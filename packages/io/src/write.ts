@@ -4,6 +4,7 @@ import {
   DxfWriter,
   DxfWriterConfiguration,
   type CadDocument,
+  type NotificationEventHandler,
 } from '@node-projects/acad-ts';
 import type { CadFormat } from './read';
 
@@ -13,6 +14,8 @@ export interface WriteOptions {
   binary?: boolean;
   /** DXF ASCII only: starting size of the output buffer; it doubles until the file fits. */
   initialBufferBytes?: number;
+  /** Writer diagnostics, e.g. "Object not implemented : VisualStyle" for objects it drops. */
+  onNotification?: (message: string, type: number) => void;
 }
 
 /**
@@ -40,7 +43,11 @@ export function fidelityDwgConfiguration(): DwgWriterConfiguration {
  * M1-05) is built on top of it.
  */
 export function writeCadDocument(doc: CadDocument, options: WriteOptions): Uint8Array {
-  if (options.format === 'dwg') return DwgWriter.writeToBuffer(doc, fidelityDwgConfiguration());
+  const notify: NotificationEventHandler | undefined = options.onNotification
+    ? (_sender, e) => options.onNotification!(e.message, e.notificationType)
+    : undefined;
+  if (options.format === 'dwg')
+    return DwgWriter.writeToBuffer(doc, fidelityDwgConfiguration(), notify ?? null);
   if (options.binary === true) {
     const chunks: Uint8Array[] = [];
     DxfWriter.writeToStream(
@@ -48,6 +55,7 @@ export function writeCadDocument(doc: CadDocument, options: WriteOptions): Uint8
       doc,
       true,
       fidelityDxfConfiguration(),
+      notify,
     );
     return concat(chunks);
   }
@@ -57,7 +65,7 @@ export function writeCadDocument(doc: CadDocument, options: WriteOptions): Uint8
   for (;;) {
     const buffer = new Uint8Array(size);
     try {
-      DxfWriter.writeToStream(buffer, doc, false, fidelityDxfConfiguration());
+      DxfWriter.writeToStream(buffer, doc, false, fidelityDxfConfiguration(), notify);
     } catch (err) {
       if (err instanceof Error && err.message === 'DXF output buffer is too small.') {
         size *= 2;
