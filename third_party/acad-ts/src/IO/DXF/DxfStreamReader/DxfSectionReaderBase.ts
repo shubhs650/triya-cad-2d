@@ -866,6 +866,10 @@ export abstract class DxfSectionReaderBase {
     const tmp = template as CadToleranceTemplate;
 
     switch (this._reader.code as number) {
+      case 1:
+        // Decode the caret codes ("^J" between the frame's lines), as the DWG text has them.
+        (template.cadObject as Tolerance).text = this._reader.valueAsString;
+        return true;
       case 3:
         tmp.dimensionStyleName = this._reader.valueAsString;
         return true;

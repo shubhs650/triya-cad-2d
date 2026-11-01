@@ -1,0 +1,15 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index c3d986b..4c2c030 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -866,6 +866,10 @@ export abstract class DxfSectionReaderBase {
+     const tmp = template as CadToleranceTemplate;
+ 
+     switch (this._reader.code as number) {
++      case 1:
++        // Decode the caret codes ("^J" between the frame's lines), as the DWG text has them.
++        (template.cadObject as Tolerance).text = this._reader.valueAsString;
++        return true;
+       case 3:
+         tmp.dimensionStyleName = this._reader.valueAsString;
+         return true;
