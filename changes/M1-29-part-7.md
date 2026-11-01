@@ -1,0 +1,1 @@
+- M1-29 part 7 (#50): acad-ts keeps a layout's paper image origin (patch 0044) and standard scale (0045), and the linetype alignment (0046), through DXF saves; round trip 8,692 → 8,640 differences.
