@@ -37,7 +37,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 - [x] (#24) **M1-07** Spatial index (R-tree) per block record and per layout; incremental updates from `ChangeSet`. **Acceptance:** query 100k entities < 2 ms; invalidation tests.
 
 ### Text
-- [ ] **M1-08** SHX parser + stroke interpreter (shapes, unifont; bigfont minimal), glyph cache; user font store in OPFS with "Add fonts" drop. **Acceptance:** renders all glyphs of a user-dropped `romans.shx` identically to the reference (owner-provided reference PNG, private corpus) and the bundled fonts in CI.
+- [~] (thread: Build M1-08 SHX font parser) **M1-08** SHX parser + stroke interpreter (shapes, unifont; bigfont minimal), glyph cache; user font store in OPFS with "Add fonts" drop. **Acceptance:** renders all glyphs of a user-dropped `romans.shx` identically to the reference (owner-provided reference PNG, private corpus) and the bundled fonts in CI.
 - [ ] **M1-09** Bundled open stroke fonts: convert Hershey + LibreCAD `.lff` to Triya font JSON; name map for common SHX names; attribution. **Acceptance:** text in corpus files with missing SHX renders with bundled fallback and the health panel lists the substitution.
 - [ ] **M1-10** TTF pipeline via `opentype.js`: glyph paths, exact advance widths, style flags; system-font fallback in browser. **Acceptance:** width tests vs `opentype.js` reference.
 - [ ] **M1-11** MTEXT formatting engine (full code set, columns, fields, `%%`, background mask), line breaking, justification. **Acceptance:** corpus MTEXT files render within tolerance; unit tests per code.
