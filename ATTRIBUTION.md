@@ -14,7 +14,8 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | Microsoft Fluent UI System Icons | UI icons | MIT | https://github.com/microsoft/fluentui-system-icons |
 | pdf.js | PDF underlay rendering | Apache-2.0 | https://github.com/mozilla/pdf.js |
 | opentype.js 2.0 | TrueType/OpenType parsing, glyph outlines and advance widths (`packages/text`, M1-10); no dependencies of its own | MIT | https://github.com/opentypejs/opentype.js |
-| React, Vite, Zustand, Radix, Comlink, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
+| React, Vite, Zustand, Radix, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
+| Comlink 4.4.2 | `@triya/io` worker RPC (M1-06) | Apache-2.0 | https://github.com/GoogleChromeLabs/comlink |
 | ESLint, @eslint/js, typescript-eslint, eslint-plugin-boundaries, globals, Prettier, Turborepo, Husky | dev tooling (lint, module boundaries, format, task runner, git hooks); not shipped | MIT | npm |
 | eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |
 | yaml | dev tooling (parses workflows in `tests/ci`); not shipped | ISC | npm |

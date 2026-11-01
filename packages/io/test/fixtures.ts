@@ -3,6 +3,7 @@
 import {
   ACadVersion,
   CadDocument,
+  Circle,
   DwgWriter,
   DxfWriter,
   Layer,
@@ -44,4 +45,23 @@ export function sampleDxf(version: ACadVersion): Uint8Array {
 /** Byte-per-char encoding; enough for the ASCII fixtures here (no DOM/Node TextEncoder in io). */
 export function ascii(text: string): Uint8Array {
   return Uint8Array.from(text, (c) => c.charCodeAt(0) & 0xff);
+}
+
+/**
+ * A DWG with `count` entities, alternating LINE and CIRCLE, for load tests (M1-06). Until the
+ * owner's bench-100k.dwg exists (M1-26) this stands in for it: at 100k entities it is about
+ * 1.4 MB and takes acad-ts a few seconds to parse.
+ */
+export function largeDwg(count: number, version = ACadVersion.AC1032): Uint8Array {
+  const doc = new CadDocument(version);
+  for (let i = 0; i < count; i++) {
+    const x = (i % 1000) * 20;
+    const y = Math.floor(i / 1000) * 20;
+    doc.entities?.add(
+      i % 2
+        ? new Line(new XYZ(x, y, 0), new XYZ(x + 10, y + 10, 0))
+        : new Circle(new XYZ(x + 5, y + 5, 0), 4),
+    );
+  }
+  return DwgWriter.writeToBuffer(doc);
 }
