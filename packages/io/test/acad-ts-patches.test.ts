@@ -18,7 +18,10 @@ import {
   DimensionStyle,
   DxfClass,
   DxfClassCollection,
+  ExtendedDataDisplacement,
+  ExtendedDataHandle,
   ExtendedDataInteger16,
+  ExtendedDataLayer,
   ExtendedDataString,
   Layer,
   Line,
@@ -331,6 +334,59 @@ describe('acad-ts local patches', () => {
       const read = back.getCadObject(color.handle) as BookColor;
       expect(read.bookName, `binary ${binary}`).toBe('PANTONE+ Solid Coated');
       expect(read.colorName, `binary ${binary}`).toBe('PANTONE 123 C');
+    }
+  });
+
+  it('0029 DXF writer writes xdata displacements, layer names and dangling handles as read', () => {
+    // 1012 went out as one group holding an XYZ, which broke the record and moved the next
+    // object's xdata onto the previous one; a 1003 layer went out as a 1005 handle; and a 1005
+    // to an object not in the drawing went out as 0. AutoCAD keeps 1005 values on save.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const layer = new Layer('APP_LAYER');
+    doc.layers!.add(layer);
+    const line = new Line(new XYZ(0, 0, 0), new XYZ(1, 0, 0));
+    doc.modelSpace!.entities.add(line);
+    line.extendedData.addByName('TRIYA_TEST', undefined);
+    line.extendedData
+      .getByName('TRIYA_TEST')
+      .records.push(
+        new ExtendedDataDisplacement(new XYZ(1, 2, 3)),
+        new ExtendedDataLayer(layer.handle),
+        new ExtendedDataHandle(0xfeed),
+      );
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const records = back.getCadObject(line.handle)!.extendedData.getByName('TRIYA_TEST').records;
+      expect(
+        records.map((r) => r.constructor.name),
+        `binary ${binary}`,
+      ).toEqual(['ExtendedDataDisplacement', 'ExtendedDataLayer', 'ExtendedDataHandle']);
+      const [disp, lay, handle] = records as [
+        ExtendedDataDisplacement,
+        ExtendedDataLayer,
+        ExtendedDataHandle,
+      ];
+      expect([disp.value.x, disp.value.y, disp.value.z]).toEqual([1, 2, 3]);
+      expect(back.getCadObject(lay.value)?.handle).toBe(layer.handle);
+      expect(handle.value).toBe(0xfeed);
+    }
+  });
+
+  it('0030 DXF writer writes xdata on symbol tables', () => {
+    // _writeTable wrote the table header without its xdata (AutoCAD puts ACAD DbSaveVer on the
+    // VPORT table).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    doc.vPorts!.extendedData.addByName('TRIYA_TEST', undefined);
+    doc.vPorts!.extendedData.getByName('TRIYA_TEST').records.push(new ExtendedDataString('kept'));
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const xdata = back.vPorts!.extendedData;
+      expect(xdata.containsKeyName('TRIYA_TEST'), `binary ${binary}`).toBe(true);
+      expect(xdata.getByName('TRIYA_TEST').records.map((r) => r.rawValue)).toEqual(['kept']);
     }
   });
 });

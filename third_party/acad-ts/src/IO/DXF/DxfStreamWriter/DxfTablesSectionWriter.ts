@@ -66,6 +66,8 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
     if (subclass) {
       this._writer.write(DxfCode.Subclass, subclass);
     }
+    // The table's own xdata (AutoCAD writes ACAD DbSaveVer on the VPORT table).
+    this.writeExtendedData(table.extendedData);
 
     for (const entry of table) {
       this._writeEntry(entry, writeFlags);

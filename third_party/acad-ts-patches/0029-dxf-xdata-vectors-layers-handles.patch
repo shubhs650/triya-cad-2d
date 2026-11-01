@@ -1,0 +1,40 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index baaf45c..0c3bb4d 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -93,6 +93,7 @@ import { ExtendedDataCoordinate } from '../../../XData/ExtendedDataCoordinate.js
+ import { ExtendedDataWorldCoordinate } from '../../../XData/ExtendedDataWorldCoordinate.js';
+ import { IExtendedDataHandleReference } from '../../../XData/IExtendedDataHandleReference.js';
+ import { ExtendedDataString } from '../../../XData/ExtendedDataString.js';
++import { ExtendedDataLayer } from '../../../XData/ExtendedDataLayer.js';
+ import { NotificationEventHandler, NotificationEventArgs, NotificationType } from '../../NotificationEventHandler.js';
+ import { DxfMap } from '../../../DxfMap.js';
+ import { BoundaryPathFlags } from '../../../Entities/BoundaryPathFlags.js';
+@@ -236,20 +237,20 @@ export abstract class DxfSectionWriterBase {
+         } else if (record instanceof ExtendedDataDistance) {
+           this._writer.write(record.code, record.value);
+         } else if (record instanceof ExtendedDataDisplacement) {
+-          this._writer.write(record.code, record.value);
++          this._writer.writeVector(record.code, record.value as IVector);
+         } else if (record instanceof ExtendedDataDirection) {
+           this._writer.writeVector(record.code, record.value as IVector);
+         } else if (record instanceof ExtendedDataCoordinate) {
+           this._writer.writeVector(record.code, record.value as IVector);
+         } else if (record instanceof ExtendedDataWorldCoordinate) {
+           this._writer.writeVector(record.code, record.value as IVector);
++        } else if (record instanceof ExtendedDataLayer) {
++          // DXF 1003 is the layer name; the reader resolves it back to the layer.
++          const layer = record.resolveReference(this._document);
++          if (layer) this._writer.write(DxfCode.ExtendedDataLayerName, layer.name);
+         } else if (typeof (record as Partial<IExtendedDataHandleReference>).resolveReference === 'function') {
+-          const handle = record as Partial<IExtendedDataHandleReference>;
+-          let h = handle.value;
+-          if (handle.resolveReference(this._document) === null) {
+-            h = 0;
+-          }
+-          this._writer.write(DxfCode.ExtendedDataHandle, h);
++          // A 1005 is written as read, like AutoCAD's save, even when it names no object here.
++          this._writer.write(DxfCode.ExtendedDataHandle, (record as Partial<IExtendedDataHandleReference>).value);
+         } else if (record instanceof ExtendedDataString) {
+           this._writer.write(record.code, record.value);
+         } else {
