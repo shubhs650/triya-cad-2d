@@ -1,0 +1,21 @@
+name: Enable auto-merge on thread PRs
+
+# Fallback for the case where the Claude GitHub App token cannot enable auto-merge itself.
+# Requires a repository secret AUTOMERGE_TOKEN (fine-grained PAT: Pull requests read/write,
+# Contents read/write) and "Allow auto-merge" turned on in the repository settings.
+# Branch protection on main (required checks: "lint · typecheck · unit · round-trip" and
+# "fidelity · offline · ui") is what makes auto-merge wait for green.
+
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize]
+
+jobs:
+  enable:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - name: Enable squash auto-merge
+        env:
+          GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN || github.token }}
+        run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}" || echo "auto-merge not enabled (check repo setting and token)"
