@@ -31,6 +31,8 @@ import {
   MText,
   TableEntity,
   type TableEntityCell,
+  CadWipeoutBase,
+  PdfUnderlay,
   TextEntity,
   type AttributeBase,
   type AttributeEntity,
@@ -71,6 +73,8 @@ import type {
   ObjectCommon,
   TableCell,
   TableGeometry,
+  ImageGeometry,
+  UnderlayGeometry,
   PlanarProps,
   TextFields,
   PolylineVertex,
@@ -639,6 +643,67 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
   };
 }
 
+/** IMAGE and WIPEOUT points and vectors are WCS; the image plane is u × v. */
+function imageGeometry(im: CadWipeoutBase): ImageGeometry | UnmappedEntity['reason'] {
+  const a = im.uVector;
+  const b = im.vVector;
+  const n = { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+  const pl = plane(n as XYZ);
+  if (pl === 'tilted') return 'tilted plane';
+  const definition = ref(im.definition);
+  const z = im.insertPoint.z;
+  return {
+    kind: im.objectName === 'WIPEOUT' ? 'WIPEOUT' : 'IMAGE',
+    ...(definition ? { definition } : {}),
+    position: xy(im.insertPoint),
+    u: xy(a),
+    v: xy(b),
+    size: xy(im.size),
+    displayFlags: im.flags as number,
+    clipping: im.clippingState,
+    brightness: im.brightness,
+    contrast: im.contrast,
+    fade: im.fade,
+    clip: {
+      // acad-ts skips DXF 71 on read (M1-32), but a rectangular boundary always states two
+      // corners (DXF reference, IMAGE), so more vertices mean a polygon.
+      type:
+        (im.clipType as number) === 2 || im.clipBoundaryVertices.length > 2
+          ? 'polygon'
+          : 'rectangle',
+      vertices: im.clipBoundaryVertices.map(xy),
+      inverted: (im.clipMode as number) === 1,
+    },
+    ...(z !== 0 ? { elevation: z } : {}),
+    ...(pl !== 'up' ? { normal: { x: n.x, y: n.y, z: n.z } } : {}),
+  };
+}
+
+/**
+ * PDFUNDERLAY: the insertion point is WCS and the rotation is about the normal, so a −Z
+ * underlay's X axis lies at π − θ and its Y axis (normal × X) is reversed.
+ */
+function underlayGeometry(u: PdfUnderlay): UnderlayGeometry | UnmappedEntity['reason'] {
+  const pl = plane(u.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const definition = ref(u.definition);
+  const z = u.insertPoint.z;
+  return {
+    kind: 'PDFUNDERLAY',
+    ...(definition ? { definition } : {}),
+    position: xy(u.insertPoint),
+    scale: { x: u.xScale, y: u.yScale, z: u.zScale },
+    rotation: ocsAngle(u.rotation, pl),
+    ...(pl === 'down' ? { upsideDown: true } : {}),
+    flags: u.flags as number,
+    contrast: u.contrast,
+    fade: u.fade,
+    clip: u.clipBoundaryVertices.map(xy),
+    ...(z !== 0 ? { elevation: z } : {}),
+    ...(pl !== 'up' ? { normal: { x: u.normal.x, y: u.normal.y, z: u.normal.z } } : {}),
+  };
+}
+
 /** TOLERANCE's 10 and 11 are WCS, so it converts like MTEXT. */
 function toleranceGeometry(t: Tolerance, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   const pl = plane(t.normal);
@@ -939,6 +1004,8 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   if (e instanceof MultiLeader) return multiLeaderGeometry(e, ctx);
   if (e instanceof Tolerance) return toleranceGeometry(e, ctx);
   if (e instanceof Hatch) return hatchGeometry(e);
+  if (e instanceof CadWipeoutBase) return imageGeometry(e);
+  if (e instanceof PdfUnderlay) return underlayGeometry(e);
   return 'not mapped yet';
 }
 

@@ -37,14 +37,14 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | LEADER | ✓ | | | | |
 | MLEADER (+ MLEADERSTYLE) | ✓ (DXF branch connection point, landing direction and dogleg length, and the context text colour, lost by acad-ts, M1-32; DWG reads them) | | | | |
 | HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | ✓ (style 75, seed points and ellipse-edge major axes lost by acad-ts, M1-32) | | | | |
-| WIPEOUT | | | | | |
-| IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | | | | | |
+| WIPEOUT | ✓ (acad-ts skips the clip type 71; the mapper infers a polygon from more than two vertices, M1-32) | | | | |
+| IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation); cell formats not mapped yet; ezdxf-written tables dropped by acad-ts (M1-32) | | | | |
 | VIEWPORT | | | | | |
 | TOLERANCE | ✓ (caret codes left encoded by acad-ts, M1-32) | | | | |
 | MLINE (+ MLINESTYLE) | | | | | |
 | REGION *(render from proxy graphics / boundary)* | | | — | | |
-| PDFUNDERLAY / DWFUNDERLAY / DGNUNDERLAY (+ definitions) | | | | | |
+| PDFUNDERLAY / DWFUNDERLAY / DGNUNDERLAY (+ definitions) | ✓ PDFUNDERLAY; DWF/DGN have no acad-ts reader and no corpus file (M1-32) | | | | |
 | OLE2FRAME *(render bounds + frame)* | | | — | | |
 | ACAD_PROXY_ENTITY *(render proxy graphics)* | | | — | P | |
 | ARRAY (associative array: anonymous block + ACAD_ARRAY xdata) | | | | | |

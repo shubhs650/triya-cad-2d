@@ -14,6 +14,8 @@ import type {
   MTextGeometry,
   MultiLeaderGeometry,
   TableGeometry,
+  ImageGeometry,
+  UnderlayGeometry,
   TextFields,
   Vec2,
 } from '@triya/engine';
@@ -131,6 +133,9 @@ const MAPPED = new Set([
   'HATCH',
   'MULTILEADER',
   'ACAD_TABLE',
+  'IMAGE',
+  'WIPEOUT',
+  'PDFUNDERLAY',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({
@@ -432,6 +437,21 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
     case 'ACAD_TABLE': {
       if (geom.kind !== 'ACAD_TABLE') return bad('type', d.type, geom.kind);
       compareTable(g, n, geom, bad);
+      return;
+    }
+    case 'IMAGE':
+    case 'WIPEOUT': {
+      if (geom.kind !== d.type) return bad('type', d.type, geom.kind);
+      compareImage(
+        subclass(g, d.type === 'IMAGE' ? 'AcDbRasterImage' : 'AcDbWipeout'),
+        geom as ImageGeometry,
+        bad,
+      );
+      return;
+    }
+    case 'PDFUNDERLAY': {
+      if (geom.kind !== 'PDFUNDERLAY') return bad('type', d.type, geom.kind);
+      compareUnderlay(subclass(g, 'AcDbUnderlayReference'), n, geom, bad);
       return;
     }
     case 'HATCH': {
@@ -1062,6 +1082,62 @@ function compareTable(groups: readonly Group[], n: V3, geom: TableGeometry, bad:
             .join('') + c[one]![1];
     if (type === 'text' && !sameText(text, e.text)) bad('cell 1', `${at} ${text}`, e.text);
   });
+}
+
+/** IMAGE / WIPEOUT (DXF AcDbRasterImage): WCS points and vectors, clip vertices in pixels. */
+function compareImage(g: readonly Group[], geom: ImageGeometry, bad: Bad): void {
+  const p2 = (code: number): Vec2 => ({ x: num(g, code), y: num(g, code + 10) });
+  for (const [code, got] of [
+    [10, geom.position],
+    [11, geom.u],
+    [12, geom.v],
+    [13, geom.size],
+  ] as const)
+    if (!near(p2(code), got)) bad(String(code), fmt(p2(code)), fmt(got));
+  if (handleIn(g, 340) !== geom.definition) bad('340', handleIn(g, 340), geom.definition);
+  const ints: [string, number, number][] = [
+    ['70', num(g, 70), geom.displayFlags],
+    ['281', num(g, 281, 50), geom.brightness],
+    ['282', num(g, 282, 50), geom.contrast],
+    ['283', num(g, 283), geom.fade],
+  ];
+  for (const [code, file, got] of ints) if (file !== got) bad(code, file, got);
+  if ((num(g, 280) !== 0) !== geom.clipping) bad('280', num(g, 280), geom.clipping);
+  if ((num(g, 290) === 1) !== geom.clip.inverted) bad('290', num(g, 290), geom.clip.inverted);
+  const type = num(g, 71, 1) === 2 ? 'polygon' : 'rectangle';
+  if (type !== geom.clip.type) bad('71', num(g, 71, 1), geom.clip.type);
+  const xs = all(g, 14).map(Number);
+  const ys = all(g, 24).map(Number);
+  const vs = xs.map((x, k) => ({ x, y: ys[k]! }));
+  if (
+    vs.length !== geom.clip.vertices.length ||
+    vs.some((v, k) => !near(v, geom.clip.vertices[k]!))
+  )
+    bad('14', vs.map(fmt).join(' '), geom.clip.vertices.map(fmt).join(' '));
+}
+
+/** PDFUNDERLAY (DXF AcDbUnderlayReference): 10 WCS, 50 about the normal 210, 11 own frame. */
+function compareUnderlay(g: readonly Group[], n: V3, geom: UnderlayGeometry, bad: Bad): void {
+  if (handleIn(g, 340) !== geom.definition) bad('340', handleIn(g, 340), geom.definition);
+  const at = { x: num(g, 10), y: num(g, 20) };
+  if (!near(at, geom.position)) bad('10', fmt(at), fmt(geom.position));
+  const sc = [num(g, 41, 1), num(g, 42, 1), num(g, 43, 1)];
+  if (!sc.every((v, k) => close(v, [geom.scale.x, geom.scale.y, geom.scale.z][k]!)))
+    bad('41', sc.join(' '), JSON.stringify(geom.scale));
+  // The X axis at 50 in the OCS of 210, taken to plan view.
+  const x = plan({ x: Math.cos(deg(g, 50)), y: Math.sin(deg(g, 50)) }, n);
+  if (!sameAngle(geom.rotation, Math.atan2(x.y, x.x))) bad('50', num(g, 50), geom.rotation);
+  for (const [code, file, got] of [
+    ['280', num(g, 280), geom.flags],
+    ['281', num(g, 281, 100), geom.contrast],
+    ['282', num(g, 282), geom.fade],
+  ] as const)
+    if (file !== got) bad(code, file, got);
+  const xs = all(g, 11).map(Number);
+  const ys = all(g, 21).map(Number);
+  const vs = xs.map((x, k) => ({ x, y: ys[k]! }));
+  if (vs.length !== geom.clip.length || vs.some((v, k) => !near(v, geom.clip[k]!)))
+    bad('11', vs.map(fmt).join(' '), geom.clip.map(fmt).join(' '));
 }
 
 /** A HATCH boundary as the file states it, read group by group (DXF reference, HATCH). */
