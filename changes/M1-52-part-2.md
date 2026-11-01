@@ -1,1 +1,1 @@
-- M1-52 part 2 (#73): leaders draw on screen with their arrowhead and the line under their text, styled by their dimension style and its per-leader overrides, and multileaders with block content draw the block.
+- M1-52 part 2 (#74): leaders draw on screen with their arrowhead and the line under their text, styled by their dimension style and its per-leader overrides, and multileaders with block content draw the block.
