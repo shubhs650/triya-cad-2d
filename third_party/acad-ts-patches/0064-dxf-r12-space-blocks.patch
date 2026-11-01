@@ -1,0 +1,57 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
+index 070823c..8451670 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
+@@ -30,11 +30,6 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
+ 
+   protected writeSection(): void {
+     for (const b of this._document.blockRecords) {
+-      if (this.version <= ACadVersion.AC1009 &&
+-        [BlockRecord.modelSpaceName.toUpperCase(), BlockRecord.paperSpaceName.toUpperCase()].includes(b.name.toUpperCase())) {
+-        this._processEntities(b);
+-        continue;
+-      }
+       this._writeBlock(b.blockEntity);
+       this._processEntities(b);
+       this._writeBlockEnd(b.blockEnd);
+@@ -52,10 +47,14 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.blockBegin);
+ 
++    // R12 has no *Model_Space/*Paper_Space names: AutoCAD writes these two blocks as
++    // $MODEL_SPACE/$PAPER_SPACE (empty; their entities go to the ENTITIES section).
++    const name = this._r12SpaceName(block.name);
++
+     if (block.xRefPath) {
+       this._writer.write(1, block.xRefPath, map);
+     }
+-    this._writer.write(2, block.name, map);
++    this._writer.write(2, name, map);
+     this._writer.write(70, block.flags, map);
+ 
+     if (this.version >= ACadVersion.AC1015 && block.isUnloaded) {
+@@ -64,10 +63,23 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.writeVector(10, block.basePoint, map);
+ 
+-    this._writer.write(3, block.name, map);
++    this._writer.write(3, name, map);
+     this._writer.write(4, block.comments, map);
+   }
+ 
++  private _r12SpaceName(name: string): string {
++    if (this.version > ACadVersion.AC1009) {
++      return name;
++    }
++    if (name.toUpperCase() === BlockRecord.modelSpaceName.toUpperCase()) {
++      return '$MODEL_SPACE';
++    }
++    if (name.toUpperCase() === BlockRecord.paperSpaceName.toUpperCase()) {
++      return '$PAPER_SPACE';
++    }
++    return name;
++  }
++
+   private _processEntities(b: BlockRecord): void {
+     const name = b.name.toUpperCase();
+     if (name === BlockRecord.modelSpaceName.toUpperCase() || name === BlockRecord.paperSpaceName.toUpperCase()) {

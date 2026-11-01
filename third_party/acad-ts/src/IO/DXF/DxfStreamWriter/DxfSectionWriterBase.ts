@@ -186,7 +186,13 @@ export abstract class DxfSectionWriterBase {
 
   protected writeCommonObjectData(cadObject: CadObject): void {
     if (this.version <= ACadVersion.AC1009) {
-      if (!(cadObject instanceof DimensionStyle)) this._writer.write(DxfCode.Handle, cadObject.handle);
+      if (cadObject instanceof DimensionStyle) {
+        // An R12 DIMSTYLE keeps its handle in 105 (5 is DIMBLK), as ezdxf writes it and the reader
+        // reads it. write() drops codes from 80 up for R12, so this one is written raw.
+        this._writer.writeRaw(DxfCode.DimVarHandle, cadObject.handle);
+      } else {
+        this._writer.write(DxfCode.Handle, cadObject.handle);
+      }
       return;
     }
     if (cadObject instanceof DimensionStyle) {

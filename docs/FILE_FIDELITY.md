@@ -153,6 +153,8 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DIMASSOC | Read and written (0061); the DXF writer refused it, dropping 47 associations and the reactors that point at them |
 | IMAGEDEF_REACTOR (DXF write) | Written with its image (0062); 77 reactors were dropped because nothing queued them |
 | ACAD_PROXY_OBJECT | Kept as read and written back raw in DXF (0063, DEC-040); the DXF writer skipped all 98 in the R13/R14 binary DXFs |
+| R12 `$MODEL_SPACE` / `$PAPER_SPACE` blocks (DXF write) | Written, empty, as AutoCAD writes them (0064); were left out, so their BLOCK/ENDBLK handles changed on every R12 save |
+| R12 DIMSTYLE handle (DXF write) | Written on 105 (0065); was left out. Nameless R12 blocks (ezdxf `r12_blocks_with_no_names.dxf`) are still lost, M1-31 |
 | TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
 | ACAD_TABLE cells (DWG write) | R2004/R2007 cell overrides (alignment, colours, text height, borders) written behind their flag word (0041); R2010+ cell geometry written with no content geometry (0042); R2004/R2007 block cells keep their block record (0043). All three were reset on a save; DWG tables now round-trip with no difference |
 | MULTILEADER (DXF) | Written in AutoCAD's group order with its context data, branches and leader lines (0037); the reader decodes the context text colour as an AcCmColor and reads the branch groups. A save reset every multileader to defaults with an empty label |
