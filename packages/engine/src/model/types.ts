@@ -1052,6 +1052,12 @@ export interface DimStyleRecord extends SymbolTableRecord {
    * (the default arrowhead, ByBlock linetype) is absent.
    */
   readonly vars: Readonly<Record<string, DimVarValue>>;
+  /**
+   * DIMVAR colours (DIMCLRD/E/T, DIMTFILLCLR) that the file holds as true colours, by name: R2004+
+   * DWGs store them as AcCmColor. `vars` keeps the ACI AutoCAD writes for each in DXF. Absent when
+   * there are none.
+   */
+  readonly trueColors?: Readonly<Record<string, Color>>;
 }
 
 /** An MLEADERSTYLE object (AutoCAD DXF reference, MLEADERSTYLE); enum fields keep DXF codes. */

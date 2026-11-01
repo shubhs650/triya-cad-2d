@@ -6,6 +6,7 @@ import {
   entityBounds,
   toleranceParts,
   toleranceForSize,
+  type DimStyleRecord,
   type HeaderValue,
   type LwPolylineGeometry,
   type MTextGeometry,
@@ -19,7 +20,7 @@ const STD = '27';
 const ACAD = '12';
 const ROMANS = '11';
 
-function model(): DocumentModel {
+function model(style: Partial<DimStyleRecord> = {}): DocumentModel {
   return DocumentModel.create({
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '100',
@@ -33,6 +34,7 @@ function model(): DocumentModel {
           handle: STD,
           name: 'Standard',
           vars: { DIMTXT: 2, DIMGAP: 0.5, DIMSCALE: 1, DIMTXSTY: ROMANS, DIMCLRD: 1, DIMCLRT: 3 },
+          ...style,
         },
       ],
       blockRecords: [blockRecord(MODEL_SPACE, '*Model_Space')],
@@ -96,6 +98,17 @@ describe('toleranceParts', () => {
     // Frames in DIMCLRD, text in DIMCLRT.
     expect(parts![0]!.color).toEqual({ kind: 'aci', index: 1 });
     expect(parts![1]!.color).toEqual({ kind: 'aci', index: 3 });
+  });
+
+  it('draws frames and text in the style true colours (R2004+ DWG)', () => {
+    const frame = { kind: 'rgb', r: 44, g: 136, b: 27 } as const;
+    const text = { kind: 'rgb', r: 80, g: 179, b: 255 } as const;
+    const m = model({ trueColors: { DIMCLRD: frame, DIMCLRT: text } });
+    const parts = toleranceParts(fcf({ text: 'A' }), undefined, m, measure)!;
+    expect(parts.map((p) => [p.geom.kind, p.color])).toEqual([
+      ['LWPOLYLINE', frame],
+      ['MTEXT', text],
+    ]);
   });
 
   it('rotates with the entity, flips under a −Z extrusion, and takes DSTYLE overrides', () => {

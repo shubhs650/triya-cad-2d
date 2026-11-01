@@ -12,5 +12,6 @@ export { readInWorker } from './worker/client';
 export type { AbortSignalLike, IoWorker, ReadInWorkerOptions } from './worker/client';
 export { mapHeader, type MappedHeader } from './map/header';
 export { mapTables, type MappedTables } from './map/tables';
+export { aciOfTrueColor } from './map/common';
 export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/entities';
 export { mapSortEnts } from './map/sortents';
