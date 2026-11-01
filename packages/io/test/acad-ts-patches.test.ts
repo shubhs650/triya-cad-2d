@@ -24,6 +24,7 @@ import {
   ExtendedDataLayer,
   ExtendedDataString,
   Layer,
+  Leader,
   Line,
   LineWeightType,
   MeasurementUnits,
@@ -388,5 +389,29 @@ describe('acad-ts local patches', () => {
       expect(xdata.containsKeyName('TRIYA_TEST'), `binary ${binary}`).toBe(true);
       expect(xdata.getByName('TRIYA_TEST').records.map((r) => r.rawValue)).toEqual(['kept']);
     }
+  });
+
+  it('0074 a DXF LEADER without group 71 has its arrowhead on', () => {
+    const doc = new CadDocument();
+    const leader = new Leader();
+    leader.arrowHeadEnabled = false;
+    leader.vertices.push(new XYZ(0, 0, 0), new XYZ(10, 0, 0));
+    doc.entities!.add(leader);
+    // The writer's output is ASCII here, so a char per byte is exact.
+    const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
+    const bytes = (t: string) => Uint8Array.from(t, (c) => c.charCodeAt(0));
+    // ezdxf and AutoCAD-written DXFs omit 71 when the arrowhead is on; drop the group the
+    // writer emits after the AcDbLeader subclass marker and its style name.
+    const without = text.replace(/(AcDbLeader\r?\n *3\r?\n[^\r\n]*\r?\n) *71\r?\n *0\r?\n/, '$1');
+    expect(without).not.toBe(text);
+
+    const omitted = DxfReader.readFromStream(bytes(without));
+    const kept = DxfReader.readFromStream(bytes(text));
+
+    const first = (d: CadDocument) => [...d.entities!].find((e) => e instanceof Leader) as Leader;
+    expect(first(omitted).arrowHeadEnabled).toBe(true);
+    expect(first(kept).arrowHeadEnabled).toBe(false);
+    // Leaders made in code keep the class default.
+    expect(new Leader().arrowHeadEnabled).toBe(false);
   });
 });

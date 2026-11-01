@@ -835,8 +835,8 @@ function compareLeader(g: readonly Group[], geom: LeaderGeometry, t: MappedTable
   const vs = xs.map((x, k) => ({ x, y: ys[k]! }));
   if (vs.length !== geom.vertices.length || vs.some((v, k) => !near(v, geom.vertices[k]!)))
     bad('10', vs.map(fmt).join(' '), geom.vertices.map(fmt).join(' '));
-  if (first(g, 71) !== undefined && geom.arrowhead !== (num(g, 71) !== 0))
-    bad('71', num(g, 71), geom.arrowhead);
+  // DXF 71 defaults to 1: files omit it when the arrowhead is on (acad-ts patch 0074).
+  if (geom.arrowhead !== (num(g, 71, 1) !== 0)) bad('71', num(g, 71, 1), geom.arrowhead);
   if (geom.spline !== (num(g, 72) === 1)) bad('72', num(g, 72), geom.spline);
   if (geom.creationType !== num(g, 73, 3)) bad('73', num(g, 73, 3), geom.creationType);
   if (!!geom.hookline !== (num(g, 75) !== 0)) bad('75', num(g, 75), !!geom.hookline);

@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31) and 0073 (M1-48) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48) and 0074 (M1-52) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1474,5 +1474,22 @@ DXF files before R2007 store text in the drawing's code page and escape other ch
 **Title:** Stop AEC raw data at the end of the DWG data stream
 
 The AEC readers (`AEC_CLEANUP_GROUP_DEF`, `AEC_WALL_STYLE`, `BINRECORD`, `AEC_WALL`) keep the bytes after their known fields as raw data, but read to the end of the object (or to the handle reader's position), so the raw data includes the string and handle streams. The writer writes the raw data and then the handles again, so the data grows on every save. This ends the raw data at the end of the data stream (the string stream start in R2007+, the handle stream before).
+
+</details>
+
+### 0074 — a DXF LEADER without group 71 reads as having no arrowhead
+
+- **File:** `third_party/acad-ts-patches/0074-dxf-leader-arrowhead-default.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** DXF 71 (arrowhead flag) is optional, and AutoCAD-written and ezdxf-written files omit it when the arrowhead is on. acad-ts takes the `Leader` class default (`arrowHeadEnabled = false`), so every such LEADER lost its arrowhead on read. Corpus: the 12 DXF LEADERs of the acadsharp samples omit 71; their DWG twins have the arrowhead on.
+- **Fix:** the DXF reader starts a LEADER with the arrowhead on, so 71 = 0 still turns it off. The class default is unchanged, so leaders made in code are not affected.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0074 a DXF LEADER without group 71 has its arrowhead on". The mapping oracle (`entities.corpus.test.ts`) now expects a missing 71 to mean on, and `leaders.corpus.test.ts` checks every corpus LEADER draws its arrowhead.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Default the DXF LEADER arrowhead flag (71) to on
+
+Group 71 of LEADER is optional, and AutoCAD omits it when the arrowhead is enabled (ezdxf's `has_arrowhead` defaults to 1 for the same reason). The DXF reader left `arrowHeadEnabled` at the class default `false`, so leaders from such files lost their arrowhead, while the same drawing saved as DWG keeps it. This change sets the flag to `true` before the DXF entity codes are read; an explicit `71 0` still disables it, and `new Leader()` is unchanged.
 
 </details>
