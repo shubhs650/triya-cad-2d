@@ -1,0 +1,14 @@
+{
+  "name": "@triya/pdf",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vector PDF writer (CTB-aware), PDF underlay via pdf.js",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

@@ -98,3 +98,6 @@ See `PRD.md` §4. A plan or PR that includes one is defective.
 
 **DEC-031 — Development is driven autonomously by Claude Code Projects threads from the repo docs; CI is the reviewer; PRs auto-merge on green; humans are consulted only for the six listed stop conditions** · Accepted · 2026-11-01
 Consequences: `CLAUDE.md`; branch protection requires CI; `docs/SETUP.md`.
+
+**DEC-032 — `testkit` is a test-only package with its own boundary edges; workspace packages are consumed from source** · Accepted · 2026-11-01
+Context: `ARCHITECTURE.md` §2 lists `packages/testkit` but gives it no edges, and the round-trip, fidelity and perf harnesses need the file layer and renderer. Decision (M0-01): `testkit → engine, io, render, text, hatch, dims, pdf`; no production file may import `testkit`, any `*.test.ts`/`*.spec.ts` may. Packages export `./src/index.ts` and resolve through `tsconfig.base.json` `paths` (and the matching Vitest alias), so there is no per-package build before tests or typecheck. Consequences: `eslint.config.js`, `tests/lint/boundaries.test.ts`; `ARCHITECTURE.md` §2.

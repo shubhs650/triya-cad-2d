@@ -1,0 +1,8 @@
+{
+  "//": "Root project: type-checks repo-level tests and config files. Packages type-check themselves via turbo.",
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"]
+  },
+  "include": ["tests", "scripts", "*.config.ts", "*.config.js", "eslint.config.js"]
+}

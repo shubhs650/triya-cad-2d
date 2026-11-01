@@ -68,9 +68,10 @@ library  → engine
 compare  → engine
 pdf      → render, engine
 engine   → (nothing)
+testkit  → engine, io, render, text, hatch, dims, pdf   (test-only; only *.test.ts / *.spec.ts files may import testkit — DEC-032)
 ```
 
-Anything pointing the other way is a lint error.
+Anything pointing the other way is a lint error. The graph is encoded in `eslint.config.js` (`DEPENDENCY_GRAPH`) and proven edge by edge in `tests/lint/boundaries.test.ts`; change all three together. Packages are consumed from source: each `package.json` exports `./src/index.ts` and `tsconfig.base.json` maps `@triya/*` to it, so there is no internal build step. The no-DOM packages (`engine`, `io`, `text`, `hatch`, `dims`, `constraints`, `library`, `compare`, `pdf`) compile without the DOM lib and lint browser globals as errors (`tests/lint/no-dom.test.ts`).
 
 ## 3. Threading model
 

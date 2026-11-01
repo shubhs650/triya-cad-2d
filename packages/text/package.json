@@ -1,0 +1,14 @@
+{
+  "name": "@triya/text",
+  "version": "0.0.0",
+  "private": true,
+  "description": "SHX parser/renderer, TTF shaping, MTEXT formatting engine",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
