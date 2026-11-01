@@ -15,6 +15,7 @@ import {
   Arc,
   AttributeDefinition,
   BlockEnd,
+  DimensionArc,
   DwgReader,
   DwgReaderConfiguration,
   DwgWriter,
@@ -1046,6 +1047,43 @@ describe('acad-ts local patches (corpus-backed)', () => {
           alignments(doc),
         );
       }
+    }
+  });
+
+  it('0047 DXF writer writes ARC_DIMENSION entities', () => {
+    // _writeEntity had no DimensionArc branch, so an arc length dimension was written as an
+    // ARC_DIMENSION with only its common entity data, and read back with no block, points or
+    // angles. The leader points 16/17 were also written only when 71 says there is a leader;
+    // AutoCAD writes them always.
+    const arcs = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is DimensionArc => o instanceof DimensionArc)
+        .map((a) => ({
+          h: handleHex(a),
+          block: a.block?.name,
+          style: a.style?.name,
+          points: [
+            a.definitionPoint,
+            a.textMiddlePoint,
+            a.firstPoint,
+            a.secondPoint,
+            a.center,
+            a.leaderPoint1,
+            a.leaderPoint2,
+          ].map((p) => [p.x, p.y, p.z]),
+          angles: [a.startAngle, a.endAngle],
+          flags: [a.isPartial, a.hasLeader, a.attachmentPoint],
+        }));
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/uncommon.dxf'));
+    expect(arcs(doc)).toHaveLength(1);
+    expect(arcs(doc)[0]).toMatchObject({
+      h: '3F6',
+      block: '*D19',
+      angles: [6.222496893710236, 1.45471846497695],
+      flags: [false, false, 5],
+    });
+    for (const binary of [false, true]) {
+      expect(arcs(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual(arcs(doc));
     }
   });
 });

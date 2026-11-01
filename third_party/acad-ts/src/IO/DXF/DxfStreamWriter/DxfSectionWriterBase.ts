@@ -365,6 +365,8 @@ export abstract class DxfSectionWriterBase {
       this._writeDimension(entity, map);
     } else if (entity instanceof DimensionOrdinate) {
       this._writeDimension(entity, map);
+    } else if (entity instanceof DimensionArc) {
+      this._writeDimension(entity, map);
     } else if (entity instanceof Ellipse) {
       this._writeEllipse(entity, map);
     } else if (entity instanceof Face3D) {
@@ -651,10 +653,9 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(40, dim.startAngle, subclass);
     this._writer.write(41, dim.endAngle, subclass);
     this._writer.write(71, dim.hasLeader ? 1 : 0, subclass);
-    if (dim.hasLeader) {
-      this._writer.writeVector(16, dim.leaderPoint1, subclass);
-      this._writer.writeVector(17, dim.leaderPoint2, subclass);
-    }
+    // AutoCAD writes both leader points whether or not 71 says there is a leader.
+    this._writer.writeVector(16, dim.leaderPoint1, subclass);
+    this._writer.writeVector(17, dim.leaderPoint2, subclass);
   }
 
   private _writeDimensionOrdinate(dim: DimensionOrdinate, map: DxfMap): void {

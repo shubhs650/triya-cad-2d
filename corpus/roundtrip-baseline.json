@@ -343,7 +343,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/uncommon.dxf": {
       "status": "diff",
-      "differences": 57
+      "differences": 41
     },
     "public/third-party/ezdxf/examples_dxf/valid_lineweights.dxf": {
       "status": "diff",
