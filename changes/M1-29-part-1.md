@@ -1,0 +1,1 @@
+- M1-29 part 1 (#27): acad-ts writes DXF VIEWPORT entities with their own group codes, including the R2000+ settings (patch 0031), and keeps ATTDEF/ATTRIB version, lock position and R2018 multiline text through a DXF save (0032); round trip 16,068 → 14,813 differences.

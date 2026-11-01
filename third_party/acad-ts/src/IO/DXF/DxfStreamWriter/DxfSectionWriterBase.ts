@@ -72,6 +72,7 @@ import { Solid3D } from '../../../Entities/Solid3D.js';
 import { AttributeBase } from '../../../Entities/AttributeBase.js';
 import { AttributeEntity } from '../../../Entities/AttributeEntity.js';
 import { AttributeDefinition } from '../../../Entities/AttributeDefinition.js';
+import { AttributeType } from '../../../Entities/AttributeType.js';
 import { DimensionStyle } from '../../../Tables/DimensionStyle.js';
 import { BlockRecord } from '../../../Tables/BlockRecord.js';
 import { Transparency } from '../../../Transparency.js';
@@ -1359,12 +1360,16 @@ export abstract class DxfSectionWriterBase {
   }
 
   private _writeViewport(viewport: Viewport, map: DxfMap): void {
+    // AcDbViewport in AutoCAD's group-code order (DXF reference, VIEWPORT). Upstream wrote the id
+    // as 68, snap angle and twist as 50/51 swapped onto twist and zoom, the UCS icon as 72 and the
+    // UCS vectors as single groups, and none of the R2000+ settings.
     const subclass = map.subClasses.get(DxfSubclassMarker.viewport)!;
     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.viewport);
     this._writer.writeVector(10, viewport.center, subclass);
     this._writer.write(40, viewport.width, subclass);
     this._writer.write(41, viewport.height, subclass);
-    this._writer.write(68, viewport.id, subclass);
+    this._writer.write(68, viewport.activeStatus, subclass);
+    this._writer.write(69, viewport.id, subclass);
     this._writer.writeVector(12, viewport.viewCenter, subclass);
     this._writer.writeVector(13, viewport.snapBase, subclass);
     this._writer.writeVector(14, viewport.snapSpacing, subclass);
@@ -1375,17 +1380,47 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(43, viewport.frontClipPlane, subclass);
     this._writer.write(44, viewport.backClipPlane, subclass);
     this._writer.write(45, viewport.viewHeight, subclass);
-    this._writer.write(50, viewport.twistAngle, subclass);
-    this._writer.write(51, viewport.circleZoomPercent, subclass);
-    this._writer.write(72, viewport.displayUcsIcon, subclass);
-    this._writer.write(90, viewport.status, subclass);
-    this._writer.write(110, viewport.ucsOrigin, subclass);
-    this._writer.write(111, viewport.ucsXAxis, subclass);
-    this._writer.write(112, viewport.ucsYAxis, subclass);
-    this._writer.write(281, viewport.renderMode, subclass);
+    this._writer.write(50, viewport.snapAngle, subclass);
+    this._writer.write(51, viewport.twistAngle, subclass);
+    this._writer.write(72, viewport.circleZoomPercent, subclass);
 
     for (const layer of viewport.frozenLayers) {
       this._writer.writeHandle(331, layer);
+    }
+
+    this._writer.write(90, viewport.status, subclass);
+    this._writer.writeHandle(340, viewport.boundary, subclass);
+
+    if (this.version >= ACadVersion.AC1015) {
+      this._writer.write(1, viewport.styleSheetName, subclass);
+      this._writer.write(281, viewport.renderMode, subclass);
+      this._writer.write(71, viewport.ucsPerViewport ? 1 : 0, subclass);
+      this._writer.write(74, viewport.displayUcsIcon ? 1 : 0, subclass);
+      this._writer.writeVector(110, viewport.ucsOrigin, subclass);
+      this._writer.writeVector(111, viewport.ucsXAxis, subclass);
+      this._writer.writeVector(112, viewport.ucsYAxis, subclass);
+      this._writer.write(79, viewport.ucsOrthographicType, subclass);
+      this._writer.write(146, viewport.elevation, subclass);
+    }
+
+    if (this.version >= ACadVersion.AC1018) {
+      this._writer.write(170, viewport.shadePlotMode, subclass);
+    }
+
+    if (this.version >= ACadVersion.AC1021) {
+      this._writer.write(61, viewport.majorGridLineFrequency, subclass);
+      this._writer.writeHandle(348, viewport.visualStyle, subclass);
+      this._writer.write(292, viewport.useDefaultLighting ? 1 : 0, subclass);
+      this._writer.write(282, viewport.defaultLightingType as number, subclass);
+      this._writer.write(141, viewport.brightness, subclass);
+      this._writer.write(142, viewport.contrast, subclass);
+      const ambient = viewport.ambientLightColor;
+      if (ambient != null) {
+        this._writer.write(63, ambient.isTrueColor ? ambient.getApproxIndex() : ambient.index);
+        if (ambient.isTrueColor) {
+          this._writer.write(421, ambient.trueColor);
+        }
+      }
     }
 
     if (viewport.sun != null) {
@@ -1432,13 +1467,33 @@ export abstract class DxfSectionWriterBase {
   }
 
   private _writeAttributeBase(att: AttributeBase, map: DxfMap): void {
+    // AcDbAttribute / AcDbAttributeDefinition in AutoCAD's order (DXF reference, ATTDEF/ATTRIB):
+    // version (R2010+) first, lock position (R2007+) after 74, then the multiline text (R2018; older
+    // versions keep it in an XRECORD under the extension dictionary).
     this._writeTextEntity(att, map);
     this._writer.write(DxfCode.Subclass, att.subclassMarker);
-    this._writer.write(2, att.tag);
+    if (this.version >= ACadVersion.AC1024) this._writer.write(280, att.version);
     if (att instanceof AttributeDefinition) this._writer.write(3, att.prompt);
+    this._writer.write(2, att.tag);
     this._writer.write(70, att.flags);
     this._writer.write(73, 0);
     this._writer.write(74, att.verticalAlignment);
-    this._writer.write(280, att.isReallyLocked ? 1 : 0);
+    if (this.version >= ACadVersion.AC1021) this._writer.write(280, att.isReallyLocked ? 1 : 0);
+    if (this.version >= ACadVersion.AC1032 && att.attributeType !== AttributeType.SingleLine && att.mText != null) {
+      const mtext = att.mText;
+      this._writer.write(71, att.attributeType);
+      this._writer.write(72, 0);
+      this._writer.writeVector(11, att.alignmentPoint);
+      this._writer.write(101, 'Embedded Object');
+      this._writer.writeVector(10, mtext.insertPoint);
+      this._writer.write(40, mtext.height);
+      this._writer.write(41, mtext.rectangleWidth);
+      this._writer.write(46, mtext.rectangleHeight);
+      this._writer.write(71, mtext.attachmentPoint);
+      this._writer.write(72, mtext.drawingDirection);
+      this.writeLongTextValue(1, 3, mtext.value ?? '');
+      this._writer.write(73, mtext.lineSpacingStyle);
+      this._writer.write(44, mtext.lineSpacing);
+    }
   }
 }

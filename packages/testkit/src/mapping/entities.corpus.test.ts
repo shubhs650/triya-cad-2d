@@ -91,9 +91,6 @@ const ACAD_TS_GAPS: Record<string, string> = {
   'ACAD_TABLE mapped': 'acad-ts drops ACAD_TABLE entities of ezdxf-written files from their block',
   'MTEXT 1':
     'acad-ts decodes only the ^J, ^M, ^I and "^ " caret codes; other control characters stay as ^A, ^B, …',
-  'ATTDEF 71':
-    'acad-ts reads the AcDbText 71 (backward / upside-down) of an ATTDEF as its multiline flag, so the mirror is lost',
-  'INSERT ATTRIB 71': 'the same for ATTRIB',
   'TOLERANCE 1':
     'acad-ts does not caret-decode TOLERANCE text, so its ^J row breaks stay encoded (MTEXT is decoded)',
   'DIMENSION 70':
