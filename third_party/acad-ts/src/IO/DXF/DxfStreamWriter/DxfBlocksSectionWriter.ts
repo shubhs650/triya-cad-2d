@@ -90,9 +90,8 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
 
     this.writeCommonObjectData(block);
 
-    this._writer.write(DxfCode.Subclass, DxfSubclassMarker.entity);
-
-    this._writer.write(8, block.layer.name);
+    // ENDBLK carries the same entity data as BLOCK (colour, linetype, lineweight...).
+    this.writeCommonEntityData(block);
 
     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.blockEnd);
   }

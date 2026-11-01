@@ -14,6 +14,7 @@ import type {
 import {
   Arc,
   AttributeDefinition,
+  BlockEnd,
   DwgReader,
   DwgReaderConfiguration,
   DwgWriter,
@@ -27,12 +28,14 @@ import {
   LayoutFlags,
   LineWeightType,
   Material,
+  Mesh,
   MText,
   MultiLeader,
   RasterVariables,
   Solid3D,
   SortEntitiesTable,
   TextEntity,
+  Tolerance,
   UnknownEntity,
   UnknownNonGraphicalObject,
   Viewport,
@@ -839,5 +842,79 @@ describe('acad-ts local patches (corpus-backed)', () => {
         landingDistance: 0.36,
       },
     });
+  });
+
+  const dxfSamples = ['AC1015', 'AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032'].map(
+    (v) => `third-party/acadsharp/sample_${v}_ascii.dxf`,
+  );
+
+  it('0038 DXF writer writes the common entity data of ENDBLK', () => {
+    // _writeBlockEnd wrote only the AcDbEntity marker and the layer, so the colour, linetype,
+    // lineweight and the rest of an ENDBLK (AutoCAD keeps them, and copies them from BLOCK)
+    // came back as their defaults.
+    const ends = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is BlockEnd => o instanceof BlockEnd)
+        .sort((a, b) => a.handle - b.handle)
+        .map((e) => [
+          handleHex(e),
+          e.layer?.name,
+          e.lineType?.name,
+          e.color.index,
+          e.lineWeight,
+          e.lineTypeScale,
+          e.isInvisible,
+        ]);
+    for (const file of dxfSamples) {
+      const doc = readDxfRaw(corpusBytes(file));
+      for (const binary of [false, true]) {
+        expect(ends(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(ends(doc));
+      }
+    }
+    // sample_AC1015: ENDBLK 9D3 has colour 193, as its BLOCK has.
+    const doc = readDxfRaw(corpusBytes(dxfSamples[0]!));
+    expect((doc.getCadObject(0x9d3) as BlockEnd).color.index).toBe(193);
+  });
+
+  it('0039 DXF reader decodes the caret codes of TOLERANCE text', () => {
+    // The text went through the generic map, which keeps "^J" undecoded, and the writer then
+    // escaped the caret again ("^ J"), so every multi-line feature control frame grew a line
+    // of literal text on each save. The DWG of the same drawing holds a real line break.
+    const texts = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is Tolerance => o instanceof Tolerance)
+        .sort((a, b) => a.handle - b.handle)
+        .map((t) => [handleHex(t), t.text]);
+    const dwg = readDwgRaw('third-party/acadsharp/sample_AC1015.dwg');
+    const dxf = readDxfRaw(corpusBytes(dxfSamples[0]!));
+    expect((dwg.getCadObject(0x823) as Tolerance).text).toBe('99\na');
+    expect((dxf.getCadObject(0x823) as Tolerance).text).toBe('99\na');
+    for (const file of dxfSamples) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(texts(doc).length, file).toBeGreaterThan(0);
+      for (const binary of [false, true]) {
+        expect(texts(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(texts(doc));
+      }
+    }
+  });
+
+  it('0040 DXF writer writes MESH version, blend crease and subdivision level on their codes', () => {
+    // _writeMesh wrote the subdivision level as 71 (the version) and 0 for 72 and 91, so a save
+    // turned every version 2 mesh into version 0 and dropped its blend crease and level.
+    const meshes = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is Mesh => o instanceof Mesh)
+        .sort((a, b) => a.handle - b.handle)
+        .map((m) => [handleHex(m), m.version, m.blendCrease, m.subdivisionLevel]);
+    for (const file of dxfSamples) {
+      const doc = readDxfRaw(corpusBytes(file));
+      for (const binary of [false, true]) {
+        expect(meshes(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(
+          meshes(doc),
+        );
+      }
+    }
+    const doc = readDxfRaw(corpusBytes(dxfSamples[0]!));
+    expect(meshes(doc)).toContainEqual(['343', 2, 0, 0]);
   });
 });

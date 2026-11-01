@@ -1,0 +1,132 @@
+// The renderer contract (ARCHITECTURE.md §7.1). Everything outside packages/render talks to a
+// `Renderer`; only this package knows it is Canvas 2D underneath, so a WebGL renderer can
+// replace it behind the same interface (DEC-006).
+
+import type { Box, ChangeSet, EntityId } from '@triya/engine';
+
+/**
+ * World → screen: the world point `center` sits at the middle of the viewport, `scale` is
+ * screen pixels (CSS) per drawing unit, and world Y points up while screen Y points down.
+ */
+export interface ViewTransform {
+  readonly center: { readonly x: number; readonly y: number };
+  readonly scale: number;
+}
+
+/** Display settings that change how the scene looks but not what it contains. */
+export interface RenderStyle {
+  /** Canvas background, a CSS colour. */
+  readonly background: string;
+  /** What ACI 7 (and anything that resolves to the foreground) draws in, a CSS colour. */
+  readonly foreground: string;
+  /** LWT: lineweights shown at their width; off draws every line 1 px. */
+  readonly showLineweights: boolean;
+}
+
+/**
+ * A primitive's colour: a CSS colour, or the foreground, which follows the background
+ * (ACI 7 is black on a light canvas and white on a dark one) so a theme switch needs no
+ * re-tessellation.
+ */
+export type PrimitiveColor = string | 'foreground';
+
+/**
+ * Path commands in world coordinates, packed for speed:
+ *   M x y · L x y · A cx cy r a0 a1 ccw · E cx cy rx ry rotation a0 a1 ccw · Z
+ * Arcs and ellipses stay exact (the canvas draws them natively at any zoom).
+ */
+export const PATH_M = 0;
+export const PATH_L = 1;
+export const PATH_A = 2;
+export const PATH_E = 3;
+export const PATH_Z = 4;
+
+export type RenderPrimitive =
+  | {
+      readonly kind: 'stroke' | 'fill';
+      readonly path: readonly number[];
+      readonly color: PrimitiveColor;
+      /** Lineweight in millimetres; undefined is the default (drawn 1 px). */
+      readonly lineweight?: number;
+      /** Fill rule for `fill`: AutoCAD hatch loops use odd parity. */
+      readonly evenOdd?: boolean;
+    }
+  /** XLINE (both directions) or RAY (one direction), clipped to the view when drawn. */
+  | {
+      readonly kind: 'infinite';
+      readonly base: { readonly x: number; readonly y: number };
+      readonly direction: { readonly x: number; readonly y: number };
+      readonly both: boolean;
+      readonly color: PrimitiveColor;
+      readonly lineweight?: number;
+    }
+  /** A POINT drawn as a dot (PDMODE 0); other PDMODE shapes come with the POINT style task. */
+  | {
+      readonly kind: 'point';
+      readonly x: number;
+      readonly y: number;
+      readonly color: PrimitiveColor;
+    };
+
+export interface Renderer {
+  /** The viewport's CSS size and device pixel ratio. */
+  resize(width: number, height: number, dpr: number): void;
+  setView(view: ViewTransform): void;
+  /** Incremental scene update, called after the model (and its spatial index) applied `cs`. */
+  apply(change: ChangeSet): void;
+  /** Rubber bands, grips and osnap markers: drawn on top, never touching the scene cache. */
+  setTransient(primitives: readonly RenderPrimitive[]): void;
+  setStyle(style: RenderStyle): void;
+  /** Draws one frame. */
+  frame(): void;
+  /** Entities within `aperture` CSS pixels of a screen point, nearest first. */
+  hitTest(screen: { readonly x: number; readonly y: number }, aperture: number): EntityId[];
+}
+
+/** The world box a view shows on a viewport of the given CSS size. */
+export function visibleBox(view: ViewTransform, width: number, height: number): Box {
+  const hw = width / 2 / view.scale;
+  const hh = height / 2 / view.scale;
+  return {
+    minX: view.center.x - hw,
+    minY: view.center.y - hh,
+    maxX: view.center.x + hw,
+    maxY: view.center.y + hh,
+  };
+}
+
+/** The view that fits `box` into a viewport, leaving `margin` (a fraction) on each side. */
+export function fitView(box: Box, width: number, height: number, margin = 0.05): ViewTransform {
+  const w = Math.max(box.maxX - box.minX, 0);
+  const h = Math.max(box.maxY - box.minY, 0);
+  const center = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+  const usable = 1 - 2 * margin;
+  const sx = w > 0 ? (width * usable) / w : Infinity;
+  const sy = h > 0 ? (height * usable) / h : Infinity;
+  const scale = Math.min(sx, sy);
+  return { center, scale: Number.isFinite(scale) && scale > 0 ? scale : 1 };
+}
+
+export function worldToScreen(
+  view: ViewTransform,
+  width: number,
+  height: number,
+  p: { readonly x: number; readonly y: number },
+): { x: number; y: number } {
+  return {
+    x: width / 2 + (p.x - view.center.x) * view.scale,
+    y: height / 2 - (p.y - view.center.y) * view.scale,
+  };
+}
+
+export function screenToWorld(
+  view: ViewTransform,
+  width: number,
+  height: number,
+  p: { readonly x: number; readonly y: number },
+): { x: number; y: number } {
+  return {
+    x: view.center.x + (p.x - width / 2) / view.scale,
+    y: view.center.y - (p.y - height / 2) / view.scale,
+  };
+}

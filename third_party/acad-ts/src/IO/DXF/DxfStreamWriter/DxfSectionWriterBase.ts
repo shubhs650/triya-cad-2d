@@ -944,10 +944,9 @@ export abstract class DxfSectionWriterBase {
     const subclass = map.subClasses.get(DxfSubclassMarker.mesh)!;
     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.mesh);
 
-    this._writer.write(71, mesh.subdivisionLevel, subclass);
-
-    this._writer.write(72, 0); // override count
-    this._writer.write(91, 0); // sub entity count
+    this._writer.write(71, mesh.version, subclass);
+    this._writer.write(72, mesh.blendCrease, subclass);
+    this._writer.write(91, mesh.subdivisionLevel, subclass);
 
     this._writer.write(92, mesh.vertices.length);
     for (const v of mesh.vertices) {

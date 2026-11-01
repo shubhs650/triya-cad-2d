@@ -41,7 +41,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation); cell formats not mapped yet; ezdxf-written tables dropped by acad-ts (M1-32) | | | | |
 | VIEWPORT | ✓ frame, view, clip boundary, frozen layers, plot style and render mode (DXF status 68, clip boundary 340, a 0 viewport ID and the R12 MVIEW view lost by acad-ts, M1-32; DWG reads 68 and 340) | | | | |
-| TOLERANCE | ✓ (caret codes left encoded by acad-ts, M1-32) | | | | |
+| TOLERANCE | ✓ (caret codes decoded since 0039) | | | | |
 | MLINE (+ MLINESTYLE) | ✓ MLINE (style handle, scale, justification, flags, vertices with element parameters); MLINESTYLE not yet | | | | |
 | REGION *(render from proxy graphics / boundary)* | ✓ boundary read from the ACIS data, SAT text (R14–R2010) or SAB binary (R2013+, DWG): lines, arcs, circles and ellipses per loop; spline (intcurve) edges reported unmapped (M1-39) | | — | | |
 | PDFUNDERLAY / DWFUNDERLAY / DGNUNDERLAY (+ definitions) | ✓ PDFUNDERLAY; DWF/DGN have no acad-ts reader and no corpus file (M1-32) | | | | |
@@ -153,6 +153,9 @@ The columns above track Triya. This section tracks the library underneath, from 
 | ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** (98 handles in the R13/R14 binary DXFs, M1-31) |
 | TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
 | MULTILEADER (DXF) | Written in AutoCAD's group order with its context data, branches and leader lines (0037); the reader decodes the context text colour as an AcCmColor and reads the branch groups. A save reset every multileader to defaults with an empty label |
+| ENDBLK entity data (DXF write) | Colour, linetype, lineweight, linetype scale and visibility written as for BLOCK (0038); only the layer was written |
+| TOLERANCE text (DXF) | Caret codes decoded on read, so the `^J` between rows is a line break as in DWG (0039); each save had turned `^J` into `^ J` |
+| MESH header (DXF write) | Version, blend crease and subdivision level written on 71, 72 and 91 (0040); the level went out as the version and the rest as 0 |
 | MTEXT columns (R2018) | Written to DXF as the embedded object, with the defined extents (0035); the DWG reader keeps the column count (0036). Every multi-column MTEXT lost its columns on a DXF save |
 | Angles (DXF write): TEXT rotation, ARC angles, HATCH pattern lines and edges | Written as the degree value that reads back to the same radians (0033); about one angle in a few dozen moved by an ulp on every save. HATCH edge angles past 360° are kept, and a SOLID hatch keeps its pattern angle, scale and lines |
 | VIEWPORT entity (DXF write) | Every AcDbViewport group written with its own code, R2000+ settings included (0031); id, angles, zoom, UCS, plot style, clip boundary and visual style were scrambled or dropped |

@@ -1,0 +1,1 @@
+- M1-29 part 5 (#45): acad-ts writes DXF ENDBLK entity data (0038) and MESH version, blend crease and subdivision level on their own codes (0040), and decodes the caret codes of TOLERANCE text (0039); round trip 9,200 → 8,910 differences.
