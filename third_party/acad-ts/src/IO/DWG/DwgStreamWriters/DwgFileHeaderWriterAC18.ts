@@ -52,7 +52,9 @@ export class DwgFileHeaderWriterAC18 extends DwgFileHeaderWriterBase<DwgFileHead
 		}
 
 		const spearBytes = stream.length % descriptor.decompressedSize;
-		if (spearBytes > 0 && !this.checkEmptyBytes(stream, offset, spearBytes)) {
+		// Trailing zero padding can be dropped, but a section that is all zeros and shorter than one
+		// page still needs its page: an empty AcDb:Template reads back as MEASUREMENT = Metric.
+		if (spearBytes > 0 && (nlocalSections === 0 || !this.checkEmptyBytes(stream, offset, spearBytes))) {
 			this.createLocalSection(
 				descriptor,
 				stream,

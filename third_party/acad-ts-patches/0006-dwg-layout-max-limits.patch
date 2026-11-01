@@ -1,0 +1,13 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 313722d..1d76881 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -4540,7 +4540,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		this._writer.writeBitShort(layout.layoutFlags);
+ 		this._writer.write3BitDouble(layout.origin);
+ 		this._writer.write2RawDouble(layout.minLimits);
+-		this._writer.write2RawDouble(layout.minLimits);
++		this._writer.write2RawDouble(layout.maxLimits);
+ 		this._writer.write3BitDouble(layout.insertionBasePoint);
+ 		this._writer.write3BitDouble(layout.xAxis);
+ 		this._writer.write3BitDouble(layout.yAxis);

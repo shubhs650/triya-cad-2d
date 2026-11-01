@@ -533,7 +533,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.writeByte(0);
 
 			this._writer.writeVariableText(record.blockEntity.comments);
-			this._writer.writeBitLong(0);
+			// Keep the block's thumbnail (BL size + RC bytes) instead of dropping it on every save.
+			const preview = record.preview ?? new Uint8Array(0);
+			this._writer.writeBitLong(preview.length);
+			this._writer.writeBytes(preview);
 		}
 
 		//R2007+:
@@ -4540,7 +4543,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.writeBitShort(layout.layoutFlags);
 		this._writer.write3BitDouble(layout.origin);
 		this._writer.write2RawDouble(layout.minLimits);
-		this._writer.write2RawDouble(layout.minLimits);
+		this._writer.write2RawDouble(layout.maxLimits);
 		this._writer.write3BitDouble(layout.insertionBasePoint);
 		this._writer.write3BitDouble(layout.xAxis);
 		this._writer.write3BitDouble(layout.yAxis);

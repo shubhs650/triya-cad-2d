@@ -15,6 +15,7 @@ import {
   EvaluationGraph,
   EvaluationGraphNode,
   Line,
+  MeasurementUnits,
   XYZ,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
@@ -98,4 +99,53 @@ describe('acad-ts local patches', () => {
       expect(reread.layers!.tryGetValue('0')!.color.trueColor).toBe(0x803dc2);
     },
   );
+
+  const dwgRoundTrip = (doc: CadDocument): CadDocument =>
+    DwgReader.readFromStream(DwgWriter.writeToBuffer(doc).slice().buffer);
+
+  it('0004 DWG header reader decodes the R2000+ flag word as the writer encodes it', () => {
+    // $PSTYLEMODE came back as 8192 (the raw 0x2000 bit), LWDISPLAY/XEDIT were never true and
+    // ENDCAPS/JOINSTYLE were not shifted (ODA spec §9.4).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const header = doc.header!;
+    header.plotStyleMode = 1;
+    header.displayLineWeight = true;
+    header.xEdit = true;
+    header.extendedNames = true;
+    header.endCaps = 2;
+    header.joinStyle = 3;
+
+    const reread = dwgRoundTrip(doc).header!;
+
+    expect(reread.plotStyleMode).toBe(1);
+    expect(reread.displayLineWeight).toBe(true);
+    expect(reread.xEdit).toBe(true);
+    expect(reread.extendedNames).toBe(true);
+    expect(reread.endCaps).toBe(2);
+    expect(reread.joinStyle).toBe(3);
+  });
+
+  it.each([ACadVersion.AC1018, ACadVersion.AC1032])(
+    '0005 DWG %s writer keeps an all-zero AcDb:Template page ($MEASUREMENT = English)',
+    (version) => {
+      const doc = new CadDocument(version);
+      doc.header!.measurementUnits = MeasurementUnits.English;
+
+      expect(dwgRoundTrip(doc).header!.measurementUnits).toBe(MeasurementUnits.English);
+    },
+  );
+
+  // 0006 needs a drawing with paper-space layouts, which acad-ts cannot author in memory;
+  // its test reads a corpus file: packages/testkit/src/spike/acad-ts-patches.corpus.test.ts.
+
+  it('0007 DWG writer keeps block-record preview images', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('THUMB');
+    block.preview = Uint8Array.from({ length: 64 }, (_, i) => (i * 7) & 0xff);
+    doc.blockRecords!.add(block);
+
+    const reread = dwgRoundTrip(doc).blockRecords!.tryGetValue('THUMB')!;
+
+    expect([...(reread.preview ?? [])]).toEqual([...block.preview]);
+  });
 });
