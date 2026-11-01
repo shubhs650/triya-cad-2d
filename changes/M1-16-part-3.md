@@ -1,0 +1,1 @@
+- M1-16 part 3 (#64): hatch pattern files (.pat) are read in AutoCAD's documented format, a bundled set of re-authored patterns ships in `assets/patterns/triya-iso.pat`, and a hatch stored without its pattern lines draws from its user-defined settings or the bundled pattern of its name.

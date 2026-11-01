@@ -351,6 +351,35 @@ describe('invalidation', () => {
     expect(index.query(MODEL_SPACE, box(10.5, 6.5, 10.6, 6.6))).toEqual([]);
   });
 
+  it('re-bounds a table when its *T block changes (M1-17)', () => {
+    // The block (here the *D1 block's line, (−1, −1)–(11, 7)) placed at the table's insertion
+    // point (100, 0); shrinking the line to (5, 3) pulls the table's far corner in.
+    const model = blockModel();
+    const b = new ChangeSetBuilder(model);
+    const table = b.addEntity({
+      owner: MODEL_SPACE,
+      layer: LAYER_0,
+      geom: {
+        kind: 'ACAD_TABLE',
+        block: DIM_BLOCK,
+        position: { x: 100, y: 0 },
+        direction: { x: 1, y: 0 },
+        rowHeights: [1],
+        columnWidths: [1],
+        cells: [],
+      },
+    });
+    model.apply(b.build());
+    const index = SpatialIndex.build(model, { tol });
+    expect(index.bounds(table.id)).toEqual({ kind: 'box', box: box(99, -1, 111, 7) });
+    const b2 = new ChangeSetBuilder(model);
+    b2.updateEntity(idOf(model, '42'), { geom: lineGeom(-1, -1, 5, 3) });
+    const cs = b2.build();
+    model.apply(cs);
+    index.apply(cs);
+    expect(index.bounds(table.id)).toEqual({ kind: 'box', box: box(99, -1, 105, 3) });
+  });
+
   it('follows an entity moved to another block', () => {
     const model = blockModel();
     const index = SpatialIndex.build(model, { tol });

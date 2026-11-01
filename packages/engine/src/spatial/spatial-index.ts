@@ -9,9 +9,9 @@
 // and the repack cost is spread over many edits.
 //
 // Invalidation: `apply(changeSet)`, called right after `DocumentModel.apply` with the same
-// change set, re-bounds the touched entities and then every INSERT (and DIMENSION, through its
-// *D block) whose block's contents changed, up through nesting, because their boxes are built
-// from block extents.
+// change set, re-bounds the touched entities and then every INSERT (and DIMENSION and
+// ACAD_TABLE, through their *D and *T blocks) whose block's contents changed, up through
+// nesting, because their boxes are built from block extents.
 
 import { boxesOverlap, type Box } from '../geom/bounds';
 import type { ChangeSet } from '../model/changeset';
@@ -132,6 +132,7 @@ function referencedBlock(e: Entity): Handle | undefined {
   const g = e.geom;
   if (g.kind === 'INSERT') return g.block;
   if (g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION') return g.block;
+  if (g.kind === 'ACAD_TABLE') return g.block;
   return undefined;
 }
 

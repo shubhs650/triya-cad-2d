@@ -1,7 +1,9 @@
-// M1-14/M1-15 on the public corpus: every INSERT and every DIMENSION with a stored `*D` block
-// draws where the spatial index says it is. The index bounds a reference from its block's
-// extents with its own transform code (M1-07), so this checks the renderer's placement against
-// an independent computation, on real files, through nesting, MINSERT arrays and arrowheads.
+// M1-14/M1-15/M1-17 on the public corpus: every INSERT, every DIMENSION with a stored `*D`
+// block and every ACAD_TABLE with a stored `*T` block draws where the spatial index says it is.
+// The index bounds a reference from its block's extents with its own transform code (M1-07),
+// so this checks the renderer's placement against an independent computation, on real files,
+// through nesting, MINSERT arrays and arrowheads. (A table whose block holds text is bounded
+// by its grid's disc until text has metrics, M1-35.)
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type { Entity } from '@triya/engine';
@@ -56,12 +58,12 @@ function* points(p: RenderPrimitive): Generator<{ x: number; y: number }> {
   }
 }
 
-describe('block references on the public corpus (M1-14, M1-15)', () => {
+describe('block references on the public corpus (M1-14, M1-15, M1-17)', () => {
   const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 
-  it('draws every INSERT and stored dimension inside the bounds the spatial index gives it', () => {
+  it('draws every INSERT, stored dimension and stored table inside its spatial-index bounds', () => {
     const wrong: string[] = [];
-    const drawn = { INSERT: 0, DIMENSION: 0, ARC_DIMENSION: 0 };
+    const drawn = { INSERT: 0, DIMENSION: 0, ARC_DIMENSION: 0, ACAD_TABLE: 0 };
     for (const f of readable) {
       let doc;
       try {
@@ -115,5 +117,7 @@ describe('block references on the public corpus (M1-14, M1-15)', () => {
     expect(drawn.INSERT).toBeGreaterThanOrEqual(479);
     expect(drawn.DIMENSION).toBeGreaterThanOrEqual(258);
     expect(drawn.ARC_DIMENSION).toBeGreaterThanOrEqual(1);
+    // M1-17: the two tables of each acadsharp sample (18 drawings).
+    expect(drawn.ACAD_TABLE).toBeGreaterThanOrEqual(36);
   });
 });
