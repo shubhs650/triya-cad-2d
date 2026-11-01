@@ -76,6 +76,10 @@ importers:
   packages/render: {}
 
   packages/testkit:
+    dependencies:
+      '@node-projects/acad-ts':
+        specifier: link:../../third_party/acad-ts
+        version: link:../../third_party/acad-ts
     devDependencies:
       '@types/node':
         specifier: ^22.20.5
