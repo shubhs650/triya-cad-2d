@@ -1,0 +1,13 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index be506df..1e91420 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -83,7 +83,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.write(62, color.color.getApproxIndex());
+     this._writer.writeTrueColor(420, color.color);
+-    this._writer.write(430, `${color.name}$${color.bookName}`);
++    this._writer.write(430, color.name);
+   }
+ 
+   protected writeDictionary(dict: CadDictionary): void {

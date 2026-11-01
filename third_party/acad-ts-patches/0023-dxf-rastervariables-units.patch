@@ -1,0 +1,13 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index b00d4a3..2544d71 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -629,7 +629,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+     this._writer.write(90, variables.classVersion, map);
+     this._writer.write(70, variables.isDisplayFrameShown ? 1 : 0, map);
+     this._writer.write(71, variables.displayQuality, map);
+-    this._writer.write(72, variables.displayQuality, map);
++    this._writer.write(72, variables.units, map);
+   }
+ 
+ 	private _writeWipeoutVariables(variables: WipeoutVariables): void {

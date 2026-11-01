@@ -83,7 +83,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     this._writer.write(62, color.color.getApproxIndex());
     this._writer.writeTrueColor(420, color.color);
-    this._writer.write(430, `${color.name}$${color.bookName}`);
+    this._writer.write(430, color.name);
   }
 
   protected writeDictionary(dict: CadDictionary): void {
@@ -436,17 +436,14 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     if (co instanceof AcdbPlaceHolder) {
       this._writeAcdbPlaceHolder(co);
-      return;
     } else if (co instanceof BlockReferenceObjectContextData) {
       this._writeBlockReferenceObjectContextData(co);
     } else if (co instanceof MTextAttributeObjectContextData) {
       this._writeMTextAttributeObjectContextData(co);
     } else if (co instanceof BookColor) {
       this.writeBookColor(co);
-      return;
     } else if (co instanceof CadDictionary) {
       this.writeDictionary(co);
-      return;
     } else if (co instanceof DictionaryVariable) {
       this.writeDictionaryVariable(co);
     } else if (co instanceof DimensionAssociation) {
@@ -457,10 +454,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this.writeGroup(co);
     } else if (co instanceof ImageDefinition) {
       this.writeImageDefinition(co);
-      return;
     } else if (co instanceof ImageDefinitionReactor) {
       this._writeImageDefinitionReactor(co);
-      return;
     } else if (co instanceof Layout) {
       this.writeLayout(co);
     } else if (co instanceof Field) {
@@ -629,7 +624,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(90, variables.classVersion, map);
     this._writer.write(70, variables.isDisplayFrameShown ? 1 : 0, map);
     this._writer.write(71, variables.displayQuality, map);
-    this._writer.write(72, variables.displayQuality, map);
+    this._writer.write(72, variables.units, map);
   }
 
 	private _writeWipeoutVariables(variables: WipeoutVariables): void {

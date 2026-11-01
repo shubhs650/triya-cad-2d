@@ -436,8 +436,6 @@ function same(kind: Kind, dxf: string, triya: unknown): boolean {
  */
 const ACAD_TS_GAPS: Record<string, string> = {
   'LAYER 347': 'CadLayerTemplate looks up the layer material but never assigns it',
-  'BLOCK_RECORD 70':
-    'the common table-entry reader takes BLOCK_RECORD 70 (insert units) as standard flags',
   'STYLE 2': 'nameless shape-file STYLE records are renamed unnamedN by the table collection',
   ...Object.fromEntries(
     [284, 285, 286, 287, 288, 289].map((c) => [
