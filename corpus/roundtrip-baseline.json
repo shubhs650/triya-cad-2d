@@ -99,11 +99,11 @@
     },
     "public/third-party/acadsharp/sample_AC1009_ascii.dxf": {
       "status": "diff",
-      "differences": 3027
+      "differences": 3020
     },
     "public/third-party/acadsharp/sample_AC1009_binary.dxf": {
       "status": "diff",
-      "differences": 3026
+      "differences": 3019
     },
     "public/third-party/acadsharp/sample_AC1014.dwg": {
       "status": "diff",
@@ -111,11 +111,11 @@
     },
     "public/third-party/acadsharp/sample_AC1015_ascii.dxf": {
       "status": "diff",
-      "differences": 506
+      "differences": 471
     },
     "public/third-party/acadsharp/sample_AC1015_binary.dxf": {
       "status": "diff",
-      "differences": 522
+      "differences": 475
     },
     "public/third-party/acadsharp/sample_AC1015.dwg": {
       "status": "diff",
@@ -123,11 +123,11 @@
     },
     "public/third-party/acadsharp/sample_AC1018_ascii.dxf": {
       "status": "diff",
-      "differences": 502
+      "differences": 467
     },
     "public/third-party/acadsharp/sample_AC1018_binary.dxf": {
       "status": "diff",
-      "differences": 518
+      "differences": 471
     },
     "public/third-party/acadsharp/sample_AC1018.dwg": {
       "status": "diff",
@@ -135,11 +135,11 @@
     },
     "public/third-party/acadsharp/sample_AC1021_ascii.dxf": {
       "status": "diff",
-      "differences": 535
+      "differences": 465
     },
     "public/third-party/acadsharp/sample_AC1021_binary.dxf": {
       "status": "diff",
-      "differences": 551
+      "differences": 469
     },
     "public/third-party/acadsharp/sample_AC1021.dwg": {
       "status": "diff",
@@ -147,11 +147,11 @@
     },
     "public/third-party/acadsharp/sample_AC1024_ascii.dxf": {
       "status": "diff",
-      "differences": 570
+      "differences": 500
     },
     "public/third-party/acadsharp/sample_AC1024_binary.dxf": {
       "status": "diff",
-      "differences": 586
+      "differences": 504
     },
     "public/third-party/acadsharp/sample_AC1024.dwg": {
       "status": "diff",
@@ -159,11 +159,11 @@
     },
     "public/third-party/acadsharp/sample_AC1027_ascii.dxf": {
       "status": "diff",
-      "differences": 570
+      "differences": 500
     },
     "public/third-party/acadsharp/sample_AC1027_binary.dxf": {
       "status": "diff",
-      "differences": 586
+      "differences": 504
     },
     "public/third-party/acadsharp/sample_AC1027.dwg": {
       "status": "diff",
@@ -171,11 +171,11 @@
     },
     "public/third-party/acadsharp/sample_AC1032_ascii.dxf": {
       "status": "diff",
-      "differences": 592
+      "differences": 521
     },
     "public/third-party/acadsharp/sample_AC1032_binary.dxf": {
       "status": "diff",
-      "differences": 608
+      "differences": 525
     },
     "public/third-party/acadsharp/sample_AC1032.dwg": {
       "status": "diff",
@@ -295,7 +295,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/multi_insert_with_attribs.dxf": {
       "status": "diff",
-      "differences": 5
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/text_alignments.dxf": {
       "status": "diff",
@@ -307,7 +307,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/text_in_viewports.dxf": {
       "status": "diff",
-      "differences": 67
+      "differences": 4
     },
     "public/third-party/ezdxf/examples_dxf/text_mirror_shx_font.dxf": {
       "status": "diff",
@@ -319,7 +319,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/text_negative_extrusion.dxf": {
       "status": "diff",
-      "differences": 190
+      "differences": 136
     },
     "public/third-party/ezdxf/examples_dxf/text_oblique_rotate.dxf": {
       "status": "diff",
@@ -335,7 +335,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/text.dxf": {
       "status": "diff",
-      "differences": 190
+      "differences": 134
     },
     "public/third-party/ezdxf/examples_dxf/transform_hatch_pattern.dxf": {
       "status": "diff",
@@ -343,7 +343,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/uncommon.dxf": {
       "status": "diff",
-      "differences": 376
+      "differences": 354
     },
     "public/third-party/ezdxf/examples_dxf/valid_lineweights.dxf": {
       "status": "diff",
@@ -351,11 +351,11 @@
     },
     "public/third-party/ezdxf/examples_dxf/viewport_frozen_layers.dxf": {
       "status": "diff",
-      "differences": 40
+      "differences": 4
     },
     "public/third-party/ezdxf/examples_dxf/viewports.dxf": {
       "status": "diff",
-      "differences": 126
+      "differences": 19
     },
     "public/third-party/ezdxf/examples_dxf/visibility.dxf": {
       "status": "diff",
@@ -363,7 +363,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/VP4.dxf": {
       "status": "diff",
-      "differences": 49
+      "differences": 4
     },
     "public/third-party/ezdxf/examples_dxf/wipeout_door.dxf": {
       "status": "diff",
@@ -375,7 +375,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/xclip.dxf": {
       "status": "diff",
-      "differences": 85
+      "differences": 4
     },
     "public/third-party/ezdxf/integration_tests/AC1003_LINE_Example.dxf": {
       "status": "diff",

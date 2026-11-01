@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30) and 0021–0030 (M1-28) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0032 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -539,5 +539,39 @@ Several DXF table-style defects compound so that a save resets every table style
 **Title:** Write xdata on DXF symbol table headers
 
 `DxfTablesSectionWriter._writeTable` writes a table's common data, its `AcDbSymbolTable` count and subclass, but not its xdata, although the reader reads it. AutoCAD writes `1001 ACAD / 1000 DbSaveVer` on the VPORT table, and that record was lost on every save. This writes `table.extendedData` after the header groups.
+
+</details>
+
+### 0031 — DXF writer scrambles VIEWPORT group codes and drops the R2000+ settings
+
+- **File:** `third_party/acad-ts-patches/0031-dxf-viewport-group-codes.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** `_writeViewport` wrote the viewport id as 68 (the status field), the twist angle as 50 (snap angle), the circle zoom as 51 (twist), the UCS-icon flag as 72 (circle zoom), and the UCS origin and axes as single groups holding an `XYZ`. It wrote no 69, 71, 74, 79, 146, 170, 61, 348, 292, 282, 141, 142, 63, 340 or 1. Reading the saved file back gave every paper-space viewport the wrong id, angles, zoom, UCS and plot style, and no clipping boundary or visual style. The reader also put the raw 63/421 numbers in `ambientLightColor`. Spike report: about 20 differences per VIEWPORT field across the AC1015–AC1032 samples.
+- **Fix:** Write AcDbViewport in the order of the DXF reference, gating the R2000, R2004 and R2007 groups by version as AutoCAD does, and read 63/421 into a `Color`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0031 DXF writer writes VIEWPORT entities with their own group codes" (AC1015, AC1018 and AC1032 samples, ASCII and binary saves: every viewport field matches after a read-write-read).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write DXF VIEWPORT entities with AutoCAD's group codes
+
+`DxfSectionWriterBase._writeViewport` shifts several fields onto neighbouring group codes (id on 68, twist on 50, circle zoom on 51, UCS icon on 72), writes the UCS origin and axes with `write` instead of `writeVector`, and omits every group added in R2000 and later, including the clip boundary (340), plot style sheet (1), visual style (348) and lighting. A read-write-read cycle therefore changes every viewport in a layout. This rewrites the subclass in the order of the DXF reference, gated by version, and makes the reader parse the ambient light colour (63/421) into a `Color`.
+
+</details>
+
+### 0032 — DXF ATTDEF and ATTRIB lose their version, lock position and multiline text
+
+- **File:** `third_party/acad-ts-patches/0032-dxf-attribute-version-lock-multiline.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** The reader treated every 280 in AcDbAttribute(Definition) as the lock flag, so the version (280 before the tag, R2010+) was lost, and it read the AcDbText 71 (mirror flags) and 72 as the multiline flag and alignment. The writer wrote the tag before the prompt, wrote 280 for every version, and never wrote the R2018 multiline block (71, 72, 11, 101 "Embedded Object" and the MTEXT groups), so multiline attributes came back as single-line text. Corpus: ATTDEF `attributeType` 19, `version` 12, `mText` 3 differences.
+- **Fix:** Route AcDbText groups to the text reader; read 280 as the version before the tag and as the lock position after it; skip AutoCAD's literal 72 0. Write prompt then tag, the version from AC1024, the lock position from AC1021, and the multiline block from AC1032 (earlier versions keep multiline text in an XRECORD under the extension dictionary, which passes through).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0032 DXF ATTDEF and ATTRIB keep version, lock position and multiline text through a save" (AC1015, AC1021, AC1024 and AC1032 samples, ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Round-trip DXF attribute version, lock position and multiline attributes
+
+AcDbAttribute and AcDbAttributeDefinition use group 280 twice: before the tag it is the class version (R2010+), after 74 it is the lock-position flag (R2007+). The reader stored both in `isReallyLocked`, and it parsed the AcDbText group 71 (text generation flags) as the multiline attribute type. The writer wrote the tag before the prompt, wrote 280 regardless of version, and dropped the R2018 multiline block, so a multiline attribute was saved as single-line text. This disambiguates the reader by position and subclass, and writes the groups in the order and versions of the DXF reference.
 
 </details>
