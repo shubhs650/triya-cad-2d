@@ -357,6 +357,8 @@ export class TableEntityCell {
 	}
 
 	mergedValue: number = 0;
+	/** Pre-R2010 DWG: which `styleOverride` fields the cell overrides (`CellOverrideFlags`). */
+	overrideFlags: CellOverrideFlags = CellOverrideFlags.None;
 	rotation: number = 0;
 	stateFlags: TableCellStateFlags = 0;
 	styleOverride: CellStyle = new CellStyle();

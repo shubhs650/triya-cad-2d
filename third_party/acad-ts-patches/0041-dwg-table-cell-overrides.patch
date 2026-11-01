@@ -1,0 +1,88 @@
+diff --git a/src/Entities/TableEntity.ts b/src/Entities/TableEntity.ts
+index a49c250..c4feefd 100644
+--- a/src/Entities/TableEntity.ts
++++ b/src/Entities/TableEntity.ts
+@@ -357,6 +357,8 @@ export class TableEntityCell {
+ 	}
+ 
+ 	mergedValue: number = 0;
++	/** Pre-R2010 DWG: which `styleOverride` fields the cell overrides (`CellOverrideFlags`). */
++	overrideFlags: CellOverrideFlags = CellOverrideFlags.None;
+ 	rotation: number = 0;
+ 	stateFlags: TableCellStateFlags = 0;
+ 	styleOverride: CellStyle = new CellStyle();
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 1284bc2..a2b3a45 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -5148,6 +5148,7 @@ export class DwgObjectReader extends DwgSectionIO {
+ 
+     if (this._mergedReaders.readBit()) {
+       const flags = this._mergedReaders.readBitLong() as CellOverrideFlags;
++      cell.overrideFlags = flags;
+       cell.virtualEdgeFlag = this._mergedReaders.readByte();
+ 
+       if ((flags & CellOverrideFlags.CellAlignment) !== 0) {
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 9f8b976..ae5e34c 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -76,7 +76,7 @@ import { BlockRecord, BlockTypeFlags } from '../../../Tables/BlockRecord.js';
+ import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
+ import { Wall } from '../../../Entities/AecEntities/Wall.js';
+ import { ProxyEntity } from '../../../Entities/ProxyEntity.js';
+-import { TableEntity, TableEntityCell, CellType, CellBorder, CellStyle, CellEdgeFlags, ContentFormat, MarginFlags, TableCellContentType, CustomDataEntry } from '../../../Entities/TableEntity.js';
++import { TableEntity, TableEntityCell, CellType, CellBorder, CellStyle, CellEdgeFlags, CellOverrideFlags, ContentFormat, MarginFlags, TableCellContentType, CustomDataEntry } from '../../../Entities/TableEntity.js';
+ import { CadBody } from '../../../Entities/CadBody.js';
+ import { Region } from '../../../Entities/Region.js';
+ import { IPolyline } from '../../../Entities/IPolyline.js';
+@@ -2996,7 +2999,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writer.writeBit(false);
+ 		}
+ 
+-		this._writer.writeBit(false);
++		this._writeTableCellOverrides(cell);
+ 
+ 		if (this.r2007Plus) {
+ 			this._writer.writeBitLong(0);
+@@ -3004,6 +3007,40 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		}
+ 	}
+ 
++	// Mirrors DwgObjectReader._readTableCellData: each flagged field follows the flag word, in
++	// flag order, with colours as the table style writes them.
++	private _writeTableCellOverrides(cell: TableEntityCell): void {
++		const flags = cell.overrideFlags;
++		this._writer.writeBit(flags !== CellOverrideFlags.None);
++		if (flags === CellOverrideFlags.None) {
++			return;
++		}
++
++		const style = cell.styleOverride;
++		this._writer.writeBitLong(flags);
++		this._writer.writeByte(cell.virtualEdgeFlag);
++		if ((flags & CellOverrideFlags.CellAlignment) !== 0) this._writer.writeBitShort(style.cellAlignment);
++		if ((flags & CellOverrideFlags.BackgroundFillNone) !== 0) this._writer.writeBit(style.isFillColorOn);
++		if ((flags & CellOverrideFlags.BackgroundColor) !== 0) this._writeTableStyleColor(style.backgroundColor);
++		if ((flags & CellOverrideFlags.ContentColor) !== 0) this._writeTableStyleColor(style.contentColor);
++		if ((flags & CellOverrideFlags.TextStyle) !== 0) {
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, style.textStyle);
++		}
++		if ((flags & CellOverrideFlags.TextHeight) !== 0) this._writer.writeBitDouble(style.textHeight);
++
++		const borders: [CellBorder, CellOverrideFlags, CellOverrideFlags, CellOverrideFlags][] = [
++			[style.topBorder, CellOverrideFlags.TopGridColor, CellOverrideFlags.TopGridLineWeight, CellOverrideFlags.TopVisibility],
++			[style.rightBorder, CellOverrideFlags.RightGridColor, CellOverrideFlags.RightGridLineWeight, CellOverrideFlags.RightVisibility],
++			[style.bottomBorder, CellOverrideFlags.BottomGridColor, CellOverrideFlags.BottomGridLineWeight, CellOverrideFlags.BottomVisibility],
++			[style.leftBorder, CellOverrideFlags.LeftGridColor, CellOverrideFlags.LeftGridLineWeight, CellOverrideFlags.LeftVisibility],
++		];
++		for (const [border, color, lineWeight, visibility] of borders) {
++			if ((flags & color) !== 0) this._writeTableStyleColor(border.color);
++			if ((flags & lineWeight) !== 0) this._writer.writeBitShort(border.lineWeight);
++			if ((flags & visibility) !== 0) this._writer.writeBitShort(border.isInvisible ? 0 : 1);
++		}
++	}
++
+ 	private _writeCadImage(image: CadWipeoutBase): void {
+ 		this._writer.writeBitLong(image.classVersion);
+ 		this._writer.write3BitDouble(image.insertPoint);

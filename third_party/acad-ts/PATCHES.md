@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0040 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0043 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -743,5 +743,73 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
 **Title:** Write DXF MESH version, blend crease and subdivision level on their own codes
 
 `_writeMesh` writes the subdivision level as group 71 and zero for 72 and 91. Group 71 is the version, 72 the blend crease and 91 the subdivision level, as the reader and AutoCAD use them, so a read-write cycle resets every mesh to version 0. This writes each value on its own code.
+
+</details>
+
+### 0041 — DWG writer drops the cell overrides of R2004 and R2007 tables
+
+- **File:** `third_party/acad-ts-patches/0041-dwg-table-cell-overrides.patch`
+- **Touches:** `src/Entities/TableEntity.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - Before R2010, a table cell stores its own overrides behind a flag word: alignment, fill, background and content colour, text style, text height, and the colour, lineweight and visibility of each border.
+  - The reader read them into `styleOverride` but did not keep the flag word. `_writeTableCell` always wrote "no overrides", so a save reset every overridden cell to its table style.
+  - Corpus: 146 differences (`ACAD_TABLE _content.rows[].cells[].styleOverride.*`) in the acadsharp R2004 and R2007 DWGs.
+- **Fix:**
+  - Keep the flag word as `TableEntityCell.overrideFlags`.
+  - Write the flag word, the virtual edge flag and each flagged field in the order the reader reads them. Colours are written as the table style writes them.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0041 DWG writer writes the cell overrides of R2004 and R2007 tables".
+  - Every cell override of acadsharp `sample_AC1018.dwg` and `sample_AC1021.dwg` must survive a DWG save.
+  - Cell 4,0 of table 528 is checked: alignment 5, background 165, content colour 7, text height 4, and top and left borders of colour 63, 0.40 mm, hidden.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the cell overrides of pre-R2010 DWG tables
+
+`DwgObjectReader._readTableCellData` reads a pre-R2010 cell's override flags and fields, but the flags are not kept, and `DwgObjectWriter._writeTableCell` always writes the "has overrides" bit as false. A read-write cycle therefore drops every cell's alignment, colours, text height and border overrides. This keeps the flag word on the cell (`overrideFlags`) and writes it back with the virtual edge flag and each flagged field, in the reader's order.
+
+</details>
+
+### 0042 — DWG writer drops the geometry of R2010+ table cells that list no content geometry
+
+- **File:** `third_party/acad-ts-patches/0042-dwg-table-cell-geometry.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - The writer wrote a cell's geometry (flags, width, height) only when the cell listed content geometry.
+  - A cell with a stated geometry and no content geometry lost its flags and size on a save.
+  - Corpus: 72 differences (`ACAD_TABLE _content.rows[].cells[].geometry*`) in the acadsharp R2010–R2018 DWGs and `sample_base.dwg`.
+- **Fix:** write the geometry block when the cell has any geometry flag, size or reference, not only when it lists content geometry.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0042 DWG writer keeps the geometry of R2010+ table cells that list no content geometry".
+  - Every cell geometry of acadsharp `sample_AC1024.dwg`, `sample_AC1027.dwg` and `sample_AC1032.dwg` must survive a DWG save.
+  - Cell 0,1 of table 528 is checked: flags 3 and size 0.0684.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep table cell geometry with no content geometry in DWG
+
+The R2010+ table content writer writes the "has geometry" flag only when the cell lists content geometry. The reader reads the geometry flags, width and height whenever the flag is set, even with a geometry count of 0. As a result, cells that have a size but no content geometry lose that size on a save. This writes the block whenever the cell carries any geometry data.
+
+</details>
+
+### 0043 — DWG writer drops the block record of R2004 and R2007 block cells
+
+- **File:** `third_party/acad-ts-patches/0043-dwg-table-block-cell-record.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - Before R2010, a block cell names its block record as the cell value, and the reader stores it in `cell.value`.
+  - `_writeTableCell` took the handle from the cell content, which such cells do not have, and wrote a null handle.
+  - Corpus: 4 differences (`ACAD_TABLE _content.rows[].cells[].value`) in the acadsharp R2004 and R2007 DWGs.
+- **Fix:** fall back to `cell.value` when a block cell has no content block record.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0043 DWG writer keeps the block record of R2004 and R2007 block cells".
+  - Every cell value handle of acadsharp `sample_AC1018.dwg` and `sample_AC1021.dwg` must survive a DWG save.
+  - Cell 1,3 of table A35 must point at block record A0B.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep the block record of pre-R2010 DWG block cells
+
+For a pre-R2010 block cell, the reader stores the block record handle in `cell.value`. The writer, however, takes the block record from `cell.content`, which is null for these cells, so a read-write cycle empties every block cell. This falls back to `cell.value`.
 
 </details>
