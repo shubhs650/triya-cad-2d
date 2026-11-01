@@ -1,0 +1,135 @@
+import { Entity } from './Entity.js';
+import { CadObject } from '../CadObject.js';
+import { CadDocument } from '../CadDocument.js';
+import { DxfFileToken } from '../DxfFileToken.js';
+import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
+import { ObjectType } from '../Types/ObjectType.js';
+import { TextStyle } from '../Tables/TextStyle.js';
+import { TextHorizontalAlignment } from './TextHorizontalAlignment.js';
+import { TextVerticalAlignmentType } from './TextVerticalAlignmentType.js';
+import { TextMirrorFlag } from './TextMirrorFlag.js';
+import { CollectionChangedEventArgs } from '../CollectionChangedEventArgs.js';
+import { IText } from './IText.js';
+import type { BoundingBox } from '../Math/BoundingBox.js';
+import { XYZ } from '../Math/XYZ.js';
+import { Transform } from '../Math/Transform.js';
+
+export class TextEntity extends Entity implements IText {
+	alignmentPoint: XYZ = new XYZ(0, 0, 0);
+
+	height: number = 1.0;
+
+	horizontalAlignment: TextHorizontalAlignment = TextHorizontalAlignment.Left;
+
+	insertPoint: XYZ = new XYZ(0, 0, 0);
+
+	get mirror(): TextMirrorFlag {
+		return this._mirror;
+	}
+	set mirror(value: TextMirrorFlag) {
+		this._mirror = value;
+	}
+
+	normal: XYZ = new XYZ(0, 0, 1);
+
+	override get objectName(): string {
+		return DxfFileToken.entityText;
+	}
+
+	override get objectType(): ObjectType {
+		return ObjectType.TEXT;
+	}
+
+	obliqueAngle: number = 0.0;
+
+	rotation: number = 0;
+
+	get style(): TextStyle {
+		return this._style;
+	}
+	set style(value: TextStyle) {
+		if (value == null) {
+			throw new Error('value cannot be null');
+		}
+		this._style = this.updateTableEntry(value, style => this._style = style, this.document?.textStyles ?? null);
+	}
+
+	override get subclassMarker(): string {
+		return DxfSubclassMarker.text;
+	}
+
+	thickness: number = 0.0;
+
+	get value(): string {
+		return this._value;
+	}
+	set value(v: string) {
+		this._value = v;
+	}
+
+	verticalAlignment: TextVerticalAlignmentType = TextVerticalAlignmentType.Baseline;
+
+	widthFactor: number = 1.0;
+
+	private _mirror: TextMirrorFlag = TextMirrorFlag.None;
+	private _style: TextStyle = TextStyle.default;
+	private _value: string = '';
+
+	constructor(value: string = '') {
+		super();
+		this.value = value;
+	}
+
+	override applyTransform(transform: unknown): void {
+		if (!(transform instanceof Transform)) {
+			return;
+		}
+
+		const matrix = transform.matrix;
+		this.insertPoint = transform.applyTransform(this.insertPoint);
+
+		const xScale = Math.hypot(matrix.m00, matrix.m10, matrix.m20);
+		const yScale = Math.hypot(matrix.m01, matrix.m11, matrix.m21);
+		const safeYScale = yScale === 0 ? 1 : yScale;
+
+		this.rotation += transform.eulerRotation.z;
+		this.height *= safeYScale;
+		this.widthFactor *= xScale / safeYScale;
+	}
+
+	override clone(): CadObject {
+		const clone = super.clone() as TextEntity;
+		clone._style = this._style.clone() as TextStyle;
+		return clone;
+	}
+
+	override getBoundingBox(): BoundingBox | null {
+		return null;
+	}
+
+	/** @internal */
+	assignDocument(doc: CadDocument): void {
+		super.assignDocument(doc);
+		this._style = this.updateTableEntry(this._style, style => this._style = style, doc.textStyles);
+	}
+
+	/** @internal */
+	unassignDocument(): void {
+		this.document?.textStyles?.removeReference(this._style.name, this);
+		super.unassignDocument();
+		this._style = this._style.clone() as TextStyle;
+	}
+
+	protected override _tableOnRemove(sender: unknown, e: CollectionChangedEventArgs): void {
+		super._tableOnRemove(sender, e);
+		if (e.item === this._style) {
+			this._style = this.document!.textStyles.get(TextStyle.defaultName)!;
+		}
+	}
+}
+
+export { TextHorizontalAlignment } from './TextHorizontalAlignment.js';
+
+export { TextVerticalAlignmentType } from './TextVerticalAlignmentType.js';
+
+export { TextMirrorFlag } from './TextMirrorFlag.js';

@@ -1,0 +1,181 @@
+import { IHandledCadObject } from './IHandledCadObject.js';
+import { ObjectType } from './Types/ObjectType.js';
+import type { CadDocument } from './CadDocument.js';
+import type { CadDictionary } from './Objects/CadDictionary.js';
+import { ExtendedDataDictionary } from './XData/ExtendedDataDictionary.js';
+import { ACadVersion } from './ACadVersion.js';
+import { CadFileFormat } from './IO/CadFileFormat.js';
+import { isOrientable } from './IOrientable.js';
+import type { IDxfClassDefined } from './Classes/IDxfClassDefined.js';
+import type { DxfClass } from './Classes/DxfClass.js';
+import { createDxfClassDefinition } from './Classes/DxfClassDefinitionRegistry.js';
+import type { TableEntry } from './Tables/TableEntry.js';
+import type { Table } from './Tables/Collections/Table.js';
+import type { NonGraphicalObject } from './Objects/NonGraphicalObject.js';
+import type { ObjectDictionaryCollection } from './Objects/Collections/ObjectDictionaryCollection.js';
+
+interface CadObjectTable<T extends CadObject> {
+	tryAdd(entry: T): T;
+}
+
+export abstract class CadObject implements IHandledCadObject, IDxfClassDefined {
+	public document: CadDocument | null = null;
+	public get extendedData(): ExtendedDataDictionary {
+		return this._extendedData ??= new ExtendedDataDictionary(this);
+	}
+	public set extendedData(value: ExtendedDataDictionary) { this._extendedData = value; }
+	public handle: number = 0;
+	public get hasDynamicSubclass(): boolean { return false; }
+	public get objectName(): string { return ""; }
+	public abstract get objectType(): ObjectType;
+	public owner: IHandledCadObject | null = null;
+
+	public get reactors(): CadObject[] {
+		return this._reactors ??= [];
+	}
+
+	public abstract get subclassMarker(): string;
+
+	public get xDictionary(): CadDictionary | null { return this._xdictionary; }
+	public set xDictionary(value: CadDictionary | null) {
+		if (value == null) return;
+		this._xdictionary = value;
+		this._xdictionary.owner = this;
+		if (this.document != null) {
+			this.document.registerCollection(this._xdictionary);
+		}
+	}
+
+	private _extendedData: ExtendedDataDictionary | null = null;
+	private _reactors: CadObject[] | null = null;
+	private _xdictionary: CadDictionary | null = null;
+
+	constructor() {}
+
+	public addReactor(reactor: CadObject): void {
+		(this._reactors ??= []).push(reactor);
+	}
+
+	public cleanReactors(): void {
+		if (!this._reactors) return;
+		const reactors = [...this._reactors];
+		for (const reactor of reactors) {
+			if (reactor.document !== this.document) {
+				const idx = this._reactors.indexOf(reactor);
+				if (idx >= 0) this._reactors.splice(idx, 1);
+			}
+		}
+	}
+
+	public clone(): CadObject {
+		// Shallow-copy the object graph, then reset document-owned state below.
+		const clone = Object.create(Object.getPrototypeOf(this));
+		Object.assign(clone, this);
+
+		clone.handle = 0;
+		clone.document = null;
+		clone.owner = null;
+		clone._reactors = null;
+		clone._extendedData = null;
+		clone.xDictionary = this._xdictionary?.clone() ?? null;
+
+		return clone;
+	}
+
+	public createExtendedDictionary(): CadDictionary {
+		if (this._xdictionary == null) {
+			const { CadDictionary: CadDictionaryImpl } = require('./Objects/CadDictionary');
+			this.xDictionary = new CadDictionaryImpl();
+		}
+		return this._xdictionary!;
+	}
+
+	public removeReactor(reactor: CadObject): boolean {
+		if (!this._reactors) return false;
+		const idx = this._reactors.indexOf(reactor);
+		if (idx >= 0) {
+			this._reactors.splice(idx, 1);
+			return true;
+		}
+		return false;
+	}
+
+	public getDxfClass(): DxfClass | null {
+		return createDxfClassDefinition(this.objectName);
+	}
+
+	public isValid(format: CadFileFormat, version: ACadVersion): boolean {
+		return this.validate(format, version).length === 0;
+	}
+
+	public validate(_format: CadFileFormat, _version: ACadVersion): string[] {
+		const errors: string[] = [];
+		if (isOrientable(this) && this.normal.getLength() <= Number.EPSILON) {
+			errors.push('normal vector cannot be zero.');
+		}
+		return errors;
+	}
+
+	public toString(): string {
+		return `${this.objectName}:${this.handle}`;
+	}
+
+	/** @internal */
+	assignDocument(doc: CadDocument): void {
+		this.document = doc;
+		if (this.xDictionary != null) {
+			doc.registerCollection(this.xDictionary);
+		}
+		if (this._extendedData && this._extendedData.size > 0) {
+			const entries = [...this.extendedData.entries()];
+			this.extendedData.clear();
+			for (const [key, value] of entries) {
+				this.extendedData.add(key, value);
+			}
+		}
+	}
+
+	/** @internal */
+	unassignDocument(): void {
+		if (this.xDictionary != null) {
+			this.document?.unregisterCollection(this.xDictionary);
+		}
+		this.handle = 0;
+		this.document = null;
+		if (this._extendedData && this._extendedData.size > 0) {
+			const entries = [...this.extendedData.entries()];
+			this.extendedData.clear();
+			for (const [key, value] of entries) {
+				this.extendedData.add(key, value);
+			}
+		}
+		if (this._reactors) this._reactors.length = 0;
+	}
+
+	protected static updateCollection<T extends CadObject>(entry: T | null, table: CadObjectTable<T> | null): T | null {
+		if (table == null || entry == null) return entry;
+		return table.tryAdd(entry);
+	}
+
+	public static updateCollectionStatic<T extends CadObject>(entry: T | null, table: CadObjectTable<T> | null): T | null {
+		return CadObject.updateCollection(entry, table);
+	}
+
+	protected updateCollection<T extends CadObject>(entry: T | null, table: CadObjectTable<T> | null): T | null {
+		return CadObject.updateCollection(entry, table);
+	}
+
+	protected updateTableEntry<T extends TableEntry>(entry: T, assignValue: (entry: T) => void, table: Table<T> | null): T;
+	protected updateTableEntry<T extends TableEntry>(entry: T | null, assignValue: (entry: T) => void, table: Table<T> | null): T | null;
+	protected updateTableEntry<T extends TableEntry>(entry: T | null, assignValue: (entry: T) => void, table: Table<T> | null): T | null {
+		if (table == null || entry == null) return entry;
+		return table.updateReference(this, entry, assignValue);
+	}
+
+	protected updateCollectionEntry<T extends NonGraphicalObject>(entry: T, assignValue: (entry: T) => void, collection: ObjectDictionaryCollection<T> | null): T;
+	protected updateCollectionEntry<T extends NonGraphicalObject>(entry: T | null, assignValue: (entry: T) => void, collection: ObjectDictionaryCollection<T> | null): T | null;
+	protected updateCollectionEntry<T extends NonGraphicalObject>(entry: T | null, assignValue: (entry: T) => void, collection: ObjectDictionaryCollection<T> | null): T | null {
+		if (collection == null || entry == null) return entry;
+		return collection.updateReference(this, entry, assignValue);
+	}
+}
