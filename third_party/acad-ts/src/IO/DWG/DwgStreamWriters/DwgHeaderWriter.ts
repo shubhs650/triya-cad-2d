@@ -1,6 +1,7 @@
 import { CadDocument } from '../../../CadDocument.js';
 import { CadHeader, SpaceLineTypeScaling, EntityPlotStyleType } from '../../../Header/CadHeader.js';
 import { ACadVersion } from '../../../ACadVersion.js';
+import { CadUtils } from '../../../CadUtils.js';
 import { DwgSectionIO } from '../DwgSectionIO.js';
 import { DwgSectionDefinition } from '../FileHeaders/DwgSectionDefinition.js';
 import { DwgReferenceType } from '../../../Types/DwgReferenceType.js';
@@ -692,7 +693,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
 
 		//R2000 +:
 		if (this.r2000Plus) {
-			let flags = ((this._header.currentEntityLineWeight as number) & 0x1F) |
+			let flags = (CadUtils.toIndex(this._header.currentEntityLineWeight) & 0x1F) |
 						(this._header.endCaps << 0x5) |
 						(this._header.joinStyle << 0x7);
 

@@ -193,6 +193,7 @@ import { StretchActionBase } from '../../../Objects/Evaluations/StretchActionBas
 import { DynamicBlockPurgePreventer } from '../../../Objects/DynamicBlockPurgePreventer.js';
 import { Material, ColorMethod, MapSource } from '../../../Objects/Material.js';
 import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
+import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
 import { VisualStyle } from '../../../Objects/VisualStyle.js';
 import { TableStyle } from '../../../Objects/TableStyle.js';
 import { writeDwgVisualStyle } from '../DwgVisualStyle.js';
@@ -441,7 +442,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 	private _isEntitySupported(entity: Entity): boolean {
 		if (entity instanceof Surface) return false;
 		if (entity instanceof Seqend) return false;
-		if (entity instanceof UnknownEntity) return false;
+		if (entity instanceof UnknownEntity) return this._canWriteRaw(entity);
 		if (entity instanceof Shape) return this.writeShapes;
 		return true;
 	}
@@ -467,24 +468,26 @@ export class DwgObjectWriter extends DwgSectionIO {
 		const ownedObjectHandles = record.layout == null && record.ownedObjectHandles.length > 0
 			? [...record.ownedObjectHandles]
 			: [...ownedEntityHandles];
+		// Sets and maps instead of Array.includes/find: those made a block's header O(n²) in its
+		// entity count (100k model-space entities took ~80 s to save).
+		const ownedSet = new Set(ownedObjectHandles);
 		for (const handle of ownedEntityHandles) {
-			if (!ownedObjectHandles.includes(handle)) {
+			if (!ownedSet.has(handle)) {
+				ownedSet.add(handle);
 				ownedObjectHandles.push(handle);
 			}
 		}
+		const entitiesByHandle = new Map(entities.map((entity) => [entity.handle, entity]));
 		const flags = record.combinedFlags;
 		const inserts = this.insertsByBlockName.get(record.name) ?? [];
 		const insertHandles = inserts.map((insert) => insert.handle);
+		const insertSet = new Set(insertHandles);
 		if (record.name.toUpperCase().startsWith('*T')) {
 			for (const handle of record.insertHandles) {
-				if (!insertHandles.includes(handle)) {
+				if (!insertSet.has(handle)) {
+					insertSet.add(handle);
 					insertHandles.push(handle);
 				}
-			}
-		}
-		for (const insert of inserts) {
-			if (!insertHandles.includes(insert.handle)) {
-				insertHandles.push(insert.handle);
 			}
 		}
 		const insertsByHandle = new Map(inserts.map((insert) => [insert.handle, insert]));
@@ -533,7 +536,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.writeByte(0);
 
 			this._writer.writeVariableText(record.blockEntity.comments);
-			this._writer.writeBitLong(0);
+			// Keep the block's thumbnail (BL size + RC bytes) instead of dropping it on every save.
+			const preview = record.preview ?? new Uint8Array(0);
+			this._writer.writeBitLong(preview.length);
+			this._writer.writeBytes(preview);
 		}
 
 		//R2007+:
@@ -562,7 +568,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		//R2004+:
 		if (this.r2004Plus) {
 			for (const handle of ownedObjectHandles) {
-				const entity = entities.find((item) => item.handle === handle);
+				const entity = entitiesByHandle.get(handle);
 				if (entity) {
 					this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, entity);
 				} else {
@@ -1105,7 +1111,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 		if (this.r2007Plus) {
 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, 0);
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
-			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, 0);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, vport.sun);
+			this._enqueueObject(vport.sun);
 		}
 
 		if (this.r2000Plus) {
@@ -1152,6 +1159,55 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._streamPos += crc.position + 2;
 
 		this.map.set(cadObject.handle, position);
+	}
+
+	/**
+	 * The record an unknown object was read with is valid only in a file of the same version, under
+	 * the same handle and, for custom classes, the same class number.
+	 */
+	private _canWriteRaw(obj: CadObject & IRawCadObject): boolean {
+		const raw = obj.rawDwgData;
+		if (raw == null || raw.version !== this._version || raw.handle !== obj.handle) {
+			return false;
+		}
+		const dxfClass = obj.getDxfClass();
+		return raw.typeCode < 500 || dxfClass?.classNumber === raw.typeCode;
+	}
+
+	/** Store an unknown object's record exactly as it was read, so a save does not drop it. */
+	private _writeRawObject(obj: CadObject & IRawCadObject): void {
+		if (!this._canWriteRaw(obj)) {
+			this.notify(`Unknown object ${obj.objectName} has no DWG data valid for this file and is not written: ${obj.handle}`, NotificationType.NotImplemented);
+			return;
+		}
+
+		const raw = obj.rawDwgData!;
+		this._ensureStreamCapacity(this._streamPos + raw.data.length + 16);
+
+		const position = this._streamPos;
+		const crc = new CRC8StreamHandler(this._stream.subarray(this._streamPos), 0xC0C1);
+		this._writeSize(crc, raw.data.length);
+		if (this.r2010Plus) {
+			this._writeSizeInBits(crc, raw.handleStreamBits);
+		}
+		crc.write(raw.data, 0, raw.data.length);
+
+		const seedBytes = new Uint8Array(2);
+		new DataView(seedBytes.buffer).setUint16(0, crc.seed, true);
+		this._stream.set(seedBytes, this._streamPos + crc.position);
+		this._streamPos += crc.position + 2;
+
+		this.map.set(obj.handle, position);
+
+		if (obj.xDictionary != null) {
+			this._dictionaries.set(obj.xDictionary.handle, obj.xDictionary);
+			this._enqueueObject(obj.xDictionary);
+		}
+		for (const child of obj.rawOwnedObjects) {
+			if (!(child instanceof Entity)) {
+				this._enqueueObject(child);
+			}
+		}
 	}
 
 	private _writeSize(stream: { write: (data: Uint8Array, offset: number, count: number) => void; position: number }, size: number): void {
@@ -1495,6 +1551,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 		}
 		if (entity instanceof Seqend) {
 			this._writeSeqend(entity);
+			return;
+		}
+		if (entity instanceof UnknownEntity) {
+			this._writeRawObject(entity);
 			return;
 		}
 
@@ -2649,7 +2709,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 
 	private _writeSolid3D(solid: Solid3D): void {
 		this._writeModelerGeometry(solid);
-		if (this.r2007Plus) this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, null);
+		if (this.r2007Plus) {
+			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, solid.history);
+			this._enqueueObject(solid.history);
+		}
 	}
 
 	private _writeTableEntity(table: TableEntity): void {
@@ -3298,7 +3361,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null);
 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
-			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, null);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, viewport.sun);
+			this._enqueueObject(viewport.sun);
 		}
 	}
 
@@ -3357,7 +3421,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		)) return { skip: true, notify: false };
 		if (entry instanceof UnknownNonGraphicalObject
 		) {
-			return { skip: true, notify: true };
+			return this._canWriteRaw(entry) ? { skip: false, notify: false } : { skip: true, notify: true };
 		}
 		return { skip: false, notify: false };
 	}
@@ -3391,6 +3455,11 @@ export class DwgObjectWriter extends DwgSectionIO {
 			if (shouldNotify) {
 				this.notify(`Object type not implemented ${obj.constructor.name}`, NotificationType.NotImplemented);
 			}
+			return;
+		}
+
+		if (obj instanceof UnknownNonGraphicalObject) {
+			this._writeRawObject(obj);
 			return;
 		}
 
@@ -4540,7 +4609,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.writeBitShort(layout.layoutFlags);
 		this._writer.write3BitDouble(layout.origin);
 		this._writer.write2RawDouble(layout.minLimits);
-		this._writer.write2RawDouble(layout.minLimits);
+		this._writer.write2RawDouble(layout.maxLimits);
 		this._writer.write3BitDouble(layout.insertionBasePoint);
 		this._writer.write3BitDouble(layout.xAxis);
 		this._writer.write3BitDouble(layout.yAxis);
@@ -4862,6 +4931,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 				case GroupCodeValueType.ExtendedDataHandle: {
 					const handle = getHandleValue(entry.value);
 					pushInt64LE(handle);
+					// Soft/hard owner entries own their object: nothing else writes it.
+					if (entry.code >= 350 && entry.code <= 369 && entry.value instanceof CadObject) {
+						this._enqueueObject(entry.value);
+					}
 					break;
 				}
 				default:

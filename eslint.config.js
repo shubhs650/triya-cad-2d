@@ -116,6 +116,7 @@ export default defineConfig(
       'third_party/**',
       'corpus/**',
       'test-results/**',
+      'test-reports/**',
       'playwright-report/**',
     ],
   },

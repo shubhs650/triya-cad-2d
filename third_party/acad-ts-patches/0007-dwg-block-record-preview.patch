@@ -1,0 +1,16 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 1d76881..44ca829 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -533,7 +533,10 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writer.writeByte(0);
+ 
+ 			this._writer.writeVariableText(record.blockEntity.comments);
+-			this._writer.writeBitLong(0);
++			// Keep the block's thumbnail (BL size + RC bytes) instead of dropping it on every save.
++			const preview = record.preview ?? new Uint8Array(0);
++			this._writer.writeBitLong(preview.length);
++			this._writer.writeBytes(preview);
+ 		}
+ 
+ 		//R2007+:

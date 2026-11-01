@@ -1,3 +1,4 @@
+import { CadObject } from '../../CadObject.js';
 import { Entity } from '../../Entities/Entity.js';
 import { Viewport } from '../../Entities/Viewport.js';
 import { Layer } from '../../Tables/Layer.js';
@@ -25,6 +26,8 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
 
 	frozenLayerHandles: Set<number> = new Set();
 
+	sunHandle: number | null = null;
+
 	constructor(entity?: Viewport) {
 		super(entity ?? new Viewport());
 	}
@@ -34,6 +37,15 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
 
 		if (this.viewportId != null) {
 			this.cadObject.id = this.viewportId;
+		}
+
+		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);
+		if (sun) {
+			this.cadObject.sun = sun;
+			sun.owner ??= this.cadObject;
+			if (this.cadObject.document != null && sun.document == null) {
+				this.cadObject.document.registerCollection(sun);
+			}
 		}
 
 		const entity = builder.tryGetCadObject<Entity>(this.boundaryHandle);

@@ -5,6 +5,8 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 test-results/
+# Round-trip reports (pnpm corpus:roundtrip); kept apart from Playwright, which wipes test-results/.
+test-reports/
 playwright-report/
 blob-report/
 .DS_Store
@@ -15,3 +17,6 @@ blob-report/
 corpus/private/*
 !corpus/private/README.md
 node-compile-cache/
+
+# acad-ts spike output for the owner's AutoCAD AUDIT sweep (M0-06/M0-07): written drawings, not sources.
+docs/reports/M0-written/

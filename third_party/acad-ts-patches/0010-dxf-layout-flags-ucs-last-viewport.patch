@@ -1,0 +1,27 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index ccc8643..f6e831f 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -301,6 +301,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+     this._writer.write(100, DxfSubclassMarker.layout);
+ 
+     this._writer.write(1, layout.name, map);
++    // AcDbLayout's own flags (PSLTSCALE, LIMCHECK): without them the reader takes AcDbPlotSettings' 70.
++    this._writer.write(70, layout.layoutFlags as number);
+ 
+     this._writer.write(71, layout.tabOrder, map);
+ 
+@@ -315,9 +317,12 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.write(146, layout.elevation, map);
+ 
+-    this._writer.write(76, 0, map);
++    this._writer.write(76, layout.ucsOrthographicType);
+ 
+     this._writer.writeHandle(330, layout.associatedBlock, map);
++    this._writer.writeHandle(331, layout.lastActiveViewport);
++    this._writer.writeHandle(345, layout.ucs);
++    this._writer.writeHandle(346, layout.baseUCS);
+   }
+ 
+   protected writeMLineStyle(style: MLineStyle): void {

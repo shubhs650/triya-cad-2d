@@ -40,5 +40,14 @@ export class CadVPortTemplate extends CadTableEntryTemplate<VPort> {
 		}
 
 		const style = builder.tryGetCadObject<CadObject>(this.styleHandle);
+
+		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);
+		if (sun) {
+			this.cadObject.sun = sun;
+			sun.owner ??= this.cadObject;
+			if (this.cadObject.document != null && sun.document == null) {
+				this.cadObject.document.registerCollection(sun);
+			}
+		}
 	}
 }

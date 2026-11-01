@@ -1,4 +1,11 @@
-import { ACadVersion, DwgReader, DxfReader, type CadDocument } from '@node-projects/acad-ts';
+import {
+  ACadVersion,
+  DwgReader,
+  DwgReaderConfiguration,
+  DxfReader,
+  DxfReaderConfiguration,
+  type CadDocument,
+} from '@node-projects/acad-ts';
 
 export type CadFormat = 'dwg' | 'dxf';
 
@@ -23,6 +30,25 @@ export function detectFormat(bytes: Uint8Array): CadFormat {
   return /^(AC\d{4}|AC\d\.\d\d|MC0\.0)/.test(magic) ? 'dwg' : 'dxf';
 }
 
+/**
+ * Reader settings for a document that may be saved again (ARCHITECTURE.md §6.2 rule 1, M1-30).
+ * Objects acad-ts cannot map are kept as `UnknownEntity` / `UnknownNonGraphicalObject` with their
+ * raw payload, which the writers emit unchanged; acad-ts' default discards them.
+ */
+export function fidelityDwgReaderConfiguration(): DwgReaderConfiguration {
+  const config = new DwgReaderConfiguration();
+  config.keepUnknownEntities = true;
+  config.keepUnknownNonGraphicalObjects = true;
+  return config;
+}
+
+export function fidelityDxfReaderConfiguration(): DxfReaderConfiguration {
+  const config = new DxfReaderConfiguration();
+  config.keepUnknownEntities = true;
+  config.keepUnknownNonGraphicalObjects = true;
+  return config;
+}
+
 /** Parse a DWG or DXF file into an acad-ts `CadDocument`. Throws on unreadable input. */
 export function readCadDocument(
   bytes: Uint8Array,
@@ -34,9 +60,12 @@ export function readCadDocument(
       bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
         ? bytes.buffer
         : bytes.slice().buffer;
-    return DwgReader.readFromStream(exact as ArrayBuffer);
+    return DwgReader.readFromStreamWithConfig(
+      exact as ArrayBuffer,
+      fidelityDwgReaderConfiguration(),
+    );
   }
-  return DxfReader.readFromStream(bytes);
+  return DxfReader.readFromStreamWithConfig(bytes, fidelityDxfReaderConfiguration());
 }
 
 export function summarizeDocument(doc: CadDocument, format: CadFormat): ReadSummary {

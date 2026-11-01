@@ -1,0 +1,191 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 950bd51..9c8d25d 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -319,6 +319,9 @@ export class DwgObjectReader extends DwgSectionIO {
+   private _objectReader!: IDwgStreamReader;
+   private _size: number = 0;
+   private _textReader!: IDwgStreamReader;
++  /** Type code and R2010+ handle-stream size of the object being read, for raw unknown objects. */
++  private _typeCode: number = 0;
++  private _handleStreamBits: number = 0;
+ 
+   constructor(
+     version: ACadVersion,
+@@ -400,6 +403,7 @@ export class DwgObjectReader extends DwgSectionIO {
+ 
+     if (this.r2010Plus) {
+       const handleSize = this._crcReader.readModularChar();
++      this._handleStreamBits = handleSize;
+       const handleSectionOffset = this._crcReader.positionInBits() + sizeInBits - handleSize;
+ 			this._objectDataEndInBits = handleSectionOffset;
+ 
+@@ -423,8 +427,10 @@ export class DwgObjectReader extends DwgSectionIO {
+       this._objectInitialPos = this._objectReader.positionInBits();
+       type = this._objectReader.readObjectType();
+ 			this._objectDataEndInBits = this._crcReader.positionInBits() + sizeInBits;
+-    }
+-
++      this._handleStreamBits = 0;
++    }
++
++    this._typeCode = type as number;
+     return type;
+   }
+ 
+@@ -1191,6 +1197,9 @@ export class DwgObjectReader extends DwgSectionIO {
+     const entity = new UnknownEntity(dxfClass);
+     const template = new CadUnknownEntityTemplate(entity);
+     this._readCommonEntityData(template);
++    if (this._builder.keepUnknownEntities) {
++      this._keepRawData(entity);
++    }
+     return template;
+   }
+ 
+@@ -1198,9 +1207,36 @@ export class DwgObjectReader extends DwgSectionIO {
+     const obj = new UnknownNonGraphicalObject(dxfClass);
+     const template = new CadUnknownNonGraphicalObjectTemplate(obj);
+     this._readCommonNonEntityData(template);
++    if (this._builder.keepUnknownNonGraphicalObjects) {
++      this._keepRawData(obj);
++    }
+     return template;
+   }
+ 
++  /**
++   * Keep an unknown object's record so the writer can store it unchanged, and queue every handle
++   * left in its handle stream: objects it owns are reachable only from there.
++   */
++  private _keepRawData(obj: UnknownEntity | UnknownNonGraphicalObject): void {
++    const start = this._objectInitialPos >> 3;
++    obj.rawDwgData = {
++      version: this._version,
++      typeCode: this._typeCode,
++      handle: obj.handle,
++      data: this._memoryStream.slice(start, start + this._size),
++      handleStreamBits: this._handleStreamBits,
++    };
++
++    const end = this._objectInitialPos + (this._size << 3);
++    try {
++      while (this._handlesReader.positionInBits() + 8 <= end) {
++        this._handleReference(obj.handle);
++      }
++    } catch {
++      // Padding after the last handle can decode as a truncated reference; nothing follows it.
++    }
++  }
++
+   // ==================== BLOCK HEADER ====================
+ 
+   private _readBlockControlObject(): CadTemplate {
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 72bc159..fa402de 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -193,6 +193,7 @@ import { StretchActionBase } from '../../../Objects/Evaluations/StretchActionBas
+ import { DynamicBlockPurgePreventer } from '../../../Objects/DynamicBlockPurgePreventer.js';
+ import { Material, ColorMethod, MapSource } from '../../../Objects/Material.js';
+ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
++import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
+ import { VisualStyle } from '../../../Objects/VisualStyle.js';
+ import { TableStyle } from '../../../Objects/TableStyle.js';
+ import { writeDwgVisualStyle } from '../DwgVisualStyle.js';
+@@ -441,7 +442,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 	private _isEntitySupported(entity: Entity): boolean {
+ 		if (entity instanceof Surface) return false;
+ 		if (entity instanceof Seqend) return false;
+-		if (entity instanceof UnknownEntity) return false;
++		if (entity instanceof UnknownEntity) return this._canWriteRaw(entity);
+ 		if (entity instanceof Shape) return this.writeShapes;
+ 		return true;
+ 	}
+@@ -1159,6 +1160,55 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		this.map.set(cadObject.handle, position);
+ 	}
+ 
++	/**
++	 * The record an unknown object was read with is valid only in a file of the same version, under
++	 * the same handle and, for custom classes, the same class number.
++	 */
++	private _canWriteRaw(obj: CadObject & IRawCadObject): boolean {
++		const raw = obj.rawDwgData;
++		if (raw == null || raw.version !== this._version || raw.handle !== obj.handle) {
++			return false;
++		}
++		const dxfClass = obj.getDxfClass();
++		return raw.typeCode < 500 || dxfClass?.classNumber === raw.typeCode;
++	}
++
++	/** Store an unknown object's record exactly as it was read, so a save does not drop it. */
++	private _writeRawObject(obj: CadObject & IRawCadObject): void {
++		if (!this._canWriteRaw(obj)) {
++			this.notify(`Unknown object ${obj.objectName} has no DWG data valid for this file and is not written: ${obj.handle}`, NotificationType.NotImplemented);
++			return;
++		}
++
++		const raw = obj.rawDwgData!;
++		this._ensureStreamCapacity(this._streamPos + raw.data.length + 16);
++
++		const position = this._streamPos;
++		const crc = new CRC8StreamHandler(this._stream.subarray(this._streamPos), 0xC0C1);
++		this._writeSize(crc, raw.data.length);
++		if (this.r2010Plus) {
++			this._writeSizeInBits(crc, raw.handleStreamBits);
++		}
++		crc.write(raw.data, 0, raw.data.length);
++
++		const seedBytes = new Uint8Array(2);
++		new DataView(seedBytes.buffer).setUint16(0, crc.seed, true);
++		this._stream.set(seedBytes, this._streamPos + crc.position);
++		this._streamPos += crc.position + 2;
++
++		this.map.set(obj.handle, position);
++
++		if (obj.xDictionary != null) {
++			this._dictionaries.set(obj.xDictionary.handle, obj.xDictionary);
++			this._enqueueObject(obj.xDictionary);
++		}
++		for (const child of obj.rawOwnedObjects) {
++			if (!(child instanceof Entity)) {
++				this._enqueueObject(child);
++			}
++		}
++	}
++
+ 	private _writeSize(stream: { write: (data: Uint8Array, offset: number, count: number) => void; position: number }, size: number): void {
+ 		if (size >= 0b1000000000000000) {
+ 			const buf = new Uint8Array(4);
+@@ -1502,6 +1552,10 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writeSeqend(entity);
+ 			return;
+ 		}
++		if (entity instanceof UnknownEntity) {
++			this._writeRawObject(entity);
++			return;
++		}
+ 
+ 		const children: Entity[] = [];
+ 		let seqend: Seqend | null = null;
+@@ -3362,7 +3416,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		)) return { skip: true, notify: false };
+ 		if (entry instanceof UnknownNonGraphicalObject
+ 		) {
+-			return { skip: true, notify: true };
++			return this._canWriteRaw(entry) ? { skip: false, notify: false } : { skip: true, notify: true };
+ 		}
+ 		return { skip: false, notify: false };
+ 	}
+@@ -3399,6 +3453,11 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			return;
+ 		}
+ 
++		if (obj instanceof UnknownNonGraphicalObject) {
++			this._writeRawObject(obj);
++			return;
++		}
++
+ 		this._writeCommonNonEntityData(obj);
+ 
+ 		if (obj instanceof AcdbPlaceHolder) {

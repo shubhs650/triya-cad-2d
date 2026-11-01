@@ -17,6 +17,7 @@ import { LinearUnitFormat } from '../../../Types/Units/LinearUnitFormat.js';
 import { AngularUnitFormat } from '../../../Types/Units/AngularUnitFormat.js';
 import { UnitsType } from '../../../Types/Units/UnitsType.js';
 import { LineWeightType } from '../../../Types/LineWeightType.js';
+import { CadUtils } from '../../../CadUtils.js';
 import { NotificationType } from '../../NotificationEventHandler.js';
 import { DwgSectionIO } from '../DwgSectionIO.js';
 import { DwgSectionDefinition } from '../FileHeaders/DwgSectionDefinition.js';
@@ -522,14 +523,17 @@ export class DwgHeaderReader extends DwgSectionIO {
 
 		if (this.r2000Plus) {
 			const flags: number = this._reader.readBitLong();
-			this._header.currentEntityLineWeight = (flags & 0x1F) as LineWeightType;
-			this._header.endCaps = flags & 0x60;
-			this._header.joinStyle = flags & 0x180;
-			this._header.displayLineWeight = (flags & 0x200) === 1;
-			this._header.xEdit = (flags & 0x400) === 1;
-			this._header.extendedNames = (flags & 0x800) === 1;
-			this._header.plotStyleMode = flags & 0x2000;
-			this._header.loadOLEObject = (flags & 0x4000) === 1;
+			// The low 5 bits are a lineweight index (as on entities), not a lineweight value.
+			this._header.currentEntityLineWeight = CadUtils.toValue(flags & 0x1F);
+			// ODA spec 3.0 §9.4: ENDCAPS/JOINSTYLE are shifted fields, LWDISPLAY and XEDIT are stored
+			// inverted, the rest are single bits. DwgHeaderWriter already encodes them this way.
+			this._header.endCaps = (flags & 0x60) >> 5;
+			this._header.joinStyle = (flags & 0x180) >> 7;
+			this._header.displayLineWeight = (flags & 0x200) === 0;
+			this._header.xEdit = (flags & 0x400) === 0;
+			this._header.extendedNames = (flags & 0x800) !== 0;
+			this._header.plotStyleMode = (flags & 0x2000) !== 0 ? 1 : 0;
+			this._header.loadOLEObject = (flags & 0x4000) !== 0;
 
 			this._header.insUnits = this._reader.readBitShort() as UnitsType;
 			this._header.currentEntityPlotStyle = this._reader.readBitShort() as EntityPlotStyleType;

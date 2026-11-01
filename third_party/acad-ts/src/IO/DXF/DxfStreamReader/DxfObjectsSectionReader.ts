@@ -105,6 +105,7 @@ import { DynamicBlockPurgePreventer } from '../../../Objects/DynamicBlockPurgePr
 import { Field } from '../../../Objects/Field.js';
 import { FieldList } from '../../../Objects/FieldList.js';
 import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
+import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
 import { TableEntity , CellRange, TableEntityColumn, TableEntityRow, TableEntityCell, CellContent, ContentFormat, CellStyle, CellBorder, CellEdgeFlags, CellAlignmentType, CellStyleType, CellStyleClass} from '../../../Entities/TableEntity.js';
 import { CadValue } from '../../../CadValue.js';
 import { Color } from '../../../Color.js';
@@ -283,18 +284,36 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           this._builder.notify(`UnknownNonGraphicalObject not supported: ${this._reader.valueAsString}`, NotificationType.NotImplemented);
         }
 
-        this._reader.readNext();
+        // A kept object records its group codes, so the writers can emit it unchanged.
+        const keep = unknownEntityTemplate !== null && this._builder.keepUnknownNonGraphicalObjects;
+        const rawObject = unknownEntityTemplate?.cadObject as UnknownNonGraphicalObject | undefined;
+        const raw: DxfRawCode[] = [];
+        if (keep) {
+          rawObject!.rawDxfName = this._reader.valueAsString;
+          this._reader.recorder = raw;
+        }
 
-        do {
-          if (unknownEntityTemplate !== null && this._builder.keepUnknownEntities) {
-            const isExtendedData = { value: false };
-            this.readCommonCodes(unknownEntityTemplate, isExtendedData, map);
-            if (isExtendedData.value) {
-              continue;
-            }
-          }
+        try {
           this._reader.readNext();
-        } while (this._reader.dxfCode !== DxfCode.Start);
+
+          do {
+            if (keep) {
+              const isExtendedData = { value: false };
+              this.readCommonCodes(unknownEntityTemplate!, isExtendedData, map);
+              if (isExtendedData.value) {
+                continue;
+              }
+            }
+            this._reader.readNext();
+          } while (this._reader.dxfCode !== DxfCode.Start);
+        } finally {
+          this._reader.recorder = null;
+        }
+
+        if (keep) {
+          raw.pop(); // the next object's type code
+          rawObject!.rawDxfCodes = raw;
+        }
 
         return unknownEntityTemplate;
       }
@@ -575,6 +594,11 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
         tmp.lasActiveViewportHandle = this._reader.valueAsHandle;
         return true;
       default:
+        // AcDbPlotSettings and AcDbLayout both use group 70 (plot flags, layout flags). Read each in
+        // its own subclass, or the layout map takes the plot flags and the layout flags overwrite them.
+        if (this.currentSubclass === DxfSubclassMarker.plotSettings) {
+          return this._readPlotSettings(template, map);
+        }
         if (!this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(DxfSubclassMarker.layout)!)) {
           return this._readPlotSettings(template, map);
         }

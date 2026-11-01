@@ -97,6 +97,7 @@ import { NotificationEventHandler, NotificationEventArgs, NotificationType } fro
 import { DxfMap } from '../../../DxfMap.js';
 import { BoundaryPathFlags } from '../../../Entities/BoundaryPathFlags.js';
 import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
+import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
 import { MathHelper } from '../../../Math/MathHelper.js';
 import { XYZ } from '../../../Math/XYZ.js';
 import { XY } from '../../../Math/XY.js';
@@ -327,6 +328,10 @@ export abstract class DxfSectionWriterBase {
     if (!this._isEntitySupported(entity)) {
       return;
     }
+    if (entity instanceof UnknownEntity) {
+      this.writeRawObject(entity);
+      return;
+    }
 	const validationErrors = entity.validate(CadFileFormat.DXF, this.version);
 	if (validationErrors.length > 0) {
 	  this.notify(`Invalid entity ${entity.constructor.name}: ${validationErrors.join(' ')}`, NotificationType.Warning);
@@ -438,9 +443,45 @@ export abstract class DxfSectionWriterBase {
     }
     if (entity instanceof Surface) return false;
     if (entity instanceof UnknownEntity) {
-      return false;
+      if (entity.rawDxfCodes == null && entity.rawDwgData != null) {
+        this.notify(`Unknown entity ${entity.objectName} was read from a DWG file and cannot be written to DXF: ${entity.handle}`, NotificationType.NotImplemented);
+      }
+      return entity.rawDxfCodes != null;
     }
     return true;
+  }
+
+  /**
+   * Write an object the reader could not map from the group codes it kept, so that a save does
+   * not drop it. The handle and owner come from the object; everything else is written as read.
+   */
+  protected writeRawObject(cadObject: CadObject & IRawCadObject): void {
+    this._writer.write(DxfCode.Start, cadObject.objectName);
+
+    let inGroup = false;
+    let beforeSubclass = true;
+    for (const { code, value } of cadObject.rawDxfCodes!) {
+      let output = value;
+      if (code === 100) {
+        beforeSubclass = false;
+      } else if (code === 102) {
+        inGroup = String(value).startsWith('{');
+      } else if (code === 5 && beforeSubclass) {
+        output = cadObject.handle;
+      } else if (code === 330 && beforeSubclass && !inGroup && cadObject.owner != null && cadObject.owner.handle !== 0) {
+        output = cadObject.owner.handle;
+      }
+      this._writer.writeRaw(code, output);
+    }
+
+    if (cadObject.xDictionary !== null) {
+      this.holder.objects.push(cadObject.xDictionary);
+    }
+    for (const child of cadObject.rawOwnedObjects) {
+      if (!(child instanceof Entity)) {
+        this.holder.objects.push(child);
+      }
+    }
   }
 
   private _writeR12LwPolyline(polyline: LwPolyline): void {
@@ -1244,7 +1285,10 @@ export abstract class DxfSectionWriterBase {
 
     if (geometry instanceof Solid3D && this.version >= ACadVersion.AC1021) {
       this._writer.write(DxfCode.Subclass, DxfSubclassMarker.solid3D);
-      this._writer.write(350, 0);
+      this._writer.write(350, geometry.history?.handle ?? 0);
+      if (geometry.history != null) {
+        this.holder.objects.push(geometry.history);
+      }
     }
   }
 
@@ -1341,6 +1385,11 @@ export abstract class DxfSectionWriterBase {
 
     for (const layer of viewport.frozenLayers) {
       this._writer.writeHandle(331, layer);
+    }
+
+    if (viewport.sun != null) {
+      this._writer.writeHandle(361, viewport.sun);
+      this.holder.objects.push(viewport.sun);
     }
   }
 

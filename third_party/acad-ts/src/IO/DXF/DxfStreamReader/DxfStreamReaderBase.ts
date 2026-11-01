@@ -5,6 +5,7 @@ import { GroupCodeValue, GroupCodeValueType } from '../../../GroupCodeValue.js';
 import { DxfException } from '../../../Exceptions/DxfException.js';
 import { MathHelper } from '../../../Math/MathHelper.js';
 import { decodeCadString, getDecoderEncodingLabel } from '../../TextEncoding.js';
+import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
 
 export abstract class DxfStreamReaderBase implements IDxfStreamReader {
   public encoding: string = getDecoderEncodingLabel('ANSI_1252');
@@ -23,6 +24,9 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
 
   public valueRaw: string = '';
 
+  /** When set, every group code read is appended to it (used to keep unknown objects raw). */
+  public recorder: DxfRawCode[] | null = null;
+
   public get valueAsString(): string {
     return String(this.value)
       .replace(/\^J/g, '\n')
@@ -36,7 +40,9 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
   }
 
   public get valueAsShort(): number {
-    return Number(this.value) & 0xFFFF;
+    // Signed 16-bit, like ACadSharp's (short)Value: `& 0xFFFF` turned ByBlock/ByLayer
+    // lineweights (-2/-1) and other negative codes into 65534/65535.
+    return (Number(this.value) << 16) >> 16;
   }
 
   public get valueAsUShort(): number {
@@ -76,7 +82,10 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
 
     if (this.dxfCode === DxfCode.Comment) {
       this.readNext();
+      return;
     }
+
+    this.recorder?.push({ code: this.code, value: this.value });
   }
 
   public find(dxfEntry: string): boolean {

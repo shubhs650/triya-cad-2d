@@ -19,6 +19,9 @@ export class Viewport extends Entity {
 	/** -1 = on but inactive/off-screen, 0 = off, positive = active stacking order. */
 	activeStatus: number = 1;
 
+	/** The viewport's SUN object (DXF 361, hard owner). acad-ts does not map SUN; it is kept raw. */
+	sun: CadObject | null = null;
+
 	ambientLightColor: Color | null = null;
 
 	backClipPlane: number = 0;
@@ -185,6 +188,7 @@ export class Viewport extends Entity {
 		clone.visualStyle = this.visualStyle?.clone() as VisualStyle | null ?? null;
 		clone.scale = this.scale?.clone() as Scale | null ?? null;
 		clone.frozenLayers = this.frozenLayers.map(l => l.clone() as Layer);
+		clone.sun = null;
 		return clone;
 	}
 
@@ -241,6 +245,9 @@ export class Viewport extends Entity {
 	/** @internal */
 	assignDocument(doc: CadDocument): void {
 		super.assignDocument(doc);
+		if (this.sun != null && this.sun.document == null) {
+			doc.registerCollection(this.sun);
+		}
 	}
 
 	/** @internal */

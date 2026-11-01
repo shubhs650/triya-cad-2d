@@ -1,0 +1,49 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 44ca829..72bc159 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -467,26 +467,28 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		const ownedObjectHandles = record.layout == null && record.ownedObjectHandles.length > 0
+ 			? [...record.ownedObjectHandles]
+ 			: [...ownedEntityHandles];
++		// Sets and maps instead of Array.includes/find: those made a block's header O(n²) in its
++		// entity count (100k model-space entities took ~80 s to save).
++		const ownedSet = new Set(ownedObjectHandles);
+ 		for (const handle of ownedEntityHandles) {
+-			if (!ownedObjectHandles.includes(handle)) {
++			if (!ownedSet.has(handle)) {
++				ownedSet.add(handle);
+ 				ownedObjectHandles.push(handle);
+ 			}
+ 		}
++		const entitiesByHandle = new Map(entities.map((entity) => [entity.handle, entity]));
+ 		const flags = record.combinedFlags;
+ 		const inserts = this.insertsByBlockName.get(record.name) ?? [];
+ 		const insertHandles = inserts.map((insert) => insert.handle);
++		const insertSet = new Set(insertHandles);
+ 		if (record.name.toUpperCase().startsWith('*T')) {
+ 			for (const handle of record.insertHandles) {
+-				if (!insertHandles.includes(handle)) {
++				if (!insertSet.has(handle)) {
++					insertSet.add(handle);
+ 					insertHandles.push(handle);
+ 				}
+ 			}
+ 		}
+-		for (const insert of inserts) {
+-			if (!insertHandles.includes(insert.handle)) {
+-				insertHandles.push(insert.handle);
+-			}
+-		}
+ 		const insertsByHandle = new Map(inserts.map((insert) => [insert.handle, insert]));
+ 
+ 		this._writeCommonNonEntityData(record);
+@@ -565,7 +567,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		//R2004+:
+ 		if (this.r2004Plus) {
+ 			for (const handle of ownedObjectHandles) {
+-				const entity = entities.find((item) => item.handle === handle);
++				const entity = entitiesByHandle.get(handle);
+ 				if (entity) {
+ 					this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, entity);
+ 				} else {

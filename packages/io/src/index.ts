@@ -4,5 +4,9 @@
 // installs a message handler.
 export { detectFormat, readCadDocument, summarizeDocument } from './read';
 export type { CadFormat, ReadSummary } from './read';
+export { fidelityDwgConfiguration, fidelityDxfConfiguration, writeCadDocument } from './write';
+export type { WriteOptions } from './write';
 export { handleIoRequest } from './worker/protocol';
 export type { IoRequest, IoResponse, ReadRequest } from './worker/protocol';
+export { mapHeader, type MappedHeader } from './map/header';
+export { mapTables, type MappedTables } from './map/tables';

@@ -92,9 +92,20 @@ The public manifest is `corpus/corpus.json`; the private one is `corpus/private/
 
 `structuralDiff(original: CadDocument, reopened: CadDocument): DiffReport` walks both acad-ts object graphs by handle and compares type, every serialisable property, xdata, extension dictionaries, reactors, owner links, and table membership. **Expected result: zero differences.**
 
-Allowed exceptions (and only these): `$TDUPDATE`, `$TDUSRTIMER`, `$TDINDWG`, `$VERSIONGUID`, `$FINGERPRINTGUID`, `$HANDSEED` (new ≥ old), `$DWGCODEPAGE` when writing to a Unicode version, and the ordering of entries within unordered dictionaries. Anything else is a failure. Adding an exception requires a DECISIONS entry.
+Allowed exceptions (and only these): `$TDUPDATE` and its UTC twin `$TDUUPDATE` (DEC-034), `$TDUSRTIMER`, `$TDINDWG`, `$VERSIONGUID`, `$FINGERPRINTGUID`, `$HANDSEED` (new ≥ old), `$DWGCODEPAGE` when writing to a Unicode version, and the ordering of entries within unordered dictionaries. Anything else is a failure. Adding an exception requires a DECISIONS entry.
 
 After an *editing* session, the diff excludes handles in the session's touched set and asserts zero differences elsewhere.
+
+**Harness** (`packages/testkit/src/roundtrip`, M0-05):
+- `roundTrip(bytes)` reads the file twice (one copy to write, one pristine copy to compare), writes it in the same version and format (DWG, ASCII DXF or binary DXF) with `@triya/io` `writeCadDocument`, reopens the output and runs `structuralDiff`. Status per file: `clean`, `diff`, `read-error`, `write-error`, `reread-error`.
+- `structuralDiff` matches every registered object by handle (`missing`/`added`/`type`), then compares its instance fields recursively. A field holding another object is compared as a reference (type + handle), so one changed object only reports on itself. Map-backed collections (dictionary and table entries, xdata by application) are unordered; lists and sets are ordered, and a pure reordering of references is reported as `order`. A null field equals an empty container, and an empty string equals a missing one, because the file formats cannot tell them apart. Header fields are reported by `$NAME`.
+- acad-ts stamps `new Date()` into header variables a file does not state, so the harness pins the clock while it reads and writes; two runs on the same bytes produce the same report.
+- Objects acad-ts cannot map are kept raw by `readCadDocument` (M1-30), so `structuralDiff` sees them like any other object. `rawObjectSurvival` also checks that each one comes back under its handle with the same payload (DXF group codes or DWG record); the corpus test requires zero losses, and the report prints the count.
+- `pnpm corpus:roundtrip` (also part of `pnpm test`) runs every public corpus file, writes `test-reports/roundtrip/report.md` and `report.json`, and fails if any file is worse than `corpus/roundtrip-baseline.json` (worse status or more differences). After an improvement, `TRIYA_UPDATE_BASELINE=1 pnpm corpus:roundtrip` locks it in. Until M1-05 the baseline holds the known differences; from M1-05 on every entry must be `clean`.
+
+### 3.1 Mapping oracle (M1-03)
+
+The round-trip diff compares acad-ts with itself, so a value acad-ts never reads is invisible to it. `packages/testkit/src/mapping/tables.corpus.test.ts` reads the HEADER and TABLES sections of every ASCII DXF in the public corpus with an independent group-code reader (`mapping/dxf-oracle.ts`) and compares each table record field and each header variable with what `mapTables`/`mapHeader` produce, by handle (by name for R12 records without one). Losses that come from acad-ts itself are listed in `ACAD_TS_GAPS` with the reason; the test fails on a new kind of mismatch and on a listed kind that no longer occurs, so the list only shrinks (M1-32). A second test checks that every table entry acad-ts reads from every readable file, DWG included, is mapped.
 
 ## 4. Fidelity harness
 
@@ -126,6 +137,10 @@ Load app → go offline (Playwright route abort) → run a scripted session cove
 
 Each command has a test file that drives it through the `PromptBus` with typed answers and asserts the `ChangeSet` (entity types, geometry within tolerance, properties, handles allocated). Tests encode AutoCAD behaviour; when behaviour is ambiguous, the test documents the chosen interpretation with a comment linking the AutoCAD reference.
 
+### 7.1 Geometry kernel tests
+
+`engine/geom` is tested with table tests for documented cases and fast-check property tests at drafting scales (coordinates to ±1000, radii 0.01–500, NURBS of degree 1–3 with non-uniform knots and optional weights): derivatives against finite differences, flattening deviation, bounds containment and tightness, transformed curves tracing the transformed points, and intersections (a secant through two points of any curve, a circle through a point of it, and a copy rotated about one of its points must all find those points; every reported point lies on both curves), closest point (on the curve and no farther than any of 200 samples), tangent points (a line drawn from a point along the tangent touches there), and offsets (every point at the offset distance). Generators keep splines free of coincident or folded-back control points, whose cusps get dedicated tests. `pnpm test` enforces ≥ 95 % branch, line, function and statement coverage of `packages/engine/src/geom` (the `coverage.thresholds` glob in `vitest.config.ts`; add a glob when another package's task sets a gate).
+
 ## 8. Owner-only gates
 
 - **AUDIT sweep:** open each Triya-saved corpus file in AutoCAD, run `AUDIT` (fix N), record error counts; required 0 at M0 (go/no-go), M2, M5, M10.
@@ -135,7 +150,7 @@ Each command has a test file that drives it through the `PromptBus` with typed a
 ## 9. Scripts
 
 ```
-pnpm test               # unit + command + round-trip (public)
+pnpm test               # unit + command + round-trip (public), with coverage gates (test-reports/coverage/)
 pnpm test:fidelity      # Playwright fidelity on public corpus
 pnpm test:perf          # perf targets
 pnpm test:offline       # offline/privacy
@@ -145,6 +160,9 @@ pnpm test:private       # all of the above on corpus/private (local only)
 pnpm corpus:list        # print corpus manifest
 pnpm corpus:ref <file>  # rasterise reference PDFs → PNGs
 pnpm corpus:validate    # schema + license fields + reference presence
+pnpm corpus:roundtrip   # round-trip every public corpus file; per-file report in test-reports/roundtrip/
+pnpm spike:read         # M0-06: read status, unmapped types, handle coverage → test-reports/spike/read.md
+pnpm spike:roundtrip    # M0-06: round-trip failure taxonomy → test-reports/spike/roundtrip.md; written files → docs/reports/M0-written/
 ```
 
 File conventions: `*.test.ts` is Vitest (Node), found in `packages/*/{src,test}/`, `apps/*/{src,test}/` and `tests/`; `*.spec.ts` is Playwright, one folder per suite under `tests/e2e/<fidelity|offline|ui|perf|io>/` (`playwright.config.ts` maps each suite to a project). Until a suite's roadmap task lands, its script passes with no tests; scripts whose implementation does not exist yet (`corpus:*`, `test:private`, `planegcs:build`) print the owning task id and exit 0. `pnpm lint` runs ESLint (including the module-boundary and no-DOM rules) and `prettier --check`; Husky runs `pnpm lint && pnpm typecheck` before each commit.

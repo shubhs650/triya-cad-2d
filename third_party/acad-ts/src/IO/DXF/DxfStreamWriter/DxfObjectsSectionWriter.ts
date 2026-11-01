@@ -37,6 +37,7 @@ import { SortEntitiesTable } from '../../../Objects/SortEntitiesTable.js';
 import { SpatialFilter } from '../../../Objects/SpatialFilter.js';
 import { XRecord } from '../../../Objects/XRecrod.js';
 import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
+import { TableContent } from '../../../Objects/TableContent.js';
 import { AecWallStyle } from '../../../Objects/AEC/AecWallStyle.js';
 import { AecCleanupGroup } from '../../../Objects/AEC/AecCleanupGroup.js';
 import { AecBinRecord } from '../../../Objects/AEC/AecBinRecord.js';
@@ -95,8 +96,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 	  const handle = dict.entryHandles[i];
 	  const entryName = dict.entryNames[i];
 	  const item = dict.getEntry<NonGraphicalObject>(entryName);
-	  if (item instanceof CadDictionary && item.entryNames.length === 0) continue;
-	  if (item == null || entryName === CadDictionary.acadMaterial || !this._isObjectSupported(item)) {
+	  // Empty dictionaries and ACAD_MATERIAL are kept: dropping them made readers recreate them
+	  // under new handles, so every save renumbered root-dictionary entries.
+	  if (item == null || !this._isObjectSupported(item)) {
 		continue;
 	  }
       if (item instanceof XRecord && !this.configuration.writeXRecords) {
@@ -301,6 +303,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(100, DxfSubclassMarker.layout);
 
     this._writer.write(1, layout.name, map);
+    // AcDbLayout's own flags (PSLTSCALE, LIMCHECK): without them the reader takes AcDbPlotSettings' 70.
+    this._writer.write(70, layout.layoutFlags as number);
 
     this._writer.write(71, layout.tabOrder, map);
 
@@ -315,9 +319,12 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     this._writer.write(146, layout.elevation, map);
 
-    this._writer.write(76, 0, map);
+    this._writer.write(76, layout.ucsOrthographicType);
 
     this._writer.writeHandle(330, layout.associatedBlock, map);
+    this._writer.writeHandle(331, layout.lastActiveViewport);
+    this._writer.writeHandle(345, layout.ucs);
+    this._writer.writeHandle(346, layout.baseUCS);
   }
 
   protected writeMLineStyle(style: MLineStyle): void {
@@ -400,6 +407,11 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
   protected writeObject<T extends CadObject>(co: T): void {
     if (!this._isObjectSupported(co)) {
+      return;
+    }
+
+    if (co instanceof UnknownNonGraphicalObject) {
+      this.writeRawObject(co);
       return;
     }
 
@@ -523,12 +535,17 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 			this._writer.write(91, i);
 			this._writer.write(93, node.flags);
 			this._writer.write(95, node.nextNodeIndex);
-			this._writer.writeHandle(360, node.expression);
+			// Readers require 360 on every node; an unresolved expression is written as handle 0.
+			this._writer.write(360, node.expression?.handle ?? 0);
 			this._writer.write(92, node.data1);
 			this._writer.write(92, node.data2);
 			this._writer.write(92, node.data3);
 			this._writer.write(92, node.data4);
-			if (node.expression) this.holder.objects.push(node.expression);
+			if (node.expression) {
+				// Expressions are owned by their graph but readers leave owner unset; mirror DwgObjectWriter.
+				node.expression.owner ??= graph;
+				this.holder.objects.push(node.expression);
+			}
 		}
 		for (let i = 0; i < graph.edges.length; i++) {
 			const edge = graph.edges[i];
@@ -658,6 +675,10 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
           const obj = e.value as IHandledCadObject;
           if (obj == null || typeof obj.handle !== 'number') continue;
           this._writer.write(e.code, obj.handle);
+          // Soft/hard owner entries own their object: nothing else writes it.
+          if (e.code >= 350 && e.code <= 369 && obj instanceof CadObject) {
+            this.holder.objects.push(obj);
+          }
           break;
         }
         default:
@@ -669,7 +690,10 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
   private _isObjectSupported(co: CadObject): boolean {
     if (co instanceof UnknownNonGraphicalObject) {
-      return false;
+      if (co.rawDxfCodes == null && co.rawDwgData != null) {
+        this.notify(`Unknown object ${co.objectName} was read from a DWG file and cannot be written to DXF: ${co.handle}`, NotificationType.NotImplemented);
+      }
+      return co.rawDxfCodes != null;
     }
 	if (!this.configuration.writeDynamicBlockData && (
 		co instanceof EvaluationGraph ||
@@ -683,6 +707,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       co instanceof DimensionAssociation ||
       co instanceof Material ||
       co instanceof MultiLeaderObjectContextData ||
+      co instanceof TableContent ||
       co instanceof VisualStyle ||
       co instanceof ProxyObject
     ) {
