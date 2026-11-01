@@ -14,8 +14,12 @@ import {
   DxfWriterConfiguration,
   EvaluationGraph,
   EvaluationGraphNode,
+  DimensionStyle,
+  Layer,
   Line,
+  LineWeightType,
   MeasurementUnits,
+  ViewModeType,
   XYZ,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
@@ -147,5 +151,58 @@ describe('acad-ts local patches', () => {
     const reread = dwgRoundTrip(doc).blockRecords!.tryGetValue('THUMB')!;
 
     expect([...(reread.preview ?? [])]).toEqual([...block.preview]);
+  });
+
+  const dxfRoundTrip = (doc: CadDocument): CadDocument =>
+    DxfReader.readFromStream(writeDxf(doc, new DxfWriterConfiguration()));
+
+  it('0008 DXF writer writes the whole VPORT record', () => {
+    // Upstream wrote 12 of ~40 VPORT codes, so view mode, twist, lens, zoom percent, UCS and
+    // grid settings reset on every save (viewMode came back as FrontClippingZ = 16).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const active = doc.vPorts!.tryGetValue('*Active')!;
+    active.viewMode = ViewModeType.Off;
+    active.twistAngle = 0.5;
+    active.lensLength = 35;
+    active.circleZoomPercent = 500;
+    active.minorGridLinesPerMajorGridLine = 4;
+    active.elevation = 12.5;
+    active.xAxis = new XYZ(0, 1, 0);
+    active.yAxis = new XYZ(-1, 0, 0);
+
+    const back = dxfRoundTrip(doc).vPorts!.tryGetValue('*Active')!;
+
+    expect(back.viewMode).toBe(ViewModeType.Off);
+    expect(back.twistAngle).toBeCloseTo(0.5, 12);
+    expect(back.lensLength).toBe(35);
+    expect(back.circleZoomPercent).toBe(500);
+    expect(back.minorGridLinesPerMajorGridLine).toBe(4);
+    expect(back.elevation).toBe(12.5);
+    expect([back.xAxis.x, back.xAxis.y, back.yAxis.x, back.yAxis.y]).toEqual([0, 1, -1, 0]);
+  });
+
+  it("0009 DXF writer keeps a layer's plot-style handle (group 390)", () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const layer = new Layer('PLOTTED');
+    layer.plotStyleName = 0x4d2;
+    doc.layers!.add(layer);
+
+    expect(dxfRoundTrip(doc).layers!.tryGetValue('PLOTTED')!.plotStyleName).toBe(0x4d2);
+  });
+
+  // 0010 (LAYOUT flags) and 0011 (empty dictionaries) need real paper-space layouts and a full
+  // named-object dictionary: packages/testkit/src/spike/acad-ts-patches.corpus.test.ts.
+
+  it('0012 DXF reader reads 16-bit group codes as signed (ByBlock lineweights)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const style = new DimensionStyle('LW');
+    style.dimensionLineWeight = LineWeightType.ByBlock;
+    style.extensionLineWeight = LineWeightType.ByLayer;
+    doc.dimensionStyles!.add(style);
+
+    const back = dxfRoundTrip(doc).dimensionStyles!.tryGetValue('LW')!;
+
+    expect(back.dimensionLineWeight).toBe(LineWeightType.ByBlock);
+    expect(back.extensionLineWeight).toBe(LineWeightType.ByLayer);
   });
 });

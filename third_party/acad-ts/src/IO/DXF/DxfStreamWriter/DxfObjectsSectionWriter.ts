@@ -95,8 +95,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 	  const handle = dict.entryHandles[i];
 	  const entryName = dict.entryNames[i];
 	  const item = dict.getEntry<NonGraphicalObject>(entryName);
-	  if (item instanceof CadDictionary && item.entryNames.length === 0) continue;
-	  if (item == null || entryName === CadDictionary.acadMaterial || !this._isObjectSupported(item)) {
+	  // Empty dictionaries and ACAD_MATERIAL are kept: dropping them made readers recreate them
+	  // under new handles, so every save renumbered root-dictionary entries.
+	  if (item == null || !this._isObjectSupported(item)) {
 		continue;
 	  }
       if (item instanceof XRecord && !this.configuration.writeXRecords) {
@@ -301,6 +302,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(100, DxfSubclassMarker.layout);
 
     this._writer.write(1, layout.name, map);
+    // AcDbLayout's own flags (PSLTSCALE, LIMCHECK): without them the reader takes AcDbPlotSettings' 70.
+    this._writer.write(70, layout.layoutFlags as number);
 
     this._writer.write(71, layout.tabOrder, map);
 
@@ -315,9 +318,12 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     this._writer.write(146, layout.elevation, map);
 
-    this._writer.write(76, 0, map);
+    this._writer.write(76, layout.ucsOrthographicType);
 
     this._writer.writeHandle(330, layout.associatedBlock, map);
+    this._writer.writeHandle(331, layout.lastActiveViewport);
+    this._writer.writeHandle(345, layout.ucs);
+    this._writer.writeHandle(346, layout.baseUCS);
   }
 
   protected writeMLineStyle(style: MLineStyle): void {

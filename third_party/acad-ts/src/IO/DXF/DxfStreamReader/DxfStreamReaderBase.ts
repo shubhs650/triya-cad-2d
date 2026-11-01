@@ -36,7 +36,9 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
   }
 
   public get valueAsShort(): number {
-    return Number(this.value) & 0xFFFF;
+    // Signed 16-bit, like ACadSharp's (short)Value: `& 0xFFFF` turned ByBlock/ByLayer
+    // lineweights (-2/-1) and other negative codes into 65534/65535.
+    return (Number(this.value) << 16) >> 16;
   }
 
   public get valueAsUShort(): number {
