@@ -116,6 +116,23 @@ export const spline: fc.Arbitrary<Spline> = fc
     ];
     const s: Spline = { kind: 'SPLINE', degree, knots, controlPoints: pts.slice(0, n) };
     return rational ? { ...s, weights: w.slice(0, n) } : s;
+  })
+  // Coincident consecutive control points, or a control polygon that folds back on itself,
+  // give a zero or near-zero derivative (a cusp in parameter). Real drawings can contain them,
+  // but tangent directions there are ill-conditioned, so the properties stay clear of them and
+  // dedicated tests cover the cusp behaviour.
+  .filter(({ controlPoints: q }) => {
+    for (let i = 1; i < q.length; i++) {
+      const ax = q[i]!.x - q[i - 1]!.x;
+      const ay = q[i]!.y - q[i - 1]!.y;
+      const la = Math.hypot(ax, ay);
+      if (la <= 0.01) return false;
+      if (i === 1) continue;
+      const bx = q[i - 1]!.x - q[i - 2]!.x;
+      const by = q[i - 1]!.y - q[i - 2]!.y;
+      if ((ax * bx + ay * by) / (la * Math.hypot(bx, by)) < -0.99) return false;
+    }
+    return true;
   });
 
 export const boundedCurve: fc.Arbitrary<BoundedCurve> = fc.oneof(

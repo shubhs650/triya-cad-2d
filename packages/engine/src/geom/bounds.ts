@@ -6,6 +6,7 @@ import type { Curve, Spline } from './curves';
 import { arcSweep, ellipseAxes, ellipseSweep, explodePolyline, pointAt } from './eval';
 import { flatten } from './flatten';
 import { splinePoint } from './nurbs';
+import { argmin } from './numeric';
 import type { Tolerance } from './tolerance';
 import { normalize } from './vec';
 import type { Vec2 } from './types';
@@ -62,34 +63,6 @@ const pad = (b: Box, d: number): Box => ({
   maxY: b.maxY + d,
 });
 
-const GOLDEN = (Math.sqrt(5) - 1) / 2;
-
-/** Minimum of a unimodal f on [lo, hi] by golden-section search. */
-function minimize(f: (u: number) => number, lo: number, hi: number): number {
-  let a = lo;
-  let b = hi;
-  let x1 = b - GOLDEN * (b - a);
-  let x2 = a + GOLDEN * (b - a);
-  let f1 = f(x1);
-  let f2 = f(x2);
-  for (let i = 0; i < 80 && b - a > Number.EPSILON * (Math.abs(a) + Math.abs(b)); i++) {
-    if (f1 <= f2) {
-      b = x2;
-      x2 = x1;
-      f2 = f1;
-      x1 = b - GOLDEN * (b - a);
-      f1 = f(x1);
-    } else {
-      a = x1;
-      x1 = x2;
-      f1 = f2;
-      x2 = a + GOLDEN * (b - a);
-      f2 = f(x2);
-    }
-  }
-  return Math.min(f1, f2, f(lo), f(hi));
-}
-
 /**
  * Spline bounds: flatten coarsely, then polish every local extremum of the samples with a
  * golden-section search on the true curve, so the box is exact to rounding rather than to the
@@ -109,11 +82,7 @@ function splineBounds(c: Spline, tol: Tolerance): Box {
       if ((i === 0 || v <= g(points[i - 1]!)) && (i === last || v <= g(points[i + 1]!))) {
         const lo = params[Math.max(0, i - 1)]!;
         const hi = params[Math.min(last, i + 1)]!;
-        best = Math.min(
-          best,
-          v,
-          minimize((u) => g(splinePoint(c, u)), lo, hi),
-        );
+        best = Math.min(best, v, argmin((u) => g(splinePoint(c, u)), lo, hi).fx);
       }
     }
     return best;
