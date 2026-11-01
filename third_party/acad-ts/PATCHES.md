@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31) and 0073 (M1-48) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1454,5 +1454,25 @@ From R2007, DXF files are UTF-8; `$DWGCODEPAGE` still holds the drawing's code p
 **Title:** Decode and write \U+XXXX escapes in DXF strings
 
 DXF files before R2007 store text in the drawing's code page and escape other characters as `\U+XXXX`. The reader keeps these escapes as literal text, so escaped symbol names fail DXF name validation on write and are dropped, and the writer replaces characters outside the code page with "?". This decodes non-ASCII `\U+XXXX` escapes in DXF string values (leaving ASCII escapes and `\\` alone) and escapes characters the target code page cannot encode.
+
+</details>
+
+### 0073 — DWG AEC objects read their handle and string streams as raw data
+
+- **File:** `third_party/acad-ts-patches/0073-dwg-aec-raw-data-end.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
+- **Symptom:**
+  - `AEC_CLEANUP_GROUP_DEF`, `AEC_WALL_STYLE` and `BINRECORD` kept everything to the end of the object as raw data, and `AEC_WALL` kept everything to the handle reader's position. Both include the handle stream (and the R2007+ string stream), which the writer then writes again after the raw bytes.
+  - Each save grew the raw data by 6–20 bytes: 4 differences in acadsharp `AecObjects.dwg`.
+- **Fix:** the raw data ends where the object's data stream ends: at the R2007+ string stream when there is one, at its flag bit when there is not, and at the handle stream before R2007. The last byte is padded with the following bits, so no data bit is dropped.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0073 DWG AEC objects keep their raw data, and only it, through a save".
+  - The four objects of `AecObjects.dwg` keep their raw bytes unchanged through two DWG saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Stop AEC raw data at the end of the DWG data stream
+
+The AEC readers (`AEC_CLEANUP_GROUP_DEF`, `AEC_WALL_STYLE`, `BINRECORD`, `AEC_WALL`) keep the bytes after their known fields as raw data, but read to the end of the object (or to the handle reader's position), so the raw data includes the string and handle streams. The writer writes the raw data and then the handles again, so the data grows on every save. This ends the raw data at the end of the data stream (the string stream start in R2007+, the handle stream before).
 
 </details>
