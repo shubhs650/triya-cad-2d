@@ -44,7 +44,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 
 ### Rendering
 - [ ] **M1-12** `Renderer` interface + `Canvas2DRenderer` with scene cache, culling, LOD, transient layer, DPR handling, `RendererHost` main-thread fallback. **Acceptance:** interface tests; fallback renders identically (pixel test).
-- [ ] **M1-13** Linetype engine (`.lin` parser incl. complex text/shape types; re-authored bundled set; LTSCALE/CELTSCALE/PSLTSCALE/MSLTSCALE), lineweight display, ACI/true-colour/colour-book resolution with ACI 7/0 rules, ByLayer/ByBlock, draw order. **Acceptance:** fidelity tests on linetype corpus files; colour-7 on light/dark canvas.
+- [~] (thread: Draw linetypes, colours and lineweights) **M1-13** Linetype engine (`.lin` parser incl. complex text/shape types; re-authored bundled set; LTSCALE/CELTSCALE/PSLTSCALE/MSLTSCALE), lineweight display, ACI/true-colour/colour-book resolution with ACI 7/0 rules, ByLayer/ByBlock, draw order. **Acceptance:** fidelity tests on linetype corpus files; colour-7 on light/dark canvas.
 - [ ] **M1-14** Block rendering: nested inserts, scale/rotation/mirror, ByBlock resolution, attributes, `*U` dynamic blocks as static with badge metadata, MINSERT. **Acceptance:** block corpus files within tolerance.
 - [ ] **M1-15** Dimension rendering from stored `*D` blocks (no engine yet) incl. annotative representations. **Acceptance:** dim corpus files within tolerance.
 - [ ] **M1-16** Hatch rendering: `.pat` engine, bundled re-authored patterns, solid, gradient, user `.pat` drop, LOD thinning, hatch draw order. **Acceptance:** hatch corpus files within tolerance; ANSI31 at 1:1 pixel-matches reference.
