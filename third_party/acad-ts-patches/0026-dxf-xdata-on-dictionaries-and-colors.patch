@@ -1,0 +1,33 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 2544d71..be506df 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -436,17 +436,14 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+ 
+     if (co instanceof AcdbPlaceHolder) {
+       this._writeAcdbPlaceHolder(co);
+-      return;
+     } else if (co instanceof BlockReferenceObjectContextData) {
+       this._writeBlockReferenceObjectContextData(co);
+     } else if (co instanceof MTextAttributeObjectContextData) {
+       this._writeMTextAttributeObjectContextData(co);
+     } else if (co instanceof BookColor) {
+       this.writeBookColor(co);
+-      return;
+     } else if (co instanceof CadDictionary) {
+       this.writeDictionary(co);
+-      return;
+     } else if (co instanceof DictionaryVariable) {
+       this.writeDictionaryVariable(co);
+     } else if (co instanceof DimensionAssociation) {
+@@ -457,10 +454,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       this.writeGroup(co);
+     } else if (co instanceof ImageDefinition) {
+       this.writeImageDefinition(co);
+-      return;
+     } else if (co instanceof ImageDefinitionReactor) {
+       this._writeImageDefinitionReactor(co);
+-      return;
+     } else if (co instanceof Layout) {
+       this.writeLayout(co);
+     } else if (co instanceof Field) {

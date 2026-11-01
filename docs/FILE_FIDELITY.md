@@ -67,7 +67,7 @@ Read ticks for entities (M1-04) mean every entity of the type in every readable 
 | VIEW | ✓ | | | |
 | UCS | ✓ | | | |
 
-Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, `BLOCK_RECORD` 70 insert units, nameless shape `STYLE` records, R12 `DIMBLK` names, `TABLESTYLE` border visibility), which M1-32 closes. MLEADERSTYLE and TABLESTYLE objects are checked the same way. The header is mapped too: every variable acad-ts knows is carried by DXF name, compared the same way; 32 variables acad-ts does not know are M1-32.
+Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, nameless shape `STYLE` records, R12 `DIMBLK` names, `TABLESTYLE` border visibility), which M1-32 closes. MLEADERSTYLE and TABLESTYLE objects are checked the same way. The header is mapped too: every variable acad-ts knows is carried by DXF name, compared the same way; 32 variables acad-ts does not know are M1-32.
 
 ## Objects (non-graphical)
 
@@ -137,6 +137,11 @@ The columns above track Triya. This section tracks the library underneath, from 
 | Dynamic-block evaluation graph (DXF write) | Writer no longer crashes (0002). The graph's parameters, grips, actions and grip-location components are **never loaded** (DWG and DXF), so a save drops them: 426 handles in 40 files (M1-33) |
 | VISUALSTYLE / MATERIAL | DXF: group codes kept on read and written back as read (0021, M1-28; the DXF reader assigns no VISUALSTYLE field and there is no field writer for either), with their extension dictionaries. DWG round trip keeps them. DWG → DXF still skips them with a notification |
 | Xdata 1070 integers (ASCII DXF write) | Negative values written signed (0022); were masked to 0–65535 |
+| Xdata on DICTIONARY, DBCOLOR, IMAGEDEF, IMAGEDEF_REACTOR, ACDBPLACEHOLDER (DXF write) | Written (0026); were dropped. Xdata changes on some `TEXT` and `VPORT` records remain (M1-28 part 3) |
+| DBCOLOR colour-book names (DXF write) | `BOOK$COLOR` written once (0027); the book name was appended again, so the colour name read back was the book name |
+| RASTERVARIABLES units (DXF write) | Written from `units` (0023); were written as the display quality |
+| BLOCK_RECORD insert units and preview (DXF) | 70 read as insert units and every 310 preview chunk kept on read; preview written back (0025). Units had read as 0 and the preview was lost |
+| Header dates (`$TDCREATE`, `$TDUPDATE`, …) | Read to the exact millisecond (0024); each save moved them back by 1 ms |
 | ACDBASSOC* / ACDBPERSSUBENTMANAGER / SUN / view styles / AEC_* and every other unmapped type | Kept raw and written back under its handle (patches 0014, 0016; `readCadDocument` sets the keep flags): DXF → DXF as the group codes read, DWG → DWG of the same version as the object record read. All 1,329 unknown objects in the public corpus survive a save. **Not** converted across formats or versions: a DWG-read object saved to DXF, or to another DWG version, is skipped with a writer notification |
 | SUN (VPORT / VIEWPORT 361), 3DSOLID history (350) | Linked and written (0017). `ACSH_*` solid history objects are still not reached in DWG (every version) or DXF: 40 handles (M1-33) |
 | CLASSES with a shared DXF name (AEC) | Both kept under their read class numbers; class numbers survive a save (0015) |

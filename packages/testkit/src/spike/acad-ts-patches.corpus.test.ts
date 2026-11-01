@@ -2,7 +2,7 @@
 // in packages/io/test/acad-ts-patches.test.ts; @triya/io has no Node file APIs to read corpus files.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { CadDictionary } from '@node-projects/acad-ts';
+import type { BlockRecord, CadDictionary } from '@node-projects/acad-ts';
 import {
   DwgReader,
   DwgReaderConfiguration,
@@ -13,6 +13,7 @@ import {
   LayoutFlags,
   LineWeightType,
   Material,
+  RasterVariables,
   Solid3D,
   UnknownEntity,
   UnknownNonGraphicalObject,
@@ -292,5 +293,47 @@ describe('acad-ts local patches (corpus-backed)', () => {
       };
       expect(entries(reread), name).toEqual(entries(doc));
     }
+  });
+
+  it('0023 DXF writer writes RASTERVARIABLES units (72), not the display quality twice', () => {
+    const doc = DxfReader.readFromStream(corpusBytes('third-party/ezdxf/examples_dxf/images.dxf'));
+    const vars = (d: CadDocument): RasterVariables =>
+      [...d.getCadObjects()].find((o): o is RasterVariables => o instanceof RasterVariables)!;
+    expect(vars(doc).units).toBe(5); // 72 = 5, inches
+    expect(vars(doc).displayQuality).toBe(1);
+
+    expect(vars(dxfRoundTrip(doc)).units).toBe(5);
+  });
+
+  it('0025 DXF BLOCK_RECORD keeps its insert units (70) and its whole preview (310)', () => {
+    // 70 went to the common table-entry flags, and each 310 chunk replaced the previous one,
+    // so a save wrote units 0 and no preview.
+    const path = 'third-party/acadsharp/dynamic-blocks/BLOCKALIGNMENTPARAMETER.dxf';
+    const bytes = corpusBytes(path);
+    // The record's own groups, from the file: handle 250.
+    const lines = new TextDecoder('latin1').decode(bytes).split(/\r?\n/);
+    const start = lines.findIndex((l, i) => l.trim() === '5' && lines[i + 1]!.trim() === '250');
+    const groups: [string, string][] = [];
+    for (let i = start; lines[i]!.trim() !== '0'; i += 2)
+      groups.push([lines[i]!.trim(), lines[i + 1]!.trim()]);
+    const preview = groups
+      .filter(([c]) => c === '310')
+      .map(([, v]) => v)
+      .join('');
+    const units = Number(groups.find(([c]) => c === '70')![1]);
+    expect(preview.length / 2).toBeGreaterThan(1000);
+    expect(units).toBe(1);
+
+    const doc = readDxfRaw(bytes);
+    const record = (d: CadDocument): BlockRecord => d.getCadObject(0x250) as BlockRecord;
+    const hex = (b: Uint8Array | null): string =>
+      [...(b ?? [])].map((x) => x.toString(16).padStart(2, '0').toUpperCase()).join('');
+    expect(record(doc).units).toBe(units);
+    expect(hex(record(doc).preview)).toBe(preview);
+
+    const back = record(dxfRawRoundTrip(doc, false));
+    expect(back.units).toBe(units);
+    expect(hex(back.preview)).toBe(preview);
+    expect(back.flags).toBe(record(doc).flags);
   });
 });

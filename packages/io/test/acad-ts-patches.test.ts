@@ -4,6 +4,7 @@ import {
   ACadVersion,
   BlockGripExpression,
   BlockRecord,
+  BookColor,
   CadDictionary,
   CadDocument,
   Color,
@@ -18,6 +19,7 @@ import {
   DxfClass,
   DxfClassCollection,
   ExtendedDataInteger16,
+  ExtendedDataString,
   Layer,
   Line,
   LineWeightType,
@@ -279,5 +281,56 @@ describe('acad-ts local patches', () => {
       .getCadObject(line.handle)!
       .extendedData.getByName('TRIYA_TEST');
     expect(back.records.map((r) => r.rawValue)).toEqual(values);
+  });
+
+  it('0024 Julian dates read back to the millisecond they were written', () => {
+    // The fraction of a day was floored field by field, so 3.000 s came back as 2.999 s.
+    for (const ms of [0, 1, 500, 999]) {
+      const doc = new CadDocument(ACadVersion.AC1032);
+      const created = new Date(2024, 4, 17, 13, 45, 3, ms);
+      doc.header!.createDateTime = created;
+
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+
+      expect(back.header!.createDateTime.getTime(), `ms ${ms}`).toBe(created.getTime());
+    }
+  });
+
+  it('0026 DXF writer writes xdata on dictionaries', () => {
+    // writeObject returned right after DICTIONARY (and DBCOLOR, IMAGEDEF, IMAGEDEF_REACTOR,
+    // ACDBPLACEHOLDER) bodies, before the xdata every other object gets.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const dict = new CadDictionary('TRIYA_TEST');
+    doc.rootDictionary!.addByKey('TRIYA_TEST', dict);
+    dict.extendedData.addByName('TRIYA_TEST', undefined);
+    dict.extendedData.getByName('TRIYA_TEST').records.push(new ExtendedDataString('kept'));
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const xdata = back.getCadObject(dict.handle)!.extendedData;
+      expect(xdata.containsKeyName('TRIYA_TEST'), `binary ${binary}`).toBe(true);
+      expect(xdata.getByName('TRIYA_TEST').records.map((r) => r.rawValue)).toEqual(['kept']);
+    }
+  });
+
+  it('0027 DXF writer writes DBCOLOR names as BOOK$COLOR once', () => {
+    // writeBookColor wrote `${name}$${bookName}`, and name already is BOOK$COLOR, so a read
+    // back took the trailing book name as the colour name.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const colors = new CadDictionary('ACAD_COLOR');
+    doc.rootDictionary!.addByKey('ACAD_COLOR', colors);
+    const color = new BookColor();
+    color.name = 'PANTONE+ Solid Coated$PANTONE 123 C';
+    color.color = Color.fromTrueColor(0xffc72c);
+    colors.addByKey(color.name, color);
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const read = back.getCadObject(color.handle) as BookColor;
+      expect(read.bookName, `binary ${binary}`).toBe('PANTONE+ Solid Coated');
+      expect(read.colorName, `binary ${binary}`).toBe('PANTONE 123 C');
+    }
   });
 });

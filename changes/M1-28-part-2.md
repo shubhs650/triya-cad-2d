@@ -1,0 +1,1 @@
+- M1-28 part 2 (#20): acad-ts DXF writer writes RASTERVARIABLES units (patch 0023), xdata on dictionaries, colour-book colours and image definitions (0026) and DBCOLOR names once (0027); BLOCK_RECORD insert units and previews survive a DXF round trip (0025); header dates read to the exact millisecond (0024). Round trip 19,218 → 18,897 differences.
