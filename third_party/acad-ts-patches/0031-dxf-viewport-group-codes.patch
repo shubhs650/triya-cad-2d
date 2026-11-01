@@ -1,0 +1,98 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index cffebaf..74efa2e 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -1881,6 +1881,13 @@ export abstract class DxfSectionReaderBase {
+       case 331:
+         tmp.frozenLayerHandles.add(this._reader.valueAsHandle);
+         return true;
++      // 63/421 are the ambient light colour; the generic map assigned the raw numbers.
++      case 63:
++        (template.cadObject as Viewport).ambientLightColor = new Color(this._reader.valueAsShort);
++        return true;
++      case 421:
++        (template.cadObject as Viewport).ambientLightColor = Color.fromTrueColor(this._reader.valueAsInt);
++        return true;
+       case 348:
+         tmp.visualStyleHandle = this._reader.valueAsHandle;
+         return true;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 0c3bb4d..aba3395 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1359,12 +1359,16 @@ export abstract class DxfSectionWriterBase {
+   }
+ 
+   private _writeViewport(viewport: Viewport, map: DxfMap): void {
++    // AcDbViewport in AutoCAD's group-code order (DXF reference, VIEWPORT). Upstream wrote the id
++    // as 68, snap angle and twist as 50/51 swapped onto twist and zoom, the UCS icon as 72 and the
++    // UCS vectors as single groups, and none of the R2000+ settings.
+     const subclass = map.subClasses.get(DxfSubclassMarker.viewport)!;
+     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.viewport);
+     this._writer.writeVector(10, viewport.center, subclass);
+     this._writer.write(40, viewport.width, subclass);
+     this._writer.write(41, viewport.height, subclass);
+-    this._writer.write(68, viewport.id, subclass);
++    this._writer.write(68, viewport.activeStatus, subclass);
++    this._writer.write(69, viewport.id, subclass);
+     this._writer.writeVector(12, viewport.viewCenter, subclass);
+     this._writer.writeVector(13, viewport.snapBase, subclass);
+     this._writer.writeVector(14, viewport.snapSpacing, subclass);
+@@ -1375,19 +1379,49 @@ export abstract class DxfSectionWriterBase {
+     this._writer.write(43, viewport.frontClipPlane, subclass);
+     this._writer.write(44, viewport.backClipPlane, subclass);
+     this._writer.write(45, viewport.viewHeight, subclass);
+-    this._writer.write(50, viewport.twistAngle, subclass);
+-    this._writer.write(51, viewport.circleZoomPercent, subclass);
+-    this._writer.write(72, viewport.displayUcsIcon, subclass);
+-    this._writer.write(90, viewport.status, subclass);
+-    this._writer.write(110, viewport.ucsOrigin, subclass);
+-    this._writer.write(111, viewport.ucsXAxis, subclass);
+-    this._writer.write(112, viewport.ucsYAxis, subclass);
+-    this._writer.write(281, viewport.renderMode, subclass);
++    this._writer.write(50, viewport.snapAngle, subclass);
++    this._writer.write(51, viewport.twistAngle, subclass);
++    this._writer.write(72, viewport.circleZoomPercent, subclass);
+ 
+     for (const layer of viewport.frozenLayers) {
+       this._writer.writeHandle(331, layer);
+     }
+ 
++    this._writer.write(90, viewport.status, subclass);
++    this._writer.writeHandle(340, viewport.boundary, subclass);
++
++    if (this.version >= ACadVersion.AC1015) {
++      this._writer.write(1, viewport.styleSheetName, subclass);
++      this._writer.write(281, viewport.renderMode, subclass);
++      this._writer.write(71, viewport.ucsPerViewport ? 1 : 0, subclass);
++      this._writer.write(74, viewport.displayUcsIcon ? 1 : 0, subclass);
++      this._writer.writeVector(110, viewport.ucsOrigin, subclass);
++      this._writer.writeVector(111, viewport.ucsXAxis, subclass);
++      this._writer.writeVector(112, viewport.ucsYAxis, subclass);
++      this._writer.write(79, viewport.ucsOrthographicType, subclass);
++      this._writer.write(146, viewport.elevation, subclass);
++    }
++
++    if (this.version >= ACadVersion.AC1018) {
++      this._writer.write(170, viewport.shadePlotMode, subclass);
++    }
++
++    if (this.version >= ACadVersion.AC1021) {
++      this._writer.write(61, viewport.majorGridLineFrequency, subclass);
++      this._writer.writeHandle(348, viewport.visualStyle, subclass);
++      this._writer.write(292, viewport.useDefaultLighting ? 1 : 0, subclass);
++      this._writer.write(282, viewport.defaultLightingType as number, subclass);
++      this._writer.write(141, viewport.brightness, subclass);
++      this._writer.write(142, viewport.contrast, subclass);
++      const ambient = viewport.ambientLightColor;
++      if (ambient != null) {
++        this._writer.write(63, ambient.isTrueColor ? ambient.getApproxIndex() : ambient.index);
++        if (ambient.isTrueColor) {
++          this._writer.write(421, ambient.trueColor);
++        }
++      }
++    }
++
+     if (viewport.sun != null) {
+       this._writer.writeHandle(361, viewport.sun);
+       this.holder.objects.push(viewport.sun);
