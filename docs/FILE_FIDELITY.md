@@ -165,3 +165,4 @@ The columns above track Triya. This section tracks the library underneath, from 
 | LAYOUT plot flags (DXF read), `$CELWEIGHT` (DWG header) | Fixed by patches 0019 and 0020 |
 | LAYOUT paper image origin and standard scale (DXF) | One origin for the DXF reader and both writers (0044); the standard scale written as 147 (0045). A save wrote origin 0,0 and the print scale as the standard scale |
 | LTYPE alignment (DXF) | 72 read and written as the character code (0046); read as the digits "65", and the R12 default written as 0 |
+| ARC_DIMENSION (DXF write) | Written with its dimension and arc data (0047); only its common entity data was written, so it came back with no block, points or angles |
