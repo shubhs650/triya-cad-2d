@@ -719,6 +719,9 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
       case 348:
         template.styleHandle = this._reader.valueAsHandle;
         return true;
+      case 361:
+        template.sunHandle = this._reader.valueAsHandle;
+        return true;
       default:
         return this.tryAssignCurrentValue(template.cadObject, map);
     }

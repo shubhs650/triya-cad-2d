@@ -1,0 +1,318 @@
+diff --git a/src/Entities/Solid3D.ts b/src/Entities/Solid3D.ts
+index 4c41c65..ed1b8dd 100644
+--- a/src/Entities/Solid3D.ts
++++ b/src/Entities/Solid3D.ts
+@@ -2,6 +2,8 @@ import { ModelerGeometry } from './ModelerGeometry.js';
+ import { DxfFileToken } from '../DxfFileToken.js';
+ import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
+ import { ObjectType } from '../Types/ObjectType.js';
++import type { CadDocument } from '../CadDocument.js';
++import type { CadObject } from '../CadObject.js';
+ 
+ export class Solid3D extends ModelerGeometry {
+ 	override get objectType(): ObjectType {
+@@ -15,4 +17,14 @@ export class Solid3D extends ModelerGeometry {
+ 	override get subclassMarker(): string {
+ 		return DxfSubclassMarker.solid3D;
+ 	}
++
++	/** The solid's history object (DXF 350 in AcDb3dSolid, R2007+). acad-ts does not map it; it is kept raw. */
++	public history: CadObject | null = null;
++
++	override assignDocument(doc: CadDocument): void {
++		super.assignDocument(doc);
++		if (this.history != null && this.history.document == null) {
++			doc.registerCollection(this.history);
++		}
++	}
+ }
+diff --git a/src/Entities/Viewport.ts b/src/Entities/Viewport.ts
+index 75b5cf4..3120b7d 100644
+--- a/src/Entities/Viewport.ts
++++ b/src/Entities/Viewport.ts
+@@ -19,6 +19,9 @@ export class Viewport extends Entity {
+ 	/** -1 = on but inactive/off-screen, 0 = off, positive = active stacking order. */
+ 	activeStatus: number = 1;
+ 
++	/** The viewport's SUN object (DXF 361, hard owner). acad-ts does not map SUN; it is kept raw. */
++	sun: CadObject | null = null;
++
+ 	ambientLightColor: Color | null = null;
+ 
+ 	backClipPlane: number = 0;
+@@ -185,6 +188,7 @@ export class Viewport extends Entity {
+ 		clone.visualStyle = this.visualStyle?.clone() as VisualStyle | null ?? null;
+ 		clone.scale = this.scale?.clone() as Scale | null ?? null;
+ 		clone.frozenLayers = this.frozenLayers.map(l => l.clone() as Layer);
++		clone.sun = null;
+ 		return clone;
+ 	}
+ 
+@@ -241,6 +245,9 @@ export class Viewport extends Entity {
+ 	/** @internal */
+ 	assignDocument(doc: CadDocument): void {
+ 		super.assignDocument(doc);
++		if (this.sun != null && this.sun.document == null) {
++			doc.registerCollection(this.sun);
++		}
+ 	}
+ 
+ 	/** @internal */
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 9c8d25d..480ee3a 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -2080,10 +2080,10 @@ export class DwgObjectReader extends DwgSectionIO {
+       template.baseUcsHandle = this._handleReference();
+     }
+     if (this.r2007Plus) {
+-      this._handleReference();
+-      this._handleReference();
+-      this._handleReference();
+-      this._handleReference();
++      this._handleReference(); // background
++      this._handleReference(); // visual style
++      this._handleReference(); // shade plot
++      template.sunHandle = this._handleReference();
+     }
+     return template;
+   }
+@@ -2472,7 +2472,10 @@ export class DwgObjectReader extends DwgSectionIO {
+     const solid = new Solid3D();
+     const template = new CadSolid3DTemplate(solid);
+     this._readModelerGeometry(template);
+-    if (this.r2007Plus) template.historyHandle = this._mergedReaders.handleReference();
++    if (this.r2007Plus) {
++      template.historyHandle = this._mergedReaders.handleReference();
++      this._enqueueHandle(template.historyHandle);
++    }
+     return template;
+   }
+ 
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index fa402de..6de8851 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -1111,7 +1111,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		if (this.r2007Plus) {
+ 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, 0);
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, 0);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, vport.sun);
++			this._enqueueObject(vport.sun);
+ 		}
+ 
+ 		if (this.r2000Plus) {
+@@ -2708,7 +2709,10 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 
+ 	private _writeSolid3D(solid: Solid3D): void {
+ 		this._writeModelerGeometry(solid);
+-		if (this.r2007Plus) this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, null);
++		if (this.r2007Plus) {
++			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, solid.history);
++			this._enqueueObject(solid.history);
++		}
+ 	}
+ 
+ 	private _writeTableEntity(table: TableEntity): void {
+@@ -3357,7 +3361,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null);
+ 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, null);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, viewport.sun);
++			this._enqueueObject(viewport.sun);
+ 		}
+ 	}
+ 
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 6e0119e..cffebaf 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -1869,6 +1869,9 @@ export abstract class DxfSectionReaderBase {
+     const tmp = template as CadViewportTemplate;
+ 
+     switch (this._reader.code as number) {
++      case 361:
++        tmp.sunHandle = this._reader.valueAsHandle;
++        return true;
+       case 67:
+       case 68:
+         return true;
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index c03ffd4..130cc32 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -719,6 +719,9 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+       case 348:
+         template.styleHandle = this._reader.valueAsHandle;
+         return true;
++      case 361:
++        template.sunHandle = this._reader.valueAsHandle;
++        return true;
+       default:
+         return this.tryAssignCurrentValue(template.cadObject, map);
+     }
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index e7199af..baaf45c 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1285,7 +1285,10 @@ export abstract class DxfSectionWriterBase {
+ 
+     if (geometry instanceof Solid3D && this.version >= ACadVersion.AC1021) {
+       this._writer.write(DxfCode.Subclass, DxfSubclassMarker.solid3D);
+-      this._writer.write(350, 0);
++      this._writer.write(350, geometry.history?.handle ?? 0);
++      if (geometry.history != null) {
++        this.holder.objects.push(geometry.history);
++      }
+     }
+   }
+ 
+@@ -1383,6 +1386,11 @@ export abstract class DxfSectionWriterBase {
+     for (const layer of viewport.frozenLayers) {
+       this._writer.writeHandle(331, layer);
+     }
++
++    if (viewport.sun != null) {
++      this._writer.writeHandle(361, viewport.sun);
++      this.holder.objects.push(viewport.sun);
++    }
+   }
+ 
+   private _writeXLine(xline: XLine, map: DxfMap): void {
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index c9367f6..48c422b 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -402,5 +402,9 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+     if (vport.ambientColor.isTrueColor) {
+       this._writer.write(421, vport.ambientColor.trueColor);
+     }
++    if (vport.sun != null) {
++      this._writer.writeHandle(361, vport.sun);
++      this.holder.objects.push(vport.sun);
++    }
+   }
+ }
+diff --git a/src/IO/Templates/CadSolid3DTemplate.ts b/src/IO/Templates/CadSolid3DTemplate.ts
+index 3144bc4..0e15b5b 100644
+--- a/src/IO/Templates/CadSolid3DTemplate.ts
++++ b/src/IO/Templates/CadSolid3DTemplate.ts
+@@ -1,4 +1,6 @@
+ import { Solid3D } from '../../Entities/Solid3D.js';
++import { CadObject } from '../../CadObject.js';
++import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
+ import { CadEntityTemplateT } from './CadEntityTemplate.js';
+ 
+ export class CadSolid3DTemplate extends CadEntityTemplateT<Solid3D> {
+@@ -7,4 +9,17 @@ export class CadSolid3DTemplate extends CadEntityTemplateT<Solid3D> {
+ 	constructor(solid?: Solid3D) {
+ 		super(solid ?? new Solid3D());
+ 	}
++
++	protected override _build(builder: CadDocumentBuilder): void {
++		super._build(builder);
++
++		const history = builder.tryGetCadObject<CadObject>(this.historyHandle);
++		if (history) {
++			this.cadObject.history = history;
++			history.owner ??= this.cadObject;
++			if (this.cadObject.document != null && history.document == null) {
++				this.cadObject.document.registerCollection(history);
++			}
++		}
++	}
+ }
+diff --git a/src/IO/Templates/CadVPortTemplate.ts b/src/IO/Templates/CadVPortTemplate.ts
+index e890cb9..fb09834 100644
+--- a/src/IO/Templates/CadVPortTemplate.ts
++++ b/src/IO/Templates/CadVPortTemplate.ts
+@@ -40,5 +40,14 @@ export class CadVPortTemplate extends CadTableEntryTemplate<VPort> {
+ 		}
+ 
+ 		const style = builder.tryGetCadObject<CadObject>(this.styleHandle);
++
++		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);
++		if (sun) {
++			this.cadObject.sun = sun;
++			sun.owner ??= this.cadObject;
++			if (this.cadObject.document != null && sun.document == null) {
++				this.cadObject.document.registerCollection(sun);
++			}
++		}
+ 	}
+ }
+diff --git a/src/IO/Templates/CadViewportTemplate.ts b/src/IO/Templates/CadViewportTemplate.ts
+index a5950e7..fec3927 100644
+--- a/src/IO/Templates/CadViewportTemplate.ts
++++ b/src/IO/Templates/CadViewportTemplate.ts
+@@ -1,3 +1,4 @@
++import { CadObject } from '../../CadObject.js';
+ import { Entity } from '../../Entities/Entity.js';
+ import { Viewport } from '../../Entities/Viewport.js';
+ import { Layer } from '../../Tables/Layer.js';
+@@ -25,6 +26,8 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
+ 
+ 	frozenLayerHandles: Set<number> = new Set();
+ 
++	sunHandle: number | null = null;
++
+ 	constructor(entity?: Viewport) {
+ 		super(entity ?? new Viewport());
+ 	}
+@@ -36,6 +39,15 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
+ 			this.cadObject.id = this.viewportId;
+ 		}
+ 
++		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);
++		if (sun) {
++			this.cadObject.sun = sun;
++			sun.owner ??= this.cadObject;
++			if (this.cadObject.document != null && sun.document == null) {
++				this.cadObject.document.registerCollection(sun);
++			}
++		}
++
+ 		const entity = builder.tryGetCadObject<Entity>(this.boundaryHandle);
+ 		if (entity) {
+ 			this.cadObject.boundary = entity;
+diff --git a/src/Tables/VPort.ts b/src/Tables/VPort.ts
+index e96d4fd..6e1755c 100644
+--- a/src/Tables/VPort.ts
++++ b/src/Tables/VPort.ts
+@@ -5,6 +5,7 @@ import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
+ import { ObjectType } from '../Types/ObjectType.js';
+ import { OrthographicType } from '../Types/OrthographicType.js';
+ import type { VisualStyle } from '../Objects/VisualStyle.js';
++import type { CadDocument } from '../CadDocument.js';
+ import { RenderMode } from '../Types/RenderMode.js';
+ import { DefaultLightingType } from './DefaultLightingType.js';
+ import { GridFlags } from './GridFlags.js';
+@@ -106,6 +107,9 @@ export class VPort extends TableEntry {
+ 
+ 	public visualStyle: VisualStyle | null = null;
+ 
++	/** The viewport's SUN object (DXF 361, hard owner). acad-ts does not map SUN; it is kept raw. */
++	public sun: CadObject | null = null;
++
+ 	public useDefaultLighting: boolean = true;
+ 
+ 	public defaultLighting: DefaultLightingType = DefaultLightingType.TwoDistantLights;
+@@ -126,8 +130,16 @@ export class VPort extends TableEntry {
+ 		const clone = super.clone() as VPort;
+ 		clone.baseUcs = this.baseUcs ? this.baseUcs.clone() as UCS : null;
+ 		clone.namedUcs = this.namedUcs ? this.namedUcs.clone() as UCS : null;
++		clone.sun = null;
+ 		return clone;
+ 	}
++
++	override assignDocument(doc: CadDocument): void {
++		super.assignDocument(doc);
++		if (this.sun != null && this.sun.document == null) {
++			doc.registerCollection(this.sun);
++		}
++	}
+ }
+ 
+ export { DefaultLightingType } from './DefaultLightingType.js';

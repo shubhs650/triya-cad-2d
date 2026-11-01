@@ -5,6 +5,7 @@ import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
 import { ObjectType } from '../Types/ObjectType.js';
 import { OrthographicType } from '../Types/OrthographicType.js';
 import type { VisualStyle } from '../Objects/VisualStyle.js';
+import type { CadDocument } from '../CadDocument.js';
 import { RenderMode } from '../Types/RenderMode.js';
 import { DefaultLightingType } from './DefaultLightingType.js';
 import { GridFlags } from './GridFlags.js';
@@ -106,6 +107,9 @@ export class VPort extends TableEntry {
 
 	public visualStyle: VisualStyle | null = null;
 
+	/** The viewport's SUN object (DXF 361, hard owner). acad-ts does not map SUN; it is kept raw. */
+	public sun: CadObject | null = null;
+
 	public useDefaultLighting: boolean = true;
 
 	public defaultLighting: DefaultLightingType = DefaultLightingType.TwoDistantLights;
@@ -126,7 +130,15 @@ export class VPort extends TableEntry {
 		const clone = super.clone() as VPort;
 		clone.baseUcs = this.baseUcs ? this.baseUcs.clone() as UCS : null;
 		clone.namedUcs = this.namedUcs ? this.namedUcs.clone() as UCS : null;
+		clone.sun = null;
 		return clone;
+	}
+
+	override assignDocument(doc: CadDocument): void {
+		super.assignDocument(doc);
+		if (this.sun != null && this.sun.document == null) {
+			doc.registerCollection(this.sun);
+		}
 	}
 }
 

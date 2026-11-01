@@ -58,4 +58,16 @@ describe('public corpus round-trip', () => {
     // A baseline entry for a file that left the corpus would hide nothing but is stale.
     expect(Object.keys(baseline.files).sort()).toEqual(manifest.files.map((f) => f.path).sort());
   });
+
+  // M1-30: objects acad-ts cannot map are kept raw and written back unchanged. No ratchet: zero
+  // losses on every file that opens.
+  it('keeps every unknown object, under its handle and with its raw payload', () => {
+    expect(runs.length, 'the first test must run first').toBe(manifest.files.length);
+    const lost = runs
+      .filter((r) => (r.result.rawObjects?.lost.length ?? 0) > 0)
+      .map((r) => `${r.file.path}: ${r.result.rawObjects!.lost.join(', ')}`);
+    expect(lost).toEqual([]);
+    const kept = runs.reduce((n, r) => n + (r.result.rawObjects?.kept ?? 0), 0);
+    expect(kept, 'the corpus has unknown objects (view styles, AEC, SUN, …)').toBeGreaterThan(1000);
+  });
 });

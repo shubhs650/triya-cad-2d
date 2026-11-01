@@ -4,6 +4,8 @@ import { CadObject } from '../CadObject.js';
 import { UnknownEntity } from '../Entities/UnknownEntity.js';
 import { CadDictionary } from '../Objects/CadDictionary.js';
 import { UnknownNonGraphicalObject } from '../Objects/UnknownNonGraphicalObject.js';
+import { addRawOwnedObject } from '../Objects/RawObjectData.js';
+import { XRecord } from '../Objects/XRecrod.js';
 import { AppId } from '../Tables/AppId.js';
 import { BlockRecord } from '../Tables/BlockRecord.js';
 import { DimensionStyle } from '../Tables/DimensionStyle.js';
@@ -96,6 +98,52 @@ export abstract class CadDocumentBuilder {
 
 		for (const template of this.cadObjectsTemplates.values()) {
 			(template as CadTemplate).build(this);
+		}
+
+		this._attachRawOwnedObjects();
+	}
+
+	/**
+	 * An object owned by an unknown object is referenced only from the owner's raw payload, so no
+	 * collection registers it and the writers never reach it. Attach it to its raw owner instead.
+	 */
+	private _attachRawOwnedObjects(): void {
+		const ownedByXRecords: CadObject[] = [];
+		for (const template of this.templatesMap.values()) {
+			const child = template.cadObject;
+			const ownerHandle = (template as CadTemplate).ownerHandle;
+			if (child.document != null || ownerHandle == null || ownerHandle === 0) {
+				continue;
+			}
+
+			const owner = this.tryGetCadObject<CadObject>(ownerHandle);
+			if ((owner instanceof UnknownNonGraphicalObject || owner instanceof UnknownEntity) && owner.xDictionary !== child) {
+				addRawOwnedObject(owner, child);
+			} else if (owner instanceof XRecord && owner.entries.some(e => e.value === child && e.code >= 350 && e.code <= 369)) {
+				// Owned through an XRECORD's soft/hard owner entry (tables' DATATABLE, for example).
+				child.owner ??= owner;
+				ownedByXRecords.push(child);
+			}
+		}
+
+		// An XRECORD joins the document only with its own owner, which may be a raw object
+		// registered above; register what it owns once it is in.
+		let pending = ownedByXRecords;
+		let progress = true;
+		while (pending.length > 0 && progress) {
+			progress = false;
+			pending = pending.filter(child => {
+				const doc = (child.owner as CadObject).document;
+				if (child.document != null) {
+					return false;
+				}
+				if (doc == null) {
+					return true;
+				}
+				doc.registerCollection(child);
+				progress = true;
+				return false;
+			});
 		}
 	}
 

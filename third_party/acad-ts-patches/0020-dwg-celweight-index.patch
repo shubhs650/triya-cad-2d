@@ -1,0 +1,43 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts b/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
+index a8e15aa..fd70a9f 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
+@@ -17,6 +17,7 @@ import { LinearUnitFormat } from '../../../Types/Units/LinearUnitFormat.js';
+ import { AngularUnitFormat } from '../../../Types/Units/AngularUnitFormat.js';
+ import { UnitsType } from '../../../Types/Units/UnitsType.js';
+ import { LineWeightType } from '../../../Types/LineWeightType.js';
++import { CadUtils } from '../../../CadUtils.js';
+ import { NotificationType } from '../../NotificationEventHandler.js';
+ import { DwgSectionIO } from '../DwgSectionIO.js';
+ import { DwgSectionDefinition } from '../FileHeaders/DwgSectionDefinition.js';
+@@ -522,7 +523,8 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 
+ 		if (this.r2000Plus) {
+ 			const flags: number = this._reader.readBitLong();
+-			this._header.currentEntityLineWeight = (flags & 0x1F) as LineWeightType;
++			// The low 5 bits are a lineweight index (as on entities), not a lineweight value.
++			this._header.currentEntityLineWeight = CadUtils.toValue(flags & 0x1F);
+ 			// ODA spec 3.0 §9.4: ENDCAPS/JOINSTYLE are shifted fields, LWDISPLAY and XEDIT are stored
+ 			// inverted, the rest are single bits. DwgHeaderWriter already encodes them this way.
+ 			this._header.endCaps = (flags & 0x60) >> 5;
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
+index 5e5a2c9..fd353b5 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
+@@ -1,6 +1,7 @@
+ import { CadDocument } from '../../../CadDocument.js';
+ import { CadHeader, SpaceLineTypeScaling, EntityPlotStyleType } from '../../../Header/CadHeader.js';
+ import { ACadVersion } from '../../../ACadVersion.js';
++import { CadUtils } from '../../../CadUtils.js';
+ import { DwgSectionIO } from '../DwgSectionIO.js';
+ import { DwgSectionDefinition } from '../FileHeaders/DwgSectionDefinition.js';
+ import { DwgReferenceType } from '../../../Types/DwgReferenceType.js';
+@@ -692,7 +693,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 
+ 		//R2000 +:
+ 		if (this.r2000Plus) {
+-			let flags = ((this._header.currentEntityLineWeight as number) & 0x1F) |
++			let flags = (CadUtils.toIndex(this._header.currentEntityLineWeight) & 0x1F) |
+ 						(this._header.endCaps << 0x5) |
+ 						(this._header.joinStyle << 0x7);
+ 

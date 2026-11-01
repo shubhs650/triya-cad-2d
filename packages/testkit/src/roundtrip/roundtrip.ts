@@ -7,6 +7,7 @@ import { readCadDocument, writeCadDocument } from '@triya/io';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from './clock.ts';
 import { structuralDiff, summarizeDiff, type Difference, type DiffSummary } from './diff.ts';
+import { rawObjectSurvival, type RawObjectSurvival } from './raw-objects.ts';
 
 export type RoundTripStatus = 'clean' | 'diff' | 'read-error' | 'write-error' | 'reread-error';
 
@@ -22,6 +23,8 @@ export interface RoundTripResult {
   summary?: DiffSummary;
   /** The first differences, verbatim, for triage. */
   sample?: Difference[];
+  /** Unknown objects kept raw by the reader, and those the save lost or changed (M1-30). */
+  rawObjects?: RawObjectSurvival;
   /** Writer notifications, message → count (objects the writer skipped, unsupported data). */
   writerNotes?: Record<string, number>;
   /** The written file, only when `keepOutput` is set (not serialised into reports). */
@@ -102,6 +105,7 @@ function roundTripUnpinned(bytes: Uint8Array, options: RoundTripOptions): RoundT
     ...(options.maxDifferences === undefined ? {} : { maxDifferences: options.maxDifferences }),
   });
   result.ms.diff = elapsed(t);
+  result.rawObjects = rawObjectSurvival(original, reopened);
   result.objectsA = report.objectsA;
   result.objectsB = report.objectsB;
   result.summary = summarizeDiff(report);

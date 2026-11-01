@@ -193,6 +193,7 @@ import { StretchActionBase } from '../../../Objects/Evaluations/StretchActionBas
 import { DynamicBlockPurgePreventer } from '../../../Objects/DynamicBlockPurgePreventer.js';
 import { Material, ColorMethod, MapSource } from '../../../Objects/Material.js';
 import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
+import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
 import { VisualStyle } from '../../../Objects/VisualStyle.js';
 import { TableStyle } from '../../../Objects/TableStyle.js';
 import { writeDwgVisualStyle } from '../DwgVisualStyle.js';
@@ -441,7 +442,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 	private _isEntitySupported(entity: Entity): boolean {
 		if (entity instanceof Surface) return false;
 		if (entity instanceof Seqend) return false;
-		if (entity instanceof UnknownEntity) return false;
+		if (entity instanceof UnknownEntity) return this._canWriteRaw(entity);
 		if (entity instanceof Shape) return this.writeShapes;
 		return true;
 	}
@@ -1110,7 +1111,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 		if (this.r2007Plus) {
 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, 0);
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
-			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, 0);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, vport.sun);
+			this._enqueueObject(vport.sun);
 		}
 
 		if (this.r2000Plus) {
@@ -1157,6 +1159,55 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._streamPos += crc.position + 2;
 
 		this.map.set(cadObject.handle, position);
+	}
+
+	/**
+	 * The record an unknown object was read with is valid only in a file of the same version, under
+	 * the same handle and, for custom classes, the same class number.
+	 */
+	private _canWriteRaw(obj: CadObject & IRawCadObject): boolean {
+		const raw = obj.rawDwgData;
+		if (raw == null || raw.version !== this._version || raw.handle !== obj.handle) {
+			return false;
+		}
+		const dxfClass = obj.getDxfClass();
+		return raw.typeCode < 500 || dxfClass?.classNumber === raw.typeCode;
+	}
+
+	/** Store an unknown object's record exactly as it was read, so a save does not drop it. */
+	private _writeRawObject(obj: CadObject & IRawCadObject): void {
+		if (!this._canWriteRaw(obj)) {
+			this.notify(`Unknown object ${obj.objectName} has no DWG data valid for this file and is not written: ${obj.handle}`, NotificationType.NotImplemented);
+			return;
+		}
+
+		const raw = obj.rawDwgData!;
+		this._ensureStreamCapacity(this._streamPos + raw.data.length + 16);
+
+		const position = this._streamPos;
+		const crc = new CRC8StreamHandler(this._stream.subarray(this._streamPos), 0xC0C1);
+		this._writeSize(crc, raw.data.length);
+		if (this.r2010Plus) {
+			this._writeSizeInBits(crc, raw.handleStreamBits);
+		}
+		crc.write(raw.data, 0, raw.data.length);
+
+		const seedBytes = new Uint8Array(2);
+		new DataView(seedBytes.buffer).setUint16(0, crc.seed, true);
+		this._stream.set(seedBytes, this._streamPos + crc.position);
+		this._streamPos += crc.position + 2;
+
+		this.map.set(obj.handle, position);
+
+		if (obj.xDictionary != null) {
+			this._dictionaries.set(obj.xDictionary.handle, obj.xDictionary);
+			this._enqueueObject(obj.xDictionary);
+		}
+		for (const child of obj.rawOwnedObjects) {
+			if (!(child instanceof Entity)) {
+				this._enqueueObject(child);
+			}
+		}
 	}
 
 	private _writeSize(stream: { write: (data: Uint8Array, offset: number, count: number) => void; position: number }, size: number): void {
@@ -1500,6 +1551,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 		}
 		if (entity instanceof Seqend) {
 			this._writeSeqend(entity);
+			return;
+		}
+		if (entity instanceof UnknownEntity) {
+			this._writeRawObject(entity);
 			return;
 		}
 
@@ -2654,7 +2709,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 
 	private _writeSolid3D(solid: Solid3D): void {
 		this._writeModelerGeometry(solid);
-		if (this.r2007Plus) this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, null);
+		if (this.r2007Plus) {
+			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, solid.history);
+			this._enqueueObject(solid.history);
+		}
 	}
 
 	private _writeTableEntity(table: TableEntity): void {
@@ -3303,7 +3361,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null);
 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
-			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, null);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, viewport.sun);
+			this._enqueueObject(viewport.sun);
 		}
 	}
 
@@ -3362,7 +3421,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		)) return { skip: true, notify: false };
 		if (entry instanceof UnknownNonGraphicalObject
 		) {
-			return { skip: true, notify: true };
+			return this._canWriteRaw(entry) ? { skip: false, notify: false } : { skip: true, notify: true };
 		}
 		return { skip: false, notify: false };
 	}
@@ -3396,6 +3455,11 @@ export class DwgObjectWriter extends DwgSectionIO {
 			if (shouldNotify) {
 				this.notify(`Object type not implemented ${obj.constructor.name}`, NotificationType.NotImplemented);
 			}
+			return;
+		}
+
+		if (obj instanceof UnknownNonGraphicalObject) {
+			this._writeRawObject(obj);
 			return;
 		}
 
@@ -4867,6 +4931,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 				case GroupCodeValueType.ExtendedDataHandle: {
 					const handle = getHandleValue(entry.value);
 					pushInt64LE(handle);
+					// Soft/hard owner entries own their object: nothing else writes it.
+					if (entry.code >= 350 && entry.code <= 369 && entry.value instanceof CadObject) {
+						this._enqueueObject(entry.value);
+					}
 					break;
 				}
 				default:

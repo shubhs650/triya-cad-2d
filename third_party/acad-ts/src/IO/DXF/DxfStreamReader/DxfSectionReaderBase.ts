@@ -97,6 +97,7 @@ import { CadVertexTemplate } from '../../Templates/CadVertexTemplate.js';
 import { CadViewportTemplate } from '../../Templates/CadViewportTemplate.js';
 import { CadWipeoutBaseTemplate } from '../../Templates/CadWipeoutBaseTemplate.js';
 import { CadUnknownEntityTemplate } from '../../Templates/CadUnknownEntityTemplate.js';
+import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
 import { CadValueTemplate } from '../../Templates/CadValueTemplate.js';
 import { CadValue } from '../../../CadValue.js';
 import { CadValueType } from '../../../CadValueType.js';
@@ -386,18 +387,35 @@ export abstract class DxfSectionReaderBase {
           this._builder.notify(`Entity not supported: ${this._reader.valueAsString}`, NotificationType.NotImplemented);
         }
 
-        this._reader.readNext();
+        // A kept entity records its group codes, so the writers can emit it unchanged.
+        const keep = unknownEntityTemplate !== null && this._builder.keepUnknownEntities;
+        const raw: DxfRawCode[] = [];
+        if (keep) {
+          (unknownEntityTemplate!.cadObject as UnknownEntity).rawDxfName = this._reader.valueAsString;
+          this._reader.recorder = raw;
+        }
 
-        do {
-          if (unknownEntityTemplate !== null && this._builder.keepUnknownEntities) {
-            const isExtendedData = { value: false };
-            this.readCommonEntityCodes(unknownEntityTemplate, isExtendedData, map);
-            if (isExtendedData.value) {
-              continue;
-            }
-          }
+        try {
           this._reader.readNext();
-        } while (this._reader.dxfCode !== DxfCode.Start);
+
+          do {
+            if (keep) {
+              const isExtendedData = { value: false };
+              this.readCommonEntityCodes(unknownEntityTemplate!, isExtendedData, map);
+              if (isExtendedData.value) {
+                continue;
+              }
+            }
+            this._reader.readNext();
+          } while (this._reader.dxfCode !== DxfCode.Start);
+        } finally {
+          this._reader.recorder = null;
+        }
+
+        if (keep) {
+          raw.pop(); // the next entity's type code
+          (unknownEntityTemplate!.cadObject as UnknownEntity).rawDxfCodes = raw;
+        }
 
         return unknownEntityTemplate;
       }
@@ -1851,6 +1869,9 @@ export abstract class DxfSectionReaderBase {
     const tmp = template as CadViewportTemplate;
 
     switch (this._reader.code as number) {
+      case 361:
+        tmp.sunHandle = this._reader.valueAsHandle;
+        return true;
       case 67:
       case 68:
         return true;

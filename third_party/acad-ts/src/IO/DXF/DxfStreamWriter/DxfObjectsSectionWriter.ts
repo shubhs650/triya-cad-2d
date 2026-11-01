@@ -37,6 +37,7 @@ import { SortEntitiesTable } from '../../../Objects/SortEntitiesTable.js';
 import { SpatialFilter } from '../../../Objects/SpatialFilter.js';
 import { XRecord } from '../../../Objects/XRecrod.js';
 import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
+import { TableContent } from '../../../Objects/TableContent.js';
 import { AecWallStyle } from '../../../Objects/AEC/AecWallStyle.js';
 import { AecCleanupGroup } from '../../../Objects/AEC/AecCleanupGroup.js';
 import { AecBinRecord } from '../../../Objects/AEC/AecBinRecord.js';
@@ -409,6 +410,11 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       return;
     }
 
+    if (co instanceof UnknownNonGraphicalObject) {
+      this.writeRawObject(co);
+      return;
+    }
+
     if (co instanceof XRecord && !this.configuration.writeXRecords) {
       return;
     }
@@ -669,6 +675,10 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
           const obj = e.value as IHandledCadObject;
           if (obj == null || typeof obj.handle !== 'number') continue;
           this._writer.write(e.code, obj.handle);
+          // Soft/hard owner entries own their object: nothing else writes it.
+          if (e.code >= 350 && e.code <= 369 && obj instanceof CadObject) {
+            this.holder.objects.push(obj);
+          }
           break;
         }
         default:
@@ -680,7 +690,10 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
   private _isObjectSupported(co: CadObject): boolean {
     if (co instanceof UnknownNonGraphicalObject) {
-      return false;
+      if (co.rawDxfCodes == null && co.rawDwgData != null) {
+        this.notify(`Unknown object ${co.objectName} was read from a DWG file and cannot be written to DXF: ${co.handle}`, NotificationType.NotImplemented);
+      }
+      return co.rawDxfCodes != null;
     }
 	if (!this.configuration.writeDynamicBlockData && (
 		co instanceof EvaluationGraph ||
@@ -694,6 +707,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       co instanceof DimensionAssociation ||
       co instanceof Material ||
       co instanceof MultiLeaderObjectContextData ||
+      co instanceof TableContent ||
       co instanceof VisualStyle ||
       co instanceof ProxyObject
     ) {
