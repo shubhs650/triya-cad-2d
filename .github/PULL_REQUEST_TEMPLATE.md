@@ -17,7 +17,7 @@ Roadmap ID: `M?-??` — <title>
 ## Docs updated
 - [ ] `docs/ROADMAP.md` (status)
 - [ ] `docs/FILE_FIDELITY.md` / `docs/COMMANDS.md` rows affected
-- [ ] `CHANGELOG.md` line
+- [ ] `changes/<task-id>.md` changelog fragment (do not edit `CHANGELOG.md`; `pnpm changelog:check`)
 - [ ] `ATTRIBUTION.md` if a dependency was added
 
 ## Deferred / needs-human

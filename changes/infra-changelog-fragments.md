@@ -1,0 +1,1 @@
+- Changelog fragments (#23): each PR now adds `changes/<task-id>.md` instead of editing `CHANGELOG.md`, so parallel PRs stop conflicting on the changelog; `pnpm changelog` assembles them (newest PR first), `pnpm changelog:check` validates them in CI, and `pnpm changelog --release <version>` folds them in at release.

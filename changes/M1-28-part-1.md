@@ -1,0 +1,1 @@
+- M1-28 part 1 (#18): acad-ts keeps MATERIAL and VISUALSTYLE group codes on DXF read and writes them back (patch 0021, DEC-040), and the ASCII DXF writer keeps the sign of xdata 1070 integers (0022). Round trip 26,527 → 19,218 differences; declared handles lost on save 4,902 → 1,266.

@@ -1,0 +1,1 @@
+- M1-04 part 1 (#17): `mapEntities` in `@triya/io` maps LINE, XLINE, RAY, CIRCLE, ARC, ELLIPSE, POINT, LWPOLYLINE, POLYLINE (2D/3D) with VERTEX, SPLINE, SOLID/TRACE and 3DFACE of every block record into plan-view engine entities (DEC-039), with common properties; other types are listed as unmapped. Corpus oracle test compares every such entity of the public ASCII DXFs.

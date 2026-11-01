@@ -1,8 +1,9 @@
 {
-  "//": "Root project: type-checks repo-level tests and config files. Packages type-check themselves via turbo.",
+  "//": "Root project: type-checks repo-level tests and config files. Packages type-check themselves via turbo. allowImportingTsExtensions: scripts run under Node type stripping, which needs explicit .ts import paths.",
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "types": ["node"]
+    "types": ["node"],
+    "allowImportingTsExtensions": true
   },
   "include": ["tests", "scripts", "*.config.ts", "*.config.js", "eslint.config.js"]
 }
