@@ -15,7 +15,7 @@ import { GroupCodeValueType } from '../../../GroupCodeValueType.js';
 export class DxfHeaderSectionWriter extends DxfSectionWriterBase {
   // R11/R12 header vocabulary; later variables may also use incompatible codes.
   private static readonly r12Variables = new Set(`
-    $ACADVER $INSBASE $EXTMIN $EXTMAX $LIMMIN $LIMMAX $ORTHOMODE $REGENMODE
+    $ACADVER $DWGCODEPAGE $INSBASE $EXTMIN $EXTMAX $LIMMIN $LIMMAX $ORTHOMODE $REGENMODE
     $FILLMODE $QTEXTMODE $MIRRTEXT $DRAGMODE $LTSCALE $OSMODE $ATTMODE $TEXTSIZE
     $TRACEWID $TEXTSTYLE $CLAYER $CELTYPE $CECOLOR $DIMSCALE $DIMASZ $DIMEXO
     $DIMDLI $DIMRND $DIMDLE $DIMEXE $DIMTP $DIMTM $DIMTXT $DIMCEN $DIMTSZ

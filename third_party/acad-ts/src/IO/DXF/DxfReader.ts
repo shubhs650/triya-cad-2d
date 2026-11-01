@@ -30,6 +30,7 @@ import { getDecoderEncodingLabel } from '../TextEncoding.js';
 
 export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
   private _version: ACadVersion = ACadVersion.Unknown;
+  private _sawR13Sections = false;
   private _builder!: DxfDocumentBuilder;
   private _reader!: IDxfStreamReader;
 
@@ -122,6 +123,7 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
           this._builder.initialHandSeed = this._document.header.handleSeed;
           break;
         case DxfFileToken.classesSection:
+          this._sawR13Sections = true;
           this._document.classes = this._readClasses();
           break;
         case DxfFileToken.tablesSection:
@@ -134,6 +136,7 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
           this._readEntitiesSection();
           break;
         case DxfFileToken.objectsSection:
+          this._sawR13Sections = true;
           this._readObjects();
           break;
         case DxfFileToken.acdsDataSection:
@@ -149,6 +152,12 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
 
     if (this._document.header === null) {
       this._document.header = new CadHeader(this._document);
+    }
+    // A DXF with no $ACADVER and no R13 sections (CLASSES, OBJECTS) is R12, as AutoCAD and ezdxf
+    // read it: the minimal R12 file is an ENTITIES section and EOF. Left at the header's default
+    // version, it was saved as R2018 with objects the file never had.
+    if (this._version === ACadVersion.Unknown && !this._sawR13Sections) {
+      this._document.header.version = ACadVersion.AC1009;
     }
 
     // Handles at or above both $HANDSEED and every stated handle are made up while building (R12

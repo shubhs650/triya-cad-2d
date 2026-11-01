@@ -1,0 +1,13 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
+index cc55340..b72192a 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
+@@ -71,6 +71,8 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.write(3, name, map);
+     this._writer.write(4, block.comments, map);
++    // A BLOCK carries xdata like any entity (ezdxf tags $MODEL_SPACE with its own).
++    this.writeExtendedData(block.extendedData);
+   }
+ 
+   private _r12SpaceName(name: string): string {

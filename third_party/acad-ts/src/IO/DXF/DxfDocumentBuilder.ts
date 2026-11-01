@@ -77,6 +77,16 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
 
     super.buildDocument();
 
+    // A made-up entity handle can collide with one the document's own tables take when they are
+    // registered (a file with no $HANDSEED numbers from 0), and the document then renumbers the
+    // entity; keep the record's owned handles naming its entities.
+    for (const record of this.documentToBuild.blockRecords) {
+      const owned = record.ownedObjectHandles;
+      if (owned.some((h) => this.documentToBuild.getCadObject(h)?.owner !== record)) {
+        record.ownedObjectHandles = [...record.entities].map((e) => e.handle);
+      }
+    }
+
     if (this.configuration.createDefaults) {
       this.documentToBuild.createDefaults();
     }
