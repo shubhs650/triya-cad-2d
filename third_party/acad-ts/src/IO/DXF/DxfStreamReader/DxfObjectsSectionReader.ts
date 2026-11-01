@@ -323,7 +323,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
   protected readObjectCodes(template: CadTemplate, readObject: ReadObjectDelegate, objectType: Function): CadTemplate {
     // The DXF writer cannot write these from their fields, so keep the codes as read for it.
     const obj = template.cadObject;
-    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle || obj instanceof ProxyObject)) {
+    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle || obj instanceof ProxyObject || obj instanceof TableContent)) {
       return this._readObjectCodes(template, readObject, objectType);
     }
     const raw: DxfRawCode[] = [];
@@ -2246,7 +2246,8 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           template.addHandleReference(this._reader.code, this._reader.valueAsHandle);
           break;
         default:
-          xRecord.createEntry(this._reader.code, this._reader.value);
+          // Strings decoded (^J is a line break), as the writer escapes them again.
+          xRecord.createEntry(this._reader.code, typeof this._reader.value === 'string' ? this._reader.valueAsString : this._reader.value);
           break;
       }
 

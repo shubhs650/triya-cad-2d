@@ -24,6 +24,9 @@ export class CadTableEntityTemplate extends CadInsertTemplate {
 
 	horizontalMargin: number | null = null;
 
+	/** True from the table-wide override flag (93) until the first row height (141). */
+	readingTableOverrides: boolean = false;
+
 	nullHandle: number | null = null;
 
 	styleHandle: number | null = null;

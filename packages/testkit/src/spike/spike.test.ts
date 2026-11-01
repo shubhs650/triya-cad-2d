@@ -12,11 +12,12 @@ const corpusBytes = (path: string): Uint8Array =>
   );
 // AC1032 ASCII DXF with view styles and dynamic-block data.
 const DYN = 'third-party/acadsharp/dynamic-blocks/BLOCKPOLARPARAMETER.dxf';
-// R2000 ASCII DXF with ACAD_TABLE entities, whose TABLECONTENT the acad-ts DXF writer still
-// skips (M1-31). The tooling tests below need a file the writer drops objects from; when M1-31
-// fixes this one, point SKIPPED at another such file (DIMASSOC in dimension_in_block.dxf was
-// fixed by 0061, ACAD_PROXY_OBJECT in bin_dxf_r13.dxf by 0063).
-const SKIPPED = 'third-party/acadsharp/sample_AC1015_ascii.dxf';
+// AC1027 DXF with a layer named with a `\U+00FC` escape, which the acad-ts DXF writer rejects as
+// an invalid name and drops (M1-31). The tooling tests below need a file the writer drops objects
+// from; when M1-31 fixes this one, point SKIPPED at another such file (DIMASSOC in
+// dimension_in_block.dxf was fixed by 0061, ACAD_PROXY_OBJECT in bin_dxf_r13.dxf by 0063, and
+// TABLECONTENT in sample_AC1015_ascii.dxf by M1-31 part 4).
+const SKIPPED = 'third-party/ezdxf/integration_tests/dxf_unicode.dxf';
 const DWG = 'third-party/acadsharp/sample_base/empty.dwg';
 
 describe('spike tooling', () => {
@@ -37,7 +38,7 @@ describe('spike tooling', () => {
     const bytes = corpusBytes(SKIPPED);
     const kept = roundTrip(bytes, { keepOutput: true });
     expect(kept.output?.length).toBe(kept.bytesOut);
-    expect(Object.keys(kept.writerNotes ?? {}).some((m) => /TableContent/.test(m))).toBe(true);
+    expect(Object.keys(kept.writerNotes ?? {}).some((m) => /name is invalid/.test(m))).toBe(true);
     expect(roundTrip(bytes).output).toBeUndefined();
   });
 
