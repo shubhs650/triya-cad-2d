@@ -5,6 +5,14 @@
 
 import {
   Arc,
+  Hatch,
+  HatchBoundaryPathArc,
+  HatchBoundaryPathEllipse,
+  HatchBoundaryPathLine,
+  HatchBoundaryPathPolyline,
+  HatchBoundaryPathSpline,
+  type HatchBoundaryPath,
+  type HatchBoundaryPathEdge,
   DimensionAligned,
   DimensionAngular2Line,
   DimensionAngular3Pt,
@@ -47,6 +55,8 @@ import {
 } from '@node-projects/acad-ts';
 import type {
   AttributeFields,
+  HatchEdge,
+  HatchLoop,
   DimensionFields,
   Color,
   EntityGeometry,
@@ -488,6 +498,120 @@ function toleranceGeometry(t: Tolerance, ctx: Ctx): EntityGeometry | UnmappedEnt
   };
 }
 
+/**
+ * A HATCH boundary edge in plan view. Edges are in the OCS, and AutoCAD stores a clockwise
+ * edge's angles negated (DXF 73 = 0). A −Z plane mirrors X: an actual arc angle a becomes
+ * π − a and an ellipse parameter t becomes −t, and the edge's direction reverses. With the
+ * flag flipped, the stored arc angle becomes a + π and the ellipse parameters stay as they
+ * are, for clockwise and counter-clockwise edges alike.
+ */
+function hatchEdge(e: HatchBoundaryPathEdge, pl: Plane): HatchEdge | undefined {
+  const down = pl === 'down';
+  const p = (v: { x: number; y: number }) => planOf(v, pl);
+  if (e instanceof HatchBoundaryPathLine) return { type: 'line', start: p(e.start), end: p(e.end) };
+  if (e instanceof HatchBoundaryPathArc) {
+    return {
+      type: 'arc',
+      center: p(e.center),
+      radius: e.radius,
+      startAngle: down ? norm(Math.PI + e.startAngle) : e.startAngle,
+      endAngle: down ? norm(Math.PI + e.endAngle) : e.endAngle,
+      ccw: e.counterClockWise !== down,
+    };
+  }
+  if (e instanceof HatchBoundaryPathEllipse) {
+    return {
+      type: 'ellipse',
+      center: p(e.center),
+      majorAxis: p(e.majorAxisEndPoint),
+      ratio: e.minorToMajorRatio,
+      startAngle: e.startAngle,
+      endAngle: e.endAngle,
+      ccw: e.counterClockWise !== down,
+    };
+  }
+  if (e instanceof HatchBoundaryPathSpline) {
+    const weights = e.controlPoints.map((c) => c.z);
+    const tangent = (t: { x: number; y: number }) => (t.x !== 0 || t.y !== 0 ? p(t) : undefined);
+    const st = tangent(e.startTangent);
+    const et = tangent(e.endTangent);
+    return {
+      type: 'spline',
+      degree: e.degree,
+      knots: [...e.knots],
+      controlPoints: e.controlPoints.map(p),
+      ...(e.isRational ? { weights } : {}),
+      periodic: e.isPeriodic,
+      ...(e.fitPoints.length > 0 ? { fitPoints: e.fitPoints.map(p) } : {}),
+      ...(st ? { startTangent: st } : {}),
+      ...(et ? { endTangent: et } : {}),
+    };
+  }
+  return undefined;
+}
+
+function hatchLoop(path: HatchBoundaryPath, pl: Plane): HatchLoop {
+  const sources = path.entities.map((x) => hex(x.handle));
+  const poly = path.edges.find((x) => x instanceof HatchBoundaryPathPolyline);
+  const base = {
+    flags: path.flags as number,
+    ...(sources.length > 0 ? { sources } : {}),
+  };
+  if (poly) {
+    // Polyline loop vertices carry their bulge in Z.
+    const vs = poly.vertices.map((v) => ({
+      location: v,
+      bulge: v.z,
+      startWidth: 0,
+      endWidth: 0,
+    }));
+    return { ...base, polyline: { vertices: lwVertices(vs, pl), closed: poly.isClosed } };
+  }
+  return {
+    ...base,
+    edges: path.edges.map((x) => hatchEdge(x, pl)).filter((x): x is HatchEdge => x !== undefined),
+  };
+}
+
+function hatchGeometry(h: Hatch): EntityGeometry | UnmappedEntity['reason'] {
+  const pl = plane(h.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const g = h.gradientColor;
+  return {
+    kind: 'HATCH',
+    pattern: h.pattern.name,
+    solid: h.isSolid,
+    associative: h.isAssociative,
+    style: h.style as number,
+    patternType: h.patternType as number,
+    patternAngle: ocsAngle(h.patternAngle, pl),
+    patternScale: h.patternScale,
+    double: h.isDouble,
+    loops: h.paths.map((x) => hatchLoop(x, pl)),
+    // The file's pattern lines are already rotated and scaled; mirroring them is exact.
+    patternLines: h.pattern.lines.map((l) => ({
+      angle: ocsAngle(l.angle, pl),
+      base: planOf(l.basePoint, pl),
+      offset: planOf(l.offset, pl),
+      dashes: [...l.dashLengths],
+    })),
+    seedPoints: h.seedPoints.map((x) => planOf(x, pl)),
+    ...(g.enabled
+      ? {
+          gradient: {
+            name: g.name,
+            angle: ocsAngle(g.angle, pl),
+            shift: g.shift,
+            singleColor: g.isSingleColorGradient,
+            tint: g.colorTint,
+            colors: g.colors.map((c) => ({ value: c.value, color: mapColor(c.color) })),
+          },
+        }
+      : {}),
+    ...planar(pl, h.normal, h.elevation, 0),
+  };
+}
+
 /** Plan-view geometry of an entity, or why it has none in Triya yet. */
 function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   if (e instanceof Line) {
@@ -654,6 +778,7 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
     return dimensionGeometry(e, ctx);
   if (e instanceof Leader) return leaderGeometry(e, ctx);
   if (e instanceof Tolerance) return toleranceGeometry(e, ctx);
+  if (e instanceof Hatch) return hatchGeometry(e);
   return 'not mapped yet';
 }
 
