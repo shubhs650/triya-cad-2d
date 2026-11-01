@@ -67,7 +67,7 @@ export interface TextContext {
 }
 
 /** AutoCAD's STANDARD style font, for text whose style record is missing. */
-const STANDARD = { name: 'txt', kind: 'shx', bold: false, italic: false } as const;
+export const STANDARD_FONT = { name: 'txt', kind: 'shx', bold: false, italic: false } as const;
 
 /** A glyph's path in font units, and whether it fills (TrueType) or strokes (SHX). */
 interface GlyphShape {
@@ -319,7 +319,7 @@ function baseOf(
   height: number,
 ): { base: MTextBase; record?: TextStyleRecord } {
   const record = ctx.style(style);
-  const font = record ? styleFont(record) : STANDARD;
+  const font = record ? styleFont(record) : STANDARD_FONT;
   return {
     base: {
       font,
