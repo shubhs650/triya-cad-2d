@@ -1,0 +1,1 @@
+- M1-14 part 1 (#55): the renderer draws block references (INSERT and MINSERT, nested), exact under rotation, mirroring and non-uniform scale, with ByBlock and layer-0 inheritance, AutoCAD's off/frozen insert-layer rules, block linetypes scaled with the reference, and each block's own draw order.

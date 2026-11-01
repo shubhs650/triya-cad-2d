@@ -26,8 +26,8 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036) | | | | |
 | ATTDEF | ✓ (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | ATTRIB | ✓ folded into its INSERT (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
-| INSERT | ✓ | | | | |
-| MINSERT | ✓ | | | | |
+| INSERT | ✓ (drawn by the renderer through nesting with ByBlock and layer-0 inheritance, M1-14 part 1; attributes not drawn yet) | | | | |
+| MINSERT | ✓ (every cell drawn, M1-14 part 1) | | | | |
 | DIMENSION (linear/aligned) | ✓ (rotated with an empty AcDbRotatedDimension read as aligned by acad-ts, M1-32) | | | | |
 | DIMENSION (angular 2-line / 3-point) | ✓ | | | | |
 | DIMENSION (radial / diametric) | ✓ | | | | |
