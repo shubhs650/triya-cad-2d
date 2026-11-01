@@ -1,0 +1,1 @@
+- M1-04 part 4a (#31): `mapEntities` maps IMAGE, WIPEOUT and PDFUNDERLAY: definition, placement, pixel axes or scale and rotation, display settings and clip boundaries, in plan view (DEC-039 extended); the spatial index bounds them. New acad-ts gaps (clip type 71 skipped, R14/R2000 DWG tables unread, no DWF/DGN underlay reader) in M1-32.

@@ -17,6 +17,7 @@ import type {
   DimensionGeometry,
   EntityGeometry,
   HatchGeometry,
+  ImageGeometry,
   InsertAttribute,
   InsertGeometry,
   LeaderGeometry,
@@ -25,6 +26,7 @@ import type {
   PolylineVertex,
   TextGeometry,
   ToleranceGeometry,
+  UnderlayGeometry,
 } from '../model/types';
 
 export type EntityBounds =
@@ -190,6 +192,44 @@ function hatchBounds(geom: HatchGeometry, tol: Tolerance): EntityBounds {
   return out ? boxed(out) : EMPTY;
 }
 
+/**
+ * An image covers `size` pixels along u and v from its corner. Clip vertices are pixel
+ * coordinates centred on pixels, with V counted up or down depending on the writer, so both
+ * readings are added; a clip boundary only ever removes part of the image.
+ */
+function imageBounds(geom: ImageGeometry): EntityBounds {
+  const at = (i: number, j: number): Vec2 => ({
+    x: geom.position.x + geom.u.x * i + geom.v.x * j,
+    y: geom.position.y + geom.u.y * i + geom.v.y * j,
+  });
+  const { x: w, y: h } = geom.size;
+  const pts = [at(0, 0), at(w, 0), at(0, h), at(w, h)];
+  for (const c of geom.clip.vertices)
+    pts.push(at(c.x + 0.5, c.y + 0.5), at(c.x + 0.5, h - c.y - 0.5));
+  return boxed(boxOf(pts));
+}
+
+/** The PDF's own extent is not in the drawing; only a clip boundary bounds an underlay. */
+function underlayBounds(geom: UnderlayGeometry): EntityBounds {
+  if (geom.clip.length === 0) return UNKNOWN;
+  const cos = Math.cos(geom.rotation);
+  const sin = Math.sin(geom.rotation);
+  const flip = geom.upsideDown ? -1 : 1;
+  // Two vertices are opposite corners of a rectangle; rotated, all four corners count.
+  const [a, b] = geom.clip;
+  const pts =
+    geom.clip.length === 2 ? [a!, b!, { x: a!.x, y: b!.y }, { x: b!.x, y: a!.y }] : geom.clip;
+  return boxed(
+    boxOf(
+      pts.map((c) => {
+        const x = c.x * geom.scale.x;
+        const y = c.y * geom.scale.y * flip;
+        return { x: geom.position.x + x * cos - y * sin, y: geom.position.y + x * sin + y * cos };
+      }),
+    ),
+  );
+}
+
 export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBounds {
   switch (geom.kind) {
     case 'LINE':
@@ -249,6 +289,11 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
       return insertBounds(geom, ctx);
     case 'HATCH':
       return hatchBounds(geom, ctx.tol);
+    case 'IMAGE':
+    case 'WIPEOUT':
+      return imageBounds(geom);
+    case 'PDFUNDERLAY':
+      return underlayBounds(geom);
     case 'ACAD_TABLE': {
       // The grid starts at the insertion point and may flow up or down along any direction,
       // so a circle of the grid's diagonal around that point holds it; cell text wraps inside
