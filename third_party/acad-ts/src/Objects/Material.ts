@@ -1,5 +1,6 @@
 import { NonGraphicalObject } from './NonGraphicalObject.js';
 import { CadObject } from '../CadObject.js';
+import type { DwgRawObjectData, DxfRawCode, IRawCadObject } from './RawObjectData.js';
 import { Color } from '../Color.js';
 import { DxfFileToken } from '../DxfFileToken.js';
 import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
@@ -32,7 +33,13 @@ export enum MaterialMode {
 	Advanced = 1,
 }
 
-export class Material extends NonGraphicalObject {
+export class Material extends NonGraphicalObject implements IRawCadObject {
+	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF writer has no field writer for this type. */
+	rawDxfCodes: DxfRawCode[] | null = null;
+	rawDxfName: string | null = null;
+	rawDwgData: DwgRawObjectData | null = null;
+	readonly rawOwnedObjects: CadObject[] = [];
+
 	ambientColor: Color = Color.byLayer;
 
 	private _ambientColorFactor: number = 1.0;

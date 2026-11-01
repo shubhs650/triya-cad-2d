@@ -12,10 +12,12 @@ import {
   DxfWriter,
   LayoutFlags,
   LineWeightType,
+  Material,
   Solid3D,
   UnknownEntity,
   UnknownNonGraphicalObject,
   Viewport,
+  VisualStyle,
   XY,
   type CadDocument,
   type CadObject,
@@ -39,6 +41,7 @@ function dxfRoundTrip(doc: CadDocument): CadDocument {
 function keepRaw<T extends DwgReaderConfiguration | DxfReaderConfiguration>(config: T): T {
   config.keepUnknownEntities = true;
   config.keepUnknownNonGraphicalObjects = true;
+  config.keepRawDxfPassthroughObjects = true;
   return config;
 }
 const readDxfRaw = (bytes: Uint8Array): CadDocument =>
@@ -250,5 +253,44 @@ describe('acad-ts local patches (corpus-backed)', () => {
 
     expect(dxf.header!.currentEntityLineWeight).toBe(LineWeightType.ByLayer);
     expect(dwg.header!.currentEntityLineWeight).toBe(LineWeightType.ByLayer);
+  });
+
+  it.each([
+    ['acadsharp/sample_AC1032_ascii.dxf', false],
+    ['acadsharp/sample_AC1032_binary.dxf', true],
+    ['acadsharp/sample_AC1015_ascii.dxf', false],
+  ])('0021 DXF writer writes MATERIAL and VISUALSTYLE back as read: %s', (path, binary) => {
+    // The DXF writer has no MATERIAL or VISUALSTYLE writer (and the DXF reader assigns no
+    // VISUALSTYLE field), so every DXF save dropped them, their dictionary entries and their
+    // extension dictionaries.
+    const doc = readDxfRaw(corpusBytes(`third-party/${path}`));
+    const styles = (d: CadDocument): (Material | VisualStyle)[] =>
+      [...d.getCadObjects()].filter(
+        (o): o is Material | VisualStyle => o instanceof Material || o instanceof VisualStyle,
+      );
+    const before = styles(doc);
+    expect(before.filter((o) => o instanceof VisualStyle).length).toBeGreaterThan(10);
+    expect(before.filter((o) => o instanceof Material).length).toBeGreaterThanOrEqual(3);
+
+    const reread = dxfRawRoundTrip(doc, binary);
+    const after = new Map(styles(reread).map((o) => [o.handle, o]));
+
+    for (const o of before) {
+      const back = after.get(o.handle);
+      expect(back?.objectName, handleHex(o)).toBe(o.objectName);
+      expect(o.rawDxfCodes?.length, handleHex(o)).toBeGreaterThan(3);
+      expect(asJson(back?.rawDxfCodes), handleHex(o)).toBe(asJson(o.rawDxfCodes));
+      expect(handleHex(back?.xDictionary), handleHex(o)).toBe(handleHex(o.xDictionary));
+    }
+    // The named-object dictionaries still list every style under its handle.
+    for (const name of ['ACAD_MATERIAL', 'ACAD_VISUALSTYLE']) {
+      const entries = (d: CadDocument): Record<string, string | undefined> => {
+        const dict = d.rootDictionary!.getEntry<CadDictionary>(name)!;
+        return Object.fromEntries(
+          [...dict.entryNames].map((n) => [n, handleHex(dict.getEntry(n))]),
+        );
+      };
+      expect(entries(reread), name).toEqual(entries(doc));
+    }
   });
 });

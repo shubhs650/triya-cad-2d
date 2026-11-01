@@ -1,4 +1,6 @@
 import { NonGraphicalObject } from './NonGraphicalObject.js';
+import type { CadObject } from '../CadObject.js';
+import type { DwgRawObjectData, DxfRawCode, IRawCadObject } from './RawObjectData.js';
 import { Color } from '../Color.js';
 import { DxfFileToken } from '../DxfFileToken.js';
 import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
@@ -9,7 +11,13 @@ import { FaceLightingModelType } from './FaceLightingModelType.js';
 import { FaceLightingQualityType } from './FaceLightingQualityType.js';
 import { FaceModifierType } from './FaceModifierType.js';
 
-export class VisualStyle extends NonGraphicalObject {
+export class VisualStyle extends NonGraphicalObject implements IRawCadObject {
+	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF reader assigns no field of this type and the writer has none. */
+	rawDxfCodes: DxfRawCode[] | null = null;
+	rawDxfName: string | null = null;
+	rawDwgData: DwgRawObjectData | null = null;
+	readonly rawOwnedObjects: CadObject[] = [];
+
 	constructor(name?: string) {
 		super(name);
 	}
