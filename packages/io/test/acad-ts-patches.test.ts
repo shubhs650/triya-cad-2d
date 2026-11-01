@@ -414,4 +414,31 @@ describe('acad-ts local patches', () => {
     // Leaders made in code keep the class default.
     expect(new Leader().arrowHeadEnabled).toBe(false);
   });
+
+  it('0075 a DXF DIMSTYLE without a group reads it as the AutoCAD default', () => {
+    const doc = new CadDocument();
+    const style = new DimensionStyle('GAPLESS');
+    style.dimensionLineGap = 0.3;
+    style.extensionLineOffset = 0.4;
+    doc.dimensionStyles!.add(style);
+    const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
+    const bytes = (t: string) => Uint8Array.from(t, (c) => c.charCodeAt(0));
+    // AutoCAD leaves every DIMVAR at its default out of a DIMSTYLE record: drop DIMGAP (147)
+    // and DIMEXO (42) from this one, as AutoCAD would write them at 0.09 and 0.0625.
+    const without = text
+      .replace(/\r?\n *147\r?\n *0\.3\r?\n/, '\n')
+      .replace(/\r?\n *42\r?\n *0\.4\r?\n/, '\n');
+    expect(without).not.toBe(text);
+    expect(without.length).toBeLessThan(text.length - 10);
+
+    const read = DxfReader.readFromStream(bytes(without));
+    const gapless = read.dimensionStyles!.tryGetValue('GAPLESS')!;
+    expect(gapless.dimensionLineGap).toBeCloseTo(0.09);
+    expect(gapless.extensionLineOffset).toBeCloseTo(0.0625);
+    // The groups the file has still win.
+    const kept = DxfReader.readFromStream(bytes(text)).dimensionStyles!.tryGetValue('GAPLESS')!;
+    expect(kept.dimensionLineGap).toBeCloseTo(0.3);
+    // Styles made in code keep the class defaults.
+    expect(new DimensionStyle('X').dimensionLineGap).toBeCloseTo(0.625);
+  });
 });

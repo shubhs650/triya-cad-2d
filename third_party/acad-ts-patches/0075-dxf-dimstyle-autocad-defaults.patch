@@ -1,0 +1,47 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index 441e3ad..cd34ff3 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -220,9 +220,14 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+           }
+           break;
+         }
+-        case DxfFileToken.tableDimstyle:
+-          template = this._readTableEntry(new CadDimensionStyleTemplate(), this._readDimensionStyle.bind(this));
++        case DxfFileToken.tableDimstyle: {
++          // A DXF DIMSTYLE leaves out every DIMVAR at AutoCAD's default, the initial value of a
++          // new style, which for these differs from the class defaults (DWG stores them all).
++          const dimTemplate = new CadDimensionStyleTemplate();
++          DxfTablesSectionReader._applyDxfDimStyleDefaults(dimTemplate.cadObject as DimensionStyle);
++          template = this._readTableEntry(dimTemplate, this._readDimensionStyle.bind(this));
+           break;
++        }
+         case DxfFileToken.tableLayer:
+           template = this._readTableEntry(new CadLayerTemplate(), this._readLayer.bind(this));
+           break;
+@@ -332,6 +337,25 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+     }
+   }
+ 
++  private static _applyDxfDimStyleDefaults(style: DimensionStyle): void {
++    style.alternateUnitDecimalPlaces = 2; // DIMALTD
++    style.alternateUnitToleranceDecimalPlaces = 2; // DIMALTTD
++    style.decimalPlaces = 4; // DIMDEC
++    style.dimensionLineIncrement = 0.38; // DIMDLI
++    style.extensionLineExtension = 0.18; // DIMEXE
++    style.extensionLineOffset = 0.0625; // DIMEXO
++    style.dimensionFit = 3; // DIMFIT
++    style.dimensionLineGap = 0.09; // DIMGAP
++    style.separateArrowBlocks = false; // DIMSAH
++    style.textVerticalAlignment = DimensionTextVerticalAlignment.Centered; // DIMTAD
++    style.toleranceDecimalPlaces = 4; // DIMTDEC
++    style.textInsideHorizontal = true; // DIMTIH
++    style.textOutsideHorizontal = true; // DIMTOH
++    style.toleranceAlignment = ToleranceAlignment.Middle; // DIMTOLJ
++    style.toleranceZeroHandling = ZeroHandling.SuppressZeroFeetAndInches; // DIMTZIN
++    style.zeroHandling = ZeroHandling.SuppressZeroFeetAndInches; // DIMZIN
++  }
++
+   private _readDimensionStyle(template: CadDimensionStyleTemplate, map: DxfClassMap): boolean {
+     const dimensionStyle = template.cadObject;
+ 
