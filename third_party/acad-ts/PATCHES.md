@@ -10,12 +10,13 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06) were not run against the upstream suite: the spike thread could not install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06) and 0014–0020 (M1-30) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
 - This directory is a filtered snapshot, not a git subtree (DEC-033). Never hand-edit a file here without a patch in `third_party/acad-ts-patches/` that `sync-acad-ts.sh` re-applies.
 - Each patch is minimal, has a unit test that fails on the unpatched code, and carries the upstream PR text below. Tests that can build their drawing in memory live in `packages/io/test/acad-ts-patches.test.ts`; tests that need a real drawing (paper-space layouts, a full named-object dictionary) live in `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts`, because `@triya/io` has no Node file APIs.
+- Patches apply in number order and a later one may change lines an earlier one touched (0020 edits the header flag word that 0004 decodes). `tests/third-party/acad-ts-vendoring.test.ts` checks each patch against the tree as it was right after it, by undoing the patches newest first on a copy.
 - Line endings are kept exactly as upstream ships them (mixed CRLF/LF); `.gitattributes` marks this tree `-text` and formatters ignore it.
 
 ## Patches
@@ -249,5 +250,124 @@ Group codes 60–79, 170–179, 270–289, 370–389, 400–409 and 1060–1070 
 **Title:** Make DWG block-header writing linear time
 
 `DwgObjectWriter._writeBlockHeader` builds the owned-object list with `includes` and looks entities up with `find` inside a loop over the block's entities, which is O(n²). Writing a model space of 100,000 lines takes ~84 s. This switches to a `Set` and a `Map`; the public-corpus round-trip results are unchanged, and the same drawing writes in ~1.9 s.
+
+</details>
+
+### 0014 — Readers discard objects they cannot map, and the writers could not write them anyway (model + DXF)
+
+- **File:** `third_party/acad-ts-patches/0014-keep-unknown-objects-raw-dxf.patch`
+- **Touches:** `src/Objects/RawObjectData.ts` (new), `src/Objects/UnknownNonGraphicalObject.ts`, `src/Entities/UnknownEntity.ts`, `src/IO/CadReaderConfiguration.ts`, `src/IO/CadDocumentBuilder.ts`, `src/IO/DXF/DxfStreamReader/{IDxfStreamReader,DxfStreamReaderBase,DxfObjectsSectionReader,DxfSectionReaderBase}.ts`, `src/IO/DXF/DxfStreamWriter/{IDxfStreamWriter,DxfStreamWriterBase,DxfSectionWriterBase,DxfObjectsSectionWriter}.ts`
+- **Symptom:** About 12% of the objects in the public corpus (view styles, SUN, AEC objects, solid history, render settings, proxies) are not mapped by acad-ts. The readers created `UnknownEntity`/`UnknownNonGraphicalObject` only when `keepUnknown*` was set (the objects reader tested `keepUnknownEntities` instead of `keepUnknownNonGraphicalObjects`), kept no payload, and both writers skipped them, so every save dropped them. Objects they own (extension dictionaries, XRECORDs) were never registered and were dropped too.
+- **Fix:** With `keepUnknownEntities`/`keepUnknownNonGraphicalObjects`, the DXF reader records every group code of an unknown object (`IDxfStreamReader.recorder`) into `rawDxfCodes`, and the DXF writer emits them with a new `writeRaw` (no escaping), substituting only the handle (5) and owner (330) before the first subclass marker. `CadDocumentBuilder` attaches objects whose owner is an unknown object to it (`rawOwnedObjects`), so they join the document and get written. `IRawCadObject` also carries the DWG record (filled by 0016). An object read from DWG has no DXF codes and is skipped with a notification when written to DXF.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0014 DXF keeps unknown objects raw and writes them back" (ASCII, binary, and an unknown entity in `uncommon.dxf`).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep unknown DXF objects and entities and write them back
+
+With `keepUnknownEntities`/`keepUnknownNonGraphicalObjects` set, the DXF reader now keeps the group codes of objects and entities it cannot map (`rawDxfCodes`), and `DxfWriter` writes them back unchanged under their handle and owner. Objects they own (extension dictionaries, XRECORDs) are attached to them and written too. Without this, a read/write of any drawing with, for example, `ACDBDETAILVIEWSTYLE`, `SUN` or an AEC object silently loses those objects. The flags' `@deprecated` notes are replaced, since the payloads are now written. The objects reader also tested `keepUnknownEntities` where it meant `keepUnknownNonGraphicalObjects`.
+
+</details>
+
+### 0015 — DWG reader drops classes that share a DXF name, and the writer renumbers classes
+
+- **File:** `third_party/acad-ts-patches/0015-dwg-same-name-classes.patch`
+- **Touches:** `src/Classes/DxfClassCollection.ts`, `src/IO/DWG/DwgStreamReaders/DwgClassesReader.ts`
+- **Symptom:** `AecObjects.dwg` has two `AEC_LIST_DEF` classes (808 and 809); `DxfClassCollection` is keyed by DXF name, so the reader dropped 809 and its 133 objects lost their class. `resetClassNumbers` renumbered every class from 500 on each save, so a raw object record (0016), which names its class by number, would point at the wrong class.
+- **Fix:** Keep a class whose name is taken in a second list (`addSameName`), included in `count`, iteration and `getByClassNumber`. `resetClassNumbers` keeps every unique number of 500 or more and gives the next free number only to classes without one.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0015 class numbers a drawing was read with survive resetClassNumbers"; `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0015 DWG reader keeps classes that share a DXF name, under their own numbers" (also needs 0016).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep DWG classes with duplicate DXF names and their class numbers
+
+Some AutoCAD Architecture drawings define two classes with the same DXF name and different class numbers, and objects of both. The collection keyed by name kept only the first, so objects of the second could not be resolved. `resetClassNumbers` also renumbered every class, which breaks any object stored by class number. This keeps same-name classes and preserves read class numbers; new classes still get numbers from 500.
+
+</details>
+
+### 0016 — DWG reader keeps no payload for unknown objects, and the writer skips them
+
+- **File:** `third_party/acad-ts-patches/0016-dwg-keep-unknown-objects-raw.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** Unknown DWG objects and entities were created without their data and the writer skipped them (`_skipEntry`, `_isEntitySupported`), so a DWG save lost them, plus every object only they referenced (the reader never queued those handles).
+- **Fix:** With the keep flags set, the reader stores the object record (`rawDwgData`: the bytes after the size MS and, R2010+, the handle-stream MC, plus version, type code and handle) and queues every handle left in its handle stream. The writer re-emits the record with a recomputed CRC when the file version, handle and class number still match (`_canWriteRaw`), and queues its extension dictionary and owned objects; otherwise it notifies and skips as before.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0016 DWG keeps unknown objects raw and writes their records back byte for byte".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep unknown DWG objects and write their records back
+
+With `keepUnknownEntities`/`keepUnknownNonGraphicalObjects` set, `DwgObjectReader` now stores the raw object record of objects it cannot parse, and `DwgObjectWriter` writes it back unchanged (new CRC) when saving to the same version, under the same handle and class number. Handles in the object's handle stream are queued, so objects it owns are read. Without this, any DWG round trip drops these objects, for example 1,096 of the objects in an AutoCAD Architecture sample.
+
+</details>
+
+### 0017 — SUN objects and 3DSOLID history objects are not linked, so a save drops them
+
+- **File:** `third_party/acad-ts-patches/0017-sun-and-solid-history.patch`
+- **Touches:** `src/Tables/VPort.ts`, `src/Entities/Viewport.ts`, `src/Entities/Solid3D.ts`, `src/IO/Templates/{CadVPortTemplate,CadViewportTemplate,CadSolid3DTemplate}.ts`, `src/IO/DXF/DxfStreamReader/{DxfTablesSectionReader,DxfSectionReaderBase}.ts`, `src/IO/DXF/DxfStreamWriter/{DxfTablesSectionWriter,DxfSectionWriterBase}.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** A VPORT's and a viewport's SUN (DXF 361, hard owner) and a 3DSOLID's history object (DXF 350, R2007+) were read as handles and thrown away; the writers wrote 0/null, so both objects vanished on save even when kept raw (0014/0016). The DWG reader also never queued the history handle.
+- **Fix:** Add `VPort.sun`, `Viewport.sun` and `Solid3D.history`, resolved by the templates, registered with the document, and written (and queued) by both writers. `clone()` drops `sun`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0017 SUN objects of VPORTs and viewports survive a DXF save", "0017 3DSOLID history objects survive DWG and DXF saves".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep SUN and 3DSOLID history references
+
+`VPORT` and `VIEWPORT` hard-own a `SUN` object through group 361, and R2007+ `3DSOLID` owns its history object through 350. The readers discarded these handles and the writers wrote 0, so the owned objects were orphaned and dropped. This adds `sun`/`history` properties, resolves them on read and writes them back, in DXF and DWG.
+
+</details>
+
+### 0018 — Objects owned only through an XRECORD entry are never read or written
+
+- **File:** `third_party/acad-ts-patches/0018-xrecord-owned-objects.patch`
+- **Touches:** `src/IO/CadDocumentBuilder.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** An XRECORD can own objects through 350–369 entries (an R2004 table's `DATATABLE`, for example). The DWG reader did not queue those handles, so the objects were never read; when read (DXF), nothing registered or wrote them.
+- **Fix:** The DWG reader queues XRECORD handle entries; the builder registers objects owned through 350–369 entries once their XRECORD is in the document; both writers queue 350–369 entry objects. The DXF writer now skips `TableContent` (not implemented by its DXF writer) with a notification instead of throwing, because 0018 makes those objects reachable.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0018 objects owned only through an XRECORD entry are read and written".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write objects owned through XRECORD entries
+
+XRECORD entries with group codes 350–369 are soft/hard owner references. Objects owned only that way were not read from DWG (their handles were never queued) and were not written by either writer, so a round trip dropped them. This queues and registers them. `DxfObjectsSectionWriter` lists `TableContent` among the objects it does not write, because reaching it used to throw.
+
+</details>
+
+### 0019 — DXF reader loses a layout's plot flags
+
+- **File:** `third_party/acad-ts-patches/0019-dxf-plotsettings-flags-in-layout.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** `AcDbPlotSettings` and `AcDbLayout` both use group 70. `_readLayout` tried the layout map first, so the plot flags went into `layoutFlags` (and were then overwritten by the real layout flags), and `PlotSettings.flags` kept its default 688. Model in `sample_AC1032_ascii.dxf` has 11952.
+- **Fix:** In `_readLayout`, read codes inside the `AcDbPlotSettings` subclass with the plot-settings map.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0019 DXF reader keeps a layout's plot flags apart from its layout flags".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read LAYOUT plot-settings codes with the plot-settings map
+
+A LAYOUT object has an `AcDbPlotSettings` subclass followed by `AcDbLayout`, and group 70 means plot flags in the first and layout flags in the second. The reader looked codes up in the layout map first, so plot flags were stored as layout flags and lost. This reads codes in the `AcDbPlotSettings` subclass with its own map.
+
+</details>
+
+### 0020 — DWG header `$CELWEIGHT` read and written as an index, not a lineweight
+
+- **File:** `third_party/acad-ts-patches/0020-dwg-celweight-index.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts`
+- **Symptom:** The low 5 bits of the R2000+ header flag word are a lineweight index (as on entities). The reader stored the index as the value (ByLayer came back as 29) and the writer wrote the value masked to 5 bits (W50 became 18).
+- **Fix:** Convert with `CadUtils.toValue` on read and `CadUtils.toIndex` on write.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0020 DWG header stores $CELWEIGHT as a lineweight index and reads it back as a value"; `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0020 DWG reader returns $CELWEIGHT as a lineweight, matching the DXF of the drawing".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Decode and encode $CELWEIGHT as a lineweight index
+
+In the R2000+ DWG header, `CELWEIGHT` is stored as a lineweight index in the low 5 bits of the flags word (ODA spec §9.4), like entity lineweights. `DwgHeaderReader` returned the raw index and `DwgHeaderWriter` masked the value, so ByLayer read as 29 and W50 wrote as 18. This uses `CadUtils.toValue`/`toIndex`.
 
 </details>

@@ -230,14 +230,16 @@ describe('acad-ts local patches (corpus-backed)', () => {
   });
 
   it("0019 DXF reader keeps a layout's plot flags apart from its layout flags", () => {
-    // Both AcDbPlotSettings and AcDbLayout use group 70; the layout's 1 overwrote the plot 688.
+    // AcDbPlotSettings and AcDbLayout both use group 70. The layout map took the plot flags as
+    // layout flags (then overwrote them), so plot flags stayed at their default (688). Model's
+    // plot flags in this file are 11952; paper layouts happen to carry the default.
     const doc = DxfReader.readFromStream(
       corpusBytes('third-party/acadsharp/sample_AC1032_ascii.dxf'),
     );
-    const layout1 = [...doc.layouts!].find((l) => l.name === 'Layout1')!;
+    const model = [...doc.layouts!].find((l) => l.name === 'Model')!;
 
-    expect(layout1.flags).toBe(688);
-    expect(layout1.layoutFlags).toBe(LayoutFlags.PaperSpaceLinetypeScaling);
+    expect(model.flags).toBe(11952);
+    expect(model.layoutFlags).toBe(LayoutFlags.PaperSpaceLinetypeScaling);
   });
 
   it('0020 DWG reader returns $CELWEIGHT as a lineweight, matching the DXF of the drawing', () => {
