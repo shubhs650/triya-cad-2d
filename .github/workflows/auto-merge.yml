@@ -1,21 +1,46 @@
-name: Enable auto-merge on thread PRs
+name: Auto-merge after green CI
 
-# Fallback for the case where the Claude GitHub App token cannot enable auto-merge itself.
-# Requires a repository secret AUTOMERGE_TOKEN (fine-grained PAT: Pull requests read/write,
-# Contents read/write) and "Allow auto-merge" turned on in the repository settings.
-# Branch protection on main (required checks: "lint · typecheck · unit · round-trip" and
-# "fidelity · offline · ui") is what makes auto-merge wait for green.
+# CI is the reviewer (DEC-031). This workflow enables squash auto-merge on a PR only after a
+# CI run for the PR's *current* head commit has finished green, so a failing check (for
+# example a deliberately failing fidelity test) can never be merged, even before branch
+# protection lists the required checks. With required checks configured it is belt and braces.
+#
+# Runs from the default branch's copy of this file (workflow_run), never checks out PR code.
+# Uses AUTOMERGE_TOKEN (fine-grained PAT: Pull requests + Contents read/write) when present so
+# the squash commit on main triggers CI; falls back to GITHUB_TOKEN.
 
 on:
-  pull_request:
-    types: [opened, reopened, ready_for_review, synchronize]
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+
+permissions:
+  contents: write
+  pull-requests: write
 
 jobs:
   enable:
-    if: github.event.pull_request.draft == false
+    name: enable auto-merge after green CI
+    if: >-
+      github.event.workflow_run.conclusion == 'success'
+      && github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     steps:
-      - name: Enable squash auto-merge
+      - name: Enable squash auto-merge on the PR whose head just passed CI
         env:
           GH_TOKEN: ${{ secrets.AUTOMERGE_TOKEN || github.token }}
-        run: gh pr merge --auto --squash "${{ github.event.pull_request.html_url }}" || echo "auto-merge not enabled (check repo setting and token)"
+          GH_REPO: ${{ github.repository }}
+          HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
+          HEAD_BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          pr=$(gh pr list --head "$HEAD_BRANCH" --state open --json number --jq '.[0].number // empty')
+          if [ -z "$pr" ]; then echo "No open PR for $HEAD_BRANCH."; exit 0; fi
+          read -r sha draft < <(gh pr view "$pr" --json headRefOid,isDraft --jq '"\(.headRefOid) \(.isDraft)"')
+          if [ "$sha" != "$HEAD_SHA" ]; then
+            echo "PR #$pr has moved past $HEAD_SHA; the run for its new head decides."; exit 0
+          fi
+          if [ "$draft" = "true" ]; then
+            echo "PR #$pr is a draft; marking it ready re-runs CI, which re-triggers this."; exit 0
+          fi
+          gh pr merge "$pr" --auto --squash \
+            || echo "Auto-merge not enabled (check the repo's Allow auto-merge setting and token)."

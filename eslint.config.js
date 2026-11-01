@@ -85,9 +85,7 @@ const BROWSER_ONLY_GLOBALS = [
 }));
 
 const elementOf = (type) =>
-  type === 'web'
-    ? { type, pattern: 'apps/web', mode: 'folder' }
-    : { type, pattern: `packages/${type}`, mode: 'folder' };
+  type === 'web' ? { type, pattern: 'apps/web' } : { type, pattern: `packages/${type}` };
 
 const policies = [
   ...Object.entries(DEPENDENCY_GRAPH).map(([from, to]) => ({

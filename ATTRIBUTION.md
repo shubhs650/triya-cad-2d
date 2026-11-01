@@ -17,6 +17,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | React, Vite, Zustand, Radix, Comlink, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
 | ESLint, @eslint/js, typescript-eslint, eslint-plugin-boundaries, globals, Prettier, Turborepo, Husky | dev tooling (lint, module boundaries, format, task runner, git hooks); not shipped | MIT | npm |
 | eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |
+| yaml | dev tooling (parses workflows in `tests/ci`); not shipped | ISC | npm |
 | TypeScript, Playwright (`@playwright/test`) | compiler; browser test runner; not shipped | Apache-2.0 | npm |
 | minimatch 10 (transitive, via ESLint) | dev tooling only; not shipped | BlueOak-1.0.0 (permissive, OSI-approved) | npm |
 

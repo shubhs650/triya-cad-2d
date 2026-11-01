@@ -17,6 +17,16 @@ Fidelity is the product. This document defines the corpus, the harnesses, the to
 | Private corpus | same harnesses | owner's real drawings | owner, locally |
 | AUDIT | AutoCAD (owner) | AutoCAD `AUDIT`/`RECOVER` on Triya-saved files | milestone gates |
 
+### 1.1 CI wiring (`.github/workflows/ci.yml`)
+
+| Job (check name) | Runs | When |
+|---|---|---|
+| `lint · typecheck · unit · round-trip` | `pnpm lint`, `typecheck`, `test`, `corpus:validate` | every PR and push to `main` (**required**) |
+| `fidelity · offline · ui` | `pnpm build`, `test:fidelity`, `test:offline`, `test:ui`; uploads `test-results/` + `playwright-report/` as `fidelity-diffs` on failure | every PR and push to `main` (**required**) |
+| `performance budgets` | `pnpm test:perf` | `main`; PRs that change `packages/render`, `engine` or `io` (`detect hot-path changes` job); PRs labelled `perf` or titled `[perf]` |
+
+Offline and UI suites still run after a fidelity failure, so one red run shows every broken gate. pnpm's store and Playwright's browsers (keyed on the Playwright version) are cached. `auto-merge.yml` enables squash auto-merge only after a CI run for the PR's current head succeeds, so a failing check never merges even without branch protection. `tests/ci/workflows.test.ts` pins all of this, including the two required check names.
+
 ## 2. Corpus
 
 ### 2.1 Public corpus (`corpus/public/`, committed)
