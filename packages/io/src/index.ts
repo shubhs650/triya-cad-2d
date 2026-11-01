@@ -13,3 +13,4 @@ export type { AbortSignalLike, IoWorker, ReadInWorkerOptions } from './worker/cl
 export { mapHeader, type MappedHeader } from './map/header';
 export { mapTables, type MappedTables } from './map/tables';
 export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/entities';
+export { mapSortEnts } from './map/sortents';
