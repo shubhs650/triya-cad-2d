@@ -270,6 +270,58 @@ describe('tables', () => {
   });
 });
 
+describe('images and underlays', () => {
+  const image: EntityGeometry = {
+    kind: 'IMAGE',
+    position: { x: 10, y: 20 },
+    u: { x: 0.5, y: 0 },
+    v: { x: 0, y: 0.5 },
+    size: { x: 100, y: 40 },
+    displayFlags: 7,
+    clipping: false,
+    brightness: 50,
+    contrast: 50,
+    fade: 0,
+    clip: { type: 'rectangle', vertices: [], inverted: false },
+  };
+
+  it('covers an image from its corner along u and v', () => {
+    expectBox(entityBounds(image, ctx()), box(10, 20, 60, 40));
+  });
+
+  it('follows rotated pixel axes', () => {
+    const g = { ...image, u: { x: 0, y: 0.5 }, v: { x: -0.5, y: 0 } };
+    expectBox(entityBounds(g, ctx()), box(-10, 20, 10, 70));
+  });
+
+  it('bounds an underlay by its clip boundary only', () => {
+    const u: EntityGeometry = {
+      kind: 'PDFUNDERLAY',
+      position: { x: 1, y: 2 },
+      scale: { x: 2, y: 2, z: 1 },
+      rotation: Math.PI / 2,
+      flags: 3,
+      contrast: 100,
+      fade: 0,
+      clip: [
+        { x: 0, y: 0 },
+        { x: 4, y: 3 },
+      ],
+    };
+    expectBox(entityBounds(u, ctx()), box(-5, 2, 1, 10));
+    expect(entityBounds({ ...u, clip: [] }, ctx()).kind).toBe('unknown');
+    // A two-corner clip is a rectangle: rotated 45°, all four of its corners count.
+    const r = Math.SQRT1_2;
+    expectBox(
+      entityBounds(
+        { ...u, position: { x: 0, y: 0 }, scale: { x: 1, y: 1, z: 1 }, rotation: Math.PI / 4 },
+        ctx(),
+      ),
+      box(-3 * r, 0, 4 * r, 7 * r),
+    );
+  });
+});
+
 describe('construction lines', () => {
   it('keeps XLINE and RAY as infinite lines with a unit direction', () => {
     const x = entityBounds(
