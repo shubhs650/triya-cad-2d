@@ -34,6 +34,7 @@ import type {
 import { expandInsert, referenceOf, type BlockSource } from './blocks';
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
+import { mixColors, tintColor } from './style/mix';
 import { patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
 import { tessellate } from './tessellate';
@@ -45,6 +46,7 @@ import {
   PATH_Z,
   screenToWorld,
   visibleBox,
+  type FillGradient,
   type PrimitiveColor,
   type RenderPrimitive,
   type RenderStyle,
@@ -57,6 +59,7 @@ export interface Canvas2D {
   strokeStyle: string | CanvasGradient | CanvasPattern;
   fillStyle: string | CanvasGradient | CanvasPattern;
   lineWidth: number;
+  globalAlpha: number;
   lineCap: CanvasLineCap;
   lineJoin: CanvasLineJoin;
   setTransform(a: number, b: number, c: number, d: number, e: number, f: number): void;
@@ -80,6 +83,15 @@ export interface Canvas2D {
   stroke(): void;
   fill(rule?: CanvasFillRule): void;
   drawImage(image: CanvasImageSource, dx: number, dy: number): void;
+  createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient;
+  createRadialGradient(
+    x0: number,
+    y0: number,
+    r0: number,
+    x1: number,
+    y1: number,
+    r1: number,
+  ): CanvasGradient;
 }
 
 /** A canvas (visible or an offscreen layer) and its 2D context. */
@@ -540,9 +552,48 @@ export class Canvas2DRenderer implements Renderer {
           world();
           ctx.beginPath();
           buildPath(ctx, prim.path, center.x, center.y);
-          device();
-          ctx.fillStyle = color;
+          const g = prim.gradient;
+          if (g) {
+            // The gradient is made in its unit frame; a fill paints it through the transform in
+            // force when it fills, so that transform is world ∘ frame.
+            const f = g.frame;
+            ctx.setTransform(
+              k * f.a,
+              -k * f.b,
+              k * f.c,
+              -k * f.d,
+              k * (f.e - center.x) + cx,
+              -k * (f.f - center.y) + cy,
+            );
+            inWorld = false;
+            ctx.fillStyle = this.#gradient(ctx, g);
+          } else {
+            device();
+            ctx.fillStyle = color;
+          }
           ctx.fill(prim.evenOdd ? 'evenodd' : 'nonzero');
+          if (g) device();
+          continue;
+        }
+        const tint = prim.kind === 'stroke' ? prim.hatch : undefined;
+        if (tint && tint.spacing * scale < 1) {
+          // ARCHITECTURE.md §7.2 LOD: hatch lines under a pixel apart → the area at their
+          // average ink, which is what the lines would paint: a line width of every spacing
+          // across them, and each dash (plus its round caps) of every repetition along them.
+          // Families tint one by one, so their alphas compound as their lines would overlap.
+          flush();
+          world();
+          ctx.beginPath();
+          buildPath(ctx, tint.area, center.x, center.y);
+          device();
+          const w = this.#lineWidth(prim.lineweight) / k;
+          const across = Math.min(1, w / tint.spacing);
+          const along =
+            tint.period > 0 ? Math.min(1, (tint.dashLength + tint.marks * w) / tint.period) : 1;
+          ctx.globalAlpha = across * along;
+          ctx.fillStyle = color;
+          ctx.fill(tint.evenOdd ? 'evenodd' : 'nonzero');
+          ctx.globalAlpha = 1;
           continue;
         }
         const width = this.#lineWidth(prim.lineweight);
@@ -566,6 +617,18 @@ export class Canvas2DRenderer implements Renderer {
       }
     }
     flush();
+  }
+
+  /** A gradient fill's canvas gradient, in its unit frame, with the colours resolved. */
+  #gradient(ctx: Canvas2D, g: FillGradient): CanvasGradient {
+    const c1 = this.#color(g.colors[0]);
+    const c2 = g.tint === undefined ? this.#color(g.colors[1]) : tintColor(c1, g.tint);
+    const out =
+      g.kind === 'linear'
+        ? ctx.createLinearGradient(0, 0, 1, 0)
+        : ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
+    for (const [t, mix] of g.stops) out.addColorStop(t, mixColors(c1, c2, mix));
+    return out;
   }
 
   #color(c: PrimitiveColor): string {

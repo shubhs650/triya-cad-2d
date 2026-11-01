@@ -201,4 +201,38 @@ describe('transformPrimitive', () => {
       applyAffine(transforms[1]![1], { x: 10, y: 0 }),
     );
   });
+
+  it('carries a hatch family’s tint area and spacing, and a gradient’s frame (M1-16)', () => {
+    const m = transforms[1]![1];
+    const k = Math.sqrt(Math.abs(m.a * m.d - m.b * m.c));
+    const family: RenderPrimitive = {
+      kind: 'stroke',
+      path: [PATH_M, 0, 0, PATH_L, 1, 0],
+      color: 'foreground',
+      hatch: {
+        area: [PATH_M, 0, 0, PATH_L, 1, 0, PATH_L, 1, 1],
+        evenOdd: true,
+        spacing: 0.5,
+        period: 2,
+        dashLength: 1,
+        marks: 1,
+      },
+    };
+    const out = transformPrimitive(family, m);
+    if (out.kind !== 'stroke' || !out.hatch) throw new Error('expected a hatch stroke');
+    expect(out.hatch).toMatchObject({ spacing: 0.5 * k, period: 2 * k, dashLength: k, marks: 1 });
+    near({ x: out.hatch.area[7]!, y: out.hatch.area[8]! }, applyAffine(m, { x: 1, y: 1 }));
+
+    const frame = { a: 2, b: 0, c: 0, d: 3, e: 1, f: 1 };
+    const fill: RenderPrimitive = {
+      kind: 'fill',
+      path: [PATH_M, 0, 0],
+      color: '#0000ff',
+      gradient: { kind: 'linear', frame, stops: [[0, 0]], colors: ['#0000ff', '#ffff00'] },
+    };
+    const g = transformPrimitive(fill, m);
+    if (g.kind !== 'fill' || !g.gradient) throw new Error('expected a gradient fill');
+    // Unit (1, 0) is block (3, 1), which the insert carries into the drawing.
+    near(applyAffine(g.gradient.frame, { x: 1, y: 0 }), applyAffine(m, { x: 3, y: 1 }));
+  });
 });

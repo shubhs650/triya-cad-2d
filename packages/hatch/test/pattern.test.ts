@@ -42,8 +42,9 @@ const input = (loops: HatchLoop[], patternLines: HatchPatternLine[], style = 0):
 function segs(r: ReturnType<typeof hatchPattern>): number[][] {
   if (r.kind !== 'lines') throw new Error(`expected lines, got ${r.kind}`);
   const out: number[][] = [];
-  for (let i = 0; i < r.segments.length; i += 4)
-    out.push([0, 1, 2, 3].map((k) => Math.round(r.segments[i + k]! * 1e9) / 1e9 + 0));
+  for (const { segments: s } of r.families)
+    for (let i = 0; i < s.length; i += 4)
+      out.push([0, 1, 2, 3].map((k) => Math.round(s[i + k]! * 1e9) / 1e9 + 0));
   return out.sort((a, b) => a[1]! - b[1]! || a[0]! - b[0]!);
 }
 const onLine = (s: number[][], y: number) => s.filter((q) => q[1] === y).map((q) => [q[0], q[2]]);
@@ -107,9 +108,10 @@ describe('hatchPattern', () => {
     const r = hatchPattern(input([square(0.5, 0.5, 9.5, 1.5)], [horizontal([0, -1])]));
     if (r.kind !== 'lines') throw new Error('expected lines');
     const xs: number[] = [];
-    for (let i = 0; i < r.dots.length; i += 2) xs.push(Math.round(r.dots[i]! * 1e9) / 1e9);
+    const [{ dots, segments }] = r.families as [(typeof r.families)[0]];
+    for (let i = 0; i < dots.length; i += 2) xs.push(Math.round(dots[i]! * 1e9) / 1e9);
     expect(xs).toEqual([1, 2, 3, 4, 5, 6, 7, 8, 9]);
-    expect(r.segments).toHaveLength(0);
+    expect(segments).toHaveLength(0);
   });
 
   it('turns the family with its angle and spaces it by the offset across the lines', () => {
@@ -177,6 +179,26 @@ describe('hatchPattern', () => {
     const ten = input([square(0, 0.5, 10, 10.5)], [horizontal()]);
     expect(hatchPattern(ten, { maxLines: 9 }).kind).toBe('too-dense');
     expect(hatchPattern(ten, { maxLines: 10 }).kind).toBe('lines');
+  });
+
+  it('reports each family with its spacing and ink, for the sub-pixel tint', () => {
+    // Two definition lines: dashes 2, gap 1, dot, gap 1 (period 4) one unit apart along x;
+    // continuous at 45° with offset (0, 0.5), 0.5·cos 45° apart across the lines.
+    const r = hatchPattern(
+      input(
+        [square(0, 0.5, 10, 10.5)],
+        [
+          horizontal([2, -1, 0, -1]),
+          { angle: Math.PI / 4, base: { x: 0, y: 0 }, offset: { x: 0, y: 0.5 }, dashes: [] },
+        ],
+      ),
+    );
+    if (r.kind !== 'lines') throw new Error('expected lines');
+    expect(r.families).toHaveLength(2);
+    const [a, b] = r.families as [(typeof r.families)[0], (typeof r.families)[0]];
+    expect(a).toMatchObject({ spacing: 1, period: 4, dashLength: 2, marks: 2 });
+    expect(b.spacing).toBeCloseTo(0.5 * Math.SQRT1_2, 12);
+    expect(b).toMatchObject({ period: 0, dashLength: 0, marks: 0 });
   });
 
   it('draws nothing for a family with no spacing, or without loops', () => {

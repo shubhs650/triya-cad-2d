@@ -177,12 +177,25 @@ export function change(
 
 export type Call = [string, ...unknown[]];
 
+/** A recorded gradient: how it was made and its colour stops. */
+export class FakeGradient {
+  readonly stops: [number, string][] = [];
+  constructor(readonly args: [string, ...number[]]) {}
+  addColorStop(offset: number, color: string): void {
+    this.stops.push([offset, color]);
+  }
+  toString(): string {
+    return `gradient(${this.args.join(',')})`;
+  }
+}
+
 /** Records every call and property write, in order. */
 export class FakeContext implements Canvas2D {
   readonly calls: Call[] = [];
   #stroke = '';
   #fill = '';
   #width = 1;
+  #alpha = 1;
   lineCap: CanvasLineCap = 'butt';
   lineJoin: CanvasLineJoin = 'miter';
   get strokeStyle(): string {
@@ -197,6 +210,7 @@ export class FakeContext implements Canvas2D {
   }
   set fillStyle(v: string | CanvasGradient | CanvasPattern) {
     this.#fill = String(v);
+    this.gradient = v instanceof FakeGradient ? v : undefined;
     this.calls.push(['fillStyle', v]);
   }
   get lineWidth(): number {
@@ -205,6 +219,23 @@ export class FakeContext implements Canvas2D {
   set lineWidth(v: number) {
     this.#width = v;
     this.calls.push(['lineWidth', v]);
+  }
+  get globalAlpha(): number {
+    return this.#alpha;
+  }
+  set globalAlpha(v: number) {
+    this.#alpha = v;
+    this.calls.push(['globalAlpha', v]);
+  }
+  /** The fill style last set, when it was a gradient. */
+  gradient: FakeGradient | undefined;
+  createLinearGradient(...a: number[]): CanvasGradient {
+    this.calls.push(['createLinearGradient', ...a]);
+    return new FakeGradient(['linear', ...a]) as unknown as CanvasGradient;
+  }
+  createRadialGradient(...a: number[]): CanvasGradient {
+    this.calls.push(['createRadialGradient', ...a]);
+    return new FakeGradient(['radial', ...a]) as unknown as CanvasGradient;
   }
   setTransform(...a: number[]): void {
     this.calls.push(['setTransform', ...a]);
@@ -237,7 +268,7 @@ export class FakeContext implements Canvas2D {
     this.calls.push(['stroke', this.#stroke, this.#width]);
   }
   fill(rule?: CanvasFillRule): void {
-    this.calls.push(['fill', this.#fill, rule]);
+    this.calls.push(['fill', this.#fill, rule, this.#alpha]);
   }
   drawImage(image: CanvasImageSource, x: number, y: number): void {
     this.calls.push(['drawImage', (image as unknown as { name: string }).name, x, y]);
