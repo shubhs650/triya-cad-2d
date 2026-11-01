@@ -1,0 +1,1 @@
+- M1-41 part 1 (#67): TEXT and MTEXT draw on screen from the loaded fonts: SHX glyphs as strokes and TrueType glyphs as filled outlines, both exact at any zoom, with AutoCAD's TEXT justification, width factor, obliquing and mirroring, MTEXT colour, font, stack, big-font and underline codes, and the text inside dimensions and tables. Font loading in the app comes with M1-37.

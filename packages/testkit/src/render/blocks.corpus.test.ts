@@ -10,9 +10,11 @@ import type { Entity } from '@triya/engine';
 import { readCadDocument } from '@triya/io';
 import {
   PATH_A,
+  PATH_C,
   PATH_E,
   PATH_L,
   PATH_M,
+  PATH_Q,
   PATH_Z,
   defaultPaint,
   expandInsert,
@@ -50,6 +52,11 @@ function* points(p: RenderPrimitive): Generator<{ x: number; y: number }> {
         y: cy! + ux * Math.sin(rot!) + uy * Math.cos(rot!),
       };
       i += 9;
+    } else if (op === PATH_Q || op === PATH_C) {
+      // A Bézier stays inside its control points' hull: its end point is the one that counts.
+      const n = op === PATH_Q ? 2 : 3;
+      yield { x: path[i + 2 * n - 1]!, y: path[i + 2 * n]! };
+      i += 1 + 2 * n;
     } else if (op === PATH_Z) {
       i += 1;
     } else {

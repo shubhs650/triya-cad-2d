@@ -12,6 +12,7 @@ import {
   type HeaderValue,
   type LayerRecord,
   type NonGraphicalObject,
+  type TextStyleRecord,
   type Vec2,
 } from '@triya/engine';
 import type { Canvas2D, Surface } from '../src/index';
@@ -89,6 +90,8 @@ export interface DrawingExtra {
     readonly name: string;
     readonly basePoint?: Vec2;
   }[];
+  /** M1-41: text styles. */
+  readonly textStyles?: readonly TextStyleRecord[];
 }
 
 /**
@@ -124,6 +127,7 @@ export function drawingInit(entities: EntityInit[], extra: DrawingExtra = {}): D
           elements: [dash(0.5), dash(-0.25)],
         },
       ],
+      ...(extra.textStyles ? { textStyles: [...extra.textStyles] } : {}),
       blockRecords: [
         { handle: MODEL, name: '*Model_Space', units: 0, explodable: true, scalable: true },
         { handle: PAPER, name: '*Paper_Space', units: 0, explodable: true, scalable: true },
@@ -260,6 +264,12 @@ export class FakeContext implements Canvas2D {
   }
   ellipse(...a: unknown[]): void {
     this.calls.push(['ellipse', ...a]);
+  }
+  quadraticCurveTo(...a: number[]): void {
+    this.calls.push(['quadraticCurveTo', ...a]);
+  }
+  bezierCurveTo(...a: number[]): void {
+    this.calls.push(['bezierCurveTo', ...a]);
   }
   closePath(): void {
     this.calls.push(['closePath']);
