@@ -17,6 +17,8 @@
   },
   "scripts": {
     "prepare": "husky",
+    "postinstall": "node third_party/build-acad-ts.mjs",
+    "build:acad-ts": "node third_party/build-acad-ts.mjs --force",
     "dev": "pnpm --filter @triya/web dev",
     "build": "turbo run build",
     "lint": "eslint . --max-warnings=0 && prettier --check .",
@@ -28,6 +30,7 @@
     "test:offline": "playwright test --project=offline --pass-with-no-tests",
     "test:ui": "playwright test --project=ui --pass-with-no-tests",
     "test:perf": "playwright test --project=perf --pass-with-no-tests",
+    "test:io": "playwright test --project=io",
     "test:private": "node scripts/not-yet.mjs test:private M1-24",
     "corpus:list": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts list",
     "corpus:validate": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts validate",

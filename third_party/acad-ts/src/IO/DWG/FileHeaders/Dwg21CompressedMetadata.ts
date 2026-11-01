@@ -1,0 +1,36 @@
+export class Dwg21CompressedMetadata {
+	headerSize: number = 0x70;
+	fileSize: number = 0;
+	pagesMapCrcCompressed: number = 0;
+	pagesMapCorrectionFactor: number = 0;
+	pagesMapCrcSeed: number = 0;
+	map2Offset: number = 0;
+	map2Id: number = 0;
+	pagesMapOffset: number = 0;
+	header2offset: number = 0;
+	pagesMapSizeCompressed: number = 0;
+	pagesMapSizeUncompressed: number = 0;
+	pagesAmount: number = 0;
+	pagesMaxId: number = 0;
+	sectionsMap2Id: number = 0;
+	pagesMapId: number = 0;
+	unknow0x20: number = 32;
+	unknow0x40: number = 64;
+	pagesMapCrcUncompressed: number = 0;
+	unknown0xF800: number = 0xF800;
+	unknown4: number = 4;
+	unknown1: number = 1;
+	sectionsAmount: number = 0;
+	sectionsMapCrcUncompressed: number = 0;
+	sectionsMapSizeCompressed: number = 0;
+	sectionsMapId: number = 0;
+	sectionsMapSizeUncompressed: number = 0;
+	sectionsMapCrcCompressed: number = 0;
+	sectionsMapCorrectionFactor: number = 0;
+	sectionsMapCrcSeed: number = 0;
+	streamVersion: number = 393472;
+	crcSeed: number = 0;
+	crcSeedEncoded: number = 0;
+	randomSeed: number = 0;
+	headerCRC64: number = 0;
+}

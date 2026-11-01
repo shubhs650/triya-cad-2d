@@ -42,6 +42,7 @@ jobs:
       - run: pnpm test:fidelity
       - run: pnpm test:offline
       - run: pnpm test:ui
+      - run: pnpm test:io
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

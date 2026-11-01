@@ -40,7 +40,7 @@ triya-cad-2d/
 │  └─ private/                 # .gitignored; owner's real drawings, run locally only
 ├─ third_party/
 │  ├─ planegcs/                # Git submodule + Emscripten build script → packages/constraints/wasm
-│  └─ acad-ts/                 # Vendored fork (git subtree) with local patches; upstream PRs tracked
+│  └─ acad-ts/                 # Vendored filtered snapshot (DEC-033) with local patches; upstream PRs tracked
 ├─ assets/
 │  ├─ fonts/                   # Open stroke fonts (Hershey, LibreCAD-derived), compiled to .shx-equivalent JSON
 │  ├─ patterns/                # Re-authored .pat set
@@ -317,7 +317,7 @@ PUBLISH loops layouts into a multi-page `PdfSink` with bookmarks and page labels
 - `pnpm` workspaces + `turbo`; Node 22; TypeScript strict; ESLint + boundaries; Prettier.
 - `pnpm build` produces `apps/web/dist`; Cloudflare Pages deploys `main` to production and PR previews to `*.pages.dev`.
 - Release = tag `vX.Y.Z` → GitHub Release with changelog → Pages deploy.
-- `third_party/planegcs` builds in CI (Emscripten docker) and the artifact is cached; `third_party/acad-ts` is a subtree with a `PATCHES.md` listing every local change and its upstream PR.
+- `third_party/planegcs` builds in CI (Emscripten docker) and the artifact is cached; `third_party/acad-ts` is a filtered snapshot of a pinned upstream commit (DEC-033, `third_party/sync-acad-ts.sh`) with a `PATCHES.md` listing every local change and its upstream PR.
 
 ## 19. Things that look optional but are not
 
