@@ -9,6 +9,12 @@
 // - Precision: paths are built relative to the view centre, so canvas float32 maths never
 //   sees large drawing coordinates.
 // - DPR: backing stores are CSS size × device pixel ratio; line widths are device pixels.
+// - Style (M1-13): an entity with a linetype is cached continuous, which is what it shows
+//   once a pattern is under a pixel and what picking measures; its dashes are fitted the
+//   first time it is drawn at a zoom that shows them and kept until it changes, so opening a
+//   drawing never pays for dashes nobody zooms in to see. Lineweights follow AutoCAD's model
+//   and layout display (`lineweightPixels`), a block's SORTENTSTABLE sets the draw order
+//   (`drawOrder`), and LTSCALE, linetype and layer changes re-resolve every entity.
 //
 // The renderer reads the model and its spatial index; the caller applies each ChangeSet to
 // both first, then to the renderer (the order `SpatialIndex.apply` already requires).
@@ -18,11 +24,18 @@ import type {
   ChangeSet,
   DocumentModel,
   Entity,
+  EntityGeometry,
   EntityId,
   Handle,
+  KeyedChanges,
+  NonGraphicalObject,
+  SortEntsTable,
   SpatialIndex,
 } from '@triya/engine';
 import { defaultPaint } from './paint';
+import { drawOrder } from './style/draw-order';
+import { patternLength } from './style/pattern';
+import { lineweightPixels } from './style/resolve';
 import { tessellate, type Paint } from './tessellate';
 import {
   PATH_A,
@@ -99,6 +112,14 @@ interface CacheEntry {
   readonly size: number;
   readonly x: number;
   readonly y: number;
+  /** An entity with a linetype: what its dashes are fitted from, on first use. */
+  readonly linetype?: {
+    readonly geom: EntityGeometry;
+    readonly paint: Paint;
+    /** One pattern repetition, world units. */
+    readonly period: number;
+    dashed?: readonly RenderPrimitive[];
+  };
 }
 
 export const DEFAULT_STYLE: RenderStyle = {
@@ -109,8 +130,19 @@ export const DEFAULT_STYLE: RenderStyle = {
 
 /** The frame budget (ARCHITECTURE.md §7.2): 60 fps. */
 const FRAME_BUDGET_MS = 16;
-/** Screen pixels per millimetre for lineweight display (96 dpi). */
-const PX_PER_MM = 96 / 25.4;
+/** Header variables that change how every entity is painted. */
+const PAINT_HEADER = new Set(['$LTSCALE']);
+
+const isSortEnts = (o: NonGraphicalObject): o is SortEntsTable => o.type === 'SORTENTSTABLE';
+
+function touchesSortEnts(c: KeyedChanges<NonGraphicalObject> | undefined): boolean {
+  if (!c) return false;
+  return (
+    (c.added ?? []).some(isSortEnts) ||
+    (c.removed ?? []).some(isSortEnts) ||
+    (c.updated ?? []).some((u) => isSortEnts(u.before) || isSortEnts(u.after))
+  );
+}
 
 export class Canvas2DRenderer implements Renderer {
   readonly #model: DocumentModel;
@@ -122,6 +154,13 @@ export class Canvas2DRenderer implements Renderer {
   readonly #paint: (e: Entity, model: DocumentModel) => Paint | undefined;
   readonly #now: () => number;
   readonly #requestIdle: (cb: () => void) => void;
+  /**
+   * Model space and block definitions show lineweights as pixels; a layout's paper space as
+   * paper millimetres at the zoom.
+   */
+  readonly #paperSpace: boolean;
+  /** Paper drawing units per millimetre; the layout's plot paper units come with M1-18. */
+  readonly #paperUnitsPerMm: number;
 
   /** Per entity id (ids are dense): its primitives and screen-size data; hidden ones absent. */
   #cache: (CacheEntry | undefined)[] = [];
@@ -155,7 +194,13 @@ export class Canvas2DRenderer implements Renderer {
     this.#paint = o.paint ?? defaultPaint;
     this.#now = o.now ?? (() => performance.now());
     this.#requestIdle = o.requestIdle ?? ((cb) => setTimeout(cb, 50));
-    for (const id of this.#model.blockEntities(this.#block)) this.#cacheEntity(id);
+    this.#paperSpace = this.#model.layouts.some(
+      (l) =>
+        l.blockRecord === this.#block &&
+        this.#model.tables.blockRecords.get(l.blockRecord)?.name.toLowerCase() !== '*model_space',
+    );
+    this.#paperUnitsPerMm = this.#model.meta.measurement === 'imperial' ? 1 / 25.4 : 1;
+    this.#cacheBlock();
   }
 
   resize(width: number, height: number, dpr: number): void {
@@ -195,14 +240,18 @@ export class Canvas2DRenderer implements Renderer {
     if (
       e?.added?.length ||
       e?.removed?.length ||
-      e?.updated?.some((u) => u.before.owner !== u.after.owner)
+      e?.updated?.some((u) => u.before.owner !== u.after.owner) ||
+      touchesSortEnts(cs.objects)
     )
       this.#orderDirty = true;
-    // A layer change can recolour or hide any entity on it: re-resolve the whole block.
-    if (cs.tables?.layers) {
-      this.#cache = [];
-      for (const id of this.#model.blockEntities(this.#block)) this.#cacheEntity(id);
-    }
+    // A layer, linetype or LTSCALE change can restyle or hide any entity: re-resolve the
+    // whole block.
+    if (
+      cs.tables?.layers ||
+      cs.tables?.linetypes ||
+      cs.header?.some((h) => PAINT_HEADER.has(h.name))
+    )
+      this.#cacheBlock();
     this.#sceneDirty = true;
   }
 
@@ -267,6 +316,11 @@ export class Canvas2DRenderer implements Renderer {
     if (id !== undefined) this.#cache[id] = undefined;
   }
 
+  #cacheBlock(): void {
+    this.#cache = [];
+    for (const id of this.#model.blockEntities(this.#block)) this.#cacheEntity(id);
+  }
+
   #cacheEntity(id: EntityId): void {
     const e = this.#model.entity(id);
     if (!e) return;
@@ -275,17 +329,42 @@ export class Canvas2DRenderer implements Renderer {
       this.#cache[id] = undefined;
       return;
     }
+    const { linetype: lt, ...continuous } = paint;
+    const prims = tessellate(e.geom, continuous);
+    const period = lt ? patternLength(lt.pattern) * lt.scale : 0;
+    const linetype = period > 0 ? { linetype: { geom: e.geom, paint, period } } : {};
     // The size and centre drive the sub-pixel LOD; unknown bounds never count as small.
     const b = this.#index.bounds(id);
     this.#cache[id] =
       b?.kind === 'box'
         ? {
-            prims: tessellate(e.geom, paint),
+            prims,
             size: Math.max(b.box.maxX - b.box.minX, b.box.maxY - b.box.minY),
             x: (b.box.minX + b.box.maxX) / 2,
             y: (b.box.minY + b.box.maxY) / 2,
+            ...linetype,
           }
-        : { prims: tessellate(e.geom, paint), size: Infinity, x: 0, y: 0 };
+        : { prims, size: Infinity, x: 0, y: 0, ...linetype };
+  }
+
+  /** What an entry draws at the current zoom: its dashes, or continuous (LOD). */
+  #primitives(entry: CacheEntry): readonly RenderPrimitive[] {
+    const lt = entry.linetype;
+    // ARCHITECTURE.md §7.2 LOD: "dashed linetypes below 1 px per pattern unit → solid".
+    if (!lt || lt.period * this.#view.scale < 1) return entry.prims;
+    lt.dashed ??= tessellate(lt.geom, lt.paint);
+    return lt.dashed;
+  }
+
+  /** The block's entities in draw order: block order, rearranged by its SORTENTSTABLE. */
+  #drawOrder(): EntityId[] {
+    let table: SortEntsTable | undefined;
+    for (const o of this.#model.objects.values())
+      if (isSortEnts(o) && o.block === this.#block) table = o;
+    const ids = this.#model.blockEntities(this.#block);
+    if (!table) return [...ids];
+    const handles = ids.map((id) => this.#model.ids.handleOf(id)!);
+    return drawOrder(handles, table.entries).map((h) => this.#model.ids.idOf(h)!);
   }
 
   #drawScene(reduced: boolean): void {
@@ -295,7 +374,7 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillStyle = this.#style.background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (this.#orderDirty) {
-      this.#order = [...this.#model.blockEntities(this.#block)];
+      this.#order = this.#drawOrder();
       this.#rank = [];
       this.#order.forEach((id, i) => (this.#rank[id] = i));
       this.#orderDirty = false;
@@ -373,7 +452,7 @@ export class Canvas2DRenderer implements Renderer {
         );
         continue;
       }
-      for (const prim of entry.prims) {
+      for (const prim of this.#primitives(entry)) {
         const color = this.#color(prim.color);
         if (prim.kind === 'point') {
           flush();
@@ -411,7 +490,9 @@ export class Canvas2DRenderer implements Renderer {
             ctx.lineTo(seg[2] - center.x, seg[3] - center.y);
           }
         } else {
-          buildPath(ctx, prim.path, center.x, center.y);
+          // LOD for a dashed primitive handed in directly (the transient layer).
+          const solid = prim.continuous && (prim.patternLength ?? 0) * scale < 1;
+          buildPath(ctx, solid ? prim.continuous! : prim.path, center.x, center.y);
         }
       }
     }
@@ -422,9 +503,18 @@ export class Canvas2DRenderer implements Renderer {
     return c === 'foreground' ? this.#style.foreground : c;
   }
 
-  /** Device pixels: 1 CSS px, or the lineweight at 96 dpi when LWT is on (at least 1 px). */
+  /** Device pixels for a lineweight in millimetres; undefined is 1 px. */
   #lineWidth(mm: number | undefined): number {
-    const css = this.#style.showLineweights && mm !== undefined ? Math.max(1, mm * PX_PER_MM) : 1;
+    const css = lineweightPixels(
+      mm === undefined ? 0 : Math.round(mm * 100),
+      this.#paperSpace
+        ? {
+            show: this.#style.showLineweights,
+            space: 'paper',
+            pixelsPerMillimetre: this.#view.scale * this.#paperUnitsPerMm,
+          }
+        : { show: this.#style.showLineweights, space: 'model' },
+    );
     return css * this.#dpr;
   }
 }
@@ -529,7 +619,8 @@ function distanceTo(prim: RenderPrimitive, p: { x: number; y: number }): number 
     return Math.hypot(p.x - (prim.base.x + t * dx), p.y - (prim.base.y + t * dy));
   }
   // Walk the path, measuring each segment; a fill also counts its inside (even-odd ray test).
-  const a = prim.path;
+  // A dashed stroke is measured along its continuous path, so its gaps pick too.
+  const a = prim.continuous ?? prim.path;
   let best = Infinity;
   let crossings = 0;
   let px = 0;

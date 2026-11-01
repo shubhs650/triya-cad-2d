@@ -3,6 +3,13 @@
 // (the canvas draws arcs natively, so they are smooth at any zoom); splines are flattened
 // once, finely enough for deep zoom.
 //
+// A paint with a linetype (M1-13) turns the stroke into explicit dashes and dots in world
+// units, fitted by `dashPath`/`dashPolyline` on the curve flattened as finely as a spline. The
+// dashed stroke keeps the exact continuous path beside it, which the renderer draws once a
+// pattern is under a pixel and measures for picking, so a click in a gap still selects.
+// Text and shapes inside complex linetypes leave their gap empty until text and shape
+// rendering exist (M1-45).
+//
 // Kinds drawn by later tasks yield nothing here, each noted where it falls through: INSERT
 // (M1-14), DIMENSION (M1-15), pattern and gradient hatches (M1-16), tables (M1-17),
 // viewports (M1-18), images and underlays (M1-19/20), text and MTEXT (M1-41).
@@ -26,12 +33,16 @@ import {
   type PrimitiveColor,
   type RenderPrimitive,
 } from './types';
+import { dashPath, dashPolyline, type DashedPath } from './style/dash';
+import { patternLength, type LinePattern } from './style/pattern';
 
 /** What every primitive of one entity shares, resolved from the entity and its layer. */
 export interface Paint {
   readonly color: PrimitiveColor;
   /** Millimetres; undefined is the default lineweight. */
   readonly lineweight?: number;
+  /** The linetype and its scale (`linetypeScale`); absent for Continuous. */
+  readonly linetype?: { readonly pattern: LinePattern; readonly scale: number };
 }
 
 /**
@@ -40,7 +51,22 @@ export interface Paint {
  */
 const SPLINE_DEVIATION = 1e-4;
 
-const stroke = (path: number[], paint: Paint): RenderPrimitive => ({
+/**
+ * Arc flattening for dashing: the chord angle whose sagitta is 1e-4 of the radius, the same
+ * relative deviation as splines.
+ */
+const ARC_STEP = 2 * Math.acos(1 - SPLINE_DEVIATION);
+
+/**
+ * The most pattern repetitions fitted to one entity. Past it the entity draws continuous, as
+ * it would look at any zoom that shows all of it; this keeps the scene cache bounded when a
+ * drawing's LTSCALE is far too small. AutoCAD documents no such limit; ours.
+ */
+const MAX_PERIODS = 20_000;
+
+type PathPrimitive = Extract<RenderPrimitive, { readonly path: readonly number[] }>;
+
+const stroke = (path: number[], paint: Paint): PathPrimitive => ({
   kind: 'stroke',
   path,
   color: paint.color,
@@ -160,6 +186,150 @@ function loopPath(path: number[], loop: HatchLoop): void {
 
 /** The primitives that draw one entity's geometry. */
 export function tessellate(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
+  const prims = exact(g, paint);
+  const lt = paint.linetype;
+  const first = prims[0];
+  if (!lt || prims.length !== 1 || first?.kind !== 'stroke') return prims;
+  const P = patternLength(lt.pattern) * lt.scale;
+  if (!(P > 0)) return prims;
+  const dashed = dashGeometry(g, lt.pattern, lt.scale, P);
+  if (!dashed || dashed.solid) return prims;
+  const path: number[] = [];
+  for (const run of dashed.dashes)
+    run.forEach((p, i) => path.push(i === 0 ? PATH_M : PATH_L, p.x, p.y));
+  // A zero-length segment: the round cap draws it as a dot as wide as the line.
+  for (const p of dashed.dots) path.push(PATH_M, p.x, p.y, PATH_L, p.x, p.y);
+  return [{ ...stroke(path, paint), continuous: first.path, patternLength: P }];
+}
+
+/** Points along an elliptical arc (a circle when rx = ry), first to last inclusive. */
+function curvePoints(
+  cx: number,
+  cy: number,
+  rx: number,
+  ry: number,
+  rot: number,
+  a0: number,
+  a1: number,
+): Vec2[] {
+  const n = Math.max(1, Math.ceil(Math.abs(a1 - a0) / ARC_STEP));
+  const cos = Math.cos(rot);
+  const sin = Math.sin(rot);
+  const out: Vec2[] = [];
+  for (let i = 0; i <= n; i++) {
+    const t = a0 + ((a1 - a0) * i) / n;
+    const ux = rx * Math.cos(t);
+    const uy = ry * Math.sin(t);
+    out.push({ x: cx + ux * cos - uy * sin, y: cy + ux * sin + uy * cos });
+  }
+  return out;
+}
+
+/** A polyline's segments, each one chord or the chords of its bulge arc. */
+function polylineSegments(vertices: readonly PolylineVertex[], closed: boolean): Vec2[][] {
+  const out: Vec2[][] = [];
+  const n = closed ? vertices.length : vertices.length - 1;
+  for (let i = 0; i < n; i++) {
+    const v = vertices[i]!;
+    const w = vertices[(i + 1) % vertices.length]!;
+    if (v.bulge === 0 || (v.x === w.x && v.y === w.y)) {
+      out.push([v, w]);
+    } else {
+      const a = bulgeArc(v, w, v.bulge);
+      const pts = curvePoints(
+        a.center.x,
+        a.center.y,
+        a.radius,
+        a.radius,
+        0,
+        a.startAngle,
+        a.startAngle + a.sweep,
+      );
+      // End exactly on the vertices, so PLINEGEN joins and per-segment fits meet.
+      pts[0] = { x: v.x, y: v.y };
+      pts[pts.length - 1] = { x: w.x, y: w.y };
+      out.push(pts);
+    }
+  }
+  return out;
+}
+
+function pathLength(points: readonly Vec2[]): number {
+  let L = 0;
+  for (let i = 1; i < points.length; i++)
+    L += Math.hypot(points[i]!.x - points[i - 1]!.x, points[i]!.y - points[i - 1]!.y);
+  return L;
+}
+
+/** A closed run without its repeated end point; `dashPath` closes it itself. */
+const open = (points: Vec2[]): Vec2[] => points.slice(0, -1);
+
+/**
+ * The linetype fitted to a stroked entity, or undefined when the kind takes no linetype here
+ * (fills, points, and XLINE/RAY, which have no ends to fit from) or the pattern is too dense.
+ */
+function dashGeometry(
+  g: EntityGeometry,
+  pattern: LinePattern,
+  scale: number,
+  P: number,
+): DashedPath | undefined {
+  const TAU = 2 * Math.PI;
+  // A closed run comes in with its end point repeating its start.
+  const fit = (points: Vec2[], closed = false): DashedPath | undefined =>
+    pathLength(points) / P > MAX_PERIODS
+      ? undefined
+      : dashPath(closed ? open(points) : points, pattern, scale, { closed });
+  const fitSegments = (segments: Vec2[][], closed: boolean, plinegen: boolean) =>
+    segments.reduce((s, seg) => s + pathLength(seg), 0) / P > MAX_PERIODS
+      ? undefined
+      : dashPolyline(segments, pattern, scale, { closed, plinegen });
+  switch (g.kind) {
+    case 'LINE':
+      return fit([g.start, g.end]);
+    case 'CIRCLE':
+      return fit(curvePoints(g.center.x, g.center.y, g.radius, g.radius, 0, 0, TAU), true);
+    case 'ARC': {
+      let end = g.endAngle;
+      while (end <= g.startAngle) end += TAU;
+      return fit(curvePoints(g.center.x, g.center.y, g.radius, g.radius, 0, g.startAngle, end));
+    }
+    case 'ELLIPSE': {
+      const rx = Math.hypot(g.majorAxis.x, g.majorAxis.y);
+      const rot = Math.atan2(g.majorAxis.y, g.majorAxis.x);
+      let end = g.endParam;
+      while (end <= g.startParam) end += TAU;
+      const full = end - g.startParam >= TAU - 1e-12;
+      const pts = curvePoints(g.center.x, g.center.y, rx, rx * g.ratio, rot, g.startParam, end);
+      return fit(pts, full);
+    }
+    case 'LWPOLYLINE':
+    case 'POLYLINE':
+      if (g.vertices.length < 2) return undefined;
+      return fitSegments(polylineSegments(g.vertices, g.closed), g.closed, g.plinegen ?? false);
+    case 'SPLINE': {
+      if (g.controlPoints.length < 2) return undefined;
+      const dev = Math.max(size(g.controlPoints) * SPLINE_DEVIATION, Number.MIN_VALUE);
+      const pts = [...flatten(g, dev).points];
+      const a = pts[0]!;
+      const b = pts[pts.length - 1]!;
+      // A closed spline ends where it starts; fit it closed only if the flattening agrees.
+      const closed = g.closed && Math.hypot(a.x - b.x, a.y - b.y) <= dev;
+      return fit(pts, closed);
+    }
+    case '3DFACE': {
+      // Each visible edge is fitted on its own, like a polyline without PLINEGEN.
+      const edges: Vec2[][] = [];
+      for (let i = 0; i < 4; i++)
+        if (!(g.hiddenEdges & (1 << i))) edges.push([g.corners[i]!, g.corners[(i + 1) % 4]!]);
+      return fitSegments(edges, false, false);
+    }
+    default:
+      return undefined;
+  }
+}
+
+function exact(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
   switch (g.kind) {
     case 'LINE':
       return [stroke([PATH_M, g.start.x, g.start.y, PATH_L, g.end.x, g.end.y], paint)];
@@ -239,8 +409,7 @@ export function tessellate(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
       return [{ kind: 'point', x: g.position.x, y: g.position.y, color: paint.color }];
     case 'LWPOLYLINE':
     case 'POLYLINE': {
-      // Widths draw as centre lines until the linetype and lineweight task (M1-13) adds
-      // wide segments.
+      // Widths draw as centre lines until polyline widths (M1-46).
       const path: number[] = [];
       polylinePath(path, g.vertices, g.closed);
       return path.length ? [stroke(path, paint)] : [];

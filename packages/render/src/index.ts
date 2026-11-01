@@ -2,7 +2,7 @@
 // Browser package: DOM types are available here. Nothing outside it may use Canvas 2D.
 export * from './types';
 export { tessellate, type Paint } from './tessellate';
-export { colorOf, defaultPaint, lineweightOf } from './paint';
+export { createPaint, defaultPaint, type PaintOptions } from './paint';
 export {
   Canvas2DRenderer,
   DEFAULT_STYLE,

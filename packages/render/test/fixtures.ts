@@ -11,12 +11,18 @@ import {
   type EntityInit,
   type HeaderValue,
   type LayerRecord,
+  type NonGraphicalObject,
 } from '@triya/engine';
 import type { Canvas2D, Surface } from '../src/index';
 
 export const MODEL = '1F';
 export const LAYER_0 = '10';
 export const LAYER_RED = '11';
+/** M1-13: a layer drawn with the DASHED linetype below (0.5 dash, 0.25 gap). */
+export const LAYER_DASHED = '12';
+export const DASHED = '15';
+/** M1-13: a layout's paper-space block, for lineweights that follow the zoom. */
+export const PAPER = '1E';
 
 export const layer = (
   handle: string,
@@ -63,14 +69,36 @@ export const line = (x1: number, y1: number, x2: number, y2: number): EntityGeom
   end: { x: x2, y: y2 },
 });
 
-/** The init of a small drawing: layers 0 and RED, model space, the given entities. */
-export function drawingInit(entities: EntityInit[]): DocumentInit {
+/** A plain dash, gap or dot of an LTYPE record. */
+export const dash = (length: number) => ({
+  length,
+  shapeFlags: 0,
+  shapeNumber: 0,
+  offset: { x: 0, y: 0 },
+  rotation: 0,
+  scale: 1,
+});
+
+export interface DrawingExtra {
+  readonly header?: Iterable<readonly [string, HeaderValue]>;
+  readonly objects?: readonly NonGraphicalObject[];
+}
+
+/**
+ * The init of a small drawing: layers 0, RED and DASHED, the Continuous and DASHED linetypes,
+ * model space and one layout, the given entities.
+ */
+export function drawingInit(entities: EntityInit[], extra: DrawingExtra = {}): DocumentInit {
   return {
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '1000',
-    header: new Map<string, HeaderValue>(),
+    header: new Map<string, HeaderValue>(extra.header ?? []),
     tables: {
-      layers: [layer(LAYER_0, '0'), layer(LAYER_RED, 'RED', { color: { kind: 'aci', index: 1 } })],
+      layers: [
+        layer(LAYER_0, '0'),
+        layer(LAYER_RED, 'RED', { color: { kind: 'aci', index: 1 } }),
+        layer(LAYER_DASHED, 'DASHED', { linetype: DASHED }),
+      ],
       linetypes: [
         {
           handle: '14',
@@ -80,19 +108,38 @@ export function drawingInit(entities: EntityInit[]): DocumentInit {
           patternLength: 0,
           elements: [],
         },
+        {
+          handle: DASHED,
+          name: 'DASHED',
+          description: '__ __ __',
+          alignment: 'A',
+          patternLength: 0.75,
+          elements: [dash(0.5), dash(-0.25)],
+        },
       ],
       blockRecords: [
         { handle: MODEL, name: '*Model_Space', units: 0, explodable: true, scalable: true },
+        { handle: PAPER, name: '*Paper_Space', units: 0, explodable: true, scalable: true },
       ],
     },
-    blocks: [{ handle: MODEL, name: '*Model_Space', basePoint: { x: 0, y: 0 } }],
-    layouts: [{ handle: 'AA', name: 'Model', tabOrder: 0, blockRecord: MODEL }],
+    blocks: [
+      { handle: MODEL, name: '*Model_Space', basePoint: { x: 0, y: 0 } },
+      { handle: PAPER, name: '*Paper_Space', basePoint: { x: 0, y: 0 } },
+    ],
+    layouts: [
+      { handle: 'AA', name: 'Model', tabOrder: 0, blockRecord: MODEL },
+      { handle: 'AB', name: 'Layout1', tabOrder: 1, blockRecord: PAPER },
+    ],
+    ...(extra.objects ? { objects: extra.objects } : {}),
     entities,
   };
 }
 
-export function drawing(entities: EntityInit[]): { model: DocumentModel; index: SpatialIndex } {
-  const model = DocumentModel.create(drawingInit(entities));
+export function drawing(
+  entities: EntityInit[],
+  extra: DrawingExtra = {},
+): { model: DocumentModel; index: SpatialIndex } {
+  const model = DocumentModel.create(drawingInit(entities, extra));
   return { model, index: SpatialIndex.build(model, { tol: toleranceForSize(1000) }) };
 }
 
