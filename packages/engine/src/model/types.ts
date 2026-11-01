@@ -93,7 +93,7 @@ export interface ObjectCommon {
 //
 // Curve entities are a kernel curve (geom/curves.ts) plus what the file carries beyond the
 // plane, so their `entity.geom` goes straight into kernel functions. POINT, POLYLINE, SOLID,
-// TRACE, 3DFACE, the text entities and INSERT have shapes of their own.
+// TRACE, 3DFACE, the text entities, INSERT and the annotations have shapes of their own.
 
 /**
  * Out-of-plane data, carried so the plan view can say where an entity sat in 3D. Geometry is
@@ -301,6 +301,134 @@ export interface InsertGeometry extends PlanarProps {
   readonly attributes: readonly InsertAttribute[];
 }
 
+/**
+ * What every DIMENSION shares (DXF AcDbDimension). Points keep the DXF reference's frames
+ * converted to plan view (DEC-039): 10 and 13–15 are WCS, 11, 12 and 16 OCS; angles are WCS
+ * angles in plan. DIMSTYLE overrides stay in the entity's ACAD `DSTYLE` xdata as read.
+ */
+export interface DimensionFields extends PlanarProps {
+  /** DIMSTYLE record handle (DXF 3). */
+  readonly style: Handle;
+  /** BLOCK_RECORD of the anonymous `*D` block holding the dimension's last drawn graphics. */
+  readonly block?: Handle;
+  /** DXF 10: the dimension line's definition point (meaning per type). */
+  readonly definitionPoint: Vec2;
+  /** DXF 11: middle of the dimension text. */
+  readonly textPosition: Vec2;
+  /** DXF 70 bit 128: the text was moved by the user. */
+  readonly textUserPositioned: boolean;
+  /** DXF 1: '' for the measurement, otherwise the override with `<>` for the measurement. */
+  readonly text: string;
+  /** DXF 53. */
+  readonly textRotation: number;
+  /** DXF 51: the dimension's horizontal direction. */
+  readonly horizontalDirection: number;
+  readonly attachment: number;
+  readonly lineSpacingStyle: number;
+  readonly lineSpacing: number;
+  /** DXF 74/75 (R2007+): arrowheads flipped. */
+  readonly flipArrows?: readonly [boolean, boolean];
+}
+
+export type DimensionGeometry = DimensionFields &
+  (
+    | {
+        readonly kind: 'DIMENSION';
+        /** DXF 70 type 0 (rotated, with `rotation` 50) or 1 (aligned). */
+        readonly dimType: 'linear' | 'aligned';
+        /** DXF 13 and 14: the extension line origins. */
+        readonly first: Vec2;
+        readonly second: Vec2;
+        readonly rotation?: number;
+        /** DXF 52: oblique angle of the extension lines, when set. */
+        readonly oblique?: number;
+      }
+    | {
+        readonly kind: 'DIMENSION';
+        /** Two-line angular: lines 13→14 and 15→10, arc through 16. */
+        readonly dimType: 'angular';
+        readonly line1Start: Vec2;
+        readonly line1End: Vec2;
+        readonly line2Start: Vec2;
+        readonly arcPoint: Vec2;
+      }
+    | {
+        readonly kind: 'DIMENSION';
+        /** Three-point angular: vertex 15, ends 13 and 14, arc through 10. */
+        readonly dimType: 'angular3pt';
+        readonly vertex: Vec2;
+        readonly first: Vec2;
+        readonly second: Vec2;
+      }
+    | {
+        readonly kind: 'DIMENSION';
+        /** Radius (10 the centre) or diameter (10 the far chord point); 15 the chord point. */
+        readonly dimType: 'radius' | 'diameter';
+        readonly chordPoint: Vec2;
+        readonly leaderLength: number;
+      }
+    | {
+        readonly kind: 'DIMENSION';
+        /** Ordinate: 10 the UCS origin, 13 the feature, 14 the leader end; 70 bit 64 = X. */
+        readonly dimType: 'ordinate';
+        readonly axis: 'x' | 'y';
+        readonly feature: Vec2;
+        readonly leaderEnd: Vec2;
+      }
+    | {
+        readonly kind: 'ARC_DIMENSION';
+        readonly dimType: 'arc';
+        /** DXF 13/14: the arc's ends; 15 its centre. */
+        readonly first: Vec2;
+        readonly second: Vec2;
+        readonly center: Vec2;
+        /** DXF 40/41, as stored. */
+        readonly startAngle: number;
+        readonly endAngle: number;
+        readonly partial: boolean;
+        /** DXF 71 with 16/17. */
+        readonly leader?: readonly [Vec2, Vec2];
+      }
+  );
+
+/** LEADER (DXF AcDbLeader). Vertices are WCS; their plan view drops Z. */
+export interface LeaderGeometry extends PlanarProps {
+  readonly kind: 'LEADER';
+  /** DIMSTYLE record handle (DXF 3). */
+  readonly style: Handle;
+  readonly vertices: readonly Vec2[];
+  /** DXF 71. */
+  readonly arrowhead: boolean;
+  /** DXF 72: path drawn as a spline. */
+  readonly spline: boolean;
+  /** DXF 73: 0 MTEXT, 1 TOLERANCE, 2 block reference, 3 none. */
+  readonly creationType: number;
+  /** DXF 75/74: a hook line, and whether it runs along the horizontal direction (1). */
+  readonly hookline?: { readonly sameDirection: boolean };
+  readonly textHeight: number;
+  readonly textWidth: number;
+  /** DXF 340: the MTEXT, TOLERANCE or INSERT it annotates. */
+  readonly annotation?: Handle;
+  /** DXF 211, 212, 213. */
+  readonly horizontalDirection: Vec2;
+  readonly blockOffset: Vec2;
+  readonly annotationOffset: Vec2;
+}
+
+/** TOLERANCE (feature control frame). 10 and 11 are WCS, as for MTEXT. */
+export interface ToleranceGeometry extends PlanarProps {
+  readonly kind: 'TOLERANCE';
+  /** DIMSTYLE record handle (DXF 3). */
+  readonly style: Handle;
+  readonly position: Vec2;
+  /** WCS angle of the X direction (DXF 11). */
+  readonly rotation: number;
+  /** Under a −Z extrusion the frame's Y axis (normal × X) is reversed. */
+  readonly upsideDown?: boolean;
+  /** DXF 1: the frame contents with their `%%v` and font codes. */
+  readonly text: string;
+}
+
 export type EntityGeometry =
   | LineGeometry
   | XlineGeometry
@@ -317,7 +445,10 @@ export type EntityGeometry =
   | TextGeometry
   | MTextGeometry
   | AttdefGeometry
-  | InsertGeometry;
+  | InsertGeometry
+  | DimensionGeometry
+  | LeaderGeometry
+  | ToleranceGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */
 export type EntityType = EntityGeometry['kind'];

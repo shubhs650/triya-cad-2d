@@ -28,20 +28,20 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | ATTRIB | ✓ folded into its INSERT (backward/upside-down lost by acad-ts, M1-32) | | | | |
 | INSERT | ✓ | | | | |
 | MINSERT | ✓ | | | | |
-| DIMENSION (linear/aligned) | | | | | |
-| DIMENSION (angular 2-line / 3-point) | | | | | |
-| DIMENSION (radial / diametric) | | | | | |
-| DIMENSION (ordinate) | | | | | |
-| DIMENSION (arc length) | | | | | |
-| DIMENSION (jogged) | | | | | |
-| LEADER | | | | | |
+| DIMENSION (linear/aligned) | ✓ (rotated with an empty AcDbRotatedDimension read as aligned by acad-ts, M1-32) | | | | |
+| DIMENSION (angular 2-line / 3-point) | ✓ | | | | |
+| DIMENSION (radial / diametric) | ✓ | | | | |
+| DIMENSION (ordinate) | ✓ | | | | |
+| DIMENSION (arc length) | ✓ (ARC_DIMENSION) | | | | |
+| DIMENSION (jogged) | — acad-ts does not read LARGE_RADIAL_DIMENSION as a dimension (M1-34) | | | | |
+| LEADER | ✓ | | | | |
 | MLEADER (+ MLEADERSTYLE) | | | | | |
 | HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | | | | | |
 | WIPEOUT | | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | | | | | |
 | VIEWPORT | | | | | |
-| TOLERANCE | | | | | |
+| TOLERANCE | ✓ (caret codes left encoded by acad-ts, M1-32) | | | | |
 | MLINE (+ MLINESTYLE) | | | | | |
 | REGION *(render from proxy graphics / boundary)* | | | — | | |
 | PDFUNDERLAY / DWFUNDERLAY / DGNUNDERLAY (+ definitions) | | | | | |
