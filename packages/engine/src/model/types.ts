@@ -650,6 +650,36 @@ export interface RegionGeometry extends PlanarProps {
 }
 
 /**
+ * OLE2FRAME: an embedded or linked OLE object, drawn as its frame (Triya never runs OLE
+ * servers). Corners are WCS (DXF 10 and 11).
+ */
+export interface OleFrameGeometry extends PlanarProps {
+  readonly kind: 'OLE2FRAME';
+  readonly upperLeft: Vec2;
+  readonly lowerRight: Vec2;
+  /** DXF 71: 1 link, 2 embedded, 3 static. */
+  readonly oleType: number;
+  /** DXF 72: the object lives in paper space. */
+  readonly paperSpace: boolean;
+  readonly application: string;
+}
+
+/**
+ * ACAD_PROXY_ENTITY: an object of an application Triya does not have, drawn from the proxy
+ * graphics its application saved. Curves are WCS plan view; what has no plan-view curve (text,
+ * meshes, shells, circles on tilted planes) is counted in `skipped` and stays in the original.
+ */
+export interface ProxyGraphicsGeometry {
+  readonly kind: 'ACAD_PROXY_ENTITY';
+  /** The custom object's DXF class name, when its class is known. */
+  readonly className?: string;
+  /** The extents the application stated, in plan view. */
+  readonly extents?: { readonly min: Vec2; readonly max: Vec2 };
+  readonly curves: readonly (Line | Circle | Arc | Polyline)[];
+  readonly skipped: number;
+}
+
+/**
  * VIEWPORT (DXF AcDbViewport). Its frame lives in its layout's paper space; the view it shows
  * is stated in model space (view direction, target, twist) and display coordinates (center).
  */
@@ -844,6 +874,8 @@ export type EntityGeometry =
   | MLineGeometry
   | ViewportGeometry
   | RegionGeometry
+  | OleFrameGeometry
+  | ProxyGraphicsGeometry
   | HatchGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */

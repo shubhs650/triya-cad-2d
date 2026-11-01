@@ -151,6 +151,8 @@ const MAPPED = new Set([
   'MLINE',
   'VIEWPORT',
   'REGION',
+  'OLE2FRAME',
+  'ACAD_PROXY_ENTITY',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({

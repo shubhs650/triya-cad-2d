@@ -45,8 +45,8 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | MLINE (+ MLINESTYLE) | ✓ MLINE (style handle, scale, justification, flags, vertices with element parameters); MLINESTYLE not yet | | | | |
 | REGION *(render from proxy graphics / boundary)* | ✓ boundary read from the ACIS data, SAT text (R14–R2010) or SAB binary (R2013+, DWG): lines, arcs, circles and ellipses per loop; spline (intcurve) edges reported unmapped (M1-39) | | — | | |
 | PDFUNDERLAY / DWFUNDERLAY / DGNUNDERLAY (+ definitions) | ✓ PDFUNDERLAY; DWF/DGN have no acad-ts reader and no corpus file (M1-32) | | | | |
-| OLE2FRAME *(render bounds + frame)* | | | — | | |
-| ACAD_PROXY_ENTITY *(render proxy graphics)* | | | — | P | |
+| OLE2FRAME *(render bounds + frame)* | mapped (frame corners, OLE type, space, application), unit tests only: no public corpus file has one (M1-40) | | — | | |
+| ACAD_PROXY_ENTITY *(render proxy graphics)* | mapped (class name, stated extents, circles, arcs and polylines from proxy graphics; text, meshes and shells counted as skipped), unit tests only: no public corpus file has one (M1-40) | | — | P | |
 | ARRAY (associative array: anonymous block + ACAD_ARRAY xdata) | | | | | |
 | 3DSOLID / SURFACE / MESH / BODY *(passthrough-only; render proxy graphics if present)* | P | | — | P | |
 | HELIX / LIGHT / CAMERA / SECTION *(passthrough-only)* | P | — | — | P | |
