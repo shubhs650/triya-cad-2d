@@ -93,6 +93,14 @@ export interface Canvas2DRendererOptions {
   readonly requestIdle?: (cb: () => void) => void;
 }
 
+/** An entity's primitives, with its world size and centre for the sub-pixel LOD. */
+interface CacheEntry {
+  readonly prims: readonly RenderPrimitive[];
+  readonly size: number;
+  readonly x: number;
+  readonly y: number;
+}
+
 export const DEFAULT_STYLE: RenderStyle = {
   background: '#212830',
   foreground: '#ffffff',
@@ -115,9 +123,14 @@ export class Canvas2DRenderer implements Renderer {
   readonly #now: () => number;
   readonly #requestIdle: (cb: () => void) => void;
 
-  readonly #cache = new Map<EntityId, readonly RenderPrimitive[]>();
-  #order = new Map<EntityId, number>();
+  /** Per entity id (ids are dense): its primitives and screen-size data; hidden ones absent. */
+  #cache: (CacheEntry | undefined)[] = [];
+  /** The block's entities in draw order, and each id's position in it. */
+  #order: readonly EntityId[] = [];
+  #rank: number[] = [];
   #orderDirty = true;
+  /** Scratch marks for walking visible entities in draw order without sorting. */
+  #mark = new Uint8Array(0);
   #style: RenderStyle;
   #view: ViewTransform = { center: { x: 0, y: 0 }, scale: 1 };
   #width = 0;
@@ -187,7 +200,7 @@ export class Canvas2DRenderer implements Renderer {
       this.#orderDirty = true;
     // A layer change can recolour or hide any entity on it: re-resolve the whole block.
     if (cs.tables?.layers) {
-      this.#cache.clear();
+      this.#cache = [];
       for (const id of this.#model.blockEntities(this.#block)) this.#cacheEntity(id);
     }
     this.#sceneDirty = true;
@@ -204,11 +217,7 @@ export class Canvas2DRenderer implements Renderer {
       const t = this.#transientLayer;
       t.ctx.setTransform(1, 0, 0, 1, 0, 0);
       t.ctx.clearRect(0, 0, t.canvas.width, t.canvas.height);
-      this.#drawPrimitives(
-        t.ctx,
-        this.#transient.map((p) => [p, undefined] as const),
-        false,
-      );
+      this.#drawPrimitives(t.ctx, [{ prims: this.#transient, size: Infinity, x: 0, y: 0 }], false);
       this.#transientDirty = false;
     }
     const out = this.#surface.ctx;
@@ -238,10 +247,10 @@ export class Canvas2DRenderer implements Renderer {
     const box: Box = { minX: p.x - r, minY: p.y - r, maxX: p.x + r, maxY: p.y + r };
     const hits: { id: EntityId; d: number }[] = [];
     for (const id of this.#index.query(this.#block, box)) {
-      const prims = this.#cache.get(id);
-      if (!prims) continue;
+      const entry = this.#cache[id];
+      if (!entry) continue;
       let d = Infinity;
-      for (const prim of prims) d = Math.min(d, distanceTo(prim, p));
+      for (const prim of entry.prims) d = Math.min(d, distanceTo(prim, p));
       if (d <= r) hits.push({ id, d });
     }
     return hits.sort((a, b) => a.d - b.d).map((h) => h.id);
@@ -255,15 +264,28 @@ export class Canvas2DRenderer implements Renderer {
 
   #forget(e: Entity): void {
     const id = this.#model.ids.idOf(e.handle);
-    if (id !== undefined) this.#cache.delete(id);
+    if (id !== undefined) this.#cache[id] = undefined;
   }
 
   #cacheEntity(id: EntityId): void {
     const e = this.#model.entity(id);
     if (!e) return;
     const paint = this.#paint(e, this.#model);
-    if (paint) this.#cache.set(id, tessellate(e.geom, paint));
-    else this.#cache.delete(id);
+    if (!paint) {
+      this.#cache[id] = undefined;
+      return;
+    }
+    // The size and centre drive the sub-pixel LOD; unknown bounds never count as small.
+    const b = this.#index.bounds(id);
+    this.#cache[id] =
+      b?.kind === 'box'
+        ? {
+            prims: tessellate(e.geom, paint),
+            size: Math.max(b.box.maxX - b.box.minX, b.box.maxY - b.box.minY),
+            x: (b.box.minX + b.box.maxX) / 2,
+            y: (b.box.minY + b.box.maxY) / 2,
+          }
+        : { prims: tessellate(e.geom, paint), size: Infinity, x: 0, y: 0 };
   }
 
   #drawScene(reduced: boolean): void {
@@ -273,30 +295,53 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillStyle = this.#style.background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (this.#orderDirty) {
-      this.#order = new Map(this.#model.blockEntities(this.#block).map((id, i) => [id, i]));
+      this.#order = [...this.#model.blockEntities(this.#block)];
+      this.#rank = [];
+      this.#order.forEach((id, i) => (this.#rank[id] = i));
       this.#orderDirty = false;
     }
-    const ids = this.#index
-      .query(this.#block, visibleBox(this.#view, this.#width, this.#height))
-      .filter((id) => this.#cache.has(id));
-    ids.sort((a, b) => (this.#order.get(a) ?? 0) - (this.#order.get(b) ?? 0));
-    const items: (readonly [RenderPrimitive, EntityId | undefined])[] = [];
-    for (const id of ids) for (const prim of this.#cache.get(id)!) items.push([prim, id]);
-    this.#drawPrimitives(ctx, items, reduced);
+    const hits = this.#index.query(this.#block, visibleBox(this.#view, this.#width, this.#height));
+    const entries: CacheEntry[] = [];
+    if (hits.length * 8 > this.#order.length) {
+      // Most of the block is in view: mark the hits and walk the block in draw order, which
+      // is linear where sorting 100k ids is not.
+      if (this.#mark.length < this.#cache.length) this.#mark = new Uint8Array(this.#cache.length);
+      const mark = this.#mark;
+      for (const id of hits) mark[id] = 1;
+      for (const id of this.#order) {
+        if (mark[id] !== 1) continue;
+        mark[id] = 0;
+        const entry = this.#cache[id];
+        if (entry) entries.push(entry);
+      }
+    } else {
+      hits.sort((a, b) => (this.#rank[a] ?? 0) - (this.#rank[b] ?? 0));
+      for (const id of hits) {
+        const entry = this.#cache[id];
+        if (entry) entries.push(entry);
+      }
+    }
+    this.#drawPrimitives(ctx, entries, reduced);
   }
 
-  /** Draws primitives, batching consecutive strokes of one colour and width into one path. */
-  #drawPrimitives(
-    ctx: Canvas2D,
-    items: readonly (readonly [RenderPrimitive, EntityId | undefined])[],
-    reduced: boolean,
-  ): void {
+  /** Draws entities' primitives, batching consecutive strokes of one colour and width. */
+  #drawPrimitives(ctx: Canvas2D, entries: readonly CacheEntry[], reduced: boolean): void {
     const { center, scale } = this.#view;
     const k = scale * this.#dpr;
     const cx = (this.#width * this.#dpr) / 2;
     const cy = (this.#height * this.#dpr) / 2;
-    const world = (): void => ctx.setTransform(k, 0, 0, -k, cx, cy);
-    const device = (): void => ctx.setTransform(1, 0, 0, 1, 0, 0);
+    // Paths are built in world units and stroked in device pixels; switch only when needed.
+    let inWorld = false;
+    const world = (): void => {
+      if (inWorld) return;
+      ctx.setTransform(k, 0, 0, -k, cx, cy);
+      inWorld = true;
+    };
+    const device = (): void => {
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      inWorld = false;
+    };
+    device();
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
@@ -309,78 +354,65 @@ export class Canvas2DRenderer implements Renderer {
       ctx.stroke();
       batch = undefined;
     };
-    const lastSize = new Map<EntityId, number>();
-    const pixelSize = (id: EntityId | undefined): number => {
-      if (id === undefined) return Infinity;
-      const known = lastSize.get(id);
-      if (known !== undefined) return known;
-      const b = this.#index.bounds(id);
-      const s =
-        b?.kind === 'box'
-          ? Math.max(b.box.maxX - b.box.minX, b.box.maxY - b.box.minY) * scale
-          : Infinity;
-      lastSize.set(id, s);
-      return s;
-    };
-    const dotted = new Set<EntityId>();
+    const dot = Math.max(1, Math.round(this.#dpr));
 
-    for (const [prim, id] of items) {
-      const color = this.#color(prim.color);
+    for (const entry of entries) {
       // LOD: an entity under a pixel is a dot, or nothing in a reduced frame.
-      if (pixelSize(id) < 1) {
-        if (reduced || dotted.has(id!)) continue;
-        dotted.add(id!);
-        const b = this.#index.bounds(id!);
-        if (b?.kind !== 'box') continue;
+      if (entry.size * scale < 1) {
+        if (reduced) continue;
+        const first = entry.prims[0];
+        if (!first) continue;
         flush();
         device();
-        ctx.fillStyle = color;
+        ctx.fillStyle = this.#color(first.color);
         ctx.fillRect(
-          Math.floor(cx + ((b.box.minX + b.box.maxX) / 2 - center.x) * k),
-          Math.floor(cy - ((b.box.minY + b.box.maxY) / 2 - center.y) * k),
-          Math.max(1, Math.round(this.#dpr)),
-          Math.max(1, Math.round(this.#dpr)),
+          Math.floor(cx + (entry.x - center.x) * k),
+          Math.floor(cy - (entry.y - center.y) * k),
+          dot,
+          dot,
         );
         continue;
       }
-      if (prim.kind === 'point') {
-        flush();
-        device();
-        ctx.fillStyle = color;
-        const d = Math.max(1, Math.round(this.#dpr));
-        ctx.fillRect(
-          Math.round(cx + (prim.x - center.x) * k - d / 2),
-          Math.round(cy - (prim.y - center.y) * k - d / 2),
-          d,
-          d,
-        );
-        continue;
-      }
-      const width = this.#lineWidth(prim.kind === 'fill' ? undefined : prim.lineweight);
-      if (prim.kind === 'fill') {
-        flush();
-        world();
-        ctx.beginPath();
-        buildPath(ctx, prim.path, center.x, center.y);
-        device();
-        ctx.fillStyle = color;
-        ctx.fill(prim.evenOdd ? 'evenodd' : 'nonzero');
-        continue;
-      }
-      if (!batch || batch.color !== color || batch.width !== width) {
-        flush();
-        batch = { color, width };
-        ctx.beginPath();
-      }
-      world();
-      if (prim.kind === 'infinite') {
-        const seg = clipInfinite(prim, visibleBox(this.#view, this.#width, this.#height));
-        if (seg) {
-          ctx.moveTo(seg[0] - center.x, seg[1] - center.y);
-          ctx.lineTo(seg[2] - center.x, seg[3] - center.y);
+      for (const prim of entry.prims) {
+        const color = this.#color(prim.color);
+        if (prim.kind === 'point') {
+          flush();
+          device();
+          ctx.fillStyle = color;
+          ctx.fillRect(
+            Math.round(cx + (prim.x - center.x) * k - dot / 2),
+            Math.round(cy - (prim.y - center.y) * k - dot / 2),
+            dot,
+            dot,
+          );
+          continue;
         }
-      } else {
-        buildPath(ctx, prim.path, center.x, center.y);
+        if (prim.kind === 'fill') {
+          flush();
+          world();
+          ctx.beginPath();
+          buildPath(ctx, prim.path, center.x, center.y);
+          device();
+          ctx.fillStyle = color;
+          ctx.fill(prim.evenOdd ? 'evenodd' : 'nonzero');
+          continue;
+        }
+        const width = this.#lineWidth(prim.lineweight);
+        if (!batch || batch.color !== color || batch.width !== width) {
+          flush();
+          batch = { color, width };
+          ctx.beginPath();
+        }
+        world();
+        if (prim.kind === 'infinite') {
+          const seg = clipInfinite(prim, visibleBox(this.#view, this.#width, this.#height));
+          if (seg) {
+            ctx.moveTo(seg[0] - center.x, seg[1] - center.y);
+            ctx.lineTo(seg[2] - center.x, seg[3] - center.y);
+          }
+        } else {
+          buildPath(ctx, prim.path, center.x, center.y);
+        }
       }
     }
     flush();
