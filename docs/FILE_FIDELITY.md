@@ -23,7 +23,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
 | 3DFACE *(render edges)* | ✓ | | — | | |
 | TEXT | ✓ | | | | |
-| MTEXT | ✓ (contents with codes as stored) | | | | |
+| MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036) | | | | |
 | ATTDEF | ✓ (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | ATTRIB | ✓ folded into its INSERT (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | INSERT | ✓ | | | | |
@@ -151,9 +151,10 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DATATABLE / TABLECONTENT owned through an XRECORD | Read and kept (0018); TABLECONTENT is **not written to DXF** (writer gap, M1-31) |
 | DIMASSOC | Read; **not written to DXF** (47 handles, M1-31) |
 | ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** (98 handles in the R13/R14 binary DXFs, M1-31) |
-| TABLESTYLE / CELLSTYLEMAP, MLEADER, MTEXT columns, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
+| TABLESTYLE / CELLSTYLEMAP, MLEADER, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
+| MTEXT columns (R2018) | Written to DXF as the embedded object, with the defined extents (0035); the DWG reader keeps the column count (0036). Every multi-column MTEXT lost its columns on a DXF save |
 | Angles (DXF write): TEXT rotation, ARC angles, HATCH pattern lines and edges | Written as the degree value that reads back to the same radians (0033); about one angle in a few dozen moved by an ulp on every save. HATCH edge angles past 360° are kept, and a SOLID hatch keeps its pattern angle, scale and lines |
 | VIEWPORT entity (DXF write) | Every AcDbViewport group written with its own code, R2000+ settings included (0031); id, angles, zoom, UCS, plot style, clip boundary and visual style were scrambled or dropped |
 | ATTDEF / ATTRIB fields (DXF) | Version (R2010+), lock position (R2007+) and R2018 multiline text read and written (0032); AcDbText 71 mirror flags no longer read as the multiline flag |
-| XRECORD, SORTENTSTABLE | Kept when owned by unknown objects (0014); sort order changes (R11, M1-29). `SORTENTSTABLE` in DXF is never loaded (94 handles, M1-33); XRECORDs under skipped objects drop with them (1,368 at save, 240 never loaded; M1-31, M1-33) |
+| XRECORD, SORTENTSTABLE | Kept when owned by unknown objects (0014); entries written in the order read (0034); the draw order was kept, the entry order was not. `SORTENTSTABLE` in DXF is never loaded (94 handles, M1-33); XRECORDs under skipped objects drop with them (1,368 at save, 240 never loaded; M1-31, M1-33) |
 | LAYOUT plot flags (DXF read), `$CELWEIGHT` (DWG header) | Fixed by patches 0019 and 0020 |

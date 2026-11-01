@@ -2164,6 +2164,7 @@ export class DwgObjectReader extends DwgSectionIO {
       mtext.columnData.columnType = this._objectReader.readBitShort() as ColumnType;
       if (mtext.columnData.columnType !== ColumnType.NoColumns) {
         const count = this._objectReader.readBitLong();
+        mtext.columnData.columnCount = count;
         mtext.columnData.width = this._objectReader.readBitDouble();
         mtext.columnData.gutter = this._objectReader.readBitDouble();
         mtext.columnData.autoHeight = this._objectReader.readBit();

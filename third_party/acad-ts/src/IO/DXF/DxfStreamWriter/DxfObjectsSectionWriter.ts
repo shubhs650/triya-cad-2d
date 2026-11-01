@@ -956,7 +956,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     this._writer.writeHandle(330, e.blockOwner);
 
-    for (const item of e) {
+    // In the stored order: the sort handles carry the draw order, the entry order is the file's.
+    for (const item of e.entries) {
       this._writer.writeHandle(331, item.entity);
       this._writer.write(5, item.sortHandle);
     }

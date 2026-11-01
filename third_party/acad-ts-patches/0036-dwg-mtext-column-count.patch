@@ -1,0 +1,12 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index f88197d..1284bc2 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -2164,6 +2164,7 @@ export class DwgObjectReader extends DwgSectionIO {
+       mtext.columnData.columnType = this._objectReader.readBitShort() as ColumnType;
+       if (mtext.columnData.columnType !== ColumnType.NoColumns) {
+         const count = this._objectReader.readBitLong();
++        mtext.columnData.columnCount = count;
+         mtext.columnData.width = this._objectReader.readBitDouble();
+         mtext.columnData.gutter = this._objectReader.readBitDouble();
+         mtext.columnData.autoHeight = this._objectReader.readBit();
