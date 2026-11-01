@@ -3,3 +3,10 @@
 export * from './types';
 export { tessellate, type Paint } from './tessellate';
 export { colorOf, defaultPaint, lineweightOf } from './paint';
+export {
+  Canvas2DRenderer,
+  DEFAULT_STYLE,
+  type Canvas2D,
+  type Canvas2DRendererOptions,
+  type Surface,
+} from './canvas2d';
