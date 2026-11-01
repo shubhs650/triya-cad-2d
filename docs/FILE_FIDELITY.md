@@ -18,7 +18,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | LWPOLYLINE | ✓ | | | | |
 | POLYLINE (2D) + VERTEX + SEQEND | ✓ | | | | |
 | POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | | |
-| SPLINE | ✓ (a spline stored only as fit points, as R2013+ DWGs can hold one, is neither drawn nor bounded until M1-49 interpolates it) | | | | |
+| SPLINE | ✓ (a spline stored only as fit points, as R2013+ DWGs can hold one, is neither drawn nor bounded until M1-47 interpolates it) | | | | |
 | SOLID | ✓ | | | | |
 | TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
 | 3DFACE *(render edges)* | ✓ | | — | | |
