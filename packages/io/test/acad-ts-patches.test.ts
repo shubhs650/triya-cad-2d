@@ -15,6 +15,8 @@ import {
   EvaluationGraph,
   EvaluationGraphNode,
   DimensionStyle,
+  DxfClass,
+  DxfClassCollection,
   Layer,
   Line,
   LineWeightType,
@@ -221,5 +223,31 @@ describe('acad-ts local patches', () => {
     expect(bytes.length).toBeGreaterThan(0);
     // Generous bound for slow CI runners; the quadratic writer is an order of magnitude over it.
     expect(ms).toBeLessThan(8_000);
+  });
+
+  it('0015 class numbers a drawing was read with survive resetClassNumbers', () => {
+    // Objects kept raw (0016) name their class by number, so a save must not renumber classes.
+    const make = (dxfName: string, classNumber: number): DxfClass =>
+      Object.assign(new DxfClass(), { dxfName, classNumber });
+    const read809 = make('AEC_LIST_DEF', 809);
+    const read808 = make('AEC_LIST_DEF', 808);
+    const added = make('NEW_CLASS', 0);
+    const classes = new DxfClassCollection();
+    classes.tryAdd(read809);
+    classes.addSameName(read808);
+    classes.tryAdd(added);
+
+    classes.resetClassNumbers();
+
+    expect(classes.count).toBe(3);
+    expect([...classes].map((c) => c.classNumber).sort()).toEqual([500, 808, 809]);
+    expect([read809.classNumber, read808.classNumber, added.classNumber]).toEqual([809, 808, 500]);
+  });
+
+  it('0020 DWG header stores $CELWEIGHT as a lineweight index and reads it back as a value', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    doc.header!.currentEntityLineWeight = LineWeightType.W50;
+
+    expect(dwgRoundTrip(doc).header!.currentEntityLineWeight).toBe(LineWeightType.W50);
   });
 });
