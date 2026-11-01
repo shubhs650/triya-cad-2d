@@ -13,6 +13,7 @@ import {
   PATH_Z,
   tessellate,
   transformPath,
+  transformPrimitive,
   type Paint,
   type RenderPrimitive,
   type TextContext,
@@ -295,6 +296,97 @@ describe('Bézier path commands', () => {
       4,
       11,
       1,
+    ]);
+  });
+});
+
+describe('greeking data (M1-41 part 2)', () => {
+  it('gives each primitive its tallest cap height and a box per run', () => {
+    const p = only(tessellate(text('AA'), paint, { text: ctx() }));
+    expect(p.text?.height).toBe(5);
+    // The run's box: from the baseline start to the pen's end (2 advances of 1), 5 tall.
+    expect(points(p.text!.greek)).toEqual([
+      [10, 20],
+      [12, 20],
+      [12, 25],
+      [10, 25],
+    ]);
+  });
+
+  it('scales with aligned text and with a block reference', () => {
+    const two = { position: { x: 0, y: 0 }, alignmentPoint: { x: 4, y: 0 }, halign: 3 };
+    const aligned = only(tessellate(text('AA', two), paint, { text: ctx() }));
+    expect(aligned.text?.height).toBe(10);
+    const moved = transformPrimitive(aligned, { a: 0, b: 3, c: -3, d: 0, e: 1, f: 0 }) as PathPrim;
+    expect(moved.text?.height).toBeCloseTo(30, 12);
+    expect(points(moved.text!.greek)[1]).toEqual([1, 12]);
+  });
+});
+
+describe('MTEXT background and frame (M1-41 part 2)', () => {
+  const bg = (flags: number, extra: Partial<MTextGeometry> = {}) =>
+    tessellate(
+      mtext('AA', {
+        background: { flags, color: { kind: 'rgb', r: 0, g: 128, b: 255 }, scale: 1.5 },
+        ...extra,
+      }),
+      paint,
+      { text: ctx() },
+    );
+  // "AA" at height 10: the box is 4 wide (two advances of 2) and 10 tall over the baseline;
+  // scale 1.5 pads it by 5.
+  const box = [
+    [-5, -5],
+    [9, -5],
+    [9, 15],
+    [-5, 15],
+  ];
+
+  it('fills its colour under the glyphs (bit 1)', () => {
+    const prims = bg(1);
+    expect(prims.map((p) => p.kind)).toEqual(['fill', 'stroke']);
+    const mask = prims[0] as PathPrim;
+    expect(mask.color).toBe('#0080ff');
+    expect(points(mask.path)).toEqual(box);
+  });
+
+  it('masks with the drawing window colour (bit 2)', () => {
+    expect(bg(3)[0]!.color).toBe('background');
+  });
+
+  it('frames the fill edge over the glyphs (bit 16), with or without the fill', () => {
+    const framed = bg(17);
+    expect(framed.map((p) => p.kind)).toEqual(['fill', 'stroke', 'stroke']);
+    const f = framed[2] as PathPrim;
+    expect(f.color).toBe('#ff0000');
+    expect(f.lineweight).toBe(0.35);
+    expect(points(f.path)).toEqual(box);
+    expect(bg(16).map((p) => p.kind)).toEqual(['stroke', 'stroke']);
+  });
+
+  it('draws nothing for a background that is switched off', () => {
+    expect(bg(0).map((p) => p.kind)).toEqual(['stroke']);
+  });
+
+  it('fills each column on its own', () => {
+    const prims = bg(1, {
+      contents: 'A\\NA',
+      attachment: 1,
+      columns: {
+        type: 1,
+        count: 2,
+        flowReversed: false,
+        autoHeight: false,
+        width: 4,
+        gutter: 2,
+        heights: [],
+      },
+      definedHeight: 20,
+    });
+    const masks = prims.filter((p) => p.kind === 'fill') as PathPrim[];
+    expect(masks.map((m) => points(m.path)[0])).toEqual([
+      [-5, -25],
+      [1, -25],
     ]);
   });
 });

@@ -24,11 +24,21 @@ export interface RenderStyle {
 }
 
 /**
- * A primitive's colour: a CSS colour, or the foreground, which follows the background
- * (ACI 7 is black on a light canvas and white on a dark one) so a theme switch needs no
- * re-tessellation.
+ * A primitive's colour: a CSS colour, the foreground, which follows the background (ACI 7 is
+ * black on a light canvas and white on a dark one), or the canvas background itself (an MTEXT
+ * mask in the drawing window colour, M1-41), so a theme switch needs no re-tessellation.
  */
-export type PrimitiveColor = string | 'foreground';
+export type PrimitiveColor = string | 'foreground' | 'background';
+
+/**
+ * Text glyphs (M1-41) and their LOD: once `height` (the tallest character's cap height, world
+ * units) is under 3 CSS px on screen, the renderer fills `greek` (one box per run, cap height
+ * tall) faintly instead of drawing the glyphs.
+ */
+export interface TextLod {
+  readonly height: number;
+  readonly greek: readonly number[];
+}
 
 /**
  * Path commands in world coordinates, packed for speed:
@@ -107,6 +117,8 @@ export type RenderPrimitive =
       readonly gradient?: FillGradient;
       /** A pattern hatch family's `stroke`, with its sub-pixel tint. */
       readonly hatch?: HatchTint;
+      /** Text glyphs, with their greeking. */
+      readonly text?: TextLod;
     }
   /** XLINE (both directions) or RAY (one direction), clipped to the view when drawn. */
   | {

@@ -158,6 +158,13 @@ export const DEFAULT_STYLE: RenderStyle = {
 
 /** The frame budget (ARCHITECTURE.md §7.2): 60 fps. */
 const FRAME_BUDGET_MS = 16;
+/** Text under this cap height on screen (CSS px) is greeked (ARCHITECTURE.md §7.2). */
+const TEXT_LOD_PX = 3;
+/**
+ * How strongly a greeked run's box is filled: about the share of a cap-height box that glyph
+ * strokes cover. AutoCAD shows no greeking (it draws every glyph); the value is ours.
+ */
+const GREEK_ALPHA = 0.35;
 /** Header variables that change how every entity is painted. */
 const PAINT_HEADER = new Set(['$LTSCALE']);
 
@@ -574,6 +581,22 @@ export class Canvas2DRenderer implements Renderer {
           );
           continue;
         }
+        const text = prim.kind === 'infinite' ? undefined : prim.text;
+        if (text && text.height * scale < TEXT_LOD_PX) {
+          // ARCHITECTURE.md §7.2 LOD: text under 3 px tall → a faint box per run (greeking),
+          // which keeps the text's place and colour and costs one fill.
+          if (text.greek.length === 0) continue;
+          flush();
+          world();
+          ctx.beginPath();
+          buildPath(ctx, text.greek, center.x, center.y);
+          device();
+          ctx.globalAlpha = GREEK_ALPHA;
+          ctx.fillStyle = color;
+          ctx.fill('nonzero');
+          ctx.globalAlpha = 1;
+          continue;
+        }
         if (prim.kind === 'fill') {
           flush();
           world();
@@ -659,7 +682,11 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   #color(c: PrimitiveColor): string {
-    return c === 'foreground' ? this.#style.foreground : c;
+    return c === 'foreground'
+      ? this.#style.foreground
+      : c === 'background'
+        ? this.#style.background
+        : c;
   }
 
   /** Device pixels for a lineweight in millimetres; undefined is 1 px. */

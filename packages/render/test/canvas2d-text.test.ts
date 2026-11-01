@@ -147,4 +147,25 @@ describe('text in the renderer', () => {
     expect(r.hitTest({ x: 100, y: 45 }, 3)).toEqual([id]);
     expect(r.hitTest({ x: 160, y: 45 }, 3)).toEqual([]);
   });
+
+  it('greeks text under 3 px tall as a faint box per run', () => {
+    const { r, redraw } = setup([entity('20', text('AA'))]);
+    // Height 10 at 0.2 px per unit: 2 px.
+    r.setView({ center: { x: 0, y: 0 }, scale: 0.2 });
+    const c = redraw();
+    expect(count(c, 'stroke')).toBe(0);
+    expect(c.calls.filter((k) => k[0] === 'fill')).toEqual([['fill', '#ffffff', 'nonzero', 0.35]]);
+    // At 3 px the glyphs are back.
+    r.setView({ center: { x: 0, y: 0 }, scale: 0.3 });
+    expect(count(redraw(), 'stroke')).toBe(1);
+  });
+
+  it('masks in the canvas background colour', () => {
+    const masked: MTextGeometry = {
+      ...mtext('A'),
+      background: { flags: 3, scale: 1.5 },
+    };
+    const c = setup([entity('20', masked)]).redraw();
+    expect(c.calls.filter((k) => k[0] === 'fill').map((k) => k[1])).toEqual(['#000000']);
+  });
 });
