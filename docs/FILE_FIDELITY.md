@@ -8,20 +8,20 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 
 | Type | Read | Render | Edit | Write | Test file |
 |---|---|---|---|---|---|
-| LINE | | | | | |
-| XLINE | | | | | |
-| RAY | | | | | |
-| CIRCLE | | | | | |
-| ARC | | | | | |
-| ELLIPSE | | | | | |
-| POINT | | | | | |
-| LWPOLYLINE | | | | | |
-| POLYLINE (2D) + VERTEX + SEQEND | | | | | |
-| POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | | | — | | |
-| SPLINE | | | | | |
-| SOLID | | | | | |
-| TRACE | | | | | |
-| 3DFACE *(render edges)* | | | — | | |
+| LINE | ✓ | | | | |
+| XLINE | ✓ | | | | |
+| RAY | ✓ | | | | |
+| CIRCLE | ✓ | | | | |
+| ARC | ✓ | | | | |
+| ELLIPSE | ✓ | | | | |
+| POINT | ✓ | | | | |
+| LWPOLYLINE | ✓ | | | | |
+| POLYLINE (2D) + VERTEX + SEQEND | ✓ | | | | |
+| POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | | |
+| SPLINE | ✓ | | | | |
+| SOLID | ✓ | | | | |
+| TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
+| 3DFACE *(render edges)* | ✓ | | — | | |
 | TEXT | | | | | |
 | MTEXT | | | | | |
 | ATTDEF | | | | | |
@@ -50,6 +50,8 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | ARRAY (associative array: anonymous block + ACAD_ARRAY xdata) | | | | | |
 | 3DSOLID / SURFACE / MESH / BODY *(passthrough-only; render proxy graphics if present)* | P | | — | P | |
 | HELIX / LIGHT / CAMERA / SECTION *(passthrough-only)* | P | — | — | P | |
+
+Read ticks for entities (M1-04) mean every entity of the type in every readable public ASCII DXF matches an independent DXF reader in plan view (DEC-039), common properties included (`packages/testkit/src/mapping/entities.corpus.test.ts`), apart from the acad-ts read gaps listed there (M1-32). Entities on a tilted plane are reported unmapped.
 
 ## Tables
 
