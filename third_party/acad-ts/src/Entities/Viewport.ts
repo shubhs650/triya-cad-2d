@@ -51,7 +51,8 @@ export class Viewport extends Entity {
 	height: number = 0;
 
 	get id(): number {
-		if (this._id !== 0) {
+		// A file's 69 is kept as stated, 0 included; only an unset id is numbered by position.
+		if (this._id !== 0 || this._idStated) {
 			return this._id;
 		}
 
@@ -74,6 +75,7 @@ export class Viewport extends Entity {
 	}
 	set id(value: number) {
 		this._id = value;
+		this._idStated = true;
 	}
 
 	lensLength: number = 0;
@@ -257,6 +259,8 @@ export class Viewport extends Entity {
 	}
 
 	private _id: number = 0;
+
+	private _idStated = false;
 }
 
 export { ViewportStatusFlags } from './ViewportStatusFlags.js';

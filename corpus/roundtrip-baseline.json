@@ -86,16 +86,16 @@
       "differences": 0
     },
     "public/third-party/acadsharp/geolocation/geoloc_AC1021.dxf": {
-      "status": "diff",
-      "differences": 1
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/acadsharp/geolocation/geoloc.dwg": {
       "status": "clean",
       "differences": 0
     },
     "public/third-party/acadsharp/geolocation/geoloc.dxf": {
-      "status": "diff",
-      "differences": 1
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/acadsharp/sample_AC1009_ascii.dxf": {
       "status": "clean",
@@ -110,12 +110,12 @@
       "differences": 0
     },
     "public/third-party/acadsharp/sample_AC1015_ascii.dxf": {
-      "status": "diff",
-      "differences": 1
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/acadsharp/sample_AC1015_binary.dxf": {
-      "status": "diff",
-      "differences": 1
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/acadsharp/sample_AC1015.dwg": {
       "status": "clean",
@@ -290,8 +290,8 @@
       "differences": 0
     },
     "public/third-party/ezdxf/examples_dxf/mtext_complex_inline_codes.dxf": {
-      "status": "diff",
-      "differences": 16
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/ezdxf/examples_dxf/multi_insert_with_attribs.dxf": {
       "status": "clean",
@@ -302,8 +302,8 @@
       "differences": 0
     },
     "public/third-party/ezdxf/examples_dxf/text_fonts.dxf": {
-      "status": "diff",
-      "differences": 2
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/ezdxf/examples_dxf/text_in_viewports.dxf": {
       "status": "clean",
@@ -318,8 +318,8 @@
       "differences": 0
     },
     "public/third-party/ezdxf/examples_dxf/text_negative_extrusion.dxf": {
-      "status": "diff",
-      "differences": 2
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/ezdxf/examples_dxf/text_oblique_rotate.dxf": {
       "status": "clean",
@@ -354,8 +354,8 @@
       "differences": 0
     },
     "public/third-party/ezdxf/examples_dxf/viewports.dxf": {
-      "status": "diff",
-      "differences": 1
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/ezdxf/examples_dxf/visibility.dxf": {
       "status": "clean",
@@ -406,8 +406,8 @@
       "differences": 0
     },
     "public/third-party/ezdxf/integration_tests/duplicate_handles.dxf": {
-      "status": "diff",
-      "differences": 1
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/ezdxf/integration_tests/dxf_unicode.dxf": {
       "status": "clean",

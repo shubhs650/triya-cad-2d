@@ -415,8 +415,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
     const tmp = template as CadFieldTemplate;
 
     switch (this._reader.code as number) {
+      // The field code is 3 overflow chunks and a last 2, the format string 9 chunks and a last
+      // 301; assigned through the map, each last chunk replaced the ones before it.
+      case 2:
       case 3:
         tmp.cadObject.fieldCode += this._reader.valueAsString;
+        return true;
+      case 9:
+      case 301:
+        tmp.cadObject.formatString += this._reader.valueAsString;
         return true;
       case 98:
         return true;
@@ -672,6 +679,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           return true;
         }
         return false;
+      // Version 1 states the reference point in 40/41/42 and writes 11/21/31 as zero after it;
+      // the map took those as the version 2+ reference point and zeroed it.
+      case 11:
+      case 21:
+      case 31:
+        if (tmp.cadObject.version === GeoDataVersion.R2009) {
+          return true;
+        }
+        return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
       case 46:
         if (tmp.cadObject.version === GeoDataVersion.R2009) {
           tmp.cadObject.horizontalUnitScale = this._reader.valueAsDouble;
@@ -724,6 +740,9 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
         return true;
       }
       case 303:
+      // 301 is the last chunk after the 303s; assigned through the map, it replaced them and
+      // kept its caret codes ("^J") as text.
+      case 301:
         tmp.cadObject.coordinateSystemDefinition += this._reader.valueAsString;
         return true;
       case 3:
@@ -1851,6 +1870,17 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           return true;
         }
         t.lineTypeName = this._reader.valueAsString;
+        return true;
+      }
+      case 62: {
+        // After the first 49, 62 is that element's colour. Assigned through the map, it replaced
+        // the style's fill colour instead.
+        const t = tmp.elementTemplates[tmp.elementTemplates.length - 1];
+        if (!t) {
+          mLineStyle.fillColor = new Color(this._reader.valueAsShort);
+          return true;
+        }
+        t.element.color = new Color(this._reader.valueAsShort);
         return true;
       }
       case 49: {

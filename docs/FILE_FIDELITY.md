@@ -40,7 +40,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | WIPEOUT | ✓ (acad-ts skips the clip type 71; the mapper infers a polygon from more than two vertices, M1-32) | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation); cell formats not mapped yet; ezdxf-written tables dropped by acad-ts (M1-32); drawn by the renderer from the `*T` block in the table's frame, M1-17 | | | | |
-| VIEWPORT | ✓ frame, view, clip boundary, frozen layers, plot style and render mode (DXF status 68, clip boundary 340, a 0 viewport ID and the R12 MVIEW view lost by acad-ts, M1-32; DWG reads 68 and 340) | | | | |
+| VIEWPORT | ✓ frame, view, clip boundary, frozen layers, plot style and render mode (DXF status 68, clip boundary 340 and the R12 MVIEW view lost by acad-ts, M1-32; DWG reads 68 and 340; a stated viewport ID of 0 is kept, M1-58) | | | | |
 | TOLERANCE | ✓ (caret codes decoded since 0039; drawn by the renderer as its compartment frames and text, sized by the text engine, and bounded by them, M1-52 part 4; GD&T symbols wait for a GD&T font, M1-54; DXF frames take AutoCAD's DIMGAP since 0075, M1-53) | | | | |
 | MLINE (+ MLINESTYLE) | ✓ MLINE (style handle, scale, justification, flags, vertices with element parameters); MLINESTYLE not yet | | | | |
 | REGION *(render from proxy graphics / boundary)* | ✓ boundary read from the ACIS data, SAT text (R14–R2010) or SAB binary (R2013+, DWG): lines, arcs, circles and ellipses per loop; spline (intcurve) edges reported unmapped (M1-39) | | — | | |
@@ -125,11 +125,11 @@ The columns above track Triya. This section tracks the library underneath, from 
 | Version | Corpus files (DWG / ASCII DXF / binary DXF) | Read | Round trip clean | Main open defects |
 |---|---|---|---|---|
 | R2.6–R12 (AC1009 and earlier) | 0 / 7 / 2 | all | 9 | none in the public corpus (M1-56); no R12 DWG yet (M1-26) |
-| R13 (AC1012) | 0 / 2 / 1 | all | 0 | DXF writer gaps |
-| R14 (AC1014) | 1 / 1 / 1 | all | 0 | R17 block entity lists |
-| 2000 (AC1015) | 1 / 5 / 2 | all | 0 | R17, DXF writer gaps |
-| 2004–2013 (AC1018–AC1027) | 4 / 46 / 4 | all | 0 | R15 table content, R11 sort order, DXF writer gaps |
-| 2018 (AC1032) | 14 / 26 / 1 | all but `recover02.dxf` (malformed) | 11 (DWG) | DXF writer gaps |
+| R13 (AC1012) | 0 / 2 / 1 | all | 3 | none in the public corpus (M1-58) |
+| R14 (AC1014) | 1 / 1 / 1 | all | 3 | none in the public corpus (M1-58) |
+| 2000 (AC1015) | 1 / 5 / 2 | all | 8 | none in the public corpus (M1-58) |
+| 2004–2013 (AC1018–AC1027) | 4 / 46 / 4 | all | 54 | none in the public corpus (M1-58) |
+| 2018 (AC1032) | 15 / 26 / 1 | all but `recover02.dxf` (malformed) | 40 | `BLOCKFLIPPARAMETER.dwg` flip parameter acad-ts never reads (M1-33) |
 
 | Type | acad-ts status after M0-06 and M1-30 |
 |---|---|
@@ -162,6 +162,15 @@ The columns above track Triya. This section tracks the library underneath, from 
 | R12 xdata 1003 layer names (DXF read) | Linked to the layer once its handle is made up (0077); an R12 layer states no handle, so the record named handle 0 and a save left the 1003 out |
 | R12 `$DWGCODEPAGE` (DXF write) | Written (0079); R12 saves left it out, so a drawing in any other code page was read back as ANSI_1252 |
 | DXF with no `$ACADVER` (read) | Read as R12 when it has no CLASSES or OBJECTS section, as AutoCAD and ezdxf read it, and saved as R12 (0081); it was saved as R2018 with a layout and dictionaries the file never had. A block record's owned handles follow its entities when the document renumbers one |
+| GEODATA coordinate system (DXF read) | The last 301 chunk appended after the 303s (0082); it replaced them, so the XML or WKT definition kept only its tail, with `^J` left as text |
+| R2009 GEODATA (DXF) | Reference point read from 40/41/42 and not zeroed by the 11 after it (0090); horizontal unit scale written as 46 (0091), where the user scale factor went |
+| FIELD code and format string (DXF read) | Every chunk appended in order: field code 3s then 2, format string 9s then 301 (0083); the last chunk replaced the ones before it |
+| STYLE `ACAD` font xdata (DXF write) | Face name and charset, pitch and family bits kept as read while the font file is unchanged; only bold and italic are refreshed (0084). They were rebuilt from the file name ("ariblk" for "Arial Black") |
+| DBCOLOR without a true colour (DXF write) | 420 written only for a true colour (0085); index colours went out as true colour 0 (black) |
+| IMAGE clip mode (DXF write, R2010+) | 290 written (0086); an inverted clip came back normal |
+| DEFPOINTS plot flag (DXF read) | Read as not plotted, as AutoCAD treats it and as the writer writes it (0087) |
+| MLINESTYLE element colours (DXF read) | 62 after an element's 49 read as that element's colour (0088); it overwrote the fill colour |
+| VIEWPORT ID 0 (DXF) | A stated 69 = 0 is kept (0089); 0 read as unset, so the ID was numbered by position and written that way |
 | TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
 | ACAD_TABLE (DXF) | Written (0068): the writer had no table branch, so every table went out as a bare INSERT and was lost with its extension dictionary, round-trip XRECORD and TABLECONTENT. The reader keeps cell override flags, block scale, alignment and chunked text (0066), and the table-wide overrides as read (DEC-043); 41 there had been read as the X scale. The acadsharp R2000–R2018 DXFs now round-trip with no table difference |
 | Table cell values (DXF) | Units, format and formatted value written from R2007 (0067); an empty value writes no payload, it was written as 91=0, which the reader rejects (FIELD 0x5F8 of `uncommon.dxf` was lost) |
