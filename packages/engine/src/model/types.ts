@@ -91,13 +91,15 @@ export interface ObjectCommon {
 
 // ── Entity geometry ────────────────────────────────────────────────────────────────────────
 //
-// Each geometry is a kernel curve (geom/curves.ts) plus what the file carries beyond the plane,
-// so `entity.geom` goes straight into kernel functions.
+// Curve entities are a kernel curve (geom/curves.ts) plus what the file carries beyond the
+// plane, so their `entity.geom` goes straight into kernel functions. POINT, POLYLINE, SOLID,
+// TRACE and 3DFACE have shapes of their own.
 
 /**
- * Out-of-plane data for planar entities, carried so it round-trips. Geometry is 2D in the
- * entity's plane (OCS for circles/arcs/polylines, WCS XY otherwise); M1-04 decides how 3D-ish
- * input such as a non-default extrusion is presented.
+ * Out-of-plane data, carried so the plan view can say where an entity sat in 3D. Geometry is
+ * always the entity's plan view in WCS XY (DEC-039): OCS entities whose extrusion is ±Z are
+ * converted exactly (−Z mirrors X), WCS entities drop Z. `elevation` is the WCS Z of the
+ * entity's plane when it is not 0, `normal` the extrusion when it is not +Z.
  */
 export interface PlanarProps {
   readonly elevation?: number;
@@ -110,9 +112,7 @@ export type XlineGeometry = Xline;
 export type RayGeometry = Ray;
 export interface CircleGeometry extends Circle, PlanarProps {}
 export interface ArcGeometry extends Arc, PlanarProps {}
-export interface EllipseGeometry extends Ellipse {
-  readonly normal?: Vec3;
-}
+export interface EllipseGeometry extends Ellipse, PlanarProps {}
 
 export interface PointGeometry extends PlanarProps {
   readonly kind: 'POINT';
@@ -143,6 +143,42 @@ export interface SplineGeometry extends Spline {
   readonly normal?: Vec3;
 }
 
+/**
+ * A heavyweight POLYLINE (2D or 3D) with its VERTEX and SEQEND entities folded in; those keep
+ * their handles in the retained original. `vertices` are the ones AutoCAD draws: for a
+ * spline-fit polyline that is the fitted vertices (VERTEX flag 8), with the frame (flag 16)
+ * in `frame`. A 3D polyline is its plan view, with no bulges.
+ */
+export interface PolylineGeometry extends PlanarProps {
+  readonly kind: 'POLYLINE';
+  readonly vertices: readonly PolylineVertex[];
+  readonly closed: boolean;
+  readonly is3d: boolean;
+  /** DXF 70 bit 2 (curve fit) or bit 4 with 75 = 5/6/8 (quadratic, cubic, Bezier spline fit). */
+  readonly fit?: 'curve' | 'quadratic' | 'cubic' | 'bezier';
+  readonly frame?: readonly Vec2[];
+  /** DXF 40/41 defaults for vertices that state no width. */
+  readonly startWidth?: number;
+  readonly endWidth?: number;
+  readonly plinegen?: boolean;
+}
+
+/**
+ * SOLID or TRACE: a filled quadrilateral (a triangle when the third and fourth corners
+ * coincide). Corners keep DXF order, so the outline is 1–2–4–3.
+ */
+export interface SolidGeometry extends PlanarProps {
+  readonly kind: 'SOLID' | 'TRACE';
+  readonly corners: readonly [Vec2, Vec2, Vec2, Vec2];
+}
+
+/** 3DFACE in plan view, drawn as its outline; DXF 70 bits 1/2/4/8 hide edges 1–4. */
+export interface Face3dGeometry {
+  readonly kind: '3DFACE';
+  readonly corners: readonly [Vec2, Vec2, Vec2, Vec2];
+  readonly hiddenEdges: number;
+}
+
 export type EntityGeometry =
   | LineGeometry
   | XlineGeometry
@@ -152,7 +188,10 @@ export type EntityGeometry =
   | EllipseGeometry
   | PointGeometry
   | LwPolylineGeometry
-  | SplineGeometry;
+  | PolylineGeometry
+  | SplineGeometry
+  | SolidGeometry
+  | Face3dGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */
 export type EntityType = EntityGeometry['kind'];
