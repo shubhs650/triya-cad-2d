@@ -1,0 +1,1 @@
+- M1-04 part 3c (#28): `mapEntities` maps MULTILEADER: leader line properties and overrides, text or block content from the context data, and every branch with its leader lines, in plan view (DEC-039 extended). New acad-ts gaps (DXF branch connection point, landing direction and dogleg length; context text colour) in M1-32.

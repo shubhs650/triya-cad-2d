@@ -35,8 +35,8 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | DIMENSION (arc length) | ✓ (ARC_DIMENSION) | | | | |
 | DIMENSION (jogged) | — acad-ts does not read LARGE_RADIAL_DIMENSION as a dimension (M1-34) | | | | |
 | LEADER | ✓ | | | | |
-| MLEADER (+ MLEADERSTYLE) | | | | | |
-| HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | | | | | |
+| MLEADER (+ MLEADERSTYLE) | ✓ (DXF branch connection point, landing direction and dogleg length, and the context text colour, lost by acad-ts, M1-32; DWG reads them) | | | | |
+| HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | ✓ (style 75, seed points and ellipse-edge major axes lost by acad-ts, M1-32) | | | | |
 | WIPEOUT | | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | | | | | |

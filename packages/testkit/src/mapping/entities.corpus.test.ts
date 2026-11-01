@@ -5,11 +5,14 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type {
+  Color,
   DimensionGeometry,
   EntityInit,
+  HatchGeometry,
   InsertGeometry,
   LeaderGeometry,
   MTextGeometry,
+  MultiLeaderGeometry,
   TextFields,
   Vec2,
 } from '@triya/engine';
@@ -92,6 +95,16 @@ const ACAD_TS_GAPS: Record<string, string> = {
     'acad-ts does not caret-decode TOLERANCE text, so its ^J row breaks stay encoded (MTEXT is decoded)',
   'DIMENSION 70':
     'acad-ts reads a rotated dimension whose AcDbRotatedDimension subclass is empty (50 omitted, angle 0) as an aligned one',
+  'HATCH 75': 'acad-ts skips the hatch style (75), so outer and ignore hatches read as normal',
+  'HATCH 98': 'acad-ts drops the seed points (98, 10/20) of DXF hatches',
+  'HATCH 11':
+    'acad-ts reads an ellipse edge’s major axis (11/21) with the centre’s coordinate in place of the other component',
+  'MULTILEADER ctx 90':
+    'acad-ts reads the context-data text colour (90) of a DXF MULTILEADER as a true colour, so ByLayer becomes RGB 0,0,0',
+  'MULTILEADER LEADER{ 10':
+    'acad-ts has no DXF code map for a MULTILEADER branch (LeaderRoot), so DXF branches keep the default connection point; DWG reads it',
+  'MULTILEADER LEADER{ 11': 'the same for the landing direction',
+  'MULTILEADER LEADER{ 40': 'the same for the dogleg length',
 };
 
 /** Types this part maps; the others must be reported as not mapped yet. */
@@ -117,6 +130,8 @@ const MAPPED = new Set([
   'ARC_DIMENSION',
   'LEADER',
   'TOLERANCE',
+  'HATCH',
+  'MULTILEADER',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({
@@ -408,6 +423,16 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
       if (!sameText(first(g, 1), geom.text)) bad('1', first(g, 1), geom.text);
       const dir = pt(g, 11);
       if (!sameAngle(geom.rotation, Math.atan2(dir.y, dir.x))) bad('11', fmt(dir), geom.rotation);
+      return;
+    }
+    case 'MULTILEADER': {
+      if (geom.kind !== 'MULTILEADER') return bad('type', d.type, geom.kind);
+      compareMultiLeader(g, geom, bad);
+      return;
+    }
+    case 'HATCH': {
+      if (geom.kind !== 'HATCH') return bad('type', d.type, geom.kind);
+      compareHatch(subclass(g, 'AcDbHatch'), n, geom, bad);
       return;
     }
     case 'INSERT': {
@@ -783,6 +808,423 @@ function compareLeader(g: readonly Group[], geom: LeaderGeometry, t: MappedTable
   if ((ann && ann !== '0' ? ann : undefined) !== geom.annotation) bad('340', ann, geom.annotation);
   if (first(g, 211) !== undefined && !near(geom.horizontalDirection, pt(g, 211)))
     bad('211', fmt(pt(g, 211)), fmt(geom.horizontalDirection));
+}
+
+/** A handle group as the mapper states it: no leading zeros, upper case, 0 for none. */
+const handleIn = (g: readonly Group[], code: number): string | undefined => {
+  const h = first(g, code)
+    ?.trim()
+    .replace(/^0+(?=.)/, '')
+    .toUpperCase();
+  return h && h !== '0' ? h : undefined;
+};
+
+/**
+ * An AcCmEntityColor as MULTILEADER writes it (DXF 91/92/93 and context 90): a signed 32-bit
+ * value whose high byte is the method, 0xC0 ByLayer, 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI.
+ */
+function cmColor(g: readonly Group[], code: number): string {
+  const v = Number(first(g, code) ?? '0') >>> 0;
+  const method = v >>> 24;
+  if (method === 0xc0) return 'byLayer';
+  if (method === 0xc2) return `rgb ${(v >>> 16) & 255},${(v >>> 8) & 255},${v & 255}`;
+  if (method === 0xc3) {
+    const i = v & 255;
+    return i === 0 ? 'byBlock' : i === 256 ? 'byLayer' : `aci ${i}`;
+  }
+  return 'byBlock';
+}
+const colorText = (c: Color): string =>
+  c.kind === 'rgb' ? `rgb ${c.r},${c.g},${c.b}` : c.kind === 'aci' ? `aci ${c.index}` : c.kind;
+
+/** The groups between an opening marker group and its closing `}` group, nesting aside. */
+function braces(
+  g: readonly Group[],
+  open: Group,
+  close: number,
+): { inner: Group[]; outer: Group[] }[] {
+  const out: { inner: Group[]; outer: Group[] }[] = [];
+  let i = 0;
+  while (i < g.length) {
+    const s = g.findIndex(([c, v], k) => k >= i && c === open[0] && v.trim() === open[1]);
+    if (s < 0) break;
+    const e = g.findIndex(([c, v], k) => k > s && c === close && v.trim() === '}');
+    out.push({ inner: g.slice(s + 1, e), outer: [] });
+    i = e + 1;
+  }
+  return out;
+}
+const without = (g: readonly Group[], open: Group, close: number): Group[] => {
+  const out: Group[] = [];
+  let depth = 0;
+  for (const grp of g) {
+    if (grp[0] === open[0] && grp[1].trim() === open[1]) depth++;
+    else if (depth > 0 && grp[0] === close && grp[1].trim() === '}') depth--;
+    else if (depth === 0) out.push(grp);
+  }
+  return out;
+};
+
+/**
+ * MULTILEADER (DXF reference, MLEADER): the AcDbMLeader groups, its CONTEXT_DATA{ block and
+ * that block's LEADER{ and LEADER_LINE{ blocks, read apart. All points are WCS.
+ */
+function compareMultiLeader(groups: readonly Group[], geom: MultiLeaderGeometry, bad: Bad): void {
+  const ml = subclass(groups, 'AcDbMLeader');
+  const CTX: Group = [300, 'CONTEXT_DATA{'];
+  const LEADER: Group = [302, 'LEADER{'];
+  const LINE: Group = [304, 'LEADER_LINE{'];
+  const own = without(ml, CTX, 301);
+  const ctxAll = braces(ml, CTX, 301)[0]?.inner ?? [];
+  const ctx = without(ctxAll, LEADER, 303);
+  const pt2 = (g: readonly Group[], code: number): Vec2 => ({
+    x: num(g, code),
+    y: num(g, code + 10),
+  });
+  const ints: [string, number, number][] = [
+    ['90', num(own, 90), geom.overrideFlags],
+    ['170', num(own, 170), geom.pathType],
+    ['172', num(own, 172), geom.contentType],
+    ['173', num(own, 173), geom.textLeftAttachment],
+    ['95', num(own, 95), geom.textRightAttachment],
+    ['271', num(own, 271), geom.textAttachmentDirection],
+    ['174', num(own, 174), geom.textAngleType],
+    ['175', num(own, 175), geom.textAlignment],
+  ];
+  for (const [code, file, got] of ints) if (file !== got) bad(code, file, got);
+  // 272/273 arrived with R2010; older files omit them, leaving the reader's default.
+  if (first(own, 273) !== undefined && num(own, 273) !== geom.textTopAttachment)
+    bad('273', num(own, 273), geom.textTopAttachment);
+  if (first(own, 272) !== undefined && num(own, 272) !== geom.textBottomAttachment)
+    bad('272', num(own, 272), geom.textBottomAttachment);
+  const flags: [string, boolean][] = [
+    ['290', geom.landing],
+    ['291', geom.dogleg],
+    ['292', geom.textFrame],
+    ['293', geom.annotative],
+  ];
+  for (const [code, got] of flags)
+    if ((num(own, Number(code)) !== 0) !== got) bad(code, num(own, Number(code)), got);
+  const reals: [string, readonly Group[], number, number][] = [
+    ['41', own, num(own, 41), geom.doglegLength],
+    ['42', own, num(own, 42), geom.arrowheadSize],
+    ['45', own, num(own, 45, 1), geom.scale],
+    ['ctx 145', ctx, num(ctx, 145), geom.landingGap],
+  ];
+  for (const [code, , file, got] of reals) if (!close(file, got)) bad(code, file, got);
+  if (handleIn(own, 340) !== geom.style) bad('340', handleIn(own, 340), geom.style);
+  if (handleIn(own, 341) !== geom.linetype) bad('341', handleIn(own, 341), geom.linetype);
+  if (handleIn(own, 342) !== geom.arrowhead) bad('342', handleIn(own, 342), geom.arrowhead);
+  if (cmColor(own, 91) !== colorText(geom.lineColor))
+    bad('91', cmColor(own, 91), colorText(geom.lineColor));
+  const lw = num(own, 171);
+  const lwGot = geom.lineweight;
+  if ((lw === -1 ? 'ByLayer' : lw === -2 ? 'ByBlock' : lw === -3 ? 'Default' : lw) !== lwGot)
+    bad('171', lw, lwGot);
+  if (!near(pt2(ctx, 10), geom.contentBase))
+    bad('ctx 10', fmt(pt2(ctx, 10)), fmt(geom.contentBase));
+
+  const text = geom.text;
+  if ((num(ctx, 290) !== 0) !== !!text) bad('ctx 290', num(ctx, 290), !!text);
+  if (text) {
+    if (!sameText(first(ctx, 304), text.content)) bad('ctx 304', first(ctx, 304), text.content);
+    if (handleIn(ctx, 340) !== text.style) bad('ctx 340', handleIn(ctx, 340), text.style);
+    if (!near(pt2(ctx, 12), text.position)) bad('ctx 12', fmt(pt2(ctx, 12)), fmt(text.position));
+    const dir = pt2(ctx, 13);
+    if ((dir.x !== 0 || dir.y !== 0) && !sameAngle(text.rotation, Math.atan2(dir.y, dir.x)))
+      bad('ctx 13', fmt(dir), text.rotation);
+    if (num(ctx, 31, 1) < 0 !== !!text.upsideDown) bad('ctx 31', num(ctx, 31, 1), text.upsideDown);
+    const tr: [string, number, number][] = [
+      ['ctx 41', num(ctx, 41), text.height],
+      ['ctx 43', num(ctx, 43), text.width],
+      ['ctx 44', num(ctx, 44), text.boundaryHeight],
+      ['ctx 45', num(ctx, 45), text.lineSpacing],
+    ];
+    for (const [code, file, got] of tr) if (!close(file, got)) bad(code, file, got);
+    const ti: [string, number, number][] = [
+      ['ctx 170', num(ctx, 170), text.lineSpacingStyle],
+      ['ctx 171', num(ctx, 171), text.attachment],
+      ['ctx 172', num(ctx, 172), text.flow],
+    ];
+    for (const [code, file, got] of ti) if (file !== got) bad(code, file, got);
+    if (cmColor(ctx, 90) !== colorText(text.color))
+      bad('ctx 90', cmColor(ctx, 90), colorText(text.color));
+  }
+  const block = geom.block;
+  if ((num(ctx, 296) !== 0) !== !!block) bad('ctx 296', num(ctx, 296), !!block);
+  if (block) {
+    if (handleIn(ctx, 341) !== block.block) bad('ctx 341', handleIn(ctx, 341), block.block);
+    if (!near(pt2(ctx, 15), block.position)) bad('ctx 15', fmt(pt2(ctx, 15)), fmt(block.position));
+    const sc = pt(ctx, 16);
+    if (
+      ![sc.x, sc.y, sc.z].every((v, k) =>
+        close(v, [block.scale.x, block.scale.y, block.scale.z][k]!),
+      )
+    )
+      bad('ctx 16', JSON.stringify(sc), JSON.stringify(block.scale));
+    if (!close(num(ctx, 46), block.rotation)) bad('ctx 46', num(ctx, 46), block.rotation);
+    if (cmColor(ctx, 93) !== colorText(block.color))
+      bad('ctx 93', cmColor(ctx, 93), colorText(block.color));
+  }
+
+  const roots = braces(ctxAll, LEADER, 303).map((b) => b.inner);
+  if (roots.length !== geom.branches.length)
+    return bad('LEADER{', roots.length, geom.branches.length);
+  roots.forEach((r, k) => {
+    const got = geom.branches[k]!;
+    const rg = without(r, LINE, 305);
+    if (num(rg, 90) !== got.index) bad('LEADER{ 90', num(rg, 90), got.index);
+    if (!near(pt2(rg, 10), got.connection))
+      bad('LEADER{ 10', fmt(pt2(rg, 10)), fmt(got.connection));
+    if (!near(pt2(rg, 11), got.direction)) bad('LEADER{ 11', fmt(pt2(rg, 11)), fmt(got.direction));
+    if (!close(num(rg, 40), got.doglegLength)) bad('LEADER{ 40', num(rg, 40), got.doglegLength);
+    const lines = braces(r, LINE, 305).map((b) => b.inner);
+    if (lines.length !== got.lines.length)
+      return bad('LEADER_LINE{', lines.length, got.lines.length);
+    lines.forEach((l, j) => {
+      const gl = got.lines[j]!;
+      if (num(l, 91) !== gl.index) bad('LEADER_LINE{ 91', num(l, 91), gl.index);
+      const xs = all(l, 10).map(Number);
+      const ys = all(l, 20).map(Number);
+      const vs = xs.map((x, q) => ({ x, y: ys[q]! }));
+      if (vs.length !== gl.vertices.length || vs.some((v, q) => !near(v, gl.vertices[q]!)))
+        bad('LEADER_LINE{ 10', vs.map(fmt).join(' '), gl.vertices.map(fmt).join(' '));
+    });
+  });
+}
+
+/** A HATCH boundary as the file states it, read group by group (DXF reference, HATCH). */
+interface FileEdge {
+  readonly type: number;
+  readonly g: Group[];
+}
+interface FileLoop {
+  readonly flags: number;
+  readonly edges: FileEdge[];
+  readonly poly?: { closed: boolean; pts: { x: number; y: number; bulge: number }[] };
+  readonly sources: string[];
+}
+
+function readHatchLoops(g: readonly Group[]): { loops: FileLoop[]; after: number } {
+  let i = g.findIndex(([c]) => c === 91);
+  const loops: FileLoop[] = [];
+  if (i < 0) return { loops, after: 0 };
+  const count = Number(g[i]![1]);
+  i++;
+  const code = (): number | undefined => g[i]?.[0];
+  const take = (): string => g[i++]![1];
+  for (let k = 0; k < count && code() === 92; k++) {
+    const flags = Number(take());
+    const edges: FileEdge[] = [];
+    let poly: FileLoop['poly'];
+    if (flags & 2) {
+      const hasBulge = code() === 72 ? Number(take()) !== 0 : false;
+      const closed = code() === 73 ? Number(take()) !== 0 : false;
+      const n = Number(take()); // 93
+      const pts = [];
+      for (let v = 0; v < n; v++) {
+        const x = Number(take());
+        const y = Number(take());
+        const bulge = hasBulge && code() === 42 ? Number(take()) : 0;
+        pts.push({ x, y, bulge });
+      }
+      poly = { closed, pts };
+    } else {
+      const n = Number(take()); // 93
+      for (let e = 0; e < n; e++) {
+        const type = Number(take()); // 72
+        const eg: Group[] = [];
+        const fixed: Record<number, number[]> = {
+          1: [10, 20, 11, 21],
+          2: [10, 20, 40, 50, 51, 73],
+          3: [10, 20, 11, 21, 40, 50, 51, 73],
+        };
+        if (type !== 4) {
+          for (const c of fixed[type] ?? []) if (code() === c) eg.push(g[i++]!);
+        } else {
+          for (const c of [94, 73, 74, 95, 96]) if (code() === c) eg.push(g[i++]!);
+          while (code() === 40 || code() === 10 || code() === 20 || code() === 42) eg.push(g[i++]!);
+          // R2010+ adds the fit data, led by its own 97 (DXF reference, spline edge data); the
+          // loop's source count is also 97, but only after its last edge.
+          const next = g[i + 1]?.[0];
+          if (code() === 97 && (e < n - 1 || next === 11 || next === 12 || next === 97)) {
+            eg.push(g[i++]!);
+            while ([11, 21, 12, 22, 13, 23].includes(code() ?? -1)) eg.push(g[i++]!);
+          }
+        }
+        edges.push({ type, g: eg });
+      }
+    }
+    const sources: string[] = [];
+    if (code() === 97) {
+      const ns = Number(take());
+      for (let q = 0; q < ns && code() === 330; q++)
+        sources.push(
+          take()
+            .trim()
+            .replace(/^0+(?=.)/, '')
+            .toUpperCase(),
+        );
+    }
+    loops.push({ flags, edges, ...(poly ? { poly } : {}), sources });
+  }
+  return { loops, after: i };
+}
+
+/** Points along an arc or ellipse edge; AutoCAD stores a clockwise edge's angles negated. */
+function edgePoints(
+  e:
+    | { type: 'arc'; center: Vec2; radius: number; s: number; e: number; ccw: boolean }
+    | {
+        type: 'ellipse';
+        center: Vec2;
+        major: Vec2;
+        ratio: number;
+        s: number;
+        e: number;
+        ccw: boolean;
+      },
+): Vec2[] {
+  const dir = e.ccw ? 1 : -1;
+  const s = dir * e.s;
+  let en = dir * e.e;
+  while (dir * (en - s) <= 1e-12) en += dir * 2 * Math.PI;
+  return [0, 0.5, 1].map((t) => {
+    const a = s + (en - s) * t;
+    if (e.type === 'arc')
+      return { x: e.center.x + e.radius * Math.cos(a), y: e.center.y + e.radius * Math.sin(a) };
+    const M = e.major;
+    return {
+      x: e.center.x + Math.cos(a) * M.x - Math.sin(a) * e.ratio * M.y,
+      y: e.center.y + Math.cos(a) * M.y + Math.sin(a) * e.ratio * M.x,
+    };
+  });
+}
+
+function compareHatch(g: readonly Group[], n: V3, geom: HatchGeometry, bad: Bad): void {
+  if (geom.pattern !== (first(g, 2) ?? '').trim()) bad('2', first(g, 2), geom.pattern);
+  if (geom.solid !== (num(g, 70) !== 0)) bad('70', num(g, 70), geom.solid);
+  if (geom.associative !== (num(g, 71) !== 0)) bad('71', num(g, 71), geom.associative);
+  const { loops, after } = readHatchLoops(g);
+  if (loops.length !== geom.loops.length) return bad('91', loops.length, geom.loops.length);
+  const vplan = (v: Vec2): Vec2 => plan(v, n);
+  loops.forEach((f, k) => {
+    const got = geom.loops[k]!;
+    if (got.flags !== f.flags) bad('92', f.flags, got.flags);
+    if ((got.sources ?? []).join(',') !== f.sources.join(','))
+      bad('330', f.sources.join(','), (got.sources ?? []).join(','));
+    if (f.poly) {
+      if (!got.polyline) return bad('92', f.flags, 'no polyline');
+      if (got.polyline.closed !== f.poly.closed) bad('73', f.poly.closed, got.polyline.closed);
+      checkVertices(
+        f.poly.pts,
+        f.poly.pts.map((p) => p.bulge),
+        num(g, 30),
+        n,
+        got.polyline.vertices,
+        f.poly.closed,
+        bad,
+      );
+      return;
+    }
+    const edges = got.edges ?? [];
+    if (edges.length !== f.edges.length) return bad('93', f.edges.length, edges.length);
+    f.edges.forEach((fe, j) => {
+      const e = edges[j]!;
+      const c = (code: number) => num(fe.g, code);
+      const at = (code: number): Vec2 => ({ x: c(code), y: c(code + 10) });
+      const check = (code: string, want: readonly Vec2[], have: readonly Vec2[]): void => {
+        if (want.length !== have.length || want.some((w, q) => !near(w, have[q]!)))
+          bad(code, want.map(fmt).join(' '), have.map(fmt).join(' '));
+      };
+      const deg2 = (code: number) => (c(code) * Math.PI) / 180;
+      switch (fe.type) {
+        case 1:
+          if (e.type !== 'line') return bad('72', fe.type, e.type);
+          return check('10', [vplan(at(10)), vplan(at(11))], [e.start, e.end]);
+        case 2: {
+          if (e.type !== 'arc') return bad('72', fe.type, e.type);
+          const want = edgePoints({
+            type: 'arc',
+            center: at(10),
+            radius: c(40),
+            s: deg2(50),
+            e: deg2(51),
+            ccw: c(73) !== 0,
+          }).map(vplan);
+          const have = edgePoints({ ...e, s: e.startAngle, e: e.endAngle });
+          return check('50', want, have);
+        }
+        case 3: {
+          if (e.type !== 'ellipse') return bad('72', fe.type, e.type);
+          // The file's major axis turns with the plane; its points are compared in plan.
+          const want = edgePoints({
+            type: 'ellipse',
+            center: at(10),
+            major: at(11),
+            ratio: c(40),
+            s: deg2(50),
+            e: deg2(51),
+            ccw: c(73) !== 0,
+          }).map(vplan);
+          const have = edgePoints({
+            type: 'ellipse',
+            center: e.center,
+            major: e.majorAxis,
+            ratio: e.ratio,
+            s: e.startAngle,
+            e: e.endAngle,
+            ccw: e.ccw,
+          });
+          return check('11', want, have);
+        }
+        case 4: {
+          if (e.type !== 'spline') return bad('72', fe.type, e.type);
+          const xs = all(fe.g, 10).map(Number);
+          const ys = all(fe.g, 20).map(Number);
+          check(
+            '10',
+            xs.map((x, q) => vplan({ x, y: ys[q]! })),
+            e.controlPoints,
+          );
+          const knots = all(fe.g, 40).map(Number);
+          if (knots.join(',') !== e.knots.join(',')) bad('40', knots.join(','), e.knots.join(','));
+          if (e.degree !== c(94)) bad('94', c(94), e.degree);
+          return;
+        }
+      }
+    });
+  });
+  const rest = g.slice(after);
+  if (geom.style !== num(rest, 75)) bad('75', num(rest, 75), geom.style);
+  if (geom.patternType !== num(rest, 76)) bad('76', num(rest, 76), geom.patternType);
+  if (!geom.solid) {
+    const ang = n.z < 0 ? Math.PI - deg(rest, 52) : deg(rest, 52);
+    if (!sameAngle(geom.patternAngle, ang)) bad('52', num(rest, 52), geom.patternAngle);
+    if (!close(geom.patternScale, num(rest, 41, 1))) bad('41', num(rest, 41, 1), geom.patternScale);
+    if (geom.double !== (num(rest, 77) !== 0)) bad('77', num(rest, 77), geom.double);
+    const lines = all(rest, 53);
+    if (lines.length !== geom.patternLines.length)
+      bad('78', lines.length, geom.patternLines.length);
+    else {
+      const a = lines.map((v) => (Number(v) * Math.PI) / 180);
+      a.forEach((v, q) => {
+        const want = n.z < 0 ? Math.PI - v : v;
+        if (!sameAngle(geom.patternLines[q]!.angle, want))
+          bad('53', v, geom.patternLines[q]!.angle);
+      });
+    }
+  }
+  const seeds = num(rest, 98);
+  if (seeds !== geom.seedPoints.length) bad('98', seeds, geom.seedPoints.length);
+  const grad = num(rest, 450) !== 0;
+  if (grad !== !!geom.gradient) bad('450', num(rest, 450), !!geom.gradient);
+  if (grad && geom.gradient) {
+    if (geom.gradient.name !== (first(rest, 470) ?? '').trim())
+      bad('470', first(rest, 470), geom.gradient.name);
+    if (geom.gradient.colors.length !== all(rest, 463).length)
+      bad('463', all(rest, 463).length, geom.gradient.colors.length);
+  }
 }
 
 /** Plan positions of polyline vertices, and each bulged segment's midpoint. */

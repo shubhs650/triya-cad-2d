@@ -5,6 +5,14 @@
 
 import {
   Arc,
+  Hatch,
+  HatchBoundaryPathArc,
+  HatchBoundaryPathEllipse,
+  HatchBoundaryPathLine,
+  HatchBoundaryPathPolyline,
+  HatchBoundaryPathSpline,
+  type HatchBoundaryPath,
+  type HatchBoundaryPathEdge,
   DimensionAligned,
   DimensionAngular2Line,
   DimensionAngular3Pt,
@@ -14,6 +22,7 @@ import {
   DimensionOrdinate,
   DimensionRadius,
   Leader,
+  MultiLeader,
   Tolerance,
   type Dimension,
   type DimensionStyle,
@@ -47,6 +56,8 @@ import {
 } from '@node-projects/acad-ts';
 import type {
   AttributeFields,
+  HatchEdge,
+  HatchLoop,
   DimensionFields,
   Color,
   EntityGeometry,
@@ -55,6 +66,7 @@ import type {
   InsertAttribute,
   LinetypeRef,
   MTextGeometry,
+  MultiLeaderGeometry,
   ObjectCommon,
   PlanarProps,
   TextFields,
@@ -62,7 +74,7 @@ import type {
   Transparency,
   Vec2,
 } from '@triya/engine';
-import { common, hex, mapColor, mapLineweight, ref } from './common';
+import { common, hex, mapColor, mapEntityColor, mapLineweight, ref } from './common';
 
 export interface UnmappedEntity {
   readonly handle: string;
@@ -470,6 +482,97 @@ function leaderGeometry(l: Leader, ctx: Ctx): EntityGeometry | UnmappedEntity['r
   };
 }
 
+/**
+ * MULTILEADER points are WCS (DXF reference, MLEADER), so the plan view drops Z. The leader
+ * plane is the context data's 110 origin with 111/112 axes; its normal must be ±Z.
+ */
+function multiLeaderGeometry(
+  m: MultiLeader,
+  ctx: Ctx,
+): MultiLeaderGeometry | UnmappedEntity['reason'] {
+  const c = m.contextData;
+  const a = c.baseDirection;
+  const b = c.baseVertical;
+  const n = { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+  const pl = plane(n as XYZ);
+  if (pl === 'tilted') return 'tilted plane';
+  const textPl = plane(c.textNormal);
+  const d = c.direction;
+  // A zero text direction runs along the OCS X axis of the text normal, as for MTEXT.
+  const dir = d.x === 0 && d.y === 0 ? { x: textPl === 'down' ? -1 : 1, y: 0 } : d;
+  const style = ref(m.style);
+  const linetype = ref(m.leaderLineType);
+  const arrowhead = ref(m.arrowhead);
+  const block = ref(c.blockContent);
+  const z = c.basePoint.z;
+  return {
+    kind: 'MULTILEADER',
+    ...(style ? { style } : {}),
+    overrideFlags: m.propertyOverrideFlags as number,
+    pathType: m.pathType as number,
+    lineColor: mapEntityColor(m.lineColor),
+    ...(linetype ? { linetype } : {}),
+    lineweight: mapLineweight(m.leaderLineWeight as number),
+    landing: m.enableLanding,
+    dogleg: m.enableDogleg,
+    doglegLength: m.landingDistance,
+    ...(arrowhead ? { arrowhead } : {}),
+    arrowheadSize: m.arrowheadSize,
+    contentType: m.contentType as number,
+    scale: m.scaleFactor,
+    annotative: m.enableAnnotationScale,
+    textLeftAttachment: m.textLeftAttachment as number,
+    textRightAttachment: m.textRightAttachment as number,
+    textTopAttachment: m.textTopAttachment as number,
+    textBottomAttachment: m.textBottomAttachment as number,
+    textAttachmentDirection: m.textAttachmentDirection as number,
+    textAngleType: m.textAngle as number,
+    textAlignment: m.textAlignment as number,
+    textFrame: m.textFrame,
+    contentBase: xy(c.contentBasePoint),
+    landingGap: c.landingGap,
+    ...(c.hasTextContents
+      ? {
+          text: {
+            content: c.textLabel,
+            style: c.textStyle ? ctx.style(c.textStyle) : '0',
+            position: xy(c.textLocation),
+            rotation: norm(Math.atan2(dir.y, dir.x)),
+            ...(textPl === 'down' ? { upsideDown: true } : {}),
+            height: c.textHeight,
+            width: c.boundaryWidth,
+            boundaryHeight: c.boundaryHeight,
+            lineSpacing: c.lineSpacingFactor,
+            lineSpacingStyle: c.lineSpacing,
+            attachment: c.textAttachmentPoint,
+            flow: c.flowDirection,
+            color: mapEntityColor(c.textColor),
+          },
+        }
+      : {}),
+    ...(c.hasContentsBlock
+      ? {
+          block: {
+            ...(block ? { block } : {}),
+            position: xy(c.blockContentLocation),
+            scale: { x: c.blockContentScale.x, y: c.blockContentScale.y, z: c.blockContentScale.z },
+            rotation: c.blockContentRotation,
+            color: mapEntityColor(c.blockContentColor),
+          },
+        }
+      : {}),
+    branches: c.leaderRoots.map((r) => ({
+      index: r.leaderIndex,
+      connection: xy(r.connectionPoint),
+      direction: xy(r.direction),
+      doglegLength: r.landingDistance,
+      lines: r.lines.map((l) => ({ index: l.index, vertices: l.points.map(xy) })),
+    })),
+    ...(z !== 0 ? { elevation: z } : {}),
+    ...(pl !== 'up' ? { normal: { x: n.x, y: n.y, z: n.z } } : {}),
+  };
+}
+
 /** TOLERANCE's 10 and 11 are WCS, so it converts like MTEXT. */
 function toleranceGeometry(t: Tolerance, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   const pl = plane(t.normal);
@@ -485,6 +588,120 @@ function toleranceGeometry(t: Tolerance, ctx: Ctx): EntityGeometry | UnmappedEnt
     text: t.text,
     ...(t.insertionPoint.z !== 0 ? { elevation: t.insertionPoint.z } : {}),
     ...(pl !== 'up' ? { normal: { x: t.normal.x, y: t.normal.y, z: t.normal.z } } : {}),
+  };
+}
+
+/**
+ * A HATCH boundary edge in plan view. Edges are in the OCS, and AutoCAD stores a clockwise
+ * edge's angles negated (DXF 73 = 0). A −Z plane mirrors X: an actual arc angle a becomes
+ * π − a and an ellipse parameter t becomes −t, and the edge's direction reverses. With the
+ * flag flipped, the stored arc angle becomes a + π and the ellipse parameters stay as they
+ * are, for clockwise and counter-clockwise edges alike.
+ */
+function hatchEdge(e: HatchBoundaryPathEdge, pl: Plane): HatchEdge | undefined {
+  const down = pl === 'down';
+  const p = (v: { x: number; y: number }) => planOf(v, pl);
+  if (e instanceof HatchBoundaryPathLine) return { type: 'line', start: p(e.start), end: p(e.end) };
+  if (e instanceof HatchBoundaryPathArc) {
+    return {
+      type: 'arc',
+      center: p(e.center),
+      radius: e.radius,
+      startAngle: down ? norm(Math.PI + e.startAngle) : e.startAngle,
+      endAngle: down ? norm(Math.PI + e.endAngle) : e.endAngle,
+      ccw: e.counterClockWise !== down,
+    };
+  }
+  if (e instanceof HatchBoundaryPathEllipse) {
+    return {
+      type: 'ellipse',
+      center: p(e.center),
+      majorAxis: p(e.majorAxisEndPoint),
+      ratio: e.minorToMajorRatio,
+      startAngle: e.startAngle,
+      endAngle: e.endAngle,
+      ccw: e.counterClockWise !== down,
+    };
+  }
+  if (e instanceof HatchBoundaryPathSpline) {
+    const weights = e.controlPoints.map((c) => c.z);
+    const tangent = (t: { x: number; y: number }) => (t.x !== 0 || t.y !== 0 ? p(t) : undefined);
+    const st = tangent(e.startTangent);
+    const et = tangent(e.endTangent);
+    return {
+      type: 'spline',
+      degree: e.degree,
+      knots: [...e.knots],
+      controlPoints: e.controlPoints.map(p),
+      ...(e.isRational ? { weights } : {}),
+      periodic: e.isPeriodic,
+      ...(e.fitPoints.length > 0 ? { fitPoints: e.fitPoints.map(p) } : {}),
+      ...(st ? { startTangent: st } : {}),
+      ...(et ? { endTangent: et } : {}),
+    };
+  }
+  return undefined;
+}
+
+function hatchLoop(path: HatchBoundaryPath, pl: Plane): HatchLoop {
+  const sources = path.entities.map((x) => hex(x.handle));
+  const poly = path.edges.find((x) => x instanceof HatchBoundaryPathPolyline);
+  const base = {
+    flags: path.flags as number,
+    ...(sources.length > 0 ? { sources } : {}),
+  };
+  if (poly) {
+    // Polyline loop vertices carry their bulge in Z.
+    const vs = poly.vertices.map((v) => ({
+      location: v,
+      bulge: v.z,
+      startWidth: 0,
+      endWidth: 0,
+    }));
+    return { ...base, polyline: { vertices: lwVertices(vs, pl), closed: poly.isClosed } };
+  }
+  return {
+    ...base,
+    edges: path.edges.map((x) => hatchEdge(x, pl)).filter((x): x is HatchEdge => x !== undefined),
+  };
+}
+
+function hatchGeometry(h: Hatch): EntityGeometry | UnmappedEntity['reason'] {
+  const pl = plane(h.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const g = h.gradientColor;
+  return {
+    kind: 'HATCH',
+    pattern: h.pattern.name,
+    solid: h.isSolid,
+    associative: h.isAssociative,
+    style: h.style as number,
+    patternType: h.patternType as number,
+    patternAngle: ocsAngle(h.patternAngle, pl),
+    patternScale: h.patternScale,
+    double: h.isDouble,
+    loops: h.paths.map((x) => hatchLoop(x, pl)),
+    // The file's pattern lines are already rotated and scaled; mirroring them is exact.
+    patternLines: h.pattern.lines.map((l) => ({
+      angle: ocsAngle(l.angle, pl),
+      base: planOf(l.basePoint, pl),
+      offset: planOf(l.offset, pl),
+      dashes: [...l.dashLengths],
+    })),
+    seedPoints: h.seedPoints.map((x) => planOf(x, pl)),
+    ...(g.enabled
+      ? {
+          gradient: {
+            name: g.name,
+            angle: ocsAngle(g.angle, pl),
+            shift: g.shift,
+            singleColor: g.isSingleColorGradient,
+            tint: g.colorTint,
+            colors: g.colors.map((c) => ({ value: c.value, color: mapColor(c.color) })),
+          },
+        }
+      : {}),
+    ...planar(pl, h.normal, h.elevation, 0),
   };
 }
 
@@ -653,7 +870,9 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   )
     return dimensionGeometry(e, ctx);
   if (e instanceof Leader) return leaderGeometry(e, ctx);
+  if (e instanceof MultiLeader) return multiLeaderGeometry(e, ctx);
   if (e instanceof Tolerance) return toleranceGeometry(e, ctx);
+  if (e instanceof Hatch) return hatchGeometry(e);
   return 'not mapped yet';
 }
 

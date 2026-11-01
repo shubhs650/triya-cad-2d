@@ -11,7 +11,7 @@ import {
   Color,
   Ellipse,
   Face3D,
-  Hatch,
+  MLine,
   Line,
   LwPolyline,
   LwPolylineVertex,
@@ -281,5 +281,8 @@ describe('heavyweight polylines', () => {
 });
 
 it('reports types not mapped yet', () => {
-  expect(unmappedOne(new Hatch())).toMatchObject({ type: 'HATCH', reason: 'not mapped yet' });
+  expect(unmappedOne(new MLine())).toMatchObject({
+    type: 'MLINE',
+    reason: 'not mapped yet',
+  });
 });
