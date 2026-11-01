@@ -313,16 +313,121 @@ export interface VportRecord extends SymbolTableRecord, ViewParams {
 }
 
 /**
- * The record type of each table. Dimension, multileader and table styles use the base record
- * until M1-03 part 2 adds their fields.
+ * A DIMVAR's value as the DIMSTYLE record states it (AutoCAD DXF reference, DIMSTYLE):
+ * numbers and enum codes as numbers, on/off variables as booleans, DIMPOST/DIMAPOST as text,
+ * DIMDSEP as its character, colours (DIMCLRD/E/T, DIMTFILLCLR) as ACI numbers, DIMJOGANG in
+ * radians, and references (DIMTXSTY, DIMBLK*, DIMLDRBLK, DIMLTYPE, DIMLTEX*) as handles.
  */
+export type DimVarValue = number | string | boolean;
+
+export interface DimStyleRecord extends SymbolTableRecord {
+  /**
+   * DIMVARs by name (`DIMSCALE`, `DIMBLK`, …). A reference variable that points at nothing
+   * (the default arrowhead, ByBlock linetype) is absent.
+   */
+  readonly vars: Readonly<Record<string, DimVarValue>>;
+}
+
+/** An MLEADERSTYLE object (AutoCAD DXF reference, MLEADERSTYLE); enum fields keep DXF codes. */
+export interface MLeaderStyleRecord extends SymbolTableRecord {
+  readonly description: string;
+  /** DXF 170: 0 none, 1 block, 2 mtext, 3 tolerance. */
+  readonly contentType: number;
+  /** DXF 171 / 172. */
+  readonly mleaderDrawOrder: number;
+  readonly leaderDrawOrder: number;
+  readonly maxLeaderPoints: number;
+  /** DXF 40 / 41, as the file states them (every corpus file has 0, so the unit is untested). */
+  readonly firstSegmentAngle: number;
+  readonly secondSegmentAngle: number;
+  /** DXF 173: 0 invisible, 1 straight, 2 spline. */
+  readonly pathType: number;
+  readonly lineColor: Color;
+  readonly linetype?: Handle;
+  readonly lineweight: Lineweight;
+  readonly landing: boolean;
+  readonly landingGap: number;
+  readonly dogleg: boolean;
+  readonly doglegLength: number;
+  readonly arrowhead?: Handle;
+  readonly arrowheadSize: number;
+  readonly defaultText: string;
+  readonly textStyle?: Handle;
+  /** DXF 174 / 178 / 273 / 272: attachment of the text to the landing. */
+  readonly textLeftAttachment: number;
+  readonly textRightAttachment: number;
+  readonly textTopAttachment: number;
+  readonly textBottomAttachment: number;
+  /** DXF 271: 0 horizontal, 1 vertical. */
+  readonly textAttachmentDirection: number;
+  /** DXF 175 / 176. */
+  readonly textAngleType: number;
+  readonly textAlignment: number;
+  readonly textColor: Color;
+  readonly textHeight: number;
+  readonly textFrame: boolean;
+  readonly textAlignAlwaysLeft: boolean;
+  readonly alignSpace: number;
+  readonly block?: Handle;
+  readonly blockColor: Color;
+  readonly blockScale: Vec3;
+  readonly blockScaleOn: boolean;
+  /** DXF 141, radians. */
+  readonly blockRotation: number;
+  readonly blockRotationOn: boolean;
+  /** DXF 177: 0 extents, 1 base point. */
+  readonly blockConnection: number;
+  readonly scale: number;
+  readonly overwriteProperties: boolean;
+  readonly annotative: boolean;
+  readonly breakGap: number;
+}
+
+/** One edge of a table cell style, in the DXF order top, inside horizontal, bottom, left, inside vertical, right. */
+export interface TableCellBorder {
+  readonly lineweight: Lineweight;
+  readonly visible: boolean;
+  readonly color: Color;
+}
+
+/** A TABLESTYLE cell style (the Data, Header and Title rows of the DXF record). */
+export interface TableCellStyle {
+  readonly textStyle?: Handle;
+  readonly textHeight: number;
+  /** DXF 170: 1 top left … 9 bottom right. */
+  readonly alignment: number;
+  readonly textColor: Color;
+  readonly fillColor: Color;
+  readonly fillOn: boolean;
+  /** DXF 90 / 91: value data type and unit type. */
+  readonly dataType: number;
+  readonly unitType: number;
+  readonly borders: readonly TableCellBorder[];
+}
+
+/** A TABLESTYLE object (AutoCAD DXF reference, TABLESTYLE). */
+export interface TableStyleRecord extends SymbolTableRecord {
+  readonly description: string;
+  /** DXF 70: 0 down, 1 up. */
+  readonly flowDirection: number;
+  /** DXF 71. */
+  readonly styleFlags: number;
+  readonly horizontalMargin: number;
+  readonly verticalMargin: number;
+  readonly suppressTitle: boolean;
+  readonly suppressHeader: boolean;
+  /** In file order. */
+  readonly cellStyles: readonly TableCellStyle[];
+}
+
+/** The record type of each table and style collection. */
 export interface TableRecords {
   layers: LayerRecord;
   linetypes: LinetypeRecord;
   textStyles: TextStyleRecord;
-  dimStyles: SymbolTableRecord;
-  mleaderStyles: SymbolTableRecord;
-  tableStyles: SymbolTableRecord;
+  dimStyles: DimStyleRecord;
+  mleaderStyles: MLeaderStyleRecord;
+  tableStyles: TableStyleRecord;
   appIds: SymbolTableRecord;
   views: ViewRecord;
   ucs: UcsRecord;
