@@ -16,12 +16,16 @@ import {
 const root = path.resolve(import.meta.dirname, '../..');
 
 describe('fragment names', () => {
-  it.each(['M1-04.md', 'M1-04-part-2.md', 'M0-GO.md', 'M10-06.md', 'infra-changelog-fragments.md'])(
-    'accepts %s',
-    (name) => {
-      expect(validateFragment(name, '- M1-04 (#19): mapped things.\n')).toEqual([]);
-    },
-  );
+  it.each([
+    'M1-04.md',
+    'M1-04-part-2.md',
+    'M1-04-part-3a.md',
+    'M0-GO.md',
+    'M10-06.md',
+    'infra-changelog-fragments.md',
+  ])('accepts %s', (name) => {
+    expect(validateFragment(name, '- M1-04 (#19): mapped things.\n')).toEqual([]);
+  });
 
   it.each(['notes.md', 'M1-4.md', 'm1-04.md', 'M1-04.txt', 'infra-.md', 'M1-04-part2.md'])(
     'rejects %s',

@@ -5,6 +5,18 @@
 
 import {
   Arc,
+  DimensionAligned,
+  DimensionAngular2Line,
+  DimensionAngular3Pt,
+  DimensionArc,
+  DimensionDiameter,
+  DimensionLinear,
+  DimensionOrdinate,
+  DimensionRadius,
+  Leader,
+  Tolerance,
+  type Dimension,
+  type DimensionStyle,
   AttributeDefinition,
   Insert,
   MText,
@@ -35,6 +47,7 @@ import {
 } from '@node-projects/acad-ts';
 import type {
   AttributeFields,
+  DimensionFields,
   Color,
   EntityGeometry,
   EntityInit,
@@ -330,6 +343,151 @@ function insertGeometry(e: Insert, ctx: Ctx): EntityGeometry | UnmappedEntity['r
   };
 }
 
+/**
+ * The AcDbDimension fields. Per the DXF reference 10 and 13–15 are WCS, while 11, 12 and 16
+ * and the angles 50–53 are in the OCS; under −Z an OCS angle θ is the WCS angle π − θ.
+ */
+function dimFields(d: Dimension, pl: Plane, ctx: Ctx): DimensionFields {
+  const flags = d.flags as number;
+  const block = ref(d.block);
+  return {
+    style: ctx.dimStyle(d.style),
+    ...(block ? { block } : {}),
+    definitionPoint: xy(d.definitionPoint),
+    textPosition: planOf(d.textMiddlePoint, pl),
+    textUserPositioned: (flags & 128) !== 0,
+    text: d.text,
+    textRotation: ocsAngle(d.textRotation, pl),
+    horizontalDirection: ocsAngle(d.horizontalDirection, pl),
+    attachment: d.attachmentPoint as number,
+    lineSpacingStyle: d.lineSpacingStyle as number,
+    lineSpacing: d.lineSpacingFactor,
+    ...(d.flipArrow1 || d.flipArrow2 ? { flipArrows: [d.flipArrow1, d.flipArrow2] as const } : {}),
+    ...planar(pl, d.normal, d.textMiddlePoint.z, 0),
+  };
+}
+
+const ocsAngle = (a: number, pl: Plane): number => (pl === 'down' ? norm(Math.PI - a) : a);
+
+function dimensionGeometry(d: Dimension, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
+  const pl = plane(d.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const f = dimFields(d, pl, ctx);
+  // DimensionLinear extends DimensionAligned, so it is tested first.
+  if (d instanceof DimensionLinear || d instanceof DimensionAligned) {
+    const linear = d instanceof DimensionLinear;
+    return {
+      ...f,
+      kind: 'DIMENSION',
+      dimType: linear ? 'linear' : 'aligned',
+      first: xy(d.firstPoint),
+      second: xy(d.secondPoint),
+      ...(linear ? { rotation: ocsAngle(d.rotation, pl) } : {}),
+      ...(d.extLineRotation !== 0 ? { oblique: ocsAngle(d.extLineRotation, pl) } : {}),
+    };
+  }
+  if (d instanceof DimensionAngular2Line) {
+    return {
+      ...f,
+      kind: 'DIMENSION',
+      dimType: 'angular',
+      line1Start: xy(d.firstPoint),
+      line1End: xy(d.secondPoint),
+      line2Start: xy(d.angleVertex),
+      arcPoint: planOf(d.dimensionArc, pl),
+    };
+  }
+  if (d instanceof DimensionAngular3Pt) {
+    return {
+      ...f,
+      kind: 'DIMENSION',
+      dimType: 'angular3pt',
+      vertex: xy(d.angleVertex),
+      first: xy(d.firstPoint),
+      second: xy(d.secondPoint),
+    };
+  }
+  if (d instanceof DimensionRadius || d instanceof DimensionDiameter) {
+    return {
+      ...f,
+      kind: 'DIMENSION',
+      dimType: d instanceof DimensionRadius ? 'radius' : 'diameter',
+      chordPoint: xy(d.angleVertex),
+      leaderLength: d.leaderLength,
+    };
+  }
+  if (d instanceof DimensionOrdinate) {
+    return {
+      ...f,
+      kind: 'DIMENSION',
+      dimType: 'ordinate',
+      axis: d.isOrdinateTypeX ? 'x' : 'y',
+      feature: xy(d.featureLocation),
+      leaderEnd: xy(d.leaderEndpoint),
+    };
+  }
+  if (d instanceof DimensionArc) {
+    return {
+      ...f,
+      kind: 'ARC_DIMENSION',
+      dimType: 'arc',
+      first: xy(d.firstPoint),
+      second: xy(d.secondPoint),
+      center: xy(d.center),
+      startAngle: d.startAngle,
+      endAngle: d.endAngle,
+      partial: d.isPartial,
+      ...(d.hasLeader ? { leader: [xy(d.leaderPoint1), xy(d.leaderPoint2)] as const } : {}),
+    };
+  }
+  return 'not mapped yet';
+}
+
+/** LEADER vertices and its 211–213 vectors are WCS, so the plan view drops Z. */
+function leaderGeometry(l: Leader, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
+  const pl = plane(l.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const annotation = ref(l.associatedAnnotation);
+  const z = l.vertices[0]?.z ?? 0;
+  return {
+    kind: 'LEADER',
+    style: ctx.dimStyle(l.style),
+    vertices: l.vertices.map(xy),
+    arrowhead: l.arrowHeadEnabled,
+    spline: (l.pathType as number) === 1,
+    creationType: l.creationType as number,
+    ...(l.hasHookline
+      ? { hookline: { sameDirection: (l.hookLineDirection as number) === 1 } }
+      : {}),
+    textHeight: l.textHeight,
+    textWidth: l.textWidth,
+    ...(annotation ? { annotation } : {}),
+    horizontalDirection: xy(l.horizontalDirection),
+    blockOffset: xy(l.blockOffset),
+    annotationOffset: xy(l.annotationOffset),
+    ...(z !== 0 ? { elevation: z } : {}),
+    ...(pl !== 'up' ? { normal: { x: l.normal.x, y: l.normal.y, z: l.normal.z } } : {}),
+  };
+}
+
+/** TOLERANCE's 10 and 11 are WCS, so it converts like MTEXT. */
+function toleranceGeometry(t: Tolerance, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
+  const pl = plane(t.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const d = t.direction;
+  const dir = d.x === 0 && d.y === 0 ? { x: pl === 'down' ? -1 : 1, y: 0 } : d;
+  return {
+    kind: 'TOLERANCE',
+    style: ctx.dimStyle(t.style),
+    position: xy(t.insertionPoint),
+    rotation: norm(Math.atan2(dir.y, dir.x)),
+    ...(pl === 'down' ? { upsideDown: true } : {}),
+    text: t.text,
+    ...(t.insertionPoint.z !== 0 ? { elevation: t.insertionPoint.z } : {}),
+    ...(pl !== 'up' ? { normal: { x: t.normal.x, y: t.normal.y, z: t.normal.z } } : {}),
+  };
+}
+
 /** Plan-view geometry of an entity, or why it has none in Triya yet. */
 function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   if (e instanceof Line) {
@@ -484,6 +642,18 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   // TableEntity extends Insert in acad-ts; tables are mapped with the annotations.
   if (e instanceof TableEntity) return 'not mapped yet';
   if (e instanceof Insert) return insertGeometry(e, ctx);
+  if (
+    e instanceof DimensionAligned ||
+    e instanceof DimensionAngular2Line ||
+    e instanceof DimensionAngular3Pt ||
+    e instanceof DimensionRadius ||
+    e instanceof DimensionDiameter ||
+    e instanceof DimensionOrdinate ||
+    e instanceof DimensionArc
+  )
+    return dimensionGeometry(e, ctx);
+  if (e instanceof Leader) return leaderGeometry(e, ctx);
+  if (e instanceof Tolerance) return toleranceGeometry(e, ctx);
   return 'not mapped yet';
 }
 
@@ -491,6 +661,8 @@ interface Ctx {
   readonly report: (u: UnmappedEntity) => void;
   /** STYLE handle of a text style reference. */
   readonly style: (s: TextStyle) => string;
+  /** DIMSTYLE handle of a dimension style reference. */
+  readonly dimStyle: (s: DimensionStyle) => string;
 }
 
 /** The AcDbEntity properties, shared by entities and the ATTRIBs folded into an INSERT. */
@@ -520,11 +692,14 @@ export function mapEntities(doc: CadDocument): MappedEntities {
   const entities: EntityInit[] = [];
   const unmapped: UnmappedEntity[] = [];
   const byName = new Map([...(doc.textStyles ?? [])].map((s) => [s.name.toUpperCase(), s]));
+  const dimByName = new Map([...(doc.dimensionStyles ?? [])].map((s) => [s.name.toUpperCase(), s]));
   const ctx: Ctx = {
     report: (u) => unmapped.push(u),
     // acad-ts leaves an ATTRIB that names no style (R12 omits 7 for STANDARD) on its detached
     // default style, whose handle is 0; resolve it by name.
     style: (s) => hex(s.handle !== 0 ? s.handle : (byName.get(s.name.toUpperCase())?.handle ?? 0)),
+    dimStyle: (s) =>
+      hex(s.handle !== 0 ? s.handle : (dimByName.get(s.name.toUpperCase())?.handle ?? 0)),
   };
   for (const block of doc.blockRecords ?? []) {
     for (const e of block.entities) {

@@ -1,0 +1,1 @@
+- M1-04 part 3a (#22): `mapEntities` maps DIMENSION (linear, aligned, angular 2-line/3-point, radius, diameter, ordinate), ARC_DIMENSION, LEADER and TOLERANCE, points in their DXF frames taken to plan view (DEC-039 extended). New acad-ts gaps (empty rotated subclass read as aligned, TOLERANCE caret codes) in M1-32; jogged dimensions are new M1-34.
