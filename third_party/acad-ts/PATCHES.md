@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0070 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1407,5 +1407,52 @@ XRECORD string entries are stored with their caret escapes and escaped again on 
 **Title:** Keep TABLECONTENT objects through DXF read and write
 
 The DXF writer skips `TableContent`, so the table content under a table's round-trip XRECORD is missing from a saved DXF. Under `keepRawDxfPassthroughObjects` this records its group codes on read and writes them back unchanged, rewriting only the handle and owner, as for MATERIAL and VISUALSTYLE.
+
+</details>
+
+### 0071 — R2007+ DXF read and written in the code page instead of UTF-8
+
+- **File:** `third_party/acad-ts-patches/0071-dxf-r2007-utf8.patch`
+- **Touches:** `src/IO/DXF/DxfReader.ts`, `src/IO/DXF/DxfWriter.ts`
+- **Symptom:**
+  - AutoCAD writes DXF as UTF-8 from R2007. `$DWGCODEPAGE` still names the drawing's code page, and acad-ts read and wrote the file in that code page.
+  - Every non-ASCII character of an R2007+ DXF came in garbled: "OBLIQUE 15°" read as "OBLIQUE 15Â°".
+  - The round trip could not see it, because the writer made the same mistake in reverse and the bytes came back unchanged.
+  - Corpus: 9 R2007+ ASCII DXFs have non-ASCII text, all of it valid UTF-8 (the acadsharp R2007–R2018 samples, and ezdxf `mtext_complex_inline_codes.dxf`, `text_in_viewports.dxf`, `text_oblique_rotate.dxf`, `uncommon.dxf` and `dxf_unicode.dxf`).
+- **Fix:** from AC1021 the reader and writer use UTF-8 whatever `$DWGCODEPAGE` says. The header value itself is kept and written as read.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0071 R2007+ DXF text is read and written as UTF-8".
+  - `text_oblique_rotate.dxf` reads "OBLIQUE 15°", an ASCII save is valid UTF-8 with that text, and both saves read it back.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write R2007+ DXF as UTF-8
+
+From R2007, DXF files are UTF-8; `$DWGCODEPAGE` still holds the drawing's code page (usually ANSI_1252). The reader switches its decoder to `$DWGCODEPAGE`, so every non-ASCII character in an R2007+ DXF is decoded wrongly ("°" becomes "Â°"), and the writer encodes in the same code page. This uses UTF-8 for both from AC1021, keeping `$DWGCODEPAGE` as read.
+
+</details>
+
+### 0072 — DXF \U+ escapes are not decoded, and characters outside the code page become "?"
+
+- **File:** `third_party/acad-ts-patches/0072-dxf-unicode-escapes.patch`
+- **Touches:** `src/IO/TextEncoding.ts`, `src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts`, `src/IO/DXF/DxfWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfBinaryWriter.ts`
+- **Symptom:**
+  - Before R2007, DXF is in the drawing's code page. AutoCAD writes a character outside it as `\U+XXXX`, and acad-ts kept the escape as text.
+  - Escaped names were saved with their backslash, which is invalid in a DXF name, so the writer refused them. Layer 2F `Tschüss mit \U+00FC` of ezdxf `dxf_unicode.dxf` was the last save-stage handle in the corpus. The Greek layer of `ASCII_R12.dxf` was refused the same way, and its entities moved to a new layer.
+  - The writer turned every character outside the code page into "?".
+- **Fix:**
+  - Every DXF string value is decoded on read. ASCII is never escaped, so `\U+0000`–`\U+007F` stays as written (`\U+005C` would otherwise start an MTEXT code), and `\\` stays an escaped backslash.
+  - DXF writers escape characters the code page cannot hold, and write UTF-8 from R2007 (0071).
+  - DWG strings are unchanged.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0072 DXF \U+ escapes are decoded on read and written back where the code page lacks the character".
+  - Layer 2F of `dxf_unicode.dxf` reads as "Tschüss mit ü" and survives ASCII and binary saves.
+  - The `ASCII_R12.dxf` Greek layer keeps its entities through both saves, and the R12 ANSI_1252 output writes `\U+039B\U+0391`.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Decode and write \U+XXXX escapes in DXF strings
+
+DXF files before R2007 store text in the drawing's code page and escape other characters as `\U+XXXX`. The reader keeps these escapes as literal text, so escaped symbol names fail DXF name validation on write and are dropped, and the writer replaces characters outside the code page with "?". This decodes non-ASCII `\U+XXXX` escapes in DXF string values (leaving ASCII escapes and `\\` alone) and escapes characters the target code page cannot encode.
 
 </details>

@@ -1,0 +1,42 @@
+diff --git a/src/IO/DXF/DxfReader.ts b/src/IO/DXF/DxfReader.ts
+index 8c14a4d..a43eefa 100644
+--- a/src/IO/DXF/DxfReader.ts
++++ b/src/IO/DXF/DxfReader.ts
+@@ -211,7 +211,8 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
+       try {
+         header.setValue(currVar, parameters);
+ 
+-        if (currVar === '$DWGCODEPAGE') {
++        // R2007+ DXF is UTF-8 whatever the code page (see _getReader).
++        if (currVar === '$DWGCODEPAGE' && this._version < ACadVersion.AC1021) {
+           this._encoding = getDecoderEncodingLabel(header.codePage);
+           this._reader.encoding = this._encoding;
+         }
+@@ -423,6 +424,11 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
+       this.triggerNotification('Dxf version not found, using a generic reader.', NotificationType.Warning);
+     }
+ 
++    // AutoCAD writes DXF as UTF-8 from R2007; $DWGCODEPAGE still names the drawing's code page.
++    if (this._version >= ACadVersion.AC1021) {
++      this._encoding = 'utf-8';
++    }
++
+     return this._createReader(isBinary, isAC1009Format);
+   }
+ 
+diff --git a/src/IO/DXF/DxfWriter.ts b/src/IO/DXF/DxfWriter.ts
+index 1529743..afb7d94 100644
+--- a/src/IO/DXF/DxfWriter.ts
++++ b/src/IO/DXF/DxfWriter.ts
+@@ -109,6 +109,11 @@ export class DxfWriter extends CadWriterBase<DxfWriterConfiguration, DxfWriteTar
+   public override write(): void {
+     super.write();
+ 
++    // DXF is UTF-8 from R2007, as AutoCAD writes it; $DWGCODEPAGE keeps the drawing's code page.
++    if (this._document.header.version >= ACadVersion.AC1021) {
++      this._encoding = 'utf-8';
++    }
++
+     // Array-based child collections do not register newly constructed children
+     // automatically. Set owners and allocate handles before writing HANDSEED.
+     for (const block of this._document.blockRecords) {

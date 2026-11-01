@@ -383,7 +383,7 @@
     },
     "public/third-party/ezdxf/integration_tests/ASCII_R12.dxf": {
       "status": "diff",
-      "differences": 59
+      "differences": 53
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r12.dxf": {
       "status": "diff",
@@ -410,8 +410,8 @@
       "differences": 1
     },
     "public/third-party/ezdxf/integration_tests/dxf_unicode.dxf": {
-      "status": "diff",
-      "differences": 2
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/ezdxf/integration_tests/groups.dxf": {
       "status": "clean",

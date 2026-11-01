@@ -162,6 +162,45 @@ export function encodeCadString(value: string | null | undefined, codePage: stri
 	return encodeAsciiCompatible(text);
 }
 
+/**
+ * DXF before R2007 is in the drawing's code page, and AutoCAD writes a character the code page
+ * cannot hold as \U+XXXX, which the DXF reader decodes again. Without this it became "?".
+ */
+export function escapeDxfUnicode(value: string, codePage: string | number | null | undefined): string {
+	const encoding = getDecoderEncodingLabel(codePage);
+	if (encoding === 'utf-8' || encoding === 'utf-16le') {
+		return value;
+	}
+
+	const map = encoding !== 'ascii' && _singleByteDecoders.has(encoding) ? getSingleByteEncoderMap(encoding) : null;
+	let out: string | null = null;
+	for (let i = 0; i < value.length; i++) {
+		const code = value.charCodeAt(i);
+		const char = value.charAt(i);
+		if (code < 0x80 || (map != null && (map.size === 0 ? code <= 0xFF : map.has(char)))) {
+			if (out !== null) out += char;
+			continue;
+		}
+		out ??= value.slice(0, i);
+		out += '\\U+' + code.toString(16).toUpperCase().padStart(4, '0');
+	}
+	return out ?? value;
+}
+
+/**
+ * The DXF reader's half of escapeDxfUnicode. ASCII is never escaped, so \U+0000–\U+007F stay
+ * as written (\U+005C would otherwise start an MTEXT code), and \\ is an escaped backslash,
+ * not the start of an escape.
+ */
+export function decodeDxfUnicode(value: string): string {
+	if (!value.includes('\\U+')) {
+		return value;
+	}
+
+	return value.replace(/\\\\|\\U\+([0-9A-Fa-f]{4})/g, (m: string, hex?: string) =>
+		hex != null && parseInt(hex, 16) >= 0x80 ? String.fromCharCode(parseInt(hex, 16)) : m);
+}
+
 export function decodeCadString(bytes: Uint8Array, codePage: string | number | null | undefined): string {
 	if (!bytes || bytes.length === 0) {
 		return '';
