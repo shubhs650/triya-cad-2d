@@ -16,6 +16,7 @@ import {
 } from '@node-projects/acad-ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
+import { declaredHandles, documentHandles } from '../roundtrip/handle-coverage.ts';
 
 export type SpikeReadStatus = 'ok' | 'warnings' | 'error';
 
@@ -31,7 +32,7 @@ export interface SpikeReadResult {
   /** Normalised notification message → count, for the taxonomy. */
   messages: Record<string, number>;
   /**
-   * Objects the file declares (DWG handle map, ASCII DXF `5`/`105` codes) that never reach the
+   * Objects the file declares (DWG handle map, DXF `5`/`105` codes) that never reach the
    * acad-ts object graph. structuralDiff cannot see these: they are absent before and after.
    */
   coverage?: { fileHandles: number; notInGraph: number; notInGraphByType: Record<string, number> };
@@ -112,48 +113,16 @@ export function spikeRead(bytes: Uint8Array): SpikeReadResult {
   });
 }
 
-/** Handles declared by the file → DXF type name ('?' when the format does not say). */
-function fileHandles(bytes: Uint8Array): Map<number, string> | null {
-  const format = sniffCadFile(bytes).format;
-  if (format === 'dwg') {
-    const reader = new DwgReader(bytes.slice().buffer) as unknown as {
-      _readHandles?: () => Map<number, number>;
-    };
-    if (typeof reader._readHandles !== 'function') return null;
-    try {
-      return new Map([...reader._readHandles().keys()].map((h) => [h, '?']));
-    } catch {
-      return null; // R12 DWG and damaged handle maps: no coverage figure.
-    }
-  }
-  if (format !== 'dxf-ascii') return null; // binary DXF: not scanned
-  const lines = new TextDecoder('latin1').decode(bytes).split(/\r?\n/);
-  const out = new Map<number, string>();
-  let type = '';
-  let inHeaderOrClasses = false;
-  for (let i = 0; i + 1 < lines.length; i += 2) {
-    const code = lines[i]!.trim();
-    const value = lines[i + 1]!.trim();
-    if (code === '0') {
-      type = value;
-      continue;
-    }
-    if (code === '2' && type === 'SECTION')
-      inHeaderOrClasses = value === 'HEADER' || value === 'CLASSES';
-    if (inHeaderOrClasses) continue;
-    if ((code === '5' || code === '105') && type !== 'SECTION' && type !== 'ENDSEC') {
-      const h = parseInt(value, 16);
-      if (Number.isFinite(h) && h !== 0 && !out.has(h)) out.set(h, type);
-    }
-  }
-  return out;
-}
-
+/** Declared handles missing from the graph acad-ts built (M1-27 shares the scanner). */
 function handleCoverage(bytes: Uint8Array, doc: CadDocument): SpikeReadResult['coverage'] | null {
-  const declared = fileHandles(bytes);
-  if (!declared || declared.size === 0) return null;
-  const inGraph = new Set<number>();
-  for (const obj of doc.getCadObjects()) inGraph.add(obj.handle);
+  let declared: Map<number, string>;
+  try {
+    declared = declaredHandles(bytes, doc.classes).handles;
+  } catch {
+    return null; // a stream the scanner cannot read: no coverage figure
+  }
+  if (declared.size === 0) return null;
+  const inGraph = documentHandles(doc);
   const missing: string[] = [];
   for (const [h, type] of declared) if (!inGraph.has(h)) missing.push(type);
   return {
