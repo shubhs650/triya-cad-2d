@@ -6,10 +6,12 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { Color } from '@node-projects/acad-ts';
-import { mapTables, readCadDocument } from '@triya/io';
-import { aciRgb, dashPath, parseLin, patternLength, patternOf } from '@triya/render';
+import { mapEntities, mapSortEnts, mapTables, readCadDocument } from '@triya/io';
+import { aciRgb, dashPath, drawOrder, parseLin, patternLength, patternOf } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
+
+const hex = (n: number) => n.toString(16).toUpperCase();
 
 const repo = fileURLToPath(new URL('../../../../', import.meta.url));
 const corpusDir = `${repo}corpus/`;
@@ -70,6 +72,72 @@ describe('linetype patterns on the public corpus (M1-13)', () => {
     expect(dashed).toBeGreaterThan(0);
     expect(complex).toBeGreaterThan(0);
     expect(wrong).toEqual([]);
+  });
+});
+
+describe('draw order on the public corpus (M1-13 part 2)', () => {
+  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+
+  it('maps every SORTENTSTABLE onto entities of its own block', () => {
+    const wrong: string[] = [];
+    let tables = 0;
+    let entries = 0;
+    let moved = 0;
+    for (const f of readable) {
+      let doc;
+      try {
+        doc = readCadDocument(new Uint8Array(readFileSync(`${corpusDir}${f.path}`)));
+      } catch {
+        continue;
+      }
+      // Every entity of every block, mapped or not (a table may order types Triya does not map).
+      const byBlock = new Map<string, string[]>();
+      for (const br of doc.blockRecords ?? []) {
+        byBlock.set(
+          hex(br.handle),
+          [...br.entities].map((e) => hex(e.handle)),
+        );
+      }
+      for (const t of mapSortEnts(doc)) {
+        tables++;
+        entries += t.entries.length;
+        const block = byBlock.get(t.block) ?? [];
+        for (const e of t.entries) {
+          if (!block.includes(e.entity)) {
+            wrong.push(
+              `${f.path} SORTENTSTABLE ${t.handle}: ${e.entity} is not in block ${t.block}`,
+            );
+          }
+        }
+        const ordered = drawOrder(block, t.entries);
+        if ([...ordered].sort().join() !== [...block].sort().join()) {
+          wrong.push(`${f.path} SORTENTSTABLE ${t.handle}: order is not a permutation`);
+        }
+        if (ordered.join() !== block.join()) moved++;
+      }
+    }
+    console.log(
+      `SORTENTS corpus: ${tables} tables, ${entries} entries, ${moved} reorder their block`,
+    );
+    expect(tables).toBeGreaterThan(0);
+    expect(moved).toBeGreaterThan(0);
+    expect(wrong).toEqual([]);
+  });
+
+  it('draws the hatch AutoCAD sent to the back before its boundary (sample_AC1015)', () => {
+    const doc = readCadDocument(
+      new Uint8Array(
+        readFileSync(`${corpusDir}public/third-party/acadsharp/sample_AC1015_ascii.dxf`),
+      ),
+    );
+    const table = mapSortEnts(doc).find((t) => t.handle === '355')!;
+    const block = mapEntities(doc)
+      .entities.filter((e) => e.owner === table.block)
+      .map((e) => e.handle);
+    const ordered = drawOrder(block, table.entries);
+    // Table 355 gives LWPOLYLINE 353 sort handle 35A and HATCH 35A sort handle 354.
+    expect(block.indexOf('353')).toBeLessThan(block.indexOf('35A'));
+    expect(ordered.indexOf('35A')).toBeLessThan(ordered.indexOf('353'));
   });
 });
 

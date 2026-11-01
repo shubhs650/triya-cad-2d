@@ -1208,6 +1208,18 @@ export interface NonGraphicalObject extends ObjectCommon {
   readonly owner: Handle;
 }
 
+/**
+ * A block's draw order (DXF SORTENTSTABLE, in the block record's `ACAD_SORTENTS` extension
+ * dictionary). An entity with an entry is drawn as if its handle were `sort`; the others keep
+ * their own. Entries stay in the order stored, as AutoCAD left them.
+ */
+export interface SortEntsTable extends NonGraphicalObject {
+  readonly type: 'SORTENTSTABLE';
+  /** BLOCK_RECORD whose entities it orders. */
+  readonly block: Handle;
+  readonly entries: readonly { readonly entity: Handle; readonly sort: Handle }[];
+}
+
 /** A header variable value as read: string, number, point, or handle (as a string). */
 export type HeaderValue = string | number | boolean | Vec2 | Vec3;
 
