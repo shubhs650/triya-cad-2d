@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://triya-cad-2d.openengtools.com/schemas/corpus.schema.json",
+  "title": "Triya CAD 2D corpus manifest",
+  "description": "docs/TESTING.md §2.3. Enforced by packages/testkit/src/corpus/manifest.ts (pnpm corpus:validate and pnpm test).",
+  "type": "object",
+  "required": ["schemaVersion", "sources", "files"],
+  "additionalProperties": false,
+  "properties": {
+    "$schema": { "type": "string" },
+    "schemaVersion": { "const": 1 },
+    "sources": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "required": ["name", "url", "license", "licenseFile"],
+        "additionalProperties": false,
+        "properties": {
+          "name": { "type": "string", "minLength": 1 },
+          "url": { "type": "string", "minLength": 1 },
+          "commit": { "type": "string", "description": "Upstream commit the files were copied from." },
+          "license": { "$ref": "#/$defs/license" },
+          "licenseFile": { "type": "string", "description": "License text, relative to corpus/." }
+        }
+      }
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["path", "version", "format", "source", "license", "sha256", "tags", "references", "tolerance", "fonts", "knownIssues"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "$ref": "#/$defs/corpusPath" },
+          "version": {
+            "enum": ["AC1002", "AC1003", "AC1004", "AC1006", "AC1009", "AC1012", "AC1014", "AC1015", "AC1018", "AC1021", "AC1024", "AC1027", "AC1032"],
+            "description": "$ACADVER code. Header-less DXF files are AC1009 and carry the no-header tag."
+          },
+          "format": { "enum": ["dwg", "dxf-ascii", "dxf-binary"] },
+          "source": { "type": "string", "description": "Key into sources." },
+          "license": { "$ref": "#/$defs/license" },
+          "upstreamPath": { "type": "string" },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+          "tags": { "type": "array", "items": { "type": "string" } },
+          "references": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["space", "pdf", "ctb"],
+              "additionalProperties": false,
+              "properties": {
+                "space": { "type": "string", "minLength": 1, "description": "Model or a layout name." },
+                "pdf": { "$ref": "#/$defs/corpusPath", "description": "AutoCAD-plotted reference (owner-provided)." },
+                "png": { "$ref": "#/$defs/corpusPath", "description": "Rasterised by pnpm corpus:ref." },
+                "ctb": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "tolerance": {
+            "type": "object",
+            "required": ["pixelMismatch", "ssim"],
+            "additionalProperties": false,
+            "properties": {
+              "pixelMismatch": { "type": "number", "minimum": 0, "maximum": 2, "description": "Percent of mismatched pixels; starts at 2 and is only ever tightened." },
+              "ssim": { "type": "number", "exclusiveMinimum": 0, "maximum": 1 }
+            }
+          },
+          "fonts": { "type": "array", "items": { "type": "string" }, "description": "Font files named by the drawing's text styles." },
+          "knownIssues": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "license": { "enum": ["MIT", "BSD-2-Clause", "BSD-3-Clause", "Apache-2.0", "ISC", "CC0-1.0", "Unlicense"] },
+    "corpusPath": { "type": "string", "pattern": "^(public|private)(?!.*/\\.\\.?(/|$))(?!.*//)/[^\\\\]+$" }
+  }
+}

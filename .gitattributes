@@ -1,0 +1,6 @@
+# Corpus drawings are hashed in corpus.json; never let git rewrite their line endings.
+*.dxf binary
+*.DXF binary
+*.dwg binary
+*.DWG binary
+corpus/** -text

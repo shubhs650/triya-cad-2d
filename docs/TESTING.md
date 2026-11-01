@@ -44,21 +44,39 @@ Owner's real vessel GAs and vendor drawings. Same `corpus.json` schema, same har
 
 ### 2.3 `corpus.json` schema
 
+The public manifest is `corpus/corpus.json`; the private one is `corpus/private/corpus.json` (same schema, never committed). `corpus/corpus.schema.json` describes the shape for editors; `packages/testkit/src/corpus/manifest.ts` enforces it in `pnpm corpus:validate` and in `pnpm test`. All paths are relative to `corpus/` and start with `public/` or `private/`.
+
 ```json
 {
+  "$schema": "./corpus.schema.json",
+  "schemaVersion": 1,
+  "sources": {
+    "self-authored": { "name": "Triya CAD 2D owner-authored drawings", "url": "https://github.com/shubhs650/triya-cad-2d", "license": "MIT", "licenseFile": "../LICENSE" },
+    "ezdxf": { "name": "ezdxf example and integration-test drawings", "url": "https://github.com/mozman/ezdxf", "commit": "5265e6e…", "license": "MIT", "licenseFile": "public/LICENSES/ezdxf-MIT.txt" }
+  },
   "files": [{
     "path": "public/ga-vessel-a1.dwg",
     "version": "AC1032",
+    "format": "dwg",
     "source": "self-authored",
     "license": "MIT",
+    "sha256": "<64 hex digits>",
     "tags": ["layouts","tables","dims","hatch","shx"],
-    "references": [{ "space": "Layout1", "pdf": "refs/ga-vessel-a1-Layout1.pdf", "png": "refs/ga-vessel-a1-Layout1.png", "ctb": "monochrome" }],
+    "references": [{ "space": "Layout1", "pdf": "public/refs/ga-vessel-a1-Layout1.pdf", "png": "public/refs/ga-vessel-a1-Layout1.png", "ctb": "monochrome" }],
     "tolerance": { "pixelMismatch": 0.5, "ssim": 0.985 },
-    "fonts": ["romans"],
+    "fonts": ["romans.shx"],
     "knownIssues": []
   }]
 }
 ```
+
+- `version` is the `$ACADVER` code and must match the file's own header (DWG magic or DXF `$ACADVER`). A DXF without a HEADER section is declared `AC1009` (what readers assume) and tagged `no-header`.
+- `format` is `dwg`, `dxf-ascii` or `dxf-binary`, checked against the file content.
+- `license` (per file and per source) must be MIT, BSD-2/3-Clause, Apache-2.0, ISC, CC0-1.0 or Unlicense.
+- `sha256` pins the exact bytes; `.gitattributes` keeps git from rewriting corpus line endings.
+- `upstreamPath` (optional) is the file's path in the third-party repository named by `sources.<key>.commit`.
+- `tolerance.pixelMismatch` is a percentage, at most 2 (the starting value for a new file, §4); it is only ever tightened.
+- Every `.dwg`/`.dxf` under a scope the manifest covers must be listed; an unlisted drawing fails validation.
 
 ## 3. Round-trip structural diff
 
