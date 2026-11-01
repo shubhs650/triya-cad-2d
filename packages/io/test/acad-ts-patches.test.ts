@@ -1,7 +1,40 @@
 // One test per local acad-ts patch (third_party/acad-ts/PATCHES.md). Each must fail when the
 // patch is reverted, which is what proves the patch is still needed after an upstream sync.
-import { CadDictionary, Line } from '@node-projects/acad-ts';
+import {
+  ACadVersion,
+  BlockGripExpression,
+  BlockRecord,
+  CadDictionary,
+  CadDocument,
+  Color,
+  DwgReader,
+  DwgWriter,
+  DxfReader,
+  DxfWriter,
+  DxfWriterConfiguration,
+  EvaluationGraph,
+  EvaluationGraphNode,
+  Line,
+  XYZ,
+} from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
+
+function writeDxf(doc: CadDocument, config: DxfWriterConfiguration): Uint8Array {
+  const chunks: Uint8Array[] = [];
+  DxfWriter.writeToStream(
+    { write: (b: Uint8Array) => void chunks.push(b.slice()) },
+    doc,
+    true,
+    config,
+  );
+  const out = new Uint8Array(chunks.reduce((n, c) => n + c.length, 0));
+  let offset = 0;
+  for (const c of chunks) {
+    out.set(c, offset);
+    offset += c.length;
+  }
+  return out;
+}
 
 describe('acad-ts local patches', () => {
   it('0001 createExtendedDictionary works under ESM', () => {
@@ -15,4 +48,54 @@ describe('acad-ts local patches', () => {
     // Idempotent: a second call returns the same dictionary.
     expect(line.createExtendedDictionary()).toBe(dict);
   });
+
+  it('0002 DXF writer saves an evaluation graph with an unresolved node', () => {
+    // A dynamic block's ACAD_ENHANCEDBLOCK graph: node 0's expression is a type acad-ts does
+    // not read (null after reading), node 1's is a grip expression. Unpatched, the writer
+    // threw on the expression's null owner, and omitted node 0's 360 so the reader lost the graph.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('DYN');
+    doc.blockRecords!.add(block);
+    const graph = new EvaluationGraph();
+    block.createExtendedDictionary().addByKey(EvaluationGraph.dictionaryEntryName, graph);
+    const unresolved = new EvaluationGraphNode();
+    const grip = new EvaluationGraphNode();
+    grip.index = 1;
+    grip.expression = new BlockGripExpression();
+    // Expressions are not registered with the document (the reader resolves them by handle
+    // only), so give this one a handle above every allocated one, as a file would.
+    grip.expression.handle = doc.header!.handleSeed + 0x100;
+    graph.nodes.push(unresolved, grip);
+    const config = new DxfWriterConfiguration();
+    config.writeDynamicBlockData = true;
+
+    const reread = DxfReader.readFromStream(writeDxf(doc, config));
+
+    const dict = reread.blockRecords!.tryGetValue('DYN')!.xDictionary!;
+    const graphB = dict.getEntry<EvaluationGraph>(EvaluationGraph.dictionaryEntryName);
+    expect(graphB).toBeInstanceOf(EvaluationGraph);
+    expect(graphB!.nodes).toHaveLength(2);
+    expect(graphB!.nodes[0]!.expression).toBeNull();
+    expect(graphB!.nodes[1]!.expression).toBeInstanceOf(BlockGripExpression);
+  });
+
+  it.each([ACadVersion.AC1018, ACadVersion.AC1024, ACadVersion.AC1032])(
+    '0003 DWG %s writer keeps true-colour channel order',
+    (version) => {
+      // DWG stores CMC/EnColor RGB as a little-endian 0xC2RRGGBB long; acad-ts wrote the
+      // bytes as R,G,B, so every true colour came back with red and blue swapped.
+      const doc = new CadDocument(version);
+      const line = new Line(new XYZ(0, 0, 0), new XYZ(10, 0, 0));
+      line.color = Color.fromTrueColor(0x34c918);
+      doc.entities!.add(line);
+      const layer = doc.layers!.tryGetValue('0')!;
+      layer.color = Color.fromTrueColor(0x803dc2);
+
+      const reread = DwgReader.readFromStream(DwgWriter.writeToBuffer(doc).slice().buffer);
+
+      const rereadLine = [...reread.entities!].find((e) => e instanceof Line)!;
+      expect(rereadLine.color.trueColor).toBe(0x34c918);
+      expect(reread.layers!.tryGetValue('0')!.color.trueColor).toBe(0x803dc2);
+    },
+  );
 });

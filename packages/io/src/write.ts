@@ -1,4 +1,10 @@
-import { DwgWriter, DxfWriter, type CadDocument } from '@node-projects/acad-ts';
+import {
+  DwgWriter,
+  DwgWriterConfiguration,
+  DxfWriter,
+  DxfWriterConfiguration,
+  type CadDocument,
+} from '@node-projects/acad-ts';
 import type { CadFormat } from './read';
 
 export interface WriteOptions {
@@ -10,18 +16,38 @@ export interface WriteOptions {
 }
 
 /**
+ * Writer settings for a save that must round-trip (TESTING.md §3, M0-06 spike).
+ * acad-ts defaults are tuned for small "clean" files: the DXF header carries only ~40 of the
+ * ~250 variables, and dynamic-block data (evaluation graphs, representation data, purge
+ * preventers) is dropped in both formats. Triya keeps everything it read.
+ */
+export function fidelityDxfConfiguration(): DxfWriterConfiguration {
+  const config = new DxfWriterConfiguration();
+  config.writeAllHeaderVariables = true;
+  config.writeDynamicBlockData = true;
+  return config;
+}
+
+export function fidelityDwgConfiguration(): DwgWriterConfiguration {
+  const config = new DwgWriterConfiguration();
+  config.writeDynamicBlockData = true;
+  return config;
+}
+
+/**
  * Serialise an acad-ts `CadDocument` in the version its header names.
  * This is the raw writer call; the passthrough-preserving export (ARCHITECTURE.md §6.1,
  * M1-05) is built on top of it.
  */
 export function writeCadDocument(doc: CadDocument, options: WriteOptions): Uint8Array {
-  if (options.format === 'dwg') return DwgWriter.writeToBuffer(doc);
+  if (options.format === 'dwg') return DwgWriter.writeToBuffer(doc, fidelityDwgConfiguration());
   if (options.binary === true) {
     const chunks: Uint8Array[] = [];
     DxfWriter.writeToStream(
       { write: (bytes: Uint8Array) => void chunks.push(bytes.slice()) },
       doc,
       true,
+      fidelityDxfConfiguration(),
     );
     return concat(chunks);
   }
@@ -31,7 +57,7 @@ export function writeCadDocument(doc: CadDocument, options: WriteOptions): Uint8
   for (;;) {
     const buffer = new Uint8Array(size);
     try {
-      DxfWriter.writeToStream(buffer, doc, false);
+      DxfWriter.writeToStream(buffer, doc, false, fidelityDxfConfiguration());
     } catch (err) {
       if (err instanceof Error && err.message === 'DXF output buffer is too small.') {
         size *= 2;

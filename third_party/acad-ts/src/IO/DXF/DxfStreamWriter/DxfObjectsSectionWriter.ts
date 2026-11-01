@@ -523,12 +523,17 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 			this._writer.write(91, i);
 			this._writer.write(93, node.flags);
 			this._writer.write(95, node.nextNodeIndex);
-			this._writer.writeHandle(360, node.expression);
+			// Readers require 360 on every node; an unresolved expression is written as handle 0.
+			this._writer.write(360, node.expression?.handle ?? 0);
 			this._writer.write(92, node.data1);
 			this._writer.write(92, node.data2);
 			this._writer.write(92, node.data3);
 			this._writer.write(92, node.data4);
-			if (node.expression) this.holder.objects.push(node.expression);
+			if (node.expression) {
+				// Expressions are owned by their graph but readers leave owner unset; mirror DwgObjectWriter.
+				node.expression.owner ??= graph;
+				this.holder.objects.push(node.expression);
+			}
 		}
 		for (let i = 0; i < graph.edges.length; i++) {
 			const edge = graph.edges[i];
