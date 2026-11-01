@@ -40,9 +40,13 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
     this.configuration = configuration;
   }
 
+  /** The model space record made up because the file has none (an R12 file with no BLOCKS). */
+  public madeUpModelSpace: BlockRecord | null = null;
+
   public override buildDocument(): void {
     if (this.modelSpaceTemplate === null) {
       const record = BlockRecord.modelSpace;
+      this.madeUpModelSpace = record;
       this.blockRecords.add(record);
       this.modelSpaceTemplate = new CadBlockRecordTemplate(record);
       this.addTemplate(this.modelSpaceTemplate);

@@ -151,8 +151,26 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
       this._document.header = new CadHeader(this._document);
     }
 
+    // Handles at or above both $HANDSEED and every stated handle are made up while building (R12
+    // has no BLOCK_RECORD table, and many R12 files state no handles); an R12 save leaves them out.
+    // The builder numbers them on from the higher of the two.
+    const firstMadeUp = Math.max(this._document.header.handleSeed, this._builder.maxStatedHandle()) + 1;
+
     this._builder.buildDocument();
 		this._builder.buildDataStorage();
+
+    const lastMadeUp = this._document.header.handleSeed - 1;
+    if (lastMadeUp >= firstMadeUp) {
+      // Made-up handles of objects with no template are defaults the reader added (LTYPE ByLayer
+      // when an entity refers to it, *PAPER_SPACE when the file has none, and so on).
+      const read = this._builder.readObjects();
+      if (this._builder.madeUpModelSpace) read.delete(this._builder.madeUpModelSpace);
+      const added = new Set<number>();
+      for (const obj of this._document.getCadObjects()) {
+        if (obj.handle >= firstMadeUp && obj.handle <= lastMadeUp && !read.has(obj)) added.add(obj.handle);
+      }
+      this._document.madeUpHandles = { first: firstMadeUp, last: lastMadeUp, added };
+    }
 
     return this._document;
   }

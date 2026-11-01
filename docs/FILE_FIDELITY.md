@@ -124,7 +124,7 @@ The columns above track Triya. This section tracks the library underneath, from 
 
 | Version | Corpus files (DWG / ASCII DXF / binary DXF) | Read | Round trip clean | Main open defects |
 |---|---|---|---|---|
-| R2.6–R12 (AC1009 and earlier) | 0 / 7 / 2 | all | 0 | R16 synthesised R13+ objects |
+| R2.6–R12 (AC1009 and earlier) | 0 / 7 / 2 | all | 3 | R12 xdata and the model-space layout link of header-less files (M1-56) |
 | R13 (AC1012) | 0 / 2 / 1 | all | 0 | DXF writer gaps |
 | R14 (AC1014) | 1 / 1 / 1 | all | 0 | R17 block entity lists |
 | 2000 (AC1015) | 1 / 5 / 2 | all | 0 | R17, DXF writer gaps |
@@ -154,8 +154,9 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DIMASSOC | Read and written (0061); the DXF writer refused it, dropping 47 associations and the reactors that point at them |
 | IMAGEDEF_REACTOR (DXF write) | Written with its image (0062); 77 reactors were dropped because nothing queued them |
 | ACAD_PROXY_OBJECT | Kept as read and written back raw in DXF (0063, DEC-040); the DXF writer skipped all 98 in the R13/R14 binary DXFs |
-| R12 `$MODEL_SPACE` / `$PAPER_SPACE` blocks (DXF write) | Written, empty, as AutoCAD writes them (0064); were left out, so their BLOCK/ENDBLK handles changed on every R12 save |
-| R12 DIMSTYLE handle (DXF write) | Written on 105 (0065); was left out. Nameless R12 blocks (ezdxf `r12_blocks_with_no_names.dxf`) are still lost, M1-31 |
+| R12 `$MODEL_SPACE` / `$PAPER_SPACE` blocks (DXF write) | Written, empty, as AutoCAD writes them (0064); were left out, so their BLOCK/ENDBLK handles changed on every R12 save. A space block the file did not have is still left out (0076), so reopening makes it up again under the same handle |
+| R12 DIMSTYLE handle (DXF write) | Written on 105 (0065); was left out. Nameless R12 blocks (ezdxf `r12_blocks_with_no_names.dxf`) are still lost, M1-33 |
+| R12 handles acad-ts makes up (DXF write) | Left out of the saved file with every table entry and block acad-ts added as a default, and `$HANDSEED` written as read (0076), so reopening makes up the same handles for the same objects. A save wrote some made-up handles and a raised `$HANDSEED`, so every R12 BLOCK_RECORD, BLOCK and owner link moved: about 6,000 differences in the R12 corpus. An object added after reading keeps its handle, and the made-up ones then move above it |
 | TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
 | ACAD_TABLE (DXF) | Written (0068): the writer had no table branch, so every table went out as a bare INSERT and was lost with its extension dictionary, round-trip XRECORD and TABLECONTENT. The reader keeps cell override flags, block scale, alignment and chunked text (0066), and the table-wide overrides as read (DEC-043); 41 there had been read as the X scale. The acadsharp R2000–R2018 DXFs now round-trip with no table difference |
 | Table cell values (DXF) | Units, format and formatted value written from R2007 (0067); an empty value writes no payload, it was written as 91=0, which the reader rejects (FIELD 0x5F8 of `uncommon.dxf` was lost) |

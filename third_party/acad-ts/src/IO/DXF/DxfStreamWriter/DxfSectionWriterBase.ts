@@ -194,8 +194,25 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(304, DxfFileToken.valueEnd);
   }
 
+  static isMadeUpHandle(document: CadDocument, handle: number): boolean {
+    const range = document.madeUpHandles;
+    return range != null && handle >= range.first && handle <= range.last;
+  }
+
+  /**
+   * In R12, whether the reader added the object as a default the file did not have. Reopening
+   * adds it again.
+   */
+  protected isBuiltDefault(cadObject: CadObject): boolean {
+    const range = this._document.madeUpHandles;
+    return this.version <= ACadVersion.AC1009 && range != null && range.added.has(cadObject.handle);
+  }
+
   protected writeCommonObjectData(cadObject: CadObject): void {
     if (this.version <= ACadVersion.AC1009) {
+      // A handle the reader made up was not in the file; written, it would stop being made up
+      // on reopening and move every other made-up handle.
+      if (DxfSectionWriterBase.isMadeUpHandle(this._document, cadObject.handle)) return;
       if (cadObject instanceof DimensionStyle) {
         // An R12 DIMSTYLE keeps its handle in 105 (5 is DIMBLK), as ezdxf writes it and the reader
         // reads it. write() drops codes from 80 up for R12, so this one is written raw.
