@@ -1,8 +1,9 @@
 // Guards for the vendored acad-ts snapshot (DEC-033, third_party/acad-ts/PATCHES.md).
 import { execFileSync } from 'node:child_process';
-import { readdirSync, readFileSync } from 'node:fs';
+import { cpSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 
 const root = path.resolve(import.meta.dirname, '../..');
 const vendored = path.join(root, 'third_party/acad-ts');
@@ -47,20 +48,20 @@ describe('third_party/acad-ts vendoring', () => {
     }
   });
 
-  it.each(patchFiles)('has %s applied to the vendored tree', (file) => {
+  // Later patches may change lines an earlier one touched (0020 edits the header flag word 0004
+  // decodes), so a patch is checked against the tree as it was right after it: undo the patches
+  // newest first on a copy of the sources, each of which must reverse-apply cleanly.
+  const unwound = mkdtempSync(path.join(tmpdir(), 'acad-ts-unwind-'));
+  cpSync(path.join(vendored, 'src'), path.join(unwound, 'src'), { recursive: true });
+  afterAll(() => rmSync(unwound, { recursive: true, force: true }));
+
+  it.each([...patchFiles].reverse())('has %s applied to the vendored tree', (file) => {
     // A patch that reverse-applies cleanly is present in the tree as written.
     expect(() =>
-      execFileSync(
-        'git',
-        [
-          'apply',
-          '--check',
-          '--reverse',
-          '--directory=third_party/acad-ts',
-          path.join(patchDir, file),
-        ],
-        { cwd: root, stdio: 'pipe' },
-      ),
+      execFileSync('git', ['apply', '--reverse', path.join(patchDir, file)], {
+        cwd: unwound,
+        stdio: 'pipe',
+      }),
     ).not.toThrow();
   });
 });

@@ -1,0 +1,542 @@
+diff --git a/src/Entities/UnknownEntity.ts b/src/Entities/UnknownEntity.ts
+index e489a94..dd1a33a 100644
+--- a/src/Entities/UnknownEntity.ts
++++ b/src/Entities/UnknownEntity.ts
+@@ -2,18 +2,31 @@ import { Entity } from './Entity.js';
+ import { DxfClass } from '../Classes/DxfClass.js';
+ import { ObjectType } from '../Types/ObjectType.js';
+ import type { BoundingBox } from '../Math/BoundingBox.js';
++import type { CadDocument } from '../CadDocument.js';
++import type { CadObject } from '../CadObject.js';
++import { DwgRawObjectData, DxfRawCode, IRawCadObject, registerRawOwnedObjects } from '../Objects/RawObjectData.js';
+ 
+ type DxfClassLookupResult = { result: DxfClass | null; found: boolean };
+ 
+-export class UnknownEntity extends Entity {
++export class UnknownEntity extends Entity implements IRawCadObject {
+ 	override get objectType(): ObjectType {
+ 		return ObjectType.UNDEFINED;
+ 	}
+ 
+ 	override get objectName(): string {
+-		return this._objectName;
++		return this._objectName || this.rawDxfName || '';
+ 	}
+ 
++	rawDxfName: string | null = null;
++
++	rawDxfCodes: DxfRawCode[] | null = null;
++
++	rawDwgData: DwgRawObjectData | null = null;
++
++	readonly rawOwnedObjects: CadObject[] = [];
++
++	private _dxfClass: DxfClass | null;
++
+ 	override get subclassMarker(): string {
+ 		return this._subclassMarker;
+ 	}
+@@ -26,6 +39,7 @@ export class UnknownEntity extends Entity {
+ 		const resolvedClass = dxfClass instanceof DxfClass
+ 			? dxfClass
+ 			: dxfClass?.result ?? null;
++		this._dxfClass = resolvedClass;
+ 		if (resolvedClass) {
+ 			this._objectName = resolvedClass.dxfName || '';
+ 			this._subclassMarker = resolvedClass.cppClassName || '';
+@@ -35,6 +49,15 @@ export class UnknownEntity extends Entity {
+ 		}
+ 	}
+ 
++	override getDxfClass(): DxfClass | null {
++		return this._dxfClass;
++	}
++
++	override assignDocument(doc: CadDocument): void {
++		super.assignDocument(doc);
++		registerRawOwnedObjects(this, doc);
++	}
++
+ 	override applyTransform(transform: unknown): void {
+ 		// No-op
+ 	}
+diff --git a/src/IO/CadDocumentBuilder.ts b/src/IO/CadDocumentBuilder.ts
+index 4c15562..6773e7d 100644
+--- a/src/IO/CadDocumentBuilder.ts
++++ b/src/IO/CadDocumentBuilder.ts
+@@ -4,6 +4,7 @@ import { CadObject } from '../CadObject.js';
+ import { UnknownEntity } from '../Entities/UnknownEntity.js';
+ import { CadDictionary } from '../Objects/CadDictionary.js';
+ import { UnknownNonGraphicalObject } from '../Objects/UnknownNonGraphicalObject.js';
++import { addRawOwnedObject } from '../Objects/RawObjectData.js';
+ import { AppId } from '../Tables/AppId.js';
+ import { BlockRecord } from '../Tables/BlockRecord.js';
+ import { DimensionStyle } from '../Tables/DimensionStyle.js';
+@@ -97,6 +98,27 @@ export abstract class CadDocumentBuilder {
+ 		for (const template of this.cadObjectsTemplates.values()) {
+ 			(template as CadTemplate).build(this);
+ 		}
++
++		this._attachRawOwnedObjects();
++	}
++
++	/**
++	 * An object owned by an unknown object is referenced only from the owner's raw payload, so no
++	 * collection registers it and the writers never reach it. Attach it to its raw owner instead.
++	 */
++	private _attachRawOwnedObjects(): void {
++		for (const template of this.templatesMap.values()) {
++			const child = template.cadObject;
++			const ownerHandle = (template as CadTemplate).ownerHandle;
++			if (child.document != null || ownerHandle == null || ownerHandle === 0) {
++				continue;
++			}
++
++			const owner = this.tryGetCadObject<CadObject>(ownerHandle);
++			if ((owner instanceof UnknownNonGraphicalObject || owner instanceof UnknownEntity) && owner.xDictionary !== child) {
++				addRawOwnedObject(owner, child);
++			}
++		}
+ 	}
+ 
+ 	buildDataStorage(): void {
+diff --git a/src/IO/CadReaderConfiguration.ts b/src/IO/CadReaderConfiguration.ts
+index 8983c41..0f150a4 100644
+--- a/src/IO/CadReaderConfiguration.ts
++++ b/src/IO/CadReaderConfiguration.ts
+@@ -1,8 +1,11 @@
+ export abstract class CadReaderConfiguration {
+ 	ignoreProxyGraphics: boolean = true;
+ 	failsafe: boolean = true;
+-	/** @deprecated Unknown entity payloads are not a substitute for typed entity support. */
++	/**
++	 * Keep entities the reader cannot map as `UnknownEntity` with their raw payload (DXF group
++	 * codes, DWG object data), so that the writers can write them back unchanged.
++	 */
+ 	keepUnknownEntities: boolean = false;
+-	/** @deprecated Unknown object payloads are not written by the writers. */
++	/** Same as `keepUnknownEntities`, for non-graphical objects (`UnknownNonGraphicalObject`). */
+ 	keepUnknownNonGraphicalObjects: boolean = false;
+ }
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index d0108dd..422e353 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -105,6 +105,7 @@ import { DynamicBlockPurgePreventer } from '../../../Objects/DynamicBlockPurgePr
+ import { Field } from '../../../Objects/Field.js';
+ import { FieldList } from '../../../Objects/FieldList.js';
+ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
++import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
+ import { TableEntity , CellRange, TableEntityColumn, TableEntityRow, TableEntityCell, CellContent, ContentFormat, CellStyle, CellBorder, CellEdgeFlags, CellAlignmentType, CellStyleType, CellStyleClass} from '../../../Entities/TableEntity.js';
+ import { CadValue } from '../../../CadValue.js';
+ import { Color } from '../../../Color.js';
+@@ -283,18 +284,36 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           this._builder.notify(`UnknownNonGraphicalObject not supported: ${this._reader.valueAsString}`, NotificationType.NotImplemented);
+         }
+ 
+-        this._reader.readNext();
++        // A kept object records its group codes, so the writers can emit it unchanged.
++        const keep = unknownEntityTemplate !== null && this._builder.keepUnknownNonGraphicalObjects;
++        const rawObject = unknownEntityTemplate?.cadObject as UnknownNonGraphicalObject | undefined;
++        const raw: DxfRawCode[] = [];
++        if (keep) {
++          rawObject!.rawDxfName = this._reader.valueAsString;
++          this._reader.recorder = raw;
++        }
+ 
+-        do {
+-          if (unknownEntityTemplate !== null && this._builder.keepUnknownEntities) {
+-            const isExtendedData = { value: false };
+-            this.readCommonCodes(unknownEntityTemplate, isExtendedData, map);
+-            if (isExtendedData.value) {
+-              continue;
+-            }
+-          }
++        try {
+           this._reader.readNext();
+-        } while (this._reader.dxfCode !== DxfCode.Start);
++
++          do {
++            if (keep) {
++              const isExtendedData = { value: false };
++              this.readCommonCodes(unknownEntityTemplate!, isExtendedData, map);
++              if (isExtendedData.value) {
++                continue;
++              }
++            }
++            this._reader.readNext();
++          } while (this._reader.dxfCode !== DxfCode.Start);
++        } finally {
++          this._reader.recorder = null;
++        }
++
++        if (keep) {
++          raw.pop(); // the next object's type code
++          rawObject!.rawDxfCodes = raw;
++        }
+ 
+         return unknownEntityTemplate;
+       }
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 6acfe1f..6e0119e 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -97,6 +97,7 @@ import { CadVertexTemplate } from '../../Templates/CadVertexTemplate.js';
+ import { CadViewportTemplate } from '../../Templates/CadViewportTemplate.js';
+ import { CadWipeoutBaseTemplate } from '../../Templates/CadWipeoutBaseTemplate.js';
+ import { CadUnknownEntityTemplate } from '../../Templates/CadUnknownEntityTemplate.js';
++import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
+ import { CadValueTemplate } from '../../Templates/CadValueTemplate.js';
+ import { CadValue } from '../../../CadValue.js';
+ import { CadValueType } from '../../../CadValueType.js';
+@@ -386,18 +387,35 @@ export abstract class DxfSectionReaderBase {
+           this._builder.notify(`Entity not supported: ${this._reader.valueAsString}`, NotificationType.NotImplemented);
+         }
+ 
+-        this._reader.readNext();
++        // A kept entity records its group codes, so the writers can emit it unchanged.
++        const keep = unknownEntityTemplate !== null && this._builder.keepUnknownEntities;
++        const raw: DxfRawCode[] = [];
++        if (keep) {
++          (unknownEntityTemplate!.cadObject as UnknownEntity).rawDxfName = this._reader.valueAsString;
++          this._reader.recorder = raw;
++        }
+ 
+-        do {
+-          if (unknownEntityTemplate !== null && this._builder.keepUnknownEntities) {
+-            const isExtendedData = { value: false };
+-            this.readCommonEntityCodes(unknownEntityTemplate, isExtendedData, map);
+-            if (isExtendedData.value) {
+-              continue;
+-            }
+-          }
++        try {
+           this._reader.readNext();
+-        } while (this._reader.dxfCode !== DxfCode.Start);
++
++          do {
++            if (keep) {
++              const isExtendedData = { value: false };
++              this.readCommonEntityCodes(unknownEntityTemplate!, isExtendedData, map);
++              if (isExtendedData.value) {
++                continue;
++              }
++            }
++            this._reader.readNext();
++          } while (this._reader.dxfCode !== DxfCode.Start);
++        } finally {
++          this._reader.recorder = null;
++        }
++
++        if (keep) {
++          raw.pop(); // the next entity's type code
++          (unknownEntityTemplate!.cadObject as UnknownEntity).rawDxfCodes = raw;
++        }
+ 
+         return unknownEntityTemplate;
+       }
+diff --git a/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
+index f4a0799..90f0e11 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
+@@ -5,6 +5,7 @@ import { GroupCodeValue, GroupCodeValueType } from '../../../GroupCodeValue.js';
+ import { DxfException } from '../../../Exceptions/DxfException.js';
+ import { MathHelper } from '../../../Math/MathHelper.js';
+ import { decodeCadString, getDecoderEncodingLabel } from '../../TextEncoding.js';
++import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
+ 
+ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
+   public encoding: string = getDecoderEncodingLabel('ANSI_1252');
+@@ -23,6 +24,9 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
+ 
+   public valueRaw: string = '';
+ 
++  /** When set, every group code read is appended to it (used to keep unknown objects raw). */
++  public recorder: DxfRawCode[] | null = null;
++
+   public get valueAsString(): string {
+     return String(this.value)
+       .replace(/\^J/g, '\n')
+@@ -78,7 +82,10 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
+ 
+     if (this.dxfCode === DxfCode.Comment) {
+       this.readNext();
++      return;
+     }
++
++    this.recorder?.push({ code: this.code, value: this.value });
+   }
+ 
+   public find(dxfEntry: string): boolean {
+diff --git a/src/IO/DXF/DxfStreamReader/IDxfStreamReader.ts b/src/IO/DXF/DxfStreamReader/IDxfStreamReader.ts
+index 2768c47..274e99d 100644
+--- a/src/IO/DXF/DxfStreamReader/IDxfStreamReader.ts
++++ b/src/IO/DXF/DxfStreamReader/IDxfStreamReader.ts
+@@ -1,5 +1,6 @@
+ import { DxfCode } from '../../../DxfCode.js';
+ import { GroupCodeValueType } from '../../../GroupCodeValue.js';
++import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
+ 
+ export interface IDxfStreamReader {
+   encoding: string;
+@@ -18,6 +19,9 @@ export interface IDxfStreamReader {
+ 
+   valueRaw: string;
+ 
++  /** When set, every group code read is appended to it (used to keep unknown objects raw). */
++  recorder: DxfRawCode[] | null;
++
+   valueAsBool: boolean;
+ 
+   valueAsShort: number;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 1670f7d..13bc10e 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -409,6 +409,11 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       return;
+     }
+ 
++    if (co instanceof UnknownNonGraphicalObject) {
++      this.writeRawObject(co);
++      return;
++    }
++
+     if (co instanceof XRecord && !this.configuration.writeXRecords) {
+       return;
+     }
+@@ -680,7 +685,10 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+ 
+   private _isObjectSupported(co: CadObject): boolean {
+     if (co instanceof UnknownNonGraphicalObject) {
+-      return false;
++      if (co.rawDxfCodes == null && co.rawDwgData != null) {
++        this.notify(`Unknown object ${co.objectName} was read from a DWG file and cannot be written to DXF: ${co.handle}`, NotificationType.NotImplemented);
++      }
++      return co.rawDxfCodes != null;
+     }
+ 	if (!this.configuration.writeDynamicBlockData && (
+ 		co instanceof EvaluationGraph ||
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index d5f7117..e7199af 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -97,6 +97,7 @@ import { NotificationEventHandler, NotificationEventArgs, NotificationType } fro
+ import { DxfMap } from '../../../DxfMap.js';
+ import { BoundaryPathFlags } from '../../../Entities/BoundaryPathFlags.js';
+ import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
++import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
+ import { MathHelper } from '../../../Math/MathHelper.js';
+ import { XYZ } from '../../../Math/XYZ.js';
+ import { XY } from '../../../Math/XY.js';
+@@ -326,6 +327,10 @@ export abstract class DxfSectionWriterBase {
+     }
+     if (!this._isEntitySupported(entity)) {
+       return;
++    }
++    if (entity instanceof UnknownEntity) {
++      this.writeRawObject(entity);
++      return;
+     }
+ 	const validationErrors = entity.validate(CadFileFormat.DXF, this.version);
+ 	if (validationErrors.length > 0) {
+@@ -438,11 +443,47 @@ export abstract class DxfSectionWriterBase {
+     }
+     if (entity instanceof Surface) return false;
+     if (entity instanceof UnknownEntity) {
+-      return false;
++      if (entity.rawDxfCodes == null && entity.rawDwgData != null) {
++        this.notify(`Unknown entity ${entity.objectName} was read from a DWG file and cannot be written to DXF: ${entity.handle}`, NotificationType.NotImplemented);
++      }
++      return entity.rawDxfCodes != null;
+     }
+     return true;
+   }
+ 
++  /**
++   * Write an object the reader could not map from the group codes it kept, so that a save does
++   * not drop it. The handle and owner come from the object; everything else is written as read.
++   */
++  protected writeRawObject(cadObject: CadObject & IRawCadObject): void {
++    this._writer.write(DxfCode.Start, cadObject.objectName);
++
++    let inGroup = false;
++    let beforeSubclass = true;
++    for (const { code, value } of cadObject.rawDxfCodes!) {
++      let output = value;
++      if (code === 100) {
++        beforeSubclass = false;
++      } else if (code === 102) {
++        inGroup = String(value).startsWith('{');
++      } else if (code === 5 && beforeSubclass) {
++        output = cadObject.handle;
++      } else if (code === 330 && beforeSubclass && !inGroup && cadObject.owner != null && cadObject.owner.handle !== 0) {
++        output = cadObject.owner.handle;
++      }
++      this._writer.writeRaw(code, output);
++    }
++
++    if (cadObject.xDictionary !== null) {
++      this.holder.objects.push(cadObject.xDictionary);
++    }
++    for (const child of cadObject.rawOwnedObjects) {
++      if (!(child instanceof Entity)) {
++        this.holder.objects.push(child);
++      }
++    }
++  }
++
+   private _writeR12LwPolyline(polyline: LwPolyline): void {
+     this._writer.write(0, 'POLYLINE');
+     this.writeCommonObjectData(polyline);
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
+index d764214..0367a9f 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
+@@ -57,6 +57,11 @@ export abstract class DxfStreamWriterBase implements IDxfStreamWriter {
+     }
+   }
+ 
++  public writeRaw(code: number, value: unknown): void {
++    this.writeDxfCode(code);
++    this.writeValue(code, value);
++  }
++
+   public writeVector(code: DxfCode | number, value: IVector, map?: DxfClassMap | null): void {
+     const intCode = typeof code === 'number' ? code : code as number;
+     for (let i = 0; i < value.dimension; i++) {
+diff --git a/src/IO/DXF/DxfStreamWriter/IDxfStreamWriter.ts b/src/IO/DXF/DxfStreamWriter/IDxfStreamWriter.ts
+index 09b7794..3196279 100644
+--- a/src/IO/DXF/DxfStreamWriter/IDxfStreamWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/IDxfStreamWriter.ts
+@@ -14,6 +14,9 @@ export interface IDxfStreamWriter {
+ 
+   write(code: DxfCode | number, value: unknown, map?: DxfClassMap | null): void;
+ 
++  /** Write a group code exactly as a reader returned it: no escaping, no optional or R12 filtering. */
++  writeRaw(code: number, value: unknown): void;
++
+   writeVector(code: DxfCode | number, value: IVector, map?: DxfClassMap | null): void;
+ 
+   writeIfNotDefault<T>(code: number, value: T, defaultValue: T, map?: DxfClassMap | null): void;
+diff --git a/src/Objects/RawObjectData.ts b/src/Objects/RawObjectData.ts
+new file mode 100644
+index 0000000..81cb9c5
+--- /dev/null
++++ b/src/Objects/RawObjectData.ts
+@@ -0,0 +1,62 @@
++import type { ACadVersion } from '../ACadVersion.js';
++import type { CadDocument } from '../CadDocument.js';
++import type { CadObject } from '../CadObject.js';
++
++/**
++ * One DXF group code of an object the reader could not map, as read: strings are the raw
++ * line (still `^J`-escaped), handles are numbers, binary chunks are bytes.
++ */
++export interface DxfRawCode {
++	code: number;
++	value: unknown;
++}
++
++/** The object record of an unknown object as stored in a DWG object section. */
++export interface DwgRawObjectData {
++	/** The file version: the bits are only valid in a file of the same version. */
++	version: ACadVersion;
++	/** Object type code as stored (a class number for custom objects). */
++	typeCode: number;
++	/** The handle encoded in the record. */
++	handle: number;
++	/** The record after its size (MS) and, for R2010+, handle-stream size (MC); without the CRC. */
++	data: Uint8Array;
++	/** R2010+: size of the handle stream in bits (the MC value). 0 for older versions. */
++	handleStreamBits: number;
++}
++
++/**
++ * What the readers keep of an object they cannot map, so that the writers can emit it unchanged
++ * under its handle instead of dropping it.
++ */
++export interface IRawCadObject {
++	/** DXF type name as read. Used when the drawing has no CLASSES entry for the type. */
++	rawDxfName: string | null;
++	/** DXF group codes after the type name (handle, groups, owner, body, xdata), in file order. */
++	rawDxfCodes: DxfRawCode[] | null;
++	/** The DWG object record, for a DWG writer of the same version. */
++	rawDwgData: DwgRawObjectData | null;
++	/** Objects this one owns that only its raw payload refers to, e.g. an XRECORD under an AEC object. */
++	readonly rawOwnedObjects: CadObject[];
++}
++
++/** Attach `child` to the raw object `owner`, registering it in the owner's document if it has one. */
++export function addRawOwnedObject(owner: IRawCadObject & CadObject, child: CadObject): void {
++	if (owner.rawOwnedObjects.includes(child)) {
++		return;
++	}
++	owner.rawOwnedObjects.push(child);
++	child.owner ??= owner;
++	if (owner.document != null && child.document == null) {
++		owner.document.registerCollection(child);
++	}
++}
++
++/** Called from the raw objects' `assignDocument`: their owned objects join the document with them. */
++export function registerRawOwnedObjects(owner: IRawCadObject, doc: CadDocument): void {
++	for (const child of owner.rawOwnedObjects) {
++		if (child.document == null) {
++			doc.registerCollection(child);
++		}
++	}
++}
+diff --git a/src/Objects/UnknownNonGraphicalObject.ts b/src/Objects/UnknownNonGraphicalObject.ts
+index 79fc8e8..000ee7e 100644
+--- a/src/Objects/UnknownNonGraphicalObject.ts
++++ b/src/Objects/UnknownNonGraphicalObject.ts
+@@ -2,21 +2,32 @@ import { NonGraphicalObject } from './NonGraphicalObject.js';
+ import { DxfClass } from '../Classes/DxfClass.js';
+ import { ObjectType } from '../Types/ObjectType.js';
+ import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
++import type { CadDocument } from '../CadDocument.js';
++import type { CadObject } from '../CadObject.js';
++import { DwgRawObjectData, DxfRawCode, IRawCadObject, registerRawOwnedObjects } from './RawObjectData.js';
+ 
+ type DxfClassLookupResult = { result: DxfClass | null; found: boolean };
+ 
+-export class UnknownNonGraphicalObject extends NonGraphicalObject {
++export class UnknownNonGraphicalObject extends NonGraphicalObject implements IRawCadObject {
+ 	override get objectType(): ObjectType {
+ 		return ObjectType.UNDEFINED;
+ 	}
+ 
+ 	override get objectName(): string {
+ 		if (!this.dxfClass) {
+-			return 'UNKNOWN';
++			return this.rawDxfName ?? 'UNKNOWN';
+ 		}
+ 		return this.dxfClass.dxfName;
+ 	}
+ 
++	rawDxfName: string | null = null;
++
++	rawDxfCodes: DxfRawCode[] | null = null;
++
++	rawDwgData: DwgRawObjectData | null = null;
++
++	readonly rawOwnedObjects: CadObject[] = [];
++
+ 	override get subclassMarker(): string {
+ 		if (!this.dxfClass) {
+ 			return DxfSubclassMarker.entity;
+@@ -30,4 +41,13 @@ export class UnknownNonGraphicalObject extends NonGraphicalObject {
+ 		super();
+ 		this.dxfClass = dxfClass instanceof DxfClass ? dxfClass : dxfClass?.result ?? null;
+ 	}
++
++	override getDxfClass(): DxfClass | null {
++		return this.dxfClass;
++	}
++
++	override assignDocument(doc: CadDocument): void {
++		super.assignDocument(doc);
++		registerRawOwnedObjects(this, doc);
++	}
+ }

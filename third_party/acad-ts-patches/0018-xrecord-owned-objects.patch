@@ -1,0 +1,119 @@
+diff --git a/src/IO/CadDocumentBuilder.ts b/src/IO/CadDocumentBuilder.ts
+index 6773e7d..80dfe74 100644
+--- a/src/IO/CadDocumentBuilder.ts
++++ b/src/IO/CadDocumentBuilder.ts
+@@ -5,6 +5,7 @@ import { UnknownEntity } from '../Entities/UnknownEntity.js';
+ import { CadDictionary } from '../Objects/CadDictionary.js';
+ import { UnknownNonGraphicalObject } from '../Objects/UnknownNonGraphicalObject.js';
+ import { addRawOwnedObject } from '../Objects/RawObjectData.js';
++import { XRecord } from '../Objects/XRecrod.js';
+ import { AppId } from '../Tables/AppId.js';
+ import { BlockRecord } from '../Tables/BlockRecord.js';
+ import { DimensionStyle } from '../Tables/DimensionStyle.js';
+@@ -107,6 +108,7 @@ export abstract class CadDocumentBuilder {
+ 	 * collection registers it and the writers never reach it. Attach it to its raw owner instead.
+ 	 */
+ 	private _attachRawOwnedObjects(): void {
++		const ownedByXRecords: CadObject[] = [];
+ 		for (const template of this.templatesMap.values()) {
+ 			const child = template.cadObject;
+ 			const ownerHandle = (template as CadTemplate).ownerHandle;
+@@ -117,8 +119,32 @@ export abstract class CadDocumentBuilder {
+ 			const owner = this.tryGetCadObject<CadObject>(ownerHandle);
+ 			if ((owner instanceof UnknownNonGraphicalObject || owner instanceof UnknownEntity) && owner.xDictionary !== child) {
+ 				addRawOwnedObject(owner, child);
++			} else if (owner instanceof XRecord && owner.entries.some(e => e.value === child && e.code >= 350 && e.code <= 369)) {
++				// Owned through an XRECORD's soft/hard owner entry (tables' DATATABLE, for example).
++				child.owner ??= owner;
++				ownedByXRecords.push(child);
+ 			}
+ 		}
++
++		// An XRECORD joins the document only with its own owner, which may be a raw object
++		// registered above; register what it owns once it is in.
++		let pending = ownedByXRecords;
++		let progress = true;
++		while (pending.length > 0 && progress) {
++			progress = false;
++			pending = pending.filter(child => {
++				const doc = (child.owner as CadObject).document;
++				if (child.document != null) {
++					return false;
++				}
++				if (doc == null) {
++					return true;
++				}
++				doc.registerCollection(child);
++				progress = true;
++				return false;
++			});
++		}
+ 	}
+ 
+ 	buildDataStorage(): void {
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 480ee3a..f88197d 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -2737,9 +2737,13 @@ export class DwgObjectReader extends DwgSectionIO {
+           xRecord.createEntry(code, this._objectReader.readBytes(this._objectReader.readByte()));
+           break;
+         case GroupCodeValueType.ObjectId:
+-        case GroupCodeValueType.ExtendedDataHandle:
+-          template.addHandleReference(code, this._objectReader.readRawULong());
++        case GroupCodeValueType.ExtendedDataHandle: {
++          // Queue the referenced object: an XRECORD may be its only owner.
++          const handle = this._objectReader.readRawULong();
++          this._enqueueHandle(handle);
++          template.addHandleReference(code, handle);
+           break;
++        }
+         default:
+           this.notify(`Unidentified GroupCodeValueType ${code} for XRecord [${xRecord.handle}]`, NotificationType.Warning);
+           break;
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 6de8851..3594b63 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -4931,6 +4931,10 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 				case GroupCodeValueType.ExtendedDataHandle: {
+ 					const handle = getHandleValue(entry.value);
+ 					pushInt64LE(handle);
++					// Soft/hard owner entries own their object: nothing else writes it.
++					if (entry.code >= 350 && entry.code <= 369 && entry.value instanceof CadObject) {
++						this._enqueueObject(entry.value);
++					}
+ 					break;
+ 				}
+ 				default:
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 13bc10e..cfc2544 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -37,6 +37,7 @@ import { SortEntitiesTable } from '../../../Objects/SortEntitiesTable.js';
+ import { SpatialFilter } from '../../../Objects/SpatialFilter.js';
+ import { XRecord } from '../../../Objects/XRecrod.js';
+ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
++import { TableContent } from '../../../Objects/TableContent.js';
+ import { AecWallStyle } from '../../../Objects/AEC/AecWallStyle.js';
+ import { AecCleanupGroup } from '../../../Objects/AEC/AecCleanupGroup.js';
+ import { AecBinRecord } from '../../../Objects/AEC/AecBinRecord.js';
+@@ -674,6 +675,10 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+           const obj = e.value as IHandledCadObject;
+           if (obj == null || typeof obj.handle !== 'number') continue;
+           this._writer.write(e.code, obj.handle);
++          // Soft/hard owner entries own their object: nothing else writes it.
++          if (e.code >= 350 && e.code <= 369 && obj instanceof CadObject) {
++            this.holder.objects.push(obj);
++          }
+           break;
+         }
+         default:
+@@ -702,6 +707,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       co instanceof DimensionAssociation ||
+       co instanceof Material ||
+       co instanceof MultiLeaderObjectContextData ||
++      co instanceof TableContent ||
+       co instanceof VisualStyle ||
+       co instanceof ProxyObject
+     ) {
