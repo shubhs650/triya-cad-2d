@@ -62,7 +62,7 @@ describe('ci.yml triggers', () => {
 });
 
 describe('ci.yml gates', () => {
-  it.each(['lint', 'typecheck', 'test', 'corpus:validate'])(
+  it.each(['lint', 'typecheck', 'test', 'corpus:validate', 'changelog:check'])(
     '`pnpm %s` runs in the required checks job',
     (script) => {
       expect(pkg.scripts[script]).toBeDefined();

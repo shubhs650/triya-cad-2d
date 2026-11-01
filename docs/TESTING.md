@@ -21,7 +21,7 @@ Fidelity is the product. This document defines the corpus, the harnesses, the to
 
 | Job (check name) | Runs | When |
 |---|---|---|
-| `lint · typecheck · unit · round-trip` | `pnpm lint`, `typecheck`, `test`, `corpus:validate` | every PR and push to `main` (**required**) |
+| `lint · typecheck · unit · round-trip` | `pnpm lint`, `typecheck`, `test`, `corpus:validate`, `changelog:check` | every PR and push to `main` (**required**) |
 | `fidelity · offline · ui` | `pnpm build`, `test:fidelity`, `test:offline`, `test:ui`, `test:io`; uploads `test-results/` + `playwright-report/` as `fidelity-diffs` on failure | every PR and push to `main` (**required**) |
 | `performance budgets` | `pnpm test:perf` | `main`; PRs that change `packages/render`, `engine` or `io` (`detect hot-path changes` job); PRs labelled `perf` or titled `[perf]` |
 
@@ -168,6 +168,8 @@ pnpm test:private       # all of the above on corpus/private (local only)
 pnpm corpus:list        # print corpus manifest
 pnpm corpus:ref <file>  # rasterise reference PDFs → PNGs
 pnpm corpus:validate    # schema + license fields + reference presence
+pnpm changelog          # print CHANGELOG.md with the changes/*.md fragments under Unreleased
+pnpm changelog:check    # validate changelog fragments (CI)
 pnpm corpus:roundtrip   # round-trip every public corpus file; per-file report in test-reports/roundtrip/
 pnpm spike:read         # M0-06: read status, unmapped types, handle coverage → test-reports/spike/read.md
 pnpm spike:roundtrip    # M0-06: round-trip failure taxonomy → test-reports/spike/roundtrip.md; written files → docs/reports/M0-written/

@@ -1,0 +1,1 @@
+- M1-02 part 1 (#11): geometry kernel `engine/geom`: vectors, angles, extents-derived `Tolerance` (DEC-036), curve shapes shared with the model, parametric evaluation of every curve type, NURBS (rational, unclamped) evaluation, flattening within a deviation, exact bounds (polished spline extremes), affine transforms of curves; ≥ 95 % coverage gate on `engine/geom` in `pnpm test`.

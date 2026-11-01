@@ -1,0 +1,1 @@
+- M1-04 part 2 (#19): `mapEntities` maps TEXT, MTEXT, ATTDEF and INSERT/MINSERT, with each INSERT's ATTRIBs folded in (own handle and properties, multiline MTEXT embedded); −Z text and inserts convert exactly (DEC-039 extended). Corpus oracle checks text frames and insert placements by probe points; new acad-ts gaps (attribute mirror flags, caret codes) added to M1-32.

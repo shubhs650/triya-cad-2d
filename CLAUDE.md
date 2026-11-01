@@ -24,7 +24,7 @@ Ship milestones from `ROADMAP.md` in order, one task per branch, tests first, fi
 5. **Run the gates locally:** `pnpm lint && pnpm typecheck && pnpm test && pnpm test:fidelity` (and `pnpm test:perf` if you touched `render`/`engine` hot paths). All green or you are not done.
 6. **Commit and push at least every 30 minutes of work** and before any long-running step. The sandbox can be recycled; unpushed work is lost. Use conventional commits (`feat(dims): …`, `fix(io): …`, `test(corpus): …`).
 7. **Open a PR** with the template filled in: task id, what changed, how it was tested, fidelity/perf numbers before→after, any passthrough implications. Mark it ready for review; `.github/workflows/auto-merge.yml` enables squash auto-merge once CI is green on the PR's head. Do not enable auto-merge yourself before CI is green: until branch protection lists the required checks, that merges immediately. CI is the reviewer. When CI fails, fix it in the same branch; never disable or weaken a check to get green.
-8. **Close out.** After merge: mark the task `[x]` in `docs/ROADMAP.md` with the PR number, update `docs/FILE_FIDELITY.md` / `docs/COMMANDS.md` status rows you affected, and add a `CHANGELOG.md` line. Commit directly to `main` as `roadmap: complete <task-id> (#PR)`.
+8. **Close out.** After merge: mark the task `[x]` in `docs/ROADMAP.md` with the PR number, update `docs/FILE_FIDELITY.md` / `docs/COMMANDS.md` status rows you affected, and add your changelog entry as a new file `changes/<task-id>.md` (one bullet with the PR number; see `changes/README.md`). Never edit `CHANGELOG.md` directly: every thread editing its top line is what made green PRs conflict. Commit directly to `main` as `roadmap: complete <task-id> (#PR)`.
 9. **Report back** in your final message: task id, PR, gates run with numbers, anything you deferred (as new roadmap tasks you added, with reasons), and anything that needs the human (see "Stop and ask").
 10. **Loop.** If you have context budget left, go to step 1. Otherwise end cleanly with everything pushed.
 
@@ -79,4 +79,4 @@ gh pr create --fill && gh pr merge --auto --squash
 
 ## Definition of done (per task)
 
-Test written first · implementation · gates green · PR auto-merged · roadmap/status docs updated · CHANGELOG line · report posted.
+Test written first · implementation · gates green · PR auto-merged · roadmap/status docs updated · `changes/<task-id>.md` fragment · PR state MERGED · report posted.

@@ -34,6 +34,8 @@
     "test:private": "node scripts/not-yet.mjs test:private M1-24",
     "corpus:list": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts list",
     "corpus:validate": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts validate",
+    "changelog": "node --experimental-strip-types scripts/changelog.ts",
+    "changelog:check": "node --experimental-strip-types scripts/changelog.ts --check",
     "corpus:roundtrip": "vitest run packages/testkit/src/roundtrip/corpus-roundtrip.test.ts",
     "spike:read": "vitest run --config vitest.spike.config.ts packages/testkit/src/spike/read.spike.ts",
     "spike:roundtrip": "vitest run --config vitest.spike.config.ts packages/testkit/src/spike/roundtrip.spike.ts",

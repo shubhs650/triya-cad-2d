@@ -1,0 +1,1 @@
+- M1-02 part 2 (#12): `engine/geom` intersections of every curve pair (`intersect`): closed forms for line/circle/ellipse pairs, flatten-seed-Newton with subdivision for splines and the rest, isolated points only (DEC-037); NURBS second derivatives.
