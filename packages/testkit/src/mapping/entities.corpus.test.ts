@@ -16,6 +16,8 @@ import type {
   TableGeometry,
   ImageGeometry,
   UnderlayGeometry,
+  MLineGeometry,
+  ViewportGeometry,
   TextFields,
   Vec2,
 } from '@triya/engine';
@@ -108,6 +110,15 @@ const ACAD_TS_GAPS: Record<string, string> = {
     'acad-ts has no DXF code map for a MULTILEADER branch (LeaderRoot), so DXF branches keep the default connection point; DWG reads it',
   'MULTILEADER LEADER{ 11': 'the same for the landing direction',
   'MULTILEADER LEADER{ 40': 'the same for the dogleg length',
+  'VIEWPORT 68':
+    'acad-ts skips a DXF viewport’s status (68: off, or on with its stacking order), so every viewport reads as 1',
+  'VIEWPORT 69':
+    'acad-ts treats a viewport ID of 0 as unset and replaces it with the viewport’s index in its block',
+  'VIEWPORT 340': 'acad-ts never reads a DXF viewport’s clip boundary (340); DWG reads it',
+  'VIEWPORT MVIEW 12':
+    'acad-ts does not read the view of an R12 viewport from its MVIEW xdata, so the view centre, height and lens read as 0',
+  'VIEWPORT MVIEW 42': 'the same for the lens length',
+  'VIEWPORT MVIEW 45': 'the same for the view height',
 };
 
 /** Types this part maps; the others must be reported as not mapped yet. */
@@ -139,6 +150,8 @@ const MAPPED = new Set([
   'IMAGE',
   'WIPEOUT',
   'PDFUNDERLAY',
+  'MLINE',
+  'VIEWPORT',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({
@@ -455,6 +468,16 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
     case 'PDFUNDERLAY': {
       if (geom.kind !== 'PDFUNDERLAY') return bad('type', d.type, geom.kind);
       compareUnderlay(subclass(g, 'AcDbUnderlayReference'), n, geom, bad);
+      return;
+    }
+    case 'MLINE': {
+      if (geom.kind !== 'MLINE') return bad('type', d.type, geom.kind);
+      compareMLine(subclass(g, 'AcDbMline'), geom, bad);
+      return;
+    }
+    case 'VIEWPORT': {
+      if (geom.kind !== 'VIEWPORT') return bad('type', d.type, geom.kind);
+      compareViewport(g, geom, bad);
       return;
     }
     case 'HATCH': {
@@ -1141,6 +1164,138 @@ function compareUnderlay(g: readonly Group[], n: V3, geom: UnderlayGeometry, bad
   const vs = xs.map((x, k) => ({ x, y: ys[k]! }));
   if (vs.length !== geom.clip.length || vs.some((v, k) => !near(v, geom.clip[k]!)))
     bad('11', vs.map(fmt).join(' '), geom.clip.map(fmt).join(' '));
+}
+
+/** MLINE (DXF AcDbMline): WCS points; per vertex 11–13, then 74/41 and 75/42 per element. */
+function compareMLine(g: readonly Group[], geom: MLineGeometry, bad: Bad): void {
+  if (handleIn(g, 340) !== geom.style) bad('340', handleIn(g, 340), geom.style);
+  if (!close(num(g, 40, 1), geom.scale)) bad('40', num(g, 40, 1), geom.scale);
+  if (num(g, 70) !== geom.justification) bad('70', num(g, 70), geom.justification);
+  if (num(g, 71) !== geom.flags) bad('71', num(g, 71), geom.flags);
+  const p2 = (grp: readonly Group[], code: number): Vec2 => ({
+    x: num(grp, code),
+    y: num(grp, code + 10),
+  });
+  if (!near(p2(g, 10), geom.start)) bad('10', fmt(p2(g, 10)), fmt(geom.start));
+  const starts = g.flatMap(([c], k) => (c === 11 ? [k] : []));
+  if (starts.length !== geom.vertices.length || num(g, 72) !== starts.length)
+    return bad('72', `${num(g, 72)} / ${starts.length}`, geom.vertices.length);
+  const elements = num(g, 73);
+  starts.forEach((s, k) => {
+    const v = g.slice(s, starts[k + 1] ?? g.length);
+    const got = geom.vertices[k]!;
+    for (const [code, want] of [
+      [11, got.position],
+      [12, got.direction],
+      [13, got.miter],
+    ] as const)
+      if (!near(p2(v, code), want)) bad(String(code), `${k} ${fmt(p2(v, code))}`, fmt(want));
+    // Element runs: 74 n, n × 41, 75 m, m × 42.
+    const runs: { parameters: number[]; fillParameters: number[] }[] = [];
+    let i = v.findIndex(([c]) => c === 74);
+    while (i >= 0 && i < v.length && v[i]![0] === 74) {
+      const n = Number(v[i]![1]);
+      const parameters = v.slice(i + 1, i + 1 + n).map(([, x]) => Number(x));
+      i += 1 + n;
+      const m = v[i]?.[0] === 75 ? Number(v[i]![1]) : 0;
+      const fillParameters = v.slice(i + 1, i + 1 + m).map(([, x]) => Number(x));
+      i += 1 + m;
+      runs.push({ parameters, fillParameters });
+    }
+    if (runs.length !== elements) bad('73', `${k} ${elements}`, runs.length);
+    if (JSON.stringify(runs) !== JSON.stringify(got.elements))
+      bad('41', `${k} ${JSON.stringify(runs)}`, JSON.stringify(got.elements));
+  });
+}
+
+/**
+ * VIEWPORT (DXF AcDbViewport). R12 files state only the frame (10, 40, 41, 68, 69) as groups
+ * and the view in the ACAD `MVIEW` xdata (DXF R12 reference, VIEWPORT): version, target,
+ * direction, twist, view height, view center, lens length, front and back clip, view mode, ….
+ */
+function compareViewport(all: readonly Group[], geom: ViewportGeometry, bad: Bad): void {
+  const r12 = !all.some(([c, v]) => c === 100 && v.trim() === 'AcDbViewport');
+  const g = r12 ? all.filter(([c]) => c < 1000) : subclass(all, 'AcDbViewport');
+  const p2 = (code: number): Vec2 => ({ x: num(g, code), y: num(g, code + 10) });
+  if (!near(p2(10), geom.center)) bad('10', fmt(p2(10)), fmt(geom.center));
+  for (const [code, want, got] of [
+    ['40', num(g, 40), geom.width],
+    ['41', num(g, 41), geom.height],
+  ] as const)
+    if (!close(want, got)) bad(code, want, got);
+  if (num(g, 68) !== geom.status) bad('68', num(g, 68), geom.status);
+  if (num(g, 69) !== geom.id) bad('69', num(g, 69), geom.id);
+  const v3 = (p: { x: number; y: number; z: number }) => `${p.x},${p.y},${p.z}`;
+  const same3 = (a: V3, b: V3) => close(a.x, b.x) && close(a.y, b.y) && close(a.z, b.z);
+  let view: {
+    target: V3;
+    direction: V3;
+    twist: number;
+    height: number;
+    center: Vec2;
+    lens: number;
+    front: number;
+    back: number;
+  };
+  if (r12) {
+    const x = all.filter(([c]) => c >= 1000);
+    const reals = x.filter(([c]) => c === 1040).map(([, v]) => Number(v));
+    const pts = x.flatMap(([c], k) =>
+      c === 1010 ? [{ x: Number(x[k]![1]), y: Number(x[k + 1]![1]), z: Number(x[k + 2]![1]) }] : [],
+    );
+    if (pts.length < 2 || reals.length < 7) return bad('MVIEW', 'short xdata', '');
+    view = {
+      target: pts[0]!,
+      direction: pts[1]!,
+      twist: reals[0]!,
+      height: reals[1]!,
+      center: { x: reals[2]!, y: reals[3]! },
+      lens: reals[4]!,
+      front: reals[5]!,
+      back: reals[6]!,
+    };
+  } else {
+    view = {
+      target: pt(g, 17),
+      direction: { x: num(g, 16), y: num(g, 26), z: num(g, 36, 1) },
+      twist: deg(g, 51),
+      height: num(g, 45),
+      center: p2(12),
+      lens: num(g, 42, 50),
+      front: num(g, 43),
+      back: num(g, 44),
+    };
+    if (num(g, 90) !== geom.flags) bad('90', num(g, 90), geom.flags);
+    if (handleIn(g, 340) !== geom.clipBoundary) bad('340', handleIn(g, 340), geom.clipBoundary);
+    // Some writers put the viewport's visual style (348) in the AcDbEntity group; there is
+    // only ever one, so take it from wherever it is.
+    const style = handleIn(g, 348) ?? handleIn(subclass(all, 'AcDbEntity'), 348);
+    if (style !== geom.visualStyle) bad('348', style, geom.visualStyle);
+    // Frozen layers are 331, one per layer (DXF reference, VIEWPORT).
+    const frozen = g
+      .filter(([c]) => c === 331)
+      .map(([, h]) =>
+        h
+          .trim()
+          .replace(/^0+(?=.)/, '')
+          .toUpperCase(),
+      );
+    if (frozen.join(' ') !== geom.frozenLayers.join(' '))
+      bad('331', frozen.join(' '), geom.frozenLayers.join(' '));
+    if ((first(g, 1) ?? '').trim() !== geom.plotStyleSheet)
+      bad('1', first(g, 1), geom.plotStyleSheet);
+    if (num(g, 281) !== geom.renderMode) bad('281', num(g, 281), geom.renderMode);
+  }
+  const s = r12 ? 'MVIEW ' : '';
+  if (!same3(view.target, geom.viewTarget)) bad(`${s}17`, v3(view.target), v3(geom.viewTarget));
+  if (!same3(view.direction, geom.viewDirection))
+    bad(`${s}16`, v3(view.direction), v3(geom.viewDirection));
+  if (!sameAngle(view.twist, geom.twist)) bad(`${s}51`, view.twist, geom.twist);
+  if (!close(view.height, geom.viewHeight)) bad(`${s}45`, view.height, geom.viewHeight);
+  if (!near(view.center, geom.viewCenter)) bad(`${s}12`, fmt(view.center), fmt(geom.viewCenter));
+  if (!close(view.lens, geom.lensLength)) bad(`${s}42`, view.lens, geom.lensLength);
+  if (!close(view.front, geom.frontClip)) bad(`${s}43`, view.front, geom.frontClip);
+  if (!close(view.back, geom.backClip)) bad(`${s}44`, view.back, geom.backClip);
 }
 
 /** A HATCH boundary as the file states it, read group by group (DXF reference, HATCH). */
