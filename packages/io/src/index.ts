@@ -8,3 +8,5 @@ export { fidelityDwgConfiguration, fidelityDxfConfiguration, writeCadDocument } 
 export type { WriteOptions } from './write';
 export { handleIoRequest } from './worker/protocol';
 export type { IoRequest, IoResponse, ReadRequest } from './worker/protocol';
+export { mapHeader, type MappedHeader } from './map/header';
+export { mapTables, type MappedTables } from './map/tables';

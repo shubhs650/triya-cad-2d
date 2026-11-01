@@ -4,7 +4,9 @@ import {
   type EntityInit,
   type EntityGeometry,
   type HeaderValue,
+  type BlockTableRecord,
   type LayerRecord,
+  type LinetypeRecord,
   type SymbolTableRecord,
 } from '../../src/model/index';
 
@@ -27,6 +29,23 @@ export const layer = (handle: string, name: string): LayerRecord => ({
 });
 
 export const record = (handle: string, name: string): SymbolTableRecord => ({ handle, name });
+
+export const linetype = (handle: string, name: string): LinetypeRecord => ({
+  handle,
+  name,
+  description: 'Solid line',
+  alignment: 'A',
+  patternLength: 0,
+  elements: [],
+});
+
+export const blockRecord = (handle: string, name: string): BlockTableRecord => ({
+  handle,
+  name,
+  units: 0,
+  explodable: true,
+  scalable: true,
+});
 
 export function entityInit(
   handle: string,
@@ -73,8 +92,11 @@ export function sampleModel(): DocumentModel {
     ]),
     tables: {
       layers: [layer(LAYER_0, '0'), layer(LAYER_WALLS, 'WALLS')],
-      linetypes: [record('14', 'Continuous')],
-      blockRecords: [record(MODEL_SPACE, '*Model_Space'), record(PAPER_SPACE, '*Paper_Space')],
+      linetypes: [linetype('14', 'Continuous')],
+      blockRecords: [
+        blockRecord(MODEL_SPACE, '*Model_Space'),
+        blockRecord(PAPER_SPACE, '*Paper_Space'),
+      ],
     },
     blocks: [
       { handle: MODEL_SPACE, name: '*Model_Space', basePoint: { x: 0, y: 0 } },

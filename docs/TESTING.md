@@ -93,6 +93,10 @@ After an *editing* session, the diff excludes handles in the session's touched s
 - Objects acad-ts cannot map are kept raw by `readCadDocument` (M1-30), so `structuralDiff` sees them like any other object. `rawObjectSurvival` also checks that each one comes back under its handle with the same payload (DXF group codes or DWG record); the corpus test requires zero losses, and the report prints the count.
 - `pnpm corpus:roundtrip` (also part of `pnpm test`) runs every public corpus file, writes `test-reports/roundtrip/report.md` and `report.json`, and fails if any file is worse than `corpus/roundtrip-baseline.json` (worse status or more differences). After an improvement, `TRIYA_UPDATE_BASELINE=1 pnpm corpus:roundtrip` locks it in. Until M1-05 the baseline holds the known differences; from M1-05 on every entry must be `clean`.
 
+### 3.1 Mapping oracle (M1-03)
+
+The round-trip diff compares acad-ts with itself, so a value acad-ts never reads is invisible to it. `packages/testkit/src/mapping/tables.corpus.test.ts` reads the HEADER and TABLES sections of every ASCII DXF in the public corpus with an independent group-code reader (`mapping/dxf-oracle.ts`) and compares each table record field and each header variable with what `mapTables`/`mapHeader` produce, by handle (by name for R12 records without one). Losses that come from acad-ts itself are listed in `ACAD_TS_GAPS` with the reason; the test fails on a new kind of mismatch and on a listed kind that no longer occurs, so the list only shrinks (M1-32). A second test checks that every table entry acad-ts reads from every readable file, DWG included, is mapped.
+
 ## 4. Fidelity harness
 
 1. Headless Chromium loads the app in test mode and opens the corpus file.
