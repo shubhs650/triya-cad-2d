@@ -50,6 +50,13 @@ export type RenderPrimitive =
       readonly lineweight?: number;
       /** Fill rule for `fill`: AutoCAD hatch loops use odd parity. */
       readonly evenOdd?: boolean;
+      /**
+       * A dashed stroke (M1-13): the exact path without its linetype, drawn instead once one
+       * pattern repetition (`patternLength`, world units) is under a pixel on screen, and
+       * used for picking so a click in a gap still hits.
+       */
+      readonly continuous?: readonly number[];
+      readonly patternLength?: number;
     }
   /** XLINE (both directions) or RAY (one direction), clipped to the view when drawn. */
   | {

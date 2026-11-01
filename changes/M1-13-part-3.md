@@ -1,0 +1,1 @@
+- M1-13 part 3 (#PR): the renderer draws linetypes (dashes fitted on first display, continuous below a pixel per pattern, gaps still pick), shows lineweights as AutoCAD does on the Model tab and in layouts with LWDEFAULT for Default, uses the computed ACI palette, and draws each block in its SORTENTSTABLE order.

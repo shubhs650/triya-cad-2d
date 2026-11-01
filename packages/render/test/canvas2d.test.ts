@@ -182,7 +182,8 @@ describe('device pixels and lineweights', () => {
     r.setStyle({ ...DARK, showLineweights: true });
     scene.ctx.clear();
     r.frame();
-    expect(scene.ctx.named('stroke')[0]![2]).toBeCloseTo((0.5 * 96) / 25.4, 12);
+    // Model tab: 0.5 mm at 96 dpi is 1.89 px, shown as a whole 2 px (M1-13 `lineweightPixels`).
+    expect(scene.ctx.named('stroke')[0]![2]).toBe(2);
   });
 });
 
