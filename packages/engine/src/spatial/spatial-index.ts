@@ -28,6 +28,7 @@ import {
 } from './entity-bounds';
 import { PackedRTree } from './packed-tree';
 import { annotationParts } from '../annotation/parts';
+import type { TextMeasure } from '../annotation/tolerance';
 
 /** Kinds whose bounds use `annotationBounds`: themselves, or their attributes (INSERT). */
 const ANNOTATION_KINDS: ReadonlySet<string> = new Set([
@@ -47,6 +48,8 @@ export interface SpatialIndexOptions {
   readonly tol: Tolerance;
   /** Exact text and annotation bounds, when a text engine is available. */
   readonly annotationBounds?: AnnotationBounds;
+  /** Text widths from the same text engine, for TOLERANCE frames (M1-52 part 4). */
+  readonly measureText?: TextMeasure;
   /**
    * Edits a block's tree absorbs before it is repacked. Default: 1/16 of the block's entries,
    * at least 256. Tests set it low to exercise repacking.
@@ -174,6 +177,7 @@ export class SpatialIndex {
     this.#ctx = {
       tol: options.tol,
       annotationBounds: options.annotationBounds,
+      measureText: options.measureText,
       blockExtents: (h) => this.extents(h),
       basePoint: (h) => model.blocks.get(h)?.basePoint,
       tables: model,

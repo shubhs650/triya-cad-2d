@@ -5,8 +5,9 @@
 // until the fonts arrive and the index re-bounds it (`SpatialIndex.reboundAnnotations`).
 //
 // Covered: TEXT, MTEXT, ATTDEF (drawn as its tag, as AutoCAD shows a definition outside a
-// block) and ATTRIB (its value, or its multiline MTEXT). TOLERANCE, LEADER, MULTILEADER and
-// dimensions without a stored block need their own geometry and stay unknown.
+// block) and ATTRIB (its value, or its multiline MTEXT). TOLERANCE, LEADER and MULTILEADER
+// are bounded by their parts (M1-52; TOLERANCE also takes `textMeasure` for its frame), and
+// dimensions without a stored block stay unknown.
 
 import type {
   AnnotationBounds,

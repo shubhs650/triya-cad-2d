@@ -2,7 +2,7 @@
 // Browser package: DOM types are available here. Nothing outside it may use Canvas 2D.
 export * from './types';
 export { tessellate, type Paint, type TessellateContext } from './tessellate';
-export { textPrimitives, type TextContext } from './text';
+export { textMeasure, textPrimitives, type TextContext } from './text';
 export { primitivesBox, textBounds } from './text-bounds';
 export { createPaint, defaultPaint, type PaintFunction, type PaintOptions } from './paint';
 export {

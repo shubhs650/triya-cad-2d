@@ -1,17 +1,24 @@
 // Annotations drawn as parts (M1-52): which kinds, and a part as an entity of its own.
+// MULTILEADER and LEADER need only the drawing's tables; TOLERANCE also measures its text.
 
 import type { Entity, EntityGeometry } from '../model/types';
 import { leaderParts } from './leader';
 import { multiLeaderParts, type AnnotationPart, type AnnotationTables } from './multileader';
+import { toleranceParts, type TextMeasure } from './tolerance';
 
-/** The parts of an annotation that draws through parts; undefined for every other entity. */
+/**
+ * The parts of an annotation that draws through parts; undefined for every other entity, and
+ * for a TOLERANCE without a `measure` that can measure its text.
+ */
 export function annotationParts(
   g: EntityGeometry,
   model: AnnotationTables,
   xdata?: Entity['xdata'],
+  measure?: TextMeasure,
 ): AnnotationPart[] | undefined {
   if (g.kind === 'MULTILEADER') return multiLeaderParts(g, model);
   if (g.kind === 'LEADER') return leaderParts(g, xdata, model);
+  if (g.kind === 'TOLERANCE') return measure && toleranceParts(g, xdata, model, measure);
   return undefined;
 }
 
