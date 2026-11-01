@@ -9,6 +9,7 @@ import {
   type ChangeSet,
 } from '../../src/model/index';
 import {
+  blockRecord,
   circleGeom,
   entityAt,
   entityInit,
@@ -47,7 +48,7 @@ describe('DocumentModel.create', () => {
     const m = DocumentModel.create({
       meta: META,
       handSeed: '30',
-      tables: { blockRecords: [{ handle: MODEL_SPACE, name: '*Model_Space' }] },
+      tables: { blockRecords: [blockRecord(MODEL_SPACE, '*Model_Space')] },
       blocks: [{ handle: MODEL_SPACE, name: '*Model_Space', basePoint: { x: 0, y: 0 } }],
       passthrough: ['3A'],
     });
@@ -76,7 +77,7 @@ describe('DocumentModel.create', () => {
     const base = {
       meta: META,
       handSeed: '40',
-      tables: { blockRecords: [{ handle: MODEL_SPACE, name: '*Model_Space' }] },
+      tables: { blockRecords: [blockRecord(MODEL_SPACE, '*Model_Space')] },
       blocks: [{ handle: MODEL_SPACE, name: '*Model_Space', basePoint: { x: 0, y: 0 } }],
       entities: [entityInit('20', lineGeom(0, 0, 1, 1))],
     };

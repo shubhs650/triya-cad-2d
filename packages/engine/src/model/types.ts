@@ -205,22 +205,129 @@ export interface LayerRecord extends SymbolTableRecord {
   readonly material?: Handle;
 }
 
+/** One dash, gap or dot of a linetype (DXF 49), with its optional shape or text (74–75, 340, 9). */
+export interface LinetypeElement {
+  /** Dash > 0, gap < 0, dot 0, in drawing units before LTSCALE. */
+  readonly length: number;
+  /** DXF 74: 1 absolute rotation, 2 text, 4 shape. */
+  readonly shapeFlags: number;
+  readonly shapeNumber: number;
+  /** STYLE record of the shape file or text font. */
+  readonly style?: Handle;
+  readonly offset: Vec2;
+  readonly rotation: number;
+  readonly scale: number;
+  readonly text?: string;
+}
+
+export interface LinetypeRecord extends SymbolTableRecord {
+  readonly description: string;
+  /** DXF 72, always `A` in AutoCAD. */
+  readonly alignment: string;
+  readonly patternLength: number;
+  readonly elements: readonly LinetypeElement[];
+}
+
+export interface TextStyleRecord extends SymbolTableRecord {
+  /** Primary font file (DXF 3): an SHX/SHP name or a TrueType file. */
+  readonly font: string;
+  /** Big font file (DXF 4) for Asian text, if any. */
+  readonly bigFont?: string;
+  /** Fixed height (DXF 40); 0 means the height is asked for when text is placed. */
+  readonly height: number;
+  readonly widthFactor: number;
+  /** Radians. */
+  readonly obliqueAngle: number;
+  readonly lastHeight: number;
+  /** DXF 71: 2 backward, 4 upside down. */
+  readonly generation: number;
+  /** TrueType style bits from the `ACAD` xdata (bold, italic, pitch and family). */
+  readonly trueTypeFlags: number;
+}
+
+export interface BlockTableRecord extends SymbolTableRecord {
+  /** LAYOUT object of a `*Model_Space` / `*Paper_Space*` record. */
+  readonly layout?: Handle;
+  /** `$INSUNITS` code of the block's units (DXF 70 of AcDbBlockTableRecord). */
+  readonly units: number;
+  readonly explodable: boolean;
+  readonly scalable: boolean;
+}
+
+/** A coordinate system: origin and axes in WCS (UCS records, and the UCS of views and vports). */
+export interface UcsFrame {
+  readonly origin: Vec3;
+  readonly xAxis: Vec3;
+  readonly yAxis: Vec3;
+  readonly elevation: number;
+  /** DXF 71/79: 0 not orthographic, 1–6 top, bottom, front, back, left, right. */
+  readonly orthographic: number;
+}
+
+export interface UcsRecord extends SymbolTableRecord, UcsFrame {}
+
+/** View parameters shared by VIEW and VPORT records. */
+export interface ViewParams {
+  readonly center: Vec2;
+  readonly height: number;
+  readonly direction: Vec3;
+  readonly target: Vec3;
+  readonly lensLength: number;
+  readonly frontClip: number;
+  readonly backClip: number;
+  /** View twist, radians. */
+  readonly twist: number;
+  /** DXF 71 view mode bits (perspective, front/back clipping, …). */
+  readonly viewMode: number;
+  /** DXF 281. */
+  readonly renderMode: number;
+}
+
+export interface ViewRecord extends SymbolTableRecord, ViewParams {
+  readonly width: number;
+  /** The UCS saved with the view (DXF 72 = 1). */
+  readonly ucs?: UcsFrame;
+}
+
+export interface VportRecord extends SymbolTableRecord, ViewParams {
+  /** Viewport extent in the display, 0–1 (DXF 10/11). */
+  readonly lowerLeft: Vec2;
+  readonly upperRight: Vec2;
+  readonly aspectRatio: number;
+  readonly snapBase: Vec2;
+  readonly snapSpacing: Vec2;
+  /** Radians. */
+  readonly snapRotation: number;
+  readonly snapOn: boolean;
+  readonly isometricSnap: boolean;
+  readonly isometricPlane: number;
+  readonly gridSpacing: Vec2;
+  readonly gridOn: boolean;
+  /** DXF 60 grid display bits. */
+  readonly gridFlags: number;
+  readonly gridMajor: number;
+  readonly circleZoom: number;
+  /** DXF 74 UCSICON bits. */
+  readonly ucsIcon: number;
+  readonly ucs: UcsFrame;
+}
+
 /**
- * The record type of each table. Tables other than layers use the base record until the task
- * that renders or edits them (M1-03, M1-13, M4, M5) adds their fields.
+ * The record type of each table. Dimension, multileader and table styles use the base record
+ * until M1-03 part 2 adds their fields.
  */
 export interface TableRecords {
   layers: LayerRecord;
-  linetypes: SymbolTableRecord;
-  textStyles: SymbolTableRecord;
+  linetypes: LinetypeRecord;
+  textStyles: TextStyleRecord;
   dimStyles: SymbolTableRecord;
   mleaderStyles: SymbolTableRecord;
   tableStyles: SymbolTableRecord;
   appIds: SymbolTableRecord;
-  views: SymbolTableRecord;
-  ucs: SymbolTableRecord;
-  vports: SymbolTableRecord;
-  blockRecords: SymbolTableRecord;
+  views: ViewRecord;
+  ucs: UcsRecord;
+  vports: VportRecord;
+  blockRecords: BlockTableRecord;
 }
 
 export type TableName = keyof TableRecords;
