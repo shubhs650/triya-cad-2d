@@ -7,6 +7,7 @@ import {
   toleranceForSize,
   type Box,
   type EntityGeometry,
+  type HatchGeometry,
   type InsertAttribute,
   type InsertGeometry,
 } from '../../src/index';
@@ -172,6 +173,78 @@ describe('curves', () => {
     expect(entityBounds({ kind: 'LWPOLYLINE', closed: false, vertices: [] }, ctx()).kind).toBe(
       'empty',
     );
+  });
+});
+
+describe('hatches', () => {
+  const hatch = (loops: HatchGeometry['loops']): HatchGeometry => ({
+    kind: 'HATCH',
+    pattern: 'SOLID',
+    solid: true,
+    associative: false,
+    style: 0,
+    patternType: 1,
+    patternAngle: 0,
+    patternScale: 1,
+    double: false,
+    loops,
+    patternLines: [],
+    seedPoints: [],
+  });
+
+  it('is bounded by the union of its boundary loops', () => {
+    const geom = hatch([
+      {
+        flags: 2,
+        polyline: {
+          closed: true,
+          vertices: [
+            { x: 0, y: 0, bulge: 0 },
+            { x: 10, y: 0, bulge: 0 },
+            { x: 10, y: 5, bulge: 0 },
+          ],
+        },
+      },
+      {
+        flags: 1,
+        edges: [
+          { type: 'line', start: { x: 20, y: 0 }, end: { x: 22, y: 1 } },
+          // Arcs and ellipses count whole, whatever their (clockwise-negated) angles.
+          {
+            type: 'arc',
+            center: { x: 20, y: 10 },
+            radius: 1,
+            startAngle: 0,
+            endAngle: 0.1,
+            ccw: false,
+          },
+          {
+            type: 'ellipse',
+            center: { x: -5, y: 0 },
+            majorAxis: { x: 2, y: 0 },
+            ratio: 0.5,
+            startAngle: 0,
+            endAngle: 1,
+            ccw: true,
+          },
+          {
+            type: 'spline',
+            degree: 1,
+            knots: [0, 0, 1, 1],
+            controlPoints: [
+              { x: 0, y: -3 },
+              { x: 1, y: -4 },
+            ],
+            periodic: false,
+          },
+        ],
+      },
+    ]);
+    expectBox(entityBounds(geom, ctx()), box(-7, -4, 22, 11));
+  });
+
+  it('draws nothing without loops', () => {
+    expect(entityBounds(hatch([]), ctx()).kind).toBe('empty');
   });
 });
 

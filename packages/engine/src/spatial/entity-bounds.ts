@@ -16,10 +16,12 @@ import type {
   AttdefGeometry,
   DimensionGeometry,
   EntityGeometry,
+  HatchGeometry,
   InsertAttribute,
   InsertGeometry,
   LeaderGeometry,
   MTextGeometry,
+  MultiLeaderGeometry,
   PolylineVertex,
   TextGeometry,
   ToleranceGeometry,
@@ -48,6 +50,7 @@ export type AnnotationGeometry =
   | ToleranceGeometry
   | LeaderGeometry
   | DimensionGeometry
+  | MultiLeaderGeometry
   | InsertAttribute;
 
 /** Exact bounds for annotation geometry, or undefined when the provider cannot tell. */
@@ -146,6 +149,47 @@ function insertBounds(geom: InsertGeometry, ctx: BoundsContext): EntityBounds {
   return boxed(out);
 }
 
+/**
+ * HATCH: the fill and pattern stay inside the boundary loops, so the loops' union bounds it.
+ * Arc and ellipse edges count as their whole circle or ellipse and spline edges as their
+ * control points (a NURBS curve lies in their convex hull), which never misses and spares
+ * the clockwise-edge angle conventions.
+ */
+function hatchBounds(geom: HatchGeometry, tol: Tolerance): EntityBounds {
+  let out: Box | undefined;
+  const add = (b: Box) => {
+    out = out ? unionBox(out, b) : b;
+  };
+  for (const loop of geom.loops) {
+    if (loop.polyline && loop.polyline.vertices.length > 0) {
+      const b = polylineBounds(loop.polyline.vertices, loop.polyline.closed, 0, tol);
+      if (b.kind === 'box') add(b.box);
+    }
+    for (const edge of loop.edges ?? []) {
+      if (edge.type === 'line') add(boxOf([edge.start, edge.end]));
+      else if (edge.type === 'arc') {
+        const { center: c, radius: r } = edge;
+        add({ minX: c.x - r, minY: c.y - r, maxX: c.x + r, maxY: c.y + r });
+      } else if (edge.type === 'ellipse') {
+        add(
+          curveBounds(
+            {
+              kind: 'ELLIPSE',
+              center: edge.center,
+              majorAxis: edge.majorAxis,
+              ratio: edge.ratio,
+              startParam: 0,
+              endParam: 2 * Math.PI,
+            },
+            tol,
+          ),
+        );
+      } else if (edge.controlPoints.length > 0) add(boxOf(edge.controlPoints));
+    }
+  }
+  return out ? boxed(out) : EMPTY;
+}
+
 export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBounds {
   switch (geom.kind) {
     case 'LINE':
@@ -188,7 +232,8 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
     case 'MTEXT':
     case 'ATTDEF':
     case 'TOLERANCE':
-    case 'LEADER': {
+    case 'LEADER':
+    case 'MULTILEADER': {
       const b = annotation(geom, ctx);
       return b ? boxed(b) : UNKNOWN;
     }
@@ -202,5 +247,7 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
     }
     case 'INSERT':
       return insertBounds(geom, ctx);
+    case 'HATCH':
+      return hatchBounds(geom, ctx.tol);
   }
 }
