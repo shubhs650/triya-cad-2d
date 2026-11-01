@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30) and 0021–0027 (M1-28) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30) and 0021–0030 (M1-28) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -488,5 +488,56 @@ The DXF tables reader treats group 70 of a BLOCK_RECORD as the table-entry flags
 **Title:** Write the DBCOLOR name (430) once as BOOK$COLOR
 
 `BookColor.name` returns `bookName$colorName`, and `writeBookColor` appends `$bookName` to it again, so the colour name read back is the book name. This writes `color.name` as is. Separately, `new BookColor(name, bookName)` loses its name because the class fields initialise after `super(name)`; that is not changed here.
+
+</details>
+
+### 0028 — DXF TABLESTYLE and CELLSTYLEMAP lose their cell styles on save
+
+- **File:** `third_party/acad-ts-patches/0028-dxf-table-style-cell-styles.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/IO/Templates/CadTableStyleTemplate.ts`
+- **Symptom:** A DXF TABLESTYLE lists its data, title and header cell styles without ids, so `CadTableStyleTemplate` (which assigns them by id) left `dataCellStyle`/`titleCellStyle`/`headerCellStyle` at their defaults and the writer wrote those defaults. The reader also took the 284–289 border visibility flags (1 = visible) as `isInvisible`, and the writer wrote 62 and 91 from other fields (`contentColor`, `valueDataType`) than the reader fills (`color`, `styleClass`). In CELLSTYLEMAP the writer wrote no MARGIN or GRIDFORMAT blocks, and the reader read each GRIDFORMAT into a border object it then dropped, along with its 90/91/40. Spike root R5: 2,790 differences in 62 files. It is also the `TABLESTYLE` 284–289 entry of the M1-32 oracle list.
+- **Fix:** Assign id-less cell styles by position (data, title, header). Read 284–289 as visibility. Write 62 from `color` and 91 from `styleClass`. Keep each GRIDFORMAT border on its style by edge flag, reading 90/91/40 too. Write the MARGIN block and the six GRIDFORMAT blocks in the order AutoCAD writes them.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0028 DXF TABLESTYLE and CELLSTYLEMAP keep their cell styles through a save" (`BLOCKALIGNMENTPARAMETER.dxf`: values checked against the file, then compared after ASCII and binary saves).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Round-trip TABLESTYLE and CELLSTYLEMAP cell styles in DXF
+
+Several DXF table-style defects compound so that a save resets every table style to defaults. The DXF TABLESTYLE body repeats its cell-style groups for data, title and header without ids, but the template assigns them by id, so the three named styles stay at their defaults, and those defaults are what the writer writes. Group codes 284–289 are visibility flags (1 = visible) but are read as `isInvisible`. The writer writes 62 and 91 from `contentColor` and `valueDataType`, while the reader fills `color` and `styleClass`. In CELLSTYLEMAP, the writer omits the MARGIN and GRIDFORMAT blocks, and the reader reads each GRIDFORMAT into a fresh `CellBorder` that it never stores. This patch fixes each of these, so a read-write-read cycle is lossless on AutoCAD-written files.
+
+</details>
+
+### 0029 — DXF writer corrupts xdata displacements and layer names, and zeroes dangling handles
+
+- **File:** `third_party/acad-ts-patches/0029-dxf-xdata-vectors-layers-handles.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** `writeExtendedData` wrote a 1012 displacement as a single group holding an `XYZ`. That broke the record, and the next object's xdata ended up on the previous one: in every `acadsharp/sample_*` DXF, the TEXT after the `DISP_APP` one gained a record. A 1003 layer reference went out as a 1005 handle, and a 1005 naming no object in the drawing went out as 0. Spike root R21 (TEXT xdata): 30 differences in 14 files. It also explains the TEXT the writer drops at handle 917 (M1-31).
+- **Fix:** Write 1012 with `writeVector`. Write 1003 as the layer name. Write 1005 values as read, which is what AutoCAD's save does.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0029 DXF writer writes xdata displacements, layer names and dangling handles as read" (ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Fix DXF xdata writing of 1012 displacements, 1003 layer names and unresolved 1005 handles
+
+`DxfSectionWriterBase.writeExtendedData` passes the `XYZ` of an `ExtendedDataDisplacement` to `write` instead of `writeVector`, which produces a malformed record. It also writes `ExtendedDataLayer` through the generic handle-reference branch, so 1003 layer names become 1005 handles. And it replaces any 1005 handle that does not resolve in the document with 0, although AutoCAD keeps such values on save. This writes displacements as vectors and layer references as their layer name, and keeps 1005 values unchanged.
+
+</details>
+
+### 0030 — DXF writer drops xdata on symbol tables
+
+- **File:** `third_party/acad-ts-patches/0030-dxf-symbol-table-xdata.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:** `_writeTable` wrote the TABLE header without its xdata, so the `ACAD` `DbSaveVer` record AutoCAD puts on the VPORT table was lost. The rest of spike root R21 (VPORT xdata): 11 files.
+- **Fix:** Write the table's xdata after its header groups, where AutoCAD writes it.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0030 DXF writer writes xdata on symbol tables" (ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write xdata on DXF symbol table headers
+
+`DxfTablesSectionWriter._writeTable` writes a table's common data, its `AcDbSymbolTable` count and subclass, but not its xdata, although the reader reads it. AutoCAD writes `1001 ACAD / 1000 DbSaveVer` on the VPORT table, and that record was lost on every save. This writes `table.extendedData` after the header groups.
 
 </details>

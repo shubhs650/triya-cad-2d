@@ -2,7 +2,14 @@
 // in packages/io/test/acad-ts-patches.test.ts; @triya/io has no Node file APIs to read corpus files.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { BlockRecord, CadDictionary } from '@node-projects/acad-ts';
+import type {
+  BlockRecord,
+  CadDictionary,
+  CellBorder,
+  CellStyle,
+  CellStyleMap,
+  TableStyle,
+} from '@node-projects/acad-ts';
 import {
   DwgReader,
   DwgReaderConfiguration,
@@ -335,5 +342,80 @@ describe('acad-ts local patches (corpus-backed)', () => {
     expect(back.units).toBe(units);
     expect(hex(back.preview)).toBe(preview);
     expect(back.flags).toBe(record(doc).flags);
+  });
+
+  it('0028 DXF TABLESTYLE and CELLSTYLEMAP keep their cell styles through a save', () => {
+    // TABLESTYLE: the reader filled cellStyles but never data/title/header, so the writer wrote
+    // the defaults; it also read the 284-289 visibility flags inverted, and wrote 62/91 from
+    // other fields than it reads them into. CELLSTYLEMAP: margins and borders were never written,
+    // and the borders were read into objects nothing kept.
+    const doc = DxfReader.readFromStream(
+      corpusBytes('third-party/acadsharp/dynamic-blocks/BLOCKALIGNMENTPARAMETER.dxf'),
+    );
+    const tableStyle = (d: CadDocument): TableStyle => d.getCadObject(0x87) as TableStyle;
+    const styleMap = (d: CadDocument): CellStyleMap => d.getCadObject(0x26f) as CellStyleMap;
+    const edges = (c: CellStyle): CellBorder[] => [
+      c.topBorder,
+      c.horizontalInsideBorder,
+      c.bottomBorder,
+      c.leftBorder,
+      c.verticalInsideBorder,
+      c.rightBorder,
+    ];
+    const cell = (c: CellStyle): unknown => ({
+      textHeight: c.textHeight,
+      cellAlignment: c.cellAlignment,
+      color: c.color.index,
+      backgroundColor: c.backgroundColor.index,
+      fill: c.isFillColorOn,
+      type: c.cellStyleType,
+      styleClass: c.styleClass,
+      margins: [
+        c.verticalMargin,
+        c.horizontalMargin,
+        c.bottomMargin,
+        c.rightMargin,
+        c.marginHorizontalSpacing,
+        c.marginVerticalSpacing,
+      ],
+      borders: edges(c).map((b) => [
+        b.lineWeight,
+        b.isInvisible,
+        b.color.index,
+        b.doubleLineSpacing,
+        b.propertyOverrideFlags,
+      ]),
+    });
+    const ts = tableStyle(doc);
+    // The file: data 0.18 top centre, title 0.25, header 0.18, every border visible.
+    expect(
+      [ts.dataCellStyle, ts.titleCellStyle, ts.headerCellStyle].map((c) => c.textHeight),
+    ).toEqual([0.18, 0.25, 0.18]);
+    expect(ts.dataCellStyle.cellAlignment).toBe(2);
+    expect(ts.dataCellStyle.backgroundColor.index).toBe(7);
+    expect(edges(ts.dataCellStyle).map((b) => b.isInvisible)).toEqual(Array(6).fill(false));
+    const title = styleMap(doc).cellStyles.find((c) => c.name === '_TITLE')!;
+    expect(cell(title)).toMatchObject({
+      margins: [0.06, 0.06, 0.06, 0.06, 0.18, 0.18],
+      borders: Array(6).fill([-2, false, 0, 0.045, 1]),
+    });
+
+    for (const binary of [false, true]) {
+      const back = dxfRawRoundTrip(doc, binary);
+      expect(tableStyle(back).cellStyles.map(cell), `binary ${binary}`).toEqual(
+        ts.cellStyles.map(cell),
+      );
+      expect(
+        [
+          tableStyle(back).dataCellStyle,
+          tableStyle(back).titleCellStyle,
+          tableStyle(back).headerCellStyle,
+        ].map(cell),
+        `binary ${binary}`,
+      ).toEqual([ts.dataCellStyle, ts.titleCellStyle, ts.headerCellStyle].map(cell));
+      expect(styleMap(back).cellStyles.map(cell), `binary ${binary}`).toEqual(
+        styleMap(doc).cellStyles.map(cell),
+      );
+    }
   });
 });

@@ -437,12 +437,6 @@ function same(kind: Kind, dxf: string, triya: unknown): boolean {
 const ACAD_TS_GAPS: Record<string, string> = {
   'LAYER 347': 'CadLayerTemplate looks up the layer material but never assigns it',
   'STYLE 2': 'nameless shape-file STYLE records are renamed unnamedN by the table collection',
-  ...Object.fromEntries(
-    [284, 285, 286, 287, 288, 289].map((c) => [
-      `TABLESTYLE ${c}`,
-      'acad-ts reads the TABLESTYLE border visibility flags (1 = visible) as isInvisible',
-    ]),
-  ),
   'DIMSTYLE 5':
     'an R12 DIMBLK names a built-in arrowhead without its underscore (BOXBLANK for the _BOXBLANK block); acad-ts leaves it unresolved',
   ...Object.fromEntries(

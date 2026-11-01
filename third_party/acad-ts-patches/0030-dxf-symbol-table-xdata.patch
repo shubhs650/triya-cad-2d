@@ -1,0 +1,13 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index 169ea16..dc3e4f3 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -66,6 +66,8 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+     if (subclass) {
+       this._writer.write(DxfCode.Subclass, subclass);
+     }
++    // The table's own xdata (AutoCAD writes ACAD DbSaveVer on the VPORT table).
++    this.writeExtendedData(table.extendedData);
+ 
+     for (const entry of table) {
+       this._writeEntry(entry, writeFlags);

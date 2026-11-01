@@ -24,9 +24,11 @@ export class CadTableStyleTemplate extends CadTemplate<TableStyle> {
 		const tableStyle = this.cadObject as TableStyle;
 		this.tableCellStyleTemplate?.build(builder);
 
-		for (const item of this.cellStyleTemplates) {
+		// The DXF TABLESTYLE body lists its cell styles without ids, as data, title, header.
+		const legacy = [3, 1, 2];
+		for (const [index, item] of this.cellStyleTemplates.entries()) {
 			item.build(builder);
-			switch (item.cellStyle.id) {
+			switch (item.cellStyle.id || legacy[index]) {
 				case 1: tableStyle.titleCellStyle = item.cellStyle; break;
 				case 2: tableStyle.headerCellStyle = item.cellStyle; break;
 				case 3: tableStyle.dataCellStyle = item.cellStyle; break;

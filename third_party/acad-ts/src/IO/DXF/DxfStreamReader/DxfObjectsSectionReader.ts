@@ -106,7 +106,7 @@ import { Field } from '../../../Objects/Field.js';
 import { FieldList } from '../../../Objects/FieldList.js';
 import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
 import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
-import { TableEntity , CellRange, TableEntityColumn, TableEntityRow, TableEntityCell, CellContent, ContentFormat, CellStyle, CellBorder, CellEdgeFlags, CellAlignmentType, CellStyleType, CellStyleClass} from '../../../Entities/TableEntity.js';
+import { TableEntity , CellRange, TableEntityColumn, TableEntityRow, TableEntityCell, CellContent, ContentFormat, CellStyle, CellBorder, CellEdgeFlags, CellAlignmentType, CellStyleType, CellStyleClass, TableEntityBorderType, TableBorderPropertyFlags} from '../../../Entities/TableEntity.js';
 import { CadValue } from '../../../CadValue.js';
 import { Color } from '../../../Color.js';
 import { LineWeightType } from '../../../Types/LineWeightType.js';
@@ -1594,6 +1594,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           if (this._reader.valueAsString.toUpperCase() === 'GRIDFORMAT') {
             const border = new CellBorder(currBorder);
             this._readGridFormat(template, border);
+            // Keep the border on the style: it was read into an object nothing referenced.
+            switch (currBorder) {
+              case CellEdgeFlags.Top: style.topBorder = border; break;
+              case CellEdgeFlags.Right: style.rightBorder = border; break;
+              case CellEdgeFlags.Bottom: style.bottomBorder = border; break;
+              case CellEdgeFlags.Left: style.leftBorder = border; break;
+              case CellEdgeFlags.InsideVertical: style.verticalInsideBorder = border; break;
+              case CellEdgeFlags.InsideHorizontal: style.horizontalInsideBorder = border; break;
+            }
           }
           break;
         case 309:
@@ -1629,6 +1638,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           break;
         case 92:
           border.lineWeight = this._reader.valueAsInt as LineWeightType;
+          break;
+        case 90:
+          border.type = this._reader.valueAsInt as TableEntityBorderType;
+          break;
+        case 91:
+          border.propertyOverrideFlags = this._reader.valueAsInt as TableBorderPropertyFlags;
+          break;
+        case 40:
+          border.doubleLineSpacing = this._reader.valueAsDouble;
           break;
         case 93:
           border.isInvisible = this._reader.valueAsBool;
@@ -1903,23 +1921,24 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
       case 279:
         if (cellStyle) cellStyle.rightBorder.lineWeight = this._reader.valueAsInt as LineWeightType;
         return true;
+      // 284-289 are 1 when the border is visible (AutoCAD DXF reference, TABLESTYLE).
       case 284:
-        if (cellStyle) cellStyle.topBorder.isInvisible = this._reader.valueAsBool;
+        if (cellStyle) cellStyle.topBorder.isInvisible = !this._reader.valueAsBool;
         return true;
       case 285:
-        if (cellStyle) cellStyle.horizontalInsideBorder.isInvisible = this._reader.valueAsBool;
+        if (cellStyle) cellStyle.horizontalInsideBorder.isInvisible = !this._reader.valueAsBool;
         return true;
       case 286:
-        if (cellStyle) cellStyle.bottomBorder.isInvisible = this._reader.valueAsBool;
+        if (cellStyle) cellStyle.bottomBorder.isInvisible = !this._reader.valueAsBool;
         return true;
       case 287:
-        if (cellStyle) cellStyle.leftBorder.isInvisible = this._reader.valueAsBool;
+        if (cellStyle) cellStyle.leftBorder.isInvisible = !this._reader.valueAsBool;
         return true;
       case 288:
-        if (cellStyle) cellStyle.verticalInsideBorder.isInvisible = this._reader.valueAsBool;
+        if (cellStyle) cellStyle.verticalInsideBorder.isInvisible = !this._reader.valueAsBool;
         return true;
       case 289:
-        if (cellStyle) cellStyle.rightBorder.isInvisible = this._reader.valueAsBool;
+        if (cellStyle) cellStyle.rightBorder.isInvisible = !this._reader.valueAsBool;
         return true;
       case 64:
         if (cellStyle) cellStyle.topBorder.color = new Color(this._reader.valueAsShort);
