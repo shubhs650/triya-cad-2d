@@ -1,0 +1,1 @@
+- M1-31 part 4 (#70): DXF saves keep `ACAD_TABLE` entities, their cell value formats, round-trip XRECORDs and `TABLECONTENT` (patches 0066–0070, DEC-042); round trip 7,488 → 6,133 differences.

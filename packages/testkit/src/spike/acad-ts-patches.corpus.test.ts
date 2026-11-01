@@ -1455,4 +1455,137 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(standard(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toBe('2B');
     }
   });
+
+  // The acadsharp samples hold the same two tables in every version: R2000/R2004 cells carry
+  // their override flags in 177 and their text in 1, R2007+ cells in 91 and a CELL_VALUE block.
+  const tableSamples = ['1015', '1018', '1021', '1024', '1027', '1032'].map(
+    (v) => `third-party/acadsharp/sample_AC${v}_ascii.dxf`,
+  );
+  const [tablesR2000, tablesR2018] = [tableSamples[0]!, tableSamples[5]!];
+  const tables = (d: CadDocument): TableEntity[] =>
+    [...d.getCadObjects()].filter((o): o is TableEntity => o instanceof TableEntity);
+
+  it('0066 DXF ACAD_TABLE reader keeps cell override flags and the table-wide overrides', () => {
+    for (const file of [tablesR2000, tablesR2018]) {
+      const table = tables(readDxfRaw(corpusBytes(file))).find((t) => t.handle === 0x528)!;
+      // The table-wide overrides follow 93 and end at the first row height; 41 is the vertical
+      // cell margin there, not the block reference's X scale.
+      expect(
+        table.tableOverrideDxfCodes.map((c) => c.code),
+        file,
+      ).toEqual([93, 94, 95, 96, 40, 41, 140, 140, 140]);
+      expect(table.xScale, file).toBe(1);
+      const cell = table.getCell(4, 0);
+      expect(cell.overrideFlags, file).toBe(file === tablesR2000 ? 26223 : 419439);
+      expect(cell.styleOverride.cellAlignment, file).toBe(5);
+      expect(cell.styleOverride.backgroundColor.index, file).toBe(165);
+    }
+  });
+
+  it('0067 DXF values keep their unit, format and formatted value; empty ones stay empty', () => {
+    const values = (d: CadDocument): unknown =>
+      tables(d).flatMap((t) =>
+        t.rows.flatMap((r) =>
+          r.cells.flatMap((c) =>
+            c.contents.map(({ cadValue: v }) => [
+              v.flags,
+              v.valueType,
+              v.value,
+              v.units,
+              v.format,
+              v.formattedValue,
+            ]),
+          ),
+        ),
+      );
+    const doc = readDxfRaw(corpusBytes(tablesR2018));
+    for (const binary of [false, true]) {
+      expect(values(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual(values(doc));
+    }
+    // An unknown-typed value was written as 91=0, which the reader cannot set, so the FIELD
+    // holding it was lost.
+    const uncommon = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/uncommon.dxf'));
+    expect(uncommon.getCadObject(0x5f8)?.objectName).toBe('FIELD');
+    expect(dxfRawRoundTrip(uncommon, false).getCadObject(0x5f8)?.objectName).toBe('FIELD');
+  });
+
+  it('0068 DXF writer writes ACAD_TABLE entities', () => {
+    // The writer had no ACAD_TABLE branch, so tables went out as bare INSERTs and were lost.
+    const project = (d: CadDocument): unknown =>
+      tables(d).map((t) => ({
+        handle: handleHex(t),
+        block: t.block?.name,
+        style: handleHex(t.style as CadObject | null),
+        insertPoint: t.insertPoint,
+        overrides: t.tableOverrideDxfCodes.map(({ code, value }) => [code, String(value)]),
+        rows: t.rows.map((r) => r.height),
+        columns: t.columns.map((c) => c.width),
+        cells: t.rows.flatMap((r) =>
+          r.cells.map((c) => [
+            c.type,
+            c.edgeFlags,
+            c.mergedValue,
+            c.overrideFlags,
+            c.virtualEdgeFlag,
+            c.styleOverride.textHeight,
+            c.styleOverride.cellAlignment,
+            c.styleOverride.topBorder.lineWeight,
+            c.styleOverride.leftBorder.color.index,
+            c.contents.map((x) => x.cadValue.value),
+          ]),
+        ),
+      }));
+    for (const file of tableSamples) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(tables(doc).length, file).toBeGreaterThan(0);
+      for (const binary of [false, true]) {
+        expect(project(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(
+          project(doc),
+        );
+      }
+    }
+  });
+
+  it('0069 DXF XRECORDs keep caret-escaped strings and unresolved handles', () => {
+    const entries = (d: CadDocument, handle: number): unknown =>
+      (d.getCadObject(handle) as XRecord).entries.map((e) => [
+        e.code,
+        e.value instanceof Object && 'handle' in e.value
+          ? handleHex(e.value as CadObject)
+          : e.value,
+      ]);
+    const doc = readDxfRaw(corpusBytes(tablesR2000));
+    // 0x14FD holds a string with a line break; 0x148C a handle to an object acad-ts never reads.
+    expect(String(entries(doc, 0x14fd))).toContain('\n');
+    for (const binary of [false, true]) {
+      const back = dxfRawRoundTrip(doc, binary);
+      for (const handle of [0x14fd, 0x148c]) {
+        expect(entries(back, handle), `${handle.toString(16)} binary ${binary}`).toEqual(
+          entries(doc, handle),
+        );
+      }
+    }
+  });
+
+  it('0070 DXF TABLECONTENT objects are kept as read and written back raw (DEC-040)', () => {
+    // The table's round-trip XRECORD owns a TABLECONTENT, which the DXF writer cannot write.
+    const raw = (d: CadDocument, handle: number): unknown =>
+      (
+        d.getCadObject(handle) as unknown as { rawDxfCodes: { code: number; value: unknown }[] }
+      )?.rawDxfCodes?.map(({ code, value }) => [
+        code,
+        value instanceof Uint8Array ? [...value] : value,
+      ]);
+    const doc = readDxfRaw(corpusBytes(tablesR2018));
+    for (const handle of [0x747, 0x12d7]) {
+      expect(doc.getCadObject(handle)?.objectName).toBe('TABLECONTENT');
+      expect(raw(doc, handle)).toBeDefined();
+      for (const binary of [false, true]) {
+        expect(dxfRawRoundTrip(doc, binary).getCadObject(handle)?.objectName).toBe('TABLECONTENT');
+        expect(raw(dxfRawRoundTrip(doc, binary), handle), `binary ${binary}`).toEqual(
+          raw(doc, handle),
+        );
+      }
+    }
+  });
 });

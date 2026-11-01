@@ -1,0 +1,124 @@
+diff --git a/src/Entities/TableEntity.ts b/src/Entities/TableEntity.ts
+index c4feefd..71648eb 100644
+--- a/src/Entities/TableEntity.ts
++++ b/src/Entities/TableEntity.ts
+@@ -14,6 +14,7 @@ import type { AttributeDefinition } from './AttributeDefinition.js';
+ import type { BlockRecord } from '../Tables/BlockRecord.js';
+ import type { Field } from '../Objects/Field.js';
+ import type { LineType } from '../Tables/LineType.js';
++import type { DxfRawCode } from '../Objects/RawObjectData.js';
+ 
+ // === Enums ===
+ 
+@@ -449,6 +450,12 @@ export class TableEntity extends Insert {
+ 	version: number = 0;
+ 	hasBreakData: boolean = false;
+ 
++	/**
++	 * DXF only: the table-wide override group codes (93 to the first row height) as read. acad-ts
++	 * models none of these overrides, so the DXF writer writes them back as read (DEC-043).
++	 */
++	tableOverrideDxfCodes: DxfRawCode[] = [];
++
+ 	breakRowRanges: BreakRowRange[] = [];
+ 
+ 	get content(): TableContent { return this._content; }
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 4c2c030..3ba5d86 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -569,8 +569,35 @@ export abstract class DxfSectionReaderBase {
+     const mapName = !subclass ? template.cadObject.subclassMarker : subclass;
+     const tmp = template as CadTableEntityTemplate;
+     const table = tmp.cadObject as TableEntity;
++    const code = this._reader.code as number;
+ 
+-    switch (this._reader.code as number) {
++    if (tmp.currentCellTemplate == null && this.currentSubclass?.toUpperCase() === DxfSubclassMarker.tableEntity.toUpperCase()) {
++      // The table-wide overrides run from their flag word (93) to the first row height. acad-ts
++      // models none of them, so keep them as read for the DXF writer (DEC-043); the four flag
++      // words (93-96) are also assigned to their fields below.
++      if (code === 93) {
++        tmp.readingTableOverrides = true;
++      } else if (code === 141 || code === 142 || code === 171) {
++        tmp.readingTableOverrides = false;
++      }
++      if (tmp.readingTableOverrides) {
++        table.tableOverrideDxfCodes.push({ code, value: this._reader.value });
++        if (code < 93 || code > 96) {
++          return true;
++        }
++      }
++    }
++
++    if (tmp.currentCellTemplate != null && (code === 91 || code === 92)) {
++      // In a cell, 91 is the override flag word (AutoCAD 2007 and later) and 92 the extended
++      // cell flags, which acad-ts does not keep. Neither is the table's row or column count.
++      if (code === 91) {
++        tmp.currentCell.overrideFlags = this._reader.valueAsInt;
++      }
++      return true;
++    }
++
++    switch (code) {
+       case 1: {
+         let content: CellContent;
+         if (tmp.currentCell.content === null) {
+@@ -592,7 +619,13 @@ export abstract class DxfSectionReaderBase {
+       }
+       case 2: {
+         if (this.currentSubclass !== null && this.currentSubclass.toUpperCase() === DxfSubclassMarker.tableEntity.toUpperCase()) {
+-          const content = tmp.currentCell.content!;
++          // Text longer than 250 characters comes as 2 chunks before the final 1.
++          let content = tmp.currentCell.content;
++          if (content === null) {
++            content = new CellContent();
++            content.cadValue.valueType = CadValueType.String;
++            tmp.currentCell.contents.push(content);
++          }
+           if (content.cadValue.value === null) {
+             content.cadValue.setValue(this._reader.valueAsString, CadValueType.String);
+           } else {
+@@ -606,6 +639,8 @@ export abstract class DxfSectionReaderBase {
+         return true;
+       }
+       case 177:
++        // The cell override flags before AutoCAD 2007, a 16-bit word.
++        tmp.currentCell.overrideFlags = this._reader.valueAsUShort;
+         return true;
+       case 279:
+         tmp.currentCell.styleOverride.topBorder.lineWeight = this._reader.valueAsShort as LineWeightType;
+@@ -667,14 +702,18 @@ export abstract class DxfSectionReaderBase {
+         return true;
+       }
+       case 144:
++        // Block scale of a block cell (the text height is 140).
+         if (tmp.currentCellTemplate != null) {
+-          tmp.currentCellTemplate.formatTextHeight = this._reader.valueAsDouble;
++          tmp.currentCell.blockScale = this._reader.valueAsDouble;
+         }
+         return true;
+       case 145:
+         tmp.currentCell.rotation = this._reader.valueAsDouble;
+         return true;
+       case 170:
++        if (tmp.currentCellTemplate != null) {
++          tmp.currentCell.styleOverride.cellAlignment = this._reader.valueAsShort;
++        }
+         return true;
+       case 171:
+         tmp.createCell(this._reader.valueAsInt as CellType);
+diff --git a/src/IO/Templates/CadTableEntityTemplate.ts b/src/IO/Templates/CadTableEntityTemplate.ts
+index 7cec3a1..83251c4 100644
+--- a/src/IO/Templates/CadTableEntityTemplate.ts
++++ b/src/IO/Templates/CadTableEntityTemplate.ts
+@@ -24,6 +24,9 @@ export class CadTableEntityTemplate extends CadInsertTemplate {
+ 
+ 	horizontalMargin: number | null = null;
+ 
++	/** True from the table-wide override flag (93) until the first row height (141). */
++	readingTableOverrides: boolean = false;
++
+ 	nullHandle: number | null = null;
+ 
+ 	styleHandle: number | null = null;

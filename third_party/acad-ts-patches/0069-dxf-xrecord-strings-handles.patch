@@ -1,0 +1,30 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index cc2a74a..4551050 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -2246,7 +2246,8 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           template.addHandleReference(this._reader.code, this._reader.valueAsHandle);
+           break;
+         default:
+-          xRecord.createEntry(this._reader.code, this._reader.value);
++          // Strings decoded (^J is a line break), as the writer escapes them again.
++          xRecord.createEntry(this._reader.code, typeof this._reader.value === 'string' ? this._reader.valueAsString : this._reader.value);
+           break;
+       }
+ 
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 414fe2f..7b13ecd 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -675,6 +675,11 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+         case GroupCodeValueType.Handle:
+         case GroupCodeValueType.ObjectId:
+         case GroupCodeValueType.ExtendedDataHandle: {
++          // A handle that resolved to no object on read stays a number: write it as read.
++          if (typeof e.value === 'number') {
++            this._writer.write(e.code, e.value);
++            break;
++          }
+           const obj = e.value as IHandledCadObject;
+           if (obj == null || typeof obj.handle !== 'number') continue;
+           this._writer.write(e.code, obj.handle);

@@ -14,6 +14,7 @@ import type { AttributeDefinition } from './AttributeDefinition.js';
 import type { BlockRecord } from '../Tables/BlockRecord.js';
 import type { Field } from '../Objects/Field.js';
 import type { LineType } from '../Tables/LineType.js';
+import type { DxfRawCode } from '../Objects/RawObjectData.js';
 
 // === Enums ===
 
@@ -448,6 +449,12 @@ export class TableEntity extends Insert {
 
 	version: number = 0;
 	hasBreakData: boolean = false;
+
+	/**
+	 * DXF only: the table-wide override group codes (93 to the first row height) as read. acad-ts
+	 * models none of these overrides, so the DXF writer writes them back as read (DEC-043).
+	 */
+	tableOverrideDxfCodes: DxfRawCode[] = [];
 
 	breakRowRanges: BreakRowRange[] = [];
 

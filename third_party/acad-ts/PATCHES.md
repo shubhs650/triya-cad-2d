@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0065 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0070 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1298,5 +1298,114 @@ AutoCAD writes the model and paper space blocks to R12 DXF files as empty `$MODE
 **Title:** Keep DIMSTYLE handles in R12 DXF
 
 R12 DIMSTYLE entries carry their handle in group 105, which the reader reads, but the R12 writer writes no handle for them, so a reopened file gives every dimension style a new handle. This writes 105 for R12 dimension styles (raw, since the R12 code filter drops codes from 80 up).
+
+</details>
+
+### 0066 — DXF ACAD_TABLE reader loses the override flags and misreads the table-wide overrides
+
+- **File:** `third_party/acad-ts-patches/0066-dxf-table-read-overrides.patch`
+- **Touches:** `src/Entities/TableEntity.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/Templates/CadTableEntityTemplate.ts`
+- **Symptom:**
+  - The table-wide overrides (93–96 and the codes after them, up to the first row height) were read as block reference and cell fields: 41, the vertical cell margin there, became the table's X scale.
+  - A cell's override flags (177 before R2007, 91 from R2007) were never read, so every cell override after them was meaningless on a save.
+  - 144 (block scale) was read as the text height, 170 (alignment) was not read, and a text whose 2 chunks come before 1 lost them.
+  - Corpus: the 12 acadsharp `sample_AC10xx` DXFs.
+- **Fix:**
+  - The table-wide overrides are kept as read in `tableOverrideDxfCodes` (DEC-043), because acad-ts models none of them.
+  - Override flags, block scale and alignment are read into their fields, and chunked cell text is joined in either order.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0066 DXF ACAD_TABLE reader keeps cell override flags and the table-wide overrides".
+  - Table 0x528 of the R2000 and R2018 samples keeps its override codes and X scale 1. Cell (4, 0) keeps its flags, alignment 5 and background colour 165.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read ACAD_TABLE override flags and table-wide overrides from DXF
+
+The DXF table reader reads the table-wide override groups (93–96 and the values after them) into block-reference and cell fields, so group 41 (a cell margin) becomes the table's X scale. It also ignores cell override flags (177, and 91 from R2007), reads 144 as the text height instead of the block scale, and drops 170. This keeps the table-wide overrides as read on `TableEntity.tableOverrideDxfCodes`, and reads the cell override flags, block scale, alignment and chunked text into their fields.
+
+</details>
+
+### 0067 — DXF table values lose their format, and empty values break the reader
+
+- **File:** `third_party/acad-ts-patches/0067-dxf-cad-value-format.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:**
+  - `writeCadValue` wrote an empty or unknown-typed value as 91=0, which `setValue` rejects on read. The object holding the value was lost: FIELD 0x5F8 in ezdxf `uncommon.dxf`.
+  - From R2007 the writer left out the units (94), format (300) and formatted value (302).
+  - The reader lost string chunks (2) that come before the last chunk (1).
+- **Fix:** an empty or unknown value writes no payload; R2007+ writes 94, 300 and 302; chunked strings are joined in either order.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0067 DXF values keep their unit, format and formatted value; empty ones stay empty".
+  - Every cell value of the R2018 sample keeps its flags, type, value, units, format and formatted value through ASCII and binary saves, and FIELD 0x5F8 of `uncommon.dxf` survives a save.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep CadValue format data in DXF and stop writing an unreadable empty value
+
+`writeCadValue` writes an empty value as type 91 with value 0, which the reader cannot set, so the FIELD or table holding it fails to load from the saved file. It also omits groups 94, 300 and 302 (units, format, formatted value) from R2007 on, and the reader drops string chunks that come before group 1. This writes no payload for an empty value, writes the three format groups, and joins chunks in either order.
+
+</details>
+
+### 0068 — DXF writer has no ACAD_TABLE writer
+
+- **File:** `third_party/acad-ts-patches/0068-dxf-write-acad-table.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:**
+  - `TableEntity` extends `Insert`, so the DXF writer wrote every table as a bare INSERT under the ACAD_TABLE name, and the reader could not read it back as a table.
+  - Every table was lost on a DXF save, with its extension dictionary, round-trip XRECORD and TABLECONTENT, and the TABLESTYLE reactors pointing at it.
+  - Corpus: 24 ACAD_TABLE handles in the 12 acadsharp `sample_AC10xx` DXFs.
+- **Fix:** write ACAD_TABLE as AutoCAD does (DXF reference, ACAD_TABLE).
+  - The block reference, then the table header (version, style, block, direction, flags, size).
+  - The table-wide overrides as read (0066), the row heights and column widths.
+  - Every cell: type, flags, merges, overrides behind their flag word, borders, and its text (before R2007) or CELL_VALUE (R2007+).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0068 DXF writer writes ACAD_TABLE entities".
+  - Every table of the six ASCII acadsharp samples (R2000 to R2018) keeps its block, style, insertion point, overrides, rows, columns and cells through ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write ACAD_TABLE entities to DXF
+
+The DXF writer has no branch for `TableEntity`, so a table is written as an INSERT and is lost when the file is read again. This adds a table writer that follows the DXF reference: block reference, table header, table-wide overrides as read, row heights, column widths and each cell (overrides behind the cell's flag word, borders, text before R2007 and a CELL_VALUE block from R2007).
+
+</details>
+
+### 0069 — DXF XRECORD strings are escaped twice and unresolved handles dropped
+
+- **File:** `third_party/acad-ts-patches/0069-dxf-xrecord-strings-handles.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:**
+  - XRECORD string entries kept their caret escapes on read, and the writer escaped them again, so a `^J` line break came back as the text `^ J`.
+  - A handle entry that resolved to no object on read stays a number, and the writer skipped it. The table round-trip XRECORDs point at objects acad-ts never reads.
+  - Corpus: XRECORDs 0x14FD and 0x148C in the acadsharp R2000 sample, among others.
+- **Fix:** decode strings on read, as the writer escapes them; write an unresolved handle as read.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0069 DXF XRECORDs keep caret-escaped strings and unresolved handles".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep XRECORD strings and unresolved handles through a DXF save
+
+XRECORD string entries are stored with their caret escapes and escaped again on write, so line breaks change on every save. Handle entries whose target was not found on read are stored as numbers and then skipped by the writer. This decodes strings on read and writes unresolved handles back as read.
+
+</details>
+
+### 0070 — DXF writer skips TABLECONTENT
+
+- **File:** `third_party/acad-ts-patches/0070-dxf-table-content-raw.patch`
+- **Touches:** `src/Objects/TableContent.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:**
+  - The DXF writer has no field writer for `TableContent` and skips it. Its DXF read is lossy as well.
+  - The TABLECONTENT under each table's `ACAD_ROUNDTRIP_2008_TABLE_ENTITY` XRECORD was lost on every DXF save (20 handles in the acadsharp samples).
+- **Fix:** under DEC-040, TABLECONTENT joins MATERIAL, VISUALSTYLE and ACAD_PROXY_OBJECT: kept as read and written back raw with `keepRawDxfPassthroughObjects`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0070 DXF TABLECONTENT objects are kept as read and written back raw (DEC-040)".
+  - TABLECONTENT 0x747 and 0x12D7 of the R2018 sample keep their group codes through ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep TABLECONTENT objects through DXF read and write
+
+The DXF writer skips `TableContent`, so the table content under a table's round-trip XRECORD is missing from a saved DXF. Under `keepRawDxfPassthroughObjects` this records its group codes on read and writes them back unchanged, rewriting only the handle and owner, as for MATERIAL and VISUALSTYLE.
 
 </details>

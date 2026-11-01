@@ -1,0 +1,63 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 4c2c030..3ba5d86 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -723,14 +762,24 @@ export abstract class DxfSectionReaderBase {
+ 
+     const template = new CadValueTemplate(value);
+     const map = DxfClassMap.create(value.constructor, 'CadValue');
++    // A string longer than 250 characters comes as 2 chunks before the final 1; a 2 after the 1
++    // is appended to it.
++    let chunks: string | null = null;
++    let seenText = false;
+ 
+     while (this._reader.code !== 304) {
+       switch (this._reader.code as number) {
+         case 1:
+-          value.setValue(this._reader.valueAsString);
++          value.setValue((chunks ?? '') + this._reader.valueAsString);
++          chunks = null;
++          seenText = true;
+           break;
+         case 2:
+-          value.setValue((value.value as string) + this._reader.valueAsString);
++          if (seenText) {
++            value.setValue((value.value as string) + this._reader.valueAsString);
++          } else {
++            chunks = (chunks ?? '') + this._reader.valueAsString;
++          }
+           break;
+         case 11: {
+           const xyz = new XYZ();
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 8e55f5a..b9b9a93 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -147,9 +148,11 @@ export abstract class DxfSectionWriterBase {
+     this._writer.write(93, value.flags);
+     this._writer.write(90, value.valueType as number);
+ 
+-    switch (value.valueType) {
++    // An empty or unknown value, or one the reader kept no data for (a date's binary chunk), has
++    // no data to write; writing a placeholder would read back as a value.
++    const valueType = value.isEmpty || value.value == null ? CadValueType.Unknown : value.valueType;
++    switch (valueType) {
+       case CadValueType.Unknown:
+-        this._writer.write(91, 0);
+         break;
+       case CadValueType.Double:
+         this._writer.write(140, Number(value.value));
+@@ -181,6 +184,13 @@ export abstract class DxfSectionWriterBase {
+         break;
+     }
+ 
++    if (this.version >= ACadVersion.AC1021) {
++      // Unit type, format string and formatted value (AutoCAD 2007 and later).
++      this._writer.write(94, value.units as number);
++      this._writer.write(300, value.format ?? '');
++      this._writer.write(302, value.formattedValue ?? '');
++    }
++
+     this._writer.write(304, DxfFileToken.valueEnd);
+   }
+ 
