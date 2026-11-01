@@ -122,40 +122,43 @@ export function basisFunctions(
   return ders;
 }
 
-/** Point and first derivative at u, for rational and non-rational splines (A4.2). */
-function evaluate(s: Spline, u: number): { point: Vec2; derivative: Vec2 } {
+/**
+ * Point and derivatives up to `order` (≤ 2) at u, rational or not (A4.2): with the
+ * homogeneous curve A(u) = Σ N·w·P and weight w(u) = Σ N·w, C = A/w,
+ * C' = (A' − w'C)/w and C'' = (A'' − 2w'C' − w''C)/w.
+ */
+export function splineDerivatives(s: Spline, u: number, order: 1 | 2): Vec2[] {
   const p = s.degree;
   const n = s.controlPoints.length - 1;
   const span = findSpan(n, p, u, s.knots);
-  const N = basisFunctions(span, u, p, s.knots, 1);
-  let x = 0;
-  let y = 0;
-  let w = 0;
-  let dx = 0;
-  let dy = 0;
-  let dw = 0;
+  const N = basisFunctions(span, u, p, s.knots, order);
+  const A = Array.from({ length: order + 1 }, () => ({ x: 0, y: 0, w: 0 }));
   for (let j = 0; j <= p; j++) {
     const i = span - p + j;
     const cp = s.controlPoints[i]!;
     const wi = s.weights ? s.weights[i]! : 1;
-    const n0 = N[0]![j]! * wi;
-    const n1 = N[1]![j]! * wi;
-    x += n0 * cp.x;
-    y += n0 * cp.y;
-    w += n0;
-    dx += n1 * cp.x;
-    dy += n1 * cp.y;
-    dw += n1;
+    for (let k = 0; k <= order; k++) {
+      const b = N[k]![j]! * wi;
+      A[k]!.x += b * cp.x;
+      A[k]!.y += b * cp.y;
+      A[k]!.w += b;
+    }
   }
-  // Quotient rule on the homogeneous curve: C = A/w, C' = (A' − w'C)/w.
-  const point = { x: x / w, y: y / w };
-  return { point, derivative: { x: (dx - dw * point.x) / w, y: (dy - dw * point.y) / w } };
+  const [a0, a1, a2] = A;
+  const c0 = { x: a0!.x / a0!.w, y: a0!.y / a0!.w };
+  const c1 = { x: (a1!.x - a1!.w * c0.x) / a0!.w, y: (a1!.y - a1!.w * c0.y) / a0!.w };
+  if (order === 1) return [c0, c1];
+  const c2 = {
+    x: (a2!.x - 2 * a1!.w * c1.x - a2!.w * c0.x) / a0!.w,
+    y: (a2!.y - 2 * a1!.w * c1.y - a2!.w * c0.y) / a0!.w,
+  };
+  return [c0, c1, c2];
 }
 
 export function splinePoint(s: Spline, u: number): Vec2 {
-  return evaluate(s, u).point;
+  return splineDerivatives(s, u, 1)[0]!;
 }
 
 export function splineDerivative(s: Spline, u: number): Vec2 {
-  return evaluate(s, u).derivative;
+  return splineDerivatives(s, u, 1)[1]!;
 }
