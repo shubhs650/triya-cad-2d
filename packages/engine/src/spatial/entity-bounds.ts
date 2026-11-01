@@ -21,6 +21,7 @@ import type {
   InsertAttribute,
   InsertGeometry,
   LeaderGeometry,
+  MLineGeometry,
   MTextGeometry,
   MultiLeaderGeometry,
   PolylineVertex,
@@ -209,6 +210,30 @@ function imageBounds(geom: ImageGeometry): EntityBounds {
   return boxed(boxOf(pts));
 }
 
+/**
+ * Each element of a multiline runs through vertex + miter × its first parameter, which the
+ * file already states in drawing units (scale applied). Round or angled end caps join the
+ * outermost elements and reach at most half their spread past an end, so the box grows by
+ * the widest half-spread.
+ */
+function mlineBounds(geom: MLineGeometry): EntityBounds {
+  if (geom.vertices.length === 0) return EMPTY;
+  const pts: Vec2[] = [];
+  let half = 0;
+  for (const v of geom.vertices) {
+    pts.push(v.position);
+    const offsets = v.elements.map((e) => e.parameters[0] ?? 0);
+    for (const d of offsets)
+      pts.push({ x: v.position.x + v.miter.x * d, y: v.position.y + v.miter.y * d });
+    if (offsets.length > 0) {
+      // The miter is a unit vector in the file; its length scales the spread all the same.
+      const len = Math.hypot(v.miter.x, v.miter.y);
+      half = Math.max(half, ((Math.max(...offsets) - Math.min(...offsets)) * len) / 2);
+    }
+  }
+  return boxed(pad(boxOf(pts), half));
+}
+
 /** The PDF's own extent is not in the drawing; only a clip boundary bounds an underlay. */
 function underlayBounds(geom: UnderlayGeometry): EntityBounds {
   if (geom.clip.length === 0) return UNKNOWN;
@@ -294,6 +319,15 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
       return imageBounds(geom);
     case 'PDFUNDERLAY':
       return underlayBounds(geom);
+    case 'MLINE':
+      return mlineBounds(geom);
+    case 'VIEWPORT': {
+      // The frame on the sheet; what it shows of model space is drawn inside it.
+      const hw = Math.abs(geom.width) / 2;
+      const hh = Math.abs(geom.height) / 2;
+      const { x, y } = geom.center;
+      return boxed({ minX: x - hw, minY: y - hh, maxX: x + hw, maxY: y + hh });
+    }
     case 'ACAD_TABLE': {
       // The grid starts at the insertion point and may flow up or down along any direction,
       // so a circle of the grid's diagonal around that point holds it; cell text wraps inside

@@ -602,6 +602,76 @@ export interface UnderlayGeometry extends PlanarProps {
   readonly clip: readonly Vec2[];
 }
 
+/** One vertex of an MLINE (DXF 11–13 and its element parameters). Points are WCS. */
+export interface MLineVertex {
+  readonly position: Vec2;
+  /** DXF 12: the direction of the segment that starts here. */
+  readonly direction: Vec2;
+  /** DXF 13: the miter direction. */
+  readonly miter: Vec2;
+  /** Per style element (DXF 74/41 and 75/42): its parameters and its area-fill parameters. */
+  readonly elements: readonly {
+    readonly parameters: readonly number[];
+    readonly fillParameters: readonly number[];
+  }[];
+}
+
+/** MLINE (DXF AcDbMline). All points are WCS, so the plan view drops Z; the plane must be ±Z. */
+export interface MLineGeometry extends PlanarProps {
+  readonly kind: 'MLINE';
+  /** MLINESTYLE handle (DXF 340). */
+  readonly style?: Handle;
+  /** DXF 40. */
+  readonly scale: number;
+  /** DXF 70: 0 top, 1 zero, 2 bottom. */
+  readonly justification: number;
+  /** DXF 71: 1 has vertices, 2 closed, 4 suppress start caps, 8 suppress end caps. */
+  readonly flags: number;
+  /** DXF 10. */
+  readonly start: Vec2;
+  readonly vertices: readonly MLineVertex[];
+}
+
+/**
+ * VIEWPORT (DXF AcDbViewport). Its frame lives in its layout's paper space; the view it shows
+ * is stated in model space (view direction, target, twist) and display coordinates (center).
+ */
+export interface ViewportGeometry {
+  readonly kind: 'VIEWPORT';
+  /** DXF 10 / 40 / 41: the frame in paper space. */
+  readonly center: Vec2;
+  readonly width: number;
+  readonly height: number;
+  /** DXF 69: 1 is the layout's own paper-space view. */
+  readonly id: number;
+  /** DXF 68: 0 off, −1 on but off screen, otherwise on and its stacking order. */
+  readonly status: number;
+  /** DXF 90: viewport status bit flags. */
+  readonly flags: number;
+  /** DXF 12 (display coordinates) / 45: the view's center and height. */
+  readonly viewCenter: Vec2;
+  readonly viewHeight: number;
+  /** DXF 16 / 17: view direction from the target, and the target, in WCS. */
+  readonly viewDirection: Vec3;
+  readonly viewTarget: Vec3;
+  /** DXF 51, radians. */
+  readonly twist: number;
+  /** DXF 42 / 43 / 44. */
+  readonly lensLength: number;
+  readonly frontClip: number;
+  readonly backClip: number;
+  /** DXF 340: the entity that clips the viewport, when it is not rectangular. */
+  readonly clipBoundary?: Handle;
+  /** DXF 341: LAYER handles frozen in this viewport. */
+  readonly frozenLayers: readonly Handle[];
+  /** DXF 1. */
+  readonly plotStyleSheet: string;
+  /** DXF 281. */
+  readonly renderMode: number;
+  /** DXF 348. */
+  readonly visualStyle?: Handle;
+}
+
 /** One cell of an ACAD_TABLE, in row-major order. */
 export interface TableCell {
   /** DXF 171: 1 text, 2 block. */
@@ -754,6 +824,8 @@ export type EntityGeometry =
   | TableGeometry
   | ImageGeometry
   | UnderlayGeometry
+  | MLineGeometry
+  | ViewportGeometry
   | HatchGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */

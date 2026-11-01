@@ -40,9 +40,9 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | WIPEOUT | ✓ (acad-ts skips the clip type 71; the mapper infers a polygon from more than two vertices, M1-32) | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation); cell formats not mapped yet; ezdxf-written tables dropped by acad-ts (M1-32) | | | | |
-| VIEWPORT | | | | | |
+| VIEWPORT | ✓ frame, view, clip boundary, frozen layers, plot style and render mode (DXF status 68, clip boundary 340, a 0 viewport ID and the R12 MVIEW view lost by acad-ts, M1-32; DWG reads 68 and 340) | | | | |
 | TOLERANCE | ✓ (caret codes left encoded by acad-ts, M1-32) | | | | |
-| MLINE (+ MLINESTYLE) | | | | | |
+| MLINE (+ MLINESTYLE) | ✓ MLINE (style handle, scale, justification, flags, vertices with element parameters); MLINESTYLE not yet | | | | |
 | REGION *(render from proxy graphics / boundary)* | | | — | | |
 | PDFUNDERLAY / DWFUNDERLAY / DGNUNDERLAY (+ definitions) | ✓ PDFUNDERLAY; DWF/DGN have no acad-ts reader and no corpus file (M1-32) | | | | |
 | OLE2FRAME *(render bounds + frame)* | | | — | | |

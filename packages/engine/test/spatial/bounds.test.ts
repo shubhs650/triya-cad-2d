@@ -484,3 +484,66 @@ describe('block references', () => {
     );
   });
 });
+
+describe('multilines and viewports', () => {
+  const el = (d: number) => ({ parameters: [d, 0], fillParameters: [] });
+  const mline: EntityGeometry = {
+    kind: 'MLINE',
+    scale: 1,
+    justification: 1,
+    flags: 1,
+    start: { x: 0, y: 0 },
+    vertices: [
+      {
+        position: { x: 0, y: 0 },
+        direction: { x: 1, y: 0 },
+        miter: { x: 0, y: 1 },
+        elements: [el(1), el(-1)],
+      },
+      {
+        position: { x: 10, y: 0 },
+        direction: { x: 1, y: 0 },
+        miter: { x: 0, y: 1 },
+        elements: [el(1), el(-1)],
+      },
+    ],
+  };
+
+  it('covers every element of a multiline, plus room for its end caps', () => {
+    // Elements at y = ±1; caps may reach half the 2-unit spread past each end.
+    expectBox(entityBounds(mline, ctx()), box(-1, -2, 11, 2));
+  });
+
+  it('follows elements offset to one side, as top justification draws them', () => {
+    const g = {
+      ...mline,
+      vertices: mline.vertices.map((v) => ({ ...v, elements: [el(0), el(-3)] })),
+    };
+    expectBox(entityBounds(g, ctx()), box(-1.5, -4.5, 11.5, 1.5));
+    expect(entityBounds({ ...mline, vertices: [] }, ctx()).kind).toBe('empty');
+  });
+
+  it('bounds a viewport by its frame on the sheet', () => {
+    const vp: EntityGeometry = {
+      kind: 'VIEWPORT',
+      center: { x: 5, y: 4 },
+      width: 8,
+      height: 6,
+      id: 2,
+      status: 1,
+      flags: 0,
+      viewCenter: { x: 1000, y: 1000 },
+      viewHeight: 500,
+      viewDirection: { x: 0, y: 0, z: 1 },
+      viewTarget: { x: 0, y: 0, z: 0 },
+      twist: 0,
+      lensLength: 50,
+      frontClip: 0,
+      backClip: 0,
+      frozenLayers: [],
+      plotStyleSheet: '',
+      renderMode: 0,
+    };
+    expectBox(entityBounds(vp, ctx()), box(1, 1, 9, 7));
+  });
+});
