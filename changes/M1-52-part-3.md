@@ -1,0 +1,1 @@
+- M1-52 part 3 (#PR): leaders in DXF files that leave out the arrowhead flag now draw their arrowhead, as AutoCAD and the same drawing saved as DWG show it (acad-ts patch 0074).

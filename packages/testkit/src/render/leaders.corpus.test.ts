@@ -93,8 +93,9 @@ describe('leaders on the public corpus (M1-52)', () => {
     expect(counts.drawn).toBeGreaterThanOrEqual(302);
     expect(counts.arrows).toBe(counts.drawn);
     expect(counts.texts).toBe(counts.drawn);
-    // M1-52 part 2: the 20 corpus LEADERs, 8 of them with an arrowhead (the DWGs).
+    // M1-52 part 2: the 20 corpus LEADERs, all with an arrowhead since acad-ts patch 0074 reads
+    // a DXF LEADER without group 71 as having one, as its DWG twin has.
     expect(counts.leaders).toBeGreaterThanOrEqual(20);
-    expect(counts.leaderArrows).toBeGreaterThanOrEqual(8);
+    expect(counts.leaderArrows).toBe(counts.leaders);
   });
 });
