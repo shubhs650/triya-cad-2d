@@ -1,0 +1,14 @@
+{
+  "name": "@triya/io",
+  "version": "0.0.0",
+  "private": true,
+  "description": "acad-ts adapter, passthrough, DXF/DWG/SVG/PNG/PDF import/export",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

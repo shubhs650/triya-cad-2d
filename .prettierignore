@@ -1,0 +1,10 @@
+# Prose is hand-formatted; Prettier would reflow the owner's docs.
+*.md
+pnpm-lock.yaml
+corpus/
+third_party/
+dist/
+coverage/
+test-results/
+playwright-report/
+.turbo/

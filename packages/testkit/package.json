@@ -1,0 +1,17 @@
+{
+  "name": "@triya/testkit",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Corpus loader, reference-plot diff, round-trip diff, perf harness",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5"
+  }
+}

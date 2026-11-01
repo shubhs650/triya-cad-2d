@@ -1,0 +1,14 @@
+{
+  "name": "@triya/hatch",
+  "version": "0.0.0",
+  "private": true,
+  "description": ".pat parser, pattern generation, boundary detection",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}

@@ -1,0 +1,16 @@
+node_modules/
+dist/
+coverage/
+.turbo/
+*.tsbuildinfo
+.eslintcache
+test-results/
+playwright-report/
+blob-report/
+.DS_Store
+.env
+.env.*
+
+# Owner's private drawings: never committed (TESTING.md §2.2). Keep the README.
+corpus/private/*
+!corpus/private/README.md

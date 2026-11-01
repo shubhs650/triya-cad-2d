@@ -14,5 +14,9 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | pdf.js | PDF underlay rendering | Apache-2.0 | https://github.com/mozilla/pdf.js |
 | opentype.js | TTF parsing/shaping | MIT | https://github.com/opentypejs/opentype.js |
 | React, Vite, Zustand, Radix, Comlink, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
+| ESLint, @eslint/js, typescript-eslint, eslint-plugin-boundaries, globals, Prettier, Turborepo, Husky | dev tooling (lint, module boundaries, format, task runner, git hooks); not shipped | MIT | npm |
+| eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |
+| TypeScript, Playwright (`@playwright/test`) | compiler; browser test runner; not shipped | Apache-2.0 | npm |
+| minimatch 10 (transitive, via ESLint) | dev tooling only; not shipped | BlueOak-1.0.0 (permissive, OSI-approved) | npm |
 
 Hatch patterns (`assets/patterns`), linetypes (`assets/linetypes`), plot-style tables (`assets/plotstyles`) and templates (`assets/templates`) are **re-authored** for this project from the published file-format descriptions and are MIT. No file copied from an Autodesk installation is included.

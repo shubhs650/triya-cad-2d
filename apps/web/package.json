@@ -1,0 +1,14 @@
+{
+  "name": "@triya/web",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Vite + React PWA shell (the only app; built out in M1-22)",
+  "license": "MIT",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json"
+  }
+}
