@@ -1,0 +1,14 @@
+import { AcdsSchemaProperty } from './AcdsSchemaProperty.js';
+import { AcdsSchemaRecord } from './AcdsSchemaRecord.js';
+
+export class AcdsSchema {
+	embeddedRecords: AcdsSchemaRecord[] = [];
+	index: number = 0;
+	indices: number[] = [];
+	name: string = '';
+	properties: AcdsSchemaProperty[] = [];
+
+	toString(): string {
+		return `${this.index} : ${this.name}`;
+	}
+}

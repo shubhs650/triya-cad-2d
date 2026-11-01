@@ -1,0 +1,62 @@
+import { DxfFileToken } from '../DxfFileToken.js';
+import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
+import { TextMirrorFlag } from '../Entities/TextMirrorFlag.js';
+import { ObjectType } from '../Types/ObjectType.js';
+import { TableEntry } from './TableEntry.js';
+import { StyleFlags } from './StyleFlags.js';
+import { FontFlags } from './FontFlags.js';
+import { StandardFlags } from './StandardFlags.js';
+
+export class TextStyle extends TableEntry {
+	public static readonly defaultName: string = 'Standard';
+
+	public override get objectType(): ObjectType {
+		return ObjectType.STYLE;
+	}
+
+	public override get objectName(): string {
+		return DxfFileToken.tableStyle;
+	}
+
+	public override get subclassMarker(): string {
+		return DxfSubclassMarker.textStyle;
+	}
+
+	public static get default(): TextStyle {
+		return new TextStyle(TextStyle.defaultName);
+	}
+
+	public get styleFlags(): StyleFlags {
+		return this.flags as unknown as StyleFlags;
+	}
+	public set styleFlags(value: StyleFlags) {
+		this.flags = value as unknown as StandardFlags;
+	}
+
+	public filename: string = '';
+
+	public bigFontFilename: string | null = null;
+
+	public height: number = 0;
+
+	public width: number = 1.0;
+
+	public lastHeight: number = 0;
+
+	public obliqueAngle: number = 0.0;
+
+	public mirrorFlag: TextMirrorFlag = TextMirrorFlag.None;
+
+	public trueType: FontFlags = FontFlags.Regular;
+
+	public get isShapeFile(): boolean {
+		return (this.styleFlags & StyleFlags.IsShape) !== 0;
+	}
+
+	public constructor(name?: string) {
+		super(name);
+	}
+}
+
+export { StyleFlags } from './StyleFlags.js';
+export { TextMirrorFlag } from '../Entities/TextMirrorFlag.js';

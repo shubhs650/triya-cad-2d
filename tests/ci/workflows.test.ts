@@ -70,7 +70,7 @@ describe('ci.yml gates', () => {
     },
   );
 
-  it.each(['test:fidelity', 'test:offline', 'test:ui'])(
+  it.each(['test:fidelity', 'test:offline', 'test:ui', 'test:io'])(
     '`pnpm %s` runs in the required browser job',
     (script) => {
       expect(pkg.scripts[script]).toBeDefined();
@@ -85,7 +85,7 @@ describe('ci.yml gates', () => {
 
   it('runs every browser suite even when an earlier one fails', () => {
     const [, browser] = jobRunning('test:fidelity')!;
-    for (const script of ['test:offline', 'test:ui']) {
+    for (const script of ['test:offline', 'test:ui', 'test:io']) {
       expect(stepRunning(browser, script)?.if).toBe('${{ !cancelled() }}');
     }
   });

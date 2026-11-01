@@ -89,6 +89,8 @@ jobs:
         run: pnpm test:offline
       - if: ${{ !cancelled() }}
         run: pnpm test:ui
+      - if: ${{ !cancelled() }}
+        run: pnpm test:io
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
