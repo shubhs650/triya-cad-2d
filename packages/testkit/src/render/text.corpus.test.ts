@@ -53,7 +53,7 @@ describe('text on the public corpus (M1-41 part 1)', () => {
   it('draws every TEXT and MTEXT near its insertion point with the stand-in font', () => {
     const fonts = new FontBook({ alternate: 'square' });
     fonts.addShx('square', parseShx(squareFont()));
-    const drawn = { TEXT: 0, MTEXT: 0 };
+    const drawn = { TEXT: 0, MTEXT: 0, backgrounds: 0, frames: 0 };
     const blank: string[] = [];
     const wrong: string[] = [];
     for (const f of readable) {
@@ -72,6 +72,12 @@ describe('text on the public corpus (M1-41 part 1)', () => {
           if (!e || (g?.kind !== 'TEXT' && g?.kind !== 'MTEXT')) continue;
           const prims = tessellate(g, { color: 'foreground' }, { text });
           if (prims.length > 0) drawn[g.kind]++;
+          // M1-41 part 2: a background fill comes first; a frame is a stroke after the glyphs.
+          if (g.kind === 'MTEXT' && g.background) {
+            if (g.background.flags & 3 && prims[0]?.kind === 'fill') drawn.backgrounds++;
+            if (g.background.flags & 16 && prims.length > 1 && prims.at(-1)?.kind === 'stroke')
+              drawn.frames++;
+          }
           // Something to show: a character besides spaces and bare break codes (`\\N` alone).
           const stored = g.kind === 'TEXT' ? g.value : g.contents;
           const visible = g.height > 0 && /\S/.test(stored.replace(/\\[PNX~]/g, ''));
@@ -100,11 +106,16 @@ describe('text on the public corpus (M1-41 part 1)', () => {
         }
       }
     }
-    console.log(`text corpus: ${drawn.TEXT} TEXT and ${drawn.MTEXT} MTEXT drawn`);
+    console.log(`text corpus: ${JSON.stringify(drawn)}`);
     expect(wrong.slice(0, 20)).toEqual([]);
     expect(blank.slice(0, 20)).toEqual([]);
     // Counts at M1-41 part 1; raise them when corpus files are added.
     expect(drawn.TEXT).toBeGreaterThanOrEqual(2548);
     expect(drawn.MTEXT).toBeGreaterThanOrEqual(1093);
+    // Every corpus MTEXT background that has text: 36 acadsharp fills and 2 framed ezdxf fills,
+    // and 5 frames. The 2 empty MTEXTs in mtext_framed_columns.dxf (column continuations with
+    // no contents) draw nothing.
+    expect(drawn.backgrounds).toBeGreaterThanOrEqual(38);
+    expect(drawn.frames).toBeGreaterThanOrEqual(5);
   });
 });

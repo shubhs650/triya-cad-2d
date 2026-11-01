@@ -134,13 +134,25 @@ function shxShape(font: ShxFont, code: number | undefined): GlyphShape | undefin
   return g && cached(font, code, () => shxPath(g));
 }
 
+interface Group {
+  readonly fill: boolean;
+  readonly color: PrimitiveColor;
+  readonly path: number[];
+  /** One box per run, cap height tall, for the greeking LOD; and the tallest run's height. */
+  readonly greek: number[];
+  height: number;
+}
+
 /** Collects one entity's glyph paths, one stroke or fill per colour. */
 class Collector {
-  readonly #paths = new Map<string, { fill: boolean; color: PrimitiveColor; path: number[] }>();
+  readonly #groups = new Map<string, Group>();
+  /** The mask, drawn under the glyphs; the frame, over them. */
+  readonly #under: RenderPrimitive[] = [];
+  readonly #over: RenderPrimitive[] = [];
   constructor(readonly paint: Paint) {}
 
   add(shape: GlyphShape, m: Affine, color: PrimitiveColor): void {
-    const path = this.#target(shape.fill, color);
+    const path = this.#group(shape.fill, color).path;
     for (const v of transformPath(shape.path, m)) path.push(v);
   }
 
@@ -149,22 +161,74 @@ class Collector {
     this.add({ path: [PATH_M, x1, y1, PATH_L, x2, y2], fill: false }, frame, color);
   }
 
-  #target(fill: boolean, color: PrimitiveColor): number[] {
+  /** A run's box (x0..x1 along the baseline y, `height` tall) for greeking. */
+  run(face: TextFace, frame: Affine, color: PrimitiveColor, box: RunBox): void {
+    const g = this.#group(face.kind === 'ttf', color);
+    const k = Math.sqrt(Math.abs(frame.a * frame.d - frame.b * frame.c));
+    g.height = Math.max(g.height, box.height * k);
+    if (!(box.x1 > box.x0)) return;
+    for (const v of transformPath(rect(box.x0, box.y, box.x1, box.y + box.height), frame))
+      g.greek.push(v);
+  }
+
+  /** The background mask (or fill) under the glyphs. */
+  mask(path: number[], color: PrimitiveColor): void {
+    this.#under.push({ kind: 'fill', path, color, evenOdd: false });
+  }
+
+  /** The text frame over the glyphs, in the entity's colour and lineweight. */
+  frame(path: number[]): void {
+    this.#over.push(this.#stroke(path, this.paint.color));
+  }
+
+  #stroke(path: number[], color: PrimitiveColor): RenderPrimitive & { kind: 'stroke' } {
+    const lw = this.paint.lineweight;
+    return { kind: 'stroke', path, color, ...(lw === undefined ? {} : { lineweight: lw }) };
+  }
+
+  #group(fill: boolean, color: PrimitiveColor): Group {
     const key = `${fill ? 'f' : 's'}${color}`;
-    let t = this.#paths.get(key);
-    if (!t) this.#paths.set(key, (t = { fill, color, path: [] }));
-    return t.path;
+    let g = this.#groups.get(key);
+    if (!g) this.#groups.set(key, (g = { fill, color, path: [], greek: [], height: 0 }));
+    return g;
   }
 
   primitives(): RenderPrimitive[] {
-    const lw = this.paint.lineweight;
-    return [...this.#paths.values()].map(({ fill, color, path }): RenderPrimitive =>
-      fill
-        ? { kind: 'fill', path, color, evenOdd: false }
-        : { kind: 'stroke', path, color, ...(lw === undefined ? {} : { lineweight: lw }) },
-    );
+    const glyphs = [...this.#groups.values()]
+      .filter((g) => g.path.length > 0)
+      .map(({ fill, color, path, greek, height }): RenderPrimitive => {
+        const text = { height, greek };
+        return fill
+          ? { kind: 'fill', path, color, evenOdd: false, text }
+          : { ...this.#stroke(path, color), text };
+      });
+    return [...this.#under, ...glyphs, ...this.#over];
   }
 }
+
+interface RunBox {
+  readonly x0: number;
+  readonly x1: number;
+  readonly y: number;
+  readonly height: number;
+}
+
+/** A closed rectangle path. */
+const rect = (x0: number, y0: number, x1: number, y1: number): number[] => [
+  PATH_M,
+  x0,
+  y0,
+  PATH_L,
+  x1,
+  y0,
+  PATH_L,
+  x1,
+  y1,
+  PATH_L,
+  x0,
+  y1,
+  PATH_Z,
+];
 
 /** An MTEXT colour override: ByLayer and ByBlock (0, 256) keep the entity's own. */
 function runColor(c: MTextColor | undefined, paint: Paint): PrimitiveColor {
@@ -197,6 +261,7 @@ function placeText(
       out.add(shape, composeAffine(frame, { a: sx, b: 0, c: shear, d: s, e: pen, f: y }), color);
     pen += charAdvance(face, cp) * sx * style.tracking;
   }
+  out.run(face, frame, color, { x0: x, x1: pen, y, height: style.height });
 }
 
 /** Every run, stack part and decoration of a layout, drawn in the text frame. */
@@ -342,16 +407,43 @@ function mtextPrimitives(g: MTextGeometry, paint: Paint, ctx: TextContext): Rend
           },
         }
       : {}),
+    ...(g.background ? { background: { scale: g.background.scale } } : {}),
   });
+  const frame = textFrame(g.position, g.rotation, false, !!g.upsideDown);
   const out = new Collector(paint);
-  drawLayout(
-    out,
-    layout,
-    textFrame(g.position, g.rotation, false, !!g.upsideDown),
-    ctx.fonts,
-    bigFont,
-  );
+  background(out, g, layout, frame);
+  drawLayout(out, layout, frame, ctx.fonts, bigFont);
   return out.primitives();
+}
+
+/**
+ * The MTEXT background (DXF 90): bit 1 fills with its colour (63/421), bit 2 with the drawing
+ * window colour (a mask), bit 16 draws a frame. The fill reaches (scale − 1) × height beyond
+ * the text box on each side ("Background Mask Dialog Box"); a multi-column MTEXT fills each
+ * column on its own (our reading). AutoCAD does not document where the frame goes; this draws
+ * it on the fill's edge, so a frame with the default 1.5 scale clears the text by half its
+ * height, to be checked against reference plots (M1-24 with M1-26).
+ */
+function background(out: Collector, g: MTextGeometry, layout: MTextLayout, frame: Affine): void {
+  const bg = g.background;
+  if (!bg || !layout.mask || (bg.flags & 0x13) === 0) return;
+  const pad = (bg.scale - 1) * g.height;
+  const columns = layout.columns.filter((c) => Number.isFinite(c.minY));
+  const boxes =
+    columns.length > 0 && columns.length === layout.columns.length
+      ? columns.map((c) => ({
+          minX: c.minX - pad,
+          minY: c.minY - pad,
+          maxX: c.maxX + pad,
+          maxY: c.maxY + pad,
+        }))
+      : [layout.mask];
+  const paths = boxes.map((b) => transformPath(rect(b.minX, b.minY, b.maxX, b.maxY), frame));
+  if (bg.flags & 3) {
+    const color: PrimitiveColor = bg.flags & 2 || !bg.color ? 'background' : colorValue(bg.color);
+    for (const p of paths) out.mask(p, color);
+  }
+  if (bg.flags & 16) for (const p of paths) out.frame(p);
 }
 
 /** The glyphs of a TEXT or MTEXT, in drawing coordinates. */

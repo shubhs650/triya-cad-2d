@@ -112,6 +112,14 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
         ...(p.gradient
           ? { gradient: { ...p.gradient, frame: composeAffine(m, p.gradient.frame) } }
           : {}),
+        ...(p.text
+          ? {
+              text: {
+                height: p.text.height * affineScale(m),
+                greek: transformPath(p.text.greek, m),
+              },
+            }
+          : {}),
         ...(p.hatch
           ? {
               hatch: {
