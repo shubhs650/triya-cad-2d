@@ -5,7 +5,7 @@
 # Why a filtered snapshot and not `git subtree add`: the upstream tree ships an Autodesk-
 # copyrighted DXF reference PDF (reference/), the ODA DWG spec, and .shx/.pat sample files
 # (samples/). CLAUDE.md forbids committing any of those, in any commit, and PRs here are
-# squash-merged, which drops the subtree merge metadata anyway. See DEC-022.
+# squash-merged, which drops the subtree merge metadata anyway. See DEC-033 in docs/DECISIONS.md.
 #
 # Usage: third_party/sync-acad-ts.sh <upstream-commit-sha>
 # Afterwards update the pinned commit in third_party/acad-ts/PATCHES.md.

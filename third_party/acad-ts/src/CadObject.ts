@@ -50,6 +50,16 @@ export abstract class CadObject implements IHandledCadObject, IDxfClassDefined {
 	private _reactors: CadObject[] | null = null;
 	private _xdictionary: CadDictionary | null = null;
 
+	// CadDictionary extends CadObject, so CadObject cannot import it as a value without an
+	// import cycle, and `require` does not exist in ES modules. CadDictionary.ts registers
+	// its constructor here when it is evaluated, like DwgFileHeader.registerFactory.
+	private static _dictionaryFactory: (() => CadDictionary) | null = null;
+
+	/** @internal Called once by CadDictionary.ts. */
+	public static registerDictionaryFactory(factory: () => CadDictionary): void {
+		CadObject._dictionaryFactory = factory;
+	}
+
 	constructor() {}
 
 	public addReactor(reactor: CadObject): void {
@@ -84,8 +94,11 @@ export abstract class CadObject implements IHandledCadObject, IDxfClassDefined {
 
 	public createExtendedDictionary(): CadDictionary {
 		if (this._xdictionary == null) {
-			const { CadDictionary: CadDictionaryImpl } = require('./Objects/CadDictionary');
-			this.xDictionary = new CadDictionaryImpl();
+			const factory = CadObject._dictionaryFactory;
+			if (factory == null) {
+				throw new Error('CadDictionary factory not registered. Import CadDictionary first.');
+			}
+			this.xDictionary = factory();
 		}
 		return this._xdictionary!;
 	}

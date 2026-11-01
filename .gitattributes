@@ -4,3 +4,7 @@
 *.dwg binary
 *.DWG binary
 corpus/** -text
+
+# Vendored upstream code keeps its own line endings (acad-ts ships mixed CRLF/LF); patches depend on them.
+third_party/acad-ts/** -text
+third_party/acad-ts-patches/** -text

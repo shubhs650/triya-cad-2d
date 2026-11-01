@@ -144,4 +144,6 @@ export class CadDictionary extends NonGraphicalObject implements Iterable<NonGra
 	}
 }
 
+CadObject.registerDictionaryFactory(() => new CadDictionary());
+
 export { DictionaryCloningFlags } from './DictionaryCloningFlags.js';
