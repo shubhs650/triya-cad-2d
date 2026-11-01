@@ -1,0 +1,28 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index 75f2afe..441e3ad 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -648,6 +648,10 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+           template.segmentTemplates.push(this._readLineTypeSegment());
+         } while (this._reader.code === 49);
+         return true;
++      case 72:
++        // The character code of the alignment: 65 for "A", the only value AutoCAD uses.
++        template.cadObject.alignment = String.fromCharCode(this._reader.valueAsShort);
++        return true;
+       case 73:
+         return true;
+       default:
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index dc3e4f3..a5d8d1f 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -260,7 +260,7 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+   private _writeLineType(linetype: LineType, map: DxfClassMap): void {
+     this._writer.write(3, linetype.description, map);
+ 
+-    this._writer.write(72, linetype.alignment, map);
++    this._writer.write(72, linetype.alignment.charCodeAt(0) || 65, map);
+     this._writer.write(73, linetype.segments.length, map);
+     this._writer.write(40, linetype.patternLength);
+ 
