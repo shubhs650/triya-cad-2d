@@ -1,0 +1,1 @@
+- M1-29 part 8 (#52): acad-ts writes ARC_DIMENSION entities to DXF with their dimension and arc data (patch 0047); round trip 8,640 → 8,624 differences.
