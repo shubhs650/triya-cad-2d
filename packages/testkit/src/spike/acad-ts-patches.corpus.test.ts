@@ -1631,4 +1631,26 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(onGreek(dxfRawRoundTrip(r12, binary)), `binary ${binary}`).toBe(greekCount);
     }
   });
+
+  it('0073 DWG AEC objects keep their raw data, and only it, through a save', () => {
+    // The readers took every byte to the end of the object, handle stream included, and the
+    // writer wrote the handles again after them, so each save grew the data by 6-20 bytes.
+    const raw = (d: CadDocument, handle: number): number[] => {
+      const o = d.getCadObject(handle) as unknown as {
+        rawData?: Uint8Array;
+        binaryData?: Uint8Array;
+      } | null;
+      return [...(o?.rawData ?? o?.binaryData ?? [])];
+    };
+    const doc = readDwgRaw('third-party/acadsharp/aec_objects/AecObjects.dwg');
+    let back = doc;
+    for (let save = 1; save <= 2; save++) {
+      back = dwgRawRoundTrip(back);
+      // AEC_CLEANUP_GROUP_DEF, AEC_WALL_STYLE, BINRECORD, AEC_WALL
+      for (const handle of [0x2191, 0x27ba, 0x3d2d, 0x3d38]) {
+        expect(raw(doc, handle).length, handle.toString(16)).toBeGreaterThan(0);
+        expect(raw(back, handle), `${handle.toString(16)} save ${save}`).toEqual(raw(doc, handle));
+      }
+    }
+  });
 });
