@@ -1,6 +1,8 @@
 // Renderer-independent drawing style (M1-13): linetype patterns and their fitting, the ACI
-// palette, ByLayer/ByBlock resolution and lineweight display. Pure functions; no Canvas2D.
+// palette, ByLayer/ByBlock resolution, lineweight display and draw order. Pure functions; no
+// Canvas2D.
 export { aciRgb, rgbHex, type Rgb } from './aci';
+export { drawOrder } from './draw-order';
 export {
   dashPath,
   dashPolyline,

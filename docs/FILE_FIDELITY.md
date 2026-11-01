@@ -80,7 +80,8 @@ Read ticks for tables (M1-03) mean every field of the record compares equal to a
 | LAYER_FILTER / LAYER_INDEX / ACAD_LAYERSTATES | | | | |
 | GROUP | | | | |
 | XRECORD | | | | |
-| PLACEHOLDER / IDBUFFER / SORTENTSTABLE | | | | |
+| PLACEHOLDER / IDBUFFER | | | | |
+| SORTENTSTABLE | ✓ entries in stored order (`mapSortEnts`), draw order by sort handle (`drawOrder`; M1-13 part 2) | | | `style.corpus.test.ts` (75 tables, 28 reorder their block) |
 | IMAGEDEF / RASTERVARIABLES | | | | |
 | PDFDEFINITION / DWFDEFINITION / DGNDEFINITION | | | | |
 | SPATIAL_FILTER (XCLIP) | | | | |
