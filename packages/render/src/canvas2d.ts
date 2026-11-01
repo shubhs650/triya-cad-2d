@@ -24,7 +24,6 @@ import type {
   ChangeSet,
   DocumentModel,
   Entity,
-  EntityGeometry,
   EntityId,
   Handle,
   KeyedChanges,
@@ -32,11 +31,12 @@ import type {
   SortEntsTable,
   SpatialIndex,
 } from '@triya/engine';
-import { defaultPaint } from './paint';
+import { expandInsert, type BlockSource } from './blocks';
+import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
-import { tessellate, type Paint } from './tessellate';
+import { tessellate } from './tessellate';
 import {
   PATH_A,
   PATH_E,
@@ -99,8 +99,11 @@ export interface Canvas2DRendererOptions {
   /** Makes an offscreen layer (the scene cache and the transient layer). */
   readonly createLayer: () => Surface;
   readonly style?: RenderStyle;
-  /** Entity → paint; undefined hides it. Defaults to `defaultPaint`. */
-  readonly paint?: (e: Entity, model: DocumentModel) => Paint | undefined;
+  /**
+   * Entity → paint (inside the context an INSERT hands down); undefined hides it. Defaults to
+   * `defaultPaint`, whose `insertContext` also serves a paint function that has none.
+   */
+  readonly paint?: PaintFunction;
   readonly now?: () => number;
   /** Runs a callback when the browser is idle (requestIdleCallback in the app). */
   readonly requestIdle?: (cb: () => void) => void;
@@ -112,14 +115,15 @@ interface CacheEntry {
   readonly size: number;
   readonly x: number;
   readonly y: number;
-  /** An entity with a linetype: what its dashes are fitted from, on first use. */
-  readonly linetype?: {
-    readonly geom: EntityGeometry;
-    readonly paint: Paint;
-    /** One pattern repetition, world units. */
+  /** An entity with linetypes: its dashed primitives, built on first use. */
+  readonly dashes?: {
+    /** The longest pattern repetition among its parts, world units. */
     readonly period: number;
-    dashed?: readonly RenderPrimitive[];
+    readonly build: () => readonly RenderPrimitive[];
+    built?: readonly RenderPrimitive[];
   };
+  /** An INSERT: every block definition it draws from (M1-14). */
+  readonly blocks?: ReadonlySet<Handle>;
 }
 
 export const DEFAULT_STYLE: RenderStyle = {
@@ -151,7 +155,13 @@ export class Canvas2DRenderer implements Renderer {
   readonly #surface: Surface;
   readonly #scene: Surface;
   readonly #transientLayer: Surface;
-  readonly #paint: (e: Entity, model: DocumentModel) => Paint | undefined;
+  readonly #paint: PaintFunction;
+  /** How INSERTs in the block shown expand (M1-14). */
+  readonly #blockSource: BlockSource;
+  /** Block definition → its entities in draw order, built on demand. */
+  #blockOrders = new Map<Handle, readonly EntityId[]>();
+  /** Block definition → its SORTENTSTABLE, built on demand. */
+  #sortTables: Map<Handle, SortEntsTable> | undefined;
   readonly #now: () => number;
   readonly #requestIdle: (cb: () => void) => void;
   /**
@@ -192,6 +202,12 @@ export class Canvas2DRenderer implements Renderer {
     this.#transientLayer = o.createLayer();
     this.#style = o.style ?? DEFAULT_STYLE;
     this.#paint = o.paint ?? defaultPaint;
+    this.#blockSource = {
+      model: this.#model,
+      paint: this.#paint,
+      insertContext: this.#paint.insertContext ?? defaultPaint.insertContext,
+      order: (block) => this.#blockOrder(block),
+    };
     this.#now = o.now ?? (() => performance.now());
     this.#requestIdle = o.requestIdle ?? ((cb) => setTimeout(cb, 50));
     this.#paperSpace = this.#model.layouts.some(
@@ -237,13 +253,36 @@ export class Canvas2DRenderer implements Renderer {
       this.#forget(u.before);
       this.#cacheIfShown(u.after);
     }
+    const sortEnts = touchesSortEnts(cs.objects);
     if (
       e?.added?.length ||
       e?.removed?.length ||
       e?.updated?.some((u) => u.before.owner !== u.after.owner) ||
-      touchesSortEnts(cs.objects)
+      sortEnts
     )
       this.#orderDirty = true;
+    // Block definitions whose contents or draw order changed: the INSERTs drawing from them
+    // (directly or through nesting) are expanded again.
+    const changed = new Set<Handle>();
+    for (const r of e?.removed ?? []) changed.add(r.entity.owner);
+    for (const a of e?.added ?? []) changed.add(a.entity.owner);
+    for (const u of e?.updated ?? []) changed.add(u.before.owner).add(u.after.owner);
+    if (sortEnts) {
+      for (const o of [
+        ...(cs.objects?.added ?? []),
+        ...(cs.objects?.removed ?? []),
+        ...(cs.objects?.updated ?? []).flatMap((u) => [u.before, u.after]),
+      ])
+        if (isSortEnts(o)) changed.add(o.block);
+      this.#sortTables = undefined;
+    }
+    for (const block of changed) this.#blockOrders.delete(block);
+    changed.delete(this.#block);
+    if (changed.size > 0) {
+      this.#cache.forEach((entry, id) => {
+        if (entry?.blocks && [...changed].some((b) => entry.blocks!.has(b))) this.#cacheEntity(id);
+      });
+    }
     // A layer, linetype or LTSCALE change can restyle or hide any entity: re-resolve the
     // whole block.
     if (
@@ -324,15 +363,33 @@ export class Canvas2DRenderer implements Renderer {
   #cacheEntity(id: EntityId): void {
     const e = this.#model.entity(id);
     if (!e) return;
-    const paint = this.#paint(e, this.#model);
-    if (!paint) {
-      this.#cache[id] = undefined;
-      return;
+    let prims: readonly RenderPrimitive[];
+    let extra: Pick<CacheEntry, 'dashes' | 'blocks'>;
+    if (e.geom.kind === 'INSERT') {
+      // The reference decides its own visibility: an off layer still shows its contents on
+      // other layers.
+      const x = expandInsert(e, this.#blockSource, { dashes: false });
+      if (x.prims.length === 0 && x.blocks.size === 0) {
+        this.#cache[id] = undefined;
+        return;
+      }
+      prims = x.prims;
+      const build = () => expandInsert(e, this.#blockSource, { dashes: true }).prims;
+      extra = {
+        blocks: x.blocks,
+        ...(x.period > 0 ? { dashes: { period: x.period, build } } : {}),
+      };
+    } else {
+      const paint = this.#paint(e, this.#model);
+      if (!paint) {
+        this.#cache[id] = undefined;
+        return;
+      }
+      const { linetype: lt, ...continuous } = paint;
+      prims = tessellate(e.geom, continuous);
+      const period = lt ? patternLength(lt.pattern) * lt.scale : 0;
+      extra = period > 0 ? { dashes: { period, build: () => tessellate(e.geom, paint) } } : {};
     }
-    const { linetype: lt, ...continuous } = paint;
-    const prims = tessellate(e.geom, continuous);
-    const period = lt ? patternLength(lt.pattern) * lt.scale : 0;
-    const linetype = period > 0 ? { linetype: { geom: e.geom, paint, period } } : {};
     // The size and centre drive the sub-pixel LOD; unknown bounds never count as small.
     const b = this.#index.bounds(id);
     this.#cache[id] =
@@ -342,29 +399,40 @@ export class Canvas2DRenderer implements Renderer {
             size: Math.max(b.box.maxX - b.box.minX, b.box.maxY - b.box.minY),
             x: (b.box.minX + b.box.maxX) / 2,
             y: (b.box.minY + b.box.maxY) / 2,
-            ...linetype,
+            ...extra,
           }
-        : { prims, size: Infinity, x: 0, y: 0, ...linetype };
+        : { prims, size: Infinity, x: 0, y: 0, ...extra };
   }
 
   /** What an entry draws at the current zoom: its dashes, or continuous (LOD). */
   #primitives(entry: CacheEntry): readonly RenderPrimitive[] {
-    const lt = entry.linetype;
-    // ARCHITECTURE.md §7.2 LOD: "dashed linetypes below 1 px per pattern unit → solid".
-    if (!lt || lt.period * this.#view.scale < 1) return entry.prims;
-    lt.dashed ??= tessellate(lt.geom, lt.paint);
-    return lt.dashed;
+    const d = entry.dashes;
+    // ARCHITECTURE.md §7.2 LOD: "dashed linetypes below 1 px per pattern unit → solid". An
+    // INSERT's parts with shorter patterns fall back one by one in the draw loop.
+    if (!d || d.period * this.#view.scale < 1) return entry.prims;
+    d.built ??= d.build();
+    return d.built;
   }
 
-  /** The block's entities in draw order: block order, rearranged by its SORTENTSTABLE. */
-  #drawOrder(): EntityId[] {
-    let table: SortEntsTable | undefined;
-    for (const o of this.#model.objects.values())
-      if (isSortEnts(o) && o.block === this.#block) table = o;
-    const ids = this.#model.blockEntities(this.#block);
-    if (!table) return [...ids];
-    const handles = ids.map((id) => this.#model.ids.handleOf(id)!);
-    return drawOrder(handles, table.entries).map((h) => this.#model.ids.idOf(h)!);
+  /** A block's entities in draw order: block order, rearranged by its SORTENTSTABLE. */
+  #blockOrder(block: Handle): readonly EntityId[] {
+    const memo = this.#blockOrders.get(block);
+    if (memo) return memo;
+    if (!this.#sortTables) {
+      this.#sortTables = new Map();
+      for (const o of this.#model.objects.values())
+        if (isSortEnts(o)) this.#sortTables.set(o.block, o);
+    }
+    const table = this.#sortTables.get(block);
+    const ids = this.#model.blockEntities(block);
+    const order = table
+      ? drawOrder(
+          ids.map((id) => this.#model.ids.handleOf(id)!),
+          table.entries,
+        ).map((h) => this.#model.ids.idOf(h)!)
+      : [...ids];
+    this.#blockOrders.set(block, order);
+    return order;
   }
 
   #drawScene(reduced: boolean): void {
@@ -374,7 +442,7 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillStyle = this.#style.background;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     if (this.#orderDirty) {
-      this.#order = this.#drawOrder();
+      this.#order = this.#blockOrder(this.#block);
       this.#rank = [];
       this.#order.forEach((id, i) => (this.#rank[id] = i));
       this.#orderDirty = false;
