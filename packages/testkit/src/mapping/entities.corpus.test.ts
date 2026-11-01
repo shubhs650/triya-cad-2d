@@ -94,8 +94,6 @@ const ACAD_TS_GAPS: Record<string, string> = {
   'ACAD_TABLE mapped': 'acad-ts drops ACAD_TABLE entities of ezdxf-written files from their block',
   'MTEXT 1':
     'acad-ts decodes only the ^J, ^M, ^I and "^ " caret codes; other control characters stay as ^A, ^B, …',
-  'TOLERANCE 1':
-    'acad-ts does not caret-decode TOLERANCE text, so its ^J row breaks stay encoded (MTEXT is decoded)',
   'DIMENSION 70':
     'acad-ts reads a rotated dimension whose AcDbRotatedDimension subclass is empty (50 omitted, angle 0) as an aligned one',
   'HATCH 75': 'acad-ts skips the hatch style (75), so outer and ignore hatches read as normal',
