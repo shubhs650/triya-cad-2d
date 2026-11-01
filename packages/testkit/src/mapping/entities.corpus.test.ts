@@ -13,6 +13,7 @@ import type {
   LeaderGeometry,
   MTextGeometry,
   MultiLeaderGeometry,
+  TableGeometry,
   TextFields,
   Vec2,
 } from '@triya/engine';
@@ -21,6 +22,7 @@ import { mapEntities, mapTables, readCadDocument, type MappedTables } from '@tri
 import { loadManifest } from '../corpus/manifest.ts';
 import { all, first, readDxfOracle, type DxfEntity, type Group } from './dxf-oracle.ts';
 
+const hex = (h: number): string => h.toString(16).toUpperCase();
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 
@@ -84,8 +86,7 @@ const COMMON = new Set(['8', '6', '62', '420', '370', '48', '60', '440']);
 const ACAD_TS_GAPS: Record<string, string> = {
   'entity 6':
     'R12 files have no BYBLOCK/BYLAYER LTYPE records; acad-ts falls back to ByLayer for an entity whose 6 is BYBLOCK',
-  'ACAD_TABLE unmapped':
-    'acad-ts drops ACAD_TABLE entities of ezdxf-written files from their block',
+  'ACAD_TABLE mapped': 'acad-ts drops ACAD_TABLE entities of ezdxf-written files from their block',
   'MTEXT 1':
     'acad-ts decodes only the ^J, ^M, ^I and "^ " caret codes; other control characters stay as ^A, ^B, …',
   'TOLERANCE 1':
@@ -129,6 +130,7 @@ const MAPPED = new Set([
   'TOLERANCE',
   'HATCH',
   'MULTILEADER',
+  'ACAD_TABLE',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({
@@ -425,6 +427,11 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
     case 'MULTILEADER': {
       if (geom.kind !== 'MULTILEADER') return bad('type', d.type, geom.kind);
       compareMultiLeader(g, geom, bad);
+      return;
+    }
+    case 'ACAD_TABLE': {
+      if (geom.kind !== 'ACAD_TABLE') return bad('type', d.type, geom.kind);
+      compareTable(g, n, geom, bad);
       return;
     }
     case 'HATCH': {
@@ -990,6 +997,73 @@ function compareMultiLeader(groups: readonly Group[], geom: MultiLeaderGeometry,
   });
 }
 
+/**
+ * ACAD_TABLE (DXF reference): the AcDbTable header up to the first cell, then one cell per
+ * 171 group, each with an optional CELL_VALUE block (301 … 304) whose codes repeat the cell's.
+ */
+function compareTable(groups: readonly Group[], n: V3, geom: TableGeometry, bad: Bad): void {
+  const ref = subclass(groups, 'AcDbBlockReference');
+  const g = subclass(groups, 'AcDbTable');
+  const firstCell = g.findIndex(([c]) => c === 171);
+  const head = firstCell < 0 ? g : g.slice(0, firstCell);
+  if (handleIn(head, 342) !== geom.style) bad('342', handleIn(head, 342), geom.style);
+  if (first(head, 343) !== undefined && handleIn(head, 343) !== geom.block)
+    bad('343', handleIn(head, 343), geom.block);
+  const at = plan(pt(ref, 10), n);
+  if (!near(at, geom.position)) bad('10', fmt(at), fmt(geom.position));
+  const dir = { x: num(head, 11), y: num(head, 21) };
+  if (!near(dir, geom.direction)) bad('11', fmt(dir), fmt(geom.direction));
+  const heights = all(head, 141).map(Number);
+  const widths = all(head, 142).map(Number);
+  if (num(head, 91) !== heights.length) bad('91', num(head, 91), heights.length);
+  if (num(head, 92) !== widths.length) bad('92', num(head, 92), widths.length);
+  if (
+    heights.length !== geom.rowHeights.length ||
+    heights.some((h, k) => !close(h, geom.rowHeights[k]!))
+  )
+    bad('141', heights.join(' '), geom.rowHeights.join(' '));
+  if (
+    widths.length !== geom.columnWidths.length ||
+    widths.some((w, k) => !close(w, geom.columnWidths[k]!))
+  )
+    bad('142', widths.join(' '), geom.columnWidths.join(' '));
+
+  const cells: Group[][] = [];
+  let inValue = false;
+  for (const grp of firstCell < 0 ? [] : g.slice(firstCell)) {
+    if (grp[0] === 301 && grp[1].trim() === 'CELL_VALUE') inValue = true;
+    else if (grp[0] === 304 && grp[1].trim() === 'ACVALUE_END') inValue = false;
+    else if (grp[0] === 171 && !inValue) cells.push([]);
+    cells.at(-1)?.push(grp);
+  }
+  const got = geom.cells.flat();
+  if (cells.length !== got.length) return bad('cells', cells.length, got.length);
+  if (geom.cells.some((r) => r.length !== widths.length)) bad('cells', 'rows of 92', 'ragged');
+  cells.forEach((c, k) => {
+    const e = got[k]!;
+    const at = `${Math.floor(k / Math.max(1, widths.length))},${k % Math.max(1, widths.length)}`;
+    const type = num(c, 171) === 2 ? 'block' : 'text';
+    if (type !== e.type) bad('cell 171', `${at} ${type}`, e.type);
+    if ((num(c, 173) !== 0) !== e.merged) bad('cell 173', `${at} ${num(c, 173)}`, e.merged);
+    if (Math.max(1, num(c, 175)) !== e.columnSpan)
+      bad('cell 175', `${at} ${num(c, 175)}`, e.columnSpan);
+    if (Math.max(1, num(c, 176)) !== e.rowSpan) bad('cell 176', `${at} ${num(c, 176)}`, e.rowSpan);
+    if (!close(num(c, 145), e.rotation)) bad('cell 145', `${at} ${num(c, 145)}`, e.rotation);
+    if (type === 'block' && handleIn(c, 340) !== e.block)
+      bad('cell 340', `${at} ${handleIn(c, 340)}`, e.block);
+    const one = c.findIndex(([code]) => code === 1);
+    const text =
+      one < 0
+        ? (first(c, 302) ?? '')
+        : c
+            .slice(0, one)
+            .filter(([code]) => code === 2)
+            .map(([, v]) => v)
+            .join('') + c[one]![1];
+    if (type === 'text' && !sameText(text, e.text)) bad('cell 1', `${at} ${text}`, e.text);
+  });
+}
+
 /** A HATCH boundary as the file states it, read group by group (DXF reference, HATCH). */
 interface FileEdge {
   readonly type: number;
@@ -1313,6 +1387,37 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
       Object.keys(ACAD_TS_GAPS).sort(),
     );
   }, 300_000);
+
+  // The oracle reads DXF only. DWG states table merges as ranges, not per cell, and a block
+  // cell as a block content; the mapped cells must still come out the same.
+  it('maps the tables of a DWG like those of the same drawing saved as DXF', () => {
+    const tables = (path: string) => {
+      const doc = readCadDocument(load(path));
+      const name = new Map([...(doc.blockRecords ?? [])].map((b) => [hex(b.handle), b.name]));
+      return mapEntities(doc)
+        .entities.filter((e) => e.geom.kind === 'ACAD_TABLE')
+        .map((e) => {
+          const g = e.geom as TableGeometry;
+          return {
+            handle: e.handle,
+            rows: g.rowHeights.length,
+            columns: g.columnWidths.length,
+            cells: g.cells.map((r) =>
+              r.map((c) => ({ ...c, block: c.block && name.get(c.block) })),
+            ),
+          };
+        });
+    };
+    const pairs = ['AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032'].map((v) => [
+      `public/third-party/acadsharp/sample_${v}.dwg`,
+      `public/third-party/acadsharp/sample_${v}_ascii.dxf`,
+    ]);
+    for (const [dwg, dxf] of pairs) {
+      const a = tables(dwg!);
+      expect(a.length).toBeGreaterThan(0);
+      expect(a).toEqual(tables(dxf!));
+    }
+  });
 
   it('accounts for every entity of every block record of every readable file', () => {
     const problems: string[] = [];

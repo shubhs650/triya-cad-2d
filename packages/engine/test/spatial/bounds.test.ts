@@ -248,6 +248,28 @@ describe('hatches', () => {
   });
 });
 
+describe('tables', () => {
+  const table: EntityGeometry = {
+    kind: 'ACAD_TABLE',
+    position: { x: 10, y: 20 },
+    direction: { x: 1, y: 0 },
+    rowHeights: [8, 6],
+    columnWidths: [30, 40],
+    cells: [],
+  };
+
+  it('covers the grid whichever way it runs from its insertion point', () => {
+    // The grid is 70 × 14; it may flow up or down and run along any direction.
+    const r = Math.hypot(70, 14);
+    const b = entityBounds(table, ctx());
+    expectBox(b, box(10 - r, 20 - r, 10 + r, 20 + r));
+  });
+
+  it('draws nothing without rows or columns', () => {
+    expect(entityBounds({ ...table, rowHeights: [], columnWidths: [] }, ctx()).kind).toBe('empty');
+  });
+});
+
 describe('construction lines', () => {
   it('keeps XLINE and RAY as infinite lines with a unit direction', () => {
     const x = entityBounds(
