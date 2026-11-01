@@ -14,3 +14,4 @@ blob-report/
 # Owner's private drawings: never committed (TESTING.md §2.2). Keep the README.
 corpus/private/*
 !corpus/private/README.md
+node-compile-cache/
