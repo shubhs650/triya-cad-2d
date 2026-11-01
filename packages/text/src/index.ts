@@ -3,3 +3,4 @@
 export * from './shx/index';
 export * from './ttf/index';
 export * from './mtext/index';
+export * from './draw/index';

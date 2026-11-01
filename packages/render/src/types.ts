@@ -33,13 +33,17 @@ export type PrimitiveColor = string | 'foreground';
 /**
  * Path commands in world coordinates, packed for speed:
  *   M x y · L x y · A cx cy r a0 a1 ccw · E cx cy rx ry rotation a0 a1 ccw · Z
- * Arcs and ellipses stay exact (the canvas draws them natively at any zoom).
+ *   Q x1 y1 x y (quadratic Bézier) · C x1 y1 x2 y2 x y (cubic Bézier)
+ * Arcs, ellipses and Béziers (TrueType outlines, M1-41) stay exact: the canvas draws them
+ * natively at any zoom, and an affine map carries a Bézier by its control points.
  */
 export const PATH_M = 0;
 export const PATH_L = 1;
 export const PATH_A = 2;
 export const PATH_E = 3;
 export const PATH_Z = 4;
+export const PATH_Q = 5;
+export const PATH_C = 6;
 
 /** A 2D affine map: (x, y) → (a·x + c·y + e, b·x + d·y + f). */
 export interface PrimitiveFrame {

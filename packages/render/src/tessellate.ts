@@ -13,7 +13,9 @@
 // INSERT, DIMENSION and ACAD_TABLE yield nothing here: the renderer draws them from their
 // blocks (`expandInsert`, M1-14, M1-15 and M1-17). Kinds drawn by later tasks yield nothing
 // either, each noted where it falls through:
-// viewports (M1-18), images and underlays (M1-19/20), text and MTEXT (M1-41).
+// viewports (M1-18), images and underlays (M1-19/20), attributes (M1-14) and the MTEXT
+// background mask (M1-41 part 2). TEXT and MTEXT draw their glyphs (`textPrimitives`, M1-41)
+// when the caller passes the loaded fonts, and nothing without them.
 
 import { bundledPatterns, gradientRamp, hatchLines, hatchPattern } from '@triya/hatch';
 import {
@@ -38,6 +40,13 @@ import {
 import { dashPath, dashPolyline, type DashedPath } from './style/dash';
 import { colorValue } from './style/resolve';
 import { patternLength, type LinePattern } from './style/pattern';
+import { textPrimitives, type TextContext } from './text';
+
+/** What tessellating some kinds needs beyond the geometry and paint. */
+export interface TessellateContext {
+  /** Loaded fonts and text styles; without them TEXT and MTEXT draw nothing. */
+  readonly text?: TextContext;
+}
 
 /** What every primitive of one entity shares, resolved from the entity and its layer. */
 export interface Paint {
@@ -194,7 +203,14 @@ function loopPath(path: number[], loop: HatchLoop): void {
 }
 
 /** The primitives that draw one entity's geometry. */
-export function tessellate(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
+export function tessellate(
+  g: EntityGeometry,
+  paint: Paint,
+  ctx: TessellateContext = {},
+): RenderPrimitive[] {
+  // Text takes no linetype: AutoCAD draws glyphs continuous.
+  if (g.kind === 'TEXT' || g.kind === 'MTEXT')
+    return ctx.text ? textPrimitives(g, paint, ctx.text) : [];
   const prims = exact(g, paint);
   const lt = paint.linetype;
   const first = prims[0];
