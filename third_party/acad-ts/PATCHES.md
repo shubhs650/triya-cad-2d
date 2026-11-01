@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0037 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0040 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -676,5 +676,72 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
 **Title:** Write and read DXF MULTILEADER entities completely
 
 `DxfSectionWriterBase._writeMultiLeader` and `_writeAnnotContext` write only part of AcDbMLeader, and several groups go on the wrong codes. A read-write cycle therefore resets every multileader's style overrides, text, colours and background, and empties its label. This writes the entity, its `CONTEXT_DATA{`, `LEADER{` and `LEADER_LINE{` blocks in the order AutoCAD writes them, with the R2010 and R2013 groups gated by version and colours written as AcCmColor values. On the read side, the context text colour (90) is now decoded as an AcCmColor rather than RGB. The `LEADER{` groups, which had no class map, are now read: connection point, direction, index, landing distance and attachment direction.
+
+</details>
+
+### 0038 — DXF writer drops the entity data of ENDBLK
+
+- **File:** `third_party/acad-ts-patches/0038-dxf-endblk-entity-data.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts`
+- **Symptom:**
+  - `_writeBlockEnd` wrote only the AcDbEntity marker and the layer.
+  - The colour, linetype, lineweight, linetype scale and visibility of every ENDBLK came back as their defaults. AutoCAD gives ENDBLK the same entity data as its BLOCK.
+  - Corpus: 87 differences (`ENDBLK color._color`) in the acadsharp sample DXFs, ENDBLKs of colour 193.
+- **Fix:** write the common entity data with `writeCommonEntityData`, as `_writeBlock` does for BLOCK.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0038 DXF writer writes the common entity data of ENDBLK".
+  - Files: acadsharp AC1015–AC1032 ASCII DXFs, with ASCII and binary saves.
+  - The layer, linetype, colour, lineweight, linetype scale and visibility of every ENDBLK must survive.
+  - ENDBLK 9D3 of the R2000 sample is checked for colour 193.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the common entity data of ENDBLK in DXF
+
+`DxfBlocksSectionWriter._writeBlockEnd` writes only the AcDbEntity subclass marker and the layer, so the colour, linetype, lineweight and the rest of a block end are lost on save. This writes them with `writeCommonEntityData`, as `_writeBlock` already does for the block begin.
+
+</details>
+
+### 0039 — DXF reader leaves the caret codes of TOLERANCE text encoded
+
+- **File:** `third_party/acad-ts-patches/0039-dxf-tolerance-text-carets.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:**
+  - `_readTolerance` let the text (1) go through the generic class map, which keeps the raw value. A two-row frame read as `99^Ja`, while the DWG of the same drawing holds `99` and `a` with a real line break.
+  - The writer then escaped the caret again, so each save turned `^J` into `^ J` and the frame gained literal text.
+  - Corpus: 24 differences (`TOLERANCE text`) in the acadsharp sample DXFs. The entity oracle listed the gap under M1-32.
+- **Fix:** read 1 with `valueAsString`, which decodes the caret codes, as the other text entities do.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0039 DXF reader decodes the caret codes of TOLERANCE text".
+  - TOLERANCE 823 of the R2000 sample must read as `99\na` from both the DWG and the DXF.
+  - Every TOLERANCE text of the acadsharp AC1015–AC1032 DXFs must survive ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Decode caret codes in DXF TOLERANCE text
+
+`_readTolerance` assigns group 1 through the class map, so the `^J` row separators of a feature control frame stay encoded, unlike the DWG reader's result. The writer then escapes the caret, and each save turns `^J` into `^ J`. This reads the text with `valueAsString`, like TEXT and MTEXT.
+
+</details>
+
+### 0040 — DXF writer writes the MESH header groups on the wrong codes
+
+- **File:** `third_party/acad-ts-patches/0040-dxf-mesh-header-codes.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:**
+  - `_writeMesh` wrote the subdivision level as 71, which is the version, and 0 for 72 (blend crease) and 91 (subdivision level).
+  - A save turned every version 2 mesh into version 0 and lost its blend crease and level.
+  - Corpus: 25 differences (`MESH version`) in the acadsharp sample DXFs.
+- **Fix:** write 71 version, 72 blend crease and 91 subdivision level, the codes the reader and the class map use and AutoCAD writes (`71 2`, `72 0`, `91 0` in the samples).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0040 DXF writer writes MESH version, blend crease and subdivision level on their codes".
+  - The version, blend crease and level of every MESH of the acadsharp AC1015–AC1032 DXFs must survive ASCII and binary saves.
+  - MESH 343 of the R2000 sample is checked for version 2.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write DXF MESH version, blend crease and subdivision level on their own codes
+
+`_writeMesh` writes the subdivision level as group 71 and zero for 72 and 91. Group 71 is the version, 72 the blend crease and 91 the subdivision level, as the reader and AutoCAD use them, so a read-write cycle resets every mesh to version 0. This writes each value on its own code.
 
 </details>

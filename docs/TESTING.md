@@ -163,7 +163,7 @@ pnpm test:fidelity      # Playwright fidelity on public corpus
 pnpm test:perf          # perf targets
 pnpm test:offline       # offline/privacy
 pnpm test:ui            # dialogs, ribbon, grips
-pnpm test:io            # @triya/io worker in Chromium via a Vite dev server (M0-03)
+pnpm test:io            # @triya/io worker in Chromium via a Vite dev server (M0-03; responsiveness, progress, cancel M1-06)
 pnpm test:private       # all of the above on corpus/private (local only)
 pnpm corpus:list        # print corpus manifest
 pnpm corpus:ref <file>  # rasterise reference PDFs → PNGs
