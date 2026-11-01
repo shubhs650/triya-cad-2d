@@ -102,8 +102,6 @@ const ACAD_TS_GAPS: Record<string, string> = {
     'acad-ts reads an ellipse edge’s major axis (11/21) with the centre’s coordinate in place of the other component',
   'VIEWPORT 68':
     'acad-ts skips a DXF viewport’s status (68: off, or on with its stacking order), so every viewport reads as 1',
-  'VIEWPORT 69':
-    'acad-ts treats a viewport ID of 0 as unset and replaces it with the viewport’s index in its block',
   'VIEWPORT 340': 'acad-ts never reads a DXF viewport’s clip boundary (340); DWG reads it',
   'VIEWPORT MVIEW 12':
     'acad-ts does not read the view of an R12 viewport from its MVIEW xdata, so the view centre, height and lens read as 0',
