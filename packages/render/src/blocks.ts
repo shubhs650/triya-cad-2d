@@ -27,6 +27,8 @@
 // MAX_DEPTH, as AutoCAD never lets such a drawing be built; this keeps a damaged file finite.
 
 import {
+  annotationParts,
+  partEntity,
   tableAxes,
   type BlockDefinition,
   type DocumentModel,
@@ -175,6 +177,14 @@ export function referenceOf(
   return undefined;
 }
 
+/**
+ * Whether an entity draws through `expandInsert`: a block reference (`referenceOf`), or an
+ * annotation drawn as parts (a MULTILEADER, M1-52).
+ */
+export function expands(e: Entity, def: (block: Handle) => BlockDefinition | undefined): boolean {
+  return e.geom.kind === 'MULTILEADER' || referenceOf(e, def) !== undefined;
+}
+
 /** What an INSERT hands its block's entities, or undefined when the whole reference is hidden. */
 export type InsertContextFunction = (
   insert: Entity,
@@ -206,8 +216,8 @@ export interface BlockExpansion {
 const MAX_DEPTH = 32;
 
 /**
- * The primitives of an INSERT (or MINSERT, or a dimension's `*D` block) and everything nested
- * in it. `dashes` false draws
+ * The primitives of an INSERT (or MINSERT, a dimension's `*D` block, a table's `*T` block or a
+ * MULTILEADER's parts) and everything nested in it. `dashes` false draws
  * every linetype continuous (the scene cache's first pass); true fits the linetypes.
  */
 export function expandInsert(
@@ -220,8 +230,28 @@ export function expandInsert(
   let period = 0;
 
   const def = (block: Handle) => src.model.blocks.get(block);
+  const draw = (e: Entity, m: Affine, ctx: BlockContext | undefined, depth: number): void => {
+    if (expands(e, def)) {
+      walk(e, m, ctx, depth + 1);
+      return;
+    }
+    const paint = src.paint(e, src.model, ctx);
+    if (!paint) return;
+    const { linetype, ...continuous } = paint;
+    if (linetype)
+      period = Math.max(period, patternLength(linetype.pattern) * linetype.scale * affineScale(m));
+    for (const p of tessellate(e.geom, options.dashes ? paint : continuous, src.tessellate))
+      prims.push(transformPrimitive(p, m));
+  };
   const walk = (e: Entity, m: Affine, outer: BlockContext | undefined, depth: number): void => {
     if (depth > MAX_DEPTH) return;
+    // A MULTILEADER draws its parts where it stands, each painted as an entity of its own
+    // (M1-52); its arrowhead blocks expand as inserts.
+    const parts = annotationParts(e.geom, src.model);
+    if (parts) {
+      for (const part of parts) draw(partEntity(e, part), m, outer, depth);
+      return;
+    }
     const ref = referenceOf(e, def);
     if (!ref) return;
     const ctx = src.insertContext(e, src.model, outer);
@@ -230,21 +260,9 @@ export function expandInsert(
     const order = src.order(ref.block);
     for (const cell of ref.cells) {
       const cm = composeAffine(m, cell);
-      const k = affineScale(cm);
       for (const id of order) {
         const child = src.model.entity(id);
-        if (!child) continue;
-        if (referenceOf(child, def)) {
-          walk(child, cm, ctx, depth + 1);
-          continue;
-        }
-        const paint = src.paint(child, src.model, ctx);
-        if (!paint) continue;
-        const { linetype, ...continuous } = paint;
-        if (linetype)
-          period = Math.max(period, patternLength(linetype.pattern) * linetype.scale * k);
-        for (const p of tessellate(child.geom, options.dashes ? paint : continuous, src.tessellate))
-          prims.push(transformPrimitive(p, cm));
+        if (child) draw(child, cm, ctx, depth);
       }
     }
   };

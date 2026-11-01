@@ -35,7 +35,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | DIMENSION (arc length) | ✓ (ARC_DIMENSION; drawn from its stored `*D` block, M1-15 part 1) | | | | |
 | DIMENSION (jogged) | — acad-ts does not read LARGE_RADIAL_DIMENSION as a dimension (M1-34) | | | | |
 | LEADER | ✓ | | | | |
-| MLEADER (+ MLEADERSTYLE) | ✓ (DXF branches and the context text colour read since 0037) | | | | |
+| MLEADER (+ MLEADERSTYLE) | ✓ (DXF branches and the context text colour read since 0037; the context arrowhead size read as `drawnArrowheadSize`; drawn by the renderer as its leader lines, landing, arrowheads and MTEXT with its frame, and bounded by them, M1-52 part 1; spline leaders wait for M1-47, block content, per-line overrides and underline attachments for M1-52 part 2) | | | | |
 | HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | ✓ (style 75, seed points and ellipse-edge major axes lost by acad-ts, M1-32; solid and pattern fills drawn by the renderer from the stored pattern lines, M1-16 part 1; gradient fills and the sub-pixel pattern tint, M1-16 part 2; a hatch stored without pattern lines drawn from its user-defined settings or the bundled patterns, M1-16 part 3; with the gradient ramps unverified against AutoCAD plots until M1-24/M1-26) | | | | |
 | WIPEOUT | ✓ (acad-ts skips the clip type 71; the mapper infers a polygon from more than two vertices, M1-32) | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |

@@ -27,6 +27,7 @@ import {
   type EntityBounds,
 } from './entity-bounds';
 import { PackedRTree } from './packed-tree';
+import { annotationParts } from '../annotation/multileader';
 
 /** Kinds whose bounds use `annotationBounds`: themselves, or their attributes (INSERT). */
 const ANNOTATION_KINDS: ReadonlySet<string> = new Set([
@@ -140,13 +141,15 @@ class BlockTree {
   }
 }
 
-/** The block an entity's bounds are built from, if any. */
-function referencedBlock(e: Entity): Handle | undefined {
+/** The blocks an entity's bounds are built from: its block, or its parts' arrowhead blocks. */
+function referencedBlocks(e: Entity, model: DocumentModel): readonly Handle[] {
   const g = e.geom;
-  if (g.kind === 'INSERT') return g.block;
-  if (g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION') return g.block;
-  if (g.kind === 'ACAD_TABLE') return g.block;
-  return undefined;
+  if (g.kind === 'INSERT') return [g.block];
+  if (g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'ACAD_TABLE')
+    return g.block === undefined ? [] : [g.block];
+  const parts = annotationParts(g, model);
+  if (!parts) return [];
+  return [...new Set(parts.flatMap((p) => (p.geom.kind === 'INSERT' ? [p.geom.block] : [])))];
 }
 
 export class SpatialIndex {
@@ -156,6 +159,8 @@ export class SpatialIndex {
   readonly #trees = new Map<Handle, BlockTree>();
   /** Block → the entities whose bounds come from its extents. */
   readonly #refs = new Map<Handle, Set<EntityId>>();
+  /** Entity → the blocks it was linked under, so unlinking needs no recomputation. */
+  readonly #linked = new Map<EntityId, readonly Handle[]>();
   readonly #extents = new Map<Handle, BlockExtents>();
   /** Blocks whose extents are being computed, to cut reference cycles. */
   readonly #computing = new Set<Handle>();
@@ -171,6 +176,7 @@ export class SpatialIndex {
       annotationBounds: options.annotationBounds,
       blockExtents: (h) => this.extents(h),
       basePoint: (h) => model.blocks.get(h)?.basePoint,
+      tables: model,
     };
   }
 
@@ -274,19 +280,22 @@ export class SpatialIndex {
   }
 
   #link(e: Entity): void {
-    const block = referencedBlock(e);
-    if (block === undefined) return;
-    let set = this.#refs.get(block);
-    if (!set) {
-      set = new Set();
-      this.#refs.set(block, set);
+    const blocks = referencedBlocks(e, this.#model);
+    if (blocks.length === 0) return;
+    this.#linked.set(e.id, blocks);
+    for (const block of blocks) {
+      let set = this.#refs.get(block);
+      if (!set) {
+        set = new Set();
+        this.#refs.set(block, set);
+      }
+      set.add(e.id);
     }
-    set.add(e.id);
   }
 
   #unlink(e: Entity): void {
-    const block = referencedBlock(e);
-    if (block !== undefined) this.#refs.get(block)?.delete(e.id);
+    for (const block of this.#linked.get(e.id) ?? []) this.#refs.get(block)?.delete(e.id);
+    this.#linked.delete(e.id);
   }
 
   #update(removed: readonly Entity[], added: readonly Entity[]): void {
