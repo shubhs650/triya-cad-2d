@@ -1,0 +1,1 @@
+- M1-31 part 1 (#61): DXF saves keep `DIMASSOC` objects (patch 0061) and the `IMAGEDEF_REACTOR` of every image (0062), so associative dimensions and images keep their links; 124 dropped handles fewer, round trip 8,266 → 7,865 differences.

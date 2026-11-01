@@ -12,8 +12,10 @@ const corpusBytes = (path: string): Uint8Array =>
   );
 // AC1032 ASCII DXF with view styles and dynamic-block data.
 const DYN = 'third-party/acadsharp/dynamic-blocks/BLOCKPOLARPARAMETER.dxf';
-// AC1027 ASCII DXF with DIMASSOC objects, which the acad-ts DXF writer skips (M1-31).
-const SKIPPED = 'third-party/ezdxf/examples_dxf/dimension_in_block.dxf';
+// Binary R13 DXF with ACAD_PROXY_OBJECTs, which the acad-ts DXF writer still skips (M1-31).
+// The tooling tests below need a file the writer drops objects from; when M1-31 fixes this
+// one, point SKIPPED at another such file (DIMASSOC in dimension_in_block.dxf was fixed by 0061).
+const SKIPPED = 'third-party/ezdxf/integration_tests/bin_dxf_r13.dxf';
 const DWG = 'third-party/acadsharp/sample_base/empty.dwg';
 
 describe('spike tooling', () => {
@@ -34,9 +36,7 @@ describe('spike tooling', () => {
     const bytes = corpusBytes(SKIPPED);
     const kept = roundTrip(bytes, { keepOutput: true });
     expect(kept.output?.length).toBe(kept.bytesOut);
-    expect(Object.keys(kept.writerNotes ?? {}).some((m) => /DimensionAssociation/.test(m))).toBe(
-      true,
-    );
+    expect(Object.keys(kept.writerNotes ?? {}).some((m) => /ProxyObject/.test(m))).toBe(true);
     expect(roundTrip(bytes).output).toBeUndefined();
   });
 

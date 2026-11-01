@@ -247,8 +247,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 148B 1493 149E",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 149C",
         "TABLEGEOMETRY": "748 149D",
@@ -268,8 +266,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 249B 24A3 24AE",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "2499 24AC",
         "TABLEGEOMETRY": "249A 24AD",
@@ -306,8 +302,6 @@
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DATATABLE": "143D 145B",
         "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 13DE 13E6 13F1",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 13EF",
         "TABLEGEOMETRY": "748 13F0",
@@ -327,8 +321,6 @@
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DATATABLE": "244D 246B",
         "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 23EE 23F6 2401",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "23EC 23FF",
         "TABLEGEOMETRY": "23ED 2400",
@@ -365,8 +357,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "1374 137C 1387",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 1385",
         "TABLEGEOMETRY": "748 1386",
@@ -386,8 +376,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "2384 238C 2397",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "2382 2395",
         "TABLEGEOMETRY": "2383 2396",
@@ -422,8 +410,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "1310 1315 1320",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 131E",
         "TABLEGEOMETRY": "748 131F",
@@ -443,8 +429,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "231F 2324 232F",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "231D 232D",
         "TABLEGEOMETRY": "231E 232E",
@@ -479,8 +463,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "12E4 12E9 12F4",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 12F2",
         "TABLEGEOMETRY": "748 12F3",
@@ -500,8 +482,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "22F1 22F6 2301",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "22EF 22FF",
         "TABLEGEOMETRY": "22F0 2300",
@@ -536,8 +516,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "12CF 12D9",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 12D7",
         "TABLEGEOMETRY": "748 12D8",
@@ -557,8 +535,6 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DICTIONARY": "22DA 22E4",
-        "DIMASSOC": "521 524 9D0",
-        "IMAGEDEF_REACTOR": "8C5",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "22D8 22E2",
         "TABLEGEOMETRY": "22D9 22E3",
@@ -646,15 +622,11 @@
     },
     "public/third-party/ezdxf/examples_dxf/dimension_in_block.dxf": {
       "declared": 161,
-      "lost": {
-        "DIMASSOC": "9F B5"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/dimension_in_nested_blocks.dxf": {
       "declared": 185,
-      "lost": {
-        "DIMASSOC": "F5"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/hatch_issues.dxf": {
       "declared": 136,
@@ -692,9 +664,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/images.dxf": {
       "declared": 457,
-      "lost": {
-        "IMAGEDEF_REACTOR": "81 87 8D 95 9A 9C A1 A3 A8 AA AD B1 B6 BB BF C4 C6 CB D0 D4 D9 DB DD E0 E5 E7 E9 ED F2 F5 F7 F9 FB FD 100 102 10A 10C 111 113 118 11B 11D 124 127 12D 12F 131 133 139 13E 140 148 14E 151 157 189 191 1A8 1B1"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/insert_bricscad_level_1.dxf": {
       "declared": 187,
@@ -783,7 +753,6 @@
       "lost": {
         "ACSH_BOX_CLASS": "623 62F",
         "DICTIONARY": "5FD 5FE",
-        "DIMASSOC": "345 357 393 3AD 3C9 3E3 413 42B",
         "FIELD": "5F8 5F9 5FF 600",
         "SORTENTSTABLE": "233 4A7 4A9 4C2 507 5E0 665 666 667 668"
       }
@@ -798,9 +767,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/viewports.dxf": {
       "declared": 200,
-      "lost": {
-        "IMAGEDEF_REACTOR": "780 789 78F 79B 7EA"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/visibility.dxf": {
       "declared": 164,
