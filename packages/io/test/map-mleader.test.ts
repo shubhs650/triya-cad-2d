@@ -88,6 +88,7 @@ describe('MULTILEADER', () => {
     m.arrowhead = arrow;
     m.arrowheadSize = 0.18;
     m.scaleFactor = 2;
+    m.contextData.arrowheadSize = 0.36;
     m.textLeftAttachment = 1 as never;
     m.textRightAttachment = 3 as never;
     m.textTopAttachment = 9 as never;
@@ -108,6 +109,8 @@ describe('MULTILEADER', () => {
       doglegLength: 0.36,
       arrowhead: H(arrow),
       arrowheadSize: 0.18,
+      // The context's drawn size, overall scale 2 applied.
+      drawnArrowheadSize: 0.36,
       contentType: 2,
       scale: 2,
       annotative: false,

@@ -31,7 +31,7 @@ import type {
   SortEntsTable,
   SpatialIndex,
 } from '@triya/engine';
-import { expandInsert, referenceOf, type BlockSource } from './blocks';
+import { expandInsert, expands, type BlockSource } from './blocks';
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { mixColors, tintColor } from './style/mix';
@@ -411,7 +411,7 @@ export class Canvas2DRenderer implements Renderer {
     if (!e) return;
     let prims: readonly RenderPrimitive[];
     let extra: Pick<CacheEntry, 'dashes' | 'blocks'>;
-    if (referenceOf(e, this.#blockDef)) {
+    if (expands(e, this.#blockDef)) {
       // The reference decides its own visibility: an off layer still shows its contents on
       // other layers.
       const x = expandInsert(e, this.#blockSource, { dashes: false });

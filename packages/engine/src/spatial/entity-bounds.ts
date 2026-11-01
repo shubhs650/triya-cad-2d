@@ -4,13 +4,15 @@
 //
 // Text has no box here: widths must be exact (opentype.js or stroke-font metrics, CLAUDE.md),
 // and the engine cannot see fonts. Text and annotations are "unknown", which queries always
-// return, until the caller injects exact bounds through `annotationBounds` (wired up when the
-// text engine lands, roadmap M1-35).
+// return, until the caller injects exact bounds through `annotationBounds` (the renderer's
+// `textBounds`, M1-35). A MULTILEADER is the union of its parts (`multiLeaderParts`, M1-52),
+// its text through that same provider.
 
 import { boxOf, curveBounds, unionBox, type Box } from '../geom/bounds';
 import type { Polyline, Spline } from '../geom/curves';
 import { validateSpline } from '../geom/nurbs';
 import type { Tolerance } from '../geom/tolerance';
+import { annotationParts, type AnnotationTables } from '../annotation/multileader';
 import type { Vec2 } from '../geom/types';
 import type { Handle } from '../model/handle';
 import type {
@@ -71,6 +73,8 @@ export interface BoundsContext {
   /** A block's base point; the origin when not given. */
   basePoint?(block: Handle): Vec2 | undefined;
   readonly annotationBounds?: AnnotationBounds | undefined;
+  /** The drawing's tables and blocks, for annotations bounded by their parts (MULTILEADER). */
+  readonly tables?: AnnotationTables | undefined;
 }
 
 const UNKNOWN: EntityBounds = Object.freeze({ kind: 'unknown' });
@@ -323,10 +327,21 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
     case 'MTEXT':
     case 'ATTDEF':
     case 'TOLERANCE':
-    case 'LEADER':
-    case 'MULTILEADER': {
+    case 'LEADER': {
       const b = annotation(geom, ctx);
       return b ? boxed(b) : UNKNOWN;
+    }
+    case 'MULTILEADER': {
+      // The union of what it draws (M1-52): lines, arrowheads, landing, content.
+      const parts = ctx.tables ? annotationParts(geom, ctx.tables) : undefined;
+      if (!parts) return UNKNOWN;
+      let out: Box | undefined;
+      for (const p of parts) {
+        const b = entityBounds(p.geom, ctx);
+        if (b.kind === 'unknown' || b.kind === 'infinite') return UNKNOWN;
+        if (b.kind === 'box') out = out ? unionBox(out, b.box) : b.box;
+      }
+      return out ? boxed(out) : EMPTY;
     }
     case 'DIMENSION':
     case 'ARC_DIMENSION': {
