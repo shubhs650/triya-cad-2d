@@ -12,6 +12,26 @@ export class MathHelper {
     return radians * (180 / Math.PI);
   }
 
+  /**
+   * Degrees that `degToRad` turns back into exactly `radians`. Files store angles in degrees and
+   * readers convert them with `degToRad`; `radToDeg` can land one ulp away from the value read,
+   * so a save would move the angle. Tries the doubles next to `radToDeg(radians)`.
+   */
+  static radToDegRoundTrip(radians: number): number {
+    const degrees = MathHelper.radToDeg(radians);
+    if (!Number.isFinite(degrees) || MathHelper.degToRad(degrees) === radians) return degrees;
+    const value = new Float64Array(1);
+    const bits = new BigInt64Array(value.buffer);
+    for (let step = 1n; step <= 4n; step++) {
+      for (const sign of [1n, -1n]) {
+        value[0] = degrees;
+        bits[0] += sign * step;
+        if (MathHelper.degToRad(value[0]) === radians) return value[0];
+      }
+    }
+    return degrees;
+  }
+
   static radToGrad(radians: number): number {
     return radians * (200 / Math.PI);
   }
