@@ -1,0 +1,12 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index a5d8d1f..eb3d039 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -344,6 +344,7 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+     this._writer.write(79, view.ucsOrthographicType);
+ 
+     this._writer.write(281, view.renderMode as number);
++    this._writer.writeHandle(348, view.visualStyle);
+ 
+     this._writer.writeVector(110, view.ucsOrigin);
+     this._writer.writeVector(111, view.ucsXAxis);

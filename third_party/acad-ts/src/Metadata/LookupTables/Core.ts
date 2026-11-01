@@ -247,7 +247,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
         "valueCodes": [
           280
         ],
-        "referenceType": 0
+        "referenceType": 0,
+        "valueKind": "char"
       },
       {
         "name": "$DIMAPOST",
@@ -463,7 +464,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
         "valueCodes": [
           70
         ],
-        "referenceType": 0
+        "referenceType": 0,
+        "valueKind": "char"
       },
       {
         "name": "$DIMATFIT",
@@ -976,7 +978,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
         "valueCodes": [
           280
         ],
-        "referenceType": 0
+        "referenceType": 0,
+        "valueKind": "char"
       },
       {
         "name": "$LWDISPLAY",
@@ -1048,7 +1051,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
         "valueCodes": [
           280
         ],
-        "referenceType": 0
+        "referenceType": 0,
+        "valueKind": "char"
       },
       {
         "name": "$ELEVATION",
@@ -1282,7 +1286,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
         "valueCodes": [
           280
         ],
-        "referenceType": 0
+        "referenceType": 0,
+        "valueKind": "char"
       },
       {
         "name": "$LONGITUDE",

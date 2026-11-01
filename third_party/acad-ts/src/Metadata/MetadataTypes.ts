@@ -1,4 +1,4 @@
-export type MetadataValueKind = 'date' | 'timespan';
+export type MetadataValueKind = 'date' | 'timespan' | 'char';
 
 export interface PropertyMetadata {
 	propertyName: string;

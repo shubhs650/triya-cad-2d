@@ -9,6 +9,8 @@ import { DxfReferenceType } from '../../../Types/DxfReferenceType.js';
 import { CadHeader } from '../../../Header/CadHeader.js';
 import { CadSystemVariable } from '../../../CadSystemVariable.js';
 import { ACadVersion } from '../../../ACadVersion.js';
+import { GroupCodeValue } from '../../../GroupCodeValue.js';
+import { GroupCodeValueType } from '../../../GroupCodeValueType.js';
 
 export class DxfHeaderSectionWriter extends DxfSectionWriterBase {
   // R11/R12 header vocabulary; later variables may also use incompatible codes.
@@ -64,6 +66,12 @@ export class DxfHeaderSectionWriter extends DxfSectionWriterBase {
       if (item.getValue(this.header) === null || item.getValue(this.header) === undefined) {
         continue;
       }
+      // An unset single-character flag ($LOFTNORMALS, $DWFFRAME, ...) reads as ''; writing it
+      // under a numeric code would read back as "0", so a drawing that never had it keeps it out.
+      if (item.getValue(this.header) === '' && item.dxfCodes.every((c) => GroupCodeValue.transformValue(c as number) !== GroupCodeValueType.String)) {
+        continue;
+      }
+
 
       this._writer.write(DxfCode.CLShapeText, key);
 

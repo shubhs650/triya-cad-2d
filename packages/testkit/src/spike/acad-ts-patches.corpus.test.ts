@@ -23,7 +23,9 @@ import {
   DxfReader,
   DxfReaderConfiguration,
   DxfWriter,
+  DxfWriterConfiguration,
   Hatch,
+  ImageDefinition,
   HatchBoundaryPathArc,
   HatchBoundaryPathEllipse,
   Insert,
@@ -35,6 +37,7 @@ import {
   MLineStyle,
   MText,
   MultiLeader,
+  MultiLeaderStyle,
   RasterVariables,
   Solid3D,
   SortEntitiesTable,
@@ -79,22 +82,33 @@ const readDwgRaw = (path: string | ArrayBuffer): CadDocument =>
     keepRaw(new DwgReaderConfiguration()),
   );
 
-function writeDxf(doc: CadDocument, binary: boolean): Uint8Array {
+function writeDxf(doc: CadDocument, binary: boolean, config?: DxfWriterConfiguration): Uint8Array {
   if (binary) {
     const chunks: Uint8Array[] = [];
-    DxfWriter.writeToStream({ write: (b: Uint8Array) => void chunks.push(b.slice()) }, doc, true);
+    DxfWriter.writeToStream(
+      { write: (b: Uint8Array) => void chunks.push(b.slice()) },
+      doc,
+      true,
+      config,
+    );
     return Buffer.concat(chunks);
   }
   // ASCII goes into a byte buffer (code-page encoding); DXF text has no NUL, so it ends at the
   // last non-zero byte. The corpus files used here are well under the buffer size.
   const buffer = new Uint8Array(32 << 20);
-  DxfWriter.writeToStream(buffer, doc, false);
+  DxfWriter.writeToStream(buffer, doc, false, config);
   let end = buffer.length;
   while (end > 0 && buffer[end - 1] === 0) end--;
   return buffer.slice(0, end);
 }
 const dxfRawRoundTrip = (doc: CadDocument, binary: boolean): CadDocument =>
   readDxfRaw(writeDxf(doc, binary));
+// A save that writes every header variable, as @triya/io's fidelity configuration does.
+function dxfAllHeaderRoundTrip(doc: CadDocument, binary: boolean): CadDocument {
+  const config = new DxfWriterConfiguration();
+  config.writeAllHeaderVariables = true;
+  return readDxfRaw(writeDxf(doc, binary, config));
+}
 const dwgRawRoundTrip = (doc: CadDocument): CadDocument =>
   readDwgRaw(DwgWriter.writeToBuffer(doc).slice().buffer);
 
@@ -1183,5 +1197,113 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(colors(dwgRawRoundTrip(doc)), file).toEqual(colors(doc));
     }
     expect(colors(readDwgRaw(dwgSamples[0]!))).toContainEqual(['996', 42]);
+  });
+
+  it('0054 DXF writer leaves out R2007+ header flags the drawing never set', () => {
+    // $LOFTNORMALS, $LIGHTGLYPHDISPLAY, $DWFFRAME and $DGNFRAME are single-character flags.
+    // A drawing without them (any file before R2007) reads them as '', and writing every
+    // header variable (as @triya/io does) put out '' under group 280, which reads back as "0".
+    const flags = (d: CadDocument): unknown[] => [
+      d.header!.loftedObjectNormals,
+      d.header!.displayLightGlyphs,
+      d.header!.dwgUnderlayFramesVisibility,
+      d.header!.dgnUnderlayFramesVisibility,
+    ];
+    for (const file of [
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+      'third-party/ezdxf/examples_dxf/Minimal_DXF_AC1021.dxf',
+      'third-party/acadsharp/sample_AC1032_ascii.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      for (const binary of [false, true]) {
+        expect(flags(dxfAllHeaderRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(
+          flags(doc),
+        );
+      }
+    }
+    expect(flags(readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1015_ascii.dxf')))).toEqual(
+      ['', '', '', ''],
+    );
+  });
+
+  it('0055 DXF reader and writer keep single-character header variables as characters', () => {
+    // $DIMDSEP (70) holds the character code of the decimal separator and the R2007+ flags
+    // (280) a character whose code is the setting, as in the DWG header. The DXF reader kept
+    // the digits ("46" for "."), so the same drawing read differently from DXF and DWG, and a
+    // DXF-to-DWG save wrote the code of the first digit ("4").
+    const chars = (d: CadDocument): unknown[] => [
+      d.header!.dimensionDecimalSeparator,
+      d.header!.loftedObjectNormals,
+      d.header!.displayLightGlyphs,
+      d.header!.dwgUnderlayFramesVisibility,
+      d.header!.dgnUnderlayFramesVisibility,
+    ];
+    for (const version of ['AC1018', 'AC1032']) {
+      const dxf = readDxfRaw(corpusBytes(`third-party/acadsharp/sample_${version}_ascii.dxf`));
+      const dwg = readDwgRaw(`third-party/acadsharp/sample_${version}.dwg`);
+      expect(chars(dxf), version).toEqual(chars(dwg));
+      for (const binary of [false, true]) {
+        expect(chars(dxfAllHeaderRoundTrip(dxf, binary)), `${version} binary ${binary}`).toEqual(
+          chars(dxf),
+        );
+      }
+    }
+    expect(chars(readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1032_ascii.dxf')))).toEqual(
+      ['.', '\u0001', '\u0001', '\u0002', '\u0000'],
+    );
+  });
+
+  it('0056 DXF writer writes the default pixel size of IMAGEDEF objects', () => {
+    // 11/21 holds the size of one pixel in drawing units; the writer left it out, so a saved
+    // image definition came back with the 1 x 1 default.
+    const sizes = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is ImageDefinition => o instanceof ImageDefinition)
+        .map((i) => [handleHex(i), i.defaultSize.x, i.defaultSize.y]);
+    for (const file of [
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+      'third-party/ezdxf/examples_dxf/images.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(sizes(doc).length, file).toBeGreaterThan(0);
+      for (const binary of [false, true]) {
+        expect(sizes(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(sizes(doc));
+      }
+    }
+    expect(
+      sizes(readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1015_ascii.dxf')))[0],
+    ).toEqual(['8C4', 0.2645833333333333, 0.2645833333333333]);
+  });
+
+  it('0057 DXF writer writes the visual style of VIEW table entries', () => {
+    // A named view keeps its visual style in 348; the writer left it out, so saved views lost
+    // their visual style.
+    const styles = (d: CadDocument): unknown[] =>
+      [...d.views!].map((v) => [v.name, handleHex(v.visualStyle)]);
+    for (const version of ['AC1021', 'AC1032']) {
+      const doc = readDxfRaw(corpusBytes(`third-party/acadsharp/sample_${version}_ascii.dxf`));
+      expect(
+        styles(doc).filter((s) => (s as unknown[])[1] !== undefined).length,
+        version,
+      ).toBeGreaterThan(0);
+      for (const binary of [false, true]) {
+        expect(styles(dxfRawRoundTrip(doc, binary)), `${version} binary ${binary}`).toEqual(
+          styles(doc),
+        );
+      }
+    }
+  });
+
+  it('0058 DXF writer writes the 298 flag of MLEADERSTYLE objects as read', () => {
+    // The writer always wrote false, so styles that set it changed on every save.
+    const flags = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is MultiLeaderStyle => o instanceof MultiLeaderStyle)
+        .map((m) => [handleHex(m), m.unknownFlag298]);
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/text.dxf'));
+    expect(flags(doc)).toContainEqual(['2D8', true]);
+    for (const binary of [false, true]) {
+      expect(flags(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual(flags(doc));
+    }
   });
 });

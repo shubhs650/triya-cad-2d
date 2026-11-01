@@ -164,6 +164,13 @@ describe('structuralDiff header rules (TESTING.md §3)', () => {
     expect(structuralDiff(a, b).differences).toEqual([]);
   });
 
+  it("allows the saving application's $LASTSAVEDBY and $ACADMAINTVER (DEC-041)", () => {
+    const [a, b] = twinDocuments();
+    b.header!.lastSavedBy = 'someone else';
+    b.header!.maintenanceVersion += 1;
+    expect(structuralDiff(a, b).differences).toEqual([]);
+  });
+
   it('still reports a changed creation date', () => {
     const [a, b] = twinDocuments();
     b.header!.createDateTime = new Date(Date.UTC(2030, 0, 1));
