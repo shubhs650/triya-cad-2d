@@ -287,6 +287,30 @@ describe('tables', () => {
   it('draws nothing without rows or columns', () => {
     expect(entityBounds({ ...table, rowHeights: [], columnWidths: [] }, ctx()).kind).toBe('empty');
   });
+
+  // M1-17: the `*T` block holds the table as AutoCAD drew it, from the insertion point (its
+  // top-left corner) along the direction and down: x along the direction, y across it.
+  const withBlock = { ...table, block: 'T1' } as EntityGeometry;
+
+  it('bounds a table by its *T block’s extents placed at the insertion point', () => {
+    const b = entityBounds(withBlock, ctx({ T1: box(0, -14, 70, 0) }));
+    expectBox(b, box(10, 6, 80, 20));
+  });
+
+  it('turns the block with the direction, and mirrors it on a −Z plane', () => {
+    const up = { ...withBlock, direction: { x: 0, y: 1 } } as EntityGeometry;
+    expectBox(entityBounds(up, ctx({ T1: box(0, -14, 70, 0) })), box(10, 20, 24, 90));
+    // Normal (0, 0, −1): the block's y axis, normal × direction, is (0, −1), so the grid
+    // that hangs down in the block rises from the insertion point in plan.
+    const mirrored = { ...withBlock, normal: { x: 0, y: 0, z: -1 } } as EntityGeometry;
+    expectBox(entityBounds(mirrored, ctx({ T1: box(0, -14, 70, 0) })), box(10, 20, 80, 34));
+  });
+
+  it('falls back to the grid disc while the block’s extents are unknown or empty', () => {
+    const r = Math.hypot(70, 14);
+    expectBox(entityBounds(withBlock, ctx({ T1: 'unknown' })), box(10 - r, 20 - r, 10 + r, 20 + r));
+    expectBox(entityBounds(withBlock, ctx()), box(10 - r, 20 - r, 10 + r, 20 + r));
+  });
 });
 
 describe('images and underlays', () => {

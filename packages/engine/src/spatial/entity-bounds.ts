@@ -26,6 +26,7 @@ import type {
   MTextGeometry,
   MultiLeaderGeometry,
   PolylineVertex,
+  TableGeometry,
   TextGeometry,
   ToleranceGeometry,
   UnderlayGeometry,
@@ -114,6 +115,17 @@ function maxWidth(vertices: readonly PolylineVertex[], start = 0, end = 0, const
 
 function annotation(geom: AnnotationGeometry, ctx: BoundsContext): Box | undefined {
   return ctx.annotationBounds?.(geom);
+}
+
+/**
+ * An ACAD_TABLE's frame in plan: its block's x axis runs along the horizontal direction (WCS)
+ * and its y axis along normal × direction, which mirrors the table on a −Z plane (DEC-039).
+ */
+export function tableAxes(geom: TableGeometry): { readonly x: Vec2; readonly y: Vec2 } {
+  const len = Math.hypot(geom.direction.x, geom.direction.y);
+  const d = len > 0 ? { x: geom.direction.x / len, y: geom.direction.y / len } : { x: 1, y: 0 };
+  const nz = (geom.normal?.z ?? 1) < 0 ? -1 : 1;
+  return { x: d, y: { x: -nz * d.y, y: nz * d.x } };
 }
 
 /**
@@ -357,9 +369,28 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
       return boxed({ minX: x - hw, minY: y - hh, maxX: x + hw, maxY: y + hh });
     }
     case 'ACAD_TABLE': {
-      // The grid starts at the insertion point and may flow up or down along any direction,
-      // so a circle of the grid's diagonal around that point holds it; cell text wraps inside
-      // its cell. Looser than the drawn table, never tighter.
+      // The `*T` block draws the table as AutoCAD last did, in the table's own frame (M1-17):
+      // its extents placed at the insertion point bound it exactly.
+      const ext = geom.block === undefined ? undefined : ctx.blockExtents(geom.block);
+      if (ext !== undefined && ext !== 'unknown' && !isEmptyBox(ext)) {
+        const base = ctx.basePoint?.(geom.block!) ?? { x: 0, y: 0 };
+        const { x: ax, y: ay } = tableAxes(geom);
+        const at = (x: number, y: number): Vec2 => ({
+          x: geom.position.x + (x - base.x) * ax.x + (y - base.y) * ay.x,
+          y: geom.position.y + (x - base.x) * ax.y + (y - base.y) * ay.y,
+        });
+        return boxed(
+          boxOf([
+            at(ext.minX, ext.minY),
+            at(ext.maxX, ext.minY),
+            at(ext.minX, ext.maxY),
+            at(ext.maxX, ext.maxY),
+          ]),
+        );
+      }
+      // Without it (or while its text has no metrics), the grid starts at the insertion point
+      // and may flow up or down along any direction, so a circle of the grid's diagonal
+      // around that point holds it; cell text wraps inside its cell. Looser, never tighter.
       const w = geom.columnWidths.reduce((a, b) => a + Math.abs(b), 0);
       const h = geom.rowHeights.reduce((a, b) => a + Math.abs(b), 0);
       if (geom.columnWidths.length === 0 || geom.rowHeights.length === 0) return EMPTY;
