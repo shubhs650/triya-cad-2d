@@ -4,7 +4,15 @@
 // Coordinate Systems"), not with the mapper's own conversion.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { EntityInit, InsertGeometry, MTextGeometry, TextFields, Vec2 } from '@triya/engine';
+import type {
+  DimensionGeometry,
+  EntityInit,
+  InsertGeometry,
+  LeaderGeometry,
+  MTextGeometry,
+  TextFields,
+  Vec2,
+} from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { mapEntities, mapTables, readCadDocument, type MappedTables } from '@triya/io';
 import { loadManifest } from '../corpus/manifest.ts';
@@ -80,6 +88,10 @@ const ACAD_TS_GAPS: Record<string, string> = {
   'ATTDEF 71':
     'acad-ts reads the AcDbText 71 (backward / upside-down) of an ATTDEF as its multiline flag, so the mirror is lost',
   'INSERT ATTRIB 71': 'the same for ATTRIB',
+  'TOLERANCE 1':
+    'acad-ts does not caret-decode TOLERANCE text, so its ^J row breaks stay encoded (MTEXT is decoded)',
+  'DIMENSION 70':
+    'acad-ts reads a rotated dimension whose AcDbRotatedDimension subclass is empty (50 omitted, angle 0) as an aligned one',
 };
 
 /** Types this part maps; the others must be reported as not mapped yet. */
@@ -101,6 +113,10 @@ const MAPPED = new Set([
   'MTEXT',
   'ATTDEF',
   'INSERT',
+  'DIMENSION',
+  'ARC_DIMENSION',
+  'LEADER',
+  'TOLERANCE',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({
@@ -371,6 +387,29 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
       compareMText(g, geom, t, bad);
       return;
     }
+    case 'DIMENSION':
+    case 'ARC_DIMENSION': {
+      if (geom.kind !== 'DIMENSION' && geom.kind !== 'ARC_DIMENSION')
+        return bad('type', d.type, geom.kind);
+      compareDimension(g, d.type, geom, t, bad);
+      return;
+    }
+    case 'LEADER': {
+      if (geom.kind !== 'LEADER') return bad('type', d.type, geom.kind);
+      compareLeader(g, geom, t, bad);
+      return;
+    }
+    case 'TOLERANCE': {
+      if (geom.kind !== 'TOLERANCE') return bad('type', d.type, geom.kind);
+      const style = (first(g, 3) ?? 'STANDARD').trim().toUpperCase();
+      if (nameOf(t.dimStyles, geom.style) !== style)
+        bad('3', style, nameOf(t.dimStyles, geom.style));
+      if (!near(geom.position, pt(g, 10))) bad('10', fmt(pt(g, 10)), fmt(geom.position));
+      if (!sameText(first(g, 1), geom.text)) bad('1', first(g, 1), geom.text);
+      const dir = pt(g, 11);
+      if (!sameAngle(geom.rotation, Math.atan2(dir.y, dir.x))) bad('11', fmt(dir), geom.rotation);
+      return;
+    }
     case 'INSERT': {
       if (geom.kind !== 'INSERT') return bad('type', d.type, geom.kind);
       compareInsert(g, geom, t, bad);
@@ -620,6 +659,130 @@ function compareInsert(g: readonly Group[], geom: InsertGeometry, t: MappedTable
     const want = step(num(g, 44), num(g, 45));
     if (!near(gotStep, want)) bad('44', fmt(want), fmt(gotStep));
   }
+}
+
+const sameAngle = (a: number, b: number): boolean =>
+  near({ x: Math.cos(a), y: Math.sin(a) }, { x: Math.cos(b), y: Math.sin(b) });
+
+/** The groups after the AcDbDimension subclass (the per-type subclasses); all of R12's. */
+function afterDimension(g: readonly Group[]): readonly Group[] {
+  const k = g.findIndex(([c, v]) => c === 100 && v.trim() === 'AcDbDimension');
+  if (k < 0) return g;
+  const next = g.findIndex(([c], i) => i > k && c === 100);
+  return next < 0 ? [] : g.slice(next);
+}
+
+const DIM_TYPES = ['linear', 'aligned', 'angular', 'diameter', 'radius', 'angular3pt', 'ordinate'];
+
+function compareDimension(
+  all: readonly Group[],
+  type: string,
+  geom: DimensionGeometry,
+  t: MappedTables,
+  bad: Bad,
+): void {
+  const n = extrusion(all);
+  const g = subclass(all, 'AcDbDimension');
+  const sub = afterDimension(all);
+  // OCS angles (DXF 50–53) are WCS π − θ under −Z.
+  const ocsAngle = (code: number, groups: readonly Group[]): number =>
+    n.z < 0 ? Math.PI - deg(groups, code) : deg(groups, code);
+  const flags = num(g, 70);
+  const want = type === 'ARC_DIMENSION' ? 'arc' : DIM_TYPES[flags & 7];
+  if (geom.dimType !== want) return bad('70', `${flags} ${want}`, geom.dimType);
+  const style = (first(g, 3) ?? 'STANDARD').trim().toUpperCase();
+  if (nameOf(t.dimStyles, geom.style) !== style) bad('3', style, nameOf(t.dimStyles, geom.style));
+  const block = first(g, 2)?.trim().toUpperCase();
+  const gotBlock = geom.block && nameOf(t.blockRecords, geom.block);
+  if ((block || undefined) !== gotBlock) bad('2', block, gotBlock);
+  if (!near(geom.definitionPoint, pt(g, 10))) bad('10', fmt(pt(g, 10)), fmt(geom.definitionPoint));
+  const tp = plan(pt(g, 11), n);
+  if (!near(geom.textPosition, tp)) bad('11', fmt(tp), fmt(geom.textPosition));
+  if (geom.textUserPositioned !== ((flags & 128) !== 0)) bad('70', flags, geom.textUserPositioned);
+  if (!sameText(first(g, 1) ?? '', geom.text)) bad('1', first(g, 1), geom.text);
+  if (!sameAngle(geom.textRotation, ocsAngle(53, g))) bad('53', num(g, 53), geom.textRotation);
+  if (first(g, 51) !== undefined && !sameAngle(geom.horizontalDirection, ocsAngle(51, g)))
+    bad('51', num(g, 51), geom.horizontalDirection);
+  // R12 dimensions have no 71; a value the file does not state is not compared.
+  if (first(g, 71) !== undefined && geom.attachment !== num(g, 71))
+    bad('71', num(g, 71), geom.attachment);
+  if (first(g, 41) !== undefined && !close(geom.lineSpacing, num(g, 41)))
+    bad('41', num(g, 41), geom.lineSpacing);
+  const p = (code: number): Vec2 => ({ x: num(sub, code), y: num(sub, code + 10) });
+  const check = (code: number, got: Vec2, want = p(code)): void => {
+    if (!near(got, want)) bad(String(code), fmt(want), fmt(got));
+  };
+  switch (geom.dimType) {
+    case 'linear':
+    case 'aligned':
+      check(13, geom.first);
+      check(14, geom.second);
+      if (geom.dimType === 'linear' && !sameAngle(geom.rotation ?? 0, ocsAngle(50, sub)))
+        bad('50', num(sub, 50), geom.rotation);
+      if (!sameAngle(geom.oblique ?? 0, first(sub, 52) ? ocsAngle(52, sub) : 0))
+        bad('52', num(sub, 52), geom.oblique);
+      return;
+    case 'angular':
+      check(13, geom.line1Start);
+      check(14, geom.line1End);
+      check(15, geom.line2Start);
+      check(16, geom.arcPoint, plan({ ...p(16), z: num(sub, 36) }, n));
+      return;
+    case 'angular3pt':
+      check(13, geom.first);
+      check(14, geom.second);
+      check(15, geom.vertex);
+      return;
+    case 'radius':
+    case 'diameter':
+      check(15, geom.chordPoint);
+      if (!close(geom.leaderLength, num(sub, 40))) bad('40', num(sub, 40), geom.leaderLength);
+      return;
+    case 'ordinate':
+      check(13, geom.feature);
+      check(14, geom.leaderEnd);
+      if (geom.axis !== (flags & 64 ? 'x' : 'y')) bad('70', flags, geom.axis);
+      return;
+    case 'arc':
+      check(13, geom.first);
+      check(14, geom.second);
+      check(15, geom.center);
+      if (geom.partial !== (num(sub, 70) !== 0)) bad('70', num(sub, 70), geom.partial);
+      if (!!geom.leader !== (num(sub, 71) !== 0)) bad('71', num(sub, 71), !!geom.leader);
+      if (geom.leader) {
+        check(16, geom.leader[0]);
+        check(17, geom.leader[1]);
+      }
+      if (!close(geom.startAngle, num(sub, 40))) bad('40', num(sub, 40), geom.startAngle);
+      if (!close(geom.endAngle, num(sub, 41))) bad('41', num(sub, 41), geom.endAngle);
+      return;
+  }
+}
+
+function compareLeader(g: readonly Group[], geom: LeaderGeometry, t: MappedTables, bad: Bad): void {
+  const style = (first(g, 3) ?? 'STANDARD').trim().toUpperCase();
+  if (nameOf(t.dimStyles, geom.style) !== style) bad('3', style, nameOf(t.dimStyles, geom.style));
+  const xs = all(g, 10).map(Number);
+  const ys = all(g, 20).map(Number);
+  const vs = xs.map((x, k) => ({ x, y: ys[k]! }));
+  if (vs.length !== geom.vertices.length || vs.some((v, k) => !near(v, geom.vertices[k]!)))
+    bad('10', vs.map(fmt).join(' '), geom.vertices.map(fmt).join(' '));
+  if (first(g, 71) !== undefined && geom.arrowhead !== (num(g, 71) !== 0))
+    bad('71', num(g, 71), geom.arrowhead);
+  if (geom.spline !== (num(g, 72) === 1)) bad('72', num(g, 72), geom.spline);
+  if (geom.creationType !== num(g, 73, 3)) bad('73', num(g, 73, 3), geom.creationType);
+  if (!!geom.hookline !== (num(g, 75) !== 0)) bad('75', num(g, 75), !!geom.hookline);
+  if (geom.hookline && geom.hookline.sameDirection !== (num(g, 74) === 1))
+    bad('74', num(g, 74), geom.hookline.sameDirection);
+  if (!close(geom.textHeight, num(g, 40))) bad('40', num(g, 40), geom.textHeight);
+  if (!close(geom.textWidth, num(g, 41))) bad('41', num(g, 41), geom.textWidth);
+  const ann = first(g, 340)
+    ?.trim()
+    .replace(/^0+(?=.)/, '')
+    .toUpperCase();
+  if ((ann && ann !== '0' ? ann : undefined) !== geom.annotation) bad('340', ann, geom.annotation);
+  if (first(g, 211) !== undefined && !near(geom.horizontalDirection, pt(g, 211)))
+    bad('211', fmt(pt(g, 211)), fmt(geom.horizontalDirection));
 }
 
 /** Plan positions of polyline vertices, and each bulged segment's midpoint. */

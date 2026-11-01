@@ -37,6 +37,7 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm corpus:validate
+      - run: pnpm changelog:check
 
   # Decides whether the perf budgets must run on this PR (TESTING.md §1: PRs touching
   # render/engine/io). On a PR, HEAD is the merge commit, so HEAD^1..HEAD is exactly the PR's diff.

@@ -21,7 +21,7 @@ Fidelity is the product. This document defines the corpus, the harnesses, the to
 
 | Job (check name) | Runs | When |
 |---|---|---|
-| `lint · typecheck · unit · round-trip` | `pnpm lint`, `typecheck`, `test`, `corpus:validate` | every PR and push to `main` (**required**) |
+| `lint · typecheck · unit · round-trip` | `pnpm lint`, `typecheck`, `test`, `corpus:validate`, `changelog:check` | every PR and push to `main` (**required**) |
 | `fidelity · offline · ui` | `pnpm build`, `test:fidelity`, `test:offline`, `test:ui`, `test:io`; uploads `test-results/` + `playwright-report/` as `fidelity-diffs` on failure | every PR and push to `main` (**required**) |
 | `performance budgets` | `pnpm test:perf` | `main`; PRs that change `packages/render`, `engine` or `io` (`detect hot-path changes` job); PRs labelled `perf` or titled `[perf]` |
 
@@ -113,7 +113,7 @@ After an *editing* session, the diff excludes handles in the session's touched s
 
 ### 3.1 Mapping oracle (M1-03)
 
-The round-trip diff compares acad-ts with itself, so a value acad-ts never reads is invisible to it. `packages/testkit/src/mapping/tables.corpus.test.ts` reads the HEADER and TABLES sections, and the MLEADERSTYLE/TABLESTYLE objects, of every ASCII DXF in the public corpus with an independent group-code reader (`mapping/dxf-oracle.ts`) and compares each table record field and each header variable with what `mapTables`/`mapHeader` produce, by handle (by name for R12 records without one). Losses that come from acad-ts itself are listed in `ACAD_TS_GAPS` with the reason; the test fails on a new kind of mismatch and on a listed kind that no longer occurs, so the list only shrinks (M1-32). A second test checks that every table entry acad-ts reads from every readable file, DWG included, is mapped. `entities.corpus.test.ts` does the same for entities: each entity of the ENTITIES and BLOCKS sections (POLYLINE with its VERTEXes, INSERT with its ATTRIBs; TEXT frames and INSERT placements are checked by where probe points land) is compared by handle with `mapEntities`, taken to plan view with the arbitrary-axis algorithm written out in the test, and every entity of every block record must be mapped or reported unmapped.
+The round-trip diff compares acad-ts with itself, so a value acad-ts never reads is invisible to it. `packages/testkit/src/mapping/tables.corpus.test.ts` reads the HEADER and TABLES sections, and the MLEADERSTYLE/TABLESTYLE objects, of every ASCII DXF in the public corpus with an independent group-code reader (`mapping/dxf-oracle.ts`) and compares each table record field and each header variable with what `mapTables`/`mapHeader` produce, by handle (by name for R12 records without one). Losses that come from acad-ts itself are listed in `ACAD_TS_GAPS` with the reason; the test fails on a new kind of mismatch and on a listed kind that no longer occurs, so the list only shrinks (M1-32). A second test checks that every table entry acad-ts reads from every readable file, DWG included, is mapped. `entities.corpus.test.ts` does the same for entities: each entity of the ENTITIES and BLOCKS sections (POLYLINE with its VERTEXes, INSERT with its ATTRIBs; TEXT frames and INSERT placements are checked by where probe points land; DIMENSION points per subclass in their DXF frames) is compared by handle with `mapEntities`, taken to plan view with the arbitrary-axis algorithm written out in the test, and every entity of every block record must be mapped or reported unmapped.
 
 ## 4. Fidelity harness
 
@@ -168,6 +168,8 @@ pnpm test:private       # all of the above on corpus/private (local only)
 pnpm corpus:list        # print corpus manifest
 pnpm corpus:ref <file>  # rasterise reference PDFs → PNGs
 pnpm corpus:validate    # schema + license fields + reference presence
+pnpm changelog          # print CHANGELOG.md with the changes/*.md fragments under Unreleased
+pnpm changelog:check    # validate changelog fragments (CI)
 pnpm corpus:roundtrip   # round-trip every public corpus file; per-file report in test-reports/roundtrip/
 pnpm spike:read         # M0-06: read status, unmapped types, handle coverage → test-reports/spike/read.md
 pnpm spike:roundtrip    # M0-06: round-trip failure taxonomy → test-reports/spike/roundtrip.md; written files → docs/reports/M0-written/
