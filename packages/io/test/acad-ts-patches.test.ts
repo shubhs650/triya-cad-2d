@@ -205,4 +205,21 @@ describe('acad-ts local patches', () => {
     expect(back.dimensionLineWeight).toBe(LineWeightType.ByBlock);
     expect(back.extensionLineWeight).toBe(LineWeightType.ByLayer);
   });
+
+  it('0013 DWG writer saves a large block in linear time', { timeout: 120_000 }, () => {
+    // Block headers deduplicated owned handles with Array.includes and looked entities up with
+    // Array.find: O(n²). 60k lines took ~18 s unpatched (100k: ~84 s); patched it is < 1 s.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    for (let i = 0; i < 60_000; i++) {
+      doc.entities!.add(new Line(new XYZ(i, 0, 0), new XYZ(i, 1, 0)));
+    }
+
+    const t0 = Date.now();
+    const bytes = DwgWriter.writeToBuffer(doc);
+    const ms = Date.now() - t0;
+
+    expect(bytes.length).toBeGreaterThan(0);
+    // Generous bound for slow CI runners; the quadratic writer is an order of magnitude over it.
+    expect(ms).toBeLessThan(8_000);
+  });
 });
