@@ -15,6 +15,7 @@ import {
   Arc,
   AttributeDefinition,
   BlockEnd,
+  BookColor,
   DimensionArc,
   DwgReader,
   DwgReaderConfiguration,
@@ -27,9 +28,11 @@ import {
   HatchBoundaryPathEllipse,
   Insert,
   LayoutFlags,
+  Leader,
   LineWeightType,
   Material,
   Mesh,
+  MLineStyle,
   MText,
   MultiLeader,
   RasterVariables,
@@ -1085,5 +1088,100 @@ describe('acad-ts local patches (corpus-backed)', () => {
     for (const binary of [false, true]) {
       expect(arcs(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual(arcs(doc));
     }
+  });
+
+  const dwgSamples = ['AC1015', 'AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032'].map(
+    (v) => `third-party/acadsharp/sample_${v}.dwg`,
+  );
+
+  it('0048 DWG writer keeps the frozen-in-new-viewports flag of R2000+ layers', () => {
+    // The R2000+ flag word took bit 4 (frozen in new viewports) from the frozen flag, so a save
+    // froze every frozen layer in new viewports and thawed the rest.
+    const layers = (d: CadDocument): unknown[] =>
+      [...d.layers!].map((l) => [l.name, l.flags, l.isOn, l.plotFlag]);
+    for (const file of dwgSamples) {
+      const doc = readDwgRaw(file);
+      expect(layers(dwgRawRoundTrip(doc)), file).toEqual(layers(doc));
+    }
+    // sample_AC1015: layer 279 is frozen (65), layer 283 frozen in new viewports only (66).
+    const doc = readDwgRaw(dwgSamples[0]!);
+    expect(
+      [doc.getCadObject(0x279), doc.getCadObject(0x283)].map(
+        (l) => (l as unknown as { flags: number }).flags,
+      ),
+    ).toEqual([65, 66]);
+  });
+
+  it('0049 DWG writer writes the linetype index of pre-R2018 MLINESTYLE elements', () => {
+    // Before R2018 an MLINESTYLE element names its linetype by index (0x7FFF ByLayer, 0x7FFE
+    // ByBlock, otherwise the position in the LTYPE table); the writer always wrote 0, so every
+    // element came back with the first linetype of the table.
+    const styles = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is MLineStyle => o instanceof MLineStyle)
+        .map((m) => [handleHex(m), m.elements.map((e) => e.lineType?.name)]);
+    for (const file of dwgSamples) {
+      const doc = readDwgRaw(file);
+      expect(styles(dwgRawRoundTrip(doc)), file).toEqual(styles(doc));
+    }
+    expect(styles(readDwgRaw(dwgSamples[0]!))).toContainEqual(['18', ['ByLayer', 'ByLayer']]);
+  });
+
+  it('0050 DWG writer keeps the insert list of every block record', () => {
+    // The writer listed only the model-space INSERTs of a block (and, for *T blocks, the ones
+    // read), so a block inserted from another block, a dimension or a table lost those entries,
+    // and the list lost its order.
+    const inserts = (d: CadDocument): unknown[] =>
+      [...d.blockRecords!].map((r) => [r.name, r.insertHandles.map((h) => h.toString(16))]);
+    for (const file of dwgSamples) {
+      const doc = readDwgRaw(file);
+      expect(inserts(dwgRawRoundTrip(doc)), file).toEqual(inserts(doc));
+    }
+    // sample_AC1015: my_block lists 10 handles, from model space, *T16 and *U25.
+    const doc = readDwgRaw(dwgSamples[0]!);
+    expect((doc.getCadObject(0xa0b) as BlockRecord).insertHandles).toHaveLength(10);
+  });
+
+  it('0051 DWG writer writes the R2000+ header arrow blocks', () => {
+    // From R2000 the header names $DIMBLK, $DIMBLK1 and $DIMBLK2 by block record handle; the
+    // writer wrote null handles, so a save reset the drawing's arrowheads to closed filled.
+    const blocks = (d: CadDocument): unknown[] => [
+      d.header!.dimensionBlockName,
+      d.header!.dimensionBlockNameFirst ?? '',
+      d.header!.dimensionBlockNameSecond ?? '',
+    ];
+    for (const file of dwgSamples) {
+      const doc = readDwgRaw(file);
+      expect(blocks(dwgRawRoundTrip(doc)), file).toEqual(blocks(doc));
+    }
+    expect(blocks(readDwgRaw(dwgSamples[0]!))[0]).toBe('_BoxBlank');
+  });
+
+  it('0052 DWG writer writes the annotation a LEADER is attached to', () => {
+    // The writer wrote a null annotation handle, so every leader came off its MTEXT, tolerance
+    // or block reference on a save.
+    const leaders = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is Leader => o instanceof Leader)
+        .map((l) => [handleHex(l), handleHex(l.associatedAnnotation)]);
+    for (const file of ['third-party/acadsharp/sample_AC1014.dwg', ...dwgSamples]) {
+      const doc = readDwgRaw(file);
+      expect(leaders(dwgRawRoundTrip(doc)), file).toEqual(leaders(doc));
+    }
+    expect(leaders(readDwgRaw(dwgSamples[0]!))).toContainEqual(['512', '513']);
+  });
+
+  it('0053 DWG writer writes the colour index of pre-R2004 DBCOLOR objects', () => {
+    // Before R2004 a DBCOLOR holds only a colour index; the writer wrote 0 (ByBlock).
+    const colors = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is BookColor => o instanceof BookColor)
+        .map((c) => [handleHex(c), c.color.index]);
+    for (const file of ['third-party/acadsharp/sample_AC1014.dwg', dwgSamples[0]!]) {
+      const doc = readDwgRaw(file);
+      expect(colors(doc).length, file).toBeGreaterThan(0);
+      expect(colors(dwgRawRoundTrip(doc)), file).toEqual(colors(doc));
+    }
+    expect(colors(readDwgRaw(dwgSamples[0]!))).toContainEqual(['996', 42]);
   });
 });

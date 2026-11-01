@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0047 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0053 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -905,5 +905,142 @@ Group 72 of a linetype is the ASCII code of its alignment, which is always 65 ("
 **Title:** Write ARC_DIMENSION entities to DXF
 
 `DxfSectionWriterBase._writeEntity` dispatches every dimension type except `DimensionArc` to `_writeDimension`. As a result, an `ARC_DIMENSION` is written with only its AcDbEntity data and loses its geometry on save. This adds the branch. It also writes the leader points (16, 17) unconditionally, as AutoCAD does, because the reader keeps them even when 71 is 0.
+
+</details>
+
+### 0048 — DWG writer writes the frozen flag where "frozen in new viewports" goes
+
+- **File:** `third_party/acad-ts-patches/0048-dwg-layer-frozen-new-viewports.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - The R2000+ layer flag word took bit 4 (frozen in new viewports) from `LayerFlags.Frozen`.
+  - A save therefore froze every frozen layer in new viewports and cleared the flag on every other layer.
+  - Corpus: 2 differences (`LAYER flags`) in each acadsharp R2000–R2018 DWG and `sample_base.dwg`.
+- **Fix:** take bit 4 from `LayerFlags.FrozenNewViewports`, as the reader does.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0048 DWG writer keeps the frozen-in-new-viewports flag of R2000+ layers".
+  - Every layer's flags, visibility and plot flag in the acadsharp R2000–R2018 DWGs must survive a save.
+  - Layers 279 (65) and 283 (66) of the R2000 sample are checked.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the "frozen in new viewports" layer flag in R2000+ DWG
+
+`_writeLayer` sets bit 4 of the R2000+ flag word from `LayerFlags.Frozen`. That bit means frozen in new viewports, which the reader maps to `LayerFlags.FrozenNewViewports`. This takes the bit from `FrozenNewViewports`.
+
+</details>
+
+### 0049 — DWG writer writes linetype index 0 for every pre-R2018 MLINESTYLE element
+
+- **File:** `third_party/acad-ts-patches/0049-dwg-mlinestyle-linetype-index.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - Before R2018, an MLINESTYLE element names its linetype by index: 0x7FFF for ByLayer, 0x7FFE for ByBlock, and otherwise the position in the LTYPE table. This is how `CadMLineStyleTemplate` reads it.
+  - The writer always wrote 0, so every element came back with the first linetype of the table.
+  - Corpus: 2 differences (`MLINESTYLE _elements[]._lineType`) in each acadsharp R2000–R2013 DWG.
+- **Fix:** write the index the template reads.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0049 DWG writer writes the linetype index of pre-R2018 MLINESTYLE elements".
+  - The element linetypes of every MLINESTYLE in the acadsharp R2000–R2018 DWGs must survive a save.
+  - The Standard style of the R2000 sample is checked for ByLayer, ByLayer.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the linetype index of pre-R2018 DWG MLINESTYLE elements
+
+Before R2018, an MLINESTYLE element's linetype is a BS index: 0x7FFF for ByLayer, 0x7FFE for ByBlock, and otherwise the LTYPE table position, which is how `CadMLineStyleTemplate` resolves it. `_writeMLineStyle` writes 0, so every element is read back with the first linetype of the table. This writes the matching index.
+
+</details>
+
+### 0050 — DWG writer rebuilds block insert lists from model space only
+
+- **File:** `third_party/acad-ts-patches/0050-dwg-block-record-insert-list.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - For each block record, the R2000+ BLOCK_HEADER lists the INSERTs of that block.
+  - The writer rebuilt the list from the INSERTs in model space only. The read list was kept only for `*T` blocks.
+  - A block inserted from paper space, another block, a dimension block or a table block therefore lost those entries. The list's order was lost too, and so were the erased inserts AutoCAD keeps in it.
+  - Corpus: 5 differences (`BLOCK_RECORD insertHandles*`) in each acadsharp R2000–R2018 DWG and `sample_base.dwg`. For example, `my_block` in the R2000 sample lists 10 inserts, from model space, `*T16` and `*U25`.
+- **Fix:**
+  - Collect INSERTs from every block record.
+  - Write the list as read, in its order, then any insert not yet in it.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0050 DWG writer keeps the insert list of every block record".
+  - Every block record's insert list in the acadsharp R2000–R2018 DWGs must survive a save.
+  - `my_block` of the R2000 sample is checked for 10 entries.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep the insert list of DWG block records
+
+The R2000+ block header lists the INSERTs of its block. `_writeBlockHeader` rebuilds that list from `document.entities`, which holds model space only, and keeps the list as read only for `*T` blocks. Inserts that live in paper space, other blocks, dimension blocks or table blocks therefore drop out on a save, along with the read order. This collects inserts from every block record and writes the list as read, followed by any insert that is new.
+
+</details>
+
+### 0051 — DWG writer writes null R2000+ header arrow blocks
+
+- **File:** `third_party/acad-ts-patches/0051-dwg-header-arrow-blocks.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts`
+- **Symptom:**
+  - From R2000, the header names `$DIMBLK`, `$DIMBLK1` and `$DIMBLK2` by block record handle.
+  - The writer wrote null handles for all of them, so a save reset the drawing's default arrowheads to closed filled.
+  - Corpus: 1 difference (`HEADER $DIMBLK`) in each acadsharp R2000–R2018 DWG, `sample_base.dwg` and `AecObjects.dwg`.
+- **Fix:**
+  - Write the block record that the header names. A name is looked up both as DXF writes it (`BoxBlank`) and as the block record is named (`_BoxBlank`).
+  - `$DIMLDRBLK` has no header field in acad-ts, so it is still written as null. The DWG reader also lets it overwrite `dimensionBlockName` when set; no corpus file sets it.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0051 DWG writer writes the R2000+ header arrow blocks".
+  - `$DIMBLK`/`$DIMBLK1`/`$DIMBLK2` of the acadsharp R2000–R2018 DWGs must survive a save.
+  - The R2000 sample is checked for `_BoxBlank`.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the header arrow blocks in R2000+ DWG
+
+The R2000+ header stores `DIMBLK`, `DIMBLK1` and `DIMBLK2` as block record handles. The reader resolves these handles into `dimensionBlockName` and its two siblings, but `DwgHeaderWriter` writes null handles, so the arrowheads are lost on save. This writes the named block records. A name is accepted with or without the leading underscore that arrow block records carry.
+
+</details>
+
+### 0052 — DWG writer detaches every LEADER from its annotation
+
+- **File:** `third_party/acad-ts-patches/0052-dwg-leader-annotation.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - `_writeLeader` wrote a null annotation handle.
+  - On a save, every leader came off the MTEXT, tolerance or block reference it was attached to.
+  - Corpus: 1 difference (`LEADER associatedAnnotation`) in each acadsharp R14–R2018 DWG and `sample_base.dwg`.
+- **Fix:** write `associatedAnnotation`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0052 DWG writer writes the annotation a LEADER is attached to".
+  - The annotation of every LEADER in the acadsharp R14–R2018 DWGs must survive a save.
+  - LEADER 512 of the R2000 sample is checked for MTEXT 513.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the associated annotation of DWG LEADER entities
+
+`_writeLeader` writes a null handle where the annotation goes. The reader resolves that handle into `associatedAnnotation`, so after a read-write cycle no leader is attached to anything. This writes `associatedAnnotation`.
+
+</details>
+
+### 0053 — DWG writer writes colour 0 for pre-R2004 DBCOLOR objects
+
+- **File:** `third_party/acad-ts-patches/0053-dwg-dbcolor-index.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - Before R2004, a DBCOLOR holds only a colour index, which the reader reads.
+  - The writer always wrote 0, so every colour came back as ByBlock.
+  - Corpus: 1 difference (`DBCOLOR color._color`) in acadsharp `sample_AC1014.dwg` and `sample_AC1015.dwg`.
+- **Fix:** write the index (the nearest index for a true colour) before R2004. Keep 0 from R2004, where the true colour follows.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0053 DWG writer writes the colour index of pre-R2004 DBCOLOR objects".
+  - Every DBCOLOR of the acadsharp R14 and R2000 DWGs must survive a save.
+  - DBCOLOR 996 of the R2000 sample is checked for index 42.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the colour index of pre-R2004 DWG DBCOLOR objects
+
+`_writeBookColor` always writes 0 as the colour index. Before R2004 that index is the whole colour, so the colour of every DBCOLOR is lost on save. This writes the index (or the nearest index for a true colour) before R2004.
 
 </details>

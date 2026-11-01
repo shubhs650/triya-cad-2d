@@ -1,0 +1,13 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index ae5e34c..b3bdf39 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -623,7 +626,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			let values = CadUtils.toIndex(layer.lineWeight) << 5;
+ 			if ((layer.flags & LayerFlags.Frozen) !== 0) values |= 0b1;
+ 			if (!layer.isOn) values |= 0b10;
+-			if ((layer.flags & LayerFlags.Frozen) !== 0) values |= 0b100;
++			if ((layer.flags & LayerFlags.FrozenNewViewports) !== 0) values |= 0b100;
+ 			if ((layer.flags & LayerFlags.Locked) !== 0) values |= 0b1000;
+ 			if (layer.plotFlag) values |= 0b10000;
+ 			this._writer.writeBitShort(values);
