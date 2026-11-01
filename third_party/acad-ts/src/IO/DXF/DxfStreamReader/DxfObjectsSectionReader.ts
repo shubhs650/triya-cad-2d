@@ -323,7 +323,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
   protected readObjectCodes(template: CadTemplate, readObject: ReadObjectDelegate, objectType: Function): CadTemplate {
     // The DXF writer cannot write these from their fields, so keep the codes as read for it.
     const obj = template.cadObject;
-    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle)) {
+    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle || obj instanceof ProxyObject)) {
       return this._readObjectCodes(template, readObject, objectType);
     }
     const raw: DxfRawCode[] = [];
