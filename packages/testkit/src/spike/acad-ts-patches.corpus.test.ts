@@ -28,6 +28,7 @@ import {
   LineWeightType,
   Material,
   MText,
+  MultiLeader,
   RasterVariables,
   Solid3D,
   SortEntitiesTable,
@@ -691,5 +692,152 @@ describe('acad-ts local patches (corpus-backed)', () => {
     // MTEXT 3EC: one dynamic column of height 0, as the DXF export of the same drawing has it.
     expect((doc.getCadObject(0x3ec) as MText).columnData?.columnCount).toBe(1);
     expect(columns(dwgRawRoundTrip(doc))).toEqual(columns(doc));
+  });
+
+  it('0037 DXF writer writes MULTILEADER entities with their own group codes', () => {
+    // _writeMultiLeader wrote a handful of groups on the wrong codes (the line colour as 171,
+    // the attachment direction as 175 and 176) and none of the rest, and _writeAnnotContext
+    // wrote the content base point as the base point and no text or background settings, so
+    // every multileader came back with default styling and an empty label. The reader also
+    // skipped the branch (LEADER{) groups and read the context text colour as RGB.
+    const plain = (v: unknown): unknown => {
+      if (v == null || typeof v !== 'object') return v;
+      if ('handle' in v) return handleHex(v as CadObject);
+      if ('_color' in v) return (v as { _color: number })._color;
+      if ('x' in v && 'y' in v) return [...Object.values(v as object)];
+      if (Array.isArray(v)) return v.map(plain);
+      return v;
+    };
+    const pick = (o: object, keys: string[]): unknown =>
+      Object.fromEntries(keys.map((k) => [k, plain((o as Record<string, unknown>)[k])]));
+    const main = [
+      'arrowheadSize',
+      'contentType',
+      'enableAnnotationScale',
+      'enableDogleg',
+      'enableLanding',
+      'extendedToText',
+      'landingDistance',
+      'leaderLineType',
+      'leaderLineWeight',
+      'lineColor',
+      'pathType',
+      'propertyOverrideFlags',
+      'scaleFactor',
+      'style',
+      'textAligninIPE',
+      'textAttachmentDirection',
+      'textAttachmentPoint',
+      'textBottomAttachment',
+      'textDirectionNegative',
+      'textTopAttachment',
+      'textAlignment',
+      'textAngle',
+      'textColor',
+      'textFrame',
+      'textLeftAttachment',
+      'textRightAttachment',
+      'textStyle',
+      'blockContentColor',
+      'blockContentConnection',
+      'blockContentRotation',
+      'blockContentScale',
+    ];
+    const context = [
+      'arrowheadSize',
+      'backgroundFillColor',
+      'backgroundFillEnabled',
+      'backgroundMaskFillOn',
+      'backgroundScaleFactor',
+      'backgroundTransparency',
+      'baseDirection',
+      'basePoint',
+      'baseVertical',
+      'blockContentConnection',
+      'boundaryHeight',
+      'boundaryWidth',
+      'columnFlowReversed',
+      'columnGutter',
+      'columnSizes',
+      'columnType',
+      'columnWidth',
+      'contentBasePoint',
+      'direction',
+      'flowDirection',
+      'hasContentsBlock',
+      'hasTextContents',
+      'landingGap',
+      'lineSpacing',
+      'lineSpacingFactor',
+      'normalReversed',
+      'scaleFactor',
+      'textAlignment',
+      'textAttachmentPoint',
+      'textBottomAttachment',
+      'textColor',
+      'textHeight',
+      'textHeightAutomatic',
+      'textLabel',
+      'textLeftAttachment',
+      'textLocation',
+      'textNormal',
+      'textRightAttachment',
+      'textRotation',
+      'textStyle',
+      'textTopAttachment',
+      'wordBreak',
+    ];
+    const fields = (m: MultiLeader): unknown => ({
+      h: handleHex(m),
+      main: pick(m, main),
+      context: pick(m.contextData, context),
+      leaders: m.contextData.leaderRoots.map((r) => ({
+        root: pick(r, [
+          'contentValid',
+          'connectionPoint',
+          'direction',
+          'leaderIndex',
+          'landingDistance',
+        ]),
+        lines: r.lines.map((l) => l.points.map(plain)),
+      })),
+    });
+    const all = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is MultiLeader => o instanceof MultiLeader)
+        .sort((a, b) => a.handle - b.handle)
+        .map(fields);
+
+    const files = [
+      ...['AC1015', 'AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032'].map(
+        (v) => `third-party/acadsharp/sample_${v}_ascii.dxf`,
+      ),
+      'third-party/ezdxf/examples_dxf/uncommon.dxf',
+    ];
+    for (const file of files) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(all(doc).length, file).toBeGreaterThan(0);
+      for (const binary of [false, true]) {
+        expect(all(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(all(doc));
+      }
+    }
+    // The first multileader of the samples: "MLeader text, hello!" on style D8, one leader.
+    const first = all(readDxfRaw(corpusBytes(files[5]!)))[0] as {
+      main: Record<string, unknown>;
+      context: Record<string, unknown>;
+      leaders: unknown[];
+    };
+    expect(first.context.textLabel).toBe('MLeader text, hello!');
+    expect([first.main.style, first.main.contentType, first.leaders.length]).toEqual(['D8', 2, 1]);
+    // The reader decoded the context text colour 0xC0000000 as RGB 0,0,0 and skipped the
+    // branch groups; the file has ByLayer and the branch 10/11/40 below.
+    expect(first.context.textColor).toBe(256);
+    expect(first.leaders[0]).toMatchObject({
+      root: {
+        connectionPoint: [1083.321045165764, 23.23924387283501, 0],
+        direction: [1, 0, 0],
+        landingDistance: 0.36,
+      },
+    });
   });
 });
