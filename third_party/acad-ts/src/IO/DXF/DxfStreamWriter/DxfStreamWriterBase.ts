@@ -39,7 +39,7 @@ export abstract class DxfStreamWriterBase implements IDxfStreamWriter {
         return;
       }
       if ((prop.referenceType & DxfReferenceType.IsAngle) !== 0) {
-        value = MathHelper.radToDeg(value as number);
+        value = MathHelper.radToDegRoundTrip(value as number);
       }
     }
 

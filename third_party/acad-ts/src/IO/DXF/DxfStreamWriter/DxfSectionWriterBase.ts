@@ -707,14 +707,15 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(75, hatch.style, subclass);
     this._writer.write(76, hatch.patternType, subclass);
 
-    if (!hatch.isSolid && hatch.pattern?.lines.length > 0) {
+    // AutoCAD writes the pattern of a SOLID hatch too (one line at 45 degrees); keep whatever was read.
+    if (hatch.pattern?.lines.length > 0) {
       this._writer.write(52, hatch.patternAngle, subclass);
       this._writer.write(41, hatch.patternScale, subclass);
       this._writer.write(77, hatch.isDouble ? 1 : 0, subclass);
 
       this._writer.write(78, hatch.pattern.lines.length);
       for (const line of hatch.pattern.lines) {
-        this._writer.write(53, MathHelper.radToDeg(line.angle));
+        this._writer.write(53, MathHelper.radToDegRoundTrip(line.angle));
         this._writer.write(43, line.basePoint.x);
         this._writer.write(44, line.basePoint.y);
         this._writer.write(45, line.offset.x);
@@ -790,24 +791,15 @@ export abstract class DxfSectionWriterBase {
   }
 
   private _writeHatchBoundaryAngles(startAngle: number, endAngle: number): void {
-    const normalizeDegrees = (angle: number): number => {
-      const normalized = MathHelper.radToDeg(angle) % 360;
-      return Object.is(normalized, -0) ? 0 : normalized;
+    // Written as read: an edge may end past 360 degrees (start 348.7, end 472.9), and wrapping it
+    // changed the stored angle. Only -0 is written as 0.
+    const degrees = (angle: number): number => {
+      const value = MathHelper.radToDegRoundTrip(angle);
+      return Object.is(value, -0) ? 0 : value;
     };
 
-    let start = normalizeDegrees(startAngle);
-    let end = normalizeDegrees(endAngle);
-
-    if (Math.abs(Math.abs(endAngle - startAngle) - MathHelper.twoPI) < MathHelper.epsilon) {
-      const sweep = endAngle > startAngle ? 360 : -360;
-      if (Math.abs(start + sweep) > 360) {
-        start -= sweep;
-      }
-      end = start + sweep;
-    }
-
-    this._writer.write(50, start);
-    this._writer.write(51, end);
+    this._writer.write(50, degrees(startAngle));
+    this._writer.write(51, degrees(endAngle));
   }
 
   private _writeBoundaryEdge(edge: HatchBoundaryPathEdge): void {

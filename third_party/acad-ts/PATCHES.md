@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0032 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0033 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -573,5 +573,22 @@ Several DXF table-style defects compound so that a save resets every table style
 **Title:** Round-trip DXF attribute version, lock position and multiline attributes
 
 AcDbAttribute and AcDbAttributeDefinition use group 280 twice: before the tag it is the class version (R2010+), after 74 it is the lock-position flag (R2007+). The reader stored both in `isReallyLocked`, and it parsed the AcDbText group 71 (text generation flags) as the multiline attribute type. The writer wrote the tag before the prompt, wrote 280 regardless of version, and dropped the R2018 multiline block, so a multiline attribute was saved as single-line text. This disambiguates the reader by position and subclass, and writes the groups in the order and versions of the DXF reference.
+
+</details>
+
+### 0033 — DXF writer moves angles by an ulp, wraps hatch edge angles and drops SOLID hatch patterns
+
+- **File:** `third_party/acad-ts-patches/0033-dxf-hatch-patterns-and-exact-angles.patch`
+- **Touches:** `src/Math/MathHelper.ts`, `src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** DXF stores angles in degrees and the reader converts them with `degToRad`. The writer converted back with `radToDeg`, which can land one ulp away from the degree value read, so `TEXT` rotation, `ARC` angles and `HATCH` pattern-line and edge angles moved on every save (42 pattern lines, 14 text rotations, 11 arc angles in the corpus). `_writeHatchBoundaryAngles` wrapped edge angles into [0, 360), so an ellipse edge from 348.7° to 472.9° came back ending at 112.9°. And `_writeHatch` skipped 52/41/77/78 and the pattern lines whenever the hatch was flagged solid, although AutoCAD writes them for SOLID too, so the pattern angle, scale and lines were lost.
+- **Fix:** Add `MathHelper.radToDegRoundTrip`, which picks the neighbouring double of `radToDeg(r)` that `degToRad` maps back to `r`, and use it for every angle the DXF writer converts through the map, for pattern lines and for edge angles. Write edge angles as read, turning only -0 into 0. Write the pattern block whenever the pattern has lines.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0033 DXF writer keeps HATCH patterns and every angle exact through a save" (acadsharp AC1015/AC1018 samples and ezdxf `clockwise_arcs_hatch`, `hatches_2`, `text_fonts`; ASCII and binary saves: every hatch pattern, pattern-line and edge angle, arc angle and text rotation is unchanged).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep DXF angles and SOLID hatch patterns exact through a save
+
+Readers turn DXF degrees into radians with `degToRad`, but `radToDeg` is not its exact inverse in floating point, so about one angle in a few dozen changes in its last digit on every read-write cycle. This adds `MathHelper.radToDegRoundTrip`, which returns the degree value that converts back to the same radians, and uses it in the DXF writer. It also stops `_writeHatchBoundaryAngles` from wrapping edge angles into [0, 360) (the stored end angle of an edge can exceed 360), and writes the hatch pattern block for SOLID hatches, as AutoCAD does, instead of dropping a pattern that was read.
 
 </details>

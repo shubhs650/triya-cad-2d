@@ -1,0 +1,1 @@
+- Flaky test fix (#37): the `curveBounds` touch property in `flatten-bounds.test.ts` now also samples a polyline's vertex parameters, where its extremes lie, so it no longer fails at random (seed 1458457596); the tolerance is unchanged.

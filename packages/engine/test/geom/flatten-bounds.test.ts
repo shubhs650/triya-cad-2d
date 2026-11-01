@@ -223,9 +223,11 @@ describe('curveBounds', () => {
         const eps = 1e-9 * sizeOf(c);
         const d = domain(c);
         let touch = { minX: Infinity, minY: Infinity, maxX: -Infinity, maxY: -Infinity };
-        // Uniform samples plus the knots, where a low-degree spline can have its corners.
+        // Uniform samples plus the knots, where a low-degree spline can have its corners, and
+        // a polyline's vertices (integer parameters), where its straight segments have theirs.
         const ts = Array.from({ length: 2001 }, (_, i) => d.start + (i / 2000) * (d.end - d.start));
         if (c.kind === 'SPLINE') ts.push(...c.knots.filter((u) => u >= d.start && u <= d.end));
+        if (c.kind === 'LWPOLYLINE') for (let k = Math.ceil(d.start); k <= d.end; k++) ts.push(k);
         for (const t of ts) {
           const p = pointAt(c, t);
           expect(boxContains(box, p, eps)).toBe(true);
