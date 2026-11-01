@@ -1569,6 +1569,10 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(282, image.contrast, subclass);
     this._writer.write(283, image.fade, subclass);
     this._writer.writeHandle(360, image.definitionReactor, subclass);
+    if (image.definitionReactor != null) {
+      // The image hard-owns its reactor (360); nothing else queues it for the OBJECTS section.
+      this.holder.objects.push(image.definitionReactor);
+    }
     this._writer.write(71, image.clipType, subclass);
     this._writer.write(91, image.clipBoundaryVertices.length);
     for (const v of image.clipBoundaryVertices) {

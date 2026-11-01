@@ -710,7 +710,6 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       co instanceof AecWallStyle ||
       co instanceof AecCleanupGroup ||
       co instanceof AecBinRecord ||
-      co instanceof DimensionAssociation ||
       co instanceof Material ||
       co instanceof MultiLeaderObjectContextData ||
       co instanceof TableContent ||
