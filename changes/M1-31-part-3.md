@@ -1,0 +1,1 @@
+- M1-31 part 3 (#65): R12 DXF saves write the `$MODEL_SPACE` and `$PAPER_SPACE` blocks as AutoCAD does (patch 0064) and keep `DIMSTYLE` handles (0065); round trip 7,566 → 7,488 differences.

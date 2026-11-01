@@ -206,15 +206,11 @@
     },
     "public/third-party/acadsharp/sample_AC1009_ascii.dxf": {
       "declared": 3899,
-      "lost": {
-        "ENDBLK": "21 25C"
-      }
+      "lost": {}
     },
     "public/third-party/acadsharp/sample_AC1009_binary.dxf": {
       "declared": 3899,
-      "lost": {
-        "ENDBLK": "21 25C"
-      }
+      "lost": {}
     },
     "public/third-party/acadsharp/sample_AC1014.dwg": {
       "declared": 1242,
@@ -797,15 +793,11 @@
     },
     "public/third-party/ezdxf/integration_tests/ASCII_R12.dxf": {
       "declared": 7,
-      "lost": {
-        "ENDBLK": "21 5B"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r12.dxf": {
       "declared": 5,
-      "lost": {
-        "ENDBLK": "1D 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf": {
       "declared": 117,
@@ -872,9 +864,8 @@
     "public/third-party/ezdxf/integration_tests/r12_blocks_with_no_names.dxf": {
       "declared": 19,
       "lost": {
-        "BLOCK": "18 1C 2E 33",
-        "DIMSTYLE": "2B",
-        "ENDBLK": "19 1D 2F 34"
+        "BLOCK": "2E 33",
+        "ENDBLK": "2F 34"
       }
     },
     "public/third-party/ezdxf/integration_tests/R12_with_trash_beyond_EOF.dxf": {
