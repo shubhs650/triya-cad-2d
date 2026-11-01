@@ -5148,6 +5148,7 @@ export class DwgObjectReader extends DwgSectionIO {
 
     if (this._mergedReaders.readBit()) {
       const flags = this._mergedReaders.readBitLong() as CellOverrideFlags;
+      cell.overrideFlags = flags;
       cell.virtualEdgeFlag = this._mergedReaders.readByte();
 
       if ((flags & CellOverrideFlags.CellAlignment) !== 0) {

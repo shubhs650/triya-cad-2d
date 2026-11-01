@@ -152,6 +152,7 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DIMASSOC | Read; **not written to DXF** (47 handles, M1-31) |
 | ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** (98 handles in the R13/R14 binary DXFs, M1-31) |
 | TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
+| ACAD_TABLE cells (DWG write) | R2004/R2007 cell overrides (alignment, colours, text height, borders) written behind their flag word (0041); R2010+ cell geometry written with no content geometry (0042); R2004/R2007 block cells keep their block record (0043). All three were reset on a save; DWG tables now round-trip with no difference |
 | MULTILEADER (DXF) | Written in AutoCAD's group order with its context data, branches and leader lines (0037); the reader decodes the context text colour as an AcCmColor and reads the branch groups. A save reset every multileader to defaults with an empty label |
 | ENDBLK entity data (DXF write) | Colour, linetype, lineweight, linetype scale and visibility written as for BLOCK (0038); only the layer was written |
 | TOLERANCE text (DXF) | Caret codes decoded on read, so the `^J` between rows is a line break as in DWG (0039); each save had turned `^J` into `^ J` |

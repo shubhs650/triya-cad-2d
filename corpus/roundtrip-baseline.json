@@ -131,7 +131,7 @@
     },
     "public/third-party/acadsharp/sample_AC1018.dwg": {
       "status": "diff",
-      "differences": 84
+      "differences": 11
     },
     "public/third-party/acadsharp/sample_AC1021_ascii.dxf": {
       "status": "diff",
@@ -143,7 +143,7 @@
     },
     "public/third-party/acadsharp/sample_AC1021.dwg": {
       "status": "diff",
-      "differences": 84
+      "differences": 11
     },
     "public/third-party/acadsharp/sample_AC1024_ascii.dxf": {
       "status": "diff",
@@ -155,7 +155,7 @@
     },
     "public/third-party/acadsharp/sample_AC1024.dwg": {
       "status": "diff",
-      "differences": 29
+      "differences": 11
     },
     "public/third-party/acadsharp/sample_AC1027_ascii.dxf": {
       "status": "diff",
@@ -167,7 +167,7 @@
     },
     "public/third-party/acadsharp/sample_AC1027.dwg": {
       "status": "diff",
-      "differences": 29
+      "differences": 11
     },
     "public/third-party/acadsharp/sample_AC1032_ascii.dxf": {
       "status": "diff",
@@ -179,7 +179,7 @@
     },
     "public/third-party/acadsharp/sample_AC1032.dwg": {
       "status": "diff",
-      "differences": 27
+      "differences": 9
     },
     "public/third-party/acadsharp/sample_base/empty.dwg": {
       "status": "clean",
@@ -187,7 +187,7 @@
     },
     "public/third-party/acadsharp/sample_base/sample_base.dwg": {
       "status": "diff",
-      "differences": 27
+      "differences": 9
     },
     "public/third-party/ezdxf/examples_dxf/3dface.dxf": {
       "status": "diff",
