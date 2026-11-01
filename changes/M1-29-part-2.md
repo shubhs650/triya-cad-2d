@@ -1,0 +1,1 @@
+- M1-29 part 2 (#35): acad-ts writes DXF angles as the degree value that reads back to the same radians, keeps hatch edge angles past 360° and keeps the pattern of SOLID hatches (patch 0033); every HATCH spike root at 0, round trip 14,813 → 14,740 differences.

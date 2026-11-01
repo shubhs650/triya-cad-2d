@@ -12,6 +12,7 @@ import type {
   TableStyle,
 } from '@node-projects/acad-ts';
 import {
+  Arc,
   AttributeDefinition,
   DwgReader,
   DwgReaderConfiguration,
@@ -19,12 +20,16 @@ import {
   DxfReader,
   DxfReaderConfiguration,
   DxfWriter,
+  Hatch,
+  HatchBoundaryPathArc,
+  HatchBoundaryPathEllipse,
   Insert,
   LayoutFlags,
   LineWeightType,
   Material,
   RasterVariables,
   Solid3D,
+  TextEntity,
   UnknownEntity,
   UnknownNonGraphicalObject,
   Viewport,
@@ -527,6 +532,75 @@ describe('acad-ts local patches (corpus-backed)', () => {
         expect(attributes(back).map(fields), `${version} binary ${binary}`).toEqual(
           attributes(doc).map(fields),
         );
+      }
+    }
+  });
+
+  it('0033 DXF writer keeps HATCH patterns and every angle exact through a save', () => {
+    // The writer converted radians to degrees with radToDeg, which can land one ulp away from
+    // the degree value read, so angles drifted on every save. It wrapped hatch edge angles into
+    // [0, 360) (ezdxf writes an ellipse edge ending at 472.87), and it dropped the pattern of a
+    // hatch flagged solid, although AutoCAD writes one (52, 41, 77, 78) for SOLID too.
+    const edgeAngles = (h: Hatch): number[] =>
+      h.paths.flatMap((p) =>
+        p.edges.flatMap((e) =>
+          e instanceof HatchBoundaryPathArc || e instanceof HatchBoundaryPathEllipse
+            ? [e.startAngle, e.endAngle]
+            : [],
+        ),
+      );
+    const fields = (o: CadObject): unknown => {
+      if (o instanceof Hatch) {
+        return {
+          h: handleHex(o),
+          pattern: [o.pattern.name, o.patternAngle, o.patternScale, o.isDouble],
+          lines: o.pattern.lines.map((l) => [
+            l.angle,
+            l.basePoint.x,
+            l.basePoint.y,
+            l.offset.x,
+            l.offset.y,
+            ...l.dashLengths,
+          ]),
+          edges: edgeAngles(o),
+        };
+      }
+      if (o instanceof Arc) return { h: handleHex(o), arc: [o.startAngle, o.endAngle] };
+      if (o instanceof TextEntity) return { h: handleHex(o), rotation: o.rotation };
+      return null;
+    };
+    const all = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .map(fields)
+        .filter((f) => f !== null)
+        .sort((a, b) =>
+          String((a as { h: string }).h).localeCompare(String((b as { h: string }).h)),
+        );
+
+    const files = [
+      'third-party/acadsharp/sample_AC1018_ascii.dxf',
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+      'third-party/ezdxf/examples_dxf/clockwise_arcs_hatch.dxf',
+      'third-party/ezdxf/examples_dxf/hatches_2.dxf',
+      'third-party/ezdxf/examples_dxf/text_fonts.dxf',
+    ];
+    const docs = new Map(files.map((f) => [f, readDxfRaw(corpusBytes(f))]));
+
+    // The file's SOLID hatch 2D in clockwise_arcs_hatch.dxf carries 52 45, 41 64 and two lines.
+    const solid = docs.get(files[2]!)!.getCadObject(0x2d) as Hatch;
+    expect([solid.isSolid, solid.patternScale, solid.pattern.lines.length]).toEqual([true, 64, 2]);
+    // Hatch 233 in hatches_2.dxf has an ellipse edge from 348.71 to 472.87 degrees.
+    const wrapped = edgeAngles(docs.get(files[3]!)!.getCadObject(0x233) as Hatch);
+    expect(wrapped[1]! * (180 / Math.PI)).toBeCloseTo(472.8737, 3);
+
+    for (const [file, doc] of docs) {
+      for (const binary of [false, true]) {
+        // Objects the writer still drops (M1-31) are not this patch's concern: compare the rest.
+        const back = all(dxfRawRoundTrip(doc, binary));
+        const kept = new Set(back.map((f) => (f as { h: string }).h));
+        const before = all(doc).filter((f) => kept.has((f as { h: string }).h));
+        expect(before.length, file).toBeGreaterThan(0);
+        expect(back, `${file} binary ${binary}`).toEqual(before);
       }
     }
   });
