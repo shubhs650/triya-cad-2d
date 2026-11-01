@@ -429,6 +429,207 @@ export interface ToleranceGeometry extends PlanarProps {
   readonly text: string;
 }
 
+/** One leader line of a MULTILEADER branch (DXF `LEADER_LINE{`). Points are WCS. */
+export interface MultiLeaderLine {
+  /** DXF 91. */
+  readonly index: number;
+  /** DXF 10, from the arrowhead end towards the branch's connection point, which is not repeated. */
+  readonly vertices: readonly Vec2[];
+}
+
+/** One branch of a MULTILEADER (DXF `LEADER{`): its leader lines and their landing. */
+export interface MultiLeaderBranch {
+  /** DXF 90. */
+  readonly index: number;
+  /** DXF 10: where the lines meet the landing (dogleg). */
+  readonly connection: Vec2;
+  /** DXF 11: the landing's direction, away from the content. */
+  readonly direction: Vec2;
+  /** DXF 40. */
+  readonly doglegLength: number;
+  readonly lines: readonly MultiLeaderLine[];
+}
+
+/** The MTEXT content of a MULTILEADER (DXF context data). Points are WCS. */
+export interface MultiLeaderText {
+  /** DXF 304, with MTEXT format codes. */
+  readonly content: string;
+  /** STYLE record handle (DXF 340 in the context data). */
+  readonly style: Handle;
+  /** DXF 12. */
+  readonly position: Vec2;
+  /** WCS angle of the text direction (DXF 13). */
+  readonly rotation: number;
+  /** The text normal (DXF 11) is −Z: the text's Y axis is reversed, as for MTEXT. */
+  readonly upsideDown?: boolean;
+  /** DXF 41. */
+  readonly height: number;
+  /** DXF 43 / 44: 0 means not wrapped. */
+  readonly width: number;
+  readonly boundaryHeight: number;
+  /** DXF 45 / 170: line spacing factor and style (1 at least, 2 exactly). */
+  readonly lineSpacing: number;
+  readonly lineSpacingStyle: number;
+  /** DXF 171: MTEXT attachment point 1–9. */
+  readonly attachment: number;
+  /** DXF 172: MTEXT drawing direction. */
+  readonly flow: number;
+  /** DXF 90. */
+  readonly color: Color;
+}
+
+/** The block content of a MULTILEADER (DXF context data). Points are WCS. */
+export interface MultiLeaderBlock {
+  /** BLOCK_RECORD handle (DXF 341 in the context data). */
+  readonly block?: Handle;
+  /** DXF 15. */
+  readonly position: Vec2;
+  /** DXF 16. */
+  readonly scale: Vec3;
+  /** DXF 46, radians. */
+  readonly rotation: number;
+  /** DXF 93. */
+  readonly color: Color;
+}
+
+/**
+ * MULTILEADER (DXF reference, MLEADER). All points are WCS, so the plan view drops Z; the
+ * leader plane (context data 110/111/112) must be ±Z. Style-level values the entity
+ * overrides are flagged in `overrideFlags` (DXF 90) and stored as the file states them.
+ */
+export interface MultiLeaderGeometry extends PlanarProps {
+  readonly kind: 'MULTILEADER';
+  /** MLEADERSTYLE handle (DXF 340). */
+  readonly style?: Handle;
+  /** DXF 90: which properties override the style. */
+  readonly overrideFlags: number;
+  /** DXF 170: 0 invisible, 1 straight, 2 spline. */
+  readonly pathType: number;
+  /** DXF 91 / 341 / 171. */
+  readonly lineColor: Color;
+  readonly linetype?: Handle;
+  readonly lineweight: Lineweight;
+  /** DXF 290 / 291 / 41. */
+  readonly landing: boolean;
+  readonly dogleg: boolean;
+  readonly doglegLength: number;
+  /** BLOCK_RECORD handle of the arrowhead (DXF 342); none means closed filled. */
+  readonly arrowhead?: Handle;
+  /** DXF 42. */
+  readonly arrowheadSize: number;
+  /** DXF 172: 0 none, 1 block, 2 mtext, 3 tolerance. */
+  readonly contentType: number;
+  /** DXF 45: overall scale. */
+  readonly scale: number;
+  /** DXF 293. */
+  readonly annotative: boolean;
+  /** DXF 173 / 95 / 273 / 272: attachment of the text to the landing. */
+  readonly textLeftAttachment: number;
+  readonly textRightAttachment: number;
+  readonly textTopAttachment: number;
+  readonly textBottomAttachment: number;
+  /** DXF 271: 0 horizontal, 1 vertical. */
+  readonly textAttachmentDirection: number;
+  /** DXF 174 / 175. */
+  readonly textAngleType: number;
+  readonly textAlignment: number;
+  /** DXF 292. */
+  readonly textFrame: boolean;
+  /** DXF 10 in the context data: where the content attaches. */
+  readonly contentBase: Vec2;
+  /** DXF 145. */
+  readonly landingGap: number;
+  readonly text?: MultiLeaderText;
+  readonly block?: MultiLeaderBlock;
+  readonly branches: readonly MultiLeaderBranch[];
+}
+
+/**
+ * One edge of a HATCH boundary loop, in the hatch's plane (plan view, DEC-039). Arc and
+ * ellipse angles keep the DXF convention: with `ccw` false AutoCAD stores the clockwise
+ * edge's angles negated. A −Z plane reverses every edge, so the mapper flips `ccw`, adds π
+ * to arc angles and keeps ellipse parameters.
+ */
+export type HatchEdge =
+  | { readonly type: 'line'; readonly start: Vec2; readonly end: Vec2 }
+  | {
+      readonly type: 'arc';
+      readonly center: Vec2;
+      readonly radius: number;
+      readonly startAngle: number;
+      readonly endAngle: number;
+      readonly ccw: boolean;
+    }
+  | {
+      readonly type: 'ellipse';
+      readonly center: Vec2;
+      /** Major axis end point relative to the centre. */
+      readonly majorAxis: Vec2;
+      readonly ratio: number;
+      readonly startAngle: number;
+      readonly endAngle: number;
+      readonly ccw: boolean;
+    }
+  | {
+      readonly type: 'spline';
+      readonly degree: number;
+      readonly knots: readonly number[];
+      readonly controlPoints: readonly Vec2[];
+      readonly weights?: readonly number[];
+      readonly periodic: boolean;
+      readonly fitPoints?: readonly Vec2[];
+      readonly startTangent?: Vec2;
+      readonly endTangent?: Vec2;
+    };
+
+/** A HATCH boundary loop: a polyline (flag 2) or a list of edges. */
+export interface HatchLoop {
+  /** DXF 92: 1 external, 2 polyline, 4 derived, 8 text box, 16 outermost, … */
+  readonly flags: number;
+  readonly polyline?: { readonly vertices: readonly PolylineVertex[]; readonly closed: boolean };
+  readonly edges?: readonly HatchEdge[];
+  /** DXF 330: the boundary objects of an associative hatch. */
+  readonly sources?: readonly Handle[];
+}
+
+/** A pattern definition line, already scaled and rotated as the file stores it (DXF 53–49). */
+export interface HatchPatternLine {
+  readonly angle: number;
+  readonly base: Vec2;
+  readonly offset: Vec2;
+  readonly dashes: readonly number[];
+}
+
+export interface HatchGeometry extends PlanarProps {
+  readonly kind: 'HATCH';
+  /** DXF 2. */
+  readonly pattern: string;
+  /** DXF 70. */
+  readonly solid: boolean;
+  /** DXF 71. */
+  readonly associative: boolean;
+  /** DXF 75: 0 normal (odd parity), 1 outer, 2 ignore. */
+  readonly style: number;
+  /** DXF 76: 0 user-defined, 1 predefined, 2 custom. */
+  readonly patternType: number;
+  readonly patternAngle: number;
+  readonly patternScale: number;
+  /** DXF 77: user-defined pattern doubled. */
+  readonly double: boolean;
+  readonly loops: readonly HatchLoop[];
+  readonly patternLines: readonly HatchPatternLine[];
+  readonly seedPoints: readonly Vec2[];
+  /** DXF 450–470, when the hatch is a gradient fill. */
+  readonly gradient?: {
+    readonly name: string;
+    readonly angle: number;
+    readonly shift: number;
+    readonly singleColor: boolean;
+    readonly tint: number;
+    readonly colors: readonly { readonly value: number; readonly color: Color }[];
+  };
+}
+
 export type EntityGeometry =
   | LineGeometry
   | XlineGeometry
@@ -448,7 +649,9 @@ export type EntityGeometry =
   | InsertGeometry
   | DimensionGeometry
   | LeaderGeometry
-  | ToleranceGeometry;
+  | ToleranceGeometry
+  | MultiLeaderGeometry
+  | HatchGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */
 export type EntityType = EntityGeometry['kind'];

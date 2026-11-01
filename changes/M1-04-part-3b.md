@@ -1,0 +1,1 @@
+- M1-04 part 3b (#25): `mapEntities` maps HATCH: polyline and edge loops (line, arc, ellipse, spline) with their associative sources, pattern lines, seed points and gradients, in plan view (DEC-039 extended). New acad-ts gaps (hatch style, seed points, ellipse-edge major axis) in M1-32.

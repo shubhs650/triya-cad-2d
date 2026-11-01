@@ -1,0 +1,142 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 339a1cb..8966200 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -106,7 +106,7 @@ import { Field } from '../../../Objects/Field.js';
+ import { FieldList } from '../../../Objects/FieldList.js';
+ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
+ import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
+-import { TableEntity , CellRange, TableEntityColumn, TableEntityRow, TableEntityCell, CellContent, ContentFormat, CellStyle, CellBorder, CellEdgeFlags, CellAlignmentType, CellStyleType, CellStyleClass} from '../../../Entities/TableEntity.js';
++import { TableEntity , CellRange, TableEntityColumn, TableEntityRow, TableEntityCell, CellContent, ContentFormat, CellStyle, CellBorder, CellEdgeFlags, CellAlignmentType, CellStyleType, CellStyleClass, TableEntityBorderType, TableBorderPropertyFlags} from '../../../Entities/TableEntity.js';
+ import { CadValue } from '../../../CadValue.js';
+ import { Color } from '../../../Color.js';
+ import { LineWeightType } from '../../../Types/LineWeightType.js';
+@@ -1594,6 +1594,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           if (this._reader.valueAsString.toUpperCase() === 'GRIDFORMAT') {
+             const border = new CellBorder(currBorder);
+             this._readGridFormat(template, border);
++            // Keep the border on the style: it was read into an object nothing referenced.
++            switch (currBorder) {
++              case CellEdgeFlags.Top: style.topBorder = border; break;
++              case CellEdgeFlags.Right: style.rightBorder = border; break;
++              case CellEdgeFlags.Bottom: style.bottomBorder = border; break;
++              case CellEdgeFlags.Left: style.leftBorder = border; break;
++              case CellEdgeFlags.InsideVertical: style.verticalInsideBorder = border; break;
++              case CellEdgeFlags.InsideHorizontal: style.horizontalInsideBorder = border; break;
++            }
+           }
+           break;
+         case 309:
+@@ -1630,6 +1639,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+         case 92:
+           border.lineWeight = this._reader.valueAsInt as LineWeightType;
+           break;
++        case 90:
++          border.type = this._reader.valueAsInt as TableEntityBorderType;
++          break;
++        case 91:
++          border.propertyOverrideFlags = this._reader.valueAsInt as TableBorderPropertyFlags;
++          break;
++        case 40:
++          border.doubleLineSpacing = this._reader.valueAsDouble;
++          break;
+         case 93:
+           border.isInvisible = this._reader.valueAsBool;
+           break;
+@@ -1903,23 +1921,24 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+       case 279:
+         if (cellStyle) cellStyle.rightBorder.lineWeight = this._reader.valueAsInt as LineWeightType;
+         return true;
++      // 284-289 are 1 when the border is visible (AutoCAD DXF reference, TABLESTYLE).
+       case 284:
+-        if (cellStyle) cellStyle.topBorder.isInvisible = this._reader.valueAsBool;
++        if (cellStyle) cellStyle.topBorder.isInvisible = !this._reader.valueAsBool;
+         return true;
+       case 285:
+-        if (cellStyle) cellStyle.horizontalInsideBorder.isInvisible = this._reader.valueAsBool;
++        if (cellStyle) cellStyle.horizontalInsideBorder.isInvisible = !this._reader.valueAsBool;
+         return true;
+       case 286:
+-        if (cellStyle) cellStyle.bottomBorder.isInvisible = this._reader.valueAsBool;
++        if (cellStyle) cellStyle.bottomBorder.isInvisible = !this._reader.valueAsBool;
+         return true;
+       case 287:
+-        if (cellStyle) cellStyle.leftBorder.isInvisible = this._reader.valueAsBool;
++        if (cellStyle) cellStyle.leftBorder.isInvisible = !this._reader.valueAsBool;
+         return true;
+       case 288:
+-        if (cellStyle) cellStyle.verticalInsideBorder.isInvisible = this._reader.valueAsBool;
++        if (cellStyle) cellStyle.verticalInsideBorder.isInvisible = !this._reader.valueAsBool;
+         return true;
+       case 289:
+-        if (cellStyle) cellStyle.rightBorder.isInvisible = this._reader.valueAsBool;
++        if (cellStyle) cellStyle.rightBorder.isInvisible = !this._reader.valueAsBool;
+         return true;
+       case 64:
+         if (cellStyle) cellStyle.topBorder.color = new Color(this._reader.valueAsShort);
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 1e91420..f5a1ae7 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -776,6 +776,29 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       this._writer.write(144, style.scale);
+       this._writer.write(309, 'CONTENTFORMAT_END');
+       this._writer.write(171, style.marginOverrideFlags);
++      this._writer.write(301, 'MARGIN');
++      this._writer.write(1, 'CELLMARGIN_BEGIN');
++      for (const margin of [style.verticalMargin, style.horizontalMargin, style.bottomMargin, style.rightMargin,
++        style.marginHorizontalSpacing, style.marginVerticalSpacing]) {
++        this._writer.write(40, margin);
++      }
++      this._writer.write(309, 'CELLMARGIN_END');
++      const borders = [style.topBorder, style.rightBorder, style.bottomBorder, style.leftBorder,
++        style.verticalInsideBorder, style.horizontalInsideBorder];
++      this._writer.write(94, borders.length);
++      for (const border of borders) {
++        this._writer.write(95, border.edgeFlags);
++        this._writer.write(302, 'GRIDFORMAT');
++        this._writer.write(1, 'GRIDFORMAT_BEGIN');
++        this._writer.write(90, border.type);
++        this._writer.write(91, border.propertyOverrideFlags);
++        this._writer.write(62, border.color.index);
++        this._writer.write(92, border.lineWeight);
++        this._writer.writeHandle(340, border.lineType);
++        this._writer.write(93, border.isInvisible ? 1 : 0);
++        this._writer.write(40, border.doubleLineSpacing);
++        this._writer.write(309, 'GRIDFORMAT_END');
++      }
+       this._writer.write(309, 'TABLEFORMAT_END');
+       this._writer.write(1, 'CELLSTYLE_BEGIN');
+       this._writer.write(90, style.id);
+@@ -807,11 +830,11 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+ 		}
+ 		this._writer.write(140, cellStyle.textHeight);
+ 		this._writer.write(170, cellStyle.cellAlignment);
+-		this._writer.write(62, cellStyle.contentColor.getApproxIndex());
++		this._writer.write(62, cellStyle.color.getApproxIndex());
+ 		this._writer.write(63, cellStyle.backgroundColor.getApproxIndex());
+ 		this._writer.write(283, cellStyle.isFillColorOn ? 1 : 0);
+ 		this._writer.write(90, cellStyle.cellStyleType);
+-		this._writer.write(91, cellStyle.valueDataType);
++		this._writer.write(91, cellStyle.styleClass);
+ 		this._writeCellStyleBorder(cellStyle.topBorder, 0);
+ 		this._writeCellStyleBorder(cellStyle.horizontalInsideBorder, 1);
+ 		this._writeCellStyleBorder(cellStyle.bottomBorder, 2);
+diff --git a/src/IO/Templates/CadTableStyleTemplate.ts b/src/IO/Templates/CadTableStyleTemplate.ts
+index 6e66a31..e6243bf 100644
+--- a/src/IO/Templates/CadTableStyleTemplate.ts
++++ b/src/IO/Templates/CadTableStyleTemplate.ts
+@@ -24,9 +24,11 @@ export class CadTableStyleTemplate extends CadTemplate<TableStyle> {
+ 		const tableStyle = this.cadObject as TableStyle;
+ 		this.tableCellStyleTemplate?.build(builder);
+ 
+-		for (const item of this.cellStyleTemplates) {
++		// The DXF TABLESTYLE body lists its cell styles without ids, as data, title, header.
++		const legacy = [3, 1, 2];
++		for (const [index, item] of this.cellStyleTemplates.entries()) {
+ 			item.build(builder);
+-			switch (item.cellStyle.id) {
++			switch (item.cellStyle.id || legacy[index]) {
+ 				case 1: tableStyle.titleCellStyle = item.cellStyle; break;
+ 				case 2: tableStyle.headerCellStyle = item.cellStyle; break;
+ 				case 3: tableStyle.dataCellStyle = item.cellStyle; break;
