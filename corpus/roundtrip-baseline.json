@@ -106,8 +106,8 @@
       "differences": 2941
     },
     "public/third-party/acadsharp/sample_AC1014.dwg": {
-      "status": "diff",
-      "differences": 5
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/acadsharp/sample_AC1015_ascii.dxf": {
       "status": "diff",

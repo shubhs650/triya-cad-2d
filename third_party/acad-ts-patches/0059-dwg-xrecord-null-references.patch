@@ -1,0 +1,17 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index b3bdf39..528861d 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -4927,11 +4929,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		for (const entry of xrecord.entries) {
+ 			if (entry.value == null) continue;
+ 			const groupValueType = GroupCodeValue.transformValue(entry.code);
+-			if ((groupValueType === GroupCodeValueType.ObjectId
+-				|| groupValueType === GroupCodeValueType.ExtendedDataHandle)
+-				&& getHandleValue(entry.value) === 0) {
+-				continue;
+-			}
++			// A null object reference (handle 0) is a valid entry: AutoCAD writes it as 0.
+ 
+ 			pushInt16LE(entry.code);
+ 

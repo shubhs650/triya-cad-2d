@@ -3672,6 +3672,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 	private _writeCadDictionaryWithDefault(dictionary: CadDictionaryWithDefault): void {
 		this._writeDictionary(dictionary);
 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, dictionary.defaultEntry);
+		// The default entry may have no other owner (R14 ACDBPLACEHOLDER): write it too.
+		this._enqueueObject(dictionary.defaultEntry);
 	}
 
 	private _writeDictionary(dictionary: CadDictionary): void {
@@ -4927,11 +4929,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		for (const entry of xrecord.entries) {
 			if (entry.value == null) continue;
 			const groupValueType = GroupCodeValue.transformValue(entry.code);
-			if ((groupValueType === GroupCodeValueType.ObjectId
-				|| groupValueType === GroupCodeValueType.ExtendedDataHandle)
-				&& getHandleValue(entry.value) === 0) {
-				continue;
-			}
+			// A null object reference (handle 0) is a valid entry: AutoCAD writes it as 0.
 
 			pushInt16LE(entry.code);
 

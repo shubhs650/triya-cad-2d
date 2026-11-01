@@ -171,7 +171,7 @@ describe('curves', () => {
 
   it('is unknown for a spline stored only as fit points, without throwing', () => {
     // R2013+ DWGs can hold a spline as fit data alone (corpus sample_AC1027.dwg); its control
-    // points are AutoCAD's to compute, so until the kernel interpolates them (M1-47) the box
+    // points are AutoCAD's to compute, so until the kernel interpolates them (M1-49) the box
     // is not known.
     const fitOnly: EntityGeometry = {
       kind: 'SPLINE',

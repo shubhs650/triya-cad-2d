@@ -275,7 +275,7 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
       return boxed(curveBounds(geom, ctx.tol));
     case 'SPLINE':
       // A spline stored only as fit points has no NURBS to bound until the kernel computes
-      // AutoCAD's interpolation (M1-47); unknown keeps every query returning it.
+      // AutoCAD's interpolation (M1-49); unknown keeps every query returning it.
       return isNurbs(geom) ? boxed(curveBounds(geom, ctx.tol)) : UNKNOWN;
     case 'XLINE':
     case 'RAY': {

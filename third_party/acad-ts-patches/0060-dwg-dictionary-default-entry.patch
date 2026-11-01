@@ -1,0 +1,13 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index b3bdf39..528861d 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -3672,6 +3672,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 	private _writeCadDictionaryWithDefault(dictionary: CadDictionaryWithDefault): void {
+ 		this._writeDictionary(dictionary);
+ 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, dictionary.defaultEntry);
++		// The default entry may have no other owner (R14 ACDBPLACEHOLDER): write it too.
++		this._enqueueObject(dictionary.defaultEntry);
+ 	}
+ 
+ 	private _writeDictionary(dictionary: CadDictionary): void {
