@@ -1,13 +1,25 @@
 name: CI
 
+# Gates for every PR and for main (docs/TESTING.md §1, CLAUDE.md "Run the gates locally").
+# The two required checks for branch protection are the job names
+# "lint · typecheck · unit · round-trip" and "fidelity · offline · ui"; renaming them silently
+# un-protects main, so tests/ci/workflows.test.ts pins them.
+
 on:
   pull_request:
+    # ready_for_review re-runs CI so a PR leaving draft gets a fresh green run, which is what
+    # auto-merge.yml waits for.
+    types: [opened, synchronize, reopened, ready_for_review]
   push:
     branches: [main]
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # A new push to a PR supersedes its old run; runs on main always finish.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
 
 jobs:
   checks:
@@ -24,6 +36,28 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
+      - run: pnpm corpus:validate
+
+  # Decides whether the perf budgets must run on this PR (TESTING.md §1: PRs touching
+  # render/engine/io). On a PR, HEAD is the merge commit, so HEAD^1..HEAD is exactly the PR's diff.
+  changes:
+    name: detect hot-path changes
+    runs-on: ubuntu-latest
+    outputs:
+      hot: ${{ steps.diff.outputs.hot }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 2 }
+      - id: diff
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
+            echo "hot=false" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          if git diff --name-only HEAD^1 HEAD | grep -qE '^(packages/render/|packages/engine/|packages/io/)'; then
+            echo "hot=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "hot=false" >> "$GITHUB_OUTPUT"
+          fi
 
   browser:
     name: fidelity · offline · ui
@@ -37,26 +71,46 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - id: pw
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
       - run: pnpm build
       - run: pnpm test:fidelity
-      - run: pnpm test:offline
-      - run: pnpm test:ui
-      - run: pnpm test:io
+      # Later suites still run after a fidelity failure so one red PR shows every broken gate.
+      - if: ${{ !cancelled() }}
+        run: pnpm test:offline
+      - if: ${{ !cancelled() }}
+        run: pnpm test:ui
+      - if: ${{ !cancelled() }}
+        run: pnpm test:io
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: fidelity-diffs
           path: |
-            test-results/**
-            playwright-report/**
+            test-results/
+            playwright-report/
+          retention-days: 14
 
   perf:
     name: performance budgets
     runs-on: ubuntu-latest
-    needs: checks
-    # Runs on PRs that touch hot paths, and always on main
-    if: github.ref == 'refs/heads/main' || contains(github.event.pull_request.title, '[perf]') || contains(github.event.pull_request.labels.*.name, 'perf')
+    needs: [checks, changes]
+    # Always on main; on PRs that touch render/engine/io, or when asked via the `perf` label
+    # or a "[perf]" title.
+    if: >-
+      github.ref == 'refs/heads/main'
+      || needs.changes.outputs.hot == 'true'
+      || contains(github.event.pull_request.labels.*.name, 'perf')
+      || contains(github.event.pull_request.title, '[perf]')
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -65,9 +119,24 @@ jobs:
       - uses: actions/setup-node@v4
         with: { node-version: 22, cache: pnpm }
       - run: pnpm install --frozen-lockfile
-      - run: pnpm exec playwright install --with-deps chromium
+      - id: pw
+        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
+      - id: pw-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
+      - if: steps.pw-cache.outputs.cache-hit != 'true'
+        run: pnpm exec playwright install --with-deps chromium
+      - if: steps.pw-cache.outputs.cache-hit == 'true'
+        run: pnpm exec playwright install-deps chromium
       - run: pnpm build
       - run: pnpm test:perf
-
-  # The M0-01 scaffold task wires the pnpm scripts this workflow calls.
-  # Until then, scripts may be no-ops that exit 0; never delete a job to get green.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: perf-results
+          path: |
+            test-results/
+            playwright-report/
+          retention-days: 14
