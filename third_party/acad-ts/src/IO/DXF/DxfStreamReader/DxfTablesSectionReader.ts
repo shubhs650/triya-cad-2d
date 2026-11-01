@@ -14,6 +14,7 @@ import { CadViewTemplate } from '../../Templates/CadViewTemplate.js';
 import { CadVPortTemplate } from '../../Templates/CadVPortTemplate.js';
 import { AppId } from '../../../Tables/AppId.js';
 import { BlockRecord } from '../../../Tables/BlockRecord.js';
+import { UnitsType } from '../../../Types/Units/UnitsType.js';
 import { DimensionStyle } from '../../../Tables/DimensionStyle.js';
 import { Layer } from '../../../Tables/Layer.js';
 import { LineType } from '../../../Tables/LineType.js';
@@ -312,6 +313,20 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
       case 340:
         template.layoutHandle = this._reader.valueAsHandle;
         return true;
+      // AcDbBlockTableRecord 70 is the insertion units, not the table-entry flags.
+      case 70:
+        template.cadObject.units = this._reader.valueAsShort as UnitsType;
+        return true;
+      // The preview bitmap spans many 310 chunks; append each one.
+      case 310: {
+        const chunk = this._reader.valueAsBinaryChunk;
+        const previous = template.cadObject.preview;
+        const joined = new Uint8Array((previous?.length ?? 0) + chunk.length);
+        if (previous) joined.set(previous);
+        joined.set(chunk, previous?.length ?? 0);
+        template.cadObject.preview = joined;
+        return true;
+      }
       default:
         return this.tryAssignCurrentValue(template.cadObject, map);
     }

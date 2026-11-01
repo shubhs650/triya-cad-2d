@@ -125,6 +125,13 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
 
   private _writeBlockRecord(block: BlockRecord, map: DxfClassMap): void {
     this._writer.writeHandle(340, block.layout, map);
+    // AutoCAD writes the preview bitmap here, in chunks of at most 127 bytes.
+    const preview = block.preview;
+    if (preview != null) {
+      for (let offset = 0; offset < preview.length; offset += 127) {
+        this._writer.write(310, preview.slice(offset, offset + 127));
+      }
+    }
 
     this._writer.write(70, block.units, map);
     this._writer.write(280, block.isExplodable ? 1 : 0, map);
