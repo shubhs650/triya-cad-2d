@@ -22,12 +22,12 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | SOLID | ✓ | | | | |
 | TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
 | 3DFACE *(render edges)* | ✓ | | — | | |
-| TEXT | | | | | |
-| MTEXT | | | | | |
-| ATTDEF | | | | | |
-| ATTRIB | | | | | |
-| INSERT | | | | | |
-| MINSERT | | | | | |
+| TEXT | ✓ | | | | |
+| MTEXT | ✓ (contents with codes as stored) | | | | |
+| ATTDEF | ✓ (backward/upside-down lost by acad-ts, M1-32) | | | | |
+| ATTRIB | ✓ folded into its INSERT (backward/upside-down lost by acad-ts, M1-32) | | | | |
+| INSERT | ✓ | | | | |
+| MINSERT | ✓ | | | | |
 | DIMENSION (linear/aligned) | | | | | |
 | DIMENSION (angular 2-line / 3-point) | | | | | |
 | DIMENSION (radial / diametric) | | | | | |

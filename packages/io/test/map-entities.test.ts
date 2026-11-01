@@ -11,6 +11,7 @@ import {
   Color,
   Ellipse,
   Face3D,
+  Leader,
   Line,
   LwPolyline,
   LwPolylineVertex,
@@ -19,7 +20,6 @@ import {
   Polyline3D,
   Solid,
   Spline,
-  TextEntity,
   Transparency,
   Vertex2D,
   Vertex3D,
@@ -280,6 +280,6 @@ describe('heavyweight polylines', () => {
   });
 });
 
-it('reports types this part does not map', () => {
-  expect(unmappedOne(new TextEntity())).toMatchObject({ type: 'TEXT', reason: 'not mapped yet' });
+it('reports types not mapped yet', () => {
+  expect(unmappedOne(new Leader())).toMatchObject({ type: 'LEADER', reason: 'not mapped yet' });
 });

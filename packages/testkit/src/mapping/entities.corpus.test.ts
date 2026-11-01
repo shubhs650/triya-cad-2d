@@ -4,7 +4,7 @@
 // Coordinate Systems"), not with the mapper's own conversion.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { EntityInit, Vec2 } from '@triya/engine';
+import type { EntityInit, InsertGeometry, MTextGeometry, TextFields, Vec2 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { mapEntities, mapTables, readCadDocument, type MappedTables } from '@triya/io';
 import { loadManifest } from '../corpus/manifest.ts';
@@ -75,6 +75,11 @@ const ACAD_TS_GAPS: Record<string, string> = {
     'R12 files have no BYBLOCK/BYLAYER LTYPE records; acad-ts falls back to ByLayer for an entity whose 6 is BYBLOCK',
   'ACAD_TABLE unmapped':
     'acad-ts drops ACAD_TABLE entities of ezdxf-written files from their block',
+  'MTEXT 1':
+    'acad-ts decodes only the ^J, ^M, ^I and "^ " caret codes; other control characters stay as ^A, ^B, …',
+  'ATTDEF 71':
+    'acad-ts reads the AcDbText 71 (backward / upside-down) of an ATTDEF as its multiline flag, so the mirror is lost',
+  'INSERT ATTRIB 71': 'the same for ATTRIB',
 };
 
 /** Types this part maps; the others must be reported as not mapped yet. */
@@ -92,6 +97,10 @@ const MAPPED = new Set([
   'SOLID',
   'TRACE',
   '3DFACE',
+  'TEXT',
+  'MTEXT',
+  'ATTDEF',
+  'INSERT',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({
@@ -115,14 +124,15 @@ function bulgeMid(a: Vec2, b: Vec2, bulge: number): Vec2 {
   return { x: mx + (dy / l) * s, y: my - (dx / l) * s };
 }
 
-function compareEntity(
-  d: DxfEntity,
-  e: EntityInit,
+type Report = (code: string, text: string) => void;
+
+/** AcDbEntity properties: an entity's, or those of an ATTRIB folded into its INSERT. */
+function compareCommon(
+  g: readonly Group[],
+  e: Omit<EntityInit, 'type' | 'owner' | 'geom'>,
   t: MappedTables,
-  report: (kind: string, text: string) => void,
+  report: Report,
 ): void {
-  const g = d.groups;
-  // ── common properties ──
   const layer = t.layers.find((l) => l.handle === e.layer)?.name;
   if (layer?.toUpperCase() !== (first(g, 8) ?? '0').trim().toUpperCase())
     report('8', `${first(g, 8)} → ${layer}`);
@@ -165,12 +175,14 @@ function compareEntity(
         : typeof got === 'object' && Math.abs(got.alpha - (v & 0xff)) <= 1; // acad-ts keeps %
     if (!ok) report('440', `${v} → ${JSON.stringify(got)}`);
   }
+}
 
-  // ── geometry ──
+function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Report): void {
+  const g = d.groups;
+  compareCommon(g, e, t, report);
   const geom = e.geom;
   const n = extrusion(g);
-  const bad = (code: string, file: unknown, got: unknown): void =>
-    report(code, `${String(file)} → ${String(got)}`);
+  const bad: Bad = (code, file, got) => report(code, `${String(file)} → ${String(got)}`);
   switch (d.type) {
     case 'LINE': {
       if (geom.kind !== 'LINE') return bad('type', d.type, geom.kind);
@@ -343,6 +355,270 @@ function compareEntity(
         bad('70', num(g, 70), geom.hiddenEdges);
       return;
     }
+    case 'TEXT':
+    case 'ATTDEF': {
+      if (geom.kind !== d.type) return bad('type', d.type, geom.kind);
+      compareText(g, geom, d.type, t, bad);
+      if (geom.kind === 'ATTDEF') {
+        compareAttribute(g, geom, bad);
+        const prompt = first(attributeGroups(g), 3) ?? '';
+        if (geom.prompt !== prompt) bad('3', prompt, geom.prompt);
+      }
+      return;
+    }
+    case 'MTEXT': {
+      if (geom.kind !== 'MTEXT') return bad('type', d.type, geom.kind);
+      compareMText(g, geom, t, bad);
+      return;
+    }
+    case 'INSERT': {
+      if (geom.kind !== 'INSERT') return bad('type', d.type, geom.kind);
+      compareInsert(g, geom, t, bad);
+      const atts = d.children.filter((c) => c.type === 'ATTRIB');
+      if (atts.length !== geom.attributes.length)
+        return bad('66', `${atts.length} ATTRIB`, geom.attributes.length);
+      atts.forEach((a, k) => {
+        const got = geom.attributes[k]!;
+        const h = first(a.groups, 5)
+          ?.trim()
+          .replace(/^0+(?=.)/, '')
+          .toUpperCase();
+        if (h !== undefined && got.handle !== h) bad('ATTRIB 5', h, got.handle);
+        compareCommon(a.groups, got, t, report);
+        compareText(a.groups, got, 'ATTRIB', t, (c, f, x) => bad(`ATTRIB ${c}`, f, x));
+        compareAttribute(a.groups, got, (c, f, x) => bad(`ATTRIB ${c}`, f, x));
+      });
+      return;
+    }
+  }
+}
+
+type Bad = (code: string, file: unknown, got: unknown) => void;
+const deg = (g: readonly Group[], code: number, dflt = 0): number =>
+  (num(g, code, dflt) * Math.PI) / 180;
+const nameOf = (rs: readonly { handle: string; name: string }[], h: string): string | undefined =>
+  rs.find((r) => r.handle === h)?.name.toUpperCase();
+
+/**
+ * A DXF string as acad-ts should decode it. The oracle splits the file as Latin-1; files from
+ * R2007 on are UTF-8, so a value with non-ASCII bytes may be either.
+ */
+function sameText(file: string | undefined, got: string): boolean {
+  const f = file ?? '';
+  const bytes = Uint8Array.from(f, (c) => c.charCodeAt(0) & 0xff);
+  return [f, new TextDecoder('utf-8').decode(bytes)].some((v) => caret(v) === got);
+}
+
+/** DXF caret notation: `^J` is the control character J − 64, and `^ ` a literal caret. */
+const caret = (v: string): string =>
+  v.replace(/\^([@-_ ])/g, (_, c: string) =>
+    c === ' ' ? '^' : String.fromCharCode(c.charCodeAt(0) - 64),
+  );
+
+/**
+ * The groups of the named subclass (every `100` run of that name), up to an embedded object
+ * (`101`), whose groups reuse the entity's codes. R12 files have no subclass markers, so their
+ * groups are all of one.
+ */
+function subclass(g: readonly Group[], name: string): readonly Group[] {
+  const end = g.findIndex(([c]) => c === 101);
+  const own = end < 0 ? g : g.slice(0, end);
+  if (!own.some(([c]) => c === 100)) return own;
+  const out: Group[] = [];
+  let inside = false;
+  for (const grp of own) {
+    if (grp[0] === 100) inside = grp[1].trim() === name;
+    else if (inside) out.push(grp);
+  }
+  return out;
+}
+const attributeGroups = (g: readonly Group[]): readonly Group[] =>
+  subclass(
+    g,
+    g.some(([c, v]) => c === 100 && v.trim() === 'AcDbAttribute')
+      ? 'AcDbAttribute'
+      : 'AcDbAttributeDefinition',
+  );
+
+/**
+ * TEXT, ATTDEF and ATTRIB: the values, and where three glyph-space points of the text frame
+ * land, from the file's OCS frame insert + R(θ)·mirror·(u, v) taken to plan view.
+ */
+function compareText(
+  all: readonly Group[],
+  geom: TextFields,
+  type: string,
+  t: MappedTables,
+  bad: Bad,
+): void {
+  const n = extrusion(all);
+  const g = subclass(all, 'AcDbText');
+  if (!sameText(first(g, 1), geom.value)) bad('1', first(g, 1), geom.value);
+  const style = (first(g, 7) ?? 'STANDARD').trim().toUpperCase();
+  if (nameOf(t.textStyles, geom.style) !== style) bad('7', style, nameOf(t.textStyles, geom.style));
+  const p = pt(g, 10);
+  if (!near(geom.position, plan(p, n))) bad('10', fmt(plan(p, n)), fmt(geom.position));
+  const h = num(g, 40);
+  if (!close(geom.height, h)) bad('40', h, geom.height);
+  if (!close(geom.widthFactor, num(g, 41, 1))) bad('41', num(g, 41, 1), geom.widthFactor);
+  if (!close(geom.oblique, deg(g, 51))) bad('51', deg(g, 51), geom.oblique);
+  if (!close(geom.thickness ?? 0, num(g, 39))) bad('39', num(g, 39), geom.thickness);
+  const halign = num(g, 72);
+  // TEXT keeps its vertical alignment in 73; ATTDEF and ATTRIB in 74 (DXF reference).
+  const valign = type === 'TEXT' ? num(g, 73) : num(attributeGroups(all), 74);
+  if (geom.halign !== halign) bad('72', halign, geom.halign);
+  if (geom.valign !== valign) bad(type === 'TEXT' ? '73' : '74', valign, geom.valign);
+  if (halign !== 0 || valign !== 0) {
+    const a = plan(pt(g, 11), n);
+    if (!geom.alignmentPoint || !near(geom.alignmentPoint, a))
+      bad('11', fmt(a), geom.alignmentPoint && fmt(geom.alignmentPoint));
+  }
+  const th = deg(g, 50);
+  const mirror = num(g, 71);
+  // A −Z plane mirrors the frame, which shows as the text turned upside down (DEC-039).
+  const flip = n.z < 0;
+  if (geom.backward !== ((mirror & 2) !== 0) || (geom.upsideDown !== ((mirror & 4) !== 0)) !== flip)
+    return bad('71', mirror, `backward ${geom.backward} upsideDown ${geom.upsideDown}`);
+  const file = (u: number, v: number): Vec2 => {
+    const su = mirror & 2 ? -u : u;
+    const sv = mirror & 4 ? -v : v;
+    return plan(
+      {
+        x: p.x + Math.cos(th) * su - Math.sin(th) * sv,
+        y: p.y + Math.sin(th) * su + Math.cos(th) * sv,
+        z: p.z,
+      },
+      n,
+    );
+  };
+  const got = (u: number, v: number): Vec2 => {
+    const su = geom.backward ? -u : u;
+    const sv = geom.upsideDown ? -v : v;
+    const c = Math.cos(geom.rotation);
+    const s = Math.sin(geom.rotation);
+    return { x: geom.position.x + c * su - s * sv, y: geom.position.y + s * su + c * sv };
+  };
+  const probes: [number, number][] = [
+    [h || 1, 0],
+    [0, h || 1],
+  ];
+  for (const [u, v] of probes)
+    if (!near(got(u, v), file(u, v))) bad('50', `${fmt(file(u, v))}`, `${fmt(got(u, v))}`);
+}
+
+function compareAttribute(
+  all: readonly Group[],
+  geom: { tag: string; flags: number },
+  bad: Bad,
+): void {
+  const g = attributeGroups(all);
+  if (geom.tag !== (first(g, 2) ?? '')) bad('2', first(g, 2), geom.tag);
+  if (geom.flags !== num(g, 70)) bad('70', num(g, 70), geom.flags);
+}
+
+/** MTEXT groups up to its embedded column data (101), which repeats some codes. */
+function mtextGroups(g: readonly Group[]): readonly Group[] {
+  const k = g.findIndex(([c]) => c === 101);
+  return k < 0 ? g : g.slice(0, k);
+}
+
+function compareMText(all: readonly Group[], geom: MTextGeometry, t: MappedTables, bad: Bad): void {
+  const g = mtextGroups(all);
+  const n = extrusion(g);
+  const contents = g
+    .filter(([c]) => c === 3 || c === 1)
+    .map(([, v]) => v)
+    .join('');
+  if (!sameText(contents, geom.contents)) bad('1', contents, geom.contents);
+  const style = (first(g, 7) ?? 'STANDARD').trim().toUpperCase();
+  if (nameOf(t.textStyles, geom.style) !== style) bad('7', style, nameOf(t.textStyles, geom.style));
+  // 10 and 11 are WCS (DXF reference, MTEXT).
+  const p = pt(g, 10);
+  if (!near(geom.position, p)) bad('10', fmt(p), fmt(geom.position));
+  if (!close(geom.height, num(g, 40))) bad('40', num(g, 40), geom.height);
+  if (!close(geom.width, num(g, 41))) bad('41', num(g, 41), geom.width);
+  if (!close(geom.definedHeight ?? 0, num(g, 46))) bad('46', num(g, 46), geom.definedHeight);
+  if (geom.attachment !== num(g, 71, 1)) bad('71', num(g, 71, 1), geom.attachment);
+  if (geom.direction !== num(g, 72, 1)) bad('72', num(g, 72, 1), geom.direction);
+  if (geom.lineSpacingStyle !== num(g, 73, 1)) bad('73', num(g, 73, 1), geom.lineSpacingStyle);
+  if (!close(geom.lineSpacing, num(g, 44, 1))) bad('44', num(g, 44, 1), geom.lineSpacing);
+  // The X direction: 11 when stated, else the 50 rotation in the OCS.
+  const dir =
+    first(g, 11) !== undefined
+      ? pt(g, 11)
+      : (() => {
+          const w = plan({ x: Math.cos(deg(g, 50)), y: Math.sin(deg(g, 50)) }, n);
+          return { x: w.x, y: w.y, z: 0 };
+        })();
+  const want = Math.atan2(dir.y, dir.x);
+  const dGot = { x: Math.cos(geom.rotation), y: Math.sin(geom.rotation) };
+  if (!near(dGot, { x: Math.cos(want), y: Math.sin(want) })) bad('11', fmt(dir), geom.rotation);
+  // The text's Y axis is normal × X; it is reversed in plan view when the normal is −Z.
+  if ((geom.upsideDown ?? false) !== n.z < 0) bad('210', fmt(n), `upsideDown ${geom.upsideDown}`);
+  const bg = num(g, 90);
+  if ((geom.background?.flags ?? 0) !== bg) bad('90', bg, geom.background?.flags);
+  if (bg !== 0 && !close(geom.background!.scale, num(g, 45, 1.5)))
+    bad('45', num(g, 45, 1.5), geom.background!.scale);
+}
+
+function compareInsert(g: readonly Group[], geom: InsertGeometry, t: MappedTables, bad: Bad): void {
+  const n = extrusion(g);
+  const name = (first(g, 2) ?? '').trim().toUpperCase();
+  if (nameOf(t.blockRecords, geom.block) !== name)
+    bad('2', name, nameOf(t.blockRecords, geom.block));
+  const p = pt(g, 10);
+  const sx = num(g, 41, 1);
+  const sy = num(g, 42, 1);
+  const th = deg(g, 50);
+  // Block point q lands at OCS insert + R(θ)·S·q, taken to plan view.
+  const file = (q: Vec2): Vec2 =>
+    plan(
+      {
+        x: p.x + Math.cos(th) * sx * q.x - Math.sin(th) * sy * q.y,
+        y: p.y + Math.sin(th) * sx * q.x + Math.cos(th) * sy * q.y,
+        z: p.z,
+      },
+      n,
+    );
+  const got = (q: Vec2): Vec2 => {
+    const x = q.x * geom.scale.x;
+    const y = q.y * geom.scale.y;
+    const c = Math.cos(geom.rotation);
+    const s = Math.sin(geom.rotation);
+    return { x: geom.position.x + c * x - s * y, y: geom.position.y + s * x + c * y };
+  };
+  for (const q of [
+    { x: 0, y: 0 },
+    { x: 1, y: 0 },
+    { x: 0, y: 1 },
+  ])
+    if (!near(got(q), file(q))) bad('10', fmt(file(q)), fmt(got(q)));
+  if (!close(Math.abs(geom.scale.z), Math.abs(num(g, 43, 1))))
+    bad('43', num(g, 43, 1), geom.scale.z);
+  const cols = num(g, 70, 1);
+  const rows = num(g, 71, 1);
+  if ((geom.array?.columns ?? 1) !== Math.max(cols, 1)) bad('70', cols, geom.array?.columns);
+  if ((geom.array?.rows ?? 1) !== Math.max(rows, 1)) bad('71', rows, geom.array?.rows);
+  if (geom.array) {
+    // Columns run along the block's rotated X axis, rows along its Y, in the OCS.
+    const step = (dc: number, dr: number): Vec2 =>
+      plan(
+        {
+          x: p.x + Math.cos(th) * dc - Math.sin(th) * dr,
+          y: p.y + Math.sin(th) * dc + Math.cos(th) * dr,
+          z: p.z,
+        },
+        n,
+      );
+    const c = Math.cos(geom.rotation);
+    const s = Math.sin(geom.rotation);
+    const a = geom.array;
+    const gotStep = {
+      x: geom.position.x + c * a.columnSpacing - s * a.rowSpacing,
+      y: geom.position.y + s * a.columnSpacing + c * a.rowSpacing,
+    };
+    const want = step(num(g, 44), num(g, 45));
+    if (!near(gotStep, want)) bad('44', fmt(want), fmt(gotStep));
   }
 }
 
