@@ -1,1 +1,1 @@
-- M1-52 part 4 (#PR): feature control frames (TOLERANCE) draw on screen as their compartment boxes and text, sized by the text engine, and are bounded by what they draw.
+- M1-52 part 4 (#77): feature control frames (TOLERANCE) draw on screen as their compartment boxes and text, sized by the text engine, and are bounded by what they draw.
