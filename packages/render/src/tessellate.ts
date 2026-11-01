@@ -10,8 +10,8 @@
 // Text and shapes inside complex linetypes leave their gap empty until text and shape
 // rendering exist (M1-45).
 //
-// INSERT, DIMENSION and ACAD_TABLE yield nothing here: the renderer draws them from their
-// blocks (`expandInsert`, M1-14, M1-15 and M1-17). Kinds drawn by later tasks yield nothing
+// INSERT, DIMENSION, ACAD_TABLE and MULTILEADER yield nothing here: the renderer draws them
+// from their blocks or parts (`expandInsert`, M1-14, M1-15, M1-17 and M1-52). Kinds drawn by later tasks yield nothing
 // either, each noted where it falls through:
 // viewports (M1-18), images and underlays (M1-19/20), attributes (M1-14) and the MTEXT
 // background mask (M1-41 part 2). TEXT and MTEXT draw their glyphs (`textPrimitives`, M1-41)

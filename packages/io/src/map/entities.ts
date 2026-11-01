@@ -544,6 +544,7 @@ function multiLeaderGeometry(
     doglegLength: m.landingDistance,
     ...(arrowhead ? { arrowhead } : {}),
     arrowheadSize: m.arrowheadSize,
+    drawnArrowheadSize: c.arrowheadSize,
     contentType: m.contentType as number,
     scale: m.scaleFactor,
     annotative: m.enableAnnotationScale,

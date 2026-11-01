@@ -11,6 +11,7 @@ export {
   applyAffine,
   composeAffine,
   expandInsert,
+  expands,
   referenceOf,
   insertTransforms,
   transformPath,

@@ -517,6 +517,8 @@ export interface MultiLeaderGeometry extends PlanarProps {
   readonly arrowhead?: Handle;
   /** DXF 42. */
   readonly arrowheadSize: number;
+  /** Context data DXF 140: the arrowhead size it was last drawn at, overall scale applied. */
+  readonly drawnArrowheadSize?: number;
   /** DXF 172: 0 none, 1 block, 2 mtext, 3 tolerance. */
   readonly contentType: number;
   /** DXF 45: overall scale. */

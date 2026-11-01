@@ -1,0 +1,1 @@
+- M1-52 part 1 (#71): multileaders draw on screen (leader lines, landing, arrowheads closed filled or from their block, text with its frame), inside blocks too, and the spatial index bounds each by exactly what it draws.
