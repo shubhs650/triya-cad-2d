@@ -1,4 +1,4 @@
-// Small numeric helpers shared by the kernel's searches.
+// Small numeric helpers shared by bounds, closest point and tangents.
 
 const GOLDEN = (Math.sqrt(5) - 1) / 2;
 
@@ -38,4 +38,23 @@ export function argmin(
     if (fx < best.fx) best = { x, fx };
   }
   return best;
+}
+
+/** A root of g on [lo, hi] where g(lo) and g(hi) differ in sign, by bisection. */
+export function bisect(g: (u: number) => number, lo: number, hi: number): number {
+  let a = lo;
+  let b = hi;
+  let ga = g(a);
+  for (let i = 0; i < 100 && b - a > Number.EPSILON * (Math.abs(a) + Math.abs(b)); i++) {
+    const m = (a + b) / 2;
+    const gm = g(m);
+    if (gm === 0) return m;
+    if (gm < 0 === ga < 0) {
+      a = m;
+      ga = gm;
+    } else {
+      b = m;
+    }
+  }
+  return (a + b) / 2;
 }
