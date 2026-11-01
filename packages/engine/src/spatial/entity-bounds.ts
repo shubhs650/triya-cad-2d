@@ -14,6 +14,7 @@ import { validateSpline } from '../geom/nurbs';
 import type { Tolerance } from '../geom/tolerance';
 import type { AnnotationTables } from '../annotation/multileader';
 import { annotationParts } from '../annotation/parts';
+import type { TextMeasure } from '../annotation/tolerance';
 import type { Vec2 } from '../geom/types';
 import type { Handle } from '../model/handle';
 import type {
@@ -77,6 +78,8 @@ export interface BoundsContext {
   readonly annotationBounds?: AnnotationBounds | undefined;
   /** The drawing's tables and blocks, for annotations bounded by their parts (LEADER, MULTILEADER). */
   readonly tables?: AnnotationTables | undefined;
+  /** Text widths, for TOLERANCE frames (M1-52 part 4); without it a TOLERANCE is unknown. */
+  readonly measureText?: TextMeasure | undefined;
 }
 
 const UNKNOWN: EntityBounds = Object.freeze({ kind: 'unknown' });
@@ -332,15 +335,17 @@ export function entityBounds(
       return boxed(boxOf(geom.corners));
     case 'TEXT':
     case 'MTEXT':
-    case 'ATTDEF':
-    case 'TOLERANCE': {
+    case 'ATTDEF': {
       const b = annotation(geom, ctx);
       return b ? boxed(b) : UNKNOWN;
     }
     case 'LEADER':
-    case 'MULTILEADER': {
-      // The union of what it draws (M1-52): lines, arrowheads, landing, content.
-      const parts = ctx.tables ? annotationParts(geom, ctx.tables, xdata) : undefined;
+    case 'MULTILEADER':
+    case 'TOLERANCE': {
+      // The union of what it draws (M1-52): lines, arrowheads, landing, frames, content.
+      const parts = ctx.tables
+        ? annotationParts(geom, ctx.tables, xdata, ctx.measureText)
+        : undefined;
       if (!parts) return UNKNOWN;
       let out: Box | undefined;
       for (const p of parts) {

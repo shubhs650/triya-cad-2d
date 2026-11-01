@@ -35,13 +35,16 @@ import {
   type AnnotationTables,
 } from './multileader';
 
-/** DIMVARs a leader reads, by their DXF group code in a `DSTYLE` override list. */
-const LEADER_VARS: Readonly<Record<number, string>> = {
+/** DIMVARs leaders and tolerances read, by their DXF group code in a `DSTYLE` override list. */
+const DSTYLE_VARS: Readonly<Record<number, string>> = {
   40: 'DIMSCALE',
   41: 'DIMASZ',
   77: 'DIMTAD',
+  140: 'DIMTXT',
   147: 'DIMGAP',
   176: 'DIMCLRD',
+  178: 'DIMCLRT',
+  340: 'DIMTXSTY',
   341: 'DIMLDRBLK',
   345: 'DIMLTYPE',
   371: 'DIMLWD',
@@ -65,7 +68,7 @@ export function dimVars(
     for (let i = at + 2; i + 1 < v.length; i += 2) {
       const code = v[i]!;
       if (code.code !== 1070) break; // the closing 1002 "}"
-      const name = LEADER_VARS[Number(code.value)];
+      const name = DSTYLE_VARS[Number(code.value)];
       const value = v[i + 1]!.value;
       if (name && (typeof value === 'number' || typeof value === 'string')) vars[name] = value;
     }
@@ -73,11 +76,11 @@ export function dimVars(
   return vars;
 }
 
-const num = (v: DimVarValue | undefined, fallback: number): number =>
+export const dimNum = (v: DimVarValue | undefined, fallback: number): number =>
   typeof v === 'number' ? v : fallback;
 
 /** A DIMVAR colour (ACI 0 ByBlock, 256 ByLayer). */
-function dimColor(v: DimVarValue | undefined): Color | undefined {
+export function dimColor(v: DimVarValue | undefined): Color | undefined {
   if (typeof v !== 'number') return undefined;
   if (v === 0) return { kind: 'byBlock' };
   if (v === 256) return { kind: 'byLayer' };
@@ -85,7 +88,7 @@ function dimColor(v: DimVarValue | undefined): Color | undefined {
 }
 
 /** A DIMVAR lineweight (hundredths of a mm; −1 ByLayer, −2 ByBlock, −3 default). */
-function dimLineweight(v: DimVarValue | undefined): Lineweight | undefined {
+export function dimLineweight(v: DimVarValue | undefined): Lineweight | undefined {
   if (typeof v !== 'number') return undefined;
   if (v === -1) return 'ByLayer';
   if (v === -2) return 'ByBlock';
@@ -102,7 +105,7 @@ export function leaderParts(
   const pts: Vec2[] = [...g.vertices];
   if (pts.length < 2) return [];
   const vars = dimVars(g.style, xdata, model);
-  const dimscale = num(vars.DIMSCALE, 1) || 1;
+  const dimscale = dimNum(vars.DIMSCALE, 1) || 1;
   const color = dimColor(vars.DIMCLRD);
   const linetype: LinetypeRef | undefined =
     typeof vars.DIMLTYPE === 'string' ? linetypeRef(model, vars.DIMLTYPE) : undefined;
@@ -113,11 +116,11 @@ export function leaderParts(
     ...(lineweight !== undefined ? { lineweight } : {}),
   };
 
-  if (g.creationType === 0 && g.hookline && num(vars.DIMTAD, 0) !== 0 && g.textWidth > 0) {
+  if (g.creationType === 0 && g.hookline && dimNum(vars.DIMTAD, 0) !== 0 && g.textWidth > 0) {
     const len = Math.hypot(g.horizontalDirection.x, g.horizontalDirection.y);
     if (len > 0) {
       const k =
-        ((g.hookline.sameDirection ? -1 : 1) * (num(vars.DIMGAP, 0) * dimscale + g.textWidth)) /
+        ((g.hookline.sameDirection ? -1 : 1) * (dimNum(vars.DIMGAP, 0) * dimscale + g.textWidth)) /
         len;
       const last = pts[pts.length - 1]!;
       pts.push({
@@ -129,7 +132,7 @@ export function leaderParts(
 
   const out: AnnotationPart[] = [];
   if (g.arrowhead) {
-    const size = num(vars.DIMASZ, 0) * dimscale;
+    const size = dimNum(vars.DIMASZ, 0) * dimscale;
     const block = typeof vars.DIMLDRBLK === 'string' ? vars.DIMLDRBLK : undefined;
     out.push(...arrowheadParts(pts[0]!, pts[1]!, size, block, model, props).parts);
   }

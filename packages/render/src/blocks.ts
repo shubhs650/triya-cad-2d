@@ -40,6 +40,7 @@ import {
 } from '@triya/engine';
 import type { Paint, TessellateContext } from './tessellate';
 import { tessellate } from './tessellate';
+import { textMeasure } from './text';
 import type { RenderPrimitive } from './types';
 import {
   affineScale,
@@ -179,11 +180,13 @@ export function referenceOf(
 
 /**
  * Whether an entity draws through `expandInsert`: a block reference (`referenceOf`), or an
- * annotation drawn as parts (a MULTILEADER, M1-52).
+ * annotation drawn as parts (MULTILEADER, LEADER and TOLERANCE, M1-52).
  */
 export function expands(e: Entity, def: (block: Handle) => BlockDefinition | undefined): boolean {
   const k = e.geom.kind;
-  return k === 'MULTILEADER' || k === 'LEADER' || referenceOf(e, def) !== undefined;
+  return (
+    k === 'MULTILEADER' || k === 'LEADER' || k === 'TOLERANCE' || referenceOf(e, def) !== undefined
+  );
 }
 
 /** What an INSERT hands its block's entities, or undefined when the whole reference is hidden. */
@@ -231,6 +234,9 @@ export function expandInsert(
   let period = 0;
 
   const def = (block: Handle) => src.model.blocks.get(block);
+  // TOLERANCE frames size their compartments by the text (M1-52 part 4).
+  const text = src.tessellate?.text;
+  const measure = text ? textMeasure(text) : undefined;
   const draw = (e: Entity, m: Affine, ctx: BlockContext | undefined, depth: number): void => {
     if (expands(e, def)) {
       walk(e, m, ctx, depth + 1);
@@ -248,7 +254,7 @@ export function expandInsert(
     if (depth > MAX_DEPTH) return;
     // A MULTILEADER draws its parts where it stands, each painted as an entity of its own
     // (M1-52); its arrowhead blocks expand as inserts.
-    const parts = annotationParts(e.geom, src.model, e.xdata);
+    const parts = annotationParts(e.geom, src.model, e.xdata, measure);
     if (parts) {
       for (const part of parts) draw(partEntity(e, part), m, outer, depth);
       return;

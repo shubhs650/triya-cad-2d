@@ -23,6 +23,7 @@ import {
   type Handle,
   type MTextGeometry,
   type TextGeometry,
+  type TextMeasure,
   type TextStyleRecord,
 } from '@triya/engine';
 import {
@@ -383,6 +384,28 @@ function textPrimitivesOf(g: TextGeometry, paint: Paint, ctx: TextContext): Rend
 
 function mtextPrimitives(g: MTextGeometry, paint: Paint, ctx: TextContext): RenderPrimitive[] {
   if (!(g.height > 0) || g.contents === '') return [];
+  const { layout, bigFont } = mtextLayout(g, ctx);
+  const frame = textFrame(g.position, g.rotation, false, !!g.upsideDown);
+  const out = new Collector(paint);
+  background(out, g, layout, frame);
+  drawLayout(out, layout, frame, ctx.fonts, bigFont);
+  return out.primitives();
+}
+
+/**
+ * `TextMeasure` for TOLERANCE frames (M1-52 part 4): the width the renderer lays an MTEXT out
+ * at, its widest line's advance, or undefined while its style's font is not loaded.
+ */
+export function textMeasure(ctx: TextContext): TextMeasure {
+  return (g) => {
+    const record = ctx.style(g.style);
+    if (!ctx.fonts.face(record ? styleFont(record) : STANDARD_FONT)) return undefined;
+    if (!(g.height > 0) || g.contents === '') return 0;
+    return mtextLayout(g, ctx).layout.lines.reduce((w, l) => Math.max(w, l.width), 0);
+  };
+}
+
+function mtextLayout(g: MTextGeometry, ctx: TextContext) {
   const { base, record } = baseOf(ctx, g.style, g.height);
   const doc = parseMText(g.contents, base, {
     ...(ctx.evaluateField ? { evaluateField: ctx.evaluateField } : {}),
@@ -409,11 +432,7 @@ function mtextPrimitives(g: MTextGeometry, paint: Paint, ctx: TextContext): Rend
       : {}),
     ...(g.background ? { background: { scale: g.background.scale } } : {}),
   });
-  const frame = textFrame(g.position, g.rotation, false, !!g.upsideDown);
-  const out = new Collector(paint);
-  background(out, g, layout, frame);
-  drawLayout(out, layout, frame, ctx.fonts, bigFont);
-  return out.primitives();
+  return { layout, bigFont };
 }
 
 /**
