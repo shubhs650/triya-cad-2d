@@ -2,6 +2,9 @@ name: CI
 
 on:
   pull_request:
+  # The main ruleset's merge queue re-runs the required checks on each queue entry,
+  # so they must report under the same job names for merge_group events too.
+  merge_group:
   push:
     branches: [main]
 
