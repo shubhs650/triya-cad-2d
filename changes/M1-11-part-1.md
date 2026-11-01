@@ -1,0 +1,1 @@
+- M1-11 part 1 (#36): MTEXT formatting-code parser: every AutoCAD format code, %% and caret code, stack, paragraph property and field read into styled paragraphs, ready for layout; TEXT contents read with %%u/%%o toggles.
