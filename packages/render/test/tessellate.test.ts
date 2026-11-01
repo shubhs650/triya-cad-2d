@@ -139,7 +139,7 @@ describe('tessellate', () => {
     expect(path(p)).toEqual([PATH_M, 1, 0, PATH_L, 1, 1, PATH_M, 0, 1, PATH_L, 0, 0]);
   });
 
-  it('fills a solid hatch with odd parity, and leaves pattern hatches to M1-16', () => {
+  it('fills a solid hatch with odd parity; a pattern hatch without lines draws nothing', () => {
     const hatch = {
       kind: 'HATCH' as const,
       pattern: 'SOLID',

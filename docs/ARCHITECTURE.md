@@ -267,7 +267,7 @@ interface Renderer {
 ## 10. Hatch (`packages/hatch`)
 
 - `.pat` parser (angle, origin, delta, dash spec) — exactly AutoCAD's semantics including the "offset along angle" quirk.
-- Pattern generation clipped to boundary loops in world space, cached per hatch; dense patterns thinned for LOD.
+- Pattern generation clipped to boundary loops in world space, cached per hatch; dense patterns thinned for LOD. **M1-16 part 1:** `hatchPattern(hatch)` takes the definition lines the HATCH stores (already scaled and rotated), each a family through base + n·offset whose dashes start at each line's own origin, and clips every line to the boundary loops (`loopSegments`, each curve flattened to 1e-4 of its own size) by sweeping its crossings and counting the loops around each stretch: normal hatches odd counts, outer exactly one, ignore any. It counts the lines first and returns `too-dense` past HPMAXLINES (1,000,000), which the renderer shows as the filled area. The renderer caches the result per change as one stroke primitive of segments and dots; the hatch's linetype does not apply to pattern lines.
 - Boundary detection: `BoundaryTracer` builds a planar graph from visible entities within the pick region (lines, arcs, circles, polylines, ellipses, splines flattened), finds the smallest enclosing loop around the pick point, then islands by containment; gap tolerance (`HPGAPTOL`); island modes. Result is a `HATCH` with edge-typed loops (line/arc/ellipse/spline), preserving source entity references for a future associative mode.
 - Solid and gradient (`GRADIENT` two-colour, nine styles) via canvas fills.
 
