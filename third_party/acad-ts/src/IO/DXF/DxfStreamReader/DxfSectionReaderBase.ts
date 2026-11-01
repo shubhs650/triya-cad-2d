@@ -1520,6 +1520,10 @@ export abstract class DxfSectionReaderBase {
         case 340:
           template.textStyleHandle = this._reader.valueAsHandle;
           break;
+        // The text colour is an AcCmColor (0xC0 ByLayer, 0xC1 index, 0xC2 RGB), not a plain RGB.
+        case 90:
+          contextData.textColor = DxfSectionReaderBase._cmColor(this._reader.valueAsInt);
+          break;
         default:
           if (!this.tryAssignCurrentValue(contextData, map)) {
             this._builder.notify(`[AcDbMLeaderObjectContextData] Unhandled dxf code ${this._reader.code} with value ${this._reader.valueAsString}`, NotificationType.None);
@@ -1548,6 +1552,40 @@ export abstract class DxfSectionReaderBase {
           if (this._reader.valueAsString === '}') {
             end = true;
           }
+          break;
+        // LeaderRoot has no DXF class map: read its groups here (DXF reference, MULTILEADER).
+        case 290:
+          root.contentValid = this._reader.valueAsBool;
+          break;
+        case 291:
+          root.unknown = this._reader.valueAsBool;
+          break;
+        case 10:
+          root.connectionPoint = new XYZ(this._reader.valueAsDouble, root.connectionPoint.y, root.connectionPoint.z);
+          break;
+        case 20:
+          root.connectionPoint = new XYZ(root.connectionPoint.x, this._reader.valueAsDouble, root.connectionPoint.z);
+          break;
+        case 30:
+          root.connectionPoint = new XYZ(root.connectionPoint.x, root.connectionPoint.y, this._reader.valueAsDouble);
+          break;
+        case 11:
+          root.direction = new XYZ(this._reader.valueAsDouble, root.direction.y, root.direction.z);
+          break;
+        case 21:
+          root.direction = new XYZ(root.direction.x, this._reader.valueAsDouble, root.direction.z);
+          break;
+        case 31:
+          root.direction = new XYZ(root.direction.x, root.direction.y, this._reader.valueAsDouble);
+          break;
+        case 90:
+          root.leaderIndex = this._reader.valueAsInt;
+          break;
+        case 40:
+          root.landingDistance = this._reader.valueAsDouble;
+          break;
+        case 271:
+          root.textAttachmentDirection = this._reader.valueAsShort;
           break;
         case 304:
           if (this._reader.valueAsString === 'LEADER_LINE{') {
@@ -1619,6 +1657,13 @@ export abstract class DxfSectionReaderBase {
     }
 
     return line;
+  }
+
+  private static _cmColor(value: number): Color {
+    const method = (value >>> 24) & 0xff;
+    if (method === 0xc0) return Color.byLayer;
+    if (method === 0xc1) return new Color(value & 0xff);
+    return new Color((value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff);
   }
 
   private _readShape(template: CadEntityTemplate, map: DxfMap, subclass?: string): boolean {

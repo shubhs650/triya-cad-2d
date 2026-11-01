@@ -1,0 +1,1 @@
+- M1-29 part 4 (#42): acad-ts writes DXF MULTILEADER entities completely, in AutoCAD's group order, and reads their branches and context text colour (patch 0037); round trip 13,089 → 9,200 differences.
