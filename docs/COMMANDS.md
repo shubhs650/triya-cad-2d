@@ -1,0 +1,229 @@
+# Command and Alias Reference (normative)
+
+This is the command surface a drafter expects. Aliases are the AutoCAD `acad.pgp` defaults. **Tier 1** = required for the markup workflow (M2). **Tier 2** = required for v1 complete. **Tier 3** = Should. Status: ` ` open · `~` in progress · `x` done (PR). Threads update the Status column in the same PR that lands the command. A command is "done" only with its options, prompts, Dynamic Input behaviour, and tests.
+
+Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants (`-NAME`) are required where noted.
+
+## Draw
+
+| Command | Aliases | Tier | Options / notes | Status |
+|---|---|---|---|---|
+| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | |
+| PLINE | PL | 1 | Arc (Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width), Halfwidth, Length, Undo, Width, Close | |
+| CIRCLE | C | 1 | 3P, 2P, TTR, TTT, Diameter | |
+| ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | |
+| RECTANG | REC | 1 | Chamfer, Elevation(ignored), Fillet, Thickness(ignored), Width, Area, Dimensions, Rotation | |
+| POLYGON | POL | 2 | Edge, Inscribed/Circumscribed | |
+| ELLIPSE | EL | 2 | Arc, Center, Rotation | |
+| SPLINE | SPL | 2 | Method (Fit/CV), Knots, Degree, Object, Close, Tolerance | |
+| XLINE | XL | 2 | Hor, Ver, Ang, Bisect, Offset | |
+| RAY | — | 2 | | |
+| POINT | PO | 2 | PDMODE, PDSIZE, Multiple | |
+| DONUT | DO | 3 | | |
+| HATCH | H, BH | 2 | contextual tab; -HATCH dash variant required | |
+| GRADIENT | GD | 2 | | |
+| BOUNDARY | BO | 2 | Island detection, object type (polyline/region) | |
+| REGION | REG | 3 | 2D only | |
+| WIPEOUT | — | 1 | Frames, Polyline | |
+| REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | |
+| DIVIDE | DIV | 2 | Block | |
+| MEASURE | ME | 2 | Block | |
+| MLINE | ML | 3 | read/render required; creation Should | |
+| SKETCH | — | 3 | | |
+
+## Modify
+
+| Command | Aliases | Tier | Options / notes | Status |
+|---|---|---|---|---|
+| ERASE | E, DEL | 1 | | |
+| OOPS | — | 1 | | |
+| MOVE | M | 1 | Displacement, Base | |
+| COPY | CO, CP | 1 | Displacement, mOde (Single/Multiple), Array | |
+| ROTATE | RO | 1 | Copy, Reference | |
+| SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | |
+| STRETCH | S | 1 | crossing/polygon; dims/defpoints follow | |
+| MIRROR | MI | 1 | MIRRTEXT | |
+| OFFSET | O | 2 | Through, Erase, Layer, Multiple, Undo; gap types | |
+| TRIM | TR | 2 | Fence, Crossing, Project(2D), Edge, eRase, Undo; Shift→Extend; ↵↵ all | |
+| EXTEND | EX | 2 | same as TRIM; Shift→Trim | |
+| FILLET | F | 2 | Undo, Polyline, Radius, Trim, Multiple; Shift for R=0 | |
+| CHAMFER | CHA | 2 | Undo, Polyline, Distance, Angle, Trim, mEthod, Multiple | |
+| BREAK | BR | 2 | First point; @ for same point | |
+| BREAKATPOINT | — | 2 | | |
+| JOIN | J | 2 | lines/arcs/polylines/splines/ellipses | |
+| EXPLODE | X | 1 | blocks, polylines, dims, mleaders, tables, hatches(to lines), arrays | |
+| ARRAY | AR | 2 | Rectangular, Polar, PAth; associative; ARRAYEDIT basic; -ARRAY dash | |
+| ARRAYCLASSIC | — | 3 | dialog | |
+| ALIGN | AL | 2 | 2-point scale | |
+| LENGTHEN | LEN | 2 | DElta, Percent, Total, DYnamic | |
+| PEDIT | PE | 2 | Close/Open, Join, Width, Edit vertex, Fit, Spline, Decurve, Ltype gen, Reverse, Undo, Multiple | |
+| SPLINEDIT | SPE | 3 | | |
+| REVERSE | — | 2 | | |
+| OVERKILL | — | 2 | tolerance, ignore props, combine | |
+| CHANGE / CHPROP | -CH / CH→PROPERTIES | 2 | | |
+| MATCHPROP | MA | 1 | Settings dialog | |
+| PROPERTIES | PR, CH, MO, Ctrl+1 | 1 | palette | |
+| UNDO / U | U | 1 | Auto, Control, BEgin/End, Mark, Back, number | |
+| REDO | Ctrl+Y | 1 | | |
+| MREDO | — | 2 | | |
+| COPYBASE / PASTECLIP / PASTEBLOCK / PASTEORIG / COPYCLIP / CUTCLIP | Ctrl+Shift+C, Ctrl+V, Ctrl+Shift+V, Ctrl+C, Ctrl+X | 1 | cross-document | |
+| DRAWORDER | DR | 1 | Above, Under, Front, Back | |
+| TEXTTOFRONT | — | 1 | Text, Dims, Leaders, All | |
+| HATCHTOBACK | — | 1 | | |
+| GROUP / UNGROUP / GROUPEDIT / CLASSICGROUP | G / UNG | 2 | Ctrl+Shift+A toggle | |
+
+## Selection and inquiry
+
+| Command | Aliases | Tier | Notes | Status |
+|---|---|---|---|---|
+| SELECT | — | 1 | all modes: W, C, F, WP, CP, L, P, ALL, BOX, AU, A, R, M, U, SI, G | |
+| QSELECT | — | 2 | dialog | |
+| FILTER | FI | 2 | dialog, named filters | |
+| SELECTSIMILAR | — | 2 | settings | |
+| Selection cycling | Ctrl+W | 2 | list popup | |
+| DIST | DI | 2 | | |
+| ID | — | 2 | | |
+| LIST | LI, LS | 2 | | |
+| AREA | AA | 2 | Add, Subtract, Object | |
+| MEASUREGEOM | MEA | 2 | Distance, Radius, Angle, ARea, Quick | |
+| DBLIST | — | 3 | | |
+
+## Annotation
+
+| Command | Aliases | Tier | Notes | Status |
+|---|---|---|---|---|
+| TEXT / DTEXT | DT | 1 | Justify (all), Style | |
+| MTEXT | T, MT | 1 | in-place editor; -MTEXT dash | |
+| TEXTEDIT / DDEDIT | ED | 1 | | |
+| STYLE | ST | 2 | dialog; -STYLE dash | |
+| FIND | — | 2 | | |
+| SPELL | SP | 3 | | |
+| SCALETEXT / JUSTIFYTEXT / TEXTALIGN | — | 2 | | |
+| FIELD / UPDATEFIELD | — | 2 | | |
+| DIMLINEAR | DLI | 1 | Mtext, Text, Angle, Horizontal, Vertical, Rotated | |
+| DIMALIGNED | DAL | 1 | | |
+| DIMRADIUS | DRA | 1 | | |
+| DIMDIAMETER | DDI | 1 | | |
+| DIMANGULAR | DAN | 1 | Quadrant | |
+| DIMCONTINUE | DCO | 1 | Select, Undo | |
+| DIMBASELINE | DBA | 1 | | |
+| DIMORDINATE | DOR | 2 | X/Y datum | |
+| DIMARC | DAR | 2 | Partial, Leader | |
+| DIMJOGGED | DJO, JOG | 2 | | |
+| DIMJOGLINE | DJL | 2 | | |
+| QDIM | — | 2 | | |
+| DIMSPACE / DIMBREAK | — | 2 | | |
+| DIMEDIT / DIMTEDIT | DED / DIMTED | 2 | Home, New, Rotate, Oblique; text position | |
+| DIMOVERRIDE | DOV | 2 | | |
+| DIMREASSOCIATE / DIMDISASSOCIATE | DRE | 2 | defpoint re-pick semantics (DIMASSOC=1) | |
+| DIMINSPECT | — | 3 | | |
+| DIMSTYLE | D, DST, DIMSTY | 2 | manager; -DIMSTYLE dash (Restore/Save/STatus/Variables/Apply) | |
+| DIMREGEN | — | 2 | regenerate from engine | |
+| MLEADER | MLD | 1 | leader/content first, Options | |
+| MLEADEREDIT | MLE | 1 | Add/Remove | |
+| MLEADERALIGN / MLEADERCOLLECT | MLA / MLC | 2 | | |
+| MLEADERSTYLE | MLS | 2 | | |
+| LEADER / QLEADER | LEAD / LE | 2 | legacy; read/edit; create Should | |
+| CENTERMARK / CENTERLINE | — | 2 | sysvars CENTEREXE, CENTERMARKEXE, CENTERLTYPE… | |
+| TABLE | TB | 2 | | |
+| TABLESTYLE | TS | 2 | | |
+| TABLEDIT / TINSERT (cell edit) | — | 2 | | |
+| TOLERANCE | TOL | 2 | | |
+| WIPEOUT / REVCLOUD | — | 1 | (see Draw) | |
+
+## Blocks and references
+
+| Command | Aliases | Tier | Notes | Status |
+|---|---|---|---|---|
+| INSERT | I | 1 | dialog + -INSERT | |
+| BLOCK | B | 2 | dialog + -BLOCK | |
+| WBLOCK | W | 2 | | |
+| BEDIT / BCLOSE / BSAVE | BE | 2 | block editor | |
+| REFEDIT / REFCLOSE / REFSET | — | 2 | | |
+| ATTDEF | ATT | 2 | dialog + -ATTDEF | |
+| ATTEDIT / EATTEDIT | ATE / ATE | 1 | | |
+| BATTMAN / ATTSYNC / ATTDISP / ATTREDEF | — | 2 | | |
+| XREF / XATTACH / XBIND / XCLIP / XOPEN | XR / XA / XB / XC | 2 | manager palette; bind/insert | |
+| IMAGEATTACH / IMAGECLIP / IMAGEADJUST / IMAGEFRAME / IMAGEQUALITY | IAT / ICL / IAD | 2 | | |
+| PDFATTACH / PDFCLIP / PDFADJUST / PDFLAYERS(read) | — | 2 | | |
+| EXTERNALREFERENCES | ER | 2 | palette | |
+| ADCENTER | ADC, Ctrl+2 | 3 | Design-Center-lite | |
+| BASE | — | 2 | | |
+
+## Layers and properties
+
+| Command | Aliases | Tier | Notes | Status |
+|---|---|---|---|---|
+| LAYER | LA | 1 | palette; -LAYER dash with full option set | |
+| LAYISO / LAYUNISO | — | 2 | settings: lock+fade or off | |
+| LAYOFF / LAYON / LAYFRZ / LAYTHW / LAYLCK / LAYULK | — | 2 | | |
+| LAYMCUR / LAYMCH / LAYCUR / LAYWALK / LAYERP / LAYDEL / LAYMRG | — | 2 | | |
+| LAYERSTATE | LAS | 2 | | |
+| LAYVPI / VPLAYER | — | 2 | | |
+| LINETYPE | LT | 2 | dialog + -LINETYPE | |
+| LTSCALE / CELTSCALE / PSLTSCALE / MSLTSCALE | LTS | 2 | sysvars | |
+| LWEIGHT | LW | 2 | dialog | |
+| COLOR | COL | 2 | dialog + -COLOR | |
+| CETRANSPARENCY | — | 2 | | |
+| PURGE | PU | 2 | dialog + -PURGE | |
+| AUDIT / RECOVER | — | 2 | Health report implementation | |
+| UNITS | UN | 2 | dialog + -UNITS | |
+| SETVAR | SET | 2 | any registered sysvar | |
+
+## View and navigation
+
+| Command | Aliases | Tier | Notes | Status |
+|---|---|---|---|---|
+| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | |
+| PAN ᵀ | P | 1 | real-time, -PAN | |
+| REGEN / REGENALL | RE / REA | 1 | | |
+| REDRAW ᵀ | R | 1 | | |
+| VIEW | V | 2 | named views dialog; -VIEW | |
+| VPORTS / MVIEW / VPCLIP / VPMAX / VPMIN | — | 2 | | |
+| MSPACE / PSPACE / MODEL | MS / PS | 2 | | |
+| LAYOUT / LAYOUTWIZARD(no) / PAGESETUP | LO | 2 | | |
+| SCALELISTEDIT | — | 2 | | |
+| CLEANSCREENON/OFF | Ctrl+0 | 2 | | |
+| DSETTINGS / OSNAP / DDPTYPE | DS, SE / OS / — | 2 | | |
+| ORTHO / GRID / SNAP / POLAR(F10) / OTRACK(F11) / DYN(F12) | F8 / F7 / F9 | 1 | status toggles | |
+| OPTIONS | OP | 2 | | |
+| TEXTSCR / GRAPHSCR | F2 | 1 | history window | |
+
+## Output and file
+
+| Command | Aliases | Tier | Notes | Status |
+|---|---|---|---|---|
+| NEW / QNEW | Ctrl+N | 1 | template dialog / default template | |
+| OPEN / CLOSE / CLOSEALL | Ctrl+O | 1 | | |
+| SAVE / QSAVE / SAVEAS | Ctrl+S / Ctrl+Shift+S | 1 | version picker | |
+| DXFOUT / DXFIN (via SAVEAS/OPEN) | — | 1 | | |
+| PLOT / PRINT | Ctrl+P | 1 | dialog; -PLOT dash (scriptable) | |
+| PREVIEW | PRE | 1 | | |
+| PUBLISH | — | 2 | | |
+| EXPORTPDF / EXPORT (svg/png) | — | 1 | | |
+| PLOTSTYLE / STYLESMANAGER | — | 2 | CTB/STB store | |
+| RECOVERYDRAWING | — | 1 | recovery flow | |
+
+## Parametric (M9)
+
+| Command | Aliases | Tier | Notes | Status |
+|---|---|---|---|---|
+| GEOMCONSTRAINT | GCON | 2 | all 12 | |
+| DIMCONSTRAINT / DCLINEAR / DCALIGNED / DCRADIUS / DCDIAMETER / DCANGULAR / DCCONVERT | DCON… | 2 | | |
+| CONSTRAINTBAR / CONSTRAINTSETTINGS / DELCONSTRAINT / CONSTRAINTINFER | CBAR / CSETTINGS / DELCON | 2 | | |
+| PARAMETERS | PAR | 2 | manager | |
+
+## Differentiators (M8)
+
+| Command | Aliases | Tier | Notes | Status |
+|---|---|---|---|---|
+| LIBRARY (PV symbols palette) | LIB | 2 | | |
+| FLANGE (insert B16.5/B16.47 flange) | — | 2 | prompts NPS/class/type/view | |
+| WELDSYMBOL | — | 2 | builder dialog | |
+| COMPARE | — | 2 | | |
+| HEALTH (drawing health report) | — | 2 | | |
+| PDFREDLINE (open PDF → sheet) | — | 2 | start screen flow | |
+
+## Excluded on purpose (do not implement)
+
+VIEWBASE/VIEWPROJ/VIEWSECTION/VIEWDETAIL · BPARAMETER/BACTION (dynamic blocks) · OBJECTSCALE/AIOBJECTSCALEADD (annotative creation) · DATAEXTRACTION/DATALINK · SHEETSET · PLOTSTAMP · 3D commands · LISP/VBA/NETLOAD/CUI · SNAP isometric style · MLSTYLE creation (Should at most).
