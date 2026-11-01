@@ -18,7 +18,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | LWPOLYLINE | ✓ | | | | |
 | POLYLINE (2D) + VERTEX + SEQEND | ✓ | | | | |
 | POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | | |
-| SPLINE | ✓ | | | | |
+| SPLINE | ✓ (a spline stored only as fit points, as R2013+ DWGs can hold one, is neither drawn nor bounded until M1-47 interpolates it) | | | | |
 | SOLID | ✓ | | | | |
 | TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
 | 3DFACE *(render edges)* | ✓ | | — | | |
@@ -28,11 +28,11 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | ATTRIB | ✓ folded into its INSERT (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | INSERT | ✓ (drawn by the renderer through nesting with ByBlock and layer-0 inheritance, M1-14 part 1; attributes not drawn yet) | | | | |
 | MINSERT | ✓ (every cell drawn, M1-14 part 1) | | | | |
-| DIMENSION (linear/aligned) | ✓ (rotated with an empty AcDbRotatedDimension read as aligned by acad-ts, M1-32) | | | | |
-| DIMENSION (angular 2-line / 3-point) | ✓ | | | | |
-| DIMENSION (radial / diametric) | ✓ | | | | |
-| DIMENSION (ordinate) | ✓ | | | | |
-| DIMENSION (arc length) | ✓ (ARC_DIMENSION) | | | | |
+| DIMENSION (linear/aligned) | ✓ (rotated with an empty AcDbRotatedDimension read as aligned by acad-ts, M1-32; drawn from its stored `*D` block by the renderer, M1-15 part 1, its text once MTEXT draws, M1-41; annotative scale representations not yet) | | | | |
+| DIMENSION (angular 2-line / 3-point) | ✓ (drawn from its stored `*D` block, M1-15 part 1) | | | | |
+| DIMENSION (radial / diametric) | ✓ (drawn from its stored `*D` block, M1-15 part 1) | | | | |
+| DIMENSION (ordinate) | ✓ (drawn from its stored `*D` block, M1-15 part 1) | | | | |
+| DIMENSION (arc length) | ✓ (ARC_DIMENSION; drawn from its stored `*D` block, M1-15 part 1) | | | | |
 | DIMENSION (jogged) | — acad-ts does not read LARGE_RADIAL_DIMENSION as a dimension (M1-34) | | | | |
 | LEADER | ✓ | | | | |
 | MLEADER (+ MLEADERSTYLE) | ✓ (DXF branches and the context text colour read since 0037) | | | | |

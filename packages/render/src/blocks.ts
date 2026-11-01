@@ -11,10 +11,25 @@
 //   reference, so a block inserted at scale 5 shows its dashes five times as long.
 // - MINSERT cells step by the row and column spacing along the rotated axes, which the
 //   insertion scale does not stretch (DXF 44/45).
+// A DIMENSION (M1-15) draws its anonymous `*D` block the same way, untransformed: the block
+// holds the dimension as AutoCAD last drew it, in drawing coordinates, and the dimension hands
+// its colour, linetype, lineweight and layer down to it as an INSERT does. DXF 12 ("insertion
+// point for clones", OCS) is not applied: the DXF reference leaves its use open, every
+// dimension in the public corpus has it at the origin, and the spatial index bounds a
+// dimension by its block's extents as they stand. A dimension without a block draws nothing
+// until the dimension engine (M5) generates one.
 // A block that (through nesting) contains itself draws its contents once per level up to
 // MAX_DEPTH, as AutoCAD never lets such a drawing be built; this keeps a damaged file finite.
 
-import type { DocumentModel, Entity, EntityId, Handle, InsertGeometry, Vec2 } from '@triya/engine';
+import type {
+  BlockDefinition,
+  DocumentModel,
+  Entity,
+  EntityId,
+  Handle,
+  InsertGeometry,
+  Vec2,
+} from '@triya/engine';
 import type { Paint } from './tessellate';
 import { tessellate } from './tessellate';
 import { PATH_A, PATH_E, PATH_L, PATH_M, PATH_Z, type RenderPrimitive } from './types';
@@ -231,6 +246,24 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
   }
 }
 
+/**
+ * The block an entity draws by reference and where each copy goes: an INSERT's cells, or a
+ * dimension's `*D` block in place. Undefined for every other entity.
+ */
+export function referenceOf(
+  e: Entity,
+  def: (block: Handle) => BlockDefinition | undefined,
+): { readonly block: Handle; readonly cells: readonly Affine[] } | undefined {
+  const g = e.geom;
+  if (g.kind === 'INSERT') {
+    const d = def(g.block);
+    return d ? { block: g.block, cells: insertTransforms(g, d.basePoint) } : undefined;
+  }
+  if ((g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION') && g.block !== undefined)
+    return def(g.block) ? { block: g.block, cells: [IDENTITY] } : undefined;
+  return undefined;
+}
+
 /** What an INSERT hands its block's entities, or undefined when the whole reference is hidden. */
 export type InsertContextFunction = (
   insert: Entity,
@@ -260,7 +293,8 @@ export interface BlockExpansion {
 const MAX_DEPTH = 32;
 
 /**
- * The primitives of an INSERT (or MINSERT) and everything nested in it. `dashes` false draws
+ * The primitives of an INSERT (or MINSERT, or a dimension's `*D` block) and everything nested
+ * in it. `dashes` false draws
  * every linetype continuous (the scene cache's first pass); true fits the linetypes.
  */
 export function expandInsert(
@@ -272,21 +306,22 @@ export function expandInsert(
   const blocks = new Set<Handle>();
   let period = 0;
 
+  const def = (block: Handle) => src.model.blocks.get(block);
   const walk = (e: Entity, m: Affine, outer: BlockContext | undefined, depth: number): void => {
-    if (e.geom.kind !== 'INSERT' || depth > MAX_DEPTH) return;
-    const g = e.geom;
+    if (depth > MAX_DEPTH) return;
+    const ref = referenceOf(e, def);
+    if (!ref) return;
     const ctx = src.insertContext(e, src.model, outer);
-    const def = src.model.blocks.get(g.block);
-    if (!ctx || !def) return;
-    blocks.add(g.block);
-    const order = src.order(g.block);
-    for (const cell of insertTransforms(g, def.basePoint)) {
+    if (!ctx) return;
+    blocks.add(ref.block);
+    const order = src.order(ref.block);
+    for (const cell of ref.cells) {
       const cm = composeAffine(m, cell);
       const k = affineScale(cm);
       for (const id of order) {
         const child = src.model.entity(id);
         if (!child) continue;
-        if (child.geom.kind === 'INSERT') {
+        if (referenceOf(child, def)) {
           walk(child, cm, ctx, depth + 1);
           continue;
         }

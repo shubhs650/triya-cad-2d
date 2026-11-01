@@ -1,0 +1,1 @@
+- M1-15 part 1 (#57): the renderer draws dimensions (every DIMENSION type and ARC_DIMENSION) from their stored `*D` blocks, with the dimension's colour and layer handed to the block's contents, and the spatial index no longer throws on a spline stored only as fit points.
