@@ -76,7 +76,7 @@ import { BlockRecord, BlockTypeFlags } from '../../../Tables/BlockRecord.js';
 import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
 import { Wall } from '../../../Entities/AecEntities/Wall.js';
 import { ProxyEntity } from '../../../Entities/ProxyEntity.js';
-import { TableEntity, TableEntityCell, CellType, CellBorder, CellStyle, CellEdgeFlags, ContentFormat, MarginFlags, TableCellContentType, CustomDataEntry } from '../../../Entities/TableEntity.js';
+import { TableEntity, TableEntityCell, CellType, CellBorder, CellStyle, CellEdgeFlags, CellOverrideFlags, ContentFormat, MarginFlags, TableCellContentType, CustomDataEntry } from '../../../Entities/TableEntity.js';
 import { CadBody } from '../../../Entities/CadBody.js';
 import { Region } from '../../../Entities/Region.js';
 import { IPolyline } from '../../../Entities/IPolyline.js';
@@ -2835,8 +2835,11 @@ export class DwgObjectWriter extends DwgSectionIO {
 				this._writeCellStyle(cell.styleOverride);
 				writer.writeBitLong(cell.styleId);
 				const geometry = cell.geometryCollection.length > 0 ? cell.geometryCollection : cell.geometry ? [cell.geometry] : [];
-				writer.writeBitLong(geometry.length > 0 ? 1 : 0);
-				if (geometry.length > 0) {
+				// A cell can state its geometry (flags and size) with no content geometry listed.
+				const hasGeometry = geometry.length > 0 || cell.geometryFlags !== 0 || cell.geometryWidth !== 0
+					|| cell.geometryHeight !== 0 || cell.geometryReference != null;
+				writer.writeBitLong(hasGeometry ? 1 : 0);
+				if (hasGeometry) {
 					writer.writeBitLong(cell.geometryFlags);
 					writer.writeBitDouble(cell.geometryWidth);
 					writer.writeBitDouble(cell.geometryHeight);
@@ -2987,7 +2990,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.writeBitLong(cell.borderHeight);
 		this._writer.writeBitDouble(cell.rotation);
 
-		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, cell.type === CellType.Block ? cell.content?.blockRecord : cell.value);
+		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, cell.type === CellType.Block ? cell.content?.blockRecord ?? cell.value : cell.value);
 		if (cell.type === CellType.Text && cell.value == null && !this.r2007Plus) {
 			const value = cell.content?.cadValue.value;
 			this._writer.writeVariableText(typeof value === 'string' ? value : value == null ? '' : String(value));
@@ -2996,11 +2999,45 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.writeBit(false);
 		}
 
-		this._writer.writeBit(false);
+		this._writeTableCellOverrides(cell);
 
 		if (this.r2007Plus) {
 			this._writer.writeBitLong(0);
 			this._writeCadValue(cell.content?.cadValue ?? { ...new CadValue(), valueType: 4, value: '' } as CadValue);
+		}
+	}
+
+	// Mirrors DwgObjectReader._readTableCellData: each flagged field follows the flag word, in
+	// flag order, with colours as the table style writes them.
+	private _writeTableCellOverrides(cell: TableEntityCell): void {
+		const flags = cell.overrideFlags;
+		this._writer.writeBit(flags !== CellOverrideFlags.None);
+		if (flags === CellOverrideFlags.None) {
+			return;
+		}
+
+		const style = cell.styleOverride;
+		this._writer.writeBitLong(flags);
+		this._writer.writeByte(cell.virtualEdgeFlag);
+		if ((flags & CellOverrideFlags.CellAlignment) !== 0) this._writer.writeBitShort(style.cellAlignment);
+		if ((flags & CellOverrideFlags.BackgroundFillNone) !== 0) this._writer.writeBit(style.isFillColorOn);
+		if ((flags & CellOverrideFlags.BackgroundColor) !== 0) this._writeTableStyleColor(style.backgroundColor);
+		if ((flags & CellOverrideFlags.ContentColor) !== 0) this._writeTableStyleColor(style.contentColor);
+		if ((flags & CellOverrideFlags.TextStyle) !== 0) {
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, style.textStyle);
+		}
+		if ((flags & CellOverrideFlags.TextHeight) !== 0) this._writer.writeBitDouble(style.textHeight);
+
+		const borders: [CellBorder, CellOverrideFlags, CellOverrideFlags, CellOverrideFlags][] = [
+			[style.topBorder, CellOverrideFlags.TopGridColor, CellOverrideFlags.TopGridLineWeight, CellOverrideFlags.TopVisibility],
+			[style.rightBorder, CellOverrideFlags.RightGridColor, CellOverrideFlags.RightGridLineWeight, CellOverrideFlags.RightVisibility],
+			[style.bottomBorder, CellOverrideFlags.BottomGridColor, CellOverrideFlags.BottomGridLineWeight, CellOverrideFlags.BottomVisibility],
+			[style.leftBorder, CellOverrideFlags.LeftGridColor, CellOverrideFlags.LeftGridLineWeight, CellOverrideFlags.LeftVisibility],
+		];
+		for (const [border, color, lineWeight, visibility] of borders) {
+			if ((flags & color) !== 0) this._writeTableStyleColor(border.color);
+			if ((flags & lineWeight) !== 0) this._writer.writeBitShort(border.lineWeight);
+			if ((flags & visibility) !== 0) this._writer.writeBitShort(border.isInvisible ? 0 : 1);
 		}
 	}
 

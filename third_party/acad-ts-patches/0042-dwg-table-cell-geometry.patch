@@ -1,0 +1,18 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 9f8b976..ae5e34c 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -2835,8 +2835,11 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 				this._writeCellStyle(cell.styleOverride);
+ 				writer.writeBitLong(cell.styleId);
+ 				const geometry = cell.geometryCollection.length > 0 ? cell.geometryCollection : cell.geometry ? [cell.geometry] : [];
+-				writer.writeBitLong(geometry.length > 0 ? 1 : 0);
+-				if (geometry.length > 0) {
++				// A cell can state its geometry (flags and size) with no content geometry listed.
++				const hasGeometry = geometry.length > 0 || cell.geometryFlags !== 0 || cell.geometryWidth !== 0
++					|| cell.geometryHeight !== 0 || cell.geometryReference != null;
++				writer.writeBitLong(hasGeometry ? 1 : 0);
++				if (hasGeometry) {
+ 					writer.writeBitLong(cell.geometryFlags);
+ 					writer.writeBitDouble(cell.geometryWidth);
+ 					writer.writeBitDouble(cell.geometryHeight);

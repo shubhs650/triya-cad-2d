@@ -34,6 +34,7 @@ import {
   RasterVariables,
   Solid3D,
   SortEntitiesTable,
+  TableEntity,
   TextEntity,
   Tolerance,
   UnknownEntity,
@@ -916,5 +917,90 @@ describe('acad-ts local patches (corpus-backed)', () => {
     }
     const doc = readDxfRaw(corpusBytes(dxfSamples[0]!));
     expect(meshes(doc)).toContainEqual(['343', 2, 0, 0]);
+  });
+
+  // Every cell of every table, with the fields a DWG save must keep.
+  const tableCells = (d: CadDocument): unknown[] =>
+    [...d.getCadObjects()]
+      .filter((o): o is TableEntity => o instanceof TableEntity)
+      .sort((a, b) => a.handle - b.handle)
+      .flatMap((t) =>
+        t.rows.flatMap((row, r) =>
+          row.cells.map((cell, c) => {
+            const o = cell.styleOverride;
+            const border = (b: typeof o.topBorder): unknown => [
+              b.color.index,
+              b.lineWeight,
+              b.isInvisible,
+            ];
+            return {
+              at: `${handleHex(t)}:${r}:${c}`,
+              style: [
+                o.cellAlignment,
+                o.isFillColorOn,
+                o.backgroundColor.index,
+                o.contentColor.index,
+                o.textStyle?.name,
+                o.textHeight,
+              ],
+              borders: [o.topBorder, o.rightBorder, o.bottomBorder, o.leftBorder].map(border),
+              geometry: [cell.geometryFlags, cell.geometryWidth, cell.geometryHeight],
+            };
+          }),
+        ),
+      );
+
+  it('0041 DWG writer writes the cell overrides of R2004 and R2007 tables', () => {
+    // Before R2010 a table cell carries its own overrides (alignment, colours, text height,
+    // borders) behind a flag word; the writer always wrote "no overrides", so a save reset
+    // every overridden cell to its table style.
+    for (const version of ['AC1018', 'AC1021']) {
+      const doc = readDwgRaw(`third-party/acadsharp/sample_${version}.dwg`);
+      expect(tableCells(dwgRawRoundTrip(doc)), version).toEqual(tableCells(doc));
+    }
+    // Table 528, row 4 cell 0: background 165, middle-centre, text height 4, borders of
+    // colour 63 and lineweight 0.40 mm, hidden.
+    const cell = (
+      tableCells(readDwgRaw('third-party/acadsharp/sample_AC1018.dwg')) as {
+        at: string;
+      }[]
+    ).find((x) => x.at === '528:4:0');
+    expect(cell).toMatchObject({
+      style: [5, false, 165, 7, undefined, 4],
+      borders: [[63, 40, true], expect.anything(), expect.anything(), [63, 40, true]],
+    });
+  });
+
+  it('0042 DWG writer keeps the geometry of R2010+ table cells that list no content geometry', () => {
+    // The writer wrote the cell geometry (flags, width, height) only when the cell listed
+    // content geometry, so a cell with none lost its flags and size on a save.
+    for (const version of ['AC1024', 'AC1027', 'AC1032']) {
+      const doc = readDwgRaw(`third-party/acadsharp/sample_${version}.dwg`);
+      expect(tableCells(dwgRawRoundTrip(doc)), version).toEqual(tableCells(doc));
+    }
+    const cell = (
+      tableCells(readDwgRaw('third-party/acadsharp/sample_AC1024.dwg')) as {
+        at: string;
+      }[]
+    ).find((x) => x.at === '528:0:1');
+    expect(cell).toMatchObject({ geometry: [3, 0.0683964098745459, 0.0683964098745459] });
+  });
+
+  it('0043 DWG writer keeps the block record of R2004 and R2007 block cells', () => {
+    // Before R2010 a block cell names its block record as the cell value; the writer took it
+    // from the cell content, which such cells do not have, and wrote a null handle.
+    const blocks = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is TableEntity => o instanceof TableEntity)
+        .flatMap((t) =>
+          t.rows.flatMap((row, r) =>
+            row.cells.map((cell, c) => `${handleHex(t)}:${r}:${c}:${handleHex(cell.value)}`),
+          ),
+        );
+    for (const version of ['AC1018', 'AC1021']) {
+      const doc = readDwgRaw(`third-party/acadsharp/sample_${version}.dwg`);
+      expect(blocks(doc), version).toContain('A35:1:3:A0B');
+      expect(blocks(dwgRawRoundTrip(doc)), version).toEqual(blocks(doc));
+    }
   });
 });

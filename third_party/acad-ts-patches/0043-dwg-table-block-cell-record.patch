@@ -1,0 +1,13 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 9f8b976..ae5e34c 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -2987,7 +2990,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		this._writer.writeBitLong(cell.borderHeight);
+ 		this._writer.writeBitDouble(cell.rotation);
+ 
+-		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, cell.type === CellType.Block ? cell.content?.blockRecord : cell.value);
++		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, cell.type === CellType.Block ? cell.content?.blockRecord ?? cell.value : cell.value);
+ 		if (cell.type === CellType.Text && cell.value == null && !this.r2007Plus) {
+ 			const value = cell.content?.cadValue.value;
+ 			this._writer.writeVariableText(typeof value === 'string' ? value : value == null ? '' : String(value));

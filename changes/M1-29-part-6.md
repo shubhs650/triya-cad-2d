@@ -1,0 +1,1 @@
+- M1-29 part 6 (#47): acad-ts keeps DWG table cells through a save: R2004/R2007 cell overrides (patch 0041), R2010+ cell geometry (0042) and R2004/R2007 block-cell records (0043); round trip 8,910 → 8,692 differences.
