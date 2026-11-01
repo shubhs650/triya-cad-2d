@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0046 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0047 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -881,5 +881,29 @@ For a pre-R2010 block cell, the reader stores the block record handle in `cell.v
 **Title:** Read and write DXF LTYPE alignment (72) as a character code
 
 Group 72 of a linetype is the ASCII code of its alignment, which is always 65 ("A"). The reader currently stores the digits "65" in `LineType.alignment`, and the DWG writer then writes "6". The writer passes the string to an integer group, so "A" becomes 0. This converts the alignment on read and on write.
+
+</details>
+
+### 0047 — DXF writer writes ARC_DIMENSION without its dimension data
+
+- **File:** `third_party/acad-ts-patches/0047-dxf-arc-dimension.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:**
+  - `_writeEntity` had no `DimensionArc` branch. An arc length dimension went out as an `ARC_DIMENSION` with only its common entity data, and came back with no block, points or angles. `_writeDimensionArc` existed but was never reached.
+  - That writer also wrote the leader points (16/17) only when 71 says there is a leader. AutoCAD writes them always, and the reader keeps them.
+  - Corpus: 16 differences (`ARC_DIMENSION *`) in ezdxf `uncommon.dxf`.
+- **Fix:**
+  - Dispatch `DimensionArc` to `_writeDimension`.
+  - Write 16 and 17 unconditionally.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0047 DXF writer writes ARC_DIMENSION entities".
+  - ARC_DIMENSION 3F6 of ezdxf `uncommon.dxf` is checked for block `*D19`, angles 6.2225/1.4547 and attachment point 5.
+  - Its block, style, points, angles and flags must survive ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write ARC_DIMENSION entities to DXF
+
+`DxfSectionWriterBase._writeEntity` dispatches every dimension type except `DimensionArc` to `_writeDimension`. As a result, an `ARC_DIMENSION` is written with only its AcDbEntity data and loses its geometry on save. This adds the branch. It also writes the leader points (16, 17) unconditionally, as AutoCAD does, because the reader keeps them even when 71 is 0.
 
 </details>
