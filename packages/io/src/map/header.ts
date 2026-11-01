@@ -8,7 +8,7 @@
 
 import { CadHeader, Color, type CadDocument } from '@node-projects/acad-ts';
 import type { DocumentMeta, HeaderValue } from '@triya/engine';
-import { hex } from './common';
+import { colorNumber, hex } from './common';
 
 export interface MappedHeader {
   readonly header: Map<string, HeaderValue>;
@@ -20,7 +20,7 @@ function scalar(v: unknown): HeaderValue | undefined {
   if (typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean') return v;
   if (typeof v === 'bigint') return Number(v);
   // Colour variables ($CECOLOR, $DIMTFILLCLR) are DXF 62 colour numbers.
-  if (v instanceof Color) return v.isTrueColor ? v.getApproxIndex() : v.index;
+  if (v instanceof Color) return colorNumber(v);
   return undefined;
 }
 
@@ -36,7 +36,7 @@ export function mapHeader(doc: CadDocument): MappedHeader {
       header.set(name, hex(h.handleSeed));
       continue;
     }
-    // acad-ts writes a true colour's 62 as −1; Triya keeps the nearest ACI number instead.
+    // acad-ts writes a true colour's 62 as −1; Triya keeps the ACI AutoCAD writes instead.
     const property = variable.getValue(h);
     if (property instanceof Color) {
       header.set(name, scalar(property)!);

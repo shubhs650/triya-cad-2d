@@ -20,7 +20,7 @@
 
 import type { Vec2 } from '../geom/types';
 import type { Entity, MTextGeometry, ToleranceGeometry } from '../model/types';
-import { dimColor, dimLineweight, dimNum, dimVars } from './leader';
+import { dimColor, dimLineweight, dimNum, dimTrueColors, dimVars } from './leader';
 import type { AnnotationPart, AnnotationTables } from './multileader';
 
 /**
@@ -53,8 +53,9 @@ export function toleranceParts(
   const gap = Math.abs(dimNum(vars.DIMGAP, 0.09)) * scale;
   const rowHeight = h + 2 * gap;
   const style = typeof vars.DIMTXSTY === 'string' ? vars.DIMTXSTY : '';
-  const frameColor = dimColor(vars.DIMCLRD);
-  const textColor = dimColor(vars.DIMCLRT);
+  const trueColors = dimTrueColors(g.style, xdata, model);
+  const frameColor = trueColors.DIMCLRD ?? dimColor(vars.DIMCLRD);
+  const textColor = trueColors.DIMCLRT ?? dimColor(vars.DIMCLRT);
   const lineweight = dimLineweight(vars.DIMLWD);
   const frameProps = {
     ...(frameColor ? { color: frameColor } : {}),

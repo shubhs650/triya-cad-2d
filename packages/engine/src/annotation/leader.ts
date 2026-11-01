@@ -50,16 +50,12 @@ const DSTYLE_VARS: Readonly<Record<number, string>> = {
   371: 'DIMLWD',
 };
 
-/**
- * A dimension-like entity's DIMVARs: its style's, with the `DSTYLE` overrides in its ACAD
- * xdata applied (each override a 1070 group code followed by its value).
- */
-export function dimVars(
-  style: Handle,
+/** The `DSTYLE` overrides in an entity's ACAD xdata (each a 1070 group code, then its value). */
+function dstyleOverrides(
   xdata: Entity['xdata'],
   model: AnnotationTables,
-): Readonly<Record<string, DimVarValue>> {
-  const vars: Record<string, DimVarValue> = { ...model.tables.dimStyles.get(style)?.vars };
+): Record<string, DimVarValue> {
+  const out: Record<string, DimVarValue> = {};
   for (const app of xdata ?? []) {
     if (model.tables.appIds.get(app.appId)?.name.toUpperCase() !== 'ACAD') continue;
     const v = app.values;
@@ -70,10 +66,36 @@ export function dimVars(
       if (code.code !== 1070) break; // the closing 1002 "}"
       const name = DSTYLE_VARS[Number(code.value)];
       const value = v[i + 1]!.value;
-      if (name && (typeof value === 'number' || typeof value === 'string')) vars[name] = value;
+      if (name && (typeof value === 'number' || typeof value === 'string')) out[name] = value;
     }
   }
-  return vars;
+  return out;
+}
+
+/**
+ * A dimension-like entity's DIMVARs: its style's, with the `DSTYLE` overrides in its ACAD
+ * xdata applied (each override a 1070 group code followed by its value).
+ */
+export function dimVars(
+  style: Handle,
+  xdata: Entity['xdata'],
+  model: AnnotationTables,
+): Readonly<Record<string, DimVarValue>> {
+  return { ...model.tables.dimStyles.get(style)?.vars, ...dstyleOverrides(xdata, model) };
+}
+
+/**
+ * The style's true DIMVAR colours (R2004+ DWG) that the entity's `DSTYLE` overrides leave in
+ * force; an override is an ACI and replaces the true colour (M1-55).
+ */
+export function dimTrueColors(
+  style: Handle,
+  xdata: Entity['xdata'],
+  model: AnnotationTables,
+): Readonly<Record<string, Color>> {
+  const colors = { ...model.tables.dimStyles.get(style)?.trueColors };
+  for (const name of Object.keys(dstyleOverrides(xdata, model))) delete colors[name];
+  return colors;
 }
 
 export const dimNum = (v: DimVarValue | undefined, fallback: number): number =>
@@ -106,7 +128,7 @@ export function leaderParts(
   if (pts.length < 2) return [];
   const vars = dimVars(g.style, xdata, model);
   const dimscale = dimNum(vars.DIMSCALE, 1) || 1;
-  const color = dimColor(vars.DIMCLRD);
+  const color = dimTrueColors(g.style, xdata, model).DIMCLRD ?? dimColor(vars.DIMCLRD);
   const linetype: LinetypeRef | undefined =
     typeof vars.DIMLTYPE === 'string' ? linetypeRef(model, vars.DIMLTYPE) : undefined;
   const lineweight = dimLineweight(vars.DIMLWD);

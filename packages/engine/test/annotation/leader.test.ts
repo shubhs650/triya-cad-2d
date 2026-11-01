@@ -1,11 +1,13 @@
 // M1-52 part 2: a LEADER as its path and arrowhead, styled by its DIMSTYLE and DSTYLE overrides.
 import { describe, expect, it } from 'vitest';
 import {
+  dimTrueColors,
   dimVars,
   DocumentModel,
   entityBounds,
   leaderParts,
   toleranceForSize,
+  type DimStyleRecord,
   type HeaderValue,
   type LeaderGeometry,
   type LwPolylineGeometry,
@@ -18,7 +20,7 @@ const ISO = '50';
 const ACAD = '12';
 const DOT = '30';
 
-function model(): DocumentModel {
+function model(style: Partial<DimStyleRecord> = {}): DocumentModel {
   return DocumentModel.create({
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '100',
@@ -32,6 +34,7 @@ function model(): DocumentModel {
           handle: ISO,
           name: 'ISO-25',
           vars: { DIMASZ: 2.5, DIMSCALE: 1, DIMTAD: 1, DIMGAP: 0.625, DIMCLRD: 0 },
+          ...style,
         },
       ],
       blockRecords: [blockRecord(MODEL_SPACE, '*Model_Space'), blockRecord(DOT, '_Dot')],
@@ -96,6 +99,31 @@ describe('dimVars', () => {
     const m = model();
     expect(dimVars(ISO, undefined, m)).toMatchObject({ DIMASZ: 2.5, DIMCLRD: 0 });
     expect(dimVars(ISO, dstyle, m)).toMatchObject({ DIMASZ: 5, DIMCLRD: 1, DIMGAP: 0.625 });
+  });
+});
+
+describe('dimTrueColors', () => {
+  const green = { kind: 'rgb', r: 44, g: 136, b: 27 } as const;
+  const blue = { kind: 'rgb', r: 80, g: 179, b: 255 } as const;
+
+  it("gives the style's true colours unless DSTYLE overrides them", () => {
+    const t = model({
+      vars: { DIMASZ: 2.5, DIMCLRD: 86, DIMCLRT: 151 },
+      trueColors: { DIMCLRD: green, DIMCLRT: blue },
+    });
+    expect(dimTrueColors(ISO, undefined, t)).toEqual({ DIMCLRD: green, DIMCLRT: blue });
+    // The DSTYLE list sets DIMCLRD to ACI 1, which then wins over the style's true colour.
+    expect(dimTrueColors(ISO, dstyle, t)).toEqual({ DIMCLRT: blue });
+    expect(dimTrueColors(ISO, undefined, model())).toEqual({});
+  });
+
+  it('draws a leader in its style true colour', () => {
+    const t = model({
+      vars: { DIMASZ: 2.5, DIMTAD: 1, DIMGAP: 0.625, DIMCLRD: 86 },
+      trueColors: { DIMCLRD: green },
+    });
+    expect(leaderParts(leader(), undefined, t).map((p) => p.color)).toEqual([green, green]);
+    expect(leaderParts(leader(), dstyle, t)[0]!.color).toEqual({ kind: 'aci', index: 1 });
   });
 });
 

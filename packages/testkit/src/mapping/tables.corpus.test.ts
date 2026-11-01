@@ -737,9 +737,9 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
   // A DXF DIMSTYLE leaves out every DIMVAR at AutoCAD's default, so its DIMVARs only match its
   // DWG twin's (which stores them all) if the reader fills the gaps with AutoCAD's defaults
   // (M1-53, acad-ts patch 0075). The acadsharp samples are each saved as DWG and DXF.
+  // R2004+ DWGs hold DIMSTYLE colours as true colours; DXF and R2000 only hold the ACI AutoCAD
+  // writes for them, so the twins agree on the ACI and the DWG keeps the true colour (M1-55).
   it('reads every DXF DIMSTYLE with the DIMVARs of its DWG twin', () => {
-    // M1-55: R2004+ DWG DIMSTYLE colours read as other ACI numbers than the DXF twin has.
-    const colors = new Set(['DIMCLRD', 'DIMCLRE', 'DIMCLRT', 'DIMTFILLCLR']);
     const dir = 'third-party/acadsharp/';
     const read = (path: string) =>
       mapTables(readCadDocument(new Uint8Array(readFileSync(`${corpusDir}public/${dir}${path}`))));
@@ -751,7 +751,11 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
       // AC1014 has no DXF twin.
       if (!m || !paths.has(`public/${dir}sample_${m[1]}_ascii.dxf`)) continue;
       const dwg = read(`sample_${m[1]}.dwg`);
-      const modern = m[1]! >= 'AC1018';
+      if (m[1]! >= 'AC1018') {
+        const custom = dwg.dimStyles.find((s) => s.name === 'custom_dim_style');
+        if (!custom?.trueColors?.['DIMCLRD'])
+          problems.push(`${m[1]} custom_dim_style: no true DIMCLRD`);
+      }
       for (const kind of ['ascii', 'binary']) {
         const dxf = read(`sample_${m[1]}_${kind}.dxf`);
         for (const want of dwg.dimStyles) {
@@ -762,7 +766,6 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
           }
           compared++;
           for (const name of new Set([...Object.keys(want.vars), ...Object.keys(got.vars)])) {
-            if (modern && colors.has(name)) continue;
             const a = want.vars[name];
             const b = got.vars[name];
             const same =
