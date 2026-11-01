@@ -679,6 +679,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           return true;
         }
         return false;
+      // Version 1 states the reference point in 40/41/42 and writes 11/21/31 as zero after it;
+      // the map took those as the version 2+ reference point and zeroed it.
+      case 11:
+      case 21:
+      case 31:
+        if (tmp.cadObject.version === GeoDataVersion.R2009) {
+          return true;
+        }
+        return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
       case 46:
         if (tmp.cadObject.version === GeoDataVersion.R2009) {
           tmp.cadObject.horizontalUnitScale = this._reader.valueAsDouble;
@@ -1861,6 +1870,17 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           return true;
         }
         t.lineTypeName = this._reader.valueAsString;
+        return true;
+      }
+      case 62: {
+        // After the first 49, 62 is that element's colour. Assigned through the map, it replaced
+        // the style's fill colour instead.
+        const t = tmp.elementTemplates[tmp.elementTemplates.length - 1];
+        if (!t) {
+          mLineStyle.fillColor = new Color(this._reader.valueAsShort);
+          return true;
+        }
+        t.element.color = new Color(this._reader.valueAsShort);
         return true;
       }
       case 49: {

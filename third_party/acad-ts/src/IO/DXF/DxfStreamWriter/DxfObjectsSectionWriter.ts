@@ -187,7 +187,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this._writer.write(301, geodata.coordinateSystemDefinition, map);
       this._writer.write(302, geodata.geoRssTag, map);
 
-      this._writer.write(46, geodata.userSpecifiedScaleFactor, map);
+      // Version 1's 46 is the horizontal unit scale, as the DXF and DWG readers take it; the user
+      // scale factor is 141 in the Civil 3D block below.
+      this._writer.write(46, geodata.horizontalUnitScale, map);
 
       this._writer.write(303, '', map);
       this._writer.write(304, '', map);

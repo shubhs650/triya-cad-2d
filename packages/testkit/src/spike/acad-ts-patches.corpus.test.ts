@@ -9,6 +9,7 @@ import type {
   CellBorder,
   CellStyle,
   CellStyleMap,
+  GeoData,
   TableStyle,
 } from '@node-projects/acad-ts';
 import {
@@ -1897,5 +1898,61 @@ describe('acad-ts local patches (corpus-backed)', () => {
       (d.getCadObject(0x29) as unknown as { _plotFlag: boolean })._plotFlag;
     expect(stored(doc)).toBe(false);
     expect(stored(dxfRawRoundTrip(doc, false))).toBe(false);
+  });
+
+  it('0088 a DXF MLINESTYLE keeps its fill colour apart from its element colours', () => {
+    // text_negative_extrusion.dxf MLINESTYLE 18 has fill 62 = 256 and elements with 62 = 0. The
+    // element 62s went through the map to the fill colour, so it read as 0 and the elements kept
+    // ByLayer.
+    const doc = readDxfRaw(
+      corpusBytes('third-party/ezdxf/examples_dxf/text_negative_extrusion.dxf'),
+    );
+    const colors = (d: CadDocument) => {
+      const style = d.getCadObject(0x18) as MLineStyle;
+      return [style.fillColor.index, ...style.elements.map((e) => e.color.index)];
+    };
+    expect(colors(doc)).toEqual([256, 0, 0]);
+    for (const binary of [false, true]) {
+      expect(colors(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual([256, 0, 0]);
+    }
+  });
+
+  it('0089 a DXF VIEWPORT keeps a stated id of 0', () => {
+    // text_negative_extrusion.dxf VIEWPORT 46A is off (68 = 0) and has 69 = 0. Id 0 read as
+    // unset, so the getter numbered it by position (2) and the writer wrote that.
+    const doc = readDxfRaw(
+      corpusBytes('third-party/ezdxf/examples_dxf/text_negative_extrusion.dxf'),
+    );
+    const id = (d: CadDocument) => (d.getCadObject(0x46a) as Viewport).id;
+    expect(id(doc)).toBe(0);
+    for (const binary of [false, true]) {
+      expect(id(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toBe(0);
+    }
+  });
+
+  it('0090 an R2009 DXF GEODATA keeps its reference point from 40/41/42', () => {
+    // geoloc_AC1021.dxf GEODATA 241 (version 1) states the reference point as 40 = y, 41 = x,
+    // 42 = z, then writes 11 = 0,0,0. The map took 11 as the version 2+ reference point and zeroed
+    // it, so the drawing lost its geographic anchor on open.
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/geolocation/geoloc_AC1021.dxf'));
+    const point = (d: CadDocument) => {
+      const p = (d.getCadObject(0x241) as GeoData).referencePoint;
+      return [p.x, p.y, p.z];
+    };
+    expect(point(doc)).toEqual([-315551.0219150639, 4702004.167534534, 50]);
+    for (const binary of [false, true]) {
+      expect(point(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual(point(doc));
+    }
+  });
+
+  it('0091 an R2009 DXF GEODATA writes its horizontal unit scale as 46', () => {
+    // The reader (and the DWG reader and writer) take R2009 46 as the horizontal unit scale; the
+    // DXF writer wrote the user scale factor there, so 0.0254 came back as 1.
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/geolocation/geoloc_AC1021.dxf'));
+    const scale = (d: CadDocument) => (d.getCadObject(0x241) as GeoData).horizontalUnitScale;
+    expect(scale(doc)).toBe(0.0254);
+    for (const binary of [false, true]) {
+      expect(scale(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toBe(0.0254);
+    }
   });
 });

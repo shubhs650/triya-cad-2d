@@ -1,0 +1,22 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 21b4c85..00c10d7 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -1863,6 +1863,17 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+         t.lineTypeName = this._reader.valueAsString;
+         return true;
+       }
++      case 62: {
++        // After the first 49, 62 is that element's colour. Assigned through the map, it replaced
++        // the style's fill colour instead.
++        const t = tmp.elementTemplates[tmp.elementTemplates.length - 1];
++        if (!t) {
++          mLineStyle.fillColor = new Color(this._reader.valueAsShort);
++          return true;
++        }
++        t.element.color = new Color(this._reader.valueAsShort);
++        return true;
++      }
+       case 49: {
+         const element = new MLineStyleElement();
+         const elementTemplate = new CadMLineStyleTemplate.ElementTemplate(element);

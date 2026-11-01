@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) and 0077–0081 (M1-56) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56) and 0082–0091 (M1-58) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1617,5 +1617,175 @@ BLOCK is an entity and can carry xdata, which the reader keeps, but `_writeBlock
 **Title:** Read a DXF without $ACADVER as R12
 
 AutoCAD and ezdxf treat a DXF without `$ACADVER` and without R13+ sections as R12. acad-ts kept its R2018 default version, so saving such a file produced an R2018 file with objects the source never had. This sets the version to AC1009 in that case, and keeps block records' owned handles in step with their entities when the document renumbers a made-up handle that collided.
+
+</details>
+
+### 0082 — GEODATA's coordinate system keeps only its last chunk
+
+- **File:** `third_party/acad-ts-patches/0082-dxf-geodata-last-chunk.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** a GEODATA coordinate system definition longer than one group is written as 303 chunks and a last 301. The 303s were appended, then the map assigned the 301, which replaced them and kept its caret codes (`^J`) as text (acadsharp `geoloc.dxf` XML, `geoloc_AC1021.dxf` WKT).
+- **Fix:** 301 is appended like the 303s.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0082 GEODATA coordinate system XML is read with its line breaks and kept through a save".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Append the last GEODATA 301 chunk
+
+`_readGeoData` appends each 303 to `coordinateSystemDefinition`, but 301 falls through to the map and replaces the text read so far. Append it too.
+
+</details>
+
+### 0083 — FIELD code and format string keep only their last chunk
+
+- **File:** `third_party/acad-ts-patches/0083-dxf-field-last-chunks.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** the field code is written as 3 chunks and a last 2, the format string as 9 chunks and a last 301. Each went through the map, so every chunk replaced the one before (ezdxf `mtext_complex_inline_codes.dxf` FIELD A9, whose format string is 1,995 characters).
+- **Fix:** 2 and 3 append to `fieldCode`, 9 and 301 to `formatString`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0083 a DXF FIELD keeps its whole field code and format string".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read FIELD overflow chunks
+
+FIELD splits the field code (3…, 2) and the format string (9…, 301) into 255-character chunks. They were assigned through the map, so only the last chunk survived. Append them in order.
+
+</details>
+
+### 0084 — a TrueType STYLE's ACAD font xdata is rebuilt from the file name
+
+- **File:** `third_party/acad-ts-patches/0084-dxf-style-font-xdata-as-read.patch`
+- **Touches:** `src/IO/TextStyleExtendedData.ts`
+- **Symptom:** on save the `ACAD` 1000/1071 pair of a TrueType style was rebuilt from the font file name, so "Arial Black" became "ariblk" and the charset, pitch and family bits of 1071 were lost (ezdxf `text_fonts.dxf` STYLE 6A8).
+- **Fix:** the reader remembers each style's font file; while it is unchanged the writer keeps the face name and the non-style bits as read and refreshes only bold and italic. A changed font file still rebuilds the pair.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0084 a TrueType STYLE keeps its ACAD font xdata as read through a DXF save".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep ACAD font xdata while the font file is unchanged
+
+The face name and the charset/pitch/family bits cannot be derived from the font file name. Keep them as read unless the style's font file changed; refresh only the bold and italic bits.
+
+</details>
+
+### 0085 — a DBCOLOR without a true colour is written with 420 = 0
+
+- **File:** `third_party/acad-ts-patches/0085-dxf-dbcolor-indexed.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** `writeBookColor` always wrote 420, so an index colour went out as true colour 0 and read back as true-colour black (acadsharp `sample_AC1015` ASCII and binary, DBCOLOR 996).
+- **Fix:** 420 is written only when the colour is a true colour.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0085 a DBCOLOR with no true colour is not written with one".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write DBCOLOR 420 only for true colours
+
+An index colour has no 24-bit value; writing 420 = 0 turns it into true-colour black on reopen.
+
+</details>
+
+### 0086 — the DXF writer leaves out IMAGE clip mode
+
+- **File:** `third_party/acad-ts-patches/0086-dxf-image-clip-mode.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** R2010+ IMAGE 290 (clip mode, inverted clip) was read but not written, so an inverted clip came back normal (ezdxf `viewports.dxf` IMAGE 7E9).
+- **Fix:** 290 is written after the clip boundary from R2010.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0086 an R2010+ DXF IMAGE keeps its clip mode (290)".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write IMAGE clip mode (290)
+
+The reader keeps `clipMode`; the writer did not write it.
+
+</details>
+
+### 0087 — a DXF Defpoints layer reads as plotted
+
+- **File:** `third_party/acad-ts-patches/0087-dxf-defpoints-plot-flag.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`
+- **Symptom:** a DEFPOINTS layer with no 290 kept the plottable default, which the getter hides; the writer writes AutoCAD's 290 = 0, so the reopened layer stored a different flag (ezdxf `duplicate_handles.dxf` LAYER 29).
+- **Fix:** a layer named Defpoints is read as not plotted, as AutoCAD treats it and as the writer writes it.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0087 a DXF Defpoints layer reads as not plotted, as it is written".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read the Defpoints layer as not plotted
+
+AutoCAD never plots Defpoints, and the writer writes 290 = 0 for it. Store the same flag on read so a save does not change it.
+
+</details>
+
+### 0088 — MLINESTYLE element colours overwrite the fill colour
+
+- **File:** `third_party/acad-ts-patches/0088-dxf-mlinestyle-element-colour.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** each element's 62 went through the map to `fillColor`, so the fill read as the last element's colour and every element kept ByLayer (ezdxf `text_negative_extrusion.dxf` MLINESTYLE 18: fill 256, elements 0).
+- **Fix:** 62 before the first 49 is the fill colour; after it, it is the colour of the element the last 49 started.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0088 a DXF MLINESTYLE keeps its fill colour apart from its element colours".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read MLINESTYLE element colours
+
+MLINESTYLE uses 62 for the fill colour and again for each element after its 49. Route the element 62s to the element.
+
+</details>
+
+### 0089 — a DXF VIEWPORT ID of 0 is renumbered
+
+- **File:** `third_party/acad-ts-patches/0089-dxf-viewport-stated-id.patch`
+- **Touches:** `src/Entities/Viewport.ts`
+- **Symptom:** `Viewport.id` treats 0 as unset and numbers the viewport by its position, so a file's 69 = 0 (an off viewport in ezdxf `text_negative_extrusion.dxf`, VIEWPORT 46A) was written as 2.
+- **Fix:** an ID set through `id` is returned as set, 0 included; only a viewport whose ID was never set is numbered by position.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0089 a DXF VIEWPORT keeps a stated id of 0".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep a stated viewport ID of 0
+
+AutoCAD writes 69 = 0 for some viewports. The getter's position numbering is for viewports made in code; once an ID is set, return it as set.
+
+</details>
+
+### 0090 — an R2009 GEODATA loses its reference point
+
+- **File:** `third_party/acad-ts-patches/0090-dxf-geodata-r2009-reference-point.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** version 1 GEODATA states the reference point in 40/41/42 and then writes 11/21/31 = 0. The map took 11 as the version 2+ reference point, so every R2009 DXF GEODATA read with its reference point at 0,0,0 (acadsharp `geoloc_AC1021.dxf` GEODATA 241). Both reads of a round trip agreed, so the structural diff could not see it.
+- **Fix:** 11/21/31 are skipped for version 1; later versions still read them through the map.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0090 an R2009 DXF GEODATA keeps its reference point from 40/41/42".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Do not read R2009 GEODATA 11 as the reference point
+
+Version 1 has the reference point in 40/41/42; 11/21/31 are a zero vector after it and overwrote it.
+
+</details>
+
+### 0091 — an R2009 GEODATA horizontal unit scale is written from the wrong field
+
+- **File:** `third_party/acad-ts-patches/0091-dxf-geodata-r2009-unit-scale.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** the DXF reader and the DWG reader and writer take version 1's 46 as the horizontal unit scale; the DXF writer wrote the user scale factor there, so 0.0254 came back as 1 (acadsharp `geoloc_AC1021.dxf`).
+- **Fix:** 46 is written from `horizontalUnitScale`; the user scale factor stays in the Civil 3D block's 141.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0091 an R2009 DXF GEODATA writes its horizontal unit scale as 46".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write R2009 GEODATA 46 as the horizontal unit scale
+
+Match the DXF reader and the DWG reader/writer.
 
 </details>
