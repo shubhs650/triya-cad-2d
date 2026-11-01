@@ -12,9 +12,10 @@
 //
 // INSERT and DIMENSION yield nothing here: the renderer draws them from their blocks
 // (`expandInsert`, M1-14 and M1-15). Kinds drawn by later tasks yield nothing either, each
-// noted where it falls through: pattern and gradient hatches (M1-16), tables (M1-17),
+// noted where it falls through: gradient hatches (M1-16 part 2), tables (M1-17),
 // viewports (M1-18), images and underlays (M1-19/20), text and MTEXT (M1-41).
 
+import { hatchPattern } from '@triya/hatch';
 import {
   bulgeArc,
   flatten,
@@ -444,13 +445,28 @@ function exact(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
       return path.length ? [stroke(path, paint)] : [];
     }
     case 'HATCH': {
-      if (!g.solid || g.gradient) return []; // pattern and gradient fills: M1-16
+      if (g.gradient) return []; // gradient fills: M1-16 part 2
+      const area = (): RenderPrimitive[] => {
+        const path: number[] = [];
+        for (const loop of g.loops) loopPath(path, loop);
+        // Style 2 (ignore) fills only the outermost loop; normal and outer use odd parity.
+        return path.length
+          ? [{ kind: 'fill', path, color: paint.color, evenOdd: g.style !== 2 }]
+          : [];
+      };
+      if (g.solid) return area();
+      // A pattern AutoCAD would not generate (HPMAXLINES) shows as its filled area, which is
+      // what so dense a pattern looks like at any zoom that shows the whole of it.
+      const pattern = hatchPattern(g);
+      if (pattern.kind === 'too-dense') return area();
       const path: number[] = [];
-      for (const loop of g.loops) loopPath(path, loop);
-      // Style 2 (ignore) fills only the outermost loop; normal and outer use odd parity.
-      return path.length
-        ? [{ kind: 'fill', path, color: paint.color, evenOdd: g.style !== 2 }]
-        : [];
+      const s = pattern.segments;
+      for (let i = 0; i < s.length; i += 4)
+        path.push(PATH_M, s[i]!, s[i + 1]!, PATH_L, s[i + 2]!, s[i + 3]!);
+      const d = pattern.dots;
+      for (let i = 0; i < d.length; i += 2)
+        path.push(PATH_M, d[i]!, d[i + 1]!, PATH_L, d[i]!, d[i + 1]!);
+      return path.length ? [stroke(path, paint)] : [];
     }
     default:
       return [];
