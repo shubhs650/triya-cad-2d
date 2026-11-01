@@ -4,7 +4,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 
 | Component | Use | License | Source |
 |---|---|---|---|
-| acad-ts | DWG/DXF read/write (vendored subtree with patches) | MIT | https://github.com/node-projects/acad-ts |
+| acad-ts | DWG/DXF read/write (vendored filtered snapshot of upstream `315f3d8` with patches, DEC-033; `third_party/acad-ts/LICENSE`) | MIT | https://github.com/node-projects/acad-ts |
 | ACadSharp | origin of acad-ts | MIT | https://github.com/DomCR/ACadSharp |
 | ezdxf example and test drawings | public fidelity corpus (`corpus/public/third-party/ezdxf`, license text in `corpus/public/LICENSES`) | MIT | https://github.com/mozman/ezdxf |
 | ACadSharp sample drawings | public fidelity corpus (`corpus/public/third-party/acadsharp`, license text in `corpus/public/LICENSES`) | MIT | https://github.com/DomCR/ACadSharp |

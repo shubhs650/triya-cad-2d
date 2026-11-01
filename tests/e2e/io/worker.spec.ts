@@ -1,5 +1,6 @@
 // M0-03 acceptance: acad-ts DwgReader runs inside a Web Worker in a Vite dev build.
 import { expect, test } from '@playwright/test';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { createServer, type ViteDevServer } from 'vite';
 // Drawings are authored with acad-ts in Node (same fixtures as the packages/io unit tests).
@@ -42,4 +43,22 @@ test('DwgReader parses a DWG inside a module Web Worker', async ({ page }) => {
     });
   }
   expect(errors).toEqual([]);
+});
+
+test('DwgReader parses a real AutoCAD 2018 corpus file inside the worker', async ({ page }) => {
+  const file = path.join(
+    import.meta.dirname,
+    '../../../corpus/public/third-party/acadsharp/sample_AC1032.dwg',
+  );
+  await page.goto(url);
+  await expect(page).toHaveTitle('ready', { timeout: 60_000 });
+
+  const res = await page.evaluate((b) => window.readInWorker(b), Array.from(readFileSync(file)));
+
+  expect(res.ok).toBe(true);
+  if (res.ok) {
+    expect(res.summary.version).toBe('AC1032');
+    expect(res.summary.layers).toContain('0');
+    expect(Object.keys(res.summary.modelSpaceEntities).length).toBeGreaterThan(0);
+  }
 });
