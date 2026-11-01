@@ -544,6 +544,64 @@ export interface MultiLeaderGeometry extends PlanarProps {
   readonly branches: readonly MultiLeaderBranch[];
 }
 
+/**
+ * IMAGE or WIPEOUT (DXF AcDbRasterImage / AcDbWipeout). Its points and vectors are WCS, so the
+ * plan view drops Z; the image plane (u × v) must be ±Z.
+ */
+export interface ImageGeometry extends PlanarProps {
+  readonly kind: 'IMAGE' | 'WIPEOUT';
+  /** IMAGEDEF handle (DXF 340); a WIPEOUT has none. */
+  readonly definition?: Handle;
+  /** DXF 10: the lower-left corner of the image. */
+  readonly position: Vec2;
+  /** DXF 11 / 12: one pixel's width and height along the image's U and V axes. */
+  readonly u: Vec2;
+  readonly v: Vec2;
+  /** DXF 13: the image size in pixels. */
+  readonly size: Vec2;
+  /** DXF 70: 1 show, 2 show unaligned, 4 clip, 8 transparent. */
+  readonly displayFlags: number;
+  /** DXF 280. */
+  readonly clipping: boolean;
+  /** DXF 281 / 282 / 283, 0–100. */
+  readonly brightness: number;
+  readonly contrast: number;
+  readonly fade: number;
+  /**
+   * DXF 71 / 14 / 290: the clip boundary in pixel coordinates; a rectangle states two
+   * opposite corners. `inverted` keeps the outside (290 = 1).
+   */
+  readonly clip: {
+    readonly type: 'rectangle' | 'polygon';
+    readonly vertices: readonly Vec2[];
+    readonly inverted: boolean;
+  };
+}
+
+/**
+ * PDFUNDERLAY (DXF AcDbUnderlayReference). The insertion point is WCS; the rotation is about
+ * the normal, so under −Z it becomes π − θ and the underlay's Y axis is reversed.
+ */
+export interface UnderlayGeometry extends PlanarProps {
+  readonly kind: 'PDFUNDERLAY';
+  /** PDFDEFINITION handle (DXF 340). */
+  readonly definition?: Handle;
+  /** DXF 10. */
+  readonly position: Vec2;
+  /** DXF 41 / 42 / 43. */
+  readonly scale: Vec3;
+  /** WCS angle of the underlay's X axis (DXF 50 about 210). */
+  readonly rotation: number;
+  readonly upsideDown?: boolean;
+  /** DXF 280: 1 clipping, 2 on, 4 monochrome, 8 adjust for background. */
+  readonly flags: number;
+  /** DXF 281 / 282. */
+  readonly contrast: number;
+  readonly fade: number;
+  /** DXF 11: clip boundary vertices in the underlay's own coordinates. */
+  readonly clip: readonly Vec2[];
+}
+
 /** One cell of an ACAD_TABLE, in row-major order. */
 export interface TableCell {
   /** DXF 171: 1 text, 2 block. */
@@ -694,6 +752,8 @@ export type EntityGeometry =
   | ToleranceGeometry
   | MultiLeaderGeometry
   | TableGeometry
+  | ImageGeometry
+  | UnderlayGeometry
   | HatchGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */
