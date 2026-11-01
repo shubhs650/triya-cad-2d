@@ -18,17 +18,23 @@
 // dimension in the public corpus has it at the origin, and the spatial index bounds a
 // dimension by its block's extents as they stand. A dimension without a block draws nothing
 // until the dimension engine (M5) generates one.
+// An ACAD_TABLE (M1-17) draws its anonymous `*T` block in the table's frame: its insertion
+// point is the block's origin and the table's top-left corner, the block's x axis runs along
+// the horizontal direction and its y axis along normal × direction (every corpus table's
+// block spans x 0 → width and y −height → 0), scale 1. A table without a block draws nothing
+// until the table engine (M4-05) generates one from its cells.
 // A block that (through nesting) contains itself draws its contents once per level up to
 // MAX_DEPTH, as AutoCAD never lets such a drawing be built; this keeps a damaged file finite.
 
-import type {
-  BlockDefinition,
-  DocumentModel,
-  Entity,
-  EntityId,
-  Handle,
-  InsertGeometry,
-  Vec2,
+import {
+  tableAxes,
+  type BlockDefinition,
+  type DocumentModel,
+  type Entity,
+  type EntityId,
+  type Handle,
+  type InsertGeometry,
+  type Vec2,
 } from '@triya/engine';
 import type { Paint } from './tessellate';
 import { tessellate } from './tessellate';
@@ -261,8 +267,9 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
 }
 
 /**
- * The block an entity draws by reference and where each copy goes: an INSERT's cells, or a
- * dimension's `*D` block in place. Undefined for every other entity.
+ * The block an entity draws by reference and where each copy goes: an INSERT's cells, a
+ * dimension's `*D` block in place, or a table's `*T` block at its insertion point. Undefined
+ * for every other entity.
  */
 export function referenceOf(
   e: Entity,
@@ -275,6 +282,27 @@ export function referenceOf(
   }
   if ((g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION') && g.block !== undefined)
     return def(g.block) ? { block: g.block, cells: [IDENTITY] } : undefined;
+  if (g.kind === 'ACAD_TABLE' && g.block !== undefined) {
+    // The `*T` block holds the table as AutoCAD last drew it (M1-17), in the table's frame:
+    // the insertion point is its top-left corner, x runs along the direction (DXF 11).
+    const d = def(g.block);
+    if (!d) return undefined;
+    const { x: ax, y: ay } = tableAxes(g);
+    const { x: bx, y: by } = d.basePoint;
+    return {
+      block: g.block,
+      cells: [
+        {
+          a: ax.x,
+          b: ax.y,
+          c: ay.x,
+          d: ay.y,
+          e: g.position.x - bx * ax.x - by * ay.x,
+          f: g.position.y - bx * ax.y - by * ay.y,
+        },
+      ],
+    };
+  }
   return undefined;
 }
 
