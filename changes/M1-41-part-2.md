@@ -1,0 +1,1 @@
+- M1-41 part 2 (#68): MTEXT background fills and drawing-window masks now hide what lies under the text, the MTEXT text frame draws, and text under 3 px on screen draws as a faint box per run instead of unreadable glyphs.
