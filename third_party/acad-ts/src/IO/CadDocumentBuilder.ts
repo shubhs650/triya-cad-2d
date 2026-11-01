@@ -302,6 +302,20 @@ export abstract class CadDocumentBuilder {
 		this.documentToBuild.updateCollections(true, false);
 	}
 
+	/** The highest handle a read object stated; before buildDocument, every mapped one did. */
+	maxStatedHandle(): number {
+		let max = 0;
+		for (const handle of this.templatesMap.keys()) if (handle > max) max = handle;
+		return max;
+	}
+
+	/** The objects read from the file; after buildDocument, every one has its template mapped. */
+	readObjects(): Set<CadObject> {
+		const objects = new Set<CadObject>();
+		for (const template of this.templatesMap.values()) objects.add(template.cadObject);
+		return objects;
+	}
+
 	protected createMissingHandles(): void {
 		let nextHandle = Number.isFinite(this.initialHandSeed) ? this.initialHandSeed : 0;
 		let pending = this.unassignedObjects;

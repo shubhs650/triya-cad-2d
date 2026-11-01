@@ -1,0 +1,214 @@
+diff --git a/src/CadDocument.ts b/src/CadDocument.ts
+index b92ca81..d365de3 100644
+--- a/src/CadDocument.ts
++++ b/src/CadDocument.ts
+@@ -72,6 +72,13 @@ export class CadDocument implements IHandledCadObject {
+ 	public groups: GroupCollection | null = null;
+ 	public get handle(): number { return 0; }
+ 	public header: CadHeader | null = null;
++	/**
++	 * Handles the reader made up for objects the file stated none for (R12 has no BLOCK_RECORD
++	 * table, and many R12 files no handles at all). An R12 DXF save leaves these out. `added` are
++	 * the ones of objects the file does not have at all (defaults the reader added), which an R12
++	 * save leaves out of the tables and blocks too.
++	 */
++	public madeUpHandles: { first: number; last: number; added: Set<number> } | null = null;
+ 	public imageDefinitions: ImageDefinitionCollection | null = null;
+ 	public layers: LayersTable | null = null;
+ 	public layouts: LayoutCollection | null = null;
+diff --git a/src/IO/CadDocumentBuilder.ts b/src/IO/CadDocumentBuilder.ts
+index 80dfe74..abaffe7 100644
+--- a/src/IO/CadDocumentBuilder.ts
++++ b/src/IO/CadDocumentBuilder.ts
+@@ -302,6 +302,20 @@ export abstract class CadDocumentBuilder {
+ 		this.documentToBuild.updateCollections(true, false);
+ 	}
+ 
++	/** The highest handle a read object stated; before buildDocument, every mapped one did. */
++	maxStatedHandle(): number {
++		let max = 0;
++		for (const handle of this.templatesMap.keys()) if (handle > max) max = handle;
++		return max;
++	}
++
++	/** The objects read from the file; after buildDocument, every one has its template mapped. */
++	readObjects(): Set<CadObject> {
++		const objects = new Set<CadObject>();
++		for (const template of this.templatesMap.values()) objects.add(template.cadObject);
++		return objects;
++	}
++
+ 	protected createMissingHandles(): void {
+ 		let nextHandle = Number.isFinite(this.initialHandSeed) ? this.initialHandSeed : 0;
+ 		let pending = this.unassignedObjects;
+diff --git a/src/IO/DXF/DxfDocumentBuilder.ts b/src/IO/DXF/DxfDocumentBuilder.ts
+index b3cc815..6ff8612 100644
+--- a/src/IO/DXF/DxfDocumentBuilder.ts
++++ b/src/IO/DXF/DxfDocumentBuilder.ts
+@@ -40,9 +40,13 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
+     this.configuration = configuration;
+   }
+ 
++  /** The model space record made up because the file has none (an R12 file with no BLOCKS). */
++  public madeUpModelSpace: BlockRecord | null = null;
++
+   public override buildDocument(): void {
+     if (this.modelSpaceTemplate === null) {
+       const record = BlockRecord.modelSpace;
++      this.madeUpModelSpace = record;
+       this.blockRecords.add(record);
+       this.modelSpaceTemplate = new CadBlockRecordTemplate(record);
+       this.addTemplate(this.modelSpaceTemplate);
+diff --git a/src/IO/DXF/DxfReader.ts b/src/IO/DXF/DxfReader.ts
+index a43eefa..8c2d502 100644
+--- a/src/IO/DXF/DxfReader.ts
++++ b/src/IO/DXF/DxfReader.ts
+@@ -151,9 +151,27 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
+       this._document.header = new CadHeader(this._document);
+     }
+ 
++    // Handles at or above both $HANDSEED and every stated handle are made up while building (R12
++    // has no BLOCK_RECORD table, and many R12 files state no handles); an R12 save leaves them out.
++    // The builder numbers them on from the higher of the two.
++    const firstMadeUp = Math.max(this._document.header.handleSeed, this._builder.maxStatedHandle()) + 1;
++
+     this._builder.buildDocument();
+ 		this._builder.buildDataStorage();
+ 
++    const lastMadeUp = this._document.header.handleSeed - 1;
++    if (lastMadeUp >= firstMadeUp) {
++      // Made-up handles of objects with no template are defaults the reader added (LTYPE ByLayer
++      // when an entity refers to it, *PAPER_SPACE when the file has none, and so on).
++      const read = this._builder.readObjects();
++      if (this._builder.madeUpModelSpace) read.delete(this._builder.madeUpModelSpace);
++      const added = new Set<number>();
++      for (const obj of this._document.getCadObjects()) {
++        if (obj.handle >= firstMadeUp && obj.handle <= lastMadeUp && !read.has(obj)) added.add(obj.handle);
++      }
++      this._document.madeUpHandles = { first: firstMadeUp, last: lastMadeUp, added };
++    }
++
+     return this._document;
+   }
+ 
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
+index 8451670..cc55340 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts
+@@ -30,6 +30,12 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
+ 
+   protected writeSection(): void {
+     for (const b of this._document.blockRecords) {
++      // A space or empty block the R12 reader added as a default comes back on reopening by
++      // itself; written, it would be read before the tables and number them differently.
++      if (this.isBuiltDefault(b) && (b.entities.count === 0 || this._isSpace(b))) {
++        this._processEntities(b);
++        continue;
++      }
+       this._writeBlock(b.blockEntity);
+       this._processEntities(b);
+       this._writeBlockEnd(b.blockEnd);
+@@ -80,9 +86,13 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
+     return name;
+   }
+ 
+-  private _processEntities(b: BlockRecord): void {
++  private _isSpace(b: BlockRecord): boolean {
+     const name = b.name.toUpperCase();
+-    if (name === BlockRecord.modelSpaceName.toUpperCase() || name === BlockRecord.paperSpaceName.toUpperCase()) {
++    return name === BlockRecord.modelSpaceName.toUpperCase() || name === BlockRecord.paperSpaceName.toUpperCase();
++  }
++
++  private _processEntities(b: BlockRecord): void {
++    if (this._isSpace(b)) {
+       for (const e of b.entities) {
+         if (e instanceof Seqend) {
+           // skip
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfHeaderSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfHeaderSectionWriter.ts
+index 97a86c3..e16986d 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfHeaderSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfHeaderSectionWriter.ts
+@@ -50,6 +50,20 @@ export class DxfHeaderSectionWriter extends DxfSectionWriterBase {
+     super(writer, document, holder, configuration);
+   }
+ 
++  /**
++   * R12 leaves the made-up handles out (see writeCommonObjectData), so it writes the seed they
++   * were made up from, and reopening makes up the same ones. Once an object has been added after
++   * reading, the seed must cover it, and the made-up handles move on the next read.
++   */
++  private _handleSeed(): number {
++    const range = this._document.madeUpHandles;
++    if (this.version > ACadVersion.AC1009 || range == null) return this._document.header.handleSeed;
++    for (const obj of this._document.getCadObjects()) {
++      if (obj.handle > range.last) return this._document.header.handleSeed;
++    }
++    return range.first - 1;
++  }
++
+   protected writeSection(): void {
+     const map: Map<string, CadSystemVariable> = CadHeader.getHeaderMap();
+ 
+@@ -76,7 +90,7 @@ export class DxfHeaderSectionWriter extends DxfSectionWriterBase {
+       this._writer.write(DxfCode.CLShapeText, key);
+ 
+       if (key === '$HANDSEED') {
+-        this._writer.write(DxfCode.Handle, this._document.header.handleSeed);
++        this._writer.write(DxfCode.Handle, this._handleSeed());
+         continue;
+       }
+ 
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index a0e16df..f732893 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -194,8 +194,25 @@ export abstract class DxfSectionWriterBase {
+     this._writer.write(304, DxfFileToken.valueEnd);
+   }
+ 
++  static isMadeUpHandle(document: CadDocument, handle: number): boolean {
++    const range = document.madeUpHandles;
++    return range != null && handle >= range.first && handle <= range.last;
++  }
++
++  /**
++   * In R12, whether the reader added the object as a default the file did not have. Reopening
++   * adds it again.
++   */
++  protected isBuiltDefault(cadObject: CadObject): boolean {
++    const range = this._document.madeUpHandles;
++    return this.version <= ACadVersion.AC1009 && range != null && range.added.has(cadObject.handle);
++  }
++
+   protected writeCommonObjectData(cadObject: CadObject): void {
+     if (this.version <= ACadVersion.AC1009) {
++      // A handle the reader made up was not in the file; written, it would stop being made up
++      // on reopening and move every other made-up handle.
++      if (DxfSectionWriterBase.isMadeUpHandle(this._document, cadObject.handle)) return;
+       if (cadObject instanceof DimensionStyle) {
+         // An R12 DIMSTYLE keeps its handle in 105 (5 is DIMBLK), as ezdxf writes it and the reader
+         // reads it. write() drops codes from 80 up for R12, so this one is written raw.
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index eb3d039..4ef9c37 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -61,7 +61,9 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.table);
+ 
+-    this._writer.write(70, table.count > 0x7FFF ? 0 : table.count);
++    // R12 leaves out the defaults the reader added; they are added again on reopening.
++    const entries = [...table].filter((entry) => !this.isBuiltDefault(entry));
++    this._writer.write(70, entries.length > 0x7FFF ? 0 : entries.length);
+ 
+     if (subclass) {
+       this._writer.write(DxfCode.Subclass, subclass);
+@@ -69,7 +71,7 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+     // The table's own xdata (AutoCAD writes ACAD DbSaveVer on the VPORT table).
+     this.writeExtendedData(table.extendedData);
+ 
+-    for (const entry of table) {
++    for (const entry of entries) {
+       this._writeEntry(entry, writeFlags);
+     }
+ 

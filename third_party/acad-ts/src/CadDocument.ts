@@ -72,6 +72,13 @@ export class CadDocument implements IHandledCadObject {
 	public groups: GroupCollection | null = null;
 	public get handle(): number { return 0; }
 	public header: CadHeader | null = null;
+	/**
+	 * Handles the reader made up for objects the file stated none for (R12 has no BLOCK_RECORD
+	 * table, and many R12 files no handles at all). An R12 DXF save leaves these out. `added` are
+	 * the ones of objects the file does not have at all (defaults the reader added), which an R12
+	 * save leaves out of the tables and blocks too.
+	 */
+	public madeUpHandles: { first: number; last: number; added: Set<number> } | null = null;
 	public imageDefinitions: ImageDefinitionCollection | null = null;
 	public layers: LayersTable | null = null;
 	public layouts: LayoutCollection | null = null;

@@ -30,6 +30,12 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
 
   protected writeSection(): void {
     for (const b of this._document.blockRecords) {
+      // A space or empty block the R12 reader added as a default comes back on reopening by
+      // itself; written, it would be read before the tables and number them differently.
+      if (this.isBuiltDefault(b) && (b.entities.count === 0 || this._isSpace(b))) {
+        this._processEntities(b);
+        continue;
+      }
       this._writeBlock(b.blockEntity);
       this._processEntities(b);
       this._writeBlockEnd(b.blockEnd);
@@ -80,9 +86,13 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
     return name;
   }
 
-  private _processEntities(b: BlockRecord): void {
+  private _isSpace(b: BlockRecord): boolean {
     const name = b.name.toUpperCase();
-    if (name === BlockRecord.modelSpaceName.toUpperCase() || name === BlockRecord.paperSpaceName.toUpperCase()) {
+    return name === BlockRecord.modelSpaceName.toUpperCase() || name === BlockRecord.paperSpaceName.toUpperCase();
+  }
+
+  private _processEntities(b: BlockRecord): void {
+    if (this._isSpace(b)) {
       for (const e of b.entities) {
         if (e instanceof Seqend) {
           // skip

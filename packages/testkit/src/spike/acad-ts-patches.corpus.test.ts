@@ -32,6 +32,7 @@ import {
   Insert,
   LayoutFlags,
   Leader,
+  Line,
   LineWeightType,
   Material,
   Mesh,
@@ -1652,5 +1653,36 @@ describe('acad-ts local patches (corpus-backed)', () => {
         expect(raw(back, handle), `${handle.toString(16)} save ${save}`).toEqual(raw(doc, handle));
       }
     }
+  });
+
+  it('0074 R12 DXF saves keep the handles acad-ts made up for what R12 does not store', () => {
+    // R12 has no BLOCK_RECORD table (and many R12 files no handles at all), so the reader makes
+    // up records and handles from $HANDSEED. A save wrote some of those handles and a raised
+    // $HANDSEED, so the reopened file made them up again under other handles.
+    const handles = (d: CadDocument): string[] =>
+      [...d.getCadObjects()].map((o) => `${o.objectName}#${o.handle.toString(16)}`).sort();
+    for (const file of [
+      'third-party/acadsharp/sample_AC1009_ascii.dxf',
+      'third-party/ezdxf/integration_tests/ASCII_R12.dxf',
+      'third-party/ezdxf/integration_tests/r12_blocks_with_no_names.dxf',
+      'third-party/ezdxf/integration_tests/AC1003_LINE_Example.dxf',
+    ]) {
+      for (const binary of [false, true]) {
+        const doc = readDxfRaw(corpusBytes(file));
+        // Taken before the save, which registers missing SEQENDs into the document it writes.
+        const read = handles(doc);
+        expect(handles(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(read);
+      }
+    }
+
+    // An object added after reading keeps its handle; the made-up ones move above it.
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/integration_tests/ASCII_R12.dxf'));
+    const line = new Line();
+    doc.modelSpace!.entities.add(line);
+    const back = dxfRawRoundTrip(doc, false);
+    expect(back.getCadObject(line.handle)?.objectName).toBe('LINE');
+    expect(new Set([...back.getCadObjects()].map((o) => o.handle)).size).toBe(
+      [...back.getCadObjects()].length,
+    );
   });
 });
