@@ -12,6 +12,7 @@ import {
   type HeaderValue,
   type LayerRecord,
   type NonGraphicalObject,
+  type Vec2,
 } from '@triya/engine';
 import type { Canvas2D, Surface } from '../src/index';
 
@@ -82,6 +83,12 @@ export const dash = (length: number) => ({
 export interface DrawingExtra {
   readonly header?: Iterable<readonly [string, HeaderValue]>;
   readonly objects?: readonly NonGraphicalObject[];
+  /** M1-14: block definitions besides model and paper space; their entities name them as owner. */
+  readonly blocks?: readonly {
+    readonly handle: string;
+    readonly name: string;
+    readonly basePoint?: Vec2;
+  }[];
 }
 
 /**
@@ -120,11 +127,23 @@ export function drawingInit(entities: EntityInit[], extra: DrawingExtra = {}): D
       blockRecords: [
         { handle: MODEL, name: '*Model_Space', units: 0, explodable: true, scalable: true },
         { handle: PAPER, name: '*Paper_Space', units: 0, explodable: true, scalable: true },
+        ...(extra.blocks ?? []).map((b) => ({
+          handle: b.handle,
+          name: b.name,
+          units: 0,
+          explodable: true,
+          scalable: true,
+        })),
       ],
     },
     blocks: [
       { handle: MODEL, name: '*Model_Space', basePoint: { x: 0, y: 0 } },
       { handle: PAPER, name: '*Paper_Space', basePoint: { x: 0, y: 0 } },
+      ...(extra.blocks ?? []).map((b) => ({
+        handle: b.handle,
+        name: b.name,
+        basePoint: b.basePoint ?? { x: 0, y: 0 },
+      })),
     ],
     layouts: [
       { handle: 'AA', name: 'Model', tabOrder: 0, blockRecord: MODEL },
