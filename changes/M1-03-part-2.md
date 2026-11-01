@@ -1,0 +1,1 @@
+- M1-03 part 2 (#16): dimension styles with every DIMVAR by name (colours as ACI, references as handles), multileader styles and table styles (cell styles and borders) from their named-object dictionaries; corpus oracle extended to DIMSTYLE groups and the style objects. M1-03 complete; new acad-ts gaps added to M1-32.

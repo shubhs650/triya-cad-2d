@@ -1,0 +1,1 @@
+- M1-02 part 3 (#13): `engine/geom` closest point (exact for lines and arcs, branch and bound for ellipses and splines), tangent directions and TAN points from a point, offsets of every curve (left of travel for positive distances; polylines joined as OFFSETGAPTYPE 0; ellipse/spline offsets sampled into polylines) and `sideOf`. M1-02 complete.
