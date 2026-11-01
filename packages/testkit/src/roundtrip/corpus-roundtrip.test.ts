@@ -1,5 +1,5 @@
 // The round-trip suite over the public corpus (docs/TESTING.md §1, §3; roadmap M0-05).
-// Writes a per-file report to test-results/roundtrip/ and holds every file to the committed
+// Writes a per-file report to test-reports/roundtrip/ (not test-results/, which Playwright wipes) and holds every file to the committed
 // baseline: a file may get better, never worse. At M0 most files have differences; they are
 // the acad-ts spike's data (M0-06). The zero-difference gate arrives with M1-05.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
@@ -16,7 +16,7 @@ import {
 import { roundTrip } from './roundtrip.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
-const outDir = fileURLToPath(new URL('../../../../test-results/roundtrip/', import.meta.url));
+const outDir = fileURLToPath(new URL('../../../../test-reports/roundtrip/', import.meta.url));
 const baselinePath = `${corpusDir}roundtrip-baseline.json`;
 const updateBaseline = process.env['TRIYA_UPDATE_BASELINE'] === '1';
 

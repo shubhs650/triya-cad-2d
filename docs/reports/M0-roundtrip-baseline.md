@@ -1,4 +1,4 @@
-<!-- Snapshot of test-results/roundtrip/report.md from the M0-05 PR (#5), acad-ts @315f3d8 + patch 0001. Regenerate with pnpm corpus:roundtrip; the live numbers are in corpus/roundtrip-baseline.json. -->
+<!-- Snapshot of test-reports/roundtrip/report.md from the M0-05 PR (#5), acad-ts @315f3d8 + patch 0001. Regenerate with pnpm corpus:roundtrip; the live numbers are in corpus/roundtrip-baseline.json. -->
 # M0 round-trip baseline: public corpus
 
 open → save (same version and format) → reopen → `structuralDiff` (docs/TESTING.md §3). Expected end state: every file `clean`.
