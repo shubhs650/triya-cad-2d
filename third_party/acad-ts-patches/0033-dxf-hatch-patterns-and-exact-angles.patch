@@ -1,0 +1,98 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 55aca5b..bb6f0c3 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -707,14 +707,15 @@ export abstract class DxfSectionWriterBase {
+     this._writer.write(75, hatch.style, subclass);
+     this._writer.write(76, hatch.patternType, subclass);
+ 
+-    if (!hatch.isSolid && hatch.pattern?.lines.length > 0) {
++    // AutoCAD writes the pattern of a SOLID hatch too (one line at 45 degrees); keep whatever was read.
++    if (hatch.pattern?.lines.length > 0) {
+       this._writer.write(52, hatch.patternAngle, subclass);
+       this._writer.write(41, hatch.patternScale, subclass);
+       this._writer.write(77, hatch.isDouble ? 1 : 0, subclass);
+ 
+       this._writer.write(78, hatch.pattern.lines.length);
+       for (const line of hatch.pattern.lines) {
+-        this._writer.write(53, MathHelper.radToDeg(line.angle));
++        this._writer.write(53, MathHelper.radToDegRoundTrip(line.angle));
+         this._writer.write(43, line.basePoint.x);
+         this._writer.write(44, line.basePoint.y);
+         this._writer.write(45, line.offset.x);
+@@ -790,24 +791,15 @@ export abstract class DxfSectionWriterBase {
+   }
+ 
+   private _writeHatchBoundaryAngles(startAngle: number, endAngle: number): void {
+-    const normalizeDegrees = (angle: number): number => {
+-      const normalized = MathHelper.radToDeg(angle) % 360;
+-      return Object.is(normalized, -0) ? 0 : normalized;
++    // Written as read: an edge may end past 360 degrees (start 348.7, end 472.9), and wrapping it
++    // changed the stored angle. Only -0 is written as 0.
++    const degrees = (angle: number): number => {
++      const value = MathHelper.radToDegRoundTrip(angle);
++      return Object.is(value, -0) ? 0 : value;
+     };
+ 
+-    let start = normalizeDegrees(startAngle);
+-    let end = normalizeDegrees(endAngle);
+-
+-    if (Math.abs(Math.abs(endAngle - startAngle) - MathHelper.twoPI) < MathHelper.epsilon) {
+-      const sweep = endAngle > startAngle ? 360 : -360;
+-      if (Math.abs(start + sweep) > 360) {
+-        start -= sweep;
+-      }
+-      end = start + sweep;
+-    }
+-
+-    this._writer.write(50, start);
+-    this._writer.write(51, end);
++    this._writer.write(50, degrees(startAngle));
++    this._writer.write(51, degrees(endAngle));
+   }
+ 
+   private _writeBoundaryEdge(edge: HatchBoundaryPathEdge): void {
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
+index 0367a9f..d1958d2 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
+@@ -39,7 +39,7 @@ export abstract class DxfStreamWriterBase implements IDxfStreamWriter {
+         return;
+       }
+       if ((prop.referenceType & DxfReferenceType.IsAngle) !== 0) {
+-        value = MathHelper.radToDeg(value as number);
++        value = MathHelper.radToDegRoundTrip(value as number);
+       }
+     }
+ 
+diff --git a/src/Math/MathHelper.ts b/src/Math/MathHelper.ts
+index 33f8562..a642ac6 100644
+--- a/src/Math/MathHelper.ts
++++ b/src/Math/MathHelper.ts
+@@ -12,6 +12,26 @@ export class MathHelper {
+     return radians * (180 / Math.PI);
+   }
+ 
++  /**
++   * Degrees that `degToRad` turns back into exactly `radians`. Files store angles in degrees and
++   * readers convert them with `degToRad`; `radToDeg` can land one ulp away from the value read,
++   * so a save would move the angle. Tries the doubles next to `radToDeg(radians)`.
++   */
++  static radToDegRoundTrip(radians: number): number {
++    const degrees = MathHelper.radToDeg(radians);
++    if (!Number.isFinite(degrees) || MathHelper.degToRad(degrees) === radians) return degrees;
++    const value = new Float64Array(1);
++    const bits = new BigInt64Array(value.buffer);
++    for (let step = 1n; step <= 4n; step++) {
++      for (const sign of [1n, -1n]) {
++        value[0] = degrees;
++        bits[0] += sign * step;
++        if (MathHelper.degToRad(value[0]) === radians) return value[0];
++      }
++    }
++    return degrees;
++  }
++
+   static radToGrad(radians: number): number {
+     return radians * (200 / Math.PI);
+   }

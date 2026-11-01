@@ -152,6 +152,7 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DIMASSOC | Read; **not written to DXF** (47 handles, M1-31) |
 | ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** (98 handles in the R13/R14 binary DXFs, M1-31) |
 | TABLESTYLE / CELLSTYLEMAP, MLEADER, MTEXT columns, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
+| Angles (DXF write): TEXT rotation, ARC angles, HATCH pattern lines and edges | Written as the degree value that reads back to the same radians (0033); about one angle in a few dozen moved by an ulp on every save. HATCH edge angles past 360° are kept, and a SOLID hatch keeps its pattern angle, scale and lines |
 | VIEWPORT entity (DXF write) | Every AcDbViewport group written with its own code, R2000+ settings included (0031); id, angles, zoom, UCS, plot style, clip boundary and visual style were scrambled or dropped |
 | ATTDEF / ATTRIB fields (DXF) | Version (R2010+), lock position (R2007+) and R2018 multiline text read and written (0032); AcDbText 71 mirror flags no longer read as the multiline flag |
 | XRECORD, SORTENTSTABLE | Kept when owned by unknown objects (0014); sort order changes (R11, M1-29). `SORTENTSTABLE` in DXF is never loaded (94 handles, M1-33); XRECORDs under skipped objects drop with them (1,368 at save, 240 never loaded; M1-31, M1-33) |
