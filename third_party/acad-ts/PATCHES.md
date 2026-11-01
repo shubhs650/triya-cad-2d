@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52) and 0075 (M1-53) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53) and 0076 (M1-49) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1508,5 +1508,29 @@ Group 71 of LEADER is optional, and AutoCAD omits it when the arrowhead is enabl
 **Title:** Read omitted DXF DIMSTYLE groups as AutoCAD's defaults
 
 AutoCAD writes a DIMSTYLE record with only the DIMVARs that differ from their defaults. The DXF reader left the missing ones at the `DimensionStyle` class defaults, several of which are ISO values (DIMGAP 0.625, DIMEXO 0.625, DIMEXE 1.25, DIMDLI 3.75, DIMDEC 2, …), so a style read from DXF differs from the same style read from the DWG of the same drawing. This change sets the 16 affected properties to AutoCAD's initial values before the DIMSTYLE's groups are read. Groups present in the file still apply, and `new DimensionStyle()` is unchanged.
+
+</details>
+
+### 0076 — R12 DXF saves move the handles acad-ts made up
+
+- **File:** `third_party/acad-ts-patches/0076-r12-made-up-handles.patch`
+- **Touches:** `src/CadDocument.ts`, `src/IO/CadDocumentBuilder.ts`, `src/IO/DXF/DxfDocumentBuilder.ts`, `src/IO/DXF/DxfReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `DxfHeaderSectionWriter.ts`, `DxfTablesSectionWriter.ts`, `DxfBlocksSectionWriter.ts`
+- **Symptom:**
+  - R12 has no BLOCK_RECORD table and many R12 files state no handles, so the reader makes up handles from `$HANDSEED`. It also adds defaults the file does not have (LTYPE ByLayer when an entity refers to it, a `*PAPER_SPACE` or model-space record, DIMSTYLE entries).
+  - A save wrote some of the made-up handles, wrote the defaults as table entries and blocks, and wrote the raised `$HANDSEED`. Reopening made the handles up again in a different order and from a different seed, so every R12 BLOCK_RECORD, BLOCK and owner link moved: about 6,000 differences, 2,911 in each acadsharp `sample_AC1009` file.
+- **Fix:**
+  - The reader records the range of handles it made up (`CadDocument.madeUpHandles`), and which of them belong to objects that have no template, that is defaults it added.
+  - An R12 save writes no handle for a made-up one, leaves the added defaults out of the tables and leaves an added space or empty block out of BLOCKS. It writes `$HANDSEED` as read, unless an object was added after reading, in which case it writes the current seed.
+  - Reopening then makes up the same handles for the same objects. An added object keeps its handle, and the made-up ones then move above it.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0076 R12 DXF saves keep the handles acad-ts made up for what R12 does not store".
+  - Four R12 files (acadsharp `sample_AC1009_ascii.dxf`, ezdxf `ASCII_R12.dxf`, `r12_blocks_with_no_names.dxf`, `AC1003_LINE_Example.dxf`), saved as ASCII and binary DXF, reopen with the same objects under the same handles.
+  - A LINE added after reading keeps its handle, and no handle is used twice.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep made-up R12 handles stable through a DXF save
+
+R12 DXF files have no BLOCK_RECORD table and often no handles, so `DxfReader` makes up handles from `$HANDSEED` and adds default table entries and space blocks. Saving as R12 wrote some made-up handles, wrote the defaults, and wrote the raised `$HANDSEED`, so reopening the saved file numbered everything differently. This records the made-up range and the reader's defaults on `CadDocument.madeUpHandles`; an R12 save leaves those handles and defaults out and writes `$HANDSEED` as read, so a reopened file gets the same handles.
 
 </details>

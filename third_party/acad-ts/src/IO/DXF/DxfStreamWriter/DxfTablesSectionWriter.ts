@@ -61,7 +61,9 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
 
     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.table);
 
-    this._writer.write(70, table.count > 0x7FFF ? 0 : table.count);
+    // R12 leaves out the defaults the reader added; they are added again on reopening.
+    const entries = [...table].filter((entry) => !this.isBuiltDefault(entry));
+    this._writer.write(70, entries.length > 0x7FFF ? 0 : entries.length);
 
     if (subclass) {
       this._writer.write(DxfCode.Subclass, subclass);
@@ -69,7 +71,7 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
     // The table's own xdata (AutoCAD writes ACAD DbSaveVer on the VPORT table).
     this.writeExtendedData(table.extendedData);
 
-    for (const entry of table) {
+    for (const entry of entries) {
       this._writeEntry(entry, writeFlags);
     }
 

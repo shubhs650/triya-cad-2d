@@ -50,6 +50,20 @@ export class DxfHeaderSectionWriter extends DxfSectionWriterBase {
     super(writer, document, holder, configuration);
   }
 
+  /**
+   * R12 leaves the made-up handles out (see writeCommonObjectData), so it writes the seed they
+   * were made up from, and reopening makes up the same ones. Once an object has been added after
+   * reading, the seed must cover it, and the made-up handles move on the next read.
+   */
+  private _handleSeed(): number {
+    const range = this._document.madeUpHandles;
+    if (this.version > ACadVersion.AC1009 || range == null) return this._document.header.handleSeed;
+    for (const obj of this._document.getCadObjects()) {
+      if (obj.handle > range.last) return this._document.header.handleSeed;
+    }
+    return range.first - 1;
+  }
+
   protected writeSection(): void {
     const map: Map<string, CadSystemVariable> = CadHeader.getHeaderMap();
 
@@ -76,7 +90,7 @@ export class DxfHeaderSectionWriter extends DxfSectionWriterBase {
       this._writer.write(DxfCode.CLShapeText, key);
 
       if (key === '$HANDSEED') {
-        this._writer.write(DxfCode.Handle, this._document.header.handleSeed);
+        this._writer.write(DxfCode.Handle, this._handleSeed());
         continue;
       }
 
