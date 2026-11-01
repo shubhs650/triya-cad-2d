@@ -1,11 +1,12 @@
 // Test helpers: a small drawing, and a recording stand-in for a Canvas 2D context so the
-// renderer's calls can be checked in Node. Pixel-level checks run in the browser (part 2).
+// renderer's calls can be checked in Node. Pixel-level checks run in the browser (tests/e2e/fidelity/renderer-host.spec.ts).
 import {
   ChangeSetBuilder,
   DocumentModel,
   SpatialIndex,
   toleranceForSize,
   type ChangeSet,
+  type DocumentInit,
   type EntityGeometry,
   type EntityInit,
   type HeaderValue,
@@ -62,8 +63,9 @@ export const line = (x1: number, y1: number, x2: number, y2: number): EntityGeom
   end: { x: x2, y: y2 },
 });
 
-export function drawing(entities: EntityInit[]): { model: DocumentModel; index: SpatialIndex } {
-  const model = DocumentModel.create({
+/** The init of a small drawing: layers 0 and RED, model space, the given entities. */
+export function drawingInit(entities: EntityInit[]): DocumentInit {
+  return {
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '1000',
     header: new Map<string, HeaderValue>(),
@@ -86,7 +88,11 @@ export function drawing(entities: EntityInit[]): { model: DocumentModel; index: 
     blocks: [{ handle: MODEL, name: '*Model_Space', basePoint: { x: 0, y: 0 } }],
     layouts: [{ handle: 'AA', name: 'Model', tabOrder: 0, blockRecord: MODEL }],
     entities,
-  });
+  };
+}
+
+export function drawing(entities: EntityInit[]): { model: DocumentModel; index: SpatialIndex } {
+  const model = DocumentModel.create(drawingInit(entities));
   return { model, index: SpatialIndex.build(model, { tol: toleranceForSize(1000) }) };
 }
 

@@ -10,4 +10,19 @@ export {
   type Canvas2DRendererOptions,
   type Surface,
 } from './canvas2d';
+export {
+  RendererHost,
+  type HostCanvas,
+  type RenderWorker,
+  type RendererHostOptions,
+  type RendererMode,
+} from './host';
+export {
+  RenderSession,
+  documentTolerance,
+  type RenderDocument,
+  type RenderSessionOptions,
+} from './session';
+export { serveRenderer, type ServeOptions } from './serve';
+export type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 export * from './style/index';
