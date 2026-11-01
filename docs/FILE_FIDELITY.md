@@ -150,7 +150,8 @@ The columns above track Triya. This section tracks the library underneath, from 
 | SUN (VPORT / VIEWPORT 361), 3DSOLID history (350) | Linked and written (0017). `ACSH_*` solid history objects are still not reached in DWG (every version) or DXF: 40 handles (M1-33) |
 | CLASSES with a shared DXF name (AEC) | Both kept under their read class numbers; class numbers survive a save (0015) |
 | DATATABLE / TABLECONTENT owned through an XRECORD | Read and kept (0018); TABLECONTENT is **not written to DXF** (writer gap, M1-31) |
-| DIMASSOC | Read; **not written to DXF** (47 handles, M1-31) |
+| DIMASSOC | Read and written (0061); the DXF writer refused it, dropping 47 associations and the reactors that point at them |
+| IMAGEDEF_REACTOR (DXF write) | Written with its image (0062); 77 reactors were dropped because nothing queued them |
 | ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** (98 handles in the R13/R14 binary DXFs, M1-31) |
 | TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
 | ACAD_TABLE cells (DWG write) | R2004/R2007 cell overrides (alignment, colours, text height, borders) written behind their flag word (0041); R2010+ cell geometry written with no content geometry (0042); R2004/R2007 block cells keep their block record (0043). All three were reset on a save; DWG tables now round-trip with no difference |

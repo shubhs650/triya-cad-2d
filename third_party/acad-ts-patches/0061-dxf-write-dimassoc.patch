@@ -1,0 +1,12 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 77fde37..d2d01ce 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -710,7 +710,6 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       co instanceof AecWallStyle ||
+       co instanceof AecCleanupGroup ||
+       co instanceof AecBinRecord ||
+-      co instanceof DimensionAssociation ||
+       co instanceof Material ||
+       co instanceof MultiLeaderObjectContextData ||
+       co instanceof TableContent ||

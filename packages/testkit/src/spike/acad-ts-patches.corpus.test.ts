@@ -39,6 +39,7 @@ import {
   MText,
   MultiLeader,
   MultiLeaderStyle,
+  RasterImage,
   RasterVariables,
   Solid3D,
   SortEntitiesTable,
@@ -1337,5 +1338,54 @@ describe('acad-ts local patches (corpus-backed)', () => {
       'E',
       'F',
     ]);
+  });
+
+  it('0061 DXF writer writes DIMASSOC objects', () => {
+    // The writer refused DIMASSOC ("Object not implemented") although it has a field writer,
+    // so every associative dimension lost its association object and the reactors pointing
+    // at it on a DXF save.
+    const assocs = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o) => o.objectName === 'DIMASSOC')
+        .map((o) => {
+          const a = o as unknown as { dimension: CadObject | null; associativityFlags: number };
+          return [handleHex(o), handleHex(a.dimension), a.associativityFlags];
+        });
+    for (const file of [
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+      'third-party/ezdxf/examples_dxf/uncommon.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(assocs(doc).length, file).toBeGreaterThan(0);
+      for (const binary of [false, true]) {
+        expect(assocs(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(
+          assocs(doc),
+        );
+      }
+    }
+  });
+
+  it('0062 DXF writer writes the IMAGEDEF_REACTOR of every image', () => {
+    // An IMAGE hard-owns its reactor (360) but nothing queued the reactor for the OBJECTS
+    // section, so it was dropped and the image and its definition lost the link.
+    const reactors = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is RasterImage => o instanceof RasterImage)
+        .map((i) => [handleHex(i), handleHex(i.definitionReactor)]);
+    for (const file of [
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+      'third-party/ezdxf/examples_dxf/images.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(
+        reactors(doc).some((r) => (r as unknown[])[1] !== undefined),
+        file,
+      ).toBe(true);
+      for (const binary of [false, true]) {
+        expect(reactors(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(
+          reactors(doc),
+        );
+      }
+    }
   });
 });

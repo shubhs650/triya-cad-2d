@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0060 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0062 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1187,5 +1187,47 @@ The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discardin
 **Title:** Write the default entry object of a DWG dictionary with default
 
 `_writeCadDictionaryWithDefault` writes the default entry's handle but never queues the object. When nothing else owns it (the R14 `ACDBPLACEHOLDER`), the saved file points at a missing object. This queues it like other owned objects.
+
+</details>
+
+### 0061 — DXF writer refuses DIMASSOC objects
+
+- **File:** `third_party/acad-ts-patches/0061-dxf-write-dimassoc.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:**
+  - `_isObjectSupported` lists `DimensionAssociation` as "Object not implemented", although `_writeDimensionAssociation` writes every field the reader reads, including both osnap point references.
+  - Every DIMASSOC was dropped on a DXF save. Its dictionary entry and the reactors that dimensions and their geometry hold went with it.
+  - Corpus: 47 save-stage handles in 15 files. Round-trip differences: `DIMASSOC <missing>`, `DIMENSION`/`LINE`/`CIRCLE` `_reactors` and the `ACAD_DIMASSOC` dictionary entries (0061 and 0062 together remove 401).
+- **Fix:** take `DimensionAssociation` off the list.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0061 DXF writer writes DIMASSOC objects".
+  - Every DIMASSOC of the acadsharp R2000 sample and ezdxf `uncommon.dxf` must keep its handle, dimension and flags through ASCII and binary saves. The round-trip suite then shows no DIMASSOC difference on any corpus file.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write DIMASSOC objects to DXF
+
+`DxfObjectsSectionWriter._isObjectSupported` rejects `DimensionAssociation` with "Object not implemented", although `_writeDimensionAssociation` is complete. Associative dimensions therefore lose their DIMASSOC object (and the reactors pointing at it) on every DXF save. This removes it from the unsupported list.
+
+</details>
+
+### 0062 — DXF writer drops the IMAGEDEF_REACTOR of every image
+
+- **File:** `third_party/acad-ts-patches/0062-dxf-image-definition-reactor.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:**
+  - An IMAGE hard-owns its IMAGEDEF_REACTOR (360). The writer wrote the handle but never queued the object for the OBJECTS section, and no dictionary owns it.
+  - The reactor was dropped, so the image (`definitionReactor`) and its definition (`_reactors`) lost the link.
+  - Corpus: 77 save-stage handles in 14 files (`IMAGEDEF_REACTOR <missing>`, `IMAGE definitionReactor`, `IMAGEDEF _reactors`).
+- **Fix:** queue `image.definitionReactor` when the image is written.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0062 DXF writer writes the IMAGEDEF_REACTOR of every image".
+  - Every IMAGE of the acadsharp R2000 sample and ezdxf `images.dxf` keeps its reactor through ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the IMAGEDEF_REACTOR of raster images to DXF
+
+`_writeCadImage` writes the 360 handle of the image's IMAGEDEF_REACTOR but never adds the reactor to the objects to write, and nothing else owns it, so it is missing from the saved file. This queues it with the image.
 
 </details>
