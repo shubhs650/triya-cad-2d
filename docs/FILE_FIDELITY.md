@@ -34,14 +34,14 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | DIMENSION (ordinate) | ✓ (drawn from its stored `*D` block, M1-15 part 1) | | | | |
 | DIMENSION (arc length) | ✓ (ARC_DIMENSION; drawn from its stored `*D` block, M1-15 part 1) | | | | |
 | DIMENSION (jogged) | — acad-ts does not read LARGE_RADIAL_DIMENSION as a dimension (M1-34) | | | | |
-| LEADER | ✓ | | | | |
-| MLEADER (+ MLEADERSTYLE) | ✓ (DXF branches and the context text colour read since 0037; the context arrowhead size read as `drawnArrowheadSize`; drawn by the renderer as its leader lines, landing, arrowheads and MTEXT with its frame, and bounded by them, M1-52 part 1; spline leaders wait for M1-47, block content, per-line overrides and underline attachments for M1-52 part 2) | | | | |
+| LEADER | ✓ (drawn by the renderer as its path and arrowhead from its DIMSTYLE and `DSTYLE` overrides, and bounded by them, M1-52 part 2; a DXF LEADER without group 71 has its arrowhead on, as its DWG twin, since acad-ts patch 0074) | | | | |
+| MLEADER (+ MLEADERSTYLE) | ✓ (DXF branches and the context text colour read since 0037; the context arrowhead size read as `drawnArrowheadSize`; drawn by the renderer as its leader lines, landing, arrowheads and MTEXT with its frame, and bounded by them, M1-52 part 1; block content drawn as an INSERT of its block, M1-52 part 2; spline leaders wait for M1-47, block-content attributes, per-line overrides and underline attachments for a later part) | | | | |
 | HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | ✓ (style 75, seed points and ellipse-edge major axes lost by acad-ts, M1-32; solid and pattern fills drawn by the renderer from the stored pattern lines, M1-16 part 1; gradient fills and the sub-pixel pattern tint, M1-16 part 2; a hatch stored without pattern lines drawn from its user-defined settings or the bundled patterns, M1-16 part 3; with the gradient ramps unverified against AutoCAD plots until M1-24/M1-26) | | | | |
 | WIPEOUT | ✓ (acad-ts skips the clip type 71; the mapper infers a polygon from more than two vertices, M1-32) | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation); cell formats not mapped yet; ezdxf-written tables dropped by acad-ts (M1-32); drawn by the renderer from the `*T` block in the table's frame, M1-17 | | | | |
 | VIEWPORT | ✓ frame, view, clip boundary, frozen layers, plot style and render mode (DXF status 68, clip boundary 340, a 0 viewport ID and the R12 MVIEW view lost by acad-ts, M1-32; DWG reads 68 and 340) | | | | |
-| TOLERANCE | ✓ (caret codes decoded since 0039) | | | | |
+| TOLERANCE | ✓ (caret codes decoded since 0039; drawn by the renderer as its compartment frames and text, sized by the text engine, and bounded by them, M1-52 part 4; GD&T symbols wait for a GD&T font, M1-54; DXF frames take AutoCAD's DIMGAP since 0075, M1-53) | | | | |
 | MLINE (+ MLINESTYLE) | ✓ MLINE (style handle, scale, justification, flags, vertices with element parameters); MLINESTYLE not yet | | | | |
 | REGION *(render from proxy graphics / boundary)* | ✓ boundary read from the ACIS data, SAT text (R14–R2010) or SAB binary (R2013+, DWG): lines, arcs, circles and ellipses per loop; spline (intcurve) edges reported unmapped (M1-39) | | — | | |
 | PDFUNDERLAY / DWFUNDERLAY / DGNUNDERLAY (+ definitions) | ✓ PDFUNDERLAY; DWF/DGN have no acad-ts reader and no corpus file (M1-32) | | | | |
@@ -60,7 +60,7 @@ Read ticks for entities (M1-04) mean every entity of the type in every readable 
 | LAYER (+ VP overrides via xdata/dictionaries) | ✓ record (VP overrides not yet) | | | |
 | LTYPE (simple + complex) | ✓ (patterns, text and shape elements fitted by `dashPath`, M1-13 part 1; `.lin` files read by `parseLin`; drawn by the renderer at LTSCALE × object scale, M1-13 part 3; embedded text and shapes not drawn yet, M1-45) | | | `style.corpus.test.ts` (473 records) |
 | STYLE (text styles, SHX and TTF, bigfont) | ✓ | | | |
-| DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet) | | | |
+| DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet); DIMVARs a DXF leaves out read as AutoCAD's defaults since acad-ts patch 0075, so every acadsharp DXF style equals its DWG twin's (R2004+ colours aside, M1-55) | | | |
 | APPID | ✓ | | | |
 | BLOCK_RECORD (+ BLOCK/ENDBLK, *Model_Space, *Paper_Space*, *D, *U, *X, *T) | ✓ record (BLOCK/ENDBLK with M1-04) | | | |
 | VPORT | ✓ | | | |
@@ -124,7 +124,7 @@ The columns above track Triya. This section tracks the library underneath, from 
 
 | Version | Corpus files (DWG / ASCII DXF / binary DXF) | Read | Round trip clean | Main open defects |
 |---|---|---|---|---|
-| R2.6–R12 (AC1009 and earlier) | 0 / 7 / 2 | all | 3 | R12 xdata and the model-space layout link of header-less files (M1-53) |
+| R2.6–R12 (AC1009 and earlier) | 0 / 7 / 2 | all | 3 | R12 xdata and the model-space layout link of header-less files (M1-56) |
 | R13 (AC1012) | 0 / 2 / 1 | all | 0 | DXF writer gaps |
 | R14 (AC1014) | 1 / 1 / 1 | all | 0 | R17 block entity lists |
 | 2000 (AC1015) | 1 / 5 / 2 | all | 0 | R17, DXF writer gaps |
@@ -154,9 +154,9 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DIMASSOC | Read and written (0061); the DXF writer refused it, dropping 47 associations and the reactors that point at them |
 | IMAGEDEF_REACTOR (DXF write) | Written with its image (0062); 77 reactors were dropped because nothing queued them |
 | ACAD_PROXY_OBJECT | Kept as read and written back raw in DXF (0063, DEC-040); the DXF writer skipped all 98 in the R13/R14 binary DXFs |
-| R12 `$MODEL_SPACE` / `$PAPER_SPACE` blocks (DXF write) | Written, empty, as AutoCAD writes them (0064); were left out, so their BLOCK/ENDBLK handles changed on every R12 save. A space block the file did not have is still left out (0074), so reopening makes it up again under the same handle |
+| R12 `$MODEL_SPACE` / `$PAPER_SPACE` blocks (DXF write) | Written, empty, as AutoCAD writes them (0064); were left out, so their BLOCK/ENDBLK handles changed on every R12 save. A space block the file did not have is still left out (0076), so reopening makes it up again under the same handle |
 | R12 DIMSTYLE handle (DXF write) | Written on 105 (0065); was left out. Nameless R12 blocks (ezdxf `r12_blocks_with_no_names.dxf`) are still lost, M1-33 |
-| R12 handles acad-ts makes up (DXF write) | Left out of the saved file with every table entry and block acad-ts added as a default, and `$HANDSEED` written as read (0074), so reopening makes up the same handles for the same objects. A save wrote some made-up handles and a raised `$HANDSEED`, so every R12 BLOCK_RECORD, BLOCK and owner link moved: about 6,000 differences in the R12 corpus. An object added after reading keeps its handle, and the made-up ones then move above it |
+| R12 handles acad-ts makes up (DXF write) | Left out of the saved file with every table entry and block acad-ts added as a default, and `$HANDSEED` written as read (0076), so reopening makes up the same handles for the same objects. A save wrote some made-up handles and a raised `$HANDSEED`, so every R12 BLOCK_RECORD, BLOCK and owner link moved: about 6,000 differences in the R12 corpus. An object added after reading keeps its handle, and the made-up ones then move above it |
 | TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
 | ACAD_TABLE (DXF) | Written (0068): the writer had no table branch, so every table went out as a bare INSERT and was lost with its extension dictionary, round-trip XRECORD and TABLECONTENT. The reader keeps cell override flags, block scale, alignment and chunked text (0066), and the table-wide overrides as read (DEC-043); 41 there had been read as the X scale. The acadsharp R2000–R2018 DXFs now round-trip with no table difference |
 | Table cell values (DXF) | Units, format and formatted value written from R2007 (0067); an empty value writes no payload, it was written as 91=0, which the reader rejects (FIELD 0x5F8 of `uncommon.dxf` was lost) |

@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) 0061–0072 (M1-31), 0073 (M1-48) and 0074 (M1-49) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53) and 0076 (M1-49) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1477,9 +1477,43 @@ The AEC readers (`AEC_CLEANUP_GROUP_DEF`, `AEC_WALL_STYLE`, `BINRECORD`, `AEC_WA
 
 </details>
 
-### 0074 — R12 DXF saves move the handles acad-ts made up
+### 0074 — a DXF LEADER without group 71 reads as having no arrowhead
 
-- **File:** `third_party/acad-ts-patches/0074-r12-made-up-handles.patch`
+- **File:** `third_party/acad-ts-patches/0074-dxf-leader-arrowhead-default.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** DXF 71 (arrowhead flag) is optional, and AutoCAD-written and ezdxf-written files omit it when the arrowhead is on. acad-ts takes the `Leader` class default (`arrowHeadEnabled = false`), so every such LEADER lost its arrowhead on read. Corpus: the 12 DXF LEADERs of the acadsharp samples omit 71; their DWG twins have the arrowhead on.
+- **Fix:** the DXF reader starts a LEADER with the arrowhead on, so 71 = 0 still turns it off. The class default is unchanged, so leaders made in code are not affected.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0074 a DXF LEADER without group 71 has its arrowhead on". The mapping oracle (`entities.corpus.test.ts`) now expects a missing 71 to mean on, and `leaders.corpus.test.ts` checks every corpus LEADER draws its arrowhead.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Default the DXF LEADER arrowhead flag (71) to on
+
+Group 71 of LEADER is optional, and AutoCAD omits it when the arrowhead is enabled (ezdxf's `has_arrowhead` defaults to 1 for the same reason). The DXF reader left `arrowHeadEnabled` at the class default `false`, so leaders from such files lost their arrowhead, while the same drawing saved as DWG keeps it. This change sets the flag to `true` before the DXF entity codes are read; an explicit `71 0` still disables it, and `new Leader()` is unchanged.
+
+</details>
+
+### 0075 — a DXF DIMSTYLE without a group reads acad-ts's ISO default for it
+
+- **File:** `third_party/acad-ts-patches/0075-dxf-dimstyle-autocad-defaults.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`
+- **Symptom:** a DXF DIMSTYLE record leaves out every DIMVAR at AutoCAD's default, the initial value of a new style. acad-ts filled the gaps with its `DimensionStyle` class defaults, several of them ISO values: DIMGAP 0.625 where AutoCAD means 0.09, DIMEXO 0.625 for 0.0625, DIMEXE 1.25 for 0.18, DIMDLI 3.75 for 0.38, and DIMDEC 2 for 4, among 16. Corpus: every style of the acadsharp DXF samples (`Standard`, `Annotative`, `ISO-25`, …) disagreed with its DWG twin on up to 16 DIMVARs, so DXF feature control frames drew with gaps seven times too wide.
+- **Fix:** the DXF reader starts each DIMSTYLE at AutoCAD's initial values for the 16 DIMVARs whose class defaults differ: DIMALTD, DIMALTTD, DIMDEC, DIMDLI, DIMEXE, DIMEXO, DIMFIT, DIMGAP, DIMSAH, DIMTAD, DIMTDEC, DIMTIH, DIMTOH, DIMTOLJ, DIMTZIN and DIMZIN. Groups in the file still win. The class defaults are unchanged, so styles made in code are not affected.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0075 a DXF DIMSTYLE without a group reads it as the AutoCAD default" drops DIMGAP and DIMEXO from a written style and reads them back as 0.09 and 0.0625. `tables.corpus.test.ts` → "reads every DXF DIMSTYLE with the DIMVARs of its DWG twin" checks all six acadsharp pairs.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read omitted DXF DIMSTYLE groups as AutoCAD's defaults
+
+AutoCAD writes a DIMSTYLE record with only the DIMVARs that differ from their defaults. The DXF reader left the missing ones at the `DimensionStyle` class defaults, several of which are ISO values (DIMGAP 0.625, DIMEXO 0.625, DIMEXE 1.25, DIMDLI 3.75, DIMDEC 2, …), so a style read from DXF differs from the same style read from the DWG of the same drawing. This change sets the 16 affected properties to AutoCAD's initial values before the DIMSTYLE's groups are read. Groups present in the file still apply, and `new DimensionStyle()` is unchanged.
+
+</details>
+
+### 0076 — R12 DXF saves move the handles acad-ts made up
+
+- **File:** `third_party/acad-ts-patches/0076-r12-made-up-handles.patch`
 - **Touches:** `src/CadDocument.ts`, `src/IO/CadDocumentBuilder.ts`, `src/IO/DXF/DxfDocumentBuilder.ts`, `src/IO/DXF/DxfReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `DxfHeaderSectionWriter.ts`, `DxfTablesSectionWriter.ts`, `DxfBlocksSectionWriter.ts`
 - **Symptom:**
   - R12 has no BLOCK_RECORD table and many R12 files state no handles, so the reader makes up handles from `$HANDSEED`. It also adds defaults the file does not have (LTYPE ByLayer when an entity refers to it, a `*PAPER_SPACE` or model-space record, DIMSTYLE entries).
@@ -1488,7 +1522,7 @@ The AEC readers (`AEC_CLEANUP_GROUP_DEF`, `AEC_WALL_STYLE`, `BINRECORD`, `AEC_WA
   - The reader records the range of handles it made up (`CadDocument.madeUpHandles`), and which of them belong to objects that have no template, that is defaults it added.
   - An R12 save writes no handle for a made-up one, leaves the added defaults out of the tables and leaves an added space or empty block out of BLOCKS. It writes `$HANDSEED` as read, unless an object was added after reading, in which case it writes the current seed.
   - Reopening then makes up the same handles for the same objects. An added object keeps its handle, and the made-up ones then move above it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0074 R12 DXF saves keep the handles acad-ts made up for what R12 does not store".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0076 R12 DXF saves keep the handles acad-ts made up for what R12 does not store".
   - Four R12 files (acadsharp `sample_AC1009_ascii.dxf`, ezdxf `ASCII_R12.dxf`, `r12_blocks_with_no_names.dxf`, `AC1003_LINE_Example.dxf`), saved as ASCII and binary DXF, reopen with the same objects under the same handles.
   - A LINE added after reading keeps its handle, and no handle is used twice.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).

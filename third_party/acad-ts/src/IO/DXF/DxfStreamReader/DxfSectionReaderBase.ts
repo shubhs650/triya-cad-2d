@@ -303,8 +303,13 @@ export abstract class DxfSectionReaderBase {
         return this.readEntityCodes(new CadEntityTemplate(new Face3D()), this._readEntitySubclassMap.bind(this), Face3D);
       case DxfFileToken.entityEllipse:
         return this.readEntityCodes(new CadEntityTemplate(new Ellipse()), this._readEntitySubclassMap.bind(this), Ellipse);
-      case DxfFileToken.entityLeader:
-        return this.readEntityCodes(new CadLeaderTemplate(), this._readLeader.bind(this), Leader);
+      case DxfFileToken.entityLeader: {
+        // DXF 71 (arrowhead flag) is optional and defaults to 1: AutoCAD and ezdxf omit it
+        // when the arrowhead is on, and the DWG twins of such files have it on.
+        const leaderTemplate = new CadLeaderTemplate();
+        (leaderTemplate.cadObject as Leader).arrowHeadEnabled = true;
+        return this.readEntityCodes(leaderTemplate, this._readLeader.bind(this), Leader);
+      }
       case DxfFileToken.entityLine:
         return this.readEntityCodes(new CadEntityTemplate(new Line()), this._readEntitySubclassMap.bind(this), Line);
       case DxfFileToken.entityLwPolyline:

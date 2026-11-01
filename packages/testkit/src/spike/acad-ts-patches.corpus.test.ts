@@ -1655,7 +1655,7 @@ describe('acad-ts local patches (corpus-backed)', () => {
     }
   });
 
-  it('0074 R12 DXF saves keep the handles acad-ts made up for what R12 does not store', () => {
+  it('0076 R12 DXF saves keep the handles acad-ts made up for what R12 does not store', () => {
     // R12 has no BLOCK_RECORD table (and many R12 files no handles at all), so the reader makes
     // up records and handles from $HANDSEED. A save wrote some of those handles and a raised
     // $HANDSEED, so the reopened file made them up again under other handles.

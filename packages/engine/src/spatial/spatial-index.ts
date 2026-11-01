@@ -27,7 +27,8 @@ import {
   type EntityBounds,
 } from './entity-bounds';
 import { PackedRTree } from './packed-tree';
-import { annotationParts } from '../annotation/multileader';
+import { annotationParts } from '../annotation/parts';
+import type { TextMeasure } from '../annotation/tolerance';
 
 /** Kinds whose bounds use `annotationBounds`: themselves, or their attributes (INSERT). */
 const ANNOTATION_KINDS: ReadonlySet<string> = new Set([
@@ -47,6 +48,8 @@ export interface SpatialIndexOptions {
   readonly tol: Tolerance;
   /** Exact text and annotation bounds, when a text engine is available. */
   readonly annotationBounds?: AnnotationBounds;
+  /** Text widths from the same text engine, for TOLERANCE frames (M1-52 part 4). */
+  readonly measureText?: TextMeasure;
   /**
    * Edits a block's tree absorbs before it is repacked. Default: 1/16 of the block's entries,
    * at least 256. Tests set it low to exercise repacking.
@@ -147,7 +150,7 @@ function referencedBlocks(e: Entity, model: DocumentModel): readonly Handle[] {
   if (g.kind === 'INSERT') return [g.block];
   if (g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'ACAD_TABLE')
     return g.block === undefined ? [] : [g.block];
-  const parts = annotationParts(g, model);
+  const parts = annotationParts(g, model, e.xdata);
   if (!parts) return [];
   return [...new Set(parts.flatMap((p) => (p.geom.kind === 'INSERT' ? [p.geom.block] : [])))];
 }
@@ -174,6 +177,7 @@ export class SpatialIndex {
     this.#ctx = {
       tol: options.tol,
       annotationBounds: options.annotationBounds,
+      measureText: options.measureText,
       blockExtents: (h) => this.extents(h),
       basePoint: (h) => model.blocks.get(h)?.basePoint,
       tables: model,
@@ -335,7 +339,7 @@ export class SpatialIndex {
     const e = this.#model.entity(id);
     if (!e) return;
     this.#refreshing.add(id);
-    const b = entityBounds(e.geom, this.#ctx);
+    const b = entityBounds(e.geom, this.#ctx, e.xdata);
     this.#refreshing.delete(id);
     this.#tree(e.owner).set(id, b);
   }
