@@ -7,6 +7,12 @@ import { readCadDocument, writeCadDocument } from '@triya/io';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from './clock.ts';
 import { structuralDiff, summarizeDiff, type Difference, type DiffSummary } from './diff.ts';
+import {
+  declaredHandles,
+  documentHandles,
+  handleCoverage,
+  type HandleCoverage,
+} from './handle-coverage.ts';
 import { rawObjectSurvival, type RawObjectSurvival } from './raw-objects.ts';
 
 export type RoundTripStatus = 'clean' | 'diff' | 'read-error' | 'write-error' | 'reread-error';
@@ -25,6 +31,10 @@ export interface RoundTripResult {
   sample?: Difference[];
   /** Unknown objects kept raw by the reader, and those the save lost or changed (M1-30). */
   rawObjects?: RawObjectSurvival;
+  /** Handles the file declares that the reopened document lacks (M1-27). */
+  handles?: HandleCoverage;
+  /** Why `handles` is missing although the file reopened (the scanner failed). */
+  handlesError?: string;
   /** Writer notifications, message → count (objects the writer skipped, unsupported data). */
   writerNotes?: Record<string, number>;
   /** The written file, only when `keepOutput` is set (not serialised into reports). */
@@ -106,6 +116,15 @@ function roundTripUnpinned(bytes: Uint8Array, options: RoundTripOptions): RoundT
   });
   result.ms.diff = elapsed(t);
   result.rawObjects = rawObjectSurvival(original, reopened);
+  try {
+    const declared = declaredHandles(bytes, original.classes);
+    result.handles = {
+      source: declared.source,
+      ...handleCoverage(declared.handles, documentHandles(original), documentHandles(reopened)),
+    };
+  } catch (err) {
+    result.handlesError = errorLine(err);
+  }
   result.objectsA = report.objectsA;
   result.objectsB = report.objectsB;
   result.summary = summarizeDiff(report);

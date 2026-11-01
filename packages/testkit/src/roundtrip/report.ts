@@ -89,6 +89,21 @@ export function formatRoundTripReport(runs: FileRoundTrip[], title = 'Round-trip
   const rawKept = runs.reduce((n, r) => n + (r.result.rawObjects?.kept ?? 0), 0);
   const rawLost = runs.reduce((n, r) => n + (r.result.rawObjects?.lost.length ?? 0), 0);
   const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ');
+  const lostByType = new Map<string, { read: number; save: number; files: Set<string> }>();
+  let declared = 0;
+  let scanned = 0;
+  for (const { file, result } of runs) {
+    if (!result.handles) continue;
+    scanned++;
+    declared += result.handles.declared;
+    for (const l of result.handles.lost) {
+      const agg = lostByType.get(l.type) ?? { read: 0, save: 0, files: new Set<string>() };
+      agg[l.stage]++;
+      agg.files.add(file.path);
+      lostByType.set(l.type, agg);
+    }
+  }
+  const lostTotal = [...lostByType.values()].reduce((n, v) => n + v.read + v.save, 0);
   const lines = [
     `# ${title}`,
     '',
@@ -98,6 +113,20 @@ export function formatRoundTripReport(runs: FileRoundTrip[], title = 'Round-trip
     '',
     `**Unknown objects kept raw:** ${rawKept}, lost or changed by the save: ${rawLost}`,
     '',
+    `**Declared handles (M1-27):** ${lostTotal} of ${declared} declared in ${scanned} scanned files are missing after the save. \`read\` = acad-ts never loaded the object, \`save\` = the writer dropped it.`,
+    '',
+    ...(lostTotal === 0
+      ? []
+      : [
+          '| Lost type | read | save | Files |',
+          '|---|---:|---:|---:|',
+          ...[...lostByType]
+            .sort(
+              (a, b) => b[1].read + b[1].save - (a[1].read + a[1].save) || a[0].localeCompare(b[0]),
+            )
+            .map(([t, v]) => `| \`${cell(t)}\` | ${v.read} | ${v.save} | ${v.files.size} |`),
+          '',
+        ]),
     '## Differences by object type and property (all files)',
     '',
     '| Object · path | Differences | Files |',
