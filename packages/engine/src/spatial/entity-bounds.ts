@@ -321,6 +321,11 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
       return underlayBounds(geom);
     case 'MLINE':
       return mlineBounds(geom);
+    case 'REGION': {
+      const edges = geom.loops.flatMap((l) => l.edges);
+      if (edges.length === 0) return EMPTY;
+      return boxed(edges.map((c) => curveBounds(c, ctx.tol)).reduce(unionBox));
+    }
     case 'VIEWPORT': {
       // The frame on the sheet; what it shows of model space is drawn inside it.
       const hw = Math.abs(geom.width) / 2;

@@ -1,0 +1,1 @@
+- M1-04 part 4c (#39): `mapEntities` maps REGION as the plan-view boundary of its ACIS body, read from SAT text (R14–R2010) or SAB binary (R2013+ and DWG) by a new reader in `packages/io/src/acis`; the spatial index bounds it. Spline-bounded regions are reported unmapped until M1-39.

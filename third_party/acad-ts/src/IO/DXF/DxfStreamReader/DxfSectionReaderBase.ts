@@ -831,8 +831,13 @@ export abstract class DxfSectionReaderBase {
         case 31:
         case 40:
         case 41:
+          break;
+        // The defined extents; the writer writes them back from these fields.
         case 42:
+          mtext.horizontalWidth = this._reader.valueAsDouble;
+          break;
         case 43:
+          mtext.verticalHeight = this._reader.valueAsDouble;
           break;
         case 44:
           mtext.columnData.width = this._reader.valueAsDouble;

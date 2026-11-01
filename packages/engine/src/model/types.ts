@@ -632,6 +632,23 @@ export interface MLineGeometry extends PlanarProps {
   readonly vertices: readonly MLineVertex[];
 }
 
+/** One boundary loop of a REGION face, in coedge order. */
+export interface RegionLoop {
+  /** Index of the face the loop bounds, counted over the whole region. */
+  readonly face: number;
+  /** Arcs and ellipses run counter-clockwise in plan view, as kernel curves do. */
+  readonly edges: readonly (Line | Arc | Circle | Ellipse)[];
+}
+
+/**
+ * REGION: a planar ACIS body (DXF AcDbModelerGeometry), read as the plan-view boundary of
+ * its faces. The ACIS data itself stays in the retained original.
+ */
+export interface RegionGeometry extends PlanarProps {
+  readonly kind: 'REGION';
+  readonly loops: readonly RegionLoop[];
+}
+
 /**
  * VIEWPORT (DXF AcDbViewport). Its frame lives in its layout's paper space; the view it shows
  * is stated in model space (view direction, target, twist) and display coordinates (center).
@@ -826,6 +843,7 @@ export type EntityGeometry =
   | UnderlayGeometry
   | MLineGeometry
   | ViewportGeometry
+  | RegionGeometry
   | HatchGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */

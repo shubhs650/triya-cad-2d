@@ -34,6 +34,7 @@ import {
   CadWipeoutBase,
   PdfUnderlay,
   MLine,
+  Region,
   Viewport,
   TextEntity,
   type AttributeBase,
@@ -78,6 +79,7 @@ import type {
   ImageGeometry,
   UnderlayGeometry,
   MLineGeometry,
+  RegionGeometry,
   ViewportGeometry,
   PlanarProps,
   TextFields,
@@ -85,13 +87,21 @@ import type {
   Transparency,
   Vec2,
 } from '@triya/engine';
+import { regionBoundary } from '../acis/region';
+import { readSab, readSat } from '../acis/records';
 import { common, hex, mapColor, mapEntityColor, mapLineweight, ref } from './common';
 
 export interface UnmappedEntity {
   readonly handle: string;
   /** DXF type name. */
   readonly type: string;
-  readonly reason: 'not mapped yet' | 'tilted plane' | 'no plan view' | 'missing block';
+  readonly reason:
+    | 'not mapped yet'
+    | 'tilted plane'
+    | 'no plan view'
+    | 'missing block'
+    /** ACIS data Triya cannot read as a planar boundary (spline edges, missing records). */
+    | 'unsupported boundary';
 }
 
 export interface MappedEntities {
@@ -735,6 +745,25 @@ function mlineGeometry(m: MLine): MLineGeometry | UnmappedEntity['reason'] {
   };
 }
 
+/** REGION: the plan-view boundary of its planar ACIS body (SAT text or SAB binary). */
+function regionGeometry(r: Region): RegionGeometry | UnmappedEntity['reason'] {
+  let model;
+  try {
+    const text = r.getAcisText();
+    model = text !== null ? readSat(text) : readSab(r.binaryData);
+  } catch {
+    return 'unsupported boundary';
+  }
+  const b = regionBoundary(model);
+  if (typeof b === 'string') return b;
+  return {
+    kind: 'REGION',
+    loops: b.loops,
+    ...(b.elevation !== 0 ? { elevation: b.elevation } : {}),
+    ...(b.down ? { normal: { x: 0, y: 0, z: -1 } } : {}),
+  };
+}
+
 /** VIEWPORT: a paper-space frame and the model-space view it shows (DXF AcDbViewport). */
 function viewportGeometry(v: Viewport): ViewportGeometry {
   const clipBoundary = ref(v.boundary);
@@ -1067,6 +1096,7 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   if (e instanceof PdfUnderlay) return underlayGeometry(e);
   if (e instanceof MLine) return mlineGeometry(e);
   if (e instanceof Viewport) return viewportGeometry(e);
+  if (e instanceof Region) return regionGeometry(e);
   return 'not mapped yet';
 }
 

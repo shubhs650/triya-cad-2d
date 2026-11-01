@@ -27,8 +27,10 @@ import {
   LayoutFlags,
   LineWeightType,
   Material,
+  MText,
   RasterVariables,
   Solid3D,
+  SortEntitiesTable,
   TextEntity,
   UnknownEntity,
   UnknownNonGraphicalObject,
@@ -603,5 +605,91 @@ describe('acad-ts local patches (corpus-backed)', () => {
         expect(back, `${file} binary ${binary}`).toEqual(before);
       }
     }
+  });
+
+  it('0034 DXF and DWG writers keep SORTENTSTABLE entries in the order read', () => {
+    // Both writers iterated the table, which yields its entries sorted by sort handle, so a save
+    // reordered every table whose entries are not stored in that order (AutoCAD stores them in
+    // the order the draw-order commands left them).
+    type Entry = { entity: CadObject | null; sortHandle: number };
+    const entries = (t: SortEntitiesTable): string[] =>
+      (t as unknown as { _sorters: Entry[] })._sorters.map(
+        (e) => `${handleHex(e.entity)}:${e.sortHandle.toString(16).toUpperCase()}`,
+      );
+    const tables = (d: CadDocument): string[][] =>
+      [...d.getCadObjects()]
+        .filter((o): o is SortEntitiesTable => o instanceof SortEntitiesTable)
+        .sort((a, b) => a.handle - b.handle)
+        .map(entries);
+
+    const dxf = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1015_ascii.dxf'));
+    // Table 355 lists LWPOLYLINE 353 (sort handle 35A) before HATCH 35A (sort handle 354).
+    expect(entries(dxf.getCadObject(0x355) as SortEntitiesTable).slice(0, 2)).toEqual([
+      '353:35A',
+      '35A:354',
+    ]);
+    for (const binary of [false, true]) {
+      expect(tables(dxfRawRoundTrip(dxf, binary)), `binary ${binary}`).toEqual(tables(dxf));
+    }
+    for (const version of ['AC1015', 'AC1018', 'AC1032']) {
+      const dwg = readDwgRaw(`third-party/acadsharp/sample_${version}.dwg`);
+      expect(tables(dwg).length, version).toBeGreaterThan(0);
+      expect(tables(dwgRawRoundTrip(dwg)), version).toEqual(tables(dwg));
+    }
+  });
+
+  it('0035 DXF writer writes the R2018 MTEXT column data', () => {
+    // The R2018 MTEXT "Embedded Object" block (101) carries the column settings, but the writer
+    // never wrote it, so every MTEXT came back with no columns, and the reader dropped the
+    // defined extents (42/43) it holds.
+    const fields = (m: MText): unknown => ({
+      h: handleHex(m),
+      columns: m.columnData ? { ...m.columnData, heights: [...m.columnData.heights] } : null,
+      extents: [m.horizontalWidth, m.verticalHeight],
+    });
+    const all = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is MText => o instanceof MText)
+        .sort((a, b) => a.handle - b.handle)
+        .map(fields);
+
+    const files = [
+      'third-party/acadsharp/sample_AC1032_ascii.dxf',
+      'third-party/ezdxf/examples_dxf/columns_R2018.dxf',
+      'third-party/ezdxf/examples_dxf/mtext_columns_R2018.dxf',
+    ];
+    for (const file of files) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(
+        [...doc.getCadObjects()].some((o) => o instanceof MText && o.hasColumns),
+        file,
+      ).toBe(true);
+      for (const binary of [false, true]) {
+        expect(all(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(all(doc));
+      }
+    }
+    // mtext_columns_R2018.dxf: dynamic columns with manual heights 20, 30, 0 and extents 62 x 30.
+    const doc = readDxfRaw(corpusBytes(files[2]!));
+    const manual = [...doc.getCadObjects()].find(
+      (o): o is MText => o instanceof MText && (o.columnData?.heights.length ?? 0) === 3,
+    );
+    expect(manual && fields(manual)).toMatchObject({
+      columns: { columnType: 2, columnCount: 3, width: 20, gutter: 1, heights: [20, 30, 0] },
+      extents: [62, 30],
+    });
+  });
+
+  it('0036 DWG reader keeps the R2018 MTEXT column count', () => {
+    // The reader read the column count but never stored it, so the writer wrote 0 and the
+    // heights that follow were dropped on the next read.
+    const columns = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is MText => o instanceof MText && o.hasColumns)
+        .sort((a, b) => a.handle - b.handle)
+        .map((m) => [handleHex(m), m.columnData?.columnCount, m.columnData?.heights]);
+    const doc = readDwgRaw('third-party/acadsharp/sample_AC1032.dwg');
+    // MTEXT 3EC: one dynamic column of height 0, as the DXF export of the same drawing has it.
+    expect((doc.getCadObject(0x3ec) as MText).columnData?.columnCount).toBe(1);
+    expect(columns(dwgRawRoundTrip(doc))).toEqual(columns(doc));
   });
 });
