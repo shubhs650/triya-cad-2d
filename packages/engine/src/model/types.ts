@@ -8,6 +8,17 @@
 // from acad-ts, M1-04 the entity geometry (adding the remaining `EntityGeometry` members), and
 // M1-05 the passthrough store. Fields are added there, not guessed here.
 
+import type {
+  Arc,
+  Circle,
+  Ellipse,
+  Line,
+  Polyline,
+  BulgeVertex as CurveVertex,
+  Ray,
+  Spline,
+  Xline,
+} from '../geom/curves';
 import type { Vec2, Vec3 } from '../geom/types';
 import type { EntityId } from './entity-ids';
 import type { Handle } from './handle';
@@ -79,6 +90,9 @@ export interface ObjectCommon {
 }
 
 // ── Entity geometry ────────────────────────────────────────────────────────────────────────
+//
+// Each geometry is a kernel curve (geom/curves.ts) plus what the file carries beyond the plane,
+// so `entity.geom` goes straight into kernel functions.
 
 /**
  * Out-of-plane data for planar entities, carried so it round-trips. Geometry is 2D in the
@@ -91,47 +105,12 @@ export interface PlanarProps {
   readonly normal?: Vec3;
 }
 
-export interface LineGeometry extends PlanarProps {
-  readonly kind: 'LINE';
-  readonly start: Vec2;
-  readonly end: Vec2;
-}
-
-export interface XlineGeometry {
-  readonly kind: 'XLINE';
-  readonly base: Vec2;
-  readonly direction: Vec2;
-}
-
-export interface RayGeometry {
-  readonly kind: 'RAY';
-  readonly base: Vec2;
-  readonly direction: Vec2;
-}
-
-export interface CircleGeometry extends PlanarProps {
-  readonly kind: 'CIRCLE';
-  readonly center: Vec2;
-  readonly radius: number;
-}
-
-/** Angles in radians, counter-clockwise from +X in the entity plane, start → end CCW. */
-export interface ArcGeometry extends PlanarProps {
-  readonly kind: 'ARC';
-  readonly center: Vec2;
-  readonly radius: number;
-  readonly startAngle: number;
-  readonly endAngle: number;
-}
-
-/** DXF ELLIPSE: major axis as a vector from the centre, minor/major ratio, parameters in radians. */
-export interface EllipseGeometry {
-  readonly kind: 'ELLIPSE';
-  readonly center: Vec2;
-  readonly majorAxis: Vec2;
-  readonly ratio: number;
-  readonly startParam: number;
-  readonly endParam: number;
+export interface LineGeometry extends Line, PlanarProps {}
+export type XlineGeometry = Xline;
+export type RayGeometry = Ray;
+export interface CircleGeometry extends Circle, PlanarProps {}
+export interface ArcGeometry extends Arc, PlanarProps {}
+export interface EllipseGeometry extends Ellipse {
   readonly normal?: Vec3;
 }
 
@@ -142,32 +121,20 @@ export interface PointGeometry extends PlanarProps {
   readonly xAxisAngle?: number;
 }
 
-export interface PolylineVertex {
-  readonly x: number;
-  readonly y: number;
-  /** Tangent of a quarter of the included angle of the arc to the next vertex; 0 = straight. */
-  readonly bulge: number;
+export interface PolylineVertex extends CurveVertex {
   readonly startWidth?: number;
   readonly endWidth?: number;
 }
 
-export interface LwPolylineGeometry extends PlanarProps {
-  readonly kind: 'LWPOLYLINE';
+export interface LwPolylineGeometry extends Polyline, PlanarProps {
   readonly vertices: readonly PolylineVertex[];
-  readonly closed: boolean;
   readonly constantWidth?: number;
   /** DXF 70 bit 128: linetype generated continuously around vertices. */
   readonly plinegen?: boolean;
 }
 
 /** NURBS as stored by AutoCAD; fit data is retained so SPLINEDIT-style edits can use it. */
-export interface SplineGeometry {
-  readonly kind: 'SPLINE';
-  readonly degree: number;
-  readonly knots: readonly number[];
-  readonly controlPoints: readonly Vec2[];
-  /** Present only for rational splines; one per control point. */
-  readonly weights?: readonly number[];
+export interface SplineGeometry extends Spline {
   readonly fitPoints?: readonly Vec2[];
   readonly startTangent?: Vec2;
   readonly endTangent?: Vec2;

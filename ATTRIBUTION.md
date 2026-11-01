@@ -19,6 +19,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |
 | TypeScript, Playwright (`@playwright/test`) | compiler; browser test runner; not shipped | Apache-2.0 | npm |
 | fast-check | property-based tests (dev only); not shipped | MIT | https://github.com/dubzzz/fast-check |
+| @vitest/coverage-v8 (and its MIT/ISC dependencies: @vitest/istanbul-lib-*, ast-v8-to-istanbul, @bcoe/v8-coverage, magicast, semver) | coverage gates in `pnpm test` (dev only); not shipped | MIT | npm |
 | minimatch 10 (transitive, via ESLint) | dev tooling only; not shipped | BlueOak-1.0.0 (permissive, OSI-approved) | npm |
 
 Hatch patterns (`assets/patterns`), linetypes (`assets/linetypes`), plot-style tables (`assets/plotstyles`) and templates (`assets/templates`) are **re-authored** for this project from the published file-format descriptions and are MIT. No file copied from an Autodesk installation is included.
