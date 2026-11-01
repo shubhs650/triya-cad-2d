@@ -1,0 +1,1 @@
+- M1-29 part 9 (#54): acad-ts DWG saves keep the layer "frozen in new viewports" flag, MLINESTYLE element linetypes, block-record insert lists, header arrow blocks, LEADER annotation links and DBCOLOR indexes (patches 0048–0053); the R2000–R2018 sample DWGs now round-trip with zero differences, and the total drops 8,624 → 8,545.
