@@ -6,6 +6,7 @@ import {
   SpatialIndex,
   toleranceForSize,
   type ChangeSet,
+  type DimStyleRecord,
   type DocumentInit,
   type EntityGeometry,
   type EntityInit,
@@ -92,6 +93,8 @@ export interface DrawingExtra {
   }[];
   /** M1-41: text styles. */
   readonly textStyles?: readonly TextStyleRecord[];
+  /** M1-52: dimension styles (LEADER). */
+  readonly dimStyles?: readonly DimStyleRecord[];
 }
 
 /**
@@ -128,6 +131,7 @@ export function drawingInit(entities: EntityInit[], extra: DrawingExtra = {}): D
         },
       ],
       ...(extra.textStyles ? { textStyles: [...extra.textStyles] } : {}),
+      ...(extra.dimStyles ? { dimStyles: [...extra.dimStyles] } : {}),
       blockRecords: [
         { handle: MODEL, name: '*Model_Space', units: 0, explodable: true, scalable: true },
         { handle: PAPER, name: '*Paper_Space', units: 0, explodable: true, scalable: true },

@@ -24,8 +24,9 @@
 // Spline leaders (DXF 170 = 2) are fit-point splines through the vertices, which draw and bound
 // once the kernel interpolates fit points the way AutoCAD does (M1-47); until then the
 // MULTILEADER's bounds are unknown and the spline does not draw.
-// Not yet (M1-52 part 2): block content and its attributes, per-line overrides (LEADER_LINE
-// DXF 93), and the text underline and overline attachments (5, 6, 8 and 10).
+// Block content (DXF 172 = 1) is an INSERT of its block (M1-52 part 2).
+// Not yet: block content attributes, per-line overrides (LEADER_LINE DXF 93), and the text
+// underline and overline attachments (5, 6, 8 and 10); no public corpus file has any of them.
 
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
@@ -33,7 +34,6 @@ import type { Handle } from '../model/handle';
 import type {
   Color,
   EntityGeometry,
-  Entity,
   LinetypeRef,
   Lineweight,
   MTextGeometry,
@@ -70,12 +70,58 @@ function unit(v: Vec2): Vec2 | undefined {
 }
 
 /** A linetype handle as an entity reference: the ByBlock and ByLayer records by their name. */
-function linetypeRef(model: AnnotationTables, h: Handle | undefined): LinetypeRef | undefined {
+export function linetypeRef(
+  model: AnnotationTables,
+  h: Handle | undefined,
+): LinetypeRef | undefined {
   if (h === undefined) return undefined;
   const name = model.tables.linetypes.get(h)?.name.toLowerCase();
   if (name === 'byblock') return 'ByBlock';
   if (name === 'bylayer') return 'ByLayer';
   return h;
+}
+
+/** Properties a leader's parts draw in. */
+type LineProps = Pick<AnnotationPart, 'color' | 'linetype' | 'lineweight'>;
+
+/**
+ * The arrowhead at `tip` of a line whose next point is `next`: closed filled when `block` names
+ * no block of the drawing, else that block. `start` is where the line then begins: one size
+ * back for a closed filled arrow and for block arrowheads not drawn about the tip (`trim`).
+ */
+export function arrowheadParts(
+  tip: Vec2,
+  next: Vec2,
+  size: number,
+  block: Handle | undefined,
+  model: AnnotationTables,
+  props: LineProps,
+  trim = true,
+): { readonly parts: AnnotationPart[]; readonly start: Vec2 } {
+  const back = unit(sub(next, tip));
+  if (!back || !(size > 0)) return { parts: [], start: tip };
+  const def = block === undefined ? undefined : model.blocks.get(block);
+  if (block !== undefined && def) {
+    const geom: EntityGeometry = {
+      kind: 'INSERT',
+      block,
+      position: tip,
+      scale: { x: size, y: size, z: size },
+      rotation: Math.atan2(-back.y, -back.x),
+      attributes: [],
+    };
+    const atTip = !trim || DRAWN_AT_TIP.has(def.name.toLowerCase());
+    return { parts: [{ ...props, geom }], start: atTip ? tip : add(tip, back, size) };
+  }
+  // Closed filled: base one size back, a sixth of the size either side.
+  const base = add(tip, back, size);
+  const n = { x: -back.y * (size / 6), y: back.x * (size / 6) };
+  const left = add(base, n);
+  const right = add(base, n, -1);
+  return {
+    parts: [{ ...props, geom: { kind: 'SOLID', corners: [tip, left, right, right] } }],
+    start: trim ? base : tip,
+  };
 }
 
 /** The MULTILEADER's MTEXT content as an MTEXT, its frame as the MTEXT's background frame. */
@@ -104,6 +150,28 @@ function textPart(g: MultiLeaderGeometry): AnnotationPart | undefined {
 }
 
 /**
+ * The MULTILEADER's block content as an INSERT of that block at its location, scale and
+ * rotation (context data 15, 16, 46) in the content colour (93). Its attribute values (DXF
+ * 330/302) are not drawn yet: no public corpus file has a block-content multileader.
+ */
+function blockPart(g: MultiLeaderGeometry, model: AnnotationTables): AnnotationPart | undefined {
+  const b = g.block;
+  if (!b || g.contentType !== 1 || b.block === undefined || !model.blocks.get(b.block))
+    return undefined;
+  return {
+    geom: {
+      kind: 'INSERT',
+      block: b.block,
+      position: b.position,
+      scale: b.scale,
+      rotation: b.rotation,
+      attributes: [],
+    },
+    color: b.color,
+  };
+}
+
+/**
  * The parts a MULTILEADER draws, in drawing coordinates: for each branch its leader lines
  * (one LWPOLYLINE each, or a fit-point SPLINE) and their arrowheads, one landing, then the
  * content. Leader parts carry the leader line colour, linetype and lineweight.
@@ -120,7 +188,6 @@ export function multiLeaderParts(
   };
   const arrowBlock =
     g.arrowhead ?? (g.style ? model.tables.mleaderStyles.get(g.style)?.arrowhead : undefined);
-  const arrowDef = arrowBlock === undefined ? undefined : model.blocks.get(arrowBlock);
   const size = g.drawnArrowheadSize ?? g.arrowheadSize;
   const horizontal = g.textAttachmentDirection === 0;
   const spline = g.pathType === 2;
@@ -137,30 +204,9 @@ export function multiLeaderParts(
         if (pts.length < 2) continue;
         const tip = pts[0]!;
         const back = unit(sub(pts[1]!, tip));
-        if (back && size > 0) {
-          if (arrowBlock !== undefined && arrowDef) {
-            out.push({
-              ...line,
-              geom: {
-                kind: 'INSERT',
-                block: arrowBlock,
-                position: tip,
-                scale: { x: size, y: size, z: size },
-                rotation: Math.atan2(-back.y, -back.x),
-                attributes: [],
-              },
-            });
-            if (!DRAWN_AT_TIP.has(arrowDef.name.toLowerCase())) pts[0] = add(tip, back, size);
-          } else {
-            // Closed filled: base one size back, a sixth of the size either side.
-            const base = add(tip, back, size);
-            const n = { x: -back.y * (size / 6), y: back.x * (size / 6) };
-            const left = add(base, n);
-            const right = add(base, n, -1);
-            out.push({ ...line, geom: { kind: 'SOLID', corners: [tip, left, right, right] } });
-            pts[0] = base;
-          }
-        }
+        const arrow = arrowheadParts(tip, pts[1]!, size, arrowBlock, model, line);
+        out.push(...arrow.parts);
+        pts[0] = arrow.start;
         if (spline) {
           out.push({
             ...line,
@@ -204,30 +250,7 @@ export function multiLeaderParts(
   }
   const text = textPart(g);
   if (text) out.push(text);
+  const block = blockPart(g, model);
+  if (block) out.push(block);
   return out;
-}
-
-/** The parts of an annotation that draws through parts; undefined for every other entity. */
-export function annotationParts(
-  g: EntityGeometry,
-  model: AnnotationTables,
-): AnnotationPart[] | undefined {
-  return g.kind === 'MULTILEADER' ? multiLeaderParts(g, model) : undefined;
-}
-
-/**
- * A part as an entity of its own, for the renderer's paint and block expansion: the owner's
- * handle, layer and properties, with the part's colour, linetype and lineweight where they
- * are not ByBlock.
- */
-export function partEntity(owner: Entity, part: AnnotationPart): Entity {
-  const { color, linetype, lineweight } = part;
-  return {
-    ...owner,
-    geom: part.geom,
-    type: part.geom.kind,
-    ...(color && color.kind !== 'byBlock' ? { color } : {}),
-    ...(linetype !== undefined && linetype !== 'ByBlock' ? { linetype } : {}),
-    ...(lineweight !== undefined && lineweight !== 'ByBlock' ? { lineweight } : {}),
-  };
 }
