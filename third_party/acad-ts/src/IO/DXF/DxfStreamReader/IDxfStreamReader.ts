@@ -1,5 +1,6 @@
 import { DxfCode } from '../../../DxfCode.js';
 import { GroupCodeValueType } from '../../../GroupCodeValue.js';
+import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
 
 export interface IDxfStreamReader {
   encoding: string;
@@ -17,6 +18,9 @@ export interface IDxfStreamReader {
   valueAsString: string;
 
   valueRaw: string;
+
+  /** When set, every group code read is appended to it (used to keep unknown objects raw). */
+  recorder: DxfRawCode[] | null;
 
   valueAsBool: boolean;
 

@@ -57,6 +57,11 @@ export abstract class DxfStreamWriterBase implements IDxfStreamWriter {
     }
   }
 
+  public writeRaw(code: number, value: unknown): void {
+    this.writeDxfCode(code);
+    this.writeValue(code, value);
+  }
+
   public writeVector(code: DxfCode | number, value: IVector, map?: DxfClassMap | null): void {
     const intCode = typeof code === 'number' ? code : code as number;
     for (let i = 0; i < value.dimension; i++) {

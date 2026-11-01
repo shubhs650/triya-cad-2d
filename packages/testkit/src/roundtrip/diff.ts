@@ -11,7 +11,7 @@
  * Deliberately not compared (not part of the object graph): DXF CLASSES instance counts, DWG
  * summary info, the preview image, and acad-ts' internal reference bookkeeping.
  */
-import { ACadVersion, CadDocument, CadHeader, CadObject } from '@node-projects/acad-ts';
+import { ACadVersion, CadDocument, CadHeader, CadObject, DxfClass } from '@node-projects/acad-ts';
 
 export type DifferenceKind = 'missing' | 'added' | 'type' | 'value' | 'order';
 
@@ -216,6 +216,9 @@ function compareFields(
   report: Report,
 ): void {
   for (const key of fieldKeys(a, b)) {
+    // Instance counts are not part of the object graph (see the file comment). Objects kept raw
+    // carry their DxfClass, and the writer stores the real count where the file may be stale.
+    if (key === 'instanceCount' && a instanceof DxfClass) continue;
     compareValues(
       (a as Record<string, unknown>)[key],
       (b as Record<string, unknown>)[key],

@@ -86,6 +86,8 @@ export function formatRoundTripReport(runs: FileRoundTrip[], title = 'Round-trip
     }
   }
   const order: RoundTripStatus[] = ['clean', 'diff', 'read-error', 'write-error', 'reread-error'];
+  const rawKept = runs.reduce((n, r) => n + (r.result.rawObjects?.kept ?? 0), 0);
+  const rawLost = runs.reduce((n, r) => n + (r.result.rawObjects?.lost.length ?? 0), 0);
   const cell = (s: string): string => s.replace(/\|/g, '\\|').replace(/\n/g, ' ');
   const lines = [
     `# ${title}`,
@@ -93,6 +95,8 @@ export function formatRoundTripReport(runs: FileRoundTrip[], title = 'Round-trip
     'open → save (same version and format) → reopen → `structuralDiff` (docs/TESTING.md §3). Expected end state: every file `clean`.',
     '',
     `**${runs.length} files:** ${order.map((s) => `${s} ${byStatus.get(s) ?? 0}`).join(' · ')}`,
+    '',
+    `**Unknown objects kept raw:** ${rawKept}, lost or changed by the save: ${rawLost}`,
     '',
     '## Differences by object type and property (all files)',
     '',

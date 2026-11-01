@@ -1,8 +1,11 @@
 export abstract class CadReaderConfiguration {
 	ignoreProxyGraphics: boolean = true;
 	failsafe: boolean = true;
-	/** @deprecated Unknown entity payloads are not a substitute for typed entity support. */
+	/**
+	 * Keep entities the reader cannot map as `UnknownEntity` with their raw payload (DXF group
+	 * codes, DWG object data), so that the writers can write them back unchanged.
+	 */
 	keepUnknownEntities: boolean = false;
-	/** @deprecated Unknown object payloads are not written by the writers. */
+	/** Same as `keepUnknownEntities`, for non-graphical objects (`UnknownNonGraphicalObject`). */
 	keepUnknownNonGraphicalObjects: boolean = false;
 }

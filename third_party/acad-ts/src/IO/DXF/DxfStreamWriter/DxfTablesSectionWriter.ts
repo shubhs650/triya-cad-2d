@@ -402,5 +402,9 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
     if (vport.ambientColor.isTrueColor) {
       this._writer.write(421, vport.ambientColor.trueColor);
     }
+    if (vport.sun != null) {
+      this._writer.writeHandle(361, vport.sun);
+      this.holder.objects.push(vport.sun);
+    }
   }
 }

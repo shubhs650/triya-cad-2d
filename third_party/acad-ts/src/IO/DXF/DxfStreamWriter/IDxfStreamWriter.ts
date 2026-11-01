@@ -14,6 +14,9 @@ export interface IDxfStreamWriter {
 
   write(code: DxfCode | number, value: unknown, map?: DxfClassMap | null): void;
 
+  /** Write a group code exactly as a reader returned it: no escaping, no optional or R12 filtering. */
+  writeRaw(code: number, value: unknown): void;
+
   writeVector(code: DxfCode | number, value: IVector, map?: DxfClassMap | null): void;
 
   writeIfNotDefault<T>(code: number, value: T, defaultValue: T, map?: DxfClassMap | null): void;

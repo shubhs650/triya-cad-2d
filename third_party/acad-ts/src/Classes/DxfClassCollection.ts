@@ -7,7 +7,7 @@ import { ProxyFlags } from './ProxyFlags.js';
 
 export class DxfClassCollection implements Iterable<DxfClass> {
 	public get count(): number {
-		return this._entries.size;
+		return this._entries.size + this._sameNameEntries.length;
 	}
 
 	public get isReadOnly(): boolean {
@@ -15,6 +15,12 @@ export class DxfClassCollection implements Iterable<DxfClass> {
 	}
 
 	public _entries: Map<string, DxfClass> = new Map<string, DxfClass>();
+
+	/**
+	 * DWG classes whose DXF name an earlier class already has. AutoCAD Architecture drawings carry
+	 * such pairs; objects use either class number, so both must survive a read and a write.
+	 */
+	private readonly _sameNameEntries: DxfClass[] = [];
 
 	/**
 	 * Adds placeholder class records that do not yet have TypeScript model types.
@@ -108,6 +114,13 @@ export class DxfClassCollection implements Iterable<DxfClass> {
 		this._entries.set(item.dxfName.toUpperCase(), item);
 	}
 
+	/** Keep a class that has the DXF name of an existing one, under its own class number. */
+	public addSameName(item: DxfClass): void {
+		if (!this._sameNameEntries.includes(item)) {
+			this._sameNameEntries.push(item);
+		}
+	}
+
 	public tryAdd(item: DxfClass): boolean {
 		const key = item.dxfName.toUpperCase();
 		if (this._entries.has(key)) {
@@ -139,6 +152,7 @@ export class DxfClassCollection implements Iterable<DxfClass> {
 
 	public clear(): void {
 		this._entries.clear();
+		this._sameNameEntries.length = 0;
 	}
 
 	public containsByName(dxfname: string): boolean {
@@ -160,7 +174,7 @@ export class DxfClassCollection implements Iterable<DxfClass> {
 	}
 
 	public getByClassNumber(id: number): DxfClass | null {
-		for (const dxfClass of this._entries.values()) {
+		for (const dxfClass of this) {
 			if (dxfClass.classNumber === id) return dxfClass;
 		}
 		return null;
@@ -170,18 +184,38 @@ export class DxfClassCollection implements Iterable<DxfClass> {
 		return this._entries.get(dxfname.toUpperCase()) ?? null;
 	}
 
-	public [Symbol.iterator](): Iterator<DxfClass> {
-		return this._entries.values();
+	public *[Symbol.iterator](): Iterator<DxfClass> {
+		yield* this._entries.values();
+		yield* this._sameNameEntries;
 	}
 
 	public remove(item: DxfClass): boolean {
 		return this._entries.delete(item.dxfName.toUpperCase());
 	}
 
+	/**
+	 * Give every class a unique number of 500 or more. A class keeps the number it was read with,
+	 * because objects stored raw refer to it by that number; classes without one (new classes start
+	 * at 500) get the next free number.
+	 */
 	public resetClassNumbers(): void {
+		const used = new Set<number>();
+		const unnumbered: DxfClass[] = [];
+		for (const item of this) {
+			if (item.classNumber >= 500 && !used.has(item.classNumber)) {
+				used.add(item.classNumber);
+			} else {
+				unnumbered.push(item);
+			}
+		}
+
 		let classNumber = 500;
-		for (const item of this._entries.values()) {
-			item.classNumber = classNumber++;
+		for (const item of unnumbered) {
+			while (used.has(classNumber)) {
+				classNumber++;
+			}
+			item.classNumber = classNumber;
+			used.add(classNumber);
 		}
 	}
 

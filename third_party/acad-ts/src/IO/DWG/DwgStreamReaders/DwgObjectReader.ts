@@ -319,6 +319,9 @@ export class DwgObjectReader extends DwgSectionIO {
   private _objectReader!: IDwgStreamReader;
   private _size: number = 0;
   private _textReader!: IDwgStreamReader;
+  /** Type code and R2010+ handle-stream size of the object being read, for raw unknown objects. */
+  private _typeCode: number = 0;
+  private _handleStreamBits: number = 0;
 
   constructor(
     version: ACadVersion,
@@ -400,6 +403,7 @@ export class DwgObjectReader extends DwgSectionIO {
 
     if (this.r2010Plus) {
       const handleSize = this._crcReader.readModularChar();
+      this._handleStreamBits = handleSize;
       const handleSectionOffset = this._crcReader.positionInBits() + sizeInBits - handleSize;
 			this._objectDataEndInBits = handleSectionOffset;
 
@@ -423,8 +427,10 @@ export class DwgObjectReader extends DwgSectionIO {
       this._objectInitialPos = this._objectReader.positionInBits();
       type = this._objectReader.readObjectType();
 			this._objectDataEndInBits = this._crcReader.positionInBits() + sizeInBits;
+      this._handleStreamBits = 0;
     }
 
+    this._typeCode = type as number;
     return type;
   }
 
@@ -1191,6 +1197,9 @@ export class DwgObjectReader extends DwgSectionIO {
     const entity = new UnknownEntity(dxfClass);
     const template = new CadUnknownEntityTemplate(entity);
     this._readCommonEntityData(template);
+    if (this._builder.keepUnknownEntities) {
+      this._keepRawData(entity);
+    }
     return template;
   }
 
@@ -1198,7 +1207,34 @@ export class DwgObjectReader extends DwgSectionIO {
     const obj = new UnknownNonGraphicalObject(dxfClass);
     const template = new CadUnknownNonGraphicalObjectTemplate(obj);
     this._readCommonNonEntityData(template);
+    if (this._builder.keepUnknownNonGraphicalObjects) {
+      this._keepRawData(obj);
+    }
     return template;
+  }
+
+  /**
+   * Keep an unknown object's record so the writer can store it unchanged, and queue every handle
+   * left in its handle stream: objects it owns are reachable only from there.
+   */
+  private _keepRawData(obj: UnknownEntity | UnknownNonGraphicalObject): void {
+    const start = this._objectInitialPos >> 3;
+    obj.rawDwgData = {
+      version: this._version,
+      typeCode: this._typeCode,
+      handle: obj.handle,
+      data: this._memoryStream.slice(start, start + this._size),
+      handleStreamBits: this._handleStreamBits,
+    };
+
+    const end = this._objectInitialPos + (this._size << 3);
+    try {
+      while (this._handlesReader.positionInBits() + 8 <= end) {
+        this._handleReference(obj.handle);
+      }
+    } catch {
+      // Padding after the last handle can decode as a truncated reference; nothing follows it.
+    }
   }
 
   // ==================== BLOCK HEADER ====================
@@ -2044,10 +2080,10 @@ export class DwgObjectReader extends DwgSectionIO {
       template.baseUcsHandle = this._handleReference();
     }
     if (this.r2007Plus) {
-      this._handleReference();
-      this._handleReference();
-      this._handleReference();
-      this._handleReference();
+      this._handleReference(); // background
+      this._handleReference(); // visual style
+      this._handleReference(); // shade plot
+      template.sunHandle = this._handleReference();
     }
     return template;
   }
@@ -2436,7 +2472,10 @@ export class DwgObjectReader extends DwgSectionIO {
     const solid = new Solid3D();
     const template = new CadSolid3DTemplate(solid);
     this._readModelerGeometry(template);
-    if (this.r2007Plus) template.historyHandle = this._mergedReaders.handleReference();
+    if (this.r2007Plus) {
+      template.historyHandle = this._mergedReaders.handleReference();
+      this._enqueueHandle(template.historyHandle);
+    }
     return template;
   }
 
@@ -2698,9 +2737,13 @@ export class DwgObjectReader extends DwgSectionIO {
           xRecord.createEntry(code, this._objectReader.readBytes(this._objectReader.readByte()));
           break;
         case GroupCodeValueType.ObjectId:
-        case GroupCodeValueType.ExtendedDataHandle:
-          template.addHandleReference(code, this._objectReader.readRawULong());
+        case GroupCodeValueType.ExtendedDataHandle: {
+          // Queue the referenced object: an XRECORD may be its only owner.
+          const handle = this._objectReader.readRawULong();
+          this._enqueueHandle(handle);
+          template.addHandleReference(code, handle);
           break;
+        }
         default:
           this.notify(`Unidentified GroupCodeValueType ${code} for XRecord [${xRecord.handle}]`, NotificationType.Warning);
           break;

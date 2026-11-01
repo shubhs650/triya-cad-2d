@@ -17,6 +17,7 @@ import { LinearUnitFormat } from '../../../Types/Units/LinearUnitFormat.js';
 import { AngularUnitFormat } from '../../../Types/Units/AngularUnitFormat.js';
 import { UnitsType } from '../../../Types/Units/UnitsType.js';
 import { LineWeightType } from '../../../Types/LineWeightType.js';
+import { CadUtils } from '../../../CadUtils.js';
 import { NotificationType } from '../../NotificationEventHandler.js';
 import { DwgSectionIO } from '../DwgSectionIO.js';
 import { DwgSectionDefinition } from '../FileHeaders/DwgSectionDefinition.js';
@@ -522,7 +523,8 @@ export class DwgHeaderReader extends DwgSectionIO {
 
 		if (this.r2000Plus) {
 			const flags: number = this._reader.readBitLong();
-			this._header.currentEntityLineWeight = (flags & 0x1F) as LineWeightType;
+			// The low 5 bits are a lineweight index (as on entities), not a lineweight value.
+			this._header.currentEntityLineWeight = CadUtils.toValue(flags & 0x1F);
 			// ODA spec 3.0 §9.4: ENDCAPS/JOINSTYLE are shifted fields, LWDISPLAY and XEDIT are stored
 			// inverted, the rest are single bits. DwgHeaderWriter already encodes them this way.
 			this._header.endCaps = (flags & 0x60) >> 5;
