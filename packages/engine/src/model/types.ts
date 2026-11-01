@@ -544,6 +544,48 @@ export interface MultiLeaderGeometry extends PlanarProps {
   readonly branches: readonly MultiLeaderBranch[];
 }
 
+/** One cell of an ACAD_TABLE, in row-major order. */
+export interface TableCell {
+  /** DXF 171: 1 text, 2 block. */
+  readonly type: 'text' | 'block';
+  /** The cell's value as text (DXF 1 with its 2 chunks), with MTEXT format codes. */
+  readonly text: string;
+  /** BLOCK_RECORD handle of a block cell (DXF 340). */
+  readonly block?: Handle;
+  /**
+   * Rows and columns the cell spans when it heads a merged range. DXF states them per cell
+   * (176 / 175); DWG states the merged ranges, from which they are derived.
+   */
+  readonly rowSpan: number;
+  readonly columnSpan: number;
+  /** Covered by a merged range headed by another cell (DXF 173). */
+  readonly merged: boolean;
+  /** DXF 145, radians. */
+  readonly rotation: number;
+}
+
+/**
+ * ACAD_TABLE. The anonymous `*T` block it references draws the table as AutoCAD last
+ * regenerated it; the rows, columns and cells are its editable content. The insertion point
+ * is OCS, as for INSERT; the horizontal direction (DXF 11) is WCS, as for MTEXT.
+ */
+export interface TableGeometry extends PlanarProps {
+  readonly kind: 'ACAD_TABLE';
+  /** TABLESTYLE handle (DXF 342). */
+  readonly style?: Handle;
+  /** BLOCK_RECORD handle of the `*T` block (DXF 343 / 2). */
+  readonly block?: Handle;
+  /** DXF 10. */
+  readonly position: Vec2;
+  /** DXF 11. */
+  readonly direction: Vec2;
+  /** DXF 141 / 142. */
+  readonly rowHeights: readonly number[];
+  readonly columnWidths: readonly number[];
+  /** `cells[row][column]`. */
+  readonly cells: readonly (readonly TableCell[])[];
+}
+
 /**
  * One edge of a HATCH boundary loop, in the hatch's plane (plan view, DEC-039). Arc and
  * ellipse angles keep the DXF convention: with `ccw` false AutoCAD stores the clockwise
@@ -651,6 +693,7 @@ export type EntityGeometry =
   | LeaderGeometry
   | ToleranceGeometry
   | MultiLeaderGeometry
+  | TableGeometry
   | HatchGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */
