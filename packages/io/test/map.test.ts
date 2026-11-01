@@ -24,7 +24,7 @@ import {
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
 import { mapHeader, mapTables } from '../src/index';
-import { mapColor, mapEntityColor, mapLineweight } from '../src/map/common';
+import { aciOfTrueColor, mapColor, mapEntityColor, mapLineweight } from '../src/map/common';
 import { DIMVARS } from '../src/map/dimvars';
 
 function docWithLayer(name: string): { doc: CadDocument; layer: Layer } {
@@ -43,6 +43,47 @@ describe('mapColor (DXF 62/420)', () => {
     expect(mapColor(Color.byBlock)).toEqual({ kind: 'byBlock' });
     expect(mapColor(new Color(1))).toEqual({ kind: 'aci', index: 1 });
     expect(mapColor(new Color(10, 20, 30))).toEqual({ kind: 'rgb', r: 10, g: 20, b: 30 });
+  });
+});
+
+// The ACI AutoCAD writes for a true colour (DXF 62 beside 420, DIMSTYLE 176–178 and R2000 saves).
+// Every true colour in the public corpus with the ACI AutoCAD stored for it (M1-55).
+const AUTOCAD_TRUE_COLOR_ACI: readonly (readonly [number, number, number, number])[] = [
+  [241, 235, 31, 2],
+  [242, 103, 34, 30],
+  [252, 193, 135, 31],
+  [226, 144, 0, 42],
+  [52, 201, 24, 82],
+  [44, 136, 27, 86],
+  [19, 155, 72, 114],
+  [17, 146, 238, 150],
+  [80, 179, 255, 151],
+  [128, 61, 194, 183],
+  [155, 66, 236, 193],
+  [169, 83, 160, 215],
+  [245, 10, 147, 230],
+  [205, 32, 39, 242],
+  [125, 33, 79, 247],
+  [0, 0, 0, 18],
+  [120, 120, 120, 8],
+  [128, 128, 128, 8],
+  [255, 255, 255, 7],
+  [0, 0, 255, 5],
+  [0, 255, 255, 4],
+];
+
+describe('aciOfTrueColor', () => {
+  it('picks the ACI AutoCAD stores for each corpus true colour', () => {
+    const got = AUTOCAD_TRUE_COLOR_ACI.map(([r, g, b]) => [r, g, b, aciOfTrueColor(r, g, b)]);
+    expect(got).toEqual(AUTOCAD_TRUE_COLOR_ACI);
+  });
+
+  it('never returns ByBlock or ByLayer', () => {
+    for (let v = 0; v < 256; v += 15) {
+      const i = aciOfTrueColor(v, 255 - v, v / 2);
+      expect(i).toBeGreaterThanOrEqual(1);
+      expect(i).toBeLessThanOrEqual(255);
+    }
   });
 });
 
@@ -185,11 +226,33 @@ describe('dimension styles', () => {
       DIMBLK: arrow.handle.toString(16).toUpperCase(),
       DIMTXSTY: style.style.handle.toString(16).toUpperCase(),
     });
-    // A true colour keeps its nearest ACI number, never acad-ts's −1.
-    expect(vars['DIMCLRT']).toBeGreaterThan(0);
+    // A true colour keeps the ACI AutoCAD writes for it in DXF, never acad-ts's −1.
+    expect(vars['DIMCLRT']).toBe(aciOfTrueColor(0, 128, 255));
     // The default arrowhead (no block) and a ByBlock dimension linetype point at nothing.
     expect(vars).not.toHaveProperty('DIMBLK1');
     expect(vars).not.toHaveProperty('DIMLTYPE');
+  });
+
+  it('keeps a true DIMVAR colour beside the ACI that DXF stores for it', () => {
+    // The acadsharp `custom_dim_style` colours as its R2004+ DWGs hold them (M1-55).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const style = new DimensionStyle('CUSTOM');
+    doc.dimensionStyles?.add(style);
+    style.dimensionLineColor = new Color(44, 136, 27);
+    style.extensionLineColor = new Color(128, 61, 194);
+    style.textColor = new Color(80, 179, 255);
+    style.textBackgroundColor = new Color(3);
+    const rec = mapTables(doc).dimStyles.find((d) => d.name === 'CUSTOM')!;
+    expect(rec.vars).toMatchObject({ DIMCLRD: 86, DIMCLRE: 183, DIMCLRT: 151, DIMTFILLCLR: 3 });
+    expect(rec.trueColors).toEqual({
+      DIMCLRD: { kind: 'rgb', r: 44, g: 136, b: 27 },
+      DIMCLRE: { kind: 'rgb', r: 128, g: 61, b: 194 },
+      DIMCLRT: { kind: 'rgb', r: 80, g: 179, b: 255 },
+    });
+    // A style without true colours carries no map.
+    expect(mapTables(doc).dimStyles.find((d) => d.name === 'Standard')).not.toHaveProperty(
+      'trueColors',
+    );
   });
 });
 
@@ -286,10 +349,13 @@ describe('mapHeader', () => {
     expect(meta.measurement).toBe('metric');
   });
 
-  it('gives a true-colour variable its nearest ACI number', () => {
+  it('gives a true-colour variable the ACI AutoCAD writes for it', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     doc.header!.currentEntityColor = new Color(255, 0, 0);
+    doc.header!.dimensionLineColor = new Color(44, 136, 27);
 
     expect(mapHeader(doc).header.get('$CECOLOR')).toBe(1);
+    // acad-ts's own approximation gives 1 here (M1-43); AutoCAD writes 86.
+    expect(mapHeader(doc).header.get('$DIMCLRD')).toBe(86);
   });
 });

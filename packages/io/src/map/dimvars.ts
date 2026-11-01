@@ -2,9 +2,9 @@
 // for the DIMSTYLE table (https://help.autodesk.com/view/OARX/2024/ENU/?guid=GUID-F2FAD36F-0CE3-4943-9DAD-A9BCD2AE81DA);
 // each one is read from the acad-ts DimensionStyle property that carries that group.
 
-import type { DimensionStyle } from '@node-projects/acad-ts';
-import type { DimStyleRecord, DimVarValue } from '@triya/engine';
-import { common, ref } from './common';
+import type { Color as AcadColor, DimensionStyle } from '@node-projects/acad-ts';
+import type { Color, DimStyleRecord, DimVarValue } from '@triya/engine';
+import { colorNumber, common, mapColor, ref } from './common';
 
 type Kind = 'value' | 'color' | 'ref';
 type Getter = (s: DimensionStyle) => unknown;
@@ -95,23 +95,27 @@ export const DIMVARS: readonly (readonly [string, number, Kind, Getter])[] = [
 
 function dimVar(kind: Kind, v: unknown): DimVarValue | undefined {
   if (kind === 'ref') return ref(v as { handle: number } | null);
-  if (kind === 'color') {
-    const c = v as { isTrueColor: boolean; index: number; getApproxIndex(): number };
-    return c.isTrueColor ? c.getApproxIndex() : c.index;
-  }
+  if (kind === 'color') return colorNumber(v as AcadColor);
   return typeof v === 'number' || typeof v === 'string' || typeof v === 'boolean' ? v : undefined;
 }
 
 export function dimStyle(s: DimensionStyle): DimStyleRecord {
   const vars: Record<string, DimVarValue> = {};
+  // R2004+ DWGs hold DIMSTYLE colours as AcCmColor, which may be a true colour; DXF only has the
+  // ACI AutoCAD writes for it, which `vars` keeps (M1-55).
+  const trueColors: Record<string, Color> = {};
   for (const [name, , kind, get] of DIMVARS) {
-    const v = dimVar(kind, get(s));
+    const raw = get(s);
+    const v = dimVar(kind, raw);
     if (v !== undefined) vars[name] = v;
+    if (kind === 'color' && (raw as AcadColor).isTrueColor)
+      trueColors[name] = mapColor(raw as AcadColor);
   }
   return {
     ...common(s),
     name: s.name,
     ...(s.flags ? { flags: s.flags as number } : {}),
     vars,
+    ...(Object.keys(trueColors).length ? { trueColors } : {}),
   };
 }
