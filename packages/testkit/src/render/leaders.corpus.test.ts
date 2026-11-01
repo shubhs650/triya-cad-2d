@@ -1,6 +1,7 @@
-// M1-52 part 1 on the public corpus: every MULTILEADER draws its parts (lines, landing,
-// arrowhead, text with the stand-in font) and the spatial index bounds it by exactly what it
-// draws, so culling never drops a leader and picking never keeps one whose drawing is elsewhere.
+// M1-52 on the public corpus: every MULTILEADER draws its parts (lines, landing, arrowhead,
+// text with the stand-in font) and every LEADER its path and arrowhead, and the spatial index
+// bounds each by exactly what it draws, so culling never drops a leader and picking never keeps
+// one whose drawing is elsewhere.
 // The comparison against AutoCAD plots is the task's acceptance with M1-24 and M1-26.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -21,14 +22,14 @@ import { squareFont } from './square-font.ts';
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 
-describe('multileaders on the public corpus (M1-52)', () => {
+describe('leaders on the public corpus (M1-52)', () => {
   const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 
-  it('draws every MULTILEADER and bounds it by what it draws', () => {
+  it('draws every MULTILEADER and LEADER and bounds it by what it draws', () => {
     const fonts = new FontBook({ alternate: 'square' });
     fonts.addShx('square', parseShx(squareFont()));
     const wrong: string[] = [];
-    const counts = { drawn: 0, arrows: 0, texts: 0 };
+    const counts = { drawn: 0, arrows: 0, texts: 0, leaders: 0, leaderArrows: 0 };
     for (const f of readable) {
       let doc;
       try {
@@ -50,14 +51,20 @@ describe('multileaders on the public corpus (M1-52)', () => {
       for (const block of model.blocks.keys()) {
         for (const id of model.blockEntities(block)) {
           const e = model.entity(id);
-          if (e?.geom.kind !== 'MULTILEADER') continue;
+          if (e?.geom.kind !== 'MULTILEADER' && e?.geom.kind !== 'LEADER') continue;
           const { prims } = expandInsert(e, src, { dashes: false });
           if (prims.length === 0) {
             wrong.push(`${f.path} ${e.handle}: draws nothing`);
             continue;
           }
-          counts.drawn++;
-          if (prims.some((p) => p.kind === 'fill')) counts.arrows++;
+          const filled = prims.some((p) => p.kind === 'fill');
+          if (e.geom.kind === 'LEADER') {
+            counts.leaders++;
+            if (filled) counts.leaderArrows++;
+          } else {
+            counts.drawn++;
+            if (filled) counts.arrows++;
+          }
           if (prims.some((p) => p.kind !== 'point' && p.kind !== 'infinite' && p.text))
             counts.texts++;
           const drawn = primitivesBox(prims)!;
@@ -86,5 +93,8 @@ describe('multileaders on the public corpus (M1-52)', () => {
     expect(counts.drawn).toBeGreaterThanOrEqual(302);
     expect(counts.arrows).toBe(counts.drawn);
     expect(counts.texts).toBe(counts.drawn);
+    // M1-52 part 2: the 20 corpus LEADERs, 8 of them with an arrowhead (the DWGs).
+    expect(counts.leaders).toBeGreaterThanOrEqual(20);
+    expect(counts.leaderArrows).toBeGreaterThanOrEqual(8);
   });
 });

@@ -208,6 +208,35 @@ describe('multiLeaderParts', () => {
     expect(framed[3]!.geom).toMatchObject({ background: { flags: 16, scale: 1.2 } });
   });
 
+  it('inserts block content at its location, scale and rotation in its colour', () => {
+    const parts = multiLeaderParts(
+      noText({
+        contentType: 1,
+        block: {
+          block: CUSTOM,
+          position: { x: 14, y: 10 },
+          scale: { x: 2, y: 2, z: 1 },
+          rotation: 0.5,
+          color: { kind: 'aci', index: 3 },
+        },
+      }),
+      model(),
+    );
+    expect(parts.at(-1)).toEqual({
+      geom: {
+        kind: 'INSERT',
+        block: CUSTOM,
+        position: { x: 14, y: 10 },
+        scale: { x: 2, y: 2, z: 1 },
+        rotation: 0.5,
+        attributes: [],
+      },
+      color: { kind: 'aci', index: 3 },
+    });
+    // Text content draws only as text content (DXF 172 = 2), block content only as block (1).
+    expect(kinds(multiLeaderParts(mleader({ contentType: 1 }), model())).at(-1)).toBe('LWPOLYLINE');
+  });
+
   it('leaves spline leaders as fit-point splines', () => {
     const parts = multiLeaderParts(mleader({ pathType: 2 }), model());
     expect(kinds(parts)).toEqual(['SOLID', 'SPLINE', 'MTEXT']);

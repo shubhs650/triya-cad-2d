@@ -5,19 +5,21 @@
 // Text has no box here: widths must be exact (opentype.js or stroke-font metrics, CLAUDE.md),
 // and the engine cannot see fonts. Text and annotations are "unknown", which queries always
 // return, until the caller injects exact bounds through `annotationBounds` (the renderer's
-// `textBounds`, M1-35). A MULTILEADER is the union of its parts (`multiLeaderParts`, M1-52),
+// `textBounds`, M1-35). A LEADER or MULTILEADER is the union of its parts (`annotationParts`, M1-52),
 // its text through that same provider.
 
 import { boxOf, curveBounds, unionBox, type Box } from '../geom/bounds';
 import type { Polyline, Spline } from '../geom/curves';
 import { validateSpline } from '../geom/nurbs';
 import type { Tolerance } from '../geom/tolerance';
-import { annotationParts, type AnnotationTables } from '../annotation/multileader';
+import type { AnnotationTables } from '../annotation/multileader';
+import { annotationParts } from '../annotation/parts';
 import type { Vec2 } from '../geom/types';
 import type { Handle } from '../model/handle';
 import type {
   AttdefGeometry,
   DimensionGeometry,
+  Entity,
   EntityGeometry,
   HatchGeometry,
   ImageGeometry,
@@ -73,7 +75,7 @@ export interface BoundsContext {
   /** A block's base point; the origin when not given. */
   basePoint?(block: Handle): Vec2 | undefined;
   readonly annotationBounds?: AnnotationBounds | undefined;
-  /** The drawing's tables and blocks, for annotations bounded by their parts (MULTILEADER). */
+  /** The drawing's tables and blocks, for annotations bounded by their parts (LEADER, MULTILEADER). */
   readonly tables?: AnnotationTables | undefined;
 }
 
@@ -282,7 +284,12 @@ function underlayBounds(geom: UnderlayGeometry): EntityBounds {
   );
 }
 
-export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBounds {
+/** `xdata` is the entity's own, for annotations whose style it overrides (a LEADER's DSTYLE). */
+export function entityBounds(
+  geom: EntityGeometry,
+  ctx: BoundsContext,
+  xdata?: Entity['xdata'],
+): EntityBounds {
   switch (geom.kind) {
     case 'LINE':
     case 'CIRCLE':
@@ -326,14 +333,14 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
     case 'TEXT':
     case 'MTEXT':
     case 'ATTDEF':
-    case 'TOLERANCE':
-    case 'LEADER': {
+    case 'TOLERANCE': {
       const b = annotation(geom, ctx);
       return b ? boxed(b) : UNKNOWN;
     }
+    case 'LEADER':
     case 'MULTILEADER': {
       // The union of what it draws (M1-52): lines, arrowheads, landing, content.
-      const parts = ctx.tables ? annotationParts(geom, ctx.tables) : undefined;
+      const parts = ctx.tables ? annotationParts(geom, ctx.tables, xdata) : undefined;
       if (!parts) return UNKNOWN;
       let out: Box | undefined;
       for (const p of parts) {

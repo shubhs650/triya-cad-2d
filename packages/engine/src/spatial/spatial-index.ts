@@ -27,7 +27,7 @@ import {
   type EntityBounds,
 } from './entity-bounds';
 import { PackedRTree } from './packed-tree';
-import { annotationParts } from '../annotation/multileader';
+import { annotationParts } from '../annotation/parts';
 
 /** Kinds whose bounds use `annotationBounds`: themselves, or their attributes (INSERT). */
 const ANNOTATION_KINDS: ReadonlySet<string> = new Set([
@@ -147,7 +147,7 @@ function referencedBlocks(e: Entity, model: DocumentModel): readonly Handle[] {
   if (g.kind === 'INSERT') return [g.block];
   if (g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'ACAD_TABLE')
     return g.block === undefined ? [] : [g.block];
-  const parts = annotationParts(g, model);
+  const parts = annotationParts(g, model, e.xdata);
   if (!parts) return [];
   return [...new Set(parts.flatMap((p) => (p.geom.kind === 'INSERT' ? [p.geom.block] : [])))];
 }
@@ -335,7 +335,7 @@ export class SpatialIndex {
     const e = this.#model.entity(id);
     if (!e) return;
     this.#refreshing.add(id);
-    const b = entityBounds(e.geom, this.#ctx);
+    const b = entityBounds(e.geom, this.#ctx, e.xdata);
     this.#refreshing.delete(id);
     this.#tree(e.owner).set(id, b);
   }

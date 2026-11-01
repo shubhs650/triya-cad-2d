@@ -182,7 +182,8 @@ export function referenceOf(
  * annotation drawn as parts (a MULTILEADER, M1-52).
  */
 export function expands(e: Entity, def: (block: Handle) => BlockDefinition | undefined): boolean {
-  return e.geom.kind === 'MULTILEADER' || referenceOf(e, def) !== undefined;
+  const k = e.geom.kind;
+  return k === 'MULTILEADER' || k === 'LEADER' || referenceOf(e, def) !== undefined;
 }
 
 /** What an INSERT hands its block's entities, or undefined when the whole reference is hidden. */
@@ -247,7 +248,7 @@ export function expandInsert(
     if (depth > MAX_DEPTH) return;
     // A MULTILEADER draws its parts where it stands, each painted as an entity of its own
     // (M1-52); its arrowhead blocks expand as inserts.
-    const parts = annotationParts(e.geom, src.model);
+    const parts = annotationParts(e.geom, src.model, e.xdata);
     if (parts) {
       for (const part of parts) draw(partEntity(e, part), m, outer, depth);
       return;
