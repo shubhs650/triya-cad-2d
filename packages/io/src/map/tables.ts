@@ -4,16 +4,19 @@
 // fields the renderer and commands read. What a record does not model stays in the retained
 // acad-ts original (the record's `raw` link), so nothing here can lose data on save.
 
-import type {
-  BlockRecord,
-  CadDocument,
-  CadObject,
-  Layer,
-  LineType,
-  TextStyle,
-  UCS,
-  View,
-  VPort,
+import {
+  CadDictionary,
+  MultiLeaderStyle,
+  TableStyle,
+  type BlockRecord,
+  type CadDocument,
+  type CadObject,
+  type Layer,
+  type LineType,
+  type TextStyle,
+  type UCS,
+  type View,
+  type VPort,
 } from '@node-projects/acad-ts';
 import type {
   BlockTableRecord,
@@ -31,6 +34,8 @@ import type {
   VportRecord,
 } from '@triya/engine';
 import { common, hex, mapColor, mapLineweight, ref, vec2, vec3 } from './common';
+import { dimStyle } from './dimvars';
+import { mleaderStyle, tableStyle } from './styles';
 
 export type MappedTables = { [K in TableName]: TableRecords[K][] };
 
@@ -202,6 +207,21 @@ function vport(p: VPort): VportRecord {
   };
 }
 
+/**
+ * Multileader and table styles are entries of the ACAD_MLEADERSTYLE and ACAD_TABLESTYLE
+ * dictionaries. acad-ts does not fill `doc.mLeaderStyles`/`doc.tableStyles` on read, so they
+ * are taken from the named-object dictionary, as AutoCAD finds them.
+ */
+function styleEntries<T>(
+  doc: CadDocument,
+  key: string,
+  type: abstract new (...args: never[]) => T,
+): T[] {
+  const dict = doc.rootDictionary?.get(key);
+  if (!(dict instanceof CadDictionary)) return [];
+  return [...dict].filter((o): o is T & typeof o => o instanceof type);
+}
+
 const each = <T, R>(items: Iterable<T> | null | undefined, f: (t: T) => R): R[] =>
   [...(items ?? [])].map(f);
 
@@ -211,10 +231,12 @@ export function mapTables(doc: CadDocument): MappedTables {
     layers: each(doc.layers, layer),
     linetypes: each(doc.lineTypes, linetype),
     textStyles: each(doc.textStyles, textStyle),
-    // Dimension, multileader and table styles get their fields in M1-03 part 2.
-    dimStyles: each(doc.dimensionStyles, base),
-    mleaderStyles: each(doc.mLeaderStyles, base),
-    tableStyles: each(doc.tableStyles, base),
+    dimStyles: each(doc.dimensionStyles, dimStyle),
+    mleaderStyles: each(
+      styleEntries(doc, CadDictionary.acadMLeaderStyle, MultiLeaderStyle),
+      mleaderStyle,
+    ),
+    tableStyles: each(styleEntries(doc, CadDictionary.acadTableStyle, TableStyle), tableStyle),
     appIds: each(doc.appIds, base),
     views: each(doc.views, view),
     ucs: each(doc.uCSs, ucs),

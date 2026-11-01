@@ -1,6 +1,7 @@
 // An independent reader for ASCII DXF, used as the oracle for the AcadToTriya mapping tests:
 // the values a file states must come out of acad-ts + AcadToTriya unchanged. It only splits
-// the HEADER and TABLES sections into group-code pairs; it knows nothing of acad-ts.
+// the HEADER and TABLES sections, and the style objects of the OBJECTS section, into
+// group-code pairs; it knows nothing of acad-ts.
 
 export type Group = readonly [code: number, value: string];
 
@@ -14,7 +15,12 @@ export interface DxfOracle {
   /** `$NAME` → the groups that follow it. */
   readonly header: ReadonlyMap<string, readonly Group[]>;
   readonly records: readonly DxfRecord[];
+  /** OBJECTS-section records of the types in STYLE_OBJECTS. */
+  readonly objects: readonly DxfRecord[];
 }
+
+/** The OBJECTS-section types Triya keeps beside the tables. */
+export const STYLE_OBJECTS: ReadonlySet<string> = new Set(['MLEADERSTYLE', 'TABLESTYLE']);
 
 export function readDxfOracle(bytes: Uint8Array): DxfOracle {
   const lines = new TextDecoder('latin1').decode(bytes).split(/\r?\n/);
@@ -25,6 +31,7 @@ export function readDxfOracle(bytes: Uint8Array): DxfOracle {
   }
   const header = new Map<string, Group[]>();
   const records: DxfRecord[] = [];
+  const objects: DxfRecord[] = [];
   let section = '';
   let current: Group[] | undefined;
   for (let i = 0; i < groups.length; i++) {
@@ -49,9 +56,14 @@ export function readDxfOracle(bytes: Uint8Array): DxfOracle {
         if (value !== 'TABLE' && value !== 'ENDTAB')
           records.push({ type: value, groups: (current = []) });
       } else current?.push([code, value]);
+    } else if (section === 'OBJECTS') {
+      if (code === 0) {
+        current = undefined;
+        if (STYLE_OBJECTS.has(value)) objects.push({ type: value, groups: (current = []) });
+      } else current?.push([code, value]);
     }
   }
-  return { header, records };
+  return { header, records, objects };
 }
 
 /** First value of a group code, if present. */

@@ -58,14 +58,14 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | LAYER (+ VP overrides via xdata/dictionaries) | ✓ record (VP overrides not yet) | | | |
 | LTYPE (simple + complex) | ✓ | | | |
 | STYLE (text styles, SHX and TTF, bigfont) | ✓ | | | |
-| DIMSTYLE (all DIMVARS + overrides via xdata) | | | | |
+| DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet) | | | |
 | APPID | ✓ | | | |
 | BLOCK_RECORD (+ BLOCK/ENDBLK, *Model_Space, *Paper_Space*, *D, *U, *X, *T) | ✓ record (BLOCK/ENDBLK with M1-04) | | | |
 | VPORT | ✓ | | | |
 | VIEW | ✓ | | | |
 | UCS | ✓ | | | |
 
-Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, `BLOCK_RECORD` 70 insert units, nameless shape `STYLE` records), which M1-32 closes. DIMSTYLE, MLEADERSTYLE and TABLESTYLE get their fields in M1-03 part 2. The header is mapped too: every variable acad-ts knows is carried by DXF name, compared the same way; 32 variables acad-ts does not know are M1-32.
+Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, `BLOCK_RECORD` 70 insert units, nameless shape `STYLE` records, R12 `DIMBLK` names, `TABLESTYLE` border visibility), which M1-32 closes. MLEADERSTYLE and TABLESTYLE objects are checked the same way. The header is mapped too: every variable acad-ts knows is carried by DXF name, compared the same way; 32 variables acad-ts does not know are M1-32.
 
 ## Objects (non-graphical)
 
@@ -73,7 +73,7 @@ Read ticks for tables (M1-03) mean every field of the record compares equal to a
 |---|---|---|---|---|
 | DICTIONARY / ACDBDICTIONARYWDFLT | | | | |
 | LAYOUT + PLOTSETTINGS | | | | |
-| MLEADERSTYLE / TABLESTYLE / MLINESTYLE | | | | |
+| MLEADERSTYLE / TABLESTYLE / MLINESTYLE | ✓ MLEADERSTYLE, TABLESTYLE (MLINESTYLE not yet) | | | |
 | SCALE (ACAD_SCALELIST) | | | | |
 | LAYER_FILTER / LAYER_INDEX / ACAD_LAYERSTATES | | | | |
 | GROUP | | | | |
