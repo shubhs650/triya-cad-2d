@@ -10,8 +10,9 @@
 // Text and shapes inside complex linetypes leave their gap empty until text and shape
 // rendering exist (M1-45).
 //
-// Kinds drawn by later tasks yield nothing here, each noted where it falls through: INSERT
-// (M1-14), DIMENSION (M1-15), pattern and gradient hatches (M1-16), tables (M1-17),
+// INSERT and DIMENSION yield nothing here: the renderer draws them from their blocks
+// (`expandInsert`, M1-14 and M1-15). Kinds drawn by later tasks yield nothing either, each
+// noted where it falls through: pattern and gradient hatches (M1-16), tables (M1-17),
 // viewports (M1-18), images and underlays (M1-19/20), text and MTEXT (M1-41).
 
 import {

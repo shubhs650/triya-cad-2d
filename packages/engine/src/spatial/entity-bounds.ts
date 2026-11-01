@@ -8,7 +8,8 @@
 // text engine lands, roadmap M1-35).
 
 import { boxOf, curveBounds, unionBox, type Box } from '../geom/bounds';
-import type { Polyline } from '../geom/curves';
+import type { Polyline, Spline } from '../geom/curves';
+import { validateSpline } from '../geom/nurbs';
 import type { Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
 import type { Handle } from '../model/handle';
@@ -72,6 +73,16 @@ export interface BoundsContext {
 }
 
 const UNKNOWN: EntityBounds = Object.freeze({ kind: 'unknown' });
+
+/** Whether a spline's degree, knots and control points form a NURBS curve to evaluate. */
+function isNurbs(s: Spline): boolean {
+  try {
+    validateSpline(s);
+    return true;
+  } catch {
+    return false;
+  }
+}
 const EMPTY: EntityBounds = Object.freeze({ kind: 'empty' });
 const boxed = (box: Box): EntityBounds => ({ kind: 'box', box });
 const isEmptyBox = (b: Box): boolean => b.minX > b.maxX || b.minY > b.maxY;
@@ -261,8 +272,11 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
     case 'CIRCLE':
     case 'ARC':
     case 'ELLIPSE':
-    case 'SPLINE':
       return boxed(curveBounds(geom, ctx.tol));
+    case 'SPLINE':
+      // A spline stored only as fit points has no NURBS to bound until the kernel computes
+      // AutoCAD's interpolation (M1-47); unknown keeps every query returning it.
+      return isNurbs(geom) ? boxed(curveBounds(geom, ctx.tol)) : UNKNOWN;
     case 'XLINE':
     case 'RAY': {
       const len = Math.hypot(geom.direction.x, geom.direction.y);

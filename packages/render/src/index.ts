@@ -9,6 +9,7 @@ export {
   applyAffine,
   composeAffine,
   expandInsert,
+  referenceOf,
   insertTransforms,
   transformPath,
   transformPrimitive,

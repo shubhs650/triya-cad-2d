@@ -31,7 +31,7 @@ import type {
   SortEntsTable,
   SpatialIndex,
 } from '@triya/engine';
-import { expandInsert, type BlockSource } from './blocks';
+import { expandInsert, referenceOf, type BlockSource } from './blocks';
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { patternLength } from './style/pattern';
@@ -122,7 +122,7 @@ interface CacheEntry {
     readonly build: () => readonly RenderPrimitive[];
     built?: readonly RenderPrimitive[];
   };
-  /** An INSERT: every block definition it draws from (M1-14). */
+  /** An INSERT or a dimension: every block definition it draws from (M1-14, M1-15). */
   readonly blocks?: ReadonlySet<Handle>;
 }
 
@@ -156,8 +156,9 @@ export class Canvas2DRenderer implements Renderer {
   readonly #scene: Surface;
   readonly #transientLayer: Surface;
   readonly #paint: PaintFunction;
-  /** How INSERTs in the block shown expand (M1-14). */
+  /** How INSERTs and dimensions in the block shown expand (M1-14, M1-15). */
   readonly #blockSource: BlockSource;
+  readonly #blockDef = (block: Handle) => this.#model.blocks.get(block);
   /** Block definition → its entities in draw order, built on demand. */
   #blockOrders = new Map<Handle, readonly EntityId[]>();
   /** Block definition → its SORTENTSTABLE, built on demand. */
@@ -365,7 +366,7 @@ export class Canvas2DRenderer implements Renderer {
     if (!e) return;
     let prims: readonly RenderPrimitive[];
     let extra: Pick<CacheEntry, 'dashes' | 'blocks'>;
-    if (e.geom.kind === 'INSERT') {
+    if (referenceOf(e, this.#blockDef)) {
       // The reference decides its own visibility: an off layer still shows its contents on
       // other layers.
       const x = expandInsert(e, this.#blockSource, { dashes: false });
