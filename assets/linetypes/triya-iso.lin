@@ -1,0 +1,36 @@
+;; Triya CAD 2D bundled linetypes (MIT, see LICENSE).
+;; Authored for Triya from the line type definitions of ISO 128-20 (basic line types 02-15),
+;; written in the .lin format AutoCAD documents. Not derived from any Autodesk file.
+;;
+;; Lengths are in multiples of the line width d, for d = 1 mm: set LTSCALE (or the object's
+;; linetype scale) to the line width in drawing units, e.g. 0.35 for a 0.35 mm pen in a
+;; drawing in millimetres. Dots are drawn as 0-length dashes, which take the line's width.
+;;
+*TRIYA_ISO02,ISO 02 dashed
+A,12,-3
+*TRIYA_ISO03,ISO 03 dashed spaced
+A,12,-18
+*TRIYA_ISO04,ISO 04 long-dashed dotted
+A,24,-3,0,-3
+*TRIYA_ISO05,ISO 05 long-dashed double-dotted
+A,24,-3,0,-3,0,-3
+*TRIYA_ISO06,ISO 06 long-dashed triplicate-dotted
+A,24,-3,0,-3,0,-3,0,-3
+*TRIYA_ISO07,ISO 07 dotted
+A,0,-3
+*TRIYA_ISO08,ISO 08 long-dashed short-dashed
+A,24,-3,6,-3
+*TRIYA_ISO09,ISO 09 long-dashed double-short-dashed
+A,24,-3,6,-3,6,-3
+*TRIYA_ISO10,ISO 10 dashed dotted
+A,12,-3,0,-3
+*TRIYA_ISO11,ISO 11 double-dashed dotted
+A,12,-3,12,-3,0,-3
+*TRIYA_ISO12,ISO 12 dashed double-dotted
+A,12,-3,0,-3,0,-3
+*TRIYA_ISO13,ISO 13 double-dashed double-dotted
+A,12,-3,12,-3,0,-3,0,-3
+*TRIYA_ISO14,ISO 14 dashed triplicate-dotted
+A,12,-3,0,-3,0,-3,0,-3
+*TRIYA_ISO15,ISO 15 double-dashed triplicate-dotted
+A,12,-3,12,-3,0,-3,0,-3,0,-3

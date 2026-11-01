@@ -25,3 +25,4 @@ export {
 } from './session';
 export { serveRenderer, type ServeOptions } from './serve';
 export type { Endpoint, HostMessage, WorkerMessage } from './protocol';
+export * from './style/index';

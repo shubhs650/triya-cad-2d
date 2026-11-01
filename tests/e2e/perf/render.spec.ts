@@ -49,7 +49,7 @@ test('T2: first full frame of 100k entities in the render worker', async ({ page
   expect(res.modes).toEqual({ worker: 'worker' });
   const firstFrame = res.firstFrameMs['worker']!;
 
-  // T3 is reported, not yet enforced: M1-43 owns reaching 60 fps (see ROADMAP.md).
+  // T3 is reported, not yet enforced: M1-44 owns reaching 60 fps (see ROADMAP.md).
   const pan = await page.evaluate(() => window.panZoom('worker', 5000));
   info.annotations.push(
     { type: 'T2 first frame (ms)', description: firstFrame.toFixed(0) },

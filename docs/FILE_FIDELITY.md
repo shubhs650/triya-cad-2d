@@ -58,7 +58,7 @@ Read ticks for entities (M1-04) mean every entity of the type in every readable 
 | Table | Read | Edit | Write | Test |
 |---|---|---|---|---|
 | LAYER (+ VP overrides via xdata/dictionaries) | ✓ record (VP overrides not yet) | | | |
-| LTYPE (simple + complex) | ✓ | | | |
+| LTYPE (simple + complex) | ✓ (patterns, text and shape elements fitted by `dashPath`, M1-13 part 1; `.lin` files read by `parseLin`) | | | `style.corpus.test.ts` (473 records) |
 | STYLE (text styles, SHX and TTF, bigfont) | ✓ | | | |
 | DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet) | | | |
 | APPID | ✓ | | | |
@@ -163,3 +163,5 @@ The columns above track Triya. This section tracks the library underneath, from 
 | ATTDEF / ATTRIB fields (DXF) | Version (R2010+), lock position (R2007+) and R2018 multiline text read and written (0032); AcDbText 71 mirror flags no longer read as the multiline flag |
 | XRECORD, SORTENTSTABLE | Kept when owned by unknown objects (0014); entries written in the order read (0034); the draw order was kept, the entry order was not. `SORTENTSTABLE` in DXF is never loaded (94 handles, M1-33); XRECORDs under skipped objects drop with them (1,368 at save, 240 never loaded; M1-31, M1-33) |
 | LAYOUT plot flags (DXF read), `$CELWEIGHT` (DWG header) | Fixed by patches 0019 and 0020 |
+| LAYOUT paper image origin and standard scale (DXF) | One origin for the DXF reader and both writers (0044); the standard scale written as 147 (0045). A save wrote origin 0,0 and the print scale as the standard scale |
+| LTYPE alignment (DXF) | 72 read and written as the character code (0046); read as the digits "65", and the R12 default written as 0 |
