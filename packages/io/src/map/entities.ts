@@ -30,6 +30,7 @@ import {
   Insert,
   MText,
   TableEntity,
+  type TableEntityCell,
   TextEntity,
   type AttributeBase,
   type AttributeEntity,
@@ -47,7 +48,7 @@ import {
   Solid,
   Spline,
   XLine,
-  type BlockRecord,
+  BlockRecord,
   type CadDocument,
   type Entity,
   type TextStyle,
@@ -68,6 +69,8 @@ import type {
   MTextGeometry,
   MultiLeaderGeometry,
   ObjectCommon,
+  TableCell,
+  TableGeometry,
   PlanarProps,
   TextFields,
   PolylineVertex,
@@ -573,6 +576,69 @@ function multiLeaderGeometry(
   };
 }
 
+/** A cell's value as AutoCAD displays it: the string, else its formatted form. */
+function cellText(c: TableEntityCell): string {
+  const v = c.content?.cadValue;
+  if (!v) return '';
+  if (typeof v.value === 'string') return v.value;
+  return v.formattedValue || (v.value == null ? '' : String(v.value));
+}
+
+/**
+ * ACAD_TABLE: the insertion point is OCS (AcDbBlockReference), the horizontal direction WCS.
+ * DXF states merges per cell (175/176 spans, 173 merged); DWG states the merged ranges, so the
+ * spans are derived from those when there are any.
+ */
+function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason'] {
+  const pl = plane(t.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const head = new Map<string, { rows: number; columns: number }>();
+  const covered = new Set<string>();
+  for (const r of t.mergedCellRanges) {
+    head.set(`${r.topRowIndex},${r.leftColumnIndex}`, {
+      rows: r.bottomRowIndex - r.topRowIndex + 1,
+      columns: r.rightColumnIndex - r.leftColumnIndex + 1,
+    });
+    for (let i = r.topRowIndex; i <= r.bottomRowIndex; i++)
+      for (let j = r.leftColumnIndex; j <= r.rightColumnIndex; j++)
+        if (i !== r.topRowIndex || j !== r.leftColumnIndex) covered.add(`${i},${j}`);
+  }
+  const ranges = t.mergedCellRanges.length > 0;
+  const cells = t.rows.map((row, i) =>
+    row.cells.map((c, j): TableCell => {
+      const span = head.get(`${i},${j}`);
+      // A block cell: DXF states cell type 2 with the block as the cell value (340); DWG
+      // states a block content (TableCellContentType 4) holding the block record.
+      const k = c.content;
+      const isBlock = (c.type as number) === 2 || ((k?.contentType as number) & 4) !== 0;
+      const record = k?.blockRecord ?? (c.value instanceof BlockRecord ? c.value : null);
+      const block = isBlock ? ref(record) : undefined;
+      return {
+        type: isBlock ? 'block' : 'text',
+        text: isBlock ? '' : cellText(c),
+        ...(block ? { block } : {}),
+        rowSpan: ranges ? (span?.rows ?? 1) : Math.max(1, c.borderHeight),
+        columnSpan: ranges ? (span?.columns ?? 1) : Math.max(1, c.borderWidth),
+        merged: ranges ? covered.has(`${i},${j}`) : c.mergedValue !== 0,
+        rotation: c.rotation,
+      };
+    }),
+  );
+  const style = ref(t.style);
+  const block = ref(t.block);
+  return {
+    kind: 'ACAD_TABLE',
+    ...(style ? { style } : {}),
+    ...(block ? { block } : {}),
+    position: planOf(t.insertPoint, pl),
+    direction: xy(t.horizontalDirection),
+    rowHeights: t.rows.map((r) => r.height),
+    columnWidths: t.columns.map((c) => c.width),
+    cells,
+    ...planar(pl, t.normal, t.insertPoint.z, 0),
+  };
+}
+
 /** TOLERANCE's 10 and 11 are WCS, so it converts like MTEXT. */
 function toleranceGeometry(t: Tolerance, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   const pl = plane(t.normal);
@@ -856,8 +922,8 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
     return { kind: 'TEXT', ...textFields(e, pl, ctx) };
   }
   if (e instanceof MText) return mtextGeometry(e, ctx);
-  // TableEntity extends Insert in acad-ts; tables are mapped with the annotations.
-  if (e instanceof TableEntity) return 'not mapped yet';
+  // TableEntity extends Insert in acad-ts, so it is tested first.
+  if (e instanceof TableEntity) return tableGeometry(e);
   if (e instanceof Insert) return insertGeometry(e, ctx);
   if (
     e instanceof DimensionAligned ||

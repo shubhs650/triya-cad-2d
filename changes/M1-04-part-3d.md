@@ -1,0 +1,1 @@
+- M1-04 part 3d (#PR): `mapEntities` maps ACAD_TABLE: its `*T` block, style, insertion point and direction, row heights, column widths and every cell (text or block, spans, merges, rotation), with DWG merged ranges and block contents normalised to what DXF states (DEC-039 extended).
