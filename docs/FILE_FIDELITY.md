@@ -41,7 +41,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation); cell formats not mapped yet; ezdxf-written tables dropped by acad-ts (M1-32); drawn by the renderer from the `*T` block in the table's frame, M1-17 | | | | |
 | VIEWPORT | ✓ frame, view, clip boundary, frozen layers, plot style and render mode (DXF status 68, clip boundary 340, a 0 viewport ID and the R12 MVIEW view lost by acad-ts, M1-32; DWG reads 68 and 340) | | | | |
-| TOLERANCE | ✓ (caret codes decoded since 0039; drawn by the renderer as its compartment frames and text, sized by the text engine, and bounded by them, M1-52 part 4; GD&T symbols wait for a GD&T font, M1-54, and DXF files for AutoCAD's omitted DIMSTYLE defaults, M1-53) | | | | |
+| TOLERANCE | ✓ (caret codes decoded since 0039; drawn by the renderer as its compartment frames and text, sized by the text engine, and bounded by them, M1-52 part 4; GD&T symbols wait for a GD&T font, M1-54; DXF frames take AutoCAD's DIMGAP since 0075, M1-53) | | | | |
 | MLINE (+ MLINESTYLE) | ✓ MLINE (style handle, scale, justification, flags, vertices with element parameters); MLINESTYLE not yet | | | | |
 | REGION *(render from proxy graphics / boundary)* | ✓ boundary read from the ACIS data, SAT text (R14–R2010) or SAB binary (R2013+, DWG): lines, arcs, circles and ellipses per loop; spline (intcurve) edges reported unmapped (M1-39) | | — | | |
 | PDFUNDERLAY / DWFUNDERLAY / DGNUNDERLAY (+ definitions) | ✓ PDFUNDERLAY; DWF/DGN have no acad-ts reader and no corpus file (M1-32) | | | | |
@@ -60,7 +60,7 @@ Read ticks for entities (M1-04) mean every entity of the type in every readable 
 | LAYER (+ VP overrides via xdata/dictionaries) | ✓ record (VP overrides not yet) | | | |
 | LTYPE (simple + complex) | ✓ (patterns, text and shape elements fitted by `dashPath`, M1-13 part 1; `.lin` files read by `parseLin`; drawn by the renderer at LTSCALE × object scale, M1-13 part 3; embedded text and shapes not drawn yet, M1-45) | | | `style.corpus.test.ts` (473 records) |
 | STYLE (text styles, SHX and TTF, bigfont) | ✓ | | | |
-| DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet) | | | |
+| DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet); DIMVARs a DXF leaves out read as AutoCAD's defaults since acad-ts patch 0075, so every acadsharp DXF style equals its DWG twin's (R2004+ colours aside, M1-55) | | | |
 | APPID | ✓ | | | |
 | BLOCK_RECORD (+ BLOCK/ENDBLK, *Model_Space, *Paper_Space*, *D, *U, *X, *T) | ✓ record (BLOCK/ENDBLK with M1-04) | | | |
 | VPORT | ✓ | | | |
