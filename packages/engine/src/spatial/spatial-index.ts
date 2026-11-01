@@ -28,6 +28,19 @@ import {
 } from './entity-bounds';
 import { PackedRTree } from './packed-tree';
 
+/** Kinds whose bounds use `annotationBounds`: themselves, or their attributes (INSERT). */
+const ANNOTATION_KINDS: ReadonlySet<string> = new Set([
+  'TEXT',
+  'MTEXT',
+  'ATTDEF',
+  'TOLERANCE',
+  'LEADER',
+  'MULTILEADER',
+  'DIMENSION',
+  'ARC_DIMENSION',
+  'INSERT',
+]);
+
 export interface SpatialIndexOptions {
   /** The document's extents-derived tolerance (spline bounds flatten with it). */
   readonly tol: Tolerance;
@@ -175,6 +188,8 @@ export class SpatialIndex {
 
   /** Brings the index up to date with a change set the model has just applied. */
   apply(cs: ChangeSet): void {
+    // A text style edit (font, width factor, obliquing) moves the glyphs of every text.
+    if (cs.tables?.textStyles) this.reboundAnnotations();
     const e = cs.entities;
     if (!e) return;
     const removed = [
@@ -186,6 +201,21 @@ export class SpatialIndex {
       ...(e.updated ?? []).map((r) => r.after),
     ];
     this.#update(removed, added);
+  }
+
+  /**
+   * Re-bounds every entity whose bounds come from `annotationBounds` (text, attributes and
+   * other annotations) and the references whose blocks hold them: after a text style changes,
+   * or when the fonts behind the bounds change (a user font loaded, M1-37).
+   */
+  reboundAnnotations(): void {
+    const all: Entity[] = [];
+    for (const h of this.#model.blocks.keys())
+      for (const id of this.#model.blockEntities(h)) {
+        const e = this.#model.entity(id)!;
+        if (ANNOTATION_KINDS.has(e.geom.kind)) all.push(e);
+      }
+    this.#update(all, all);
   }
 
   /**

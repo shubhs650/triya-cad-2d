@@ -1,0 +1,1 @@
+- M1-35 part 1 (#69): the spatial index bounds TEXT, MTEXT, attribute definitions and attributes by exactly what the renderer draws for them, so text is culled when off screen and only picked when the cursor is on it; it re-bounds text when fonts load or a text style changes.

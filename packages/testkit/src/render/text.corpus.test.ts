@@ -7,7 +7,18 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { readCadDocument } from '@triya/io';
-import { PATH_A, PATH_C, PATH_E, PATH_L, PATH_M, PATH_Q, tessellate } from '@triya/render';
+import { boxesOverlap, type Box, type EntityId } from '@triya/engine';
+import {
+  PATH_A,
+  PATH_C,
+  PATH_E,
+  PATH_L,
+  PATH_M,
+  PATH_Q,
+  primitivesBox,
+  tessellate,
+  textBounds,
+} from '@triya/render';
 import { FontBook, parseShx } from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
@@ -47,7 +58,7 @@ function* coordinates(path: readonly number[]): Generator<[number, number]> {
   }
 }
 
-describe('text on the public corpus (M1-41 part 1)', () => {
+describe('text on the public corpus (M1-41, M1-35)', () => {
   const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 
   it('draws every TEXT and MTEXT near its insertion point with the stand-in font', () => {
@@ -117,5 +128,72 @@ describe('text on the public corpus (M1-41 part 1)', () => {
     // no contents) draw nothing.
     expect(drawn.backgrounds).toBeGreaterThanOrEqual(38);
     expect(drawn.frames).toBeGreaterThanOrEqual(5);
+  });
+
+  it('bounds text exactly in the spatial index, so apertures find just the text they touch (M1-35)', () => {
+    const fonts = new FontBook({ alternate: 'square' });
+    fonts.addShx('square', parseShx(squareFont()));
+    let boxed = 0;
+    let apertures = 0;
+    const wrong: string[] = [];
+    for (const f of readable) {
+      let doc;
+      try {
+        doc = readCadDocument(new Uint8Array(readFileSync(`${corpusDir}${f.path}`)));
+      } catch {
+        continue;
+      }
+      const { model, index } = corpusDrawing(doc, (m) =>
+        textBounds({ fonts, style: (h) => m.tables.textStyles.get(h) }),
+      );
+      const text = { fonts, style: (h: string) => model.tables.textStyles.get(h) };
+      for (const block of model.blocks.keys()) {
+        // The exact box of each text in the block, from what the renderer draws.
+        const exact = new Map<EntityId, Box>();
+        for (const id of model.blockEntities(block)) {
+          const g = model.entity(id)!.geom;
+          if (g.kind !== 'TEXT' && g.kind !== 'MTEXT') continue;
+          const b = index.bounds(id);
+          const drawn = primitivesBox(tessellate(g, { color: 'foreground' }, { text }));
+          if (b?.kind !== 'box') {
+            wrong.push(`${f.path} ${g.kind} ${model.entity(id)!.handle}: bounds ${b?.kind}`);
+            continue;
+          }
+          boxed++;
+          const at = drawn ?? {
+            minX: g.position.x,
+            minY: g.position.y,
+            maxX: g.position.x,
+            maxY: g.position.y,
+          };
+          exact.set(id, at);
+        }
+        // Apertures at each text's centre and just past each of its corners: the index returns
+        // every text whose exact box the aperture touches, and no other text.
+        for (const b of exact.values()) {
+          const w = Math.max(b.maxX - b.minX, b.maxY - b.minY, 1e-6);
+          const r = w / 20;
+          const centres = [
+            [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2],
+            [b.maxX + 2 * r, b.maxY + 2 * r],
+            [b.minX - 2 * r, b.minY - 2 * r],
+          ];
+          for (const [x, y] of centres) {
+            const q = { minX: x! - r, minY: y! - r, maxX: x! + r, maxY: y! + r };
+            apertures++;
+            const found = new Set(index.query(block, q).filter((id) => exact.has(id)));
+            for (const [id, e] of exact) {
+              if (boxesOverlap(e, q, 0) !== found.has(id)) {
+                wrong.push(`${f.path} ${model.entity(id)!.handle}: aperture ${JSON.stringify(q)}`);
+              }
+            }
+          }
+        }
+      }
+    }
+    console.log(`text bounds: ${boxed} texts boxed, ${apertures} apertures`);
+    expect(wrong.slice(0, 20)).toEqual([]);
+    // Every corpus TEXT and MTEXT, the 11 empty ones bounded by their insertion point.
+    expect(boxed).toBeGreaterThanOrEqual(3652);
   });
 });

@@ -271,6 +271,64 @@ describe('queries', () => {
     expect(index.query(MODEL_SPACE, box(41, 41, 45, 45))).toEqual([text.id]);
     expect(index.query(MODEL_SPACE, box(42, 41, 45, 45))).toEqual([]);
   });
+
+  it('re-bounds text and the inserts holding it when fonts or text styles change (M1-35)', () => {
+    const model = blockModel();
+    const b = new ChangeSetBuilder(model);
+    const style = b.addTableRecord('textStyles', {
+      name: 'Standard',
+      font: 'romans',
+      height: 0,
+      widthFactor: 1,
+      obliqueAngle: 0,
+      lastHeight: 2.5,
+      generation: 0,
+      trueTypeFlags: 0,
+    });
+    const text = b.addEntity({
+      owner: BLOCK_A,
+      layer: LAYER_0,
+      geom: {
+        kind: 'TEXT',
+        value: 'A',
+        style: style.handle,
+        position: { x: 0, y: 0 },
+        height: 1,
+        rotation: 0,
+        widthFactor: 1,
+        oblique: 0,
+        halign: 0,
+        valign: 0,
+        backward: false,
+        upsideDown: false,
+      },
+    });
+    model.apply(b.build());
+    // What the injected text engine reports: nothing until a font loads, then `width` wide.
+    let width: number | undefined;
+    const index = SpatialIndex.build(model, {
+      tol,
+      annotationBounds: (g) =>
+        'kind' in g && g.kind === 'TEXT' && width !== undefined ? box(0, 0, width, 1) : undefined,
+    });
+    const insert = idOf(model, '52'); // BLOCK_A at (200, 0)
+    expect(index.bounds(text.id)).toEqual({ kind: 'unknown' });
+    expect(index.bounds(insert)).toEqual({ kind: 'unknown' });
+
+    width = 3; // a font arrived
+    index.reboundAnnotations();
+    expect(index.bounds(text.id)).toEqual({ kind: 'box', box: box(0, 0, 3, 1) });
+    expect(index.bounds(insert)).toEqual({ kind: 'box', box: box(200, 0, 203, 1) });
+
+    width = 5; // the style got wider: applying its change re-bounds on its own
+    const b2 = new ChangeSetBuilder(model);
+    b2.updateTableRecord('textStyles', style.handle, { widthFactor: 5 / 3 });
+    const cs = b2.build();
+    model.apply(cs);
+    index.apply(cs);
+    expect(index.bounds(insert)).toEqual({ kind: 'box', box: box(200, 0, 205, 1) });
+    expect(index.query(MODEL_SPACE, box(204, 0.5, 210, 2))).toEqual([insert]);
+  });
 });
 
 describe('invalidation', () => {

@@ -7,6 +7,7 @@ import {
   DocumentModel,
   SpatialIndex,
   toleranceFromExtents,
+  type AnnotationBounds,
   type DocumentInit,
   type HeaderValue,
   type Vec2,
@@ -34,12 +35,22 @@ export function documentInit(doc: CadDocument): DocumentInit {
 const point = (v: HeaderValue | undefined): Vec2 | undefined =>
   typeof v === 'object' ? { x: v.x, y: v.y } : undefined;
 
-/** The document and its spatial index, with the tolerance from `$EXTMIN`/`$EXTMAX`. */
-export function corpusDrawing(doc: CadDocument): { model: DocumentModel; index: SpatialIndex } {
+/**
+ * The document and its spatial index, with the tolerance from `$EXTMIN`/`$EXTMAX`, and text
+ * bounds when `annotationBounds` is given one (it gets the model, for the text styles).
+ */
+export function corpusDrawing(
+  doc: CadDocument,
+  annotationBounds?: (model: DocumentModel) => AnnotationBounds,
+): { model: DocumentModel; index: SpatialIndex } {
   const model = DocumentModel.create(documentInit(doc));
   const min = point(model.header.get('$EXTMIN'));
   const max = point(model.header.get('$EXTMAX'));
   // A file without extents gets the unit-size tolerance, as toleranceFromExtents gives empty ones.
   const tol = toleranceFromExtents(min ?? { x: 1, y: 1 }, max ?? { x: 0, y: 0 });
-  return { model, index: SpatialIndex.build(model, { tol }) };
+  const bounds = annotationBounds?.(model);
+  return {
+    model,
+    index: SpatialIndex.build(model, { tol, ...(bounds ? { annotationBounds: bounds } : {}) }),
+  };
 }
