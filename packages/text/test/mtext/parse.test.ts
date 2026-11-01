@@ -139,8 +139,10 @@ describe('character codes', () => {
     expect(w!.style.widthFactor).toBe(0.8);
     expect(q!.style.oblique).toBe(15);
     expect(t!.style.tracking).toBe(1.5);
-    // AutoCAD also writes these with an x suffix; the value is still the factor itself.
-    expect(items('\\W2x;a')[0]!.style.widthFactor).toBe(2);
+    // An x suffix makes them relative to the current value, as for \H.
+    const [w2, t2] = items('\\W0.5;\\W2x;a\\T2x;b');
+    expect(w2!.style.widthFactor).toBe(1);
+    expect(t2!.style.tracking).toBe(2);
   });
 
   it('\\A sets the vertical alignment within the line', () => {
@@ -260,6 +262,8 @@ describe('stacking (\\S)', () => {
 
   it('allows an empty part, escaped separators, %% codes and a missing ;', () => {
     expect(text('\\S^2;')).toEqual(['[|2]']);
+    // The space after ^ is not drawn; after / it is.
+    expect(text('\\S1^ 2;\\S1/ 2;')).toEqual(['[1|2][1| 2]']);
     expect(text('\\S1\\/2#3;')).toEqual(['[1/2|3]']);
     expect(text('\\S%%p0.1^0;')).toEqual(['[\u00b10.1|0]']);
     expect(text('\\S1/2')).toEqual(['[1|2]']);
@@ -303,6 +307,13 @@ describe('paragraph properties (\\p)', () => {
   it('carries into later paragraphs, and a change mid-paragraph applies to all of it', () => {
     const doc = parse('a\\pqr;b\\Pc{\\pqc;d}\\Pe');
     expect(doc.paragraphs.map((p) => p.style.align)).toEqual(['right', 'center', 'right']);
+  });
+
+  it('reads a centre or right stop right after t', () => {
+    expect(parse('\\ptc6,r9;a').paragraphs[0]!.style.tabs).toEqual([
+      { at: 6, kind: 'center' },
+      { at: 9, kind: 'right' },
+    ]);
   });
 
   it('tz clears the tabs and unknown keys are skipped', () => {

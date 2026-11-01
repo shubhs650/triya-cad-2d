@@ -3,9 +3,10 @@
 // table and the `%%` control codes of "Control Codes and Special Characters".
 //
 // Where the documentation is silent, this follows the reading DXF libraries share, noted at
-// each place: `\c` true colour has red in the low byte (Windows COLORREF); `\W` and `\T`
-// take an optional x suffix without making the value relative (only `\H…x` is relative);
-// paragraph properties carry into later paragraphs; an unknown code shows literally.
+// each place: `\c` true colour has red in the low byte (Windows COLORREF, masked to 24 bits);
+// an x suffix makes `\H`, `\W` and `\T` relative to the current value; paragraph properties
+// carry into later paragraphs; an unknown code shows literally. See ezdxf's MTEXT notes:
+// https://ezdxf.readthedocs.io/en/stable/dxfinternals/entities/mtext.html
 
 /** An MTEXT colour override; undefined in a style means the entity's own colour. */
 export type MTextColor =
@@ -188,6 +189,14 @@ function parseFont(value: string, upper: boolean): MTextFont {
   };
 }
 
+/** A tab stop: n (left), cn (centre) or rn (right). */
+function tabStop(tok: string): MTextTabStop | undefined {
+  const m = /^([cr]?)(.+)$/.exec(tok);
+  const at = m ? num(m[2]!) : undefined;
+  if (!m || at === undefined) return undefined;
+  return { at, kind: m[1] === 'c' ? 'center' : m[1] === 'r' ? 'right' : 'left' };
+}
+
 /** `\p` value: comma-separated keys, an optional leading x (extended form). */
 function parseParagraph(value: string, current: MTextParagraphStyle): MTextParagraphStyle {
   const out: {
@@ -199,10 +208,9 @@ function parseParagraph(value: string, current: MTextParagraphStyle): MTextParag
   for (const tok of tokens) {
     // Tab stops follow t until a token that is not one: n, cn (centre) or rn (right).
     if (inTabs) {
-      const m = /^([cr]?)(.+)$/.exec(tok);
-      const at = m ? num(m[2]!) : undefined;
-      if (m && at !== undefined) {
-        tabs!.push({ at, kind: m[1] === 'c' ? 'center' : m[1] === 'r' ? 'right' : 'left' });
+      const stop = tabStop(tok);
+      if (stop) {
+        tabs!.push(stop);
         continue;
       }
       inTabs = false;
@@ -230,8 +238,8 @@ function parseParagraph(value: string, current: MTextParagraphStyle): MTextParag
         tabs = [];
         out.tabs = tabs;
         if (rest === 'z') break;
-        const at = num(rest);
-        if (at !== undefined) tabs.push({ at, kind: 'left' });
+        const stop = tabStop(rest);
+        if (stop) tabs.push(stop);
         inTabs = true;
         break;
       }
@@ -599,7 +607,9 @@ export function parseMText(
       case 'W':
       case 'T': {
         const f = factor(v);
-        if (f) setChar(code === 'W' ? { widthFactor: f.v } : { tracking: f.v });
+        if (!f) return;
+        if (code === 'W') setChar({ widthFactor: f.relative ? ctx.char.widthFactor * f.v : f.v });
+        else setChar({ tracking: f.relative ? ctx.char.tracking * f.v : f.v });
         return;
       }
       case 'Q': {
@@ -658,7 +668,9 @@ export function parseMText(
       emit(upper);
       return;
     }
-    const lower = v.slice(j + 1).replace(/\\(.)/g, '$1');
+    // After ^ a space keeps the denominator from reading as a caret code; it is not drawn.
+    const rest = sep === '^' ? v.slice(j + 1).replace(/^ /, '') : v.slice(j + 1);
+    const lower = rest.replace(/\\(.)/g, '$1');
     out.item({
       type: 'stack',
       upper: percentCodes(upper),

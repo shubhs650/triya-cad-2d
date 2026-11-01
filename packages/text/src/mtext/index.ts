@@ -12,3 +12,15 @@ export {
   type MTextParseOptions,
   type MTextTabStop,
 } from './parse';
+export {
+  layoutMText,
+  type MTextBox,
+  type MTextColumns,
+  type MTextDecoration,
+  type MTextLayout,
+  type MTextLayoutOptions,
+  type MTextLine,
+  type MTextMeasure,
+  type MTextRun,
+  type MTextStackPart,
+} from './layout';
