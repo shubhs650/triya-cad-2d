@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type {
+  AttributeBase,
   BlockRecord,
   CadDictionary,
   CellBorder,
@@ -11,12 +12,14 @@ import type {
   TableStyle,
 } from '@node-projects/acad-ts';
 import {
+  AttributeDefinition,
   DwgReader,
   DwgReaderConfiguration,
   DwgWriter,
   DxfReader,
   DxfReaderConfiguration,
   DxfWriter,
+  Insert,
   LayoutFlags,
   LineWeightType,
   Material,
@@ -416,6 +419,115 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(styleMap(back).cellStyles.map(cell), `binary ${binary}`).toEqual(
         styleMap(doc).cellStyles.map(cell),
       );
+    }
+  });
+
+  it('0031 DXF writer writes VIEWPORT entities with their own group codes', () => {
+    // _writeViewport wrote the id as 68, twist as 50, circle zoom as 51, the UCS icon as 72 and
+    // the UCS vectors as single groups, and none of the R2000+ settings (UCS per viewport,
+    // elevation, shade plot, grid, visual style, lighting), so every paper-space viewport
+    // came back with twist 1000 and default UCS and lighting.
+    const fields = (v: Viewport): unknown => ({
+      id: v.id,
+      center: [v.center.x, v.center.y],
+      size: [v.width, v.height],
+      viewHeight: v.viewHeight,
+      snapAngle: v.snapAngle,
+      twistAngle: v.twistAngle,
+      circleZoomPercent: v.circleZoomPercent,
+      status: v.status,
+      styleSheetName: v.styleSheetName,
+      renderMode: v.renderMode,
+      ucsPerViewport: v.ucsPerViewport,
+      displayUcsIcon: v.displayUcsIcon,
+      ucs: [v.ucsOrigin, v.ucsXAxis, v.ucsYAxis].map((p) => [p.x, p.y, p.z]),
+      ucsOrthographicType: v.ucsOrthographicType,
+      elevation: v.elevation,
+      shadePlotMode: v.shadePlotMode,
+      majorGridLineFrequency: v.majorGridLineFrequency,
+      visualStyle: handleHex(v.visualStyle),
+      useDefaultLighting: v.useDefaultLighting,
+      defaultLightingType: v.defaultLightingType,
+      brightness: v.brightness,
+      contrast: v.contrast,
+      ambient: v.ambientLightColor
+        ? [v.ambientLightColor.index, v.ambientLightColor.trueColor]
+        : null,
+    });
+    const viewports = (d: CadDocument): Viewport[] =>
+      [...d.getCadObjects()].filter((o): o is Viewport => o instanceof Viewport);
+
+    for (const version of ['AC1015', 'AC1018', 'AC1032']) {
+      // Read as @triya/io does, so the VISUALSTYLE the viewports point at is written too (0021).
+      const doc = readDxfRaw(corpusBytes(`third-party/acadsharp/sample_${version}_ascii.dxf`));
+      // The file's viewport 245: id 2, circle zoom 1000, UCS per viewport on.
+      const v245 = doc.getCadObject(0x245) as Viewport;
+      expect([v245.id, v245.circleZoomPercent, v245.ucsPerViewport], version).toEqual([
+        2,
+        1000,
+        true,
+      ]);
+      if (version === 'AC1032') expect(v245.majorGridLineFrequency).toBe(5);
+
+      for (const binary of [false, true]) {
+        const back = dxfRawRoundTrip(doc, binary);
+        expect(viewports(back).map(fields), `${version} binary ${binary}`).toEqual(
+          viewports(doc).map(fields),
+        );
+      }
+    }
+  });
+
+  it('0032 DXF ATTDEF and ATTRIB keep version, lock position and multiline text through a save', () => {
+    // The reader took every 280 as the version (so the lock position overwrote it) and the
+    // AcDbText 71 (mirror) as the multiline flag; the writer wrote no version, multiline flag
+    // or embedded MTEXT.
+    const fields = (a: AttributeBase): unknown => ({
+      tag: a.tag,
+      flags: a.flags,
+      version: a.version,
+      locked: a.isReallyLocked,
+      attributeType: a.attributeType,
+      mirror: a.mirror,
+      horizontal: a.horizontalAlignment,
+      vertical: a.verticalAlignment,
+      prompt: a instanceof AttributeDefinition ? a.prompt : undefined,
+      mText: a.mText
+        ? {
+            value: a.mText.value,
+            at: [a.mText.insertPoint.x, a.mText.insertPoint.y],
+            height: a.mText.height,
+            attachment: a.mText.attachmentPoint,
+          }
+        : null,
+    });
+    const attributes = (d: CadDocument): AttributeBase[] => [
+      ...[...d.getCadObjects()].filter(
+        (o): o is AttributeDefinition => o instanceof AttributeDefinition,
+      ),
+      ...[...d.getCadObjects()]
+        .filter((o): o is Insert => o instanceof Insert)
+        .flatMap((i) => [...i.attributes]),
+    ];
+
+    for (const version of ['AC1015', 'AC1021', 'AC1024', 'AC1032']) {
+      const doc = readDxfRaw(corpusBytes(`third-party/acadsharp/sample_${version}_ascii.dxf`));
+      const multi = doc.getCadObject(0x796) as AttributeDefinition;
+      // The file: R2007+ writes the lock position (280 1) after 74; R2010+ adds version 280 0
+      // before the prompt; R2018 adds the multiline text (71 4, embedded MTEXT).
+      expect(multi.isReallyLocked, version).toBe(version !== 'AC1015');
+      expect(multi.version, version).toBe(0);
+      // Before R2018 the multiline text lives in an XRECORD under the extension dictionary.
+      const multiline = version === 'AC1032';
+      expect(multi.attributeType, version).toBe(multiline ? 4 : 1);
+      expect(multi.mText !== null, version).toBe(multiline);
+
+      for (const binary of [false, true]) {
+        const back = dxfRawRoundTrip(doc, binary);
+        expect(attributes(back).map(fields), `${version} binary ${binary}`).toEqual(
+          attributes(doc).map(fields),
+        );
+      }
     }
   });
 });

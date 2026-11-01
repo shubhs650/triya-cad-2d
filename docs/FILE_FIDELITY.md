@@ -24,8 +24,8 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | 3DFACE *(render edges)* | ✓ | | — | | |
 | TEXT | ✓ | | | | |
 | MTEXT | ✓ (contents with codes as stored) | | | | |
-| ATTDEF | ✓ (backward/upside-down lost by acad-ts, M1-32) | | | | |
-| ATTRIB | ✓ folded into its INSERT (backward/upside-down lost by acad-ts, M1-32) | | | | |
+| ATTDEF | ✓ (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
+| ATTRIB | ✓ folded into its INSERT (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | INSERT | ✓ | | | | |
 | MINSERT | ✓ | | | | |
 | DIMENSION (linear/aligned) | ✓ (rotated with an empty AcDbRotatedDimension read as aligned by acad-ts, M1-32) | | | | |
@@ -151,6 +151,8 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DATATABLE / TABLECONTENT owned through an XRECORD | Read and kept (0018); TABLECONTENT is **not written to DXF** (writer gap, M1-31) |
 | DIMASSOC | Read; **not written to DXF** (47 handles, M1-31) |
 | ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** (98 handles in the R13/R14 binary DXFs, M1-31) |
-| TABLESTYLE / CELLSTYLEMAP, MLEADER, MTEXT columns, ACAD_TABLE, VIEWPORT entity | Lossy in DXF (R5, R12–R15) |
+| TABLESTYLE / CELLSTYLEMAP, MLEADER, MTEXT columns, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
+| VIEWPORT entity (DXF write) | Every AcDbViewport group written with its own code, R2000+ settings included (0031); id, angles, zoom, UCS, plot style, clip boundary and visual style were scrambled or dropped |
+| ATTDEF / ATTRIB fields (DXF) | Version (R2010+), lock position (R2007+) and R2018 multiline text read and written (0032); AcDbText 71 mirror flags no longer read as the multiline flag |
 | XRECORD, SORTENTSTABLE | Kept when owned by unknown objects (0014); sort order changes (R11, M1-29). `SORTENTSTABLE` in DXF is never loaded (94 handles, M1-33); XRECORDs under skipped objects drop with them (1,368 at save, 240 never loaded; M1-31, M1-33) |
 | LAYOUT plot flags (DXF read), `$CELWEIGHT` (DWG header) | Fixed by patches 0019 and 0020 |

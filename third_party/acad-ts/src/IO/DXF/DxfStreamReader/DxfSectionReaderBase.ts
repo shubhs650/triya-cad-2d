@@ -527,7 +527,25 @@ export abstract class DxfSectionReaderBase {
     const emap = map.subClasses.get(template.cadObject.subclassMarker)!;
     const tmp = template as CadAttributeTemplate;
 
-    switch (this._reader.code as number) {
+    // AcDbText groups go to the text reader: its 71 is the mirror flag, not the multiline flag.
+    // R12 files have no subclass markers, and there 71/72 are always the text's.
+    const sub = this.currentSubclass?.toUpperCase() ?? '';
+    const code = this._reader.code as number;
+    if (sub === DxfSubclassMarker.text.toUpperCase() || (sub === '' && (code === 71 || code === 72))) {
+      return this._readTextEntity(template, map, DxfSubclassMarker.text);
+    }
+
+    switch (code) {
+      // 280 before the tag is the version (R2010+); after it, the lock position (R2007+).
+      case 280: {
+        const att = tmp.cadObject as AttributeBase;
+        if (att.tag === '') att.version = this._reader.valueAsShort;
+        else att.isReallyLocked = this._reader.valueAsBool;
+        return true;
+      }
+      // 72 after the multiline flag is written as 0 by AutoCAD; it is not the text alignment.
+      case 72:
+        return true;
       case 44:
       case 46:
         return true;
@@ -1880,6 +1898,13 @@ export abstract class DxfSectionReaderBase {
         return true;
       case 331:
         tmp.frozenLayerHandles.add(this._reader.valueAsHandle);
+        return true;
+      // 63/421 are the ambient light colour; the generic map assigned the raw numbers.
+      case 63:
+        (template.cadObject as Viewport).ambientLightColor = new Color(this._reader.valueAsShort);
+        return true;
+      case 421:
+        (template.cadObject as Viewport).ambientLightColor = Color.fromTrueColor(this._reader.valueAsInt);
         return true;
       case 348:
         tmp.visualStyleHandle = this._reader.valueAsHandle;
