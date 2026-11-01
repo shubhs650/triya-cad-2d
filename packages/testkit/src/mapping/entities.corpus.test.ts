@@ -101,12 +101,6 @@ const ACAD_TS_GAPS: Record<string, string> = {
   'HATCH 98': 'acad-ts drops the seed points (98, 10/20) of DXF hatches',
   'HATCH 11':
     'acad-ts reads an ellipse edge’s major axis (11/21) with the centre’s coordinate in place of the other component',
-  'MULTILEADER ctx 90':
-    'acad-ts reads the context-data text colour (90) of a DXF MULTILEADER as a true colour, so ByLayer becomes RGB 0,0,0',
-  'MULTILEADER LEADER{ 10':
-    'acad-ts has no DXF code map for a MULTILEADER branch (LeaderRoot), so DXF branches keep the default connection point; DWG reads it',
-  'MULTILEADER LEADER{ 11': 'the same for the landing direction',
-  'MULTILEADER LEADER{ 40': 'the same for the dogleg length',
   'VIEWPORT 68':
     'acad-ts skips a DXF viewport’s status (68: off, or on with its stacking order), so every viewport reads as 1',
   'VIEWPORT 69':

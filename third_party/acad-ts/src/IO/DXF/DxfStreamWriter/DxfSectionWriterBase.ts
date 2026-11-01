@@ -1064,35 +1064,82 @@ export abstract class DxfSectionWriterBase {
   }
 
   private _writeMultiLeader(mleader: MultiLeader, map: DxfMap): void {
-    const subclass = map.subClasses.get(DxfSubclassMarker.leader)!;
-    this._writer.write(DxfCode.Subclass, DxfSubclassMarker.leader);
+    // AcDbMLeader in AutoCAD's group-code order (DXF reference, MULTILEADER, checked against the
+    // acadsharp samples R2000-R2018). Upstream wrote a few groups on the wrong codes and dropped
+    // the rest, so a save reset every multileader to its style's defaults.
+    const subclass = map.subClasses.get(DxfSubclassMarker.multiLeader)!;
+    const b = (value: boolean): number => (value ? 1 : 0);
+    this._writer.write(DxfCode.Subclass, DxfSubclassMarker.multiLeader);
 
-    this._writer.write(270, mleader.contentType, subclass);
+    if (this.version >= ACadVersion.AC1024) this._writer.write(270, 2);
+
+    this._writer.write(300, 'CONTEXT_DATA{');
+    this._writeAnnotContext(mleader.contextData);
+    this._writer.write(301, '}');
+
     this._writer.writeHandle(340, mleader.style);
-    this._writer.writeHandle(341, mleader.leaderLineType);
-    this._writer.writeCmColor(91, mleader.lineColor, subclass);
+    this._writer.write(90, mleader.propertyOverrideFlags, subclass);
     this._writer.write(170, mleader.pathType, subclass);
-    this._writer.write(171, mleader.lineColor, subclass);
+    this._writeMLeaderColor(91, mleader.lineColor);
+    this._writer.writeHandle(341, mleader.leaderLineType);
+    this._writer.write(171, mleader.leaderLineWeight, subclass);
+    this._writer.write(290, b(mleader.enableLanding));
+    this._writer.write(291, b(mleader.enableDogleg));
+    this._writer.write(41, mleader.landingDistance, subclass);
+    this._writer.write(42, mleader.arrowheadSize, subclass);
+    this._writer.writeHandle(342, mleader.arrowhead);
+    this._writer.write(172, mleader.contentType, subclass);
     this._writer.writeHandle(343, mleader.textStyle);
     this._writer.write(173, mleader.textLeftAttachment, subclass);
     this._writer.write(95, mleader.textRightAttachment, subclass);
-
-    if (mleader.contextData) {
-      this._writer.write(300, "CONTEXT_DATA{");
-      this._writeAnnotContext(mleader.contextData, map);
-      this._writer.write(301, "}");
+    this._writer.write(174, mleader.textAngle, subclass);
+    this._writer.write(175, mleader.textAlignment, subclass);
+    this._writeMLeaderColor(92, mleader.textColor);
+    this._writer.write(292, b(mleader.textFrame));
+    this._writer.writeHandle(344, mleader.blockContentId);
+    this._writeMLeaderColor(93, mleader.blockContentColor);
+    this._writer.writeVector(10, mleader.blockContentScale, subclass);
+    this._writer.write(43, mleader.blockContentRotation, subclass);
+    this._writer.write(176, mleader.blockContentConnection, subclass);
+    this._writer.write(293, b(mleader.enableAnnotationScale));
+    for (const att of mleader.blockAttributes) {
+      this._writer.writeHandle(330, att.attributeDefinition);
+      this._writer.write(177, att.index);
+      this._writer.write(44, att.width);
+      this._writer.write(302, att.text);
     }
-
-    this._writer.write(44, mleader.scaleFactor, subclass);
-    this._writer.write(294, mleader.textDirectionNegative, subclass);
-    this._writer.write(274, mleader.textAligninIPE, subclass);
-    this._writer.write(178, mleader.textAttachmentDirection, subclass);
-    this._writer.write(175, mleader.textAttachmentDirection, subclass);
-    this._writer.write(176, mleader.textAttachmentDirection, subclass);
+    this._writer.write(294, b(mleader.textDirectionNegative));
+    this._writer.write(178, b(mleader.textAligninIPE));
+    this._writer.write(179, mleader.textAttachmentPoint, subclass);
+    this._writer.write(45, mleader.scaleFactor, subclass);
+    if (this.version >= ACadVersion.AC1024) {
+      this._writer.write(271, mleader.textAttachmentDirection, subclass);
+      this._writer.write(272, mleader.textBottomAttachment, subclass);
+      this._writer.write(273, mleader.textTopAttachment, subclass);
+    }
+    if (this.version >= ACadVersion.AC1027) {
+      this._writer.write(295, b(mleader.extendedToText));
+    }
   }
 
-  private _writeAnnotContext(contextData: MultiLeaderObjectContextData, map: DxfMap): void {
+  // Multileader colours are 32-bit AcCmColor values (0xC0 ByLayer, 0xC1 index, 0xC2 RGB). The DXF
+  // reader keeps some of them as the raw integer, which is written back unchanged.
+  private _writeMLeaderColor(code: number, color: Color | number): void {
+    if (typeof color === 'number') {
+      this._writer.write(code, color);
+      return;
+    }
+    let value: number;
+    if (color.isTrueColor) value = 0xc2000000 | (color.r << 16) | (color.g << 8) | color.b;
+    else if (color.isByLayer) value = 0xc0000000;
+    else value = 0xc1000000 | color.index;
+    this._writer.write(code, value | 0);
+  }
+
+  private _writeAnnotContext(contextData: MultiLeaderObjectContextData): void {
     const ctxMap = DxfClassMap.create(MultiLeaderObjectContextData);
+    const b = (value: boolean): number => (value ? 1 : 0);
+    this._writer.write(40, contextData.scaleFactor, ctxMap);
     this._writer.writeVector(10, contextData.contentBasePoint, ctxMap);
     this._writer.write(41, contextData.textHeight, ctxMap);
     this._writer.write(140, contextData.arrowheadSize, ctxMap);
@@ -1101,45 +1148,100 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(175, contextData.textRightAttachment, ctxMap);
     this._writer.write(176, contextData.textAlignment, ctxMap);
     this._writer.write(177, contextData.blockContentConnection, ctxMap);
-    this._writer.write(290, contextData.hasTextContents, ctxMap);
+    this._writer.write(290, b(contextData.hasTextContents));
 
-    this._writer.writeVector(110, contextData.contentBasePoint, ctxMap);
-    this._writer.writeVector(111, contextData.baseDirection, ctxMap);
-    this._writer.writeVector(112, contextData.baseVertical, ctxMap);
-    this._writer.write(297, contextData.normalReversed, ctxMap);
-
-    this._writer.writeVector(12, contextData.textLocation, ctxMap);
-    this._writer.writeVector(13, contextData.direction, ctxMap);
-
-    for (const root of contextData.leaderRoots) {
-      this._writer.write(302, "LEADER{");
-      this._writeLeaderRoot(root);
-      this._writer.write(303, "}");
+    if (contextData.hasTextContents) {
+      this._writer.write(304, contextData.textLabel ?? '');
+      this._writer.writeVector(11, contextData.textNormal, ctxMap);
+      this._writer.writeHandle(340, contextData.textStyle);
+      this._writer.writeVector(12, contextData.textLocation, ctxMap);
+      this._writer.writeVector(13, contextData.direction, ctxMap);
+      this._writer.write(42, contextData.textRotation, ctxMap);
+      this._writer.write(43, contextData.boundaryWidth, ctxMap);
+      this._writer.write(44, contextData.boundaryHeight, ctxMap);
+      this._writer.write(45, contextData.lineSpacingFactor, ctxMap);
+      this._writer.write(170, contextData.lineSpacing, ctxMap);
+      this._writeMLeaderColor(90, contextData.textColor);
+      this._writer.write(171, contextData.textAttachmentPoint, ctxMap);
+      this._writer.write(172, contextData.flowDirection, ctxMap);
+      this._writeMLeaderColor(91, contextData.backgroundFillColor);
+      this._writer.write(141, contextData.backgroundScaleFactor, ctxMap);
+      this._writer.write(92, contextData.backgroundTransparency, ctxMap);
+      this._writer.write(291, b(contextData.backgroundFillEnabled));
+      this._writer.write(292, b(contextData.backgroundMaskFillOn));
+      this._writer.write(173, contextData.columnType, ctxMap);
+      this._writer.write(293, b(contextData.textHeightAutomatic));
+      this._writer.write(142, contextData.columnWidth, ctxMap);
+      this._writer.write(143, contextData.columnGutter, ctxMap);
+      this._writer.write(294, b(contextData.columnFlowReversed));
+      for (const size of contextData.columnSizes) {
+        this._writer.write(144, size);
+      }
+      this._writer.write(295, b(contextData.wordBreak));
     }
 
-    this._writer.writeHandle(340, contextData.textStyle);
+    this._writer.write(296, b(contextData.hasContentsBlock));
+    if (contextData.hasContentsBlock) {
+      this._writer.writeHandle(341, contextData.blockContent);
+      this._writer.writeVector(14, contextData.blockContentNormal, ctxMap);
+      this._writer.writeVector(15, contextData.blockContentLocation, ctxMap);
+      this._writer.writeVector(16, contextData.blockContentScale, ctxMap);
+      this._writer.write(46, contextData.blockContentRotation, ctxMap);
+      this._writeMLeaderColor(93, contextData.blockContentColor);
+    }
+
+    this._writer.writeVector(110, contextData.basePoint, ctxMap);
+    this._writer.writeVector(111, contextData.baseDirection, ctxMap);
+    this._writer.writeVector(112, contextData.baseVertical, ctxMap);
+    this._writer.write(297, b(contextData.normalReversed));
+
+    for (const root of contextData.leaderRoots) {
+      this._writer.write(302, 'LEADER{');
+      this._writeLeaderRoot(root);
+      this._writer.write(303, '}');
+    }
+
+    if (this.version >= ACadVersion.AC1024) {
+      this._writer.write(272, contextData.textBottomAttachment, ctxMap);
+      this._writer.write(273, contextData.textTopAttachment, ctxMap);
+    }
   }
 
   private _writeLeaderRoot(root: LeaderRoot): void {
-  const rootMap = DxfClassMap.create(root.constructor, 'LeaderRoot');
-    this._writer.write(290, root.contentValid, rootMap);
-    this._writer.writeVector(10, root.connectionPoint, rootMap);
-    this._writer.writeVector(11, root.direction, rootMap);
+    this._writer.write(290, root.contentValid ? 1 : 0);
+    this._writer.write(291, root.unknown ? 1 : 0);
+    this._writer.writeVector(10, root.connectionPoint);
+    this._writer.writeVector(11, root.direction);
+    for (const pair of root.breakStartEndPointsPairs) {
+      this._writer.writeVector(12, pair.startPoint);
+      this._writer.writeVector(13, pair.endPoint);
+    }
+    this._writer.write(90, root.leaderIndex);
+    this._writer.write(40, root.landingDistance);
 
     for (const line of root.lines) {
-      this._writer.write(304, "LEADER_LINE{");
+      this._writer.write(304, 'LEADER_LINE{');
       this._writeLeaderLine(line);
-      this._writer.write(305, "}");
+      this._writer.write(305, '}');
     }
 
-    this._writer.write(271, root.textAttachmentDirection, rootMap);
+    if (this.version >= ACadVersion.AC1024) {
+      this._writer.write(271, root.textAttachmentDirection);
+    }
   }
 
   private _writeLeaderLine(line: LeaderLine): void {
     for (const pt of line.points) {
       this._writer.writeVector(10, pt);
     }
-    this._writer.write(91, line.breakInfoEntries.length);
+    for (const info of line.breakInfoEntries) {
+      this._writer.write(90, info.segmentIndex);
+      for (const pair of info.startEndPoints) {
+        this._writer.writeVector(11, pair.startPoint);
+        this._writer.writeVector(12, pair.endPoint);
+      }
+    }
+    this._writer.write(91, line.index);
   }
 
   private _writeOle2Frame(ole: Ole2Frame, map: DxfMap): void {

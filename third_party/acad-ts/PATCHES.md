@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0036 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0037 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -646,5 +646,35 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
 **Title:** Store the MTEXT column count read from R2018 DWG
 
 `DwgObjectReader` reads the R2018 MTEXT column count but does not assign it to `columnData.columnCount`. The writer then writes 0, and the column heights are lost on the next read. This assigns the count.
+
+</details>
+
+### 0037 — DXF MULTILEADER loses its settings, its text colour and its branches on save
+
+- **File:** `third_party/acad-ts-patches/0037-dxf-multileader.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:**
+  - `_writeMultiLeader` wrote a few AcDbMLeader groups on the wrong codes: the line colour as 171 and the attachment direction as 175 and 176. It left out the rest.
+  - `_writeAnnotContext` wrote the content base point where the base point goes. It wrote none of the text, background, column or block settings, and no label.
+  - Every multileader therefore came back with default styling and an empty label.
+  - The reader decoded the context text colour (90, an AcCmColor) as plain RGB, so ByLayer became RGB 0,0,0.
+  - The reader read no group of a branch (`LEADER{`), because `LeaderRoot` has no DXF class map.
+  - Corpus: 3,889 differences (`MULTILEADER *`) in the twelve acadsharp sample DXFs and ezdxf `uncommon.dxf`. The entity oracle listed the read gaps under M1-32.
+- **Fix:**
+  - Write AcDbMLeader, its context data, branches and leader lines in AutoCAD's group order, checked against the acadsharp R2000–R2018 samples. 270, the context 272/273, the branch 271 and the trailing 271–273 are written from R2010; 295 from R2013.
+  - Write colours as AcCmColor values. The ones the reader keeps as raw integers are written back unchanged.
+  - Read the context text colour as an AcCmColor.
+  - Read the branch groups 290, 291, 10, 11, 90, 40 and 271.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0037 DXF writer writes MULTILEADER entities with their own group codes".
+  - Files: acadsharp AC1015–AC1032 and ezdxf `uncommon.dxf`, with ASCII and binary saves.
+  - Every main, context and branch field, plus the leader points, must survive the round trip.
+  - The first sample multileader is checked for its label, style, ByLayer text colour and branch connection point.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write and read DXF MULTILEADER entities completely
+
+`DxfSectionWriterBase._writeMultiLeader` and `_writeAnnotContext` write only part of AcDbMLeader, and several groups go on the wrong codes. A read-write cycle therefore resets every multileader's style overrides, text, colours and background, and empties its label. This writes the entity, its `CONTEXT_DATA{`, `LEADER{` and `LEADER_LINE{` blocks in the order AutoCAD writes them, with the R2010 and R2013 groups gated by version and colours written as AcCmColor values. On the read side, the context text colour (90) is now decoded as an AcCmColor rather than RGB. The `LEADER{` groups, which had no class map, are now read: connection point, direction, index, landing distance and attachment direction.
 
 </details>

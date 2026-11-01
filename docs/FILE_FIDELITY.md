@@ -35,7 +35,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | DIMENSION (arc length) | ✓ (ARC_DIMENSION) | | | | |
 | DIMENSION (jogged) | — acad-ts does not read LARGE_RADIAL_DIMENSION as a dimension (M1-34) | | | | |
 | LEADER | ✓ | | | | |
-| MLEADER (+ MLEADERSTYLE) | ✓ (DXF branch connection point, landing direction and dogleg length, and the context text colour, lost by acad-ts, M1-32; DWG reads them) | | | | |
+| MLEADER (+ MLEADERSTYLE) | ✓ (DXF branches and the context text colour read since 0037) | | | | |
 | HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | ✓ (style 75, seed points and ellipse-edge major axes lost by acad-ts, M1-32) | | | | |
 | WIPEOUT | ✓ (acad-ts skips the clip type 71; the mapper infers a polygon from more than two vertices, M1-32) | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |
@@ -151,7 +151,8 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DATATABLE / TABLECONTENT owned through an XRECORD | Read and kept (0018); TABLECONTENT is **not written to DXF** (writer gap, M1-31) |
 | DIMASSOC | Read; **not written to DXF** (47 handles, M1-31) |
 | ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** (98 handles in the R13/R14 binary DXFs, M1-31) |
-| TABLESTYLE / CELLSTYLEMAP, MLEADER, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
+| TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
+| MULTILEADER (DXF) | Written in AutoCAD's group order with its context data, branches and leader lines (0037); the reader decodes the context text colour as an AcCmColor and reads the branch groups. A save reset every multileader to defaults with an empty label |
 | MTEXT columns (R2018) | Written to DXF as the embedded object, with the defined extents (0035); the DWG reader keeps the column count (0036). Every multi-column MTEXT lost its columns on a DXF save |
 | Angles (DXF write): TEXT rotation, ARC angles, HATCH pattern lines and edges | Written as the degree value that reads back to the same radians (0033); about one angle in a few dozen moved by an ulp on every save. HATCH edge angles past 360° are kept, and a SOLID hatch keeps its pattern angle, scale and lines |
 | VIEWPORT entity (DXF write) | Every AcDbViewport group written with its own code, R2000+ settings included (0031); id, angles, zoom, UCS, plot style, clip boundary and visual style were scrambled or dropped |
