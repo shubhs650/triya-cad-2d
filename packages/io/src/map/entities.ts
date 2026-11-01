@@ -34,6 +34,8 @@ import {
   CadWipeoutBase,
   PdfUnderlay,
   MLine,
+  Ole2Frame,
+  ProxyEntity,
   Region,
   Viewport,
   TextEntity,
@@ -79,6 +81,8 @@ import type {
   ImageGeometry,
   UnderlayGeometry,
   MLineGeometry,
+  OleFrameGeometry,
+  ProxyGraphicsGeometry,
   RegionGeometry,
   ViewportGeometry,
   PlanarProps,
@@ -90,6 +94,7 @@ import type {
 import { regionBoundary } from '../acis/region';
 import { readSab, readSat } from '../acis/records';
 import { common, hex, mapColor, mapEntityColor, mapLineweight, ref } from './common';
+import { proxyCurves } from './proxy';
 
 export interface UnmappedEntity {
   readonly handle: string;
@@ -745,6 +750,30 @@ function mlineGeometry(m: MLine): MLineGeometry | UnmappedEntity['reason'] {
   };
 }
 
+/** OLE2FRAME: the frame of an OLE object (DXF AcDbOle2Frame); corners are WCS. */
+function oleGeometry(o: Ole2Frame): OleFrameGeometry {
+  const z = o.upperLeftCorner.z;
+  return {
+    kind: 'OLE2FRAME',
+    upperLeft: xy(o.upperLeftCorner),
+    lowerRight: xy(o.lowerRightCorner),
+    oleType: o.oleObjectType as number,
+    paperSpace: o.isPaperSpace,
+    application: o.sourceApplication,
+    ...(z !== 0 ? { elevation: z } : {}),
+  };
+}
+
+/** ACAD_PROXY_ENTITY: what its proxy graphics draw in plan view. */
+function proxyEntityGeometry(p: ProxyEntity): ProxyGraphicsGeometry {
+  const className = p.dxfClass?.dxfName;
+  return {
+    kind: 'ACAD_PROXY_ENTITY',
+    ...(className ? { className } : {}),
+    ...proxyCurves(p.proxyGeometries),
+  };
+}
+
 /** REGION: the plan-view boundary of its planar ACIS body (SAT text or SAB binary). */
 function regionGeometry(r: Region): RegionGeometry | UnmappedEntity['reason'] {
   let model;
@@ -1097,6 +1126,8 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   if (e instanceof MLine) return mlineGeometry(e);
   if (e instanceof Viewport) return viewportGeometry(e);
   if (e instanceof Region) return regionGeometry(e);
+  if (e instanceof Ole2Frame) return oleGeometry(e);
+  if (e instanceof ProxyEntity) return proxyEntityGeometry(e);
   return 'not mapped yet';
 }
 
