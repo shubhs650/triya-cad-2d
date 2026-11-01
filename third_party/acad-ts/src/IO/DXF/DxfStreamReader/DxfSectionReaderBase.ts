@@ -569,8 +569,35 @@ export abstract class DxfSectionReaderBase {
     const mapName = !subclass ? template.cadObject.subclassMarker : subclass;
     const tmp = template as CadTableEntityTemplate;
     const table = tmp.cadObject as TableEntity;
+    const code = this._reader.code as number;
 
-    switch (this._reader.code as number) {
+    if (tmp.currentCellTemplate == null && this.currentSubclass?.toUpperCase() === DxfSubclassMarker.tableEntity.toUpperCase()) {
+      // The table-wide overrides run from their flag word (93) to the first row height. acad-ts
+      // models none of them, so keep them as read for the DXF writer (DEC-043); the four flag
+      // words (93-96) are also assigned to their fields below.
+      if (code === 93) {
+        tmp.readingTableOverrides = true;
+      } else if (code === 141 || code === 142 || code === 171) {
+        tmp.readingTableOverrides = false;
+      }
+      if (tmp.readingTableOverrides) {
+        table.tableOverrideDxfCodes.push({ code, value: this._reader.value });
+        if (code < 93 || code > 96) {
+          return true;
+        }
+      }
+    }
+
+    if (tmp.currentCellTemplate != null && (code === 91 || code === 92)) {
+      // In a cell, 91 is the override flag word (AutoCAD 2007 and later) and 92 the extended
+      // cell flags, which acad-ts does not keep. Neither is the table's row or column count.
+      if (code === 91) {
+        tmp.currentCell.overrideFlags = this._reader.valueAsInt;
+      }
+      return true;
+    }
+
+    switch (code) {
       case 1: {
         let content: CellContent;
         if (tmp.currentCell.content === null) {
@@ -592,7 +619,13 @@ export abstract class DxfSectionReaderBase {
       }
       case 2: {
         if (this.currentSubclass !== null && this.currentSubclass.toUpperCase() === DxfSubclassMarker.tableEntity.toUpperCase()) {
-          const content = tmp.currentCell.content!;
+          // Text longer than 250 characters comes as 2 chunks before the final 1.
+          let content = tmp.currentCell.content;
+          if (content === null) {
+            content = new CellContent();
+            content.cadValue.valueType = CadValueType.String;
+            tmp.currentCell.contents.push(content);
+          }
           if (content.cadValue.value === null) {
             content.cadValue.setValue(this._reader.valueAsString, CadValueType.String);
           } else {
@@ -606,6 +639,8 @@ export abstract class DxfSectionReaderBase {
         return true;
       }
       case 177:
+        // The cell override flags before AutoCAD 2007, a 16-bit word.
+        tmp.currentCell.overrideFlags = this._reader.valueAsUShort;
         return true;
       case 279:
         tmp.currentCell.styleOverride.topBorder.lineWeight = this._reader.valueAsShort as LineWeightType;
@@ -667,14 +702,18 @@ export abstract class DxfSectionReaderBase {
         return true;
       }
       case 144:
+        // Block scale of a block cell (the text height is 140).
         if (tmp.currentCellTemplate != null) {
-          tmp.currentCellTemplate.formatTextHeight = this._reader.valueAsDouble;
+          tmp.currentCell.blockScale = this._reader.valueAsDouble;
         }
         return true;
       case 145:
         tmp.currentCell.rotation = this._reader.valueAsDouble;
         return true;
       case 170:
+        if (tmp.currentCellTemplate != null) {
+          tmp.currentCell.styleOverride.cellAlignment = this._reader.valueAsShort;
+        }
         return true;
       case 171:
         tmp.createCell(this._reader.valueAsInt as CellType);
@@ -723,14 +762,24 @@ export abstract class DxfSectionReaderBase {
 
     const template = new CadValueTemplate(value);
     const map = DxfClassMap.create(value.constructor, 'CadValue');
+    // A string longer than 250 characters comes as 2 chunks before the final 1; a 2 after the 1
+    // is appended to it.
+    let chunks: string | null = null;
+    let seenText = false;
 
     while (this._reader.code !== 304) {
       switch (this._reader.code as number) {
         case 1:
-          value.setValue(this._reader.valueAsString);
+          value.setValue((chunks ?? '') + this._reader.valueAsString);
+          chunks = null;
+          seenText = true;
           break;
         case 2:
-          value.setValue((value.value as string) + this._reader.valueAsString);
+          if (seenText) {
+            value.setValue((value.value as string) + this._reader.valueAsString);
+          } else {
+            chunks = (chunks ?? '') + this._reader.valueAsString;
+          }
           break;
         case 11: {
           const xyz = new XYZ();

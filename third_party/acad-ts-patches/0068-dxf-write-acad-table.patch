@@ -1,0 +1,140 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 8e55f5a..b9b9a93 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -29,6 +29,7 @@ import { Face3D } from '../../../Entities/Face3D.js';
+ import { Hatch , HatchBoundaryPath, HatchBoundaryPathPolyline, HatchBoundaryPathEdge, HatchBoundaryPathLine, HatchBoundaryPathArc, HatchBoundaryPathEllipse, HatchBoundaryPathSpline} from '../../../Entities/Hatch.js';
+ import { HatchPattern } from '../../../Entities/HatchPattern.js';
+ import { Insert } from '../../../Entities/Insert.js';
++import { CellOverrideFlags, CellType, TableEntity, type CellBorder, type TableEntityCell } from '../../../Entities/TableEntity.js';
+ import { Leader } from '../../../Entities/Leader.js';
+ import { Line } from '../../../Entities/Line.js';
+ import { LwPolyline } from '../../../Entities/LwPolyline.js';
+@@ -379,6 +389,8 @@ export abstract class DxfSectionWriterBase {
+       this._writeFace3D(entity, map);
+     } else if (entity instanceof Hatch) {
+       this._writeHatch(entity, map);
++    } else if (entity instanceof TableEntity) {
++      this._writeTableEntity(entity, map);
+     } else if (entity instanceof Insert) {
+       this._writeInsert(entity, map);
+     } else if (entity instanceof Leader) {
+@@ -889,6 +901,118 @@ export abstract class DxfSectionWriterBase {
+     }
+   }
+ 
++  // ACAD_TABLE as AutoCAD writes it (DXF reference, ACAD_TABLE): the block reference, the table
++  // header, the table-wide overrides as read (DEC-043), the row heights, the column widths and
++  // then every cell, row by row.
++  private _writeTableEntity(table: TableEntity, map: DxfMap): void {
++    const insert = map.subClasses.get(DxfSubclassMarker.insert)!;
++    this._writer.write(DxfCode.Subclass, DxfSubclassMarker.insert);
++    this._writer.write(2, table.block?.name ?? '', insert);
++    this._writer.writeVector(10, table.insertPoint, insert);
++    // AutoCAD writes no scale, rotation or normal for a table; keep any a table has.
++    if (table.xScale !== 1) this._writer.write(41, table.xScale, insert);
++    if (table.yScale !== 1) this._writer.write(42, table.yScale, insert);
++    if (table.zScale !== 1) this._writer.write(43, table.zScale, insert);
++    if (table.rotation !== 0) this._writer.write(50, table.rotation, insert);
++    if (table.normal.x !== 0 || table.normal.y !== 0 || table.normal.z !== 1) {
++      this._writer.writeVector(210, table.normal, insert);
++    }
++
++    this._writer.write(DxfCode.Subclass, DxfSubclassMarker.tableEntity);
++    if (this.version >= ACadVersion.AC1024) {
++      this._writer.write(280, table.version);
++    }
++    this._writer.writeHandle(342, table.style);
++    this._writer.writeHandle(343, table.block);
++    this._writer.writeVector(11, table.horizontalDirection);
++    this._writer.write(90, table.valueFlag);
++    this._writer.write(91, table.rows.length);
++    this._writer.write(92, table.columns.length);
++    if (table.tableOverrideDxfCodes.length > 0) {
++      for (const { code, value } of table.tableOverrideDxfCodes) {
++        this._writer.writeRaw(code, value);
++      }
++    } else {
++      // No override values are kept (a table built in memory or read from DWG), so state none:
++      // a flag bit with no value would, for example, suppress the title row.
++      for (const code of [93, 94, 95, 96]) {
++        this._writer.write(code, 0);
++      }
++    }
++    for (const row of table.rows) {
++      this._writer.write(141, row.height);
++    }
++    for (const column of table.columns) {
++      this._writer.write(142, column.width);
++    }
++    for (const row of table.rows) {
++      for (const cell of row.cells) {
++        this._writeTableEntityCell(cell);
++      }
++    }
++  }
++
++  // Before AutoCAD 2007 a cell carries its override flags in 177 (a 16-bit word) and its text in
++  // 1; from 2007 on the flags are in 91 and the value in a CELL_VALUE block. Each override value
++  // follows only when its flag is set, in the order AutoCAD writes them.
++  private _writeTableEntityCell(cell: TableEntityCell): void {
++    const r2007Plus = this.version >= ACadVersion.AC1021;
++    const flags = cell.overrideFlags;
++    const style = cell.styleOverride;
++    const content = cell.content ?? cell.contents[0] ?? null;
++
++    this._writer.write(171, cell.type);
++    this._writer.write(172, cell.edgeFlags);
++    this._writer.write(173, cell.mergedValue);
++    this._writer.write(174, cell.autoFit ? 1 : 0);
++    this._writer.write(175, cell.borderWidth);
++    this._writer.write(176, cell.borderHeight);
++    if (r2007Plus) {
++      this._writer.write(91, flags);
++    } else {
++      this._writer.write(177, (flags << 16) >> 16);
++    }
++    this._writer.write(178, cell.virtualEdgeFlag);
++    this._writer.write(145, cell.rotation);
++
++    if (cell.type === CellType.Block) {
++      this._writer.writeHandle(340, cell.value ?? content?.blockRecord ?? null);
++      this._writer.write(144, cell.blockScale);
++    } else if (!r2007Plus) {
++      const value = content?.cadValue.value;
++      const text = typeof value === 'string' ? value : content?.cadValue.formattedValue || (value == null ? '' : String(value));
++      this.writeLongTextValue(1, 2, text);
++    }
++
++    if ((flags & CellOverrideFlags.CellAlignment) !== 0) this._writer.write(170, style.cellAlignment);
++    if ((flags & CellOverrideFlags.BackgroundColor) !== 0) this._writer.write(63, style.backgroundColor.getApproxIndex());
++    if ((flags & CellOverrideFlags.ContentColor) !== 0) this._writer.write(64, style.contentColor.getApproxIndex());
++    if ((flags & CellOverrideFlags.BackgroundFillNone) !== 0) this._writer.write(283, style.isFillColorOn ? 1 : 0);
++    if ((flags & CellOverrideFlags.TextStyle) !== 0 && style.textStyle != null) this._writer.write(7, style.textStyle.name);
++    if ((flags & CellOverrideFlags.TextHeight) !== 0) this._writer.write(140, style.textHeight);
++    const borders: [CellBorder, number, number, CellOverrideFlags, CellOverrideFlags][] = [
++      [style.rightBorder, 275, 65, CellOverrideFlags.RightGridLineWeight, CellOverrideFlags.RightGridColor],
++      [style.bottomBorder, 276, 66, CellOverrideFlags.BottomGridLineWeight, CellOverrideFlags.BottomGridColor],
++      [style.leftBorder, 278, 68, CellOverrideFlags.LeftGridLineWeight, CellOverrideFlags.LeftGridColor],
++      [style.topBorder, 279, 69, CellOverrideFlags.TopGridLineWeight, CellOverrideFlags.TopGridColor],
++    ];
++    for (const [border, lineWeightCode, colorCode, lineWeightFlag, colorFlag] of borders) {
++      if ((flags & lineWeightFlag) !== 0) this._writer.write(lineWeightCode, border.lineWeight);
++      if ((flags & colorFlag) !== 0) this._writer.write(colorCode, border.color.getApproxIndex());
++    }
++
++    if (r2007Plus) {
++      this._writer.write(92, 0);
++      this._writer.write(301, 'CELL_VALUE');
++      let value = content?.cadValue;
++      if (value == null) {
++        value = new CadValue();
++        value.isEmpty = true;
++      }
++      this.writeCadValue(value);
++    }
++  }
++
+   private _writeLeader(leader: Leader, map: DxfMap): void {
+     const subclass = map.subClasses.get(DxfSubclassMarker.leader)!;
+     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.leader);
