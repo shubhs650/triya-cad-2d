@@ -1,0 +1,1 @@
+- M1-31 part 2 (#62): DXF saves keep `ACAD_PROXY_OBJECT`s as read (patch 0063, DEC-040), so objects from other applications survive; the binary R13/R14 DXFs round-trip with no difference, round trip 7,865 → 7,566 differences.

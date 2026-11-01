@@ -809,17 +809,11 @@
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf": {
       "declared": 117,
-      "lost": {
-        "ACAD_PROXY_OBJECT": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 49 4A 4B 4C 4D 4E 4F 50 51 52 53 54 55 56 57 58 59 6D 6E 7B 7D 7E 85 86 89",
-        "DICTIONARY": "7F 81"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r14.dxf": {
       "declared": 120,
-      "lost": {
-        "ACAD_PROXY_OBJECT": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 49 4A 4B 4C 4D 4E 4F 50 51 52 53 54 55 56 57 58 59 6D 6E 7B 7D 7E 85 86 89",
-        "DICTIONARY": "7F 81"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r2000.dxf": {
       "declared": 45,

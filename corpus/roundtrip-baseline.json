@@ -390,12 +390,12 @@
       "differences": 52
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf": {
-      "status": "diff",
-      "differences": 149
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r14.dxf": {
-      "status": "diff",
-      "differences": 150
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r2000.dxf": {
       "status": "clean",

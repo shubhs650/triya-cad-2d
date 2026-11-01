@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0062 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0063 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1229,5 +1229,29 @@ The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discardin
 **Title:** Write the IMAGEDEF_REACTOR of raster images to DXF
 
 `_writeCadImage` writes the 360 handle of the image's IMAGEDEF_REACTOR but never adds the reactor to the objects to write, and nothing else owns it, so it is missing from the saved file. This queues it with the image.
+
+</details>
+
+### 0063 — DXF writer skips every proxy object
+
+- **File:** `third_party/acad-ts-patches/0063-dxf-proxy-object-raw.patch`
+- **Touches:** `src/Objects/ProxyObject.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:**
+  - The DXF writer has no field writer for `ProxyObject` and skips it with "Object not implemented : ProxyObject".
+  - Every ACAD_PROXY_OBJECT was dropped on a DXF save, together with the dictionary entries that own it.
+  - Corpus: 98 save-stage handles, 49 in each of the binary R13 and R14 DXFs (154 and 156 round-trip differences).
+- **Fix:** under DEC-040, proxy objects join MATERIAL and VISUALSTYLE.
+  - With `keepRawDxfPassthroughObjects`, the reader keeps their group codes as read, and the writer writes those codes back, rewriting only the handle and owner.
+  - `ProxyObject` gains the `IRawCadObject` fields for this.
+  - Proxy objects with no recorded codes are still skipped with the notification, as before.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0063 DXF proxy objects are kept as read and written back raw (DEC-040)".
+  - Every proxy object of `bin_dxf_r13.dxf` and `bin_dxf_r14.dxf` keeps its handle, owner and proxy data through a binary DXF save, and its group codes come back unchanged.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep ACAD_PROXY_OBJECTs through DXF read and write
+
+The DXF writer has no writer for `ProxyObject` and skips it, so every proxy object (and the dictionary entries owning it) is missing from a saved DXF. Under the existing `keepRawDxfPassthroughObjects` option, which already keeps MATERIAL and VISUALSTYLE as read, this records the group codes of proxy objects on read and writes them back unchanged, rewriting only the handle and owner. Without the option, behaviour is unchanged.
 
 </details>
