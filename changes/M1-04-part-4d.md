@@ -1,0 +1,1 @@
+- M1-04 part 4d (#40): `mapEntities` maps OLE2FRAME (frame corners, OLE type, space, application) and ACAD_PROXY_ENTITY (circles, arcs and polylines from its proxy graphics, under pushed model transforms) and the spatial index bounds them, which completes M1-04. Neither type has a public corpus file yet (M1-40).

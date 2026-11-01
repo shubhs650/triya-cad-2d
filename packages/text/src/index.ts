@@ -2,3 +2,4 @@
 // Runs in Node and in a Web Worker: no DOM or browser globals (enforced by tsconfig `lib` and ESLint).
 export * from './shx/index';
 export * from './ttf/index';
+export * from './mtext/index';

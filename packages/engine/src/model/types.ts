@@ -632,6 +632,53 @@ export interface MLineGeometry extends PlanarProps {
   readonly vertices: readonly MLineVertex[];
 }
 
+/** One boundary loop of a REGION face, in coedge order. */
+export interface RegionLoop {
+  /** Index of the face the loop bounds, counted over the whole region. */
+  readonly face: number;
+  /** Arcs and ellipses run counter-clockwise in plan view, as kernel curves do. */
+  readonly edges: readonly (Line | Arc | Circle | Ellipse)[];
+}
+
+/**
+ * REGION: a planar ACIS body (DXF AcDbModelerGeometry), read as the plan-view boundary of
+ * its faces. The ACIS data itself stays in the retained original.
+ */
+export interface RegionGeometry extends PlanarProps {
+  readonly kind: 'REGION';
+  readonly loops: readonly RegionLoop[];
+}
+
+/**
+ * OLE2FRAME: an embedded or linked OLE object, drawn as its frame (Triya never runs OLE
+ * servers). Corners are WCS (DXF 10 and 11).
+ */
+export interface OleFrameGeometry extends PlanarProps {
+  readonly kind: 'OLE2FRAME';
+  readonly upperLeft: Vec2;
+  readonly lowerRight: Vec2;
+  /** DXF 71: 1 link, 2 embedded, 3 static. */
+  readonly oleType: number;
+  /** DXF 72: the object lives in paper space. */
+  readonly paperSpace: boolean;
+  readonly application: string;
+}
+
+/**
+ * ACAD_PROXY_ENTITY: an object of an application Triya does not have, drawn from the proxy
+ * graphics its application saved. Curves are WCS plan view; what has no plan-view curve (text,
+ * meshes, shells, circles on tilted planes) is counted in `skipped` and stays in the original.
+ */
+export interface ProxyGraphicsGeometry {
+  readonly kind: 'ACAD_PROXY_ENTITY';
+  /** The custom object's DXF class name, when its class is known. */
+  readonly className?: string;
+  /** The extents the application stated, in plan view. */
+  readonly extents?: { readonly min: Vec2; readonly max: Vec2 };
+  readonly curves: readonly (Line | Circle | Arc | Polyline)[];
+  readonly skipped: number;
+}
+
 /**
  * VIEWPORT (DXF AcDbViewport). Its frame lives in its layout's paper space; the view it shows
  * is stated in model space (view direction, target, twist) and display coordinates (center).
@@ -826,6 +873,9 @@ export type EntityGeometry =
   | UnderlayGeometry
   | MLineGeometry
   | ViewportGeometry
+  | RegionGeometry
+  | OleFrameGeometry
+  | ProxyGraphicsGeometry
   | HatchGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */

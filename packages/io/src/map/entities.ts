@@ -34,6 +34,9 @@ import {
   CadWipeoutBase,
   PdfUnderlay,
   MLine,
+  Ole2Frame,
+  ProxyEntity,
+  Region,
   Viewport,
   TextEntity,
   type AttributeBase,
@@ -78,6 +81,9 @@ import type {
   ImageGeometry,
   UnderlayGeometry,
   MLineGeometry,
+  OleFrameGeometry,
+  ProxyGraphicsGeometry,
+  RegionGeometry,
   ViewportGeometry,
   PlanarProps,
   TextFields,
@@ -85,13 +91,22 @@ import type {
   Transparency,
   Vec2,
 } from '@triya/engine';
+import { regionBoundary } from '../acis/region';
+import { readSab, readSat } from '../acis/records';
 import { common, hex, mapColor, mapEntityColor, mapLineweight, ref } from './common';
+import { proxyCurves } from './proxy';
 
 export interface UnmappedEntity {
   readonly handle: string;
   /** DXF type name. */
   readonly type: string;
-  readonly reason: 'not mapped yet' | 'tilted plane' | 'no plan view' | 'missing block';
+  readonly reason:
+    | 'not mapped yet'
+    | 'tilted plane'
+    | 'no plan view'
+    | 'missing block'
+    /** ACIS data Triya cannot read as a planar boundary (spline edges, missing records). */
+    | 'unsupported boundary';
 }
 
 export interface MappedEntities {
@@ -735,6 +750,49 @@ function mlineGeometry(m: MLine): MLineGeometry | UnmappedEntity['reason'] {
   };
 }
 
+/** OLE2FRAME: the frame of an OLE object (DXF AcDbOle2Frame); corners are WCS. */
+function oleGeometry(o: Ole2Frame): OleFrameGeometry {
+  const z = o.upperLeftCorner.z;
+  return {
+    kind: 'OLE2FRAME',
+    upperLeft: xy(o.upperLeftCorner),
+    lowerRight: xy(o.lowerRightCorner),
+    oleType: o.oleObjectType as number,
+    paperSpace: o.isPaperSpace,
+    application: o.sourceApplication,
+    ...(z !== 0 ? { elevation: z } : {}),
+  };
+}
+
+/** ACAD_PROXY_ENTITY: what its proxy graphics draw in plan view. */
+function proxyEntityGeometry(p: ProxyEntity): ProxyGraphicsGeometry {
+  const className = p.dxfClass?.dxfName;
+  return {
+    kind: 'ACAD_PROXY_ENTITY',
+    ...(className ? { className } : {}),
+    ...proxyCurves(p.proxyGeometries),
+  };
+}
+
+/** REGION: the plan-view boundary of its planar ACIS body (SAT text or SAB binary). */
+function regionGeometry(r: Region): RegionGeometry | UnmappedEntity['reason'] {
+  let model;
+  try {
+    const text = r.getAcisText();
+    model = text !== null ? readSat(text) : readSab(r.binaryData);
+  } catch {
+    return 'unsupported boundary';
+  }
+  const b = regionBoundary(model);
+  if (typeof b === 'string') return b;
+  return {
+    kind: 'REGION',
+    loops: b.loops,
+    ...(b.elevation !== 0 ? { elevation: b.elevation } : {}),
+    ...(b.down ? { normal: { x: 0, y: 0, z: -1 } } : {}),
+  };
+}
+
 /** VIEWPORT: a paper-space frame and the model-space view it shows (DXF AcDbViewport). */
 function viewportGeometry(v: Viewport): ViewportGeometry {
   const clipBoundary = ref(v.boundary);
@@ -1067,6 +1125,9 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   if (e instanceof PdfUnderlay) return underlayGeometry(e);
   if (e instanceof MLine) return mlineGeometry(e);
   if (e instanceof Viewport) return viewportGeometry(e);
+  if (e instanceof Region) return regionGeometry(e);
+  if (e instanceof Ole2Frame) return oleGeometry(e);
+  if (e instanceof ProxyEntity) return proxyEntityGeometry(e);
   return 'not mapped yet';
 }
 

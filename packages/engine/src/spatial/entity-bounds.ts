@@ -321,6 +321,20 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
       return underlayBounds(geom);
     case 'MLINE':
       return mlineBounds(geom);
+    case 'OLE2FRAME':
+      return boxed(boxOf([geom.upperLeft, geom.lowerRight]));
+    case 'ACAD_PROXY_ENTITY': {
+      // The stated extents and every drawn curve; an object that draws nothing we read is unknown.
+      const boxes = geom.curves.map((c) => curveBounds(c, ctx.tol));
+      if (geom.extents) boxes.push(boxOf([geom.extents.min, geom.extents.max]));
+      if (boxes.length === 0) return UNKNOWN;
+      return boxed(boxes.reduce(unionBox));
+    }
+    case 'REGION': {
+      const edges = geom.loops.flatMap((l) => l.edges);
+      if (edges.length === 0) return EMPTY;
+      return boxed(edges.map((c) => curveBounds(c, ctx.tol)).reduce(unionBox));
+    }
     case 'VIEWPORT': {
       // The frame on the sheet; what it shows of model space is drawn inside it.
       const hw = Math.abs(geom.width) / 2;

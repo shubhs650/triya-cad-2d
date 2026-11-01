@@ -547,3 +547,50 @@ describe('multilines and viewports', () => {
     expectBox(entityBounds(vp, ctx()), box(1, 1, 9, 7));
   });
 });
+
+describe('regions', () => {
+  it('bounds a region by the curves of all its loops', () => {
+    const region: EntityGeometry = {
+      kind: 'REGION',
+      loops: [
+        {
+          face: 0,
+          edges: [
+            { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+            { kind: 'ARC', center: { x: 5, y: 0 }, radius: 5, startAngle: 0, endAngle: Math.PI },
+          ],
+        },
+        { face: 0, edges: [{ kind: 'CIRCLE', center: { x: 5, y: 2 }, radius: 1 }] },
+      ],
+    };
+    expectBox(entityBounds(region, ctx()), box(0, 0, 10, 5));
+    expect(entityBounds({ kind: 'REGION', loops: [] }, ctx()).kind).toBe('empty');
+  });
+});
+
+describe('OLE frames and proxy entities', () => {
+  it('bounds an OLE frame by its corners', () => {
+    const ole: EntityGeometry = {
+      kind: 'OLE2FRAME',
+      upperLeft: { x: 1, y: 9 },
+      lowerRight: { x: 7, y: 3 },
+      oleType: 2,
+      paperSpace: false,
+      application: '',
+    };
+    expectBox(entityBounds(ole, ctx()), box(1, 3, 7, 9));
+  });
+
+  it('bounds a proxy entity by its stated extents and drawn curves, unknown when it draws none', () => {
+    const p: EntityGeometry = {
+      kind: 'ACAD_PROXY_ENTITY',
+      extents: { min: { x: 0, y: 0 }, max: { x: 4, y: 4 } },
+      curves: [{ kind: 'CIRCLE', center: { x: 10, y: 0 }, radius: 1 }],
+      skipped: 0,
+    };
+    expectBox(entityBounds(p, ctx()), box(0, -1, 11, 4));
+    expect(entityBounds({ kind: 'ACAD_PROXY_ENTITY', curves: [], skipped: 3 }, ctx()).kind).toBe(
+      'unknown',
+    );
+  });
+});
