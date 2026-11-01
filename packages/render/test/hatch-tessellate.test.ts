@@ -165,3 +165,22 @@ describe('gradient hatches', () => {
     expect(tessellate({ ...gradient(), loops: [] }, { color: '#ff0000' })).toEqual([]);
   });
 });
+
+describe('hatches stored without pattern lines (M1-16 part 3)', () => {
+  it('draws a named pattern from the bundled library at the hatch’s scale', () => {
+    // TRIYA_LINES0: horizontal lines 3 mm apart; at scale 1/3 they are 1 apart, like the
+    // stored lines of `hatch()`.
+    const named = hatch({ pattern: 'TRIYA_LINES0', patternScale: 1 / 3, patternLines: [] });
+    const p = path(tessellate(named, { color: 'foreground' })[0]);
+    expect(p.filter((_, i) => i % 3 === 2).map((y) => Math.round(y * 1e9) / 1e9)).toEqual([
+      1, 1, 2, 2, 3, 3,
+    ]);
+  });
+
+  it('draws a user-defined hatch from its angle and spacing, and nothing for an unknown name', () => {
+    const user = hatch({ patternType: 0, pattern: '_USER', patternScale: 1, patternLines: [] });
+    expect(tessellate(user, { color: 'foreground' })).toHaveLength(1);
+    const unknown = hatch({ pattern: 'NOT_A_PATTERN', patternLines: [] });
+    expect(tessellate(unknown, { color: 'foreground' })).toEqual([]);
+  });
+});
