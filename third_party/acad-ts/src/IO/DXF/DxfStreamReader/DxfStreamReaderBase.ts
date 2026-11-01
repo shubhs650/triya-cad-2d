@@ -4,7 +4,7 @@ import { DxfFileToken } from '../../../DxfFileToken.js';
 import { GroupCodeValue, GroupCodeValueType } from '../../../GroupCodeValue.js';
 import { DxfException } from '../../../Exceptions/DxfException.js';
 import { MathHelper } from '../../../Math/MathHelper.js';
-import { decodeCadString, getDecoderEncodingLabel } from '../../TextEncoding.js';
+import { decodeCadString, decodeDxfUnicode, getDecoderEncodingLabel } from '../../TextEncoding.js';
 import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
 
 export abstract class DxfStreamReaderBase implements IDxfStreamReader {
@@ -148,7 +148,7 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
       case GroupCodeValueType.String:
       case GroupCodeValueType.Comment:
       case GroupCodeValueType.ExtendedDataString:
-        return this.readStringLine();
+        return decodeDxfUnicode(this.readStringLine());
       case GroupCodeValueType.Point3D:
       case GroupCodeValueType.Double:
       case GroupCodeValueType.ExtendedDataDouble:

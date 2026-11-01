@@ -511,14 +511,9 @@ const deg = (g: readonly Group[], code: number, dflt = 0): number =>
 const nameOf = (rs: readonly { handle: string; name: string }[], h: string): string | undefined =>
   rs.find((r) => r.handle === h)?.name.toUpperCase();
 
-/**
- * A DXF string as acad-ts should decode it. The oracle splits the file as Latin-1; files from
- * R2007 on are UTF-8, so a value with non-ASCII bytes may be either.
- */
+/** A DXF string as acad-ts should decode it; the oracle has already decoded the file's text. */
 function sameText(file: string | undefined, got: string): boolean {
-  const f = file ?? '';
-  const bytes = Uint8Array.from(f, (c) => c.charCodeAt(0) & 0xff);
-  return [f, new TextDecoder('utf-8').decode(bytes)].some((v) => caret(v) === got);
+  return caret(file ?? '') === got;
 }
 
 /** DXF caret notation: `^J` is the control character J − 64, and `^ ` a literal caret. */

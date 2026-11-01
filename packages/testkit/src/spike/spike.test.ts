@@ -12,12 +12,17 @@ const corpusBytes = (path: string): Uint8Array =>
   );
 // AC1032 ASCII DXF with view styles and dynamic-block data.
 const DYN = 'third-party/acadsharp/dynamic-blocks/BLOCKPOLARPARAMETER.dxf';
-// AC1027 DXF with a layer named with a `\U+00FC` escape, which the acad-ts DXF writer rejects as
-// an invalid name and drops (M1-31). The tooling tests below need a file the writer drops objects
-// from; when M1-31 fixes this one, point SKIPPED at another such file (DIMASSOC in
-// dimension_in_block.dxf was fixed by 0061, ACAD_PROXY_OBJECT in bin_dxf_r13.dxf by 0063, and
-// TABLECONTENT in sample_AC1015_ascii.dxf by M1-31 part 4).
+// The tooling tests below need a file the writer drops objects from. The public corpus has none
+// left since M1-31 (DIMASSOC in dimension_in_block.dxf was fixed by 0061, ACAD_PROXY_OBJECT in
+// bin_dxf_r13.dxf by 0063, TABLECONTENT in sample_AC1015_ascii.dxf by M1-31 part 4, and the
+// `\U+00FC` layer of dxf_unicode.dxf by 0072), so this AC1027 file gets a layer name with a "|",
+// which DXF names cannot hold: the writer reports it and drops the layer.
 const SKIPPED = 'third-party/ezdxf/integration_tests/dxf_unicode.dxf';
+const skippedBytes = (): Uint8Array => {
+  const text = Buffer.from(corpusBytes(SKIPPED)).toString('latin1');
+  expect(text).toContain('mit \\U+00FC');
+  return new Uint8Array(Buffer.from(text.replace('mit \\U+00FC', 'mit |'), 'latin1'));
+};
 const DWG = 'third-party/acadsharp/sample_base/empty.dwg';
 
 describe('spike tooling', () => {
@@ -35,7 +40,7 @@ describe('spike tooling', () => {
   });
 
   it('roundTrip reports writer notifications and returns the written bytes when asked', () => {
-    const bytes = corpusBytes(SKIPPED);
+    const bytes = skippedBytes();
     const kept = roundTrip(bytes, { keepOutput: true });
     expect(kept.output?.length).toBe(kept.bytesOut);
     expect(Object.keys(kept.writerNotes ?? {}).some((m) => /name is invalid/.test(m))).toBe(true);
@@ -53,7 +58,7 @@ describe('spike tooling', () => {
     expect(categorize(changed)).toBe('property-loss');
     expect(rootKey(changed)).toBe('VIEWPORT ucs[]');
 
-    const bytes = corpusBytes(SKIPPED);
+    const bytes = skippedBytes();
     const rt = roundTrip(bytes, { sampleSize: 1e6, maxDifferences: 1e6 });
     const tax = buildTaxonomy([
       { path: SKIPPED, read: spikeRead(bytes), roundTrip: rt, differences: rt.sample ?? [] },

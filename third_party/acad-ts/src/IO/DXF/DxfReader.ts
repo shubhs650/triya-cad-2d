@@ -211,7 +211,8 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
       try {
         header.setValue(currVar, parameters);
 
-        if (currVar === '$DWGCODEPAGE') {
+        // R2007+ DXF is UTF-8 whatever the code page (see _getReader).
+        if (currVar === '$DWGCODEPAGE' && this._version < ACadVersion.AC1021) {
           this._encoding = getDecoderEncodingLabel(header.codePage);
           this._reader.encoding = this._encoding;
         }
@@ -421,6 +422,11 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
 
     if (this._version === ACadVersion.Unknown) {
       this.triggerNotification('Dxf version not found, using a generic reader.', NotificationType.Warning);
+    }
+
+    // AutoCAD writes DXF as UTF-8 from R2007; $DWGCODEPAGE still names the drawing's code page.
+    if (this._version >= ACadVersion.AC1021) {
+      this._encoding = 'utf-8';
     }
 
     return this._createReader(isBinary, isAC1009Format);
