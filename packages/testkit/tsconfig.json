@@ -1,8 +1,8 @@
 {
-  "//": "allowImportingTsExtensions: the corpus CLI runs under Node type stripping, which needs explicit .ts import paths.",
+  "//": "allowImportingTsExtensions: the corpus CLI runs under Node type stripping, which needs explicit .ts import paths. DOM lib: testkit may import @triya/render (DEC-032), a browser package whose sources name Canvas types; the code still runs in Node.",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
-    "lib": ["ES2023"],
+    "lib": ["ES2023", "DOM"],
     "types": ["node"],
     "allowImportingTsExtensions": true
   },

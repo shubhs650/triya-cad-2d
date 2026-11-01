@@ -58,7 +58,7 @@ Read ticks for entities (M1-04) mean every entity of the type in every readable 
 | Table | Read | Edit | Write | Test |
 |---|---|---|---|---|
 | LAYER (+ VP overrides via xdata/dictionaries) | ✓ record (VP overrides not yet) | | | |
-| LTYPE (simple + complex) | ✓ | | | |
+| LTYPE (simple + complex) | ✓ (patterns, text and shape elements fitted by `dashPath`, M1-13 part 1; `.lin` files read by `parseLin`) | | | `style.corpus.test.ts` (473 records) |
 | STYLE (text styles, SHX and TTF, bigfont) | ✓ | | | |
 | DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet) | | | |
 | APPID | ✓ | | | |

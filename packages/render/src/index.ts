@@ -10,3 +10,4 @@ export {
   type Canvas2DRendererOptions,
   type Surface,
 } from './canvas2d';
+export * from './style/index';
