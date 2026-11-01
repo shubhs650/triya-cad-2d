@@ -429,6 +429,92 @@ export interface ToleranceGeometry extends PlanarProps {
   readonly text: string;
 }
 
+/**
+ * One edge of a HATCH boundary loop, in the hatch's plane (plan view, DEC-039). Arc and
+ * ellipse angles keep the DXF convention: with `ccw` false AutoCAD stores the clockwise
+ * edge's angles negated. A −Z plane reverses every edge, so the mapper flips `ccw`, adds π
+ * to arc angles and keeps ellipse parameters.
+ */
+export type HatchEdge =
+  | { readonly type: 'line'; readonly start: Vec2; readonly end: Vec2 }
+  | {
+      readonly type: 'arc';
+      readonly center: Vec2;
+      readonly radius: number;
+      readonly startAngle: number;
+      readonly endAngle: number;
+      readonly ccw: boolean;
+    }
+  | {
+      readonly type: 'ellipse';
+      readonly center: Vec2;
+      /** Major axis end point relative to the centre. */
+      readonly majorAxis: Vec2;
+      readonly ratio: number;
+      readonly startAngle: number;
+      readonly endAngle: number;
+      readonly ccw: boolean;
+    }
+  | {
+      readonly type: 'spline';
+      readonly degree: number;
+      readonly knots: readonly number[];
+      readonly controlPoints: readonly Vec2[];
+      readonly weights?: readonly number[];
+      readonly periodic: boolean;
+      readonly fitPoints?: readonly Vec2[];
+      readonly startTangent?: Vec2;
+      readonly endTangent?: Vec2;
+    };
+
+/** A HATCH boundary loop: a polyline (flag 2) or a list of edges. */
+export interface HatchLoop {
+  /** DXF 92: 1 external, 2 polyline, 4 derived, 8 text box, 16 outermost, … */
+  readonly flags: number;
+  readonly polyline?: { readonly vertices: readonly PolylineVertex[]; readonly closed: boolean };
+  readonly edges?: readonly HatchEdge[];
+  /** DXF 330: the boundary objects of an associative hatch. */
+  readonly sources?: readonly Handle[];
+}
+
+/** A pattern definition line, already scaled and rotated as the file stores it (DXF 53–49). */
+export interface HatchPatternLine {
+  readonly angle: number;
+  readonly base: Vec2;
+  readonly offset: Vec2;
+  readonly dashes: readonly number[];
+}
+
+export interface HatchGeometry extends PlanarProps {
+  readonly kind: 'HATCH';
+  /** DXF 2. */
+  readonly pattern: string;
+  /** DXF 70. */
+  readonly solid: boolean;
+  /** DXF 71. */
+  readonly associative: boolean;
+  /** DXF 75: 0 normal (odd parity), 1 outer, 2 ignore. */
+  readonly style: number;
+  /** DXF 76: 0 user-defined, 1 predefined, 2 custom. */
+  readonly patternType: number;
+  readonly patternAngle: number;
+  readonly patternScale: number;
+  /** DXF 77: user-defined pattern doubled. */
+  readonly double: boolean;
+  readonly loops: readonly HatchLoop[];
+  readonly patternLines: readonly HatchPatternLine[];
+  readonly seedPoints: readonly Vec2[];
+  /** DXF 450–470, when the hatch is a gradient fill. */
+  readonly gradient?: {
+    readonly name: string;
+    readonly angle: number;
+    readonly shift: number;
+    readonly singleColor: boolean;
+    readonly tint: number;
+    readonly colors: readonly { readonly value: number; readonly color: Color }[];
+  };
+}
+
 export type EntityGeometry =
   | LineGeometry
   | XlineGeometry
@@ -448,7 +534,8 @@ export type EntityGeometry =
   | InsertGeometry
   | DimensionGeometry
   | LeaderGeometry
-  | ToleranceGeometry;
+  | ToleranceGeometry
+  | HatchGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */
 export type EntityType = EntityGeometry['kind'];
