@@ -1003,4 +1003,49 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(blocks(dwgRawRoundTrip(doc)), version).toEqual(blocks(doc));
     }
   });
+
+  it('0044 DXF reader and writers keep one paper image origin for a layout', () => {
+    // The DXF reader stored 148/149 in paperImageOriginX/Y while both writers and the DWG
+    // reader use paperImageOrigin, so a DXF save wrote 0,0.
+    const origins = (d: CadDocument): unknown[] =>
+      [...d.layouts!].map((l) => [l.name, l.paperImageOrigin.x, l.paperImageOrigin.y]);
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/viewports.dxf'));
+    expect(origins(doc)).toContainEqual(['Model', 114.98, 300.29]);
+    for (const binary of [false, true]) {
+      expect(origins(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual(origins(doc));
+    }
+  });
+
+  it('0045 DXF writer writes the standard scale of a layout as 147', () => {
+    // 147 is the standard scale factor (the value behind 75); the writer wrote the custom
+    // print scale (142 / 143) there instead.
+    const scales = (d: CadDocument): unknown[] =>
+      [...d.layouts!].map((l) => [l.name, l.standardScale]);
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/viewports.dxf'));
+    expect(scales(doc)).toContainEqual(['Model', 0.069]);
+    for (const binary of [false, true]) {
+      expect(scales(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual(scales(doc));
+    }
+  });
+
+  it('0046 DXF LTYPE alignment (72) is read and written as a character code', () => {
+    // 72 holds the character code of the alignment ("65" for "A"). The reader kept the digits
+    // as the alignment and the writer converted the string to a number, so "A" went out as 0
+    // and a DWG save wrote "6".
+    const alignments = (d: CadDocument): unknown[] =>
+      [...d.lineTypes!].map((l) => [l.name, l.alignment]);
+    for (const file of [
+      'third-party/ezdxf/integration_tests/ASCII_R12.dxf',
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      // Every linetype of these files is aligned "A" (72 = 65).
+      expect(new Set(alignments(doc).map((a) => (a as string[])[1])), file).toEqual(new Set(['A']));
+      for (const binary of [false, true]) {
+        expect(alignments(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(
+          alignments(doc),
+        );
+      }
+    }
+  });
 });

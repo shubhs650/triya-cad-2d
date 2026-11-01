@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0043 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0046 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -811,5 +811,75 @@ The R2010+ table content writer writes the "has geometry" flag only when the cel
 **Title:** Keep the block record of pre-R2010 DWG block cells
 
 For a pre-R2010 block cell, the reader stores the block record handle in `cell.value`. The writer, however, takes the block record from `cell.content`, which is null for these cells, so a read-write cycle empties every block cell. This falls back to `cell.value`.
+
+</details>
+
+### 0044 — DXF reader keeps the paper image origin apart from the one the writers use
+
+- **File:** `third_party/acad-ts-patches/0044-plot-settings-paper-image-origin.patch`
+- **Touches:** `src/Objects/PlotSettings.ts`
+- **Symptom:**
+  - `PlotSettings` had both `paperImageOrigin` (an XY) and `paperImageOriginX`/`Y` (numbers).
+  - The DXF class map assigns 148/149 to the numbers. The DWG reader and both writers use the XY.
+  - So a DXF save wrote a paper image origin of 0,0, and a DXF-read layout written to DWG lost its origin too.
+  - Corpus: 19 differences (`LAYOUT paperImageOriginX/Y`) in the ezdxf example DXFs.
+- **Fix:** make `paperImageOriginX`/`Y` accessors over `paperImageOrigin`. The class map's names keep working and there is one value.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0044 DXF reader and writers keep one paper image origin for a layout".
+  - The Model layout of ezdxf `viewports.dxf` must read as origin 114.98, 300.29.
+  - The origin of every layout must survive ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Use one paper image origin in PlotSettings
+
+`PlotSettings` declares both `paperImageOrigin` and `paperImageOriginX`/`paperImageOriginY`. The DXF reader fills the pair through the class map, while the DWG reader and both writers use `paperImageOrigin`, so the origin read from a DXF file is written as 0,0. This turns the pair into accessors over `paperImageOrigin`.
+
+</details>
+
+### 0045 — DXF writer writes the print scale where the standard scale goes
+
+- **File:** `third_party/acad-ts-patches/0045-dxf-layout-standard-scale.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:**
+  - Group 147 of AcDbPlotSettings is the standard scale factor, the value behind the standard scale type (75). The reader and the DWG code use it that way.
+  - The writer wrote the custom print scale (142 / 143) there, so a save changed 0.069 into 0.0688….
+  - Corpus: 19 differences (`LAYOUT standardScale`) in the ezdxf example DXFs.
+- **Fix:** write `standardScale` as 147.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0045 DXF writer writes the standard scale of a layout as 147".
+  - The Model layout of ezdxf `viewports.dxf` must read as 0.069.
+  - The standard scale of every layout must survive ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the standard scale factor as DXF group 147
+
+`writePlotSettings` writes `printScale` (numerator / denominator) as group 147. Group 147 is the standard scale factor, which the reader stores in `standardScale` and the DWG writer writes. This writes `standardScale`.
+
+</details>
+
+### 0046 — DXF LTYPE alignment read as digits and written as 0
+
+- **File:** `third_party/acad-ts-patches/0046-dxf-ltype-alignment-char-code.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:**
+  - LTYPE 72 holds the character code of the alignment: 65 for "A".
+  - The reader stored the digits ("65") as the alignment, so a DWG save wrote "6".
+  - The writer passed the string to an integer group. The default "A" of the linetypes acad-ts adds to R12 files therefore went out as 0.
+  - Corpus: 11 differences (`LTYPE alignment`) in the R12 DXFs.
+- **Fix:**
+  - Read 72 as a character code.
+  - Write the alignment's character code, with 65 when it is empty.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0046 DXF LTYPE alignment (72) is read and written as a character code".
+  - Every linetype of ezdxf `ASCII_R12.dxf` and acadsharp `sample_AC1015_ascii.dxf` must read as "A".
+  - The alignments must survive ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write DXF LTYPE alignment (72) as a character code
+
+Group 72 of a linetype is the ASCII code of its alignment, which is always 65 ("A"). The reader currently stores the digits "65" in `LineType.alignment`, and the DWG writer then writes "6". The writer passes the string to an integer group, so "A" becomes 0. This converts the alignment on read and on write.
 
 </details>

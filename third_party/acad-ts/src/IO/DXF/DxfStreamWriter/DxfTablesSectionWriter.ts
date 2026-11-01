@@ -260,7 +260,7 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
   private _writeLineType(linetype: LineType, map: DxfClassMap): void {
     this._writer.write(3, linetype.description, map);
 
-    this._writer.write(72, linetype.alignment, map);
+    this._writer.write(72, linetype.alignment.charCodeAt(0) || 65, map);
     this._writer.write(73, linetype.segments.length, map);
     this._writer.write(40, linetype.patternLength);
 

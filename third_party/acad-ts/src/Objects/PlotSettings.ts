@@ -59,8 +59,25 @@ export class PlotSettings extends NonGraphicalObject {
 	pageName: string = 'none_device';
 	paperHeight: number = 0;
 	paperImageOrigin: XY = new XY(0, 0);
-	paperImageOriginX: number = 0;
-	paperImageOriginY: number = 0;
+
+	// The DXF class map assigns 148/149 by these names; keep them views of paperImageOrigin,
+	// which the DWG reader and both writers use.
+	get paperImageOriginX(): number {
+		return this.paperImageOrigin.x;
+	}
+
+	set paperImageOriginX(value: number) {
+		this.paperImageOrigin = new XY(value, this.paperImageOrigin.y);
+	}
+
+	get paperImageOriginY(): number {
+		return this.paperImageOrigin.y;
+	}
+
+	set paperImageOriginY(value: number) {
+		this.paperImageOrigin = new XY(this.paperImageOrigin.x, value);
+	}
+
 	paperRotation: PlotRotation = PlotRotation.NoRotation;
 	paperSize: string = 'ISO_A4_(210.00_x_297.00_MM)';
 	paperUnits: PlotPaperUnits = PlotPaperUnits.Millimeters;

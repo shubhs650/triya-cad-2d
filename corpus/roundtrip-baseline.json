@@ -99,11 +99,11 @@
     },
     "public/third-party/acadsharp/sample_AC1009_ascii.dxf": {
       "status": "diff",
-      "differences": 2942
+      "differences": 2941
     },
     "public/third-party/acadsharp/sample_AC1009_binary.dxf": {
       "status": "diff",
-      "differences": 2942
+      "differences": 2941
     },
     "public/third-party/acadsharp/sample_AC1014.dwg": {
       "status": "diff",
@@ -191,15 +191,15 @@
     },
     "public/third-party/ezdxf/examples_dxf/3dface.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/acad_table_simple.dxf": {
       "status": "diff",
-      "differences": 6
+      "differences": 4
     },
     "public/third-party/ezdxf/examples_dxf/acad_table_with_blk_ref.dxf": {
       "status": "diff",
-      "differences": 5
+      "differences": 3
     },
     "public/third-party/ezdxf/examples_dxf/caret_encoding.dxf": {
       "status": "diff",
@@ -227,27 +227,27 @@
     },
     "public/third-party/ezdxf/examples_dxf/dimension_in_block.dxf": {
       "status": "diff",
-      "differences": 14
+      "differences": 12
     },
     "public/third-party/ezdxf/examples_dxf/dimension_in_nested_blocks.dxf": {
       "status": "diff",
-      "differences": 9
+      "differences": 7
     },
     "public/third-party/ezdxf/examples_dxf/hatch_issues.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/hatch_text_box_in_fill.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/hatch_text_box_in_hole.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/hatch_text_box_overlapping_fill_and_hole.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/hatches_1.dxf": {
       "status": "diff",
@@ -259,19 +259,19 @@
     },
     "public/third-party/ezdxf/examples_dxf/images.dxf": {
       "status": "diff",
-      "differences": 140
+      "differences": 137
     },
     "public/third-party/ezdxf/examples_dxf/insert_bricscad_level_1.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1006.dxf": {
       "status": "diff",
-      "differences": 54
+      "differences": 53
     },
     "public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1009.dxf": {
       "status": "diff",
-      "differences": 9
+      "differences": 7
     },
     "public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1021.dxf": {
       "status": "diff",
@@ -291,7 +291,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/mtext_complex_inline_codes.dxf": {
       "status": "diff",
-      "differences": 28
+      "differences": 26
     },
     "public/third-party/ezdxf/examples_dxf/multi_insert_with_attribs.dxf": {
       "status": "diff",
@@ -307,7 +307,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/text_in_viewports.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/text_mirror_shx_font.dxf": {
       "status": "diff",
@@ -319,7 +319,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/text_negative_extrusion.dxf": {
       "status": "diff",
-      "differences": 6
+      "differences": 5
     },
     "public/third-party/ezdxf/examples_dxf/text_oblique_rotate.dxf": {
       "status": "diff",
@@ -335,7 +335,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/text.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 3
     },
     "public/third-party/ezdxf/examples_dxf/transform_hatch_pattern.dxf": {
       "status": "diff",
@@ -351,11 +351,11 @@
     },
     "public/third-party/ezdxf/examples_dxf/viewport_frozen_layers.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/viewports.dxf": {
       "status": "diff",
-      "differences": 19
+      "differences": 16
     },
     "public/third-party/ezdxf/examples_dxf/visibility.dxf": {
       "status": "diff",
@@ -363,7 +363,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/VP4.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/examples_dxf/wipeout_door.dxf": {
       "status": "diff",
@@ -375,19 +375,19 @@
     },
     "public/third-party/ezdxf/examples_dxf/xclip.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/integration_tests/AC1003_LINE_Example.dxf": {
       "status": "diff",
-      "differences": 74
+      "differences": 72
     },
     "public/third-party/ezdxf/integration_tests/ASCII_R12.dxf": {
       "status": "diff",
-      "differences": 67
+      "differences": 66
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r12.dxf": {
       "status": "diff",
-      "differences": 53
+      "differences": 52
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf": {
       "status": "diff",
@@ -403,7 +403,7 @@
     },
     "public/third-party/ezdxf/integration_tests/custom_blocks.dxf": {
       "status": "diff",
-      "differences": 3
+      "differences": 2
     },
     "public/third-party/ezdxf/integration_tests/duplicate_handles.dxf": {
       "status": "diff",
@@ -415,7 +415,7 @@
     },
     "public/third-party/ezdxf/integration_tests/groups.dxf": {
       "status": "diff",
-      "differences": 4
+      "differences": 2
     },
     "public/third-party/ezdxf/integration_tests/layout_broken_links_2.dxf": {
       "status": "diff",
@@ -455,7 +455,7 @@
     },
     "public/third-party/ezdxf/integration_tests/R12_with_trash_beyond_EOF.dxf": {
       "status": "diff",
-      "differences": 10
+      "differences": 8
     },
     "public/third-party/ezdxf/integration_tests/r2000_blocks_with_no_name_and_no_block_record.dxf": {
       "status": "diff",
