@@ -22,6 +22,7 @@ import {
   DimensionOrdinate,
   DimensionRadius,
   Leader,
+  MultiLeader,
   Tolerance,
   type Dimension,
   type DimensionStyle,
@@ -65,6 +66,7 @@ import type {
   InsertAttribute,
   LinetypeRef,
   MTextGeometry,
+  MultiLeaderGeometry,
   ObjectCommon,
   PlanarProps,
   TextFields,
@@ -72,7 +74,7 @@ import type {
   Transparency,
   Vec2,
 } from '@triya/engine';
-import { common, hex, mapColor, mapLineweight, ref } from './common';
+import { common, hex, mapColor, mapEntityColor, mapLineweight, ref } from './common';
 
 export interface UnmappedEntity {
   readonly handle: string;
@@ -480,6 +482,97 @@ function leaderGeometry(l: Leader, ctx: Ctx): EntityGeometry | UnmappedEntity['r
   };
 }
 
+/**
+ * MULTILEADER points are WCS (DXF reference, MLEADER), so the plan view drops Z. The leader
+ * plane is the context data's 110 origin with 111/112 axes; its normal must be ±Z.
+ */
+function multiLeaderGeometry(
+  m: MultiLeader,
+  ctx: Ctx,
+): MultiLeaderGeometry | UnmappedEntity['reason'] {
+  const c = m.contextData;
+  const a = c.baseDirection;
+  const b = c.baseVertical;
+  const n = { x: a.y * b.z - a.z * b.y, y: a.z * b.x - a.x * b.z, z: a.x * b.y - a.y * b.x };
+  const pl = plane(n as XYZ);
+  if (pl === 'tilted') return 'tilted plane';
+  const textPl = plane(c.textNormal);
+  const d = c.direction;
+  // A zero text direction runs along the OCS X axis of the text normal, as for MTEXT.
+  const dir = d.x === 0 && d.y === 0 ? { x: textPl === 'down' ? -1 : 1, y: 0 } : d;
+  const style = ref(m.style);
+  const linetype = ref(m.leaderLineType);
+  const arrowhead = ref(m.arrowhead);
+  const block = ref(c.blockContent);
+  const z = c.basePoint.z;
+  return {
+    kind: 'MULTILEADER',
+    ...(style ? { style } : {}),
+    overrideFlags: m.propertyOverrideFlags as number,
+    pathType: m.pathType as number,
+    lineColor: mapEntityColor(m.lineColor),
+    ...(linetype ? { linetype } : {}),
+    lineweight: mapLineweight(m.leaderLineWeight as number),
+    landing: m.enableLanding,
+    dogleg: m.enableDogleg,
+    doglegLength: m.landingDistance,
+    ...(arrowhead ? { arrowhead } : {}),
+    arrowheadSize: m.arrowheadSize,
+    contentType: m.contentType as number,
+    scale: m.scaleFactor,
+    annotative: m.enableAnnotationScale,
+    textLeftAttachment: m.textLeftAttachment as number,
+    textRightAttachment: m.textRightAttachment as number,
+    textTopAttachment: m.textTopAttachment as number,
+    textBottomAttachment: m.textBottomAttachment as number,
+    textAttachmentDirection: m.textAttachmentDirection as number,
+    textAngleType: m.textAngle as number,
+    textAlignment: m.textAlignment as number,
+    textFrame: m.textFrame,
+    contentBase: xy(c.contentBasePoint),
+    landingGap: c.landingGap,
+    ...(c.hasTextContents
+      ? {
+          text: {
+            content: c.textLabel,
+            style: c.textStyle ? ctx.style(c.textStyle) : '0',
+            position: xy(c.textLocation),
+            rotation: norm(Math.atan2(dir.y, dir.x)),
+            ...(textPl === 'down' ? { upsideDown: true } : {}),
+            height: c.textHeight,
+            width: c.boundaryWidth,
+            boundaryHeight: c.boundaryHeight,
+            lineSpacing: c.lineSpacingFactor,
+            lineSpacingStyle: c.lineSpacing,
+            attachment: c.textAttachmentPoint,
+            flow: c.flowDirection,
+            color: mapEntityColor(c.textColor),
+          },
+        }
+      : {}),
+    ...(c.hasContentsBlock
+      ? {
+          block: {
+            ...(block ? { block } : {}),
+            position: xy(c.blockContentLocation),
+            scale: { x: c.blockContentScale.x, y: c.blockContentScale.y, z: c.blockContentScale.z },
+            rotation: c.blockContentRotation,
+            color: mapEntityColor(c.blockContentColor),
+          },
+        }
+      : {}),
+    branches: c.leaderRoots.map((r) => ({
+      index: r.leaderIndex,
+      connection: xy(r.connectionPoint),
+      direction: xy(r.direction),
+      doglegLength: r.landingDistance,
+      lines: r.lines.map((l) => ({ index: l.index, vertices: l.points.map(xy) })),
+    })),
+    ...(z !== 0 ? { elevation: z } : {}),
+    ...(pl !== 'up' ? { normal: { x: n.x, y: n.y, z: n.z } } : {}),
+  };
+}
+
 /** TOLERANCE's 10 and 11 are WCS, so it converts like MTEXT. */
 function toleranceGeometry(t: Tolerance, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   const pl = plane(t.normal);
@@ -777,6 +870,7 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   )
     return dimensionGeometry(e, ctx);
   if (e instanceof Leader) return leaderGeometry(e, ctx);
+  if (e instanceof MultiLeader) return multiLeaderGeometry(e, ctx);
   if (e instanceof Tolerance) return toleranceGeometry(e, ctx);
   if (e instanceof Hatch) return hatchGeometry(e);
   return 'not mapped yet';

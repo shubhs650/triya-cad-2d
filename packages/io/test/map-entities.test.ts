@@ -11,7 +11,7 @@ import {
   Color,
   Ellipse,
   Face3D,
-  MultiLeader,
+  MLine,
   Line,
   LwPolyline,
   LwPolylineVertex,
@@ -281,8 +281,8 @@ describe('heavyweight polylines', () => {
 });
 
 it('reports types not mapped yet', () => {
-  expect(unmappedOne(new MultiLeader())).toMatchObject({
-    type: 'MULTILEADER',
+  expect(unmappedOne(new MLine())).toMatchObject({
+    type: 'MLINE',
     reason: 'not mapped yet',
   });
 });
