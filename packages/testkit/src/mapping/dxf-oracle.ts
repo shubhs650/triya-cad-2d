@@ -34,12 +34,29 @@ export interface DxfEntity extends DxfRecord {
 /** The OBJECTS-section types Triya keeps beside the tables. */
 export const STYLE_OBJECTS: ReadonlySet<string> = new Set(['MLEADERSTYLE', 'TABLESTYLE']);
 
+/**
+ * DXF text as AutoCAD writes it: UTF-8 from R2007 (AC1021), the drawing's code page before
+ * (read as Latin-1 here, which keeps every byte), and `\U+XXXX` for a character the code page
+ * lacks. ASCII is never escaped, and `\\` is an escaped backslash.
+ */
+function decodeDxfText(bytes: Uint8Array): string {
+  const latin1 = new TextDecoder('latin1').decode(bytes);
+  const version = /\$ACADVER\r?\n\s*1\r?\n(AC\d{4})/.exec(latin1)?.[1] ?? '';
+  return version >= 'AC1021' ? new TextDecoder('utf-8').decode(bytes) : latin1;
+}
+const unescapeDxfUnicode = (v: string): string =>
+  v.replace(/\\\\|\\U\+([0-9A-Fa-f]{4})/g, (m, hex?: string) =>
+    hex !== undefined && Number.parseInt(hex, 16) >= 0x80
+      ? String.fromCharCode(Number.parseInt(hex, 16))
+      : m,
+  );
+
 export function readDxfOracle(bytes: Uint8Array): DxfOracle {
-  const lines = new TextDecoder('latin1').decode(bytes).split(/\r?\n/);
+  const lines = decodeDxfText(bytes).split(/\r?\n/);
   // Values keep their spaces (descriptions, names); only the line break is dropped.
   const groups: Group[] = [];
   for (let i = 0; i + 1 < lines.length; i += 2) {
-    groups.push([Number.parseInt(lines[i]!.trim(), 10), lines[i + 1]!]);
+    groups.push([Number.parseInt(lines[i]!.trim(), 10), unescapeDxfUnicode(lines[i + 1]!)]);
   }
   const header = new Map<string, Group[]>();
   const records: DxfRecord[] = [];

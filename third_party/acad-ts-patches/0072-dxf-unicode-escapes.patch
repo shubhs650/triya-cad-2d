@@ -1,0 +1,115 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
+index 90f0e11..af5980b 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
+@@ -4,7 +4,7 @@ import { DxfFileToken } from '../../../DxfFileToken.js';
+ import { GroupCodeValue, GroupCodeValueType } from '../../../GroupCodeValue.js';
+ import { DxfException } from '../../../Exceptions/DxfException.js';
+ import { MathHelper } from '../../../Math/MathHelper.js';
+-import { decodeCadString, getDecoderEncodingLabel } from '../../TextEncoding.js';
++import { decodeCadString, decodeDxfUnicode, getDecoderEncodingLabel } from '../../TextEncoding.js';
+ import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
+ 
+ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
+@@ -148,7 +148,7 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
+       case GroupCodeValueType.String:
+       case GroupCodeValueType.Comment:
+       case GroupCodeValueType.ExtendedDataString:
+-        return this.readStringLine();
++        return decodeDxfUnicode(this.readStringLine());
+       case GroupCodeValueType.Point3D:
+       case GroupCodeValueType.Double:
+       case GroupCodeValueType.ExtendedDataDouble:
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfBinaryWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfBinaryWriter.ts
+index 2f5d55a..5407a3a 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfBinaryWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfBinaryWriter.ts
+@@ -1,6 +1,6 @@
+ import { DxfStreamWriterBase } from './DxfStreamWriterBase.js';
+ import { GroupCodeValue, GroupCodeValueType } from '../../../GroupCodeValue.js';
+-import { encodeCadString } from '../../TextEncoding.js';
++import { encodeCadString, escapeDxfUnicode } from '../../TextEncoding.js';
+ 
+ export class DxfBinaryWriter extends DxfStreamWriterBase {
+   public static readonly sentinelBytes: Uint8Array = new Uint8Array([
+@@ -63,7 +63,7 @@ export class DxfBinaryWriter extends DxfStreamWriterBase {
+       case GroupCodeValueType.Comment:
+       case GroupCodeValueType.ExtendedDataString: {
+         const str = `${value}`;
+-        const encoded = encodeCadString(str, this._encoding);
++        const encoded = encodeCadString(escapeDxfUnicode(str, this._encoding), this._encoding);
+         this._ensureCapacity(encoded.length + 1);
+         this._buffer.set(encoded, this._position);
+         this._position += encoded.length;
+diff --git a/src/IO/DXF/DxfWriter.ts b/src/IO/DXF/DxfWriter.ts
+index 1529743..31c7636 100644
+--- a/src/IO/DXF/DxfWriter.ts
++++ b/src/IO/DXF/DxfWriter.ts
+@@ -16,7 +16,7 @@ import { CadDocument } from '../../CadDocument.js';
+ import { DxfCode } from '../../DxfCode.js';
+ import { DxfFileToken } from '../../DxfFileToken.js';
+ import { NotificationEventHandler } from '../NotificationEventHandler.js';
+-import { encodeCadString } from '../TextEncoding.js';
++import { encodeCadString, escapeDxfUnicode } from '../TextEncoding.js';
+ import { ACadVersion } from '../../ACadVersion.js';
+ import { Insert } from '../../Entities/Insert.js';
+ import { Polyline } from '../../Entities/Polyline.js';
+@@ -52,7 +52,7 @@ class Uint8ArrayTextOutput implements DxfTextOutput {
+   }
+ 
+   public write(value: string): void {
+-    const bytes = encodeCadString(value, this._encoding);
++    const bytes = encodeCadString(escapeDxfUnicode(value, this._encoding), this._encoding);
+     this._ensureCapacity(bytes.length);
+     this._stream.set(bytes, this._position);
+     this._position += bytes.length;
+diff --git a/src/IO/TextEncoding.ts b/src/IO/TextEncoding.ts
+index 35f71bb..b8b3331 100644
+--- a/src/IO/TextEncoding.ts
++++ b/src/IO/TextEncoding.ts
+@@ -162,6 +162,45 @@ export function encodeCadString(value: string | null | undefined, codePage: stri
+ 	return encodeAsciiCompatible(text);
+ }
+ 
++/**
++ * DXF before R2007 is in the drawing's code page, and AutoCAD writes a character the code page
++ * cannot hold as \U+XXXX, which the DXF reader decodes again. Without this it became "?".
++ */
++export function escapeDxfUnicode(value: string, codePage: string | number | null | undefined): string {
++	const encoding = getDecoderEncodingLabel(codePage);
++	if (encoding === 'utf-8' || encoding === 'utf-16le') {
++		return value;
++	}
++
++	const map = encoding !== 'ascii' && _singleByteDecoders.has(encoding) ? getSingleByteEncoderMap(encoding) : null;
++	let out: string | null = null;
++	for (let i = 0; i < value.length; i++) {
++		const code = value.charCodeAt(i);
++		const char = value.charAt(i);
++		if (code < 0x80 || (map != null && (map.size === 0 ? code <= 0xFF : map.has(char)))) {
++			if (out !== null) out += char;
++			continue;
++		}
++		out ??= value.slice(0, i);
++		out += '\\U+' + code.toString(16).toUpperCase().padStart(4, '0');
++	}
++	return out ?? value;
++}
++
++/**
++ * The DXF reader's half of escapeDxfUnicode. ASCII is never escaped, so \U+0000–\U+007F stay
++ * as written (\U+005C would otherwise start an MTEXT code), and \\ is an escaped backslash,
++ * not the start of an escape.
++ */
++export function decodeDxfUnicode(value: string): string {
++	if (!value.includes('\\U+')) {
++		return value;
++	}
++
++	return value.replace(/\\\\|\\U\+([0-9A-Fa-f]{4})/g, (m: string, hex?: string) =>
++		hex != null && parseInt(hex, 16) >= 0x80 ? String.fromCharCode(parseInt(hex, 16)) : m);
++}
++
+ export function decodeCadString(bytes: Uint8Array, codePage: string | number | null | undefined): string {
+ 	if (!bytes || bytes.length === 0) {
+ 		return '';

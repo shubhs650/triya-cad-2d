@@ -1588,4 +1588,47 @@ describe('acad-ts local patches (corpus-backed)', () => {
       }
     }
   });
+
+  it('0071 R2007+ DXF text is read and written as UTF-8', () => {
+    // AutoCAD writes DXF as UTF-8 from R2007; $DWGCODEPAGE still names the drawing's code
+    // page. Reading these files in ANSI_1252 turned "°" into "Â°".
+    const texts = (d: CadDocument): string[] =>
+      [...(d.modelSpace?.entities ?? [])]
+        .map((e) => (e as unknown as { value?: unknown }).value)
+        .filter((v): v is string => typeof v === 'string');
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/text_oblique_rotate.dxf'));
+    expect(texts(doc)).toContain('OBLIQUE 15°');
+    expect(new TextDecoder('utf-8', { fatal: true }).decode(writeDxf(doc, false))).toContain(
+      'OBLIQUE 15°',
+    );
+    for (const binary of [false, true]) {
+      expect(texts(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toContain('OBLIQUE 15°');
+    }
+  });
+
+  it('0072 DXF \\U+ escapes are decoded on read and written back where the code page lacks the character', () => {
+    const named = (d: CadDocument, handle: number): string | undefined =>
+      (d.getCadObject(handle) as unknown as { name?: string } | null)?.name;
+    // An R2013 drawing whose layer name ends in an escaped ü. With its backslash the name is
+    // invalid in DXF, so the writer refused the layer.
+    const unicode = readDxfRaw(corpusBytes('third-party/ezdxf/integration_tests/dxf_unicode.dxf'));
+    expect(named(unicode, 0x2f)).toBe('Tschüss mit ü');
+    // An R12 ANSI_1252 drawing: the Greek letters are not in the code page, so they go back
+    // out as \U+ escapes, and the lines stay on their layer.
+    const r12 = readDxfRaw(corpusBytes('third-party/ezdxf/integration_tests/ASCII_R12.dxf'));
+    const greek = 'ΛΑΓΕΡÄÜÖ';
+    const onGreek = (d: CadDocument): number =>
+      [...(d.modelSpace?.entities ?? [])].filter((e) => e.layer?.name === greek).length;
+    const greekCount = onGreek(r12);
+    expect(greekCount).toBeGreaterThan(0);
+    expect(new TextDecoder('windows-1252').decode(writeDxf(r12, false))).toContain(
+      '\\U+039B\\U+0391',
+    );
+    for (const binary of [false, true]) {
+      expect(named(dxfRawRoundTrip(unicode, binary), 0x2f), `binary ${binary}`).toBe(
+        'Tschüss mit ü',
+      );
+      expect(onGreek(dxfRawRoundTrip(r12, binary)), `binary ${binary}`).toBe(greekCount);
+    }
+  });
 });

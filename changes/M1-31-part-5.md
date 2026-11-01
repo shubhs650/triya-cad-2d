@@ -1,0 +1,1 @@
+- M1-31 part 5 (#72): R2007+ DXF is read and written as UTF-8, and `\U+` escapes are decoded and written back (patches 0071, 0072); no save-stage handle is left, closing M1-31; round trip 6,133 → 6,125 differences.

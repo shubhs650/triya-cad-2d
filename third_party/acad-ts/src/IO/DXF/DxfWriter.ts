@@ -16,7 +16,7 @@ import { CadDocument } from '../../CadDocument.js';
 import { DxfCode } from '../../DxfCode.js';
 import { DxfFileToken } from '../../DxfFileToken.js';
 import { NotificationEventHandler } from '../NotificationEventHandler.js';
-import { encodeCadString } from '../TextEncoding.js';
+import { encodeCadString, escapeDxfUnicode } from '../TextEncoding.js';
 import { ACadVersion } from '../../ACadVersion.js';
 import { Insert } from '../../Entities/Insert.js';
 import { Polyline } from '../../Entities/Polyline.js';
@@ -52,7 +52,7 @@ class Uint8ArrayTextOutput implements DxfTextOutput {
   }
 
   public write(value: string): void {
-    const bytes = encodeCadString(value, this._encoding);
+    const bytes = encodeCadString(escapeDxfUnicode(value, this._encoding), this._encoding);
     this._ensureCapacity(bytes.length);
     this._stream.set(bytes, this._position);
     this._position += bytes.length;
@@ -108,6 +108,11 @@ export class DxfWriter extends CadWriterBase<DxfWriterConfiguration, DxfWriteTar
 
   public override write(): void {
     super.write();
+
+    // DXF is UTF-8 from R2007, as AutoCAD writes it; $DWGCODEPAGE keeps the drawing's code page.
+    if (this._document.header.version >= ACadVersion.AC1021) {
+      this._encoding = 'utf-8';
+    }
 
     // Array-based child collections do not register newly constructed children
     // automatically. Set owners and allocate handles before writing HANDSEED.

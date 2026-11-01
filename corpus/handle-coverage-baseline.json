@@ -797,9 +797,7 @@
     },
     "public/third-party/ezdxf/integration_tests/dxf_unicode.dxf": {
       "declared": 50,
-      "lost": {
-        "LAYER": "2F"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/groups.dxf": {
       "declared": 138,
