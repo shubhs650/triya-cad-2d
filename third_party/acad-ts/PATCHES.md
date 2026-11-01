@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06) and 0014–0020 (M1-30) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30) and 0021–0022 (M1-28) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -369,5 +369,39 @@ A LAYOUT object has an `AcDbPlotSettings` subclass followed by `AcDbLayout`, and
 **Title:** Decode and encode $CELWEIGHT as a lineweight index
 
 In the R2000+ DWG header, `CELWEIGHT` is stored as a lineweight index in the low 5 bits of the flags word (ODA spec §9.4), like entity lineweights. `DwgHeaderReader` returned the raw index and `DwgHeaderWriter` masked the value, so ByLayer read as 29 and W50 wrote as 18. This uses `CadUtils.toValue`/`toIndex`.
+
+</details>
+
+### 0021 — DXF writer drops every MATERIAL and VISUALSTYLE
+
+- **File:** `third_party/acad-ts-patches/0021-dxf-raw-material-and-visualstyle.patch`
+- **Touches:** `src/IO/CadReaderConfiguration.ts`, `src/Objects/Material.ts`, `src/Objects/VisualStyle.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** `DxfObjectsSectionWriter` has no writer for `Material` or `VisualStyle` and skips them ("Object not implemented"). Their extension dictionaries, XRECORDs and named-object-dictionary entries went with them: 1,838 objects in 83 public files, 3,636 declared handles counting their dictionaries and XRECORDs. The DXF reader also assigns no `VisualStyle` field (`_readVisualStyle` consumes every code), so a field writer alone would write defaults.
+- **Fix:** New reader option `keepRawDxfPassthroughObjects`. When it is set, `readObjectCodes` records the group codes of these two types with the M1-30 recorder (0014), and the writer emits them through `writeRawObject`, which rewrites only the handle and owner. Without recorded codes, the writer still skips the object with a notification. DEC-040.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0021 DXF writer writes MATERIAL and VISUALSTYLE back as read" (R2018 ASCII and binary, R2000 ASCII: every style keeps its handle, codes and extension dictionary, and `ACAD_MATERIAL`/`ACAD_VISUALSTYLE` list the same entries).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Optionally keep MATERIAL and VISUALSTYLE group codes so DXF saves do not drop them
+
+The DXF writer has no MATERIAL or VISUALSTYLE writer, so every DXF save drops them, together with their extension dictionaries and the named-object dictionary entries that point at them. The DXF VISUALSTYLE reader also assigns no field, so a field writer would only write defaults. This adds `CadReaderConfiguration.keepRawDxfPassthroughObjects`. When it is set, the DXF reader records the group codes of these objects, using the same recorder as raw unknown objects, and the DXF writer writes them back unchanged under their handle and owner. The default behaviour is unchanged.
+
+</details>
+
+### 0022 — ASCII DXF writer masks negative xdata 1070 integers
+
+- **File:** `third_party/acad-ts-patches/0022-dxf-ascii-signed-xdata-int16.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfAsciiWriter.ts`
+- **Symptom:** `writeValue` wrote `ExtendedDataInt16` (1070) as `value & 0xFFFF`, so `-1` became `65535`. Ordinary 16-bit codes were already written signed. acad-ts reads the value back as signed, so the round-trip diff of typed xdata could not see it, but the file is wrong for other readers. It showed as raw-code differences once 0021 kept VISUALSTYLE xdata (`1070 -1`).
+- **Fix:** Write negative 1070 values signed, as for `Int16`.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0022 ASCII DXF writer keeps the sign of xdata 1070 integers" (checks the written lines, then the reread values).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write negative xdata 1070 integers signed in ASCII DXF
+
+`DxfAsciiWriter.writeValue` keeps the sign for `Int16` group codes but masks `ExtendedDataInt16` (1070) to 16 bits, so `-1` is written as `65535`. AutoCAD writes and expects 1070 as a signed 16-bit integer. This applies the same signed path to 1070.
 
 </details>

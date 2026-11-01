@@ -3,6 +3,7 @@
 All notable changes are recorded here by the thread that lands them (one line per merged task, newest first).
 
 ## Unreleased
+- M1-28 part 1 (#18): acad-ts keeps MATERIAL and VISUALSTYLE group codes on DXF read and writes them back (patch 0021, DEC-040), and the ASCII DXF writer keeps the sign of xdata 1070 integers (0022). Round trip 26,527 → 19,218 differences; declared handles lost on save 4,902 → 1,266.
 - M1-04 part 1 (#17): `mapEntities` in `@triya/io` maps LINE, XLINE, RAY, CIRCLE, ARC, ELLIPSE, POINT, LWPOLYLINE, POLYLINE (2D/3D) with VERTEX, SPLINE, SOLID/TRACE and 3DFACE of every block record into plan-view engine entities (DEC-039), with common properties; other types are listed as unmapped. Corpus oracle test compares every such entity of the public ASCII DXFs.
 - M1-27 (#15): handle-coverage gate in the round-trip suite: every handle a corpus file declares (DWG handle map typed per record, ASCII and binary DXF `5`/`105`) must be in the reopened document; known losses ratcheted by handle in `corpus/handle-coverage-baseline.json` (4,902 of 46,712: 919 never loaded, 3,983 dropped on save). No allow-list (DEC-038). Residue split into M1-31 (writer) and new M1-33 (reader).
 - M1-03 part 2 (#16): dimension styles with every DIMVAR by name (colours as ACI, references as handles), multileader styles and table styles (cell styles and borders) from their named-object dictionaries; corpus oracle extended to DIMSTYLE groups and the style objects. M1-03 complete; new acad-ts gaps added to M1-32.

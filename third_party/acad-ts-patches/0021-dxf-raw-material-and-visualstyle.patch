@@ -1,0 +1,122 @@
+diff --git a/src/IO/CadReaderConfiguration.ts b/src/IO/CadReaderConfiguration.ts
+index 0f150a4..d199661 100644
+--- a/src/IO/CadReaderConfiguration.ts
++++ b/src/IO/CadReaderConfiguration.ts
+@@ -8,4 +8,9 @@ export abstract class CadReaderConfiguration {
+ 	keepUnknownEntities: boolean = false;
+ 	/** Same as `keepUnknownEntities`, for non-graphical objects (`UnknownNonGraphicalObject`). */
+ 	keepUnknownNonGraphicalObjects: boolean = false;
++	/**
++	 * Keep the DXF group codes of objects the DXF writer cannot write from their fields
++	 * (`MATERIAL`, `VISUALSTYLE`), so that a DXF save writes them back as read instead of dropping them.
++	 */
++	keepRawDxfPassthroughObjects: boolean = false;
+ }
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 8f4e217..339a1cb 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -321,6 +321,24 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+   }
+ 
+   protected readObjectCodes(template: CadTemplate, readObject: ReadObjectDelegate, objectType: Function): CadTemplate {
++    // The DXF writer cannot write these from their fields, so keep the codes as read for it.
++    const obj = template.cadObject;
++    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle)) {
++      return this._readObjectCodes(template, readObject, objectType);
++    }
++    const raw: DxfRawCode[] = [];
++    this._reader.recorder = raw;
++    try {
++      this._readObjectCodes(template, readObject, objectType);
++    } finally {
++      this._reader.recorder = null;
++    }
++    raw.pop(); // the next object's type code
++    obj.rawDxfCodes = raw;
++    return template;
++  }
++
++  private _readObjectCodes(template: CadTemplate, readObject: ReadObjectDelegate, objectType: Function): CadTemplate {
+     this._reader.readNext();
+ 
+     const commonData = this.readCommonObjectData() as {
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index cfc2544..b00d4a3 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -415,6 +415,12 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       return;
+     }
+ 
++    // No field writer exists for these; write the group codes the reader kept.
++    if ((co instanceof Material || co instanceof VisualStyle) && co.rawDxfCodes != null) {
++      this.writeRawObject(co);
++      return;
++    }
++
+     if (co instanceof XRecord && !this.configuration.writeXRecords) {
+       return;
+     }
+@@ -694,6 +700,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+         this.notify(`Unknown object ${co.objectName} was read from a DWG file and cannot be written to DXF: ${co.handle}`, NotificationType.NotImplemented);
+       }
+       return co.rawDxfCodes != null;
++    }
++    if ((co instanceof Material || co instanceof VisualStyle) && co.rawDxfCodes != null) {
++      return true;
+     }
+ 	if (!this.configuration.writeDynamicBlockData && (
+ 		co instanceof EvaluationGraph ||
+diff --git a/src/Objects/Material.ts b/src/Objects/Material.ts
+index 6ad3967..607ab59 100644
+--- a/src/Objects/Material.ts
++++ b/src/Objects/Material.ts
+@@ -1,5 +1,6 @@
+ import { NonGraphicalObject } from './NonGraphicalObject.js';
+ import { CadObject } from '../CadObject.js';
++import type { DwgRawObjectData, DxfRawCode, IRawCadObject } from './RawObjectData.js';
+ import { Color } from '../Color.js';
+ import { DxfFileToken } from '../DxfFileToken.js';
+ import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
+@@ -32,7 +33,13 @@ export enum MaterialMode {
+ 	Advanced = 1,
+ }
+ 
+-export class Material extends NonGraphicalObject {
++export class Material extends NonGraphicalObject implements IRawCadObject {
++	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF writer has no field writer for this type. */
++	rawDxfCodes: DxfRawCode[] | null = null;
++	rawDxfName: string | null = null;
++	rawDwgData: DwgRawObjectData | null = null;
++	readonly rawOwnedObjects: CadObject[] = [];
++
+ 	ambientColor: Color = Color.byLayer;
+ 
+ 	private _ambientColorFactor: number = 1.0;
+diff --git a/src/Objects/VisualStyle.ts b/src/Objects/VisualStyle.ts
+index e8d5c85..d89665f 100644
+--- a/src/Objects/VisualStyle.ts
++++ b/src/Objects/VisualStyle.ts
+@@ -1,4 +1,6 @@
+ import { NonGraphicalObject } from './NonGraphicalObject.js';
++import type { CadObject } from '../CadObject.js';
++import type { DwgRawObjectData, DxfRawCode, IRawCadObject } from './RawObjectData.js';
+ import { Color } from '../Color.js';
+ import { DxfFileToken } from '../DxfFileToken.js';
+ import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
+@@ -9,7 +11,13 @@ import { FaceLightingModelType } from './FaceLightingModelType.js';
+ import { FaceLightingQualityType } from './FaceLightingQualityType.js';
+ import { FaceModifierType } from './FaceModifierType.js';
+ 
+-export class VisualStyle extends NonGraphicalObject {
++export class VisualStyle extends NonGraphicalObject implements IRawCadObject {
++	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF reader assigns no field of this type and the writer has none. */
++	rawDxfCodes: DxfRawCode[] | null = null;
++	rawDxfName: string | null = null;
++	rawDwgData: DwgRawObjectData | null = null;
++	readonly rawOwnedObjects: CadObject[] = [];
++
+ 	constructor(name?: string) {
+ 		super(name);
+ 	}
