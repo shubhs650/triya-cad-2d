@@ -1,0 +1,1 @@
+- M1-12 part 3 (#49): `RendererHost` draws in a render worker on an OffscreenCanvas, falling back to the main thread with the same code where canvas transfer is missing, and a pixel test proves the two match. The frame loop is about ten times lighter at 100k entities, and a perf spec now checks first-frame time on a synthetic 100k drawing. Reaching 60 fps pan/zoom there is M1-43.
