@@ -15,7 +15,7 @@
 // noted where it falls through: tables (M1-17),
 // viewports (M1-18), images and underlays (M1-19/20), text and MTEXT (M1-41).
 
-import { gradientRamp, hatchPattern } from '@triya/hatch';
+import { bundledPatterns, gradientRamp, hatchLines, hatchPattern } from '@triya/hatch';
 import {
   bulgeArc,
   flatten,
@@ -66,6 +66,12 @@ const ARC_STEP = 2 * Math.acos(1 - SPLINE_DEVIATION);
  * drawing's LTSCALE is far too small. AutoCAD documents no such limit; ours.
  */
 const MAX_PERIODS = 20_000;
+
+/**
+ * Where a hatch stored without its pattern lines finds them (M1-16 part 3): the bundled
+ * patterns. User .pat files join through the app's pattern drop (M1-50).
+ */
+const PATTERNS = bundledPatterns();
 
 type PathPrimitive = Extract<RenderPrimitive, { readonly path: readonly number[] }>;
 
@@ -478,7 +484,7 @@ function exact(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
       if (g.solid) return [fill(paint.color)];
       // A pattern AutoCAD would not generate (HPMAXLINES) shows as its filled area, which is
       // what so dense a pattern looks like at any zoom that shows the whole of it.
-      const pattern = hatchPattern(g);
+      const pattern = hatchPattern({ ...g, patternLines: hatchLines(g, PATTERNS) });
       if (pattern.kind === 'too-dense') return [fill(paint.color)];
       // One stroke per family, so each switches to its tint at its own spacing (LOD).
       return pattern.families.map((f) => {

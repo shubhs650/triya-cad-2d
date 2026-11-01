@@ -4,7 +4,7 @@
 // midpoint, independently of the line sweep `hatchPattern` uses.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { gradientRamp, hatchPattern, loopSegments } from '@triya/hatch';
+import { gradientRamp, hatchPattern, loopSegments, patternLines } from '@triya/hatch';
 import { mapEntities, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
@@ -159,5 +159,48 @@ describe('pattern hatches on the public corpus (M1-16)', () => {
     expect(wrong).toEqual([]);
     // 15 drawings × LINEAR and SPHERICAL (acadsharp samples) at M1-16 part 2.
     expect(gradients).toBeGreaterThanOrEqual(30);
+  });
+
+  it('places a pattern at a hatch’s angle and scale as AutoCAD stored it (M1-16 part 3)', () => {
+    // ANSI31, general-purpose section lining: 45° lines 1/8 in apart (3.175 mm in a metric
+    // drawing). Written here from that geometry, then placed at each corpus ANSI31 hatch's
+    // stored angle and scale, it must give the line the file stores.
+    const def = (spacing: number) => ({
+      name: 'ANSI31',
+      description: '',
+      lines: [{ angle: 45, origin: { x: 0, y: 0 }, delta: { x: 0, y: spacing }, dashes: [] }],
+    });
+    const TURN = 2 * Math.PI;
+    const wrong: string[] = [];
+    let checked = 0;
+    for (const f of readable) {
+      let doc;
+      try {
+        doc = readCadDocument(new Uint8Array(readFileSync(`${corpusDir}${f.path}`)));
+      } catch {
+        continue;
+      }
+      for (const e of mapEntities(doc).entities) {
+        const g = e.geom;
+        if (g.kind !== 'HATCH' || g.pattern !== 'ANSI31' || g.patternLines.length !== 1) continue;
+        checked++;
+        const stored = g.patternLines[0]!;
+        const fits = [0.125, 3.175].some((spacing) => {
+          const [l] = patternLines(def(spacing), { angle: g.patternAngle, scale: g.patternScale });
+          const da = Math.abs(((l!.angle - stored.angle) % TURN) + TURN) % TURN;
+          const eps = 1e-9 * Math.max(1, Math.hypot(stored.offset.x, stored.offset.y));
+          return (
+            Math.min(da, TURN - da) < 1e-9 &&
+            Math.abs(l!.offset.x - stored.offset.x) < eps &&
+            Math.abs(l!.offset.y - stored.offset.y) < eps &&
+            stored.dashes.length === 0
+          );
+        });
+        if (!fits) wrong.push(`${f.path} HATCH ${e.handle}: ${JSON.stringify(stored)}`);
+      }
+    }
+    expect(wrong).toEqual([]);
+    // 20 AutoCAD-saved acadsharp samples and 4 in ezdxf's hatch_issues.dxf.
+    expect(checked).toBeGreaterThanOrEqual(24);
   });
 });
