@@ -1,0 +1,1 @@
+- M1-12 part 1 (#44): `Renderer` interface, view transforms, render primitives that keep arcs and ellipses exact, entity tessellation and ByLayer colour/lineweight paint, the base of the Canvas 2D renderer.
