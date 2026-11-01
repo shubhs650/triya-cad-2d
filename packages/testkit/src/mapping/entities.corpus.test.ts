@@ -17,6 +17,7 @@ import type {
   ImageGeometry,
   UnderlayGeometry,
   MLineGeometry,
+  RegionGeometry,
   ViewportGeometry,
   TextFields,
   Vec2,
@@ -149,6 +150,7 @@ const MAPPED = new Set([
   'PDFUNDERLAY',
   'MLINE',
   'VIEWPORT',
+  'REGION',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({
@@ -475,6 +477,11 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
     case 'VIEWPORT': {
       if (geom.kind !== 'VIEWPORT') return bad('type', d.type, geom.kind);
       compareViewport(g, geom, bad);
+      return;
+    }
+    case 'REGION': {
+      if (geom.kind !== 'REGION') return bad('type', d.type, geom.kind);
+      compareRegion(subclass(g, 'AcDbModelerGeometry'), geom, bad);
       return;
     }
     case 'HATCH': {
@@ -1210,6 +1217,72 @@ function compareMLine(g: readonly Group[], geom: MLineGeometry, bad: Bad): void 
  * and the view in the ACAD `MVIEW` xdata (DXF R12 reference, VIEWPORT): version, target,
  * direction, twist, view height, view center, lens length, front and back clip, view mode, ….
  */
+/**
+ * REGION: the SAT text in groups 1 (a line) and 3 (its continuation), which R2000–R2004 files
+ * also encipher (each character but space becomes 159 − code). R2013+ files keep SAB in the
+ * ACDSDATA section instead; those are compared through the DWG test below. The check is
+ * independent of the mapper's ACIS reader: every `point` record, moved by the body transform,
+ * must be an endpoint of a mapped edge and every edge endpoint a point; there is one mapped edge
+ * per `edge` record and one LINE per `straight-curve`.
+ */
+function compareRegion(g: readonly Group[], geom: RegionGeometry, bad: Bad): void {
+  const lines: string[] = [];
+  for (const [c, v] of g)
+    if (c === 1) lines.push(v);
+    else if (c === 3 && lines.length > 0) lines[lines.length - 1] += v;
+  if (lines.length === 0) return; // SAB in ACDSDATA
+  const plain = /^\d/.test(lines[0]!.trim());
+  const text = lines
+    .map((l) =>
+      plain
+        ? l
+        : [...l]
+            .map((ch) => (ch === ' ' ? ' ' : String.fromCharCode(159 - ch.charCodeAt(0))))
+            .join(''),
+    )
+    .join('\n');
+  const recs = text
+    .split('\n')
+    .slice(3)
+    .join(' ')
+    .split('#')
+    .map((r) => r.trim().split(/\s+/))
+    .filter((t) => t[0] !== '' && t[0] !== undefined);
+  const nums = (t: string[]) => t.filter((x) => /^-?\d/.test(x) && !x.includes('$')).map(Number);
+  const xf = recs.find((t) => t[0] === 'transform');
+  // Transform numbers after the header: 9 matrix entries, translation, scale (identity matrix in the corpus).
+  const xn = xf ? nums(xf).slice(-13) : [1, 0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1];
+  const points = recs
+    .filter((t) => t[0] === 'point')
+    .map((t) => {
+      const [x, y] = nums(t).slice(-3);
+      return { x: x! * xn[12]! + xn[9]!, y: y! * xn[12]! + xn[10]! };
+    });
+  const ends: Vec2[] = geom.loops.flatMap((l) =>
+    l.edges.flatMap((e): Vec2[] => {
+      if (e.kind === 'LINE') return [e.start, e.end];
+      if (e.kind === 'ARC')
+        return [e.startAngle, e.endAngle].map((a) => ARC_POINT(e.center, e.radius, a));
+      return [];
+    }),
+  );
+  const fmtAll = (ps: Vec2[]) => ps.map(fmt).sort().join(' ');
+  if (
+    !points.every((p) => ends.some((q) => near(p, q))) ||
+    !ends.every((q) => points.some((p) => near(p, q)))
+  )
+    bad('point', fmtAll(points), fmtAll(ends));
+  const edges = geom.loops.reduce((n, l) => n + l.edges.length, 0);
+  const count = (type: string) => recs.filter((t) => t[0] === type).length;
+  if (count('edge') !== edges) bad('edge', count('edge'), edges);
+  const linesMapped = geom.loops.reduce(
+    (n, l) => n + l.edges.filter((e) => e.kind === 'LINE').length,
+    0,
+  );
+  if (count('straight-curve') !== linesMapped)
+    bad('straight-curve', count('straight-curve'), linesMapped);
+}
+
 function compareViewport(all: readonly Group[], geom: ViewportGeometry, bad: Bad): void {
   const r12 = !all.some(([c, v]) => c === 100 && v.trim() === 'AcDbViewport');
   const g = r12 ? all.filter(([c]) => c < 1000) : subclass(all, 'AcDbViewport');
@@ -1648,6 +1721,33 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
       expect(a.length).toBeGreaterThan(0);
       expect(a).toEqual(tables(dxf!));
     }
+  });
+
+  // The oracle reads SAT text only (R12 has no ACIS data). R2013+ files and DWGs keep the region as SAB binary; each
+  // sample saves the same drawing, so its region must map like the R2000 SAT one, to 1e-9.
+  it('maps the SAB regions of DWG and R2013+ files like the SAT region of the same drawing', () => {
+    const rounded = (v: unknown): unknown =>
+      typeof v === 'number'
+        ? Math.round(v * 1e9) / 1e9 + 0
+        : Array.isArray(v)
+          ? v.map(rounded)
+          : v && typeof v === 'object'
+            ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, rounded(x)]))
+            : v;
+    const regions = (path: string) =>
+      mapEntities(readCadDocument(load(path)))
+        .entities.filter((e) => e.geom.kind === 'REGION')
+        .map((e) => rounded({ handle: e.handle, geom: e.geom }));
+    const want = regions('public/third-party/acadsharp/sample_AC1015_ascii.dxf');
+    expect(want).toHaveLength(1);
+    const files = readable
+      .map((f) => f.path)
+      .filter((p) =>
+        /acadsharp\/sample_AC10(1[4-9]|[23]\d)(_ascii\.dxf|_binary\.dxf|\.dwg)$/.test(p),
+      );
+    const sab = files.filter((p) => /AC10(2[7-9]|3\d)|\.dwg$/.test(p));
+    expect(sab.length).toBeGreaterThan(4);
+    for (const p of files) expect(regions(p), p).toEqual(want);
   });
 
   it('accounts for every entity of every block record of every readable file', () => {

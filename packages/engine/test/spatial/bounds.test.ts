@@ -547,3 +547,23 @@ describe('multilines and viewports', () => {
     expectBox(entityBounds(vp, ctx()), box(1, 1, 9, 7));
   });
 });
+
+describe('regions', () => {
+  it('bounds a region by the curves of all its loops', () => {
+    const region: EntityGeometry = {
+      kind: 'REGION',
+      loops: [
+        {
+          face: 0,
+          edges: [
+            { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 10, y: 0 } },
+            { kind: 'ARC', center: { x: 5, y: 0 }, radius: 5, startAngle: 0, endAngle: Math.PI },
+          ],
+        },
+        { face: 0, edges: [{ kind: 'CIRCLE', center: { x: 5, y: 2 }, radius: 1 }] },
+      ],
+    };
+    expectBox(entityBounds(region, ctx()), box(0, 0, 10, 5));
+    expect(entityBounds({ kind: 'REGION', loops: [] }, ctx()).kind).toBe('empty');
+  });
+});
