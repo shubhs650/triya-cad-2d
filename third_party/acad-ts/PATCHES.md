@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0033 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0036 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -590,5 +590,61 @@ AcDbAttribute and AcDbAttributeDefinition use group 280 twice: before the tag it
 **Title:** Keep DXF angles and SOLID hatch patterns exact through a save
 
 Readers turn DXF degrees into radians with `degToRad`, but `radToDeg` is not its exact inverse in floating point, so about one angle in a few dozen changes in its last digit on every read-write cycle. This adds `MathHelper.radToDegRoundTrip`, which returns the degree value that converts back to the same radians, and uses it in the DXF writer. It also stops `_writeHatchBoundaryAngles` from wrapping edge angles into [0, 360) (the stored end angle of an edge can exceed 360), and writes the hatch pattern block for SOLID hatches, as AutoCAD does, instead of dropping a pattern that was read.
+
+</details>
+
+### 0034 — DXF and DWG writers reorder SORTENTSTABLE entries
+
+- **File:** `third_party/acad-ts-patches/0034-sortentstable-entry-order.patch`
+- **Touches:** `src/Objects/SortEntitiesTable.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** `SortEntitiesTable` yields its entries sorted by sort handle, and both writers iterated it. So a save reordered every table whose entries were not stored in sort-handle order, and AutoCAD stores them in the order its draw-order commands left them. The draw order itself survived, because it comes from the sort handles, but the object did not round-trip. Corpus: 874 differences (`_sorters[].entity` and `.sortHandle`) in the acadsharp DWG and DXF samples.
+- **Fix:** Add a read-only `entries` getter that returns the stored order, and use it in both writers. Iteration keeps its sorted order for callers that want draw order.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0034 DXF and DWG writers keep SORTENTSTABLE entries in the order read" (AC1015 DXF, ASCII and binary saves; AC1015, AC1018 and AC1032 DWG).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write SORTENTSTABLE entries in their stored order
+
+`SortEntitiesTable[Symbol.iterator]` sorts the entries by sort handle, and the DXF and DWG writers iterate the table, so a read-write cycle reorders the entries of any table not already stored in sort-handle order. AutoCAD keeps them in the order its draw-order edits leave them. This adds an `entries` getter that returns the stored order and uses it in both writers. Iteration still yields entries in draw order.
+
+</details>
+
+### 0035 — DXF writer drops the R2018 MTEXT column data
+
+- **File:** `third_party/acad-ts-patches/0035-dxf-mtext-r2018-columns.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** R2018 DXF keeps the column settings of an MTEXT in an "Embedded Object" block (101) after the background groups. The reader read the block into `columnData`, but the writer never wrote it, so every MTEXT came back with no columns. The reader also skipped the block's defined extents (42/43). Corpus: 749 differences (`_columnData.*`) across the R2018 DXF files.
+- **Fix:** From AC1032, write the block for an MTEXT with columns, in the order AutoCAD writes it:
+  - 70 (attachment), 10 (direction), 11 (insertion point), 40/41 (reference rectangle), 42/43 (extents).
+  - 71–74 (column type, count, width, gutter, auto height, flow reversed).
+  - The 46 heights.
+  
+  The reader now keeps 42/43 in `horizontalWidth`/`verticalHeight`, which the writer writes back.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0035 DXF writer writes the R2018 MTEXT column data". It runs on acadsharp `sample_AC1032_ascii` and ezdxf `columns_R2018` and `mtext_columns_R2018`, with ASCII and binary saves. It checks the column data and extents of every MTEXT, and the manual heights 20/30/0 of the ezdxf example.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the R2018 MTEXT embedded column object to DXF
+
+The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.columnData`, but `_writeMText` never writes it, so a read-write cycle removes the columns of every multi-column MTEXT. This writes the embedded object for R2018 files when the MTEXT has columns, in AutoCAD's order. It also makes the reader keep the defined extents (42/43), so that they can be written back.
+
+</details>
+
+### 0036 — DWG reader loses the R2018 MTEXT column count
+
+- **File:** `third_party/acad-ts-patches/0036-dwg-mtext-column-count.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
+- **Symptom:** The R2018 MTEXT reader read the column count into a local and never stored it. The writer therefore wrote a count of 0, and the next read dropped the column heights that followed. Corpus: 8 differences (`_columnData.heights.length`) in `sample_AC1032.dwg` and `sample_base.dwg`.
+- **Fix:** Store the count in `columnData.columnCount`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0036 DWG reader keeps the R2018 MTEXT column count" (`sample_AC1032.dwg`: MTEXT 3EC has one column, and every column count and height survives a DWG save).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Store the MTEXT column count read from R2018 DWG
+
+`DwgObjectReader` reads the R2018 MTEXT column count but does not assign it to `columnData.columnCount`. The writer then writes 0, and the column heights are lost on the next read. This assigns the count.
 
 </details>

@@ -105,6 +105,11 @@ export class SortEntitiesTable extends NonGraphicalObject implements Iterable<So
 		return true;
 	}
 
+	/** The entries in the order they were read or added; iteration yields them sorted by sort handle. */
+	get entries(): readonly Sorter[] {
+		return this._sorters;
+	}
+
 	[Symbol.iterator](): Iterator<Sorter> {
 		const sorted = [...this._sorters].sort((a, b) => a.compareTo(b));
 		return sorted[Symbol.iterator]();
