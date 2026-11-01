@@ -3,6 +3,7 @@
 All notable changes are recorded here by the thread that lands them (one line per merged task, newest first).
 
 ## Unreleased
+- M0-02 (#4): CI caches Playwright browsers, runs perf on hot-path PRs, keeps running suites after a fidelity failure, validates the corpus; auto-merge now waits for a green CI run on the PR head.
 - M1-04 part 2 (#19): `mapEntities` maps TEXT, MTEXT, ATTDEF and INSERT/MINSERT, with each INSERT's ATTRIBs folded in (own handle and properties, multiline MTEXT embedded); −Z text and inserts convert exactly (DEC-039 extended). Corpus oracle checks text frames and insert placements by probe points; new acad-ts gaps (attribute mirror flags, caret codes) added to M1-32.
 - M1-28 part 1 (#18): acad-ts keeps MATERIAL and VISUALSTYLE group codes on DXF read and writes them back (patch 0021, DEC-040), and the ASCII DXF writer keeps the sign of xdata 1070 integers (0022). Round trip 26,527 → 19,218 differences; declared handles lost on save 4,902 → 1,266.
 - M1-04 part 1 (#17): `mapEntities` in `@triya/io` maps LINE, XLINE, RAY, CIRCLE, ARC, ELLIPSE, POINT, LWPOLYLINE, POLYLINE (2D/3D) with VERTEX, SPLINE, SOLID/TRACE and 3DFACE of every block record into plan-view engine entities (DEC-039), with common properties; other types are listed as unmapped. Corpus oracle test compares every such entity of the public ASCII DXFs.

@@ -17,7 +17,7 @@ Everything below is a one-time owner task (~45 minutes). After it, your involvem
    - Require branches to be up to date before merging.
    - **Do not** block force-pushes for admins only; **do** block deletions.
    - Bypass list: add yourself so `roadmap: claim/complete` commits from threads (which run with your GitHub identity through the Claude GitHub App) can go straight to `main`. If you'd rather keep `main` strictly PR-only, tell the project (Part 3, instruction C) and threads will route roadmap edits through their PR instead.
-5. **Settings → Secrets → Actions:** add `AUTOMERGE_TOKEN` = a fine-grained PAT scoped to this repo with *Pull requests: read/write* and *Contents: read/write*. This is only the fallback used by `.github/workflows/auto-merge.yml` if a thread's own `gh pr merge --auto` is refused.
+5. **Settings → Secrets → Actions:** add `AUTOMERGE_TOKEN` = a fine-grained PAT scoped to this repo with *Pull requests: read/write* and *Contents: read/write*. `.github/workflows/auto-merge.yml` uses it to enable auto-merge after CI passes on a PR's head, so the squash commit on `main` also triggers CI (a merge made with the default `GITHUB_TOKEN` does not).
 6. **Labels:** create `needs-human`, `adr-proposal`, `fidelity`, `perf`, `bug`, `enhancement`.
 7. Install the **Claude GitHub App** (github.com/apps/claude) on this repository if it isn't already, and confirm it under github.com/settings/installations → Repository access.
 8. Optional but recommended: **Settings → Code security → Dependabot** security updates on; Actions permissions → "Allow GitHub Actions to create and approve pull requests" on (needed for the fallback workflow).

@@ -17,6 +17,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | React, Vite, Zustand, Radix, Comlink, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
 | ESLint, @eslint/js, typescript-eslint, eslint-plugin-boundaries, globals, Prettier, Turborepo, Husky | dev tooling (lint, module boundaries, format, task runner, git hooks); not shipped | MIT | npm |
 | eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |
+| yaml | dev tooling (parses workflows in `tests/ci`); not shipped | ISC | npm |
 | TypeScript, Playwright (`@playwright/test`) | compiler; browser test runner; not shipped | Apache-2.0 | npm |
 | fast-check | property-based tests (dev only); not shipped | MIT | https://github.com/dubzzz/fast-check |
 | @vitest/coverage-v8 (and its MIT/ISC dependencies: @vitest/istanbul-lib-*, ast-v8-to-istanbul, @bcoe/v8-coverage, magicast, semver) | coverage gates in `pnpm test` (dev only); not shipped | MIT | npm |
