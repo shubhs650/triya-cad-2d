@@ -6,7 +6,8 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 |---|---|---|---|
 | acad-ts | DWG/DXF read/write (vendored subtree with patches) | MIT | https://github.com/node-projects/acad-ts |
 | ACadSharp | origin of acad-ts | MIT | https://github.com/DomCR/ACadSharp |
-| ezdxf test files | public fidelity corpus | MIT | https://github.com/mozman/ezdxf |
+| ezdxf example and test drawings | public fidelity corpus (`corpus/public/third-party/ezdxf`, license text in `corpus/public/LICENSES`) | MIT | https://github.com/mozman/ezdxf |
+| ACadSharp sample drawings | public fidelity corpus (`corpus/public/third-party/acadsharp`, license text in `corpus/public/LICENSES`) | MIT | https://github.com/DomCR/ACadSharp |
 | PlaneGCS (FreeCAD) | 2D constraint solver, built to WASM as a separate module | LGPL-2.1+ | https://github.com/FreeCAD/FreeCAD/tree/main/src/Mod/Sketcher/App/planegcs |
 | Hershey fonts | bundled stroke fonts (converted) | Public domain (Hershey/NIST terms) | https://www.ghostscript.com/doc/current/Fonts.htm#Hershey |
 | LibreCAD .lff fonts | bundled stroke fonts (converted) | LGPL (font files; attribution) | https://github.com/LibreCAD/LibreCAD/tree/master/librecad/support/fonts |

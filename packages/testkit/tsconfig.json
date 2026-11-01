@@ -1,8 +1,10 @@
 {
+  "//": "allowImportingTsExtensions: the corpus CLI runs under Node type stripping, which needs explicit .ts import paths.",
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
     "lib": ["ES2023"],
-    "types": ["node"]
+    "types": ["node"],
+    "allowImportingTsExtensions": true
   },
   "include": ["src"]
 }
