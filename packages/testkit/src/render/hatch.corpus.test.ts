@@ -4,7 +4,7 @@
 // midpoint, independently of the line sweep `hatchPattern` uses.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { hatchPattern, loopSegments } from '@triya/hatch';
+import { gradientRamp, hatchPattern, loopSegments } from '@triya/hatch';
 import { mapEntities, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
@@ -87,9 +87,9 @@ describe('pattern hatches on the public corpus (M1-16)', () => {
         hatches++;
         // A hatch can rightly draw nothing: in transform_hatch_pattern.dxf the stored lines are
         // 50.8 apart across a 10 × 10 boundary, so none crosses it.
-        if (r.segments.length > 0 || r.dots.length > 0) drawing++;
+        if (r.families.length > 0) drawing++;
         const loops = g.loops.map(loopSegments);
-        const s = r.segments;
+        const s = r.families.flatMap((fam) => fam.segments);
         for (let i = 0; i < s.length; i += 4) {
           dashes++;
           const mx = (s[i]! + s[i + 2]!) / 2;
@@ -108,5 +108,56 @@ describe('pattern hatches on the public corpus (M1-16)', () => {
     expect(hatches).toBeGreaterThanOrEqual(140);
     expect(drawing).toBeGreaterThanOrEqual(133);
     expect(dashes).toBeGreaterThan(20_000);
+  });
+
+  it('fits every gradient’s ramp to its boundary (M1-16 part 2)', () => {
+    // Centred ramps (shift 0) run over the boundary exactly: a linear ramp from 0 at its
+    // first point across to 1 at its last, and a radial one out to 1 at its farthest point.
+    const wrong: string[] = [];
+    let gradients = 0;
+    for (const f of readable) {
+      let doc;
+      try {
+        doc = readCadDocument(new Uint8Array(readFileSync(`${corpusDir}${f.path}`)));
+      } catch {
+        continue;
+      }
+      for (const e of mapEntities(doc).entities) {
+        const g = e.geom;
+        if (g.kind !== 'HATCH' || !g.gradient) continue;
+        const where = `${f.path} HATCH ${e.handle} ${g.gradient.name}`;
+        const ramp = gradientRamp({ loops: g.loops, gradient: g.gradient });
+        if (!ramp) {
+          wrong.push(`${where}: no ramp`);
+          continue;
+        }
+        gradients++;
+        const { a, b, c, d, e: tx, f: ty } = ramp.frame;
+        const det = a * d - b * c;
+        let lo = Infinity;
+        let hi = -Infinity;
+        for (const seg of g.loops.map(loopSegments)) {
+          for (let i = 0; i < seg.length; i += 2) {
+            // World → the unit frame.
+            const x = seg[i]! - tx;
+            const y = seg[i + 1]! - ty;
+            const u = (d * x - c * y) / det;
+            const v = (-b * x + a * y) / det;
+            const t = ramp.kind === 'linear' ? u : Math.hypot(u, v);
+            lo = Math.min(lo, t);
+            hi = Math.max(hi, t);
+          }
+        }
+        if (g.gradient.shift === 0) {
+          if (ramp.kind === 'linear' && (Math.abs(lo) > 1e-9 || Math.abs(hi - 1) > 1e-9))
+            wrong.push(`${where}: linear ramp spans ${lo}..${hi}`);
+          if (ramp.kind === 'radial' && hi > 1 + 1e-9)
+            wrong.push(`${where}: radial ramp reaches ${hi}`);
+        }
+      }
+    }
+    expect(wrong).toEqual([]);
+    // 15 drawings × LINEAR and SPHERICAL (acadsharp samples) at M1-16 part 2.
+    expect(gradients).toBeGreaterThanOrEqual(30);
   });
 });

@@ -2,6 +2,7 @@
 // its boundary (`@triya/hatch`), drawn as one stroke of dash segments and dots in the hatch's
 // colour; a pattern denser than HPMAXLINES fills its area instead.
 import type { HatchGeometry } from '@triya/engine';
+import { gradientRamp } from '@triya/hatch';
 import { describe, expect, it } from 'vitest';
 import { PATH_L, PATH_M, tessellate, type RenderPrimitive } from '../src/index';
 
@@ -91,11 +92,76 @@ describe('pattern hatches', () => {
     });
   });
 
-  it('leaves gradient fills to part 2', () => {
-    const gradient = hatch({
-      solid: true,
-      gradient: { name: 'LINEAR', angle: 0, shift: 0, singleColor: false, tint: 0, colors: [] },
+  it('draws each pattern family as its own stroke, with what its sub-pixel tint needs', () => {
+    // Part 2: once a family's lines are under a pixel apart the renderer fills the area with
+    // the family's average ink instead, so each stroke carries the area, spacing and dashes.
+    const two = hatch({
+      patternLines: [
+        { angle: 0, base: { x: 0, y: 0 }, offset: { x: 0, y: 1 }, dashes: [1, -9] },
+        { angle: Math.PI / 2, base: { x: 0, y: 0 }, offset: { x: -0.5, y: 0 }, dashes: [] },
+      ],
     });
-    expect(tessellate(gradient, { color: 'foreground' })).toEqual([]);
+    const prims = tessellate(two, { color: '#ff0000' });
+    expect(prims).toHaveLength(2);
+    const area = tessellate(hatch({ solid: true }), { color: '#ff0000' })[0]!;
+    expect(prims[0]).toMatchObject({
+      kind: 'stroke',
+      hatch: { spacing: 1, period: 10, dashLength: 1, marks: 1, evenOdd: true },
+    });
+    expect(prims[1]).toMatchObject({
+      kind: 'stroke',
+      hatch: { spacing: 0.5, period: 0, dashLength: 0, marks: 0 },
+    });
+    for (const p of prims) expect('hatch' in p && p.hatch?.area).toEqual(path(area));
+  });
+});
+
+describe('gradient hatches', () => {
+  type Gradient = NonNullable<HatchGeometry['gradient']>;
+  const blue = { kind: 'rgb', r: 0, g: 0, b: 255 } as const;
+  const gradient = (extra: Partial<Gradient> = {}): HatchGeometry =>
+    hatch({
+      solid: true,
+      pattern: 'SOLID',
+      gradient: {
+        name: 'SPHERICAL',
+        angle: 0,
+        shift: 0,
+        singleColor: false,
+        tint: 0,
+        colors: [
+          { value: 0, color: blue },
+          { value: 1, color: { kind: 'aci', index: 2 } },
+        ],
+        ...extra,
+      },
+    });
+
+  it('fills the boundary with the ramp in the gradient’s own two colours', () => {
+    const g = gradient();
+    const [p, ...rest] = tessellate(g, { color: '#ff0000' });
+    expect(rest).toEqual([]);
+    const solid = tessellate(hatch({ solid: true }), { color: '#ff0000' })[0]!;
+    // The hatch's own colour does not show; colour 1 also stands for the fill in the LOD dot.
+    expect(p).toMatchObject({ kind: 'fill', color: '#0000ff', evenOdd: true, path: path(solid) });
+    expect(p).toHaveProperty('gradient', {
+      ...gradientRamp({ loops: g.loops, gradient: g.gradient! }),
+      colors: ['#0000ff', '#ffff00'],
+    });
+  });
+
+  it('keeps ACI 7 as the foreground, and a one-colour gradient’s tint', () => {
+    const one = gradient({
+      singleColor: true,
+      tint: 0.25,
+      colors: [{ value: 0, color: { kind: 'aci', index: 7 } }],
+    });
+    expect(tessellate(one, { color: '#ff0000' })[0]).toMatchObject({
+      gradient: { colors: ['foreground', 'foreground'], tint: 0.25 },
+    });
+  });
+
+  it('draws nothing for a gradient whose boundary has no area', () => {
+    expect(tessellate({ ...gradient(), loops: [] }, { color: '#ff0000' })).toEqual([]);
   });
 });

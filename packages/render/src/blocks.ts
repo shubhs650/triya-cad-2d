@@ -242,6 +242,20 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
         ...(p.patternLength === undefined
           ? {}
           : { patternLength: p.patternLength * affineScale(m) }),
+        ...(p.gradient
+          ? { gradient: { ...p.gradient, frame: composeAffine(m, p.gradient.frame) } }
+          : {}),
+        ...(p.hatch
+          ? {
+              hatch: {
+                ...p.hatch,
+                area: transformPath(p.hatch.area, m),
+                spacing: p.hatch.spacing * affineScale(m),
+                period: p.hatch.period * affineScale(m),
+                dashLength: p.hatch.dashLength * affineScale(m),
+              },
+            }
+          : {}),
       };
   }
 }

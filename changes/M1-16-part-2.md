@@ -1,0 +1,1 @@
+- M1-16 part 2 (#63): gradient hatches draw as linear or radial gradients fitted to their boundary (all nine AutoCAD gradient names, angle, shift and one-colour tint), and a pattern hatch whose lines are under a pixel apart draws as its area at the lines' average ink.
