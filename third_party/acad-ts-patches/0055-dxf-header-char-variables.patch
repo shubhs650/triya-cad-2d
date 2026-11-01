@@ -1,0 +1,92 @@
+diff --git a/src/DxfPropertyBase.ts b/src/DxfPropertyBase.ts
+index 24e753c..f9c2700 100644
+--- a/src/DxfPropertyBase.ts
++++ b/src/DxfPropertyBase.ts
+@@ -138,6 +138,12 @@ export abstract class DxfPropertyBase {
+ 			return;
+ 		}
+ 
++		// A C# char property: the group holds the character code ($DIMDSEP 46 is ".").
++		if (this._valueKind === 'char') {
++			this.setPropertyValue(obj, typeof value === 'string' && !/^\s*\d+\s*$/.test(value) ? value : String.fromCharCode(toNumber(value)));
++			return;
++		}
++
+ 		if (typeof currentValue === 'boolean') {
+ 			this.setPropertyValue(obj, typeof value === 'boolean' ? value : toNumber(value) !== 0);
+ 			return;
+@@ -217,6 +223,10 @@ export abstract class DxfPropertyBase {
+ 			return toNumber(value) / 86400000;
+ 		}
+ 
++		if (this._valueKind === 'char') {
++			return typeof value === 'string' ? (value.length > 0 ? value.charCodeAt(0) : null) : value;
++		}
++
+ 		if (value instanceof Color) {
+ 			switch (code) {
+ 				case 62:
+diff --git a/src/Metadata/LookupTables/Core.ts b/src/Metadata/LookupTables/Core.ts
+index f896646..f4568b7 100644
+--- a/src/Metadata/LookupTables/Core.ts
++++ b/src/Metadata/LookupTables/Core.ts
+@@ -247,7 +247,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
+         "valueCodes": [
+           280
+         ],
+-        "referenceType": 0
++        "referenceType": 0,
++        "valueKind": "char"
+       },
+       {
+         "name": "$DIMAPOST",
+@@ -463,7 +464,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
+         "valueCodes": [
+           70
+         ],
+-        "referenceType": 0
++        "referenceType": 0,
++        "valueKind": "char"
+       },
+       {
+         "name": "$DIMATFIT",
+@@ -976,7 +978,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
+         "valueCodes": [
+           280
+         ],
+-        "referenceType": 0
++        "referenceType": 0,
++        "valueKind": "char"
+       },
+       {
+         "name": "$LWDISPLAY",
+@@ -1048,7 +1051,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
+         "valueCodes": [
+           280
+         ],
+-        "referenceType": 0
++        "referenceType": 0,
++        "valueKind": "char"
+       },
+       {
+         "name": "$ELEVATION",
+@@ -1282,7 +1286,8 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
+         "valueCodes": [
+           280
+         ],
+-        "referenceType": 0
++        "referenceType": 0,
++        "valueKind": "char"
+       },
+       {
+         "name": "$LONGITUDE",
+diff --git a/src/Metadata/MetadataTypes.ts b/src/Metadata/MetadataTypes.ts
+index 489df7b..a89cd3d 100644
+--- a/src/Metadata/MetadataTypes.ts
++++ b/src/Metadata/MetadataTypes.ts
+@@ -1,4 +1,4 @@
+-export type MetadataValueKind = 'date' | 'timespan';
++export type MetadataValueKind = 'date' | 'timespan' | 'char';
+ 
+ export interface PropertyMetadata {
+ 	propertyName: string;

@@ -59,6 +59,8 @@ const ALLOWED_HEADER_CHANGES = new Set([
   '$TDINDWG',
   '$VERSIONGUID',
   '$FINGERPRINTGUID',
+  '$LASTSAVEDBY', // who saved the file (DEC-041)
+  '$ACADMAINTVER', // maintenance version of the program that saved it (DEC-041)
 ]);
 
 class Collector {

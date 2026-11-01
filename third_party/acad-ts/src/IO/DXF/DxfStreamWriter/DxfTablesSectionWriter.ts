@@ -344,6 +344,7 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
     this._writer.write(79, view.ucsOrthographicType);
 
     this._writer.write(281, view.renderMode as number);
+    this._writer.writeHandle(348, view.visualStyle);
 
     this._writer.writeVector(110, view.ucsOrigin);
     this._writer.writeVector(111, view.ucsXAxis);

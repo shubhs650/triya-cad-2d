@@ -173,3 +173,8 @@ The columns above track Triya. This section tracks the library underneath, from 
 | `$DIMBLK`, `$DIMBLK1`, `$DIMBLK2` (DWG write, R2000+) | Written as their block records (0051); were written null. `$DIMLDRBLK` is still not kept |
 | LEADER annotation (DWG write) | Written (0052); every leader came off its annotation |
 | DBCOLOR (DWG write, before R2004) | Colour index written (0053); was written as 0 |
+| Single-character header variables `$DIMDSEP`, `$LOFTNORMALS`, `$LIGHTGLYPHDISPLAY`, `$DWFFRAME`, `$DGNFRAME` (DXF) | Read and written as character codes, as in DWG (0055); DXF kept the digits ("46" for "."). A flag the drawing never set stays out of the file (0054); it was written as 0 |
+| `$LASTSAVEDBY`, `$ACADMAINTVER` | Describe the program that saved the file; allowed to change on save (DEC-041) |
+| IMAGEDEF default pixel size (DXF write) | Written (0056); reset to 1 × 1 |
+| VIEW visual style (DXF write) | Written (0057); was dropped |
+| MLEADERSTYLE 298 flag (DXF write) | Written as read (0058); was always false |

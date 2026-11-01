@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0053 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0058 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1042,5 +1042,108 @@ The R2000+ header stores `DIMBLK`, `DIMBLK1` and `DIMBLK2` as block record handl
 **Title:** Write the colour index of pre-R2004 DWG DBCOLOR objects
 
 `_writeBookColor` always writes 0 as the colour index. Before R2004 that index is the whole colour, so the colour of every DBCOLOR is lost on save. This writes the index (or the nearest index for a true colour) before R2004.
+
+</details>
+
+### 0054 — DXF writer writes unset R2007+ header flags as 0
+
+- **File:** `third_party/acad-ts-patches/0054-dxf-header-unset-char-flags.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfHeaderSectionWriter.ts`
+- **Symptom:**
+  - `$LOFTNORMALS`, `$LIGHTGLYPHDISPLAY`, `$DWFFRAME` and `$DGNFRAME` are single-character flags. A drawing without them (every file before R2007, and minimal files) reads them as `''`.
+  - With `writeAllHeaderVariables` the writer put `''` out under group 280, which reads back as `"0"`.
+  - Corpus: 4 differences in each of 19 files (76).
+- **Fix:** skip a header variable whose value is the empty string when none of its group codes holds a string, so a flag the drawing never had stays out of the file.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0054 DXF writer leaves out R2007+ header flags the drawing never set".
+  - The R2000 and minimal R2007 files must keep `''`. The R2018 file, which sets the flags, must keep its values. Both ASCII and binary.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Do not write unset character header variables to DXF
+
+With `writeAllHeaderVariables`, char-typed header variables that the drawing never set (`''`) were written under their numeric group code and read back as `"0"`. This skips a variable whose value is empty when none of its codes holds a string.
+
+</details>
+
+### 0055 — DXF reader keeps single-character header variables as digits
+
+- **File:** `third_party/acad-ts-patches/0055-dxf-header-char-variables.patch`
+- **Touches:** `src/DxfPropertyBase.ts`, `src/Metadata/MetadataTypes.ts`, `src/Metadata/LookupTables/Core.ts`
+- **Symptom:**
+  - `$DIMDSEP` (70) holds the character code of the decimal separator, and the R2007+ flags above (280) hold a character whose code is the setting. The DWG reader turns these into characters (`.`, `\u0001`).
+  - The DXF reader stored the digits (`"46"`, `"1"`), so the same drawing read differently from DXF and DWG. A DXF-to-DWG save then wrote the code of the first digit (`"4"`).
+  - Corpus: 1 difference (`HEADER _dimensionStyleOverrides.decimalSeparator`, read `"."` and written back as `"0"`) in each of 9 R14-era files.
+- **Fix:** add a `char` value kind and mark these five variables with it. Reading turns a code into its character, and writing turns the character back into its code (an empty value writes nothing).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0055 DXF reader and writer keep single-character header variables as characters".
+  - The R2004 and R2018 acadsharp samples must read the same five values from DXF as from DWG, and keep them through ASCII and binary saves.
+  - The R2018 DXF is checked for `.`, `\u0001`, `\u0001`, `\u0002`, `\u0000`.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write char-typed DXF header variables as character codes
+
+`$DIMDSEP`, `$LOFTNORMALS`, `$LIGHTGLYPHDISPLAY`, `$DWFFRAME` and `$DGNFRAME` are `char` in the DWG header and character codes in DXF. The DXF path stored the code's digits as the string, so DXF and DWG reads of one drawing disagreed and DXF-to-DWG saves wrote the wrong byte. This adds a `char` value kind that converts in both directions.
+
+</details>
+
+### 0056 — DXF writer drops the default pixel size of IMAGEDEF
+
+- **File:** `third_party/acad-ts-patches/0056-dxf-imagedef-default-size.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:**
+  - IMAGEDEF 11/21 is the size of one pixel in drawing units. The reader reads it, and the writer left it out, so saved image definitions came back with the 1 × 1 default.
+  - Corpus: 2 differences (`IMAGEDEF defaultSize.x/y`) in each of 17 files (34).
+- **Fix:** write 11/21 after the image size, in AutoCAD's group order.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0056 DXF writer writes the default pixel size of IMAGEDEF objects".
+  - Every IMAGEDEF of the acadsharp R2000 sample and ezdxf `images.dxf` must survive ASCII and binary saves. IMAGEDEF 8C4 is checked for 0.2645833333333333.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write IMAGEDEF default pixel size (11/21) to DXF
+
+`writeImageDefinition` omitted group 11/21 (default size of one pixel), so the value reset to 1 × 1 on every DXF save. This writes it.
+
+</details>
+
+### 0057 — DXF writer drops the visual style of VIEW table entries
+
+- **File:** `third_party/acad-ts-patches/0057-dxf-view-visual-style.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:**
+  - A named view keeps its visual style handle in 348. The reader reads it, and the writer left it out.
+  - Corpus: 1 difference (`VIEW visualStyle`) in each of 8 R2007+ acadsharp sample DXFs.
+- **Fix:** write 348 after the render mode (281), when the view has a visual style.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0057 DXF writer writes the visual style of VIEW table entries".
+  - Every view of the acadsharp R2007 and R2018 sample DXFs keeps its visual style through ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the VIEW visual style handle (348) to DXF
+
+`_writeView` did not write group 348, so named views lost their visual style on save. This writes it when set.
+
+</details>
+
+### 0058 — DXF writer always writes false for the MLEADERSTYLE 298 flag
+
+- **File:** `third_party/acad-ts-patches/0058-dxf-mleaderstyle-flag-298.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:**
+  - The reader reads 298 into `unknownFlag298` (the DWG writer writes it), and the DXF writer wrote a constant `false`.
+  - Corpus: 1 difference in each of 3 ezdxf files.
+- **Fix:** write `unknownFlag298`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0058 DXF writer writes the 298 flag of MLEADERSTYLE objects as read".
+  - Every MLEADERSTYLE of ezdxf `text.dxf` keeps the flag through ASCII and binary saves. Style 2D8 is checked for `true`.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the MLEADERSTYLE 298 flag as read
+
+The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discarding the value read. This writes `unknownFlag298`, as the DWG writer already does.
 
 </details>
