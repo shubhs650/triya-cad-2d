@@ -33,6 +33,8 @@ import {
   type TableEntityCell,
   CadWipeoutBase,
   PdfUnderlay,
+  MLine,
+  Viewport,
   TextEntity,
   type AttributeBase,
   type AttributeEntity,
@@ -75,6 +77,8 @@ import type {
   TableGeometry,
   ImageGeometry,
   UnderlayGeometry,
+  MLineGeometry,
+  ViewportGeometry,
   PlanarProps,
   TextFields,
   PolylineVertex,
@@ -704,6 +708,61 @@ function underlayGeometry(u: PdfUnderlay): UnderlayGeometry | UnmappedEntity['re
   };
 }
 
+/** MLINE points and directions are WCS (DXF reference, MLINE), so the plan view drops Z. */
+function mlineGeometry(m: MLine): MLineGeometry | UnmappedEntity['reason'] {
+  const pl = plane(m.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const style = ref(m.style);
+  const z = m.startPoint.z;
+  return {
+    kind: 'MLINE',
+    ...(style ? { style } : {}),
+    scale: m.scaleFactor,
+    justification: m.justification as number,
+    flags: m.flags as number,
+    start: xy(m.startPoint),
+    vertices: m.vertices.map((v) => ({
+      position: xy(v.position),
+      direction: xy(v.direction),
+      miter: xy(v.miter),
+      elements: v.segments.map((s) => ({
+        parameters: [...s.parameters],
+        fillParameters: [...s.areaFillParameters],
+      })),
+    })),
+    ...(z !== 0 ? { elevation: z } : {}),
+    ...(pl !== 'up' ? { normal: { x: m.normal.x, y: m.normal.y, z: m.normal.z } } : {}),
+  };
+}
+
+/** VIEWPORT: a paper-space frame and the model-space view it shows (DXF AcDbViewport). */
+function viewportGeometry(v: Viewport): ViewportGeometry {
+  const clipBoundary = ref(v.boundary);
+  const visualStyle = ref(v.visualStyle);
+  return {
+    kind: 'VIEWPORT',
+    center: xy(v.center),
+    width: v.width,
+    height: v.height,
+    id: v.id,
+    status: v.activeStatus as number,
+    flags: v.status as number,
+    viewCenter: xy(v.viewCenter),
+    viewHeight: v.viewHeight,
+    viewDirection: { x: v.viewDirection.x, y: v.viewDirection.y, z: v.viewDirection.z },
+    viewTarget: { x: v.viewTarget.x, y: v.viewTarget.y, z: v.viewTarget.z },
+    twist: v.twistAngle,
+    lensLength: v.lensLength,
+    frontClip: v.frontClipPlane,
+    backClip: v.backClipPlane,
+    ...(clipBoundary ? { clipBoundary } : {}),
+    frozenLayers: v.frozenLayers.map((l) => hex(l.handle)),
+    plotStyleSheet: v.styleSheetName,
+    renderMode: v.renderMode,
+    ...(visualStyle ? { visualStyle } : {}),
+  };
+}
+
 /** TOLERANCE's 10 and 11 are WCS, so it converts like MTEXT. */
 function toleranceGeometry(t: Tolerance, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   const pl = plane(t.normal);
@@ -1006,6 +1065,8 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
   if (e instanceof Hatch) return hatchGeometry(e);
   if (e instanceof CadWipeoutBase) return imageGeometry(e);
   if (e instanceof PdfUnderlay) return underlayGeometry(e);
+  if (e instanceof MLine) return mlineGeometry(e);
+  if (e instanceof Viewport) return viewportGeometry(e);
   return 'not mapped yet';
 }
 
