@@ -13,7 +13,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | LibreCAD .lff fonts | bundled stroke fonts (converted) | LGPL (font files; attribution) | https://github.com/LibreCAD/LibreCAD/tree/master/librecad/support/fonts |
 | Microsoft Fluent UI System Icons | UI icons | MIT | https://github.com/microsoft/fluentui-system-icons |
 | pdf.js | PDF underlay rendering | Apache-2.0 | https://github.com/mozilla/pdf.js |
-| opentype.js | TTF parsing/shaping | MIT | https://github.com/opentypejs/opentype.js |
+| opentype.js 2.0 | TrueType/OpenType parsing, glyph outlines and advance widths (`packages/text`, M1-10); no dependencies of its own | MIT | https://github.com/opentypejs/opentype.js |
 | React, Vite, Zustand, Radix, Comlink, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
 | ESLint, @eslint/js, typescript-eslint, eslint-plugin-boundaries, globals, Prettier, Turborepo, Husky | dev tooling (lint, module boundaries, format, task runner, git hooks); not shipped | MIT | npm |
 | eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |
