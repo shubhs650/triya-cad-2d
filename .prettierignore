@@ -6,5 +6,6 @@ third_party/
 dist/
 coverage/
 test-results/
+test-reports/
 playwright-report/
 .turbo/

@@ -5,6 +5,8 @@ coverage/
 *.tsbuildinfo
 .eslintcache
 test-results/
+# Round-trip reports (pnpm corpus:roundtrip); kept apart from Playwright, which wipes test-results/.
+test-reports/
 playwright-report/
 blob-report/
 .DS_Store

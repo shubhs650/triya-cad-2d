@@ -82,9 +82,15 @@ The public manifest is `corpus/corpus.json`; the private one is `corpus/private/
 
 `structuralDiff(original: CadDocument, reopened: CadDocument): DiffReport` walks both acad-ts object graphs by handle and compares type, every serialisable property, xdata, extension dictionaries, reactors, owner links, and table membership. **Expected result: zero differences.**
 
-Allowed exceptions (and only these): `$TDUPDATE`, `$TDUSRTIMER`, `$TDINDWG`, `$VERSIONGUID`, `$FINGERPRINTGUID`, `$HANDSEED` (new ≥ old), `$DWGCODEPAGE` when writing to a Unicode version, and the ordering of entries within unordered dictionaries. Anything else is a failure. Adding an exception requires a DECISIONS entry.
+Allowed exceptions (and only these): `$TDUPDATE` and its UTC twin `$TDUUPDATE` (DEC-034), `$TDUSRTIMER`, `$TDINDWG`, `$VERSIONGUID`, `$FINGERPRINTGUID`, `$HANDSEED` (new ≥ old), `$DWGCODEPAGE` when writing to a Unicode version, and the ordering of entries within unordered dictionaries. Anything else is a failure. Adding an exception requires a DECISIONS entry.
 
 After an *editing* session, the diff excludes handles in the session's touched set and asserts zero differences elsewhere.
+
+**Harness** (`packages/testkit/src/roundtrip`, M0-05):
+- `roundTrip(bytes)` reads the file twice (one copy to write, one pristine copy to compare), writes it in the same version and format (DWG, ASCII DXF or binary DXF) with `@triya/io` `writeCadDocument`, reopens the output and runs `structuralDiff`. Status per file: `clean`, `diff`, `read-error`, `write-error`, `reread-error`.
+- `structuralDiff` matches every registered object by handle (`missing`/`added`/`type`), then compares its instance fields recursively. A field holding another object is compared as a reference (type + handle), so one changed object only reports on itself. Map-backed collections (dictionary and table entries, xdata by application) are unordered; lists and sets are ordered, and a pure reordering of references is reported as `order`. A null field equals an empty container, and an empty string equals a missing one, because the file formats cannot tell them apart. Header fields are reported by `$NAME`.
+- acad-ts stamps `new Date()` into header variables a file does not state, so the harness pins the clock while it reads and writes; two runs on the same bytes produce the same report.
+- `pnpm corpus:roundtrip` (also part of `pnpm test`) runs every public corpus file, writes `test-reports/roundtrip/report.md` and `report.json`, and fails if any file is worse than `corpus/roundtrip-baseline.json` (worse status or more differences). After an improvement, `TRIYA_UPDATE_BASELINE=1 pnpm corpus:roundtrip` locks it in. Until M1-05 the baseline holds the known differences; from M1-05 on every entry must be `clean`.
 
 ## 4. Fidelity harness
 
@@ -135,6 +141,7 @@ pnpm test:private       # all of the above on corpus/private (local only)
 pnpm corpus:list        # print corpus manifest
 pnpm corpus:ref <file>  # rasterise reference PDFs → PNGs
 pnpm corpus:validate    # schema + license fields + reference presence
+pnpm corpus:roundtrip   # round-trip every public corpus file; per-file report in test-reports/roundtrip/
 ```
 
 File conventions: `*.test.ts` is Vitest (Node), found in `packages/*/{src,test}/`, `apps/*/{src,test}/` and `tests/`; `*.spec.ts` is Playwright, one folder per suite under `tests/e2e/<fidelity|offline|ui|perf|io>/` (`playwright.config.ts` maps each suite to a project). Until a suite's roadmap task lands, its script passes with no tests; scripts whose implementation does not exist yet (`corpus:*`, `test:private`, `planegcs:build`) print the owning task id and exit 0. `pnpm lint` runs ESLint (including the module-boundary and no-DOM rules) and `prettier --check`; Husky runs `pnpm lint && pnpm typecheck` before each commit.
