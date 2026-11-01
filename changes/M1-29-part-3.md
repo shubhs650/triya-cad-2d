@@ -1,0 +1,1 @@
+- M1-29 part 3 (#38): acad-ts keeps SORTENTSTABLE entries in the order read (patch 0034) and keeps R2018 MTEXT columns through DXF (0035) and DWG (0036) saves; round trip 14,740 → 13,089 differences.

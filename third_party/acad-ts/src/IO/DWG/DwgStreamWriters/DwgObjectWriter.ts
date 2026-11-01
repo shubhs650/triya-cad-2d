@@ -4807,7 +4807,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 	private _writeSortEntitiesTable(sortEntitiesTable: SortEntitiesTable): void {
 		this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, sortEntitiesTable.blockOwner);
 
-		const sorters = Array.from(sortEntitiesTable);
+		// In the stored order: the sort handles carry the draw order, the entry order is the file's.
+		const sorters = sortEntitiesTable.entries;
 		this._writer.writeBitLong(sorters.length);
 		for (const item of sorters) {
 			this._writer.main.handleReference(item.sortHandle);

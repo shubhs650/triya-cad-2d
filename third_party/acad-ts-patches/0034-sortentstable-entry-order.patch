@@ -1,0 +1,44 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 3594b63..9f8b976 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -4807,7 +4807,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 	private _writeSortEntitiesTable(sortEntitiesTable: SortEntitiesTable): void {
+ 		this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, sortEntitiesTable.blockOwner);
+ 
+-		const sorters = Array.from(sortEntitiesTable);
++		// In the stored order: the sort handles carry the draw order, the entry order is the file's.
++		const sorters = sortEntitiesTable.entries;
+ 		this._writer.writeBitLong(sorters.length);
+ 		for (const item of sorters) {
+ 			this._writer.main.handleReference(item.sortHandle);
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index f5a1ae7..ed336eb 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -956,7 +956,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.writeHandle(330, e.blockOwner);
+ 
+-    for (const item of e) {
++    // In the stored order: the sort handles carry the draw order, the entry order is the file's.
++    for (const item of e.entries) {
+       this._writer.writeHandle(331, item.entity);
+       this._writer.write(5, item.sortHandle);
+     }
+diff --git a/src/Objects/SortEntitiesTable.ts b/src/Objects/SortEntitiesTable.ts
+index 1371122..8933f96 100644
+--- a/src/Objects/SortEntitiesTable.ts
++++ b/src/Objects/SortEntitiesTable.ts
+@@ -105,6 +105,11 @@ export class SortEntitiesTable extends NonGraphicalObject implements Iterable<So
+ 		return true;
+ 	}
+ 
++	/** The entries in the order they were read or added; iteration yields them sorted by sort handle. */
++	get entries(): readonly Sorter[] {
++		return this._sorters;
++	}
++
+ 	[Symbol.iterator](): Iterator<Sorter> {
+ 		const sorted = [...this._sorters].sort((a, b) => a.compareTo(b));
+ 		return sorted[Symbol.iterator]();

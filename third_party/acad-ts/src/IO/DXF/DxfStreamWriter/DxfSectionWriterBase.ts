@@ -1037,6 +1037,30 @@ export abstract class DxfSectionWriterBase {
       this._writer.write(441, mtext.backgroundTransparency);
       }
     }
+
+    // R2018 keeps the column settings in an embedded object (DXF reference, MTEXT); AutoCAD
+    // writes it after the background groups. Static columns carry no heights.
+    const columns = mtext.columnData;
+    if (this.version >= ACadVersion.AC1032 && columns != null && mtext.hasColumns) {
+      const direction = mtext.alignmentPoint.getLength() > 0 ? mtext.alignmentPoint : new XYZ(1, 0, 0);
+      this._writer.write(101, 'Embedded Object');
+      this._writer.write(70, mtext.attachmentPoint);
+      this._writer.writeVector(10, direction);
+      this._writer.writeVector(11, mtext.insertPoint);
+      this._writer.write(40, mtext.rectangleWidth);
+      this._writer.write(41, mtext.rectangleHeight);
+      this._writer.write(42, mtext.horizontalWidth);
+      this._writer.write(43, mtext.verticalHeight);
+      this._writer.write(71, columns.columnType);
+      this._writer.write(72, columns.columnCount);
+      this._writer.write(44, columns.width);
+      this._writer.write(45, columns.gutter);
+      this._writer.write(73, columns.autoHeight ? 1 : 0);
+      this._writer.write(74, columns.flowReversed ? 1 : 0);
+      for (const height of columns.heights) {
+        this._writer.write(46, height);
+      }
+    }
   }
 
   private _writeMultiLeader(mleader: MultiLeader, map: DxfMap): void {
