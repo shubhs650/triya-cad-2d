@@ -1,0 +1,29 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index ae5e34c..b3bdf39 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -3041,6 +3044,15 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		}
+ 	}
+ 
++	// Pre-R2018 MLINESTYLE elements name their linetype by index, as CadMLineStyleTemplate reads
++	// it: 0x7FFF ByLayer, 0x7FFE ByBlock, otherwise the position in the LTYPE table.
++	private _mlineStyleLineTypeIndex(lineType: LineType | null): number {
++		if (lineType == null || lineType.name.toUpperCase() === LineType.byLayerName.toUpperCase()) return 0x7FFF;
++		if (lineType.name.toUpperCase() === LineType.byBlockName.toUpperCase()) return 0x7FFE;
++		const index = Array.from(this._document.lineTypes).indexOf(lineType);
++		return index < 0 ? 0x7FFF : index;
++	}
++
+ 	private _writeCadImage(image: CadWipeoutBase): void {
+ 		this._writer.writeBitLong(image.classVersion);
+ 		this._writer.write3BitDouble(image.insertPoint);
+@@ -4703,7 +4717,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			if (this.r2018Plus) {
+ 				this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, element.lineType);
+ 			} else {
+-				this._writer.writeBitShort(0);
++				this._writer.writeBitShort(this._mlineStyleLineTypeIndex(element.lineType));
+ 			}
+ 		}
+ 	}

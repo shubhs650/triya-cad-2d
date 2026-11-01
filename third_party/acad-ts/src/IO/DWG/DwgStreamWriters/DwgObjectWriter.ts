@@ -242,7 +242,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 	private get insertsByBlockName(): Map<string, Insert[]> {
 		if (this._insertsByBlockName == null) {
 			this._insertsByBlockName = new Map<string, Insert[]>();
-			for (const entity of this._document.entities ?? []) {
+			// Inserts in every block, not only model space: a block can be inserted from paper
+			// space, another block, a dimension or a table block.
+			const entities = Array.from(this._document.blockRecords).flatMap((record) => Array.from(record.entities));
+			for (const entity of entities) {
 				if (!(entity instanceof Insert) || entity.block == null) {
 					continue;
 				}
@@ -480,14 +483,14 @@ export class DwgObjectWriter extends DwgSectionIO {
 		const entitiesByHandle = new Map(entities.map((entity) => [entity.handle, entity]));
 		const flags = record.combinedFlags;
 		const inserts = this.insertsByBlockName.get(record.name) ?? [];
-		const insertHandles = inserts.map((insert) => insert.handle);
+		// The list as read first, in its order (it can name erased inserts and tables), then any
+		// insert added since.
+		const insertHandles = [...record.insertHandles];
 		const insertSet = new Set(insertHandles);
-		if (record.name.toUpperCase().startsWith('*T')) {
-			for (const handle of record.insertHandles) {
-				if (!insertSet.has(handle)) {
-					insertSet.add(handle);
-					insertHandles.push(handle);
-				}
+		for (const insert of inserts) {
+			if (!insertSet.has(insert.handle)) {
+				insertSet.add(insert.handle);
+				insertHandles.push(insert.handle);
 			}
 		}
 		const insertsByHandle = new Map(inserts.map((insert) => [insert.handle, insert]));
@@ -623,7 +626,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 			let values = CadUtils.toIndex(layer.lineWeight) << 5;
 			if ((layer.flags & LayerFlags.Frozen) !== 0) values |= 0b1;
 			if (!layer.isOn) values |= 0b10;
-			if ((layer.flags & LayerFlags.Frozen) !== 0) values |= 0b100;
+			if ((layer.flags & LayerFlags.FrozenNewViewports) !== 0) values |= 0b100;
 			if ((layer.flags & LayerFlags.Locked) !== 0) values |= 0b1000;
 			if (layer.plotFlag) values |= 0b10000;
 			this._writer.writeBitShort(values);
@@ -2280,7 +2283,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.writeBit(false);
 		}
 
-		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null);
+		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, leader.associatedAnnotation);
 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, leader.style);
 	}
 
@@ -3041,6 +3044,15 @@ export class DwgObjectWriter extends DwgSectionIO {
 		}
 	}
 
+	// Pre-R2018 MLINESTYLE elements name their linetype by index, as CadMLineStyleTemplate reads
+	// it: 0x7FFF ByLayer, 0x7FFE ByBlock, otherwise the position in the LTYPE table.
+	private _mlineStyleLineTypeIndex(lineType: LineType | null): number {
+		if (lineType == null || lineType.name.toUpperCase() === LineType.byLayerName.toUpperCase()) return 0x7FFF;
+		if (lineType.name.toUpperCase() === LineType.byBlockName.toUpperCase()) return 0x7FFE;
+		const index = Array.from(this._document.lineTypes).indexOf(lineType);
+		return index < 0 ? 0x7FFF : index;
+	}
+
 	private _writeCadImage(image: CadWipeoutBase): void {
 		this._writer.writeBitLong(image.classVersion);
 		this._writer.write3BitDouble(image.insertPoint);
@@ -3633,7 +3645,9 @@ export class DwgObjectWriter extends DwgSectionIO {
 	}
 
 	private _writeBookColor(color: BookColor): void {
-		this._writer.writeBitShort(0);
+		// Before R2004 the colour index is all the object holds; from R2004 it is 0 and the
+		// true colour follows.
+		this._writer.writeBitShort(this.r2004Plus ? 0 : color.color.isTrueColor ? color.color.getApproxIndex() : color.color.index);
 
 		if (this.r2004Plus) {
 			const arr = new Uint8Array([
@@ -4703,7 +4717,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 			if (this.r2018Plus) {
 				this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, element.lineType);
 			} else {
-				this._writer.writeBitShort(0);
+				this._writer.writeBitShort(this._mlineStyleLineTypeIndex(element.lineType));
 			}
 		}
 	}

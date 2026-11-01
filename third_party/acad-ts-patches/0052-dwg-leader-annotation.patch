@@ -1,0 +1,13 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index ae5e34c..b3bdf39 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -2280,7 +2283,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writer.writeBit(false);
+ 		}
+ 
+-		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null);
++		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, leader.associatedAnnotation);
+ 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, leader.style);
+ 	}
+ 

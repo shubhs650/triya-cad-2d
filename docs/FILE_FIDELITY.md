@@ -167,3 +167,9 @@ The columns above track Triya. This section tracks the library underneath, from 
 | LAYOUT paper image origin and standard scale (DXF) | One origin for the DXF reader and both writers (0044); the standard scale written as 147 (0045). A save wrote origin 0,0 and the print scale as the standard scale |
 | LTYPE alignment (DXF) | 72 read and written as the character code (0046); read as the digits "65", and the R12 default written as 0 |
 | ARC_DIMENSION (DXF write) | Written with its dimension and arc data (0047); only its common entity data was written, so it came back with no block, points or angles |
+| LAYER flags (DWG write, R2000+) | "Frozen in new viewports" written from its own flag (0048); it was written from the frozen flag |
+| MLINESTYLE element linetypes (DWG write, before R2018) | Written as the linetype index the reader resolves (0049); every element came back with the first linetype |
+| BLOCK_RECORD insert list (DWG write, R2000+) | Kept as read, then new inserts, from every block (0050); rebuilt from model-space inserts only |
+| `$DIMBLK`, `$DIMBLK1`, `$DIMBLK2` (DWG write, R2000+) | Written as their block records (0051); were written null. `$DIMLDRBLK` is still not kept |
+| LEADER annotation (DWG write) | Written (0052); every leader came off its annotation |
+| DBCOLOR (DWG write, before R2004) | Colour index written (0053); was written as 0 |
