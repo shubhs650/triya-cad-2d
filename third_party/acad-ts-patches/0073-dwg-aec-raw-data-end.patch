@@ -1,0 +1,142 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index a2b3a45..ae3f1d4 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -314,7 +314,12 @@ export class DwgObjectReader extends DwgSectionIO {
+   private _handles: number[];
+   private _handlesReader!: IDwgStreamReader;
+   private _mergedReaders!: IDwgStreamReader;
+-	private _objectDataEndInBits: number = 0;
++	private _objectDataEndInBits: number = 0;
++	/**
++	 * End of the object's data stream: the start of the R2007+ string stream when there is one,
++	 * else its flag bit (R2007+) or the handle stream (before R2007). Raw trailing data ends here.
++	 */
++	private _dataStreamEndInBits: number = 0;
+   private _objectInitialPos: number = 0;
+   private _objectReader!: IDwgStreamReader;
+   private _size: number = 0;
+@@ -414,7 +419,8 @@ export class DwgObjectReader extends DwgSectionIO {
+ 
+       this._handlesReader.setPositionInBits(handleSectionOffset);
+ 
+-      this._textReader.setPositionByFlag(handleSectionOffset - 1);
++      const textStart = this._textReader.setPositionByFlag(handleSectionOffset - 1);
++      this._dataStreamEndInBits = this._textReader.isEmpty ? handleSectionOffset - 1 : textStart;
+ 
+       this._mergedReaders = new DwgMergedReader(this._objectReader, this._textReader, this._handlesReader);
+     } else {
+@@ -427,6 +433,8 @@ export class DwgObjectReader extends DwgSectionIO {
+       this._objectInitialPos = this._objectReader.positionInBits();
+       type = this._objectReader.readObjectType();
+ 			this._objectDataEndInBits = this._crcReader.positionInBits() + sizeInBits;
++      // Until the handle stream offset is read (_updateHandleReader, R2000+).
++      this._dataStreamEndInBits = this._objectDataEndInBits;
+       this._handleStreamBits = 0;
+     }
+ 
+@@ -706,9 +714,11 @@ export class DwgObjectReader extends DwgSectionIO {
+     const size = this._objectReader.readRawLong();
+ 
+     this._handlesReader.setPositionInBits(size + this._objectInitialPos);
++    this._dataStreamEndInBits = size + this._objectInitialPos;
+ 
+     if (this._version === ACadVersion.AC1021) {
+-      this._textReader.setPositionByFlag(size + this._objectInitialPos - 1);
++      const textStart = this._textReader.setPositionByFlag(size + this._objectInitialPos - 1);
++      this._dataStreamEndInBits = this._textReader.isEmpty ? size + this._objectInitialPos - 1 : textStart;
+     }
+ 
+     this._mergedReaders = new DwgMergedReader(this._objectReader, this._textReader, this._handlesReader);
+@@ -4257,6 +4267,12 @@ export class DwgObjectReader extends DwgSectionIO {
+     blockGrip.value93 = this._mergedReaders.readBitLong();
+   }
+ 
++  /** The rest of the data stream, whole bytes; the last one is padded with the next stream's bits. */
++  private _readRemainingDataBytes(): Uint8Array | null {
++    const bits = this._dataStreamEndInBits - this._objectReader.positionInBits();
++    return bits > 0 ? this._objectReader.readBytes(Math.ceil(bits / 8)) : null;
++  }
++
+   private _readAecCleanupGroup(): CadTemplate {
+     const cleanupGroup = new AecCleanupGroup();
+     const template = new CadNonGraphicalObjectTemplate(cleanupGroup);
+@@ -4266,15 +4282,9 @@ export class DwgObjectReader extends DwgSectionIO {
+         cleanupGroup.version = this._mergedReaders.readBitLong();
+       }
+       cleanupGroup.description = this._mergedReaders.readVariableText();
+-      const currentPos = this._mergedReaders.positionInBits();
+-      const endPos = this._objectInitialPos + (this._size * 8);
+-      const remainingBits = endPos - currentPos;
+-      if (remainingBits > 0) {
+-        const remainingBytes = Math.floor(remainingBits / 8);
+-        if (remainingBytes > 0) {
+-          cleanupGroup.rawData = this._mergedReaders.readBytes(remainingBytes);
+-        }
+-      }
++      // Up to the end of the data stream: past it are the strings and handles, written again.
++      const rawData = this._readRemainingDataBytes();
++      if (rawData) cleanupGroup.rawData = rawData;
+     } catch (ex: unknown) {
+       const message = ex instanceof Error ? ex.message : String(ex);
+       this._builder.notify(
+@@ -4295,15 +4305,9 @@ export class DwgObjectReader extends DwgSectionIO {
+     template.binRecordHandle = this._handleReference();
+     template.styleHandle = this._handleReference();
+     template.cleanupGroupHandle = this._handleReference();
+-    const objectPos = this._objectReader.positionInBits();
+-    const handlesPos = this._handlesReader.positionInBits();
+-    const objectDataSize = handlesPos - objectPos;
+-    if (objectDataSize > 0) {
+-      let dataBytes = Math.floor(objectDataSize / 8);
+-      if (objectDataSize % 8 !== 0) dataBytes++;
+-      const rawData = this._objectReader.readBytes(dataBytes);
+-      template.rawData = rawData;
+-    }
++    // Up to the end of the data stream: the handles were read above and are written again.
++    const rawData = this._readRemainingDataBytes();
++    if (rawData) template.rawData = rawData;
+     return template as unknown as CadTemplate;
+   }
+ 
+@@ -4315,15 +4319,8 @@ export class DwgObjectReader extends DwgSectionIO {
+       wallStyle.version = this._mergedReaders.readBitLong();
+     }
+     wallStyle.description = this._mergedReaders.readVariableText();
+-    const currentPos = this._mergedReaders.positionInBits();
+-    const endPos = this._objectInitialPos + (this._size * 8);
+-    const remainingBits = endPos - currentPos;
+-    if (remainingBits > 0) {
+-      const remainingBytes = Math.floor(remainingBits / 8);
+-      if (remainingBytes > 0) {
+-        wallStyle.rawData = this._mergedReaders.readBytes(remainingBytes);
+-      }
+-    }
++    const rawData = this._readRemainingDataBytes();
++    if (rawData) wallStyle.rawData = rawData;
+     return template;
+   }
+ 
+@@ -4338,16 +4335,12 @@ export class DwgObjectReader extends DwgSectionIO {
+     this._builder.notify(
+       `BinRecord: Handle reader at position ${currentPos}, BinRecord Handle: ${binRecord.handle.toString(16)}`,
+       NotificationType.None);
+-    const endPos = this._objectInitialPos + (this._size * 8);
+-    const remainingBits = endPos - currentPos;
+-    if (remainingBits > 0) {
+-      const remainingBytes = Math.floor(remainingBits / 8);
+-      if (remainingBytes > 0) {
+-        binRecord.binaryData = this._mergedReaders.readBytes(remainingBytes);
+-        this._builder.notify(
+-          `BinRecord: Read ${remainingBytes} bytes of binary data. Version: ${binRecord.version}, Handle: ${binRecord.handle.toString(16)}`,
+-          NotificationType.None);
+-      }
++    const binaryData = this._readRemainingDataBytes();
++    if (binaryData) {
++      binRecord.binaryData = binaryData;
++      this._builder.notify(
++        `BinRecord: Read ${binaryData.length} bytes of binary data. Version: ${binRecord.version}, Handle: ${binRecord.handle.toString(16)}`,
++        NotificationType.None);
+     }
+     return template;
+   }
