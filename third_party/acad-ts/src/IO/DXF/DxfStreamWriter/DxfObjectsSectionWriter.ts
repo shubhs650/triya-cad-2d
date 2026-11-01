@@ -95,8 +95,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 	  const handle = dict.entryHandles[i];
 	  const entryName = dict.entryNames[i];
 	  const item = dict.getEntry<NonGraphicalObject>(entryName);
-	  if (item instanceof CadDictionary && item.entryNames.length === 0) continue;
-	  if (item == null || entryName === CadDictionary.acadMaterial || !this._isObjectSupported(item)) {
+	  // Empty dictionaries and ACAD_MATERIAL are kept: dropping them made readers recreate them
+	  // under new handles, so every save renumbered root-dictionary entries.
+	  if (item == null || !this._isObjectSupported(item)) {
 		continue;
 	  }
       if (item instanceof XRecord && !this.configuration.writeXRecords) {
@@ -301,6 +302,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(100, DxfSubclassMarker.layout);
 
     this._writer.write(1, layout.name, map);
+    // AcDbLayout's own flags (PSLTSCALE, LIMCHECK): without them the reader takes AcDbPlotSettings' 70.
+    this._writer.write(70, layout.layoutFlags as number);
 
     this._writer.write(71, layout.tabOrder, map);
 
@@ -315,9 +318,12 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     this._writer.write(146, layout.elevation, map);
 
-    this._writer.write(76, 0, map);
+    this._writer.write(76, layout.ucsOrthographicType);
 
     this._writer.writeHandle(330, layout.associatedBlock, map);
+    this._writer.writeHandle(331, layout.lastActiveViewport);
+    this._writer.writeHandle(345, layout.ucs);
+    this._writer.writeHandle(346, layout.baseUCS);
   }
 
   protected writeMLineStyle(style: MLineStyle): void {
@@ -523,12 +529,17 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 			this._writer.write(91, i);
 			this._writer.write(93, node.flags);
 			this._writer.write(95, node.nextNodeIndex);
-			this._writer.writeHandle(360, node.expression);
+			// Readers require 360 on every node; an unresolved expression is written as handle 0.
+			this._writer.write(360, node.expression?.handle ?? 0);
 			this._writer.write(92, node.data1);
 			this._writer.write(92, node.data2);
 			this._writer.write(92, node.data3);
 			this._writer.write(92, node.data4);
-			if (node.expression) this.holder.objects.push(node.expression);
+			if (node.expression) {
+				// Expressions are owned by their graph but readers leave owner unset; mirror DwgObjectWriter.
+				node.expression.owner ??= graph;
+				this.holder.objects.push(node.expression);
+			}
 		}
 		for (let i = 0; i < graph.edges.length; i++) {
 			const edge = graph.edges[i];

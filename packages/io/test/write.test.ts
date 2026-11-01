@@ -1,6 +1,12 @@
-import { DxfReader } from '@node-projects/acad-ts';
+import { DxfReader, XYZ } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
-import { readCadDocument, summarizeDocument, writeCadDocument } from '../src/index';
+import {
+  fidelityDwgConfiguration,
+  fidelityDxfConfiguration,
+  readCadDocument,
+  summarizeDocument,
+  writeCadDocument,
+} from '../src/index';
 import { ACadVersion, DWG_VERSIONS, sampleDocument } from './fixtures';
 
 const BINARY_SENTINEL = 'AutoCAD Binary DXF\r\n\x1a\0';
@@ -49,5 +55,23 @@ describe('writeCadDocument', () => {
     expect(summarizeDocument(readCadDocument(bytes), 'dxf').modelSpaceEntities).toEqual({
       LINE: 1,
     });
+  });
+
+  it('keeps every header variable in a DXF save, not only the acad-ts default subset', () => {
+    // acad-ts writes ~40 of ~250 DXF header variables by default; $TILEMODE and $EXTMAX are
+    // not among them, so a plain write resets them (M0-06 spike, 90+ corpus files).
+    const doc = sampleDocument(ACadVersion.AC1032);
+    doc.header!.showModelSpace = true;
+    doc.header!.modelSpaceExtMax = new XYZ(120, 80, 0);
+    const reread = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+    expect(reread.header!.showModelSpace).toBe(true);
+    expect(reread.header!.modelSpaceExtMax.x).toBe(120);
+    expect(reread.header!.modelSpaceExtMax.y).toBe(80);
+  });
+
+  it('turns on dynamic-block data and all header variables in its writer profiles', () => {
+    expect(fidelityDxfConfiguration().writeAllHeaderVariables).toBe(true);
+    expect(fidelityDxfConfiguration().writeDynamicBlockData).toBe(true);
+    expect(fidelityDwgConfiguration().writeDynamicBlockData).toBe(true);
   });
 });

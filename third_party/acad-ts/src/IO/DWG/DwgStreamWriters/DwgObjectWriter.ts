@@ -467,24 +467,26 @@ export class DwgObjectWriter extends DwgSectionIO {
 		const ownedObjectHandles = record.layout == null && record.ownedObjectHandles.length > 0
 			? [...record.ownedObjectHandles]
 			: [...ownedEntityHandles];
+		// Sets and maps instead of Array.includes/find: those made a block's header O(n²) in its
+		// entity count (100k model-space entities took ~80 s to save).
+		const ownedSet = new Set(ownedObjectHandles);
 		for (const handle of ownedEntityHandles) {
-			if (!ownedObjectHandles.includes(handle)) {
+			if (!ownedSet.has(handle)) {
+				ownedSet.add(handle);
 				ownedObjectHandles.push(handle);
 			}
 		}
+		const entitiesByHandle = new Map(entities.map((entity) => [entity.handle, entity]));
 		const flags = record.combinedFlags;
 		const inserts = this.insertsByBlockName.get(record.name) ?? [];
 		const insertHandles = inserts.map((insert) => insert.handle);
+		const insertSet = new Set(insertHandles);
 		if (record.name.toUpperCase().startsWith('*T')) {
 			for (const handle of record.insertHandles) {
-				if (!insertHandles.includes(handle)) {
+				if (!insertSet.has(handle)) {
+					insertSet.add(handle);
 					insertHandles.push(handle);
 				}
-			}
-		}
-		for (const insert of inserts) {
-			if (!insertHandles.includes(insert.handle)) {
-				insertHandles.push(insert.handle);
 			}
 		}
 		const insertsByHandle = new Map(inserts.map((insert) => [insert.handle, insert]));
@@ -533,7 +535,10 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.writeByte(0);
 
 			this._writer.writeVariableText(record.blockEntity.comments);
-			this._writer.writeBitLong(0);
+			// Keep the block's thumbnail (BL size + RC bytes) instead of dropping it on every save.
+			const preview = record.preview ?? new Uint8Array(0);
+			this._writer.writeBitLong(preview.length);
+			this._writer.writeBytes(preview);
 		}
 
 		//R2007+:
@@ -562,7 +567,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		//R2004+:
 		if (this.r2004Plus) {
 			for (const handle of ownedObjectHandles) {
-				const entity = entities.find((item) => item.handle === handle);
+				const entity = entitiesByHandle.get(handle);
 				if (entity) {
 					this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, entity);
 				} else {
@@ -4540,7 +4545,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.writeBitShort(layout.layoutFlags);
 		this._writer.write3BitDouble(layout.origin);
 		this._writer.write2RawDouble(layout.minLimits);
-		this._writer.write2RawDouble(layout.minLimits);
+		this._writer.write2RawDouble(layout.maxLimits);
 		this._writer.write3BitDouble(layout.insertionBasePoint);
 		this._writer.write3BitDouble(layout.xAxis);
 		this._writer.write3BitDouble(layout.yAxis);

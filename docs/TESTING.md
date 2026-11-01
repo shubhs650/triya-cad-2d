@@ -142,6 +142,8 @@ pnpm corpus:list        # print corpus manifest
 pnpm corpus:ref <file>  # rasterise reference PDFs → PNGs
 pnpm corpus:validate    # schema + license fields + reference presence
 pnpm corpus:roundtrip   # round-trip every public corpus file; per-file report in test-reports/roundtrip/
+pnpm spike:read         # M0-06: read status, unmapped types, handle coverage → test-reports/spike/read.md
+pnpm spike:roundtrip    # M0-06: round-trip failure taxonomy → test-reports/spike/roundtrip.md; written files → docs/reports/M0-written/
 ```
 
 File conventions: `*.test.ts` is Vitest (Node), found in `packages/*/{src,test}/`, `apps/*/{src,test}/` and `tests/`; `*.spec.ts` is Playwright, one folder per suite under `tests/e2e/<fidelity|offline|ui|perf|io>/` (`playwright.config.ts` maps each suite to a project). Until a suite's roadmap task lands, its script passes with no tests; scripts whose implementation does not exist yet (`corpus:*`, `test:private`, `planegcs:build`) print the owning task id and exit 0. `pnpm lint` runs ESLint (including the module-boundary and no-DOM rules) and `prettier --check`; Husky runs `pnpm lint && pnpm typecheck` before each commit.

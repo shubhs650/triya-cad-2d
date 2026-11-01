@@ -1,0 +1,65 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index e6de46a..0668297 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -342,6 +342,9 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+   }
+ 
+   private _writeVPort(vport: VPort, map: DxfClassMap): void {
++    // Full AcDbViewportTableRecord, in AutoCAD's group-code order. Upstream wrote only the
++    // corners, centre, snap/grid vectors, height/aspect and the snap/grid switches, so view
++    // mode, twist, lens, clipping, UCS, grid and lighting settings reset on every DXF save.
+     this._writer.writeVector(10, vport.bottomLeft, map);
+     this._writer.writeVector(11, vport.topRight, map);
+     this._writer.writeVector(12, vport.center, map);
+@@ -353,8 +356,49 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.write(40, vport.viewHeight);
+     this._writer.write(41, vport.aspectRatio);
+-
++    this._writer.write(42, vport.lensLength, map);
++    this._writer.write(43, vport.frontClippingPlane, map);
++    this._writer.write(44, vport.backClippingPlane, map);
++    this._writer.write(50, vport.snapRotation, map);
++    this._writer.write(51, vport.twistAngle, map);
++
++    this._writer.write(71, vport.viewMode as number);
++    this._writer.write(72, vport.circleZoomPercent);
++    // Fast zoom: obsolete, always 1 (AutoCAD DXF reference, VPORT group code 73).
++    this._writer.write(73, 1);
++    this._writer.write(74, vport.ucsIconDisplay as number);
+     this._writer.write(75, vport.snapOn ? 1 : 0);
+     this._writer.write(76, vport.showGrid ? 1 : 0);
++    this._writer.write(77, vport.isometricSnap ? 1 : 0);
++    this._writer.write(78, vport.snapIsoPair);
++
++    if (this.version < ACadVersion.AC1015) {
++      return;
++    }
++
++    this._writer.write(281, vport.renderMode as number);
++    this._writer.writeVector(110, vport.origin);
++    this._writer.writeVector(111, vport.xAxis);
++    this._writer.writeVector(112, vport.yAxis);
++    this._writer.writeHandle(345, vport.namedUcs);
++    this._writer.writeHandle(346, vport.baseUcs);
++    this._writer.write(79, vport.orthographicType as number);
++    this._writer.write(146, vport.elevation);
++
++    if (this.version < ACadVersion.AC1021) {
++      return;
++    }
++
++    this._writer.writeHandle(348, vport.visualStyle);
++    this._writer.write(60, vport.gridFlags as number);
++    this._writer.write(61, vport.minorGridLinesPerMajorGridLine);
++    this._writer.write(292, vport.useDefaultLighting);
++    this._writer.write(282, vport.defaultLighting as number);
++    this._writer.write(141, vport.brightness);
++    this._writer.write(142, vport.contrast);
++    this._writer.write(63, vport.ambientColor.isTrueColor ? vport.ambientColor.getApproxIndex() : vport.ambientColor.index);
++    if (vport.ambientColor.isTrueColor) {
++      this._writer.write(421, vport.ambientColor.trueColor);
++    }
+   }
+ }

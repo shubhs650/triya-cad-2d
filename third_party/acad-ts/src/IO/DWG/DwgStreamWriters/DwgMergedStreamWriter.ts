@@ -136,9 +136,10 @@ export class DwgMergedStreamWriter implements IDwgStreamWriter {
 
 		const arr = new Uint8Array(4);
 		if (value.isTrueColor) {
-			arr[0] = value.r;
+			// Little-endian 0xC2RRGGBB, as DwgStreamReaderAC18.readCmColor reads it.
+			arr[0] = value.b;
 			arr[1] = value.g;
-			arr[2] = value.b;
+			arr[2] = value.r;
 			arr[3] = 0b11000010;
 		} else if (value.isByLayer) {
 			arr[3] = 0b11000000;

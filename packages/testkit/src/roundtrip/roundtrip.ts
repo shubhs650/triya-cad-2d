@@ -22,6 +22,10 @@ export interface RoundTripResult {
   summary?: DiffSummary;
   /** The first differences, verbatim, for triage. */
   sample?: Difference[];
+  /** Writer notifications, message → count (objects the writer skipped, unsupported data). */
+  writerNotes?: Record<string, number>;
+  /** The written file, only when `keepOutput` is set (not serialised into reports). */
+  output?: Uint8Array;
   ms: { read: number; write?: number; reread?: number; diff?: number };
 }
 
@@ -29,6 +33,8 @@ export interface RoundTripOptions {
   /** How many differences to keep verbatim in `sample`. Default 25. */
   sampleSize?: number;
   maxDifferences?: number;
+  /** Return the written bytes in `output` (the spike hands them to the owner for AUDIT). */
+  keepOutput?: boolean;
 }
 
 export function roundTrip(bytes: Uint8Array, options: RoundTripOptions = {}): RoundTripResult {
@@ -63,17 +69,24 @@ function roundTripUnpinned(bytes: Uint8Array, options: RoundTripOptions): RoundT
   result.ms.read = elapsed(t);
 
   let written: Uint8Array;
+  const notes: Record<string, number> = {};
   t = performance.now();
   try {
     written = writeCadDocument(working, {
       format: format === 'dwg' ? 'dwg' : 'dxf',
       binary: format === 'dxf-binary',
+      onNotification: (message) => {
+        const key = message.replace(/\b(handle|line)\s+\w+/gi, '$1 …').slice(0, 160);
+        notes[key] = (notes[key] ?? 0) + 1;
+      },
     });
   } catch (err) {
     return fail('write-error', err);
   }
   result.ms.write = elapsed(t);
   result.bytesOut = written.length;
+  if (Object.keys(notes).length > 0) result.writerNotes = notes;
+  if (options.keepOutput === true) result.output = written;
 
   let reopened: CadDocument;
   t = performance.now();

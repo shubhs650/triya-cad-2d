@@ -112,3 +112,27 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | AC1032 (2018) | | | | | |
 
 Writing to a version older than the source drops entities that didn't exist in that version; Triya warns with the list before saving and never drops silently.
+
+## acad-ts layer status (M0-06 spike)
+
+The columns above track Triya. This section tracks the library underneath, from `docs/reports/M0-acad-ts-spike.md` (acad-ts 315f3d8 + patches 0001–0013). R-numbers are the root causes in that report §4; the tasks that fix them are M1-27 to M1-30.
+
+| Version | Corpus files (DWG / ASCII DXF / binary DXF) | Read | Round trip clean | Main open defects |
+|---|---|---|---|---|
+| R2.6–R12 (AC1009 and earlier) | 0 / 7 / 2 | all | 0 | R16 synthesised R13+ objects |
+| R13 (AC1012) | 0 / 2 / 1 | all | 0 | DXF writer gaps |
+| R14 (AC1014) | 1 / 1 / 1 | all | 0 | R17 block entity lists |
+| 2000 (AC1015) | 1 / 5 / 2 | all | 0 | R17, DXF writer gaps |
+| 2004–2013 (AC1018–AC1027) | 4 / 46 / 4 | all | 0 | R15 table content, R11 sort order, DXF writer gaps |
+| 2018 (AC1032) | 14 / 26 / 1 | all but `recover02.dxf` (malformed) | 11 (DWG) | DXF writer gaps |
+
+| Type | acad-ts status after M0-06 |
+|---|---|
+| VPORT, LAYER, LAYOUT (DXF write) | Fixed by patches 0008, 0009, 0010 |
+| Header flag word, true colours, template page, layout limits, block previews (DWG) | Fixed by patches 0003–0007 |
+| Dynamic-block evaluation graph (DXF write) | Writer no longer crashes (0002); DWG round trip clean |
+| VISUALSTYLE / MATERIAL | Read; **not written to DXF** (R2, R3). DWG round trip keeps them |
+| ACDBASSOC* / ACDBPERSSUBENTMANAGER / SUN / view styles / AEC_* | **Not retained**: read as unknown and dropped on save (R9, M1-30). The "P" above is the target, not today's state |
+| ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** |
+| TABLESTYLE / CELLSTYLEMAP, MLEADER, MTEXT columns, ACAD_TABLE, VIEWPORT entity | Lossy in DXF (R5, R12–R15) |
+| XRECORD, SORTENTSTABLE | Lost when owned by unknown objects (R7); sort order changes (R11) |
