@@ -1422,4 +1422,37 @@ describe('acad-ts local patches (corpus-backed)', () => {
       }
     }
   });
+
+  it('0064 R12 DXF saves write the $MODEL_SPACE and $PAPER_SPACE blocks', () => {
+    // AutoCAD's R12 DXF export writes both space blocks, empty, so their ENDBLK handles survive;
+    // the acad-ts R12 writer skipped them and a reopened file made new ones.
+    const ends = (d: CadDocument): (string | undefined)[] =>
+      ['*Model_Space', '*Paper_Space'].map((n) => handleHex(d.blockRecords?.get(n)?.blockEnd));
+    for (const file of [
+      'third-party/acadsharp/sample_AC1009_ascii.dxf',
+      'third-party/ezdxf/integration_tests/ASCII_R12.dxf',
+      'third-party/ezdxf/integration_tests/bin_dxf_r12.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(ends(doc), file).not.toContain(undefined);
+      for (const binary of [false, true]) {
+        const bytes = writeDxf(doc, binary);
+        expect(Buffer.from(bytes).includes('$MODEL_SPACE'), `${file} binary ${binary}`).toBe(true);
+        expect(ends(readDxfRaw(bytes)), `${file} binary ${binary}`).toEqual(ends(doc));
+      }
+    }
+  });
+
+  it('0065 R12 DXF saves keep the DIMSTYLE handle', () => {
+    // R12 DIMSTYLE entries carry their handle in 105, because 5 is DIMBLK there. The writer left
+    // it out, so a reopened file gave the style a new handle.
+    const file = 'third-party/ezdxf/integration_tests/r12_blocks_with_no_names.dxf';
+    const doc = readDxfRaw(corpusBytes(file));
+    const standard = (d: CadDocument): string | undefined =>
+      handleHex(d.dimensionStyles?.get('Standard'));
+    expect(standard(doc)).toBe('2B');
+    for (const binary of [false, true]) {
+      expect(standard(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toBe('2B');
+    }
+  });
 });

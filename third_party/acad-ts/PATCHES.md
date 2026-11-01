@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0063 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0065 (M1-31) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1253,5 +1253,50 @@ The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discardin
 **Title:** Keep ACAD_PROXY_OBJECTs through DXF read and write
 
 The DXF writer has no writer for `ProxyObject` and skips it, so every proxy object (and the dictionary entries owning it) is missing from a saved DXF. Under the existing `keepRawDxfPassthroughObjects` option, which already keeps MATERIAL and VISUALSTYLE as read, this records the group codes of proxy objects on read and writes them back unchanged, rewriting only the handle and owner. Without the option, behaviour is unchanged.
+
+</details>
+
+### 0064 — R12 DXF writer leaves out the $MODEL_SPACE and $PAPER_SPACE blocks
+
+- **File:** `third_party/acad-ts-patches/0064-dxf-r12-space-blocks.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts`
+- **Symptom:**
+  - For R12 the BLOCKS section skipped the model and paper space blocks altogether.
+  - AutoCAD's R12 export writes both, empty, as `$MODEL_SPACE` and `$PAPER_SPACE`. The acadsharp `sample_AC1009` files, which come from AutoCAD, have them, and so do ezdxf's R12 files.
+  - Their BLOCK and ENDBLK handles were lost: a reopened file made new ones.
+  - Corpus: 12 save-stage handles in 5 R12 files. The reread space blocks also changed owner and handle in the round trip.
+- **Fix:** write both blocks for R12 under their R12 names. Their entities still go to the ENTITIES section, as before.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0064 R12 DXF saves write the $MODEL_SPACE and $PAPER_SPACE blocks".
+  - The acadsharp R12 sample and ezdxf `ASCII_R12.dxf` and `bin_dxf_r12.dxf` keep both ENDBLK handles through ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the $MODEL_SPACE and $PAPER_SPACE blocks to R12 DXF
+
+AutoCAD writes the model and paper space blocks to R12 DXF files as empty `$MODEL_SPACE` and `$PAPER_SPACE` blocks, and the DXF reader maps them back. The R12 writer skipped both, so their BLOCK/ENDBLK handles were lost on every R12 save. This writes them under their R12 names; their entities stay in the ENTITIES section.
+
+</details>
+
+### 0065 — R12 DXF writer leaves out the DIMSTYLE handle
+
+- **File:** `third_party/acad-ts-patches/0065-dxf-r12-dimstyle-handle.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:**
+  - For R12 `writeCommonObjectData` wrote group 5 for every handle, except a DIMSTYLE, whose handle it left out.
+  - A DIMSTYLE keeps its handle in 105, because 5 is DIMBLK, and the reader reads 105 in R12 as well. `write()` drops every code from 80 up for R12, so 105 could not simply be added there.
+  - The style came back under a new handle (ezdxf `r12_blocks_with_no_names.dxf`, 1 save-stage handle).
+- **Fix:** write the DIMSTYLE handle on 105 with `writeRaw`.
+  - This follows ezdxf's R12 files. AutoCAD's own R12 export writes no handles on table entries at all, so its documented behaviour does not settle this.
+  - Every other R12 table entry already gets a handle on 5 from this writer.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0065 R12 DXF saves keep the DIMSTYLE handle".
+  - The `Standard` style of `r12_blocks_with_no_names.dxf` keeps handle 2B through ASCII and binary saves.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep DIMSTYLE handles in R12 DXF
+
+R12 DIMSTYLE entries carry their handle in group 105, which the reader reads, but the R12 writer writes no handle for them, so a reopened file gives every dimension style a new handle. This writes 105 for R12 dimension styles (raw, since the R12 code filter drops codes from 80 up).
 
 </details>
