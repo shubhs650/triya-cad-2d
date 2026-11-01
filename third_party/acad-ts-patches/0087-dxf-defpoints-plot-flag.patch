@@ -1,0 +1,20 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index cd34ff3..27f2d5c 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -228,9 +228,14 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+           template = this._readTableEntry(dimTemplate, this._readDimensionStyle.bind(this));
+           break;
+         }
+-        case DxfFileToken.tableLayer:
++        case DxfFileToken.tableLayer: {
+           template = this._readTableEntry(new CadLayerTemplate(), this._readLayer.bind(this));
++          // Defpoints never plots (Layer.plotFlag), and the writer writes 290 = 0 for it; store
++          // that, so a file that leaves 290 out reads the same before and after a save.
++          const layer = template.cadObject as Layer;
++          if (layer.name.toLowerCase() === Layer.defpointsName) layer.plotFlag = false;
+           break;
++        }
+         case DxfFileToken.tableLinetype:
+           template = this._readTableEntry(new CadLineTypeTemplate(), this._readLineType.bind(this));
+           break;

@@ -1806,4 +1806,96 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(owned(back), file).toEqual(owned(doc));
     }
   });
+
+  it('0082 GEODATA coordinate system XML is read with its line breaks and kept through a save', () => {
+    // The XML comes as 303 chunks and a last 301; the 301 was read raw, so its ^J stayed text
+    // and a save escaped the caret ("^ J").
+    for (const file of [
+      'third-party/acadsharp/geolocation/geoloc.dxf',
+      'third-party/acadsharp/geolocation/geoloc_AC1021.dxf',
+    ]) {
+      const geodata = (d: CadDocument): string =>
+        (
+          [...d.getCadObjects()].find((o) => o.objectName === 'GEODATA') as unknown as {
+            coordinateSystemDefinition: string;
+          }
+        ).coordinateSystemDefinition;
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(geodata(doc), file).not.toContain('^J');
+      // geoloc.dxf has the XML form, geoloc_AC1021.dxf the WKT form.
+      expect(geodata(doc), file).toMatch(/^(<\?xml|PROJCS\[)/);
+      expect(geodata(dxfRawRoundTrip(doc, false)), file).toBe(geodata(doc));
+    }
+  });
+
+  it('0083 a DXF FIELD keeps its whole field code and format string', () => {
+    // The field code comes as 3 overflow chunks and a last 2, the format string as 9 chunks and a
+    // last 301 (98 is its length). Both last chunks were assigned over what came before them.
+    const doc = readDxfRaw(
+      corpusBytes('third-party/ezdxf/examples_dxf/mtext_complex_inline_codes.dxf'),
+    );
+    const field = (d: CadDocument): { fieldCode: string; formatString: string } =>
+      d.getCadObject(0xa9) as unknown as { fieldCode: string; formatString: string };
+    expect(field(doc).fieldCode.startsWith('{\\A1;Complex MTEXT content:}')).toBe(true);
+    expect(field(doc).formatString).toHaveLength(1995);
+    for (const binary of [false, true]) {
+      const back = field(dxfRawRoundTrip(doc, binary));
+      expect(back.fieldCode, `binary ${binary}`).toBe(field(doc).fieldCode);
+      expect(back.formatString, `binary ${binary}`).toBe(field(doc).formatString);
+    }
+  });
+
+  it('0084 a TrueType STYLE keeps its ACAD font xdata as read through a DXF save', () => {
+    // text_fonts.dxf STYLE 6A8: 1000 "Arial Black" (the face name), 1071 0x02000022 (bold plus
+    // pitch and family). A save rebuilt both from the file name and the bold/italic flags.
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/text_fonts.dxf'));
+    expect(xdataOf(doc, 0x6a8).slice(-3)).toEqual(['ACAD', '1000="Arial Black"', '1071=33554466']);
+    for (const binary of [false, true]) {
+      expect(xdataOf(dxfRawRoundTrip(doc, binary), 0x6a8), `binary ${binary}`).toEqual(
+        xdataOf(doc, 0x6a8),
+      );
+    }
+    // A style given another font file is still written with that font's name.
+    const style = doc.getCadObject(0x6a8) as unknown as { filename: string };
+    style.filename = 'arial.ttf';
+    expect(xdataOf(dxfRawRoundTrip(doc, false), 0x6a8).slice(-2)[0]).toBe('1000="arial"');
+  });
+
+  it('0085 a DBCOLOR with no true colour is not written with one', () => {
+    // sample_AC1015 DBCOLOR 996 has no colour groups and reads as index 0. The writer wrote 420
+    // anyway, as true colour 0, which reads back as true-colour black.
+    for (const file of [
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+      'third-party/acadsharp/sample_AC1015_binary.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      const color = (d: CadDocument) => (d.getCadObject(0x996) as BookColor).color;
+      expect(color(doc).isTrueColor, file).toBe(false);
+      const back = color(dxfRawRoundTrip(doc, file.includes('binary')));
+      expect(back.isTrueColor, file).toBe(false);
+      expect(back.index, file).toBe(color(doc).index);
+    }
+  });
+
+  it('0086 an R2010+ DXF IMAGE keeps its clip mode (290)', () => {
+    // viewports.dxf (AC1027) IMAGE 7E9 has 290 = 1 (inverted clip); the writer left 290 out.
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/viewports.dxf'));
+    const mode = (d: CadDocument) => (d.getCadObject(0x7e9) as RasterImage).clipMode;
+    expect(Number(mode(doc))).toBe(1);
+    for (const binary of [false, true]) {
+      expect(Number(mode(dxfRawRoundTrip(doc, binary))), `binary ${binary}`).toBe(1);
+    }
+  });
+
+  it('0087 a DXF Defpoints layer reads as not plotted, as it is written', () => {
+    // duplicate_handles.dxf DEFPOINTS has no 290. It read as plottable (the getter hides it), the
+    // writer writes AutoCAD's 290 = 0, and the reopened layer stored a different flag.
+    const doc = readDxfRaw(
+      corpusBytes('third-party/ezdxf/integration_tests/duplicate_handles.dxf'),
+    );
+    const stored = (d: CadDocument) =>
+      (d.getCadObject(0x29) as unknown as { _plotFlag: boolean })._plotFlag;
+    expect(stored(doc)).toBe(false);
+    expect(stored(dxfRawRoundTrip(doc, false))).toBe(false);
+  });
 });

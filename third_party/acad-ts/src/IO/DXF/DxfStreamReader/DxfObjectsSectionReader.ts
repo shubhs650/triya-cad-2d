@@ -415,8 +415,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
     const tmp = template as CadFieldTemplate;
 
     switch (this._reader.code as number) {
+      // The field code is 3 overflow chunks and a last 2, the format string 9 chunks and a last
+      // 301; assigned through the map, each last chunk replaced the ones before it.
+      case 2:
       case 3:
         tmp.cadObject.fieldCode += this._reader.valueAsString;
+        return true;
+      case 9:
+      case 301:
+        tmp.cadObject.formatString += this._reader.valueAsString;
         return true;
       case 98:
         return true;
@@ -724,6 +731,9 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
         return true;
       }
       case 303:
+      // 301 is the last chunk after the 303s; assigned through the map, it replaced them and
+      // kept its caret codes ("^J") as text.
+      case 301:
         tmp.cadObject.coordinateSystemDefinition += this._reader.valueAsString;
         return true;
       case 3:

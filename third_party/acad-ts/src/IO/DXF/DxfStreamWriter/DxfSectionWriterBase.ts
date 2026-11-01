@@ -1739,6 +1739,8 @@ export abstract class DxfSectionWriterBase {
       this._writer.write(14, v.x);
       this._writer.write(24, v.y);
     }
+    // Clip mode (inside or outside the boundary) is R2010+, after the boundary.
+    if (this.version >= ACadVersion.AC1024) this._writer.write(290, Number(image.clipMode), subclass);
   }
 
   private _writeSeqend(seqend: Seqend, map: DxfMap): void {

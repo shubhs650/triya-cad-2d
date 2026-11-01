@@ -9,6 +9,11 @@ import { ExtendedDataString } from '../XData/ExtendedDataString.js';
 const italicExtendedFontFlag = 0x01000000;
 const boldExtendedFontFlag = 0x02000000;
 
+// The font file each style had when its ACAD font xdata was read. While it is unchanged, the xdata
+// face name ("Arial Black" for ariblk.ttf) and the flag bits other than bold and italic (charset,
+// pitch and family) are kept as read; a file name only gives "ariblk".
+const fontFileAtRead = new WeakMap<TextStyle, string>();
+
 export function getTextStyleExtendedDataForWrite(style: TextStyle): ExtendedDataDictionary {
 	const extendedFontFlags = toExtendedFontFlags(style.trueType);
 	if (extendedFontFlags === 0 || style.isShapeFile || isShxFont(style.filename)) {
@@ -41,8 +46,14 @@ export function getTextStyleExtendedDataForWrite(style: TextStyle): ExtendedData
 	}
 
 	const records = existingAcadEntry ? [...existingAcadEntry[1].records] : [];
-	const fontNameRecord = new ExtendedDataString(fontFamily);
-	const fontFlagsRecord = new ExtendedDataInteger32(extendedFontFlags);
+	let fontNameRecord = new ExtendedDataString(fontFamily);
+	let fontFlagsRecord = new ExtendedDataInteger32(extendedFontFlags);
+	if (records[0] instanceof ExtendedDataString && records[1] instanceof ExtendedDataInteger32
+		&& fontFileAtRead.get(style) === style.filename) {
+		fontNameRecord = new ExtendedDataString(records[0].value);
+		const otherBits = records[1].value & ~(italicExtendedFontFlag | boldExtendedFontFlag);
+		fontFlagsRecord = new ExtendedDataInteger32(otherBits | extendedFontFlags);
+	}
 	if (records[0] instanceof ExtendedDataString && records[1] instanceof ExtendedDataInteger32) {
 		records.splice(0, 2, fontNameRecord, fontFlagsRecord);
 	} else {
@@ -65,6 +76,7 @@ export function applyTextStyleTrueTypeFromExtendedData(style: TextStyle): void {
 		const fontFlagsRecord = records[i + 1];
 		if (fontNameRecord instanceof ExtendedDataString && fontFlagsRecord instanceof ExtendedDataInteger32) {
 			style.trueType = fromExtendedFontFlags(fontFlagsRecord.value);
+			if (i === 0) fontFileAtRead.set(style, style.filename);
 			return;
 		}
 	}

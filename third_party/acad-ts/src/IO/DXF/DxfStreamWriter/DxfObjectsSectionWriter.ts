@@ -82,7 +82,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.dbColor);
 
     this._writer.write(62, color.color.getApproxIndex());
-    this._writer.writeTrueColor(420, color.color);
+    // An indexed colour (a DBCOLOR with no colour groups reads as index 0) has no 420; written,
+    // it read back as true-colour black.
+    if (color.color.isTrueColor) this._writer.writeTrueColor(420, color.color);
     this._writer.write(430, color.name);
   }
 

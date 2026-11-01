@@ -1,0 +1,21 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 4551050..21b4c85 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -415,9 +415,16 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+     const tmp = template as CadFieldTemplate;
+ 
+     switch (this._reader.code as number) {
++      // The field code is 3 overflow chunks and a last 2, the format string 9 chunks and a last
++      // 301; assigned through the map, each last chunk replaced the ones before it.
++      case 2:
+       case 3:
+         tmp.cadObject.fieldCode += this._reader.valueAsString;
+         return true;
++      case 9:
++      case 301:
++        tmp.cadObject.formatString += this._reader.valueAsString;
++        return true;
+       case 98:
+         return true;
+       case 6: {
