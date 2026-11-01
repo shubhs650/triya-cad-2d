@@ -1,0 +1,62 @@
+diff --git a/src/IO/DXF/DxfDocumentBuilder.ts b/src/IO/DXF/DxfDocumentBuilder.ts
+index 8321173..4ea22f9 100644
+--- a/src/IO/DXF/DxfDocumentBuilder.ts
++++ b/src/IO/DXF/DxfDocumentBuilder.ts
+@@ -77,6 +77,16 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
+ 
+     super.buildDocument();
+ 
++    // A made-up entity handle can collide with one the document's own tables take when they are
++    // registered (a file with no $HANDSEED numbers from 0), and the document then renumbers the
++    // entity; keep the record's owned handles naming its entities.
++    for (const record of this.documentToBuild.blockRecords) {
++      const owned = record.ownedObjectHandles;
++      if (owned.some((h) => this.documentToBuild.getCadObject(h)?.owner !== record)) {
++        record.ownedObjectHandles = [...record.entities].map((e) => e.handle);
++      }
++    }
++
+     if (this.configuration.createDefaults) {
+       this.documentToBuild.createDefaults();
+     }
+diff --git a/src/IO/DXF/DxfReader.ts b/src/IO/DXF/DxfReader.ts
+index 8c2d502..e3e81e0 100644
+--- a/src/IO/DXF/DxfReader.ts
++++ b/src/IO/DXF/DxfReader.ts
+@@ -30,6 +30,7 @@ import { getDecoderEncodingLabel } from '../TextEncoding.js';
+ 
+ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
+   private _version: ACadVersion = ACadVersion.Unknown;
++  private _sawR13Sections = false;
+   private _builder!: DxfDocumentBuilder;
+   private _reader!: IDxfStreamReader;
+ 
+@@ -122,6 +123,7 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
+           this._builder.initialHandSeed = this._document.header.handleSeed;
+           break;
+         case DxfFileToken.classesSection:
++          this._sawR13Sections = true;
+           this._document.classes = this._readClasses();
+           break;
+         case DxfFileToken.tablesSection:
+@@ -134,6 +136,7 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
+           this._readEntitiesSection();
+           break;
+         case DxfFileToken.objectsSection:
++          this._sawR13Sections = true;
+           this._readObjects();
+           break;
+         case DxfFileToken.acdsDataSection:
+@@ -150,6 +153,12 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
+     if (this._document.header === null) {
+       this._document.header = new CadHeader(this._document);
+     }
++    // A DXF with no $ACADVER and no R13 sections (CLASSES, OBJECTS) is R12, as AutoCAD and ezdxf
++    // read it: the minimal R12 file is an ENTITIES section and EOF. Left at the header's default
++    // version, it was saved as R2018 with objects the file never had.
++    if (this._version === ACadVersion.Unknown && !this._sawR13Sections) {
++      this._document.header.version = ACadVersion.AC1009;
++    }
+ 
+     // Handles at or above both $HANDSEED and every stated handle are made up while building (R12
+     // has no BLOCK_RECORD table, and many R12 files state no handles); an R12 save leaves them out.

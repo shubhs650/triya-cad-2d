@@ -1,4 +1,6 @@
 import { Entity } from '../../Entities/Entity.js';
+import { ExtendedDataLayer } from '../../XData/ExtendedDataLayer.js';
+import type { Layer } from '../../Tables/Layer.js';
 import { CadTemplate } from '../Templates/CadTemplate.js';
 import { CadObject } from '../../CadObject.js';
 import { CadDictionary } from '../../Objects/CadDictionary.js';
@@ -43,6 +45,9 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
   /** The model space record made up because the file has none (an R12 file with no BLOCKS). */
   public madeUpModelSpace: BlockRecord | null = null;
 
+  /** 1003 xdata records whose layer had no handle yet when they were read. */
+  public unnumberedXDataLayers: [ExtendedDataLayer, Layer][] = [];
+
   public override buildDocument(): void {
     if (this.modelSpaceTemplate === null) {
       const record = BlockRecord.modelSpace;
@@ -53,6 +58,8 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
     }
 
     this.createMissingHandles();
+
+    for (const [record, layer] of this.unnumberedXDataLayers) record.value = layer.handle;
 
     for (const entity of this.modelSpaceEntities) {
       this.modelSpaceTemplate!.ownedObjectsHandlers.add(entity.handle);
@@ -69,6 +76,16 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
     }
 
     super.buildDocument();
+
+    // A made-up entity handle can collide with one the document's own tables take when they are
+    // registered (a file with no $HANDSEED numbers from 0), and the document then renumbers the
+    // entity; keep the record's owned handles naming its entities.
+    for (const record of this.documentToBuild.blockRecords) {
+      const owned = record.ownedObjectHandles;
+      if (owned.some((h) => this.documentToBuild.getCadObject(h)?.owner !== record)) {
+        record.ownedObjectHandles = [...record.entities].map((e) => e.handle);
+      }
+    }
 
     if (this.configuration.createDefaults) {
       this.documentToBuild.createDefaults();

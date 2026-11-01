@@ -2059,6 +2059,8 @@ export abstract class DxfSectionReaderBase {
           const layer = this._builder.layers.get(this._reader.valueAsString);
           if (layer) {
             record = new ExtendedDataLayer(layer.handle);
+            // An R12 layer often states no handle; it gets one when the document is built.
+            if (layer.handle === 0) this._builder.unnumberedXDataLayers.push([record as ExtendedDataLayer, layer]);
           } else {
             this._builder.notify(`[XData] Could not found the linked Layer ${this._reader.valueAsString}.`, NotificationType.Warning);
           }

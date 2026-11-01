@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53) and 0076 (M1-49) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) and 0077–0081 (M1-56) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1532,5 +1532,90 @@ AutoCAD writes a DIMSTYLE record with only the DIMVARs that differ from their de
 **Title:** Keep made-up R12 handles stable through a DXF save
 
 R12 DXF files have no BLOCK_RECORD table and often no handles, so `DxfReader` makes up handles from `$HANDSEED` and adds default table entries and space blocks. Saving as R12 wrote some made-up handles, wrote the defaults, and wrote the raised `$HANDSEED`, so reopening the saved file numbered everything differently. This records the made-up range and the reader's defaults on `CadDocument.madeUpHandles`; an R12 save leaves those handles and defaults out and writes `$HANDSEED` as read, so a reopened file gets the same handles.
+
+</details>
+
+### 0077 — an R12 xdata layer name links to handle 0
+
+- **File:** `third_party/acad-ts-patches/0077-r12-xdata-layer-without-handle.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfDocumentBuilder.ts`
+- **Symptom:** a 1003 xdata record is read as a link to the named layer's handle. R12 layers state no handle, so the link was to handle 0, and a save left the 1003 out (acadsharp `sample_AC1009` TEXT 91B, `LAYER_APP`).
+- **Fix:** a record read while its layer has no handle is linked again once `createMissingHandles` has given the layer one.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0077 an R12 DXF 1003 xdata layer keeps its layer when the layer has no handle in the file".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Link R12 xdata layer names after layer handles are made up
+
+DXF 1003 xdata stores a layer name, which the reader turns into the layer's handle. In R12 files layers usually have no handle when the entities are read, so the record pointed at handle 0 and the writer could not resolve it. This relinks those records after the builder assigns handles.
+
+</details>
+
+### 0078 — POLYLINE and INSERT xdata is written after the SEQEND
+
+- **File:** `third_party/acad-ts-patches/0078-dxf-owner-xdata-before-children.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** the entity writer wrote an entity's xdata after the entity-specific data, which for a POLYLINE, and for an INSERT with attributes, includes its VERTEX/ATTRIB records and SEQEND. The reader then gave the xdata to the SEQEND (`sample_AC1009` POLYLINEs, 5 differences in each file).
+- **Fix:** a POLYLINE, and an INSERT with attributes, writes its xdata before its children, and the general writer does not write it again.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0078 DXF POLYLINE and INSERT xdata is written with them, not after their SEQEND".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write POLYLINE/INSERT xdata before their VERTEX/ATTRIB records
+
+An entity's xdata ends its own record, but the DXF writer appended it after `_writePolyline`/`_writeInsert`, which had already written the vertices or attributes and the SEQEND. Readers then attach the xdata to the SEQEND. This writes it before the children.
+
+</details>
+
+### 0079 — R12 DXF saves leave out $DWGCODEPAGE
+
+- **File:** `third_party/acad-ts-patches/0079-r12-dxf-codepage.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfHeaderSectionWriter.ts`
+- **Symptom:** the R12 header vocabulary did not list `$DWGCODEPAGE`, which R12 has. The text was still written in the drawing's code page, so a saved drawing in any code page but ANSI_1252 was read back wrongly; ezdxf `bin_dxf_r12.dxf` lost its `ansi_1252` spelling.
+- **Fix:** `$DWGCODEPAGE` is in the R12 vocabulary.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0079 R12 DXF saves write $DWGCODEPAGE, so the text is read back in its code page".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write $DWGCODEPAGE in R12 DXF
+
+R12 DXF files carry `$DWGCODEPAGE` and the writer encodes text in that code page, but the R12 header variable list left it out, so readers fell back to ANSI_1252. This adds it to the list.
+
+</details>
+
+### 0080 — BLOCK xdata is not written
+
+- **File:** `third_party/acad-ts-patches/0080-dxf-block-xdata.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts`
+- **Symptom:** the BLOCK writer wrote no xdata, so a block's xdata was lost on save (ezdxf tags the `$MODEL_SPACE` BLOCK of `r12_blocks_with_no_names.dxf`).
+- **Fix:** the BLOCK writer writes the block's xdata.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0080 DXF BLOCK xdata is written with the block".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write BLOCK entity xdata
+
+BLOCK is an entity and can carry xdata, which the reader keeps, but `_writeBlock` never wrote it. This writes it at the end of the BLOCK record.
+
+</details>
+
+### 0081 — a DXF with no $ACADVER is saved as R2018
+
+- **File:** `third_party/acad-ts-patches/0081-dxf-versionless-as-r12.patch`
+- **Touches:** `src/IO/DXF/DxfReader.ts`, `src/IO/DXF/DxfDocumentBuilder.ts`
+- **Symptom:** with no `$ACADVER` (the minimal R12 file is an ENTITIES section and EOF) the document kept the header's R2018 default and was saved as R2018, with a layout, dictionaries and a BLOCK_RECORD table the file never had. With no `$HANDSEED`, an entity's made-up handle could also collide with a table's, and the document renumbered the entity while its block record kept the old handle (ezdxf `Minimal_DXF_AC1009.dxf`, `R12_with_trash_beyond_EOF.dxf`).
+- **Fix:** a DXF with no `$ACADVER` and no CLASSES or OBJECTS section is read as R12, as AutoCAD and ezdxf read it. After the build, a block record's owned handles are taken from its entities if any of them no longer names one of its entities.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0081 a DXF with no version and no R13 sections reads as R12 and saves as R12".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read a DXF without $ACADVER as R12
+
+AutoCAD and ezdxf treat a DXF without `$ACADVER` and without R13+ sections as R12. acad-ts kept its R2018 default version, so saving such a file produced an R2018 file with objects the source never had. This sets the version to AC1009 in that case, and keeps block records' owned handles in step with their entities when the document renumbers a made-up handle that collided.
 
 </details>

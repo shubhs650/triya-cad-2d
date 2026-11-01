@@ -468,7 +468,18 @@ export abstract class DxfSectionWriterBase {
       this.notify(`Entity not implemented: ${entity.constructor.name}`, NotificationType.NotImplemented);
     }
 
+    // A POLYLINE or INSERT with attributes wrote its xdata before its children (see
+    // _writeOwnerExtendedData); written here it would follow the SEQEND and be read as the SEQEND's.
+    if (this._xdataWrittenBy.has(entity)) this._xdataWrittenBy.delete(entity);
+    else this.writeExtendedData(entity.extendedData);
+  }
+
+  private readonly _xdataWrittenBy = new Set<Entity>();
+
+  /** Writes an entity's xdata ahead of its VERTEX/ATTRIB children, where the record ends. */
+  private _writeOwnerExtendedData(entity: Entity): void {
     this.writeExtendedData(entity.extendedData);
+    this._xdataWrittenBy.add(entity);
   }
 
   private _isEntitySupported(entity: Entity): boolean {
@@ -908,6 +919,7 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(44, insert.columnSpacing, subclass);
     this._writer.write(45, insert.rowSpacing, subclass);
     this._writer.writeVector(210, insert.normal, subclass);
+    if (insert.hasAttributes) this._writeOwnerExtendedData(insert);
 
     for (const att of insert.attributes) {
       this.writeEntity(att);
@@ -1450,6 +1462,7 @@ export abstract class DxfSectionWriterBase {
       this._writer.write(71, polyline.vertices.length);
       this._writer.write(72, polyline.faces.length);
     }
+    this._writeOwnerExtendedData(polyline);
 
     for (const vertex of polyline.vertices) {
       if (vertex instanceof Vertex) {

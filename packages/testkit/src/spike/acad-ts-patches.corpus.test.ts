@@ -12,6 +12,7 @@ import type {
   TableStyle,
 } from '@node-projects/acad-ts';
 import {
+  ACadVersion,
   Arc,
   AttributeDefinition,
   BlockEnd,
@@ -25,6 +26,8 @@ import {
   DxfReaderConfiguration,
   DxfWriter,
   DxfWriterConfiguration,
+  ExtendedData,
+  ExtendedDataString,
   Hatch,
   ImageDefinition,
   HatchBoundaryPathArc,
@@ -1684,5 +1687,123 @@ describe('acad-ts local patches (corpus-backed)', () => {
     expect(new Set([...back.getCadObjects()].map((o) => o.handle)).size).toBe(
       [...back.getCadObjects()].length,
     );
+  });
+
+  // R12 xdata, as read and after a save: app name and each record's code and value (a 1003 layer
+  // by the name it resolves to).
+  const xdataOf = (d: CadDocument, handle: number): string[] => {
+    const o = d.getCadObject(handle) as
+      | (CadObject & {
+          extendedData?: Iterable<
+            [
+              { name: string },
+              {
+                records: {
+                  code: number;
+                  value: unknown;
+                  resolveReference?: (doc: CadDocument) => { name?: string } | null;
+                }[];
+              },
+            ]
+          > | null;
+        })
+      | null;
+    const out: string[] = [];
+    for (const [app, data] of o?.extendedData ?? []) {
+      out.push(app.name);
+      for (const r of data.records) {
+        out.push(
+          `${r.code}=${r.code === 1003 ? (r.resolveReference?.(d)?.name ?? 'unresolved') : JSON.stringify(r.value)}`,
+        );
+      }
+    }
+    return out;
+  };
+
+  it('0077 an R12 DXF 1003 xdata layer keeps its layer when the layer has no handle in the file', () => {
+    // sample_AC1009 TEXT 91B: 1001 LAYER_APP, 1002 {, 1003 APP_LAYER, 1002 }. R12 layers state no
+    // handle, so the reader linked the record to handle 0 and a save left the 1003 out.
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1009_ascii.dxf'));
+    expect(xdataOf(doc, 0x91b)).toEqual(['LAYER_APP', '1002="{"', '1003=APP_LAYER', '1002="}"']);
+    for (const binary of [false, true]) {
+      expect(xdataOf(dxfRawRoundTrip(doc, binary), 0x91b), `binary ${binary}`).toEqual(
+        xdataOf(doc, 0x91b),
+      );
+    }
+  });
+
+  it('0078 DXF POLYLINE and INSERT xdata is written with them, not after their SEQEND', () => {
+    // The writer wrote an entity's xdata after the entity's vertices or attributes and SEQEND, so
+    // the reader gave it to the SEQEND (sample_AC1009 POLYLINE 353 and its SEQEND 17F1).
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1009_ascii.dxf'));
+    const polyline = xdataOf(doc, 0x353);
+    expect(polyline.slice(0, 2)).toEqual(['ACAD', '1000="ASC_BOUNDS"']);
+    for (const binary of [false, true]) {
+      const back = dxfRawRoundTrip(doc, binary);
+      expect(xdataOf(back, 0x353), `binary ${binary}`).toEqual(polyline);
+      expect(xdataOf(back, 0x17f1), `binary ${binary}`).toEqual([]);
+    }
+
+    // The same for an INSERT with attributes; no corpus file has one with xdata, so add some.
+    const insert = [...doc.getCadObjects()].find(
+      (o): o is Insert => o instanceof Insert && o.hasAttributes,
+    )!;
+    insert.extendedData.addByName('ACAD', new ExtendedData([new ExtendedDataString('ATTRIBUTED')]));
+    const back = dxfRawRoundTrip(doc, false);
+    expect(xdataOf(back, insert.handle)).toEqual(['ACAD', '1000="ATTRIBUTED"']);
+    expect(xdataOf(back, insert.attributes.seqend!.handle)).toEqual([]);
+  });
+
+  it('0079 R12 DXF saves write $DWGCODEPAGE, so the text is read back in its code page', () => {
+    // R12 has $DWGCODEPAGE (ezdxf's bin_dxf_r12.dxf carries "ansi_1252"). The R12 header writer
+    // left it out, so a reopened file read as ANSI_1252 whatever code page it was written in.
+    const bin = readDxfRaw(corpusBytes('third-party/ezdxf/integration_tests/bin_dxf_r12.dxf'));
+    expect(bin.header!.codePage).toBe('ansi_1252');
+    expect(dxfRawRoundTrip(bin, true).header!.codePage).toBe('ansi_1252');
+
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/integration_tests/ASCII_R12.dxf'));
+    doc.header!.codePage = 'ANSI_1251';
+    const text = new TextEntity();
+    text.value = 'Привет';
+    doc.modelSpace!.entities.add(text);
+    for (const binary of [false, true]) {
+      const back = dxfRawRoundTrip(doc, binary);
+      expect(back.header!.codePage, `binary ${binary}`).toBe('ANSI_1251');
+      expect((back.getCadObject(text.handle) as TextEntity).value, `binary ${binary}`).toBe(
+        'Привет',
+      );
+    }
+  });
+
+  it('0080 DXF BLOCK xdata is written with the block', () => {
+    // ezdxf tags the $MODEL_SPACE BLOCK of r12_blocks_with_no_names.dxf (18) with EZDXF xdata; the
+    // BLOCK writer wrote none, so a save dropped it.
+    const doc = readDxfRaw(
+      corpusBytes('third-party/ezdxf/integration_tests/r12_blocks_with_no_names.dxf'),
+    );
+    const block = xdataOf(doc, 0x18);
+    expect(block.slice(0, 2)).toEqual(['EZDXF', '1000="CREATED_BY_EZDXF"']);
+    for (const binary of [false, true]) {
+      expect(xdataOf(dxfRawRoundTrip(doc, binary), 0x18), `binary ${binary}`).toEqual(block);
+    }
+  });
+
+  it('0081 a DXF with no version and no R13 sections reads as R12 and saves as R12', () => {
+    // AutoCAD and ezdxf read a DXF with no $ACADVER as R12 (the minimal R12 file is ENTITIES and
+    // EOF). acad-ts kept its R2018 default and saved such a file with a layout, dictionaries and
+    // a BLOCK_RECORD table it never had, so reopening found a different document.
+    for (const file of [
+      'third-party/ezdxf/examples_dxf/Minimal_DXF_AC1009.dxf',
+      'third-party/ezdxf/integration_tests/R12_with_trash_beyond_EOF.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(doc.header!.version, file).toBe(ACadVersion.AC1009);
+      const owned = (d: CadDocument): number[] => d.modelSpace!.ownedObjectHandles;
+      // The model space record names the entities it owns, under the handles they have.
+      expect(owned(doc), file).toEqual([...doc.modelSpace!.entities].map((e) => e.handle));
+      const back = dxfRawRoundTrip(doc, false);
+      expect(back.header!.version, file).toBe(ACadVersion.AC1009);
+      expect(owned(back), file).toEqual(owned(doc));
+    }
   });
 });
