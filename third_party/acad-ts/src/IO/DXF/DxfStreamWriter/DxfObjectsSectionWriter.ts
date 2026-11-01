@@ -418,7 +418,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     }
 
     // No field writer exists for these; write the group codes the reader kept.
-    if ((co instanceof Material || co instanceof VisualStyle) && co.rawDxfCodes != null) {
+    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject) && co.rawDxfCodes != null) {
       this.writeRawObject(co);
       return;
     }
@@ -698,7 +698,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       }
       return co.rawDxfCodes != null;
     }
-    if ((co instanceof Material || co instanceof VisualStyle) && co.rawDxfCodes != null) {
+    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject) && co.rawDxfCodes != null) {
       return true;
     }
 	if (!this.configuration.writeDynamicBlockData && (

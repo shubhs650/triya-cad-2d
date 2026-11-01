@@ -39,6 +39,7 @@ import {
   MText,
   MultiLeader,
   MultiLeaderStyle,
+  ProxyObject,
   RasterImage,
   RasterVariables,
   Solid3D,
@@ -1385,6 +1386,39 @@ describe('acad-ts local patches (corpus-backed)', () => {
         expect(reactors(dxfRawRoundTrip(doc, binary)), `${file} binary ${binary}`).toEqual(
           reactors(doc),
         );
+      }
+    }
+  });
+
+  it('0063 DXF proxy objects are kept as read and written back raw (DEC-040)', () => {
+    // The DXF writer has no ACAD_PROXY_OBJECT writer ("Object not implemented"), and the reader
+    // keeps neither the object references nor the class-id codes, so every proxy was dropped.
+    const proxies = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is ProxyObject => o instanceof ProxyObject)
+        .map((p) => [
+          handleHex(p),
+          handleHex(p.owner as CadObject | null),
+          p.binaryData?.length ?? 0,
+        ]);
+    for (const file of [
+      'third-party/ezdxf/integration_tests/bin_dxf_r13.dxf',
+      'third-party/ezdxf/integration_tests/bin_dxf_r14.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(file));
+      expect(proxies(doc).length, file).toBe(49);
+      for (const binary of [false, true]) {
+        const back = dxfRawRoundTrip(doc, binary);
+        expect(proxies(back), `${file} binary ${binary}`).toEqual(proxies(doc));
+        // Binary chunks read back from a Buffer are Buffers; compare their bytes.
+        const raw = (d: CadDocument): unknown =>
+          (
+            d.getCadObject(0x25) as unknown as { rawDxfCodes: { code: number; value: unknown }[] }
+          ).rawDxfCodes.map(({ code, value }) => [
+            code,
+            value instanceof Uint8Array ? [...value] : value,
+          ]);
+        expect(raw(back), `${file} binary ${binary}`).toEqual(raw(doc));
       }
     }
   });

@@ -1,0 +1,57 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 8966200..cc2a74a 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -323,7 +323,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+   protected readObjectCodes(template: CadTemplate, readObject: ReadObjectDelegate, objectType: Function): CadTemplate {
+     // The DXF writer cannot write these from their fields, so keep the codes as read for it.
+     const obj = template.cadObject;
+-    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle)) {
++    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle || obj instanceof ProxyObject)) {
+       return this._readObjectCodes(template, readObject, objectType);
+     }
+     const raw: DxfRawCode[] = [];
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index d2d01ce..414fe2f 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -418,7 +418,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+     }
+ 
+     // No field writer exists for these; write the group codes the reader kept.
+-    if ((co instanceof Material || co instanceof VisualStyle) && co.rawDxfCodes != null) {
++    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject) && co.rawDxfCodes != null) {
+       this.writeRawObject(co);
+       return;
+     }
+@@ -698,7 +698,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       }
+       return co.rawDxfCodes != null;
+     }
+-    if ((co instanceof Material || co instanceof VisualStyle) && co.rawDxfCodes != null) {
++    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject) && co.rawDxfCodes != null) {
+       return true;
+     }
+ 	if (!this.configuration.writeDynamicBlockData && (
+diff --git a/src/Objects/ProxyObject.ts b/src/Objects/ProxyObject.ts
+index ec53d51..eaade83 100644
+--- a/src/Objects/ProxyObject.ts
++++ b/src/Objects/ProxyObject.ts
+@@ -3,8 +3,16 @@ import { DxfFileToken } from '../DxfFileToken.js';
+ import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
+ import { ACadVersion } from '../ACadVersion.js';
+ import { DxfClass } from '../Classes/DxfClass.js';
++import type { DwgRawObjectData, DxfRawCode, IRawCadObject } from './RawObjectData.js';
++import type { CadObject } from '../CadObject.js';
++
++export class ProxyObject extends NonGraphicalObject implements IRawCadObject {
++	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF writer has no field writer for this type. */
++	rawDxfCodes: DxfRawCode[] | null = null;
++	rawDxfName: string | null = null;
++	rawDwgData: DwgRawObjectData | null = null;
++	readonly rawOwnedObjects: CadObject[] = [];
+ 
+-export class ProxyObject extends NonGraphicalObject {
+ 	get classId(): number {
+ 		return this.dxfClass?.classNumber ?? 0;
+ 	}
