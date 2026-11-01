@@ -122,6 +122,10 @@ Load app → go offline (Playwright route abort) → run a scripted session cove
 
 Each command has a test file that drives it through the `PromptBus` with typed answers and asserts the `ChangeSet` (entity types, geometry within tolerance, properties, handles allocated). Tests encode AutoCAD behaviour; when behaviour is ambiguous, the test documents the chosen interpretation with a comment linking the AutoCAD reference.
 
+### 7.1 Geometry kernel tests
+
+`engine/geom` is tested with table tests for documented cases and fast-check property tests at drafting scales (coordinates to ±1000, radii 0.01–500, NURBS of degree 1–3 with non-uniform knots and optional weights): derivatives against finite differences, flattening deviation, bounds containment and tightness, and transformed curves tracing the transformed points. `pnpm test` enforces ≥ 95 % branch, line, function and statement coverage of `packages/engine/src/geom` (the `coverage.thresholds` glob in `vitest.config.ts`; add a glob when another package's task sets a gate).
+
 ## 8. Owner-only gates
 
 - **AUDIT sweep:** open each Triya-saved corpus file in AutoCAD, run `AUDIT` (fix N), record error counts; required 0 at M0 (go/no-go), M2, M5, M10.
@@ -131,7 +135,7 @@ Each command has a test file that drives it through the `PromptBus` with typed a
 ## 9. Scripts
 
 ```
-pnpm test               # unit + command + round-trip (public)
+pnpm test               # unit + command + round-trip (public), with coverage gates (test-reports/coverage/)
 pnpm test:fidelity      # Playwright fidelity on public corpus
 pnpm test:perf          # perf targets
 pnpm test:offline       # offline/privacy

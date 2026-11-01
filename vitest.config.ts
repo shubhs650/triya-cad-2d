@@ -22,5 +22,21 @@ export default defineConfig({
     ],
     exclude: ['**/node_modules/**', 'tests/e2e/**'],
     testTimeout: 30_000,
+    // Coverage gates (`pnpm test` runs with --coverage). M1-02 requires >= 95 % branch coverage
+    // of the geometry kernel; add a glob here when another package's task sets a gate.
+    coverage: {
+      provider: 'v8',
+      include: ['packages/engine/src/geom/**/*.ts'],
+      reporter: ['text-summary', 'json-summary'],
+      reportsDirectory: 'test-reports/coverage',
+      thresholds: {
+        'packages/engine/src/geom/**/*.ts': {
+          branches: 95,
+          lines: 95,
+          functions: 95,
+          statements: 95,
+        },
+      },
+    },
   },
 });
