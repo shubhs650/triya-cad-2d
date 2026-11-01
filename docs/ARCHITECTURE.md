@@ -97,7 +97,7 @@ Anything pointing the other way is a lint error. The graph is encoded in `eslint
 
 - **Engine worker** owns the document. The main thread holds a lightweight mirror (entity ids, bounds, selection state) for hit-testing of UI affordances only.
 - **Render worker** owns the `OffscreenCanvas`. It never touches the document; it receives `ChangeSet`s (added/updated/removed entity ids + their `RenderPrimitive`s) and keeps a scene cache.
-- **I/O worker** is spawned per heavy job and terminated after, so a 30 MB parse never blocks interaction and memory is reclaimed.
+- **I/O worker** is spawned per heavy job and terminated after, so a 30 MB parse never blocks interaction and memory is reclaimed. `readInWorker(bytes, { createWorker, onProgress, signal })` in `@triya/io` is the main-thread side; the worker entry `@triya/io/worker` exposes `ioApi` over Comlink. The bytes are transferred, not copied. acad-ts parses in one synchronous call, so progress is reported per stage (`parse`, `summarize`, `done`), not per byte. Aborting the signal terminates the worker at once and rejects with `AbortError`; the worker is terminated however the job ends, which discards its heap. Only the client may be imported on the main thread: the package index pulls in acad-ts.
 - Input → command engine round trip must be < 16 ms (T3). Rubber-banding during a command is drawn by the render worker from a `TransientLayer` fed by the engine's preview output, not by re-running the command.
 - On Firefox/Safari without `OffscreenCanvas` transfer, the render worker's code runs on the main thread behind the same interface (`RendererHost`), so no second code path exists.
 
