@@ -25,6 +25,8 @@ import {
   DxfReaderConfiguration,
   DxfWriter,
   DxfWriterConfiguration,
+  ExtendedData,
+  ExtendedDataString,
   Hatch,
   ImageDefinition,
   HatchBoundaryPathArc,
@@ -1684,5 +1686,70 @@ describe('acad-ts local patches (corpus-backed)', () => {
     expect(new Set([...back.getCadObjects()].map((o) => o.handle)).size).toBe(
       [...back.getCadObjects()].length,
     );
+  });
+
+  // R12 xdata, as read and after a save: app name and each record's code and value (a 1003 layer
+  // by the name it resolves to).
+  const xdataOf = (d: CadDocument, handle: number): string[] => {
+    const o = d.getCadObject(handle) as
+      | (CadObject & {
+          extendedData?: Iterable<
+            [
+              { name: string },
+              {
+                records: {
+                  code: number;
+                  value: unknown;
+                  resolveReference?: (doc: CadDocument) => { name?: string } | null;
+                }[];
+              },
+            ]
+          > | null;
+        })
+      | null;
+    const out: string[] = [];
+    for (const [app, data] of o?.extendedData ?? []) {
+      out.push(app.name);
+      for (const r of data.records) {
+        out.push(
+          `${r.code}=${r.code === 1003 ? (r.resolveReference?.(d)?.name ?? 'unresolved') : JSON.stringify(r.value)}`,
+        );
+      }
+    }
+    return out;
+  };
+
+  it('0080 an R12 DXF 1003 xdata layer keeps its layer when the layer has no handle in the file', () => {
+    // sample_AC1009 TEXT 91B: 1001 LAYER_APP, 1002 {, 1003 APP_LAYER, 1002 }. R12 layers state no
+    // handle, so the reader linked the record to handle 0 and a save left the 1003 out.
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1009_ascii.dxf'));
+    expect(xdataOf(doc, 0x91b)).toEqual(['LAYER_APP', '1002="{"', '1003=APP_LAYER', '1002="}"']);
+    for (const binary of [false, true]) {
+      expect(xdataOf(dxfRawRoundTrip(doc, binary), 0x91b), `binary ${binary}`).toEqual(
+        xdataOf(doc, 0x91b),
+      );
+    }
+  });
+
+  it('0081 DXF POLYLINE and INSERT xdata is written with them, not after their SEQEND', () => {
+    // The writer wrote an entity's xdata after the entity's vertices or attributes and SEQEND, so
+    // the reader gave it to the SEQEND (sample_AC1009 POLYLINE 353 and its SEQEND 17F1).
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1009_ascii.dxf'));
+    const polyline = xdataOf(doc, 0x353);
+    expect(polyline.slice(0, 2)).toEqual(['ACAD', '1000="ASC_BOUNDS"']);
+    for (const binary of [false, true]) {
+      const back = dxfRawRoundTrip(doc, binary);
+      expect(xdataOf(back, 0x353), `binary ${binary}`).toEqual(polyline);
+      expect(xdataOf(back, 0x17f1), `binary ${binary}`).toEqual([]);
+    }
+
+    // The same for an INSERT with attributes; no corpus file has one with xdata, so add some.
+    const insert = [...doc.getCadObjects()].find(
+      (o): o is Insert => o instanceof Insert && o.hasAttributes,
+    )!;
+    insert.extendedData.addByName('ACAD', new ExtendedData([new ExtendedDataString('ATTRIBUTED')]));
+    const back = dxfRawRoundTrip(doc, false);
+    expect(xdataOf(back, insert.handle)).toEqual(['ACAD', '1000="ATTRIBUTED"']);
+    expect(xdataOf(back, insert.attributes.seqend!.handle)).toEqual([]);
   });
 });

@@ -1,4 +1,6 @@
 import { Entity } from '../../Entities/Entity.js';
+import { ExtendedDataLayer } from '../../XData/ExtendedDataLayer.js';
+import type { Layer } from '../../Tables/Layer.js';
 import { CadTemplate } from '../Templates/CadTemplate.js';
 import { CadObject } from '../../CadObject.js';
 import { CadDictionary } from '../../Objects/CadDictionary.js';
@@ -43,6 +45,9 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
   /** The model space record made up because the file has none (an R12 file with no BLOCKS). */
   public madeUpModelSpace: BlockRecord | null = null;
 
+  /** 1003 xdata records whose layer had no handle yet when they were read. */
+  public unnumberedXDataLayers: [ExtendedDataLayer, Layer][] = [];
+
   public override buildDocument(): void {
     if (this.modelSpaceTemplate === null) {
       const record = BlockRecord.modelSpace;
@@ -53,6 +58,8 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
     }
 
     this.createMissingHandles();
+
+    for (const [record, layer] of this.unnumberedXDataLayers) record.value = layer.handle;
 
     for (const entity of this.modelSpaceEntities) {
       this.modelSpaceTemplate!.ownedObjectsHandlers.add(entity.handle);
