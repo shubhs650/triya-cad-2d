@@ -22,13 +22,13 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | SOLID | ✓ | | | | |
 | TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
 | 3DFACE *(render edges)* | ✓ | | — | | |
-| TEXT | ✓ | | | | |
-| MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036) | | | | |
+| TEXT | ✓ (drawn by the renderer as SHX strokes or TrueType fills from the loaded fonts, with AutoCAD's justification, M1-41 part 1; unverified against AutoCAD plots until M1-24/M1-26) | | | | |
+| MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036; drawn by the renderer from the loaded fonts with colour, font, stack, big-font and decoration codes, M1-41 part 1; background fill, mask and frame, M1-41 part 2; vertical text not yet) | | | | |
 | ATTDEF | ✓ (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | ATTRIB | ✓ folded into its INSERT (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | INSERT | ✓ (drawn by the renderer through nesting with ByBlock and layer-0 inheritance, M1-14 part 1; attributes not drawn yet) | | | | |
 | MINSERT | ✓ (every cell drawn, M1-14 part 1) | | | | |
-| DIMENSION (linear/aligned) | ✓ (rotated with an empty AcDbRotatedDimension read as aligned by acad-ts, M1-32; drawn from its stored `*D` block by the renderer, M1-15 part 1, its text once MTEXT draws, M1-41; annotative scale representations not yet) | | | | |
+| DIMENSION (linear/aligned) | ✓ (rotated with an empty AcDbRotatedDimension read as aligned by acad-ts, M1-32; drawn from its stored `*D` block by the renderer, M1-15 part 1, its text with it once fonts are loaded, M1-41 part 1; annotative scale representations not yet) | | | | |
 | DIMENSION (angular 2-line / 3-point) | ✓ (drawn from its stored `*D` block, M1-15 part 1) | | | | |
 | DIMENSION (radial / diametric) | ✓ (drawn from its stored `*D` block, M1-15 part 1) | | | | |
 | DIMENSION (ordinate) | ✓ (drawn from its stored `*D` block, M1-15 part 1) | | | | |

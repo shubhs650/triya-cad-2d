@@ -37,12 +37,15 @@ import { drawOrder } from './style/draw-order';
 import { mixColors, tintColor } from './style/mix';
 import { patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
-import { tessellate } from './tessellate';
+import { tessellate, type TessellateContext } from './tessellate';
+import type { TextFonts } from '@triya/text';
 import {
   PATH_A,
+  PATH_C,
   PATH_E,
   PATH_L,
   PATH_M,
+  PATH_Q,
   PATH_Z,
   screenToWorld,
   visibleBox,
@@ -69,6 +72,8 @@ export interface Canvas2D {
   moveTo(x: number, y: number): void;
   lineTo(x: number, y: number): void;
   arc(x: number, y: number, r: number, a0: number, a1: number, anticlockwise?: boolean): void;
+  quadraticCurveTo(x1: number, y1: number, x: number, y: number): void;
+  bezierCurveTo(x1: number, y1: number, x2: number, y2: number, x: number, y: number): void;
   ellipse(
     x: number,
     y: number,
@@ -119,6 +124,13 @@ export interface Canvas2DRendererOptions {
   readonly now?: () => number;
   /** Runs a callback when the browser is idle (requestIdleCallback in the app). */
   readonly requestIdle?: (cb: () => void) => void;
+  /**
+   * Loaded fonts for TEXT and MTEXT (M1-41); without them text draws nothing. The app fills
+   * them from the user font store and the bundled fonts before drawing (M1-37).
+   */
+  readonly fonts?: TextFonts;
+  /** A field's current value (MTEXT `%<…>%`); undefined shows `----`. */
+  readonly evaluateField?: (code: string) => string | undefined;
 }
 
 /** An entity's primitives, with its world size and centre for the sub-pixel LOD. */
@@ -146,6 +158,13 @@ export const DEFAULT_STYLE: RenderStyle = {
 
 /** The frame budget (ARCHITECTURE.md §7.2): 60 fps. */
 const FRAME_BUDGET_MS = 16;
+/** Text under this cap height on screen (CSS px) is greeked (ARCHITECTURE.md §7.2). */
+const TEXT_LOD_PX = 3;
+/**
+ * How strongly a greeked run's box is filled: about the share of a cap-height box that glyph
+ * strokes cover. AutoCAD shows no greeking (it draws every glyph); the value is ours.
+ */
+const GREEK_ALPHA = 0.35;
 /** Header variables that change how every entity is painted. */
 const PAINT_HEADER = new Set(['$LTSCALE']);
 
@@ -168,6 +187,8 @@ export class Canvas2DRenderer implements Renderer {
   readonly #scene: Surface;
   readonly #transientLayer: Surface;
   readonly #paint: PaintFunction;
+  /** Fonts and text styles for TEXT and MTEXT (M1-41). */
+  readonly #tessellate: TessellateContext = {};
   /** How INSERTs and dimensions in the block shown expand (M1-14, M1-15). */
   readonly #blockSource: BlockSource;
   readonly #blockDef = (block: Handle) => this.#model.blocks.get(block);
@@ -215,11 +236,22 @@ export class Canvas2DRenderer implements Renderer {
     this.#transientLayer = o.createLayer();
     this.#style = o.style ?? DEFAULT_STYLE;
     this.#paint = o.paint ?? defaultPaint;
+    if (o.fonts) {
+      const model = this.#model;
+      this.#tessellate = {
+        text: {
+          fonts: o.fonts,
+          style: (h) => model.tables.textStyles.get(h),
+          ...(o.evaluateField ? { evaluateField: o.evaluateField } : {}),
+        },
+      };
+    }
     this.#blockSource = {
       model: this.#model,
       paint: this.#paint,
       insertContext: this.#paint.insertContext ?? defaultPaint.insertContext,
       order: (block) => this.#blockOrder(block),
+      tessellate: this.#tessellate,
     };
     this.#now = o.now ?? (() => performance.now());
     this.#requestIdle = o.requestIdle ?? ((cb) => setTimeout(cb, 50));
@@ -296,11 +328,12 @@ export class Canvas2DRenderer implements Renderer {
         if (entry?.blocks && [...changed].some((b) => entry.blocks!.has(b))) this.#cacheEntity(id);
       });
     }
-    // A layer, linetype or LTSCALE change can restyle or hide any entity: re-resolve the
-    // whole block.
+    // A layer, linetype, text style or LTSCALE change can restyle or hide any entity:
+    // re-resolve the whole block.
     if (
       cs.tables?.layers ||
       cs.tables?.linetypes ||
+      cs.tables?.textStyles ||
       cs.header?.some((h) => PAINT_HEADER.has(h.name))
     )
       this.#cacheBlock();
@@ -399,9 +432,10 @@ export class Canvas2DRenderer implements Renderer {
         return;
       }
       const { linetype: lt, ...continuous } = paint;
-      prims = tessellate(e.geom, continuous);
+      prims = tessellate(e.geom, continuous, this.#tessellate);
       const period = lt ? patternLength(lt.pattern) * lt.scale : 0;
-      extra = period > 0 ? { dashes: { period, build: () => tessellate(e.geom, paint) } } : {};
+      const build = () => tessellate(e.geom, paint, this.#tessellate);
+      extra = period > 0 ? { dashes: { period, build } } : {};
     }
     // The size and centre drive the sub-pixel LOD; unknown bounds never count as small.
     const b = this.#index.bounds(id);
@@ -547,6 +581,22 @@ export class Canvas2DRenderer implements Renderer {
           );
           continue;
         }
+        const text = prim.kind === 'infinite' ? undefined : prim.text;
+        if (text && text.height * scale < TEXT_LOD_PX) {
+          // ARCHITECTURE.md §7.2 LOD: text under 3 px tall → a faint box per run (greeking),
+          // which keeps the text's place and colour and costs one fill.
+          if (text.greek.length === 0) continue;
+          flush();
+          world();
+          ctx.beginPath();
+          buildPath(ctx, text.greek, center.x, center.y);
+          device();
+          ctx.globalAlpha = GREEK_ALPHA;
+          ctx.fillStyle = color;
+          ctx.fill('nonzero');
+          ctx.globalAlpha = 1;
+          continue;
+        }
         if (prim.kind === 'fill') {
           flush();
           world();
@@ -632,7 +682,11 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   #color(c: PrimitiveColor): string {
-    return c === 'foreground' ? this.#style.foreground : c;
+    return c === 'foreground'
+      ? this.#style.foreground
+      : c === 'background'
+        ? this.#style.background
+        : c;
   }
 
   /** Device pixels for a lineweight in millimetres; undefined is 1 px. */
@@ -680,6 +734,21 @@ function buildPath(ctx: Canvas2D, a: readonly number[], ox: number, oy: number):
           a[i + 8] === 0,
         );
         i += 9;
+        break;
+      case PATH_Q:
+        ctx.quadraticCurveTo(a[i + 1]! - ox, a[i + 2]! - oy, a[i + 3]! - ox, a[i + 4]! - oy);
+        i += 5;
+        break;
+      case PATH_C:
+        ctx.bezierCurveTo(
+          a[i + 1]! - ox,
+          a[i + 2]! - oy,
+          a[i + 3]! - ox,
+          a[i + 4]! - oy,
+          a[i + 5]! - ox,
+          a[i + 6]! - oy,
+        );
+        i += 7;
         break;
       case PATH_Z:
         ctx.closePath();
@@ -802,6 +871,31 @@ function distanceTo(prim: RenderPrimitive, p: { x: number; y: number }): number 
           );
         }
         i += isArc ? 7 : 9;
+        break;
+      }
+      case PATH_Q:
+      case PATH_C: {
+        // Chords of the curve, for the distance and the inside test.
+        const q = a[i] === PATH_Q;
+        const [x0, y0] = [px, py];
+        const n = 16;
+        for (let j = 1; j <= n; j++) {
+          const t = j / n;
+          const u = 1 - t;
+          if (q) {
+            edge(
+              u * u * x0 + 2 * u * t * a[i + 1]! + t * t * a[i + 3]!,
+              u * u * y0 + 2 * u * t * a[i + 2]! + t * t * a[i + 4]!,
+            );
+          } else {
+            const [b0, b1, b2, b3] = [u * u * u, 3 * u * u * t, 3 * u * t * t, t * t * t];
+            edge(
+              b0 * x0 + b1 * a[i + 1]! + b2 * a[i + 3]! + b3 * a[i + 5]!,
+              b0 * y0 + b1 * a[i + 2]! + b2 * a[i + 4]! + b3 * a[i + 6]!,
+            );
+          }
+        }
+        i += q ? 5 : 7;
         break;
       }
       case PATH_Z:
