@@ -138,6 +138,12 @@ export abstract class DxfPropertyBase {
 			return;
 		}
 
+		// A C# char property: the group holds the character code ($DIMDSEP 46 is ".").
+		if (this._valueKind === 'char') {
+			this.setPropertyValue(obj, typeof value === 'string' && !/^\s*\d+\s*$/.test(value) ? value : String.fromCharCode(toNumber(value)));
+			return;
+		}
+
 		if (typeof currentValue === 'boolean') {
 			this.setPropertyValue(obj, typeof value === 'boolean' ? value : toNumber(value) !== 0);
 			return;
@@ -215,6 +221,10 @@ export abstract class DxfPropertyBase {
 
 		if (this._valueKind === 'timespan') {
 			return toNumber(value) / 86400000;
+		}
+
+		if (this._valueKind === 'char') {
+			return typeof value === 'string' ? (value.length > 0 ? value.charCodeAt(0) : null) : value;
 		}
 
 		if (value instanceof Color) {

@@ -92,7 +92,7 @@ The public manifest is `corpus/corpus.json`; the private one is `corpus/private/
 
 `structuralDiff(original: CadDocument, reopened: CadDocument): DiffReport` walks both acad-ts object graphs by handle and compares type, every serialisable property, xdata, extension dictionaries, reactors, owner links, and table membership. **Expected result: zero differences.**
 
-Allowed exceptions (and only these): `$TDUPDATE` and its UTC twin `$TDUUPDATE` (DEC-034), `$TDUSRTIMER`, `$TDINDWG`, `$VERSIONGUID`, `$FINGERPRINTGUID`, `$HANDSEED` (new ≥ old), `$DWGCODEPAGE` when writing to a Unicode version, and the ordering of entries within unordered dictionaries. Anything else is a failure. Adding an exception requires a DECISIONS entry.
+Allowed exceptions (and only these): `$TDUPDATE` and its UTC twin `$TDUUPDATE` (DEC-034), `$TDUSRTIMER`, `$TDINDWG`, `$VERSIONGUID`, `$FINGERPRINTGUID`, `$LASTSAVEDBY` and `$ACADMAINTVER` (DEC-041), `$HANDSEED` (new ≥ old), `$DWGCODEPAGE` when writing to a Unicode version, and the ordering of entries within unordered dictionaries. Anything else is a failure. Adding an exception requires a DECISIONS entry.
 
 After an *editing* session, the diff excludes handles in the session's touched set and asserts zero differences elsewhere.
 

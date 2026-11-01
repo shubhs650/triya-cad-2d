@@ -1,0 +1,13 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index fad2c06..77fde37 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -402,7 +404,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+     this._writer.write(271, style.textAttachmentDirection, map);
+     this._writer.write(272, style.textBottomAttachment, map);
+     this._writer.write(273, style.textTopAttachment, map);
+-    this._writer.write(298, false);
++    this._writer.write(298, style.unknownFlag298, map);
+   }
+ 
+   protected writeObject<T extends CadObject>(co: T): void {

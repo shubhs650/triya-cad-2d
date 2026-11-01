@@ -290,6 +290,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     this._writer.writeVector(10, definition.size, map);
 
+    this._writer.writeVector(11, definition.defaultSize, map);
+
     this._writer.write(280, definition.isLoaded ? 1 : 0, map);
 
     this._writer.write(281, definition.units as number, map);
@@ -402,7 +404,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(271, style.textAttachmentDirection, map);
     this._writer.write(272, style.textBottomAttachment, map);
     this._writer.write(273, style.textTopAttachment, map);
-    this._writer.write(298, false);
+    this._writer.write(298, style.unknownFlag298, map);
   }
 
   protected writeObject<T extends CadObject>(co: T): void {
