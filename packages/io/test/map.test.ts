@@ -4,8 +4,11 @@
 import {
   ACadVersion,
   AppId,
+  BlockRecord,
+  CadDictionary,
   CadDocument,
   Color,
+  DimensionStyle,
   ExtendedData,
   ExtendedDataHandle,
   ExtendedDataInteger32,
@@ -14,12 +17,15 @@ import {
   Layer,
   LineType,
   LineTypeSegment,
+  MultiLeaderStyle,
+  TableStyle,
   View,
   XYZ,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
 import { mapHeader, mapTables } from '../src/index';
-import { mapColor, mapLineweight } from '../src/map/common';
+import { mapColor, mapEntityColor, mapLineweight } from '../src/map/common';
+import { DIMVARS } from '../src/map/dimvars';
 
 function docWithLayer(name: string): { doc: CadDocument; layer: Layer } {
   const doc = new CadDocument(ACadVersion.AC1032);
@@ -145,6 +151,101 @@ describe('views', () => {
 
     expect(views.find((v) => v.name === 'PLAIN')).not.toHaveProperty('ucs');
     expect(views.find((v) => v.name === 'UCS')!.ucs?.origin).toEqual({ x: 10, y: 20, z: 0 });
+  });
+});
+
+describe('dimension styles', () => {
+  it('lists each DIMVAR and DXF group once', () => {
+    expect(new Set(DIMVARS.map(([name]) => name)).size).toBe(DIMVARS.length);
+    expect(new Set(DIMVARS.map(([, code]) => code)).size).toBe(DIMVARS.length);
+  });
+
+  it('keys DIMVARs by name with colours as ACI and references as handles', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const arrow = new BlockRecord('_ARCHTICK');
+    doc.blockRecords?.add(arrow);
+    const style = new DimensionStyle('ARCH');
+    doc.dimensionStyles?.add(style);
+    style.scaleFactor = 48;
+    style.textVerticalAlignment = 1 as never;
+    style.textInsideHorizontal = false;
+    style.decimalSeparator = ',';
+    style.dimensionLineColor = new Color(2);
+    style.textColor = new Color(0, 128, 255);
+    style.arrowBlock = arrow;
+    style.style = doc.textStyles!.tryGetValue('Standard')!;
+    const vars = mapTables(doc).dimStyles.find((d) => d.name === 'ARCH')!.vars;
+
+    expect(vars).toMatchObject({
+      DIMSCALE: 48,
+      DIMTAD: 1,
+      DIMTIH: false,
+      DIMDSEP: ',',
+      DIMCLRD: 2,
+      DIMBLK: arrow.handle.toString(16).toUpperCase(),
+      DIMTXSTY: style.style.handle.toString(16).toUpperCase(),
+    });
+    // A true colour keeps its nearest ACI number, never acad-ts's −1.
+    expect(vars['DIMCLRT']).toBeGreaterThan(0);
+    // The default arrowhead (no block) and a ByBlock dimension linetype point at nothing.
+    expect(vars).not.toHaveProperty('DIMBLK1');
+    expect(vars).not.toHaveProperty('DIMLTYPE');
+  });
+});
+
+describe('mapEntityColor (MLEADERSTYLE 91/93/94)', () => {
+  it('decodes the raw AcCmEntityColor acad-ts leaves after a DXF read', () => {
+    expect(mapEntityColor(0xc0000000 | 0)).toEqual({ kind: 'byLayer' });
+    expect(mapEntityColor(-1056964608)).toEqual({ kind: 'byBlock' }); // 0xC1000000
+    expect(mapEntityColor(0xc2000000 | 0x102030)).toEqual({ kind: 'rgb', r: 16, g: 32, b: 48 });
+    expect(mapEntityColor(0xc3000000 | 5)).toEqual({ kind: 'aci', index: 5 });
+    expect(mapEntityColor(0xc8000000)).toEqual({ kind: 'byBlock' });
+  });
+
+  it('maps a Color as mapColor does', () => {
+    expect(mapEntityColor(new Color(3))).toEqual({ kind: 'aci', index: 3 });
+  });
+});
+
+function styleDictionary(doc: CadDocument, key: string): CadDictionary {
+  const root = doc.rootDictionary!;
+  let dict = root.get(key);
+  if (!(dict instanceof CadDictionary)) {
+    dict = new CadDictionary(key);
+    root.add(dict as CadDictionary);
+  }
+  return dict as CadDictionary;
+}
+
+describe('multileader and table styles', () => {
+  it('maps a multileader style from ACAD_MLEADERSTYLE with its references', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const style = new MultiLeaderStyle('NOTES');
+    style.textStyle = doc.textStyles!.tryGetValue('Standard')!;
+    style.textHeight = 2.5;
+    style.lineColor = new Color(1);
+    styleDictionary(doc, CadDictionary.acadMLeaderStyle).add(style);
+    const mapped = mapTables(doc).mleaderStyles.find((m) => m.name === 'NOTES')!;
+
+    expect(mapped.handle).toBe(style.handle.toString(16).toUpperCase());
+    expect(mapped).toMatchObject({
+      textHeight: 2.5,
+      lineColor: { kind: 'aci', index: 1 },
+      textStyle: style.textStyle!.handle.toString(16).toUpperCase(),
+    });
+    expect(mapped).not.toHaveProperty('arrowhead');
+  });
+
+  it('maps a table style without taking its 71 flags for standard flags', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const style = new TableStyle('GRID');
+    style.flags = 3;
+    style.suppressTitle = true;
+    styleDictionary(doc, CadDictionary.acadTableStyle).add(style);
+    const mapped = mapTables(doc).tableStyles.find((t) => t.name === 'GRID')!;
+
+    expect(mapped).not.toHaveProperty('flags');
+    expect(mapped).toMatchObject({ styleFlags: 3, suppressTitle: true, cellStyles: [] });
   });
 });
 

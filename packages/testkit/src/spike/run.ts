@@ -78,7 +78,7 @@ export function runSpikeRead(paths: SpikePaths): { file: CorpusFile; read: Spike
     '',
     '## Objects in the file that never reach the acad-ts graph',
     '',
-    `Handle coverage over ${scanned} files (DWG handle map and ASCII DXF \`5\`/\`105\` codes; binary DXF and R12 DWG not scanned): **${missingTotal} of ${declared}** declared objects are not in the object graph, so neither \`structuralDiff\` nor the writer sees them. \`?\` = DWG, where the handle map carries no type.`,
+    `Handle coverage over ${scanned} files (DWG handle map typed from each object record, ASCII and binary DXF \`5\`/\`105\` codes; scanner shared with the M1-27 gate): **${missingTotal} of ${declared}** declared objects are not in the object graph, so neither \`structuralDiff\` nor the writer sees them.`,
     '',
     '| Type | Objects | Files |',
     '|---|---:|---:|',

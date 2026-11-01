@@ -7,6 +7,12 @@ import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
 import {
+  compareToHandleBaseline,
+  toHandleBaseline,
+  type HandleBaseline,
+  type HandleRun,
+} from './handle-coverage.ts';
+import {
   compareToBaseline,
   formatRoundTripReport,
   toBaseline,
@@ -18,11 +24,18 @@ import { roundTrip } from './roundtrip.ts';
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const outDir = fileURLToPath(new URL('../../../../test-reports/roundtrip/', import.meta.url));
 const baselinePath = `${corpusDir}roundtrip-baseline.json`;
+const handleBaselinePath = `${corpusDir}handle-coverage-baseline.json`;
 const updateBaseline = process.env['TRIYA_UPDATE_BASELINE'] === '1';
 
 describe('public corpus round-trip', () => {
   const manifest = loadManifest(`${corpusDir}corpus.json`);
   const runs: FileRoundTrip[] = [];
+  const handleRuns = (): HandleRun[] =>
+    runs.map(({ file, result }) =>
+      result.handles
+        ? { path: file.path, coverage: result.handles }
+        : { path: file.path, unscanned: result.handlesError ?? result.status },
+    );
 
   it('runs open → save → reopen → diff on every corpus file and writes the report', () => {
     for (const file of manifest.files) {
@@ -37,8 +50,13 @@ describe('public corpus round-trip', () => {
       formatRoundTripReport(runs, 'Round-trip report: public corpus'),
     );
     writeFileSync(`${outDir}report.json`, `${JSON.stringify(runs, null, 1)}\n`);
-    if (updateBaseline)
+    if (updateBaseline) {
       writeFileSync(baselinePath, `${JSON.stringify(toBaseline(runs), null, 2)}\n`);
+      writeFileSync(
+        handleBaselinePath,
+        `${JSON.stringify(toHandleBaseline(handleRuns()), null, 2)}\n`,
+      );
+    }
   }, 300_000);
 
   it('does not regress against corpus/roundtrip-baseline.json', () => {
@@ -69,5 +87,28 @@ describe('public corpus round-trip', () => {
     expect(lost).toEqual([]);
     const kept = runs.reduce((n, r) => n + (r.result.rawObjects?.kept ?? 0), 0);
     expect(kept, 'the corpus has unknown objects (view styles, AEC, SUN, …)').toBeGreaterThan(1000);
+  });
+
+  // M1-27: every handle the file declares must be in the reopened document. Until M1-31 the
+  // known losses are in corpus/handle-coverage-baseline.json; any other lost handle fails.
+  it('loses no declared handle beyond corpus/handle-coverage-baseline.json', () => {
+    expect(runs.length, 'the first test must run first').toBe(manifest.files.length);
+    expect(
+      existsSync(handleBaselinePath),
+      'run TRIYA_UPDATE_BASELINE=1 pnpm corpus:roundtrip',
+    ).toBe(true);
+    const baseline = JSON.parse(readFileSync(handleBaselinePath, 'utf8')) as HandleBaseline;
+    const comparison = compareToHandleBaseline(handleRuns(), baseline);
+    if (comparison.improvements.length > 0 && !updateBaseline) {
+      console.info(
+        `[handles] ${comparison.improvements.length} handle(s) no longer lost; lock it in with TRIYA_UPDATE_BASELINE=1 pnpm corpus:roundtrip:\n  ${comparison.improvements.slice(0, 50).join('\n  ')}`,
+      );
+    }
+    expect(comparison.added, 'new corpus files need a baseline entry').toEqual([]);
+    expect(comparison.regressions).toEqual([]);
+    expect(Object.keys(baseline.files).sort()).toEqual(manifest.files.map((f) => f.path).sort());
+    // Only files that cannot be read go unscanned; every format the corpus holds is scanned.
+    const unscanned = runs.filter((r) => !r.result.handles).map((r) => r.result.status);
+    expect(new Set(unscanned)).toEqual(new Set(['read-error']));
   });
 });

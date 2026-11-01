@@ -1,0 +1,960 @@
+{
+  "note": "Handle-coverage ratchet (docs/TESTING.md §3.2, M1-27): declared handles each corpus file loses on a save, by type. pnpm test fails on any handle not listed here; after a fix, TRIYA_UPDATE_BASELINE=1 pnpm corpus:roundtrip removes it. Expected end state (M1-31): every lost list empty.",
+  "files": {
+    "public/third-party/acadsharp/aec_objects/AecObjects.dwg": {
+      "declared": 1573,
+      "lost": {
+        "BLOCK": "2ADC 2AE0",
+        "DICTIONARY": "2C9C",
+        "ENDBLK": "2ADE 2AE3",
+        "XRECORD": "2C9D 3DEB 3DEE 3DEF 3DF2 3DF5 3DF6"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKALIGNMENTPARAMETER.dwg": {
+      "declared": 162,
+      "lost": {
+        "BLOCKALIGNMENTGRIP": "25F",
+        "BLOCKALIGNMENTPARAMETER": "25D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "260 261"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKALIGNMENTPARAMETER.dxf": {
+      "declared": 164,
+      "lost": {
+        "BLOCKALIGNMENTGRIP": "25F",
+        "BLOCKALIGNMENTPARAMETER": "25D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "260 261"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKBASEPOINTPARAMETER.dwg": {
+      "declared": 158,
+      "lost": {
+        "BLOCKBASEPOINTPARAMETER": "253"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKBASEPOINTPARAMETER.dxf": {
+      "declared": 160,
+      "lost": {
+        "BLOCKBASEPOINTPARAMETER": "253"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dwg": {
+      "declared": 194,
+      "lost": {
+        "BLOCKFLIPACTION": "26D",
+        "BLOCKFLIPGRIP": "262",
+        "BLOCKFLIPPARAMETER": "25E",
+        "BLOCKGRIPLOCATIONCOMPONENT": "263 264 265"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dxf": {
+      "declared": 196,
+      "lost": {
+        "BLOCKFLIPACTION": "26D",
+        "BLOCKFLIPGRIP": "262",
+        "BLOCKFLIPPARAMETER": "25E",
+        "BLOCKGRIPLOCATIONCOMPONENT": "263 264 265"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKLINEARPARAMETER.dwg": {
+      "declared": 182,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "261 262 266 267",
+        "BLOCKLINEARGRIP": "260 265",
+        "BLOCKLINEARPARAMETER": "25D",
+        "BLOCKSCALEACTION": "26C"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKLINEARPARAMETER.dxf": {
+      "declared": 184,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "261 262 266 267",
+        "BLOCKLINEARGRIP": "260 265",
+        "BLOCKLINEARPARAMETER": "25D",
+        "BLOCKSCALEACTION": "26C"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKLOOKUPPARAMETER.dwg": {
+      "declared": 361,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "605 606 609 60A 60D 60E 612 613",
+        "BLOCKLINEARGRIP": "608",
+        "BLOCKLINEARPARAMETER": "601",
+        "BLOCKLOOKUPACTION": "607",
+        "BLOCKLOOKUPGRIP": "604 611",
+        "BLOCKLOOKUPPARAMETER": "603 610",
+        "BLOCKMOVEACTION": "60F",
+        "BLOCKPOINTPARAMETER": "60B",
+        "BLOCKSTRETCHACTION": "602",
+        "BLOCKXYGRIP": "60C"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKLOOKUPPARAMETER.dxf": {
+      "declared": 363,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "605 606 609 60A 60D 60E 612 613",
+        "BLOCKLINEARGRIP": "608",
+        "BLOCKLINEARPARAMETER": "601",
+        "BLOCKLOOKUPACTION": "607",
+        "BLOCKLOOKUPGRIP": "604 611",
+        "BLOCKLOOKUPPARAMETER": "603 610",
+        "BLOCKMOVEACTION": "60F",
+        "BLOCKPOINTPARAMETER": "60B",
+        "BLOCKSTRETCHACTION": "602",
+        "BLOCKXYGRIP": "60C"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKPOINTPARAMETER.dwg": {
+      "declared": 197,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "260 261",
+        "BLOCKMOVEACTION": "267",
+        "BLOCKPOINTPARAMETER": "25C",
+        "BLOCKXYGRIP": "25F"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKPOINTPARAMETER.dxf": {
+      "declared": 199,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "260 261",
+        "BLOCKMOVEACTION": "267",
+        "BLOCKPOINTPARAMETER": "25C",
+        "BLOCKXYGRIP": "25F"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKPOLARPARAMETER.dwg": {
+      "declared": 256,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "3A7 3A8 3AA 3AB 3B9 3BA 3BD 3BE 3EB 3EC 3EE 3EF 3F3 3F4 3F6 3F7",
+        "BLOCKPOLARGRIP": "3A6 3A9 3B8 3BC 3EA 3ED 3F2 3F5",
+        "BLOCKPOLARPARAMETER": "3A5 3B7 3E9 3F1",
+        "BLOCKPOLARSTRETCHACTION": "3AC 3CB 3F0 3F8"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKPOLARPARAMETER.dxf": {
+      "declared": 186,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "261 262 266 267",
+        "BLOCKPOLARGRIP": "260 265",
+        "BLOCKPOLARPARAMETER": "25D",
+        "BLOCKPOLARSTRETCHACTION": "26E"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKROTATIONPARAMETER.dwg": {
+      "declared": 217,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "26B 26C",
+        "BLOCKROTATEACTION": "273",
+        "BLOCKROTATIONGRIP": "26A",
+        "BLOCKROTATIONPARAMETER": "25E"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKROTATIONPARAMETER.dxf": {
+      "declared": 219,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "26B 26C",
+        "BLOCKROTATEACTION": "273",
+        "BLOCKROTATIONGRIP": "26A",
+        "BLOCKROTATIONPARAMETER": "25E"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKVISIBILITYPARAMETER.dwg": {
+      "declared": 298,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "33D 33E",
+        "BLOCKVISIBILITYGRIP": "33C",
+        "BLOCKVISIBILITYPARAMETER": "33B"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKVISIBILITYPARAMETER.dxf": {
+      "declared": 300,
+      "lost": {
+        "BLOCKGRIPLOCATIONCOMPONENT": "33D 33E",
+        "BLOCKVISIBILITYGRIP": "33C",
+        "BLOCKVISIBILITYPARAMETER": "33B"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKXYPARAMETER.dwg": {
+      "declared": 228,
+      "lost": {
+        "BLOCKARRAYACTION": "28F",
+        "BLOCKGRIPLOCATIONCOMPONENT": "284 285 287 288 28A 28B 28D 28E",
+        "BLOCKXYGRIP": "283 286 289 28C",
+        "BLOCKXYPARAMETER": "282"
+      }
+    },
+    "public/third-party/acadsharp/dynamic-blocks/BLOCKXYPARAMETER.dxf": {
+      "declared": 230,
+      "lost": {
+        "BLOCKARRAYACTION": "28F",
+        "BLOCKGRIPLOCATIONCOMPONENT": "284 285 287 288 28A 28B 28D 28E",
+        "BLOCKXYGRIP": "283 286 289 28C",
+        "BLOCKXYPARAMETER": "282"
+      }
+    },
+    "public/third-party/acadsharp/geolocation/geoloc_AC1021.dxf": {
+      "declared": 215,
+      "lost": {}
+    },
+    "public/third-party/acadsharp/geolocation/geoloc.dwg": {
+      "declared": 150,
+      "lost": {}
+    },
+    "public/third-party/acadsharp/geolocation/geoloc.dxf": {
+      "declared": 152,
+      "lost": {}
+    },
+    "public/third-party/acadsharp/sample_AC1009_ascii.dxf": {
+      "declared": 3899,
+      "lost": {
+        "ENDBLK": "21 25C",
+        "TEXT": "917"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1009_binary.dxf": {
+      "declared": 3899,
+      "lost": {
+        "ENDBLK": "21 25C",
+        "TEXT": "917"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1014.dwg": {
+      "declared": 1242,
+      "lost": {
+        "ACAD_EVALUATION_GRAPH": "D67 D6C",
+        "ACDBPLACEHOLDER": "F",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "ACSH_HISTORY_CLASS": "D66 D6B",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "1104",
+        "XRECORD": "1105 1106"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1015_ascii.dxf": {
+      "declared": 1029,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACDBDATATABLE": "1502 1524",
+        "ACDB_BLOCKREPRESENTATION_DATA": "ABD AC8",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 148B 1493 149E",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "747 149C",
+        "TABLEGEOMETRY": "748 149D",
+        "TEXT": "917",
+        "XRECORD": "AC0 AC1 AC2 AC4 ACB ACC ACD ACF 148C 1494 1495 149F 1503 1504 1505 1506 1507 1508 1509 150A 150B 150C 150D 150E 150F 1510 1511 1512 1513 1514 1515 1516 1517 1525 1526 1527 1528 1529 152A 152B 152C 152D 152E 152F 1530 1531 1532 1533 1534 1535 1536 1537 1538"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1015_binary.dxf": {
+      "declared": 1029,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACDBDATATABLE": "2512 2534",
+        "ACDB_BLOCKREPRESENTATION_DATA": "ABD AC8",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 249B 24A3 24AE",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "2499 24AC",
+        "TABLEGEOMETRY": "249A 24AD",
+        "TEXT": "917",
+        "XRECORD": "AC0 AC1 AC2 AC4 ACB ACC ACD ACF 249C 24A4 24A5 24AF 2513 2514 2515 2516 2517 2518 2519 251A 251B 251C 251D 251E 251F 2520 2521 2522 2523 2524 2525 2526 2527 2535 2536 2537 2538 2539 253A 253B 253C 253D 253E 253F 2540 2541 2542 2543 2544 2545 2546 2547 2548"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1015.dwg": {
+      "declared": 1047,
+      "lost": {
+        "ACAD_EVALUATION_GRAPH": "D67 D6C",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "ACSH_HISTORY_CLASS": "D66 D6B",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "102C",
+        "XRECORD": "102D 102E"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1018_ascii.dxf": {
+      "declared": 999,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACDB_BLOCKREPRESENTATION_DATA": "ABD AC8",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DATATABLE": "143D 145B",
+        "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 13DE 13E6 13F1",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "747 13EF",
+        "TABLEGEOMETRY": "748 13F0",
+        "TEXT": "917",
+        "XRECORD": "AC0 AC1 AC2 AC4 ACB ACC ACD ACF 13DF 13E7 13E8 13F2 143E 143F 1440 1441 1442 1443 1444 1445 1446 1447 1448 1449 144A 144B 144C 144D 144E 144F 1450 1451 1452 145C 145D 145E 145F 1460 1461 1462 1463 1464 1465 1466 1467 1468 1469 146A 146B 146C 146D 146E 146F"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1018_binary.dxf": {
+      "declared": 1001,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACDB_BLOCKREPRESENTATION_DATA": "ABD AC8",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DATATABLE": "244D 246B",
+        "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 23EE 23F6 2401",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "23EC 23FF",
+        "TABLEGEOMETRY": "23ED 2400",
+        "TEXT": "917",
+        "XRECORD": "AC0 AC1 AC2 AC4 ACB ACC ACD ACF 23EF 23F7 23F8 2402 244E 244F 2450 2451 2452 2453 2454 2455 2456 2457 2458 2459 245A 245B 245C 245D 245E 245F 2460 2461 2462 246C 246D 246E 246F 2470 2471 2472 2473 2474 2475 2476 2477 2478 2479 247A 247B 247C 247D 247E 247F"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1018.dwg": {
+      "declared": 1014,
+      "lost": {
+        "ACAD_EVALUATION_GRAPH": "D67 D6C",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "ACSH_HISTORY_CLASS": "D66 D6B",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "F71",
+        "XRECORD": "F72 F73"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1021_ascii.dxf": {
+      "declared": 929,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "1374 137C 1387",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "747 1385",
+        "TABLEGEOMETRY": "748 1386",
+        "TEXT": "917",
+        "XRECORD": "1375 137D 137E 1388"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1021_binary.dxf": {
+      "declared": 933,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "2384 238C 2397",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "2382 2395",
+        "TABLEGEOMETRY": "2383 2396",
+        "TEXT": "917",
+        "XRECORD": "2385 238D 238E 2398"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1021.dwg": {
+      "declared": 925,
+      "lost": {
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "F08",
+        "XRECORD": "F09 F0A"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1024_ascii.dxf": {
+      "declared": 921,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "1310 1315 1320",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "747 131E",
+        "TABLEGEOMETRY": "748 131F",
+        "TEXT": "917",
+        "XRECORD": "1311 1316 1317 1321"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1024_binary.dxf": {
+      "declared": 926,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "231F 2324 232F",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "231D 232D",
+        "TABLEGEOMETRY": "231E 232E",
+        "TEXT": "917",
+        "XRECORD": "2320 2325 2326 2330"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1024.dwg": {
+      "declared": 923,
+      "lost": {
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "E9B",
+        "XRECORD": "E9C E9D"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1027_ascii.dxf": {
+      "declared": 870,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "12E4 12E9 12F4",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "747 12F2",
+        "TABLEGEOMETRY": "748 12F3",
+        "TEXT": "917",
+        "XRECORD": "12E5 12EA 12EB 12F5"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1027_binary.dxf": {
+      "declared": 875,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "22F1 22F6 2301",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "22EF 22FF",
+        "TABLEGEOMETRY": "22F0 2300",
+        "TEXT": "917",
+        "XRECORD": "22F2 22F7 22F8 2302"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1027.dwg": {
+      "declared": 865,
+      "lost": {
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "E70",
+        "XRECORD": "E71 E72"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1032_ascii.dxf": {
+      "declared": 847,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "12CF 12D9",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "747 12D7",
+        "TABLEGEOMETRY": "748 12D8",
+        "TEXT": "917",
+        "XRECORD": "12D0 12DA"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1032_binary.dxf": {
+      "declared": 852,
+      "lost": {
+        "ACAD_TABLE": "528 A35",
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "DICTIONARY": "22DA 22E4",
+        "DIMASSOC": "521 524 9D0",
+        "IMAGEDEF_REACTOR": "8C5",
+        "SORTENTSTABLE": "354 36D 370 375",
+        "TABLECONTENT": "22D8 22E2",
+        "TABLEGEOMETRY": "22D9 22E3",
+        "TEXT": "917",
+        "XRECORD": "22DB 22E5"
+      }
+    },
+    "public/third-party/acadsharp/sample_AC1032.dwg": {
+      "declared": 842,
+      "lost": {
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89"
+      }
+    },
+    "public/third-party/acadsharp/sample_base/empty.dwg": {
+      "declared": 145,
+      "lost": {}
+    },
+    "public/third-party/acadsharp/sample_base/sample_base.dwg": {
+      "declared": 845,
+      "lost": {
+        "ACSH_BOX_CLASS": "D68",
+        "ACSH_EXTRUSION_CLASS": "D6D",
+        "BLOCKGRIPLOCATIONCOMPONENT": "A83 A84 A86 A87 A8B A8C",
+        "BLOCKLINEARGRIP": "A82 A85",
+        "BLOCKLINEARPARAMETER": "A81",
+        "BLOCKSCALEACTION": "A88",
+        "BLOCKVISIBILITYGRIP": "A8A",
+        "BLOCKVISIBILITYPARAMETER": "A89",
+        "XRECORD": "E1A E1D E1E"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/3dface.dxf": {
+      "declared": 219,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/acad_table_simple.dxf": {
+      "declared": 147,
+      "lost": {
+        "ACAD_TABLE": "9C",
+        "DICTIONARY": "B2",
+        "TABLECONTENT": "AF",
+        "TABLEGEOMETRY": "B0",
+        "XRECORD": "B3"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/acad_table_with_blk_ref.dxf": {
+      "declared": 198,
+      "lost": {
+        "ACAD_TABLE": "CF",
+        "DICTIONARY": "118",
+        "TABLECONTENT": "116",
+        "TABLEGEOMETRY": "117",
+        "XRECORD": "119"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/caret_encoding.dxf": {
+      "declared": 105,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/circle_radius_le_0.dxf": {
+      "declared": 46,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/clockwise_arcs_hatch.dxf": {
+      "declared": 46,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/colors.dxf": {
+      "declared": 211,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/columns_R2007.dxf": {
+      "declared": 257,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/columns_R2018.dxf": {
+      "declared": 199,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/dimension_in_block.dxf": {
+      "declared": 161,
+      "lost": {
+        "DIMASSOC": "9F B5"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/dimension_in_nested_blocks.dxf": {
+      "declared": 185,
+      "lost": {
+        "DIMASSOC": "F5"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/hatch_issues.dxf": {
+      "declared": 136,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/hatch_text_box_in_fill.dxf": {
+      "declared": 136,
+      "lost": {
+        "SORTENTSTABLE": "A0 A2 AC"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/hatch_text_box_in_hole.dxf": {
+      "declared": 135,
+      "lost": {
+        "SORTENTSTABLE": "A0 A2"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/hatch_text_box_overlapping_fill_and_hole.dxf": {
+      "declared": 135,
+      "lost": {
+        "SORTENTSTABLE": "A0 A2"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/hatches_1.dxf": {
+      "declared": 214,
+      "lost": {
+        "SORTENTSTABLE": "231 23F 253 254 255 25B 269 279 27A 280 281 282 2A5 2A6 2A7 2C1 2C2 2C3 2D8 2E1 2E2 2E3"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/hatches_2.dxf": {
+      "declared": 168,
+      "lost": {
+        "SORTENTSTABLE": "221 225 24B 24D"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/images.dxf": {
+      "declared": 457,
+      "lost": {
+        "IMAGEDEF_REACTOR": "81 87 8D 95 9A 9C A1 A3 A8 AA AD B1 B6 BB BF C4 C6 CB D0 D4 D9 DB DD E0 E5 E7 E9 ED F2 F5 F7 F9 FB FD 100 102 10A 10C 111 113 118 11B 11D 124 127 12D 12F 131 133 139 13E 140 148 14E 151 157 189 191 1A8 1B1"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/insert_bricscad_level_1.dxf": {
+      "declared": 187,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1006.dxf": {
+      "declared": 0,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1009.dxf": {
+      "declared": 0,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1021.dxf": {
+      "declared": 25,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/mtext_columns_R2000.dxf": {
+      "declared": 54,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/mtext_columns_R2007.dxf": {
+      "declared": 54,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/mtext_columns_R2018.dxf": {
+      "declared": 48,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/mtext_complex_inline_codes.dxf": {
+      "declared": 183,
+      "lost": {
+        "FIELD": "CD DE E5 EC F8 101 108 10F"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/multi_insert_with_attribs.dxf": {
+      "declared": 63,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_alignments.dxf": {
+      "declared": 107,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_fonts.dxf": {
+      "declared": 1454,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_in_viewports.dxf": {
+      "declared": 156,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_mirror_shx_font.dxf": {
+      "declared": 773,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_mirror_true_type_font.dxf": {
+      "declared": 773,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_negative_extrusion.dxf": {
+      "declared": 430,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_oblique_rotate.dxf": {
+      "declared": 418,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_stacked_shx_font.dxf": {
+      "declared": 541,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text_stacked_true_type_font.dxf": {
+      "declared": 541,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/text.dxf": {
+      "declared": 429,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/transform_hatch_pattern.dxf": {
+      "declared": 143,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/uncommon.dxf": {
+      "declared": 658,
+      "lost": {
+        "ACSH_BOX_CLASS": "623 62F",
+        "DICTIONARY": "5FD 5FE",
+        "DIMASSOC": "345 357 393 3AD 3C9 3E3 413 42B",
+        "FIELD": "5F8 5F9 5FF 600",
+        "SORTENTSTABLE": "233 4A7 4A9 4C2 507 5E0 665 666 667 668"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/valid_lineweights.dxf": {
+      "declared": 94,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/viewport_frozen_layers.dxf": {
+      "declared": 139,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/viewports.dxf": {
+      "declared": 200,
+      "lost": {
+        "IMAGEDEF_REACTOR": "780 789 78F 79B 7EA"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/visibility.dxf": {
+      "declared": 164,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/VP4.dxf": {
+      "declared": 158,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/wipeout_door.dxf": {
+      "declared": 384,
+      "lost": {
+        "SORTENTSTABLE": "27D 367 410"
+      }
+    },
+    "public/third-party/ezdxf/examples_dxf/wipeout_random.dxf": {
+      "declared": 78,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/examples_dxf/xclip.dxf": {
+      "declared": 223,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/AC1003_LINE_Example.dxf": {
+      "declared": 0,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/ASCII_R12.dxf": {
+      "declared": 7,
+      "lost": {
+        "ENDBLK": "21 5B"
+      }
+    },
+    "public/third-party/ezdxf/integration_tests/bin_dxf_r12.dxf": {
+      "declared": 5,
+      "lost": {
+        "ENDBLK": "1D 21"
+      }
+    },
+    "public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf": {
+      "declared": 117,
+      "lost": {
+        "ACAD_PROXY_OBJECT": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 49 4A 4B 4C 4D 4E 4F 50 51 52 53 54 55 56 57 58 59 6D 6E 7B 7D 7E 85 86 89",
+        "DICTIONARY": "7F 81"
+      }
+    },
+    "public/third-party/ezdxf/integration_tests/bin_dxf_r14.dxf": {
+      "declared": 120,
+      "lost": {
+        "ACAD_PROXY_OBJECT": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 49 4A 4B 4C 4D 4E 4F 50 51 52 53 54 55 56 57 58 59 6D 6E 7B 7D 7E 85 86 89",
+        "DICTIONARY": "7F 81"
+      }
+    },
+    "public/third-party/ezdxf/integration_tests/bin_dxf_r2000.dxf": {
+      "declared": 45,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/custom_blocks.dxf": {
+      "declared": 143,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/duplicate_handles.dxf": {
+      "declared": 148,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/dxf_unicode.dxf": {
+      "declared": 50,
+      "lost": {
+        "LAYER": "2F"
+      }
+    },
+    "public/third-party/ezdxf/integration_tests/groups.dxf": {
+      "declared": 138,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/layout_broken_links_2.dxf": {
+      "declared": 53,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/layout_broken_links.dxf": {
+      "declared": 53,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/layout_missing_block_definition.dxf": {
+      "declared": 51,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/layout_missing_block_record.dxf": {
+      "declared": 52,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/MODEL.dxf": {
+      "declared": 46,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/mtext_framed_columns.dxf": {
+      "declared": 132,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/mtext_text_frame.dxf": {
+      "declared": 167,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/no_layouts.dxf": {
+      "declared": 46,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/r12_blocks_with_no_names.dxf": {
+      "declared": 19,
+      "lost": {
+        "BLOCK": "18 1C 2E 33",
+        "DIMSTYLE": "2B",
+        "ENDBLK": "19 1D 2F 34"
+      }
+    },
+    "public/third-party/ezdxf/integration_tests/R12_with_trash_beyond_EOF.dxf": {
+      "declared": 0,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/r2000_blocks_with_no_name_and_no_block_record.dxf": {
+      "declared": 53,
+      "lost": {
+        "BLOCK": "30 33",
+        "ENDBLK": "31 34"
+      }
+    },
+    "public/third-party/ezdxf/integration_tests/r2000_blocks_with_no_names.dxf": {
+      "declared": 55,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/recover02.dxf": {
+      "unscanned": "read-error"
+    },
+    "public/third-party/ezdxf/integration_tests/small_r13.dxf": {
+      "declared": 110,
+      "lost": {}
+    },
+    "public/third-party/ezdxf/integration_tests/small_r14.dxf": {
+      "declared": 69,
+      "lost": {}
+    }
+  }
+}

@@ -91,13 +91,15 @@ export interface ObjectCommon {
 
 // ── Entity geometry ────────────────────────────────────────────────────────────────────────
 //
-// Each geometry is a kernel curve (geom/curves.ts) plus what the file carries beyond the plane,
-// so `entity.geom` goes straight into kernel functions.
+// Curve entities are a kernel curve (geom/curves.ts) plus what the file carries beyond the
+// plane, so their `entity.geom` goes straight into kernel functions. POINT, POLYLINE, SOLID,
+// TRACE and 3DFACE have shapes of their own.
 
 /**
- * Out-of-plane data for planar entities, carried so it round-trips. Geometry is 2D in the
- * entity's plane (OCS for circles/arcs/polylines, WCS XY otherwise); M1-04 decides how 3D-ish
- * input such as a non-default extrusion is presented.
+ * Out-of-plane data, carried so the plan view can say where an entity sat in 3D. Geometry is
+ * always the entity's plan view in WCS XY (DEC-039): OCS entities whose extrusion is ±Z are
+ * converted exactly (−Z mirrors X), WCS entities drop Z. `elevation` is the WCS Z of the
+ * entity's plane when it is not 0, `normal` the extrusion when it is not +Z.
  */
 export interface PlanarProps {
   readonly elevation?: number;
@@ -110,9 +112,7 @@ export type XlineGeometry = Xline;
 export type RayGeometry = Ray;
 export interface CircleGeometry extends Circle, PlanarProps {}
 export interface ArcGeometry extends Arc, PlanarProps {}
-export interface EllipseGeometry extends Ellipse {
-  readonly normal?: Vec3;
-}
+export interface EllipseGeometry extends Ellipse, PlanarProps {}
 
 export interface PointGeometry extends PlanarProps {
   readonly kind: 'POINT';
@@ -143,6 +143,42 @@ export interface SplineGeometry extends Spline {
   readonly normal?: Vec3;
 }
 
+/**
+ * A heavyweight POLYLINE (2D or 3D) with its VERTEX and SEQEND entities folded in; those keep
+ * their handles in the retained original. `vertices` are the ones AutoCAD draws: for a
+ * spline-fit polyline that is the fitted vertices (VERTEX flag 8), with the frame (flag 16)
+ * in `frame`. A 3D polyline is its plan view, with no bulges.
+ */
+export interface PolylineGeometry extends PlanarProps {
+  readonly kind: 'POLYLINE';
+  readonly vertices: readonly PolylineVertex[];
+  readonly closed: boolean;
+  readonly is3d: boolean;
+  /** DXF 70 bit 2 (curve fit) or bit 4 with 75 = 5/6/8 (quadratic, cubic, Bezier spline fit). */
+  readonly fit?: 'curve' | 'quadratic' | 'cubic' | 'bezier';
+  readonly frame?: readonly Vec2[];
+  /** DXF 40/41 defaults for vertices that state no width. */
+  readonly startWidth?: number;
+  readonly endWidth?: number;
+  readonly plinegen?: boolean;
+}
+
+/**
+ * SOLID or TRACE: a filled quadrilateral (a triangle when the third and fourth corners
+ * coincide). Corners keep DXF order, so the outline is 1–2–4–3.
+ */
+export interface SolidGeometry extends PlanarProps {
+  readonly kind: 'SOLID' | 'TRACE';
+  readonly corners: readonly [Vec2, Vec2, Vec2, Vec2];
+}
+
+/** 3DFACE in plan view, drawn as its outline; DXF 70 bits 1/2/4/8 hide edges 1–4. */
+export interface Face3dGeometry {
+  readonly kind: '3DFACE';
+  readonly corners: readonly [Vec2, Vec2, Vec2, Vec2];
+  readonly hiddenEdges: number;
+}
+
 export type EntityGeometry =
   | LineGeometry
   | XlineGeometry
@@ -152,7 +188,10 @@ export type EntityGeometry =
   | EllipseGeometry
   | PointGeometry
   | LwPolylineGeometry
-  | SplineGeometry;
+  | PolylineGeometry
+  | SplineGeometry
+  | SolidGeometry
+  | Face3dGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */
 export type EntityType = EntityGeometry['kind'];
@@ -313,16 +352,121 @@ export interface VportRecord extends SymbolTableRecord, ViewParams {
 }
 
 /**
- * The record type of each table. Dimension, multileader and table styles use the base record
- * until M1-03 part 2 adds their fields.
+ * A DIMVAR's value as the DIMSTYLE record states it (AutoCAD DXF reference, DIMSTYLE):
+ * numbers and enum codes as numbers, on/off variables as booleans, DIMPOST/DIMAPOST as text,
+ * DIMDSEP as its character, colours (DIMCLRD/E/T, DIMTFILLCLR) as ACI numbers, DIMJOGANG in
+ * radians, and references (DIMTXSTY, DIMBLK*, DIMLDRBLK, DIMLTYPE, DIMLTEX*) as handles.
  */
+export type DimVarValue = number | string | boolean;
+
+export interface DimStyleRecord extends SymbolTableRecord {
+  /**
+   * DIMVARs by name (`DIMSCALE`, `DIMBLK`, …). A reference variable that points at nothing
+   * (the default arrowhead, ByBlock linetype) is absent.
+   */
+  readonly vars: Readonly<Record<string, DimVarValue>>;
+}
+
+/** An MLEADERSTYLE object (AutoCAD DXF reference, MLEADERSTYLE); enum fields keep DXF codes. */
+export interface MLeaderStyleRecord extends SymbolTableRecord {
+  readonly description: string;
+  /** DXF 170: 0 none, 1 block, 2 mtext, 3 tolerance. */
+  readonly contentType: number;
+  /** DXF 171 / 172. */
+  readonly mleaderDrawOrder: number;
+  readonly leaderDrawOrder: number;
+  readonly maxLeaderPoints: number;
+  /** DXF 40 / 41, as the file states them (every corpus file has 0, so the unit is untested). */
+  readonly firstSegmentAngle: number;
+  readonly secondSegmentAngle: number;
+  /** DXF 173: 0 invisible, 1 straight, 2 spline. */
+  readonly pathType: number;
+  readonly lineColor: Color;
+  readonly linetype?: Handle;
+  readonly lineweight: Lineweight;
+  readonly landing: boolean;
+  readonly landingGap: number;
+  readonly dogleg: boolean;
+  readonly doglegLength: number;
+  readonly arrowhead?: Handle;
+  readonly arrowheadSize: number;
+  readonly defaultText: string;
+  readonly textStyle?: Handle;
+  /** DXF 174 / 178 / 273 / 272: attachment of the text to the landing. */
+  readonly textLeftAttachment: number;
+  readonly textRightAttachment: number;
+  readonly textTopAttachment: number;
+  readonly textBottomAttachment: number;
+  /** DXF 271: 0 horizontal, 1 vertical. */
+  readonly textAttachmentDirection: number;
+  /** DXF 175 / 176. */
+  readonly textAngleType: number;
+  readonly textAlignment: number;
+  readonly textColor: Color;
+  readonly textHeight: number;
+  readonly textFrame: boolean;
+  readonly textAlignAlwaysLeft: boolean;
+  readonly alignSpace: number;
+  readonly block?: Handle;
+  readonly blockColor: Color;
+  readonly blockScale: Vec3;
+  readonly blockScaleOn: boolean;
+  /** DXF 141, radians. */
+  readonly blockRotation: number;
+  readonly blockRotationOn: boolean;
+  /** DXF 177: 0 extents, 1 base point. */
+  readonly blockConnection: number;
+  readonly scale: number;
+  readonly overwriteProperties: boolean;
+  readonly annotative: boolean;
+  readonly breakGap: number;
+}
+
+/** One edge of a table cell style, in the DXF order top, inside horizontal, bottom, left, inside vertical, right. */
+export interface TableCellBorder {
+  readonly lineweight: Lineweight;
+  readonly visible: boolean;
+  readonly color: Color;
+}
+
+/** A TABLESTYLE cell style (the Data, Header and Title rows of the DXF record). */
+export interface TableCellStyle {
+  readonly textStyle?: Handle;
+  readonly textHeight: number;
+  /** DXF 170: 1 top left … 9 bottom right. */
+  readonly alignment: number;
+  readonly textColor: Color;
+  readonly fillColor: Color;
+  readonly fillOn: boolean;
+  /** DXF 90 / 91: value data type and unit type. */
+  readonly dataType: number;
+  readonly unitType: number;
+  readonly borders: readonly TableCellBorder[];
+}
+
+/** A TABLESTYLE object (AutoCAD DXF reference, TABLESTYLE). */
+export interface TableStyleRecord extends SymbolTableRecord {
+  readonly description: string;
+  /** DXF 70: 0 down, 1 up. */
+  readonly flowDirection: number;
+  /** DXF 71. */
+  readonly styleFlags: number;
+  readonly horizontalMargin: number;
+  readonly verticalMargin: number;
+  readonly suppressTitle: boolean;
+  readonly suppressHeader: boolean;
+  /** In file order. */
+  readonly cellStyles: readonly TableCellStyle[];
+}
+
+/** The record type of each table and style collection. */
 export interface TableRecords {
   layers: LayerRecord;
   linetypes: LinetypeRecord;
   textStyles: TextStyleRecord;
-  dimStyles: SymbolTableRecord;
-  mleaderStyles: SymbolTableRecord;
-  tableStyles: SymbolTableRecord;
+  dimStyles: DimStyleRecord;
+  mleaderStyles: MLeaderStyleRecord;
+  tableStyles: TableStyleRecord;
   appIds: SymbolTableRecord;
   views: ViewRecord;
   ucs: UcsRecord;

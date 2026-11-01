@@ -1,0 +1,14 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfAsciiWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfAsciiWriter.ts
+index 868561f..6450cd3 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfAsciiWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfAsciiWriter.ts
+@@ -59,7 +59,8 @@ export class DxfAsciiWriter extends DxfStreamWriterBase {
+       case GroupCodeValueType.Int16:
+       case GroupCodeValueType.ExtendedDataInt16:
+         line = `${Math.trunc(value as number) & 0xFFFF}`;
+-        if ((value as number) < 0 && type === GroupCodeValueType.Int16) {
++        // 1070 is signed like the other 16-bit integers (DXF reference, "Group Codes in Numerical Order").
++        if ((value as number) < 0 && (type === GroupCodeValueType.Int16 || type === GroupCodeValueType.ExtendedDataInt16)) {
+           line = `${Math.trunc(value as number)}`;
+         }
+         break;

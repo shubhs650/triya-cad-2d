@@ -10,8 +10,10 @@ const corpusBytes = (path: string): Uint8Array =>
   new Uint8Array(
     readFileSync(fileURLToPath(new URL(`../../../../corpus/public/${path}`, import.meta.url))),
   );
-// AC1032 ASCII DXF with VISUALSTYLE objects, which the acad-ts DXF writer skips.
+// AC1032 ASCII DXF with view styles and dynamic-block data.
 const DYN = 'third-party/acadsharp/dynamic-blocks/BLOCKPOLARPARAMETER.dxf';
+// AC1027 ASCII DXF with DIMASSOC objects, which the acad-ts DXF writer skips (M1-31).
+const SKIPPED = 'third-party/ezdxf/examples_dxf/dimension_in_block.dxf';
 const DWG = 'third-party/acadsharp/sample_base/empty.dwg';
 
 describe('spike tooling', () => {
@@ -29,10 +31,12 @@ describe('spike tooling', () => {
   });
 
   it('roundTrip reports writer notifications and returns the written bytes when asked', () => {
-    const bytes = corpusBytes(DYN);
+    const bytes = corpusBytes(SKIPPED);
     const kept = roundTrip(bytes, { keepOutput: true });
     expect(kept.output?.length).toBe(kept.bytesOut);
-    expect(Object.keys(kept.writerNotes ?? {}).some((m) => /VisualStyle/.test(m))).toBe(true);
+    expect(Object.keys(kept.writerNotes ?? {}).some((m) => /DimensionAssociation/.test(m))).toBe(
+      true,
+    );
     expect(roundTrip(bytes).output).toBeUndefined();
   });
 
@@ -47,10 +51,10 @@ describe('spike tooling', () => {
     expect(categorize(changed)).toBe('property-loss');
     expect(rootKey(changed)).toBe('VIEWPORT ucs[]');
 
-    const bytes = corpusBytes(DYN);
+    const bytes = corpusBytes(SKIPPED);
     const rt = roundTrip(bytes, { sampleSize: 1e6, maxDifferences: 1e6 });
     const tax = buildTaxonomy([
-      { path: DYN, read: spikeRead(bytes), roundTrip: rt, differences: rt.sample ?? [] },
+      { path: SKIPPED, read: spikeRead(bytes), roundTrip: rt, differences: rt.sample ?? [] },
     ]);
     const total = Object.values(tax.byCategory).reduce((n, c) => n + c.count, 0);
     expect(total).toBe(tax.rows.reduce((n, r) => n + r.count, 0));

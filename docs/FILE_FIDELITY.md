@@ -8,20 +8,20 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 
 | Type | Read | Render | Edit | Write | Test file |
 |---|---|---|---|---|---|
-| LINE | | | | | |
-| XLINE | | | | | |
-| RAY | | | | | |
-| CIRCLE | | | | | |
-| ARC | | | | | |
-| ELLIPSE | | | | | |
-| POINT | | | | | |
-| LWPOLYLINE | | | | | |
-| POLYLINE (2D) + VERTEX + SEQEND | | | | | |
-| POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | | | — | | |
-| SPLINE | | | | | |
-| SOLID | | | | | |
-| TRACE | | | | | |
-| 3DFACE *(render edges)* | | | — | | |
+| LINE | ✓ | | | | |
+| XLINE | ✓ | | | | |
+| RAY | ✓ | | | | |
+| CIRCLE | ✓ | | | | |
+| ARC | ✓ | | | | |
+| ELLIPSE | ✓ | | | | |
+| POINT | ✓ | | | | |
+| LWPOLYLINE | ✓ | | | | |
+| POLYLINE (2D) + VERTEX + SEQEND | ✓ | | | | |
+| POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | | |
+| SPLINE | ✓ | | | | |
+| SOLID | ✓ | | | | |
+| TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
+| 3DFACE *(render edges)* | ✓ | | — | | |
 | TEXT | | | | | |
 | MTEXT | | | | | |
 | ATTDEF | | | | | |
@@ -51,6 +51,8 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | 3DSOLID / SURFACE / MESH / BODY *(passthrough-only; render proxy graphics if present)* | P | | — | P | |
 | HELIX / LIGHT / CAMERA / SECTION *(passthrough-only)* | P | — | — | P | |
 
+Read ticks for entities (M1-04) mean every entity of the type in every readable public ASCII DXF matches an independent DXF reader in plan view (DEC-039), common properties included (`packages/testkit/src/mapping/entities.corpus.test.ts`), apart from the acad-ts read gaps listed there (M1-32). Entities on a tilted plane are reported unmapped.
+
 ## Tables
 
 | Table | Read | Edit | Write | Test |
@@ -58,14 +60,14 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | LAYER (+ VP overrides via xdata/dictionaries) | ✓ record (VP overrides not yet) | | | |
 | LTYPE (simple + complex) | ✓ | | | |
 | STYLE (text styles, SHX and TTF, bigfont) | ✓ | | | |
-| DIMSTYLE (all DIMVARS + overrides via xdata) | | | | |
+| DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet) | | | |
 | APPID | ✓ | | | |
 | BLOCK_RECORD (+ BLOCK/ENDBLK, *Model_Space, *Paper_Space*, *D, *U, *X, *T) | ✓ record (BLOCK/ENDBLK with M1-04) | | | |
 | VPORT | ✓ | | | |
 | VIEW | ✓ | | | |
 | UCS | ✓ | | | |
 
-Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, `BLOCK_RECORD` 70 insert units, nameless shape `STYLE` records), which M1-32 closes. DIMSTYLE, MLEADERSTYLE and TABLESTYLE get their fields in M1-03 part 2. The header is mapped too: every variable acad-ts knows is carried by DXF name, compared the same way; 32 variables acad-ts does not know are M1-32.
+Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, `BLOCK_RECORD` 70 insert units, nameless shape `STYLE` records, R12 `DIMBLK` names, `TABLESTYLE` border visibility), which M1-32 closes. MLEADERSTYLE and TABLESTYLE objects are checked the same way. The header is mapped too: every variable acad-ts knows is carried by DXF name, compared the same way; 32 variables acad-ts does not know are M1-32.
 
 ## Objects (non-graphical)
 
@@ -73,7 +75,7 @@ Read ticks for tables (M1-03) mean every field of the record compares equal to a
 |---|---|---|---|---|
 | DICTIONARY / ACDBDICTIONARYWDFLT | | | | |
 | LAYOUT + PLOTSETTINGS | | | | |
-| MLEADERSTYLE / TABLESTYLE / MLINESTYLE | | | | |
+| MLEADERSTYLE / TABLESTYLE / MLINESTYLE | ✓ MLEADERSTYLE, TABLESTYLE (MLINESTYLE not yet) | | | |
 | SCALE (ACAD_SCALELIST) | | | | |
 | LAYER_FILTER / LAYER_INDEX / ACAD_LAYERSTATES | | | | |
 | GROUP | | | | |
@@ -117,7 +119,7 @@ Writing to a version older than the source drops entities that didn't exist in t
 
 ## acad-ts layer status (M0-06 spike)
 
-The columns above track Triya. This section tracks the library underneath, from `docs/reports/M0-acad-ts-spike.md` (acad-ts 315f3d8 + patches 0001–0013). R-numbers are the root causes in that report §4; the tasks that fix them are M1-27 to M1-30.
+The columns above track Triya. This section tracks the library underneath, from `docs/reports/M0-acad-ts-spike.md` (acad-ts 315f3d8 + patches 0001–0013). R-numbers are the root causes in that report §4; the tasks that fix them are M1-27 to M1-31 and M1-33. Since M1-27, `pnpm test` checks every declared handle (DWG handle map, ASCII and binary DXF) after a save; `corpus/handle-coverage-baseline.json` lists the known losses by type and file.
 
 | Version | Corpus files (DWG / ASCII DXF / binary DXF) | Read | Round trip clean | Main open defects |
 |---|---|---|---|---|
@@ -132,14 +134,15 @@ The columns above track Triya. This section tracks the library underneath, from 
 |---|---|
 | VPORT, LAYER, LAYOUT (DXF write) | Fixed by patches 0008, 0009, 0010 |
 | Header flag word, true colours, template page, layout limits, block previews (DWG) | Fixed by patches 0003–0007 |
-| Dynamic-block evaluation graph (DXF write) | Writer no longer crashes (0002); DWG round trip clean |
-| VISUALSTYLE / MATERIAL | Read; **not written to DXF** (R2, R3). DWG round trip keeps them |
+| Dynamic-block evaluation graph (DXF write) | Writer no longer crashes (0002). The graph's parameters, grips, actions and grip-location components are **never loaded** (DWG and DXF), so a save drops them: 426 handles in 40 files (M1-33) |
+| VISUALSTYLE / MATERIAL | DXF: group codes kept on read and written back as read (0021, M1-28; the DXF reader assigns no VISUALSTYLE field and there is no field writer for either), with their extension dictionaries. DWG round trip keeps them. DWG → DXF still skips them with a notification |
+| Xdata 1070 integers (ASCII DXF write) | Negative values written signed (0022); were masked to 0–65535 |
 | ACDBASSOC* / ACDBPERSSUBENTMANAGER / SUN / view styles / AEC_* and every other unmapped type | Kept raw and written back under its handle (patches 0014, 0016; `readCadDocument` sets the keep flags): DXF → DXF as the group codes read, DWG → DWG of the same version as the object record read. All 1,329 unknown objects in the public corpus survive a save. **Not** converted across formats or versions: a DWG-read object saved to DXF, or to another DWG version, is skipped with a writer notification |
-| SUN (VPORT / VIEWPORT 361), 3DSOLID history (350) | Linked and written (0017). Pre-R2007 DWG solid history objects (`ACSH_*`, 6 in the corpus) are still not reached (M1-31) |
+| SUN (VPORT / VIEWPORT 361), 3DSOLID history (350) | Linked and written (0017). `ACSH_*` solid history objects are still not reached in DWG (every version) or DXF: 40 handles (M1-33) |
 | CLASSES with a shared DXF name (AEC) | Both kept under their read class numbers; class numbers survive a save (0015) |
 | DATATABLE / TABLECONTENT owned through an XRECORD | Read and kept (0018); TABLECONTENT is **not written to DXF** (writer gap, M1-31) |
-| DIMASSOC | Read; **not written to DXF** (M1-31) |
-| ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** |
+| DIMASSOC | Read; **not written to DXF** (47 handles, M1-31) |
+| ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** (98 handles in the R13/R14 binary DXFs, M1-31) |
 | TABLESTYLE / CELLSTYLEMAP, MLEADER, MTEXT columns, ACAD_TABLE, VIEWPORT entity | Lossy in DXF (R5, R12–R15) |
-| XRECORD, SORTENTSTABLE | Kept when owned by unknown objects (0014); sort order changes (R11, M1-29) |
+| XRECORD, SORTENTSTABLE | Kept when owned by unknown objects (0014); sort order changes (R11, M1-29). `SORTENTSTABLE` in DXF is never loaded (94 handles, M1-33); XRECORDs under skipped objects drop with them (1,368 at save, 240 never loaded; M1-31, M1-33) |
 | LAYOUT plot flags (DXF read), `$CELWEIGHT` (DWG header) | Fixed by patches 0019 and 0020 |
