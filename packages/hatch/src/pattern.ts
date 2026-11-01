@@ -26,13 +26,34 @@ export interface HatchInput {
   readonly style: number;
 }
 
+/**
+ * The lines one pattern definition line generates inside the boundary, with what the renderer
+ * needs to draw them as an average tint once they are under a pixel apart (LOD, ARCHITECTURE.md
+ * §7.2): their spacing and how much of each line is ink.
+ */
+export interface HatchFamily {
+  /** Dash segments, flat: x0, y0, x1, y1 per segment. */
+  readonly segments: readonly number[];
+  /** Dots, flat: x, y per dot. */
+  readonly dots: readonly number[];
+  /** The distance between neighbouring lines, drawing units. */
+  readonly spacing: number;
+  /** One repetition of the dash pattern; 0 for a continuous line. */
+  readonly period: number;
+  /** The dashes' total length in one repetition. */
+  readonly dashLength: number;
+  /**
+   * The dashes and dots in one repetition: each is drawn with round caps, so it inks a line
+   * width more than its length.
+   */
+  readonly marks: number;
+}
+
 export type HatchPattern =
   | {
       readonly kind: 'lines';
-      /** Dash segments, flat: x0, y0, x1, y1 per segment. */
-      readonly segments: readonly number[];
-      /** Dots, flat: x, y per dot. */
-      readonly dots: readonly number[];
+      /** One entry per definition line that draws anything inside the boundary. */
+      readonly families: readonly HatchFamily[];
     }
   | { readonly kind: 'too-dense'; readonly lines: number };
 
@@ -53,7 +74,7 @@ function hatched(style: number, k: number): boolean {
 
 export function hatchPattern(g: HatchInput, options: HatchPatternOptions = {}): HatchPattern {
   const maxLines = options.maxLines ?? HPMAXLINES;
-  const empty: HatchPattern = { kind: 'lines', segments: [], dots: [] };
+  const empty: HatchPattern = { kind: 'lines', families: [] };
   if (g.loops.length === 0 || g.patternLines.length === 0) return empty;
 
   // The boundary's extents give the tolerance below which a family has no spacing (the
@@ -83,12 +104,24 @@ export function hatchPattern(g: HatchInput, options: HatchPatternOptions = {}): 
   const lines = families.reduce((n, f) => n + (f ? f.last - f.first + 1 : 0), 0);
   if (lines > maxLines) return { kind: 'too-dense', lines };
 
-  const segments: number[] = [];
-  const dots: number[] = [];
+  const out: HatchFamily[] = [];
   families.forEach((f, i) => {
-    if (f) clip(f, g.patternLines[i]!, loops, g.style, segments, dots);
+    if (!f) return;
+    const pl = g.patternLines[i]!;
+    const segments: number[] = [];
+    const dots: number[] = [];
+    clip(f, pl, loops, g.style, segments, dots);
+    if (segments.length === 0 && dots.length === 0) return;
+    out.push({
+      segments,
+      dots,
+      spacing: f.spacing,
+      period: pl.dashes.reduce((s, d) => s + Math.abs(d), 0),
+      dashLength: pl.dashes.reduce((s, d) => s + Math.max(d, 0), 0),
+      marks: pl.dashes.filter((d) => d >= 0).length,
+    });
   });
-  return { kind: 'lines', segments, dots };
+  return { kind: 'lines', families: out };
 }
 
 interface Family {

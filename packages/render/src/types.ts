@@ -41,6 +41,48 @@ export const PATH_A = 2;
 export const PATH_E = 3;
 export const PATH_Z = 4;
 
+/** A 2D affine map: (x, y) → (a·x + c·y + e, b·x + d·y + f). */
+export interface PrimitiveFrame {
+  readonly a: number;
+  readonly b: number;
+  readonly c: number;
+  readonly d: number;
+  readonly e: number;
+  readonly f: number;
+}
+
+/** A gradient hatch's fill (M1-16 part 2): a two-colour ramp laid out in `frame`. */
+export interface FillGradient {
+  /** `linear` runs along x from 0 to 1 of the unit frame; `radial` from its origin to radius 1. */
+  readonly kind: 'linear' | 'radial';
+  /** Unit frame → world. */
+  readonly frame: PrimitiveFrame;
+  /** [offset along the ramp, weight of colour 2]. */
+  readonly stops: readonly (readonly [offset: number, mix: number])[];
+  readonly colors: readonly [PrimitiveColor, PrimitiveColor];
+  /**
+   * A one-colour gradient: colour 2 is colour 1 shaded toward black (below 0.5) or tinted
+   * toward white (above), resolved per frame because colour 1 may be the foreground.
+   */
+  readonly tint?: number;
+}
+
+/**
+ * One family of a pattern hatch's lines (M1-16 part 2), for the LOD that draws it as its area
+ * at its average ink once the lines are under a pixel apart.
+ */
+export interface HatchTint {
+  /** The hatch boundary as a fill path, and its fill rule. */
+  readonly area: readonly number[];
+  readonly evenOdd: boolean;
+  /** World units between neighbouring lines. */
+  readonly spacing: number;
+  /** One dash repetition (0: continuous), its dashes' total length, and its dashes and dots. */
+  readonly period: number;
+  readonly dashLength: number;
+  readonly marks: number;
+}
+
 export type RenderPrimitive =
   | {
       readonly kind: 'stroke' | 'fill';
@@ -57,6 +99,10 @@ export type RenderPrimitive =
        */
       readonly continuous?: readonly number[];
       readonly patternLength?: number;
+      /** A gradient `fill`: drawn with this ramp instead of `color`. */
+      readonly gradient?: FillGradient;
+      /** A pattern hatch family's `stroke`, with its sub-pixel tint. */
+      readonly hatch?: HatchTint;
     }
   /** XLINE (both directions) or RAY (one direction), clipped to the view when drawn. */
   | {
