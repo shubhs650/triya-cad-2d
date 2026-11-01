@@ -4,6 +4,7 @@ import {
   ACadVersion,
   BlockGripExpression,
   BlockRecord,
+  BookColor,
   CadDictionary,
   CadDocument,
   Color,
@@ -17,7 +18,11 @@ import {
   DimensionStyle,
   DxfClass,
   DxfClassCollection,
+  ExtendedDataDisplacement,
+  ExtendedDataHandle,
   ExtendedDataInteger16,
+  ExtendedDataLayer,
+  ExtendedDataString,
   Layer,
   Line,
   LineWeightType,
@@ -279,5 +284,109 @@ describe('acad-ts local patches', () => {
       .getCadObject(line.handle)!
       .extendedData.getByName('TRIYA_TEST');
     expect(back.records.map((r) => r.rawValue)).toEqual(values);
+  });
+
+  it('0024 Julian dates read back to the millisecond they were written', () => {
+    // The fraction of a day was floored field by field, so 3.000 s came back as 2.999 s.
+    for (const ms of [0, 1, 500, 999]) {
+      const doc = new CadDocument(ACadVersion.AC1032);
+      const created = new Date(2024, 4, 17, 13, 45, 3, ms);
+      doc.header!.createDateTime = created;
+
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+
+      expect(back.header!.createDateTime.getTime(), `ms ${ms}`).toBe(created.getTime());
+    }
+  });
+
+  it('0026 DXF writer writes xdata on dictionaries', () => {
+    // writeObject returned right after DICTIONARY (and DBCOLOR, IMAGEDEF, IMAGEDEF_REACTOR,
+    // ACDBPLACEHOLDER) bodies, before the xdata every other object gets.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const dict = new CadDictionary('TRIYA_TEST');
+    doc.rootDictionary!.addByKey('TRIYA_TEST', dict);
+    dict.extendedData.addByName('TRIYA_TEST', undefined);
+    dict.extendedData.getByName('TRIYA_TEST').records.push(new ExtendedDataString('kept'));
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const xdata = back.getCadObject(dict.handle)!.extendedData;
+      expect(xdata.containsKeyName('TRIYA_TEST'), `binary ${binary}`).toBe(true);
+      expect(xdata.getByName('TRIYA_TEST').records.map((r) => r.rawValue)).toEqual(['kept']);
+    }
+  });
+
+  it('0027 DXF writer writes DBCOLOR names as BOOK$COLOR once', () => {
+    // writeBookColor wrote `${name}$${bookName}`, and name already is BOOK$COLOR, so a read
+    // back took the trailing book name as the colour name.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const colors = new CadDictionary('ACAD_COLOR');
+    doc.rootDictionary!.addByKey('ACAD_COLOR', colors);
+    const color = new BookColor();
+    color.name = 'PANTONE+ Solid Coated$PANTONE 123 C';
+    color.color = Color.fromTrueColor(0xffc72c);
+    colors.addByKey(color.name, color);
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const read = back.getCadObject(color.handle) as BookColor;
+      expect(read.bookName, `binary ${binary}`).toBe('PANTONE+ Solid Coated');
+      expect(read.colorName, `binary ${binary}`).toBe('PANTONE 123 C');
+    }
+  });
+
+  it('0029 DXF writer writes xdata displacements, layer names and dangling handles as read', () => {
+    // 1012 went out as one group holding an XYZ, which broke the record and moved the next
+    // object's xdata onto the previous one; a 1003 layer went out as a 1005 handle; and a 1005
+    // to an object not in the drawing went out as 0. AutoCAD keeps 1005 values on save.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const layer = new Layer('APP_LAYER');
+    doc.layers!.add(layer);
+    const line = new Line(new XYZ(0, 0, 0), new XYZ(1, 0, 0));
+    doc.modelSpace!.entities.add(line);
+    line.extendedData.addByName('TRIYA_TEST', undefined);
+    line.extendedData
+      .getByName('TRIYA_TEST')
+      .records.push(
+        new ExtendedDataDisplacement(new XYZ(1, 2, 3)),
+        new ExtendedDataLayer(layer.handle),
+        new ExtendedDataHandle(0xfeed),
+      );
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const records = back.getCadObject(line.handle)!.extendedData.getByName('TRIYA_TEST').records;
+      expect(
+        records.map((r) => r.constructor.name),
+        `binary ${binary}`,
+      ).toEqual(['ExtendedDataDisplacement', 'ExtendedDataLayer', 'ExtendedDataHandle']);
+      const [disp, lay, handle] = records as [
+        ExtendedDataDisplacement,
+        ExtendedDataLayer,
+        ExtendedDataHandle,
+      ];
+      expect([disp.value.x, disp.value.y, disp.value.z]).toEqual([1, 2, 3]);
+      expect(back.getCadObject(lay.value)?.handle).toBe(layer.handle);
+      expect(handle.value).toBe(0xfeed);
+    }
+  });
+
+  it('0030 DXF writer writes xdata on symbol tables', () => {
+    // _writeTable wrote the table header without its xdata (AutoCAD puts ACAD DbSaveVer on the
+    // VPORT table).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    doc.vPorts!.extendedData.addByName('TRIYA_TEST', undefined);
+    doc.vPorts!.extendedData.getByName('TRIYA_TEST').records.push(new ExtendedDataString('kept'));
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const xdata = back.vPorts!.extendedData;
+      expect(xdata.containsKeyName('TRIYA_TEST'), `binary ${binary}`).toBe(true);
+      expect(xdata.getByName('TRIYA_TEST').records.map((r) => r.rawValue)).toEqual(['kept']);
+    }
   });
 });

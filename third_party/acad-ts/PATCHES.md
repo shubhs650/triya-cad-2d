@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30) and 0021–0022 (M1-28) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30) and 0021–0030 (M1-28) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -403,5 +403,141 @@ The DXF writer has no MATERIAL or VISUALSTYLE writer, so every DXF save drops th
 **Title:** Write negative xdata 1070 integers signed in ASCII DXF
 
 `DxfAsciiWriter.writeValue` keeps the sign for `Int16` group codes but masks `ExtendedDataInt16` (1070) to 16 bits, so `-1` is written as `65535`. AutoCAD writes and expects 1070 as a signed 16-bit integer. This applies the same signed path to 1070.
+
+</details>
+
+### 0023 — DXF writer writes RASTERVARIABLES display quality as its units
+
+- **File:** `third_party/acad-ts-patches/0023-dxf-rastervariables-units.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** `_writeRasterVariables` wrote `displayQuality` for both 71 and 72, so every DXF save replaced the image units (72) with the display quality: inches (5) came back as 1. Spike root R10, 30 files.
+- **Fix:** Write `units` for 72.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0023 DXF writer writes RASTERVARIABLES units (72), not the display quality twice" (`images.dxf`, units 5).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write RASTERVARIABLES units (72) instead of repeating the display quality
+
+`DxfObjectsSectionWriter._writeRasterVariables` writes `variables.displayQuality` for group 72, which is the image units. A save therefore changes the units of every raster image definition to the display-quality value. This writes `variables.units`.
+
+</details>
+
+### 0024 — Julian dates lose a millisecond on read
+
+- **File:** `third_party/acad-ts-patches/0024-julian-date-milliseconds.patch`
+- **Touches:** `src/CadUtils.ts`
+- **Symptom:** `fromJulianCalendar` floored hours, minutes, seconds and milliseconds one after the other from a day fraction that is never exact, so a date stored at `…:03.000` read back as `…:02.999`. Every save then moved `$TDCREATE`, `$TDUPDATE` and the other dates by a millisecond. Spike root R6, 42 files.
+- **Fix:** Round the day fraction to whole milliseconds once, then split it into fields.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0024 Julian dates read back to the millisecond they were written" (milliseconds 0, 1, 500 and 999 through a DXF save).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Round Julian dates to the millisecond before splitting them into fields
+
+`CadUtils.fromJulianCalendar` floors each time field from the remaining day fraction. The fraction of a stored Julian date is a binary double, so `3.000 s` is usually `2.9999999 s` and reads back as `2.999 s`; each read and save cycle drifts a date back by a millisecond. This rounds the fraction to whole milliseconds once and derives hours, minutes, seconds and milliseconds from that integer.
+
+</details>
+
+### 0025 — DXF BLOCK_RECORD loses its insert units and its preview
+
+- **File:** `third_party/acad-ts-patches/0025-dxf-block-record-units-and-preview.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:** In `AcDbBlockTableRecord`, group 70 is the insertion units, but the reader passed it to the common table-entry flags, so `units` stayed 0. Each 310 preview chunk replaced the previous one on read, and the writer wrote no 310 at all. A DXF save lost both. Spike root R8, 33 and 27 files; also the `BLOCK_RECORD 70` entry of the M1-32 oracle list.
+- **Fix:** Read 70 into `units` and append every 310 chunk to `preview`; write `preview` back in chunks of at most 127 bytes after 340, where AutoCAD writes it.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0025 DXF BLOCK_RECORD keeps its insert units (70) and its whole preview (310)" (`BLOCKALIGNMENTPARAMETER.dxf`, handle 250, against the group codes in the file).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write BLOCK_RECORD insert units (70) and the whole preview bitmap (310)
+
+The DXF tables reader treats group 70 of a BLOCK_RECORD as the table-entry flags, but in the `AcDbBlockTableRecord` subclass it is the insertion units (`INSUNITS` values). The reader also keeps only the last 310 chunk of the preview bitmap, and the writer writes no preview. This reads 70 into `BlockRecord.units`, concatenates all 310 chunks into `preview`, and writes the preview back in 127-byte chunks after group 340.
+
+</details>
+
+### 0026 — DXF writer drops xdata on dictionaries and five other object types
+
+- **File:** `third_party/acad-ts-patches/0026-dxf-xdata-on-dictionaries-and-colors.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** `writeObject` returned straight after the body of `DICTIONARY`, `DBCOLOR`, `IMAGEDEF`, `IMAGEDEF_REACTOR` and `ACDBPLACEHOLDER`, before `writeExtendedData`, so their xdata was lost on every DXF save (45 differences in 16 files for dictionaries, 8 in 8 for colour-book colours). Part of spike root R21.
+- **Fix:** Drop the early returns so these types reach the shared `writeExtendedData` call like every other object.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0026 DXF writer writes xdata on dictionaries" (ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write xdata on DICTIONARY, DBCOLOR, IMAGEDEF, IMAGEDEF_REACTOR and ACDBPLACEHOLDER
+
+`DxfObjectsSectionWriter.writeObject` returns early after these five object bodies, so it never reaches the `writeExtendedData` call at the end, and their xdata is dropped from every DXF file. None of the five writers emits xdata itself; this removes the early returns.
+
+</details>
+
+### 0027 — DXF writer doubles the book name of DBCOLOR objects
+
+- **File:** `third_party/acad-ts-patches/0027-dxf-dbcolor-name.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** `writeBookColor` wrote 430 as `${name}$${bookName}`, but `BookColor.name` already is `BOOK$COLOR`, so `RAL CLASSIC$RAL 1006` was written as `RAL CLASSIC$RAL 1006$RAL CLASSIC` and read back with the colour name `RAL CLASSIC`. Spike root R1 (the DBCOLOR part), 12 files.
+- **Fix:** Write `name` for 430.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0027 DXF writer writes DBCOLOR names as BOOK$COLOR once" (ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the DBCOLOR name (430) once as BOOK$COLOR
+
+`BookColor.name` returns `bookName$colorName`, and `writeBookColor` appends `$bookName` to it again, so the colour name read back is the book name. This writes `color.name` as is. Separately, `new BookColor(name, bookName)` loses its name because the class fields initialise after `super(name)`; that is not changed here.
+
+</details>
+
+### 0028 — DXF TABLESTYLE and CELLSTYLEMAP lose their cell styles on save
+
+- **File:** `third_party/acad-ts-patches/0028-dxf-table-style-cell-styles.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/IO/Templates/CadTableStyleTemplate.ts`
+- **Symptom:** A DXF TABLESTYLE lists its data, title and header cell styles without ids, so `CadTableStyleTemplate` (which assigns them by id) left `dataCellStyle`/`titleCellStyle`/`headerCellStyle` at their defaults and the writer wrote those defaults. The reader also took the 284–289 border visibility flags (1 = visible) as `isInvisible`, and the writer wrote 62 and 91 from other fields (`contentColor`, `valueDataType`) than the reader fills (`color`, `styleClass`). In CELLSTYLEMAP the writer wrote no MARGIN or GRIDFORMAT blocks, and the reader read each GRIDFORMAT into a border object it then dropped, along with its 90/91/40. Spike root R5: 2,790 differences in 62 files. It is also the `TABLESTYLE` 284–289 entry of the M1-32 oracle list.
+- **Fix:** Assign id-less cell styles by position (data, title, header). Read 284–289 as visibility. Write 62 from `color` and 91 from `styleClass`. Keep each GRIDFORMAT border on its style by edge flag, reading 90/91/40 too. Write the MARGIN block and the six GRIDFORMAT blocks in the order AutoCAD writes them.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0028 DXF TABLESTYLE and CELLSTYLEMAP keep their cell styles through a save" (`BLOCKALIGNMENTPARAMETER.dxf`: values checked against the file, then compared after ASCII and binary saves).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Round-trip TABLESTYLE and CELLSTYLEMAP cell styles in DXF
+
+Several DXF table-style defects compound so that a save resets every table style to defaults. The DXF TABLESTYLE body repeats its cell-style groups for data, title and header without ids, but the template assigns them by id, so the three named styles stay at their defaults, and those defaults are what the writer writes. Group codes 284–289 are visibility flags (1 = visible) but are read as `isInvisible`. The writer writes 62 and 91 from `contentColor` and `valueDataType`, while the reader fills `color` and `styleClass`. In CELLSTYLEMAP, the writer omits the MARGIN and GRIDFORMAT blocks, and the reader reads each GRIDFORMAT into a fresh `CellBorder` that it never stores. This patch fixes each of these, so a read-write-read cycle is lossless on AutoCAD-written files.
+
+</details>
+
+### 0029 — DXF writer corrupts xdata displacements and layer names, and zeroes dangling handles
+
+- **File:** `third_party/acad-ts-patches/0029-dxf-xdata-vectors-layers-handles.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** `writeExtendedData` wrote a 1012 displacement as a single group holding an `XYZ`. That broke the record, and the next object's xdata ended up on the previous one: in every `acadsharp/sample_*` DXF, the TEXT after the `DISP_APP` one gained a record. A 1003 layer reference went out as a 1005 handle, and a 1005 naming no object in the drawing went out as 0. Spike root R21 (TEXT xdata): 30 differences in 14 files. It also explains the TEXT the writer drops at handle 917 (M1-31).
+- **Fix:** Write 1012 with `writeVector`. Write 1003 as the layer name. Write 1005 values as read, which is what AutoCAD's save does.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0029 DXF writer writes xdata displacements, layer names and dangling handles as read" (ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Fix DXF xdata writing of 1012 displacements, 1003 layer names and unresolved 1005 handles
+
+`DxfSectionWriterBase.writeExtendedData` passes the `XYZ` of an `ExtendedDataDisplacement` to `write` instead of `writeVector`, which produces a malformed record. It also writes `ExtendedDataLayer` through the generic handle-reference branch, so 1003 layer names become 1005 handles. And it replaces any 1005 handle that does not resolve in the document with 0, although AutoCAD keeps such values on save. This writes displacements as vectors and layer references as their layer name, and keeps 1005 values unchanged.
+
+</details>
+
+### 0030 — DXF writer drops xdata on symbol tables
+
+- **File:** `third_party/acad-ts-patches/0030-dxf-symbol-table-xdata.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:** `_writeTable` wrote the TABLE header without its xdata, so the `ACAD` `DbSaveVer` record AutoCAD puts on the VPORT table was lost. The rest of spike root R21 (VPORT xdata): 11 files.
+- **Fix:** Write the table's xdata after its header groups, where AutoCAD writes it.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0030 DXF writer writes xdata on symbol tables" (ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write xdata on DXF symbol table headers
+
+`DxfTablesSectionWriter._writeTable` writes a table's common data, its `AcDbSymbolTable` count and subclass, but not its xdata, although the reader reads it. AutoCAD writes `1001 ACAD / 1000 DbSaveVer` on the VPORT table, and that record was lost on every save. This writes `table.extendedData` after the header groups.
 
 </details>

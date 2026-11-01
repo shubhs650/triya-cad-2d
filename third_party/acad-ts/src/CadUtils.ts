@@ -259,13 +259,13 @@ export class CadUtils {
 		const years = months > 2 ? b - 4716 : b - 4715;
 		const days = a - c - Math.floor(30.6001 * d);
 
-		const hours = Math.floor(fraction * 24);
-		fraction -= hours / 24.0;
-		const minutes = Math.floor(fraction * 1440);
-		fraction -= minutes / 1440.0;
-		const decimalSeconds = fraction * 86400;
-		const seconds = Math.floor(decimalSeconds);
-		const milliseconds = Math.floor((decimalSeconds - seconds) * 1000);
+		// Round to the millisecond first: flooring each field turned 3.000 s into 2.999 s,
+		// because the day fraction of a stored Julian date is never exact.
+		const totalMs = Math.round(fraction * 86400000);
+		const hours = Math.floor(totalMs / 3600000);
+		const minutes = Math.floor((totalMs % 3600000) / 60000);
+		const seconds = Math.floor((totalMs % 60000) / 1000);
+		const milliseconds = totalMs % 1000;
 
 		return new Date(years, months - 1, days, hours, minutes, seconds, milliseconds);
 	}

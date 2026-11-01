@@ -83,7 +83,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     this._writer.write(62, color.color.getApproxIndex());
     this._writer.writeTrueColor(420, color.color);
-    this._writer.write(430, `${color.name}$${color.bookName}`);
+    this._writer.write(430, color.name);
   }
 
   protected writeDictionary(dict: CadDictionary): void {
@@ -436,17 +436,14 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 
     if (co instanceof AcdbPlaceHolder) {
       this._writeAcdbPlaceHolder(co);
-      return;
     } else if (co instanceof BlockReferenceObjectContextData) {
       this._writeBlockReferenceObjectContextData(co);
     } else if (co instanceof MTextAttributeObjectContextData) {
       this._writeMTextAttributeObjectContextData(co);
     } else if (co instanceof BookColor) {
       this.writeBookColor(co);
-      return;
     } else if (co instanceof CadDictionary) {
       this.writeDictionary(co);
-      return;
     } else if (co instanceof DictionaryVariable) {
       this.writeDictionaryVariable(co);
     } else if (co instanceof DimensionAssociation) {
@@ -457,10 +454,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this.writeGroup(co);
     } else if (co instanceof ImageDefinition) {
       this.writeImageDefinition(co);
-      return;
     } else if (co instanceof ImageDefinitionReactor) {
       this._writeImageDefinitionReactor(co);
-      return;
     } else if (co instanceof Layout) {
       this.writeLayout(co);
     } else if (co instanceof Field) {
@@ -629,7 +624,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(90, variables.classVersion, map);
     this._writer.write(70, variables.isDisplayFrameShown ? 1 : 0, map);
     this._writer.write(71, variables.displayQuality, map);
-    this._writer.write(72, variables.displayQuality, map);
+    this._writer.write(72, variables.units, map);
   }
 
 	private _writeWipeoutVariables(variables: WipeoutVariables): void {
@@ -781,6 +776,29 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this._writer.write(144, style.scale);
       this._writer.write(309, 'CONTENTFORMAT_END');
       this._writer.write(171, style.marginOverrideFlags);
+      this._writer.write(301, 'MARGIN');
+      this._writer.write(1, 'CELLMARGIN_BEGIN');
+      for (const margin of [style.verticalMargin, style.horizontalMargin, style.bottomMargin, style.rightMargin,
+        style.marginHorizontalSpacing, style.marginVerticalSpacing]) {
+        this._writer.write(40, margin);
+      }
+      this._writer.write(309, 'CELLMARGIN_END');
+      const borders = [style.topBorder, style.rightBorder, style.bottomBorder, style.leftBorder,
+        style.verticalInsideBorder, style.horizontalInsideBorder];
+      this._writer.write(94, borders.length);
+      for (const border of borders) {
+        this._writer.write(95, border.edgeFlags);
+        this._writer.write(302, 'GRIDFORMAT');
+        this._writer.write(1, 'GRIDFORMAT_BEGIN');
+        this._writer.write(90, border.type);
+        this._writer.write(91, border.propertyOverrideFlags);
+        this._writer.write(62, border.color.index);
+        this._writer.write(92, border.lineWeight);
+        this._writer.writeHandle(340, border.lineType);
+        this._writer.write(93, border.isInvisible ? 1 : 0);
+        this._writer.write(40, border.doubleLineSpacing);
+        this._writer.write(309, 'GRIDFORMAT_END');
+      }
       this._writer.write(309, 'TABLEFORMAT_END');
       this._writer.write(1, 'CELLSTYLE_BEGIN');
       this._writer.write(90, style.id);
@@ -812,11 +830,11 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 		}
 		this._writer.write(140, cellStyle.textHeight);
 		this._writer.write(170, cellStyle.cellAlignment);
-		this._writer.write(62, cellStyle.contentColor.getApproxIndex());
+		this._writer.write(62, cellStyle.color.getApproxIndex());
 		this._writer.write(63, cellStyle.backgroundColor.getApproxIndex());
 		this._writer.write(283, cellStyle.isFillColorOn ? 1 : 0);
 		this._writer.write(90, cellStyle.cellStyleType);
-		this._writer.write(91, cellStyle.valueDataType);
+		this._writer.write(91, cellStyle.styleClass);
 		this._writeCellStyleBorder(cellStyle.topBorder, 0);
 		this._writeCellStyleBorder(cellStyle.horizontalInsideBorder, 1);
 		this._writeCellStyleBorder(cellStyle.bottomBorder, 2);
