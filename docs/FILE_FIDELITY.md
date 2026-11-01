@@ -126,13 +126,18 @@ The columns above track Triya. This section tracks the library underneath, from 
 | 2004–2013 (AC1018–AC1027) | 4 / 46 / 4 | all | 0 | R15 table content, R11 sort order, DXF writer gaps |
 | 2018 (AC1032) | 14 / 26 / 1 | all but `recover02.dxf` (malformed) | 11 (DWG) | DXF writer gaps |
 
-| Type | acad-ts status after M0-06 |
+| Type | acad-ts status after M0-06 and M1-30 |
 |---|---|
 | VPORT, LAYER, LAYOUT (DXF write) | Fixed by patches 0008, 0009, 0010 |
 | Header flag word, true colours, template page, layout limits, block previews (DWG) | Fixed by patches 0003–0007 |
 | Dynamic-block evaluation graph (DXF write) | Writer no longer crashes (0002); DWG round trip clean |
 | VISUALSTYLE / MATERIAL | Read; **not written to DXF** (R2, R3). DWG round trip keeps them |
-| ACDBASSOC* / ACDBPERSSUBENTMANAGER / SUN / view styles / AEC_* | **Not retained**: read as unknown and dropped on save (R9, M1-30). The "P" above is the target, not today's state |
+| ACDBASSOC* / ACDBPERSSUBENTMANAGER / SUN / view styles / AEC_* and every other unmapped type | Kept raw and written back under its handle (patches 0014, 0016; `readCadDocument` sets the keep flags): DXF → DXF as the group codes read, DWG → DWG of the same version as the object record read. All 1,329 unknown objects in the public corpus survive a save. **Not** converted across formats or versions: a DWG-read object saved to DXF, or to another DWG version, is skipped with a writer notification |
+| SUN (VPORT / VIEWPORT 361), 3DSOLID history (350) | Linked and written (0017). Pre-R2007 DWG solid history objects (`ACSH_*`, 6 in the corpus) are still not reached (M1-31) |
+| CLASSES with a shared DXF name (AEC) | Both kept under their read class numbers; class numbers survive a save (0015) |
+| DATATABLE / TABLECONTENT owned through an XRECORD | Read and kept (0018); TABLECONTENT is **not written to DXF** (writer gap, M1-31) |
+| DIMASSOC | Read; **not written to DXF** (M1-31) |
 | ACAD_PROXY_OBJECT | Kept on read; **skipped by the DXF writer** |
 | TABLESTYLE / CELLSTYLEMAP, MLEADER, MTEXT columns, ACAD_TABLE, VIEWPORT entity | Lossy in DXF (R5, R12–R15) |
-| XRECORD, SORTENTSTABLE | Lost when owned by unknown objects (R7); sort order changes (R11) |
+| XRECORD, SORTENTSTABLE | Kept when owned by unknown objects (0014); sort order changes (R11, M1-29) |
+| LAYOUT plot flags (DXF read), `$CELWEIGHT` (DWG header) | Fixed by patches 0019 and 0020 |
