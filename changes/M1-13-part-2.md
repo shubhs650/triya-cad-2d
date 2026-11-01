@@ -1,1 +1,1 @@
-- M1-13 part 2 (#PR): draw order. `mapSortEnts` in `@triya/io` reads each block's SORTENTSTABLE into a new engine `SortEntsTable` object, and `drawOrder` in `@triya/render` sorts a block by sort handle as AutoCAD does, so a hatch sent to the back draws behind its boundary.
+- M1-13 part 2 (#51): draw order. `mapSortEnts` in `@triya/io` reads each block's SORTENTSTABLE into a new engine `SortEntsTable` object, and `drawOrder` in `@triya/render` sorts a block by sort handle as AutoCAD does, so a hatch sent to the back draws behind its boundary.
