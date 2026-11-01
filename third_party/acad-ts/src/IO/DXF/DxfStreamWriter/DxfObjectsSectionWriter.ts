@@ -610,7 +610,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(76, plot.shadePlotMode, map);
     this._writer.write(77, plot.shadePlotResolutionMode, map);
     this._writer.write(78, plot.shadePlotDPI, map);
-    this._writer.write(147, plot.printScale, map);
+    this._writer.write(147, plot.standardScale, map);
 
     this._writer.write(148, plot.paperImageOrigin.x, map);
     this._writer.write(149, plot.paperImageOrigin.y, map);

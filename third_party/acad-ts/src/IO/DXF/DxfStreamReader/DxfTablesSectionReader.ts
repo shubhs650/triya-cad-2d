@@ -648,6 +648,10 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
           template.segmentTemplates.push(this._readLineTypeSegment());
         } while (this._reader.code === 49);
         return true;
+      case 72:
+        // The character code of the alignment: 65 for "A", the only value AutoCAD uses.
+        template.cadObject.alignment = String.fromCharCode(this._reader.valueAsShort);
+        return true;
       case 73:
         return true;
       default:
