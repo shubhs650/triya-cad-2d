@@ -10,3 +10,4 @@ export { handleIoRequest } from './worker/protocol';
 export type { IoRequest, IoResponse, ReadRequest } from './worker/protocol';
 export { mapHeader, type MappedHeader } from './map/header';
 export { mapTables, type MappedTables } from './map/tables';
+export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/entities';
