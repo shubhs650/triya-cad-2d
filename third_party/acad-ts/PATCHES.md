@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0058 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28) and 0031–0060 (M1-29) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1145,5 +1145,47 @@ With `writeAllHeaderVariables`, char-typed header variables that the drawing nev
 **Title:** Write the MLEADERSTYLE 298 flag as read
 
 The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discarding the value read. This writes `unknownFlag298`, as the DWG writer already does.
+
+</details>
+
+### 0059 — DWG writer drops XRECORD entries that point at nothing
+
+- **File:** `third_party/acad-ts-patches/0059-dwg-xrecord-null-references.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - An XRECORD may hold an object reference (330–369) whose handle is 0, a null pointer. The reader keeps the entry.
+  - The writer skipped such entries, so the record came back shorter.
+  - Corpus: 4 differences (`XRECORD _entries.length`) in acadsharp `sample_AC1014.dwg`.
+- **Fix:** write the entry with handle 0, as AutoCAD does.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0059 DWG writer keeps the null object references of XRECORD entries".
+  - Every XRECORD of the R14 sample must keep its entry codes through a save. XRECORD 118C is checked for its single 340 entry.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep null object references in DWG XRECORD entries
+
+`_writeXRecord` skipped object-reference entries whose handle is 0, so an XRECORD that holds a null pointer lost that entry on save and its entry count changed. This writes the entry with handle 0.
+
+</details>
+
+### 0060 — DWG writer never writes the default entry of a dictionary with default
+
+- **File:** `third_party/acad-ts-patches/0060-dwg-dictionary-default-entry.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:**
+  - `ACDBDICTIONARYWDFLT` writes the handle of its default entry. In R14 files that entry (an `ACDBPLACEHOLDER`) is owned by nothing else, so no other path writes the object.
+  - The handle then pointed at nothing, and the default read back as null.
+  - Corpus: 1 difference (`ACDBDICTIONARYWDFLT defaultEntry`) in acadsharp `sample_AC1014.dwg`.
+- **Fix:** queue the default entry for writing. The queue skips objects that are already written.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0060 DWG writer writes the default entry of a dictionary with default".
+  - Every dictionary with default of the R14 and R2000–R2018 samples keeps its default entry through a save. Dictionary E of the R14 sample is checked for default F.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the default entry object of a DWG dictionary with default
+
+`_writeCadDictionaryWithDefault` writes the default entry's handle but never queues the object. When nothing else owns it (the R14 `ACDBPLACEHOLDER`), the saved file points at a missing object. This queues it like other owned objects.
 
 </details>

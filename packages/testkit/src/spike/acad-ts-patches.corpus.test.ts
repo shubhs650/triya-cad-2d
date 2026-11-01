@@ -16,6 +16,7 @@ import {
   AttributeDefinition,
   BlockEnd,
   BookColor,
+  CadDictionaryWithDefault,
   DimensionArc,
   DwgReader,
   DwgReaderConfiguration,
@@ -48,6 +49,7 @@ import {
   UnknownNonGraphicalObject,
   Viewport,
   VisualStyle,
+  XRecord,
   XY,
   type CadDocument,
   type CadObject,
@@ -1305,5 +1307,35 @@ describe('acad-ts local patches (corpus-backed)', () => {
     for (const binary of [false, true]) {
       expect(flags(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toEqual(flags(doc));
     }
+  });
+
+  it('0059 DWG writer keeps the null object references of XRECORD entries', () => {
+    // An XRECORD may hold a 340 entry that points at nothing (handle 0). The writer skipped
+    // those entries, so the record came back shorter.
+    const records = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is XRecord => o instanceof XRecord)
+        .map((x) => [handleHex(x), [...x.entries].map((e) => e.code)]);
+    const doc = readDwgRaw('third-party/acadsharp/sample_AC1014.dwg');
+    expect(records(doc)).toContainEqual(['118C', [340]]);
+    expect(records(dwgRawRoundTrip(doc))).toEqual(records(doc));
+  });
+
+  it('0060 DWG writer writes the default entry of a dictionary with default', () => {
+    // The default entry (an ACDBPLACEHOLDER in R14 files) may be owned by nothing else; the
+    // writer wrote its handle but never the object, so it read back as null.
+    const defaults = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is CadDictionaryWithDefault => o instanceof CadDictionaryWithDefault)
+        .map((x) => [handleHex(x), handleHex(x.defaultEntry)]);
+    for (const file of ['third-party/acadsharp/sample_AC1014.dwg', ...dwgSamples]) {
+      const doc = readDwgRaw(file);
+      expect(defaults(doc).length, file).toBeGreaterThan(0);
+      expect(defaults(dwgRawRoundTrip(doc)), file).toEqual(defaults(doc));
+    }
+    expect(defaults(readDwgRaw('third-party/acadsharp/sample_AC1014.dwg'))).toContainEqual([
+      'E',
+      'F',
+    ]);
   });
 });

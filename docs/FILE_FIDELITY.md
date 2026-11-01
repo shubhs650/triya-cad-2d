@@ -178,3 +178,5 @@ The columns above track Triya. This section tracks the library underneath, from 
 | IMAGEDEF default pixel size (DXF write) | Written (0056); reset to 1 × 1 |
 | VIEW visual style (DXF write) | Written (0057); was dropped |
 | MLEADERSTYLE 298 flag (DXF write) | Written as read (0058); was always false |
+| XRECORD null object references (DWG write) | Written as handle 0 (0059); the entry was dropped |
+| ACDBDICTIONARYWDFLT default entry (DWG write) | Object written (0060); an R14 placeholder owned only through it was lost |
