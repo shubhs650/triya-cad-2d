@@ -39,7 +39,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 ### Text
 - [x] (#30) **M1-08** SHX parser + stroke interpreter (shapes, unifont; bigfont minimal), glyph cache; user font store in OPFS with "Add fonts" drop. **Acceptance:** renders all glyphs of a user-dropped `romans.shx` identically to the reference (owner-provided reference PNG, private corpus) and the bundled fonts in CI. *Done (#30):* `parseShx` reads shapes 1.0/1.1, unifont and bigfont (minimal) files; the stroke interpreter covers codes 0–14 with exact arcs (bulges) and exact advances; glyphs are cached per font and character; tested on self-authored SHX files. The OPFS store, the "Add fonts" drop and the reference-render check moved to M1-37.
 - [ ] **M1-09** Bundled open stroke fonts: convert Hershey + LibreCAD `.lff` to Triya font JSON; name map for common SHX names; attribution. **Acceptance:** text in corpus files with missing SHX renders with bundled fallback and the health panel lists the substitution.
-- [ ] **M1-10** TTF pipeline via `opentype.js`: glyph paths, exact advance widths, style flags; system-font fallback in browser. **Acceptance:** width tests vs `opentype.js` reference.
+- [~] (thread: Build M1-10 TrueType font pipeline) **M1-10** TTF pipeline via `opentype.js`: glyph paths, exact advance widths, style flags; system-font fallback in browser. **Acceptance:** width tests vs `opentype.js` reference.
 - [ ] **M1-11** MTEXT formatting engine (full code set, columns, fields, `%%`, background mask), line breaking, justification. **Acceptance:** corpus MTEXT files render within tolerance; unit tests per code.
 
 ### Rendering
