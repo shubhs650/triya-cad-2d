@@ -17,6 +17,7 @@ import {
   DimensionStyle,
   DxfClass,
   DxfClassCollection,
+  ExtendedDataInteger16,
   Layer,
   Line,
   LineWeightType,
@@ -25,6 +26,7 @@ import {
   XYZ,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
+import { readCadDocument, writeCadDocument } from '../src/index';
 
 function writeDxf(doc: CadDocument, config: DxfWriterConfiguration): Uint8Array {
   const chunks: Uint8Array[] = [];
@@ -249,5 +251,33 @@ describe('acad-ts local patches', () => {
     doc.header!.currentEntityLineWeight = LineWeightType.W50;
 
     expect(dwgRoundTrip(doc).header!.currentEntityLineWeight).toBe(LineWeightType.W50);
+  });
+
+  it('0022 ASCII DXF writer keeps the sign of xdata 1070 integers', () => {
+    // Unpatched, 1070 was written masked to 16 bits, so -1 came back as 65535 (AutoCAD writes
+    // and reads 1070 as a signed 16-bit integer). Binary DXF stored the bits and was unaffected.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const line = new Line(new XYZ(0, 0, 0), new XYZ(1, 1, 0));
+    doc.entities!.add(line);
+    line.extendedData.addByName('TRIYA_TEST', undefined);
+    const values = [-1, -32768, 0, 32767];
+    line.extendedData
+      .getByName('TRIYA_TEST')
+      .records.push(...values.map((v) => new ExtendedDataInteger16(v)));
+
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+
+    // ASCII DXF of an in-memory drawing is plain ASCII.
+    const lines = Array.from(bytes, (b) => String.fromCharCode(b))
+      .join('')
+      .split(/\r?\n/);
+    const written = lines.flatMap((l: string, i: number) =>
+      i % 2 === 0 && l.trim() === '1070' ? [lines[i + 1]!.trim()] : [],
+    );
+    expect(written).toEqual(values.map(String));
+    const back = readCadDocument(bytes)
+      .getCadObject(line.handle)!
+      .extendedData.getByName('TRIYA_TEST');
+    expect(back.records.map((r) => r.rawValue)).toEqual(values);
   });
 });

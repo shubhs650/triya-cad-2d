@@ -8,4 +8,9 @@ export abstract class CadReaderConfiguration {
 	keepUnknownEntities: boolean = false;
 	/** Same as `keepUnknownEntities`, for non-graphical objects (`UnknownNonGraphicalObject`). */
 	keepUnknownNonGraphicalObjects: boolean = false;
+	/**
+	 * Keep the DXF group codes of objects the DXF writer cannot write from their fields
+	 * (`MATERIAL`, `VISUALSTYLE`), so that a DXF save writes them back as read instead of dropping them.
+	 */
+	keepRawDxfPassthroughObjects: boolean = false;
 }

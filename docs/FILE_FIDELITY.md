@@ -133,7 +133,8 @@ The columns above track Triya. This section tracks the library underneath, from 
 | VPORT, LAYER, LAYOUT (DXF write) | Fixed by patches 0008, 0009, 0010 |
 | Header flag word, true colours, template page, layout limits, block previews (DWG) | Fixed by patches 0003–0007 |
 | Dynamic-block evaluation graph (DXF write) | Writer no longer crashes (0002). The graph's parameters, grips, actions and grip-location components are **never loaded** (DWG and DXF), so a save drops them: 426 handles in 40 files (M1-33) |
-| VISUALSTYLE / MATERIAL | Read; **not written to DXF** (R2, R3; 1,493 + 345 handles, M1-28/M1-31). DWG round trip keeps them |
+| VISUALSTYLE / MATERIAL | DXF: group codes kept on read and written back as read (0021, M1-28; the DXF reader assigns no VISUALSTYLE field and there is no field writer for either), with their extension dictionaries. DWG round trip keeps them. DWG → DXF still skips them with a notification |
+| Xdata 1070 integers (ASCII DXF write) | Negative values written signed (0022); were masked to 0–65535 |
 | ACDBASSOC* / ACDBPERSSUBENTMANAGER / SUN / view styles / AEC_* and every other unmapped type | Kept raw and written back under its handle (patches 0014, 0016; `readCadDocument` sets the keep flags): DXF → DXF as the group codes read, DWG → DWG of the same version as the object record read. All 1,329 unknown objects in the public corpus survive a save. **Not** converted across formats or versions: a DWG-read object saved to DXF, or to another DWG version, is skipped with a writer notification |
 | SUN (VPORT / VIEWPORT 361), 3DSOLID history (350) | Linked and written (0017). `ACSH_*` solid history objects are still not reached in DWG (every version) or DXF: 40 handles (M1-33) |
 | CLASSES with a shared DXF name (AEC) | Both kept under their read class numbers; class numbers survive a save (0015) |

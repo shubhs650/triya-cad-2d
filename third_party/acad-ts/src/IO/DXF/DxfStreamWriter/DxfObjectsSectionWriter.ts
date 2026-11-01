@@ -415,6 +415,12 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       return;
     }
 
+    // No field writer exists for these; write the group codes the reader kept.
+    if ((co instanceof Material || co instanceof VisualStyle) && co.rawDxfCodes != null) {
+      this.writeRawObject(co);
+      return;
+    }
+
     if (co instanceof XRecord && !this.configuration.writeXRecords) {
       return;
     }
@@ -694,6 +700,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
         this.notify(`Unknown object ${co.objectName} was read from a DWG file and cannot be written to DXF: ${co.handle}`, NotificationType.NotImplemented);
       }
       return co.rawDxfCodes != null;
+    }
+    if ((co instanceof Material || co instanceof VisualStyle) && co.rawDxfCodes != null) {
+      return true;
     }
 	if (!this.configuration.writeDynamicBlockData && (
 		co instanceof EvaluationGraph ||

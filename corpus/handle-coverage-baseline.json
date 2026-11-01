@@ -23,11 +23,7 @@
       "lost": {
         "BLOCKALIGNMENTGRIP": "25F",
         "BLOCKALIGNMENTPARAMETER": "25D",
-        "BLOCKGRIPLOCATIONCOMPONENT": "260 261",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKGRIPLOCATIONCOMPONENT": "260 261"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKBASEPOINTPARAMETER.dwg": {
@@ -39,11 +35,7 @@
     "public/third-party/acadsharp/dynamic-blocks/BLOCKBASEPOINTPARAMETER.dxf": {
       "declared": 160,
       "lost": {
-        "BLOCKBASEPOINTPARAMETER": "253",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKBASEPOINTPARAMETER": "253"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dwg": {
@@ -61,11 +53,7 @@
         "BLOCKFLIPACTION": "26D",
         "BLOCKFLIPGRIP": "262",
         "BLOCKFLIPPARAMETER": "25E",
-        "BLOCKGRIPLOCATIONCOMPONENT": "263 264 265",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKGRIPLOCATIONCOMPONENT": "263 264 265"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKLINEARPARAMETER.dwg": {
@@ -83,11 +71,7 @@
         "BLOCKGRIPLOCATIONCOMPONENT": "261 262 266 267",
         "BLOCKLINEARGRIP": "260 265",
         "BLOCKLINEARPARAMETER": "25D",
-        "BLOCKSCALEACTION": "26C",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKSCALEACTION": "26C"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKLOOKUPPARAMETER.dwg": {
@@ -117,11 +101,7 @@
         "BLOCKMOVEACTION": "60F",
         "BLOCKPOINTPARAMETER": "60B",
         "BLOCKSTRETCHACTION": "602",
-        "BLOCKXYGRIP": "60C",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKXYGRIP": "60C"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKPOINTPARAMETER.dwg": {
@@ -139,11 +119,7 @@
         "BLOCKGRIPLOCATIONCOMPONENT": "260 261",
         "BLOCKMOVEACTION": "267",
         "BLOCKPOINTPARAMETER": "25C",
-        "BLOCKXYGRIP": "25F",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKXYGRIP": "25F"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKPOLARPARAMETER.dwg": {
@@ -161,11 +137,7 @@
         "BLOCKGRIPLOCATIONCOMPONENT": "261 262 266 267",
         "BLOCKPOLARGRIP": "260 265",
         "BLOCKPOLARPARAMETER": "25D",
-        "BLOCKPOLARSTRETCHACTION": "26E",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKPOLARSTRETCHACTION": "26E"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKROTATIONPARAMETER.dwg": {
@@ -183,11 +155,7 @@
         "BLOCKGRIPLOCATIONCOMPONENT": "26B 26C",
         "BLOCKROTATEACTION": "273",
         "BLOCKROTATIONGRIP": "26A",
-        "BLOCKROTATIONPARAMETER": "25E",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKROTATIONPARAMETER": "25E"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKVISIBILITYPARAMETER.dwg": {
@@ -203,11 +171,7 @@
       "lost": {
         "BLOCKGRIPLOCATIONCOMPONENT": "33D 33E",
         "BLOCKVISIBILITYGRIP": "33C",
-        "BLOCKVISIBILITYPARAMETER": "33B",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKVISIBILITYPARAMETER": "33B"
       }
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKXYPARAMETER.dwg": {
@@ -225,21 +189,12 @@
         "BLOCKARRAYACTION": "28F",
         "BLOCKGRIPLOCATIONCOMPONENT": "284 285 287 288 28A 28B 28D 28E",
         "BLOCKXYGRIP": "283 286 289 28C",
-        "BLOCKXYPARAMETER": "282",
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "BLOCKXYPARAMETER": "282"
       }
     },
     "public/third-party/acadsharp/geolocation/geoloc_AC1021.dxf": {
       "declared": 215,
-      "lost": {
-        "DICTIONARY": "110 186 188 252 254 256 258 25A 25C 25E 260 262 264 266 268 26A 26C 26E 270 272 274 276 278 27A 27C 27E 280",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A 253 255 257 259 25B 25D 25F 261 263 265 267 269 26B 26D 26F 271 273 275 277 279 27B 27D 27F 281"
-      }
+      "lost": {}
     },
     "public/third-party/acadsharp/geolocation/geoloc.dwg": {
       "declared": 150,
@@ -247,12 +202,7 @@
     },
     "public/third-party/acadsharp/geolocation/geoloc.dxf": {
       "declared": 152,
-      "lost": {
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
-      }
+      "lost": {}
     },
     "public/third-party/acadsharp/sample_AC1009_ascii.dxf": {
       "declared": 3899,
@@ -298,16 +248,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 75A 760 ABE ABF AC3 AC9 ACA ACE DAB DB7 DC1 DCB DD5 DDF DE9 DF3 148B 1493 149E 14B8 14BA 14BC 14BE 14C0 14C2 14C4 14C6 14C8 14CA 14CC 14CE 14D0 14D2 14D4 14D6 14D8 14DA 14DC 14DE 14E0 14E2 14E4 14E6",
+        "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 148B 1493 149E",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 149C",
         "TABLEGEOMETRY": "748 149D",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A AC0 AC1 AC2 AC4 ACB ACC ACD ACF DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 148C 1494 1495 149F 14B5 14B6 14B7 14B9 14BB 14BD 14BF 14C1 14C3 14C5 14C7 14C9 14CB 14CD 14CF 14D1 14D3 14D5 14D7 14D9 14DB 14DD 14DF 14E1 14E3 14E5 14E7 1503 1504 1505 1506 1507 1508 1509 150A 150B 150C 150D 150E 150F 1510 1511 1512 1513 1514 1515 1516 1517 1525 1526 1527 1528 1529 152A 152B 152C 152D 152E 152F 1530 1531 1532 1533 1534 1535 1536 1537 1538 1545 1546 1547 1548 1549 154A 154B 154C"
+        "XRECORD": "AC0 AC1 AC2 AC4 ACB ACC ACD ACF 148C 1494 1495 149F 1503 1504 1505 1506 1507 1508 1509 150A 150B 150C 150D 150E 150F 1510 1511 1512 1513 1514 1515 1516 1517 1525 1526 1527 1528 1529 152A 152B 152C 152D 152E 152F 1530 1531 1532 1533 1534 1535 1536 1537 1538"
       }
     },
     "public/third-party/acadsharp/sample_AC1015_binary.dxf": {
@@ -322,16 +270,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 75A 760 ABE ABF AC3 AC9 ACA ACE DAB DB7 DC1 DCB DD5 DDF DE9 DF3 249B 24A3 24AE 24C8 24CA 24CC 24CE 24D0 24D2 24D4 24D6 24D8 24DA 24DC 24DE 24E0 24E2 24E4 24E6 24E8 24EA 24EC 24EE 24F0 24F2 24F4 24F6",
+        "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 249B 24A3 24AE",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "2499 24AC",
         "TABLEGEOMETRY": "249A 24AD",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A AC0 AC1 AC2 AC4 ACB ACC ACD ACF DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 249C 24A4 24A5 24AF 24C5 24C6 24C7 24C9 24CB 24CD 24CF 24D1 24D3 24D5 24D7 24D9 24DB 24DD 24DF 24E1 24E3 24E5 24E7 24E9 24EB 24ED 24EF 24F1 24F3 24F5 24F7 2513 2514 2515 2516 2517 2518 2519 251A 251B 251C 251D 251E 251F 2520 2521 2522 2523 2524 2525 2526 2527 2535 2536 2537 2538 2539 253A 253B 253C 253D 253E 253F 2540 2541 2542 2543 2544 2545 2546 2547 2548 2555 2556 2557 2558 2559 255A 255B 255C"
+        "XRECORD": "AC0 AC1 AC2 AC4 ACB ACC ACD ACF 249C 24A4 24A5 24AF 2513 2514 2515 2516 2517 2518 2519 251A 251B 251C 251D 251E 251F 2520 2521 2522 2523 2524 2525 2526 2527 2535 2536 2537 2538 2539 253A 253B 253C 253D 253E 253F 2540 2541 2542 2543 2544 2545 2546 2547 2548"
       }
     },
     "public/third-party/acadsharp/sample_AC1015.dwg": {
@@ -363,16 +309,14 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DATATABLE": "143D 145B",
-        "DICTIONARY": "110 186 188 75A 760 ABE ABF AC3 AC9 ACA ACE DAB DB7 DC1 DCB DD5 DDF DE9 DF3 13DE 13E6 13F1 1405 1407 1409 140B 140D 140F 1411 1413 1415 1417 1419 141B 141D 141F 1421 1423 1425 1427 1429 142B 142D 142F 1431 1433",
+        "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 13DE 13E6 13F1",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 13EF",
         "TABLEGEOMETRY": "748 13F0",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A AC0 AC1 AC2 AC4 ACB ACC ACD ACF DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 13DF 13E7 13E8 13F2 1402 1403 1404 1406 1408 140A 140C 140E 1410 1412 1414 1416 1418 141A 141C 141E 1420 1422 1424 1426 1428 142A 142C 142E 1430 1432 1434 143E 143F 1440 1441 1442 1443 1444 1445 1446 1447 1448 1449 144A 144B 144C 144D 144E 144F 1450 1451 1452 145C 145D 145E 145F 1460 1461 1462 1463 1464 1465 1466 1467 1468 1469 146A 146B 146C 146D 146E 146F 147C 147D 147E 147F 1480 1481 1482 1483"
+        "XRECORD": "AC0 AC1 AC2 AC4 ACB ACC ACD ACF 13DF 13E7 13E8 13F2 143E 143F 1440 1441 1442 1443 1444 1445 1446 1447 1448 1449 144A 144B 144C 144D 144E 144F 1450 1451 1452 145C 145D 145E 145F 1460 1461 1462 1463 1464 1465 1466 1467 1468 1469 146A 146B 146C 146D 146E 146F"
       }
     },
     "public/third-party/acadsharp/sample_AC1018_binary.dxf": {
@@ -387,16 +331,14 @@
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
         "DATATABLE": "244D 246B",
-        "DICTIONARY": "110 186 188 75A 760 ABE ABF AC3 AC9 ACA ACE DAB DB7 DC1 DCB DD5 DDF DE9 DF3 23EE 23F6 2401 2415 2417 2419 241B 241D 241F 2421 2423 2425 2427 2429 242B 242D 242F 2431 2433 2435 2437 2439 243B 243D 243F 2441 2443",
+        "DICTIONARY": "75A 760 ABE ABF AC3 AC9 ACA ACE 23EE 23F6 2401",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "23EC 23FF",
         "TABLEGEOMETRY": "23ED 2400",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A AC0 AC1 AC2 AC4 ACB ACC ACD ACF DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 23EF 23F7 23F8 2402 2412 2413 2414 2416 2418 241A 241C 241E 2420 2422 2424 2426 2428 242A 242C 242E 2430 2432 2434 2436 2438 243A 243C 243E 2440 2442 2444 244E 244F 2450 2451 2452 2453 2454 2455 2456 2457 2458 2459 245A 245B 245C 245D 245E 245F 2460 2461 2462 246C 246D 246E 246F 2470 2471 2472 2473 2474 2475 2476 2477 2478 2479 247A 247B 247C 247D 247E 247F 248C 248D 248E 248F 2490 2491 2492 2493"
+        "XRECORD": "AC0 AC1 AC2 AC4 ACB ACC ACD ACF 23EF 23F7 23F8 2402 244E 244F 2450 2451 2452 2453 2454 2455 2456 2457 2458 2459 245A 245B 245C 245D 245E 245F 2460 2461 2462 246C 246D 246E 246F 2470 2471 2472 2473 2474 2475 2476 2477 2478 2479 247A 247B 247C 247D 247E 247F"
       }
     },
     "public/third-party/acadsharp/sample_AC1018.dwg": {
@@ -428,16 +370,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 DAB DB7 DC1 DCB DD5 DDF DE9 DF3 1374 137C 1387 1393 1395 1397 1399 139B 139D 139F 13A1 13A3 13A5 13A7 13A9 13AB 13AD 13AF 13B1 13B3 13B5 13B7 13B9 13BB 13BD 13BF 13C1",
+        "DICTIONARY": "1374 137C 1387",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 1385",
         "TABLEGEOMETRY": "748 1386",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 1375 137D 137E 1388 1394 1396 1398 139A 139C 139E 13A0 13A2 13A4 13A6 13A8 13AA 13AC 13AE 13B0 13B2 13B4 13B6 13B8 13BA 13BC 13BE 13C0 13C2"
+        "XRECORD": "1375 137D 137E 1388"
       }
     },
     "public/third-party/acadsharp/sample_AC1021_binary.dxf": {
@@ -452,16 +392,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 DAB DB7 DC1 DCB DD5 DDF DE9 DF3 2384 238C 2397 23A3 23A5 23A7 23A9 23AB 23AD 23AF 23B1 23B3 23B5 23B7 23B9 23BB 23BD 23BF 23C1 23C3 23C5 23C7 23C9 23CB 23CD 23CF 23D1",
+        "DICTIONARY": "2384 238C 2397",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "2382 2395",
         "TABLEGEOMETRY": "2383 2396",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 2385 238D 238E 2398 23A4 23A6 23A8 23AA 23AC 23AE 23B0 23B2 23B4 23B6 23B8 23BA 23BC 23BE 23C0 23C2 23C4 23C6 23C8 23CA 23CC 23CE 23D0 23D2"
+        "XRECORD": "2385 238D 238E 2398"
       }
     },
     "public/third-party/acadsharp/sample_AC1021.dwg": {
@@ -491,16 +429,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 DAB DB7 DC1 DCB DD5 DDF DE9 DF3 1310 1315 1320 132C 132E 1330 1332 1334 1336 1338 133A 133C 133E 1340 1342 1344 1346 1348 134A 134C 134E 1350 1352 1354 1356 1358 135A",
+        "DICTIONARY": "1310 1315 1320",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 131E",
         "TABLEGEOMETRY": "748 131F",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 1311 1316 1317 1321 132D 132F 1331 1333 1335 1337 1339 133B 133D 133F 1341 1343 1345 1347 1349 134B 134D 134F 1351 1353 1355 1357 1359 135B"
+        "XRECORD": "1311 1316 1317 1321"
       }
     },
     "public/third-party/acadsharp/sample_AC1024_binary.dxf": {
@@ -515,16 +451,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 DAB DB7 DC1 DCB DD5 DDF DE9 DF3 231F 2324 232F 233B 233D 233F 2341 2343 2345 2347 2349 234B 234D 234F 2351 2353 2355 2357 2359 235B 235D 235F 2361 2363 2365 2367 2369",
+        "DICTIONARY": "231F 2324 232F",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "231D 232D",
         "TABLEGEOMETRY": "231E 232E",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 2320 2325 2326 2330 233C 233E 2340 2342 2344 2346 2348 234A 234C 234E 2350 2352 2354 2356 2358 235A 235C 235E 2360 2362 2364 2366 2368 236A"
+        "XRECORD": "2320 2325 2326 2330"
       }
     },
     "public/third-party/acadsharp/sample_AC1024.dwg": {
@@ -554,16 +488,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 DAB DB7 DC1 DCB DD5 DDF DE9 DF3 12E4 12E9 12F4",
+        "DICTIONARY": "12E4 12E9 12F4",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 12F2",
         "TABLEGEOMETRY": "748 12F3",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 12E5 12EA 12EB 12F5"
+        "XRECORD": "12E5 12EA 12EB 12F5"
       }
     },
     "public/third-party/acadsharp/sample_AC1027_binary.dxf": {
@@ -578,16 +510,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 DAB DB7 DC1 DCB DD5 DDF DE9 DF3 22F1 22F6 2301",
+        "DICTIONARY": "22F1 22F6 2301",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "22EF 22FF",
         "TABLEGEOMETRY": "22F0 2300",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 22F2 22F7 22F8 2302"
+        "XRECORD": "22F2 22F7 22F8 2302"
       }
     },
     "public/third-party/acadsharp/sample_AC1027.dwg": {
@@ -617,16 +547,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 DAB DB7 DC1 DCB DD5 DDF DE9 DF3 12CF 12D9",
+        "DICTIONARY": "12CF 12D9",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "747 12D7",
         "TABLEGEOMETRY": "748 12D8",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 12D0 12DA"
+        "XRECORD": "12D0 12DA"
       }
     },
     "public/third-party/acadsharp/sample_AC1032_binary.dxf": {
@@ -641,16 +569,14 @@
         "BLOCKSCALEACTION": "A88",
         "BLOCKVISIBILITYGRIP": "A8A",
         "BLOCKVISIBILITYPARAMETER": "A89",
-        "DICTIONARY": "110 186 188 DAB DB7 DC1 DCB DD5 DDF DE9 DF3 22DA 22E4",
+        "DICTIONARY": "22DA 22E4",
         "DIMASSOC": "521 524 9D0",
         "IMAGEDEF_REACTOR": "8C5",
-        "MATERIAL": "96 97 98 DAA DB6 DC0 DCA DD4 DDE DE8 DF2",
         "SORTENTSTABLE": "354 36D 370 375",
         "TABLECONTENT": "22D8 22E2",
         "TABLEGEOMETRY": "22D9 22E3",
         "TEXT": "917",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A DAC DAD DAE DAF DB0 DB1 DB2 DB3 DB4 DB5 DB8 DB9 DBA DBB DBC DBD DBE DBF DC2 DC3 DC4 DC5 DC6 DC7 DC8 DC9 DCC DCD DCE DCF DD0 DD1 DD2 DD3 DD6 DD7 DD8 DD9 DDA DDB DDC DDD DE0 DE1 DE2 DE3 DE4 DE5 DE6 DE7 DEA DEB DEC DED DEE DEF DF0 DF1 DF4 DF5 DF6 DF7 DF8 DF9 DFA DFB 22DB 22E5"
+        "XRECORD": "22DB 22E5"
       }
     },
     "public/third-party/acadsharp/sample_AC1032.dwg": {
@@ -686,22 +612,15 @@
     },
     "public/third-party/ezdxf/examples_dxf/3dface.dxf": {
       "declared": 219,
-      "lost": {
-        "DICTIONARY": "16A 1EE 1F0",
-        "MATERIAL": "E3 E4 E5",
-        "VISUALSTYLE": "E7 E8 E9 EA EB EC ED EE EF F0 F1 F2 F3 F4 F5 F6 1DB 1DC 1DD 1E6 1E7 1E8 1E9 1EA",
-        "XRECORD": "16B 16C 16D 16E 1EF 1F1 1F2"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/acad_table_simple.dxf": {
       "declared": 147,
       "lost": {
         "ACAD_TABLE": "9C",
         "DICTIONARY": "B2",
-        "MATERIAL": "45 46 47",
         "TABLECONTENT": "AF",
         "TABLEGEOMETRY": "B0",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E",
         "XRECORD": "B3"
       }
     },
@@ -710,141 +629,90 @@
       "lost": {
         "ACAD_TABLE": "CF",
         "DICTIONARY": "118",
-        "MATERIAL": "45 46 47",
         "TABLECONTENT": "116",
         "TABLEGEOMETRY": "117",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E",
         "XRECORD": "119"
       }
     },
     "public/third-party/ezdxf/examples_dxf/caret_encoding.dxf": {
       "declared": 105,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/circle_radius_le_0.dxf": {
       "declared": 46,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/clockwise_arcs_hatch.dxf": {
       "declared": 46,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/colors.dxf": {
       "declared": 211,
-      "lost": {
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/columns_R2007.dxf": {
       "declared": 257,
-      "lost": {
-        "DICTIONARY": "19D 19F 1A1 1A3 1A5 1A7 1A9 1AB 1AD 1AF 1B1 1B3 1B5 1B7 1B9 1BB 1BD 1BF 1C1 1C3 1C5 1C7 1C9 1CB 1CD",
-        "MATERIAL": "11 19 21",
-        "VISUALSTYLE": "2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 3D 3E 3F 40 41 17E",
-        "XRECORD": "19E 1A0 1A2 1A4 1A6 1A8 1AA 1AC 1AE 1B0 1B2 1B4 1B6 1B8 1BA 1BC 1BE 1C0 1C2 1C4 1C6 1C8 1CA 1CC 1CE"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/columns_R2018.dxf": {
       "declared": 199,
-      "lost": {
-        "DICTIONARY": "12 1A 22",
-        "MATERIAL": "11 19 21",
-        "VISUALSTYLE": "2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 3D 3E 3F 40 41",
-        "XRECORD": "13 14 15 16 17 18 1B 1C 1D 1E 1F 20 23 24 25 26 27 28"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/dimension_in_block.dxf": {
       "declared": 161,
       "lost": {
-        "DIMASSOC": "9F B5",
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
+        "DIMASSOC": "9F B5"
       }
     },
     "public/third-party/ezdxf/examples_dxf/dimension_in_nested_blocks.dxf": {
       "declared": 185,
       "lost": {
-        "DIMASSOC": "F5",
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
+        "DIMASSOC": "F5"
       }
     },
     "public/third-party/ezdxf/examples_dxf/hatch_issues.dxf": {
       "declared": 136,
-      "lost": {
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/hatch_text_box_in_fill.dxf": {
       "declared": 136,
       "lost": {
-        "MATERIAL": "45 46 47",
-        "SORTENTSTABLE": "A0 A2 AC",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
+        "SORTENTSTABLE": "A0 A2 AC"
       }
     },
     "public/third-party/ezdxf/examples_dxf/hatch_text_box_in_hole.dxf": {
       "declared": 135,
       "lost": {
-        "MATERIAL": "45 46 47",
-        "SORTENTSTABLE": "A0 A2",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
+        "SORTENTSTABLE": "A0 A2"
       }
     },
     "public/third-party/ezdxf/examples_dxf/hatch_text_box_overlapping_fill_and_hole.dxf": {
       "declared": 135,
       "lost": {
-        "MATERIAL": "45 46 47",
-        "SORTENTSTABLE": "A0 A2",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
+        "SORTENTSTABLE": "A0 A2"
       }
     },
     "public/third-party/ezdxf/examples_dxf/hatches_1.dxf": {
       "declared": 214,
       "lost": {
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "SORTENTSTABLE": "231 23F 253 254 255 25B 269 279 27A 280 281 282 2A5 2A6 2A7 2C1 2C2 2C3 2D8 2E1 2E2 2E3",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "SORTENTSTABLE": "231 23F 253 254 255 25B 269 279 27A 280 281 282 2A5 2A6 2A7 2C1 2C2 2C3 2D8 2E1 2E2 2E3"
       }
     },
     "public/third-party/ezdxf/examples_dxf/hatches_2.dxf": {
       "declared": 168,
       "lost": {
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "SORTENTSTABLE": "221 225 24B 24D",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "SORTENTSTABLE": "221 225 24B 24D"
       }
     },
     "public/third-party/ezdxf/examples_dxf/images.dxf": {
       "declared": 457,
       "lost": {
-        "DICTIONARY": "D 3B 3E 1C6 1CB 1CD",
-        "IMAGEDEF_REACTOR": "81 87 8D 95 9A 9C A1 A3 A8 AA AD B1 B6 BB BF C4 C6 CB D0 D4 D9 DB DD E0 E5 E7 E9 ED F2 F5 F7 F9 FB FD 100 102 10A 10C 111 113 118 11B 11D 124 127 12D 12F 131 133 139 13E 140 148 14E 151 157 189 191 1A8 1B1",
-        "MATERIAL": "B 3A 3D",
-        "VISUALSTYLE": "2B 59 5A",
-        "XRECORD": "E F 10 11 12 3C 3F 1C0 1C7 1C8 1C9 1CC 1CE"
+        "IMAGEDEF_REACTOR": "81 87 8D 95 9A 9C A1 A3 A8 AA AD B1 B6 BB BF C4 C6 CB D0 D4 D9 DB DD E0 E5 E7 E9 ED F2 F5 F7 F9 FB FD 100 102 10A 10C 111 113 118 11B 11D 124 127 12D 12F 131 133 139 13E 140 148 14E 151 157 189 191 1A8 1B1"
       }
     },
     "public/third-party/ezdxf/examples_dxf/insert_bricscad_level_1.dxf": {
       "declared": 187,
-      "lost": {
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1006.dxf": {
       "declared": 0,
@@ -860,188 +728,115 @@
     },
     "public/third-party/ezdxf/examples_dxf/mtext_columns_R2000.dxf": {
       "declared": 54,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/mtext_columns_R2007.dxf": {
       "declared": 54,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/mtext_columns_R2018.dxf": {
       "declared": 48,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/mtext_complex_inline_codes.dxf": {
       "declared": 183,
       "lost": {
-        "FIELD": "CD DE E5 EC F8 101 108 10F",
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
+        "FIELD": "CD DE E5 EC F8 101 108 10F"
       }
     },
     "public/third-party/ezdxf/examples_dxf/multi_insert_with_attribs.dxf": {
       "declared": 63,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_alignments.dxf": {
       "declared": 107,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_fonts.dxf": {
       "declared": 1454,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "E2 E3 E4 E5 E6 E7 E8 E9 EA EB EC ED EE EF F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_in_viewports.dxf": {
       "declared": 156,
-      "lost": {
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_mirror_shx_font.dxf": {
       "declared": 773,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "E2 E3 E4 E5 E6 E7 E8 E9 EA EB EC ED EE EF F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_mirror_true_type_font.dxf": {
       "declared": 773,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "E2 E3 E4 E5 E6 E7 E8 E9 EA EB EC ED EE EF F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_negative_extrusion.dxf": {
       "declared": 430,
-      "lost": {
-        "DICTIONARY": "173 1F7 1F9",
-        "MATERIAL": "EC ED EE",
-        "VISUALSTYLE": "F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FA FB FC FD FE FF 1E4 1E5 1E6 1EF 1F0 1F1 1F2 1F3",
-        "XRECORD": "1F8 1FA 1FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_oblique_rotate.dxf": {
       "declared": 418,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "E2 E3 E4 E5 E6 E7 E8 E9 EA EB EC ED EE EF F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_stacked_shx_font.dxf": {
       "declared": 541,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "E2 E3 E4 E5 E6 E7 E8 E9 EA EB EC ED EE EF F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text_stacked_true_type_font.dxf": {
       "declared": 541,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "E2 E3 E4 E5 E6 E7 E8 E9 EA EB EC ED EE EF F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/text.dxf": {
       "declared": 429,
-      "lost": {
-        "DICTIONARY": "173 1F7 1F9",
-        "MATERIAL": "EC ED EE",
-        "VISUALSTYLE": "F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FA FB FC FD FE FF 1E4 1E5 1E6 1EF 1F0 1F1 1F2 1F3",
-        "XRECORD": "1F8 1FA 1FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/transform_hatch_pattern.dxf": {
       "declared": 143,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "19F 1A0 1A1 1A2 1A3 1A4 1A5 1A6 1A7 1A8 1A9 1AA 1AB 1AC 1AD 1AE 1AF 1B0 1B1 1B2 1B3 1B4 1B5 1B6 1B8"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/uncommon.dxf": {
       "declared": 658,
       "lost": {
         "ACSH_BOX_CLASS": "623 62F",
-        "DICTIONARY": "110 186 188 5FD 5FE",
+        "DICTIONARY": "5FD 5FE",
         "DIMASSOC": "345 357 393 3AD 3C9 3E3 413 42B",
         "FIELD": "5F8 5F9 5FF 600",
-        "MATERIAL": "96 97 98",
-        "SORTENTSTABLE": "233 4A7 4A9 4C2 507 5E0 665 666 667 668",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "SORTENTSTABLE": "233 4A7 4A9 4C2 507 5E0 665 666 667 668"
       }
     },
     "public/third-party/ezdxf/examples_dxf/valid_lineweights.dxf": {
       "declared": 94,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/viewport_frozen_layers.dxf": {
       "declared": 139,
-      "lost": {
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/viewports.dxf": {
       "declared": 200,
       "lost": {
-        "IMAGEDEF_REACTOR": "780 789 78F 79B 7EA",
-        "MATERIAL": "74C 74D 74E",
-        "VISUALSTYLE": "74F 750 751 752 753 754 755 756 757 758 759 75A 75B 75C 75D 75E 75F 760 761 762 763 764 765 766 769"
+        "IMAGEDEF_REACTOR": "780 789 78F 79B 7EA"
       }
     },
     "public/third-party/ezdxf/examples_dxf/visibility.dxf": {
       "declared": 164,
-      "lost": {
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/VP4.dxf": {
       "declared": 158,
-      "lost": {
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/wipeout_door.dxf": {
       "declared": 384,
       "lost": {
-        "DICTIONARY": "110 186 188",
-        "MATERIAL": "96 97 98",
-        "SORTENTSTABLE": "27D 367 410",
-        "VISUALSTYLE": "9A 9B 9C 9D 9E 9F A0 A1 A2 A3 A4 A5 A6 A7 A8 A9 173 174 175 17E 17F 180 181 182",
-        "XRECORD": "111 112 113 114 187 189 18A"
+        "SORTENTSTABLE": "27D 367 410"
       }
     },
     "public/third-party/ezdxf/examples_dxf/wipeout_random.dxf": {
       "declared": 78,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/xclip.dxf": {
       "declared": 223,
-      "lost": {
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/AC1003_LINE_Example.dxf": {
       "declared": 0,
@@ -1063,34 +858,23 @@
       "declared": 117,
       "lost": {
         "ACAD_PROXY_OBJECT": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 49 4A 4B 4C 4D 4E 4F 50 51 52 53 54 55 56 57 58 59 6D 6E 7B 7D 7E 85 86 89",
-        "DICTIONARY": "7F 81 117 119 11B",
-        "MATERIAL": "45 46 47",
-        "XRECORD": "118 11A 11C"
+        "DICTIONARY": "7F 81"
       }
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r14.dxf": {
       "declared": 120,
       "lost": {
         "ACAD_PROXY_OBJECT": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 49 4A 4B 4C 4D 4E 4F 50 51 52 53 54 55 56 57 58 59 6D 6E 7B 7D 7E 85 86 89",
-        "DICTIONARY": "7F 81 168 16A 16C",
-        "MATERIAL": "45 46 47",
-        "XRECORD": "169 16B 16D"
+        "DICTIONARY": "7F 81"
       }
     },
     "public/third-party/ezdxf/integration_tests/bin_dxf_r2000.dxf": {
       "declared": 45,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/custom_blocks.dxf": {
       "declared": 143,
-      "lost": {
-        "DICTIONARY": "173 1F7 1F9",
-        "MATERIAL": "EC ED EE",
-        "VISUALSTYLE": "F0 F1 F2 F3 F4 F5 F6 F7 F8 F9 FA FB FC FD FE FF 1E4 1E5 1E6 1EF 1F0 1F1 1F2 1F3",
-        "XRECORD": "174 175 176 177 1F8 1FA 1FB"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/duplicate_handles.dxf": {
       "declared": 148,
@@ -1099,60 +883,40 @@
     "public/third-party/ezdxf/integration_tests/dxf_unicode.dxf": {
       "declared": 50,
       "lost": {
-        "LAYER": "2F",
-        "MATERIAL": "1F 20 21"
+        "LAYER": "2F"
       }
     },
     "public/third-party/ezdxf/integration_tests/groups.dxf": {
       "declared": 138,
-      "lost": {
-        "MATERIAL": "45 46 47",
-        "VISUALSTYLE": "25 26 27 28 29 2A 2B 2C 2D 2E 2F 30 31 32 33 34 35 36 37 38 39 3A 3B 3C 6E"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/layout_broken_links_2.dxf": {
       "declared": 53,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/layout_broken_links.dxf": {
       "declared": 53,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/layout_missing_block_definition.dxf": {
       "declared": 51,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/layout_missing_block_record.dxf": {
       "declared": 52,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/MODEL.dxf": {
       "declared": 46,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/mtext_framed_columns.dxf": {
       "declared": 132,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "4C 4D 4E 4F 50 51 52 53 54 55 56 57 58 59 5A 5B 5C 5D 5E 5F 60 61 62 63 65"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/mtext_text_frame.dxf": {
       "declared": 167,
-      "lost": {
-        "MATERIAL": "1F 20 21",
-        "VISUALSTYLE": "58 59 5A 5B 5C 5D 5E 5F 60 61 62 63 64 65 66 67 68 69 6A 6B 6C 6D 6E 6F 70"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/no_layouts.dxf": {
       "declared": 46,
@@ -1174,15 +938,12 @@
       "declared": 53,
       "lost": {
         "BLOCK": "30 33",
-        "ENDBLK": "31 34",
-        "MATERIAL": "1F 20 21"
+        "ENDBLK": "31 34"
       }
     },
     "public/third-party/ezdxf/integration_tests/r2000_blocks_with_no_names.dxf": {
       "declared": 55,
-      "lost": {
-        "MATERIAL": "1F 20 21"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/recover02.dxf": {
       "unscanned": "read-error"
