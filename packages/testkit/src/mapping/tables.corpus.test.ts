@@ -4,7 +4,8 @@
 // entry is mapped, every reference resolves) because there is no text to compare against.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { HeaderValue, TableName, TableRecords, Vec2, Vec3 } from '@triya/engine';
+import type { Color, HeaderValue, TableName, TableRecords, Vec2, Vec3 } from '@triya/engine';
+import type { CadDocument } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
 import { mapHeader, mapTables, readCadDocument, type MappedTables } from '@triya/io';
 import { loadManifest } from '../corpus/manifest.ts';
@@ -30,10 +31,12 @@ const TABLE_OF: Record<string, TableName> = {
   UCS: 'ucs',
   VPORT: 'vports',
   BLOCK_RECORD: 'blockRecords',
+  MLEADERSTYLE: 'mleaderStyles',
+  TABLESTYLE: 'tableStyles',
 };
 
 type Getter<R> = (r: R, t: MappedTables) => unknown;
-type Kind = 'num' | 'deg' | 'int' | 'str' | 'name' | 'bool' | 'handle';
+type Kind = 'num' | 'deg' | 'int' | 'str' | 'name' | 'bool' | 'handle' | 'cmcolor' | 'aci' | 'lw';
 type Checks<R> = Record<number, [Kind, Getter<R>]>;
 
 const xyz = (
@@ -174,7 +177,187 @@ const VPORT: Checks<TableRecords['vports']> = {
   61: ['int', (r) => r.gridMajor],
 };
 
+/**
+ * DIMSTYLE groups by the AutoCAD DXF reference, written out here rather than taken from
+ * `@triya/io` so that the test stays independent of the table it checks. 70 (flags and
+ * DIMTFILLCLR), 278 (DIMDSEP) and the R12 names 5/6/7 are compared in compareRecord.
+ */
+const DIMSTYLE_GROUPS: Record<number, [string, Kind]> = {
+  3: ['DIMPOST', 'str'],
+  4: ['DIMAPOST', 'str'],
+  40: ['DIMSCALE', 'num'],
+  41: ['DIMASZ', 'num'],
+  42: ['DIMEXO', 'num'],
+  43: ['DIMDLI', 'num'],
+  44: ['DIMEXE', 'num'],
+  45: ['DIMRND', 'num'],
+  46: ['DIMDLE', 'num'],
+  47: ['DIMTP', 'num'],
+  48: ['DIMTM', 'num'],
+  49: ['DIMFXL', 'num'],
+  50: ['DIMJOGANG', 'deg'],
+  69: ['DIMTFILL', 'int'],
+  71: ['DIMTOL', 'bool'],
+  72: ['DIMLIM', 'bool'],
+  73: ['DIMTIH', 'bool'],
+  74: ['DIMTOH', 'bool'],
+  75: ['DIMSE1', 'bool'],
+  76: ['DIMSE2', 'bool'],
+  77: ['DIMTAD', 'int'],
+  78: ['DIMZIN', 'int'],
+  79: ['DIMAZIN', 'int'],
+  90: ['DIMARCSYM', 'int'],
+  140: ['DIMTXT', 'num'],
+  141: ['DIMCEN', 'num'],
+  142: ['DIMTSZ', 'num'],
+  143: ['DIMALTF', 'num'],
+  144: ['DIMLFAC', 'num'],
+  145: ['DIMTVP', 'num'],
+  146: ['DIMTFAC', 'num'],
+  147: ['DIMGAP', 'num'],
+  148: ['DIMALTRND', 'num'],
+  170: ['DIMALT', 'bool'],
+  171: ['DIMALTD', 'int'],
+  172: ['DIMTOFL', 'bool'],
+  173: ['DIMSAH', 'bool'],
+  174: ['DIMTIX', 'bool'],
+  175: ['DIMSOXD', 'bool'],
+  176: ['DIMCLRD', 'int'],
+  177: ['DIMCLRE', 'int'],
+  178: ['DIMCLRT', 'int'],
+  179: ['DIMADEC', 'int'],
+  270: ['DIMUNIT', 'int'],
+  271: ['DIMDEC', 'int'],
+  272: ['DIMTDEC', 'int'],
+  273: ['DIMALTU', 'int'],
+  274: ['DIMALTTD', 'int'],
+  275: ['DIMAUNIT', 'int'],
+  276: ['DIMFRAC', 'int'],
+  277: ['DIMLUNIT', 'int'],
+  279: ['DIMTMOVE', 'int'],
+  280: ['DIMJUST', 'int'],
+  281: ['DIMSD1', 'bool'],
+  282: ['DIMSD2', 'bool'],
+  283: ['DIMTOLJ', 'int'],
+  284: ['DIMTZIN', 'int'],
+  285: ['DIMALTZ', 'int'],
+  286: ['DIMALTTZ', 'int'],
+  287: ['DIMFIT', 'int'],
+  288: ['DIMUPT', 'bool'],
+  289: ['DIMATFIT', 'int'],
+  290: ['DIMFXLON', 'bool'],
+  294: ['DIMTXTDIRECTION', 'int'],
+  340: ['DIMTXSTY', 'handle'],
+  341: ['DIMLDRBLK', 'handle'],
+  342: ['DIMBLK', 'handle'],
+  343: ['DIMBLK1', 'handle'],
+  344: ['DIMBLK2', 'handle'],
+  345: ['DIMLTYPE', 'handle'],
+  346: ['DIMLTEX1', 'handle'],
+  347: ['DIMLTEX2', 'handle'],
+  371: ['DIMLWD', 'int'],
+  372: ['DIMLWE', 'int'],
+};
+
+const DIMSTYLE: Checks<TableRecords['dimStyles']> = {
+  2: ['str', (r) => r.name],
+  ...Object.fromEntries(
+    Object.entries(DIMSTYLE_GROUPS).map(([code, [name, kind]]) => [
+      code,
+      [kind, (r: TableRecords['dimStyles']) => r.vars[name]],
+    ]),
+  ),
+};
+
+const MLEADERSTYLE: Checks<TableRecords['mleaderStyles']> = {
+  3: ['str', (r) => r.description],
+  170: ['int', (r) => r.contentType],
+  171: ['int', (r) => r.mleaderDrawOrder],
+  172: ['int', (r) => r.leaderDrawOrder],
+  90: ['int', (r) => r.maxLeaderPoints],
+  40: ['num', (r) => r.firstSegmentAngle],
+  41: ['num', (r) => r.secondSegmentAngle],
+  173: ['int', (r) => r.pathType],
+  91: ['cmcolor', (r) => r.lineColor],
+  340: ['handle', (r) => r.linetype],
+  92: ['lw', (r) => r.lineweight],
+  290: ['bool', (r) => r.landing],
+  42: ['num', (r) => r.landingGap],
+  291: ['bool', (r) => r.dogleg],
+  43: ['num', (r) => r.doglegLength],
+  341: ['handle', (r) => r.arrowhead],
+  44: ['num', (r) => r.arrowheadSize],
+  300: ['str', (r) => r.defaultText],
+  342: ['handle', (r) => r.textStyle],
+  174: ['int', (r) => r.textLeftAttachment],
+  178: ['int', (r) => r.textRightAttachment],
+  273: ['int', (r) => r.textTopAttachment],
+  272: ['int', (r) => r.textBottomAttachment],
+  271: ['int', (r) => r.textAttachmentDirection],
+  175: ['int', (r) => r.textAngleType],
+  176: ['int', (r) => r.textAlignment],
+  93: ['cmcolor', (r) => r.textColor],
+  45: ['num', (r) => r.textHeight],
+  292: ['bool', (r) => r.textFrame],
+  297: ['bool', (r) => r.textAlignAlwaysLeft],
+  46: ['num', (r) => r.alignSpace],
+  343: ['handle', (r) => r.block],
+  94: ['cmcolor', (r) => r.blockColor],
+  47: ['num', (r) => r.blockScale.x],
+  49: ['num', (r) => r.blockScale.y],
+  140: ['num', (r) => r.blockScale.z],
+  293: ['bool', (r) => r.blockScaleOn],
+  141: ['deg', (r) => r.blockRotation],
+  294: ['bool', (r) => r.blockRotationOn],
+  177: ['int', (r) => r.blockConnection],
+  142: ['num', (r) => r.scale],
+  295: ['bool', (r) => r.overwriteProperties],
+  296: ['bool', (r) => r.annotative],
+  143: ['num', (r) => r.breakGap],
+};
+
+const TABLESTYLE: Checks<TableRecords['tableStyles']> = {
+  3: ['str', (r) => r.description],
+  70: ['int', (r) => r.flowDirection],
+  71: ['int', (r) => r.styleFlags],
+  40: ['num', (r) => r.horizontalMargin],
+  41: ['num', (r) => r.verticalMargin],
+  280: ['bool', (r) => r.suppressTitle],
+  281: ['bool', (r) => r.suppressHeader],
+};
+
+/** TABLESTYLE cell-style groups, which repeat for each cell style starting at its 7. */
+const CELL_STYLE: Checks<TableRecords['tableStyles']['cellStyles'][number]> = {
+  140: ['num', (c) => c.textHeight],
+  170: ['int', (c) => c.alignment],
+  62: ['aci', (c) => c.textColor],
+  63: ['aci', (c) => c.fillColor],
+  283: ['bool', (c) => c.fillOn],
+  90: ['int', (c) => c.dataType],
+  91: ['int', (c) => c.unitType],
+  ...Object.fromEntries(
+    [0, 1, 2, 3, 4, 5].flatMap((k) => [
+      [
+        274 + k,
+        ['lw', (c: TableRecords['tableStyles']['cellStyles'][number]) => c.borders[k]?.lineweight],
+      ],
+      // AutoCAD's DXF reference: 284–289 are 1 when the border is visible.
+      [
+        284 + k,
+        ['bool', (c: TableRecords['tableStyles']['cellStyles'][number]) => c.borders[k]?.visible],
+      ],
+      [
+        64 + k,
+        ['aci', (c: TableRecords['tableStyles']['cellStyles'][number]) => c.borders[k]?.color],
+      ],
+    ]),
+  ),
+};
+
 const CHECKS: Record<string, Checks<never>> = {
+  MLEADERSTYLE,
+  TABLESTYLE,
+  DIMSTYLE,
   LAYER,
   LTYPE,
   STYLE,
@@ -184,6 +367,29 @@ const CHECKS: Record<string, Checks<never>> = {
   VIEW,
   VPORT,
 } as unknown as Record<string, Checks<never>>;
+
+/** A DXF colour number (62): 0 ByBlock, 256 ByLayer, else ACI. */
+function aciColor(n: number): Color {
+  return n === 0
+    ? { kind: 'byBlock' }
+    : n === 256
+      ? { kind: 'byLayer' }
+      : { kind: 'aci', index: n };
+}
+/**
+ * An AcCmEntityColor as MLEADERSTYLE writes it (91/93/94): the high byte is the method
+ * (0xC0 ByLayer, 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI) and the low bytes the colour.
+ */
+function cmColor(v: number): Color | undefined {
+  const method = (v >>> 24) & 0xff;
+  if (method === 0xc0) return { kind: 'byLayer' };
+  if (method === 0xc1) return { kind: 'byBlock' };
+  if (method === 0xc2) return { kind: 'rgb', r: (v >> 16) & 0xff, g: (v >> 8) & 0xff, b: v & 0xff };
+  if (method === 0xc3) return aciColor(v & 0xff);
+  return undefined;
+}
+const sameColor = (a: unknown, b: Color | undefined): boolean =>
+  b !== undefined && JSON.stringify(a) === JSON.stringify(b);
 
 function same(kind: Kind, dxf: string, triya: unknown): boolean {
   switch (kind) {
@@ -196,6 +402,15 @@ function same(kind: Kind, dxf: string, triya: unknown): boolean {
     }
     case 'int':
       return triya === Number.parseInt(dxf, 10);
+    case 'lw':
+      return (
+        (typeof triya === 'string' ? LW[triya as keyof typeof LW] : triya) ===
+        Number.parseInt(dxf, 10)
+      );
+    case 'aci':
+      return sameColor(triya, aciColor(Number.parseInt(dxf, 10)));
+    case 'cmcolor':
+      return sameColor(triya, cmColor(Number.parseInt(dxf, 10)));
     case 'bool':
       return triya === (Number.parseInt(dxf, 10) !== 0);
     case 'str':
@@ -224,6 +439,14 @@ const ACAD_TS_GAPS: Record<string, string> = {
   'BLOCK_RECORD 70':
     'the common table-entry reader takes BLOCK_RECORD 70 (insert units) as standard flags',
   'STYLE 2': 'nameless shape-file STYLE records are renamed unnamedN by the table collection',
+  ...Object.fromEntries(
+    [284, 285, 286, 287, 288, 289].map((c) => [
+      `TABLESTYLE ${c}`,
+      'acad-ts reads the TABLESTYLE border visibility flags (1 = visible) as isInvisible',
+    ]),
+  ),
+  'DIMSTYLE 5':
+    'an R12 DIMBLK names a built-in arrowhead without its underscore (BOXBLANK for the _BOXBLANK block); acad-ts leaves it unresolved',
   ...Object.fromEntries(
     [
       '$ATTDIA',
@@ -319,6 +542,69 @@ function compareRecord(r: DxfRecord, t: MappedTables, out: Mismatch[], where: st
     if (lengths.length !== got.length || lengths.some((l, k) => Math.abs(l - got[k]!) > 1e-9))
       report(49, lengths.join(','), got.join(','));
   }
+  if (r.type === 'TABLESTYLE') {
+    // Split the record at each 7 (a cell style's text style); before the first are the
+    // style's own groups.
+    const starts = r.groups.flatMap(([c], k) => (c === 7 ? [k] : []));
+    const cells = (rec as TableRecords['tableStyles']).cellStyles;
+    if (cells.length !== starts.length) report(7, `${starts.length} cell styles`, cells.length);
+    starts.forEach((start, n) => {
+      const groups = r.groups.slice(start, starts[n + 1] ?? r.groups.length);
+      const cell = cells[n];
+      if (!cell) return;
+      const name = groups[0]![1].trim().toUpperCase();
+      if (nameOf(t, 'textStyles', cell.textStyle)?.toUpperCase() !== name)
+        report(7, name, nameOf(t, 'textStyles', cell.textStyle));
+      for (const [code, [kind, get]] of Object.entries(CELL_STYLE)) {
+        const v = first(groups, Number(code));
+        if (v !== undefined && !same(kind, v, get(cell, t)))
+          report(Number(code), v, JSON.stringify(get(cell, t)));
+      }
+    });
+    // The style's own groups are those before the first cell style.
+    r = { type: r.type, groups: r.groups.slice(0, starts[0] ?? r.groups.length) };
+  }
+  if (r.type === 'DIMSTYLE') {
+    const d = rec as TableRecords['dimStyles'];
+    // 70 is the flags and, after DIMTFILL (69), DIMTFILLCLR.
+    const seventies = all(r.groups, 70);
+    if (!same('int', seventies[0]!, d.flags ?? 0)) report(70, seventies[0]!, d.flags);
+    if (seventies[1] !== undefined && !same('int', seventies[1], d.vars['DIMTFILLCLR']))
+      report(70, seventies[1], d.vars['DIMTFILLCLR']);
+    const dsep = first(r.groups, 278);
+    if (dsep !== undefined && d.vars['DIMDSEP'] !== String.fromCharCode(Number.parseInt(dsep, 10)))
+      report(278, dsep, d.vars['DIMDSEP']);
+    // Some writers (ezdxf's minimal files) put names where the reference wants handles.
+    for (const [code, table] of [
+      [340, 'textStyles'],
+      [341, 'blockRecords'],
+      [342, 'blockRecords'],
+      [343, 'blockRecords'],
+      [344, 'blockRecords'],
+      [345, 'linetypes'],
+      [346, 'linetypes'],
+      [347, 'linetypes'],
+    ] as const) {
+      const want = first(r.groups, code);
+      if (want === undefined || /^\s*[0-9A-Fa-f]+\s*$/.test(want)) continue;
+      delete checks[code];
+      const h = d.vars[DIMSTYLE_GROUPS[code]![0]] as string | undefined;
+      const got = want.trim() === '' ? h : nameOf(t, table, h)?.toUpperCase();
+      if (got !== (want.trim() === '' ? undefined : want.trim().toUpperCase()))
+        report(code, want, got);
+    }
+    // R12 names the arrow blocks (5/6/7) where later versions give handles (342–344).
+    for (const [code, name] of [
+      [5, 'DIMBLK'],
+      [6, 'DIMBLK1'],
+      [7, 'DIMBLK2'],
+    ] as const) {
+      const want = first(r.groups, code);
+      if (want === undefined) continue;
+      const got = nameOf(t, 'blockRecords', d.vars[name] as string | undefined) ?? '';
+      if (got.toUpperCase() !== want.trim().toUpperCase()) report(code, want, got);
+    }
+  }
   for (const [code, [kind, get]] of Object.entries(checks)) {
     const values = all(r.groups, Number(code));
     if (values.length === 0) continue;
@@ -366,6 +652,12 @@ function compareHeader(
   if (!ok) report(s);
 }
 
+function dictionaryEntries(doc: CadDocument, key: string, type: string): { handle: number }[] {
+  const dict = doc.rootDictionary?.get(key) as
+    Iterable<{ handle: number; objectName: string }> | undefined;
+  return [...(dict ?? [])].filter((o) => o.objectName === type);
+}
+
 function load(path: string): Uint8Array {
   return new Uint8Array(readFileSync(`${corpusDir}${path}`));
 }
@@ -389,7 +681,8 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
       const oracle = readDxfOracle(bytes);
       const tables = mapTables(doc);
       const { header } = mapHeader(doc);
-      for (const r of oracle.records) compareRecord(r, tables, mismatches, f.path);
+      for (const r of [...oracle.records, ...oracle.objects])
+        compareRecord(r, tables, mismatches, f.path);
       for (const [name, groups] of oracle.header)
         compareHeader(name, groups, header, mismatches, f.path);
     }
@@ -420,8 +713,10 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
         ['ucs', doc.uCSs],
         ['vports', doc.vPorts],
         ['blockRecords', doc.blockRecords],
-        ['mleaderStyles', doc.mLeaderStyles],
-        ['tableStyles', doc.tableStyles],
+        // Every style in the style dictionaries. R13/R14 files hold them as proxy objects,
+        // which stay passthrough (FILE_FIDELITY: ACAD_PROXY_OBJECT).
+        ['mleaderStyles', dictionaryEntries(doc, 'ACAD_MLEADERSTYLE', 'MLEADERSTYLE')],
+        ['tableStyles', dictionaryEntries(doc, 'ACAD_TABLESTYLE', 'TABLESTYLE')],
       ];
       for (const [name, src] of sources) {
         const want = [...(src ?? [])].map((e) => e.handle.toString(16).toUpperCase()).sort();
@@ -433,6 +728,16 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
       for (const l of t.layers)
         if (!linetypes.has(l.linetype))
           problems.push(`${f.path} layer ${l.name}: linetype ${l.linetype}`);
+      const textStyles = new Set(t.textStyles.map((r) => r.handle));
+      const styleRefs = [
+        ...t.mleaderStyles.map((m) => [`mleader style ${m.name}`, m.textStyle] as const),
+        ...t.tableStyles.flatMap((ts) =>
+          ts.cellStyles.map((c) => [`table style ${ts.name}`, c.textStyle] as const),
+        ),
+      ];
+      for (const [what, h] of styleRefs)
+        if (h !== undefined && !textStyles.has(h))
+          problems.push(`${f.path} ${what}: text style ${h}`);
     }
     expect(problems).toEqual([]);
   }, 300_000);
