@@ -5,12 +5,14 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type {
+  Color,
   DimensionGeometry,
   EntityInit,
   HatchGeometry,
   InsertGeometry,
   LeaderGeometry,
   MTextGeometry,
+  MultiLeaderGeometry,
   TextFields,
   Vec2,
 } from '@triya/engine';
@@ -97,6 +99,12 @@ const ACAD_TS_GAPS: Record<string, string> = {
   'HATCH 98': 'acad-ts drops the seed points (98, 10/20) of DXF hatches',
   'HATCH 11':
     'acad-ts reads an ellipse edge’s major axis (11/21) with the centre’s coordinate in place of the other component',
+  'MULTILEADER ctx 90':
+    'acad-ts reads the context-data text colour (90) of a DXF MULTILEADER as a true colour, so ByLayer becomes RGB 0,0,0',
+  'MULTILEADER LEADER{ 10':
+    'acad-ts has no DXF code map for a MULTILEADER branch (LeaderRoot), so DXF branches keep the default connection point; DWG reads it',
+  'MULTILEADER LEADER{ 11': 'the same for the landing direction',
+  'MULTILEADER LEADER{ 40': 'the same for the dogleg length',
 };
 
 /** Types this part maps; the others must be reported as not mapped yet. */
@@ -123,6 +131,7 @@ const MAPPED = new Set([
   'LEADER',
   'TOLERANCE',
   'HATCH',
+  'MULTILEADER',
 ]);
 
 const ARC_POINT = (c: Vec2, r: number, a: number): Vec2 => ({
@@ -414,6 +423,11 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
       if (!sameText(first(g, 1), geom.text)) bad('1', first(g, 1), geom.text);
       const dir = pt(g, 11);
       if (!sameAngle(geom.rotation, Math.atan2(dir.y, dir.x))) bad('11', fmt(dir), geom.rotation);
+      return;
+    }
+    case 'MULTILEADER': {
+      if (geom.kind !== 'MULTILEADER') return bad('type', d.type, geom.kind);
+      compareMultiLeader(g, geom, bad);
       return;
     }
     case 'HATCH': {
@@ -794,6 +808,189 @@ function compareLeader(g: readonly Group[], geom: LeaderGeometry, t: MappedTable
   if ((ann && ann !== '0' ? ann : undefined) !== geom.annotation) bad('340', ann, geom.annotation);
   if (first(g, 211) !== undefined && !near(geom.horizontalDirection, pt(g, 211)))
     bad('211', fmt(pt(g, 211)), fmt(geom.horizontalDirection));
+}
+
+/** A handle group as the mapper states it: no leading zeros, upper case, 0 for none. */
+const handleIn = (g: readonly Group[], code: number): string | undefined => {
+  const h = first(g, code)
+    ?.trim()
+    .replace(/^0+(?=.)/, '')
+    .toUpperCase();
+  return h && h !== '0' ? h : undefined;
+};
+
+/**
+ * An AcCmEntityColor as MULTILEADER writes it (DXF 91/92/93 and context 90): a signed 32-bit
+ * value whose high byte is the method, 0xC0 ByLayer, 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI.
+ */
+function cmColor(g: readonly Group[], code: number): string {
+  const v = Number(first(g, code) ?? '0') >>> 0;
+  const method = v >>> 24;
+  if (method === 0xc0) return 'byLayer';
+  if (method === 0xc2) return `rgb ${(v >>> 16) & 255},${(v >>> 8) & 255},${v & 255}`;
+  if (method === 0xc3) {
+    const i = v & 255;
+    return i === 0 ? 'byBlock' : i === 256 ? 'byLayer' : `aci ${i}`;
+  }
+  return 'byBlock';
+}
+const colorText = (c: Color): string =>
+  c.kind === 'rgb' ? `rgb ${c.r},${c.g},${c.b}` : c.kind === 'aci' ? `aci ${c.index}` : c.kind;
+
+/** The groups between an opening marker group and its closing `}` group, nesting aside. */
+function braces(
+  g: readonly Group[],
+  open: Group,
+  close: number,
+): { inner: Group[]; outer: Group[] }[] {
+  const out: { inner: Group[]; outer: Group[] }[] = [];
+  let i = 0;
+  while (i < g.length) {
+    const s = g.findIndex(([c, v], k) => k >= i && c === open[0] && v.trim() === open[1]);
+    if (s < 0) break;
+    const e = g.findIndex(([c, v], k) => k > s && c === close && v.trim() === '}');
+    out.push({ inner: g.slice(s + 1, e), outer: [] });
+    i = e + 1;
+  }
+  return out;
+}
+const without = (g: readonly Group[], open: Group, close: number): Group[] => {
+  const out: Group[] = [];
+  let depth = 0;
+  for (const grp of g) {
+    if (grp[0] === open[0] && grp[1].trim() === open[1]) depth++;
+    else if (depth > 0 && grp[0] === close && grp[1].trim() === '}') depth--;
+    else if (depth === 0) out.push(grp);
+  }
+  return out;
+};
+
+/**
+ * MULTILEADER (DXF reference, MLEADER): the AcDbMLeader groups, its CONTEXT_DATA{ block and
+ * that block's LEADER{ and LEADER_LINE{ blocks, read apart. All points are WCS.
+ */
+function compareMultiLeader(groups: readonly Group[], geom: MultiLeaderGeometry, bad: Bad): void {
+  const ml = subclass(groups, 'AcDbMLeader');
+  const CTX: Group = [300, 'CONTEXT_DATA{'];
+  const LEADER: Group = [302, 'LEADER{'];
+  const LINE: Group = [304, 'LEADER_LINE{'];
+  const own = without(ml, CTX, 301);
+  const ctxAll = braces(ml, CTX, 301)[0]?.inner ?? [];
+  const ctx = without(ctxAll, LEADER, 303);
+  const pt2 = (g: readonly Group[], code: number): Vec2 => ({
+    x: num(g, code),
+    y: num(g, code + 10),
+  });
+  const ints: [string, number, number][] = [
+    ['90', num(own, 90), geom.overrideFlags],
+    ['170', num(own, 170), geom.pathType],
+    ['172', num(own, 172), geom.contentType],
+    ['173', num(own, 173), geom.textLeftAttachment],
+    ['95', num(own, 95), geom.textRightAttachment],
+    ['271', num(own, 271), geom.textAttachmentDirection],
+    ['174', num(own, 174), geom.textAngleType],
+    ['175', num(own, 175), geom.textAlignment],
+  ];
+  for (const [code, file, got] of ints) if (file !== got) bad(code, file, got);
+  // 272/273 arrived with R2010; older files omit them, leaving the reader's default.
+  if (first(own, 273) !== undefined && num(own, 273) !== geom.textTopAttachment)
+    bad('273', num(own, 273), geom.textTopAttachment);
+  if (first(own, 272) !== undefined && num(own, 272) !== geom.textBottomAttachment)
+    bad('272', num(own, 272), geom.textBottomAttachment);
+  const flags: [string, boolean][] = [
+    ['290', geom.landing],
+    ['291', geom.dogleg],
+    ['292', geom.textFrame],
+    ['293', geom.annotative],
+  ];
+  for (const [code, got] of flags)
+    if ((num(own, Number(code)) !== 0) !== got) bad(code, num(own, Number(code)), got);
+  const reals: [string, readonly Group[], number, number][] = [
+    ['41', own, num(own, 41), geom.doglegLength],
+    ['42', own, num(own, 42), geom.arrowheadSize],
+    ['45', own, num(own, 45, 1), geom.scale],
+    ['ctx 145', ctx, num(ctx, 145), geom.landingGap],
+  ];
+  for (const [code, , file, got] of reals) if (!close(file, got)) bad(code, file, got);
+  if (handleIn(own, 340) !== geom.style) bad('340', handleIn(own, 340), geom.style);
+  if (handleIn(own, 341) !== geom.linetype) bad('341', handleIn(own, 341), geom.linetype);
+  if (handleIn(own, 342) !== geom.arrowhead) bad('342', handleIn(own, 342), geom.arrowhead);
+  if (cmColor(own, 91) !== colorText(geom.lineColor))
+    bad('91', cmColor(own, 91), colorText(geom.lineColor));
+  const lw = num(own, 171);
+  const lwGot = geom.lineweight;
+  if ((lw === -1 ? 'ByLayer' : lw === -2 ? 'ByBlock' : lw === -3 ? 'Default' : lw) !== lwGot)
+    bad('171', lw, lwGot);
+  if (!near(pt2(ctx, 10), geom.contentBase))
+    bad('ctx 10', fmt(pt2(ctx, 10)), fmt(geom.contentBase));
+
+  const text = geom.text;
+  if ((num(ctx, 290) !== 0) !== !!text) bad('ctx 290', num(ctx, 290), !!text);
+  if (text) {
+    if (!sameText(first(ctx, 304), text.content)) bad('ctx 304', first(ctx, 304), text.content);
+    if (handleIn(ctx, 340) !== text.style) bad('ctx 340', handleIn(ctx, 340), text.style);
+    if (!near(pt2(ctx, 12), text.position)) bad('ctx 12', fmt(pt2(ctx, 12)), fmt(text.position));
+    const dir = pt2(ctx, 13);
+    if ((dir.x !== 0 || dir.y !== 0) && !sameAngle(text.rotation, Math.atan2(dir.y, dir.x)))
+      bad('ctx 13', fmt(dir), text.rotation);
+    if (num(ctx, 31, 1) < 0 !== !!text.upsideDown) bad('ctx 31', num(ctx, 31, 1), text.upsideDown);
+    const tr: [string, number, number][] = [
+      ['ctx 41', num(ctx, 41), text.height],
+      ['ctx 43', num(ctx, 43), text.width],
+      ['ctx 44', num(ctx, 44), text.boundaryHeight],
+      ['ctx 45', num(ctx, 45), text.lineSpacing],
+    ];
+    for (const [code, file, got] of tr) if (!close(file, got)) bad(code, file, got);
+    const ti: [string, number, number][] = [
+      ['ctx 170', num(ctx, 170), text.lineSpacingStyle],
+      ['ctx 171', num(ctx, 171), text.attachment],
+      ['ctx 172', num(ctx, 172), text.flow],
+    ];
+    for (const [code, file, got] of ti) if (file !== got) bad(code, file, got);
+    if (cmColor(ctx, 90) !== colorText(text.color))
+      bad('ctx 90', cmColor(ctx, 90), colorText(text.color));
+  }
+  const block = geom.block;
+  if ((num(ctx, 296) !== 0) !== !!block) bad('ctx 296', num(ctx, 296), !!block);
+  if (block) {
+    if (handleIn(ctx, 341) !== block.block) bad('ctx 341', handleIn(ctx, 341), block.block);
+    if (!near(pt2(ctx, 15), block.position)) bad('ctx 15', fmt(pt2(ctx, 15)), fmt(block.position));
+    const sc = pt(ctx, 16);
+    if (
+      ![sc.x, sc.y, sc.z].every((v, k) =>
+        close(v, [block.scale.x, block.scale.y, block.scale.z][k]!),
+      )
+    )
+      bad('ctx 16', JSON.stringify(sc), JSON.stringify(block.scale));
+    if (!close(num(ctx, 46), block.rotation)) bad('ctx 46', num(ctx, 46), block.rotation);
+    if (cmColor(ctx, 93) !== colorText(block.color))
+      bad('ctx 93', cmColor(ctx, 93), colorText(block.color));
+  }
+
+  const roots = braces(ctxAll, LEADER, 303).map((b) => b.inner);
+  if (roots.length !== geom.branches.length)
+    return bad('LEADER{', roots.length, geom.branches.length);
+  roots.forEach((r, k) => {
+    const got = geom.branches[k]!;
+    const rg = without(r, LINE, 305);
+    if (num(rg, 90) !== got.index) bad('LEADER{ 90', num(rg, 90), got.index);
+    if (!near(pt2(rg, 10), got.connection))
+      bad('LEADER{ 10', fmt(pt2(rg, 10)), fmt(got.connection));
+    if (!near(pt2(rg, 11), got.direction)) bad('LEADER{ 11', fmt(pt2(rg, 11)), fmt(got.direction));
+    if (!close(num(rg, 40), got.doglegLength)) bad('LEADER{ 40', num(rg, 40), got.doglegLength);
+    const lines = braces(r, LINE, 305).map((b) => b.inner);
+    if (lines.length !== got.lines.length)
+      return bad('LEADER_LINE{', lines.length, got.lines.length);
+    lines.forEach((l, j) => {
+      const gl = got.lines[j]!;
+      if (num(l, 91) !== gl.index) bad('LEADER_LINE{ 91', num(l, 91), gl.index);
+      const xs = all(l, 10).map(Number);
+      const ys = all(l, 20).map(Number);
+      const vs = xs.map((x, q) => ({ x, y: ys[q]! }));
+      if (vs.length !== gl.vertices.length || vs.some((v, q) => !near(v, gl.vertices[q]!)))
+        bad('LEADER_LINE{ 10', vs.map(fmt).join(' '), gl.vertices.map(fmt).join(' '));
+    });
+  });
 }
 
 /** A HATCH boundary as the file states it, read group by group (DXF reference, HATCH). */
