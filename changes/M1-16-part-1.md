@@ -1,0 +1,1 @@
+- M1-16 part 1 (#60): the renderer draws pattern hatches from the pattern lines the file stores, clipped to the boundary by island style (normal, outer, ignore) and dashed as AutoCAD does, and fills a pattern denser than HPMAXLINES.
