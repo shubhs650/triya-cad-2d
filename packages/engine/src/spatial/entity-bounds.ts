@@ -249,5 +249,14 @@ export function entityBounds(geom: EntityGeometry, ctx: BoundsContext): EntityBo
       return insertBounds(geom, ctx);
     case 'HATCH':
       return hatchBounds(geom, ctx.tol);
+    case 'ACAD_TABLE': {
+      // The grid starts at the insertion point and may flow up or down along any direction,
+      // so a circle of the grid's diagonal around that point holds it; cell text wraps inside
+      // its cell. Looser than the drawn table, never tighter.
+      const w = geom.columnWidths.reduce((a, b) => a + Math.abs(b), 0);
+      const h = geom.rowHeights.reduce((a, b) => a + Math.abs(b), 0);
+      if (geom.columnWidths.length === 0 || geom.rowHeights.length === 0) return EMPTY;
+      return boxed(pad(boxOf([geom.position]), Math.hypot(w, h)));
+    }
   }
 }

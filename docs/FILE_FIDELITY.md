@@ -39,7 +39,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | ✓ (style 75, seed points and ellipse-edge major axes lost by acad-ts, M1-32) | | | | |
 | WIPEOUT | | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | | | | | |
-| TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | | | | | |
+| TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation); cell formats not mapped yet; ezdxf-written tables dropped by acad-ts (M1-32) | | | | |
 | VIEWPORT | | | | | |
 | TOLERANCE | ✓ (caret codes left encoded by acad-ts, M1-32) | | | | |
 | MLINE (+ MLINESTYLE) | | | | | |
