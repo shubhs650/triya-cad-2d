@@ -1,0 +1,1 @@
+- M1-12 part 2 (#48): `Canvas2DRenderer`, the first renderer that draws a drawing: a scene cache rebuilt only for changed entities, R-tree culling, sub-pixel LOD with an idle full-quality frame after a slow one, a transient layer for rubber bands and grips, device-pixel-ratio-aware lines and hit testing by true distance.
