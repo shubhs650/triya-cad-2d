@@ -1,0 +1,38 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index ae5e34c..b3bdf39 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -242,7 +242,10 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 	private get insertsByBlockName(): Map<string, Insert[]> {
+ 		if (this._insertsByBlockName == null) {
+ 			this._insertsByBlockName = new Map<string, Insert[]>();
+-			for (const entity of this._document.entities ?? []) {
++			// Inserts in every block, not only model space: a block can be inserted from paper
++			// space, another block, a dimension or a table block.
++			const entities = Array.from(this._document.blockRecords).flatMap((record) => Array.from(record.entities));
++			for (const entity of entities) {
+ 				if (!(entity instanceof Insert) || entity.block == null) {
+ 					continue;
+ 				}
+@@ -480,14 +483,14 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		const entitiesByHandle = new Map(entities.map((entity) => [entity.handle, entity]));
+ 		const flags = record.combinedFlags;
+ 		const inserts = this.insertsByBlockName.get(record.name) ?? [];
+-		const insertHandles = inserts.map((insert) => insert.handle);
++		// The list as read first, in its order (it can name erased inserts and tables), then any
++		// insert added since.
++		const insertHandles = [...record.insertHandles];
+ 		const insertSet = new Set(insertHandles);
+-		if (record.name.toUpperCase().startsWith('*T')) {
+-			for (const handle of record.insertHandles) {
+-				if (!insertSet.has(handle)) {
+-					insertSet.add(handle);
+-					insertHandles.push(handle);
+-				}
++		for (const insert of inserts) {
++			if (!insertSet.has(insert.handle)) {
++				insertSet.add(insert.handle);
++				insertHandles.push(insert.handle);
+ 			}
+ 		}
+ 		const insertsByHandle = new Map(inserts.map((insert) => [insert.handle, insert]));

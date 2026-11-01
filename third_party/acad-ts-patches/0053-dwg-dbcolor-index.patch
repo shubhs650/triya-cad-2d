@@ -1,0 +1,15 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index ae5e34c..b3bdf39 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -3633,7 +3645,9 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 	}
+ 
+ 	private _writeBookColor(color: BookColor): void {
+-		this._writer.writeBitShort(0);
++		// Before R2004 the colour index is all the object holds; from R2004 it is 0 and the
++		// true colour follows.
++		this._writer.writeBitShort(this.r2004Plus ? 0 : color.color.isTrueColor ? color.color.getApproxIndex() : color.color.index);
+ 
+ 		if (this.r2004Plus) {
+ 			const arr = new Uint8Array([
