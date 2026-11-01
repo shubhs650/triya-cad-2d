@@ -93,7 +93,7 @@ export interface ObjectCommon {
 //
 // Curve entities are a kernel curve (geom/curves.ts) plus what the file carries beyond the
 // plane, so their `entity.geom` goes straight into kernel functions. POINT, POLYLINE, SOLID,
-// TRACE and 3DFACE have shapes of their own.
+// TRACE, 3DFACE, the text entities and INSERT have shapes of their own.
 
 /**
  * Out-of-plane data, carried so the plan view can say where an entity sat in 3D. Geometry is
@@ -179,6 +179,128 @@ export interface Face3dGeometry {
   readonly hiddenEdges: number;
 }
 
+/**
+ * The text frame shared by TEXT, ATTDEF and ATTRIB. `rotation` is the WCS angle of the
+ * baseline; glyphs are laid out in the frame `rotation · mirror` around the anchor, so a −Z
+ * extrusion (which mirrors the OCS in X) shows as the baseline turned to π − θ with
+ * `upsideDown` toggled (DEC-039). `halign`/`valign` are DXF 72/73 (74 for ATTDEF) as stored.
+ */
+export interface TextFields extends PlanarProps {
+  readonly value: string;
+  /** STYLE record handle. */
+  readonly style: Handle;
+  /** DXF 10: the first alignment point (the baseline start for left-baseline text). */
+  readonly position: Vec2;
+  /** DXF 11: the second alignment point, present when the text is not left-baseline. */
+  readonly alignmentPoint?: Vec2;
+  readonly height: number;
+  readonly rotation: number;
+  readonly widthFactor: number;
+  /** DXF 51, radians. */
+  readonly oblique: number;
+  /** DXF 72: 0 left, 1 centre, 2 right, 3 aligned, 4 middle, 5 fit. */
+  readonly halign: number;
+  /** DXF 73: 0 baseline, 1 bottom, 2 middle, 3 top. */
+  readonly valign: number;
+  /** DXF 71 bit 2: mirrored in the text's own X. */
+  readonly backward: boolean;
+  /** DXF 71 bit 4: mirrored in the text's own Y. */
+  readonly upsideDown: boolean;
+}
+
+export interface TextGeometry extends TextFields {
+  readonly kind: 'TEXT';
+}
+
+/** What an attribute definition and an attribute have beyond their text. */
+export interface AttributeFields extends TextFields {
+  readonly tag: string;
+  /** DXF 70: 1 invisible, 2 constant, 4 verify, 8 preset. */
+  readonly flags: number;
+  /** DXF 280: position locked within the block. */
+  readonly lockPosition?: boolean;
+  /** A multiline attribute (DXF 71 = 2 or 4) carries its text as an embedded MTEXT. */
+  readonly mtext?: MTextGeometry;
+}
+
+export interface AttdefGeometry extends AttributeFields {
+  readonly kind: 'ATTDEF';
+  readonly prompt: string;
+}
+
+/**
+ * MTEXT. Its insertion point and X direction are WCS in the file, so `position` is the
+ * insertion point without Z and `rotation` the WCS angle of the X direction. Under a −Z
+ * extrusion the text's Y axis (normal × X) points the other way, which `upsideDown` says;
+ * MTEXT has no DXF mirror flag, so it only ever comes from the extrusion.
+ */
+export interface MTextGeometry extends PlanarProps {
+  readonly kind: 'MTEXT';
+  /** The contents with their formatting codes, as stored (DXF 1 and 3). */
+  readonly contents: string;
+  readonly style: Handle;
+  readonly position: Vec2;
+  readonly height: number;
+  /** DXF 41: reference rectangle width (0 = no wrapping). */
+  readonly width: number;
+  /** DXF 46: defined height, when set. */
+  readonly definedHeight?: number;
+  readonly rotation: number;
+  readonly upsideDown?: boolean;
+  /** DXF 71: 1–9, top-left to bottom-right. */
+  readonly attachment: number;
+  /** DXF 72: 1 left to right, 3 top to bottom, 5 by style. */
+  readonly direction: number;
+  /** DXF 73: 1 at least, 2 exact. */
+  readonly lineSpacingStyle: number;
+  /** DXF 44. */
+  readonly lineSpacing: number;
+  /** DXF 90 flags (1 colour, 2 drawing window colour, 16 frame) with 63/421, 45, 441. */
+  readonly background?: {
+    readonly flags: number;
+    readonly color?: Color;
+    readonly scale: number;
+    readonly transparency?: number;
+  };
+  readonly columns?: {
+    /** DXF 75: 1 static, 2 dynamic. */
+    readonly type: number;
+    readonly count: number;
+    readonly flowReversed: boolean;
+    readonly autoHeight: boolean;
+    readonly width: number;
+    readonly gutter: number;
+    readonly heights: readonly number[];
+  };
+}
+
+/** An ATTRIB, folded into its INSERT; it keeps its own handle and entity properties. */
+export interface InsertAttribute extends AttributeFields, EntityProps, ObjectCommon {}
+
+/**
+ * INSERT or MINSERT in plan view: the block's WCS placement is position · rotation · scale.
+ * A −Z extrusion is folded in exactly (DEC-039): OCS (x, y, z) is WCS (−x, y, −z), so the
+ * placement becomes the mirrored position, rotation −θ and scale (−sx, sy, −sz), and `normal`
+ * only records where it came from.
+ */
+export interface InsertGeometry extends PlanarProps {
+  readonly kind: 'INSERT';
+  /** BLOCK_RECORD handle. */
+  readonly block: Handle;
+  readonly position: Vec2;
+  readonly scale: Vec3;
+  readonly rotation: number;
+  /** MINSERT: DXF 70/71 counts and 44/45 spacing, along the rotated (unscaled) axes. */
+  readonly array?: {
+    readonly columns: number;
+    readonly rows: number;
+    readonly columnSpacing: number;
+    readonly rowSpacing: number;
+  };
+  /** The ATTRIBs that follow the INSERT, in file order (SEQEND folded in, as for POLYLINE). */
+  readonly attributes: readonly InsertAttribute[];
+}
+
 export type EntityGeometry =
   | LineGeometry
   | XlineGeometry
@@ -191,7 +313,11 @@ export type EntityGeometry =
   | PolylineGeometry
   | SplineGeometry
   | SolidGeometry
-  | Face3dGeometry;
+  | Face3dGeometry
+  | TextGeometry
+  | MTextGeometry
+  | AttdefGeometry
+  | InsertGeometry;
 
 /** DXF entity type name; always equal to `geom.kind`. */
 export type EntityType = EntityGeometry['kind'];

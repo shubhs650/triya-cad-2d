@@ -5,6 +5,13 @@
 
 import {
   Arc,
+  AttributeDefinition,
+  Insert,
+  MText,
+  TableEntity,
+  TextEntity,
+  type AttributeBase,
+  type AttributeEntity,
   Circle,
   Ellipse,
   Face3D,
@@ -22,15 +29,22 @@ import {
   type BlockRecord,
   type CadDocument,
   type Entity,
+  type TextStyle,
   type Vertex,
   type XYZ,
 } from '@node-projects/acad-ts';
 import type {
+  AttributeFields,
   Color,
   EntityGeometry,
   EntityInit,
+  EntityProps,
+  InsertAttribute,
   LinetypeRef,
+  MTextGeometry,
+  ObjectCommon,
   PlanarProps,
+  TextFields,
   PolylineVertex,
   Transparency,
   Vec2,
@@ -41,7 +55,7 @@ export interface UnmappedEntity {
   readonly handle: string;
   /** DXF type name. */
   readonly type: string;
-  readonly reason: 'not mapped yet' | 'tilted plane' | 'no plan view';
+  readonly reason: 'not mapped yet' | 'tilted plane' | 'no plan view' | 'missing block';
 }
 
 export interface MappedEntities {
@@ -180,8 +194,144 @@ function polyline(p: Polyline): EntityGeometry | UnmappedEntity['reason'] {
   };
 }
 
+/**
+ * The text frame of TEXT, ATTDEF and ATTRIB. Their 10/11 points, rotation and elevation are
+ * OCS. Under −Z the frame R(θ)·mirror becomes X·R(θ)·mirror = R(π − θ)·Y·mirror, so the
+ * baseline turns to π − θ and the text's own Y flips: `upsideDown` toggles (DEC-039).
+ */
+function textFields(t: TextEntity, pl: Plane, ctx: Ctx): TextFields {
+  const mirror = t.mirror as number;
+  const halign = t.horizontalAlignment as number;
+  const valign = t.verticalAlignment as number;
+  const down = pl === 'down';
+  return {
+    value: t.value,
+    style: ctx.style(t.style),
+    position: planOf(t.insertPoint, pl),
+    // AutoCAD ignores 11 for left-baseline text and does not write it.
+    ...(halign !== 0 || valign !== 0 ? { alignmentPoint: planOf(t.alignmentPoint, pl) } : {}),
+    height: t.height,
+    rotation: down ? norm(Math.PI - t.rotation) : t.rotation,
+    widthFactor: t.widthFactor,
+    oblique: t.obliqueAngle,
+    halign,
+    valign,
+    backward: (mirror & 2) !== 0,
+    upsideDown: ((mirror & 4) !== 0) !== down,
+    ...planar(pl, t.normal, t.insertPoint.z, t.thickness),
+  };
+}
+
+function attributeFields(a: AttributeBase, pl: Plane, ctx: Ctx): AttributeFields {
+  const multiline = (a.attributeType as number) !== 1 && a.mText !== null;
+  const mtext = multiline ? mtextGeometry(a.mText!, ctx) : undefined;
+  return {
+    ...textFields(a, pl, ctx),
+    tag: a.tag,
+    flags: a.flags as number,
+    ...(a.isReallyLocked ? { lockPosition: true } : {}),
+    ...(typeof mtext === 'object' ? { mtext } : {}),
+  };
+}
+
+/**
+ * MTEXT's 10 and 11 are WCS, so they need no conversion; a −Z extrusion only reverses the
+ * text's Y axis (normal × X), which `upsideDown` records.
+ */
+function mtextGeometry(m: MText, ctx: Ctx): MTextGeometry | UnmappedEntity['reason'] {
+  const pl = plane(m.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  // No 11 or 50 in the file leaves the direction zero: the text runs along the OCS X axis,
+  // which is WCS −X under a −Z extrusion.
+  const d = m.alignmentPoint;
+  const dir = d.x === 0 && d.y === 0 ? { x: pl === 'down' ? -1 : 1, y: 0 } : d;
+  const bg = m.backgroundFillFlags as number;
+  const cols = m.columnData;
+  return {
+    kind: 'MTEXT',
+    contents: m.value,
+    style: ctx.style(m.style),
+    position: xy(m.insertPoint),
+    height: m.height,
+    width: m.rectangleWidth,
+    ...(m.rectangleHeight !== 0 ? { definedHeight: m.rectangleHeight } : {}),
+    rotation: norm(Math.atan2(dir.y, dir.x)),
+    ...(pl === 'down' ? { upsideDown: true } : {}),
+    attachment: m.attachmentPoint as number,
+    direction: m.drawingDirection as number,
+    lineSpacingStyle: m.lineSpacingStyle as number,
+    lineSpacing: m.lineSpacing,
+    ...(bg !== 0
+      ? {
+          background: {
+            flags: bg,
+            ...(m.backgroundColor ? { color: mapColor(m.backgroundColor) } : {}),
+            scale: m.backgroundScale,
+            ...(m.backgroundTransparency !== 0 ? { transparency: m.backgroundTransparency } : {}),
+          },
+        }
+      : {}),
+    ...(m.hasColumns && cols
+      ? {
+          columns: {
+            type: cols.columnType as number,
+            count: cols.columnCount,
+            flowReversed: cols.flowReversed,
+            autoHeight: cols.autoHeight,
+            width: cols.width,
+            gutter: cols.gutter,
+            heights: [...cols.heights],
+          },
+        }
+      : {}),
+    ...(m.insertPoint.z !== 0 ? { elevation: m.insertPoint.z } : {}),
+    ...(pl !== 'up' ? { normal: { x: m.normal.x, y: m.normal.y, z: m.normal.z } } : {}),
+  };
+}
+
+/**
+ * The block lands at OCS insert + R(θ)·S·q. Under −Z, OCS (x, y, z) is WCS (−x, y, −z), and
+ * that mirror commutes R(θ) to R(−θ) and S to diag(−sx, sy, −sz): an ordinary +Z placement.
+ */
+function insertGeometry(e: Insert, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
+  if (!e.block) return 'missing block';
+  const pl = plane(e.normal);
+  if (pl === 'tilted') return 'tilted plane';
+  const down = pl === 'down';
+  const attributes: InsertAttribute[] = [];
+  for (const a of e.attributes as unknown as AttributeEntity[]) {
+    const apl = plane(a.normal);
+    if (apl === 'tilted')
+      ctx.report({ handle: hex(a.handle), type: a.objectName, reason: 'tilted plane' });
+    else attributes.push({ ...entityProps(a), ...attributeFields(a, apl, ctx) });
+  }
+  const multiple = e.columnCount > 1 || e.rowCount > 1;
+  return {
+    kind: 'INSERT',
+    block: hex(e.block.handle),
+    position: planOf(e.insertPoint, pl),
+    scale: down
+      ? { x: -e.xScale, y: e.yScale, z: -e.zScale }
+      : { x: e.xScale, y: e.yScale, z: e.zScale },
+    rotation: down ? norm(-e.rotation) : e.rotation,
+    ...(multiple
+      ? {
+          array: {
+            columns: e.columnCount,
+            rows: e.rowCount,
+            // Columns run along the rotated X axis, which the mirror reverses.
+            columnSpacing: down ? -e.columnSpacing : e.columnSpacing,
+            rowSpacing: e.rowSpacing,
+          },
+        }
+      : {}),
+    attributes,
+    ...planar(pl, e.normal, e.insertPoint.z, 0),
+  };
+}
+
 /** Plan-view geometry of an entity, or why it has none in Triya yet. */
-function geometry(e: Entity): EntityGeometry | UnmappedEntity['reason'] {
+function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'] {
   if (e instanceof Line) {
     const z = e.startPoint.z === e.endPoint.z ? e.startPoint.z : 0;
     const pl = plane(e.normal);
@@ -319,17 +469,35 @@ function geometry(e: Entity): EntityGeometry | UnmappedEntity['reason'] {
       hiddenEdges: e.flags as number,
     };
   }
+  // AttributeDefinition extends TextEntity, so it is tested first.
+  if (e instanceof AttributeDefinition) {
+    const pl = plane(e.normal);
+    if (pl === 'tilted') return 'tilted plane';
+    return { kind: 'ATTDEF', ...attributeFields(e, pl, ctx), prompt: e.prompt };
+  }
+  if (e instanceof TextEntity) {
+    const pl = plane(e.normal);
+    if (pl === 'tilted') return 'tilted plane';
+    return { kind: 'TEXT', ...textFields(e, pl, ctx) };
+  }
+  if (e instanceof MText) return mtextGeometry(e, ctx);
+  // TableEntity extends Insert in acad-ts; tables are mapped with the annotations.
+  if (e instanceof TableEntity) return 'not mapped yet';
+  if (e instanceof Insert) return insertGeometry(e, ctx);
   return 'not mapped yet';
 }
 
-function entity(e: Entity, owner: BlockRecord): EntityInit | UnmappedEntity {
-  const geom = geometry(e);
-  if (typeof geom === 'string') return { handle: hex(e.handle), type: e.objectName, reason: geom };
+interface Ctx {
+  readonly report: (u: UnmappedEntity) => void;
+  /** STYLE handle of a text style reference. */
+  readonly style: (s: TextStyle) => string;
+}
+
+/** The AcDbEntity properties, shared by entities and the ATTRIBs folded into an INSERT. */
+function entityProps(e: Entity): EntityProps & ObjectCommon {
   const material = ref(e.material);
   return {
     ...common(e),
-    type: geom.kind,
-    owner: hex(owner.handle),
     layer: hex(e.layer.handle),
     color: entityColor(e),
     linetype: linetypeRef(e),
@@ -338,17 +506,29 @@ function entity(e: Entity, owner: BlockRecord): EntityInit | UnmappedEntity {
     ltScale: e.lineTypeScale,
     visible: !e.isInvisible,
     ...(material ? { material } : {}),
-    geom,
   };
+}
+
+function entity(e: Entity, owner: BlockRecord, ctx: Ctx): EntityInit | UnmappedEntity {
+  const geom = geometry(e, ctx);
+  if (typeof geom === 'string') return { handle: hex(e.handle), type: e.objectName, reason: geom };
+  return { ...entityProps(e), type: geom.kind, owner: hex(owner.handle), geom };
 }
 
 /** Every entity of every block record, mapped or reported. */
 export function mapEntities(doc: CadDocument): MappedEntities {
   const entities: EntityInit[] = [];
   const unmapped: UnmappedEntity[] = [];
+  const byName = new Map([...(doc.textStyles ?? [])].map((s) => [s.name.toUpperCase(), s]));
+  const ctx: Ctx = {
+    report: (u) => unmapped.push(u),
+    // acad-ts leaves an ATTRIB that names no style (R12 omits 7 for STANDARD) on its detached
+    // default style, whose handle is 0; resolve it by name.
+    style: (s) => hex(s.handle !== 0 ? s.handle : (byName.get(s.name.toUpperCase())?.handle ?? 0)),
+  };
   for (const block of doc.blockRecords ?? []) {
     for (const e of block.entities) {
-      const m = entity(e, block);
+      const m = entity(e, block, ctx);
       if ('geom' in m) entities.push(m);
       else unmapped.push(m);
     }
