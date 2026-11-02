@@ -1,0 +1,44 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 4ff403c..40f2b91 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -644,7 +644,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
+ 		}
+ 		if (this.r2007Plus) {
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
++			// The layer's material; upstream wrote 0, detaching every layer from it.
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, layer.material?.handle ?? 0);
+ 		}
+ 
+ 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, layer.lineType.handle);
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index 4ef9c37..e406caf 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -257,6 +257,9 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+     // Hard pointer to the layer's plot style name (an ACDBPLACEHOLDER in ACAD_PLOTSTYLENAME);
+     // upstream always wrote 0, detaching every layer from its plot style.
+     this._writer.write(390, layer.plotStyleName, map);
++
++    // The layer's material (R2007+); upstream never wrote it, so every layer lost it on save.
++    if (this.version >= ACadVersion.AC1021) this._writer.writeHandle(347, layer.material, map);
+   }
+ 
+   private _writeLineType(linetype: LineType, map: DxfClassMap): void {
+diff --git a/src/IO/Templates/CadLayerTemplate.ts b/src/IO/Templates/CadLayerTemplate.ts
+index 07951db..4e75bf1 100644
+--- a/src/IO/Templates/CadLayerTemplate.ts
++++ b/src/IO/Templates/CadLayerTemplate.ts
+@@ -25,7 +25,11 @@ export class CadLayerTemplate extends CadTableEntryTemplate<Layer> {
+ 	protected override _build(builder: CadDocumentBuilder): void {
+ 		super._build(builder);
+ 
++		// The layer's material (DXF 347, DWG R2007+): upstream looked it up and dropped it.
+ 		const material = builder.tryGetCadObject<Material>(this.materialHandle);
++		if (material instanceof Material) {
++			this.cadObject.material = material;
++		}
+ 
+ 		const lineType = this.getTableReference(builder, this.lineTypeHandle, this.lineTypeName ?? '', LineType);
+ 		if (lineType) {

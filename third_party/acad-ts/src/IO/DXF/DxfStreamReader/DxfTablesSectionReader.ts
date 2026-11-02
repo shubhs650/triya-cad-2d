@@ -372,7 +372,9 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
         dimensionStyle.alternateDimensioningSuffix = this._reader.valueAsString;
         return true;
       case 5:
-        template.dimbL_Name = this._reader.valueAsString;
+        // 5 is a handle code, so the value was parsed as hex (BOXBLANK became 11); R12's DIMBLK
+        // is a block name, which the line holds as written.
+        template.dimbL_Name = this._reader.valueRaw.trim();
         return true;
       case 6:
         template.dimblK1_Name = this._reader.valueAsString;

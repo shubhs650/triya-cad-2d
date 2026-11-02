@@ -59,17 +59,17 @@ Read ticks for entities (M1-04) mean every entity of the type in every readable 
 
 | Table | Read | Edit | Write | Test |
 |---|---|---|---|---|
-| LAYER (+ VP overrides via xdata/dictionaries) | ✓ record (VP overrides not yet) | | | |
+| LAYER (+ VP overrides via xdata/dictionaries) | ✓ record, material (DXF 347 and DWG R2007+, read and written since acad-ts patch 0112, M1-32 part 3) (VP overrides not yet) | | | |
 | LTYPE (simple + complex) | ✓ (patterns, text and shape elements fitted by `dashPath`, M1-13 part 1; `.lin` files read by `parseLin`; drawn by the renderer at LTSCALE × object scale, M1-13 part 3; embedded text and shapes drawn with their STYLE's font or shape file, M1-45 part 1; DXF segment styles (340) read since patch 0105) | | | `style.corpus.test.ts` (473 records) |
-| STYLE (text styles, SHX and TTF, bigfont) | ✓ | | | |
-| DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet); DIMVARs a DXF leaves out read as AutoCAD's defaults since acad-ts patch 0075, so every acadsharp DXF style equals its DWG twin's; R2004+ DWG true colours (DIMCLRD/E/T, DIMTFILLCLR) are kept beside the ACI AutoCAD writes for them in DXF (M1-55) and LEADER/TOLERANCE draw in them | | | |
+| STYLE (text styles, SHX and TTF, bigfont) | ✓ (a shape file's nameless record keeps its empty name since acad-ts patch 0113, M1-32 part 3; it was renamed `unnamedN`) | | | |
+| DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet); DIMVARs a DXF leaves out read as AutoCAD's defaults since acad-ts patch 0075, so every acadsharp DXF style equals its DWG twin's; R2004+ DWG true colours (DIMCLRD/E/T, DIMTFILLCLR) are kept beside the ACI AutoCAD writes for them in DXF (M1-55) and LEADER/TOLERANCE draw in them; R12 arrow block names (5/6/7) read and written, a built-in arrowhead without its underscore, since acad-ts patch 0114 (M1-32 part 3) | | | |
 | APPID | ✓ | | | |
 | BLOCK_RECORD (+ BLOCK/ENDBLK, *Model_Space, *Paper_Space*, *D, *U, *X, *T) | ✓ record (BLOCK/ENDBLK with M1-04) | | | |
 | VPORT | ✓ | | | |
 | VIEW | ✓ | | | |
 | UCS | ✓ | | | |
 
-Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, nameless shape `STYLE` records, R12 `DIMBLK` names), which M1-32 closes. MLEADERSTYLE and TABLESTYLE objects are checked the same way. The header is mapped too: every variable acad-ts knows is carried by DXF name and compared the same way, which since M1-32 part 2 (acad-ts patch 0111) is every AutoCAD variable a corpus DXF states (`$LINMIN`/`$LINMAX` in ezdxf's hand-written `Minimal_DXF_AC1006.dxf` are not AutoCAD variables and are skipped, as AutoCAD skips them).
+Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), with no exceptions since M1-32 part 3 (acad-ts patches 0112–0114: layer material, nameless shape `STYLE` records, R12 `DIMBLK` names); `ACAD_TS_GAPS` there is empty and keeps the ratchet. MLEADERSTYLE and TABLESTYLE objects are checked the same way. The header is mapped too: every variable acad-ts knows is carried by DXF name and compared the same way, which since M1-32 part 2 (acad-ts patch 0111) is every AutoCAD variable a corpus DXF states (`$LINMIN`/`$LINMAX` in ezdxf's hand-written `Minimal_DXF_AC1006.dxf` are not AutoCAD variables and are skipped, as AutoCAD skips them).
 
 ## Objects (non-graphical)
 

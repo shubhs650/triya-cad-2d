@@ -1,0 +1,1 @@
+- M1-32 part 3 (#126): layers keep their material through open and save (DXF and DWG), a shape file's nameless text style stays nameless instead of becoming `unnamed0`, and R12 dimension styles keep their arrow blocks (`BOXBLANK` was read as a hex handle); acad-ts patches 0112–0114.

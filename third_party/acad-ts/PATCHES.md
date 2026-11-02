@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36) and 0111 (M1-32 part 2) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) and 0112–0114 (M1-32 part 3) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2134,5 +2134,56 @@ The DXF hatch reader skipped the hatch style (75); `_readPattern` consumed the g
 **Title:** Read and write the header variables missing from the CadHeader metadata
 
 Thirty header variables AutoCAD writes (`$ATTDIA`, `$ATTREQ`, `$SURFTAB1`, `$SURFU`, `$PUCSORG`, `$UCSORTHOREF`, `$CMATERIAL`, `$INTERSECTIONCOLOR`, …) had no entry in the `CadHeader` system-variable metadata, so the DXF reader skipped them and the DXF writer never wrote them, even where `CadHeader` already had the field. This adds the entries, the fields that were missing, and a `'handle'` value kind for header variables that point at objects the library has no class for (kept as the raw handle). It also fixes the DWG header: `$SURFV` was read into `SurfaceDensityM`, the R2004+ `$INTERSECTIONCOLOR` went into `InterfereColor`, and several values and pointers were read and discarded or written as constants.
+
+</details>
+
+### 0112 — a layer's material is looked up on read and dropped, and never written
+
+- **File:** `third_party/acad-ts-patches/0112-layer-material.patch`
+- **Touches:** `src/IO/Templates/CadLayerTemplate.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** both readers keep a layer's material handle (DXF 347, DWG R2007+), and `CadLayerTemplate` looks the material up but never assigns it, so `Layer.material` was always null. The DXF writer wrote no 347 and the DWG writer wrote a null handle, so a save detached every layer from its material. Found by the M1-03 tables oracle (`tables.corpus.test.ts`, `LAYER 347`, roadmap M1-32): every layer of the R2007+ acadsharp and dynamic-block samples points at the Global material.
+- **Fix:** the template assigns the material when the handle names one; the DXF writer writes 347 for R2007+ (AutoCAD writes it after 390) and the DWG writer writes the material handle.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0112 a layer keeps its material (DXF 347, DWG R2007+) through read and save"; `tables.corpus.test.ts` no longer lists `LAYER 347` in `ACAD_TS_GAPS`.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep a layer's material on read and write it back
+
+`CadLayerTemplate.Build` looks up the material from `MaterialHandle` but never assigns it to `Layer.Material`, so every layer read from DXF (347) or R2007+ DWG has no material. The DXF writer never writes 347 and the DWG writer writes a null material handle, so a round trip detaches layers from their materials. This assigns it, writes 347 for R2007+ DXF and writes the handle in DWG.
+
+</details>
+
+### 0113 — nameless shape-file text styles are renamed `unnamedN`
+
+- **File:** `third_party/acad-ts-patches/0113-nameless-shape-file-styles.patch`
+- **Touches:** `src/Tables/Collections/Table.ts`, `src/Tables/TableEntry.ts`, `src/Tables/TextStyle.ts`
+- **Symptom:** AutoCAD stores the STYLE record of a shape file (loaded for complex linetypes or SHAPE entities, flag 1) with an empty name, and a drawing can hold several. `Table.add` renamed every nameless entry `unnamed0`, `unnamed1`, …, so the name read back was not the file's, an R12 record (no handle) could not be told apart, and a DXF writer that dropped the rename would have hit the "name is invalid" check, which skips the record. A DWG style control can list an entry twice; a named entry lands on the same key, so that was harmless while the rename gave a nameless one a name. Found by the M1-03 tables oracle (`STYLE 2`, roadmap M1-32) on `sample_AC1009/AC1015/AC1018_ascii.dxf`.
+- **Fix:** `TableEntry.keepsEmptyName` (true for a shape-file `TextStyle`) keeps the empty name: the table stores such an entry under a key no name can have (so lookups by name never find it, as AutoCAD's do not), adds it once, and re-keys it if it is renamed; `validate` accepts its empty name.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0113 a nameless shape-file text style keeps its empty name" (R12 and R2000 DXF, R2004 DWG, with saves); `tables.corpus.test.ts` matches R12 nameless records in file order and no longer lists `STYLE 2`.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep the empty name of shape-file text styles
+
+AutoCAD writes the STYLE table record of a shape file with an empty name (flag 1), and a drawing may have several. `Table.Add` renamed them `unnamed0`, `unnamed1`, … This keeps the empty name for entries that allow it (`TableEntry.KeepsEmptyName`, true for shape-file text styles): they are stored under a private key so they never match a lookup by name, added once even when a DWG style control lists them twice, and pass DXF name validation.
+
+</details>
+
+### 0114 — R12 DIMSTYLE arrow names are parsed as handles and never written
+
+- **File:** `third_party/acad-ts-patches/0114-r12-dimstyle-arrow-names.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`, `src/IO/Templates/CadDimensionStyleTemplate.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:** an R12 DIMSTYLE names its arrow blocks in 5, 6 and 7 (DIMBLK, DIMBLK1, DIMBLK2). 5 is a handle code, so the reader parsed the name as hex (`BOXBLANK` became `11`, an empty name `0`) and the arrow block never resolved. AutoCAD also writes a built-in arrowhead there without the underscore of its block (`BOXBLANK` for `_BOXBLANK`, as the DIMBLK system variable takes it), which a lookup by name misses. The R12 writer wrote none of 5/6/7. Found by the M1-03 tables oracle (`DIMSTYLE 5`, roadmap M1-32) on `sample_AC1009_ascii.dxf`.
+- **Fix:** the reader takes 5 from the line as written; the template resolves a built-in arrowhead name (AutoCAD's DIMBLK list) to its underscored block when no block has the name as written; the R12 writer writes 5/6/7 as names, a built-in arrowhead without its underscore.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0114 an R12 DIMBLK names its arrow block, a built-in arrowhead without its underscore" (ASCII and binary R12, saved both ways, and the text AutoCAD writes); `tables.corpus.test.ts` no longer lists `DIMSTYLE 5`.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write R12 DIMSTYLE arrow block names
+
+In R12 DXF the DIMSTYLE record names its arrow blocks in groups 5, 6 and 7. Group 5 is a handle code, so the reader parsed `BOXBLANK` as the hex number 11 and the arrow block was never found. AutoCAD writes built-in arrowheads there without the leading underscore of their block (`BOXBLANK` for `_BOXBLANK`). This reads 5 as text, resolves built-in arrowhead names to their underscored blocks when no block has the name as written, and writes 5/6/7 in R12 the way AutoCAD does.
 
 </details>

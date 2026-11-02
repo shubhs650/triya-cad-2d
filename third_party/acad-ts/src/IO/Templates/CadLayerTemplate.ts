@@ -25,7 +25,11 @@ export class CadLayerTemplate extends CadTableEntryTemplate<Layer> {
 	protected override _build(builder: CadDocumentBuilder): void {
 		super._build(builder);
 
+		// The layer's material (DXF 347, DWG R2007+): upstream looked it up and dropped it.
 		const material = builder.tryGetCadObject<Material>(this.materialHandle);
+		if (material instanceof Material) {
+			this.cadObject.material = material;
+		}
 
 		const lineType = this.getTableReference(builder, this.lineTypeHandle, this.lineTypeName ?? '', LineType);
 		if (lineType) {

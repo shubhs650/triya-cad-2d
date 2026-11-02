@@ -644,7 +644,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
 		}
 		if (this.r2007Plus) {
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
+			// The layer's material; upstream wrote 0, detaching every layer from it.
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, layer.material?.handle ?? 0);
 		}
 
 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, layer.lineType.handle);

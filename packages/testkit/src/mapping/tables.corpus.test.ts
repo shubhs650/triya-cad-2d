@@ -432,14 +432,10 @@ function same(kind: Kind, dxf: string, triya: unknown): boolean {
  * Where acad-ts itself does not keep what the file states, so no mapping can: each kind is a
  * read defect or gap in acad-ts, tracked by roadmap task M1-32. The test fails when a kind
  * appears that is not listed (a new loss) and when a listed kind no longer appears (fixed:
- * remove it here).
+ * remove it here). Empty since M1-32 part 3 (acad-ts patches 0112–0114); keep the ratchet for the
+ * next gap a new corpus file shows.
  */
-const ACAD_TS_GAPS: Record<string, string> = {
-  'LAYER 347': 'CadLayerTemplate looks up the layer material but never assigns it',
-  'STYLE 2': 'nameless shape-file STYLE records are renamed unnamedN by the table collection',
-  'DIMSTYLE 5':
-    'an R12 DIMBLK names a built-in arrowhead without its underscore (BOXBLANK for the _BOXBLANK block); acad-ts leaves it unresolved',
-};
+const ACAD_TS_GAPS: Record<string, string> = {};
 
 /**
  * Header names that are not AutoCAD variables, which AutoCAD skips on open, so no reader keeps
@@ -455,25 +451,35 @@ interface Mismatch {
   readonly text: string;
 }
 
-function findRecord(r: DxfRecord, t: MappedTables, table: TableName) {
+/**
+ * The record a mapped entry came from. `namelessIndex` counts the nameless STYLE records of an
+ * R12 file, in file order: a shape file's style has an empty name, so with no handle either it
+ * is told apart only by its place among the others.
+ */
+function findRecord(r: DxfRecord, t: MappedTables, table: TableName, namelessIndex?: number) {
   const h = recordHandle(r);
   // R12 files have no handles; acad-ts assigns them, so match those records by name.
   if (h === undefined) {
-    const name = first(r.groups, 2)?.toUpperCase();
-    return t[table].find((x) => x.name.toUpperCase() === name);
+    const name = first(r.groups, 2)?.toUpperCase() ?? '';
+    const named = t[table].filter((x) => x.name.toUpperCase() === name);
+    return name === '' ? named[namelessIndex ?? 0] : named[0];
   }
   return t[table].find((x) => x.handle === h);
 }
 
-function compareRecord(r: DxfRecord, t: MappedTables, out: Mismatch[], where: string): void {
+function compareRecord(
+  r: DxfRecord,
+  t: MappedTables,
+  out: Mismatch[],
+  where: string,
+  namelessIndex?: number,
+): void {
   const table = TABLE_OF[r.type];
   if (!table) return;
-  const rec = findRecord(r, t, table);
+  const rec = findRecord(r, t, table, namelessIndex);
   const label = `${where} ${r.type} ${recordHandle(r) ?? '-'} (${first(r.groups, 2)})`;
   if (!rec) {
-    // A nameless R12 shape-file style has neither handle nor name to find it by.
-    const kind = r.type === 'STYLE' && !first(r.groups, 2) ? 'STYLE 2' : `${r.type} mapped`;
-    out.push({ kind, text: `${label}: not mapped` });
+    out.push({ kind: `${r.type} mapped`, text: `${label}: not mapped` });
     return;
   }
   const checks: Checks<never> = { ...CHECKS[r.type] };
@@ -566,7 +572,7 @@ function compareRecord(r: DxfRecord, t: MappedTables, out: Mismatch[], where: st
       const want = first(r.groups, code);
       if (want === undefined) continue;
       const got = nameOf(t, 'blockRecords', d.vars[name] as string | undefined) ?? '';
-      if (got.toUpperCase() !== want.trim().toUpperCase()) report(code, want, got);
+      if (r12ArrowName(got) !== want.trim().toUpperCase()) report(code, want, got);
     }
   }
   for (const [code, [kind, get]] of Object.entries(checks)) {
@@ -575,6 +581,19 @@ function compareRecord(r: DxfRecord, t: MappedTables, out: Mismatch[], where: st
     const got = get(rec as never, t);
     if (!same(kind, values[0]!, got)) report(Number(code), values[0]!, got);
   }
+}
+
+/**
+ * How R12 names an arrow block in DIMSTYLE 5/6/7: AutoCAD's built-in arrowheads (the DIMBLK
+ * system variable's list) without the underscore their blocks have (BOXBLANK for _BOXBLANK).
+ */
+function r12ArrowName(block: string): string {
+  const name = block.toUpperCase();
+  return /^_(ARCHTICK|BOXBLANK|BOXFILLED|CLOSED|CLOSEDBLANK|DATUMBLANK|DATUMFILLED|DOT|DOTBLANK|DOTSMALL|INTEGRAL|NONE|OBLIQUE|OPEN|OPEN30|OPEN90|ORIGIN|ORIGIN2|SMALL)$/.test(
+    name,
+  )
+    ? name.slice(1)
+    : name;
 }
 
 function compareHeader(
@@ -645,8 +664,11 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
       const oracle = readDxfOracle(bytes);
       const tables = mapTables(doc);
       const { header } = mapHeader(doc);
-      for (const r of [...oracle.records, ...oracle.objects])
-        compareRecord(r, tables, mismatches, f.path);
+      let nameless = 0;
+      for (const r of [...oracle.records, ...oracle.objects]) {
+        const unnamed = r.type === 'STYLE' && !first(r.groups, 2) && !recordHandle(r);
+        compareRecord(r, tables, mismatches, f.path, unnamed ? nameless++ : undefined);
+      }
       for (const [name, groups] of oracle.header)
         if (!NOT_AUTOCAD_VARIABLES.has(name))
           compareHeader(name, groups, header, mismatches, f.path);

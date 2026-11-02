@@ -53,6 +53,12 @@ export class TextStyle extends TableEntry {
 		return (this.styleFlags & StyleFlags.IsShape) !== 0;
 	}
 
+	// AutoCAD names the STYLE record of a shape file with an empty string, and a drawing can
+	// hold several; the table used to rename them unnamedN, so a save wrote text styles.
+	public override get keepsEmptyName(): boolean {
+		return this.isShapeFile;
+	}
+
 	public constructor(name?: string) {
 		super(name);
 	}
