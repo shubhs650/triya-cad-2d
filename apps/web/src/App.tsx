@@ -12,6 +12,7 @@ import { NavBar } from './NavBar';
 import { openDrawing, openError } from './open';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import { Settings } from './Settings';
+import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
 
 export const OET_HOME = 'https://openengtools.com/';
@@ -46,6 +47,14 @@ fonts.subscribe(() => {
   for (const c of allControllers()) c.setFonts(fontSources);
 });
 
+/**
+ * Fonts installed on this computer (M1-38 part 2): used once the browser's permission is
+ * granted, for the TrueType fonts open drawings name, after the user's own files.
+ */
+const deviceFonts = new DeviceFonts(browserFontAccess());
+void deviceFonts.init();
+deviceFonts.subscribe(() => fonts.setDeviceFonts(deviceFonts.files()));
+
 function addFonts(files: Iterable<File>): void {
   for (const f of files) {
     void f.arrayBuffer().then((b) => fonts.add(f.name, new Uint8Array(b)));
@@ -75,6 +84,7 @@ async function open(file: { readonly name: string; getFile(): Promise<Blob> }): 
     if (!opened.modelSpace) throw new Error('the drawing has no model space');
     // The drawing's authoritative document goes to its engine worker (M1-67).
     engines.start(store.opened(file.name, opened, opened.modelSpace), opened.init);
+    void deviceFonts.need(trueTypeFontsOf(opened.init));
   } catch (e) {
     store.failed(file.name, openError(file.name, e));
   }
@@ -208,6 +218,7 @@ export function App() {
       <Settings
         patterns={patterns}
         fonts={fonts}
+        deviceFonts={deviceFonts}
         open={settings}
         onClose={() => setSettings(false)}
         onAdd={addPatterns}
