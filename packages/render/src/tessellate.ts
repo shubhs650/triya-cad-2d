@@ -19,6 +19,8 @@
 
 import { bundledPatterns, gradientRamp, hatchLines, hatchPattern } from '@triya/hatch';
 import {
+  VIEWPORT_NON_RECT_CLIP,
+  viewportFrame,
   bulgeArc,
   flatten,
   type EntityGeometry,
@@ -443,6 +445,19 @@ function exact(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
       const path: number[] = [];
       splinePath(path, g, true);
       return path.length ? [stroke(path, paint)] : [];
+    }
+    case 'VIEWPORT': {
+      // The frame on the sheet (M1-18). The layout's own paper-space viewport has none, and a
+      // viewport clipped by an entity shows that entity as its frame instead.
+      if (g.id === 1 || (g.flags & VIEWPORT_NON_RECT_CLIP) !== 0) return [];
+      const { minX, minY, maxX, maxY } = viewportFrame(g);
+      if (!(maxX > minX && maxY > minY)) return [];
+      return [
+        stroke(
+          [PATH_M, minX, minY, PATH_L, maxX, minY, PATH_L, maxX, maxY, PATH_L, minX, maxY, PATH_Z],
+          paint,
+        ),
+      ];
     }
     case 'SOLID':
     case 'TRACE': {
