@@ -1,1 +1,1 @@
-- M1-33 part 5 (#PRNUM): objects a drawing holds but nothing in it refers to (DWG objects whose owner is gone, DXF blocks with no name) are kept through saves instead of dropped (acad-ts patches 0103, 0104). No public corpus file loses an object on open any more; M1-33 is done.
+- M1-33 part 5 (#109): objects a drawing holds but nothing in it refers to (DWG objects whose owner is gone, DXF blocks with no name) are kept through saves instead of dropped (acad-ts patches 0103, 0104). No public corpus file loses an object on open any more; M1-33 is done.
