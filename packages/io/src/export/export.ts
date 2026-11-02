@@ -7,7 +7,7 @@
 // from the I/O side, and the original only has to be the file as opened (the I/O worker reads
 // it again from the bytes it kept). The original is mutated, so each export needs a fresh read.
 
-import type { CadDocument } from '@node-projects/acad-ts';
+import type { CadDocument, Layer } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   BlockRecord,
@@ -27,6 +27,8 @@ import { documentInit } from '../map/document';
 import type { CadFormat } from '../read';
 import { writeCadDocument, type WriteOptions } from '../write';
 import { createAcadEntity, entityProblems, same, writeEntity, type Resolver } from './entities';
+import { planHeader, writeHeader } from './header';
+import { planLayers, writeLayers } from './layers';
 import { PassthroughStore } from './passthrough';
 
 /** A difference the exporter cannot write yet; nothing was changed. */
@@ -63,28 +65,6 @@ const withoutId = (e: Entity): Omit<Entity, 'id'> => {
   return rest;
 };
 
-/**
- * Header variables acad-ts makes up on every read when the file does not state them (the clock
- * and fresh GUIDs, CadHeader.ts), so the model, mapped from an earlier read, cannot match the
- * original here. Triya never writes them: the writer and AutoCAD own them.
- */
-const VOLATILE_HEADER = new Set([
-  '$TDCREATE',
-  '$TDUCREATE',
-  '$TDUPDATE',
-  '$TDUUPDATE',
-  '$VERSIONGUID',
-  '$FINGERPRINTGUID',
-]);
-
-function headerProblems(base: DocumentInit, model: DocumentModel): string[] {
-  const before = new Map(base.header ?? []);
-  const names = new Set([...before.keys(), ...model.header.keys()]);
-  return [...names]
-    .filter((n) => !VOLATILE_HEADER.has(n) && !same(before.get(n), model.header.get(n)))
-    .map((n) => `header variable ${n} changes`);
-}
-
 function keyedProblems(
   what: string,
   before: readonly { handle: Handle }[],
@@ -97,10 +77,12 @@ function keyedProblems(
   return out;
 }
 
+/** The non-entity changes no writer handles yet (header and layers: header.ts, layers.ts). */
 function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
-  const out = headerProblems(base, model);
+  const out: string[] = [];
   const baseTables = (base.tables ?? {}) as Record<string, readonly { handle: Handle }[]>;
   for (const [name, table] of Object.entries(model.tables)) {
+    if (name === 'layers') continue;
     out.push(...keyedProblems(`${name} record`, baseTables[name] ?? [], table));
   }
   out.push(...keyedProblems('object', base.objects ?? [], model.objects));
@@ -272,18 +254,26 @@ export function triyaToAcad(
   const base = documentInit(original);
   const store = PassthroughStore.of(original, base);
   const lineTypes = original.lineTypes;
-  const header = original.header;
+  const docHeader = original.header;
   // Held children a save creates (polyline vertices) are numbered after everything the engine
   // allocated, so they meet neither an engine handle nor one the file already uses.
-  let next = Math.max(Number.parseInt(model.handSeed, 16), header?.handleSeed ?? 0);
-  const r: Resolver = {
+  let next = Math.max(Number.parseInt(model.handSeed, 16), docHeader?.handleSeed ?? 0);
+  const created = new Map<Handle, Layer>();
+  const r = {
     store,
     byLayer: lineTypes?.tryGetValue('ByLayer') ?? LineType.byLayer,
     byBlock: lineTypes?.tryGetValue('ByBlock') ?? LineType.byBlock,
     allocate: () => next++,
-  };
+    created,
+  } satisfies Resolver;
+  // Layers first: entities and $CLAYER may name a layer the same save adds.
+  const layers = planLayers(original, base, model, r);
+  const header = planHeader(original, base, model, format, [...created.values()]);
   const { plan: p, problems } = plan(original, base, model, r, format);
+  problems.unshift(...header.problems, ...layers.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
+
+  writeLayers(original, r, layers.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
   // it owns (§6.2 rule 3); shared objects it points to stay.
@@ -296,11 +286,12 @@ export function triyaToAcad(
     block.entities.add(e);
     writeEntity(r, e, undefined, after);
   }
+  writeHeader(original, header.changes);
   // New objects are allocated above $HANDSEED; the seed written back covers every handle the
   // engine handed out, used or not, as AutoCAD skips handles of cancelled objects, and every
   // held child the save numbered.
   const seed = Math.max(Number.parseInt(model.handSeed, 16), next);
-  if (header && seed > header.handleSeed) header.handleSeed = seed;
+  if (docHeader && seed > docHeader.handleSeed) docHeader.handleSeed = seed;
   return {
     updated: p.updated.length,
     added: p.added.length,
