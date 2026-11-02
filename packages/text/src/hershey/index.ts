@@ -14,3 +14,4 @@ export {
   type TriyaStrokeFont,
 } from './convert';
 export { loadStrokeFont, strokeShape } from './load';
+export { buildGdtFont, GDT_FONT, GDT_SYMBOLS } from './gdt';

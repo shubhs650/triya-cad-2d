@@ -180,4 +180,6 @@ export const SHX_EQUIVALENTS: Readonly<Record<string, string>> = {
   gothice: 'oet-gothice',
   gothicg: 'oet-gothicg',
   gothici: 'oet-gothici',
+  // AutoCAD's GD&T symbol font: our re-authored symbols on the lower-case letters (M1-54).
+  gdt: 'oet-gdt',
 };
