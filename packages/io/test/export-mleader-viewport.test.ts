@@ -156,7 +156,6 @@ function drawing(version = ACadVersion.AC1032): Uint8Array {
   block.blockContentId = bc.blockContent;
   view.frozenLayers = [doc.layers!.get('HIDDEN')];
   view.visualStyle = visualStyles.getEntry<VisualStyle>('2dWireframe')!;
-  // DWG: acad-ts's DXF reader drops a multileader's arrowhead and content block (M1-84).
   return writeCadDocument(doc, { format: 'dwg' });
 }
 
@@ -243,20 +242,11 @@ function changed(g: EntityGeometry, changes: Record<string, unknown>): EntityGeo
 const ml = (g: EntityGeometry): MultiLeaderGeometry => g as MultiLeaderGeometry;
 
 /**
- * What acad-ts reads back: its DXF reader drops a multileader's arrowhead (342), content block
- * (344 and context 341) and leader line indexes (91), which the DXF writer writes (M1-84), and
- * its DXF writer leaves out the visual styles this drawing's DWG holds (M1-88).
+ * What acad-ts reads back: its DXF writer leaves out the visual styles this drawing's DWG holds
+ * (M1-88).
  */
 function readBack(g: EntityGeometry, format: CadFormat): EntityGeometry {
-  if (format !== 'dxf') return g;
-  if (g.kind === 'VIEWPORT') return changed(g, { visualStyle: undefined });
-  if (g.kind !== 'MULTILEADER') return g;
-  const { block: _b, ...block } = g.block ?? { block: undefined };
-  return changed(g, {
-    arrowhead: undefined,
-    ...(g.block ? { block } : {}),
-    branches: g.branches.map((b) => ({ ...b, lines: b.lines.map((l) => ({ ...l, index: 0 })) })),
-  });
+  return format === 'dxf' && g.kind === 'VIEWPORT' ? changed(g, { visualStyle: undefined }) : g;
 }
 
 describe('triyaToAcad multileaders and viewports', () => {
@@ -410,6 +400,22 @@ describe('triyaToAcad multileaders and viewports', () => {
     // DWG does not store DXF 68 (AutoCAD derives it from the on flag and the stacking order).
     ['a VIEWPORT’s DXF-only fields', 'VIEWPORT', 1, () => ({ status: 2 })],
     ['a VIEWPORT’s style sheet', 'VIEWPORT', 1, () => ({ plotStyleSheet: 'acad.ctb' })],
+    [
+      // acad-ts's DXF reader dropped all three until patch 0130 (M1-84).
+      'a block MULTILEADER’s arrowhead block, content block and second leader line',
+      'MULTILEADER',
+      1,
+      (g) => ({
+        arrowhead: handleOf('block', 'DOT'),
+        block: { ...ml(g).block!, block: handleOf('block', 'DOT') },
+        branches: [
+          {
+            ...ml(g).branches[0]!,
+            lines: [...ml(g).branches[0]!.lines, { index: 1, vertices: [P(20, -5)] }],
+          },
+        ],
+      }),
+    ],
     ['a VIEWPORT thawing its layers', 'VIEWPORT', 1, () => ({ frozenLayers: [] })],
   ];
 
@@ -475,7 +481,7 @@ describe('triyaToAcad multileaders and viewports', () => {
       for (const e of added) {
         const back = reopened(bytes, e.handle);
         expect(back, `${format} ${e.type}`).toBeDefined();
-        expectGeometry(back!.geom, readBack(e.geom, format));
+        expectGeometry(back!.geom, e.geom);
       }
     }
   });
