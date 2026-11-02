@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77) and 0127 (M1-80) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80) and 0128 (M1-82) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2404,5 +2404,20 @@ Before R2007 a DWG string is in the drawing's code page and AutoCAD stores a cha
 **Title:** Write the DXF POLYLINE smooth surface type (75) for spline-fit polylines
 
 Group 75 is the curve and smooth surface type of any POLYLINE, not only of polygon meshes: a spline-fit 2D or 3D polyline stores its fit type there (5 quadratic, 6 cubic, 8 Bezier). The DXF writer wrote it for `PolygonMesh` only, so a quadratic or Bezier spline-fit polyline saved to DXF read back with `smoothSurface` 0, which AutoCAD treats as cubic. This writes 75 for 2D and 3D polylines when `smoothSurface` is set, and leaves the output unchanged otherwise.
+
+### 0128 — DXF DIMENSION loses its line spacing factor (41) and oblique angle (52)
+
+- **File:** `third_party/acad-ts-patches/0128-dxf-dimension-line-spacing-oblique.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/Templates/CadDimensionTemplate.ts`
+- **Symptom:** the DXF reader skipped group 41 of every dimension (it only took it, after `AcDbArcDimension`, as an ARC_DIMENSION's end angle), so the text line spacing factor read back as 0, though the writer writes it. The writer left out 52, the extension lines' oblique angle of an aligned or rotated dimension, so an obliqued dimension saved to DXF read back straight. The reader took 52 through the class map as radians, where DXF states it in degrees like every other angle (ezdxf converts it with `math.radians`), and only after `AcDbAlignedDimension`, where ezdxf writes it in `AcDbDimension`. The DWG reader and writer keep both. Found by Triya M1-75 part 3; the round trip compares acad-ts with itself, so it could not see the losses.
+- **Fix:** 41 outside `AcDbArcDimension` sets `lineSpacingFactor`. 52 is read in degrees wherever it comes; read before the subclass marker that makes the dimension aligned or rotated, the template keeps it and hands it to the dimension `setDimensionObject` creates. The writer states 52 in `AcDbAlignedDimension`, in degrees, when the angle is not 0, as the DXF reference describes it ("Linear dimension types with an oblique angle have an optional group code 52") and AutoCAD leaves it out of every corpus dimension.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0128 a DXF DIMENSION keeps its line spacing factor (41) and oblique angle (52)"; `packages/io/test/export-annotations.test.ts` → "writes the line spacing factor and the oblique angle, through a DXF save (M1-82)".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file). No corpus drawing states either code, so the placement of 52 follows the DXF reference; the reader accepts ezdxf's placement too.
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read DIMENSION 41 and read and write 52 in degrees
+
+`DxfSectionReaderBase._readDimension` ignored group 41 unless it followed `AcDbArcDimension` (the arc's end angle), so every dimension's text line spacing factor read back as 0. `DxfSectionWriterBase` never wrote 52, the extension line oblique angle of aligned and rotated dimensions, and the reader assigned 52 in radians although DXF angles are in degrees. This reads 41 as the line spacing factor outside `AcDbArcDimension`, reads 52 in degrees (also when it comes in `AcDbDimension`, before the aligned or rotated subclass marker, as ezdxf writes it), and writes 52 in degrees after the extension line points when it is not 0.
 
 </details>
