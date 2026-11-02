@@ -1,0 +1,20 @@
+{
+  "name": "Triya CAD 2D",
+  "short_name": "Triya CAD",
+  "description": "2D drafting in the browser. Drawings never leave your device.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#f5f6f8",
+  "theme_color": "#212830",
+  "file_handlers": [
+    {
+      "action": "/",
+      "accept": {
+        "image/vnd.dwg": [".dwg"],
+        "image/vnd.dxf": [".dxf"]
+      }
+    }
+  ],
+  "launch_handler": { "client_mode": "focus-existing" }
+}

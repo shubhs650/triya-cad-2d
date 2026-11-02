@@ -174,8 +174,8 @@ Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | |
-| PAN ᵀ | P | 1 | real-time, -PAN | |
+| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time || partial (M1-22 part 1): real-time wheel zoom at the cursor, Extents on middle double-click; command options wait on M2-01 |
+| PAN ᵀ | P | 1 | real-time, -PAN || partial (M1-22 part 1): real-time pan by middle-button drag; command waits on M2-01 |
 | REGEN / REGENALL | RE / REA | 1 | | |
 | REDRAW ᵀ | R | 1 | | |
 | VIEW | V | 2 | named views dialog; -VIEW | |
