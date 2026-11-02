@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) 0100 (M1-33 part 3) and 0103 (M1-45) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1974,5 +1974,22 @@ Before R2007 a solid's ACSH_HISTORY_CLASS is referenced from an XRECORD in the s
 **Title:** Keep a DICTIONARYWDFLT default entry that is not one of its entries
 
 A dictionary-with-default can name a default that is not one of its entries. The default was resolved but never registered with the document, and the DXF writer wrote its handle without writing the object. Both are fixed.
+
+</details>
+
+### 0103 — a DXF linetype segment loses the text style it names
+
+- **File:** `third_party/acad-ts-patches/0103-dxf-linetype-segment-style.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`
+- **Symptom:** a complex linetype element names the STYLE record of its text font or shape file in group 340 (after 75). The DXF reader skipped the group, so every segment's `style` was null after a DXF read; the template already resolves `styleHandle` and the DWG reader sets it. acadsharp `sample_AC1009`–`AC1032` DXF: GAS_LINE's "GAS" lost Standard (11), and TRACKS, BATTING and the other shape linetypes lost their `ltypeshp.shx` style (27F), so their text and shapes had no font to draw with (M1-45). The writer already wrote the handle back, so the round trip did not show it.
+- **Fix:** read 340 into the segment template's `styleHandle`, which the builder resolves to the text style.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0103 a DXF linetype segment keeps the text style it names (340)".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read the text style of DXF linetype segments (group 340)
+
+`_readLineTypeSegment` skipped group 340, the STYLE record of a text or shape element, so complex linetypes read from DXF had no style on their segments. The segment template already resolves `styleHandle` (the DWG reader fills it); the DXF reader now does too.
 
 </details>

@@ -718,6 +718,7 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
           template.segment.shapeNumber = this._reader.valueAsInt;
           break;
         case 340:
+          template.styleHandle = this._reader.valueAsHandle;
           break;
         default:
           this._builder.notify(`[LineTypeSegment] Unhandled dxf code ${this._reader.code} with value ${this._reader.valueAsString}, position ${this._reader.position}`, NotificationType.None);

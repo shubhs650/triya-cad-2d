@@ -45,6 +45,7 @@ import {
   type TtfGlyph,
 } from '@triya/text';
 import { composeAffine, transformPath, type Affine } from './affine';
+import type { EmbedPlacement } from './style/dash';
 import { colorValue } from './style/resolve';
 import type { Paint } from './tessellate';
 import {
@@ -155,6 +156,13 @@ class Collector {
   add(shape: GlyphShape, m: Affine, color: PrimitiveColor): void {
     const path = this.#group(shape.fill, color).path;
     for (const v of transformPath(shape.path, m)) path.push(v);
+  }
+
+  /** A shape (complex linetypes): its strokes, and its height for the greeking LOD. */
+  shape(shape: GlyphShape, m: Affine, height: number, color: PrimitiveColor): void {
+    this.add(shape, m, color);
+    const g = this.#group(false, color);
+    g.height = Math.max(g.height, height);
   }
 
   /** A straight line in the text frame: a decoration or a stack's fraction bar. */
@@ -333,7 +341,14 @@ function baseOf(
 }
 
 function textPrimitivesOf(g: TextGeometry, paint: Paint, ctx: TextContext): RenderPrimitive[] {
-  if (!(g.height > 0) || g.value === '') return [];
+  const out = new Collector(paint);
+  drawText(out, g, ctx);
+  return out.primitives();
+}
+
+/** Lays a TEXT out and adds its glyphs to `out`. */
+function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
+  if (!(g.height > 0) || g.value === '') return;
   const { base } = baseOf(ctx, g.style, g.height);
   const charBase: MTextBase = {
     ...base,
@@ -377,9 +392,7 @@ function textPrimitivesOf(g: TextGeometry, paint: Paint, ctx: TextContext): Rend
     local = { a: 1, b: 0, c: 0, d: 1, e: dx, f: dy };
   }
   const frame = composeAffine(textFrame(at, g.rotation, g.backward, g.upsideDown), local);
-  const out = new Collector(paint);
   drawLayout(out, layout, frame, ctx.fonts, undefined);
-  return out.primitives();
 }
 
 function mtextPrimitives(g: MTextGeometry, paint: Paint, ctx: TextContext): RenderPrimitive[] {
@@ -472,4 +485,60 @@ export function textPrimitives(
   ctx: TextContext,
 ): RenderPrimitive[] {
   return g.kind === 'TEXT' ? textPrimitivesOf(g, paint, ctx) : mtextPrimitives(g, paint, ctx);
+}
+
+/**
+ * The text and shapes a complex linetype places along an entity (M1-45), in the entity's
+ * colour and lineweight, as glyph primitives with the usual greeking.
+ *
+ * AutoCAD ("Text in Custom Linetypes", "Shapes in Custom Linetypes"): text is drawn in the
+ * named text style, `S=` multiplying the style's fixed height, or giving the height itself
+ * when the style's height is 0; it starts at the placement, left on its baseline, with the
+ * style's width factor and obliquing. A shape is the numbered shape of the shape file the
+ * STYLE record names, at `S=` (times the linetype scale, already in `scale`). A style that is
+ * missing, or a shape file that is not loaded, leaves the gap empty: it is listed in
+ * `FontBook.missing` for the health report, and no other font stands in for a shape file,
+ * as its shape numbers mean nothing in another file.
+ */
+export function linetypeEmbedPrimitives(
+  embeds: readonly EmbedPlacement[],
+  paint: Paint,
+  ctx: TextContext,
+): RenderPrimitive[] {
+  const out = new Collector(paint);
+  for (const p of embeds) {
+    const e = p.embed;
+    const style = e.style === undefined ? undefined : ctx.style(e.style);
+    if (!style) continue;
+    if (e.kind === 'text') {
+      drawText(
+        out,
+        {
+          kind: 'TEXT',
+          value: e.text ?? '',
+          style: style.handle,
+          position: p.at,
+          height: (style.height > 0 ? style.height : 1) * p.scale,
+          rotation: p.angle,
+          widthFactor: style.widthFactor,
+          oblique: style.obliqueAngle,
+          halign: 0,
+          valign: 0,
+          backward: false,
+          upsideDown: false,
+        },
+        ctx,
+      );
+      continue;
+    }
+    if (e.shapeNumber === undefined) continue;
+    const font = ctx.fonts.bigFont(style.font);
+    const shape = font && font.hasShape(e.shapeNumber) ? shxShape(font, e.shapeNumber) : undefined;
+    if (!font || !shape) continue;
+    const k = font.scaleFor(p.scale);
+    const c = Math.cos(p.angle) * k;
+    const s = Math.sin(p.angle) * k;
+    out.shape(shape, { a: c, b: s, c: -s, d: c, e: p.at.x, f: p.at.y }, p.scale, paint.color);
+  }
+  return out.primitives();
 }

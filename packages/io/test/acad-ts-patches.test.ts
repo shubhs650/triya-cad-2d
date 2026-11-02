@@ -26,8 +26,12 @@ import {
   Layer,
   Leader,
   Line,
+  LineType,
+  LineTypeSegment,
+  LineTypeShapeFlags,
   LineWeightType,
   MeasurementUnits,
+  TextStyle,
   ViewModeType,
   XYZ,
 } from '@node-projects/acad-ts';
@@ -440,5 +444,31 @@ describe('acad-ts local patches', () => {
     expect(kept.dimensionLineGap).toBeCloseTo(0.3);
     // Styles made in code keep the class defaults.
     expect(new DimensionStyle('X').dimensionLineGap).toBeCloseTo(0.625);
+  });
+
+  it('0103 a DXF linetype segment keeps the text style it names (340)', () => {
+    const doc = new CadDocument();
+    const style = new TextStyle('GASFONT');
+    style.filename = 'romans.shx';
+    doc.textStyles!.add(style);
+    const gas = new LineType('GAS_LINE');
+    const dash = new LineTypeSegment();
+    dash.length = 0.5;
+    gas.addSegment(dash);
+    const text = new LineTypeSegment();
+    text.length = -0.2;
+    text.shapeFlags = LineTypeShapeFlags.Text;
+    text.text = 'GAS';
+    text.scale = 0.1;
+    text.style = style;
+    gas.addSegment(text);
+    doc.lineTypes!.add(gas);
+
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    // The writer stores the style's handle with the segment.
+    expect(String.fromCharCode(...bytes)).toMatch(/\r?\n 75\r?\n *0\r?\n340\r?\n[0-9A-F]+\r?\n/);
+    const read = DxfReader.readFromStream(bytes).lineTypes!.tryGetValue('GAS_LINE')!;
+    const segment = read.segments.find((s) => s.text === 'GAS')!;
+    expect(segment.style?.name).toBe('GASFONT');
   });
 });
