@@ -158,7 +158,19 @@ export abstract class DxfSectionWriterBase {
         this._writer.write(140, Number(value.value));
         break;
       case CadValueType.Date:
-        this._writer.write(91, 0);
+        if (this.version >= ACadVersion.AC1021 && value.value instanceof Date) {
+          // A SYSTEMTIME, as the reader and the DWG writer encode it.
+          const date = value.value;
+          const bytes = new Uint8Array(16);
+          const view = new DataView(bytes.buffer);
+          [date.getFullYear(), date.getMonth() + 1, date.getDay(), date.getDate(), date.getHours(),
+            date.getMinutes(), date.getSeconds(), date.getMilliseconds()]
+            .forEach((part, i) => view.setInt16(i * 2, part, true));
+          this._writer.write(92, bytes.length);
+          this._writer.write(310, bytes);
+        } else {
+          this._writer.write(91, 0);
+        }
         break;
       case CadValueType.General:
       case CadValueType.String:

@@ -777,6 +777,7 @@ export abstract class DxfSectionReaderBase {
     let seenText = false;
     let type: CadValueType | null = null;
     const binary = { size: 0, read: 0 };
+    let dateBytes: number[] = [];
 
     while (this._reader.code !== 304) {
       switch (this._reader.code as number) {
@@ -829,6 +830,18 @@ export abstract class DxfSectionReaderBase {
         case 330:
           template.valueHandle = this._reader.valueAsHandle;
           break;
+        case 92:
+          // The byte count of a date's or buffer's 310 data.
+          break;
+        case 310:
+          if (value.valueType === CadValueType.Date) {
+            dateBytes = dateBytes.concat(Array.from(this._reader.valueAsBinaryChunk));
+            const date = DxfSectionReaderBase.systemTimeDate(dateBytes);
+            if (date) {
+              value.setValue(date);
+            }
+          }
+          break;
         default:
           if (!this.tryAssignCurrentValue(value, map)) {
             this._builder.notify(`Unhandled dxf code ${this._reader.code} value ${this._reader.valueAsString} at readCadValue method.`, NotificationType.None);
@@ -842,6 +855,19 @@ export abstract class DxfSectionReaderBase {
     }
 
     return template;
+  }
+
+  /**
+   * A date value's 16 bytes in R2007 and later: a SYSTEMTIME (year, month, day of week, day, hour,
+   * minute, second, millisecond, each a little-endian short), as the DWG reader decodes it.
+   */
+  static systemTimeDate(bytes: number[]): Date | null {
+    if (bytes.length !== 16) {
+      return null;
+    }
+    const view = new DataView(new Uint8Array(bytes).buffer);
+    const short = (offset: number): number => view.getInt16(offset, true);
+    return new Date(short(0), short(2) - 1, short(6), short(8), short(10), short(12), short(14));
   }
 
   /**

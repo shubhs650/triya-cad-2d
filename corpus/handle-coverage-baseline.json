@@ -314,9 +314,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/mtext_complex_inline_codes.dxf": {
       "declared": 183,
-      "lost": {
-        "FIELD": "CD DE E5 EC F8 101 108 10F"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/multi_insert_with_attribs.dxf": {
       "declared": 63,
@@ -368,9 +366,7 @@
     },
     "public/third-party/ezdxf/examples_dxf/uncommon.dxf": {
       "declared": 648,
-      "lost": {
-        "FIELD": "5F9 600"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/valid_lineweights.dxf": {
       "declared": 94,

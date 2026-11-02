@@ -1,0 +1,1 @@
+- M1-33 part 3 (#100): dates in DXF fields and table cells survive a save (acad-ts patch 0100); they were dropped on every save. The handle-coverage gate now counts child fields, which are saved inside their parent; objects never loaded on open 52 → 42.
