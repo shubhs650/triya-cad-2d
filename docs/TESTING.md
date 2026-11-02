@@ -137,6 +137,8 @@ Runs on the CI runner with fixed CPU class; thresholds carry a 20 % margin over 
 - T5: in-place save timing; autosave timing after last edit.
 
 `tests/e2e/perf/render.spec.ts` runs the render side of T2 and T3 on a synthetic 100k-entity drawing built in the page (`tests/e2e/render-harness`); `tests/e2e/io/responsiveness.spec.ts` parses the generated `bench-100k` DWG (M1-42). It asserts the T2 first frame in the render worker and, since M1-44, T3: pan/zoom paced by animation frames (one view change and frame per frame, as the app draws) at ≥ 48 fps (60 less the runner margin) on the synthetic 100k drawing and on the generated `bench-100k` drawing mapped through `documentInit`; fps and the slowest frame are reported as test annotations.
+
+`tests/e2e/perf/app.spec.ts` (M1-60) runs T3 in the app: it opens the generated `bench-ga` drawing with the Open button in `apps/web` at 1366 × 768, waits for its first frame, then zooms with the wheel at the cursor and pans by dragging with the middle button for 5 s each. The mouse sends 125 events a second straight to Chromium's input pipeline (CDP `Input.dispatchMouseEvent`, not awaited one by one: Playwright's `mouse.wheel`/`mouse.move` wait for each event and top out near 30 and 60 a second). A frame counts when the render worker has drawn it: `CanvasController` keeps one frame in flight and fires `framedrawn` on its canvas when the renderer acknowledges it. It asserts ≥ 48 fps for each gesture and that the mouse sent more events than frames; fps, the slowest frame and open → first frame are reported as annotations.
 - T6: PLOT A1 timing.
 - T7: `performance.measureUserAgentSpecificMemory` across 20 open/close cycles.
 
