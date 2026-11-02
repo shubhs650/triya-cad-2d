@@ -17,7 +17,7 @@ import type {
   TextGeometry,
 } from '@triya/engine';
 import { styleFont } from '@triya/text';
-import { STANDARD_FONT, textPrimitives, type TextContext } from './text';
+import { attributeText, STANDARD_FONT, textPrimitives, type TextContext } from './text';
 import { PATH_A, PATH_C, PATH_E, PATH_L, PATH_M, PATH_Q, type RenderPrimitive } from './types';
 
 /** Points a path never leaves: line ends, curve control points, arc and ellipse boxes. */
@@ -86,11 +86,9 @@ export function primitivesBox(prims: readonly RenderPrimitive[]): Box | undefine
 
 /** What an annotation draws as text, as TEXT or MTEXT geometry; undefined for the others. */
 function asText(g: AnnotationGeometry): TextGeometry | MTextGeometry | undefined {
-  // An ATTRIB (folded into its INSERT) has no kind of its own.
-  if (!('kind' in g)) {
-    if (g.flags & 1) return undefined; // invisible: draws nothing
-    return g.mtext ?? { ...g, kind: 'TEXT' };
-  }
+  // An ATTRIB (folded into its INSERT) has no kind of its own. Whether an invisible one shows
+  // depends on ATTMODE, which the spatial index decides.
+  if (!('kind' in g)) return attributeText(g);
   switch (g.kind) {
     case 'TEXT':
     case 'MTEXT':

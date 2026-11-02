@@ -329,6 +329,56 @@ describe('queries', () => {
     expect(index.bounds(insert)).toEqual({ kind: 'box', box: box(200, 0, 205, 1) });
     expect(index.query(MODEL_SPACE, box(204, 0.5, 210, 2))).toEqual([insert]);
   });
+
+  it('bounds invisible attributes under ATTMODE 2 and re-bounds when ATTMODE changes (M1-14)', () => {
+    const model = blockModel();
+    const b = new ChangeSetBuilder(model);
+    const ins = b.addEntity({
+      owner: MODEL_SPACE,
+      layer: LAYER_0,
+      geom: {
+        ...insertGeom(BLOCK_A, 0, 0),
+        attributes: [
+          {
+            handle: '900',
+            value: 'X',
+            tag: 'T',
+            flags: 1, // invisible
+            style: '11',
+            position: { x: 50, y: 50 },
+            height: 1,
+            rotation: 0,
+            widthFactor: 1,
+            oblique: 0,
+            halign: 0,
+            valign: 0,
+            backward: false,
+            upsideDown: false,
+            layer: LAYER_0,
+            color: { kind: 'byLayer' },
+            linetype: 'ByLayer',
+            lineweight: 'ByLayer',
+            transparency: 'ByLayer',
+            ltScale: 1,
+            visible: true,
+          },
+        ],
+      } as EntityGeometry,
+    });
+    model.apply(b.build());
+    const index = SpatialIndex.build(model, {
+      tol,
+      annotationBounds: (g) => ('tag' in g ? box(50, 50, 51, 51) : undefined),
+    });
+    // BLOCK_A holds a line from (0, 0) to (1, 0); the invisible attribute is left out.
+    expect(index.bounds(ins.id)).toEqual({ kind: 'box', box: box(0, 0, 1, 0) });
+    const b2 = new ChangeSetBuilder(model);
+    b2.setHeader('$ATTMODE', 2);
+    const cs = b2.build();
+    model.apply(cs);
+    index.apply(cs);
+    expect(index.bounds(ins.id)).toEqual({ kind: 'box', box: box(0, 0, 51, 51) });
+  });
 });
 
 describe('invalidation', () => {

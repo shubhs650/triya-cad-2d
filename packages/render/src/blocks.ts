@@ -23,6 +23,14 @@
 // the horizontal direction and its y axis along normal × direction (every corpus table's
 // block spans x 0 → width and y −height → 0), scale 1. A table without a block draws nothing
 // until the table engine (M4-05) generates one from its cells.
+// Attributes (M1-14 part 2): an INSERT's ATTRIBs are stored in the INSERT's owner's
+// coordinates, so they draw where they stand, carried only by the references around the
+// INSERT, once for a MINSERT (AutoCAD keeps one set of ATTRIBs per MINSERT, at the first
+// cell; drawing them per cell is not documented). Each is painted as an object inside the
+// reference: ByBlock takes the INSERT's properties and layer 0 the INSERT's layer, the common
+// drafter expectation (AutoCAD's documentation only says ATTRIBs belong to the INSERT). A
+// block's ATTDEFs do not draw through a reference, except a constant one, which no ATTRIB
+// stands for and which shows its value. ATTMODE decides which of them show (`attributeShown`).
 // A block that (through nesting) contains itself draws its contents once per level up to
 // MAX_DEPTH, as AutoCAD never lets such a drawing be built; this keeps a damaged file finite.
 
@@ -40,7 +48,7 @@ import {
 } from '@triya/engine';
 import type { Paint, TessellateContext } from './tessellate';
 import { tessellate } from './tessellate';
-import { textMeasure } from './text';
+import { attributeShown, attributeText, textMeasure } from './text';
 import type { RenderPrimitive } from './types';
 import {
   affineScale,
@@ -267,6 +275,7 @@ export function expandInsert(
   // TOLERANCE frames size their compartments by the text (M1-52 part 4).
   const text = src.tessellate?.text;
   const measure = text ? textMeasure(text) : undefined;
+  const attMode = src.tessellate?.attributeMode;
   const draw = (
     e: Entity,
     m: Affine,
@@ -274,6 +283,14 @@ export function expandInsert(
     depth: number,
     chain: readonly Handle[],
   ): void => {
+    const g = e.geom;
+    if (g.kind === 'ATTDEF') {
+      // Only a constant definition shows through a reference, as its value.
+      if (!(g.flags & 2) || !attributeShown(g.flags, attMode)) return;
+      const shown = attributeText(g);
+      draw({ ...e, geom: shown, type: shown.kind }, m, ctx, depth, chain);
+      return;
+    }
     if (expands(e, def)) {
       walk(e, m, ctx, depth + 1, chain);
       return;
@@ -328,6 +345,26 @@ export function expandInsert(
         const child = src.model.entity(id);
         if (child) draw(child, cm, ctx, depth, chain);
       }
+    }
+    if (e.geom.kind !== 'INSERT') return;
+    for (const a of e.geom.attributes) {
+      if (!attributeShown(a.flags, attMode)) continue;
+      const shown = attributeText(a);
+      const attrib: Entity = {
+        id: e.id,
+        type: shown.kind,
+        owner: e.owner,
+        geom: shown,
+        handle: a.handle,
+        layer: a.layer,
+        color: a.color,
+        linetype: a.linetype,
+        lineweight: a.lineweight,
+        transparency: a.transparency,
+        ltScale: a.ltScale,
+        visible: a.visible,
+      };
+      draw(attrib, m, ctx, depth, chain);
     }
   };
   walk(insert, IDENTITY, undefined, 0, []);
