@@ -4,15 +4,17 @@
 // only; the I/O worker, which only gathers facts, does not load the font and pattern code.
 
 import { bundledPatterns } from '@triya/hatch';
-import { styleFont, type TextFonts } from '@triya/text';
+import { styleFont, type MTextFont } from '@triya/text';
 import type { DrawingFacts, DrawingReference } from './facts';
 
 export type { DrawingFacts, DrawingReference } from './facts';
 
-/** The app's loaded fonts, as `FontBook` provides them. */
-export interface HealthFonts extends TextFonts {
-  readonly missing: ReadonlySet<string>;
-  readonly substitutions: ReadonlyMap<string, string>;
+/** The app's loaded fonts, as `FontBook` provides them, asked without recording anything. */
+export interface HealthFonts {
+  /** How a text font draws: its own face, a stand-in (by file key), or nothing. */
+  resolve(font: MTextFont): { readonly face?: unknown; readonly substitute?: string };
+  /** Whether a big font or shape file is loaded. */
+  hasShx(name: string): boolean;
 }
 
 export interface HealthSources {
@@ -26,7 +28,7 @@ export interface MissingFont {
   readonly font: string;
   /** The loaded font (file key) that draws it instead; undefined when nothing does. */
   readonly substitute: string | undefined;
-  /** Text styles that name it (as primary, big font or shape file); empty for MTEXT `\F`. */
+  /** Text styles that name it (as primary, big font or shape file). */
   readonly styles: readonly string[];
 }
 
@@ -56,38 +58,34 @@ export interface HealthReport {
 /**
  * The health report of a drawing whose facts are `facts`, given the app's fonts and patterns.
  * Each text style's fonts are resolved through `fonts` as drawing them would, so the missing
- * list does not wait for the text to be drawn; fonts already recorded as missing (MTEXT `\F`
- * fonts drawn so far) are listed too.
+ * list does not wait for the text to be drawn. Fonts MTEXT names inline (`\F`) are not in the
+ * facts yet (M8-07).
  */
 export function healthReport(facts: DrawingFacts, sources: HealthSources): HealthReport {
   const { fonts } = sources;
   const patterns = sources.patterns ?? bundledPatterns();
-  const named = new Map<string, Set<string>>();
-  const name = (font: string, style: string) => {
-    const set = named.get(font) ?? new Set<string>();
-    set.add(style);
-    named.set(font, set);
+  // Font name → what draws it and the styles naming it. Asked of this drawing's styles only:
+  // the app's one FontBook serves every open drawing.
+  const missingFonts = new Map<string, { substitute: string | undefined; styles: Set<string> }>();
+  const miss = (font: string, style: string, substitute: string | undefined) => {
+    const m = missingFonts.get(font) ?? { substitute, styles: new Set<string>() };
+    m.styles.add(style);
+    missingFonts.set(font, m);
   };
-  const shapesMissing = new Set<string>();
   for (const s of facts.textStyles) {
     if (s.shapeFile) {
       // A shape file draws linetype shapes, never text, so no text font stands in for it.
-      if (!fonts.bigFont(s.font)) shapesMissing.add(s.font);
-      name(s.font, s.name);
+      if (!fonts.hasShx(s.font)) miss(s.font, s.name, undefined);
       continue;
     }
-    fonts.face(styleFont(s));
-    name(s.font, s.name);
-    if (s.bigFont) {
-      fonts.bigFont(s.bigFont);
-      name(s.bigFont, s.name);
-    }
+    const r = fonts.resolve(styleFont(s));
+    if (!r.face || r.substitute !== undefined) miss(s.font, s.name, r.substitute);
+    // A big font's characters have no stand-in either.
+    if (s.bigFont && !fonts.hasShx(s.bigFont)) miss(s.bigFont, s.name, undefined);
   }
-  const missing = [...new Set([...fonts.missing, ...shapesMissing])].sort().map((font) => ({
-    font,
-    substitute: shapesMissing.has(font) ? undefined : fonts.substitutions.get(font),
-    styles: [...(named.get(font) ?? [])].sort(),
-  }));
+  const missing = [...missingFonts]
+    .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+    .map(([font, m]) => ({ font, substitute: m.substitute, styles: [...m.styles].sort() }));
   const total = (rows: readonly { count: number }[]) => rows.reduce((n, r) => n + r.count, 0);
   return {
     version: { code: facts.version, release: RELEASES[facts.version] },

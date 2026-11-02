@@ -127,6 +127,20 @@ describe('FontBook with the bundled fonts (M1-09)', () => {
     ]);
   });
 
+  it('resolves a font as face would without recording it, for the health report', () => {
+    const b = book();
+    expect(b.resolve(shx('ROMANC.SHX'))).toEqual({
+      face: { kind: 'shx', font: complex },
+      substitute: 'oet-complex',
+    });
+    expect(b.resolve(shx('oet-simplex'))).toEqual({ face: { kind: 'shx', font: simplex } });
+    expect(new FontBook().resolve(shx('romans'))).toEqual({});
+    expect([...b.missing]).toEqual([]);
+    expect([...b.substitutions]).toEqual([]);
+    expect(b.hasShx('OET-COMPLEX.SHX')).toBe(true);
+    expect(b.hasShx('gbcbig.shx')).toBe(false);
+  });
+
   it('falls back to oet-simplex for a font with no equivalent, TrueType included', () => {
     const b = book();
     expect(b.face(shx('acme_logo.shx'))?.font).toBe(simplex);
