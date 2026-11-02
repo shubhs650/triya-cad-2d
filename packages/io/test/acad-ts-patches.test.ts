@@ -38,12 +38,16 @@ import {
   HatchStyleType,
   Layer,
   Leader,
+  LeaderLine,
+  LeaderRoot,
   Line,
   LineType,
   LineTypeSegment,
   LineTypeShapeFlags,
   LineWeightType,
   MeasurementUnits,
+  MultiLeader,
+  MultiLeaderStyle,
   ObjectType,
   PdfUnderlay,
   PdfUnderlayDefinition,
@@ -962,5 +966,50 @@ describe('acad-ts local patches', () => {
       } else if (inside && ['210', '11', '91', '290'].includes(code)) underlays.at(-1)!.push(code);
     }
     expect(underlays).toEqual([['210', '11', '11', '11', '11'], ['11', '11'], []]);
+  });
+
+  it('0130 a DXF MULTILEADER keeps its arrowhead (342), content block (344, context 341) and line indexes (91)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadMLeaderStyle)!;
+    const style = new MultiLeaderStyle('STANDARD');
+    styles.add(style);
+    const blocks = ['TAG', 'DOT'].map((name) => {
+      const b = new BlockRecord(name);
+      b.entities.add(new Line());
+      doc.blockRecords!.add(b);
+      return b;
+    });
+    const ml = new MultiLeader();
+    const ctx = ml.contextData;
+    ctx.hasContentsBlock = true;
+    ctx.blockContentNormal = new XYZ(0, 0, 1);
+    ctx.blockContentLocation = new XYZ(30, 10, 0);
+    ctx.blockContentScale = new XYZ(1, 1, 1);
+    const r = new LeaderRoot();
+    r.connectionPoint = new XYZ(28, 10, 0);
+    r.direction = new XYZ(1, 0, 0);
+    r.lines = [0, 1].map((index) => {
+      const l = new LeaderLine();
+      l.index = index;
+      l.points = [new XYZ(20, index * 5, 0)];
+      return l;
+    });
+    ctx.leaderRoots = [r];
+    ml.contentType = 1 as never;
+    doc.entities!.add(ml);
+    // References resolve through the document's collections, so they are set once it has them.
+    ml.style = style;
+    ml.blockContentId = blocks[0]!;
+    ctx.blockContent = blocks[0]!;
+    ml.arrowhead = blocks[1]!;
+
+    const back = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+    const same = back.getCadObject(Number(ml.handle)) as MultiLeader;
+
+    expect(same).toBeInstanceOf(MultiLeader);
+    expect(same.arrowhead?.name).toBe('DOT');
+    expect(same.blockContentId?.name).toBe('TAG');
+    expect(same.contextData.blockContent?.name).toBe('TAG');
+    expect(same.contextData.leaderRoots[0]!.lines.map((l) => l.index)).toEqual([0, 1]);
   });
 });
