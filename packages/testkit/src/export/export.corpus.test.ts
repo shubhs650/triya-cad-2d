@@ -16,6 +16,7 @@ import {
   DocumentModel,
   type Entity,
   type EntityGeometry,
+  type Handle,
   type HatchGeometry,
   type HeaderValue,
   type LayerRecord,
@@ -310,22 +311,100 @@ describe('TriyaToAcad edits on the public corpus', () => {
     expect(readable.length).toBeGreaterThan(100);
   });
 
-  it('refuses an R12 viewport’s view, which lives in its MVIEW xdata (M1-86)', () => {
+  describe('an R12 viewport’s view, which lives in its MVIEW xdata (M1-86)', () => {
     const path = 'public/third-party/acadsharp/sample_AC1009_ascii.dxf';
     const bytes = new Uint8Array(readFileSync(`${corpusDir}${path}`));
-    for (const changes of [
-      { viewHeight: 1 },
-      { twist: 0.5 },
-      { frozenLayers: [] as string[], flags: 0 },
-    ]) {
-      const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
-      const vp = [...model.entities()].find((e) => e.type === 'VIEWPORT')!;
-      edit(model, vp, { ...vp.geom, ...changes } as EntityGeometry);
+    const open = (): DocumentModel => DocumentModel.create(documentInit(readCadDocument(bytes)));
+    const viewports = (m: DocumentModel): Entity[] =>
+      [...m.entities()].filter((e) => e.type === 'VIEWPORT');
+    type View = Extract<EntityGeometry, { kind: 'VIEWPORT' }>;
+    // ViewportStatusFlags (DXF 90): R12 says these through VIEWMODE and the MVIEW 1070s.
+    const GRID = 512;
+    const SNAP = 256;
+    const ISO_TOP = 4096;
+    const ISO_RIGHT = 8192;
+    const HIDE_PLOT = 2048;
+    const UCS_AT_ORIGIN = 64;
+    const ZOOM_LOCK = 16384;
+    const OFF = 131072;
 
+    const views: [string, (g: View) => Partial<View>][] = [
+      [
+        'the view itself',
+        (g) => ({
+          viewCenter: { x: g.viewCenter.x + 2, y: g.viewCenter.y - 1 },
+          viewHeight: g.viewHeight * 2,
+          twist: 0.5,
+          viewTarget: { x: 1, y: 2, z: 3 },
+          viewDirection: { x: 1, y: -1, z: 1 },
+          lensLength: 35,
+          frontClip: 2,
+          backClip: -4,
+        }),
+      ],
+      ['perspective with front and back clipping', (g) => ({ flags: g.flags | 0b10111 })],
+      [
+        'snap, grid, isometric snap on the top plane, hidden in plot',
+        (g) => ({ flags: (g.flags ^ GRID ^ SNAP ^ UCS_AT_ORIGIN) | 1024 | ISO_TOP | HIDE_PLOT }),
+      ],
+      ['the right isometric plane', (g) => ({ flags: g.flags | 1024 | ISO_RIGHT })],
+    ];
+    it.each(views)('saves %s and maps it back', (_what, change) => {
+      withPinnedClock(() => {
+        const model = open();
+        const targets = viewports(model);
+        expect(targets).toHaveLength(2);
+        for (const vp of targets) {
+          edit(model, vp, { ...vp.geom, ...change(vp.geom as View) } as EntityGeometry);
+        }
+        const original = readCadDocument(bytes);
+        const reopened = readCadDocument(
+          exportDocument(readCadDocument(bytes), model, { format: 'dxf' }),
+        );
+        const back = new Map(documentInit(reopened).entities?.map((e) => [e.handle, e]));
+        for (const vp of targets.map((e) => model.entity(e.id)!)) {
+          expect(near(back.get(vp.handle)?.geom, vp.geom), vp.handle).toBe(true);
+        }
+        const ignoreHandles = new Set(targets.map((e) => Number.parseInt(e.handle, 16)));
+        expect(structuralDiff(original, reopened, { ignoreHandles }).differences).toEqual([]);
+      });
+    });
+
+    const refused: [string, (g: View, layer: Handle) => Partial<View>, RegExp][] = [
+      // R12 keeps a viewport's frozen layers as 1003 names in the MVIEW xdata, which acad-ts
+      // does not read into the viewport yet.
+      ['frozen layers', (_g, layer) => ({ frozenLayers: [layer] }), /frozen layers.*M1-90/],
+      ['a plot style table', () => ({ plotStyleSheet: 'monochrome.ctb' }), /R12 has no/],
+      ['a render mode', () => ({ renderMode: 1 }), /R12 has no/],
+      ['a flag R12 has no place for', (g) => ({ flags: g.flags | ZOOM_LOCK }), /R12 has no/],
+      ['an off flag without status 0', (g) => ({ flags: g.flags | OFF }), /status 0/],
+      ['status 0 without the off flag', () => ({ status: 0 }), /status 0/],
+      ['both isometric planes', (g) => ({ flags: g.flags | ISO_TOP | ISO_RIGHT }), /isometric/],
+    ];
+    it('refuses a new viewport, as R12 paper space reads into model space (M1-89)', () => {
+      const model = open();
+      const like = viewports(model)[1]!;
+      const b = new ChangeSetBuilder(model);
+      b.addEntity({
+        owner: like.owner,
+        layer: like.layer,
+        geom: { ...(like.geom as View), id: 3 },
+      });
+      model.apply(b.build());
       expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
-        /VIEWPORT .*M1-86/,
+        /VIEWPORT .*M1-89/,
       );
-    }
+    });
+
+    it.each(refused)('refuses %s', (_what, change, message) => {
+      const model = open();
+      const vp = viewports(model)[1]!;
+      const g = vp.geom as View;
+      edit(model, vp, { ...g, ...change(g, vp.layer) } as EntityGeometry);
+      expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
+        message,
+      );
+    });
   });
 
   it('refuses an edit of the layer 0 an R12 file does not have (acad-ts makes it up)', () => {
