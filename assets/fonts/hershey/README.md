@@ -7,7 +7,8 @@ SHA-256 `f64628825b4bc40461cc8c7cd3868b9a765969c738fea7a541ccc17fb7f77ef9`.
 
 `pnpm fonts:build` converts it into the bundled fonts `assets/fonts/oet-*.json` with the
 catalog in `packages/text/src/hershey/catalog.ts` (M1-09, DEC-044). The accent marks, the
-diameter sign and the character assignments past ASCII are ours (MIT).
+diameter sign, the letters built from other letters (Latin-1 and Latin Extended-A ligatures,
+Þ þ ð ß ¡ ¿, M1-59) and the character assignments past ASCII are ours (MIT).
 
 ## Distribution terms
 
