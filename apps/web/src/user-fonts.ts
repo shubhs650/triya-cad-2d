@@ -48,6 +48,7 @@ export class FontStore {
   readonly #persistence: FontPersistence;
   readonly #bundled: FontSources;
   #files: readonly StoredFont[] = [];
+  #device: readonly StoredFont[] = [];
   #sources: FontSources;
   #state: FontState = { files: [] };
   #listeners = new Set<() => void>();
@@ -112,6 +113,17 @@ export class FontStore {
     }
   }
 
+  /**
+   * Fonts installed on this computer (M1-38 part 2, `DeviceFonts`), handed on after the user's
+   * files and never kept: they come from the device on each visit. One whose file name a user
+   * file also has is left out, so the user's file wins.
+   */
+  setDeviceFonts(files: readonly StoredFont[]): void {
+    if (files === this.#device) return;
+    this.#device = files;
+    this.#set(this.#files);
+  }
+
   dismiss(): void {
     this.#state = { files: this.#state.files };
     this.#emit();
@@ -121,7 +133,14 @@ export class FontStore {
     this.#files = [...files].sort((a, b) =>
       a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
     );
-    this.#sources = { ...this.#bundled, files: this.#files };
+    // FontBook looks files up without their extension, so arial.otf serves arial.ttf too.
+    const stem = (name: string) => keyOf(name).replace(/\.(shx|ttf|otf)$/, '');
+    const own = new Set(this.#files.map((f) => stem(f.name)));
+    // User files first: FontBook keeps the first face added for a family and style.
+    this.#sources = {
+      ...this.#bundled,
+      files: [...this.#files, ...this.#device.filter((f) => !own.has(stem(f.name)))],
+    };
     this.#state = {
       ...this.#state,
       files: this.#files.map((f) => ({ name: f.name, kind: kindOf(f.name) })),
