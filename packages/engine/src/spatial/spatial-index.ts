@@ -187,6 +187,10 @@ export class SpatialIndex {
       blockExtents: (h) => this.extents(h),
       basePoint: (h) => model.blocks.get(h)?.basePoint,
       tables: model,
+      get attributeMode() {
+        const v = model.header.get('$ATTMODE');
+        return typeof v === 'number' ? v : undefined;
+      },
     };
   }
 
@@ -205,7 +209,9 @@ export class SpatialIndex {
   /** Brings the index up to date with a change set the model has just applied. */
   apply(cs: ChangeSet): void {
     // A text style edit (font, width factor, obliquing) moves the glyphs of every text.
-    if (cs.tables?.textStyles) this.reboundAnnotations();
+    // ATTMODE shows or hides invisible attributes (M1-14 part 2).
+    if (cs.tables?.textStyles || cs.header?.some((h) => h.name === '$ATTMODE'))
+      this.reboundAnnotations();
     const e = cs.entities;
     if (!e) return;
     const removed = [

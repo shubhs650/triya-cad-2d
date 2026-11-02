@@ -13,7 +13,13 @@ export {
   type DecodeOptions,
   type RasterFormat,
 } from './decode/raster';
-export { textMeasure, textPrimitives, type TextContext } from './text';
+export {
+  attributeShown,
+  attributeText,
+  textMeasure,
+  textPrimitives,
+  type TextContext,
+} from './text';
 export { primitivesBox, textBounds } from './text-bounds';
 export { createPaint, defaultPaint, type PaintFunction, type PaintOptions } from './paint';
 export {

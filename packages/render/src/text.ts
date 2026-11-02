@@ -20,6 +20,7 @@
 
 import {
   bulgeArc,
+  type AttributeFields,
   type Handle,
   type MTextGeometry,
   type TextGeometry,
@@ -476,6 +477,26 @@ function background(out: Collector, g: MTextGeometry, layout: MTextLayout, frame
     for (const p of paths) out.mask(p, color);
   }
   if (bg.flags & 16) for (const p of paths) out.frame(p);
+}
+
+/**
+ * What an attribute draws (M1-14 part 2): its value as a TEXT in the attribute's own frame,
+ * or a multiline attribute's embedded MTEXT. For an ATTRIB the value is what the user typed;
+ * for a constant ATTDEF inside a reference, the default value AutoCAD shows for it.
+ */
+export function attributeText(a: AttributeFields): TextGeometry | MTextGeometry {
+  return a.mtext ?? { ...a, kind: 'TEXT' };
+}
+
+/**
+ * Whether ATTMODE (ATTDISP) shows an attribute with these DXF 70 flags: 0 shows none, 2 shows
+ * every one, and 1 (normal, AutoCAD's initial value, also taken for anything else) shows those
+ * without the invisible bit.
+ */
+export function attributeShown(flags: number, attMode: number | undefined): boolean {
+  if (attMode === 0) return false;
+  if (attMode === 2) return true;
+  return (flags & 1) === 0;
 }
 
 /** The glyphs of a TEXT or MTEXT, in drawing coordinates. */

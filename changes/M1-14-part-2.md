@@ -1,0 +1,1 @@
+- M1-14 part 2 (#139): block attributes on screen: INSERTs draw their ATTRIBs (multiline ones from their MTEXT) with ByBlock and layer-0 inheritance, references show constant ATTDEFs as their value, an ATTDEF outside a block shows its tag, and ATTMODE 0/1/2 hides, shows visible or shows every attribute, with the spatial index bounding them to match.
