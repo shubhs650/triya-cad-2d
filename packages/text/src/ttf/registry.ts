@@ -26,12 +26,22 @@ export interface ResolvedFont {
   readonly substituted: boolean;
 }
 
+/** A font a source offered but that cannot be used (M1-38): the health report lists these. */
+export interface FontWarning {
+  /** The source, as `FontSource.name` names it. */
+  readonly source: string;
+  /** The family or file name that was asked for. */
+  readonly font: string;
+  /** What went wrong: "could not be read (…)" or "not a usable font (…)". */
+  readonly problem: string;
+}
+
 export class TtfRegistry {
   readonly #sources: readonly FontSource[];
   readonly #fallbacks: readonly string[];
   readonly #cache = new Map<string, Promise<{ font: TtfFont; source: string } | undefined>>();
-  /** Fonts a source offered that did not parse, so the health report can name them. */
-  readonly warnings: string[] = [];
+  /** Fonts a source could not read or that did not parse, so the health report can name them. */
+  readonly warnings: FontWarning[] = [];
 
   constructor(sources: readonly FontSource[], fallbacks: readonly string[]) {
     this.#sources = sources;
@@ -65,15 +75,26 @@ export class TtfRegistry {
   }
 
   async #load(family: string, style: FontStyleRequest) {
+    const warn = (source: FontSource, problem: string, e: unknown) =>
+      this.warnings.push({
+        source: source.name,
+        font: family,
+        problem: `${problem} (${e instanceof Error ? e.message : String(e)})`,
+      });
     for (const source of this.#sources) {
-      const bytes = await source.load(family, style);
+      let bytes: Uint8Array | undefined;
+      try {
+        bytes = await source.load(family, style);
+      } catch (e) {
+        // A source that offers a file it then cannot read is skipped like one lacking it.
+        warn(source, 'could not be read', e);
+        continue;
+      }
       if (!bytes) continue;
       try {
         return { font: parseTtf(bytes), source: source.name };
       } catch (e) {
-        this.warnings.push(
-          `${source.name}: ${family} is not a usable font (${(e as Error).message})`,
-        );
+        warn(source, 'not a usable font', e);
       }
     }
     return undefined;

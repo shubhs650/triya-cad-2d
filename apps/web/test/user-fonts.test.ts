@@ -4,7 +4,13 @@
 import { describe, expect, it } from 'vitest';
 import { buildShapes } from '../../../packages/text/test/shx/builder';
 import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
-import { FontStore, isFontFile, type FontPersistence, type StoredFont } from '../src/user-fonts';
+import {
+  FontStore,
+  isFontFile,
+  opfsFonts,
+  type FontPersistence,
+  type StoredFont,
+} from '../src/user-fonts';
 
 const SANS = fontBytes(testFont());
 const SHX = buildShapes([{ code: 65, name: 'UCA', bytes: [0x14, 0x10, 0x1c, 0x18, 0] }], {
@@ -15,10 +21,13 @@ const SHX = buildShapes([{ code: 65, name: 'UCA', bytes: [0x14, 0x10, 0x1c, 0x18
 const BUNDLED = { shx: [{ name: 'oet-simplex', source: '{}' }] };
 
 /** The device store's stand-in: what a reload would read back. */
-function memory(initial: StoredFont[] = []): FontPersistence & { rows: StoredFont[] } {
+function memory(
+  initial: StoredFont[] = [],
+  unreadable: { name: string; problem: string }[] = [],
+): FontPersistence & { rows: StoredFont[] } {
   const p = {
     rows: [...initial],
-    load: () => Promise.resolve([...p.rows]),
+    load: () => Promise.resolve({ fonts: [...p.rows], unreadable }),
     put: (f: StoredFont) => {
       p.rows = [...p.rows.filter((r) => r.name !== f.name), f];
       return Promise.resolve();
@@ -55,6 +64,24 @@ describe('FontStore', () => {
     await s.load();
     expect(names(s)).toEqual([['TestSans.ttf', 'TrueType font']]);
     expect(s.sources().files?.[0]?.bytes).toEqual(SANS);
+  });
+
+  // M1-38 part 3: the Health palette lists kept files that could not be read back.
+  it('keeps the names of kept files it could not read back, for the health report', async () => {
+    const db = memory(
+      [{ name: 'TestSans.ttf', bytes: SANS }],
+      [{ name: 'gone.shx', problem: 'could not be read (NotReadableError)' }],
+    );
+    const s = new FontStore(db, BUNDLED);
+    expect(s.getSnapshot().unreadable).toEqual([]);
+    await s.load();
+    expect(names(s)).toEqual([['TestSans.ttf', 'TrueType font']]);
+    expect(s.getSnapshot().unreadable).toEqual([
+      { name: 'gone.shx', problem: 'could not be read (NotReadableError)' },
+    ]);
+    // A file added under that name replaces the one that could not be read.
+    await s.add('Gone.SHX', SHX);
+    expect(s.getSnapshot().unreadable).toEqual([]);
   });
 
   it('replaces a file whose name differs only in case', async () => {
@@ -99,6 +126,35 @@ describe('FontStore', () => {
     await s.add('TestSans.ttf', SANS);
     expect(s.sources().files).toHaveLength(1);
     expect(s.getSnapshot().error).toMatch(/could not be kept on this device/);
+  });
+
+  it('reads every kept file it can and names the ones it cannot', async () => {
+    const file = (name: string, bytes: Uint8Array | Error) => ({
+      kind: 'file' as const,
+      name,
+      getFile: () =>
+        bytes instanceof Error
+          ? Promise.reject(bytes)
+          : Promise.resolve(new Blob([bytes as Uint8Array<ArrayBuffer>])),
+    });
+    const entries = [
+      file('TestSans.ttf', SANS),
+      file('gone.shx', new DOMException('The file changed', 'NotReadableError')),
+      file('notes.txt', SANS),
+    ];
+    const folder = {
+      async *values() {
+        yield* entries;
+      },
+    };
+    const storage = {
+      getDirectory: () => Promise.resolve({ getDirectoryHandle: () => Promise.resolve(folder) }),
+    } as unknown as StorageManager;
+    const { fonts, unreadable } = await opfsFonts(storage).load();
+    expect(fonts.map((f) => f.name)).toEqual(['TestSans.ttf']);
+    expect(unreadable).toEqual([
+      { name: 'gone.shx', problem: 'could not be read (The file changed)' },
+    ]);
   });
 
   it('recognises font files by extension', () => {
