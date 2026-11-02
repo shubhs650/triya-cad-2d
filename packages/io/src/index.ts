@@ -18,3 +18,11 @@ export { mapSortEnts } from './map/sortents';
 export { mapLayouts } from './map/layouts';
 export { mapImageObjects, type ImageObject } from './map/images';
 export { documentInit, openDocument, type OpenedDocument } from './map/document';
+export { drawingFacts, type DrawingFacts, type DrawingReference } from './health/facts';
+export {
+  healthReport,
+  type HealthFonts,
+  type HealthReport,
+  type HealthSources,
+  type MissingFont,
+} from './health/report';

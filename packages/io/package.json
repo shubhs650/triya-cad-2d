@@ -8,7 +8,8 @@
   "exports": {
     ".": "./src/index.ts",
     "./worker": "./src/worker/io.worker.ts",
-    "./client": "./src/worker/client.ts"
+    "./client": "./src/worker/client.ts",
+    "./health": "./src/health/report.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
