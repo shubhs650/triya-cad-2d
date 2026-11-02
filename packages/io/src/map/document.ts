@@ -16,7 +16,8 @@ import {
   type HeaderValue,
 } from '@triya/engine';
 import { hex } from './common';
-import { mapEntities } from './entities';
+import { drawingFacts, type DrawingFacts } from '../health/facts';
+import { mapEntities, type UnmappedEntity } from './entities';
 import { mapHeader } from './header';
 import { mapImageObjects } from './images';
 import { mapLayouts } from './layouts';
@@ -24,8 +25,13 @@ import { mapSortEnts } from './sortents';
 import { mapTables } from './tables';
 
 export function documentInit(doc: CadDocument): DocumentInit {
+  return mapDocument(doc).init;
+}
+
+function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: UnmappedEntity[] } {
   const { header, meta, handSeed } = mapHeader(doc);
-  return {
+  const { entities, unmapped } = mapEntities(doc);
+  const init: DocumentInit = {
     meta,
     handSeed,
     header,
@@ -36,8 +42,9 @@ export function documentInit(doc: CadDocument): DocumentInit {
     }),
     objects: [...mapSortEnts(doc), ...mapImageObjects(doc)],
     layouts: mapLayouts(doc),
-    entities: mapEntities(doc).entities,
+    entities,
   };
+  return { init, unmapped };
 }
 
 /** What opening a drawing hands the app, besides the document itself. */
@@ -50,15 +57,22 @@ export interface OpenedDocument {
    * A space whose contents have no known extent has no entry.
    */
   readonly extents: Readonly<Record<Handle, Box>>;
+  /** What the drawing health report needs from the file (M1-25). */
+  readonly facts: DrawingFacts;
 }
 
 const point = (v: HeaderValue | undefined): { x: number; y: number } | undefined =>
   typeof v === 'object' ? v : undefined;
 
 export function openDocument(doc: CadDocument): OpenedDocument {
-  const init = documentInit(doc);
+  const { init, unmapped } = mapDocument(doc);
   const modelSpace = init.blocks?.find((b) => b.name.toUpperCase() === '*MODEL_SPACE')?.handle;
-  return { init, modelSpace, extents: spaceExtents(init, modelSpace) };
+  return {
+    init,
+    modelSpace,
+    extents: spaceExtents(init, modelSpace),
+    facts: drawingFacts(doc, init, unmapped),
+  };
 }
 
 /**
