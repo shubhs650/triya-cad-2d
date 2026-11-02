@@ -101,8 +101,12 @@ describe('viewportShowsModel', () => {
   it('draws model space only through an on, sized floating viewport', () => {
     expect(viewportShowsModel(vp())).toBe(true);
     expect(viewportShowsModel(vp({ id: 1 }))).toBe(false);
-    expect(viewportShowsModel(vp({ status: 0 }))).toBe(false);
-    expect(viewportShowsModel(vp({ status: -1 }))).toBe(false);
+    // 68 is the session's activation, not the On switch: AutoCAD writes 0 for every viewport of a
+    // layout that is not current (the paper-space viewport of text_negative_extrusion.dxf's
+    // Layout1 too, which cannot be turned off) and DWG has no 68. The 90 flag says off.
+    expect(viewportShowsModel(vp({ status: 0 }))).toBe(true);
+    // −1 is past MAXACTVP on AutoCAD's screen; a plot still draws it, and Triya has no such limit.
+    expect(viewportShowsModel(vp({ status: -1 }))).toBe(true);
     expect(viewportShowsModel(vp({ flags: VIEWPORT_OFF }))).toBe(false);
     expect(viewportShowsModel(vp({ width: 0 }))).toBe(false);
     expect(viewportShowsModel(vp({ viewHeight: 0 }))).toBe(false);

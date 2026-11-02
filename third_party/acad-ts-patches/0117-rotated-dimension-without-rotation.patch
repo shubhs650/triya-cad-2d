@@ -1,0 +1,19 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index e2a21fc..003b2f5 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -1147,6 +1147,14 @@ export abstract class DxfSectionReaderBase {
+             map.subClasses.set(this._reader.valueAsString, DxfClassMap.create(DimensionOrdinate));
+             return true;
+           case DxfSubclassMarker.linearDimension:
++            // AutoCAD leaves out 50 when the rotation is 0, so this marker may be all that says
++            // the dimension is rotated rather than aligned.
++            if (!(tmp.cadObject instanceof DimensionLinear)) {
++              tmp.setDimensionObject(new DimensionLinear());
++              if (!map.subClasses.has(DxfSubclassMarker.linearDimension)) {
++                map.subClasses.set(DxfSubclassMarker.linearDimension, DxfClassMap.create(DimensionLinear));
++              }
++            }
+             return true;
+           default:
+             return false;

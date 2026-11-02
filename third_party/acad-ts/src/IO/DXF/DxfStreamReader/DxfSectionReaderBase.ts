@@ -1147,6 +1147,14 @@ export abstract class DxfSectionReaderBase {
             map.subClasses.set(this._reader.valueAsString, DxfClassMap.create(DimensionOrdinate));
             return true;
           case DxfSubclassMarker.linearDimension:
+            // AutoCAD leaves out 50 when the rotation is 0, so this marker may be all that says
+            // the dimension is rotated rather than aligned.
+            if (!(tmp.cadObject instanceof DimensionLinear)) {
+              tmp.setDimensionObject(new DimensionLinear());
+              if (!map.subClasses.has(DxfSubclassMarker.linearDimension)) {
+                map.subClasses.set(DxfSubclassMarker.linearDimension, DxfClassMap.create(DimensionLinear));
+              }
+            }
             return true;
           default:
             return false;
@@ -2093,7 +2101,14 @@ export abstract class DxfSectionReaderBase {
         tmp.sunHandle = this._reader.valueAsHandle;
         return true;
       case 67:
+        return true;
       case 68:
+        // Off (0), or on with its stacking order (1 for the active viewport).
+        (template.cadObject as Viewport).activeStatus = this._reader.valueAsShort;
+        return true;
+      case 340:
+        // The entity that clips a non-rectangular viewport; DWG reads it, DXF skipped it.
+        tmp.boundaryHandle = this._reader.valueAsHandle;
         return true;
       case 69:
         tmp.viewportId = this._reader.valueAsShort;
