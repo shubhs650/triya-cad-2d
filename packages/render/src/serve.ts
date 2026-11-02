@@ -24,6 +24,7 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         surface: o.surfaceOf(m.canvas),
         createLayer: o.createLayer,
         ...(m.style && { style: m.style }),
+        ...(m.patterns && { patterns: m.patterns }),
         ...(o.now && { now: o.now }),
         ...(o.requestIdle && { requestIdle: o.requestIdle }),
       });
@@ -46,6 +47,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         break;
       case 'style':
         r.setStyle(m.style);
+        break;
+      case 'patterns':
+        r.setPatterns(m.sources);
         break;
       case 'frame':
         r.frame();

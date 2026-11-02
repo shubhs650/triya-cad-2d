@@ -68,6 +68,9 @@ importers:
       '@triya/engine':
         specifier: workspace:*
         version: link:../../packages/engine
+      '@triya/hatch':
+        specifier: workspace:*
+        version: link:../../packages/hatch
       '@triya/io':
         specifier: workspace:*
         version: link:../../packages/io
