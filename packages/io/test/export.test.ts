@@ -207,6 +207,26 @@ function acadInsert(bytes: Uint8Array, handle: string): Insert {
   return readCadDocument(bytes).getCadObject(Number.parseInt(handle, 16)) as Insert;
 }
 
+/** A new HATCH: a type with no writer yet (roadmap M1-75). */
+const hatch = (model: DocumentModel): { owner: string; layer: string; geom: EntityGeometry } => ({
+  owner: byType(model, 'LINE').owner,
+  layer: byType(model, 'LINE').layer,
+  geom: {
+    kind: 'HATCH',
+    pattern: 'SOLID',
+    solid: true,
+    associative: false,
+    style: 0,
+    patternType: 1,
+    patternAngle: 0,
+    patternScale: 1,
+    double: false,
+    loops: [],
+    patternLines: [],
+    seedPoints: [],
+  },
+});
+
 const byType = (model: DocumentModel, type: string, is3d?: boolean): Entity =>
   [...model.entities()].find(
     (e) => e.type === type && (is3d === undefined || (e.geom as { is3d?: boolean }).is3d === is3d),
@@ -1034,10 +1054,7 @@ describe('triyaToAcad', () => {
   it('refuses what it cannot write yet and leaves the original as it was', () => {
     const cases: ((b: ChangeSetBuilder, model: DocumentModel) => void)[] = [
       (b, m) => {
-        const s = byType(m, 'TOLERANCE');
-        b.updateEntity(s.id, {
-          geom: { ...s.geom, position: { x: 2, y: 3 } } as EntityGeometry,
-        });
+        b.addEntity(hatch(m));
       },
       (b, m) => {
         const s = byType(m, 'INSERT');
@@ -1135,10 +1152,10 @@ describe('triyaToAcad', () => {
 
   it('names each problem in the error', () => {
     const { model } = open();
-    const s = byType(model, 'TOLERANCE');
-    edit(model, (b) =>
-      b.updateEntity(s.id, { geom: { ...s.geom, rotation: 3 } as EntityGeometry }),
-    );
+    let s: Entity | undefined;
+    edit(model, (b) => {
+      s = b.addEntity(hatch(model));
+    });
     let error: unknown;
     try {
       triyaToAcad(readCadDocument(FILE), model);
@@ -1146,7 +1163,7 @@ describe('triyaToAcad', () => {
       error = e;
     }
     expect((error as UnsupportedChangeError).problems).toEqual([
-      `TOLERANCE ${s.handle}: geometry changes`,
+      `HATCH ${s!.handle}: new entities`,
     ]);
   });
 });
