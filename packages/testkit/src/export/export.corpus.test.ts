@@ -1,16 +1,17 @@
 // TriyaToAcad on the public corpus (M1-05, M1-75): a markup-style edit of every entity Triya can
-// write (move it; grow circles and arcs, turn arcs and text) must save so that the edited
+// write (move it; grow circles and arcs, turn arcs, text and blocks) must save so that the edited
 // entities map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles reports nothing (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
 import { readFileSync } from 'node:fs';
-import { Polyline } from '@node-projects/acad-ts';
+import { Insert, Polyline } from '@node-projects/acad-ts';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
   DocumentModel,
   type Entity,
   type EntityGeometry,
+  type TextFields,
   type Vec2,
 } from '@triya/engine';
 import {
@@ -39,6 +40,16 @@ const TURN = 0.1;
 const TWO_PI = 2 * Math.PI;
 const turn = (a: number): number => (a + TURN) % TWO_PI;
 
+/** MOVE of a text frame (TEXT, ATTDEF, ATTRIB), with ROTATE in place. */
+function movedText<T extends TextFields>(g: T): T {
+  return {
+    ...g,
+    position: move(g.position),
+    ...(g.alignmentPoint ? { alignmentPoint: move(g.alignmentPoint) } : {}),
+    rotation: turn(g.rotation),
+  };
+}
+
 /** The edit: what MOVE, SCALE (about the centre) and ROTATE (in place) would leave. */
 function edited(g: EntityGeometry): EntityGeometry {
   switch (g.kind) {
@@ -64,11 +75,19 @@ function edited(g: EntityGeometry): EntityGeometry {
     case 'LWPOLYLINE':
       return { ...g, vertices: g.vertices.map((v) => ({ ...v, ...move(v) })) };
     case 'TEXT':
+    case 'ATTDEF':
+      return movedText(g);
+    case 'INSERT':
+      // MOVE takes the ATTRIBs along (a multiline one's embedded MTEXT too); ROTATE turns the
+      // block about its insertion point.
       return {
         ...g,
         position: move(g.position),
-        ...(g.alignmentPoint ? { alignmentPoint: move(g.alignmentPoint) } : {}),
         rotation: turn(g.rotation),
+        attributes: g.attributes.map((a) => ({
+          ...movedText(a),
+          ...(a.mtext ? { mtext: { ...a.mtext, position: move(a.mtext.position) } } : {}),
+        })),
       };
     case 'MTEXT':
       return { ...g, position: move(g.position), rotation: turn(g.rotation) };
@@ -147,11 +166,13 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .map((e) => `${e.type} ${e.handle}`);
         expect(wrong, f.path).toEqual([]);
 
-        // A polyline's VERTEX entities are edited with it, under their own handles.
+        // A polyline's VERTEX entities and an INSERT's ATTRIBs are edited with it, under their
+        // own handles.
         const ignoreHandles = new Set(targets.map((e) => Number.parseInt(e.handle, 16)));
         for (const h of [...ignoreHandles]) {
           const o = original.getCadObject(h);
           if (o instanceof Polyline) for (const v of o.vertices) ignoreHandles.add(v.handle);
+          if (o instanceof Insert) for (const a of o.attributes) ignoreHandles.add(a.handle);
         }
         const diff = structuralDiff(original, reopened, { ignoreHandles });
         expect(diff.differences.slice(0, 5), f.path).toEqual([]);
