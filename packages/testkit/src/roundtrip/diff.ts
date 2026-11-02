@@ -12,6 +12,7 @@
  * summary info, the preview image, and acad-ts' internal reference bookkeeping.
  */
 import { ACadVersion, CadDocument, CadHeader, CadObject, DxfClass } from '@node-projects/acad-ts';
+import { documentObjects } from './handle-coverage.js';
 
 export type DifferenceKind = 'missing' | 'added' | 'type' | 'value' | 'order';
 
@@ -148,9 +149,7 @@ export function summarizeDiff(report: DiffReport): DiffSummary {
 }
 
 function indexByHandle(doc: CadDocument): Map<number, CadObject> {
-  const map = new Map<number, CadObject>();
-  for (const obj of doc.getCadObjects()) map.set(obj.handle, obj);
-  return map;
+  return documentObjects(doc);
 }
 
 let headerNames: Map<string, string> | null = null;
