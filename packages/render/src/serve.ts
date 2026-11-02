@@ -25,6 +25,7 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         createLayer: o.createLayer,
         ...(m.style && { style: m.style }),
         ...(m.patterns && { patterns: m.patterns }),
+        ...(m.fonts && { fonts: m.fonts }),
         ...(o.now && { now: o.now }),
         ...(o.requestIdle && { requestIdle: o.requestIdle }),
       });

@@ -3,7 +3,7 @@
 // requests that need an answer (hit test, flush), which carry an id.
 
 import type { ChangeSet, EntityId } from '@triya/engine';
-import type { RenderDocument } from './session';
+import type { FontSources, RenderDocument } from './session';
 import type { RasterPixels, RenderPrimitive, RenderStyle, ViewTransform } from './types';
 
 export type HostMessage =
@@ -15,6 +15,8 @@ export type HostMessage =
       readonly style?: RenderStyle;
       /** The user's .pat files (M1-50). */
       readonly patterns?: readonly string[];
+      /** Fonts for text (M1-72). */
+      readonly fonts?: FontSources;
     }
   | {
       readonly type: 'resize';

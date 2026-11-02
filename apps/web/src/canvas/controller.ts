@@ -26,6 +26,7 @@ import {
   type ViewTransform,
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
+import { BUNDLED_FONTS } from '../fonts';
 import { extentsView, panBy, wheelFactor, zoomAt, type ViewportSize } from './navigate';
 import { ViewHistory, allView, scaleView, windowView } from './views';
 
@@ -223,6 +224,7 @@ export class CanvasController {
       createWorker: () => new RenderWorker(),
       style: this.#style(),
       onError: this.#hooks.onError,
+      fonts: BUNDLED_FONTS,
       ...(patterns.length > 0 && { patterns }),
     });
     for (const change of this.#hooks.changes?.() ?? []) host.apply(change);
