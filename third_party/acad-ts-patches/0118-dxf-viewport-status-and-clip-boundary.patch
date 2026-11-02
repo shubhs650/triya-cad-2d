@@ -1,0 +1,19 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 003b2f5..b2467b7 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -2101,7 +2101,14 @@ export abstract class DxfSectionReaderBase {
+         tmp.sunHandle = this._reader.valueAsHandle;
+         return true;
+       case 67:
++        return true;
+       case 68:
++        // Off (0), or on with its stacking order (1 for the active viewport).
++        (template.cadObject as Viewport).activeStatus = this._reader.valueAsShort;
++        return true;
++      case 340:
++        // The entity that clips a non-rectangular viewport; DWG reads it, DXF skipped it.
++        tmp.boundaryHandle = this._reader.valueAsHandle;
+         return true;
+       case 69:
+         tmp.viewportId = this._reader.valueAsShort;

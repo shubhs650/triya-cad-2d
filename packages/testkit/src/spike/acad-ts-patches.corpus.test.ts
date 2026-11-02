@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type {
+  DimensionAligned,
   Entity,
   AttributeBase,
   BlockRecord,
@@ -25,6 +26,7 @@ import {
   BookColor,
   CadDictionaryWithDefault,
   DimensionArc,
+  DimensionLinear,
   DimensionRadialLarge,
   DwgReader,
   DwgReaderConfiguration,
@@ -49,6 +51,7 @@ import {
   Mesh,
   MLineStyle,
   MText,
+  ViewportStatusFlags,
   MultiLeader,
   MultiLeaderStyle,
   ProxyObject,
@@ -2417,6 +2420,109 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(text).toMatch(
         /\n\s*2\r?\nCUSTOM_STYLE_LTYPES\r?\n(?:.*\r?\n)*?\s*5\r?\nBOXBLANK\r?\n\s*6\r?\n\r?\n\s*7\r?\n\r?\n/,
       );
+    }
+  });
+
+  it('0115 an R12 entity drawn ByBlock keeps its linetype though the file has no BYBLOCK record', () => {
+    // R12 files have no BYBLOCK or BYLAYER LTYPE records, yet entities name them in 6.
+    for (const path of [
+      'third-party/acadsharp/sample_AC1009_ascii.dxf',
+      'third-party/acadsharp/sample_AC1009_binary.dxf',
+    ]) {
+      const line = (d: CadDocument) => d.getCadObject(0x57a) as Line;
+      const doc = readDxfRaw(corpusBytes(path));
+      expect(line(doc).lineType.name.toUpperCase(), path).toBe('BYBLOCK');
+      // The ByBlock entry is the document's, so a save writes it like any other linetype.
+      expect(doc.lineTypes!.tryGetValue('ByBlock'), path).toBe(line(doc).lineType);
+      for (const binary of [false, true])
+        expect(line(dxfRawRoundTrip(doc, binary)).lineType.name.toUpperCase(), path).toBe(
+          'BYBLOCK',
+        );
+    }
+  });
+
+  it('0116 DXF caret codes ^@ to ^_ decode to the control characters 0 to 31 and encode back', () => {
+    // DXF reference, "Control character handling": a control character is written as ^ and the
+    // character 64 above it, a caret as "^ ". acad-ts decoded only ^J, ^M and ^I.
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/caret_encoding.dxf'));
+    const text = (d: CadDocument, h: number) => (d.getCadObject(h) as MText).value;
+    expect(text(doc, 0x47)).toBe('A: abc\u0001def');
+    expect(text(doc, 0x62)).toBe('@: abc\u0000def');
+    expect(text(doc, 0x66)).toBe('_: abc\u001fdef');
+    // ^^ is control character 30, and "^ " a caret.
+    expect(text(doc, 0x68)).toBe('^: abc\u001edef');
+    // Lower case letters are not caret codes.
+    const lower = [...doc.entities!].find(
+      (e): e is MText => e instanceof MText && e.value.startsWith('a: '),
+    )!;
+    expect(lower.value).toBe('a: abc^adef');
+    const written = new TextDecoder('latin1').decode(writeDxf(doc, false));
+    expect(written).toMatch(/\nA: abc\^Adef\r?\n/);
+    expect(written).toMatch(/\n\^ : abc\^\^def\r?\n/);
+    expect(written).toMatch(/\na: abc\^ adef\r?\n/);
+    // No control character but the line ends is written raw.
+    expect([...written].filter((c) => c < ' ' && c !== '\n' && c !== '\r')).toEqual([]);
+    for (const binary of [false, true]) {
+      const saved = dxfRawRoundTrip(doc, binary);
+      for (const h of [0x47, 0x62, 0x66, 0x68]) expect(text(saved, h)).toBe(text(doc, h));
+    }
+  });
+
+  it('0117 a rotated DXF dimension whose AcDbRotatedDimension subclass is empty stays rotated', () => {
+    // AutoCAD leaves out 50 when the rotation is 0, so the subclass marker is all that says the
+    // dimension is rotated (linear), not aligned.
+    for (const path of [
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+      'third-party/acadsharp/sample_AC1032_ascii.dxf',
+    ]) {
+      const dim = (d: CadDocument) => d.getCadObject(0xc96) as DimensionAligned;
+      const doc = readDxfRaw(corpusBytes(path));
+      expect(dim(doc), path).toBeInstanceOf(DimensionLinear);
+      expect((dim(doc) as DimensionLinear).rotation).toBe(0);
+      expect([dim(doc).firstPoint.x, dim(doc).secondPoint.x]).toEqual([
+        313.7733248453183, 348.8966563915915,
+      ]);
+      expect(dim(dxfRawRoundTrip(doc, false)), path).toBeInstanceOf(DimensionLinear);
+    }
+  });
+
+  it('0118 a DXF viewport keeps its status (68) and clip boundary (340)', () => {
+    const status = (path: string, h: number) =>
+      (readDxfRaw(corpusBytes(path)).getCadObject(h) as Viewport).activeStatus;
+    // 68: 0 off, otherwise on with its stacking order (1 is the active one).
+    expect(status('third-party/acadsharp/sample_AC1015_ascii.dxf', 0x245)).toBe(2);
+    expect(status('third-party/ezdxf/examples_dxf/viewports.dxf', 0x7f4)).toBe(10);
+    expect(status('third-party/ezdxf/examples_dxf/text_negative_extrusion.dxf', 0x466)).toBe(0);
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/text_in_viewports.dxf'));
+    const vp = (d: CadDocument) => d.getCadObject(0xb8) as Viewport;
+    expect(handleHex(vp(doc).boundary)).toBe('B7');
+    expect(vp(doc).status & ViewportStatusFlags.NonRectangularClipping).not.toBe(0);
+    for (const binary of [false, true]) {
+      const saved = dxfRawRoundTrip(doc, binary);
+      expect(handleHex(vp(saved).boundary)).toBe('B7');
+      expect(vp(saved).activeStatus).toBe(vp(doc).activeStatus);
+    }
+  });
+
+  it('0119 an R12 viewport reads its view from the MVIEW xdata', () => {
+    // R12 states only the frame as groups (10, 40, 41, 68, 69); the view, snap and grid are in
+    // the ACAD MVIEW xdata (DXF R12 reference, VIEWPORT).
+    for (const path of [
+      'third-party/acadsharp/sample_AC1009_ascii.dxf',
+      'third-party/acadsharp/sample_AC1009_binary.dxf',
+    ]) {
+      const vp = readDxfRaw(corpusBytes(path)).getCadObject(0x267) as Viewport;
+      expect(vp.viewHeight, path).toBeCloseTo(8.7472440944881882, 12);
+      expect(vp.viewCenter.x).toBeCloseTo(7.9813029013506149, 12);
+      expect(vp.viewCenter.y).toBeCloseTo(3.9671916098106572, 12);
+      expect([vp.viewDirection.x, vp.viewDirection.y, vp.viewDirection.z]).toEqual([0, 0, 1]);
+      expect(vp.lensLength).toBe(50);
+      expect(vp.circleZoomPercent).toBe(1000);
+      expect([vp.snapSpacing.x, vp.snapSpacing.y, vp.gridSpacing.x, vp.gridSpacing.y]).toEqual([
+        0.5, 0.5, 0.5, 0.5,
+      ]);
+      // Fast zoom on and the UCS icon shown (MVIEW 1070s), nothing else.
+      expect(vp.status).toBe(ViewportStatusFlags.FastZoom | ViewportStatusFlags.UcsIconVisibility);
     }
   });
 });

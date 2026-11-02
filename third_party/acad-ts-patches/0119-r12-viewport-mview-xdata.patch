@@ -1,0 +1,100 @@
+diff --git a/src/IO/Templates/CadViewportTemplate.ts b/src/IO/Templates/CadViewportTemplate.ts
+index fec3927..7b7b5cb 100644
+--- a/src/IO/Templates/CadViewportTemplate.ts
++++ b/src/IO/Templates/CadViewportTemplate.ts
+@@ -5,6 +5,14 @@ import { Layer } from '../../Tables/Layer.js';
+ import { UCS } from '../../Tables/UCS.js';
+ import { VisualStyle } from '../../Objects/VisualStyle.js';
+ import { XYZ } from '../../Math/XYZ.js';
++import { XY } from '../../Math/XY.js';
++import { ACadVersion } from '../../ACadVersion.js';
++import { ExtendedDataControlString } from '../../XData/ExtendedDataControlString.js';
++import { ExtendedDataCoordinate } from '../../XData/ExtendedDataCoordinate.js';
++import { ExtendedDataInteger16 } from '../../XData/ExtendedDataInteger16.js';
++import { ExtendedDataReal } from '../../XData/ExtendedDataReal.js';
++import { ExtendedDataString } from '../../XData/ExtendedDataString.js';
++import { ViewportStatusFlags } from '../../Entities/ViewportStatusFlags.js';
+ import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
+ import { NotificationType } from '../NotificationEventHandler.js';
+ import { CadEntityTemplateT } from './CadEntityTemplate.js';
+@@ -39,6 +47,10 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
+ 			this.cadObject.id = this.viewportId;
+ 		}
+ 
++		if (builder.version < ACadVersion.AC1012) {
++			this._readR12View();
++		}
++
+ 		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);
+ 		if (sun) {
+ 			this.cadObject.sun = sun;
+@@ -94,4 +106,69 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
+ 			}
+ 		}
+ 	}
++
++	/**
++	 * R12 states only a viewport's frame as groups (10, 40, 41, 68, 69). The view, snap and grid
++	 * are in its ACAD xdata after the string MVIEW (DXF R12 reference, VIEWPORT): version, target,
++	 * direction, twist, view height, view centre X and Y, lens length, front and back clip, then
++	 * the 1070s view mode, circle zoom, fast zoom, UCSICON, snap, grid, snap style and isopair,
++	 * the 1040s snap angle, snap base X/Y, snap spacing X/Y and grid spacing X/Y, the hidden-in-plot
++	 * 1070, and a nested group of frozen layers. The xdata stays as read, so a save writes it back.
++	 */
++	private _readR12View(): void {
++		let records = null;
++		for (const [app, data] of this.cadObject.extendedData) {
++			if (app.name.toUpperCase() === 'ACAD') records = data.records;
++		}
++		const start = records?.findIndex((r) => r instanceof ExtendedDataString && r.value.toUpperCase() === 'MVIEW') ?? -1;
++		if (records == null || start < 0) return;
++
++		const points: XYZ[] = [];
++		const reals: number[] = [];
++		const ints: number[] = [];
++		let depth = 0;
++		for (const r of records.slice(start + 1)) {
++			if (r instanceof ExtendedDataControlString) {
++				depth += r.isClosing ? -1 : 1;
++				if (depth !== 1) break; // the frozen-layer group, or the end of MVIEW
++			} else if (r instanceof ExtendedDataCoordinate) points.push(r.value);
++			else if (r instanceof ExtendedDataReal) reals.push(r.value);
++			else if (r instanceof ExtendedDataInteger16) ints.push(r.value);
++		}
++		if (points.length < 2 || reals.length < 7) return;
++
++		const vp = this.cadObject;
++		vp.viewTarget = new XYZ(points[0].x, points[0].y, points[0].z);
++		vp.viewDirection = new XYZ(points[1].x, points[1].y, points[1].z);
++		// xdata reals are stored as they are in memory, so the angles are in radians.
++		vp.twistAngle = reals[0];
++		vp.viewHeight = reals[1];
++		vp.viewCenter = new XY(reals[2], reals[3]);
++		vp.lensLength = reals[4];
++		vp.frontClipPlane = reals[5];
++		vp.backClipPlane = reals[6];
++		if (reals.length >= 14) {
++			vp.snapAngle = reals[7];
++			vp.snapBase = new XY(reals[8], reals[9]);
++			vp.snapSpacing = new XY(reals[10], reals[11]);
++			vp.gridSpacing = new XY(reals[12], reals[13]);
++		}
++		if (ints.length >= 10) {
++			const [, viewMode, circleZoom, fastZoom, ucsIcon, snap, grid, snapStyle, isoPair, hidden] = ints;
++			vp.circleZoomPercent = circleZoom;
++			// VIEWMODE bits 1-16 are the status bits of the same meaning; UCSICON bit 1 is on, 2 at origin.
++			let status = viewMode & 0x1f;
++			if (ucsIcon & 1) status |= ViewportStatusFlags.UcsIconVisibility;
++			if (ucsIcon & 2) status |= ViewportStatusFlags.UcsIconAtOrigin;
++			if (fastZoom) status |= ViewportStatusFlags.FastZoom;
++			if (snap) status |= ViewportStatusFlags.SnapMode;
++			if (grid) status |= ViewportStatusFlags.GridMode;
++			if (snapStyle) status |= ViewportStatusFlags.IsometricSnapStyle;
++			if (hidden) status |= ViewportStatusFlags.HidePlotMode;
++			// SNAPISOPAIR: 0 left, 1 top, 2 right.
++			if (isoPair === 1) status |= ViewportStatusFlags.IsoPairTop;
++			if (isoPair === 2) status |= ViewportStatusFlags.IsoPairRight;
++			vp.status = status as ViewportStatusFlags;
++		}
++	}
+ }
