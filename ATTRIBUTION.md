@@ -9,12 +9,12 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | ezdxf example and test drawings | public fidelity corpus (`corpus/public/third-party/ezdxf`, license text in `corpus/public/LICENSES`) | MIT | https://github.com/mozman/ezdxf |
 | ACadSharp sample drawings | public fidelity corpus (`corpus/public/third-party/acadsharp`, license text in `corpus/public/LICENSES`) | MIT | https://github.com/DomCR/ACadSharp |
 | PlaneGCS (FreeCAD) | 2D constraint solver, built to WASM as a separate module | LGPL-2.1+ | https://github.com/FreeCAD/FreeCAD/tree/main/src/Mod/Sketcher/App/planegcs |
-| Hershey fonts | bundled stroke fonts (converted) | Public domain (Hershey/NIST terms) | https://www.ghostscript.com/doc/current/Fonts.htm#Hershey |
-| LibreCAD .lff fonts | bundled stroke fonts (converted) | LGPL (font files; attribution) | https://github.com/LibreCAD/LibreCAD/tree/master/librecad/support/fonts |
+| Hershey fonts | bundled stroke fonts `assets/fonts/oet-*.json`, converted from the original occidental data in `assets/fonts/hershey/hershey.jhf` (M1-09, DEC-044). The Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S. National Bureau of Standards. The format of the Font data in this distribution was originally created by James Hurt, Cognition, Inc., 900 Technology Park Drive, Billerica, MA 01821. | Hershey font distribution terms: free for any use, with these acknowledgements, in any format except NTIS's (`assets/fonts/hershey/README.md`) | https://paulbourke.net/dataformats/hershey/ |
 | Microsoft Fluent UI System Icons | UI icons | MIT | https://github.com/microsoft/fluentui-system-icons |
 | pdf.js | PDF underlay rendering | Apache-2.0 | https://github.com/mozilla/pdf.js |
 | opentype.js 2.0 | TrueType/OpenType parsing, glyph outlines and advance widths (`packages/text`, M1-10); no dependencies of its own | MIT | https://github.com/opentypejs/opentype.js |
 | React, Vite, Zustand, Radix, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
+| React 19.2 and React DOM (`apps/web`, M1-22); `@vitejs/plugin-react` 5 and `@types/react`, `@types/react-dom` (build and types only, not shipped) | app shell UI | MIT | https://github.com/facebook/react, https://github.com/vitejs/vite-plugin-react |
 | Comlink 4.4.2 | `@triya/io` worker RPC (M1-06) | Apache-2.0 | https://github.com/GoogleChromeLabs/comlink |
 | ESLint, @eslint/js, typescript-eslint, eslint-plugin-boundaries, globals, Prettier, Turborepo, Husky | dev tooling (lint, module boundaries, format, task runner, git hooks); not shipped | MIT | npm |
 | eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |

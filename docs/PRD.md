@@ -184,7 +184,7 @@ Detailed in `UI_SPEC.md`. Summary:
 
 ## 9. Licensing
 
-- App: MIT. PlaneGCS: LGPL-2.1+, built as a separate WASM module loaded at runtime, source and build script published. Fonts: public-domain Hershey set + LibreCAD LGPL `.lff` converted (attributed). Hatch patterns and linetypes: re-authored, not copied from Autodesk files. Icons: Microsoft Fluent UI System Icons (MIT). `ATTRIBUTION.md` lists everything.
+- App: MIT. PlaneGCS: LGPL-2.1+, built as a separate WASM module loaded at runtime, source and build script published. Fonts: the public-domain Hershey set, converted (attributed; LibreCAD fonts are GPL and excluded, DEC-044). Hatch patterns and linetypes: re-authored, not copied from Autodesk files. Icons: Microsoft Fluent UI System Icons (MIT). `ATTRIBUTION.md` lists everything.
 - No Autodesk-copyrighted assets (SHX files, `acad.pat`, `acad.lin`, `acad.dwt`, `acad.ctb`) are ever committed. Users may drop their own; they stay on the user's device.
 
 ## 10. Dependencies and their risk
