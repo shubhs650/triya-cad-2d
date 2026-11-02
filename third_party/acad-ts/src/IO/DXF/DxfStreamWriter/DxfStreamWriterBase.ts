@@ -46,11 +46,11 @@ export abstract class DxfStreamWriterBase implements IDxfStreamWriter {
     this.writeDxfCode(intCode);
 
     if (typeof value === 'string') {
+      // Caret notation for every control character, not only line feed, return and tab, so the
+      // DXF stays one value per line and reads back as it was.
       const s = value
         .replace(/\^/g, '^ ')
-        .replace(/\n/g, '^J')
-        .replace(/\r/g, '^M')
-        .replace(/\t/g, '^I');
+        .replace(/[\x00-\x1f]/g, (c) => '^' + String.fromCharCode(c.charCodeAt(0) + 64));
       this.writeValue(intCode, s);
     } else {
       this.writeValue(intCode, value);

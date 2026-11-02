@@ -1,0 +1,39 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
+index af5980b..587568d 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts
+@@ -28,11 +28,10 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
+   public recorder: DxfRawCode[] | null = null;
+ 
+   public get valueAsString(): string {
+-    return String(this.value)
+-      .replace(/\^J/g, '\n')
+-      .replace(/\^M/g, '\r')
+-      .replace(/\^I/g, '\t')
+-      .replace(/\^ /g, '^');
++    // DXF caret notation: ^@ to ^_ are the control characters 0 to 31 (^J a line feed) and
++    // "^ " a caret. One pass, left to right, so "^^J" is control character 30 and a J.
++    return String(this.value).replace(/\^([@-_ ])/g, (_, c: string) =>
++      c === ' ' ? '^' : String.fromCharCode(c.charCodeAt(0) - 64));
+   }
+ 
+   public get valueAsBool(): boolean {
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
+index d1958d2..fdb2c55 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
+@@ -46,11 +46,11 @@ export abstract class DxfStreamWriterBase implements IDxfStreamWriter {
+     this.writeDxfCode(intCode);
+ 
+     if (typeof value === 'string') {
++      // Caret notation for every control character, not only line feed, return and tab, so the
++      // DXF stays one value per line and reads back as it was.
+       const s = value
+         .replace(/\^/g, '^ ')
+-        .replace(/\n/g, '^J')
+-        .replace(/\r/g, '^M')
+-        .replace(/\t/g, '^I');
++        .replace(/[\x00-\x1f]/g, (c) => '^' + String.fromCharCode(c.charCodeAt(0) + 64));
+       this.writeValue(intCode, s);
+     } else {
+       this.writeValue(intCode, value);

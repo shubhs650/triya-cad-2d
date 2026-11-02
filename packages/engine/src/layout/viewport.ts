@@ -46,13 +46,16 @@ export function viewportScale(vp: ViewportGeometry): number {
 }
 
 /**
- * Whether the viewport draws model space: not the layout's own paper-space viewport (id 1),
- * on (DXF 68 > 0, so not off and not past MAXACTVP) and not turned off, with a frame and a view.
+ * Whether the viewport draws model space: not the layout's own paper-space viewport (id 1), not
+ * turned off (DXF 90 bit 0x20000) and with a frame and a view. DXF 68 is not the On switch,
+ * although the DXF reference calls 0 "off": AutoCAD writes 0 for every viewport of a layout that
+ * is not current, the paper-space viewport included (text_negative_extrusion.dxf, Layout1), and DWG
+ * has no 68 at all; −1 (past MAXACTVP) is a screen limit Triya does not have. R12 files, which
+ * have no 90, get the off bit from 68 = 0 on read (acad-ts patch 0119).
  */
 export function viewportShowsModel(vp: ViewportGeometry): boolean {
   return (
     vp.id !== 1 &&
-    vp.status > 0 &&
     (vp.flags & VIEWPORT_OFF) === 0 &&
     vp.width !== 0 &&
     vp.height !== 0 &&
