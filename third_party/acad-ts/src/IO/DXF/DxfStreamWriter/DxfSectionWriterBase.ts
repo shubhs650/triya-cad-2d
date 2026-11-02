@@ -322,8 +322,9 @@ export abstract class DxfSectionWriterBase {
       this._writer.writeTrueColor(420, entity.bookColor.color);
       this._writer.write(430, entity.bookColor.name);
     } else if (entity.color.isTrueColor) {
-      if (this.version <= ACadVersion.AC1009) this._writer.write(62, entity.color.getApproxIndex());
-      else this._writer.writeTrueColor(420, entity.color);
+      // AutoCAD writes the nearest ACI before the true colour, for readers that take only 62.
+      this._writer.write(62, entity.color.getApproxIndex());
+      if (this.version > ACadVersion.AC1009) this._writer.writeTrueColor(420, entity.color);
     } else {
       this._writer.write(62, entity.color.index);
     }

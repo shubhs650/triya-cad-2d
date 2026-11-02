@@ -1,9 +1,11 @@
 // M1-55: the ACI that AutoCAD writes for a true colour. A DXF object with a true colour (420)
 // keeps an ACI right before it (62), the number R2000 files and DIMSTYLE groups 176–178 hold
 // when only an ACI fits. Every such pair in the public corpus's ASCII DXFs must equal
-// `aciOfTrueColor`, which Triya uses wherever it turns a true colour into an ACI number.
+// `aciOfTrueColor`, which Triya uses wherever it turns a true colour into an ACI number, and
+// acad-ts's `Color.approxIndex`, which its writers use for the same (patch 0109, M1-43).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { Color } from '@node-projects/acad-ts';
 import { aciOfTrueColor } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
@@ -31,6 +33,9 @@ describe('true colour → ACI', () => {
         distinct.add(rgb);
         const got = aciOfTrueColor(r, g, b);
         if (got !== aci) problems.add(`${f.path} ${type} ${r},${g},${b}: ${aci} ≠ ${got}`);
+        const acad = Color.approxIndex(r, g, b);
+        if (acad !== aci)
+          problems.add(`acad-ts ${f.path} ${type} ${r},${g},${b}: ${aci} ≠ ${acad}`);
       }
     }
     expect([...problems]).toEqual([]);
