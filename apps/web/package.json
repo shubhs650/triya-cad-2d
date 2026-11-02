@@ -16,6 +16,7 @@
   },
   "dependencies": {
     "@triya/engine": "workspace:*",
+    "@triya/hatch": "workspace:*",
     "@triya/io": "workspace:*",
     "@triya/render": "workspace:*",
     "react": "^19.2.9",

@@ -1,17 +1,43 @@
-// The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs and
-// Report issue; the canvas area with its navigation bar; the layout tabs; the status bar. The
+// The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs,
+// Report issue and Settings; the canvas area with its navigation bar; the layout tabs; the status bar. The
 // ribbon, palettes and command line arrive with their own tasks.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasMode } from './canvas/controller';
-import { controllerOf, register } from './canvas/registry';
+import { allControllers, controllerOf, register } from './canvas/registry';
 import { DocumentStore, type OpenDocument } from './documents';
 import { NavBar } from './NavBar';
 import { openDrawing, openError } from './open';
+import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
+import { Settings } from './Settings';
 
 export const OET_HOME = 'https://openengtools.com/';
 export const REPORT_ISSUE = 'https://github.com/shubhs650/triya-cad-2d/issues/new';
 
 const store = new DocumentStore();
+
+/** The user's .pat files (M1-50), read back from this device and handed to every renderer. */
+const patterns = new PatternStore(indexedDbPatterns());
+void patterns.load();
+let patternSources = patterns.sources();
+patterns.subscribe(() => {
+  if (patterns.sources() === patternSources) return;
+  patternSources = patterns.sources();
+  for (const c of allControllers()) c.setPatterns(patternSources);
+});
+
+function addPatterns(files: Iterable<File>): void {
+  for (const f of files) void f.text().then((text) => patterns.add(f.name, text));
+}
+
+/** A dropped file: a .pat joins the hatch patterns, anything else opens as a drawing. */
+function dropped(files: Iterable<File>): void {
+  const pats: File[] = [];
+  for (const f of files) {
+    if (isPatFile(f.name)) pats.push(f);
+    else void open(fromFile(f));
+  }
+  addPatterns(pats);
+}
 
 async function open(file: { readonly name: string; getFile(): Promise<Blob> }): Promise<void> {
   store.startOpening(file.name);
@@ -36,6 +62,8 @@ interface LaunchParams {
 
 export function App() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
+  const [settings, setSettings] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const pick = useCallback(() => picker.current?.click(), []);
@@ -87,7 +115,7 @@ export function App() {
       onDrop={(e) => {
         e.preventDefault();
         setDragging(false);
-        for (const f of e.dataTransfer.files) void open(fromFile(f));
+        dropped(e.dataTransfer.files);
       }}
     >
       <header className="title-bar">
@@ -136,12 +164,37 @@ export function App() {
         <a className="report" href={REPORT_ISSUE} target="_blank" rel="noreferrer">
           Report issue
         </a>
+        <button type="button" className="settings-button" onClick={() => setSettings(true)}>
+          Settings
+        </button>
       </header>
+      <Settings
+        patterns={patterns}
+        open={settings}
+        onClose={() => setSettings(false)}
+        onAdd={addPatterns}
+      />
 
       {state.error && (
         <div className="banner error" role="alert">
           <span>{state.error}</span>
           <button type="button" aria-label="Dismiss" onClick={() => store.dismissError()}>
+            ×
+          </button>
+        </div>
+      )}
+      {!settings && patternState.error && (
+        <div className="banner error" role="alert">
+          <span>{patternState.error}</span>
+          <button type="button" aria-label="Dismiss" onClick={() => patterns.dismiss()}>
+            ×
+          </button>
+        </div>
+      )}
+      {!settings && patternState.notice && (
+        <div className="banner" role="status">
+          <span>{patternState.notice}</span>
+          <button type="button" aria-label="Dismiss" onClick={() => patterns.dismiss()}>
             ×
           </button>
         </div>
@@ -229,6 +282,7 @@ function SpaceCanvas({
       onMode: (m) => {
         if (visibleRef.current) onMode(m);
       },
+      patterns: () => patterns.sources(),
     });
     const unregister = register(id, block, c);
     return () => {

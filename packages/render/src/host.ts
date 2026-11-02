@@ -37,6 +37,8 @@ export interface RendererHostOptions {
    */
   readonly createWorker?: () => RenderWorker;
   readonly style?: RenderStyle;
+  /** The user's .pat files (M1-50), in the order added. */
+  readonly patterns?: readonly string[];
   /** Main-thread layers; defaults to OffscreenCanvas, as in the worker. */
   readonly createLayer?: () => Surface;
   /** A failure in the render worker that no pending request was waiting for. */
@@ -89,6 +91,7 @@ export class RendererHost {
           canvas: offscreen,
           document: o.document,
           ...(o.style && { style: o.style }),
+          ...(o.patterns && { patterns: o.patterns }),
         },
         [offscreen as Transferable],
       );
@@ -98,6 +101,7 @@ export class RendererHost {
         surface: surfaceOf(o.canvas),
         createLayer: o.createLayer ?? offscreenLayer,
         ...(o.style && { style: o.style }),
+        ...(o.patterns && { patterns: o.patterns }),
       });
     }
   }
@@ -126,6 +130,12 @@ export class RendererHost {
   setStyle(style: RenderStyle): void {
     if (this.#session) this.#session.renderer.setStyle(style);
     else this.#post({ type: 'style', style });
+  }
+
+  /** Replaces the user's .pat files; open hatches stored without lines redraw from them. */
+  setPatterns(sources: readonly string[]): void {
+    if (this.#session) this.#session.renderer.setPatterns(sources);
+    else this.#post({ type: 'patterns', sources });
   }
 
   frame(): void {

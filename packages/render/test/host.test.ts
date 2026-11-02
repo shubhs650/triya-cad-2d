@@ -74,7 +74,7 @@ function canvas(visible: Recorded, transferable: boolean): HostCanvas {
 
 const STYLE = { background: '#000000', foreground: '#ffffff', showLineweights: false };
 
-function hosts(entities = [entity('20', line(0, 0, 10, 0))]) {
+function hosts(entities = [entity('20', line(0, 0, 10, 0))], patterns?: readonly string[]) {
   const engine = drawing(entities);
   const document = { init: drawingInit(entities), block: MODEL, tol: toleranceForSize(1000) };
   const mainSurfaces: Recorded[] = [];
@@ -88,6 +88,7 @@ function hosts(entities = [entity('20', line(0, 0, 10, 0))]) {
     mode: 'main',
     style: STYLE,
     createLayer: () => record(mainSurfaces, 'layer'),
+    ...(patterns && { patterns }),
   });
   const errors: Error[] = [];
   const off = new RendererHost({
@@ -96,6 +97,7 @@ function hosts(entities = [entity('20', line(0, 0, 10, 0))]) {
     createWorker: () => worker,
     style: STYLE,
     onError: (e) => errors.push(e),
+    ...(patterns && { patterns }),
   });
   return { engine, main, off, worker, mainSurfaces, workerSurfaces, errors };
 }
@@ -164,6 +166,46 @@ describe('RendererHost', () => {
     expect(log(workerSurfaces).flat().length).toBeGreaterThan(20);
     expect(log(workerSurfaces)).toEqual(log(mainSurfaces));
     expect(workerSurfaces[0]!.canvas).toEqual({ width: 200, height: 100 });
+  });
+
+  it('hands user hatch patterns to the worker as to the main thread (M1-50)', async () => {
+    // A custom-pattern hatch stored without its lines: drawn only from a user .pat.
+    const square = [
+      { x: 0, y: 0, bulge: 0 },
+      { x: 4, y: 0, bulge: 0 },
+      { x: 4, y: 4, bulge: 0 },
+      { x: 0, y: 4, bulge: 0 },
+    ];
+    const hatch = entity('20', {
+      kind: 'HATCH',
+      pattern: 'MY_LINES',
+      solid: false,
+      associative: false,
+      style: 0,
+      patternType: 2,
+      patternAngle: 0,
+      patternScale: 1,
+      double: false,
+      seedPoints: [],
+      loops: [{ flags: 2, polyline: { closed: true, vertices: square } }],
+      patternLines: [],
+    });
+    const { main, off, mainSurfaces, workerSurfaces } = hosts(
+      [hatch],
+      ['*MY_LINES\n0, 0,0, 0,1\n'],
+    );
+    for (const h of [main, off]) {
+      h.resize(100, 100, 1);
+      h.setView({ center: { x: 2, y: 2 }, scale: 20 });
+      h.frame();
+      h.setPatterns(['*MY_LINES\n90, 0,0, 0,1\n']);
+      h.frame();
+    }
+    await off.flush();
+    const strokes = (surfaces: Recorded[]) =>
+      surfaces.flatMap((s) => s.ctx.calls).filter((c) => c[0] === 'stroke');
+    expect(strokes(workerSurfaces)).toHaveLength(2);
+    expect(log(workerSurfaces)).toEqual(log(mainSurfaces));
   });
 
   it('answers hit tests from either side alike', async () => {

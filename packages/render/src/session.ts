@@ -39,6 +39,8 @@ export interface RenderSessionOptions {
   readonly surface: Surface;
   readonly createLayer: () => Surface;
   readonly style?: RenderStyle;
+  /** The user's .pat files (M1-50). */
+  readonly patterns?: readonly string[];
   readonly paint?: (e: Entity, model: DocumentModel) => Paint | undefined;
   readonly now?: () => number;
   readonly requestIdle?: (cb: () => void) => void;
@@ -71,6 +73,7 @@ export class RenderSession {
       surface: o.surface,
       createLayer: o.createLayer,
       ...(o.style && { style: o.style }),
+      ...(o.patterns && { patterns: o.patterns }),
       ...(o.paint && { paint: o.paint }),
       ...(o.now && { now: o.now }),
       ...(o.requestIdle && { requestIdle: o.requestIdle }),

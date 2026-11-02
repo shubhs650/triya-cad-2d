@@ -57,8 +57,9 @@ import { mixColors, parseHex, tintColor } from './style/mix';
 import { adjustPixels, type ImageFrames } from './image';
 import { patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
-import { tessellate } from './tessellate';
+import { patternLibrary, tessellate } from './tessellate';
 import type { TextContext } from './text';
+import type { PatternLibrary } from '@triya/hatch';
 import type { TextFonts } from '@triya/text';
 import {
   PATH_A,
@@ -161,6 +162,11 @@ export interface Canvas2DRendererOptions {
    * them from the user font store and the bundled fonts before drawing (M1-37).
    */
   readonly fonts?: TextFonts;
+  /**
+   * The user's .pat files (M1-50), in the order added: their patterns join the bundled ones,
+   * a later file winning on a shared name, for hatches stored without their pattern lines.
+   */
+  readonly patterns?: readonly string[];
   /** A field's current value (MTEXT `%<…>%`); undefined shows `----`. */
   readonly evaluateField?: (code: string) => string | undefined;
   /**
@@ -296,8 +302,13 @@ export class Canvas2DRenderer implements Renderer {
   readonly #scene: Surface;
   readonly #transientLayer: Surface;
   readonly #paint: PaintFunction;
-  /** Fonts and text styles for TEXT and MTEXT (M1-41); image frame settings (M1-19). */
-  readonly #tessellate: { text?: TextContext; frames?: ImageFrames } = {};
+  /**
+   * Fonts and text styles for TEXT and MTEXT (M1-41), image frame settings (M1-19) and the
+   * hatch pattern library (M1-50). One object shared with `#blockSource`, so a pattern change
+   * reaches block contents too.
+   */
+  readonly #tessellate: { text?: TextContext; frames?: ImageFrames; patterns?: PatternLibrary } =
+    {};
   readonly #createLayer: () => Surface;
   readonly #images: ((definition: Handle) => RasterPixels | undefined) | undefined;
   /** Bitmap → its adjusted layers, by setting, colour and background. */
@@ -366,6 +377,7 @@ export class Canvas2DRenderer implements Renderer {
       };
     }
     this.#tessellate.frames = imageFrames(this.#model);
+    if (o.patterns?.length) this.#tessellate.patterns = patternLibrary(o.patterns);
     this.#blockSource = {
       model: this.#model,
       paint: this.#paint,
@@ -414,6 +426,16 @@ export class Canvas2DRenderer implements Renderer {
   setStyle(style: RenderStyle): void {
     this.#style = style;
     this.#sceneDirty = this.#transientDirty = true;
+  }
+
+  /**
+   * Replaces the user's .pat files (M1-50). Every entity is re-tessellated, as for a layer
+   * change: a hatch stored without its lines, alone or inside a block, may now draw or change.
+   */
+  setPatterns(sources: readonly string[]): void {
+    this.#tessellate.patterns = patternLibrary(sources);
+    this.#cacheBlock();
+    this.#sceneDirty = true;
   }
 
   setTransient(primitives: readonly RenderPrimitive[]): void {

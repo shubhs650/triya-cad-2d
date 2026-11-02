@@ -13,6 +13,8 @@ export type HostMessage =
       readonly canvas: unknown;
       readonly document: RenderDocument;
       readonly style?: RenderStyle;
+      /** The user's .pat files (M1-50). */
+      readonly patterns?: readonly string[];
     }
   | {
       readonly type: 'resize';
@@ -24,6 +26,7 @@ export type HostMessage =
   | { readonly type: 'apply'; readonly change: ChangeSet }
   | { readonly type: 'transient'; readonly primitives: readonly RenderPrimitive[] }
   | { readonly type: 'style'; readonly style: RenderStyle }
+  | { readonly type: 'patterns'; readonly sources: readonly string[] }
   | { readonly type: 'frame' }
   | {
       readonly type: 'hitTest';
