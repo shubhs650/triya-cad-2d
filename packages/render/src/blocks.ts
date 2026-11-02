@@ -115,6 +115,7 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
         ...(p.gradient
           ? { gradient: { ...p.gradient, frame: composeAffine(m, p.gradient.frame) } }
           : {}),
+        ...(p.image ? { image: { ...p.image, frame: composeAffine(m, p.image.frame) } } : {}),
         ...(p.text
           ? {
               text: {

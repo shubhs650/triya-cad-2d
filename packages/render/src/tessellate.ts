@@ -13,8 +13,8 @@
 // INSERT, DIMENSION, ACAD_TABLE and MULTILEADER yield nothing here: the renderer draws them
 // from their blocks or parts (`expandInsert`, M1-14, M1-15, M1-17 and M1-52). Kinds drawn by later tasks yield nothing
 // either, each noted where it falls through:
-// viewports (M1-18), images and underlays (M1-19/20), attributes (M1-14) and the MTEXT
-// background mask (M1-41 part 2). TEXT and MTEXT draw their glyphs (`textPrimitives`, M1-41)
+// underlays (M1-20), attributes (M1-14) and the MTEXT background mask (M1-41 part 2). IMAGE
+// and WIPEOUT come from `imagePrimitives` (M1-19). TEXT and MTEXT draw their glyphs (`textPrimitives`, M1-41)
 // when the caller passes the loaded fonts, and nothing without them.
 
 import { bundledPatterns, gradientRamp, hatchLines, hatchPattern } from '@triya/hatch';
@@ -43,11 +43,14 @@ import { dashPath, dashPolyline, type DashedPath } from './style/dash';
 import { colorValue } from './style/resolve';
 import { patternLength, type LinePattern } from './style/pattern';
 import { textPrimitives, type TextContext } from './text';
+import { imagePrimitives, type ImageFrames } from './image';
 
 /** What tessellating some kinds needs beyond the geometry and paint. */
 export interface TessellateContext {
   /** Loaded fonts and text styles; without them TEXT and MTEXT draw nothing. */
   readonly text?: TextContext;
+  /** IMAGEFRAME and WIPEOUTFRAME; both on (AutoCAD's initial values) when absent. */
+  readonly frames?: ImageFrames;
 }
 
 /** What every primitive of one entity shares, resolved from the entity and its layer. */
@@ -213,6 +216,8 @@ export function tessellate(
   // Text takes no linetype: AutoCAD draws glyphs continuous.
   if (g.kind === 'TEXT' || g.kind === 'MTEXT')
     return ctx.text ? textPrimitives(g, paint, ctx.text) : [];
+  // Image frames are drawn continuous: a frame is a display aid, not linework (ours).
+  if (g.kind === 'IMAGE' || g.kind === 'WIPEOUT') return imagePrimitives(g, paint, ctx.frames);
   const prims = exact(g, paint);
   const lt = paint.linetype;
   const first = prims[0];
