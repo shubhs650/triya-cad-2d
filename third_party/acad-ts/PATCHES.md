@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80) and 0128 (M1-82) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82) and 0130 (M1-84) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2419,5 +2419,22 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 **Title:** Read DIMENSION 41 and read and write 52 in degrees
 
 `DxfSectionReaderBase._readDimension` ignored group 41 unless it followed `AcDbArcDimension` (the arc's end angle), so every dimension's text line spacing factor read back as 0. `DxfSectionWriterBase` never wrote 52, the extension line oblique angle of aligned and rotated dimensions, and the reader assigned 52 in radians although DXF angles are in degrees. This reads 41 as the line spacing factor outside `AcDbArcDimension`, reads 52 in degrees (also when it comes in `AcDbDimension`, before the aligned or rotated subclass marker, as ezdxf writes it), and writes 52 in degrees after the extension line points when it is not 0.
+
+</details>
+
+### 0130 — DXF MULTILEADER loses its arrowhead (342), content block (344, context 341) and leader line indexes (91)
+
+- **File:** `third_party/acad-ts-patches/0130-dxf-multileader-blocks-line-index.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** the DXF reader skipped four groups the DXF writer writes: the multileader's arrowhead block (342) and content block (344) in `AcDbMLeader`, the content block in the context data (341) and each `LEADER_LINE{`'s index (91). A block multileader saved to DXF read back with no block and the default arrowhead, and every leader line as index 0. The templates already had the handle fields (`arrowheadHandle`, `blockContentHandle`, `blockRecordHandle`), filled only by the DWG reader. Found by Triya M1-75 part 5, fixed in M1-84; every corpus multileader is mtext with the default arrowhead and one line, so the round trip could not see it.
+- **Fix:** read 342 and 344 into the multileader template's handles, context 341 into the context template's block record handle (entity 341 stays the leader linetype), and LEADER_LINE 91 into `LeaderLine.index`.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0130 a DXF MULTILEADER keeps its arrowhead (342), content block (344, context 341) and line indexes (91)"; `packages/io/test/export-mleader-viewport.test.ts` → "writes a block MULTILEADER’s arrowhead block, content block and second leader line to dxf so it maps back".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read the DXF multileader arrowhead, content block and leader line index
+
+`DxfSectionReaderBase._readMLeader` ignored 342 (arrowhead block) and 344 (block content), `_readMultiLeaderObjectContextData` ignored 341 (block content in the context data) and `_readMultiLeaderLine` ignored 91 (the leader line index), although `DxfSectionWriterBase` writes all four and the DWG reader keeps them. A block multileader saved to DXF read back without its block and with the default arrowhead, and every leader line with index 0. This reads the three handles into the existing `CadMLeaderTemplate.arrowheadHandle` / `blockContentHandle` and `CadMLeaderAnnotContextTemplate.blockRecordHandle`, which the templates already resolve, and 91 into `LeaderLine.index`.
 
 </details>

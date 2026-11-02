@@ -1717,8 +1717,15 @@ export abstract class DxfSectionReaderBase {
       case 341:
         tmp.leaderLineTypeHandle = this._reader.valueAsHandle;
         return true;
+      // The arrowhead and content blocks (DXF reference, MULTILEADER); the writer writes both.
+      case 342:
+        tmp.arrowheadHandle = this._reader.valueAsHandle;
+        return true;
       case 343:
         tmp.mTextStyleHandle = this._reader.valueAsHandle;
+        return true;
+      case 344:
+        tmp.blockContentHandle = this._reader.valueAsHandle;
         return true;
       // Leader line, text and block content colours: AcCmEntityColor values, not integers.
       case 91:
@@ -1756,6 +1763,10 @@ export abstract class DxfSectionReaderBase {
           break;
         case 340:
           template.textStyleHandle = this._reader.valueAsHandle;
+          break;
+        // The content block, as on the entity (344).
+        case 341:
+          template.blockRecordHandle = this._reader.valueAsHandle;
           break;
         // The text, background fill and block content colours are AcCmEntityColor values.
         case 90:
@@ -1880,6 +1891,10 @@ export abstract class DxfSectionReaderBase {
           line.points[line.points.length - 1] = pt;
           break;
         }
+        // The line's index in its leader (DXF reference, MULTILEADER); the writer writes it.
+        case 91:
+          line.index = this._reader.valueAsInt;
+          break;
         case 305:
           if (this._reader.valueAsString === '}') {
             end = true;
