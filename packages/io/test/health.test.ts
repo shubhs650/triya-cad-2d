@@ -197,14 +197,20 @@ describe('healthReport', () => {
     ]);
   });
 
-  it('adds fonts the drawing already found missing, such as MTEXT \\F fonts', () => {
+  it("lists only this drawing's fonts, whatever else the shared book has drawn", () => {
     const book = fonts('romans', 'txt', 'gbcbig', 'ltypeshp');
+    // Another open drawing drew isocp.shx with a stand-in.
     book.face({ name: 'isocp.shx', kind: 'shx', bold: false, italic: false });
-    expect(healthReport(FACTS, { fonts: book }).fonts.missing).toContainEqual({
-      font: 'isocp.shx',
-      substitute: 'oet-simplex',
-      styles: [],
-    });
+    expect(healthReport(FACTS, { fonts: book }).fonts.missing.map((m) => m.font)).toEqual([
+      'arial.ttf',
+    ]);
+  });
+
+  it('records nothing in the book', () => {
+    const book = fonts();
+    healthReport(FACTS, { fonts: book });
+    expect([...book.missing]).toEqual([]);
+    expect([...book.substitutions]).toEqual([]);
   });
 
   it('lists the stored-without-lines patterns no loaded pattern file defines', () => {

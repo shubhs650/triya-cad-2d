@@ -3,7 +3,8 @@
 // render session (in its worker) loads them into a FontBook; a font the drawing names that is
 // not here draws with its bundled equivalent, then the default one (FontBook.substitutions).
 // User SHX and TrueType fonts join them in M1-37 and M1-38.
-import type { FontSources } from '@triya/render';
+import { fontBookOf, type FontSources } from '@triya/render';
+import type { FontBook } from '@triya/text';
 
 const files = import.meta.glob<string>('../../../assets/fonts/*.json', {
   eager: true,
@@ -17,3 +18,13 @@ export const BUNDLED_FONTS: FontSources = {
     source,
   })),
 };
+
+let book: FontBook | undefined;
+
+/**
+ * The same fonts as a FontBook on the main thread, for the health report (M1-70), which asks
+ * how each of a drawing's fonts draws. Loaded the first time the Health palette opens.
+ */
+export function appFonts(): FontBook {
+  return (book ??= fontBookOf(BUNDLED_FONTS));
+}
