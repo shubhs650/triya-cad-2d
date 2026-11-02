@@ -1,0 +1,1 @@
+- M1-18 part 2 (#86): viewports hide the layers frozen in them, block parts and nested references included, and draw model-space linetypes in paper units under PSLTSCALE, so dashes look the same on the sheet in every viewport.
