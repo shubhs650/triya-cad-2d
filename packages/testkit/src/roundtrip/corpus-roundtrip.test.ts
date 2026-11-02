@@ -1,7 +1,8 @@
 // The round-trip suite over the public corpus (docs/TESTING.md §1, §3; roadmap M0-05).
 // Writes a per-file report to test-reports/roundtrip/ (not test-results/, which Playwright wipes) and holds every file to the committed
-// baseline: a file may get better, never worse. At M0 most files have differences; they are
-// the acad-ts spike's data (M0-06). The zero-difference gate arrives with M1-05.
+// baseline: a file may get better, never worse. Since M1-05 the save is Triya's own export
+// (map → DocumentModel → exportDocument from the retained original), and every file that reads
+// must come back with zero differences.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -75,6 +76,14 @@ describe('public corpus round-trip', () => {
     expect(comparison.regressions).toEqual([]);
     // A baseline entry for a file that left the corpus would hide nothing but is stale.
     expect(Object.keys(baseline.files).sort()).toEqual(manifest.files.map((f) => f.path).sort());
+  });
+
+  it('saves every readable corpus file through TriyaToAcad with zero differences (M1-05)', () => {
+    expect(runs.length, 'the first test must run first').toBe(manifest.files.length);
+    const unclean = runs
+      .filter(({ result }) => result.status !== 'clean' && result.status !== 'read-error')
+      .map(({ file, result }) => `${file.path}: ${result.status} ${result.error ?? ''}`.trim());
+    expect(unclean).toEqual([]);
   });
 
   // M1-30: objects acad-ts cannot map are kept raw and written back unchanged. No ratchet: zero

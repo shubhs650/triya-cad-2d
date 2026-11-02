@@ -2,28 +2,30 @@
 
 One row per DXF/DWG entity, object or table type. A type is **done** only when all five columns are ticked and a corpus file exercises it. Threads update rows in the PR that lands the work. "P" in a column means handled purely by passthrough (preserved, not interpreted) — that is a valid final state for the types marked *(passthrough-only)*.
 
+Since M1-05 every save goes through `exportDocument`: it starts from the retained original and writes back only what differs from the original's own mapping, so a type Triya does not edit is written back untouched (its Write cell stays empty until its writer exists, roadmap M1-75), and the round-trip suite gates zero differences on every readable corpus file.
+
 Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) · **Edit** (modifiable by Triya commands) · **Write** (rebuilt on export without loss) · **Test** (corpus file + round-trip + fidelity reference).
 
 ## Entities
 
 | Type | Read | Render | Edit | Write | Test file |
 |---|---|---|---|---|---|
-| LINE | ✓ | | | | |
-| XLINE | ✓ (drawn clipped to the view, its linetype laid out from the base point both ways so dashes stay put while panning, M1-45; text and shapes in the linetype not drawn) | | | | |
-| RAY | ✓ (drawn clipped to the view, its linetype laid out from the base point onward, M1-45; text and shapes in the linetype not drawn) | | | | |
-| CIRCLE | ✓ | | | | |
-| ARC | ✓ | | | | |
-| ELLIPSE | ✓ | | | | |
-| POINT | ✓ | | | | |
-| LWPOLYLINE | ✓ (widths drawn as filled segments, tapered along lines and arcs, mitred where wide segments meet, outlined under FILLMODE 0, and bounded by those outlines, M1-46; wide segments draw continuous whatever the linetype until M1-66) | | | | |
+| LINE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| XLINE | ✓ (drawn clipped to the view, its linetype laid out from the base point both ways so dashes stay put while panning, M1-45; text and shapes in the linetype not drawn) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| RAY | ✓ (drawn clipped to the view, its linetype laid out from the base point onward, M1-45; text and shapes in the linetype not drawn) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| CIRCLE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| ARC | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| ELLIPSE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| POINT | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| LWPOLYLINE | ✓ (widths drawn as filled segments, tapered along lines and arcs, mitred where wide segments meet, outlined under FILLMODE 0, and bounded by those outlines, M1-46; wide segments draw continuous whatever the linetype until M1-66) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | POLYLINE (2D) + VERTEX + SEQEND | ✓ (widths, with the POLYLINE's 40/41 defaults, drawn as for LWPOLYLINE, M1-46) | | | | |
 | POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | | |
 | SPLINE | ✓ (a spline stored only as fit points, as R2013+ DWGs can hold one, draws and is bounded as AutoCAD's interpolation of them, M1-47; tangent, closed, √chord, uniform and fit-tolerance cases unverified until M1-65) | | | | |
 | SOLID | ✓ | | | | |
 | TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
 | 3DFACE *(render edges)* | ✓ | | — | | |
-| TEXT | ✓ (drawn by the renderer as SHX strokes or TrueType fills from the loaded fonts, with AutoCAD's justification, M1-41 part 1; unverified against AutoCAD plots until M1-24/M1-26) | | | | |
-| MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036; drawn by the renderer from the loaded fonts with colour, font, stack, big-font and decoration codes, M1-41 part 1; background fill, mask and frame, M1-41 part 2; vertical text not yet) | | | | |
+| TEXT | ✓ (drawn by the renderer as SHX strokes or TrueType fills from the loaded fonts, with AutoCAD's justification, M1-41 part 1; unverified against AutoCAD plots until M1-24/M1-26) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036; drawn by the renderer from the loaded fonts with colour, font, stack, big-font and decoration codes, M1-41 part 1; background fill, mask and frame, M1-41 part 2; vertical text not yet) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | ATTDEF | ✓ (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | ATTRIB | ✓ folded into its INSERT (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | INSERT | ✓ (drawn by the renderer through nesting with ByBlock and layer-0 inheritance, M1-14 part 1; attributes not drawn yet) | | | | |
@@ -36,7 +38,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | DIMENSION (jogged) | ✓ DXF (LARGE_RADIAL_DIMENSION read as `DimensionRadialLarge` since acad-ts patch 0107, M1-34); DWG still kept raw, not mapped (M1-74) | ✓ (drawn from its stored `*D` block) | | ✓ DXF (written with its AcDbRadialDimensionLarge data); left out of a DWG save of a DXF, as before (M1-74) | `entities.corpus.test.ts` (2 in uncommon.dxf) |
 | LEADER | ✓ (drawn by the renderer as its path and arrowhead from its DIMSTYLE and `DSTYLE` overrides, and bounded by them, M1-52 part 2; a DXF LEADER without group 71 has its arrowhead on, as its DWG twin, since acad-ts patch 0074) | | | | |
 | MLEADER (+ MLEADERSTYLE) | ✓ (DXF branches and the context text colour read since 0037; the context arrowhead size read as `drawnArrowheadSize`; drawn by the renderer as its leader lines, landing, arrowheads and MTEXT with its frame, and bounded by them, M1-52 part 1; block content drawn as an INSERT of its block, M1-52 part 2; spline leaders drawn as the cubic through their vertices, M1-47; block-content attributes, per-line overrides and underline attachments for a later part) | | | | |
-| HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | ✓ (style 75, seed points and ellipse-edge major axes lost by acad-ts, M1-32; solid and pattern fills drawn by the renderer from the stored pattern lines, M1-16 part 1; gradient fills and the sub-pixel pattern tint, M1-16 part 2; a hatch stored without pattern lines drawn from its user-defined settings or the bundled patterns, M1-16 part 3; with the gradient ramps unverified against AutoCAD plots until M1-24/M1-26) | | | | |
+| HATCH (pattern/solid/gradient; line/arc/ellipse/spline/polyline edges) | ✓ (style 75, seed points and ellipse-edge major axes read since acad-ts patch 0108, M1-32 part 1; solid and pattern fills drawn by the renderer from the stored pattern lines, M1-16 part 1; gradient fills and the sub-pixel pattern tint, M1-16 part 2; a hatch stored without pattern lines drawn from its user-defined settings or the bundled patterns, M1-16 part 3; with the gradient ramps unverified against AutoCAD plots until M1-24/M1-26) | | | | |
 | WIPEOUT | ✓ (acad-ts skips the clip type 71; the mapper infers a polygon from more than two vertices, M1-32; drawn by the renderer as its boundary filled in the background colour, framed per WIPEOUTFRAME, M1-19 part 1) | | | | `images.corpus.test.ts` (23 wipeouts) |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT); drawn by the renderer from the app's decoded bitmap, clipped (rectangle, polygon, inverted), framed per IMAGEFRAME, with brightness, contrast, fade and transparency applied (our curves, unverified until M1-64), outlined while no bitmap is loaded (M1-19 part 1); BMP, TIFF, PNG, JPEG and GIF decoded, IMAGEQUALITY draft unsmoothed (part 2); finding the files is M1-21 | | | | `images.corpus.test.ts` (85 images, no bitmaps in the corpus) |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation) and cell formats (alignment, text style and height, content colour, background, edges, R2010+ margins; DXF/R2004 flag words and R2010+ cell, row, column and content formats folded the same way, M1-36, patch 0109); table-wide overrides not mapped yet (M1-77); ezdxf-written tables are read since patch 0099 (an empty cell's 91 had thrown, M1-33); drawn by the renderer from the `*T` block in the table's frame, M1-17 | | | | |

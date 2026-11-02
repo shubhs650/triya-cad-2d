@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34) and 0109 (M1-36) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32) and 0109 (M1-36) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2059,6 +2059,23 @@ Entities held inside an INSERT or a POLYLINE never had `assignDocument` called, 
 **Title:** Read and write LARGE_RADIAL_DIMENSION (jogged radius dimension) in DXF
 
 `LARGE_RADIAL_DIMENSION` had no entity class, so it was read as an unknown entity and its geometry was not available. This adds `DimensionRadialLarge` with the `AcDbRadialDimensionLarge` codes (13 override centre, 14 jog point, 15 chord point, 40 leader length), reads it in the DXF entity section, and writes it back with its subclass. The flags (70) are kept as read. The DWG object layout is not included; the DWG writer skips the entity as it did before.
+
+</details>
+
+### 0108 — a DXF hatch loses its style, its seed points and its ellipse edges' major axes
+
+- **File:** `third_party/acad-ts-patches/0108-dxf-hatch-style-seeds-ellipse-axis.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** three DXF `HATCH` read losses found by the M1-04 entity oracle (`entities.corpus.test.ts` `ACAD_TS_GAPS`, roadmap M1-32). (1) `readHatch` skipped group 75, so every outer and ignore hatch read as normal (acadsharp `sample_AC1015`–`AC1032` ASCII: 35A, 36E, 371, 376, BBB, BC0, BC2, BC4). (2) `_readPattern` advanced past the code that ends the last pattern line, so the group after the pattern was lost: when it was 98 (a line with no dashes ends on `79 0`, then `98 1`), the seed-point count went with it and the seed points that follow were dropped (35A, 36E, BC0); when it was 47, the pixel size was lost. (3) the ellipse-edge reader built the major axis end point (11/21) from the centre's other coordinate, so a later 21 replaced the x the 11 had set with the centre's x. The writer already wrote all three, so the round trip compared two equally wrong reads and did not show it.
+- **Fix:** read 75 into `hatch.style`; leave the code that ends the last pattern line for the caller (only advance while the line goes on); build the major axis from its own components.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0108 a DXF hatch keeps its style, seed points and ellipse-edge major axes".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read DXF hatch style, seed points and ellipse-edge major axes
+
+The DXF hatch reader skipped the hatch style (75); `_readPattern` consumed the group after the last pattern line, so a `98` that directly follows a dashless line was lost along with the seed points it counts (and a following `47` lost the pixel size); and an ellipse edge's major axis end point took its missing component from the edge's centre, so its x was overwritten by the centre's x once 21 was read. All three are written correctly by the DXF writer, so a round trip hides them.
 
 </details>
 

@@ -1,8 +1,8 @@
 // A whole drawing as a Triya document (M1-22): header, tables, every block definition with its
 // base point, the mapped entities in block order, the SORTENTSTABLEs, the image definitions and
 // settings (M1-19) and the layouts with their page setups (M1-18), which is what the app builds
-// its engine and renderer from. The objects M1-05's passthrough store keeps are left out:
-// nothing that reads this needs them yet.
+// its engine and renderer from. The objects Triya keeps without mapping are listed by handle
+// only (`passthrough`, M1-05), so the engine never allocates one of their handles again.
 import type { CadDocument } from '@node-projects/acad-ts';
 import {
   DocumentModel,
@@ -16,6 +16,7 @@ import {
   type HeaderValue,
 } from '@triya/engine';
 import { hex } from './common';
+import { PassthroughStore } from '../export/passthrough';
 import { drawingFacts, type DrawingFacts } from '../health/facts';
 import { mapEntities, type UnmappedEntity } from './entities';
 import { mapHeader } from './header';
@@ -44,7 +45,7 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
     layouts: mapLayouts(doc),
     entities,
   };
-  return { init, unmapped };
+  return { init: { ...init, passthrough: PassthroughStore.of(doc, init).handles }, unmapped };
 }
 
 /** What opening a drawing hands the app, besides the document itself. */
