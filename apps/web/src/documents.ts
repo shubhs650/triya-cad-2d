@@ -21,6 +21,8 @@ export interface OpenDocument {
    * arrives (M2-13); until then they last as long as the tab.
    */
   readonly savedViews: readonly SavedView[];
+  /** Edits applied by the drawing's engine so far (M1-67): chrome that mirrors it re-reads. */
+  readonly revision: number;
 }
 
 export interface DocumentsState {
@@ -47,14 +49,22 @@ export class DocumentStore {
     this.#set({ opening: [...this.#state.opening, name], error: undefined });
   }
 
-  /** A file opened: it gets a tab, which shows. */
-  opened(name: string, opened: OpenResult, block: string): void {
-    const doc: OpenDocument = { id: this.#nextId++, name, opened, block, savedViews: [] };
+  /** A file opened: it gets a tab, which shows. Returns the new document's id. */
+  opened(name: string, opened: OpenResult, block: string): number {
+    const doc: OpenDocument = {
+      id: this.#nextId++,
+      name,
+      opened,
+      block,
+      savedViews: [],
+      revision: 0,
+    };
     this.#set({
       docs: [...this.#state.docs, doc],
       active: doc.id,
       opening: this.#withoutOne(name),
     });
+    return doc.id;
   }
 
   failed(name: string, message: string): void {
@@ -73,6 +83,11 @@ export class DocumentStore {
     const rest = docs.filter((d) => d.id !== id);
     const active = this.#state.active === id ? (rest[at] ?? rest[at - 1])?.id : this.#state.active;
     this.#set({ docs: rest, active });
+  }
+
+  /** The drawing's engine applied an edit: the palettes mirroring it re-read. */
+  edited(id: number): void {
+    this.#update(id, (d) => ({ ...d, revision: d.revision + 1 }));
   }
 
   /** Shows the Model tab or a layout tab of a document. */
