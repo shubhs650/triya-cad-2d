@@ -1,4 +1,4 @@
-// AcadToTriya for DIMENSION (every subclass), ARC_DIMENSION, LEADER and TOLERANCE (M1-04
+// AcadToTriya for DIMENSION (every subclass), ARC_DIMENSION, LARGE_RADIAL_DIMENSION, LEADER and TOLERANCE (M1-04
 // part 3a) on drawings authored in memory with acad-ts. The corpus comparison is in
 // packages/testkit/src/mapping/entities.corpus.test.ts; the corpus has no −Z dimension,
 // leader or tolerance, so those conversions are covered here.
@@ -13,6 +13,7 @@ import {
   DimensionDiameter,
   DimensionLinear,
   DimensionOrdinate,
+  DimensionRadialLarge,
   DimensionRadius,
   Leader,
   Tolerance,
@@ -147,6 +148,24 @@ describe('DIMENSION', () => {
         { x: 2, y: 2 },
         { x: 3, y: 3 },
       ],
+    });
+  });
+
+  it('maps a LARGE_RADIAL_DIMENSION (jogged radius) with its jog (M1-34)', () => {
+    const jog = new DimensionRadialLarge();
+    jog.definitionPoint = new XYZ(0, 0, 0);
+    jog.chordPoint = new XYZ(3, 4, 0);
+    jog.overrideCenter = new XYZ(0, -1, 0);
+    jog.jogPoint = new XYZ(1.5, 1, 0);
+    jog.leaderLength = 0.5;
+    expect(mapOne(jog)).toMatchObject({
+      kind: 'LARGE_RADIAL_DIMENSION',
+      dimType: 'jogged',
+      definitionPoint: { x: 0, y: 0 },
+      chordPoint: { x: 3, y: 4 },
+      overrideCenter: { x: 0, y: -1 },
+      jogPoint: { x: 1.5, y: 1 },
+      leaderLength: 0.5,
     });
   });
 

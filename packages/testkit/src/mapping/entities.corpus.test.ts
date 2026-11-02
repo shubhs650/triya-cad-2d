@@ -129,6 +129,7 @@ const MAPPED = new Set([
   'INSERT',
   'DIMENSION',
   'ARC_DIMENSION',
+  'LARGE_RADIAL_DIMENSION',
   'LEADER',
   'TOLERANCE',
   'HATCH',
@@ -413,8 +414,13 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
       return;
     }
     case 'DIMENSION':
-    case 'ARC_DIMENSION': {
-      if (geom.kind !== 'DIMENSION' && geom.kind !== 'ARC_DIMENSION')
+    case 'ARC_DIMENSION':
+    case 'LARGE_RADIAL_DIMENSION': {
+      if (
+        geom.kind !== 'DIMENSION' &&
+        geom.kind !== 'ARC_DIMENSION' &&
+        geom.kind !== 'LARGE_RADIAL_DIMENSION'
+      )
         return bad('type', d.type, geom.kind);
       compareDimension(g, d.type, geom, t, bad);
       return;
@@ -753,7 +759,13 @@ function compareDimension(
   const ocsAngle = (code: number, groups: readonly Group[]): number =>
     n.z < 0 ? Math.PI - deg(groups, code) : deg(groups, code);
   const flags = num(g, 70);
-  const want = type === 'ARC_DIMENSION' ? 'arc' : DIM_TYPES[flags & 7];
+  // A jogged radius dimension stores type 9 in 70 (uncommon.dxf: 169 = 9 | 32 | 128).
+  const want =
+    type === 'ARC_DIMENSION'
+      ? 'arc'
+      : type === 'LARGE_RADIAL_DIMENSION'
+        ? 'jogged'
+        : DIM_TYPES[flags & 7];
   if (geom.dimType !== want) return bad('70', `${flags} ${want}`, geom.dimType);
   const style = (first(g, 3) ?? 'STANDARD').trim().toUpperCase();
   if (nameOf(t.dimStyles, geom.style) !== style) bad('3', style, nameOf(t.dimStyles, geom.style));
@@ -800,6 +812,12 @@ function compareDimension(
       return;
     case 'radius':
     case 'diameter':
+      check(15, geom.chordPoint);
+      if (!close(geom.leaderLength, num(sub, 40))) bad('40', num(sub, 40), geom.leaderLength);
+      return;
+    case 'jogged':
+      check(13, geom.overrideCenter);
+      check(14, geom.jogPoint);
       check(15, geom.chordPoint);
       if (!close(geom.leaderLength, num(sub, 40))) bad('40', num(sub, 40), geom.leaderLength);
       return;

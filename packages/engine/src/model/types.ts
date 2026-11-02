@@ -379,6 +379,18 @@ export type DimensionGeometry = DimensionFields &
         readonly leaderEnd: Vec2;
       }
     | {
+        readonly kind: 'LARGE_RADIAL_DIMENSION';
+        /** Jogged radius (M1-34): 10 the centre, 15 the chord point on the arc. */
+        readonly dimType: 'jogged';
+        readonly chordPoint: Vec2;
+        /** DXF 13: the displaced centre the dimension line starts from. */
+        readonly overrideCenter: Vec2;
+        /** DXF 14: the jog point. */
+        readonly jogPoint: Vec2;
+        /** DXF 40. */
+        readonly leaderLength: number;
+      }
+    | {
         readonly kind: 'ARC_DIMENSION';
         readonly dimType: 'arc';
         /** DXF 13/14: the arc's ends; 15 its centre. */

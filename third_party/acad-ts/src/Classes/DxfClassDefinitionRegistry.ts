@@ -133,6 +133,15 @@ define({
 });
 
 define({
+	cppClassName: DxfSubclassMarker.radialDimensionLarge,
+	dwgVersion: ACadVersion.AC1018,
+	dxfName: DxfFileToken.entityLargeRadialDimension,
+	itemClassId: 498,
+	maintenanceVersion: 0,
+	proxyFlags: ProxyFlags.EraseAllowed | ProxyFlags.DisablesProxyWarningDialog,
+});
+
+define({
 	cppClassName: DxfSubclassMarker.mesh,
 	dwgVersion: 0 as ACadVersion,
 	dxfName: DxfFileToken.entityMesh,
