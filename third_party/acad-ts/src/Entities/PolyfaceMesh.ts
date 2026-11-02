@@ -1,4 +1,5 @@
 import { Polyline } from './Polyline.js';
+import type { CadDocument } from '../CadDocument.js';
 import { CadObject } from '../CadObject.js';
 import { CadObjectCollection } from '../CadObjectCollection.js';
 import { DxfFileToken } from '../DxfFileToken.js';
@@ -38,5 +39,19 @@ export class PolyfaceMesh extends Polyline {
 	}
 	override getBoundingBox(): BoundingBox | null {
 		return super.getBoundingBox();
+	}
+
+	/** @internal Faces are held like vertices (see Polyline). */
+	override assignHeldChildren(doc: CadDocument): void {
+		super.assignHeldChildren(doc);
+		for (const face of this.faces) {
+			if (face.document == null) face.assignDocument(doc);
+		}
+	}
+
+	/** @internal */
+	override unassignDocument(): void {
+		for (const face of this.faces) face.unassignDocument();
+		super.unassignDocument();
 	}
 }

@@ -1,0 +1,135 @@
+diff --git a/src/Entities/Insert.ts b/src/Entities/Insert.ts
+index 3b18fe7..864440e 100644
+--- a/src/Entities/Insert.ts
++++ b/src/Entities/Insert.ts
+@@ -233,6 +233,7 @@ export class Insert extends Entity {
+ 	/** @internal */
+ 	assignDocument(doc: CadDocument): void {
+ 		super.assignDocument(doc);
++		this.assignHeldChildren(doc);
+ 
+ 		if (this.block == null) return;
+ 
+@@ -244,8 +245,24 @@ export class Insert extends Entity {
+ 		}
+ 	}
+ 
++	/**
++	 * @internal Attributes and their SEQEND are held here, not registered; they still take the
++	 * document's layer, linetype and text style entries. Also called by the reader, which adds the
++	 * attributes after the insert joins the document.
++	 */
++	assignHeldChildren(doc: CadDocument): void {
++		for (const attribute of this.attributes) {
++			if (attribute.document == null) attribute.assignDocument(doc);
++		}
++		if (this.attributes.seqend != null && this.attributes.seqend.document == null) {
++			this.attributes.seqend.assignDocument(doc);
++		}
++	}
++
+ 	/** @internal */
+ 	unassignDocument(): void {
++		for (const attribute of this.attributes) attribute.unassignDocument();
++		this.attributes.seqend?.unassignDocument();
+ 		this.block = this.block?.clone() as BlockRecord ?? null;
+ 		super.unassignDocument();
+ 	}
+diff --git a/src/Entities/PolyfaceMesh.ts b/src/Entities/PolyfaceMesh.ts
+index 55fe345..e233e3a 100644
+--- a/src/Entities/PolyfaceMesh.ts
++++ b/src/Entities/PolyfaceMesh.ts
+@@ -1,4 +1,5 @@
+ import { Polyline } from './Polyline.js';
++import type { CadDocument } from '../CadDocument.js';
+ import { CadObject } from '../CadObject.js';
+ import { CadObjectCollection } from '../CadObjectCollection.js';
+ import { DxfFileToken } from '../DxfFileToken.js';
+@@ -39,4 +40,18 @@ export class PolyfaceMesh extends Polyline {
+ 	override getBoundingBox(): BoundingBox | null {
+ 		return super.getBoundingBox();
+ 	}
++
++	/** @internal Faces are held like vertices (see Polyline). */
++	override assignHeldChildren(doc: CadDocument): void {
++		super.assignHeldChildren(doc);
++		for (const face of this.faces) {
++			if (face.document == null) face.assignDocument(doc);
++		}
++	}
++
++	/** @internal */
++	override unassignDocument(): void {
++		for (const face of this.faces) face.unassignDocument();
++		super.unassignDocument();
++	}
+ }
+diff --git a/src/Entities/Polyline.ts b/src/Entities/Polyline.ts
+index 9c1ec6c..8044003 100644
+--- a/src/Entities/Polyline.ts
++++ b/src/Entities/Polyline.ts
+@@ -1,4 +1,5 @@
+ import { Entity } from './Entity.js';
++import type { CadDocument } from '../CadDocument.js';
+ import { IPolyline, IVertex } from './IPolyline.js';
+ import { SeqendCollection } from './SeqendCollection.js';
+ import { CadObject } from '../CadObject.js';
+@@ -114,4 +115,30 @@ export abstract class Polyline extends Entity {
+ 			yield entity;
+ 		}
+ 	}
++
++	/**
++	 * @internal Vertices and their SEQEND are held here, not registered with the document; they
++	 * still take the document's layer and linetype entries, as the polyline does.
++	 */
++	assignDocument(doc: CadDocument): void {
++		super.assignDocument(doc);
++		this.assignHeldChildren(doc);
++	}
++
++	/** @internal Also called by the reader, which adds the vertices after the polyline joins the document. */
++	assignHeldChildren(doc: CadDocument): void {
++		for (const vertex of this.vertices) {
++			if (vertex.document == null) vertex.assignDocument(doc);
++		}
++		if (this.vertices.seqend != null && this.vertices.seqend.document == null) {
++			this.vertices.seqend.assignDocument(doc);
++		}
++	}
++
++	/** @internal */
++	unassignDocument(): void {
++		for (const vertex of this.vertices) vertex.unassignDocument();
++		this.vertices.seqend?.unassignDocument();
++		super.unassignDocument();
++	}
+ }
+diff --git a/src/IO/CadDocumentBuilder.ts b/src/IO/CadDocumentBuilder.ts
+index 46db2db..3014144 100644
+--- a/src/IO/CadDocumentBuilder.ts
++++ b/src/IO/CadDocumentBuilder.ts
+@@ -2,6 +2,8 @@ import { ACadVersion } from '../ACadVersion.js';
+ import { CadDocument } from '../CadDocument.js';
+ import { CadObject } from '../CadObject.js';
+ import { UnknownEntity } from '../Entities/UnknownEntity.js';
++import { Insert } from '../Entities/Insert.js';
++import { Polyline } from '../Entities/Polyline.js';
+ import { CadDictionary } from '../Objects/CadDictionary.js';
+ import { CadDictionaryWithDefault } from '../Objects/CadDictionaryWithDefault.js';
+ import { UnknownNonGraphicalObject } from '../Objects/UnknownNonGraphicalObject.js';
+@@ -110,6 +112,14 @@ export abstract class CadDocumentBuilder {
+ 			this.documentToBuild.unreachableObjects.push(obj);
+ 			this.documentToBuild.registerCollection(obj);
+ 		}
++
++		// Templates add attributes, vertices and SEQENDs after their owner joined the document, and
++		// those children are held by the owner, not registered: give them the document's table entries.
++		for (const obj of [...this.documentToBuild.getCadObjects()]) {
++			if ((obj instanceof Polyline || obj instanceof Insert) && obj.document != null) {
++				obj.assignHeldChildren(obj.document);
++			}
++		}
+ 	}
+ 
+ 	/**

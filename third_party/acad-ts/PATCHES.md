@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3) and 0105 (M1-45) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45) and 0106 (M1-68) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2025,5 +2025,22 @@ A BLOCK with no name and no BLOCK_RECORD failed with an empty table entry name a
 **Title:** Read the text style of DXF linetype segments (group 340)
 
 `_readLineTypeSegment` skipped group 340, the STYLE record of a text or shape element, so complex linetypes read from DXF had no style on their segments. The segment template already resolves `styleHandle` (the DWG reader fills it); the DXF reader now does too.
+
+</details>
+
+### 0106 — attributes, vertices and SEQENDs never take the document's table entries
+
+- **File:** `third_party/acad-ts-patches/0106-held-children-table-entries.patch`
+- **Touches:** `src/Entities/Insert.ts`, `src/Entities/Polyline.ts`, `src/Entities/PolyfaceMesh.ts`, `src/IO/CadDocumentBuilder.ts`
+- **Symptom:** an INSERT's attributes and `SEQEND`, a polyline's vertices and `SEQEND` and a polyface mesh's faces are held inside their owner, not registered with the document, so `assignDocument` never ran on them. A child whose record had no 8/6/7 kept a detached `Layer.default`/`LineType.byLayer`/`TextStyle.default` instead of the document's `0`/`ByLayer`/`STANDARD`, and its `document` stayed null. From R13 on the DXF writer omits code 8 for layer `0`, so after a save such a child read back with no layer at all. ezdxf `small_r13.dxf` VERTEX 78, acadsharp `sample_AC1009.dxf` ATTRIB 705 (style), `sample_AC1015.dxf` VERTEX 423 / SEQEND 42A after a DXF save; 388 differences across 19 corpus files once the structural diff compares held children.
+- **Fix:** `Insert` and `Polyline` gain `assignHeldChildren(doc)`, called from `assignDocument` and, at the end of a build, by the builder for every insert and polyline (the readers push the children after the owner joined the document). `PolyfaceMesh` extends it to its faces. `unassignDocument` releases the children too. A child already in a document is left alone.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0106 attributes, vertices and SEQENDs take their layer, linetype and style from the document".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Assign the document to attributes, vertices, faces and SEQENDs
+
+Entities held inside an INSERT or a POLYLINE never had `assignDocument` called, so their layer, linetype and text style stayed detached defaults rather than the document's table entries, and a layer-0 child lost its layer after a DXF save (the writer omits code 8 for layer 0). Owners now assign their held children when they join a document and after the reader builds them, and release them when they leave.
 
 </details>

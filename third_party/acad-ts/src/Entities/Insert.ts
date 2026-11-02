@@ -233,6 +233,7 @@ export class Insert extends Entity {
 	/** @internal */
 	assignDocument(doc: CadDocument): void {
 		super.assignDocument(doc);
+		this.assignHeldChildren(doc);
 
 		if (this.block == null) return;
 
@@ -244,8 +245,24 @@ export class Insert extends Entity {
 		}
 	}
 
+	/**
+	 * @internal Attributes and their SEQEND are held here, not registered; they still take the
+	 * document's layer, linetype and text style entries. Also called by the reader, which adds the
+	 * attributes after the insert joins the document.
+	 */
+	assignHeldChildren(doc: CadDocument): void {
+		for (const attribute of this.attributes) {
+			if (attribute.document == null) attribute.assignDocument(doc);
+		}
+		if (this.attributes.seqend != null && this.attributes.seqend.document == null) {
+			this.attributes.seqend.assignDocument(doc);
+		}
+	}
+
 	/** @internal */
 	unassignDocument(): void {
+		for (const attribute of this.attributes) attribute.unassignDocument();
+		this.attributes.seqend?.unassignDocument();
 		this.block = this.block?.clone() as BlockRecord ?? null;
 		super.unassignDocument();
 	}
