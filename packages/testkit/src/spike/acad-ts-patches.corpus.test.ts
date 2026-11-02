@@ -86,6 +86,7 @@ function keepRaw<T extends DwgReaderConfiguration | DxfReaderConfiguration>(conf
   config.keepUnknownEntities = true;
   config.keepUnknownNonGraphicalObjects = true;
   config.keepRawDxfPassthroughObjects = true;
+  config.keepUnreachableObjects = true;
   return config;
 }
 const readDxfRaw = (bytes: Uint8Array): CadDocument =>
@@ -2149,5 +2150,72 @@ describe('acad-ts local patches (corpus-backed)', () => {
     const reread = readDxfRaw(writeDxf(doc, false));
     expect((reread.getCadObject(0xe) as CadDictionaryWithDefault).defaultEntry?.handle).toBe(0xf);
     expect(reread.getCadObject(0xf)).toBeTruthy();
+  });
+
+  it('0103 a DWG object no reference reaches is kept raw and written back', () => {
+    // Objects in the object map whose owner is not in the map, so nothing the reader follows
+    // reaches them. AecObjects.dwg: BLOCK/ENDBLK of block records 2ADB and 2ADF (listed by the
+    // block table, absent from the map), DICTIONARY 2C9C with XRECORD 2C9D, and XRECORDs owned
+    // by 3DEA/3DED/3DF1/3DF4. sample_base.dwg: XRECORDs owned by E19 and E1C. AutoCAD keeps
+    // them in the database, so a save keeps them as read (owner decision, M1-33 part 5).
+    const cases: [string, number[]][] = [
+      [
+        'third-party/acadsharp/aec_objects/AecObjects.dwg',
+        [
+          0x2adc, 0x2ade, 0x2ae0, 0x2ae3, 0x2c9c, 0x2c9d, 0x3deb, 0x3dee, 0x3def, 0x3df2, 0x3df5,
+          0x3df6,
+        ],
+      ],
+      ['third-party/acadsharp/sample_base/sample_base.dwg', [0xe1a, 0xe1d, 0xe1e]],
+    ];
+    for (const [path, handles] of cases) {
+      const doc = readDwgRaw(path);
+      const saved = dwgRawRoundTrip(doc);
+      for (const h of handles) {
+        const before = doc.getCadObject(h) as UnknownNonGraphicalObject | null;
+        expect(before?.rawDwgData, `${path} ${h.toString(16)}`).toBeTruthy();
+        expect(doc.unreachableObjects).toContain(before);
+        const after = saved.getCadObject(h) as UnknownNonGraphicalObject | null;
+        expect(after?.rawDwgData?.data, `${path} ${h.toString(16)} saved`).toEqual(
+          before!.rawDwgData!.data,
+        );
+      }
+    }
+    // Without the setting the reader still follows references only.
+    const plain = DwgReader.readFromStreamWithConfig(
+      corpusFile('third-party/acadsharp/sample_base/sample_base.dwg'),
+      new DwgReaderConfiguration(),
+    );
+    expect(plain.getCadObject(0xe1a)).toBeNull();
+  });
+
+  it('0104 a DXF block with no name and no block record is kept raw and written back', () => {
+    // ezdxf r12_blocks_with_no_names.dxf (BLOCK 2E/ENDBLK 2F, BLOCK 33/ENDBLK 34: no 2 or 3) and
+    // r2000_blocks_with_no_name_and_no_block_record.dxf (BLOCK 30/ENDBLK 31 owned by 2F, BLOCK
+    // 33/ENDBLK 34 owned by 32; neither record is in the file). A block record cannot have an
+    // empty name, so acad-ts threw and dropped them; no INSERT can name them, so nothing reaches
+    // them. They are kept as read, like DWG objects no reference reaches (0103).
+    const cases: [string, number[]][] = [
+      [
+        'third-party/ezdxf/integration_tests/r12_blocks_with_no_names.dxf',
+        [0x2e, 0x2f, 0x33, 0x34],
+      ],
+      [
+        'third-party/ezdxf/integration_tests/r2000_blocks_with_no_name_and_no_block_record.dxf',
+        [0x30, 0x31, 0x33, 0x34],
+      ],
+    ];
+    for (const [path, handles] of cases) {
+      const doc = readDxfRaw(corpusBytes(path));
+      const reread = readDxfRaw(writeDxf(doc, false));
+      for (const h of handles) {
+        const before = doc.getCadObject(h) as UnknownEntity | null;
+        expect(before?.rawDxfCodes, `${path} ${h.toString(16)}`).toBeTruthy();
+        expect(doc.unreachableObjects).toContain(before);
+        const after = reread.getCadObject(h) as UnknownEntity | null;
+        expect(after?.objectName, `${path} ${h.toString(16)} saved`).toBe(before!.objectName);
+        expect(after!.rawDxfCodes).toEqual(before!.rawDxfCodes);
+      }
+    }
   });
 });

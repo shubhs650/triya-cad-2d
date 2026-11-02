@@ -3,12 +3,7 @@
   "files": {
     "public/third-party/acadsharp/aec_objects/AecObjects.dwg": {
       "declared": 1573,
-      "lost": {
-        "BLOCK": "2ADC 2AE0",
-        "DICTIONARY": "2C9C",
-        "ENDBLK": "2ADE 2AE3",
-        "XRECORD": "2C9D 3DEB 3DEE 3DEF 3DF2 3DF5 3DF6"
-      }
+      "lost": {}
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKALIGNMENTPARAMETER.dwg": {
       "declared": 162,
@@ -192,9 +187,7 @@
     },
     "public/third-party/acadsharp/sample_base/sample_base.dwg": {
       "declared": 845,
-      "lost": {
-        "XRECORD": "E1A E1D E1E"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/examples_dxf/3dface.dxf": {
       "declared": 219,
@@ -458,10 +451,7 @@
     },
     "public/third-party/ezdxf/integration_tests/r12_blocks_with_no_names.dxf": {
       "declared": 19,
-      "lost": {
-        "BLOCK": "2E 33",
-        "ENDBLK": "2F 34"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/R12_with_trash_beyond_EOF.dxf": {
       "declared": 0,
@@ -469,10 +459,7 @@
     },
     "public/third-party/ezdxf/integration_tests/r2000_blocks_with_no_name_and_no_block_record.dxf": {
       "declared": 53,
-      "lost": {
-        "BLOCK": "30 33",
-        "ENDBLK": "31 34"
-      }
+      "lost": {}
     },
     "public/third-party/ezdxf/integration_tests/r2000_blocks_with_no_names.dxf": {
       "declared": 55,
