@@ -6,20 +6,15 @@
  */
 import {
   ACadVersion,
-  CadDictionary,
-  Field,
   DwgObjectReader,
   DwgReader,
   DwgSectionDefinition,
   DwgStreamReaderBase,
-  Insert,
   ObjectType,
-  PolyfaceMesh,
-  Polyline,
   type CadDocument,
-  type CadObject,
   type DxfClassCollection,
 } from '@node-projects/acad-ts';
+import { documentObjects } from '@triya/io';
 import { sniffCadFile } from '../corpus/sniff.ts';
 
 export type HandleSource = 'dwg-handle-map' | 'dxf-ascii' | 'dxf-binary';
@@ -61,36 +56,9 @@ export function declaredHandles(
   throw new Error(`cannot list the handles of a ${format} stream`);
 }
 
-/**
- * Every object the document holds, by handle. acad-ts keeps polyline vertices, polyface-mesh
- * faces, attributes and their `SEQEND`, and child fields inside their owner (under their file
- * handles) rather than in the document's object map, so those are added from the owner. A held
- * child is not registered with the document, so neither is its extension dictionary; the
- * dictionary and its entries are reached only through the child.
- */
-export function documentObjects(doc: CadDocument): Map<number, CadObject> {
-  const out = new Map<number, CadObject>();
-  const addTree = (o: CadObject): void => {
-    if (out.has(o.handle)) return;
-    out.set(o.handle, o);
-    if (o.xDictionary) addTree(o.xDictionary);
-    if (o instanceof CadDictionary) for (const e of o) addTree(e);
-    addHeld(o);
-  };
-  const addHeld = (o: CadObject): void => {
-    if (o instanceof Field) for (const f of o.children) addTree(f);
-    const children = o instanceof Polyline ? o.vertices : o instanceof Insert ? o.attributes : null;
-    if (!children) return;
-    for (const c of children) addTree(c);
-    if (children.seqend) addTree(children.seqend);
-    if (o instanceof PolyfaceMesh) for (const f of o.faces) addTree(f);
-  };
-  const registered = [...doc.getCadObjects()];
-  for (const o of registered) out.set(o.handle, o);
-  for (const o of registered) addHeld(o);
-  out.delete(0);
-  return out;
-}
+// Every object the document holds, held children included: the same walk the exporter's
+// PassthroughStore uses (M1-05).
+export { documentObjects };
 
 /** Handles of every object the document holds (`documentObjects`). */
 export function documentHandles(doc: CadDocument): Set<number> {
