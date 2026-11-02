@@ -1008,7 +1008,7 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(tableCells(dwgRawRoundTrip(doc)), version).toEqual(tableCells(doc));
     }
     // Table 528, row 4 cell 0: background 165, middle-centre, text height 4, borders of
-    // colour 63 and lineweight 0.40 mm, shown (read as hidden until 0109: the *T9 block draws
+    // colour 63 and lineweight 0.40 mm, shown (read as hidden until 0110: the *T9 block draws
     // them and the R2010+ saves state them visible).
     const cell = (
       tableCells(readDwgRaw('third-party/acadsharp/sample_AC1018.dwg')) as {
@@ -2301,7 +2301,7 @@ describe('acad-ts local patches (corpus-backed)', () => {
     }
   });
 
-  it('0109 DWG table cells keep their border edges, R2004 visibility and R2010 cell-style flags', () => {
+  it('0110 DWG table cells keep their border edges, R2004 visibility and R2010 cell-style flags', () => {
     // acadsharp sample: table 528 cell (4,0) overrides the top and left edges (colour 63,
     // lineweight 0.40, visibility) and the background, cell (4,2) also the right edge. The *T9
     // block draws all of them, and the R2010+ saves state them visible.

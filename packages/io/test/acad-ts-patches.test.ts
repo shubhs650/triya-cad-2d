@@ -47,6 +47,7 @@ import {
   XYZ,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
+import { aciOfTrueColor } from '../src/map/common';
 import { readCadDocument, writeCadDocument } from '../src/index';
 
 function writeDxf(doc: CadDocument, config: DxfWriterConfiguration): Uint8Array {
@@ -511,7 +512,52 @@ describe('acad-ts local patches', () => {
     expect([axis.x, axis.y]).toEqual([3, 4]);
   });
 
-  it('0109 a DXF table cell keeps the text style override it names (7)', () => {
+  it('0109 the ACI palette has no mistyped entries and a true colour maps to the ACI AutoCAD writes', () => {
+    // Entries that broke the palette's pattern: mistyped digits (29, 91, 145), ACI 192 with red
+    // and blue swapped, and the greys 250–254 (AutoCAD reports 253 as 173,173,173).
+    expect(Color.getIndexRGB(29)).toEqual([38, 23, 19]);
+    expect(Color.getIndexRGB(91)).toEqual([127, 255, 127]);
+    expect(Color.getIndexRGB(145)).toEqual([63, 111, 127]);
+    expect(Color.getIndexRGB(192)).toEqual([82, 0, 165]);
+    expect([250, 251, 252, 253, 254].map((i) => Color.getIndexRGB(i)![0])).toEqual([
+      51, 91, 132, 173, 214,
+    ]);
+
+    // Unpatched, approxIndex returned at the first signed channel sum below the previous one,
+    // so most true colours came out as 0 (ByBlock) or 1. AutoCAD's ACI beside a corpus 420:
+    expect(Color.approxIndex(205, 32, 39)).toBe(242);
+    expect(Color.approxIndex(0, 0, 0)).toBe(18);
+    expect(Color.approxIndex(128, 61, 194)).toBe(183);
+    expect(Color.approxIndex(255, 255, 255)).toBe(7);
+    // It is the same lookup as Triya's own `aciOfTrueColor`, and never ByBlock or ByLayer.
+    for (let r = 0; r < 256; r += 17) {
+      for (let g = 0; g < 256; g += 17) {
+        for (let b = 0; b < 256; b += 51) {
+          expect(Color.approxIndex(r, g, b), `${r},${g},${b}`).toBe(aciOfTrueColor(r, g, b));
+        }
+      }
+    }
+  });
+
+  it('0109 DXF writes the nearest ACI (62) before a true colour (420), as AutoCAD does', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const layer = new Layer('TRUE_RED');
+    layer.color = Color.fromTrueColor(0xcd2027);
+    doc.layers!.add(layer);
+    const line = new Line();
+    line.color = Color.fromTrueColor(0x803dc2);
+    doc.entities!.add(line);
+
+    const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
+
+    // Layer: 62 was the broken approxIndex (here 0); entity: 62 was left out.
+    expect(text).toMatch(/\r?\n 62\r?\n *242\r?\n420\r?\n *13443111\r?\n/);
+    expect(text).toMatch(/\r?\n 62\r?\n *183\r?\n420\r?\n *8404418\r?\n/);
+    const back = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+    expect((back.getCadObject(line.handle) as Line).color.trueColor).toBe(0x803dc2);
+  });
+
+  it('0110 a DXF table cell keeps the text style override it names (7)', () => {
     for (const version of [ACadVersion.AC1018, ACadVersion.AC1032]) {
       const doc = new CadDocument(version);
       const style = new TextStyle('NOTES');

@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32) and 0109 (M1-36) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43) and 0110 (M1-36) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2079,9 +2079,26 @@ The DXF hatch reader skipped the hatch style (75); `_readPattern` consumed the g
 
 </details>
 
-### 0109 — Table cell formats: border edge ids, R2004 border visibility, R2010 cell-style flags, DXF cell text style
+### 0109 — the ACI palette's mistyped entries, and the ACI written for a true colour
 
-- **File:** `third_party/acad-ts-patches/0109-table-cell-style-reads.patch`
+- **File:** `third_party/acad-ts-patches/0109-aci-palette-approx-index.patch`
+- **Touches:** `src/Color.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** 31 of the 255 entries of `Color._indexRgb` broke the palette's own pattern: mistyped digits (38 written 28 or 88, 76 written 126, 127 written 125 or 217, 145 written 142), ACI 192 with red and blue swapped, and the greys 250–254. `Color.approxIndex` summed signed channel differences and returned at the first sum below the previous one, so a true colour saved through `getApproxIndex` (layer 62 next to 420, entity colour-book 62, the `$CECOLOR` header, R12 DXF, R2000 DWG colours, table cell and visual style colours) got an unrelated index, usually 0 (ByBlock) or 1. The DXF writer also left out the 62 that AutoCAD writes before an entity's 420. Found by the M1-13 palette oracle (`style.corpus.test.ts`) and M1-55.
+- **Fix:** the 31 entries now follow the palette's rule (24 hues 15° apart, values 1, 0.65, 0.5, 0.3, 0.15 of 255 at full and half saturation, floored; greys 51 + 40.8·k), which equals Triya's computed `aciRgb` on all 255. `approxIndex` returns the nearest ACI by squared RGB distance over 1–255, lowest index on a tie, in the palette AutoCAD itself looks true colours up in (hue rows 1, 0.8, 0.6, 0.5, 0.3; greys 51, 80, 105, 130, 190), the same lookup as `@triya/io`'s `aciOfTrueColor`: it reproduces all 3,532 62/420 pairs AutoCAD wrote in the public corpus. The DXF writer writes that ACI in 62 before a true-colour entity's 420, as AutoCAD does (every corpus entity with a 420 has one).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0109 the ACI palette has no mistyped entries and a true colour maps to the ACI AutoCAD writes" and "0109 DXF writes the nearest ACI (62) before a true colour (420), as AutoCAD does"; `packages/testkit/src/mapping/style.corpus.test.ts` (acad-ts equals `aciRgb` on 1–255) and `true-color.corpus.test.ts` (every corpus pair).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Fix mistyped ACI palette entries and nearest-colour lookup
+
+`Color._indexRgb` had 31 entries that do not follow the AutoCAD Color Index pattern (for example ACI 29 was 38,28,19 instead of 38,23,19, ACI 192 had red and blue swapped, and the greys 250–254 were off). `Color.approxIndex` compared signed sums of channel differences and stopped at the first decrease, so most true colours mapped to index 0 (ByBlock) or 1. This fixes the table, makes `approxIndex` return the nearest index (squared RGB distance, 1–255) in the palette AutoCAD uses when it stores an ACI next to a true colour (it reproduces the 62 AutoCAD writes beside 420 in the ezdxf and ACadSharp sample files), and writes that 62 before an entity's 420 in DXF, as AutoCAD does.
+
+</details>
+
+### 0110 — Table cell formats: border edge ids, R2004 border visibility, R2010 cell-style flags, DXF cell text style
+
+- **File:** `third_party/acad-ts-patches/0110-table-cell-style-reads.patch`
 - **Touches:** `src/Entities/TableEntity.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/Templates/CadTableEntityTemplate.ts`
 - **Symptom:** four ways a table cell's format overrides read wrong, found mapping them (M1-36) and comparing each acadsharp `sample_*.dwg` with its DXF save:
   1. `CellEdgeFlags` had 2 as the right edge and 0x20 as the inside horizontal line. ObjectARX `AcDb::GridLineType` has them the other way round (kHorzInside = 2, kVertRight = 0x20). So an R2010+ cell style's right-edge override landed on `horizontalInsideBorder`: in `sample_AC1024.dwg` table 528, cell (4,2) is drawn with a colour-63 right edge, and its DXF save says so (65 = 63), but acad-ts put that edge inside.
@@ -2089,7 +2106,7 @@ The DXF hatch reader skipped the hatch style (75); `_readPattern` consumed the g
   3. A DWG R2010+ cell style states its own property override flags, and then its content format, which has flags of its own. The content format's flags overwrote the cell style's in `propertyOverrideFlags`, so whatever a cell, row, column or table cell style overrode (alignment, background, margins, text height) was lost. In `sample_AC1024.dwg`, cell (4,0) overrides 0x63E10 (alignment, background 165, margins), and acad-ts read 0.
   4. The DXF reader dropped a cell's text style override (7). The flag (0x10) was read, but the style was not, although the DXF writer writes it.
 - **Fix:** swap the two `CellEdgeFlags` values. The reader and writer both use the enum, so files round-trip as before, with the edges now named right. `CellStyle.cellPropertyOverrideFlags` (null unless read from DWG) keeps the cell style's own flags, and the writer writes it back in their place. The R2004 reader and writer treat the visibility short as "hidden" (1 = hidden). The DXF reader keeps a cell's 7, and the cell template resolves it by name when the cell is built, as for a handle.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0109 DWG table cells keep their border edges, R2004 visibility and R2010 cell-style flags" (1–3, with DWG round trips); `packages/io/test/acad-ts-patches.test.ts` → "0109 a DXF table cell keeps the text style override it names (7)" (4). The M1-36 corpus test "maps the tables of a DWG like those of the same drawing saved as DXF" now compares cell formats, and it fails without 1–3.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0110 DWG table cells keep their border edges, R2004 visibility and R2010 cell-style flags" (1–3, with DWG round trips); `packages/io/test/acad-ts-patches.test.ts` → "0110 a DXF table cell keeps the text style override it names (7)" (4). The M1-36 corpus test "maps the tables of a DWG like those of the same drawing saved as DXF" now compares cell formats, and it fails without 1–3.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file). Visibility (2) is inferred from the drawing, because no corpus file has an edge that is really hidden. AutoCAD's DXF for the same cells writes no 289/285/286/288, and acad-ts reads none.
 
 <details><summary>Upstream PR text</summary>
