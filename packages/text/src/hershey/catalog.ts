@@ -8,8 +8,9 @@
 // printable-ASCII layouts are the ones the Hershey distribution's own mapped fonts use
 // (rowmans, rowmand, rowmant, scripts, scriptc, and the complex, italic and gothic sets),
 // checked glyph for glyph against the occidental file. Everything past ASCII is ours:
-// Unicode Greek where Hershey has the weight, a few symbols, and the Latin-1 accented letters
-// built from a base letter and an accent (`ACCENTED`).
+// Unicode Greek and Cyrillic where Hershey has them, a few symbols, and the Latin-1 and Latin
+// Extended-A letters built from a base letter and an accent or from other letters
+// (convert.ts).
 
 /** Numbers n, n+1, …, n+count−1. */
 function run(start: number, count: number): number[] {
@@ -33,6 +34,25 @@ function greek(capital: number, small: number): Record<number, number> {
   return out;
 }
 
+/**
+ * Hershey Cyrillic Complex at U+0410–U+044F (M1-59): Hershey numbers А–Я 2801–2832 and а–я
+ * 2901–2932 in alphabetical order without Ё, which is exactly Unicode's order for the block
+ * (checked against the glyph drawings). Ё and ё are built from Е and е with a diaeresis.
+ * Hershey drew Cyrillic in its Complex weight only, so the simplex, duplex and triplex faces
+ * borrow it too: a heavier Cyrillic letter reads better than the "?" AutoCAD would draw for a
+ * character the font lacks, and AutoCAD's own Unicode SHX fonts (romans, txt) carry Cyrillic.
+ */
+const CYRILLIC: Readonly<Record<number, number>> = Object.fromEntries([
+  ...run(0x410, 32).map((code, i) => [code, 2801 + i]),
+  ...run(0x430, 32).map((code, i) => [code, 2901 + i]),
+]);
+
+/**
+ * How far Hershey's Italic Complex leans: its I runs from x = 3 at the cap line to −3 at the
+ * baseline, 6 units over a height of 21.
+ */
+const ITALIC_SLOPE = 6 / 21;
+
 /** Simplex-weight symbols: ° ± × ÷ · and §. */
 const SIMPLEX_SYMBOLS = { 0xb0: 718, 0xb1: 2233, 0xd7: 727, 0xf7: 2237, 0xb7: 729, 0xa7: 2276 };
 /** The same symbols from the complex set, for the heavier fonts. */
@@ -47,6 +67,14 @@ export interface HersheyFontDef {
   readonly ascii: readonly number[];
   /** Further code points and their Hershey glyph numbers. */
   readonly extra: Readonly<Record<number, number>>;
+  /**
+   * Upright Hershey glyphs leaned to match an italic face: code points and glyph numbers, and
+   * the lean as x per unit of height.
+   */
+  readonly slanted?: {
+    readonly glyphs: Readonly<Record<number, number>>;
+    readonly slope: number;
+  };
 }
 
 export const HERSHEY_FONTS: readonly HersheyFontDef[] = [
@@ -59,7 +87,7 @@ export const HERSHEY_FONTS: readonly HersheyFontDef[] = [
       ...run(700, 10), 712, 713, 2241, 726, 2242, 715, 2273, ...run(501, 26), 2223, 804, 2224,
       2262, UNDERSCORE, 730, ...run(601, 26), 2225, 723, 2226, 2246,
     ],
-    extra: { ...SIMPLEX_SYMBOLS, ...greek(527, 627) },
+    extra: { ...SIMPLEX_SYMBOLS, ...greek(527, 627), ...CYRILLIC },
   },
   {
     name: 'oet-duplex',
@@ -70,7 +98,7 @@ export const HERSHEY_FONTS: readonly HersheyFontDef[] = [
       2720, ...run(2700, 10), 2712, 2713, 2241, 2726, 2242, 2715, 2273, ...run(2501, 26), 2223, 804,
       2224, 2262, UNDERSCORE, 2716, ...run(2601, 26), 2225, 2229, 2226, 2246,
     ],
-    extra: COMPLEX_SYMBOLS,
+    extra: { ...COMPLEX_SYMBOLS, ...CYRILLIC },
   },
   {
     name: 'oet-complex',
@@ -81,7 +109,7 @@ export const HERSHEY_FONTS: readonly HersheyFontDef[] = [
       ...run(2200, 10), 1212, 1213, 2241, 726, 2242, 2215, 2273, ...run(2001, 26), 1405, 804, 1406,
       2247, UNDERSCORE, 2249, ...run(2101, 26), 1407, 723, 1408, 2246,
     ],
-    extra: { ...COMPLEX_SYMBOLS, ...greek(2027, 2127) },
+    extra: { ...COMPLEX_SYMBOLS, ...greek(2027, 2127), ...CYRILLIC },
   },
   {
     name: 'oet-triplex',
@@ -92,7 +120,7 @@ export const HERSHEY_FONTS: readonly HersheyFontDef[] = [
       3220, ...run(3200, 10), 3212, 3213, 2241, 3226, 2242, 3215, 2273, ...run(3001, 26), 2223, 804,
       2224, 2262, UNDERSCORE, 3216, ...run(3101, 26), 2225, 2229, 2226, 2246,
     ],
-    extra: COMPLEX_SYMBOLS,
+    extra: { ...COMPLEX_SYMBOLS, ...CYRILLIC },
   },
   {
     name: 'oet-italic',
@@ -104,6 +132,7 @@ export const HERSHEY_FONTS: readonly HersheyFontDef[] = [
       2247, UNDERSCORE, 2249, ...run(2151, 26), 1407, 723, 1408, 2246,
     ],
     extra: COMPLEX_SYMBOLS,
+    slanted: { glyphs: CYRILLIC, slope: ITALIC_SLOPE },
   },
   {
     name: 'oet-script',
