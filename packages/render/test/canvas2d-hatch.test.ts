@@ -98,7 +98,7 @@ describe('gradient hatches', () => {
       .slice(0, i)
       .filter((k) => k[0] === 'setTransform')
       .at(-1);
-    expect(transform).toEqual(['setTransform', 40, -0, 0, -30, 80, 65]);
+    expect(transform).toEqual(['setTransform', 40, 0, 0, -30, 80, 65]);
     expect((c.gradient as FakeGradient).stops).toEqual([
       [0, '#0000ff'],
       [1, '#ffff00'],

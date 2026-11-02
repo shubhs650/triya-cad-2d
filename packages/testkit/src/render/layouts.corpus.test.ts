@@ -5,10 +5,34 @@
 // stored limits: that checks the margin turn for rotated plots and the inch/mm conversion on
 // real files. Layouts written by other programs (ezdxf, BricsCAD) or never set up keep
 // whatever limits they had, and are listed below with the reason.
+//
+// Then every layout is drawn on a recording canvas fitted to its viewports: each viewport that
+// shows model space, and has model-space entities under its view, must draw them inside its
+// clip (one save/clip/restore group with at least one path), and the frame must not throw.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { layoutSheet } from '@triya/engine';
+import {
+  layoutSheet,
+  viewportFrame,
+  viewportShowsModel,
+  viewportTransform,
+  invert,
+  applyPoint,
+  type Box,
+  type DocumentModel,
+  type Handle,
+  type SpatialIndex,
+} from '@triya/engine';
 import { readCadDocument } from '@triya/io';
+import {
+  Canvas2DRenderer,
+  defaultPaint,
+  expands,
+  fitView,
+  tessellate,
+  type Canvas2D,
+  type Surface,
+} from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
 import { corpusDrawing } from './document.ts';
@@ -60,7 +84,108 @@ const LIMITS_DIFFER: Record<string, string> = {
 const files = manifest.files;
 
 let checked = 0;
+let viewportsDrawn = 0;
+
+/** A canvas that only counts what the renderer does inside clips. */
+function recorder(): Surface & { groups: number[] } {
+  let depth = 0;
+  const groups: number[] = [];
+  const ctx = new Proxy(
+    {},
+    {
+      get: (_t, name) => {
+        if (name === 'save')
+          return () => {
+            depth++;
+            groups.push(0);
+          };
+        if (name === 'restore') return () => void depth--;
+        if (name === 'moveTo' || name === 'fillRect' || name === 'arc' || name === 'ellipse')
+          return () => {
+            if (depth > 0) groups[groups.length - 1]!++;
+          };
+        if (name === 'createLinearGradient' || name === 'createRadialGradient')
+          return () => ({ addColorStop: () => undefined });
+        return () => undefined;
+      },
+      set: () => true,
+    },
+  ) as Canvas2D;
+  return { canvas: { width: 0, height: 0 }, ctx, image: {} as CanvasImageSource, groups };
+}
+
+/** Draws a layout fitted to its viewports; how many viewports drew, and how many should. */
+function drawLayout(
+  model: DocumentModel,
+  index: SpatialIndex,
+  block: Handle,
+): { expected: number; drawn: number } {
+  const ms = [...model.tables.blockRecords.values()].find(
+    (r) => r.name.toLowerCase() === '*model_space',
+  )!.handle;
+  let expected = 0;
+  let fit: Box | undefined;
+  for (const id of model.blockEntities(block)) {
+    const e = model.entity(id)!;
+    if (e.geom.kind !== 'VIEWPORT' || !viewportShowsModel(e.geom)) continue;
+    const frame = viewportFrame(e.geom);
+    fit = fit
+      ? {
+          minX: Math.min(fit.minX, frame.minX),
+          minY: Math.min(fit.minY, frame.minY),
+          maxX: Math.max(fit.maxX, frame.maxX),
+          maxY: Math.max(fit.maxY, frame.maxY),
+        }
+      : frame;
+    const toModel = invert(viewportTransform(e.geom));
+    const a = applyPoint(toModel, { x: frame.minX, y: frame.minY });
+    const b = applyPoint(toModel, { x: frame.maxX, y: frame.maxY });
+    const view = {
+      minX: Math.min(a.x, b.x),
+      minY: Math.min(a.y, b.y),
+      maxX: Math.max(a.x, b.x),
+      maxY: Math.max(a.y, b.y),
+    };
+    // Something drawable under the view: a shown entity with known bounds that draws without
+    // fonts (text has none here), or a block reference.
+    const shows = index.query(ms, view).some((h) => {
+      const en = model.entity(h);
+      const bd = index.bounds(h);
+      if (!en || !bd || bd.kind !== 'box') return false;
+      const paint = defaultPaint(en, model);
+      const draws =
+        expands(en, (b) => model.blocks.get(b)) ||
+        (paint !== undefined && tessellate(en.geom, paint).length > 0);
+      const inView =
+        bd.box.maxX >= view.minX &&
+        bd.box.minX <= view.maxX &&
+        bd.box.maxY >= view.minY &&
+        bd.box.minY <= view.maxY;
+      return inView && draws;
+    });
+    if (shows) expected++;
+  }
+  const visible = recorder();
+  const layers: ReturnType<typeof recorder>[] = [];
+  const r = new Canvas2DRenderer({
+    model,
+    index,
+    block,
+    surface: visible,
+    createLayer: () => {
+      const l = recorder();
+      layers.push(l);
+      return l;
+    },
+    requestIdle: () => undefined,
+  });
+  r.resize(1000, 700, 1);
+  if (fit) r.setView(fitView(fit, 1000, 700));
+  r.frame();
+  return { expected, drawn: layers[0]!.groups.filter((n) => n > 0).length };
+}
 const MATCHING = 70;
+const VIEWPORTS_DRAWN = 74;
 
 describe('layouts on the public corpus', () => {
   it.each(files.map((f) => [f.path]))('%s', (path) => {
@@ -70,7 +195,7 @@ describe('layouts on the public corpus', () => {
     } catch {
       return; // unreadable files are the read-error baseline's business
     }
-    const { model } = corpusDrawing(doc);
+    const { model, index } = corpusDrawing(doc);
     const differ: string[] = [];
     const listed: string[] = [];
     for (const layout of model.layouts) {
@@ -89,10 +214,23 @@ describe('layouts on the public corpus', () => {
       checked++;
     }
     expect(differ).toEqual(listed);
+
+    for (const layout of model.layouts) {
+      const space = model.tables.blockRecords.get(layout.blockRecord)?.name.toLowerCase();
+      if (space === '*model_space') continue;
+      const { expected, drawn } = drawLayout(model, index, layout.blockRecord);
+      expect({ key: `${path} | ${layout.name}`, drawn }).toEqual({
+        key: `${path} | ${layout.name}`,
+        drawn: expected,
+      });
+      viewportsDrawn += drawn;
+    }
   });
 
   it('checks the AutoCAD-set layouts and lists every exception it still needs', () => {
     // Layouts whose sheet is their limits, from DWG, ASCII and binary DXF.
     expect(checked - Object.keys(LIMITS_DIFFER).length).toBe(MATCHING);
+    // Viewports drawn with their views, across the corpus.
+    expect(viewportsDrawn).toBe(VIEWPORTS_DRAWN);
   });
 });
