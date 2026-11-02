@@ -13,4 +13,10 @@ export abstract class CadReaderConfiguration {
 	 * (`MATERIAL`, `VISUALSTYLE`), so that a DXF save writes them back as read instead of dropping them.
 	 */
 	keepRawDxfPassthroughObjects: boolean = false;
+	/**
+	 * Read every object in a DWG object map, not only those a reference reaches, and keep the ones
+	 * nothing reaches (an owner that is not in the file) raw in `CadDocument.unreachableObjects`,
+	 * so that a save of the same version writes them back as read.
+	 */
+	keepUnreachableObjects: boolean = false;
 }
