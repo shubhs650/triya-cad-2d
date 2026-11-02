@@ -1,0 +1,240 @@
+/* App shell theme (UI_SPEC.md §1, §6): light chrome, dark model canvas. Colours are variables
+   so the dark chrome and the configurable canvas colours can replace them. */
+:root {
+  --chrome-bg: #f5f6f8;
+  --chrome-bg-raised: #ffffff;
+  --chrome-border: #d9dce1;
+  --chrome-text: #1f2328;
+  --chrome-text-muted: #5b6270;
+  --accent: #2563eb;
+  --danger-bg: #fdecec;
+  --danger-text: #8a1c1c;
+  --canvas-model: #212830;
+  --motion: 120ms;
+  font-family:
+    system-ui,
+    -apple-system,
+    'Segoe UI',
+    Roboto,
+    sans-serif;
+  font-size: 13px;
+  color: var(--chrome-text);
+  background: var(--chrome-bg);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion: 0ms;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.app.dragging .canvas-area {
+  outline: 2px dashed var(--accent);
+  outline-offset: -6px;
+}
+
+.title-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  height: 36px;
+  padding: 0 8px;
+  background: var(--chrome-bg-raised);
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.oet-home {
+  font-weight: 700;
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.app-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.badge {
+  padding: 1px 6px;
+  border-radius: 8px;
+  font-size: 11px;
+  color: var(--chrome-text-muted);
+  border: 1px solid var(--chrome-border);
+  white-space: nowrap;
+}
+
+.open-button,
+.start button,
+.banner button {
+  padding: 3px 10px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg);
+  transition: background var(--motion);
+}
+
+.open-button:hover,
+.start button:hover {
+  background: var(--chrome-border);
+}
+
+.doc-tabs {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  gap: 2px;
+}
+
+.doc-tab {
+  display: flex;
+  align-items: center;
+  border: 1px solid transparent;
+  border-radius: 4px 4px 0 0;
+  white-space: nowrap;
+}
+
+.doc-tab[data-active='true'] {
+  background: var(--chrome-bg);
+  border-color: var(--chrome-border);
+}
+
+.doc-tab button {
+  border: 0;
+  background: none;
+  padding: 4px 6px;
+}
+
+.doc-tab .close {
+  color: var(--chrome-text-muted);
+}
+
+.report {
+  color: var(--chrome-text-muted);
+  white-space: nowrap;
+}
+
+.banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 4px 12px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.banner.error {
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.canvas-area {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  background: var(--canvas-model);
+}
+
+.doc-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.doc-canvas[hidden] {
+  display: none;
+}
+
+.drawing-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+
+.start {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  color: #d6dae0;
+}
+
+.start h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+}
+
+.start button {
+  color: var(--chrome-text);
+}
+
+.start .privacy {
+  color: #8a8f98;
+  font-size: 12px;
+}
+
+.layout-tabs {
+  display: flex;
+  min-height: 24px;
+  padding: 0 8px;
+  background: var(--chrome-bg);
+  border-top: 1px solid var(--chrome-border);
+}
+
+.layout-tab {
+  padding: 3px 10px;
+}
+
+.layout-tab.current {
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-top: 0;
+}
+
+.status-bar {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 26px;
+  padding: 0 8px;
+  background: var(--chrome-bg-raised);
+  border-top: 1px solid var(--chrome-border);
+  font-variant-numeric: tabular-nums;
+}
+
+.status-bar .spacer {
+  flex: 1;
+}
+
+.status-bar .space {
+  font-weight: 600;
+}

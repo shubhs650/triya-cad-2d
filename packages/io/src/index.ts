@@ -7,8 +7,8 @@ export type { CadFormat, ReadSummary } from './read';
 export { fidelityDwgConfiguration, fidelityDxfConfiguration, writeCadDocument } from './write';
 export type { WriteOptions } from './write';
 export { ioApi } from './worker/api';
-export type { IoApi, IoProgress, ProgressCallback } from './worker/api';
-export { readInWorker } from './worker/client';
+export type { IoApi, IoProgress, OpenResult, ProgressCallback } from './worker/api';
+export { openInWorker, readInWorker } from './worker/client';
 export type { AbortSignalLike, IoWorker, ReadInWorkerOptions } from './worker/client';
 export { mapHeader, type MappedHeader } from './map/header';
 export { mapTables, type MappedTables } from './map/tables';
@@ -17,3 +17,4 @@ export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/ent
 export { mapSortEnts } from './map/sortents';
 export { mapLayouts } from './map/layouts';
 export { mapImageObjects, type ImageObject } from './map/images';
+export { documentInit, openDocument, type OpenedDocument } from './map/document';
