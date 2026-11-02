@@ -12,6 +12,7 @@ import type {
   GeoData,
   TableStyle,
   BlockAction,
+  BlockFlipGrip,
   BlockVisibilityParameter,
 } from '@node-projects/acad-ts';
 import {
@@ -131,10 +132,13 @@ const rawObjects = (doc: CadDocument): RawObject[] =>
   );
 const handleHex = (o: CadObject | null | undefined): string | undefined =>
   o?.handle.toString(16).toUpperCase();
+// Bytes compare by value: a Buffer (binary DXF read from a Buffer) has a toJSON that runs before
+// the replacer, so look at the holder's own value.
 const asJson = (value: unknown): string =>
-  JSON.stringify(value, (_k, v: unknown) =>
-    v instanceof Uint8Array ? [...v] : typeof v === 'bigint' ? v.toString() : v,
-  );
+  JSON.stringify(value, function (this: Record<string, unknown>, k, v: unknown) {
+    const own = this[k];
+    return own instanceof Uint8Array ? [...own] : typeof v === 'bigint' ? v.toString() : v;
+  });
 
 const paperLayouts = (doc: CadDocument): Layout[] =>
   [...doc.layouts!].filter((layout) => layout.name !== 'Model');
@@ -197,7 +201,12 @@ describe('acad-ts local patches (corpus-backed)', () => {
     const before = rawObjects(doc);
     expect(before.map((o) => o.objectName)).toContain(expected);
 
-    const after = new Map(rawObjects(dxfRawRoundTrip(doc, binary)).map((o) => [o.handle, o]));
+    // Saved as @triya/io saves: since 0092, unknown objects in a dynamic-block or solid-history
+    // graph are in the document, and only a save that writes the graph writes them.
+    const config = new DxfWriterConfiguration();
+    config.writeDynamicBlockData = true;
+    const back = readDxfRaw(writeDxf(doc, binary, config));
+    const after = new Map(rawObjects(back).map((o) => [o.handle, o]));
 
     for (const o of before) {
       expect(o.rawDxfCodes?.length, `${handleHex(o)} ${o.objectName}`).toBeGreaterThan(0);
@@ -232,7 +241,11 @@ describe('acad-ts local patches (corpus-backed)', () => {
     const before = rawObjects(doc);
     expect(before.map((o) => o.objectName)).toContain('ACDBDETAILVIEWSTYLE');
 
-    const after = new Map(rawObjects(dwgRawRoundTrip(doc)).map((o) => [o.handle, o]));
+    // Saved as @triya/io saves (see 0014).
+    const config = new DwgWriterConfiguration();
+    config.writeDynamicBlockData = true;
+    const saved = DwgWriter.writeToBuffer(doc, config).slice().buffer;
+    const after = new Map(rawObjects(readDwgRaw(saved)).map((o) => [o.handle, o]));
 
     for (const o of before) {
       expect(o.rawDwgData, `${handleHex(o)} ${o.objectName}`).toBeTruthy();
@@ -2028,5 +2041,47 @@ describe('acad-ts local patches (corpus-backed)', () => {
       const back = readDxfRaw(writeDxf(doc, binary, config));
       expect(states(back), `binary ${binary}`).toEqual(states(doc));
     }
+  });
+
+  it('0095 a DWG BLOCKFLIPGRIP reads its flip id before its direction, as written', () => {
+    // BLOCKFLIPPARAMETER grip 262: the DXF twin has direction 140/141/142 = 0, 7.6027…, 0 and
+    // 93 = 3. The DWG record holds the id (BL) first, as the writer writes it; read as a direction,
+    // it came out as 1, -11159.6, 3.5e-162 and id 2, and the saved grip did not read back.
+    const file = 'third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER';
+    const grip = (d: CadDocument) => {
+      const g = d.getCadObject(0x262) as BlockFlipGrip | null;
+      return g && [g.directionX, g.directionY, g.directionZ, g.flipExpressionId];
+    };
+    const dwg = readDwgRaw(`${file}.dwg`);
+    const [x, y, z, id] = grip(dwg)!;
+    expect(x).toBeCloseTo(0, 12);
+    expect(y).toBeCloseTo(7.602752046755313, 9);
+    expect(z).toBe(0);
+    expect(id).toBe(3);
+    const config = new DwgWriterConfiguration();
+    config.writeDynamicBlockData = true;
+    const back = readDwgRaw(DwgWriter.writeToBuffer(dwg, config).slice().buffer);
+    expect(grip(back)).toEqual(grip(dwg));
+  });
+
+  it('0096 a DXF 330 after the first subclass marker does not replace the stated owner', () => {
+    // BLOCKFLIPPARAMETER BLOCKFLIPACTION 26D (an object acad-ts has no reader for) is owned by graph
+    // 25C and acts on 26C and 259 (AcDbBlockAction 330s). Each later 330 replaced the owner, so the
+    // action was attached to an entity, not to its graph, and never joined the document.
+    const doc = readDxfRaw(
+      corpusBytes('third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dxf'),
+    );
+    const action = doc.getCadObject(0x26d);
+    expect(action?.owner).toBe(doc.getCadObject(0x25c));
+  });
+
+  it('0097 a DXF evaluation expression reads a value of any type', () => {
+    // BLOCKFLIPPARAMETER BLOCKGRIPLOCATIONCOMPONENT 263 holds a 70-type value (1, 70 = 70, 70 = 0).
+    // The reader required a 140 after the 70, threw, and dropped the object.
+    const doc = readDxfRaw(
+      corpusBytes('third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dxf'),
+    );
+    expect(doc.getCadObject(0x263)?.constructor.name).toBe('BlockGripExpression');
+    expect(doc.getCadObject(0x264)?.constructor.name).toBe('BlockGripExpression');
   });
 });
