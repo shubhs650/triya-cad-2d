@@ -154,6 +154,8 @@ export class CadTableCellTemplate implements ICadTemplate {
 
 	textStyleOverrideHandle: number | null = null;
 
+	textStyleOverrideName: string | null = null;
+
 	unknownHandle: number | null = null;
 
 	valueHandle: number | null = null;
@@ -168,7 +170,8 @@ export class CadTableCellTemplate implements ICadTemplate {
 			contentTemplate.build(builder);
 		}
 
-		this.cell.styleOverride.textStyle = builder.tryGetCadObject<TextStyle>(this.textStyleOverrideHandle);
+		this.cell.styleOverride.textStyle = builder.tryGetCadObject<TextStyle>(this.textStyleOverrideHandle)
+			?? builder.tryGetTableEntry(this.textStyleOverrideName ?? '', TextStyle);
 		if (this.formatTextHeight != null) {
 			this.cell.styleOverride.textHeight = this.formatTextHeight;
 		}

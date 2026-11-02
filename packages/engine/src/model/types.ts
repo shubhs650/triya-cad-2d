@@ -754,6 +754,57 @@ export interface TableCell {
   readonly merged: boolean;
   /** DXF 145, radians. */
   readonly rotation: number;
+  /** What the cell overrides of its table style, its row's and column's folded in; absent when nothing. */
+  readonly format?: TableCellFormat;
+}
+
+/**
+ * One edge of a table cell as a cell, row or column override states it. Only overridden
+ * properties are present. A visibility override that keeps the edge shown is not kept:
+ * AutoCAD sets it beside every colour or lineweight override, and an R2000/R2004 DXF cannot
+ * state it for the bottom and left edges (its flag word, 177, is 16-bit).
+ */
+export interface TableBorderFormat {
+  readonly color?: Color;
+  /** DXF 27x. */
+  readonly lineweight?: Lineweight;
+  readonly hidden?: true;
+}
+
+/**
+ * The formatting a table cell overrides (M1-36), normalised across the two ways files state it:
+ * DXF and DWG up to R2007 give one flag word per cell (DXF 177 / 91) with the values in 170,
+ * 63, 64, 283, 7, 140 and 27x / 6x, already folded from rows and columns; DWG R2010 and later
+ * give cell, row and column cell styles and per-content formats, which the mapper folds the same
+ * way (content over cell over row over column). Table-wide overrides are not included.
+ */
+export interface TableCellFormat {
+  /** 1 top left … 9 bottom right (DXF 170). */
+  readonly alignment?: number;
+  /** STYLE handle (DXF 7). */
+  readonly textStyle?: Handle;
+  /** DXF 140. */
+  readonly textHeight?: number;
+  /** DXF 64. */
+  readonly contentColor?: Color;
+  /** The background fill colour (DXF 63), or null for no fill (DXF 283 = 1). */
+  readonly background?: Color | null;
+  readonly borders?: {
+    readonly top?: TableBorderFormat;
+    readonly right?: TableBorderFormat;
+    readonly bottom?: TableBorderFormat;
+    readonly left?: TableBorderFormat;
+  };
+  /**
+   * Cell margins (DWG R2010+ only; DXF states margins for the whole table, 40 / 41). A margin
+   * equal to the table's own is not an override and is left out.
+   */
+  readonly margins?: {
+    readonly left?: number;
+    readonly top?: number;
+    readonly right?: number;
+    readonly bottom?: number;
+  };
 }
 
 /**
