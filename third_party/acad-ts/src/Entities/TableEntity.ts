@@ -328,6 +328,35 @@ export class CellStyle extends ContentFormat {
 	id: number = 0;
 }
 
+/**
+ * One row type's table-wide overrides (title, header or data rows), as DXF and DWG up to R2007
+ * state them. Which of them apply is in TableStyleOverrides.flags.
+ */
+export class TableRowTypeOverrides {
+	contentColor: Color = Color.byBlock;
+	fillNone: boolean = false;
+	fillColor: Color = Color.byBlock;
+	alignment: number = 0;
+	textStyle: TextStyle | null = null;
+	textHeight: number = 0;
+}
+
+/**
+ * The table-wide overrides of the table style that DXF (93 and the values after it) and DWG up
+ * to R2007 state; flags says which apply. The border overrides (94-96) are not kept here.
+ */
+export class TableStyleOverrides {
+	flags: TableOverrideFlags = TableOverrideFlags.None;
+	suppressTitle: boolean = false;
+	suppressHeader: boolean = false;
+	flowDirection: number = 0;
+	horizontalCellMargin: number = 0;
+	verticalCellMargin: number = 0;
+	title: TableRowTypeOverrides = new TableRowTypeOverrides();
+	header: TableRowTypeOverrides = new TableRowTypeOverrides();
+	data: TableRowTypeOverrides = new TableRowTypeOverrides();
+}
+
 export class TableEntityCell {
 	styleId: number = 0;
 	dataLink: CadObject | null = null;
@@ -461,6 +490,9 @@ export class TableEntity extends Insert {
 	 * models none of these overrides, so the DXF writer writes them back as read (DEC-043).
 	 */
 	tableOverrideDxfCodes: DxfRawCode[] = [];
+
+	/** The table-wide overrides DXF and DWG up to R2007 state; null when there are none. */
+	tableOverrides: TableStyleOverrides | null = null;
 
 	breakRowRanges: BreakRowRange[] = [];
 

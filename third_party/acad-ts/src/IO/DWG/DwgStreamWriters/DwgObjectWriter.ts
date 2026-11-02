@@ -77,7 +77,7 @@ import { BlockRecord, BlockTypeFlags } from '../../../Tables/BlockRecord.js';
 import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
 import { Wall } from '../../../Entities/AecEntities/Wall.js';
 import { ProxyEntity } from '../../../Entities/ProxyEntity.js';
-import { TableEntity, TableEntityCell, CellType, CellBorder, CellStyle, CellEdgeFlags, CellOverrideFlags, ContentFormat, MarginFlags, TableCellContentType, CustomDataEntry } from '../../../Entities/TableEntity.js';
+import { TableEntity, TableEntityCell, CellType, CellBorder, CellStyle, CellEdgeFlags, CellOverrideFlags, ContentFormat, MarginFlags, TableCellContentType, CustomDataEntry, TableOverrideFlags, TableRowTypeOverrides } from '../../../Entities/TableEntity.js';
 import { CadBody } from '../../../Entities/CadBody.js';
 import { Region } from '../../../Entities/Region.js';
 import { IPolyline } from '../../../Entities/IPolyline.js';
@@ -2780,10 +2780,48 @@ export class DwgObjectWriter extends DwgSectionIO {
 			}
 		}
 
+		this._writeTableOverrides(table);
+		// The border colour, lineweight and visibility overrides are not kept.
 		this._writer.writeBit(false);
 		this._writer.writeBit(false);
 		this._writer.writeBit(false);
-		this._writer.writeBit(false);
+	}
+
+	/** The R2004/R2007 table-wide overrides, as the reader reads them (ODA spec, TABLE). */
+	private _writeTableOverrides(table: TableEntity): void {
+		const o = table.tableOverrides;
+		this._writer.writeBit(o !== null);
+		if (o === null) {
+			return;
+		}
+		const flags = o.flags;
+		this._writer.writeBitLong(flags);
+		if ((flags & TableOverrideFlags.TitleSuppressed) !== 0) {
+			this._writer.writeBit(o.suppressTitle);
+		}
+		if ((flags & TableOverrideFlags.FlowDirection) !== 0) {
+			this._writer.writeBitShort(o.flowDirection);
+		}
+		if ((flags & TableOverrideFlags.HorizontalCellMargin) !== 0) {
+			this._writer.writeBitDouble(o.horizontalCellMargin);
+		}
+		if ((flags & TableOverrideFlags.VerticalCellMargin) !== 0) {
+			this._writer.writeBitDouble(o.verticalCellMargin);
+		}
+		const rowTypes = [o.title, o.header, o.data];
+		const perRowType = (first: TableOverrideFlags, write: (row: TableRowTypeOverrides) => void): void => {
+			rowTypes.forEach((row, k) => {
+				if ((flags & (first << k)) !== 0) {
+					write(row);
+				}
+			});
+		};
+		perRowType(TableOverrideFlags.TitleRowColor, (row) => this._writer.writeCmColor(row.contentColor));
+		perRowType(TableOverrideFlags.TitleRowFillNone, (row) => this._writer.writeBit(row.fillNone));
+		perRowType(TableOverrideFlags.TitleRowFillColor, (row) => this._writer.writeCmColor(row.fillColor));
+		perRowType(TableOverrideFlags.TitleRowAlign, (row) => this._writer.writeBitShort(row.alignment));
+		perRowType(TableOverrideFlags.TitleTextStyle, (row) => this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, row.textStyle));
+		perRowType(TableOverrideFlags.TitleRowHeight, (row) => this._writer.writeBitDouble(row.textHeight));
 	}
 
 	private _writeTableContent(content: TableEntity['content']): void {
