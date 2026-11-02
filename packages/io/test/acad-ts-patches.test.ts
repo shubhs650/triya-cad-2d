@@ -45,6 +45,8 @@ import {
   LineWeightType,
   MeasurementUnits,
   ObjectType,
+  PdfUnderlay,
+  PdfUnderlayDefinition,
   Polyline2D,
   Polyline3D,
   PolygonMesh,
@@ -911,5 +913,54 @@ describe('acad-ts local patches', () => {
     const movedLinear = moved.getCadObject(Number(linear.handle)) as DimensionLinear;
     expect(movedLinear).toBeInstanceOf(DimensionLinear);
     expect(movedLinear.extLineRotation).toBeCloseTo(0.3, 12);
+  });
+  it('0129 a DXF PDFUNDERLAY keeps its normal (210) and clip boundary (11/21)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const definition = new PdfUnderlayDefinition();
+    definition.name = 'sheet-1';
+    definition.file = 'sheet.pdf';
+    definition.page = '1';
+    const pdfs = new CadDictionary(CadDictionary.acadPdfDefinitions);
+    doc.rootDictionary!.add(pdfs);
+    pdfs.add(definition);
+    const flipped = new PdfUnderlay(definition);
+    flipped.normal = new XYZ(0, 0, -1);
+    flipped.insertPoint = new XYZ(-3, 2, 0);
+    flipped.flags = 1 | 2 | 16;
+    flipped.clipBoundaryVertices = [new XY(0, 0), new XY(4, 0), new XY(4, 3), new XY(1, 2.5)];
+    const rectangle = new PdfUnderlay(definition);
+    rectangle.clipBoundaryVertices = [new XY(-1, -1), new XY(5, 6)];
+    const plain = new PdfUnderlay(definition);
+    for (const u of [flipped, rectangle, plain]) doc.entities!.add(u);
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+      const same = (u: PdfUnderlay) => back.getCadObject(Number(u.handle)) as PdfUnderlay;
+      const xyz = (v: XYZ) => [v.x, v.y, v.z];
+      const xy = (v: XY[]) => v.map((p) => [p.x, p.y]);
+      expect(xyz(same(flipped).normal)).toEqual([0, 0, -1]);
+      expect(same(flipped).flags).toBe(1 | 2 | 16);
+      expect(xy(same(flipped).clipBoundaryVertices)).toEqual(xy(flipped.clipBoundaryVertices));
+      expect(xy(same(rectangle).clipBoundaryVertices)).toEqual([
+        [-1, -1],
+        [5, 6],
+      ]);
+      expect(xyz(same(plain).normal)).toEqual([0, 0, 1]);
+      expect(same(plain).clipBoundaryVertices).toEqual([]);
+    }
+
+    // AutoCAD states the normal only when it is not +Z (the corpus underlays have none), and
+    // the clip as repeated 11/21 pairs with no count (DXF reference, UNDERLAY).
+    const lines = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' })).split(/\r?\n/);
+    const underlays: string[][] = [];
+    let inside = false;
+    for (let k = 0; k + 1 < lines.length; k += 2) {
+      const code = lines[k]!.trim();
+      if (code === '0') {
+        inside = lines[k + 1] === 'PDFUNDERLAY';
+        if (inside) underlays.push([]);
+      } else if (inside && ['210', '11', '91', '290'].includes(code)) underlays.at(-1)!.push(code);
+    }
+    expect(underlays).toEqual([['210', '11', '11', '11', '11'], ['11', '11'], []]);
   });
 });

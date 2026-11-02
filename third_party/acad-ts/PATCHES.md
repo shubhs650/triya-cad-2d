@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80) and 0128 (M1-82) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82) and 0129 (M1-83) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2419,5 +2419,22 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 **Title:** Read DIMENSION 41 and read and write 52 in degrees
 
 `DxfSectionReaderBase._readDimension` ignored group 41 unless it followed `AcDbArcDimension` (the arc's end angle), so every dimension's text line spacing factor read back as 0. `DxfSectionWriterBase` never wrote 52, the extension line oblique angle of aligned and rotated dimensions, and the reader assigned 52 in radians although DXF angles are in degrees. This reads 41 as the line spacing factor outside `AcDbArcDimension`, reads 52 in degrees (also when it comes in `AcDbDimension`, before the aligned or rotated subclass marker, as ezdxf writes it), and writes 52 in degrees after the extension line points when it is not 0.
+
+</details>
+
+### 0129 — DXF PDFUNDERLAY loses its normal (210) and clip boundary (11/21)
+
+- **File:** `third_party/acad-ts-patches/0129-dxf-underlay-normal-clip.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** the DXF writer wrote an underlay's 340, 10, 41–43, 50 and 280–282 only, so an underlay on −Z or with a clip boundary saved to DXF read back on +Z and unclipped; the DXF reader did not read the clip vertices (11/21) either. The DWG reader and writer keep both. No corpus underlay has a normal or clip, so the round trip could not see it; found by Triya M1-75 part 4, fixed in M1-83.
+- **Fix:** the writer states 210 after the rotation when the normal is not +Z (AutoCAD leaves it out of every corpus underlay) and the clip boundary as repeated 11/21 pairs after the fade, with no count, as the DXF reference (UNDERLAY) lists them; the reader collects those pairs. "Clip is inside mode" (inverted clip) is bit 16 of the 280 flags, which both already keep. The 91 count and 290 of the IMAGE clip are not UNDERLAY codes.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0129 a DXF PDFUNDERLAY keeps its normal (210) and clip boundary (11/21)"; `packages/io/test/export-fills.test.ts` → "writes an underlay’s normal and clip boundary to DWG and DXF (M1-83)".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write and read the DXF underlay normal and clip boundary
+
+`DxfSectionWriterBase._writePdfUnderlay` wrote no normal (210) and no clip boundary, and `DxfSectionReaderBase._readUnderlayEntity` ignored the clip vertices, so a PDF underlay on a −Z plane or with a clip lost both through a DXF save, although the DWG reader and writer keep them. This writes 210 after the rotation when the normal is not (0, 0, 1), and each clip vertex as an 11/21 pair after the fade (DXF reference, UNDERLAY: two points are the corners of a clip rectangle, more are a polygon), and reads the pairs back into `clipBoundaryVertices`.
 
 </details>

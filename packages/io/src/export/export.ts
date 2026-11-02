@@ -133,27 +133,11 @@ function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
 
 /**
  * What acad-ts cannot write to the format at hand: its DWG writer leaves a LARGE_RADIAL_DIMENSION
- * out (roadmap M1-74), and its DXF writer a PDFUNDERLAY's normal (210) and clip boundary (11,
- * M1-83), so an edited or new one would be lost.
+ * out (roadmap M1-74), so an edited or new one would be lost.
  */
-function formatProblems(
-  format: CadFormat | undefined,
-  before: EntityInit | undefined,
-  e: Entity,
-): string[] {
+function formatProblems(format: CadFormat | undefined, e: Entity): string[] {
   if (format === 'dwg' && e.type === 'LARGE_RADIAL_DIMENSION') {
     return [`${e.type} ${e.handle}: acad-ts has no DWG writer for it (M1-74)`];
-  }
-  if (format === 'dxf' && e.geom.kind === 'PDFUNDERLAY') {
-    const b = before?.geom.kind === 'PDFUNDERLAY' ? before.geom : undefined;
-    const g = e.geom;
-    const lost =
-      (b ? !same(b.normal, g.normal) : g.normal !== undefined) ||
-      (b ? !same(b.clip, g.clip) : g.clip.length > 0);
-    if (lost)
-      return [
-        `${e.type} ${e.handle}: acad-ts writes no DXF normal or clip boundary for it (M1-83)`,
-      ];
   }
   return [];
 }
@@ -184,12 +168,12 @@ function plan(
       problems.push(`${m.type} ${m.handle}: moves to another block`);
       continue;
     }
-    problems.push(...entityProblems(r, b as Entity, m), ...formatProblems(format, b, m));
+    problems.push(...entityProblems(r, b as Entity, m), ...formatProblems(format, m));
     out.updated.push({ acad, before: b, after: m });
   }
   for (const m of model.entities()) {
     if (baseByHandle.has(m.handle)) continue;
-    problems.push(...entityProblems(r, undefined, m), ...formatProblems(format, undefined, m));
+    problems.push(...entityProblems(r, undefined, m), ...formatProblems(format, m));
     const block = r.store.original(m.owner);
     if (!(block instanceof BlockRecord)) {
       problems.push(`${m.type} ${m.handle}: owner block ${m.owner} is not in the drawing`);
