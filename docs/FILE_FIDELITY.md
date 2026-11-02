@@ -170,6 +170,7 @@ The columns above track Triya. This section tracks the library underneath, from 
 | FIELD code and format string (DXF read) | Every chunk appended in order: field code 3s then 2, format string 9s then 301 (0083); the last chunk replaced the ones before it |
 | STYLE `ACAD` font xdata (DXF write) | Face name and charset, pitch and family bits kept as read while the font file is unchanged; only bold and italic are refreshed (0084). They were rebuilt from the file name ("ariblk" for "Arial Black") |
 | DBCOLOR without a true colour (DXF write) | 420 written only for a true colour (0085); index colours went out as true colour 0 (black) |
+| ACI for a true colour (DXF 62 beside 420, R12 DXF, R2000 DWG, `$CECOLOR`, table cells) and the ACI palette | The nearest ACI in the palette AutoCAD looks true colours up in, as AutoCAD writes it on all 3,532 corpus pairs, and 62 written before an entity's 420 (0109); it was usually 0 (ByBlock) or 1, and entities had no 62. The 31 mistyped `Color._indexRgb` entries (ACI 29, 91, …, 192, greys 250–254) match the computed palette (0109) |
 | IMAGE clip mode (DXF write, R2010+) | 290 written (0086); an inverted clip came back normal |
 | DEFPOINTS plot flag (DXF read) | Read as not plotted, as AutoCAD treats it and as the writer writes it (0087) |
 | MLINESTYLE element colours (DXF read) | 62 after an element's 49 read as that element's colour (0088); it overwrote the fill colour |

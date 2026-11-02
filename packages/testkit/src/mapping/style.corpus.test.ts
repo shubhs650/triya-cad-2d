@@ -158,23 +158,14 @@ describe('bundled linetypes (assets/linetypes)', () => {
 });
 
 describe('ACI palette against acad-ts', () => {
-  /**
-   * Entries of acad-ts's `Color._indexRgb` that break the palette's own pattern, so acad-ts
-   * has them wrong: mistyped digits (38 as 28 or 88, 76 as 126, 127 as 125 or 217, 145 as
-   * 142), ACI 192 with red and blue swapped, and the greys 250–254 (AutoCAD reports 253 as
-   * 173,173,173). Patching acad-ts is M1-43.
-   */
-  const ACAD_TS_PALETTE_GAPS = new Set([
-    29, 91, 109, 119, 129, 139, 145, 147, 149, 157, 159, 167, 169, 177, 179, 187, 189, 192, 197,
-    199, 203, 209, 219, 229, 239, 249, 250, 251, 252, 253, 254,
-  ]);
-
-  it('equals acad-ts on every other index 1–255', () => {
+  // acad-ts's `Color._indexRgb` had 31 entries that broke the palette's pattern (mistyped
+  // digits, ACI 192 with red and blue swapped, the greys 250–254); patch 0109 (M1-43) fixed them.
+  it('equals acad-ts on every index 1–255', () => {
     const differ: number[] = [];
     for (let i = 1; i <= 255; i++) {
       if (aciRgb(i).join() !== Color.getIndexRGB(i)!.join()) differ.push(i);
     }
-    expect(differ).toEqual([...ACAD_TS_PALETTE_GAPS]);
+    expect(differ).toEqual([]);
   });
 
   it('keeps each hue row regular where acad-ts does not', () => {
