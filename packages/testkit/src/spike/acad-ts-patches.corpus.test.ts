@@ -2084,4 +2084,28 @@ describe('acad-ts local patches (corpus-backed)', () => {
     expect(doc.getCadObject(0x263)?.constructor.name).toBe('BlockGripExpression');
     expect(doc.getCadObject(0x264)?.constructor.name).toBe('BlockGripExpression');
   });
+
+  it('0098 an R2000/R2004 DXF table value ends on its data, so the objects after it are read', () => {
+    // Before R2007 a TABLECONTENT data-map or cell value has no 304 ACVALUE_END: it is a 90 type
+    // and that type's data (301 DATAMAP_VALUE, 90 = 2, 140 = 7783, 309 DATAMAP_END). The reader
+    // waited for a 304, read past the end of TABLECONTENT 747 and swallowed TABLEGEOMETRY 748,
+    // ACDBDATATABLE 1502 and DICTIONARY 75A.
+    for (const path of ['sample_AC1015_ascii.dxf', 'sample_AC1018_ascii.dxf']) {
+      const doc = readDxfRaw(corpusBytes(`third-party/acadsharp/${path}`));
+      for (const h of [0x747, 0x748, 0x75a, 0x760, 0xabd, 0xabe]) {
+        expect(doc.getCadObject(h), `${path} ${h.toString(16)}`).toBeTruthy();
+      }
+    }
+  });
+
+  it('0099 a DXF table value of unknown type with a 91 is read, not thrown away', () => {
+    // ezdxf acad_table_simple ACAD_TABLE 9C: an empty cell is 301 CELL_VALUE, 93 = 3, 90 = 0,
+    // 91 = 0. Setting the 91 on an unknown-type value threw, which dropped the table and the
+    // objects its read had passed (TABLECONTENT AF, TABLEGEOMETRY B0, DICTIONARY B2).
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/acad_table_simple.dxf'));
+    for (const h of [0x9c, 0xaf, 0xb0, 0xb2, 0xb3]) {
+      expect(doc.getCadObject(h), h.toString(16)).toBeTruthy();
+    }
+    expect(doc.getCadObject(0x9c)).toBeInstanceOf(TableEntity);
+  });
 });

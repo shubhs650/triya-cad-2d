@@ -113,6 +113,7 @@ import { CadValue } from '../../../CadValue.js';
 import { Color } from '../../../Color.js';
 import { LineWeightType } from '../../../Types/LineWeightType.js';
 import { ACadVersion } from '../../../ACadVersion.js';
+import { CadValueType } from '../../../CadValueType.js';
 import { DxfCode } from '../../../DxfCode.js';
 import { DxfFileToken } from '../../../DxfFileToken.js';
 import { DxfSubclassMarker } from '../../../DxfSubclassMarker.js';
@@ -1775,7 +1776,12 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
     this._reader.readNext();
 
     let end = false;
+    let type: CadValueType | null = null;
+    const binary = { size: 0, read: 0 };
     while (this._reader.dxfCode !== DxfCode.Start) {
+      if (this._reader.code === 90) {
+        type = this._reader.valueAsInt as CadValueType;
+      }
       switch (this._reader.code as number) {
         case 11:
         case 21:
@@ -1795,7 +1801,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           break;
       }
 
-      if (end) {
+      if (end || this.endsPreR2007Value(type, binary)) {
         break;
       }
 

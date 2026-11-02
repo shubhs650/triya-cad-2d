@@ -1,0 +1,1 @@
+- M1-33 part 2 (#93): R2000 and R2004 DXF tables no longer swallow the objects saved after them, and tables with empty cells (including ezdxf-written ones) are no longer dropped on open (acad-ts patches 0098–0099). The handle-coverage gate stops counting draw-order sort handles as objects and sees attribute dictionaries; objects never loaded on open 463 → 52.
