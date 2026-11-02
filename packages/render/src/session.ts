@@ -21,8 +21,11 @@ import {
   type TableName,
   type Tolerance,
 } from '@triya/engine';
+import { FontBook, loadStrokeFont, type TriyaStrokeFont } from '@triya/text';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
+import type { TextContext } from './text';
+import { textBounds } from './text-bounds';
 import type { RasterPixels, RenderStyle } from './types';
 
 /** What the render side needs to build its replica: the engine's init and the block shown. */
@@ -34,6 +37,29 @@ export interface RenderDocument {
   readonly tol?: Tolerance;
 }
 
+/**
+ * Fonts for TEXT and MTEXT, as sources a message can carry (M1-72): the bundled stroke fonts
+ * (M1-09) as their committed JSON text, by font name (`oet-simplex`). The session loads them
+ * into a FontBook where it runs, so the worker needs nothing but the init message.
+ */
+export interface FontSources {
+  readonly shx?: readonly { readonly name: string; readonly source: string }[];
+}
+
+/** A FontBook holding the given fonts; a source that does not load is left out. */
+export function fontBookOf(sources: FontSources): FontBook {
+  const book = new FontBook();
+  for (const { name, source } of sources.shx ?? []) {
+    try {
+      book.addShx(name, loadStrokeFont(JSON.parse(source) as TriyaStrokeFont));
+    } catch {
+      // A damaged font is a missing font: its text draws with the fallbacks, and the health
+      // report lists it among the substitutions.
+    }
+  }
+  return book;
+}
+
 export interface RenderSessionOptions {
   readonly document: RenderDocument;
   readonly surface: Surface;
@@ -41,6 +67,8 @@ export interface RenderSessionOptions {
   readonly style?: RenderStyle;
   /** The user's .pat files (M1-50). */
   readonly patterns?: readonly string[];
+  /** Fonts for text (M1-72); without them text draws nothing and has unknown bounds. */
+  readonly fonts?: FontSources;
   readonly paint?: (e: Entity, model: DocumentModel) => Paint | undefined;
   readonly now?: () => number;
   readonly requestIdle?: (cb: () => void) => void;
@@ -61,13 +89,26 @@ export class RenderSession {
   readonly model: DocumentModel;
   readonly index: SpatialIndex;
   readonly renderer: Canvas2DRenderer;
+  /** The fonts text draws with, when the session was given any (M1-72). */
+  readonly fonts: FontBook | undefined;
   /** Decoded bitmaps by IMAGEDEF handle, as the app sends them (M1-19). */
   readonly #images = new Map<Handle, RasterPixels>();
 
   constructor(o: RenderSessionOptions) {
     const { init, block } = o.document;
     this.model = DocumentModel.create(init);
-    this.index = SpatialIndex.build(this.model, { tol: o.document.tol ?? documentTolerance(init) });
+    const model = this.model;
+    this.fonts = o.fonts && fontBookOf(o.fonts);
+    // Text is bounded by its glyphs once fonts are loaded (M1-35), so culling and extents see
+    // it; without fonts it stays unknown and is drawn whatever the view.
+    const text: TextContext | undefined = this.fonts && {
+      fonts: this.fonts,
+      style: (h) => model.tables.textStyles.get(h),
+    };
+    this.index = SpatialIndex.build(this.model, {
+      tol: o.document.tol ?? documentTolerance(init),
+      ...(text && { annotationBounds: textBounds(text) }),
+    });
     this.renderer = new Canvas2DRenderer({
       model: this.model,
       index: this.index,
@@ -76,6 +117,7 @@ export class RenderSession {
       createLayer: o.createLayer,
       ...(o.style && { style: o.style }),
       ...(o.patterns && { patterns: o.patterns }),
+      ...(this.fonts && { fonts: this.fonts }),
       ...(o.paint && { paint: o.paint }),
       ...(o.now && { now: o.now }),
       ...(o.requestIdle && { requestIdle: o.requestIdle }),

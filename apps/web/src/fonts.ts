@@ -1,8 +1,30 @@
-// The fonts the app has loaded for drawing text (ARCHITECTURE.md §8). The health report
-// (M1-70) reads which of a drawing's fonts they serve and which stand-in draws the rest.
-// Nothing fills the book yet: the user font store is M1-37 and drawing text in the app with the
-// bundled Hershey fonts comes with M1-41, which load into this same book, so until then the
-// report truthfully says each font is not drawn.
-import { FontBook } from '@triya/text';
+// The bundled Hershey fonts (M1-09, DEC-044) for every renderer the app makes (M1-72): the
+// committed JSON files, built into the app so text draws offline and nothing is fetched. The
+// render session (in its worker) loads them into a FontBook; a font the drawing names that is
+// not here draws with its bundled equivalent, then the default one (FontBook.substitutions).
+// User SHX and TrueType fonts join them in M1-37 and M1-38.
+import { fontBookOf, type FontSources } from '@triya/render';
+import type { FontBook } from '@triya/text';
 
-export const appFonts = new FontBook();
+const files = import.meta.glob<string>('../../../assets/fonts/*.json', {
+  eager: true,
+  query: '?raw',
+  import: 'default',
+});
+
+export const BUNDLED_FONTS: FontSources = {
+  shx: Object.entries(files).map(([path, source]) => ({
+    name: path.slice(path.lastIndexOf('/') + 1, -'.json'.length),
+    source,
+  })),
+};
+
+let book: FontBook | undefined;
+
+/**
+ * The same fonts as a FontBook on the main thread, for the health report (M1-70), which asks
+ * how each of a drawing's fonts draws. Loaded the first time the Health palette opens.
+ */
+export function appFonts(): FontBook {
+  return (book ??= fontBookOf(BUNDLED_FONTS));
+}

@@ -49,6 +49,8 @@ test('lists the version, units, missing fonts, references and unknown objects', 
   await expect(fontRows.getByRole('rowheader', { name: 'consola.ttf' })).toBeVisible();
   await expect(fontRows.getByRole('row', { name: /ltypeshp\.shx/ })).toContainText('Not drawn');
   await expect(fontRows.getByRole('row', { name: /arial\.ttf/ })).toContainText('Standard');
+  // TrueType fonts draw with the bundled default stand-in (M1-72).
+  await expect(fontRows.getByRole('row', { name: /arial\.ttf/ })).toContainText('oet-simplex');
 
   const refs = palette.getByRole('group', { name: /^References/ });
   await expect(refs).toContainText('.\\image.JPG');

@@ -27,7 +27,7 @@ export function HealthPalette({
 }) {
   const facts = doc.opened.facts;
   const report = useMemo(
-    () => healthReport(facts, { fonts: appFonts, patterns: patternLibrary(patternSources) }),
+    () => healthReport(facts, { fonts: appFonts(), patterns: patternLibrary(patternSources) }),
     [facts, patternSources],
   );
   const { version, units, fonts, references, patterns, unknownObjects, unmappedEntities } = report;
