@@ -2536,7 +2536,7 @@ describe('acad-ts local patches (corpus-backed)', () => {
     );
     expect((doc.getCadObject(0x267) as Viewport).status & ViewportStatusFlags.ViewportOff).toBe(0);
   });
-  it('0121 DXF and DWG up to R2007 keep the table-wide overrides', () => {
+  it('0121 DXF and DWG up to R2007 keep the table-wide overrides through a DWG save', () => {
     const table = (doc: CadDocument, h: number) => doc.getCadObject(h) as TableEntity;
     // Sample table 528 overrides both cell margins and the three row types' text heights
     // (93 = 0x700018). DWG states the row types in flag order (title, header, data); DXF writes
@@ -2563,6 +2563,8 @@ describe('acad-ts local patches (corpus-backed)', () => {
       const doc = readDwgRaw(path);
       expect528(table(doc, 0x528), path);
       expect(table(doc, 0xa35).tableOverrides, path).toBeNull();
+      // The DWG writer wrote "no overrides", so a save dropped them.
+      expect528(table(dwgRawRoundTrip(doc), 0x528), `${path} saved`);
     }
 
     // Every 93 property, with the DXF codes the ODA specification gives them (280, 281, 70, 40,
@@ -2591,20 +2593,36 @@ describe('acad-ts local patches (corpus-backed)', () => {
     const edited = text.replace(/ 93\r?\n *7340056\r?\n(?:.*\r?\n)*?(?=141\r?\n)/, all);
     expect(edited).not.toBe(text);
     const doc = readDxfRaw(Uint8Array.from(edited, (c) => c.charCodeAt(0)));
-    const o = table(doc, 0x528).tableOverrides!;
-    expect(o.flags).toBe(0x7fffff);
-    expect([o.suppressTitle, o.suppressHeader, o.flowDirection]).toEqual([true, true, 1]);
-    expect([o.horizontalCellMargin, o.verticalCellMargin]).toEqual([0.5, 0.25]);
     const standard = handleHex(doc.textStyles!.tryGetValue('Standard'));
-    // data, title, header
-    for (const [k, r] of [o.data, o.title, o.header].entries()) {
-      expect(r.contentColor.index).toBe(k + 1);
-      expect(r.fillNone).toBe(k !== 1);
-      expect(r.fillColor.index).toBe(k + 4);
-      expect(r.alignment).toBe(k + 7);
-      expect(handleHex(r.textStyle)).toBe(standard);
-      expect(r.textHeight).toBe([0.3, 0.1, 0.2][k]);
-    }
+    const expectAll = (d: CadDocument, label: string) => {
+      const o = table(d, 0x528).tableOverrides!;
+      expect(o.flags, label).toBe(0x7fffff);
+      // DWG states no header-suppressed value (ODA spec), so only DXF keeps it.
+      expect([o.suppressTitle, o.suppressHeader, o.flowDirection], label).toEqual([
+        true,
+        label === 'dxf',
+        1,
+      ]);
+      expect([o.horizontalCellMargin, o.verticalCellMargin]).toEqual([0.5, 0.25]);
+      // data, title, header
+      for (const [k, r] of [o.data, o.title, o.header].entries()) {
+        expect(r.contentColor.index, label).toBe(k + 1);
+        expect(r.fillNone).toBe(k !== 1);
+        expect(r.fillColor.index).toBe(k + 4);
+        expect(r.alignment).toBe(k + 7);
+        expect(handleHex(r.textStyle)).toBe(standard);
+        expect(r.textHeight).toBe([0.3, 0.1, 0.2][k]);
+      }
+    };
+    expectAll(doc, 'dxf');
+    // acad-ts cannot write this DXF-read document to DWG (TABLECONTENT), so the overrides go
+    // onto the same table of the drawing's R2004 DWG save.
+    const dwg = readDwgRaw('third-party/acadsharp/sample_AC1018.dwg');
+    const o = table(doc, 0x528).tableOverrides!;
+    for (const r of [o.data, o.title, o.header])
+      r.textStyle = dwg.textStyles!.tryGetValue('Standard')!;
+    table(dwg, 0x528).tableOverrides = o;
+    expectAll(dwgRawRoundTrip(dwg), 'dwg');
     // The codes are still written back as read (DEC-043).
     expect(table(dxfRawRoundTrip(doc, false), 0x528).tableOverrides!.data.textHeight).toBe(0.3);
   });
