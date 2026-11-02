@@ -96,8 +96,9 @@ export interface DrawingExtra {
   readonly textStyles?: readonly TextStyleRecord[];
   /** M1-52: dimension styles (LEADER). */
   readonly dimStyles?: readonly DimStyleRecord[];
-  /** M1-18: Layout1's page setup. */
+  /** M1-18: Layout1's page setup and layout flags (1 = PSLTSCALE). */
   readonly layoutPlot?: LayoutPlot;
+  readonly layoutFlags?: number;
 }
 
 /**
@@ -164,6 +165,7 @@ export function drawingInit(entities: EntityInit[], extra: DrawingExtra = {}): D
         tabOrder: 1,
         blockRecord: PAPER,
         ...(extra.layoutPlot ? { plot: extra.layoutPlot } : {}),
+        ...(extra.layoutFlags !== undefined ? { flags: extra.layoutFlags } : {}),
       },
     ],
     ...(extra.objects ? { objects: extra.objects } : {}),

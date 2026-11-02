@@ -1,12 +1,14 @@
 // M1-18: a layout drawn on its sheet, with each viewport's view of model space clipped to its
 // frame, checked on the calls the renderer makes to a recording context.
-import type { EntityInit, LayoutPlot, ViewportGeometry } from '@triya/engine';
+import type { EntityGeometry, EntityInit, LayoutPlot, ViewportGeometry } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer, type RenderStyle } from '../src/index';
 import {
   change,
   drawing,
   entity,
+  LAYER_0,
+  LAYER_DASHED,
   LAYER_RED,
   line,
   MODEL,
@@ -317,5 +319,103 @@ describe('viewports', () => {
     const inside = clipped(scene.ctx.calls)[0]!;
     expect(inside.filter((c) => c[0] === 'fillRect')).toHaveLength(1);
     expect(inside.filter((c) => c[0] === 'moveTo')).toEqual([]);
+  });
+});
+
+describe('viewport layer freeze (M1-18 part 2)', () => {
+  const B = '40';
+  const INNER = '41';
+  const insertOf = (block: string): EntityGeometry => ({
+    kind: 'INSERT',
+    block,
+    position: { x: 0, y: 0 },
+    scale: { x: 1, y: 1, z: 1 },
+    rotation: 0,
+    attributes: [],
+  });
+  const blocks: DrawingExtra = {
+    blocks: [
+      { handle: B, name: 'B' },
+      { handle: INNER, name: 'INNER' },
+    ],
+  };
+  /** Two viewports side by side on the same view; the second freezes RED. */
+  const twoViewports = [
+    onPaper('30', viewport()),
+    onPaper('31', viewport({ center: { x: 140, y: 40 }, frozenLayers: [LAYER_RED] })),
+  ];
+  const lines = (calls: Call[]) => calls.filter((c) => c[0] === 'moveTo').length;
+
+  it('hides model-space entities on a layer frozen in that viewport only', () => {
+    const { r, scene } = setup([
+      ...twoViewports,
+      entity('20', line(0, 10, 20, 10)),
+      entity('21', line(0, 12, 20, 12), { layer: LAYER_RED }),
+    ]);
+    r.frame();
+    const [first, second] = clipped(scene.ctx.calls);
+    expect(lines(first!)).toBe(2);
+    expect(lines(second!)).toBe(1);
+  });
+
+  it('hides a reference on a frozen layer, and the block parts and nested references on it', () => {
+    const { r, scene } = setup(
+      [
+        ...twoViewports,
+        // INSERT on 0 holding: a line on 0, a RED line, and a nested INSERT on RED of a line on 0.
+        entity('20', insertOf(B)),
+        entity('22', line(0, 10, 20, 10), { owner: B }),
+        entity('23', line(0, 12, 20, 12), { owner: B, layer: LAYER_RED }),
+        entity('24', insertOf(INNER), { owner: B, layer: LAYER_RED }),
+        entity('25', line(0, 14, 20, 14), { owner: INNER, layer: LAYER_0 }),
+        // An INSERT on RED disappears whole.
+        entity('26', insertOf(INNER), { layer: LAYER_RED }),
+      ],
+      { extra: blocks },
+    );
+    r.frame();
+    const [first, second] = clipped(scene.ctx.calls);
+    expect(lines(first!)).toBe(4);
+    expect(lines(second!)).toBe(1);
+  });
+
+  it('keeps the frozen layers on screen in model space and on the sheet', () => {
+    const { r, scene } = setup([
+      ...twoViewports,
+      onPaper('27', line(0, 0, 10, 0), { layer: LAYER_RED }),
+    ]);
+    r.frame();
+    expect(scene.ctx.named('stroke').map((s) => s[1])).toContain('#ff0000');
+  });
+});
+
+describe('viewport linetype scale (PSLTSCALE, M1-18 part 2)', () => {
+  /** The first dash's length in model units, from a viewport at scale 2. */
+  function firstDash(flags: number | undefined): number {
+    const { r, scene } = setup(
+      [onPaper('30', viewport()), entity('20', line(0, 10, 20, 10), { layer: LAYER_DASHED })],
+      { extra: flags === undefined ? {} : { layoutFlags: flags } },
+    );
+    r.setView({ center: { x: 90, y: 40 }, scale: 8 });
+    r.frame();
+    const inside = clipped(scene.ctx.calls)[0]!;
+    const m = inside.findIndex((c) => c[0] === 'moveTo');
+    return Number(inside[m + 1]![1]) - Number(inside[m]![1]);
+  }
+
+  it('draws dashes in paper units under PSLTSCALE 1 (the default)', () => {
+    // DASHED: 0.5 dash, 0.25 gap. At 2 paper units per model unit a 0.5-unit paper dash is
+    // 0.25 model units; the first dash of a fitted line is half a dash plus half the leftover.
+    const ps = firstDash(1);
+    expect(firstDash(undefined)).toBeCloseTo(ps, 12);
+    const ms = firstDash(0);
+    // 20 / 0.75 leaves 0.5 over (26 patterns + 0.5): first dash 0.25 + 0.25 = 0.5 at scale 1;
+    // 20 / 0.375 leaves 0.125 over: first dash 0.125 + 0.0625 = 0.1875 at scale 1/2.
+    expect(ms).toBeCloseTo(0.5, 9);
+    expect(ps).toBeCloseTo(0.1875, 9);
+  });
+
+  it('draws model space through PSLTSCALE 0 viewports at the model linetype scale', () => {
+    expect(firstDash(0)).toBeGreaterThan(firstDash(1));
   });
 });
