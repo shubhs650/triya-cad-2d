@@ -2,6 +2,8 @@ import { ACadVersion } from '../ACadVersion.js';
 import { CadDocument } from '../CadDocument.js';
 import { CadObject } from '../CadObject.js';
 import { UnknownEntity } from '../Entities/UnknownEntity.js';
+import { Insert } from '../Entities/Insert.js';
+import { Polyline } from '../Entities/Polyline.js';
 import { CadDictionary } from '../Objects/CadDictionary.js';
 import { CadDictionaryWithDefault } from '../Objects/CadDictionaryWithDefault.js';
 import { UnknownNonGraphicalObject } from '../Objects/UnknownNonGraphicalObject.js';
@@ -109,6 +111,14 @@ export abstract class CadDocumentBuilder {
 		for (const obj of this.unreachableObjects) {
 			this.documentToBuild.unreachableObjects.push(obj);
 			this.documentToBuild.registerCollection(obj);
+		}
+
+		// Templates add attributes, vertices and SEQENDs after their owner joined the document, and
+		// those children are held by the owner, not registered: give them the document's table entries.
+		for (const obj of [...this.documentToBuild.getCadObjects()]) {
+			if ((obj instanceof Polyline || obj instanceof Insert) && obj.document != null) {
+				obj.assignHeldChildren(obj.document);
+			}
 		}
 	}
 

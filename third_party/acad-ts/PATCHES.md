@@ -2010,3 +2010,20 @@ DWG files can hold objects whose owner is not in the file. The reader never reac
 A BLOCK with no name and no BLOCK_RECORD failed with an empty table entry name and was dropped. With `keepUnreachableObjects`, the block is kept as raw entities and written back in the BLOCKS section.
 
 </details>
+
+### 0106 — attributes, vertices and SEQENDs never take the document's table entries
+
+- **File:** `third_party/acad-ts-patches/0106-held-children-table-entries.patch`
+- **Touches:** `src/Entities/Insert.ts`, `src/Entities/Polyline.ts`, `src/Entities/PolyfaceMesh.ts`, `src/IO/CadDocumentBuilder.ts`
+- **Symptom:** an INSERT's attributes and `SEQEND`, a polyline's vertices and `SEQEND` and a polyface mesh's faces are held inside their owner, not registered with the document, so `assignDocument` never ran on them. A child whose record had no 8/6/7 kept a detached `Layer.default`/`LineType.byLayer`/`TextStyle.default` instead of the document's `0`/`ByLayer`/`STANDARD`, and its `document` stayed null. From R13 on the DXF writer omits code 8 for layer `0`, so after a save such a child read back with no layer at all. ezdxf `small_r13.dxf` VERTEX 78, acadsharp `sample_AC1009.dxf` ATTRIB 705 (style), `sample_AC1015.dxf` VERTEX 423 / SEQEND 42A after a DXF save; 388 differences across 19 corpus files once the structural diff compares held children.
+- **Fix:** `Insert` and `Polyline` gain `assignHeldChildren(doc)`, called from `assignDocument` and, at the end of a build, by the builder for every insert and polyline (the readers push the children after the owner joined the document). `PolyfaceMesh` extends it to its faces. `unassignDocument` releases the children too. A child already in a document is left alone.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0106 attributes, vertices and SEQENDs take their layer, linetype and style from the document".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Assign the document to attributes, vertices, faces and SEQENDs
+
+Entities held inside an INSERT or a POLYLINE never had `assignDocument` called, so their layer, linetype and text style stayed detached defaults rather than the document's table entries, and a layer-0 child lost its layer after a DXF save (the writer omits code 8 for layer 0). Owners now assign their held children when they join a document and after the reader builds them, and release them when they leave.
+
+</details>
