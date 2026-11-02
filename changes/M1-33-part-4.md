@@ -1,0 +1,1 @@
+- M1-33 part 4 (#107): the solid history of R14–R2004 DWG 3D solids, with its graph, and an R14 plot-style default placeholder are kept on open (acad-ts patches 0101, 0102); objects never loaded on open 42 → 23.

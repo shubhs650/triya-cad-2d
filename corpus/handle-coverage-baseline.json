@@ -112,13 +112,7 @@
     },
     "public/third-party/acadsharp/sample_AC1014.dwg": {
       "declared": 1242,
-      "lost": {
-        "ACAD_EVALUATION_GRAPH": "D67 D6C",
-        "ACDBPLACEHOLDER": "F",
-        "ACSH_BOX_CLASS": "D68",
-        "ACSH_EXTRUSION_CLASS": "D6D",
-        "ACSH_HISTORY_CLASS": "D66 D6B"
-      }
+      "lost": {}
     },
     "public/third-party/acadsharp/sample_AC1015_ascii.dxf": {
       "declared": 1025,
@@ -130,12 +124,7 @@
     },
     "public/third-party/acadsharp/sample_AC1015.dwg": {
       "declared": 1047,
-      "lost": {
-        "ACAD_EVALUATION_GRAPH": "D67 D6C",
-        "ACSH_BOX_CLASS": "D68",
-        "ACSH_EXTRUSION_CLASS": "D6D",
-        "ACSH_HISTORY_CLASS": "D66 D6B"
-      }
+      "lost": {}
     },
     "public/third-party/acadsharp/sample_AC1018_ascii.dxf": {
       "declared": 995,
@@ -147,12 +136,7 @@
     },
     "public/third-party/acadsharp/sample_AC1018.dwg": {
       "declared": 1014,
-      "lost": {
-        "ACAD_EVALUATION_GRAPH": "D67 D6C",
-        "ACSH_BOX_CLASS": "D68",
-        "ACSH_EXTRUSION_CLASS": "D6D",
-        "ACSH_HISTORY_CLASS": "D66 D6B"
-      }
+      "lost": {}
     },
     "public/third-party/acadsharp/sample_AC1021_ascii.dxf": {
       "declared": 925,

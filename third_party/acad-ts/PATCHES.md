@@ -1942,3 +1942,37 @@ Empty cells are written as unknown-type values with a 91. Setting it threw "Inva
 R2007+ DXF stores a date value as a byte count (92) and a SYSTEMTIME (310). The reader ignored both and the writer emitted `91 0`, so dates in fields and table cells were lost on a DXF save. This decodes and encodes the SYSTEMTIME the same way the DWG reader and writer do.
 
 </details>
+
+### 0101 — a pre-R2007 3DSOLID history is not in the document
+
+- **File:** `third_party/acad-ts-patches/0101-dwg-pre-r2007-solid-history.patch`
+- **Touches:** `src/IO/CadDocumentBuilder.ts`
+- **Symptom:** before R2007 a 3DSOLID has no history handle (350 came with R2007). Its `ACSH_HISTORY_CLASS` is owned by the solid (its owner handle) but referenced only from the `ACAD_XREC_ROUNDTRIP` XRECORD in the solid's extension dictionary (a 360 entry). The DWG reader read it from that entry, but nothing registered it, so the history and the evaluation graph and `ACSH_*` nodes it owns (kept raw since M1-30) were not in the document. acadsharp `sample_AC1014/1015/1018.dwg`: solid D65 → history D66 → graph D67 → box D68, and solid D6A → D6B → D6C → D6D (18 handles).
+- **Fix:** when an object's owner holds it through an owner entry (350–369) of an XRECORD in the owner's extension dictionary, the builder registers it with that owner, as it already does for an object owned through an XRECORD's entries.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0101 a pre-R2007 3DSOLID keeps its history, and the history its graph".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Register pre-R2007 3DSOLID history objects
+
+Before R2007 a solid's ACSH_HISTORY_CLASS is referenced from an XRECORD in the solid's extension dictionary, not from the solid. The object was read but never registered, so it, and the graph it owns, were missing from the document. The builder now registers an object held through an owner entry of an XRECORD in its owner's extension dictionary.
+
+</details>
+
+### 0102 — a dictionary's default entry that is not one of its entries is lost
+
+- **File:** `third_party/acad-ts-patches/0102-dictionary-default-entry.patch`
+- **Touches:** `src/IO/CadDocumentBuilder.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** acadsharp `sample_AC1014.dwg`'s `ACAD_PLOTSTYLENAME` (E) has no entries; its default (340) is `ACDBPLACEHOLDER` F. Only the dictionary held the placeholder, so it was not in the document, and a DXF save wrote the 340 but never the object (the DWG writer already wrote it).
+- **Fix:** the builder registers a default entry owned by its dictionary-with-default, and the DXF writer writes the default entry with the dictionary's entries (it skips one already written).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0102 a dictionary-with-default keeps a default entry that is not one of its entries".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep a DICTIONARYWDFLT default entry that is not one of its entries
+
+A dictionary-with-default can name a default that is not one of its entries. The default was resolved but never registered with the document, and the DXF writer wrote its handle without writing the object. Both are fixed.
+
+</details>

@@ -1,0 +1,32 @@
+diff --git a/src/IO/CadDocumentBuilder.ts b/src/IO/CadDocumentBuilder.ts
+index e36dedf..35a365d 100644
+--- a/src/IO/CadDocumentBuilder.ts
++++ b/src/IO/CadDocumentBuilder.ts
+@@ -129,6 +129,11 @@ export abstract class CadDocumentBuilder {
+ 				// register it with the graph, as an XRECORD entry is.
+ 				child.owner ??= owner;
+ 				ownedThroughEntries.push(child);
++			} else if (owner?.xDictionary != null && CadDocumentBuilder._ownsThroughXRecord(owner.xDictionary, child)) {
++				// Before R2007 a 3DSOLID's history (ACSH_HISTORY_CLASS) is owned by the solid but referenced
++				// only from an XRECORD in the solid's extension dictionary; R2007+ references it from the solid (350).
++				child.owner ??= owner;
++				ownedThroughEntries.push(child);
+ 			}
+ 		}
+ 
+@@ -153,6 +158,15 @@ export abstract class CadDocumentBuilder {
+ 		}
+ 	}
+ 
++	private static _ownsThroughXRecord(dictionary: CadDictionary, child: CadObject): boolean {
++		for (const entry of dictionary) {
++			if (entry instanceof XRecord && entry.entries.some(e => e.value === child && e.code >= 350 && e.code <= 369)) {
++				return true;
++			}
++		}
++		return false;
++	}
++
+ 	buildDataStorage(): void {
+ 		if (this.dataStorage === null) return;
+ 
