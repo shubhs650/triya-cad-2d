@@ -17,6 +17,8 @@ import type { TextMeasure } from '../annotation/tolerance';
 import type { Vec2 } from '../geom/types';
 import type { Handle } from '../model/handle';
 import { splineCurve } from '../model/spline';
+import { polylineWidths } from '../model/width';
+import { wideOutlines, type WideVertex } from '../geom/width';
 import type {
   AttdefGeometry,
   DimensionGeometry,
@@ -100,11 +102,15 @@ function polylineBounds(
   closed: boolean,
   halfWidth: number,
   tol: Tolerance,
+  wide?: readonly WideVertex[],
 ): EntityBounds {
   if (vertices.length === 0) return EMPTY;
   const kernel: Polyline = { kind: 'LWPOLYLINE', vertices, closed };
-  const b = vertices.length === 1 ? boxOf(vertices) : curveBounds(kernel, tol);
-  return boxed(pad(b, halfWidth));
+  let b = pad(vertices.length === 1 ? boxOf(vertices) : curveBounds(kernel, tol), halfWidth);
+  // Mitred corners of wide segments reach past half the width (M1-46): add the outlines the
+  // renderer fills.
+  if (wide) for (const f of wideOutlines(wide, closed).fills) b = unionBox(b, boxOf(f));
+  return boxed(b);
 }
 
 function maxWidth(vertices: readonly PolylineVertex[], start = 0, end = 0, constant = 0): number {
@@ -318,12 +324,13 @@ export function entityBounds(
         geom.closed,
         maxWidth(geom.vertices, 0, 0, geom.constantWidth) / 2,
         ctx.tol,
+        polylineWidths(geom),
       );
     case 'POLYLINE': {
       // A 3D polyline is straight segments in plan, whatever bulges the vertices carry.
       const vertices = geom.is3d ? geom.vertices.map((v) => ({ ...v, bulge: 0 })) : geom.vertices;
-      const half = maxWidth(geom.vertices, geom.startWidth, geom.endWidth) / 2;
-      return polylineBounds(vertices, geom.closed, half, ctx.tol);
+      const half = geom.is3d ? 0 : maxWidth(geom.vertices, geom.startWidth, geom.endWidth) / 2;
+      return polylineBounds(vertices, geom.closed, half, ctx.tol, polylineWidths(geom));
     }
     case 'SOLID':
     case 'TRACE':
