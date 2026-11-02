@@ -186,6 +186,11 @@ export type RenderPrimitive =
       readonly both: boolean;
       readonly color: PrimitiveColor;
       /**
+       * A linetype (M1-45 part 2): its elements in world units (dash > 0, gap < 0, dot 0) and
+       * one repetition, laid out from `base` at draw time over the part on screen.
+       */
+      readonly dashes?: { readonly lengths: readonly number[]; readonly period: number };
+      /**
        * Inside a block reference (M1-18): the layers that hide this part when frozen in a
        * viewport, its own effective layer and every nested reference's above it.
        */

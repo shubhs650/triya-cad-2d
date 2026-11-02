@@ -1075,9 +1075,17 @@ export class Canvas2DRenderer implements Renderer {
         world();
         if (prim.kind === 'infinite') {
           const seg = clipInfinite(prim, box);
-          if (seg) {
-            ctx.moveTo(seg[0] - ox, seg[1] - oy);
-            ctx.lineTo(seg[2] - ox, seg[3] - oy);
+          if (!seg) continue;
+          const d = prim.dashes;
+          // The same LOD as other dashed strokes: under a pixel per repetition, continuous.
+          if (d && d.period * scale >= 1) {
+            dashInfinite(prim, d, seg, (x1, y1, x2, y2) => {
+              ctx.moveTo(x1 - ox, y1 - oy);
+              ctx.lineTo(x2 - ox, y2 - oy);
+            });
+          } else {
+            ctx.moveTo(seg.x1 - ox, seg.y1 - oy);
+            ctx.lineTo(seg.x2 - ox, seg.y2 - oy);
           }
         } else {
           // LOD for a dashed primitive handed in directly (the transient layer).
@@ -1275,11 +1283,52 @@ function buildPath(ctx: Canvas2D, a: readonly number[], ox: number, oy: number):
   }
 }
 
-/** The part of an XLINE or RAY inside `box`, as x1 y1 x2 y2 (Liang–Barsky). */
+interface InfiniteSegment {
+  readonly x1: number;
+  readonly y1: number;
+  readonly x2: number;
+  readonly y2: number;
+  /** Distances from the base point along the unit direction. */
+  readonly t0: number;
+  readonly t1: number;
+  readonly dx: number;
+  readonly dy: number;
+}
+
+/**
+ * An XLINE's or RAY's linetype over its part on screen, from `t0` to `t1`. The pattern starts
+ * at the base point and repeats both ways, so a dash stays where it is while the view moves;
+ * AutoCAD documents no start for an infinite line's pattern, and this is what its display
+ * shows a drafter (dashes that do not crawl when panning).
+ */
+function dashInfinite(
+  p: Extract<RenderPrimitive, { kind: 'infinite' }>,
+  d: { readonly lengths: readonly number[]; readonly period: number },
+  seg: InfiniteSegment,
+  draw: (x1: number, y1: number, x2: number, y2: number) => void,
+): void {
+  const at = (t: number): [number, number] => [p.base.x + seg.dx * t, p.base.y + seg.dy * t];
+  for (let k = Math.floor(seg.t0 / d.period); k * d.period <= seg.t1; k++) {
+    let s = k * d.period;
+    for (const len of d.lengths) {
+      const e = s + Math.abs(len);
+      if (len >= 0) {
+        const a = Math.max(s, seg.t0);
+        const b = Math.min(e, seg.t1);
+        // A dot (or a dash's start on screen) as a zero-length segment the round cap draws.
+        if (b > a || (len === 0 && s >= seg.t0 && s <= seg.t1))
+          draw(...at(a), ...at(len === 0 ? a : b));
+      }
+      s = e;
+    }
+  }
+}
+
+/** The part of an XLINE or RAY inside `box` (Liang–Barsky). */
 function clipInfinite(
   p: Extract<RenderPrimitive, { kind: 'infinite' }>,
   box: Box,
-): [number, number, number, number] | undefined {
+): InfiniteSegment | undefined {
   const len = Math.hypot(p.direction.x, p.direction.y);
   if (!(len > 0)) return undefined;
   const dx = p.direction.x / len;
@@ -1297,7 +1346,16 @@ function clipInfinite(
   };
   if (!clip(p.base.x, dx, box.minX, box.maxX) || !clip(p.base.y, dy, box.minY, box.maxY))
     return undefined;
-  return [p.base.x + dx * t0, p.base.y + dy * t0, p.base.x + dx * t1, p.base.y + dy * t1];
+  return {
+    x1: p.base.x + dx * t0,
+    y1: p.base.y + dy * t0,
+    x2: p.base.x + dx * t1,
+    y2: p.base.y + dy * t1,
+    t0,
+    t1,
+    dx,
+    dy,
+  };
 }
 
 const segDist = (
