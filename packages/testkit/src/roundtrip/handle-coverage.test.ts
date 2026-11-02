@@ -56,6 +56,27 @@ describe('declaredHandles', () => {
     ]);
   });
 
+  it('does not count SORTENTSTABLE sort handles (5 after 331) as declared objects', () => {
+    // DXF reference, SORTENTSTABLE: after AcDbSortentsTable, each 331 (entity) is followed by
+    // a 5 that is the entity's sort handle, a draw-order key and not an object of its own.
+    const bytes = ascii([
+      [0, 'SECTION'],
+      [2, 'OBJECTS'],
+      [0, 'SORTENTSTABLE'],
+      [5, '21C'],
+      [330, '1F'],
+      [100, 'AcDbSortentsTable'],
+      [330, '1F'],
+      [331, '218'],
+      [5, '21A'],
+      [331, '219'],
+      [5, '220'],
+      [0, 'ENDSEC'],
+      [0, 'EOF'],
+    ]);
+    expect([...declaredHandles(bytes).handles]).toEqual([[0x21c, 'SORTENTSTABLE']]);
+  });
+
   it('reads binary DXF (R12 one-byte and R13+ two-byte group codes) like its ASCII twin', () => {
     // The twins were saved separately, so their handle values differ; their objects do not.
     const tally = (m: Map<number, string>): Record<string, number> => {
@@ -95,6 +116,13 @@ describe('documentHandles', () => {
     const have = documentHandles(readCadDocument(bytes));
     // POLYLINE 31: VERTEX 33–36, SEQEND 32. INSERT 3B: ATTRIB 3D–3F, SEQEND 3C.
     for (const h of [0x31, 0x32, 0x33, 0x36, 0x3b, 0x3c, 0x3d, 0x3f]) expect(have).toContain(h);
+  });
+
+  it('includes the extension dictionaries of those children, and what the dictionaries hold', () => {
+    const bytes = corpus('third-party/acadsharp/sample_AC1021_ascii.dxf');
+    const have = documentHandles(readCadDocument(bytes));
+    // ATTRIB 79D (a multi-line attribute) → DICTIONARY 137C → XRECORD 137D, 137E.
+    for (const h of [0x79d, 0x137c, 0x137d, 0x137e]) expect(have).toContain(h);
   });
 });
 

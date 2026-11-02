@@ -6,6 +6,7 @@
  */
 import {
   ACadVersion,
+  CadDictionary,
   DwgObjectReader,
   DwgReader,
   DwgSectionDefinition,
@@ -15,6 +16,7 @@ import {
   PolyfaceMesh,
   Polyline,
   type CadDocument,
+  type CadObject,
   type DxfClassCollection,
 } from '@node-projects/acad-ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
@@ -65,13 +67,21 @@ export function declaredHandles(
  */
 export function documentHandles(doc: CadDocument): Set<number> {
   const out = new Set<number>();
+  // A child is not registered with the document, so neither is its extension dictionary; the
+  // dictionary and its entries are reached only through the child.
+  const addTree = (o: CadObject): void => {
+    if (out.has(o.handle)) return;
+    out.add(o.handle);
+    if (o.xDictionary) addTree(o.xDictionary);
+    if (o instanceof CadDictionary) for (const e of o) addTree(e);
+  };
   for (const o of doc.getCadObjects()) {
     out.add(o.handle);
     const children = o instanceof Polyline ? o.vertices : o instanceof Insert ? o.attributes : null;
     if (!children) continue;
-    for (const c of children) out.add(c.handle);
-    if (children.seqend) out.add(children.seqend.handle);
-    if (o instanceof PolyfaceMesh) for (const f of o.faces) out.add(f.handle);
+    for (const c of children) addTree(c);
+    if (children.seqend) addTree(children.seqend);
+    if (o instanceof PolyfaceMesh) for (const f of o.faces) addTree(f);
   }
   out.delete(0);
   return out;
@@ -182,13 +192,19 @@ function dxfHandles(groups: Iterable<Group>): Map<number, string> {
   const out = new Map<number, string>();
   let type = '';
   let skip = false; // HEADER ($HANDSEED is a 5) and CLASSES carry no object handles
+  let subclassed = false; // a 100 marker has been seen in the current record
   for (const [code, value] of groups) {
     if (code === 0) {
       type = value.trim();
+      subclassed = false;
       continue;
     }
+    if (code === 100) subclassed = true;
     if (code === 2 && type === 'SECTION') skip = value === 'HEADER' || value === 'CLASSES';
     if (skip || type === 'SECTION') continue;
+    // SORTENTSTABLE pairs each 331 entity with a 5 sort handle after AcDbSortentsTable (DXF
+    // reference, SORTENTSTABLE). A sort handle is a draw-order key, not an object.
+    if (code === 5 && type === 'SORTENTSTABLE' && subclassed) continue;
     // DIMSTYLE records keep their handle in 105 because 5 is DIMBLK there (DXF reference,
     // DIMSTYLE group codes).
     if (!(code === 105 || (code === 5 && type !== 'DIMSTYLE'))) continue;
