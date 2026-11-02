@@ -116,6 +116,10 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     if (dict instanceof CadDictionaryWithDefault) {
       this._writer.write(100, DxfSubclassMarker.dictionaryWithDefault);
       this._writer.writeHandle(340, dict.defaultEntry);
+      // A default entry that is not one of the entries is written by nothing else.
+      if (dict.defaultEntry != null) {
+        this.holder.objects.push(dict.defaultEntry);
+      }
     }
   }
 
