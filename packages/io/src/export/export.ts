@@ -8,7 +8,7 @@
 // it again from the bytes it kept). The original is mutated, so each export needs a fresh read.
 
 import type { CadDocument } from '@node-projects/acad-ts';
-import { BlockRecord, Entity as AcadEntity, LineType } from '@node-projects/acad-ts';
+import { ACadVersion, BlockRecord, Entity as AcadEntity, LineType } from '@node-projects/acad-ts';
 import {
   compareHandles,
   type DocumentInit,
@@ -132,17 +132,60 @@ function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
 }
 
 /**
- * What acad-ts cannot write to the format at hand: its DWG writer leaves a LARGE_RADIAL_DIMENSION
- * out (roadmap M1-74), and its DXF writer a PDFUNDERLAY's normal (210) and clip boundary (11,
- * M1-83), so an edited or new one would be lost.
+ * An R12 viewport states only its frame, status and ID as groups; the view and the layers frozen
+ * in it are the ACAD MVIEW xdata (DXF R12 reference, VIEWPORT), which Triya does not write yet,
+ * and the R2000 settings do not exist.
+ */
+const R12_VIEW = [
+  'viewCenter',
+  'viewHeight',
+  'viewDirection',
+  'viewTarget',
+  'twist',
+  'lensLength',
+  'frontClip',
+  'backClip',
+  'flags',
+  'frozenLayers',
+  'clipBoundary',
+  'plotStyleSheet',
+  'renderMode',
+  'visualStyle',
+] as const;
+
+/**
+ * What acad-ts cannot write to the format at hand: an R12 viewport's view (M1-86), its DWG writer leaves a LARGE_RADIAL_DIMENSION
+ * out (roadmap M1-74) and a VIEWPORT's style sheet and visual style (M1-85), and its DXF writer
+ * a PDFUNDERLAY's normal (210) and clip boundary (11, M1-83), so an edited or new one would be
+ * lost.
  */
 function formatProblems(
   format: CadFormat | undefined,
+  version: ACadVersion | undefined,
   before: EntityInit | undefined,
   e: Entity,
 ): string[] {
   if (format === 'dwg' && e.type === 'LARGE_RADIAL_DIMENSION') {
     return [`${e.type} ${e.handle}: acad-ts has no DWG writer for it (M1-74)`];
+  }
+  if (version === ACadVersion.AC1009 && e.geom.kind === 'VIEWPORT') {
+    const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;
+    const g = e.geom;
+    if (!b || R12_VIEW.some((k) => !same(b[k], g[k]))) {
+      return [`${e.type} ${e.handle}: its R12 view lives in the MVIEW xdata (M1-86)`];
+    }
+  }
+  if (format === 'dwg' && e.geom.kind === 'VIEWPORT') {
+    const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;
+    const g = e.geom;
+    const lost =
+      (b ? b.plotStyleSheet !== g.plotStyleSheet : g.plotStyleSheet !== '') ||
+      (b ? b.visualStyle !== g.visualStyle : g.visualStyle !== undefined);
+    if (lost) {
+      return [
+        `${e.type} ${e.handle}: acad-ts writes no DWG style sheet or visual style for it (M1-85)`,
+      ];
+    }
   }
   if (format === 'dxf' && e.geom.kind === 'PDFUNDERLAY') {
     const b = before?.geom.kind === 'PDFUNDERLAY' ? before.geom : undefined;
@@ -166,6 +209,7 @@ function plan(
   format: CadFormat | undefined,
 ): { plan: Plan; problems: string[] } {
   const problems = [...nonEntityProblems(base, model), ...orderProblems(base, model)];
+  const version = doc.header?.version;
   const out: Plan = { updated: [], added: [], removed: [] };
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
   for (const b of base.entities ?? []) {
@@ -184,12 +228,15 @@ function plan(
       problems.push(`${m.type} ${m.handle}: moves to another block`);
       continue;
     }
-    problems.push(...entityProblems(r, b as Entity, m), ...formatProblems(format, b, m));
+    problems.push(...entityProblems(r, b as Entity, m), ...formatProblems(format, version, b, m));
     out.updated.push({ acad, before: b, after: m });
   }
   for (const m of model.entities()) {
     if (baseByHandle.has(m.handle)) continue;
-    problems.push(...entityProblems(r, undefined, m), ...formatProblems(format, undefined, m));
+    problems.push(
+      ...entityProblems(r, undefined, m),
+      ...formatProblems(format, version, undefined, m),
+    );
     const block = r.store.original(m.owner);
     if (!(block instanceof BlockRecord)) {
       problems.push(`${m.type} ${m.handle}: owner block ${m.owner} is not in the drawing`);
