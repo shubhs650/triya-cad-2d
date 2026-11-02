@@ -16,3 +16,4 @@ export { aciOfTrueColor } from './map/common';
 export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/entities';
 export { mapSortEnts } from './map/sortents';
 export { mapLayouts } from './map/layouts';
+export { mapImageObjects, type ImageObject } from './map/images';

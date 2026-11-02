@@ -185,7 +185,8 @@ function drawLayout(
   return { expected, drawn: layers[0]!.groups.filter((n) => n > 0).length };
 }
 const MATCHING = 70;
-const VIEWPORTS_DRAWN = 74;
+// 74 → 82 with images and wipeouts (M1-19): viewports that show only those now draw.
+const VIEWPORTS_DRAWN = 82;
 
 describe('layouts on the public corpus', () => {
   it.each(files.map((f) => [f.path]))('%s', (path) => {
