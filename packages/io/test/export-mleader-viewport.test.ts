@@ -194,7 +194,10 @@ const find = (model: DocumentModel, type: string, n = 0): Entity =>
   [...model.entities()].filter((e) => e.type === type)[n]!;
 
 /** The handle of a named record or dictionary entry of the file. */
-function handleOf(kind: 'block' | 'style' | 'layer' | 'linetype' | 'mleaderstyle' | 'visualstyle', name: string): string {
+function handleOf(
+  kind: 'block' | 'style' | 'layer' | 'linetype' | 'mleaderstyle' | 'visualstyle',
+  name: string,
+): string {
   const doc = readCadDocument(FILE);
   const o =
     kind === 'block'
@@ -431,9 +434,7 @@ describe('triyaToAcad multileaders and viewports', () => {
     const model = open();
     const e = find(model, 'MULTILEADER');
     const g = ml(e.geom);
-    const branches = [
-      { ...g.branches[0]!, lines: [{ index: 0, vertices: [P(-1, -1), P(4, 4)] }] },
-    ];
+    const branches = [{ ...g.branches[0]!, lines: [{ index: 0, vertices: [P(-1, -1), P(4, 4)] }] }];
     edit(model, (b) => b.updateEntity(e.id, { geom: changed(g, { branches }) }));
     const original = readCadDocument(FILE).getCadObject(Number.parseInt(e.handle, 16));
     const saved = readCadDocument(save(model)).getCadObject(Number.parseInt(e.handle, 16));
@@ -477,7 +478,8 @@ describe('triyaToAcad multileaders and viewports', () => {
 
   it('refuses what it cannot write and leaves the original as it was', () => {
     const geom = (m: DocumentModel, type: string, n = 0) => find(m, type, n).geom;
-    const update = (type: string, n: number, changes: (g: EntityGeometry) => Record<string, unknown>) =>
+    const update =
+      (type: string, n: number, changes: (g: EntityGeometry) => Record<string, unknown>) =>
       (b: ChangeSetBuilder, m: DocumentModel) => {
         const e = find(m, type, n);
         b.updateEntity(e.id, { geom: changed(e.geom, changes(geom(m, type, n))) });

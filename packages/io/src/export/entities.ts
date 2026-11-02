@@ -1837,7 +1837,11 @@ const viewportWriter: Writer<ViewportGeometry> = {
         if (!resolve(r, l, Layer)) out.push(`frozen layer ${l} does not exist`);
       }
     }
-    if (d('visualStyle') && g.visualStyle !== undefined && !resolve(r, g.visualStyle, VisualStyle)) {
+    if (
+      d('visualStyle') &&
+      g.visualStyle !== undefined &&
+      !resolve(r, g.visualStyle, VisualStyle)
+    ) {
       out.push(`visual style ${g.visualStyle} does not exist`);
     }
     return out;
