@@ -37,6 +37,7 @@ import {
   HatchPatternLine,
   HatchStyleType,
   Layer,
+  Layout,
   Leader,
   LeaderLine,
   LeaderRoot,
@@ -64,6 +65,8 @@ import {
   Vertex2D,
   Vertex3D,
   ViewModeType,
+  Viewport,
+  VisualStyle,
   XY,
   XYZ,
 } from '@node-projects/acad-ts';
@@ -1011,5 +1014,69 @@ describe('acad-ts local patches', () => {
     expect(same.blockContentId?.name).toBe('TAG');
     expect(same.contextData.blockContent?.name).toBe('TAG');
     expect(same.contextData.leaderRoots[0]!.lines.map((l) => l.index)).toEqual([0, 1]);
+  });
+
+  it('0131 a DWG VIEWPORT keeps its style sheet (DXF 1) and visual style (348)', () => {
+    const save = (version: ACadVersion) => {
+      const doc = new CadDocument(version);
+      const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadVisualStyle)!;
+      for (const name of ['2dWireframe', 'Conceptual']) styles.add(new VisualStyle(name));
+      // A new acad-ts document has no LAYOUT objects; AutoCAD links each space block to one.
+      const layouts = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadLayout)!;
+      for (const [name, space] of [
+        ['Model', doc.modelSpace!],
+        ['Layout1', doc.paperSpace!],
+      ] as const) {
+        const layout = new Layout(name);
+        layouts.add(layout);
+        layout.associatedBlock = space;
+      }
+      const paper = new Viewport();
+      paper.id = 1;
+      paper.width = 297;
+      paper.height = 210;
+      paper.viewHeight = 210;
+      const view = new Viewport();
+      view.id = 2;
+      view.center = new XYZ(100, 100, 0);
+      view.width = 80;
+      view.height = 60;
+      view.viewHeight = 30;
+      view.styleSheetName = 'monochrome.ctb';
+      for (const v of [paper, view]) doc.paperSpace!.entities.add(v);
+      view.visualStyle = styles.getEntry<VisualStyle>('Conceptual')!;
+      const bytes = writeCadDocument(doc, { format: 'dwg' });
+      return readCadDocument(bytes).getCadObject(Number(view.handle)) as Viewport;
+    };
+
+    for (const version of [ACadVersion.AC1021, ACadVersion.AC1024, ACadVersion.AC1032]) {
+      const v = save(version);
+      expect(v.styleSheetName, ACadVersion[version]).toBe('monochrome.ctb');
+      expect(v.visualStyle?.name, ACadVersion[version]).toBe('Conceptual');
+    }
+    // R2000 and R2004 store the style sheet but have no visual style (it is R2007+ in DWG,
+    // as 348 is in DXF).
+    for (const version of [ACadVersion.AC1015, ACadVersion.AC1018]) {
+      const v = save(version);
+      expect(v.styleSheetName, ACadVersion[version]).toBe('monochrome.ctb');
+      expect(v.visualStyle, ACadVersion[version]).toBeNull();
+    }
+
+    // The DXF writer writes only the VISUALSTYLE objects it read from DXF, so a DXF save of one
+    // read from DWG leaves 348 out rather than naming an object the file does not have.
+    const v = save(ACadVersion.AC1032);
+    const dxf = writeCadDocument(v.document!, { format: 'dxf' });
+    const lines = String.fromCharCode(...dxf).split(/\r?\n/);
+    const objects: [string, string][][] = [];
+    for (let k = 0; k + 1 < lines.length; k += 2) {
+      const pair: [string, string] = [lines[k]!.trim(), lines[k + 1]!.trim()];
+      if (pair[0] === '0') objects.push([]);
+      objects.at(-1)?.push(pair);
+    }
+    const hex = v.handle.toString(16).toUpperCase();
+    const viewport = objects.find((o) => o[0]![1] === 'VIEWPORT' && o[1]?.[1] === hex)!;
+    const codes = viewport.map(([code]) => code);
+    expect(codes).not.toContain('348');
+    expect(readCadDocument(dxf).getCadObject(Number(v.handle))).toBeTruthy();
   });
 });

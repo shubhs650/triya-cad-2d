@@ -2125,7 +2125,7 @@ export class DwgObjectReader extends DwgSectionIO {
     }
     if (this.r2007Plus) {
       this._handleReference(); // background
-      this._handleReference(); // visual style
+      template.visualStyleHandle = this._handleReference();
       this._handleReference(); // shade plot
       template.sunHandle = this._handleReference();
     }

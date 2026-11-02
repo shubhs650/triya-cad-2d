@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83) and 0130 (M1-84) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84) and 0131 (M1-85) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2453,5 +2453,22 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 **Title:** Read the DXF multileader arrowhead, content block and leader line index
 
 `DxfSectionReaderBase._readMLeader` ignored 342 (arrowhead block) and 344 (block content), `_readMultiLeaderObjectContextData` ignored 341 (block content in the context data) and `_readMultiLeaderLine` ignored 91 (the leader line index), although `DxfSectionWriterBase` writes all four and the DWG reader keeps them. A block multileader saved to DXF read back without its block and with the default arrowhead, and every leader line with index 0. This reads the three handles into the existing `CadMLeaderTemplate.arrowheadHandle` / `blockContentHandle` and `CadMLeaderAnnotContextTemplate.blockRecordHandle`, which the templates already resolve, and 91 into `LeaderLine.index`.
+
+</details>
+
+### 0131 — DWG VIEWPORT loses its style sheet (DXF 1) and visual style (348)
+
+- **File:** `third_party/acad-ts-patches/0131-dwg-viewport-style-sheet-visual-style.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** the DWG writer wrote a viewport's plot style sheet name as an empty string and its visual style handle as null, so every DWG save of a viewport with a plot style table or a visual style dropped them. The DWG reader read the R2007+ visual style handle and threw it away, so 33 of the 51 viewports in the public corpus DWGs lost their visual style on read, which the round trip (acad-ts against itself) could not see. Found by Triya M1-75 part 5, fixed in M1-85.
+- **Fix:** the writer writes `styleSheetName` (R2000+) and the visual style as a hard pointer (R2007+), where the ODA specification (VIEWPORT, 348) places them; the reader keeps the visual style handle for the template to resolve, as the DXF reader already does for 348. The background (332) and shade plot (333) handles beside it stay null: `Viewport` has no field for either and the DXF reader drops them too. With DWG visual styles now read, the DXF writer names a visual style in 348 only when it writes that object, that is one read from DXF and kept as its raw codes; one read from DWG has no DXF writer, so naming it would leave a handle to an object the file does not have.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0131 a DWG VIEWPORT keeps its style sheet (DXF 1) and visual style (348)"; `packages/io/test/export-mleader-viewport.test.ts` → "writes a VIEWPORT’s style sheet to dwg so it maps back" and "writes a viewport’s visual style to DWG so it maps back (M1-85)".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the DWG viewport style sheet and visual style, and keep the visual style on read
+
+`DwgObjectWriter._writeViewport` wrote an empty style sheet name and a null visual style handle, and `DwgObjectReader._readViewport` discarded the R2007+ visual style handle it read, so a viewport's plot style table and visual style did not survive a DWG save, and the visual style did not survive a DWG read. This writes `styleSheetName` and `visualStyle` (hard pointer, R2007+) and assigns the read handle to `CadViewportTemplate.visualStyleHandle`, which the template already resolves for DXF. Since a visual style read from DWG has no DXF object writer, `DxfSectionWriterBase._writeViewport` now writes 348 only for a visual style that carries its DXF raw codes, so a DWG-to-DXF conversion does not reference an object it leaves out.
 
 </details>
