@@ -4,8 +4,8 @@
 //
 // Inside an INSERT, entities inherit through the `blockContext` the reference hands down
 // (`insertContext`, M1-14). Viewport linetype scaling (PSLTSCALE) is applied by the renderer
-// per viewport (M1-18 part 2); annotation scaling (MSLTSCALE) waits, since acad-ts reads
-// neither `$MSLTSCALE` nor `$CANNOSCALEVALUE` from the file.
+// per viewport (M1-18 part 2), and annotation scaling (MSLTSCALE) on the Model tab (M1-63):
+// both multiply the scale resolved here at draw time.
 
 import type { DocumentModel, Entity, HeaderValue, LinetypeRecord } from '@triya/engine';
 import { patternOf, linetypeScale, type LinePattern } from './style/pattern';
