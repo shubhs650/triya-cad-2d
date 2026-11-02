@@ -129,13 +129,13 @@ The columns above track Triya. This section tracks the library underneath, from 
 | R14 (AC1014) | 1 / 1 / 1 | all | 3 | none in the public corpus (M1-58) |
 | 2000 (AC1015) | 1 / 5 / 2 | all | 8 | none in the public corpus (M1-58) |
 | 2004–2013 (AC1018–AC1027) | 4 / 46 / 4 | all | 54 | none in the public corpus (M1-58) |
-| 2018 (AC1032) | 15 / 26 / 1 | all but `recover02.dxf` (malformed) | 40 | `BLOCKFLIPPARAMETER.dwg` flip parameter acad-ts never reads (M1-33) |
+| 2018 (AC1032) | 15 / 26 / 1 | all but `recover02.dxf` (malformed) | 41 | none in the public corpus (M1-33 part 1) |
 
 | Type | acad-ts status after M0-06 and M1-30 |
 |---|---|
 | VPORT, LAYER, LAYOUT (DXF write) | Fixed by patches 0008, 0009, 0010 |
 | Header flag word, true colours, template page, layout limits, block previews (DWG) | Fixed by patches 0003–0007 |
-| Dynamic-block evaluation graph (DXF write) | Writer no longer crashes (0002). The graph's parameters, grips, actions and grip-location components are **never loaded** (DWG and DXF), so a save drops them: 426 handles in 40 files (M1-33) |
+| Dynamic-block evaluation graph (DXF write) | Writer no longer crashes (0002). The graph's parameters, grips, actions and grip-location components join the document with their graph (0092), DXF actions keep their owner and selection set (0093), DXF saves write them as read (0094), a DWG flip grip reads in the right order (0095), and DXF expressions of any value type read (0097): every handle of the acadsharp `dynamic-blocks` files is kept. Left (M1-33): the graphs of the R14–R2004 `sample_AC10xx` DWGs and `ACDB_BLOCKREPRESENTATION_DATA` in the R2000/R2004 DXFs |
 | VISUALSTYLE / MATERIAL | DXF: group codes kept on read and written back as read (0021, M1-28; the DXF reader assigns no VISUALSTYLE field and there is no field writer for either), with their extension dictionaries. DWG round trip keeps them. DWG → DXF still skips them with a notification |
 | Xdata 1070 integers (ASCII DXF write) | Negative values written signed (0022); were masked to 0–65535 |
 | Xdata on DICTIONARY, DBCOLOR, IMAGEDEF, IMAGEDEF_REACTOR, ACDBPLACEHOLDER (DXF write) | Written (0026); were dropped. The remaining `TEXT` and `VPORT` table xdata are fixed by 0029 and 0030 |
@@ -147,7 +147,7 @@ The columns above track Triya. This section tracks the library underneath, from 
 | Xdata 1012 displacements, 1003 layer names, 1005 handles (DXF write) | Written as read (0029); a displacement broke the record and moved the next object's xdata, layers went out as handles, dangling handles as 0 |
 | Xdata on symbol tables (DXF write) | Written (0030); the VPORT table's `ACAD DbSaveVer` was dropped |
 | ACDBASSOC* / ACDBPERSSUBENTMANAGER / SUN / view styles / AEC_* and every other unmapped type | Kept raw and written back under its handle (patches 0014, 0016; `readCadDocument` sets the keep flags): DXF → DXF as the group codes read, DWG → DWG of the same version as the object record read. All 1,329 unknown objects in the public corpus survive a save. **Not** converted across formats or versions: a DWG-read object saved to DXF, or to another DWG version, is skipped with a writer notification |
-| SUN (VPORT / VIEWPORT 361), 3DSOLID history (350) | Linked and written (0017). `ACSH_*` solid history objects are still not reached in DWG (every version) or DXF: 40 handles (M1-33) |
+| SUN (VPORT / VIEWPORT 361), 3DSOLID history (350) | Linked and written (0017). `ACSH_*` solid history nodes join the document with their graph (0092); in the R14–R2004 `sample_AC10xx` DWGs the history graph itself is still not reached: 12 handles (M1-33) |
 | CLASSES with a shared DXF name (AEC) | Both kept under their read class numbers; class numbers survive a save (0015) |
 | AEC_WALL, AEC_WALL_STYLE, AEC_CLEANUP_GROUP_DEF, BINRECORD (DWG) | Raw data ends at the data stream (0073); it took in the handle and string streams, so each save grew it by 6–20 bytes. `AecObjects.dwg` round-trips with no difference |
 | DATATABLE / TABLECONTENT owned through an XRECORD | Read and kept (0018); TABLECONTENT kept as read and written back raw in DXF (0070, DEC-040), it was skipped on every DXF save. DATATABLE in DXF is still never loaded (M1-33) |
@@ -171,6 +171,7 @@ The columns above track Triya. This section tracks the library underneath, from 
 | DEFPOINTS plot flag (DXF read) | Read as not plotted, as AutoCAD treats it and as the writer writes it (0087) |
 | MLINESTYLE element colours (DXF read) | 62 after an element's 49 read as that element's colour (0088); it overwrote the fill colour |
 | VIEWPORT ID 0 (DXF) | A stated 69 = 0 is kept (0089); 0 read as unset, so the ID was numbered by position and written that way |
+| DXF owner (330) | Taken only from the 330 before the first subclass marker, unless none was stated (0096); a later 330 an object's reader did not consume (an unknown action's selection set, TABLEGEOMETRY's null cell references) replaced the owner, and the object never joined the document |
 | TABLESTYLE / CELLSTYLEMAP, ACAD_TABLE | Lossy in DXF (R5, R12–R15) |
 | ACAD_TABLE (DXF) | Written (0068): the writer had no table branch, so every table went out as a bare INSERT and was lost with its extension dictionary, round-trip XRECORD and TABLECONTENT. The reader keeps cell override flags, block scale, alignment and chunked text (0066), and the table-wide overrides as read (DEC-043); 41 there had been read as the X scale. The acadsharp R2000–R2018 DXFs now round-trip with no table difference |
 | Table cell values (DXF) | Units, format and formatted value written from R2007 (0067); an empty value writes no payload, it was written as 91=0, which the reader rejects (FIELD 0x5F8 of `uncommon.dxf` was lost) |
