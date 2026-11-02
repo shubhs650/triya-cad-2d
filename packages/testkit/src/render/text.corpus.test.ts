@@ -19,10 +19,11 @@ import {
   tessellate,
   textBounds,
 } from '@triya/render';
-import { FontBook, parseShx } from '@triya/text';
+import { FontBook, parseShx, SHX_EQUIVALENTS, styleFont } from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
 import { corpusDrawing } from './document.ts';
+import { bundledFontBook } from './bundled-fonts.ts';
 import { squareFont } from './square-font.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
@@ -108,6 +109,61 @@ describe('text on the public corpus (M1-41, M1-35)', () => {
     // no contents) draw nothing.
     expect(drawn.backgrounds).toBeGreaterThanOrEqual(38);
     expect(drawn.frames).toBeGreaterThanOrEqual(5);
+  });
+
+  it('draws text whose font is missing with the bundled Hershey fonts and reports it (M1-09)', () => {
+    // No drawing font is committed, so every corpus style is missing and falls back.
+    const fonts = bundledFontBook();
+    const drawn = { TEXT: 0, MTEXT: 0 };
+    const blank: string[] = [];
+    const styleFonts = new Set<string>();
+    for (const f of readable) {
+      let doc;
+      try {
+        doc = readCadDocument(new Uint8Array(readFileSync(`${corpusDir}${f.path}`)));
+      } catch {
+        continue;
+      }
+      const { model } = corpusDrawing(doc);
+      const text = { fonts, style: (h: string) => model.tables.textStyles.get(h) };
+      for (const block of model.blocks.keys()) {
+        for (const id of model.blockEntities(block)) {
+          const e = model.entity(id);
+          const g = e?.geom;
+          if (!e || (g?.kind !== 'TEXT' && g?.kind !== 'MTEXT')) continue;
+          const style = model.tables.textStyles.get(g.style);
+          if (style?.font) styleFonts.add(styleFont(style).name);
+          const prims = tessellate(g, { color: 'foreground' }, { text });
+          const stored = g.kind === 'TEXT' ? g.value : g.contents;
+          const visible = g.height > 0 && /\S/.test(stored.replace(/\\[PNX~]/g, ''));
+          if (!visible) continue;
+          if (prims.some((p) => p.kind === 'stroke')) drawn[g.kind]++;
+          else blank.push(`${f.path} ${g.kind} ${e.handle}`);
+        }
+      }
+    }
+    const byFont = new Map<string, string[]>();
+    for (const [name, oet] of fonts.substitutions)
+      byFont.set(oet, [...(byFont.get(oet) ?? []), name]);
+    console.log(
+      `bundled fonts: ${JSON.stringify(drawn)}, ${JSON.stringify(Object.fromEntries(byFont))}`,
+    );
+    expect(blank.slice(0, 20)).toEqual([]);
+    expect(drawn.TEXT).toBeGreaterThanOrEqual(2548);
+    expect(drawn.MTEXT).toBeGreaterThanOrEqual(1093);
+    // Every style font the corpus names is reported, with its Hershey equivalent when it has one.
+    for (const name of styleFonts) {
+      const key = name
+        .split(/[\\/]/)
+        .pop()!
+        .toLowerCase()
+        .replace(/\.(shx|ttf|otf|ttc)$/, '');
+      expect(fonts.substitutions.get(name), name).toBe(SHX_EQUIVALENTS[key] ?? 'oet-simplex');
+    }
+    // The corpus's SHX styles name txt and simplex.shx; the rest are TrueType, drawn with
+    // oet-simplex until the TrueType sources (M1-38) supply them.
+    expect(fonts.substitutions.get('txt')).toBe('oet-simplex');
+    expect(fonts.substitutions.get('simplex.shx')).toBe('oet-simplex');
   });
 
   it('bounds text exactly in the spatial index, so apertures find just the text they touch (M1-35)', () => {
