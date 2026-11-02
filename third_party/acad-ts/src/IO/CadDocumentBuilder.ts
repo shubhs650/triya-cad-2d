@@ -3,6 +3,7 @@ import { CadDocument } from '../CadDocument.js';
 import { CadObject } from '../CadObject.js';
 import { UnknownEntity } from '../Entities/UnknownEntity.js';
 import { CadDictionary } from '../Objects/CadDictionary.js';
+import { CadDictionaryWithDefault } from '../Objects/CadDictionaryWithDefault.js';
 import { UnknownNonGraphicalObject } from '../Objects/UnknownNonGraphicalObject.js';
 import { addRawOwnedObject } from '../Objects/RawObjectData.js';
 import { EvaluationGraph } from '../Objects/Evaluations/EvaluationGraph.js';
@@ -129,6 +130,16 @@ export abstract class CadDocumentBuilder {
 				// register it with the graph, as an XRECORD entry is.
 				child.owner ??= owner;
 				ownedThroughEntries.push(child);
+			} else if (owner instanceof CadDictionaryWithDefault && owner.defaultEntry === child) {
+				// A default entry need not be one of the dictionary's entries (an R14 ACAD_PLOTSTYLENAME
+				// with no entries and an ACDBPLACEHOLDER default); then only the dictionary holds it.
+				child.owner ??= owner;
+				ownedThroughEntries.push(child);
+			} else if (owner?.xDictionary != null && CadDocumentBuilder._ownsThroughXRecord(owner.xDictionary, child)) {
+				// Before R2007 a 3DSOLID's history (ACSH_HISTORY_CLASS) is owned by the solid but referenced
+				// only from an XRECORD in the solid's extension dictionary; R2007+ references it from the solid (350).
+				child.owner ??= owner;
+				ownedThroughEntries.push(child);
 			}
 		}
 
@@ -151,6 +162,15 @@ export abstract class CadDocumentBuilder {
 				return false;
 			});
 		}
+	}
+
+	private static _ownsThroughXRecord(dictionary: CadDictionary, child: CadObject): boolean {
+		for (const entry of dictionary) {
+			if (entry instanceof XRecord && entry.entries.some(e => e.value === child && e.code >= 350 && e.code <= 369)) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	buildDataStorage(): void {

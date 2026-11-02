@@ -2122,4 +2122,32 @@ describe('acad-ts local patches (corpus-backed)', () => {
     expect(new TextDecoder().decode(saved)).toContain('E40704000200150010002D0027000000');
     expect(date(readDxfRaw(saved))).toEqual(date(doc));
   });
+
+  it('0101 a pre-R2007 3DSOLID keeps its history, and the history its graph', () => {
+    // Before R2007 a 3DSOLID's ACSH_HISTORY_CLASS is owned by the solid (its 330) but referenced
+    // only from the ACAD_XREC_ROUNDTRIP XRECORD in the solid's extension dictionary (360). Nothing
+    // registered it, so the history, and the evaluation graph and ACSH node it owns, were not in
+    // the document. acadsharp sample_AC1015/1018: solid D65 → history D66 → graph D67 → box D68,
+    // and solid D6A → D6B → D6C → D6D.
+    for (const path of ['sample_AC1014.dwg', 'sample_AC1015.dwg', 'sample_AC1018.dwg']) {
+      const doc = readDwgRaw(`third-party/acadsharp/${path}`);
+      for (const h of [0xd66, 0xd67, 0xd68, 0xd6b, 0xd6c, 0xd6d]) {
+        expect(doc.getCadObject(h), `${path} ${h.toString(16)}`).toBeTruthy();
+      }
+      expect(doc.getCadObject(0xd66)!.owner).toBe(doc.getCadObject(0xd65));
+    }
+  });
+
+  it('0102 a dictionary-with-default keeps a default entry that is not one of its entries', () => {
+    // acadsharp sample_AC1014.dwg: ACAD_PLOTSTYLENAME (E) has no entries, but its default (340)
+    // is ACDBPLACEHOLDER F. Only the dictionary held it, so it was not in the document and a DXF
+    // save wrote a 340 to an object it never wrote.
+    const doc = readDwgRaw('third-party/acadsharp/sample_AC1014.dwg');
+    const dict = doc.getCadObject(0xe) as CadDictionaryWithDefault;
+    expect(doc.getCadObject(0xf)).toBe(dict.defaultEntry);
+    expect(dict.defaultEntry!.owner).toBe(dict);
+    const reread = readDxfRaw(writeDxf(doc, false));
+    expect((reread.getCadObject(0xe) as CadDictionaryWithDefault).defaultEntry?.handle).toBe(0xf);
+    expect(reread.getCadObject(0xf)).toBeTruthy();
+  });
 });
