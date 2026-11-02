@@ -5,6 +5,7 @@ export * from './bounds';
 export * from './closest';
 export * from './curves';
 export * from './eval';
+export * from './fit';
 export * from './flatten';
 export * from './intersect';
 export * from './nurbs';

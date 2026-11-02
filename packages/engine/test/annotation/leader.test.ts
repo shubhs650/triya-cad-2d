@@ -215,7 +215,15 @@ describe('leaderParts', () => {
     expect(b.box.maxY).toBeCloseTo(40);
     expect(b.box.minX).toBeCloseTo(0);
     expect(b.box.minY).toBeCloseTo(0);
-    expect(entityBounds(leader({ spline: true }), ctx).kind).toBe('unknown');
+    // A spline leader is bounded by the cubic through its vertices (M1-47), which holds them all.
+    const curved = entityBounds(leader({ spline: true }), ctx);
+    if (curved.kind !== 'box') throw new Error(curved.kind);
+    for (const v of leader().vertices) {
+      expect(v.x).toBeGreaterThanOrEqual(curved.box.minX - 1e-9);
+      expect(v.x).toBeLessThanOrEqual(curved.box.maxX + 1e-9);
+      expect(v.y).toBeGreaterThanOrEqual(curved.box.minY - 1e-9);
+      expect(v.y).toBeLessThanOrEqual(curved.box.maxY + 1e-9);
+    }
     expect(entityBounds(leader({ vertices: [{ x: 0, y: 0 }] }), ctx).kind).toBe('empty');
   });
 });

@@ -169,10 +169,9 @@ describe('curves', () => {
     expectBox(entityBounds({ kind: '3DFACE', corners, hiddenEdges: 0 }, ctx()), box(0, 0, 3, 5));
   });
 
-  it('is unknown for a spline stored only as fit points, without throwing', () => {
-    // R2013+ DWGs can hold a spline as fit data alone (corpus sample_AC1027.dwg); its control
-    // points are AutoCAD's to compute, so until the kernel interpolates them (M1-47) the box
-    // is not known.
+  it('bounds a spline stored only as fit points by AutoCAD’s interpolation of them (M1-47)', () => {
+    // R2013+ DWGs can hold a spline as fit data alone (corpus sample_AC1027.dwg). Two fit
+    // points without tangents interpolate as the straight line between them.
     const fitOnly: EntityGeometry = {
       kind: 'SPLINE',
       degree: 3,
@@ -185,7 +184,24 @@ describe('curves', () => {
       closed: false,
       periodic: false,
     };
-    expect(entityBounds(fitOnly, ctx()).kind).toBe('unknown');
+    expectBox(entityBounds(fitOnly, ctx()), box(0, 0, 5, 5), 6);
+    // An end tangent bends it: leaving straight down from (0, 0) dips below the chord.
+    const bent = entityBounds({ ...fitOnly, startTangent: { x: 0, y: -1 } }, ctx());
+    expect(bent.kind).toBe('box');
+    if (bent.kind === 'box') expect(bent.box.minY).toBeLessThan(-0.1);
+  });
+
+  it('is unknown for a spline with neither a NURBS nor two fit points, without throwing', () => {
+    const empty: EntityGeometry = {
+      kind: 'SPLINE',
+      degree: 3,
+      knots: [],
+      controlPoints: [],
+      fitPoints: [{ x: 1, y: 1 }],
+      closed: false,
+      periodic: false,
+    };
+    expect(entityBounds(empty, ctx()).kind).toBe('unknown');
   });
 
   it('has no box for a polyline without vertices', () => {
@@ -260,6 +276,29 @@ describe('hatches', () => {
       },
     ]);
     expectBox(entityBounds(geom, ctx()), box(-7, -4, 22, 11));
+  });
+
+  it('bounds a spline edge kept only as fit points by their interpolation', () => {
+    const geom = hatch([
+      {
+        flags: 1,
+        edges: [
+          {
+            type: 'spline',
+            degree: 3,
+            knots: [],
+            controlPoints: [],
+            periodic: false,
+            fitPoints: [
+              { x: 0, y: 0 },
+              { x: 4, y: 2 },
+            ],
+          },
+          { type: 'line', start: { x: 4, y: 2 }, end: { x: 0, y: 0 } },
+        ],
+      },
+    ]);
+    expectBox(entityBounds(geom, ctx()), box(0, 0, 4, 2), 6);
   });
 
   it('draws nothing without loops', () => {
