@@ -9,7 +9,7 @@
 import type { ChangeSet, EntityId } from '@triya/engine';
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
-import { RenderSession, type RenderDocument } from './session';
+import { RenderSession, type FontSources, type RenderDocument } from './session';
 import { offscreenLayer, surfaceOf } from './surface';
 import type { RasterPixels, RenderPrimitive, RenderStyle, ViewTransform } from './types';
 
@@ -39,6 +39,8 @@ export interface RendererHostOptions {
   readonly style?: RenderStyle;
   /** The user's .pat files (M1-50), in the order added. */
   readonly patterns?: readonly string[];
+  /** Fonts for text (M1-72), loaded where the session runs. */
+  readonly fonts?: FontSources;
   /** Main-thread layers; defaults to OffscreenCanvas, as in the worker. */
   readonly createLayer?: () => Surface;
   /** A failure in the render worker that no pending request was waiting for. */
@@ -92,6 +94,7 @@ export class RendererHost {
           document: o.document,
           ...(o.style && { style: o.style }),
           ...(o.patterns && { patterns: o.patterns }),
+          ...(o.fonts && { fonts: o.fonts }),
         },
         [offscreen as Transferable],
       );
@@ -102,6 +105,7 @@ export class RendererHost {
         createLayer: o.createLayer ?? offscreenLayer,
         ...(o.style && { style: o.style }),
         ...(o.patterns && { patterns: o.patterns }),
+        ...(o.fonts && { fonts: o.fonts }),
       });
     }
   }

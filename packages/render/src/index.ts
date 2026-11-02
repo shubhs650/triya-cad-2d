@@ -49,6 +49,8 @@ export {
 export {
   RenderSession,
   documentTolerance,
+  fontBookOf,
+  type FontSources,
   type RenderDocument,
   type RenderSessionOptions,
 } from './session';
