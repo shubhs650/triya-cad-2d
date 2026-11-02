@@ -25,6 +25,7 @@ import {
   BookColor,
   CadDictionaryWithDefault,
   DimensionArc,
+  DimensionRadialLarge,
   DwgReader,
   DwgReaderConfiguration,
   DwgWriter,
@@ -197,7 +198,8 @@ describe('acad-ts local patches (corpus-backed)', () => {
   it.each([
     ['acadsharp/sample_AC1032_ascii.dxf', false, 'ACDBDETAILVIEWSTYLE'],
     ['acadsharp/sample_AC1032_binary.dxf', true, 'ACDBDETAILVIEWSTYLE'],
-    ['ezdxf/examples_dxf/uncommon.dxf', false, 'LARGE_RADIAL_DIMENSION'],
+    // Its LARGE_RADIAL_DIMENSIONs were the example until 0107 read them as dimensions.
+    ['ezdxf/examples_dxf/uncommon.dxf', false, 'ACDBASSOCPERSSUBENTMANAGER'],
   ])('0014 DXF keeps unknown objects raw and writes them back: %s', (path, binary, expected) => {
     // Unmapped objects (view styles, AEC objects, proxies) used to be discarded on read, so every
     // save dropped them without the round-trip diff noticing.
@@ -2246,6 +2248,55 @@ describe('acad-ts local patches (corpus-backed)', () => {
     for (const h of [0x423, 0x42a]) {
       inTable(saved, held(saved, h));
       expect(held(saved, h).layer.name).toBe('0');
+    }
+  });
+
+  it('0107 DXF reads LARGE_RADIAL_DIMENSION as a jogged radius dimension and writes it back', () => {
+    // acad-ts had no class for the jogged radius dimension, so it read it as an UnknownEntity:
+    // kept through saves, but no point, block or style of it could be mapped. ezdxf
+    // uncommon.dxf has two (37C and 414); 10 is the centre, 15 the chord point, 13 the
+    // displaced centre and 14 the jog point.
+    const jogged = (d: CadDocument): unknown[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is DimensionRadialLarge => o instanceof DimensionRadialLarge)
+        .map((j) => ({
+          h: handleHex(j),
+          block: j.block?.name,
+          style: j.style?.name,
+          flags: j.flags as number,
+          points: [
+            j.definitionPoint,
+            j.textMiddlePoint,
+            j.chordPoint,
+            j.overrideCenter,
+            j.jogPoint,
+          ].map((p) => [p.x, p.y, p.z]),
+          leaderLength: j.leaderLength,
+          measurement: j.measurement,
+        }));
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/uncommon.dxf'));
+    expect(jogged(doc).map((j) => (j as { h: string }).h)).toEqual(['37C', '414']);
+    expect(jogged(doc)[0]).toEqual({
+      h: '37C',
+      block: '*D15',
+      style: 'Standard',
+      flags: 169,
+      points: [
+        [46.57002769699686, 54.16002082875706, 0],
+        [48.31509744610074, 53.12906792803588, 0],
+        [49.22992452597505, 52.58860607421084, 0],
+        [46.57002769699682, 54.25002082875701, 0],
+        [47.9885196452457, 53.36700367245278, 0],
+      ],
+      leaderLength: 0,
+      measurement: expect.closeTo(3.089400503595107, 12),
+    });
+    const before = doc.getCadObject(0x37c)!;
+    expect(before.objectName).toBe('LARGE_RADIAL_DIMENSION');
+    for (const binary of [false, true]) {
+      const back = dxfRawRoundTrip(doc, binary);
+      expect(jogged(back), `binary ${binary}`).toEqual(jogged(doc));
+      expect(back.getCadObject(0x37c)?.objectName).toBe('LARGE_RADIAL_DIMENSION');
     }
   });
 });

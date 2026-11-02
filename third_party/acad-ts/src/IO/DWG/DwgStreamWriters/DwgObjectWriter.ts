@@ -27,6 +27,7 @@ import { DimensionRadius } from '../../../Entities/DimensionRadius.js';
 import { DimensionAngular2Line } from '../../../Entities/DimensionAngular2Line.js';
 import { DimensionAngular3Pt } from '../../../Entities/DimensionAngular3Pt.js';
 import { DimensionArc } from '../../../Entities/DimensionArc.js';
+import { DimensionRadialLarge } from '../../../Entities/DimensionRadialLarge.js';
 import { DimensionDiameter } from '../../../Entities/DimensionDiameter.js';
 import { DimensionOrdinate } from '../../../Entities/DimensionOrdinate.js';
 import { Ellipse } from '../../../Entities/Ellipse.js';
@@ -446,6 +447,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 
 	private _isEntitySupported(entity: Entity): boolean {
 		if (entity instanceof Surface) return false;
+		// Its DWG layout is not implemented: left out, as when it was read as an UnknownEntity.
+		if (entity instanceof DimensionRadialLarge) return false;
 		if (entity instanceof Seqend) return false;
 		if (entity instanceof UnknownEntity) return this._canWriteRaw(entity);
 		if (entity instanceof Shape) return this.writeShapes;
