@@ -12,6 +12,7 @@
 // taken for a header variable; CANNOSCALEVALUE (M1-63) is added from the ACAD_SCALELIST SCALE
 // that CANNOSCALE names, as AutoCAD computes it.
 
+import type { CadSystemVariable } from '@node-projects/acad-ts';
 import {
   CadDictionary,
   CadHeader,
@@ -42,35 +43,39 @@ const isPoint = (codes: readonly number[]): boolean =>
   codes.length >= 2 && codes.every((c) => c >= 10 && c < 40);
 
 /** Group codes 320–369 are object handles (soft/hard pointer and owner ids). */
-const isHandleCode = (code: number): boolean => code >= 320 && code < 370;
+export const isHandleCode = (code: number): boolean => code >= 320 && code < 370;
+
+/**
+ * A header variable's value as Triya carries it, or undefined when the header does not state it
+ * (the inverse of what `TriyaToAcad` writes, export/header.ts).
+ */
+export function headerVariableValue(
+  name: string,
+  variable: CadSystemVariable,
+  h: CadHeader,
+): HeaderValue | undefined {
+  if (name === '$HANDSEED') return hex(h.handleSeed);
+  // acad-ts writes a true colour's 62 as −1; Triya keeps the ACI AutoCAD writes instead.
+  const property = variable.getValue(h);
+  if (property instanceof Color) return scalar(property)!;
+  const values = variable.dxfCodes.map((code) => variable.getSystemValue(code, h));
+  if (values.every((v) => v === null || v === undefined)) return undefined;
+  if (isPoint(variable.dxfCodes)) {
+    const [x, y, z] = values.map((v) => Number(v ?? 0));
+    return values.length > 2 ? { x: x!, y: y!, z: z! } : { x: x!, y: y! };
+  }
+  // A handle variable ($CMATERIAL 347) is a hex string, as DXF writes it.
+  if (variable.dxfCodes.length === 1 && isHandleCode(variable.dxfCodes[0]!)) {
+    return hex(Number(values[0]));
+  }
+  return scalar(values[0]);
+}
 
 export function mapHeader(doc: CadDocument): MappedHeader {
   const h = doc.header ?? new CadHeader();
   const header = new Map<string, HeaderValue>();
   for (const [name, variable] of CadHeader.getHeaderMap()) {
-    if (name === '$HANDSEED') {
-      header.set(name, hex(h.handleSeed));
-      continue;
-    }
-    // acad-ts writes a true colour's 62 as −1; Triya keeps the ACI AutoCAD writes instead.
-    const property = variable.getValue(h);
-    if (property instanceof Color) {
-      header.set(name, scalar(property)!);
-      continue;
-    }
-    const values = variable.dxfCodes.map((code) => variable.getSystemValue(code, h));
-    if (values.every((v) => v === null || v === undefined)) continue;
-    if (isPoint(variable.dxfCodes)) {
-      const [x, y, z] = values.map((v) => Number(v ?? 0));
-      header.set(name, values.length > 2 ? { x: x!, y: y!, z: z! } : { x: x!, y: y! });
-      continue;
-    }
-    // A handle variable ($CMATERIAL 347) is a hex string, as DXF writes it.
-    if (variable.dxfCodes.length === 1 && isHandleCode(variable.dxfCodes[0]!)) {
-      header.set(name, hex(Number(values[0])));
-      continue;
-    }
-    const value = scalar(values[0]);
+    const value = headerVariableValue(name, variable, h);
     if (value !== undefined) header.set(name, value);
   }
   mapVariableDictionary(doc, header);
@@ -87,7 +92,7 @@ export function mapHeader(doc: CadDocument): MappedHeader {
 }
 
 /** The named-object dictionary's entry `key`, when it is a dictionary. */
-function namedDictionary(doc: CadDocument, key: string): CadDictionary | undefined {
+export function namedDictionary(doc: CadDocument, key: string): CadDictionary | undefined {
   const d = doc.rootDictionary?.get(key);
   return d instanceof CadDictionary ? d : undefined;
 }
@@ -103,10 +108,15 @@ function mapVariableDictionary(doc: CadDocument, header: Map<string, HeaderValue
     if (v instanceof DictionaryVariable && v.name) header.set(v.name, v.value);
   const current = header.get(DictionaryVariable.currentAnnotationScale);
   if (current === undefined) return;
+  const value = annotationScaleValue(doc, current);
+  if (value !== undefined) header.set('CANNOSCALEVALUE', value);
+}
+
+/** CANNOSCALEVALUE for a CANNOSCALE of `scale`: undefined when no list scale has that name. */
+export function annotationScaleValue(doc: CadDocument, scale: HeaderValue): number | undefined {
   for (const s of namedDictionary(doc, CadDictionary.acadScaleList) ?? []) {
-    if (!(s instanceof Scale) || s.name !== current) continue;
-    if (s.paperUnits > 0 && s.drawingUnits > 0)
-      header.set('CANNOSCALEVALUE', s.paperUnits / s.drawingUnits);
-    return;
+    if (!(s instanceof Scale) || s.name !== scale) continue;
+    return s.paperUnits > 0 && s.drawingUnits > 0 ? s.paperUnits / s.drawingUnits : undefined;
   }
+  return undefined;
 }

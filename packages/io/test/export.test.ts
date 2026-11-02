@@ -1125,7 +1125,7 @@ describe('triyaToAcad', () => {
           geom: { ...p.geom, normal: { x: 1, y: 0, z: 0 } } as EntityGeometry,
         });
       },
-      (b) => b.setHeader('$LTSCALE', 7),
+      (b) => b.setHeader('$ACADVER', 'AC1015'),
       (b, m) => {
         const part = [...m.tables.blockRecords.values()].find((r) => r.name === 'PART')!;
         b.moveEntity(byType(m, 'LINE').id, part.handle);
