@@ -14,10 +14,21 @@ const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url))
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 
+// M1-73: one test per file, each with its own budget, instead of one walk over the whole
+// corpus under the global 30 s `testTimeout` (it took 30.7 s in a full local `pnpm test`).
+// The slowest file (sample_AC1009_ascii.dxf) takes 0.6 s alone and 1.0 s in a full
+// `pnpm test` with coverage (2026-11-02), so 5 s leaves five times that under load, while a
+// file that gets that much slower still fails here by name.
+const PER_FILE_BUDGET_MS = 5_000;
+
 describe('ioApi.open on the public corpus', () => {
-  it('returns the summary and a clonable document for every readable file', async () => {
+  it('covers the readable corpus', () => {
     expect(readable.length).toBeGreaterThan(100);
-    for (const f of readable) {
+  });
+
+  it.each(readable.map((f) => [f.path, f] as const))(
+    '%s',
+    async (_path, f) => {
       const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
       const doc = readCadDocument(bytes);
       const opened = await ioApi.open(bytes.slice());
@@ -54,8 +65,9 @@ describe('ioApi.open on the public corpus', () => {
         );
         if (known) expect(opened.extents[l.blockRecord], `${f.path} ${l.name}`).toBeDefined();
       }
-    }
-  });
+    },
+    PER_FILE_BUDGET_MS,
+  );
 
   it('reports stages in order', async () => {
     const f = readable[0]!;

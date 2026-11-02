@@ -15,6 +15,7 @@ import { DimensionAngular3Pt } from '../../../Entities/DimensionAngular3Pt.js';
 import { DimensionArc } from '../../../Entities/DimensionArc.js';
 import { AcisTextCodec } from '../../AcisTextCodec.js';
 import { DimensionRadius } from '../../../Entities/DimensionRadius.js';
+import { DimensionRadialLarge } from '../../../Entities/DimensionRadialLarge.js';
 import { DimensionOrdinate } from '../../../Entities/DimensionOrdinate.js';
 import { DimensionType } from '../../../Entities/DimensionType.js';
 import { Ellipse } from '../../../Entities/Ellipse.js';
@@ -295,6 +296,8 @@ export abstract class DxfSectionReaderBase {
         return this.readEntityCodes(new CadEntityTemplate(new Circle()), this._readCircle.bind(this), Circle);
       case DxfFileToken.entityArcDimension:
         return this.readEntityCodes(new CadDimensionTemplate(new DimensionArc()), this._readDimension.bind(this), DimensionArc);
+      case DxfFileToken.entityLargeRadialDimension:
+        return this.readEntityCodes(new CadDimensionTemplate(new DimensionRadialLarge()), this._readDimension.bind(this), DimensionRadialLarge);
       case DxfFileToken.entityDimension: {
         const dimTemplate = this.readEntityCodes(new CadDimensionTemplate(), this._readDimension.bind(this), Dimension);
         if (dimTemplate.cadObject instanceof DimensionPlaceholder) {
@@ -1124,6 +1127,10 @@ export abstract class DxfSectionReaderBase {
           case DxfSubclassMarker.arcDimension:
             tmp.setDimensionObject(new DimensionArc());
             map.subClasses.set(this._reader.valueAsString, DxfClassMap.create(DimensionArc));
+            return true;
+          case DxfSubclassMarker.radialDimensionLarge:
+            tmp.setDimensionObject(new DimensionRadialLarge());
+            map.subClasses.set(this._reader.valueAsString, DxfClassMap.create(DimensionRadialLarge));
             return true;
           case DxfSubclassMarker.radialDimension:
             tmp.setDimensionObject(new DimensionRadius());

@@ -160,7 +160,10 @@ export function referenceOf(
     const d = def(g.block);
     return d ? { block: g.block, cells: insertTransforms(g, d.basePoint) } : undefined;
   }
-  if ((g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION') && g.block !== undefined)
+  if (
+    (g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'LARGE_RADIAL_DIMENSION') &&
+    g.block !== undefined
+  )
     return def(g.block) ? { block: g.block, cells: [IDENTITY] } : undefined;
   if (g.kind === 'ACAD_TABLE' && g.block !== undefined) {
     // The `*T` block holds the table as AutoCAD last drew it (M1-17), in the table's frame:

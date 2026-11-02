@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68) and 0108 (M1-32) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34) and 0108 (M1-32) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2042,6 +2042,23 @@ A BLOCK with no name and no BLOCK_RECORD failed with an empty table entry name a
 **Title:** Assign the document to attributes, vertices, faces and SEQENDs
 
 Entities held inside an INSERT or a POLYLINE never had `assignDocument` called, so their layer, linetype and text style stayed detached defaults rather than the document's table entries, and a layer-0 child lost its layer after a DXF save (the writer omits code 8 for layer 0). Owners now assign their held children when they join a document and after the reader builds them, and release them when they leave.
+
+</details>
+
+### 0107 — DXF reads LARGE_RADIAL_DIMENSION as a dimension
+
+- **File:** `third_party/acad-ts-patches/0107-dxf-large-radial-dimension.patch`
+- **Touches:** new `src/Entities/DimensionRadialLarge.ts`; `src/index.ts`, `src/DxfFileToken.ts`, `src/DxfSubclassMarker.ts`, `src/Classes/DxfClassDefinitionRegistry.ts`, `src/Metadata/LookupTables/Entities.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** acad-ts had no class for the jogged radius dimension, so a `LARGE_RADIAL_DIMENSION` read as an `UnknownEntity`. It was kept through saves, but its block, style and points could not be mapped or drawn. ezdxf `uncommon.dxf` has two (37C and 414).
+- **Fix:** a `DimensionRadialLarge` entity (subclass `AcDbRadialDimensionLarge`): 15 the chord point, 13 the displaced centre, 14 the jog point, 40 the leader length; 10 stays the centre (the definition point), so the measurement is 10→15. The DXF reader reads it like `ARC_DIMENSION`, and the DXF writer writes it with its subclass. The class definition matches AutoCAD's (`uncommon.dxf` CLASS: proxy flags 1025, entity). Type 70 keeps what the file says (AutoCAD writes 9 | 32 | 128 = 169); a new one starts at 9 | 32. The DWG layout is not implemented: a DWG file's jogged dimension still reads as an `UnknownEntity` and is written back raw, and one read from DXF is left out of a DWG save, as it was before.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0107 DXF reads LARGE_RADIAL_DIMENSION as a jogged radius dimension and writes it back". The 0014 case for `uncommon.dxf` now uses `ACDBASSOCPERSSUBENTMANAGER` as its unknown object.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write LARGE_RADIAL_DIMENSION (jogged radius dimension) in DXF
+
+`LARGE_RADIAL_DIMENSION` had no entity class, so it was read as an unknown entity and its geometry was not available. This adds `DimensionRadialLarge` with the `AcDbRadialDimensionLarge` codes (13 override centre, 14 jog point, 15 chord point, 40 leader length), reads it in the DXF entity section, and writes it back with its subclass. The flags (70) are kept as read. The DWG object layout is not included; the DWG writer skips the entity as it did before.
 
 </details>
 

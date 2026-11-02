@@ -1,0 +1,234 @@
+diff --git a/src/Classes/DxfClassDefinitionRegistry.ts b/src/Classes/DxfClassDefinitionRegistry.ts
+index bfa5947..f32e6f4 100644
+--- a/src/Classes/DxfClassDefinitionRegistry.ts
++++ b/src/Classes/DxfClassDefinitionRegistry.ts
+@@ -132,6 +132,15 @@ define({
+ 	proxyFlags: ProxyFlags.EraseAllowed | ProxyFlags.DisablesProxyWarningDialog,
+ });
+ 
++define({
++	cppClassName: DxfSubclassMarker.radialDimensionLarge,
++	dwgVersion: ACadVersion.AC1018,
++	dxfName: DxfFileToken.entityLargeRadialDimension,
++	itemClassId: 498,
++	maintenanceVersion: 0,
++	proxyFlags: ProxyFlags.EraseAllowed | ProxyFlags.DisablesProxyWarningDialog,
++});
++
+ define({
+ 	cppClassName: DxfSubclassMarker.mesh,
+ 	dwgVersion: 0 as ACadVersion,
+diff --git a/src/DxfFileToken.ts b/src/DxfFileToken.ts
+index a4f9580..0482516 100644
+--- a/src/DxfFileToken.ts
++++ b/src/DxfFileToken.ts
+@@ -28,6 +28,7 @@ export class DxfFileToken {
+ 	public static readonly entityCircle = "CIRCLE";
+ 	public static readonly entityCoordinationModel = "COORDINATION MODEL";
+ 	public static readonly entityDimension = "DIMENSION";
++	public static readonly entityLargeRadialDimension = "LARGE_RADIAL_DIMENSION";
+ 	public static readonly entityEllipse = "ELLIPSE";
+ 	public static readonly entityHatch = "HATCH";
+ 	public static readonly entityHelix = "HELIX";
+diff --git a/src/DxfSubclassMarker.ts b/src/DxfSubclassMarker.ts
+index c9a02e9..5c255d2 100644
+--- a/src/DxfSubclassMarker.ts
++++ b/src/DxfSubclassMarker.ts
+@@ -16,6 +16,7 @@ export class DxfSubclassMarker {
+ 	public static readonly angular2LineDimension = "AcDb2LineAngularDimension";
+ 	public static readonly angular3PointDimension = "AcDb3PointAngularDimension";
+ 	public static readonly arcDimension = "AcDbArcDimension";
++	public static readonly radialDimensionLarge = "AcDbRadialDimensionLarge";
+ 	public static readonly annotScaleObjectContextData = "AcDbAnnotScaleObjectContextData";
+ 	public static readonly arc = "AcDbArc";
+ 	public static readonly attribute = "AcDbAttribute";
+diff --git a/src/Entities/DimensionRadialLarge.ts b/src/Entities/DimensionRadialLarge.ts
+new file mode 100644
+index 0000000..53ee8d3
+--- /dev/null
++++ b/src/Entities/DimensionRadialLarge.ts
+@@ -0,0 +1,48 @@
++import { Dimension } from './Dimension.js';
++import { DimensionType } from './DimensionType.js';
++import { DxfFileToken } from '../DxfFileToken.js';
++import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
++import { BoundingBox } from '../Math/BoundingBox.js';
++import { XYZ } from '../Math/XYZ.js';
++import { ObjectType } from '../Types/ObjectType.js';
++
++/**
++ * Jogged radius dimension (DXF `LARGE_RADIAL_DIMENSION`, subclass `AcDbRadialDimensionLarge`).
++ * The definition point (10) is the arc's centre, 15 the chord point on the arc, 13 the displaced
++ * centre the dimension line starts from and 14 the jog point.
++ */
++export class DimensionRadialLarge extends Dimension {
++	/** DXF 15: the point on the arc. */
++	chordPoint: XYZ = new XYZ(0, 0, 0);
++	/** DXF 13: the displaced centre the dimension line starts from. */
++	overrideCenter: XYZ = new XYZ(0, 0, 0);
++	/** DXF 14: the jog point. */
++	jogPoint: XYZ = new XYZ(0, 0, 0);
++	/** DXF 40. */
++	leaderLength: number = 0;
++
++	override get measurement(): number {
++		const d = Dimension.subtractPoints(this.chordPoint, this.definitionPoint);
++		return Math.sqrt(d.dot(d));
++	}
++
++	override get objectName(): string { return DxfFileToken.entityLargeRadialDimension; }
++	override get objectType(): ObjectType { return ObjectType.UNLISTED; }
++	override get subclassMarker(): string { return DxfSubclassMarker.radialDimensionLarge; }
++
++	constructor() {
++		// AutoCAD stores type 9 in 70 for a jogged radius dimension (169 = 9 | 32 | 128).
++		super(9 as DimensionType);
++	}
++
++	override applyTransform(transform: unknown): void {
++		super.applyTransform(transform);
++		this.chordPoint = this.applyTransformToPoint(transform, this.chordPoint);
++		this.overrideCenter = this.applyTransformToPoint(transform, this.overrideCenter);
++		this.jogPoint = this.applyTransformToPoint(transform, this.jogPoint);
++	}
++
++	override getBoundingBox(): BoundingBox {
++		return BoundingBox.fromPoints([this.definitionPoint, this.chordPoint, this.overrideCenter, this.jogPoint]);
++	}
++}
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index a6619f7..51441dd 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -27,6 +27,7 @@ import { DimensionRadius } from '../../../Entities/DimensionRadius.js';
+ import { DimensionAngular2Line } from '../../../Entities/DimensionAngular2Line.js';
+ import { DimensionAngular3Pt } from '../../../Entities/DimensionAngular3Pt.js';
+ import { DimensionArc } from '../../../Entities/DimensionArc.js';
++import { DimensionRadialLarge } from '../../../Entities/DimensionRadialLarge.js';
+ import { DimensionDiameter } from '../../../Entities/DimensionDiameter.js';
+ import { DimensionOrdinate } from '../../../Entities/DimensionOrdinate.js';
+ import { Ellipse } from '../../../Entities/Ellipse.js';
+@@ -446,6 +447,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 
+ 	private _isEntitySupported(entity: Entity): boolean {
+ 		if (entity instanceof Surface) return false;
++		// Its DWG layout is not implemented: left out, as when it was read as an UnknownEntity.
++		if (entity instanceof DimensionRadialLarge) return false;
+ 		if (entity instanceof Seqend) return false;
+ 		if (entity instanceof UnknownEntity) return this._canWriteRaw(entity);
+ 		if (entity instanceof Shape) return this.writeShapes;
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 11a7953..26e461d 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -15,6 +15,7 @@ import { DimensionAngular3Pt } from '../../../Entities/DimensionAngular3Pt.js';
+ import { DimensionArc } from '../../../Entities/DimensionArc.js';
+ import { AcisTextCodec } from '../../AcisTextCodec.js';
+ import { DimensionRadius } from '../../../Entities/DimensionRadius.js';
++import { DimensionRadialLarge } from '../../../Entities/DimensionRadialLarge.js';
+ import { DimensionOrdinate } from '../../../Entities/DimensionOrdinate.js';
+ import { DimensionType } from '../../../Entities/DimensionType.js';
+ import { Ellipse } from '../../../Entities/Ellipse.js';
+@@ -295,6 +296,8 @@ export abstract class DxfSectionReaderBase {
+         return this.readEntityCodes(new CadEntityTemplate(new Circle()), this._readCircle.bind(this), Circle);
+       case DxfFileToken.entityArcDimension:
+         return this.readEntityCodes(new CadDimensionTemplate(new DimensionArc()), this._readDimension.bind(this), DimensionArc);
++      case DxfFileToken.entityLargeRadialDimension:
++        return this.readEntityCodes(new CadDimensionTemplate(new DimensionRadialLarge()), this._readDimension.bind(this), DimensionRadialLarge);
+       case DxfFileToken.entityDimension: {
+         const dimTemplate = this.readEntityCodes(new CadDimensionTemplate(), this._readDimension.bind(this), Dimension);
+         if (dimTemplate.cadObject instanceof DimensionPlaceholder) {
+@@ -1125,6 +1128,10 @@ export abstract class DxfSectionReaderBase {
+             tmp.setDimensionObject(new DimensionArc());
+             map.subClasses.set(this._reader.valueAsString, DxfClassMap.create(DimensionArc));
+             return true;
++          case DxfSubclassMarker.radialDimensionLarge:
++            tmp.setDimensionObject(new DimensionRadialLarge());
++            map.subClasses.set(this._reader.valueAsString, DxfClassMap.create(DimensionRadialLarge));
++            return true;
+           case DxfSubclassMarker.radialDimension:
+             tmp.setDimensionObject(new DimensionRadius());
+             map.subClasses.set(this._reader.valueAsString, DxfClassMap.create(DimensionRadius));
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index e9d5749..a136ca7 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -22,6 +22,7 @@ import { DimensionDiameter } from '../../../Entities/DimensionDiameter.js';
+ import { DimensionAngular2Line } from '../../../Entities/DimensionAngular2Line.js';
+ import { DimensionAngular3Pt } from '../../../Entities/DimensionAngular3Pt.js';
+ import { DimensionArc } from '../../../Entities/DimensionArc.js';
++import { DimensionRadialLarge } from '../../../Entities/DimensionRadialLarge.js';
+ import { DimensionOrdinate } from '../../../Entities/DimensionOrdinate.js';
+ import { Dimension } from '../../../Entities/Dimension.js';
+ import { Ellipse } from '../../../Entities/Ellipse.js';
+@@ -412,6 +413,8 @@ export abstract class DxfSectionWriterBase {
+       this._writeDimension(entity, map);
+     } else if (entity instanceof DimensionArc) {
+       this._writeDimension(entity, map);
++    } else if (entity instanceof DimensionRadialLarge) {
++      this._writeDimension(entity, map);
+     } else if (entity instanceof Ellipse) {
+       this._writeEllipse(entity, map);
+     } else if (entity instanceof Face3D) {
+@@ -651,6 +654,9 @@ export abstract class DxfSectionWriterBase {
+     if (dim instanceof DimensionArc) {
+       this._writeDimensionArc(dim, map);
+     }
++    if (dim instanceof DimensionRadialLarge) {
++      this._writeDimensionRadialLarge(dim, map);
++    }
+     if (dim instanceof DimensionOrdinate) {
+       this._writeDimensionOrdinate(dim, map);
+     }
+@@ -716,6 +722,15 @@ export abstract class DxfSectionWriterBase {
+     this._writer.writeVector(17, dim.leaderPoint2, subclass);
+   }
+ 
++  private _writeDimensionRadialLarge(dim: DimensionRadialLarge, map: DxfMap): void {
++    const subclass = map.subClasses.get(DxfSubclassMarker.radialDimensionLarge)!;
++    this._writer.write(DxfCode.Subclass, DxfSubclassMarker.radialDimensionLarge);
++    this._writer.writeVector(13, dim.overrideCenter, subclass);
++    this._writer.writeVector(14, dim.jogPoint, subclass);
++    this._writer.writeVector(15, dim.chordPoint, subclass);
++    this._writer.write(40, dim.leaderLength, subclass);
++  }
++
+   private _writeDimensionOrdinate(dim: DimensionOrdinate, map: DxfMap): void {
+     const subclass = map.subClasses.get(DxfSubclassMarker.ordinateDimension)!;
+     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.ordinateDimension);
+diff --git a/src/Metadata/LookupTables/Entities.ts b/src/Metadata/LookupTables/Entities.ts
+index cae962b..89ccf35 100644
+--- a/src/Metadata/LookupTables/Entities.ts
++++ b/src/Metadata/LookupTables/Entities.ts
+@@ -533,6 +533,19 @@ export const metadataLookupEntities: readonly ClassMetadata[] = [
+     "dxfName": "ARC_DIMENSION",
+     "dxfSubClassName": "AcDbArcDimension"
+   },
++  {
++    "typeName": "DimensionRadialLarge",
++    "baseTypeName": "Dimension",
++    "properties": [
++      { "propertyName": "overrideCenter", "valueCodes": [13, 23, 33], "referenceType": 0 },
++      { "propertyName": "jogPoint", "valueCodes": [14, 24, 34], "referenceType": 0 },
++      { "propertyName": "chordPoint", "valueCodes": [15, 25, 35], "referenceType": 0 },
++      { "propertyName": "leaderLength", "valueCodes": [40], "referenceType": 0 }
++    ],
++    "systemVariables": [],
++    "dxfName": "LARGE_RADIAL_DIMENSION",
++    "dxfSubClassName": "AcDbRadialDimensionLarge"
++  },
+   {
+     "typeName": "DimensionDiameter",
+     "baseTypeName": "Dimension",
+diff --git a/src/index.ts b/src/index.ts
+index 96df64c..b06bacf 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -55,6 +55,7 @@ export { DimensionDiameter } from './Entities/DimensionDiameter.js';
+ export { DimensionLinear } from './Entities/DimensionLinear.js';
+ export { DimensionOrdinate } from './Entities/DimensionOrdinate.js';
+ export { DimensionRadius } from './Entities/DimensionRadius.js';
++export { DimensionRadialLarge } from './Entities/DimensionRadialLarge.js';
+ export { DimensionType } from './Entities/DimensionType.js';
+ export { DrawingDirectionType } from './Entities/DrawingDirectionType.js';
+ export { Ellipse } from './Entities/Ellipse.js';

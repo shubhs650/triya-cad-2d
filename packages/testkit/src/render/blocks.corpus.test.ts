@@ -70,7 +70,13 @@ describe('block references on the public corpus (M1-14, M1-15, M1-17)', () => {
 
   it('draws every INSERT, stored dimension and stored table inside its spatial-index bounds', () => {
     const wrong: string[] = [];
-    const drawn = { INSERT: 0, DIMENSION: 0, ARC_DIMENSION: 0, ACAD_TABLE: 0 };
+    const drawn = {
+      INSERT: 0,
+      DIMENSION: 0,
+      ARC_DIMENSION: 0,
+      LARGE_RADIAL_DIMENSION: 0,
+      ACAD_TABLE: 0,
+    };
     for (const f of readable) {
       let doc;
       try {
@@ -124,6 +130,8 @@ describe('block references on the public corpus (M1-14, M1-15, M1-17)', () => {
     expect(drawn.INSERT).toBeGreaterThanOrEqual(479);
     expect(drawn.DIMENSION).toBeGreaterThanOrEqual(258);
     expect(drawn.ARC_DIMENSION).toBeGreaterThanOrEqual(1);
+    // The two jogged radius dimensions of uncommon.dxf (M1-34).
+    expect(drawn.LARGE_RADIAL_DIMENSION).toBe(2);
     // M1-17: the two tables of each acadsharp sample (18 drawings).
     expect(drawn.ACAD_TABLE).toBeGreaterThanOrEqual(36);
   });

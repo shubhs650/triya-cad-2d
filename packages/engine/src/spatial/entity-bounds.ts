@@ -359,7 +359,8 @@ export function entityBounds(
       return out ? boxed(out) : EMPTY;
     }
     case 'DIMENSION':
-    case 'ARC_DIMENSION': {
+    case 'ARC_DIMENSION':
+    case 'LARGE_RADIAL_DIMENSION': {
       const b = annotation(geom, ctx);
       if (b) return boxed(b);
       // The *D block holds the dimension as last drawn, in plan coordinates (no transform).

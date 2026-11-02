@@ -534,6 +534,19 @@ export const metadataLookupEntities: readonly ClassMetadata[] = [
     "dxfSubClassName": "AcDbArcDimension"
   },
   {
+    "typeName": "DimensionRadialLarge",
+    "baseTypeName": "Dimension",
+    "properties": [
+      { "propertyName": "overrideCenter", "valueCodes": [13, 23, 33], "referenceType": 0 },
+      { "propertyName": "jogPoint", "valueCodes": [14, 24, 34], "referenceType": 0 },
+      { "propertyName": "chordPoint", "valueCodes": [15, 25, 35], "referenceType": 0 },
+      { "propertyName": "leaderLength", "valueCodes": [40], "referenceType": 0 }
+    ],
+    "systemVariables": [],
+    "dxfName": "LARGE_RADIAL_DIMENSION",
+    "dxfSubClassName": "AcDbRadialDimensionLarge"
+  },
+  {
     "typeName": "DimensionDiameter",
     "baseTypeName": "Dimension",
     "properties": [
