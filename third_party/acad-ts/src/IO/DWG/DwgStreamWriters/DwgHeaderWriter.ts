@@ -33,6 +33,15 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		return records?.tryGetValue(name) ?? records?.tryGetValue(`_${name}`) ?? null;
 	}
 
+	/** A handle the header keeps as read: 0 once nothing in the document has it. */
+	private _objectHandle(handle: number | null): number {
+		return handle != null && this._document.getCadObject(handle) != null ? handle : 0;
+	}
+
+	private _ucs(name: string): number {
+		return (name && this._document.uCSs?.tryGetValue(name)?.handle) || 0;
+	}
+
 	constructor(stream: Uint8Array, document: CadDocument, encoding: string) {
 		super(document.header.version);
 
@@ -149,9 +158,9 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		//R13-R14 Only:
 		if (this.r13_14Only) {
 			//B : ATTREQ
-			this._writer.writeBit(false);
+			this._writer.writeBit(this._header.attributeRequest !== 0);
 			//B : ATTDIA
-			this._writer.writeBit(false);
+			this._writer.writeBit(this._header.attributeDialog !== 0);
 		}
 
 		//Common:
@@ -177,7 +186,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		//R13 - R14 Only:
 		if (this.r13_14Only) {
 			//B : DELOBJ
-			this._writer.writeBit(false);
+			this._writer.writeBit(this._header.deleteObjects !== 0);
 		}
 
 		//Common:
@@ -191,7 +200,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		//R13-R14 Only:
 		if (this.r13_14Only) {
 			//BS : DRAGMODE
-			this._writer.writeBitShort(0);
+			this._writer.writeBitShort(this._header.dragMode);
 		}
 
 		//Common:
@@ -219,7 +228,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		//R13 - R14 Only:
 		if (this.r13_14Only) {
 			//BS: COORDS
-			this._writer.writeBitShort(0);
+			this._writer.writeBitShort(this._header.coordinateDisplay);
 		}
 
 		//Common:
@@ -229,7 +238,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		//R13 - R14 Only:
 		if (this.r13_14Only) {
 			//BS: PICKSTYLE
-			this._writer.writeBitShort(0);
+			this._writer.writeBitShort(this._header.pickStyle);
 		}
 
 		//R2004 +:
@@ -358,7 +367,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		//R2007 + Only:
 		if (this.r2007Plus) {
 			//H: CMATERIAL(hard pointer)
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._objectHandle(this._header.currentMaterialHandle));
 		}
 
 		//Common:
@@ -402,9 +411,9 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		//R2000+ Only:
 		if (this.r2000Plus) {
 			//H : PUCSORTHOREF (hard pointer)
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._ucs(this._header.paperSpaceUcsOrthographicReferenceName));
 			//BS : PUCSORTHOVIEW
-			this._writer.writeBitShort(0);
+			this._writer.writeBitShort(this._header.paperSpaceUcsOrthographicView);
 			//H: PUCSBASE(hard pointer)
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
 
@@ -448,9 +457,9 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		//R2000 + Only:
 		if (this.r2000Plus) {
 			//H: UCSORTHOREF(hard pointer)
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._ucs(this._header.ucsOrthographicReferenceName));
 			//BS: UCSORTHOVIEW
-			this._writer.writeBitShort(0);
+			this._writer.writeBitShort(this._header.ucsOrthographicView);
 			//H : UCSBASE(hard pointer)
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
 
@@ -745,7 +754,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
 			this._writer.writeByte(this._header.dimensionAssociativity);
 			this._writer.writeByte(this._header.haloGapPercentage);
 			this._writer.writeBitShort(this._header.obscuredColor.index);
-			this._writer.writeBitShort(this._header.interfereColor.index);
+			this._writer.writeBitShort(this._header.intersectionColor.index);
 			this._writer.writeByte(this._header.obscuredType);
 			this._writer.writeByte(this._header.intersectionDisplay);
 
@@ -786,15 +795,15 @@ export class DwgHeaderWriter extends DwgSectionIO {
 			this._writer.writeBitDouble(this._header.northDirection);
 			this._writer.writeBitLong(this._header.timeZone);
 			this._writer.writeByte(this._header.displayLightGlyphs.charCodeAt(0) || 0);
-			this._writer.writeByte(0x30); // '0'
+			this._writer.writeByte(this._header.tileModeLightSynch);
 			this._writer.writeByte(this._header.dwgUnderlayFramesVisibility.charCodeAt(0) || 0);
 			this._writer.writeByte(this._header.dgnUnderlayFramesVisibility.charCodeAt(0) || 0);
 
 			this._writer.writeBit(false);
 			this._writer.writeCmColor(this._header.interfereColor);
 
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._objectHandle(this._header.interfereObjectVisualStyleHandle));
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._objectHandle(this._header.interfereViewportVisualStyleHandle));
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
 
 			this._writer.writeByte(this._header.shadowMode);

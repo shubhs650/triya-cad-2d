@@ -1,0 +1,627 @@
+diff --git a/src/DxfPropertyBase.ts b/src/DxfPropertyBase.ts
+index f9c2700..0e8901a 100644
+--- a/src/DxfPropertyBase.ts
++++ b/src/DxfPropertyBase.ts
+@@ -69,6 +69,12 @@ export abstract class DxfPropertyBase {
+ 			return;
+ 		}
+ 
++		// A raw handle ($CMATERIAL): the header is read before the objects it points at.
++		if (this._valueKind === 'handle') {
++			this.setPropertyValue(obj, value == null ? null : toNumber(value));
++			return;
++		}
++
+ 		const currentValue = this.getPropertyValue(obj);
+ 
+ 		if (isVector(currentValue)) {
+@@ -202,6 +208,10 @@ export abstract class DxfPropertyBase {
+ 			return value;
+ 		}
+ 
++		if (this._valueKind === 'handle') {
++			return value;
++		}
++
+ 		const groupCode = GroupCodeValue.transformValue(code);
+ 		switch (groupCode) {
+ 			case GroupCodeValueType.Handle:
+diff --git a/src/Header/CadHeader.ts b/src/Header/CadHeader.ts
+index 3ccde14..1a8ca4f 100644
+--- a/src/Header/CadHeader.ts
++++ b/src/Header/CadHeader.ts
+@@ -437,6 +437,40 @@ export class CadHeader {
+ 	public haloGapPercentage: number = 0;
+ 	public handleSeed: number = 0x01;
+ 	public hideText: number = 0;
++	/** $ATTDIA: attribute entry through a dialog box (R13/R14 DWG and DXF). */
++	public attributeDialog: number = 0;
++	/** $ATTREQ: prompt for attribute values on insert (R13/R14 DWG and DXF). */
++	public attributeRequest: number = 1;
++	/** $COORDS: status-bar coordinate display (R13/R14 DWG and DXF). */
++	public coordinateDisplay: number = 1;
++	/** $DELOBJ: what happens to the objects a new one was made from (R13/R14 DWG and DXF). */
++	public deleteObjects: number = 1;
++	/** $DRAGMODE: 0 off, 1 on request, 2 auto (R13/R14 DWG and DXF). */
++	public dragMode: number = 2;
++	/** $HANDLING: handles on (R12 and R13 DXF). */
++	public handling: number = 1;
++	/** $SAVEIMAGES (R13 DXF). */
++	public saveImages: number = 0;
++	/** $INTERSECTIONCOLOR: colour of intersection polylines (257 = ByEntity). */
++	public intersectionColor: Color = new Color(257);
++	/** $TILEMODELIGHTSYNCH (R2007+). */
++	public tileModeLightSynch: number = 1;
++	/** $REALWORLDSCALE (R2007+). */
++	public realWorldScale: boolean = true;
++	/** $UCSORTHOREF: the UCS orthographic views are relative to, by name. */
++	public ucsOrthographicReferenceName: string = '';
++	/** $UCSORTHOVIEW: 0 not orthographic, 1 top … 6 right. */
++	public ucsOrthographicView: number = 0;
++	/** $PUCSORTHOREF: as $UCSORTHOREF, in paper space. */
++	public paperSpaceUcsOrthographicReferenceName: string = '';
++	/** $PUCSORTHOVIEW: as $UCSORTHOVIEW, in paper space. */
++	public paperSpaceUcsOrthographicView: number = 0;
++	/** $CMATERIAL: handle of the current MATERIAL object, as read. */
++	public currentMaterialHandle: number | null = null;
++	/** $INTERFEREOBJVS: handle of the visual style of interference objects, as read. */
++	public interfereObjectVisualStyleHandle: number | null = null;
++	/** $INTERFEREVPVS: handle of the visual style of the interference-check viewport, as read. */
++	public interfereViewportVisualStyleHandle: number | null = null;
+ 	public hyperLinkBase: string | null = null;
+ 	public indexCreationFlags: IndexCreationFlags = IndexCreationFlags.NoIndex;
+ 	public insUnits: UnitsType = UnitsType.Unitless;
+@@ -525,6 +559,9 @@ export class CadHeader {
+ 	public paperSpaceUcs: UCS = new UCS();
+ 	public paperSpaceUcsBase: UCS = new UCS();
+ 
++	public get paperSpaceOrigin(): XYZ { return this.paperSpaceUcs.origin; }
++	public set paperSpaceOrigin(v: XYZ) { this.paperSpaceUcs.origin = v; }
++
+ 	public get paperSpaceXAxis(): XYZ { return this.paperSpaceUcs.xAxis; }
+ 	public set paperSpaceXAxis(v: XYZ) { this.paperSpaceUcs.xAxis = v; }
+ 
+diff --git a/src/IO/DWG/DwgHeaderHandlesCollection.ts b/src/IO/DWG/DwgHeaderHandlesCollection.ts
+index 3cb650b..1c429cc 100644
+--- a/src/IO/DWG/DwgHeaderHandlesCollection.ts
++++ b/src/IO/DWG/DwgHeaderHandlesCollection.ts
+@@ -206,5 +206,16 @@ export class DwgHeaderHandlesCollection {
+ 
+ 		record = builder.tryGetCadObject<BlockRecord>(this.dimblk2);
+ 		if (record) { header.dimensionBlockNameSecond = record.name; }
++
++		entry = builder.tryGetCadObject<TableEntry>(this.ucsorthoref);
++		if (entry) { header.ucsOrthographicReferenceName = entry.name; }
++
++		entry = builder.tryGetCadObject<TableEntry>(this.pucsorthoref);
++		if (entry) { header.paperSpaceUcsOrthographicReferenceName = entry.name; }
++
++		// Kept by handle, as DXF keeps them: acad-ts has no MATERIAL or VISUALSTYLE class.
++		if (this.cmaterial && builder.tryGetCadObject(this.cmaterial)) { header.currentMaterialHandle = this.cmaterial; }
++		if (this.interfereobjvs && builder.tryGetCadObject(this.interfereobjvs)) { header.interfereObjectVisualStyleHandle = this.interfereobjvs; }
++		if (this.interferevpvs && builder.tryGetCadObject(this.interferevpvs)) { header.interfereViewportVisualStyleHandle = this.interferevpvs; }
+ 	}
+ }
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts b/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
+index fd70a9f..7e069a8 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
+@@ -124,8 +124,8 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 		this._header.showSplineControlPoints = this._reader.readBit();
+ 
+ 		if (this.r13_14Only) {
+-			this._reader.readBit();
+-			this._reader.readBit();
++			this._header.attributeRequest = this._reader.readBit() ? 1 : 0;
++			this._header.attributeDialog = this._reader.readBit() ? 1 : 0;
+ 		}
+ 
+ 		this._header.mirrorText = this._reader.readBit();
+@@ -140,7 +140,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 		this._header.retainXRefDependentVisibilitySettings = this._reader.readBit();
+ 
+ 		if (this.r13_14Only) {
+-			this._reader.readBit();
++			this._header.deleteObjects = this._reader.readBit() ? 1 : 0;
+ 		}
+ 
+ 		this._header.displaySilhouetteCurves = this._reader.readBit();
+@@ -148,7 +148,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 		this._header.proxyGraphics = this._reader.readBitShortAsBool();
+ 
+ 		if (this.r13_14Only) {
+-			this._reader.readBitShort();
++			this._header.dragMode = this._reader.readBitShort();
+ 		}
+ 
+ 		this._header.spatialIndexMaxTreeDepth = this._reader.readBitShort();
+@@ -170,13 +170,13 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 		this._header.attributeVisibility = this._reader.readBitShort() as AttributeVisibilityMode;
+ 
+ 		if (this.r13_14Only) {
+-			this._reader.readBitShort();
++			this._header.coordinateDisplay = this._reader.readBitShort();
+ 		}
+ 
+ 		this._header.pointDisplayMode = this._reader.readBitShort();
+ 
+ 		if (this.r13_14Only) {
+-			this._reader.readBitShort();
++			this._header.pickStyle = this._reader.readBitShort();
+ 		}
+ 
+ 		if (this.r2004Plus) {
+@@ -193,7 +193,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 
+ 		this._header.numberOfSplineSegments = this._reader.readBitShort();
+ 		this._header.surfaceDensityM = this._reader.readBitShort();
+-		this._header.surfaceDensityM = this._reader.readBitShort();
++		this._header.surfaceDensityN = this._reader.readBitShort();
+ 		this._header.surfaceType = this._reader.readBitShort();
+ 		this._header.surfaceTabulation1 = this._reader.readBitShort();
+ 		this._header.surfaceTabulation2 = this._reader.readBitShort();
+@@ -283,7 +283,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 
+ 		if (this.r2000Plus) {
+ 			objectPointers.pucsorthoref = this._reader.handleReference();
+-			this._reader.readBitShort(); // PUCSORTHOVIEW
++			this._header.paperSpaceUcsOrthographicView = this._reader.readBitShort();
+ 			objectPointers.pucsbase = this._reader.handleReference();
+ 
+ 			this._header.paperSpaceOrthographicTopDOrigin = this._reader.read3BitDouble();
+@@ -308,7 +308,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 
+ 		if (this.r2000Plus) {
+ 			objectPointers.ucsorthoref = this._reader.handleReference();
+-			this._reader.readBitShort(); // UCSORTHOVIEW
++			this._header.ucsOrthographicView = this._reader.readBitShort();
+ 			objectPointers.ucsbase = this._reader.handleReference();
+ 
+ 			this._header.modelSpaceOrthographicTopDOrigin = this._reader.read3BitDouble();
+@@ -554,7 +554,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 			this._header.dimensionAssociativity = this._reader.readByte() as DimensionAssociation;
+ 			this._header.haloGapPercentage = this._reader.readByte();
+ 			this._header.obscuredColor = new Color(this._reader.readBitShort());
+-			this._header.interfereColor = new Color(this._reader.readBitShort());
++			this._header.intersectionColor = new Color(this._reader.readBitShort());
+ 			this._header.obscuredType = this._reader.readByte();
+ 			this._header.intersectionDisplay = this._reader.readByte();
+ 			this._header.projectName = this._reader.readVariableText();
+@@ -595,7 +595,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 			this._header.northDirection = this._reader.readBitDouble();
+ 			this._header.timeZone = this._reader.readBitLong();
+ 			this._header.displayLightGlyphs = String.fromCharCode(this._reader.readRawChar());
+-			this._reader.readRawChar(); // TILEMODELIGHTSYNCH
++			this._header.tileModeLightSynch = this._reader.readRawChar();
+ 			this._header.dwgUnderlayFramesVisibility = String.fromCharCode(this._reader.readRawChar());
+ 			this._header.dgnUnderlayFramesVisibility = String.fromCharCode(this._reader.readRawChar());
+ 			this._reader.readBit(); // unknown
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
+index 1d9f4ba..e5b6994 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
+@@ -33,6 +33,15 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		return records?.tryGetValue(name) ?? records?.tryGetValue(`_${name}`) ?? null;
+ 	}
+ 
++	/** A handle the header keeps as read: 0 once nothing in the document has it. */
++	private _objectHandle(handle: number | null): number {
++		return handle != null && this._document.getCadObject(handle) != null ? handle : 0;
++	}
++
++	private _ucs(name: string): number {
++		return (name && this._document.uCSs?.tryGetValue(name)?.handle) || 0;
++	}
++
+ 	constructor(stream: Uint8Array, document: CadDocument, encoding: string) {
+ 		super(document.header.version);
+ 
+@@ -149,9 +158,9 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		//R13-R14 Only:
+ 		if (this.r13_14Only) {
+ 			//B : ATTREQ
+-			this._writer.writeBit(false);
++			this._writer.writeBit(this._header.attributeRequest !== 0);
+ 			//B : ATTDIA
+-			this._writer.writeBit(false);
++			this._writer.writeBit(this._header.attributeDialog !== 0);
+ 		}
+ 
+ 		//Common:
+@@ -177,7 +186,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		//R13 - R14 Only:
+ 		if (this.r13_14Only) {
+ 			//B : DELOBJ
+-			this._writer.writeBit(false);
++			this._writer.writeBit(this._header.deleteObjects !== 0);
+ 		}
+ 
+ 		//Common:
+@@ -191,7 +200,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		//R13-R14 Only:
+ 		if (this.r13_14Only) {
+ 			//BS : DRAGMODE
+-			this._writer.writeBitShort(0);
++			this._writer.writeBitShort(this._header.dragMode);
+ 		}
+ 
+ 		//Common:
+@@ -219,7 +228,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		//R13 - R14 Only:
+ 		if (this.r13_14Only) {
+ 			//BS: COORDS
+-			this._writer.writeBitShort(0);
++			this._writer.writeBitShort(this._header.coordinateDisplay);
+ 		}
+ 
+ 		//Common:
+@@ -229,7 +238,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		//R13 - R14 Only:
+ 		if (this.r13_14Only) {
+ 			//BS: PICKSTYLE
+-			this._writer.writeBitShort(0);
++			this._writer.writeBitShort(this._header.pickStyle);
+ 		}
+ 
+ 		//R2004 +:
+@@ -358,7 +367,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		//R2007 + Only:
+ 		if (this.r2007Plus) {
+ 			//H: CMATERIAL(hard pointer)
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._objectHandle(this._header.currentMaterialHandle));
+ 		}
+ 
+ 		//Common:
+@@ -402,9 +411,9 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		//R2000+ Only:
+ 		if (this.r2000Plus) {
+ 			//H : PUCSORTHOREF (hard pointer)
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._ucs(this._header.paperSpaceUcsOrthographicReferenceName));
+ 			//BS : PUCSORTHOVIEW
+-			this._writer.writeBitShort(0);
++			this._writer.writeBitShort(this._header.paperSpaceUcsOrthographicView);
+ 			//H: PUCSBASE(hard pointer)
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+ 
+@@ -448,9 +457,9 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		//R2000 + Only:
+ 		if (this.r2000Plus) {
+ 			//H: UCSORTHOREF(hard pointer)
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._ucs(this._header.ucsOrthographicReferenceName));
+ 			//BS: UCSORTHOVIEW
+-			this._writer.writeBitShort(0);
++			this._writer.writeBitShort(this._header.ucsOrthographicView);
+ 			//H : UCSBASE(hard pointer)
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+ 
+@@ -745,7 +754,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 			this._writer.writeByte(this._header.dimensionAssociativity);
+ 			this._writer.writeByte(this._header.haloGapPercentage);
+ 			this._writer.writeBitShort(this._header.obscuredColor.index);
+-			this._writer.writeBitShort(this._header.interfereColor.index);
++			this._writer.writeBitShort(this._header.intersectionColor.index);
+ 			this._writer.writeByte(this._header.obscuredType);
+ 			this._writer.writeByte(this._header.intersectionDisplay);
+ 
+@@ -786,15 +795,15 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 			this._writer.writeBitDouble(this._header.northDirection);
+ 			this._writer.writeBitLong(this._header.timeZone);
+ 			this._writer.writeByte(this._header.displayLightGlyphs.charCodeAt(0) || 0);
+-			this._writer.writeByte(0x30); // '0'
++			this._writer.writeByte(this._header.tileModeLightSynch);
+ 			this._writer.writeByte(this._header.dwgUnderlayFramesVisibility.charCodeAt(0) || 0);
+ 			this._writer.writeByte(this._header.dgnUnderlayFramesVisibility.charCodeAt(0) || 0);
+ 
+ 			this._writer.writeBit(false);
+ 			this._writer.writeCmColor(this._header.interfereColor);
+ 
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._objectHandle(this._header.interfereObjectVisualStyleHandle));
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._objectHandle(this._header.interfereViewportVisualStyleHandle));
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+ 
+ 			this._writer.writeByte(this._header.shadowMode);
+diff --git a/src/Metadata/LookupTables/Core.ts b/src/Metadata/LookupTables/Core.ts
+index f4568b7..73fddab 100644
+--- a/src/Metadata/LookupTables/Core.ts
++++ b/src/Metadata/LookupTables/Core.ts
+@@ -2230,6 +2230,285 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
+           290
+         ],
+         "referenceType": 0
++      },
++      {
++        "name": "$ATTDIA",
++        "isName": false,
++        "propertyName": "attributeDialog",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$ATTREQ",
++        "isName": false,
++        "propertyName": "attributeRequest",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$COORDS",
++        "isName": false,
++        "propertyName": "coordinateDisplay",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$DELOBJ",
++        "isName": false,
++        "propertyName": "deleteObjects",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$DRAGMODE",
++        "isName": false,
++        "propertyName": "dragMode",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$HANDLING",
++        "isName": false,
++        "propertyName": "handling",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$PICKSTYLE",
++        "isName": false,
++        "propertyName": "pickStyle",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$SAVEIMAGES",
++        "isName": false,
++        "propertyName": "saveImages",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$SKPOLY",
++        "isName": false,
++        "propertyName": "sketchPolylineType",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$SURFTAB1",
++        "isName": false,
++        "propertyName": "surfaceTabulation1",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$SURFTAB2",
++        "isName": false,
++        "propertyName": "surfaceTabulation2",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$SURFU",
++        "isName": false,
++        "propertyName": "surfaceDensityM",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$SURFV",
++        "isName": false,
++        "propertyName": "surfaceDensityN",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$HIDETEXT",
++        "isName": false,
++        "propertyName": "hideText",
++        "valueCodes": [
++          280
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$INTERSECTIONCOLOR",
++        "isName": false,
++        "propertyName": "intersectionColor",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$INTERSECTIONDISPLAY",
++        "isName": false,
++        "propertyName": "intersectionDisplay",
++        "valueCodes": [
++          280
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$OBSCOLOR",
++        "isName": false,
++        "propertyName": "obscuredColor",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$OBSLTYPE",
++        "isName": false,
++        "propertyName": "obscuredType",
++        "valueCodes": [
++          280
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$TILEMODELIGHTSYNCH",
++        "isName": false,
++        "propertyName": "tileModeLightSynch",
++        "valueCodes": [
++          280
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$REALWORLDSCALE",
++        "isName": false,
++        "propertyName": "realWorldScale",
++        "valueCodes": [
++          290
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$UCSORTHOREF",
++        "isName": true,
++        "propertyName": "ucsOrthographicReferenceName",
++        "valueCodes": [
++          2
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$UCSORTHOVIEW",
++        "isName": false,
++        "propertyName": "ucsOrthographicView",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$PUCSORG",
++        "isName": false,
++        "propertyName": "paperSpaceOrigin",
++        "valueCodes": [
++          10,
++          20,
++          30
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$PUCSXDIR",
++        "isName": false,
++        "propertyName": "paperSpaceXAxis",
++        "valueCodes": [
++          10,
++          20,
++          30
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$PUCSYDIR",
++        "isName": false,
++        "propertyName": "paperSpaceYAxis",
++        "valueCodes": [
++          10,
++          20,
++          30
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$PUCSORTHOREF",
++        "isName": true,
++        "propertyName": "paperSpaceUcsOrthographicReferenceName",
++        "valueCodes": [
++          2
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$PUCSORTHOVIEW",
++        "isName": false,
++        "propertyName": "paperSpaceUcsOrthographicView",
++        "valueCodes": [
++          70
++        ],
++        "referenceType": 0
++      },
++      {
++        "name": "$CMATERIAL",
++        "isName": false,
++        "propertyName": "currentMaterialHandle",
++        "valueCodes": [
++          347
++        ],
++        "referenceType": 0,
++        "valueKind": "handle"
++      },
++      {
++        "name": "$INTERFEREOBJVS",
++        "isName": false,
++        "propertyName": "interfereObjectVisualStyleHandle",
++        "valueCodes": [
++          345
++        ],
++        "referenceType": 0,
++        "valueKind": "handle"
++      },
++      {
++        "name": "$INTERFEREVPVS",
++        "isName": false,
++        "propertyName": "interfereViewportVisualStyleHandle",
++        "valueCodes": [
++          346
++        ],
++        "referenceType": 0,
++        "valueKind": "handle"
+       }
+     ]
+   },
+diff --git a/src/Metadata/MetadataTypes.ts b/src/Metadata/MetadataTypes.ts
+index a89cd3d..cfa3d53 100644
+--- a/src/Metadata/MetadataTypes.ts
++++ b/src/Metadata/MetadataTypes.ts
+@@ -1,4 +1,4 @@
+-export type MetadataValueKind = 'date' | 'timespan' | 'char';
++export type MetadataValueKind = 'date' | 'timespan' | 'char' | 'handle';
+ 
+ export interface PropertyMetadata {
+ 	propertyName: string;

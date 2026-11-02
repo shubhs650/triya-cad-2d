@@ -439,43 +439,15 @@ const ACAD_TS_GAPS: Record<string, string> = {
   'STYLE 2': 'nameless shape-file STYLE records are renamed unnamedN by the table collection',
   'DIMSTYLE 5':
     'an R12 DIMBLK names a built-in arrowhead without its underscore (BOXBLANK for the _BOXBLANK block); acad-ts leaves it unresolved',
-  ...Object.fromEntries(
-    [
-      '$ATTDIA',
-      '$ATTREQ',
-      '$CMATERIAL',
-      '$COORDS',
-      '$DELOBJ',
-      '$DRAGMODE',
-      '$HANDLING',
-      '$HIDETEXT',
-      '$INTERFEREOBJVS',
-      '$INTERFEREVPVS',
-      '$INTERSECTIONCOLOR',
-      '$INTERSECTIONDISPLAY',
-      '$LINMAX',
-      '$LINMIN',
-      '$OBSCOLOR',
-      '$OBSLTYPE',
-      '$PUCSORG',
-      '$PUCSORTHOREF',
-      '$PUCSORTHOVIEW',
-      '$PUCSXDIR',
-      '$PICKSTYLE',
-      '$PUCSYDIR',
-      '$REALWORLDSCALE',
-      '$SAVEIMAGES',
-      '$SKPOLY',
-      '$SURFTAB1',
-      '$SURFTAB2',
-      '$SURFU',
-      '$SURFV',
-      '$TILEMODELIGHTSYNCH',
-      '$UCSORTHOREF',
-      '$UCSORTHOVIEW',
-    ].map((v) => [v, 'not in the acad-ts header metadata, so DXF read drops it']),
-  ),
 };
+
+/**
+ * Header names that are not AutoCAD variables, which AutoCAD skips on open, so no reader keeps
+ * them. Only ezdxf's hand-written `Minimal_DXF_AC1006.dxf` ("DXF created by Eric Roger") has
+ * `$LINMIN`/`$LINMAX`, with the values its `$EXTMIN`/`$EXTMAX` have: neither is in the AutoCAD
+ * DXF references (R12 to 2024), so they are most likely `$LIMMIN`/`$LIMMAX` misspelt.
+ */
+const NOT_AUTOCAD_VARIABLES = new Set(['$LINMIN', '$LINMAX']);
 
 interface Mismatch {
   /** `LAYER 62`, `$LTSCALE`, …: what ACAD_TS_GAPS is keyed on. */
@@ -676,7 +648,8 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
       for (const r of [...oracle.records, ...oracle.objects])
         compareRecord(r, tables, mismatches, f.path);
       for (const [name, groups] of oracle.header)
-        compareHeader(name, groups, header, mismatches, f.path);
+        if (!NOT_AUTOCAD_VARIABLES.has(name))
+          compareHeader(name, groups, header, mismatches, f.path);
     }
     expect(files).toBeGreaterThan(50);
     expect(mismatches.filter((m) => !(m.kind in ACAD_TS_GAPS)).map((m) => m.text)).toEqual([]);

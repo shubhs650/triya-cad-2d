@@ -1,0 +1,1 @@
+- M1-32 part 2 (#121): DXF files keep 30 more header variables (`$ATTDIA`, `$ATTREQ`, `$SURFTAB1`, `$SURFU`, `$PUCSORG`, `$UCSORTHOREF`, `$CMATERIAL`, `$INTERSECTIONCOLOR`, …) through open and save, and DWG files keep the ones acad-ts read into the wrong field or threw away (acad-ts patch 0111).

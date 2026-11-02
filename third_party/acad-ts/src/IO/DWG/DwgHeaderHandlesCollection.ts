@@ -206,5 +206,16 @@ export class DwgHeaderHandlesCollection {
 
 		record = builder.tryGetCadObject<BlockRecord>(this.dimblk2);
 		if (record) { header.dimensionBlockNameSecond = record.name; }
+
+		entry = builder.tryGetCadObject<TableEntry>(this.ucsorthoref);
+		if (entry) { header.ucsOrthographicReferenceName = entry.name; }
+
+		entry = builder.tryGetCadObject<TableEntry>(this.pucsorthoref);
+		if (entry) { header.paperSpaceUcsOrthographicReferenceName = entry.name; }
+
+		// Kept by handle, as DXF keeps them: acad-ts has no MATERIAL or VISUALSTYLE class.
+		if (this.cmaterial && builder.tryGetCadObject(this.cmaterial)) { header.currentMaterialHandle = this.cmaterial; }
+		if (this.interfereobjvs && builder.tryGetCadObject(this.interfereobjvs)) { header.interfereObjectVisualStyleHandle = this.interfereobjvs; }
+		if (this.interferevpvs && builder.tryGetCadObject(this.interferevpvs)) { header.interfereViewportVisualStyleHandle = this.interferevpvs; }
 	}
 }
