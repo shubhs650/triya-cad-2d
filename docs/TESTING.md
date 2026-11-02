@@ -136,7 +136,7 @@ Runs on the CI runner with fixed CPU class; thresholds carry a 20 % margin over 
 - T3: scripted pan/zoom for 5 s; count frames; measure input→prompt latency; osnap query timing at 1000 random cursor positions.
 - T5: in-place save timing; autosave timing after last edit.
 
-`tests/e2e/perf/render.spec.ts` runs the render side of T2 and T3 on a synthetic 100k-entity drawing built in the page (`tests/e2e/render-harness`); `tests/e2e/io/responsiveness.spec.ts` parses the generated `bench-100k` DWG (M1-42). It asserts the T2 first frame in the render worker and reports T3 fps as test annotations; M1-44 turns the T3 report into an assertion.
+`tests/e2e/perf/render.spec.ts` runs the render side of T2 and T3 on a synthetic 100k-entity drawing built in the page (`tests/e2e/render-harness`); `tests/e2e/io/responsiveness.spec.ts` parses the generated `bench-100k` DWG (M1-42). It asserts the T2 first frame in the render worker and, since M1-44, T3: pan/zoom paced by animation frames (one view change and frame per frame, as the app draws) at ≥ 48 fps (60 less the runner margin) on the synthetic 100k drawing and on the generated `bench-100k` drawing mapped through `documentInit`; fps and the slowest frame are reported as test annotations.
 - T6: PLOT A1 timing.
 - T7: `performance.measureUserAgentSpecificMemory` across 20 open/close cycles.
 
