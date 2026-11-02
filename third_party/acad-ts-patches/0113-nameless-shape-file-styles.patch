@@ -1,0 +1,72 @@
+diff --git a/src/Tables/Collections/Table.ts b/src/Tables/Collections/Table.ts
+index ec6c89d..ff1fc83 100644
+--- a/src/Tables/Collections/Table.ts
++++ b/src/Tables/Collections/Table.ts
+@@ -34,6 +34,13 @@ export abstract class Table<T extends TableEntry> extends CadObject implements I
+ 
+ 	public add(item: T): void {
+ 		if (!item.name || !item.name.trim()) {
++			if (item.keepsEmptyName) {
++				// Kept under a key no name can have, so lookups by name never find it. A table control
++				// can list an entry twice (DWG); a named one lands on the same key, so this one must too.
++				if ([...this.entries.values()].includes(item)) return;
++				this.addEntry(this.createName('\u0000nameless'), item);
++				return;
++			}
+ 			item.name = this.createName('unnamed');
+ 		}
+ 		this.addEntry(item.name, item);
+@@ -149,10 +156,14 @@ export abstract class Table<T extends TableEntry> extends CadObject implements I
+ 			throw new Error(`The name ${e.oldName} belongs to a default entry.`);
+ 		}
+ 
+-		const entry = this.entries.get(e.oldName.toUpperCase());
+-		if (entry) {
++		// A nameless entry is kept under a key of its own (keepsEmptyName).
++		const oldKey = e.oldName
++			? e.oldName.toUpperCase()
++			: [...this.entries].find(([, v]) => v === sender)?.[0];
++		const entry = oldKey === undefined ? undefined : this.entries.get(oldKey);
++		if (entry && oldKey !== undefined) {
+ 			this.entries.set(e.newName.toUpperCase(), entry);
+-			this.entries.delete(e.oldName.toUpperCase());
++			this.entries.delete(oldKey);
+ 		}
+ 		this._referenceHandler.changeKey(e.oldName.toUpperCase(), e.newName.toUpperCase());
+ 	}
+diff --git a/src/Tables/TableEntry.ts b/src/Tables/TableEntry.ts
+index b3c6a92..b0b69d6 100644
+--- a/src/Tables/TableEntry.ts
++++ b/src/Tables/TableEntry.ts
+@@ -47,8 +47,14 @@ export abstract class TableEntry extends CadObject implements INamedCadObject {
+ 		return clone;
+ 	}
+ 
++	/** True for an entry AutoCAD stores with an empty name (a shape file's text style). */
++	public get keepsEmptyName(): boolean {
++		return false;
++	}
++
+ 	public override validate(format: CadFileFormat, version: ACadVersion): string[] {
+ 		const errors = super.validate(format, version);
++		if (this.name === '' && this.keepsEmptyName) return errors;
+ 		if (format === CadFileFormat.DXF && !INamedCadObjectExtensions.isValidDxfName(this, version)) {
+ 			errors.push(`${this.constructor.name}: name is invalid for a DXF file.`);
+ 		}
+diff --git a/src/Tables/TextStyle.ts b/src/Tables/TextStyle.ts
+index 48c34a1..36a7a67 100644
+--- a/src/Tables/TextStyle.ts
++++ b/src/Tables/TextStyle.ts
+@@ -53,6 +53,12 @@ export class TextStyle extends TableEntry {
+ 		return (this.styleFlags & StyleFlags.IsShape) !== 0;
+ 	}
+ 
++	// AutoCAD names the STYLE record of a shape file with an empty string, and a drawing can
++	// hold several; the table used to rename them unnamedN, so a save wrote text styles.
++	public override get keepsEmptyName(): boolean {
++		return this.isShapeFile;
++	}
++
+ 	public constructor(name?: string) {
+ 		super(name);
+ 	}

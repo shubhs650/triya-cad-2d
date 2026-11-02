@@ -145,6 +145,14 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
   private _writeDimensionStyle(style: DimensionStyle, map: DxfClassMap): void {
     this._writer.write(3, style.postFix, map);
     this._writer.write(4, style.alternateDimensioningSuffix, map);
+    if (this.version <= ACadVersion.AC1009) {
+      // R12 has no handles: it names the arrow blocks (DIMBLK, DIMBLK1, DIMBLK2), a built-in
+      // arrowhead without the underscore of its block, as AutoCAD writes them. Code 5 is a handle
+      // code, which the writers write as its value's text (upper case, as R12 names are).
+      this._writer.write(5, r12ArrowName(style.arrowBlock));
+      this._writer.write(6, r12ArrowName(style.dimArrow1));
+      this._writer.write(7, r12ArrowName(style.dimArrow2));
+    }
 
     this._writer.write(40, style.scaleFactor, map);
     this._writer.write(41, style.arrowSize, map);
@@ -257,6 +265,9 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
     // Hard pointer to the layer's plot style name (an ACDBPLACEHOLDER in ACAD_PLOTSTYLENAME);
     // upstream always wrote 0, detaching every layer from its plot style.
     this._writer.write(390, layer.plotStyleName, map);
+
+    // The layer's material (R2007+); upstream never wrote it, so every layer lost it on save.
+    if (this.version >= ACadVersion.AC1021) this._writer.writeHandle(347, layer.material, map);
   }
 
   private _writeLineType(linetype: LineType, map: DxfClassMap): void {
@@ -419,4 +430,12 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
       this.holder.objects.push(vport.sun);
     }
   }
+}
+
+/** The name R12 gives an arrow block: AutoCAD's built-in arrowheads lose their underscore. */
+function r12ArrowName(block: BlockRecord | null): string {
+  const name = block?.name ?? '';
+  return /^_(ARCHTICK|BOXBLANK|BOXFILLED|CLOSED|CLOSEDBLANK|DATUMBLANK|DATUMFILLED|DOT|DOTBLANK|DOTSMALL|INTEGRAL|NONE|OBLIQUE|OPEN|OPEN30|OPEN90|ORIGIN|ORIGIN2|SMALL)$/i.test(name)
+    ? name.slice(1)
+    : name;
 }
