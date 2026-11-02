@@ -43,8 +43,11 @@ export interface OpenedDocument {
   readonly init: DocumentInit;
   /** The `*Model_Space` block record, which the Model tab shows. */
   readonly modelSpace: Handle | undefined;
-  /** Model-space extents for Zoom Extents, undefined when nothing has a known extent. */
-  readonly extents: Box | undefined;
+  /**
+   * Zoom Extents per space, keyed by block record: model space and each layout's paper space.
+   * A space whose contents have no known extent has no entry.
+   */
+  readonly extents: Readonly<Record<Handle, Box>>;
 }
 
 const point = (v: HeaderValue | undefined): { x: number; y: number } | undefined =>
@@ -53,30 +56,42 @@ const point = (v: HeaderValue | undefined): { x: number; y: number } | undefined
 export function openDocument(doc: CadDocument): OpenedDocument {
   const init = documentInit(doc);
   const modelSpace = init.blocks?.find((b) => b.name.toUpperCase() === '*MODEL_SPACE')?.handle;
-  const extents = modelSpace === undefined ? undefined : modelExtents(init, modelSpace);
-  return { init, modelSpace, extents };
+  return { init, modelSpace, extents: spaceExtents(init, modelSpace) };
 }
 
 /**
- * The union of what model space draws whose extent the engine knows. AutoCAD's extents leave
+ * The union of what each space draws whose extent the engine knows. AutoCAD's extents leave
  * out XLINE and RAY; text has no extent until the text engine supplies bounds (M1-35), so a
- * drawing of text alone falls back to the header's `$EXTMIN`/`$EXTMAX`.
+ * model space of text alone falls back to the header's `$EXTMIN`/`$EXTMAX`.
  */
-function modelExtents(init: DocumentInit, block: Handle): Box | undefined {
+function spaceExtents(init: DocumentInit, modelSpace: Handle | undefined): Record<Handle, Box> {
   const model = DocumentModel.create(init);
   const header = model.header;
   const min = point(header.get('$EXTMIN'));
   const max = point(header.get('$EXTMAX'));
   const tol = toleranceFromExtents(min ?? { x: 1, y: 1 }, max ?? { x: 0, y: 0 });
   const index = SpatialIndex.build(model, { tol });
-  let box: Box = EMPTY_BOX;
-  for (const id of model.blockEntities(block)) {
-    const b = index.bounds(id);
-    if (b?.kind === 'box') box = unionBox(box, b.box);
+  const out: Record<Handle, Box> = {};
+  const spaces = new Set(model.layouts.map((l) => l.blockRecord));
+  if (modelSpace !== undefined) spaces.add(modelSpace);
+  for (const block of spaces) {
+    if (!model.hasBlock(block)) continue;
+    let box: Box = EMPTY_BOX;
+    for (const id of model.blockEntities(block)) {
+      const b = index.bounds(id);
+      if (b?.kind === 'box') box = unionBox(box, b.box);
+    }
+    if (box.minX <= box.maxX && box.minY <= box.maxY) out[block] = box;
   }
-  if (box.minX <= box.maxX && box.minY <= box.maxY) return box;
-  if (min && max && min.x <= max.x && min.y <= max.y) {
-    return { minX: min.x, minY: min.y, maxX: max.x, maxY: max.y };
+  if (
+    modelSpace !== undefined &&
+    !out[modelSpace] &&
+    min &&
+    max &&
+    min.x <= max.x &&
+    min.y <= max.y
+  ) {
+    out[modelSpace] = { minX: min.x, minY: min.y, maxX: max.x, maxY: max.y };
   }
-  return undefined;
+  return out;
 }

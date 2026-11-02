@@ -174,11 +174,11 @@ Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time || partial (M1-22 part 1): real-time wheel zoom at the cursor, Extents on middle double-click; command options wait on M2-01 |
-| PAN ᵀ | P | 1 | real-time, -PAN || partial (M1-22 part 1): real-time pan by middle-button drag; command waits on M2-01 |
-| REGEN / REGENALL | RE / REA | 1 | | |
+| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | partial (M1-22): real-time wheel zoom at the cursor; Extents (also middle double-click), Window, Previous, All and Scale 2X/0.5X on the navigation bar; Center, Dynamic, Object, nXP and the command line wait on M2-01 |
+| PAN ᵀ | P | 1 | real-time, -PAN | partial (M1-22): real-time pan by middle-button drag, and with the left button from the navigation bar until Esc; -PAN and the command wait on M2-01 |
+| REGEN / REGENALL | RE / REA | 1 | | partial (M1-22 part 2): Regen on the navigation bar rebuilds the space shown; REGENALL and the command wait on M2-01 |
 | REDRAW ᵀ | R | 1 | | |
-| VIEW | V | 2 | named views dialog; -VIEW | |
+| VIEW | V | 2 | named views dialog; -VIEW | partial (M1-22 part 2): the navigation bar's Views list restores the drawing's plan views and saves new ones for the session (written to the drawing with M2-13); the dialog waits |
 | VPORTS / MVIEW / VPCLIP / VPMAX / VPMIN | — | 2 | | |
 | MSPACE / PSPACE / MODEL | MS / PS | 2 | | |
 | LAYOUT / LAYOUTWIZARD(no) / PAGESETUP | LO | 2 | | |
