@@ -1,23 +1,30 @@
 // Settings (UI_SPEC.md §1 title bar), for now the user's files the app draws with: hatch
-// pattern files (M1-50), as AutoCAD's OPTIONS > Files lists its support files. A modal
-// <dialog>, so focus stays inside it and Esc closes it.
+// pattern files (M1-50) and font files (M1-38, M1-37), as AutoCAD's OPTIONS > Files lists its
+// support files. A modal <dialog>, so focus stays inside it and Esc closes it.
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { PatternStore } from './patterns';
+import type { FontStore } from './user-fonts';
 
 export function Settings({
   patterns,
+  fonts,
   open,
   onClose,
   onAdd,
+  onAddFonts,
 }: {
   patterns: PatternStore;
+  fonts: FontStore;
   open: boolean;
   onClose: () => void;
   onAdd: (files: Iterable<File>) => void;
+  onAddFonts: (files: Iterable<File>) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const fontPicker = useRef<HTMLInputElement>(null);
   const { files, notice, error } = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
+  const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
 
   useEffect(() => {
     const d = dialog.current;
@@ -77,6 +84,57 @@ export function Settings({
           data-testid="pattern-picker"
           onChange={(e) => {
             onAdd(e.currentTarget.files ?? []);
+            e.currentTarget.value = '';
+          }}
+        />
+      </section>
+      <section aria-labelledby="fonts-title">
+        <h3 id="fonts-title">Fonts</h3>
+        <p>
+          Your SHX, TrueType and OpenType files draw the text styles that name them, instead of the
+          bundled stand-in. They stay on this device. You can also drop them on the window.
+        </p>
+        {fontState.files.length === 0 ? (
+          <p className="empty">No font files added.</p>
+        ) : (
+          <ul aria-label="Font files">
+            {fontState.files.map((f) => (
+              <li key={f.name}>
+                <span className="file-name">{f.name}</span>
+                <span className="pattern-names">{f.kind}</span>
+                <button
+                  type="button"
+                  aria-label={`Remove ${f.name}`}
+                  onClick={() => void fonts.remove(f.name)}
+                >
+                  Remove
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        {fontState.error && (
+          <p className="message error" role="alert">
+            {fontState.error}
+          </p>
+        )}
+        {fontState.notice && (
+          <p className="message" role="status">
+            {fontState.notice}
+          </p>
+        )}
+        <button type="button" onClick={() => fontPicker.current?.click()}>
+          Add font files…
+        </button>
+        <input
+          ref={fontPicker}
+          type="file"
+          accept=".shx,.ttf,.otf"
+          multiple
+          hidden
+          data-testid="font-picker"
+          onChange={(e) => {
+            onAddFonts(e.currentTarget.files ?? []);
             e.currentTarget.value = '';
           }}
         />

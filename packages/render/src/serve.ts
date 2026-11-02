@@ -52,6 +52,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'patterns':
         r.setPatterns(m.sources);
         break;
+      case 'fonts':
+        session.setFonts(m.fonts);
+        break;
       case 'frame':
         r.frame();
         break;

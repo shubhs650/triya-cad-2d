@@ -21,7 +21,7 @@ import {
   type TableName,
   type Tolerance,
 } from '@triya/engine';
-import { FontBook, loadStrokeFont, type TriyaStrokeFont } from '@triya/text';
+import { FontBook, loadStrokeFont, parseShx, parseTtf, type TriyaStrokeFont } from '@triya/text';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
 import type { TextContext } from './text';
@@ -38,23 +38,40 @@ export interface RenderDocument {
 }
 
 /**
- * Fonts for TEXT and MTEXT, as sources a message can carry (M1-72): the bundled stroke fonts
- * (M1-09) as their committed JSON text, by font name (`oet-simplex`). The session loads them
- * into a FontBook where it runs, so the worker needs nothing but the init message.
+ * Fonts for TEXT and MTEXT, as sources a message can carry: the bundled stroke fonts (M1-09) as
+ * their committed JSON text by font name (`oet-simplex`, M1-72), and the user's font files as
+ * bytes by file name (`.shx`, `.ttf`, `.otf`; M1-37, M1-38). The session loads them into a
+ * FontBook where it runs, so the worker needs nothing but the message.
  */
 export interface FontSources {
   readonly shx?: readonly { readonly name: string; readonly source: string }[];
+  readonly files?: readonly { readonly name: string; readonly bytes: Uint8Array }[];
 }
 
-/** A FontBook holding the given fonts; a source that does not load is left out. */
-export function fontBookOf(sources: FontSources): FontBook {
+const TRUETYPE = /\.(ttf|otf)$/i;
+
+/**
+ * A FontBook holding the given fonts. A file that does not parse is left out and its name
+ * pushed to `failed`: its text draws with the fallbacks, as for a missing font, and the health
+ * report can name it.
+ */
+export function fontBookOf(sources: FontSources, failed: string[] = []): FontBook {
   const book = new FontBook();
   for (const { name, source } of sources.shx ?? []) {
     try {
       book.addShx(name, loadStrokeFont(JSON.parse(source) as TriyaStrokeFont));
     } catch {
-      // A damaged font is a missing font: its text draws with the fallbacks, and the health
-      // report lists it among the substitutions.
+      failed.push(name);
+    }
+  }
+  // User files go in after the bundled fonts: a style finds its own file by name first, and
+  // the bundled fonts only stand in for what is missing (ARCHITECTURE.md §8).
+  for (const { name, bytes } of sources.files ?? []) {
+    try {
+      if (TRUETYPE.test(name)) book.addTtf(parseTtf(bytes), name);
+      else book.addShx(name, parseShx(bytes));
+    } catch {
+      failed.push(name);
     }
   }
   return book;
@@ -67,7 +84,7 @@ export interface RenderSessionOptions {
   readonly style?: RenderStyle;
   /** The user's .pat files (M1-50). */
   readonly patterns?: readonly string[];
-  /** Fonts for text (M1-72); without them text draws nothing and has unknown bounds. */
+  /** Fonts for text (M1-72, M1-38); without them text draws nothing and has unknown bounds. */
   readonly fonts?: FontSources;
   readonly paint?: (e: Entity, model: DocumentModel) => Paint | undefined;
   readonly now?: () => number;
@@ -89,8 +106,10 @@ export class RenderSession {
   readonly model: DocumentModel;
   readonly index: SpatialIndex;
   readonly renderer: Canvas2DRenderer;
-  /** The fonts text draws with, when the session was given any (M1-72). */
-  readonly fonts: FontBook | undefined;
+  /** What text draws with and how it is bounded; `fonts` changes with `setFonts`. */
+  readonly #text: { fonts: FontBook; readonly style: TextContext['style'] };
+  /** The font files that did not parse, by name (the health report lists them). */
+  fontWarnings: readonly string[] = [];
   /** Decoded bitmaps by IMAGEDEF handle, as the app sends them (M1-19). */
   readonly #images = new Map<Handle, RasterPixels>();
 
@@ -98,16 +117,17 @@ export class RenderSession {
     const { init, block } = o.document;
     this.model = DocumentModel.create(init);
     const model = this.model;
-    this.fonts = o.fonts && fontBookOf(o.fonts);
-    // Text is bounded by its glyphs once fonts are loaded (M1-35), so culling and extents see
-    // it; without fonts it stays unknown and is drawn whatever the view.
-    const text: TextContext | undefined = this.fonts && {
-      fonts: this.fonts,
+    const failed: string[] = [];
+    this.#text = {
+      fonts: fontBookOf(o.fonts ?? {}, failed),
       style: (h) => model.tables.textStyles.get(h),
     };
+    this.fontWarnings = failed;
+    // Text is bounded by its glyphs (M1-35), through the fonts in force at each query, so
+    // culling and extents see it; text no loaded font serves stays unknown and always draws.
     this.index = SpatialIndex.build(this.model, {
       tol: o.document.tol ?? documentTolerance(init),
-      ...(text && { annotationBounds: textBounds(text) }),
+      annotationBounds: textBounds(this.#text),
     });
     this.renderer = new Canvas2DRenderer({
       model: this.model,
@@ -117,12 +137,29 @@ export class RenderSession {
       createLayer: o.createLayer,
       ...(o.style && { style: o.style }),
       ...(o.patterns && { patterns: o.patterns }),
-      ...(this.fonts && { fonts: this.fonts }),
+      ...(o.fonts && { fonts: this.#text.fonts }),
       ...(o.paint && { paint: o.paint }),
       ...(o.now && { now: o.now }),
       ...(o.requestIdle && { requestIdle: o.requestIdle }),
       images: (h) => this.#images.get(h),
     });
+  }
+
+  /** The fonts text draws with now. */
+  get fonts(): FontBook {
+    return this.#text.fonts;
+  }
+
+  /**
+   * Replaces the fonts (the user added or removed a font file): text redraws with them and the
+   * spatial index re-bounds it.
+   */
+  setFonts(sources: FontSources): void {
+    const failed: string[] = [];
+    this.#text.fonts = fontBookOf(sources, failed);
+    this.fontWarnings = failed;
+    this.renderer.setFonts(this.#text.fonts);
+    this.index.reboundAnnotations();
   }
 
   /**

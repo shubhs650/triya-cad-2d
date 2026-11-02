@@ -184,6 +184,11 @@ describe('bundled fonts through RendererHost (M1-72)', () => {
       h.setView({ center: { x: 20, y: 5 }, scale: 4 });
       h.frame();
     }
+    // Fonts that change while the drawing is open reach the worker too (M1-38).
+    for (const h of [main, off]) {
+      h.setFonts({ shx: [] });
+      h.frame();
+    }
     await off.flush();
     const calls = (surfaces: Recorded[]) => surfaces.map((s) => s.ctx.calls);
     expect(

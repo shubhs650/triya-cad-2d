@@ -11,6 +11,7 @@ import { NavBar } from './NavBar';
 import { openDrawing, openError } from './open';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import { Settings } from './Settings';
+import { FontStore, isFontFile, opfsFonts } from './user-fonts';
 
 export const OET_HOME = 'https://openengtools.com/';
 export const REPORT_ISSUE = 'https://github.com/shubhs650/triya-cad-2d/issues/new';
@@ -31,14 +32,39 @@ function addPatterns(files: Iterable<File>): void {
   for (const f of files) void f.text().then((text) => patterns.add(f.name, text));
 }
 
-/** A dropped file: a .pat joins the hatch patterns, anything else opens as a drawing. */
+/**
+ * The user's font files (M1-38 TrueType/OpenType, M1-37 SHX), read back from this device and
+ * handed to every renderer with the bundled fonts.
+ */
+const fonts = new FontStore(opfsFonts());
+void fonts.load();
+let fontSources = fonts.sources();
+fonts.subscribe(() => {
+  if (fonts.sources() === fontSources) return;
+  fontSources = fonts.sources();
+  for (const c of allControllers()) c.setFonts(fontSources);
+});
+
+function addFonts(files: Iterable<File>): void {
+  for (const f of files) {
+    void f.arrayBuffer().then((b) => fonts.add(f.name, new Uint8Array(b)));
+  }
+}
+
+/**
+ * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf the fonts, anything else
+ * opens as a drawing.
+ */
 function dropped(files: Iterable<File>): void {
   const pats: File[] = [];
+  const fontFiles: File[] = [];
   for (const f of files) {
     if (isPatFile(f.name)) pats.push(f);
+    else if (isFontFile(f.name)) fontFiles.push(f);
     else void open(fromFile(f));
   }
   addPatterns(pats);
+  addFonts(fontFiles);
 }
 
 async function open(file: { readonly name: string; getFile(): Promise<Blob> }): Promise<void> {
@@ -66,6 +92,7 @@ interface LaunchParams {
 export function App() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
+  const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
   const [settings, setSettings] = useState(false);
   const [layersOpen, setLayersOpen] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
@@ -177,9 +204,11 @@ export function App() {
       </header>
       <Settings
         patterns={patterns}
+        fonts={fonts}
         open={settings}
         onClose={() => setSettings(false)}
         onAdd={addPatterns}
+        onAddFonts={addFonts}
       />
 
       {state.error && (
@@ -202,6 +231,22 @@ export function App() {
         <div className="banner" role="status">
           <span>{patternState.notice}</span>
           <button type="button" aria-label="Dismiss" onClick={() => patterns.dismiss()}>
+            ×
+          </button>
+        </div>
+      )}
+      {!settings && fontState.error && (
+        <div className="banner error" role="alert">
+          <span>{fontState.error}</span>
+          <button type="button" aria-label="Dismiss" onClick={() => fonts.dismiss()}>
+            ×
+          </button>
+        </div>
+      )}
+      {!settings && fontState.notice && (
+        <div className="banner" role="status">
+          <span>{fontState.notice}</span>
+          <button type="button" aria-label="Dismiss" onClick={() => fonts.dismiss()}>
             ×
           </button>
         </div>
@@ -306,6 +351,7 @@ function SpaceCanvas({
         if (visibleRef.current) onMode(m);
       },
       patterns: () => patterns.sources(),
+      fonts: () => fonts.sources(),
       changes: () => engines.changesOf(id),
     });
     const unregister = register(id, block, c);

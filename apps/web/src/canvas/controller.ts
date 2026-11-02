@@ -22,6 +22,7 @@ import {
   PATH_Z,
   RendererHost,
   screenToWorld,
+  type FontSources,
   type RenderStyle,
   type ViewTransform,
 } from '@triya/render';
@@ -58,6 +59,11 @@ export interface CanvasHooks {
   readonly onMode?: (mode: CanvasMode) => void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
   readonly patterns?: () => readonly string[];
+  /**
+   * The fonts when a renderer is made: the bundled ones and the user's files (M1-72, M1-38);
+   * later changes come by `setFonts`. Defaults to the bundled fonts.
+   */
+  readonly fonts?: () => FontSources;
   /**
    * The changes the drawing's engine applied since it opened (M1-67): a renderer is built from
    * the drawing as opened, so a new one (first show, REGEN) applies these to catch up.
@@ -208,6 +214,12 @@ export class CanvasController {
     this.#requestFrame();
   }
 
+  /** The user's font files changed (M1-38): text redraws with them. */
+  setFonts(fonts: FontSources): void {
+    this.#host.setFonts(fonts);
+    this.#requestFrame();
+  }
+
   dispose(): void {
     this.#listeners.abort();
     this.#observer.disconnect();
@@ -224,7 +236,7 @@ export class CanvasController {
       createWorker: () => new RenderWorker(),
       style: this.#style(),
       onError: this.#hooks.onError,
-      fonts: BUNDLED_FONTS,
+      fonts: this.#hooks.fonts?.() ?? BUNDLED_FONTS,
       ...(patterns.length > 0 && { patterns }),
     });
     for (const change of this.#hooks.changes?.() ?? []) host.apply(change);
