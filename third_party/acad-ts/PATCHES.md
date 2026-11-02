@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43) and 0111 (M1-32 part 2) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36) and 0111 (M1-32 part 2) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2093,6 +2093,30 @@ The DXF hatch reader skipped the hatch style (75); `_readPattern` consumed the g
 **Title:** Fix mistyped ACI palette entries and nearest-colour lookup
 
 `Color._indexRgb` had 31 entries that do not follow the AutoCAD Color Index pattern (for example ACI 29 was 38,28,19 instead of 38,23,19, ACI 192 had red and blue swapped, and the greys 250–254 were off). `Color.approxIndex` compared signed sums of channel differences and stopped at the first decrease, so most true colours mapped to index 0 (ByBlock) or 1. This fixes the table, makes `approxIndex` return the nearest index (squared RGB distance, 1–255) in the palette AutoCAD uses when it stores an ACI next to a true colour (it reproduces the 62 AutoCAD writes beside 420 in the ezdxf and ACadSharp sample files), and writes that 62 before an entity's 420 in DXF, as AutoCAD does.
+
+</details>
+
+### 0110 — Table cell formats: border edge ids, R2004 border visibility, R2010 cell-style flags, DXF cell text style
+
+- **File:** `third_party/acad-ts-patches/0110-table-cell-style-reads.patch`
+- **Touches:** `src/Entities/TableEntity.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/Templates/CadTableEntityTemplate.ts`
+- **Symptom:** four ways a table cell's format overrides read wrong, found mapping them (M1-36) and comparing each acadsharp `sample_*.dwg` with its DXF save:
+  1. `CellEdgeFlags` had 2 as the right edge and 0x20 as the inside horizontal line. ObjectARX `AcDb::GridLineType` has them the other way round (kHorzInside = 2, kVertRight = 0x20). So an R2010+ cell style's right-edge override landed on `horizontalInsideBorder`: in `sample_AC1024.dwg` table 528, cell (4,2) is drawn with a colour-63 right edge, and its DXF save says so (65 = 63), but acad-ts put that edge inside.
+  2. An R2004/R2007 DWG cell's edge visibility override (BS) was read inverted, 0 as hidden. In `sample_AC1018.dwg`, cell (4,0) of table 528 flags its top and left visibility with 0, and acad-ts read both edges as hidden. The `*T9` block draws both edges (colour 63, 0.40 mm), and the R2010+ saves state them visible.
+  3. A DWG R2010+ cell style states its own property override flags, and then its content format, which has flags of its own. The content format's flags overwrote the cell style's in `propertyOverrideFlags`, so whatever a cell, row, column or table cell style overrode (alignment, background, margins, text height) was lost. In `sample_AC1024.dwg`, cell (4,0) overrides 0x63E10 (alignment, background 165, margins), and acad-ts read 0.
+  4. The DXF reader dropped a cell's text style override (7). The flag (0x10) was read, but the style was not, although the DXF writer writes it.
+- **Fix:** swap the two `CellEdgeFlags` values. The reader and writer both use the enum, so files round-trip as before, with the edges now named right. `CellStyle.cellPropertyOverrideFlags` (null unless read from DWG) keeps the cell style's own flags, and the writer writes it back in their place. The R2004 reader and writer treat the visibility short as "hidden" (1 = hidden). The DXF reader keeps a cell's 7, and the cell template resolves it by name when the cell is built, as for a handle.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0110 DWG table cells keep their border edges, R2004 visibility and R2010 cell-style flags" (1–3, with DWG round trips); `packages/io/test/acad-ts-patches.test.ts` → "0110 a DXF table cell keeps the text style override it names (7)" (4). The M1-36 corpus test "maps the tables of a DWG like those of the same drawing saved as DXF" now compares cell formats, and it fails without 1–3.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file). Visibility (2) is inferred from the drawing, because no corpus file has an edge that is really hidden. AutoCAD's DXF for the same cells writes no 289/285/286/288, and acad-ts reads none.
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Fix table cell format reads: grid line ids, R2004 edge visibility, R2010 cell style override flags, DXF cell text style
+
+- `CellEdgeFlags`: 2 is the inside horizontal grid line and 0x20 the right edge (`AcDb::GridLineType`). Before this, R2010+ right-edge overrides were stored on `HorizontalInsideBorder`.
+- R2004/R2007 DWG cell overrides: the edge visibility short was read inverted. A cell whose `*T` block draws its edge, and whose R2010 save states it visible, stores 0 there.
+- R2010+ DWG cell styles: the cell style's override flags were overwritten by its content format's flags, which are read next. They are now kept in `CellStyle.CellPropertyOverrideFlags` and written back.
+- DXF ACAD_TABLE cells: a cell's text style override (7) is now read and resolved by name.
 
 </details>
 

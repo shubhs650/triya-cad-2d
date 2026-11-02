@@ -1,0 +1,142 @@
+diff --git a/src/Entities/TableEntity.ts b/src/Entities/TableEntity.ts
+index 3bc465f..926efd8 100644
+--- a/src/Entities/TableEntity.ts
++++ b/src/Entities/TableEntity.ts
+@@ -54,11 +54,12 @@ export enum CellAlignmentType {
+ export enum CellEdgeFlags {
+ 	Unknown = 0,
+ 	Top = 1,
+-	Right = 2,
++	// AcDb::GridLineType: 2 is the inside horizontal line and 0x20 the right edge.
++	InsideHorizontal = 2,
+ 	Bottom = 4,
+ 	Left = 8,
+ 	InsideVertical = 16,
+-	InsideHorizontal = 32,
++	Right = 32,
+ }
+ 
+ export enum CellStyleClass {
+@@ -314,6 +315,11 @@ export class CellStyle extends ContentFormat {
+ 	rightMargin: number = 0;
+ 	styleClass: CellStyleClass = CellStyleClass.Data;
+ 	tableCellStylePropertyFlags: TableCellStylePropertyFlags = 0;
++	/**
++	 * The cell style's own override flags, as DWG R2010+ states them before its content format;
++	 * propertyOverrideFlags holds the content format's. Null when the style was not read from DWG.
++	 */
++	cellPropertyOverrideFlags: TableCellStylePropertyFlags | null = null;
+ 	textColor: Color = Color.byBlock;
+ 	topBorder: CellBorder = new CellBorder(CellEdgeFlags.Top);
+ 	cellStyleType: CellStyleType = CellStyleType.Unknown;
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index d4cfd65..4029f4b 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -4936,7 +4936,7 @@ export class DwgObjectReader extends DwgSectionIO {
+       return;
+     }
+ 
+-    cellStyle.propertyOverrideFlags = this._mergedReaders.readBitLong() as TableCellStylePropertyFlags;
++    cellStyle.cellPropertyOverrideFlags = this._mergedReaders.readBitLong() as TableCellStylePropertyFlags;
+     cellStyle.tableCellStylePropertyFlags = this._mergedReaders.readBitLong() as TableCellStylePropertyFlags;
+     cellStyle.backgroundColor = this._mergedReaders.readCmColor(this.r2004Pre);
+     cellStyle.contentLayoutFlags = this._mergedReaders.readBitLong() as TableCellContentLayoutFlags;
+@@ -5204,7 +5204,7 @@ export class DwgObjectReader extends DwgSectionIO {
+         cell.styleOverride.topBorder.lineWeight = this._mergedReaders.readBitShort() as LineWeightType;
+       }
+       if ((flags & CellOverrideFlags.TopVisibility) !== 0) {
+-        cell.styleOverride.topBorder.isInvisible = !this._mergedReaders.readBitShortAsBool();
++        cell.styleOverride.topBorder.isInvisible = this._mergedReaders.readBitShortAsBool();
+       }
+ 
+       if ((flags & CellOverrideFlags.RightGridColor) !== 0) {
+@@ -5214,7 +5214,7 @@ export class DwgObjectReader extends DwgSectionIO {
+         cell.styleOverride.rightBorder.lineWeight = this._mergedReaders.readBitShort() as LineWeightType;
+       }
+       if ((flags & CellOverrideFlags.RightVisibility) !== 0) {
+-        cell.styleOverride.rightBorder.isInvisible = !this._mergedReaders.readBitShortAsBool();
++        cell.styleOverride.rightBorder.isInvisible = this._mergedReaders.readBitShortAsBool();
+       }
+ 
+       if ((flags & CellOverrideFlags.BottomGridColor) !== 0) {
+@@ -5224,7 +5224,7 @@ export class DwgObjectReader extends DwgSectionIO {
+         cell.styleOverride.bottomBorder.lineWeight = this._mergedReaders.readBitShort() as LineWeightType;
+       }
+       if ((flags & CellOverrideFlags.BottomVisibility) !== 0) {
+-        cell.styleOverride.bottomBorder.isInvisible = !this._mergedReaders.readBitShortAsBool();
++        cell.styleOverride.bottomBorder.isInvisible = this._mergedReaders.readBitShortAsBool();
+       }
+ 
+       if ((flags & CellOverrideFlags.LeftGridColor) !== 0) {
+@@ -5234,7 +5234,7 @@ export class DwgObjectReader extends DwgSectionIO {
+         cell.styleOverride.leftBorder.lineWeight = this._mergedReaders.readBitShort() as LineWeightType;
+       }
+       if ((flags & CellOverrideFlags.LeftVisibility) !== 0) {
+-        cell.styleOverride.leftBorder.isInvisible = !this._mergedReaders.readBitShortAsBool();
++        cell.styleOverride.leftBorder.isInvisible = this._mergedReaders.readBitShortAsBool();
+       }
+     }
+ 
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 51441dd..4ff403c 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -3045,7 +3045,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		for (const [border, color, lineWeight, visibility] of borders) {
+ 			if ((flags & color) !== 0) this._writeTableStyleColor(border.color);
+ 			if ((flags & lineWeight) !== 0) this._writer.writeBitShort(border.lineWeight);
+-			if ((flags & visibility) !== 0) this._writer.writeBitShort(border.isInvisible ? 0 : 1);
++			if ((flags & visibility) !== 0) this._writer.writeBitShort(border.isInvisible ? 1 : 0);
+ 		}
+ 	}
+ 
+@@ -3921,7 +3921,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			return;
+ 		}
+ 
+-		this._writer.writeBitLong(style.propertyOverrideFlags);
++		this._writer.writeBitLong(style.cellPropertyOverrideFlags ?? style.propertyOverrideFlags);
+ 		this._writer.writeBitLong(style.tableCellStylePropertyFlags);
+ 		this._writer.writeCmColor(style.backgroundColor);
+ 		this._writer.writeBitLong(style.contentLayoutFlags);
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 26e461d..e26254e 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -609,6 +609,12 @@ export abstract class DxfSectionReaderBase {
+       return true;
+     }
+ 
++    if (tmp.currentCellTemplate != null && code === 7) {
++      // A cell's text style override names the style; it is resolved when the cell is built.
++      tmp.currentCellTemplate.textStyleOverrideName = this._reader.valueAsString;
++      return true;
++    }
++
+     switch (code) {
+       case 1: {
+         let content: CellContent;
+diff --git a/src/IO/Templates/CadTableEntityTemplate.ts b/src/IO/Templates/CadTableEntityTemplate.ts
+index 83251c4..e47fdc3 100644
+--- a/src/IO/Templates/CadTableEntityTemplate.ts
++++ b/src/IO/Templates/CadTableEntityTemplate.ts
+@@ -154,6 +154,8 @@ export class CadTableCellTemplate implements ICadTemplate {
+ 
+ 	textStyleOverrideHandle: number | null = null;
+ 
++	textStyleOverrideName: string | null = null;
++
+ 	unknownHandle: number | null = null;
+ 
+ 	valueHandle: number | null = null;
+@@ -168,7 +170,8 @@ export class CadTableCellTemplate implements ICadTemplate {
+ 			contentTemplate.build(builder);
+ 		}
+ 
+-		this.cell.styleOverride.textStyle = builder.tryGetCadObject<TextStyle>(this.textStyleOverrideHandle);
++		this.cell.styleOverride.textStyle = builder.tryGetCadObject<TextStyle>(this.textStyleOverrideHandle)
++			?? builder.tryGetTableEntry(this.textStyleOverrideName ?? '', TextStyle);
+ 		if (this.formatTextHeight != null) {
+ 			this.cell.styleOverride.textHeight = this.formatTextHeight;
+ 		}

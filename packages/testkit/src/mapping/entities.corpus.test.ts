@@ -444,7 +444,7 @@ function compareEntity(d: DxfEntity, e: EntityInit, t: MappedTables, report: Rep
     }
     case 'ACAD_TABLE': {
       if (geom.kind !== 'ACAD_TABLE') return bad('type', d.type, geom.kind);
-      compareTable(g, n, geom, bad);
+      compareTable(g, n, geom, t, bad);
       return;
     }
     case 'IMAGE':
@@ -1051,7 +1051,13 @@ function compareMultiLeader(groups: readonly Group[], geom: MultiLeaderGeometry,
  * ACAD_TABLE (DXF reference): the AcDbTable header up to the first cell, then one cell per
  * 171 group, each with an optional CELL_VALUE block (301 … 304) whose codes repeat the cell's.
  */
-function compareTable(groups: readonly Group[], n: V3, geom: TableGeometry, bad: Bad): void {
+function compareTable(
+  groups: readonly Group[],
+  n: V3,
+  geom: TableGeometry,
+  t: MappedTables,
+  bad: Bad,
+): void {
   const ref = subclass(groups, 'AcDbBlockReference');
   const g = subclass(groups, 'AcDbTable');
   const firstCell = g.findIndex(([c]) => c === 171);
@@ -1111,7 +1117,73 @@ function compareTable(groups: readonly Group[], n: V3, geom: TableGeometry, bad:
             .map(([, v]) => v)
             .join('') + c[one]![1];
     if (type === 'text' && !sameText(text, e.text)) bad('cell 1', `${at} ${text}`, e.text);
+    const fileFormat = JSON.stringify(digits(cellFormatOf(c, t)));
+    const mappedFormat = JSON.stringify(digits(e.format));
+    if (fileFormat !== mappedFormat) bad('cell format', `${at} ${fileFormat}`, mappedFormat);
   });
+}
+
+/** Numbers to the 12 significant digits ASCII DXF keeps of them. */
+function digits(v: unknown): unknown {
+  return typeof v === 'number'
+    ? Number(v.toPrecision(12))
+    : Array.isArray(v)
+      ? v.map(digits)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, digits(x)]))
+        : v;
+}
+
+/** An ACI colour group (6x of a table cell): 0 ByBlock, 256 ByLayer. */
+function aciOf(index: number): unknown {
+  return index === 0
+    ? { kind: 'byBlock' }
+    : index === 256
+      ? { kind: 'byLayer' }
+      : { kind: 'aci', index: Math.abs(index) };
+}
+
+/**
+ * The format a DXF ACAD_TABLE cell overrides (M1-36), read from its own groups: the override
+ * flag word (177 before R2007, a 16-bit word, then 91) says which of 170, 283, 63, 64, 7, 140
+ * and the edge groups (colour 69 / 65 / 66 / 68, lineweight 279 / 275 / 276 / 278 for top,
+ * right, bottom, left) apply. 283 is "background fill none". The groups of the cell's
+ * CELL_VALUE block are not the cell's.
+ */
+function cellFormatOf(cell: readonly Group[], t: MappedTables): unknown {
+  const own: Group[] = [];
+  let inValue = false;
+  for (const grp of cell) {
+    if (grp[0] === 301 && grp[1].trim() === 'CELL_VALUE') inValue = true;
+    else if (grp[0] === 304 && grp[1].trim() === 'ACVALUE_END') inValue = false;
+    else if (!inValue) own.push(grp);
+  }
+  const flags = first(own, 91) !== undefined ? num(own, 91) : num(own, 177) & 0xffff;
+  const f: Record<string, unknown> = {};
+  if (flags & 0x01) f.alignment = num(own, 170);
+  if (flags & 0x04) f.background = aciOf(num(own, 63));
+  if (flags & 0x02 && num(own, 283) === 1) f.background = null;
+  if (flags & 0x08) f.contentColor = aciOf(num(own, 64));
+  const style = first(own, 7)?.trim().toUpperCase();
+  const styleHandle = t.textStyles.find((s) => s.name.toUpperCase() === style)?.handle;
+  if (flags & 0x10 && styleHandle) f.textStyle = styleHandle;
+  if (flags & 0x20) f.textHeight = num(own, 140);
+  const lw = (v: number) => ({ [-1]: 'ByLayer', [-2]: 'ByBlock', [-3]: 'Default' })[v] ?? v;
+  const borders: Record<string, Record<string, unknown>> = {};
+  const edges = [
+    ['top', 0x40, 0x400, 69, 279],
+    ['right', 0x80, 0x800, 65, 275],
+    ['bottom', 0x100, 0x1000, 66, 276],
+    ['left', 0x200, 0x2000, 68, 278],
+  ] as const;
+  for (const [side, color, weight, colorCode, weightCode] of edges) {
+    const b: Record<string, unknown> = {};
+    if (flags & color) b.color = aciOf(num(own, colorCode));
+    if (flags & weight) b.lineweight = lw(num(own, weightCode));
+    if (Object.keys(b).length > 0) borders[side] = b;
+  }
+  if (Object.keys(borders).length > 0) f.borders = borders;
+  return Object.keys(f).length > 0 ? f : undefined;
 }
 
 /** IMAGE / WIPEOUT (DXF AcDbRasterImage): WCS points and vectors, clip vertices in pixels. */
@@ -1693,8 +1765,18 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
   }, 300_000);
 
   // The oracle reads DXF only. DWG states table merges as ranges, not per cell, and a block
-  // cell as a block content; the mapped cells must still come out the same.
+  // cell as a block content; from R2010 it also keeps cell formats as cell, row and column
+  // cell styles and content formats (M1-36). The mapped cells must still come out the same,
+  // numbers to the 12 significant digits ASCII DXF keeps of them.
   it('maps the tables of a DWG like those of the same drawing saved as DXF', () => {
+    const digits = (v: unknown): unknown =>
+      typeof v === 'number'
+        ? Number(v.toPrecision(12))
+        : Array.isArray(v)
+          ? v.map(digits)
+          : v && typeof v === 'object'
+            ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, digits(x)]))
+            : v;
     const tables = (path: string) => {
       const doc = readCadDocument(load(path));
       const name = new Map([...(doc.blockRecords ?? [])].map((b) => [hex(b.handle), b.name]));
@@ -1706,8 +1788,8 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
             handle: e.handle,
             rows: g.rowHeights.length,
             columns: g.columnWidths.length,
-            cells: g.cells.map((r) =>
-              r.map((c) => ({ ...c, block: c.block && name.get(c.block) })),
+            cells: digits(
+              g.cells.map((r) => r.map((c) => ({ ...c, block: c.block && name.get(c.block) }))),
             ),
           };
         });
