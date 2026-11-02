@@ -95,15 +95,22 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
       const q = applyAffine(m, p);
       return { ...p, x: q.x, y: q.y };
     }
-    case 'infinite':
+    case 'infinite': {
+      const k = affineScale(m);
       return {
         ...p,
         base: applyAffine(m, p.base),
+        ...(p.dashes
+          ? {
+              dashes: { lengths: p.dashes.lengths.map((l) => l * k), period: p.dashes.period * k },
+            }
+          : {}),
         direction: {
           x: m.a * p.direction.x + m.c * p.direction.y,
           y: m.b * p.direction.x + m.d * p.direction.y,
         },
       };
+    }
     default:
       return {
         ...p,

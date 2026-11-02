@@ -129,6 +129,51 @@ describe('linetypes', () => {
     const ids = r.hitTest({ x: 5, y: 25 }, 1);
     expect(ids.map((id) => d.model.ids.handleOf(id))).toEqual(['20']);
   });
+
+  // M1-45 part 2: XLINE and RAY have no ends to fit a pattern between, so their dashes are laid
+  // out from the base point at draw time, over the part of the line on screen. AutoCAD does
+  // not document where an infinite line's pattern starts; anchoring it at the base point keeps
+  // every dash where it is while panning, which is what a drafter sees in AutoCAD.
+  const xline = (extra: Partial<EntityInit> = {}, kind: 'XLINE' | 'RAY' = 'XLINE') =>
+    entity(
+      '21',
+      { kind, base: { x: 0, y: 0 }, direction: { x: 1, y: 0 } },
+      {
+        layer: LAYER_DASHED,
+        ...extra,
+      },
+    );
+  /** The world x of each moveTo, for a view centred on `cx`. */
+  const starts = (c: ReturnType<ReturnType<typeof setup>['redraw']>, cx: number) =>
+    c.named('moveTo').map((m) => Math.round(((m[1] as number) + cx) * 1e9) / 1e9);
+
+  it('dashes an XLINE from its base point, and the dashes stay put while panning', () => {
+    const { r, redraw } = setup([xline()]);
+    // View 0..10: dashes 0.5 long every 0.75 from x = 0.
+    const at = starts(redraw(), 5);
+    expect(at).toHaveLength(14);
+    expect(at.slice(0, 3)).toEqual([0, 0.75, 1.5]);
+    r.setView({ center: { x: 5.3, y: 0 }, scale: 10 });
+    const panned = starts(redraw(), 5.3);
+    // The dash at 0..0.5 is cut at the view's edge; the rest are where they were.
+    expect(panned.slice(0, 3)).toEqual([0.3, 0.75, 1.5]);
+    r.setView({ center: { x: -4.7, y: 0 }, scale: 10 });
+    expect(starts(redraw(), -4.7).slice(0, 2)).toEqual([-9.7, -9]);
+  });
+
+  it('dashes a RAY only from its base point on', () => {
+    const { r, redraw } = setup([xline({}, 'RAY')]);
+    r.setView({ center: { x: 0, y: 0 }, scale: 10 });
+    const at = starts(redraw(), 0);
+    expect(at[0]).toBe(0);
+    expect(at).toHaveLength(7);
+  });
+
+  it('draws an infinite line continuous once a pattern is under a pixel', () => {
+    const { r, redraw } = setup([xline()]);
+    r.setView({ center: { x: 5, y: 0 }, scale: 1 });
+    expect(redraw().named('moveTo')).toHaveLength(1);
+  });
 });
 
 describe('lineweights', () => {
