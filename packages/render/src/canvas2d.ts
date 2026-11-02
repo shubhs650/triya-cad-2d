@@ -255,6 +255,9 @@ const TEXT_LOD_PX = 3;
  * strokes cover. AutoCAD shows no greeking (it draws every glyph); the value is ours.
  */
 const GREEK_ALPHA = 0.35;
+/** LAYLOCKFADECTL: AutoCAD's initial value, and the most it fades (its range is −90…90). */
+const LAYLOCKFADE_DEFAULT = 50;
+const LAYLOCKFADE_MAX = 90;
 /** Header variables that change how every entity is painted. */
 const PAINT_HEADER = new Set(['$LTSCALE', '$FILLMODE']);
 
@@ -371,6 +374,8 @@ export class Canvas2DRenderer implements Renderer {
   #height = 0;
   #dpr = 1;
   #transient: readonly RenderPrimitive[] = [];
+  /** The locked layers (M1-69), found again after a layer change; undefined until needed. */
+  #locked: ReadonlySet<Handle> | undefined;
   #sceneDirty = true;
   #transientDirty = true;
   #lastFrameSlow = false;
@@ -518,6 +523,7 @@ export class Canvas2DRenderer implements Renderer {
       this.#imageQuality = imageQuality(this.#model);
     }
     this.#tessellate.fill = fillMode(this.#model);
+    if (cs.tables?.layers) this.#locked = undefined;
     // A layer, linetype, text style, LTSCALE or FILLMODE change can restyle or hide any
     // entity, and an IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the
     // whole block.
@@ -908,10 +914,20 @@ export class Canvas2DRenderer implements Renderer {
     ctx.lineCap = 'round';
     ctx.lineJoin = 'round';
 
-    let batch: { color: string; width: number } | undefined;
+    // Locked-layer fading (M1-69): the canvas alpha is set only when it changes, and is back
+    // at 1 when the frame ends.
+    const fade = this.#fade();
+    let alpha = 1;
+    const setAlpha = (a: number): void => {
+      if (a === alpha) return;
+      ctx.globalAlpha = a;
+      alpha = a;
+    };
+    let batch: { color: string; width: number; alpha: number } | undefined;
     const flush = (): void => {
       if (!batch) return;
       device();
+      setAlpha(batch.alpha);
       ctx.strokeStyle = batch.color;
       ctx.lineWidth = batch.width;
       ctx.stroke();
@@ -921,6 +937,8 @@ export class Canvas2DRenderer implements Renderer {
 
     for (const entry of entries) {
       if (frozen && entry.layer !== undefined && frozen.has(entry.layer)) continue;
+      const entryAlpha =
+        fade && entry.layer !== undefined && fade.locked.has(entry.layer) ? fade.alpha : 1;
       // LOD: an entity under a pixel is a dot, or nothing in a reduced frame.
       if (entry.size * scale < 1) {
         if (reduced) continue;
@@ -928,6 +946,7 @@ export class Canvas2DRenderer implements Renderer {
         if (!first) continue;
         flush();
         device();
+        setAlpha(entryAlpha);
         ctx.fillStyle = this.#color(first.color);
         ctx.fillRect(
           Math.floor(devX(entry.x, entry.y)),
@@ -939,10 +958,17 @@ export class Canvas2DRenderer implements Renderer {
       }
       for (const prim of this.#primitives(entry, scale, ltMul)) {
         if (frozen && prim.layers?.some((l) => frozen.has(l))) continue;
+        // In a block, a part fades when the reference's layer (the entry's) or a layer below it
+        // is locked; AutoCAD's help does not say for the nested case (ambiguity noted, M1-69).
+        const a =
+          entryAlpha === 1 && fade && prim.layers?.some((l) => fade.locked.has(l))
+            ? fade.alpha
+            : entryAlpha;
         const color = this.#color(prim.color);
         if (prim.kind === 'point') {
           flush();
           device();
+          setAlpha(a);
           ctx.fillStyle = color;
           ctx.fillRect(
             Math.round(devX(prim.x, prim.y) - dot / 2),
@@ -962,20 +988,21 @@ export class Canvas2DRenderer implements Renderer {
           ctx.beginPath();
           buildPath(ctx, text.greek, ox, oy);
           device();
-          ctx.globalAlpha = GREEK_ALPHA;
+          setAlpha(GREEK_ALPHA * a);
           ctx.fillStyle = color;
           ctx.fill('nonzero');
-          ctx.globalAlpha = 1;
           continue;
         }
         if (prim.kind === 'fill' && prim.image) {
           flush();
+          setAlpha(a);
           this.#drawImage(ctx, prim.path, prim.image, prim, color, frame);
           inWorld = false;
           continue;
         }
         if (prim.kind === 'fill') {
           flush();
+          setAlpha(a);
           world();
           ctx.beginPath();
           buildPath(ctx, prim.path, ox, oy);
@@ -1019,16 +1046,15 @@ export class Canvas2DRenderer implements Renderer {
           const across = Math.min(1, w / tint.spacing);
           const along =
             tint.period > 0 ? Math.min(1, (tint.dashLength + tint.marks * w) / tint.period) : 1;
-          ctx.globalAlpha = across * along;
+          setAlpha(across * along * a);
           ctx.fillStyle = color;
           ctx.fill(tint.evenOdd ? 'evenodd' : 'nonzero');
-          ctx.globalAlpha = 1;
           continue;
         }
         const width = this.#lineWidth(prim.lineweight);
-        if (!batch || batch.color !== color || batch.width !== width) {
+        if (!batch || batch.color !== color || batch.width !== width || batch.alpha !== a) {
           flush();
-          batch = { color, width };
+          batch = { color, width, alpha: a };
           ctx.beginPath();
         }
         world();
@@ -1046,6 +1072,7 @@ export class Canvas2DRenderer implements Renderer {
       }
     }
     flush();
+    setAlpha(1);
   }
 
   /**
@@ -1136,6 +1163,22 @@ export class Canvas2DRenderer implements Renderer {
         : ctx.createRadialGradient(0, 0, 0, 0, 0, 1);
     for (const [t, mix] of g.stops) out.addColorStop(t, mixColors(c1, c2, mix));
     return out;
+  }
+
+  /**
+   * The alpha objects on locked layers draw at (LAYLOCKFADECTL, M1-69), with the locked layers;
+   * undefined when nothing fades. AutoCAD fades toward the background; drawing at reduced alpha
+   * is the same over empty canvas and lets what lies beneath show through, as its fade does.
+   */
+  #fade(): { readonly alpha: number; readonly locked: ReadonlySet<Handle> } | undefined {
+    const amount = Math.min(LAYLOCKFADE_MAX, this.#style.layLockFade ?? LAYLOCKFADE_DEFAULT);
+    if (!(amount > 0)) return undefined;
+    if (!this.#locked) {
+      const locked = new Set<Handle>();
+      for (const l of this.#model.tables.layers.values()) if (l.locked) locked.add(l.handle);
+      this.#locked = locked;
+    }
+    return this.#locked.size > 0 ? { alpha: 1 - amount / 100, locked: this.#locked } : undefined;
   }
 
   #color(c: PrimitiveColor): string {
