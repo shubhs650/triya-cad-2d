@@ -8,7 +8,13 @@
 // it again from the bytes it kept). The original is mutated, so each export needs a fresh read.
 
 import type { CadDocument, Layer } from '@node-projects/acad-ts';
-import { ACadVersion, BlockRecord, Entity as AcadEntity, LineType } from '@node-projects/acad-ts';
+import {
+  ACadVersion,
+  BlockRecord,
+  Entity as AcadEntity,
+  LineType,
+  Viewport,
+} from '@node-projects/acad-ts';
 import {
   compareHandles,
   type DocumentInit,
@@ -24,6 +30,11 @@ import { createAcadEntity, entityProblems, same, writeEntity, type Resolver } fr
 import { planHeader, writeHeader } from './header';
 import { planLayers, writeLayers } from './layers';
 import { PassthroughStore } from './passthrough';
+import { r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
+
+/** R12 and before, whose viewports state their view in the MVIEW xdata (as patch 0119 reads it). */
+const isR12 = (version: ACadVersion | undefined): boolean =>
+  version !== undefined && version !== ACadVersion.Unknown && version < ACadVersion.AC1012;
 
 /** A difference the exporter cannot write yet; nothing was changed. */
 export class UnsupportedChangeError extends Error {
@@ -114,47 +125,25 @@ function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
 }
 
 /**
- * An R12 viewport states only its frame, status and ID as groups; the view and the layers frozen
- * in it are the ACAD MVIEW xdata (DXF R12 reference, VIEWPORT), which Triya does not write yet,
- * and the R2000 settings do not exist.
- */
-const R12_VIEW = [
-  'viewCenter',
-  'viewHeight',
-  'viewDirection',
-  'viewTarget',
-  'twist',
-  'lensLength',
-  'frontClip',
-  'backClip',
-  'flags',
-  'frozenLayers',
-  'clipBoundary',
-  'plotStyleSheet',
-  'renderMode',
-  'visualStyle',
-] as const;
-
-/**
- * What acad-ts cannot write to the format at hand: an R12 viewport's view (M1-86), its DWG writer leaves a LARGE_RADIAL_DIMENSION
- * out (roadmap M1-74) and a VIEWPORT's style sheet and visual style (M1-85), so an edited or
- * new one would be lost.
+ * What acad-ts cannot write to the format at hand: what an R12 viewport cannot state (see
+ * r12-viewport.ts), its DWG writer leaves a LARGE_RADIAL_DIMENSION out (roadmap M1-74) and a
+ * VIEWPORT's style sheet and visual style (M1-85), so an edited or new one would be lost.
+ * `acad` is the original of an edited entity.
  */
 function formatProblems(
   format: CadFormat | undefined,
   version: ACadVersion | undefined,
   before: EntityInit | undefined,
   e: Entity,
+  acad?: AcadEntity,
 ): string[] {
   if (format === 'dwg' && e.type === 'LARGE_RADIAL_DIMENSION') {
     return [`${e.type} ${e.handle}: acad-ts has no DWG writer for it (M1-74)`];
   }
-  if (version === ACadVersion.AC1009 && e.geom.kind === 'VIEWPORT') {
+  if (isR12(version) && e.geom.kind === 'VIEWPORT') {
     const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;
-    const g = e.geom;
-    if (!b || R12_VIEW.some((k) => !same(b[k], g[k]))) {
-      return [`${e.type} ${e.handle}: its R12 view lives in the MVIEW xdata (M1-86)`];
-    }
+    const v = acad instanceof Viewport ? acad : undefined;
+    return r12ViewportProblems(v, b, e.geom).map((p) => `${e.type} ${e.handle}: ${p}`);
   }
   if (format === 'dwg' && e.geom.kind === 'VIEWPORT') {
     const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;
@@ -198,7 +187,10 @@ function plan(
       problems.push(`${m.type} ${m.handle}: moves to another block`);
       continue;
     }
-    problems.push(...entityProblems(r, b as Entity, m), ...formatProblems(format, version, b, m));
+    problems.push(
+      ...entityProblems(r, b as Entity, m),
+      ...formatProblems(format, version, b, m, acad),
+    );
     out.updated.push({ acad, before: b, after: m });
   }
   for (const m of model.entities()) {
@@ -258,7 +250,19 @@ export function triyaToAcad(
   // Removing an entity from its block unregisters it and its extension dictionary, which only
   // it owns (§6.2 rule 3); shared objects it points to stay.
   for (const e of p.removed) (e.owner as BlockRecord).entities.remove(e);
-  for (const { acad, before, after } of p.updated) writeEntity(r, acad, before as Entity, after);
+  const r12 = isR12(original.header?.version);
+  for (const { acad, before, after } of p.updated) {
+    writeEntity(r, acad, before as Entity, after);
+    if (
+      r12 &&
+      acad instanceof Viewport &&
+      before.geom.kind === 'VIEWPORT' &&
+      after.geom.kind === 'VIEWPORT' &&
+      r12ViewChanges(before.geom, after.geom)
+    ) {
+      writeR12View(acad);
+    }
+  }
   for (const { block, after } of p.added) {
     const e = createAcadEntity(after.geom)!;
     // acad-ts keeps a non-zero handle it has not seen, so the entity keeps Triya's handle.
