@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) 0100 (M1-33 part 3) and 0103 (M1-45) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3) and 0105 (M1-45) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1977,13 +1977,47 @@ A dictionary-with-default can name a default that is not one of its entries. The
 
 </details>
 
-### 0103 — a DXF linetype segment loses the text style it names
+### 0103 — a DWG object no reference reaches is never read
 
-- **File:** `third_party/acad-ts-patches/0103-dxf-linetype-segment-style.patch`
+- **File:** `third_party/acad-ts-patches/0103-dwg-unreachable-objects.patch`
+- **Touches:** `src/IO/CadReaderConfiguration.ts`, `src/CadDocument.ts`, `src/IO/CadDocumentBuilder.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** the DWG reader reads only the objects it reaches from the header, the tables and the references it decodes. An object in the object map whose owner is not in the map is never reached, so a save drops it. acadsharp `AecObjects.dwg`: `BLOCK`/`ENDBLK` 2ADC/2ADE and 2AE0/2AE3 (their block records 2ADB and 2ADF are listed by the block table but are not in the map), `DICTIONARY` 2C9C with `XRECORD` 2C9D, and `XRECORD`s 3DEB, 3DEE, 3DEF, 3DF2, 3DF5, 3DF6 (owners 3DEA, 3DED, 3DF1, 3DF4 not in the map). `sample_base.dwg`: `XRECORD`s E1A, E1D, E1E (owners E19, E1C not in the map). AutoCAD keeps such objects in the database.
+- **Fix:** a new reader setting, `keepUnreachableObjects` (off by default). With it, once the references are exhausted, every object left in the map is kept as its raw record in an `UnknownNonGraphicalObject` (whatever its type), registered with the document and listed in `CadDocument.unreachableObjects`. The DWG writer writes them raw, as it writes unknown objects (same version only).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0103 a DWG object no reference reaches is kept raw and written back".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Optionally keep DWG objects that no reference reaches
+
+DWG files can hold objects whose owner is not in the file. The reader never reaches them, so they disappear on save. `CadReaderConfiguration.keepUnreachableObjects` reads every object left in the object map after the references are followed, keeps each as its raw record in `CadDocument.unreachableObjects`, and the DWG writer stores them unchanged for the same version.
+
+</details>
+
+### 0104 — a DXF block with no name and no block record is dropped
+
+- **File:** `third_party/acad-ts-patches/0104-dxf-unreachable-nameless-blocks.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfBlockSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts`
+- **Symptom:** a `BLOCK` with no name (no 2 or 3) and no block record in the file made the reader create a record with an empty name, which a table cannot hold, so the block and its `ENDBLK` were dropped with an error. ezdxf `r12_blocks_with_no_names.dxf` (BLOCK 2E/ENDBLK 2F, BLOCK 33/ENDBLK 34) and `r2000_blocks_with_no_name_and_no_block_record.dxf` (BLOCK 30/ENDBLK 31 owned by 2F, BLOCK 33/ENDBLK 34 owned by 32; neither record is in the file).
+- **Fix:** with `keepUnreachableObjects` (0103), the block's header, entities and `ENDBLK` are kept as raw `UnknownEntity`s in `CadDocument.unreachableObjects`, and the DXF writer writes them at the end of the BLOCKS section as read. No INSERT can name such a block, so it stays unreachable.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0104 a DXF block with no name and no block record is kept raw and written back".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep nameless DXF blocks without a block record
+
+A BLOCK with no name and no BLOCK_RECORD failed with an empty table entry name and was dropped. With `keepUnreachableObjects`, the block is kept as raw entities and written back in the BLOCKS section.
+
+</details>
+
+### 0105 — a DXF linetype segment loses the text style it names
+
+- **File:** `third_party/acad-ts-patches/0105-dxf-linetype-segment-style.patch`
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`
 - **Symptom:** a complex linetype element names the STYLE record of its text font or shape file in group 340 (after 75). The DXF reader skipped the group, so every segment's `style` was null after a DXF read; the template already resolves `styleHandle` and the DWG reader sets it. acadsharp `sample_AC1009`–`AC1032` DXF: GAS_LINE's "GAS" lost Standard (11), and TRACKS, BATTING and the other shape linetypes lost their `ltypeshp.shx` style (27F), so their text and shapes had no font to draw with (M1-45). The writer already wrote the handle back, so the round trip did not show it.
 - **Fix:** read 340 into the segment template's `styleHandle`, which the builder resolves to the text style.
-- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0103 a DXF linetype segment keeps the text style it names (340)".
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0105 a DXF linetype segment keeps the text style it names (340)".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>

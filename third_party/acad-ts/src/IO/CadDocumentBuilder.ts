@@ -48,6 +48,8 @@ export abstract class CadDocumentBuilder {
 	dimensionStyles: DimensionStylesTable = new DimensionStylesTable();
 	documentToBuild: CadDocument;
 	initialHandSeed: number = 0;
+	/** DWG objects no reference reaches, kept raw (`CadReaderConfiguration.keepUnreachableObjects`). */
+	readonly unreachableObjects: CadObject[] = [];
 
 	abstract get keepUnknownEntities(): boolean;
 	abstract get keepUnknownNonGraphicalObjects(): boolean;
@@ -103,6 +105,11 @@ export abstract class CadDocumentBuilder {
 		}
 
 		this._attachRawOwnedObjects();
+
+		for (const obj of this.unreachableObjects) {
+			this.documentToBuild.unreachableObjects.push(obj);
+			this.documentToBuild.registerCollection(obj);
+		}
 	}
 
 	/**

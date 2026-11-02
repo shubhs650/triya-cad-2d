@@ -446,7 +446,7 @@ describe('acad-ts local patches', () => {
     expect(new DimensionStyle('X').dimensionLineGap).toBeCloseTo(0.625);
   });
 
-  it('0103 a DXF linetype segment keeps the text style it names (340)', () => {
+  it('0105 a DXF linetype segment keeps the text style it names (340)', () => {
     const doc = new CadDocument();
     const style = new TextStyle('GASFONT');
     style.filename = 'romans.shx';

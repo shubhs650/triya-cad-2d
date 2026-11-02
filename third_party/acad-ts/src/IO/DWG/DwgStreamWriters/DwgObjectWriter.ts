@@ -321,6 +321,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 		}
 
 		this._writeBlockEntities();
+		// Objects no reference reaches are written by nothing else (written raw, same version only).
+		this._objects.push(...this._document.unreachableObjects);
 		this._writeObjects();
 	}
 

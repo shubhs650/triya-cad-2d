@@ -112,6 +112,12 @@ export class CadDocument implements IHandledCadObject {
 
 	private readonly _cadObjects: Map<number, IHandledCadObject> = new Map();
 
+	/**
+	 * DWG objects in the file that no reference reaches (their owner is not in the file), kept raw so
+	 * that a save of the same version writes them back (`CadReaderConfiguration.keepUnreachableObjects`).
+	 */
+	readonly unreachableObjects: CadObject[] = [];
+
 	/** @internal Build storage from all registered geometries, including block contents. */
 	createDataStorage(): CadFileDataStorage | null {
 		const geometries = [...this._cadObjects.values()].filter((object): object is ModelerGeometry =>
