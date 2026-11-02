@@ -1,12 +1,13 @@
 // M1-46 on the public corpus: every LWPOLYLINE and 2D POLYLINE with a width (the acadsharp
 // samples' tapered and arc segments, constant widths in the ezdxf files) draws its wide
 // segments filled, each outline running through the segment's own vertices' offsets, and is
-// bounded by what it draws.
+// bounded by what it draws. Those with a linetype (M1-66) draw their dashes as pieces of the
+// same outlines, inside the same bounds.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { polylineWidths } from '@triya/engine';
 import { readCadDocument } from '@triya/io';
-import { defaultPaint, PATH_Z, tessellate } from '@triya/render';
+import { createPaint, defaultPaint, PATH_Z, tessellate } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
 import { corpusDrawing } from './document.ts';
@@ -32,10 +33,15 @@ function points(path: readonly number[]): [number, number][] {
 let wide = 0;
 let arcs = 0;
 let tapered = 0;
+let dashed = 0;
+const styled = createPaint();
 // Ratchets: what the public corpus holds today.
 const WIDE = 73;
 const ARCS = 23;
 const TAPERED = 45;
+// No public corpus file has a wide polyline with a linetype today; the dashing itself is checked
+// in render/test/wide-linetype.test.ts, and this keeps a sample added later checked here.
+const DASHED = 0;
 
 describe('polyline widths on the public corpus', () => {
   it.each(files.map((f) => [f.path]))('%s', (path) => {
@@ -71,6 +77,18 @@ describe('polyline widths on the public corpus', () => {
         continue;
       }
       const drawn = prims.flatMap((p) => ('path' in p ? points(p.path) : []));
+      // With its linetype: dashes cut from the same outlines, which stay beside them whole.
+      const lt = styled(e, model);
+      if (lt?.linetype && fill && 'path' in fill) {
+        const dashedPrims = tessellate(g, lt);
+        const pieces = dashedPrims.find((p) => p.kind === 'fill');
+        if (pieces && 'path' in pieces && pieces.continuous) {
+          dashed++;
+          if (pieces.continuous.join() !== fill.path.join())
+            bad.push(`${key}: dashed outline differs from the continuous one`);
+          drawn.push(...points(pieces.path));
+        }
+      }
       const size = Math.max(1, ...drawn.map(([x, y]) => Math.max(Math.abs(x), Math.abs(y))));
       // Every wide segment's outline reaches half its start width out from its start vertex
       // (exactly there with a square end, further at a mitre).
@@ -102,6 +120,11 @@ describe('polyline widths on the public corpus', () => {
   });
 
   it('covers every wide polyline the corpus holds', () => {
-    expect({ wide, arcs, tapered }).toEqual({ wide: WIDE, arcs: ARCS, tapered: TAPERED });
+    expect({ wide, arcs, tapered, dashed }).toEqual({
+      wide: WIDE,
+      arcs: ARCS,
+      tapered: TAPERED,
+      dashed: DASHED,
+    });
   });
 });
