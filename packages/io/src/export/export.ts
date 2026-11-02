@@ -8,7 +8,13 @@
 // it again from the bytes it kept). The original is mutated, so each export needs a fresh read.
 
 import type { CadDocument } from '@node-projects/acad-ts';
-import { ACadVersion, BlockRecord, Entity as AcadEntity, LineType } from '@node-projects/acad-ts';
+import {
+  ACadVersion,
+  BlockRecord,
+  Entity as AcadEntity,
+  LineType,
+  VisualStyle,
+} from '@node-projects/acad-ts';
 import {
   compareHandles,
   type DocumentInit,
@@ -155,10 +161,13 @@ const R12_VIEW = [
 
 /**
  * What acad-ts cannot write to the format at hand: an R12 viewport's view (M1-86), its DWG writer leaves a LARGE_RADIAL_DIMENSION
- * out (roadmap M1-74) and a VIEWPORT's style sheet and visual style (M1-85), so an edited or
- * new one would be lost.
+ * out (roadmap M1-74), and a VIEWPORT's style sheet before R2000 or visual style before R2007,
+ * which neither format stores (DXF 1 and 348 are R2000+ and R2007+, as the DWG fields are), or
+ * a DWG visual style on a DXF save, which acad-ts does not write (M1-87); so an edited or new one
+ * would be lost.
  */
 function formatProblems(
+  r: Resolver,
   format: CadFormat | undefined,
   version: ACadVersion | undefined,
   before: EntityInit | undefined,
@@ -174,17 +183,25 @@ function formatProblems(
       return [`${e.type} ${e.handle}: its R12 view lives in the MVIEW xdata (M1-86)`];
     }
   }
-  if (format === 'dwg' && e.geom.kind === 'VIEWPORT') {
+  if (e.geom.kind === 'VIEWPORT') {
     const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;
     const g = e.geom;
-    const lost =
-      (b ? b.plotStyleSheet !== g.plotStyleSheet : g.plotStyleSheet !== '') ||
-      (b ? b.visualStyle !== g.visualStyle : g.visualStyle !== undefined);
-    if (lost) {
-      return [
-        `${e.type} ${e.handle}: acad-ts writes no DWG style sheet or visual style for it (M1-85)`,
-      ];
+    const out: string[] = [];
+    const name = version === undefined ? '' : (ACadVersion[version] ?? '');
+    const sheet = b ? b.plotStyleSheet !== g.plotStyleSheet : g.plotStyleSheet !== '';
+    const style = b ? b.visualStyle !== g.visualStyle : g.visualStyle !== undefined;
+    if (sheet && version !== undefined && version < ACadVersion.AC1015) {
+      out.push(`${e.type} ${e.handle}: ${name} cannot store a viewport's plot style sheet`);
     }
+    if (style && version !== undefined && version < ACadVersion.AC1021) {
+      out.push(`${e.type} ${e.handle}: ${name} cannot store a viewport's visual style`);
+    } else if (style && format === 'dxf' && g.visualStyle !== undefined) {
+      const v = r.store.original(g.visualStyle);
+      if (v instanceof VisualStyle && v.rawDxfCodes == null) {
+        out.push(`${e.type} ${e.handle}: acad-ts writes no DXF VISUALSTYLE read from DWG (M1-87)`);
+      }
+    }
+    return out;
   }
   return [];
 }
@@ -216,14 +233,17 @@ function plan(
       problems.push(`${m.type} ${m.handle}: moves to another block`);
       continue;
     }
-    problems.push(...entityProblems(r, b as Entity, m), ...formatProblems(format, version, b, m));
+    problems.push(
+      ...entityProblems(r, b as Entity, m),
+      ...formatProblems(r, format, version, b, m),
+    );
     out.updated.push({ acad, before: b, after: m });
   }
   for (const m of model.entities()) {
     if (baseByHandle.has(m.handle)) continue;
     problems.push(
       ...entityProblems(r, undefined, m),
-      ...formatProblems(format, version, undefined, m),
+      ...formatProblems(r, format, version, undefined, m),
     );
     const block = r.store.original(m.owner);
     if (!(block instanceof BlockRecord)) {

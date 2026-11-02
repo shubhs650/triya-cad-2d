@@ -1,0 +1,53 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index b03affb..56c8801 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -2125,7 +2125,7 @@ export class DwgObjectReader extends DwgSectionIO {
+     }
+     if (this.r2007Plus) {
+       this._handleReference(); // background
+-      this._handleReference(); // visual style
++      template.visualStyleHandle = this._handleReference();
+       this._handleReference(); // shade plot
+       template.sunHandle = this._handleReference();
+     }
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 5f0a3fc..caee7c4 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -3403,7 +3403,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		if (this.r2000Plus) {
+ 			this._writer.writeBitLong(viewport.frozenLayers.length);
+ 			this._writer.writeBitLong(viewport.status);
+-			this._writer.writeVariableText('');
++			this._writer.writeVariableText(viewport.styleSheetName);
+ 			this._writer.writeByte(viewport.renderMode);
+ 			this._writer.writeBit(viewport.displayUcsIcon);
+ 			this._writer.writeBit(viewport.ucsPerViewport);
+@@ -3451,8 +3451,9 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		}
+ 
+ 		if (this.r2007Plus) {
++			// Background (332), visual style (348) and shade plot (333).
+ 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, viewport.visualStyle);
+ 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, viewport.sun);
+ 			this._enqueueObject(viewport.sun);
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 6913605..77c6455 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1725,7 +1725,10 @@ export abstract class DxfSectionWriterBase {
+ 
+     if (this.version >= ACadVersion.AC1021) {
+       this._writer.write(61, viewport.majorGridLineFrequency, subclass);
+-      this._writer.writeHandle(348, viewport.visualStyle, subclass);
++      // Only a visual style read from DXF is written (as its raw codes); naming one read from
++      // DWG would leave the handle pointing at an object the file does not have.
++      const visualStyle = viewport.visualStyle?.rawDxfCodes != null ? viewport.visualStyle : null;
++      this._writer.writeHandle(348, visualStyle, subclass);
+       this._writer.write(292, viewport.useDefaultLighting ? 1 : 0, subclass);
+       this._writer.write(282, viewport.defaultLightingType as number, subclass);
+       this._writer.write(141, viewport.brightness, subclass);

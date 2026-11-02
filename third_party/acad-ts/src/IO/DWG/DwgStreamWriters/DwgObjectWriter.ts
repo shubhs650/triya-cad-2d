@@ -3403,7 +3403,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		if (this.r2000Plus) {
 			this._writer.writeBitLong(viewport.frozenLayers.length);
 			this._writer.writeBitLong(viewport.status);
-			this._writer.writeVariableText('');
+			this._writer.writeVariableText(viewport.styleSheetName);
 			this._writer.writeByte(viewport.renderMode);
 			this._writer.writeBit(viewport.displayUcsIcon);
 			this._writer.writeBit(viewport.ucsPerViewport);
@@ -3451,8 +3451,9 @@ export class DwgObjectWriter extends DwgSectionIO {
 		}
 
 		if (this.r2007Plus) {
+			// Background (332), visual style (348) and shade plot (333).
 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, viewport.visualStyle);
 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, null);
 			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, viewport.sun);
 			this._enqueueObject(viewport.sun);

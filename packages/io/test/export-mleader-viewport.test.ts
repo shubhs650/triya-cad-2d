@@ -61,8 +61,8 @@ function root(points: readonly XYZ[], connection: XYZ, index = 0): LeaderRoot {
  * in the layout's paper space the paper viewport and one model viewport freezing layer HIDDEN
  * (layers HIDDEN and NOTES, visual styles 2dWireframe and Conceptual).
  */
-function drawing(): Uint8Array {
-  const doc = new CadDocument(ACadVersion.AC1032);
+function drawing(version = ACadVersion.AC1032): Uint8Array {
+  const doc = new CadDocument(version);
   const dicts = doc.rootDictionary!;
   const mleaderStyles = dicts.getEntry<CadDictionary>(CadDictionary.acadMLeaderStyle)!;
   const style = new MultiLeaderStyle('STANDARD');
@@ -162,8 +162,8 @@ function drawing(): Uint8Array {
 
 const FILE = drawing();
 
-function open(): DocumentModel {
-  return DocumentModel.create(documentInit(readCadDocument(FILE)));
+function open(file = FILE): DocumentModel {
+  return DocumentModel.create(documentInit(readCadDocument(file)));
 }
 
 /**
@@ -244,10 +244,13 @@ const ml = (g: EntityGeometry): MultiLeaderGeometry => g as MultiLeaderGeometry;
 
 /**
  * What acad-ts reads back: its DXF reader drops a multileader's arrowhead (342), content block
- * (344 and context 341) and leader line indexes (91), which the DXF writer writes (M1-84).
+ * (344 and context 341) and leader line indexes (91), which the DXF writer writes (M1-84), and
+ * its DXF writer leaves out the visual styles this drawing's DWG holds (M1-87).
  */
 function readBack(g: EntityGeometry, format: CadFormat): EntityGeometry {
-  if (format !== 'dxf' || g.kind !== 'MULTILEADER') return g;
+  if (format !== 'dxf') return g;
+  if (g.kind === 'VIEWPORT') return changed(g, { visualStyle: undefined });
+  if (g.kind !== 'MULTILEADER') return g;
   const { block: _b, ...block } = g.block ?? { block: undefined };
   return changed(g, {
     arrowhead: undefined,
@@ -404,17 +407,9 @@ describe('triyaToAcad multileaders and viewports', () => {
         renderMode: 2,
       }),
     ],
-    // DWG does not store DXF 68 (AutoCAD derives it from the on flag and the stacking order),
-    // and acad-ts writes no DWG style sheet or visual style (M1-85).
-    [
-      'a VIEWPORT’s DXF-only fields',
-      'VIEWPORT',
-      1,
-      () => ({
-        status: 2,
-        plotStyleSheet: 'acad.ctb',
-      }),
-    ],
+    // DWG does not store DXF 68 (AutoCAD derives it from the on flag and the stacking order).
+    ['a VIEWPORT’s DXF-only fields', 'VIEWPORT', 1, () => ({ status: 2 })],
+    ['a VIEWPORT’s style sheet', 'VIEWPORT', 1, () => ({ plotStyleSheet: 'acad.ctb' })],
     ['a VIEWPORT thawing its layers', 'VIEWPORT', 1, () => ({ frozenLayers: [] })],
   ];
 
@@ -458,7 +453,16 @@ describe('triyaToAcad multileaders and viewports', () => {
           block: { ...ml(find(model, 'MULTILEADER', 1).geom).block!, position: P(-30, 10) },
         }),
       ],
-      [view, changed(view.geom, { id: 3, center: P(200, 50), frozenLayers: [] })],
+      // No visual style: this drawing's, from its DWG, would not reach a DXF save (M1-87).
+      [
+        view,
+        changed(view.geom, {
+          id: 3,
+          center: P(200, 50),
+          frozenLayers: [],
+          visualStyle: undefined,
+        }),
+      ],
     ];
     const added: Entity[] = [];
     edit(model, (b) => {
@@ -537,7 +541,7 @@ describe('triyaToAcad multileaders and viewports', () => {
     }
   });
 
-  it('writes a viewport’s visual style', () => {
+  it('writes a viewport’s visual style, and refuses one read from DWG on a DXF save (M1-87)', () => {
     // acad-ts writes DXF VISUALSTYLE objects only as read from DXF, so this one, from a DWG,
     // would not reach a DXF save; the written reference is checked on the document instead.
     const model = open();
@@ -545,24 +549,59 @@ describe('triyaToAcad multileaders and viewports', () => {
     const visualStyle = handleOf('visualstyle', 'Conceptual');
     edit(model, (b) => b.updateEntity(e.id, { geom: changed(e.geom, { visualStyle }) }));
     const doc = readCadDocument(FILE);
-    triyaToAcad(doc, model, 'dxf');
+    triyaToAcad(doc, model);
 
     expect((doc.getCadObject(Number.parseInt(e.handle, 16)) as Viewport).visualStyle?.name).toBe(
       'Conceptual',
     );
+    expect(() => save(model, 'dxf')).toThrow(/VIEWPORT .*M1-87/);
   });
 
-  it('refuses a viewport’s style sheet and visual style on a DWG save (M1-85)', () => {
-    for (const changes of [
-      { plotStyleSheet: 'acad.ctb' },
-      { visualStyle: handleOf('visualstyle', 'Conceptual') },
-    ]) {
-      const model = open();
+  it('writes a viewport’s visual style to DWG so it maps back (M1-85)', () => {
+    const model = open();
+    const e = find(model, 'VIEWPORT', 1);
+    const next = changed(e.geom, { visualStyle: handleOf('visualstyle', 'Conceptual') });
+    edit(model, (b) => b.updateEntity(e.id, { geom: next }));
+
+    expectGeometry(reopened(save(model, 'dwg'), e.handle)?.geom, next);
+  });
+
+  it('refuses a style sheet before R2000 and a visual style before R2007, which have none', () => {
+    // R14 has no plot style sheet and R2004 no visual style, in DWG and in DXF alike.
+    for (const [version, field] of [
+      [ACadVersion.AC1014, 'plotStyleSheet'],
+      [ACadVersion.AC1018, 'visualStyle'],
+    ] as const) {
+      const file = drawing(version);
+      const doc = readCadDocument(file);
+      const conceptual = doc
+        .rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadVisualStyle)!
+        .getEntry('Conceptual')!;
+      const changes =
+        field === 'plotStyleSheet'
+          ? { plotStyleSheet: 'acad.ctb' }
+          : { visualStyle: conceptual.handle.toString(16).toUpperCase() };
+      const model = open(file);
       const e = find(model, 'VIEWPORT', 1);
       edit(model, (b) => b.updateEntity(e.id, { geom: changed(e.geom, changes) }));
-
-      expect(() => save(model, 'dwg'), JSON.stringify(changes)).toThrow(/VIEWPORT .*M1-85/);
-      expect(() => save(model, 'dxf')).not.toThrow();
+      for (const format of ['dxf', 'dwg'] as const) {
+        expect(() => exportDocument(readCadDocument(file), model, { format }), field).toThrow(
+          new RegExp(`VIEWPORT ${e.handle}: ${ACadVersion[version]} cannot store`),
+        );
+      }
+      if (field === 'visualStyle') {
+        // R2004 keeps the style sheet.
+        const sheet = open(file);
+        const v = find(sheet, 'VIEWPORT', 1);
+        edit(sheet, (b) =>
+          b.updateEntity(v.id, { geom: changed(v.geom, { plotStyleSheet: 'a.stb' }) }),
+        );
+        const back = reopened(
+          exportDocument(readCadDocument(file), sheet, { format: 'dwg' }),
+          v.handle,
+        );
+        expect(back?.geom).toMatchObject({ plotStyleSheet: 'a.stb' });
+      }
     }
   });
 });
