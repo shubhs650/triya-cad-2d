@@ -17,6 +17,14 @@ export { mapEntities, type MappedEntities, type UnmappedEntity } from './map/ent
 export { mapSortEnts } from './map/sortents';
 export { mapLayouts } from './map/layouts';
 export { mapImageObjects, type ImageObject } from './map/images';
+export {
+  exportDocument,
+  triyaToAcad,
+  UnsupportedChangeError,
+  type ExportSummary,
+} from './export/export';
+export { WRITABLE_TYPES } from './export/entities';
+export { documentObjects, PassthroughStore } from './export/passthrough';
 export { documentInit, openDocument, type OpenedDocument } from './map/document';
 export { drawingFacts, type DrawingFacts, type DrawingReference } from './health/facts';
 export {
