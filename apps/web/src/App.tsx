@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from '
 import { CanvasController, type CanvasMode } from './canvas/controller';
 import { allControllers, controllerOf, register } from './canvas/registry';
 import { DocumentStore, type OpenDocument } from './documents';
+import { engines } from './engine/registry';
 import { NavBar } from './NavBar';
 import { openDrawing, openError } from './open';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
@@ -44,7 +45,8 @@ async function open(file: { readonly name: string; getFile(): Promise<Blob> }): 
   try {
     const opened = await openDrawing(await file.getFile());
     if (!opened.modelSpace) throw new Error('the drawing has no model space');
-    store.opened(file.name, opened, opened.modelSpace);
+    // The drawing's authoritative document goes to its engine worker (M1-67).
+    engines.start(store.opened(file.name, opened, opened.modelSpace), opened.init);
   } catch (e) {
     store.failed(file.name, openError(file.name, e));
   }
@@ -154,7 +156,10 @@ export function App() {
                 type="button"
                 className="close"
                 aria-label={`Close ${d.name}`}
-                onClick={() => store.close(d.id)}
+                onClick={() => {
+                  store.close(d.id);
+                  engines.stop(d.id);
+                }}
               >
                 ×
               </button>
@@ -283,6 +288,7 @@ function SpaceCanvas({
         if (visibleRef.current) onMode(m);
       },
       patterns: () => patterns.sources(),
+      changes: () => engines.changesOf(id),
     });
     const unregister = register(id, block, c);
     return () => {
