@@ -565,6 +565,44 @@ describe('triyaToAcad', () => {
     expectGeometry(reopened(save(model), e.handle)?.geom, next);
   });
 
+  // POLYLINE 75 is the fit type of a spline-fit polyline (DXF reference, POLYLINE); without
+  // it a quadratic or Bezier fit reads back cubic (M1-80, acad-ts patch 0126).
+  it.each([
+    ['quadratic', false],
+    ['bezier', false],
+    ['quadratic', true],
+    ['bezier', true],
+  ] as const)('keeps a %s spline fit through a DXF save (3D: %s)', (fit, is3d) => {
+    const { model } = open();
+    const e = byType(model, 'POLYLINE', is3d);
+    const frame = [
+      { x: 0, y: 0 },
+      { x: 1, y: 2 },
+      { x: 2, y: 0 },
+    ];
+    const edited = {
+      kind: 'POLYLINE',
+      vertices: [
+        { x: 0, y: 0, bulge: 0 },
+        { x: 1, y: 1, bulge: 0 },
+        { x: 2, y: 0, bulge: 0 },
+      ],
+      closed: false,
+      is3d,
+      fit,
+      frame,
+    } as EntityGeometry;
+    let added: Entity | undefined;
+    edit(model, (b) => {
+      b.updateEntity(e.id, { geom: edited });
+      added = b.addEntity({ owner: e.owner, layer: e.layer, geom: edited });
+    });
+    const bytes = save(model);
+
+    expectGeometry(reopened(bytes, e.handle)?.geom, edited);
+    expectGeometry(reopened(bytes, added!.handle)?.geom, edited);
+  });
+
   it('keeps a polyline vertex that did not change exactly as it was', () => {
     const { model } = open();
     const e = byType(model, 'LWPOLYLINE');
@@ -906,9 +944,7 @@ describe('triyaToAcad', () => {
         ],
         closed: false,
         is3d: false,
-        // Quadratic and Bezier fits do not survive a DXF save yet: acad-ts writes POLYLINE 75
-        // for polygon meshes only (roadmap M1-80).
-        fit: 'cubic',
+        fit: 'quadratic',
         frame: [
           { x: 0, y: 0 },
           { x: 1, y: 1 },
