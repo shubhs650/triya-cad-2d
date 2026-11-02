@@ -258,12 +258,18 @@ describe('ACAD_TABLE', () => {
       const c = t.rows[0]!.cells[0]!.styleOverride;
       margins(c, [0.5, 0.25, 0.5, 1]);
       c.cellPropertyOverrideFlags = all | 0x200;
-      c.backgroundColor = Color.fromTrueColor(0); // CMC method None as acad-ts reads it
+      c.backgroundColor = new Color(257); // CMC method None (0xC8), as acad-ts reads it (0120)
+      const black = t.rows[0]!.cells[1]!.styleOverride;
+      black.hasData = true;
+      black.cellPropertyOverrideFlags = 0x200;
+      black.backgroundColor = Color.fromTrueColor(0); // a real black fill (M1-76)
 
-      expect(mapOne(doc, t).cells[0]![0]!.format).toEqual({
+      const cells = mapOne(doc, t).cells[0]!;
+      expect(cells[0]!.format).toEqual({
         background: null,
         margins: { top: 0.25, bottom: 1 },
       });
+      expect(cells[1]!.format).toEqual({ background: { kind: 'rgb', r: 0, g: 0, b: 0 } });
     });
   });
 });

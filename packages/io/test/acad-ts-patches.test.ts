@@ -9,6 +9,8 @@ import {
   CadDocument,
   Color,
   DwgReader,
+  DwgStreamReaderBase,
+  DwgStreamWriterBase,
   DwgWriter,
   DxfReader,
   DxfWriter,
@@ -693,4 +695,51 @@ describe('acad-ts local patches', () => {
       back.pickStyle,
     ]).toEqual([1, 0, 0, 1, 2, 3]);
   });
+
+  it.each([
+    ['AC1018', ACadVersion.AC1018],
+    ['AC1021', ACadVersion.AC1021],
+    ['AC1024', ACadVersion.AC1024],
+    ['AC1032', ACadVersion.AC1032],
+  ])(
+    '0120 DWG %s keeps the colour method None (0xC8) apart from true-colour black',
+    (_, version) => {
+      // AcCmEntityColor's method byte 0xC8 is None (kACInone, ACI 257; AutoCAD's DXF saves
+      // state it as 62 = 257). acad-ts read it as true-colour black and wrote 257 back as ACI 1.
+      const bits = new Uint8Array(32);
+      const raw = DwgStreamWriterBase.getStreamWriter(version, bits, 'utf-8');
+      raw.writeBitShort(0); // CMC: BS index, BL 0xC8000000, RC no names
+      raw.writeBitLong(0xc8000000 | 0);
+      raw.writeByte(0);
+      raw.writeBitShort(0x8000); // ENC: complex colour, BL 0xC8000000
+      raw.writeBitLong(0xc8000000 | 0);
+      const reader = DwgStreamReaderBase.getStreamHandler(version, bits);
+      expect(reader.readCmColor().index).toBe(257);
+      expect(reader.readEnColor().color.index).toBe(257);
+
+      // Written back as the method None, which is what the reader above takes.
+      const out = new Uint8Array(32);
+      DwgStreamWriterBase.getStreamWriter(version, out, 'utf-8').writeCmColor(Color.byEntity);
+      const written = DwgStreamReaderBase.getStreamHandler(version, out);
+      written.readBitShort();
+      expect(written.readBitLong() >>> 24).toBe(0xc8);
+
+      // Through a whole drawing: DIMTFILLCLR None and black, in the header and a DIMSTYLE.
+      // DWG stores DIMTFILLCLR from R2007 on; R2004's CMC is the stream check above.
+      if (version < ACadVersion.AC1021) return;
+      const doc = new CadDocument(version);
+      doc.header!.dimensionTextBackgroundColor = Color.byEntity;
+      const none = new DimensionStyle('NONE');
+      none.textBackgroundColor = Color.byEntity;
+      const black = new DimensionStyle('BLACK');
+      black.textBackgroundColor = Color.fromTrueColor(0);
+      doc.dimensionStyles!.add(none);
+      doc.dimensionStyles!.add(black);
+      const back = dwgRoundTrip(doc);
+      expect(back.header!.dimensionTextBackgroundColor.index).toBe(257);
+      expect(back.dimensionStyles!.tryGetValue('NONE')!.textBackgroundColor.index).toBe(257);
+      const stillBlack = back.dimensionStyles!.tryGetValue('BLACK')!.textBackgroundColor;
+      expect([stillBlack.isTrueColor, stillBlack.trueColor]).toEqual([true, 0]);
+    },
+  );
 });
