@@ -10,6 +10,7 @@
 
 import type {
   AttributeBase,
+  CadObject,
   CadWipeoutBase,
   HatchBoundaryPathEdge,
   Vertex,
@@ -108,6 +109,7 @@ import type {
   EntityProps,
   EntityType,
   Face3dGeometry,
+  Handle,
   HatchEdge,
   HatchGeometry,
   HatchLoop,
@@ -191,27 +193,30 @@ export interface Resolver {
    * handed out, so it never meets one (CLAUDE.md: handles are never renumbered).
    */
   readonly allocate: () => number;
+  /** Table records the save adds (new layers), by handle, before they join the drawing. */
+  readonly created: ReadonlyMap<Handle, CadObject>;
 }
 
-function resolve<T>(
+/** The drawing's object `handle` (or one the save adds) when it is a `type`. */
+export function resolve<T>(
   r: Resolver,
   handle: string,
   type: abstract new (...args: never[]) => T,
 ): T | undefined {
-  const o = r.store.original(handle);
+  const o = r.store.original(handle) ?? r.created.get(handle);
   return o instanceof type ? o : undefined;
 }
 
 // ── Common properties ──────────────────────────────────────────────────────────────────────
 
-function acadColor(c: Color): AcadColor {
+export function acadColor(c: Color): AcadColor {
   if (c.kind === 'byLayer') return AcadColor.byLayer;
   if (c.kind === 'byBlock') return AcadColor.byBlock;
   if (c.kind === 'aci') return new AcadColor(c.index);
   return new AcadColor(c.r, c.g, c.b);
 }
 
-function acadLineweight(w: Lineweight): number {
+export function acadLineweight(w: Lineweight): number {
   if (w === 'ByLayer') return -1;
   if (w === 'ByBlock') return -2;
   if (w === 'Default') return -3;

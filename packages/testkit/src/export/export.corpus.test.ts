@@ -1,9 +1,12 @@
 // TriyaToAcad on the public corpus (M1-05, M1-75): a markup-style edit of every entity Triya can
 // write (move it; grow circles and arcs, turn arcs, text, blocks and feature control frames;
 // move hatches with their pattern origin, images, wipeouts, underlays, multilines, multileaders
-// and viewport frames) must save so that the edited entities map back to the edit, and every
-// other object in the file comes back exactly as read: `structuralDiff` ignoring only the
-// edited handles reports nothing (TESTING.md §3).
+// and viewport frames), with what the Layers palette and a markup session change outside the
+// entities (every layer turned off or on, locked or unlocked and recoloured; $LTSCALE,
+// $TEXTSIZE and the current layer), must save so that the edited entities, layers and header
+// variables map back to the edit, and every other object in the file comes back exactly as
+// read: `structuralDiff` ignoring only the edited handles and variables reports nothing
+// (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
 import { readFileSync } from 'node:fs';
 import { Insert, Polyline } from '@node-projects/acad-ts';
@@ -14,6 +17,8 @@ import {
   type Entity,
   type EntityGeometry,
   type HatchGeometry,
+  type HeaderValue,
+  type LayerRecord,
   type TextFields,
   type Vec2,
 } from '@triya/engine';
@@ -243,11 +248,40 @@ function edited(g: EntityGeometry): EntityGeometry {
   }
 }
 
+/** The Layers palette's toggles and a colour change, on every layer. */
+function editedLayer(l: LayerRecord): Partial<LayerRecord> {
+  const index = l.color.kind === 'aci' && l.color.index === 3 ? 4 : 3;
+  return { on: !l.on, locked: !l.locked, color: { kind: 'aci', index } };
+}
+
+/** Header variables a markup session changes: LTSCALE, TEXTSIZE and the current layer. */
+function editedHeader(model: DocumentModel): Map<string, HeaderValue> {
+  const out = new Map<string, HeaderValue>();
+  const ltscale = model.header.get('$LTSCALE');
+  const textsize = model.header.get('$TEXTSIZE');
+  if (typeof ltscale === 'number') out.set('$LTSCALE', ltscale * 2);
+  if (typeof textsize === 'number') out.set('$TEXTSIZE', textsize + 1);
+  const current = model.header.get('$CLAYER');
+  const other = [...model.tables.layers.values()].find((l) => l.name !== current);
+  if (typeof current === 'string' && other) out.set('$CLAYER', other.name);
+  return out;
+}
+
+/** A layer as it maps back: `raw` is the reader's link, and DXF 70 holds frozen/locked. */
+function comparableLayer(l: LayerRecord | undefined): unknown {
+  if (!l) return l;
+  const { raw: _raw, flags, ...rest } = l;
+  const others = (flags ?? 0) & ~5;
+  return { ...rest, ...(others ? { flags: others } : {}) };
+}
+
 function edit(model: DocumentModel, e: Entity, geom: EntityGeometry): void {
   const b = new ChangeSetBuilder(model);
   b.updateEntity(e.id, { geom });
   model.apply(b.build());
 }
+
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
 
 /** Equal up to float noise relative to the drawing's magnitude; angles compared mod 2π. */
 function near(a: unknown, b: unknown, key = ''): boolean {
@@ -294,6 +328,20 @@ describe('TriyaToAcad edits on the public corpus', () => {
     }
   });
 
+  it('refuses an edit of the layer 0 an R12 file does not have (acad-ts makes it up)', () => {
+    const path = 'public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1006.dxf';
+    const bytes = new Uint8Array(readFileSync(`${corpusDir}${path}`));
+    const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
+    const zero = [...model.tables.layers.values()].find((l) => l.name === '0')!;
+    const b = new ChangeSetBuilder(model);
+    b.updateTableRecord('layers', zero.handle, { color: { kind: 'aci', index: 3 } });
+    model.apply(b.build());
+
+    expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
+      /layer 0 .*made it up/,
+    );
+  });
+
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s',
     (_path, f) => {
@@ -307,29 +355,58 @@ describe('TriyaToAcad edits on the public corpus', () => {
         const original = readCadDocument(bytes);
         const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
         const targets = [...model.entities()].filter((e) => writable.has(e.type));
+        // An R12 file without layer 0 reads with a made-up one, which saves only as read.
+        const madeUp = original.madeUpHandles?.added;
+        const layers = [...model.tables.layers.values()].filter(
+          (l) => !madeUp?.has(Number.parseInt(l.handle, 16)),
+        );
+        const header = editedHeader(model);
         const b = new ChangeSetBuilder(model);
         for (const e of targets) b.updateEntity(e.id, { geom: edited(e.geom) });
+        for (const l of layers) b.updateTableRecord('layers', l.handle, editedLayer(l));
+        for (const [name, value] of header) b.setHeader(name, value);
         model.apply(b.build());
 
         const saved = exportDocument(readCadDocument(bytes), model, options);
         const reopened = readCadDocument(saved);
-        const back = new Map(documentInit(reopened).entities?.map((e) => [e.handle, e]));
+        const init = documentInit(reopened);
+        const back = new Map(init.entities?.map((e) => [e.handle, e]));
         const wrong = targets
           .map((e) => model.entity(e.id) as Entity)
           .filter((e) => !near(back.get(e.handle)?.geom, e.geom))
           .map((e) => `${e.type} ${e.handle}`);
         expect(wrong, f.path).toEqual([]);
+        const backLayers = new Map(init.tables?.layers?.map((l) => [l.handle, l]));
+        const wrongLayers = layers
+          .map((l) => model.tables.layers.get(l.handle)!)
+          .filter((l) => !same(comparableLayer(backLayers.get(l.handle)), comparableLayer(l)))
+          .map((l) => l.name);
+        expect(wrongLayers, f.path).toEqual([]);
+        const backHeader = new Map(init.header);
+        expect(
+          [...header.keys()].filter((n) => !same(backHeader.get(n), header.get(n))),
+          f.path,
+        ).toEqual([]);
 
         // A polyline's VERTEX entities and an INSERT's ATTRIBs are edited with it, under their
         // own handles.
-        const ignoreHandles = new Set(targets.map((e) => Number.parseInt(e.handle, 16)));
+        const ignoreHandles = new Set(
+          [...targets, ...layers].map((e) => Number.parseInt(e.handle, 16)),
+        );
         for (const h of [...ignoreHandles]) {
           const o = original.getCadObject(h);
           if (o instanceof Polyline) for (const v of o.vertices) ignoreHandles.add(v.handle);
           if (o instanceof Insert) for (const a of o.attributes) ignoreHandles.add(a.handle);
         }
-        const diff = structuralDiff(original, reopened, { ignoreHandles });
-        expect(diff.differences.slice(0, 5), f.path).toEqual([]);
+        // The edited variables, and the header's current-layer record ($CLAYER), are the edit.
+        const diff = structuralDiff(original, reopened, { ignoreHandles }).differences.filter(
+          (d) =>
+            d.handle !== '0' ||
+            ![...header.keys(), '_currentLayer'].some(
+              (n) => d.path === n || d.path.startsWith(`${n}.`),
+            ),
+        );
+        expect(diff.slice(0, 5), f.path).toEqual([]);
       });
     },
     PER_FILE_BUDGET_MS,
