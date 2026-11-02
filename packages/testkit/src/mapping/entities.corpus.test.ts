@@ -87,22 +87,11 @@ interface Mismatch {
 
 const COMMON = new Set(['8', '6', '62', '420', '370', '48', '60', '440']);
 
-/** Where acad-ts itself does not keep what the file states (M1-32). Same ratchet as tables. */
-const ACAD_TS_GAPS: Record<string, string> = {
-  'entity 6':
-    'R12 files have no BYBLOCK/BYLAYER LTYPE records; acad-ts falls back to ByLayer for an entity whose 6 is BYBLOCK',
-  'MTEXT 1':
-    'acad-ts decodes only the ^J, ^M, ^I and "^ " caret codes; other control characters stay as ^A, ^B, …',
-  'DIMENSION 70':
-    'acad-ts reads a rotated dimension whose AcDbRotatedDimension subclass is empty (50 omitted, angle 0) as an aligned one',
-  'VIEWPORT 68':
-    'acad-ts skips a DXF viewport’s status (68: off, or on with its stacking order), so every viewport reads as 1',
-  'VIEWPORT 340': 'acad-ts never reads a DXF viewport’s clip boundary (340); DWG reads it',
-  'VIEWPORT MVIEW 12':
-    'acad-ts does not read the view of an R12 viewport from its MVIEW xdata, so the view centre, height and lens read as 0',
-  'VIEWPORT MVIEW 42': 'the same for the lens length',
-  'VIEWPORT MVIEW 45': 'the same for the view height',
-};
+/**
+ * Where acad-ts itself does not keep what the file states (M1-32). Same ratchet as tables. Empty
+ * since M1-32 part 4 (acad-ts patches 0115–0119); keep it for the next gap a new corpus file shows.
+ */
+const ACAD_TS_GAPS: Record<string, string> = {};
 
 /** Types this part maps; the others must be reported as not mapped yet. */
 const MAPPED = new Set([

@@ -74,6 +74,10 @@ export class CadEntityTemplate extends CadTemplateT<Entity> {
 		const ltype = this.getTableReference(builder, this.lineTypeHandle, this.lineTypeName ?? '', LineType);
 		if (ltype) {
 			this.cadObject.lineType = ltype;
+		} else if (this.lineTypeName?.toUpperCase() === LineType.byBlockName.toUpperCase()) {
+			// R12 files have no BYBLOCK LTYPE record, yet an entity names it in 6: it means ByBlock, as
+			// BYLAYER means ByLayer (the default an entity already has). The document adds the entry.
+			this.cadObject.lineType = LineType.byBlock;
 		}
 
 		const color = builder.tryGetCadObject<BookColor>(this.colorHandle);

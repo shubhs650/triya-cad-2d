@@ -708,7 +708,10 @@ export interface ViewportGeometry {
   readonly height: number;
   /** DXF 69: 1 is the layout's own paper-space view. */
   readonly id: number;
-  /** DXF 68: 0 off, −1 on but off screen, otherwise on and its stacking order. */
+  /**
+   * DXF 68: 0 not active (off, or in a layout that is not current), −1 on but past MAXACTVP,
+   * otherwise on and its stacking order. Whether it is off is the 90 flag (see viewportShowsModel).
+   */
   readonly status: number;
   /** DXF 90: viewport status bit flags. */
   readonly flags: number;

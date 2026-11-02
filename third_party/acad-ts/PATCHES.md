@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) and 0112–0114 (M1-32 part 3) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3) and 0115–0119 (M1-32 part 4) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2185,5 +2185,90 @@ AutoCAD writes the STYLE table record of a shape file with an empty name (flag 1
 **Title:** Read and write R12 DIMSTYLE arrow block names
 
 In R12 DXF the DIMSTYLE record names its arrow blocks in groups 5, 6 and 7. Group 5 is a handle code, so the reader parsed `BOXBLANK` as the hex number 11 and the arrow block was never found. AutoCAD writes built-in arrowheads there without the leading underscore of their block (`BOXBLANK` for `_BOXBLANK`). This reads 5 as text, resolves built-in arrowhead names to their underscored blocks when no block has the name as written, and writes 5/6/7 in R12 the way AutoCAD does.
+
+</details>
+
+### 0115 — an R12 entity drawn ByBlock reads as ByLayer
+
+- **File:** `third_party/acad-ts-patches/0115-r12-byblock-linetype.patch`
+- **Touches:** `src/IO/Templates/CadEntityTemplate.ts`
+- **Symptom:** R12 files have no BYBLOCK or BYLAYER LTYPE records, yet an entity names them in 6. The linetype lookup by name failed, so the entity kept its default ByLayer and drew in its layer's linetype instead of its block's. Found by the M1-04 entity oracle (`entity 6`, roadmap M1-32) on 69 entities of `sample_AC1009_ascii.dxf`.
+- **Fix:** when no table entry has the name and it is `BYBLOCK` (any case), the entity gets `LineType.byBlock`; the document adds the entry as it already did for ByLayer.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0115 an R12 entity drawn ByBlock keeps its linetype though the file has no BYBLOCK record"; `entities.corpus.test.ts` no longer lists the gap.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read ByBlock linetypes in R12 DXF files
+
+R12 DXF files have no BYBLOCK linetype record, but entities still set group 6 to BYBLOCK. The lookup by name failed and the entity silently fell back to ByLayer. This assigns ByBlock when the name is BYBLOCK and the table has no such entry.
+
+</details>
+
+### 0116 — DXF caret codes other than ^J, ^M and ^I stay encoded
+
+- **File:** `third_party/acad-ts-patches/0116-dxf-caret-control-characters.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts`
+- **Symptom:** DXF writes a control character as `^` and the character 64 above it (`^@` is 0, `^A` 1, …, `^_` 31) and a caret as `^ `. The reader decoded only `^J`, `^M` and `^I`, so `^A` and the rest came back as text, and the writer encoded only line feed, return and tab, so any other control character would be written raw. Decoding in sequence also read `^^J` as a caret and a line feed. Found by the M1-04 entity oracle (`MTEXT 1`, roadmap M1-32) on ezdxf's `caret_encoding.dxf`.
+- **Fix:** decode `^@`–`^_` and `^ ` in one left-to-right pass; encode every character below 32 the same way after escaping carets.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0116 DXF caret codes ^@ to ^_ decode to the control characters 0 to 31 and encode back"; `entities.corpus.test.ts` no longer lists the gap.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Decode and encode every DXF caret code
+
+DXF stores control characters 0–31 in caret notation (`^@` … `^_`) and a caret as `^ `. Only `^J`, `^M` and `^I` were decoded and encoded. This decodes the whole range in a single pass (so `^^` is character 30, not a caret) and encodes every control character on write.
+
+</details>
+
+### 0117 — a rotated dimension with an empty AcDbRotatedDimension subclass reads as aligned
+
+- **File:** `third_party/acad-ts-patches/0117-rotated-dimension-without-rotation.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** AutoCAD leaves out 50 when a rotated (linear) dimension is at 0°, so its `AcDbRotatedDimension` subclass marker is empty and is all that tells it from an aligned one. The reader made a `DimensionLinear` only on 50, so these read as `DimensionAligned`. Found by the M1-04 entity oracle (`DIMENSION 70`, roadmap M1-32) on 16 dimensions of the acadsharp samples, `dimension_in_nested_blocks.dxf` and `uncommon.dxf`.
+- **Fix:** the `AcDbRotatedDimension` marker turns the dimension into a `DimensionLinear` (rotation 0) unless it already is one.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0117 a rotated DXF dimension whose AcDbRotatedDimension subclass is empty stays rotated"; `entities.corpus.test.ts` no longer lists the gap.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read rotated dimensions that omit their rotation
+
+A rotated dimension at 0° is written without group 50, leaving the AcDbRotatedDimension subclass empty. The reader only switched to DimensionLinear on group 50, so these came back as aligned dimensions. The subclass marker now switches it.
+
+</details>
+
+### 0118 — DXF viewport status (68) and clip boundary (340) are skipped
+
+- **File:** `third_party/acad-ts-patches/0118-dxf-viewport-status-and-clip-boundary.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** the VIEWPORT reader returned on 68 without reading it, so every viewport read as on and active (1) and a save wrote that, and it never read 340, so a non-rectangular viewport lost its clip entity on a DXF read (DWG reads both). Found by the M1-04 entity oracle (`VIEWPORT 68`, `VIEWPORT 340`, roadmap M1-32) on 56 and 4 viewports.
+- **Fix:** 68 sets `activeStatus`, 340 sets the template's boundary handle, which the template already resolves.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0118 a DXF viewport keeps its status (68) and clip boundary (340)"; `entities.corpus.test.ts` no longer lists the gap.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read DXF viewport status and clip boundary
+
+The DXF VIEWPORT reader skipped group 68 (off, or on with its stacking order) and never read group 340 (the clip boundary entity), although the writer writes both and the DWG reader reads them. This reads them.
+
+</details>
+
+### 0119 — an R12 viewport has no view
+
+- **File:** `third_party/acad-ts-patches/0119-r12-viewport-mview-xdata.patch`
+- **Touches:** `src/IO/Templates/CadViewportTemplate.ts`
+- **Symptom:** R12 states a viewport's frame as groups (10, 40, 41, 68, 69) and its view, snap and grid in the ACAD xdata after `MVIEW` (DXF R12 reference, VIEWPORT). acad-ts never read that xdata into the viewport, so view centre, height, lens and the rest read as 0. Found by the M1-04 entity oracle (`VIEWPORT MVIEW 12/42/45`, roadmap M1-32) on `sample_AC1009_ascii.dxf`.
+- **Fix:** for documents before R13, the template reads the MVIEW xdata into view target, direction, twist, height, centre, lens, front and back clip, snap angle, base and spacing, grid spacing, circle zoom and the status bits (view mode, UCS icon, fast zoom, snap, grid, isometric snap, isopair, hidden in plot), and sets the ViewportOff flag when 68 is 0, since R12 has no 90 flags to say so. The xdata itself is kept as read.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0119 an R12 viewport reads its view from the MVIEW xdata"; `entities.corpus.test.ts` no longer lists the gap.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read the R12 viewport view from its MVIEW xdata
+
+R12 DXF files keep a viewport's view, snap and grid settings in the ACAD xdata after the MVIEW string rather than as groups. This reads them into the Viewport properties when the file is older than R13, leaving the xdata untouched so it is written back as read.
 
 </details>

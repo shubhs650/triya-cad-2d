@@ -28,11 +28,10 @@ export abstract class DxfStreamReaderBase implements IDxfStreamReader {
   public recorder: DxfRawCode[] | null = null;
 
   public get valueAsString(): string {
-    return String(this.value)
-      .replace(/\^J/g, '\n')
-      .replace(/\^M/g, '\r')
-      .replace(/\^I/g, '\t')
-      .replace(/\^ /g, '^');
+    // DXF caret notation: ^@ to ^_ are the control characters 0 to 31 (^J a line feed) and
+    // "^ " a caret. One pass, left to right, so "^^J" is control character 30 and a J.
+    return String(this.value).replace(/\^([@-_ ])/g, (_, c: string) =>
+      c === ' ' ? '^' : String.fromCharCode(c.charCodeAt(0) - 64));
   }
 
   public get valueAsBool(): boolean {
