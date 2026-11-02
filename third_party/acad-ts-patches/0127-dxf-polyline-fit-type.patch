@@ -1,0 +1,23 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index c30c3f5..67504d1 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -46,6 +46,7 @@ import { Polyline2D } from '../../../Entities/Polyline2D.js';
+ import { Polyline3D } from '../../../Entities/Polyline3D.js';
+ import { PolyfaceMesh } from '../../../Entities/PolyfaceMesh.js';
+ import { PolygonMesh } from '../../../Entities/PolygonMesh.js';
++import { SmoothSurfaceType } from '../../../Entities/SmoothSurfaceType.js';
+ import { Ray } from '../../../Entities/Ray.js';
+ import { Shape } from '../../../Entities/Shape.js';
+ import { Solid } from '../../../Entities/Solid.js';
+@@ -1481,6 +1482,10 @@ export abstract class DxfSectionWriterBase {
+     } else if (polyline instanceof PolyfaceMesh) {
+       this._writer.write(71, polyline.vertices.length);
+       this._writer.write(72, polyline.faces.length);
++    } else if (polyline.smoothSurface !== SmoothSurfaceType.NoSmooth) {
++      // 75 (optional, default 0) is also the fit type of a spline-fit 2D or 3D polyline;
++      // without it a quadratic or Bezier fit reads back as the default cubic.
++      this._writer.write(75, polyline.smoothSurface);
+     }
+     this._writeOwnerExtendedData(polyline);
+ 
