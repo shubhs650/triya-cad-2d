@@ -7,6 +7,7 @@ import { CadNotSupportedException } from '../../../Exceptions/CadNotSupportedExc
 import { DwgException } from '../../../Exceptions/DwgException.js';
 import { DwgReferenceType } from '../../../Types/DwgReferenceType.js';
 import { IDwgStreamReader } from './IDwgStreamReader.js';
+import { decodeDxfUnicode } from '../../TextEncoding.js';
 
 // Factory registration for breaking circular dependency
 type StreamReaderFactory = new (stream: Uint8Array, resetPosition: boolean) => IDwgStreamReader;
@@ -489,7 +490,9 @@ export abstract class DwgStreamReaderBase implements IDwgStreamReader {
 		const length = this.readBitShort();
 		let str: string;
 		if (length > 0) {
-			str = this.readStringEncoded(length, this.encoding).replace(/\0/g, '');
+			// Before R2007 (AC21 reads UTF-16 instead) a character outside the code page is a
+			// \U+XXXX escape, as in DXF.
+			str = decodeDxfUnicode(this.readStringEncoded(length, this.encoding).replace(/\0/g, ''));
 		} else {
 			str = '';
 		}

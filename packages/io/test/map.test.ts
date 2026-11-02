@@ -259,12 +259,13 @@ describe('dimension styles', () => {
 });
 
 describe('mapEntityColor (MLEADERSTYLE 91/93/94)', () => {
-  it('decodes the raw AcCmEntityColor acad-ts leaves after a DXF read', () => {
-    expect(mapEntityColor(0xc0000000 | 0)).toEqual({ kind: 'byLayer' });
-    expect(mapEntityColor(-1056964608)).toEqual({ kind: 'byBlock' }); // 0xC1000000
-    expect(mapEntityColor(0xc2000000 | 0x102030)).toEqual({ kind: 'rgb', r: 16, g: 32, b: 48 });
-    expect(mapEntityColor(0xc3000000 | 5)).toEqual({ kind: 'aci', index: 5 });
-    expect(mapEntityColor(0xc8000000)).toEqual({ kind: 'byBlock' });
+  it('maps every AcCmEntityColor method acad-ts decodes (0122)', () => {
+    const m = (v: number) => mapEntityColor(Color.fromCmValue(v));
+    expect(m(0xc0000000 | 0)).toEqual({ kind: 'byLayer' });
+    expect(m(-1056964608)).toEqual({ kind: 'byBlock' }); // 0xC1000000
+    expect(m(0xc2000000 | 0x102030)).toEqual({ kind: 'rgb', r: 16, g: 32, b: 48 });
+    expect(m(0xc3000000 | 5)).toEqual({ kind: 'aci', index: 5 });
+    expect(m(0xc8000000)).toEqual({ kind: 'byBlock' });
   });
 
   it('maps a Color as mapColor does', () => {

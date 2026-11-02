@@ -91,6 +91,8 @@ function drawing(): Uint8Array {
   solid.thirdCorner = new XYZ(0, 1, 2);
   solid.fourthCorner = new XYZ(1, 1, 2);
   solid.normal = DOWN;
+  const trace = new Solid(new XYZ(0, 0, 0), new XYZ(2, 0, 0), new XYZ(0, 1, 0), new XYZ(2, 1, 0));
+  trace.isTrace = true;
   const face = new Face3D();
   face.firstCorner = new XYZ(0, 0, 1);
   face.secondCorner = new XYZ(4, 0, 2);
@@ -135,7 +137,20 @@ function drawing(): Uint8Array {
   const tolerance = new Tolerance();
   tolerance.text = '{\\Fgdt;j}%%v0.1';
   tolerance.insertionPoint = new XYZ(1, 1, 0);
-  for (const e of [circle, arc, pline, ellipse, text, mtext, solid, face, spline, tilted, insert]) {
+  for (const e of [
+    circle,
+    arc,
+    pline,
+    ellipse,
+    text,
+    mtext,
+    solid,
+    trace,
+    face,
+    spline,
+    tilted,
+    insert,
+  ]) {
     doc.entities!.add(e);
   }
   doc.entities!.add(titled);
@@ -431,6 +446,19 @@ describe('triyaToAcad', () => {
         elevation: -4,
         thickness: 0.5,
         normal: { x: 0, y: 0, z: -1 },
+      },
+    ],
+    [
+      'TRACE',
+      {
+        kind: 'TRACE',
+        corners: [
+          { x: 0, y: 0 },
+          { x: 4, y: 0 },
+          { x: 0, y: 1 },
+          { x: 4, y: 1 },
+        ],
+        elevation: 2,
       },
     ],
     [

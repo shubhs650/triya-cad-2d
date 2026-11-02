@@ -1,0 +1,49 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgStreamReaderBase.ts b/src/IO/DWG/DwgStreamReaders/DwgStreamReaderBase.ts
+index 805a985..3c7e18d 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgStreamReaderBase.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgStreamReaderBase.ts
+@@ -6,7 +6,8 @@ import { ACadVersion } from '../../../ACadVersion.js';
+ import { CadNotSupportedException } from '../../../Exceptions/CadNotSupportedException.js';
+ import { DwgException } from '../../../Exceptions/DwgException.js';
+ import { DwgReferenceType } from '../../../Types/DwgReferenceType.js';
+-import { IDwgStreamReader } from './IDwgStreamReader.js';
++import { IDwgStreamReader } from './IDwgStreamReader.js';
++import { decodeDxfUnicode } from '../../TextEncoding.js';
+ 
+ // Factory registration for breaking circular dependency
+ type StreamReaderFactory = new (stream: Uint8Array, resetPosition: boolean) => IDwgStreamReader;
+@@ -489,7 +490,9 @@ export abstract class DwgStreamReaderBase implements IDwgStreamReader {
+ 		const length = this.readBitShort();
+ 		let str: string;
+ 		if (length > 0) {
+-			str = this.readStringEncoded(length, this.encoding).replace(/\0/g, '');
++			// Before R2007 (AC21 reads UTF-16 instead) a character outside the code page is a
++			// \U+XXXX escape, as in DXF.
++			str = decodeDxfUnicode(this.readStringEncoded(length, this.encoding).replace(/\0/g, ''));
+ 		} else {
+ 			str = '';
+ 		}
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgStreamWriterBase.ts b/src/IO/DWG/DwgStreamWriters/DwgStreamWriterBase.ts
+index 2f915a4..217e10a 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgStreamWriterBase.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgStreamWriterBase.ts
+@@ -7,7 +7,7 @@ import { CadUtils } from '../../../CadUtils.js';
+ import { DwgReferenceType } from '../../../Types/DwgReferenceType.js';
+ import { IHandledCadObject } from '../../../IHandledCadObject.js';
+ import { IDwgStreamWriter } from './IDwgStreamWriter.js';
+-import { encodeCadString } from '../../TextEncoding.js';
++import { encodeCadString, escapeDxfUnicode } from '../../TextEncoding.js';
+ 
+ // Factory registration for breaking circular dependency
+ type WriterFactory = new (stream: Uint8Array, encoding: string) => IDwgStreamWriter;
+@@ -295,7 +295,9 @@ export abstract class DwgStreamWriterBase implements IDwgStreamWriter {
+ 			return;
+ 		}
+ 
+-		const bytes = encodeCadString(value, this.encoding);
++		// Before R2007 (AC21 writes UTF-16 instead) a character outside the code page is written
++		// as its \U+XXXX escape, as in DXF; it became "?".
++		const bytes = encodeCadString(escapeDxfUnicode(value, this.encoding), this.encoding);
+ 		this.writeBitShort(bytes.length);
+ 		this.writeBytes(bytes);
+ 	}

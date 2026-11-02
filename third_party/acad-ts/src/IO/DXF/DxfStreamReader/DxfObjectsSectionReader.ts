@@ -2015,6 +2015,16 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
       case 342:
         tmp.mTextStyleHandle = this._reader.valueAsHandle;
         return true;
+      // Leader line, text and block colours: AcCmEntityColor values, not integers.
+      case 91:
+        (tmp.cadObject as MultiLeaderStyle).lineColor = Color.fromCmValue(this._reader.valueAsInt);
+        return true;
+      case 93:
+        (tmp.cadObject as MultiLeaderStyle).textColor = Color.fromCmValue(this._reader.valueAsInt);
+        return true;
+      case 94:
+        (tmp.cadObject as MultiLeaderStyle).blockContentColor = Color.fromCmValue(this._reader.valueAsInt);
+        return true;
       default:
         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
     }

@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) and 0120 (M1-76) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76) and 0121–0125 (M1-79) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2287,5 +2287,90 @@ R12 DXF files keep a viewport's view, snap and grid settings in the ACAD xdata a
 R2004+ DWG colours store the AcCmEntityColor colour method in the high byte of the RGB value. `ReadCmColor` handled ByLayer (0xC0) and the indexed methods and read every other value as a true colour, so None (0xC8) became black (0,0,0). AutoCAD writes None for visual style colours and for the background of table and cell styles, where it means "no fill", so a real black fill could not be told apart from none. On write, ACI 257 (the ACI value AutoCAD uses for None, `kACInone`, and the value DXF stores) was written as method 0xC3 with index `257 & 0xFF`, i.e. red.
 
 This reads method 0xC8 as `Color.ByEntity` (257) in `ReadCmColor` (stream and merged readers) and in the complex-colour branch of `ReadEnColor`, and writes 257 back as method 0xC8 in `WriteCmColor` and the merged writer. True black stays a true colour.
+
+</details>
+
+### 0121 — a TRACE reads as a SOLID
+
+- **File:** `third_party/acad-ts-patches/0121-trace-kept-apart-from-solid.patch`
+- **Touches:** `src/Entities/Solid.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
+- **Symptom:** the DXF and DWG readers made a `Solid` for a `TRACE`, and `Solid` always names itself SOLID, so a save turned every TRACE into a SOLID. No corpus file has a TRACE (the SOLIDs of the AutoCAD samples carry the `AcDbTrace` subclass marker, which is what AutoCAD writes for a SOLID). Listed by M1-32, fixed in M1-79.
+- **Fix:** `Solid.isTrace` (false by default); when set, `objectName` is TRACE and `objectType` is `ObjectType.TRACE`, which both writers already use. The readers set it for TRACE.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0121 a TRACE reads and saves as a TRACE, not a SOLID".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep TRACE entities apart from SOLID
+
+TRACE has the same data as SOLID, and both readers read it into a `Solid`, which always reports itself as SOLID, so a TRACE was saved as a SOLID. This adds `Solid.isTrace`; when it is set the entity names itself TRACE (`objectName`, `objectType`), and the DXF and DWG readers set it for TRACE.
+
+</details>
+
+### 0122 — DXF MULTILEADER and MLEADERSTYLE colours read as raw integers
+
+- **File:** `third_party/acad-ts-patches/0122-dxf-mleader-colours.patch`
+- **Touches:** `src/Color.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts`
+- **Symptom:** DXF states these colours as one 32-bit AcCmEntityColor value each (MULTILEADER 91/92/93, its context's 91/93, MLEADERSTYLE 91/93/94; high byte 0xC0 ByLayer, 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI, 0xC8 None). The reader assigned the raw integer to the `Color` property, so a DXF→DWG save could not write it, and the MLEADERSTYLE writer, given a number, wrote ByBlock. The context text colour (90) was decoded, but 0xC3 (ACI) read as RGB. Both writers wrote an ACI colour as 0xC1 + index and ByLayer as ByBlock. Every corpus value is 0xC0, 0xC1 or 0xC2 (`sample_AC1015_ascii.dxf` and `sample_AC1018_ascii.dxf` have an RGB 200,200,200 text background). Listed by M1-32, fixed in M1-79.
+- **Fix:** `Color.fromCmValue` / `Color.toCmValue` decode and encode the value (0xC1 and the methods that carry no colour keep the low byte as an index, as `DwgStreamReaderAC18.readCmColor` does); the readers decode those groups and both writers encode with it.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0122 DXF MULTILEADER and MLEADERSTYLE colours read as colours and save back".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write MULTILEADER and MLEADERSTYLE colours as AcCmEntityColor values
+
+These DXF groups hold a 32-bit AcCmEntityColor (high byte 0xC0 ByLayer, 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI, 0xC8 None), but the reader assigned the raw integer to `Color` properties, which the DWG writer then cannot write. This adds `Color.fromCmValue`/`toCmValue`, decodes MULTILEADER 91/92/93, its context's 90/91/93 and MLEADERSTYLE 91/93/94 with it, and writes ACI as 0xC3 and ByLayer as 0xC0 (they were written as 0xC1, ByBlock).
+
+</details>
+
+### 0123 — DXF IMAGE and WIPEOUT lose their clip boundary type (71)
+
+- **File:** `third_party/acad-ts-patches/0123-dxf-image-clip-type.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** the reader skipped group 71 (1 rectangular, 2 polygonal), so every DXF image and wipeout read as rectangular, and a save wrote 71 = 1 with the polygon's vertices. Corpus: `wipeout_door.dxf` (2), `images.dxf` (1), `viewports.dxf` (2) and the acadsharp R2000/R2004 wipeouts. Listed by M1-32, fixed in M1-79.
+- **Fix:** 71 sets `clipType`. The DWG reader already read it.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0123 a DXF IMAGE or WIPEOUT keeps its clip boundary type (71)".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read the DXF image clip boundary type
+
+The DXF reader skipped group 71 of IMAGE and WIPEOUT, so a polygonal clip read as rectangular and was saved back as one. This reads it into `clipType`, as the DWG reader does.
+
+</details>
+
+### 0124 — R14 and R2000 DWG tables read as unknown objects
+
+- **File:** `third_party/acad-ts-patches/0124-dwg-r14-r2000-tables.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
+- **Symptom:** the DWG reader read `ACAD_TABLE` only from R2004 on and left an R14 or R2000 one as an unknown entity, so the two tables of `sample_AC1014.dwg` and `sample_AC1015.dwg` were not mapped. AutoCAD saves them there as a custom class object with the R2004 layout. Listed by M1-32, fixed in M1-79.
+- **Fix:** read `ACAD_TABLE` in every version. The R14 and R2000 tables map exactly like the same drawing's R2000 DXF save, and the writer already wrote that layout.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0124 R14 and R2000 DWGs read their ACAD_TABLEs and save them back"; `entities.corpus.test.ts` → "maps the tables of a DWG like those of the same drawing saved as DXF" now includes AC1014 and AC1015.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read ACAD_TABLE from R14 and R2000 DWG files
+
+Tables in R14 and R2000 DWG files are custom class objects with the R2004 layout, but the reader only read them from R2004 on and kept older ones as unknown entities. Reading them in every version gives the same table as the drawing's R2004 save (checked on the ACadSharp R14/R2000/R2004 samples).
+
+</details>
+
+### 0125 — DWG strings before R2007 keep their \U+ escapes
+
+- **File:** `third_party/acad-ts-patches/0125-dwg-unicode-escapes.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgStreamReaderBase.ts`, `src/IO/DWG/DwgStreamWriters/DwgStreamWriterBase.ts`
+- **Symptom:** before R2007, DWG strings are in the drawing's code page and AutoCAD writes a character outside it as `\U+XXXX`, as in DXF. 0072 decodes them in DXF; the DWG reader kept them as text (`sample_AC1014/1015/1018.dwg` MTEXT `\U+220545,6` and `94\U+00B0`, which their DXF save reads as `∅45,6` and `94°`), and the writer turned a character outside the code page into "?". Listed by M1-32, fixed in M1-79.
+- **Fix:** `readVariableText` decodes with `decodeDxfUnicode` and `writeVariableText` escapes with `escapeDxfUnicode`; R2007+ (`DwgStreamReaderAC21`, `DwgStreamWriterAC21`) reads and writes UTF-16 through its own overrides.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0125 a DWG before R2007 decodes its \U+ escapes and writes them back".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Decode and encode \U+ escapes in pre-R2007 DWG strings
+
+Before R2007 a DWG string is in the drawing's code page and AutoCAD stores a character outside it as \U+XXXX, exactly as in DXF. The DWG reader kept the escape as text and the writer replaced such characters with "?". This applies the DXF reader's decoding and the DXF writer's escaping to the pre-R2007 variable text.
 
 </details>
