@@ -203,16 +203,25 @@ describe('viewports', () => {
     expect(inside!.filter((c) => c[0] === 'moveTo')).toHaveLength(1);
   });
 
-  it('draws no view through the paper-space viewport, an off viewport or one turned off', () => {
-    for (const vp of [viewport({ id: 1 }), viewport({ status: 0 }), viewport({ flags: 0x20000 })]) {
+  it('draws no view through the paper-space viewport or one turned off', () => {
+    for (const vp of [viewport({ id: 1 }), viewport({ flags: 0x20000 })]) {
       const { r, scene } = setup([onPaper('30', vp), entity('20', line(0, 10, 20, 10))]);
       r.frame();
       expect(clipped(scene.ctx.calls)).toEqual([]);
     }
   });
 
+  it('draws the view of a viewport whose status (68) is 0, as in a layout that is not current', () => {
+    const { r, scene } = setup([
+      onPaper('30', viewport({ status: 0 })),
+      entity('20', line(0, 10, 20, 10)),
+    ]);
+    r.frame();
+    expect(clipped(scene.ctx.calls)).toHaveLength(1);
+  });
+
   it('still draws the frame of an off viewport, never the paper-space viewport’s', () => {
-    const off = setup([onPaper('30', viewport({ status: 0 }))]);
+    const off = setup([onPaper('30', viewport({ flags: 0x20000 }))]);
     off.r.frame();
     expect(off.scene.ctx.named('moveTo')).toEqual([['moveTo', -50, -20]]);
     const own = setup([onPaper('30', viewport({ id: 1 }))]);
