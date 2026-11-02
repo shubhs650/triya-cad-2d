@@ -188,7 +188,17 @@ export class CanvasController {
   /** A change the drawing's engine applied (M1-67): the renderer applies it and redraws. */
   apply(change: ChangeSet): void {
     this.#host.apply(change);
-    this.#requestFrame();
+    // Drawn now rather than on the next animation frame, so `flush` resolves once the change
+    // is on screen (the palette measures toggle → canvas, M1-23).
+    if (this.#view && this.#size.width > 0) {
+      this.#host.setView(this.#view);
+      this.#host.frame();
+    }
+  }
+
+  /** Resolves once the renderer has handled everything sent to it so far. */
+  flush(): Promise<void> {
+    return this.#host.flush();
   }
 
   /** The user's .pat files changed (M1-50): hatches stored without lines redraw from them. */

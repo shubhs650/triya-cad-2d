@@ -154,7 +154,7 @@ Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| LAYER | LA | 1 | palette; -LAYER dash with full option set | |
+| LAYER | LA | 1 | palette; -LAYER dash with full option set. Palette list, search, On/Freeze/Lock and VP Freeze display done in M1-23; command, -LAYER and other columns open | ~ |
 | LAYISO / LAYUNISO | — | 2 | settings: lock+fade or off | |
 | LAYOFF / LAYON / LAYFRZ / LAYTHW / LAYLCK / LAYULK | — | 2 | | |
 | LAYMCUR / LAYMCH / LAYCUR / LAYWALK / LAYERP / LAYDEL / LAYMRG | — | 2 | | |
