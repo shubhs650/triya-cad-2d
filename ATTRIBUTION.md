@@ -15,6 +15,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | pdf.js | PDF underlay rendering | Apache-2.0 | https://github.com/mozilla/pdf.js |
 | opentype.js 2.0 | TrueType/OpenType parsing, glyph outlines and advance widths (`packages/text`, M1-10); no dependencies of its own | MIT | https://github.com/opentypejs/opentype.js |
 | React, Vite, Zustand, Radix, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
+| React 19.2 and React DOM (`apps/web`, M1-22); `@vitejs/plugin-react` 5 and `@types/react`, `@types/react-dom` (build and types only, not shipped) | app shell UI | MIT | https://github.com/facebook/react, https://github.com/vitejs/vite-plugin-react |
 | Comlink 4.4.2 | `@triya/io` worker RPC (M1-06) | Apache-2.0 | https://github.com/GoogleChromeLabs/comlink |
 | ESLint, @eslint/js, typescript-eslint, eslint-plugin-boundaries, globals, Prettier, Turborepo, Husky | dev tooling (lint, module boundaries, format, task runner, git hooks); not shipped | MIT | npm |
 | eslint-import-resolver-typescript | dev tooling (resolves `@triya/*` for the boundary rule); not shipped | ISC | npm |

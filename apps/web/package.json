@@ -2,13 +2,25 @@
   "name": "@triya/web",
   "version": "0.0.0",
   "private": true,
-  "description": "Vite + React PWA shell (the only app; built out in M1-22)",
+  "description": "Vite + React PWA shell (the only app)",
   "license": "MIT",
   "type": "module",
-  "exports": {
-    ".": "./src/index.ts"
-  },
   "scripts": {
-    "typecheck": "tsc -p tsconfig.json"
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json"
+  },
+  "dependencies": {
+    "@triya/engine": "workspace:*",
+    "@triya/io": "workspace:*",
+    "@triya/render": "workspace:*",
+    "react": "^19.2.9",
+    "react-dom": "^19.2.9"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^5.2.0"
   }
 }
