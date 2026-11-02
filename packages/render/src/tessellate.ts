@@ -72,6 +72,11 @@ export interface TessellateContext {
    * user's .pat files (`patternLibrary`, M1-50). Defaults to the bundled patterns alone.
    */
   readonly patterns?: PatternLibrary;
+  /**
+   * ATTMODE (ATTDISP, M1-14 part 2): which attributes a block reference shows (0 none,
+   * 1 the visible ones, 2 all); 1, AutoCAD's initial value, when absent.
+   */
+  readonly attributeMode?: number | undefined;
 }
 
 /** What every primitive of one entity shares, resolved from the entity and its layer. */
@@ -237,6 +242,10 @@ export function tessellate(
   // Text takes no linetype: AutoCAD draws glyphs continuous.
   if (g.kind === 'TEXT' || g.kind === 'MTEXT')
     return ctx.text ? textPrimitives(g, paint, ctx.text) : [];
+  // An attribute definition outside a block shows its tag, on one line even when multiline
+  // (M1-14 part 2); inside a reference `expandInsert` decides what it shows.
+  if (g.kind === 'ATTDEF')
+    return ctx.text ? textPrimitives({ ...g, kind: 'TEXT', value: g.tag }, paint, ctx.text) : [];
   // Image frames are drawn continuous: a frame is a display aid, not linework (ours).
   if (g.kind === 'IMAGE' || g.kind === 'WIPEOUT') return imagePrimitives(g, paint, ctx.frames);
   if (g.kind === 'LWPOLYLINE' || g.kind === 'POLYLINE') {

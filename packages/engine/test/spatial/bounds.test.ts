@@ -566,6 +566,45 @@ describe('block references', () => {
       entityBounds(insert({ attributes: [{ ...attr, flags: 1 }] }), ctx(unit)),
       box(0, 0, 2, 1),
     );
+    // ATTMODE 2 (M1-14 part 2) shows invisible attributes too.
+    expectBox(
+      entityBounds(
+        insert({ attributes: [{ ...attr, flags: 1 }] }),
+        ctx(unit, { ...withText, attributeMode: 2 }),
+      ),
+      box(0, 0, 51, 51),
+    );
+  });
+
+  it('bounds a constant ATTDEF by its tag and its value, which a reference shows (M1-14 part 2)', () => {
+    const attdef = {
+      kind: 'ATTDEF',
+      tag: 'T',
+      prompt: '',
+      value: 'VALUE',
+      flags: 2,
+      style: '11',
+      position: { x: 0, y: 0 },
+      height: 1,
+      rotation: 0,
+      widthFactor: 1,
+      oblique: 0,
+      halign: 0,
+      valign: 0,
+      backward: false,
+      upsideDown: false,
+    } satisfies EntityGeometry;
+    // Stand-in text bounds: one unit per character of what is drawn.
+    const withText = ctx(unit, {
+      annotationBounds: (g) =>
+        'kind' in g && g.kind === 'ATTDEF'
+          ? box(0, 0, g.tag.length, 1)
+          : 'kind' in g && g.kind === 'TEXT'
+            ? box(0, 0, g.value.length, 1)
+            : undefined,
+    });
+    expectBox(entityBounds(attdef, withText), box(0, 0, 5, 1));
+    expectBox(entityBounds({ ...attdef, flags: 0 }, withText), box(0, 0, 1, 1));
   });
 });
 

@@ -132,6 +132,38 @@ describe('text in the renderer', () => {
     expect(count(c, 'moveTo')).toBe(2);
   });
 
+  it("draws an INSERT's attributes and an ATTDEF's tag, and follows ATTMODE (M1-14 part 2)", () => {
+    const props = {
+      layer: '10',
+      color: { kind: 'byBlock' },
+      linetype: 'ByLayer',
+      lineweight: 'ByLayer',
+      transparency: 'ByLayer',
+      ltScale: 1,
+      visible: true,
+    } as const;
+    const ins = {
+      kind: 'INSERT',
+      block: D1,
+      position: { x: 0, y: 0 },
+      scale: { x: 1, y: 1, z: 1 },
+      rotation: 0,
+      attributes: [
+        { ...text('A'), ...props, handle: '60', tag: 'SHOWN', flags: 0 },
+        { ...text('A'), ...props, handle: '61', tag: 'HIDDEN', flags: 1 },
+      ],
+    } as const;
+    const tag = { ...text('AAAA'), kind: 'ATTDEF', tag: 'A', prompt: '', flags: 0 } as const;
+    const { d, r, redraw } = setup([entity('20', ins), entity('21', tag)]);
+    // The visible attribute and the ATTDEF's one-letter tag (not its four-letter value).
+    expect(count(redraw(), 'moveTo')).toBe(2);
+    r.apply(change(d, (b) => b.setHeader('$ATTMODE', 2)));
+    expect(count(redraw(), 'moveTo')).toBe(3);
+    r.apply(change(d, (b) => b.setHeader('$ATTMODE', 0)));
+    // ATTMODE hides attributes, not attribute definitions.
+    expect(count(redraw(), 'moveTo')).toBe(1);
+  });
+
   it('redraws its text when a text style changes font', () => {
     const { d, r, redraw } = setup([entity('20', text('A'))]);
     expect(count(redraw(), 'bezierCurveTo')).toBe(0);

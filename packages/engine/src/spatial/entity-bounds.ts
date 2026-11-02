@@ -82,6 +82,11 @@ export interface BoundsContext {
   readonly tables?: AnnotationTables | undefined;
   /** Text widths, for TOLERANCE frames (M1-52 part 4); without it a TOLERANCE is unknown. */
   readonly measureText?: TextMeasure | undefined;
+  /**
+   * ATTMODE (M1-14 part 2): 2 shows invisible attributes too, so they count in an INSERT's
+   * bounds. Other values bound the visible ones (ATTMODE 0 shows none, which those cover).
+   */
+  readonly attributeMode?: number | undefined;
 }
 
 const UNKNOWN: EntityBounds = Object.freeze({ kind: 'unknown' });
@@ -173,7 +178,8 @@ function insertBounds(geom: InsertGeometry, ctx: BoundsContext): EntityBounds {
     out = boxOf([at(x0, y0), at(x1, y0), at(x0, y1), at(x1, y1)]);
   }
   for (const attr of geom.attributes) {
-    if (attr.flags & 1) continue; // DXF 70 bit 1: invisible
+    // DXF 70 bit 1: invisible, drawn only under ATTMODE 2.
+    if (attr.flags & 1 && ctx.attributeMode !== 2) continue;
     const b = annotation(attr, ctx);
     if (b === undefined) return UNKNOWN;
     out = unionBox(out, b);
@@ -337,10 +343,18 @@ export function entityBounds(
     case '3DFACE':
       return boxed(boxOf(geom.corners));
     case 'TEXT':
-    case 'MTEXT':
-    case 'ATTDEF': {
+    case 'MTEXT': {
       const b = annotation(geom, ctx);
       return b ? boxed(b) : UNKNOWN;
+    }
+    case 'ATTDEF': {
+      // Drawn as its tag, and a constant one as its value through a block reference (M1-14
+      // part 2): both count, so the block's extents cover what its references show.
+      const tag = annotation(geom, ctx);
+      if (!tag) return UNKNOWN;
+      if (!(geom.flags & 2)) return boxed(tag);
+      const value = annotation(geom.mtext ?? { ...geom, kind: 'TEXT' }, ctx);
+      return value ? boxed(unionBox(tag, value)) : UNKNOWN;
     }
     case 'LEADER':
     case 'MULTILEADER':

@@ -274,12 +274,18 @@ const GREEK_ALPHA = 0.35;
 const LAYLOCKFADE_DEFAULT = 50;
 const LAYLOCKFADE_MAX = 90;
 /** Header variables that change how every entity is painted. */
-const PAINT_HEADER = new Set(['$LTSCALE', '$FILLMODE']);
+const PAINT_HEADER = new Set(['$LTSCALE', '$FILLMODE', '$ATTMODE']);
 
 /** FILLMODE (M1-46): off, as 0 or false, outlines wide polylines; on when the header has none. */
 function fillMode(model: DocumentModel): boolean {
   const v = model.header.get('$FILLMODE');
   return !(v === 0 || v === false);
+}
+
+/** ATTMODE (M1-14 part 2): which attributes references show; AutoCAD's 1 when absent. */
+function attributeMode(model: DocumentModel): number | undefined {
+  const v = model.header.get('$ATTMODE');
+  return typeof v === 'number' ? v : undefined;
 }
 
 const isSortEnts = (o: NonGraphicalObject): o is SortEntsTable => o.type === 'SORTENTSTABLE';
@@ -337,14 +343,15 @@ export class Canvas2DRenderer implements Renderer {
   readonly #paint: PaintFunction;
   /**
    * Fonts and text styles for TEXT and MTEXT (M1-41), image frame settings (M1-19), the
-   * hatch pattern library (M1-50) and FILLMODE (M1-46). One object shared with
-   * `#blockSource`, so a pattern or FILLMODE change reaches block contents too.
+   * hatch pattern library (M1-50), FILLMODE (M1-46) and ATTMODE (M1-14). One object shared
+   * with `#blockSource`, so a pattern, FILLMODE or ATTMODE change reaches block contents too.
    */
   readonly #tessellate: {
     text?: TextContext;
     frames?: ImageFrames;
     patterns?: PatternLibrary;
     fill?: boolean;
+    attributeMode?: number | undefined;
   } = {};
   readonly #createLayer: () => Surface;
   readonly #images: ((definition: Handle) => RasterPixels | undefined) | undefined;
@@ -436,6 +443,7 @@ export class Canvas2DRenderer implements Renderer {
     }
     this.#tessellate.frames = imageFrames(this.#model);
     this.#tessellate.fill = fillMode(this.#model);
+    this.#tessellate.attributeMode = attributeMode(this.#model);
     this.#imageQuality = imageQuality(this.#model);
     if (o.patterns?.length) this.#tessellate.patterns = patternLibrary(o.patterns);
     this.#blockSource = {
@@ -571,8 +579,9 @@ export class Canvas2DRenderer implements Renderer {
       this.#imageQuality = imageQuality(this.#model);
     }
     this.#tessellate.fill = fillMode(this.#model);
+    this.#tessellate.attributeMode = attributeMode(this.#model);
     if (cs.tables?.layers) this.#locked = undefined;
-    // A layer, linetype, text style, LTSCALE or FILLMODE change can restyle or hide any
+    // A layer, linetype, text style, LTSCALE, FILLMODE or ATTMODE change can restyle or hide any
     // entity, and an IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the
     // whole block.
     if (
