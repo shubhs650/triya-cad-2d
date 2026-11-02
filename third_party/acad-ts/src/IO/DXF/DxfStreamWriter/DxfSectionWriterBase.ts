@@ -669,6 +669,10 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.alignedDimension);
     this._writer.writeVector(13, dim.firstPoint, subclass);
     this._writer.writeVector(14, dim.secondPoint, subclass);
+    // The oblique angle of the extension lines is optional and only stated when set (DXF
+    // reference, DIMENSION: "Linear dimension types with an oblique angle have an optional
+    // group code 52"), as AutoCAD writes it, in degrees.
+    if (dim.extLineRotation !== 0) this._writer.write(52, MathHelper.radToDegRoundTrip(dim.extLineRotation));
   }
 
   private _writeDimensionLinear(dim: DimensionLinear, map: DxfMap): void {

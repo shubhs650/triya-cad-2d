@@ -15,9 +15,14 @@ import {
   PATH_L,
   PATH_M,
   PATH_Q,
+  attributeShown,
+  attributeText,
+  defaultPaint,
+  expandInsert,
   primitivesBox,
   tessellate,
   textBounds,
+  type BlockSource,
 } from '@triya/render';
 import { FontBook, parseShx, SHX_EQUIVALENTS, styleFont } from '@triya/text';
 import { describe, expect, it } from 'vitest';
@@ -164,6 +169,79 @@ describe('text on the public corpus (M1-41, M1-35)', () => {
     // oet-simplex until the TrueType sources (M1-38) supply them.
     expect(fonts.substitutions.get('txt')).toBe('oet-simplex');
     expect(fonts.substitutions.get('simplex.shx')).toBe('oet-simplex');
+  });
+
+  it("draws every attribute inside its INSERT's spatial-index bounds (M1-14 part 2)", () => {
+    const fonts = new FontBook({ alternate: 'square' });
+    fonts.addShx('square', parseShx(squareFont()));
+    const drawn = { attributes: 0, constants: 0 };
+    const wrong: string[] = [];
+    for (const f of readable) {
+      let doc;
+      try {
+        doc = readCadDocument(new Uint8Array(readFileSync(`${corpusDir}${f.path}`)));
+      } catch {
+        continue;
+      }
+      const { model, index } = corpusDrawing(doc, (m) =>
+        textBounds({ fonts, style: (h) => m.tables.textStyles.get(h) }),
+      );
+      const text = { fonts, style: (h: string) => model.tables.textStyles.get(h) };
+      const src: BlockSource = {
+        model,
+        paint: defaultPaint,
+        insertContext: defaultPaint.insertContext,
+        order: (block) => model.blockEntities(block),
+      };
+      for (const block of model.blocks.keys()) {
+        for (const id of model.blockEntities(block)) {
+          const e = model.entity(id)!;
+          const g = e.geom;
+          if (g.kind !== 'INSERT') continue;
+          // What the INSERT shows besides its block's own drawing: its attributes, and the
+          // constant ATTDEFs of its block.
+          const shown = g.attributes.filter((a) => attributeShown(a.flags, undefined));
+          const constants = model
+            .blockEntities(g.block)
+            .map((c) => model.entity(c)!.geom)
+            .filter((c) => c.kind === 'ATTDEF' && c.flags & 2);
+          if (shown.length === 0 && constants.length === 0) continue;
+          const attributePrims = shown.flatMap((a) =>
+            tessellate(attributeText(a), { color: 'foreground' }, { text }),
+          );
+          const own = primitivesBox(attributePrims);
+          if (own) drawn.attributes += shown.length;
+          drawn.constants += constants.length;
+          // The reference draws exactly its attributes on top of what it draws under ATTMODE 0
+          // (the corpus's constant ATTDEFs all have empty values, so they add nothing).
+          const expand = (attributeMode: number) =>
+            expandInsert(e, { ...src, tessellate: { text, attributeMode } }, { dashes: false })
+              .prims.length;
+          if (expand(1) - expand(0) !== attributePrims.length)
+            wrong.push(`${f.path} INSERT ${e.handle}: attributes not drawn`);
+          if (!own) continue;
+          const b = index.bounds(id);
+          if (b?.kind !== 'box') {
+            wrong.push(`${f.path} INSERT ${e.handle}: bounds ${b?.kind}`);
+            continue;
+          }
+          const slack = 1e-6 * Math.max(1, b.box.maxX - b.box.minX, b.box.maxY - b.box.minY);
+          if (
+            own.minX < b.box.minX - slack ||
+            own.minY < b.box.minY - slack ||
+            own.maxX > b.box.maxX + slack ||
+            own.maxY > b.box.maxY + slack
+          )
+            wrong.push(`${f.path} INSERT ${e.handle}: ${JSON.stringify(own)} outside its bounds`);
+        }
+      }
+    }
+    console.log(`attributes: ${JSON.stringify(drawn)}`);
+    expect(wrong.slice(0, 20)).toEqual([]);
+    // Counts at M1-14 part 2: the corpus INSERTs' visible ATTRIBs with text, and the constant
+    // ATTDEFs (all with empty values) of the acadsharp samples' blocks.
+    expect(drawn.attributes).toBeGreaterThanOrEqual(100);
+    expect(drawn.constants).toBeGreaterThanOrEqual(44);
   });
 
   it('bounds text exactly in the spatial index, so apertures find just the text they touch (M1-35)', () => {
