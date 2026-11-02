@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77) and 0128 (M1-82) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80) and 0128 (M1-82) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2389,6 +2389,21 @@ Before R2007 a DWG string is in the drawing's code page and AutoCAD stores a cha
 `DwgObjectReader` reads the R2004/R2007 table overrides (flag word, title suppression, flow direction, cell margins and the per-row-type colours, fills, alignments, text styles and heights) and discards every value, and the DXF reader does not read group 93 and the values after it at all; `DwgObjectWriter` writes "no overrides". This adds `TableStyleOverrides` / `TableRowTypeOverrides` on `TableEntity.tableOverrides` and fills it from both readers, and writes it back to R2004/R2007 DWG. In DXF a per-row-type value repeats for each row type whose bit is set, in `AcDb::RowType` order (data, title, header), which differs from the bit order (title, header, data) DWG uses; AutoCAD's DWG and DXF saves of the same table show it. The DXF writer is unchanged.
 
 </details>
+
+### 0127 — DXF POLYLINE drops the fit type of spline-fit polylines (75)
+
+- **File:** `third_party/acad-ts-patches/0127-dxf-polyline-fit-type.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** the writer wrote group 75 (curves and smooth surface type) for polygon meshes only. A spline-fit 2D or 3D POLYLINE (70 bit 4) states its fit type there too (5 quadratic, 6 cubic, 8 Bezier), so a quadratic or Bezier fit saved to DXF read back as the default cubic. The DXF and DWG readers both keep it. No corpus file has a spline-fit polyline, so the round trip could not see it; found by M1-75 part 1, fixed in M1-80.
+- **Fix:** write 75 for every other POLYLINE whose `smoothSurface` is not `NoSmooth`. It is optional with default 0 (DXF reference, POLYLINE), so polylines without a smooth type are written as before.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0127 DXF writes POLYLINE 75 for spline-fit 2D and 3D polylines, not only for meshes"; `packages/io/test/export.test.ts` → "keeps a … spline fit through a DXF save".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write the DXF POLYLINE smooth surface type (75) for spline-fit polylines
+
+Group 75 is the curve and smooth surface type of any POLYLINE, not only of polygon meshes: a spline-fit 2D or 3D polyline stores its fit type there (5 quadratic, 6 cubic, 8 Bezier). The DXF writer wrote it for `PolygonMesh` only, so a quadratic or Bezier spline-fit polyline saved to DXF read back with `smoothSurface` 0, which AutoCAD treats as cubic. This writes 75 for 2D and 3D polylines when `smoothSurface` is set, and leaves the output unchanged otherwise.
 
 ### 0128 — DXF DIMENSION loses its line spacing factor (41) and oblique angle (52)
 

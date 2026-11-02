@@ -1,5 +1,6 @@
 // One test per local acad-ts patch (third_party/acad-ts/PATCHES.md). Each must fail when the
 // patch is reverted, which is what proves the patch is still needed after an upstream sync.
+import type { Polyline } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   BlockGripExpression,
@@ -44,12 +45,18 @@ import {
   LineWeightType,
   MeasurementUnits,
   ObjectType,
+  Polyline2D,
+  Polyline3D,
+  PolygonMesh,
+  SmoothSurfaceType,
   Solid,
   TableEntity,
   TableEntityCell,
   TableEntityColumn,
   TableEntityRow,
   TextStyle,
+  Vertex2D,
+  Vertex3D,
   ViewModeType,
   XY,
   XYZ,
@@ -772,6 +779,54 @@ describe('acad-ts local patches', () => {
     // A SOLID stays a SOLID.
     expect(first(DxfReader.readFromStream(bytes(text))).objectName).toBe('SOLID');
     expect(first(dwgRoundTrip(doc)).objectName).toBe('SOLID');
+  });
+
+  it('0127 DXF writes POLYLINE 75 for spline-fit 2D and 3D polylines, not only for meshes', () => {
+    const doc = new CadDocument();
+    const fitted = (p: Polyline, type: SmoothSurfaceType, v: () => Vertex2D | Vertex3D) => {
+      for (const [x, y] of [
+        [0, 0],
+        [1, 1],
+        [2, 0],
+      ] as const) {
+        const vertex = v();
+        vertex.location = new XYZ(x, y, 0);
+        p.vertices.push(vertex);
+      }
+      p.flags = (p.flags as number) | 4;
+      p.smoothSurface = type;
+      doc.entities!.add(p);
+      return p;
+    };
+    const written = [
+      fitted(new Polyline2D(), SmoothSurfaceType.Quadratic, () => new Vertex2D()),
+      fitted(new Polyline2D(), SmoothSurfaceType.BezierSurface, () => new Vertex2D()),
+      fitted(new Polyline3D(), SmoothSurfaceType.Quadratic, () => new Vertex3D()),
+      fitted(new Polyline3D(), SmoothSurfaceType.BezierSurface, () => new Vertex3D()),
+      fitted(new Polyline2D(), SmoothSurfaceType.Cubic, () => new Vertex2D()),
+    ];
+    const plain = new Polyline2D();
+    plain.vertices.push(new Vertex2D(), new Vertex2D());
+    doc.entities!.add(plain);
+    const mesh = new PolygonMesh();
+    mesh.smoothSurface = SmoothSurfaceType.Cubic;
+    doc.entities!.add(mesh);
+
+    const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
+    const read = DxfReader.readFromStream(Uint8Array.from(text, (c) => c.charCodeAt(0)));
+    const back = (h: number) => read.getCadObject(h) as Polyline;
+    for (const p of written) expect(back(p.handle).smoothSurface).toBe(p.smoothSurface);
+    expect(back(mesh.handle).smoothSurface).toBe(SmoothSurfaceType.Cubic);
+    // 75 is optional (default 0): a polyline without a smooth type writes none, and a mesh
+    // still writes it once.
+    const groups = (h: number) => {
+      const at = text.search(new RegExp(`\\n *5\\r?\\n${h.toString(16).toUpperCase()}\\r?\\n`));
+      const end = text.indexOf('VERTEX', at);
+      return text.slice(at, end).match(/\n *75\r?\n/g)?.length ?? 0;
+    };
+    expect(groups(plain.handle)).toBe(0);
+    expect(groups(mesh.handle)).toBe(1);
+    expect(groups(written[0]!.handle)).toBe(1);
   });
 
   it('0128 a DXF DIMENSION keeps its line spacing factor (41) and oblique angle (52)', () => {
