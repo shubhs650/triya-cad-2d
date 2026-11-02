@@ -29,6 +29,7 @@ export type HostMessage =
   | { readonly type: 'transient'; readonly primitives: readonly RenderPrimitive[] }
   | { readonly type: 'style'; readonly style: RenderStyle }
   | { readonly type: 'patterns'; readonly sources: readonly string[] }
+  | { readonly type: 'fonts'; readonly fonts: FontSources }
   | { readonly type: 'frame' }
   /** An IMAGEDEF's decoded bitmap, its pixel buffer transferred; null forgets it (M1-19). */
   | { readonly type: 'image'; readonly definition: string; readonly pixels: RasterPixels | null }
