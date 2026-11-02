@@ -40,7 +40,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | WIPEOUT | ✓ (acad-ts skips the clip type 71; the mapper infers a polygon from more than two vertices, M1-32) | | | | |
 | IMAGE (+ IMAGEDEF, IMAGEDEF_REACTOR) | ✓ IMAGE (clip type as for WIPEOUT) | | | | |
 | TABLE (ACAD_TABLE + TABLESTYLE + cell styles) | ✓ grid, `*T` block and cells (text, block, spans, merges, rotation); cell formats not mapped yet; ezdxf-written tables dropped by acad-ts (M1-32); drawn by the renderer from the `*T` block in the table's frame, M1-17 | | | | |
-| VIEWPORT | ✓ frame, view, clip boundary, frozen layers, plot style and render mode (DXF status 68, clip boundary 340 and the R12 MVIEW view lost by acad-ts, M1-32; DWG reads 68 and 340; a stated viewport ID of 0 is kept, M1-58) | | | | |
+| VIEWPORT | ✓ frame, view, clip boundary, frozen layers, plot style and render mode (DXF status 68, clip boundary 340 and the R12 MVIEW view lost by acad-ts, M1-32; DWG reads 68 and 340; a stated viewport ID of 0 is kept, M1-58); drawn in its layout as its frame and its view of model space, clipped to the frame (M1-18 part 1), hiding the layers frozen in it and scaling linetypes by PSLTSCALE (part 2); non-rectangular clips, VP layer overrides and annotative scales not yet | | | | |
 | TOLERANCE | ✓ (caret codes decoded since 0039; drawn by the renderer as its compartment frames and text, sized by the text engine, and bounded by them, M1-52 part 4; GD&T symbols wait for a GD&T font, M1-54; DXF frames take AutoCAD's DIMGAP since 0075, M1-53) | | | | |
 | MLINE (+ MLINESTYLE) | ✓ MLINE (style handle, scale, justification, flags, vertices with element parameters); MLINESTYLE not yet | | | | |
 | REGION *(render from proxy graphics / boundary)* | ✓ boundary read from the ACIS data, SAT text (R14–R2010) or SAB binary (R2013+, DWG): lines, arcs, circles and ellipses per loop; spline (intcurve) edges reported unmapped (M1-39) | | — | | |
@@ -74,7 +74,7 @@ Read ticks for tables (M1-03) mean every field of the record compares equal to a
 | Object | Read | Edit | Write | Test |
 |---|---|---|---|---|
 | DICTIONARY / ACDBDICTIONARYWDFLT | | | | |
-| LAYOUT + PLOTSETTINGS | | | | |
+| LAYOUT + PLOTSETTINGS | ✓ tab, block record, layout flags, limits and the page setup that places the sheet: paper size, margins, paper units, rotation, plot offset, scale, plot type and flags (`mapLayouts`, M1-18 part 1); the sheet equals AutoCAD's stored limits on 70 corpus layouts (`layouts.corpus.test.ts`); other PLOTSETTINGS fields stay on the retained original | | | `packages/io/test/map-layouts.test.ts`, `packages/testkit/src/render/layouts.corpus.test.ts` |
 | MLEADERSTYLE / TABLESTYLE / MLINESTYLE | ✓ MLEADERSTYLE, TABLESTYLE (MLINESTYLE not yet) | | | |
 | SCALE (ACAD_SCALELIST) | | | | |
 | LAYER_FILTER / LAYER_INDEX / ACAD_LAYERSTATES | | | | |

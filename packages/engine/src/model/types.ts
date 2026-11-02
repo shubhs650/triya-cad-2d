@@ -1207,6 +1207,47 @@ export interface Layout extends ObjectCommon {
   readonly tabOrder: number;
   /** BLOCK_RECORD holding this layout's entities. */
   readonly blockRecord: Handle;
+  /** DXF 70: 1 PSLTSCALE (paper-space linetype scaling), 2 LIMCHECK. */
+  readonly flags?: number;
+  /** DXF 10 / 11: LIMMIN and LIMMAX of the layout, in its drawing units. */
+  readonly limits?: { readonly min: Vec2; readonly max: Vec2 };
+  /** The page setup the layout's sheet is drawn from (M1-18). */
+  readonly plot?: LayoutPlot;
+}
+
+/** DXF 72 plot paper units. */
+export type PlotPaperUnits = 'inches' | 'millimeters' | 'pixels';
+
+/**
+ * A layout's page setup: the PLOTSETTINGS groups of its LAYOUT object (DXF AcDbPlotSettings).
+ * Paper sizes and margins are millimetres on the paper as the device feeds it; `rotation`
+ * turns the drawing on it (1 is AutoCAD's Landscape for a portrait sheet).
+ */
+export interface LayoutPlot {
+  /** DXF 4: the canonical media name, e.g. `ISO_A4_(210.00_x_297.00_MM)`. */
+  readonly paperSize: string;
+  /** DXF 44 / 45. */
+  readonly paperWidth: number;
+  readonly paperHeight: number;
+  /** DXF 40–43: the unprintable margins. */
+  readonly margins: {
+    readonly left: number;
+    readonly bottom: number;
+    readonly right: number;
+    readonly top: number;
+  };
+  /** DXF 72. */
+  readonly paperUnits: PlotPaperUnits;
+  /** DXF 73: 0 none, 1 90° (Landscape), 2 180°, 3 270°. */
+  readonly rotation: 0 | 1 | 2 | 3;
+  /** DXF 46 / 47: the plot offset from the printable area's corner, millimetres. */
+  readonly origin: Vec2;
+  /** DXF 142 / 143: `numerator` paper units plot `denominator` drawing units. */
+  readonly scale: { readonly numerator: number; readonly denominator: number };
+  /** DXF 74: what is plotted (5 is the layout). */
+  readonly plotType: number;
+  /** DXF 70 plot flags. */
+  readonly flags: number;
 }
 
 /** A non-graphical object (dictionary, xrecord, layer state, scale, image def, …). */

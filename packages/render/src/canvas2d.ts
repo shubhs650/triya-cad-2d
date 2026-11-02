@@ -15,21 +15,38 @@
 //   drawing never pays for dashes nobody zooms in to see. Lineweights follow AutoCAD's model
 //   and layout display (`lineweightPixels`), a block's SORTENTSTABLE sets the draw order
 //   (`drawOrder`), and LTSCALE, linetype and layer changes re-resolve every entity.
+// - Layouts (M1-18): a layout's block is shown on its sheet (the paper in the canvas
+//   background colour, the area around it in `layoutBackground`, the printable area dashed),
+//   with each floating viewport's view of model space drawn first, clipped to its frame and
+//   culled by the model-space index, then the paper-space entities on top (AutoCAD's display,
+//   and its plot default "plot paper space last"). Model-space entities share the cache: their
+//   primitives are in model space whichever viewport shows them, and each viewport only changes
+//   the transform they are drawn through.
 //
 // The renderer reads the model and its spatial index; the caller applies each ChangeSet to
 // both first, then to the renderer (the order `SpatialIndex.apply` already requires).
 
-import type {
-  Box,
-  ChangeSet,
-  DocumentModel,
-  Entity,
-  EntityId,
-  Handle,
-  KeyedChanges,
-  NonGraphicalObject,
-  SortEntsTable,
-  SpatialIndex,
+import {
+  invert,
+  layoutSheet,
+  paperUnitsPerMm,
+  viewportFrame,
+  viewportScale,
+  viewportShowsModel,
+  viewportTransform,
+  type Box,
+  type ChangeSet,
+  type DocumentModel,
+  type Entity,
+  type EntityId,
+  type Handle,
+  type KeyedChanges,
+  type LayoutSheet,
+  type Matrix2D,
+  type NonGraphicalObject,
+  type SortEntsTable,
+  type SpatialIndex,
+  type ViewportGeometry,
 } from '@triya/engine';
 import { expandInsert, expands, type BlockSource } from './blocks';
 import { defaultPaint, type PaintFunction } from './paint';
@@ -88,6 +105,12 @@ export interface Canvas2D {
   stroke(): void;
   fill(rule?: CanvasFillRule): void;
   drawImage(image: CanvasImageSource, dx: number, dy: number): void;
+  /** Viewport clipping and the printable area's dashes (M1-18). */
+  save(): void;
+  restore(): void;
+  rect(x: number, y: number, w: number, h: number): void;
+  clip(): void;
+  setLineDash(segments: number[]): void;
   createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient;
   createRadialGradient(
     x0: number,
@@ -139,16 +162,60 @@ interface CacheEntry {
   readonly size: number;
   readonly x: number;
   readonly y: number;
-  /** An entity with linetypes: its dashed primitives, built on first use. */
+  /**
+   * An entity with linetypes: its dashed primitives, built on first use, per linetype scale
+   * multiplier (1, or a PSLTSCALE viewport's 1 / scale, M1-18).
+   */
   readonly dashes?: {
-    /** The longest pattern repetition among its parts, world units. */
+    /** The longest pattern repetition among its parts at multiplier 1, world units. */
     readonly period: number;
-    readonly build: () => readonly RenderPrimitive[];
-    built?: readonly RenderPrimitive[];
+    readonly build: (multiplier: number) => readonly RenderPrimitive[];
+    readonly built: Map<number, readonly RenderPrimitive[]>;
   };
   /** An INSERT or a dimension: every block definition it draws from (M1-14, M1-15). */
   readonly blocks?: ReadonlySet<Handle>;
+  /** The entity's own LAYER, which hides it when frozen in a viewport (M1-18). */
+  readonly layer?: Handle;
 }
+
+/**
+ * How cached primitives reach the device: coordinates minus `origin` (so canvas float32 maths
+ * sees small numbers), then `m` to device pixels. `scale` is CSS pixels per drawing unit for
+ * the LOD rules, and `box` what is visible, in the primitives' own coordinates.
+ */
+interface DrawFrame {
+  readonly ox: number;
+  readonly oy: number;
+  readonly m: Matrix2D;
+  readonly scale: number;
+  readonly box: Box;
+  /** A viewport's frozen layers (DXF 341): entries and block parts on them are skipped. */
+  readonly frozen?: ReadonlySet<Handle>;
+  /** Linetype scale multiplier: 1 / the viewport scale under PSLTSCALE, else 1. */
+  readonly linetypeScale?: number;
+}
+
+/** A viewport to draw: its geometry, model → paper map, and whether it is drawn. */
+interface ViewportEntry {
+  readonly geom: ViewportGeometry;
+  readonly toPaper: Matrix2D;
+  readonly frozen: ReadonlySet<Handle> | undefined;
+}
+
+/** The block's entities in draw order, and each id's position in it. */
+interface Ordered {
+  readonly order: readonly EntityId[];
+  readonly rank: number[];
+}
+
+/**
+ * The area around a layout's sheet when the style names none: the canvas background moved a
+ * third of the way to mid grey, so the sheet stands out on light and dark themes. AutoCAD's
+ * own default is a fixed grey; ours follows the theme.
+ */
+const LAYOUT_SURROUND_MIX = 1 / 3;
+/** The printable area's dashes, CSS px (AutoCAD draws it dashed; the lengths are ours). */
+const PRINTABLE_DASH = [6, 4];
 
 export const DEFAULT_STYLE: RenderStyle = {
   background: '#212830',
@@ -203,15 +270,21 @@ export class Canvas2DRenderer implements Renderer {
    * paper millimetres at the zoom.
    */
   readonly #paperSpace: boolean;
-  /** Paper drawing units per millimetre; the layout's plot paper units come with M1-18. */
+  /** Paper drawing units per millimetre, from the layout's page setup (M1-18). */
   readonly #paperUnitsPerMm: number;
+  /** The layout's PSLTSCALE (DXF 70 bit 1): viewport linetypes in paper units. */
+  readonly #psltscale: boolean;
+  /** The layout's sheet, when the block shown is a set-up layout. */
+  readonly #sheet: LayoutSheet | undefined;
+  /** Model space, when the block shown is a layout whose viewports show it. */
+  readonly #modelBlock: Handle | undefined;
+  /** The layout's model-space viewports in stacking order; undefined until first needed. */
+  #viewports: readonly ViewportEntry[] | undefined;
 
   /** Per entity id (ids are dense): its primitives and screen-size data; hidden ones absent. */
   #cache: (CacheEntry | undefined)[] = [];
-  /** The block's entities in draw order, and each id's position in it. */
-  #order: readonly EntityId[] = [];
-  #rank: number[] = [];
-  #orderDirty = true;
+  /** Per block drawn (the block shown, and model space through viewports): draw order. */
+  #ordered = new Map<Handle, Ordered>();
   /** Scratch marks for walking visible entities in draw order without sorting. */
   #mark = new Uint8Array(0);
   #style: RenderStyle;
@@ -255,12 +328,23 @@ export class Canvas2DRenderer implements Renderer {
     };
     this.#now = o.now ?? (() => performance.now());
     this.#requestIdle = o.requestIdle ?? ((cb) => setTimeout(cb, 50));
-    this.#paperSpace = this.#model.layouts.some(
-      (l) =>
-        l.blockRecord === this.#block &&
-        this.#model.tables.blockRecords.get(l.blockRecord)?.name.toLowerCase() !== '*model_space',
-    );
-    this.#paperUnitsPerMm = this.#model.meta.measurement === 'imperial' ? 1 / 25.4 : 1;
+    const records = this.#model.tables.blockRecords;
+    const isModel = (h: Handle) => records.get(h)?.name.toLowerCase() === '*model_space';
+    const layout = this.#model.layouts.find((l) => l.blockRecord === this.#block);
+    this.#paperSpace = layout !== undefined && !isModel(layout.blockRecord);
+    const plot = this.#paperSpace ? layout?.plot : undefined;
+    this.#sheet = this.#paperSpace && layout ? layoutSheet(layout) : undefined;
+    // A layout without stated flags takes AutoCAD's default, PSLTSCALE 1.
+    this.#psltscale = ((layout?.flags ?? 1) & 1) !== 0;
+    // Without a page setup the paper units follow the drawing's measurement.
+    this.#paperUnitsPerMm = plot
+      ? paperUnitsPerMm(plot)
+      : this.#model.meta.measurement === 'imperial'
+        ? 1 / 25.4
+        : 1;
+    this.#modelBlock = this.#paperSpace
+      ? [...records.values()].find((r) => isModel(r.handle))?.handle
+      : undefined;
     this.#cacheBlock();
   }
 
@@ -305,7 +389,9 @@ export class Canvas2DRenderer implements Renderer {
       e?.updated?.some((u) => u.before.owner !== u.after.owner) ||
       sortEnts
     )
-      this.#orderDirty = true;
+      this.#ordered.clear();
+    // A viewport may have been added, moved, rescaled or switched off.
+    if (this.#paperSpace && e) this.#viewports = undefined;
     // Block definitions whose contents or draw order changed: the INSERTs drawing from them
     // (directly or through nesting) are expanded again.
     const changed = new Set<Handle>();
@@ -323,6 +409,7 @@ export class Canvas2DRenderer implements Renderer {
     }
     for (const block of changed) this.#blockOrders.delete(block);
     changed.delete(this.#block);
+    if (this.#modelBlock) changed.delete(this.#modelBlock);
     if (changed.size > 0) {
       this.#cache.forEach((entry, id) => {
         if (entry?.blocks && [...changed].some((b) => entry.blocks!.has(b))) this.#cacheEntity(id);
@@ -351,7 +438,12 @@ export class Canvas2DRenderer implements Renderer {
       const t = this.#transientLayer;
       t.ctx.setTransform(1, 0, 0, 1, 0, 0);
       t.ctx.clearRect(0, 0, t.canvas.width, t.canvas.height);
-      this.#drawPrimitives(t.ctx, [{ prims: this.#transient, size: Infinity, x: 0, y: 0 }], false);
+      this.#drawPrimitives(
+        t.ctx,
+        [{ prims: this.#transient, size: Infinity, x: 0, y: 0 }],
+        false,
+        this.#viewFrame(),
+      );
       this.#transientDirty = false;
     }
     const out = this.#surface.ctx;
@@ -390,8 +482,13 @@ export class Canvas2DRenderer implements Renderer {
     return hits.sort((a, b) => a.d - b.d).map((h) => h.id);
   }
 
+  /** Whether entities of `block` are drawn: the block shown, or model space in a layout. */
+  #draws(block: Handle): boolean {
+    return block === this.#block || (this.#modelBlock !== undefined && block === this.#modelBlock);
+  }
+
   #cacheIfShown(e: Entity): void {
-    if (e.owner !== this.#block) return;
+    if (!this.#draws(e.owner)) return;
     const id = this.#model.ids.idOf(e.handle);
     if (id !== undefined) this.#cacheEntity(id);
   }
@@ -404,13 +501,15 @@ export class Canvas2DRenderer implements Renderer {
   #cacheBlock(): void {
     this.#cache = [];
     for (const id of this.#model.blockEntities(this.#block)) this.#cacheEntity(id);
+    if (this.#modelBlock)
+      for (const id of this.#model.blockEntities(this.#modelBlock)) this.#cacheEntity(id);
   }
 
   #cacheEntity(id: EntityId): void {
     const e = this.#model.entity(id);
     if (!e) return;
     let prims: readonly RenderPrimitive[];
-    let extra: Pick<CacheEntry, 'dashes' | 'blocks'>;
+    let extra: Pick<CacheEntry, 'dashes' | 'blocks' | 'layer'>;
     if (expands(e, this.#blockDef)) {
       // The reference decides its own visibility: an off layer still shows its contents on
       // other layers.
@@ -420,10 +519,11 @@ export class Canvas2DRenderer implements Renderer {
         return;
       }
       prims = x.prims;
-      const build = () => expandInsert(e, this.#blockSource, { dashes: true }).prims;
+      const build = (linetypeScale: number) =>
+        expandInsert(e, this.#blockSource, { dashes: true, linetypeScale }).prims;
       extra = {
         blocks: x.blocks,
-        ...(x.period > 0 ? { dashes: { period: x.period, build } } : {}),
+        ...(x.period > 0 ? { dashes: { period: x.period, build, built: new Map() } } : {}),
       };
     } else {
       const paint = this.#paint(e, this.#model);
@@ -434,9 +534,15 @@ export class Canvas2DRenderer implements Renderer {
       const { linetype: lt, ...continuous } = paint;
       prims = tessellate(e.geom, continuous, this.#tessellate);
       const period = lt ? patternLength(lt.pattern) * lt.scale : 0;
-      const build = () => tessellate(e.geom, paint, this.#tessellate);
-      extra = period > 0 ? { dashes: { period, build } } : {};
+      const build = (k: number) =>
+        tessellate(
+          e.geom,
+          k === 1 || !lt ? paint : { ...paint, linetype: { ...lt, scale: lt.scale * k } },
+          this.#tessellate,
+        );
+      extra = period > 0 ? { dashes: { period, build, built: new Map() } } : {};
     }
+    extra = { ...extra, layer: e.layer };
     // The size and centre drive the sub-pixel LOD; unknown bounds never count as small.
     const b = this.#index.bounds(id);
     this.#cache[id] =
@@ -451,14 +557,18 @@ export class Canvas2DRenderer implements Renderer {
         : { prims, size: Infinity, x: 0, y: 0, ...extra };
   }
 
-  /** What an entry draws at the current zoom: its dashes, or continuous (LOD). */
-  #primitives(entry: CacheEntry): readonly RenderPrimitive[] {
+  /**
+   * What an entry draws at `scale` CSS px per unit with linetypes scaled by `multiplier`: its
+   * dashes, or continuous (LOD).
+   */
+  #primitives(entry: CacheEntry, scale: number, multiplier: number): readonly RenderPrimitive[] {
     const d = entry.dashes;
     // ARCHITECTURE.md §7.2 LOD: "dashed linetypes below 1 px per pattern unit → solid". An
     // INSERT's parts with shorter patterns fall back one by one in the draw loop.
-    if (!d || d.period * this.#view.scale < 1) return entry.prims;
-    d.built ??= d.build();
-    return d.built;
+    if (!d || d.period * multiplier * scale < 1) return entry.prims;
+    let built = d.built.get(multiplier);
+    if (!built) d.built.set(multiplier, (built = d.build(multiplier)));
+    return built;
   }
 
   /** A block's entities in draw order: block order, rearranged by its SORTENTSTABLE. */
@@ -482,53 +592,207 @@ export class Canvas2DRenderer implements Renderer {
     return order;
   }
 
-  #drawScene(reduced: boolean): void {
-    this.sceneDraws++;
-    const { ctx, canvas } = this.#scene;
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.fillStyle = this.#style.background;
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    if (this.#orderDirty) {
-      this.#order = this.#blockOrder(this.#block);
-      this.#rank = [];
-      this.#order.forEach((id, i) => (this.#rank[id] = i));
-      this.#orderDirty = false;
+  /** A block's draw order and ranks, rebuilt after entities move in or out of it. */
+  #orderedOf(block: Handle): Ordered {
+    let o = this.#ordered.get(block);
+    if (!o) {
+      const order = this.#blockOrder(block);
+      const rank: number[] = [];
+      order.forEach((id, i) => (rank[id] = i));
+      o = { order, rank };
+      this.#ordered.set(block, o);
     }
-    const hits = this.#index.query(this.#block, visibleBox(this.#view, this.#width, this.#height));
+    return o;
+  }
+
+  /** The cached entries of `block` the index returns for `box`, in draw order. */
+  #visibleEntries(block: Handle, box: Box): CacheEntry[] {
+    const { order, rank } = this.#orderedOf(block);
+    const hits = this.#index.query(block, box);
     const entries: CacheEntry[] = [];
-    if (hits.length * 8 > this.#order.length) {
+    if (hits.length * 8 > order.length) {
       // Most of the block is in view: mark the hits and walk the block in draw order, which
       // is linear where sorting 100k ids is not.
       if (this.#mark.length < this.#cache.length) this.#mark = new Uint8Array(this.#cache.length);
       const mark = this.#mark;
       for (const id of hits) mark[id] = 1;
-      for (const id of this.#order) {
+      for (const id of order) {
         if (mark[id] !== 1) continue;
         mark[id] = 0;
         const entry = this.#cache[id];
         if (entry) entries.push(entry);
       }
     } else {
-      hits.sort((a, b) => (this.#rank[a] ?? 0) - (this.#rank[b] ?? 0));
+      hits.sort((a, b) => (rank[a] ?? 0) - (rank[b] ?? 0));
       for (const id of hits) {
         const entry = this.#cache[id];
         if (entry) entries.push(entry);
       }
     }
-    this.#drawPrimitives(ctx, entries, reduced);
+    return entries;
+  }
+
+  /** The frame of the block shown: its coordinates about the view centre. */
+  #viewFrame(): DrawFrame {
+    const k = this.#view.scale * this.#dpr;
+    return {
+      ox: this.#view.center.x,
+      oy: this.#view.center.y,
+      m: {
+        a: k,
+        b: 0,
+        c: 0,
+        d: -k,
+        e: (this.#width * this.#dpr) / 2,
+        f: (this.#height * this.#dpr) / 2,
+      },
+      scale: this.#view.scale,
+      box: visibleBox(this.#view, this.#width, this.#height),
+    };
+  }
+
+  /** The layout's viewports that show model space, in stacking (draw) order. */
+  #viewportList(): readonly ViewportEntry[] {
+    if (this.#viewports) return this.#viewports;
+    const out: ViewportEntry[] = [];
+    if (this.#modelBlock) {
+      for (const id of this.#orderedOf(this.#block).order) {
+        const e = this.#model.entity(id);
+        // The viewport's own visibility and layer hide its frame only: AutoCAD shows the
+        // view of a viewport whose layer is off (the usual way to hide frames). A frozen
+        // layer is taken the same way; AutoCAD's help does not say.
+        if (e?.geom.kind !== 'VIEWPORT' || !viewportShowsModel(e.geom)) continue;
+        const frozen = e.geom.frozenLayers.length > 0 ? new Set(e.geom.frozenLayers) : undefined;
+        out.push({ geom: e.geom, toPaper: viewportTransform(e.geom), frozen });
+      }
+    }
+    this.#viewports = out;
+    return out;
+  }
+
+  #drawScene(reduced: boolean): void {
+    this.sceneDraws++;
+    const { ctx, canvas } = this.#scene;
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    const sheet = this.#sheet;
+    ctx.fillStyle = sheet
+      ? (this.#style.layoutBackground ??
+        mixColors(this.#style.background, '#808080', LAYOUT_SURROUND_MIX))
+      : this.#style.background;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    const view = this.#viewFrame();
+    if (sheet) this.#drawSheet(ctx, sheet, view);
+    for (const vp of this.#viewportList()) this.#drawViewport(ctx, vp, view, reduced);
+    this.#drawPrimitives(ctx, this.#visibleEntries(this.#block, view.box), reduced, view);
+  }
+
+  /** The paper in the background colour and the printable area dashed, in device pixels. */
+  #drawSheet(ctx: Canvas2D, sheet: LayoutSheet, view: DrawFrame): void {
+    const r = this.#deviceRect(sheet.paper, view);
+    ctx.fillStyle = this.#style.background;
+    ctx.fillRect(r.x, r.y, r.w, r.h);
+    const p = this.#deviceRect(sheet.printable, view);
+    if (p.w <= 0 || p.h <= 0) return;
+    ctx.beginPath();
+    ctx.rect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+    ctx.setLineDash(PRINTABLE_DASH.map((d) => d * this.#dpr));
+    ctx.strokeStyle = mixColors(this.#style.foreground, this.#style.background, 0.5);
+    ctx.lineWidth = this.#dpr;
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  /** A paper-space box on the device, snapped to whole pixels. */
+  #deviceRect(b: Box, f: DrawFrame): { x: number; y: number; w: number; h: number } {
+    const x0 = Math.round(f.m.a * (b.minX - f.ox) + f.m.e);
+    const x1 = Math.round(f.m.a * (b.maxX - f.ox) + f.m.e);
+    const y0 = Math.round(f.m.d * (b.maxY - f.oy) + f.m.f);
+    const y1 = Math.round(f.m.d * (b.minY - f.oy) + f.m.f);
+    return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+  }
+
+  /** One viewport's view of model space, clipped to its frame. */
+  #drawViewport(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame, reduced: boolean): void {
+    const frame = viewportFrame(vp.geom);
+    const shown = {
+      minX: Math.max(frame.minX, view.box.minX),
+      minY: Math.max(frame.minY, view.box.minY),
+      maxX: Math.min(frame.maxX, view.box.maxX),
+      maxY: Math.min(frame.maxY, view.box.maxY),
+    };
+    if (shown.minX >= shown.maxX || shown.minY >= shown.maxY) return;
+    const toModel = invert(vp.toPaper);
+    // The model box under the visible part of the frame (a rotated view's corners spread it).
+    const corners = [
+      [shown.minX, shown.minY],
+      [shown.maxX, shown.minY],
+      [shown.maxX, shown.maxY],
+      [shown.minX, shown.maxY],
+    ].map(([x, y]) => ({
+      x: toModel.a * x! + toModel.c * y! + toModel.e,
+      y: toModel.b * x! + toModel.d * y! + toModel.f,
+    }));
+    const box = {
+      minX: Math.min(...corners.map((p) => p.x)),
+      minY: Math.min(...corners.map((p) => p.y)),
+      maxX: Math.max(...corners.map((p) => p.x)),
+      maxY: Math.max(...corners.map((p) => p.y)),
+    };
+    const entries = this.#visibleEntries(this.#modelBlock!, box);
+    if (entries.length === 0) return;
+    // Model coordinates are taken about the model point at the frame centre.
+    const o = {
+      x: toModel.a * vp.geom.center.x + toModel.c * vp.geom.center.y + toModel.e,
+      y: toModel.b * vp.geom.center.x + toModel.d * vp.geom.center.y + toModel.f,
+    };
+    const t = vp.toPaper;
+    const k = view.m.a;
+    const m: Matrix2D = {
+      a: k * t.a,
+      b: -k * t.b,
+      c: k * t.c,
+      d: -k * t.d,
+      e: view.m.e + k * (vp.geom.center.x - view.ox),
+      f: view.m.f - k * (vp.geom.center.y - view.oy),
+    };
+    const clip = this.#deviceRect(shown, view);
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.beginPath();
+    ctx.rect(clip.x, clip.y, clip.w, clip.h);
+    ctx.clip();
+    const vs = viewportScale(vp.geom);
+    this.#drawPrimitives(ctx, entries, reduced, {
+      ox: o.x,
+      oy: o.y,
+      m,
+      scale: view.scale * vs,
+      box,
+      // PSLTSCALE 1: "the dash lengths of a line in a viewport … the same as … in paper space".
+      linetypeScale: this.#psltscale ? 1 / vs : 1,
+      ...(vp.frozen ? { frozen: vp.frozen } : {}),
+    });
+    ctx.restore();
   }
 
   /** Draws entities' primitives, batching consecutive strokes of one colour and width. */
-  #drawPrimitives(ctx: Canvas2D, entries: readonly CacheEntry[], reduced: boolean): void {
-    const { center, scale } = this.#view;
+  #drawPrimitives(
+    ctx: Canvas2D,
+    entries: readonly CacheEntry[],
+    reduced: boolean,
+    frame: DrawFrame,
+  ): void {
+    const { ox, oy, m, scale, box, frozen } = frame;
+    const ltMul = frame.linetypeScale ?? 1;
+    /** Device pixels per drawing unit along a line (what a line width converts by). */
     const k = scale * this.#dpr;
-    const cx = (this.#width * this.#dpr) / 2;
-    const cy = (this.#height * this.#dpr) / 2;
+    const devX = (x: number, y: number) => m.a * (x - ox) + m.c * (y - oy) + m.e;
+    const devY = (x: number, y: number) => m.b * (x - ox) + m.d * (y - oy) + m.f;
     // Paths are built in world units and stroked in device pixels; switch only when needed.
     let inWorld = false;
     const world = (): void => {
       if (inWorld) return;
-      ctx.setTransform(k, 0, 0, -k, cx, cy);
+      ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
       inWorld = true;
     };
     const device = (): void => {
@@ -551,6 +815,7 @@ export class Canvas2DRenderer implements Renderer {
     const dot = Math.max(1, Math.round(this.#dpr));
 
     for (const entry of entries) {
+      if (frozen && entry.layer !== undefined && frozen.has(entry.layer)) continue;
       // LOD: an entity under a pixel is a dot, or nothing in a reduced frame.
       if (entry.size * scale < 1) {
         if (reduced) continue;
@@ -560,22 +825,23 @@ export class Canvas2DRenderer implements Renderer {
         device();
         ctx.fillStyle = this.#color(first.color);
         ctx.fillRect(
-          Math.floor(cx + (entry.x - center.x) * k),
-          Math.floor(cy - (entry.y - center.y) * k),
+          Math.floor(devX(entry.x, entry.y)),
+          Math.floor(devY(entry.x, entry.y)),
           dot,
           dot,
         );
         continue;
       }
-      for (const prim of this.#primitives(entry)) {
+      for (const prim of this.#primitives(entry, scale, ltMul)) {
+        if (frozen && prim.layers?.some((l) => frozen.has(l))) continue;
         const color = this.#color(prim.color);
         if (prim.kind === 'point') {
           flush();
           device();
           ctx.fillStyle = color;
           ctx.fillRect(
-            Math.round(cx + (prim.x - center.x) * k - dot / 2),
-            Math.round(cy - (prim.y - center.y) * k - dot / 2),
+            Math.round(devX(prim.x, prim.y) - dot / 2),
+            Math.round(devY(prim.x, prim.y) - dot / 2),
             dot,
             dot,
           );
@@ -589,7 +855,7 @@ export class Canvas2DRenderer implements Renderer {
           flush();
           world();
           ctx.beginPath();
-          buildPath(ctx, text.greek, center.x, center.y);
+          buildPath(ctx, text.greek, ox, oy);
           device();
           ctx.globalAlpha = GREEK_ALPHA;
           ctx.fillStyle = color;
@@ -601,19 +867,21 @@ export class Canvas2DRenderer implements Renderer {
           flush();
           world();
           ctx.beginPath();
-          buildPath(ctx, prim.path, center.x, center.y);
+          buildPath(ctx, prim.path, ox, oy);
           const g = prim.gradient;
           if (g) {
             // The gradient is made in its unit frame; a fill paints it through the transform in
             // force when it fills, so that transform is world ∘ frame.
             const f = g.frame;
+            const fe = f.e - ox;
+            const ff = f.f - oy;
             ctx.setTransform(
-              k * f.a,
-              -k * f.b,
-              k * f.c,
-              -k * f.d,
-              k * (f.e - center.x) + cx,
-              -k * (f.f - center.y) + cy,
+              m.a * f.a + m.c * f.b,
+              m.b * f.a + m.d * f.b,
+              m.a * f.c + m.c * f.d,
+              m.b * f.c + m.d * f.d,
+              m.a * fe + m.c * ff + m.e,
+              m.b * fe + m.d * ff + m.f,
             );
             inWorld = false;
             ctx.fillStyle = this.#gradient(ctx, g);
@@ -634,7 +902,7 @@ export class Canvas2DRenderer implements Renderer {
           flush();
           world();
           ctx.beginPath();
-          buildPath(ctx, tint.area, center.x, center.y);
+          buildPath(ctx, tint.area, ox, oy);
           device();
           const w = this.#lineWidth(prim.lineweight) / k;
           const across = Math.min(1, w / tint.spacing);
@@ -654,15 +922,15 @@ export class Canvas2DRenderer implements Renderer {
         }
         world();
         if (prim.kind === 'infinite') {
-          const seg = clipInfinite(prim, visibleBox(this.#view, this.#width, this.#height));
+          const seg = clipInfinite(prim, box);
           if (seg) {
-            ctx.moveTo(seg[0] - center.x, seg[1] - center.y);
-            ctx.lineTo(seg[2] - center.x, seg[3] - center.y);
+            ctx.moveTo(seg[0] - ox, seg[1] - oy);
+            ctx.lineTo(seg[2] - ox, seg[3] - oy);
           }
         } else {
           // LOD for a dashed primitive handed in directly (the transient layer).
           const solid = prim.continuous && (prim.patternLength ?? 0) * scale < 1;
-          buildPath(ctx, solid ? prim.continuous! : prim.path, center.x, center.y);
+          buildPath(ctx, solid ? prim.continuous! : prim.path, ox, oy);
         }
       }
     }

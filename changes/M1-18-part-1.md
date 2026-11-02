@@ -1,0 +1,1 @@
+- M1-18 part 1 (#82): layouts draw on their sheet. Layouts carry their page setup, the paper and printable area sit where AutoCAD puts them (matching its stored limits on 70 corpus layouts), and each viewport shows its view of model space through its scale, target, twist and view direction, clipped to its frame, with lineweights in the layout's paper units.
