@@ -1,7 +1,7 @@
 // Linetype patterns as the renderer uses them, from a drawing's LTYPE records or a .lin file,
 // and the scale that applies to them (ARCHITECTURE.md §7.2).
 
-import type { LinetypeRecord, Vec2 } from '@triya/engine';
+import type { HeaderValue, LinetypeRecord, Vec2 } from '@triya/engine';
 
 /**
  * How an embedded text or shape turns. AutoCAD .lin syntax: `R=` relative to the line
@@ -109,4 +109,23 @@ export function linetypeScale(s: LinetypeScaleInput): number {
   if (s.viewportScale !== undefined && s.viewportScale > 0) k /= s.viewportScale;
   if (s.annotationScale !== undefined && s.annotationScale > 0) k *= s.annotationScale;
   return k;
+}
+
+/**
+ * The Model tab's `annotationScale` for `linetypeScale`: drawing units per paper unit of the
+ * current annotation scale (1 / CANNOSCALEVALUE) when MSLTSCALE is 1, else undefined. Both
+ * variables live in the drawing's variable dictionary and come through AcadToTriya under their
+ * bare names (M1-63).
+ *
+ * AutoCAD's help gives MSLTSCALE an initial value of 1, but a drawing that does not state it
+ * (every drawing saved before AutoCAD 2008, which brought the variable) opens with the old
+ * look, so a missing MSLTSCALE is taken as 0 here. The help does not say this outright; it is
+ * what keeps a legacy drawing's linetypes as they were drawn.
+ */
+export function annotationLinetypeScale(
+  header: ReadonlyMap<string, HeaderValue>,
+): number | undefined {
+  if (Number(header.get('MSLTSCALE')) !== 1) return undefined;
+  const value = header.get('CANNOSCALEVALUE');
+  return typeof value === 'number' && Number.isFinite(value) && value > 0 ? 1 / value : undefined;
 }

@@ -5,6 +5,7 @@ import {
   aciRgb,
   blockContext,
   lineweightPixels,
+  annotationLinetypeScale,
   linetypeScale,
   patternLength,
   patternOf,
@@ -175,6 +176,22 @@ describe('linetypeScale', () => {
     // A 1:50 viewport shows 0.02 paper units per model unit.
     expect(linetypeScale({ ltscale: 1, objectScale: 1, viewportScale: 0.02 })).toBeCloseTo(50, 12);
     expect(linetypeScale({ ltscale: 2, objectScale: 1, annotationScale: 50 })).toBe(100);
+  });
+
+  it('takes the Model-tab annotation scale from MSLTSCALE and CANNOSCALEVALUE (M1-63)', () => {
+    const h = (...e: [string, string | number][]) => new Map(e);
+    expect(annotationLinetypeScale(h(['MSLTSCALE', '1'], ['CANNOSCALEVALUE', 0.02]))).toBeCloseTo(
+      50,
+      12,
+    );
+    expect(annotationLinetypeScale(h(['MSLTSCALE', 1], ['CANNOSCALEVALUE', 0.5]))).toBe(2);
+    expect(annotationLinetypeScale(h(['MSLTSCALE', '0'], ['CANNOSCALEVALUE', 0.02]))).toBe(
+      undefined,
+    );
+    // No MSLTSCALE: a drawing from before AutoCAD 2008 keeps its old look.
+    expect(annotationLinetypeScale(h(['CANNOSCALEVALUE', 0.02]))).toBe(undefined);
+    expect(annotationLinetypeScale(h(['MSLTSCALE', '1']))).toBe(undefined);
+    expect(annotationLinetypeScale(h(['MSLTSCALE', '1'], ['CANNOSCALEVALUE', 0]))).toBe(undefined);
   });
 });
 
