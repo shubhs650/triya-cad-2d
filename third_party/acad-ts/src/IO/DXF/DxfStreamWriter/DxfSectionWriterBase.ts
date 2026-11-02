@@ -22,6 +22,7 @@ import { DimensionDiameter } from '../../../Entities/DimensionDiameter.js';
 import { DimensionAngular2Line } from '../../../Entities/DimensionAngular2Line.js';
 import { DimensionAngular3Pt } from '../../../Entities/DimensionAngular3Pt.js';
 import { DimensionArc } from '../../../Entities/DimensionArc.js';
+import { DimensionRadialLarge } from '../../../Entities/DimensionRadialLarge.js';
 import { DimensionOrdinate } from '../../../Entities/DimensionOrdinate.js';
 import { Dimension } from '../../../Entities/Dimension.js';
 import { Ellipse } from '../../../Entities/Ellipse.js';
@@ -412,6 +413,8 @@ export abstract class DxfSectionWriterBase {
       this._writeDimension(entity, map);
     } else if (entity instanceof DimensionArc) {
       this._writeDimension(entity, map);
+    } else if (entity instanceof DimensionRadialLarge) {
+      this._writeDimension(entity, map);
     } else if (entity instanceof Ellipse) {
       this._writeEllipse(entity, map);
     } else if (entity instanceof Face3D) {
@@ -651,6 +654,9 @@ export abstract class DxfSectionWriterBase {
     if (dim instanceof DimensionArc) {
       this._writeDimensionArc(dim, map);
     }
+    if (dim instanceof DimensionRadialLarge) {
+      this._writeDimensionRadialLarge(dim, map);
+    }
     if (dim instanceof DimensionOrdinate) {
       this._writeDimensionOrdinate(dim, map);
     }
@@ -714,6 +720,15 @@ export abstract class DxfSectionWriterBase {
     // AutoCAD writes both leader points whether or not 71 says there is a leader.
     this._writer.writeVector(16, dim.leaderPoint1, subclass);
     this._writer.writeVector(17, dim.leaderPoint2, subclass);
+  }
+
+  private _writeDimensionRadialLarge(dim: DimensionRadialLarge, map: DxfMap): void {
+    const subclass = map.subClasses.get(DxfSubclassMarker.radialDimensionLarge)!;
+    this._writer.write(DxfCode.Subclass, DxfSubclassMarker.radialDimensionLarge);
+    this._writer.writeVector(13, dim.overrideCenter, subclass);
+    this._writer.writeVector(14, dim.jogPoint, subclass);
+    this._writer.writeVector(15, dim.chordPoint, subclass);
+    this._writer.write(40, dim.leaderLength, subclass);
   }
 
   private _writeDimensionOrdinate(dim: DimensionOrdinate, map: DxfMap): void {

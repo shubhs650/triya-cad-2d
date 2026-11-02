@@ -55,6 +55,7 @@ export { DimensionDiameter } from './Entities/DimensionDiameter.js';
 export { DimensionLinear } from './Entities/DimensionLinear.js';
 export { DimensionOrdinate } from './Entities/DimensionOrdinate.js';
 export { DimensionRadius } from './Entities/DimensionRadius.js';
+export { DimensionRadialLarge } from './Entities/DimensionRadialLarge.js';
 export { DimensionType } from './Entities/DimensionType.js';
 export { DrawingDirectionType } from './Entities/DrawingDirectionType.js';
 export { Ellipse } from './Entities/Ellipse.js';

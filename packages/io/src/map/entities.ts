@@ -17,6 +17,7 @@ import {
   DimensionAngular2Line,
   DimensionAngular3Pt,
   DimensionArc,
+  DimensionRadialLarge,
   DimensionDiameter,
   DimensionLinear,
   DimensionOrdinate,
@@ -462,6 +463,17 @@ function dimensionGeometry(d: Dimension, ctx: Ctx): EntityGeometry | UnmappedEnt
       axis: d.isOrdinateTypeX ? 'x' : 'y',
       feature: xy(d.featureLocation),
       leaderEnd: xy(d.leaderEndpoint),
+    };
+  }
+  if (d instanceof DimensionRadialLarge) {
+    return {
+      ...f,
+      kind: 'LARGE_RADIAL_DIMENSION',
+      dimType: 'jogged',
+      chordPoint: xy(d.chordPoint),
+      overrideCenter: xy(d.overrideCenter),
+      jogPoint: xy(d.jogPoint),
+      leaderLength: d.leaderLength,
     };
   }
   if (d instanceof DimensionArc) {
@@ -1121,7 +1133,8 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
     e instanceof DimensionRadius ||
     e instanceof DimensionDiameter ||
     e instanceof DimensionOrdinate ||
-    e instanceof DimensionArc
+    e instanceof DimensionArc ||
+    e instanceof DimensionRadialLarge
   )
     return dimensionGeometry(e, ctx);
   if (e instanceof Leader) return leaderGeometry(e, ctx);

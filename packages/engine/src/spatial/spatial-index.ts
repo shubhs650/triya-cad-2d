@@ -40,6 +40,7 @@ const ANNOTATION_KINDS: ReadonlySet<string> = new Set([
   'MULTILEADER',
   'DIMENSION',
   'ARC_DIMENSION',
+  'LARGE_RADIAL_DIMENSION',
   'INSERT',
 ]);
 
@@ -148,7 +149,12 @@ class BlockTree {
 function referencedBlocks(e: Entity, model: DocumentModel): readonly Handle[] {
   const g = e.geom;
   if (g.kind === 'INSERT') return [g.block];
-  if (g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'ACAD_TABLE')
+  if (
+    g.kind === 'DIMENSION' ||
+    g.kind === 'ARC_DIMENSION' ||
+    g.kind === 'LARGE_RADIAL_DIMENSION' ||
+    g.kind === 'ACAD_TABLE'
+  )
     return g.block === undefined ? [] : [g.block];
   const parts = annotationParts(g, model, e.xdata);
   if (!parts) return [];

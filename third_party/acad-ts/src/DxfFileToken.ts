@@ -28,6 +28,7 @@ export class DxfFileToken {
 	public static readonly entityCircle = "CIRCLE";
 	public static readonly entityCoordinationModel = "COORDINATION MODEL";
 	public static readonly entityDimension = "DIMENSION";
+	public static readonly entityLargeRadialDimension = "LARGE_RADIAL_DIMENSION";
 	public static readonly entityEllipse = "ELLIPSE";
 	public static readonly entityHatch = "HATCH";
 	public static readonly entityHelix = "HELIX";
