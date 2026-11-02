@@ -14,6 +14,7 @@ import type {
   BlockAction,
   BlockFlipGrip,
   BlockVisibilityParameter,
+  Field,
 } from '@node-projects/acad-ts';
 import {
   ACadVersion,
@@ -2107,5 +2108,18 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(doc.getCadObject(h), h.toString(16)).toBeTruthy();
     }
     expect(doc.getCadObject(0x9c)).toBeInstanceOf(TableEntity);
+  });
+
+  it('0100 a DXF date value keeps its date through a save', () => {
+    // ezdxf uncommon.dxf FIELD 5F9 (an AcVar Date child of FIELD 5F8) holds 90 = 8, 92 = 16,
+    // 310 = E407 0400 0200 1500 1000 2D00 2700 0000: a SYSTEMTIME, 2020-04-21 16:45:39. The reader
+    // skipped the bytes and the writer wrote 91 = 0, so the date was gone after a save.
+    const date = (doc: CadDocument): unknown =>
+      (doc.getCadObject(0x5f8) as Field).children[0]?.value.value;
+    const doc = readDxfRaw(corpusBytes('third-party/ezdxf/examples_dxf/uncommon.dxf'));
+    expect(date(doc)).toEqual(new Date(2020, 3, 21, 16, 45, 39, 0));
+    const saved = writeDxf(doc, false);
+    expect(new TextDecoder().decode(saved)).toContain('E40704000200150010002D0027000000');
+    expect(date(readDxfRaw(saved))).toEqual(date(doc));
   });
 });
