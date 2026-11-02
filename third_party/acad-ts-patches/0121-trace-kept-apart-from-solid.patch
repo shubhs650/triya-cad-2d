@@ -1,0 +1,68 @@
+diff --git a/src/Entities/Solid.ts b/src/Entities/Solid.ts
+index e42b20e..a62232a 100644
+--- a/src/Entities/Solid.ts
++++ b/src/Entities/Solid.ts
+@@ -12,12 +12,18 @@ export class Solid extends Entity {
+ 
+ 	normal: XYZ = new XYZ(0, 0, 1);
+ 
++	/**
++	 * A TRACE: the same data as a SOLID (DXF reference, TRACE), kept apart so that a TRACE
++	 * is written back as one.
++	 */
++	isTrace: boolean = false;
++
+ 	override get objectName(): string {
+-		return DxfFileToken.entitySolid;
++		return this.isTrace ? DxfFileToken.entityTrace : DxfFileToken.entitySolid;
+ 	}
+ 
+ 	override get objectType(): ObjectType {
+-		return ObjectType.SOLID;
++		return this.isTrace ? ObjectType.TRACE : ObjectType.SOLID;
+ 	}
+ 
+ 	secondCorner: XYZ = new XYZ(0, 0, 0);
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 4029f4b..b3429e7 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -806,8 +806,8 @@ export class DwgObjectReader extends DwgSectionIO {
+       case ObjectType.FACE3D: template = this._read3dFace(); break;
+       case ObjectType.POLYLINE_PFACE: template = this._readPolyfaceMesh(); break;
+       case ObjectType.POLYLINE_MESH: template = this._readPolylineMesh(); break;
+-      case ObjectType.SOLID:
+-      case ObjectType.TRACE: template = this._readSolid(); break;
++      case ObjectType.SOLID: template = this._readSolid(false); break;
++      case ObjectType.TRACE: template = this._readSolid(true); break;
+       case ObjectType.SHAPE: template = this._readShape(); break;
+       case ObjectType.VIEWPORT: template = this._readViewport(); break;
+       case ObjectType.ELLIPSE: template = this._readEllipse(); break;
+@@ -1157,8 +1157,9 @@ export class DwgObjectReader extends DwgSectionIO {
+     return template;
+   }
+ 
+-  private _readSolid(): CadTemplate {
++  private _readSolid(isTrace: boolean): CadTemplate {
+     const solid = new Solid();
++    solid.isTrace = isTrace;
+     const template = new CadEntityTemplate(solid);
+     this._readCommonEntityData(template);
+     solid.thickness = this._objectReader.readBitThickness();
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index b2467b7..6e029dc 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -345,7 +345,11 @@ export abstract class DxfSectionReaderBase {
+         return this.readEntityCodes(new CadEntityTemplate(new Ray()), this._readEntitySubclassMap.bind(this), Ray);
+       case DxfFileToken.endSequence:
+         return this.readEntityCodes(new CadEntityTemplate(new Seqend()), this._readEntitySubclassMap.bind(this), Seqend);
+-      case DxfFileToken.entityTrace:
++      case DxfFileToken.entityTrace: {
++        const trace = new Solid();
++        trace.isTrace = true;
++        return this.readEntityCodes(new CadEntityTemplate(trace), this._readEntitySubclassMap.bind(this), Solid);
++      }
+       case DxfFileToken.entitySolid:
+         return this.readEntityCodes(new CadEntityTemplate(new Solid()), this._readEntitySubclassMap.bind(this), Solid);
+       case DxfFileToken.entityTable:

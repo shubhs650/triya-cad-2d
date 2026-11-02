@@ -39,6 +39,8 @@ import {
   LineTypeShapeFlags,
   LineWeightType,
   MeasurementUnits,
+  ObjectType,
+  Solid,
   TableEntity,
   TableEntityCell,
   TableEntityColumn,
@@ -742,4 +744,29 @@ describe('acad-ts local patches', () => {
       expect([stillBlack.isTrueColor, stillBlack.trueColor]).toEqual([true, 0]);
     },
   );
+
+  it('0121 a TRACE reads and saves as a TRACE, not a SOLID', () => {
+    const doc = new CadDocument();
+    doc.entities!.add(
+      new Solid(new XYZ(0, 0, 0), new XYZ(4, 0, 0), new XYZ(0, 1, 0), new XYZ(4, 1, 0)),
+    );
+    const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
+    const bytes = (t: string) => Uint8Array.from(t, (c) => c.charCodeAt(0));
+    // A TRACE has the same groups as a SOLID (DXF reference, TRACE), subclass AcDbTrace too.
+    const traced = text.replace(/(\n *0\r?\n)SOLID(\r?\n)/, '$1TRACE$2');
+    expect(traced).not.toBe(text);
+    const first = (d: CadDocument) => [...d.entities!].find((e) => e instanceof Solid) as Solid;
+
+    const read = DxfReader.readFromStream(bytes(traced));
+    expect(first(read).objectName).toBe('TRACE');
+    expect(first(read).objectType).toBe(ObjectType.TRACE);
+    expect(first(read).fourthCorner.x).toBe(4);
+    const saved = String.fromCharCode(...writeCadDocument(read, { format: 'dxf' }));
+    expect(saved).toMatch(/\n *0\r?\nTRACE\r?\n/);
+    expect(first(DxfReader.readFromStream(bytes(saved))).objectName).toBe('TRACE');
+    expect(first(dwgRoundTrip(read)).objectName).toBe('TRACE');
+    // A SOLID stays a SOLID.
+    expect(first(DxfReader.readFromStream(bytes(text))).objectName).toBe('SOLID');
+    expect(first(dwgRoundTrip(doc)).objectName).toBe('SOLID');
+  });
 });

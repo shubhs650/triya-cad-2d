@@ -1,0 +1,155 @@
+diff --git a/src/Color.ts b/src/Color.ts
+index 0badf77..3323a5d 100644
+--- a/src/Color.ts
++++ b/src/Color.ts
+@@ -129,6 +129,29 @@ export class Color {
+ 		return c;
+ 	}
+ 
++	/**
++	 * An AcCmEntityColor as DXF states it in one 32-bit group (MLEADERSTYLE 91/93/94, MULTILEADER
++	 * 91/92/93 and its context 90/91/93): the high byte is the colour method, 0xC0 ByLayer,
++	 * 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI (in the low byte), 0xC8 None. Other methods keep the low
++	 * byte as an index, as the DWG reader does.
++	 */
++	public static fromCmValue(value: number): Color {
++		const method = (value >>> 24) & 0xFF;
++		if (method === 0xC0) return Color.byLayer;
++		if (method === 0xC2) return Color.fromTrueColor(value & 0xFFFFFF);
++		if (method === 0xC8) return Color.byEntity;
++		return new Color(value & 0xFF);
++	}
++
++	/** The fromCmValue value of this colour, as a signed 32-bit integer. */
++	public toCmValue(): number {
++		if (this.isTrueColor) return (0xC2000000 | (this.trueColor & 0xFFFFFF)) | 0;
++		if (this.isByLayer) return 0xC0000000 | 0;
++		if (this.isByBlock) return 0xC1000000 | 0;
++		if (this.index === 257) return 0xC8000000 | 0;
++		return (0xC3000000 | this.index) | 0;
++	}
++
+ 	public static getIndexRGB(index: number): number[] {
+ 		return Color._indexRgb[index];
+ 	}
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 574f1bd..41ebb54 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -2015,6 +2015,16 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+       case 342:
+         tmp.mTextStyleHandle = this._reader.valueAsHandle;
+         return true;
++      // Leader line, text and block colours: AcCmEntityColor values, not integers.
++      case 91:
++        (tmp.cadObject as MultiLeaderStyle).lineColor = Color.fromCmValue(this._reader.valueAsInt);
++        return true;
++      case 93:
++        (tmp.cadObject as MultiLeaderStyle).textColor = Color.fromCmValue(this._reader.valueAsInt);
++        return true;
++      case 94:
++        (tmp.cadObject as MultiLeaderStyle).blockContentColor = Color.fromCmValue(this._reader.valueAsInt);
++        return true;
+       default:
+         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
+     }
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 6e029dc..bacb8d1 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -1657,6 +1657,16 @@ export abstract class DxfSectionReaderBase {
+       case 343:
+         tmp.mTextStyleHandle = this._reader.valueAsHandle;
+         return true;
++      // Leader line, text and block content colours: AcCmEntityColor values, not integers.
++      case 91:
++        (tmp.cadObject as MultiLeader).lineColor = Color.fromCmValue(this._reader.valueAsInt);
++        return true;
++      case 92:
++        (tmp.cadObject as MultiLeader).textColor = Color.fromCmValue(this._reader.valueAsInt);
++        return true;
++      case 93:
++        (tmp.cadObject as MultiLeader).blockContentColor = Color.fromCmValue(this._reader.valueAsInt);
++        return true;
+       default:
+         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
+     }
+@@ -1684,9 +1694,15 @@ export abstract class DxfSectionReaderBase {
+         case 340:
+           template.textStyleHandle = this._reader.valueAsHandle;
+           break;
+-        // The text colour is an AcCmColor (0xC0 ByLayer, 0xC1 index, 0xC2 RGB), not a plain RGB.
++        // The text, background fill and block content colours are AcCmEntityColor values.
+         case 90:
+-          contextData.textColor = DxfSectionReaderBase._cmColor(this._reader.valueAsInt);
++          contextData.textColor = Color.fromCmValue(this._reader.valueAsInt);
++          break;
++        case 91:
++          contextData.backgroundFillColor = Color.fromCmValue(this._reader.valueAsInt);
++          break;
++        case 93:
++          contextData.blockContentColor = Color.fromCmValue(this._reader.valueAsInt);
+           break;
+         default:
+           if (!this.tryAssignCurrentValue(contextData, map)) {
+@@ -1823,13 +1839,6 @@ export abstract class DxfSectionReaderBase {
+     return line;
+   }
+ 
+-  private static _cmColor(value: number): Color {
+-    const method = (value >>> 24) & 0xff;
+-    if (method === 0xc0) return Color.byLayer;
+-    if (method === 0xc1) return new Color(value & 0xff);
+-    return new Color((value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff);
+-  }
+-
+   private _readShape(template: CadEntityTemplate, map: DxfMap, subclass?: string): boolean {
+     const tmp = template as CadShapeTemplate;
+ 
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index f01afd5..c30c3f5 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1311,16 +1311,8 @@ export abstract class DxfSectionWriterBase {
+ 
+   // Multileader colours are 32-bit AcCmColor values (0xC0 ByLayer, 0xC1 index, 0xC2 RGB). The DXF
+   // reader keeps some of them as the raw integer, which is written back unchanged.
+-  private _writeMLeaderColor(code: number, color: Color | number): void {
+-    if (typeof color === 'number') {
+-      this._writer.write(code, color);
+-      return;
+-    }
+-    let value: number;
+-    if (color.isTrueColor) value = 0xc2000000 | (color.r << 16) | (color.g << 8) | color.b;
+-    else if (color.isByLayer) value = 0xc0000000;
+-    else value = 0xc1000000 | color.index;
+-    this._writer.write(code, value | 0);
++  private _writeMLeaderColor(code: number, color: Color): void {
++    this._writer.write(code, color.toCmValue());
+   }
+ 
+   private _writeAnnotContext(contextData: MultiLeaderObjectContextData): void {
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
+index fdb2c55..b5ac743 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts
+@@ -73,18 +73,7 @@ export abstract class DxfStreamWriterBase implements IDxfStreamWriter {
+     if (GroupCodeValue.transformValue(code) === GroupCodeValueType.Int16) {
+       this.write(code, color.getApproxIndex() & 0xFFFF);
+     } else {
+-      const arr = new Uint8Array(4);
+-      if (color.isTrueColor) {
+-        arr[0] = color.b;
+-        arr[1] = color.g;
+-        arr[2] = color.r;
+-        arr[3] = 0xC2;
+-      } else {
+-        arr[3] = 0xC1;
+-        arr[0] = color.index;
+-      }
+-      const view = new DataView(arr.buffer);
+-      this.write(code, view.getInt32(0, true), map);
++      this.write(code, color.toCmValue(), map);
+     }
+   }
+ 

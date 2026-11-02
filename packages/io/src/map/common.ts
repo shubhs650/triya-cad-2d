@@ -105,24 +105,11 @@ export function mapColor(c: AcadColor): Color {
 }
 
 /**
- * An AcCmEntityColor (MLEADERSTYLE 91/93/94). acad-ts reads it from DWG as a Color but from
- * DXF leaves the raw 32-bit value in the property, whose high byte is the colour method
- * (0xC0 ByLayer, 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI, 0xC8 none, treated as ByBlock).
+ * An AcCmEntityColor (MULTILEADER and MLEADERSTYLE colours). acad-ts decodes it from DXF and
+ * DWG alike (patch 0122); the method None (ACI 257 there) is taken as ByBlock.
  */
-export function mapEntityColor(c: AcadColor | number): Color {
-  if (typeof c !== 'number') return mapColor(c);
-  const method = (c >>> 24) & 0xff;
-  if (method === 0xc0) return { kind: 'byLayer' };
-  if (method === 0xc2) return { kind: 'rgb', r: (c >> 16) & 0xff, g: (c >> 8) & 0xff, b: c & 0xff };
-  if (method === 0xc3) {
-    const index = c & 0xff;
-    return index === 0
-      ? { kind: 'byBlock' }
-      : index === 256
-        ? { kind: 'byLayer' }
-        : { kind: 'aci', index };
-  }
-  return { kind: 'byBlock' };
+export function mapEntityColor(c: AcadColor): Color {
+  return c.index === 257 ? { kind: 'byBlock' } : mapColor(c);
 }
 
 /** DXF 370: hundredths of a millimetre, or −1 ByLayer, −2 ByBlock, −3 Default. */
