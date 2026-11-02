@@ -1056,6 +1056,7 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
     const st = tangent(e.startTangent);
     const et = tangent(e.endTangent);
     const pl = plane(e.normal);
+    const kp = e.knotParametrization as number;
     return {
       kind: 'SPLINE',
       degree: e.degree,
@@ -1065,6 +1066,11 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
       ...(e.fitPoints.length > 0 ? { fitPoints: e.fitPoints.map(xy) } : {}),
       ...(st ? { startTangent: st } : {}),
       ...(et ? { endTangent: et } : {}),
+      // DWG R2013+ knot parameterization (1 square root, 2 uniform), which shapes a spline
+      // drawn from its fit points (M1-47); chord (0) and custom (15) leave it out.
+      ...(e.fitPoints.length > 0 && (kp === 1 || kp === 2)
+        ? { knotParameterization: kp === 1 ? ('sqrt' as const) : ('uniform' as const) }
+        : {}),
       closed: e.isClosed,
       periodic: e.isPeriodic,
       ...(pl !== 'up' && Math.hypot(e.normal.x, e.normal.y, e.normal.z) > 0

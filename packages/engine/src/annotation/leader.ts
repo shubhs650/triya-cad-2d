@@ -16,7 +16,8 @@
 //   viewport) draws at 1 in model space. The line runs to the tip, under the arrowhead.
 // - DIMCLRD, DIMLTYPE and DIMLWD colour, dash and weight the path and arrowhead; ByBlock
 //   means the leader's own.
-// Spline leaders (DXF 72 = 1) are fit-point splines (M1-47), as for MULTILEADER.
+// Spline leaders (DXF 72 = 1) are fit-point splines through the vertices (M1-47), as for
+// MULTILEADER.
 
 import type { Vec2 } from '../geom/types';
 import type { Handle } from '../model/handle';

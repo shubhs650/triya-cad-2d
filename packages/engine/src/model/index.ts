@@ -3,5 +3,6 @@ export * from './changeset';
 export * from './document';
 export * from './entity-ids';
 export * from './handle';
+export * from './spline';
 export * from './types';
 export * from './update';

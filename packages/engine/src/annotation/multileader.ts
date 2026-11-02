@@ -21,9 +21,9 @@
 //   AutoCAD documents this for dimension lines only; leaders are drawn the same way.
 // - The text frame (DXF 292) is a rectangle a landing gap outside the text. Where AutoCAD puts
 //   it is undocumented; to be checked against reference plots (M1-24/M1-26).
-// Spline leaders (DXF 170 = 2) are fit-point splines through the vertices, which draw and bound
-// once the kernel interpolates fit points the way AutoCAD does (M1-47); until then the
-// MULTILEADER's bounds are unknown and the spline does not draw.
+// Spline leaders (DXF 170 = 2) are fit-point splines through the vertices, drawn and bounded
+// as the kernel's interpolation of them (M1-47) with natural ends: AutoCAD stores no end
+// tangents for a leader, and does not document how it shapes the ends.
 // Block content (DXF 172 = 1) is an INSERT of its block (M1-52 part 2).
 // Not yet: block content attributes, per-line overrides (LEADER_LINE DXF 93), and the text
 // underline and overline attachments (5, 6, 8 and 10); no public corpus file has any of them.

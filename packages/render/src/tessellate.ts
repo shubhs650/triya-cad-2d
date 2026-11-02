@@ -27,7 +27,8 @@ import {
   type HatchEdge,
   type HatchLoop,
   type PolylineVertex,
-  type Spline,
+  splineCurve,
+  type SplineData,
   type Vec2,
 } from '@triya/engine';
 import {
@@ -137,8 +138,10 @@ function size(points: readonly Vec2[]): number {
   return Math.max(maxX - minX, maxY - minY);
 }
 
-function splinePath(path: number[], s: Spline, move: boolean): void {
-  if (s.controlPoints.length < 2) return;
+/** A SPLINE or spline edge: its NURBS, or the interpolation of its fit points (M1-47). */
+function splinePath(path: number[], data: SplineData, move: boolean): void {
+  const s = splineCurve(data);
+  if (!s || s.controlPoints.length < 2) return;
   const dev = Math.max(size(s.controlPoints) * SPLINE_DEVIATION, Number.MIN_VALUE);
   const { points } = flatten(s, dev);
   points.forEach((p, i) => path.push(i === 0 && move ? PATH_M : PATH_L, p.x, p.y));
@@ -182,17 +185,7 @@ function edgePath(path: number[], e: HatchEdge, first: boolean): void {
       return;
     }
     case 'spline':
-      splinePath(
-        path,
-        {
-          kind: 'SPLINE',
-          degree: e.degree,
-          knots: e.knots,
-          controlPoints: e.controlPoints,
-          ...(e.weights ? { weights: e.weights } : {}),
-        },
-        first,
-      );
+      splinePath(path, e, first);
       return;
   }
 }
@@ -340,9 +333,10 @@ function dashGeometry(
       if (g.vertices.length < 2) return undefined;
       return fitSegments(polylineSegments(g.vertices, g.closed), g.closed, g.plinegen ?? false);
     case 'SPLINE': {
-      if (g.controlPoints.length < 2) return undefined;
-      const dev = Math.max(size(g.controlPoints) * SPLINE_DEVIATION, Number.MIN_VALUE);
-      const pts = [...flatten(g, dev).points];
+      const curve = splineCurve(g);
+      if (!curve || curve.controlPoints.length < 2) return undefined;
+      const dev = Math.max(size(curve.controlPoints) * SPLINE_DEVIATION, Number.MIN_VALUE);
+      const pts = [...flatten(curve, dev).points];
       const a = pts[0]!;
       const b = pts[pts.length - 1]!;
       // A closed spline ends where it starts; fit it closed only if the flattening agrees.
