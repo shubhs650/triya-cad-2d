@@ -17,7 +17,7 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | ARC | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | ELLIPSE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | POINT | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
-| LWPOLYLINE | ✓ (widths drawn as filled segments, tapered along lines and arcs, mitred where wide segments meet, outlined under FILLMODE 0, and bounded by those outlines, M1-46; wide segments draw continuous whatever the linetype until M1-66) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| LWPOLYLINE | ✓ (widths drawn as filled segments, tapered along lines and arcs, mitred where wide segments meet, outlined under FILLMODE 0, and bounded by those outlines, M1-46; dashed along the centre line with each dash a piece of the outline when the linetype is not continuous, M1-66) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | POLYLINE (2D) + VERTEX + SEQEND | ✓ (widths, with the POLYLINE's 40/41 defaults, drawn as for LWPOLYLINE, M1-46) | | | | |
 | POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | | |
 | SPLINE | ✓ (a spline stored only as fit points, as R2013+ DWGs can hold one, draws and is bounded as AutoCAD's interpolation of them, M1-47; tangent, closed, √chord, uniform and fit-tolerance cases unverified until M1-65) | | | | |
