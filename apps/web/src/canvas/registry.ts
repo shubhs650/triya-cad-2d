@@ -20,3 +20,9 @@ export function controllerOf(doc: number, block: string): CanvasController | und
 export function allControllers(): IterableIterator<CanvasController> {
   return controllers.values();
 }
+
+/** The live controllers of one document, one per space it has shown. */
+export function controllersOf(doc: number): CanvasController[] {
+  const prefix = `${doc}:`;
+  return [...controllers].filter(([k]) => k.startsWith(prefix)).map(([, c]) => c);
+}

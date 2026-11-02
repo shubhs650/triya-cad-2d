@@ -1,5 +1,6 @@
 import {
   DocumentModel,
+  type DocumentInit,
   type Entity,
   type EntityInit,
   type EntityGeometry,
@@ -82,7 +83,12 @@ export const circleGeom = (x: number, y: number, r: number): EntityGeometry => (
 
 /** A small drawing: two layers, model and paper space, three model-space entities, one in paper space. */
 export function sampleModel(): DocumentModel {
-  return DocumentModel.create({
+  return DocumentModel.create(sampleInit());
+}
+
+/** The init `sampleModel` is built from. */
+export function sampleInit(): DocumentInit {
+  return {
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '40',
     header: new Map<string, HeaderValue>([
@@ -114,7 +120,7 @@ export function sampleModel(): DocumentModel {
       entityInit('23', lineGeom(0, 0, 0, 10)),
       entityInit('24', lineGeom(1, 1, 2, 2), { owner: PAPER_SPACE }),
     ],
-  });
+  };
 }
 
 /** A comparable, reference-free snapshot of everything a ChangeSet can touch. */

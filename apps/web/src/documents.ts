@@ -47,14 +47,15 @@ export class DocumentStore {
     this.#set({ opening: [...this.#state.opening, name], error: undefined });
   }
 
-  /** A file opened: it gets a tab, which shows. */
-  opened(name: string, opened: OpenResult, block: string): void {
+  /** A file opened: it gets a tab, which shows. Returns the new document's id. */
+  opened(name: string, opened: OpenResult, block: string): number {
     const doc: OpenDocument = { id: this.#nextId++, name, opened, block, savedViews: [] };
     this.#set({
       docs: [...this.#state.docs, doc],
       active: doc.id,
       opening: this.#withoutOne(name),
     });
+    return doc.id;
   }
 
   failed(name: string, message: string): void {

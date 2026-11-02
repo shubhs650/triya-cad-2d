@@ -8,7 +8,14 @@
 // navigation bar adds ZOOM Window, Previous, All and Scale, real-time PAN with the left button,
 // and REGEN (part 2).
 import RenderWorker from '@triya/render/worker?worker';
-import { layoutSheet, unionBox, type Box, type Handle, type Layout } from '@triya/engine';
+import {
+  layoutSheet,
+  unionBox,
+  type Box,
+  type ChangeSet,
+  type Handle,
+  type Layout,
+} from '@triya/engine';
 import {
   PATH_L,
   PATH_M,
@@ -50,6 +57,11 @@ export interface CanvasHooks {
   readonly onMode?: (mode: CanvasMode) => void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
   readonly patterns?: () => readonly string[];
+  /**
+   * The changes the drawing's engine applied since it opened (M1-67): a renderer is built from
+   * the drawing as opened, so a new one (first show, REGEN) applies these to catch up.
+   */
+  readonly changes?: () => readonly ChangeSet[];
 }
 
 type Point = { readonly x: number; readonly y: number };
@@ -173,6 +185,12 @@ export class CanvasController {
     this.#resize();
   }
 
+  /** A change the drawing's engine applied (M1-67): the renderer applies it and redraws. */
+  apply(change: ChangeSet): void {
+    this.#host.apply(change);
+    this.#requestFrame();
+  }
+
   /** The user's .pat files changed (M1-50): hatches stored without lines redraw from them. */
   setPatterns(sources: readonly string[]): void {
     this.#host.setPatterns(sources);
@@ -197,6 +215,7 @@ export class CanvasController {
       onError: this.#hooks.onError,
       ...(patterns.length > 0 && { patterns }),
     });
+    for (const change of this.#hooks.changes?.() ?? []) host.apply(change);
     this.canvas.dataset['renderer'] = host.mode;
     return host;
   }
