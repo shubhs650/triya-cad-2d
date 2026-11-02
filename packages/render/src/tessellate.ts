@@ -27,8 +27,11 @@ import {
   type HatchEdge,
   type HatchLoop,
   type PolylineVertex,
+  polylineWidths,
   splineCurve,
+  wideOutlines,
   type SplineData,
+  type WideVertex,
   type Vec2,
 } from '@triya/engine';
 import {
@@ -52,6 +55,8 @@ export interface TessellateContext {
   readonly text?: TextContext;
   /** IMAGEFRAME and WIPEOUTFRAME; both on (AutoCAD's initial values) when absent. */
   readonly frames?: ImageFrames;
+  /** FILLMODE: false outlines wide polyline segments instead of filling them; on when absent. */
+  readonly fill?: boolean;
 }
 
 /** What every primitive of one entity shares, resolved from the entity and its layer. */
@@ -211,6 +216,10 @@ export function tessellate(
     return ctx.text ? textPrimitives(g, paint, ctx.text) : [];
   // Image frames are drawn continuous: a frame is a display aid, not linework (ours).
   if (g.kind === 'IMAGE' || g.kind === 'WIPEOUT') return imagePrimitives(g, paint, ctx.frames);
+  if (g.kind === 'LWPOLYLINE' || g.kind === 'POLYLINE') {
+    const widths = polylineWidths(g);
+    if (widths) return widePolyline(g.vertices, g.closed, widths, paint, ctx.fill ?? true);
+  }
   const prims = exact(g, paint);
   const lt = paint.linetype;
   const first = prims[0];
@@ -225,6 +234,47 @@ export function tessellate(
   // A zero-length segment: the round cap draws it as a dot as wide as the line.
   for (const p of dashed.dots) path.push(PATH_M, p.x, p.y, PATH_L, p.x, p.y);
   return [{ ...stroke(path, paint), continuous: first.path, patternLength: P }];
+}
+
+/**
+ * A polyline with widths (M1-46): each wide segment's outline (`wideOutlines`) filled, or
+ * outlined with FILLMODE off, and the zero-width segments as the thin line. Wide polylines
+ * draw continuous: dashing them is M1-66.
+ */
+function widePolyline(
+  vertices: readonly PolylineVertex[],
+  closed: boolean,
+  widths: readonly WideVertex[],
+  paint: Paint,
+  fill: boolean,
+): RenderPrimitive[] {
+  const { fills, thin } = wideOutlines(widths, closed);
+  const out: RenderPrimitive[] = [];
+  if (fills.length > 0) {
+    const path: number[] = [];
+    for (const f of fills) {
+      f.forEach((p, i) => path.push(i === 0 ? PATH_M : PATH_L, p.x, p.y));
+      path.push(PATH_Z);
+    }
+    // Each outline is counter-clockwise, so overlapping mitres add up under nonzero.
+    out.push(fill ? { kind: 'fill', path, color: paint.color } : stroke(path, paint));
+  }
+  if (thin.length > 0) {
+    const path: number[] = [];
+    let last = -2;
+    for (const i of thin) {
+      const v = vertices[i]!;
+      const w = vertices[(i + 1) % vertices.length]!;
+      const seg = [v, { ...w, bulge: 0 }];
+      const sub: number[] = [];
+      polylinePath(sub, seg, false);
+      // Consecutive thin segments continue one subpath.
+      path.push(...(i === last + 1 ? sub.slice(3) : sub));
+      last = i;
+    }
+    out.push(stroke(path, paint));
+  }
+  return out;
 }
 
 /** Points along an elliptical arc (a circle when rx = ry), first to last inclusive. */

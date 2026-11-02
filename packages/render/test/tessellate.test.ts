@@ -140,6 +140,97 @@ describe('tessellate', () => {
     expect(a.length / 3).toBeGreaterThan(20);
   });
 
+  describe('polyline widths (M1-46)', () => {
+    const wide = (constantWidth: number) =>
+      ({
+        kind: 'LWPOLYLINE',
+        closed: false,
+        constantWidth,
+        vertices: [
+          { x: 0, y: 0, bulge: 0 },
+          { x: 10, y: 0, bulge: 0 },
+          { x: 10, y: 10, bulge: 0 },
+        ],
+      }) as const;
+    /** The closed subpaths of a packed M / L / Z path, as point lists. */
+    const rings = (p: readonly number[]): number[][][] => {
+      const out: number[][][] = [];
+      for (let i = 0; i < p.length;) {
+        if (p[i] === PATH_M) out.push([[p[i + 1]!, p[i + 2]!]]);
+        else if (p[i] === PATH_L) out[out.length - 1]!.push([p[i + 1]!, p[i + 2]!]);
+        i += p[i] === PATH_Z ? 1 : 3;
+      }
+      return out;
+    };
+
+    it('fills each wide segment’s mitred outline in the entity’s colour', () => {
+      const prims = tessellate(wide(2), paint);
+      expect(prims).toHaveLength(1);
+      const [f] = prims;
+      expect(f).toMatchObject({ kind: 'fill', color: '#ff0000' });
+      const r = rings(path(f));
+      expect(r).toHaveLength(2);
+      expect(r[0]).toEqual([
+        [0, -1],
+        [11, -1],
+        [9, 1],
+        [0, 1],
+      ]);
+      expect(path(f).filter((c) => c === PATH_Z)).toHaveLength(2);
+    });
+
+    it('keeps zero-width segments as the thin line', () => {
+      const prims = tessellate(
+        {
+          kind: 'LWPOLYLINE',
+          closed: false,
+          vertices: [
+            { x: 0, y: 0, bulge: 0 },
+            { x: 10, y: 0, bulge: 0, startWidth: 2, endWidth: 0 },
+            { x: 12, y: 0, bulge: 0 },
+          ],
+        },
+        paint,
+      );
+      expect(prims.map((p) => p.kind)).toEqual(['fill', 'stroke']);
+      expect(path(prims[1])).toEqual([PATH_M, 0, 0, PATH_L, 10, 0]);
+    });
+
+    it('outlines wide segments instead with FILLMODE off', () => {
+      const prims = tessellate(wide(2), paint, { fill: false });
+      expect(prims.map((p) => p.kind)).toEqual(['stroke']);
+      expect(rings(path(prims[0]))).toHaveLength(2);
+      expect(path(prims[0]).filter((c) => c === PATH_Z)).toHaveLength(2);
+    });
+
+    it('applies a POLYLINE’s default widths, and none to a 3D polyline', () => {
+      const pl = {
+        kind: 'POLYLINE',
+        closed: false,
+        is3d: false,
+        startWidth: 1,
+        endWidth: 1,
+        vertices: [
+          { x: 0, y: 0, bulge: 0 },
+          { x: 4, y: 0, bulge: 0 },
+        ],
+      } as const;
+      expect(tessellate(pl, paint).map((p) => p.kind)).toEqual(['fill']);
+      expect(tessellate({ ...pl, is3d: true }, paint).map((p) => p.kind)).toEqual(['stroke']);
+    });
+
+    it('draws wide segments continuous whatever the linetype', () => {
+      const pattern = {
+        name: 'DASHED',
+        description: '',
+        elements: [{ length: 1 }, { length: -1 }],
+      };
+      const dashed = { ...paint, linetype: { pattern, scale: 1 } };
+      const prims = tessellate(wide(2), dashed);
+      expect(prims.map((p) => p.kind)).toEqual(['fill']);
+    });
+  });
+
   it('fills SOLID corners in the order 1–2–4–3', () => {
     const [p] = tessellate(
       {
