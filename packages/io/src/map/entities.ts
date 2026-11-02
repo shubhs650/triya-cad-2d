@@ -31,6 +31,10 @@ import {
   Insert,
   MText,
   TableEntity,
+  type CellBorder,
+  type CellStyle,
+  type Color as AcadColor,
+  type ContentFormat,
   type TableEntityCell,
   CadWipeoutBase,
   PdfUnderlay,
@@ -77,7 +81,9 @@ import type {
   MTextGeometry,
   MultiLeaderGeometry,
   ObjectCommon,
+  TableBorderFormat,
   TableCell,
+  TableCellFormat,
   TableGeometry,
   ImageGeometry,
   UnderlayGeometry,
@@ -620,6 +626,161 @@ function cellText(c: TableEntityCell): string {
   return v.formattedValue || (v.value == null ? '' : String(v.value));
 }
 
+type Mutable<T> = { -readonly [K in keyof T]: T[K] };
+type Edge = 'top' | 'right' | 'bottom' | 'left';
+type FormatDraft = Omit<Mutable<TableCellFormat>, 'borders' | 'margins'> & {
+  borders: Partial<Record<Edge, Mutable<TableBorderFormat>>>;
+  margins: Mutable<NonNullable<TableCellFormat['margins']>>;
+};
+
+/**
+ * The cell override flag word of DXF (177, 91) and DWG up to R2007 (ODA spec, TABLE): each
+ * edge has a colour, lineweight and visibility bit, in that order of significance.
+ */
+const CELL_ALIGNMENT = 0x01;
+const CELL_FILL_NONE = 0x02;
+const CELL_BACKGROUND = 0x04;
+const CELL_CONTENT_COLOR = 0x08;
+const CELL_TEXT_STYLE = 0x10;
+const CELL_TEXT_HEIGHT = 0x20;
+const CELL_EDGES: readonly [Edge, number, number, number][] = [
+  ['top', 0x40, 0x400, 0x4000],
+  ['right', 0x80, 0x800, 0x8000],
+  ['bottom', 0x100, 0x1000, 0x10000],
+  ['left', 0x200, 0x2000, 0x20000],
+];
+
+/** The cell style and content format property flags of DWG R2010+ (AcDb::CellProperty). */
+const PROP_ALIGNMENT = 0x10;
+const PROP_CONTENT_COLOR = 0x20;
+const PROP_TEXT_STYLE = 0x40;
+const PROP_TEXT_HEIGHT = 0x80;
+const PROP_BACKGROUND = 0x200;
+const PROP_MARGINS: readonly ['left' | 'top' | 'right' | 'bottom', number][] = [
+  ['left', 0x400],
+  ['top', 0x800],
+  ['right', 0x1000],
+  ['bottom', 0x2000],
+];
+/** AcDb::GridProperty bits of a border override. */
+const BORDER_LINEWEIGHT = 0x02;
+const BORDER_COLOR = 0x08;
+const BORDER_VISIBILITY = 0x10;
+
+/**
+ * A cell background colour. DWG R2010+ states "no fill" as the colour method None (0xC8),
+ * which acad-ts reads as true-colour black, so black is taken as no fill (AutoCAD's default
+ * cell background is None; a black RGB fill is not told apart, see M1-75).
+ */
+function background(c: AcadColor): Color | null {
+  return c.isTrueColor && c.trueColor === 0 ? null : mapColor(c);
+}
+
+function edge(d: FormatDraft, side: Edge): Mutable<TableBorderFormat> {
+  return (d.borders[side] ??= {});
+}
+
+/** The flag word: DXF and DWG up to R2007. The values sit in the cell's style override. */
+function applyCellFlags(d: FormatDraft, flags: number, s: CellStyle): void {
+  if (flags & CELL_ALIGNMENT) d.alignment = s.cellAlignment;
+  // acad-ts keeps DXF 283 in isFillColorOn, but the code is "background fill none": 1 is no
+  // fill. A cell with 283 = 0 and colour 165 draws a colour-165 SOLID in its *T block.
+  if (flags & CELL_BACKGROUND) d.background = mapColor(s.backgroundColor);
+  if (flags & CELL_FILL_NONE && s.isFillColorOn) d.background = null;
+  if (flags & CELL_CONTENT_COLOR) d.contentColor = mapColor(s.contentColor);
+  const style = flags & CELL_TEXT_STYLE ? ref(s.textStyle) : undefined;
+  if (style) d.textStyle = style;
+  if (flags & CELL_TEXT_HEIGHT) d.textHeight = s.textHeight;
+  for (const [side, color, weight, visibility] of CELL_EDGES) {
+    const b = borderOf(s, side);
+    if (flags & color) edge(d, side).color = mapColor(b.color);
+    if (flags & weight) edge(d, side).lineweight = mapLineweight(b.lineWeight);
+    if (flags & visibility && b.isInvisible) edge(d, side).hidden = true;
+  }
+}
+
+function borderOf(s: CellStyle, side: Edge): CellBorder {
+  return side === 'top'
+    ? s.topBorder
+    : side === 'right'
+      ? s.rightBorder
+      : side === 'bottom'
+        ? s.bottomBorder
+        : s.leftBorder;
+}
+
+/** The content properties a DWG R2010+ cell style or content format overrides. */
+function applyContentFormat(d: FormatDraft, flags: number, f: ContentFormat): void {
+  if (flags & PROP_ALIGNMENT) d.alignment = f.alignment;
+  if (flags & PROP_CONTENT_COLOR) d.contentColor = mapColor(f.color);
+  const style = flags & PROP_TEXT_STYLE ? ref(f.textStyle) : undefined;
+  if (style) d.textStyle = style;
+  if (flags & PROP_TEXT_HEIGHT) d.textHeight = f.textHeight;
+}
+
+/** A DWG R2010+ cell, row or column cell style. */
+function applyCellStyle(d: FormatDraft, s: CellStyle): void {
+  if (!s.hasData) return;
+  const flags = s.cellPropertyOverrideFlags ?? 0;
+  applyContentFormat(d, flags, s);
+  if (flags & PROP_BACKGROUND) d.background = background(s.backgroundColor);
+  if (s.marginOverrideFlags & 1) {
+    const value = {
+      left: s.horizontalMargin,
+      top: s.verticalMargin,
+      right: s.rightMargin,
+      bottom: s.bottomMargin,
+    };
+    for (const [side, bit] of PROP_MARGINS) if (flags & bit) d.margins[side] = value[side];
+  }
+  for (const side of ['top', 'right', 'bottom', 'left'] as const) {
+    const b = borderOf(s, side);
+    const f = b.propertyOverrideFlags;
+    if (f & BORDER_COLOR) edge(d, side).color = mapColor(b.color);
+    if (f & BORDER_LINEWEIGHT) edge(d, side).lineweight = mapLineweight(b.lineWeight);
+    if (f & BORDER_VISIBILITY && b.isInvisible) edge(d, side).hidden = true;
+  }
+}
+
+/**
+ * What a cell overrides of its table style. DXF and DWG up to R2007 fold row and column
+ * overrides into each cell's flag word; DWG R2010+ keeps them apart, so they are folded here
+ * the same way, content format over cell over row over column (ObjectARX AcDbTable; the order
+ * of row and column is not documented, row is taken as the nearer one). A margin equal to the
+ * table's own is dropped: R2010+ repeats the table margins in every cell, and DXF has none.
+ */
+function cellFormat(
+  t: TableEntity,
+  i: number,
+  j: number,
+  c: TableEntityCell,
+): TableCellFormat | undefined {
+  const d: FormatDraft = { borders: {}, margins: {} };
+  applyCellFlags(d, c.overrideFlags, c.styleOverride);
+  const column = t.columns[j]?.cellStyleOverride;
+  if (column) applyCellStyle(d, column);
+  const row = t.rows[i]?.cellStyleOverride;
+  if (row) applyCellStyle(d, row);
+  applyCellStyle(d, c.styleOverride);
+  const k = c.content?.format;
+  if (k?.hasData) applyContentFormat(d, k.propertyOverrideFlags, k);
+
+  const table: FormatDraft = { borders: {}, margins: {} };
+  applyCellStyle(table, t.cellStyleOverride);
+  for (const side of ['left', 'top', 'right', 'bottom'] as const)
+    if (d.margins[side] !== undefined && d.margins[side] === table.margins[side])
+      delete d.margins[side];
+
+  const { borders, margins, ...rest } = d;
+  const kept = Object.entries(borders).filter(([, b]) => Object.keys(b).length > 0);
+  const format: Mutable<TableCellFormat> = {
+    ...rest,
+    ...(kept.length > 0 ? { borders: Object.fromEntries(kept) } : {}),
+    ...(Object.keys(margins).length > 0 ? { margins } : {}),
+  };
+  return Object.keys(format).length > 0 ? format : undefined;
+}
+
 /**
  * ACAD_TABLE: the insertion point is OCS (AcDbBlockReference), the horizontal direction WCS.
  * DXF states merges per cell (175/176 spans, 173 merged); DWG states the merged ranges, so the
@@ -649,6 +810,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
       const isBlock = (c.type as number) === 2 || ((k?.contentType as number) & 4) !== 0;
       const record = k?.blockRecord ?? (c.value instanceof BlockRecord ? c.value : null);
       const block = isBlock ? ref(record) : undefined;
+      const format = cellFormat(t, i, j, c);
       return {
         type: isBlock ? 'block' : 'text',
         text: isBlock ? '' : cellText(c),
@@ -657,6 +819,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
         columnSpan: ranges ? (span?.columns ?? 1) : Math.max(1, c.borderWidth),
         merged: ranges ? covered.has(`${i},${j}`) : c.mergedValue !== 0,
         rotation: c.rotation,
+        ...(format ? { format } : {}),
       };
     }),
   );

@@ -3045,7 +3045,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		for (const [border, color, lineWeight, visibility] of borders) {
 			if ((flags & color) !== 0) this._writeTableStyleColor(border.color);
 			if ((flags & lineWeight) !== 0) this._writer.writeBitShort(border.lineWeight);
-			if ((flags & visibility) !== 0) this._writer.writeBitShort(border.isInvisible ? 0 : 1);
+			if ((flags & visibility) !== 0) this._writer.writeBitShort(border.isInvisible ? 1 : 0);
 		}
 	}
 
@@ -3921,7 +3921,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 			return;
 		}
 
-		this._writer.writeBitLong(style.propertyOverrideFlags);
+		this._writer.writeBitLong(style.cellPropertyOverrideFlags ?? style.propertyOverrideFlags);
 		this._writer.writeBitLong(style.tableCellStylePropertyFlags);
 		this._writer.writeCmColor(style.backgroundColor);
 		this._writer.writeBitLong(style.contentLayoutFlags);
