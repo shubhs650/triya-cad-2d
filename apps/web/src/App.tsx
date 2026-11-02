@@ -1,9 +1,11 @@
 // The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs and
-// Report issue; the canvas area; the layout tabs; the status bar. The ribbon, palettes and
-// command line arrive with their own tasks.
+// Report issue; the canvas area with its navigation bar; the layout tabs; the status bar. The
+// ribbon, palettes and command line arrive with their own tasks.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { CanvasController } from './canvas/controller';
+import { CanvasController, type CanvasMode } from './canvas/controller';
+import { controllerOf, register } from './canvas/registry';
 import { DocumentStore, type OpenDocument } from './documents';
+import { NavBar } from './NavBar';
 import { openDrawing, openError } from './open';
 
 export const OET_HOME = 'https://openengtools.com/';
@@ -53,12 +55,19 @@ export function App() {
         e.preventDefault();
         pick();
       }
+      // Esc ends real-time PAN and cancels ZOOM Window, as in AutoCAD.
+      if (e.key === 'Escape') {
+        const { docs, active } = store.getSnapshot();
+        const doc = docs.find((d) => d.id === active);
+        if (doc) controllerOf(doc.id, doc.block)?.setMode('none');
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [pick]);
 
   const active = state.docs.find((d) => d.id === state.active);
+  const [mode, setMode] = useState<CanvasMode>('none');
 
   return (
     <div
@@ -145,8 +154,9 @@ export function App() {
 
       <main className="canvas-area">
         {state.docs.map((d) => (
-          <DocumentCanvas key={d.id} doc={d} active={d.id === state.active} />
+          <DocumentCanvas key={d.id} doc={d} active={d.id === state.active} onMode={setMode} />
         ))}
+        {active && <NavBar doc={active} store={store} mode={mode} />}
         {state.docs.length === 0 && (
           <div className="start" data-testid="start">
             <h1>Triya CAD 2D</h1>
@@ -159,9 +169,7 @@ export function App() {
         )}
       </main>
 
-      <nav className="layout-tabs" aria-label="Layouts">
-        {active && <span className="layout-tab current">Model</span>}
-      </nav>
+      <LayoutTabs doc={active} />
       <StatusBar doc={active} />
     </div>
   );
@@ -170,21 +178,102 @@ export function App() {
 /** The world point under the cursor, written straight into the status bar (no React render). */
 let showCursor: (p: { x: number; y: number } | undefined) => void = () => {};
 
-function DocumentCanvas({ doc, active }: { doc: OpenDocument; active: boolean }) {
-  const ref = useRef<HTMLDivElement>(null);
+/** One container per space of the document shown so far; the space on screen is visible. */
+function DocumentCanvas({
+  doc,
+  active,
+  onMode,
+}: {
+  doc: OpenDocument;
+  active: boolean;
+  onMode: (m: CanvasMode) => void;
+}) {
+  const [shown, setShown] = useState<readonly string[]>([doc.block]);
   useEffect(() => {
-    const c = new CanvasController(ref.current!, doc.opened, doc.block, {
-      onCursor: (p) => showCursor(p),
-      onError: (e) => store.failed(doc.name, openError(doc.name, e)),
-    });
-    return () => c.dispose();
-  }, [doc]);
-  useEffect(() => {
-    const canvas = ref.current?.querySelector('canvas');
-    if (canvas) canvas.dataset['active'] = String(active);
-  }, [active]);
+    setShown((s) => (s.includes(doc.block) ? s : [...s, doc.block]));
+  }, [doc.block]);
   return (
-    <div ref={ref} id={`doc-${doc.id}`} role="tabpanel" className="doc-canvas" hidden={!active} />
+    <div id={`doc-${doc.id}`} role="tabpanel" className="doc-canvas" hidden={!active}>
+      {shown.map((block) => (
+        <SpaceCanvas
+          key={block}
+          doc={doc}
+          block={block}
+          visible={active && block === doc.block}
+          onMode={onMode}
+        />
+      ))}
+    </div>
+  );
+}
+
+function SpaceCanvas({
+  doc,
+  block,
+  visible,
+  onMode,
+}: {
+  doc: OpenDocument;
+  block: string;
+  visible: boolean;
+  onMode: (m: CanvasMode) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const { id, name, opened } = doc;
+  const visibleRef = useRef(visible);
+  visibleRef.current = visible;
+  useEffect(() => {
+    const c = new CanvasController(ref.current!, opened, block, {
+      onCursor: (p) => showCursor(p),
+      onError: (e) => store.failed(name, openError(name, e)),
+      onMode: (m) => {
+        if (visibleRef.current) onMode(m);
+      },
+    });
+    const unregister = register(id, block, c);
+    return () => {
+      unregister();
+      c.dispose();
+    };
+  }, [id, name, opened, block, onMode]);
+  useEffect(() => {
+    const c = controllerOf(id, block);
+    if (!c) return;
+    c.canvas.dataset['active'] = String(visible);
+    // Leaving a space ends its PAN or ZOOM Window, so the bar never shows a stale mode.
+    if (!visible) c.setMode('none');
+  }, [id, block, visible]);
+  return <div ref={ref} className="space-canvas" hidden={!visible} />;
+}
+
+/** Model, then the layouts in tab order (DXF 71). */
+function LayoutTabs({ doc }: { doc: OpenDocument | undefined }) {
+  if (!doc) return <nav className="layout-tabs" aria-label="Layouts" />;
+  const model = doc.opened.modelSpace!;
+  const layouts = [...(doc.opened.init.layouts ?? [])]
+    .filter((l) => l.blockRecord !== model)
+    .sort((a, b) => a.tabOrder - b.tabOrder);
+  const tabs = [
+    { name: 'Model', block: model },
+    ...layouts.map((l) => ({ name: l.name, block: l.blockRecord })),
+  ];
+  return (
+    <nav className="layout-tabs" aria-label="Layouts">
+      <div role="tablist" aria-label="Model and layouts">
+        {tabs.map((t) => (
+          <button
+            key={t.block}
+            type="button"
+            role="tab"
+            className="layout-tab"
+            aria-selected={t.block === doc.block}
+            onClick={() => store.showSpace(doc.id, t.block)}
+          >
+            {t.name}
+          </button>
+        ))}
+      </div>
+    </nav>
   );
 }
 
@@ -212,7 +301,7 @@ function StatusBar({ doc }: { doc: OpenDocument | undefined }) {
         <>
           <span className="version">{doc.opened.summary.version}</span>
           <span className="space" data-testid="space">
-            MODEL
+            {doc.block === doc.opened.modelSpace ? 'MODEL' : 'PAPER'}
           </span>
         </>
       )}

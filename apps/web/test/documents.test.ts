@@ -65,3 +65,27 @@ describe('DocumentStore', () => {
     expect(calls).toBe(1);
   });
 });
+
+describe('DocumentStore spaces and saved views', () => {
+  const v = (x: number) => ({ center: { x, y: 0 }, scale: 1 });
+
+  it('switches a document between model space and a layout', () => {
+    const s = storeWith('a.dwg');
+    const id = s.getSnapshot().docs[0]!.id;
+    s.showSpace(id, '58');
+    expect(s.getSnapshot().docs[0]!.block).toBe('58');
+  });
+
+  it('saves views in the space shown, a new view replacing one of the same name', () => {
+    const s = storeWith('a.dwg');
+    const id = s.getSnapshot().docs[0]!.id;
+    s.saveView(id, 'Front', v(1));
+    s.showSpace(id, '58');
+    s.saveView(id, 'Sheet', v(2));
+    s.saveView(id, 'FRONT', v(3));
+    expect(s.getSnapshot().docs[0]!.savedViews).toEqual([
+      { name: 'Sheet', block: '58', view: v(2) },
+      { name: 'FRONT', block: '58', view: v(3) },
+    ]);
+  });
+});

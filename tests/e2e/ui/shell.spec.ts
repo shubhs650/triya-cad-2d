@@ -14,6 +14,7 @@ import {
   openWithDrop,
   openWithPicker,
   serve,
+  worldAt,
 } from '../app/page';
 import { startApp } from '../app/server';
 
@@ -28,15 +29,8 @@ test.afterAll(async () => {
 const DXF_NAME = path.basename(DXF);
 const DWG_NAME = path.basename(DWG);
 
-/** The world point the status bar shows for the cursor at canvas point (x, y). */
-async function worldAt(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
-  const box = (await activeCanvas(page).boundingBox())!;
-  await page.mouse.move(box.x + x, box.y + y);
-  const coords = page.getByTestId('coords');
-  await expect(coords).not.toHaveText('');
-  const [wx, wy] = (await coords.textContent())!.split(',').map((s) => Number(s.trim()));
-  return { x: wx!, y: wy! };
-}
+const docTabs = (page: Page) =>
+  page.getByRole('tablist', { name: 'Open drawings' }).getByRole('tab');
 
 test.describe('app shell', () => {
   test.describe.configure({ timeout: 90_000 });
@@ -90,16 +84,16 @@ test.describe('app shell', () => {
     await expectShown(page, DXF_NAME);
     await openWithPicker(page, DWG);
     await expectShown(page, DWG_NAME);
-    await expect(page.getByRole('tab')).toHaveCount(2);
+    await expect(docTabs(page)).toHaveCount(2);
 
     await page.getByRole('tab', { name: DXF_NAME, exact: true }).click();
     await expectShown(page, DXF_NAME);
 
     await page.getByRole('button', { name: `Close ${DXF_NAME}` }).click();
-    await expect(page.getByRole('tab')).toHaveCount(1);
+    await expect(docTabs(page)).toHaveCount(1);
     await expectShown(page, DWG_NAME);
     await page.getByRole('button', { name: `Close ${DWG_NAME}` }).click();
-    await expect(page.getByRole('tab')).toHaveCount(0);
+    await expect(docTabs(page)).toHaveCount(0);
     await expect(page.getByTestId('start')).toBeVisible();
   });
 
@@ -156,7 +150,7 @@ test.describe('app shell', () => {
       await chooser
     ).setFiles({ name: 'broken.dwg', mimeType: 'application/octet-stream', buffer: brokenDwg() });
     await expect(page.getByRole('alert')).toContainText('broken.dwg');
-    await expect(page.getByRole('tab')).toHaveCount(0);
+    await expect(docTabs(page)).toHaveCount(0);
     await openWithPicker(page, DXF);
     await expectShown(page, DXF_NAME);
   });

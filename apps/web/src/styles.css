@@ -214,12 +214,6 @@ button {
   padding: 3px 10px;
 }
 
-.layout-tab.current {
-  background: var(--chrome-bg-raised);
-  border: 1px solid var(--chrome-border);
-  border-top: 0;
-}
-
 .status-bar {
   display: flex;
   align-items: center;
@@ -237,4 +231,104 @@ button {
 
 .status-bar .space {
   font-weight: 600;
+}
+
+.space-canvas {
+  position: absolute;
+  inset: 0;
+}
+
+.space-canvas[hidden] {
+  display: none;
+}
+
+.drawing-canvas[data-mode='pan'] {
+  cursor: grab;
+}
+
+/* Navigation bar on the canvas, right edge (AutoCAD's navigation bar). */
+.nav-bar {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgb(0 0 0 / 20%);
+  font-size: 12px;
+}
+
+.nav-bar > button,
+.views-menu button {
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  text-align: left;
+  transition: background var(--motion);
+}
+
+.nav-bar > button:hover,
+.views-menu button:hover {
+  background: var(--chrome-bg);
+}
+
+.nav-bar > button[aria-pressed='true'] {
+  background: var(--chrome-border);
+  border-color: var(--accent);
+}
+
+.views-menu {
+  border-top: 1px solid var(--chrome-border);
+  padding-top: 4px;
+  max-width: 200px;
+}
+
+.views-menu ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.views-menu .empty {
+  padding: 3px 8px;
+  color: var(--chrome-text-muted);
+}
+
+.views-menu form {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 4px;
+}
+
+.views-menu label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  color: var(--chrome-text-muted);
+}
+
+.views-menu input {
+  font: inherit;
+  padding: 2px 4px;
+}
+
+.layout-tabs [role='tablist'] {
+  display: flex;
+}
+
+.layout-tab {
+  border: 1px solid transparent;
+  border-top: 0;
+  background: none;
+}
+
+.layout-tab[aria-selected='true'] {
+  background: var(--chrome-bg-raised);
+  border-color: var(--chrome-border);
 }
