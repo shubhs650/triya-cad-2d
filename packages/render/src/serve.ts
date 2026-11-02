@@ -54,6 +54,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'frame':
         r.frame();
         break;
+      case 'image':
+        session.setImage(m.definition, m.pixels ?? undefined);
+        break;
       case 'hitTest':
         port.postMessage({ type: 'reply', id: m.id, ids: r.hitTest(m.screen, m.aperture) });
         break;

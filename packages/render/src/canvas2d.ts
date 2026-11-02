@@ -120,6 +120,8 @@ export interface Canvas2D {
   restore(): void;
   rect(x: number, y: number, w: number, h: number): void;
   clip(rule?: CanvasFillRule): void;
+  /** IMAGEQUALITY (M1-19): high smooths a scaled bitmap, draft shows its pixels. */
+  imageSmoothingEnabled: boolean;
   setLineDash(segments: number[]): void;
   createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient;
   createRadialGradient(
@@ -276,6 +278,13 @@ function imageFrames(model: DocumentModel): ImageFrames {
   return { image, wipeout };
 }
 
+/** IMAGEQUALITY from the drawing's RASTERVARIABLES; high when the drawing has none. */
+function imageQuality(model: DocumentModel): 'draft' | 'high' {
+  for (const o of model.objects.values())
+    if (o.type === 'RASTERVARIABLES') return (o as RasterVariables).quality;
+  return 'high';
+}
+
 function touchesFrames(c: KeyedChanges<NonGraphicalObject> | undefined): boolean {
   if (!c) return false;
   return (
@@ -311,6 +320,8 @@ export class Canvas2DRenderer implements Renderer {
     {};
   readonly #createLayer: () => Surface;
   readonly #images: ((definition: Handle) => RasterPixels | undefined) | undefined;
+  /** IMAGEQUALITY from RASTERVARIABLES; AutoCAD's initial value is high. */
+  #imageQuality: 'draft' | 'high' = 'high';
   /** Bitmap → its adjusted layers, by setting, colour and background. */
   #bitmaps = new WeakMap<RasterPixels, Map<string, Surface>>();
   /** How INSERTs and dimensions in the block shown expand (M1-14, M1-15). */
@@ -377,6 +388,7 @@ export class Canvas2DRenderer implements Renderer {
       };
     }
     this.#tessellate.frames = imageFrames(this.#model);
+    this.#imageQuality = imageQuality(this.#model);
     if (o.patterns?.length) this.#tessellate.patterns = patternLibrary(o.patterns);
     this.#blockSource = {
       model: this.#model,
@@ -443,6 +455,11 @@ export class Canvas2DRenderer implements Renderer {
     this.#transientDirty = true;
   }
 
+  /** Redraws the scene on the next frame: something it draws from changed (a bitmap, M1-19). */
+  invalidate(): void {
+    this.#sceneDirty = true;
+  }
+
   apply(cs: ChangeSet): void {
     const e = cs.entities;
     for (const r of e?.removed ?? []) this.#forget(r.entity);
@@ -485,7 +502,10 @@ export class Canvas2DRenderer implements Renderer {
       });
     }
     const frames = touchesFrames(cs.objects);
-    if (frames) this.#tessellate.frames = imageFrames(this.#model);
+    if (frames) {
+      this.#tessellate.frames = imageFrames(this.#model);
+      this.#imageQuality = imageQuality(this.#model);
+    }
     // A layer, linetype, text style or LTSCALE change can restyle or hide any entity, and an
     // IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the whole block.
     if (
@@ -1044,6 +1064,8 @@ export class Canvas2DRenderer implements Renderer {
     const layer = this.#bitmap(pixels, im, color);
     ctx.save();
     ctx.clip(prim.evenOdd ? 'evenodd' : 'nonzero');
+    // AutoCAD documents draft as lower quality and faster; drawing pixels unsmoothed is ours.
+    ctx.imageSmoothingEnabled = this.#imageQuality === 'high';
     // Bitmap pixels → the image's stated pixel grid → world → device.
     const sx = im.width / pixels.width;
     const sy = im.height / pixels.height;

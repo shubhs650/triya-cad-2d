@@ -4,7 +4,7 @@
 
 import type { ChangeSet, EntityId } from '@triya/engine';
 import type { RenderDocument } from './session';
-import type { RenderPrimitive, RenderStyle, ViewTransform } from './types';
+import type { RasterPixels, RenderPrimitive, RenderStyle, ViewTransform } from './types';
 
 export type HostMessage =
   | {
@@ -28,6 +28,8 @@ export type HostMessage =
   | { readonly type: 'style'; readonly style: RenderStyle }
   | { readonly type: 'patterns'; readonly sources: readonly string[] }
   | { readonly type: 'frame' }
+  /** An IMAGEDEF's decoded bitmap, its pixel buffer transferred; null forgets it (M1-19). */
+  | { readonly type: 'image'; readonly definition: string; readonly pixels: RasterPixels | null }
   | {
       readonly type: 'hitTest';
       readonly id: number;

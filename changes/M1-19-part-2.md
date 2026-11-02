@@ -1,0 +1,1 @@
+- M1-19 part 2 (#94): BMP, TIFF, PNG, JPEG and GIF image files decode for drawing (TIFF via UTIF.js), bitmaps reach the render worker without copying, and IMAGEQUALITY draft shows image pixels unsmoothed.

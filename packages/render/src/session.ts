@@ -23,7 +23,7 @@ import {
 } from '@triya/engine';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
-import type { RenderStyle } from './types';
+import type { RasterPixels, RenderStyle } from './types';
 
 /** What the render side needs to build its replica: the engine's init and the block shown. */
 export interface RenderDocument {
@@ -61,6 +61,8 @@ export class RenderSession {
   readonly model: DocumentModel;
   readonly index: SpatialIndex;
   readonly renderer: Canvas2DRenderer;
+  /** Decoded bitmaps by IMAGEDEF handle, as the app sends them (M1-19). */
+  readonly #images = new Map<Handle, RasterPixels>();
 
   constructor(o: RenderSessionOptions) {
     const { init, block } = o.document;
@@ -77,7 +79,18 @@ export class RenderSession {
       ...(o.paint && { paint: o.paint }),
       ...(o.now && { now: o.now }),
       ...(o.requestIdle && { requestIdle: o.requestIdle }),
+      images: (h) => this.#images.get(h),
     });
+  }
+
+  /**
+   * An IMAGEDEF's decoded bitmap, or undefined to forget it (file gone or unloaded): images
+   * using it redraw on the next frame.
+   */
+  setImage(definition: Handle, pixels: RasterPixels | undefined): void {
+    if (pixels) this.#images.set(definition, pixels);
+    else this.#images.delete(definition);
+    this.renderer.invalidate();
   }
 
   /**
