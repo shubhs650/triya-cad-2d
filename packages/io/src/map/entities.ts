@@ -662,6 +662,8 @@ const PROP_MARGINS: readonly ['left' | 'top' | 'right' | 'bottom', number][] = [
   ['right', 0x1000],
   ['bottom', 0x2000],
 ];
+/** The ACI of the colour method None. */
+const ACI_NONE = 257;
 /** AcDb::GridProperty bits of a border override. */
 const BORDER_LINEWEIGHT = 0x02;
 const BORDER_COLOR = 0x08;
@@ -669,11 +671,11 @@ const BORDER_VISIBILITY = 0x10;
 
 /**
  * A cell background colour. DWG R2010+ states "no fill" as the colour method None (0xC8),
- * which acad-ts reads as true-colour black, so black is taken as no fill (AutoCAD's default
- * cell background is None; a black RGB fill is not told apart, see M1-75).
+ * which acad-ts reads as ACI 257 (AcCmEntityColor::kACInone, patch 0120), as AutoCAD's DXF
+ * saves state it (CELLSTYLE 62 = 257). AutoCAD's default cell background is None.
  */
 function background(c: AcadColor): Color | null {
-  return c.isTrueColor && c.trueColor === 0 ? null : mapColor(c);
+  return c.index === ACI_NONE ? null : mapColor(c);
 }
 
 function edge(d: FormatDraft, side: Edge): Mutable<TableBorderFormat> {

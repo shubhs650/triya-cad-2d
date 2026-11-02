@@ -19,6 +19,9 @@ export class DwgStreamReaderAC18 extends DwgStreamReaderAC15 {
 
 		if (rgb === 0xC0000000) {
 			color = Color.byLayer;
+		} else if (arr[3] === 0xC8) {
+			// Colour method None (AcCmEntityColor::kNone): ACI 257, as DXF states it.
+			color = Color.byEntity;
 		} else if ((rgb & 0b0000_0001_0000_0000_0000_0000_0000_0000) !== 0) {
 			color = new Color(arr[0]);
 		} else {
@@ -60,7 +63,8 @@ export class DwgStreamReaderAC18 extends DwgStreamReaderAC15 {
 				arr[1] = (rgb >>> 8) & 0xFF;
 				arr[2] = (rgb >>> 16) & 0xFF;
 				arr[3] = (rgb >>> 24) & 0xFF;
-				color = Color.fromTrueColor((arr[2] << 16) | (arr[1] << 8) | arr[0]);
+				// Colour method None (0xC8) is ACI 257, not true-colour black.
+				color = arr[3] === 0xC8 ? Color.byEntity : Color.fromTrueColor((arr[2] << 16) | (arr[1] << 8) | arr[0]);
 			} else {
 				color = new Color(size & 0b111111111111);
 			}
