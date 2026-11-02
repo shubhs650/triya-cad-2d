@@ -124,7 +124,7 @@ export { Solid3D } from './Entities/Solid3D.js';
 export { Spline } from './Entities/Spline.js';
 export { SplineFlags } from './Entities/SplineFlags.js';
 export { SplineFlags1 } from './Entities/SplineFlags1.js';
-export { TableEntityBorderType, BreakFlowDirection, BreakOptionFlags, CellAlignmentType, CellEdgeFlags, CellStyleClass, CellStyleType, CellType, MarginFlags, TableBorderPropertyFlags, TableCellContentLayoutFlags, TableCellContentType, TableCellStateFlags, TableCellStylePropertyFlags, TableEntityValueUnitType, BorderOverrideFlags, TableOverrideFlags, CellOverrideFlags, TableAttribute, CustomDataEntry, CellContentGeometry, CellRange, ContentFormat, CellBorder, CellContent, CellStyle, TableEntityCell, TableEntityColumn, TableEntityRow, BreakHeight, BreakData, BreakRowRange, TableEntity, TableContent } from './Entities/TableEntity.js';
+export { TableEntityBorderType, BreakFlowDirection, BreakOptionFlags, CellAlignmentType, CellEdgeFlags, CellStyleClass, CellStyleType, CellType, MarginFlags, TableBorderPropertyFlags, TableCellContentLayoutFlags, TableCellContentType, TableCellStateFlags, TableCellStylePropertyFlags, TableEntityValueUnitType, BorderOverrideFlags, TableOverrideFlags, CellOverrideFlags, TableAttribute, CustomDataEntry, CellContentGeometry, CellRange, ContentFormat, CellBorder, CellContent, CellStyle, TableEntityCell, TableEntityColumn, TableEntityRow, BreakHeight, BreakData, BreakRowRange, TableEntity, TableContent, TableRowTypeOverrides, TableStyleOverrides } from './Entities/TableEntity.js';
 export { TextEntity } from './Entities/TextEntity.js';
 export { TextHorizontalAlignment } from './Entities/TextHorizontalAlignment.js';
 export { TextMirrorFlag } from './Entities/TextMirrorFlag.js';

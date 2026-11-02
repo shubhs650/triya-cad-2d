@@ -779,7 +779,7 @@ export interface TableBorderFormat {
  * DXF and DWG up to R2007 give one flag word per cell (DXF 177 / 91) with the values in 170,
  * 63, 64, 283, 7, 140 and 27x / 6x, already folded from rows and columns; DWG R2010 and later
  * give cell, row and column cell styles and per-content formats, which the mapper folds the same
- * way (content over cell over row over column). Table-wide overrides are not included.
+ * way (content over cell over row over column). Table-wide overrides are `TableGeometry.overrides`.
  */
 export interface TableCellFormat {
   /** 1 top left … 9 bottom right (DXF 170). */
@@ -810,6 +810,29 @@ export interface TableCellFormat {
   };
 }
 
+/** What a table overrides of its style for one row type (title, header or data rows). */
+export type TableRowFormat = Pick<
+  TableCellFormat,
+  'alignment' | 'textStyle' | 'textHeight' | 'contentColor' | 'background'
+>;
+
+/**
+ * What a table overrides of its table style for the whole table (M1-77), as against one cell
+ * (`TableCell.format`). DXF and DWG up to R2007 state a horizontal and a vertical cell margin
+ * (DXF 40 / 41, the left and right, top and bottom margins here) and per row type the text
+ * style, height, alignment, content colour and fill (93 and the values after it). DWG R2010+
+ * states the margins as the table's own cell style and the row-type values as each row's: a
+ * value every row of a type overrides alike is that type's. Each row type's values are also
+ * in the format of each of its cells, which is what a cell is drawn with. Border overrides
+ * (94–96) are not mapped yet (M1-81).
+ */
+export interface TableOverrides {
+  readonly margins?: TableCellFormat['margins'];
+  readonly title?: TableRowFormat;
+  readonly header?: TableRowFormat;
+  readonly data?: TableRowFormat;
+}
+
 /**
  * ACAD_TABLE. The anonymous `*T` block it references draws the table as AutoCAD last
  * regenerated it; the rows, columns and cells are its editable content. The insertion point
@@ -830,6 +853,8 @@ export interface TableGeometry extends PlanarProps {
   readonly columnWidths: readonly number[];
   /** `cells[row][column]`. */
   readonly cells: readonly (readonly TableCell[])[];
+  /** Table-wide overrides of the table style; absent when none. */
+  readonly overrides?: TableOverrides;
 }
 
 /**

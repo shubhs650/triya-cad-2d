@@ -36,6 +36,8 @@ import {
   type Color as AcadColor,
   type ContentFormat,
   type TableEntityCell,
+  type TableRowTypeOverrides,
+  type TableStyleOverrides,
   CadWipeoutBase,
   PdfUnderlay,
   MLine,
@@ -85,6 +87,8 @@ import type {
   TableCell,
   TableCellFormat,
   TableGeometry,
+  TableOverrides,
+  TableRowFormat,
   ImageGeometry,
   UnderlayGeometry,
   MLineGeometry,
@@ -783,6 +787,95 @@ function cellFormat(
   return Object.keys(format).length > 0 ? format : undefined;
 }
 
+/** The row format properties, in the order they are listed in `TableRowFormat`. */
+function rowFormat(d: FormatDraft): TableRowFormat | undefined {
+  const f: Mutable<TableRowFormat> = {};
+  if (d.alignment !== undefined) f.alignment = d.alignment;
+  if (d.textStyle !== undefined) f.textStyle = d.textStyle;
+  if (d.textHeight !== undefined) f.textHeight = d.textHeight;
+  if (d.contentColor !== undefined) f.contentColor = d.contentColor;
+  if (d.background !== undefined) f.background = d.background;
+  return Object.keys(f).length > 0 ? f : undefined;
+}
+
+/** The table override flag word (DXF 93, DWG up to R2007; ODA spec, TABLE). */
+const TABLE_HORIZONTAL_MARGIN = 0x08;
+const TABLE_VERTICAL_MARGIN = 0x10;
+/** The title row's bit of each per-row-type property; the header's is one up, the data's two. */
+const ROW_CONTENT_COLOR = 0x20;
+const ROW_FILL_NONE = 0x100;
+const ROW_FILL_COLOR = 0x800;
+const ROW_ALIGNMENT = 0x4000;
+const ROW_TEXT_STYLE = 0x20000;
+const ROW_TEXT_HEIGHT = 0x100000;
+const ROW_TYPES = ['title', 'header', 'data'] as const;
+
+/** The table-wide overrides as DXF and DWG up to R2007 state them (93 and its values). */
+function statedOverrides(o: TableStyleOverrides): TableOverrides {
+  const flags = o.flags;
+  const h = flags & TABLE_HORIZONTAL_MARGIN ? o.horizontalCellMargin : undefined;
+  const v = flags & TABLE_VERTICAL_MARGIN ? o.verticalCellMargin : undefined;
+  const margins = {
+    ...(h !== undefined ? { left: h } : {}),
+    ...(v !== undefined ? { top: v } : {}),
+    ...(h !== undefined ? { right: h } : {}),
+    ...(v !== undefined ? { bottom: v } : {}),
+  };
+  const out: Mutable<TableOverrides> = Object.keys(margins).length > 0 ? { margins } : {};
+  ROW_TYPES.forEach((type, k) => {
+    const r: TableRowTypeOverrides = o[type];
+    const d: FormatDraft = { borders: {}, margins: {} };
+    if (flags & (ROW_ALIGNMENT << k)) d.alignment = r.alignment;
+    const style = flags & (ROW_TEXT_STYLE << k) ? ref(r.textStyle) : undefined;
+    if (style) d.textStyle = style;
+    if (flags & (ROW_TEXT_HEIGHT << k)) d.textHeight = r.textHeight;
+    if (flags & (ROW_CONTENT_COLOR << k)) d.contentColor = mapColor(r.contentColor);
+    if (flags & (ROW_FILL_COLOR << k)) d.background = mapColor(r.fillColor);
+    if (flags & (ROW_FILL_NONE << k) && r.fillNone) d.background = null;
+    const f = rowFormat(d);
+    if (f) out[type] = f;
+  });
+  return out;
+}
+
+/**
+ * The table-wide overrides of a DWG R2010+ table: the margins are the table's own cell style;
+ * a row type's values are what every row of that type overrides alike in its cell style (the
+ * row's style id names the TABLESTYLE cell style `_TITLE`, `_HEADER` or `_DATA`). AutoCAD's DXF
+ * save of the corpus table states the same; how it treats rows of a type that differ is not
+ * documented, and such a value is left to the rows' cells, which carry it anyway.
+ */
+function contentOverrides(t: TableEntity): TableOverrides {
+  const table: FormatDraft = { borders: {}, margins: {} };
+  applyCellStyle(table, t.cellStyleOverride);
+  const out: Mutable<TableOverrides> =
+    Object.keys(table.margins).length > 0 ? { margins: table.margins } : {};
+  const names = new Map((t.style?.cellStyles ?? []).map((c) => [c.id, c.name.toUpperCase()]));
+  const typeOf = (id: number) => {
+    const name = names.get(id);
+    const k = name ? ['_TITLE', '_HEADER', '_DATA'].indexOf(name) : id - 1;
+    return ROW_TYPES[k];
+  };
+  for (const type of ROW_TYPES) {
+    const formats = t.rows
+      .filter((r) => typeOf(r.styleId) === type)
+      .map((r) => {
+        const d: FormatDraft = { borders: {}, margins: {} };
+        applyCellStyle(d, r.cellStyleOverride);
+        return rowFormat(d) ?? {};
+      });
+    if (formats.length === 0) continue;
+    const [head, ...rest] = formats as [TableRowFormat, ...TableRowFormat[]];
+    const same = Object.fromEntries(
+      Object.entries(head).filter(([k, v]) =>
+        rest.every((f) => JSON.stringify(f[k as keyof TableRowFormat]) === JSON.stringify(v)),
+      ),
+    ) as TableRowFormat;
+    if (Object.keys(same).length > 0) out[type] = same;
+  }
+  return out;
+}
+
 /**
  * ACAD_TABLE: the insertion point is OCS (AcDbBlockReference), the horizontal direction WCS.
  * DXF states merges per cell (175/176 spans, 173 merged); DWG states the merged ranges, so the
@@ -827,6 +920,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
   );
   const style = ref(t.style);
   const block = ref(t.block);
+  const overrides = t.tableOverrides ? statedOverrides(t.tableOverrides) : contentOverrides(t);
   return {
     kind: 'ACAD_TABLE',
     ...(style ? { style } : {}),
@@ -836,6 +930,7 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
     rowHeights: t.rows.map((r) => r.height),
     columnWidths: t.columns.map((c) => c.width),
     cells,
+    ...(Object.keys(overrides).length > 0 ? { overrides } : {}),
     ...planar(pl, t.normal, t.insertPoint.z, 0),
   };
 }

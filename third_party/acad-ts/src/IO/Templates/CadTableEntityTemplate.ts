@@ -1,4 +1,4 @@
-import { TableEntity, TableEntityCell, CellType, CellContent, CellStyle, CellBorder, ContentFormat, TableAttribute } from '../../Entities/TableEntity.js';
+import { TableEntity, TableEntityCell, CellType, CellContent, CellStyle, CellBorder, ContentFormat, TableAttribute, TableRowTypeOverrides } from '../../Entities/TableEntity.js';
 import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
 import { CadInsertTemplate } from './CadInsertTemplate.js';
 import { CadValueTemplate } from './CadValueTemplate.js';
@@ -26,6 +26,9 @@ export class CadTableEntityTemplate extends CadInsertTemplate {
 
 	/** True from the table-wide override flag (93) until the first row height (141). */
 	readingTableOverrides: boolean = false;
+
+	/** The text styles of the table-wide overrides: a DWG handle or a DXF name, resolved on build. */
+	overrideTextStyles: [TableRowTypeOverrides, number | string][] = [];
 
 	nullHandle: number | null = null;
 
@@ -62,6 +65,11 @@ export class CadTableEntityTemplate extends CadInsertTemplate {
 			this.tableEntity.style = styleTemplate.cadObject as TableStyle;
 		} else {
 			this.tableEntity.style = builder.tryGetCadObject<TableStyle>(this.styleHandle);
+		}
+		for (const [row, style] of this.overrideTextStyles) {
+			row.textStyle = typeof style === 'number'
+				? builder.tryGetCadObject<TextStyle>(style)
+				: builder.tryGetTableEntry(style, TextStyle);
 		}
 
 		for (const cellTemplate of this.cadTableCellTemplates) {
