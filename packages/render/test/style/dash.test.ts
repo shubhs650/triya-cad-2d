@@ -84,6 +84,8 @@ describe('dashPath on a line', () => {
       dashes: [[along(0), along(10)]],
       dots: [],
       embeds: [],
+      spans: [[0, 10]],
+      dotsAt: [],
     });
   });
 });
@@ -139,6 +141,58 @@ describe('dashPath on polylines and closed paths', () => {
     ];
     const d = dashPolyline(sides, DASHED, 1, { plinegen: true, closed: true });
     expect(d.dashes).toHaveLength(5);
+  });
+});
+
+describe('spans along the path (M1-66)', () => {
+  const corner = [along(0), along(1), { x: 1, y: 1 }];
+
+  it('gives each dash as its start and end distance, and each dot as a distance', () => {
+    const d = dashPath([along(0), along(3)], DASHED, 1);
+    expect(d.spans).toHaveLength(d.dashes.length);
+    d.spans.forEach(([a, b], i) => {
+      expect(a).toBeCloseTo(d.dashes[i]![0]!.x, 12);
+      expect(b).toBeCloseTo(d.dashes[i]!.at(-1)!.x, 12);
+    });
+    const dots = dashPath([along(0), along(1)], DOTS, 1);
+    expect(dots.dotsAt.map((s) => s)).toEqual(dots.dots.map((p) => p.x));
+  });
+
+  it('spans a continuous path end to end', () => {
+    expect(dashPath([along(0), along(0.5)], DASHED, 1).spans).toEqual([[0, 0.5]]);
+    expect(dashPath([along(0), along(0)], DASHED, 1).spans).toEqual([]);
+  });
+
+  it('splits the joint dash of a closed path at the start point', () => {
+    const square = [along(0), along(1), { x: 1, y: 1 }, { x: 0, y: 1 }];
+    const d = dashPath(square, DASHED, 1, { closed: true });
+    expect(d.spans).toHaveLength(6);
+    expect(d.spans[0]![0]).toBeCloseTo(3.625, 12);
+    expect(d.spans[0]![1]).toBeCloseTo(4, 12);
+    expect(d.spans[1]![0]).toBe(0);
+    expect(d.spans[1]![1]).toBeCloseTo(0.375, 12);
+  });
+
+  it('measures PLINEGEN off spans along the whole polyline', () => {
+    const d = dashPolyline([corner.slice(0, 2), corner.slice(1)], DASHED, 1, { plinegen: false });
+    close(
+      d.spans.map((s) => [...s]),
+      [
+        [0, 0.375],
+        [0.625, 1],
+        [1, 1.375],
+        [1.625, 2],
+      ],
+    );
+    const on = dashPolyline([corner.slice(0, 2), corner.slice(1)], DASHED, 1, { plinegen: true });
+    close(
+      on.spans.map((s) => [...s]),
+      [
+        [0, 0.5],
+        [0.75, 1.25],
+        [1.5, 2],
+      ],
+    );
   });
 });
 

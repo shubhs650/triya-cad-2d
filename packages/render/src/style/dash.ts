@@ -32,6 +32,14 @@ export interface DashedPath {
   readonly dashes: readonly (readonly Vec2[])[];
   readonly dots: readonly Vec2[];
   readonly embeds: readonly EmbedPlacement[];
+  /**
+   * The pen-down runs as [start, end] distances along the path (M1-66, for drawing them on a
+   * wide polyline). A closed path's joint run is two spans: the one up to its end, then the
+   * one from its start. A continuous path is one span from 0 to its length.
+   */
+  readonly spans: readonly (readonly [number, number])[];
+  /** The dots as distances along the path. */
+  readonly dotsAt: readonly number[];
 }
 
 export interface DashOptions {
@@ -56,7 +64,14 @@ export function dashPath(
   const L = path.length;
   const lens = pattern.elements.map((e) => e.length * scale);
   const P = lens.reduce((s, v) => s + Math.abs(v), 0);
-  const solid = (): DashedPath => ({ solid: true, dashes: [path.points], dots: [], embeds: [] });
+  const solid = (): DashedPath => ({
+    solid: true,
+    dashes: [path.points],
+    dots: [],
+    embeds: [],
+    spans: L > 0 ? [[0, L]] : [],
+    dotsAt: [],
+  });
   if (lens.length === 0 || !(P > 0) || L === 0) return solid();
   if (options.pixelsPerUnit !== undefined && P * options.pixelsPerUnit < 1) return solid();
   const eps = 1e-9 * Math.max(L, P);
@@ -72,9 +87,16 @@ export function dashPath(
   const dashes: Vec2[][] = [];
   const dots: Vec2[] = [];
   const embeds: EmbedPlacement[] = [];
+  const spans: [number, number][] = [];
+  const dotsAt: number[] = [];
+  const dot = (a: number) => {
+    dots.push(path.at(a));
+    dotsAt.push(a);
+  };
   const run = (a: number, b: number) => {
-    if (b - a <= eps) dots.push(path.at(a));
-    else dashes.push(path.slice(a, b));
+    if (b - a <= eps) return dot(a);
+    dashes.push(path.slice(a, b));
+    spans.push([a, b]);
   };
   const place = (embed: PatternEmbed, s: number) => embeds.push(path.place(embed, s, scale));
 
@@ -82,8 +104,11 @@ export function dashPath(
   const endStart = phase + N * P;
   if (closed) {
     // The end and start dashes meet at the start point and draw as one.
-    if (d0 + r <= eps) dots.push(path.at(0));
-    else dashes.push([...path.slice(endStart, L), ...path.slice(0, startEnd).slice(1)]);
+    if (d0 + r <= eps) dot(0);
+    else {
+      dashes.push([...path.slice(endStart, L), ...path.slice(0, startEnd).slice(1)]);
+      spans.push([endStart, L], [0, startEnd]);
+    }
   } else {
     run(0, startEnd);
   }
@@ -103,7 +128,7 @@ export function dashPath(
     }
   }
   if (!closed) run(endStart, L);
-  return { solid: false, dashes, dots, embeds };
+  return { solid: false, dashes, dots, embeds, spans, dotsAt };
 }
 
 /**
@@ -125,11 +150,22 @@ export function dashPolyline(
     return dashPath(joined, pattern, scale, options);
   }
   const parts = segments.map((seg) => dashPath(seg, pattern, scale, { ...options, closed: false }));
+  // Spans and dots measured along the whole polyline, each segment from where it starts.
+  const spans: (readonly [number, number])[] = [];
+  const dotsAt: number[] = [];
+  let offset = 0;
+  parts.forEach((p, i) => {
+    for (const [a, b] of p.spans) spans.push([offset + a, offset + b]);
+    for (const d of p.dotsAt) dotsAt.push(offset + d);
+    offset += new Measured(segments[i]!).length;
+  });
   return {
     solid: parts.every((p) => p.solid),
     dashes: parts.flatMap((p) => p.dashes),
     dots: parts.flatMap((p) => p.dots),
     embeds: parts.flatMap((p) => p.embeds),
+    spans,
+    dotsAt,
   };
 }
 

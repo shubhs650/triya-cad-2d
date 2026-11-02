@@ -35,8 +35,12 @@ import {
   type PolylineVertex,
   polylineWidths,
   splineCurve,
+  wideCross,
   wideOutlines,
+  widePiece,
+  wideSegments,
   type SplineData,
+  type WideSegment,
   type WideVertex,
   type Vec2,
 } from '@triya/engine';
@@ -237,7 +241,10 @@ export function tessellate(
   if (g.kind === 'IMAGE' || g.kind === 'WIPEOUT') return imagePrimitives(g, paint, ctx.frames);
   if (g.kind === 'LWPOLYLINE' || g.kind === 'POLYLINE') {
     const widths = polylineWidths(g);
-    if (widths) return widePolyline(g.vertices, g.closed, widths, paint, ctx.fill ?? true);
+    if (widths) {
+      const dashed = paint.linetype && dashedWidePolyline(g, widths, paint, ctx);
+      return dashed || widePolyline(g.vertices, g.closed, widths, paint, ctx.fill ?? true);
+    }
   }
   const prims = exact(g, paint, ctx.patterns ?? PATTERNS);
   const lt = paint.linetype;
@@ -273,8 +280,7 @@ export function tessellate(
 
 /**
  * A polyline with widths (M1-46): each wide segment's outline (`wideOutlines`) filled, or
- * outlined with FILLMODE off, and the zero-width segments as the thin line. Wide polylines
- * draw continuous: dashing them is M1-66.
+ * outlined with FILLMODE off, and the zero-width segments as the thin line.
  */
 function widePolyline(
   vertices: readonly PolylineVertex[],
@@ -283,8 +289,20 @@ function widePolyline(
   paint: Paint,
   fill: boolean,
 ): RenderPrimitive[] {
+  const { outlines, thin } = wideParts(vertices, closed, widths, paint, fill);
+  return [outlines, thin].filter((x): x is PathPrimitive => x !== undefined);
+}
+
+/** `widePolyline`'s two primitives: the wide outlines and the thin segments, when any. */
+function wideParts(
+  vertices: readonly PolylineVertex[],
+  closed: boolean,
+  widths: readonly WideVertex[],
+  paint: Paint,
+  fill: boolean,
+): { outlines?: PathPrimitive; thin?: PathPrimitive } {
   const { fills, thin } = wideOutlines(widths, closed);
-  const out: RenderPrimitive[] = [];
+  const out: { outlines?: PathPrimitive; thin?: PathPrimitive } = {};
   if (fills.length > 0) {
     const path: number[] = [];
     for (const f of fills) {
@@ -292,7 +310,7 @@ function widePolyline(
       path.push(PATH_Z);
     }
     // Each outline is counter-clockwise, so overlapping mitres add up under nonzero.
-    out.push(fill ? { kind: 'fill', path, color: paint.color } : stroke(path, paint));
+    out.outlines = fill ? { kind: 'fill', path, color: paint.color } : stroke(path, paint);
   }
   if (thin.length > 0) {
     const path: number[] = [];
@@ -307,8 +325,114 @@ function widePolyline(
       path.push(...(i === last + 1 ? sub.slice(3) : sub));
       last = i;
     }
-    out.push(stroke(path, paint));
+    out.thin = stroke(path, paint);
   }
+  return out;
+}
+
+/**
+ * A wide polyline with a linetype (M1-66). AutoCAD fits the pattern to the centre line as it
+ * would the thin polyline (PLINEGEN through the vertices or per segment) and draws each dash
+ * as that stretch of the segment's tapered outline (`widePiece`), mitred where the dash runs
+ * through a vertex; on zero-width segments the dashes are thin. A dot is drawn as the cut
+ * across the width (AutoCAD documents neither; a zero-length piece of a filled outline is
+ * that cut, our reading). The whole outline stays beside the dashes as `continuous`, for
+ * picking in a gap and for the level of detail. Undefined when the polyline draws
+ * continuous (too short for one pattern, or past MAX_PERIODS).
+ */
+function dashedWidePolyline(
+  g: Extract<EntityGeometry, { kind: 'LWPOLYLINE' | 'POLYLINE' }>,
+  widths: readonly WideVertex[],
+  paint: Paint,
+  ctx: TessellateContext,
+): RenderPrimitive[] | undefined {
+  const lt = paint.linetype!;
+  const P = patternLength(lt.pattern) * lt.scale;
+  const segments = wideSegments(widths, g.closed);
+  const total = segments.reduce((s, x) => s + x.length, 0);
+  if (!(P > 0) || segments.length === 0 || total / P > MAX_PERIODS) return undefined;
+  const dashed = dashPolyline(
+    segments.map((x) => x.centre),
+    lt.pattern,
+    lt.scale,
+    { closed: g.closed, plinegen: g.plinegen ?? false },
+  );
+  if (dashed.solid) return undefined;
+  const { linetype: _, ...plain } = paint;
+  const fill = ctx.fill ?? true;
+  const starts: number[] = [];
+  segments.reduce((o, x) => (starts.push(o), o + x.length), 0);
+  const eps = 1e-9 * total;
+  const wide: number[] = [];
+  const thin: number[] = [];
+  for (const [a, b] of dashed.spans) {
+    let open = false;
+    segments.forEach((seg, i) => {
+      const lo = Math.max(a, starts[i]!);
+      const hi = Math.min(b, starts[i]! + seg.length);
+      if (hi - lo <= eps) return;
+      if (seg.wide) {
+        widePiece(seg, lo - starts[i]!, hi - starts[i]!).forEach((p, k) =>
+          wide.push(k === 0 ? PATH_M : PATH_L, p.x, p.y),
+        );
+        wide.push(PATH_Z);
+        open = false;
+        return;
+      }
+      // A dash running on through a vertex between thin segments stays one subpath.
+      centreSlice(seg, lo - starts[i]!, hi - starts[i]!).forEach((p, k) => {
+        if (k === 0 && open) return;
+        thin.push(k === 0 ? PATH_M : PATH_L, p.x, p.y);
+      });
+      open = true;
+    });
+  }
+  for (const d of dashed.dotsAt) {
+    // The last segment with a length starting at or before the dot.
+    let i = 0;
+    segments.forEach((x, k) => {
+      if (x.length > 0 && starts[k]! <= d) i = k;
+    });
+    const seg = segments[i]!;
+    const cut = wideCross(seg, d - starts[i]!);
+    // The round cap draws a zero-length segment as a dot as wide as the line.
+    const [p, q] = cut ?? [centreSlice(seg, d - starts[i]!, d - starts[i]!)[0]!];
+    thin.push(PATH_M, p!.x, p!.y, PATH_L, (q ?? p)!.x, (q ?? p)!.y);
+  }
+  const whole = wideParts(g.vertices, g.closed, widths, plain, fill);
+  const out: RenderPrimitive[] = [];
+  if (wide.length > 0 && whole.outlines) {
+    const dashes: PathPrimitive = fill
+      ? { kind: 'fill', path: wide, color: paint.color }
+      : stroke(wide, plain);
+    out.push({ ...dashes, continuous: whole.outlines.path, patternLength: P });
+  }
+  if (thin.length > 0) {
+    // Dots across wide segments ride here too; with no thin segment the continuous stroke is
+    // empty, and the outlines above draw and pick the whole polyline.
+    out.push({ ...stroke(thin, plain), continuous: whole.thin?.path ?? [], patternLength: P });
+  }
+  if (dashed.embeds.length > 0 && ctx.text)
+    out.push(...linetypeEmbedPrimitives(dashed.embeds, plain, ctx.text));
+  return out;
+}
+
+/** The centre line of a segment between two distances along it. */
+function centreSlice(seg: WideSegment, a: number, b: number): Vec2[] {
+  const at = (d: number): Vec2 => {
+    let k = 0;
+    while (k < seg.at.length - 2 && seg.at[k + 1]! < d) k++;
+    const span = seg.at[k + 1]! - seg.at[k]!;
+    const t = span > 0 ? Math.max(0, Math.min(1, (d - seg.at[k]!) / span)) : 0;
+    const p = seg.centre[k]!;
+    const q = seg.centre[k + 1]!;
+    return { x: p.x + (q.x - p.x) * t, y: p.y + (q.y - p.y) * t };
+  };
+  const out = [at(a)];
+  for (let k = 1; k < seg.centre.length - 1; k++) {
+    if (seg.at[k]! > a && seg.at[k]! < b) out.push(seg.centre[k]!);
+  }
+  out.push(at(b));
   return out;
 }
 
