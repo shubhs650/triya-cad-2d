@@ -9,8 +9,8 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | Type | Read | Render | Edit | Write | Test file |
 |---|---|---|---|---|---|
 | LINE | ✓ | | | | |
-| XLINE | ✓ | | | | |
-| RAY | ✓ | | | | |
+| XLINE | ✓ (drawn clipped to the view, its linetype laid out from the base point both ways so dashes stay put while panning, M1-45; text and shapes in the linetype not drawn) | | | | |
+| RAY | ✓ (drawn clipped to the view, its linetype laid out from the base point onward, M1-45; text and shapes in the linetype not drawn) | | | | |
 | CIRCLE | ✓ | | | | |
 | ARC | ✓ | | | | |
 | ELLIPSE | ✓ | | | | |
