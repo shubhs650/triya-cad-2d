@@ -1,5 +1,5 @@
 // TriyaToAcad on the public corpus (M1-05, M1-75): a markup-style edit of every entity Triya can
-// write (move it; grow circles and arcs, turn arcs, text and blocks) must save so that the edited
+// write (move it; grow circles and arcs, turn arcs, text, blocks and feature control frames) must save so that the edited
 // entities map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles reports nothing (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
@@ -48,6 +48,59 @@ function movedText<T extends TextFields>(g: T): T {
     ...(g.alignmentPoint ? { alignmentPoint: move(g.alignmentPoint) } : {}),
     rotation: turn(g.rotation),
   };
+}
+
+type DimensionGeometry = Extract<
+  EntityGeometry,
+  { kind: 'DIMENSION' | 'ARC_DIMENSION' | 'LARGE_RADIAL_DIMENSION' }
+>;
+
+/** MOVE of a dimension: every point (its block, the drawn graphics, is not regenerated). */
+function movedDimension(g: DimensionGeometry): EntityGeometry {
+  const shared = { definitionPoint: move(g.definitionPoint), textPosition: move(g.textPosition) };
+  switch (g.dimType) {
+    case 'linear':
+    case 'aligned':
+    case 'angular3pt':
+      return {
+        ...g,
+        ...shared,
+        first: move(g.first),
+        second: move(g.second),
+        ...(g.dimType === 'angular3pt' ? { vertex: move(g.vertex) } : {}),
+      } as EntityGeometry;
+    case 'angular':
+      return {
+        ...g,
+        ...shared,
+        line1Start: move(g.line1Start),
+        line1End: move(g.line1End),
+        line2Start: move(g.line2Start),
+        arcPoint: move(g.arcPoint),
+      };
+    case 'radius':
+    case 'diameter':
+      return { ...g, ...shared, chordPoint: move(g.chordPoint) };
+    case 'ordinate':
+      return { ...g, ...shared, feature: move(g.feature), leaderEnd: move(g.leaderEnd) };
+    case 'jogged':
+      return {
+        ...g,
+        ...shared,
+        chordPoint: move(g.chordPoint),
+        overrideCenter: move(g.overrideCenter),
+        jogPoint: move(g.jogPoint),
+      };
+    case 'arc':
+      return {
+        ...g,
+        ...shared,
+        first: move(g.first),
+        second: move(g.second),
+        center: move(g.center),
+        ...(g.leader ? { leader: [move(g.leader[0]), move(g.leader[1])] as const } : {}),
+      };
+  }
 }
 
 /** The edit: what MOVE, SCALE (about the centre) and ROTATE (in place) would leave. */
@@ -108,6 +161,14 @@ function edited(g: EntityGeometry): EntityGeometry {
         vertices: g.vertices.map((v) => ({ ...v, ...move(v) })),
         ...(g.frame ? { frame: g.frame.map(move) } : {}),
       };
+    case 'DIMENSION':
+    case 'ARC_DIMENSION':
+    case 'LARGE_RADIAL_DIMENSION':
+      return movedDimension(g);
+    case 'LEADER':
+      return { ...g, vertices: g.vertices.map(move) };
+    case 'TOLERANCE':
+      return { ...g, position: move(g.position), rotation: turn(g.rotation) };
     default:
       throw new Error(`no edit for ${g.kind}`);
   }

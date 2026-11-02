@@ -4,8 +4,9 @@
 // model (and every unchanged value, to the bit) stays as the file had it (§6.2 rule 2).
 //
 // Geometry writers exist for the types markup creates and edits first and, since M1-75 parts 1
-// and 2, SOLID, TRACE, 3DFACE, SPLINE, POLYLINE, ATTDEF and INSERT with its ATTRIBs; the others report
-// the change as unsupported (roadmap M1-75) rather than dropping it.
+// to 3, SOLID, TRACE, 3DFACE, SPLINE, POLYLINE, ATTDEF, INSERT with its ATTRIBs, every
+// dimension, LEADER and TOLERANCE; the others report the change as unsupported (roadmap M1-75)
+// rather than dropping it.
 
 import type { AttributeBase, Vertex } from '@node-projects/acad-ts';
 import {
@@ -15,11 +16,25 @@ import {
   BlockRecord,
   Circle,
   Color as AcadColor,
+  DimensionAligned,
+  DimensionAngular2Line,
+  DimensionAngular3Pt,
+  DimensionArc,
+  DimensionDiameter,
+  DimensionLinear,
+  DimensionOrdinate,
+  DimensionRadialLarge,
+  DimensionRadius,
+  DimensionStyle,
   Ellipse,
+  Entity as AcadEntity,
   Face3D,
+  HookLineDirection,
   Insert,
   KnotParametrization,
   Layer,
+  Leader,
+  LeaderPathType,
   Line,
   LineType,
   LwPolyline,
@@ -39,6 +54,7 @@ import {
   TextColumnData,
   TextEntity,
   TextStyle,
+  Tolerance,
   Transparency as AcadTransparency,
   Vertex2D,
   Vertex3D,
@@ -46,7 +62,7 @@ import {
   XLine,
   XY,
   XYZ,
-  type Entity as AcadEntity,
+  type Dimension,
 } from '@node-projects/acad-ts';
 import type {
   ArcGeometry,
@@ -54,6 +70,7 @@ import type {
   AttributeFields,
   CircleGeometry,
   Color,
+  DimensionGeometry,
   EllipseGeometry,
   Entity,
   EntityGeometry,
@@ -63,6 +80,7 @@ import type {
   InsertAttribute,
   InsertGeometry,
   KnotParameterization,
+  LeaderGeometry,
   LineGeometry,
   LinetypeRef,
   Lineweight,
@@ -76,6 +94,7 @@ import type {
   SplineGeometry,
   TextFields,
   TextGeometry,
+  ToleranceGeometry,
   Transparency,
   Vec2,
   Vec3,
@@ -931,6 +950,251 @@ function writeAttributes(
   }
 }
 
+// ── DIMENSION, ARC_DIMENSION, LARGE_RADIAL_DIMENSION ───────────────────────────────────────
+
+type DimType = DimensionGeometry['dimType'];
+
+/** Each dimension type is its own acad-ts class (and DWG object), so the type cannot change. */
+const DIMENSION_CLASSES: Record<DimType, () => Dimension> = {
+  linear: () => new DimensionLinear(),
+  aligned: () => new DimensionAligned(),
+  angular: () => new DimensionAngular2Line(),
+  angular3pt: () => new DimensionAngular3Pt(),
+  radius: () => new DimensionRadius(),
+  diameter: () => new DimensionDiameter(),
+  ordinate: () => new DimensionOrdinate(),
+  jogged: () => new DimensionRadialLarge(),
+  arc: () => new DimensionArc(),
+};
+
+const dimStyleProblems = (r: Resolver, style: string): string[] =>
+  resolve(r, style, DimensionStyle) ? [] : [`dimension style ${style} does not exist`];
+
+/** An OCS angle (DXF 50–53) under −Z is the WCS angle π − θ, and back (map/entities.ts). */
+const ocsAngle = (a: number, pl: Plane): number => (pl === 'down' ? norm(Math.PI - a) : a);
+
+const dimensionWriter: Writer<DimensionGeometry> = {
+  // `createAcadEntity` picks the class by type; this is only the fallback the table needs.
+  create: () => new DimensionLinear(),
+  problems(r, before, g) {
+    const out = planeProblems(g);
+    if (before && before.dimType !== g.dimType) {
+      out.push(`a change from a ${before.dimType} to a ${g.dimType} dimension`);
+    }
+    if (!before || before.style !== g.style) out.push(...dimStyleProblems(r, g.style));
+    if (!before || before.block !== g.block) {
+      // AutoCAD draws a dimension from its block and does not make a missing one up, so a
+      // dimension without one would show nothing. A new block is the dimension engine's (M3).
+      if (g.block === undefined) out.push('a dimension without its block');
+      else if (!insertable(r, g.block)) out.push(`block ${g.block} cannot be a dimension's block`);
+    }
+    return out;
+  },
+  write(r, e, before, g) {
+    const dim = e as Dimension;
+    const d = differ(before, g);
+    const pl = plane(g.normal);
+    // 10 and 13–15 are WCS: moved in plan, a point keeps its Z until the elevation is edited
+    // (as LINE does); 11 and 16 are OCS, at the OCS elevation the mapping reads from 11.
+    const elevation = d('elevation');
+    const wcs = (p: Vec2, old: XYZ): XYZ =>
+      new XYZ(p.x, p.y, elevation ? (g.elevation ?? 0) : old.z);
+    const ocs = (p: Vec2, old: XYZ): XYZ =>
+      new XYZ(ocsX(p.x, pl), p.y, elevation ? ocsZ(g.elevation, pl) : old.z);
+    if (d('style')) dim.style = resolve(r, g.style, DimensionStyle)!;
+    if (d('block')) dim.block = g.block ? insertable(r, g.block)! : null;
+    if (d('definitionPoint') || elevation) {
+      dim.definitionPoint = wcs(g.definitionPoint, dim.definitionPoint);
+    }
+    if (d('textPosition') || elevation)
+      dim.textMiddlePoint = ocs(g.textPosition, dim.textMiddlePoint);
+    if (d('textUserPositioned')) dim.isTextUserDefinedLocation = g.textUserPositioned;
+    if (d('text')) dim.text = g.text;
+    if (d('textRotation')) dim.textRotation = ocsAngle(g.textRotation, pl);
+    if (d('horizontalDirection')) dim.horizontalDirection = ocsAngle(g.horizontalDirection, pl);
+    if (d('attachment')) dim.attachmentPoint = g.attachment;
+    if (d('lineSpacingStyle')) dim.lineSpacingStyle = g.lineSpacingStyle;
+    if (d('lineSpacing')) dim.lineSpacingFactor = g.lineSpacing;
+    if (d('flipArrows')) {
+      dim.flipArrow1 = g.flipArrows?.[0] ?? false;
+      dim.flipArrow2 = g.flipArrows?.[1] ?? false;
+    }
+    if (d('normal')) dim.normal = xyz(g.normal);
+    writeDimensionPoints(dim, before, g, wcs, ocs, elevation, pl);
+  },
+};
+
+/** The points and values of each dimension type (the inverse of map/entities.ts). */
+function writeDimensionPoints(
+  dim: Dimension,
+  before: DimensionGeometry | undefined,
+  g: DimensionGeometry,
+  wcs: (p: Vec2, old: XYZ) => XYZ,
+  ocs: (p: Vec2, old: XYZ) => XYZ,
+  elevation: boolean,
+  pl: Plane,
+): void {
+  const d = differ(before as typeof g | undefined, g) as (...keys: string[]) => boolean;
+  const moved = (k: string): boolean => d(k) || elevation;
+  switch (g.dimType) {
+    case 'linear':
+    case 'aligned': {
+      const a = dim as DimensionAligned;
+      if (moved('first')) a.firstPoint = wcs(g.first, a.firstPoint);
+      if (moved('second')) a.secondPoint = wcs(g.second, a.secondPoint);
+      if (d('oblique')) a.extLineRotation = g.oblique === undefined ? 0 : ocsAngle(g.oblique, pl);
+      if (a instanceof DimensionLinear && d('rotation')) a.rotation = ocsAngle(g.rotation ?? 0, pl);
+      return;
+    }
+    case 'angular': {
+      const a = dim as DimensionAngular2Line;
+      if (moved('line1Start')) a.firstPoint = wcs(g.line1Start, a.firstPoint);
+      if (moved('line1End')) a.secondPoint = wcs(g.line1End, a.secondPoint);
+      if (moved('line2Start')) a.angleVertex = wcs(g.line2Start, a.angleVertex);
+      if (moved('arcPoint')) a.dimensionArc = ocs(g.arcPoint, a.dimensionArc);
+      return;
+    }
+    case 'angular3pt': {
+      const a = dim as DimensionAngular3Pt;
+      if (moved('vertex')) a.angleVertex = wcs(g.vertex, a.angleVertex);
+      if (moved('first')) a.firstPoint = wcs(g.first, a.firstPoint);
+      if (moved('second')) a.secondPoint = wcs(g.second, a.secondPoint);
+      return;
+    }
+    case 'radius':
+    case 'diameter': {
+      const a = dim as DimensionRadius | DimensionDiameter;
+      if (moved('chordPoint')) a.angleVertex = wcs(g.chordPoint, a.angleVertex);
+      if (d('leaderLength')) a.leaderLength = g.leaderLength;
+      return;
+    }
+    case 'ordinate': {
+      const a = dim as DimensionOrdinate;
+      if (d('axis')) a.isOrdinateTypeX = g.axis === 'x';
+      if (moved('feature')) a.featureLocation = wcs(g.feature, a.featureLocation);
+      if (moved('leaderEnd')) a.leaderEndpoint = wcs(g.leaderEnd, a.leaderEndpoint);
+      return;
+    }
+    case 'jogged': {
+      const a = dim as DimensionRadialLarge;
+      if (moved('chordPoint')) a.chordPoint = wcs(g.chordPoint, a.chordPoint);
+      if (moved('overrideCenter')) a.overrideCenter = wcs(g.overrideCenter, a.overrideCenter);
+      if (moved('jogPoint')) a.jogPoint = wcs(g.jogPoint, a.jogPoint);
+      if (d('leaderLength')) a.leaderLength = g.leaderLength;
+      return;
+    }
+    case 'arc': {
+      const a = dim as DimensionArc;
+      if (moved('first')) a.firstPoint = wcs(g.first, a.firstPoint);
+      if (moved('second')) a.secondPoint = wcs(g.second, a.secondPoint);
+      if (moved('center')) a.center = wcs(g.center, a.center);
+      if (d('startAngle')) a.startAngle = g.startAngle;
+      if (d('endAngle')) a.endAngle = g.endAngle;
+      if (d('partial')) a.isPartial = g.partial;
+      if (moved('leader')) {
+        // AutoCAD writes both leader points whether or not 71 says there is a leader; one that
+        // goes keeps its last points.
+        a.hasLeader = g.leader !== undefined;
+        if (g.leader) {
+          a.leaderPoint1 = wcs(g.leader[0], a.leaderPoint1);
+          a.leaderPoint2 = wcs(g.leader[1], a.leaderPoint2);
+        }
+      }
+      return;
+    }
+  }
+}
+
+// ── LEADER, TOLERANCE ──────────────────────────────────────────────────────────────────────
+
+/**
+ * acad-ts has no hook line flag of its own: it writes DXF 75 exactly when the leader has more
+ * than one vertex, an annotation type other than none (3) and a horizontal direction.
+ */
+const writesHookline = (g: LeaderGeometry): boolean =>
+  g.vertices.length > 1 &&
+  g.creationType !== 3 &&
+  Math.hypot(g.horizontalDirection.x, g.horizontalDirection.y) > 0;
+
+const leaderWriter: Writer<LeaderGeometry> = {
+  create: () => new Leader(),
+  problems(r, before, g) {
+    const out = planeProblems(g);
+    if (!before || before.style !== g.style) out.push(...dimStyleProblems(r, g.style));
+    const d = differ(before, g);
+    // An annotation the save adds is not an object of the file yet (left in M1-75).
+    if (d('annotation') && g.annotation && !resolve(r, g.annotation, AcadEntity)) {
+      out.push(`annotation ${g.annotation} is not an entity of the drawing`);
+    }
+    if (
+      d('vertices', 'creationType', 'hookline', 'horizontalDirection') &&
+      (g.hookline !== undefined) !== writesHookline(g)
+    ) {
+      out.push(g.hookline ? 'a hook line acad-ts cannot write' : 'a leader without its hook line');
+    }
+    return out;
+  },
+  write(r, e, before, g) {
+    const l = e as Leader;
+    const d = differ(before, g);
+    // Vertices and 211–213 are WCS and mapped in plan: each keeps its Z (the mapping reads the
+    // elevation from the first vertex) until the elevation itself is edited.
+    const elevation = d('elevation');
+    if (d('vertices') || elevation) {
+      l.vertices = elevation
+        ? g.vertices.map((p) => new XYZ(p.x, p.y, g.elevation ?? 0))
+        : withZ(g.vertices, l.vertices);
+    }
+    const vector = (v: Vec2, old: XYZ): XYZ => new XYZ(v.x, v.y, old.z);
+    if (d('horizontalDirection')) {
+      l.horizontalDirection = vector(g.horizontalDirection, l.horizontalDirection);
+    }
+    if (d('blockOffset')) l.blockOffset = vector(g.blockOffset, l.blockOffset);
+    if (d('annotationOffset')) l.annotationOffset = vector(g.annotationOffset, l.annotationOffset);
+    if (d('style')) l.style = resolve(r, g.style, DimensionStyle)!;
+    if (d('arrowhead')) l.arrowHeadEnabled = g.arrowhead;
+    if (d('spline')) {
+      l.pathType = g.spline ? LeaderPathType.Spline : LeaderPathType.StraightLineSegments;
+    }
+    if (d('creationType')) l.creationType = g.creationType;
+    if (d('hookline') && g.hookline) {
+      l.hookLineDirection = g.hookline.sameDirection
+        ? HookLineDirection.Same
+        : HookLineDirection.Opposite;
+    }
+    if (d('textHeight')) l.textHeight = g.textHeight;
+    if (d('textWidth')) l.textWidth = g.textWidth;
+    if (d('annotation')) {
+      l.associatedAnnotation = g.annotation ? resolve(r, g.annotation, AcadEntity)! : null;
+    }
+    if (d('normal')) l.normal = xyz(g.normal);
+  },
+};
+
+const toleranceWriter: Writer<ToleranceGeometry> = {
+  create: () => new Tolerance(),
+  problems: (r, before, g) => [
+    ...planeProblems(g),
+    ...(!before || before.style !== g.style ? dimStyleProblems(r, g.style) : []),
+    // The frame's Y axis is normal × X, so it runs upside down exactly when the normal is −Z.
+    ...((g.upsideDown === true) !== (plane(g.normal) === 'down')
+      ? ['an upside-down TOLERANCE on a +Z plane']
+      : []),
+  ],
+  write(r, e, before, g) {
+    const t = e as Tolerance;
+    const d = differ(before, g);
+    // 10 and 11 are WCS, as for MTEXT.
+    if (d('position', 'elevation')) {
+      t.insertionPoint = new XYZ(g.position.x, g.position.y, g.elevation ?? 0);
+    }
+    if (d('rotation')) t.direction = new XYZ(Math.cos(g.rotation), Math.sin(g.rotation), 0);
+    if (d('style')) t.style = resolve(r, g.style, DimensionStyle)!;
+    if (d('text')) t.text = g.text;
+    if (d('normal')) t.normal = xyz(g.normal);
+  },
+};
+
 const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   LINE: lineWriter,
   XLINE: xlineWriter('XLINE'),
@@ -949,6 +1213,11 @@ const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   POLYLINE: polylineWriter,
   ATTDEF: attdefWriter,
   INSERT: insertWriter,
+  DIMENSION: dimensionWriter,
+  ARC_DIMENSION: dimensionWriter,
+  LARGE_RADIAL_DIMENSION: dimensionWriter,
+  LEADER: leaderWriter,
+  TOLERANCE: toleranceWriter,
 } as Partial<Record<EntityType, Writer<never>>>;
 
 /** The entity types whose geometry Triya can write (the rest: roadmap M1-75). */
@@ -958,6 +1227,8 @@ export const WRITABLE_TYPES: readonly EntityType[] = Object.keys(WRITERS) as Ent
 export function createAcadEntity(geom: EntityGeometry): AcadEntity | undefined {
   // A 3D polyline is its own acad-ts class (POLYLINE_3D in DWG), which `create` cannot pick.
   if (geom.kind === 'POLYLINE' && geom.is3d) return new Polyline3D();
+  // Each dimension type is its own class, which `create` cannot pick either.
+  if ('dimType' in geom) return DIMENSION_CLASSES[geom.dimType]();
   return WRITERS[geom.kind]?.create();
 }
 
