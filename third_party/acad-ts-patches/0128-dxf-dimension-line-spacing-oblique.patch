@@ -1,0 +1,70 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 7f21a0b..38fecb5 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -1106,6 +1106,8 @@ export abstract class DxfSectionReaderBase {
+           tmp.cadObject.endAngle = this._reader.valueAsDouble;
+           return true;
+         }
++        // Elsewhere 41 is the text line spacing factor (AcDbDimension).
++        (tmp.cadObject as Dimension).lineSpacingFactor = this._reader.valueAsDouble;
+         return true;
+       case 70: {
+ 		if (tmp.cadObject instanceof DimensionArc && this.currentSubclass === DxfSubclassMarker.arcDimension) {
+@@ -1158,6 +1160,16 @@ export abstract class DxfSectionReaderBase {
+         }
+         return true;
+       }
++      case 52:
++        // The oblique angle of the extension lines, in degrees like every DXF angle. The DXF
++        // reference puts it in AcDbAlignedDimension; ezdxf writes it in AcDbDimension, before the
++        // subclass that makes the dimension linear, so the template keeps it until then.
++        if (tmp.cadObject instanceof DimensionAligned) {
++          tmp.cadObject.extLineRotation = this._reader.valueAsAngle;
++        } else {
++          tmp.extLineRotation = this._reader.valueAsAngle;
++        }
++        return true;
+       case 42:
+         return true;
+       case 73:
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index c30c3f5..b11cd26 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -668,6 +668,10 @@ export abstract class DxfSectionWriterBase {
+     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.alignedDimension);
+     this._writer.writeVector(13, dim.firstPoint, subclass);
+     this._writer.writeVector(14, dim.secondPoint, subclass);
++    // The oblique angle of the extension lines is optional and only stated when set (DXF
++    // reference, DIMENSION: "Linear dimension types with an oblique angle have an optional
++    // group code 52"), as AutoCAD writes it, in degrees.
++    if (dim.extLineRotation !== 0) this._writer.write(52, MathHelper.radToDegRoundTrip(dim.extLineRotation));
+   }
+ 
+   private _writeDimensionLinear(dim: DimensionLinear, map: DxfMap): void {
+diff --git a/src/IO/Templates/CadDimensionTemplate.ts b/src/IO/Templates/CadDimensionTemplate.ts
+index 07dd940..909b177 100644
+--- a/src/IO/Templates/CadDimensionTemplate.ts
++++ b/src/IO/Templates/CadDimensionTemplate.ts
+@@ -17,6 +17,9 @@ export class CadDimensionTemplate extends CadEntityTemplate {
+ 
+ 	styleName: string | null = null;
+ 
++	/** DXF 52 read before the subclass that says the dimension is linear (ezdxf writes it in AcDbDimension). */
++	extLineRotation: number | null = null;
++
+ 	constructor(dimension?: Dimension) {
+ 		super(dimension ?? new DimensionPlaceholder());
+ 	}
+@@ -82,6 +85,10 @@ export class CadDimensionTemplate extends CadEntityTemplate {
+ 			linear.extLineRotation = aligned.extLineRotation;
+ 		}
+ 
++		if (dimension instanceof DimensionAligned && this.extLineRotation !== null) {
++			dimension.extLineRotation = this.extLineRotation;
++		}
++
+ 		this.cadObject = dimension;
+ 	}
+ }

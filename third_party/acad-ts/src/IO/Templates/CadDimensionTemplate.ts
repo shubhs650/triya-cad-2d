@@ -17,6 +17,9 @@ export class CadDimensionTemplate extends CadEntityTemplate {
 
 	styleName: string | null = null;
 
+	/** DXF 52 read before the subclass that says the dimension is linear (ezdxf writes it in AcDbDimension). */
+	extLineRotation: number | null = null;
+
 	constructor(dimension?: Dimension) {
 		super(dimension ?? new DimensionPlaceholder());
 	}
@@ -80,6 +83,10 @@ export class CadDimensionTemplate extends CadEntityTemplate {
 			linear.firstPoint = aligned.firstPoint;
 			linear.secondPoint = aligned.secondPoint;
 			linear.extLineRotation = aligned.extLineRotation;
+		}
+
+		if (dimension instanceof DimensionAligned && this.extLineRotation !== null) {
+			dimension.extLineRotation = this.extLineRotation;
 		}
 
 		this.cadObject = dimension;

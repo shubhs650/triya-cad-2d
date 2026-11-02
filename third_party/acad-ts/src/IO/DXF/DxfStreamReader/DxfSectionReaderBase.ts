@@ -1106,6 +1106,8 @@ export abstract class DxfSectionReaderBase {
           tmp.cadObject.endAngle = this._reader.valueAsDouble;
           return true;
         }
+        // Elsewhere 41 is the text line spacing factor (AcDbDimension).
+        (tmp.cadObject as Dimension).lineSpacingFactor = this._reader.valueAsDouble;
         return true;
       case 70: {
 		if (tmp.cadObject instanceof DimensionArc && this.currentSubclass === DxfSubclassMarker.arcDimension) {
@@ -1158,6 +1160,16 @@ export abstract class DxfSectionReaderBase {
         }
         return true;
       }
+      case 52:
+        // The oblique angle of the extension lines, in degrees like every DXF angle. The DXF
+        // reference puts it in AcDbAlignedDimension; ezdxf writes it in AcDbDimension, before the
+        // subclass that makes the dimension linear, so the template keeps it until then.
+        if (tmp.cadObject instanceof DimensionAligned) {
+          tmp.cadObject.extLineRotation = this._reader.valueAsAngle;
+        } else {
+          tmp.extLineRotation = this._reader.valueAsAngle;
+        }
+        return true;
       case 42:
         return true;
       case 73:
