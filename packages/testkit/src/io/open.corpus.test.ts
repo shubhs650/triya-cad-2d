@@ -20,7 +20,9 @@ describe('ioApi.open on the public corpus', () => {
     for (const f of readable) {
       const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
       const doc = readCadDocument(bytes);
-      const { summary, init, modelSpace: space, extents } = await ioApi.open(bytes.slice());
+      const opened = await ioApi.open(bytes.slice());
+      const { summary, init, modelSpace: space } = opened;
+      const extents = space === undefined ? undefined : opened.extents[space];
 
       expect(summary, f.path).toEqual(summarizeDocument(doc, detectFormat(bytes)));
       expect(structuredClone(init), f.path).toEqual(init);
@@ -43,6 +45,14 @@ describe('ioApi.open on the public corpus', () => {
           expect(p.y, f.path).toBeGreaterThanOrEqual(extents!.minY - slack);
           expect(p.y, f.path).toBeLessThanOrEqual(extents!.maxY + slack);
         }
+      }
+
+      // Every layout's paper space with entities of known extent has its extents too.
+      for (const l of init.layouts ?? []) {
+        const known = (init.entities ?? []).some(
+          (e) => e.owner === l.blockRecord && e.geom.kind === 'LINE',
+        );
+        if (known) expect(opened.extents[l.blockRecord], `${f.path} ${l.name}`).toBeDefined();
       }
     }
   });

@@ -71,8 +71,39 @@ export async function ink(page: Page): Promise<number> {
 
 /** Waits until the tab for `name` is selected and its drawing is on the canvas. */
 export async function expectShown(page: Page, name: string): Promise<void> {
-  await expect(page.getByRole('tab', { name })).toHaveAttribute('aria-selected', 'true', {
+  const tab = page.getByRole('tablist', { name: 'Open drawings' }).getByRole('tab', { name });
+  await expect(tab).toHaveAttribute('aria-selected', 'true', {
     timeout: 30_000,
   });
   await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(200);
+}
+
+/** The world point the status bar shows for the cursor at canvas point (x, y). */
+export async function worldAt(page: Page, x: number, y: number): Promise<{ x: number; y: number }> {
+  const box = (await activeCanvas(page).boundingBox())!;
+  await page.mouse.move(box.x + x, box.y + y);
+  const coords = page.getByTestId('coords');
+  await expect(coords).not.toHaveText('');
+  const [wx, wy] = (await coords.textContent())!.split(',').map((s) => Number(s.trim()));
+  return { x: wx!, y: wy! };
+}
+
+/** Pixels of the visible canvas close to white: a layout's paper. */
+export async function paperPixels(page: Page): Promise<number> {
+  const png = (await activeCanvas(page).screenshot()).toString('base64');
+  return page.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const c = document.createElement('canvas');
+    c.width = img.width;
+    c.height = img.height;
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(img, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4)
+      if (d[i]! > 245 && d[i + 1]! > 245 && d[i + 2]! > 245) n++;
+    return n;
+  }, png);
 }
