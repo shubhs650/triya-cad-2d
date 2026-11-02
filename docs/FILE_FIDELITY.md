@@ -69,7 +69,7 @@ Read ticks for entities (M1-04) mean every entity of the type in every readable 
 | VIEW | ✓ | | | |
 | UCS | ✓ | | | |
 
-Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, nameless shape `STYLE` records, R12 `DIMBLK` names), which M1-32 closes. MLEADERSTYLE and TABLESTYLE objects are checked the same way. The header is mapped too: every variable acad-ts knows is carried by DXF name, compared the same way; 32 variables acad-ts does not know are M1-32.
+Read ticks for tables (M1-03) mean every field of the record compares equal to an independent DXF reader on every readable public corpus file (`packages/testkit/src/mapping/tables.corpus.test.ts`), except the acad-ts read gaps listed there as `ACAD_TS_GAPS` (layer material, nameless shape `STYLE` records, R12 `DIMBLK` names), which M1-32 closes. MLEADERSTYLE and TABLESTYLE objects are checked the same way. The header is mapped too: every variable acad-ts knows is carried by DXF name and compared the same way, which since M1-32 part 2 (acad-ts patch 0111) is every AutoCAD variable a corpus DXF states (`$LINMIN`/`$LINMAX` in ezdxf's hand-written `Minimal_DXF_AC1006.dxf` are not AutoCAD variables and are skipped, as AutoCAD skips them).
 
 ## Objects (non-graphical)
 
@@ -215,3 +215,4 @@ The columns above track Triya. This section tracks the library underneath, from 
 | MLEADERSTYLE 298 flag (DXF write) | Written as read (0058); was always false |
 | XRECORD null object references (DWG write) | Written as handle 0 (0059); the entry was dropped |
 | ACDBDICTIONARYWDFLT default entry (DWG write) | Object written (0060); an R14 placeholder owned only through it was lost |
+| 30 header variables missing from the acad-ts header map (`$ATTDIA`, `$ATTREQ`, `$SURFTAB1`/`2`, `$SURFU`/`V`, `$PUCSORG`, `$UCSORTHOREF`, `$CMATERIAL`, `$INTERSECTIONCOLOR`, `$TILEMODELIGHTSYNCH`, …) | Read from DXF and written back (0111, M1-32 part 2); DXF read dropped them and saves never wrote them. In DWG, `$SURFV` was read into `$SURFU`, the R2004+ `$INTERSECTIONCOLOR` into `$INTERFERECOLOR`, and the R13/R14 `$ATTREQ`/`$ATTDIA`/`$DELOBJ`/`$DRAGMODE`/`$COORDS`/`$PICKSTYLE`, `$TILEMODELIGHTSYNCH`, the orthographic UCS views and the material and visual-style pointers were read and dropped, then written as constants; all are kept now. `$CMATERIAL`, `$INTERFEREOBJVS` and `$INTERFEREVPVS` are kept as raw handles (acad-ts has no MATERIAL or VISUALSTYLE class) |
