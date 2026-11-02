@@ -2,7 +2,12 @@
 // so the same calls must reach the canvas in the same order. Checked here on a recording context
 // with an in-process worker; tests/e2e/fidelity/renderer-host.spec.ts checks real pixels.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { toleranceForSize, toleranceFromExtents, type ChangeSet } from '@triya/engine';
+import {
+  toleranceForSize,
+  toleranceFromExtents,
+  type ChangeSet,
+  type EntityGeometry,
+} from '@triya/engine';
 import {
   RenderSession,
   RendererHost,
@@ -164,6 +169,54 @@ describe('RendererHost', () => {
     expect(log(workerSurfaces).flat().length).toBeGreaterThan(20);
     expect(log(workerSurfaces)).toEqual(log(mainSurfaces));
     expect(workerSurfaces[0]!.canvas).toEqual({ width: 200, height: 100 });
+  });
+
+  it('draws an image bitmap sent to either side alike, its buffer transferred to the worker', async () => {
+    const photo: EntityGeometry = {
+      kind: 'IMAGE',
+      definition: '7F',
+      position: { x: 0, y: 0 },
+      u: { x: 1, y: 0 },
+      v: { x: 0, y: 1 },
+      size: { x: 2, y: 1 },
+      displayFlags: 7,
+      clipping: false,
+      brightness: 50,
+      contrast: 50,
+      fade: 0,
+      clip: { type: 'rectangle', vertices: [], inverted: false },
+    };
+    const { main, off, worker, mainSurfaces, workerSurfaces } = hosts([entity('20', photo)]);
+    const transfers: unknown[][] = [];
+    const post = worker.postMessage.bind(worker);
+    worker.postMessage = (m: HostMessage, transfer?: Transferable[]) => {
+      if (m.type === 'image') transfers.push(transfer ?? []);
+      post(m);
+    };
+    const pixels = () => ({ width: 2, height: 1, data: new Uint8ClampedArray(8).fill(200) });
+    for (const h of [main, off]) {
+      h.resize(100, 50, 1);
+      h.setView({ center: { x: 1, y: 0.5 }, scale: 10 });
+      h.frame();
+      const sent = pixels();
+      h.setImage('7F', sent);
+      h.frame();
+      h.setImage('7F', undefined);
+      h.frame();
+    }
+    await off.flush();
+    await main.flush();
+    expect(transfers).toHaveLength(2);
+    expect(transfers[0]).toHaveLength(1);
+    expect(transfers[0]![0]).toBeInstanceOf(ArrayBuffer);
+    expect(transfers[1]).toEqual([]);
+    expect(log(workerSurfaces)).toEqual(log(mainSurfaces));
+    // The bitmap's own layer is drawn once, in the frame after it arrived.
+    const putImages = mainSurfaces.flatMap((sf) => sf.ctx.named('putImageData'));
+    expect(putImages).toHaveLength(1);
+    // The scene layer (after the visible surface) draws the bitmap in that frame only; once
+    // forgotten the image is outlined instead.
+    expect(mainSurfaces[1]!.ctx.named('drawImage')).toHaveLength(1);
   });
 
   it('answers hit tests from either side alike', async () => {
