@@ -1,0 +1,1 @@
+- M1-32 part 1 (#117): DXF hatches keep their style (75), seed points and ellipse-edge major axes (acad-ts patch 0108).
