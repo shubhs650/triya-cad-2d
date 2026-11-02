@@ -1,4 +1,4 @@
-// M1-70: text draws in the app. The drawing's TEXT uses the STANDARD style's font, txt, which
+// M1-72: text draws in the app. The drawing's TEXT uses the STANDARD style's font, txt, which
 // no device has; it draws with the bundled Hershey fonts, which ship inside the app, so this
 // holds offline too.
 import { writeFileSync } from 'node:fs';

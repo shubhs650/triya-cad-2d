@@ -1,4 +1,4 @@
-// M1-70: the app bundles every committed Hershey font (M1-09) and hands them to its renderers,
+// M1-72: the app bundles every committed Hershey font (M1-09) and hands them to its renderers,
 // so a font a drawing names but the device lacks draws with its bundled equivalent.
 import { fontBookOf } from '@triya/render';
 import { describe, expect, it } from 'vitest';

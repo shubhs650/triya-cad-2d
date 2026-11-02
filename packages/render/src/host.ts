@@ -39,7 +39,7 @@ export interface RendererHostOptions {
   readonly style?: RenderStyle;
   /** The user's .pat files (M1-50), in the order added. */
   readonly patterns?: readonly string[];
-  /** Fonts for text (M1-70), loaded where the session runs. */
+  /** Fonts for text (M1-72), loaded where the session runs. */
   readonly fonts?: FontSources;
   /** Main-thread layers; defaults to OffscreenCanvas, as in the worker. */
   readonly createLayer?: () => Surface;

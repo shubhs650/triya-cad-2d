@@ -1,4 +1,4 @@
-// M1-70: the bundled fonts reach the renderer wherever it runs. The app hands a session its
+// M1-72: the bundled fonts reach the renderer wherever it runs. The app hands a session its
 // stroke fonts as the committed JSON sources; the session loads them into a FontBook, so TEXT
 // draws (a font the drawing names but nobody has, here romans.shx, through its bundled
 // equivalent), and the spatial index bounds text by its glyphs instead of leaving it unknown.
@@ -83,7 +83,7 @@ function session(fonts?: FontSources) {
   return { s, scene: layers[0]! };
 }
 
-describe('bundled fonts in a render session (M1-70)', () => {
+describe('bundled fonts in a render session (M1-72)', () => {
   it('draws text from the font sources it is given, and nothing without them', () => {
     expect(session().scene.ctx.named('stroke')).toHaveLength(0);
     expect(session(FONTS).scene.ctx.named('lineTo').length).toBeGreaterThan(10);
@@ -143,7 +143,7 @@ function inProcessWorker(made: Recorded[]): RenderWorker {
   };
 }
 
-describe('bundled fonts through RendererHost (M1-70)', () => {
+describe('bundled fonts through RendererHost (M1-72)', () => {
   beforeEach(() => {
     vi.stubGlobal('OffscreenCanvas', class {});
   });

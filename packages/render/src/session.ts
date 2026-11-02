@@ -38,7 +38,7 @@ export interface RenderDocument {
 }
 
 /**
- * Fonts for TEXT and MTEXT, as sources a message can carry (M1-70): the bundled stroke fonts
+ * Fonts for TEXT and MTEXT, as sources a message can carry (M1-72): the bundled stroke fonts
  * (M1-09) as their committed JSON text, by font name (`oet-simplex`). The session loads them
  * into a FontBook where it runs, so the worker needs nothing but the init message.
  */
@@ -67,7 +67,7 @@ export interface RenderSessionOptions {
   readonly style?: RenderStyle;
   /** The user's .pat files (M1-50). */
   readonly patterns?: readonly string[];
-  /** Fonts for text (M1-70); without them text draws nothing and has unknown bounds. */
+  /** Fonts for text (M1-72); without them text draws nothing and has unknown bounds. */
   readonly fonts?: FontSources;
   readonly paint?: (e: Entity, model: DocumentModel) => Paint | undefined;
   readonly now?: () => number;
@@ -89,7 +89,7 @@ export class RenderSession {
   readonly model: DocumentModel;
   readonly index: SpatialIndex;
   readonly renderer: Canvas2DRenderer;
-  /** The fonts text draws with, when the session was given any (M1-70). */
+  /** The fonts text draws with, when the session was given any (M1-72). */
   readonly fonts: FontBook | undefined;
   /** Decoded bitmaps by IMAGEDEF handle, as the app sends them (M1-19). */
   readonly #images = new Map<Handle, RasterPixels>();

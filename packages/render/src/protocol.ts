@@ -15,7 +15,7 @@ export type HostMessage =
       readonly style?: RenderStyle;
       /** The user's .pat files (M1-50). */
       readonly patterns?: readonly string[];
-      /** Fonts for text (M1-70). */
+      /** Fonts for text (M1-72). */
       readonly fonts?: FontSources;
     }
   | {

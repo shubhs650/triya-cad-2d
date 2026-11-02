@@ -1,4 +1,4 @@
-// The bundled Hershey fonts (M1-09, DEC-044) for every renderer the app makes (M1-70): the
+// The bundled Hershey fonts (M1-09, DEC-044) for every renderer the app makes (M1-72): the
 // committed JSON files, built into the app so text draws offline and nothing is fetched. The
 // render session (in its worker) loads them into a FontBook; a font the drawing names that is
 // not here draws with its bundled equivalent, then the default one (FontBook.substitutions).
