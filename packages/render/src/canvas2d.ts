@@ -466,6 +466,21 @@ export class Canvas2DRenderer implements Renderer {
     this.#sceneDirty = true;
   }
 
+  /**
+   * Replaces the fonts text draws with (the user's font files changed, M1-38): every entity is
+   * re-tessellated, since text inside blocks, dimensions and tables may draw differently.
+   */
+  setFonts(fonts: TextFonts): void {
+    const model = this.#model;
+    this.#tessellate.text = {
+      ...this.#tessellate.text,
+      fonts,
+      style: (h) => model.tables.textStyles.get(h),
+    };
+    this.#cacheBlock();
+    this.#sceneDirty = true;
+  }
+
   setTransient(primitives: readonly RenderPrimitive[]): void {
     this.#transient = primitives;
     this.#transientDirty = true;

@@ -142,6 +142,12 @@ export class RendererHost {
     else this.#post({ type: 'patterns', sources });
   }
 
+  /** The fonts changed (the user added or removed a font file, M1-38): text redraws. */
+  setFonts(fonts: FontSources): void {
+    if (this.#session) this.#session.setFonts(fonts);
+    else this.#post({ type: 'fonts', fonts });
+  }
+
   frame(): void {
     if (this.#session) this.#session.renderer.frame();
     else this.#post({ type: 'frame' });
