@@ -52,7 +52,7 @@ import {
 } from './affine';
 
 export { affineScale, applyAffine, composeAffine, IDENTITY, transformPath, type Affine };
-import type { BlockContext } from './style/resolve';
+import { effectiveLayer, type BlockContext } from './style/resolve';
 import { patternLength } from './style/pattern';
 
 /**
@@ -227,19 +227,44 @@ const MAX_DEPTH = 32;
 export function expandInsert(
   insert: Entity,
   src: BlockSource,
-  options: { readonly dashes: boolean },
+  options: {
+    readonly dashes: boolean;
+    /**
+     * Multiplies every linetype scale: 1 / the viewport scale for model space seen through a
+     * PSLTSCALE layout viewport (M1-18). `period` stays at the unmultiplied scale.
+     */
+    readonly linetypeScale?: number;
+  },
 ): BlockExpansion {
   const prims: RenderPrimitive[] = [];
   const blocks = new Set<Handle>();
   let period = 0;
+  const ltMul = options.linetypeScale ?? 1;
+  // The layer tags (M1-18 viewport freeze) are shared per chain and leaf layer, so a block's
+  // thousand parts on one layer carry one array.
+  const tags = new Map<string, readonly Handle[]>();
+  const tagOf = (chain: readonly Handle[], leaf: Handle | undefined): readonly Handle[] => {
+    const all = leaf === undefined || chain.includes(leaf) ? chain : [...chain, leaf];
+    const key = all.join(' ');
+    let t = tags.get(key);
+    if (!t) tags.set(key, (t = all));
+    return t;
+  };
+  const layers = src.model.tables.layers;
 
   const def = (block: Handle) => src.model.blocks.get(block);
   // TOLERANCE frames size their compartments by the text (M1-52 part 4).
   const text = src.tessellate?.text;
   const measure = text ? textMeasure(text) : undefined;
-  const draw = (e: Entity, m: Affine, ctx: BlockContext | undefined, depth: number): void => {
+  const draw = (
+    e: Entity,
+    m: Affine,
+    ctx: BlockContext | undefined,
+    depth: number,
+    chain: readonly Handle[],
+  ): void => {
     if (expands(e, def)) {
-      walk(e, m, ctx, depth + 1);
+      walk(e, m, ctx, depth + 1, chain);
       return;
     }
     const paint = src.paint(e, src.model, ctx);
@@ -247,16 +272,37 @@ export function expandInsert(
     const { linetype, ...continuous } = paint;
     if (linetype)
       period = Math.max(period, patternLength(linetype.pattern) * linetype.scale * affineScale(m));
-    for (const p of tessellate(e.geom, options.dashes ? paint : continuous, src.tessellate))
-      prims.push(transformPrimitive(p, m));
+    const used =
+      options.dashes && linetype && ltMul !== 1
+        ? { ...paint, linetype: { ...linetype, scale: linetype.scale * ltMul } }
+        : options.dashes
+          ? paint
+          : continuous;
+    const tag = tagOf(chain, effectiveLayer(e, { layers, lwDefault: 0 }, ctx)?.handle);
+    for (const p of tessellate(e.geom, used, src.tessellate)) {
+      // transformPrimitive makes a fresh object, so tagging it in place copies nothing.
+      const q = transformPrimitive(p, m) as { layers?: readonly Handle[] };
+      if (tag.length > 0) q.layers = tag;
+      prims.push(q as RenderPrimitive);
+    }
   };
-  const walk = (e: Entity, m: Affine, outer: BlockContext | undefined, depth: number): void => {
+  const walk = (
+    e: Entity,
+    m: Affine,
+    outer: BlockContext | undefined,
+    depth: number,
+    above: readonly Handle[],
+  ): void => {
     if (depth > MAX_DEPTH) return;
+    // Below the top level, a reference's own layer hides everything in it when frozen in a
+    // viewport (the top-level one is the cache entry's layer).
+    const own = depth > 0 ? effectiveLayer(e, { layers, lwDefault: 0 }, outer)?.handle : undefined;
+    const chain = own === undefined || above.includes(own) ? above : [...above, own];
     // A MULTILEADER draws its parts where it stands, each painted as an entity of its own
     // (M1-52); its arrowhead blocks expand as inserts.
     const parts = annotationParts(e.geom, src.model, e.xdata, measure);
     if (parts) {
-      for (const part of parts) draw(partEntity(e, part), m, outer, depth);
+      for (const part of parts) draw(partEntity(e, part), m, outer, depth, chain);
       return;
     }
     const ref = referenceOf(e, def);
@@ -269,10 +315,10 @@ export function expandInsert(
       const cm = composeAffine(m, cell);
       for (const id of order) {
         const child = src.model.entity(id);
-        if (child) draw(child, cm, ctx, depth);
+        if (child) draw(child, cm, ctx, depth, chain);
       }
     }
   };
-  walk(insert, IDENTITY, undefined, 0);
+  walk(insert, IDENTITY, undefined, 0, []);
   return { prims, period, blocks };
 }

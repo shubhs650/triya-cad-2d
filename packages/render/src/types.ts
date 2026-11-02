@@ -107,6 +107,11 @@ export type RenderPrimitive =
       readonly kind: 'stroke' | 'fill';
       readonly path: readonly number[];
       readonly color: PrimitiveColor;
+      /**
+       * Inside a block reference (M1-18): the layers that hide this part when frozen in a
+       * viewport, its own effective layer and every nested reference's above it.
+       */
+      readonly layers?: readonly string[];
       /** Lineweight in millimetres; undefined is the default (drawn 1 px). */
       readonly lineweight?: number;
       /** Fill rule for `fill`: AutoCAD hatch loops use odd parity. */
@@ -132,6 +137,11 @@ export type RenderPrimitive =
       readonly direction: { readonly x: number; readonly y: number };
       readonly both: boolean;
       readonly color: PrimitiveColor;
+      /**
+       * Inside a block reference (M1-18): the layers that hide this part when frozen in a
+       * viewport, its own effective layer and every nested reference's above it.
+       */
+      readonly layers?: readonly string[];
       readonly lineweight?: number;
     }
   /** A POINT drawn as a dot (PDMODE 0); other PDMODE shapes come with the POINT style task. */
@@ -140,6 +150,11 @@ export type RenderPrimitive =
       readonly x: number;
       readonly y: number;
       readonly color: PrimitiveColor;
+      /**
+       * Inside a block reference (M1-18): the layers that hide this part when frozen in a
+       * viewport, its own effective layer and every nested reference's above it.
+       */
+      readonly layers?: readonly string[];
     };
 
 export interface Renderer {
