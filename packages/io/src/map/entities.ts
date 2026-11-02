@@ -860,12 +860,7 @@ function imageGeometry(im: CadWipeoutBase): ImageGeometry | UnmappedEntity['reas
     contrast: im.contrast,
     fade: im.fade,
     clip: {
-      // acad-ts skips DXF 71 on read (M1-32), but a rectangular boundary always states two
-      // corners (DXF reference, IMAGE), so more vertices mean a polygon.
-      type:
-        (im.clipType as number) === 2 || im.clipBoundaryVertices.length > 2
-          ? 'polygon'
-          : 'rectangle',
+      type: (im.clipType as number) === 2 ? 'polygon' : 'rectangle',
       vertices: im.clipBoundaryVertices.map(xy),
       inverted: (im.clipMode as number) === 1,
     },
@@ -1260,8 +1255,7 @@ function geometry(e: Entity, ctx: Ctx): EntityGeometry | UnmappedEntity['reason'
       planOf(p, pl),
     );
     return {
-      // acad-ts reads TRACE as SOLID (M1-32), so every one is a SOLID here.
-      kind: 'SOLID',
+      kind: e.isTrace ? 'TRACE' : 'SOLID',
       corners: [c[0]!, c[1]!, c[2]!, c[3]!],
       ...planar(pl, e.normal, e.firstCorner.z, e.thickness),
     };

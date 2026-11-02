@@ -1,0 +1,22 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index bacb8d1..ee235f1 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -69,7 +69,8 @@ import { VertexFaceMesh } from '../../../Entities/VertexFaceMesh.js';
+ import { VertexFaceRecord } from '../../../Entities/VertexFaceRecord.js';
+ import { Viewport } from '../../../Entities/Viewport.js';
+ import { Wipeout } from '../../../Entities/Wipeout.js';
+-import { CadWipeoutBase } from '../../../Entities/CadWipeoutBase.js';
++import { CadWipeoutBase } from '../../../Entities/CadWipeoutBase.js';
++import { ClipType } from '../../../Entities/ClipType.js';
+ import { XLine } from '../../../Entities/XLine.js';
+ import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
+ import { ModelerGeometry } from '../../../Entities/ModelerGeometry.js';
+@@ -1858,6 +1859,7 @@ export abstract class DxfSectionReaderBase {
+ 
+     switch (this._reader.code as number) {
+       case 71:
++        wipeout.clipType = this._reader.valueAsShort as ClipType;
+         return true;
+       case 91: {
+         const nvertices = this._reader.valueAsInt;

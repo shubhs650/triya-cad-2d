@@ -129,6 +129,29 @@ export class Color {
 		return c;
 	}
 
+	/**
+	 * An AcCmEntityColor as DXF states it in one 32-bit group (MLEADERSTYLE 91/93/94, MULTILEADER
+	 * 91/92/93 and its context 90/91/93): the high byte is the colour method, 0xC0 ByLayer,
+	 * 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI (in the low byte), 0xC8 None. Other methods keep the low
+	 * byte as an index, as the DWG reader does.
+	 */
+	public static fromCmValue(value: number): Color {
+		const method = (value >>> 24) & 0xFF;
+		if (method === 0xC0) return Color.byLayer;
+		if (method === 0xC2) return Color.fromTrueColor(value & 0xFFFFFF);
+		if (method === 0xC8) return Color.byEntity;
+		return new Color(value & 0xFF);
+	}
+
+	/** The fromCmValue value of this colour, as a signed 32-bit integer. */
+	public toCmValue(): number {
+		if (this.isTrueColor) return (0xC2000000 | (this.trueColor & 0xFFFFFF)) | 0;
+		if (this.isByLayer) return 0xC0000000 | 0;
+		if (this.isByBlock) return 0xC1000000 | 0;
+		if (this.index === 257) return 0xC8000000 | 0;
+		return (0xC3000000 | this.index) | 0;
+	}
+
 	public static getIndexRGB(index: number): number[] {
 		return Color._indexRgb[index];
 	}

@@ -12,12 +12,18 @@ export class Solid extends Entity {
 
 	normal: XYZ = new XYZ(0, 0, 1);
 
+	/**
+	 * A TRACE: the same data as a SOLID (DXF reference, TRACE), kept apart so that a TRACE
+	 * is written back as one.
+	 */
+	isTrace: boolean = false;
+
 	override get objectName(): string {
-		return DxfFileToken.entitySolid;
+		return this.isTrace ? DxfFileToken.entityTrace : DxfFileToken.entitySolid;
 	}
 
 	override get objectType(): ObjectType {
-		return ObjectType.SOLID;
+		return this.isTrace ? ObjectType.TRACE : ObjectType.SOLID;
 	}
 
 	secondCorner: XYZ = new XYZ(0, 0, 0);

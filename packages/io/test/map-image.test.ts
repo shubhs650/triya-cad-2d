@@ -4,6 +4,7 @@
 import {
   ACadVersion,
   CadDocument,
+  ClipType,
   ImageDefinition,
   PdfUnderlay,
   PdfUnderlayDefinition,
@@ -87,12 +88,18 @@ describe('IMAGE and WIPEOUT', () => {
     expect('definition' in g).toBe(false);
   });
 
-  it('reads more than two clip vertices as a polygon, since acad-ts skips DXF 71', () => {
+  it('takes the clip boundary type from DXF 71, which acad-ts reads since patch 0123', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     const w = new Wipeout();
     w.clipBoundaryVertices = [new XY(0, 0), new XY(1, 0), new XY(0, 1), new XY(0, 0)];
-
+    w.clipType = ClipType.Polygonal;
     expect(mapIn(doc, w)).toMatchObject({ clip: { type: 'polygon' } });
+
+    const r = new Wipeout();
+    r.clipBoundaryVertices = [new XY(0, 0), new XY(1, 1)];
+    expect(mapIn(new CadDocument(ACadVersion.AC1032), r)).toMatchObject({
+      clip: { type: 'rectangle' },
+    });
   });
 
   it('keeps a mirrored image in WCS and reports one on a tilted plane', () => {

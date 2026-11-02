@@ -1311,16 +1311,8 @@ export abstract class DxfSectionWriterBase {
 
   // Multileader colours are 32-bit AcCmColor values (0xC0 ByLayer, 0xC1 index, 0xC2 RGB). The DXF
   // reader keeps some of them as the raw integer, which is written back unchanged.
-  private _writeMLeaderColor(code: number, color: Color | number): void {
-    if (typeof color === 'number') {
-      this._writer.write(code, color);
-      return;
-    }
-    let value: number;
-    if (color.isTrueColor) value = 0xc2000000 | (color.r << 16) | (color.g << 8) | color.b;
-    else if (color.isByLayer) value = 0xc0000000;
-    else value = 0xc1000000 | color.index;
-    this._writer.write(code, value | 0);
+  private _writeMLeaderColor(code: number, color: Color): void {
+    this._writer.write(code, color.toCmValue());
   }
 
   private _writeAnnotContext(contextData: MultiLeaderObjectContextData): void {

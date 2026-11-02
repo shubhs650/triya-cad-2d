@@ -11,9 +11,6 @@ import type {
 } from '@triya/engine';
 import { common, mapColor, mapEntityColor, mapLineweight, ref, vec3 } from './common';
 
-/** What acad-ts holds in a MultiLeaderStyle colour property (see mapEntityColor). */
-type AcadColorValue = Parameters<typeof mapEntityColor>[0];
-
 /** `ref` for an optional reference, as a spread so absent references stay absent. */
 const opt = <K extends string>(key: K, o: { readonly handle: number } | null | undefined) => {
   const h = ref(o);
@@ -32,7 +29,7 @@ export function mleaderStyle(s: MultiLeaderStyle): MLeaderStyleRecord {
     firstSegmentAngle: s.firstSegmentAngleConstraint,
     secondSegmentAngle: s.secondSegmentAngleConstraint,
     pathType: s.pathType,
-    lineColor: mapEntityColor(s.lineColor as AcadColorValue),
+    lineColor: mapEntityColor(s.lineColor),
     ...opt('linetype', s.leaderLineType),
     lineweight: mapLineweight(s.leaderLineWeight),
     landing: s.enableLanding,
@@ -50,13 +47,13 @@ export function mleaderStyle(s: MultiLeaderStyle): MLeaderStyleRecord {
     textAttachmentDirection: s.textAttachmentDirection,
     textAngleType: s.textAngle,
     textAlignment: s.textAlignment,
-    textColor: mapEntityColor(s.textColor as AcadColorValue),
+    textColor: mapEntityColor(s.textColor),
     textHeight: s.textHeight,
     textFrame: s.textFrame,
     textAlignAlwaysLeft: s.textAlignAlwaysLeft,
     alignSpace: s.alignSpace,
     ...opt('block', s.blockContent),
-    blockColor: mapEntityColor(s.blockContentColor as AcadColorValue),
+    blockColor: mapEntityColor(s.blockContentColor),
     blockScale: vec3(s.blockContentScale),
     blockScaleOn: s.enableBlockContentScale,
     blockRotation: s.blockContentRotation,

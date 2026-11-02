@@ -4,7 +4,7 @@
 // model (and every unchanged value, to the bit) stays as the file had it (§6.2 rule 2).
 //
 // Geometry writers exist for the types markup creates and edits first and, since M1-75 part 1,
-// SOLID, 3DFACE, SPLINE and POLYLINE; the others report the change as unsupported (roadmap
+// SOLID, TRACE, 3DFACE, SPLINE and POLYLINE; the others report the change as unsupported (roadmap
 // M1-75) rather than dropping it.
 
 import type { Vertex } from '@node-projects/acad-ts';
@@ -507,6 +507,12 @@ const solidWriter: Writer<SolidGeometry> = {
   },
 };
 
+// A TRACE has a SOLID's data (DXF reference, TRACE); only its type tells them apart.
+const traceWriter: Writer<SolidGeometry> = {
+  ...solidWriter,
+  create: () => Object.assign(new Solid(), { isTrace: true }),
+};
+
 const face3dWriter: Writer<Face3dGeometry> = {
   create: () => new Face3D(),
   problems: () => [],
@@ -735,6 +741,7 @@ const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   TEXT: textWriter,
   MTEXT: mtextWriter,
   SOLID: solidWriter,
+  TRACE: traceWriter,
   '3DFACE': face3dWriter,
   SPLINE: splineWriter,
   POLYLINE: polylineWriter,
