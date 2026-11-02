@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56) and 0082–0091 (M1-58) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58) and 0092–0097 (M1-33) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1787,5 +1787,107 @@ Version 1 has the reference point in 40/41/42; 11/21/31 are a zero vector after 
 **Title:** Write R2009 GEODATA 46 as the horizontal unit scale
 
 Match the DXF reader and the DWG reader/writer.
+
+</details>
+
+### 0092 — dynamic-block graph nodes never join the document
+
+- **File:** `third_party/acad-ts-patches/0092-dynamic-block-graph-nodes-registered.patch`
+- **Touches:** `src/IO/CadDocumentBuilder.ts`
+- **Symptom:** an evaluation graph's parameters, grips, actions and grip-location components are owned by the graph and reached only through its nodes. The builder linked them to the nodes but never registered them, so the document did not hold them (`getCadObject` returned nothing, new handles could reuse theirs) and the M1-27 handle gate counted 437 of them as never loaded, in DWG and DXF alike (acadsharp `dynamic-blocks/*`, every `sample_AC10xx`).
+- **Fix:** an object owned by an evaluation graph and named by one of its nodes is registered with the graph, as an object owned through an XRECORD entry is.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0092 dynamic-block graph nodes join the document with their graph".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Register evaluation graph node expressions in the document
+
+Graph node expressions are owned by their `ACAD_EVALUATION_GRAPH` but no collection registers them, so `CadDocument` never holds them. Register them once their graph is in the document.
+
+</details>
+
+### 0093 — a DXF block action's selection set replaces its owner
+
+- **File:** `third_party/acad-ts-patches/0093-dxf-block-action-selection-set.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** the AcDbBlockAction 330s (the entities the action acts on) went through the common codes, which take every 330 as the owner. The action's owner became its last entity, so it was not linked to its graph, and its `entities` stayed empty (acadsharp `BLOCKLINEARPARAMETER.dxf` BLOCKSCALEACTION 26C on CIRCLE 258); the DWG reader reads both.
+- **Fix:** AcDbBlockAction 330s are read as the selection set, into a `CadBlockActionTemplate` (now also used for actions read through the generic path), as the DWG reader does.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0093 a DXF block action keeps its graph owner and reads its selection set".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read DXF block action selection sets
+
+The 330s of AcDbBlockAction are the action's entities. They were read as owner handles, so the last entity replaced the graph as owner.
+
+</details>
+
+### 0094 — DXF saves drop data of dynamic-block graph nodes
+
+- **File:** `third_party/acad-ts-patches/0094-dxf-dynamic-block-nodes-as-read.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/Objects/Evaluations/EvaluationExpression.ts`
+- **Symptom:** the DXF writer writes these objects from their DXF maps, which hold only part of them; every visibility state of a BLOCKVISIBILITYPARAMETER was dropped (acadsharp `BLOCKVISIBILITYPARAMETER.dxf` 33B and the `sample_AC10xx` DXFs: 52 differences once 0092 made the nodes visible).
+- **Fix:** with `keepRawDxfPassthroughObjects`, the reader keeps the group codes of every evaluation expression and the DXF writer writes them back as read, as for MATERIAL and VISUALSTYLE. Nodes read from DWG still go through the field writer.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0094 DXF saves write dynamic-block graph nodes as read".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep DXF group codes of evaluation expressions
+
+The map-driven DXF writer for dynamic-block objects loses data (visibility states, among others). Keep the codes as read when the reader is asked to, and write them back.
+
+</details>
+
+### 0095 — a DWG BLOCKFLIPGRIP is read in the wrong field order
+
+- **File:** `third_party/acad-ts-patches/0095-dwg-block-flip-grip-field-order.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
+- **Symptom:** the reader read the direction (3BD) before the flip id (BL); the record and the writer have the id first. The grip read as direction 1, -11159.6, 3.5e-162 and id 2 (the DXF twin: 0, 7.6, 0 and 3), and a saved grip did not read back, which was the last round-trip difference of `BLOCKFLIPPARAMETER.dwg`.
+- **Fix:** the id is read first, then the direction.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0095 a DWG BLOCKFLIPGRIP reads its flip id before its direction, as written".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read BLOCKFLIPGRIP flip id before direction
+
+The writer writes BL 93 then 3BD 140–142, which matches the file; the reader had them swapped.
+
+</details>
+
+### 0096 — a DXF 330 after the first subclass marker replaces the owner
+
+- **File:** `third_party/acad-ts-patches/0096-dxf-owner-before-first-subclass.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** the common codes took every 330 as the owner, so any 330 an object's reader did not consume (the selection set of an unknown BLOCKFLIPACTION, references inside TABLEGEOMETRY) replaced the owner stated before the first subclass marker. Such objects were attached to an entity and never joined the document (acadsharp `BLOCKFLIPPARAMETER.dxf` 26D; 16 TABLEGEOMETRY objects in the `sample_AC10xx` DXFs).
+- **Fix:** a 330 after the first subclass marker sets the owner only when none was stated.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0096 a DXF 330 after the first subclass marker does not replace the stated owner".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep the owner stated before the first subclass marker
+
+DXF states an object's owner as the 330 in its common data, before the first 100. A later 330 is object data; when a reader does not consume it, it must not overwrite the owner.
+
+</details>
+
+### 0097 — a DXF evaluation expression with a non-double value is dropped
+
+- **File:** `third_party/acad-ts-patches/0097-dxf-evaluation-expression-value-type.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** AcDbEvalExpr holds `1`, then `70` (the value's type), then the value in that type's group. The reader required 140 after the 70 and threw on a short value (70 = 70, 70 = 0), which dropped the object (acadsharp `BLOCKFLIPPARAMETER.dxf` BLOCKGRIPLOCATIONCOMPONENT 263).
+- **Fix:** the value group is read whatever its code.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0097 a DXF evaluation expression reads a value of any type".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read AcDbEvalExpr values of any type
+
+The value after the 70 type group can be any type's group code; requiring 140 threw for shorts.
 
 </details>

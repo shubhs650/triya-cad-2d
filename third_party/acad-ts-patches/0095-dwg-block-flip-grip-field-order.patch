@@ -1,0 +1,17 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index ae3f1d4..03b430a 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -4171,10 +4171,11 @@ export class DwgObjectReader extends DwgSectionIO {
+     const value = new BlockFlipGrip();
+     const template = new CadBlockGripTemplate(value);
+     this._readBlockGrip(template);
++    // The id (BL 93) comes before the direction (3BD 140-142), as DwgObjectWriter writes it.
++    value.flipExpressionId = this._mergedReaders.readBitLong();
+     value.directionX = this._mergedReaders.readBitDouble();
+     value.directionY = this._mergedReaders.readBitDouble();
+     value.directionZ = this._mergedReaders.readBitDouble();
+-    value.flipExpressionId = this._mergedReaders.readBitLong();
+     return template;
+   }
+ 
