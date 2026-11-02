@@ -5,8 +5,21 @@
 // where acad-ts converts them, dates as Julian days), points as Vec2/Vec3, and references as
 // the referenced record's name, as DXF writes them. Triya reads what it needs by name; the rest
 // is carried so a later save can compare against it.
+//
+// AutoCAD saves some system variables outside the HEADER section, as DICTIONARYVAR entries of
+// the AcDbVariableDictionary (MSLTSCALE, CANNOSCALE, CMLEADERSTYLE, …). Those are carried
+// under their bare names (`MSLTSCALE`), with the string the entry holds, so no name can be
+// taken for a header variable; CANNOSCALEVALUE (M1-63) is added from the ACAD_SCALELIST SCALE
+// that CANNOSCALE names, as AutoCAD computes it.
 
-import { CadHeader, Color, type CadDocument } from '@node-projects/acad-ts';
+import {
+  CadDictionary,
+  CadHeader,
+  Color,
+  DictionaryVariable,
+  Scale,
+  type CadDocument,
+} from '@node-projects/acad-ts';
 import type { DocumentMeta, HeaderValue } from '@triya/engine';
 import { colorNumber, hex } from './common';
 
@@ -60,6 +73,7 @@ export function mapHeader(doc: CadDocument): MappedHeader {
     const value = scalar(values[0]);
     if (value !== undefined) header.set(name, value);
   }
+  mapVariableDictionary(doc, header);
   return {
     header,
     handSeed: hex(h.handleSeed),
@@ -70,4 +84,29 @@ export function mapHeader(doc: CadDocument): MappedHeader {
       measurement: (h.measurementUnits as number) === 0 ? 'imperial' : 'metric',
     },
   };
+}
+
+/** The named-object dictionary's entry `key`, when it is a dictionary. */
+function namedDictionary(doc: CadDocument, key: string): CadDictionary | undefined {
+  const d = doc.rootDictionary?.get(key);
+  return d instanceof CadDictionary ? d : undefined;
+}
+
+/**
+ * The AcDbVariableDictionary's DICTIONARYVARs under their names, and CANNOSCALEVALUE: the
+ * paper units per drawing unit of the ACAD_SCALELIST scale CANNOSCALE names ("Returns the
+ * value of the current annotation scale", 0.02 for 1:50). A CANNOSCALE naming no scale of
+ * the list has no value.
+ */
+function mapVariableDictionary(doc: CadDocument, header: Map<string, HeaderValue>): void {
+  for (const v of namedDictionary(doc, CadDictionary.variableDictionary) ?? [])
+    if (v instanceof DictionaryVariable && v.name) header.set(v.name, v.value);
+  const current = header.get(DictionaryVariable.currentAnnotationScale);
+  if (current === undefined) return;
+  for (const s of namedDictionary(doc, CadDictionary.acadScaleList) ?? []) {
+    if (!(s instanceof Scale) || s.name !== current) continue;
+    if (s.paperUnits > 0 && s.drawingUnits > 0)
+      header.set('CANNOSCALEVALUE', s.paperUnits / s.drawingUnits);
+    return;
+  }
 }

@@ -17,6 +17,11 @@ export interface DxfOracle {
   readonly records: readonly DxfRecord[];
   /** OBJECTS-section records of the types in STYLE_OBJECTS. */
   readonly objects: readonly DxfRecord[];
+  /**
+   * OBJECTS-section records of the types in VARIABLE_OBJECTS, in file order: the first
+   * DICTIONARY is the named-object dictionary.
+   */
+  readonly variableObjects: readonly DxfRecord[];
   /** Entities of the ENTITIES and BLOCKS sections, in file order. */
   readonly entities: readonly DxfEntity[];
 }
@@ -33,6 +38,16 @@ export interface DxfEntity extends DxfRecord {
 
 /** The OBJECTS-section types Triya keeps beside the tables. */
 export const STYLE_OBJECTS: ReadonlySet<string> = new Set(['MLEADERSTYLE', 'TABLESTYLE']);
+
+/**
+ * The OBJECTS-section types that hold the system variables AutoCAD saves outside the HEADER
+ * (M1-63): the AcDbVariableDictionary's DICTIONARYVARs and the ACAD_SCALELIST SCALEs.
+ */
+export const VARIABLE_OBJECTS: ReadonlySet<string> = new Set([
+  'DICTIONARY',
+  'DICTIONARYVAR',
+  'SCALE',
+]);
 
 /**
  * DXF text as AutoCAD writes it: UTF-8 from R2007 (AC1021), the drawing's code page before
@@ -61,6 +76,7 @@ export function readDxfOracle(bytes: Uint8Array): DxfOracle {
   const header = new Map<string, Group[]>();
   const records: DxfRecord[] = [];
   const objects: DxfRecord[] = [];
+  const variableObjects: DxfRecord[] = [];
   const entities: DxfEntity[] = [];
   let block: string | undefined;
   let parent: DxfEntity | undefined;
@@ -118,10 +134,12 @@ export function readDxfOracle(bytes: Uint8Array): DxfOracle {
       if (code === 0) {
         current = undefined;
         if (STYLE_OBJECTS.has(value)) objects.push({ type: value, groups: (current = []) });
+        else if (VARIABLE_OBJECTS.has(value))
+          variableObjects.push({ type: value, groups: (current = []) });
       } else current?.push([code, value]);
     }
   }
-  return { header, records, objects, entities };
+  return { header, records, objects, variableObjects, entities };
 }
 
 /** First value of a group code, if present. */

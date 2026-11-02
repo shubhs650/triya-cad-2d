@@ -8,6 +8,7 @@ import {
   CadDictionary,
   CadDocument,
   Color,
+  DictionaryVariable,
   DimensionStyle,
   ExtendedData,
   ExtendedDataHandle,
@@ -18,6 +19,7 @@ import {
   LineType,
   LineTypeSegment,
   MultiLeaderStyle,
+  Scale,
   TableStyle,
   View,
   XYZ,
@@ -357,5 +359,41 @@ describe('mapHeader', () => {
     expect(mapHeader(doc).header.get('$CECOLOR')).toBe(1);
     // acad-ts's own approximation gives 1 here (M1-43); AutoCAD writes 86.
     expect(mapHeader(doc).header.get('$DIMCLRD')).toBe(86);
+  });
+
+  // M1-63: MSLTSCALE, CANNOSCALE and their kind are system variables AutoCAD saves as
+  // DICTIONARYVAR entries of the AcDbVariableDictionary, not in the HEADER section.
+  it('carries the variable dictionary under bare names, with CANNOSCALEVALUE', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const vars = doc.rootDictionary!.get(CadDictionary.variableDictionary) as CadDictionary;
+    vars.add(new DictionaryVariable('MSLTSCALE', '1'));
+    vars.add(new DictionaryVariable('CANNOSCALE', '1:50'));
+    const scales = doc.rootDictionary!.get(CadDictionary.acadScaleList) as CadDictionary;
+    for (const [key, name, paper, drawing] of [
+      ['A0', '1:1', 1, 1],
+      ['A1', '1:50', 1, 50],
+    ] as const) {
+      const s = new Scale(name);
+      s.paperUnits = paper;
+      s.drawingUnits = drawing;
+      scales.addByKey(key, s);
+    }
+    const { header } = mapHeader(doc);
+
+    expect(header.get('MSLTSCALE')).toBe('1');
+    expect(header.get('CANNOSCALE')).toBe('1:50');
+    expect(header.get('CANNOSCALEVALUE')).toBe(0.02);
+    expect(header.has('$MSLTSCALE')).toBe(false);
+  });
+
+  it('leaves CANNOSCALEVALUE out when CANNOSCALE names no scale of the list', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const vars = doc.rootDictionary!.get(CadDictionary.variableDictionary) as CadDictionary;
+    vars.add(new DictionaryVariable('CANNOSCALE', '1:20'));
+    const { header } = mapHeader(doc);
+
+    expect(header.get('CANNOSCALE')).toBe('1:20');
+    expect(header.has('CANNOSCALEVALUE')).toBe(false);
+    expect(header.has('MSLTSCALE')).toBe(false);
   });
 });
