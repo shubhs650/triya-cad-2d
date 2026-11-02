@@ -18,12 +18,12 @@ Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) �
 | ELLIPSE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | POINT | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | LWPOLYLINE | ✓ (widths drawn as filled segments, tapered along lines and arcs, mitred where wide segments meet, outlined under FILLMODE 0, and bounded by those outlines, M1-46; dashed along the centre line with each dash a piece of the outline when the linetype is not continuous, M1-66) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
-| POLYLINE (2D) + VERTEX + SEQEND | ✓ (widths, with the POLYLINE's 40/41 defaults, drawn as for LWPOLYLINE, M1-46) | | | | |
-| POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | | |
-| SPLINE | ✓ (a spline stored only as fit points, as R2013+ DWGs can hold one, draws and is bounded as AutoCAD's interpolation of them, M1-47; tangent, closed, √chord, uniform and fit-tolerance cases unverified until M1-65) | | | | |
-| SOLID | ✓ | | | | |
-| TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
-| 3DFACE *(render edges)* | ✓ | | — | | |
+| POLYLINE (2D) + VERTEX + SEQEND | ✓ (widths, with the POLYLINE's 40/41 defaults, drawn as for LWPOLYLINE, M1-46) | | | ✓ (new or edited, M1-75 part 1: VERTEX entities edited in place under their handles; vertices and SEQEND a polyline gains numbered above the engine's handles; a quadratic or Bezier fit type does not survive a DXF save yet, M1-80; `export.corpus.test.ts`) | |
+| POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | ✓ 3D (new or edited in plan, each vertex keeping its Z, M1-75 part 1); meshes passthrough | |
+| SPLINE | ✓ (a spline stored only as fit points, as R2013+ DWGs can hold one, draws and is bounded as AutoCAD's interpolation of them, M1-47; tangent, closed, √chord, uniform and fit-tolerance cases unverified until M1-65) | | | ✓ (new or edited, M1-75 part 1: control and fit points keep their Z; a changed knot or weight count must fit the control points; `export.corpus.test.ts`) | |
+| SOLID | ✓ | | | ✓ (new or edited, written back by handle onto the original, only the fields that changed, M1-75 part 1; `export.corpus.test.ts`) | |
+| TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | ✓ as SOLID (M1-75 part 1) | |
+| 3DFACE *(render edges)* | ✓ | | — | ✓ (new or edited in plan, each corner keeping its Z, M1-75 part 1; `export.corpus.test.ts`) | |
 | TEXT | ✓ (drawn by the renderer as SHX strokes or TrueType fills from the loaded fonts, with AutoCAD's justification, M1-41 part 1; unverified against AutoCAD plots until M1-24/M1-26) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036; drawn by the renderer from the loaded fonts with colour, font, stack, big-font and decoration codes, M1-41 part 1; background fill, mask and frame, M1-41 part 2; vertical text not yet) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | ATTDEF | ✓ (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |

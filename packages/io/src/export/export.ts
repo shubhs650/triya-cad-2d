@@ -184,10 +184,15 @@ export function triyaToAcad(original: CadDocument, model: DocumentModel): Export
   const base = documentInit(original);
   const store = PassthroughStore.of(original, base);
   const lineTypes = original.lineTypes;
+  const header = original.header;
+  // Held children a save creates (polyline vertices) are numbered after everything the engine
+  // allocated, so they meet neither an engine handle nor one the file already uses.
+  let next = Math.max(Number.parseInt(model.handSeed, 16), header?.handleSeed ?? 0);
   const r: Resolver = {
     store,
     byLayer: lineTypes?.tryGetValue('ByLayer') ?? LineType.byLayer,
     byBlock: lineTypes?.tryGetValue('ByBlock') ?? LineType.byBlock,
+    allocate: () => next++,
   };
   const { plan: p, problems } = plan(original, base, model, r);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
@@ -197,16 +202,16 @@ export function triyaToAcad(original: CadDocument, model: DocumentModel): Export
   for (const e of p.removed) (e.owner as BlockRecord).entities.remove(e);
   for (const { acad, before, after } of p.updated) writeEntity(r, acad, before as Entity, after);
   for (const { block, after } of p.added) {
-    const e = createAcadEntity(after.type)!;
+    const e = createAcadEntity(after.geom)!;
     // acad-ts keeps a non-zero handle it has not seen, so the entity keeps Triya's handle.
     e.handle = Number.parseInt(after.handle, 16);
     block.entities.add(e);
     writeEntity(r, e, undefined, after);
   }
   // New objects are allocated above $HANDSEED; the seed written back covers every handle the
-  // engine handed out, used or not, as AutoCAD skips handles of cancelled objects.
-  const header = original.header;
-  const seed = Number.parseInt(model.handSeed, 16);
+  // engine handed out, used or not, as AutoCAD skips handles of cancelled objects, and every
+  // held child the save numbered.
+  const seed = Math.max(Number.parseInt(model.handSeed, 16), next);
   if (header && seed > header.handleSeed) header.handleSeed = seed;
   return {
     updated: p.updated.length,
