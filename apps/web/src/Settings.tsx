@@ -3,11 +3,13 @@
 // support files. A modal <dialog>, so focus stays inside it and Esc closes it.
 import { useEffect, useRef, useSyncExternalStore } from 'react';
 import type { PatternStore } from './patterns';
+import type { DeviceFonts, DeviceFontsState } from './local-fonts';
 import type { FontStore } from './user-fonts';
 
 export function Settings({
   patterns,
   fonts,
+  deviceFonts,
   open,
   onClose,
   onAdd,
@@ -15,6 +17,7 @@ export function Settings({
 }: {
   patterns: PatternStore;
   fonts: FontStore;
+  deviceFonts: DeviceFonts;
   open: boolean;
   onClose: () => void;
   onAdd: (files: Iterable<File>) => void;
@@ -25,6 +28,7 @@ export function Settings({
   const fontPicker = useRef<HTMLInputElement>(null);
   const { files, notice, error } = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
   const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
+  const device = useSyncExternalStore(deviceFonts.subscribe, deviceFonts.getSnapshot);
 
   useEffect(() => {
     const d = dialog.current;
@@ -138,10 +142,56 @@ export function Settings({
             e.currentTarget.value = '';
           }}
         />
+        <InstalledFonts state={device} onAllow={() => void deviceFonts.allow()} />
       </section>
       <form method="dialog">
         <button type="submit">Close</button>
       </form>
     </dialog>
+  );
+}
+
+/**
+ * Fonts installed on this computer (M1-38 part 2). The browser asks the user when the button
+ * is pressed; the app never asks by itself, and a refusal only leaves the bundled fonts.
+ */
+function InstalledFonts({ state, onAllow }: { state: DeviceFontsState; onAllow: () => void }) {
+  return (
+    <section className="installed-fonts" aria-labelledby="installed-fonts-title">
+      <h4 id="installed-fonts-title">Fonts installed on this computer</h4>
+      {state.permission === 'unsupported' && (
+        <p>This browser cannot share the fonts installed on this computer.</p>
+      )}
+      {state.permission === 'prompt' && (
+        <>
+          <p>
+            Text can draw with the fonts installed on this computer. Your browser asks you first.
+            The fonts are read on this device and never uploaded.
+          </p>
+          <button type="button" onClick={onAllow}>
+            Use installed fonts…
+          </button>
+        </>
+      )}
+      {state.permission === 'denied' && (
+        <p role="status">
+          Access to installed fonts is blocked, so the bundled fonts stand in. You can allow it in
+          your browser&apos;s site settings.
+        </p>
+      )}
+      {state.permission === 'granted' &&
+        (state.used.length === 0 ? (
+          <p className="empty">No open drawing uses an installed font.</p>
+        ) : (
+          <ul aria-label="Installed fonts in use">
+            {state.used.map((u) => (
+              <li key={u.requested}>
+                <span className="file-name">{u.requested}</span>
+                <span className="pattern-names">{u.face}</span>
+              </li>
+            ))}
+          </ul>
+        ))}
+    </section>
   );
 }

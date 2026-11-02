@@ -77,6 +77,9 @@ importers:
       '@triya/render':
         specifier: workspace:*
         version: link:../../packages/render
+      '@triya/text':
+        specifier: workspace:*
+        version: link:../../packages/text
       react:
         specifier: ^19.2.9
         version: 19.2.9

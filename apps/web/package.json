@@ -19,6 +19,7 @@
     "@triya/hatch": "workspace:*",
     "@triya/io": "workspace:*",
     "@triya/render": "workspace:*",
+    "@triya/text": "workspace:*",
     "react": "^19.2.9",
     "react-dom": "^19.2.9"
   },
