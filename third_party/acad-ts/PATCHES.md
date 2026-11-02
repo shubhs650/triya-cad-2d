@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3) 0115–0119 (M1-32 part 4) and 0121–0125 (M1-79) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76) and 0121–0125 (M1-79) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2270,6 +2270,23 @@ The DXF VIEWPORT reader skipped group 68 (off, or on with its stacking order) an
 **Title:** Read the R12 viewport view from its MVIEW xdata
 
 R12 DXF files keep a viewport's view, snap and grid settings in the ACAD xdata after the MVIEW string rather than as groups. This reads them into the Viewport properties when the file is older than R13, leaving the xdata untouched so it is written back as read.
+
+### 0120 — the DWG colour method None reads as true-colour black
+
+- **File:** `third_party/acad-ts-patches/0120-dwg-colour-method-none.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgStreamReaderAC18.ts`, `src/IO/DWG/DwgStreamReaders/DwgMergedReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgStreamWriterAC18.ts`, `src/IO/DWG/DwgStreamWriters/DwgMergedStreamWriter.ts`
+- **Symptom:** an R2004+ DWG colour (CMC, and the complex-colour long of an ENC) carries its AcCmEntityColor method in the high byte of the RGB long. The readers knew ByLayer (0xC0), the ACI methods (low bit set: 0xC1 ByBlock, 0xC3 ACI) and took everything else as an RGB colour, so None (0xC8) came back as true-colour black. Every AutoCAD drawing has some: the corpus DWGs state 21 to 76 each, in visual styles and in table and cell styles, where a None cell background means no fill (M1-36 had to read black as no fill, so a real black fill was lost). The writers wrote ACI 257, the ACI of None (`AcCmEntityColor::kACInone`), as method 0xC3 with index 257 & 0xFF, ACI 1 (red).
+- **Fix:** the CMC readers (the stream reader and the merged reader's own copy) and the ENC complex-colour branch read method 0xC8 as `Color.byEntity`, ACI 257, which is what AutoCAD's DXF saves of the same drawings state (CELLSTYLE background 62 = 257) and what the DXF reader already returns. The CMC writers write ACI 257 as method 0xC8. True-colour black (0xC2000000) stays black.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0120 DWG AC1018/AC1021/AC1024/AC1032 keeps the colour method None (0xC8) apart from true-colour black" (the CMC and ENC bit streams, the CMC writer, and a DWG round trip of DIMTFILLCLR None and black in the header and a DIMSTYLE). `packages/io/test/map-table.test.ts` maps a None cell background as no fill and a black one as black.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file). The ENC branch has no corpus sample: no corpus entity colour uses method None, so it follows the CMC encoding.
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write the DWG colour method None (0xC8)
+
+R2004+ DWG colours store the AcCmEntityColor colour method in the high byte of the RGB value. `ReadCmColor` handled ByLayer (0xC0) and the indexed methods and read every other value as a true colour, so None (0xC8) became black (0,0,0). AutoCAD writes None for visual style colours and for the background of table and cell styles, where it means "no fill", so a real black fill could not be told apart from none. On write, ACI 257 (the ACI value AutoCAD uses for None, `kACInone`, and the value DXF stores) was written as method 0xC3 with index `257 & 0xFF`, i.e. red.
+
+This reads method 0xC8 as `Color.ByEntity` (257) in `ReadCmColor` (stream and merged readers) and in the complex-colour branch of `ReadEnColor`, and writes 257 back as method 0xC8 in `WriteCmColor` and the merged writer. True black stays a true colour.
 
 </details>
 

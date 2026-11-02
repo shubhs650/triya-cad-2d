@@ -1,0 +1,66 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgMergedReader.ts b/src/IO/DWG/DwgStreamReaders/DwgMergedReader.ts
+index f8bb170..04649b2 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgMergedReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgMergedReader.ts
+@@ -153,6 +153,9 @@ export class DwgMergedReader implements IDwgStreamReader {
+ 		let color: Color;
+ 		if (rgb === 0xC0000000) {
+ 			color = Color.byLayer;
++		} else if (arr[3] === 0xC8) {
++			// Colour method None (AcCmEntityColor::kNone): ACI 257, as DXF states it.
++			color = Color.byEntity;
+ 		} else if ((rgb & 0b0000_0001_0000_0000_0000_0000_0000_0000) !== 0) {
+ 			// Indexed color
+ 			color = new Color(arr[0]);
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgStreamReaderAC18.ts b/src/IO/DWG/DwgStreamReaders/DwgStreamReaderAC18.ts
+index f3f388f..f06338d 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgStreamReaderAC18.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgStreamReaderAC18.ts
+@@ -19,6 +19,9 @@ export class DwgStreamReaderAC18 extends DwgStreamReaderAC15 {
+ 
+ 		if (rgb === 0xC0000000) {
+ 			color = Color.byLayer;
++		} else if (arr[3] === 0xC8) {
++			// Colour method None (AcCmEntityColor::kNone): ACI 257, as DXF states it.
++			color = Color.byEntity;
+ 		} else if ((rgb & 0b0000_0001_0000_0000_0000_0000_0000_0000) !== 0) {
+ 			color = new Color(arr[0]);
+ 		} else {
+@@ -60,7 +63,8 @@ export class DwgStreamReaderAC18 extends DwgStreamReaderAC15 {
+ 				arr[1] = (rgb >>> 8) & 0xFF;
+ 				arr[2] = (rgb >>> 16) & 0xFF;
+ 				arr[3] = (rgb >>> 24) & 0xFF;
+-				color = Color.fromTrueColor((arr[2] << 16) | (arr[1] << 8) | arr[0]);
++				// Colour method None (0xC8) is ACI 257, not true-colour black.
++				color = arr[3] === 0xC8 ? Color.byEntity : Color.fromTrueColor((arr[2] << 16) | (arr[1] << 8) | arr[0]);
+ 			} else {
+ 				color = new Color(size & 0b111111111111);
+ 			}
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgMergedStreamWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgMergedStreamWriter.ts
+index 8545491..8f4b886 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgMergedStreamWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgMergedStreamWriter.ts
+@@ -143,6 +143,9 @@ export class DwgMergedStreamWriter implements IDwgStreamWriter {
+ 			arr[3] = 0b11000010;
+ 		} else if (value.isByLayer) {
+ 			arr[3] = 0b11000000;
++		} else if (value.index === 257) {
++			// Colour method None (0xC8); as ACI it would be written as index 1.
++			arr[3] = 0xC8;
+ 		} else {
+ 			arr[0] = value.index & 0xFF;
+ 			arr[3] = 0b11000011;
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgStreamWriterAC18.ts b/src/IO/DWG/DwgStreamWriters/DwgStreamWriterAC18.ts
+index 4edf136..f2a6942 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgStreamWriterAC18.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgStreamWriterAC18.ts
+@@ -22,6 +22,9 @@ export class DwgStreamWriterAC18 extends DwgStreamWriterAC15 {
+ 			arr[3] = 0b11000010;
+ 		} else if (value.isByLayer) {
+ 			arr[3] = 0b11000000;
++		} else if (value.index === 257) {
++			// Colour method None (0xC8); as ACI it would be written as index 1.
++			arr[3] = 0xC8;
+ 		} else {
+ 			arr[3] = 0b11000011;
+ 			arr[0] = value.index & 0xFF;
