@@ -1,0 +1,1 @@
+- M1-75 part 3 (#135): saves now write dimension (every type, arc length and jogged), LEADER and TOLERANCE changes and new ones by handle. A dimension cannot change type and must keep its block; a jogged radius dimension is refused on a DWG save. Line spacing and oblique angles still do not survive a DXF save (M1-82).

@@ -18,6 +18,7 @@ import {
   type Handle,
 } from '@triya/engine';
 import { documentInit } from '../map/document';
+import type { CadFormat } from '../read';
 import { writeCadDocument, type WriteOptions } from '../write';
 import { createAcadEntity, entityProblems, same, writeEntity, type Resolver } from './entities';
 import { PassthroughStore } from './passthrough';
@@ -130,11 +131,22 @@ function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
   return out;
 }
 
+/**
+ * Types acad-ts can read from a file but not write to the format at hand: its DWG writer leaves
+ * a LARGE_RADIAL_DIMENSION out (roadmap M1-74), so an edited or new one would be lost.
+ */
+function formatProblems(format: CadFormat | undefined, e: Entity): string[] {
+  return format === 'dwg' && e.type === 'LARGE_RADIAL_DIMENSION'
+    ? [`${e.type} ${e.handle}: acad-ts has no DWG writer for it (M1-74)`]
+    : [];
+}
+
 function plan(
   doc: CadDocument,
   base: DocumentInit,
   model: DocumentModel,
   r: Resolver,
+  format: CadFormat | undefined,
 ): { plan: Plan; problems: string[] } {
   const problems = [...nonEntityProblems(base, model), ...orderProblems(base, model)];
   const out: Plan = { updated: [], added: [], removed: [] };
@@ -155,12 +167,12 @@ function plan(
       problems.push(`${m.type} ${m.handle}: moves to another block`);
       continue;
     }
-    problems.push(...entityProblems(r, b as Entity, m));
+    problems.push(...entityProblems(r, b as Entity, m), ...formatProblems(format, m));
     out.updated.push({ acad, before: b, after: m });
   }
   for (const m of model.entities()) {
     if (baseByHandle.has(m.handle)) continue;
-    problems.push(...entityProblems(r, undefined, m));
+    problems.push(...entityProblems(r, undefined, m), ...formatProblems(format, m));
     const block = r.store.original(m.owner);
     if (!(block instanceof BlockRecord)) {
       problems.push(`${m.type} ${m.handle}: owner block ${m.owner} is not in the drawing`);
@@ -178,9 +190,13 @@ function plan(
 /**
  * Applies the Triya document's differences from `original`'s own mapping onto `original`, by
  * handle (ARCHITECTURE.md §6.1). Throws `UnsupportedChangeError`, leaving `original` as it was,
- * when a difference has no writer yet.
+ * when a difference has no writer yet (for the `format` the save is for, when given).
  */
-export function triyaToAcad(original: CadDocument, model: DocumentModel): ExportSummary {
+export function triyaToAcad(
+  original: CadDocument,
+  model: DocumentModel,
+  format?: CadFormat,
+): ExportSummary {
   const base = documentInit(original);
   const store = PassthroughStore.of(original, base);
   const lineTypes = original.lineTypes;
@@ -194,7 +210,7 @@ export function triyaToAcad(original: CadDocument, model: DocumentModel): Export
     byBlock: lineTypes?.tryGetValue('ByBlock') ?? LineType.byBlock,
     allocate: () => next++,
   };
-  const { plan: p, problems } = plan(original, base, model, r);
+  const { plan: p, problems } = plan(original, base, model, r, format);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
@@ -227,6 +243,6 @@ export function exportDocument(
   model: DocumentModel,
   options: WriteOptions,
 ): Uint8Array {
-  triyaToAcad(original, model);
+  triyaToAcad(original, model, options.format);
   return writeCadDocument(original, options);
 }
