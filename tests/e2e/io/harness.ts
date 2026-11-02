@@ -8,6 +8,16 @@ export async function startHarness(): Promise<{ url: string; close(): Promise<vo
     root: path.join(import.meta.dirname, 'harness'),
     configFile: false,
     logLevel: 'error',
+    // Same mapping as tsconfig.base.json `paths`: the worker's mapping (ioApi.open) imports
+    // @triya/engine from source.
+    resolve: {
+      alias: [
+        {
+          find: /^@triya\/([a-z-]+)$/,
+          replacement: path.join(import.meta.dirname, '../../../packages/$1/src/index.ts'),
+        },
+      ],
+    },
     server: { host: '127.0.0.1', port: 0, strictPort: false },
   });
   await server.listen();

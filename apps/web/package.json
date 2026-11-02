@@ -5,6 +5,9 @@
   "description": "Vite + React PWA shell (the only app)",
   "license": "MIT",
   "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
