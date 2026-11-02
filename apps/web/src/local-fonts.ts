@@ -14,6 +14,7 @@ import {
   styleFont,
   type FontSource,
   type FontStyleRequest,
+  type FontWarning,
   type MTextFont,
 } from '@triya/text';
 import type { DocumentInit } from '@triya/engine';
@@ -211,6 +212,8 @@ export interface DeviceFontsState {
   readonly permission: LocalFontsPermission;
   /** The installed faces drawn with, by the font name a drawing asked for. */
   readonly used: readonly { readonly requested: string; readonly face: string }[];
+  /** Installed faces that could not be read or did not parse (the Health palette lists them). */
+  readonly warnings: readonly FontWarning[];
 }
 
 const requestKey = (f: MTextFont) => `${f.name.toLowerCase()}|${Number(f.bold)}${Number(f.italic)}`;
@@ -223,7 +226,7 @@ const requestKey = (f: MTextFont) => `${f.name.toLowerCase()}|${Number(f.bold)}$
  */
 export class DeviceFonts {
   readonly #access: LocalFontAccess;
-  #state: DeviceFontsState = { permission: 'unsupported', used: [] };
+  #state: DeviceFontsState = { permission: 'unsupported', used: [], warnings: [] };
   #installed: readonly LocalFontData[] | undefined;
   readonly #needed = new Map<string, MTextFont>();
   readonly #tried = new Set<string>();
@@ -264,11 +267,6 @@ export class DeviceFonts {
   };
 
   getSnapshot = (): DeviceFontsState => this.#state;
-
-  /** Installed faces that were offered but did not parse (`TtfRegistry.warnings`). */
-  get warnings(): readonly string[] {
-    return this.#registry.warnings;
-  }
 
   /** The faces read so far; the same array until one is added. */
   files(): readonly StoredFont[] {
@@ -323,6 +321,9 @@ export class DeviceFonts {
         if (!found || !picked) continue;
         this.#used(font.name, picked.face);
         if (this.#add(font.name, picked.face, picked.bytes)) changed = true;
+      }
+      if (this.#registry.warnings.length !== this.#state.warnings.length) {
+        this.#set({ warnings: [...this.#registry.warnings] });
       }
       if (changed) {
         this.#files = [...this.#read.values()].map((r) => r.font);

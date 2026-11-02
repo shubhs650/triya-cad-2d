@@ -21,6 +21,7 @@ export { documentInit, openDocument, type OpenedDocument } from './map/document'
 export { drawingFacts, type DrawingFacts, type DrawingReference } from './health/facts';
 export {
   healthReport,
+  type FontError,
   type HealthFonts,
   type HealthReport,
   type HealthSources,

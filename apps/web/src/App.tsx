@@ -295,6 +295,8 @@ export function App() {
           <HealthPalette
             doc={active}
             patternSources={patterns.sources()}
+            fontStore={fonts}
+            deviceFonts={deviceFonts}
             onClose={() => setPalette(undefined)}
           />
         )}

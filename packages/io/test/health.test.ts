@@ -213,6 +213,53 @@ describe('healthReport', () => {
     expect([...book.substitutions]).toEqual([]);
   });
 
+  // M1-38 part 3: fonts the app could not read or parse, and installed fonts drawn with.
+  it('lists font errors with the styles of this drawing that name each font', () => {
+    const r = healthReport(FACTS, {
+      fonts: fonts(),
+      fontErrors: [
+        { source: 'Your fonts', font: 'ROMANS.SHX', problem: 'not a font Triya can read' },
+        { source: 'This computer', font: 'Arial', problem: 'could not be read (NotAllowedError)' },
+        { source: 'Your fonts', font: 'C:\\Fonts\\isocp.shx', problem: 'could not be read' },
+      ],
+    });
+    // Matched by file name without folder, extension or case; a family matches its file.
+    expect(r.fonts.errors).toEqual([
+      {
+        font: 'Arial',
+        source: 'This computer',
+        problem: 'could not be read (NotAllowedError)',
+        styles: ['Body'],
+      },
+      // An error for a font this drawing does not name is still listed: it is the app's.
+      {
+        font: 'C:\\Fonts\\isocp.shx',
+        source: 'Your fonts',
+        problem: 'could not be read',
+        styles: [],
+      },
+      {
+        font: 'ROMANS.SHX',
+        source: 'Your fonts',
+        problem: 'not a font Triya can read',
+        styles: ['Notes', 'Title'],
+      },
+    ]);
+    expect(healthReport(FACTS, { fonts: fonts() }).fonts.errors).toEqual([]);
+  });
+
+  it("lists the installed faces this drawing's fonts are drawn with", () => {
+    const r = healthReport(FACTS, {
+      fonts: fonts(),
+      installed: [
+        { requested: 'arial.ttf', face: 'Arial' },
+        // Another drawing's font: not this drawing's business.
+        { requested: 'consola.ttf', face: 'Consolas' },
+      ],
+    });
+    expect(r.fonts.installed).toEqual([{ font: 'arial.ttf', face: 'Arial', styles: ['Body'] }]);
+  });
+
   it('lists the stored-without-lines patterns no loaded pattern file defines', () => {
     // The bundled set defines TRIYA_BRICK (names match without case) but not ANSI31.
     expect(healthReport(FACTS, { fonts: fonts() }).patterns.missing).toEqual([
