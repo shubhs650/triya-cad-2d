@@ -49,6 +49,10 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
 
 		if (builder.version < ACadVersion.AC1012) {
 			this._readR12View();
+			// R12 has no 90 flags: a status (68) of 0 is how it says the viewport is off.
+			if (this.cadObject.activeStatus === 0) {
+				this.cadObject.status |= ViewportStatusFlags.ViewportOff;
+			}
 		}
 
 		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);

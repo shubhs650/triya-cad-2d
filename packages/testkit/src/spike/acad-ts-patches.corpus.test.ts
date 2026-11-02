@@ -2524,5 +2524,16 @@ describe('acad-ts local patches (corpus-backed)', () => {
       // Fast zoom on and the UCS icon shown (MVIEW 1070s), nothing else.
       expect(vp.status).toBe(ViewportStatusFlags.FastZoom | ViewportStatusFlags.UcsIconVisibility);
     }
+    // R12 has no 90 flags, so a status (68) of 0 is the only sign a viewport is off.
+    const text = new TextDecoder('latin1').decode(
+      corpusBytes('third-party/acadsharp/sample_AC1009_ascii.dxf'),
+    );
+    const off = text.replace(/(\n26B\r?\n(?:.*\r?\n)*? 68\r?\n) *2\r?\n/, '$1     0\n');
+    expect(off).not.toBe(text);
+    const doc = readDxfRaw(Uint8Array.from(off, (c) => c.charCodeAt(0)));
+    expect((doc.getCadObject(0x26b) as Viewport).status & ViewportStatusFlags.ViewportOff).not.toBe(
+      0,
+    );
+    expect((doc.getCadObject(0x267) as Viewport).status & ViewportStatusFlags.ViewportOff).toBe(0);
   });
 });

@@ -2261,7 +2261,7 @@ The DXF VIEWPORT reader skipped group 68 (off, or on with its stacking order) an
 - **File:** `third_party/acad-ts-patches/0119-r12-viewport-mview-xdata.patch`
 - **Touches:** `src/IO/Templates/CadViewportTemplate.ts`
 - **Symptom:** R12 states a viewport's frame as groups (10, 40, 41, 68, 69) and its view, snap and grid in the ACAD xdata after `MVIEW` (DXF R12 reference, VIEWPORT). acad-ts never read that xdata into the viewport, so view centre, height, lens and the rest read as 0. Found by the M1-04 entity oracle (`VIEWPORT MVIEW 12/42/45`, roadmap M1-32) on `sample_AC1009_ascii.dxf`.
-- **Fix:** for documents before R13, the template reads the MVIEW xdata into view target, direction, twist, height, centre, lens, front and back clip, snap angle, base and spacing, grid spacing, circle zoom and the status bits (view mode, UCS icon, fast zoom, snap, grid, isometric snap, isopair, hidden in plot). The xdata itself is kept as read.
+- **Fix:** for documents before R13, the template reads the MVIEW xdata into view target, direction, twist, height, centre, lens, front and back clip, snap angle, base and spacing, grid spacing, circle zoom and the status bits (view mode, UCS icon, fast zoom, snap, grid, isometric snap, isopair, hidden in plot), and sets the ViewportOff flag when 68 is 0, since R12 has no 90 flags to say so. The xdata itself is kept as read.
 - **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0119 an R12 viewport reads its view from the MVIEW xdata"; `entities.corpus.test.ts` no longer lists the gap.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 

@@ -1,5 +1,5 @@
 diff --git a/src/IO/Templates/CadViewportTemplate.ts b/src/IO/Templates/CadViewportTemplate.ts
-index fec3927..7b7b5cb 100644
+index fec3927..27cf89a 100644
 --- a/src/IO/Templates/CadViewportTemplate.ts
 +++ b/src/IO/Templates/CadViewportTemplate.ts
 @@ -5,6 +5,14 @@ import { Layer } from '../../Tables/Layer.js';
@@ -17,18 +17,22 @@ index fec3927..7b7b5cb 100644
  import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
  import { NotificationType } from '../NotificationEventHandler.js';
  import { CadEntityTemplateT } from './CadEntityTemplate.js';
-@@ -39,6 +47,10 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
+@@ -39,6 +47,14 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
  			this.cadObject.id = this.viewportId;
  		}
  
 +		if (builder.version < ACadVersion.AC1012) {
 +			this._readR12View();
++			// R12 has no 90 flags: a status (68) of 0 is how it says the viewport is off.
++			if (this.cadObject.activeStatus === 0) {
++				this.cadObject.status |= ViewportStatusFlags.ViewportOff;
++			}
 +		}
 +
  		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);
  		if (sun) {
  			this.cadObject.sun = sun;
-@@ -94,4 +106,69 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
+@@ -94,4 +110,69 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
  			}
  		}
  	}
