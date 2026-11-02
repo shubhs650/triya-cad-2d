@@ -1,0 +1,1 @@
+- M1-75 part 6 (#144): saves keep edited header variables (and existing DICTIONARYVARs) and new or edited layers, such as the Layers palette's On, Freeze and Lock toggles; what a save cannot keep (a variable the format does not store, a removed layer, a layer's transparency) is refused before anything is written. M1-87 tracks the acad-ts header writer gaps found on the way.
