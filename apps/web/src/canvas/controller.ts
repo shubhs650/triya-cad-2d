@@ -86,6 +86,10 @@ export class CanvasController {
   #size: ViewportSize = { width: 0, height: 0 };
   #view: ViewTransform | undefined;
   #pending = 0;
+  /** A frame was sent to the renderer and is not drawn yet. */
+  #drawing = false;
+  /** A view change arrived while a frame was in flight. */
+  #again = false;
   #mode: CanvasMode = 'none';
   #drag: { readonly pointer: number; x: number; y: number } | undefined;
   #lastMiddle: { readonly t: number; readonly x: number; readonly y: number } | undefined;
@@ -186,6 +190,7 @@ export class CanvasController {
     this.#canvas = canvas;
     this.#listeners = new AbortController();
     this.#host = this.#createHost();
+    this.#drawing = this.#again = false;
     this.#listen();
     this.#size = { width: 0, height: 0 };
     this.#view = view;
@@ -319,8 +324,30 @@ export class CanvasController {
     this.#pending = requestAnimationFrame(() => {
       this.#pending = 0;
       if (!this.#view) return;
+      // One frame in flight: while the render worker is still drawing (building the drawing
+      // after open, or a full redraw once a pan settles), later views are not queued behind
+      // it to be drawn one by one; the latest is drawn once it is free (M1-60).
+      if (this.#drawing) {
+        this.#again = true;
+        return;
+      }
       this.#host.setView(this.#view);
       this.#host.frame();
+      this.#drawing = true;
+      const canvas = this.#canvas;
+      this.#host.flush().then(
+        () => {
+          this.#drawing = false;
+          // Nothing in the app listens; the T3 spec counts the frames that were drawn.
+          canvas.dispatchEvent(new Event('framedrawn'));
+          if (this.#again) {
+            this.#again = false;
+            this.#requestFrame();
+          }
+        },
+        // The renderer was disposed (REGEN, closing the drawing).
+        () => undefined,
+      );
     });
   }
 
