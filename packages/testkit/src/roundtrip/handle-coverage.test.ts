@@ -124,6 +124,13 @@ describe('documentHandles', () => {
     // ATTRIB 79D (a multi-line attribute) → DICTIONARY 137C → XRECORD 137D, 137E.
     for (const h of [0x79d, 0x137c, 0x137d, 0x137e]) expect(have).toContain(h);
   });
+
+  it('includes child fields, which acad-ts keeps inside the parent field', () => {
+    const bytes = corpus('third-party/ezdxf/examples_dxf/uncommon.dxf');
+    const have = documentHandles(readCadDocument(bytes));
+    // FIELD 5F8 → child FIELD 5F9; FIELD 5FF → child FIELD 600 (360 in the parent, 330 back).
+    for (const h of [0x5f8, 0x5f9, 0x5ff, 0x600]) expect(have).toContain(h);
+  });
 });
 
 describe('handleCoverage', () => {
