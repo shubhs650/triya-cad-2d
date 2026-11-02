@@ -777,7 +777,7 @@ describe('acad-ts local patches', () => {
     expect(first(dwgRoundTrip(doc)).objectName).toBe('SOLID');
   });
 
-  it('0126 DXF writes POLYLINE 75 for spline-fit 2D and 3D polylines, not only for meshes', () => {
+  it('0127 DXF writes POLYLINE 75 for spline-fit 2D and 3D polylines, not only for meshes', () => {
     const doc = new CadDocument();
     const fitted = (p: Polyline, type: SmoothSurfaceType, v: () => Vertex2D | Vertex3D) => {
       for (const [x, y] of [

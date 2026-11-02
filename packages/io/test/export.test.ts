@@ -586,7 +586,7 @@ describe('triyaToAcad', () => {
   });
 
   // POLYLINE 75 is the fit type of a spline-fit polyline (DXF reference, POLYLINE); without
-  // it a quadratic or Bezier fit reads back cubic (M1-80, acad-ts patch 0126).
+  // it a quadratic or Bezier fit reads back cubic (M1-80, acad-ts patch 0127).
   it.each([
     ['quadratic', false],
     ['bezier', false],

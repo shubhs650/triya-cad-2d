@@ -153,7 +153,7 @@ import { RevolvedSurface } from '../../../Entities/RevolvedSurface.js';
 import { SweptSurface } from '../../../Entities/SweptSurface.js';
 import { CadBody } from '../../../Entities/CadBody.js';
 import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
-import { TableEntity, CellType, CellContent, CellContentGeometry, CellRange, CustomDataEntry, CellStyle, CellStyleType, TableCellContentType, TableCellStateFlags, ContentFormat, CellEdgeFlags, CellBorder, TableEntityBorderType, TableCellContentLayoutFlags, TableCellStylePropertyFlags, MarginFlags, TableBorderPropertyFlags, TableCellStylePropertyFlags as TCFlags, TableOverrideFlags, BorderOverrideFlags, TableAttribute, BreakOptionFlags, BreakFlowDirection, BreakHeight, BreakRowRange, BreakData, TableEntityColumn, TableEntityRow, TableEntityCell, CellAlignmentType , CellStyleClass, CellOverrideFlags } from '../../../Entities/TableEntity.js';
+import { TableEntity, CellType, CellContent, CellContentGeometry, CellRange, CustomDataEntry, CellStyle, CellStyleType, TableCellContentType, TableCellStateFlags, ContentFormat, CellEdgeFlags, CellBorder, TableEntityBorderType, TableCellContentLayoutFlags, TableCellStylePropertyFlags, MarginFlags, TableBorderPropertyFlags, TableCellStylePropertyFlags as TCFlags, TableOverrideFlags, TableStyleOverrides, TableRowTypeOverrides, BorderOverrideFlags, TableAttribute, BreakOptionFlags, BreakFlowDirection, BreakHeight, BreakRowRange, BreakData, TableEntityColumn, TableEntityRow, TableEntityCell, CellAlignmentType , CellStyleClass, CellOverrideFlags } from '../../../Entities/TableEntity.js';
 import { Block } from '../../../Blocks/Block.js';
 import { BlockEnd } from '../../../Blocks/BlockEnd.js';
 import { BlockRecord, BlockTypeFlags } from '../../../Tables/BlockRecord.js';
@@ -4453,72 +4453,44 @@ export class DwgObjectReader extends DwgSectionIO {
       const styleOverride = new TableStyle();
       table.content.style = styleOverride;
       const flags = this._mergedReaders.readBitLong() as TableOverrideFlags;
+      const overrides = new TableStyleOverrides();
+      overrides.flags = flags;
+      if (flags !== 0) {
+        table.tableOverrides = overrides;
+      }
       if ((flags & TableOverrideFlags.TitleSuppressed) !== 0) {
         styleOverride.suppressTitle = this._mergedReaders.readBit();
+        overrides.suppressTitle = styleOverride.suppressTitle;
       }
       if ((flags & TableOverrideFlags.FlowDirection) !== 0) {
-        this._mergedReaders.readBitShort();
+        overrides.flowDirection = this._mergedReaders.readBitShort();
       }
       if ((flags & TableOverrideFlags.HorizontalCellMargin) !== 0) {
-        this._mergedReaders.readBitDouble();
+        overrides.horizontalCellMargin = this._mergedReaders.readBitDouble();
       }
       if ((flags & TableOverrideFlags.VerticalCellMargin) !== 0) {
-        this._mergedReaders.readBitDouble();
+        overrides.verticalCellMargin = this._mergedReaders.readBitDouble();
       }
-      if ((flags & TableOverrideFlags.TitleRowColor) !== 0) {
-        this._mergedReaders.readCmColor(this.r2004Pre);
-      }
-      if ((flags & TableOverrideFlags.HeaderRowColor) !== 0) {
-        this._mergedReaders.readCmColor(this.r2004Pre);
-      }
-      if ((flags & TableOverrideFlags.DataRowColor) !== 0) {
-        this._mergedReaders.readCmColor(this.r2004Pre);
-      }
-      if ((flags & TableOverrideFlags.TitleRowFillNone) !== 0) {
-        this._mergedReaders.readBit();
-      }
-      if ((flags & TableOverrideFlags.HeaderRowFillNone) !== 0) {
-        this._mergedReaders.readBit();
-      }
-      if ((flags & TableOverrideFlags.DataRowFillNone) !== 0) {
-        this._mergedReaders.readBit();
-      }
-      if ((flags & TableOverrideFlags.TitleRowFillColor) !== 0) {
-        this._mergedReaders.readCmColor(this.r2004Pre);
-      }
-      if ((flags & TableOverrideFlags.HeaderRowFillColor) !== 0) {
-        this._mergedReaders.readCmColor(this.r2004Pre);
-      }
-      if ((flags & TableOverrideFlags.DataRowFillColor) !== 0) {
-        this._mergedReaders.readCmColor(this.r2004Pre);
-      }
-      if ((flags & TableOverrideFlags.TitleRowAlign) !== 0) {
-        this._mergedReaders.readBitShort();
-      }
-      if ((flags & TableOverrideFlags.HeaderRowAlign) !== 0) {
-        this._mergedReaders.readBitShort();
-      }
-      if ((flags & TableOverrideFlags.DataRowAlign) !== 0) {
-        this._mergedReaders.readBitShort();
-      }
-      if ((flags & TableOverrideFlags.TitleTextStyle) !== 0) {
-        this._handleReference();
-      }
-      if ((flags & TableOverrideFlags.HeaderTextStyle) !== 0) {
-        this._handleReference();
-      }
-      if ((flags & TableOverrideFlags.DataTextStyle) !== 0) {
-        this._handleReference();
-      }
-      if ((flags & TableOverrideFlags.TitleRowHeight) !== 0) {
-        this._mergedReaders.readBitDouble();
-      }
-      if ((flags & TableOverrideFlags.HeaderRowHeight) !== 0) {
-        this._mergedReaders.readBitDouble();
-      }
-      if ((flags & TableOverrideFlags.DataRowHeight) !== 0) {
-        this._mergedReaders.readBitDouble();
-      }
+      // Each per-row-type property is stated for the title, header and data rows, in that order.
+      const rowTypes = [overrides.title, overrides.header, overrides.data];
+      const perRowType = (first: TableOverrideFlags, read: (row: TableRowTypeOverrides) => void): void => {
+        rowTypes.forEach((row, k) => {
+          if ((flags & (first << k)) !== 0) {
+            read(row);
+          }
+        });
+      };
+      perRowType(TableOverrideFlags.TitleRowColor, (row) => { row.contentColor = this._mergedReaders.readCmColor(this.r2004Pre); });
+      perRowType(TableOverrideFlags.TitleRowFillNone, (row) => { row.fillNone = this._mergedReaders.readBit(); });
+      perRowType(TableOverrideFlags.TitleRowFillColor, (row) => { row.fillColor = this._mergedReaders.readCmColor(this.r2004Pre); });
+      perRowType(TableOverrideFlags.TitleRowAlign, (row) => { row.alignment = this._mergedReaders.readBitShort(); });
+      perRowType(TableOverrideFlags.TitleTextStyle, (row) => {
+        const handle = this._handleReference();
+        if (handle) {
+          template.overrideTextStyles.push([row, handle]);
+        }
+      });
+      perRowType(TableOverrideFlags.TitleRowHeight, (row) => { row.textHeight = this._mergedReaders.readBitDouble(); });
     }
     if (this._mergedReaders.readBit()) {
       const flags = this._mergedReaders.readBitLong() as BorderOverrideFlags;

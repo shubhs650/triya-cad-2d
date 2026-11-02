@@ -1,7 +1,7 @@
 // AcadToTriya for ACAD_TABLE (M1-04 part 3d) on drawings authored in memory with acad-ts:
 // rows, columns and cells, merged ranges stated either way (DXF per cell, DWG as ranges), and
 // the −Z plan view, and the cell formats of M1-36 (a DXF / R2004 flag word, or R2010 cell,
-// row, column and content formats). The corpus comparison is in packages/testkit/src/mapping/entities.corpus.test.ts.
+// row, column and content formats), and the table-wide overrides of M1-77. The corpus comparison is in packages/testkit/src/mapping/entities.corpus.test.ts.
 import {
   ACadVersion,
   BlockRecord,
@@ -13,6 +13,7 @@ import {
   TableEntityCell,
   TableEntityColumn,
   TableEntityRow,
+  TableStyleOverrides,
   TextStyle,
   XYZ,
 } from '@node-projects/acad-ts';
@@ -270,6 +271,95 @@ describe('ACAD_TABLE', () => {
         margins: { top: 0.25, bottom: 1 },
       });
       expect(cells[1]!.format).toEqual({ background: { kind: 'rgb', r: 0, g: 0, b: 0 } });
+    });
+  });
+  describe('table-wide overrides (M1-77)', () => {
+    it('reads the DXF / R2004 override flag word: margins and each row type’s values', () => {
+      const doc = new CadDocument(ACadVersion.AC1018);
+      const { t } = table(doc);
+      const style = new TextStyle('NOTES');
+      doc.textStyles?.add(style);
+      const o = new TableStyleOverrides();
+      o.horizontalCellMargin = 0.5;
+      o.verticalCellMargin = 0.25; // not flagged: ignored
+      o.title.alignment = 5;
+      o.title.textStyle = style;
+      o.title.textHeight = 4;
+      o.header.contentColor = new Color(3);
+      o.header.fillColor = new Color(140);
+      o.data.fillColor = new Color(141);
+      o.data.fillNone = true;
+      o.data.textHeight = 2.5;
+      o.header.textHeight = 9; // not flagged: ignored
+      // horizontal margin; title alignment, style and height; header content and fill colour;
+      // data fill colour, fill none and height
+      o.flags = (0x08 |
+        0x4000 |
+        0x20000 |
+        0x100000 |
+        0x40 |
+        0x1000 |
+        0x2000 |
+        0x400 |
+        0x400000) as never;
+      t.tableOverrides = o;
+
+      expect(mapOne(doc, t).overrides).toEqual({
+        margins: { left: 0.5, right: 0.5 },
+        title: { alignment: 5, textStyle: H(style), textHeight: 4 },
+        header: {
+          contentColor: { kind: 'aci', index: 3 },
+          background: { kind: 'aci', index: 140 },
+        },
+        data: { textHeight: 2.5, background: null },
+      });
+    });
+
+    it('has none when the flag word is 0 or nothing is stated', () => {
+      const doc = new CadDocument(ACadVersion.AC1018);
+      const { t } = table(doc);
+      expect(mapOne(doc, t).overrides).toBeUndefined();
+      t.tableOverrides = new TableStyleOverrides();
+      expect(mapOne(doc, t).overrides).toBeUndefined();
+    });
+
+    it('derives R2010 overrides from the table cell style and what every row of a type shares', () => {
+      const doc = new CadDocument(ACadVersion.AC1032);
+      const { t } = table(doc);
+      const data = new TableEntityRow();
+      data.height = 6;
+      data.cells.push(cell('A'), cell('B'));
+      t.rows.push(data);
+      const [title, row1, row2] = t.rows as [TableEntityRow, TableEntityRow, TableEntityRow];
+      title.styleId = 1;
+      row1.styleId = 3;
+      row2.styleId = 3;
+      const cso = t.cellStyleOverride;
+      cso.hasData = true;
+      cso.marginOverrideFlags = 1 as never;
+      cso.cellPropertyOverrideFlags = (0x400 | 0x800) as never; // left and top only
+      cso.horizontalMargin = 0.1;
+      cso.verticalMargin = 0.2;
+      cso.rightMargin = 0.3;
+      const own = (
+        r: TableEntityRow,
+        flags: number,
+        set: (s: TableEntityRow['cellStyleOverride']) => void,
+      ) => {
+        r.cellStyleOverride.hasData = true;
+        r.cellStyleOverride.cellPropertyOverrideFlags = flags as never;
+        set(r.cellStyleOverride);
+      };
+      own(title, 0x80 | 0x10, (s) => ((s.textHeight = 5), (s.alignment = 2)));
+      own(row1, 0x80 | 0x20, (s) => ((s.textHeight = 2), (s.color = new Color(1))));
+      own(row2, 0x80 | 0x20, (s) => ((s.textHeight = 2), (s.color = new Color(2))));
+
+      expect(mapOne(doc, t).overrides).toEqual({
+        margins: { left: 0.1, top: 0.2 },
+        title: { alignment: 2, textHeight: 5 },
+        // the data rows' colours differ, so only their height is the row type's
+        data: { textHeight: 2 },
+      });
     });
   });
 });
