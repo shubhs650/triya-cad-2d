@@ -48,25 +48,42 @@ export async function openWithDrop(page: Page, file: string): Promise<void> {
 
 /** Non-background pixels of the visible canvas. */
 export async function ink(page: Page): Promise<number> {
+  return canvasInk(page, false);
+}
+
+/**
+ * How strongly the canvas is inked: the summed RGB distance of every pixel from the dark
+ * canvas colour. A faded object (M1-69) counts for less while covering the same pixels.
+ */
+export async function inkWeight(page: Page): Promise<number> {
+  return canvasInk(page, true);
+}
+
+async function canvasInk(page: Page, weighted: boolean): Promise<number> {
   const png = (await activeCanvas(page).screenshot()).toString('base64');
-  return page.evaluate(async (b64) => {
-    const img = new Image();
-    img.src = `data:image/png;base64,${b64}`;
-    await img.decode();
-    const c = document.createElement('canvas');
-    c.width = img.width;
-    c.height = img.height;
-    const ctx = c.getContext('2d')!;
-    ctx.drawImage(img, 0, 0);
-    const d = ctx.getImageData(0, 0, c.width, c.height).data;
-    // The dark model canvas, #212830 (UI_SPEC.md §6).
-    let n = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      if (Math.abs(d[i]! - 0x21) + Math.abs(d[i + 1]! - 0x28) + Math.abs(d[i + 2]! - 0x30) > 24)
-        n++;
-    }
-    return n;
-  }, png);
+  return page.evaluate(
+    async ({ b64, weighted }) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      // The dark model canvas, #212830 (UI_SPEC.md §6).
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const off =
+          Math.abs(d[i]! - 0x21) + Math.abs(d[i + 1]! - 0x28) + Math.abs(d[i + 2]! - 0x30);
+        if (weighted) n += off;
+        else if (off > 24) n++;
+      }
+      return n;
+    },
+    { b64: png, weighted },
+  );
 }
 
 /** Waits until the tab for `name` is selected and its drawing is on the canvas. */

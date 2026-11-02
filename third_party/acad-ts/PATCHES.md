@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33) and 0098–0099 (M1-33 part 2) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1923,5 +1923,22 @@ R2004 and earlier DXF files write a value as its 90 type and the type's data, wi
 **Title:** Do not throw on the 91 of an unknown-type DXF table value
 
 Empty cells are written as unknown-type values with a 91. Setting it threw "Invalid operation for value type" and dropped the whole table; the 91 carries no value for that type and is now skipped.
+
+</details>
+
+### 0100 — a DXF date value is dropped on read and written as 91 = 0
+
+- **File:** `third_party/acad-ts-patches/0100-dxf-date-value.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** an R2007+ date value (field, table cell) is `90 = 8`, `92 = 16`, `310` = a SYSTEMTIME. `readCadValue` skipped the 92 and 310, so the value stayed empty, and the writer wrote `91 = 0` for a date. ezdxf `uncommon.dxf` FIELD 5F9 (an AcVar Date child field, 2020-04-21 16:45:39) and the acadsharp R2007+ `ACAD_TABLE` date cell lost their dates on every save. The structural diff could not see it: both reads had an empty value.
+- **Fix:** the reader decodes the 16 bytes as the DWG reader does (year, month, day of week, day, hour, minute, second, millisecond, little-endian shorts). The writer writes `92 = 16` and the SYSTEMTIME for a date from R2007 on. Pre-R2007 8-byte dates are unchanged.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0100 a DXF date value keeps its date through a save".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write DXF date values (92/310 SYSTEMTIME)
+
+R2007+ DXF stores a date value as a byte count (92) and a SYSTEMTIME (310). The reader ignored both and the writer emitted `91 0`, so dates in fields and table cells were lost on a DXF save. This decodes and encodes the SYSTEMTIME the same way the DWG reader and writer do.
 
 </details>

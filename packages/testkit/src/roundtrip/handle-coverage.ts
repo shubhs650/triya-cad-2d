@@ -7,6 +7,7 @@
 import {
   ACadVersion,
   CadDictionary,
+  Field,
   DwgObjectReader,
   DwgReader,
   DwgSectionDefinition,
@@ -61,30 +62,39 @@ export function declaredHandles(
 }
 
 /**
- * Handles of every object the document holds. acad-ts keeps polyline vertices, polyface-mesh
- * faces, attributes and their `SEQEND` inside the owning entity (under their file handles)
- * rather than in the document's object map, so those are added from the owner.
+ * Every object the document holds, by handle. acad-ts keeps polyline vertices, polyface-mesh
+ * faces, attributes and their `SEQEND`, and child fields inside their owner (under their file
+ * handles) rather than in the document's object map, so those are added from the owner. A held
+ * child is not registered with the document, so neither is its extension dictionary; the
+ * dictionary and its entries are reached only through the child.
  */
-export function documentHandles(doc: CadDocument): Set<number> {
-  const out = new Set<number>();
-  // A child is not registered with the document, so neither is its extension dictionary; the
-  // dictionary and its entries are reached only through the child.
+export function documentObjects(doc: CadDocument): Map<number, CadObject> {
+  const out = new Map<number, CadObject>();
   const addTree = (o: CadObject): void => {
     if (out.has(o.handle)) return;
-    out.add(o.handle);
+    out.set(o.handle, o);
     if (o.xDictionary) addTree(o.xDictionary);
     if (o instanceof CadDictionary) for (const e of o) addTree(e);
+    addHeld(o);
   };
-  for (const o of doc.getCadObjects()) {
-    out.add(o.handle);
+  const addHeld = (o: CadObject): void => {
+    if (o instanceof Field) for (const f of o.children) addTree(f);
     const children = o instanceof Polyline ? o.vertices : o instanceof Insert ? o.attributes : null;
-    if (!children) continue;
+    if (!children) return;
     for (const c of children) addTree(c);
     if (children.seqend) addTree(children.seqend);
     if (o instanceof PolyfaceMesh) for (const f of o.faces) addTree(f);
-  }
+  };
+  const registered = [...doc.getCadObjects()];
+  for (const o of registered) out.set(o.handle, o);
+  for (const o of registered) addHeld(o);
   out.delete(0);
   return out;
+}
+
+/** Handles of every object the document holds (`documentObjects`). */
+export function documentHandles(doc: CadDocument): Set<number> {
+  return new Set(documentObjects(doc).keys());
 }
 
 /** Declared handles absent from `reopened`; `original` (the first read) says at which stage. */
