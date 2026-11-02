@@ -3,11 +3,16 @@
 // the I/O worker with the drawing; the report sets them against the fonts and hatch patterns
 // the app has loaded, so it is worked out again when the user adds .pat files. Fix buttons
 // arrive with the complete report (M8-07). Keyboard operable: each card folds from its summary.
-import { useMemo, type ReactNode } from 'react';
+// Fonts (M1-38 part 3): the report asks a book of the fonts the renderers get, bundled, the
+// user's files and installed faces, so it follows them as they change, and it lists the font
+// files the app could not read or parse and the installed faces the drawing draws with.
+import { useMemo, useSyncExternalStore, type ReactNode } from 'react';
 import { healthReport, type HealthReport } from '@triya/io/health';
 import { patternLibrary } from '@triya/render';
 import type { OpenDocument } from './documents';
-import { appFonts } from './fonts';
+import { appFontErrors, appFonts } from './fonts';
+import type { DeviceFonts } from './local-fonts';
+import type { FontStore } from './user-fonts';
 
 const REFERENCE_KIND: Record<HealthReport['references'][number]['kind'], string> = {
   xref: 'Xref',
@@ -18,18 +23,38 @@ const REFERENCE_KIND: Record<HealthReport['references'][number]['kind'], string>
 export function HealthPalette({
   doc,
   patternSources,
+  fontStore,
+  deviceFonts,
   onClose,
 }: {
   doc: OpenDocument;
   /** The user's .pat files (M1-50): the report is redone when they change. */
   patternSources: readonly string[];
+  /** The user's font files (M1-38): the report is redone when they change. */
+  fontStore: FontStore;
+  /** Fonts installed on this computer (M1-38 part 2). */
+  deviceFonts: DeviceFonts;
   onClose: () => void;
 }) {
   const facts = doc.opened.facts;
-  const report = useMemo(
-    () => healthReport(facts, { fonts: appFonts(), patterns: patternLibrary(patternSources) }),
-    [facts, patternSources],
-  );
+  const own = useSyncExternalStore(fontStore.subscribe, fontStore.getSnapshot);
+  const device = useSyncExternalStore(deviceFonts.subscribe, deviceFonts.getSnapshot);
+  // The same object until the fonts change (FontStore), so the book is loaded once per change.
+  const fontSources = fontStore.sources();
+  const report = useMemo(() => {
+    const app = appFonts(fontSources);
+    return healthReport(facts, {
+      fonts: app.book,
+      patterns: patternLibrary(patternSources),
+      fontErrors: appFontErrors({
+        failed: app.failed,
+        own: own.files.map((f) => f.name),
+        unreadable: own.unreadable,
+        device: device.warnings,
+      }),
+      installed: device.used,
+    });
+  }, [facts, patternSources, fontSources, own, device]);
   const { version, units, fonts, references, patterns, unknownObjects, unmappedEntities } = report;
 
   return (
@@ -80,6 +105,61 @@ export function HealthPalette({
             </table>
           )}
         </Card>
+
+        <Card id="font-errors" title="Font errors" count={fonts.errors.length}>
+          {fonts.errors.length === 0 ? (
+            <p className="empty">None: every font file reads.</p>
+          ) : (
+            <>
+              <p className="hint">Text these fonts serve draws as if they were missing.</p>
+              <table aria-label="Font errors">
+                <thead>
+                  <tr>
+                    <th scope="col">Font</th>
+                    <th scope="col">From</th>
+                    <th scope="col">Problem</th>
+                    <th scope="col">Text styles</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {fonts.errors.map((e, i) => (
+                    <tr key={`${e.source} ${e.font} ${i}`}>
+                      <th scope="row">{e.font}</th>
+                      <td>{e.source}</td>
+                      <td>{e.problem}</td>
+                      <td>
+                        {e.styles.length ? e.styles.map((s) => s || '(unnamed)').join(', ') : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          )}
+        </Card>
+
+        {fonts.installed.length > 0 && (
+          <Card id="installed" title="Fonts from this computer" count={fonts.installed.length}>
+            <table aria-label="Fonts from this computer">
+              <thead>
+                <tr>
+                  <th scope="col">Font</th>
+                  <th scope="col">Drawn with</th>
+                  <th scope="col">Text styles</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fonts.installed.map((f) => (
+                  <tr key={f.font}>
+                    <th scope="row">{f.font}</th>
+                    <td>{f.face}</td>
+                    <td>{f.styles.map((s) => s || '(unnamed)').join(', ')}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </Card>
+        )}
 
         <Card id="references" title="References" count={references.length}>
           {references.length === 0 ? (
