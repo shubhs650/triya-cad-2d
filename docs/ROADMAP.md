@@ -56,7 +56,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 - [ ] **M1-21** Xref and reference resolution: "Missing references" panel, file/folder drop, cached handles (IndexedDB), silent re-resolve, nested xrefs, overlay/attach, XCLIP, `name|layer` layers. **Acceptance:** xref corpus set (parent + children) resolves and renders within tolerance.
 
 ### App shell (viewer-grade)
-- [ ] **M1-22** Vite + React shell: open file (picker, drag-drop, file handler), document tabs, status bar, zoom/pan (wheel, middle-drag, Z/P transparent), ZOOM E/W/P/A/S/O, PAN, REGEN, VIEW save/restore; light chrome + dark canvas theme per `UI_SPEC.md`; OET home + Report issue buttons. **Acceptance:** Playwright opens corpus files via each route; pan/zoom perf ≥ 60 fps on `bench-ga.dwg`.
+- [~] (thread: Complete another M1 roadmap task) **M1-22** Vite + React shell: open file (picker, drag-drop, file handler), document tabs, status bar, zoom/pan (wheel, middle-drag, Z/P transparent), ZOOM E/W/P/A/S/O, PAN, REGEN, VIEW save/restore; light chrome + dark canvas theme per `UI_SPEC.md`; OET home + Report issue buttons. **Acceptance:** Playwright opens corpus files via each route; pan/zoom perf ≥ 60 fps on `bench-ga.dwg`.
 - [ ] **M1-23** Layers palette read-only + on/off/freeze/lock toggles with VP overrides display. **Acceptance:** toggles update canvas < 16 ms.
 - [ ] **M1-24** Fidelity harness end-to-end in CI (headless render → PNG → perceptual diff vs reference; artifacts on failure; tolerance per file). **Acceptance:** CI job green across corpus.
 - [ ] **M1-25** Drawing health report v1 (missing fonts/refs/patterns, unknown objects count, version, units). **Acceptance:** report content tests.
