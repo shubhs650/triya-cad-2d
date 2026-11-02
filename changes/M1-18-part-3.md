@@ -1,0 +1,1 @@
+- M1-18 part 3 (#PR): the M1-18 items no public corpus file can show are split into their own tasks: a viewport-overrides sample the owner authors (M1-61, issue #87), drawing VP layer overrides and non-rectangular clips from it (M1-62), and the annotation scale (CANNOSCALE, MSLTSCALE and per-viewport annotative representations, M1-63).
