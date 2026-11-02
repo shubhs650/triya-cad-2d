@@ -1,0 +1,1 @@
+- M1-63 part 1 (#128): MSLTSCALE now scales Model-tab linetypes by the current annotation scale (CANNOSCALE), as AutoCAD does. Both variables are read from the drawing's variable dictionary, where AutoCAD saves them, and every variable-dictionary entry now reaches the document model under its own name.

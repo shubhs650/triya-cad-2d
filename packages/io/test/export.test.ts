@@ -2,6 +2,7 @@
 // document's changes by handle. Drawings are authored in memory with acad-ts and saved once,
 // so "the file" is real bytes; the corpus-wide checks are in
 // packages/testkit/src/export/export.corpus.test.ts.
+import type { Polyline, Vertex3D } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   Arc,
@@ -9,15 +10,23 @@ import {
   CadDocument,
   Circle,
   Ellipse,
+  Face3D,
+  Insert,
   Layer,
   Line,
   LwPolyline,
   LwPolylineVertex,
   MText,
+  Polyline2D,
+  Polyline3D,
+  Seqend,
   Solid,
+  Spline,
   TextEntity,
+  Vertex2D,
   XY,
   XYZ,
+  type CadObject,
 } from '@node-projects/acad-ts';
 import {
   ChangeSetBuilder,
@@ -74,14 +83,49 @@ function drawing(): Uint8Array {
   mtext.insertPoint = new XYZ(7, 8, 0);
   mtext.rectangleWidth = 20;
   const solid = new Solid();
-  solid.firstCorner = new XYZ(0, 0, 0);
-  solid.secondCorner = new XYZ(1, 0, 0);
-  solid.thirdCorner = new XYZ(0, 1, 0);
-  solid.fourthCorner = new XYZ(1, 1, 0);
+  solid.firstCorner = new XYZ(0, 0, 2);
+  solid.secondCorner = new XYZ(1, 0, 2);
+  solid.thirdCorner = new XYZ(0, 1, 2);
+  solid.fourthCorner = new XYZ(1, 1, 2);
+  solid.normal = DOWN;
+  const face = new Face3D();
+  face.firstCorner = new XYZ(0, 0, 1);
+  face.secondCorner = new XYZ(4, 0, 2);
+  face.thirdCorner = new XYZ(4, 4, 3);
+  face.fourthCorner = new XYZ(0, 4, 4);
+  const spline = new Spline();
+  spline.degree = 3;
+  spline.controlPoints = [new XYZ(0, 0, 5), new XYZ(1, 2, 5), new XYZ(3, 2, 5), new XYZ(4, 0, 5)];
+  spline.knots = [0, 0, 0, 0, 1, 1, 1, 1];
+  spline.fitPoints = [new XYZ(0, 0, 5), new XYZ(4, 0, 5)];
+  spline.flags = 8; // planar
+  const pline2d = new Polyline2D([
+    new Vertex2D(new XYZ(0, 0, 0)),
+    new Vertex2D(new XYZ(6, 0, 0)),
+    new Vertex2D(new XYZ(6, 3, 0)),
+  ]);
+  (pline2d.vertices[0] as Vertex2D).bulge = 0.4;
+  (pline2d.vertices[1] as Vertex2D).startWidth = 0.5;
+  pline2d.normal = DOWN;
+  pline2d.elevation = 1.5;
+  const pline3d = new Polyline3D([new XYZ(0, 0, 1), new XYZ(2, 0, 2), new XYZ(2, 2, 3)]);
   const tilted = new Circle(new XYZ(0, 0, 0), 1);
   tilted.normal = new XYZ(1, 0, 0);
-  for (const e of [circle, arc, pline, ellipse, text, mtext, solid, tilted]) doc.entities!.add(e);
-  doc.blockRecords!.add(new BlockRecord('PART'));
+  const part = new BlockRecord('PART');
+  doc.blockRecords!.add(part);
+  const insert = new Insert(part);
+  insert.insertPoint = new XYZ(20, 20, 0);
+  for (const e of [circle, arc, pline, ellipse, text, mtext, solid, face, spline, tilted, insert]) {
+    doc.entities!.add(e);
+  }
+  for (const p of [pline2d, pline3d]) {
+    doc.entities!.add(p);
+    // acad-ts holds vertices and SEQEND inside the polyline and leaves their handles to the
+    // file; a drawing authored in memory gives them handles the way AutoCAD would.
+    for (const v of p.vertices) v.handle = doc.header!.handleSeed++;
+    p.vertices.seqend = new Seqend(p);
+    p.vertices.seqend.handle = doc.header!.handleSeed++;
+  }
   return writeCadDocument(doc, { format: 'dxf' });
 }
 
@@ -92,8 +136,20 @@ function open(bytes = FILE): { model: DocumentModel; init: ReturnType<typeof doc
   return { model: DocumentModel.create(init), init };
 }
 
-const byType = (model: DocumentModel, type: string): Entity =>
-  [...model.entities()].find((e) => e.type === type)!;
+const byType = (model: DocumentModel, type: string, is3d?: boolean): Entity =>
+  [...model.entities()].find(
+    (e) => e.type === type && (is3d === undefined || (e.geom as { is3d?: boolean }).is3d === is3d),
+  )!;
+
+/** The polyline with this handle in a reopened save, with its held vertices and SEQEND. */
+function acadPolyline(bytes: Uint8Array, handle: string): Polyline {
+  return readCadDocument(bytes).getCadObject(Number.parseInt(handle, 16)) as Polyline;
+}
+
+const handlesOf = (p: Polyline): number[] => [
+  ...p.vertices.map((v: CadObject) => v.handle),
+  p.vertices.seqend!.handle,
+];
 
 function edit(model: DocumentModel, f: (b: ChangeSetBuilder) => void): void {
   const b = new ChangeSetBuilder(model);
@@ -286,9 +342,115 @@ describe('triyaToAcad', () => {
         background: { flags: 1, color: { kind: 'aci', index: 3 }, scale: 1.25 },
       },
     ],
+    [
+      'SOLID',
+      {
+        kind: 'SOLID',
+        corners: [
+          { x: 1, y: 1 },
+          { x: 3, y: 1 },
+          { x: 1, y: 2 },
+          { x: 3, y: 3 },
+        ],
+        elevation: -4,
+        thickness: 0.5,
+        normal: { x: 0, y: 0, z: -1 },
+      },
+    ],
+    [
+      '3DFACE',
+      {
+        kind: '3DFACE',
+        corners: [
+          { x: -1, y: 0 },
+          { x: 5, y: 0 },
+          { x: 5, y: 5 },
+          { x: 0, y: 5 },
+        ],
+        hiddenEdges: 5,
+      },
+    ],
+    [
+      'SPLINE',
+      {
+        kind: 'SPLINE',
+        degree: 2,
+        knots: [0, 0, 0, 0.5, 1, 1, 1],
+        controlPoints: [
+          { x: 0, y: 0 },
+          { x: 2, y: 3 },
+          { x: 4, y: 3 },
+          { x: 6, y: 0 },
+        ],
+        weights: [1, 0.5, 0.5, 1],
+        fitPoints: [
+          { x: 0, y: 0 },
+          { x: 3, y: 2 },
+          { x: 6, y: 0 },
+        ],
+        startTangent: { x: 1, y: 1 },
+        endTangent: { x: 1, y: -1 },
+        closed: false,
+        periodic: false,
+        normal: { x: 0, y: 0, z: -1 },
+      },
+    ],
+    [
+      'POLYLINE',
+      {
+        kind: 'POLYLINE',
+        vertices: [
+          { x: 1, y: 1, bulge: -0.5, startWidth: 0.25, endWidth: 0.75 },
+          { x: 5, y: 1, bulge: 0 },
+          { x: 5, y: 4, bulge: 0.2 },
+          { x: 2, y: 6, bulge: 0 },
+        ],
+        closed: true,
+        is3d: false,
+        startWidth: 0.1,
+        endWidth: 0.2,
+        plinegen: true,
+        elevation: -2,
+        thickness: 1,
+        normal: { x: 0, y: 0, z: -1 },
+      },
+    ],
+    [
+      'POLYLINE',
+      {
+        kind: 'POLYLINE',
+        vertices: [
+          { x: 0, y: 1, bulge: 0 },
+          { x: 3, y: 1, bulge: 0 },
+        ],
+        closed: true,
+        is3d: true,
+      },
+    ],
+    [
+      'POLYLINE',
+      {
+        kind: 'POLYLINE',
+        vertices: [
+          { x: 0, y: 0, bulge: 0 },
+          { x: 1, y: 1, bulge: 0 },
+          { x: 2, y: 1.5, bulge: 0 },
+          { x: 3, y: 1, bulge: 0 },
+          { x: 4, y: 0, bulge: 0 },
+        ],
+        closed: false,
+        is3d: false,
+        fit: 'cubic',
+        frame: [
+          { x: 0, y: 0 },
+          { x: 2, y: 3 },
+          { x: 4, y: 0 },
+        ],
+      },
+    ],
   ] as const)('writes an edited %s so it maps back to the edit', (type, geom) => {
     const { model } = open();
-    const e = byType(model, type);
+    const e = byType(model, type, 'is3d' in geom ? geom.is3d : undefined);
     const style = 'style' in e.geom ? { style: e.geom.style } : {};
     const next = { ...geom, ...style } as unknown as EntityGeometry;
     edit(model, (b) => b.updateEntity(e.id, { geom: next }));
@@ -304,6 +466,115 @@ describe('triyaToAcad', () => {
     edit(model, (b) => b.updateEntity(e.id, { geom: { ...e.geom, vertices } as EntityGeometry }));
 
     expect(reopened(save(model), e.handle)?.geom).toEqual({ ...e.geom, vertices });
+  });
+
+  it('keeps the Z of 3D points it only moves in plan, and their vertex handles', () => {
+    const { model } = open();
+    const face = byType(model, '3DFACE');
+    const spline = byType(model, 'SPLINE');
+    const p3 = byType(model, 'POLYLINE', true);
+    const shift = <T extends { x: number; y: number }>(p: T): T => ({ ...p, x: p.x + 1 });
+    edit(model, (b) => {
+      for (const e of [face, spline, p3]) {
+        const g = e.geom as unknown as Record<string, unknown>;
+        const next = Object.fromEntries(
+          Object.entries(g).map(([k, v]) => [
+            k,
+            k === 'corners' || k === 'controlPoints' || k === 'fitPoints' || k === 'vertices'
+              ? (v as { x: number; y: number }[]).map(shift)
+              : v,
+          ]),
+        );
+        b.updateEntity(e.id, { geom: next as unknown as EntityGeometry });
+      }
+    });
+    const bytes = save(model);
+    const doc = readCadDocument(bytes);
+    const f = doc.getCadObject(Number.parseInt(face.handle, 16)) as Face3D;
+    const s = doc.getCadObject(Number.parseInt(spline.handle, 16)) as Spline;
+    const before = acadPolyline(FILE, p3.handle);
+    const after = acadPolyline(bytes, p3.handle);
+
+    expect([f.firstCorner, f.secondCorner, f.thirdCorner, f.fourthCorner].map((c) => c.z)).toEqual([
+      1, 2, 3, 4,
+    ]);
+    expect(f.firstCorner.x).toBe(1);
+    expect(s.controlPoints.map((c) => c.z)).toEqual([5, 5, 5, 5]);
+    expect(s.fitPoints.map((c) => c.z)).toEqual([5, 5]);
+    expect([...after.vertices].map((v) => (v as Vertex3D).location.z)).toEqual([1, 2, 3]);
+    expect(handlesOf(after)).toEqual(handlesOf(before));
+  });
+
+  it('gives vertices a polyline gains new handles above the seed, and keeps the rest', () => {
+    const { model } = open();
+    const p2 = byType(model, 'POLYLINE', false);
+    const p3 = byType(model, 'POLYLINE', true);
+    const g2 = p2.geom as Extract<EntityGeometry, { kind: 'POLYLINE' }>;
+    const g3 = p3.geom as Extract<EntityGeometry, { kind: 'POLYLINE' }>;
+    const seed = Number.parseInt(model.handSeed, 16);
+    edit(model, (b) => {
+      b.updateEntity(p2.id, {
+        geom: {
+          ...g2,
+          vertices: [...g2.vertices, { x: 9, y: 9, bulge: 0 }, { x: 9, y: 12, bulge: 0.1 }],
+        },
+      });
+      b.updateEntity(p3.id, { geom: { ...g3, vertices: g3.vertices.slice(0, 2) } });
+    });
+    const bytes = save(model);
+    const before2 = handlesOf(acadPolyline(FILE, p2.handle));
+    const after2 = acadPolyline(bytes, p2.handle);
+    const after3 = acadPolyline(bytes, p3.handle);
+    const added = handlesOf(after2).slice(3, 5);
+
+    expect(handlesOf(after2).slice(0, 3)).toEqual(before2.slice(0, 3));
+    expect(after2.vertices.seqend!.handle).toBe(before2[3]);
+    expect(new Set(added).size).toBe(2);
+    for (const h of added) expect(h).toBeGreaterThanOrEqual(seed);
+    expect(readCadDocument(bytes).header!.handleSeed).toBeGreaterThan(Math.max(...added));
+    // The vertices keep the polyline's layer, as AutoCAD writes them.
+    expect(after2.vertices.every((v) => v.layer.name === after2.layer.name)).toBe(true);
+    expect([...after3.vertices].map((v) => (v as Vertex3D).location.z)).toEqual([1, 2]);
+    expectGeometry(reopened(bytes, p2.handle)?.geom, model.entity(p2.id)!.geom);
+    expectGeometry(reopened(bytes, p3.handle)?.geom, model.entity(p3.id)!.geom);
+  });
+
+  it('writes a new polyline with its vertices and SEQEND to DWG too', () => {
+    const { model } = open();
+    const line = byType(model, 'LINE');
+    const geoms: EntityGeometry[] = [
+      {
+        kind: 'POLYLINE',
+        vertices: [
+          { x: 0, y: 0, bulge: 0.5 },
+          { x: 3, y: 0, bulge: 0 },
+          { x: 3, y: 3, bulge: 0 },
+        ],
+        closed: true,
+        is3d: false,
+      },
+      {
+        kind: 'POLYLINE',
+        vertices: [
+          { x: 0, y: 0, bulge: 0 },
+          { x: 3, y: 4, bulge: 0 },
+        ],
+        closed: false,
+        is3d: true,
+      },
+    ];
+    const added: Entity[] = [];
+    edit(model, (b) => {
+      for (const geom of geoms) {
+        added.push(b.addEntity({ owner: line.owner, layer: line.layer, geom }));
+      }
+    });
+    const bytes = exportDocument(readCadDocument(FILE), model, { format: 'dwg' });
+
+    for (const e of added) {
+      expectGeometry(reopened(bytes, e.handle)?.geom, e.geom);
+      expect(acadPolyline(bytes, e.handle).vertices.seqend).not.toBeNull();
+    }
   });
 
   it('deletes an entity with the extension dictionary only it owns, not the shared layer', () => {
@@ -337,6 +608,76 @@ describe('triyaToAcad', () => {
         endParam: 2 * Math.PI,
       },
       { kind: 'POINT', position: { x: 9, y: 9 } },
+      {
+        kind: 'SOLID',
+        corners: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 0, y: 1 },
+          { x: 0, y: 1 },
+        ],
+      },
+      {
+        kind: '3DFACE',
+        corners: [
+          { x: 0, y: 0 },
+          { x: 1, y: 0 },
+          { x: 1, y: 1 },
+          { x: 0, y: 1 },
+        ],
+        hiddenEdges: 2,
+      },
+      {
+        kind: 'SPLINE',
+        degree: 3,
+        knots: [0, 0, 0, 0, 1, 1, 1, 1],
+        controlPoints: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+          { x: 2, y: 1 },
+          { x: 3, y: 0 },
+        ],
+        closed: false,
+        periodic: false,
+      },
+      {
+        kind: 'POLYLINE',
+        vertices: [
+          { x: 0, y: 0, bulge: 0.5 },
+          { x: 3, y: 0, bulge: 0, startWidth: 1 },
+          { x: 3, y: 3, bulge: 0 },
+        ],
+        closed: true,
+        is3d: false,
+        elevation: 2,
+      },
+      {
+        kind: 'POLYLINE',
+        vertices: [
+          { x: 0, y: 0, bulge: 0 },
+          { x: 3, y: 0, bulge: 0 },
+        ],
+        closed: false,
+        is3d: true,
+      },
+      {
+        kind: 'POLYLINE',
+        vertices: [
+          { x: 0, y: 0, bulge: 0 },
+          { x: 1, y: 0.5, bulge: 0 },
+          { x: 2, y: 0, bulge: 0 },
+        ],
+        closed: false,
+        is3d: false,
+        // Quadratic and Bezier fits do not survive a DXF save yet: acad-ts writes POLYLINE 75
+        // for polygon meshes only (roadmap M1-80).
+        fit: 'cubic',
+        frame: [
+          { x: 0, y: 0 },
+          { x: 1, y: 1 },
+          { x: 2, y: 0 },
+        ],
+      },
       {
         kind: 'LWPOLYLINE',
         vertices: [
@@ -389,22 +730,53 @@ describe('triyaToAcad', () => {
       expectGeometry(back!.geom, e.geom);
     }
     expect(doc.header!.handleSeed).toBeGreaterThanOrEqual(Number.parseInt(model.handSeed, 16));
+    // A new polyline's vertices and SEQEND get handles of their own above every other one.
+    const held = added
+      .filter((e) => e.type === 'POLYLINE')
+      .flatMap((e) => handlesOf(doc.getCadObject(Number.parseInt(e.handle, 16)) as Polyline));
+    expect(new Set(held).size).toBe(held.length);
+    for (const h of held) {
+      expect(h).toBeGreaterThanOrEqual(Number.parseInt(model.handSeed, 16));
+      expect(h).toBeLessThan(doc.header!.handleSeed);
+    }
   });
 
   it('refuses what it cannot write yet and leaves the original as it was', () => {
     const cases: ((b: ChangeSetBuilder, model: DocumentModel) => void)[] = [
       (b, m) => {
-        const s = byType(m, 'SOLID');
+        const s = byType(m, 'INSERT');
         b.updateEntity(s.id, {
-          geom: {
-            ...s.geom,
-            corners: [
-              { x: 0, y: 0 },
-              { x: 2, y: 0 },
-              { x: 0, y: 2 },
-              { x: 2, y: 2 },
-            ],
-          } as EntityGeometry,
+          geom: { ...s.geom, position: { x: 1, y: 1 } } as EntityGeometry,
+        });
+      },
+      (b, m) => {
+        // A knot vector that does not fit the control points would write a broken SPLINE.
+        const s = byType(m, 'SPLINE');
+        b.updateEntity(s.id, {
+          geom: { ...s.geom, knots: [0, 0, 1, 1] } as EntityGeometry,
+        });
+      },
+      (b, m) => {
+        const s = byType(m, 'SPLINE');
+        b.updateEntity(s.id, {
+          geom: { ...s.geom, weights: [1, 2] } as EntityGeometry,
+        });
+      },
+      (b, m) => {
+        const p = byType(m, 'POLYLINE', false);
+        b.updateEntity(p.id, { geom: { ...p.geom, is3d: true } as EntityGeometry });
+      },
+      (b, m) => {
+        const p = byType(m, 'POLYLINE', true);
+        const g = p.geom as Extract<EntityGeometry, { kind: 'POLYLINE' }>;
+        b.updateEntity(p.id, {
+          geom: { ...g, vertices: g.vertices.map((v) => ({ ...v, bulge: 0.5 })) },
+        });
+      },
+      (b, m) => {
+        const p = byType(m, 'SOLID');
+        b.updateEntity(p.id, {
+          geom: { ...p.geom, normal: { x: 1, y: 0, z: 0 } } as EntityGeometry,
         });
       },
       (b) => b.setHeader('$LTSCALE', 7),
@@ -426,9 +798,9 @@ describe('triyaToAcad', () => {
 
   it('names each problem in the error', () => {
     const { model } = open();
-    const s = byType(model, 'SOLID');
+    const s = byType(model, 'INSERT');
     edit(model, (b) =>
-      b.updateEntity(s.id, { geom: { ...s.geom, thickness: 3 } as EntityGeometry }),
+      b.updateEntity(s.id, { geom: { ...s.geom, rotation: 3 } as EntityGeometry }),
     );
     let error: unknown;
     try {
@@ -437,7 +809,7 @@ describe('triyaToAcad', () => {
       error = e;
     }
     expect((error as UnsupportedChangeError).problems).toEqual([
-      `SOLID ${s.handle}: geometry changes`,
+      `INSERT ${s.handle}: geometry changes`,
     ]);
   });
 });

@@ -1,9 +1,10 @@
-// TriyaToAcad on the public corpus (M1-05): a markup-style edit of every entity Triya can
+// TriyaToAcad on the public corpus (M1-05, M1-75): a markup-style edit of every entity Triya can
 // write (move it; grow circles and arcs, turn arcs and text) must save so that the edited
 // entities map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles reports nothing (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
 import { readFileSync } from 'node:fs';
+import { Polyline } from '@node-projects/acad-ts';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
@@ -71,6 +72,23 @@ function edited(g: EntityGeometry): EntityGeometry {
       };
     case 'MTEXT':
       return { ...g, position: move(g.position), rotation: turn(g.rotation) };
+    case 'SOLID':
+    case '3DFACE': {
+      const [a, b, c, d] = g.corners.map(move);
+      return { ...g, corners: [a!, b!, c!, d!] };
+    }
+    case 'SPLINE':
+      return {
+        ...g,
+        controlPoints: g.controlPoints.map(move),
+        ...(g.fitPoints ? { fitPoints: g.fitPoints.map(move) } : {}),
+      };
+    case 'POLYLINE':
+      return {
+        ...g,
+        vertices: g.vertices.map((v) => ({ ...v, ...move(v) })),
+        ...(g.frame ? { frame: g.frame.map(move) } : {}),
+      };
     default:
       throw new Error(`no edit for ${g.kind}`);
   }
@@ -129,7 +147,12 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .map((e) => `${e.type} ${e.handle}`);
         expect(wrong, f.path).toEqual([]);
 
+        // A polyline's VERTEX entities are edited with it, under their own handles.
         const ignoreHandles = new Set(targets.map((e) => Number.parseInt(e.handle, 16)));
+        for (const h of [...ignoreHandles]) {
+          const o = original.getCadObject(h);
+          if (o instanceof Polyline) for (const v of o.vertices) ignoreHandles.add(v.handle);
+        }
         const diff = structuralDiff(original, reopened, { ignoreHandles });
         expect(diff.differences.slice(0, 5), f.path).toEqual([]);
       });

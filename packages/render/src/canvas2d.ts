@@ -59,7 +59,7 @@ import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { mixColors, parseHex, tintColor } from './style/mix';
 import { adjustPixels, type ImageFrames } from './image';
-import { patternLength } from './style/pattern';
+import { annotationLinetypeScale, patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
 import { patternLibrary, tessellate } from './tessellate';
 import type { TextContext } from './text';
@@ -218,7 +218,10 @@ interface DrawFrame {
   readonly box: Box;
   /** A viewport's frozen layers (DXF 341): entries and block parts on them are skipped. */
   readonly frozen?: ReadonlySet<Handle>;
-  /** Linetype scale multiplier: 1 / the viewport scale under PSLTSCALE, else 1. */
+  /**
+   * Linetype scale multiplier: 1 / the viewport scale under PSLTSCALE, the annotation scale
+   * on the Model tab under MSLTSCALE (M1-63), else 1.
+   */
   readonly linetypeScale?: number;
 }
 
@@ -367,6 +370,8 @@ export class Canvas2DRenderer implements Renderer {
   readonly #paperUnitsPerMm: number;
   /** The layout's PSLTSCALE (DXF 70 bit 1): viewport linetypes in paper units. */
   readonly #psltscale: boolean;
+  /** The block shown is model space: the Model tab, where MSLTSCALE applies (M1-63). */
+  readonly #modelTab: boolean;
   /** The layout's sheet, when the block shown is a set-up layout. */
   readonly #sheet: LayoutSheet | undefined;
   /** Model space, when the block shown is a layout whose viewports show it. */
@@ -446,6 +451,7 @@ export class Canvas2DRenderer implements Renderer {
     const isModel = (h: Handle) => records.get(h)?.name.toLowerCase() === '*model_space';
     const layout = this.#model.layouts.find((l) => l.blockRecord === this.#block);
     this.#paperSpace = layout !== undefined && !isModel(layout.blockRecord);
+    this.#modelTab = isModel(this.#block);
     const plot = this.#paperSpace ? layout?.plot : undefined;
     this.#sheet = this.#paperSpace && layout ? layoutSheet(layout) : undefined;
     // A layout without stated flags takes AutoCAD's default, PSLTSCALE 1.
@@ -907,7 +913,15 @@ export class Canvas2DRenderer implements Renderer {
     for (const vp of this.#viewportList()) this.#drawViewport(ctx, vp, view, reduced);
     const entries = this.#visibleEntries(this.#block, view.box);
     this.#sceneEntries += entries.length;
-    this.#drawPrimitives(ctx, entries, reduced, view);
+    // MSLTSCALE 1 "scales linetypes displayed on the Model tab by the annotation scale". Read
+    // per scene, so a header change needs no re-tessellation (dashes are kept per multiplier).
+    const annotation = this.#modelTab ? annotationLinetypeScale(this.#model.header) : undefined;
+    this.#drawPrimitives(
+      ctx,
+      entries,
+      reduced,
+      annotation === undefined ? view : { ...view, linetypeScale: annotation },
+    );
   }
 
   /** The paper in the background colour and the printable area dashed, in device pixels. */

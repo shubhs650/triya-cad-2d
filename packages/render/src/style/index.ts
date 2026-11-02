@@ -12,6 +12,7 @@ export {
 } from './dash';
 export { parseLin, type LinFile, type LinIssue } from './lin';
 export {
+  annotationLinetypeScale,
   linetypeScale,
   patternLength,
   patternOf,

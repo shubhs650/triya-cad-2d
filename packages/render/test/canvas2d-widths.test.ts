@@ -1,9 +1,18 @@
 // Canvas2DRenderer with wide polylines (M1-46): filled while FILLMODE is on (AutoCAD's
-// initial value), outlined when the header turns it off, and redrawn when it changes.
+// initial value), outlined when the header turns it off, and redrawn when it changes. With a
+// linetype (M1-66) each dash is a filled piece of the outline, continuous under a pixel.
 import type { EntityGeometry } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer, type RenderStyle } from '../src/index';
-import { change, drawing, entity, MODEL, surface, type DrawingExtra } from './fixtures';
+import {
+  change,
+  drawing,
+  entity,
+  LAYER_DASHED,
+  MODEL,
+  surface,
+  type DrawingExtra,
+} from './fixtures';
 
 const DARK: RenderStyle = { background: '#000000', foreground: '#ffffff', showLineweights: false };
 
@@ -17,8 +26,8 @@ const wide: EntityGeometry = {
   ],
 };
 
-function setup(extra?: DrawingExtra) {
-  const d = drawing([entity('20', wide)], extra);
+function setup(extra?: DrawingExtra, layer?: string) {
+  const d = drawing([entity('20', wide, layer ? { layer } : {})], extra);
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
     model: d.model,
@@ -35,9 +44,9 @@ function setup(extra?: DrawingExtra) {
   });
   r.resize(200, 100, 1);
   const scene = layers[0]!.ctx;
-  const redraw = () => {
+  const redraw = (scale = 10) => {
     scene.clear();
-    r.setView({ center: { x: 5, y: 0 }, scale: 10 });
+    r.setView({ center: { x: 5, y: 0 }, scale });
     r.frame();
     return scene;
   };
@@ -74,5 +83,16 @@ describe('wide polylines', () => {
     const c = s.redraw();
     expect(c.named('fill')).toEqual([]);
     expect(c.named('stroke')).toHaveLength(1);
+  });
+
+  it('fill each dash on a dashed layer, and the whole outline once a pattern is under a pixel', () => {
+    const s = setup(undefined, LAYER_DASHED);
+    // 10 units of DASHED (0.5, -0.25): 14 dashes, as a thin line has.
+    let c = s.redraw();
+    expect(c.named('fill')).toHaveLength(1);
+    expect(c.named('moveTo')).toHaveLength(14);
+    c = s.redraw(1); // 0.75 px per pattern
+    expect(c.named('fill')).toHaveLength(1);
+    expect(c.named('moveTo')).toHaveLength(1);
   });
 });

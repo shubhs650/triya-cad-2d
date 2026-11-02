@@ -3,14 +3,18 @@
 // fields that differ from the entity as it was mapped are written, so everything Triya does not
 // model (and every unchanged value, to the bit) stays as the file had it (§6.2 rule 2).
 //
-// Geometry writers exist for the types markup creates and edits first; the others report the
-// change as unsupported (roadmap M1-75) rather than dropping it.
+// Geometry writers exist for the types markup creates and edits first and, since M1-75 part 1,
+// SOLID, 3DFACE, SPLINE and POLYLINE; the others report the change as unsupported (roadmap
+// M1-75) rather than dropping it.
 
+import type { Vertex } from '@node-projects/acad-ts';
 import {
   Arc,
   Circle,
   Color as AcadColor,
   Ellipse,
+  Face3D,
+  KnotParametrization,
   Layer,
   Line,
   LineType,
@@ -19,11 +23,22 @@ import {
   Material,
   MText,
   Point,
+  Polyline,
+  Polyline2D,
+  Polyline3D,
   Ray,
+  Seqend,
+  SmoothSurfaceType,
+  Solid,
+  Spline,
+  SplineFlags,
   TextColumnData,
   TextEntity,
   TextStyle,
   Transparency as AcadTransparency,
+  Vertex2D,
+  Vertex3D,
+  VertexFlags,
   XLine,
   XY,
   XYZ,
@@ -37,15 +52,21 @@ import type {
   Entity,
   EntityGeometry,
   EntityType,
+  Face3dGeometry,
+  KnotParameterization,
   LineGeometry,
   LinetypeRef,
   Lineweight,
   LwPolylineGeometry,
   MTextGeometry,
   PointGeometry,
+  PolylineGeometry,
   RayGeometry,
+  SolidGeometry,
+  SplineGeometry,
   TextGeometry,
   Transparency,
+  Vec2,
   Vec3,
   XlineGeometry,
 } from '@triya/engine';
@@ -93,6 +114,12 @@ export interface Resolver {
   /** acad-ts's own `ByLayer`/`ByBlock` linetype records of the drawing. */
   readonly byLayer: LineType;
   readonly byBlock: LineType;
+  /**
+   * A fresh handle for an object the save creates that the engine does not model on its own
+   * (a polyline's VERTEX and SEQEND entities): above `$HANDSEED` and every handle the engine
+   * handed out, so it never meets one (CLAUDE.md: handles are never renumbered).
+   */
+  readonly allocate: () => number;
 }
 
 function resolve<T>(
@@ -179,6 +206,11 @@ function writeProps(r: Resolver, e: AcadEntity, before: Entity | undefined, afte
   if (changed('visible')) e.isInvisible = !after.visible;
   if (changed('material')) {
     e.material = after.material ? resolve(r, after.material, Material)! : null;
+  }
+  // AutoCAD keeps a polyline's VERTEX and SEQEND entities on the polyline's layer.
+  if (changed('layer') && e instanceof Polyline) {
+    for (const v of e.vertices) v.layer = e.layer;
+    if (e.vertices.seqend) e.vertices.seqend.layer = e.layer;
   }
 }
 
@@ -448,6 +480,249 @@ const mtextWriter: Writer<MTextGeometry> = {
   },
 };
 
+// ── SOLID, 3DFACE ──────────────────────────────────────────────────────────────────────────
+
+type Corners = readonly [Vec2, Vec2, Vec2, Vec2];
+
+const solidWriter: Writer<SolidGeometry> = {
+  create: () => new Solid(),
+  problems: (_r, _b, g) => planeProblems(g),
+  write(_r, e, before, g) {
+    const s = e as Solid;
+    const d = differ(before, g);
+    const pl = plane(g.normal);
+    // The mapping keeps the first corner's elevation (all four share one OCS Z in AutoCAD's
+    // files); a corner keeps its own Z until the elevation itself is edited, as LINE does.
+    const elevation = d('elevation');
+    if (d('corners') || elevation) {
+      const z = (old: XYZ): number => (elevation ? ocsZ(g.elevation, pl) : old.z);
+      const c = (p: Vec2, old: XYZ): XYZ => new XYZ(ocsX(p.x, pl), p.y, z(old));
+      s.firstCorner = c(g.corners[0], s.firstCorner);
+      s.secondCorner = c(g.corners[1], s.secondCorner);
+      s.thirdCorner = c(g.corners[2], s.thirdCorner);
+      s.fourthCorner = c(g.corners[3], s.fourthCorner);
+    }
+    if (d('thickness')) s.thickness = g.thickness ?? 0;
+    if (d('normal')) s.normal = xyz(g.normal);
+  },
+};
+
+const face3dWriter: Writer<Face3dGeometry> = {
+  create: () => new Face3D(),
+  problems: () => [],
+  write(_r, e, before, g) {
+    const f = e as Face3D;
+    const d = differ(before, g);
+    // A 3DFACE is mapped as its plan view: each corner keeps its WCS Z (0 on a new face).
+    if (d('corners')) {
+      const c = (p: Vec2, old: XYZ): XYZ => new XYZ(p.x, p.y, old.z);
+      const cs: Corners = g.corners;
+      f.firstCorner = c(cs[0], f.firstCorner);
+      f.secondCorner = c(cs[1], f.secondCorner);
+      f.thirdCorner = c(cs[2], f.thirdCorner);
+      f.fourthCorner = c(cs[3], f.fourthCorner);
+    }
+    if (d('hiddenEdges')) f.flags = g.hiddenEdges;
+  },
+};
+
+// ── SPLINE ─────────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Plan-view points written back over WCS points: a point keeps the Z of the one it replaces;
+ * an added one takes the last point's Z (a planar spline stays planar), or 0 on a new entity.
+ */
+function withZ(points: readonly Vec2[], old: readonly XYZ[]): XYZ[] {
+  const last = old.length > 0 ? old[old.length - 1]!.z : 0;
+  return points.map((p, i) => new XYZ(p.x, p.y, old[i]?.z ?? last));
+}
+
+const KNOT_PARAMETERIZATION: Record<KnotParameterization, KnotParametrization> = {
+  chord: KnotParametrization.Chord,
+  sqrt: KnotParametrization.SquareRoot,
+  uniform: KnotParametrization.Uniform,
+};
+
+const splineWriter: Writer<SplineGeometry> = {
+  create: () => {
+    const s = new Spline();
+    // AutoCAD flags every spline it draws in a plane as planar (DXF 70 bit 8).
+    s.flags = SplineFlags.Planar;
+    return s;
+  },
+  problems(_r, before, g) {
+    const out: string[] = [];
+    const counts = (s: SplineGeometry): unknown[] => [
+      s.degree,
+      s.knots.length,
+      s.controlPoints.length,
+      s.weights?.length,
+    ];
+    // A knot vector that does not fit the control points would write a SPLINE AutoCAD cannot
+    // read. Checked only when the counts change, so a file's own odd spline still saves.
+    if (!before || !same(counts(before), counts(g))) {
+      if (g.controlPoints.length > 0 && g.knots.length !== g.controlPoints.length + g.degree + 1) {
+        out.push(
+          `${g.knots.length} knots for ${g.controlPoints.length} control points of degree ${g.degree}`,
+        );
+      }
+      if (g.weights && g.weights.length !== g.controlPoints.length) {
+        out.push(`${g.weights.length} weights for ${g.controlPoints.length} control points`);
+      }
+    }
+    return out;
+  },
+  write(_r, e, before, g) {
+    const s = e as Spline;
+    // Splines are mapped in WCS whatever their normal (map/entities.ts), so the normal is only
+    // carried; a spline with no normal stated keeps the file's (+Z or the zero vector).
+    const d = differ(before, g);
+    if (d('degree')) s.degree = g.degree;
+    if (d('knots')) s.knots = [...g.knots];
+    if (d('controlPoints')) s.controlPoints = withZ(g.controlPoints, s.controlPoints);
+    const n = s.controlPoints.length;
+    // Weights all 1 map as no weights, so the file's list only changes with the edit's, or
+    // when it no longer fits the control points.
+    if (d('weights') || (!g.weights && s.weights.length > 0 && s.weights.length !== n)) {
+      s.weights = g.weights ? [...g.weights] : [];
+      const flags = s.flags as number;
+      s.flags = g.weights ? flags | SplineFlags.Rational : flags & ~SplineFlags.Rational;
+    }
+    if (d('fitPoints')) s.fitPoints = withZ(g.fitPoints ?? [], s.fitPoints);
+    const tangent = (t: Vec2 | undefined, old: XYZ): XYZ =>
+      t ? new XYZ(t.x, t.y, old.z) : new XYZ(0, 0, 0);
+    if (d('startTangent')) s.startTangent = tangent(g.startTangent, s.startTangent);
+    if (d('endTangent')) s.endTangent = tangent(g.endTangent, s.endTangent);
+    if (d('knotParameterization')) {
+      const kp = g.knotParameterization;
+      const old = s.knotParametrization as number;
+      // Chord and custom both map as no parameterization; a custom one stays custom.
+      s.knotParametrization = kp
+        ? KNOT_PARAMETERIZATION[kp]
+        : old === KnotParametrization.Custom
+          ? KnotParametrization.Custom
+          : KnotParametrization.Chord;
+    }
+    if (d('closed')) s.isClosed = g.closed;
+    if (d('periodic')) s.isPeriodic = g.periodic;
+    if (d('normal') && (before || g.normal)) s.normal = xyz(g.normal);
+  },
+};
+
+// ── POLYLINE ───────────────────────────────────────────────────────────────────────────────
+
+const FIT_TYPES = {
+  quadratic: SmoothSurfaceType.Quadratic,
+  cubic: SmoothSurfaceType.Cubic,
+  bezier: SmoothSurfaceType.BezierSurface,
+} as const;
+
+/** DXF 70 bits the polyline writer owns: closed, curve fit, spline fit, PLINEGEN. */
+const POLYLINE_FLAGS = 1 | 2 | 4 | 128;
+
+const polylineWriter: Writer<PolylineGeometry> = {
+  create: () => new Polyline2D(),
+  problems(_r, before, g) {
+    const out = g.is3d ? [] : planeProblems(g);
+    // A 2D and a 3D polyline are different objects (POLYLINE_2D / POLYLINE_3D in DWG).
+    if (before && before.is3d !== g.is3d) out.push('a change between 2D and 3D');
+    if (g.is3d && g.vertices.some((v) => v.bulge !== 0)) out.push('bulges on a 3D polyline');
+    if (g.is3d && (g.elevation !== undefined || g.thickness !== undefined || g.normal)) {
+      out.push('elevation, thickness or a normal on a 3D polyline');
+    }
+    return out;
+  },
+  write(r, e, before, g) {
+    const p = e as Polyline;
+    const d = differ(before, g);
+    const pl = g.is3d ? 'up' : plane(g.normal);
+    if (d('vertices', 'frame', 'fit', 'elevation')) writeVertices(r, p, g, pl, d('elevation'));
+    // Bit 8 (3D) stays as read: is3d cannot change (above), and acad-ts sets it for Polyline3D.
+    let flags = (p.flags as number) & ~POLYLINE_FLAGS;
+    if (g.closed) flags |= 1;
+    if (g.fit === 'curve') flags |= 2;
+    else if (g.fit) flags |= 4;
+    if (g.plinegen) flags |= 128;
+    if (d('closed', 'fit', 'plinegen')) p.flags = flags;
+    if (d('fit')) {
+      p.smoothSurface = g.fit && g.fit !== 'curve' ? FIT_TYPES[g.fit] : SmoothSurfaceType.NoSmooth;
+    }
+    if (d('startWidth')) p.startWidth = g.startWidth ?? 0;
+    if (d('endWidth')) p.endWidth = g.endWidth ?? 0;
+    if (d('elevation') && !g.is3d) p.elevation = ocsZ(g.elevation, pl);
+    if (d('thickness')) p.thickness = g.thickness ?? 0;
+    if (d('normal') && !g.is3d) p.normal = xyz(g.normal);
+  },
+};
+
+/**
+ * Writes the drawn vertices and the spline frame (VERTEX flag 16) onto the polyline's own
+ * VERTEX entities, the i-th of each kind in place, so a vertex keeps its handle and all Triya
+ * does not model (its flags, tangent, id). Vertices a polyline gains are new VERTEX entities
+ * under fresh handles (`Resolver.allocate`); a polyline that loses some just drops them.
+ */
+function writeVertices(
+  r: Resolver,
+  p: Polyline,
+  g: PolylineGeometry,
+  pl: Plane,
+  elevationChanged: boolean,
+): void {
+  const old = [...p.vertices] as Vertex[];
+  const isFrame = (v: Vertex): boolean =>
+    ((v.flags as number) & VertexFlags.SplineFrameControlPoint) !== 0;
+  const oldDrawn = old.filter((v) => !isFrame(v));
+  const oldFrame = old.filter(isFrame);
+  const base = g.is3d ? VertexFlags.PolylineVertex3D : 0;
+  const lastZ = old.length > 0 ? old[old.length - 1]!.location.z : 0;
+  // A 2D vertex's Z is the OCS elevation (AutoCAD writes it there too); a 3D one keeps its WCS
+  // Z, and one added takes the last vertex's.
+  const z = (v: Vertex | undefined): number =>
+    g.is3d
+      ? (v?.location.z ?? lastZ)
+      : elevationChanged || !v
+        ? ocsZ(g.elevation, pl)
+        : v.location.z;
+  const vertex = (v: Vertex | undefined, flags: number): Vertex => {
+    if (v) return v;
+    const out = g.is3d ? new Vertex3D() : new Vertex2D();
+    out.handle = r.allocate();
+    out.flags = flags;
+    out.layer = p.layer;
+    return out;
+  };
+  const drawnFlags =
+    base | (g.fit && g.fit !== 'curve' ? VertexFlags.SplineVertexFromSplineFitting : 0);
+  const drawn = g.vertices.map((src, i) => {
+    const v = vertex(oldDrawn[i], drawnFlags);
+    v.location = new XYZ(g.is3d ? src.x : ocsX(src.x, pl), src.y, z(oldDrawn[i]));
+    v.bulge = g.is3d || pl !== 'down' ? src.bulge : -src.bulge + 0;
+    v.startWidth = src.startWidth ?? 0;
+    v.endWidth = src.endWidth ?? 0;
+    return v;
+  });
+  const frame = (g.frame ?? []).map((src, i) => {
+    const v = vertex(oldFrame[i], base | VertexFlags.SplineFrameControlPoint);
+    v.location = new XYZ(g.is3d ? src.x : ocsX(src.x, pl), src.y, z(oldFrame[i]));
+    return v;
+  });
+  const sameCounts = drawn.length === oldDrawn.length && frame.length === oldFrame.length;
+  // Same counts keep the file's interleaving; otherwise frame first, as AutoCAD writes it.
+  const next = sameCounts ? old : [...frame, ...drawn];
+  const seqend = p.vertices.seqend;
+  p.vertices.length = 0;
+  p.vertices.push(...next);
+  if (p.document) for (const v of next) if (v.document == null) v.assignDocument(p.document);
+  if (!seqend) {
+    const s = new Seqend(p);
+    s.handle = r.allocate();
+    s.layer = p.layer;
+    p.vertices.seqend = s;
+    if (p.document) s.assignDocument(p.document);
+  }
+  for (const v of next) v.owner = p;
+}
+
 const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   LINE: lineWriter,
   XLINE: xlineWriter('XLINE'),
@@ -459,14 +734,20 @@ const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   LWPOLYLINE: lwPolylineWriter,
   TEXT: textWriter,
   MTEXT: mtextWriter,
+  SOLID: solidWriter,
+  '3DFACE': face3dWriter,
+  SPLINE: splineWriter,
+  POLYLINE: polylineWriter,
 } as Partial<Record<EntityType, Writer<never>>>;
 
 /** The entity types whose geometry Triya can write (the rest: roadmap M1-75). */
 export const WRITABLE_TYPES: readonly EntityType[] = Object.keys(WRITERS) as EntityType[];
 
-/** A new acad-ts entity for `type`, or undefined when no writer exists. */
-export function createAcadEntity(type: EntityType): AcadEntity | undefined {
-  return WRITERS[type]?.create();
+/** A new acad-ts entity for `geom`, or undefined when no writer exists. */
+export function createAcadEntity(geom: EntityGeometry): AcadEntity | undefined {
+  // A 3D polyline is its own acad-ts class (POLYLINE_3D in DWG), which `create` cannot pick.
+  if (geom.kind === 'POLYLINE' && geom.is3d) return new Polyline3D();
+  return WRITERS[geom.kind]?.create();
 }
 
 /**

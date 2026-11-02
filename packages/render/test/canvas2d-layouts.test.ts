@@ -428,3 +428,74 @@ describe('viewport linetype scale (PSLTSCALE, M1-18 part 2)', () => {
     expect(firstDash(0)).toBeGreaterThan(firstDash(1));
   });
 });
+
+describe('Model-tab linetype scale (MSLTSCALE, M1-63)', () => {
+  /** CANNOSCALE 1:2: two drawing units per paper unit. */
+  const ANNO_1_2: [string, string | number][] = [
+    ['CANNOSCALE', '1:2'],
+    ['CANNOSCALEVALUE', 0.5],
+  ];
+  const dashed = () => [entity('20', line(0, 10, 20, 10), { layer: LAYER_DASHED })];
+
+  /** The first dash's length in model units on the Model tab. */
+  function modelDash(header: [string, string | number][]): {
+    dash: () => number;
+    s: ReturnType<typeof setup>;
+  } {
+    const s = setup(dashed(), { block: MODEL, extra: { header } });
+    s.r.setView({ center: { x: 10, y: 10 }, scale: 8 });
+    const dash = () => {
+      s.scene.ctx.calls.length = 0;
+      s.r.frame();
+      const calls = s.scene.ctx.calls;
+      const m = calls.findIndex((c) => c[0] === 'moveTo');
+      return Number(calls[m + 1]![1]) - Number(calls[m]![1]);
+    };
+    return { dash, s };
+  }
+
+  it('scales Model-tab linetypes by the annotation scale when MSLTSCALE is 1', () => {
+    // DASHED at ×2: 1 dash, 0.5 gap; 20 / 1.5 leaves 0.5 over: first dash 0.5 + 0.25.
+    expect(modelDash([['MSLTSCALE', '1'], ...ANNO_1_2]).dash()).toBeCloseTo(0.75, 9);
+    expect(modelDash([['MSLTSCALE', '0'], ...ANNO_1_2]).dash()).toBeCloseTo(0.5, 9);
+  });
+
+  it('takes a drawing without MSLTSCALE as MSLTSCALE 0, as AutoCAD opens pre-2008 drawings', () => {
+    expect(modelDash(ANNO_1_2).dash()).toBeCloseTo(0.5, 9);
+  });
+
+  it('ignores an unknown annotation scale', () => {
+    expect(
+      modelDash([
+        ['MSLTSCALE', '1'],
+        ['CANNOSCALE', '1:2'],
+      ]).dash(),
+    ).toBeCloseTo(0.5, 9);
+  });
+
+  it('follows MSLTSCALE and CANNOSCALE changes', () => {
+    const { dash, s } = modelDash(ANNO_1_2);
+    expect(dash()).toBeCloseTo(0.5, 9);
+    s.r.apply(change(s.d, (b) => b.setHeader('MSLTSCALE', '1')));
+    expect(dash()).toBeCloseTo(0.75, 9);
+    s.r.apply(
+      change(s.d, (b) => {
+        b.setHeader('CANNOSCALE', '1:1');
+        b.setHeader('CANNOSCALEVALUE', 1);
+      }),
+    );
+    expect(dash()).toBeCloseTo(0.5, 9);
+  });
+
+  it('leaves model space seen through a layout viewport to PSLTSCALE', () => {
+    const { r, scene } = setup(
+      [onPaper('30', viewport()), entity('20', line(0, 10, 20, 10), { layer: LAYER_DASHED })],
+      { extra: { header: [['MSLTSCALE', '1'], ...ANNO_1_2], layoutFlags: 1 } },
+    );
+    r.setView({ center: { x: 90, y: 40 }, scale: 8 });
+    r.frame();
+    const inside = clipped(scene.ctx.calls)[0]!;
+    const m = inside.findIndex((c) => c[0] === 'moveTo');
+    expect(Number(inside[m + 1]![1]) - Number(inside[m]![1])).toBeCloseTo(0.1875, 9);
+  });
+});
