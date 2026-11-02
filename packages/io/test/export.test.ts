@@ -207,23 +207,17 @@ function acadInsert(bytes: Uint8Array, handle: string): Insert {
   return readCadDocument(bytes).getCadObject(Number.parseInt(handle, 16)) as Insert;
 }
 
-/** A new HATCH: a type with no writer yet (roadmap M1-75). */
-const hatch = (model: DocumentModel): { owner: string; layer: string; geom: EntityGeometry } => ({
+/** A new OLE2FRAME: a type with no writer (Triya never runs OLE servers, so it never makes one). */
+const ole = (model: DocumentModel): { owner: string; layer: string; geom: EntityGeometry } => ({
   owner: byType(model, 'LINE').owner,
   layer: byType(model, 'LINE').layer,
   geom: {
-    kind: 'HATCH',
-    pattern: 'SOLID',
-    solid: true,
-    associative: false,
-    style: 0,
-    patternType: 1,
-    patternAngle: 0,
-    patternScale: 1,
-    double: false,
-    loops: [],
-    patternLines: [],
-    seedPoints: [],
+    kind: 'OLE2FRAME',
+    upperLeft: { x: 0, y: 1 },
+    lowerRight: { x: 1, y: 0 },
+    oleType: 2,
+    paperSpace: false,
+    application: '',
   },
 });
 
@@ -1054,7 +1048,7 @@ describe('triyaToAcad', () => {
   it('refuses what it cannot write yet and leaves the original as it was', () => {
     const cases: ((b: ChangeSetBuilder, model: DocumentModel) => void)[] = [
       (b, m) => {
-        b.addEntity(hatch(m));
+        b.addEntity(ole(m));
       },
       (b, m) => {
         const s = byType(m, 'INSERT');
@@ -1154,7 +1148,7 @@ describe('triyaToAcad', () => {
     const { model } = open();
     let s: Entity | undefined;
     edit(model, (b) => {
-      s = b.addEntity(hatch(model));
+      s = b.addEntity(ole(model));
     });
     let error: unknown;
     try {
@@ -1163,7 +1157,7 @@ describe('triyaToAcad', () => {
       error = e;
     }
     expect((error as UnsupportedChangeError).problems).toEqual([
-      `HATCH ${s!.handle}: new entities`,
+      `OLE2FRAME ${s!.handle}: new entities`,
     ]);
   });
 });

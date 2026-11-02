@@ -1,5 +1,6 @@
 // TriyaToAcad on the public corpus (M1-05, M1-75): a markup-style edit of every entity Triya can
-// write (move it; grow circles and arcs, turn arcs, text, blocks and feature control frames) must save so that the edited
+// write (move it; grow circles and arcs, turn arcs, text, blocks and feature control frames;
+// move hatches with their pattern origin, images, wipeouts, underlays and multilines) must save so that the edited
 // entities map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles reports nothing (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
@@ -11,6 +12,7 @@ import {
   DocumentModel,
   type Entity,
   type EntityGeometry,
+  type HatchGeometry,
   type TextFields,
   type Vec2,
 } from '@triya/engine';
@@ -103,6 +105,45 @@ function movedDimension(g: DimensionGeometry): EntityGeometry {
   }
 }
 
+type HatchEdge = NonNullable<HatchGeometry['loops'][number]['edges']>[number];
+
+function movedHatchEdge(e: HatchEdge): HatchEdge {
+  switch (e.type) {
+    case 'line':
+      return { ...e, start: move(e.start), end: move(e.end) };
+    case 'arc':
+    case 'ellipse':
+      return { ...e, center: move(e.center) };
+    case 'spline':
+      return {
+        ...e,
+        controlPoints: e.controlPoints.map(move),
+        ...(e.fitPoints ? { fitPoints: e.fitPoints.map(move) } : {}),
+      };
+  }
+}
+
+/** MOVE of a hatch: its boundary, seed points and pattern origin (the boundary objects stay). */
+function movedHatch(g: HatchGeometry): HatchGeometry {
+  return {
+    ...g,
+    loops: g.loops.map((l) => ({
+      ...l,
+      ...(l.polyline
+        ? {
+            polyline: {
+              ...l.polyline,
+              vertices: l.polyline.vertices.map((v) => ({ ...v, ...move(v) })),
+            },
+          }
+        : {}),
+      ...(l.edges ? { edges: l.edges.map(movedHatchEdge) } : {}),
+    })),
+    seedPoints: g.seedPoints.map(move),
+    patternLines: g.patternLines.map((l) => ({ ...l, base: move(l.base) })),
+  };
+}
+
 /** The edit: what MOVE, SCALE (about the centre) and ROTATE (in place) would leave. */
 function edited(g: EntityGeometry): EntityGeometry {
   switch (g.kind) {
@@ -169,6 +210,18 @@ function edited(g: EntityGeometry): EntityGeometry {
       return { ...g, vertices: g.vertices.map(move) };
     case 'TOLERANCE':
       return { ...g, position: move(g.position), rotation: turn(g.rotation) };
+    case 'HATCH':
+      return movedHatch(g);
+    case 'IMAGE':
+    case 'WIPEOUT':
+    case 'PDFUNDERLAY':
+      return { ...g, position: move(g.position) };
+    case 'MLINE':
+      return {
+        ...g,
+        start: move(g.start),
+        vertices: g.vertices.map((v) => ({ ...v, position: move(v.position) })),
+      };
     default:
       throw new Error(`no edit for ${g.kind}`);
   }
