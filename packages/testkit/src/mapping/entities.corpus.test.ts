@@ -91,7 +91,6 @@ const COMMON = new Set(['8', '6', '62', '420', '370', '48', '60', '440']);
 const ACAD_TS_GAPS: Record<string, string> = {
   'entity 6':
     'R12 files have no BYBLOCK/BYLAYER LTYPE records; acad-ts falls back to ByLayer for an entity whose 6 is BYBLOCK',
-  'ACAD_TABLE mapped': 'acad-ts drops ACAD_TABLE entities of ezdxf-written files from their block',
   'MTEXT 1':
     'acad-ts decodes only the ^J, ^M, ^I and "^ " caret codes; other control characters stay as ^A, ^B, …',
   'DIMENSION 70':

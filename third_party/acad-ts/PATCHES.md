@@ -1913,7 +1913,7 @@ R2004 and earlier DXF files write a value as its 90 type and the type's data, wi
 
 - **File:** `third_party/acad-ts-patches/0099-dxf-unknown-value-91.patch`
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
-- **Symptom:** an empty table cell is a value of type 0 (unknown) that still carries `91 = 0` (every pre-R2007 one, and ezdxf `acad_table_simple.dxf`, R2013: `301 CELL_VALUE`, `93 = 3`, `90 = 0`, `91 = 0`). `readCadValue` passed the 91 to `CadValue.setValue`, which throws for the unknown type, so the ACAD_TABLE or TABLECONTENT was dropped with the objects the failed read had passed.
+- **Symptom:** an empty table cell is a value of type 0 (unknown) that still carries `91 = 0` (every pre-R2007 one, and ezdxf `acad_table_simple.dxf`, R2013: `301 CELL_VALUE`, `93 = 3`, `90 = 0`, `91 = 0`). `readCadValue` passed the 91 to `CadValue.setValue`, which throws for the unknown type, so the ACAD_TABLE or TABLECONTENT was dropped with the objects the failed read had passed. This was the M1-04 mapping gap "acad-ts drops ACAD_TABLE entities of ezdxf-written files from their block" (M1-32).
 - **Fix:** the 91 of an unknown-type value is skipped.
 - **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0099 a DXF table value of unknown type with a 91 is read, not thrown away".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
