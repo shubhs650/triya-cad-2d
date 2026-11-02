@@ -162,15 +162,20 @@ interface CacheEntry {
   readonly size: number;
   readonly x: number;
   readonly y: number;
-  /** An entity with linetypes: its dashed primitives, built on first use. */
+  /**
+   * An entity with linetypes: its dashed primitives, built on first use, per linetype scale
+   * multiplier (1, or a PSLTSCALE viewport's 1 / scale, M1-18).
+   */
   readonly dashes?: {
-    /** The longest pattern repetition among its parts, world units. */
+    /** The longest pattern repetition among its parts at multiplier 1, world units. */
     readonly period: number;
-    readonly build: () => readonly RenderPrimitive[];
-    built?: readonly RenderPrimitive[];
+    readonly build: (multiplier: number) => readonly RenderPrimitive[];
+    readonly built: Map<number, readonly RenderPrimitive[]>;
   };
   /** An INSERT or a dimension: every block definition it draws from (M1-14, M1-15). */
   readonly blocks?: ReadonlySet<Handle>;
+  /** The entity's own LAYER, which hides it when frozen in a viewport (M1-18). */
+  readonly layer?: Handle;
 }
 
 /**
@@ -184,12 +189,17 @@ interface DrawFrame {
   readonly m: Matrix2D;
   readonly scale: number;
   readonly box: Box;
+  /** A viewport's frozen layers (DXF 341): entries and block parts on them are skipped. */
+  readonly frozen?: ReadonlySet<Handle>;
+  /** Linetype scale multiplier: 1 / the viewport scale under PSLTSCALE, else 1. */
+  readonly linetypeScale?: number;
 }
 
 /** A viewport to draw: its geometry, model → paper map, and whether it is drawn. */
 interface ViewportEntry {
   readonly geom: ViewportGeometry;
   readonly toPaper: Matrix2D;
+  readonly frozen: ReadonlySet<Handle> | undefined;
 }
 
 /** The block's entities in draw order, and each id's position in it. */
@@ -262,6 +272,8 @@ export class Canvas2DRenderer implements Renderer {
   readonly #paperSpace: boolean;
   /** Paper drawing units per millimetre, from the layout's page setup (M1-18). */
   readonly #paperUnitsPerMm: number;
+  /** The layout's PSLTSCALE (DXF 70 bit 1): viewport linetypes in paper units. */
+  readonly #psltscale: boolean;
   /** The layout's sheet, when the block shown is a set-up layout. */
   readonly #sheet: LayoutSheet | undefined;
   /** Model space, when the block shown is a layout whose viewports show it. */
@@ -322,6 +334,8 @@ export class Canvas2DRenderer implements Renderer {
     this.#paperSpace = layout !== undefined && !isModel(layout.blockRecord);
     const plot = this.#paperSpace ? layout?.plot : undefined;
     this.#sheet = this.#paperSpace && layout ? layoutSheet(layout) : undefined;
+    // A layout without stated flags takes AutoCAD's default, PSLTSCALE 1.
+    this.#psltscale = ((layout?.flags ?? 1) & 1) !== 0;
     // Without a page setup the paper units follow the drawing's measurement.
     this.#paperUnitsPerMm = plot
       ? paperUnitsPerMm(plot)
@@ -495,7 +509,7 @@ export class Canvas2DRenderer implements Renderer {
     const e = this.#model.entity(id);
     if (!e) return;
     let prims: readonly RenderPrimitive[];
-    let extra: Pick<CacheEntry, 'dashes' | 'blocks'>;
+    let extra: Pick<CacheEntry, 'dashes' | 'blocks' | 'layer'>;
     if (expands(e, this.#blockDef)) {
       // The reference decides its own visibility: an off layer still shows its contents on
       // other layers.
@@ -505,10 +519,11 @@ export class Canvas2DRenderer implements Renderer {
         return;
       }
       prims = x.prims;
-      const build = () => expandInsert(e, this.#blockSource, { dashes: true }).prims;
+      const build = (linetypeScale: number) =>
+        expandInsert(e, this.#blockSource, { dashes: true, linetypeScale }).prims;
       extra = {
         blocks: x.blocks,
-        ...(x.period > 0 ? { dashes: { period: x.period, build } } : {}),
+        ...(x.period > 0 ? { dashes: { period: x.period, build, built: new Map() } } : {}),
       };
     } else {
       const paint = this.#paint(e, this.#model);
@@ -519,9 +534,15 @@ export class Canvas2DRenderer implements Renderer {
       const { linetype: lt, ...continuous } = paint;
       prims = tessellate(e.geom, continuous, this.#tessellate);
       const period = lt ? patternLength(lt.pattern) * lt.scale : 0;
-      const build = () => tessellate(e.geom, paint, this.#tessellate);
-      extra = period > 0 ? { dashes: { period, build } } : {};
+      const build = (k: number) =>
+        tessellate(
+          e.geom,
+          k === 1 || !lt ? paint : { ...paint, linetype: { ...lt, scale: lt.scale * k } },
+          this.#tessellate,
+        );
+      extra = period > 0 ? { dashes: { period, build, built: new Map() } } : {};
     }
+    extra = { ...extra, layer: e.layer };
     // The size and centre drive the sub-pixel LOD; unknown bounds never count as small.
     const b = this.#index.bounds(id);
     this.#cache[id] =
@@ -536,14 +557,18 @@ export class Canvas2DRenderer implements Renderer {
         : { prims, size: Infinity, x: 0, y: 0, ...extra };
   }
 
-  /** What an entry draws at `scale` CSS px per unit: its dashes, or continuous (LOD). */
-  #primitives(entry: CacheEntry, scale: number): readonly RenderPrimitive[] {
+  /**
+   * What an entry draws at `scale` CSS px per unit with linetypes scaled by `multiplier`: its
+   * dashes, or continuous (LOD).
+   */
+  #primitives(entry: CacheEntry, scale: number, multiplier: number): readonly RenderPrimitive[] {
     const d = entry.dashes;
     // ARCHITECTURE.md §7.2 LOD: "dashed linetypes below 1 px per pattern unit → solid". An
     // INSERT's parts with shorter patterns fall back one by one in the draw loop.
-    if (!d || d.period * scale < 1) return entry.prims;
-    d.built ??= d.build();
-    return d.built;
+    if (!d || d.period * multiplier * scale < 1) return entry.prims;
+    let built = d.built.get(multiplier);
+    if (!built) d.built.set(multiplier, (built = d.build(multiplier)));
+    return built;
   }
 
   /** A block's entities in draw order: block order, rearranged by its SORTENTSTABLE. */
@@ -637,7 +662,8 @@ export class Canvas2DRenderer implements Renderer {
         // view of a viewport whose layer is off (the usual way to hide frames). A frozen
         // layer is taken the same way; AutoCAD's help does not say.
         if (e?.geom.kind !== 'VIEWPORT' || !viewportShowsModel(e.geom)) continue;
-        out.push({ geom: e.geom, toPaper: viewportTransform(e.geom) });
+        const frozen = e.geom.frozenLayers.length > 0 ? new Set(e.geom.frozenLayers) : undefined;
+        out.push({ geom: e.geom, toPaper: viewportTransform(e.geom), frozen });
       }
     }
     this.#viewports = out;
@@ -735,12 +761,16 @@ export class Canvas2DRenderer implements Renderer {
     ctx.beginPath();
     ctx.rect(clip.x, clip.y, clip.w, clip.h);
     ctx.clip();
+    const vs = viewportScale(vp.geom);
     this.#drawPrimitives(ctx, entries, reduced, {
       ox: o.x,
       oy: o.y,
       m,
-      scale: view.scale * viewportScale(vp.geom),
+      scale: view.scale * vs,
       box,
+      // PSLTSCALE 1: "the dash lengths of a line in a viewport … the same as … in paper space".
+      linetypeScale: this.#psltscale ? 1 / vs : 1,
+      ...(vp.frozen ? { frozen: vp.frozen } : {}),
     });
     ctx.restore();
   }
@@ -752,7 +782,8 @@ export class Canvas2DRenderer implements Renderer {
     reduced: boolean,
     frame: DrawFrame,
   ): void {
-    const { ox, oy, m, scale, box } = frame;
+    const { ox, oy, m, scale, box, frozen } = frame;
+    const ltMul = frame.linetypeScale ?? 1;
     /** Device pixels per drawing unit along a line (what a line width converts by). */
     const k = scale * this.#dpr;
     const devX = (x: number, y: number) => m.a * (x - ox) + m.c * (y - oy) + m.e;
@@ -784,6 +815,7 @@ export class Canvas2DRenderer implements Renderer {
     const dot = Math.max(1, Math.round(this.#dpr));
 
     for (const entry of entries) {
+      if (frozen && entry.layer !== undefined && frozen.has(entry.layer)) continue;
       // LOD: an entity under a pixel is a dot, or nothing in a reduced frame.
       if (entry.size * scale < 1) {
         if (reduced) continue;
@@ -800,7 +832,8 @@ export class Canvas2DRenderer implements Renderer {
         );
         continue;
       }
-      for (const prim of this.#primitives(entry, scale)) {
+      for (const prim of this.#primitives(entry, scale, ltMul)) {
+        if (frozen && prim.layers?.some((l) => frozen.has(l))) continue;
         const color = this.#color(prim.color);
         if (prim.kind === 'point') {
           flush();

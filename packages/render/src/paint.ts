@@ -3,9 +3,9 @@
 // LWDEFAULT lineweight, and the linetype pattern at LTSCALE × the object's linetype scale.
 //
 // Inside an INSERT, entities inherit through the `blockContext` the reference hands down
-// (`insertContext`, M1-14); viewport and annotation linetype
-// scaling (PSLTSCALE, MSLTSCALE) come with layouts (M1-18), since acad-ts reads neither
-// `$MSLTSCALE` nor `$CANNOSCALEVALUE` from the file.
+// (`insertContext`, M1-14). Viewport linetype scaling (PSLTSCALE) is applied by the renderer
+// per viewport (M1-18 part 2); annotation scaling (MSLTSCALE) waits, since acad-ts reads
+// neither `$MSLTSCALE` nor `$CANNOSCALEVALUE` from the file.
 
 import type { DocumentModel, Entity, HeaderValue, LinetypeRecord } from '@triya/engine';
 import { patternOf, linetypeScale, type LinePattern } from './style/pattern';
