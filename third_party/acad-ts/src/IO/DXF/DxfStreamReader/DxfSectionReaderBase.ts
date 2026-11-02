@@ -264,7 +264,11 @@ export abstract class DxfSectionReaderBase {
         this._readDefinedGroups(template);
         break;
       case 330:
-        template.ownerHandle = this._reader.valueAsHandle;
+        // The owner is the 330 before the first subclass marker. A later one is data the object's
+        // reader did not take (an unknown object's references, for one) and must not replace it.
+        if (this.currentSubclass === '' || template.ownerHandle == null) {
+          template.ownerHandle = this._reader.valueAsHandle;
+        }
         break;
       case 1001:
         isExtendedData.value = true;

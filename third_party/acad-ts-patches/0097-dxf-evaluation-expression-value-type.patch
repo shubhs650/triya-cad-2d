@@ -1,0 +1,15 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 91ac751..70459ca 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -2020,7 +2020,9 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+     switch (this._reader.code as number) {
+       case 1:
+         this._reader.expectedCode(70);
+-        this._reader.expectedCode(140);
++        // 70 is the value's type, and the value follows in that type's group (140 for a double,
++        // 70 for a short); requiring 140 threw on the others and dropped the object.
++        this._reader.readNext();
+         return true;
+       default:
+         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(DxfSubclassMarker.evalGraphExpr)!);

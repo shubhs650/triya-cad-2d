@@ -1,0 +1,67 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 8d80972..91ac751 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -35,6 +35,7 @@ import { CadEvaluationExpressionTemplate } from '../../Templates/CadEvaluationEx
+ import { CadBlockElementTemplate } from '../../Templates/CadBlockElementTemplate.js';
+ import { CadBlockActionTemplate } from '../../Templates/CadBlockActionTemplate.js';
+ import { BlockAction } from '../../../Objects/Evaluations/BlockAction.js';
++import { EvaluationExpression } from '../../../Objects/Evaluations/EvaluationExpression.js';
+ import { CadBlockActionBasePtTemplate } from '../../Templates/CadBlockActionBasePtTemplate.js';
+ import { CadBlockParameterTemplate } from '../../Templates/CadBlockParameterTemplate.js';
+ import { CadBlock1PtParameterTemplate } from '../../Templates/CadBlock1PtParameterTemplate.js';
+@@ -324,7 +325,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+   protected readObjectCodes(template: CadTemplate, readObject: ReadObjectDelegate, objectType: Function): CadTemplate {
+     // The DXF writer cannot write these from their fields, so keep the codes as read for it.
+     const obj = template.cadObject;
+-    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle || obj instanceof ProxyObject || obj instanceof TableContent)) {
++    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle || obj instanceof ProxyObject || obj instanceof TableContent || obj instanceof EvaluationExpression)) {
+       return this._readObjectCodes(template, readObject, objectType);
+     }
+     const raw: DxfRawCode[] = [];
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index a749a11..1d98c3b 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -421,8 +421,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       return;
+     }
+ 
+-    // No field writer exists for these; write the group codes the reader kept.
+-    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent) && co.rawDxfCodes != null) {
++    // No field writer exists for these (dynamic-block graph nodes: one that writes only what
++    // their maps hold, which drops visibility states); write the group codes the reader kept.
++    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent || co instanceof EvaluationExpression) && co.rawDxfCodes != null) {
+       this.writeRawObject(co);
+       return;
+     }
+@@ -707,7 +708,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       }
+       return co.rawDxfCodes != null;
+     }
+-    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent) && co.rawDxfCodes != null) {
++    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent || co instanceof EvaluationExpression) && co.rawDxfCodes != null) {
+       return true;
+     }
+ 	if (!this.configuration.writeDynamicBlockData && (
+diff --git a/src/Objects/Evaluations/EvaluationExpression.ts b/src/Objects/Evaluations/EvaluationExpression.ts
+index fedd0a2..f5fa557 100644
+--- a/src/Objects/Evaluations/EvaluationExpression.ts
++++ b/src/Objects/Evaluations/EvaluationExpression.ts
+@@ -1,8 +1,15 @@
+ import { CadObject } from '../../CadObject.js';
+ import { DxfSubclassMarker } from '../../DxfSubclassMarker.js';
+ import { ObjectType } from '../../Types/ObjectType.js';
++import type { DwgRawObjectData, DxfRawCode, IRawCadObject } from '../RawObjectData.js';
++
++export abstract class EvaluationExpression extends CadObject implements IRawCadObject {
++	// A DXF read keeps the group codes for the DXF writer, whose field writer drops data.
++	rawDxfCodes: DxfRawCode[] | null = null;
++	rawDxfName: string | null = null;
++	rawDwgData: DwgRawObjectData | null = null;
++	readonly rawOwnedObjects: CadObject[] = [];
+ 
+-export abstract class EvaluationExpression extends CadObject {
+ 	id: number = 0;
+ 
+ 	override get objectType(): ObjectType { return ObjectType.UNLISTED; }
