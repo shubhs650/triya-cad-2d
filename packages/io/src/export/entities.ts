@@ -4,17 +4,24 @@
 // model (and every unchanged value, to the bit) stays as the file had it (§6.2 rule 2).
 //
 // Geometry writers exist for the types markup creates and edits first and, since M1-75 parts 1
-// to 3, SOLID, TRACE, 3DFACE, SPLINE, POLYLINE, ATTDEF, INSERT with its ATTRIBs, every
-// dimension, LEADER and TOLERANCE; the others report the change as unsupported (roadmap M1-75)
+// to 4, SOLID, TRACE, 3DFACE, SPLINE, POLYLINE, ATTDEF, INSERT with its ATTRIBs, every
+// dimension, LEADER, TOLERANCE, HATCH, IMAGE, WIPEOUT, PDFUNDERLAY and MLINE; the others report the change as unsupported (roadmap M1-75)
 // rather than dropping it.
 
-import type { AttributeBase, Vertex } from '@node-projects/acad-ts';
+import type {
+  AttributeBase,
+  CadWipeoutBase,
+  HatchBoundaryPathEdge,
+  Vertex,
+} from '@node-projects/acad-ts';
 import {
   Arc,
   AttributeDefinition,
   AttributeEntity,
   BlockRecord,
   Circle,
+  ClipMode,
+  ClipType,
   Color as AcadColor,
   DimensionAligned,
   DimensionAngular2Line,
@@ -29,7 +36,17 @@ import {
   Ellipse,
   Entity as AcadEntity,
   Face3D,
+  GradientColor,
+  Hatch,
+  HatchBoundaryPath,
+  HatchBoundaryPathArc,
+  HatchBoundaryPathEllipse,
+  HatchBoundaryPathLine,
+  HatchBoundaryPathPolyline,
+  HatchBoundaryPathSpline,
+  HatchPatternLine,
   HookLineDirection,
+  ImageDefinition,
   Insert,
   KnotParametrization,
   Layer,
@@ -40,11 +57,18 @@ import {
   LwPolyline,
   LwPolylineVertex,
   Material,
+  MLine,
+  MLineSegment,
+  MLineStyle,
+  MLineVertex,
   MText,
+  PdfUnderlay,
+  PdfUnderlayDefinition,
   Point,
   Polyline,
   Polyline2D,
   Polyline3D,
+  RasterImage,
   Ray,
   Seqend,
   SmoothSurfaceType,
@@ -59,6 +83,7 @@ import {
   Vertex2D,
   Vertex3D,
   VertexFlags,
+  Wipeout,
   XLine,
   XY,
   XYZ,
@@ -77,6 +102,10 @@ import type {
   EntityProps,
   EntityType,
   Face3dGeometry,
+  HatchEdge,
+  HatchGeometry,
+  HatchLoop,
+  ImageGeometry,
   InsertAttribute,
   InsertGeometry,
   KnotParameterization,
@@ -85,6 +114,7 @@ import type {
   LinetypeRef,
   Lineweight,
   LwPolylineGeometry,
+  MLineGeometry,
   MTextGeometry,
   ObjectCommon,
   PointGeometry,
@@ -96,6 +126,7 @@ import type {
   TextGeometry,
   ToleranceGeometry,
   Transparency,
+  UnderlayGeometry,
   Vec2,
   Vec3,
   XlineGeometry,
@@ -1195,6 +1226,357 @@ const toleranceWriter: Writer<ToleranceGeometry> = {
   },
 };
 
+// ── HATCH ──────────────────────────────────────────────────────────────────────────────────
+
+/** The −Z mirror of a hatch edge, the inverse of map/entities.ts `hatchEdge`. */
+function acadHatchEdge(e: HatchEdge, pl: Plane): HatchBoundaryPathEdge {
+  const down = pl === 'down';
+  const p = (v: Vec2): XY => new XY(ocsX(v.x, pl), v.y);
+  switch (e.type) {
+    case 'line': {
+      const l = new HatchBoundaryPathLine();
+      l.start = p(e.start);
+      l.end = p(e.end);
+      return l;
+    }
+    case 'arc': {
+      // Mirrored with the flag flipped, a stored arc angle is the plan angle − π.
+      const a = new HatchBoundaryPathArc();
+      a.center = p(e.center);
+      a.radius = e.radius;
+      a.startAngle = down ? norm(e.startAngle - Math.PI) : e.startAngle;
+      a.endAngle = down ? norm(e.endAngle - Math.PI) : e.endAngle;
+      a.counterClockWise = e.ccw !== down;
+      return a;
+    }
+    case 'ellipse': {
+      const el = new HatchBoundaryPathEllipse();
+      el.center = p(e.center);
+      el.majorAxisEndPoint = p(e.majorAxis);
+      el.minorToMajorRatio = e.ratio;
+      el.startAngle = e.startAngle;
+      el.endAngle = e.endAngle;
+      el.counterClockWise = e.ccw !== down;
+      return el;
+    }
+    case 'spline': {
+      // acad-ts keeps a rational edge's weights in the control points' Z (DXF 42).
+      const s = new HatchBoundaryPathSpline();
+      s.degree = e.degree;
+      s.knots = [...e.knots];
+      s.controlPoints = e.controlPoints.map(
+        (c, i) => new XYZ(ocsX(c.x, pl), c.y, e.weights?.[i] ?? 1),
+      );
+      s.isRational = e.weights !== undefined;
+      s.isPeriodic = e.periodic;
+      s.fitPoints = (e.fitPoints ?? []).map(p);
+      s.startTangent = e.startTangent ? p(e.startTangent) : new XY(0, 0);
+      s.endTangent = e.endTangent ? p(e.endTangent) : new XY(0, 0);
+      return s;
+    }
+  }
+}
+
+function acadHatchLoopEdges(l: HatchLoop, pl: Plane): HatchBoundaryPathEdge[] {
+  if (!l.polyline) return (l.edges ?? []).map((e) => acadHatchEdge(e, pl));
+  // A polyline loop keeps each vertex's bulge in its Z.
+  const poly = new HatchBoundaryPathPolyline();
+  poly.isClosed = l.polyline.closed;
+  poly.vertices = l.polyline.vertices.map(
+    (v) => new XYZ(ocsX(v.x, pl), v.y, pl === 'down' ? -v.bulge + 0 : v.bulge),
+  );
+  return [poly];
+}
+
+const hatchWriter: Writer<HatchGeometry> = {
+  create: () => new Hatch(),
+  problems(_r, before, g) {
+    const out = planeProblems(g);
+    if (g.thickness !== undefined) out.push('a thickness, which a HATCH does not have');
+    g.loops.forEach((l, i) => {
+      // An associative hatch's boundary objects point back at it through their reactors,
+      // which Triya does not write yet (M1-75), so a loop keeps the ones it was read with.
+      if (!same(l.sources, before?.loops[i]?.sources)) {
+        out.push(`loop ${i}: its boundary objects change`);
+      }
+      if ((l.polyline === undefined) === (l.edges === undefined)) {
+        out.push(`loop ${i}: neither a polyline nor edges, or both`);
+      }
+      for (const e of l.edges ?? []) {
+        if (
+          e.type !== 'spline' ||
+          same(
+            e,
+            before?.loops[i]?.edges?.find((x) => same(x, e)),
+          )
+        ) {
+          continue;
+        }
+        if (e.knots.length !== e.controlPoints.length + e.degree + 1) {
+          out.push(
+            `loop ${i}: a spline edge with ${e.knots.length} knots for ${e.controlPoints.length} control points of degree ${e.degree}`,
+          );
+        }
+        if (e.weights && e.weights.length !== e.controlPoints.length) {
+          out.push(
+            `loop ${i}: a spline edge with ${e.weights.length} weights for ${e.controlPoints.length} control points`,
+          );
+        }
+      }
+    });
+    if (!same(before?.gradient, g.gradient) && g.gradient?.colors.some((c) => hasBook(c.color))) {
+      out.push('colour-book gradient colours');
+    }
+    return out;
+  },
+  write(_r, e, before, g) {
+    const h = e as Hatch;
+    const d = differ(before, g);
+    const pl = plane(g.normal);
+    // On the same plane `d` compares with `before`; a loop that did not change stays as read.
+    const kept = d('normal') ? undefined : before;
+    if (d('loops')) {
+      const old = h.paths;
+      h.paths = g.loops.map((l, i) => {
+        if (kept && old[i] && same(kept.loops[i], l)) return old[i];
+        // A loop at the same index is rewritten in place: its boundary objects (unchanged,
+        // see `problems`) stay with it.
+        const path = old[i] ?? new HatchBoundaryPath();
+        path.flags = l.flags;
+        path.edges = acadHatchLoopEdges(l, pl);
+        return path;
+      });
+    }
+    if (d('pattern')) {
+      if (h.pattern.name !== g.pattern) h.pattern.name = g.pattern;
+    }
+    // acad-ts's angle and scale setters rotate and scale the stored pattern lines by the new
+    // value (not by the change), but the file's lines are already final: keep them as they are.
+    if (d('patternAngle', 'patternScale')) {
+      const lines = h.pattern.lines.map((l) => l.clone());
+      if (d('patternAngle')) h.patternAngle = ocsAngle(g.patternAngle, pl);
+      if (d('patternScale')) h.patternScale = g.patternScale;
+      h.pattern.lines = lines;
+    }
+    if (d('patternLines')) {
+      h.pattern.lines = g.patternLines.map((l) => {
+        const out = new HatchPatternLine();
+        out.angle = ocsAngle(l.angle, pl);
+        out.basePoint = new XY(ocsX(l.base.x, pl), l.base.y);
+        out.offset = new XY(ocsX(l.offset.x, pl), l.offset.y);
+        out.dashLengths = [...l.dashes];
+        return out;
+      });
+    }
+    if (d('solid')) h.isSolid = g.solid;
+    if (d('associative')) h.isAssociative = g.associative;
+    if (d('style')) h.style = g.style;
+    if (d('patternType')) h.patternType = g.patternType;
+    if (d('double')) h.isDouble = g.double;
+    if (d('seedPoints')) h.seedPoints = g.seedPoints.map((p) => new XY(ocsX(p.x, pl), p.y));
+    if (d('gradient')) {
+      const gr = g.gradient;
+      const out = h.gradientColor;
+      // A hatch that stops being a gradient keeps its settings, as AutoCAD's 450 = 0 does.
+      out.enabled = gr !== undefined;
+      if (gr) {
+        out.name = gr.name;
+        out.angle = ocsAngle(gr.angle, pl);
+        out.shift = gr.shift;
+        out.isSingleColorGradient = gr.singleColor;
+        out.colorTint = gr.tint;
+        out.colors = gr.colors.map((c) => {
+          const x = new GradientColor();
+          x.value = c.value;
+          x.color = acadColor(c.color);
+          return x;
+        });
+      }
+    }
+    if (d('elevation')) h.elevation = ocsZ(g.elevation, pl);
+    if (d('normal')) h.normal = xyz(g.normal);
+  },
+};
+
+// ── IMAGE, WIPEOUT ─────────────────────────────────────────────────────────────────────────
+
+/** Display settings acad-ts only takes between 0 and 100 (DXF 281–283). */
+const percentProblems = (values: Record<string, number>): string[] =>
+  Object.entries(values)
+    .filter(([, v]) => !(v >= 0 && v <= 100))
+    .map(([k, v]) => `${k} ${v} is not between 0 and 100`);
+
+function imageWriter(kind: 'IMAGE' | 'WIPEOUT'): Writer<ImageGeometry> {
+  return {
+    create: () => (kind === 'IMAGE' ? new RasterImage() : new Wipeout()),
+    problems(r, before, g) {
+      const out: string[] = [];
+      // The image plane is u × v (DXF 11, 12); the mapping states it as the normal.
+      const cz = g.u.x * g.v.y - g.u.y * g.v.x;
+      if (plane(g.normal) === 'tilted') out.push('a plane that is not ±Z');
+      else if (!(cz !== 0)) out.push('U and V vectors that span no plane');
+      else if (cz < 0 !== (plane(g.normal) === 'down')) {
+        out.push('a normal that is not U × V');
+      }
+      if (g.thickness !== undefined) out.push(`a thickness, which an ${kind} does not have`);
+      // A rectangle is stated by two opposite corners (DXF 91 = 2); the DWG writer reads both.
+      const n = g.clip.vertices.length;
+      if ((!before || !same(before.clip, g.clip)) && g.clip.type === 'rectangle' && n !== 2) {
+        out.push(`a rectangular clip with ${n} corners`);
+      }
+      out.push(
+        ...percentProblems({ brightness: g.brightness, contrast: g.contrast, fade: g.fade }),
+      );
+      if (kind === 'WIPEOUT' && g.definition !== undefined) out.push('a WIPEOUT with an IMAGEDEF');
+      if (kind === 'IMAGE' && (!before || before.definition !== g.definition)) {
+        // AutoCAD has no image without the IMAGEDEF that names its file.
+        if (g.definition === undefined) out.push('an IMAGE without its IMAGEDEF');
+        else if (!resolve(r, g.definition, ImageDefinition)) {
+          out.push(`IMAGEDEF ${g.definition} does not exist`);
+        }
+      }
+      return out;
+    },
+    write(r, e, before, g) {
+      const im = e as CadWipeoutBase;
+      const d = differ(before, g);
+      if (d('definition') && g.definition !== undefined) {
+        // The IMAGEDEF_REACTOR goes with the image: off the old definition's reactors (the
+        // writer adds it to the new one's and makes one for a new image, `updateImageReactors`).
+        const reactor = im.definitionReactor;
+        const old = im.definition;
+        if (reactor && old) {
+          const i = old.reactors.indexOf(reactor);
+          if (i >= 0) old.reactors.splice(i, 1);
+        }
+        im.definition = resolve(r, g.definition, ImageDefinition)!;
+      }
+      // Points and vectors are WCS; the image plane is ±Z, so U and V have no Z.
+      if (d('position', 'elevation')) {
+        im.insertPoint = new XYZ(g.position.x, g.position.y, g.elevation ?? 0);
+      }
+      if (d('u')) im.uVector = new XYZ(g.u.x, g.u.y, 0);
+      if (d('v')) im.vVector = new XYZ(g.v.x, g.v.y, 0);
+      if (d('size')) im.size = new XY(g.size.x, g.size.y);
+      if (d('displayFlags')) im.flags = g.displayFlags;
+      if (d('clipping')) im.clippingState = g.clipping;
+      if (d('brightness')) im.brightness = g.brightness;
+      if (d('contrast')) im.contrast = g.contrast;
+      if (d('fade')) im.fade = g.fade;
+      if (d('clip')) {
+        im.clipType = g.clip.type === 'polygon' ? ClipType.Polygonal : ClipType.Rectangular;
+        im.clipBoundaryVertices = g.clip.vertices.map((p) => new XY(p.x, p.y));
+        im.clipMode = g.clip.inverted ? ClipMode.Inside : ClipMode.Outside;
+      }
+    },
+  };
+}
+
+// ── PDFUNDERLAY ────────────────────────────────────────────────────────────────────────────
+
+const underlayWriter: Writer<UnderlayGeometry> = {
+  create: () => new PdfUnderlay(),
+  problems(r, before, g) {
+    const out = planeProblems(g);
+    if (g.thickness !== undefined) out.push('a thickness, which a PDFUNDERLAY does not have');
+    // Its Y axis is normal × X, so it is reversed exactly on −Z.
+    if ((g.upsideDown === true) !== (plane(g.normal) === 'down')) {
+      out.push('an upside-down PDFUNDERLAY on a +Z plane');
+    }
+    if (g.scale.x === 0 || g.scale.y === 0 || g.scale.z === 0) out.push('a zero scale');
+    out.push(...percentProblems({ contrast: g.contrast, fade: g.fade }));
+    if (
+      (!before || before.definition !== g.definition) &&
+      g.definition !== undefined &&
+      !resolve(r, g.definition, PdfUnderlayDefinition)
+    ) {
+      out.push(`PDFDEFINITION ${g.definition} does not exist`);
+    }
+    return out;
+  },
+  write(r, e, before, g) {
+    const u = e as PdfUnderlay;
+    const d = differ(before, g);
+    const pl = plane(g.normal);
+    if (d('definition')) {
+      u.definition = g.definition ? resolve(r, g.definition, PdfUnderlayDefinition)! : null;
+    }
+    // The insertion point is WCS; the rotation is about the normal (map/entities.ts).
+    if (d('position', 'elevation')) {
+      u.insertPoint = new XYZ(g.position.x, g.position.y, g.elevation ?? 0);
+    }
+    if (d('scale')) {
+      u.xScale = g.scale.x;
+      u.yScale = g.scale.y;
+      u.zScale = g.scale.z;
+    }
+    if (d('rotation')) u.rotation = ocsAngle(g.rotation, pl);
+    if (d('flags')) u.flags = g.flags;
+    if (d('contrast')) u.contrast = g.contrast;
+    if (d('fade')) u.fade = g.fade;
+    if (d('clip')) u.clipBoundaryVertices = g.clip.map((p) => new XY(p.x, p.y));
+    if (d('normal')) u.normal = xyz(g.normal);
+  },
+};
+
+// ── MLINE ──────────────────────────────────────────────────────────────────────────────────
+
+const mlineWriter: Writer<MLineGeometry> = {
+  create: () => new MLine(),
+  problems(r, before, g) {
+    const out = planeProblems(g);
+    if (g.thickness !== undefined) out.push('a thickness, which an MLINE does not have');
+    const d = differ(before, g);
+    if (d('style')) {
+      if (g.style === undefined) out.push('an MLINE without its MLINESTYLE');
+      else if (!resolve(r, g.style, MLineStyle)) out.push(`MLINESTYLE ${g.style} does not exist`);
+    }
+    // DXF 73 is the style's element count, and each vertex states one parameter list per
+    // element (DXF reference, MLINE); a mismatch writes an MLINE AutoCAD cannot read.
+    const style = g.style ? resolve(r, g.style, MLineStyle) : undefined;
+    if (style && d('style', 'vertices')) {
+      const n = style.elements.length;
+      if (g.vertices.some((v) => v.elements.length !== n)) {
+        out.push(`vertices whose element count is not the ${n} of MLINESTYLE ${g.style}`);
+      }
+    }
+    return out;
+  },
+  write(r, e, before, g) {
+    const m = e as MLine;
+    const d = differ(before, g);
+    if (d('style')) m.style = resolve(r, g.style!, MLineStyle)!;
+    if (d('scale')) m.scaleFactor = g.scale;
+    if (d('justification')) m.justification = g.justification;
+    if (d('flags')) m.flags = g.flags;
+    // Points and vectors are WCS (the mapping reads the elevation from the start point): a
+    // vertex keeps its Z until the elevation is edited, and one added takes the start's.
+    const elevation = d('elevation');
+    if (d('start') || elevation) {
+      m.startPoint = new XYZ(g.start.x, g.start.y, elevation ? (g.elevation ?? 0) : m.startPoint.z);
+    }
+    if (d('vertices') || elevation) {
+      const old = m.vertices;
+      const z = (i: number): number => (elevation || !old[i] ? m.startPoint.z : old[i]!.position.z);
+      const vector = (v: Vec2, o: XYZ | undefined): XYZ => new XYZ(v.x, v.y, o?.z ?? 0);
+      m.vertices = g.vertices.map((src, i) => {
+        const v = new MLineVertex();
+        v.position = new XYZ(src.position.x, src.position.y, z(i));
+        v.direction = vector(src.direction, old[i]?.direction);
+        v.miter = vector(src.miter, old[i]?.miter);
+        v.segments = src.elements.map((el) => {
+          const s = new MLineSegment();
+          s.parameters = [...el.parameters];
+          s.areaFillParameters = [...el.fillParameters];
+          return s;
+        });
+        return v;
+      });
+    }
+    if (d('normal')) m.normal = xyz(g.normal);
+  },
+};
+
 const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   LINE: lineWriter,
   XLINE: xlineWriter('XLINE'),
@@ -1218,6 +1600,11 @@ const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   LARGE_RADIAL_DIMENSION: dimensionWriter,
   LEADER: leaderWriter,
   TOLERANCE: toleranceWriter,
+  HATCH: hatchWriter,
+  IMAGE: imageWriter('IMAGE'),
+  WIPEOUT: imageWriter('WIPEOUT'),
+  PDFUNDERLAY: underlayWriter,
+  MLINE: mlineWriter,
 } as Partial<Record<EntityType, Writer<never>>>;
 
 /** The entity types whose geometry Triya can write (the rest: roadmap M1-75). */
