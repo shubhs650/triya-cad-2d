@@ -7,6 +7,7 @@ import {
   parseMText,
   parseShx,
   parseTtf,
+  loadStrokeFont,
   shxCode,
   styleFont,
   type MTextCharStyle,
@@ -90,6 +91,75 @@ describe('FontBook', () => {
     book.addShx('simplex', f);
     expect(book.face(shx('isocp'))).toEqual({ kind: 'shx', font: f });
     expect(book.missing.has('isocp')).toBe(true);
+  });
+});
+
+describe('FontBook with the bundled fonts (M1-09)', () => {
+  /** A tiny bundled font: just "A", as a square of the given size. */
+  const bundled = (name: string, size: number) =>
+    loadStrokeFont({
+      format: 'triya-stroke-font',
+      version: 1,
+      name,
+      description: name,
+      notice: '',
+      above: 42,
+      below: 0,
+      glyphs: { '65': [size + 4, [[0, 0, size, 0, size, size, 0, size, 0, 0]]] },
+    });
+  const simplex = bundled('oet-simplex', 30);
+  const complex = bundled('oet-complex', 32);
+  const book = (options: { alternate?: string } = {}) => {
+    const b = new FontBook(options);
+    b.addShx('oet-simplex', simplex);
+    b.addShx('oet-complex', complex);
+    return b;
+  };
+
+  it('draws a missing SHX font with its Hershey equivalent and reports the substitution', () => {
+    const b = book();
+    expect(b.face(shx('ROMANC.SHX'))?.font).toBe(complex);
+    expect(b.face(shx('txt'))?.font).toBe(simplex);
+    expect([...b.missing]).toEqual(['ROMANC.SHX', 'txt']);
+    expect([...b.substitutions]).toEqual([
+      ['ROMANC.SHX', 'oet-complex'],
+      ['txt', 'oet-simplex'],
+    ]);
+  });
+
+  it('falls back to oet-simplex for a font with no equivalent, TrueType included', () => {
+    const b = book();
+    expect(b.face(shx('acme_logo.shx'))?.font).toBe(simplex);
+    expect(b.face({ name: 'Arial', kind: 'ttf', bold: false, italic: false })?.font).toBe(simplex);
+    expect(b.substitutions.get('Arial')).toBe('oet-simplex');
+    // An unrelated object key is not a font name.
+    expect(b.face(shx('constructor'))?.font).toBe(simplex);
+  });
+
+  it("keeps the drawing's own font when it is loaded", () => {
+    const b = book();
+    const own = romans();
+    b.addShx('romans.shx', own);
+    expect(b.face(shx('romans'))?.font).toBe(own);
+    expect(b.substitutions.size).toBe(0);
+  });
+
+  it('prefers the named equivalent to FONTALT, and maps FONTALT itself when not loaded', () => {
+    const alt = romans();
+    const withAlt = book({ alternate: 'square.shx' });
+    withAlt.addShx('square', alt);
+    expect(withAlt.face(shx('romanc'))?.font).toBe(complex);
+    expect(withAlt.face(shx('acme'))?.font).toBe(alt);
+    expect(withAlt.substitutions.get('acme')).toBe('square');
+    // FONTALT = romanc.shx, not loaded: its bundled equivalent serves.
+    const mapped = book({ alternate: 'romanc.shx' });
+    expect(mapped.face(shx('acme'))?.font).toBe(complex);
+  });
+
+  it('serves nothing when no bundled font is loaded either', () => {
+    const b = new FontBook({ alternate: 'romanc' });
+    expect(b.face(shx('romans'))).toBeUndefined();
+    expect(b.substitutions.size).toBe(0);
   });
 });
 
