@@ -6,3 +6,4 @@ export * from './handle';
 export * from './spline';
 export * from './types';
 export * from './update';
+export * from './width';

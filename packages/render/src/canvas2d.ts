@@ -256,7 +256,13 @@ const TEXT_LOD_PX = 3;
  */
 const GREEK_ALPHA = 0.35;
 /** Header variables that change how every entity is painted. */
-const PAINT_HEADER = new Set(['$LTSCALE']);
+const PAINT_HEADER = new Set(['$LTSCALE', '$FILLMODE']);
+
+/** FILLMODE (M1-46): off, as 0 or false, outlines wide polylines; on when the header has none. */
+function fillMode(model: DocumentModel): boolean {
+  const v = model.header.get('$FILLMODE');
+  return !(v === 0 || v === false);
+}
 
 const isSortEnts = (o: NonGraphicalObject): o is SortEntsTable => o.type === 'SORTENTSTABLE';
 
@@ -312,12 +318,16 @@ export class Canvas2DRenderer implements Renderer {
   readonly #transientLayer: Surface;
   readonly #paint: PaintFunction;
   /**
-   * Fonts and text styles for TEXT and MTEXT (M1-41), image frame settings (M1-19) and the
-   * hatch pattern library (M1-50). One object shared with `#blockSource`, so a pattern change
-   * reaches block contents too.
+   * Fonts and text styles for TEXT and MTEXT (M1-41), image frame settings (M1-19), the
+   * hatch pattern library (M1-50) and FILLMODE (M1-46). One object shared with
+   * `#blockSource`, so a pattern or FILLMODE change reaches block contents too.
    */
-  readonly #tessellate: { text?: TextContext; frames?: ImageFrames; patterns?: PatternLibrary } =
-    {};
+  readonly #tessellate: {
+    text?: TextContext;
+    frames?: ImageFrames;
+    patterns?: PatternLibrary;
+    fill?: boolean;
+  } = {};
   readonly #createLayer: () => Surface;
   readonly #images: ((definition: Handle) => RasterPixels | undefined) | undefined;
   /** IMAGEQUALITY from RASTERVARIABLES; AutoCAD's initial value is high. */
@@ -388,6 +398,7 @@ export class Canvas2DRenderer implements Renderer {
       };
     }
     this.#tessellate.frames = imageFrames(this.#model);
+    this.#tessellate.fill = fillMode(this.#model);
     this.#imageQuality = imageQuality(this.#model);
     if (o.patterns?.length) this.#tessellate.patterns = patternLibrary(o.patterns);
     this.#blockSource = {
@@ -506,8 +517,10 @@ export class Canvas2DRenderer implements Renderer {
       this.#tessellate.frames = imageFrames(this.#model);
       this.#imageQuality = imageQuality(this.#model);
     }
-    // A layer, linetype, text style or LTSCALE change can restyle or hide any entity, and an
-    // IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the whole block.
+    this.#tessellate.fill = fillMode(this.#model);
+    // A layer, linetype, text style, LTSCALE or FILLMODE change can restyle or hide any
+    // entity, and an IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the
+    // whole block.
     if (
       frames ||
       cs.tables?.layers ||
