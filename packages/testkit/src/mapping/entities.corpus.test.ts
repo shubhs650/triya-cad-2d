@@ -1073,6 +1073,10 @@ function compareTable(
   )
     bad('142', widths.join(' '), geom.columnWidths.join(' '));
 
+  const fileOverrides = JSON.stringify(digits(tableOverridesOf(head, t)));
+  const mappedOverrides = JSON.stringify(digits(geom.overrides));
+  if (fileOverrides !== mappedOverrides) bad('93', fileOverrides, mappedOverrides);
+
   const cells: Group[][] = [];
   let inValue = false;
   for (const grp of firstCell < 0 ? [] : g.slice(firstCell)) {
@@ -1121,6 +1125,63 @@ function digits(v: unknown): unknown {
       : v && typeof v === 'object'
         ? Object.fromEntries(Object.entries(v).map(([k, x]) => [k, digits(x)]))
         : v;
+}
+
+/**
+ * The table-wide overrides of a DXF ACAD_TABLE (M1-77): the flag word 93 says which apply, and
+ * their values follow 93–96 in flag order, with the DXF codes the ODA specification gives them
+ * (40 / 41 margins; per row type 64 content colour, 283 fill none, 63 fill colour, 170
+ * alignment, 7 text style, 140 text height). Each per-row-type code repeats for the row types
+ * whose bit is set, in AcDb::RowType order: data, title, header (sample table 528 states
+ * title 0.1425 in DWG, which DXF writes second). The flag bits are title, header, data. The
+ * horizontal margin is the left and right one, the vertical margin the top and bottom one.
+ */
+function tableOverridesOf(head: readonly Group[], t: MappedTables): unknown {
+  const flags = num(head, 93);
+  const values = (code: number): string[] => {
+    const from = head.findIndex(([c]) => c === 93);
+    return head
+      .slice(from)
+      .filter(([c]) => c === code)
+      .map(([, v]) => v.trim());
+  };
+  const o: Record<string, unknown> = {};
+  const margins: Record<string, number> = {};
+  if (flags & 0x08) margins.left = margins.right = Number(values(40)[0]);
+  if (flags & 0x10) margins.top = margins.bottom = Number(values(41)[0]);
+  if (Object.keys(margins).length > 0)
+    o.margins = {
+      left: margins.left,
+      top: margins.top,
+      right: margins.right,
+      bottom: margins.bottom,
+    };
+  // Bits per row type, title / header / data, from 0x20 content colour on.
+  const bit = (property: number, row: number) => 1 << (5 + 3 * property + row);
+  const order = [2, 0, 1]; // data, title, header
+  const rows: Record<string, unknown>[] = [{}, {}, {}];
+  const fillNone = [false, false, false];
+  const take = (property: number, code: number, set: (row: number, v: string) => void) => {
+    const vs = values(code);
+    let k = 0;
+    for (const row of order) if (flags & bit(property, row)) set(row, vs[k++]!);
+  };
+  take(0, 64, (row, v) => (rows[row]!.contentColor = aciOf(Number(v))));
+  take(1, 283, (row, v) => (fillNone[row] = Number(v) === 1));
+  take(2, 63, (row, v) => (rows[row]!.background = aciOf(Number(v))));
+  fillNone.forEach((none, row) => none && (rows[row]!.background = null));
+  take(3, 170, (row, v) => (rows[row]!.alignment = Number(v)));
+  take(4, 7, (row, v) => {
+    const style = t.textStyles.find((s) => s.name.toUpperCase() === v.toUpperCase())?.handle;
+    if (style) rows[row]!.textStyle = style;
+  });
+  take(5, 140, (row, v) => (rows[row]!.textHeight = Number(v)));
+  const keys = ['alignment', 'textStyle', 'textHeight', 'contentColor', 'background'];
+  const sorted = (r: Record<string, unknown>) =>
+    Object.fromEntries(keys.filter((k) => k in r).map((k) => [k, r[k]]));
+  for (const [k, name] of ['title', 'header', 'data'].entries())
+    if (Object.keys(rows[k]!).length > 0) o[name] = sorted(rows[k]!);
+  return Object.keys(o).length > 0 ? o : undefined;
 }
 
 /** An ACI colour group (6x of a table cell): 0 ByBlock, 256 ByLayer. */
@@ -1777,6 +1838,7 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
             handle: e.handle,
             rows: g.rowHeights.length,
             columns: g.columnWidths.length,
+            overrides: digits(g.overrides),
             cells: digits(
               g.cells.map((r) => r.map((c) => ({ ...c, block: c.block && name.get(c.block) }))),
             ),
@@ -1790,6 +1852,8 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
     for (const [dwg, dxf] of pairs) {
       const a = tables(dwg!);
       expect(a.length).toBeGreaterThan(0);
+      // Table 528 overrides its margins and row text heights (M1-77).
+      expect(a.find((x) => x.handle === '528')?.overrides, dwg).toBeDefined();
       expect(a).toEqual(tables(dxf!));
     }
   });

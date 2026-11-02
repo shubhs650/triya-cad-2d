@@ -60,7 +60,7 @@ import { Solid } from '../../../Entities/Solid.js';
 import { Solid3D } from '../../../Entities/Solid3D.js';
 import { Spline } from '../../../Entities/Spline.js';
 import { TextEntity } from '../../../Entities/TextEntity.js';
-import { TableEntity , CellContent, TableEntityRow, TableEntityColumn, CellType} from '../../../Entities/TableEntity.js';
+import { TableEntity , CellContent, TableEntityRow, TableEntityColumn, CellType, TableOverrideFlags, TableStyleOverrides, TableRowTypeOverrides} from '../../../Entities/TableEntity.js';
 import { Tolerance } from '../../../Entities/Tolerance.js';
 import { Vertex2D } from '../../../Entities/Vertex2D.js';
 import { Vertex } from '../../../Entities/Vertex.js';
@@ -577,6 +577,55 @@ export abstract class DxfSectionReaderBase {
     }
   }
 
+  /**
+   * The table-wide overrides kept as read (93 to the first row height) into their model. Their
+   * values follow 93-96 in flag order, with the codes the ODA specification gives them; a
+   * per-row-type code repeats for each row type whose bit is set, in AcDb::RowType order (data,
+   * title, header), where DWG and the flag bits go title, header, data.
+   */
+  private _readTableOverrides(tmp: CadTableEntityTemplate): void {
+    const table = tmp.tableEntity;
+    const values = new Map<number, unknown[]>();
+    for (const { code, value } of table.tableOverrideDxfCodes) {
+      if (!values.has(code)) {
+        values.set(code, []);
+      }
+      values.get(code)!.push(value);
+    }
+    const next = (code: number): unknown => values.get(code)?.shift();
+    const num = (code: number): number => Number(next(code) ?? 0);
+    const flags = num(93) as TableOverrideFlags;
+    if (flags === 0) {
+      return;
+    }
+    const o = new TableStyleOverrides();
+    o.flags = flags;
+    if ((flags & TableOverrideFlags.TitleSuppressed) !== 0) o.suppressTitle = num(280) !== 0;
+    if ((flags & TableOverrideFlags.HeaderSuppressed) !== 0) o.suppressHeader = num(281) !== 0;
+    if ((flags & TableOverrideFlags.FlowDirection) !== 0) o.flowDirection = num(70);
+    if ((flags & TableOverrideFlags.HorizontalCellMargin) !== 0) o.horizontalCellMargin = num(40);
+    if ((flags & TableOverrideFlags.VerticalCellMargin) !== 0) o.verticalCellMargin = num(41);
+    // [row type, its bit's offset from the title row's]
+    const rows: [TableRowTypeOverrides, number][] = [[o.data, 2], [o.title, 0], [o.header, 1]];
+    const perRowType = (first: TableOverrideFlags, code: number, read: (row: TableRowTypeOverrides, value: unknown) => void): void => {
+      for (const [row, k] of rows) {
+        if ((flags & (first << k)) !== 0) {
+          read(row, next(code));
+        }
+      }
+    };
+    perRowType(TableOverrideFlags.TitleRowColor, 64, (row, v) => { row.contentColor = new Color(Number(v ?? 0)); });
+    perRowType(TableOverrideFlags.TitleRowFillNone, 283, (row, v) => { row.fillNone = Number(v ?? 0) !== 0; });
+    perRowType(TableOverrideFlags.TitleRowFillColor, 63, (row, v) => { row.fillColor = new Color(Number(v ?? 0)); });
+    perRowType(TableOverrideFlags.TitleRowAlign, 170, (row, v) => { row.alignment = Number(v ?? 0); });
+    perRowType(TableOverrideFlags.TitleTextStyle, 7, (row, v) => {
+      const name = String(v ?? '').trim();
+      if (name) tmp.overrideTextStyles.push([row, name]);
+    });
+    perRowType(TableOverrideFlags.TitleRowHeight, 140, (row, v) => { row.textHeight = Number(v ?? 0); });
+    table.tableOverrides = o;
+  }
+
   private _readTableEntity(template: CadEntityTemplate, map: DxfMap, subclass?: string): boolean {
     const mapName = !subclass ? template.cadObject.subclassMarker : subclass;
     const tmp = template as CadTableEntityTemplate;
@@ -589,8 +638,9 @@ export abstract class DxfSectionReaderBase {
       // words (93-96) are also assigned to their fields below.
       if (code === 93) {
         tmp.readingTableOverrides = true;
-      } else if (code === 141 || code === 142 || code === 171) {
+      } else if ((code === 141 || code === 142 || code === 171) && tmp.readingTableOverrides) {
         tmp.readingTableOverrides = false;
+        this._readTableOverrides(tmp);
       }
       if (tmp.readingTableOverrides) {
         table.tableOverrideDxfCodes.push({ code, value: this._reader.value });

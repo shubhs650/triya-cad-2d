@@ -2536,4 +2536,76 @@ describe('acad-ts local patches (corpus-backed)', () => {
     );
     expect((doc.getCadObject(0x267) as Viewport).status & ViewportStatusFlags.ViewportOff).toBe(0);
   });
+  it('0121 DXF and DWG up to R2007 keep the table-wide overrides', () => {
+    const table = (doc: CadDocument, h: number) => doc.getCadObject(h) as TableEntity;
+    // Sample table 528 overrides both cell margins and the three row types' text heights
+    // (93 = 0x700018). DWG states the row types in flag order (title, header, data); DXF writes
+    // them in AcDb::RowType order (data 1, title 2, header 4), as the two saves show.
+    const expect528 = (t: TableEntity, label: string) => {
+      const o = t.tableOverrides;
+      expect(o, label).not.toBeNull();
+      expect(o!.flags, label).toBe(0x700018);
+      expect(o!.horizontalCellMargin, label).toBeCloseTo(0.034198204937273, 12);
+      expect(o!.verticalCellMargin, label).toBeCloseTo(0.034198204937273, 12);
+      expect(o!.title.textHeight, label).toBeCloseTo(0.1424925205719706, 12);
+      expect(o!.header.textHeight, label).toBeCloseTo(0.1025946148118188, 12);
+      expect(o!.data.textHeight, label).toBeCloseTo(0.1025946148118188, 12);
+    };
+    for (const v of ['AC1015', 'AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032']) {
+      const path = `third-party/acadsharp/sample_${v}_ascii.dxf`;
+      const doc = readDxfRaw(corpusBytes(path));
+      expect528(table(doc, 0x528), path);
+      expect(table(doc, 0xa35).tableOverrides, path).toBeNull();
+      expect528(table(dxfRawRoundTrip(doc, true), 0x528), `${path} saved`);
+    }
+    for (const v of ['AC1018', 'AC1021']) {
+      const path = `third-party/acadsharp/sample_${v}.dwg`;
+      const doc = readDwgRaw(path);
+      expect528(table(doc, 0x528), path);
+      expect(table(doc, 0xa35).tableOverrides, path).toBeNull();
+    }
+
+    // Every 93 property, with the DXF codes the ODA specification gives them (280, 281, 70, 40,
+    // 41, then per row type 64, 283, 63, 170, 7 and 140). No corpus table states the others.
+    const path = 'third-party/acadsharp/sample_AC1018_ascii.dxf';
+    const text = new TextDecoder('latin1').decode(corpusBytes(path));
+    const g = (code: number, value: string | number) => `${String(code).padStart(3)}\n${value}\n`;
+    const rows = (code: number, values: (string | number)[]) =>
+      values.map((x) => g(code, x)).join('');
+    const all =
+      g(93, 0x7fffff) +
+      g(94, 0) +
+      g(95, 0) +
+      g(96, 0) +
+      g(280, 1) +
+      g(281, 1) +
+      g(70, 1) +
+      g(40, 0.5) +
+      g(41, 0.25) +
+      rows(64, [1, 2, 3]) +
+      rows(283, [1, 0, 1]) +
+      rows(63, [4, 5, 6]) +
+      rows(170, [7, 8, 9]) +
+      rows(7, ['Standard', 'Standard', 'Standard']) +
+      rows(140, [0.3, 0.1, 0.2]);
+    const edited = text.replace(/ 93\r?\n *7340056\r?\n(?:.*\r?\n)*?(?=141\r?\n)/, all);
+    expect(edited).not.toBe(text);
+    const doc = readDxfRaw(Uint8Array.from(edited, (c) => c.charCodeAt(0)));
+    const o = table(doc, 0x528).tableOverrides!;
+    expect(o.flags).toBe(0x7fffff);
+    expect([o.suppressTitle, o.suppressHeader, o.flowDirection]).toEqual([true, true, 1]);
+    expect([o.horizontalCellMargin, o.verticalCellMargin]).toEqual([0.5, 0.25]);
+    const standard = handleHex(doc.textStyles!.tryGetValue('Standard'));
+    // data, title, header
+    for (const [k, r] of [o.data, o.title, o.header].entries()) {
+      expect(r.contentColor.index).toBe(k + 1);
+      expect(r.fillNone).toBe(k !== 1);
+      expect(r.fillColor.index).toBe(k + 4);
+      expect(r.alignment).toBe(k + 7);
+      expect(handleHex(r.textStyle)).toBe(standard);
+      expect(r.textHeight).toBe([0.3, 0.1, 0.2][k]);
+    }
+    // The codes are still written back as read (DEC-043).
+    expect(table(dxfRawRoundTrip(doc, false), 0x528).tableOverrides!.data.textHeight).toBe(0.3);
+  });
 });

@@ -1,0 +1,290 @@
+diff --git a/src/Entities/TableEntity.ts b/src/Entities/TableEntity.ts
+index 926efd8..eead772 100644
+--- a/src/Entities/TableEntity.ts
++++ b/src/Entities/TableEntity.ts
+@@ -328,6 +328,35 @@ export class CellStyle extends ContentFormat {
+ 	id: number = 0;
+ }
+ 
++/**
++ * One row type's table-wide overrides (title, header or data rows), as DXF and DWG up to R2007
++ * state them. Which of them apply is in TableStyleOverrides.flags.
++ */
++export class TableRowTypeOverrides {
++	contentColor: Color = Color.byBlock;
++	fillNone: boolean = false;
++	fillColor: Color = Color.byBlock;
++	alignment: number = 0;
++	textStyle: TextStyle | null = null;
++	textHeight: number = 0;
++}
++
++/**
++ * The table-wide overrides of the table style that DXF (93 and the values after it) and DWG up
++ * to R2007 state; flags says which apply. The border overrides (94-96) are not kept here.
++ */
++export class TableStyleOverrides {
++	flags: TableOverrideFlags = TableOverrideFlags.None;
++	suppressTitle: boolean = false;
++	suppressHeader: boolean = false;
++	flowDirection: number = 0;
++	horizontalCellMargin: number = 0;
++	verticalCellMargin: number = 0;
++	title: TableRowTypeOverrides = new TableRowTypeOverrides();
++	header: TableRowTypeOverrides = new TableRowTypeOverrides();
++	data: TableRowTypeOverrides = new TableRowTypeOverrides();
++}
++
+ export class TableEntityCell {
+ 	styleId: number = 0;
+ 	dataLink: CadObject | null = null;
+@@ -462,6 +491,9 @@ export class TableEntity extends Insert {
+ 	 */
+ 	tableOverrideDxfCodes: DxfRawCode[] = [];
+ 
++	/** The table-wide overrides DXF and DWG up to R2007 state; null when there are none. */
++	tableOverrides: TableStyleOverrides | null = null;
++
+ 	breakRowRanges: BreakRowRange[] = [];
+ 
+ 	get content(): TableContent { return this._content; }
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 4029f4b..166b08e 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -153,7 +153,7 @@ import { RevolvedSurface } from '../../../Entities/RevolvedSurface.js';
+ import { SweptSurface } from '../../../Entities/SweptSurface.js';
+ import { CadBody } from '../../../Entities/CadBody.js';
+ import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
+-import { TableEntity, CellType, CellContent, CellContentGeometry, CellRange, CustomDataEntry, CellStyle, CellStyleType, TableCellContentType, TableCellStateFlags, ContentFormat, CellEdgeFlags, CellBorder, TableEntityBorderType, TableCellContentLayoutFlags, TableCellStylePropertyFlags, MarginFlags, TableBorderPropertyFlags, TableCellStylePropertyFlags as TCFlags, TableOverrideFlags, BorderOverrideFlags, TableAttribute, BreakOptionFlags, BreakFlowDirection, BreakHeight, BreakRowRange, BreakData, TableEntityColumn, TableEntityRow, TableEntityCell, CellAlignmentType , CellStyleClass, CellOverrideFlags } from '../../../Entities/TableEntity.js';
++import { TableEntity, CellType, CellContent, CellContentGeometry, CellRange, CustomDataEntry, CellStyle, CellStyleType, TableCellContentType, TableCellStateFlags, ContentFormat, CellEdgeFlags, CellBorder, TableEntityBorderType, TableCellContentLayoutFlags, TableCellStylePropertyFlags, MarginFlags, TableBorderPropertyFlags, TableCellStylePropertyFlags as TCFlags, TableOverrideFlags, TableStyleOverrides, TableRowTypeOverrides, BorderOverrideFlags, TableAttribute, BreakOptionFlags, BreakFlowDirection, BreakHeight, BreakRowRange, BreakData, TableEntityColumn, TableEntityRow, TableEntityCell, CellAlignmentType , CellStyleClass, CellOverrideFlags } from '../../../Entities/TableEntity.js';
+ import { Block } from '../../../Blocks/Block.js';
+ import { BlockEnd } from '../../../Blocks/BlockEnd.js';
+ import { BlockRecord, BlockTypeFlags } from '../../../Tables/BlockRecord.js';
+@@ -4452,72 +4452,44 @@ export class DwgObjectReader extends DwgSectionIO {
+       const styleOverride = new TableStyle();
+       table.content.style = styleOverride;
+       const flags = this._mergedReaders.readBitLong() as TableOverrideFlags;
++      const overrides = new TableStyleOverrides();
++      overrides.flags = flags;
++      if (flags !== 0) {
++        table.tableOverrides = overrides;
++      }
+       if ((flags & TableOverrideFlags.TitleSuppressed) !== 0) {
+         styleOverride.suppressTitle = this._mergedReaders.readBit();
++        overrides.suppressTitle = styleOverride.suppressTitle;
+       }
+       if ((flags & TableOverrideFlags.FlowDirection) !== 0) {
+-        this._mergedReaders.readBitShort();
++        overrides.flowDirection = this._mergedReaders.readBitShort();
+       }
+       if ((flags & TableOverrideFlags.HorizontalCellMargin) !== 0) {
+-        this._mergedReaders.readBitDouble();
++        overrides.horizontalCellMargin = this._mergedReaders.readBitDouble();
+       }
+       if ((flags & TableOverrideFlags.VerticalCellMargin) !== 0) {
+-        this._mergedReaders.readBitDouble();
+-      }
+-      if ((flags & TableOverrideFlags.TitleRowColor) !== 0) {
+-        this._mergedReaders.readCmColor(this.r2004Pre);
+-      }
+-      if ((flags & TableOverrideFlags.HeaderRowColor) !== 0) {
+-        this._mergedReaders.readCmColor(this.r2004Pre);
+-      }
+-      if ((flags & TableOverrideFlags.DataRowColor) !== 0) {
+-        this._mergedReaders.readCmColor(this.r2004Pre);
+-      }
+-      if ((flags & TableOverrideFlags.TitleRowFillNone) !== 0) {
+-        this._mergedReaders.readBit();
+-      }
+-      if ((flags & TableOverrideFlags.HeaderRowFillNone) !== 0) {
+-        this._mergedReaders.readBit();
+-      }
+-      if ((flags & TableOverrideFlags.DataRowFillNone) !== 0) {
+-        this._mergedReaders.readBit();
+-      }
+-      if ((flags & TableOverrideFlags.TitleRowFillColor) !== 0) {
+-        this._mergedReaders.readCmColor(this.r2004Pre);
+-      }
+-      if ((flags & TableOverrideFlags.HeaderRowFillColor) !== 0) {
+-        this._mergedReaders.readCmColor(this.r2004Pre);
+-      }
+-      if ((flags & TableOverrideFlags.DataRowFillColor) !== 0) {
+-        this._mergedReaders.readCmColor(this.r2004Pre);
+-      }
+-      if ((flags & TableOverrideFlags.TitleRowAlign) !== 0) {
+-        this._mergedReaders.readBitShort();
+-      }
+-      if ((flags & TableOverrideFlags.HeaderRowAlign) !== 0) {
+-        this._mergedReaders.readBitShort();
+-      }
+-      if ((flags & TableOverrideFlags.DataRowAlign) !== 0) {
+-        this._mergedReaders.readBitShort();
+-      }
+-      if ((flags & TableOverrideFlags.TitleTextStyle) !== 0) {
+-        this._handleReference();
+-      }
+-      if ((flags & TableOverrideFlags.HeaderTextStyle) !== 0) {
+-        this._handleReference();
+-      }
+-      if ((flags & TableOverrideFlags.DataTextStyle) !== 0) {
+-        this._handleReference();
+-      }
+-      if ((flags & TableOverrideFlags.TitleRowHeight) !== 0) {
+-        this._mergedReaders.readBitDouble();
+-      }
+-      if ((flags & TableOverrideFlags.HeaderRowHeight) !== 0) {
+-        this._mergedReaders.readBitDouble();
+-      }
+-      if ((flags & TableOverrideFlags.DataRowHeight) !== 0) {
+-        this._mergedReaders.readBitDouble();
++        overrides.verticalCellMargin = this._mergedReaders.readBitDouble();
+       }
++      // Each per-row-type property is stated for the title, header and data rows, in that order.
++      const rowTypes = [overrides.title, overrides.header, overrides.data];
++      const perRowType = (first: TableOverrideFlags, read: (row: TableRowTypeOverrides) => void): void => {
++        rowTypes.forEach((row, k) => {
++          if ((flags & (first << k)) !== 0) {
++            read(row);
++          }
++        });
++      };
++      perRowType(TableOverrideFlags.TitleRowColor, (row) => { row.contentColor = this._mergedReaders.readCmColor(this.r2004Pre); });
++      perRowType(TableOverrideFlags.TitleRowFillNone, (row) => { row.fillNone = this._mergedReaders.readBit(); });
++      perRowType(TableOverrideFlags.TitleRowFillColor, (row) => { row.fillColor = this._mergedReaders.readCmColor(this.r2004Pre); });
++      perRowType(TableOverrideFlags.TitleRowAlign, (row) => { row.alignment = this._mergedReaders.readBitShort(); });
++      perRowType(TableOverrideFlags.TitleTextStyle, (row) => {
++        const handle = this._handleReference();
++        if (handle) {
++          template.overrideTextStyles.push([row, handle]);
++        }
++      });
++      perRowType(TableOverrideFlags.TitleRowHeight, (row) => { row.textHeight = this._mergedReaders.readBitDouble(); });
+     }
+     if (this._mergedReaders.readBit()) {
+       const flags = this._mergedReaders.readBitLong() as BorderOverrideFlags;
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index b2467b7..3e2f5b2 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -60,7 +60,7 @@ import { Solid } from '../../../Entities/Solid.js';
+ import { Solid3D } from '../../../Entities/Solid3D.js';
+ import { Spline } from '../../../Entities/Spline.js';
+ import { TextEntity } from '../../../Entities/TextEntity.js';
+-import { TableEntity , CellContent, TableEntityRow, TableEntityColumn, CellType} from '../../../Entities/TableEntity.js';
++import { TableEntity , CellContent, TableEntityRow, TableEntityColumn, CellType, TableOverrideFlags, TableStyleOverrides, TableRowTypeOverrides} from '../../../Entities/TableEntity.js';
+ import { Tolerance } from '../../../Entities/Tolerance.js';
+ import { Vertex2D } from '../../../Entities/Vertex2D.js';
+ import { Vertex } from '../../../Entities/Vertex.js';
+@@ -577,6 +577,55 @@ export abstract class DxfSectionReaderBase {
+     }
+   }
+ 
++  /**
++   * The table-wide overrides kept as read (93 to the first row height) into their model. Their
++   * values follow 93-96 in flag order, with the codes the ODA specification gives them; a
++   * per-row-type code repeats for each row type whose bit is set, in AcDb::RowType order (data,
++   * title, header), where DWG and the flag bits go title, header, data.
++   */
++  private _readTableOverrides(tmp: CadTableEntityTemplate): void {
++    const table = tmp.tableEntity;
++    const values = new Map<number, unknown[]>();
++    for (const { code, value } of table.tableOverrideDxfCodes) {
++      if (!values.has(code)) {
++        values.set(code, []);
++      }
++      values.get(code)!.push(value);
++    }
++    const next = (code: number): unknown => values.get(code)?.shift();
++    const num = (code: number): number => Number(next(code) ?? 0);
++    const flags = num(93) as TableOverrideFlags;
++    if (flags === 0) {
++      return;
++    }
++    const o = new TableStyleOverrides();
++    o.flags = flags;
++    if ((flags & TableOverrideFlags.TitleSuppressed) !== 0) o.suppressTitle = num(280) !== 0;
++    if ((flags & TableOverrideFlags.HeaderSuppressed) !== 0) o.suppressHeader = num(281) !== 0;
++    if ((flags & TableOverrideFlags.FlowDirection) !== 0) o.flowDirection = num(70);
++    if ((flags & TableOverrideFlags.HorizontalCellMargin) !== 0) o.horizontalCellMargin = num(40);
++    if ((flags & TableOverrideFlags.VerticalCellMargin) !== 0) o.verticalCellMargin = num(41);
++    // [row type, its bit's offset from the title row's]
++    const rows: [TableRowTypeOverrides, number][] = [[o.data, 2], [o.title, 0], [o.header, 1]];
++    const perRowType = (first: TableOverrideFlags, code: number, read: (row: TableRowTypeOverrides, value: unknown) => void): void => {
++      for (const [row, k] of rows) {
++        if ((flags & (first << k)) !== 0) {
++          read(row, next(code));
++        }
++      }
++    };
++    perRowType(TableOverrideFlags.TitleRowColor, 64, (row, v) => { row.contentColor = new Color(Number(v ?? 0)); });
++    perRowType(TableOverrideFlags.TitleRowFillNone, 283, (row, v) => { row.fillNone = Number(v ?? 0) !== 0; });
++    perRowType(TableOverrideFlags.TitleRowFillColor, 63, (row, v) => { row.fillColor = new Color(Number(v ?? 0)); });
++    perRowType(TableOverrideFlags.TitleRowAlign, 170, (row, v) => { row.alignment = Number(v ?? 0); });
++    perRowType(TableOverrideFlags.TitleTextStyle, 7, (row, v) => {
++      const name = String(v ?? '').trim();
++      if (name) tmp.overrideTextStyles.push([row, name]);
++    });
++    perRowType(TableOverrideFlags.TitleRowHeight, 140, (row, v) => { row.textHeight = Number(v ?? 0); });
++    table.tableOverrides = o;
++  }
++
+   private _readTableEntity(template: CadEntityTemplate, map: DxfMap, subclass?: string): boolean {
+     const mapName = !subclass ? template.cadObject.subclassMarker : subclass;
+     const tmp = template as CadTableEntityTemplate;
+@@ -589,8 +638,9 @@ export abstract class DxfSectionReaderBase {
+       // words (93-96) are also assigned to their fields below.
+       if (code === 93) {
+         tmp.readingTableOverrides = true;
+-      } else if (code === 141 || code === 142 || code === 171) {
++      } else if ((code === 141 || code === 142 || code === 171) && tmp.readingTableOverrides) {
+         tmp.readingTableOverrides = false;
++        this._readTableOverrides(tmp);
+       }
+       if (tmp.readingTableOverrides) {
+         table.tableOverrideDxfCodes.push({ code, value: this._reader.value });
+diff --git a/src/IO/Templates/CadTableEntityTemplate.ts b/src/IO/Templates/CadTableEntityTemplate.ts
+index e47fdc3..e6ed03b 100644
+--- a/src/IO/Templates/CadTableEntityTemplate.ts
++++ b/src/IO/Templates/CadTableEntityTemplate.ts
+@@ -1,4 +1,4 @@
+-import { TableEntity, TableEntityCell, CellType, CellContent, CellStyle, CellBorder, ContentFormat, TableAttribute } from '../../Entities/TableEntity.js';
++import { TableEntity, TableEntityCell, CellType, CellContent, CellStyle, CellBorder, ContentFormat, TableAttribute, TableRowTypeOverrides } from '../../Entities/TableEntity.js';
+ import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
+ import { CadInsertTemplate } from './CadInsertTemplate.js';
+ import { CadValueTemplate } from './CadValueTemplate.js';
+@@ -27,6 +27,9 @@ export class CadTableEntityTemplate extends CadInsertTemplate {
+ 	/** True from the table-wide override flag (93) until the first row height (141). */
+ 	readingTableOverrides: boolean = false;
+ 
++	/** The text styles of the table-wide overrides: a DWG handle or a DXF name, resolved on build. */
++	overrideTextStyles: [TableRowTypeOverrides, number | string][] = [];
++
+ 	nullHandle: number | null = null;
+ 
+ 	styleHandle: number | null = null;
+@@ -63,6 +66,11 @@ export class CadTableEntityTemplate extends CadInsertTemplate {
+ 		} else {
+ 			this.tableEntity.style = builder.tryGetCadObject<TableStyle>(this.styleHandle);
+ 		}
++		for (const [row, style] of this.overrideTextStyles) {
++			row.textStyle = typeof style === 'number'
++				? builder.tryGetCadObject<TextStyle>(style)
++				: builder.tryGetTableEntry(style, TextStyle);
++		}
+ 
+ 		for (const cellTemplate of this.cadTableCellTemplates) {
+ 			cellTemplate.build(builder);
+diff --git a/src/index.ts b/src/index.ts
+index b06bacf..0a6022f 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -124,7 +124,7 @@ export { Solid3D } from './Entities/Solid3D.js';
+ export { Spline } from './Entities/Spline.js';
+ export { SplineFlags } from './Entities/SplineFlags.js';
+ export { SplineFlags1 } from './Entities/SplineFlags1.js';
+-export { TableEntityBorderType, BreakFlowDirection, BreakOptionFlags, CellAlignmentType, CellEdgeFlags, CellStyleClass, CellStyleType, CellType, MarginFlags, TableBorderPropertyFlags, TableCellContentLayoutFlags, TableCellContentType, TableCellStateFlags, TableCellStylePropertyFlags, TableEntityValueUnitType, BorderOverrideFlags, TableOverrideFlags, CellOverrideFlags, TableAttribute, CustomDataEntry, CellContentGeometry, CellRange, ContentFormat, CellBorder, CellContent, CellStyle, TableEntityCell, TableEntityColumn, TableEntityRow, BreakHeight, BreakData, BreakRowRange, TableEntity, TableContent } from './Entities/TableEntity.js';
++export { TableEntityBorderType, BreakFlowDirection, BreakOptionFlags, CellAlignmentType, CellEdgeFlags, CellStyleClass, CellStyleType, CellType, MarginFlags, TableBorderPropertyFlags, TableCellContentLayoutFlags, TableCellContentType, TableCellStateFlags, TableCellStylePropertyFlags, TableEntityValueUnitType, BorderOverrideFlags, TableOverrideFlags, CellOverrideFlags, TableAttribute, CustomDataEntry, CellContentGeometry, CellRange, ContentFormat, CellBorder, CellContent, CellStyle, TableEntityCell, TableEntityColumn, TableEntityRow, BreakHeight, BreakData, BreakRowRange, TableEntity, TableContent, TableRowTypeOverrides, TableStyleOverrides } from './Entities/TableEntity.js';
+ export { TextEntity } from './Entities/TextEntity.js';
+ export { TextHorizontalAlignment } from './Entities/TextHorizontalAlignment.js';
+ export { TextMirrorFlag } from './Entities/TextMirrorFlag.js';
