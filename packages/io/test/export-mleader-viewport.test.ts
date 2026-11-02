@@ -245,7 +245,7 @@ const ml = (g: EntityGeometry): MultiLeaderGeometry => g as MultiLeaderGeometry;
 /**
  * What acad-ts reads back: its DXF reader drops a multileader's arrowhead (342), content block
  * (344 and context 341) and leader line indexes (91), which the DXF writer writes (M1-84), and
- * its DXF writer leaves out the visual styles this drawing's DWG holds (M1-87).
+ * its DXF writer leaves out the visual styles this drawing's DWG holds (M1-88).
  */
 function readBack(g: EntityGeometry, format: CadFormat): EntityGeometry {
   if (format !== 'dxf') return g;
@@ -453,7 +453,7 @@ describe('triyaToAcad multileaders and viewports', () => {
           block: { ...ml(find(model, 'MULTILEADER', 1).geom).block!, position: P(-30, 10) },
         }),
       ],
-      // No visual style: this drawing's, from its DWG, would not reach a DXF save (M1-87).
+      // No visual style: this drawing's, from its DWG, would not reach a DXF save (M1-88).
       [
         view,
         changed(view.geom, {
@@ -541,7 +541,7 @@ describe('triyaToAcad multileaders and viewports', () => {
     }
   });
 
-  it('writes a viewport’s visual style, and refuses one read from DWG on a DXF save (M1-87)', () => {
+  it('writes a viewport’s visual style, and refuses one read from DWG on a DXF save (M1-88)', () => {
     // acad-ts writes DXF VISUALSTYLE objects only as read from DXF, so this one, from a DWG,
     // would not reach a DXF save; the written reference is checked on the document instead.
     const model = open();
@@ -554,7 +554,7 @@ describe('triyaToAcad multileaders and viewports', () => {
     expect((doc.getCadObject(Number.parseInt(e.handle, 16)) as Viewport).visualStyle?.name).toBe(
       'Conceptual',
     );
-    expect(() => save(model, 'dxf')).toThrow(/VIEWPORT .*M1-87/);
+    expect(() => save(model, 'dxf')).toThrow(/VIEWPORT .*M1-88/);
   });
 
   it('writes a viewport’s visual style to DWG so it maps back (M1-85)', () => {

@@ -163,7 +163,7 @@ const R12_VIEW = [
  * What acad-ts cannot write to the format at hand: an R12 viewport's view (M1-86), its DWG writer leaves a LARGE_RADIAL_DIMENSION
  * out (roadmap M1-74), and a VIEWPORT's style sheet before R2000 or visual style before R2007,
  * which neither format stores (DXF 1 and 348 are R2000+ and R2007+, as the DWG fields are), or
- * a DWG visual style on a DXF save, which acad-ts does not write (M1-87); so an edited or new one
+ * a DWG visual style on a DXF save, which acad-ts does not write (M1-88); so an edited or new one
  * would be lost.
  */
 function formatProblems(
@@ -198,7 +198,7 @@ function formatProblems(
     } else if (style && format === 'dxf' && g.visualStyle !== undefined) {
       const v = r.store.original(g.visualStyle);
       if (v instanceof VisualStyle && v.rawDxfCodes == null) {
-        out.push(`${e.type} ${e.handle}: acad-ts writes no DXF VISUALSTYLE read from DWG (M1-87)`);
+        out.push(`${e.type} ${e.handle}: acad-ts writes no DXF VISUALSTYLE read from DWG (M1-88)`);
       }
     }
     return out;
