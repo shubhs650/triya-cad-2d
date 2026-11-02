@@ -9,6 +9,7 @@ import { BUNDLED_FONTS, appFontErrors, appFonts } from '../src/fonts';
 const committed = [
   'oet-complex',
   'oet-duplex',
+  'oet-gdt',
   'oet-gothice',
   'oet-gothicg',
   'oet-gothici',
@@ -26,10 +27,11 @@ describe('bundled fonts in the app', () => {
 
   it('loads into a font book that serves the SHX names drawings use', () => {
     const book = fontBookOf(BUNDLED_FONTS);
-    for (const name of ['romans.shx', 'txt', 'complex.shx', 'gothice.shx']) {
+    for (const name of ['romans.shx', 'txt', 'complex.shx', 'gothice.shx', 'gdt']) {
       expect(book.face({ name, kind: 'shx', bold: false, italic: false })?.kind, name).toBe('shx');
     }
     expect(book.substitutions.get('romans.shx')).toBe('oet-simplex');
+    expect(book.substitutions.get('gdt')).toBe('oet-gdt');
   });
 });
 

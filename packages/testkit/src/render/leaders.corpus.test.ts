@@ -15,9 +15,10 @@ import {
   textMeasure,
   type BlockSource,
 } from '@triya/render';
-import { FontBook, parseShx } from '@triya/text';
+import { FontBook, GDT_FONT, GDT_SYMBOLS, loadStrokeFont, parseShx } from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
+import { bundledFontBook, bundledFontFiles } from './bundled-fonts.ts';
 import { corpusDrawing } from './document.ts';
 import { squareFont } from './square-font.ts';
 
@@ -115,5 +116,76 @@ describe('leaders on the public corpus (M1-52)', () => {
     expect(counts.leaderArrows).toBe(counts.leaders);
     // M1-52 part 4: the 3 TOLERANCEs of each of the 20 acadsharp samples (DXF and DWG).
     expect(counts.frames).toBeGreaterThanOrEqual(60);
+  });
+
+  // M1-54: with the bundled fonts, a TOLERANCE's `{\Fgdt;x}` letters draw with our GD&T font,
+  // so the frames show symbols (position, diameter, profile, …), not the letters j, n, d.
+  it('draws the GD&T symbols of every TOLERANCE with the bundled GD&T font', () => {
+    // The same fonts without oet-gdt: `gdt` then falls back to oet-simplex's letters.
+    const lettersOnly = new FontBook();
+    for (const [name, text] of bundledFontFiles())
+      if (name !== GDT_FONT) lettersOnly.addShx(name, loadStrokeFont(JSON.parse(text)));
+    const wrong: string[] = [];
+    const seen = new Set<string>();
+    let frames = 0;
+    for (const f of readable) {
+      let doc;
+      try {
+        doc = readCadDocument(new Uint8Array(readFileSync(`${corpusDir}${f.path}`)));
+      } catch {
+        continue;
+      }
+      const draw = (fonts: FontBook) => {
+        const style =
+          (m: { tables: { textStyles: ReadonlyMap<string, unknown> } }) => (h: string) =>
+            m.tables.textStyles.get(h) as never;
+        const { model } = corpusDrawing(
+          doc,
+          (m) => textBounds({ fonts, style: style(m) }),
+          (m) => textMeasure({ fonts, style: style(m) }),
+        );
+        const src: BlockSource = {
+          model,
+          paint: defaultPaint,
+          insertContext: defaultPaint.insertContext,
+          order: (block) => model.blockEntities(block),
+          tessellate: { text: { fonts, style: style(model) } },
+        };
+        const out = new Map<string, { text: string; prims: unknown }>();
+        for (const block of model.blocks.keys())
+          for (const id of model.blockEntities(block)) {
+            const e = model.entity(id);
+            if (e?.geom.kind !== 'TOLERANCE') continue;
+            out.set(e.handle, {
+              text: e.geom.text,
+              prims: expandInsert(e, src, { dashes: false }).prims,
+            });
+          }
+        return out;
+      };
+      const book = bundledFontBook();
+      const symbols = draw(book);
+      const letters = draw(lettersOnly);
+      for (const [handle, { text, prims }] of symbols) {
+        const used = [...text.matchAll(/\\Fgdt;([^}]*)\}/g)].flatMap((m) => [...m[1]!]);
+        if (used.length === 0) continue;
+        frames++;
+        for (const ch of used) {
+          seen.add(ch);
+          if (!Object.hasOwn(GDT_SYMBOLS, ch))
+            wrong.push(`${f.path} ${handle}: ${ch} is no symbol`);
+        }
+        if (book.substitutions.get('gdt') !== GDT_FONT)
+          wrong.push(`${f.path} ${handle}: gdt drew with ${book.substitutions.get('gdt')}`);
+        // Drawn with symbols, the frame differs from the same frame drawn with the letters.
+        if (JSON.stringify(prims) === JSON.stringify(letters.get(handle)?.prims))
+          wrong.push(`${f.path} ${handle}: draws letters`);
+      }
+    }
+    expect(wrong.slice(0, 20)).toEqual([]);
+    // The corpus frames use position, diameter, profile of a surface and projected zone
+    // (2 frames with GD&T text in each of the 20 acadsharp samples).
+    expect(frames).toBeGreaterThanOrEqual(40);
+    expect([...seen].sort()).toEqual(['d', 'j', 'n', 'p']);
   });
 });
