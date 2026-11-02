@@ -1,13 +1,26 @@
 // The open documents and which tab shows (M1-22). A small external store read with
 // useSyncExternalStore: only the chrome (tabs, start screen, banners) subscribes.
 import type { OpenResult } from '@triya/io';
+import type { ViewTransform } from '@triya/render';
+
+/** A view saved with VIEW (New) in this session, in the space it was saved in. */
+export interface SavedView {
+  readonly name: string;
+  readonly block: string;
+  readonly view: ViewTransform;
+}
 
 export interface OpenDocument {
   readonly id: number;
   readonly name: string;
   readonly opened: OpenResult;
-  /** The block shown: model space until layouts come (M1-18). */
+  /** The space shown: model space or a layout's paper-space block record. */
   readonly block: string;
+  /**
+   * Views saved this session. They are written into the drawing's VIEW table when saving
+   * arrives (M2-13); until then they last as long as the tab.
+   */
+  readonly savedViews: readonly SavedView[];
 }
 
 export interface DocumentsState {
@@ -36,7 +49,7 @@ export class DocumentStore {
 
   /** A file opened: it gets a tab, which shows. */
   opened(name: string, opened: OpenResult, block: string): void {
-    const doc: OpenDocument = { id: this.#nextId++, name, opened, block };
+    const doc: OpenDocument = { id: this.#nextId++, name, opened, block, savedViews: [] };
     this.#set({
       docs: [...this.#state.docs, doc],
       active: doc.id,
@@ -62,8 +75,28 @@ export class DocumentStore {
     this.#set({ docs: rest, active });
   }
 
+  /** Shows the Model tab or a layout tab of a document. */
+  showSpace(id: number, block: string): void {
+    this.#update(id, (d) => ({ ...d, block }));
+  }
+
+  /** VIEW New: saves `view` of the space shown under `name`, replacing a view of that name. */
+  saveView(id: number, name: string, view: ViewTransform): void {
+    this.#update(id, (d) => ({
+      ...d,
+      savedViews: [
+        ...d.savedViews.filter((v) => v.name.toUpperCase() !== name.toUpperCase()),
+        { name, block: d.block, view },
+      ],
+    }));
+  }
+
   dismissError(): void {
     this.#set({ error: undefined });
+  }
+
+  #update(id: number, f: (d: OpenDocument) => OpenDocument): void {
+    this.#set({ docs: this.#state.docs.map((d) => (d.id === id ? f(d) : d)) });
   }
 
   #withoutOne(name: string): readonly string[] {

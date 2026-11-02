@@ -216,4 +216,35 @@ describe('loopSegments', () => {
     };
     expect(loopSegments(open).length / 4).toBe(4);
   });
+
+  it('curves a spline edge kept only as fit points through them (M1-47)', () => {
+    // Three fit points, natural ends: the curve rises above the straight lines through them.
+    const loop: HatchLoop = {
+      flags: 1,
+      edges: [
+        {
+          type: 'spline',
+          degree: 3,
+          knots: [],
+          controlPoints: [],
+          periodic: false,
+          fitPoints: [
+            { x: 0, y: 0 },
+            { x: 5, y: 5 },
+            { x: 10, y: 0 },
+          ],
+        },
+        { type: 'line', start: { x: 10, y: 0 }, end: { x: 0, y: 0 } },
+      ],
+    };
+    const s = loopSegments(loop);
+    expect(s.length / 4).toBeGreaterThan(10);
+    // At x 2.5 the straight edge through the fit points is at y 2.5; the curve bulges above it.
+    let y = -Infinity;
+    for (let i = 0; i < s.length; i += 4) {
+      const [x0, y0, x1, y1] = [s[i]!, s[i + 1]!, s[i + 2]!, s[i + 3]!];
+      if (y0 > 0 && x0 <= 2.5 && x1 >= 2.5) y = y0 + ((y1 - y0) * (2.5 - x0)) / (x1 - x0);
+    }
+    expect(y).toBeGreaterThan(2.5 + 0.1);
+  });
 });

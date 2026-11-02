@@ -44,17 +44,21 @@ import {
   type LayoutSheet,
   type Matrix2D,
   type NonGraphicalObject,
+  type RasterVariables,
   type SortEntsTable,
   type SpatialIndex,
   type ViewportGeometry,
+  type WipeoutVariables,
 } from '@triya/engine';
 import { expandInsert, expands, type BlockSource } from './blocks';
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
-import { mixColors, tintColor } from './style/mix';
+import { mixColors, parseHex, tintColor } from './style/mix';
+import { adjustPixels, type ImageFrames } from './image';
 import { patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
-import { tessellate, type TessellateContext } from './tessellate';
+import { tessellate } from './tessellate';
+import type { TextContext } from './text';
 import type { TextFonts } from '@triya/text';
 import {
   PATH_A,
@@ -67,7 +71,9 @@ import {
   screenToWorld,
   visibleBox,
   type FillGradient,
+  type ImageFill,
   type PrimitiveColor,
+  type RasterPixels,
   type RenderPrimitive,
   type RenderStyle,
   type Renderer,
@@ -105,11 +111,16 @@ export interface Canvas2D {
   stroke(): void;
   fill(rule?: CanvasFillRule): void;
   drawImage(image: CanvasImageSource, dx: number, dy: number): void;
+  /** An image's adjusted bitmap, written once into a layer of its own (M1-19). */
+  createImageData(width: number, height: number): ImageData;
+  putImageData(data: ImageData, dx: number, dy: number): void;
   /** Viewport clipping and the printable area's dashes (M1-18). */
   save(): void;
   restore(): void;
   rect(x: number, y: number, w: number, h: number): void;
-  clip(): void;
+  clip(rule?: CanvasFillRule): void;
+  /** IMAGEQUALITY (M1-19): high smooths a scaled bitmap, draft shows its pixels. */
+  imageSmoothingEnabled: boolean;
   setLineDash(segments: number[]): void;
   createLinearGradient(x0: number, y0: number, x1: number, y1: number): CanvasGradient;
   createRadialGradient(
@@ -154,6 +165,12 @@ export interface Canvas2DRendererOptions {
   readonly fonts?: TextFonts;
   /** A field's current value (MTEXT `%<…>%`); undefined shows `----`. */
   readonly evaluateField?: (code: string) => string | undefined;
+  /**
+   * An IMAGEDEF's decoded bitmap (M1-19), or undefined while the app has none (file not
+   * found or not yet decoded): the image then shows as its outline. Asked again every frame
+   * until it answers, and once per bitmap and setting after that.
+   */
+  readonly images?: (definition: Handle) => RasterPixels | undefined;
 }
 
 /** An entity's primitives, with its world size and centre for the sub-pixel LOD. */
@@ -237,6 +254,40 @@ const PAINT_HEADER = new Set(['$LTSCALE']);
 
 const isSortEnts = (o: NonGraphicalObject): o is SortEntsTable => o.type === 'SORTENTSTABLE';
 
+const WHITE = [255, 255, 255] as const;
+const BLACK = [0, 0, 0] as const;
+
+const isFrameSetting = (o: NonGraphicalObject): o is RasterVariables | WipeoutVariables =>
+  o.type === 'RASTERVARIABLES' || o.type === 'WIPEOUTVARIABLES';
+
+/** IMAGEFRAME and WIPEOUTFRAME from the drawing's objects; on when the drawing has none. */
+function imageFrames(model: DocumentModel): ImageFrames {
+  let image = true;
+  let wipeout = true;
+  for (const o of model.objects.values()) {
+    if (!isFrameSetting(o)) continue;
+    if (o.type === 'RASTERVARIABLES') image = o.frame;
+    else wipeout = o.frame;
+  }
+  return { image, wipeout };
+}
+
+/** IMAGEQUALITY from the drawing's RASTERVARIABLES; high when the drawing has none. */
+function imageQuality(model: DocumentModel): 'draft' | 'high' {
+  for (const o of model.objects.values())
+    if (o.type === 'RASTERVARIABLES') return (o as RasterVariables).quality;
+  return 'high';
+}
+
+function touchesFrames(c: KeyedChanges<NonGraphicalObject> | undefined): boolean {
+  if (!c) return false;
+  return (
+    (c.added ?? []).some(isFrameSetting) ||
+    (c.removed ?? []).some(isFrameSetting) ||
+    (c.updated ?? []).some((u) => isFrameSetting(u.before) || isFrameSetting(u.after))
+  );
+}
+
 function touchesSortEnts(c: KeyedChanges<NonGraphicalObject> | undefined): boolean {
   if (!c) return false;
   return (
@@ -254,8 +305,14 @@ export class Canvas2DRenderer implements Renderer {
   readonly #scene: Surface;
   readonly #transientLayer: Surface;
   readonly #paint: PaintFunction;
-  /** Fonts and text styles for TEXT and MTEXT (M1-41). */
-  readonly #tessellate: TessellateContext = {};
+  /** Fonts and text styles for TEXT and MTEXT (M1-41); image frame settings (M1-19). */
+  readonly #tessellate: { text?: TextContext; frames?: ImageFrames } = {};
+  readonly #createLayer: () => Surface;
+  readonly #images: ((definition: Handle) => RasterPixels | undefined) | undefined;
+  /** IMAGEQUALITY from RASTERVARIABLES; AutoCAD's initial value is high. */
+  #imageQuality: 'draft' | 'high' = 'high';
+  /** Bitmap → its adjusted layers, by setting, colour and background. */
+  #bitmaps = new WeakMap<RasterPixels, Map<string, Surface>>();
   /** How INSERTs and dimensions in the block shown expand (M1-14, M1-15). */
   readonly #blockSource: BlockSource;
   readonly #blockDef = (block: Handle) => this.#model.blocks.get(block);
@@ -309,16 +366,18 @@ export class Canvas2DRenderer implements Renderer {
     this.#transientLayer = o.createLayer();
     this.#style = o.style ?? DEFAULT_STYLE;
     this.#paint = o.paint ?? defaultPaint;
+    this.#createLayer = o.createLayer;
+    this.#images = o.images;
     if (o.fonts) {
       const model = this.#model;
-      this.#tessellate = {
-        text: {
-          fonts: o.fonts,
-          style: (h) => model.tables.textStyles.get(h),
-          ...(o.evaluateField ? { evaluateField: o.evaluateField } : {}),
-        },
+      this.#tessellate.text = {
+        fonts: o.fonts,
+        style: (h) => model.tables.textStyles.get(h),
+        ...(o.evaluateField ? { evaluateField: o.evaluateField } : {}),
       };
     }
+    this.#tessellate.frames = imageFrames(this.#model);
+    this.#imageQuality = imageQuality(this.#model);
     this.#blockSource = {
       model: this.#model,
       paint: this.#paint,
@@ -374,6 +433,11 @@ export class Canvas2DRenderer implements Renderer {
     this.#transientDirty = true;
   }
 
+  /** Redraws the scene on the next frame: something it draws from changed (a bitmap, M1-19). */
+  invalidate(): void {
+    this.#sceneDirty = true;
+  }
+
   apply(cs: ChangeSet): void {
     const e = cs.entities;
     for (const r of e?.removed ?? []) this.#forget(r.entity);
@@ -415,9 +479,15 @@ export class Canvas2DRenderer implements Renderer {
         if (entry?.blocks && [...changed].some((b) => entry.blocks!.has(b))) this.#cacheEntity(id);
       });
     }
-    // A layer, linetype, text style or LTSCALE change can restyle or hide any entity:
-    // re-resolve the whole block.
+    const frames = touchesFrames(cs.objects);
+    if (frames) {
+      this.#tessellate.frames = imageFrames(this.#model);
+      this.#imageQuality = imageQuality(this.#model);
+    }
+    // A layer, linetype, text style or LTSCALE change can restyle or hide any entity, and an
+    // IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the whole block.
     if (
+      frames ||
       cs.tables?.layers ||
       cs.tables?.linetypes ||
       cs.tables?.textStyles ||
@@ -863,6 +933,12 @@ export class Canvas2DRenderer implements Renderer {
           ctx.globalAlpha = 1;
           continue;
         }
+        if (prim.kind === 'fill' && prim.image) {
+          flush();
+          this.#drawImage(ctx, prim.path, prim.image, prim, color, frame);
+          inWorld = false;
+          continue;
+        }
         if (prim.kind === 'fill') {
           flush();
           world();
@@ -935,6 +1011,84 @@ export class Canvas2DRenderer implements Renderer {
       }
     }
     flush();
+  }
+
+  /**
+   * An image fill: its adjusted bitmap through world ∘ frame, clipped to the fill's path; the
+   * path outlined while the app has no bitmap. Leaves the canvas transform at identity.
+   */
+  #drawImage(
+    ctx: Canvas2D,
+    path: readonly number[],
+    im: ImageFill,
+    prim: { readonly evenOdd?: boolean; readonly lineweight?: number },
+    color: string,
+    frame: DrawFrame,
+  ): void {
+    const { ox, oy, m } = frame;
+    const pixels = this.#images?.(im.definition);
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    ctx.beginPath();
+    buildPath(ctx, path, ox, oy);
+    if (!pixels || !(pixels.width > 0 && pixels.height > 0)) {
+      // AutoCAD shows an image it cannot find by its frame; ours shows the boundary whatever
+      // IMAGEFRAME says, so the missing image's place stays visible (ambiguity noted, M1-19).
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      ctx.strokeStyle = color;
+      ctx.lineWidth = this.#lineWidth(prim.lineweight);
+      ctx.stroke();
+      return;
+    }
+    const layer = this.#bitmap(pixels, im, color);
+    ctx.save();
+    ctx.clip(prim.evenOdd ? 'evenodd' : 'nonzero');
+    // AutoCAD documents draft as lower quality and faster; drawing pixels unsmoothed is ours.
+    ctx.imageSmoothingEnabled = this.#imageQuality === 'high';
+    // Bitmap pixels → the image's stated pixel grid → world → device.
+    const sx = im.width / pixels.width;
+    const sy = im.height / pixels.height;
+    const f = im.frame;
+    const fe = f.e - ox;
+    const ff = f.f - oy;
+    ctx.setTransform(
+      (m.a * f.a + m.c * f.b) * sx,
+      (m.b * f.a + m.d * f.b) * sx,
+      (m.a * f.c + m.c * f.d) * sy,
+      (m.b * f.c + m.d * f.d) * sy,
+      m.a * fe + m.c * ff + m.e,
+      m.b * fe + m.d * ff + m.f,
+    );
+    ctx.drawImage(layer.image, 0, 0);
+    ctx.restore();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /** The bitmap with the image's settings applied, made once per setting and colours. */
+  #bitmap(pixels: RasterPixels, im: ImageFill, color: string): Surface {
+    const background = this.#style.background;
+    const key = `${im.brightness}|${im.contrast}|${im.fade}|${im.transparent}|${color}|${background}`;
+    let byKey = this.#bitmaps.get(pixels);
+    if (!byKey) this.#bitmaps.set(pixels, (byKey = new Map()));
+    let layer = byKey.get(key);
+    if (!layer) {
+      layer = this.#createLayer();
+      layer.canvas.width = pixels.width;
+      layer.canvas.height = pixels.height;
+      const data = layer.ctx.createImageData(pixels.width, pixels.height);
+      data.data.set(
+        adjustPixels(pixels, {
+          brightness: im.brightness,
+          contrast: im.contrast,
+          fade: im.fade,
+          transparent: im.transparent,
+          color: parseHex(color) ?? WHITE,
+          background: parseHex(background) ?? BLACK,
+        }),
+      );
+      layer.ctx.putImageData(data, 0, 0);
+      byKey.set(key, layer);
+    }
+    return layer;
   }
 
   /** A gradient fill's canvas gradient, in its unit frame, with the colours resolved. */

@@ -109,6 +109,37 @@ describe('tessellate', () => {
     expect(a.length / 3).toBeGreaterThan(20);
   });
 
+  it('draws a spline stored only as fit points through them (M1-47)', () => {
+    const fitPoints = [
+      { x: 0, y: 0 },
+      { x: 10, y: 5 },
+      { x: 20, y: 0 },
+    ];
+    const [p] = tessellate(
+      {
+        kind: 'SPLINE',
+        degree: 3,
+        knots: [],
+        controlPoints: [],
+        fitPoints,
+        closed: false,
+        periodic: false,
+      },
+      paint,
+    );
+    const a = path(p);
+    expect(a.slice(0, 3)).toEqual([PATH_M, 0, 0]);
+    const last = a.slice(-2);
+    expect(last[0]).toBeCloseTo(20, 9);
+    expect(last[1]).toBeCloseTo(0, 9);
+    // The middle fit point is on the flattened curve: some vertex within the deviation.
+    let nearest = Infinity;
+    for (let i = 0; i < a.length; i += 3)
+      nearest = Math.min(nearest, Math.hypot(a[i + 1]! - 10, a[i + 2]! - 5));
+    expect(nearest).toBeLessThan(0.05);
+    expect(a.length / 3).toBeGreaterThan(20);
+  });
+
   it('fills SOLID corners in the order 1–2–4–3', () => {
     const [p] = tessellate(
       {

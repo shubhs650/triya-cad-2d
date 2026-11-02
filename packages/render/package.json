@@ -11,5 +11,8 @@
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json"
+  },
+  "dependencies": {
+    "utif": "3.1.0"
   }
 }

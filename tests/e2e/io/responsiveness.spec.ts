@@ -1,15 +1,16 @@
 // M1-06 acceptance: a large drawing parses without blocking the main thread. The page measures
 // its own timer ticks and how long pointer input waits for its handler while the worker
 // parses; the test also times each pointer move's round trip through the browser.
-// bench-100k.dwg is owner-provided (M1-26); until it exists, a 100k-entity DWG is generated
-// here with acad-ts. It takes acad-ts a few seconds to parse, far longer than the budget.
+// The drawing is the generated bench-100k benchmark (M1-42, DEC-045): 100k entities of mixed
+// kinds, 50 blocks, 5 layouts. It takes acad-ts several seconds to parse, far longer than the
+// budget.
 import { expect, test, type Page } from '@playwright/test';
-import { ACadVersion, largeDwg, sampleDwg } from '../../../packages/io/test/fixtures';
+import { ACadVersion, sampleDwg } from '../../../packages/io/test/fixtures';
+import { BENCH_100K, benchCounts, benchDwg } from '../../../packages/testkit/src/bench/drawing';
 import { startHarness } from './harness';
 
 /** RAIL: input handled within 100 ms feels instant. */
 const BUDGET_MS = 100;
-const ENTITIES = 100_000;
 /**
  * A pointer round trip also crosses this test process and the browser process, which share
  * the CPU with other test workers, so it gets a looser bound than the in-page probes. Parsing
@@ -24,7 +25,7 @@ test.describe.configure({ timeout: 120_000 });
 
 test.beforeAll(async () => {
   harness = await startHarness();
-  big = Buffer.from(largeDwg(ENTITIES));
+  big = Buffer.from(benchDwg(BENCH_100K));
 });
 
 test.afterAll(async () => {
@@ -75,14 +76,16 @@ test('the probes see a main-thread stall (control)', async ({ page }) => {
   expect(slowestMove).toBeGreaterThan(2 * BUDGET_MS);
 });
 
-test('a 100k-entity DWG parses in the worker while the page stays responsive', async ({ page }) => {
+test('the generated bench-100k DWG parses in the worker while the page stays responsive', async ({
+  page,
+}) => {
   const file = await open(page);
   const job = page.evaluate((f) => window.load(f), file);
   const slowestMove = await movePointerDuring(page, job);
   const res = await job;
 
   expect(res.ok, res.error).toBe(true);
-  expect(res.summary?.modelSpaceEntities).toEqual({ LINE: ENTITIES / 2, CIRCLE: ENTITIES / 2 });
+  expect(res.summary?.modelSpaceEntities).toEqual(benchCounts(BENCH_100K));
   // Long enough that parsing on the main thread could not have hidden from the probes.
   expect(res.durationMs).toBeGreaterThan(5 * BUDGET_MS);
   expect(res.inputEvents).toBeGreaterThan(5);
@@ -93,7 +96,7 @@ test('a 100k-entity DWG parses in the worker while the page stays responsive', a
   expect(res.mainThreadHasAcadTs).toBe(false);
   expect([res.workersCreated, res.workersTerminated]).toEqual([1, 1]);
   console.log(
-    `M1-06: ${ENTITIES} entities (${(big.length / 1e6).toFixed(1)} MB) parsed in ` +
+    `M1-42: bench-100k, ${BENCH_100K.entities} entities (${(big.length / 1e6).toFixed(1)} MB) parsed in ` +
       `${res.durationMs.toFixed(0)} ms; max tick gap ${res.maxTickGapMs.toFixed(1)} ms, ` +
       `max input delay ${res.maxInputDelayMs.toFixed(1)} ms, ` +
       `slowest pointer round trip ${slowestMove.toFixed(1)} ms`,

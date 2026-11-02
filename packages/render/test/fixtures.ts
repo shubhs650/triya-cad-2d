@@ -216,6 +216,14 @@ export class FakeContext implements Canvas2D {
   #width = 1;
   #alpha = 1;
   lineCap: CanvasLineCap = 'butt';
+  #smoothing = true;
+  get imageSmoothingEnabled(): boolean {
+    return this.#smoothing;
+  }
+  set imageSmoothingEnabled(v: boolean) {
+    this.#smoothing = v;
+    this.calls.push(['imageSmoothingEnabled', v]);
+  }
   lineJoin: CanvasLineJoin = 'miter';
   get strokeStyle(): string {
     return this.#stroke;
@@ -304,14 +312,21 @@ export class FakeContext implements Canvas2D {
   rect(...a: number[]): void {
     this.calls.push(['rect', ...a]);
   }
-  clip(): void {
-    this.calls.push(['clip']);
+  clip(rule?: CanvasFillRule): void {
+    this.calls.push(rule === undefined ? ['clip'] : ['clip', rule]);
   }
   setLineDash(segments: number[]): void {
     this.calls.push(['setLineDash', [...segments]]);
   }
   drawImage(image: CanvasImageSource, x: number, y: number): void {
     this.calls.push(['drawImage', (image as unknown as { name: string }).name, x, y]);
+  }
+  createImageData(width: number, height: number): ImageData {
+    this.calls.push(['createImageData', width, height]);
+    return { width, height, data: new Uint8ClampedArray(width * height * 4) } as ImageData;
+  }
+  putImageData(data: ImageData, x: number, y: number): void {
+    this.calls.push(['putImageData', [...data.data], x, y]);
   }
   named(name: string): Call[] {
     return this.calls.filter((c) => c[0] === name);

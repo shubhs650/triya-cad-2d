@@ -102,6 +102,43 @@ export interface HatchTint {
   readonly marks: number;
 }
 
+/**
+ * A raster image's bitmap, decoded to straight (not premultiplied) RGBA, rows top first, as
+ * the app hands it over for an IMAGEDEF (M1-19).
+ */
+export interface RasterPixels {
+  readonly width: number;
+  readonly height: number;
+  /** `width × height × 4` bytes. */
+  readonly data: Uint8ClampedArray;
+  /**
+   * A one-bit image. AutoCAD draws a bitonal image's foreground in the IMAGE's colour and its
+   * background in the drawing's; the foreground here is the pixels darker than mid grey, as
+   * in a black-on-white scan.
+   */
+  readonly bitonal?: boolean;
+}
+
+/** An IMAGE's bitmap on a `fill` whose path is the part of the image shown (M1-19). */
+export interface ImageFill {
+  /** The IMAGEDEF whose pixels are drawn. */
+  readonly definition: string;
+  /** Bitmap space (x right and y down in pixels, its top-left corner at 0, 0) → world. */
+  readonly frame: PrimitiveFrame;
+  /**
+   * DXF 13: the image size in pixels the frame is laid out for; a bitmap of another size
+   * (the file changed since it was attached) is stretched to it, as AutoCAD does.
+   */
+  readonly width: number;
+  readonly height: number;
+  /** DXF 281 / 282 / 283, 0–100: AutoCAD's defaults are 50, 50 and 0. */
+  readonly brightness: number;
+  readonly contrast: number;
+  readonly fade: number;
+  /** DXF 70 bit 8: transparent pixels (and a bitonal image's background) show through. */
+  readonly transparent: boolean;
+}
+
 export type RenderPrimitive =
   | {
       readonly kind: 'stroke' | 'fill';
@@ -125,6 +162,11 @@ export type RenderPrimitive =
       readonly patternLength?: number;
       /** A gradient `fill`: drawn with this ramp instead of `color`. */
       readonly gradient?: FillGradient;
+      /**
+       * An image `fill`: the bitmap drawn clipped to the path, or, while the app has no pixels
+       * for it, the path outlined in `color`.
+       */
+      readonly image?: ImageFill;
       /** A pattern hatch family's `stroke`, with its sub-pixel tint. */
       readonly hatch?: HatchTint;
       /** Text glyphs, with their greeking. */

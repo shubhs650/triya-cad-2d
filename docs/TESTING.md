@@ -10,7 +10,7 @@ Fidelity is the product. This document defines the corpus, the harnesses, the to
 | Command | Vitest (Node) | commands driven by scripted `PromptAnswer` sequences on the `PromptBus`; assert resulting `ChangeSet` | every PR |
 | Round-trip | Vitest (Node) + `testkit` | open → save → reopen → `structuralDiff` on every public corpus file | every PR |
 | Fidelity | Playwright (Chromium headless) + `testkit` | render each public corpus file through the real `Canvas2DRenderer` to PNG; perceptual diff vs AutoCAD reference | every PR |
-| Perf | Playwright | T1–T3, T5–T7 on `bench-*.dwg` | PRs touching `render`/`engine`/`io`; nightly |
+| Perf | Playwright | T1–T3, T5–T7 on the generated bench drawings | PRs touching `render`/`engine`/`io`; nightly |
 | Offline/privacy | Playwright with network blocked | T8; assert zero requests | every PR |
 | UI | Playwright | dialogs, ribbon breakpoints (T9), grips, keyboard | every PR |
 | Cross-browser | Playwright WebKit + Firefox | degraded-mode paths | nightly |
@@ -44,7 +44,7 @@ Offline, UI and io suites still run after a fidelity failure, so one red run sho
   - `r12.dxf`, `r2000.dwg`, `r2007.dwg`, `r2013.dwg`, `r2018.dwg` — same drawing saved by AutoCAD in each version
   - `dynamic-block.dwg` — one dynamic block in two states (render-only test)
   - `constraints-acad.dwg` — AutoCAD constraints (passthrough test)
-  - `bench-ga.dwg` (≈5 MB) and `bench-100k.dwg` (≈30 MB, 100k entities, 50 blocks, 5 layouts) — perf benchmarks
+- **Generated benchmark drawings** (DEC-045): `bench-100k` (100k entities, 50 blocks, 5 layouts) and `bench-ga` (25k entities, 30 blocks, 2 layouts) are built in the test from a seeded generator (`packages/testkit/src/bench/drawing.ts`), not committed or owner-provided. The mix is 40 % LINE, 15 % LWPOLYLINE, 10 % each CIRCLE, ARC, INSERT and TEXT, 5 % MTEXT; dimensions and hatches join it once Triya generates their geometry.
 - **Third-party samples** with redistributable licenses: ezdxf test files (MIT), ACadSharp samples (MIT). Record source + license per file in `corpus.json`.
 - **References:** for each file, a PDF plotted from AutoCAD (monochrome.ctb unless the file's own CTB is included) per layout and for model extents, plus PNGs rasterised from those PDFs at 150 dpi by `pnpm corpus:ref`.
 
@@ -135,7 +135,7 @@ Runs on the CI runner with fixed CPU class; thresholds carry a 20 % margin over 
 - T3: scripted pan/zoom for 5 s; count frames; measure input→prompt latency; osnap query timing at 1000 random cursor positions.
 - T5: in-place save timing; autosave timing after last edit.
 
-Until the bench files land (M1-26), `tests/e2e/perf/render.spec.ts` runs the render side of T2 and T3 on a synthetic 100k-entity drawing built in the page (`tests/e2e/render-harness`). It asserts the T2 first frame in the render worker and reports T3 fps as test annotations; M1-44 turns the T3 report into an assertion.
+`tests/e2e/perf/render.spec.ts` runs the render side of T2 and T3 on a synthetic 100k-entity drawing built in the page (`tests/e2e/render-harness`); `tests/e2e/io/responsiveness.spec.ts` parses the generated `bench-100k` DWG (M1-42). It asserts the T2 first frame in the render worker and reports T3 fps as test annotations; M1-44 turns the T3 report into an assertion.
 - T6: PLOT A1 timing.
 - T7: `performance.measureUserAgentSpecificMemory` across 20 open/close cycles.
 

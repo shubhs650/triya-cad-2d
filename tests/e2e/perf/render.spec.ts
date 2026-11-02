@@ -1,6 +1,5 @@
-// Renderer budgets on a synthetic 100k-entity drawing (TESTING.md §5), until the owner's
-// bench-100k.dwg lands (M1-26). The drawing is built in the page, so this measures the render
-// side of T2 only: building the render replica, its index and tessellation, and the first
+// Renderer budgets on a synthetic 100k-entity drawing (TESTING.md §5; benchmarks are synthetic
+// by DEC-045). The drawing is built in the page, so this measures the render side of T2 only: building the render replica, its index and tessellation, and the first
 // full frame, in the render worker as the app runs it.
 import { expect, test } from '@playwright/test';
 import { startRenderHarness } from '../render-harness/server';

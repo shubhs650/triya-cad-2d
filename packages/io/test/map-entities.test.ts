@@ -217,6 +217,20 @@ describe('WCS entities', () => {
     });
   });
 
+  it('keeps a fit-point spline’s knot parameterization, chord left implicit (M1-47)', () => {
+    const fit = (kp: number) => {
+      const s = new Spline();
+      s.degree = 3;
+      s.fitPoints = [new XYZ(0, 0, 0), new XYZ(5, 5, 0)];
+      s.knotParametrization = kp as never;
+      return mapOne(s).geom as { knotParameterization?: string };
+    };
+    expect(fit(0).knotParameterization).toBeUndefined();
+    expect(fit(1).knotParameterization).toBe('sqrt');
+    expect(fit(2).knotParameterization).toBe('uniform');
+    expect(fit(15).knotParameterization).toBeUndefined();
+  });
+
   it('keeps a 3DFACE in plan view with its hidden edges', () => {
     const f = new Face3D();
     f.firstCorner = new XYZ(0, 0, 1);
