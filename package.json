@@ -36,6 +36,7 @@
     "corpus:validate": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts validate",
     "changelog": "node --experimental-strip-types scripts/changelog.ts",
     "changelog:check": "node --experimental-strip-types scripts/changelog.ts --check",
+    "fonts:build": "node --experimental-strip-types scripts/build-fonts.ts",
     "corpus:roundtrip": "vitest run packages/testkit/src/roundtrip/corpus-roundtrip.test.ts",
     "spike:read": "vitest run --config vitest.spike.config.ts packages/testkit/src/spike/read.spike.ts",
     "spike:roundtrip": "vitest run --config vitest.spike.config.ts packages/testkit/src/spike/roundtrip.spike.ts",

@@ -4,12 +4,15 @@
 // synchronous view the renderer and layout use once they are in memory.
 //
 // Font resolution (ARCHITECTURE.md §8): the style's font by file name, else by TrueType family,
-// else the alternate font (AutoCAD's FONTALT), else nothing (the text is reported missing).
+// else the bundled Hershey font that stands in for that SHX name (M1-09), else the alternate
+// font (AutoCAD's FONTALT, itself through the same name map), else the default bundled font,
+// else nothing. Every font drawn with another one is reported (`missing`, `substitutions`).
 
 import type { MTextCharStyle, MTextFont } from '../mtext/parse';
 import type { MTextMeasure } from '../mtext/layout';
 import type { ShxFont } from '../shx/font';
 import type { TtfFont } from '../ttf/font';
+import { DEFAULT_BUNDLED_FONT, SHX_EQUIVALENTS } from '../hershey/catalog';
 
 export type TextFace =
   | { readonly kind: 'shx'; readonly font: ShxFont }
@@ -57,6 +60,8 @@ export class FontBook implements TextFonts {
   readonly #alternate: string | undefined;
   /** Requested font names that were drawn with another font or not at all. */
   readonly missing = new Set<string>();
+  /** Requested font name → the loaded font (by file key) that drew it instead, for the health report. */
+  readonly substitutions = new Map<string, string>();
 
   constructor(options: FontBookOptions = {}) {
     this.#alternate = options.alternate;
@@ -76,8 +81,27 @@ export class FontBook implements TextFonts {
     const found = this.#find(font);
     if (found) return found;
     this.missing.add(font.name);
-    const alt = this.#alternate && this.#shx.get(fileKey(this.#alternate));
-    return alt ? { kind: 'shx', font: alt } : undefined;
+    const key = this.#substitute(font.name);
+    if (key === undefined) return undefined;
+    this.substitutions.set(font.name, key);
+    return { kind: 'shx', font: this.#shx.get(key)! };
+  }
+
+  /**
+   * The loaded SHX font that draws a font that is not loaded. The bundled equivalent of the
+   * very font the style names comes first, as it is closer than FONTALT, which stands in for
+   * any font (DEC-044).
+   */
+  #substitute(name: string): string | undefined {
+    const loaded = (key: string | undefined) => (key && this.#shx.has(key) ? key : undefined);
+    const equivalent = (key: string) =>
+      Object.hasOwn(SHX_EQUIVALENTS, key) ? loaded(SHX_EQUIVALENTS[key]) : undefined;
+    const alt = this.#alternate === undefined ? undefined : fileKey(this.#alternate);
+    return (
+      equivalent(fileKey(name)) ??
+      (alt === undefined ? undefined : (loaded(alt) ?? equivalent(alt))) ??
+      loaded(DEFAULT_BUNDLED_FONT)
+    );
   }
 
   bigFont(name: string): ShxFont | undefined {
