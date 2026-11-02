@@ -284,11 +284,12 @@ describe('MULTILEADER bounds', () => {
       kind: 'box',
       box: { minX: 0, minY: 0, maxX: 20, maxY: 11.25 },
     });
-    // Without text bounds, or for a spline leader, the MULTILEADER is unknown.
+    // Without text bounds the MULTILEADER is unknown.
     expect(entityBounds(mleader(), { ...ctx, annotationBounds: () => undefined }).kind).toBe(
       'unknown',
     );
-    expect(entityBounds(mleader({ pathType: 2 }), ctx).kind).toBe('unknown');
+    // A spline leader is the cubic through its vertices (M1-47), bounded like the rest.
+    expect(entityBounds(mleader({ pathType: 2 }), ctx).kind).toBe('box');
     expect(entityBounds(noText({ branches: [] }), ctx).kind).toBe('empty');
   });
 

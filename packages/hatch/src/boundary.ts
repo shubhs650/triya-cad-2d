@@ -7,7 +7,7 @@
 
 import {
   flatten,
-  validateSpline,
+  splineCurve,
   type BoundedCurve,
   type HatchEdge,
   type HatchLoop,
@@ -74,24 +74,12 @@ function pushEdge(out: number[], e: HatchEdge): void {
       return;
     }
     case 'spline': {
-      const s = {
-        kind: 'SPLINE' as const,
-        degree: e.degree,
-        knots: e.knots,
-        controlPoints: e.controlPoints,
-        ...(e.weights ? { weights: e.weights } : {}),
-      };
-      try {
-        validateSpline(s);
-      } catch {
-        // A spline edge kept only as fit points: straight through them until the kernel
-        // interpolates fit data (M1-47).
-        if (e.fitPoints) pushPoints(out, e.fitPoints);
-        return;
-      }
+      // Its NURBS, or AutoCAD's interpolation of its fit points (M1-47).
+      const s = splineCurve(e);
+      if (!s) return;
       let lo = { x: Infinity, y: Infinity };
       let hi = { x: -Infinity, y: -Infinity };
-      for (const p of e.controlPoints) {
+      for (const p of s.controlPoints) {
         lo = { x: Math.min(lo.x, p.x), y: Math.min(lo.y, p.y) };
         hi = { x: Math.max(hi.x, p.x), y: Math.max(hi.y, p.y) };
       }

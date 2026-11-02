@@ -20,6 +20,7 @@ import type {
   Xline,
 } from '../geom/curves';
 import type { Vec2, Vec3 } from '../geom/types';
+import type { KnotParameterization } from '../geom/fit';
 import type { EntityId } from './entity-ids';
 import type { Handle } from './handle';
 
@@ -138,6 +139,8 @@ export interface SplineGeometry extends Spline {
   readonly fitPoints?: readonly Vec2[];
   readonly startTangent?: Vec2;
   readonly endTangent?: Vec2;
+  /** How fit points are spaced along the curve (DWG R2013+ knot parameterization); chord when absent. */
+  readonly knotParameterization?: KnotParameterization;
   readonly closed: boolean;
   readonly periodic: boolean;
   readonly normal?: Vec3;
