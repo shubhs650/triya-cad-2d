@@ -69,6 +69,12 @@ export abstract class DxfPropertyBase {
 			return;
 		}
 
+		// A raw handle ($CMATERIAL): the header is read before the objects it points at.
+		if (this._valueKind === 'handle') {
+			this.setPropertyValue(obj, value == null ? null : toNumber(value));
+			return;
+		}
+
 		const currentValue = this.getPropertyValue(obj);
 
 		if (isVector(currentValue)) {
@@ -199,6 +205,10 @@ export abstract class DxfPropertyBase {
 	protected getRawValueByCode(code: number, obj: object): unknown {
 		const value = this.getPropertyValue(obj);
 		if (value == null) {
+			return value;
+		}
+
+		if (this._valueKind === 'handle') {
 			return value;
 		}
 

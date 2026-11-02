@@ -28,6 +28,9 @@ function scalar(v: unknown): HeaderValue | undefined {
 const isPoint = (codes: readonly number[]): boolean =>
   codes.length >= 2 && codes.every((c) => c >= 10 && c < 40);
 
+/** Group codes 320–369 are object handles (soft/hard pointer and owner ids). */
+const isHandleCode = (code: number): boolean => code >= 320 && code < 370;
+
 export function mapHeader(doc: CadDocument): MappedHeader {
   const h = doc.header ?? new CadHeader();
   const header = new Map<string, HeaderValue>();
@@ -47,6 +50,11 @@ export function mapHeader(doc: CadDocument): MappedHeader {
     if (isPoint(variable.dxfCodes)) {
       const [x, y, z] = values.map((v) => Number(v ?? 0));
       header.set(name, values.length > 2 ? { x: x!, y: y!, z: z! } : { x: x!, y: y! });
+      continue;
+    }
+    // A handle variable ($CMATERIAL 347) is a hex string, as DXF writes it.
+    if (variable.dxfCodes.length === 1 && isHandleCode(variable.dxfCodes[0]!)) {
+      header.set(name, hex(Number(values[0])));
       continue;
     }
     const value = scalar(values[0]);

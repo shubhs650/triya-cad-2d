@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34) and 0108 (M1-32) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32) and 0111 (M1-32 part 2) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2076,5 +2076,22 @@ Entities held inside an INSERT or a POLYLINE never had `assignDocument` called, 
 **Title:** Read DXF hatch style, seed points and ellipse-edge major axes
 
 The DXF hatch reader skipped the hatch style (75); `_readPattern` consumed the group after the last pattern line, so a `98` that directly follows a dashless line was lost along with the seed points it counts (and a following `47` lost the pixel size); and an ellipse edge's major axis end point took its missing component from the edge's centre, so its x was overwritten by the centre's x once 21 was read. All three are written correctly by the DXF writer, so a round trip hides them.
+
+</details>
+
+### 0111 — header variables the header map leaves out are dropped on DXF read and never written
+
+- **File:** `third_party/acad-ts-patches/0111-header-variables-missing-from-map.patch`
+- **Touches:** `src/Metadata/LookupTables/Core.ts`, `src/Metadata/MetadataTypes.ts`, `src/DxfPropertyBase.ts`, `src/Header/CadHeader.ts`, `src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts`, `src/IO/DWG/DwgHeaderHandlesCollection.ts`, `src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts`
+- **Symptom:** the DXF header reader and writer only know the variables in the `CadHeader` metadata, and 30 variables AutoCAD writes were missing from it, so DXF read dropped them and a save never wrote them: `$ATTDIA`, `$ATTREQ`, `$COORDS`, `$DELOBJ`, `$DRAGMODE`, `$HANDLING`, `$PICKSTYLE`, `$SAVEIMAGES`, `$SKPOLY`, `$SURFTAB1`/`2`, `$SURFU`/`V`, `$HIDETEXT`, `$INTERSECTIONCOLOR`, `$INTERSECTIONDISPLAY`, `$OBSCOLOR`, `$OBSLTYPE`, `$TILEMODELIGHTSYNCH`, `$REALWORLDSCALE`, `$UCSORTHOREF`, `$UCSORTHOVIEW`, `$PUCSORG`, `$PUCSXDIR`, `$PUCSYDIR`, `$PUCSORTHOREF`, `$PUCSORTHOVIEW`, `$CMATERIAL`, `$INTERFEREOBJVS`, `$INTERFEREVPVS` (found by the M1-03 header oracle, `tables.corpus.test.ts`, roadmap M1-32; up to 80 corpus files each). Half of them already had a `CadHeader` field the DWG reader fills. The DWG header had its own losses: `$SURFV` was read into `surfaceDensityM` (so `$SURFU` took `$SURFV`'s value and `$SURFV` stayed 6); the R2004+ `$INTERSECTIONCOLOR` short was read into `interfereColor` (and written from it); `$TILEMODELIGHTSYNCH`, `$UCSORTHOVIEW`, `$PUCSORTHOVIEW`, the R13/R14 `$ATTREQ`, `$ATTDIA`, `$DELOBJ`, `$DRAGMODE`, `$COORDS`, `$PICKSTYLE` and the `$CMATERIAL`, `$UCSORTHOREF`, `$PUCSORTHOREF`, `$INTERFEREOBJVS`, `$INTERFEREVPVS` pointers were read and thrown away, and the writer wrote constants (`'0'` for `$TILEMODELIGHTSYNCH`, which AutoCAD stores as 1) or null handles.
+- **Fix:** metadata entries for the 30 variables; new `CadHeader` fields for those with none (`attributeDialog`, `attributeRequest`, `coordinateDisplay`, `deleteObjects`, `dragMode`, `handling`, `saveImages`, `intersectionColor`, `tileModeLightSynch`, `realWorldScale`, `ucsOrthographicReferenceName`/`View`, `paperSpaceUcsOrthographicReferenceName`/`View`, `paperSpaceOrigin`) and, for the three object pointers, `currentMaterialHandle`, `interfereObjectVisualStyleHandle` and `interfereViewportVisualStyleHandle`, kept as raw handles through a new `'handle'` value kind (the DXF header is read before the objects, and acad-ts has no MATERIAL or VISUALSTYLE class). The DWG reader fills the fields and resolves the pointers once the objects are built (a handle nothing has is dropped); the DWG writer writes them, a pointer as 0 when its object is gone.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0111 header variables the acad-ts header map left out are read, written and kept in DWG"; `packages/testkit/src/mapping/tables.corpus.test.ts` no longer lists them in `ACAD_TS_GAPS`.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write the header variables missing from the CadHeader metadata
+
+Thirty header variables AutoCAD writes (`$ATTDIA`, `$ATTREQ`, `$SURFTAB1`, `$SURFU`, `$PUCSORG`, `$UCSORTHOREF`, `$CMATERIAL`, `$INTERSECTIONCOLOR`, …) had no entry in the `CadHeader` system-variable metadata, so the DXF reader skipped them and the DXF writer never wrote them, even where `CadHeader` already had the field. This adds the entries, the fields that were missing, and a `'handle'` value kind for header variables that point at objects the library has no class for (kept as the raw handle). It also fixes the DWG header: `$SURFV` was read into `SurfaceDensityM`, the R2004+ `$INTERSECTIONCOLOR` went into `InterfereColor`, and several values and pointers were read and discarded or written as constants.
 
 </details>

@@ -437,6 +437,40 @@ export class CadHeader {
 	public haloGapPercentage: number = 0;
 	public handleSeed: number = 0x01;
 	public hideText: number = 0;
+	/** $ATTDIA: attribute entry through a dialog box (R13/R14 DWG and DXF). */
+	public attributeDialog: number = 0;
+	/** $ATTREQ: prompt for attribute values on insert (R13/R14 DWG and DXF). */
+	public attributeRequest: number = 1;
+	/** $COORDS: status-bar coordinate display (R13/R14 DWG and DXF). */
+	public coordinateDisplay: number = 1;
+	/** $DELOBJ: what happens to the objects a new one was made from (R13/R14 DWG and DXF). */
+	public deleteObjects: number = 1;
+	/** $DRAGMODE: 0 off, 1 on request, 2 auto (R13/R14 DWG and DXF). */
+	public dragMode: number = 2;
+	/** $HANDLING: handles on (R12 and R13 DXF). */
+	public handling: number = 1;
+	/** $SAVEIMAGES (R13 DXF). */
+	public saveImages: number = 0;
+	/** $INTERSECTIONCOLOR: colour of intersection polylines (257 = ByEntity). */
+	public intersectionColor: Color = new Color(257);
+	/** $TILEMODELIGHTSYNCH (R2007+). */
+	public tileModeLightSynch: number = 1;
+	/** $REALWORLDSCALE (R2007+). */
+	public realWorldScale: boolean = true;
+	/** $UCSORTHOREF: the UCS orthographic views are relative to, by name. */
+	public ucsOrthographicReferenceName: string = '';
+	/** $UCSORTHOVIEW: 0 not orthographic, 1 top … 6 right. */
+	public ucsOrthographicView: number = 0;
+	/** $PUCSORTHOREF: as $UCSORTHOREF, in paper space. */
+	public paperSpaceUcsOrthographicReferenceName: string = '';
+	/** $PUCSORTHOVIEW: as $UCSORTHOVIEW, in paper space. */
+	public paperSpaceUcsOrthographicView: number = 0;
+	/** $CMATERIAL: handle of the current MATERIAL object, as read. */
+	public currentMaterialHandle: number | null = null;
+	/** $INTERFEREOBJVS: handle of the visual style of interference objects, as read. */
+	public interfereObjectVisualStyleHandle: number | null = null;
+	/** $INTERFEREVPVS: handle of the visual style of the interference-check viewport, as read. */
+	public interfereViewportVisualStyleHandle: number | null = null;
 	public hyperLinkBase: string | null = null;
 	public indexCreationFlags: IndexCreationFlags = IndexCreationFlags.NoIndex;
 	public insUnits: UnitsType = UnitsType.Unitless;
@@ -524,6 +558,9 @@ export class CadHeader {
 
 	public paperSpaceUcs: UCS = new UCS();
 	public paperSpaceUcsBase: UCS = new UCS();
+
+	public get paperSpaceOrigin(): XYZ { return this.paperSpaceUcs.origin; }
+	public set paperSpaceOrigin(v: XYZ) { this.paperSpaceUcs.origin = v; }
 
 	public get paperSpaceXAxis(): XYZ { return this.paperSpaceUcs.xAxis; }
 	public set paperSpaceXAxis(v: XYZ) { this.paperSpaceUcs.xAxis = v; }

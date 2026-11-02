@@ -506,4 +506,110 @@ describe('acad-ts local patches', () => {
     const axis = (read.paths[0]!.edges[0] as HatchBoundaryPathEllipse).majorAxisEndPoint;
     expect([axis.x, axis.y]).toEqual([3, 4]);
   });
+  it('0111 header variables the acad-ts header map left out are read, written and kept in DWG', () => {
+    // The M1-03 oracle found 32 variables AutoCAD writes that DXF read dropped (roadmap M1-32).
+    const vars: [string, ...[number, string][]][] = [
+      ['$ATTDIA', [70, '1']],
+      ['$ATTREQ', [70, '0']],
+      ['$COORDS', [70, '2']],
+      ['$DELOBJ', [70, '0']],
+      ['$DRAGMODE', [70, '1']],
+      ['$HANDLING', [70, '1']],
+      ['$PICKSTYLE', [70, '3']],
+      ['$SAVEIMAGES', [70, '1']],
+      ['$SKPOLY', [70, '2']],
+      ['$SURFTAB1', [70, '11']],
+      ['$SURFTAB2', [70, '12']],
+      ['$SURFU', [70, '13']],
+      ['$SURFV', [70, '14']],
+      ['$HIDETEXT', [280, '0']],
+      ['$INTERSECTIONDISPLAY', [280, '1']],
+      ['$INTERSECTIONCOLOR', [70, '5']],
+      ['$OBSCOLOR', [70, '3']],
+      ['$OBSLTYPE', [280, '2']],
+      ['$TILEMODELIGHTSYNCH', [280, '0']],
+      ['$REALWORLDSCALE', [290, '0']],
+      ['$UCSORTHOREF', [2, 'TOPUCS']],
+      ['$UCSORTHOVIEW', [70, '1']],
+      ['$PUCSORTHOREF', [2, 'SHEETUCS']],
+      ['$PUCSORTHOVIEW', [70, '2']],
+      ['$PUCSORG', [10, '1'], [20, '2'], [30, '3']],
+      ['$PUCSXDIR', [10, '0'], [20, '1'], [30, '0']],
+      ['$PUCSYDIR', [10, '-1'], [20, '0'], [30, '0']],
+      ['$CMATERIAL', [347, 'A1']],
+      ['$INTERFEREOBJVS', [345, 'A2']],
+      ['$INTERFEREVPVS', [346, 'A3']],
+    ];
+    const text = String.fromCharCode(...writeCadDocument(new CadDocument(), { format: 'dxf' }));
+    const groups = vars
+      .map(
+        ([name, ...gs]) => `  9\r\n${name}\r\n${gs.map(([c, v]) => `${c}\r\n${v}\r\n`).join('')}`,
+      )
+      .join('');
+    // At the end of HEADER, so they win over what the writer wrote for them (once it knows them).
+    const withVars = text.replace(/( *0\r?\nENDSEC\r?\n)/, `${groups}$1`);
+    expect(withVars).not.toBe(text);
+    const bytes = (t: string) => Uint8Array.from(t, (c) => c.charCodeAt(0));
+
+    // As the DXF writer would write them back: handles in hex, everything else as stated.
+    const stated = (d: CadDocument) =>
+      vars.map(([name]) => [
+        name,
+        [...d.header!.getValues(name)].map(([c, v]) =>
+          c >= 320 && c < 370 ? (v as number).toString(16).toUpperCase() : String(Number(v) || v),
+        ),
+      ]);
+    const want = vars.map(([name, ...gs]) => [
+      name,
+      gs.map(([, v]) => (v === '0' ? '0' : String(Number(v) || v))),
+    ]);
+    const read = DxfReader.readFromStream(bytes(withVars));
+    // Booleans read back as true/false.
+    const asText = (rows: ReturnType<typeof stated>) =>
+      rows.map(([n, vs]) => [
+        n,
+        (vs as string[]).map((v) => (v === 'false' ? '0' : v === 'true' ? '1' : v)),
+      ]);
+    expect(asText(stated(read))).toEqual(want);
+    // and written back by the DXF writer.
+    expect(
+      asText(stated(DxfReader.readFromStream(writeCadDocument(read, { format: 'dxf' })))),
+    ).toEqual(want);
+
+    // DWG: the values its header holds, which the reader skipped or put in the wrong field.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const h = doc.header!;
+    h.surfaceDensityM = 13;
+    h.surfaceDensityN = 14;
+    h.intersectionColor = new Color(5);
+    h.interfereColor = new Color(3);
+    h.tileModeLightSynch = 0;
+    h.ucsOrthographicView = 1;
+    h.paperSpaceUcsOrthographicView = 2;
+    const dwg = dwgRoundTrip(doc).header!;
+    expect([dwg.surfaceDensityM, dwg.surfaceDensityN]).toEqual([13, 14]);
+    expect([dwg.intersectionColor.index, dwg.interfereColor.index]).toEqual([5, 3]);
+    expect(dwg.tileModeLightSynch).toBe(0);
+    expect([dwg.ucsOrthographicView, dwg.paperSpaceUcsOrthographicView]).toEqual([1, 2]);
+
+    // R13/R14 DWG keeps the variables later releases moved to the registry.
+    const r14 = new CadDocument(ACadVersion.AC1014);
+    Object.assign(r14.header!, {
+      attributeDialog: 1,
+      attributeRequest: 0,
+      deleteObjects: 0,
+      dragMode: 1,
+      coordinateDisplay: 2,
+      pickStyle: 3,
+    });
+    const back = dwgRoundTrip(r14).header!;
+    expect([
+      back.attributeDialog,
+      back.attributeRequest,
+      back.deleteObjects,
+      back.dragMode,
+      back.coordinateDisplay,
+      back.pickStyle,
+    ]).toEqual([1, 0, 0, 1, 2, 3]);
+  });
 });

@@ -124,8 +124,8 @@ export class DwgHeaderReader extends DwgSectionIO {
 		this._header.showSplineControlPoints = this._reader.readBit();
 
 		if (this.r13_14Only) {
-			this._reader.readBit();
-			this._reader.readBit();
+			this._header.attributeRequest = this._reader.readBit() ? 1 : 0;
+			this._header.attributeDialog = this._reader.readBit() ? 1 : 0;
 		}
 
 		this._header.mirrorText = this._reader.readBit();
@@ -140,7 +140,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 		this._header.retainXRefDependentVisibilitySettings = this._reader.readBit();
 
 		if (this.r13_14Only) {
-			this._reader.readBit();
+			this._header.deleteObjects = this._reader.readBit() ? 1 : 0;
 		}
 
 		this._header.displaySilhouetteCurves = this._reader.readBit();
@@ -148,7 +148,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 		this._header.proxyGraphics = this._reader.readBitShortAsBool();
 
 		if (this.r13_14Only) {
-			this._reader.readBitShort();
+			this._header.dragMode = this._reader.readBitShort();
 		}
 
 		this._header.spatialIndexMaxTreeDepth = this._reader.readBitShort();
@@ -170,13 +170,13 @@ export class DwgHeaderReader extends DwgSectionIO {
 		this._header.attributeVisibility = this._reader.readBitShort() as AttributeVisibilityMode;
 
 		if (this.r13_14Only) {
-			this._reader.readBitShort();
+			this._header.coordinateDisplay = this._reader.readBitShort();
 		}
 
 		this._header.pointDisplayMode = this._reader.readBitShort();
 
 		if (this.r13_14Only) {
-			this._reader.readBitShort();
+			this._header.pickStyle = this._reader.readBitShort();
 		}
 
 		if (this.r2004Plus) {
@@ -193,7 +193,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 
 		this._header.numberOfSplineSegments = this._reader.readBitShort();
 		this._header.surfaceDensityM = this._reader.readBitShort();
-		this._header.surfaceDensityM = this._reader.readBitShort();
+		this._header.surfaceDensityN = this._reader.readBitShort();
 		this._header.surfaceType = this._reader.readBitShort();
 		this._header.surfaceTabulation1 = this._reader.readBitShort();
 		this._header.surfaceTabulation2 = this._reader.readBitShort();
@@ -283,7 +283,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 
 		if (this.r2000Plus) {
 			objectPointers.pucsorthoref = this._reader.handleReference();
-			this._reader.readBitShort(); // PUCSORTHOVIEW
+			this._header.paperSpaceUcsOrthographicView = this._reader.readBitShort();
 			objectPointers.pucsbase = this._reader.handleReference();
 
 			this._header.paperSpaceOrthographicTopDOrigin = this._reader.read3BitDouble();
@@ -308,7 +308,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 
 		if (this.r2000Plus) {
 			objectPointers.ucsorthoref = this._reader.handleReference();
-			this._reader.readBitShort(); // UCSORTHOVIEW
+			this._header.ucsOrthographicView = this._reader.readBitShort();
 			objectPointers.ucsbase = this._reader.handleReference();
 
 			this._header.modelSpaceOrthographicTopDOrigin = this._reader.read3BitDouble();
@@ -554,7 +554,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 			this._header.dimensionAssociativity = this._reader.readByte() as DimensionAssociation;
 			this._header.haloGapPercentage = this._reader.readByte();
 			this._header.obscuredColor = new Color(this._reader.readBitShort());
-			this._header.interfereColor = new Color(this._reader.readBitShort());
+			this._header.intersectionColor = new Color(this._reader.readBitShort());
 			this._header.obscuredType = this._reader.readByte();
 			this._header.intersectionDisplay = this._reader.readByte();
 			this._header.projectName = this._reader.readVariableText();
@@ -595,7 +595,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 			this._header.northDirection = this._reader.readBitDouble();
 			this._header.timeZone = this._reader.readBitLong();
 			this._header.displayLightGlyphs = String.fromCharCode(this._reader.readRawChar());
-			this._reader.readRawChar(); // TILEMODELIGHTSYNCH
+			this._header.tileModeLightSynch = this._reader.readRawChar();
 			this._header.dwgUnderlayFramesVisibility = String.fromCharCode(this._reader.readRawChar());
 			this._header.dgnUnderlayFramesVisibility = String.fromCharCode(this._reader.readRawChar());
 			this._reader.readBit(); // unknown

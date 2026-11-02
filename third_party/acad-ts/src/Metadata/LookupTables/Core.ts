@@ -2230,6 +2230,285 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
           290
         ],
         "referenceType": 0
+      },
+      {
+        "name": "$ATTDIA",
+        "isName": false,
+        "propertyName": "attributeDialog",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$ATTREQ",
+        "isName": false,
+        "propertyName": "attributeRequest",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$COORDS",
+        "isName": false,
+        "propertyName": "coordinateDisplay",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$DELOBJ",
+        "isName": false,
+        "propertyName": "deleteObjects",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$DRAGMODE",
+        "isName": false,
+        "propertyName": "dragMode",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$HANDLING",
+        "isName": false,
+        "propertyName": "handling",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$PICKSTYLE",
+        "isName": false,
+        "propertyName": "pickStyle",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$SAVEIMAGES",
+        "isName": false,
+        "propertyName": "saveImages",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$SKPOLY",
+        "isName": false,
+        "propertyName": "sketchPolylineType",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$SURFTAB1",
+        "isName": false,
+        "propertyName": "surfaceTabulation1",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$SURFTAB2",
+        "isName": false,
+        "propertyName": "surfaceTabulation2",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$SURFU",
+        "isName": false,
+        "propertyName": "surfaceDensityM",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$SURFV",
+        "isName": false,
+        "propertyName": "surfaceDensityN",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$HIDETEXT",
+        "isName": false,
+        "propertyName": "hideText",
+        "valueCodes": [
+          280
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$INTERSECTIONCOLOR",
+        "isName": false,
+        "propertyName": "intersectionColor",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$INTERSECTIONDISPLAY",
+        "isName": false,
+        "propertyName": "intersectionDisplay",
+        "valueCodes": [
+          280
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$OBSCOLOR",
+        "isName": false,
+        "propertyName": "obscuredColor",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$OBSLTYPE",
+        "isName": false,
+        "propertyName": "obscuredType",
+        "valueCodes": [
+          280
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$TILEMODELIGHTSYNCH",
+        "isName": false,
+        "propertyName": "tileModeLightSynch",
+        "valueCodes": [
+          280
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$REALWORLDSCALE",
+        "isName": false,
+        "propertyName": "realWorldScale",
+        "valueCodes": [
+          290
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$UCSORTHOREF",
+        "isName": true,
+        "propertyName": "ucsOrthographicReferenceName",
+        "valueCodes": [
+          2
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$UCSORTHOVIEW",
+        "isName": false,
+        "propertyName": "ucsOrthographicView",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$PUCSORG",
+        "isName": false,
+        "propertyName": "paperSpaceOrigin",
+        "valueCodes": [
+          10,
+          20,
+          30
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$PUCSXDIR",
+        "isName": false,
+        "propertyName": "paperSpaceXAxis",
+        "valueCodes": [
+          10,
+          20,
+          30
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$PUCSYDIR",
+        "isName": false,
+        "propertyName": "paperSpaceYAxis",
+        "valueCodes": [
+          10,
+          20,
+          30
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$PUCSORTHOREF",
+        "isName": true,
+        "propertyName": "paperSpaceUcsOrthographicReferenceName",
+        "valueCodes": [
+          2
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$PUCSORTHOVIEW",
+        "isName": false,
+        "propertyName": "paperSpaceUcsOrthographicView",
+        "valueCodes": [
+          70
+        ],
+        "referenceType": 0
+      },
+      {
+        "name": "$CMATERIAL",
+        "isName": false,
+        "propertyName": "currentMaterialHandle",
+        "valueCodes": [
+          347
+        ],
+        "referenceType": 0,
+        "valueKind": "handle"
+      },
+      {
+        "name": "$INTERFEREOBJVS",
+        "isName": false,
+        "propertyName": "interfereObjectVisualStyleHandle",
+        "valueCodes": [
+          345
+        ],
+        "referenceType": 0,
+        "valueKind": "handle"
+      },
+      {
+        "name": "$INTERFEREVPVS",
+        "isName": false,
+        "propertyName": "interfereViewportVisualStyleHandle",
+        "valueCodes": [
+          346
+        ],
+        "referenceType": 0,
+        "valueKind": "handle"
       }
     ]
   },
