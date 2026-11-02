@@ -88,8 +88,10 @@ button {
 }
 
 .open-button,
+.settings-button,
 .start button,
-.banner button {
+.banner button,
+.settings button {
   padding: 3px 10px;
   border: 1px solid var(--chrome-border);
   border-radius: 4px;
@@ -98,7 +100,9 @@ button {
 }
 
 .open-button:hover,
-.start button:hover {
+.settings-button:hover,
+.start button:hover,
+.settings button:hover {
   background: var(--chrome-border);
 }
 
@@ -331,4 +335,78 @@ button {
 .layout-tab[aria-selected='true'] {
   background: var(--chrome-bg-raised);
   border-color: var(--chrome-border);
+}
+
+/* Settings (M1-50): a modal dialog over the shell. */
+.settings {
+  width: min(480px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  color: var(--chrome-text);
+  background: var(--chrome-bg-raised);
+}
+
+.settings::backdrop {
+  background: rgb(0 0 0 / 30%);
+}
+
+.settings h2 {
+  margin: 0 0 12px;
+  font-size: 16px;
+}
+
+.settings h3 {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+
+.settings p {
+  margin: 0 0 8px;
+  color: var(--chrome-text-muted);
+}
+
+.settings ul {
+  margin: 0 0 8px;
+  padding: 0;
+  list-style: none;
+}
+
+.settings li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.settings .file-name {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.settings .pattern-names {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--chrome-text-muted);
+}
+
+.settings .message {
+  color: var(--chrome-text);
+}
+
+.settings .message.error {
+  padding: 4px 8px;
+  border-radius: 4px;
+  background: var(--danger-bg);
+  color: var(--danger-text);
+}
+
+.settings form {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }

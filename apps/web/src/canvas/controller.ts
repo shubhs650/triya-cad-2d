@@ -48,6 +48,8 @@ export interface CanvasHooks {
   readonly onError: (e: Error) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
+  /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
+  readonly patterns?: () => readonly string[];
 }
 
 type Point = { readonly x: number; readonly y: number };
@@ -171,6 +173,12 @@ export class CanvasController {
     this.#resize();
   }
 
+  /** The user's .pat files changed (M1-50): hatches stored without lines redraw from them. */
+  setPatterns(sources: readonly string[]): void {
+    this.#host.setPatterns(sources);
+    this.#requestFrame();
+  }
+
   dispose(): void {
     this.#listeners.abort();
     this.#observer.disconnect();
@@ -180,12 +188,14 @@ export class CanvasController {
   }
 
   #createHost(): RendererHost {
+    const patterns = this.#hooks.patterns?.() ?? [];
     const host = new RendererHost({
       canvas: this.canvas,
       document: { init: this.#opened.init, block: this.block },
       createWorker: () => new RenderWorker(),
       style: this.#style(),
       onError: this.#hooks.onError,
+      ...(patterns.length > 0 && { patterns }),
     });
     this.canvas.dataset['renderer'] = host.mode;
     return host;
