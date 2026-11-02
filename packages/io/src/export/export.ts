@@ -133,8 +133,9 @@ function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
 
 /**
  * What acad-ts cannot write to the format at hand: its DWG writer leaves a LARGE_RADIAL_DIMENSION
- * out (roadmap M1-74), and its DXF writer a PDFUNDERLAY's normal (210) and clip boundary (11,
- * M1-83), so an edited or new one would be lost.
+ * out (roadmap M1-74) and a VIEWPORT's style sheet and visual style (M1-85), and its DXF writer
+ * a PDFUNDERLAY's normal (210) and clip boundary (11, M1-83), so an edited or new one would be
+ * lost.
  */
 function formatProblems(
   format: CadFormat | undefined,
@@ -143,6 +144,18 @@ function formatProblems(
 ): string[] {
   if (format === 'dwg' && e.type === 'LARGE_RADIAL_DIMENSION') {
     return [`${e.type} ${e.handle}: acad-ts has no DWG writer for it (M1-74)`];
+  }
+  if (format === 'dwg' && e.geom.kind === 'VIEWPORT') {
+    const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;
+    const g = e.geom;
+    const lost =
+      (b ? b.plotStyleSheet !== g.plotStyleSheet : g.plotStyleSheet !== '') ||
+      (b ? b.visualStyle !== g.visualStyle : g.visualStyle !== undefined);
+    if (lost) {
+      return [
+        `${e.type} ${e.handle}: acad-ts writes no DWG style sheet or visual style for it (M1-85)`,
+      ];
+    }
   }
   if (format === 'dxf' && e.geom.kind === 'PDFUNDERLAY') {
     const b = before?.geom.kind === 'PDFUNDERLAY' ? before.geom : undefined;

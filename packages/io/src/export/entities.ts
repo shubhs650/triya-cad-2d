@@ -4,9 +4,9 @@
 // model (and every unchanged value, to the bit) stays as the file had it (§6.2 rule 2).
 //
 // Geometry writers exist for the types markup creates and edits first and, since M1-75 parts 1
-// to 4, SOLID, TRACE, 3DFACE, SPLINE, POLYLINE, ATTDEF, INSERT with its ATTRIBs, every
-// dimension, LEADER, TOLERANCE, HATCH, IMAGE, WIPEOUT, PDFUNDERLAY and MLINE; the others report the change as unsupported (roadmap M1-75)
-// rather than dropping it.
+// to 5, SOLID, TRACE, 3DFACE, SPLINE, POLYLINE, ATTDEF, INSERT with its ATTRIBs, every
+// dimension, LEADER, TOLERANCE, HATCH, IMAGE, WIPEOUT, PDFUNDERLAY, MLINE, MULTILEADER and
+// VIEWPORT; the others report the change as unsupported (roadmap M1-75) rather than dropping it.
 
 import type {
   AttributeBase,
@@ -51,7 +51,9 @@ import {
   KnotParametrization,
   Layer,
   Leader,
+  LeaderLine,
   LeaderPathType,
+  LeaderRoot,
   Line,
   LineType,
   LwPolyline,
@@ -62,6 +64,8 @@ import {
   MLineStyle,
   MLineVertex,
   MText,
+  MultiLeader,
+  MultiLeaderStyle,
   PdfUnderlay,
   PdfUnderlayDefinition,
   Point,
@@ -83,6 +87,8 @@ import {
   Vertex2D,
   Vertex3D,
   VertexFlags,
+  Viewport,
+  VisualStyle,
   Wipeout,
   XLine,
   XY,
@@ -116,6 +122,9 @@ import type {
   LwPolylineGeometry,
   MLineGeometry,
   MTextGeometry,
+  MultiLeaderBlock,
+  MultiLeaderGeometry,
+  MultiLeaderText,
   ObjectCommon,
   PointGeometry,
   PolylineGeometry,
@@ -129,6 +138,7 @@ import type {
   UnderlayGeometry,
   Vec2,
   Vec3,
+  ViewportGeometry,
   XlineGeometry,
 } from '@triya/engine';
 import type { PassthroughStore } from './passthrough';
@@ -260,6 +270,13 @@ export function entityProblems(r: Resolver, before: Entity | undefined, after: E
   const out = propProblems(r, what, before, after);
   if (after.geom.kind === 'INSERT' && after.geom.block === after.owner) {
     out.push(`${what}: a block inserted into itself`);
+  }
+  // AutoCAD shows a viewport only in a layout's paper space.
+  if (after.geom.kind === 'VIEWPORT' && (!before || before.owner !== after.owner)) {
+    const block = resolve(r, after.owner, BlockRecord);
+    if (!block?.layout || block.name.toUpperCase() === BlockRecord.modelSpaceName.toUpperCase()) {
+      out.push(`${what}: a viewport outside a layout's paper space`);
+    }
   }
   if (!before || !same(before.geom, after.geom)) {
     const writer = WRITERS[after.type] as Writer<EntityGeometry> | undefined;
@@ -1577,6 +1594,283 @@ const mlineWriter: Writer<MLineGeometry> = {
   },
 };
 
+// ── MULTILEADER ────────────────────────────────────────────────────────────────────────────
+
+/** MLEADER content types (DXF 172) that need content: 1 block, 2 mtext. */
+const BLOCK_CONTENT = 1;
+const MTEXT_CONTENT = 2;
+
+function multiLeaderProblems(
+  r: Resolver,
+  before: MultiLeaderGeometry | undefined,
+  g: MultiLeaderGeometry,
+): string[] {
+  const out = planeProblems(g);
+  const d = differ(before, g);
+  if (g.thickness !== undefined) out.push('a thickness, which a MULTILEADER does not have');
+  if (d('style')) {
+    if (g.style === undefined) out.push('a MULTILEADER without its MLEADERSTYLE');
+    else if (!resolve(r, g.style, MultiLeaderStyle)) {
+      out.push(`MLEADERSTYLE ${g.style} does not exist`);
+    }
+  }
+  if (d('linetype') && g.linetype !== undefined && !resolve(r, g.linetype, LineType)) {
+    out.push(`linetype ${g.linetype} does not exist`);
+  }
+  if (d('arrowhead') && g.arrowhead !== undefined && !resolve(r, g.arrowhead, BlockRecord)) {
+    out.push(`arrowhead block ${g.arrowhead} does not exist`);
+  }
+  // An annotative multileader keeps a context data object per annotation scale in its extension
+  // dictionary, which Triya does not write yet (M1-75).
+  if ((before ? before.annotative : false) !== g.annotative) out.push('annotative changes');
+  const colors = [g.lineColor, g.text?.color, g.block?.color];
+  if (d('lineColor', 'text', 'block') && colors.some((c) => c && hasBook(c))) {
+    out.push('colour-book colours');
+  }
+  if (d('contentType', 'text') && g.contentType === MTEXT_CONTENT && !g.text) {
+    out.push('an mtext MULTILEADER without its text');
+  }
+  if (d('contentType', 'block') && g.contentType === BLOCK_CONTENT && !g.block?.block) {
+    out.push('a block MULTILEADER without its block');
+  }
+  if (d('text') && g.text) {
+    if (!before?.text || before.text.style !== g.text.style) {
+      out.push(...styleProblems(r, g.text.style));
+    }
+  }
+  if (d('block') && g.block?.block !== undefined && !resolve(r, g.block.block, BlockRecord)) {
+    out.push(`content block ${g.block.block} does not exist`);
+  }
+  // The text's normal is the leader plane's, so it runs upside down exactly on −Z, as MTEXT.
+  if (g.text && (g.text.upsideDown === true) !== (plane(g.normal) === 'down')) {
+    out.push('upside-down MULTILEADER text on a +Z plane');
+  }
+  return out;
+}
+
+/** A leader plane's 111/112 axes: X along +X, Y = normal × X (MLEADER context data). */
+const leaderAxes = (pl: Plane): [XYZ, XYZ] =>
+  pl === 'down' ? [new XYZ(1, 0, 0), new XYZ(0, -1, 0)] : [new XYZ(1, 0, 0), new XYZ(0, 1, 0)];
+
+const multiLeaderWriter: Writer<MultiLeaderGeometry> = {
+  create: () => new MultiLeader(),
+  problems: multiLeaderProblems,
+  write(r, e, before, g) {
+    const m = e as MultiLeader;
+    const c = m.contextData;
+    const d = differ(before, g);
+    const pl = plane(g.normal);
+    // Every point is WCS and mapped in plan (the elevation is the base point's Z): each keeps its
+    // Z until the elevation is edited, and a point the save adds takes the elevation.
+    const elevation = d('elevation');
+    const z0 = g.elevation ?? 0;
+    const at = (p: Vec2, old: XYZ | undefined): XYZ =>
+      new XYZ(p.x, p.y, elevation || !old ? z0 : old.z);
+    if (elevation) c.basePoint = new XYZ(c.basePoint.x, c.basePoint.y, z0);
+    if (d('normal')) {
+      [c.baseDirection, c.baseVertical] = leaderAxes(pl);
+      c.normalReversed = false;
+    }
+    if (d('style')) m.style = resolve(r, g.style!, MultiLeaderStyle)!;
+    if (d('overrideFlags')) m.propertyOverrideFlags = g.overrideFlags;
+    if (d('pathType')) m.pathType = g.pathType;
+    if (d('lineColor')) m.lineColor = acadColor(g.lineColor);
+    if (d('linetype')) m.leaderLineType = g.linetype ? resolve(r, g.linetype, LineType)! : null;
+    if (d('lineweight')) m.leaderLineWeight = acadLineweight(g.lineweight);
+    if (d('landing')) m.enableLanding = g.landing;
+    if (d('dogleg')) m.enableDogleg = g.dogleg;
+    if (d('doglegLength')) m.landingDistance = g.doglegLength;
+    if (d('arrowhead')) m.arrowhead = g.arrowhead ? resolve(r, g.arrowhead, BlockRecord)! : null;
+    if (d('arrowheadSize')) m.arrowheadSize = g.arrowheadSize;
+    if (d('drawnArrowheadSize')) c.arrowheadSize = g.drawnArrowheadSize ?? g.arrowheadSize;
+    if (d('contentType')) m.contentType = g.contentType;
+    if (d('scale')) m.scaleFactor = g.scale;
+    if (d('annotative')) m.enableAnnotationScale = g.annotative;
+    // The text attachments and alignment are stated on the entity and again in the context data
+    // AutoCAD draws from; the mapping reads the entity's, and a save keeps the two the same.
+    if (d('textLeftAttachment')) {
+      m.textLeftAttachment = g.textLeftAttachment;
+      c.textLeftAttachment = g.textLeftAttachment;
+    }
+    if (d('textRightAttachment')) {
+      m.textRightAttachment = g.textRightAttachment;
+      c.textRightAttachment = g.textRightAttachment;
+    }
+    if (d('textTopAttachment')) {
+      m.textTopAttachment = g.textTopAttachment;
+      c.textTopAttachment = g.textTopAttachment;
+    }
+    if (d('textBottomAttachment')) {
+      m.textBottomAttachment = g.textBottomAttachment;
+      c.textBottomAttachment = g.textBottomAttachment;
+    }
+    if (d('textAttachmentDirection')) m.textAttachmentDirection = g.textAttachmentDirection;
+    if (d('textAngleType')) m.textAngle = g.textAngleType;
+    if (d('textAlignment')) {
+      m.textAlignment = g.textAlignment;
+      c.textAlignment = g.textAlignment;
+    }
+    if (d('textFrame')) m.textFrame = g.textFrame;
+    if (d('contentBase') || elevation) c.contentBasePoint = at(g.contentBase, c.contentBasePoint);
+    if (d('landingGap')) c.landingGap = g.landingGap;
+    // A new entity, or one moved to another plane, writes all of its content.
+    const was = d('normal') ? undefined : before;
+    if (d('text') || elevation) writeMultiLeaderText(r, m, was?.text, g, elevation);
+    if (d('block') || elevation) writeMultiLeaderBlock(r, m, was?.block, g, elevation);
+    if (d('branches') || elevation) {
+      const roots = c.leaderRoots;
+      c.leaderRoots = g.branches.map((b, i) => {
+        // A branch or line keeps what Triya does not map (its breaks, a line's own colour,
+        // linetype and arrowhead overrides) by its position in the list.
+        const root = roots[i] ?? new LeaderRoot();
+        root.leaderIndex = b.index;
+        root.connectionPoint = at(b.connection, roots[i]?.connectionPoint);
+        root.direction = new XYZ(b.direction.x, b.direction.y, roots[i]?.direction.z ?? 0);
+        root.landingDistance = b.doglegLength;
+        const lines = root.lines;
+        root.lines = b.lines.map((l, j) => {
+          const line = lines[j] ?? new LeaderLine();
+          line.index = l.index;
+          line.points = l.vertices.map((p, k) => at(p, lines[j]?.points[k]));
+          return line;
+        });
+        return root;
+      });
+    }
+  },
+};
+
+function writeMultiLeaderText(
+  r: Resolver,
+  m: MultiLeader,
+  before: MultiLeaderText | undefined,
+  g: MultiLeaderGeometry,
+  elevation: boolean,
+): void {
+  const c = m.contextData;
+  const t = g.text;
+  c.hasTextContents = t !== undefined;
+  if (!t) return;
+  const b = before;
+  const d = (...keys: (keyof MultiLeaderText)[]): boolean =>
+    !b || keys.some((k) => !same(b[k], t[k]));
+  const z = elevation || !b ? (g.elevation ?? 0) : c.textLocation.z;
+  if (d('content')) c.textLabel = t.content;
+  if (d('style')) {
+    c.textStyle = resolve(r, t.style, TextStyle)!;
+    m.textStyle = c.textStyle;
+  }
+  if (d('position') || elevation) c.textLocation = new XYZ(t.position.x, t.position.y, z);
+  if (d('rotation', 'upsideDown')) {
+    // 13 is the WCS text direction; 42 states the same angle about the text normal (OCS).
+    c.direction = new XYZ(Math.cos(t.rotation) + 0, Math.sin(t.rotation) + 0, 0);
+    c.textRotation = ocsAngle(t.rotation, t.upsideDown ? 'down' : 'up');
+  }
+  if (d('upsideDown')) c.textNormal = new XYZ(0, 0, t.upsideDown ? -1 : 1);
+  if (d('height')) c.textHeight = t.height;
+  if (d('width')) c.boundaryWidth = t.width;
+  if (d('boundaryHeight')) c.boundaryHeight = t.boundaryHeight;
+  if (d('lineSpacing')) c.lineSpacingFactor = t.lineSpacing;
+  if (d('lineSpacingStyle')) c.lineSpacing = t.lineSpacingStyle;
+  if (d('attachment')) {
+    c.textAttachmentPoint = t.attachment;
+    m.textAttachmentPoint = t.attachment;
+  }
+  if (d('flow')) c.flowDirection = t.flow;
+  if (d('color')) {
+    c.textColor = acadColor(t.color);
+    m.textColor = c.textColor;
+  }
+}
+
+function writeMultiLeaderBlock(
+  r: Resolver,
+  m: MultiLeader,
+  before: MultiLeaderBlock | undefined,
+  g: MultiLeaderGeometry,
+  elevation: boolean,
+): void {
+  const c = m.contextData;
+  const k = g.block;
+  c.hasContentsBlock = k !== undefined;
+  if (!k) return;
+  const b = before;
+  const d = (...keys: (keyof MultiLeaderBlock)[]): boolean =>
+    !b || keys.some((key) => !same(b[key], k[key]));
+  // The block's normal (context 14) is the leader plane's; Triya does not map it.
+  if (!b) c.blockContentNormal = new XYZ(0, 0, plane(g.normal) === 'down' ? -1 : 1);
+  if (d('block')) {
+    c.blockContent = k.block ? resolve(r, k.block, BlockRecord)! : null;
+    m.blockContentId = c.blockContent;
+  }
+  if (d('position') || elevation) {
+    const z = elevation || !b ? (g.elevation ?? 0) : c.blockContentLocation.z;
+    c.blockContentLocation = new XYZ(k.position.x, k.position.y, z);
+  }
+  if (d('scale')) {
+    c.blockContentScale = new XYZ(k.scale.x, k.scale.y, k.scale.z);
+    m.blockContentScale = c.blockContentScale;
+  }
+  if (d('rotation')) {
+    c.blockContentRotation = k.rotation;
+    m.blockContentRotation = k.rotation;
+  }
+  if (d('color')) {
+    c.blockContentColor = acadColor(k.color);
+    m.blockContentColor = c.blockContentColor;
+  }
+}
+
+// ── VIEWPORT ───────────────────────────────────────────────────────────────────────────────
+
+const viewportWriter: Writer<ViewportGeometry> = {
+  create: () => new Viewport(),
+  problems(r, before, g) {
+    const out: string[] = [];
+    const d = differ(before, g);
+    // The clip boundary entity points back at the viewport through its reactors (M1-75).
+    if (before?.clipBoundary !== g.clipBoundary) {
+      out.push('clip boundary changes');
+    }
+    if (d('frozenLayers')) {
+      for (const l of g.frozenLayers) {
+        if (!resolve(r, l, Layer)) out.push(`frozen layer ${l} does not exist`);
+      }
+    }
+    if (d('visualStyle') && g.visualStyle !== undefined && !resolve(r, g.visualStyle, VisualStyle)) {
+      out.push(`visual style ${g.visualStyle} does not exist`);
+    }
+    return out;
+  },
+  write(r, e, before, g) {
+    const v = e as Viewport;
+    const d = differ(before, g);
+    // The frame is in paper space; its centre keeps the Z it had.
+    if (d('center')) v.center = new XYZ(g.center.x, g.center.y, v.center.z);
+    if (d('width')) v.width = g.width;
+    if (d('height')) v.height = g.height;
+    if (d('id')) v.id = g.id;
+    if (d('status')) v.activeStatus = g.status;
+    if (d('flags')) v.status = g.flags as Viewport['status'];
+    if (d('viewCenter')) v.viewCenter = new XY(g.viewCenter.x, g.viewCenter.y);
+    if (d('viewHeight')) v.viewHeight = g.viewHeight;
+    if (d('viewDirection')) {
+      v.viewDirection = new XYZ(g.viewDirection.x, g.viewDirection.y, g.viewDirection.z);
+    }
+    if (d('viewTarget')) v.viewTarget = new XYZ(g.viewTarget.x, g.viewTarget.y, g.viewTarget.z);
+    if (d('twist')) v.twistAngle = g.twist;
+    if (d('lensLength')) v.lensLength = g.lensLength;
+    if (d('frontClip')) v.frontClipPlane = g.frontClip;
+    if (d('backClip')) v.backClipPlane = g.backClip;
+    if (d('frozenLayers')) v.frozenLayers = g.frozenLayers.map((l) => resolve(r, l, Layer)!);
+    if (d('plotStyleSheet')) v.styleSheetName = g.plotStyleSheet;
+    if (d('renderMode')) v.renderMode = g.renderMode;
+    if (d('visualStyle')) {
+      v.visualStyle = g.visualStyle ? resolve(r, g.visualStyle, VisualStyle)! : null;
+    }
+  },
+};
+
 const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   LINE: lineWriter,
   XLINE: xlineWriter('XLINE'),
@@ -1605,6 +1899,8 @@ const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   WIPEOUT: imageWriter('WIPEOUT'),
   PDFUNDERLAY: underlayWriter,
   MLINE: mlineWriter,
+  MULTILEADER: multiLeaderWriter,
+  VIEWPORT: viewportWriter,
 } as Partial<Record<EntityType, Writer<never>>>;
 
 /** The entity types whose geometry Triya can write (the rest: roadmap M1-75). */
