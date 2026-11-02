@@ -6,6 +6,10 @@
 // - Culling: each frame draws only what the spatial index returns for the visible box.
 // - LOD: an entity smaller than a pixel on screen is a one-pixel dot; after a frame over the
 //   16 ms budget the next frame skips those and schedules a full-quality frame when idle.
+// - Pan/zoom (M1-44): while only the view changes on a scene too heavy to redraw within a
+//   frame, each frame draws the last scene bitmap moved and scaled to the new view (what it
+//   does not cover shows the background), and the scene is drawn again in full once the view
+//   has stopped changing for `SETTLE_MS`. Any other change redraws at once.
 // - Precision: paths are built relative to the view centre, so canvas float32 maths never
 //   sees large drawing coordinates.
 // - DPR: backing stores are CSS size × device pixel ratio; line widths are device pixels.
@@ -248,6 +252,14 @@ export const DEFAULT_STYLE: RenderStyle = {
 
 /** The frame budget (ARCHITECTURE.md §7.2): 60 fps. */
 const FRAME_BUDGET_MS = 16;
+/**
+ * Entities drawn above which a full redraw is taken as too heavy for a pan/zoom frame even when
+ * its CPU time fits the budget: the canvas rasterises after the draw calls return, so the timer
+ * does not see it. M1-12 measured 10k entities at 48–54 fps in headless Chromium.
+ */
+const HEAVY_SCENE_ENTRIES = 8000;
+/** How long the view must stay put before a moved scene bitmap is redrawn in full. */
+const SETTLE_MS = 100;
 /** Text under this cap height on screen (CSS px) is greeked (ARCHITECTURE.md §7.2). */
 const TEXT_LOD_PX = 3;
 /**
@@ -377,6 +389,21 @@ export class Canvas2DRenderer implements Renderer {
   /** The locked layers (M1-69), found again after a layer change; undefined until needed. */
   #locked: ReadonlySet<Handle> | undefined;
   #sceneDirty = true;
+  /**
+   * Something other than the view changed since the scene was drawn (content, style, size,
+   * fonts, patterns or a bitmap): moving the old bitmap would show the wrong drawing.
+   */
+  #contentDirty = true;
+  /** The view the scene bitmap was drawn at; undefined before the first scene draw. */
+  #sceneView: ViewTransform | undefined;
+  /** The last scene draw's CPU time and the entities it drew. */
+  #sceneMs = 0;
+  #sceneEntries = 0;
+  /** When a frame last moved the scene bitmap, and whether a settle check is waiting. */
+  #movedAt = 0;
+  #settlePending = false;
+  /** The next frame draws the scene in full even if only the view changed (the settle). */
+  #forceFull = false;
   #transientDirty = true;
   #lastFrameSlow = false;
   #idlePending = false;
@@ -443,7 +470,7 @@ export class Canvas2DRenderer implements Renderer {
       s.canvas.width = Math.round(width * dpr);
       s.canvas.height = Math.round(height * dpr);
     }
-    this.#sceneDirty = this.#transientDirty = true;
+    this.#sceneDirty = this.#contentDirty = this.#transientDirty = true;
   }
 
   setView(view: ViewTransform): void {
@@ -453,7 +480,7 @@ export class Canvas2DRenderer implements Renderer {
 
   setStyle(style: RenderStyle): void {
     this.#style = style;
-    this.#sceneDirty = this.#transientDirty = true;
+    this.#sceneDirty = this.#contentDirty = this.#transientDirty = true;
   }
 
   /**
@@ -463,7 +490,7 @@ export class Canvas2DRenderer implements Renderer {
   setPatterns(sources: readonly string[]): void {
     this.#tessellate.patterns = patternLibrary(sources);
     this.#cacheBlock();
-    this.#sceneDirty = true;
+    this.#sceneDirty = this.#contentDirty = true;
   }
 
   /**
@@ -478,7 +505,7 @@ export class Canvas2DRenderer implements Renderer {
       style: (h) => model.tables.textStyles.get(h),
     };
     this.#cacheBlock();
-    this.#sceneDirty = true;
+    this.#sceneDirty = this.#contentDirty = true;
   }
 
   setTransient(primitives: readonly RenderPrimitive[]): void {
@@ -488,7 +515,7 @@ export class Canvas2DRenderer implements Renderer {
 
   /** Redraws the scene on the next frame: something it draws from changed (a bitmap, M1-19). */
   invalidate(): void {
-    this.#sceneDirty = true;
+    this.#sceneDirty = this.#contentDirty = true;
   }
 
   apply(cs: ChangeSet): void {
@@ -550,15 +577,20 @@ export class Canvas2DRenderer implements Renderer {
       cs.header?.some((h) => PAINT_HEADER.has(h.name))
     )
       this.#cacheBlock();
-    this.#sceneDirty = true;
+    this.#sceneDirty = this.#contentDirty = true;
   }
 
   frame(): void {
     const start = this.#now();
-    const reduced = this.#lastFrameSlow;
-    if (this.#sceneDirty || reduced) {
+    const moved = this.#movedScene();
+    const reduced = !moved && this.#lastFrameSlow;
+    this.#forceFull = false;
+    if (!moved && (this.#sceneDirty || reduced)) {
+      const t0 = this.#now();
       this.#drawScene(reduced);
-      this.#sceneDirty = false;
+      this.#sceneMs = this.#now() - t0;
+      this.#sceneView = this.#view;
+      this.#sceneDirty = this.#contentDirty = false;
     }
     if (this.#transientDirty) {
       const t = this.#transientLayer;
@@ -575,8 +607,19 @@ export class Canvas2DRenderer implements Renderer {
     const out = this.#surface.ctx;
     out.setTransform(1, 0, 0, 1, 0, 0);
     out.clearRect(0, 0, this.#surface.canvas.width, this.#surface.canvas.height);
-    out.drawImage(this.#scene.image, 0, 0);
+    if (moved) {
+      out.fillStyle = this.#surround();
+      out.fillRect(0, 0, this.#surface.canvas.width, this.#surface.canvas.height);
+      out.setTransform(...moved);
+      out.drawImage(this.#scene.image, 0, 0);
+      out.setTransform(1, 0, 0, 1, 0, 0);
+    } else out.drawImage(this.#scene.image, 0, 0);
     out.drawImage(this.#transientLayer.image, 0, 0);
+    if (moved) {
+      this.#movedAt = start;
+      this.#settleLater();
+      return;
+    }
 
     this.#lastFrameSlow = this.#now() - start > FRAME_BUDGET_MS;
     if (reduced) {
@@ -591,6 +634,61 @@ export class Canvas2DRenderer implements Renderer {
         });
       }
     }
+  }
+
+  /**
+   * When only the view changed since a heavy scene was drawn, the device transform that takes
+   * the scene bitmap to the view in force; otherwise undefined, and the scene is redrawn.
+   * A world point at device x₀ in the bitmap's view (centre c₀, scale s₀) is at
+   * x₁ = k·x₀ + (W/2)(1 − k) + (c₀ − c₁)·s₁·dpr in the new one, with k = s₁/s₀ (y flips sign).
+   */
+  #movedScene(): [number, number, number, number, number, number] | undefined {
+    const from = this.#sceneView;
+    const to = this.#view;
+    if (!from || this.#forceFull || this.#contentDirty || !this.#sceneDirty) return undefined;
+    if (from.center.x === to.center.x && from.center.y === to.center.y && from.scale === to.scale)
+      return undefined;
+    if (this.#sceneMs <= FRAME_BUDGET_MS && this.#sceneEntries <= HEAVY_SCENE_ENTRIES)
+      return undefined;
+    const k = to.scale / from.scale;
+    const w = this.#width * this.#dpr;
+    const h = this.#height * this.#dpr;
+    const s = to.scale * this.#dpr;
+    return [
+      k,
+      0,
+      0,
+      k,
+      (w / 2) * (1 - k) + (from.center.x - to.center.x) * s,
+      (h / 2) * (1 - k) - (from.center.y - to.center.y) * s,
+    ];
+  }
+
+  /** Draws the scene in full once the view has stayed put for SETTLE_MS. */
+  #settleLater(): void {
+    if (this.#settlePending) return;
+    this.#settlePending = true;
+    const check = (): void => {
+      if (this.#now() - this.#movedAt < SETTLE_MS) {
+        this.#requestIdle(check);
+        return;
+      }
+      this.#settlePending = false;
+      // Something else may have redrawn the scene meanwhile (an edit, a resize).
+      if (!this.#sceneDirty || this.#sceneView === this.#view) return;
+      this.#forceFull = true;
+      this.#lastFrameSlow = false;
+      this.frame();
+    };
+    this.#requestIdle(check);
+  }
+
+  /** What shows around a layout's sheet, or the model background. */
+  #surround(): string {
+    return this.#sheet
+      ? (this.#style.layoutBackground ??
+          mixColors(this.#style.background, '#808080', LAYOUT_SURROUND_MIX))
+      : this.#style.background;
   }
 
   hitTest(screen: { readonly x: number; readonly y: number }, aperture: number): EntityId[] {
@@ -798,18 +896,18 @@ export class Canvas2DRenderer implements Renderer {
 
   #drawScene(reduced: boolean): void {
     this.sceneDraws++;
+    this.#sceneEntries = 0;
     const { ctx, canvas } = this.#scene;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     const sheet = this.#sheet;
-    ctx.fillStyle = sheet
-      ? (this.#style.layoutBackground ??
-        mixColors(this.#style.background, '#808080', LAYOUT_SURROUND_MIX))
-      : this.#style.background;
+    ctx.fillStyle = this.#surround();
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const view = this.#viewFrame();
     if (sheet) this.#drawSheet(ctx, sheet, view);
     for (const vp of this.#viewportList()) this.#drawViewport(ctx, vp, view, reduced);
-    this.#drawPrimitives(ctx, this.#visibleEntries(this.#block, view.box), reduced, view);
+    const entries = this.#visibleEntries(this.#block, view.box);
+    this.#sceneEntries += entries.length;
+    this.#drawPrimitives(ctx, entries, reduced, view);
   }
 
   /** The paper in the background colour and the printable area dashed, in device pixels. */
@@ -866,6 +964,7 @@ export class Canvas2DRenderer implements Renderer {
     };
     const entries = this.#visibleEntries(this.#modelBlock!, box);
     if (entries.length === 0) return;
+    this.#sceneEntries += entries.length;
     // Model coordinates are taken about the model point at the frame centre.
     const o = {
       x: toModel.a * vp.geom.center.x + toModel.c * vp.geom.center.y + toModel.e,
