@@ -2299,4 +2299,48 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(back.getCadObject(0x37c)?.objectName).toBe('LARGE_RADIAL_DIMENSION');
     }
   });
+
+  it('0109 DWG table cells keep their border edges, R2004 visibility and R2010 cell-style flags', () => {
+    // acadsharp sample: table 528 cell (4,0) overrides the top and left edges (colour 63,
+    // lineweight 0.40, visibility) and the background, cell (4,2) also the right edge. The *T9
+    // block draws all of them, and the R2010+ saves state them visible.
+    const cellOf = (d: CadDocument, row: number, column: number) => {
+      const t = d.getCadObject(0x528) as TableEntity;
+      return t.rows[row]!.cells[column]!;
+    };
+    const r2004 = readDwgRaw('third-party/acadsharp/sample_AC1018.dwg');
+    const edges = (d: CadDocument) => {
+      const s = cellOf(d, 4, 0).styleOverride;
+      return [s.topBorder, s.leftBorder].map((b) => [b.color.index, b.isInvisible]);
+    };
+    expect(cellOf(r2004, 4, 0).overrideFlags & 0x24000).toBe(0x24000);
+    expect(edges(r2004)).toEqual([
+      [63, false],
+      [63, false],
+    ]);
+    expect(edges(dwgRawRoundTrip(r2004))).toEqual(edges(r2004));
+
+    // R2010+: the cell style's own override flags come before its content format, whose flags
+    // used to overwrite them; and edge 0x20 is the right edge, 2 the inside horizontal line.
+    const r2010 = readDwgRaw('third-party/acadsharp/sample_AC1024.dwg');
+    const styles = (d: CadDocument) => {
+      const a = cellOf(d, 4, 0).styleOverride;
+      const b = cellOf(d, 4, 2).styleOverride;
+      return {
+        flags: a.cellPropertyOverrideFlags,
+        format: a.propertyOverrideFlags as number,
+        background: a.backgroundColor.index,
+        right: [b.rightBorder.propertyOverrideFlags as number, b.rightBorder.color.index],
+        inside: [b.horizontalInsideBorder.propertyOverrideFlags as number],
+      };
+    };
+    expect(styles(r2010)).toEqual({
+      flags: 0x63e10, // alignment, background, the four margins and their spacing
+      format: 0,
+      background: 165,
+      right: [0x3f, 63],
+      inside: [0x25],
+    });
+    expect(styles(dwgRawRoundTrip(r2010))).toEqual(styles(r2010));
+  });
 });

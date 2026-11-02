@@ -54,11 +54,12 @@ export enum CellAlignmentType {
 export enum CellEdgeFlags {
 	Unknown = 0,
 	Top = 1,
-	Right = 2,
+	// AcDb::GridLineType: 2 is the inside horizontal line and 0x20 the right edge.
+	InsideHorizontal = 2,
 	Bottom = 4,
 	Left = 8,
 	InsideVertical = 16,
-	InsideHorizontal = 32,
+	Right = 32,
 }
 
 export enum CellStyleClass {
@@ -314,6 +315,11 @@ export class CellStyle extends ContentFormat {
 	rightMargin: number = 0;
 	styleClass: CellStyleClass = CellStyleClass.Data;
 	tableCellStylePropertyFlags: TableCellStylePropertyFlags = 0;
+	/**
+	 * The cell style's own override flags, as DWG R2010+ states them before its content format;
+	 * propertyOverrideFlags holds the content format's. Null when the style was not read from DWG.
+	 */
+	cellPropertyOverrideFlags: TableCellStylePropertyFlags | null = null;
 	textColor: Color = Color.byBlock;
 	topBorder: CellBorder = new CellBorder(CellEdgeFlags.Top);
 	cellStyleType: CellStyleType = CellStyleType.Unknown;

@@ -609,6 +609,12 @@ export abstract class DxfSectionReaderBase {
       return true;
     }
 
+    if (tmp.currentCellTemplate != null && code === 7) {
+      // A cell's text style override names the style; it is resolved when the cell is built.
+      tmp.currentCellTemplate.textStyleOverrideName = this._reader.valueAsString;
+      return true;
+    }
+
     switch (code) {
       case 1: {
         let content: CellContent;

@@ -31,6 +31,10 @@ import {
   LineTypeShapeFlags,
   LineWeightType,
   MeasurementUnits,
+  TableEntity,
+  TableEntityCell,
+  TableEntityColumn,
+  TableEntityRow,
   TextStyle,
   ViewModeType,
   XYZ,
@@ -470,5 +474,35 @@ describe('acad-ts local patches', () => {
     const read = DxfReader.readFromStream(bytes).lineTypes!.tryGetValue('GAS_LINE')!;
     const segment = read.segments.find((s) => s.text === 'GAS')!;
     expect(segment.style?.name).toBe('GASFONT');
+  });
+
+  it('0109 a DXF table cell keeps the text style override it names (7)', () => {
+    for (const version of [ACadVersion.AC1018, ACadVersion.AC1032]) {
+      const doc = new CadDocument(version);
+      const style = new TextStyle('NOTES');
+      doc.textStyles!.add(style);
+      const block = new BlockRecord('*T1');
+      doc.blockRecords!.add(block);
+      const table = new TableEntity();
+      table.block = block;
+      table.horizontalDirection = new XYZ(1, 0, 0);
+      const column = new TableEntityColumn();
+      column.width = 10;
+      table.columns.push(column);
+      const row = new TableEntityRow();
+      row.height = 5;
+      const cell = new TableEntityCell();
+      cell.styleOverride.textStyle = style;
+      cell.overrideFlags = 0x10 as never; // text style
+      row.cells.push(cell);
+      table.rows.push(row);
+      doc.entities!.add(table);
+
+      const bytes = writeDxf(doc, new DxfWriterConfiguration());
+      const read = [...DxfReader.readFromStream(bytes).entities!].find(
+        (e): e is TableEntity => e instanceof TableEntity,
+      )!;
+      expect(read.rows[0]!.cells[0]!.styleOverride.textStyle?.name, `${version}`).toBe('NOTES');
+    }
   });
 });

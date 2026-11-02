@@ -4936,7 +4936,7 @@ export class DwgObjectReader extends DwgSectionIO {
       return;
     }
 
-    cellStyle.propertyOverrideFlags = this._mergedReaders.readBitLong() as TableCellStylePropertyFlags;
+    cellStyle.cellPropertyOverrideFlags = this._mergedReaders.readBitLong() as TableCellStylePropertyFlags;
     cellStyle.tableCellStylePropertyFlags = this._mergedReaders.readBitLong() as TableCellStylePropertyFlags;
     cellStyle.backgroundColor = this._mergedReaders.readCmColor(this.r2004Pre);
     cellStyle.contentLayoutFlags = this._mergedReaders.readBitLong() as TableCellContentLayoutFlags;
@@ -5204,7 +5204,7 @@ export class DwgObjectReader extends DwgSectionIO {
         cell.styleOverride.topBorder.lineWeight = this._mergedReaders.readBitShort() as LineWeightType;
       }
       if ((flags & CellOverrideFlags.TopVisibility) !== 0) {
-        cell.styleOverride.topBorder.isInvisible = !this._mergedReaders.readBitShortAsBool();
+        cell.styleOverride.topBorder.isInvisible = this._mergedReaders.readBitShortAsBool();
       }
 
       if ((flags & CellOverrideFlags.RightGridColor) !== 0) {
@@ -5214,7 +5214,7 @@ export class DwgObjectReader extends DwgSectionIO {
         cell.styleOverride.rightBorder.lineWeight = this._mergedReaders.readBitShort() as LineWeightType;
       }
       if ((flags & CellOverrideFlags.RightVisibility) !== 0) {
-        cell.styleOverride.rightBorder.isInvisible = !this._mergedReaders.readBitShortAsBool();
+        cell.styleOverride.rightBorder.isInvisible = this._mergedReaders.readBitShortAsBool();
       }
 
       if ((flags & CellOverrideFlags.BottomGridColor) !== 0) {
@@ -5224,7 +5224,7 @@ export class DwgObjectReader extends DwgSectionIO {
         cell.styleOverride.bottomBorder.lineWeight = this._mergedReaders.readBitShort() as LineWeightType;
       }
       if ((flags & CellOverrideFlags.BottomVisibility) !== 0) {
-        cell.styleOverride.bottomBorder.isInvisible = !this._mergedReaders.readBitShortAsBool();
+        cell.styleOverride.bottomBorder.isInvisible = this._mergedReaders.readBitShortAsBool();
       }
 
       if ((flags & CellOverrideFlags.LeftGridColor) !== 0) {
@@ -5234,7 +5234,7 @@ export class DwgObjectReader extends DwgSectionIO {
         cell.styleOverride.leftBorder.lineWeight = this._mergedReaders.readBitShort() as LineWeightType;
       }
       if ((flags & CellOverrideFlags.LeftVisibility) !== 0) {
-        cell.styleOverride.leftBorder.isInvisible = !this._mergedReaders.readBitShortAsBool();
+        cell.styleOverride.leftBorder.isInvisible = this._mergedReaders.readBitShortAsBool();
       }
     }
 
