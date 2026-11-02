@@ -102,6 +102,7 @@ describe('FontBook with the bundled fonts (M1-09)', () => {
       version: 1,
       name,
       description: name,
+      notice: '',
       above: 42,
       below: 0,
       glyphs: { '65': [size + 4, [[0, 0, size, 0, size, size, 0, size, 0, 0]]] },

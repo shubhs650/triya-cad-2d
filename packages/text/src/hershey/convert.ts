@@ -28,6 +28,8 @@ export interface TriyaStrokeFont {
   readonly version: 1;
   readonly name: string;
   readonly description: string;
+  /** The acknowledgements the Hershey distribution terms require with the data. */
+  readonly notice: string;
   /** Font units from the baseline to the top of capitals (text height maps to this). */
   readonly above: number;
   /** Font units below the baseline that the lowest glyph reaches. */
@@ -35,6 +37,12 @@ export interface TriyaStrokeFont {
   /** Code point (decimal) → glyph, in font units, y up from the baseline, x from the origin. */
   readonly glyphs: Readonly<Record<string, StrokeGlyph>>;
 }
+
+export const HERSHEY_NOTICE =
+  'The Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S. ' +
+  'National Bureau of Standards. The format of the Font data in this distribution was ' +
+  'originally created by James Hurt, Cognition, Inc., 900 Technology Park Drive, Billerica, ' +
+  'MA 01821. Converted for Triya CAD 2D (MIT); accents and characters past ASCII are ours.';
 
 /** Font units per Hershey unit: halves, so the accents we add can sit between Hershey's grid. */
 const UNIT = 2;
@@ -225,6 +233,7 @@ export function buildStrokeFont(
     version: 1,
     name: def.name,
     description: def.description,
+    notice: HERSHEY_NOTICE,
     above,
     below,
     glyphs: Object.fromEntries(

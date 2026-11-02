@@ -3,6 +3,7 @@
   "version": 1,
   "name": "oet-gothici",
   "description": "Hershey Gothic Italian",
+  "notice": "The Hershey Fonts were originally created by Dr. A. V. Hershey while working at the U. S. National Bureau of Standards. The format of the Font data in this distribution was originally created by James Hurt, Cognition, Inc., 900 Technology Park Drive, Billerica, MA 01821. Converted for Triya CAD 2D (MIT); accents and characters past ASCII are ours.",
   "above": 42,
   "below": 14,
   "glyphs": {

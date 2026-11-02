@@ -7,6 +7,7 @@ export {
 export {
   buildStrokeFont,
   formatStrokeFont,
+  HERSHEY_NOTICE,
   parseHershey,
   type HersheyGlyph,
   type StrokeGlyph,
