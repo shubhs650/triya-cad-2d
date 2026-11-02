@@ -469,7 +469,7 @@ describe('triyaToAcad fills, images, underlays and multilines', () => {
     expectGeometry(reopened(save(model), e.handle)?.geom, next);
   });
 
-  it('writes an underlay’s normal and clip boundary to DWG, and refuses them on DXF (M1-83)', () => {
+  it('writes an underlay’s normal and clip boundary to DWG and DXF (M1-83)', () => {
     for (const changes of [
       { clip: [P(0, 0), P(4, 0), P(4, 3)] },
       { rotation: 0.5, upsideDown: true, normal: MINUS_Z },
@@ -480,7 +480,7 @@ describe('triyaToAcad fills, images, underlays and multilines', () => {
       edit(model, (b) => b.updateEntity(e.id, { geom: next }));
 
       expectGeometry(reopened(save(model, 'dwg'), e.handle)?.geom, next);
-      expect(() => save(model), JSON.stringify(changes)).toThrow(/PDFUNDERLAY .*M1-83/);
+      expectGeometry(reopened(save(model), e.handle)?.geom, next);
     }
   });
 
@@ -606,6 +606,20 @@ describe('triyaToAcad fills, images, underlays and multilines', () => {
         contrast: 100,
         fade: 0,
         clip: [],
+      },
+      {
+        // M1-83: a −Z underlay with an inverted polygonal clip survives a DXF save.
+        kind: 'PDFUNDERLAY',
+        definition: objectNamed('PDFDEFINITION', 'sheet-1'),
+        position: P(-2, 3),
+        scale: { x: 2, y: 2, z: 1 },
+        rotation: 1,
+        upsideDown: true,
+        flags: 1 | 2 | 16,
+        contrast: 100,
+        fade: 0,
+        clip: [P(0, 0), P(4, 0), P(4, 3), P(1, 2)],
+        normal: MINUS_Z,
       },
       {
         kind: 'MLINE',

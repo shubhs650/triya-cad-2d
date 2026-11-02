@@ -1,0 +1,52 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 38fecb5..16304be 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -42,6 +42,7 @@ import { PolyfaceMesh } from '../../../Entities/PolyfaceMesh.js';
+ import { PolygonMesh } from '../../../Entities/PolygonMesh.js';
+ import { PolygonMeshVertex } from '../../../Entities/PolygonMeshVertex.js';
+ import { PdfUnderlay } from '../../../Entities/PdfUnderlay.js';
++import type { UnderlayEntity } from '../../../Entities/UnderlayEntity.js';
+ import { PdfUnderlayDefinition } from '../../../Objects/PdfUnderlayDefinition.js';
+ import { Ole2Frame } from '../../../Entities/Ole2Frame.js';
+ import { Ray } from '../../../Entities/Ray.js';
+@@ -2129,6 +2130,16 @@ export abstract class DxfSectionReaderBase {
+       case 340:
+         tmp.definitionHandle = this._reader.valueAsHandle;
+         return true;
++      case 11:
++        // A clip boundary vertex: repeated 11/21 pairs with no count (DXF reference, UNDERLAY).
++        (tmp.cadObject as UnderlayEntity).clipBoundaryVertices.push(new XY(this._reader.valueAsDouble, 0));
++        return true;
++      case 21: {
++        const vertices = (tmp.cadObject as UnderlayEntity).clipBoundaryVertices;
++        const last = vertices.at(-1);
++        if (last) vertices[vertices.length - 1] = new XY(last.x, this._reader.valueAsDouble);
++        return true;
++      }
+       default:
+         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
+     }
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index bfd3690..6913605 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1454,9 +1454,18 @@ export abstract class DxfSectionWriterBase {
+     this._writer.write(42, underlay.yScale, subclass);
+     this._writer.write(43, underlay.zScale, subclass);
+     this._writer.write(50, underlay.rotation, subclass);
++    // The normal and the clip boundary follow the DXF reference (UNDERLAY): 210 after the
++    // rotation, stated only when it is not +Z as AutoCAD does, and the clip as repeated 11/21
++    // pairs after the fade, with no count (two points are a rectangle's corners).
++    const n = underlay.normal;
++    if (n.x !== 0 || n.y !== 0 || n.z !== 1) this._writer.writeVector(210, n, subclass);
+     this._writer.write(280, underlay.flags, subclass);
+     this._writer.write(281, underlay.contrast, subclass);
+     this._writer.write(282, underlay.fade, subclass);
++    for (const v of underlay.clipBoundaryVertices) {
++      this._writer.write(11, v.x);
++      this._writer.write(21, v.y);
++    }
+   }
+ 
+   private _writePoint(point: Point, map: DxfMap): void {
