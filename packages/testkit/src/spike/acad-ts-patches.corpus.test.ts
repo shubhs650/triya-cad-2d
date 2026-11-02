@@ -11,6 +11,8 @@ import type {
   CellStyleMap,
   GeoData,
   TableStyle,
+  BlockAction,
+  BlockVisibilityParameter,
 } from '@node-projects/acad-ts';
 import {
   ACadVersion,
@@ -23,6 +25,7 @@ import {
   DwgReader,
   DwgReaderConfiguration,
   DwgWriter,
+  DwgWriterConfiguration,
   DxfReader,
   DxfReaderConfiguration,
   DxfWriter,
@@ -1953,6 +1956,77 @@ describe('acad-ts local patches (corpus-backed)', () => {
     expect(scale(doc)).toBe(0.0254);
     for (const binary of [false, true]) {
       expect(scale(dxfRawRoundTrip(doc, binary)), `binary ${binary}`).toBe(0.0254);
+    }
+  });
+
+  it('0092 dynamic-block graph nodes join the document with their graph', () => {
+    // BLOCKVISIBILITYPARAMETER: the parameter 33B, its grip 33C and grip locations 33D/33E are
+    // owned by ACAD_EVALUATION_GRAPH 33A and reached only through its nodes. The builder linked
+    // them to the nodes but never registered them, so the document did not hold them.
+    const file = 'third-party/acadsharp/dynamic-blocks/BLOCKVISIBILITYPARAMETER';
+    const nodes = (d: CadDocument) =>
+      [0x33b, 0x33c, 0x33d, 0x33e].map((h) => {
+        const o = d.getCadObject(h);
+        return [o?.constructor.name, o?.owner === d.getCadObject(0x33a)];
+      });
+    const expected = [
+      ['BlockVisibilityParameter', true],
+      ['BlockVisibilityGrip', true],
+      ['BlockGripExpression', true],
+      ['BlockGripExpression', true],
+    ];
+    const dxf = readDxfRaw(corpusBytes(`${file}.dxf`));
+    const dwg = readDwgRaw(`${file}.dwg`);
+    expect(nodes(dxf)).toEqual(expected);
+    expect(nodes(dwg)).toEqual(expected);
+    // Saved as @triya/io saves (fidelity configurations write the dynamic-block graph).
+    const dxfConfig = new DxfWriterConfiguration();
+    dxfConfig.writeDynamicBlockData = true;
+    for (const binary of [false, true]) {
+      const back = readDxfRaw(writeDxf(dxf, binary, dxfConfig));
+      expect(nodes(back), `binary ${binary}`).toEqual(expected);
+    }
+    const dwgConfig = new DwgWriterConfiguration();
+    dwgConfig.writeDynamicBlockData = true;
+    const dwgBack = readDwgRaw(DwgWriter.writeToBuffer(dwg, dwgConfig).slice().buffer);
+    expect(nodes(dwgBack)).toEqual(expected);
+  });
+
+  it('0093 a DXF block action keeps its graph owner and reads its selection set', () => {
+    // BLOCKLINEARPARAMETER BLOCKSCALEACTION 26C is owned by graph 25B and acts on CIRCLE 258
+    // (AcDbBlockAction 71 = 1, 330 = 258). That 330 was taken as the owner, so the action was
+    // neither linked to its graph nor given its entity; the DWG reader reads both.
+    const file = 'third-party/acadsharp/dynamic-blocks/BLOCKLINEARPARAMETER';
+    const action = (d: CadDocument) => {
+      const a = d.getCadObject(0x26c) as BlockAction | null;
+      return [a?.owner?.handle, a?.entities.map((e) => e.handle)];
+    };
+    expect(action(readDwgRaw(`${file}.dwg`))).toEqual([0x25b, [0x258]]);
+    expect(action(readDxfRaw(corpusBytes(`${file}.dxf`)))).toEqual([0x25b, [0x258]]);
+  });
+
+  it('0094 DXF saves write dynamic-block graph nodes as read', () => {
+    // The field writer for these objects writes only what their maps hold, so a DXF save dropped
+    // the visibility states of BLOCKVISIBILITYPARAMETER 33B (and of every sample_AC10xx file).
+    const doc = readDxfRaw(
+      corpusBytes('third-party/acadsharp/dynamic-blocks/BLOCKVISIBILITYPARAMETER.dxf'),
+    );
+    const states = (d: CadDocument) =>
+      [...(d.getCadObject(0x33b) as BlockVisibilityParameter).states.values()].map((s) => [
+        s.name,
+        s.entities.map((e) => e.handle),
+      ]);
+    expect(states(doc).map(([name]) => name)).toEqual([
+      'VisibilityState0',
+      'VisibilityState1',
+      'HideAll',
+      'ShowAll',
+    ]);
+    const config = new DxfWriterConfiguration();
+    config.writeDynamicBlockData = true;
+    for (const binary of [false, true]) {
+      const back = readDxfRaw(writeDxf(doc, binary, config));
+      expect(states(back), `binary ${binary}`).toEqual(states(doc));
     }
   });
 });

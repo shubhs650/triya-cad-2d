@@ -34,6 +34,8 @@ import { CadUnknownNonGraphicalObjectTemplate } from '../../Templates/CadUnknown
 import { CadEvaluationExpressionTemplate } from '../../Templates/CadEvaluationExpressionTemplate.js';
 import { CadBlockElementTemplate } from '../../Templates/CadBlockElementTemplate.js';
 import { CadBlockActionTemplate } from '../../Templates/CadBlockActionTemplate.js';
+import { BlockAction } from '../../../Objects/Evaluations/BlockAction.js';
+import { EvaluationExpression } from '../../../Objects/Evaluations/EvaluationExpression.js';
 import { CadBlockActionBasePtTemplate } from '../../Templates/CadBlockActionBasePtTemplate.js';
 import { CadBlockParameterTemplate } from '../../Templates/CadBlockParameterTemplate.js';
 import { CadBlock1PtParameterTemplate } from '../../Templates/CadBlock1PtParameterTemplate.js';
@@ -323,7 +325,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
   protected readObjectCodes(template: CadTemplate, readObject: ReadObjectDelegate, objectType: Function): CadTemplate {
     // The DXF writer cannot write these from their fields, so keep the codes as read for it.
     const obj = template.cadObject;
-    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle || obj instanceof ProxyObject || obj instanceof TableContent)) {
+    if (!this._builder.configuration.keepRawDxfPassthroughObjects || !(obj instanceof Material || obj instanceof VisualStyle || obj instanceof ProxyObject || obj instanceof TableContent || obj instanceof EvaluationExpression)) {
       return this._readObjectCodes(template, readObject, objectType);
     }
     const raw: DxfRawCode[] = [];
@@ -382,7 +384,9 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
   }
 
   private _readMappedDynamicObject(object: CadObject, reader: ReadObjectDelegate): CadTemplate {
-    return this.readObjectCodes(new CadNonGraphicalObjectTemplate(object as never), reader, object.constructor);
+    // An action's template resolves its selection set (AcDbBlockAction 330s), as the DWG reader's does.
+    const template = object instanceof BlockAction ? new CadBlockActionTemplate(object) : new CadNonGraphicalObjectTemplate(object as never);
+    return this.readObjectCodes(template, reader, object.constructor);
   }
 
   private _readFieldList(template: CadTemplate, map: DxfMap): boolean {
@@ -2035,6 +2039,12 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
 
   private _readBlockAction(template: CadTemplate, map: DxfMap): boolean {
     switch (this._reader.code as number) {
+      // The selection set; read through the common codes, each 330 replaced the graph as owner.
+      case 330:
+        if (template instanceof CadBlockActionTemplate) {
+          template.entityHandles.add(this._reader.valueAsHandle);
+        }
+        return true;
       default:
         if (!this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(DxfSubclassMarker.blockAction)!)) {
           return this._readBlockElement(template, map);
