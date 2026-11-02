@@ -421,8 +421,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       return;
     }
 
-    // No field writer exists for these; write the group codes the reader kept.
-    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent) && co.rawDxfCodes != null) {
+    // No field writer exists for these (dynamic-block graph nodes: one that writes only what
+    // their maps hold, which drops visibility states); write the group codes the reader kept.
+    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent || co instanceof EvaluationExpression) && co.rawDxfCodes != null) {
       this.writeRawObject(co);
       return;
     }
@@ -707,7 +708,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       }
       return co.rawDxfCodes != null;
     }
-    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent) && co.rawDxfCodes != null) {
+    if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent || co instanceof EvaluationExpression) && co.rawDxfCodes != null) {
       return true;
     }
 	if (!this.configuration.writeDynamicBlockData && (

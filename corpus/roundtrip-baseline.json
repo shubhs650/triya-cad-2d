@@ -22,8 +22,8 @@
       "differences": 0
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dwg": {
-      "status": "diff",
-      "differences": 1
+      "status": "clean",
+      "differences": 0
     },
     "public/third-party/acadsharp/dynamic-blocks/BLOCKFLIPPARAMETER.dxf": {
       "status": "clean",

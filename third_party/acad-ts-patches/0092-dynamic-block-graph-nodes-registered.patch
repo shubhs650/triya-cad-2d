@@ -1,0 +1,42 @@
+diff --git a/src/IO/CadDocumentBuilder.ts b/src/IO/CadDocumentBuilder.ts
+index abaffe7..e36dedf 100644
+--- a/src/IO/CadDocumentBuilder.ts
++++ b/src/IO/CadDocumentBuilder.ts
+@@ -5,6 +5,7 @@ import { UnknownEntity } from '../Entities/UnknownEntity.js';
+ import { CadDictionary } from '../Objects/CadDictionary.js';
+ import { UnknownNonGraphicalObject } from '../Objects/UnknownNonGraphicalObject.js';
+ import { addRawOwnedObject } from '../Objects/RawObjectData.js';
++import { EvaluationGraph } from '../Objects/Evaluations/EvaluationGraph.js';
+ import { XRecord } from '../Objects/XRecrod.js';
+ import { AppId } from '../Tables/AppId.js';
+ import { BlockRecord } from '../Tables/BlockRecord.js';
+@@ -108,7 +109,7 @@ export abstract class CadDocumentBuilder {
+ 	 * collection registers it and the writers never reach it. Attach it to its raw owner instead.
+ 	 */
+ 	private _attachRawOwnedObjects(): void {
+-		const ownedByXRecords: CadObject[] = [];
++		const ownedThroughEntries: CadObject[] = [];
+ 		for (const template of this.templatesMap.values()) {
+ 			const child = template.cadObject;
+ 			const ownerHandle = (template as CadTemplate).ownerHandle;
+@@ -122,13 +123,18 @@ export abstract class CadDocumentBuilder {
+ 			} else if (owner instanceof XRecord && owner.entries.some(e => e.value === child && e.code >= 350 && e.code <= 369)) {
+ 				// Owned through an XRECORD's soft/hard owner entry (tables' DATATABLE, for example).
+ 				child.owner ??= owner;
+-				ownedByXRecords.push(child);
++				ownedThroughEntries.push(child);
++			} else if (owner instanceof EvaluationGraph && owner.nodes.some(n => n.expression === child)) {
++				// A dynamic-block parameter, grip or action is reached only through its graph's nodes;
++				// register it with the graph, as an XRECORD entry is.
++				child.owner ??= owner;
++				ownedThroughEntries.push(child);
+ 			}
+ 		}
+ 
+ 		// An XRECORD joins the document only with its own owner, which may be a raw object
+ 		// registered above; register what it owns once it is in.
+-		let pending = ownedByXRecords;
++		let pending = ownedThroughEntries;
+ 		let progress = true;
+ 		while (pending.length > 0 && progress) {
+ 			progress = false;
