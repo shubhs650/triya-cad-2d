@@ -137,9 +137,8 @@ const R12_VIEW = [
 
 /**
  * What acad-ts cannot write to the format at hand: an R12 viewport's view (M1-86), its DWG writer leaves a LARGE_RADIAL_DIMENSION
- * out (roadmap M1-74) and a VIEWPORT's style sheet and visual style (M1-85), and its DXF writer
- * a PDFUNDERLAY's normal (210) and clip boundary (11, M1-83), so an edited or new one would be
- * lost.
+ * out (roadmap M1-74) and a VIEWPORT's style sheet and visual style (M1-85), so an edited or
+ * new one would be lost.
  */
 function formatProblems(
   format: CadFormat | undefined,
@@ -168,17 +167,6 @@ function formatProblems(
         `${e.type} ${e.handle}: acad-ts writes no DWG style sheet or visual style for it (M1-85)`,
       ];
     }
-  }
-  if (format === 'dxf' && e.geom.kind === 'PDFUNDERLAY') {
-    const b = before?.geom.kind === 'PDFUNDERLAY' ? before.geom : undefined;
-    const g = e.geom;
-    const lost =
-      (b ? !same(b.normal, g.normal) : g.normal !== undefined) ||
-      (b ? !same(b.clip, g.clip) : g.clip.length > 0);
-    if (lost)
-      return [
-        `${e.type} ${e.handle}: acad-ts writes no DXF normal or clip boundary for it (M1-83)`,
-      ];
   }
   return [];
 }
