@@ -58,7 +58,7 @@ Read ticks for entities (M1-04) mean every entity of the type in every readable 
 | Table | Read | Edit | Write | Test |
 |---|---|---|---|---|
 | LAYER (+ VP overrides via xdata/dictionaries) | ✓ record (VP overrides not yet) | | | |
-| LTYPE (simple + complex) | ✓ (patterns, text and shape elements fitted by `dashPath`, M1-13 part 1; `.lin` files read by `parseLin`; drawn by the renderer at LTSCALE × object scale, M1-13 part 3; embedded text and shapes not drawn yet, M1-45) | | | `style.corpus.test.ts` (473 records) |
+| LTYPE (simple + complex) | ✓ (patterns, text and shape elements fitted by `dashPath`, M1-13 part 1; `.lin` files read by `parseLin`; drawn by the renderer at LTSCALE × object scale, M1-13 part 3; embedded text and shapes drawn with their STYLE's font or shape file, M1-45 part 1; DXF segment styles (340) read since patch 0105) | | | `style.corpus.test.ts` (473 records) |
 | STYLE (text styles, SHX and TTF, bigfont) | ✓ | | | |
 | DIMSTYLE (all DIMVARS + overrides via xdata) | ✓ record, all DIMVARs (xdata overrides not yet); DIMVARs a DXF leaves out read as AutoCAD's defaults since acad-ts patch 0075, so every acadsharp DXF style equals its DWG twin's; R2004+ DWG true colours (DIMCLRD/E/T, DIMTFILLCLR) are kept beside the ACI AutoCAD writes for them in DXF (M1-55) and LEADER/TOLERANCE draw in them | | | |
 | APPID | ✓ | | | |
