@@ -315,7 +315,7 @@ PUBLISH loops layouts into a multi-page `PdfSink` with bookmarks and page labels
 - `packages/engine` unit tests (Vitest): geometry, parser, commands via scripted `PromptAnswer` sequences — no browser.
 - `packages/io` round-trip tests on `corpus/public/*` (Node): open → save → reopen → structural diff.
 - Fidelity tests: headless Chromium (Playwright) renders each corpus file via the real renderer to PNG at the reference's resolution; perceptual diff vs AutoCAD reference with per-file tolerance.
-- Perf tests: Playwright + `performance.now()` around open/pan/zoom/osnap on `bench-*.dwg`; thresholds from `PRD.md` §12.
+- Perf tests: Playwright + `performance.now()` around open/pan/zoom/osnap on the generated bench drawings (`packages/testkit/src/bench`, DEC-045); thresholds from `PRD.md` §12.
 - Offline test: Playwright with network blocked after load.
 - Private corpus: same harness, run locally with `pnpm test:private`, never in CI.
 

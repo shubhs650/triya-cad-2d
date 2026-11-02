@@ -207,17 +207,17 @@ Detailed in `UI_SPEC.md`. Summary:
 
 ## 12. Quantitative acceptance targets
 
-Measured on a mid-range laptop (i5-class, integrated GPU, 16 GB) in headless Chromium in CI, and on the reference corpus files `corpus/public/bench-*.dwg`.
+Measured on a mid-range laptop (i5-class, integrated GPU, 16 GB) in headless Chromium in CI, and on the generated benchmark drawings `bench-100k` and `bench-ga` (synthetic, built by a seeded generator in `packages/testkit/src/bench`; DEC-045).
 
 | ID | Target |
 |---|---|
 | T1 | Cold start (installed, offline): canvas interactive < 1.5 s; first-ever load ≤ 10 MB before usable, remainder streamed with "Ready offline" indicator |
-| T2 | Open: `bench-100k.dwg` (≈30 MB, 100k entities, 50 blocks, 5 layouts) renders < 3 s; `bench-ga.dwg` (5 MB) < 0.5 s |
+| T2 | Open: `bench-100k` (100k entities, 50 blocks, 5 layouts) renders < 3 s; `bench-ga` (25k entities, a vessel-GA-sized drawing) < 0.5 s |
 | T3 | Pan/zoom ≥ 60 fps with 100k entities visible; input latency ≤ 16 ms on command prompts; osnap marker response < 50 ms at 100k entities |
 | T4 | Fidelity: ≥ 99 % of entities in public corpus pixel-match AutoCAD reference plots within tolerance; 100 % of private corpus opens without error; AUDIT = 0 on all Triya-saved files; round-trip structural diff = 0 |
-| T5 | In-place save of `bench-100k.dwg` < 2 s; autosave within 5 s of last edit, never to the original |
+| T5 | In-place save of `bench-100k` < 2 s; autosave within 5 s of last edit, never to the original |
 | T6 | A1 sheet with CTB to vector PDF < 2 s; lineweights verified in Acrobat and PDF-XChange at 100 % |
-| T7 | Memory < 1 GB for `bench-100k.dwg`; no growth across 20 open/close cycles (±5 %) |
+| T7 | Memory < 1 GB for `bench-100k`; no growth across 20 open/close cycles (±5 %) |
 | T8 | Every feature works with the network disabled, including SHX/pattern/CTB drops and PDF export |
 | T9 | Home-tab Draw/Modify/Annotate commands all visible at 1366×768; no horizontal scroll at 1280; full ribbon at ≥ 1920 |
 
