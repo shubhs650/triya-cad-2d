@@ -6,7 +6,7 @@
 // a browser `Worker` and `AbortSignal` satisfy them.
 import * as Comlink from 'comlink';
 import type { CadFormat, ReadSummary } from '../read';
-import type { IoApi, IoProgress } from './api';
+import type { IoApi, IoProgress, OpenResult } from './api';
 
 export type IoWorker = Comlink.Endpoint & { terminate(): void };
 
@@ -37,10 +37,34 @@ function abortError(): Error {
  * not copied: afterwards the caller's buffer is detached. A view into a larger buffer is
  * copied first, so the rest of that buffer stays usable.
  */
-export async function readInWorker(
+export function readInWorker(
   bytes: Uint8Array,
   options: ReadInWorkerOptions,
 ): Promise<ReadSummary> {
+  return runJob(bytes, options, (remote, own, progress) =>
+    remote.read(own, options.format, progress),
+  );
+}
+
+/**
+ * Opens a drawing in a new worker (M1-22): parses `bytes` and resolves with its summary and
+ * the Triya document mapped from it. The bytes are transferred as by `readInWorker`.
+ */
+export function openInWorker(bytes: Uint8Array, options: ReadInWorkerOptions): Promise<OpenResult> {
+  return runJob(bytes, options, (remote, own, progress) =>
+    remote.open(own, options.format, progress),
+  );
+}
+
+async function runJob<T>(
+  bytes: Uint8Array,
+  options: ReadInWorkerOptions,
+  call: (
+    remote: Comlink.Remote<IoApi>,
+    own: Uint8Array,
+    progress: ((p: IoProgress) => void) | undefined,
+  ) => Promise<T>,
+): Promise<T> {
   const { signal } = options;
   if (signal?.aborted) throw abortError();
   const own =
@@ -54,7 +78,7 @@ export async function readInWorker(
       signal?.addEventListener('abort', onAbort, { once: true });
     });
     const progress = options.onProgress && Comlink.proxy(options.onProgress);
-    const job = remote.read(Comlink.transfer(own, [own.buffer]), options.format, progress);
+    const job = call(remote, Comlink.transfer(own, [own.buffer]), progress);
     return await Promise.race([job, aborted]);
   } finally {
     if (onAbort) signal?.removeEventListener('abort', onAbort);

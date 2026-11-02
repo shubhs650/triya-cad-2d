@@ -1,4 +1,4 @@
-// @triya/web: Vite + React PWA shell (the only app; built out in M1-22).
-// Browser package: DOM types are available here.
-// Intentionally empty until its first roadmap task lands.
+// @triya/web: the app (entry: index.html → src/main.tsx). Nothing imports it; this module
+// exists so `@triya/web` resolves and the module-boundary lint can report any package that
+// tries to (tests/lint/boundaries.test.ts).
 export {};
