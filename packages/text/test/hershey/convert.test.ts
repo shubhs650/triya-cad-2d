@@ -110,7 +110,68 @@ describe('buildStrokeFont', () => {
     expect(oStroke[0]! < 6 && oStroke[2]! > 30).toBe(true);
     // Ç: the cedilla hangs below the baseline.
     expect(Math.min(...font.glyphs[String(0xc7)]![1].at(-1)!.filter((_, k) => k % 2))).toBe(-9);
-    expect(font.below).toBe(9);
+    // The lowest ink is the turned "!" of ¡ (an A here), hanging from the x-height (M1-59).
+    expect(font.below).toBe(14);
+  });
+
+  it('builds Latin Extended-A letters from a base letter and an accent (M1-59)', () => {
+    const [, c] = font.glyphs['67']!;
+    const top = Math.max(...c.flatMap((s) => s.filter((_, k) => k % 2)));
+    const xs = c.flatMap((s) => s.filter((_, k) => k % 2 === 0));
+    const cx = Math.round((Math.min(...xs) + Math.max(...xs)) / 2);
+    // Č: the caron, a v centred over the C's ink, 3 units above its top.
+    const caron = font.glyphs[String(0x10c)]![1];
+    expect(caron.slice(0, -1)).toEqual(c);
+    expect(caron.at(-1)).toEqual([cx - 5, top + 8, cx, top + 3, cx + 5, top + 8]);
+    // ı: i without its dot; ĭ loses it too, į keeps it under its ogonek.
+    const i = font.glyphs['105']![1];
+    expect(font.glyphs[String(0x131)]![1]).toEqual([i[1]]);
+    expect(font.glyphs[String(0x12d)]![1]).toHaveLength(2);
+    expect(font.glyphs[String(0x12f)]![1].slice(0, 2)).toEqual(i);
+    // Ő: two acute marks over the O (centred at 22, top 42).
+    expect(font.glyphs[String(0x150)]![1].slice(-2)).toEqual([
+      [17, 45, 20, 51],
+      [23, 45, 26, 51],
+    ]);
+  });
+
+  it('builds ligatures and turned marks from whole letters (M1-59)', () => {
+    // ĳ: i, then j (an A here) one i advance on.
+    const [iAdvance, i] = font.glyphs['105']!;
+    const [aAdvance] = font.glyphs['65']!;
+    const ij = font.glyphs[String(0x133)]!;
+    expect(ij[0]).toBe(iAdvance + aAdvance);
+    expect(ij[1].slice(0, i.length)).toEqual(i);
+    expect(ij[1][i.length]).toEqual([18 + iAdvance, 42, 2 + iAdvance, 0]);
+    // Œ: the O cut at its middle, closed by the E's stem (an A's first leg here) put there.
+    const xs = (s: readonly number[]) => s.filter((_, k) => k % 2 === 0);
+    const oXs = font.glyphs['79']![1].flatMap(xs);
+    const middle = Math.round((Math.min(...oXs) + Math.max(...oXs)) / 2);
+    const oe = font.glyphs[String(0x152)]![1];
+    const oPart = oe.slice(0, -3);
+    expect(oPart.length).toBeGreaterThan(0);
+    expect(Math.max(...oPart.flatMap(xs))).toBe(middle);
+    // The A's first leg runs from x = 18 at the top to 2 at the baseline; at mid-height (21)
+    // it is at 10, which lands on the O's middle.
+    expect(oe.at(-3)).toEqual([middle + 8, 42, middle - 8, 0]);
+    // ¡: the "!" (an A) turned half a turn, reaching up to the x-height of x.
+    const turned = font.glyphs[String(0xa1)]![1];
+    expect(turned[0]).toEqual([18, -14, 34, 28]);
+  });
+
+  it('leans upright glyphs to an italic face', () => {
+    const slanted = buildStrokeFont(
+      { ...def(), slanted: { glyphs: { 0x416: 501 }, slope: 0.5 } },
+      parseHershey(SAMPLE),
+    );
+    expect(slanted.glyphs[String(0x416)]).toEqual([
+      36,
+      [
+        [39, 42, 2, 0],
+        [39, 42, 34, 0],
+        [15, 14, 35, 14],
+      ],
+    ]);
   });
 
   it('draws the diameter sign for %%c at both code points', () => {
