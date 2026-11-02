@@ -2,28 +2,30 @@
 
 One row per DXF/DWG entity, object or table type. A type is **done** only when all five columns are ticked and a corpus file exercises it. Threads update rows in the PR that lands the work. "P" in a column means handled purely by passthrough (preserved, not interpreted) — that is a valid final state for the types marked *(passthrough-only)*.
 
+Since M1-05 every save goes through `exportDocument`: it starts from the retained original and writes back only what differs from the original's own mapping, so a type Triya does not edit is written back untouched (its Write cell stays empty until its writer exists, roadmap M1-75), and the round-trip suite gates zero differences on every readable corpus file.
+
 Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) · **Edit** (modifiable by Triya commands) · **Write** (rebuilt on export without loss) · **Test** (corpus file + round-trip + fidelity reference).
 
 ## Entities
 
 | Type | Read | Render | Edit | Write | Test file |
 |---|---|---|---|---|---|
-| LINE | ✓ | | | | |
-| XLINE | ✓ (drawn clipped to the view, its linetype laid out from the base point both ways so dashes stay put while panning, M1-45; text and shapes in the linetype not drawn) | | | | |
-| RAY | ✓ (drawn clipped to the view, its linetype laid out from the base point onward, M1-45; text and shapes in the linetype not drawn) | | | | |
-| CIRCLE | ✓ | | | | |
-| ARC | ✓ | | | | |
-| ELLIPSE | ✓ | | | | |
-| POINT | ✓ | | | | |
-| LWPOLYLINE | ✓ (widths drawn as filled segments, tapered along lines and arcs, mitred where wide segments meet, outlined under FILLMODE 0, and bounded by those outlines, M1-46; wide segments draw continuous whatever the linetype until M1-66) | | | | |
+| LINE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| XLINE | ✓ (drawn clipped to the view, its linetype laid out from the base point both ways so dashes stay put while panning, M1-45; text and shapes in the linetype not drawn) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| RAY | ✓ (drawn clipped to the view, its linetype laid out from the base point onward, M1-45; text and shapes in the linetype not drawn) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| CIRCLE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| ARC | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| ELLIPSE | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| POINT | ✓ | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| LWPOLYLINE | ✓ (widths drawn as filled segments, tapered along lines and arcs, mitred where wide segments meet, outlined under FILLMODE 0, and bounded by those outlines, M1-46; wide segments draw continuous whatever the linetype until M1-66) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | POLYLINE (2D) + VERTEX + SEQEND | ✓ (widths, with the POLYLINE's 40/41 defaults, drawn as for LWPOLYLINE, M1-46) | | | | |
 | POLYLINE (3D, mesh, pface) *(render as 2D projection; edit none)* | ✓ 3D (meshes not yet) | | — | | |
 | SPLINE | ✓ (a spline stored only as fit points, as R2013+ DWGs can hold one, draws and is bounded as AutoCAD's interpolation of them, M1-47; tangent, closed, √chord, uniform and fit-tolerance cases unverified until M1-65) | | | | |
 | SOLID | ✓ | | | | |
 | TRACE | ✓ as SOLID (acad-ts reads TRACE as SOLID, M1-32) | | | | |
 | 3DFACE *(render edges)* | ✓ | | — | | |
-| TEXT | ✓ (drawn by the renderer as SHX strokes or TrueType fills from the loaded fonts, with AutoCAD's justification, M1-41 part 1; unverified against AutoCAD plots until M1-24/M1-26) | | | | |
-| MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036; drawn by the renderer from the loaded fonts with colour, font, stack, big-font and decoration codes, M1-41 part 1; background fill, mask and frame, M1-41 part 2; vertical text not yet) | | | | |
+| TEXT | ✓ (drawn by the renderer as SHX strokes or TrueType fills from the loaded fonts, with AutoCAD's justification, M1-41 part 1; unverified against AutoCAD plots until M1-24/M1-26) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
+| MTEXT | ✓ (contents with codes as stored; R2018 columns kept through DXF and DWG saves, 0035/0036; drawn by the renderer from the loaded fonts with colour, font, stack, big-font and decoration codes, M1-41 part 1; background fill, mask and frame, M1-41 part 2; vertical text not yet) | | | ✓ (changes written back by handle onto the original, only the fields that changed, M1-05; `export.corpus.test.ts`) | |
 | ATTDEF | ✓ (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | ATTRIB | ✓ folded into its INSERT (version, lock position and R2018 multiline text kept through a DXF save, 0032) | | | | |
 | INSERT | ✓ (drawn by the renderer through nesting with ByBlock and layer-0 inheritance, M1-14 part 1; attributes not drawn yet) | | | | |

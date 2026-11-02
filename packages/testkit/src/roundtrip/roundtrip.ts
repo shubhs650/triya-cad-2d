@@ -1,9 +1,12 @@
 /**
  * Round-trip harness (docs/TESTING.md §3): open → save in the same version and format →
- * reopen → `structuralDiff(original, reopened)`.
+ * reopen → `structuralDiff(original, reopened)`. The save is Triya's own (M1-05): the drawing
+ * is mapped into a `DocumentModel` and `exportDocument` writes it back from the retained
+ * original, which is what the app's Save does.
  */
 import type { CadDocument } from '@node-projects/acad-ts';
-import { readCadDocument, writeCadDocument } from '@triya/io';
+import { DocumentModel } from '@triya/engine';
+import { documentInit, exportDocument, readCadDocument } from '@triya/io';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from './clock.ts';
 import { structuralDiff, summarizeDiff, type Difference, type DiffSummary } from './diff.ts';
@@ -85,7 +88,8 @@ function roundTripUnpinned(bytes: Uint8Array, options: RoundTripOptions): RoundT
   const notes: Record<string, number> = {};
   t = performance.now();
   try {
-    written = writeCadDocument(working, {
+    const model = DocumentModel.create(documentInit(working));
+    written = exportDocument(working, model, {
       format: format === 'dwg' ? 'dwg' : 'dxf',
       binary: format === 'dxf-binary',
       onNotification: (message) => {
