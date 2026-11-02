@@ -17,6 +17,10 @@ import {
   DxfWriterConfiguration,
   EvaluationGraph,
   EvaluationGraphNode,
+  DimensionAligned,
+  DimensionArc,
+  DimensionLinear,
+  DimensionRadius,
   DimensionStyle,
   DxfClass,
   DxfClassCollection,
@@ -768,5 +772,89 @@ describe('acad-ts local patches', () => {
     // A SOLID stays a SOLID.
     expect(first(DxfReader.readFromStream(bytes(text))).objectName).toBe('SOLID');
     expect(first(dwgRoundTrip(doc)).objectName).toBe('SOLID');
+  });
+
+  it('0128 a DXF DIMENSION keeps its line spacing factor (41) and oblique angle (52)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const linear = new DimensionLinear();
+    linear.secondPoint = new XYZ(10, 0, 0);
+    linear.rotation = 0.2;
+    linear.lineSpacingFactor = 1.5;
+    linear.extLineRotation = 0.3;
+    const aligned = new DimensionAligned();
+    aligned.secondPoint = new XYZ(4, 3, 0);
+    aligned.lineSpacingFactor = 0.75;
+    aligned.extLineRotation = 0.25;
+    const square = new DimensionAligned();
+    square.secondPoint = new XYZ(0, 5, 0);
+    // An ARC_DIMENSION has 41 twice: the line spacing in AcDbDimension, the end angle after
+    // AcDbArcDimension.
+    const arc = new DimensionArc();
+    arc.center = new XYZ(0, 0, 0);
+    arc.firstPoint = new XYZ(5, 0, 0);
+    arc.secondPoint = new XYZ(0, 5, 0);
+    arc.startAngle = 0.1;
+    arc.endAngle = 1.2;
+    arc.lineSpacingFactor = 2;
+    const radius = new DimensionRadius();
+    radius.angleVertex = new XYZ(3, 0, 0);
+    radius.lineSpacingFactor = 1.25;
+    for (const d of [linear, aligned, square, arc, radius]) doc.entities!.add(d);
+
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const back = readCadDocument(bytes);
+    const same = <T>(d: T): T => back.getCadObject(Number((d as Line).handle)) as T;
+
+    expect(same(linear)).toBeInstanceOf(DimensionLinear);
+    expect(same(linear).lineSpacingFactor).toBe(1.5);
+    expect(same(linear).extLineRotation).toBeCloseTo(0.3, 12);
+    expect(same(linear).rotation).toBeCloseTo(0.2, 12);
+    expect(same(aligned).lineSpacingFactor).toBe(0.75);
+    expect(same(aligned).extLineRotation).toBeCloseTo(0.25, 12);
+    expect(same(square).extLineRotation).toBe(0);
+    expect(same(arc).lineSpacingFactor).toBe(2);
+    expect(same(arc).startAngle).toBeCloseTo(0.1, 12);
+    expect(same(arc).endAngle).toBeCloseTo(1.2, 12);
+    expect(same(radius).lineSpacingFactor).toBe(1.25);
+    // 52 is optional (DXF reference, DIMENSION): AutoCAD states it only for an oblique
+    // dimension, in degrees like every DXF angle, in AcDbAlignedDimension.
+    const lines = String.fromCharCode(...bytes).split(/\r?\n/);
+    const dims: string[][][] = [];
+    for (let k = 0; k + 1 < lines.length; k += 2) {
+      const pair = [lines[k]!.trim(), lines[k + 1]!];
+      if (pair[0] === '0') {
+        if (pair[1] === 'DIMENSION') dims.push([]);
+        else if (dims.at(-1)?.length) dims.push([]);
+      }
+      dims.at(-1)?.push(pair);
+    }
+    const oblique = (d: string[][]) => {
+      const at = d.findIndex(([c]) => c === '52');
+      return at < 0 ? undefined : [d.slice(0, at).findLast(([c]) => c === '100')![1], d[at]![1]];
+    };
+    expect(
+      dims
+        .filter((d) => d.length)
+        .map(oblique)
+        .slice(0, 3),
+    ).toEqual([
+      ['AcDbAlignedDimension', String((0.3 * 180) / Math.PI)],
+      ['AcDbAlignedDimension', '14.32394487827058'],
+      undefined,
+    ]);
+
+    // ezdxf writes 52 in AcDbDimension, before the subclass marker that makes the dimension
+    // aligned or linear.
+    const ezdxf = lines
+      .join('\n')
+      .replace(
+        /(\n100\nAcDbDimension\n)((?:(?!\n {2}0\n)[\s\S])*?)\n 52\n([^\n]+)/,
+        '$1 52\n$3\n$2',
+      );
+    expect(ezdxf).not.toBe(lines.join('\n'));
+    const moved = DxfReader.readFromStream(Uint8Array.from(ezdxf, (c) => c.charCodeAt(0)));
+    const movedLinear = moved.getCadObject(Number(linear.handle)) as DimensionLinear;
+    expect(movedLinear).toBeInstanceOf(DimensionLinear);
+    expect(movedLinear.extLineRotation).toBeCloseTo(0.3, 12);
   });
 });

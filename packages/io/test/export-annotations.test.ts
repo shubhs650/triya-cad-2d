@@ -183,10 +183,7 @@ function expectGeometry(actual: EntityGeometry | undefined, expected: EntityGeom
 const P = (x: number, y: number) => ({ x, y });
 const UP_TO_DOWN = { normal: { x: 0, y: 0, z: -1 } };
 
-/**
- * Fields every DIMENSION edit below changes, on a −Z plane at a new elevation. The line spacing
- * factor is checked on its own: a DXF save loses it (M1-81).
- */
+/** Fields every DIMENSION edit below changes, on a −Z plane at a new elevation. */
 const SHARED = {
   definitionPoint: P(20, 25),
   textPosition: P(-15, 26),
@@ -196,6 +193,7 @@ const SHARED = {
   horizontalDirection: 0.4,
   attachment: 2,
   lineSpacingStyle: 2,
+  lineSpacing: 1.5,
   flipArrows: [true, false],
   elevation: -3,
   ...UP_TO_DOWN,
@@ -266,15 +264,20 @@ describe('triyaToAcad annotations', () => {
     expectGeometry(reopened(save(model), e.handle)?.geom, next);
   });
 
-  it('writes the line spacing factor and the oblique angle, which a DXF save loses (M1-81)', () => {
+  it('writes the line spacing factor and the oblique angle, through a DXF save (M1-82)', () => {
     const model = open();
     const linear = find(model, 'DIMENSION', 'linear');
     const aligned = find(model, 'DIMENSION', 'aligned');
+    const nextLinear = {
+      ...linear.geom,
+      lineSpacing: 1.5,
+      oblique: 1.2,
+      ...UP_TO_DOWN,
+    } as EntityGeometry;
+    const nextAligned = { ...aligned.geom, lineSpacing: 0.8, oblique: 0.25 } as EntityGeometry;
     edit(model, (b) => {
-      b.updateEntity(linear.id, {
-        geom: { ...linear.geom, lineSpacing: 1.5, oblique: 1.2, ...UP_TO_DOWN } as EntityGeometry,
-      });
-      b.updateEntity(aligned.id, { geom: { ...aligned.geom, oblique: 0.25 } as EntityGeometry });
+      b.updateEntity(linear.id, { geom: nextLinear });
+      b.updateEntity(aligned.id, { geom: nextAligned });
     });
     const doc = readCadDocument(FILE);
     triyaToAcad(doc, model);
@@ -285,6 +288,10 @@ describe('triyaToAcad annotations', () => {
     expect(acad(linear.handle).extLineRotation).toBeCloseTo(Math.PI - 1.2, 12);
     // The aligned dimension is on −Z already.
     expect(acad(aligned.handle).extLineRotation).toBeCloseTo(Math.PI - 0.25, 12);
+    // acad-ts's DXF reader skipped 41 and its writer left out 52 until patch 0128.
+    const bytes = save(model);
+    expectGeometry(reopened(bytes, linear.handle)?.geom, nextLinear);
+    expectGeometry(reopened(bytes, aligned.handle)?.geom, nextAligned);
   });
 
   it('restyles a dimension and points it at another block', () => {
@@ -366,8 +373,7 @@ describe('triyaToAcad annotations', () => {
       horizontalDirection: 0,
       attachment: 5,
       lineSpacingStyle: 1,
-      // A DXF save reads any other factor back as 0 until M1-81.
-      lineSpacing: 0,
+      lineSpacing: 1.25,
     };
     const geoms: EntityGeometry[] = [
       {
