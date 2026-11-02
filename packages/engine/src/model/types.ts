@@ -1269,6 +1269,47 @@ export interface SortEntsTable extends NonGraphicalObject {
   readonly entries: readonly { readonly entity: Handle; readonly sort: Handle }[];
 }
 
+/**
+ * A raster image's definition (DXF IMAGEDEF, M1-19): the file an IMAGE shows and the pixel
+ * size it was attached at. The pixels themselves are not in the drawing; the app resolves
+ * `fileName` to a file (M1-21) and hands the decoded bitmap to the renderer.
+ */
+export interface ImageDefinition extends NonGraphicalObject {
+  readonly type: 'IMAGEDEF';
+  /** DXF 1: the path as saved, often relative (`.\photo.jpg`). */
+  readonly fileName: string;
+  /** DXF 10: the image size in pixels. */
+  readonly size: Vec2;
+  /** DXF 11: one pixel's default size in AutoCAD units. */
+  readonly pixelSize: Vec2;
+  /** DXF 280: whether the image is loaded. */
+  readonly loaded: boolean;
+  /** DXF 281: resolution units, 0 none, 2 centimetres, 5 inches. */
+  readonly units: number;
+}
+
+/**
+ * The drawing's image display settings (DXF RASTERVARIABLES, `ACAD_IMAGE_VARS`): IMAGEFRAME
+ * and IMAGEQUALITY. A drawing without the object uses AutoCAD's initial values, frame on and
+ * high quality.
+ */
+export interface RasterVariables extends NonGraphicalObject {
+  readonly type: 'RASTERVARIABLES';
+  /** DXF 70: image frames shown. */
+  readonly frame: boolean;
+  /** DXF 71. */
+  readonly quality: 'draft' | 'high';
+  /** DXF 72: insertion units, 0 none, 1 millimetres, … 5 inches. */
+  readonly units: number;
+}
+
+/** WIPEOUTFRAME (DXF WIPEOUTVARIABLES, `ACAD_WIPEOUT_VARS`); without it frames show. */
+export interface WipeoutVariables extends NonGraphicalObject {
+  readonly type: 'WIPEOUTVARIABLES';
+  /** DXF 70: wipeout frames shown. */
+  readonly frame: boolean;
+}
+
 /** A header variable value as read: string, number, point, or handle (as a string). */
 export type HeaderValue = string | number | boolean | Vec2 | Vec3;
 

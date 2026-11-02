@@ -1,0 +1,1 @@
+- M1-19 part 1 (#91): raster images draw from the app's decoded bitmaps, clipped, framed and adjusted (brightness, contrast, fade, transparency), and wipeouts mask what is under them; image definitions and the IMAGEFRAME/WIPEOUTFRAME settings are read from the file.

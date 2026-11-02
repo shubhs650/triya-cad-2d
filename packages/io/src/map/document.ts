@@ -1,7 +1,8 @@
 // A whole drawing as a Triya document (M1-22): header, tables, every block definition with its
-// base point, the mapped entities in block order, the SORTENTSTABLEs and the layouts with their
-// page setups (M1-18), which is what the app builds its engine and renderer from. The objects
-// M1-05's passthrough store keeps are left out: nothing that reads this needs them yet.
+// base point, the mapped entities in block order, the SORTENTSTABLEs, the image definitions and
+// settings (M1-19) and the layouts with their page setups (M1-18), which is what the app builds
+// its engine and renderer from. The objects M1-05's passthrough store keeps are left out:
+// nothing that reads this needs them yet.
 import type { CadDocument } from '@node-projects/acad-ts';
 import {
   DocumentModel,
@@ -17,6 +18,7 @@ import {
 import { hex } from './common';
 import { mapEntities } from './entities';
 import { mapHeader } from './header';
+import { mapImageObjects } from './images';
 import { mapLayouts } from './layouts';
 import { mapSortEnts } from './sortents';
 import { mapTables } from './tables';
@@ -32,7 +34,7 @@ export function documentInit(doc: CadDocument): DocumentInit {
       const p = b.blockEntity?.basePoint;
       return { handle: hex(b.handle), name: b.name, basePoint: { x: p?.x ?? 0, y: p?.y ?? 0 } };
     }),
-    objects: mapSortEnts(doc),
+    objects: [...mapSortEnts(doc), ...mapImageObjects(doc)],
     layouts: mapLayouts(doc),
     entities: mapEntities(doc).entities,
   };
