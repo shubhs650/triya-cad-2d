@@ -78,13 +78,28 @@ export class FontBook implements TextFonts {
   }
 
   face(font: MTextFont): TextFace | undefined {
+    const r = this.resolve(font);
+    if (r.substitute !== undefined || !r.face) this.missing.add(font.name);
+    if (r.substitute !== undefined) this.substitutions.set(font.name, r.substitute);
+    return r.face;
+  }
+
+  /**
+   * How `face` would draw a font, without recording anything: its own face, or the loaded
+   * font (by file key) that stands in for it, or nothing. The health report asks this per
+   * drawing, as `missing` and `substitutions` gather every drawing the book has drawn.
+   */
+  resolve(font: MTextFont): { readonly face?: TextFace; readonly substitute?: string } {
     const found = this.#find(font);
-    if (found) return found;
-    this.missing.add(font.name);
+    if (found) return { face: found };
     const key = this.#substitute(font.name);
-    if (key === undefined) return undefined;
-    this.substitutions.set(font.name, key);
-    return { kind: 'shx', font: this.#shx.get(key)! };
+    if (key === undefined) return {};
+    return { face: { kind: 'shx', font: this.#shx.get(key)! }, substitute: key };
+  }
+
+  /** Whether an SHX file (a big font or shape file) of this name is loaded. */
+  hasShx(name: string): boolean {
+    return this.#shx.has(fileKey(name));
   }
 
   /**
