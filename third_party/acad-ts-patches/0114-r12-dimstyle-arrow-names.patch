@@ -1,0 +1,91 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index 7f9c4dc..029e398 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -372,7 +372,9 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+         dimensionStyle.alternateDimensioningSuffix = this._reader.valueAsString;
+         return true;
+       case 5:
+-        template.dimbL_Name = this._reader.valueAsString;
++        // 5 is a handle code, so the value was parsed as hex (BOXBLANK became 11); R12's DIMBLK
++        // is a block name, which the line holds as written.
++        template.dimbL_Name = this._reader.valueRaw.trim();
+         return true;
+       case 6:
+         template.dimblK1_Name = this._reader.valueAsString;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index e406caf..f56c547 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -145,6 +145,14 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+   private _writeDimensionStyle(style: DimensionStyle, map: DxfClassMap): void {
+     this._writer.write(3, style.postFix, map);
+     this._writer.write(4, style.alternateDimensioningSuffix, map);
++    if (this.version <= ACadVersion.AC1009) {
++      // R12 has no handles: it names the arrow blocks (DIMBLK, DIMBLK1, DIMBLK2), a built-in
++      // arrowhead without the underscore of its block, as AutoCAD writes them. Code 5 is a handle
++      // code, which the writers write as its value's text (upper case, as R12 names are).
++      this._writer.write(5, r12ArrowName(style.arrowBlock));
++      this._writer.write(6, r12ArrowName(style.dimArrow1));
++      this._writer.write(7, r12ArrowName(style.dimArrow2));
++    }
+ 
+     this._writer.write(40, style.scaleFactor, map);
+     this._writer.write(41, style.arrowSize, map);
+@@ -423,3 +431,11 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+     }
+   }
+ }
++
++/** The name R12 gives an arrow block: AutoCAD's built-in arrowheads lose their underscore. */
++function r12ArrowName(block: BlockRecord | null): string {
++  const name = block?.name ?? '';
++  return /^_(ARCHTICK|BOXBLANK|BOXFILLED|CLOSED|CLOSEDBLANK|DATUMBLANK|DATUMFILLED|DOT|DOTBLANK|DOTSMALL|INTEGRAL|NONE|OBLIQUE|OPEN|OPEN30|OPEN90|ORIGIN|ORIGIN2|SMALL)$/i.test(name)
++    ? name.slice(1)
++    : name;
++}
+diff --git a/src/IO/Templates/CadDimensionStyleTemplate.ts b/src/IO/Templates/CadDimensionStyleTemplate.ts
+index e6ce17a..fba56a3 100644
+--- a/src/IO/Templates/CadDimensionStyleTemplate.ts
++++ b/src/IO/Templates/CadDimensionStyleTemplate.ts
+@@ -65,19 +65,37 @@ export class CadDimensionStyleTemplate extends CadTableEntryTemplate<DimensionSt
+ 		if (leaderArrow) {
+ 			this.cadObject.leaderArrow = leaderArrow;
+ 		}
+-		const arrowBlock = this.getTableReference(builder, this.dimblk, this.dimbL_Name ?? '', BlockRecord);
++		const arrowBlock = this.getTableReference(builder, this.dimblk, this._arrowName(builder, this.dimbL_Name), BlockRecord);
+ 		if (arrowBlock) this.cadObject.arrowBlock = arrowBlock;
+ 
+-		const dimArrow1 = this.getTableReference(builder, this.dimblk1, this.dimblK1_Name ?? '', BlockRecord);
++		const dimArrow1 = this.getTableReference(builder, this.dimblk1, this._arrowName(builder, this.dimblK1_Name), BlockRecord);
+ 		if (dimArrow1) {
+ 			this.cadObject.dimArrow1 = dimArrow1;
+ 		}
+ 
+-		const dimArrow2 = this.getTableReference(builder, this.dimblk2, this.dimblK2_Name ?? '', BlockRecord);
++		const dimArrow2 = this.getTableReference(builder, this.dimblk2, this._arrowName(builder, this.dimblK2_Name), BlockRecord);
+ 		if (dimArrow2) {
+ 			this.cadObject.dimArrow2 = dimArrow2;
+ 		}
+ 
+ 		const external = this.getTableReference(builder, this.blockHandle, '', BlockRecord);
+ 	}
++
++	/**
++	 * The block an R12 DIMBLK/DIMBLK1/DIMBLK2 (5/6/7) names. AutoCAD names a built-in arrowhead
++	 * there without the underscore of its block (BOXBLANK for _BOXBLANK), as the DIMBLK system
++	 * variable takes it; a block of the name as written wins.
++	 */
++	private _arrowName(builder: CadDocumentBuilder, name: string | null): string {
++		if (!name || name.startsWith('_') || !CadDimensionStyleTemplate._builtInArrows.has(name.toUpperCase())) return name ?? '';
++		if (builder.tryGetTableEntry(name, BlockRecord) instanceof BlockRecord) return name;
++		return builder.tryGetTableEntry(`_${name}`, BlockRecord) instanceof BlockRecord ? `_${name}` : name;
++	}
++
++	// AutoCAD's built-in arrowheads (DIMBLK system variable), without their leading underscore.
++	private static readonly _builtInArrows = new Set([
++		'ARCHTICK', 'BOXBLANK', 'BOXFILLED', 'CLOSED', 'CLOSEDBLANK', 'DATUMBLANK', 'DATUMFILLED', 'DOT',
++		'DOTBLANK', 'DOTSMALL', 'INTEGRAL', 'NONE', 'OBLIQUE', 'OPEN', 'OPEN30', 'OPEN90', 'ORIGIN',
++		'ORIGIN2', 'SMALL',
++	]);
+ }

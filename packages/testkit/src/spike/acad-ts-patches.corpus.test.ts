@@ -2344,4 +2344,79 @@ describe('acad-ts local patches (corpus-backed)', () => {
     });
     expect(styles(dwgRawRoundTrip(r2010))).toEqual(styles(r2010));
   });
+  it('0112 a layer keeps its material (DXF 347, DWG R2007+) through read and save', () => {
+    // Every layer of the ACadSharp R2007+ samples points at the Global material (98).
+    // CadLayerTemplate looked it up and dropped it, and neither writer wrote it.
+    const materials = (d: CadDocument) =>
+      [...d.layers!].map((l) => [l.name, l.material?.name, l.material?.handle]);
+    const dxf = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1021_ascii.dxf'));
+    const want = [...dxf.layers!].map((l) => [l.name, 'Global', 0x98]);
+    expect(materials(dxf)).toEqual(want);
+    expect(materials(dxfRawRoundTrip(dxf, false))).toEqual(want);
+    expect(materials(dxfRawRoundTrip(dxf, true))).toEqual(want);
+    expect(dxf.getCadObject(0x98)).toBeInstanceOf(Material);
+
+    const dwg = readDwgRaw('third-party/acadsharp/sample_AC1021.dwg');
+    const global = [...dwg.layers!].map((l) => [l.name, 'Global', 0x98]);
+    expect(materials(dwg)).toEqual(global);
+    expect(materials(dwgRawRoundTrip(dwg))).toEqual(global);
+  });
+
+  it('0113 a nameless shape-file text style keeps its empty name', () => {
+    // AutoCAD writes the STYLE record of a shape file loaded for complex linetypes or SHAPE
+    // entities with an empty name (flag 1). The table renamed each unnamed0, unnamed1, … so a
+    // save wrote them as text styles of that name; R12 records have no handle to tell them by.
+    for (const path of [
+      'third-party/acadsharp/sample_AC1009_ascii.dxf',
+      'third-party/acadsharp/sample_AC1015_ascii.dxf',
+    ]) {
+      const shapes = (d: CadDocument) =>
+        [...d.textStyles!]
+          .filter((s) => s.isShapeFile)
+          .map((s) => [s.name, s.filename, s.height === 0 ? 0 : s.height]);
+      const doc = readDxfRaw(corpusBytes(path));
+      const want = [
+        ['', 'ltypeshp.shx', 0],
+        ['', expect.stringMatching(/test_shape\.shx$/), 0],
+      ];
+      expect(shapes(doc), path).toEqual(want);
+      expect(shapes(dxfRawRoundTrip(doc, false)), `${path} saved`).toEqual(want);
+      // Still found by every other name, and STANDARD is still the default entry.
+      expect(doc.textStyles!.tryGetValue('Standard')).toBeDefined();
+      expect(doc.textStyles!.tryGetValue('')).toBeUndefined();
+    }
+    // DWG: the style control lists each record; a nameless one was listed under two names.
+    const dwg = readDwgRaw('third-party/acadsharp/sample_AC1018.dwg');
+    const nameless = (d: CadDocument) =>
+      [...d.textStyles!].filter((s) => s.isShapeFile).map((s) => [s.name, s.handle]);
+    expect(nameless(dwg)).toEqual([
+      ['', 0x27f],
+      ['', 0x887],
+    ]);
+    expect(nameless(dwgRawRoundTrip(dwg))).toEqual(nameless(dwg));
+  });
+
+  it('0114 an R12 DIMBLK names its arrow block, a built-in arrowhead without its underscore', () => {
+    // R12 has no handles: DIMSTYLE 5/6/7 name the arrow blocks, and AutoCAD writes a built-in
+    // arrowhead without the underscore of its block (BOXBLANK for the _BOXBLANK block). 5 is a
+    // handle code, so acad-ts parsed BOXBLANK as hex (11) and wrote no 5/6/7 at all in R12.
+    for (const path of [
+      'third-party/acadsharp/sample_AC1009_ascii.dxf',
+      'third-party/acadsharp/sample_AC1009_binary.dxf',
+    ]) {
+      const arrows = (d: CadDocument) => {
+        const s = d.dimensionStyles!.tryGetValue('CUSTOM_STYLE_LTYPES')!;
+        return [s.arrowBlock?.name, s.dimArrow1?.name, s.dimArrow2?.name];
+      };
+      const doc = readDxfRaw(corpusBytes(path));
+      expect(arrows(doc), path).toEqual(['_BOXBLANK', undefined, undefined]);
+      expect(arrows(dxfRawRoundTrip(doc, false)), `${path} saved`).toEqual(arrows(doc));
+      expect(arrows(dxfRawRoundTrip(doc, true)), `${path} saved binary`).toEqual(arrows(doc));
+      // Written as AutoCAD writes it.
+      const text = new TextDecoder('latin1').decode(writeDxf(doc, false));
+      expect(text).toMatch(
+        /\n\s*2\r?\nCUSTOM_STYLE_LTYPES\r?\n(?:.*\r?\n)*?\s*5\r?\nBOXBLANK\r?\n\s*6\r?\n\r?\n\s*7\r?\n\r?\n/,
+      );
+    }
+  });
 });

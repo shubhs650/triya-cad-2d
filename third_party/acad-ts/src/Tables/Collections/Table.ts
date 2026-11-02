@@ -34,6 +34,13 @@ export abstract class Table<T extends TableEntry> extends CadObject implements I
 
 	public add(item: T): void {
 		if (!item.name || !item.name.trim()) {
+			if (item.keepsEmptyName) {
+				// Kept under a key no name can have, so lookups by name never find it. A table control
+				// can list an entry twice (DWG); a named one lands on the same key, so this one must too.
+				if ([...this.entries.values()].includes(item)) return;
+				this.addEntry(this.createName('\u0000nameless'), item);
+				return;
+			}
 			item.name = this.createName('unnamed');
 		}
 		this.addEntry(item.name, item);
@@ -149,10 +156,14 @@ export abstract class Table<T extends TableEntry> extends CadObject implements I
 			throw new Error(`The name ${e.oldName} belongs to a default entry.`);
 		}
 
-		const entry = this.entries.get(e.oldName.toUpperCase());
-		if (entry) {
+		// A nameless entry is kept under a key of its own (keepsEmptyName).
+		const oldKey = e.oldName
+			? e.oldName.toUpperCase()
+			: [...this.entries].find(([, v]) => v === sender)?.[0];
+		const entry = oldKey === undefined ? undefined : this.entries.get(oldKey);
+		if (entry && oldKey !== undefined) {
 			this.entries.set(e.newName.toUpperCase(), entry);
-			this.entries.delete(e.oldName.toUpperCase());
+			this.entries.delete(oldKey);
 		}
 		this._referenceHandler.changeKey(e.oldName.toUpperCase(), e.newName.toUpperCase());
 	}

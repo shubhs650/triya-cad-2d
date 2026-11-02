@@ -65,19 +65,37 @@ export class CadDimensionStyleTemplate extends CadTableEntryTemplate<DimensionSt
 		if (leaderArrow) {
 			this.cadObject.leaderArrow = leaderArrow;
 		}
-		const arrowBlock = this.getTableReference(builder, this.dimblk, this.dimbL_Name ?? '', BlockRecord);
+		const arrowBlock = this.getTableReference(builder, this.dimblk, this._arrowName(builder, this.dimbL_Name), BlockRecord);
 		if (arrowBlock) this.cadObject.arrowBlock = arrowBlock;
 
-		const dimArrow1 = this.getTableReference(builder, this.dimblk1, this.dimblK1_Name ?? '', BlockRecord);
+		const dimArrow1 = this.getTableReference(builder, this.dimblk1, this._arrowName(builder, this.dimblK1_Name), BlockRecord);
 		if (dimArrow1) {
 			this.cadObject.dimArrow1 = dimArrow1;
 		}
 
-		const dimArrow2 = this.getTableReference(builder, this.dimblk2, this.dimblK2_Name ?? '', BlockRecord);
+		const dimArrow2 = this.getTableReference(builder, this.dimblk2, this._arrowName(builder, this.dimblK2_Name), BlockRecord);
 		if (dimArrow2) {
 			this.cadObject.dimArrow2 = dimArrow2;
 		}
 
 		const external = this.getTableReference(builder, this.blockHandle, '', BlockRecord);
 	}
+
+	/**
+	 * The block an R12 DIMBLK/DIMBLK1/DIMBLK2 (5/6/7) names. AutoCAD names a built-in arrowhead
+	 * there without the underscore of its block (BOXBLANK for _BOXBLANK), as the DIMBLK system
+	 * variable takes it; a block of the name as written wins.
+	 */
+	private _arrowName(builder: CadDocumentBuilder, name: string | null): string {
+		if (!name || name.startsWith('_') || !CadDimensionStyleTemplate._builtInArrows.has(name.toUpperCase())) return name ?? '';
+		if (builder.tryGetTableEntry(name, BlockRecord) instanceof BlockRecord) return name;
+		return builder.tryGetTableEntry(`_${name}`, BlockRecord) instanceof BlockRecord ? `_${name}` : name;
+	}
+
+	// AutoCAD's built-in arrowheads (DIMBLK system variable), without their leading underscore.
+	private static readonly _builtInArrows = new Set([
+		'ARCHTICK', 'BOXBLANK', 'BOXFILLED', 'CLOSED', 'CLOSEDBLANK', 'DATUMBLANK', 'DATUMFILLED', 'DOT',
+		'DOTBLANK', 'DOTSMALL', 'INTEGRAL', 'NONE', 'OBLIQUE', 'OPEN', 'OPEN30', 'OPEN90', 'ORIGIN',
+		'ORIGIN2', 'SMALL',
+	]);
 }

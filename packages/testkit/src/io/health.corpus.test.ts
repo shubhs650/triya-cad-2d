@@ -113,7 +113,7 @@ describe('health report on the public corpus', () => {
     expect(r12.fonts.missing).toContainEqual({
       font: 'ltypeshp.shx',
       substitute: undefined,
-      styles: ['unnamed0'],
+      styles: [''], // a shape file's style has an empty name
     });
   });
 
