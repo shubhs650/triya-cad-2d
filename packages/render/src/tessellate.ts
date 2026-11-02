@@ -7,8 +7,8 @@
 // units, fitted by `dashPath`/`dashPolyline` on the curve flattened as finely as a spline. The
 // dashed stroke keeps the exact continuous path beside it, which the renderer draws once a
 // pattern is under a pixel and measures for picking, so a click in a gap still selects.
-// Text and shapes inside complex linetypes leave their gap empty until text and shape
-// rendering exist (M1-45).
+// Text and shapes inside complex linetypes draw in their gaps through the text engine and SHX
+// shapes (M1-45, `linetypeEmbedPrimitives`) when fonts are passed.
 //
 // INSERT, DIMENSION, ACAD_TABLE and MULTILEADER yield nothing here: the renderer draws them
 // from their blocks or parts (`expandInsert`, M1-14, M1-15, M1-17 and M1-52). Kinds drawn by later tasks yield nothing
@@ -52,7 +52,7 @@ import {
 import { dashPath, dashPolyline, type DashedPath } from './style/dash';
 import { colorValue } from './style/resolve';
 import { patternLength, type LinePattern } from './style/pattern';
-import { textPrimitives, type TextContext } from './text';
+import { linetypeEmbedPrimitives, textPrimitives, type TextContext } from './text';
 import { imagePrimitives, type ImageFrames } from './image';
 
 /** What tessellating some kinds needs beyond the geometry and paint. */
@@ -252,7 +252,16 @@ export function tessellate(
     run.forEach((p, i) => path.push(i === 0 ? PATH_M : PATH_L, p.x, p.y));
   // A zero-length segment: the round cap draws it as a dot as wide as the line.
   for (const p of dashed.dots) path.push(PATH_M, p.x, p.y, PATH_L, p.x, p.y);
-  return [{ ...stroke(path, paint), continuous: first.path, patternLength: P }];
+  const out: RenderPrimitive[] = [
+    { ...stroke(path, paint), continuous: first.path, patternLength: P },
+  ];
+  // Text and shapes in the gaps (M1-45), drawn with the dashes and only with them: once the
+  // pattern is under a pixel the renderer draws the continuous stroke alone.
+  if (dashed.embeds.length > 0 && ctx.text) {
+    const { linetype: _, ...plain } = paint;
+    out.push(...linetypeEmbedPrimitives(dashed.embeds, plain, ctx.text));
+  }
+  return out;
 }
 
 /**
