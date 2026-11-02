@@ -1,8 +1,9 @@
 // TriyaToAcad on the public corpus (M1-05, M1-75): a markup-style edit of every entity Triya can
 // write (move it; grow circles and arcs, turn arcs, text, blocks and feature control frames;
-// move hatches with their pattern origin, images, wipeouts, underlays and multilines) must save so that the edited
-// entities map back to the edit, and every other object in the file comes back exactly as
-// read: `structuralDiff` ignoring only the edited handles reports nothing (TESTING.md §3).
+// move hatches with their pattern origin, images, wipeouts, underlays, multilines, multileaders
+// and viewport frames) must save so that the edited entities map back to the edit, and every
+// other object in the file comes back exactly as read: `structuralDiff` ignoring only the
+// edited handles reports nothing (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
 import { readFileSync } from 'node:fs';
 import { Insert, Polyline } from '@node-projects/acad-ts';
@@ -222,9 +223,30 @@ function edited(g: EntityGeometry): EntityGeometry {
         start: move(g.start),
         vertices: g.vertices.map((v) => ({ ...v, position: move(v.position) })),
       };
+    case 'MULTILEADER':
+      return {
+        ...g,
+        contentBase: move(g.contentBase),
+        ...(g.text ? { text: { ...g.text, position: move(g.text.position) } } : {}),
+        ...(g.block ? { block: { ...g.block, position: move(g.block.position) } } : {}),
+        branches: g.branches.map((b) => ({
+          ...b,
+          connection: move(b.connection),
+          lines: b.lines.map((l) => ({ ...l, vertices: l.vertices.map(move) })),
+        })),
+      };
+    case 'VIEWPORT':
+      // MOVE of the frame in paper space; the view it shows stays.
+      return { ...g, center: move(g.center) };
     default:
       throw new Error(`no edit for ${g.kind}`);
   }
+}
+
+function edit(model: DocumentModel, e: Entity, geom: EntityGeometry): void {
+  const b = new ChangeSetBuilder(model);
+  b.updateEntity(e.id, { geom });
+  model.apply(b.build());
 }
 
 /** Equal up to float noise relative to the drawing's magnitude; angles compared mod 2π. */
@@ -252,6 +274,24 @@ function near(a: unknown, b: unknown, key = ''): boolean {
 describe('TriyaToAcad edits on the public corpus', () => {
   it('covers the readable corpus', () => {
     expect(readable.length).toBeGreaterThan(100);
+  });
+
+  it('refuses an R12 viewport’s view, which lives in its MVIEW xdata (M1-86)', () => {
+    const path = 'public/third-party/acadsharp/sample_AC1009_ascii.dxf';
+    const bytes = new Uint8Array(readFileSync(`${corpusDir}${path}`));
+    for (const changes of [
+      { viewHeight: 1 },
+      { twist: 0.5 },
+      { frozenLayers: [] as string[], flags: 0 },
+    ]) {
+      const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
+      const vp = [...model.entities()].find((e) => e.type === 'VIEWPORT')!;
+      edit(model, vp, { ...vp.geom, ...changes } as EntityGeometry);
+
+      expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
+        /VIEWPORT .*M1-86/,
+      );
+    }
   });
 
   it.each(readable.map((f) => [f.path, f] as const))(
