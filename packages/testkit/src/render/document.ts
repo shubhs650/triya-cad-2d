@@ -1,7 +1,8 @@
 // A corpus file as a Triya document, assembled from the AcadToTriya mappers the way the app
 // will once M1-22 opens files: header, tables, every block definition with its base point, the
-// mapped entities in block order, and the SORTENTSTABLEs. Layouts, and the objects M1-05's
-// passthrough store keeps, are left out: nothing that reads this needs them yet.
+// mapped entities in block order, the SORTENTSTABLEs and the layouts with their page setups
+// (M1-18). The objects M1-05's passthrough store keeps are left out: nothing that reads this
+// needs them yet.
 import type { CadDocument } from '@node-projects/acad-ts';
 import {
   DocumentModel,
@@ -13,7 +14,7 @@ import {
   type TextMeasure,
   type Vec2,
 } from '@triya/engine';
-import { mapEntities, mapHeader, mapSortEnts, mapTables } from '@triya/io';
+import { mapEntities, mapHeader, mapLayouts, mapSortEnts, mapTables } from '@triya/io';
 
 const hex = (h: number | bigint): string => h.toString(16).toUpperCase();
 
@@ -29,6 +30,7 @@ export function documentInit(doc: CadDocument): DocumentInit {
       return { handle: hex(b.handle), name: b.name, basePoint: { x: p?.x ?? 0, y: p?.y ?? 0 } };
     }),
     objects: mapSortEnts(doc),
+    layouts: mapLayouts(doc),
     entities: mapEntities(doc).entities,
   };
 }
