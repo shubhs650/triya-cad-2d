@@ -394,6 +394,39 @@ export class DwgObjectReader extends DwgSectionIO {
 
       this._builder.addTemplate(template);
     }
+
+    if (this._builder.configuration.keepUnreachableObjects) {
+      this._readUnreachableObjects();
+    }
+  }
+
+  /**
+   * Objects in the object map that no reference reached: their owner is not in the file (a block
+   * record the map lacks, a dictionary that was erased). AutoCAD keeps them in the database, so
+   * they are kept as their raw record, whatever their type, for the writer to store unchanged.
+   */
+  private _readUnreachableObjects(): void {
+    for (const [handle, offset] of this._map) {
+      if (handle === 0 || this._readedObjects.has(handle) || this._builder.tryGetObjectTemplate(handle) != null) {
+        continue;
+      }
+      const type = this._getEntityType(offset);
+      this._readedObjects.set(handle, type);
+      if (this._size <= 0) {
+        continue;
+      }
+      const obj = new UnknownNonGraphicalObject(this._classes.get(type as number) ?? null);
+      obj.handle = handle;
+      const start = this._objectInitialPos >> 3;
+      obj.rawDwgData = {
+        version: this._version,
+        typeCode: this._typeCode,
+        handle,
+        data: this._memoryStream.slice(start, start + this._size),
+        handleStreamBits: this._handleStreamBits,
+      };
+      this._builder.unreachableObjects.push(obj);
+    }
   }
 
   private _getEntityType(offset: number): ObjectType {

@@ -1,0 +1,114 @@
+diff --git a/src/CadDocument.ts b/src/CadDocument.ts
+index d365de3..aea8663 100644
+--- a/src/CadDocument.ts
++++ b/src/CadDocument.ts
+@@ -112,6 +112,12 @@ export class CadDocument implements IHandledCadObject {
+ 
+ 	private readonly _cadObjects: Map<number, IHandledCadObject> = new Map();
+ 
++	/**
++	 * DWG objects in the file that no reference reaches (their owner is not in the file), kept raw so
++	 * that a save of the same version writes them back (`CadReaderConfiguration.keepUnreachableObjects`).
++	 */
++	readonly unreachableObjects: CadObject[] = [];
++
+ 	/** @internal Build storage from all registered geometries, including block contents. */
+ 	createDataStorage(): CadFileDataStorage | null {
+ 		const geometries = [...this._cadObjects.values()].filter((object): object is ModelerGeometry =>
+diff --git a/src/IO/CadDocumentBuilder.ts b/src/IO/CadDocumentBuilder.ts
+index 1382c95..46db2db 100644
+--- a/src/IO/CadDocumentBuilder.ts
++++ b/src/IO/CadDocumentBuilder.ts
+@@ -48,6 +48,8 @@ export abstract class CadDocumentBuilder {
+ 	dimensionStyles: DimensionStylesTable = new DimensionStylesTable();
+ 	documentToBuild: CadDocument;
+ 	initialHandSeed: number = 0;
++	/** DWG objects no reference reaches, kept raw (`CadReaderConfiguration.keepUnreachableObjects`). */
++	readonly unreachableObjects: CadObject[] = [];
+ 
+ 	abstract get keepUnknownEntities(): boolean;
+ 	abstract get keepUnknownNonGraphicalObjects(): boolean;
+@@ -103,6 +105,11 @@ export abstract class CadDocumentBuilder {
+ 		}
+ 
+ 		this._attachRawOwnedObjects();
++
++		for (const obj of this.unreachableObjects) {
++			this.documentToBuild.unreachableObjects.push(obj);
++			this.documentToBuild.registerCollection(obj);
++		}
+ 	}
+ 
+ 	/**
+diff --git a/src/IO/CadReaderConfiguration.ts b/src/IO/CadReaderConfiguration.ts
+index d199661..d642364 100644
+--- a/src/IO/CadReaderConfiguration.ts
++++ b/src/IO/CadReaderConfiguration.ts
+@@ -13,4 +13,10 @@ export abstract class CadReaderConfiguration {
+ 	 * (`MATERIAL`, `VISUALSTYLE`), so that a DXF save writes them back as read instead of dropping them.
+ 	 */
+ 	keepRawDxfPassthroughObjects: boolean = false;
++	/**
++	 * Read every object in a DWG object map, not only those a reference reaches, and keep the ones
++	 * nothing reaches (an owner that is not in the file) raw in `CadDocument.unreachableObjects`,
++	 * so that a save of the same version writes them back as read.
++	 */
++	keepUnreachableObjects: boolean = false;
+ }
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 03b430a..d4cfd65 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -394,6 +394,39 @@ export class DwgObjectReader extends DwgSectionIO {
+ 
+       this._builder.addTemplate(template);
+     }
++
++    if (this._builder.configuration.keepUnreachableObjects) {
++      this._readUnreachableObjects();
++    }
++  }
++
++  /**
++   * Objects in the object map that no reference reached: their owner is not in the file (a block
++   * record the map lacks, a dictionary that was erased). AutoCAD keeps them in the database, so
++   * they are kept as their raw record, whatever their type, for the writer to store unchanged.
++   */
++  private _readUnreachableObjects(): void {
++    for (const [handle, offset] of this._map) {
++      if (handle === 0 || this._readedObjects.has(handle) || this._builder.tryGetObjectTemplate(handle) != null) {
++        continue;
++      }
++      const type = this._getEntityType(offset);
++      this._readedObjects.set(handle, type);
++      if (this._size <= 0) {
++        continue;
++      }
++      const obj = new UnknownNonGraphicalObject(this._classes.get(type as number) ?? null);
++      obj.handle = handle;
++      const start = this._objectInitialPos >> 3;
++      obj.rawDwgData = {
++        version: this._version,
++        typeCode: this._typeCode,
++        handle,
++        data: this._memoryStream.slice(start, start + this._size),
++        handleStreamBits: this._handleStreamBits,
++      };
++      this._builder.unreachableObjects.push(obj);
++    }
+   }
+ 
+   private _getEntityType(offset: number): ObjectType {
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 528861d..a6619f7 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -321,6 +321,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		}
+ 
+ 		this._writeBlockEntities();
++		// Objects no reference reaches are written by nothing else (written raw, same version only).
++		this._objects.push(...this._document.unreachableObjects);
+ 		this._writeObjects();
+ 	}
+ 

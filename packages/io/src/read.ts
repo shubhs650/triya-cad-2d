@@ -41,6 +41,8 @@ export function fidelityDwgReaderConfiguration(): DwgReaderConfiguration {
   const config = new DwgReaderConfiguration();
   config.keepUnknownEntities = true;
   config.keepUnknownNonGraphicalObjects = true;
+  // Objects no reference reaches are still in the file, and AutoCAD keeps them (M1-33).
+  config.keepUnreachableObjects = true;
   return config;
 }
 
@@ -49,6 +51,8 @@ export function fidelityDxfReaderConfiguration(): DxfReaderConfiguration {
   config.keepUnknownEntities = true;
   config.keepUnknownNonGraphicalObjects = true;
   config.keepRawDxfPassthroughObjects = true;
+  // Blocks with no name and no record: nothing can reference them, but they are in the file.
+  config.keepUnreachableObjects = true;
   return config;
 }
 

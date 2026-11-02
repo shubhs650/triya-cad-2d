@@ -13,6 +13,7 @@ import { BlockEnd } from '../../../Blocks/BlockEnd.js';
 import { BlockRecord } from '../../../Tables/BlockRecord.js';
 import { Entity } from '../../../Entities/Entity.js';
 import { Seqend } from '../../../Entities/Seqend.js';
+import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
 
 export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
   public get sectionName(): string {
@@ -39,6 +40,13 @@ export class DxfBlocksSectionWriter extends DxfSectionWriterBase {
       this._writeBlock(b.blockEntity);
       this._processEntities(b);
       this._writeBlockEnd(b.blockEnd);
+    }
+
+    // Blocks no reference reaches (no name and no record) are written as read.
+    for (const o of this._document.unreachableObjects) {
+      if (o instanceof UnknownEntity && o.rawDxfCodes != null) {
+        this.writeRawObject(o);
+      }
     }
   }
 

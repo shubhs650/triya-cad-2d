@@ -14,6 +14,8 @@ import { CadEntityTemplate } from '../../Templates/CadEntityTemplate.js';
 import { ICadOwnerTemplate } from '../../Templates/ICadOwnerTemplate.js';
 import { DxfException } from '../../../Exceptions/DxfException.js';
 import { NotificationType } from '../../NotificationEventHandler.js';
+import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
+import type { DxfRawCode } from '../../../Objects/RawObjectData.js';
 
 export class DxfBlockSectionReader extends DxfSectionReaderBase {
   public constructor(reader: IDxfStreamReader, builder: DxfDocumentBuilder) {
@@ -55,6 +57,12 @@ export class DxfBlockSectionReader extends DxfSectionReaderBase {
   }
 
   private _readBlock(): void {
+    // The header is recorded in case the block turns out to have no name and no record (below).
+    const keepUnreachable = this._builder.configuration.keepUnreachableObjects;
+    const header: DxfRawCode[] = [];
+    if (keepUnreachable) {
+      this._reader.recorder = header;
+    }
     this._reader.readNext();
 
     const map = DxfMap.create(Block);
@@ -114,6 +122,15 @@ export class DxfBlockSectionReader extends DxfSectionReaderBase {
       }
 
       this._reader.readNext();
+    }
+    this._reader.recorder = null;
+    header.pop(); // the next record's type code
+
+    if (record === null && !name && keepUnreachable) {
+      // A block record cannot have an empty name, and no INSERT can name this block, so nothing
+      // reaches it. Keep it as read, like a DWG object no reference reaches.
+      this._readUnreachableBlock(header);
+      return;
     }
 
     if (record === null) {
@@ -177,6 +194,45 @@ export class DxfBlockSectionReader extends DxfSectionReaderBase {
 
     this._readBlockEnd(record.blockEnd);
     this._builder.addTemplate(template);
+  }
+
+  /** The block's header is read; keep it, its entities and its ENDBLK as raw entities. */
+  private _readUnreachableBlock(header: DxfRawCode[]): void {
+    const kept = [this._rawEntity(DxfFileToken.block, header)];
+    while (this._reader.valueAsString !== DxfFileToken.endSection) {
+      const type = this._reader.valueAsString;
+      const raw: DxfRawCode[] = [];
+      this._reader.recorder = raw;
+      try {
+        do {
+          this._reader.readNext();
+        } while (this._reader.dxfCode !== DxfCode.Start);
+      } finally {
+        this._reader.recorder = null;
+      }
+      raw.pop();
+      kept.push(this._rawEntity(type, raw));
+      if (type === DxfFileToken.endBlock) {
+        break;
+      }
+    }
+
+    for (const entity of kept) {
+      if (entity.handle === 0) {
+        this._builder.notify(`Block with no name and no handle is not kept: ${entity.objectName}`, NotificationType.Warning);
+        continue;
+      }
+      this._builder.unreachableObjects.push(entity);
+    }
+  }
+
+  private _rawEntity(name: string, raw: DxfRawCode[]): UnknownEntity {
+    const entity = new UnknownEntity(null);
+    entity.rawDxfName = name;
+    entity.rawDxfCodes = raw;
+    const handle = raw.find((c) => c.code === 5)?.value;
+    entity.handle = typeof handle === 'number' ? handle : parseInt(String(handle ?? '0'), 16) || 0;
+    return entity;
   }
 
   private _readBlockEnd(block: BlockEnd): void {
