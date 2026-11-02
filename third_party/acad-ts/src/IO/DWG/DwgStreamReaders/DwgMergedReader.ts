@@ -153,6 +153,9 @@ export class DwgMergedReader implements IDwgStreamReader {
 		let color: Color;
 		if (rgb === 0xC0000000) {
 			color = Color.byLayer;
+		} else if (arr[3] === 0xC8) {
+			// Colour method None (AcCmEntityColor::kNone): ACI 257, as DXF states it.
+			color = Color.byEntity;
 		} else if ((rgb & 0b0000_0001_0000_0000_0000_0000_0000_0000) !== 0) {
 			// Indexed color
 			color = new Color(arr[0]);

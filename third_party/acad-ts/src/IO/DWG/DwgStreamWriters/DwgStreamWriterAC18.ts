@@ -22,6 +22,9 @@ export class DwgStreamWriterAC18 extends DwgStreamWriterAC15 {
 			arr[3] = 0b11000010;
 		} else if (value.isByLayer) {
 			arr[3] = 0b11000000;
+		} else if (value.index === 257) {
+			// Colour method None (0xC8); as ACI it would be written as index 1.
+			arr[3] = 0xC8;
 		} else {
 			arr[3] = 0b11000011;
 			arr[0] = value.index & 0xFF;
