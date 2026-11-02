@@ -542,3 +542,65 @@ button {
   padding: 8px;
   color: var(--chrome-text-muted);
 }
+
+/* Health palette (M1-70): the drawing health report as folding cards. */
+.health-cards {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 6px 8px;
+}
+
+.health-card {
+  margin-bottom: 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg);
+}
+
+.health-card summary {
+  padding: 4px 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.health-card dl {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 2px 12px;
+  margin: 0;
+  padding: 4px 8px 8px;
+}
+
+.health-card dt {
+  color: var(--chrome-text-muted);
+}
+
+.health-card dd {
+  margin: 0;
+}
+
+.health-card table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.health-card th,
+.health-card td {
+  padding: 2px 8px;
+  border-top: 1px solid var(--chrome-border);
+  text-align: left;
+  font-weight: normal;
+  overflow-wrap: anywhere;
+}
+
+.health-card thead th {
+  color: var(--chrome-text-muted);
+}
+
+.health-card .empty,
+.health-card .hint {
+  margin: 0;
+  padding: 4px 8px 8px;
+  color: var(--chrome-text-muted);
+}

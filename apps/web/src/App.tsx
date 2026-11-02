@@ -6,6 +6,7 @@ import { CanvasController, type CanvasMode } from './canvas/controller';
 import { allControllers, controllerOf, register } from './canvas/registry';
 import { DocumentStore, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
+import { HealthPalette } from './HealthPalette';
 import { LayersPalette } from './LayersPalette';
 import { NavBar } from './NavBar';
 import { openDrawing, openError } from './open';
@@ -67,7 +68,9 @@ export function App() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
   const [settings, setSettings] = useState(false);
-  const [layersOpen, setLayersOpen] = useState(false);
+  // One palette docks at a time until the palette stack (M7-03).
+  const [palette, setPalette] = useState<'layers' | 'health' | undefined>();
+  const togglePalette = (p: 'layers' | 'health') => setPalette((o) => (o === p ? undefined : p));
   const picker = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
   const pick = useCallback(() => picker.current?.click(), []);
@@ -229,17 +232,31 @@ export function App() {
             </div>
           )}
         </main>
-        {active && layersOpen && (
-          <LayersPalette doc={active} store={store} onClose={() => setLayersOpen(false)} />
+        {active && palette === 'layers' && (
+          <LayersPalette doc={active} store={store} onClose={() => setPalette(undefined)} />
+        )}
+        {active && palette === 'health' && (
+          <HealthPalette
+            doc={active}
+            patternSources={patterns.sources()}
+            onClose={() => setPalette(undefined)}
+          />
         )}
         {active && (
           <nav className="palette-rail" aria-label="Palettes">
             <button
               type="button"
-              aria-expanded={layersOpen}
-              onClick={() => setLayersOpen((o) => !o)}
+              aria-expanded={palette === 'layers'}
+              onClick={() => togglePalette('layers')}
             >
               Layers
+            </button>
+            <button
+              type="button"
+              aria-expanded={palette === 'health'}
+              onClick={() => togglePalette('health')}
+            >
+              Health
             </button>
           </nav>
         )}
