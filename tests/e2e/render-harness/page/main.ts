@@ -8,6 +8,7 @@ import {
   type DocumentInit,
   type EntityInit,
 } from '../../../../packages/engine/src/index';
+import { documentInit } from '../../../../packages/io/src/index';
 import {
   RendererHost,
   decodeRaster,
@@ -22,9 +23,11 @@ import {
   line,
   MODEL,
 } from '../../../../packages/render/test/fixtures';
+import { BENCH_100K, benchDocument } from '../../../../packages/testkit/src/bench/drawing';
 
 export interface SetupOptions {
-  readonly drawing: 'sample' | 'synthetic';
+  /** `bench-100k` is the generated benchmark (M1-42, DEC-045), mapped as a file would be. */
+  readonly drawing: 'sample' | 'synthetic' | 'bench-100k';
   /** Entities in the synthetic drawing. */
   readonly count?: number;
   readonly theme: 'dark' | 'light';
@@ -178,6 +181,8 @@ function synthetic(count: number): EntityInit[] {
 let engine: DocumentModel | undefined;
 let hosts: { mode: RendererMode; host: RendererHost }[] = [];
 let size = { width: 0, height: 0 };
+/** The drawing's extents, which pan/zoom moves about. */
+let extents = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
 let background = '#000000';
 
 function createWorker() {
@@ -199,15 +204,25 @@ function inkOf(canvas: HTMLCanvasElement, background: string): number {
 }
 
 async function setup(o: SetupOptions): Promise<SetupResult> {
-  const entities = o.drawing === 'sample' ? sample() : synthetic(o.count ?? 1000);
-  const init: DocumentInit = { ...drawingInit(entities), handSeed: '100000' };
+  let init: DocumentInit;
+  let block = MODEL;
+  const box = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
+  if (o.drawing === 'bench-100k') {
+    init = documentInit(benchDocument(BENCH_100K));
+    block = init.tables!.blockRecords!.find((r) => r.name.toLowerCase() === '*model_space')!.handle;
+    // 1000 columns of 20-unit cells (packages/testkit/src/bench/drawing.ts).
+    Object.assign(box, { maxX: 20_000, maxY: (BENCH_100K.entities / 1000) * 20 });
+  } else {
+    const entities = o.drawing === 'sample' ? sample() : synthetic(o.count ?? 1000);
+    init = { ...drawingInit(entities), handSeed: '100000' };
+    if (o.drawing === 'sample') Object.assign(box, { maxX: 100, maxY: 60 });
+    else Object.assign(box, { maxX: 10_050, maxY: 10_050 });
+  }
   engine = DocumentModel.create(init);
   size = { width: o.width, height: o.height };
+  extents = box;
   const style = THEMES[o.theme];
   background = style.background;
-  const box = { minX: 0, minY: 0, maxX: 0, maxY: 0 };
-  if (o.drawing === 'sample') Object.assign(box, { maxX: 100, maxY: 60 });
-  else Object.assign(box, { maxX: 10_050, maxY: 10_050 });
   const view = fitView(box, o.width, o.height);
 
   const firstFrameMs: Record<string, number> = {};
@@ -223,7 +238,7 @@ async function setup(o: SetupOptions): Promise<SetupResult> {
     const start = performance.now();
     const host = new RendererHost({
       canvas,
-      document: { init, block: MODEL },
+      document: { init, block },
       mode,
       createWorker,
       style,
@@ -259,19 +274,30 @@ async function edit(): Promise<number> {
   return main ? inkOf(main, background) : 0;
 }
 
-/** Pans and zooms one host for `ms`, waiting for each frame to be drawn before the next. */
+/**
+ * Pans and zooms one host for `ms` as the app does: one view change and frame per animation
+ * frame, waiting for each to be drawn before the next, so `fps` is frames shown per second
+ * (at most the display rate) rather than how fast the renderer can take messages.
+ */
 async function panZoom(mode: RendererMode, ms: number): Promise<PanZoomResult> {
   const h = hosts.find((x) => x.mode === mode)?.host;
   if (!h) throw new Error(`no ${mode} host`);
-  const base = fitView({ minX: 0, minY: 0, maxX: 10_050, maxY: 10_050 }, size.width, size.height);
+  const base = fitView(extents, size.width, size.height);
+  // About 8 % of the drawing's size each way (800 units on the 10 050-unit synthetic one).
+  const swingX = 0.08 * (extents.maxX - extents.minX);
+  const swingY = 0.08 * (extents.maxY - extents.minY);
   const start = performance.now();
   let frames = 0;
   let maxFrameMs = 0;
   while (performance.now() - start < ms) {
+    await new Promise((resolve) => requestAnimationFrame(resolve));
     const t = (performance.now() - start) / 1000;
     const f0 = performance.now();
     h.setView({
-      center: { x: base.center.x + 800 * Math.sin(t), y: base.center.y + 800 * Math.cos(t) },
+      center: {
+        x: base.center.x + swingX * Math.sin(t),
+        y: base.center.y + swingY * Math.cos(t),
+      },
       scale: base.scale * (1 + 0.2 * Math.sin(t * 1.7)),
     });
     h.frame();

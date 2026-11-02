@@ -221,6 +221,98 @@ describe('level of detail and the frame budget', () => {
   });
 });
 
+describe('pan and zoom of a heavy scene (M1-44)', () => {
+  /** A clock the test moves; a full scene draw while `tick` is 20 costs 20 ms (over budget). */
+  function heavy() {
+    const clock = { t: 0, tick: 20 };
+    const s = setup(undefined, { now: () => (clock.t += clock.tick) });
+    s.r.frame(); // the first frame draws the scene in full: 20 ms, a heavy scene
+    clock.tick = 0;
+    s.visible.ctx.clear();
+    return { ...s, clock };
+  }
+
+  it('moves the cached scene while the view changes, then redraws it in full once it settles', () => {
+    const { r, visible, idle, clock } = heavy();
+    expect(r.sceneDraws).toBe(1);
+    // Twice the zoom, one unit right: world (6, 0) was at device (60, 25) and stays at the
+    // new centre (50, 25), so the bitmap is scaled by 2 and shifted by (-70, -25).
+    r.setView({ center: { x: 6, y: 0 }, scale: 20 });
+    r.frame();
+    expect(r.sceneDraws).toBe(1);
+    const c = visible.ctx.calls;
+    const at = c.findIndex((x) => x[0] === 'drawImage' && x[1] === 'scene');
+    expect(c[at - 1]).toEqual(['setTransform', 2, 0, 0, 2, -70, -25]);
+    // What the old bitmap does not cover shows the background.
+    expect(c.slice(0, at)).toContainEqual(['fillStyle', '#000000']);
+    expect(c.slice(0, at)).toContainEqual(['fillRect', 0, 0, 100, 50]);
+    expect(c[at + 1]).toEqual(['setTransform', 1, 0, 0, 1, 0, 0]);
+    expect(visible.ctx.named('drawImage').map((x) => x[1])).toEqual(['scene', 'transient']);
+
+    // Still moving: the idle check waits and asks again.
+    expect(idle).toHaveLength(1);
+    clock.t += 50;
+    idle.shift()!();
+    expect(r.sceneDraws).toBe(1);
+    expect(idle).toHaveLength(1);
+    // A further move restarts the wait; transforms are always from the bitmap's own view.
+    r.setView({ center: { x: 5, y: 0 }, scale: 5 });
+    r.frame();
+    expect(visible.ctx.calls).toContainEqual(['setTransform', 0.5, 0, 0, 0.5, 25, 12.5]);
+    clock.t += 60;
+    idle.shift()!();
+    expect(r.sceneDraws).toBe(1);
+    // Settled: the scene is drawn again at the view in force, in full.
+    clock.t += 200;
+    visible.ctx.clear();
+    idle.shift()!();
+    expect(r.sceneDraws).toBe(2);
+    expect(visible.ctx.calls).not.toContainEqual(['setTransform', 0.5, 0, 0, 0.5, 25, 12.5]);
+    expect(visible.ctx.named('drawImage')[0]).toEqual(['drawImage', 'scene', 0, 0]);
+    expect(idle).toHaveLength(0);
+  });
+
+  it('redraws at once when the content changes during a pan', () => {
+    const { d, r, idle, clock } = heavy();
+    r.setView({ center: { x: 6, y: 0 }, scale: 20 });
+    r.frame();
+    expect(r.sceneDraws).toBe(1);
+    const cs = change(d, (b) => b.addEntity(entity('30', line(0, 1, 10, 1))));
+    r.apply(cs);
+    r.frame();
+    expect(r.sceneDraws).toBe(2);
+    // That frame followed a slow one, so it was reduced and asked for a full one when idle
+    // (M1-12); the settle check finds the scene already at the view and adds nothing.
+    clock.t += 200;
+    while (idle.length > 0) idle.shift()!();
+    expect(r.sceneDraws).toBe(3);
+  });
+
+  it('redraws at once after a resize, a style change or an invalidated bitmap', () => {
+    const { r } = heavy();
+    r.resize(120, 60, 1);
+    r.frame();
+    expect(r.sceneDraws).toBe(2);
+    r.setView({ center: { x: 0, y: 0 }, scale: 1 });
+    r.setStyle(LIGHT);
+    r.frame();
+    expect(r.sceneDraws).toBe(3);
+    r.setView({ center: { x: 1, y: 0 }, scale: 1 });
+    r.invalidate();
+    r.frame();
+    expect(r.sceneDraws).toBe(4);
+  });
+
+  it('keeps redrawing in full on every view change while the scene is cheap', () => {
+    const { r, idle } = setup(undefined, { now: () => 0 });
+    r.frame();
+    r.setView({ center: { x: 6, y: 0 }, scale: 20 });
+    r.frame();
+    expect(r.sceneDraws).toBe(2);
+    expect(idle).toHaveLength(0);
+  });
+});
+
 describe('infinite lines and hit testing', () => {
   it('clips an XLINE to the view', () => {
     const { r, scene } = setup([
