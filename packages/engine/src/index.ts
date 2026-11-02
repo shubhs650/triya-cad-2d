@@ -4,3 +4,4 @@ export * from './model/index';
 export * from './geom/index';
 export * from './spatial/index';
 export * from './annotation/index';
+export * from './layout/index';

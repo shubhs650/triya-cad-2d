@@ -21,6 +21,11 @@ export interface RenderStyle {
   readonly foreground: string;
   /** LWT: lineweights shown at their width; off draws every line 1 px. */
   readonly showLineweights: boolean;
+  /**
+   * Around a layout's sheet, a CSS colour (M1-18); the sheet itself is `background`, so ACI 7
+   * contrasts with the paper. Defaults to the background moved toward grey.
+   */
+  readonly layoutBackground?: string;
 }
 
 /**

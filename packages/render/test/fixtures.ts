@@ -12,6 +12,7 @@ import {
   type EntityInit,
   type HeaderValue,
   type LayerRecord,
+  type LayoutPlot,
   type NonGraphicalObject,
   type TextStyleRecord,
   type Vec2,
@@ -95,6 +96,8 @@ export interface DrawingExtra {
   readonly textStyles?: readonly TextStyleRecord[];
   /** M1-52: dimension styles (LEADER). */
   readonly dimStyles?: readonly DimStyleRecord[];
+  /** M1-18: Layout1's page setup. */
+  readonly layoutPlot?: LayoutPlot;
 }
 
 /**
@@ -155,7 +158,13 @@ export function drawingInit(entities: EntityInit[], extra: DrawingExtra = {}): D
     ],
     layouts: [
       { handle: 'AA', name: 'Model', tabOrder: 0, blockRecord: MODEL },
-      { handle: 'AB', name: 'Layout1', tabOrder: 1, blockRecord: PAPER },
+      {
+        handle: 'AB',
+        name: 'Layout1',
+        tabOrder: 1,
+        blockRecord: PAPER,
+        ...(extra.layoutPlot ? { plot: extra.layoutPlot } : {}),
+      },
     ],
     ...(extra.objects ? { objects: extra.objects } : {}),
     entities,
@@ -283,6 +292,21 @@ export class FakeContext implements Canvas2D {
   }
   fill(rule?: CanvasFillRule): void {
     this.calls.push(['fill', this.#fill, rule, this.#alpha]);
+  }
+  save(): void {
+    this.calls.push(['save']);
+  }
+  restore(): void {
+    this.calls.push(['restore']);
+  }
+  rect(...a: number[]): void {
+    this.calls.push(['rect', ...a]);
+  }
+  clip(): void {
+    this.calls.push(['clip']);
+  }
+  setLineDash(segments: number[]): void {
+    this.calls.push(['setLineDash', [...segments]]);
   }
   drawImage(image: CanvasImageSource, x: number, y: number): void {
     this.calls.push(['drawImage', (image as unknown as { name: string }).name, x, y]);
