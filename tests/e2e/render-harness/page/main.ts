@@ -10,6 +10,7 @@ import {
 } from '../../../../packages/engine/src/index';
 import {
   RendererHost,
+  decodeRaster,
   fitView,
   type RenderStyle,
   type RendererMode,
@@ -282,14 +283,34 @@ async function panZoom(mode: RendererMode, ms: number): Promise<PanZoomResult> {
   return { frames, fps: frames / seconds, maxFrameMs };
 }
 
+/** An image file through `decodeRaster` with the browser's own codecs (M1-19 part 2). */
+async function decodeImage(
+  bytes: number[],
+): Promise<{ width: number; height: number; data: number[]; bitonal: boolean }> {
+  const p = await decodeRaster(new Uint8Array(bytes));
+  return { width: p.width, height: p.height, data: [...p.data], bitonal: p.bitonal === true };
+}
+
+/** A canvas filled with `rgba` encoded by the browser as `type` (for lossy formats). */
+async function encodeImage(type: string, rgba: number[], width: number): Promise<number[]> {
+  const c = new OffscreenCanvas(width, rgba.length / 4 / width);
+  const ctx = c.getContext('2d')!;
+  ctx.putImageData(new ImageData(new Uint8ClampedArray(rgba), width), 0, 0);
+  return [...new Uint8Array(await (await c.convertToBlob({ type, quality: 1 })).arrayBuffer())];
+}
+
 declare global {
   interface Window {
+    decodeImage: typeof decodeImage;
+    encodeImage: typeof encodeImage;
     setup(o: SetupOptions): Promise<SetupResult>;
     edit(): Promise<number>;
     panZoom(mode: RendererMode, ms: number): Promise<PanZoomResult>;
   }
 }
 
+window.decodeImage = decodeImage;
+window.encodeImage = encodeImage;
 window.setup = setup;
 window.edit = edit;
 window.panZoom = panZoom;

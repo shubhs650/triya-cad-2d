@@ -176,6 +176,19 @@ describe('images', () => {
     ).toHaveLength(1);
   });
 
+  it('smooths scaled bitmaps at IMAGEQUALITY high and shows their pixels at draft', () => {
+    const smoothing = (quality: 'draft' | 'high') => {
+      const vars: RasterVariables = { ...rasterVars(true), quality };
+      const c = setup([{ handle: '20', geom: image() }], {
+        pixels: { '7F': grey() },
+        extra: { objects: [vars] },
+      }).redraw();
+      return c.named('imageSmoothingEnabled');
+    };
+    expect(smoothing('high')).toEqual([['imageSmoothingEnabled', true]]);
+    expect(smoothing('draft')).toEqual([['imageSmoothingEnabled', false]]);
+  });
+
   it('keeps the outside of an inverted clip with the even-odd rule', () => {
     const g = image({
       clipping: true,

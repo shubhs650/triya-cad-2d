@@ -216,6 +216,14 @@ export class FakeContext implements Canvas2D {
   #width = 1;
   #alpha = 1;
   lineCap: CanvasLineCap = 'butt';
+  #smoothing = true;
+  get imageSmoothingEnabled(): boolean {
+    return this.#smoothing;
+  }
+  set imageSmoothingEnabled(v: boolean) {
+    this.#smoothing = v;
+    this.calls.push(['imageSmoothingEnabled', v]);
+  }
   lineJoin: CanvasLineJoin = 'miter';
   get strokeStyle(): string {
     return this.#stroke;

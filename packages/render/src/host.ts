@@ -11,7 +11,7 @@ import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession, type RenderDocument } from './session';
 import { offscreenLayer, surfaceOf } from './surface';
-import type { RenderPrimitive, RenderStyle, ViewTransform } from './types';
+import type { RasterPixels, RenderPrimitive, RenderStyle, ViewTransform } from './types';
 
 /** The canvas element the host draws into, typed by the members it uses. */
 export interface HostCanvas {
@@ -133,6 +133,19 @@ export class RendererHost {
     else this.#post({ type: 'frame' });
   }
 
+  /**
+   * An IMAGEDEF's decoded bitmap (`decodeRaster`), or undefined to forget it. To the worker
+   * the pixel buffer is transferred, not copied, so `pixels` is unusable here afterwards.
+   */
+  setImage(definition: string, pixels: RasterPixels | undefined): void {
+    if (this.#session) this.#session.setImage(definition, pixels);
+    else
+      this.#post(
+        { type: 'image', definition, pixels: pixels ?? null },
+        pixels ? [pixels.data.buffer as ArrayBuffer] : [],
+      );
+  }
+
   /** Entities within `aperture` CSS pixels of a screen point, nearest first. */
   hitTest(
     screen: { readonly x: number; readonly y: number },
@@ -157,8 +170,9 @@ export class RendererHost {
     this.#pending.clear();
   }
 
-  #post(m: HostMessage): void {
-    this.#worker?.postMessage(m);
+  #post(m: HostMessage, transfer?: Transferable[]): void {
+    if (transfer?.length) this.#worker?.postMessage(m, transfer);
+    else this.#worker?.postMessage(m);
   }
 
   #request(make: (id: number) => HostMessage): Promise<readonly EntityId[]> {
