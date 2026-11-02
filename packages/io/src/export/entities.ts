@@ -3,17 +3,21 @@
 // fields that differ from the entity as it was mapped are written, so everything Triya does not
 // model (and every unchanged value, to the bit) stays as the file had it (§6.2 rule 2).
 //
-// Geometry writers exist for the types markup creates and edits first and, since M1-75 part 1,
-// SOLID, 3DFACE, SPLINE and POLYLINE; the others report the change as unsupported (roadmap
-// M1-75) rather than dropping it.
+// Geometry writers exist for the types markup creates and edits first and, since M1-75 parts 1
+// and 2, SOLID, TRACE, 3DFACE, SPLINE, POLYLINE, ATTDEF and INSERT with its ATTRIBs; the others report
+// the change as unsupported (roadmap M1-75) rather than dropping it.
 
-import type { Vertex } from '@node-projects/acad-ts';
+import type { AttributeBase, Vertex } from '@node-projects/acad-ts';
 import {
   Arc,
+  AttributeDefinition,
+  AttributeEntity,
+  BlockRecord,
   Circle,
   Color as AcadColor,
   Ellipse,
   Face3D,
+  Insert,
   KnotParametrization,
   Layer,
   Line,
@@ -46,24 +50,31 @@ import {
 } from '@node-projects/acad-ts';
 import type {
   ArcGeometry,
+  AttdefGeometry,
+  AttributeFields,
   CircleGeometry,
   Color,
   EllipseGeometry,
   Entity,
   EntityGeometry,
+  EntityProps,
   EntityType,
   Face3dGeometry,
+  InsertAttribute,
+  InsertGeometry,
   KnotParameterization,
   LineGeometry,
   LinetypeRef,
   Lineweight,
   LwPolylineGeometry,
   MTextGeometry,
+  ObjectCommon,
   PointGeometry,
   PolylineGeometry,
   RayGeometry,
   SolidGeometry,
   SplineGeometry,
+  TextFields,
   TextGeometry,
   Transparency,
   Vec2,
@@ -166,11 +177,18 @@ const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefi
 /** Properties whose changes no writer handles yet. */
 const UNSUPPORTED_PROPS = ['xdata', 'reactors', 'extDict', 'plotStyle', 'annotative'] as const;
 
-/** Why the change from `before` (undefined: a new entity) to `after` cannot be written. */
-export function entityProblems(r: Resolver, before: Entity | undefined, after: Entity): string[] {
+/** The AcDbEntity properties of an entity, and of an ATTRIB folded into its INSERT. */
+type Props = EntityProps & ObjectCommon;
+
+/** Why the property change from `before` (undefined: a new object) to `after` cannot be written. */
+function propProblems(
+  r: Resolver,
+  what: string,
+  before: Props | undefined,
+  after: Props,
+): string[] {
   const out: string[] = [];
-  const what = `${after.type} ${after.handle}`;
-  const changed = (k: keyof Entity): boolean =>
+  const changed = (k: keyof Props): boolean =>
     before === undefined ? after[k] !== undefined : !same(before[k], after[k]);
   for (const k of UNSUPPORTED_PROPS) if (changed(k)) out.push(`${what}: ${k} changes`);
   if (changed('layer') && !resolve(r, after.layer, Layer)) {
@@ -183,6 +201,16 @@ export function entityProblems(r: Resolver, before: Entity | undefined, after: E
     out.push(`${what}: material ${after.material} does not exist`);
   }
   if (changed('color') && hasBook(after.color)) out.push(`${what}: colour-book colours`);
+  return out;
+}
+
+/** Why the change from `before` (undefined: a new entity) to `after` cannot be written. */
+export function entityProblems(r: Resolver, before: Entity | undefined, after: Entity): string[] {
+  const what = `${after.type} ${after.handle}`;
+  const out = propProblems(r, what, before, after);
+  if (after.geom.kind === 'INSERT' && after.geom.block === after.owner) {
+    out.push(`${what}: a block inserted into itself`);
+  }
   if (!before || !same(before.geom, after.geom)) {
     const writer = WRITERS[after.type] as Writer<EntityGeometry> | undefined;
     if (!writer) out.push(`${what}: ${before ? 'geometry changes' : 'new entities'}`);
@@ -192,8 +220,8 @@ export function entityProblems(r: Resolver, before: Entity | undefined, after: E
 }
 
 /** Writes the AcDbEntity properties of `after` that differ from `before`. */
-function writeProps(r: Resolver, e: AcadEntity, before: Entity | undefined, after: Entity): void {
-  const changed = (k: keyof Entity): boolean => !before || !same(before[k], after[k]);
+function writeProps(r: Resolver, e: AcadEntity, before: Props | undefined, after: Props): void {
+  const changed = (k: keyof Props): boolean => !before || !same(before[k], after[k]);
   if (changed('layer')) e.layer = resolve(r, after.layer, Layer)!;
   if (changed('color')) {
     e.color = acadColor(after.color);
@@ -211,6 +239,10 @@ function writeProps(r: Resolver, e: AcadEntity, before: Entity | undefined, afte
   if (changed('layer') && e instanceof Polyline) {
     for (const v of e.vertices) v.layer = e.layer;
     if (e.vertices.seqend) e.vertices.seqend.layer = e.layer;
+  }
+  // An INSERT's SEQEND goes with the INSERT too; its ATTRIBs have layers of their own.
+  if (changed('layer') && e instanceof Insert && e.attributes.seqend) {
+    e.attributes.seqend.layer = e.layer;
   }
 }
 
@@ -389,43 +421,52 @@ const lwPolylineWriter: Writer<LwPolylineGeometry> = {
 const styleProblems = (r: Resolver, style: string): string[] =>
   resolve(r, style, TextStyle) ? [] : [`text style ${style} does not exist`];
 
+const textProblems = (r: Resolver, b: TextFields | undefined, g: TextFields): string[] => [
+  ...planeProblems(g),
+  ...(!b || b.style !== g.style ? styleProblems(r, g.style) : []),
+];
+
 const textWriter: Writer<TextGeometry> = {
   create: () => new TextEntity(),
-  problems: (r, b, g) => [
-    ...planeProblems(g),
-    ...(!b || b.style !== g.style ? styleProblems(r, g.style) : []),
-  ],
-  write(r, e, before, g) {
-    const t = e as TextEntity;
-    const d = differ(before, g);
-    const pl = plane(g.normal);
-    const elevation = d('elevation');
-    const z = (old: number): number => (elevation ? ocsZ(g.elevation, pl) : old);
-    if (d('value')) t.value = g.value;
-    if (d('style')) t.style = resolve(r, g.style, TextStyle)!;
-    if (d('position') || elevation) {
-      t.insertPoint = new XYZ(ocsX(g.position.x, pl), g.position.y, z(t.insertPoint.z));
-    }
-    if ((d('alignmentPoint') || elevation) && g.alignmentPoint) {
-      const a = g.alignmentPoint;
-      t.alignmentPoint = new XYZ(ocsX(a.x, pl), a.y, z(t.alignmentPoint.z));
-    }
-    if (d('height')) t.height = g.height;
-    if (d('rotation')) t.rotation = pl === 'down' ? norm(Math.PI - g.rotation) : g.rotation;
-    if (d('widthFactor')) t.widthFactor = g.widthFactor;
-    if (d('oblique')) t.obliqueAngle = g.oblique;
-    if (d('halign')) t.horizontalAlignment = g.halign;
-    if (d('valign')) t.verticalAlignment = g.valign;
-    if (d('backward', 'upsideDown')) {
-      // Under −Z the text's own Y flips, so the file's upside-down bit is the opposite.
-      const upsideDown = g.upsideDown !== (pl === 'down');
-      const other = (t.mirror as number) & ~6;
-      t.mirror = other | (g.backward ? 2 : 0) | (upsideDown ? 4 : 0);
-    }
-    if (d('thickness')) t.thickness = g.thickness ?? 0;
-    if (d('normal')) t.normal = xyz(g.normal);
-  },
+  problems: textProblems,
+  write: (r, e, before, g) => writeTextFields(r, e as TextEntity, before, g),
 };
+
+/** The text frame TEXT, ATTDEF and ATTRIB share (the inverse of map/entities.ts `textFields`). */
+function writeTextFields(
+  r: Resolver,
+  t: TextEntity,
+  before: TextFields | undefined,
+  g: TextFields,
+): void {
+  const d = differ(before, g);
+  const pl = plane(g.normal);
+  const elevation = d('elevation');
+  const z = (old: number): number => (elevation ? ocsZ(g.elevation, pl) : old);
+  if (d('value')) t.value = g.value;
+  if (d('style')) t.style = resolve(r, g.style, TextStyle)!;
+  if (d('position') || elevation) {
+    t.insertPoint = new XYZ(ocsX(g.position.x, pl), g.position.y, z(t.insertPoint.z));
+  }
+  if ((d('alignmentPoint') || elevation) && g.alignmentPoint) {
+    const a = g.alignmentPoint;
+    t.alignmentPoint = new XYZ(ocsX(a.x, pl), a.y, z(t.alignmentPoint.z));
+  }
+  if (d('height')) t.height = g.height;
+  if (d('rotation')) t.rotation = pl === 'down' ? norm(Math.PI - g.rotation) : g.rotation;
+  if (d('widthFactor')) t.widthFactor = g.widthFactor;
+  if (d('oblique')) t.obliqueAngle = g.oblique;
+  if (d('halign')) t.horizontalAlignment = g.halign;
+  if (d('valign')) t.verticalAlignment = g.valign;
+  if (d('backward', 'upsideDown')) {
+    // Under −Z the text's own Y flips, so the file's upside-down bit is the opposite.
+    const upsideDown = g.upsideDown !== (pl === 'down');
+    const other = (t.mirror as number) & ~6;
+    t.mirror = other | (g.backward ? 2 : 0) | (upsideDown ? 4 : 0);
+  }
+  if (d('thickness')) t.thickness = g.thickness ?? 0;
+  if (d('normal')) t.normal = xyz(g.normal);
+}
 
 const mtextWriter: Writer<MTextGeometry> = {
   create: () => new MText(),
@@ -505,6 +546,12 @@ const solidWriter: Writer<SolidGeometry> = {
     if (d('thickness')) s.thickness = g.thickness ?? 0;
     if (d('normal')) s.normal = xyz(g.normal);
   },
+};
+
+// A TRACE has a SOLID's data (DXF reference, TRACE); only its type tells them apart.
+const traceWriter: Writer<SolidGeometry> = {
+  ...solidWriter,
+  create: () => Object.assign(new Solid(), { isTrace: true }),
 };
 
 const face3dWriter: Writer<Face3dGeometry> = {
@@ -723,6 +770,167 @@ function writeVertices(
   for (const v of next) v.owner = p;
 }
 
+// ── ATTDEF, INSERT and its ATTRIBs ─────────────────────────────────────────────────────────
+
+/**
+ * What an ATTDEF and an ATTRIB have beyond their text frame. A multiline attribute's embedded
+ * MTEXT is edited in place; making a single-line attribute multiline or back is refused, because
+ * DXF before R2018 keeps that text in an extension-dictionary XRECORD Triya does not write.
+ */
+function attributeProblems(
+  r: Resolver,
+  before: AttributeFields | undefined,
+  g: AttributeFields,
+): string[] {
+  const out = textProblems(r, before, g);
+  if ((before?.mtext !== undefined) !== (g.mtext !== undefined)) {
+    out.push(
+      g.mtext ? 'a single-line attribute made multiline' : 'a multiline attribute made single-line',
+    );
+  } else if (before?.mtext && g.mtext) {
+    out.push(...mtextWriter.problems(r, before.mtext, g.mtext));
+  }
+  return out;
+}
+
+function writeAttributeFields(
+  r: Resolver,
+  a: AttributeBase,
+  before: AttributeFields | undefined,
+  g: AttributeFields,
+): void {
+  writeTextFields(r, a, before, g);
+  const d = differ(before, g);
+  if (d('tag')) a.tag = g.tag;
+  if (d('flags')) a.flags = g.flags;
+  if (d('lockPosition')) a.isReallyLocked = g.lockPosition === true;
+  if (before?.mtext && g.mtext && a.mText && !same(before.mtext, g.mtext)) {
+    mtextWriter.write(r, a.mText, before.mtext, g.mtext);
+  }
+}
+
+const attdefWriter: Writer<AttdefGeometry> = {
+  create: () => new AttributeDefinition(),
+  problems: attributeProblems,
+  write(r, e, before, g) {
+    const a = e as AttributeDefinition;
+    writeAttributeFields(r, a, before, g);
+    if (differ(before, g)('prompt')) a.prompt = g.prompt;
+  },
+};
+
+/** A block an INSERT may name: not a layout's own block (`*Model_Space`, `*Paper_Space…`). */
+function insertable(r: Resolver, handle: string): BlockRecord | undefined {
+  const b = resolve(r, handle, BlockRecord);
+  return b && !/^\*(model|paper)_space/i.test(b.name) ? b : undefined;
+}
+
+const insertWriter: Writer<InsertGeometry> = {
+  create: () => new Insert(),
+  problems(r, before, g) {
+    const out = planeProblems(g);
+    if ((!before || before.block !== g.block) && !insertable(r, g.block)) {
+      out.push(`block ${g.block} cannot be inserted`);
+    }
+    const old = new Map((before?.attributes ?? []).map((a) => [a.handle, a]));
+    const seen = new Set<string>();
+    for (const a of g.attributes) {
+      const what = `ATTRIB ${a.handle}`;
+      const b = old.get(a.handle);
+      if (seen.has(a.handle)) out.push(`${what}: listed twice`);
+      seen.add(a.handle);
+      // An ATTRIB the INSERT gains keeps the handle the engine gave it, which must be free:
+      // one held by another object (another INSERT's ATTRIB, say) would be renumbered or lost.
+      if (!b && (!/^[0-9A-F]+$/.test(a.handle) || r.store.original(a.handle))) {
+        out.push(`${what}: the handle is already used`);
+      }
+      out.push(...propProblems(r, what, b, a));
+      if (!b || !same(b, a)) {
+        out.push(...attributeProblems(r, b, a).map((p) => `${what}: ${p}`));
+      }
+    }
+    return out;
+  },
+  write(r, e, before, g) {
+    const ins = e as Insert;
+    const d = differ(before, g);
+    const pl = plane(g.normal);
+    const down = pl === 'down';
+    if (d('block')) ins.block = insertable(r, g.block)!;
+    if (d('position', 'elevation')) {
+      ins.insertPoint = new XYZ(ocsX(g.position.x, pl), g.position.y, ocsZ(g.elevation, pl));
+    }
+    // −Z folds into the placement as rotation −θ and scale (−sx, sy, −sz) (map/entities.ts).
+    if (d('scale')) {
+      ins.xScale = down ? -g.scale.x + 0 : g.scale.x;
+      ins.yScale = g.scale.y;
+      ins.zScale = down ? -g.scale.z + 0 : g.scale.z;
+    }
+    if (d('rotation')) ins.rotation = down ? norm(-g.rotation) : g.rotation;
+    if (d('array')) {
+      const a = g.array;
+      ins.columnCount = a?.columns ?? 1;
+      ins.rowCount = a?.rows ?? 1;
+      // Columns run along the rotated X axis, which the mirror reverses.
+      ins.columnSpacing = a ? (down ? -a.columnSpacing + 0 : a.columnSpacing) : 0;
+      ins.rowSpacing = a?.rowSpacing ?? 0;
+    }
+    if (d('normal')) ins.normal = xyz(g.normal);
+    if (!before || !same(before.attributes, g.attributes)) {
+      writeAttributes(r, ins, before?.attributes ?? [], g.attributes);
+    }
+  },
+};
+
+/**
+ * Writes the ATTRIBs onto the INSERT's own, by handle, so an ATTRIB keeps everything Triya does
+ * not model; one the INSERT gains is created under its engine handle, and one it loses is
+ * dropped. The SEQEND that ends them keeps its handle, is created under a fresh one
+ * (`Resolver.allocate`) when the first ATTRIB arrives, and goes with the last, as AutoCAD writes
+ * an INSERT without attributes (DXF 66 = 0, no SEQEND).
+ */
+function writeAttributes(
+  r: Resolver,
+  ins: Insert,
+  before: readonly InsertAttribute[],
+  after: readonly InsertAttribute[],
+): void {
+  const old = new Map(before.map((a) => [a.handle, a]));
+  const acad = new Map<string, AttributeEntity>();
+  for (const a of ins.attributes) acad.set(a.handle.toString(16).toUpperCase(), a);
+  const written = after.map((g) => {
+    const kept = old.has(g.handle) ? acad.get(g.handle) : undefined;
+    const a = kept ?? new AttributeEntity();
+    if (!kept) a.handle = Number.parseInt(g.handle, 16);
+    const b = kept ? old.get(g.handle) : undefined;
+    writeProps(r, a, b, g);
+    writeAttributeFields(r, a, b, g);
+    return a;
+  });
+  // An ATTRIB Triya could not map (a tilted one) stays in its slot, untouched (§6.2 rule 4).
+  const next: AttributeEntity[] = [];
+  for (const a of ins.attributes) {
+    if (!old.has(a.handle.toString(16).toUpperCase())) next.push(a);
+    else if (written.length > 0) next.push(written.shift()!);
+  }
+  next.push(...written);
+  ins.attributes.length = 0;
+  ins.attributes.push(...next);
+  for (const a of next) {
+    a.owner = ins;
+    if (ins.document && a.document == null) a.assignDocument(ins.document);
+  }
+  if (next.length === 0) {
+    ins.attributes.seqend = null;
+  } else if (!ins.attributes.seqend) {
+    const s = new Seqend(ins);
+    s.handle = r.allocate();
+    s.layer = ins.layer;
+    ins.attributes.seqend = s;
+    if (ins.document) s.assignDocument(ins.document);
+  }
+}
+
 const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   LINE: lineWriter,
   XLINE: xlineWriter('XLINE'),
@@ -735,9 +943,12 @@ const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   TEXT: textWriter,
   MTEXT: mtextWriter,
   SOLID: solidWriter,
+  TRACE: traceWriter,
   '3DFACE': face3dWriter,
   SPLINE: splineWriter,
   POLYLINE: polylineWriter,
+  ATTDEF: attdefWriter,
+  INSERT: insertWriter,
 } as Partial<Record<EntityType, Writer<never>>>;
 
 /** The entity types whose geometry Triya can write (the rest: roadmap M1-75). */

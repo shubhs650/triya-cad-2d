@@ -806,8 +806,8 @@ export class DwgObjectReader extends DwgSectionIO {
       case ObjectType.FACE3D: template = this._read3dFace(); break;
       case ObjectType.POLYLINE_PFACE: template = this._readPolyfaceMesh(); break;
       case ObjectType.POLYLINE_MESH: template = this._readPolylineMesh(); break;
-      case ObjectType.SOLID:
-      case ObjectType.TRACE: template = this._readSolid(); break;
+      case ObjectType.SOLID: template = this._readSolid(false); break;
+      case ObjectType.TRACE: template = this._readSolid(true); break;
       case ObjectType.SHAPE: template = this._readShape(); break;
       case ObjectType.VIEWPORT: template = this._readViewport(); break;
       case ObjectType.ELLIPSE: template = this._readEllipse(); break;
@@ -927,9 +927,9 @@ export class DwgObjectReader extends DwgSectionIO {
       case DxfFileToken.objectAecCleanupGroupDef: template = this._readAecCleanupGroup(); break;
       case 'ACDBDICTIONARYWDFLT': template = this._readDictionaryWithDefault(); break;
       case 'ACDBPLACEHOLDER': template = this._readPlaceHolder(); break;
-      // Tables saved into older drawings are custom/proxy data, not the R2004+
-      // table layout. Preserve them through the unknown-class path below.
-      case 'ACAD_TABLE': if (this.r2004Plus) template = this._readTableEntity(); break;
+      // R14 and R2000 drawings keep a table as a custom class object with the same layout as
+      // R2004 (the corpus R14/R2000 samples read like their R2004 save).
+      case 'ACAD_TABLE': template = this._readTableEntity(); break;
 			case 'ACIDBLOCKREFERENCE': template = this._readInsert(); break;
       case DxfFileToken.objectDimensionAssociation: template = this._readDimensionAssociation(); break;
       case 'DBCOLOR': template = this._readDbColor(); break;
@@ -1157,8 +1157,9 @@ export class DwgObjectReader extends DwgSectionIO {
     return template;
   }
 
-  private _readSolid(): CadTemplate {
+  private _readSolid(isTrace: boolean): CadTemplate {
     const solid = new Solid();
+    solid.isTrace = isTrace;
     const template = new CadEntityTemplate(solid);
     this._readCommonEntityData(template);
     solid.thickness = this._objectReader.readBitThickness();

@@ -187,6 +187,14 @@ describe('plan view of OCS entities (DEC-039)', () => {
     });
   });
 
+  it('maps a TRACE as a TRACE, not a SOLID (M1-79)', () => {
+    const t = new Solid(new XYZ(0, 0, 0), new XYZ(4, 0, 0), new XYZ(0, 1, 0), new XYZ(4, 1, 0));
+    t.isTrace = true;
+
+    expect(mapOne(t).geom).toMatchObject({ kind: 'TRACE' });
+    expect(mapOne(new Solid()).geom).toMatchObject({ kind: 'SOLID' });
+  });
+
   it('reports a circle on a tilted plane instead of guessing its projection', () => {
     const c = new Circle(new XYZ(0, 0, 0), 1);
     c.normal = new XYZ(0, 1, 1);

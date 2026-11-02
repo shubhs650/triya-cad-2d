@@ -5,7 +5,6 @@ import { fileURLToPath } from 'node:url';
 import type {
   DimensionAligned,
   Entity,
-  AttributeBase,
   BlockRecord,
   CadDictionary,
   CellBorder,
@@ -16,14 +15,18 @@ import type {
   BlockAction,
   BlockFlipGrip,
   BlockVisibilityParameter,
+  ClipType,
   Field,
 } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   Arc,
+  AttributeBase,
   AttributeDefinition,
   BlockEnd,
   BookColor,
+  CadWipeoutBase,
+  Color,
   CadDictionaryWithDefault,
   DimensionArc,
   DimensionLinear,
@@ -2536,7 +2539,146 @@ describe('acad-ts local patches (corpus-backed)', () => {
     );
     expect((doc.getCadObject(0x267) as Viewport).status & ViewportStatusFlags.ViewportOff).toBe(0);
   });
-  it('0121 DXF and DWG up to R2007 keep the table-wide overrides through a DWG save', () => {
+
+  it('0122 DXF MULTILEADER and MLEADERSTYLE colours read as colours and save back', () => {
+    // AcCmEntityColor values (high byte 0xC0 ByLayer, 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI); the
+    // reader left them as raw integers, which the DWG writer cannot write.
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1018_ascii.dxf'));
+    const leader = (d: CadDocument) => d.getCadObject(0xb22) as MultiLeader;
+    const style = (d: CadDocument) => d.getCadObject(0xd8) as MultiLeaderStyle;
+    const colours = (d: CadDocument): string[] => {
+      const m = leader(d);
+      const s = style(d);
+      return [
+        m.lineColor,
+        m.textColor,
+        m.blockContentColor,
+        m.contextData.textColor,
+        m.contextData.backgroundFillColor,
+        s.lineColor,
+        s.textColor,
+        s.blockContentColor,
+      ].map((c: unknown) => (c instanceof Color ? c.toString() : `raw ${String(c)}`));
+    };
+    expect(colours(doc)).toEqual([
+      'ByBlock',
+      'ByBlock',
+      'ByBlock',
+      'ByLayer',
+      'True Color RGB:200,200,200',
+      'ByBlock',
+      'ByBlock',
+      'ByBlock',
+    ]);
+    // Every method saves back: ByLayer, ACI, RGB, and the MLEADERSTYLE groups as well.
+    leader(doc).lineColor = Color.byLayer;
+    leader(doc).textColor = new Color(3);
+    leader(doc).blockContentColor = Color.fromTrueColor(0x102030);
+    style(doc).lineColor = new Color(5);
+    style(doc).textColor = Color.byLayer;
+    style(doc).blockContentColor = Color.fromTrueColor(0x405060);
+    const want = colours(doc);
+    expect(want.slice(0, 3)).toEqual(['ByLayer', 'Indexed Color:3', 'True Color RGB:16,32,48']);
+    for (const binary of [false, true]) expect(colours(dxfRawRoundTrip(doc, binary))).toEqual(want);
+    // The DWG save of the same drawing reads them as the DXF does, and keeps the edits.
+    const dwg = readDwgRaw('third-party/acadsharp/sample_AC1018.dwg');
+    expect(colours(dwg).slice(0, 3)).toEqual(['ByBlock', 'ByBlock', 'ByBlock']);
+    leader(dwg).lineColor = Color.byLayer;
+    leader(dwg).textColor = new Color(3);
+    leader(dwg).blockContentColor = Color.fromTrueColor(0x102030);
+    expect(colours(dwgRawRoundTrip(dwg)).slice(0, 3)).toEqual(want.slice(0, 3));
+    // AutoCAD's method byte for an ACI colour is 0xC3 (0xC1 is ByBlock).
+    const text = new TextDecoder('latin1').decode(writeDxf(doc, false));
+    expect(text).toMatch(/\n *92\r?\n *-1023410173\r?\n/);
+  });
+
+  it('0123 a DXF IMAGE or WIPEOUT keeps its clip boundary type (71)', () => {
+    const clipTypes = (d: CadDocument): ClipType[] =>
+      [...d.getCadObjects()]
+        .filter((o): o is CadWipeoutBase => o instanceof CadWipeoutBase)
+        .map((o) => o.clipType);
+    for (const [path, want] of [
+      ['third-party/ezdxf/examples_dxf/wipeout_door.dxf', [2, 2]],
+      ['third-party/ezdxf/examples_dxf/wipeout_random.dxf', [1]],
+      ['third-party/ezdxf/examples_dxf/viewports.dxf', [1, 1, 1, 2, 2]],
+    ] as const) {
+      const doc = readDxfRaw(corpusBytes(path));
+      expect([...clipTypes(doc)].sort(), path).toEqual(want);
+      for (const binary of [false, true]) {
+        expect([...clipTypes(dxfRawRoundTrip(doc, binary))].sort(), path).toEqual(want);
+      }
+    }
+  });
+
+  it('0124 R14 and R2000 DWGs read their ACAD_TABLEs and save them back', () => {
+    // AutoCAD keeps a table in an R14 or R2000 DWG as a custom class object in the R2004
+    // layout; acad-ts read only R2004+ ones and left the rest as unknown objects.
+    const tables = (d: CadDocument) =>
+      [...d.getCadObjects()]
+        .filter((o): o is TableEntity => o instanceof TableEntity)
+        .map((t) => [handleHex(t), t.rows.length, t.columns.length])
+        .sort();
+    const want = tables(readDwgRaw('third-party/acadsharp/sample_AC1018.dwg'));
+    expect(want).toEqual([
+      ['528', 7, 3],
+      ['A35', 4, 5],
+    ]);
+    for (const v of ['AC1014', 'AC1015']) {
+      const doc = readDwgRaw(`third-party/acadsharp/sample_${v}.dwg`);
+      expect(tables(doc), v).toEqual(want);
+      expect(tables(dwgRawRoundTrip(doc)), v).toEqual(want);
+    }
+  });
+
+  it('0125 a DWG before R2007 decodes its \\U+ escapes and writes them back', () => {
+    // Before R2007 DWG strings are in the drawing's code page, and AutoCAD writes a character
+    // outside it as \U+XXXX, as in DXF (0072).
+    // R14 numbers its handles apart from the later saves, so the MTEXTs are found by content.
+    const texts = (d: CadDocument) => [
+      ...new Set(
+        [...documentObjects(d).values()]
+          .filter((o): o is MText => o instanceof MText && /\\U\+|[\u0080-\uffff]/.test(o.value))
+          .map((m) => m.value),
+      ),
+    ];
+    const want = ['94\u00b0', '\u220545,6'];
+    expect(texts(readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1015_ascii.dxf')))).toEqual(
+      want,
+    );
+    for (const v of ['AC1014', 'AC1015', 'AC1018']) {
+      const doc = readDwgRaw(`third-party/acadsharp/sample_${v}.dwg`);
+      expect(texts(doc), v).toEqual(want);
+      const saved = DwgWriter.writeToBuffer(doc).slice();
+      expect(texts(readDwgRaw(saved.buffer)), v).toEqual(want);
+      // U+2205 is outside ANSI_1252, so it goes back as its escape; the degree sign is inside.
+      // (R2004 compresses its object data, so only R14 and R2000 show it in the bytes.)
+      if (v !== 'AC1018') {
+        expect(new TextDecoder('latin1').decode(saved), v).toContain('\\U+220545,6');
+      }
+    }
+  });
+
+  it('M1-79 an R12 ATTRIB without a text style (7) takes the STANDARD entry of the table', () => {
+    // No patch: listed in M1-32 as a possible loss, but every such ATTRIB of the corpus already
+    // resolves to the document's style (0106 gives attributes the document's table entries).
+    for (const path of [
+      'third-party/acadsharp/sample_AC1009_ascii.dxf',
+      'third-party/acadsharp/sample_AC1009_binary.dxf',
+    ]) {
+      const doc = readDxfRaw(corpusBytes(path));
+      const styles = new Set([...doc.textStyles!]);
+      const attributes = [...documentObjects(doc).values()].filter(
+        (o): o is AttributeBase => o instanceof AttributeBase,
+      );
+      expect(attributes.length, path).toBe(9);
+      for (const a of attributes) {
+        expect(styles.has(a.style), `${path} ${handleHex(a)}`).toBe(true);
+        expect(a.style.name.toUpperCase()).toBe('STANDARD');
+      }
+    }
+  });
+
+  it('0126 DXF and DWG up to R2007 keep the table-wide overrides through a DWG save', () => {
     const table = (doc: CadDocument, h: number) => doc.getCadObject(h) as TableEntity;
     // Sample table 528 overrides both cell margins and the three row types' text heights
     // (93 = 0x700018). DWG states the row types in flag order (title, header, data); DXF writes

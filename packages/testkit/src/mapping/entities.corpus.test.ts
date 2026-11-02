@@ -1829,7 +1829,10 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
             : v;
     const tables = (path: string) => {
       const doc = readCadDocument(load(path));
-      const name = new Map([...(doc.blockRecords ?? [])].map((b) => [hex(b.handle), b.name]));
+      // Names are case-insensitive; R14 keeps them in capitals.
+      const name = new Map(
+        [...(doc.blockRecords ?? [])].map((b) => [hex(b.handle), b.name.toUpperCase()]),
+      );
       return mapEntities(doc)
         .entities.filter((e) => e.geom.kind === 'ACAD_TABLE')
         .map((e) => {
@@ -1845,16 +1848,22 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
           };
         });
     };
-    const pairs = ['AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032'].map((v) => [
+    // R14 and R2000 DWGs keep an ACAD_TABLE as a custom class object in the R2004 layout
+    // (M1-79); R14 has no DXF save of its own, so it is compared with the R2000 one.
+    const pairs = ['AC1015', 'AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032'].map((v) => [
       `public/third-party/acadsharp/sample_${v}.dwg`,
       `public/third-party/acadsharp/sample_${v}_ascii.dxf`,
+    ]);
+    pairs.push([
+      'public/third-party/acadsharp/sample_AC1014.dwg',
+      'public/third-party/acadsharp/sample_AC1015_ascii.dxf',
     ]);
     for (const [dwg, dxf] of pairs) {
       const a = tables(dwg!);
       expect(a.length).toBeGreaterThan(0);
       // Table 528 overrides its margins and row text heights (M1-77).
       expect(a.find((x) => x.handle === '528')?.overrides, dwg).toBeDefined();
-      expect(a).toEqual(tables(dxf!));
+      expect(a, dwg).toEqual(tables(dxf!));
     }
   });
 

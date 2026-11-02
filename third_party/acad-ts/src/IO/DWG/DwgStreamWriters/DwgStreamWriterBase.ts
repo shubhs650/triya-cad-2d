@@ -7,7 +7,7 @@ import { CadUtils } from '../../../CadUtils.js';
 import { DwgReferenceType } from '../../../Types/DwgReferenceType.js';
 import { IHandledCadObject } from '../../../IHandledCadObject.js';
 import { IDwgStreamWriter } from './IDwgStreamWriter.js';
-import { encodeCadString } from '../../TextEncoding.js';
+import { encodeCadString, escapeDxfUnicode } from '../../TextEncoding.js';
 
 // Factory registration for breaking circular dependency
 type WriterFactory = new (stream: Uint8Array, encoding: string) => IDwgStreamWriter;
@@ -295,7 +295,9 @@ export abstract class DwgStreamWriterBase implements IDwgStreamWriter {
 			return;
 		}
 
-		const bytes = encodeCadString(value, this.encoding);
+		// Before R2007 (AC21 writes UTF-16 instead) a character outside the code page is written
+		// as its \U+XXXX escape, as in DXF; it became "?".
+		const bytes = encodeCadString(escapeDxfUnicode(value, this.encoding), this.encoding);
 		this.writeBitShort(bytes.length);
 		this.writeBytes(bytes);
 	}

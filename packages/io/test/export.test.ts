@@ -6,6 +6,8 @@ import type { Polyline, Vertex3D } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   Arc,
+  AttributeDefinition,
+  AttributeEntity,
   BlockRecord,
   CadDocument,
   Circle,
@@ -23,6 +25,7 @@ import {
   Solid,
   Spline,
   TextEntity,
+  Tolerance,
   Vertex2D,
   XY,
   XYZ,
@@ -88,6 +91,8 @@ function drawing(): Uint8Array {
   solid.thirdCorner = new XYZ(0, 1, 2);
   solid.fourthCorner = new XYZ(1, 1, 2);
   solid.normal = DOWN;
+  const trace = new Solid(new XYZ(0, 0, 0), new XYZ(2, 0, 0), new XYZ(0, 1, 0), new XYZ(2, 1, 0));
+  trace.isTrace = true;
   const face = new Face3D();
   face.firstCorner = new XYZ(0, 0, 1);
   face.secondCorner = new XYZ(4, 0, 2);
@@ -115,9 +120,59 @@ function drawing(): Uint8Array {
   doc.blockRecords!.add(part);
   const insert = new Insert(part);
   insert.insertPoint = new XYZ(20, 20, 0);
-  for (const e of [circle, arc, pline, ellipse, text, mtext, solid, face, spline, tilted, insert]) {
+  // A titled block: its ATTDEF on a −Z plane, and an INSERT of it with two ATTRIBs.
+  const tag = new BlockRecord('TAG');
+  doc.blockRecords!.add(tag);
+  const attdef = new AttributeDefinition();
+  attdef.tag = 'NO';
+  attdef.prompt = 'Drawing number';
+  attdef.value = '000';
+  attdef.insertPoint = new XYZ(1, 1, 0);
+  attdef.height = 2;
+  attdef.normal = DOWN;
+  tag.entities.add(attdef);
+  const titled = new Insert(tag);
+  titled.insertPoint = new XYZ(40, 10, 1);
+  titled.rotation = 0.25;
+  const tolerance = new Tolerance();
+  tolerance.text = '{\\Fgdt;j}%%v0.1';
+  tolerance.insertionPoint = new XYZ(1, 1, 0);
+  for (const e of [
+    circle,
+    arc,
+    pline,
+    ellipse,
+    text,
+    mtext,
+    solid,
+    trace,
+    face,
+    spline,
+    tilted,
+    insert,
+  ]) {
     doc.entities!.add(e);
   }
+  doc.entities!.add(titled);
+  doc.entities!.add(tolerance);
+  // `new Insert(block)` makes an ATTRIB of each ATTDEF, under no handle; these are made by hand.
+  titled.attributes.length = 0;
+  for (const [name, value, x] of [
+    ['NO', 'A-101', 41],
+    ['REV', 'C', 45],
+  ] as const) {
+    const a = new AttributeEntity();
+    a.tag = name;
+    a.value = value;
+    a.insertPoint = new XYZ(x, 11, 1);
+    a.height = 1;
+    a.layer = titled.layer;
+    a.owner = titled;
+    a.handle = doc.header!.handleSeed++;
+    titled.attributes.push(a);
+  }
+  titled.attributes.seqend = new Seqend(titled);
+  titled.attributes.seqend.handle = doc.header!.handleSeed++;
   for (const p of [pline2d, pline3d]) {
     doc.entities!.add(p);
     // acad-ts holds vertices and SEQEND inside the polyline and leaves their handles to the
@@ -134,6 +189,22 @@ const FILE = drawing();
 function open(bytes = FILE): { model: DocumentModel; init: ReturnType<typeof documentInit> } {
   const init = documentInit(readCadDocument(bytes));
   return { model: DocumentModel.create(init), init };
+}
+
+type InsertGeometry = Extract<EntityGeometry, { kind: 'INSERT' }>;
+
+/** The INSERT of TAG, which has ATTRIBs. */
+const titled = (model: DocumentModel): Entity & { geom: InsertGeometry } =>
+  [...model.entities()].find(
+    (e) => e.geom.kind === 'INSERT' && e.geom.attributes.length > 0,
+  ) as Entity & { geom: InsertGeometry };
+
+const blockNamed = (model: DocumentModel, name: string): string =>
+  [...model.tables.blockRecords.values()].find((r) => r.name === name)!.handle;
+
+/** The INSERT with this handle in a reopened save, with its held ATTRIBs and SEQEND. */
+function acadInsert(bytes: Uint8Array, handle: string): Insert {
+  return readCadDocument(bytes).getCadObject(Number.parseInt(handle, 16)) as Insert;
 }
 
 const byType = (model: DocumentModel, type: string, is3d?: boolean): Entity =>
@@ -358,6 +429,19 @@ describe('triyaToAcad', () => {
       },
     ],
     [
+      'TRACE',
+      {
+        kind: 'TRACE',
+        corners: [
+          { x: 0, y: 0 },
+          { x: 4, y: 0 },
+          { x: 0, y: 1 },
+          { x: 4, y: 1 },
+        ],
+        elevation: 2,
+      },
+    ],
+    [
       '3DFACE',
       {
         kind: '3DFACE',
@@ -446,6 +530,29 @@ describe('triyaToAcad', () => {
           { x: 2, y: 3 },
           { x: 4, y: 0 },
         ],
+      },
+    ],
+    [
+      'ATTDEF',
+      {
+        kind: 'ATTDEF',
+        value: '001',
+        position: { x: 2, y: -1 },
+        alignmentPoint: { x: 4, y: -1 },
+        height: 1.25,
+        rotation: 0.4,
+        widthFactor: 0.9,
+        oblique: 0,
+        halign: 1,
+        valign: 0,
+        backward: false,
+        upsideDown: true,
+        tag: 'SHEET',
+        flags: 9,
+        lockPosition: true,
+        prompt: 'Sheet number',
+        elevation: 0.5,
+        normal: { x: 0, y: 0, z: -1 },
       },
     ],
   ] as const)('writes an edited %s so it maps back to the edit', (type, geom) => {
@@ -577,6 +684,136 @@ describe('triyaToAcad', () => {
     }
   });
 
+  it('writes an edited INSERT and its ATTRIBs by handle', () => {
+    const { model } = open();
+    const e = titled(model);
+    const markup = [...model.tables.layers.values()].find((l) => l.name === 'MARKUP')!;
+    const [no, rev] = e.geom.attributes;
+    const next: InsertGeometry = {
+      ...e.geom,
+      position: { x: -3, y: 7 },
+      scale: { x: -2, y: 3, z: -1 },
+      rotation: 5.5,
+      elevation: -2,
+      normal: { x: 0, y: 0, z: -1 },
+      attributes: [
+        {
+          ...no!,
+          value: 'A-102',
+          position: { x: -4, y: 8 },
+          rotation: 1,
+          height: 1.5,
+          layer: markup.handle,
+          color: { kind: 'aci', index: 2 },
+          flags: 8,
+          lockPosition: true,
+          upsideDown: true,
+          normal: { x: 0, y: 0, z: -1 },
+        },
+        rev!,
+      ],
+    };
+    edit(model, (b) => b.updateEntity(e.id, { geom: next }));
+    const bytes = save(model);
+
+    expectGeometry(reopened(bytes, e.handle)?.geom, next);
+    const before = acadInsert(FILE, e.handle);
+    const after = acadInsert(bytes, e.handle);
+    expect(after.attributes.map((a) => a.handle)).toEqual(before.attributes.map((a) => a.handle));
+    expect(after.attributes.seqend!.handle).toBe(before.attributes.seqend!.handle);
+  });
+
+  it('turns an INSERT into a MINSERT of another block', () => {
+    const { model } = open();
+    const e = byType(model, 'INSERT');
+    const next = {
+      ...e.geom,
+      block: blockNamed(model, 'TAG'),
+      array: { columns: 3, rows: 2, columnSpacing: -5, rowSpacing: 4 },
+      normal: { x: 0, y: 0, z: -1 },
+    } as EntityGeometry;
+    edit(model, (b) => b.updateEntity(e.id, { geom: next }));
+    const bytes = save(model);
+
+    expectGeometry(reopened(bytes, e.handle)?.geom, next);
+    expect(acadInsert(bytes, e.handle).isMultiple).toBe(true);
+  });
+
+  it('adds ATTRIBs under the handles the engine gave them and drops removed ones', () => {
+    const { model } = open();
+    const e = titled(model);
+    const [no, rev] = e.geom.attributes;
+    let added = '';
+    edit(model, (b) => {
+      added = model.handles.allocate();
+      b.updateEntity(e.id, {
+        geom: {
+          ...e.geom,
+          attributes: [
+            rev!,
+            {
+              ...no!,
+              handle: added,
+              raw: { handle: added },
+              tag: 'SHEET',
+              value: '2',
+              position: { x: 50, y: 11 },
+            },
+          ],
+        },
+      });
+    });
+    const bytes = save(model);
+    const back = reopened(bytes, e.handle)!.geom as InsertGeometry;
+
+    expect(back.attributes.map((a) => [a.handle, a.tag, a.value])).toEqual([
+      [rev!.handle, 'REV', 'C'],
+      [added, 'SHEET', '2'],
+    ]);
+    const before = acadInsert(FILE, e.handle);
+    expect(acadInsert(bytes, e.handle).attributes.seqend!.handle).toBe(
+      before.attributes.seqend!.handle,
+    );
+    // The removed ATTRIB is gone from the file.
+    expect(readCadDocument(bytes).getCadObject(Number.parseInt(no!.handle, 16))).toBeFalsy();
+
+    // An INSERT that loses all its ATTRIBs loses its SEQEND too, as AutoCAD writes it.
+    const { model: m2 } = open();
+    const e2 = titled(m2);
+    edit(m2, (b) => b.updateEntity(e2.id, { geom: { ...e2.geom, attributes: [] } }));
+    const bare = acadInsert(save(m2), e2.handle);
+    expect(bare.attributes.length).toBe(0);
+    expect(bare.attributes.seqend).toBeNull();
+  });
+
+  it.each(['dxf', 'dwg'] as const)(
+    'writes a new INSERT with ATTRIBs and a SEQEND to %s',
+    (format) => {
+      const { model } = open();
+      const proto = titled(model);
+      let e!: Entity;
+      edit(model, (b) => {
+        const attributes = proto.geom.attributes.map((a, i) => {
+          const handle = model.handles.allocate();
+          // The mapping names each object's own raw record by its handle.
+          return { ...a, handle, raw: { handle }, value: `V${i}` };
+        });
+        e = b.addEntity({
+          owner: proto.owner,
+          layer: proto.layer,
+          geom: { ...proto.geom, position: { x: 70, y: 0 }, rotation: 0, attributes },
+        });
+      });
+      const bytes = exportDocument(readCadDocument(FILE), model, { format });
+
+      expectGeometry(reopened(bytes, e.handle)?.geom, e.geom);
+      const doc = readCadDocument(bytes);
+      const seqend = (doc.getCadObject(Number.parseInt(e.handle, 16)) as Insert).attributes.seqend!;
+      expect(seqend.handle).toBeGreaterThanOrEqual(Number.parseInt(model.handSeed, 16));
+      expect(seqend.handle).toBeLessThan(doc.header!.handleSeed);
+    },
+  );
+
   it('deletes an entity with the extension dictionary only it owns, not the shared layer', () => {
     const { model } = open();
     const line = byType(model, 'LINE');
@@ -701,6 +938,23 @@ describe('triyaToAcad', () => {
         upsideDown: false,
       },
       {
+        kind: 'ATTDEF',
+        value: 'X',
+        style,
+        position: { x: 1, y: 3 },
+        height: 2,
+        rotation: 0,
+        widthFactor: 1,
+        oblique: 0,
+        halign: 0,
+        valign: 0,
+        backward: false,
+        upsideDown: false,
+        tag: 'NAME',
+        flags: 1,
+        prompt: 'Name',
+      },
+      {
         kind: 'MTEXT',
         contents: 'B',
         style,
@@ -744,10 +998,55 @@ describe('triyaToAcad', () => {
   it('refuses what it cannot write yet and leaves the original as it was', () => {
     const cases: ((b: ChangeSetBuilder, model: DocumentModel) => void)[] = [
       (b, m) => {
-        const s = byType(m, 'INSERT');
+        const s = byType(m, 'TOLERANCE');
         b.updateEntity(s.id, {
-          geom: { ...s.geom, position: { x: 1, y: 1 } } as EntityGeometry,
+          geom: { ...s.geom, position: { x: 2, y: 3 } } as EntityGeometry,
         });
+      },
+      (b, m) => {
+        const s = byType(m, 'INSERT');
+        b.updateEntity(s.id, { geom: { ...s.geom, block: 'FFFFF' } as EntityGeometry });
+      },
+      (b, m) => {
+        // A block inserted into itself would recurse forever.
+        const tag = blockNamed(m, 'TAG');
+        b.addEntity({
+          owner: tag,
+          layer: titled(m).layer,
+          geom: { ...titled(m).geom, attributes: [] },
+        });
+      },
+      (b, m) => {
+        const e = titled(m);
+        const [no] = e.geom.attributes;
+        b.updateEntity(e.id, {
+          geom: { ...e.geom, attributes: [{ ...no!, normal: { x: 1, y: 0, z: 0 } }] },
+        });
+      },
+      (b, m) => {
+        // A new ATTRIB under a handle the file already uses (here the LINE's).
+        const e = titled(m);
+        const [no] = e.geom.attributes;
+        b.updateEntity(e.id, {
+          geom: { ...e.geom, attributes: [no!, { ...no!, handle: byType(m, 'LINE').handle }] },
+        });
+      },
+      (b, m) => {
+        const e = titled(m);
+        const [no, rev] = e.geom.attributes;
+        b.updateEntity(e.id, {
+          geom: {
+            ...e.geom,
+            attributes: [{ ...no!, xdata: [] }, rev!],
+          },
+        });
+      },
+      (b, m) => {
+        // Single-line to multiline: older DXF versions keep the text where Triya does not write.
+        const e = titled(m);
+        const [no, rev] = e.geom.attributes;
+        const mtext = byType(m, 'MTEXT').geom as Extract<EntityGeometry, { kind: 'MTEXT' }>;
+        b.updateEntity(e.id, { geom: { ...e.geom, attributes: [{ ...no!, mtext }, rev!] } });
       },
       (b, m) => {
         // A knot vector that does not fit the control points would write a broken SPLINE.
@@ -791,14 +1090,16 @@ describe('triyaToAcad', () => {
       edit(model, (b) => f(b, model));
       const doc = readCadDocument(FILE);
 
-      expect(() => triyaToAcad(doc, model)).toThrow(UnsupportedChangeError);
+      expect(() => triyaToAcad(doc, model), String(cases.indexOf(f))).toThrow(
+        UnsupportedChangeError,
+      );
       expect(documentInit(doc)).toEqual(init);
     }
   });
 
   it('names each problem in the error', () => {
     const { model } = open();
-    const s = byType(model, 'INSERT');
+    const s = byType(model, 'TOLERANCE');
     edit(model, (b) =>
       b.updateEntity(s.id, { geom: { ...s.geom, rotation: 3 } as EntityGeometry }),
     );
@@ -809,7 +1110,7 @@ describe('triyaToAcad', () => {
       error = e;
     }
     expect((error as UnsupportedChangeError).problems).toEqual([
-      `INSERT ${s.handle}: geometry changes`,
+      `TOLERANCE ${s.handle}: geometry changes`,
     ]);
   });
 });

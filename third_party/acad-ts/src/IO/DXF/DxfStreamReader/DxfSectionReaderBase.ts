@@ -70,6 +70,7 @@ import { VertexFaceRecord } from '../../../Entities/VertexFaceRecord.js';
 import { Viewport } from '../../../Entities/Viewport.js';
 import { Wipeout } from '../../../Entities/Wipeout.js';
 import { CadWipeoutBase } from '../../../Entities/CadWipeoutBase.js';
+import { ClipType } from '../../../Entities/ClipType.js';
 import { XLine } from '../../../Entities/XLine.js';
 import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
 import { ModelerGeometry } from '../../../Entities/ModelerGeometry.js';
@@ -345,7 +346,11 @@ export abstract class DxfSectionReaderBase {
         return this.readEntityCodes(new CadEntityTemplate(new Ray()), this._readEntitySubclassMap.bind(this), Ray);
       case DxfFileToken.endSequence:
         return this.readEntityCodes(new CadEntityTemplate(new Seqend()), this._readEntitySubclassMap.bind(this), Seqend);
-      case DxfFileToken.entityTrace:
+      case DxfFileToken.entityTrace: {
+        const trace = new Solid();
+        trace.isTrace = true;
+        return this.readEntityCodes(new CadEntityTemplate(trace), this._readEntitySubclassMap.bind(this), Solid);
+      }
       case DxfFileToken.entitySolid:
         return this.readEntityCodes(new CadEntityTemplate(new Solid()), this._readEntitySubclassMap.bind(this), Solid);
       case DxfFileToken.entityTable:
@@ -1703,6 +1708,16 @@ export abstract class DxfSectionReaderBase {
       case 343:
         tmp.mTextStyleHandle = this._reader.valueAsHandle;
         return true;
+      // Leader line, text and block content colours: AcCmEntityColor values, not integers.
+      case 91:
+        (tmp.cadObject as MultiLeader).lineColor = Color.fromCmValue(this._reader.valueAsInt);
+        return true;
+      case 92:
+        (tmp.cadObject as MultiLeader).textColor = Color.fromCmValue(this._reader.valueAsInt);
+        return true;
+      case 93:
+        (tmp.cadObject as MultiLeader).blockContentColor = Color.fromCmValue(this._reader.valueAsInt);
+        return true;
       default:
         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
     }
@@ -1730,9 +1745,15 @@ export abstract class DxfSectionReaderBase {
         case 340:
           template.textStyleHandle = this._reader.valueAsHandle;
           break;
-        // The text colour is an AcCmColor (0xC0 ByLayer, 0xC1 index, 0xC2 RGB), not a plain RGB.
+        // The text, background fill and block content colours are AcCmEntityColor values.
         case 90:
-          contextData.textColor = DxfSectionReaderBase._cmColor(this._reader.valueAsInt);
+          contextData.textColor = Color.fromCmValue(this._reader.valueAsInt);
+          break;
+        case 91:
+          contextData.backgroundFillColor = Color.fromCmValue(this._reader.valueAsInt);
+          break;
+        case 93:
+          contextData.blockContentColor = Color.fromCmValue(this._reader.valueAsInt);
           break;
         default:
           if (!this.tryAssignCurrentValue(contextData, map)) {
@@ -1869,13 +1890,6 @@ export abstract class DxfSectionReaderBase {
     return line;
   }
 
-  private static _cmColor(value: number): Color {
-    const method = (value >>> 24) & 0xff;
-    if (method === 0xc0) return Color.byLayer;
-    if (method === 0xc1) return new Color(value & 0xff);
-    return new Color((value >> 16) & 0xff, (value >> 8) & 0xff, value & 0xff);
-  }
-
   private _readShape(template: CadEntityTemplate, map: DxfMap, subclass?: string): boolean {
     const tmp = template as CadShapeTemplate;
 
@@ -1895,6 +1909,7 @@ export abstract class DxfSectionReaderBase {
 
     switch (this._reader.code as number) {
       case 71:
+        wipeout.clipType = this._reader.valueAsShort as ClipType;
         return true;
       case 91: {
         const nvertices = this._reader.valueAsInt;

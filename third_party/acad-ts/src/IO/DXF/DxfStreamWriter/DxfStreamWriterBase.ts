@@ -73,18 +73,7 @@ export abstract class DxfStreamWriterBase implements IDxfStreamWriter {
     if (GroupCodeValue.transformValue(code) === GroupCodeValueType.Int16) {
       this.write(code, color.getApproxIndex() & 0xFFFF);
     } else {
-      const arr = new Uint8Array(4);
-      if (color.isTrueColor) {
-        arr[0] = color.b;
-        arr[1] = color.g;
-        arr[2] = color.r;
-        arr[3] = 0xC2;
-      } else {
-        arr[3] = 0xC1;
-        arr[0] = color.index;
-      }
-      const view = new DataView(arr.buffer);
-      this.write(code, view.getInt32(0, true), map);
+      this.write(code, color.toCmValue(), map);
     }
   }
 

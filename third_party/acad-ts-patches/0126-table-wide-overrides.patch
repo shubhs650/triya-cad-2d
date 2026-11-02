@@ -49,7 +49,7 @@ index 926efd8..eead772 100644
  
  	get content(): TableContent { return this._content; }
 diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
-index 4029f4b..166b08e 100644
+index 5290bf2..b03affb 100644
 --- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
 +++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
 @@ -153,7 +153,7 @@ import { RevolvedSurface } from '../../../Entities/RevolvedSurface.js';
@@ -61,7 +61,7 @@ index 4029f4b..166b08e 100644
  import { Block } from '../../../Blocks/Block.js';
  import { BlockEnd } from '../../../Blocks/BlockEnd.js';
  import { BlockRecord, BlockTypeFlags } from '../../../Tables/BlockRecord.js';
-@@ -4452,72 +4452,44 @@ export class DwgObjectReader extends DwgSectionIO {
+@@ -4453,72 +4453,44 @@ export class DwgObjectReader extends DwgSectionIO {
        const styleOverride = new TableStyle();
        table.content.style = styleOverride;
        const flags = this._mergedReaders.readBitLong() as TableOverrideFlags;
@@ -227,7 +227,7 @@ index 40f2b91..5f0a3fc 100644
  
  	private _writeTableContent(content: TableEntity['content']): void {
 diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
-index b2467b7..3e2f5b2 100644
+index ee235f1..7f21a0b 100644
 --- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
 +++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
 @@ -60,7 +60,7 @@ import { Solid } from '../../../Entities/Solid.js';
@@ -239,7 +239,7 @@ index b2467b7..3e2f5b2 100644
  import { Tolerance } from '../../../Entities/Tolerance.js';
  import { Vertex2D } from '../../../Entities/Vertex2D.js';
  import { Vertex } from '../../../Entities/Vertex.js';
-@@ -577,6 +577,55 @@ export abstract class DxfSectionReaderBase {
+@@ -582,6 +582,55 @@ export abstract class DxfSectionReaderBase {
      }
    }
  
@@ -295,7 +295,7 @@ index b2467b7..3e2f5b2 100644
    private _readTableEntity(template: CadEntityTemplate, map: DxfMap, subclass?: string): boolean {
      const mapName = !subclass ? template.cadObject.subclassMarker : subclass;
      const tmp = template as CadTableEntityTemplate;
-@@ -589,8 +638,9 @@ export abstract class DxfSectionReaderBase {
+@@ -594,8 +643,9 @@ export abstract class DxfSectionReaderBase {
        // words (93-96) are also assigned to their fields below.
        if (code === 93) {
          tmp.readingTableOverrides = true;
