@@ -4,7 +4,7 @@
 // long toggle → canvas took (acceptance: under 16 ms).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DWG, DXF, expectShown, ink, openWithPicker } from '../app/page';
+import { DWG, DXF, expectShown, ink, inkWeight, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -69,7 +69,7 @@ test('turning a layer off and freezing it hide its objects, in under 16 ms', asy
   await expect.poll(() => ink(page)).toBeLessThan(shown / 2);
 });
 
-test('refuses to freeze the current layer, locks without hiding, and filters by name', async ({
+test('refuses to freeze the current layer, fades a locked layer, and filters by name', async ({
   page,
 }) => {
   const palette = await openLayers(page, DXF);
@@ -78,11 +78,25 @@ test('refuses to freeze the current layer, locks without hiding, and filters by 
   await palette.getByRole('button', { name: `Freeze ${name}`, exact: true }).click();
   await expect(palette.getByRole('alert')).toHaveText('Cannot freeze the current layer.');
 
+  // Lock keeps the hatch on screen, faded by LAYLOCKFADECTL (50 by default, M1-69): the same
+  // pixels at about half strength. The hatch's own share is measured against HATCH off, since
+  // the canvas screenshot also holds the navigation bar.
   const shown = await ink(page);
+  const on = palette.getByRole('button', { name: 'On HATCH' });
+  await on.click();
+  await expect.poll(() => ink(page)).toBeLessThan(shown / 2);
+  const bare = await inkWeight(page);
+  await on.click();
+  await expect.poll(() => ink(page)).toBeGreaterThan(shown * 0.9);
+  const full = (await inkWeight(page)) - bare;
   const lock = palette.getByRole('button', { name: 'Lock HATCH' });
   await lock.click();
   await expect(lock).toHaveAttribute('aria-pressed', 'true');
+  await expect.poll(() => inkWeight(page)).toBeLessThan(bare + full * 0.7);
   expect(await ink(page)).toBeGreaterThan(shown * 0.9);
+  expect((await inkWeight(page)) - bare).toBeGreaterThan(full * 0.3);
+  await lock.click();
+  await expect.poll(() => inkWeight(page)).toBeGreaterThan(bare + full * 0.9);
 
   await palette.getByRole('searchbox', { name: 'Search for layer' }).fill('hat');
   await expect(palette.getByRole('rowheader')).toHaveText(['HATCH']);

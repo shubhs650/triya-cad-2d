@@ -26,6 +26,12 @@ export interface RenderStyle {
    * contrasts with the paper. Defaults to the background moved toward grey.
    */
   readonly layoutBackground?: string;
+  /**
+   * LAYLOCKFADECTL, −90…90: objects on locked layers draw faded by this percentage (M1-69).
+   * Zero or negative draws them normally; AutoCAD keeps the value in the registry, not the
+   * drawing, and starts it at 50.
+   */
+  readonly layLockFade?: number;
 }
 
 /**
