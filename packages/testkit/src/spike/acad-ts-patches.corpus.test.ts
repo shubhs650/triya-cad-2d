@@ -1008,7 +1008,8 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(tableCells(dwgRawRoundTrip(doc)), version).toEqual(tableCells(doc));
     }
     // Table 528, row 4 cell 0: background 165, middle-centre, text height 4, borders of
-    // colour 63 and lineweight 0.40 mm, hidden.
+    // colour 63 and lineweight 0.40 mm, shown (read as hidden until 0109: the *T9 block draws
+    // them and the R2010+ saves state them visible).
     const cell = (
       tableCells(readDwgRaw('third-party/acadsharp/sample_AC1018.dwg')) as {
         at: string;
@@ -1016,7 +1017,7 @@ describe('acad-ts local patches (corpus-backed)', () => {
     ).find((x) => x.at === '528:4:0');
     expect(cell).toMatchObject({
       style: [5, false, 165, 7, undefined, 4],
-      borders: [[63, 40, true], expect.anything(), expect.anything(), [63, 40, true]],
+      borders: [[63, 40, false], expect.anything(), expect.anything(), [63, 40, false]],
     });
   });
 
