@@ -47,8 +47,14 @@ export abstract class TableEntry extends CadObject implements INamedCadObject {
 		return clone;
 	}
 
+	/** True for an entry AutoCAD stores with an empty name (a shape file's text style). */
+	public get keepsEmptyName(): boolean {
+		return false;
+	}
+
 	public override validate(format: CadFileFormat, version: ACadVersion): string[] {
 		const errors = super.validate(format, version);
+		if (this.name === '' && this.keepsEmptyName) return errors;
 		if (format === CadFileFormat.DXF && !INamedCadObjectExtensions.isValidDxfName(this, version)) {
 			errors.push(`${this.constructor.name}: name is invalid for a DXF file.`);
 		}
