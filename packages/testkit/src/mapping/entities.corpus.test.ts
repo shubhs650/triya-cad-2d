@@ -95,10 +95,6 @@ const ACAD_TS_GAPS: Record<string, string> = {
     'acad-ts decodes only the ^J, ^M, ^I and "^ " caret codes; other control characters stay as ^A, ^B, …',
   'DIMENSION 70':
     'acad-ts reads a rotated dimension whose AcDbRotatedDimension subclass is empty (50 omitted, angle 0) as an aligned one',
-  'HATCH 75': 'acad-ts skips the hatch style (75), so outer and ignore hatches read as normal',
-  'HATCH 98': 'acad-ts drops the seed points (98, 10/20) of DXF hatches',
-  'HATCH 11':
-    'acad-ts reads an ellipse edge’s major axis (11/21) with the centre’s coordinate in place of the other component',
   'VIEWPORT 68':
     'acad-ts skips a DXF viewport’s status (68: off, or on with its stacking order), so every viewport reads as 1',
   'VIEWPORT 340': 'acad-ts never reads a DXF viewport’s clip boundary (340); DWG reads it',

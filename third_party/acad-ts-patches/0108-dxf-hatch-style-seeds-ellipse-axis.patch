@@ -1,0 +1,35 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 11a7953..80451a4 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -1176,6 +1176,7 @@ export abstract class DxfSectionReaderBase {
+       case 90:
+         return true;
+       case 75:
++        hatch.style = this._reader.valueAsInt;
+         return true;
+       case 78:
+         this._readPattern(hatch.pattern, this._reader.valueAsInt);
+@@ -2264,7 +2265,8 @@ export abstract class DxfSectionReaderBase {
+             end = true;
+             break;
+         }
+-        this._reader.readNext();
++        // The code that ends the last line (47, 98, ...) belongs to the hatch: leave it for the caller.
++        if (!end) this._reader.readNext();
+       }
+ 
+       pattern.lines.push(line);
+@@ -2460,10 +2462,10 @@ export abstract class DxfSectionReaderBase {
+               ellipse.center = new XY(ellipse.center.x, this._reader.valueAsDouble);
+               break;
+             case 11:
+-              ellipse.majorAxisEndPoint = new XY(this._reader.valueAsDouble, ellipse.center.y);
++              ellipse.majorAxisEndPoint = new XY(this._reader.valueAsDouble, ellipse.majorAxisEndPoint.y);
+               break;
+             case 21:
+-              ellipse.majorAxisEndPoint = new XY(ellipse.center.x, this._reader.valueAsDouble);
++              ellipse.majorAxisEndPoint = new XY(ellipse.majorAxisEndPoint.x, this._reader.valueAsDouble);
+               break;
+             case 40:
+               ellipse.minorToMajorRatio = this._reader.valueAsDouble;

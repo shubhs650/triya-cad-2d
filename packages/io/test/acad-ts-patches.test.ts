@@ -23,6 +23,12 @@ import {
   ExtendedDataInteger16,
   ExtendedDataLayer,
   ExtendedDataString,
+  Hatch,
+  HatchBoundaryPath,
+  HatchBoundaryPathEllipse,
+  HatchPattern,
+  HatchPatternLine,
+  HatchStyleType,
   Layer,
   Leader,
   Line,
@@ -33,6 +39,7 @@ import {
   MeasurementUnits,
   TextStyle,
   ViewModeType,
+  XY,
   XYZ,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
@@ -470,5 +477,33 @@ describe('acad-ts local patches', () => {
     const read = DxfReader.readFromStream(bytes).lineTypes!.tryGetValue('GAS_LINE')!;
     const segment = read.segments.find((s) => s.text === 'GAS')!;
     expect(segment.style?.name).toBe('GASFONT');
+  });
+
+  it('0108 a DXF hatch keeps its style, seed points and ellipse-edge major axes', () => {
+    const doc = new CadDocument();
+    const hatch = new Hatch();
+    hatch.style = HatchStyleType.Outer;
+    hatch.pattern = new HatchPattern('ANSI31');
+    const line = new HatchPatternLine();
+    line.angle = Math.PI / 4;
+    line.offset = new XY(-0.0884, 0.0884);
+    hatch.pattern.lines.push(line); // no dashes: the line ends on 79 0, then 98 follows
+    hatch.seedPoints.push(new XY(12, 21));
+    const edge = new HatchBoundaryPathEllipse();
+    edge.center = new XY(10, 20);
+    edge.majorAxisEndPoint = new XY(3, 4);
+    edge.minorToMajorRatio = 0.5;
+    edge.endAngle = 2 * Math.PI;
+    edge.counterClockWise = true;
+    hatch.paths.push(new HatchBoundaryPath([edge]));
+    doc.entities!.add(hatch);
+
+    const read = [
+      ...DxfReader.readFromStream(writeCadDocument(doc, { format: 'dxf' })).entities!,
+    ].filter((e): e is Hatch => e instanceof Hatch)[0]!;
+    expect(read.style).toBe(HatchStyleType.Outer);
+    expect(read.seedPoints.map((p) => [p.x, p.y])).toEqual([[12, 21]]);
+    const axis = (read.paths[0]!.edges[0] as HatchBoundaryPathEllipse).majorAxisEndPoint;
+    expect([axis.x, axis.y]).toEqual([3, 4]);
   });
 });
