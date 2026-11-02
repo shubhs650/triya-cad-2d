@@ -14,9 +14,19 @@ export interface StoredFont {
   readonly bytes: Uint8Array;
 }
 
+/** A kept file that could not be read back, and why (the Health palette lists it). */
+export interface UnreadableFont {
+  readonly name: string;
+  readonly problem: string;
+}
+
 /** Where the files are kept between visits. */
 export interface FontPersistence {
-  load(): Promise<readonly StoredFont[]>;
+  /** The kept files, and the ones that are there but could not be read. */
+  load(): Promise<{
+    readonly fonts: readonly StoredFont[];
+    readonly unreadable: readonly UnreadableFont[];
+  }>;
   put(font: StoredFont): Promise<void>;
   remove(name: string): Promise<void>;
 }
@@ -29,6 +39,8 @@ export interface UserFont {
 
 export interface FontState {
   readonly files: readonly UserFont[];
+  /** Kept files that could not be read back on this visit (M1-38 part 3). */
+  readonly unreadable: readonly UnreadableFont[];
   readonly notice?: string;
   readonly error?: string;
 }
@@ -50,7 +62,7 @@ export class FontStore {
   #files: readonly StoredFont[] = [];
   #device: readonly StoredFont[] = [];
   #sources: FontSources;
-  #state: FontState = { files: [] };
+  #state: FontState = { files: [], unreadable: [] };
   #listeners = new Set<() => void>();
 
   constructor(persistence: FontPersistence, bundled: FontSources = BUNDLED_FONTS) {
@@ -73,14 +85,19 @@ export class FontStore {
 
   /** Reads the files kept by earlier visits. Files added meanwhile win over a kept namesake. */
   async load(): Promise<void> {
-    let kept: readonly StoredFont[];
+    let kept: Awaited<ReturnType<FontPersistence['load']>>;
     try {
       kept = await this.#persistence.load();
     } catch {
+      // No device store in this browser: the files work for the session (add says so).
       return;
     }
     const added = new Set(this.#files.map((f) => keyOf(f.name)));
-    this.#set([...kept.filter((f) => !added.has(keyOf(f.name))), ...this.#files]);
+    this.#state = {
+      ...this.#state,
+      unreadable: kept.unreadable.filter((f) => !added.has(keyOf(f.name))),
+    };
+    this.#set([...kept.fonts.filter((f) => !added.has(keyOf(f.name))), ...this.#files]);
   }
 
   async add(name: string, bytes: Uint8Array): Promise<void> {
@@ -92,6 +109,10 @@ export class FontStore {
     }
     const old = this.#files.find((f) => keyOf(f.name) === keyOf(name));
     const font: StoredFont = { name, bytes };
+    const unreadable = this.#state.unreadable.filter((f) => keyOf(f.name) !== keyOf(name));
+    if (unreadable.length !== this.#state.unreadable.length) {
+      this.#state = { ...this.#state, unreadable };
+    }
     this.#set([...this.#files.filter((f) => f !== old), font]);
     this.#update({ notice: `Added ${kindOf(name)} ${name}.` });
     try {
@@ -125,7 +146,7 @@ export class FontStore {
   }
 
   dismiss(): void {
-    this.#state = { files: this.#state.files };
+    this.#state = { files: this.#state.files, unreadable: this.#state.unreadable };
     this.#emit();
   }
 
@@ -149,7 +170,7 @@ export class FontStore {
   }
 
   #update(message: { notice?: string; error?: string }): void {
-    this.#state = { files: this.#state.files, ...message };
+    this.#state = { files: this.#state.files, unreadable: this.#state.unreadable, ...message };
     this.#emit();
   }
 
@@ -174,13 +195,20 @@ export function opfsFonts(
   };
   return {
     load: async () => {
-      const out: StoredFont[] = [];
+      const fonts: StoredFont[] = [];
+      const unreadable: UnreadableFont[] = [];
       for await (const handle of (await folder()).values()) {
         if (handle.kind !== 'file' || !isFontFile(handle.name)) continue;
-        const file = await (handle as FileSystemFileHandle).getFile();
-        out.push({ name: handle.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+        try {
+          const file = await (handle as FileSystemFileHandle).getFile();
+          fonts.push({ name: handle.name, bytes: new Uint8Array(await file.arrayBuffer()) });
+        } catch (e) {
+          // One file the browser will not give back does not cost the others.
+          const why = e instanceof Error ? e.message : String(e);
+          unreadable.push({ name: handle.name, problem: `could not be read (${why})` });
+        }
       }
-      return out;
+      return { fonts, unreadable };
     },
     put: async (font) => {
       const handle = await (await folder()).getFileHandle(font.name, { create: true });

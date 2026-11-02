@@ -242,9 +242,16 @@ export function tessellate(
   const prims = exact(g, paint, ctx.patterns ?? PATTERNS);
   const lt = paint.linetype;
   const first = prims[0];
-  if (!lt || prims.length !== 1 || first?.kind !== 'stroke') return prims;
+  if (!lt || prims.length !== 1) return prims;
   const P = patternLength(lt.pattern) * lt.scale;
   if (!(P > 0)) return prims;
+  // XLINE and RAY have no ends to fit the pattern between: the renderer lays it out from the
+  // base point over the part on screen (M1-45 part 2). Their text and shapes are not drawn.
+  if (first?.kind === 'infinite') {
+    const lengths = lt.pattern.elements.map((e) => e.length * lt.scale);
+    return [{ ...first, dashes: { lengths, period: P } }];
+  }
+  if (first?.kind !== 'stroke') return prims;
   const dashed = dashGeometry(g, lt.pattern, lt.scale, P);
   if (!dashed || dashed.solid) return prims;
   const path: number[] = [];

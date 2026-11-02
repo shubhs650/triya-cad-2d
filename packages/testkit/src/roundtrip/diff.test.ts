@@ -1,7 +1,12 @@
 import type { CadDictionary } from '@node-projects/acad-ts';
 import { ExtendedDataString, Line, XRecord, XYZ, type Circle } from '@node-projects/acad-ts';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import type { AttributeEntity, Vertex } from '@node-projects/acad-ts';
+import { readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { structuralDiff, summarizeDiff } from './diff.ts';
+import { documentObjects } from './handle-coverage.ts';
 import { ACadVersion, entityOfType, twinDocuments } from './fixtures.ts';
 
 const hex = (n: number): string => n.toString(16).toUpperCase();
@@ -29,6 +34,34 @@ describe('structuralDiff', () => {
         b: '51',
       }),
     ]);
+  });
+
+  it('reports a change inside an attribute or a polyline vertex (held children, M1-68)', () => {
+    // acad-ts keeps attributes, vertices and SEQENDs inside their owner, not registered with the
+    // document; the diff must compare their contents, not only the owner's reference to them.
+    const bytes = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../../corpus/public/third-party/ezdxf/examples_dxf/multi_insert_with_attribs.dxf',
+          import.meta.url,
+        ),
+      ),
+    );
+    const a = readCadDocument(bytes);
+    const b = readCadDocument(bytes);
+    expect(structuralDiff(a, b).differences).toEqual([]);
+    const held = documentObjects(b);
+    (held.get(0x3d) as AttributeEntity).value = 'Changed';
+    (held.get(0x33) as Vertex).location = new XYZ(1, 0, 0);
+    const changed = structuralDiff(a, b).differences.map(
+      (d) => `${d.objectName} ${d.handle} ${d.path}`,
+    );
+    expect(changed).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/^ATTRIB 3D .*value/),
+        expect.stringMatching(/^VERTEX 33 .*location\.x$/),
+      ]),
+    );
   });
 
   it('reports objects missing from or added to the reopened document', () => {

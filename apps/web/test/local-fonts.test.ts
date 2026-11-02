@@ -47,6 +47,11 @@ const INSTALLED = [
   face('DejaVu Sans', 'Bold', 'DejaVuSans-Bold'),
   face('ISOCPEUR', 'Regular', 'ISOCPEUR'),
   face('Broken', 'Regular', 'Broken', new Uint8Array([1, 2, 3])),
+  // A face the browser lists but will not hand over (M1-38 part 3).
+  {
+    ...face('Locked', 'Regular', 'Locked'),
+    blob: () => Promise.reject(new DOMException('The font is not available', 'NotFoundError')),
+  },
 ];
 
 const plain = { bold: false, italic: false };
@@ -175,6 +180,7 @@ describe('DeviceFonts', () => {
     expect(d.getSnapshot()).toEqual({
       permission: 'granted',
       used: [{ requested: 'arial.ttf', face: 'Arial' }],
+      warnings: [],
     });
     expect(d.files().map((f) => f.name)).toEqual(['arial.ttf']);
     expect(d.files()[0]!.bytes).toEqual(SANS);
@@ -197,7 +203,7 @@ describe('DeviceFonts', () => {
     await d.init();
     await d.need([{ name: 'arial.ttf', kind: 'ttf', bold: false, italic: false }]);
     await expect(d.allow()).resolves.toBeUndefined();
-    expect(d.getSnapshot()).toEqual({ permission: 'denied', used: [] });
+    expect(d.getSnapshot()).toEqual({ permission: 'denied', used: [], warnings: [] });
     expect(d.files()).toEqual([]);
   });
 
@@ -206,8 +212,28 @@ describe('DeviceFonts', () => {
     await d.init();
     await d.need([{ name: 'Broken', kind: 'ttf', bold: false, italic: false }]);
     expect(d.files()).toEqual([]);
-    expect(d.warnings).toHaveLength(1);
-    expect(d.warnings[0]).toMatch(/^This computer: Broken is not a usable font/);
+    const [warning, ...rest] = d.getSnapshot().warnings;
+    expect(rest).toEqual([]);
+    expect(warning).toMatchObject({ source: 'This computer', font: 'Broken' });
+    expect(warning?.problem).toMatch(/^not a usable font/);
+  });
+
+  // M1-38 part 3: the health report lists it, so the snapshot changes when one is added.
+  it('keeps a warning for a face it cannot read, and tells its listeners', async () => {
+    const d = new DeviceFonts(access('granted'));
+    await d.init();
+    let told = 0;
+    d.subscribe(() => told++);
+    await d.need([{ name: 'Locked', kind: 'ttf', bold: false, italic: false }]);
+    expect(d.files()).toEqual([]);
+    expect(d.getSnapshot().warnings).toEqual([
+      {
+        source: 'This computer',
+        font: 'Locked',
+        problem: 'could not be read (The font is not available)',
+      },
+    ]);
+    expect(told).toBeGreaterThan(0);
   });
 
   it('hands a face on once, by the file name a style asks for', async () => {
@@ -225,7 +251,7 @@ describe('DeviceFonts', () => {
 
 describe('FontStore with installed fonts', () => {
   const none: FontPersistence = {
-    load: () => Promise.resolve([]),
+    load: () => Promise.resolve({ fonts: [], unreadable: [] }),
     put: () => Promise.resolve(),
     remove: () => Promise.resolve(),
   };

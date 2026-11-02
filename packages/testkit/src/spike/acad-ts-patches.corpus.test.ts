@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import type {
+  Entity,
   AttributeBase,
   BlockRecord,
   CadDictionary,
@@ -69,6 +70,7 @@ import {
   type Layout,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
+import { documentObjects } from '../roundtrip/handle-coverage.js';
 
 const corpusBytes = (path: string): Uint8Array =>
   new Uint8Array(
@@ -2218,6 +2220,34 @@ describe('acad-ts local patches (corpus-backed)', () => {
         expect(after?.objectName, `${path} ${h.toString(16)} saved`).toBe(before!.objectName);
         expect(after!.rawDxfCodes).toEqual(before!.rawDxfCodes);
       }
+    }
+  });
+
+  it('0106 attributes, vertices and SEQENDs take their layer, linetype and style from the document', () => {
+    // acad-ts holds these children inside their owner and never assigns them to the document, so
+    // a missing 8, 6 or 7 left them on a detached default instead of the table's own entry, and
+    // a DXF save (which omits 8 for layer 0) read back with no layer at all.
+    const held = (doc: CadDocument, h: number): Entity => documentObjects(doc).get(h) as Entity;
+    const inTable = (doc: CadDocument, e: Entity): void => {
+      expect(e.document, `${e.objectName} ${e.handle.toString(16)}`).toBe(doc);
+      expect(e.layer).toBe(doc.layers!.tryGetValue(e.layer.name));
+      expect(e.lineType).toBe(doc.lineTypes!.tryGetValue(e.lineType.name));
+    };
+    // small_r13.dxf VERTEX 78 / SEQEND 7A: no 6.
+    const r13 = readDxfRaw(corpusBytes('third-party/ezdxf/integration_tests/small_r13.dxf'));
+    for (const h of [0x78, 0x7a]) inTable(r13, held(r13, h));
+    // sample_AC1009 ATTRIB 705: no 7, so STANDARD.
+    const r12 = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1009_ascii.dxf'));
+    const attrib = held(r12, 0x705) as TextEntity;
+    inTable(r12, attrib);
+    expect(attrib.style).toBe(r12.textStyles!.tryGetValue('STANDARD'));
+    // sample_AC1015 VERTEX 423 / SEQEND 42A on layer 0, through a DXF save.
+    const saved = readDxfRaw(
+      writeDxf(readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1015_ascii.dxf')), false),
+    );
+    for (const h of [0x423, 0x42a]) {
+      inTable(saved, held(saved, h));
+      expect(held(saved, h).layer.name).toBe('0');
     }
   });
 

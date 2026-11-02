@@ -1,4 +1,5 @@
 import { Entity } from './Entity.js';
+import type { CadDocument } from '../CadDocument.js';
 import { IPolyline, IVertex } from './IPolyline.js';
 import { SeqendCollection } from './SeqendCollection.js';
 import { CadObject } from '../CadObject.js';
@@ -113,5 +114,31 @@ export abstract class Polyline extends Entity {
 		for (const entity of PolylineExtensions.explode(polyline)) {
 			yield entity;
 		}
+	}
+
+	/**
+	 * @internal Vertices and their SEQEND are held here, not registered with the document; they
+	 * still take the document's layer and linetype entries, as the polyline does.
+	 */
+	assignDocument(doc: CadDocument): void {
+		super.assignDocument(doc);
+		this.assignHeldChildren(doc);
+	}
+
+	/** @internal Also called by the reader, which adds the vertices after the polyline joins the document. */
+	assignHeldChildren(doc: CadDocument): void {
+		for (const vertex of this.vertices) {
+			if (vertex.document == null) vertex.assignDocument(doc);
+		}
+		if (this.vertices.seqend != null && this.vertices.seqend.document == null) {
+			this.vertices.seqend.assignDocument(doc);
+		}
+	}
+
+	/** @internal */
+	unassignDocument(): void {
+		for (const vertex of this.vertices) vertex.unassignDocument();
+		this.vertices.seqend?.unassignDocument();
+		super.unassignDocument();
 	}
 }

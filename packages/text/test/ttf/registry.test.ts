@@ -66,6 +66,23 @@ describe('TtfRegistry', () => {
     const r = await reg.resolve('Arial', { bold: false, italic: false });
     expect(r?.source).toBe('local');
     expect(reg.warnings).toHaveLength(1);
-    expect(reg.warnings[0]).toMatch(/user.*Arial/);
+    expect(reg.warnings[0]).toMatchObject({ source: 'user', font: 'Arial' });
+    expect(reg.warnings[0]?.problem).toMatch(/^not a usable font \(.+\)$/);
+  });
+
+  // M1-38 part 3: a file a source cannot read (an installed face whose bytes the browser
+  // will not give) is skipped like one that does not parse, and named for the health report.
+  it('skips a source that cannot read its file, and says why', async () => {
+    const unreadable: FontSource = {
+      name: 'This computer',
+      load: () => Promise.reject(new Error('NotAllowedError')),
+    };
+    const good = memory('bundled', { arial: bytes });
+    const reg = new TtfRegistry([unreadable, good], []);
+    const r = await reg.resolve('Arial', { bold: false, italic: false });
+    expect(r?.source).toBe('bundled');
+    expect(reg.warnings).toEqual([
+      { source: 'This computer', font: 'Arial', problem: 'could not be read (NotAllowedError)' },
+    ]);
   });
 });

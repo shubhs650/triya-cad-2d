@@ -17,8 +17,21 @@ export interface HealthFonts {
   hasShx(name: string): boolean;
 }
 
+/** A font file the app could not read or parse (M1-38): `TtfRegistry.warnings` or a user file. */
+export interface FontError {
+  /** Where it came from, as the app names it: "Your fonts", "This computer". */
+  readonly source: string;
+  /** The file or family name. */
+  readonly font: string;
+  readonly problem: string;
+}
+
 export interface HealthSources {
   readonly fonts: HealthFonts;
+  /** The app's font errors; every one is listed, whether or not this drawing names it. */
+  readonly fontErrors?: readonly FontError[];
+  /** Fonts installed on this computer the app draws with (M1-38 part 2), by the name asked for. */
+  readonly installed?: readonly { readonly requested: string; readonly face: string }[];
   /** The patterns hatches stored without lines draw from; the bundled set when not given. */
   readonly patterns?: { get(name: string): unknown };
 }
@@ -39,7 +52,17 @@ export interface HealthReport {
     readonly name: string;
     readonly measurement: 'imperial' | 'metric';
   };
-  readonly fonts: { readonly missing: readonly MissingFont[] };
+  readonly fonts: {
+    readonly missing: readonly MissingFont[];
+    /** Font files that could not be read or parsed, with this drawing's styles naming each. */
+    readonly errors: readonly (FontError & { readonly styles: readonly string[] })[];
+    /** This drawing's fonts drawn with a face installed on this computer, and which face. */
+    readonly installed: readonly {
+      readonly font: string;
+      readonly face: string;
+      readonly styles: readonly string[];
+    }[];
+  };
   /** Not looked for yet: finding the files is the references palette's job (M1-21). */
   readonly references: readonly (DrawingReference & { readonly status: 'unchecked' })[];
   readonly patterns: {
@@ -86,6 +109,20 @@ export function healthReport(facts: DrawingFacts, sources: HealthSources): Healt
   const missing = [...missingFonts]
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([font, m]) => ({ font, substitute: m.substitute, styles: [...m.styles].sort() }));
+  const naming = stylesNaming(facts);
+  const byFont = <T extends { font: string }>(a: T, b: T) =>
+    a.font.toLowerCase() < b.font.toLowerCase()
+      ? -1
+      : a.font.toLowerCase() > b.font.toLowerCase()
+        ? 1
+        : 0;
+  const errors = (sources.fontErrors ?? [])
+    .map((e) => ({ font: e.font, source: e.source, problem: e.problem, styles: naming(e.font) }))
+    .sort(byFont);
+  const installed = (sources.installed ?? [])
+    .map((u) => ({ font: u.requested, face: u.face, styles: naming(u.requested) }))
+    .filter((u) => u.styles.length > 0)
+    .sort(byFont);
   const total = (rows: readonly { count: number }[]) => rows.reduce((n, r) => n + r.count, 0);
   return {
     version: { code: facts.version, release: RELEASES[facts.version] },
@@ -94,7 +131,7 @@ export function healthReport(facts: DrawingFacts, sources: HealthSources): Healt
       name: INSUNITS[facts.insUnits] ?? `Unknown (${facts.insUnits})`,
       measurement: facts.measurement,
     },
-    fonts: { missing },
+    fonts: { missing, errors, installed },
     references: facts.references.map((r) => ({ ...r, status: 'unchecked' as const })),
     patterns: {
       missing: facts.patternHatches
@@ -104,6 +141,24 @@ export function healthReport(facts: DrawingFacts, sources: HealthSources): Healt
     unknownObjects: { total: total(facts.unknownObjects), byType: facts.unknownObjects },
     unmappedEntities: { total: total(facts.unmappedEntities), byType: facts.unmappedEntities },
   };
+}
+
+/** A font name as files are matched: no folder, extension or case (`C:\Fonts\Arial.TTF` → arial). */
+const fontKey = (name: string) =>
+  (name.split(/[\\/]/).pop() ?? name).replace(/\.(shx|ttf|otf|ttc)$/i, '').toLowerCase();
+
+/** The text styles of a drawing that name a font, as primary font, big font or shape file. */
+function stylesNaming(facts: DrawingFacts): (font: string) => string[] {
+  const styles = new Map<string, Set<string>>();
+  for (const s of facts.textStyles) {
+    for (const f of [s.font, s.bigFont]) {
+      if (!f) continue;
+      const set = styles.get(fontKey(f)) ?? new Set<string>();
+      set.add(s.name);
+      styles.set(fontKey(f), set);
+    }
+  }
+  return (font) => [...(styles.get(fontKey(font)) ?? [])].sort();
 }
 
 /**

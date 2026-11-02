@@ -201,7 +201,7 @@ describe('dashed strokes', () => {
     expect(runs(p.path)).toHaveLength(28);
   });
 
-  it('leaves fills, points and infinite lines as they are', () => {
+  it('leaves fills and points as they are, and hands infinite lines their pattern', () => {
     const solid: EntityGeometry = {
       kind: 'SOLID',
       corners: [
@@ -217,8 +217,15 @@ describe('dashed strokes', () => {
       direction: { x: 1, y: 0 },
     };
     const point: EntityGeometry = { kind: 'POINT', position: { x: 1, y: 2 } };
-    for (const g of [solid, xline, point])
+    for (const g of [solid, point])
       expect(tessellate(g, paint(DASHED))).toEqual(tessellate(g, { color: '#ff0000' }));
+    // M1-45 part 2: an infinite line carries its scaled pattern, laid out at draw time.
+    expect(tessellate(xline, paint(DASHED))).toEqual([
+      {
+        ...tessellate(xline, { color: '#ff0000' })[0],
+        dashes: { lengths: [0.5, -0.25], period: 0.75 },
+      },
+    ]);
   });
 
   it('draws a pattern too dense to hold as the continuous stroke', () => {
