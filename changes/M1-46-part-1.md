@@ -1,0 +1,1 @@
+- M1-46 part 1 (#98): polylines with widths now draw as filled segments, tapering along lines and arcs and mitred where wide segments meet, as outlines when FILLMODE is 0, and the spatial index bounds them by what they draw; all 73 corpus wide polylines are covered. Dashing wide polylines is M1-66.

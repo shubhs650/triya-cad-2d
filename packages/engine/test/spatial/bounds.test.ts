@@ -123,7 +123,9 @@ describe('curves', () => {
         },
         ctx(),
       ),
-      box(-0.5, -0.5, 4.5, 3.5),
+      // Mitred corners (M1-46): the outer edges y = −0.5, x = 4.5 and 3x − 4y = −2.5 meet at
+      // (4.5, −0.5), (4.5, 4) and (−1.5, −0.5), beyond half the width at the sharp corners.
+      box(-1.5, -0.5, 4.5, 4),
     );
   });
 
