@@ -17,7 +17,13 @@
 // and WIPEOUT come from `imagePrimitives` (M1-19). TEXT and MTEXT draw their glyphs (`textPrimitives`, M1-41)
 // when the caller passes the loaded fonts, and nothing without them.
 
-import { bundledPatterns, gradientRamp, hatchLines, hatchPattern } from '@triya/hatch';
+import {
+  bundledPatterns,
+  gradientRamp,
+  hatchLines,
+  hatchPattern,
+  type PatternLibrary,
+} from '@triya/hatch';
 import {
   VIEWPORT_NON_RECT_CLIP,
   viewportFrame,
@@ -57,6 +63,11 @@ export interface TessellateContext {
   readonly frames?: ImageFrames;
   /** FILLMODE: false outlines wide polyline segments instead of filling them; on when absent. */
   readonly fill?: boolean;
+  /**
+   * Where a hatch stored without its pattern lines finds them: the bundled patterns and the
+   * user's .pat files (`patternLibrary`, M1-50). Defaults to the bundled patterns alone.
+   */
+  readonly patterns?: PatternLibrary;
 }
 
 /** What every primitive of one entity shares, resolved from the entity and its layer. */
@@ -87,11 +98,19 @@ const ARC_STEP = 2 * Math.acos(1 - SPLINE_DEVIATION);
  */
 const MAX_PERIODS = 20_000;
 
-/**
- * Where a hatch stored without its pattern lines finds them (M1-16 part 3): the bundled
- * patterns. User .pat files join through the app's pattern drop (M1-50).
- */
+/** The bundled patterns (M1-16 part 3), for a context that brings no library of its own. */
 const PATTERNS = bundledPatterns();
+
+/**
+ * The library hatches draw from (M1-50): the bundled patterns, then the user's .pat sources in
+ * the order added, a later one winning on a shared name (AutoCAD matches names without regard
+ * to case). A source holding no valid pattern adds nothing.
+ */
+export function patternLibrary(sources: readonly string[]): PatternLibrary {
+  const library = bundledPatterns();
+  for (const s of sources) library.add(s);
+  return library;
+}
 
 type PathPrimitive = Extract<RenderPrimitive, { readonly path: readonly number[] }>;
 
@@ -220,7 +239,7 @@ export function tessellate(
     const widths = polylineWidths(g);
     if (widths) return widePolyline(g.vertices, g.closed, widths, paint, ctx.fill ?? true);
   }
-  const prims = exact(g, paint);
+  const prims = exact(g, paint, ctx.patterns ?? PATTERNS);
   const lt = paint.linetype;
   const first = prims[0];
   if (!lt || prims.length !== 1 || first?.kind !== 'stroke') return prims;
@@ -405,7 +424,7 @@ function dashGeometry(
   }
 }
 
-function exact(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
+function exact(g: EntityGeometry, paint: Paint, patterns: PatternLibrary): RenderPrimitive[] {
   switch (g.kind) {
     case 'LINE':
       return [stroke([PATH_M, g.start.x, g.start.y, PATH_L, g.end.x, g.end.y], paint)];
@@ -564,7 +583,7 @@ function exact(g: EntityGeometry, paint: Paint): RenderPrimitive[] {
       if (g.solid) return [fill(paint.color)];
       // A pattern AutoCAD would not generate (HPMAXLINES) shows as its filled area, which is
       // what so dense a pattern looks like at any zoom that shows the whole of it.
-      const pattern = hatchPattern({ ...g, patternLines: hatchLines(g, PATTERNS) });
+      const pattern = hatchPattern({ ...g, patternLines: hatchLines(g, patterns) });
       if (pattern.kind === 'too-dense') return [fill(paint.color)];
       // One stroke per family, so each switches to its tint at its own spacing (LOD).
       return pattern.families.map((f) => {

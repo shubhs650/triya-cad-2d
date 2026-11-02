@@ -15,3 +15,8 @@ export function register(doc: number, block: string, c: CanvasController): () =>
 export function controllerOf(doc: number, block: string): CanvasController | undefined {
   return controllers.get(key(doc, block));
 }
+
+/** Every live controller: for changes that reach every drawing, such as the user's patterns. */
+export function allControllers(): IterableIterator<CanvasController> {
+  return controllers.values();
+}
