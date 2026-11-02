@@ -42,6 +42,7 @@ import { PolyfaceMesh } from '../../../Entities/PolyfaceMesh.js';
 import { PolygonMesh } from '../../../Entities/PolygonMesh.js';
 import { PolygonMeshVertex } from '../../../Entities/PolygonMeshVertex.js';
 import { PdfUnderlay } from '../../../Entities/PdfUnderlay.js';
+import type { UnderlayEntity } from '../../../Entities/UnderlayEntity.js';
 import { PdfUnderlayDefinition } from '../../../Objects/PdfUnderlayDefinition.js';
 import { Ole2Frame } from '../../../Entities/Ole2Frame.js';
 import { Ray } from '../../../Entities/Ray.js';
@@ -2144,6 +2145,16 @@ export abstract class DxfSectionReaderBase {
       case 340:
         tmp.definitionHandle = this._reader.valueAsHandle;
         return true;
+      case 11:
+        // A clip boundary vertex: repeated 11/21 pairs with no count (DXF reference, UNDERLAY).
+        (tmp.cadObject as UnderlayEntity).clipBoundaryVertices.push(new XY(this._reader.valueAsDouble, 0));
+        return true;
+      case 21: {
+        const vertices = (tmp.cadObject as UnderlayEntity).clipBoundaryVertices;
+        const last = vertices.at(-1);
+        if (last) vertices[vertices.length - 1] = new XY(last.x, this._reader.valueAsDouble);
+        return true;
+      }
       default:
         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
     }

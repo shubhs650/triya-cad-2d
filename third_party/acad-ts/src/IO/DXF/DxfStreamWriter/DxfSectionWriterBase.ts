@@ -1454,9 +1454,18 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(42, underlay.yScale, subclass);
     this._writer.write(43, underlay.zScale, subclass);
     this._writer.write(50, underlay.rotation, subclass);
+    // The normal and the clip boundary follow the DXF reference (UNDERLAY): 210 after the
+    // rotation, stated only when it is not +Z as AutoCAD does, and the clip as repeated 11/21
+    // pairs after the fade, with no count (two points are a rectangle's corners).
+    const n = underlay.normal;
+    if (n.x !== 0 || n.y !== 0 || n.z !== 1) this._writer.writeVector(210, n, subclass);
     this._writer.write(280, underlay.flags, subclass);
     this._writer.write(281, underlay.contrast, subclass);
     this._writer.write(282, underlay.fade, subclass);
+    for (const v of underlay.clipBoundaryVertices) {
+      this._writer.write(11, v.x);
+      this._writer.write(21, v.y);
+    }
   }
 
   private _writePoint(point: Point, map: DxfMap): void {
