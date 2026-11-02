@@ -1,0 +1,112 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 70459ca..574f1bd 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -113,6 +113,7 @@ import { CadValue } from '../../../CadValue.js';
+ import { Color } from '../../../Color.js';
+ import { LineWeightType } from '../../../Types/LineWeightType.js';
+ import { ACadVersion } from '../../../ACadVersion.js';
++import { CadValueType } from '../../../CadValueType.js';
+ import { DxfCode } from '../../../DxfCode.js';
+ import { DxfFileToken } from '../../../DxfFileToken.js';
+ import { DxfSubclassMarker } from '../../../DxfSubclassMarker.js';
+@@ -1775,7 +1776,12 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+     this._reader.readNext();
+ 
+     let end = false;
++    let type: CadValueType | null = null;
++    const binary = { size: 0, read: 0 };
+     while (this._reader.dxfCode !== DxfCode.Start) {
++      if (this._reader.code === 90) {
++        type = this._reader.valueAsInt as CadValueType;
++      }
+       switch (this._reader.code as number) {
+         case 11:
+         case 21:
+@@ -1795,7 +1801,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           break;
+       }
+ 
+-      if (end) {
++      if (end || this.endsPreR2007Value(type, binary)) {
+         break;
+       }
+ 
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index b3c3b6f..9afed16 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -775,6 +775,8 @@ export abstract class DxfSectionReaderBase {
+     // is appended to it.
+     let chunks: string | null = null;
+     let seenText = false;
++    let type: CadValueType | null = null;
++    const binary = { size: 0, read: 0 };
+ 
+     while (this._reader.code !== 304) {
+       switch (this._reader.code as number) {
+@@ -810,6 +812,7 @@ export abstract class DxfSectionReaderBase {
+         }
+         case 90:
+           value.valueType = this._reader.valueAsInt as CadValueType;
++          type = value.valueType;
+           break;
+         case 91:
+           value.setValue(this._reader.valueAsInt);
+@@ -829,12 +832,56 @@ export abstract class DxfSectionReaderBase {
+           }
+           break;
+       }
++      if (this.endsPreR2007Value(type, binary)) {
++        break;
++      }
+       this._reader.readNext();
+     }
+ 
+     return template;
+   }
+ 
++  /**
++   * Whether the current code is the last one of a value written before R2007. Those values have
++   * no 304 ACVALUE_END: they are a 90 type and that type's data, so they end on the type's last
++   * data code. (R2007 added the 93 flags before and 94, 300, 302 and 304 after.)
++   */
++  protected endsPreR2007Value(type: CadValueType | null, binary: { size: number; read: number }): boolean {
++    if (type === null || this._builder.version >= ACadVersion.AC1021) {
++      return false;
++    }
++
++    const code = this._reader.code as number;
++    switch (type) {
++      case CadValueType.Unknown:
++      case CadValueType.Long:
++        return code === 91;
++      case CadValueType.Double:
++        return code === 140;
++      case CadValueType.String:
++        return code === 1;
++      case CadValueType.Date:
++      case CadValueType.Buffer:
++        if (code === 92) {
++          binary.size = this._reader.valueAsInt;
++        } else if (code === 310) {
++          binary.read += this._reader.valueAsBinaryChunk.length;
++        } else {
++          return false;
++        }
++        return binary.read >= binary.size;
++      case CadValueType.Point2D:
++        return code === 21;
++      case CadValueType.Point3D:
++        return code === 31;
++      case CadValueType.Handle:
++        return code === 330;
++      default:
++        // A result buffer or general value has no fixed data codes: it ends on its type.
++        return code === 90;
++    }
++  }
++
+   private _readTextEntity(template: CadEntityTemplate, map: DxfMap, subclass?: string): boolean {
+     const mapName = !subclass ? template.cadObject.subclassMarker : subclass;
+     const tmp = template as CadTextEntityTemplate;

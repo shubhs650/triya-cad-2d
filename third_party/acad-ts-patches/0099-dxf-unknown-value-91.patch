@@ -1,0 +1,16 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 9afed16..27256ff 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -815,7 +815,10 @@ export abstract class DxfSectionReaderBase {
+           type = value.valueType;
+           break;
+         case 91:
+-          value.setValue(this._reader.valueAsInt);
++          // An unknown-type value can carry a 91 (an empty cell, and every pre-R2007 one); it is not a long.
++          if (value.valueType !== CadValueType.Unknown) {
++            value.setValue(this._reader.valueAsInt);
++          }
+           break;
+         case 93:
+           value.flags = this._reader.valueAsInt;

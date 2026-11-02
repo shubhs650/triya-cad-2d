@@ -775,6 +775,8 @@ export abstract class DxfSectionReaderBase {
     // is appended to it.
     let chunks: string | null = null;
     let seenText = false;
+    let type: CadValueType | null = null;
+    const binary = { size: 0, read: 0 };
 
     while (this._reader.code !== 304) {
       switch (this._reader.code as number) {
@@ -810,9 +812,13 @@ export abstract class DxfSectionReaderBase {
         }
         case 90:
           value.valueType = this._reader.valueAsInt as CadValueType;
+          type = value.valueType;
           break;
         case 91:
-          value.setValue(this._reader.valueAsInt);
+          // An unknown-type value can carry a 91 (an empty cell, and every pre-R2007 one); it is not a long.
+          if (value.valueType !== CadValueType.Unknown) {
+            value.setValue(this._reader.valueAsInt);
+          }
           break;
         case 93:
           value.flags = this._reader.valueAsInt;
@@ -829,10 +835,54 @@ export abstract class DxfSectionReaderBase {
           }
           break;
       }
+      if (this.endsPreR2007Value(type, binary)) {
+        break;
+      }
       this._reader.readNext();
     }
 
     return template;
+  }
+
+  /**
+   * Whether the current code is the last one of a value written before R2007. Those values have
+   * no 304 ACVALUE_END: they are a 90 type and that type's data, so they end on the type's last
+   * data code. (R2007 added the 93 flags before and 94, 300, 302 and 304 after.)
+   */
+  protected endsPreR2007Value(type: CadValueType | null, binary: { size: number; read: number }): boolean {
+    if (type === null || this._builder.version >= ACadVersion.AC1021) {
+      return false;
+    }
+
+    const code = this._reader.code as number;
+    switch (type) {
+      case CadValueType.Unknown:
+      case CadValueType.Long:
+        return code === 91;
+      case CadValueType.Double:
+        return code === 140;
+      case CadValueType.String:
+        return code === 1;
+      case CadValueType.Date:
+      case CadValueType.Buffer:
+        if (code === 92) {
+          binary.size = this._reader.valueAsInt;
+        } else if (code === 310) {
+          binary.read += this._reader.valueAsBinaryChunk.length;
+        } else {
+          return false;
+        }
+        return binary.read >= binary.size;
+      case CadValueType.Point2D:
+        return code === 21;
+      case CadValueType.Point3D:
+        return code === 31;
+      case CadValueType.Handle:
+        return code === 330;
+      default:
+        // A result buffer or general value has no fixed data codes: it ends on its type.
+        return code === 90;
+    }
   }
 
   private _readTextEntity(template: CadEntityTemplate, map: DxfMap, subclass?: string): boolean {

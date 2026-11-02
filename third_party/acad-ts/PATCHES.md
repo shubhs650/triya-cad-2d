@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58) and 0092–0097 (M1-33) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33) and 0098–0099 (M1-33 part 2) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -1889,5 +1889,39 @@ DXF states an object's owner as the 330 in its common data, before the first 100
 **Title:** Read AcDbEvalExpr values of any type
 
 The value after the 70 type group can be any type's group code; requiring 140 threw for shorts.
+
+</details>
+
+### 0098 — a pre-R2007 DXF table value runs past the end of its object
+
+- **File:** `third_party/acad-ts-patches/0098-dxf-pre-r2007-value-end.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** before R2007 a table, data-map or field value has no `304 ACVALUE_END`: it is a `90` type and that type's data (`301 DATAMAP_VALUE`, `90 = 2`, `140 = 7783`, `309 DATAMAP_END`). `readCadValue` and `_readDataMapValue` waited for a 304, so they read the enclosing `DATAMAP_END`, `CELLCONTENT_END` and so on as value codes, then the next objects. In acadsharp `sample_AC1015_ascii.dxf` and `sample_AC1018_ascii.dxf` (and their binary twins) each TABLECONTENT swallowed its TABLEGEOMETRY, the ACDBDATATABLE and the dictionaries after it, which were never loaded. With 0099 the corpus handle-coverage gate goes from 318 to 52 lost handles.
+- **Fix:** before R2007, a value ends on its type's last data code (91 for unknown and long, 140 double, 1 string, 21 2D point, 31 3D point, 330 handle; date and buffer after the 92 byte count of 310s; result buffer and general on the 90 itself). R2007 and later still end on 304.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0098 an R2000/R2004 DXF table value ends on its data, so the objects after it are read". The TABLECONTENT itself is read only with 0099 too, because its empty cells are unknown-type values with a 91.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** End pre-R2007 DXF table values on their data, not on ACVALUE_END
+
+R2004 and earlier DXF files write a value as its 90 type and the type's data, with no 304 ACVALUE_END (that marker, the 93 flags and the 94/300/302 groups arrived with R2007). The value readers waited for a 304 and consumed the enclosing structure and the following objects. This ends a pre-R2007 value on its type's last data code.
+
+</details>
+
+### 0099 — a DXF table value of unknown type with a 91 throws
+
+- **File:** `third_party/acad-ts-patches/0099-dxf-unknown-value-91.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** an empty table cell is a value of type 0 (unknown) that still carries `91 = 0` (every pre-R2007 one, and ezdxf `acad_table_simple.dxf`, R2013: `301 CELL_VALUE`, `93 = 3`, `90 = 0`, `91 = 0`). `readCadValue` passed the 91 to `CadValue.setValue`, which throws for the unknown type, so the ACAD_TABLE or TABLECONTENT was dropped with the objects the failed read had passed.
+- **Fix:** the 91 of an unknown-type value is skipped.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0099 a DXF table value of unknown type with a 91 is read, not thrown away".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Do not throw on the 91 of an unknown-type DXF table value
+
+Empty cells are written as unknown-type values with a 91. Setting it threw "Invalid operation for value type" and dropped the whole table; the 91 carries no value for that type and is now skipped.
 
 </details>
