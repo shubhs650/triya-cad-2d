@@ -14,6 +14,7 @@ import {
   Layer,
   LineType,
   MultiLeaderStyle,
+  TableStyle,
   TextStyle,
   type CadObject,
   type CadDocument,
@@ -388,6 +389,15 @@ function headerProblem(
       ];
       if (!styles.some((s) => s instanceof MultiLeaderStyle && s.name === value))
         return `no multileader style named ${JSON.stringify(value)}`;
+    }
+    // The current table style, likewise.
+    if (name === DictionaryVariable.currentTableStyle) {
+      const styles = [
+        ...(namedDictionary(doc, CadDictionary.acadTableStyle) ?? []),
+        ...added.filter((r) => r instanceof TableStyle),
+      ];
+      if (!styles.some((s) => s instanceof TableStyle && s.name === value))
+        return `no table style named ${JSON.stringify(value)}`;
     }
     return undefined;
   }

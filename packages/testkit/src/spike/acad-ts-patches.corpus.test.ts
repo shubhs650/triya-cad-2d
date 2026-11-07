@@ -3048,4 +3048,38 @@ describe('acad-ts local patches (corpus-backed)', () => {
     const saved = visualStyles(readDwgRaw(DwgWriter.writeToBuffer(doc).slice().buffer));
     expect(visualStyleDiff(saved, read)).toEqual([]);
   });
+
+  it('0142 TABLESTYLE row styles keep their text colour (DWG) and data and unit types (DXF)', () => {
+    // Before the patch the DWG row style read its text colour into textColor, which DXF and
+    // the mapping do not use, and DXF 90/91 (data and unit type) went into the R2010 cell style
+    // type and class, which the DWG row style does not hold.
+    const standard = (d: CadDocument): TableStyle =>
+      d
+        .rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadTableStyle)!
+        .getEntry<TableStyle>('Standard')!;
+    const rows = (s: TableStyle) =>
+      [s.dataCellStyle, s.titleCellStyle, s.headerCellStyle].map((c: CellStyle) => [
+        c.color.index,
+        c.valueDataType,
+        c.valueUnitType,
+      ]);
+    const dxf = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1021_ascii.dxf'));
+    const dwg = readDwgRaw('third-party/acadsharp/sample_AC1021.dwg');
+    // The same drawing: ByBlock text, data type 512 (general), unit type 0.
+    expect(rows(standard(dxf))).toEqual(Array(3).fill([0, 512, 0]));
+    expect(rows(standard(dwg))).toEqual(rows(standard(dxf)));
+    for (const doc of [dxf, dwg]) {
+      const s = standard(doc);
+      s.dataCellStyle.color = new Color(3);
+      s.headerCellStyle.valueDataType = 4;
+      s.headerCellStyle.valueUnitType = 2;
+    }
+    const edited = [
+      [3, 512, 0],
+      [0, 512, 0],
+      [0, 4, 2],
+    ];
+    expect(rows(standard(dxfRawRoundTrip(dxf, false)))).toEqual(edited);
+    expect(rows(standard(readDwgRaw(DwgWriter.writeToBuffer(dwg).slice().buffer)))).toEqual(edited);
+  });
 });

@@ -4,14 +4,16 @@
 // and viewport frames), with what the Layers palette and a markup session change outside the
 // entities (every layer turned off or on, locked or unlocked and recoloured; every text style
 // widened and slanted; every linetype redescribed and its pattern doubled; every dimension style
-// rescaled, its text enlarged and moved inside, and its dimension lines recoloured; $LTSCALE, $TEXTSIZE
+// rescaled, its text enlarged and moved inside, and its dimension lines recoloured; every table
+// style before R2010 redescribed, its margins and data text doubled, its title filled and its
+// header's top border thickened; $LTSCALE, $TEXTSIZE
 // and the current layer; every block's draw order turned upside down), must save so that the
 // edited entities, records and header variables map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles and variables reports nothing
 // (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
 import { readFileSync } from 'node:fs';
-import { Insert, Polyline, type Viewport } from '@node-projects/acad-ts';
+import { ACadVersion, Insert, Polyline, type Viewport } from '@node-projects/acad-ts';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
@@ -27,6 +29,7 @@ import {
   type LinetypeRecord,
   type NonGraphicalObject,
   type SortEntsTable,
+  type TableStyleRecord,
   type TextFields,
   type TextStyleRecord,
   type UcsRecord,
@@ -325,6 +328,33 @@ function editedMLeaderStyle(s: MLeaderStyleRecord): Partial<MLeaderStyleRecord> 
       kind: 'aci',
       index: s.lineColor.kind === 'aci' && s.lineColor.index === 1 ? 2 : 1,
     },
+  };
+}
+
+/** TABLESTYLE: margins, text, fill and a border, as the table style dialog changes them. */
+function editedTableStyle(s: TableStyleRecord): Partial<TableStyleRecord> {
+  const [data, title, header] = s.cellStyles;
+  return {
+    description: `${s.description} (edited)`,
+    horizontalMargin: s.horizontalMargin * 2,
+    verticalMargin: s.verticalMargin * 2,
+    cellStyles: [
+      { ...data!, textHeight: data!.textHeight * 2 },
+      {
+        ...title!,
+        fillOn: !title!.fillOn,
+        fillColor: {
+          kind: 'aci',
+          index: title!.fillColor.kind === 'aci' && title!.fillColor.index === 8 ? 9 : 8,
+        },
+      },
+      {
+        ...header!,
+        borders: header!.borders.map((b, i) =>
+          i === 0 ? { ...b, lineweight: b.lineweight === 50 ? 35 : 50 } : b,
+        ),
+      },
+    ],
   };
 }
 
@@ -643,6 +673,10 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter(editableLinetype);
         const dimStyles = [...model.tables.dimStyles.values()].filter(kept);
         const mleaderStyles = [...model.tables.mleaderStyles.values()];
+        // From R2010 AutoCAD keeps a table style's cell styles, which Triya does not map (M1-96).
+        const version = original.header?.version ?? ACadVersion.AC1032;
+        const tableStyles =
+          version < ACadVersion.AC1024 ? [...model.tables.tableStyles.values()] : [];
         const ucs = [...model.tables.ucs.values()].filter(kept);
         const views = [...model.tables.views.values()].filter(kept);
         const vports = [...model.tables.vports.values()].filter(kept);
@@ -668,6 +702,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
         for (const d of dimStyles) b.updateTableRecord('dimStyles', d.handle, editedDimStyle(d));
         for (const s of mleaderStyles)
           b.updateTableRecord('mleaderStyles', s.handle, editedMLeaderStyle(s));
+        for (const s of tableStyles)
+          b.updateTableRecord('tableStyles', s.handle, editedTableStyle(s));
         for (const u of ucs) b.updateTableRecord('ucs', u.handle, editedUcs(u));
         for (const v of views) b.updateTableRecord('views', v.handle, editedView(v));
         for (const v of vports) b.updateTableRecord('vports', v.handle, editedView(v));
@@ -713,6 +749,12 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((s) => !near(withoutRaw(backMLeaderStyles.get(s.handle)), withoutRaw(s)))
           .map((s) => s.name);
         expect(wrongMLeaderStyles, f.path).toEqual([]);
+        const backTableStyles = new Map(init.tables?.tableStyles?.map((s) => [s.handle, s]));
+        const wrongTableStyles = tableStyles
+          .map((s) => model.tables.tableStyles.get(s.handle)!)
+          .filter((s) => !near(withoutRaw(backTableStyles.get(s.handle)), withoutRaw(s)))
+          .map((s) => s.name);
+        expect(wrongTableStyles, f.path).toEqual([]);
         const wrongViewRecords = (['ucs', 'views', 'vports'] as const).flatMap((table) => {
           const backRecords = new Map(
             (init.tables?.[table] ?? []).map((r: { handle: Handle; raw?: unknown }) => [
@@ -747,6 +789,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ...linetypes,
             ...dimStyles,
             ...mleaderStyles,
+            ...tableStyles,
             ...ucs,
             ...views,
             ...vports,

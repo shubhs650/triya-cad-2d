@@ -4888,7 +4888,8 @@ export class DwgObjectReader extends DwgSectionIO {
     cellStyleTemplate.textStyleHandle = this._handleReference();
     style.textHeight = this._mergedReaders.readBitDouble();
     style.cellAlignment = this._mergedReaders.readBitShort() as CellAlignmentType;
-    style.textColor = this._mergedReaders.readCmColor(this.r2004Pre);
+    // The text colour, which DXF (62) and the R2010 content format keep in color.
+    style.color = this._mergedReaders.readCmColor(this.r2004Pre);
     style.backgroundColor = this._mergedReaders.readCmColor(this.r2004Pre);
     style.isFillColorOn = this._mergedReaders.readBit();
     this._readBorderStyle(style.topBorder);
