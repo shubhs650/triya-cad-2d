@@ -1,0 +1,285 @@
+diff --git a/src/Classes/DxfClassDefinitionRegistry.ts b/src/Classes/DxfClassDefinitionRegistry.ts
+index f32e6f4..12d3a83 100644
+--- a/src/Classes/DxfClassDefinitionRegistry.ts
++++ b/src/Classes/DxfClassDefinitionRegistry.ts
+@@ -215,6 +215,16 @@ define({
+ 	proxyFlags: ProxyFlags.EraseAllowed | ProxyFlags.CloningAllowed | ProxyFlags.DisablesProxyWarningDialog,
+ });
+ 
++// As AutoCAD lists it in the CLASSES of ACadSharp's sample_AC1024+ DXF saves (90 = 1153).
++define({
++	cppClassName: DxfSubclassMarker.textObjectContextData,
++	dwgVersion: ACadVersion.AC1021,
++	dxfName: DxfFileToken.textObjectContextData,
++	itemClassId: 499,
++	maintenanceVersion: 0,
++	proxyFlags: ProxyFlags.EraseAllowed | ProxyFlags.CloningAllowed | ProxyFlags.DisablesProxyWarningDialog,
++});
++
+ define({
+ 	cppClassName: DxfSubclassMarker.dbColor,
+ 	dwgVersion: ACadVersion.AC1015,
+diff --git a/src/DxfFileToken.ts b/src/DxfFileToken.ts
+index 0482516..e82b0f0 100644
+--- a/src/DxfFileToken.ts
++++ b/src/DxfFileToken.ts
+@@ -85,6 +85,7 @@ export class DxfFileToken {
+ 	public static readonly linkedTableDataRow_BEGIN = "LINKEDTABLEDATAROW_BEGIN";
+ 	public static readonly linkedTableDataRow_END = "LINKEDTABLEDATAROW_END";
+ 	public static readonly mTextAttributeObjectContextData = "ACDB_MTEXTATTRIBUTEOBJECTCONTEXTDATA_CLASS";
++	public static readonly textObjectContextData = "ACDB_TEXTOBJECTCONTEXTDATA_CLASS";
+ 	public static readonly objectAecCleanupGroupDef = "AEC_CLEANUP_GROUP_DEF";
+ 	public static readonly objectAecWallStyle = "AEC_WALL_STYLE";
+ 	public static readonly objectBinRecord = "BINRECORD";
+diff --git a/src/DxfSubclassMarker.ts b/src/DxfSubclassMarker.ts
+index 5c255d2..eb36945 100644
+--- a/src/DxfSubclassMarker.ts
++++ b/src/DxfSubclassMarker.ts
+@@ -145,6 +145,7 @@ export class DxfSubclassMarker {
+ 	public static readonly tableRecord = "AcDbSymbolTableRecord";
+ 	public static readonly tableStyle = "AcDbTableStyle";
+ 	public static readonly text = "AcDbText";
++	public static readonly textObjectContextData = "AcDbTextObjectContextData";
+ 	public static readonly textStyle = "AcDbTextStyleTableRecord";
+ 	public static readonly tolerance = "AcDbFcf";
+ 	public static readonly ucs = "AcDbUCSTableRecord";
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index e71ad1b..6cc0347 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -248,6 +248,7 @@ import { BlockGripExpression } from '../../../Objects/Evaluations/BlockGripExpre
+ import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
+ import { BlockReferenceObjectContextData } from '../../../Objects/BlockReferenceObjectContextData.js';
+ import { MTextAttributeObjectContextData } from '../../../Objects/MTextAttributeObjectContextData.js';
++import { TextObjectContextData } from '../../../Objects/TextObjectContextData.js';
+ import { ObjectContextData } from '../../../Objects/ObjectContextData.js';
+ import { Field, EvaluationOptionFlags, FilingOptionFlags, FieldStateFlags, EvaluationStatusFlags } from '../../../Objects/Field.js';
+ import { FieldList } from '../../../Objects/FieldList.js';
+@@ -1021,6 +1022,7 @@ export class DwgObjectReader extends DwgSectionIO {
+       case DxfFileToken.objectCellStyleMap: template = this._readCellStyleMap(); break;
+       case DxfFileToken.blkRefObjectContextData: template = this._readBlkRefObjectContextData(); break;
+       case DxfFileToken.mTextAttributeObjectContextData: template = this._readMTextAttributeObjectContextData(); break;
++      case DxfFileToken.textObjectContextData: template = this._readTextObjectContextData(); break;
+       case DxfFileToken.objectFieldList: template = this._readFieldList(); break;
+       case DxfFileToken.objectField: template = this._readField(); break;
+     }
+@@ -4628,6 +4630,18 @@ export class DwgObjectReader extends DwgSectionIO {
+     return template;
+   }
+ 
++  // AcDbTextObjectContextData (LibreDWG dwg2.spec, TEXTOBJECTCONTEXTDATA): the horizontal mode,
++  // rotation and two 2D points, the values a DXF save writes as 70, 50, 10 and 11.
++  private _readTextObjectContextData(): CadTemplate {
++    const contextData = new TextObjectContextData();
++    const template = new CadAnnotScaleObjectContextDataTemplate(contextData);
++    this._readAnnotScaleObjectContextData(template);
++    contextData.horizontalMode = this._mergedReaders.readBitShort();
++    contextData.rotation = this._mergedReaders.readBitDouble();
++    contextData.insertionPoint = this._mergedReaders.read2RawDouble();
++    contextData.alignmentPoint = this._mergedReaders.read2RawDouble();
++    return template;
++  }
+   private _readMTextAttributeObjectContextData(): CadTemplate | null {
+     const contextData = new MTextAttributeObjectContextData();
+     const template = new CadAnnotScaleObjectContextDataTemplate(contextData);
+@@ -4720,7 +4734,9 @@ export class DwgObjectReader extends DwgSectionIO {
+     this._readCommonNonEntityData(template);
+     const contextData = template.cadObject as ObjectContextData;
+     contextData.version = this._objectReader.readBitShort();
+-    contextData.hasFileToExtensionDictionary = this._objectReader.readBit();
++    // The record holds the version and the default flag only, as the writer writes it (LibreDWG
++    // dwg2.spec, AcDbObjectContextData: BS 70, B 290). Reading another bit before the flag shifted
++    // value after it: ACadSharp's sample_AC1024+ DWG text context data read as garbage.
+     contextData.default = this._objectReader.readBit();
+   }
+ 
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 11545f8..c7a494b 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -205,6 +205,7 @@ import { ProxyObject } from '../../../Objects/ProxyObject.js';
+ import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
+ import { BlockReferenceObjectContextData } from '../../../Objects/BlockReferenceObjectContextData.js';
+ import { MTextAttributeObjectContextData } from '../../../Objects/MTextAttributeObjectContextData.js';
++import { TextObjectContextData } from '../../../Objects/TextObjectContextData.js';
+ import { LeaderLine, LeaderRoot, MultiLeaderObjectContextData } from '../../../Objects/MultiLeaderObjectContextData.js';
+ import { GradientColor } from '../../../Entities/GradientColor.js';
+ import { PolylineFlags } from '../../../Entities/PolylineFlags.js';
+@@ -3643,6 +3644,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writeBlockRepresentationData(obj);
+ 		} else if (obj instanceof BlockReferenceObjectContextData) {
+ 			this._writeBlockReferenceObjectContextData(obj);
++		} else if (obj instanceof TextObjectContextData) {
++			this._writeTextObjectContextData(obj);
+ 		} else if (obj instanceof MTextAttributeObjectContextData) {
+ 			this._writeMTextAttributeObjectContextData(obj);
+ 		} else if (obj instanceof GeoData) {
+@@ -3871,6 +3874,13 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		this._writer.writeBitDouble(contextData.zScale);
+ 	}
+ 
++	private _writeTextObjectContextData(contextData: TextObjectContextData): void {
++		this._writeAnnotScaleObjectContextData(contextData);
++		this._writer.writeBitShort(contextData.horizontalMode);
++		this._writer.writeBitDouble(contextData.rotation);
++		this._writer.write2RawDouble(contextData.insertionPoint);
++		this._writer.write2RawDouble(contextData.alignmentPoint);
++	}
+ 	private _writeMTextAttributeObjectContextData(contextData: MTextAttributeObjectContextData): void {
+ 		this._writeObjectContextData(contextData);
+ 		this._writeAnnotScaleObjectContextData(contextData);
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index fe150aa..540719a 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -44,6 +44,7 @@ import { CadBlockGripTemplate } from '../../Templates/CadBlockGripTemplate.js';
+ import { CadTableEntityTemplate , CadCellStyleTemplate, CadTableCellContentFormatTemplate, CadTableCellContentTemplate} from '../../Templates/CadTableEntityTemplate.js';
+ import { BlockReferenceObjectContextData } from '../../../Objects/BlockReferenceObjectContextData.js';
+ import { MTextAttributeObjectContextData } from '../../../Objects/MTextAttributeObjectContextData.js';
++import { TextObjectContextData } from '../../../Objects/TextObjectContextData.js';
+ import { AcdbPlaceHolder } from '../../../Objects/AcdbPlaceHolder.js';
+ import { BookColor } from '../../../Objects/BookColor.js';
+ import { DimensionAssociation , OsnapPointRef} from '../../../Objects/DimensionAssociation.js';
+@@ -168,6 +169,8 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+     switch (this._reader.valueAsString as string) {
+       case DxfFileToken.blkRefObjectContextData:
+         return this.readObjectCodes(new CadAnnotScaleObjectContextDataTemplate(new BlockReferenceObjectContextData()), this._readAnnotScaleObjectContextData.bind(this), BlockReferenceObjectContextData);
++      case DxfFileToken.textObjectContextData:
++        return this.readObjectCodes(new CadAnnotScaleObjectContextDataTemplate(new TextObjectContextData()), this._readTextObjectContextData.bind(this), TextObjectContextData);
+       case DxfFileToken.mTextAttributeObjectContextData:
+         return this.readObjectCodes(new CadAnnotScaleObjectContextDataTemplate(new MTextAttributeObjectContextData()), this._readAnnotScaleObjectContextData.bind(this), MTextAttributeObjectContextData);
+       case DxfFileToken.objectPlaceholder:
+@@ -519,6 +522,43 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+     }
+   }
+ 
++  // AcDbObjectContextData holds 70 (the version) and 290 (default); AcDbAnnotScaleObjectContextData
++  // the scale (340) and then the text's own values, with no subclass marker of their own: 70 the
++  // horizontal mode, 50 the rotation, 10/20 and 11/21 the points.
++  private _readTextObjectContextData(template: CadTemplate, map: DxfMap): boolean {
++    const tmp = template as CadAnnotScaleObjectContextDataTemplate;
++    const data = tmp.cadObject as TextObjectContextData;
++    const own = this.currentSubclass === DxfSubclassMarker.annotScaleObjectContextData;
++    switch (this._reader.code as number) {
++      case 70:
++        if (own) data.horizontalMode = this._reader.valueAsShort;
++        else data.version = this._reader.valueAsShort;
++        return true;
++      case 290:
++        data.default = this._reader.valueAsBool;
++        return true;
++      case 340:
++        tmp.scaleHandle = this._reader.valueAsHandle;
++        return true;
++      case 50:
++        data.rotation = this._reader.valueAsAngle;
++        return true;
++      case 10:
++        data.insertionPoint = new XY(this._reader.valueAsDouble, data.insertionPoint.y);
++        return true;
++      case 20:
++        data.insertionPoint = new XY(data.insertionPoint.x, this._reader.valueAsDouble);
++        return true;
++      case 11:
++        data.alignmentPoint = new XY(this._reader.valueAsDouble, data.alignmentPoint.y);
++        return true;
++      case 21:
++        data.alignmentPoint = new XY(data.alignmentPoint.x, this._reader.valueAsDouble);
++        return true;
++      default:
++        return false;
++    }
++  }
+   private _readAnnotScaleObjectContextData(template: CadTemplate, map: DxfMap): boolean {
+     const tmp = template as CadAnnotScaleObjectContextDataTemplate;
+     switch (this._reader.code as number) {
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index fcd3042..bc72036 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -52,6 +52,7 @@ import { ProxyObject } from '../../../Objects/ProxyObject.js';
+ import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
+ import { MTextAttributeObjectContextData } from '../../../Objects/MTextAttributeObjectContextData.js';
+ import { BlockReferenceObjectContextData } from '../../../Objects/BlockReferenceObjectContextData.js';
++import { TextObjectContextData } from '../../../Objects/TextObjectContextData.js';
+ import { Entity } from '../../../Entities/Entity.js';
+ import { GroupCodeValueType } from '../../../GroupCodeValue.js';
+ import { IHandledCadObject } from '../../../IHandledCadObject.js';
+@@ -450,6 +451,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       this._writeAcdbPlaceHolder(co);
+     } else if (co instanceof BlockReferenceObjectContextData) {
+       this._writeBlockReferenceObjectContextData(co);
++    } else if (co instanceof TextObjectContextData) {
++      this._writeTextObjectContextData(co);
+     } else if (co instanceof MTextAttributeObjectContextData) {
+       this._writeMTextAttributeObjectContextData(co);
+     } else if (co instanceof BookColor) {
+@@ -744,10 +747,26 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+   }
+ 
+ 	private _writeAnnotScaleObjectContextData(contextData: import('../../../Objects/AnnotScaleObjectContextData.js').AnnotScaleObjectContextData): void {
++		// Every context data object starts with its AcDbObjectContextData version and default flag;
++		// leaving them out read a block reference's back as not the default.
++		this._writer.write(DxfCode.Subclass, DxfSubclassMarker.objectContextData);
++		this._writer.write(70, contextData.version);
++		this._writer.write(290, contextData.default);
+ 		this._writer.write(DxfCode.Subclass, DxfSubclassMarker.annotScaleObjectContextData);
+ 		this._writer.writeHandle(340, contextData.scale);
+ 	}
+ 
++	// AutoCAD's layout (ACadSharp's sample_AC1024+ DXF saves): the AcDbObjectContextData version
++	// and default flag, the scale, then the text's values with no subclass marker of their own.
++	private _writeTextObjectContextData(contextData: TextObjectContextData): void {
++		this._writeAnnotScaleObjectContextData(contextData);
++		this._writer.write(70, contextData.horizontalMode);
++		this._writer.write(50, MathHelper.radToDeg(contextData.rotation));
++		this._writer.write(10, contextData.insertionPoint.x);
++		this._writer.write(20, contextData.insertionPoint.y);
++		this._writer.write(11, contextData.alignmentPoint.x);
++		this._writer.write(21, contextData.alignmentPoint.y);
++	}
+ 	private _writeBlockReferenceObjectContextData(contextData: BlockReferenceObjectContextData): void {
+ 		const map = DxfClassMap.create(BlockReferenceObjectContextData);
+ 		this._writeAnnotScaleObjectContextData(contextData);
+diff --git a/src/Objects/TextObjectContextData.ts b/src/Objects/TextObjectContextData.ts
+new file mode 100644
+index 0000000..7d50295
+--- /dev/null
++++ b/src/Objects/TextObjectContextData.ts
+@@ -0,0 +1,24 @@
++import { AnnotScaleObjectContextData } from './AnnotScaleObjectContextData.js';
++import { DxfFileToken } from '../DxfFileToken.js';
++import { XY } from '../Math/XY.js';
++
++/**
++ * The representation of an annotative TEXT (or single-line attribute) at one annotation scale
++ * (`ACDB_TEXTOBJECTCONTEXTDATA_CLASS`, AcDbTextObjectContextData), kept in the
++ * `ACDB_ANNOTATIONSCALES` dictionary of the entity's `AcDbContextDataManager`. Points are OCS,
++ * as the TEXT's own 10 and 11.
++ */
++export class TextObjectContextData extends AnnotScaleObjectContextData {
++	/** DXF 70 after the scale: the horizontal alignment (the TEXT's 72). */
++	horizontalMode: number = 0;
++	/** DXF 50, radians. */
++	rotation: number = 0;
++	/** DXF 10/20: the first alignment point. */
++	insertionPoint: XY = new XY(0, 0);
++	/** DXF 11/21: the second alignment point. */
++	alignmentPoint: XY = new XY(0, 0);
++
++	override get objectName(): string {
++		return DxfFileToken.textObjectContextData;
++	}
++}
+diff --git a/src/index.ts b/src/index.ts
+index f760d5b..734f0bb 100644
+--- a/src/index.ts
++++ b/src/index.ts
+@@ -484,6 +484,7 @@ export { Material, MaterialChannelFlags, MaterialIlluminationModel, MaterialMode
+ export { MLineStyleElement, MLineStyle } from './Objects/MLineStyle.js';
+ export { MLineStyleFlags } from './Objects/MLineStyleFlags.js';
+ export { MTextAttributeObjectContextData } from './Objects/MTextAttributeObjectContextData.js';
++export { TextObjectContextData } from './Objects/TextObjectContextData.js';
+ export { MultiLeaderDrawOrderType } from './Objects/MultiLeaderDrawOrderType.js';
+ export { BreakInfo, StartEndPointPair, LeaderLine, LeaderRoot, MultiLeaderObjectContextData } from './Objects/MultiLeaderObjectContextData.js';
+ export { MultiLeaderStyle } from './Objects/MultiLeaderStyle.js';

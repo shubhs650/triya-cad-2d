@@ -4,7 +4,10 @@
 // in `unmapped` and stay with the retained original only.
 
 import {
+  AnnotScaleObjectContextData,
+  CadDictionary,
   EntityPlotStyleType,
+  TextObjectContextData,
   Arc,
   Hatch,
   HatchBoundaryPathArc,
@@ -71,6 +74,8 @@ import {
   type XYZ,
 } from '@node-projects/acad-ts';
 import type {
+  AnnotationRepresentation,
+  AnnotativeData,
   AttributeFields,
   HatchEdge,
   HatchLoop,
@@ -1441,6 +1446,44 @@ interface Ctx {
   readonly dimStyle: (s: DimensionStyle) => string;
 }
 
+/**
+ * An annotative entity's representations: the objects of the `ACDB_ANNOTATIONSCALES` dictionary
+ * in its extension dictionary's `AcDbContextDataManager` (AutoCAD keeps the manager, emptied,
+ * when the annotative property is turned off, so an empty one maps to none). A TEXT's context
+ * data holds OCS values, mapped to plan coordinates like the text's own (`textFields`).
+ */
+function annotative(e: Entity): AnnotativeData | undefined {
+  const manager = e.xDictionary?.get(CONTEXT_DATA_MANAGER);
+  const scales = manager instanceof CadDictionary ? manager.get(ANNOTATION_SCALES) : undefined;
+  if (!(scales instanceof CadDictionary)) return undefined;
+  const pl: Plane = e instanceof TextEntity ? plane(e.normal) : 'up';
+  const representations = [...scales].map((o): AnnotationRepresentation => {
+    if (!(o instanceof AnnotScaleObjectContextData)) return { handle: hex(o.handle) };
+    const scale = ref(o.scale);
+    const t = o instanceof TextObjectContextData && pl !== 'tilted' ? o : undefined;
+    return {
+      handle: hex(o.handle),
+      ...(scale ? { scale } : {}),
+      isDefault: o.default,
+      ...(t
+        ? {
+            text: {
+              position: planOf(t.insertionPoint, pl),
+              alignmentPoint: planOf(t.alignmentPoint, pl),
+              rotation: pl === 'down' ? norm(Math.PI - t.rotation) : t.rotation,
+              halign: t.horizontalMode,
+            },
+          }
+        : {}),
+    };
+  });
+  return representations.length > 0 ? { representations } : undefined;
+}
+
+/** The extension dictionary entry holding an annotative object's context data. */
+const CONTEXT_DATA_MANAGER = 'AcDbContextDataManager';
+const ANNOTATION_SCALES = 'ACDB_ANNOTATIONSCALES';
+
 /** The AcDbEntity properties, shared by entities and the ATTRIBs folded into an INSERT. */
 function entityProps(e: Entity): EntityProps & ObjectCommon {
   const material = ref(e.material);
@@ -1450,6 +1493,7 @@ function entityProps(e: Entity): EntityProps & ObjectCommon {
     e.plotStyleType === EntityPlotStyleType.ByObjectId && e.plotStyleName !== 0
       ? hex(e.plotStyleName)
       : undefined;
+  const anno = annotative(e);
   return {
     ...common(e),
     layer: hex(e.layer.handle),
@@ -1461,6 +1505,7 @@ function entityProps(e: Entity): EntityProps & ObjectCommon {
     visible: !e.isInvisible,
     ...(plotStyle ? { plotStyle } : {}),
     ...(material ? { material } : {}),
+    ...(anno ? { annotative: anno } : {}),
   };
 }
 

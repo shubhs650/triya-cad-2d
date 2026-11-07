@@ -52,6 +52,7 @@ import { ProxyObject } from '../../../Objects/ProxyObject.js';
 import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
 import { MTextAttributeObjectContextData } from '../../../Objects/MTextAttributeObjectContextData.js';
 import { BlockReferenceObjectContextData } from '../../../Objects/BlockReferenceObjectContextData.js';
+import { TextObjectContextData } from '../../../Objects/TextObjectContextData.js';
 import { Entity } from '../../../Entities/Entity.js';
 import { GroupCodeValueType } from '../../../GroupCodeValue.js';
 import { IHandledCadObject } from '../../../IHandledCadObject.js';
@@ -450,6 +451,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this._writeAcdbPlaceHolder(co);
     } else if (co instanceof BlockReferenceObjectContextData) {
       this._writeBlockReferenceObjectContextData(co);
+    } else if (co instanceof TextObjectContextData) {
+      this._writeTextObjectContextData(co);
     } else if (co instanceof MTextAttributeObjectContextData) {
       this._writeMTextAttributeObjectContextData(co);
     } else if (co instanceof BookColor) {
@@ -744,10 +747,26 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
   }
 
 	private _writeAnnotScaleObjectContextData(contextData: import('../../../Objects/AnnotScaleObjectContextData.js').AnnotScaleObjectContextData): void {
+		// Every context data object starts with its AcDbObjectContextData version and default flag;
+		// leaving them out read a block reference's back as not the default.
+		this._writer.write(DxfCode.Subclass, DxfSubclassMarker.objectContextData);
+		this._writer.write(70, contextData.version);
+		this._writer.write(290, contextData.default);
 		this._writer.write(DxfCode.Subclass, DxfSubclassMarker.annotScaleObjectContextData);
 		this._writer.writeHandle(340, contextData.scale);
 	}
 
+	// AutoCAD's layout (ACadSharp's sample_AC1024+ DXF saves): the AcDbObjectContextData version
+	// and default flag, the scale, then the text's values with no subclass marker of their own.
+	private _writeTextObjectContextData(contextData: TextObjectContextData): void {
+		this._writeAnnotScaleObjectContextData(contextData);
+		this._writer.write(70, contextData.horizontalMode);
+		this._writer.write(50, MathHelper.radToDeg(contextData.rotation));
+		this._writer.write(10, contextData.insertionPoint.x);
+		this._writer.write(20, contextData.insertionPoint.y);
+		this._writer.write(11, contextData.alignmentPoint.x);
+		this._writer.write(21, contextData.alignmentPoint.y);
+	}
 	private _writeBlockReferenceObjectContextData(contextData: BlockReferenceObjectContextData): void {
 		const map = DxfClassMap.create(BlockReferenceObjectContextData);
 		this._writeAnnotScaleObjectContextData(contextData);

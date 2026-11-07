@@ -205,6 +205,7 @@ import { ProxyObject } from '../../../Objects/ProxyObject.js';
 import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
 import { BlockReferenceObjectContextData } from '../../../Objects/BlockReferenceObjectContextData.js';
 import { MTextAttributeObjectContextData } from '../../../Objects/MTextAttributeObjectContextData.js';
+import { TextObjectContextData } from '../../../Objects/TextObjectContextData.js';
 import { LeaderLine, LeaderRoot, MultiLeaderObjectContextData } from '../../../Objects/MultiLeaderObjectContextData.js';
 import { GradientColor } from '../../../Entities/GradientColor.js';
 import { PolylineFlags } from '../../../Entities/PolylineFlags.js';
@@ -3643,6 +3644,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writeBlockRepresentationData(obj);
 		} else if (obj instanceof BlockReferenceObjectContextData) {
 			this._writeBlockReferenceObjectContextData(obj);
+		} else if (obj instanceof TextObjectContextData) {
+			this._writeTextObjectContextData(obj);
 		} else if (obj instanceof MTextAttributeObjectContextData) {
 			this._writeMTextAttributeObjectContextData(obj);
 		} else if (obj instanceof GeoData) {
@@ -3871,6 +3874,13 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.writeBitDouble(contextData.zScale);
 	}
 
+	private _writeTextObjectContextData(contextData: TextObjectContextData): void {
+		this._writeAnnotScaleObjectContextData(contextData);
+		this._writer.writeBitShort(contextData.horizontalMode);
+		this._writer.writeBitDouble(contextData.rotation);
+		this._writer.write2RawDouble(contextData.insertionPoint);
+		this._writer.write2RawDouble(contextData.alignmentPoint);
+	}
 	private _writeMTextAttributeObjectContextData(contextData: MTextAttributeObjectContextData): void {
 		this._writeObjectContextData(contextData);
 		this._writeAnnotScaleObjectContextData(contextData);

@@ -44,6 +44,7 @@ import { CadBlockGripTemplate } from '../../Templates/CadBlockGripTemplate.js';
 import { CadTableEntityTemplate , CadCellStyleTemplate, CadTableCellContentFormatTemplate, CadTableCellContentTemplate} from '../../Templates/CadTableEntityTemplate.js';
 import { BlockReferenceObjectContextData } from '../../../Objects/BlockReferenceObjectContextData.js';
 import { MTextAttributeObjectContextData } from '../../../Objects/MTextAttributeObjectContextData.js';
+import { TextObjectContextData } from '../../../Objects/TextObjectContextData.js';
 import { AcdbPlaceHolder } from '../../../Objects/AcdbPlaceHolder.js';
 import { BookColor } from '../../../Objects/BookColor.js';
 import { DimensionAssociation , OsnapPointRef} from '../../../Objects/DimensionAssociation.js';
@@ -168,6 +169,8 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
     switch (this._reader.valueAsString as string) {
       case DxfFileToken.blkRefObjectContextData:
         return this.readObjectCodes(new CadAnnotScaleObjectContextDataTemplate(new BlockReferenceObjectContextData()), this._readAnnotScaleObjectContextData.bind(this), BlockReferenceObjectContextData);
+      case DxfFileToken.textObjectContextData:
+        return this.readObjectCodes(new CadAnnotScaleObjectContextDataTemplate(new TextObjectContextData()), this._readTextObjectContextData.bind(this), TextObjectContextData);
       case DxfFileToken.mTextAttributeObjectContextData:
         return this.readObjectCodes(new CadAnnotScaleObjectContextDataTemplate(new MTextAttributeObjectContextData()), this._readAnnotScaleObjectContextData.bind(this), MTextAttributeObjectContextData);
       case DxfFileToken.objectPlaceholder:
@@ -519,6 +522,43 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
     }
   }
 
+  // AcDbObjectContextData holds 70 (the version) and 290 (default); AcDbAnnotScaleObjectContextData
+  // the scale (340) and then the text's own values, with no subclass marker of their own: 70 the
+  // horizontal mode, 50 the rotation, 10/20 and 11/21 the points.
+  private _readTextObjectContextData(template: CadTemplate, map: DxfMap): boolean {
+    const tmp = template as CadAnnotScaleObjectContextDataTemplate;
+    const data = tmp.cadObject as TextObjectContextData;
+    const own = this.currentSubclass === DxfSubclassMarker.annotScaleObjectContextData;
+    switch (this._reader.code as number) {
+      case 70:
+        if (own) data.horizontalMode = this._reader.valueAsShort;
+        else data.version = this._reader.valueAsShort;
+        return true;
+      case 290:
+        data.default = this._reader.valueAsBool;
+        return true;
+      case 340:
+        tmp.scaleHandle = this._reader.valueAsHandle;
+        return true;
+      case 50:
+        data.rotation = this._reader.valueAsAngle;
+        return true;
+      case 10:
+        data.insertionPoint = new XY(this._reader.valueAsDouble, data.insertionPoint.y);
+        return true;
+      case 20:
+        data.insertionPoint = new XY(data.insertionPoint.x, this._reader.valueAsDouble);
+        return true;
+      case 11:
+        data.alignmentPoint = new XY(this._reader.valueAsDouble, data.alignmentPoint.y);
+        return true;
+      case 21:
+        data.alignmentPoint = new XY(data.alignmentPoint.x, this._reader.valueAsDouble);
+        return true;
+      default:
+        return false;
+    }
+  }
   private _readAnnotScaleObjectContextData(template: CadTemplate, map: DxfMap): boolean {
     const tmp = template as CadAnnotScaleObjectContextDataTemplate;
     switch (this._reader.code as number) {
