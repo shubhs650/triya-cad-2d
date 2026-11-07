@@ -34,6 +34,8 @@ export interface RecordRules<A extends TableEntry, R extends SymbolTableRecord> 
   readonly fixedNames: readonly string[];
   /** The table's own problems with the change from `before` (undefined: a new record). */
   readonly problems: (before: R | undefined, after: R, acad: A | undefined) => string[];
+  /** Records may share a name (VPORT: every tiled viewport is *Active). */
+  readonly namesRepeat?: boolean;
   /** A name may be empty (a shape file's STYLE record). */
   readonly mayBeNameless?: (after: R) => boolean;
 }
@@ -88,7 +90,7 @@ export function planRecords<A extends TableEntry, R extends SymbolTableRecord>(
       if (b && fixed.has(b.name.toUpperCase())) out.push(`${b.name} cannot be renamed`);
       else if (b && ((b.flags ?? 0) & XREF_BITS) !== 0)
         out.push(`an xref-dependent ${rules.what} cannot be renamed`);
-      else if (!nameless && (names.get(a.name.toUpperCase()) ?? 0) > 1)
+      else if (!nameless && !rules.namesRepeat && (names.get(a.name.toUpperCase()) ?? 0) > 1)
         out.push(`another ${rules.what} is named ${a.name}`);
       else if (
         !nameless &&
