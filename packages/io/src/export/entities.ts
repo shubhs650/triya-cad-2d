@@ -252,7 +252,8 @@ const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefi
 const UNSUPPORTED_PROPS = ['xdata', 'reactors', 'extDict', 'plotStyle', 'annotative'] as const;
 /**
  * An entity's reactors are written: the only changes accepted are those that keep a LEADER and
- * its annotation, or an associative HATCH and its boundary objects, pointing at each other
+ * its annotation, an associative HATCH and its boundary objects, or a VIEWPORT and its clip
+ * boundary, pointing at each other
  * (`reactorProblems` in reactors.ts checks them).
  * An ATTRIB's are not.
  */
@@ -1854,10 +1855,7 @@ const viewportWriter: Writer<ViewportGeometry> = {
   problems(r, before, g) {
     const out: string[] = [];
     const d = differ(before, g);
-    // The clip boundary entity points back at the viewport through its reactors (M1-75).
-    if (before?.clipBoundary !== g.clipBoundary) {
-      out.push('clip boundary changes');
-    }
+    // The clip boundary, and its reactor back, are checked with the whole model (reactors.ts).
     if (d('frozenLayers')) {
       for (const l of g.frozenLayers) {
         if (!resolve(r, l, Layer)) out.push(`frozen layer ${l} does not exist`);
@@ -1893,6 +1891,10 @@ const viewportWriter: Writer<ViewportGeometry> = {
     if (d('frontClip')) v.frontClipPlane = g.frontClip;
     if (d('backClip')) v.backClipPlane = g.backClip;
     if (d('frozenLayers')) v.frozenLayers = g.frozenLayers.map((l) => resolve(r, l, Layer)!);
+    if (d('clipBoundary')) {
+      // A clip the same save adds (VPCLIP Polygonal) is created before any entity is written.
+      v.boundary = g.clipBoundary ? resolve(r, g.clipBoundary, AcadEntity)! : null;
+    }
     if (d('plotStyleSheet')) v.styleSheetName = g.plotStyleSheet;
     if (d('renderMode')) v.renderMode = g.renderMode;
     if (d('visualStyle')) {

@@ -1,7 +1,7 @@
 // TriyaToAcad on the public corpus (M1-05, M1-75): a markup-style edit of every entity Triya can
 // write (move it; grow circles and arcs, turn arcs, text, blocks and feature control frames;
 // move hatches with their pattern origin, images, wipeouts, underlays, multilines, multileaders
-// and viewport frames; move tables, widen their first column, heighten their first row and retype
+// and viewport frames, every other clipped viewport made rectangular; move tables, widen their first column, heighten their first row and retype
 // their cells), with what the Layers palette and a markup session change outside the
 // entities (every layer turned off or on, locked or unlocked and recoloured; every text style
 // widened and slanted; every linetype redescribed and its pattern doubled; every dimension style
@@ -47,6 +47,7 @@ import {
   type UcsRecord,
   type Vec2,
   type ViewRecord,
+  type ViewportGeometry,
   type VportRecord,
   type WipeoutVariables,
 } from '@triya/engine';
@@ -69,6 +70,9 @@ const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i
 const writable = new Set<string>(WRITABLE_TYPES);
 /** Each file opens, maps, saves and reopens twice; the slowest takes about 1 s alone. */
 const PER_FILE_BUDGET_MS = 10_000;
+
+/** DXF 90 bit 65536: the viewport is clipped by its 340 entity (DXF reference, VIEWPORT). */
+const NON_RECTANGULAR = 0x10000;
 
 const D: Vec2 = { x: 0.5, y: -0.25 };
 const move = (p: Vec2): Vec2 => ({ x: p.x + D.x, y: p.y + D.y });
@@ -799,6 +803,22 @@ describe('TriyaToAcad edits on the public corpus', () => {
         const hooked = targets
           .filter((e) => e.geom.kind === 'HATCH' && e.geom.associative)
           .filter((_e, i) => i % 2 === 1);
+        // Every other clipped VIEWPORT is rectangular again (VPCLIP Delete), which drops it from
+        // its clip object's reactors; the rest keep their clip while they move.
+        const clippedViewports = targets.filter(
+          (e) => e.geom.kind === 'VIEWPORT' && e.geom.clipBoundary !== undefined,
+        );
+        const unclipped = clippedViewports
+          .filter((_e, i) => i % 2 === 0)
+          .map((e) => {
+            const { clipBoundary, ...g } = b.entity(e.id)!.geom as ViewportGeometry;
+            b.updateEntity(e.id, { geom: { ...g, flags: g.flags & ~NON_RECTANGULAR } });
+            const c = model.entityByHandle(clipBoundary!)!;
+            const reactors = (b.entity(c.id)!.reactors ?? []).filter((h) => h !== e.handle);
+            b.updateEntity(c.id, { reactors });
+            return { viewport: e, clip: c };
+          });
+        const stillClipped = clippedViewports.filter((_e, i) => i % 2 === 1);
         for (const t of drawOrder)
           b.updateObject(t.handle, { entries: t.entries } as Partial<NonGraphicalObject>);
         const r12 = version <= ACadVersion.AC1009;
@@ -846,6 +866,19 @@ describe('TriyaToAcad edits on the public corpus', () => {
           ),
         ];
         expect(wrongBoundaries, f.path).toEqual([]);
+        // An unclipped viewport is off its old clip object's reactors; a clipped one still on it.
+        const wrongClips = [
+          ...unclipped
+            .filter(({ viewport, clip }) =>
+              (back.get(clip.handle)?.reactors ?? []).includes(viewport.handle),
+            )
+            .map(({ viewport, clip }) => `${clip.type} ${clip.handle} -> ${viewport.handle}`),
+          ...stillClipped
+            .map((v) => [v, (v.geom as ViewportGeometry).clipBoundary!] as const)
+            .filter(([v, c]) => !(back.get(c)?.reactors ?? []).includes(v.handle))
+            .map(([v, c]) => `${c} -/> ${v.handle}`),
+        ];
+        expect(wrongClips, f.path).toEqual([]);
         const backLayers = new Map(init.tables?.layers?.map((l) => [l.handle, l]));
         const transparencyApps = new Set(
           (init.tables?.appIds ?? [])
