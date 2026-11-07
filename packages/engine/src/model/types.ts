@@ -1337,6 +1337,24 @@ export interface Layout extends ObjectCommon {
   readonly limits?: { readonly min: Vec2; readonly max: Vec2 };
   /** The page setup the layout's sheet is drawn from (M1-18). */
   readonly plot?: LayoutPlot;
+  /**
+   * The rest of the layout's space state (M1-75 part 30). While a paper layout is the current one
+   * (on `*Paper_Space`) the header's `$P…` variables hold it live, as they hold its limits and
+   * flags, and AutoCAD saves it into the LAYOUT too; making another layout current swaps them.
+   */
+  readonly space?: LayoutSpace;
+}
+
+/** DXF 12–17 and 146 of AcDbLayout, with the header variables that hold them for the current layout. */
+export interface LayoutSpace {
+  /** DXF 12: `$PINSBASE`. */
+  readonly insertionBase: Vec3;
+  /** DXF 14 / 15: `$PEXTMIN` / `$PEXTMAX`. */
+  readonly extents: { readonly min: Vec3; readonly max: Vec3 };
+  /** DXF 146: `$PELEVATION`. */
+  readonly elevation: number;
+  /** DXF 13 / 16 / 17: `$PUCSORG`, `$PUCSXDIR`, `$PUCSYDIR`. */
+  readonly ucs: { readonly origin: Vec3; readonly xAxis: Vec3; readonly yAxis: Vec3 };
 }
 
 /** DXF 72 plot paper units. */

@@ -385,7 +385,7 @@ export function triyaToAcad(
   const header = planHeader(original, base, model, format, [...created.values()], renamed);
   const drawOrder = planDrawOrder(original, base, model, r);
   // Before the entities: a new block holds entities and INSERTs, dimensions and tables name it.
-  const blocks = planBlocks(original, base, model, r, format, drawOrder);
+  const blocks = planBlocks(original, base, model, r, format, drawOrder, layouts.plan.swapping);
   const { plan: p, problems } = plan(original, base, model, r, format);
   // After the entities: a record the save removes may lose its last referrer in the same save.
   const purge = planPurge(original, base, model, r, p.removed);

@@ -14,12 +14,20 @@
 // (purge.ts). AutoCAD sets every layout up for plotting, so a new one states its limits and
 // page setup.
 //
-// Refused, before anything changes: removing the Model layout, or the current layout (the one
-// on *Paper_Space: AutoCAD first makes another current, which moves *Paper_Space to that one's
-// block); a layout removed without its block or added without a new one; a layout moving to
-// another block record (AutoCAD swaps *Paper_Space between layouts only when another one is
-// made current); any layout change before R2000, which introduced layouts; values AutoCAD
-// does not take; and xdata, reactor and extension dictionary changes.
+// Making another layout current (part 30): AutoCAD swaps the names of the two sheet blocks, so the
+// new current layout's block becomes *Paper_Space and the old one's takes its name (the blocks
+// keep their handles, and DXF then writes the new current sheet's entities in ENTITIES); the
+// header's $P… variables, which hold the current layout's limits, flags and space, take the new
+// current layout's, and the layout that was current keeps them in its LAYOUT. The layout that was
+// current may then be deleted, as AutoCAD deletes the current layout once another is current.
+//
+// Refused, before anything changes: removing the Model layout, or the current layout while no
+// other one is made current; a layout removed without its block or added without a new one; a
+// layout moving to another block record; sheet block names changing other than by that swap
+// (blocks.ts), or a layout the same save adds made current; a named paper-space UCS (DXF 345 / 346,
+// $PUCSNAME, which Triya does not map) on a switch; any layout change before R2000, which
+// introduced layouts; values AutoCAD does not take; and xdata, reactor and extension dictionary
+// changes.
 
 import {
   ACadVersion,
@@ -28,6 +36,7 @@ import {
   Layout as AcadLayout,
   PaperMargin,
   XY,
+  XYZ,
   type CadDocument,
   type CadObject,
 } from '@node-projects/acad-ts';
@@ -39,6 +48,7 @@ import type {
   HeaderValue,
   Layout,
   LayoutPlot,
+  LayoutSpace,
   Vec2,
 } from '@triya/engine';
 import { entryRenameProblems, renameEntries } from './dictionary-entries';
@@ -53,6 +63,13 @@ export interface LayoutsPlan {
   /** New layouts, each made on the block record the same save adds. */
   readonly added: Layout[];
   readonly removed: AcadLayout[];
+  /** Another layout made current: its block, which takes the name *Paper_Space (part 30). */
+  readonly current?: BlockRecord;
+  /**
+   * The sheet blocks whose names swap as another layout is made current, which this file checks
+   * and writes, not blocks.ts (also when the switch is refused: the problems say why here).
+   */
+  readonly swapping: ReadonlySet<Handle>;
 }
 
 /** The sheet block of a layout other than the current one: `*Paper_Space` and a number. */
@@ -94,6 +111,9 @@ const flagOn = (v: HeaderValue | undefined): boolean => v === true || v === 1;
 const sameXY = (a: HeaderValue | undefined, b: Vec2 | undefined): boolean =>
   typeof a === 'object' && b !== undefined && a.x === b.x && a.y === b.y;
 
+/** The name of the current paper layout's block. */
+const CURRENT_SHEET = '*PAPER_SPACE';
+
 /** The layout's space: model, the current paper layout's *Paper_Space, or another sheet. */
 function spaceOf(
   l: Layout,
@@ -105,11 +125,67 @@ function spaceOf(
   return 'other';
 }
 
-/** The header variables that state a current layout's limits and flags. */
+/** The header variables that state a current layout's limits, flags and space. */
 const HEADER = {
-  model: { min: '$LIMMIN', max: '$LIMMAX', check: '$LIMCHECK', ltscale: undefined },
-  paper: { min: '$PLIMMIN', max: '$PLIMMAX', check: '$PLIMCHECK', ltscale: '$PSLTSCALE' },
+  model: {
+    min: '$LIMMIN',
+    max: '$LIMMAX',
+    check: '$LIMCHECK',
+    ltscale: undefined,
+    space: ['$INSBASE', '$EXTMIN', '$EXTMAX', '$ELEVATION', '$UCSORG', '$UCSXDIR', '$UCSYDIR'],
+  },
+  paper: {
+    min: '$PLIMMIN',
+    max: '$PLIMMAX',
+    check: '$PLIMCHECK',
+    ltscale: '$PSLTSCALE',
+    space: [
+      '$PINSBASE',
+      '$PEXTMIN',
+      '$PEXTMAX',
+      '$PELEVATION',
+      '$PUCSORG',
+      '$PUCSXDIR',
+      '$PUCSYDIR',
+    ],
+  },
 } as const;
+
+/** The `LayoutSpace` values in the order of `HEADER[…].space`. */
+const spaceValues = (s: LayoutSpace | undefined): (HeaderValue | undefined)[] =>
+  s
+    ? [
+        s.insertionBase,
+        s.extents.min,
+        s.extents.max,
+        s.elevation,
+        s.ucs.origin,
+        s.ucs.xAxis,
+        s.ucs.yAxis,
+      ]
+    : [];
+
+/** Whether a header variable states value `v` (a point by its X, Y and Z; Z 0 when it has none). */
+function states(h: HeaderValue | undefined, v: HeaderValue | undefined): boolean {
+  if (v === undefined || h === undefined) return false;
+  if (typeof v === 'boolean') return flagOn(h) === v;
+  if (typeof v !== 'object' || typeof h !== 'object') return h === v;
+  const z = (p: object) => ('z' in p && typeof p.z === 'number' ? p.z : 0);
+  return h.x === v.x && h.y === v.y && z(h) === z(v);
+}
+
+/** Each header variable of the current paper layout with what it states of layout `l`. */
+function paperHeader(l: Layout): [string, HeaderValue | undefined][] {
+  const v = HEADER.paper;
+  const values = spaceValues(l.space);
+  return [
+    [v.min, l.limits?.min],
+    [v.max, l.limits?.max],
+    [v.check, ((l.flags ?? 0) & 2) !== 0],
+    [v.ltscale, ((l.flags ?? 0) & 1) !== 0],
+    ...v.space.map((name, i): [string, HeaderValue | undefined] => [name, values[i]]),
+  ];
+}
 
 /** The model's layout changes against the original's mapping, and why any cannot be written. */
 export function planLayouts(
@@ -118,7 +194,12 @@ export function planLayouts(
   model: DocumentModel,
   r: Resolver,
 ): { plan: LayoutsPlan; problems: string[] } {
-  const plan: LayoutsPlan = { updated: [], added: [], removed: [] };
+  const plan: { -readonly [K in keyof LayoutsPlan]: LayoutsPlan[K] } = {
+    updated: [],
+    added: [],
+    removed: [],
+    swapping: new Set(),
+  };
   const problems: string[] = [];
   const version = doc.header?.version;
   const before = new Map((base.layouts ?? []).map((l) => [l.handle, l]));
@@ -135,11 +216,15 @@ export function planLayouts(
     const key = String(l.name).toUpperCase();
     names.set(key, (names.get(key) ?? 0) + 1);
   }
+  const switched = planCurrent(doc, base, model, r, before, after, baseRecords, noLayouts);
+  problems.push(...switched.problems);
+  if (switched.current) plan.current = switched.current;
+  plan.swapping = switched.swapping ?? new Set();
   let tabsChange = false;
   for (const [h, b] of before) {
     if (after.has(h)) continue;
     tabsChange = true;
-    const out = removalProblems(b, baseRecords, model, noLayouts);
+    const out = removalProblems(b, baseRecords, model, noLayouts, switched.from === h);
     const acad = resolve(r, h, AcadLayout);
     if (!acad) out.push('the original is not a LAYOUT');
     else if (entryKey(doc, acad) === undefined) out.push('ACAD_LAYOUT does not list it');
@@ -189,7 +274,9 @@ export function planLayouts(
       );
     if (!same(b.limits, a.limits)) out.push(...limitsProblems(a.limits));
     if (!same(b.plot, a.plot)) out.push(...plotProblems(b.plot, a.plot, space));
-    if (space !== 'other') {
+    if (!same(b.space, a.space)) out.push(...spaceProblems(a.space));
+    // On a switch, which layout the header states is planCurrent's to check.
+    if (space === 'model' || (space === 'paper' && !switched.from)) {
       out.push(...headerProblems(b, a, HEADER[space], baseHeader, model.header));
     }
     if (out.length > 0) problems.push(...out.map((p) => `${label}: ${p}`));
@@ -207,16 +294,92 @@ export function planLayouts(
   return { plan, problems };
 }
 
+/**
+ * Another layout made current: the paper layout the model has on *Paper_Space is not the one the
+ * drawing had there. Checks that the two sheet blocks swap names, as AutoCAD swaps them, and that
+ * the header, where it stated the old current layout, states the new one.
+ */
+function planCurrent(
+  doc: CadDocument,
+  base: DocumentInit,
+  model: DocumentModel,
+  r: Resolver,
+  before: ReadonlyMap<Handle, Layout>,
+  after: ReadonlyMap<Handle, Layout>,
+  baseRecords: ReadonlyMap<Handle, BlockTableRecord>,
+  noLayouts: string | undefined,
+): {
+  current?: BlockRecord;
+  from?: Handle;
+  swapping?: ReadonlySet<Handle>;
+  problems: string[];
+} {
+  const was = [...before.values()].find((l) => spaceOf(l, baseRecords) === 'paper');
+  const now = [...after.values()].find(
+    (l) => model.tables.blockRecords.get(l.blockRecord)?.name.toUpperCase() === CURRENT_SHEET,
+  );
+  if (!was || !now || was.handle === now.handle) return { problems: [] };
+  const label = `layout ${now.name} (${now.handle})`;
+  const kept = model.tables.blockRecords.get(was.blockRecord);
+  const swapping = new Set([now.blockRecord, ...(kept ? [was.blockRecord] : [])]);
+  const fail = (...out: string[]) => ({
+    from: was.handle,
+    swapping,
+    problems: out.map((p) => `${label}: made current, ${p}`),
+  });
+  if (noLayouts) return fail(noLayouts);
+  const sheet = baseRecords.get(was.blockRecord)!.name;
+  const old = baseRecords.get(now.blockRecord);
+  if (!before.has(now.handle) || !old)
+    return fail('but a layout the same save adds cannot be made current yet');
+  const out: string[] = [];
+  if (model.tables.blockRecords.get(now.blockRecord)!.name !== sheet)
+    out.push(`its block takes the name ${sheet}`);
+  if (kept && kept.name !== old.name)
+    out.push(`the block of the layout that was current takes ${old.name}, its block's name`);
+  // A named UCS of paper space (DXF 345 / 346, $PUCSNAME / $PUCSBASE) is not mapped.
+  const baseHeader = new Map(base.header ?? []);
+  for (const l of [was, now]) {
+    const acad = resolve(r, l.handle, AcadLayout);
+    if (acad?.ucs || acad?.baseUCS)
+      out.push(`layout ${l.name} has a named UCS (DXF 345 / 346), which Triya does not map`);
+  }
+  for (const name of ['$PUCSNAME', '$PUCSBASE']) {
+    const v = baseHeader.get(name) ?? '';
+    if (v !== '') out.push(`${name} names a UCS, which Triya does not keep with its layout`);
+  }
+  const stated = new Map(paperHeader(was));
+  for (const [name, value] of paperHeader(now)) {
+    if (states(baseHeader.get(name), stated.get(name)) && !states(model.header.get(name), value))
+      out.push(`${name} states the current layout's; set it to ${now.name}'s`);
+  }
+  if (out.length > 0) return fail(...out);
+  const block = resolve(r, now.blockRecord, BlockRecord);
+  if (!block) return fail('its block is not a BLOCK_RECORD');
+  return { current: block, from: was.handle, swapping, problems: [] };
+}
+
+/** A layout's space: every value a number. */
+function spaceProblems(s: LayoutSpace | undefined): string[] {
+  if (!s) return ['space: a layout keeps its space'];
+  const points = [s.insertionBase, s.extents?.min, s.extents?.max, s.ucs?.origin, s.ucs?.xAxis];
+  const all = [...points, s.ucs?.yAxis];
+  if (!all.every((p) => finite(p?.x, p?.y, p?.z)) || !finite(s.elevation))
+    return ['space: each value is a number'];
+  return [];
+}
+
 function removalProblems(
   b: Layout,
   baseRecords: ReadonlyMap<Handle, BlockTableRecord>,
   model: DocumentModel,
   noLayouts: string | undefined,
+  wasCurrent: boolean,
 ): string[] {
   if (noLayouts) return [noLayouts];
   const space = spaceOf(b, baseRecords);
   if (space === 'model') return ['the Model layout cannot be removed'];
-  if (space === 'paper')
+  if (space === 'paper' && !wasCurrent)
     return [
       'the current layout (on *Paper_Space) goes only once another is made current, which moves *Paper_Space to its block',
     ];
@@ -283,6 +446,7 @@ function additionProblems(
   else out.push(...limitsProblems(a.limits));
   if (!a.plot) out.push('a new layout needs its page setup');
   else out.push(...plotProblems(undefined, a.plot, 'other'));
+  if (a.space) out.push(...spaceProblems(a.space));
   return out;
 }
 
@@ -413,6 +577,14 @@ function headerProblems(
   };
   flag(1, 'PSLTSCALE', vars.ltscale);
   flag(2, 'LIMCHECK', vars.check);
+  if (!same(b.space, a.space)) {
+    const was = spaceValues(b.space);
+    const now = spaceValues(a.space);
+    vars.space.forEach((name, i) => {
+      if (states(baseHeader.get(name), was[i]) && !states(header.get(name), now[i]))
+        out.push(`space: ${name} states the current layout's; change it alike`);
+    });
+  }
   return out;
 }
 
@@ -444,7 +616,11 @@ export function writeLayouts(
       acad.maxLimits = new XY(a.limits.max.x, a.limits.max.y);
     }
     if (changed('plot') && a.plot) writePlot(acad, b.plot, a.plot);
+    if (changed('space') && a.space) writeSpace(acad, a.space);
   }
+  // After the blocks (blocks.ts leaves the two names to this) and before PURGE, which takes the
+  // block of a layout deleted once another was made current under the name it then has.
+  if (plan.current) doc.blockRecords!.setPaperSpace(plan.current);
   for (const a of plan.added) {
     const acad = new AcadLayout(a.name);
     // acad-ts keeps a non-zero handle it has not seen, so the layout keeps Triya's handle.
@@ -455,10 +631,22 @@ export function writeLayouts(
     acad.minLimits = new XY(a.limits!.min.x, a.limits!.min.y);
     acad.maxLimits = new XY(a.limits!.max.x, a.limits!.max.y);
     writePlot(acad, undefined, a.plot!);
+    if (a.space) writeSpace(acad, a.space);
     // planLayouts refuses a new layout where ACAD_LAYOUT is missing (additionProblems).
     dict!.add(acad);
     r.created.set(a.handle, acad);
   }
+}
+
+function writeSpace(acad: AcadLayout, s: LayoutSpace): void {
+  const xyz = (p: { x: number; y: number; z: number }) => new XYZ(p.x, p.y, p.z);
+  acad.insertionBasePoint = xyz(s.insertionBase);
+  acad.minExtents = xyz(s.extents.min);
+  acad.maxExtents = xyz(s.extents.max);
+  acad.elevation = s.elevation;
+  acad.origin = xyz(s.ucs.origin);
+  acad.xAxis = xyz(s.ucs.xAxis);
+  acad.yAxis = xyz(s.ucs.yAxis);
 }
 
 function writePlot(acad: AcadLayout, b: LayoutPlot | undefined, a: LayoutPlot): void {

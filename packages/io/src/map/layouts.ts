@@ -2,8 +2,8 @@
 // setup its sheet is drawn from (DXF AcDbLayout and AcDbPlotSettings groups).
 
 import type { CadDocument, Layout as AcadLayout } from '@node-projects/acad-ts';
-import type { Layout, LayoutPlot, PlotPaperUnits as Units } from '@triya/engine';
-import { common, ref, vec2 } from './common';
+import type { Layout, LayoutPlot, LayoutSpace, PlotPaperUnits as Units } from '@triya/engine';
+import { common, ref, vec2, vec3 } from './common';
 
 /** DXF 72: 0 inches, 1 millimetres, 2 pixels. */
 const UNITS: readonly Units[] = ['inches', 'millimeters', 'pixels'];
@@ -25,6 +25,16 @@ function plotOf(l: AcadLayout): LayoutPlot {
   };
 }
 
+/** DXF 12–17 and 146: what the header's `$P…` variables hold while the layout is current. */
+function spaceOf(l: AcadLayout): LayoutSpace {
+  return {
+    insertionBase: vec3(l.insertionBasePoint),
+    extents: { min: vec3(l.minExtents), max: vec3(l.maxExtents) },
+    elevation: l.elevation,
+    ucs: { origin: vec3(l.origin), xAxis: vec3(l.xAxis), yAxis: vec3(l.yAxis) },
+  };
+}
+
 /**
  * Every layout with its block record, in tab order (Model first). A layout whose block record
  * is missing (a damaged file) has no space to show and is left to the retained original.
@@ -42,6 +52,7 @@ export function mapLayouts(doc: CadDocument): Layout[] {
       flags: l.layoutFlags as number,
       limits: { min: vec2(l.minLimits), max: vec2(l.maxLimits) },
       plot: plotOf(l),
+      space: spaceOf(l),
     });
   }
   return out.sort((a, b) => a.tabOrder - b.tabOrder || a.name.localeCompare(b.name));

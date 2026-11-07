@@ -551,3 +551,110 @@ describe('LAYOUT New and Delete', () => {
     ).toEqual([expect.stringMatching(/AC1014 has no layouts \(R2000 added them\)/)]);
   });
 });
+
+describe('Making another layout current', () => {
+  const recordName = (doc: CadDocument, h: string) =>
+    (doc.getCadObject(Number.parseInt(h, 16)) as BlockRecord | null)?.name;
+  const paperHeader = (m: Map<string, unknown> | ReadonlyMap<string, unknown>) =>
+    Object.fromEntries(
+      [...m].filter(([k]) => /^\$P(LIM|SLTSCALE|INSBASE|EXT|ELEVATION|UCS)/.test(k)),
+    );
+
+  it.each(SAVES)(
+    'swaps *Paper_Space to the new current layout and the header to its state (%s %s)',
+    (version, format) => {
+      const bytes = drawing(version, format, { headerAgrees: true });
+      const model = open(bytes);
+      const [one, two] = [layout(model, 'Layout1'), layout(model, 'Layout2')];
+      const was = documentInit(readCadDocument(bytes));
+      edit(model, (b) => b.setCurrentLayout(two.handle));
+      expect(model.header.get('$PLIMMAX')).toEqual(two.limits!.max);
+      const doc = saved(bytes, model, format);
+      // The sheet blocks keep their handles and swap names.
+      expect([recordName(doc, two.blockRecord), recordName(doc, one.blockRecord)]).toEqual([
+        '*Paper_Space',
+        '*Paper_Space0',
+      ]);
+      expect(doc.paperSpace?.handle.toString(16).toUpperCase()).toBe(two.blockRecord);
+      const back = documentInit(doc);
+      expect(back.layouts!.map(comparable)).toEqual(model.layouts.map(comparable));
+      expect(paperHeader(new Map(back.header))).toEqual(paperHeader(model.header));
+      // Layout2's line is on its sheet, now the current one, as it was.
+      expect(back.entities).toEqual(was.entities);
+    },
+  );
+
+  it.each(SAVES)(
+    'deletes the layout that was current once another is (%s %s)',
+    (version, format) => {
+      const bytes = drawing(version, format, { headerAgrees: true });
+      const model = open(bytes);
+      const [one, two] = [layout(model, 'Layout1'), layout(model, 'Layout2')];
+      edit(model, (b) => {
+        b.setCurrentLayout(two.handle);
+        b.removeLayout(one.handle);
+      });
+      const doc = saved(bytes, model, format);
+      const back = documentInit(doc);
+      expect(back.layouts!.map(comparable)).toEqual(model.layouts.map(comparable));
+      expect(back.layouts!.map((l) => l.name)).toEqual(['Model', 'Layout2']);
+      expect(recordName(doc, two.blockRecord)).toBe('*Paper_Space');
+      expect(doc.getCadObject(Number.parseInt(one.blockRecord, 16))).toBeNull();
+      expect(doc.getCadObject(Number.parseInt(one.handle, 16))).toBeNull();
+      expect(back.entities!.filter((e) => e.owner === two.blockRecord)).toHaveLength(1);
+    },
+  );
+
+  it('writes a layout whose space changes', () => {
+    const bytes = drawing();
+    const model = open(bytes);
+    const two = layout(model, 'Layout2');
+    const space = {
+      ...two.space!,
+      insertionBase: { x: 5, y: 6, z: 0 },
+      extents: { min: { x: 1, y: 2, z: 0 }, max: { x: 300, y: 200, z: 0 } },
+    };
+    edit(model, (b) => b.updateLayout(two.handle, { space }));
+    expect(
+      layout(open(exportDocument(readCadDocument(bytes), model, { format: 'dxf' })), 'Layout2')
+        .space,
+    ).toEqual(space);
+  });
+
+  it('refuses a switch the header or the blocks do not follow', () => {
+    const agreeing = drawing(ACadVersion.AC1032, 'dxf', { headerAgrees: true });
+    // The header stated Layout1's limits, so it must state Layout2's.
+    expect(
+      refused((b, m) => {
+        b.setCurrentLayout(layout(m, 'Layout2').handle);
+        b.setHeader('$PLIMMAX', layout(m, 'Layout1').limits!.max);
+      }, agreeing),
+    ).toEqual([
+      expect.stringMatching(
+        /layout Layout2 .*: made current, \$PLIMMAX states the current layout's; set it to Layout2's/,
+      ),
+    ]);
+    // A layout the same save adds cannot be made current yet.
+    expect(
+      refused((b, m) => {
+        const sheet = b.addLayout({
+          name: 'Sheet',
+          limits: layout(m, 'Layout1').limits!,
+          plot: sheetPlot(m),
+        });
+        b.setCurrentLayout(sheet.handle);
+      }, agreeing),
+    ).toEqual(
+      expect.arrayContaining([
+        expect.stringMatching(/layout Sheet .*: made current, but a layout the same save adds/),
+      ]),
+    );
+    // Values a space cannot have.
+    expect(
+      refused((b, m) => {
+        const two = layout(m, 'Layout2');
+        b.updateLayout(two.handle, { space: { ...two.space!, elevation: Number.NaN } });
+      }),
+    ).toEqual([expect.stringMatching(/layout Layout2 .*: space: each value is a number/)]);
+  });
+});
