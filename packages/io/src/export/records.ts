@@ -1,5 +1,5 @@
-// TriyaToAcad for symbol table records (M1-75 parts 6 and 8): the planning every table writer
-// shares. Each record the model changes or adds is matched to its acad-ts original by handle
+// TriyaToAcad for symbol table records (M1-75 parts 6 and 8) and the style objects Triya keeps
+// beside them (MLEADERSTYLE, part 11): the planning every table writer shares. Each record the model changes or adds is matched to its acad-ts original by handle
 // (or made under the engine's handle), its name is checked as AutoCAD checks it, and the
 // table's own rules add their problems. Nothing is changed until every table has planned.
 
@@ -7,7 +7,7 @@ import {
   ACadVersion,
   INamedCadObjectExtensions,
   type CadDocument,
-  type TableEntry,
+  type CadObject,
 } from '@node-projects/acad-ts';
 import type { Handle, SymbolTableRecord } from '@triya/engine';
 import { resolve, same, type Resolver } from './entities';
@@ -18,13 +18,13 @@ export const XREF_BITS = 16 | 32;
 /** Record fields no table writer handles yet. */
 const UNSUPPORTED = ['xdata', 'reactors', 'extDict'] as const;
 
-export interface RecordPlan<A extends TableEntry, R extends SymbolTableRecord> {
+export interface RecordPlan<A extends CadObject & { name: string }, R extends SymbolTableRecord> {
   readonly updated: { readonly acad: A; readonly before: R; readonly after: R }[];
   /** New acad-ts records, already holding their handle, with the record to write. */
   readonly added: { readonly acad: A; readonly after: R }[];
 }
 
-export interface RecordRules<A extends TableEntry, R extends SymbolTableRecord> {
+export interface RecordRules<A extends CadObject & { name: string }, R extends SymbolTableRecord> {
   /** What the problems call a record ("layer"). */
   readonly what: string;
   readonly type: abstract new (...args: never[]) => A;
@@ -41,11 +41,11 @@ export interface RecordRules<A extends TableEntry, R extends SymbolTableRecord> 
 }
 
 /** The model's changes to one table against the original's mapping, and why any cannot be written. */
-export function planRecords<A extends TableEntry, R extends SymbolTableRecord>(
+export function planRecords<A extends CadObject & { name: string }, R extends SymbolTableRecord>(
   doc: CadDocument,
   base: readonly R[],
   after: ReadonlyMap<Handle, R>,
-  r: Resolver & { readonly created: Map<Handle, TableEntry> },
+  r: Resolver & { readonly created: Map<Handle, CadObject> },
   rules: RecordRules<A, R>,
 ): { plan: RecordPlan<A, R>; problems: string[] } {
   const plan: RecordPlan<A, R> = { updated: [], added: [] };

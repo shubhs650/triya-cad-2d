@@ -11,6 +11,7 @@ import {
   Layer,
   Line,
   LineType,
+  MultiLeaderStyle,
   TextStyle,
   XYZ,
 } from '@node-projects/acad-ts';
@@ -28,7 +29,8 @@ import {
 
 /**
  * Layers 0, WALLS (red, DASHED, 0.35 mm) and NOTES, linetypes Continuous and DASHED, text
- * styles Standard and NOTES, one LINE on WALLS, and the DICTIONARYVAR CMLEADERSTYLE.
+ * styles Standard and NOTES, one LINE on WALLS, the multileader styles Standard and Annotative,
+ * and the DICTIONARYVAR CMLEADERSTYLE (a save checks that it names a multileader style).
  */
 function drawing(version = ACadVersion.AC1032, format: CadFormat = 'dxf'): Uint8Array {
   const doc = new CadDocument(version);
@@ -44,6 +46,13 @@ function drawing(version = ACadVersion.AC1032, format: CadFormat = 'dxf'): Uint8
   const line = new Line(new XYZ(0, 0, 0), new XYZ(10, 0, 0));
   line.layer = walls;
   doc.entities!.add(line);
+  const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadMLeaderStyle)!;
+  for (const name of ['Standard', 'Annotative']) {
+    const s = new MultiLeaderStyle(name);
+    styles.add(s);
+    s.textStyle = doc.textStyles!.get('Standard')!;
+    s.leaderLineType = doc.lineTypes!.get('ByBlock')!;
+  }
   const vars = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.variableDictionary);
   if (vars && !vars.containsKey(DictionaryVariable.currentMultiLeaderStyle)) {
     const v = new DictionaryVariable();

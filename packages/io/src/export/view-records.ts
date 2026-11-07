@@ -18,6 +18,7 @@ import {
   XY,
   XYZ,
   type CadDocument,
+  type CadObject,
   type TableEntry,
 } from '@node-projects/acad-ts';
 import type {
@@ -37,7 +38,7 @@ import type { CadFormat } from '../read';
 import type { Resolver } from './entities';
 import { changes, planRecords, XREF_BITS, type RecordPlan } from './records';
 
-type Planner = Resolver & { readonly created: Map<Handle, TableEntry> };
+type Planner = Resolver & { readonly created: Map<Handle, CadObject> };
 
 /** DXF 71 view mode bits AutoCAD defines (perspective, front/back clip, follow UCS, front clip not at eye). */
 const VIEW_MODE_BITS = 1 | 2 | 4 | 8 | 16;

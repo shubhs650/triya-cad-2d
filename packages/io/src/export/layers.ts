@@ -10,7 +10,7 @@ import {
   LineType,
   Material,
   type CadDocument,
-  type TableEntry,
+  type CadObject,
 } from '@node-projects/acad-ts';
 import type { DocumentInit, DocumentModel, Handle, LayerRecord } from '@triya/engine';
 import { acadColor, acadLineweight, resolve, same, type Resolver } from './entities';
@@ -30,7 +30,7 @@ export function planLayers(
   doc: CadDocument,
   base: DocumentInit,
   model: DocumentModel,
-  r: Resolver & { readonly created: Map<Handle, TableEntry> },
+  r: Resolver & { readonly created: Map<Handle, CadObject> },
 ): { plan: LayerPlan; problems: string[] } {
   return planRecords(doc, base.tables?.layers ?? [], model.tables.layers, r, {
     what: 'layer',
