@@ -967,12 +967,22 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     this._writer.write(1, DimensionAssociation.osnapPointRefClassName);
 
     this._writer.write(72, osnapPoint.objectOsnapType);
-    this._writer.writeHandle(331, osnapPoint.geometry);
+    // The geometry and its path (as the DWG writer takes it), then the DXF reference's order.
+    const geometry = osnapPoint.geometryPath.length > 0 ? osnapPoint.geometryPath : [osnapPoint.geometry];
+    for (const object of geometry) this._writer.writeHandle(331, object);
     this._writer.write(73, osnapPoint.subentType);
     this._writer.write(91, osnapPoint.gsMarker);
+    for (const path of osnapPoint.xrefPaths) this._writer.write(301, path);
     this._writer.write(40, osnapPoint.geometryParameter);
 
     this._writer.writeVector(10, osnapPoint.osnapPoint);
+
+    if (osnapPoint.objectOsnapType === 6 || osnapPoint.objectOsnapType === 11) {
+      for (const object of osnapPoint.intersectionGeometry) this._writer.writeHandle(332, object);
+      this._writer.write(74, osnapPoint.intersectionSubType);
+      this._writer.write(92, osnapPoint.intersectionGsMarker);
+      for (const path of osnapPoint.intersectionXrefPaths) this._writer.write(302, path);
+    }
 
     this._writer.write(75, osnapPoint.hasLastPointRef ? 1 : 0);
   }

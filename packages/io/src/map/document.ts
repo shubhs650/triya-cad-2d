@@ -20,6 +20,7 @@ import { PassthroughStore } from '../export/passthrough';
 import { drawingFacts, type DrawingFacts } from '../health/facts';
 import { mapEntities, type UnmappedEntity } from './entities';
 import { mapGroups } from './groups';
+import { mapDimAssocs } from './dim-assoc';
 import { mapHeader } from './header';
 import { mapImageObjects } from './images';
 import { mapLayouts } from './layouts';
@@ -39,7 +40,12 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
     header,
     tables: mapTables(doc),
     blocks: [...(doc.blockRecords ?? [])].map(mapBlock),
-    objects: [...mapSortEnts(doc), ...mapImageObjects(doc), ...mapGroups(doc)],
+    objects: [
+      ...mapSortEnts(doc),
+      ...mapImageObjects(doc),
+      ...mapGroups(doc),
+      ...mapDimAssocs(doc),
+    ],
     layouts: mapLayouts(doc),
     entities,
   };
