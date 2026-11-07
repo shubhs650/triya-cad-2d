@@ -28,6 +28,12 @@ import { documentInit } from '../map/document';
 import type { CadFormat } from '../read';
 import { writeCadDocument, type WriteOptions } from '../write';
 import { createAcadEntity, entityProblems, same, writeEntity, type Resolver } from './entities';
+import {
+  onlyNewDictionary,
+  planDrawOrder,
+  writeDrawOrder,
+  type DrawOrderChanges,
+} from './draw-order';
 import { planHeader, writeHeader } from './header';
 import { planLayers, writeLayers } from './layers';
 import { PassthroughStore } from './passthrough';
@@ -83,15 +89,40 @@ function keyedProblems(
   return out;
 }
 
-/** The non-entity changes no writer handles yet (header and layers: header.ts, layers.ts). */
-function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
+/**
+ * The non-entity changes no writer handles yet (header, layers and draw order: header.ts,
+ * layers.ts, draw-order.ts). A block record may gain the extension dictionary a new draw order
+ * table needs.
+ */
+function nonEntityProblems(
+  base: DocumentInit,
+  model: DocumentModel,
+  drawOrder: DrawOrderChanges,
+): string[] {
   const out: string[] = [];
   const baseTables = (base.tables ?? {}) as Record<string, readonly { handle: Handle }[]>;
   for (const [name, table] of Object.entries(model.tables)) {
     if (name === 'layers') continue;
-    out.push(...keyedProblems(`${name} record`, baseTables[name] ?? [], table));
+    let records: ReadonlyMap<Handle, unknown> = table;
+    if (name === 'blockRecords') {
+      const was = new Map((base.tables?.blockRecords ?? []).map((b) => [b.handle, b]));
+      records = new Map(
+        [...model.tables.blockRecords].map(([h, b]) => [
+          h,
+          onlyNewDictionary(drawOrder, was.get(h), b) ? was.get(h) : b,
+        ]),
+      );
+    }
+    out.push(...keyedProblems(`${name} record`, baseTables[name] ?? [], records));
   }
-  out.push(...keyedProblems('object', base.objects ?? [], model.objects));
+  const notDrawOrder = <T extends { type: string }>(o: T): boolean => o.type !== 'SORTENTSTABLE';
+  out.push(
+    ...keyedProblems(
+      'object',
+      (base.objects ?? []).filter(notDrawOrder),
+      new Map([...model.objects].filter(([, o]) => notDrawOrder(o))),
+    ),
+  );
   if (!same(base.layouts ?? [], model.layouts)) out.push('layout changes');
   if (!same(base.blocks ?? [], [...model.blocks.values()])) out.push('block definition changes');
   return out;
@@ -178,8 +209,9 @@ function plan(
   model: DocumentModel,
   r: Resolver,
   format: CadFormat | undefined,
+  drawOrder: DrawOrderChanges,
 ): { plan: Plan; problems: string[] } {
-  const problems = [...nonEntityProblems(base, model), ...orderProblems(base, model)];
+  const problems = [...nonEntityProblems(base, model, drawOrder), ...orderProblems(base, model)];
   const version = doc.header?.version;
   const out: Plan = { updated: [], added: [], removed: [] };
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
@@ -253,15 +285,22 @@ export function triyaToAcad(
   // Layers first: entities and $CLAYER may name a layer the same save adds.
   const layers = planLayers(original, base, model, r);
   const header = planHeader(original, base, model, format, [...created.values()]);
-  const { plan: p, problems } = plan(original, base, model, r, format);
+  const drawOrder = planDrawOrder(original, base, model, r);
+  const { plan: p, problems } = plan(original, base, model, r, format, drawOrder);
   problems.unshift(...header.problems, ...layers.problems);
+  problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
 
   writeLayers(original, r, layers.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
-  // it owns (§6.2 rule 3); shared objects it points to stay.
-  for (const e of p.removed) (e.owner as BlockRecord).entities.remove(e);
+  // it owns (§6.2 rule 3); shared objects it points to stay. Its draw order entry goes with it,
+  // as AutoCAD saves no entry for an erased entity.
+  for (const e of p.removed) {
+    const block = e.owner as BlockRecord;
+    block.sortEntitiesTable?.remove(e);
+    block.entities.remove(e);
+  }
   const r12 = isR12(original.header?.version);
   for (const { acad, before, after } of p.updated) {
     writeEntity(r, acad, before as Entity, after);
@@ -282,6 +321,7 @@ export function triyaToAcad(
     block.entities.add(e);
     writeEntity(r, e, undefined, after);
   }
+  writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
   // New objects are allocated above $HANDSEED; the seed written back covers every handle the
   // engine handed out, used or not, as AutoCAD skips handles of cancelled objects, and every
