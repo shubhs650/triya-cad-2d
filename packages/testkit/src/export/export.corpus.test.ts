@@ -3,7 +3,8 @@
 // move hatches with their pattern origin, images, wipeouts, underlays, multilines, multileaders
 // and viewport frames), with what the Layers palette and a markup session change outside the
 // entities (every layer turned off or on, locked or unlocked and recoloured; every text style
-// widened and slanted; every linetype redescribed and its pattern doubled; $LTSCALE, $TEXTSIZE
+// widened and slanted; every linetype redescribed and its pattern doubled; every dimension style
+// rescaled, its text enlarged and moved inside, and its dimension lines recoloured; $LTSCALE, $TEXTSIZE
 // and the current layer; every block's draw order turned upside down), must save so that the
 // edited entities, records and header variables map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles and variables reports nothing
@@ -18,6 +19,7 @@ import {
   type Entity,
   type EntityGeometry,
   type Handle,
+  type DimStyleRecord,
   type HatchGeometry,
   type HeaderValue,
   type LayerRecord,
@@ -285,6 +287,28 @@ function editedLinetype(l: LinetypeRecord): Partial<LinetypeRecord> {
   };
 }
 
+/**
+ * The DIMSTYLE manager on every dimension style: twice the overall scale, larger text forced
+ * inside the extension lines, and red or yellow dimension lines (variables every version stores).
+ */
+function editedDimStyle(s: DimStyleRecord): {
+  readonly [K in keyof DimStyleRecord]?: DimStyleRecord[K] | undefined;
+} {
+  const v = s.vars;
+  // An ACI of its own replaces an R2004+ DWG's true colour, as the DIMSTYLE manager does.
+  const { DIMCLRD: _dimclrd, ...trueColors } = s.trueColors ?? {};
+  return {
+    trueColors: Object.keys(trueColors).length > 0 ? trueColors : undefined,
+    vars: {
+      ...v,
+      DIMSCALE: (v.DIMSCALE as number) === 0 ? 1 : (v.DIMSCALE as number) * 2,
+      DIMTXT: (v.DIMTXT as number) * 1.5,
+      DIMTIX: !v.DIMTIX,
+      DIMCLRD: v.DIMCLRD === 1 ? 2 : 1,
+    },
+  };
+}
+
 /** A record as it maps back, without the reader's link. */
 function withoutRaw<T extends { raw?: unknown }>(r: T | undefined): Omit<T, 'raw'> | undefined {
   if (!r) return r;
@@ -539,6 +563,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
         const linetypes = [...model.tables.linetypes.values()]
           .filter(kept)
           .filter(editableLinetype);
+        const dimStyles = [...model.tables.dimStyles.values()].filter(kept);
         const header = editedHeader(model);
         // DRAWORDER: each block's draw order turned upside down among the entities it lists.
         const drawOrder = [...model.objects.values()]
@@ -558,6 +583,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
         for (const l of layers) b.updateTableRecord('layers', l.handle, editedLayer(l));
         for (const t of textStyles) b.updateTableRecord('textStyles', t.handle, editedTextStyle(t));
         for (const l of linetypes) b.updateTableRecord('linetypes', l.handle, editedLinetype(l));
+        for (const d of dimStyles) b.updateTableRecord('dimStyles', d.handle, editedDimStyle(d));
         for (const [name, value] of header) b.setHeader(name, value);
         model.apply(b.build());
 
@@ -588,6 +614,12 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((l) => !near(withoutRaw(backLinetypes.get(l.handle)), withoutRaw(l)))
           .map((l) => l.name);
         expect(wrongLinetypes, f.path).toEqual([]);
+        const backDimStyles = new Map(init.tables?.dimStyles?.map((d) => [d.handle, d]));
+        const wrongDimStyles = dimStyles
+          .map((d) => model.tables.dimStyles.get(d.handle)!)
+          .filter((d) => !near(withoutRaw(backDimStyles.get(d.handle)), withoutRaw(d)))
+          .map((d) => d.name);
+        expect(wrongDimStyles, f.path).toEqual([]);
         const backObjects = new Map(init.objects?.map((o) => [o.handle, o]));
         const wrongDrawOrder = drawOrder
           .filter((t) => !same(backObjects.get(t.handle), t))
@@ -602,8 +634,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
         // A polyline's VERTEX entities and an INSERT's ATTRIBs are edited with it, under their
         // own handles.
         const ignoreHandles = new Set(
-          [...targets, ...layers, ...textStyles, ...linetypes, ...drawOrder].map((e) =>
-            Number.parseInt(e.handle, 16),
+          [...targets, ...layers, ...textStyles, ...linetypes, ...dimStyles, ...drawOrder].map(
+            (e) => Number.parseInt(e.handle, 16),
           ),
         );
         for (const h of [...ignoreHandles]) {
