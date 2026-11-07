@@ -301,9 +301,27 @@ function singleCrossing(
 }
 
 /**
+ * How far a piece strays from the chord of its range, sampled at the same fractions `flatten`
+ * checks. Halving a chord quarters this only once the chord direction settles: across a tight
+ * bend (a parabola's tip) the half chord turns with the curve and keeps about half (M1-100).
+ */
+function chordDeviation(p: Piece, r: readonly [number, number]): number {
+  if (p.kind === 'linear') return 0;
+  const c0 = piecePoint(p, r[0]);
+  const c1 = piecePoint(p, r[1]);
+  let worst = 0;
+  for (const f of [0.25, 0.5, 0.75]) {
+    const q = piecePoint(p, r[0] + f * (r[1] - r[0]));
+    worst = Math.max(worst, distance(q, add(c0, scale(sub(c1, c0), fractionOn(c0, c1, q)))));
+  }
+  return worst;
+}
+
+/**
  * Newton from the seed of one chord pair; when it does not converge (the chords are too
  * coarse for a shallow crossing on a tight bend), or a second crossing may hide in the same
- * pair, halve both ranges and retry, up to `depth` times. Halving a chord quarters its deviation, so the band shrinks by four each level.
+ * pair, halve both ranges and retry, up to `depth` times. Each half pair's band is its
+ * measured chord deviations, never less than a quarter of the parent band.
  */
 function seedPair(
   a: Piece,
@@ -331,16 +349,20 @@ function seedPair(
   if (depth === 0 || (hit && singleCrossing(a, b, ra, rb, hit))) return;
   const am = (ra[0] + ra[1]) / 2;
   const bm = (rb[0] + rb[1]) / 2;
-  const next = Math.max(band / 4, 2 * tol.linear);
-  for (const ha of [
+  const halvesA = [
     [ra[0], am],
     [am, ra[1]],
-  ] as const) {
-    for (const hb of [
-      [rb[0], bm],
-      [bm, rb[1]],
-    ] as const) {
-      seedPair(a, b, ha, hb, next, depth - 1, tol, hits);
+  ] as const;
+  const halvesB = [
+    [rb[0], bm],
+    [bm, rb[1]],
+  ] as const;
+  const devA = halvesA.map((h) => chordDeviation(a, h));
+  const devB = halvesB.map((h) => chordDeviation(b, h));
+  for (let i = 0; i < 2; i++) {
+    for (let j = 0; j < 2; j++) {
+      const next = Math.max(band / 4, devA[i]! + devB[j]!, 2 * tol.linear);
+      seedPair(a, b, halvesA[i]!, halvesB[j]!, next, depth - 1, tol, hits);
     }
   }
 }

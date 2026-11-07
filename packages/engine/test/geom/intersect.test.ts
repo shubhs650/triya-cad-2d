@@ -186,6 +186,39 @@ describe('intersect: properties over all curve pairs', () => {
     );
   });
 
+  it('finds both ends of a short secant across a tight spline bend (M1-100)', () => {
+    // fast-check seed -1611953239: a parabola whose tip turns from horizontal to vertical
+    // inside one flattening chord. Halving that chord only halves its deviation (not a
+    // quarter), so a band shrunk by four per level dropped the second crossing.
+    const c: Curve = {
+      kind: 'SPLINE',
+      degree: 2,
+      knots: [0, 0, 0, 0.05, 0.05, 0.05],
+      controlPoints: [
+        { x: 0, y: 0 },
+        { x: 7.479930489092619, y: 0 },
+        { x: 0, y: 618.8233084289079 },
+      ],
+    };
+    for (const [s1, s2] of [
+      [0.03642963634131514, 0.02],
+      [0.02, 0.03642963634131514],
+    ] as const) {
+      const p1 = at(c, s1);
+      const p2 = at(c, s2);
+      const len = Math.hypot(p2.x - p1.x, p2.y - p1.y);
+      const ux = (p2.x - p1.x) / len;
+      const uy = (p2.y - p1.y) / len;
+      const line = L(p1.x - ux, p1.y - uy, p2.x + ux, p2.y + uy);
+      const xs = intersect(c, line, TOL);
+      onBoth(c, line, xs);
+      const eps = 1e-6 * sizeOf(c);
+      expect(finds(xs, p1, eps)).toBe(true);
+      expect(finds(xs, p2, eps)).toBe(true);
+      expect(xs).toHaveLength(2);
+    }
+  });
+
   it('a copy rotated about one of its points intersects the original there', () => {
     fc.assert(
       fc.property(
