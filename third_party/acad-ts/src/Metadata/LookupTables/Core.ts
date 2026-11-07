@@ -789,7 +789,7 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
         "valueCodes": [
           62
         ],
-        "referenceType": 16
+        "referenceType": 0
       },
       {
         "name": "$DIMTFILL",

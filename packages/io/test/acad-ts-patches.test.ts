@@ -1079,4 +1079,49 @@ describe('acad-ts local patches', () => {
     expect(codes).not.toContain('348');
     expect(readCadDocument(dxf).getCadObject(Number(v.handle))).toBeTruthy();
   });
+
+  it('0132 a DWG header keeps DIMLDRBLK, DIMLTYPE, DIMLTEX1/2, DIMMZF and REALWORLDSCALE; DXF keeps DIMTFILLCLR', () => {
+    const drawing = (version: ACadVersion) => {
+      const doc = new CadDocument(version);
+      for (const name of ['_Dot', '_Oblique']) doc.blockRecords!.add(new BlockRecord(name));
+      for (const name of ['DASHED', 'HIDDEN', 'CENTER']) doc.lineTypes!.add(new LineType(name));
+      const h = doc.header!;
+      h.dimensionBlockName = '_Oblique';
+      h.arrowBlockName = '_Dot';
+      h.dimensionLineType = 'DASHED';
+      h.dimensionTex1 = 'HIDDEN';
+      h.dimensionTex2 = 'CENTER';
+      h.dimensionMzf = 100;
+      h.dimensionFit = 3;
+      h.realWorldScale = false;
+      h.dimensionTextBackgroundColor = new Color(5);
+      return doc;
+    };
+    const dwg = (version: ACadVersion) =>
+      readCadDocument(writeCadDocument(drawing(version), { format: 'dwg' })).header!;
+
+    // DIMLDRBLK is an R2000+ handle; it no longer overwrites DIMBLK on reading.
+    for (const version of [ACadVersion.AC1015, ACadVersion.AC1018, ACadVersion.AC1032]) {
+      const h = dwg(version);
+      expect(h.arrowBlockName, ACadVersion[version]).toBe('_Dot');
+      expect(h.dimensionBlockName, ACadVersion[version]).toBe('_Oblique');
+    }
+    // DIMLTYPE, DIMLTEX1, DIMLTEX2 and REALWORLDSCALE are R2007+.
+    for (const version of [ACadVersion.AC1021, ACadVersion.AC1024, ACadVersion.AC1032]) {
+      const h = dwg(version);
+      expect(h.dimensionLineType, ACadVersion[version]).toBe('DASHED');
+      expect(h.dimensionTex1, ACadVersion[version]).toBe('HIDDEN');
+      expect(h.dimensionTex2, ACadVersion[version]).toBe('CENTER');
+      expect(h.realWorldScale, ACadVersion[version]).toBe(false);
+    }
+    // R2010+ stores DIMMZF (AutoCAD's default 100) beside DIMMZS, not DIMFIT.
+    for (const version of [ACadVersion.AC1024, ACadVersion.AC1032]) {
+      const h = dwg(version);
+      expect(h.dimensionMzf, ACadVersion[version]).toBe(100);
+      expect(h.dimensionFit, ACadVersion[version]).not.toBe(100);
+    }
+
+    const dxf = readCadDocument(writeCadDocument(drawing(ACadVersion.AC1032), { format: 'dxf' }));
+    expect(dxf.header!.dimensionTextBackgroundColor.index).toBe(5);
+  });
 });

@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84) and 0131 (M1-85) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85) and 0132 (M1-87) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2470,5 +2470,22 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 **Title:** Write the DWG viewport style sheet and visual style, and keep the visual style on read
 
 `DwgObjectWriter._writeViewport` wrote an empty style sheet name and a null visual style handle, and `DwgObjectReader._readViewport` discarded the R2007+ visual style handle it read, so a viewport's plot style table and visual style did not survive a DWG save, and the visual style did not survive a DWG read. This writes `styleSheetName` and `visualStyle` (hard pointer, R2007+) and assigns the read handle to `CadViewportTemplate.visualStyleHandle`, which the template already resolves for DXF. Since a visual style read from DWG has no DXF object writer, `DxfSectionWriterBase._writeViewport` now writes 348 only for a visual style that carries its DXF raw codes, so a DWG-to-DXF conversion does not reference an object it leaves out.
+
+</details>
+
+### 0132 — DWG header DIMLDRBLK, DIMLTYPE, DIMLTEX1/2, DIMMZF and REALWORLDSCALE; DXF `$DIMTFILLCLR`
+
+- **File:** `third_party/acad-ts-patches/0132-dwg-header-dimension-linetypes-leader-block-mzf.patch`
+- **Touches:** `src/IO/DWG/DwgHeaderHandlesCollection.ts`, `src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts`, `src/Metadata/LookupTables/Core.ts`
+- **Symptom:** the DWG header writer wrote DIMLDRBLK (R2000+) and DIMLTYPE, DIMLTEX1, DIMLTEX2 (R2007+) as null handles, and the reader resolved DIMLDRBLK into `dimensionBlockName` (overwriting DIMBLK) and never resolved the three linetype handles, so every DWG read reported ByBlock where the corpus DXF saves of the same drawings state BATTING, TRACKS and ZIGZAG. In the R2010+ block after DIMALTMZF/DIMALTMZS, where the ODA specification puts DIMMZF, the reader read and the writer wrote `dimensionFit` (the R2010+ corpus DWGs hold 100 there, DIMMZF's default, beside DIMALTMZF's 100; DIMFIT runs 0–5). The R2007+ bit before INTERFERECOLOR, REALWORLDSCALE, was skipped on read and written as 0. The DXF writer skipped `$DIMTFILLCLR`, marked Ignored in the header metadata, although AutoCAD writes it (62) and the reader reads it. Found by Triya M1-75 part 6, fixed in M1-87.
+- **Fix:** the writer writes DIMLDRBLK from `arrowBlockName` by block record (as DIMBLK), DIMLTYPE/DIMLTEX1/DIMLTEX2 by linetype record (null when the document has no such linetype, which AutoCAD reads as ByBlock), `dimensionMzf` in the DIMMZF slot and `realWorldScale` in its bit; the reader reads the same fields into the same properties and resolves DIMLDRBLK into `arrowBlockName`. `$DIMTFILLCLR` loses its Ignored flag.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0132 a DWG header keeps DIMLDRBLK, DIMLTYPE, DIMLTEX1/2, DIMMZF and REALWORLDSCALE; DXF keeps DIMTFILLCLR"; `packages/testkit/src/export/export-header.corpus.test.ts` (every corpus DWG and DXF version that stores them maps a change back).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write the DWG header DIMLDRBLK, DIMLTYPE, DIMLTEX1/2, DIMMZF and REALWORLDSCALE, and the DXF $DIMTFILLCLR
+
+`DwgHeaderWriter` wrote null handles for DIMLDRBLK and the R2007+ DIMLTYPE, DIMLTEX1 and DIMLTEX2, and `DwgHeaderHandlesCollection.updateHeader` assigned the DIMLDRBLK block record's name to `DimensionBlockName` (DIMBLK) and ignored the three linetype handles, so a DWG read reports ByBlock for linetypes the same drawing's DXF save names. In the R2010+ dimension block, the double after DIMALTMZS is DIMMZF (ODA specification, header section), but the reader and writer used `DimensionFit`; AutoCAD drawings hold 100 there, DIMMZF's default. The R2007+ bit before INTERFERECOLOR is REALWORLDSCALE and was skipped and written as 0. This writes and reads all of them into the existing header properties (`ArrowBlockName`, `DimensionLineType`, `DimensionTex1/2`, `DimensionMzf`, `RealWorldScale`). It also drops the Ignored flag from `$DIMTFILLCLR`, which AutoCAD writes to DXF (group 62) and the DXF reader already reads.
 
 </details>

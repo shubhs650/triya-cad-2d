@@ -1,5 +1,6 @@
 import { CadHeader } from '../../Header/CadHeader.js';
 import { BlockRecord } from '../../Tables/BlockRecord.js';
+import { LineType } from '../../Tables/LineType.js';
 import { TableEntry } from '../../Tables/TableEntry.js';
 import { DwgDocumentBuilder } from './DwgDocumentBuilder.js';
 
@@ -199,13 +200,22 @@ export class DwgHeaderHandlesCollection {
 		if (record) { header.dimensionBlockName = record.name; }
 
 		record = builder.tryGetCadObject<BlockRecord>(this.dimldrblk);
-		if (record) { header.dimensionBlockName = record.name; }
+		if (record) { header.arrowBlockName = record.name; }
 
 		record = builder.tryGetCadObject<BlockRecord>(this.dimblk1);
 		if (record) { header.dimensionBlockNameFirst = record.name; }
 
 		record = builder.tryGetCadObject<BlockRecord>(this.dimblk2);
 		if (record) { header.dimensionBlockNameSecond = record.name; }
+
+		entry = builder.tryGetCadObject<TableEntry>(this.dimltype);
+		if (entry instanceof LineType) { header.dimensionLineType = entry.name; }
+
+		entry = builder.tryGetCadObject<TableEntry>(this.dimltex1);
+		if (entry instanceof LineType) { header.dimensionTex1 = entry.name; }
+
+		entry = builder.tryGetCadObject<TableEntry>(this.dimltex2);
+		if (entry instanceof LineType) { header.dimensionTex2 = entry.name; }
 
 		entry = builder.tryGetCadObject<TableEntry>(this.ucsorthoref);
 		if (entry) { header.ucsOrthographicReferenceName = entry.name; }
