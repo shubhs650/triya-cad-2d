@@ -291,9 +291,19 @@ function edited(g: EntityGeometry): EntityGeometry {
 }
 
 /** The Layers palette's toggles and a colour change, on every layer. */
-function editedLayer(l: LayerRecord): Partial<LayerRecord> {
+/**
+ * The LAYER dialog on every layer: on or off, locked or unlocked, another colour, and (but in
+ * R12, which has no transparency) an opaque layer made 70 % transparent, a transparent one opaque.
+ */
+function editedLayer(l: LayerRecord, r12: boolean): Partial<LayerRecord> {
   const index = l.color.kind === 'aci' && l.color.index === 3 ? 4 : 3;
-  return { on: !l.on, locked: !l.locked, color: { kind: 'aci', index } };
+  const opaque = typeof l.transparency === 'object' && l.transparency.alpha === 255;
+  return {
+    on: !l.on,
+    locked: !l.locked,
+    color: { kind: 'aci', index },
+    ...(r12 ? {} : { transparency: { alpha: opaque ? 76 : 255 } }),
+  };
 }
 
 /** The STYLE dialog on every text style: a wider width factor, and slanted or upright. */
@@ -447,11 +457,16 @@ function editedHeader(model: DocumentModel): Map<string, HeaderValue> {
 }
 
 /** A layer as it maps back: `raw` is the reader's link, and DXF 70 holds frozen/locked. */
-function comparableLayer(l: LayerRecord | undefined): unknown {
+/**
+ * A layer as it maps back: DXF 70 holds frozen and locked, and its AcCmTransparency xdata
+ * (`apps`) is what the save rewrites from `transparency`, which is compared instead.
+ */
+function comparableLayer(l: LayerRecord | undefined, apps: ReadonlySet<Handle>): unknown {
   if (!l) return l;
-  const { raw: _raw, flags, ...rest } = l;
+  const { raw: _raw, flags, xdata, ...rest } = l;
   const others = (flags ?? 0) & ~5;
-  return { ...rest, ...(others ? { flags: others } : {}) };
+  const kept = xdata?.filter((x) => !apps.has(x.appId)) ?? [];
+  return { ...rest, ...(others ? { flags: others } : {}), ...(kept.length ? { xdata: kept } : {}) };
 }
 
 function edit(model: DocumentModel, e: Entity, geom: EntityGeometry): void {
@@ -766,7 +781,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
           });
         for (const t of drawOrder)
           b.updateObject(t.handle, { entries: t.entries } as Partial<NonGraphicalObject>);
-        for (const l of layers) b.updateTableRecord('layers', l.handle, editedLayer(l));
+        const r12 = version <= ACadVersion.AC1009;
+        for (const l of layers) b.updateTableRecord('layers', l.handle, editedLayer(l, r12));
         for (const t of textStyles) b.updateTableRecord('textStyles', t.handle, editedTextStyle(t));
         for (const l of linetypes) b.updateTableRecord('linetypes', l.handle, editedLinetype(l));
         for (const d of dimStyles) b.updateTableRecord('dimStyles', d.handle, editedDimStyle(d));
@@ -796,9 +812,22 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .map(({ annotation }) => `${annotation.type} ${annotation.handle}`);
         expect(wrongReactors, f.path).toEqual([]);
         const backLayers = new Map(init.tables?.layers?.map((l) => [l.handle, l]));
+        const transparencyApps = new Set(
+          (init.tables?.appIds ?? [])
+            .filter((a) => a.name.toUpperCase() === 'ACCMTRANSPARENCY')
+            .map((a) => a.handle),
+        );
+        // A drawing without the application has it registered by the save, once.
+        if (!r12 && layers.length > 0) expect(transparencyApps.size, f.path).toBe(1);
         const wrongLayers = layers
           .map((l) => model.tables.layers.get(l.handle)!)
-          .filter((l) => !same(comparableLayer(backLayers.get(l.handle)), comparableLayer(l)))
+          .filter(
+            (l) =>
+              !same(
+                comparableLayer(backLayers.get(l.handle), transparencyApps),
+                comparableLayer(l, transparencyApps),
+              ),
+          )
           .map((l) => l.name);
         expect(wrongLayers, f.path).toEqual([]);
         const backStyles = new Map(init.tables?.textStyles?.map((t) => [t.handle, t]));
@@ -879,18 +908,27 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ...detached.map((d) => d.annotation),
           ].map((e) => Number.parseInt(e.handle, 16)),
         );
+        // The AcCmTransparency application the save registered for the layers' transparency.
+        for (const h of transparencyApps) {
+          const handle = Number.parseInt(h, 16);
+          if (!original.getCadObject(handle)) ignoreHandles.add(handle);
+        }
         for (const h of [...ignoreHandles]) {
           const o = original.getCadObject(h);
           if (o instanceof Polyline) for (const v of o.vertices) ignoreHandles.add(v.handle);
           if (o instanceof Insert) for (const a of o.attributes) ignoreHandles.add(a.handle);
         }
-        // The edited variables, and the header's current-layer record ($CLAYER), are the edit.
+        // The edited variables, and the header's current-layer record ($CLAYER), are the edit,
+        // as is the APPID table's entry for the application the save registered.
+        const registered = (d: { objectName: string; path: string; a?: string }): boolean =>
+          d.objectName === 'APPID' && d.path === 'entries[ACCMTRANSPARENCY]' && d.a === 'absent';
         const diff = structuralDiff(original, reopened, { ignoreHandles }).differences.filter(
           (d) =>
-            d.handle !== '0' ||
-            ![...header.keys(), '_currentLayer'].some(
-              (n) => d.path === n || d.path.startsWith(`${n}.`),
-            ),
+            !registered(d) &&
+            (d.handle !== '0' ||
+              ![...header.keys(), '_currentLayer'].some(
+                (n) => d.path === n || d.path.startsWith(`${n}.`),
+              )),
         );
         expect(diff.slice(0, 5), f.path).toEqual([]);
       });
