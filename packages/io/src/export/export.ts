@@ -7,7 +7,7 @@
 // from the I/O side, and the original only has to be the file as opened (the I/O worker reads
 // it again from the bytes it kept). The original is mutated, so each export needs a fresh read.
 
-import type { CadDocument, Layer } from '@node-projects/acad-ts';
+import type { CadDocument, TableEntry } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   BlockRecord,
@@ -36,8 +36,10 @@ import {
 } from './draw-order';
 import { planHeader, writeHeader } from './header';
 import { planLayers, writeLayers } from './layers';
+import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
+import { planTextStyles, writeTextStyles } from './text-styles';
 
 /** R12 and before, whose viewports state their view in the MVIEW xdata (as patch 0119 reads it). */
 const isR12 = (version: ACadVersion | undefined): boolean =>
@@ -89,9 +91,12 @@ function keyedProblems(
   return out;
 }
 
+/** The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts). */
+const WRITTEN_TABLES = new Set(['layers', 'textStyles', 'linetypes']);
+
 /**
- * The non-entity changes no writer handles yet (header, layers and draw order: header.ts,
- * layers.ts, draw-order.ts). A block record may gain the extension dictionary a new draw order
+ * The non-entity changes no writer handles yet (header, the tables above and draw order:
+ * header.ts, draw-order.ts). A block record may gain the extension dictionary a new draw order
  * table needs.
  */
 function nonEntityProblems(
@@ -102,7 +107,7 @@ function nonEntityProblems(
   const out: string[] = [];
   const baseTables = (base.tables ?? {}) as Record<string, readonly { handle: Handle }[]>;
   for (const [name, table] of Object.entries(model.tables)) {
-    if (name === 'layers') continue;
+    if (WRITTEN_TABLES.has(name)) continue;
     let records: ReadonlyMap<Handle, unknown> = table;
     if (name === 'blockRecords') {
       const was = new Map((base.tables?.blockRecords ?? []).map((b) => [b.handle, b]));
@@ -274,7 +279,7 @@ export function triyaToAcad(
   // Held children a save creates (polyline vertices) are numbered after everything the engine
   // allocated, so they meet neither an engine handle nor one the file already uses.
   let next = Math.max(Number.parseInt(model.handSeed, 16), docHeader?.handleSeed ?? 0);
-  const created = new Map<Handle, Layer>();
+  const created = new Map<Handle, TableEntry>();
   const r = {
     store,
     byLayer: lineTypes?.tryGetValue('ByLayer') ?? LineType.byLayer,
@@ -282,15 +287,25 @@ export function triyaToAcad(
     allocate: () => next++,
     created,
   } satisfies Resolver;
-  // Layers first: entities and $CLAYER may name a layer the same save adds.
+  // Records first: entities and the header may name one the same save adds, a linetype's text
+  // a text style, a layer a linetype.
+  const textStyles = planTextStyles(original, base, model, r);
+  const linetypes = planLinetypes(original, base, model, r);
   const layers = planLayers(original, base, model, r);
   const header = planHeader(original, base, model, format, [...created.values()]);
   const drawOrder = planDrawOrder(original, base, model, r);
   const { plan: p, problems } = plan(original, base, model, r, format, drawOrder);
-  problems.unshift(...header.problems, ...layers.problems);
+  problems.unshift(
+    ...header.problems,
+    ...textStyles.problems,
+    ...linetypes.problems,
+    ...layers.problems,
+  );
   problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
 
+  writeTextStyles(original, textStyles.plan);
+  writeLinetypes(original, r, linetypes.plan);
   writeLayers(original, r, layers.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only

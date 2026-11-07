@@ -10,7 +10,10 @@ import {
   CadHeader,
   DictionaryVariable,
   DxfHeaderSectionWriter,
-  type Layer,
+  Layer,
+  LineType,
+  TextStyle,
+  type TableEntry,
   type CadDocument,
   type CadSystemVariable,
 } from '@node-projects/acad-ts';
@@ -60,11 +63,21 @@ const WRITER_OWNED = new Set([
  */
 const UCS_NAMES = /^\$P?UCS(NAME|BASE|ORTHOREF)$/;
 
-/** The records a name can name: the drawing's, and the layers the same save adds. */
-type Records = (doc: CadDocument, added: readonly Layer[]) => Iterable<{ name: string }> | null;
+/** The records a name can name: the drawing's, and those of its table the same save adds. */
+type Records = (
+  doc: CadDocument,
+  added: readonly TableEntry[],
+) => Iterable<{ name: string }> | null;
 
 const blocks: Records = (d) => d.blockRecords;
-const linetypes: Records = (d) => d.lineTypes;
+const linetypes: Records = (d, added) => [
+  ...(d.lineTypes ?? []),
+  ...added.filter((r) => r instanceof LineType),
+];
+const textStyles: Records = (d, added) => [
+  ...(d.textStyles ?? []),
+  ...added.filter((r) => r instanceof TextStyle),
+];
 
 /**
  * Name variables and the records they name, which must exist (AutoCAD looks them up by name;
@@ -72,10 +85,12 @@ const linetypes: Records = (d) => d.lineTypes;
  * arrow-block and dimension-linetype names may be empty: the default arrowhead, ByBlock.
  */
 const NAME_TABLES: Record<string, { readonly records: Records; readonly empty?: true }> = {
-  $CLAYER: { records: (d, added) => [...(d.layers ?? []), ...added] },
+  $CLAYER: {
+    records: (d, added) => [...(d.layers ?? []), ...added.filter((r) => r instanceof Layer)],
+  },
   $CELTYPE: { records: linetypes },
-  $TEXTSTYLE: { records: (d) => d.textStyles },
-  $DIMTXSTY: { records: (d) => d.textStyles },
+  $TEXTSTYLE: { records: textStyles },
+  $DIMTXSTY: { records: textStyles },
   $DIMSTYLE: { records: (d) => d.dimensionStyles },
   $CMLSTYLE: { records: (d) => [...(namedDictionary(d, CadDictionary.acadMLineStyle) ?? [])] },
   $DIMBLK: { records: blocks, empty: true },
@@ -300,7 +315,7 @@ export function planHeader(
   base: DocumentInit,
   model: DocumentModel,
   format: CadFormat | undefined,
-  added: readonly Layer[],
+  added: readonly TableEntry[],
 ): { changes: HeaderChange[]; problems: string[] } {
   const before = new Map(base.header ?? []);
   const names = new Set([...before.keys(), ...model.header.keys()]);
@@ -339,7 +354,7 @@ export function planHeader(
 
 function headerProblem(
   doc: CadDocument,
-  added: readonly Layer[],
+  added: readonly TableEntry[],
   name: string,
   value: HeaderValue | undefined,
   variable: CadSystemVariable | undefined,
