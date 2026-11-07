@@ -1,5 +1,6 @@
 import { DwgSectionIO } from '../DwgSectionIO.js';
 import { DwgSectionDefinition } from '../FileHeaders/DwgSectionDefinition.js';
+import { EntityPlotStyleType } from '../../../Header/EntityPlotStyleType.js';
 import { DwgDocumentBuilder } from '../DwgDocumentBuilder.js';
 import { DwgStreamReaderBase } from './DwgStreamReaderBase.js';
 import { DwgMergedReader } from './DwgMergedReader.js';
@@ -591,14 +592,18 @@ export class DwgObjectReader extends DwgSectionIO {
     }
 
     if (this.r2007Plus) {
-      if (this._objectReader.read2Bits() === 3) {
+      template.materialFlags = this._objectReader.read2Bits();
+      if (template.materialFlags === 3) {
         template.materialHandle = this._handleReference();
       }
       this._objectReader.readByte();
     }
 
-    if (this._objectReader.read2Bits() === 3) {
-      this._handleReference();
+    // The plot style flags (00 ByLayer, 01 ByBlock, 10 dictionary default, 11 and a hard
+    // pointer): upstream read and dropped them.
+    entity.plotStyleType = this._objectReader.read2Bits() as EntityPlotStyleType;
+    if (entity.plotStyleType === EntityPlotStyleType.ByObjectId) {
+      entity.plotStyleName = this._handleReference();
     }
 
     if (this.r2010Plus) {

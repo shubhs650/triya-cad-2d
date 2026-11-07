@@ -4,6 +4,7 @@
 // in `unmapped` and stay with the retained original only.
 
 import {
+  EntityPlotStyleType,
   Arc,
   Hatch,
   HatchBoundaryPathArc,
@@ -1416,6 +1417,12 @@ interface Ctx {
 /** The AcDbEntity properties, shared by entities and the ATTRIBs folded into an INSERT. */
 function entityProps(e: Entity): EntityProps & ObjectCommon {
   const material = ref(e.material);
+  // A plot style name only when the entity names one (ByObjectId); ByLayer, and the ByBlock and
+  // dictionary default a DWG can state, read as none (Triya plots them ByLayer).
+  const plotStyle =
+    e.plotStyleType === EntityPlotStyleType.ByObjectId && e.plotStyleName !== 0
+      ? hex(e.plotStyleName)
+      : undefined;
   return {
     ...common(e),
     layer: hex(e.layer.handle),
@@ -1425,6 +1432,7 @@ function entityProps(e: Entity): EntityProps & ObjectCommon {
     transparency: transparency(e),
     ltScale: e.lineTypeScale,
     visible: !e.isInvisible,
+    ...(plotStyle ? { plotStyle } : {}),
     ...(material ? { material } : {}),
   };
 }

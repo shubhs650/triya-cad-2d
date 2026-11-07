@@ -47,6 +47,8 @@ import {
   LeaderLine,
   LeaderRoot,
   Line,
+  AcdbPlaceHolder,
+  EntityPlotStyleType,
   LineType,
   LineTypeSegment,
   LineTypeShapeFlags,
@@ -1783,6 +1785,51 @@ describe('acad-ts local patches', () => {
       expect(back.cellStyles[0]!.textHeight, `binary ${binary}`).toBe(0.25);
       expect(back.cellStyles[0]!.scale, `binary ${binary}`).toBe(1);
       expect(back.cellStyles[0]!.backgroundColor.index, `binary ${binary}`).toBe(30);
+    }
+  });
+
+  it('0154 an entity keeps its plot style name (DXF 390, DWG R2000+) through a save', () => {
+    // In a named-plot-style drawing ($PSTYLEMODE 0) an entity names its plot style by a hard
+    // pointer to an ACDBPLACEHOLDER (DXF 390; DWG plot style flags 11 and the handle), and a DWG
+    // states ByLayer, ByBlock and the dictionary default as the flags 00, 01 and 10. Unpatched,
+    // both readers dropped it and both writers wrote ByLayer.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    doc.header!.plotStyleMode = 0;
+    const style = new AcdbPlaceHolder('TRIYA_PLOT_STYLE');
+    doc.rootDictionary!.add(style);
+    const lines = [0, 1, 2, 3].map((i) => {
+      const line = new Line(new XYZ(i, 0, 0), new XYZ(i, 1, 0));
+      doc.entities!.add(line);
+      return line;
+    });
+    lines[1]!.plotStyleType = EntityPlotStyleType.ByBlock;
+    lines[2]!.plotStyleType = EntityPlotStyleType.ByDictionaryDefault;
+    lines[3]!.plotStyleType = EntityPlotStyleType.ByObjectId;
+    lines[3]!.plotStyleName = style.handle;
+    const styles = (d: CadDocument) =>
+      lines.map((l) => {
+        const e = d.getCadObject(l.handle) as Line;
+        return [e.plotStyleType, e.plotStyleName];
+      });
+
+    const all = [
+      [EntityPlotStyleType.ByLayer, 0],
+      [EntityPlotStyleType.ByBlock, 0],
+      [EntityPlotStyleType.ByDictionaryDefault, 0],
+      [EntityPlotStyleType.ByObjectId, style.handle],
+    ];
+    expect(styles(dwgRoundTrip(doc))).toEqual(all);
+    doc.header!.version = ACadVersion.AC1015;
+    expect(styles(dwgRoundTrip(doc))).toEqual(all);
+    // DXF has 390 only: ByBlock and the dictionary default have no group of their own.
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+      expect(styles(back), `binary ${binary}`).toEqual([
+        [EntityPlotStyleType.ByLayer, 0],
+        [EntityPlotStyleType.ByLayer, 0],
+        [EntityPlotStyleType.ByLayer, 0],
+        [EntityPlotStyleType.ByObjectId, style.handle],
+      ]);
     }
   });
 });

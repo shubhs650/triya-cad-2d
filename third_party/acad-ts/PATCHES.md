@@ -2812,3 +2812,54 @@ A multiline ATTRIB or ATTDEF in R2018 DXF carries its text as an embedded MTEXT 
 In a CELLSTYLEMAP (and the TABLEFORMAT records of table cell styles), the content format states the block scale at group 140 and the text height at group 144, and the cell style's 62 before its CONTENTFORMAT is the background colour (257 for None). AutoCAD's own DXF saves confirm it: 140 is 1.0 and 144 the row's text height in every one, matching the cell styles of the same drawing saved as DWG. `ContentFormat` mapped 140 to `TextHeight` and 144 to `Scale`, and the cell style's 62 to `TextColor`, so a cell style read back with text height 1 and the background colour was lost on write. This maps the two content format codes the right way round, reads the cell style's 62 as `BackgroundColor`, and writes them back the same way.
 
 </details>
+
+### 0152 — an entity's material is dropped on read and never written
+
+- **File:** `third_party/acad-ts-patches/0152-entity-material.patch`
+- **Touches:** `src/IO/Templates/CadEntityTemplate.ts`, `src/IO/CadDocumentBuilder.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** both readers keep an entity's material handle (DXF 347; DWG R2007+ after the material flags 11), but `CadEntityTemplate` never assigned it, the DWG reader skipped the flags 01 that state ByBlock, and neither writer wrote a material (the DWG writer always wrote the flags 00, ByLayer). So every entity read without its material, and Triya's material edits (the Properties palette's Material row) were lost on save. Every ACadSharp R2007+ sample gives a POINT the ByBlock material and four CIRCLEs materials of their own (Aluminum Cast, Beech, Bamboo, Asphalt - Wet), and a multiline attribute's embedded MTEXT points at the ByLayer material. Found by Triya M1-75 part 21.
+- **Fix:** the template assigns the material the handle names, or for the DWG flags 01 the drawing's ByBlock material (`CadDocumentBuilder.findCadObject`, which finds a read object by a test and remembers it); the DXF writer writes 347 for R2007+ when the entity has a material, and the DWG writer writes the flags 01 for ByBlock and 11 with a hard pointer for any other material, 00 for none.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0152 an entity keeps its material (DXF 347, DWG R2007+) through read and save" (the R2007+ DXF and DWG samples agree, and keep it through ASCII, binary and DWG saves).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write an entity's material
+
+The DXF reader stores an entity's 347 and the DWG reader the R2007+ material handle in `CadEntityTemplate.materialHandle`, but the template never resolves it, so `Entity.material` is always null after a read. The DWG reader also discards the material flags, where 01 means ByBlock (the DXF save of the same drawing points 347 at the ByBlock MATERIAL). Neither writer writes a material: the DXF writer has no 347 and the DWG writer always writes the flags 00. This resolves the handle in the template (and the flags 01 to the drawing's ByBlock material), writes 347 from R2007 in DXF, and writes the DWG flags 01 for ByBlock or 11 and the hard pointer. With the ACadSharp sample files, the materials of the DXF and DWG saves now read alike and survive a save in either format.
+
+</details>
+
+### 0153 — a DWG layer's plot style name is dropped on read and written as 0
+
+- **File:** `third_party/acad-ts-patches/0153-dwg-layer-plot-style.patch`
+- **Touches:** `src/IO/Templates/CadLayerTemplate.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** the DWG reader read a layer's R2000+ plot style name handle into `CadLayerTemplate.plotStyleHandle`, which nothing used, and the DWG writer wrote 0 for it, so every DWG layer read with no plot style and every DWG save detached each layer from its plot style name (Normal in every corpus sample, as their DXF saves state in 390). Patch 0009 fixed the same loss for DXF. Found by Triya M1-75 part 21.
+- **Fix:** the template sets `Layer.plotStyleName` from the handle, and the writer writes it.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0153 a DWG layer keeps its plot style name (R2000+) through read and save" (AC1015–AC1032 DWG samples agree with their DXF saves before and after a DWG save).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep a DWG layer's plot style name
+
+`DwgObjectReader._readLayer` reads the R2000+ plot style name handle into `CadLayerTemplate.plotStyleHandle`, which is never assigned to the layer, and `DwgObjectWriter._writeLayer` writes a null handle in its place. Every DWG layer therefore reads without a plot style and a DWG save detaches it from its plot style name (an ACDBPLACEHOLDER in ACAD_PLOTSTYLENAME). This assigns `Layer.plotStyleName` in the template and writes it, as the DXF writer does for 390.
+
+</details>
+
+### 0154 — an entity's plot style name is dropped on read and never written
+
+- **File:** `third_party/acad-ts-patches/0154-entity-plot-style.patch`
+- **Touches:** `src/Entities/Entity.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** in a named-plot-style drawing ($PSTYLEMODE 0) an entity names its plot style by a hard pointer to an ACDBPLACEHOLDER in ACAD_PLOTSTYLENAME: DXF 390 in AcDbEntity, and in a DWG from R2000 the plot style flags (00 ByLayer, 01 ByBlock, 10 the dictionary default, 11 and the pointer). `Entity` had no field for it: the DXF reader dropped 390, the DWG reader read and discarded the flags and handle, and both writers wrote ByLayer. No public corpus file names one on an entity; Triya M1-75 part 21 (the Properties palette's Plot style row) needs it saved.
+- **Fix:** `Entity.plotStyleType` (`EntityPlotStyleType`) and `Entity.plotStyleName` (the raw handle, as `Layer.plotStyleName` keeps it) are read from 390 (as ByObjectId) and from the DWG flags and pointer, and written back: 390 for ByObjectId from R2000 in DXF, which has no group for ByBlock or the dictionary default, and the flags (and pointer) in a DWG.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0154 an entity keeps its plot style name (DXF 390, DWG R2000+) through a save" (each flag through R2000 and R2018 DWG saves; ByObjectId through ASCII and binary DXF).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write an entity's plot style name
+
+An entity in a named-plot-style drawing points at its plot style name (an ACDBPLACEHOLDER in ACAD_PLOTSTYLENAME) with DXF group 390, and a DWG from R2000 states the plot style flags (ByLayer, ByBlock, dictionary default, or by object id followed by a hard pointer). `Entity` has no field for it, so the DXF reader drops 390, `DwgObjectReader` reads and discards the flags and handle, and both writers always write ByLayer. This adds `Entity.plotStyleType` and `Entity.plotStyleName` (the handle, as `Layer.plotStyleName` holds it), reads them in both formats and writes them back; DXF, which has no code for ByBlock or the dictionary default, gets 390 for a plot style by object id only.
+
+</details>
