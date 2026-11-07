@@ -22,6 +22,7 @@ export function mapImageObjects(doc: CadDocument): ImageObject[] {
         ...common(o),
         type: 'IMAGEDEF',
         owner,
+        name: o.name,
         fileName: o.fileName,
         size: vec2(o.size),
         pixelSize: vec2(o.defaultSize),
