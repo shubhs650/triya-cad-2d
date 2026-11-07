@@ -1221,4 +1221,135 @@ describe('acad-ts local patches', () => {
     expect(Array.from(saved, (b) => String.fromCharCode(b)).join('')).not.toMatch(/\$PAPER_SPACE/);
     expect(spaces(readCadDocument(saved))).toEqual(expected);
   });
+
+  it('0136 the DXF reader reads a VISUALSTYLE into its fields in the layout of each version', () => {
+    // The DXF reader kept only the codes (0021), so a DXF saved as DWG wrote every visual style
+    // with the class defaults (M1-91). Every field set to a value that is not its default, with
+    // true colours on all five colours, must read back from the layout 0133 writes.
+    const make = (): VisualStyle => {
+      const style = new VisualStyle('Mine');
+      style.description = 'Mine';
+      style.type = 9;
+      style.faceLightingModel = 2;
+      style.faceLightingQuality = 1;
+      style.faceColorMode = 3;
+      style.faceModifiers = 2;
+      style.faceOpacityLevel = 0.25;
+      style.faceSpecularLevel = 12.5;
+      style.faceStyleMonoColor = new Color(1, 2, 3);
+      style.edgeStyleModel = 2;
+      style.edgeStyle = 33;
+      style.edgeIntersectionColor = new Color(4, 5, 6);
+      style.edgeObscuredColor = new Color(7, 8, 9);
+      style.edgeObscuredLineType = 3;
+      style.edgeIntersectionLineType = 4;
+      style.edgeCreaseAngle = 40;
+      style.edgeModifiers = 5;
+      style.edgeColorValue = new Color(10, 11, 12);
+      style.opacityLevel = 0.75;
+      style.edgeWidth = 2;
+      style.edgeOverhang = 6;
+      style.edgeJitter = 1;
+      style.edgeSilhouetteColor = new Color(13, 14, 15);
+      style.edgeSilhouetteWidth = 7;
+      style.haloGap = 8;
+      style.edgeIsolineCount = 9;
+      style.precisionFlag = true;
+      style.displaySettings = 11;
+      style.brightness = 0.5;
+      style.shadowType = 2;
+      style.internalFlag = true;
+      return style;
+    };
+    const fieldsOf = (style: VisualStyle) =>
+      Object.fromEntries(
+        Object.entries(style)
+          .filter(
+            ([key]) =>
+              (![
+                'document',
+                'handle',
+                'owner',
+                'onNameChanged',
+                'rawDxfCodes',
+                'rawDxfName',
+                'rawDwgData',
+                'rawOwnedObjects',
+              ].includes(key) &&
+                !key.startsWith('_')) ||
+              key === '_edgeColorValue',
+          )
+          .map(([key, value]) => [
+            key,
+            value instanceof Color ? [value.index, value.trueColor] : value,
+          ]),
+      );
+    const readBack = (version: ACadVersion, style: VisualStyle): VisualStyle => {
+      const doc = new CadDocument(version);
+      doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadVisualStyle)!.add(style);
+      const read = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+      return read
+        .rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadVisualStyle)!
+        .getEntry<VisualStyle>('Mine')!;
+    };
+
+    // R2007 (and R2000/R2004 DXF): one code per value, no operations; the edge style apply flag
+    // and the value after the internal flag are R2007's own.
+    const r2007 = make();
+    r2007.edgeApplyStyleFlag = 1;
+    r2007.dwgLegacyUnknown = 0.125;
+    expect(fieldsOf(readBack(ACadVersion.AC1021, r2007))).toEqual(fieldsOf(r2007));
+
+    // R2010: an operation after every value.
+    const r2010 = make();
+    r2010.dwgPropertyOperations = Array.from({ length: 28 }, (_, i) => i % 3);
+    expect(fieldsOf(readBack(ACadVersion.AC1024, r2010))).toEqual(fieldsOf(r2010));
+
+    // R2013+: the 58 values under their types' codes, the last 30 the extended properties.
+    const r2018 = make();
+    r2018.dwgPropertyOperations = Array.from({ length: 28 }, (_, i) => (i + 1) % 3);
+    r2018.dwgExtendedProperties = [
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      false,
+      true,
+      50,
+      0.5,
+      1.5,
+      7,
+      new Color(16, 17, 18),
+      3,
+      4,
+      new Color(5),
+      true,
+      6,
+      7,
+      8,
+      false,
+      9,
+      Color.byLayer,
+      2.5,
+      10,
+      'strokes_ogs.tif',
+      true,
+      3.5,
+      4.5,
+    ].map((value, i) => ({ value, operation: i % 2 }));
+    const extended = (style: VisualStyle) =>
+      style.dwgExtendedProperties.map(({ value, operation }) => [
+        value instanceof Color ? [value.index, value.trueColor] : value,
+        operation,
+      ]);
+    const back = readBack(ACadVersion.AC1032, r2018);
+    expect(fieldsOf(back)).toEqual({
+      ...fieldsOf(r2018),
+      dwgExtendedProperties: expect.anything(),
+    });
+    expect(extended(back)).toEqual(extended(r2018));
+  });
 });

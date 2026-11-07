@@ -8,7 +8,7 @@ import { IDxfStreamWriter } from './IDxfStreamWriter.js';
 // The R2007 and R2010 DXF codes of the DWG fields, in the DWG (and DXF) order. A true colour
 // follows its index colour at code + 358: the corpus states 63/421 (face style mono colour) and
 // 66/424 (edge colour); 64/422, 65/423 and 67/425 follow the same rule.
-const codes: readonly number[] = [
+export const codes: readonly number[] = [
 	71, 72, 73, 90, 40, 41, 63, 74, 91, 64, 65, 75, 175, 42, 92, 66, 43, 76, 77, 78, 67, 79,
 	170, 171, 290, 93, 44, 173,
 ];
