@@ -4,6 +4,7 @@
 // is checked by export-header.corpus.test.ts.
 import {
   ACadVersion,
+  AppId,
   CadDictionary,
   CadDocument,
   Color,
@@ -284,8 +285,10 @@ describe('layers', () => {
       (b, m) => b.updateTableRecord('layers', layerNamed(m, 'NOTES').handle, { name: 'walls' }),
       (b, m) => b.updateTableRecord('layers', layerNamed(m, 'NOTES').handle, { name: 'A<B' }),
       (b, m) =>
+        b.updateTableRecord('layers', layerNamed(m, 'NOTES').handle, { transparency: 'ByLayer' }),
+      (b, m) =>
         b.updateTableRecord('layers', layerNamed(m, 'NOTES').handle, {
-          transparency: { alpha: 128 },
+          transparency: { alpha: 100.5 },
         }),
       (b, m) =>
         b.updateTableRecord('layers', layerNamed(m, 'NOTES').handle, {
@@ -314,6 +317,106 @@ describe('layers', () => {
     }
   });
 
+  it.each(formats)('writes a layer’s transparency as AcCmTransparency xdata (%s)', (format) => {
+    const bytes = drawing(ACadVersion.AC1032, format);
+    const { model } = open(bytes);
+    const walls = layerNamed(model, 'WALLS');
+    let added: LayerRecord | undefined;
+    edit(model, (b) => {
+      // 70 %, which AutoCAD stores as alpha 76 (sample_AC1027 Layer_transp_70: 1071 = 0x0200004C).
+      b.updateTableRecord('layers', walls.handle, { transparency: { alpha: 76 } });
+      const { handle: _h, raw: _raw, ...init } = layerNamed(model, 'NOTES');
+      added = b.addTableRecord('layers', { ...init, name: 'GLASS', transparency: { alpha: 25 } });
+    });
+
+    const back = saved(bytes, model, format);
+    const apps = (back.tables?.appIds ?? []).filter(
+      (a) => a.name.toUpperCase() === 'ACCMTRANSPARENCY',
+    );
+    // The drawing had no AcCmTransparency application: the save registers it, once.
+    expect(apps).toHaveLength(1);
+    const layers = new Map(back.tables?.layers?.map((l) => [l.handle, l]));
+    expect(layers.get(walls.handle)?.transparency).toEqual({ alpha: 76 });
+    expect(layers.get(added!.handle)?.transparency).toEqual({ alpha: 25 });
+    expect(layers.get(walls.handle)?.xdata).toEqual([
+      { appId: apps[0]!.handle, values: [{ code: 1071, value: 0x0200004c }] },
+    ]);
+    const without = (l: LayerRecord | undefined) => {
+      if (!l) return l;
+      const { xdata: _x, ...rest } = l;
+      return comparable({ ...rest, transparency: { alpha: 255 } });
+    };
+    expect(without(layers.get(added!.handle))).toEqual(
+      without(model.tables.layers.get(added!.handle)),
+    );
+
+    // Made opaque again: the layer keeps its entry, as AutoCAD writes an opaque layer's (1071 0).
+    const again = exportDocument(readCadDocument(bytes), model, { format });
+    const second = open(again).model;
+    edit(second, (b) =>
+      b.updateTableRecord('layers', walls.handle, { transparency: { alpha: 255 } }),
+    );
+    const opaque = saved(again, second, format).tables?.layers?.find(
+      (l) => l.handle === walls.handle,
+    );
+    expect(opaque?.transparency).toEqual({ alpha: 255 });
+    expect(opaque?.xdata?.[0]?.values).toEqual([{ code: 1071, value: 0 }]);
+  });
+
+  it('uses the drawing’s own AcCmTransparency application, whatever its case', () => {
+    const doc = readCadDocument(drawing());
+    doc.appIds!.add(new AppId('ACCMTRANSPARENCY'));
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const { model } = open(bytes);
+    const own = [...model.tables.appIds.values()].find((a) => a.name === 'ACCMTRANSPARENCY')!;
+    edit(model, (b) =>
+      b.updateTableRecord('layers', layerNamed(model, 'WALLS').handle, {
+        transparency: { alpha: 128 },
+      }),
+    );
+
+    const back = saved(bytes, model, 'dxf');
+    expect(
+      (back.tables?.appIds ?? []).filter((a) => a.name.toUpperCase() === 'ACCMTRANSPARENCY'),
+    ).toHaveLength(1);
+    const walls = back.tables?.layers?.find((l) => l.name === 'WALLS');
+    expect(walls?.transparency).toEqual({ alpha: 128 });
+    expect(walls?.xdata?.[0]?.appId).toBe(own.handle);
+  });
+
+  it('uses an AcCmTransparency application the same save adds', () => {
+    const bytes = drawing();
+    const { model } = open(bytes);
+    let app: { handle: string } | undefined;
+    edit(model, (b) => {
+      app = b.addTableRecord('appIds', { name: 'AcCmTransparency' });
+      b.updateTableRecord('layers', layerNamed(model, 'WALLS').handle, {
+        transparency: { alpha: 128 },
+      });
+    });
+
+    const back = saved(bytes, model, 'dxf');
+    const apps = (back.tables?.appIds ?? []).filter(
+      (a) => a.name.toUpperCase() === 'ACCMTRANSPARENCY',
+    );
+    expect(apps.map((a) => a.handle)).toEqual([app!.handle]);
+    expect(back.tables?.layers?.find((l) => l.name === 'WALLS')?.xdata?.[0]?.appId).toBe(
+      app!.handle,
+    );
+  });
+
+  it('refuses a layer more than 90 % transparent, as the LAYER dialog does', () => {
+    const bytes = drawing();
+    const { model } = open(bytes);
+    edit(model, (b) =>
+      b.updateTableRecord('layers', layerNamed(model, 'WALLS').handle, {
+        transparency: { alpha: 24 },
+      }),
+    );
+
+    expect(() => triyaToAcad(readCadDocument(bytes), model)).toThrow(/more than 90 %/);
+  });
+
   it('refuses an R12 save of what an R12 layer does not store', () => {
     const bytes = drawing(ACadVersion.AC1009);
     const { model } = open(bytes);
@@ -323,6 +426,15 @@ describe('layers', () => {
 
     expect(() => triyaToAcad(readCadDocument(bytes), model, 'dxf')).toThrow(
       /an R12 layer does not store its lineweight/,
+    );
+    const { model: other } = open(bytes);
+    edit(other, (b) =>
+      b.updateTableRecord('layers', layerNamed(other, 'WALLS').handle, {
+        transparency: { alpha: 128 },
+      }),
+    );
+    expect(() => triyaToAcad(readCadDocument(bytes), other, 'dxf')).toThrow(
+      /an R12 layer does not store its transparency/,
     );
   });
 
