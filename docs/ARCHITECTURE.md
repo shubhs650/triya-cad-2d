@@ -204,7 +204,7 @@ A typed registry (`SysVarRegistry`) with AutoCAD names, types, defaults, scope (
 1. Every acad-ts object that `AcadToTriya` does not map is kept, with its handle, in `PassthroughStore` and written back byte-for-byte at the model level (acad-ts object graph), including xdata, reactors, extension dictionaries, and owner links.
 2. Entities Triya **does** map keep a `raw` reference. On export, properties Triya didn't model (unknown xdata app ids, proxy graphics, custom flags) are copied from `raw` onto the rebuilt object.
 3. Deleting an entity in Triya deletes its passthrough twin and any objects solely owned by it (its extension dictionary) — never shared objects.
-4. Block definitions containing only unmapped entities are kept whole. `*U` (dynamic) blocks are mapped as static block definitions **for rendering only**; their `AcDbBlockRepresentationData`/evaluation graphs are passthrough.
+4. Block definitions containing only unmapped entities are kept whole. `*U` (dynamic) blocks are mapped as static block definitions **for rendering only**; their `AcDbBlockRepresentationData`/evaluation graphs are passthrough. Only which records are dynamic definitions (`BlockDefinition.dynamic`) and which dynamic block a `*U` state stands for (`dynamicOf`) are read, so `dynamicBlockOf` can badge their references (FR-B3, M1-14 part 3).
 5. Unknown header variables, classes (`CLASSES` section), and the `OBJECTS` section are passthrough by default; Triya only claims what it models.
 6. The round-trip test (open → save → reopen → structural diff) must report **zero** differences for every corpus file, with the sole allowed exceptions listed in `TESTING.md` (`$TDUPDATE`, `$TDUSRTIMER`, `$HANDSEED` ≥, `$VERSIONGUID`, `$FINGERPRINTGUID`).
 

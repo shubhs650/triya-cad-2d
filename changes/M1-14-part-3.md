@@ -1,0 +1,1 @@
+- M1-14 part 3 (#165): dynamic-block badge metadata: block definitions say whether they are a dynamic block (by the name AutoCAD shows) or an anonymous state of one, and `dynamicBlockOf` gives the dynamic block any reference draws, for the "Dynamic — edit in AutoCAD" badge (FR-B3).
