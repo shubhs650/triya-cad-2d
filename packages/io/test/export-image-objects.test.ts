@@ -297,6 +297,40 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
     },
   );
 
+  it.each(SAVES)(
+    'renames a definition in its ACAD_IMAGE_DICT entry, the image still showing it (%s %s, M1-95)',
+    (version, format) => {
+      const bytes = drawing(version, format);
+      const model = open(bytes);
+      const [photo, plan] = [definition(model, 'photo'), definition(model, 'plan')];
+      // The External References palette's rename; a new definition takes the name it frees,
+      // and the other definition takes the renamed one's old name.
+      edit(model, (b) => {
+        b.updateObject(photo.handle, patch({ name: 'Site photo', loaded: false }));
+        b.updateObject(plan.handle, patch({ name: 'photo' }));
+        b.addObject(newDefinition(photo.owner, 'plan') as never);
+      });
+      const entries = (doc: ReturnType<typeof readCadDocument>) => {
+        const dict = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadImageDict)!;
+        return { names: dict.entryNames, handles: dict.entryHandles };
+      };
+      const original = entries(readCadDocument(bytes));
+      const reopened = readCadDocument(exportDocument(readCadDocument(bytes), model, { format }));
+      const after = entries(reopened);
+      expect(after.names).toEqual([
+        ...original.names.map((n) => ({ photo: 'Site photo', plan: 'photo' })[n] ?? n),
+        'plan',
+      ]);
+      expect(after.handles.slice(0, original.handles.length)).toEqual(original.handles);
+      const back = documentInit(reopened);
+      const get = (h: string) => back.objects!.find((o) => o.handle === h);
+      for (const d of [photo, plan])
+        expect(comparable(get(d.handle))).toEqual(comparable(model.objects.get(d.handle)));
+      const image = back.entities!.find((e) => e.type === 'IMAGE')!;
+      expect((image.geom as { definition?: string }).definition).toBe(photo.handle);
+    },
+  );
+
   it('refuses what it cannot write and leaves the original as it was', () => {
     const bytes = drawing();
     const root = dictionary(bytes);
@@ -311,7 +345,9 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
     const cases: [(b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
       [(b, m) => b.removeObject(definition(m, 'plan').handle), /removing an IMAGEDEF/],
       [(b, m) => b.removeObject(raster(m).handle), /removing a RASTERVARIABLES/],
-      [update(photo, { name: 'picture' }), /cannot rename a dictionary entry.*M1-95/],
+      [update(photo, { name: 'PLAN' }), /another image is named PLAN/],
+      [update(photo, { name: '' }), /an image needs a name/],
+      [update(photo, { name: 'a|b' }), /"a\|b" is not a valid image name/],
       [update(photo, { owner: root }), /owner changes/],
       [update(photo, { type: 'PDFDEFINITION' }), /type changes/],
       [update(photo, { fileName: '' }), /fileName: an image needs its file/],

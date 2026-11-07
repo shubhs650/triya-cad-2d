@@ -16,7 +16,13 @@
 // (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
 import { readFileSync } from 'node:fs';
-import { ACadVersion, Insert, Polyline, type Viewport } from '@node-projects/acad-ts';
+import {
+  ACadVersion,
+  Insert,
+  Polyline,
+  type CadDictionary,
+  type Viewport,
+} from '@node-projects/acad-ts';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
@@ -866,6 +872,119 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ![...header.keys(), '_currentLayer'].some(
               (n) => d.path === n || d.path.startsWith(`${n}.`),
             ),
+        );
+        expect(diff.slice(0, 5), f.path).toEqual([]);
+      });
+    },
+    PER_FILE_BUDGET_MS,
+  );
+
+  // M1-95: every multileader style but Standard, every table style but Standard before R2010
+  // (from R2010 a table style keeps cell styles Triya does not map, M1-96) and every image
+  // definition renamed, with CMLEADERSTYLE and CTABLESTYLE following, as AutoCAD's RENAME and
+  // the External References palette do. Each keeps its dictionary entry, in place, under its
+  // handle; MULTILEADERs, TABLEs and IMAGEs point at it by handle and come back as read.
+  it.each(readable.map((f) => [f.path, f] as const))(
+    'renames dictionary-named objects in place in %s',
+    (_path, f) => {
+      const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
+      const { format } = sniffCadFile(bytes);
+      const options = {
+        format: (format === 'dwg' ? 'dwg' : 'dxf') as CadFormat,
+        binary: format === 'dxf-binary',
+      };
+      withPinnedClock(() => {
+        const original = readCadDocument(bytes);
+        const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
+        const version = original.header?.version ?? ACadVersion.AC1032;
+        const renamed = (name: string) => `${name} renamed`;
+        const mleaderStyles = [...model.tables.mleaderStyles.values()].filter(
+          (s) => s.name.toUpperCase() !== 'STANDARD',
+        );
+        const tableStyles =
+          version < ACadVersion.AC1024
+            ? [...model.tables.tableStyles.values()].filter(
+                (s) => s.name.toUpperCase() !== 'STANDARD',
+              )
+            : [];
+        const images = [...model.objects.values()].filter(
+          (o): o is ImageDefinition => o.type === 'IMAGEDEF',
+        );
+        if (mleaderStyles.length + tableStyles.length + images.length === 0) return;
+        const header = new Map<string, HeaderValue>();
+        for (const [name, styles] of [
+          ['CMLEADERSTYLE', mleaderStyles],
+          ['CTABLESTYLE', tableStyles],
+        ] as const) {
+          const current = model.header.get(name);
+          const style = styles.find(
+            (s) => typeof current === 'string' && s.name.toUpperCase() === current.toUpperCase(),
+          );
+          if (style) header.set(name, renamed(style.name));
+        }
+        const b = new ChangeSetBuilder(model);
+        for (const s of mleaderStyles)
+          b.updateTableRecord('mleaderStyles', s.handle, { name: renamed(s.name) });
+        for (const s of tableStyles)
+          b.updateTableRecord('tableStyles', s.handle, { name: renamed(s.name) });
+        for (const o of images)
+          b.updateObject(o.handle, { name: renamed(o.name) } as Partial<NonGraphicalObject>);
+        for (const [name, value] of header) b.setHeader(name, value);
+        model.apply(b.build());
+
+        const reopened = readCadDocument(exportDocument(readCadDocument(bytes), model, options));
+        const init = documentInit(reopened);
+        const names = (rs: readonly { handle: Handle; name: string }[] | undefined) =>
+          new Map(rs?.map((r) => [r.handle, r.name]));
+        const backMLeader = names(init.tables?.mleaderStyles);
+        const backTable = names(init.tables?.tableStyles);
+        const backImages = names(
+          init.objects?.filter((o): o is ImageDefinition => o.type === 'IMAGEDEF'),
+        );
+        expect(
+          [
+            ...mleaderStyles.filter((s) => backMLeader.get(s.handle) !== renamed(s.name)),
+            ...tableStyles.filter((s) => backTable.get(s.handle) !== renamed(s.name)),
+            ...images.filter((o) => backImages.get(o.handle) !== renamed(o.name)),
+          ].map((r) => r.name),
+          f.path,
+        ).toEqual([]);
+        const backHeader = new Map(init.header);
+        for (const [name, value] of header) expect(backHeader.get(name), f.path).toBe(value);
+
+        // Each owning dictionary lists the same entries, in the same order, under the new names.
+        const newName = new Map<number, string>(
+          [...mleaderStyles, ...tableStyles, ...images].map((r) => [
+            Number.parseInt(r.handle, 16),
+            renamed(r.name),
+          ]),
+        );
+        const owners = new Set<number>();
+        for (const h of newName.keys()) {
+          const dict = original.getCadObject(h)!.owner as CadDictionary;
+          owners.add(dict.handle);
+          const back = reopened.getCadObject(dict.handle) as CadDictionary;
+          expect(
+            { names: back.entryNames, handles: back.entryHandles },
+            `${f.path} ${dict.name}`,
+          ).toEqual({
+            names: dict.entryNames.map((n, i) => newName.get(dict.entryHandles[i]!) ?? n),
+            handles: dict.entryHandles,
+          });
+        }
+        // Nothing else changes: not the entities pointing at the renamed objects either.
+        // CMLEADERSTYLE and CTABLESTYLE are DICTIONARYVAR objects, whose value is the edit.
+        const variables = original.rootDictionary?.get('AcDbVariableDictionary') as
+          CadDictionary | undefined;
+        const ignoreHandles = new Set([
+          ...newName.keys(),
+          ...owners,
+          ...[...header.keys()].map((n) => variables!.getEntry(n)!.handle),
+        ]);
+        const diff = structuralDiff(original, reopened, { ignoreHandles }).differences.filter(
+          (d) =>
+            d.handle !== '0' ||
+            ![...header.keys()].some((n) => d.path === n || d.path.startsWith(`${n}.`)),
         );
         expect(diff.slice(0, 5), f.path).toEqual([]);
       });

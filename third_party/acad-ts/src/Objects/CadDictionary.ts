@@ -127,6 +127,38 @@ export class CadDictionary extends NonGraphicalObject implements Iterable<NonGra
 		return false;
 	}
 
+	/**
+	 * Renames the entry `key` to `newName` where it stands: the object keeps its handle and
+	 * owner, takes the new name, and is written under it. Removing and re-adding it would
+	 * unassign it from the document and move it to the end.
+	 * @returns false when there is no entry `key`.
+	 */
+	rename(key: string, newName: string): boolean {
+		if (!newName) {
+			throw new Error('NonGraphicalObject must have a name');
+		}
+		const oldKey = key.toLowerCase();
+		const item = this._entries.get(oldKey);
+		if (!item) {
+			return false;
+		}
+		const newKey = newName.toLowerCase();
+		if (newKey !== oldKey && this._entries.has(newKey)) {
+			throw new Error(`The dictionary already has an entry named ${newName}`);
+		}
+		const entries = new Map<string, NonGraphicalObject>();
+		const names = new Map<string, string>();
+		for (const [k, v] of this._entries) {
+			const renamed = k === oldKey;
+			entries.set(renamed ? newKey : k, v);
+			names.set(renamed ? newKey : k, renamed ? newName : (this._entryNames.get(k) ?? k));
+		}
+		this._entries = entries;
+		this._entryNames = names;
+		item.name = newName;
+		return true;
+	}
+
 	tryAdd(value: NonGraphicalObject): boolean {
 		if (!this._entries.has(value.name.toLowerCase())) {
 			this.add(value);

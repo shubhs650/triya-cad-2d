@@ -5,11 +5,12 @@
 // the drawing's ACAD_IMAGE_VARS and ACAD_WIPEOUT_VARS, which the first image or wipeout of a
 // drawing creates. A definition is an entry of the ACAD_IMAGE_DICT dictionary named by the image
 // name; a drawing without that dictionary gains it under the handle its new definitions name as
-// their owner, as AutoCAD creates it with the first image.
+// their owner, as AutoCAD creates it with the first image. A renamed definition (the External
+// References palette's rename) keeps its entry where it stands under the new name (M1-95); the
+// IMAGEs showing it point at it by handle.
 //
 // Refused, before anything changes: removing one (IMAGE Detach also erases the images showing
-// it, which the IMAGEDEF_REACTORs tie to it; not written yet), renaming a definition (acad-ts's
-// dictionary keys an entry by the name it was added under, M1-95), a new one before R14, which
+// it, which the IMAGEDEF_REACTORs tie to it; not written yet), a new one before R14, which
 // introduced raster images, values AutoCAD does not store, and xdata, reactor and extension
 // dictionary changes.
 
@@ -35,6 +36,7 @@ import type {
   WipeoutVariables,
 } from '@triya/engine';
 import { resolve, same, type Resolver } from './entities';
+import { entryRenameProblems, renameEntries } from './dictionary-entries';
 import { changes } from './records';
 
 type ImageObject = ImageDefinition | RasterVariables | WipeoutVariables;
@@ -148,8 +150,8 @@ export function planImageObjects(
       acad = resolve(r, h, ACAD_TYPE[a.type] as abstract new (...args: never[]) => AcadImageObject);
       if (!acad) out.push(`the original is not a ${a.type}`);
       if (b.owner !== a.owner) out.push('owner changes');
-      if (b.type === 'IMAGEDEF' && b.name !== (a as ImageDefinition).name)
-        out.push('acad-ts cannot rename a dictionary entry in place (M1-95)');
+      if (acad && b.type === 'IMAGEDEF' && b.name !== (a as ImageDefinition).name)
+        out.push(...imageRenameProblems(acad, (a as ImageDefinition).name, names, model, version));
       for (const k of UNSUPPORTED) if (!same(b[k], a[k])) out.push(`${k} changes`);
     } else {
       if (doc.getCadObject(Number.parseInt(h, 16))) out.push('the handle is already used');
@@ -212,6 +214,25 @@ export function planImageObjects(
   if (newDictionaries.size > 1)
     problems.push('new image definitions name more than one new ACAD_IMAGE_DICT');
   return { plan, problems };
+}
+
+/** Why an image definition cannot be renamed `name` (the External References palette's rename). */
+function imageRenameProblems(
+  acad: AcadImageObject,
+  name: string,
+  names: ReadonlyMap<string, number>,
+  model: DocumentModel,
+  version: ACadVersion | undefined,
+): string[] {
+  if (typeof name !== 'string' || name === '') return ['an image needs a name'];
+  if ((names.get(name.toUpperCase()) ?? 0) > 1) return [`another image is named ${name}`];
+  if (!INamedCadObjectExtensions.isValidDxfName({ name } as never, version))
+    return [`${JSON.stringify(name)} is not a valid image name`];
+  return entryRenameProblems(
+    acad,
+    name,
+    (o) => model.objects.get(hex(o.handle))?.type === 'IMAGEDEF',
+  );
 }
 
 /** What AutoCAD does not store in the fields that change. */
@@ -285,6 +306,15 @@ function writeImageObject(o: AcadImageObject, b: ImageObject | undefined, a: Ima
  */
 export function writeImageObjects(doc: CadDocument, plan: ImageObjectsPlan): void {
   const root = doc.rootDictionary!;
+  // Renamed definitions first, as a new one may take a name one gives up.
+  renameEntries(
+    plan.updated
+      .filter(
+        ({ before, after }) =>
+          before.type === 'IMAGEDEF' && before.name !== (after as ImageDefinition).name,
+      )
+      .map(({ acad, after }) => ({ acad, name: (after as ImageDefinition).name })),
+  );
   for (const { acad, after, dictionary } of plan.added) {
     let dict: CadDictionary = root;
     if (typeof dictionary === 'number') {

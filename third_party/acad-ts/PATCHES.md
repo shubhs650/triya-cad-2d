@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) and 0143–0145 (M1-93) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94) and 0147 (M1-95) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2725,5 +2725,22 @@ A drawing split into tiled viewports has one VPORT record per tile, all named `*
 **Title:** Read MLEADERSTYLE arrowhead (341) and block content (343) handles from DXF
 
 `DxfObjectsSectionReader._readMLeaderStyle` reads the leader line type (340) and MText style (342) handles into `CadMLeaderStyleTemplate`, but not the arrowhead block (341) or the block content (343), so a style read from DXF loses both, while the DWG reader keeps them and the DXF writer writes them. This adds the two cases; the template already resolves both handles when the document is built.
+
+</details>
+
+### 0147 — `CadDictionary.rename` renames an entry in place
+
+- **File:** `third_party/acad-ts-patches/0147-cad-dictionary-rename-in-place.patch`
+- **Touches:** `src/Objects/CadDictionary.ts`
+- **Symptom:** A dictionary keys an entry by the name it was added under, and both writers write that key as the entry name (DXF 3, the DWG entry text), which is the only place a MLEADERSTYLE, TABLESTYLE or IMAGEDEF keeps its name. Setting the object's `name` left the key as it was, so the save wrote the old name, and the only other route, `remove` then `add`, sets the owner to null on the way (which the document takes as an unlink) and moves the entry to the end. Upstream ACadSharp renames the key from `OnNameChanged`; the port dropped that handler. Found by Triya M1-75 parts 11–13, fixed in M1-95.
+- **Fix:** A `rename(key, newName)` method that swaps the key where the entry stands, keeps its handle and owner, gives the object the new name, refuses a name another entry has (without regard to case) and returns false when there is no entry `key`. It is explicit rather than a name-change handler, so a reader that sets a name after adding an entry changes nothing.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0147 CadDictionary.rename renames an entry in place, keeping its handle and owner" (entry order, case-only renames, refusals, and R2000/R2018 DXF and R2004/R2018 DWG saves reading back with the new name in the old place).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Add `CadDictionary.rename` to rename an entry in place
+
+Objects such as MLEADERSTYLE, TABLESTYLE and IMAGEDEF are named only by their dictionary entry, which `CadDictionary` keys by the name the object was added under. Changing the object's `name` does not change the key, so the writers keep writing the old name; ACadSharp handles this with `onEntryNameChanged`, which the TypeScript port does not have. `remove` + `add` works but unassigns the object from the document and moves the entry to the end of the dictionary. This adds `rename(key, newName)`, which replaces the key at the same position, keeps the object's handle and owner, sets its name, and throws if another entry already has the new name.
 
 </details>
