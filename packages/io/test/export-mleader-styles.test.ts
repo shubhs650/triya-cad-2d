@@ -28,22 +28,29 @@ import {
   type CadFormat,
 } from '../src/index';
 
-/** Multileader styles Standard and CALLOUT, the block TAG, and CMLEADERSTYLE = Standard. */
-function drawing(version = ACadVersion.AC1032, format: CadFormat = 'dxf'): Uint8Array {
+/**
+ * Multileader styles Standard, CALLOUT and `more`, the block TAG, and CMLEADERSTYLE = `current`.
+ */
+function drawing(
+  version = ACadVersion.AC1032,
+  format: CadFormat = 'dxf',
+  current = MultiLeaderStyle.defaultName,
+  more: readonly string[] = [],
+): Uint8Array {
   const doc = new CadDocument(version);
   doc.blockRecords!.add(new BlockRecord('TAG'));
   const dict = doc.rootDictionary!.get(CadDictionary.acadMLeaderStyle) as CadDictionary;
-  for (const name of [MultiLeaderStyle.defaultName, 'CALLOUT']) {
+  for (const name of [MultiLeaderStyle.defaultName, 'CALLOUT', ...more]) {
     const s = new MultiLeaderStyle(name);
     dict.add(s);
     s.textStyle = doc.textStyles!.get('Standard')!;
     s.leaderLineType = doc.lineTypes!.get('ByBlock')!;
   }
   const vars = doc.rootDictionary!.get(CadDictionary.variableDictionary) as CadDictionary;
-  const current = new DictionaryVariable();
-  current.name = 'CMLEADERSTYLE';
-  current.value = MultiLeaderStyle.defaultName;
-  vars.add(current);
+  const variable = new DictionaryVariable();
+  variable.name = 'CMLEADERSTYLE';
+  variable.value = current;
+  vars.add(variable);
   return writeCadDocument(doc, { format });
 }
 
@@ -244,6 +251,85 @@ describe('MLEADERSTYLE objects', () => {
     },
   );
 
+  const mleaderEntries = (doc: ReturnType<typeof readCadDocument>) => {
+    const dict = doc.rootDictionary!.get(CadDictionary.acadMLeaderStyle) as CadDictionary;
+    return { names: dict.entryNames, handles: dict.entryHandles };
+  };
+
+  it.each(SAVES)(
+    'renames a style in its dictionary entry, and CMLEADERSTYLE with it (%s %s, M1-95)',
+    (version, format) => {
+      const bytes = drawing(version, format, 'CALLOUT');
+      const model = open(bytes);
+      const callout = style(model, 'CALLOUT');
+      // A new style may take the name the rename gives up (from R2007; the copy states the
+      // R2010 attachment fields, which a DWG keeps from R2010).
+      const adds = version >= (format === 'dwg' ? ACadVersion.AC1024 : ACadVersion.AC1021);
+      let added = '';
+      edit(model, (b) => {
+        b.updateTableRecord('mleaderStyles', callout.handle, { name: 'Balloon', textHeight: 4 });
+        if (adds) {
+          const { handle: _h, raw: _raw, ...rest } = callout;
+          added = b.addTableRecord('mleaderStyles', { ...rest, name: 'CALLOUT' }).handle;
+        }
+        b.setHeader('CMLEADERSTYLE', 'Balloon');
+      });
+
+      const original = mleaderEntries(readCadDocument(bytes));
+      const reopened = readCadDocument(exportDocument(readCadDocument(bytes), model, { format }));
+      const after = mleaderEntries(reopened);
+      // The entry stays where it was, under its handle; a new one goes at the end.
+      expect(after.names).toEqual([
+        ...original.names.map((n) => (n === 'CALLOUT' ? 'Balloon' : n)),
+        ...(adds ? ['CALLOUT'] : []),
+      ]);
+      expect(after.handles.slice(0, original.handles.length)).toEqual(original.handles);
+      const back = documentInit(reopened);
+      const get = (h: string) => back.tables!.mleaderStyles!.find((s) => s.handle === h);
+      expect(comparable(get(callout.handle))).toEqual(
+        comparable(model.tables.mleaderStyles.get(callout.handle)),
+      );
+      if (adds) expect(get(added)?.name).toBe('CALLOUT');
+      expect(new Map(back.header).get('CMLEADERSTYLE')).toBe('Balloon');
+    },
+  );
+
+  it.each(formats)('lets two styles trade names (%s)', (format) => {
+    const bytes = drawing(ACadVersion.AC1032, format, 'Standard', ['NOTE']);
+    const model = open(bytes);
+    const [callout, note] = [style(model, 'CALLOUT'), style(model, 'NOTE')];
+    edit(model, (b) => {
+      b.updateTableRecord('mleaderStyles', callout.handle, { name: 'NOTE' });
+      b.updateTableRecord('mleaderStyles', note.handle, { name: 'CALLOUT' });
+    });
+    const original = mleaderEntries(readCadDocument(bytes));
+    const reopened = readCadDocument(exportDocument(readCadDocument(bytes), model, { format }));
+    expect(mleaderEntries(reopened)).toEqual({
+      names: original.names.map((n) => ({ CALLOUT: 'NOTE', NOTE: 'CALLOUT' })[n] ?? n),
+      handles: original.handles,
+    });
+    const back = documentInit(reopened).tables!.mleaderStyles!;
+    expect(back.find((s) => s.handle === callout.handle)?.name).toBe('NOTE');
+    expect(back.find((s) => s.handle === note.handle)?.name).toBe('CALLOUT');
+  });
+
+  it('refuses a rename that leaves CMLEADERSTYLE naming the old name', () => {
+    const bytes = drawing(ACadVersion.AC1032, 'dxf', 'callout');
+    const model = open(bytes);
+    edit(model, (b) =>
+      b.updateTableRecord('mleaderStyles', style(model, 'CALLOUT').handle, { name: 'BALLOON' }),
+    );
+    expect(refusal(() => triyaToAcad(readCadDocument(bytes), model, 'dxf'))).toEqual([
+      'header variable CMLEADERSTYLE: it names callout, which the save renames BALLOON',
+    ]);
+    // A case-only rename keeps the name CMLEADERSTYLE finds.
+    const again = open(bytes);
+    edit(again, (b) =>
+      b.updateTableRecord('mleaderStyles', style(again, 'CALLOUT').handle, { name: 'Callout' }),
+    );
+    expect(refusal(() => triyaToAcad(readCadDocument(bytes), again, 'dxf'))).toEqual([]);
+  });
+
   it('refuses what it cannot write and leaves the original as it was', () => {
     const update =
       (name: string, change: Partial<MLeaderStyleRecord>) =>
@@ -259,7 +345,15 @@ describe('MLEADERSTYLE objects', () => {
         (b, m) => b.removeTableRecord('mleaderStyles', style(m, 'CALLOUT').handle),
         /removing a multileader style/,
       ],
-      [update('CALLOUT', { name: 'BALLOON' }), /cannot rename a dictionary entry.*M1-95/],
+      [update('CALLOUT', { name: 'standard' }), /another multileader style is named standard/],
+      [update('CALLOUT', { name: 'A<B' }), /is not a valid multileader style name/],
+      [
+        (b, m) => {
+          b.updateTableRecord('mleaderStyles', style(m, 'CALLOUT').handle, { name: 'BALLOON' });
+          b.setHeader('CMLEADERSTYLE', 'CALLOUT');
+        },
+        /CMLEADERSTYLE: no multileader style named "CALLOUT"/,
+      ],
       [update('Standard', { name: 'Default' }), /Standard cannot be renamed/],
       [add({ name: 'callout' }), /another multileader style is named callout/],
       [add({ name: 'A<B' }), /is not a valid multileader style name/],

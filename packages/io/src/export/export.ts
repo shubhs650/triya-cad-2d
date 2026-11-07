@@ -338,7 +338,13 @@ export function triyaToAcad(
   };
   // Before the entities: a new IMAGE may show a definition the same save adds.
   const imageObjects = planImageObjects(original, base, model, r);
-  const header = planHeader(original, base, model, format, [...created.values()]);
+  // A current style variable may name a style by the name the same save gives it.
+  const renamed = new Map<CadObject, string>(
+    [...mleaderStyles.plan.updated, ...tableStyles.plan.updated]
+      .filter(({ before, after }) => before.name !== after.name)
+      .map(({ acad, after }) => [acad, after.name]),
+  );
+  const header = planHeader(original, base, model, format, [...created.values()], renamed);
   const drawOrder = planDrawOrder(original, base, model, r);
   const { plan: p, problems } = plan(original, base, model, r, format, drawOrder);
   problems.unshift(
