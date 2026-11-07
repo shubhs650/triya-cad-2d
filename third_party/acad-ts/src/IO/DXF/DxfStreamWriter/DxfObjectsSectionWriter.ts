@@ -778,7 +778,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this._writer.write(170, style.cellAlignment);
       this._writer.write(91, style.styleClass);
       this._writer.write(92, style.tableCellStylePropertyFlags);
-      this._writer.write(62, style.textColor.index);
+      // The background colour: the content colour is the CONTENTFORMAT's 62 below.
+      this._writer.write(62, style.backgroundColor.index);
       this._writer.write(300, 'CONTENTFORMAT');
       this._writer.write(1, 'CONTENTFORMAT_BEGIN');
       this._writer.write(90, style.propertyFlags);
@@ -787,11 +788,12 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this._writer.write(93, style.valueUnitType);
       this._writer.write(300, style.valueFormatString);
       this._writer.write(40, MathHelper.radToDeg(style.rotation));
-      this._writer.write(140, style.textHeight);
+      this._writer.write(140, style.scale);
       this._writer.write(94, style.alignment);
       this._writer.write(62, style.color.index);
       if (style.textStyle) this._writer.write(340, style.textStyle.handle);
-      this._writer.write(144, style.scale);
+      // 140 is the block scale and 144 the text height (AutoCAD DXF reference, content format).
+      this._writer.write(144, style.textHeight);
       this._writer.write(309, 'CONTENTFORMAT_END');
       this._writer.write(171, style.marginOverrideFlags);
       this._writer.write(301, 'MARGIN');

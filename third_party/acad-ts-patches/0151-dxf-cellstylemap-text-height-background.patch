@@ -1,0 +1,60 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 1705444..0524be6 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -1604,6 +1604,11 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+         case 95:
+           currBorder = this._reader.valueAsInt as CellEdgeFlags;
+           break;
++        // The cell style's background colour (AutoCAD DXF reference, TABLESTYLE cell style:
++        // 62 after the merge flags 92; 257 is None). The content colour is the CONTENTFORMAT's 62.
++        case 62:
++          style.backgroundColor = new Color(this._reader.valueAsShort);
++          break;
+         case 1:
+           break;
+         case 300:
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 5e42e83..ae040e4 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -778,7 +778,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       this._writer.write(170, style.cellAlignment);
+       this._writer.write(91, style.styleClass);
+       this._writer.write(92, style.tableCellStylePropertyFlags);
+-      this._writer.write(62, style.textColor.index);
++      // The background colour: the content colour is the CONTENTFORMAT's 62 below.
++      this._writer.write(62, style.backgroundColor.index);
+       this._writer.write(300, 'CONTENTFORMAT');
+       this._writer.write(1, 'CONTENTFORMAT_BEGIN');
+       this._writer.write(90, style.propertyFlags);
+@@ -787,11 +788,12 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+       this._writer.write(93, style.valueUnitType);
+       this._writer.write(300, style.valueFormatString);
+       this._writer.write(40, MathHelper.radToDeg(style.rotation));
+-      this._writer.write(140, style.textHeight);
++      this._writer.write(140, style.scale);
+       this._writer.write(94, style.alignment);
+       this._writer.write(62, style.color.index);
+       if (style.textStyle) this._writer.write(340, style.textStyle.handle);
+-      this._writer.write(144, style.scale);
++      // 140 is the block scale and 144 the text height (AutoCAD DXF reference, content format).
++      this._writer.write(144, style.textHeight);
+       this._writer.write(309, 'CONTENTFORMAT_END');
+       this._writer.write(171, style.marginOverrideFlags);
+       this._writer.write(301, 'MARGIN');
+diff --git a/src/Metadata/LookupTables/Objects.ts b/src/Metadata/LookupTables/Objects.ts
+index 6de62fd..25228ec 100644
+--- a/src/Metadata/LookupTables/Objects.ts
++++ b/src/Metadata/LookupTables/Objects.ts
+@@ -9,8 +9,8 @@ export const metadataLookupObjects: readonly ClassMetadata[] = [
+     { "propertyName": "propertyFlags", "valueCodes": [90], "referenceType": 0 },
+     { "propertyName": "propertyOverrideFlags", "valueCodes": [91], "referenceType": 0 },
+     { "propertyName": "rotation", "valueCodes": [40], "referenceType": 32 },
+-    { "propertyName": "scale", "valueCodes": [144], "referenceType": 0 },
+-    { "propertyName": "textHeight", "valueCodes": [140], "referenceType": 0 },
++    { "propertyName": "scale", "valueCodes": [140], "referenceType": 0 },
++    { "propertyName": "textHeight", "valueCodes": [144], "referenceType": 0 },
+     { "propertyName": "valueDataType", "valueCodes": [92], "referenceType": 0 },
+     { "propertyName": "valueUnitType", "valueCodes": [93], "referenceType": 0 },
+     { "propertyName": "valueFormatString", "valueCodes": [300], "referenceType": 0 }

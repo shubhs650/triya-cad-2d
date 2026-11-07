@@ -2795,3 +2795,20 @@ In R2018 DXF the MTEXT column settings are an embedded object (group 101) that A
 A multiline ATTRIB or ATTDEF in R2018 DXF carries its text as an embedded MTEXT object (group 101), which AutoCAD writes after the attribute's own groups and before its extended data. The DXF reader reads that embedded object with `readEntityCodes`, which continues to the next entity, so the 1001 groups are stored on the embedded MTEXT's template and the attribute loses its extended data (the writers write the attribute's, not the embedded MTEXT's). This moves the extended data collected while reading the embedded object back to the attribute.
 
 </details>
+
+### 0151 — the DXF CELLSTYLEMAP's text height (144) and background colour (62)
+
+- **File:** `third_party/acad-ts-patches/0151-dxf-cellstylemap-text-height-background.patch`
+- **Touches:** `src/Metadata/LookupTables/Objects.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** A table style's CELLSTYLEMAP (which AutoCAD 2008 and later save beside the TABLESTYLE row styles in every DXF) holds each cell style's content format with the block scale at 140 and the text height at 144: every corpus DXF states 140 = 1.0 and 144 = the row's text height (0.25 for a Standard title, 0.18 for its header and data rows, as the same style in the DWG save states them). acad-ts read and wrote the two swapped, so a cell style came back with text height 1 and scale 0.25, and a text height written to it went to the block scale. The cell style's own 62, after its merge flags (92) and before CONTENTFORMAT, is its background colour (257 when None, as the DWG's background colour is), but it was read into and written from `textColor`, which nothing else uses. Found by Triya M1-96 part 2, which keeps the map in step with the rows.
+- **Fix:** `ContentFormat` maps 140 to `scale` and 144 to `textHeight`; the TABLEFORMAT reader takes 62 as `backgroundColor`, and the CELLSTYLEMAP writer writes `backgroundColor` there and 140 / 144 the right way round. The other TABLEFORMAT codes acad-ts misreads (170 the data flag, 91 the override flags, 93 the content layout flags, and GRIDFORMAT 90 / 91) are left for M1-98.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0151 the DXF CELLSTYLEMAP states the text height at 144 and the background at 62" (ASCII and binary DXF); `packages/testkit/src/mapping/tables.corpus.test.ts` → "maps every TABLESTYLE CELLSTYLEMAP like the row styles it is kept in step with".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write the CELLSTYLEMAP text height and background colour at their DXF codes
+
+In a CELLSTYLEMAP (and the TABLEFORMAT records of table cell styles), the content format states the block scale at group 140 and the text height at group 144, and the cell style's 62 before its CONTENTFORMAT is the background colour (257 for None). AutoCAD's own DXF saves confirm it: 140 is 1.0 and 144 the row's text height in every one, matching the cell styles of the same drawing saved as DWG. `ContentFormat` mapped 140 to `TextHeight` and 144 to `Scale`, and the cell style's 62 to `TextColor`, so a cell style read back with text height 1 and the background colour was lost on write. This maps the two content format codes the right way round, reads the cell style's 62 as `BackgroundColor`, and writes them back the same way.
+
+</details>
