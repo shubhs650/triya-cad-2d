@@ -34,8 +34,8 @@ export function detectFormat(bytes: Uint8Array): CadFormat {
  * Reader settings for a document that may be saved again (ARCHITECTURE.md §6.2 rule 1, M1-30).
  * Objects acad-ts cannot map are kept as `UnknownEntity` / `UnknownNonGraphicalObject` with their
  * raw payload, which the writers emit unchanged; acad-ts' default discards them. DXF reads also
- * keep the group codes of MATERIAL and VISUALSTYLE, which the DXF writer cannot write from their
- * fields (M1-28, patch 0021).
+ * keep the group codes of MATERIAL and VISUALSTYLE, which the DXF reader does not read into
+ * fields, so DXF saves write them back as read (M1-28, patch 0021).
  */
 export function fidelityDwgReaderConfiguration(): DwgReaderConfiguration {
   const config = new DwgReaderConfiguration();

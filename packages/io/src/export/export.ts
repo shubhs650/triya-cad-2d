@@ -14,7 +14,6 @@ import {
   Entity as AcadEntity,
   LineType,
   Viewport,
-  VisualStyle,
 } from '@node-projects/acad-ts';
 import {
   compareHandles,
@@ -166,12 +165,10 @@ function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
  * What acad-ts cannot write to the format at hand: what an R12 viewport cannot state (see
  * r12-viewport.ts), its DWG writer leaves a LARGE_RADIAL_DIMENSION out (roadmap M1-74), and a
  * VIEWPORT's style sheet before R2000 or visual style before R2007, which neither format stores
- * (DXF 1 and 348 are R2000+ and R2007+, as the DWG fields are), or a DWG visual style on a DXF
- * save, which acad-ts does not write (M1-88); so an edited or new one would be lost. `acad` is
- * the original of an edited entity.
+ * (DXF 1 and 348 are R2000+ and R2007+, as the DWG fields are); so an edited or new one would be
+ * lost. `acad` is the original of an edited entity.
  */
 function formatProblems(
-  r: Resolver,
   format: CadFormat | undefined,
   version: ACadVersion | undefined,
   before: EntityInit | undefined,
@@ -198,11 +195,6 @@ function formatProblems(
     }
     if (style && version !== undefined && version < ACadVersion.AC1021) {
       out.push(`${e.type} ${e.handle}: ${name} cannot store a viewport's visual style`);
-    } else if (style && format === 'dxf' && g.visualStyle !== undefined) {
-      const v = r.store.original(g.visualStyle);
-      if (v instanceof VisualStyle && v.rawDxfCodes == null) {
-        out.push(`${e.type} ${e.handle}: acad-ts writes no DXF VISUALSTYLE read from DWG (M1-88)`);
-      }
     }
     return out;
   }
@@ -239,7 +231,7 @@ function plan(
     }
     problems.push(
       ...entityProblems(r, b as Entity, m),
-      ...formatProblems(r, format, version, b, m, acad),
+      ...formatProblems(format, version, b, m, acad),
     );
     out.updated.push({ acad, before: b, after: m });
   }
@@ -247,7 +239,7 @@ function plan(
     if (baseByHandle.has(m.handle)) continue;
     problems.push(
       ...entityProblems(r, undefined, m),
-      ...formatProblems(r, format, version, undefined, m),
+      ...formatProblems(format, version, undefined, m),
     );
     const block = r.store.original(m.owner);
     if (!(block instanceof BlockRecord)) {
