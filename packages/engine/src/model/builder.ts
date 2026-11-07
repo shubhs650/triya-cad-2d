@@ -29,12 +29,13 @@ import type {
   EntityProps,
   HeaderValue,
   Layout,
+  LayoutSpace,
   NonGraphicalObject,
   ObjectCommon,
   TableName,
   TableRecords,
 } from './types';
-import type { Vec2 } from '../geom/types';
+import type { Vec2, Vec3 } from '../geom/types';
 import {
   createEntity,
   createRecord,
@@ -75,11 +76,53 @@ export interface NewLayout {
   readonly flags?: number;
   readonly limits?: Layout['limits'];
   readonly plot?: Layout['plot'];
+  /** Omitted, an empty sheet's: world UCS, insertion base at 0,0,0, no extents. */
+  readonly space?: Layout['space'];
 }
 
 /** A layout's sheet block: `*Paper_Space` (the current layout's) or `*Paper_Space` and a number. */
 const PAPER_SPACE = /^\*paper_space(\d*)$/i;
 const MODEL_SPACE = '*MODEL_SPACE';
+
+/**
+ * A new, empty sheet's space: AutoCAD states the extents of an empty space as 1E+20 to -1E+20
+ * (EXTMIN / EXTMAX), and the UCS and insertion base start at the world's.
+ */
+const EMPTY_SPACE: LayoutSpace = {
+  insertionBase: { x: 0, y: 0, z: 0 },
+  extents: { min: { x: 1e20, y: 1e20, z: 1e20 }, max: { x: -1e20, y: -1e20, z: -1e20 } },
+  elevation: 0,
+  ucs: { origin: { x: 0, y: 0, z: 0 }, xAxis: { x: 1, y: 0, z: 0 }, yAxis: { x: 0, y: 1, z: 0 } },
+};
+const CURRENT_SHEET = '*Paper_Space';
+
+/** The header variables that hold the current paper layout's limits and space (AutoCAD 2024). */
+const PAPER_HEADER = {
+  limMin: '$PLIMMIN',
+  limMax: '$PLIMMAX',
+  limCheck: '$PLIMCHECK',
+  ltScale: '$PSLTSCALE',
+  insBase: '$PINSBASE',
+  extMin: '$PEXTMIN',
+  extMax: '$PEXTMAX',
+  elevation: '$PELEVATION',
+  ucsOrg: '$PUCSORG',
+  ucsXDir: '$PUCSXDIR',
+  ucsYDir: '$PUCSYDIR',
+} as const;
+
+/** DXF 70 of AcDbLayout. */
+const PSLTSCALE_FLAG = 1;
+const LIMCHECK_FLAG = 2;
+
+const isVec2 = (v: HeaderValue | undefined): v is Vec2 =>
+  typeof v === 'object' && Number.isFinite(v.x) && Number.isFinite(v.y);
+const vec3 = (v: HeaderValue | undefined): Vec3 | undefined =>
+  isVec2(v) ? { x: v.x, y: v.y, z: 'z' in v && Number.isFinite(v.z) ? v.z : 0 } : undefined;
+/** A header flag as the variable states it: a boolean stays a boolean, a number a number. */
+const flagValue = (was: HeaderValue | undefined, on: boolean): HeaderValue =>
+  typeof was === 'boolean' ? on : on ? 1 : 0;
+const flagOn = (v: HeaderValue | undefined): boolean => v === true || v === 1;
 
 function sameValue(a: HeaderValue | undefined, b: HeaderValue | undefined): boolean {
   if (a === b) return true;
@@ -368,6 +411,7 @@ export class ChangeSetBuilder {
       flags: init.flags ?? 1,
       ...(init.limits ? { limits: init.limits } : {}),
       ...(init.plot ? { plot: init.plot } : {}),
+      space: init.space ?? EMPTY_SPACE,
     });
     draft.add(layout);
     this.#addedLayouts.push(handle);
@@ -395,6 +439,113 @@ export class ChangeSetBuilder {
     if (!this.#blocks.get(block)) return;
     for (const id of this.blockEntities(block)) this.removeEntity(id);
     this.removeBlock(block);
+  }
+
+  /**
+   * Makes a paper layout the current one, as clicking its tab does in AutoCAD: its block takes
+   * the name `*Paper_Space` and the block that had it takes this one's name (the blocks keep their
+   * handles and entities). The layout that was current keeps the live state the header held for
+   * it (`$PLIMMIN`, `$PEXTMIN`, …, see `LayoutSpace`), and the header takes this layout's.
+   */
+  setCurrentLayout(handle: Handle): void {
+    this.#open();
+    const draft = this.#layoutDraft();
+    const layout = draft.get(handle);
+    if (!layout) throw new Error(`layout ${handle} does not exist`);
+    const name = this.tableRecord('blockRecords', layout.blockRecord)?.name;
+    if (name === undefined) throw new Error(`layout ${handle}: its block does not exist`);
+    if (name.toUpperCase() === MODEL_SPACE)
+      throw new Error(`layout ${handle}: the Model layout is not a paper layout`);
+    if (name.toUpperCase() === CURRENT_SHEET.toUpperCase()) return;
+    const current = this.#layoutHandles()
+      .map((h) => draft.get(h))
+      .find(
+        (l) =>
+          l !== undefined &&
+          this.tableRecord('blockRecords', l.blockRecord)?.name.toUpperCase() ===
+            CURRENT_SHEET.toUpperCase(),
+      );
+    if (!current) throw new Error(`layout ${handle}: no layout is on ${CURRENT_SHEET}`);
+    draft.update(current.handle, this.#liveSpace(current));
+    // The name as the drawing spells it (AutoCAD writes `*Paper_Space`).
+    const sheet = this.tableRecord('blockRecords', current.blockRecord)!.name;
+    this.updateBlock(layout.blockRecord, { name: sheet });
+    this.updateBlock(current.blockRecord, { name });
+    this.#setLiveSpace(layout);
+  }
+
+  /** The layout's limits, flags and space as the header holds them while it is current. */
+  #liveSpace(l: Layout): RecordPatch<Layout> {
+    const h = (name: string) => this.#headerValue(name);
+    const v = PAPER_HEADER;
+    const patch: { -readonly [K in keyof Layout]?: Layout[K] } = {};
+    const min = h(v.limMin);
+    const max = h(v.limMax);
+    if (isVec2(min) && isVec2(max))
+      patch.limits = { min: { x: min.x, y: min.y }, max: { x: max.x, y: max.y } };
+    let flags = l.flags ?? 0;
+    if (h(v.ltScale) !== undefined)
+      flags = flagOn(h(v.ltScale)) ? flags | PSLTSCALE_FLAG : flags & ~PSLTSCALE_FLAG;
+    if (h(v.limCheck) !== undefined)
+      flags = flagOn(h(v.limCheck)) ? flags | LIMCHECK_FLAG : flags & ~LIMCHECK_FLAG;
+    if (flags !== (l.flags ?? 0)) patch.flags = flags;
+    const [insertionBase, extMin, extMax, origin, xAxis, yAxis] = [
+      v.insBase,
+      v.extMin,
+      v.extMax,
+      v.ucsOrg,
+      v.ucsXDir,
+      v.ucsYDir,
+    ].map((n) => vec3(h(n)));
+    const elevation = h(v.elevation);
+    if (
+      insertionBase &&
+      extMin &&
+      extMax &&
+      origin &&
+      xAxis &&
+      yAxis &&
+      typeof elevation === 'number'
+    ) {
+      const space: LayoutSpace = {
+        insertionBase,
+        extents: { min: extMin, max: extMax },
+        elevation,
+        ucs: { origin, xAxis, yAxis },
+      };
+      patch.space = space;
+    }
+    return patch as RecordPatch<Layout>;
+  }
+
+  /** Puts the layout's limits, flags and space into the header variables of the current layout. */
+  #setLiveSpace(l: Layout): void {
+    const v = PAPER_HEADER;
+    const set = (name: string, value: HeaderValue) => {
+      if (!sameValue(this.#headerValue(name), value)) this.setHeader(name, value);
+    };
+    if (l.limits) {
+      set(v.limMin, { x: l.limits.min.x, y: l.limits.min.y });
+      set(v.limMax, { x: l.limits.max.x, y: l.limits.max.y });
+    }
+    const flags = l.flags ?? 0;
+    set(v.ltScale, flagValue(this.#headerValue(v.ltScale), (flags & PSLTSCALE_FLAG) !== 0));
+    set(v.limCheck, flagValue(this.#headerValue(v.limCheck), (flags & LIMCHECK_FLAG) !== 0));
+    const s = l.space;
+    if (!s) return;
+    set(v.insBase, s.insertionBase);
+    set(v.extMin, s.extents.min);
+    set(v.extMax, s.extents.max);
+    set(v.elevation, s.elevation);
+    set(v.ucsOrg, s.ucs.origin);
+    set(v.ucsXDir, s.ucs.xAxis);
+    set(v.ucsYDir, s.ucs.yAxis);
+  }
+
+  /** A header variable as it will be after this change set. */
+  #headerValue(name: string): HeaderValue | undefined {
+    const change = this.#header.get(name);
+    return change ? change.after : this.#model.header.get(name);
   }
 
   // ── Blocks ──────────────────────────────────────────────────────────────────────────────
