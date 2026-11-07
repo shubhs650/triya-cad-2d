@@ -202,8 +202,7 @@ function formatProblems(
   }
   if (e.geom.kind === 'ACAD_TABLE' && before?.geom.kind === 'ACAD_TABLE') {
     if (!(acad instanceof TableEntity)) return [];
-    const dwgFrom2010 = format === 'dwg' && version !== undefined && version >= ACadVersion.AC1024;
-    return tableCellProblems(acad, before.geom, e.geom, dwgFrom2010).map(
+    return tableCellProblems(acad, before.geom, e.geom, version, format).map(
       (p) => `${e.type} ${e.handle}: ${p}`,
     );
   }

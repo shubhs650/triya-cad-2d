@@ -1,6 +1,7 @@
-// TriyaToAcad for ACAD_TABLE (M1-75 part 14): table editing as AutoCAD's table grips and cell
-// editor change a table (move, direction, row heights, column widths, cell text and blocks, cell
-// rotation, the table style and the `*T` block). The drawing is authored in memory with acad-ts
+// TriyaToAcad for ACAD_TABLE (M1-75 parts 14 and 26): table editing as AutoCAD's table grips,
+// cell editor and Table Cell ribbon change a table (move, direction, row heights, column widths,
+// cell text and blocks, cell rotation, the table style and the `*T` block; Merge Cells and
+// Unmerge Cells; a cell's alignment, text style, height, colours, fill and borders). The drawing is authored in memory with acad-ts
 // and saved once, so "the file" is real bytes; the corpus-wide edits are in
 // packages/testkit/src/export/export.corpus.test.ts.
 import {
@@ -10,7 +11,9 @@ import {
   CadDocument,
   CadValueType,
   CellContent,
+  CellOverrideFlags,
   CellType,
+  Color,
   Line,
   TableCellContentType,
   TableCellStateFlags,
@@ -43,6 +46,11 @@ interface Options {
   readonly field?: boolean;
   /** Cell (1, 1) has its content locked (TableCellStateFlags.ContentLocked). */
   readonly locked?: boolean;
+  /**
+   * Cell (1, 0) overrides its alignment (middle centre), content colour (ACI 3) and top border
+   * lineweight (0.50 mm) in the cell's override flag word (DXF 177 / 91, DWG before R2010).
+   */
+  readonly formatted?: boolean;
 }
 
 /**
@@ -117,6 +125,14 @@ function drawing(
     });
     t.rows.push(r);
   });
+  if (options.formatted) {
+    const c = t.rows[1]!.cells[0]!;
+    c.overrideFlags = CellOverrideFlags.CellAlignment | CellOverrideFlags.ContentColor;
+    c.overrideFlags |= CellOverrideFlags.TopGridLineWeight;
+    c.styleOverride.cellAlignment = 5;
+    c.styleOverride.contentColor = new Color(3);
+    c.styleOverride.topBorder.lineWeight = 50 as never;
+  }
   const special = t.rows[1]!.cells[1]!;
   if (options.locked) special.stateFlags = TableCellStateFlags.ContentLocked;
   if (options.field) special.contents[0]!.contentType = TableCellContentType.Field;
@@ -282,8 +298,35 @@ describe('ACAD_TABLE', () => {
       (g, m) => ({ ...g, block: blockNamed(m, '*Model_Space') }),
       /cannot be a table's block/,
     ],
-    ['a merge', (g) => cell(g, 2, 0, { columnSpan: 2 }), /merged cells change/],
-    ['an unmerge', (g) => cell(g, 0, 1, { merged: false }), /merged cells change/],
+    [
+      'a merge running off the table',
+      (g) => cell(g, 2, 1, { columnSpan: 2 }),
+      /cell \(2, 1\): its merge runs off the table/,
+    ],
+    [
+      'a merge over a cell that is not marked merged',
+      (g) => cell(g, 1, 0, { columnSpan: 2 }),
+      /cell \(1, 1\) is in the merge of cell \(1, 0\) but not marked merged/,
+    ],
+    [
+      'a merged cell no merge covers',
+      (g) => cell(g, 2, 0, { merged: true }),
+      /cell \(2, 0\) is marked merged but no merge covers it/,
+    ],
+    [
+      'two merges over one cell',
+      (g) =>
+        cell(cell(cell(g, 1, 1, { rowSpan: 2 }), 2, 1, { merged: true }), 0, 1, {
+          merged: true,
+          rowSpan: 2,
+        }),
+      /cell \(0, 1\)/,
+    ],
+    [
+      'a span that is not a whole number',
+      (g) => cell(g, 1, 0, { rowSpan: 1.5 }),
+      /cell \(1, 0\): rowSpan 1.5 is not a whole number of 1 or more/,
+    ],
     [
       'a text cell turned into a block cell',
       (g, m) => cell(g, 1, 0, { type: 'block', text: '', block: blockNamed(m, 'MARK') }),
@@ -300,7 +343,41 @@ describe('ACAD_TABLE', () => {
       (g, m) => cell(g, 2, 1, { block: blockNamed(m, '*Paper_Space') }),
       /cannot be a cell's block/,
     ],
-    ['a cell format', (g) => cell(g, 1, 0, { format: { alignment: 5 } }), /cell formats change/],
+    [
+      'an alignment AutoCAD does not have',
+      (g) => cell(g, 1, 0, { format: { alignment: 10 } }),
+      /cell \(1, 0\): alignment 10 is not 1 to 9/,
+    ],
+    [
+      'a text height of 0',
+      (g) => cell(g, 1, 0, { format: { textHeight: 0 } }),
+      /cell \(1, 0\): textHeight 0 is not a number more than 0/,
+    ],
+    [
+      'a text style that does not exist',
+      (g) => cell(g, 1, 0, { format: { textStyle: 'FFFF' } }),
+      /cell \(1, 0\): text style FFFF does not exist/,
+    ],
+    [
+      'a lineweight AutoCAD does not have',
+      (g) => cell(g, 1, 0, { format: { borders: { top: { lineweight: 17 } } } }),
+      /cell \(1, 0\): top border lineweight 17 is not a lineweight/,
+    ],
+    [
+      'a true colour in a DXF cell',
+      (g) => cell(g, 1, 0, { format: { contentColor: { kind: 'rgb', r: 1, g: 2, b: 3 } } }),
+      /cell \(1, 0\): contentColor: a DXF table cell holds ACI colours only/,
+    ],
+    [
+      'a hidden edge in a DXF cell',
+      (g) => cell(g, 1, 0, { format: { borders: { left: { hidden: true } } } }),
+      /cell \(1, 0\): a hidden left edge, which acad-ts cannot write to DXF \(M1-81\)/,
+    ],
+    [
+      'cell margins outside a DWG from R2010',
+      (g) => cell(g, 1, 0, { format: { margins: { left: 0.2 } } }),
+      /cell \(1, 0\): cell margins, which only a DWG from R2010 states per cell/,
+    ],
     [
       'a table-wide override',
       (g) => ({ ...g, overrides: { margins: { left: 0.2 } } }),
@@ -352,5 +429,160 @@ describe('ACAD_TABLE', () => {
     expect(problems.join('; ')).toMatch(/cell rotation in a DWG from R2010/);
     // The same edit saves to DXF, which states it per cell (145).
     expect(saved(bytes, model, 'dxf').cells[1]![0]!.rotation).toBeCloseTo(Math.PI / 2, 12);
+  });
+
+  // Merge Cells and Unmerge Cells (M1-75 part 26): DXF and DWG before R2010 state a merge per
+  // cell (DXF 173 merged, 175 / 176 the head's spans), DWG R2010+ as the table's merged ranges.
+  it.each(SAVES)('saves merged and unmerged cells to %s', (_w, version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    let g = table(model).geom;
+    // Unmerge the title (an R2018 DWG authored in memory has no merge: acad-ts writes ranges only).
+    g = cell(cell(g, 0, 0, { columnSpan: 1 }), 0, 1, { merged: false });
+    // Merge the first column's header and data cells.
+    g = cell(cell(g, 1, 0, { rowSpan: 2 }), 2, 0, { merged: true });
+    edit(model, g);
+    const back = saved(bytes, model, format);
+    expect(back.cells).toEqual(table(model).geom.cells);
+    expect(back.cells[1]![0]).toMatchObject({ rowSpan: 2, columnSpan: 1, merged: false });
+    expect(back.cells[2]![0]).toMatchObject({ rowSpan: 1, columnSpan: 1, merged: true });
+  });
+
+  it.each(SAVES.filter(([w]) => !/R2018 DWG/.test(w)))(
+    'merges the title again in %s',
+    (_w, version, format) => {
+      const bytes = drawing(version, format);
+      const model = open(bytes);
+      const g = table(model).geom;
+      const unmerged = cell(cell(g, 0, 0, { columnSpan: 1 }), 0, 1, { merged: false });
+      edit(model, unmerged);
+      const once = exportDocument(readCadDocument(bytes), model, { format });
+      const again = open(once);
+      edit(again, g);
+      expect(saved(once, again, format).cells).toEqual(g.cells);
+    },
+  );
+
+  it('saves a merge into an R2018 DWG as its merged ranges', () => {
+    const bytes = drawing(ACadVersion.AC1032, 'dwg');
+    const model = open(bytes);
+    const g = table(model).geom;
+    edit(model, cell(cell(g, 0, 0, { columnSpan: 2 }), 0, 1, { merged: true }));
+    const out = readCadDocument(exportDocument(readCadDocument(bytes), model, { format: 'dwg' }));
+    const t = [...out.entities!].find((e) => e instanceof TableEntity) as TableEntity;
+    expect(t.mergedCellRanges.map((r) => [r.topRowIndex, r.leftColumnIndex])).toEqual([[0, 0]]);
+    expect(t.mergedCellRanges.map((r) => [r.bottomRowIndex, r.rightColumnIndex])).toEqual([[0, 1]]);
+  });
+
+  // Cell formats (M1-75 part 26), as the Table Cell ribbon sets them on one cell: written into the
+  // cell's override flag word, which DXF and DWG before R2010 state.
+  const FLAG_SAVES = SAVES.filter(([w]) => !/R2018 DWG/.test(w));
+
+  it.each(FLAG_SAVES)('saves cell formats to %s', (_w, version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    const standard = [...model.tables.textStyles.values()].find(
+      (s) => s.name.toUpperCase() === 'STANDARD',
+    )!.handle;
+    const dwg = format === 'dwg';
+    let g = table(model).geom;
+    g = cell(g, 1, 0, {
+      format: {
+        alignment: 5,
+        textStyle: standard,
+        textHeight: 0.25,
+        contentColor: { kind: 'aci', index: 1 },
+        background: { kind: 'aci', index: 4 },
+        borders: {
+          top: { color: { kind: 'aci', index: 2 }, lineweight: 50 },
+          right: { lineweight: 35 },
+          ...(dwg ? { bottom: { hidden: true } } : {}),
+        },
+      },
+    });
+    g = cell(g, 1, 1, {
+      format: {
+        background: null,
+        contentColor: dwg ? { kind: 'rgb', r: 10, g: 20, b: 30 } : { kind: 'byBlock' },
+      },
+    });
+    edit(model, g);
+    const back = saved(bytes, model, format);
+    expect(back.cells[1]).toEqual(table(model).geom.cells[1]);
+    expect(back).toEqual(table(model).geom);
+  });
+
+  it.each(FLAG_SAVES)("changes and removes a cell's format in %s", (_w, version, format) => {
+    const bytes = drawing(version, format, { formatted: true });
+    const model = open(bytes);
+    const g = table(model).geom;
+    expect(g.cells[1]![0]!.format).toEqual({
+      alignment: 5,
+      contentColor: { kind: 'aci', index: 3 },
+      borders: { top: { lineweight: 50 } },
+    });
+    // Another alignment, the colour back to the style's, the border kept.
+    edit(
+      model,
+      cell(
+        cell(g, 1, 0, { format: { alignment: 7, borders: { top: { lineweight: 50 } } } }),
+        0,
+        0,
+        {
+          format: { textHeight: 0.4 },
+        },
+      ),
+    );
+    const once = exportDocument(readCadDocument(bytes), model, { format });
+    expect(table(open(once)).geom).toEqual(table(model).geom);
+    // Then nothing overridden at all.
+    const again = open(once);
+    const g2 = table(again).geom;
+    const { format: _f, ...plain } = g2.cells[1]![0]!;
+    edit(again, { ...g2, cells: g2.cells.map((r, i) => (i === 1 ? [plain, r[1]!] : r)) });
+    const back = saved(once, again, format);
+    expect(back.cells[1]![0]!.format).toBeUndefined();
+    expect(back).toEqual(table(again).geom);
+  });
+
+  it('refuses a cell format in a DWG from R2010, which states it in cell styles', () => {
+    const bytes = drawing(ACadVersion.AC1032, 'dwg');
+    const model = open(bytes);
+    edit(model, cell(table(model).geom, 1, 0, { format: { alignment: 5 } }));
+    const problems = refusal(() =>
+      exportDocument(readCadDocument(bytes), model, { format: 'dwg' }),
+    );
+    expect(problems.join('; ')).toMatch(/cell \(1, 0\): a cell format in a DWG from R2010/);
+  });
+
+  it('saves a true colour into an R2004 DWG cell', () => {
+    const bytes = drawing(ACadVersion.AC1018, 'dwg');
+    const model = open(bytes);
+    edit(
+      model,
+      cell(table(model).geom, 1, 0, {
+        format: { background: { kind: 'rgb', r: 1, g: 2, b: 3 } },
+      }),
+    );
+    expect(saved(bytes, model, 'dwg').cells[1]![0]!.format).toEqual({
+      background: { kind: 'rgb', r: 1, g: 2, b: 3 },
+    });
+  });
+
+  it('refuses a true colour in a DWG cell before R2004, which holds ACI colours only', () => {
+    const bytes = drawing(ACadVersion.AC1015, 'dwg');
+    const model = open(bytes);
+    edit(
+      model,
+      cell(table(model).geom, 1, 0, {
+        format: { contentColor: { kind: 'rgb', r: 1, g: 2, b: 3 } },
+      }),
+    );
+    const problems = refusal(() =>
+      exportDocument(readCadDocument(bytes), model, { format: 'dwg' }),
+    );
+    expect(problems.join('; ')).toMatch(
+      /cell \(1, 0\): contentColor: a DWG table cell before R2004 holds ACI colours only/,
+    );
   });
 });
