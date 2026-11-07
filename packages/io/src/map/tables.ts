@@ -5,9 +5,13 @@
 // acad-ts original (the record's `raw` link), so nothing here can lose data on save.
 
 import {
+  AcdbPlaceHolder,
   CadDictionary,
+  Material,
+  MLineStyle,
   MultiLeaderStyle,
   TableStyle,
+  VisualStyle,
   type BlockRecord,
   type CadDocument,
   type CadObject,
@@ -222,6 +226,26 @@ function styleEntries<T>(
   return [...dict].filter((o): o is T & typeof o => o instanceof type);
 }
 
+/**
+ * The entries of a named-object dictionary that PURGE takes (M1-75 part 29), by the entry name
+ * AutoCAD lists them under: MLINESTYLE, MATERIAL, VISUALSTYLE and the ACDBPLACEHOLDER plot
+ * style names. Only the name is mapped: an MLINESTYLE's DXF 70 is its fill and cap flags, not
+ * the standard flags of a record. An entry acad-ts did not read as its class (a visual style
+ * kept as a proxy) is left to the passthrough.
+ */
+function namedEntries(
+  doc: CadDocument,
+  key: string,
+  type: abstract new (...args: never[]) => CadObject,
+): SymbolTableRecord[] {
+  const dict = doc.rootDictionary?.get(key);
+  if (!(dict instanceof CadDictionary)) return [];
+  const names = dict.entryNames;
+  return [...dict].flatMap((o, i) =>
+    o instanceof type ? [{ ...common(o), name: names[i] ?? o.name }] : [],
+  );
+}
+
 const each = <T, R>(items: Iterable<T> | null | undefined, f: (t: T) => R): R[] =>
   [...(items ?? [])].map(f);
 
@@ -242,5 +266,9 @@ export function mapTables(doc: CadDocument): MappedTables {
     ucs: each(doc.uCSs, ucs),
     vports: each(doc.vPorts, vport),
     blockRecords: each(doc.blockRecords, blockRecord),
+    mlineStyles: namedEntries(doc, CadDictionary.acadMLineStyle, MLineStyle),
+    materials: namedEntries(doc, CadDictionary.acadMaterial, Material),
+    visualStyles: namedEntries(doc, CadDictionary.acadVisualStyle, VisualStyle),
+    plotStyles: namedEntries(doc, CadDictionary.acadPlotStyleName, AcdbPlaceHolder),
   };
 }

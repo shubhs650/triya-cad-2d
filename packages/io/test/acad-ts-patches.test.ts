@@ -2064,4 +2064,16 @@ describe('acad-ts local patches', () => {
     expect([...again.entities!].map((e) => e.handle)).toEqual([handle, b!.handle, c!.handle]);
     expect([...again.blockRecords!.tryGetValue('PART')!.entities]).toEqual([]);
   });
+
+  it('0162 a VPORT reads its visual style (DXF 348, DWG R2007+)', () => {
+    for (const format of ['dxf', 'dwg'] as const) {
+      const doc = new CadDocument(ACadVersion.AC1032);
+      const styles = doc.rootDictionary!.get(CadDictionary.acadVisualStyle) as CadDictionary;
+      const style = new VisualStyle('TRIYA_SHADED');
+      styles.add(style);
+      doc.vPorts!.get(VPort.defaultName)!.visualStyle = style;
+      const back = readCadDocument(writeCadDocument(doc, { format }));
+      expect(back.vPorts!.get(VPort.defaultName)!.visualStyle?.handle, format).toBe(style.handle);
+    }
+  });
 });

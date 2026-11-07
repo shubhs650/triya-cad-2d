@@ -137,6 +137,13 @@ const WRITTEN_TABLES = new Set([
 ]);
 
 /**
+ * The tables PURGE is the only writer of (purge.ts, M1-75 part 29): a record that goes is
+ * written, one added or changed is not yet (MLSTYLE, MATERIALS, VISUALSTYLES, plot style
+ * tables are later work).
+ */
+const PURGE_ONLY_TABLES = new Set(['mlineStyles', 'materials', 'visualStyles', 'plotStyles']);
+
+/**
  * The non-entity changes no writer handles yet (header, the tables above, block definitions,
  * draw order, the image objects and groups: header.ts, blocks.ts, draw-order.ts,
  * image-objects.ts, groups.ts).
@@ -146,7 +153,14 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   const baseTables = (base.tables ?? {}) as Record<string, readonly { handle: Handle }[]>;
   for (const [name, table] of Object.entries(model.tables)) {
     if (WRITTEN_TABLES.has(name)) continue;
-    out.push(...keyedProblems(`${name} record`, baseTables[name] ?? [], table));
+    const before = baseTables[name] ?? [];
+    out.push(
+      ...keyedProblems(
+        `${name} record`,
+        PURGE_ONLY_TABLES.has(name) ? before.filter((r) => table.has(r.handle)) : before,
+        table,
+      ),
+    );
   }
   // Draw order tables, the image objects and groups have writers (draw-order.ts,
   // image-objects.ts, groups.ts).
