@@ -1,0 +1,1 @@
+- M1-96 part 1 (#168): an R2010+ DWG's table styles map as their DXF saves state them (rows from the `_DATA`/`_TITLE`/`_HEADER` cell styles by id, alignment from the content format, fill from the background colour, flow direction and margins from the "Table" cell style); every acadsharp DWG's table styles now compare equal with its ASCII and binary DXF saves.
