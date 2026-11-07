@@ -1,9 +1,17 @@
 // The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs,
 // Report issue and Settings; the canvas area with its navigation bar; the layout tabs; the status bar. The
 // ribbon, palettes and command line arrive with their own tasks.
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasMode } from './canvas/controller';
-import { allControllers, controllerOf, register } from './canvas/registry';
+import {
+  allControllers,
+  controllerOf,
+  currentTile,
+  register,
+  setCurrentTile,
+  tilesOf,
+} from './canvas/registry';
+import { modelTiles, type ModelTile } from './canvas/views';
 import { DocumentStore, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
@@ -358,6 +366,10 @@ function DocumentCanvas({
   );
 }
 
+/**
+ * One space's canvas, or in a model space saved with tiled viewports (several `*Active`
+ * VPORTs) one canvas per viewport, each in its part of the area (M1-22 part 4).
+ */
 function SpaceCanvas({
   doc,
   block,
@@ -369,6 +381,78 @@ function SpaceCanvas({
   visible: boolean;
   onMode: (m: CanvasMode) => void;
 }) {
+  const { id, opened } = doc;
+  const tiles = useMemo(
+    () => (block === opened.modelSpace ? modelTiles(opened.init.tables?.vports) : [undefined]),
+    [block, opened],
+  );
+  const tiled = tiles.length > 1;
+  // Runs after the viewports' own effects, so every controller exists by now.
+  useEffect(() => {
+    showCurrent(id, block, visible);
+    // Leaving a space ends its PAN or ZOOM Window, so the bar never shows a stale mode.
+    if (!visible) for (const [, c] of tilesOf(id, block)) c.setMode('none');
+  }, [id, block, visible]);
+  return (
+    <div className={tiled ? 'space-canvas tiled' : 'space-canvas'} hidden={!visible}>
+      {tiles.map((tile, index) => (
+        <ViewportCanvas
+          key={index}
+          doc={doc}
+          block={block}
+          visible={visible}
+          onMode={onMode}
+          index={index}
+          tile={tiled ? tile : undefined}
+          count={tiles.length}
+        />
+      ))}
+    </div>
+  );
+}
+
+/** Marks the canvas on screen: the current viewport of the space shown. */
+function showCurrent(doc: number, block: string, visible: boolean): void {
+  const current = currentTile(doc, block);
+  for (const [i, c] of tilesOf(doc, block)) {
+    c.canvas.dataset['active'] = String(visible && i === current);
+  }
+}
+
+/**
+ * Makes a tiled viewport current, as a click in it does in AutoCAD: the one it replaces ends
+ * its PAN or ZOOM Window, and the navigation bar shows the new one's mode.
+ */
+function activateTile(
+  doc: number,
+  block: string,
+  tile: number,
+  onMode: (m: CanvasMode) => void,
+): void {
+  const previous = controllerOf(doc, block);
+  setCurrentTile(doc, block, tile);
+  previous?.setMode('none');
+  showCurrent(doc, block, true);
+  onMode(controllerOf(doc, block)?.mode ?? 'none');
+}
+
+function ViewportCanvas({
+  doc,
+  block,
+  visible,
+  onMode,
+  index,
+  tile,
+  count,
+}: {
+  doc: OpenDocument;
+  block: string;
+  visible: boolean;
+  onMode: (m: CanvasMode) => void;
+  index: number;
+  tile: ModelTile | undefined;
+  count: number;
+}) {
   const ref = useRef<HTMLDivElement>(null);
   const { id, name, opened } = doc;
   const visibleRef = useRef(visible);
@@ -378,26 +462,42 @@ function SpaceCanvas({
       onCursor: (p) => showCursor(p),
       onError: (e) => store.failed(name, openError(name, e)),
       onMode: (m) => {
-        if (visibleRef.current) onMode(m);
+        if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },
       patterns: () => patterns.sources(),
       fonts: () => fonts.sources(),
       changes: () => engines.changesOf(id),
+      ...(tile && {
+        tile: {
+          vport: tile.vport,
+          label: `Model viewport ${index + 1} of ${count}`,
+          isCurrent: () => currentTile(id, block) === index,
+          activate: () => activateTile(id, block, index, onMode),
+        },
+      }),
     });
-    const unregister = register(id, block, c);
+    const unregister = register(id, block, c, index);
+    showCurrent(id, block, visibleRef.current);
     return () => {
       unregister();
       c.dispose();
     };
-  }, [id, name, opened, block, onMode]);
-  useEffect(() => {
-    const c = controllerOf(id, block);
-    if (!c) return;
-    c.canvas.dataset['active'] = String(visible);
-    // Leaving a space ends its PAN or ZOOM Window, so the bar never shows a stale mode.
-    if (!visible) c.setMode('none');
-  }, [id, block, visible]);
-  return <div ref={ref} className="space-canvas" hidden={!visible} />;
+  }, [id, name, opened, block, onMode, index, tile, count]);
+  const r = tile?.rect;
+  return (
+    <div
+      ref={ref}
+      className="viewport-tile"
+      style={
+        r && {
+          left: `${r.left * 100}%`,
+          top: `${r.top * 100}%`,
+          width: `${r.width * 100}%`,
+          height: `${r.height * 100}%`,
+        }
+      }
+    />
+  );
 }
 
 /** Model, then the layouts in tab order (DXF 71). */

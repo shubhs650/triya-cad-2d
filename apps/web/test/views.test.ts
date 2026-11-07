@@ -8,6 +8,7 @@ import {
   ViewHistory,
   activeVport,
   allView,
+  modelTiles,
   namedView,
   paperSpaceView,
   paperSpaceViewport,
@@ -256,5 +257,77 @@ describe('the view a drawing was saved in', () => {
   it('leaves a layout with no stated view to its sheet', () => {
     expect(paperSpaceView(undefined, size)).toBeUndefined();
     expect(paperSpaceView(viewport({ viewHeight: 0, height: 0 }), size)).toBeUndefined();
+  });
+});
+
+// M1-22 part 4: several *Active VPORTs are a tiled-viewport configuration, each drawn in its
+// part of the window (DXF 10/11, 0–1 with the origin at the lower left), the first current.
+describe('tiled model-space viewports', () => {
+  const tile = (
+    handle: string,
+    lowerLeft: { x: number; y: number },
+    upperRight: { x: number; y: number },
+    name = '*Active',
+  ): VportRecord =>
+    ({
+      handle,
+      name,
+      lowerLeft,
+      upperRight,
+      center: { x: 0, y: 0 },
+      height: 10,
+      direction: { x: 0, y: 0, z: 1 },
+      target: { x: 0, y: 0, z: 0 },
+      twist: 0,
+    }) as unknown as VportRecord;
+
+  it('places each *Active VPORT in its part of the window, top-left based, in table order', () => {
+    const left = tile('A', { x: 0, y: 0 }, { x: 0.5, y: 1 });
+    const topRight = tile('B', { x: 0.5, y: 0.5 }, { x: 1, y: 1 });
+    const bottomRight = tile('C', { x: 0.5, y: 0 }, { x: 1, y: 0.5 });
+    const tiles = modelTiles([
+      tile('S', { x: 0, y: 0 }, { x: 1, y: 1 }, 'Saved'),
+      left,
+      topRight,
+      bottomRight,
+    ]);
+    expect(tiles.map((t) => t.vport)).toEqual([left, topRight, bottomRight]);
+    expect(tiles.map((t) => t.rect)).toEqual([
+      { left: 0, top: 0, width: 0.5, height: 1 },
+      { left: 0.5, top: 0, width: 0.5, height: 0.5 },
+      { left: 0.5, top: 0.5, width: 0.5, height: 0.5 },
+    ]);
+  });
+
+  it('fills the window with one viewport, whatever part of it the record states', () => {
+    const only = tile('A', { x: 0, y: 0 }, { x: 0.5, y: 1 });
+    expect(modelTiles([only])).toEqual([
+      { vport: only, rect: { left: 0, top: 0, width: 1, height: 1 } },
+    ]);
+    // No VPORT table: one tile with no saved view (the extents).
+    expect(modelTiles(undefined)).toEqual([
+      { vport: undefined, rect: { left: 0, top: 0, width: 1, height: 1 } },
+    ]);
+  });
+
+  it('leaves out a tile with no area or outside the window, keeping the first current', () => {
+    const a = tile('A', { x: 0, y: 0 }, { x: 0.5, y: 1 });
+    const b = tile('B', { x: 0.5, y: 0 }, { x: 1, y: 1 });
+    const flat = tile('F', { x: 0.2, y: 0.5 }, { x: 0.2, y: 1 });
+    const outside = tile('O', { x: 1.5, y: 0 }, { x: 2, y: 1 });
+    const nan = tile('N', { x: NaN, y: 0 }, { x: 1, y: 1 });
+    expect(modelTiles([a, flat, outside, nan, b]).map((t) => t.vport)).toEqual([a, b]);
+    // When only one is left, it fills the window.
+    expect(modelTiles([a, flat]).map((t) => t.rect)).toEqual([
+      { left: 0, top: 0, width: 1, height: 1 },
+    ]);
+    // A current viewport that cannot be placed still opens, alone, in its saved view.
+    expect(modelTiles([flat, a, b]).map((t) => t.vport)).toEqual([flat]);
+  });
+
+  it('clips a corner stored a little outside the window to it', () => {
+    const a = tile('A', { x: -1e-9, y: 0 }, { x: 0.5, y: 1.0000001 });
+    const b = tile('B', { x: 0.5, y: 0 }, { x: 1, y: 1 });
+    expect(modelTiles([a, b])[0]!.rect).toEqual({ left: 0, top: 0, width: 0.5, height: 1 });
   });
 });

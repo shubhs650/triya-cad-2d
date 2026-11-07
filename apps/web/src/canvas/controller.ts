@@ -15,6 +15,7 @@ import {
   type ChangeSet,
   type Handle,
   type Layout,
+  type VportRecord,
 } from '@triya/engine';
 import {
   PATH_L,
@@ -78,6 +79,17 @@ export interface CanvasHooks {
    * the drawing as opened, so a new one (first show, REGEN) applies these to catch up.
    */
   readonly changes?: () => readonly ChangeSet[];
+  /**
+   * One of model space's tiled viewports (M1-22 part 4): the `*Active` VPORT it opens in, its
+   * name for assistive technology, whether it is the current viewport, and how a press or a
+   * wheel roll in it makes it current. Without it the canvas is the space's only viewport.
+   */
+  readonly tile?: {
+    readonly vport: VportRecord | undefined;
+    readonly label: string;
+    readonly isCurrent: () => boolean;
+    readonly activate: () => void;
+  };
 }
 
 type Point = { readonly x: number; readonly y: number };
@@ -115,7 +127,10 @@ export class CanvasController {
     this.#hooks = hooks;
     const canvas = document.createElement('canvas');
     canvas.className = 'drawing-canvas';
-    canvas.setAttribute('aria-label', this.#layout ? `Layout ${this.#layout.name}` : 'Model');
+    canvas.setAttribute(
+      'aria-label',
+      this.#layout ? `Layout ${this.#layout.name}` : (hooks.tile?.label ?? 'Model'),
+    );
     container.append(canvas);
     this.#canvas = canvas;
     this.#host = this.#createHost();
@@ -271,7 +286,10 @@ export class CanvasController {
   #openingView(): ViewTransform {
     const saved = this.#layout
       ? paperSpaceView(paperSpaceViewport(this.#opened.init.entities, this.block), this.#size)
-      : savedModelView(activeVport(this.#opened.init.tables?.vports), this.#size);
+      : savedModelView(
+          this.#hooks.tile ? this.#hooks.tile.vport : activeVport(this.#opened.init.tables?.vports),
+          this.#size,
+        );
     return saved ?? extentsView(this.#opening(), this.#size);
   }
 
@@ -403,6 +421,9 @@ export class CanvasController {
       (e) => {
         e.preventDefault();
         if (!this.#view) return;
+        // The wheel zooms the viewport under the cursor, which becomes current (as a press
+        // would), so the navigation bar then acts on the viewport just zoomed.
+        this.#activate();
         if (e.timeStamp - this.#lastWheel > WHEEL_GESTURE_MS) this.#history.push(this.#view);
         this.#lastWheel = e.timeStamp;
         const factor = wheelFactor(e.deltaY, e.deltaMode);
@@ -414,6 +435,9 @@ export class CanvasController {
     c.addEventListener(
       'pointerdown',
       (e) => {
+        // A press in a viewport that is not current makes it current; AutoCAD takes the
+        // left-button click that does so for nothing else.
+        if (this.#activate() && e.button === 0) return;
         if (e.button === 1) {
           // No autoscroll or paste on middle click.
           e.preventDefault();
@@ -477,6 +501,14 @@ export class CanvasController {
     c.addEventListener('pointercancel', endDrag, opts);
     c.addEventListener('pointerleave', () => this.#hooks.onCursor(undefined), opts);
     c.addEventListener('auxclick', (e) => e.preventDefault(), opts);
+  }
+
+  /** Makes this tiled viewport current; true when it was not. */
+  #activate(): boolean {
+    const tile = this.#hooks.tile;
+    if (!tile || tile.isCurrent()) return false;
+    tile.activate();
+    return true;
   }
 
   #startDrag(e: PointerEvent): void {
