@@ -1,7 +1,8 @@
 // TriyaToAcad on the public corpus (M1-05, M1-75): a markup-style edit of every entity Triya can
 // write (move it; grow circles and arcs, turn arcs, text, blocks and feature control frames;
 // move hatches with their pattern origin, images, wipeouts, underlays, multilines, multileaders
-// and viewport frames), with what the Layers palette and a markup session change outside the
+// and viewport frames; move tables, widen their first column, heighten their first row and retype
+// their cells), with what the Layers palette and a markup session change outside the
 // entities (every layer turned off or on, locked or unlocked and recoloured; every text style
 // widened and slanted; every linetype redescribed and its pattern doubled; every dimension style
 // rescaled, its text enlarged and moved inside, and its dimension lines recoloured; every table
@@ -263,6 +264,20 @@ function edited(g: EntityGeometry): EntityGeometry {
     case 'VIEWPORT':
       // MOVE of the frame in paper space; the view it shows stays.
       return { ...g, center: move(g.center) };
+    case 'ACAD_TABLE':
+      // MOVE, a wider first column and a taller first row (the grips), and every cell that can
+      // be typed in retyped (number and date cells become the text typed).
+      return {
+        ...g,
+        position: move(g.position),
+        rowHeights: g.rowHeights.map((h, i) => (i === 0 ? h * 1.5 : h)),
+        columnWidths: g.columnWidths.map((w, j) => (j === 0 ? w * 1.5 : w)),
+        cells: g.cells.map((row) =>
+          row.map((c) =>
+            c.type === 'text' && !c.merged ? { ...c, text: `${c.text} (edited)` } : c,
+          ),
+        ),
+      };
     default:
       throw new Error(`no edit for ${g.kind}`);
   }
