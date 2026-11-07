@@ -2016,17 +2016,15 @@ const tableWriter: Writer<TableGeometry> = {
       const origins = originProblems(before, g);
       if (origins.length > 0) return [...out, ...origins];
     }
-    if (!before || regridded(g)) {
-      const rows = g.rowHeights.length;
-      const columns = g.columnWidths.length;
-      if (rows === 0 || columns === 0) {
-        out.push('no rows or no columns');
-        return out;
-      }
-      if (!gridOf(g, rows, columns)) {
-        out.push('a grid that is not rows × columns (a height per row, a cell per column)');
-        return out;
-      }
+    const rows = g.rowHeights.length;
+    const columns = g.columnWidths.length;
+    if (rows === 0 || columns === 0) {
+      out.push('no rows or no columns');
+      return out;
+    }
+    if (!gridOf(g, rows, columns)) {
+      out.push('a grid that is not rows × columns (a height per row, a cell per column)');
+      return out;
     }
     if (g.rowHeights.some((h) => !(h > 0))) out.push('a row height of 0 or less');
     if (g.columnWidths.some((w) => !(w > 0))) out.push('a column width of 0 or less');
