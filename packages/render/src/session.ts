@@ -235,10 +235,7 @@ export class RenderSession {
     if (cs.blocks) out.blocks = rebaseKeyed(cs.blocks, m.blocks);
     if (cs.layouts) {
       const own = new Map(m.layouts.map((l) => [l.handle, l]));
-      out.layouts = cs.layouts.map((u) => ({
-        before: own.get(u.before.handle) ?? u.before,
-        after: u.after,
-      }));
+      out.layouts = rebaseKeyed(cs.layouts, own);
     }
     return out;
   }

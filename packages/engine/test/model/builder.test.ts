@@ -146,15 +146,15 @@ describe('ChangeSetBuilder', () => {
     b.updateLayout('1E', { limits: { min: { x: 0, y: 0 }, max: { x: 420, y: 297 } } });
     expect(b.layout('1E')).toMatchObject({ name: 'Sheet A', tabOrder: 1 });
     const cs = b.build();
-    expect(cs.layouts).toHaveLength(1);
-    expect(cs.layouts![0]!.before.name).toBe('Layout1');
+    expect(cs.layouts?.updated).toHaveLength(1);
+    expect(cs.layouts!.updated![0]!.before.name).toBe('Layout1');
     const before = snapshot(m);
     m.apply(cs);
     expect(m.layouts.map((l) => l.name)).toEqual(['Model', 'Sheet A']);
     expect(m.layouts[1]!.limits?.max).toEqual({ x: 420, y: 297 });
     m.apply(invertChangeSet(cs));
     expect(snapshot(m)).toEqual(before);
-    expect(isEmptyChangeSet({ layouts: [] })).toBe(true);
+    expect(isEmptyChangeSet({ layouts: { updated: [] } })).toBe(true);
     expect(isEmptyChangeSet(cs)).toBe(false);
   });
 
@@ -165,6 +165,79 @@ describe('ChangeSetBuilder', () => {
     b.updateLayout('22', { tabOrder: 2 });
     m.apply(b.build());
     expect(m.layouts.map((l) => l.name)).toEqual(['Layout1', 'Model']);
+  });
+
+  it('adds a layout with its own paper space block and undoes it (LAYOUT New)', () => {
+    const m = sampleModel();
+    const before = snapshot(m);
+    const b = new ChangeSetBuilder(m);
+    const limits = { min: { x: 0, y: 0 }, max: { x: 420, y: 297 } };
+    const sheet = b.addLayout({ name: 'Sheet 2', limits });
+    // The block record first, then the layout: AutoCAD numbers the next paper space block
+    // after the ones the drawing has, and the record links back to its layout.
+    expect(sheet).toEqual({
+      handle: '41',
+      name: 'Sheet 2',
+      tabOrder: 2,
+      blockRecord: '40',
+      limits,
+    });
+    expect(b.layout('41')).toBe(sheet);
+    expect(b.tableRecord('blockRecords', '40')).toEqual({
+      handle: '40',
+      name: '*Paper_Space0',
+      layout: '41',
+      units: 0,
+      explodable: true,
+      scalable: true,
+    });
+    expect(b.block('40')).toEqual({
+      handle: '40',
+      name: '*Paper_Space0',
+      basePoint: { x: 0, y: 0 },
+    });
+    const third = b.addLayout({ name: 'Sheet 3', tabOrder: 1 });
+    expect(third).toMatchObject({ tabOrder: 1, blockRecord: '42' });
+    expect(b.tableRecord('blockRecords', '42')?.name).toBe('*Paper_Space1');
+    const e = b.addEntity({ owner: '40', layer: LAYER_0, geom: circleGeom(0, 0, 1) });
+    const cs = b.build();
+    expect(cs.layouts?.added).toEqual([sheet, third]);
+    expect(cs.blocks?.added?.map((d) => d.handle)).toEqual(['40', '42']);
+    m.apply(cs);
+    expect(m.layouts.map((l) => l.name)).toEqual(['Model', 'Layout1', 'Sheet 3', 'Sheet 2']);
+    expect(m.blockEntities('40')).toEqual([e.id]);
+    m.apply(invertChangeSet(cs));
+    expect(snapshot(m)).toEqual(before);
+  });
+
+  it('removes a layout with its block and everything on it, and undoes it (LAYOUT Delete)', () => {
+    const m = sampleModel();
+    const before = snapshot(m);
+    const b = new ChangeSetBuilder(m);
+    b.removeLayout('1E');
+    expect(b.layout('1E')).toBeUndefined();
+    expect(b.block(PAPER_SPACE)).toBeUndefined();
+    expect(b.tableRecord('blockRecords', PAPER_SPACE)).toBeUndefined();
+    expect(() => b.removeLayout('1E')).toThrow(/layout 1E/);
+    // Model is not a layout one can delete.
+    expect(() => b.removeLayout('22')).toThrow(/the Model layout cannot be removed/);
+    const cs = b.build();
+    expect(cs.layouts?.removed?.map((l) => l.handle)).toEqual(['1E']);
+    expect(cs.entities?.removed?.map((r) => r.entity.handle)).toEqual(['24']);
+    m.apply(cs);
+    expect(m.layouts.map((l) => l.name)).toEqual(['Model']);
+    expect(m.hasBlock(PAPER_SPACE)).toBe(false);
+    m.apply(invertChangeSet(cs));
+    expect(snapshot(m)).toEqual(before);
+  });
+
+  it('takes back a layout added in the same change set', () => {
+    const m = sampleModel();
+    const b = new ChangeSetBuilder(m);
+    const sheet = b.addLayout({ name: 'Sheet 2' });
+    b.addEntity({ owner: sheet.blockRecord, layer: LAYER_0, geom: circleGeom(0, 0, 1) });
+    b.removeLayout(sheet.handle);
+    expect(isEmptyChangeSet(b.build())).toBe(true);
   });
 
   it('adds a block with its record, fills it and undoes it (BLOCK)', () => {

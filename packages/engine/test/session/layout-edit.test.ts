@@ -67,7 +67,7 @@ describe('layout edits', () => {
     const r = s.edit({ kind: 'layout', layout: '2E', name: 'Plan' });
     expect(r.ok).toBe(true);
     if (!r.ok) return;
-    expect(r.change.layouts?.map((u) => [u.before.name, u.after.name])).toEqual([
+    expect(r.change.layouts?.updated?.map((u) => [u.before.name, u.after.name])).toEqual([
       ['Layout2', 'Plan'],
     ]);
     expect(tabs(s.model)).toEqual(['0:Model', '1:Layout1', '2:Plan', '3:Layout3']);
@@ -78,7 +78,7 @@ describe('layout edits', () => {
     const r = s.edit({ kind: 'layout', layout: '3E', tabOrder: 1 });
     expect(r.ok).toBe(true);
     expect(tabs(s.model)).toEqual(['0:Model', '1:Layout3', '2:Layout1', '3:Layout2']);
-    if (r.ok) expect(r.change.layouts).toHaveLength(3);
+    if (r.ok) expect(r.change.layouts?.updated).toHaveLength(3);
     // Past the end goes last, as dropping a tab after the last one.
     s.edit({ kind: 'layout', layout: '3E', tabOrder: 99 });
     expect(tabs(s.model)).toEqual(['0:Model', '1:Layout1', '2:Layout2', '3:Layout3']);
@@ -110,10 +110,12 @@ describe('layout edits', () => {
     // What crosses to a worker is a copy, so the replica swaps in its own layouts, as the
     // render session does.
     const rebased = (cs: ChangeSet): ChangeSet => ({
-      layouts: (JSON.parse(JSON.stringify(cs)) as ChangeSet).layouts!.map((u) => ({
-        before: replica.layouts.find((l) => l.handle === u.before.handle)!,
-        after: u.after,
-      })),
+      layouts: {
+        updated: (JSON.parse(JSON.stringify(cs)) as ChangeSet).layouts!.updated!.map((u) => ({
+          before: replica.layouts.find((l) => l.handle === u.before.handle)!,
+          after: u.after,
+        })),
+      },
     });
     replica.apply(rebased(r.change));
     expect(tabs(replica)).toEqual(['0:Model', '1:Detail', '2:Layout1', '3:Layout2']);
