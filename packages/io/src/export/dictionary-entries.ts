@@ -8,7 +8,7 @@
 import { CadDictionary, type CadObject, type NonGraphicalObject } from '@node-projects/acad-ts';
 
 /** The key `acad` is listed under in `dict`, or undefined when `dict` does not list it. */
-function entryKey(dict: CadDictionary, acad: CadObject): string | undefined {
+export function entryKey(dict: CadDictionary, acad: CadObject): string | undefined {
   const i = [...dict].indexOf(acad as NonGraphicalObject);
   return i < 0 ? undefined : dict.entryNames[i];
 }

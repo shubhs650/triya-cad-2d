@@ -13,48 +13,73 @@
 // fields it does not map of those it does). An object the same save changes refers to the
 // record only if its new state does, or if the reference is in a field Triya does not map.
 //
-// Not purged here (refused by records.ts): VPORT records (VPORTS Join and named configurations),
-// multileader and table styles (dictionary entries), and the objects PURGE also takes (MLINE
-// styles, materials, visual styles, plot styles, regapps' groups, shapes kept as nameless STYLE
-// records).
+// Part 27 adds multileader and table styles, which are entries of the ACAD_MLEADERSTYLE and
+// ACAD_TABLESTYLE dictionaries (PURGE, and the Delete button of the MLEADERSTYLE and TABLESTYLE
+// dialogs), and VPORT records: the tiles VPORTS Join takes and the named configurations the
+// VPORTS dialog deletes. AutoCAD keeps the first *Active record as the current viewport (DXF
+// reference, VPORT: "the first such entry describes the current viewport"), so that one stays.
+//
+// Not purged here: the objects PURGE also takes (MLINE styles, materials, visual styles, plot
+// styles), which Triya does not map as records, and shapes kept as nameless STYLE records.
 
 import type { CadDocument, Entity as AcadEntity } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   AppId,
   BlockRecord,
+  CadDictionary,
   CadObject,
+  DictionaryVariable,
   DimensionStyle,
   ExtendedDataReference,
   Layer,
   LineType,
+  MultiLeaderStyle,
   Table,
+  TableStyle,
   TextStyle,
   UCS,
   View,
+  VPort,
   XRecordEntry,
   type TableEntry,
 } from '@node-projects/acad-ts';
 import type { DocumentInit, DocumentModel, Handle, TableName } from '@triya/engine';
 import { hex } from '../map/common';
+import { entryKey } from './dictionary-entries';
 import { resolve, type Resolver } from './entities';
 import { documentObjects } from './passthrough';
 
 type Purgeable =
-  'layers' | 'linetypes' | 'textStyles' | 'dimStyles' | 'appIds' | 'ucs' | 'views' | 'blockRecords';
+  | 'layers'
+  | 'linetypes'
+  | 'textStyles'
+  | 'dimStyles'
+  | 'appIds'
+  | 'ucs'
+  | 'views'
+  | 'vports'
+  | 'mleaderStyles'
+  | 'tableStyles'
+  | 'blockRecords';
+
+/** A table record, or a style kept as a dictionary entry (MLEADERSTYLE, TABLESTYLE). */
+type Named = CadObject & { name: string };
 
 interface TableRules {
   /** What the problems call a record, as records.ts does. */
   readonly what: string;
-  readonly type: abstract new (...args: never[]) => TableEntry;
-  readonly table: (doc: CadDocument) => Table<TableEntry> | null | undefined;
+  readonly type: abstract new (...args: never[]) => Named;
   /**
    * Records AutoCAD never purges (AutoCAD 2024 PURGE and LAYDEL): layer 0 and Defpoints, the
-   * ByLayer, ByBlock and Continuous linetypes, the Standard text and dimension styles, and the
-   * ACAD application every drawing registers.
+   * ByLayer, ByBlock and Continuous linetypes, the Standard text, dimension, multileader and
+   * table styles, and the ACAD application every drawing registers.
    */
   readonly fixed: readonly string[];
-  /** Header variables that name a record of the table (AutoCAD looks them up by name). */
+  /**
+   * Header variables (and DICTIONARYVARs, by their bare names) that name a record of the table:
+   * AutoCAD looks them up by name.
+   */
   readonly header: readonly string[];
 }
 
@@ -62,50 +87,57 @@ const TABLES: Readonly<Record<Purgeable, TableRules>> = {
   layers: {
     what: 'layer',
     type: Layer,
-    table: (d) => d.layers,
     fixed: [Layer.defaultName, 'Defpoints'],
     header: ['$CLAYER'],
   },
   linetypes: {
     what: 'linetype',
     type: LineType,
-    table: (d) => d.lineTypes,
     fixed: [LineType.byLayerName, LineType.byBlockName, LineType.continuousName],
     header: ['$CELTYPE', '$DIMLTYPE', '$DIMLTEX1', '$DIMLTEX2'],
   },
   textStyles: {
     what: 'text style',
     type: TextStyle,
-    table: (d) => d.textStyles,
     fixed: [TextStyle.defaultName],
     header: ['$TEXTSTYLE', '$DIMTXSTY'],
   },
   dimStyles: {
     what: 'dimension style',
     type: DimensionStyle,
-    table: (d) => d.dimensionStyles,
     fixed: [DimensionStyle.defaultName],
     header: ['$DIMSTYLE'],
   },
   appIds: {
     what: 'application',
     type: AppId,
-    table: (d) => d.appIds,
     fixed: [AppId.defaultName],
     header: [],
   },
   ucs: {
     what: 'UCS',
     type: UCS,
-    table: (d) => d.uCSs,
     fixed: [],
     header: ['$UCSNAME', '$PUCSNAME', '$UCSBASE', '$PUCSBASE', '$UCSORTHOREF', '$PUCSORTHOREF'],
   },
-  views: { what: 'view', type: View, table: (d) => d.views, fixed: [], header: [] },
+  views: { what: 'view', type: View, fixed: [], header: [] },
+  // The first *Active record, the current viewport, is checked in planPurge.
+  vports: { what: 'viewport', type: VPort, fixed: [], header: [] },
+  mleaderStyles: {
+    what: 'multileader style',
+    type: MultiLeaderStyle,
+    fixed: [MultiLeaderStyle.defaultName],
+    header: [DictionaryVariable.currentMultiLeaderStyle],
+  },
+  tableStyles: {
+    what: 'table style',
+    type: TableStyle,
+    fixed: [TableStyle.defaultName],
+    header: [DictionaryVariable.currentTableStyle],
+  },
   blockRecords: {
     what: 'block',
     type: BlockRecord,
-    table: (d) => d.blockRecords as Table<TableEntry> | null,
     fixed: [],
     header: ['$DIMBLK', '$DIMBLK1', '$DIMBLK2', '$DIMLDRBLK'],
   },
@@ -168,14 +200,15 @@ const SKIPPED_FIELDS = new Set(['document', '_referenceHandler', 'owner', '_owne
 const MAX_DEPTH = 24;
 
 export interface PurgePlan {
-  readonly removed: { readonly table: Table<TableEntry>; readonly acad: TableEntry }[];
+  /** Each goes from what owns it: its symbol table, or the dictionary listing it. */
+  readonly removed: Named[];
 }
 
 interface Target {
   readonly table: Purgeable;
   readonly handle: Handle;
   readonly name: string;
-  readonly acad: TableEntry;
+  readonly acad: Named;
   /** Who refers to it: referrer key → what the problem says. */
   readonly referrers: Map<string, string>;
 }
@@ -297,6 +330,10 @@ export function planPurge(
       else if (b.name === '') out.push('a nameless record (a shape file) cannot be purged');
       else if ((flags & XREF_DEPENDENT) !== 0)
         out.push(`an xref-dependent ${rules.what} goes with its xref (XREF Detach, M1-21)`);
+      else if (acad instanceof VPort && doc.vPorts?.tryGetValue(VPort.defaultName) === acad)
+        out.push(
+          'the first *Active viewport is the current one (VPORTS Join keeps it and changes its view)',
+        );
       else if (r12 && acad && madeUp(doc, acad.handle))
         out.push(
           `the file states no handle for this ${rules.what} (acad-ts numbers it on reading, and the records after it would be renumbered)`,
@@ -382,7 +419,8 @@ export function planPurge(
     const h = hex(o.handle);
     acadReferences(o, (x) => {
       const t = typeof x === 'number' ? byHandle.get(x) : byObject.get(x);
-      if (!t || t.referrers.has(h)) return;
+      // The table or dictionary listing a record does not refer to it.
+      if (!t || t.referrers.has(h) || t.acad.owner === o) return;
       // A reference Triya maps that the save changes away.
       if (after.has(h) && refersBefore(h, t) && !refersAfter(h, t)) return;
       t.referrers.set(h, `${o.objectName} ${h} refers to it`);
@@ -404,7 +442,7 @@ export function planPurge(
     const rules = TABLES[t.table];
     const refs = [...t.referrers.values()];
     if (refs.length === 0) {
-      plan.removed.push({ table: rules.table(doc)!, acad: t.acad });
+      plan.removed.push(t.acad);
       continue;
     }
     const shown = refs.slice(0, 3);
@@ -435,16 +473,30 @@ function blockProblems(
 }
 
 /**
- * Takes the planned records out of their tables. acad-ts's table hands whatever it still lists
- * as referring to a removed record to the table's default record, so those listings (left by
- * referrers that have since moved on, or gone) are dropped first: nothing that stays refers to
- * the record (planPurge).
+ * Takes the planned records out of their tables, and the styles out of their dictionaries.
+ * acad-ts's table hands whatever it still lists as referring to a removed record to the table's
+ * default record, so those listings (left by referrers that have since moved on, or gone) are
+ * dropped first: nothing that stays refers to the record (planPurge). A record whose name repeats
+ * (a VPORT tile after the first) is keyed by its handle as well.
  */
 export function writePurge(plan: PurgePlan): void {
-  for (const { table, acad } of plan.removed) {
-    for (const owner of [...table.getReferences(acad.name)])
-      table.removeReference(acad.name, owner);
-    if (table.remove(acad.name) !== acad) {
+  for (const acad of plan.removed) {
+    const owner = acad.owner;
+    if (owner instanceof CadDictionary) {
+      const key = entryKey(owner, acad);
+      if (key === undefined || !owner.remove(key))
+        throw new Error(
+          `${acad.objectName} ${acad.name}: acad-ts did not remove it from its dictionary`,
+        );
+      continue;
+    }
+    const table = owner as Table<TableEntry>;
+    const entry = acad as TableEntry;
+    for (const referrer of [...table.getReferences(entry.name)])
+      table.removeReference(entry.name, referrer);
+    const key =
+      table.tryGetValue(entry.name) === entry ? entry.name : `${entry.handle}:${entry.name}`;
+    if (table.remove(key) !== entry) {
       throw new Error(`${acad.objectName} ${acad.name}: acad-ts did not remove it from its table`);
     }
   }

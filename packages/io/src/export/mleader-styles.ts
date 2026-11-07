@@ -133,6 +133,7 @@ export function planMLeaderStyles(
     type: MultiLeaderStyle,
     make: (a) => new MultiLeaderStyle(a.name),
     fixedNames: [MultiLeaderStyle.defaultName],
+    removable: true,
     problems: (b, a, acad) => [
       ...mleaderStyleProblems(r, version, format, b, a),
       ...(b && acad && b.name !== a.name
