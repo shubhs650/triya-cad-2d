@@ -1,5 +1,6 @@
 import { Entity } from '../../Entities/Entity.js';
 import { BookColor } from '../../Objects/BookColor.js';
+import { Material } from '../../Objects/Material.js';
 import { Layer } from '../../Tables/Layer.js';
 import { LineType } from '../../Tables/LineType.js';
 import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
@@ -28,6 +29,9 @@ export class CadEntityTemplate extends CadTemplateT<Entity> {
 	ltypeFlags: number | null = null;
 
 	materialHandle: number | null = null;
+
+	/** DWG R2007+ material flags: 00 ByLayer, 01 ByBlock, 11 the handle above. */
+	materialFlags: number | null = null;
 
 	nextEntity: number | null = null;
 
@@ -93,6 +97,16 @@ export class CadEntityTemplate extends CadTemplateT<Entity> {
 			if (bookColor) {
 				this.cadObject.bookColor = bookColor;
 			}
+		}
+
+		// The entity's material (DXF 347; DWG R2007+ by handle, or by flag for ByBlock): upstream
+		// kept the handle and never assigned it, so every entity read without its material.
+		const material = builder.tryGetCadObject<Material>(this.materialHandle);
+		if (material instanceof Material) {
+			this.cadObject.material = material;
+		} else if (this.materialFlags === 1) {
+			const byBlock = builder.findCadObject('material:BYBLOCK', o => o instanceof Material && o.name.toUpperCase() === 'BYBLOCK');
+			if (byBlock instanceof Material) this.cadObject.material = byBlock;
 		}
 
 		if (this.proxyGraphics != null && !builder.ignoreProxyGraphics) {

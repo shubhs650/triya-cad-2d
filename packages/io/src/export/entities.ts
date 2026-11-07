@@ -15,6 +15,8 @@ import type {
   Vertex,
 } from '@node-projects/acad-ts';
 import {
+  ACadVersion,
+  EntityPlotStyleType,
   Arc,
   AttributeDefinition,
   CadObject,
@@ -205,7 +207,19 @@ export interface Resolver {
   readonly allocate: () => number;
   /** Table records the save adds (new layers), by handle, before they join the drawing. */
   readonly created: ReadonlyMap<Handle, CadObject>;
+  /** The version the drawing is saved in (its own). */
+  readonly version?: ACadVersion | undefined;
+  /**
+   * What an entity may name as its plot style: why none (a colour-dependent drawing, or one before
+   * R2000), or the ACAD_PLOTSTYLENAME entries and default.
+   */
+  readonly plotStyles?: PlotStyleNames;
 }
+
+/** The plot style names entities may name in a drawing (`plotStyleNames` in export.ts). */
+export type PlotStyleNames =
+  | { readonly refusal: string }
+  | { readonly names: ReadonlySet<Handle>; readonly refusal?: undefined };
 
 /** The drawing's object `handle` (or one the save adds) when it is a `type`. */
 export function resolve<T>(
@@ -250,10 +264,10 @@ function linetype(r: Resolver, ref: LinetypeRef): LineType | undefined {
 const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefined;
 
 /**
- * Properties whose changes no writer handles yet. Xdata is written (xdata.ts, M1-75 part 19), on
- * entities and ATTRIBs alike.
+ * Properties whose changes no writer handles yet. Xdata (xdata.ts, M1-75 part 19), plot style
+ * names and materials (part 21) are written, on entities and ATTRIBs alike.
  */
-const UNSUPPORTED_PROPS = ['reactors', 'extDict', 'plotStyle', 'annotative'] as const;
+const UNSUPPORTED_PROPS = ['reactors', 'extDict', 'annotative'] as const;
 /**
  * An entity's reactors are written: the only changes accepted are those that keep a LEADER and
  * its annotation, an associative HATCH and its boundary objects, or a VIEWPORT and its clip
@@ -284,8 +298,22 @@ function propProblems(
   if (changed('linetype') && !linetype(r, after.linetype)) {
     out.push(`${what}: linetype ${after.linetype} does not exist`);
   }
-  if (changed('material') && after.material && !resolve(r, after.material, Material)) {
-    out.push(`${what}: material ${after.material} does not exist`);
+  if (changed('material') && after.material) {
+    // AutoCAD 2007 introduced materials; acad-ts writes an entity's from R2007 (DXF 347, DWG).
+    if (r.version !== undefined && r.version < ACadVersion.AC1021) {
+      out.push(`${what}: ${ACadVersion[r.version]} has no materials (R2007 added them)`);
+    } else if (!resolve(r, after.material, Material)) {
+      out.push(`${what}: material ${after.material} does not exist`);
+    }
+  }
+  if (changed('plotStyle') && after.plotStyle) {
+    // Named plot styles (AutoCAD 2000): an entity names one only in a named-plot-style drawing;
+    // a colour-dependent one plots by colour and shows no Plot style property to set.
+    const styles = r.plotStyles;
+    if (styles?.refusal !== undefined) out.push(`${what}: ${styles.refusal}`);
+    else if (styles && !styles.names.has(after.plotStyle)) {
+      out.push(`${what}: plot style ${after.plotStyle} is not in ACAD_PLOTSTYLENAME`);
+    }
   }
   if (changed('color') && hasBook(after.color)) out.push(`${what}: colour-book colours`);
   if (changed('xdata')) {
@@ -331,6 +359,13 @@ function writeProps(r: Resolver, e: AcadEntity, before: Props | undefined, after
   if (changed('visible')) e.isInvisible = !after.visible;
   if (changed('material')) {
     e.material = after.material ? resolve(r, after.material, Material)! : null;
+  }
+  if (changed('plotStyle')) {
+    // Taking a name off plots the entity ByLayer, as the Properties palette's ByLayer does.
+    e.plotStyleType = after.plotStyle
+      ? EntityPlotStyleType.ByObjectId
+      : EntityPlotStyleType.ByLayer;
+    e.plotStyleName = after.plotStyle ? Number.parseInt(after.plotStyle, 16) : 0;
   }
   if (changed('xdata') && !same(before?.xdata ?? [], after.xdata ?? [])) {
     writeXdata(r, e, before?.xdata, after.xdata);

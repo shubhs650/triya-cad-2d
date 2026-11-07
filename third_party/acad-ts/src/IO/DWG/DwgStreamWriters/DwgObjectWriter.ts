@@ -194,6 +194,7 @@ import { ParameterValueSet } from '../../../Objects/Evaluations/ParameterValueSe
 import { StretchActionBase } from '../../../Objects/Evaluations/StretchActionBase.js';
 import { DynamicBlockPurgePreventer } from '../../../Objects/DynamicBlockPurgePreventer.js';
 import { Material, ColorMethod, MapSource } from '../../../Objects/Material.js';
+import { EntityPlotStyleType } from '../../../Header/EntityPlotStyleType.js';
 import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
 import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
 import { VisualStyle } from '../../../Objects/VisualStyle.js';
@@ -642,7 +643,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null);
 
 		if (this.r2000Plus) {
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
+			// The layer's plot style name; upstream wrote 0, detaching every layer from it.
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, layer.plotStyleName);
 		}
 		if (this.r2007Plus) {
 			// The layer's material; upstream wrote 0, detaching every layer from it.
@@ -1403,11 +1405,26 @@ export class DwgObjectWriter extends DwgSectionIO {
 		}
 
 		if (this.r2007Plus) {
-			this._writer.write2Bits(0b00);
+			// The entity's material: 00 ByLayer (none), 01 ByBlock, 11 and a hard pointer (AutoCAD also
+			// points some entities at the ByLayer material itself). Upstream always wrote ByLayer, so a
+			// save detached every entity from its material.
+			const material = entity.material;
+			if (material === null) {
+				this._writer.write2Bits(0b00);
+			} else if (material.name.toUpperCase() === 'BYBLOCK') {
+				this._writer.write2Bits(0b01);
+			} else {
+				this._writer.write2Bits(0b11);
+				this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, material);
+			}
 			this._writer.writeByte(0);
 		}
 
-		this._writer.write2Bits(0b00);
+		// The plot style flags, and the plot style name for ByObjectId; upstream always wrote ByLayer.
+		this._writer.write2Bits(entity.plotStyleType);
+		if (entity.plotStyleType === EntityPlotStyleType.ByObjectId) {
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, entity.plotStyleName);
+		}
 
 		if (this._version > ACadVersion.AC1021) {
 			this._writer.writeBit(false);

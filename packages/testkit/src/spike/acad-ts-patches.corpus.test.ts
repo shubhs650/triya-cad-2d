@@ -18,6 +18,7 @@ import type {
 } from '@node-projects/acad-ts';
 import {
   ACadVersion,
+  Entity as AcadEntity,
   Arc,
   AttributeBase,
   AttributeDefinition,
@@ -3081,5 +3082,51 @@ describe('acad-ts local patches (corpus-backed)', () => {
     ];
     expect(rows(standard(dxfRawRoundTrip(dxf, false)))).toEqual(edited);
     expect(rows(standard(readDwgRaw(DwgWriter.writeToBuffer(dwg).slice().buffer)))).toEqual(edited);
+  });
+
+  it('0152 an entity keeps its material (DXF 347, DWG R2007+) through read and save', () => {
+    // The ACadSharp R2007+ samples give a POINT the ByBlock material and four CIRCLEs materials
+    // of their own (DXF 347; a DWG states ByBlock as the material flags 01 and the others as 11
+    // and a handle). The entity template dropped the handle both readers kept, the DWG reader
+    // skipped ByBlock, and neither writer wrote a material.
+    const materials = (d: CadDocument) =>
+      [...d.getCadObjects()]
+        .filter((o): o is AcadEntity => o instanceof AcadEntity && o.material !== null)
+        .map((e) => [e.handle.toString(16).toUpperCase(), e.material!.name])
+        .sort((a, b) => a[0]!.localeCompare(b[0]!));
+    for (const version of ['AC1021', 'AC1024', 'AC1027', 'AC1032']) {
+      const base = `third-party/acadsharp/sample_${version}`;
+      const dxf = readDxfRaw(corpusBytes(`${base}_ascii.dxf`));
+      const want = [
+        ['298', 'ByBlock'],
+        ['E00', 'Aluminum Cast'],
+        ['E01', 'Beech'],
+        ['E02', 'Bamboo'],
+        ['E03', 'Asphalt - Wet'],
+      ];
+      expect(materials(dxf), version).toEqual(want);
+      expect(materials(dxfRawRoundTrip(dxf, false)), `${version} DXF`).toEqual(want);
+      expect(materials(dxfRawRoundTrip(dxf, true)), `${version} binary DXF`).toEqual(want);
+      const dwg = readDwgRaw(`${base}.dwg`);
+      expect(materials(dwg), `${version} DWG`).toEqual(want);
+      expect(materials(dwgRawRoundTrip(dwg)), `${version} DWG saved`).toEqual(want);
+    }
+  });
+
+  it('0153 a DWG layer keeps its plot style name (R2000+) through read and save', () => {
+    // Every layer points at a plot style name (DXF 390), Normal in these colour-dependent
+    // samples. The DWG reader read the handle and dropped it, and the writer wrote 0.
+    const styles = (d: CadDocument) => [...d.layers!].map((l) => [l.name, l.plotStyleName]);
+    for (const version of ['AC1015', 'AC1018', 'AC1021', 'AC1024', 'AC1027', 'AC1032']) {
+      const base = `third-party/acadsharp/sample_${version}`;
+      const want = styles(readDxfRaw(corpusBytes(`${base}_ascii.dxf`)));
+      expect(
+        want.every(([, h]) => h !== 0),
+        version,
+      ).toBe(true);
+      const dwg = readDwgRaw(`${base}.dwg`);
+      expect(styles(dwg), `${version} DWG`).toEqual(want);
+      expect(styles(dwgRawRoundTrip(dwg)), `${version} DWG saved`).toEqual(want);
+    }
   });
 });

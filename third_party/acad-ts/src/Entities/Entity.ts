@@ -5,6 +5,7 @@ import { Color } from '../Color.js';
 import { Layer } from '../Tables/Layer.js';
 import { LineType } from '../Tables/LineType.js';
 import { LineWeightType } from '../Types/LineWeightType.js';
+import { EntityPlotStyleType } from '../Header/EntityPlotStyleType.js';
 import { Transparency } from '../Transparency.js';
 import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
 import { CollectionChangedEventArgs } from '../CollectionChangedEventArgs.js';
@@ -60,6 +61,15 @@ export abstract class Entity extends CadObject implements IEntity {
 	set material(value: Material | null) {
 		this._material = this.updateCollectionEntry(value, material => this._material = material, this.document?.materials ?? null);
 	}
+
+	/**
+	 * How the entity names its plot style in a named-plot-style drawing (DWG R2000+ flags; a DXF
+	 * states only ByObjectId, as 390).
+	 */
+	plotStyleType: EntityPlotStyleType = EntityPlotStyleType.ByLayer;
+
+	/** Handle of the plot style name (an ACDBPLACEHOLDER in ACAD_PLOTSTYLENAME) for ByObjectId. */
+	plotStyleName: number = 0;
 
 	proxyGeometries: IProxyGeometry[] = [];
 	get hasProxyGeometries(): boolean { return this.proxyGeometries.length > 0; }

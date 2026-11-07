@@ -13,6 +13,7 @@ import { CadObject } from '../../../CadObject.js';
 import { CadValue } from '../../../CadValue.js';
 import { CadValueType } from '../../../CadValueType.js';
 import { Entity } from '../../../Entities/Entity.js';
+import { EntityPlotStyleType } from '../../../Header/EntityPlotStyleType.js';
 import { Arc } from '../../../Entities/Arc.js';
 import { Circle } from '../../../Entities/Circle.js';
 import { DimensionAligned } from '../../../Entities/DimensionAligned.js';
@@ -317,6 +318,11 @@ export abstract class DxfSectionWriterBase {
     if (this.version <= ACadVersion.AC1009) this._writer.write(8, entity.layer?.name ?? '0');
     else this._writer.writeIfNotDefault(8, entity.layer?.name ?? '0', '0');
     this._writer.writeIfNotDefault(6, entity.lineType?.name ?? 'ByLayer', 'ByLayer');
+    // The entity's material (R2007+; AutoCAD writes it only when it is not ByLayer, the default an
+    // entity reads without one). Upstream never wrote it, so a save detached every entity from it.
+    if (this.version >= ACadVersion.AC1021 && entity.material !== null) {
+      this._writer.writeHandle(347, entity.material, map);
+    }
 
     if (entity.bookColor !== null) {
       this._writer.write(62, entity.bookColor.color.getApproxIndex());
@@ -346,6 +352,11 @@ export abstract class DxfSectionWriterBase {
 
     if (this.version >= ACadVersion.AC1015) {
       this._writer.writeIfNotDefault(370, entity.lineWeight, LineWeightType.ByLayer, map);
+      // The entity's plot style name; upstream never wrote it. DXF has no group for ByBlock or the
+      // dictionary default, which a DWG states by flag.
+      if (entity.plotStyleType === EntityPlotStyleType.ByObjectId) {
+        this._writer.write(390, entity.plotStyleName, map);
+      }
     }
   }
 
