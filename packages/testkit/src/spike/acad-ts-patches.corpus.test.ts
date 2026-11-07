@@ -3108,38 +3108,35 @@ describe('acad-ts local patches (corpus-backed)', () => {
     return maps;
   }
 
-  it('0152 a DXF save of every corpus CELLSTYLEMAP states the groups the file did', () => {
-    // M1-98: AutoCAD saves a CELLSTYLEMAP in every DXF from AutoCAD 2008 on. Unpatched, a save
-    // wrote the cell alignment at 170 and the class at 91, no 93, GRIDFORMAT 90 and 91 swapped,
-    // the borders in another order and no 340 for a border without a linetype.
-    const manifest = loadManifest(
-      fileURLToPath(new URL('../../../../corpus/corpus.json', import.meta.url)),
+  // One test per file, as the corpus open test does, so the files share no time budget.
+  const styleMapFiles = loadManifest(
+    fileURLToPath(new URL('../../../../corpus/corpus.json', import.meta.url)),
+  )
+    .files.filter((f) => f.format === 'dxf-ascii' && !f.knownIssues.some((k) => /read/i.test(k)))
+    .map((f) => f.path.replace(/^public\//, ''))
+    .filter(
+      (path) => cellStyleMapGroups(Buffer.from(corpusBytes(path)).toString('latin1')).size > 0,
     );
-    const problems: string[] = [];
-    let compared = 0;
-    for (const f of manifest.files.filter((x) => x.format === 'dxf-ascii')) {
-      const path = f.path.replace(/^public\//, '');
-      const bytes = corpusBytes(path);
-      const text = Buffer.from(bytes).toString('latin1');
-      if (!text.includes('CELLSTYLEMAP')) continue;
-      let doc: CadDocument;
-      try {
-        doc = readDxfRaw(bytes);
-      } catch {
-        continue; // Files acad-ts cannot read (recover02.dxf) have their own known issue.
-      }
-      const saved = cellStyleMapGroups(Buffer.from(writeDxf(doc, false)).toString('latin1'));
-      for (const [handle, groups] of cellStyleMapGroups(text)) {
-        compared++;
-        const back = saved.get(handle) ?? [];
-        const at = groups.findIndex((g, i) => back[i] !== g);
-        if (at >= 0 || back.length !== groups.length)
-          problems.push(`${path} ${handle} group ${at}: ${groups[at]} saved as ${back[at]}`);
-      }
-    }
-    expect(problems).toEqual([]);
-    expect(compared).toBeGreaterThan(40);
+
+  it('0152 finds the corpus DXFs with a CELLSTYLEMAP', () => {
+    expect(styleMapFiles.length).toBeGreaterThan(40);
   });
+
+  it.each(styleMapFiles)(
+    '0152 a DXF save of the CELLSTYLEMAPs in %s states their groups',
+    (path) => {
+      // M1-98: AutoCAD saves a CELLSTYLEMAP in every DXF from AutoCAD 2008 on. Unpatched, a save
+      // wrote the cell alignment at 170 and the class at 91, no 93, GRIDFORMAT 90 and 91 swapped,
+      // the borders in another order and no 340 for a border without a linetype.
+      const bytes = corpusBytes(path);
+      const read = cellStyleMapGroups(Buffer.from(bytes).toString('latin1'));
+      const saved = cellStyleMapGroups(
+        Buffer.from(writeDxf(readDxfRaw(bytes), false)).toString('latin1'),
+      );
+      expect(read.size).toBeGreaterThan(0);
+      for (const [handle, groups] of read) expect(saved.get(handle), handle).toEqual(groups);
+    },
+  );
 
   // The fields of a cell style both formats state, with the text style and linetypes by name.
   const mapCell = (c: CellStyle): unknown => ({
