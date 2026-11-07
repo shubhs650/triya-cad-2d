@@ -81,8 +81,8 @@ function cellStyle(c: CellStyle): TableCellStyle {
     textColor: mapColor(c.color),
     fillColor: mapColor(c.backgroundColor),
     fillOn: c.isFillColorOn,
-    dataType: c.cellStyleType as number,
-    unitType: c.styleClass as number,
+    dataType: c.valueDataType,
+    unitType: c.valueUnitType,
     borders: [
       c.topBorder,
       c.horizontalInsideBorder,

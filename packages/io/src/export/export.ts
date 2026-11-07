@@ -37,6 +37,7 @@ import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
+import { planTableStyles, writeTableStyles } from './table-styles';
 import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
@@ -95,7 +96,7 @@ function keyedProblems(
 
 /**
  * The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts, dim-styles.ts,
- * view-records.ts, mleader-styles.ts).
+ * view-records.ts, mleader-styles.ts, table-styles.ts).
  */
 const WRITTEN_TABLES = new Set([
   'layers',
@@ -107,6 +108,7 @@ const WRITTEN_TABLES = new Set([
   'views',
   'vports',
   'mleaderStyles',
+  'tableStyles',
 ]);
 
 /**
@@ -301,8 +303,9 @@ export function triyaToAcad(
   const linetypes = planLinetypes(original, base, model, r);
   const dimStyles = planDimStyles(original, base, model, r, format);
   const layers = planLayers(original, base, model, r);
-  // After the text styles and linetypes it may name.
+  // After the text styles and linetypes they may name.
   const mleaderStyles = planMLeaderStyles(original, base, model, r, format);
+  const tableStyles = planTableStyles(original, base, model, r, format);
   const views = {
     appIds: planAppIds(original, base, model, r),
     ucs: planUcs(original, base, model, r),
@@ -319,6 +322,7 @@ export function triyaToAcad(
     ...dimStyles.problems,
     ...layers.problems,
     ...mleaderStyles.problems,
+    ...tableStyles.problems,
     ...Object.values(views).flatMap((v) => v.problems),
   );
   problems.push(...drawOrder.problems);
@@ -329,6 +333,7 @@ export function triyaToAcad(
   writeDimStyles(original, r, dimStyles.plan);
   writeLayers(original, r, layers.plan);
   writeMLeaderStyles(original, r, mleaderStyles.plan);
+  writeTableStyles(original, r, tableStyles.plan);
   writeViewRecords(original, {
     appIds: views.appIds.plan,
     ucs: views.ucs.plan,
