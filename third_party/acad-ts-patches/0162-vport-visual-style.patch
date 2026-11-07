@@ -1,0 +1,35 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 8875fa7..fef5c5a 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -1145,7 +1145,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 
+ 		if (this.r2007Plus) {
+ 			this._writer.handleReferenceTyped(DwgReferenceType.SoftPointer, 0);
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, 0);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, vport.visualStyle);
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardOwnership, vport.sun);
+ 			this._enqueueObject(vport.sun);
+ 		}
+diff --git a/src/IO/Templates/CadVPortTemplate.ts b/src/IO/Templates/CadVPortTemplate.ts
+index fb09834..af51ad5 100644
+--- a/src/IO/Templates/CadVPortTemplate.ts
++++ b/src/IO/Templates/CadVPortTemplate.ts
+@@ -1,4 +1,5 @@
+ import { CadObject } from '../../CadObject.js';
++import { VisualStyle } from '../../Objects/VisualStyle.js';
+ import { UCS } from '../../Tables/UCS.js';
+ import { VPort } from '../../Tables/VPort.js';
+ import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
+@@ -40,6 +41,11 @@ export class CadVPortTemplate extends CadTableEntryTemplate<VPort> {
+ 		}
+ 
+ 		const style = builder.tryGetCadObject<CadObject>(this.styleHandle);
++		if (style instanceof VisualStyle) {
++			this.cadObject.visualStyle = style;
++		} else if (this.styleHandle != null && this.styleHandle > 0) {
++			builder.notify(`Visual style ${this.styleHandle} not found for viewport ${this.cadObject.handle}`, NotificationType.Warning);
++		}
+ 
+ 		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);
+ 		if (sun) {
