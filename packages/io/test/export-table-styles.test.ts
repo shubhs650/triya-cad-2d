@@ -319,8 +319,8 @@ describe('TABLESTYLE objects', () => {
     };
     const cases: [(b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
       [
-        (b, m) => b.removeTableRecord('tableStyles', style(m, 'GRID').handle),
-        /removing a table style/,
+        (b, m) => b.removeTableRecord('tableStyles', style(m, 'Standard').handle),
+        /Standard cannot be purged/,
       ],
       [update('GRID', () => ({ name: 'STANDARD' })), /another table style is named STANDARD/],
       [

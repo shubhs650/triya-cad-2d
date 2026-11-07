@@ -342,8 +342,8 @@ describe('MLEADERSTYLE objects', () => {
       };
     const cases: [(b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
       [
-        (b, m) => b.removeTableRecord('mleaderStyles', style(m, 'CALLOUT').handle),
-        /removing a multileader style/,
+        (b, m) => b.removeTableRecord('mleaderStyles', style(m, 'Standard').handle),
+        /Standard cannot be purged/,
       ],
       [update('CALLOUT', { name: 'standard' }), /another multileader style is named standard/],
       [update('CALLOUT', { name: 'A<B' }), /is not a valid multileader style name/],
