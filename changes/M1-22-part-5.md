@@ -1,0 +1,1 @@
+- M1-22 part 5 (#172): document tabs move by drag or Ctrl+Shift+Page Up/Down, and resting the mouse on a tab previews the drawing's Model and layouts as last drawn (render worker thumbnails); clicking one shows it.

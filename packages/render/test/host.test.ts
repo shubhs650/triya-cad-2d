@@ -13,6 +13,7 @@ import {
   RendererHost,
   documentTolerance,
   serveRenderer,
+  type BitmapFactory,
   type HostCanvas,
   type HostMessage,
   type RenderWorker,
@@ -23,7 +24,10 @@ import { change, drawing, drawingInit, entity, LAYER_RED, line, MODEL, surface }
 type Recorded = ReturnType<typeof surface>;
 
 /** A render worker running in-process: messages are cloned and delivered asynchronously. */
-function inProcessWorker(made: Recorded[]): RenderWorker & { terminated: boolean } {
+function inProcessWorker(
+  made: Recorded[],
+  createBitmap: BitmapFactory = fakeBitmap,
+): RenderWorker & { terminated: boolean } {
   const toWorker: ((e: { data: HostMessage }) => void)[] = [];
   const toHost: ((e: { data: WorkerMessage }) => void)[] = [];
   serveRenderer(
@@ -38,6 +42,7 @@ function inProcessWorker(made: Recorded[]): RenderWorker & { terminated: boolean
       surfaceOf: (canvas) => canvas as Recorded,
       createLayer: () => record(made, 'layer'),
       requestIdle: () => undefined,
+      createBitmap,
     },
   );
   const w = {
@@ -60,6 +65,14 @@ function inProcessWorker(made: Recorded[]): RenderWorker & { terminated: boolean
   return w;
 }
 
+/** createImageBitmap stand-in: a clonable record of what was copied, at what size. */
+const fakeBitmap = (source: CanvasImageSource, o: ImageBitmapOptions) =>
+  Promise.resolve({
+    source: (source as unknown as { name: string }).name,
+    width: o.resizeWidth,
+    height: o.resizeHeight,
+  } as unknown as ImageBitmap);
+
 function record(list: Recorded[], name: string): Recorded {
   const s = surface(name);
   list.push(s);
@@ -68,7 +81,8 @@ function record(list: Recorded[], name: string): Recorded {
 
 /** A canvas element stand-in. `transferable` gives it transferControlToOffscreen. */
 function canvas(visible: Recorded, transferable: boolean): HostCanvas {
-  const c: HostCanvas = {
+  const c: HostCanvas & { name: string } = {
+    name: 'element',
     width: 0,
     height: 0,
     getContext: () => visible.ctx,
@@ -93,6 +107,7 @@ function hosts(entities = [entity('20', line(0, 0, 10, 0))], patterns?: readonly
     mode: 'main',
     style: STYLE,
     createLayer: () => record(mainSurfaces, 'layer'),
+    createBitmap: fakeBitmap,
     ...(patterns && { patterns }),
   });
   const errors: Error[] = [];
@@ -171,6 +186,40 @@ describe('RendererHost', () => {
     expect(log(workerSurfaces).flat().length).toBeGreaterThan(20);
     expect(log(workerSurfaces)).toEqual(log(mainSurfaces));
     expect(workerSurfaces[0]!.canvas).toEqual({ width: 200, height: 100 });
+  });
+
+  it('copies the last frame as a thumbnail on the worker as on the main thread (M1-22)', async () => {
+    const { main, off } = hosts();
+    // Never sized: nothing to copy.
+    expect(await main.thumbnail({ width: 160, height: 120 })).toBeUndefined();
+    expect(await off.thumbnail({ width: 160, height: 120 })).toBeUndefined();
+    for (const h of [main, off]) {
+      h.resize(400, 150, 2);
+      h.setView({ center: { x: 5, y: 0 }, scale: 10 });
+      h.frame();
+    }
+    // An 800 × 300 canvas fits 160 × 120 at 160 × 60. The worker copies the canvas it was
+    // handed (the recorded 'visible' surface); the main thread copies the canvas element.
+    const size = { width: 160, height: 60 };
+    expect(await main.thumbnail({ width: 160, height: 120 })).toEqual({
+      source: 'element',
+      ...size,
+    });
+    expect(await off.thumbnail({ width: 160, height: 120 })).toEqual({
+      source: 'visible',
+      ...size,
+    });
+  });
+
+  it('reports a thumbnail the worker could not take to its caller', async () => {
+    const worker = inProcessWorker([], () => Promise.reject(new Error('no bitmap')));
+    const off = new RendererHost({
+      canvas: canvas(surface('visible'), true),
+      document: { init: drawingInit([]), block: MODEL },
+      createWorker: () => worker,
+    });
+    off.resize(10, 10, 1);
+    await expect(off.thumbnail({ width: 5, height: 5 })).rejects.toThrow(/no bitmap/);
   });
 
   it('hands user hatch patterns to the worker as to the main thread (M1-50)', async () => {

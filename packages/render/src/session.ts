@@ -26,6 +26,7 @@ import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
 import type { TextContext } from './text';
 import { textBounds } from './text-bounds';
+import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
 import type { RasterPixels, RenderStyle } from './types';
 
 /** What the render side needs to build its replica: the engine's init and the block shown. */
@@ -112,8 +113,10 @@ export class RenderSession {
   fontWarnings: readonly string[] = [];
   /** Decoded bitmaps by IMAGEDEF handle, as the app sends them (M1-19). */
   readonly #images = new Map<Handle, RasterPixels>();
+  readonly #surface: Surface;
 
   constructor(o: RenderSessionOptions) {
+    this.#surface = o.surface;
     const { init, block } = o.document;
     this.model = DocumentModel.create(init);
     const model = this.model;
@@ -160,6 +163,11 @@ export class RenderSession {
     this.fontWarnings = failed;
     this.renderer.setFonts(this.#text.fonts);
     this.index.reboundAnnotations();
+  }
+
+  /** The last frame drawn, fitted inside `max` (the document tab hover preview, M1-22). */
+  thumbnail(max: ThumbnailSize, createBitmap?: BitmapFactory): Promise<ImageBitmap | undefined> {
+    return thumbnailOf(this.#surface, max, createBitmap);
   }
 
   /**

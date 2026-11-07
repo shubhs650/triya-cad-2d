@@ -46,6 +46,29 @@ describe('DocumentStore', () => {
     expect(showing(s)).toBe('b');
   });
 
+  it('moves a dragged tab to its new place, keeping the tab that shows (M1-22 part 5)', () => {
+    const s = storeWith('a', 'b', 'c', 'd');
+    const [a, , c] = s.getSnapshot().docs;
+    s.move(a!.id, 2);
+    expect(names(s)).toEqual(['b', 'c', 'a', 'd']);
+    s.move(c!.id, 0);
+    expect(names(s)).toEqual(['c', 'b', 'a', 'd']);
+    expect(showing(s)).toBe('d');
+    // Past either end goes to that end; an unknown tab or no move changes nothing.
+    s.move(c!.id, 99);
+    expect(names(s)).toEqual(['b', 'a', 'd', 'c']);
+    s.move(c!.id, -5);
+    expect(names(s)).toEqual(['c', 'b', 'a', 'd']);
+    const before = s.getSnapshot();
+    s.move(c!.id, 0);
+    s.move(12345, 1);
+    expect(s.getSnapshot()).toBe(before);
+    // Closing after a move still shows the right neighbour in the new order.
+    s.activate(a!.id);
+    s.close(a!.id);
+    expect(showing(s)).toBe('d');
+  });
+
   it('reports a failed open and clears it on the next open', () => {
     const s = new DocumentStore();
     s.startOpening('x.dwg');
