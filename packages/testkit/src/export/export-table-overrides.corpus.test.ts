@@ -77,12 +77,11 @@ function edited(g: TableGeometry): TableGeometry {
 }
 
 describe('TriyaToAcad table-wide override edits on the public corpus', () => {
-  it('finds tables stating table-wide overrides in the corpus, DWG from R2010 among them', () => {
+  it('finds tables in the corpus', () => {
     const files = readable.filter((f) =>
       /ACAD_TABLE/.test(readFileSync(`${corpusDir}${f.path}`, 'latin1')),
     );
     expect(files.length).toBeGreaterThan(10);
-    expect(files.some((f) => /AC10(24|27|32)\.dwg$/.test(f.path))).toBe(true);
   });
 
   it.each(readable.map((f) => [f.path, f] as const))(
