@@ -87,8 +87,10 @@ export function madeUpOrderProblems(
     const now = model.blockEntities(block).map((id) => model.entity(id)!.handle);
     const survivors = now.filter((h) => oldSet.has(h));
     const lastOld = now.findIndex((h) => h === old.at(-1));
-    const firstOther = now.findIndex((h) => !oldSet.has(h));
-    if (!same(survivors, old) || (firstOther >= 0 && firstOther < lastOld))
+    // An entity new to the block is written without a handle too, so it must follow them.
+    const had = new Set(baseOrder.get(block));
+    const firstNew = now.findIndex((h) => !had.has(h));
+    if (!same(survivors, old) || (firstNew >= 0 && firstNew < lastOld))
       out.push(`entity order in block ${block} changes, and ${why}`);
   }
   return out;
