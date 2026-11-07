@@ -398,6 +398,7 @@ export function triyaToAcad(
     allocate: () => next++,
     created,
     version: docHeader?.version,
+    format,
     plotStyles,
   } satisfies Resolver;
   // Records first: entities and the header may name one the same save adds, a linetype's text

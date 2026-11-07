@@ -5,13 +5,11 @@
 // back as edited and nothing else in the drawing changes.
 //
 // A new cell takes the format of the cell it is inserted next to, as AutoCAD formats an inserted
-// row or column like its neighbour. A DWG from R2010 states formats in cell styles, which are not
-// written yet: there a new row or column takes its neighbour's cell style, and a new cell maps
-// with what its row gives it, which in the corpus tables is the table-wide override of its row
-// type (rows by place: title, header, then data, as every corpus table has them).
+// row or column like its neighbour. A DWG from R2010 states formats in cell styles: there a new
+// row or column takes its neighbour's cell style, and what the new cell's format adds to that is
+// written into the cell's own cell style (M1-75 part 36).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ACadVersion } from '@node-projects/acad-ts';
 import {
   ChangeSetBuilder,
   DocumentModel,
@@ -50,16 +48,10 @@ function newCell(like: TableCell, text: string, format: TableCellFormat | undefi
   };
 }
 
-/** The table-wide override of row `i`'s type, by place: what a DWG from R2010 gives a new cell. */
-const rowTypeFormat = (g: TableGeometry, i: number): TableCellFormat | undefined =>
-  i === 0 ? g.overrides?.title : i === 1 ? g.overrides?.header : g.overrides?.data;
-
 /** A row inserted below the last one, its cells like the last row's. */
-function rowBelow(g: TableGeometry, dwgFrom2010: boolean): TableGeometry {
+function rowBelow(g: TableGeometry): TableGeometry {
   const last = g.cells.length - 1;
-  const row = g.cells[last]!.map((c, j) =>
-    newCell(c, `R+${j}`, dwgFrom2010 ? rowTypeFormat(g, last + 1) : c.format),
-  );
+  const row = g.cells[last]!.map((c, j) => newCell(c, `R+${j}`, c.format));
   return {
     ...g,
     rowHeights: [...g.rowHeights, g.rowHeights[last]!],
@@ -69,7 +61,7 @@ function rowBelow(g: TableGeometry, dwgFrom2010: boolean): TableGeometry {
 }
 
 /** A column inserted right of the first one; a merge it falls inside widens over it. */
-function columnRight(g: TableGeometry, dwgFrom2010: boolean): TableGeometry {
+function columnRight(g: TableGeometry): TableGeometry {
   const covered = new Set<number>();
   const cells = g.cells.map((row) => [...row]);
   for (const [i, row] of g.cells.entries()) {
@@ -83,11 +75,7 @@ function columnRight(g: TableGeometry, dwgFrom2010: boolean): TableGeometry {
     ...g,
     columnWidths: [g.columnWidths[0]!, g.columnWidths[0]!, ...g.columnWidths.slice(1)],
     cells: cells.map((row, i) => {
-      const fresh = newCell(
-        { ...row[0]!, type: 'text' },
-        i === 0 ? '' : `C+${i}`,
-        dwgFrom2010 ? rowTypeFormat(g, i) : row[0]!.format,
-      );
+      const fresh = newCell({ ...row[0]!, type: 'text' }, i === 0 ? '' : `C+${i}`, row[0]!.format);
       const cell = covered.has(i) ? { ...fresh, text: '', merged: true } : fresh;
       return [row[0]!, cell, ...row.slice(1)];
     }),
@@ -147,13 +135,10 @@ describe('TriyaToAcad table rows and columns on the public corpus', () => {
           (e): e is Table => e.geom.kind === 'ACAD_TABLE',
         );
         if (tables.length === 0) return;
-        const version = original.header?.version ?? ACadVersion.AC1032;
-        const dwgFrom2010 = options.format === 'dwg' && version >= ACadVersion.AC1024;
-
         const b = new ChangeSetBuilder(model);
         for (const t of tables) {
           b.updateEntity(t.id, {
-            geom: rowDeleted(columnRight(rowBelow(t.geom, dwgFrom2010), dwgFrom2010)),
+            geom: rowDeleted(columnRight(rowBelow(t.geom))),
           });
         }
         model.apply(b.build());

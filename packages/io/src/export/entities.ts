@@ -88,6 +88,7 @@ import {
   TableCellContentType,
   TableCellStateFlags,
   TableEntity,
+  TableEntityCell,
   TableStyle,
   TextColumnData,
   TextEntity,
@@ -156,17 +157,22 @@ import type {
 } from '@triya/engine';
 import type { CadFormat } from '../read';
 import type { PassthroughStore } from './passthrough';
+import { tableCellFormat, tableMargins } from '../map/entities';
 import {
+  cellStyleProblems,
+  dwgFrom2010,
   formatFileProblems,
   formatValueProblems,
   mergeProblems,
   mergesChange,
   writeCellFormat,
+  writeCellStyleFormat,
   writeMerges,
 } from './table-cells';
 import { buildGrid, newTableProblems, writeTableOverrides } from './table-new';
 import {
   alignedBefore,
+  cellStylesAt,
   formatsBefore,
   originProblems,
   regrid,
@@ -227,6 +233,8 @@ export interface Resolver {
   readonly created: ReadonlyMap<Handle, CadObject>;
   /** The version the drawing is saved in (its own). */
   readonly version?: ACadVersion | undefined;
+  /** The format the drawing is saved to, when the save says. */
+  readonly format?: CadFormat | undefined;
   /**
    * What an entity may name as its plot style: why none (a colour-dependent drawing, or one before
    * R2000), or the ACAD_PLOTSTYLENAME entries and default.
@@ -2087,7 +2095,9 @@ const tableWriter: Writer<TableGeometry> = {
       }
       if (!b || b.rotation !== a.rotation) cell.rotation = a.rotation;
       const format = formats ? formats[i]![j] : b?.format;
-      if (!same(format, a.format)) writeCellFormat(r, cell, format, a.format);
+      if (same(format, a.format)) continue;
+      if (dwgFrom2010(r.format, r.version)) writeCellStyleFormat(r, cell, format, a.format);
+      else writeCellFormat(r, cell, format, a.format);
     }
     if (!was || grid || mergesChange(was, g)) writeMerges(t, was, g);
     if (!before && g.overrides) writeTableOverrides(r, t, g.overrides);
@@ -2135,18 +2145,30 @@ export function tableCellProblems(
     if (originProblems(before, after).length > 0) return out;
     out.push(...regridProblems(acad, after));
   } else if (!gridOf(after, acad.rows.length, acad.columns.length)) return out;
-  const dwgFrom2010 = format === 'dwg' && version !== undefined && version >= ACadVersion.AC1024;
+  const styles = dwgFrom2010(format, version);
   const was = alignedBefore(before, after);
   // A cell a row or column insert makes is checked against what it maps as where it sits.
   const formats = grid ? formatsBefore(acad, before, after) : undefined;
+  const at2010 = styles ? cellStylesAt(acad, after) : undefined;
+  const margins = styles ? tableMargins(acad.cellStyleOverride) : {};
   for (const [i, j, b, a] of cells(was, after)) {
     const at = `cell (${i}, ${j})`;
     const formatWas = formats ? formats[i]![j] : b?.format;
     out.push(
-      ...formatFileProblems(formatWas, a.format, version, format, dwgFrom2010).map(
-        (p) => `${at}: ${p}`,
-      ),
+      ...formatFileProblems(formatWas, a.format, version, format, styles).map((p) => `${at}: ${p}`),
     );
+    if (at2010 && !same(formatWas, a.format)) {
+      // What the cell's row and column give it, which it keeps unless it overrides them.
+      const inherited = tableCellFormat(
+        acad.cellStyleOverride,
+        at2010.columns[j],
+        at2010.rows[i],
+        new TableEntityCell(),
+      );
+      out.push(
+        ...cellStyleProblems(inherited, margins, formatWas, a.format).map((p) => `${at}: ${p}`),
+      );
+    }
     if (!b) continue;
     const cell = acad.rows[after.rowOrigins?.[i] ?? i]?.cells[after.columnOrigins?.[j] ?? j];
     if (!cell) continue;
@@ -2163,7 +2185,7 @@ export function tableCellProblems(
         out.push(`${at}: a block with attribute values`);
       }
     }
-    if (b.rotation !== a.rotation && dwgFrom2010) {
+    if (b.rotation !== a.rotation && styles) {
       out.push(`${at}: a cell rotation in a DWG from R2010, which keeps it in the content format`);
     }
   }
