@@ -165,6 +165,14 @@ import {
   writeMerges,
 } from './table-cells';
 import { buildGrid, newTableProblems, writeTableOverrides } from './table-new';
+import {
+  alignedBefore,
+  formatsBefore,
+  originProblems,
+  regrid,
+  regridded,
+  regridProblems,
+} from './table-grid';
 import { writeXdata, xdataProblems } from './xdata';
 
 const TWO_PI = 2 * Math.PI;
@@ -1960,14 +1968,6 @@ const viewportWriter: Writer<ViewportGeometry> = {
 
 // ── ACAD_TABLE ─────────────────────────────────────────────────────────────────────────────
 
-/** The cells of `before` and `after` side by side, with their row and column. */
-function* cellPairs(
-  before: TableGeometry,
-  after: TableGeometry,
-): Generator<[number, number, TableCell, TableCell]> {
-  for (const [i, j, b, a] of cells(before, after)) if (b) yield [i, j, b, a];
-}
-
 /** Every cell of `after` with its row, column and the cell it was in `before`, if any. */
 function* cells(
   before: TableGeometry | undefined,
@@ -1992,8 +1992,9 @@ const gridOf = (g: TableGeometry, rows: number, columns: number): boolean =>
  * from the new content is the table engine's (M4-05), as a dimension's block is the dimension
  * engine's. Merges and cell formats are written by table-cells.ts (M1-75 part 26). A new table
  * (TABLE, COPY; part 32) comes with the `*T` block the same save adds for it, and is built by
- * table-new.ts with its table-wide overrides. Rows and columns added to or removed from a table
- * and an edited table's table-wide overrides are refused for now.
+ * table-new.ts with its table-wide overrides. Rows and columns inserted or deleted (part 34) are
+ * moved into place by table-grid.ts, from where the table says each came from. An edited table's
+ * table-wide overrides are refused for now.
  */
 const tableWriter: Writer<TableGeometry> = {
   create: () => new TableEntity(),
@@ -2011,11 +2012,11 @@ const tableWriter: Writer<TableGeometry> = {
     if (g.direction.x === 0 && g.direction.y === 0) out.push('no horizontal direction');
     if (!before) out.push(...newTableProblems(r, g));
     else if (!same(before.overrides, g.overrides)) out.push('table overrides change');
-    if (before && !gridOf(g, before.rowHeights.length, before.columnWidths.length)) {
-      out.push('rows or columns added or removed');
-      return out;
+    if (before) {
+      const origins = originProblems(before, g);
+      if (origins.length > 0) return [...out, ...origins];
     }
-    if (!before) {
+    if (!before || regridded(g)) {
       const rows = g.rowHeights.length;
       const columns = g.columnWidths.length;
       if (rows === 0 || columns === 0) {
@@ -2029,8 +2030,10 @@ const tableWriter: Writer<TableGeometry> = {
     }
     if (g.rowHeights.some((h) => !(h > 0))) out.push('a row height of 0 or less');
     if (g.columnWidths.some((w) => !(w > 0))) out.push('a column width of 0 or less');
-    if (!before || mergesChange(before, g)) out.push(...mergeProblems(g));
-    for (const [i, j, b, a] of cells(before, g)) {
+    // Each cell against the cell it was, wherever its row and column were.
+    const was = before && alignedBefore(before, g);
+    if (!was || mergesChange(was, g)) out.push(...mergeProblems(g));
+    for (const [i, j, b, a] of cells(was, g)) {
       const at = `cell (${i}, ${j})`;
       out.push(...formatValueProblems(r, a, b).map((p) => `${at}: ${p}`));
       if (b && a.type !== b.type) {
@@ -2051,7 +2054,13 @@ const tableWriter: Writer<TableGeometry> = {
   },
   write(r, e, before, g) {
     const t = e as TableEntity;
-    const d = differ(before, g);
+    // Rows and columns inserted or deleted (table-grid.ts): every row, column and cell moves to
+    // its new place first, and is then written against what it was.
+    const grid = before !== undefined && regridded(g);
+    const formats = grid ? formatsBefore(t, before, g) : undefined;
+    if (grid) regrid(t, g);
+    const was = before && alignedBefore(before, g);
+    const d = differ(was, g);
     const pl = plane(g.normal);
     if (d('style')) t.style = resolve(r, g.style!, TableStyle)!;
     if (!before) buildGrid(t, g);
@@ -2065,7 +2074,7 @@ const tableWriter: Writer<TableGeometry> = {
     if (d('columnWidths')) g.columnWidths.forEach((w, j) => (t.columns[j]!.width = w));
     if (d('normal')) t.normal = xyz(g.normal);
     // Cells by their own before, not `differ`'s: a plane change must not rewrite every value.
-    for (const [i, j, b, a] of cells(before, g)) {
+    for (const [i, j, b, a] of cells(was, g)) {
       const cell = t.rows[i]!.cells[j]!;
       // A new cell nothing was typed into holds no value, as AutoCAD leaves one.
       if (a.type === 'text' && (b ? b.text !== a.text : a.text !== '')) {
@@ -2079,9 +2088,10 @@ const tableWriter: Writer<TableGeometry> = {
         }
       }
       if (!b || b.rotation !== a.rotation) cell.rotation = a.rotation;
-      if (!same(b?.format, a.format)) writeCellFormat(r, cell, b?.format, a.format);
+      const format = formats ? formats[i]![j] : b?.format;
+      if (!same(format, a.format)) writeCellFormat(r, cell, format, a.format);
     }
-    if (!before || mergesChange(before, g)) writeMerges(t, before, g);
+    if (!was || grid || mergesChange(was, g)) writeMerges(t, was, g);
     if (!before && g.overrides) writeTableOverrides(r, t, g.overrides);
   },
 };
@@ -2122,17 +2132,26 @@ export function tableCellProblems(
   format: CadFormat | undefined,
 ): string[] {
   const out: string[] = [];
-  if (!gridOf(after, acad.rows.length, acad.columns.length)) return out;
+  const grid = regridded(after);
+  if (grid) {
+    if (originProblems(before, after).length > 0) return out;
+    out.push(...regridProblems(acad, after));
+  } else if (!gridOf(after, acad.rows.length, acad.columns.length)) return out;
   const dwgFrom2010 = format === 'dwg' && version !== undefined && version >= ACadVersion.AC1024;
-  for (const [i, j, b, a] of cellPairs(before, after)) {
+  const was = alignedBefore(before, after);
+  // A cell a row or column insert makes is checked against what it maps as where it sits.
+  const formats = grid ? formatsBefore(acad, before, after) : undefined;
+  for (const [i, j, b, a] of cells(was, after)) {
     const at = `cell (${i}, ${j})`;
-    const cell = acad.rows[i]?.cells[j];
-    if (!cell) continue;
+    const formatWas = formats ? formats[i]![j] : b?.format;
     out.push(
-      ...formatFileProblems(b.format, a.format, version, format, dwgFrom2010).map(
+      ...formatFileProblems(formatWas, a.format, version, format, dwgFrom2010).map(
         (p) => `${at}: ${p}`,
       ),
     );
+    if (!b) continue;
+    const cell = acad.rows[after.rowOrigins?.[i] ?? i]?.cells[after.columnOrigins?.[j] ?? j];
+    if (!cell) continue;
     if (b.text !== a.text || b.block !== a.block) {
       const k = cell.contents[0];
       if (cell.contents.length > 1) out.push(`${at} holds more than one content`);

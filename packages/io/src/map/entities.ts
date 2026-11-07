@@ -762,18 +762,35 @@ function cellFormat(
   j: number,
   c: TableEntityCell,
 ): TableCellFormat | undefined {
+  return tableCellFormat(
+    t.cellStyleOverride,
+    t.columns[j]?.cellStyleOverride,
+    t.rows[i]?.cellStyleOverride,
+    c,
+  );
+}
+
+/**
+ * `cellFormat` from the cell styles of the table, the cell's column and its row: what a cell
+ * maps as once it sits in that row and column (the save checks a cell a row or column insert
+ * makes against it, M1-75 part 34).
+ */
+export function tableCellFormat(
+  tableStyle: CellStyle,
+  column: CellStyle | undefined,
+  row: CellStyle | undefined,
+  c: TableEntityCell,
+): TableCellFormat | undefined {
   const d: FormatDraft = { borders: {}, margins: {} };
   applyCellFlags(d, c.overrideFlags, c.styleOverride);
-  const column = t.columns[j]?.cellStyleOverride;
   if (column) applyCellStyle(d, column);
-  const row = t.rows[i]?.cellStyleOverride;
   if (row) applyCellStyle(d, row);
   applyCellStyle(d, c.styleOverride);
   const k = c.content?.format;
   if (k?.hasData) applyContentFormat(d, k.propertyOverrideFlags, k);
 
   const table: FormatDraft = { borders: {}, margins: {} };
-  applyCellStyle(table, t.cellStyleOverride);
+  applyCellStyle(table, tableStyle);
   for (const side of ['left', 'top', 'right', 'bottom'] as const)
     if (d.margins[side] !== undefined && d.margins[side] === table.margins[side])
       delete d.margins[side];
