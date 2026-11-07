@@ -2,8 +2,9 @@
 // ACAD_TABLE in the drawing, and what the TABLE command adds to a drawing with a table style and
 // no table, each on an anonymous `*T` block of its own that the same save adds. The new tables
 // map back as they were saved and nothing else in the drawing changes. A DWG from R2010 states
-// cell formats, rotations and table-wide overrides in cell styles, which are not written yet:
-// a copy carrying them is refused, and the copy without them saves. A file before R14 holds no
+// rotations and table-wide overrides in cell styles, which are not written yet: a copy carrying
+// them is refused, and the copy without them saves; its cell formats go into the new cells' own
+// cell styles (M1-75 part 36). A file before R14 holds no
 // tables and refuses one.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -58,20 +59,14 @@ const typed = (style: Handle, block: Handle): TableGeometry => ({
   ],
 });
 
-/** `g` without what a DWG from R2010 states in cell styles: cell formats, rotations, overrides. */
+/** `g` without what a DWG from R2010 states in cell styles unwritten: rotations, overrides. */
 function plain(g: TableGeometry): TableGeometry {
   const { overrides: _o, ...rest } = g;
-  return {
-    ...rest,
-    cells: g.cells.map((row) =>
-      row.map(({ format: _f, ...c }) => ({ ...c, rotation: 0 }) as TableCell),
-    ),
-  };
+  return { ...rest, cells: g.cells.map((row) => row.map((c) => ({ ...c, rotation: 0 }))) };
 }
 
 const stated = (g: TableGeometry): boolean =>
-  g.overrides !== undefined ||
-  g.cells.some((row) => row.some((c) => c.format !== undefined || c.rotation !== 0));
+  g.overrides !== undefined || g.cells.some((row) => row.some((c) => c.rotation !== 0));
 
 describe('TriyaToAcad new tables on the public corpus', () => {
   it('finds files to copy tables in and files to add one to', () => {

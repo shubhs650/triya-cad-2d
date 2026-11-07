@@ -279,7 +279,7 @@ describe('ACAD_TABLE rows and columns', () => {
     expect(problems.join('\n')).toMatch(/holds a field or formula/);
   });
 
-  it('refuses a new cell in an R2018 DWG whose format is not the one its row gives it', () => {
+  it('saves a new cell with a format of its own to an R2018 DWG, in its cell style', () => {
     const bytes = drawing(ACadVersion.AC1032, 'dwg');
     const model = open(bytes);
     const g = rowInserted(table(model).geom, model);
@@ -290,10 +290,19 @@ describe('ACAD_TABLE rows and columns', () => {
         [{ ...g.cells[3]![0]!, format: { alignment: 5 } }, g.cells[3]![1]!],
       ],
     });
+    expect(mapped(save(bytes, model, 'dwg'))).toEqual(stated(table(model).geom));
+  });
+
+  it('refuses taking off a new R2018 DWG cell what the row it copies states', () => {
+    const bytes = drawing(ACadVersion.AC1032, 'dwg', { cellStyles: true });
+    const model = open(bytes);
+    const g = rowInserted(table(model).geom, model);
+    const { format: _f, ...plain } = g.cells[3]![0]!;
+    edit(model, { ...g, cells: [...g.cells.slice(0, 3), [plain, g.cells[3]![1]!]] });
     const problems = refusal(() =>
       exportDocument(readCadDocument(bytes), model, { format: 'dwg' }),
     );
-    expect(problems.join('\n')).toMatch(/cell \(3, 0\): a cell format in a DWG from R2010/);
+    expect(problems.join('\n')).toMatch(/cell \(3, 0\): alignment is its row's or column's/);
   });
 });
 

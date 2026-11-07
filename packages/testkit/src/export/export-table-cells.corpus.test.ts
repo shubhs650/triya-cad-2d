@@ -3,8 +3,9 @@
 // first merge is unmerged, the last two plain cells of the last row are merged, one plain cell
 // gets another alignment, a red content colour and a 0.50 mm top edge, and the first other cell
 // with a format loses it. The edits map back and nothing else in the drawing changes. A DWG from
-// R2010 states cell formats in cell styles, which are not written yet: it takes the merges and
-// refuses the formats.
+// R2010 states cell formats in cell styles (M1-75 part 36), where a cell cannot take off what
+// its row states: there the cell losing its format keeps what its row gives it, which in the
+// corpus tables is the table-wide override of its row type (rows by place: title, header, data).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ACadVersion } from '@node-projects/acad-ts';
@@ -13,6 +14,7 @@ import {
   DocumentModel,
   type Entity,
   type TableCell,
+  type TableCellFormat,
   type TableGeometry,
 } from '@triya/engine';
 import { documentInit, exportDocument, readCadDocument, type CadFormat } from '@triya/io';
@@ -74,8 +76,15 @@ function merged(g: TableGeometry): TableGeometry {
   return out;
 }
 
-/** One plain cell's format changed, and the first other cell with a format left without. */
-function formatted(g: TableGeometry): TableGeometry {
+/** The table-wide override of row `i`'s type, by place: what a DWG from R2010 row gives a cell. */
+const rowTypeFormat = (g: TableGeometry, i: number): TableCellFormat | undefined =>
+  i === 0 ? g.overrides?.title : i === 1 ? g.overrides?.header : g.overrides?.data;
+
+/**
+ * One plain cell's format changed, and the first other cell with a format left without, or with
+ * only what its row gives it (`dwgFrom2010`).
+ */
+function formatted(g: TableGeometry, dwgFrom2010: boolean): TableGeometry {
   const all = g.cells.flatMap((row, i) => row.map((c, j) => ({ c, i, j })));
   const target = all.find(({ c }) => plain(c));
   const cleared = all.find(({ c }) => c.format !== undefined && c !== target?.c);
@@ -93,7 +102,8 @@ function formatted(g: TableGeometry): TableGeometry {
     }
     if (cleared && i === cleared.i && j === cleared.j) {
       const { format: _format, ...rest } = c;
-      return rest;
+      const kept = dwgFrom2010 ? rowTypeFormat(g, i) : undefined;
+      return kept ? { ...rest, format: kept } : rest;
     }
     return;
   });
@@ -126,20 +136,9 @@ describe('TriyaToAcad table cell edits on the public corpus', () => {
         const version = original.header?.version ?? ACadVersion.AC1032;
         const dwgFrom2010 = options.format === 'dwg' && version >= ACadVersion.AC1024;
 
-        if (dwgFrom2010) {
-          const refused = DocumentModel.create(documentInit(readCadDocument(bytes)));
-          const b = new ChangeSetBuilder(refused);
-          for (const t of tables) b.updateEntity(t.id, { geom: formatted(t.geom) });
-          refused.apply(b.build());
-          expect(() => exportDocument(readCadDocument(bytes), refused, options)).toThrow(
-            /a cell format in a DWG from R2010/,
-          );
-        }
-
         const b = new ChangeSetBuilder(model);
         for (const t of tables) {
-          const g = merged(t.geom);
-          b.updateEntity(t.id, { geom: dwgFrom2010 ? g : formatted(g) });
+          b.updateEntity(t.id, { geom: formatted(merged(t.geom), dwgFrom2010) });
         }
         model.apply(b.build());
         const reopened = readCadDocument(exportDocument(readCadDocument(bytes), model, options));

@@ -10,8 +10,8 @@
 // A new row or column takes the cell style of the one it follows (the one after it when it comes
 // first): AutoCAD's help says an inserted row or column takes the formatting of the row or column
 // it is inserted next to, without saying which side, and a row inserted below is the common
-// case. Its new cells override nothing of their own, so in a DWG from R2010, whose cell styles
-// have no writer yet, a new cell's format must be the one its row and column give it.
+// case. Its new cells override nothing of their own; in a DWG from R2010 a new cell's format is
+// then written into its cell style like an edited cell's (table-cells.ts, part 36).
 
 import {
   CellStyle,
@@ -139,6 +139,20 @@ function stylesAt<T extends { cellStyleOverride: CellStyle }>(
 }
 
 /**
+ * The cell styles each row and each column of `g` sits on once saved (`acad` is the table as
+ * read): its own, or for a new one the one it copies.
+ */
+export function cellStylesAt(
+  acad: TableEntity,
+  g: TableGeometry,
+): { rows: (CellStyle | undefined)[]; columns: (CellStyle | undefined)[] } {
+  return {
+    rows: stylesAt(acad.rows, rowOrigins(g)),
+    columns: stylesAt(acad.columns, columnOrigins(g)),
+  };
+}
+
+/**
  * What a cell of `g` was before, for the cell's format: its own when it was there, otherwise
  * what a new cell in its row and column maps as (`acad` is the table as read). The cells of `g`
  * are its row by column grid.
@@ -149,8 +163,7 @@ export function formatsBefore(
   g: TableGeometry,
 ): (TableCellFormat | undefined)[][] {
   const was = alignedBefore(before, g);
-  const rows = stylesAt(acad.rows, rowOrigins(g));
-  const columns = stylesAt(acad.columns, columnOrigins(g));
+  const { rows, columns } = cellStylesAt(acad, g);
   return g.cells.map((row, i) =>
     row.map((c, j) => {
       const b = was.cells[i]?.[j];

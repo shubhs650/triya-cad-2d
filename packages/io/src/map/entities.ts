@@ -810,6 +810,16 @@ export function tableCellFormat(
   return Object.keys(format).length > 0 ? format : undefined;
 }
 
+/**
+ * The margins a DWG R2010+ table's own cell style states: a cell's margin equal to one of them
+ * maps as no override (`tableCellFormat`), so the save cannot state such a margin per cell.
+ */
+export function tableMargins(tableStyle: CellStyle): NonNullable<TableCellFormat['margins']> {
+  const d: FormatDraft = { borders: {}, margins: {} };
+  applyCellStyle(d, tableStyle);
+  return d.margins;
+}
+
 /** The row format properties, in the order they are listed in `TableRowFormat`. */
 function rowFormat(d: FormatDraft): TableRowFormat | undefined {
   const f: Mutable<TableRowFormat> = {};

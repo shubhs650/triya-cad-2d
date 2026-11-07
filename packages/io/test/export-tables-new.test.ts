@@ -2,7 +2,7 @@
 // with an anonymous `*T` block of its own that the same save adds. Every format a table can be
 // saved to takes the grid, cell text and blocks, merges and cell rotation; DXF and DWG before
 // R2010 also take cell formats (the cell override flag word) and the table-wide overrides (DXF 93
-// and the values after it). The drawing is authored in memory with acad-ts and saved once
+// and the values after it); a DWG from R2010 takes cell formats in each cell's cell style (part 36). The drawing is authored in memory with acad-ts and saved once
 // (table-drawing.ts); the corpus-wide copies are in export-tables-new.corpus.test.ts in testkit.
 import type { TableEntity } from '@node-projects/acad-ts';
 import {
@@ -58,7 +58,7 @@ const text = (t: string, more: Partial<TableCell> = {}): TableCell => ({
 /**
  * A 3 × 3 table as the TABLE command leaves it after typing: a title merged over the three
  * columns, a header row and a data row with block MARK in its last cell. `formats` adds cell
- * formats, a rotation and table-wide overrides, which a DWG from R2010 does not take yet.
+ * formats, a rotation and table-wide overrides; a DWG from R2010 does not take the last two yet.
  */
 function newTable(model: DocumentModel, block: string, formats: boolean): TableGeometry {
   const standard = textStyleNamed(model, 'STANDARD');
@@ -162,7 +162,7 @@ const SAVES: [string, ACadVersion, CadFormat][] = [
   ['R2000 DWG', ACadVersion.AC1015, 'dwg'],
 ];
 
-/** A DWG from R2010 keeps cell formats, rotations and overrides in cell styles (not written yet). */
+/** A DWG from R2010 keeps cell rotations and table-wide overrides in cell styles (not written yet). */
 const dwgFrom2010 = (version: ACadVersion, format: CadFormat) =>
   format === 'dwg' && version >= ACadVersion.AC1024;
 
@@ -316,12 +316,22 @@ describe('new ACAD_TABLE', () => {
     expect(problems.join('; ')).toMatch(message);
   });
 
-  it('refuses cell formats, rotations and overrides in a new table in an R2018 DWG', () => {
+  it("saves the cell formats of a new table to an R2018 DWG in its cells' cell styles", () => {
+    const bytes = drawing(ACadVersion.AC1032, 'dwg');
+    const model = open(bytes);
+    const t = addTable(model, (block) => {
+      const { overrides: _o, ...g } = newTable(model, block, true);
+      return { ...g, cells: g.cells.map((r) => r.map((c) => ({ ...c, rotation: 0 }))) };
+    });
+    expect(savedTable(bytes, model, 'dwg', t.handle)).toEqual(t.geom);
+  });
+
+  it('refuses rotations and overrides in a new table in an R2018 DWG', () => {
     const bytes = drawing(ACadVersion.AC1032, 'dwg');
     const model = open(bytes);
     addTable(model, (block) => newTable(model, block, true));
     const problems = refusal(() => save(bytes, model, 'dwg')).join('; ');
-    expect(problems).toMatch(/cell \(2, 1\): a cell format in a DWG from R2010/);
+    expect(problems).not.toMatch(/cell format/);
     expect(problems).toMatch(/cell \(2, 0\): a cell rotation in a DWG from R2010/);
     expect(problems).toMatch(/table overrides in a DWG from R2010, which states them in cell/);
   });
