@@ -8,13 +8,19 @@
 //   it was made from (DXF 97 count and 330 handles), and each object lists the hatch in its
 //   reactors, as every associative hatch of the corpus shows. HATCH with "Pick points" (and
 //   BOUNDARY) makes the boundary first, so a new hatch may name objects the same save adds.
-// Other reactor changes (groups, associative dimensions, viewport clips, ...) are still refused:
-// their other end is not written yet.
+// - a non-rectangular VIEWPORT and the entity that clips it (M1-75 part 18): the viewport names
+//   it (DXF 340, DWG hard pointer) and sets "non-rectangular clipping" (DXF 90 bit 65536), and
+//   the entity lists the viewport in its reactors, as every clipped viewport of the corpus
+//   shows. VPCLIP Polygonal and MVIEW Polygonal draw the polygon first, so a viewport may be
+//   clipped by an entity the same save adds.
+// Other reactor changes (groups, associative dimensions, ...) are still refused: their other
+// end is not written yet.
 
 import type {
   DocumentInit,
   DocumentModel,
   Entity,
+  EntityGeometry,
   EntityInit,
   Handle,
   HatchLoop,
@@ -50,6 +56,37 @@ const TEXT_BOX = 8;
 const annotationOf = (e: Entity | EntityInit): Handle | undefined =>
   e.geom.kind === 'LEADER' ? e.geom.annotation : undefined;
 
+/** DXF 90 bit 65536: the viewport is clipped by its 340 entity (DXF reference, VIEWPORT). */
+const NON_RECTANGULAR = 0x10000;
+
+/**
+ * What VPCLIP and MVIEW Object take as a clipping boundary: "closed polylines, circles,
+ * ellipses, closed splines, and regions" (AutoCAD 2024 VPCLIP).
+ */
+const CLIP_TYPES = new Set(['LWPOLYLINE', 'POLYLINE', 'CIRCLE', 'ELLIPSE', 'SPLINE', 'REGION']);
+
+const clipOf = (e: Entity | EntityInit | undefined): Handle | undefined =>
+  e?.geom.kind === 'VIEWPORT' ? e.geom.clipBoundary : undefined;
+
+/** Whether a clip boundary of an accepted type is closed (open curves cannot clip). */
+function closed(g: EntityGeometry): boolean {
+  switch (g.kind) {
+    case 'LWPOLYLINE':
+      return g.closed;
+    case 'POLYLINE':
+      return g.closed && !g.is3d;
+    case 'SPLINE':
+      return g.closed || g.periodic;
+    case 'ELLIPSE': {
+      // A full ellipse runs a whole turn of its parameter; acad-ts writes 0 to 2π.
+      const sweep = g.endParam - g.startParam;
+      return Math.abs(Math.abs(sweep) - 2 * Math.PI) <= 1e-9 || sweep === 0;
+    }
+    default:
+      return true;
+  }
+}
+
 const loopsOf = (e: Entity | EntityInit | undefined): readonly HatchLoop[] =>
   e?.geom.kind === 'HATCH' ? e.geom.loops : [];
 
@@ -60,10 +97,22 @@ const sourcesOf = (e: Entity | EntityInit | undefined): Handle[] =>
 /** Whether `owner`, listed in an entity's reactors, names entity `handle` back. */
 function linked(owner: Entity | undefined, handle: Handle): boolean {
   if (!owner) return false;
-  return annotationOf(owner) === handle || sourcesOf(owner).includes(handle);
+  return (
+    annotationOf(owner) === handle || sourcesOf(owner).includes(handle) || clipOf(owner) === handle
+  );
 }
 
-/** Why the model's entity reactors, leader annotations and hatch boundaries cannot be written. */
+/** The entity kinds that list themselves in another's reactors, and what they call the link. */
+const LINKS: Record<string, string> = {
+  LEADER: 'leader still annotates it',
+  HATCH: 'hatch still names it',
+  VIEWPORT: 'viewport is still clipped by it',
+};
+
+/**
+ * Why the model's entity reactors, leader annotations, hatch boundaries and viewport clips
+ * cannot be written.
+ */
 export function reactorProblems(base: DocumentInit, model: DocumentModel): string[] {
   const out: string[] = [];
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
@@ -75,22 +124,80 @@ export function reactorProblems(base: DocumentInit, model: DocumentModel): strin
     if (!same(before, after)) {
       for (const h of after.filter((x) => !before.includes(x))) {
         if (!linked(model.entityByHandle(h), m.handle)) {
-          out.push(`${what}: reactor ${h} is not a leader it annotates or a hatch it bounds`);
+          out.push(
+            `${what}: reactor ${h} is not a leader it annotates, a hatch it bounds or a viewport it clips`,
+          );
         }
       }
       for (const h of before.filter((x) => !after.includes(x))) {
         const was = baseByHandle.get(h);
         const now = model.entityByHandle(h);
-        if (!was || (was.geom.kind !== 'LEADER' && was.geom.kind !== 'HATCH')) {
-          out.push(`${what}: reactor ${h} goes, which is not a leader's or a hatch's`);
+        if (!was || !(was.geom.kind in LINKS)) {
+          out.push(
+            `${what}: reactor ${h} goes, which is not a leader's, a hatch's or a viewport's`,
+          );
         } else if (linked(now, m.handle)) {
-          const kind = was.geom.kind === 'LEADER' ? 'leader still annotates' : 'hatch still names';
-          out.push(`${what}: reactor ${h} goes, but that ${kind} it`);
+          out.push(`${what}: reactor ${h} goes, but that ${LINKS[was.geom.kind]}`);
         }
       }
     }
     if (m.geom.kind === 'LEADER') out.push(...leaderProblems(model, what, m, b));
     if (m.geom.kind === 'HATCH') out.push(...hatchProblems(model, what, m, b));
+    if (m.geom.kind === 'VIEWPORT') out.push(...viewportProblems(model, what, m, b));
+  }
+  return out;
+}
+
+function viewportProblems(
+  model: DocumentModel,
+  what: string,
+  m: Entity,
+  b: EntityInit | undefined,
+): string[] {
+  if (m.geom.kind !== 'VIEWPORT') return [];
+  const clip = m.geom.clipBoundary;
+  const old = clipOf(b);
+  const nonRectangular = (m.geom.flags & NON_RECTANGULAR) !== 0;
+  const wasNonRectangular = b?.geom.kind === 'VIEWPORT' && (b.geom.flags & NON_RECTANGULAR) !== 0;
+  if (b && clip === old && nonRectangular === wasNonRectangular) return [];
+  const out: string[] = [];
+  // VPCLIP sets the flag with the clip and clears it on Delete; AutoCAD draws a viewport with
+  // one and not the other as neither.
+  if (clip !== undefined && !nonRectangular) {
+    out.push(`${what}: a clip boundary without non-rectangular clipping (DXF 90 bit 65536)`);
+  }
+  if (clip === undefined && nonRectangular) {
+    out.push(`${what}: non-rectangular clipping (DXF 90 bit 65536) without a clip boundary`);
+  }
+  if (clip !== undefined && clip !== old) {
+    const where = `${what}: clip boundary ${clip}`;
+    const c = model.entityByHandle(clip);
+    if (!c) {
+      out.push(`${where} is not an entity of the drawing`);
+    } else {
+      if (c.owner !== m.owner) out.push(`${where} is in another block`);
+      if (!CLIP_TYPES.has(c.type)) {
+        out.push(`${where} is a ${c.type}, not a closed curve or region VPCLIP takes`);
+      } else if (!closed(c.geom)) {
+        out.push(`${where} is not closed`);
+      }
+      if (!(c.reactors ?? []).includes(m.handle)) {
+        out.push(`${where} does not point back at it (reactors)`);
+      }
+      // One object clips one viewport: it follows that viewport (its reactor) and goes with it.
+      for (const h of c.reactors ?? []) {
+        if (h !== m.handle && clipOf(model.entityByHandle(h)) === clip) {
+          out.push(`${where} clips viewport ${h} too`);
+        }
+      }
+    }
+  }
+  // AutoCAD takes the viewport off the reactors of an object that no longer clips it.
+  if (old !== undefined && old !== clip) {
+    const c = model.entityByHandle(old);
+    if (c && (c.reactors ?? []).includes(m.handle)) {
+      out.push(`${what}: its old clip boundary ${old} still points at it (reactors)`);
+    }
   }
   return out;
 }
