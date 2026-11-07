@@ -414,14 +414,121 @@ describe('ACAD_TABLE', () => {
     expect(back).toEqual(table(again).geom);
   });
 
-  it('refuses a cell format in a DWG from R2010, which states it in cell styles', () => {
+  // Cell formats in a DWG from R2010 (M1-75 part 36): written into the cell's own cell style
+  // (AcDb::CellProperty and GridProperty override bits), or its content format where that already
+  // overrides the property, since the content format wins over every cell style.
+  const STYLE_SAVES: [string, ACadVersion][] = [
+    ['R2018 DWG', ACadVersion.AC1032],
+    ['R2013 DWG', ACadVersion.AC1027],
+    ['R2010 DWG', ACadVersion.AC1024],
+  ];
+
+  it.each(STYLE_SAVES)('saves cell formats to %s in cell styles', (_w, version) => {
+    const bytes = drawing(version, 'dwg');
+    const model = open(bytes);
+    const standard = [...model.tables.textStyles.values()].find(
+      (s) => s.name.toUpperCase() === 'STANDARD',
+    )!.handle;
+    let g = table(model).geom;
+    g = cell(g, 1, 0, {
+      format: {
+        alignment: 5,
+        textStyle: standard,
+        textHeight: 0.25,
+        contentColor: { kind: 'aci', index: 1 },
+        background: { kind: 'aci', index: 4 },
+        borders: {
+          top: { color: { kind: 'aci', index: 2 }, lineweight: 50 },
+          right: { lineweight: 35 },
+          bottom: { hidden: true },
+        },
+        margins: { left: 0.2, top: 0.1, right: 0.2, bottom: 0.1 },
+      },
+    });
+    g = cell(g, 1, 1, {
+      format: { background: null, contentColor: { kind: 'rgb', r: 10, g: 20, b: 30 } },
+    });
+    edit(model, g);
+    expect(saved(bytes, model, 'dwg')).toEqual(table(model).geom);
+  });
+
+  it("maps a DWG cell's cell styles: its own, its content format's and its row's", () => {
+    const g = table(open(drawing(ACadVersion.AC1032, 'dwg', { cellStyles: true }))).geom;
+    expect(g.cells[1]![0]!.format).toEqual({
+      alignment: 5,
+      contentColor: { kind: 'aci', index: 3 },
+      textHeight: 0.3,
+      borders: { top: { lineweight: 50 } },
+    });
+    expect(g.cells[2]![0]!.format).toEqual({ alignment: 4 });
+  });
+
+  it("changes and removes a cell's format in an R2018 DWG", () => {
+    const bytes = drawing(ACadVersion.AC1032, 'dwg', { cellStyles: true });
+    const model = open(bytes);
+    const g = table(model).geom;
+    // Another alignment and text height (the content format's), the colour back to the style's,
+    // the border kept; a data row cell given its own alignment over the row's.
+    let next = cell(g, 1, 0, {
+      format: { alignment: 7, textHeight: 0.4, borders: { top: { lineweight: 50 } } },
+    });
+    next = cell(next, 2, 0, { format: { alignment: 9, contentColor: { kind: 'aci', index: 6 } } });
+    edit(model, next);
+    const once = exportDocument(readCadDocument(bytes), model, { format: 'dwg' });
+    expect(table(open(once)).geom).toEqual(table(model).geom);
+    const t = [...readCadDocument(once).entities!].find(
+      (e) => e instanceof TableEntity,
+    ) as TableEntity;
+    expect(t.rows[1]!.cells[0]!.content!.format.textHeight).toBe(0.4);
+    // Then nothing of the cell's own: the data row cell is back to its row's alignment.
+    const again = open(once);
+    const g2 = table(again).geom;
+    const { format: _f, ...plain } = g2.cells[1]![0]!;
+    edit(again, {
+      ...cell(g2, 2, 0, { format: { alignment: 4 } }),
+      cells: cell(g2, 2, 0, { format: { alignment: 4 } }).cells.map((r, i) =>
+        i === 1 ? [plain, r[1]!] : r,
+      ),
+    });
+    const back = saved(once, again, 'dwg');
+    expect(back.cells[1]![0]!.format).toBeUndefined();
+    expect(back.cells[2]![0]!.format).toEqual({ alignment: 4 });
+    expect(back).toEqual(table(again).geom);
+  });
+
+  it('hides a cell edge and shows it again in an R2018 DWG', () => {
     const bytes = drawing(ACadVersion.AC1032, 'dwg');
     const model = open(bytes);
-    edit(model, cell(table(model).geom, 1, 0, { format: { alignment: 5 } }));
+    edit(model, cell(table(model).geom, 2, 0, { format: { borders: { left: { hidden: true } } } }));
+    const once = exportDocument(readCadDocument(bytes), model, { format: 'dwg' });
+    const again = open(once);
+    const g = table(again).geom;
+    expect(g.cells[2]![0]!.format).toEqual({ borders: { left: { hidden: true } } });
+    const { format: _f, ...plain } = g.cells[2]![0]!;
+    edit(again, { ...g, cells: g.cells.map((r, i) => (i === 2 ? [plain, r[1]!] : r)) });
+    expect(saved(once, again, 'dwg').cells[2]![0]!.format).toBeUndefined();
+  });
+
+  const STYLE_REFUSED: [string, (g: TableGeometry) => TableGeometry, RegExp][] = [
+    [
+      'taking off one cell what its row states',
+      (g) => cell(g, 2, 0, { format: undefined }),
+      /cell \(2, 0\): alignment is its row's or column's \(their cell styles\)/,
+    ],
+    [
+      'a negative margin',
+      (g) => cell(g, 1, 1, { format: { margins: { left: -0.1 } } }),
+      /cell \(1, 1\): left margin -0.1 is not a number of 0 or more/,
+    ],
+  ];
+  it.each(STYLE_REFUSED)('refuses %s in an R2018 DWG', (_what, change, message) => {
+    const bytes = drawing(ACadVersion.AC1032, 'dwg', { cellStyles: true });
+    const model = open(bytes);
+    edit(model, change(table(model).geom));
     const problems = refusal(() =>
       exportDocument(readCadDocument(bytes), model, { format: 'dwg' }),
     );
-    expect(problems.join('; ')).toMatch(/cell \(1, 0\): a cell format in a DWG from R2010/);
+    expect(problems.join('; ')).toMatch(message);
   });
 
   it('saves a true colour into an R2004 DWG cell', () => {

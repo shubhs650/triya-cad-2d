@@ -11,16 +11,32 @@
 //
 // A cell format is written into the cell's override flag word and the values beside it (DXF 177
 // before R2007 and 91 from it, DWG before R2010), which already fold in the row's and column's
-// overrides: a property set gets its flag and value, a property cleared loses its flag. DWG
-// R2010+ keeps overrides apart in content, cell, row and column cell styles, which are not
-// written yet (M1-75): a format change there is refused, as is what the format at hand cannot
-// state (margins outside DWG R2010+, ACI-only colours, DXF edge visibility).
+// overrides: a property set gets its flag and value, a property cleared loses its flag. What
+// the format at hand cannot state is refused (margins outside DWG R2010+, ACI-only colours, DXF
+// edge visibility).
+//
+// DWG R2010+ keeps overrides apart, in the cell's content format and the cell, row and column
+// cell styles (AcDb::CellProperty and AcDb::GridProperty bits), folded content over cell over
+// row over column (map/entities.ts `tableCellFormat`). A format change there is written into
+// the cell's own cell style (M1-75 part 36), as the Table Cell ribbon sets a cell's properties,
+// except a content property the content format already overrides, which is changed there since
+// the content format wins (AutoCAD's in-place editor sets text height and colour per content).
+// A property the cell no longer overrides loses its bit in both. One the cell's row or column
+// states cannot be taken off one cell (the cell would show the row's), so that is refused; an
+// edge shown again keeps its visibility bit with the edge visible, which shows it whatever the
+// row says.
 
 import {
   CellOverrideFlags,
   CellRange,
+  CellStyleType,
+  Color as AcadColor,
+  MarginFlags,
+  TableBorderPropertyFlags,
+  TableCellContentLayoutFlags,
+  TableCellStylePropertyFlags,
   TextStyle,
-  type ACadVersion,
+  ACadVersion,
   type CellBorder,
   type TableEntity,
   type TableEntityCell,
@@ -62,6 +78,12 @@ const EDGE_FLAGS: Record<Edge, { color: number; lineweight: number; visibility: 
     visibility: CellOverrideFlags.LeftVisibility,
   },
 };
+
+/** Whether a save to `format` in `version` states cell formats in cell styles: DWG from R2010. */
+export const dwgFrom2010 = (
+  format: CadFormat | undefined,
+  version: ACadVersion | undefined,
+): boolean => format === 'dwg' && version !== undefined && version >= ACadVersion.AC1024;
 
 const isWhole = (n: unknown, min: number, max = Infinity): boolean =>
   typeof n === 'number' && Number.isInteger(n) && n >= min && n <= max;
@@ -233,7 +255,7 @@ function colorsOf(f: TableCellFormat | undefined): [string, Color | null | undef
 
 /**
  * Why the format change from `b` to `a` cannot be written to the file at hand (`dwgFrom2010`:
- * a DWG from R2010, whose cell styles are not written yet).
+ * a DWG from R2010, which states it in cell styles; `cellStyleProblems` checks those).
  */
 export function formatFileProblems(
   b: TableCellFormat | undefined,
@@ -243,10 +265,8 @@ export function formatFileProblems(
   dwgFrom2010: boolean,
 ): string[] {
   if (same(a, b)) return [];
-  if (dwgFrom2010)
-    return ['a cell format in a DWG from R2010, which states it in cell styles (M1-75)'];
   const out: string[] = [];
-  if (!same(a?.margins, b?.margins) && a?.margins !== undefined) {
+  if (!dwgFrom2010 && !same(a?.margins, b?.margins) && a?.margins !== undefined) {
     out.push('cell margins, which only a DWG from R2010 states per cell');
   }
   const was = new Map(colorsOf(b));
@@ -346,4 +366,164 @@ export function writeCellFormat(
     }
   }
   cell.overrideFlags = flags as CellOverrideFlags;
+}
+
+// ── Cell formats in cell styles (DWG R2010+, M1-75 part 36) ────────────────────────────────
+
+const P = TableCellStylePropertyFlags;
+
+/** The content properties, with their bit in a cell style or content format. */
+const CONTENT_PROPS: readonly [
+  'alignment' | 'contentColor' | 'textStyle' | 'textHeight',
+  number,
+][] = [
+  ['alignment', P.Alignment],
+  ['contentColor', P.ContentColor],
+  ['textStyle', P.TextStyle],
+  ['textHeight', P.TextHeight],
+];
+
+type Side = 'left' | 'top' | 'right' | 'bottom';
+const MARGIN_PROPS: readonly [Side, number][] = [
+  ['left', P.MarginLeft],
+  ['top', P.MarginTop],
+  ['right', P.MarginRight],
+  ['bottom', P.MarginBottom],
+];
+
+/**
+ * Why the format change from `b` to `a` cannot be written into a DWG R2010+ cell's cell styles:
+ * `inherited` is what the cell's row and column cell styles give it (nothing for a new table),
+ * `tableMargins` the margins of the table's own cell style. A property the cell stops
+ * overriding that its row or column states would come back from there; a margin equal to the
+ * table's maps as no override, and one below 0 is not a margin.
+ */
+export function cellStyleProblems(
+  inherited: TableCellFormat | undefined,
+  tableMargins: NonNullable<TableCellFormat['margins']>,
+  b: TableCellFormat | undefined,
+  a: TableCellFormat | undefined,
+): string[] {
+  if (same(a, b)) return [];
+  const out: string[] = [];
+  const kept = (what: string) =>
+    out.push(
+      `${what} is its row's or column's (their cell styles), which one cell cannot take off`,
+    );
+  for (const k of ['alignment', 'contentColor', 'textStyle', 'textHeight', 'background'] as const) {
+    if (b?.[k] !== undefined && a?.[k] === undefined && inherited?.[k] !== undefined) kept(k);
+  }
+  for (const [side] of MARGIN_PROPS) {
+    const v = a?.margins?.[side];
+    const was = b?.margins?.[side];
+    if (same(v, was)) continue;
+    if (v === undefined) {
+      if (inherited?.margins?.[side] !== undefined) kept(`the ${side} margin`);
+    } else if (!(typeof v === 'number' && Number.isFinite(v) && v >= 0)) {
+      out.push(`${side} margin ${JSON.stringify(v)} is not a number of 0 or more`);
+    } else if (v === tableMargins[side]) {
+      out.push(`${side} margin ${v} is the table's own, which a cell states by not overriding it`);
+    }
+  }
+  for (const side of EDGES) {
+    const was = b?.borders?.[side];
+    const now = a?.borders?.[side];
+    for (const k of ['color', 'lineweight'] as const) {
+      if (was?.[k] !== undefined && now?.[k] === undefined) {
+        if (inherited?.borders?.[side]?.[k] !== undefined) kept(`the ${side} border ${k}`);
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Writes the format change from `b` to `a` into a DWG R2010+ cell: its content format where that
+ * overrides a content property already, its own cell style otherwise. A cell style that stated
+ * nothing is begun as AutoCAD writes one overriding nothing (every corpus R2010+ cell style:
+ * content flowing, background None, scale 1, data type unknown 512).
+ */
+export function writeCellStyleFormat(
+  r: Resolver,
+  cell: TableEntityCell,
+  b: TableCellFormat | undefined,
+  a: TableCellFormat | undefined,
+): void {
+  const s = cell.styleOverride;
+  if (!s.hasData) {
+    s.hasData = true;
+    s.cellStyleType = CellStyleType.Cell;
+    s.contentLayoutFlags = TableCellContentLayoutFlags.Flow;
+    s.backgroundColor = AcadColor.byEntity;
+    s.scale = 1;
+    s.valueDataType = 512;
+  }
+  let own = s.cellPropertyOverrideFlags ?? 0;
+  const content = cell.content?.format;
+  const changed = (k: keyof TableCellFormat): boolean => !same(a?.[k], b?.[k]);
+  for (const [k, bit] of CONTENT_PROPS) {
+    if (!changed(k)) continue;
+    const v = a?.[k];
+    if (v === undefined) {
+      own &= ~bit;
+      if (content?.hasData) content.propertyOverrideFlags &= ~bit;
+      continue;
+    }
+    const inContent = content?.hasData && (content.propertyOverrideFlags & bit) !== 0;
+    const target = inContent ? content! : s;
+    if (!inContent) own |= bit;
+    if (k === 'alignment') target.alignment = v as number;
+    if (k === 'textHeight') target.textHeight = v as number;
+    if (k === 'contentColor') target.color = acadColor(v as Color);
+    if (k === 'textStyle') target.textStyle = resolve(r, v as string, TextStyle)!;
+  }
+  if (changed('background')) {
+    const bg = a?.background;
+    if (bg === undefined) own &= ~P.BackgroundColor;
+    else {
+      own |= P.BackgroundColor;
+      // No fill is the colour method None, ACI 257 to acad-ts (patch 0120).
+      s.backgroundColor = bg === null ? AcadColor.byEntity : acadColor(bg);
+    }
+  }
+  for (const [side, bit] of MARGIN_PROPS) {
+    if (same(a?.margins?.[side], b?.margins?.[side])) continue;
+    const v = a?.margins?.[side];
+    if (v === undefined) {
+      own &= ~bit;
+      continue;
+    }
+    own |= bit;
+    s.marginOverrideFlags |= MarginFlags.Override;
+    if (side === 'left') s.horizontalMargin = v;
+    if (side === 'top') s.verticalMargin = v;
+    if (side === 'right') s.rightMargin = v;
+    if (side === 'bottom') s.bottomMargin = v;
+  }
+  const B = TableBorderPropertyFlags;
+  for (const side of EDGES) {
+    const was: TableBorderFormat | undefined = b?.borders?.[side];
+    const now: TableBorderFormat | undefined = a?.borders?.[side];
+    if (same(was, now)) continue;
+    const border = borderOf(cell, side);
+    const set = (bit: number, on: boolean): void => {
+      border.propertyOverrideFlags = on
+        ? border.propertyOverrideFlags | bit
+        : border.propertyOverrideFlags & ~bit;
+    };
+    if (!same(was?.color, now?.color)) {
+      set(B.Color, now?.color !== undefined);
+      if (now?.color !== undefined) border.color = acadColor(now.color);
+    }
+    if (!same(was?.lineweight, now?.lineweight)) {
+      set(B.LineWeight, now?.lineweight !== undefined);
+      if (now?.lineweight !== undefined)
+        border.lineWeight = acadLineweight(now.lineweight) as never;
+    }
+    if (!!was?.hidden !== !!now?.hidden) {
+      set(B.Invisibility, true);
+      border.isInvisible = !!now?.hidden;
+    }
+  }
+  s.cellPropertyOverrideFlags = own;
 }

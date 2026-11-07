@@ -10,9 +10,9 @@
 // from R2010 gives each row the cell style of its row type (`_TITLE`, `_HEADER`, `_DATA` by the
 // table style's ids) and states row, cell and table cell styles that override nothing.
 //
-// A DWG from R2010 states cell formats, a cell's rotation and the table-wide overrides in cell
-// styles and content formats, which are not written yet (M1-75): a new table there carries
-// none of them. DXF and DWG before R2010 state the overrides in one flag word with the values
+// A DWG from R2010 states a cell's rotation and the table-wide overrides in cell styles and
+// content formats, which are not written yet (M1-75): a new table there carries neither. Its
+// cell formats go into each cell's own cell style, as an edited cell's do (table-cells.ts). DXF and DWG before R2010 state the overrides in one flag word with the values
 // after it, by row type (title, header, data): a horizontal and a vertical margin, and each row
 // type's text style, height, alignment, content colour and fill. acad-ts keeps a DXF table's
 // override codes as read (DEC-043) and writes them back, so a new table gets the codes as
@@ -46,7 +46,12 @@ import type {
 } from '@triya/engine';
 import type { CadFormat } from '../read';
 import { acadColor, resolve, type Resolver } from './entities';
-import { formatFileProblems, formatValueProblems } from './table-cells';
+import {
+  cellStyleProblems,
+  dwgFrom2010,
+  formatFileProblems,
+  formatValueProblems,
+} from './table-cells';
 import { colorProblems } from './table-styles';
 
 /** DXF 90, the table value flag, on every corpus table (DXF and DWG before R2010). */
@@ -178,8 +183,8 @@ const COLORS: readonly ('contentColor' | 'background')[] = ['contentColor', 'bac
 
 /**
  * Why the file at hand cannot hold the new table `g`: a format before R14 (AutoCAD saves a table
- * to R14 and later; R12 has no custom objects), what a DWG from R2010 states in cell styles, and
- * colours the format holds as ACI only.
+ * to R14 and later; R12 has no custom objects), the rotations and table-wide overrides a DWG from
+ * R2010 states in cell styles, and colours the format holds as ACI only.
  */
 export function newTableFileProblems(
   g: TableGeometry,
@@ -190,16 +195,22 @@ export function newTableFileProblems(
   if (known && version < ACadVersion.AC1014) {
     return [`${ACadVersion[version]} holds no tables (AutoCAD saves them to R14 and later)`];
   }
-  const dwgFrom2010 = format === 'dwg' && known && version >= ACadVersion.AC1024;
+  const styles = dwgFrom2010(format, version);
   const out: string[] = [];
   for (const [i, row] of g.cells.entries()) {
     for (const [j, c] of row.entries()) {
       out.push(
-        ...formatFileProblems(undefined, c.format, version, format, dwgFrom2010).map(
+        ...formatFileProblems(undefined, c.format, version, format, styles).map(
           (p) => `${at(i, j)}: ${p}`,
         ),
       );
-      if (dwgFrom2010 && c.rotation !== 0) {
+      // A new table's rows and columns override nothing, nor does its own cell style.
+      if (styles) {
+        out.push(
+          ...cellStyleProblems(undefined, {}, undefined, c.format).map((p) => `${at(i, j)}: ${p}`),
+        );
+      }
+      if (styles && c.rotation !== 0) {
         out.push(
           `${at(i, j)}: a cell rotation in a DWG from R2010, which keeps it in the content format`,
         );
@@ -208,7 +219,7 @@ export function newTableFileProblems(
   }
   const o = g.overrides;
   if (!o) return out;
-  if (dwgFrom2010) {
+  if (styles) {
     out.push('table overrides in a DWG from R2010, which states them in cell styles (M1-75)');
     return out;
   }

@@ -9,11 +9,14 @@ import {
   CadValueType,
   CellContent,
   CellOverrideFlags,
+  CellStyleType,
   CellType,
   Color,
   Line,
+  TableBorderPropertyFlags,
   TableCellContentType,
   TableCellStateFlags,
+  TableCellStylePropertyFlags,
   TableEntity,
   TableEntityCell,
   TableEntityColumn,
@@ -33,6 +36,13 @@ export interface Options {
    * lineweight (0.50 mm) in the cell's override flag word (DXF 177 / 91, DWG before R2010).
    */
   readonly formatted?: boolean;
+  /**
+   * The same overrides as a DWG from R2010 states them, in cell styles: cell (1, 0)'s own cell
+   * style overrides its alignment (middle centre), content colour (ACI 3) and top border
+   * lineweight (0.50 mm), its content format the text height (0.3); the data row's cell style
+   * overrides the alignment (middle left) of every cell in it.
+   */
+  readonly cellStyles?: boolean;
 }
 
 /**
@@ -114,6 +124,25 @@ export function drawing(
     c.styleOverride.cellAlignment = 5;
     c.styleOverride.contentColor = new Color(3);
     c.styleOverride.topBorder.lineWeight = 50 as never;
+  }
+  if (options.cellStyles) {
+    const s = t.rows[1]!.cells[0]!.styleOverride;
+    s.hasData = true;
+    s.cellPropertyOverrideFlags =
+      TableCellStylePropertyFlags.Alignment | TableCellStylePropertyFlags.ContentColor;
+    s.alignment = 5;
+    s.color = new Color(3);
+    s.topBorder.propertyOverrideFlags = TableBorderPropertyFlags.LineWeight;
+    s.topBorder.lineWeight = 50 as never;
+    const f = t.rows[1]!.cells[0]!.contents[0]!.format;
+    f.hasData = true;
+    f.propertyOverrideFlags = TableCellStylePropertyFlags.TextHeight;
+    f.textHeight = 0.3;
+    const row = t.rows[2]!.cellStyleOverride;
+    row.cellStyleType = CellStyleType.Row;
+    row.hasData = true;
+    row.cellPropertyOverrideFlags = TableCellStylePropertyFlags.Alignment;
+    row.alignment = 4;
   }
   const special = t.rows[1]!.cells[1]!;
   if (options.locked) special.stateFlags = TableCellStateFlags.ContentLocked;
