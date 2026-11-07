@@ -232,6 +232,7 @@ export class RenderSession {
       out.tables = tables as TableChanges;
     }
     if (cs.objects) out.objects = rebaseKeyed(cs.objects, m.objects);
+    if (cs.blocks) out.blocks = rebaseKeyed(cs.blocks, m.blocks);
     if (cs.layouts) {
       const own = new Map(m.layouts.map((l) => [l.handle, l]));
       out.layouts = cs.layouts.map((u) => ({

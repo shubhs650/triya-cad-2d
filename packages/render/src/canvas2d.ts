@@ -554,6 +554,8 @@ export class Canvas2DRenderer implements Renderer {
     for (const r of e?.removed ?? []) changed.add(r.entity.owner);
     for (const a of e?.added ?? []) changed.add(a.entity.owner);
     for (const u of e?.updated ?? []) changed.add(u.before.owner).add(u.after.owner);
+    // A moved base point places the block's contents elsewhere in every reference (M1-75).
+    for (const u of cs.blocks?.updated ?? []) changed.add(u.after.handle);
     if (sortEnts) {
       for (const o of [
         ...(cs.objects?.added ?? []),

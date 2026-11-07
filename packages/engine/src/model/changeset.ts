@@ -11,12 +11,14 @@
 // Applying removes in descending index order per block, replaces updates in place, then
 // inserts additions in ascending index order. Inverting swaps added/removed and before/after.
 //
-// Block definitions are not yet part of a change set; they join when the first command that
-// creates them (BLOCK in M5) needs it. Layouts can be updated (renamed, reordered, given a new
+// Block definitions (M1-75 part 22) are keyed by their BLOCK_RECORD handle and travel with
+// that record: a new block adds both (BLOCK, and the dimension and table commands' anonymous
+// blocks), a removed one drops both once its entities are gone (PURGE). Layouts can be updated (renamed, reordered, given a new
 // page setup or limits, M1-75 part 20), not added or removed: a new layout needs its own
 // `*Paper_Space` block record and definition, which LAYOUT New (M6) brings with it.
 
 import type {
+  BlockDefinition,
   Entity,
   HeaderValue,
   Layout,
@@ -61,6 +63,8 @@ export interface ChangeSet {
   readonly entities?: EntityChanges;
   readonly tables?: TableChanges;
   readonly objects?: KeyedChanges<NonGraphicalObject>;
+  /** Block definitions, by their BLOCK_RECORD handle (the record changes in `tables`). */
+  readonly blocks?: KeyedChanges<BlockDefinition>;
   readonly header?: readonly HeaderChange[];
   /** Updated layouts, by handle. */
   readonly layouts?: readonly Replacement<Layout>[];
@@ -86,6 +90,7 @@ export function invertChangeSet(cs: ChangeSet): ChangeSet {
     entities?: EntityChanges;
     tables?: TableChanges;
     objects?: KeyedChanges<NonGraphicalObject>;
+    blocks?: KeyedChanges<BlockDefinition>;
     header?: readonly HeaderChange[];
     layouts?: readonly Replacement<Layout>[];
   } = {};
@@ -109,6 +114,7 @@ export function invertChangeSet(cs: ChangeSet): ChangeSet {
     out.tables = tables as TableChanges;
   }
   if (cs.objects) out.objects = invertKeyed(cs.objects);
+  if (cs.blocks) out.blocks = invertKeyed(cs.blocks);
   if (cs.header) {
     out.header = cs.header.map(({ name, before, after }) => ({
       name,
@@ -127,6 +133,7 @@ export function isEmptyChangeSet(cs: ChangeSet): boolean {
   return (
     emptyKeyed(cs.entities) &&
     emptyKeyed(cs.objects) &&
+    emptyKeyed(cs.blocks) &&
     !cs.header?.length &&
     !cs.layouts?.length &&
     Object.values(cs.tables ?? {}).every((c) => emptyKeyed(c as KeyedChanges<unknown> | undefined))

@@ -125,8 +125,9 @@ export function sampleInit(): DocumentInit {
 
 /** A comparable, reference-free snapshot of everything a ChangeSet can touch. */
 export function snapshot(model: DocumentModel): unknown {
-  const blocks = [...model.blocks.keys()].map((h) => [
+  const blocks = [...model.blocks.keys()].sort().map((h) => [
     h,
+    model.blocks.get(h),
     model.blockEntities(h).map((id) => model.entity(id)),
   ]);
   // Keyed collections are compared sorted: their iteration order carries no meaning (export

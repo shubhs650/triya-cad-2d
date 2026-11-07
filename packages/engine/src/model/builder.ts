@@ -22,6 +22,8 @@ import type { DocumentModel } from './document';
 import type { EntityId } from './entity-ids';
 import type { Handle } from './handle';
 import type {
+  BlockDefinition,
+  BlockTableRecord,
   Entity,
   EntityGeometry,
   EntityProps,
@@ -31,6 +33,7 @@ import type {
   ObjectCommon,
   TableName,
   TableRecords,
+  Vec2,
 } from './types';
 import {
   createEntity,
@@ -48,6 +51,20 @@ export type NewEntity = {
   readonly layer: Handle;
   readonly geom: EntityGeometry;
 } & Partial<Omit<EntityProps, 'layer'> & Omit<ObjectCommon, 'handle'>>;
+
+/**
+ * A new block definition (BLOCK): its name and base point, and its record's units and
+ * Allow exploding / Scale uniformly settings, which default as AutoCAD's BLOCK dialog does
+ * (unitless, explodable, any scale). `flags` is the BLOCK entity's DXF 70 (1 anonymous).
+ */
+export interface NewBlock {
+  readonly name: string;
+  readonly basePoint: Vec2;
+  readonly flags?: number;
+  readonly units?: number;
+  readonly explodable?: boolean;
+  readonly scalable?: boolean;
+}
 
 function sameValue(a: HeaderValue | undefined, b: HeaderValue | undefined): boolean {
   if (a === b) return true;
@@ -121,11 +138,13 @@ export class ChangeSetBuilder {
   readonly #objects: KeyedDraft<NonGraphicalObject>;
   readonly #tables = new Map<TableName, KeyedDraft<ObjectCommon>>();
   #layouts: KeyedDraft<Layout> | undefined;
+  readonly #blocks: KeyedDraft<BlockDefinition>;
   #built = false;
 
   constructor(model: DocumentModel) {
     this.#model = model;
     this.#objects = new KeyedDraft('object', model.objects);
+    this.#blocks = new KeyedDraft('block', model.blocks);
   }
 
   // ── Working view ────────────────────────────────────────────────────────────────────────
@@ -141,9 +160,16 @@ export class ChangeSetBuilder {
 
   /** The block's entities as they will be after this change set. */
   blockEntities(block: Handle): EntityId[] {
-    const out = this.#model.blockEntities(block).filter((id) => !this.#removed.has(id));
+    if (!this.#blocks.get(block)) throw new Error(`owner block ${block} does not exist`);
+    const own = this.#model.hasBlock(block) ? this.#model.blockEntities(block) : [];
+    const out = own.filter((id) => !this.#removed.has(id));
     for (const e of this.#added.values()) if (e.owner === block) out.push(e.id);
     return out;
+  }
+
+  /** The block definition as it will be after this change set. */
+  block(handle: Handle): BlockDefinition | undefined {
+    return this.#blocks.get(handle);
   }
 
   object(handle: Handle): NonGraphicalObject | undefined {
@@ -162,7 +188,7 @@ export class ChangeSetBuilder {
 
   addEntity(draft: NewEntity): Entity {
     this.#open();
-    if (!this.#model.hasBlock(draft.owner))
+    if (!this.#blocks.get(draft.owner))
       throw new Error(`owner block ${draft.owner} does not exist`);
     const handle = this.#model.handles.allocate();
     const entity = createEntity(this.#model.ids.assign(handle), {
@@ -202,7 +228,7 @@ export class ChangeSetBuilder {
   moveEntity(id: EntityId, owner: Handle): Entity {
     this.#open();
     const cur = this.#requireEntity(id);
-    if (!this.#model.hasBlock(owner)) throw new Error(`owner block ${owner} does not exist`);
+    if (!this.#blocks.get(owner)) throw new Error(`owner block ${owner} does not exist`);
     if (!this.#added.has(id)) {
       this.#updated.delete(id);
       this.#removed.set(id, this.#model.entity(id)!);
@@ -277,6 +303,48 @@ export class ChangeSetBuilder {
     return this.#layoutDraft().update(handle, patch);
   }
 
+  // ── Blocks ──────────────────────────────────────────────────────────────────────────────
+
+  /** Adds a block definition and its BLOCK_RECORD under one new handle (BLOCK). */
+  addBlock(init: NewBlock): BlockDefinition {
+    this.#open();
+    const handle = this.#model.handles.allocate();
+    const record: BlockTableRecord = {
+      handle,
+      name: init.name,
+      ...(init.flags ? { flags: init.flags } : {}),
+      units: init.units ?? 0,
+      explodable: init.explodable ?? true,
+      scalable: init.scalable ?? true,
+    };
+    this.#table('blockRecords').add(createRecord(record));
+    const def = createRecord<BlockDefinition>({
+      handle,
+      name: init.name,
+      basePoint: init.basePoint,
+    });
+    this.#blocks.add(def);
+    return def;
+  }
+
+  /** Edits a block definition; a new name renames its BLOCK_RECORD too (RENAME). */
+  updateBlock(handle: Handle, patch: RecordPatch<BlockDefinition>): BlockDefinition {
+    this.#open();
+    const next = this.#blocks.update(handle, patch);
+    if (patch.name !== undefined) this.#table('blockRecords').update(handle, { name: patch.name });
+    return next;
+  }
+
+  /** Removes an empty block definition and its BLOCK_RECORD (PURGE). */
+  removeBlock(handle: Handle): void {
+    this.#open();
+    if (!this.#blocks.get(handle)) throw new Error(`block ${handle} does not exist`);
+    if (this.blockEntities(handle).length > 0)
+      throw new Error(`block ${handle} still holds entities`);
+    this.#blocks.remove(handle);
+    this.#table('blockRecords').remove(handle);
+  }
+
   // ── Result ──────────────────────────────────────────────────────────────────────────────
 
   build(): ChangeSet {
@@ -286,6 +354,7 @@ export class ChangeSetBuilder {
       entities?: EntityChanges;
       tables?: TableChanges;
       objects?: KeyedChanges<NonGraphicalObject>;
+      blocks?: KeyedChanges<BlockDefinition>;
       header?: readonly HeaderChange[];
       layouts?: readonly Replacement<Layout>[];
     } = {};
@@ -300,6 +369,8 @@ export class ChangeSetBuilder {
     if (Object.keys(tables).length) cs.tables = tables as TableChanges;
     const objects = this.#objects.changes();
     if (objects) cs.objects = objects;
+    const blocks = this.#blocks.changes();
+    if (blocks) cs.blocks = blocks;
     const header = [...this.#header.values()].filter((h) => !sameValue(h.before, h.after));
     if (header.length) cs.header = header;
     const layouts = this.#layouts?.changes()?.updated;
@@ -329,9 +400,10 @@ export class ChangeSetBuilder {
     const next = new Map<Handle, number>();
     const added: PositionedEntity[] = [];
     for (const entity of this.#added.values()) {
-      const index =
-        next.get(entity.owner) ??
-        this.#model.blockEntities(entity.owner).length - (removedBy.get(entity.owner) ?? 0);
+      const before = this.#model.hasBlock(entity.owner)
+        ? this.#model.blockEntities(entity.owner).length
+        : 0;
+      const index = next.get(entity.owner) ?? before - (removedBy.get(entity.owner) ?? 0);
       added.push({ entity, index });
       next.set(entity.owner, index + 1);
     }
