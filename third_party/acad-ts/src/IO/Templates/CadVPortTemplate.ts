@@ -1,4 +1,5 @@
 import { CadObject } from '../../CadObject.js';
+import { VisualStyle } from '../../Objects/VisualStyle.js';
 import { UCS } from '../../Tables/UCS.js';
 import { VPort } from '../../Tables/VPort.js';
 import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
@@ -40,6 +41,11 @@ export class CadVPortTemplate extends CadTableEntryTemplate<VPort> {
 		}
 
 		const style = builder.tryGetCadObject<CadObject>(this.styleHandle);
+		if (style instanceof VisualStyle) {
+			this.cadObject.visualStyle = style;
+		} else if (this.styleHandle != null && this.styleHandle > 0) {
+			builder.notify(`Visual style ${this.styleHandle} not found for viewport ${this.cadObject.handle}`, NotificationType.Warning);
+		}
 
 		const sun = builder.tryGetCadObject<CadObject>(this.sunHandle);
 		if (sun) {

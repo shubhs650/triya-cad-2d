@@ -1259,6 +1259,18 @@ export interface TableRecords {
   ucs: UcsRecord;
   vports: VportRecord;
   blockRecords: BlockTableRecord;
+  /**
+   * The styles and definitions PURGE also takes, which the file keeps as entries of a dictionary
+   * of the named-object dictionary (M1-75 part 29): MLINESTYLE (`ACAD_MLINESTYLE`), MATERIAL
+   * (`ACAD_MATERIAL`), VISUALSTYLE (`ACAD_VISUALSTYLE`) and the plot style names of a
+   * named-plot-style drawing (ACDBPLACEHOLDER in `ACAD_PLOTSTYLENAME`). Triya keeps them by name
+   * only; what they hold stays in the original. Entities, layers and viewports point at them by
+   * handle (MLINE `style`, `material`, `plotStyle`, `visualStyle`).
+   */
+  mlineStyles: SymbolTableRecord;
+  materials: SymbolTableRecord;
+  visualStyles: SymbolTableRecord;
+  plotStyles: SymbolTableRecord;
 }
 
 export type TableName = keyof TableRecords;
@@ -1275,6 +1287,10 @@ export const TABLE_NAMES: readonly TableName[] = [
   'ucs',
   'vports',
   'blockRecords',
+  'mlineStyles',
+  'materials',
+  'visualStyles',
+  'plotStyles',
 ];
 
 export type Tables = { readonly [K in TableName]: ReadonlyMap<Handle, TableRecords[K]> };

@@ -2065,6 +2065,18 @@ describe('acad-ts local patches', () => {
     expect([...again.blockRecords!.tryGetValue('PART')!.entities]).toEqual([]);
   });
 
+  it('0162 a VPORT reads its visual style (DXF 348, DWG R2007+)', () => {
+    for (const format of ['dxf', 'dwg'] as const) {
+      const doc = new CadDocument(ACadVersion.AC1032);
+      const styles = doc.rootDictionary!.get(CadDictionary.acadVisualStyle) as CadDictionary;
+      const style = new VisualStyle('TRIYA_SHADED');
+      styles.add(style);
+      doc.vPorts!.get(VPort.defaultName)!.visualStyle = style;
+      const back = readCadDocument(writeCadDocument(doc, { format }));
+      expect(back.vPorts!.get(VPort.defaultName)!.visualStyle?.handle, format).toBe(style.handle);
+    }
+  });
+
   it('0163 another layout made current takes *Paper_Space, its entities written in ENTITIES', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     const layouts = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadLayout)!;

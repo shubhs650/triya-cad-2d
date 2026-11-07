@@ -1,6 +1,7 @@
-// PURGE on every readable public corpus file (M1-75 parts 25 and 27): every layer, linetype, text
-// style, dimension style, multileader style, table style, application, UCS, view, viewport and
-// block (a block with the entities in it) is removed at once, the save's refusals take back the records something still refers to until it saves,
+// PURGE on every readable public corpus file (M1-75 parts 25, 27 and 29): every layer, linetype,
+// text style, dimension style, multileader style, table style, application, UCS, view, viewport,
+// block (a block with the entities in it), MLINE style, material, visual style and plot style is
+// removed at once, the save's refusals take back the records something still refers to until it saves,
 // and what it purges must be gone from the reopened file with all it owned, while everything
 // else stays exactly as read. A dangling reference the save left would read back as a changed
 // field of the object holding it, so the diff also proves that nothing kept refers to what went.
@@ -47,6 +48,10 @@ const TABLES: readonly TableName[] = [
   'mleaderStyles',
   'tableStyles',
   'blockRecords',
+  'mlineStyles',
+  'materials',
+  'visualStyles',
+  'plotStyles',
 ];
 
 /** Records purged across the corpus, per table: each table must purge somewhere. */
@@ -166,8 +171,9 @@ describe('TriyaToAcad PURGE on the public corpus', () => {
   it('purges records of every table somewhere in the corpus', () => {
     // The only corpus UCS record is in the malformed duplicate_handles.dxf, which is not in
     // `readable`; every corpus file has a single VPORT, the current *Active one, which stays, and
-    // no table style but Standard, which PURGE never takes: export-purge.test.ts covers those.
-    const unpurgeable = new Set<TableName>(['ucs', 'vports', 'tableStyles']);
+    // no table style or MLINE style but Standard, which PURGE never takes: export-purge.test.ts
+    // covers those.
+    const unpurgeable = new Set<TableName>(['ucs', 'vports', 'tableStyles', 'mlineStyles']);
     for (const table of TABLES.filter((t) => !unpurgeable.has(t)))
       expect(purgedPerTable.get(table) ?? 0, table).toBeGreaterThan(0);
   });

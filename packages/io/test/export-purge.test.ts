@@ -7,22 +7,30 @@
 // packages/testkit/src/export/export-purge.corpus.test.ts.
 import {
   ACadVersion,
+  AcdbPlaceHolder,
   AppId,
   BlockRecord,
   CadDictionary,
+  CadDictionaryWithDefault,
   CadDocument,
   DictionaryVariable,
   DimensionStyle,
+  EntityPlotStyleType,
   ExtendedDataString,
   Insert,
   Layer,
   Line,
   LineType,
+  Material,
+  MLine,
+  MLineStyle,
+  MLineVertex,
   MultiLeaderStyle,
   TableStyle,
   TextStyle,
   UCS,
   View,
+  VisualStyle,
   VPort,
   XRecord,
   XY,
@@ -441,5 +449,225 @@ describe('TriyaToAcad PURGE of styles and viewports (M1-75 part 27)', () => {
     const model = open(bytes);
     edit(model, (b) => b.removeTableRecord('vports', named(model, 'vports', 'SAVED').handle));
     expect(tiles(saved(bytes, model, 'dxf'))).toEqual(['*ACTIVE 0']);
+  });
+});
+
+/**
+ * MLINE styles SPARE, USED (an MLINE draws with it) and CURRENT ($CMLSTYLE); materials SPARE,
+ * USED (a LINE is made of it), LAYERED (layer 0's), CURRENT ($CMATERIAL) and HELD (named only by
+ * an XRECORD); visual styles SPARE, USED (the current viewport's), INTERNAL (DXF 291) and the
+ * default Conceptual; plot style names Normal (the dictionary default), SPARE and USED (the
+ * LINE's).
+ */
+function purgeable(version = ACadVersion.AC1032, format: CadFormat = 'dwg'): Uint8Array {
+  const doc = new CadDocument(version);
+  doc.updateCollections(true, true);
+  doc.header!.plotStyleMode = 0;
+  const note = new XRecord('TRIYA_NOTE');
+  doc.rootDictionary!.add(note);
+
+  const mlines = new Map<string, MLineStyle>();
+  for (const name of ['SPARE', 'USED', 'CURRENT']) {
+    const s = new MLineStyle(name);
+    doc.mLineStyles!.add(s);
+    mlines.set(name, s);
+  }
+  doc.header!.currentMLineStyleName = 'CURRENT';
+  const mline = new MLine();
+  doc.entities!.add(mline);
+  mline.style = mlines.get('USED')!;
+  for (const x of [0, 10]) {
+    const v = new MLineVertex();
+    v.position = new XYZ(x, 0, 0);
+    v.direction = new XYZ(1, 0, 0);
+    v.miter = new XYZ(0, 1, 0);
+    mline.vertices.push(v);
+  }
+
+  const materials = new Map<string, Material>();
+  for (const name of ['SPARE', 'USED', 'LAYERED', 'CURRENT', 'HELD']) {
+    const m = new Material(name);
+    doc.materials!.add(m);
+    materials.set(name, m);
+  }
+  const line = new Line(new XYZ(0, 5, 0), new XYZ(10, 5, 0));
+  doc.entities!.add(line);
+  line.material = materials.get('USED')!;
+  doc.layers!.get('0')!.material = materials.get('LAYERED')!;
+  doc.header!.currentMaterialHandle = materials.get('CURRENT')!.handle;
+  note.createEntry(347, materials.get('HELD')!);
+
+  const styles = doc.rootDictionary!.get(CadDictionary.acadVisualStyle) as CadDictionary;
+  const visual = new Map<string, VisualStyle>();
+  for (const name of ['Conceptual', 'SPARE', 'USED', 'INTERNAL']) {
+    const v = new VisualStyle(name);
+    v.description = name;
+    v.internalFlag = name === 'INTERNAL';
+    styles.add(v);
+    visual.set(name, v);
+  }
+  doc.vPorts!.get(VPort.defaultName)!.visualStyle = visual.get('USED')!;
+
+  const plot = new CadDictionaryWithDefault(CadDictionary.acadPlotStyleName);
+  doc.rootDictionary!.add(plot);
+  const pens = new Map<string, AcdbPlaceHolder>();
+  for (const name of ['Normal', 'SPARE', 'USED']) {
+    const p = new AcdbPlaceHolder(name);
+    plot.add(p);
+    pens.set(name, p);
+  }
+  plot.defaultEntry = pens.get('Normal')!;
+  line.plotStyleType = EntityPlotStyleType.ByObjectId;
+  line.plotStyleName = pens.get('USED')!.handle;
+  return writeCadDocument(doc, { format });
+}
+
+const PART_29_TABLES = ['mlineStyles', 'materials', 'visualStyles', 'plotStyles'] as const;
+
+const PURGEABLE_CASES: readonly (readonly [string, ACadVersion, CadFormat])[] = [
+  ['R2018 DWG', ACadVersion.AC1032, 'dwg'],
+  ['R2010 DWG', ACadVersion.AC1024, 'dwg'],
+  ['R2007 DWG', ACadVersion.AC1021, 'dwg'],
+];
+
+describe('TriyaToAcad PURGE of MLINE styles, materials, visual styles and plot styles (M1-75 part 29)', () => {
+  it('maps each by its dictionary entry name', () => {
+    const model = open(purgeable());
+    expect(names(model, 'mlineStyles')).toEqual(['CURRENT', 'SPARE', 'STANDARD', 'USED']);
+    expect(names(model, 'materials')).toEqual([
+      'BYBLOCK',
+      'BYLAYER',
+      'CURRENT',
+      'GLOBAL',
+      'HELD',
+      'LAYERED',
+      'SPARE',
+      'USED',
+    ]);
+    expect(names(model, 'visualStyles')).toEqual(['CONCEPTUAL', 'INTERNAL', 'SPARE', 'USED']);
+    expect(names(model, 'plotStyles')).toEqual(['NORMAL', 'SPARE', 'USED']);
+  });
+
+  describe.each(PURGEABLE_CASES)('%s', (_label, version, format) => {
+    const bytes = purgeable(version, format);
+
+    it('drops the unused one of each, and everything else stays as read', () => {
+      const model = open(bytes);
+      const gone = PART_29_TABLES.map((t) => named(model, t, 'SPARE').handle);
+      edit(model, (b) => PART_29_TABLES.forEach((t, i) => b.removeTableRecord(t, gone[i]!)));
+      const back = saved(bytes, model, format);
+      expect(names(back, 'mlineStyles')).toEqual(['CURRENT', 'STANDARD', 'USED']);
+      expect(names(back, 'materials')).toEqual([
+        'BYBLOCK',
+        'BYLAYER',
+        'CURRENT',
+        'GLOBAL',
+        'HELD',
+        'LAYERED',
+        'USED',
+      ]);
+      expect(names(back, 'visualStyles')).toEqual(['CONCEPTUAL', 'INTERNAL', 'USED']);
+      expect(names(back, 'plotStyles')).toEqual(['NORMAL', 'USED']);
+      expect(gone.filter((h) => back.hasHandle(h))).toEqual([]);
+      for (const t of PART_29_TABLES)
+        expect(named(back, t, 'USED'), t).toEqual(named(model, t, 'USED'));
+      // What referred to the ones kept still does.
+      const line = [...back.entities()].find((e) => e.type === 'LINE')!;
+      expect(line.plotStyle).toBe(named(back, 'plotStyles', 'USED').handle);
+      if (version >= ACadVersion.AC1021)
+        expect(line.material).toBe(named(back, 'materials', 'USED').handle);
+    });
+
+    it('drops the current MLINE style and material once the same save moves off them', () => {
+      const model = open(bytes);
+      edit(model, (b) => {
+        b.setHeader('$CMLSTYLE', 'Standard');
+        b.setHeader('$CMATERIAL', named(model, 'materials', 'ByLayer').handle);
+        b.removeTableRecord('mlineStyles', named(model, 'mlineStyles', 'CURRENT').handle);
+        b.removeTableRecord('materials', named(model, 'materials', 'CURRENT').handle);
+      });
+      const back = saved(bytes, model, format);
+      expect(names(back, 'mlineStyles')).toEqual(['SPARE', 'STANDARD', 'USED']);
+      expect(names(back, 'materials')).not.toContain('CURRENT');
+    });
+  });
+
+  it('refuses one something still refers to and the ones AutoCAD keeps, and changes nothing', () => {
+    const bytes = purgeable();
+    const problems = (table: TableName, name: string) =>
+      refused(
+        (b, model) => b.removeTableRecord(table, named(model, table, name).handle),
+        bytes,
+        'dwg',
+      );
+    const h = '\\([0-9A-F]+\\)';
+    expect(problems('mlineStyles', 'USED')).toEqual([
+      expect.stringMatching(new RegExp(`^MLINE style USED ${h}: MLINE [0-9A-F]+ refers to it$`)),
+    ]);
+    expect(problems('mlineStyles', 'CURRENT')).toEqual([
+      expect.stringMatching(new RegExp(`^MLINE style CURRENT ${h}: \\$CMLSTYLE names it$`)),
+    ]);
+    expect(problems('materials', 'USED')).toEqual([
+      expect.stringMatching(new RegExp(`^material USED ${h}: LINE [0-9A-F]+ refers to it$`)),
+    ]);
+    expect(problems('materials', 'LAYERED')).toEqual([
+      expect.stringMatching(new RegExp(`^material LAYERED ${h}: LAYER [0-9A-F]+ refers to it$`)),
+    ]);
+    expect(problems('materials', 'CURRENT')).toEqual([
+      expect.stringMatching(new RegExp(`^material CURRENT ${h}: \\$CMATERIAL names it$`)),
+    ]);
+    expect(problems('materials', 'HELD')).toEqual([
+      expect.stringMatching(new RegExp(`^material HELD ${h}: XRECORD [0-9A-F]+ refers to it$`)),
+    ]);
+    expect(problems('visualStyles', 'USED')).toEqual([
+      expect.stringMatching(new RegExp(`^visual style USED ${h}: VPORT [0-9A-F]+ refers to it$`)),
+    ]);
+    expect(problems('plotStyles', 'USED')).toEqual([
+      expect.stringMatching(new RegExp(`^plot style USED ${h}: LINE [0-9A-F]+ refers to it$`)),
+    ]);
+    for (const [table, name] of [
+      ['mlineStyles', 'Standard'],
+      ['materials', 'ByLayer'],
+      ['materials', 'ByBlock'],
+      ['materials', 'Global'],
+      ['visualStyles', 'Conceptual'],
+      ['plotStyles', 'Normal'],
+    ] as const)
+      expect(problems(table, name), name).toContainEqual(
+        expect.stringMatching(new RegExp(`${name} cannot be purged$`, 'i')),
+      );
+    expect(problems('visualStyles', 'INTERNAL')).toEqual([
+      expect.stringMatching(/an internal visual style \(DXF 291\) cannot be purged$/),
+    ]);
+  });
+
+  it('drops a plot style and material with the entity that named them', () => {
+    const bytes = purgeable();
+    expect(
+      refused(
+        (b, model) => {
+          const line = [...model.entities()].find((e) => e.type === 'LINE')!;
+          b.removeEntity(line.id);
+          b.removeTableRecord('plotStyles', named(model, 'plotStyles', 'USED').handle);
+          b.removeTableRecord('materials', named(model, 'materials', 'USED').handle);
+        },
+        bytes,
+        'dwg',
+      ),
+    ).toEqual([]);
+  });
+
+  it('refuses a new or changed record of these tables', () => {
+    const bytes = purgeable();
+    expect(
+      refused(
+        (b, model) =>
+          b.updateTableRecord('materials', named(model, 'materials', 'SPARE').handle, {
+            name: 'RENAMED',
+          }),
+        bytes,
+        'dwg',
+      ),
+    ).toEqual([expect.stringMatching(/^materials record [0-9A-F]+ changes$/)]);
   });
 });

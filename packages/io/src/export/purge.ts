@@ -19,27 +19,39 @@
 // VPORTS dialog deletes. AutoCAD keeps the first *Active record as the current viewport (DXF
 // reference, VPORT: "the first such entry describes the current viewport"), so that one stays.
 //
-// Not purged here: the objects PURGE also takes (MLINE styles, materials, visual styles, plot
-// styles), which Triya does not map as records, and shapes kept as nameless STYLE records.
+// Part 29 adds the other objects PURGE takes: MLINE styles, materials, visual styles and the
+// plot style names of a named-plot-style drawing, entries of ACAD_MLINESTYLE, ACAD_MATERIAL,
+// ACAD_VISUALSTYLE and ACAD_PLOTSTYLENAME that Triya maps by name. AutoCAD keeps Standard, the
+// ByLayer, ByBlock and Global materials, the Normal plot style and its default visual styles.
+// Some of what refers to them is a bare handle in acad-ts (an entity's or layer's plot style
+// name, a 3D solid's face materials, the header's $CMATERIAL and interference visual styles), so
+// those fields are read as references too.
+//
+// Not purged here: shapes kept as nameless STYLE records.
 
 import type { CadDocument, Entity as AcadEntity } from '@node-projects/acad-ts';
 import {
   ACadVersion,
+  AcdbPlaceHolder,
   AppId,
   BlockRecord,
   CadDictionary,
+  CadDictionaryWithDefault,
   CadObject,
   DictionaryVariable,
   DimensionStyle,
   ExtendedDataReference,
   Layer,
   LineType,
+  Material,
+  MLineStyle,
   MultiLeaderStyle,
   Table,
   TableStyle,
   TextStyle,
   UCS,
   View,
+  VisualStyle,
   VPort,
   XRecordEntry,
   type TableEntry,
@@ -61,9 +73,16 @@ type Purgeable =
   | 'vports'
   | 'mleaderStyles'
   | 'tableStyles'
-  | 'blockRecords';
+  | 'blockRecords'
+  | 'mlineStyles'
+  | 'materials'
+  | 'visualStyles'
+  | 'plotStyles';
 
-/** A table record, or a style kept as a dictionary entry (MLEADERSTYLE, TABLESTYLE). */
+/**
+ * A table record, or a style kept as a dictionary entry (MLEADERSTYLE, TABLESTYLE, MLINESTYLE,
+ * MATERIAL, VISUALSTYLE, a plot style's ACDBPLACEHOLDER).
+ */
 type Named = CadObject & { name: string };
 
 interface TableRules {
@@ -72,8 +91,10 @@ interface TableRules {
   readonly type: abstract new (...args: never[]) => Named;
   /**
    * Records AutoCAD never purges (AutoCAD 2024 PURGE and LAYDEL): layer 0 and Defpoints, the
-   * ByLayer, ByBlock and Continuous linetypes, the Standard text, dimension, multileader and
-   * table styles, and the ACAD application every drawing registers.
+   * ByLayer, ByBlock and Continuous linetypes, the Standard text, dimension, multileader,
+   * table and MLINE styles, the ACAD application every drawing registers, the ByLayer, ByBlock
+   * and Global materials, the Normal plot style, and the default visual styles (the Visual
+   * Styles Manager: "a default visual style … cannot be deleted").
    */
   readonly fixed: readonly string[];
   /**
@@ -141,6 +162,37 @@ const TABLES: Readonly<Record<Purgeable, TableRules>> = {
     fixed: [],
     header: ['$DIMBLK', '$DIMBLK1', '$DIMBLK2', '$DIMLDRBLK'],
   },
+  mlineStyles: {
+    what: 'MLINE style',
+    type: MLineStyle,
+    fixed: [MLineStyle.defaultName],
+    header: ['$CMLSTYLE'],
+  },
+  materials: {
+    what: 'material',
+    type: Material,
+    fixed: [Material.byLayerName, Material.byBlockName, 'Global'],
+    header: ['$CMATERIAL'],
+  },
+  // Internal visual styles (DXF 291) are checked in planPurge.
+  visualStyles: {
+    what: 'visual style',
+    type: VisualStyle,
+    fixed: [
+      VisualStyle.defaultName,
+      'Wireframe',
+      'Hidden',
+      'Realistic',
+      'Conceptual',
+      'Shaded',
+      'Shaded with edges',
+      'Shades of Gray',
+      'Sketchy',
+      'X-Ray',
+    ],
+    header: ['$INTERFEREOBJVS', '$INTERFEREVPVS'],
+  },
+  plotStyles: { what: 'plot style', type: AcdbPlaceHolder, fixed: ['Normal'], header: [] },
 };
 
 /** DXF 70 bits of a record an xref brings (16, 32) and of an xref's own block (4, 8 overlay). */
@@ -190,6 +242,18 @@ const HANDLE_KEYS = new Set([
 
 /** Xdata group codes that hold a handle: 1003 a layer (acad-ts keeps its handle), 1005. */
 const XDATA_HANDLES = new Set([1003, 1005]);
+
+/**
+ * acad-ts fields holding a bare handle rather than the object: an entity's or layer's plot style
+ * name (DXF 390), a 3D solid's face materials, and the header's material and visual styles.
+ */
+const HANDLE_FIELDS = new Set([
+  'plotStyleName',
+  'materialHandle',
+  'currentMaterialHandle',
+  'interfereObjectVisualStyleHandle',
+  'interfereViewportVisualStyleHandle',
+]);
 
 /** Group codes of an XRECORD entry that hold a handle (DXF reference, group code ranges). */
 const isHandleCode = (c: number): boolean =>
@@ -284,6 +348,10 @@ function acadReferences(root: object, found: (target: CadObject | number) => voi
     }
     for (const [k, x] of Object.entries(v)) {
       if (SKIPPED_FIELDS.has(k) || typeof x === 'function') continue;
+      if (typeof x === 'number') {
+        if (x !== 0 && HANDLE_FIELDS.has(k)) found(x);
+        continue;
+      }
       walk(x, depth + 1);
     }
   };
@@ -328,6 +396,10 @@ export function planPurge(
       else if (rules.fixed.some((n) => n.toUpperCase() === b.name.toUpperCase()))
         out.push(`${b.name} cannot be purged`);
       else if (b.name === '') out.push('a nameless record (a shape file) cannot be purged');
+      else if (acad instanceof VisualStyle && acad.internalFlag)
+        out.push('an internal visual style (DXF 291) cannot be purged');
+      else if (acad?.owner instanceof CadDictionaryWithDefault && acad.owner.defaultEntry === acad)
+        out.push(`it is the default of ${acad.owner.name || 'its dictionary'}`);
       else if ((flags & XREF_DEPENDENT) !== 0)
         out.push(`an xref-dependent ${rules.what} goes with its xref (XREF Detach, M1-21)`);
       else if (acad instanceof VPort && doc.vPorts?.tryGetValue(VPort.defaultName) === acad)
