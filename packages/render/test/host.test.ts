@@ -412,6 +412,23 @@ describe('RenderSession', () => {
     expect(s.model.layouts.map((l) => l.name)).toEqual(['Model', 'Plan']);
   });
 
+  it('applies a block definition change set that crossed a postMessage (M1-75)', () => {
+    const engine = drawing([]);
+    const s = new RenderSession({
+      document: { init: drawingInit([]), block: MODEL },
+      surface: surface('v'),
+      createLayer: () => surface('l'),
+    });
+    let block = '';
+    const cs = change(engine, (b) => {
+      block = b.addBlock({ name: 'DOOR', basePoint: { x: 0, y: 0 } }).handle;
+      b.updateBlock(MODEL, { basePoint: { x: 1, y: 1 } });
+    });
+    s.apply(structuredClone(cs));
+    expect(s.model.blocks.get(block)?.name).toBe('DOOR');
+    expect(s.model.blocks.get(MODEL)?.basePoint).toEqual({ x: 1, y: 1 });
+  });
+
   it('takes its tolerance from the header extents', () => {
     const init = drawingInit([]);
     expect(documentTolerance(init)).toEqual(toleranceForSize(1));

@@ -1935,6 +1935,58 @@ describe('acad-ts local patches', () => {
     expect((back as CellStyleMap).cellStyles.map(styleMapFields)).toEqual([want]);
   });
 
+  it('0157 the DXF reader gives every block its own base point', () => {
+    // A BLOCK's 10/20/30 were written into the XYZ the block already had, in place; every new
+    // Block starts with the same shared XYZ_Zero, so each block read set every other block's base
+    // point (and every Block made afterwards started at the last one read).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const window = new BlockRecord('WINDOW');
+    doc.blockRecords!.add(window);
+    window.blockEntity.basePoint = new XYZ(1, 2, 5);
+    doc.blockRecords!.add(new BlockRecord('EMPTY'));
+    const reread = DxfReader.readFromStream(writeDxf(doc, new DxfWriterConfiguration()));
+    expect(reread.blockRecords!.tryGetValue('WINDOW')!.blockEntity.basePoint).toEqual(
+      new XYZ(1, 2, 5),
+    );
+    expect(reread.blockRecords!.tryGetValue('EMPTY')!.blockEntity.basePoint).toEqual(XYZ.zero);
+    expect(new BlockRecord('NEW').blockEntity.basePoint).toEqual(XYZ.zero);
+  });
+
+  it('0158 a block is explodable unless the file says otherwise', () => {
+    // Allow exploding came with AutoCAD 2006: a DWG before R2007 and an R12 DXF have no field for
+    // it, and every block in them can be exploded. Unpatched, they read as not explodable.
+    const make = (version: ACadVersion) => {
+      const doc = new CadDocument(version);
+      doc.blockRecords!.add(new BlockRecord('DOOR'));
+      return doc;
+    };
+    const dwg = DwgReader.readFromStream(
+      DwgWriter.writeToBuffer(make(ACadVersion.AC1018)).slice().buffer,
+    );
+    expect(dwg.blockRecords!.tryGetValue('DOOR')!.isExplodable).toBe(true);
+    const r12 = DxfReader.readFromStream(
+      writeDxf(make(ACadVersion.AC1009), new DxfWriterConfiguration()),
+    );
+    expect(r12.blockRecords!.tryGetValue('DOOR')!.isExplodable).toBe(true);
+    // A file that states it is still read as it says.
+    const fixed = make(ACadVersion.AC1032);
+    fixed.blockRecords!.tryGetValue('DOOR')!.isExplodable = false;
+    const back = DxfReader.readFromStream(writeDxf(fixed, new DxfWriterConfiguration()));
+    expect(back.blockRecords!.tryGetValue('DOOR')!.isExplodable).toBe(false);
+  });
+
+  it('0159 renaming a table entry keeps its place in the table', () => {
+    // A table is written in its entries' order; a rename moved the entry to the end, so it
+    // reordered the file (and in R12, whose block records have no handles, renumbered every
+    // record acad-ts makes up after it on the next read).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    for (const name of ['A', 'B', 'C']) doc.blockRecords!.add(new BlockRecord(name));
+    doc.blockRecords!.tryGetValue('A')!.name = 'A2';
+    const names = [...doc.blockRecords!].map((b) => b.name).filter((n) => !n.startsWith('*'));
+    expect(names).toEqual(['A2', 'B', 'C']);
+    expect(doc.blockRecords!.tryGetValue('a2')?.name).toBe('A2');
+    expect(doc.blockRecords!.tryGetValue('A')).toBeUndefined();
+  });
   it.each([
     ['DXF', 'dxf'],
     ['binary DXF', 'dxf-binary'],

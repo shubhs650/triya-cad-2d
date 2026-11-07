@@ -1,0 +1,19 @@
+diff --git a/src/DxfPropertyBase.ts b/src/DxfPropertyBase.ts
+index 0e8901a..8f512b2 100644
+--- a/src/DxfPropertyBase.ts
++++ b/src/DxfPropertyBase.ts
+@@ -79,8 +79,12 @@ export abstract class DxfPropertyBase {
+ 
+ 		if (isVector(currentValue)) {
+ 			const index = Math.max(0, Math.floor(code / 10) % 10 - 1);
+-			currentValue[index] = toNumber(value);
+-			this.setPropertyValue(obj, currentValue);
++			// A copy: a default vector may be shared (every Block starts with XYZ_Zero).
++			const vector = currentValue instanceof XYZ
++				? new XYZ(currentValue.x, currentValue.y, currentValue.z)
++				: new XY(currentValue.x, currentValue.y);
++			vector[index] = toNumber(value);
++			this.setPropertyValue(obj, vector);
+ 			return;
+ 		}
+ 

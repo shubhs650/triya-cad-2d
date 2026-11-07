@@ -245,6 +245,53 @@ export class DocumentModel {
       }
     }
 
+    // Block definitions (M1-75 part 22) travel with their BLOCK_RECORD: one is added only where
+    // its record will exist, and goes only with its entities. BLOCK and ENDBLK handles are claimed
+    // like any other.
+    const blocks = cs.blocks ?? {};
+    const removedBlocks = new Set<Handle>();
+    for (const d of blocks.removed ?? []) {
+      if (removedBlocks.has(d.handle))
+        throw new Error(`block ${d.handle} is changed more than once`);
+      removedBlocks.add(d.handle);
+      this.#checkCurrentBlock(d);
+      if (d.beginHandle !== undefined) freed.add(d.beginHandle);
+      if (d.endHandle !== undefined) freed.add(d.endHandle);
+    }
+    const addedBlocks = new Set<Handle>();
+    for (const d of blocks.added ?? []) {
+      if (addedBlocks.has(d.handle)) throw new Error(`block ${d.handle} is changed more than once`);
+      if (this.#blocks.has(d.handle) && !removedBlocks.has(d.handle))
+        throw new Error(`block ${d.handle} already exists`);
+      addedBlocks.add(d.handle);
+      if (d.beginHandle !== undefined) claim(d.beginHandle);
+      if (d.endHandle !== undefined) claim(d.endHandle);
+    }
+    const updatedBlocks = new Set<Handle>();
+    for (const { before, after } of blocks.updated ?? []) {
+      const h = before.handle;
+      if (updatedBlocks.has(h) || removedBlocks.has(h) || addedBlocks.has(h))
+        throw new Error(`block ${h} is changed more than once`);
+      updatedBlocks.add(h);
+      this.#checkCurrentBlock(before);
+      if (after.handle !== h) throw new Error(`block ${h}: an update cannot change handle`);
+      if (after.beginHandle !== before.beginHandle || after.endHandle !== before.endHandle)
+        throw new Error(`block ${h}: an update cannot change its BLOCK or ENDBLK handle`);
+    }
+    const records = cs.tables?.blockRecords;
+    const recordGone = new Set((records?.removed ?? []).map((r) => r.handle));
+    const recordNew = new Set((records?.added ?? []).map((r) => r.handle));
+    for (const h of addedBlocks) {
+      if (!recordNew.has(h) && (!this.#tables.blockRecords.has(h) || recordGone.has(h)))
+        throw new Error(`block ${h} has no BLOCK_RECORD`);
+    }
+    for (const h of recordGone) {
+      if (this.#blocks.has(h) && !removedBlocks.has(h) && !recordNew.has(h))
+        throw new Error(`block ${h}: its BLOCK_RECORD is removed`);
+    }
+    const blockExists = (h: Handle): boolean =>
+      addedBlocks.has(h) || (this.#blocks.has(h) && !removedBlocks.has(h));
+
     const updatedIds = new Set<EntityId>();
     for (const { before, after } of ents.updated ?? []) {
       if (removedIds.has(before.id) || updatedIds.has(before.id)) {
@@ -266,9 +313,10 @@ export class DocumentModel {
     for (const { entity } of ents.removed ?? [])
       room.set(entity.owner, (room.get(entity.owner) ?? 0) - 1);
     for (const { entity, index } of [...(ents.added ?? [])].sort((a, b) => a.index - b.index)) {
-      const list = this.#blockEntities.get(entity.owner);
-      if (!list)
+      if (!blockExists(entity.owner))
         throw new Error(`entity ${entity.handle}: owner block ${entity.owner} does not exist`);
+      // A block re-added under the same handle starts empty.
+      const list = addedBlocks.has(entity.owner) ? [] : this.#blockEntities.get(entity.owner)!;
       if (addedIds.has(entity.id) || updatedIds.has(entity.id)) {
         throw new Error(`entity ${entity.handle} is changed more than once`);
       }
@@ -282,6 +330,10 @@ export class DocumentModel {
         throw new Error(`index ${index} is out of range for block ${entity.owner} (size ${size})`);
       }
       room.set(entity.owner, (room.get(entity.owner) ?? 0) + 1);
+    }
+    for (const h of removedBlocks) {
+      if (this.#blockEntities.get(h)!.length + (room.get(h) ?? 0) !== 0)
+        throw new Error(`block ${h} still holds entities`);
     }
 
     for (const [label, map, c] of keyed) {
@@ -334,6 +386,22 @@ export class DocumentModel {
       }
       for (const { after } of c.updated ?? []) map.set(after.handle, after);
     }
+    for (const d of blocks.removed ?? []) {
+      this.#blocks.delete(d.handle);
+      this.#blockEntities.delete(d.handle);
+      if (d.beginHandle !== undefined) this.#used.delete(d.beginHandle);
+      if (d.endHandle !== undefined) this.#used.delete(d.endHandle);
+    }
+    for (const { after } of blocks.updated ?? []) this.#blocks.set(after.handle, after);
+    for (const d of blocks.added ?? []) {
+      this.#blocks.set(d.handle, d);
+      this.#blockEntities.set(d.handle, []);
+      for (const h of [d.beginHandle, d.endHandle]) {
+        if (h === undefined) continue;
+        this.#used.add(h);
+        this.handles.observe(h);
+      }
+    }
     this.#addEntities(ents.added ?? []);
     for (const [, map, c] of keyed) {
       for (const r of c.added ?? []) {
@@ -360,6 +428,13 @@ export class DocumentModel {
     if (cur === undefined) throw new Error(`entity ${e.handle} is not in the model`);
     if (cur !== e)
       throw new Error(`entity ${e.handle} is stale (changed since this change set was built)`);
+  }
+
+  #checkCurrentBlock(d: BlockDefinition): void {
+    const cur = this.#blocks.get(d.handle);
+    if (cur === undefined) throw new Error(`block ${d.handle} is not in the model`);
+    if (cur !== d)
+      throw new Error(`block ${d.handle} is stale (changed since this change set was built)`);
   }
 
   #checkCurrentRecord(label: string, map: Map<Handle, ObjectCommon>, r: ObjectCommon): void {

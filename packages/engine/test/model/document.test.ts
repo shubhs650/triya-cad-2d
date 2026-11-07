@@ -398,6 +398,135 @@ describe('applyChangeSet validation is atomic', () => {
     expect(m.header.get('$EXTMIN')).toEqual({ x: 1, y: 1, z: 0 });
   });
 
+  it('adds a block definition with its record and entities, and removes it on inversion', () => {
+    const m = sampleModel();
+    const before = snapshot(m);
+    const def = { handle: '40', name: 'DOOR', basePoint: { x: 1, y: 2 } };
+    const e = createEntity(
+      m.ids.assign('41'),
+      entityInit('41', circleGeom(0, 0, 1), { owner: '40' }),
+    );
+    const cs: ChangeSet = {
+      tables: { blockRecords: { added: [blockRecord('40', 'DOOR')] } },
+      blocks: { added: [def] },
+      entities: { added: [{ entity: e, index: 0 }] },
+    };
+    expect(isEmptyChangeSet({ blocks: {} })).toBe(true);
+    expect(isEmptyChangeSet({ blocks: { added: [def] } })).toBe(false);
+    m.apply(cs);
+    expect(m.blocks.get('40')).toEqual(def);
+    expect(m.blockEntities('40')).toEqual([e.id]);
+    expect(m.handSeed).toBe('42');
+    m.apply(invertChangeSet(cs));
+    expect(snapshot(m)).toEqual(before);
+    expect(m.hasBlock('40')).toBe(false);
+    m.apply(cs);
+    expect(m.entityByHandle('41')).toBe(e);
+  });
+
+  it('updates a block definition in place, and claims new BLOCK and ENDBLK handles', () => {
+    const m = sampleModel();
+    const ms = m.blocks.get(MODEL_SPACE)!;
+    const after = { ...ms, basePoint: { x: 5, y: 5 } };
+    m.apply({ blocks: { updated: [{ before: ms, after }] } });
+    expect(m.blocks.get(MODEL_SPACE)).toBe(after);
+    expect(m.blockEntities(MODEL_SPACE)).toHaveLength(3);
+    m.apply({
+      tables: { blockRecords: { added: [blockRecord('50', 'B')] } },
+      blocks: {
+        added: [
+          {
+            handle: '50',
+            name: 'B',
+            basePoint: { x: 0, y: 0 },
+            beginHandle: '51',
+            endHandle: '52',
+          },
+        ],
+      },
+    });
+    expect(m.hasHandle('51')).toBe(true);
+    expect(m.handSeed).toBe('53');
+  });
+
+  it('rejects inconsistent block definition changes', () => {
+    const def = { handle: '40', name: 'DOOR', basePoint: { x: 0, y: 0 } };
+    rejects(
+      () => ({ header: [okHeader], blocks: { added: [def] } }),
+      /block 40 has no BLOCK_RECORD/,
+    );
+    rejects(
+      (m) => ({ header: [okHeader], blocks: { added: [m.blocks.get(MODEL_SPACE)!] } }),
+      /block 1F already exists/,
+    );
+    rejects(
+      (m) => ({
+        header: [okHeader],
+        tables: { blockRecords: { removed: [m.tables.blockRecords.get(PAPER_SPACE)!] } },
+      }),
+      /block 1B: its BLOCK_RECORD is removed/,
+    );
+    rejects(
+      (m) => ({
+        header: [okHeader],
+        tables: { blockRecords: { removed: [m.tables.blockRecords.get(PAPER_SPACE)!] } },
+        blocks: { removed: [m.blocks.get(PAPER_SPACE)!] },
+      }),
+      /block 1B still holds entities/,
+    );
+    rejects(
+      (m) => ({
+        header: [okHeader],
+        blocks: {
+          updated: [
+            { before: { ...m.blocks.get(MODEL_SPACE)! }, after: m.blocks.get(MODEL_SPACE)! },
+          ],
+        },
+      }),
+      /block 1F is stale/,
+    );
+    rejects(
+      (m) => ({
+        header: [okHeader],
+        blocks: {
+          updated: [
+            {
+              before: m.blocks.get(MODEL_SPACE)!,
+              after: { ...m.blocks.get(MODEL_SPACE)!, handle: '1B' },
+            },
+          ],
+        },
+      }),
+      /block 1F: an update cannot change handle/,
+    );
+    rejects((m) => {
+      const e = createEntity(
+        m.ids.assign('41'),
+        entityInit('41', circleGeom(0, 0, 1), { owner: '40' }),
+      );
+      return {
+        header: [okHeader],
+        tables: { blockRecords: { added: [blockRecord('40', 'DOOR')] } },
+        blocks: { added: [{ ...def, beginHandle: '20' }] },
+        entities: { added: [{ entity: e, index: 0 }] },
+      };
+    }, /handle 20 is already used/);
+  });
+
+  it('removes an emptied block definition with its record', () => {
+    const m = sampleModel();
+    const before = snapshot(m);
+    const cs: ChangeSet = {
+      entities: { removed: [{ entity: entityAt(m, PAPER_SPACE, 0), index: 0 }] },
+      tables: { blockRecords: { removed: [m.tables.blockRecords.get(PAPER_SPACE)!] } },
+      blocks: { removed: [m.blocks.get(PAPER_SPACE)!] },
+    };
+    m.apply(cs);
+    expect(m.hasBlock(PAPER_SPACE)).toBe(false);
+    m.apply(invertChangeSet(cs));
+    expect(snapshot(m)).toEqual(before);
+  });
+
   it('rejects stale or duplicate keyed records', () => {
     rejects(
       (m) => ({

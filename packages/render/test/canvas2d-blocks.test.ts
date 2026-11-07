@@ -188,6 +188,15 @@ describe('inserts', () => {
     ).toContain('#ff0000');
   });
 
+  it('redraws an insert when its block’s base point moves (M1-75)', () => {
+    const { d, r, redraw } = setup([lineInB(), entity('20', insertOf(B))]);
+    const [, x0] = redraw().named('moveTo')[0]!;
+    // BASE: the base point moves one unit right, so the contents draw one unit left.
+    r.apply(change(d, (b) => b.updateBlock(B, { basePoint: { x: 1, y: 0 } })));
+    const [, x1] = redraw().named('moveTo')[0]!;
+    expect((x0 as number) - (x1 as number)).toBeCloseTo(1);
+  });
+
   it('survives a block that contains itself', () => {
     const { redraw } = setup([
       entity('55', line(0, 0, 1, 0), { owner: SELF }),
