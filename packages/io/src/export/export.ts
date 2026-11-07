@@ -33,18 +33,15 @@ import { writeCadDocument, type WriteOptions } from '../write';
 import {
   createAcadEntity,
   entityProblems,
+  resolve,
   same,
   tableCellProblems,
   writeEntity,
   type PlotStyleNames,
   type Resolver,
 } from './entities';
-import {
-  onlyNewDictionary,
-  planDrawOrder,
-  writeDrawOrder,
-  type DrawOrderChanges,
-} from './draw-order';
+import { planDrawOrder, writeDrawOrder } from './draw-order';
+import { planBlocks, writeBlocks } from './blocks';
 import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
 import { IMAGE_OBJECT_TYPES, planImageObjects, writeImageObjects } from './image-objects';
@@ -112,7 +109,7 @@ function keyedProblems(
 
 /**
  * The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts, dim-styles.ts,
- * view-records.ts, mleader-styles.ts, table-styles.ts).
+ * view-records.ts, mleader-styles.ts, table-styles.ts, and blocks.ts with the block definitions).
  */
 const WRITTEN_TABLES = new Set([
   'layers',
@@ -125,33 +122,19 @@ const WRITTEN_TABLES = new Set([
   'vports',
   'mleaderStyles',
   'tableStyles',
+  'blockRecords',
 ]);
 
 /**
- * The non-entity changes no writer handles yet (header, the tables above, draw order and the
- * image objects: header.ts, draw-order.ts, image-objects.ts). A block record may gain the extension dictionary a new draw order
- * table needs.
+ * The non-entity changes no writer handles yet (header, the tables above, block definitions,
+ * draw order and the image objects: header.ts, blocks.ts, draw-order.ts, image-objects.ts).
  */
-function nonEntityProblems(
-  base: DocumentInit,
-  model: DocumentModel,
-  drawOrder: DrawOrderChanges,
-): string[] {
+function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   const out: string[] = [];
   const baseTables = (base.tables ?? {}) as Record<string, readonly { handle: Handle }[]>;
   for (const [name, table] of Object.entries(model.tables)) {
     if (WRITTEN_TABLES.has(name)) continue;
-    let records: ReadonlyMap<Handle, unknown> = table;
-    if (name === 'blockRecords') {
-      const was = new Map((base.tables?.blockRecords ?? []).map((b) => [b.handle, b]));
-      records = new Map(
-        [...model.tables.blockRecords].map(([h, b]) => [
-          h,
-          onlyNewDictionary(drawOrder, was.get(h), b) ? was.get(h) : b,
-        ]),
-      );
-    }
-    out.push(...keyedProblems(`${name} record`, baseTables[name] ?? [], records));
+    out.push(...keyedProblems(`${name} record`, baseTables[name] ?? [], table));
   }
   // Draw order tables and the image objects have writers (draw-order.ts, image-objects.ts).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
@@ -163,7 +146,6 @@ function nonEntityProblems(
       new Map([...model.objects].filter(([, o]) => unwritten(o))),
     ),
   );
-  if (!same(base.blocks ?? [], [...model.blocks.values()])) out.push('block definition changes');
   return out;
 }
 
@@ -265,10 +247,9 @@ function plan(
   model: DocumentModel,
   r: Resolver,
   format: CadFormat | undefined,
-  drawOrder: DrawOrderChanges,
 ): { plan: Plan; problems: string[] } {
   const problems = [
-    ...nonEntityProblems(base, model, drawOrder),
+    ...nonEntityProblems(base, model),
     ...orderProblems(base, model),
     ...reactorProblems(base, model),
   ];
@@ -305,8 +286,9 @@ function plan(
       ...entityProblems(r, undefined, m),
       ...formatProblems(format, version, undefined, m, acadApp),
     );
-    const block = r.store.original(m.owner);
-    if (!(block instanceof BlockRecord)) {
+    // A block the same save adds (blocks.ts) holds its entities too.
+    const block = resolve(r, m.owner, BlockRecord);
+    if (!block) {
       problems.push(`${m.type} ${m.handle}: owner block ${m.owner} is not in the drawing`);
     } else if (doc.getCadObject(Number.parseInt(m.handle, 16))) {
       problems.push(`${m.type} ${m.handle}: the handle is already used`);
@@ -386,15 +368,23 @@ export function triyaToAcad(
   // Before the entities: a new IMAGE may show a definition the same save adds.
   const imageObjects = planImageObjects(original, base, model, r);
   const layouts = planLayouts(original, base, model, r);
-  // A current style variable may name a style by the name the same save gives it.
+  // A current style variable may name a style, and an arrow-block variable a block, by the name
+  // the same save gives it (RENAME).
   const renamed = new Map<CadObject, string>(
     [...mleaderStyles.plan.updated, ...tableStyles.plan.updated]
       .filter(({ before, after }) => before.name !== after.name)
       .map(({ acad, after }) => [acad, after.name]),
   );
+  for (const b of base.tables?.blockRecords ?? []) {
+    const name = model.tables.blockRecords.get(b.handle)?.name;
+    const acad = resolve(r, b.handle, BlockRecord);
+    if (acad && name !== undefined && name !== b.name) renamed.set(acad, name);
+  }
   const header = planHeader(original, base, model, format, [...created.values()], renamed);
   const drawOrder = planDrawOrder(original, base, model, r);
-  const { plan: p, problems } = plan(original, base, model, r, format, drawOrder);
+  // Before the entities: a new block holds entities and INSERTs, dimensions and tables name it.
+  const blocks = planBlocks(original, base, model, r, format, drawOrder);
+  const { plan: p, problems } = plan(original, base, model, r, format);
   problems.unshift(
     ...header.problems,
     ...textStyles.problems,
@@ -406,6 +396,7 @@ export function triyaToAcad(
     ...Object.values(views).flatMap((v) => v.problems),
     ...imageObjects.problems,
     ...layouts.problems,
+    ...blocks.problems,
   );
   problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
@@ -424,6 +415,7 @@ export function triyaToAcad(
   });
   writeImageObjects(original, imageObjects.plan);
   writeLayouts(layouts.plan);
+  writeBlocks(original, r, blocks.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
   // it owns (§6.2 rule 3); shared objects it points to stay. Its draw order entry goes with it,

@@ -167,6 +167,66 @@ describe('ChangeSetBuilder', () => {
     expect(m.layouts.map((l) => l.name)).toEqual(['Layout1', 'Model']);
   });
 
+  it('adds a block with its record, fills it and undoes it (BLOCK)', () => {
+    const m = sampleModel();
+    const before = snapshot(m);
+    const b = new ChangeSetBuilder(m);
+    const def = b.addBlock({ name: 'DOOR', basePoint: { x: 1, y: 2 } });
+    expect(def).toEqual({ handle: '40', name: 'DOOR', basePoint: { x: 1, y: 2 } });
+    expect(b.block('40')).toBe(def);
+    expect(b.tableRecord('blockRecords', '40')).toEqual({
+      handle: '40',
+      name: 'DOOR',
+      units: 0,
+      explodable: true,
+      scalable: true,
+    });
+    const e = b.addEntity({ owner: def.handle, layer: LAYER_0, geom: circleGeom(0, 0, 1) });
+    expect(b.blockEntities(def.handle)).toEqual([e.id]);
+    const cs = b.build();
+    expect(cs.blocks?.added).toEqual([def]);
+    expect(cs.entities?.added).toEqual([{ entity: e, index: 0 }]);
+    m.apply(cs);
+    expect(m.blocks.get('40')).toBe(def);
+    expect(m.tables.blockRecords.get('40')?.name).toBe('DOOR');
+    expect(m.blockEntities('40')).toEqual([e.id]);
+    m.apply(invertChangeSet(cs));
+    expect(snapshot(m)).toEqual(before);
+  });
+
+  it('moves a block base point, renames a block with its record, and removes an empty one', () => {
+    const m = sampleModel();
+    const b = new ChangeSetBuilder(m);
+    const made = b.addBlock({ name: 'TEMP', basePoint: { x: 0, y: 0 }, units: 4, scalable: false });
+    expect(b.tableRecord('blockRecords', made.handle)).toMatchObject({ units: 4, scalable: false });
+    b.updateBlock(made.handle, { name: 'TEMP2' });
+    expect(b.tableRecord('blockRecords', made.handle)?.name).toBe('TEMP2');
+    b.removeBlock(made.handle);
+    expect(b.block(made.handle)).toBeUndefined();
+    b.updateBlock(PAPER_SPACE, { basePoint: { x: 3, y: 4 } });
+    b.updateBlock(PAPER_SPACE, { name: '*Paper_Space9' });
+    // A block that holds entities cannot go until they do.
+    expect(() => b.removeBlock(PAPER_SPACE)).toThrow(/block 1B still holds entities/);
+    const cs = b.build();
+    expect(cs.blocks?.added).toEqual([]);
+    expect(cs.tables?.blockRecords?.added).toEqual([]);
+    m.apply(cs);
+    expect(m.blocks.get(PAPER_SPACE)).toMatchObject({
+      name: '*Paper_Space9',
+      basePoint: { x: 3, y: 4 },
+    });
+    expect(m.tables.blockRecords.get(PAPER_SPACE)?.name).toBe('*Paper_Space9');
+    const b2 = new ChangeSetBuilder(m);
+    b2.removeEntity(m.blockEntities(PAPER_SPACE)[0]!);
+    b2.removeBlock(PAPER_SPACE);
+    expect(() =>
+      b2.addEntity({ owner: PAPER_SPACE, layer: LAYER_0, geom: circleGeom(0, 0, 1) }),
+    ).toThrow(/owner block 1B/);
+    m.apply(b2.build());
+    expect(m.hasBlock(PAPER_SPACE)).toBe(false);
+    expect(m.tables.blockRecords.has(PAPER_SPACE)).toBe(false);
+  });
+
   it('fails fast on unknown targets and after build()', () => {
     const m = sampleModel();
     const b = new ChangeSetBuilder(m);
@@ -178,6 +238,8 @@ describe('ChangeSetBuilder', () => {
     expect(() => b.updateObject('99', {})).toThrow(/object 99/);
     expect(() => b.removeTableRecord('layers', '99')).toThrow(/layers record 99/);
     expect(() => b.updateLayout('99', { name: 'X' })).toThrow(/layout 99/);
+    expect(() => b.updateBlock('99', { name: 'X' })).toThrow(/block 99/);
+    expect(() => b.removeBlock('99')).toThrow(/block 99/);
     b.build();
     expect(() => b.setHeader('$X', 1)).toThrow(/already built/);
   });
@@ -203,6 +265,8 @@ const op = fc.oneof(
     v: fc.option(fc.integer(), { nil: undefined }),
   }),
   fc.record({ kind: fc.constant('layer' as const), frozen: fc.boolean() }),
+  fc.record({ kind: fc.constant('block' as const), r: fc.integer({ min: 1, max: 9 }) }),
+  fc.record({ kind: fc.constant('base' as const), s: fc.integer({ min: 1, max: 9 }) }),
 );
 
 type Op = { kind: string; [k: string]: unknown };
@@ -236,6 +300,15 @@ function run(b: ChangeSetBuilder, ops: readonly Op[]): ChangeSetBuilder {
         break;
       case 'layer':
         b.updateTableRecord('layers', LAYER_WALLS, { frozen: o.frozen as boolean });
+        break;
+      case 'block': {
+        // BLOCK: a new definition holding one circle.
+        const def = b.addBlock({ name: `B${o.r as number}`, basePoint: { x: 0, y: 0 } });
+        b.addEntity({ owner: def.handle, layer: LAYER_0, geom: circleGeom(0, 0, o.r as number) });
+        break;
+      }
+      case 'base':
+        b.updateBlock(PAPER_SPACE, { basePoint: { x: o.s as number, y: 0 } });
         break;
     }
   }

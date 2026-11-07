@@ -212,8 +212,16 @@ export class SpatialIndex {
     // ATTMODE shows or hides invisible attributes (M1-14 part 2).
     if (cs.tables?.textStyles || cs.header?.some((h) => h.name === '$ATTMODE'))
       this.reboundAnnotations();
-    const e = cs.entities;
-    if (!e) return;
+    const e = cs.entities ?? {};
+    // A block whose base point moved places its contents elsewhere in every reference (BASE in
+    // the block editor, M1-75 part 22); a removed block's tree goes (its entities went first).
+    const moved = (cs.blocks?.updated ?? [])
+      .filter(
+        (u) =>
+          u.before.basePoint.x !== u.after.basePoint.x ||
+          u.before.basePoint.y !== u.after.basePoint.y,
+      )
+      .map((u) => u.after.handle);
     const removed = [
       ...(e.removed ?? []).map((p) => p.entity),
       ...(e.updated ?? []).map((r) => r.before),
@@ -222,7 +230,11 @@ export class SpatialIndex {
       ...(e.added ?? []).map((p) => p.entity),
       ...(e.updated ?? []).map((r) => r.after),
     ];
-    this.#update(removed, added);
+    if (removed.length || added.length || moved.length) this.#update(removed, added, moved);
+    for (const d of cs.blocks?.removed ?? []) {
+      this.#trees.delete(d.handle);
+      this.#extents.delete(d.handle);
+    }
   }
 
   /**
@@ -314,8 +326,12 @@ export class SpatialIndex {
     this.#linked.delete(e.id);
   }
 
-  #update(removed: readonly Entity[], added: readonly Entity[]): void {
-    const dirty = new Set<Handle>();
+  #update(
+    removed: readonly Entity[],
+    added: readonly Entity[],
+    moved: readonly Handle[] = [],
+  ): void {
+    const dirty = new Set<Handle>(moved);
     for (const e of removed) {
       this.#trees.get(e.owner)?.delete(e.id);
       this.#unlink(e);

@@ -8,6 +8,7 @@ import {
   boxesOverlap,
   ChangeSetBuilder,
   DocumentModel,
+  invertChangeSet,
   toleranceForSize,
   type Box,
   type EntityGeometry,
@@ -422,6 +423,35 @@ describe('invalidation', () => {
     index.apply(ucs);
     expect(index.query(MODEL_SPACE, box(240, -1, 241, 1))).toEqual([]);
     expect(index.query(MODEL_SPACE, box(355, -1, 356, 1))).toEqual([]);
+  });
+
+  it('re-bounds the references when a block base point moves, and indexes a new block (M1-75)', () => {
+    const model = blockModel();
+    const index = SpatialIndex.build(model, { tol });
+    const b = new ChangeSetBuilder(model);
+    // BASE in A: the base point moves to (1, 0), so A at (200, 0) draws from 199 to 200.
+    b.updateBlock(BLOCK_A, { basePoint: { x: 1, y: 0 } });
+    // BLOCK: a new definition holding a circle, referenced from model space at once.
+    const c = b.addBlock({ name: 'C', basePoint: { x: 0, y: 0 } });
+    b.addEntity({ owner: c.handle, layer: LAYER_0, geom: circleGeom(0, 0, 2) });
+    const ref = b.addEntity({
+      owner: MODEL_SPACE,
+      layer: LAYER_0,
+      geom: insertGeom(c.handle, 500, 0),
+    });
+    const cs = b.build();
+    model.apply(cs);
+    index.apply(cs);
+    expect(index.query(MODEL_SPACE, box(199.2, -1, 199.4, 1))).toEqual([idOf(model, '52')]);
+    expect(index.query(MODEL_SPACE, box(200.2, -1, 200.4, 1))).toEqual([]);
+    expect(index.extents(c.handle)).toEqual(box(-2, -2, 2, 2));
+    expect(index.query(MODEL_SPACE, box(501, 1, 503, 3))).toEqual([ref.id]);
+    // Undo: A's references go back and the new block's tree goes with it.
+    const undo = invertChangeSet(cs);
+    model.apply(undo);
+    index.apply(undo);
+    expect(index.query(MODEL_SPACE, box(200.2, -1, 200.4, 1))).toEqual([idOf(model, '52')]);
+    expect(index.extents(c.handle)).toBeUndefined();
   });
 
   it('re-bounds a dimension when its *D block changes', () => {

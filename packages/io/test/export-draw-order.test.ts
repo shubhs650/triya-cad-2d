@@ -268,7 +268,7 @@ describe('draw order (SORTENTSTABLE)', () => {
       [
         'an extension dictionary no new table needs',
         (m, b) => b.updateTableRecord('blockRecords', ps(m), { extDict: m.handles.allocate() }),
-        /blockRecords record .* changes/,
+        /block \*Paper_Space \(\w+\): extDict changes/,
       ],
       [
         'xdata on a table',

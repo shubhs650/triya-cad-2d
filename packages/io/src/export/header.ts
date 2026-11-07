@@ -393,6 +393,19 @@ export function planHeader(
     if (was && !styleNames(doc, entry, type, added, renamed).some((n) => n.toUpperCase() === key))
       problems.push(`header variable ${name}: it names ${value}, which the save renames ${was[1]}`);
   }
+  // RENAME (M1-75 part 22): a name variable left naming a renamed record would name nothing
+  // (AutoCAD's own variables follow the record, as they hold its handle).
+  for (const [name, table] of Object.entries(NAME_TABLES)) {
+    const value = model.header.get(name);
+    if (typeof value !== 'string' || value === '' || !same(before.get(name), value)) continue;
+    const records = [...(table.records(doc, added) ?? [])] as (CadObject & { name: string })[];
+    const now = records.map((r) => renamed.get(r) ?? r.name);
+    const was = records.find((r) => r.name === value && renamed.has(r));
+    if (was && !now.includes(value))
+      problems.push(
+        `header variable ${name}: it names ${value}, which the save renames ${renamed.get(was)}`,
+      );
+  }
   // CANNOSCALEVALUE is not stored: it is the CANNOSCALE scale's ratio, so it must follow it.
   const scale = model.header.get(DictionaryVariable.currentAnnotationScale);
   const ratio = model.header.get('CANNOSCALEVALUE');
@@ -441,7 +454,9 @@ function headerProblem(
     // Spelled as the record is: the header maps back with the record's own name.
     const found =
       (value === '' && table.empty) ||
-      [...(table.records(doc, added) ?? [])].some((r) => r.name === value);
+      [...(table.records(doc, added) ?? [])].some(
+        (r) => (renamed.get(r as CadObject & { name: string }) ?? r.name) === value,
+      );
     if (!found) return `no record named ${JSON.stringify(value)}`;
   } else {
     // Dry run on a header of its own: the value must be one the variable holds as given.
