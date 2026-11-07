@@ -54,6 +54,7 @@ export function planLayers(
 ): { plan: LayerPlan; problems: string[] } {
   return planRecords(doc, base.tables?.layers ?? [], model.tables.layers, r, {
     what: 'layer',
+    removable: true,
     type: Layer,
     make: (a) => new Layer(a.name),
     // AutoCAD: "The name of layer 0 cannot be changed"; an xref's layers are renamed in it.

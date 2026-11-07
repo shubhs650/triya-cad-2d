@@ -49,6 +49,7 @@ export function planTextStyles(
 ): { plan: TextStylePlan; problems: string[] } {
   return planRecords(doc, base.tables?.textStyles ?? [], model.tables.textStyles, r, {
     what: 'text style',
+    removable: true,
     type: TextStyle,
     make: (a) => {
       // acad-ts refuses an empty name in the constructor; a shape file's style has one.

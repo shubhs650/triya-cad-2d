@@ -39,6 +39,7 @@ export function planLinetypes(
 ): { plan: LinetypePlan; problems: string[] } {
   return planRecords(doc, base.tables?.linetypes ?? [], model.tables.linetypes, r, {
     what: 'linetype',
+    removable: true,
     type: LineType,
     make: (a) => new LineType(a.name),
     // AutoCAD: BYLAYER, BYBLOCK and CONTINUOUS cannot be renamed.

@@ -173,7 +173,10 @@ describe('text styles', () => {
       (name: string, change: Partial<TextStyleRecord>) => (b: ChangeSetBuilder, m: DocumentModel) =>
         b.updateTableRecord('textStyles', styleNamed(m, name).handle, change);
     const cases: [(b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
-      [(b, m) => b.removeTableRecord('textStyles', styleNamed(m, 'NOTES').handle), /removing/],
+      [
+        (b, m) => b.removeTableRecord('textStyles', styleNamed(m, 'Standard').handle),
+        /Standard cannot be purged/,
+      ],
       [update('Standard', { name: 'MAIN' }), /Standard cannot be renamed/],
       [update('NOTES', { name: 'bold' }), /another text style is named bold/],
       [update('NOTES', { name: 'A<B' }), /not a valid text style name/],
@@ -297,7 +300,10 @@ describe('linetypes', () => {
       };
     const element = (l: LinetypeRecord, change: object) => [{ ...l.elements[0]!, ...change }];
     const cases: [(b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
-      [(b, m) => b.removeTableRecord('linetypes', linetypeNamed(m, 'DASHED').handle), /removing/],
+      [
+        (b, m) => b.removeTableRecord('linetypes', linetypeNamed(m, 'Continuous').handle),
+        /Continuous cannot be purged/,
+      ],
       [update('Continuous', () => ({ name: 'SOLID' })), /Continuous cannot be renamed/],
       [update('ByLayer', () => ({ description: 'x' })), /ByLayer is not a linetype to edit/],
       [

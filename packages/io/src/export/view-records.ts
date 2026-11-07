@@ -153,6 +153,7 @@ export function planAppIds(
 ): { plan: AppIdPlan; problems: string[] } {
   return planRecords(doc, base.tables?.appIds ?? [], model.tables.appIds, r, {
     what: 'application',
+    removable: true,
     type: AppId,
     make: (a) => new AppId(a.name),
     // AutoCAD's own application name, which its xdata (TrueType faces, …) is registered under.
@@ -180,6 +181,7 @@ export function planUcs(
   const version = doc.header?.version;
   return planRecords(doc, base.tables?.ucs ?? [], model.tables.ucs, r, {
     what: 'UCS',
+    removable: true,
     type: UCS,
     make: (a) => new UCS(a.name),
     fixedNames: [],
@@ -220,6 +222,7 @@ export function planViews(
   const version = doc.header?.version;
   return planRecords(doc, base.tables?.views ?? [], model.tables.views, r, {
     what: 'view',
+    removable: true,
     type: View,
     make: (a) => new View(a.name),
     fixedNames: [],
