@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23) and 0161 (M1-75 part 24) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24) and 0163 (M1-75 part 30) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2975,5 +2975,22 @@ When a file is read, an entity keeps the reactors it states, which for a grouped
 There is no way to move an entity from one block record to another while keeping it in the document: `remove` unregisters it (handle reset to 0, reactors cleared, extension dictionary unregistered) and `add` registers it again under a new handle. This adds `CadObjectCollection.moveTo(item, target)`, which changes the item's owner and collection without touching its registration, and `reorder(order)`, which sets the order the collection (and so the written file) lists its entries in.
 
 The R2004+ DWG writer also writes a non-layout block's owned-object handles as read and appends entities added since, so a reordered or moved entity is written in its old place, and a moved one is listed by its old block too, which the reader then rejects. The writer now fills the slots of the block's entities in collection order and drops handles of objects another block owns, keeping everything else in the list as read.
+
+</details>
+
+### 0163 — another layout cannot be made current: `*Paper_Space` cannot be renamed
+
+- **File:** `third_party/acad-ts-patches/0163-block-records-set-paper-space.patch`
+- **Touches:** `src/Tables/Collections/Table.ts`, `src/Tables/Collections/BlockRecordsTable.ts`
+- **Symptom:** AutoCAD makes another layout current by swapping the names of the two sheet blocks: the new current layout's block becomes `*Paper_Space` (the DWG header points at it, DXF writes its entities in ENTITIES) and the old one's takes its name. In acad-ts `*Paper_Space` is a default entry of the block record table, and renaming it throws ("The name *Paper_Space belongs to a default entry"), so a document could not change its current layout. Found by Triya M1-75 part 30.
+- **Fix:** `Table.swapEntryNames(a, b)` (protected) swaps two entries' names, each keeping its place in the table and its references following it; `BlockRecordsTable.setPaperSpace(record)` uses it to make a paper layout's block the current one.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0163 another layout made current takes *Paper_Space, its entities written in ENTITIES" (DXF and DWG); `packages/testkit/src/export/export-layouts-current.corpus.test.ts` makes another layout current in every multi-layout corpus file.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Make another layout current (`BlockRecordsTable.setPaperSpace`)
+
+AutoCAD keeps the current paper layout on the block record named `*Paper_Space`; making another layout current swaps the names of the two layouts' block records, and both keep their handles and entities. In acad-ts `*Paper_Space` is one of the block table's default entries, so renaming it throws and a document's current layout cannot change. This adds `BlockRecordsTable.setPaperSpace(record)`, which gives `record` the name `*Paper_Space` and the previous paper space block `record`'s name, built on a protected `Table.swapEntryNames` that re-keys both entries in place (the table is written in entry order) and moves the name references with them. `CadDocument.paperSpace`, the DWG header's paper space handle and the DXF ENTITIES section follow the name, so the new current layout is written as such.
 
 </details>
