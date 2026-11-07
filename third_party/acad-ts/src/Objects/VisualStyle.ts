@@ -12,7 +12,7 @@ import { FaceLightingQualityType } from './FaceLightingQualityType.js';
 import { FaceModifierType } from './FaceModifierType.js';
 
 export class VisualStyle extends NonGraphicalObject implements IRawCadObject {
-	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF reader assigns no field of this type and the writer has none. */
+	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF writer writes a style read from DXF back from these, and one read from DWG from its fields. */
 	rawDxfCodes: DxfRawCode[] | null = null;
 	rawDxfName: string | null = null;
 	rawDwgData: DwgRawObjectData | null = null;

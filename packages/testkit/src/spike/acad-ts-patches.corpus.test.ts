@@ -6,10 +6,8 @@ import type {
   DimensionAligned,
   Entity,
   BlockRecord,
-  CadDictionary,
   CellBorder,
   CellStyle,
-  CellStyleMap,
   GeoData,
   TableStyle,
   BlockAction,
@@ -25,7 +23,9 @@ import {
   AttributeDefinition,
   BlockEnd,
   BookColor,
+  CadDictionary,
   CadWipeoutBase,
+  CellStyleMap,
   Color,
   CadDictionaryWithDefault,
   DimensionArc,
@@ -62,6 +62,7 @@ import {
   RasterVariables,
   Solid3D,
   SortEntitiesTable,
+  TableContent,
   TableEntity,
   TextEntity,
   Tolerance,
@@ -2930,5 +2931,121 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(names(back, 0x267), `binary ${binary}`).toEqual(['LAYER_VP_FREEZE', 'LAYER2']);
       expect(names(back, 0x26b), `binary ${binary}`).toEqual([]);
     }
+  });
+
+  // A visual style's fields, colours as [index, true colour] and its extended data as text.
+  const visualStyleFields = (style: VisualStyle): Record<string, unknown> => {
+    const plain = (v: unknown): unknown => (v instanceof Color ? [v.index, v.trueColor] : v);
+    const skip = new Set([
+      'document',
+      'handle',
+      'owner',
+      'onNameChanged',
+      'rawDxfCodes',
+      'rawDxfName',
+      'rawDwgData',
+      'rawOwnedObjects',
+    ]);
+    return {
+      ...Object.fromEntries(
+        Object.entries(style)
+          .filter(([k]) => !skip.has(k) && (!k.startsWith('_') || k === '_edgeColorValue'))
+          .map(([k, v]) => [k, plain(v)]),
+      ),
+      dwgExtendedProperties: style.dwgExtendedProperties.map((p) => [plain(p.value), p.operation]),
+      name: style.name,
+      xdata: [...style.extendedData].map(([app, data]) => [app.name, data.records.map(String)]),
+    };
+  };
+  const visualStyles = (d: CadDocument): Map<number, Record<string, unknown>> =>
+    new Map(
+      [...d.getCadObjects()]
+        .filter((o): o is VisualStyle => o instanceof VisualStyle)
+        .map((o) => [o.handle, visualStyleFields(o)]),
+    );
+  // [handle, field, DXF value, DWG value] for every field that differs.
+  const visualStyleDiff = (
+    dxf: Map<number, Record<string, unknown>>,
+    dwg: Map<number, Record<string, unknown>>,
+  ): unknown[][] =>
+    [...dwg].flatMap(([handle, fields]) =>
+      Object.entries(fields).flatMap(([k, v]) =>
+        asJson(v) === asJson(dxf.get(handle)?.[k])
+          ? []
+          : [[handle.toString(16).toUpperCase(), k, dxf.get(handle)?.[k], v]],
+      ),
+    );
+
+  it.each(['AC1021', 'AC1024', 'AC1027', 'AC1032'])(
+    "0136 DXF reader reads VISUALSTYLEs into the fields the same drawing's DWG holds: %s",
+    (version) => {
+      // The DXF reader assigned no field (0021 keeps the codes for a DXF save), so a DXF saved
+      // as DWG wrote every visual style with the class defaults (M1-91). The acadsharp DWGs and
+      // AutoCAD's DXF saves of them share handles; the DWG read is the oracle.
+      const dwg = visualStyles(readDwgRaw(`third-party/acadsharp/sample_${version}.dwg`));
+      expect(dwg.size).toBe(24);
+      for (const kind of ['ascii', 'binary']) {
+        const dxf = visualStyles(
+          readDxfRaw(corpusBytes(`third-party/acadsharp/sample_${version}_${kind}.dxf`)),
+        );
+        expect([...dxf.keys()].sort(), `${version} ${kind}`).toEqual([...dwg.keys()].sort());
+        // Realistic's face lighting quality: 3 in the DXF, 2 in the R2007 DWG (see 0133).
+        expect(visualStyleDiff(dxf, dwg), `${version} ${kind}`).toEqual(
+          version === 'AC1021' ? [['A3', 'faceLightingQuality', 3, 2]] : [],
+        );
+      }
+    },
+  );
+
+  it.each(['AC1015', 'AC1018'])(
+    '0136 DXF reader reads an R2000/R2004 DXF VISUALSTYLE (R2007 layout) as the R2007 DWG holds it: %s',
+    (version) => {
+      // AutoCAD writes the R2007 layout to R2000 and R2004 DXF too. These are saves of the same
+      // drawing as sample_AC1021.dwg, with the same handles. R2000 DXF has no true colours, so
+      // there a colour reads as the index colour AutoCAD wrote for the DWG's true colour.
+      const dwg = visualStyles(readDwgRaw('third-party/acadsharp/sample_AC1021.dwg'));
+      const dxf = visualStyles(
+        readDxfRaw(corpusBytes(`third-party/acadsharp/sample_${version}_ascii.dxf`)),
+      );
+      expect([...dxf.keys()].sort()).toEqual([...dwg.keys()].sort());
+      const diff = visualStyleDiff(dxf, dwg);
+      const approxIndex = (d: unknown[]): boolean => {
+        const [index] = d[2] as number[];
+        const [, rgb] = d[3] as number[];
+        return Color.fromTrueColor(rgb!).getApproxIndex() === index;
+      };
+      const colours = diff.filter((d) => Array.isArray(d[2]) && approxIndex(d));
+      expect(colours.length > 0, version).toBe(version === 'AC1015');
+      expect(
+        diff.filter((d) => !colours.includes(d)),
+        version,
+      ).toEqual([['A3', 'faceLightingQuality', 3, 2]]);
+    },
+  );
+
+  it.each([
+    'third-party/acadsharp/geolocation/geoloc_AC1021.dxf',
+    'third-party/ezdxf/integration_tests/custom_blocks.dxf',
+    'third-party/ezdxf/examples_dxf/3dface.dxf',
+  ])('0136 a DXF saved as DWG keeps its VISUALSTYLEs: %s', (path) => {
+    // One file per layout: R2007, R2010 and R2013+ DXF, saved as a DWG of the same version.
+    const doc = readDxfRaw(corpusBytes(path));
+    const read = visualStyles(doc);
+    expect(read.size).toBeGreaterThanOrEqual(24);
+    // The DXF fields are AutoCAD's: Realistic is lit and Conceptual has silhouettes, as in
+    // the acadsharp DWGs, where a style read with no fields has neither.
+    const byName = new Map([...read.values()].map((f) => [f.name, f]));
+    expect(byName.get('Realistic')?.['faceLightingModel']).toBe(2);
+    expect(byName.get('Conceptual')?.['edgeModifiers']).not.toBe(0);
+    // acad-ts cannot write cell style maps or table contents to DWG (not M1-91's); leave them out.
+    for (const o of [...doc.getCadObjects()]) {
+      if (!(o instanceof CadDictionary)) continue;
+      for (const n of o.entryNames) {
+        const entry = o.getEntry(n);
+        if (entry instanceof CellStyleMap || entry instanceof TableContent) o.remove(n);
+      }
+    }
+    const saved = visualStyles(readDwgRaw(DwgWriter.writeToBuffer(doc).slice().buffer));
+    expect(visualStyleDiff(saved, read)).toEqual([]);
   });
 });
