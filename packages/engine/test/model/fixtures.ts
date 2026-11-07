@@ -141,6 +141,7 @@ export function snapshot(model: DocumentModel): unknown {
     tables,
     header: byKey(model.header.entries()),
     objects: byKey(model.objects.entries()),
+    layouts: [...model.layouts],
     count: model.entityCount,
   };
 }

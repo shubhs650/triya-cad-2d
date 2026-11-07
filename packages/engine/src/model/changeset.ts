@@ -11,10 +11,19 @@
 // Applying removes in descending index order per block, replaces updates in place, then
 // inserts additions in ascending index order. Inverting swaps added/removed and before/after.
 //
-// Block definitions and layouts are not yet part of a change set; they join when the first
-// command that creates them (BLOCK in M5, LAYOUT in M6) needs it.
+// Block definitions are not yet part of a change set; they join when the first command that
+// creates them (BLOCK in M5) needs it. Layouts can be updated (renamed, reordered, given a new
+// page setup or limits, M1-75 part 20), not added or removed: a new layout needs its own
+// `*Paper_Space` block record and definition, which LAYOUT New (M6) brings with it.
 
-import type { Entity, HeaderValue, NonGraphicalObject, TableName, TableRecords } from './types';
+import type {
+  Entity,
+  HeaderValue,
+  Layout,
+  NonGraphicalObject,
+  TableName,
+  TableRecords,
+} from './types';
 
 export interface Replacement<T> {
   readonly before: T;
@@ -53,6 +62,8 @@ export interface ChangeSet {
   readonly tables?: TableChanges;
   readonly objects?: KeyedChanges<NonGraphicalObject>;
   readonly header?: readonly HeaderChange[];
+  /** Updated layouts, by handle. */
+  readonly layouts?: readonly Replacement<Layout>[];
 }
 
 const swap = <T>({ before, after }: Replacement<T>): Replacement<T> => ({
@@ -76,6 +87,7 @@ export function invertChangeSet(cs: ChangeSet): ChangeSet {
     tables?: TableChanges;
     objects?: KeyedChanges<NonGraphicalObject>;
     header?: readonly HeaderChange[];
+    layouts?: readonly Replacement<Layout>[];
   } = {};
   if (cs.entities) {
     const e = cs.entities;
@@ -104,6 +116,7 @@ export function invertChangeSet(cs: ChangeSet): ChangeSet {
       after: before,
     }));
   }
+  if (cs.layouts) out.layouts = cs.layouts.map(swap);
   return out;
 }
 
@@ -115,6 +128,7 @@ export function isEmptyChangeSet(cs: ChangeSet): boolean {
     emptyKeyed(cs.entities) &&
     emptyKeyed(cs.objects) &&
     !cs.header?.length &&
+    !cs.layouts?.length &&
     Object.values(cs.tables ?? {}).every((c) => emptyKeyed(c as KeyedChanges<unknown> | undefined))
   );
 }

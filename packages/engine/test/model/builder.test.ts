@@ -138,6 +138,35 @@ describe('ChangeSetBuilder', () => {
     expect(m.objects.has('C')).toBe(true);
   });
 
+  it('updates layouts by handle, keeps them in tab order, and undoes the update', () => {
+    const m = sampleModel();
+    const b = new ChangeSetBuilder(m);
+    expect(b.layout('1E')?.name).toBe('Layout1');
+    b.updateLayout('1E', { name: 'Sheet A' });
+    b.updateLayout('1E', { limits: { min: { x: 0, y: 0 }, max: { x: 420, y: 297 } } });
+    expect(b.layout('1E')).toMatchObject({ name: 'Sheet A', tabOrder: 1 });
+    const cs = b.build();
+    expect(cs.layouts).toHaveLength(1);
+    expect(cs.layouts![0]!.before.name).toBe('Layout1');
+    const before = snapshot(m);
+    m.apply(cs);
+    expect(m.layouts.map((l) => l.name)).toEqual(['Model', 'Sheet A']);
+    expect(m.layouts[1]!.limits?.max).toEqual({ x: 420, y: 297 });
+    m.apply(invertChangeSet(cs));
+    expect(snapshot(m)).toEqual(before);
+    expect(isEmptyChangeSet({ layouts: [] })).toBe(true);
+    expect(isEmptyChangeSet(cs)).toBe(false);
+  });
+
+  it('reorders layouts when their tab order changes', () => {
+    const m = sampleModel();
+    const b = new ChangeSetBuilder(m);
+    // Tab order is what orders them; Model stays first only by its own tab order.
+    b.updateLayout('22', { tabOrder: 2 });
+    m.apply(b.build());
+    expect(m.layouts.map((l) => l.name)).toEqual(['Layout1', 'Model']);
+  });
+
   it('fails fast on unknown targets and after build()', () => {
     const m = sampleModel();
     const b = new ChangeSetBuilder(m);
@@ -148,6 +177,7 @@ describe('ChangeSetBuilder', () => {
     );
     expect(() => b.updateObject('99', {})).toThrow(/object 99/);
     expect(() => b.removeTableRecord('layers', '99')).toThrow(/layers record 99/);
+    expect(() => b.updateLayout('99', { name: 'X' })).toThrow(/layout 99/);
     b.build();
     expect(() => b.setHeader('$X', 1)).toThrow(/already built/);
   });
