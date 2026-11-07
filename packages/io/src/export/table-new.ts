@@ -74,6 +74,50 @@ function rowStyleIds(style: TableStyle | null): Record<RowType, number> {
 }
 
 /**
+ * The rows of a new table's grid, or of rows inserted where no row of the table is left to take
+ * the style of (table-grid.ts): each on the cell style of its row type, by its place.
+ */
+export function newRows(style: TableStyle | null, count: number): TableEntityRow[] {
+  const ids = rowStyleIds(style);
+  return rowTypes(style, count).map((type) => {
+    const row = new TableEntityRow();
+    row.styleId = ids[type];
+    row.cellStyleOverride.cellStyleType = CellStyleType.Row;
+    row.cellStyleOverride.hasData = true;
+    return row;
+  });
+}
+
+/** A new column, `width` wide, its cell style overriding nothing. */
+export function newColumn(width: number): TableEntityColumn {
+  const column = new TableEntityColumn();
+  column.width = width;
+  column.cellStyleOverride.cellStyleType = CellStyleType.Column;
+  return column;
+}
+
+/**
+ * A new cell for `c`, as AutoCAD makes one: a cell style overriding nothing, and a block cell
+ * holding a block content. Its value is written after, as for an edited cell.
+ */
+export function newCell(c: TableCell): TableEntityCell {
+  const cell = new TableEntityCell();
+  cell.styleOverride.cellStyleType = CellStyleType.Cell;
+  cell.styleOverride.hasData = true;
+  if (c.type === 'block') {
+    cell.type = CellType.Block;
+    cell.blockScale = 1;
+    const content = new CellContent();
+    content.contentType = TableCellContentType.Block;
+    // AutoCAD states a block cell's value as an empty string (R2007+ DWG).
+    content.cadValue.valueType = CadValueType.String;
+    content.cadValue.isEmpty = true;
+    cell.contents.push(content);
+  }
+  return cell;
+}
+
+/**
  * Builds the grid of a new table on `t` (whose style is set): its columns, rows and cells, a
  * block cell holding a block content, the rows' cell styles by row type. Values are written
  * after, as for an edited table.
@@ -82,35 +126,11 @@ export function buildGrid(t: TableEntity, g: TableGeometry): void {
   t.valueFlag = VALUE_FLAG;
   t.content.cellStyleOverride.cellStyleType = CellStyleType.FormattedTableData;
   t.content.cellStyleOverride.hasData = true;
-  for (const width of g.columnWidths) {
-    const column = new TableEntityColumn();
-    column.width = width;
-    column.cellStyleOverride.cellStyleType = CellStyleType.Column;
-    t.columns.push(column);
-  }
-  const ids = rowStyleIds(t.style);
-  const types = rowTypes(t.style, g.cells.length);
+  for (const width of g.columnWidths) t.columns.push(newColumn(width));
+  const rows = newRows(t.style, g.cells.length);
   for (const [i, cells] of g.cells.entries()) {
-    const row = new TableEntityRow();
-    row.styleId = ids[types[i]!];
-    row.cellStyleOverride.cellStyleType = CellStyleType.Row;
-    row.cellStyleOverride.hasData = true;
-    for (const c of cells) {
-      const cell = new TableEntityCell();
-      cell.styleOverride.cellStyleType = CellStyleType.Cell;
-      cell.styleOverride.hasData = true;
-      if (c.type === 'block') {
-        cell.type = CellType.Block;
-        cell.blockScale = 1;
-        const content = new CellContent();
-        content.contentType = TableCellContentType.Block;
-        // AutoCAD states a block cell's value as an empty string (R2007+ DWG).
-        content.cadValue.valueType = CadValueType.String;
-        content.cadValue.isEmpty = true;
-        cell.contents.push(content);
-      }
-      row.cells.push(cell);
-    }
+    const row = rows[i]!;
+    for (const c of cells) row.cells.push(newCell(c));
     t.rows.push(row);
   }
 }

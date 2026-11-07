@@ -855,6 +855,17 @@ export interface TableGeometry extends PlanarProps {
   readonly cells: readonly (readonly TableCell[])[];
   /** Table-wide overrides of the table style; absent when none. */
   readonly overrides?: TableOverrides;
+  /**
+   * Where each row came from once rows are inserted or deleted (the table engine's Insert Rows
+   * and Delete Rows, M4-05): the index of the row in the table as the file states it, or null
+   * for a row inserted since, in increasing order. Absent while the rows are the file's, in
+   * order. Rows and cells have no identity in DWG or DXF, so a save needs it to keep what each
+   * row and cell holds that Triya does not map (DEC-046); a save re-bases the model, and the
+   * table maps without it again.
+   */
+  readonly rowOrigins?: readonly (number | null)[];
+  /** `rowOrigins` for the columns (Insert Columns and Delete Columns). */
+  readonly columnOrigins?: readonly (number | null)[];
 }
 
 /**
