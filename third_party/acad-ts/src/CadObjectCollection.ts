@@ -61,6 +61,30 @@ export class CadObjectCollection<T extends CadObject> implements Iterable<T> {
 		}
 	}
 
+	/**
+	 * Moves `item` from this collection to `target`, another collection of the same document,
+	 * as `item`'s new owner. Unlike `remove` and `add`, the item stays registered with its
+	 * document: it keeps its handle, its reactors and its extension dictionary.
+	 */
+	public moveTo(item: T, target: CadObjectCollection<T>): void {
+		if (!this._entries.has(item)) throw new Error(`Item is not in the collection`);
+		if (target === this) throw new Error(`Item is already in the collection`);
+		if (target.owner.document !== this.owner.document) throw new Error(`The collections belong to different documents`);
+		this._entries.delete(item);
+		target._entries.add(item);
+		item.owner = target.owner;
+	}
+
+	/** Puts the entries in `order`, which must hold every entry of the collection once. */
+	public reorder(order: readonly T[]): void {
+		const next = new Set<T>(order);
+		if (next.size !== order.length || next.size !== this._entries.size || order.some((item) => !this._entries.has(item))) {
+			throw new Error(`The order must hold every entry of the collection once`);
+		}
+		this._entries.clear();
+		for (const item of order) this._entries.add(item);
+	}
+
 	[Symbol.iterator](): Iterator<T> {
 		return this._entries[Symbol.iterator]();
 	}

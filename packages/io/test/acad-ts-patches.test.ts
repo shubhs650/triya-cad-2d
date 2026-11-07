@@ -2027,4 +2027,41 @@ describe('acad-ts local patches', () => {
       );
     },
   );
+
+  it('0161 an entity moves to another block and is reordered keeping its handle', () => {
+    // `remove` then `add` unregisters the entity: it came back under a new handle, with no
+    // reactors and its extension dictionary renumbered, so CHSPACE could not keep handles.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const part = new BlockRecord('PART');
+    doc.blockRecords!.add(part);
+    const [a, b, c] = [0, 1, 2].map((x) => new Line(new XYZ(x, 0, 0), new XYZ(x, 5, 0)));
+    for (const e of [a!, b!, c!]) doc.entities!.add(e);
+    a!.createExtendedDictionary();
+    const handle = a!.handle;
+    const dictionary = a!.xDictionary!.handle;
+    doc.entities!.moveTo(a!, part.entities);
+    expect(a!.handle).toBe(handle);
+    expect(a!.owner).toBe(part);
+    expect(doc.getCadObject(handle)).toBe(a);
+    expect(a!.xDictionary!.handle).toBe(dictionary);
+    expect(doc.getCadObject(dictionary)).toBe(a!.xDictionary);
+    doc.entities!.reorder([c!, b!]);
+    expect([...doc.entities!]).toEqual([c, b]);
+    expect(() => doc.entities!.reorder([c!])).toThrow(/every entry/);
+
+    const back = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+    const moved = back.getCadObject(handle) as Line;
+    expect((moved.owner as BlockRecord).name).toBe('PART');
+    expect(moved.xDictionary?.handle).toBe(dictionary);
+    expect([...back.entities!].map((e) => e.handle)).toEqual([c!.handle, b!.handle]);
+
+    // An R2004+ DWG block header lists its entities as read; the list follows both changes.
+    const dwg = readCadDocument(writeCadDocument(doc, { format: 'dwg' }));
+    const line = (h: number) => dwg.getCadObject(h) as Line;
+    dwg.blockRecords!.tryGetValue('PART')!.entities.moveTo(line(handle), dwg.entities!);
+    dwg.entities!.reorder([line(handle), line(b!.handle), line(c!.handle)]);
+    const again = readCadDocument(writeCadDocument(dwg, { format: 'dwg' }));
+    expect([...again.entities!].map((e) => e.handle)).toEqual([handle, b!.handle, c!.handle]);
+    expect([...again.blockRecords!.tryGetValue('PART')!.entities]).toEqual([]);
+  });
 });
