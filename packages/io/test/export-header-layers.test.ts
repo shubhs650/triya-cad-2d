@@ -143,8 +143,10 @@ describe('header variables', () => {
       ['CANNOSCALEVALUE', 0.5],
       // AutoCAD 2000 moved OSMODE to the registry; DWG does not store it.
       ['$OSMODE', 0, 'dwg'],
-      ['$DIMLTYPE', 'DASHED', 'dwg'],
-      ['$DIMTFILLCLR', 3, 'dxf'],
+      // No DWG header has it (an R13 DXF variable).
+      ['$SAVEIMAGES', 1, 'dwg'],
+      // AutoCAD takes 1 to 30, and acad-ts's DWG reader drops anything else.
+      ['$STEPSPERSEC', 0],
     ];
     for (const [name, value, format] of cases) {
       const bytes = drawing();
@@ -158,17 +160,42 @@ describe('header variables', () => {
     }
   });
 
+  it('writes the DWG dimension linetypes and the DXF text fill colour (M1-87)', () => {
+    const bytes = drawing();
+    const { model } = open(bytes);
+    edit(model, (b) => {
+      b.setHeader('$DIMLTYPE', 'DASHED');
+      b.setHeader('$DIMLTEX1', 'DASHED');
+      b.setHeader('$DIMTFILLCLR', 3);
+    });
+
+    const dwg = new Map(saved(bytes, model, 'dwg').header);
+    expect(dwg.get('$DIMLTYPE')).toBe('DASHED');
+    expect(dwg.get('$DIMLTEX1')).toBe('DASHED');
+    expect(new Map(saved(bytes, model, 'dxf').header).get('$DIMTFILLCLR')).toBe(3);
+  });
+
+  it('refuses on an R2004 DWG the dimension linetypes it does not store', () => {
+    const bytes = drawing(ACadVersion.AC1018, 'dwg');
+    const { model } = open(bytes);
+    edit(model, (b) => b.setHeader('$DIMLTYPE', 'DASHED'));
+
+    expect(() => triyaToAcad(readCadDocument(bytes), model, 'dwg')).toThrow(
+      /\$DIMLTYPE: DWG before R2007 does not store it/,
+    );
+  });
+
   it('writes on DXF what a DWG save refuses', () => {
     const bytes = drawing();
     const { model } = open(bytes);
     edit(model, (b) => {
       b.setHeader('$OSMODE', 0);
-      b.setHeader('$DIMLTYPE', 'DASHED');
+      b.setHeader('$SAVEIMAGES', 1);
     });
 
     const back = new Map(saved(bytes, model, 'dxf').header);
     expect(back.get('$OSMODE')).toBe(0);
-    expect(back.get('$DIMLTYPE')).toBe('DASHED');
+    expect(back.get('$SAVEIMAGES')).toBe(1);
   });
 
   it('refuses an R12 save of a variable R12 does not have', () => {
