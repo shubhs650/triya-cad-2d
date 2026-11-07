@@ -1,13 +1,17 @@
 // M1-22 part 2: the ZOOM options and named views as view functions. They become ZOOM and
 // VIEW command options when the command line arrives (M2-01); the navigation bar calls them now.
-import type { ViewRecord } from '@triya/engine';
+import type { EntityInit, ViewRecord, ViewportGeometry, VportRecord } from '@triya/engine';
 import { visibleBox, type ViewTransform } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import {
   HISTORY_LIMIT,
   ViewHistory,
+  activeVport,
   allView,
   namedView,
+  paperSpaceView,
+  paperSpaceViewport,
+  savedModelView,
   scaleView,
   windowView,
 } from '../src/canvas/views';
@@ -131,5 +135,126 @@ describe('named views (VIEW restore)', () => {
   it('cannot show a view that is not a plan view or is twisted', () => {
     expect(namedView(record({ direction: { x: 1, y: 1, z: 1 } }), size)).toBeUndefined();
     expect(namedView(record({ twist: 0.3 }), size)).toBeUndefined();
+  });
+});
+
+// M1-22 part 3: a space opens in the view saved with the drawing, as AutoCAD reopens it.
+describe('the view a drawing was saved in', () => {
+  const vport = (o: Partial<VportRecord>): VportRecord =>
+    ({
+      handle: '29',
+      name: '*Active',
+      center: { x: 1121.82, y: -261.37 },
+      height: 1100,
+      aspectRatio: 2.72,
+      direction: { x: 0, y: 0, z: 1 },
+      target: { x: 0, y: 0, z: 0 },
+      lensLength: 50,
+      frontClip: 0,
+      backClip: 0,
+      twist: 0,
+      viewMode: 0,
+      renderMode: 0,
+      ...o,
+    }) as VportRecord;
+
+  it('takes the first *Active VPORT, which is the current viewport, whatever its case', () => {
+    const a = vport({ handle: 'A', name: '*ACTIVE' });
+    const b = vport({ handle: 'B' });
+    expect(activeVport([vport({ handle: 'C', name: 'Saved' }), a, b])).toBe(a);
+    expect(activeVport([vport({ name: 'Saved' })])).toBeUndefined();
+    expect(activeVport(undefined)).toBeUndefined();
+  });
+
+  it('shows model space at the saved centre with the saved height filling the window', () => {
+    // VIEWSIZE is the view's height: AutoCAD keeps it and lets the width follow the window.
+    const v = savedModelView(vport({}), size)!;
+    expect(v.center).toEqual({ x: 1121.82, y: -261.37 });
+    expect(v.scale).toBeCloseTo(600 / 1100, 12);
+  });
+
+  it('adds the target to the centre, which is in display coordinates', () => {
+    const v = savedModelView(vport({ target: { x: 166, y: 205, z: 0 } }), size)!;
+    expect(v.center.x).toBeCloseTo(1287.82, 9);
+    expect(v.center.y).toBeCloseTo(-56.37, 9);
+  });
+
+  it('takes any plan direction, not only a unit one', () => {
+    // geoloc.dxf stores (0, 0, 484.29); uncommon.dxf (-7.8e-14, 0, 367.79).
+    expect(savedModelView(vport({ direction: { x: 0, y: 0, z: 484.29 } }), size)).toBeDefined();
+    expect(
+      savedModelView(vport({ direction: { x: -7.82e-14, y: 0, z: 367.79 } }), size),
+    ).toBeDefined();
+  });
+
+  it('leaves a view it cannot show to the extents', () => {
+    expect(savedModelView(undefined, size)).toBeUndefined();
+    expect(savedModelView(vport({ direction: { x: 1, y: -1, z: 1 } }), size)).toBeUndefined();
+    expect(savedModelView(vport({ direction: { x: 0, y: 0, z: -1 } }), size)).toBeUndefined();
+    expect(savedModelView(vport({ twist: 0.2 }), size)).toBeUndefined();
+    expect(savedModelView(vport({ height: 0 }), size)).toBeUndefined();
+    expect(savedModelView(vport({ height: NaN }), size)).toBeUndefined();
+    expect(savedModelView(vport({}), { width: 0, height: 0 })).toBeUndefined();
+  });
+
+  const viewport = (o: Partial<ViewportGeometry>): ViewportGeometry =>
+    ({
+      kind: 'VIEWPORT',
+      center: { x: 7.62, y: 4 },
+      width: 24.43,
+      height: 8.99,
+      id: 1,
+      status: 1,
+      flags: 0,
+      viewCenter: { x: 7.62, y: 4 },
+      viewHeight: 8.99,
+      viewDirection: { x: 0, y: 0, z: 1 },
+      viewTarget: { x: 0, y: 0, z: 0 },
+      twist: 0,
+      lensLength: 50,
+      frontClip: 0,
+      backClip: 0,
+      frozenLayers: [],
+      plotStyleSheet: '',
+      renderMode: 0,
+      ...o,
+    }) as ViewportGeometry;
+
+  const entity = (owner: string, geom: ViewportGeometry): EntityInit =>
+    ({ handle: '9', owner, type: 'VIEWPORT', geom }) as unknown as EntityInit;
+
+  it("finds a layout's own paper-space viewport (id 1) among its entities", () => {
+    const own = viewport({});
+    const other = viewport({ id: 2 });
+    const elsewhere = viewport({ id: 1 });
+    const entities = [entity('1F', elsewhere), entity('2A', other), entity('2A', own)];
+    expect(paperSpaceViewport(entities, '2A')).toBe(own);
+    expect(paperSpaceViewport(entities, '3B')).toBeUndefined();
+    expect(paperSpaceViewport(undefined, '2A')).toBeUndefined();
+  });
+
+  it('shows a layout at its paper-space view: DXF 12 centre and 45 height', () => {
+    // ezdxf leaves the frame at (0, 0) but states the view (VP4.dxf, xclip.dxf).
+    const v = paperSpaceView(
+      viewport({ center: { x: 0, y: 0 }, viewCenter: { x: 209.31, y: 98.79 }, viewHeight: 342.81 }),
+      size,
+    )!;
+    expect(v.center).toEqual({ x: 209.31, y: 98.79 });
+    expect(v.scale).toBeCloseTo(600 / 342.81, 12);
+  });
+
+  it('falls back to the frame (DXF 10 / 41) when the view height is not stated', () => {
+    // acad-ts reads no view centre or height from an R14 DWG's paper-space viewport.
+    const v = paperSpaceView(
+      viewport({ viewCenter: { x: 0, y: 0 }, viewHeight: 0, center: { x: 7.62, y: 4 } }),
+      size,
+    )!;
+    expect(v.center).toEqual({ x: 7.62, y: 4 });
+    expect(v.scale).toBeCloseTo(600 / 8.99, 12);
+  });
+
+  it('leaves a layout with no stated view to its sheet', () => {
+    expect(paperSpaceView(undefined, size)).toBeUndefined();
+    expect(paperSpaceView(viewport({ viewHeight: 0, height: 0 }), size)).toBeUndefined();
   });
 });

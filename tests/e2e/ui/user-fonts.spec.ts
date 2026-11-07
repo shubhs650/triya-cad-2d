@@ -26,7 +26,22 @@ const FILLED = 400_000;
 async function openDrawing(page: Page): Promise<number> {
   await openWithPicker(page, DRAWING);
   await expectShown(page, 'hatch_text_box_in_hole.dxf');
-  return inkWeight(page);
+  // The drawing opens in its saved view (M1-22 part 3), where the magenta hatch reaches the
+  // window's top and bottom, so the status line shrinking the canvas would cut hatch rows off
+  // and the ink would drop whatever the font did. Zoom Extents leaves a margin round it.
+  await page
+    .getByRole('toolbar', { name: 'Navigation' })
+    .getByRole('button', { name: 'Zoom Extents', exact: true })
+    .click();
+  // The zoomed frame draws in the render worker: wait until two looks agree.
+  let last = -1;
+  let now = await inkWeight(page);
+  while (now !== last) {
+    last = now;
+    await page.waitForTimeout(250);
+    now = await inkWeight(page);
+  }
+  return now;
 }
 
 test('a dropped TrueType file draws the style that names it, and stays after a reload', async ({

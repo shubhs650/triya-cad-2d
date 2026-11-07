@@ -29,7 +29,16 @@ import {
 import type { OpenResult } from '@triya/io';
 import { BUNDLED_FONTS } from '../fonts';
 import { extentsView, panBy, wheelFactor, zoomAt, type ViewportSize } from './navigate';
-import { ViewHistory, allView, scaleView, windowView } from './views';
+import {
+  ViewHistory,
+  activeVport,
+  allView,
+  paperSpaceView,
+  paperSpaceViewport,
+  savedModelView,
+  scaleView,
+  windowView,
+} from './views';
 
 /** The dark model canvas, and the paper and its surround in a layout (UI_SPEC.md §6). */
 export const MODEL_CANVAS = '#212830';
@@ -254,10 +263,19 @@ export class CanvasController {
   }
 
   /**
-   * The view a space opens in: model space at its extents, a layout with its whole sheet in
-   * view (and anything drawn off it). AutoCAD reopens the view saved with the drawing (the
-   * `*Active` VPORT, or the layout's paper-space view); reading those is M1-22 part 3.
+   * The view a space opens in, as AutoCAD reopens a drawing: model space in the `*Active`
+   * VPORT's view, a layout in its paper-space viewport's view (M1-22 part 3). Without one (no
+   * VPORT table, a 3D view, a layout never shown) model space opens at its extents and a
+   * layout with its whole sheet in view.
    */
+  #openingView(): ViewTransform {
+    const saved = this.#layout
+      ? paperSpaceView(paperSpaceViewport(this.#opened.init.entities, this.block), this.#size)
+      : savedModelView(activeVport(this.#opened.init.tables?.vports), this.#size);
+    return saved ?? extentsView(this.#opening(), this.#size);
+  }
+
+  /** The extents, and a layout's sheet with anything drawn off it. */
   #opening(): Box | undefined {
     const e = this.#extents();
     const p = this.#paper();
@@ -303,7 +321,7 @@ export class CanvasController {
     this.#size = { width, height };
     this.#host.resize(width, height, devicePixelRatio);
     if (this.#view) this.#setView(this.#view);
-    else this.#setView(extentsView(this.#opening(), this.#size));
+    else this.#setView(this.#openingView());
   }
 
   /** A discrete view change (a ZOOM option, VIEW restore): recorded for ZOOM Previous. */

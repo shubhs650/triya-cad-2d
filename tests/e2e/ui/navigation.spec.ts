@@ -1,7 +1,9 @@
 // M1-22 part 2: the navigation bar (PAN, ZOOM Extents/Window/Previous/All/In/Out, REGEN,
 // named views) and the layout tabs, on sample_AC1018.dwg: three layouts, LIMMAX 12,9, model
 // extents about (0, -566)–(1852, 161), and a saved plan view `view_custom` centred at
-// (65.70, 15.93). The status bar's coordinates are how the test reads the view.
+// (65.70, 15.93). It was saved with model space centred at (1121.82, -261.37), 1100.22 units
+// high (the `*Active` VPORT), and Layout1 centred at (7.62, 4), 8.99 high (its paper-space
+// viewport). The status bar's coordinates are how the test reads the view.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import {
@@ -45,6 +47,34 @@ const nav = (page: Page, name: string) =>
 
 test.describe('navigation bar and layout tabs', () => {
   test.describe.configure({ timeout: 90_000 });
+
+  // M1-22 part 3: AutoCAD reopens each space in the view it was saved in, not at the extents.
+  test('opens Model and a layout in the views the drawing was saved in', async ({ page }) => {
+    const { box, cx, cy } = await opened(page);
+    let u = await unit(page, cx, cy);
+    let c = await worldAt(page, cx, cy);
+    expect(Math.abs(c.x - 1121.82)).toBeLessThan(2 * u);
+    expect(Math.abs(c.y + 261.37)).toBeLessThan(2 * u);
+    // The saved height fills the window's height; the width follows the window.
+    expect(u * box.height).toBeCloseTo(1100.22, -1);
+
+    const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
+    await tabs.nth(1).click();
+    await expect(page.getByTestId('space')).toHaveText('PAPER');
+    u = await unit(page, cx, cy);
+    c = await worldAt(page, cx, cy);
+    expect(Math.abs(c.x - 7.62)).toBeLessThan(2 * u);
+    expect(Math.abs(c.y - 4)).toBeLessThan(2 * u);
+    expect(u * box.height).toBeCloseTo(8.99, 0);
+
+    // Zoom Extents still frames the drawing: here the extents' centre, about (926, -203).
+    await tabs.first().click();
+    await nav(page, 'Zoom Extents').click();
+    u = await unit(page, cx, cy);
+    c = await worldAt(page, cx, cy);
+    expect(Math.abs(c.x - 926.1)).toBeLessThan(2 * u + 1);
+    expect(Math.abs(c.y + 202.66)).toBeLessThan(2 * u + 1);
+  });
 
   test('lists Model and the layouts in tab order and shows a layout on its paper', async ({
     page,

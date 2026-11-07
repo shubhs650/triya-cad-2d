@@ -131,15 +131,19 @@ test.describe('app shell', () => {
     expect(Math.abs(moved.x - grab.x)).toBeLessThan(2 * unit1);
     expect(Math.abs(moved.y - grab.y)).toBeLessThan(2 * unit1);
 
-    // Middle-button double click: back to the extents view the drawing opened in.
+    // Middle-button double click: Zoom Extents. The drawing opened in the view it was saved
+    // in (centre (-265, 575), M1-22 part 3); the extents (-320.71, 509.59)–(-230.86, 612.29)
+    // centre on (-275.79, 560.94).
+    expect(Math.abs(startCentre.x + 265)).toBeLessThan(2 * unit);
+    expect(Math.abs(startCentre.y - 575)).toBeLessThan(2 * unit);
     await page.mouse.move(box.x + cx, box.y + cy);
     for (let i = 0; i < 2; i++) {
       await page.mouse.down({ button: 'middle' });
       await page.mouse.up({ button: 'middle' });
     }
     const back = await worldAt(page, cx, cy);
-    expect(Math.abs(back.x - startCentre.x)).toBeLessThan(2 * unit);
-    expect(Math.abs(back.y - startCentre.y)).toBeLessThan(2 * unit);
+    expect(Math.abs(back.x + 275.79)).toBeLessThan(2 * unit);
+    expect(Math.abs(back.y - 560.94)).toBeLessThan(2 * unit);
   });
 
   test('reports a file it cannot read and keeps working', async ({ page }) => {

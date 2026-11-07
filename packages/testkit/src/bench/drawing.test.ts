@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 import {
   BENCH_100K,
   BENCH_GA,
+  BENCH_WINDOW,
   benchCounts,
   benchDocument,
   benchDwg,
@@ -50,6 +51,20 @@ describe('generated benchmark drawings (M1-42, DEC-045)', () => {
     const layouts = [...(doc.layouts ?? [])].filter((l) => l.name !== 'Model');
     expect(layouts).toHaveLength(spec.layouts);
     for (const l of layouts) expect([...(l.associatedBlock?.entities ?? [])]).toHaveLength(4);
+    // Saved zoomed to its extents (M1-22 part 3: the app opens the *Active VPORT's view):
+    // in the app's canvas at 1366 × 768 the saved height shows every entity's grid cell.
+    const active = [...(doc.vPorts ?? [])].find((v) => v.name.toUpperCase() === '*ACTIVE')!;
+    const cols = Math.min(spec.entities, 1000);
+    const rows = Math.ceil(spec.entities / 1000);
+    const shown = {
+      w: (active.viewHeight * BENCH_WINDOW.width) / BENCH_WINDOW.height,
+      h: active.viewHeight,
+    };
+    expect(Math.abs(active.center.x - (cols * 20) / 2)).toBeLessThan(20);
+    expect(Math.abs(active.center.y - (rows * 20) / 2)).toBeLessThan(20);
+    expect(shown.w).toBeGreaterThan(cols * 20);
+    expect(shown.w).toBeLessThan(cols * 20 * 1.2);
+    expect(shown.h).toBeGreaterThan(rows * 20);
     console.log(`${spec.name}: ${(bytes.length / 1e6).toFixed(1)} MB`);
   };
 
