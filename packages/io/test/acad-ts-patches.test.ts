@@ -1193,4 +1193,32 @@ describe('acad-ts local patches', () => {
     const dxf = readCadDocument(writeCadDocument(drawing(ACadVersion.AC1032), { format: 'dxf' }));
     expect(dxf.header!.dimensionTextBackgroundColor.index).toBe(5);
   });
+  it('0134 an R12 entity that states 67 = 1 reads into paper space, which saves back', () => {
+    // The minimal R12 file: an ENTITIES section and EOF, no BLOCKS, so no $PAPER_SPACE block.
+    const line = (paper: boolean, x: number): string[] => [
+      ...['0', 'LINE', '8', '0'],
+      ...(paper ? ['67', '1'] : []),
+      ...['10', `${x}`, '20', '0', '30', '0', '11', `${x + 1}`, '21', '1', '31', '0'],
+    ];
+    const text = [
+      ...['0', 'SECTION', '2', 'ENTITIES'],
+      ...line(true, 0),
+      ...line(false, 5),
+      ...['0', 'ENDSEC', '0', 'EOF'],
+    ].join('\n');
+    const spaces = (doc: CadDocument) => ({
+      model: [...doc.modelSpace!.entities].map((e) => (e as Line).startPoint.x),
+      paper: [...(doc.paperSpace?.entities ?? [])].map((e) => (e as Line).startPoint.x),
+      layout: doc.paperSpace?.layout?.name,
+      listed: [...doc.layouts!].some((l) => l === doc.paperSpace?.layout),
+    });
+    const expected = { model: [5], paper: [0], layout: 'Layout1', listed: true };
+    const doc = readCadDocument(Uint8Array.from(text, (c) => c.charCodeAt(0)));
+    expect(doc.header!.version).toBe(ACadVersion.AC1009);
+    expect(spaces(doc)).toEqual(expected);
+    const saved = writeCadDocument(doc, { format: 'dxf' });
+    // The made-up record and layout stay out of the save; the entity says 67 = 1 again.
+    expect(Array.from(saved, (b) => String.fromCharCode(b)).join('')).not.toMatch(/\$PAPER_SPACE/);
+    expect(spaces(readCadDocument(saved))).toEqual(expected);
+  });
 });

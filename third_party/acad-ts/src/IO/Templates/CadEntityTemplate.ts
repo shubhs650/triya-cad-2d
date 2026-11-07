@@ -14,6 +14,9 @@ export class CadEntityTemplate extends CadTemplateT<Entity> {
 
 	entityMode: number = 0;
 
+	/** DXF 67 = 1: in paper space, for an entity that states no owner (R12). */
+	isPaperSpace: boolean = false;
+
 	layerHandle: number | null = null;
 
 	layerName: string | null = null;

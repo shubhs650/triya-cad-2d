@@ -186,7 +186,9 @@ function drawLayout(
 }
 const MATCHING = 70;
 // 74 → 82 with images and wipeouts (M1-19): viewports that show only those now draw.
-const VIEWPORTS_DRAWN = 82;
+// 82 → 84 with R12 paper space (M1-89): the R12 sample's viewport, ASCII and binary, draws in
+// the Layout1 its paper space now reads with.
+const VIEWPORTS_DRAWN = 84;
 
 describe('layouts on the public corpus', () => {
   it.each(files.map((f) => [f.path]))('%s', (path) => {

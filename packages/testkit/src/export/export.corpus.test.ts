@@ -418,18 +418,75 @@ describe('TriyaToAcad edits on the public corpus', () => {
       ['status 0 without the off flag', () => ({ status: 0 }), /status 0/],
       ['both isometric planes', (g) => ({ flags: g.flags | ISO_TOP | ISO_RIGHT }), /isometric/],
     ];
-    it('refuses a new viewport, as R12 paper space reads into model space (M1-89)', () => {
+    it('saves a new viewport in paper space and maps it back (M1-89)', () => {
+      withPinnedClock(() => {
+        const model = open();
+        const like = viewports(model)[1]!;
+        const g = like.geom as View;
+        const b = new ChangeSetBuilder(model);
+        const draft = b.addEntity({
+          owner: like.owner,
+          layer: like.layer,
+          geom: {
+            ...g,
+            id: 3,
+            center: { x: g.center.x + 1, y: g.center.y },
+            viewCenter: { x: 1, y: 2 },
+            viewHeight: 4,
+            flags: g.flags | GRID,
+          },
+        });
+        model.apply(b.build());
+        const added = model.entity(draft.id)!;
+        const original = readCadDocument(bytes);
+        const saved = exportDocument(readCadDocument(bytes), model, { format: 'dxf' });
+        const reopened = readCadDocument(saved);
+        // In paper space: R12 says so by 67 = 1, beside the view in its MVIEW xdata.
+        const v = reopened.getCadObject(Number.parseInt(added.handle, 16));
+        expect(v?.owner).toBe(reopened.paperSpace);
+        const back = new Map(documentInit(reopened).entities?.map((e) => [e.handle, e]));
+        // The record's handle is made up (R12 has no BLOCK_RECORD table), and the made-up handles
+        // move up past the new viewport's on the next read.
+        expect(back.get(added.handle)?.owner).toBe(
+          reopened.paperSpace!.handle.toString(16).toUpperCase(),
+        );
+        expect(near(back.get(added.handle)?.geom, added.geom)).toBe(true);
+        // The edit: the viewport and the paper space record that lists it.
+        const ignoreHandles = new Set([
+          Number.parseInt(added.handle, 16),
+          original.paperSpace!.handle,
+        ]);
+        // The handles acad-ts makes up on read (R12 has no BLOCK_RECORD table, and its table
+        // entries state none) are numbered above the highest the file states, so the new one
+        // moves them all up by the same amount.
+        const was = original.madeUpHandles!;
+        const now = reopened.madeUpHandles!;
+        expect(now.last - now.first).toBe(was.last - was.first);
+        const handleOfB = (h: number): number =>
+          h >= now.first && h <= now.last ? h - now.first + was.first : h;
+        expect(
+          structuralDiff(original, reopened, { ignoreHandles, handleOfB }).differences,
+        ).toEqual([]);
+      });
+    });
+
+    it('refuses a new viewport with a clip boundary or frozen layers', () => {
       const model = open();
       const like = viewports(model)[1]!;
       const b = new ChangeSetBuilder(model);
       b.addEntity({
         owner: like.owner,
         layer: like.layer,
-        geom: { ...(like.geom as View), id: 3 },
+        geom: {
+          ...(like.geom as View),
+          id: 3,
+          clipBoundary: like.handle,
+          frozenLayers: [like.layer],
+        },
       });
       model.apply(b.build());
       expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
-        /VIEWPORT .*M1-89/,
+        /clip boundary(.|\n)*frozen layers.*M1-90/,
       );
     });
 
