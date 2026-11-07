@@ -307,7 +307,7 @@ export function triyaToAcad(
     appIds: planAppIds(original, base, model, r),
     ucs: planUcs(original, base, model, r),
     views: planViews(original, base, model, r),
-    vports: planVports(original, base, model, r, format),
+    vports: planVports(original, base, model, r),
   };
   const header = planHeader(original, base, model, format, [...created.values()]);
   const drawOrder = planDrawOrder(original, base, model, r);

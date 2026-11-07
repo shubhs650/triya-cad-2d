@@ -34,7 +34,6 @@ import type {
   ViewRecord,
   VportRecord,
 } from '@triya/engine';
-import type { CadFormat } from '../read';
 import type { Resolver } from './entities';
 import { changes, planRecords, XREF_BITS, type RecordPlan } from './records';
 
@@ -287,14 +286,8 @@ export function planVports(
   base: DocumentInit,
   model: DocumentModel,
   r: Planner,
-  format: CadFormat | undefined,
 ): { plan: VportPlan; problems: string[] } {
   const version = doc.header?.version;
-  const names = new Map<string, number>();
-  for (const v of model.tables.vports.values()) {
-    const key = v.name.toUpperCase();
-    names.set(key, (names.get(key) ?? 0) + 1);
-  }
   return planRecords(doc, base.tables?.vports ?? [], model.tables.vports, r, {
     what: 'viewport',
     type: VPort,
@@ -336,31 +329,9 @@ export function planVports(
         out.push(`UCS icon flags ${a.ucsIcon} are not on (1) and at origin (2)`);
       if (changed('ucs')) out.push(...frameProblems(a.ucs, 'UCS '));
       out.push(...notStored(NOT_STORED.vports, version, changed));
-      if (format === 'dwg') out.push(...dwgVportLosses(changed, a));
-      // acad-ts's DXF reader keeps the first of the records sharing a name (roadmap M1-93).
-      else if ((!b || b.name !== a.name) && (names.get(a.name.toUpperCase()) ?? 0) > 1)
-        out.push(`acad-ts's DXF reader drops a second viewport named ${a.name} (M1-93)`);
       return out;
     },
   });
-}
-
-/**
- * What acad-ts's DWG reader cannot read back (roadmap M1-93): it sets the view mode bits it
- * reads onto VPort's default, front clip not at eye (16), so a mode without that bit reads with
- * it; and it assigns, rather than adds, the UCS icon's on and at-origin bits, leaving the default
- * (on, at origin) when neither is set, so an icon that is off reads on.
- */
-function dwgVportLosses(
-  changed: (...keys: (keyof VportRecord)[]) => boolean,
-  a: VportRecord,
-): string[] {
-  const out: string[] = [];
-  if (changed('viewMode') && (a.viewMode & 16) === 0)
-    out.push(`acad-ts reads a DWG view mode without 16 back with it (M1-93)`);
-  if (changed('ucsIcon') && (a.ucsIcon & 1) === 0)
-    out.push(`acad-ts reads a DWG UCS icon that is off back on (M1-93)`);
-  return out;
 }
 
 function writeVport(p: VPort, b: VportRecord | undefined, a: VportRecord): void {
