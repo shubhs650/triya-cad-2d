@@ -10,7 +10,6 @@
 
 import type {
   AttributeBase,
-  CadObject,
   CadWipeoutBase,
   HatchBoundaryPathEdge,
   Vertex,
@@ -18,6 +17,7 @@ import type {
 import {
   Arc,
   AttributeDefinition,
+  CadObject,
   AttributeEntity,
   BlockRecord,
   CadValueType,
@@ -250,6 +250,12 @@ const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefi
 
 /** Properties whose changes no writer handles yet. */
 const UNSUPPORTED_PROPS = ['xdata', 'reactors', 'extDict', 'plotStyle', 'annotative'] as const;
+/**
+ * An entity's reactors are written: the only changes accepted are those that keep a LEADER and
+ * its annotation pointing at each other (`annotationProblems` in reactors.ts checks them).
+ * An ATTRIB's are not.
+ */
+const UNSUPPORTED_ENTITY_PROPS = UNSUPPORTED_PROPS.filter((k) => k !== 'reactors');
 
 /** The AcDbEntity properties of an entity, and of an ATTRIB folded into its INSERT. */
 type Props = EntityProps & ObjectCommon;
@@ -260,11 +266,12 @@ function propProblems(
   what: string,
   before: Props | undefined,
   after: Props,
+  unsupported: readonly (keyof Props)[] = UNSUPPORTED_PROPS,
 ): string[] {
   const out: string[] = [];
   const changed = (k: keyof Props): boolean =>
     before === undefined ? after[k] !== undefined : !same(before[k], after[k]);
-  for (const k of UNSUPPORTED_PROPS) if (changed(k)) out.push(`${what}: ${k} changes`);
+  for (const k of unsupported) if (changed(k)) out.push(`${what}: ${k} changes`);
   if (changed('layer') && !resolve(r, after.layer, Layer)) {
     out.push(`${what}: layer ${after.layer} does not exist`);
   }
@@ -281,7 +288,7 @@ function propProblems(
 /** Why the change from `before` (undefined: a new entity) to `after` cannot be written. */
 export function entityProblems(r: Resolver, before: Entity | undefined, after: Entity): string[] {
   const what = `${after.type} ${after.handle}`;
-  const out = propProblems(r, what, before, after);
+  const out = propProblems(r, what, before, after, UNSUPPORTED_ENTITY_PROPS);
   if (after.geom.kind === 'INSERT' && after.geom.block === after.owner) {
     out.push(`${what}: a block inserted into itself`);
   }
@@ -315,6 +322,11 @@ function writeProps(r: Resolver, e: AcadEntity, before: Props | undefined, after
   if (changed('visible')) e.isInvisible = !after.visible;
   if (changed('material')) {
     e.material = after.material ? resolve(r, after.material, Material)! : null;
+  }
+  if (changed('reactors') && !same(before?.reactors ?? [], after.reactors ?? [])) {
+    // In the model's order; each names an object of the drawing or an entity the save adds.
+    e.reactors.length = 0;
+    for (const h of after.reactors ?? []) e.addReactor(resolve(r, h, CadObject)!);
   }
   // AutoCAD keeps a polyline's VERTEX and SEQEND entities on the polyline's layer.
   if (changed('layer') && e instanceof Polyline) {
@@ -1184,10 +1196,7 @@ const leaderWriter: Writer<LeaderGeometry> = {
     const out = planeProblems(g);
     if (!before || before.style !== g.style) out.push(...dimStyleProblems(r, g.style));
     const d = differ(before, g);
-    // An annotation the save adds is not an object of the file yet (left in M1-75).
-    if (d('annotation') && g.annotation && !resolve(r, g.annotation, AcadEntity)) {
-      out.push(`annotation ${g.annotation} is not an entity of the drawing`);
-    }
+    // The annotation, and its reactor back, are checked with the whole model (reactors.ts).
     if (
       d('vertices', 'creationType', 'hookline', 'horizontalDirection') &&
       (g.hookline !== undefined) !== writesHookline(g)
@@ -1227,6 +1236,7 @@ const leaderWriter: Writer<LeaderGeometry> = {
     if (d('textHeight')) l.textHeight = g.textHeight;
     if (d('textWidth')) l.textWidth = g.textWidth;
     if (d('annotation')) {
+      // An annotation the same save adds is created before any entity is written.
       l.associatedAnnotation = g.annotation ? resolve(r, g.annotation, AcadEntity)! : null;
     }
     if (d('normal')) l.normal = xyz(g.normal);
