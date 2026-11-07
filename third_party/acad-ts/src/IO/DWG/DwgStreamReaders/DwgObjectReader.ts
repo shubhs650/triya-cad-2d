@@ -248,6 +248,7 @@ import { BlockGripExpression } from '../../../Objects/Evaluations/BlockGripExpre
 import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
 import { BlockReferenceObjectContextData } from '../../../Objects/BlockReferenceObjectContextData.js';
 import { MTextAttributeObjectContextData } from '../../../Objects/MTextAttributeObjectContextData.js';
+import { TextObjectContextData } from '../../../Objects/TextObjectContextData.js';
 import { ObjectContextData } from '../../../Objects/ObjectContextData.js';
 import { Field, EvaluationOptionFlags, FilingOptionFlags, FieldStateFlags, EvaluationStatusFlags } from '../../../Objects/Field.js';
 import { FieldList } from '../../../Objects/FieldList.js';
@@ -1021,6 +1022,7 @@ export class DwgObjectReader extends DwgSectionIO {
       case DxfFileToken.objectCellStyleMap: template = this._readCellStyleMap(); break;
       case DxfFileToken.blkRefObjectContextData: template = this._readBlkRefObjectContextData(); break;
       case DxfFileToken.mTextAttributeObjectContextData: template = this._readMTextAttributeObjectContextData(); break;
+      case DxfFileToken.textObjectContextData: template = this._readTextObjectContextData(); break;
       case DxfFileToken.objectFieldList: template = this._readFieldList(); break;
       case DxfFileToken.objectField: template = this._readField(); break;
     }
@@ -4628,6 +4630,18 @@ export class DwgObjectReader extends DwgSectionIO {
     return template;
   }
 
+  // AcDbTextObjectContextData (LibreDWG dwg2.spec, TEXTOBJECTCONTEXTDATA): the horizontal mode,
+  // rotation and two 2D points, the values a DXF save writes as 70, 50, 10 and 11.
+  private _readTextObjectContextData(): CadTemplate {
+    const contextData = new TextObjectContextData();
+    const template = new CadAnnotScaleObjectContextDataTemplate(contextData);
+    this._readAnnotScaleObjectContextData(template);
+    contextData.horizontalMode = this._mergedReaders.readBitShort();
+    contextData.rotation = this._mergedReaders.readBitDouble();
+    contextData.insertionPoint = this._mergedReaders.read2RawDouble();
+    contextData.alignmentPoint = this._mergedReaders.read2RawDouble();
+    return template;
+  }
   private _readMTextAttributeObjectContextData(): CadTemplate | null {
     const contextData = new MTextAttributeObjectContextData();
     const template = new CadAnnotScaleObjectContextDataTemplate(contextData);
@@ -4720,7 +4734,9 @@ export class DwgObjectReader extends DwgSectionIO {
     this._readCommonNonEntityData(template);
     const contextData = template.cadObject as ObjectContextData;
     contextData.version = this._objectReader.readBitShort();
-    contextData.hasFileToExtensionDictionary = this._objectReader.readBit();
+    // The record holds the version and the default flag only, as the writer writes it (LibreDWG
+    // dwg2.spec, AcDbObjectContextData: BS 70, B 290). Reading another bit before the flag shifted
+    // value after it: ACadSharp's sample_AC1024+ DWG text context data read as garbage.
     contextData.default = this._objectReader.readBit();
   }
 

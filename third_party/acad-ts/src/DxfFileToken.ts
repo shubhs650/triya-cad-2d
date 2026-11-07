@@ -85,6 +85,7 @@ export class DxfFileToken {
 	public static readonly linkedTableDataRow_BEGIN = "LINKEDTABLEDATAROW_BEGIN";
 	public static readonly linkedTableDataRow_END = "LINKEDTABLEDATAROW_END";
 	public static readonly mTextAttributeObjectContextData = "ACDB_MTEXTATTRIBUTEOBJECTCONTEXTDATA_CLASS";
+	public static readonly textObjectContextData = "ACDB_TEXTOBJECTCONTEXTDATA_CLASS";
 	public static readonly objectAecCleanupGroupDef = "AEC_CLEANUP_GROUP_DEF";
 	public static readonly objectAecWallStyle = "AEC_WALL_STYLE";
 	public static readonly objectBinRecord = "BINRECORD";

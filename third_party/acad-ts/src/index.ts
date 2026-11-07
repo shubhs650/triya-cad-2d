@@ -484,6 +484,7 @@ export { Material, MaterialChannelFlags, MaterialIlluminationModel, MaterialMode
 export { MLineStyleElement, MLineStyle } from './Objects/MLineStyle.js';
 export { MLineStyleFlags } from './Objects/MLineStyleFlags.js';
 export { MTextAttributeObjectContextData } from './Objects/MTextAttributeObjectContextData.js';
+export { TextObjectContextData } from './Objects/TextObjectContextData.js';
 export { MultiLeaderDrawOrderType } from './Objects/MultiLeaderDrawOrderType.js';
 export { BreakInfo, StartEndPointPair, LeaderLine, LeaderRoot, MultiLeaderObjectContextData } from './Objects/MultiLeaderObjectContextData.js';
 export { MultiLeaderStyle } from './Objects/MultiLeaderStyle.js';
