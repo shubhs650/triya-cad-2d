@@ -288,6 +288,33 @@ describe('applyChangeSet validation is atomic', () => {
     }, /stale/);
   });
 
+  it('rejects a stale, unknown, repeated or re-handled layout update', () => {
+    const layout = (m: DocumentModel) => m.layouts.find((l) => l.handle === '1E')!;
+    rejects((m) => {
+      const stale = { ...layout(m) };
+      return { header: [okHeader], layouts: [{ before: stale, after: { ...stale, name: 'A' } }] };
+    }, /layout 1E is stale/);
+    rejects((m) => {
+      const ghost = { ...layout(m), handle: '77' };
+      return { header: [okHeader], layouts: [{ before: ghost, after: ghost }] };
+    }, /layout 77 is not in the model/);
+    rejects((m) => {
+      const l = layout(m);
+      const after = { ...l, name: 'A' };
+      return {
+        header: [okHeader],
+        layouts: [
+          { before: l, after },
+          { before: l, after },
+        ],
+      };
+    }, /layout 1E is changed more than once/);
+    rejects((m) => {
+      const l = layout(m);
+      return { header: [okHeader], layouts: [{ before: l, after: { ...l, handle: '78' } }] };
+    }, /layout 1E: an update cannot change handle/);
+  });
+
   it('rejects an update that changes identity or type', () => {
     rejects((m) => {
       const cur = entityAt(m, MODEL_SPACE, 0);

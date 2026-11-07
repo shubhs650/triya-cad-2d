@@ -45,6 +45,7 @@ import {
 import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
 import { IMAGE_OBJECT_TYPES, planImageObjects, writeImageObjects } from './image-objects';
+import { planLayouts, writeLayouts } from './layouts';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
 import { planTableStyles, writeTableStyles } from './table-styles';
@@ -159,7 +160,6 @@ function nonEntityProblems(
       new Map([...model.objects].filter(([, o]) => unwritten(o))),
     ),
   );
-  if (!same(base.layouts ?? [], model.layouts)) out.push('layout changes');
   if (!same(base.blocks ?? [], [...model.blocks.values()])) out.push('block definition changes');
   return out;
 }
@@ -358,6 +358,7 @@ export function triyaToAcad(
   };
   // Before the entities: a new IMAGE may show a definition the same save adds.
   const imageObjects = planImageObjects(original, base, model, r);
+  const layouts = planLayouts(original, base, model, r);
   // A current style variable may name a style by the name the same save gives it.
   const renamed = new Map<CadObject, string>(
     [...mleaderStyles.plan.updated, ...tableStyles.plan.updated]
@@ -377,6 +378,7 @@ export function triyaToAcad(
     ...tableStyles.problems,
     ...Object.values(views).flatMap((v) => v.problems),
     ...imageObjects.problems,
+    ...layouts.problems,
   );
   problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
@@ -394,6 +396,7 @@ export function triyaToAcad(
     vports: views.vports.plan,
   });
   writeImageObjects(original, imageObjects.plan);
+  writeLayouts(layouts.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
   // it owns (§6.2 rule 3); shared objects it points to stay. Its draw order entry goes with it,
