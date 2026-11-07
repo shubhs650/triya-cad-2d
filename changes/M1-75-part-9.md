@@ -1,0 +1,1 @@
+- M1-75 part 9 (#150): saves keep dimension style changes (new or edited DIMSTYLE records, for the DIMSTYLE manager): every DIMVAR, references to text styles and linetypes the same save may add, and R2004+ DWG true colours; a DIMVAR the drawing's version does not store, obsolete DIMUNIT/DIMFIT and what acad-ts loses (M1-92) are refused.
