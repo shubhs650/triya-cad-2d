@@ -1,0 +1,1 @@
+- M1-75 part 7 (#146): saves keep draw order changes (edited, new or removed SORTENTSTABLEs, with the extension dictionary a block gains for its first one), which DRAWORDER, TEXTTOFRONT and HATCHTOBACK need; an erased entity's draw order entry goes with it instead of being written as handle 0.
