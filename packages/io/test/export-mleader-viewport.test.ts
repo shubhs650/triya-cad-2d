@@ -241,14 +241,6 @@ function changed(g: EntityGeometry, changes: Record<string, unknown>): EntityGeo
 
 const ml = (g: EntityGeometry): MultiLeaderGeometry => g as MultiLeaderGeometry;
 
-/**
- * What acad-ts reads back: its DXF writer leaves out the visual styles this drawing's DWG holds
- * (M1-88).
- */
-function readBack(g: EntityGeometry, format: CadFormat): EntityGeometry {
-  return format === 'dxf' && g.kind === 'VIEWPORT' ? changed(g, { visualStyle: undefined }) : g;
-}
-
 describe('triyaToAcad multileaders and viewports', () => {
   it('reads the authored drawing as expected', () => {
     const model = open();
@@ -427,7 +419,7 @@ describe('triyaToAcad multileaders and viewports', () => {
       const next = changed(e.geom, changes(e.geom));
       edit(model, (b) => b.updateEntity(e.id, { geom: next }));
 
-      expectGeometry(reopened(save(model, format), e.handle)?.geom, readBack(next, format));
+      expectGeometry(reopened(save(model, format), e.handle)?.geom, next);
     });
   }
 
@@ -459,16 +451,8 @@ describe('triyaToAcad multileaders and viewports', () => {
           block: { ...ml(find(model, 'MULTILEADER', 1).geom).block!, position: P(-30, 10) },
         }),
       ],
-      // No visual style: this drawing's, from its DWG, would not reach a DXF save (M1-88).
-      [
-        view,
-        changed(view.geom, {
-          id: 3,
-          center: P(200, 50),
-          frozenLayers: [],
-          visualStyle: undefined,
-        }),
-      ],
+      // With this drawing's visual style, read from its DWG (M1-88).
+      [view, changed(view.geom, { id: 3, center: P(200, 50), frozenLayers: [] })],
     ];
     const added: Entity[] = [];
     edit(model, (b) => {
@@ -547,20 +531,21 @@ describe('triyaToAcad multileaders and viewports', () => {
     }
   });
 
-  it('writes a viewport’s visual style, and refuses one read from DWG on a DXF save (M1-88)', () => {
-    // acad-ts writes DXF VISUALSTYLE objects only as read from DXF, so this one, from a DWG,
-    // would not reach a DXF save; the written reference is checked on the document instead.
+  it('writes a viewport’s visual style, read from DWG, to DXF so it maps back (M1-88)', () => {
     const model = open();
     const e = find(model, 'VIEWPORT', 1);
-    const visualStyle = handleOf('visualstyle', 'Conceptual');
-    edit(model, (b) => b.updateEntity(e.id, { geom: changed(e.geom, { visualStyle }) }));
-    const doc = readCadDocument(FILE);
-    triyaToAcad(doc, model);
+    const next = changed(e.geom, { visualStyle: handleOf('visualstyle', 'Conceptual') });
+    edit(model, (b) => b.updateEntity(e.id, { geom: next }));
+    const bytes = save(model, 'dxf');
 
-    expect((doc.getCadObject(Number.parseInt(e.handle, 16)) as Viewport).visualStyle?.name).toBe(
-      'Conceptual',
+    expectGeometry(reopened(bytes, e.handle)?.geom, next);
+    // The style itself is written, under its name and handle.
+    const styles = readCadDocument(bytes).rootDictionary!.getEntry<CadDictionary>(
+      CadDictionary.acadVisualStyle,
+    )!;
+    expect(styles.getEntry('Conceptual')?.handle.toString(16).toUpperCase()).toBe(
+      handleOf('visualstyle', 'Conceptual'),
     );
-    expect(() => save(model, 'dxf')).toThrow(/VIEWPORT .*M1-88/);
   });
 
   it('writes a viewport’s visual style to DWG so it maps back (M1-85)', () => {

@@ -1062,22 +1062,91 @@ describe('acad-ts local patches', () => {
       expect(v.visualStyle, ACadVersion[version]).toBeNull();
     }
 
-    // The DXF writer writes only the VISUALSTYLE objects it read from DXF, so a DXF save of one
-    // read from DWG leaves 348 out rather than naming an object the file does not have.
+    // A DXF save of one read from DWG names it too, and writes it (0133, M1-88).
     const v = save(ACadVersion.AC1032);
     const dxf = writeCadDocument(v.document!, { format: 'dxf' });
-    const lines = String.fromCharCode(...dxf).split(/\r?\n/);
-    const objects: [string, string][][] = [];
-    for (let k = 0; k + 1 < lines.length; k += 2) {
-      const pair: [string, string] = [lines[k]!.trim(), lines[k + 1]!.trim()];
-      if (pair[0] === '0') objects.push([]);
-      objects.at(-1)?.push(pair);
+    const back = readCadDocument(dxf).getCadObject(Number(v.handle)) as Viewport;
+    expect(back.visualStyle?.name).toBe('Conceptual');
+    expect(back.visualStyle?.handle).toBe(v.visualStyle!.handle);
+  });
+
+  it('0133 the DXF writer writes a VISUALSTYLE from its fields in the layout of each version', () => {
+    // The corpus test checks every field against AutoCAD's DXF saves; this one covers the
+    // edge colours as true colours, which no corpus style states but the edge colour.
+    const written = (version: ACadVersion) => {
+      const doc = new CadDocument(version);
+      const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadVisualStyle)!;
+      const style = new VisualStyle('Mine');
+      style.type = 9;
+      style.faceStyleMonoColor = new Color(1, 2, 3);
+      style.edgeIntersectionColor = new Color(4, 5, 6);
+      style.edgeObscuredColor = new Color(7, 8, 9);
+      style.edgeColorValue = new Color(10, 11, 12);
+      style.edgeSilhouetteColor = new Color(13, 14, 15);
+      style.edgeCreaseAngle = 40;
+      style.precisionFlag = true;
+      styles.add(style);
+      const read = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+      const back = read.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadVisualStyle)!;
+      const codes = back.getEntry<VisualStyle>('Mine')!.rawDxfCodes!;
+      return codes.slice(codes.findIndex((c) => c.code === 100)).map((c) => [c.code, c.value]);
+    };
+    const rgb = (r: number, g: number, b: number) => (r << 16) | (g << 8) | b;
+    const r2007 = written(ACadVersion.AC1021);
+    expect(r2007.slice(0, 3)).toEqual([
+      [100, 'AcDbVisualStyle'],
+      [2, 'Mine'],
+      [70, 9],
+    ]);
+    for (const [code, value] of [
+      [421, rgb(1, 2, 3)],
+      [422, rgb(4, 5, 6)],
+      [423, rgb(7, 8, 9)],
+      [424, rgb(10, 11, 12)],
+      [425, rgb(13, 14, 15)],
+    ] as const) {
+      expect(r2007.find(([c]) => c === code)?.[1], String(code)).toBe(value);
     }
-    const hex = v.handle.toString(16).toUpperCase();
-    const viewport = objects.find((o) => o[0]![1] === 'VIEWPORT' && o[1]?.[1] === hex)!;
-    const codes = viewport.map(([code]) => code);
-    expect(codes).not.toContain('348');
-    expect(readCadDocument(dxf).getCadObject(Number(v.handle))).toBeTruthy();
+    // R2007 ends with the precision flag, the edge style apply flag, then 93 … 45.
+    expect(r2007.slice(-7)).toEqual([
+      [290, true],
+      [174, 0],
+      [93, 0],
+      [44, 0],
+      [173, 0],
+      [291, false],
+      [45, 0],
+    ]);
+
+    const r2010 = written(ACadVersion.AC1024);
+    expect(r2010.slice(1, 6)).toEqual([
+      [2, 'Mine'],
+      [70, 9],
+      [177, 2],
+      [291, false],
+      [71, 0],
+    ]);
+    expect(r2010.filter(([c]) => c === 176)).toHaveLength(28);
+    expect(r2010.find(([c]) => c === 424)?.[1]).toBe(rgb(10, 11, 12));
+
+    const r2018 = written(ACadVersion.AC1032);
+    expect(r2018.slice(1, 6)).toEqual([
+      [2, 'Mine'],
+      [70, 9],
+      [177, 3],
+      [291, false],
+      [70, 58],
+    ]);
+    expect(r2018.filter(([c]) => c === 176)).toHaveLength(58);
+    expect(r2018.filter(([c]) => c === 420).map(([, v]) => v)).toEqual(
+      expect.arrayContaining([
+        rgb(1, 2, 3),
+        rgb(4, 5, 6),
+        rgb(7, 8, 9),
+        rgb(10, 11, 12),
+        rgb(13, 14, 15),
+      ]),
+    );
   });
 
   it('0132 a DWG header keeps DIMLDRBLK, DIMLTYPE, DIMLTEX1/2, DIMMZF and REALWORLDSCALE; DXF keeps DIMTFILLCLR', () => {

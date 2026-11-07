@@ -1725,10 +1725,7 @@ export abstract class DxfSectionWriterBase {
 
     if (this.version >= ACadVersion.AC1021) {
       this._writer.write(61, viewport.majorGridLineFrequency, subclass);
-      // Only a visual style read from DXF is written (as its raw codes); naming one read from
-      // DWG would leave the handle pointing at an object the file does not have.
-      const visualStyle = viewport.visualStyle?.rawDxfCodes != null ? viewport.visualStyle : null;
-      this._writer.writeHandle(348, visualStyle, subclass);
+      this._writer.writeHandle(348, viewport.visualStyle, subclass);
       this._writer.write(292, viewport.useDefaultLighting ? 1 : 0, subclass);
       this._writer.write(282, viewport.defaultLightingType as number, subclass);
       this._writer.write(141, viewport.brightness, subclass);

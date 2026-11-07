@@ -4,15 +4,15 @@ import { VisualStyle } from '../../Objects/VisualStyle.js';
 import { IDwgStreamReader } from './DwgStreamReaders/IDwgStreamReader.js';
 import { IDwgStreamWriter } from './DwgStreamWriters/IDwgStreamWriter.js';
 
-type ValueType = 'BL' | 'BS' | 'BD' | 'B' | 'RC' | 'CMC' | 'TV';
+export type ValueType = 'BL' | 'BS' | 'BD' | 'B' | 'RC' | 'CMC' | 'TV';
 type Value = number | boolean | string | Color;
 type ValueKey = { [K in keyof VisualStyle]: VisualStyle[K] extends Value ? K : never }[keyof VisualStyle];
-type Field = readonly [ValueKey, ValueType];
+export type Field = readonly [ValueKey, ValueType];
 
 // AcDbVisualStyle has a fixed sequence, not a counted list of payload entries.
 // R2010 adds an operation (BS) after every value. R2013 adds 30 more values.
 // Layout cross-checked against LibreDWG's src/dwg2.spec, VISUALSTYLE.
-const fields: readonly Field[] = [
+export const fields: readonly Field[] = [
   ['faceLightingModel', 'BL'], ['faceLightingQuality', 'BL'], ['faceColorMode', 'BL'],
   ['faceModifiers', 'BS'], ['faceOpacityLevel', 'BD'], ['faceSpecularLevel', 'BD'],
   ['faceStyleMonoColor', 'CMC'], ['edgeStyleModel', 'BL'], ['edgeStyle', 'BL'],
@@ -25,7 +25,7 @@ const fields: readonly Field[] = [
   ['displaySettings', 'BL'], ['brightness', 'BD'], ['shadowType', 'BL'],
 ];
 
-const extendedTypes: readonly ValueType[] = [
+export const extendedTypes: readonly ValueType[] = [
   'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'B', 'BL', 'BD', 'BD',
   'BL', 'CMC', 'BL', 'BL', 'CMC', 'B', 'BL', 'BL', 'BL', 'B', 'BL', 'CMC',
   'BD', 'BL', 'TV', 'B', 'BD', 'BD',
