@@ -1984,8 +1984,8 @@ const gridOf = (g: TableGeometry, rows: number, columns: number): boolean =>
  * heights and column widths, cell text and blocks, cell rotation, the table style and the `*T`
  * block. The `*T` block, which AutoCAD draws the table from, is written as it is: regenerating it
  * from the new content is the table engine's (M4-05), as a dimension's block is the dimension
- * engine's. What changes the grid or formatting (rows and columns added or removed, merges, cell
- * formats, table-wide overrides) is refused for now; so is a new table, which needs a `*T` block
+ * engine's. Merges and cell formats are written by table-cells.ts (M1-75 part 26). Rows and
+ * columns added or removed and table-wide overrides are refused for now; so is a new table, which needs a `*T` block
  * of its own that only the TABLE command can make (block definitions, M5).
  */
 const tableWriter: Writer<TableGeometry> = {
