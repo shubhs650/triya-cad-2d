@@ -779,6 +779,26 @@ describe('TriyaToAcad edits on the public corpus', () => {
             b.updateEntity(a.id, { reactors });
             return { leader: e, annotation: a };
           });
+        // Every other associative HATCH lets go of its boundary objects (HATCHEDIT, Associative
+        // off), which drop the hatch from their reactors; the rest keep theirs while they move.
+        const unhooked = targets
+          .filter((e) => e.geom.kind === 'HATCH' && e.geom.associative)
+          .filter((_e, i) => i % 2 === 0)
+          .map((e) => {
+            const g = b.entity(e.id)!.geom as HatchGeometry;
+            const sources = [...new Set(g.loops.flatMap((l) => l.sources ?? []))];
+            const loops = g.loops.map(({ sources: _sources, ...l }) => l);
+            b.updateEntity(e.id, { geom: { ...g, loops, associative: false } });
+            const boundary = sources.map((h) => model.entityByHandle(h)!);
+            for (const s of boundary) {
+              const reactors = (b.entity(s.id)!.reactors ?? []).filter((h) => h !== e.handle);
+              b.updateEntity(s.id, { reactors });
+            }
+            return { hatch: e, boundary };
+          });
+        const hooked = targets
+          .filter((e) => e.geom.kind === 'HATCH' && e.geom.associative)
+          .filter((_e, i) => i % 2 === 1);
         for (const t of drawOrder)
           b.updateObject(t.handle, { entries: t.entries } as Partial<NonGraphicalObject>);
         const r12 = version <= ACadVersion.AC1009;
@@ -811,6 +831,21 @@ describe('TriyaToAcad edits on the public corpus', () => {
           )
           .map(({ annotation }) => `${annotation.type} ${annotation.handle}`);
         expect(wrongReactors, f.path).toEqual([]);
+        // An unhooked hatch is off its old boundary objects' reactors; a kept one still on them.
+        const wrongBoundaries = [
+          ...unhooked.flatMap(({ hatch, boundary }) =>
+            boundary
+              .filter((s) => (back.get(s.handle)?.reactors ?? []).includes(hatch.handle))
+              .map((s) => `${s.type} ${s.handle} -> ${hatch.handle}`),
+          ),
+          ...hooked.flatMap((h) =>
+            (h.geom as HatchGeometry).loops
+              .flatMap((l) => l.sources ?? [])
+              .filter((s) => !(back.get(s)?.reactors ?? []).includes(h.handle))
+              .map((s) => `${s} -/> ${h.handle}`),
+          ),
+        ];
+        expect(wrongBoundaries, f.path).toEqual([]);
         const backLayers = new Map(init.tables?.layers?.map((l) => [l.handle, l]));
         const transparencyApps = new Set(
           (init.tables?.appIds ?? [])
@@ -906,6 +941,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ...drawOrder,
             ...imageObjects,
             ...detached.map((d) => d.annotation),
+            ...unhooked.flatMap((u) => u.boundary),
           ].map((e) => Number.parseInt(e.handle, 16)),
         );
         // The AcCmTransparency application the save registered for the layers' transparency.

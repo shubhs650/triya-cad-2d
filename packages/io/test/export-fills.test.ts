@@ -656,12 +656,14 @@ describe('triyaToAcad fills, images, underlays and multilines', () => {
     const geom = (m: DocumentModel, type: string, n = 0) => find(m, type, n).geom;
     const cases: ((b: ChangeSetBuilder, m: DocumentModel) => void)[] = [
       (b, m) => {
-        // The boundary objects carry reactors to the hatch, which Triya does not write yet.
+        // An associative hatch left without boundary objects, which still point at it (the
+        // accepted changes are in export-hatch-boundaries.test.ts).
         const g = geom(m, 'HATCH') as HatchGeometry;
         const loops = [{ ...g.loops[0]!, sources: undefined }];
         b.updateEntity(find(m, 'HATCH').id, { geom: changed(g, { loops }) });
       },
       (b, m) => {
+        // Boundary objects on a hatch that is not associative.
         const g = geom(m, 'HATCH', 1) as HatchGeometry;
         const loops = [{ ...g.loops[0]!, sources: [find(m, 'LWPOLYLINE').handle] }];
         b.updateEntity(find(m, 'HATCH', 1).id, { geom: changed(g, { loops }) });
