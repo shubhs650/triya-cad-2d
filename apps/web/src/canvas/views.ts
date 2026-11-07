@@ -113,13 +113,72 @@ function isPlan(d: Vec3, twist: number): boolean {
   );
 }
 
+const isActive = (v: VportRecord) => v.name.toUpperCase() === '*ACTIVE';
+
 /**
  * The model-space view a drawing was saved in: the `*Active` VPORT. Several of them make a
- * tiled-viewport configuration, and the DXF reference says the first is the current viewport;
- * the app shows that one alone until tiled viewports come.
+ * tiled-viewport configuration (`modelTiles`), and the DXF reference says the first is the
+ * current viewport.
  */
 export function activeVport(vports: readonly VportRecord[] | undefined): VportRecord | undefined {
-  return vports?.find((v) => v.name.toUpperCase() === '*ACTIVE');
+  return vports?.find(isActive);
+}
+
+/** A tile's part of the window as fractions of its width and height, from the top left. */
+export interface TileRect {
+  readonly left: number;
+  readonly top: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** One tiled model-space viewport: the `*Active` VPORT it opens in and where it sits. */
+export interface ModelTile {
+  readonly vport: VportRecord | undefined;
+  readonly rect: TileRect;
+}
+
+const WHOLE: TileRect = { left: 0, top: 0, width: 1, height: 1 };
+
+/**
+ * A corner stored this far outside the window (in fractions of it) is rounding, clipped to the
+ * window; further out, the tile is not in the window.
+ */
+const RECT_SLACK = 1e-6;
+
+/**
+ * The tiled model-space viewports a drawing was saved with (M1-22 part 4): every `*Active`
+ * VPORT in table order, the first being the current one, each in its part of the window. DXF
+ * 10/11 give its lower-left and upper-right corners as fractions of the drawing area with the
+ * origin at the lower left (AutoCAD DXF reference, VPORT), so the top is 1 less the upper
+ * corner's Y. A tile with no area or outside the window is left out; when the current one is,
+ * or fewer than two are left, the current viewport fills the window alone, as a single
+ * viewport always does whatever corners it states.
+ */
+export function modelTiles(vports: readonly VportRecord[] | undefined): readonly ModelTile[] {
+  const active = vports?.filter(isActive) ?? [];
+  const placed: ModelTile[] = [];
+  for (const vport of active) {
+    const rect = tileRect(vport);
+    if (rect) placed.push({ vport, rect });
+    else if (placed.length === 0) break;
+  }
+  if (placed.length < 2) return [{ vport: active[0], rect: WHOLE }];
+  return placed;
+}
+
+function tileRect(v: VportRecord): TileRect | undefined {
+  const { lowerLeft: ll, upperRight: ur } = v;
+  if (![ll?.x, ll?.y, ur?.x, ur?.y].every(Number.isFinite)) return undefined;
+  const inside = (n: number) => n >= -RECT_SLACK && n <= 1 + RECT_SLACK;
+  if (![ll.x, ll.y, ur.x, ur.y].every(inside)) return undefined;
+  const clip = (n: number) => Math.min(Math.max(n, 0), 1);
+  const x0 = clip(ll.x);
+  const y0 = clip(ll.y);
+  const x1 = clip(ur.x);
+  const y1 = clip(ur.y);
+  if (!(x1 - x0 > RECT_SLACK) || !(y1 - y0 > RECT_SLACK)) return undefined;
+  return { left: x0, top: 1 - y1, width: x1 - x0, height: y1 - y0 };
 }
 
 /**
