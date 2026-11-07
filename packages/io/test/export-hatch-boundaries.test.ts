@@ -403,7 +403,7 @@ describe('triyaToAcad associative hatch boundaries', () => {
         },
       ],
       [
-        /reactor .* is not a leader it annotates or a hatch it bounds/,
+        /reactor .* is not a leader it annotates, a hatch it bounds or a viewport it clips/,
         (b, m) => {
           b.updateEntity(find(m, 'CIRCLE', 1).id, { reactors: [find(m, 'HATCH').handle] });
         },
