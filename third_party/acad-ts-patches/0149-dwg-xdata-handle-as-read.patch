@@ -1,0 +1,33 @@
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index ecfbf01..7080d2c 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -145,6 +145,7 @@ import { ExtendedDataDisplacement } from '../../../XData/ExtendedDataDisplacemen
+ import { ExtendedDataCoordinate } from '../../../XData/ExtendedDataCoordinate.js';
+ import { ExtendedDataWorldCoordinate } from '../../../XData/ExtendedDataWorldCoordinate.js';
+ import { ExtendedDataString } from '../../../XData/ExtendedDataString.js';
++import { ExtendedDataHandle } from '../../../XData/ExtendedDataHandle.js';
+ import type { IExtendedDataHandleReference } from '../../../XData/IExtendedDataHandleReference.js';
+ import { getTextStyleExtendedDataForWrite } from '../../TextStyleExtendedData.js';
+ 
+@@ -1470,12 +1471,16 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			} else if ('resolveReference' in record && 'value' in record) {
+ 				const href = record as IExtendedDataHandleReference;
+ 				let h = href.value;
+-				try {
+-					if (href.resolveReference(this._document) == null) {
++				// A 1005 is written as read, like AutoCAD's save and the DXF writer, even when it names
++				// no object here; a 1003 layer that is not in the drawing has no handle to write.
++				if (!(record instanceof ExtendedDataHandle)) {
++					try {
++						if (href.resolveReference(this._document) == null) {
++							h = 0;
++						}
++					} catch {
+ 						h = 0;
+ 					}
+-				} catch {
+-					h = 0;
+ 				}
+ 				const buf = new ArrayBuffer(8);
+ 				let value = BigInt(Math.trunc(h));
