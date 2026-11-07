@@ -1,0 +1,140 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 41ebb54..009845c 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -75,6 +75,8 @@ import { TableContent } from '../../../Objects/TableContent.js';
+ import { LinkedData } from '../../../Objects/LinkedData.js';
+ import { FormattedTableData } from '../../../Objects/FormattedTableData.js';
+ import { VisualStyle } from '../../../Objects/VisualStyle.js';
++import { extendedTypes as visualStyleExtendedTypes, fields as visualStyleFields, type ValueType } from '../../DWG/DwgVisualStyle.js';
++import { codes as visualStyleCodes } from '../DxfStreamWriter/DxfVisualStyle.js';
+ import { SpatialFilter } from '../../../Objects/SpatialFilter.js';
+ import { MLineStyle , MLineStyleElement} from '../../../Objects/MLineStyle.js';
+ import { MultiLeaderStyle } from '../../../Objects/MultiLeaderStyle.js';
+@@ -1809,15 +1811,96 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+     }
+   }
+ 
++  // Where each VISUALSTYLE read has got to: whether its type (the first 70) is read, whether
++  // the values are a counted list (R2013+: 70 = 58 after 177 and 291), the next value of that
++  // list, and the last value read, which an operation (176) or a true colour belongs to.
++  private readonly _visualStyleReads = new WeakMap<CadTemplate, { typeRead: boolean; counted: boolean; next: number; last: number }>();
++
++  // The inverse of writeDxfVisualStyle (0133), into the fields the DWG reader fills: R2007
++  // (also R2000/R2004 DXF) one code per value, R2010 an operation (176) after each, R2013+ the
++  // 28 values and 30 extended properties by position under their types' codes.
+   private _readVisualStyle(template: CadTemplate, map: DxfMap): boolean {
+-    switch (this._reader.code as number) {
+-      case 176:
++    const style = template.cadObject as VisualStyle;
++    const state = this._visualStyleReads.get(template) ?? { typeRead: false, counted: false, next: 0, last: -1 };
++    this._visualStyleReads.set(template, state);
++    const value = (type: ValueType): number | boolean | string | Color => {
++      switch (type) {
++        case 'B': return this._reader.valueAsInt !== 0;
++        case 'BD': return this._reader.valueAsDouble;
++        case 'CMC': return new Color(this._reader.valueAsShort);
++        case 'TV': return this._reader.valueAsString;
++        default: return this._reader.valueAsInt;
++      }
++    };
++    const typeOf = (index: number): ValueType =>
++      index < visualStyleFields.length ? visualStyleFields[index][1] : visualStyleExtendedTypes[index - visualStyleFields.length];
++    const assign = (index: number, v: number | boolean | string | Color): void => {
++      if (index < visualStyleFields.length) {
++        Reflect.set(style, visualStyleFields[index][0], v);
++      } else if (index < visualStyleFields.length + visualStyleExtendedTypes.length) {
++        const property = style.dwgExtendedProperties[index - visualStyleFields.length];
++        style.dwgExtendedProperties[index - visualStyleFields.length] = { value: v, operation: property?.operation ?? 1 };
++      }
++      state.last = index;
++    };
++    const code = this._reader.code as number;
++
++    switch (code) {
++      case 2:
++        // The DWG record holds the description; the dictionary entry names the style.
++        if (!state.typeRead) style.description = this._reader.valueAsString;
++        return true;
++      case 70:
++        if (!state.typeRead) {
++          style.type = this._reader.valueAsInt;
++          state.typeRead = true;
++        } else {
++          state.counted = true;
++        }
++        return true;
+       case 177:
+-      case 420:
++        // 2 in every R2010 and 3 in every R2013+ DXF; the DWG record has no such value.
+         return true;
+-      default:
++      case 291:
++        style.internalFlag = this._reader.valueAsInt !== 0;
++        return true;
++      case 176:
++        if (state.last >= visualStyleFields.length) {
++          const property = style.dwgExtendedProperties[state.last - visualStyleFields.length];
++          if (property !== undefined) property.operation = this._reader.valueAsInt;
++        } else if (state.last >= 0) {
++          style.dwgPropertyOperations[state.last] = this._reader.valueAsInt;
++        }
++        return true;
++      case 1001:
++        return false;
++    }
++    // A true colour follows its index colour: 421-425 in R2007/R2010, 420 in R2013+.
++    if (code >= 420 && code <= 427) {
++      if (state.last >= 0 && typeOf(state.last) === 'CMC') assign(state.last, Color.fromTrueColor(this._reader.valueAsInt));
++      return true;
++    }
++    if (state.counted) {
++      if (code === 90 || code === 40 || code === 290 || code === 62 || code === 1) {
++        assign(state.next, value(typeOf(state.next)));
++        state.next++;
++      }
++      return true;
++    }
++    switch (code) {
++      case 62:
++        // 62 = 5 before the R2007-layout mono colour (63), a constant the DWG record does not hold.
++        return true;
++      case 174:
++        style.edgeApplyStyleFlag = this._reader.valueAsInt;
++        return true;
++      case 45:
++        style.dwgLegacyUnknown = this._reader.valueAsDouble;
+         return true;
+     }
++    const index = visualStyleCodes.indexOf(code);
++    if (index >= 0) assign(index, value(typeOf(index)));
++    return true;
+   }
+ 
+   private _readSpatialFilter(template: CadTemplate, map: DxfMap): boolean {
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfVisualStyle.ts b/src/IO/DXF/DxfStreamWriter/DxfVisualStyle.ts
+index 8b499b2..b99f991 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfVisualStyle.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfVisualStyle.ts
+@@ -8,7 +8,7 @@ import { IDxfStreamWriter } from './IDxfStreamWriter.js';
+ // The R2007 and R2010 DXF codes of the DWG fields, in the DWG (and DXF) order. A true colour
+ // follows its index colour at code + 358: the corpus states 63/421 (face style mono colour) and
+ // 66/424 (edge colour); 64/422, 65/423 and 67/425 follow the same rule.
+-const codes: readonly number[] = [
++export const codes: readonly number[] = [
+ 	71, 72, 73, 90, 40, 41, 63, 74, 91, 64, 65, 75, 175, 42, 92, 66, 43, 76, 77, 78, 67, 79,
+ 	170, 171, 290, 93, 44, 173,
+ ];
+diff --git a/src/Objects/VisualStyle.ts b/src/Objects/VisualStyle.ts
+index d89665f..f4d7185 100644
+--- a/src/Objects/VisualStyle.ts
++++ b/src/Objects/VisualStyle.ts
+@@ -12,7 +12,7 @@ import { FaceLightingQualityType } from './FaceLightingQualityType.js';
+ import { FaceModifierType } from './FaceModifierType.js';
+ 
+ export class VisualStyle extends NonGraphicalObject implements IRawCadObject {
+-	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF reader assigns no field of this type and the writer has none. */
++	/** DXF group codes as read, when the reader keeps them (`keepRawDxfPassthroughObjects`): the DXF writer writes a style read from DXF back from these, and one read from DWG from its fields. */
+ 	rawDxfCodes: DxfRawCode[] | null = null;
+ 	rawDxfName: string | null = null;
+ 	rawDwgData: DwgRawObjectData | null = null;
