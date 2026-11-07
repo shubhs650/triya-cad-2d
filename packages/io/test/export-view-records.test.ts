@@ -309,10 +309,13 @@ describe('APPID, UCS, VIEW and VPORT records', () => {
       (table: ViewTable, name: string, change: object) => (b: ChangeSetBuilder, m: DocumentModel) =>
         b.updateTableRecord(table, named(m, table, name).handle, change as never);
     const cases: [(b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
-      [(b, m) => b.removeTableRecord('views', named(m, 'views', 'PLAN').handle), /removing a view/],
       [
-        (b, m) => b.removeTableRecord('appIds', named(m, 'appIds', 'TRIYA_TEST').handle),
-        /removing/,
+        (b, m) => b.removeTableRecord('vports', named(m, 'vports', '*Active').handle),
+        /removing a viewport/,
+      ],
+      [
+        (b, m) => b.removeTableRecord('appIds', named(m, 'appIds', 'ACAD').handle),
+        /ACAD cannot be purged/,
       ],
       [update('appIds', 'ACAD', { name: 'ACAD2' }), /ACAD cannot be renamed/],
       [update('appIds', 'TRIYA_TEST', { name: 'acad' }), /another application is named acad/],

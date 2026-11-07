@@ -441,9 +441,9 @@ describe('dimension styles', () => {
 
     const records: [string, (b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
       [
-        'remove',
-        (b, m) => b.removeTableRecord('dimStyles', dimStyleNamed(m, 'ARCH').handle),
-        /removing a dimension style/,
+        'purge Standard',
+        (b, m) => b.removeTableRecord('dimStyles', dimStyleNamed(m, 'Standard').handle),
+        /Standard cannot be purged/,
       ],
       [
         'rename Standard',
