@@ -2,9 +2,10 @@
 // write (move it; grow circles and arcs, turn arcs, text, blocks and feature control frames;
 // move hatches with their pattern origin, images, wipeouts, underlays, multilines, multileaders
 // and viewport frames), with what the Layers palette and a markup session change outside the
-// entities (every layer turned off or on, locked or unlocked and recoloured; $LTSCALE,
-// $TEXTSIZE and the current layer; every block's draw order turned upside down), must save so that the edited entities, layers and header
-// variables map back to the edit, and every other object in the file comes back exactly as
+// entities (every layer turned off or on, locked or unlocked and recoloured; every text style
+// widened and slanted; every linetype redescribed and its pattern doubled; $LTSCALE, $TEXTSIZE
+// and the current layer; every block's draw order turned upside down), must save so that the
+// edited entities, records and header variables map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles and variables reports nothing
 // (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
@@ -20,9 +21,11 @@ import {
   type HatchGeometry,
   type HeaderValue,
   type LayerRecord,
+  type LinetypeRecord,
   type NonGraphicalObject,
   type SortEntsTable,
   type TextFields,
+  type TextStyleRecord,
   type Vec2,
 } from '@triya/engine';
 import {
@@ -257,6 +260,38 @@ function editedLayer(l: LayerRecord): Partial<LayerRecord> {
   return { on: !l.on, locked: !l.locked, color: { kind: 'aci', index } };
 }
 
+/** The STYLE dialog on every text style: a wider width factor, and slanted or upright. */
+function editedTextStyle(s: TextStyleRecord): Partial<TextStyleRecord> {
+  return {
+    widthFactor: s.widthFactor * 1.25,
+    obliqueAngle: s.obliqueAngle === 0 ? Math.PI / 12 : 0,
+  };
+}
+
+/** LTYPE records with a pattern to edit: all but ByLayer and ByBlock, which stand for others. */
+const editableLinetype = (l: LinetypeRecord): boolean =>
+  !['BYLAYER', 'BYBLOCK'].includes(l.name.toUpperCase());
+
+/** A new description, and a linetype's pattern twice as long (Continuous has none). */
+function editedLinetype(l: LinetypeRecord): Partial<LinetypeRecord> {
+  return {
+    description: `${l.description} (edited)`,
+    ...(l.elements.length > 0
+      ? {
+          patternLength: l.patternLength * 2,
+          elements: l.elements.map((e) => ({ ...e, length: e.length * 2 })),
+        }
+      : {}),
+  };
+}
+
+/** A record as it maps back, without the reader's link. */
+function withoutRaw<T extends { raw?: unknown }>(r: T | undefined): Omit<T, 'raw'> | undefined {
+  if (!r) return r;
+  const { raw: _raw, ...rest } = r;
+  return rest;
+}
+
 /** Header variables a markup session changes: LTSCALE, TEXTSIZE and the current layer. */
 function editedHeader(model: DocumentModel): Map<string, HeaderValue> {
   const out = new Map<string, HeaderValue>();
@@ -441,6 +476,12 @@ describe('TriyaToAcad edits on the public corpus', () => {
         const layers = [...model.tables.layers.values()].filter(
           (l) => !madeUp?.has(Number.parseInt(l.handle, 16)),
         );
+        const kept = (r: { handle: Handle }): boolean =>
+          !madeUp?.has(Number.parseInt(r.handle, 16));
+        const textStyles = [...model.tables.textStyles.values()].filter(kept);
+        const linetypes = [...model.tables.linetypes.values()]
+          .filter(kept)
+          .filter(editableLinetype);
         const header = editedHeader(model);
         // DRAWORDER: each block's draw order turned upside down among the entities it lists.
         const drawOrder = [...model.objects.values()]
@@ -458,6 +499,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
         for (const t of drawOrder)
           b.updateObject(t.handle, { entries: t.entries } as Partial<NonGraphicalObject>);
         for (const l of layers) b.updateTableRecord('layers', l.handle, editedLayer(l));
+        for (const t of textStyles) b.updateTableRecord('textStyles', t.handle, editedTextStyle(t));
+        for (const l of linetypes) b.updateTableRecord('linetypes', l.handle, editedLinetype(l));
         for (const [name, value] of header) b.setHeader(name, value);
         model.apply(b.build());
 
@@ -476,6 +519,18 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((l) => !same(comparableLayer(backLayers.get(l.handle)), comparableLayer(l)))
           .map((l) => l.name);
         expect(wrongLayers, f.path).toEqual([]);
+        const backStyles = new Map(init.tables?.textStyles?.map((t) => [t.handle, t]));
+        const wrongStyles = textStyles
+          .map((t) => model.tables.textStyles.get(t.handle)!)
+          .filter((t) => !near(withoutRaw(backStyles.get(t.handle)), withoutRaw(t)))
+          .map((t) => t.name);
+        expect(wrongStyles, f.path).toEqual([]);
+        const backLinetypes = new Map(init.tables?.linetypes?.map((l) => [l.handle, l]));
+        const wrongLinetypes = linetypes
+          .map((l) => model.tables.linetypes.get(l.handle)!)
+          .filter((l) => !near(withoutRaw(backLinetypes.get(l.handle)), withoutRaw(l)))
+          .map((l) => l.name);
+        expect(wrongLinetypes, f.path).toEqual([]);
         const backObjects = new Map(init.objects?.map((o) => [o.handle, o]));
         const wrongDrawOrder = drawOrder
           .filter((t) => !same(backObjects.get(t.handle), t))
@@ -490,7 +545,9 @@ describe('TriyaToAcad edits on the public corpus', () => {
         // A polyline's VERTEX entities and an INSERT's ATTRIBs are edited with it, under their
         // own handles.
         const ignoreHandles = new Set(
-          [...targets, ...layers, ...drawOrder].map((e) => Number.parseInt(e.handle, 16)),
+          [...targets, ...layers, ...textStyles, ...linetypes, ...drawOrder].map((e) =>
+            Number.parseInt(e.handle, 16),
+          ),
         );
         for (const h of [...ignoreHandles]) {
           const o = original.getCadObject(h);

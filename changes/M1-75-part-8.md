@@ -1,0 +1,1 @@
+- M1-75 part 8 (#148): saves keep text style and linetype changes (new or edited STYLE and LTYPE records, for the STYLE and LINETYPE commands); a TrueType style's `ACAD` face name and bold/italic xdata follow its font, and entities, layers, linetypes and the header may name a style or linetype the same save adds.
