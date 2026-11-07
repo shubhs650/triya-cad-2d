@@ -9,6 +9,7 @@ import {
   CadDictionary,
   CadHeader,
   DictionaryVariable,
+  DimensionStyle,
   DxfHeaderSectionWriter,
   Layer,
   LineType,
@@ -91,7 +92,12 @@ const NAME_TABLES: Record<string, { readonly records: Records; readonly empty?: 
   $CELTYPE: { records: linetypes },
   $TEXTSTYLE: { records: textStyles },
   $DIMTXSTY: { records: textStyles },
-  $DIMSTYLE: { records: (d) => d.dimensionStyles },
+  $DIMSTYLE: {
+    records: (d, added) => [
+      ...(d.dimensionStyles ?? []),
+      ...added.filter((r) => r instanceof DimensionStyle),
+    ],
+  },
   $CMLSTYLE: { records: (d) => [...(namedDictionary(d, CadDictionary.acadMLineStyle) ?? [])] },
   $DIMBLK: { records: blocks, empty: true },
   $DIMBLK1: { records: blocks, empty: true },
