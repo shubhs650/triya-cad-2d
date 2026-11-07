@@ -33,6 +33,7 @@ import {
   type DimStyleRecord,
   type MLeaderStyleRecord,
   type HatchGeometry,
+  type LeaderGeometry,
   type HeaderValue,
   type ImageDefinition,
   type LayerRecord,
@@ -752,6 +753,17 @@ describe('TriyaToAcad edits on the public corpus', () => {
         for (const o of imageObjects)
           b.updateObject(o.handle, editedImageObject(o) as Partial<NonGraphicalObject>);
         for (const e of targets) b.updateEntity(e.id, { geom: edited(e.geom) });
+        // Each LEADER lets go of its annotation, which drops the leader from its reactors.
+        const detached = targets
+          .filter((e) => e.geom.kind === 'LEADER' && e.geom.annotation !== undefined)
+          .map((e) => {
+            const { annotation, ...g } = b.entity(e.id)!.geom as LeaderGeometry;
+            b.updateEntity(e.id, { geom: g });
+            const a = model.entityByHandle(annotation!)!;
+            const reactors = (a.reactors ?? []).filter((h) => h !== e.handle);
+            b.updateEntity(a.id, { reactors });
+            return { leader: e, annotation: a };
+          });
         for (const t of drawOrder)
           b.updateObject(t.handle, { entries: t.entries } as Partial<NonGraphicalObject>);
         for (const l of layers) b.updateTableRecord('layers', l.handle, editedLayer(l));
@@ -777,6 +789,12 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((e) => !near(back.get(e.handle)?.geom, e.geom))
           .map((e) => `${e.type} ${e.handle}`);
         expect(wrong, f.path).toEqual([]);
+        const wrongReactors = detached
+          .filter(({ leader, annotation }) =>
+            (back.get(annotation.handle)?.reactors ?? []).includes(leader.handle),
+          )
+          .map(({ annotation }) => `${annotation.type} ${annotation.handle}`);
+        expect(wrongReactors, f.path).toEqual([]);
         const backLayers = new Map(init.tables?.layers?.map((l) => [l.handle, l]));
         const wrongLayers = layers
           .map((l) => model.tables.layers.get(l.handle)!)
@@ -858,6 +876,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ...vports,
             ...drawOrder,
             ...imageObjects,
+            ...detached.map((d) => d.annotation),
           ].map((e) => Number.parseInt(e.handle, 16)),
         );
         for (const h of [...ignoreHandles]) {

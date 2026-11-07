@@ -50,6 +50,7 @@ import { planTableStyles, writeTableStyles } from './table-styles';
 import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
+import { annotationProblems } from './reactors';
 import { planTextStyles, writeTextStyles } from './text-styles';
 import { planAppIds, planUcs, planViews, planVports, writeViewRecords } from './view-records';
 
@@ -245,7 +246,11 @@ function plan(
   format: CadFormat | undefined,
   drawOrder: DrawOrderChanges,
 ): { plan: Plan; problems: string[] } {
-  const problems = [...nonEntityProblems(base, model, drawOrder), ...orderProblems(base, model)];
+  const problems = [
+    ...nonEntityProblems(base, model, drawOrder),
+    ...orderProblems(base, model),
+    ...annotationProblems(base, model),
+  ];
   const version = doc.header?.version;
   const out: Plan = { updated: [], added: [], removed: [] };
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
@@ -378,6 +383,15 @@ export function triyaToAcad(
     block.sortEntitiesTable?.remove(e);
     block.entities.remove(e);
   }
+  // Every entity the save adds exists before any is written, so a LEADER can name the
+  // annotation the LEADER command makes after it, and the annotation its leader (reactors).
+  const added = p.added.map(({ block, after }) => {
+    const e = createAcadEntity(after.geom)!;
+    // acad-ts keeps a non-zero handle it has not seen, so the entity keeps Triya's handle.
+    e.handle = Number.parseInt(after.handle, 16);
+    created.set(after.handle, e);
+    return { block, e, after };
+  });
   const r12 = isR12(original.header?.version);
   for (const { acad, before, after } of p.updated) {
     writeEntity(r, acad, before as Entity, after);
@@ -391,10 +405,7 @@ export function triyaToAcad(
       writeR12View(acad);
     }
   }
-  for (const { block, after } of p.added) {
-    const e = createAcadEntity(after.geom)!;
-    // acad-ts keeps a non-zero handle it has not seen, so the entity keeps Triya's handle.
-    e.handle = Number.parseInt(after.handle, 16);
+  for (const { block, e, after } of added) {
     block.entities.add(e);
     writeEntity(r, e, undefined, after);
     if (r12 && e instanceof Viewport) addR12View(original, e);
