@@ -44,6 +44,7 @@ import { ToleranceAlignment } from '../../../Tables/ToleranceAlignment.js';
 import { ZeroHandling } from '../../../Tables/ZeroHandling.js';
 import { AngularZeroHandling } from '../../../Tables/ZeroHandling.js';
 import { ArcLengthSymbolPosition } from '../../../Tables/ArcLengthSymbolPosition.js';
+import { TextDirection } from '../../../Tables/TextDirection.js';
 import { FractionFormat } from '../../../Tables/FractionFormat.js';
 import { LinearUnitFormat } from '../../../Types/Units/LinearUnitFormat.js';
 import { AngularUnitFormat } from '../../../Types/Units/AngularUnitFormat.js';
@@ -534,7 +535,8 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
         dimensionStyle.angularDecimalPlaces = this._reader.valueAsShort;
         return true;
       case 270:
-        dimensionStyle.linearUnitFormat = this._reader.valueAsShort as LinearUnitFormat;
+        // DIMUNIT (R13/R14), which DIMLUNIT (277) and DIMFRAC replaced; the DWG reader keeps it apart too.
+        dimensionStyle.dimensionUnit = this._reader.valueAsShort;
         return true;
       case 271:
         dimensionStyle.decimalPlaces = this._reader.valueAsShort;
@@ -595,6 +597,10 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
         return true;
       case 290:
         dimensionStyle.isExtensionLineLengthFixed = this._reader.valueAsBool;
+        return true;
+      case 294:
+        // DIMTXTDIRECTION (DXF reference, DIMSTYLE): 1 draws the text right to left.
+        dimensionStyle.textDirection = this._reader.valueAsShort !== 0 ? TextDirection.RightToLeft : TextDirection.LeftToRight;
         return true;
       case 340:
         template.textStyleHandle = this._reader.valueAsHandle;

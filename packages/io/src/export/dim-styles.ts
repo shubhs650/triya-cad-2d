@@ -7,7 +7,7 @@
 //
 // A DIMVAR the drawing's version has no group for is refused when it changes, as AutoCAD's own
 // save to that version drops it (the DIMSTYLE layouts of the ODA's Open Design Specification for
-// .dwg, §20.4.53, and the DXF reference's DIMSTYLE groups); so is what acad-ts loses (M1-92).
+// .dwg, §20.4.53, and the DXF reference's DIMSTYLE groups).
 
 import {
   ACadVersion,
@@ -204,7 +204,6 @@ function dimStyleProblems(
     }
   }
   out.push(...trueColorProblems(version, format, b, a));
-  out.push(...acadTsLosses(version, format, b, a, changed));
   return out;
 }
 
@@ -271,39 +270,6 @@ function trueColorProblems(
     else if (a.vars[name] !== aciOfTrueColor(now.r, now.g, now.b))
       out.push(`${name}: its colour number is not the one AutoCAD gives the true colour`);
   }
-  return out;
-}
-
-/**
- * What acad-ts writes or reads back wrong (roadmap M1-92): its DXF writer leaves DIMARCSYM out
- * when it is 1 (above), DIMTXTDIRECTION out altogether and DIMTFILLCLR out without a background
- * fill, its DXF reader reads DIMUNIT (270) as DIMLUNIT, and its R2000+ DWG reader and writer
- * put DIMFIT where the record holds DIMATFIT (written as 3).
- */
-function acadTsLosses(
-  version: ACadVersion | undefined,
-  format: CadFormat | undefined,
-  b: DimStyleRecord | undefined,
-  a: DimStyleRecord,
-  changed: readonly string[],
-): string[] {
-  const out: string[] = [];
-  const lost = (name: string): void => {
-    out.push(`${name}: acad-ts does not save it to ${format?.toUpperCase()} (M1-92)`);
-  };
-  if (format === 'dxf') {
-    if (changed.includes('DIMARCSYM') && a.vars.DIMARCSYM === 1) lost('DIMARCSYM');
-    if (changed.includes('DIMTXTDIRECTION')) lost('DIMTXTDIRECTION');
-    if (changed.includes('DIMUNIT')) lost('DIMUNIT');
-    const fill = changed.includes('DIMTFILL') || changed.includes('DIMTFILLCLR') || !b;
-    if (fill && a.vars.DIMTFILL === 0 && a.vars.DIMTFILLCLR !== 0) lost('DIMTFILLCLR');
-  }
-  if (
-    format === 'dwg' &&
-    (version === undefined || version >= ACadVersion.AC1015) &&
-    changed.includes('DIMATFIT')
-  )
-    lost('DIMATFIT');
   return out;
 }
 

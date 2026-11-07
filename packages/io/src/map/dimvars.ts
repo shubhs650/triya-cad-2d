@@ -79,8 +79,8 @@ export const DIMVARS: readonly (readonly [string, number, DimVarKind, DimVarProp
   ['DIMUPT', 288, 'value', 'cursorUpdate'],
   ['DIMATFIT', 289, 'value', 'dimensionTextArrowFit'],
   ['DIMFXLON', 290, 'value', 'isExtensionLineLengthFixed'],
-  // The DXF reference gives DIMTXTDIRECTION as 294; acad-ts reads and writes it as 295. No
-  // public corpus file states it, so the group code is not tested here.
+  // DXF 294 as the DXF reference gives it (acad-ts read 295 until patch 0138). No public corpus
+  // file states it; acad-ts-patches.test.ts checks the group code.
   ['DIMTXTDIRECTION', 294, 'value', 'textDirection'],
   ['DIMTXSTY', 340, 'ref', 'style'],
   ['DIMLDRBLK', 341, 'ref', 'leaderArrow'],

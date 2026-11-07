@@ -1,0 +1,38 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 56c8801..99ee561 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -171,6 +171,7 @@ import { Layer, LayerFlags } from '../../../Tables/Layer.js';
+ import { LineType, LineTypeShapeFlags } from '../../../Tables/LineType.js';
+ import { TextStyle, StyleFlags, TextMirrorFlag as TextStyleMirrorFlag } from '../../../Tables/TextStyle.js';
+ import { DimensionStyle, ZeroHandling, ToleranceAlignment, DimensionTextHorizontalAlignment, DimensionTextVerticalAlignment, AngularZeroHandling, ArcLengthSymbolPosition, DimensionTextBackgroundFillMode, FractionFormat, TextMovement, TextDirection } from '../../../Tables/DimensionStyle.js';
++import { TextArrowFitType } from '../../../Tables/TextArrowFitType.js';
+ import { View, ViewModeType, RenderMode } from '../../../Tables/View.js';
+ import { VPort, DefaultLightingType, GridFlags, UscIconType } from '../../../Tables/VPort.js';
+ import { UCS, OrthographicType } from '../../../Tables/UCS.js';
+@@ -2997,7 +2998,10 @@ export class DwgObjectReader extends DwgSectionIO {
+       dimStyle.alternateUnitZeroHandling = this._objectReader.readBitShort() as ZeroHandling;
+       dimStyle.alternateUnitToleranceZeroHandling = this._objectReader.readBitShort() as ZeroHandling;
+       dimStyle.cursorUpdate = this._objectReader.readBit();
+-      dimStyle.dimensionFit = this._objectReader.readBitShort();
++      // DIMATFIT (ODA spec §20.4.53). R2000+ has no DIMFIT (DIMATFIT and DIMTMOVE replaced it):
++      // keep what the DXF reader gives a style without 287, AutoCAD's default 3.
++      dimStyle.dimensionTextArrowFit = this._objectReader.readBitShort() as TextArrowFitType;
++      dimStyle.dimensionFit = 3;
+     }
+     if (this.r2007Plus) {
+       dimStyle.isExtensionLineLengthFixed = this._objectReader.readBit();
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index caee7c4..f93077a 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -1009,7 +1009,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writer.writeBitShort(dimStyle.alternateUnitZeroHandling);
+ 			this._writer.writeBitShort(dimStyle.alternateUnitToleranceZeroHandling);
+ 			this._writer.writeBit(dimStyle.cursorUpdate);
+-			this._writer.writeBitShort(3);
++			// DIMATFIT (ODA spec §20.4.53).
++			this._writer.writeBitShort(dimStyle.dimensionTextArrowFit);
+ 		}
+ 
+ 		if (this.r2007Plus) {

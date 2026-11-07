@@ -1,0 +1,14 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index f56c547..d7f00ef 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -173,7 +173,8 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+       this._writer.write(70, 0, map);
+     }
+ 
+-    if (style.arcLengthSymbolPosition !== ArcLengthSymbolPosition.AboveDimensionText) {
++    // DIMARCSYM 0 (before the text) is AutoCAD's default, which it leaves out and readers assume.
++    if (style.arcLengthSymbolPosition !== ArcLengthSymbolPosition.BeforeDimensionText) {
+       this._writer.write(90, style.arcLengthSymbolPosition as number);
+     }
+ 

@@ -198,8 +198,8 @@ describe('dimension styles', () => {
         DIMLTEX1: dashed.handle,
         DIMLTEX2: linetype.handle,
       };
-      // DXF saves the text direction and DWG DIMATFIT wrongly (M1-92); the other side has them.
-      const gaps = format === 'dxf' ? { DIMATFIT: 1 } : { DIMTXTDIRECTION: 1 };
+      // DXF used to lose the text direction and DWG DIMATFIT (M1-92, acad-ts 0138 and 0141).
+      const gaps = { DIMATFIT: 1, DIMTXTDIRECTION: 1 };
       b.updateTableRecord('dimStyles', standard.handle, {
         vars: { ...standard.vars, ...EDITED, ...refs, ...gaps },
       });
@@ -338,6 +338,24 @@ describe('dimension styles', () => {
     expect(near(back?.vars, vars)).toBe(true);
   });
 
+  // What acad-ts lost until M1-92 (patches 0137–0141), each saved where it used to be refused.
+  it.each([
+    ['DIMARCSYM 1 (above the text)', ACadVersion.AC1032, 'dxf', { DIMARCSYM: 1 }],
+    ['DIMTXTDIRECTION', ACadVersion.AC1024, 'dxf', { DIMTXTDIRECTION: 1 }],
+    ['DIMTFILLCLR without a fill', ACadVersion.AC1032, 'dxf', { DIMTFILL: 0, DIMTFILLCLR: 5 }],
+    ['R14 DIMUNIT', ACadVersion.AC1014, 'dxf', { DIMUNIT: 4 }],
+    ['R2000 DIMATFIT', ACadVersion.AC1015, 'dwg', { DIMATFIT: 1 }],
+    ['R2018 DIMATFIT', ACadVersion.AC1032, 'dwg', { DIMATFIT: 0 }],
+  ] as const)('saves %s', (_what, version, format, change) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    const arch = dimStyleNamed(model, 'ARCH');
+    const vars = { ...arch.vars, ...change };
+    edit(model, (b) => b.updateTableRecord('dimStyles', arch.handle, { vars }));
+    const back = saved(bytes, model, format).tables?.dimStyles?.find((s) => s.name === 'ARCH');
+    expect(near(back?.vars, vars), JSON.stringify(back?.vars)).toBe(true);
+  });
+
   it('refuses what it cannot write and leaves the original as it was', () => {
     type Case = [string, (m: DocumentModel) => Record<string, DimVarValue | undefined>, RegExp];
     const vars =
@@ -406,28 +424,6 @@ describe('dimension styles', () => {
         'dxf',
         ['DIMUNIT', vars({ DIMUNIT: 4 }), /DIMUNIT: obsolete since R2000/],
       ],
-      // What acad-ts loses (M1-92).
-      [
-        ACadVersion.AC1032,
-        'dxf',
-        ['DIMARCSYM 1', vars({ DIMARCSYM: 1 }), /DIMARCSYM: acad-ts does not save it to DXF/],
-      ],
-      [
-        ACadVersion.AC1032,
-        'dxf',
-        ['DIMTXTDIRECTION', vars({ DIMTXTDIRECTION: 1 }), /DIMTXTDIRECTION: acad-ts/],
-      ],
-      [
-        ACadVersion.AC1032,
-        'dxf',
-        ['DIMTFILLCLR', vars({ DIMTFILLCLR: 5 }), /DIMTFILLCLR: acad-ts/],
-      ],
-      [
-        ACadVersion.AC1032,
-        'dwg',
-        ['DIMATFIT', vars({ DIMATFIT: 1 }), /DIMATFIT: acad-ts does not save it to DWG/],
-      ],
-      [ACadVersion.AC1014, 'dxf', ['DIMUNIT', vars({ DIMUNIT: 4 }), /DIMUNIT: acad-ts/]],
     ];
     for (const [version, format, [what, change, message]] of cases) {
       const bytes = drawing(version, format);

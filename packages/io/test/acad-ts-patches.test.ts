@@ -3,6 +3,7 @@
 import type { Polyline } from '@node-projects/acad-ts';
 import {
   ACadVersion,
+  ArcLengthSymbolPosition,
   BlockGripExpression,
   BlockRecord,
   BookColor,
@@ -45,6 +46,7 @@ import {
   LineType,
   LineTypeSegment,
   LineTypeShapeFlags,
+  LinearUnitFormat,
   LineWeightType,
   MeasurementUnits,
   MultiLeader,
@@ -61,6 +63,8 @@ import {
   TableEntityCell,
   TableEntityColumn,
   TableEntityRow,
+  TextArrowFitType,
+  TextDirection,
   TextStyle,
   Vertex2D,
   Vertex3D,
@@ -1351,5 +1355,163 @@ describe('acad-ts local patches', () => {
       dwgExtendedProperties: expect.anything(),
     });
     expect(extended(back)).toEqual(extended(r2018));
+  });
+
+  // M1-92: DIMSTYLE values acad-ts lost on a save. Each test saves an ARCH style beside Standard.
+  const dimStyleBack = (
+    version: ACadVersion,
+    format: 'dxf' | 'dwg',
+    set: (s: DimensionStyle) => void,
+    binary = false,
+  ): { style: DimensionStyle; text: string } => {
+    const doc = new CadDocument(version);
+    const style = new DimensionStyle('ARCH');
+    set(style);
+    doc.dimensionStyles!.add(style);
+    const bytes = writeCadDocument(doc, { format, binary });
+    const back = readCadDocument(bytes).dimensionStyles!.tryGetValue('ARCH')!;
+    return {
+      style: back,
+      text:
+        format === 'dxf' && !binary
+          ? Array.from(bytes, (c) => String.fromCharCode(c)).join('')
+          : '',
+    };
+  };
+  const latin1 = (text: string) => Uint8Array.from(text, (c) => c.charCodeAt(0));
+  /** The group codes and values of the ARCH DIMSTYLE record in DXF text. */
+  const archGroups = (text: string): [number, string][] => {
+    const lines = text.split(/\r?\n/);
+    const pairs: [number, string][] = [];
+    for (let i = 0; i + 1 < lines.length; i += 2) pairs.push([+lines[i]!, lines[i + 1]!.trim()]);
+    const start = pairs.findIndex(
+      ([c, v], i) =>
+        c === 0 && v === 'DIMSTYLE' && pairs.slice(i + 1).find(([k]) => k === 2)?.[1] === 'ARCH',
+    );
+    const end = pairs.findIndex(([c], i) => i > start && c === 0);
+    return pairs.slice(start + 1, end);
+  };
+
+  it('0137 the DXF writer writes DIMARCSYM 1 (above the text), leaving out only 0', () => {
+    for (const binary of [false, true]) {
+      for (const p of [
+        ArcLengthSymbolPosition.BeforeDimensionText,
+        ArcLengthSymbolPosition.AboveDimensionText,
+        ArcLengthSymbolPosition.None,
+      ]) {
+        const { style, text } = dimStyleBack(
+          ACadVersion.AC1032,
+          'dxf',
+          (s) => (s.arcLengthSymbolPosition = p),
+          binary,
+        );
+        expect(style.arcLengthSymbolPosition, `${p} ${binary}`).toBe(p);
+        // AutoCAD leaves the default (0, before the text) out.
+        if (!binary)
+          expect(archGroups(text).filter(([c]) => c === 90)).toEqual(p === 0 ? [] : [[90, `${p}`]]);
+      }
+    }
+  });
+
+  it('0138 DXF DIMTXTDIRECTION is group 294, as the DXF reference gives it', () => {
+    for (const binary of [false, true]) {
+      const { style, text } = dimStyleBack(
+        ACadVersion.AC1024,
+        'dxf',
+        (s) => (s.textDirection = TextDirection.RightToLeft),
+        binary,
+      );
+      expect(style.textDirection, `${binary}`).toBe(TextDirection.RightToLeft);
+      if (!binary) expect(archGroups(text).filter(([c]) => c === 294)).toEqual([[294, '1']]);
+    }
+    // Left to right is AutoCAD's default, which it leaves out.
+    const { style, text } = dimStyleBack(ACadVersion.AC1032, 'dxf', () => {});
+    expect(style.textDirection).toBe(TextDirection.LeftToRight);
+    expect(archGroups(text).some(([c]) => c === 294 || c === 295)).toBe(false);
+    // A DIMSTYLE that states 294 = 1 reads right to left.
+    const stated = text.replace(/(\n\s*2\r?\nARCH\r?\n\s*70\r?\n\s*0\r?\n)/, '$1294\n1\n');
+    expect(stated).not.toBe(text);
+    const read = readCadDocument(latin1(stated)).dimensionStyles!.tryGetValue('ARCH')!;
+    expect(read.textDirection).toBe(TextDirection.RightToLeft);
+  });
+
+  it('0139 the DXF writer writes DIMTFILLCLR whatever DIMTFILL is', () => {
+    for (const binary of [false, true]) {
+      for (const fill of [0, 1, 2]) {
+        const { style } = dimStyleBack(
+          ACadVersion.AC1032,
+          'dxf',
+          (s) => {
+            s.textBackgroundFillMode = fill as never;
+            s.textBackgroundColor = new Color(5);
+          },
+          binary,
+        );
+        expect(style.textBackgroundFillMode, `${fill} ${binary}`).toBe(fill);
+        expect(style.textBackgroundColor.index, `${fill} ${binary}`).toBe(5);
+      }
+    }
+  });
+
+  it('0140 DXF DIMUNIT (270) reads into DIMUNIT, not DIMLUNIT, and R13/R14 saves write it', () => {
+    for (const version of [ACadVersion.AC1012, ACadVersion.AC1014]) {
+      const { style, text } = dimStyleBack(version, 'dxf', (s) => {
+        s.dimensionUnit = 4;
+        s.linearUnitFormat = LinearUnitFormat.Decimal;
+      });
+      expect(style.dimensionUnit, ACadVersion[version]).toBe(4);
+      expect(style.linearUnitFormat, ACadVersion[version]).toBe(LinearUnitFormat.Decimal);
+      expect(archGroups(text).filter(([c]) => c === 270)).toEqual([[270, '4']]);
+    }
+    // R12 has no DIMUNIT, and R2000 replaced it by DIMLUNIT and DIMFRAC.
+    for (const version of [ACadVersion.AC1009, ACadVersion.AC1015, ACadVersion.AC1032]) {
+      const { text } = dimStyleBack(version, 'dxf', (s) => (s.dimensionUnit = 4));
+      expect(
+        archGroups(text).some(([c]) => c === 270),
+        ACadVersion[version],
+      ).toBe(false);
+    }
+    // An R14 file that states DIMLUNIT before DIMUNIT keeps both.
+    const { text } = dimStyleBack(ACadVersion.AC1014, 'dxf', (s) => {
+      s.dimensionUnit = 6;
+      s.linearUnitFormat = LinearUnitFormat.Architectural;
+    });
+    // Moves the 270 pair to just after the 277 pair.
+    const swapped = text.replace(
+      /\n(\s*270\r?\n\s*6\r?\n)([\s\S]*?\n\s*277\r?\n\s*4\r?\n)/,
+      '\n$2$1',
+    );
+    expect(swapped).not.toBe(text);
+    const read = readCadDocument(latin1(swapped)).dimensionStyles!.tryGetValue('ARCH')!;
+    expect([read.dimensionUnit, read.linearUnitFormat]).toEqual([
+      6,
+      LinearUnitFormat.Architectural,
+    ]);
+  });
+
+  it('0141 an R2000+ DWG DIMSTYLE reads and writes DIMATFIT in its own place', () => {
+    for (const version of [
+      ACadVersion.AC1015,
+      ACadVersion.AC1018,
+      ACadVersion.AC1024,
+      ACadVersion.AC1032,
+    ]) {
+      for (const fit of [
+        TextArrowFitType.Both,
+        TextArrowFitType.ArrowsFirst,
+        TextArrowFitType.TextFirst,
+      ]) {
+        const { style } = dimStyleBack(version, 'dwg', (s) => {
+          s.dimensionTextArrowFit = fit;
+          s.dimensionFit = 5;
+        });
+        expect(style.dimensionTextArrowFit, `${ACadVersion[version]} ${fit}`).toBe(fit);
+        // R2000+ stores no DIMFIT: it reads as the DXF reader's default for an absent 287.
+        expect(style.dimensionFit, `${ACadVersion[version]} ${fit}`).toBe(3);
+      }
+    }
+    // R13/R14 store DIMFIT and no DIMATFIT.
+    const { style } = dimStyleBack(ACadVersion.AC1014, 'dwg', (s) => (s.dimensionFit = 5));
+    expect(style.dimensionFit).toBe(5);
   });
 });
