@@ -199,6 +199,7 @@ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalO
 import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
 import { VisualStyle } from '../../../Objects/VisualStyle.js';
 import { TableStyle } from '../../../Objects/TableStyle.js';
+import { CellStyleMap } from '../../../Objects/CellStyleMap.js';
 import { writeDwgVisualStyle } from '../DwgVisualStyle.js';
 import { ProxyObject } from '../../../Objects/ProxyObject.js';
 import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
@@ -3608,6 +3609,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 		} else if (obj instanceof DynamicBlockPurgePreventer) {
 			this._writer.writeBitShort(obj.version);
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, obj.block ?? obj.blockHandle);
+		} else if (obj instanceof CellStyleMap) {
+			this._writeCellStyleMap(obj);
 		} else if (obj instanceof TableStyle) {
 			this._writeTableStyle(obj);
 		} else if (obj instanceof Material) {
@@ -3943,6 +3946,17 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writeRowCellStyle(tableStyle.headerCellStyle);
 	}
 
+	/** CELLSTYLEMAP, as the reader reads it: a count, then each cell style with its id, class and name. */
+	private _writeCellStyleMap(map: CellStyleMap): void {
+		this._writer.writeBitLong(map.cellStyles.length);
+		for (const style of map.cellStyles) {
+			this._writeCellStyle(style);
+			this._writer.writeBitLong(style.id);
+			this._writer.writeBitLong(style.styleClass);
+			this._writer.writeVariableText(style.name);
+		}
+	}
+
 	private _writeTableStyleColor(color: Color): void {
 		if (this.r2004Pre && this._writer instanceof DwgMergedStreamWriter) {
 			this._writer.writeMergedCmColor(color);
@@ -3987,7 +4001,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 
 		this._writer.writeBitLong(style.cellPropertyOverrideFlags ?? style.propertyOverrideFlags);
 		this._writer.writeBitLong(style.tableCellStylePropertyFlags);
-		this._writer.writeCmColor(style.backgroundColor);
+		this._writeTableStyleColor(style.backgroundColor);
 		this._writer.writeBitLong(style.contentLayoutFlags);
 		this._writeCellContentFormat(style);
 		this._writer.writeBitShort(style.marginOverrideFlags);
@@ -4019,7 +4033,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 	private _writeBorder(border: CellBorder): void {
 		this._writer.writeBitLong(border.propertyOverrideFlags);
 		this._writer.writeBitLong(border.type);
-		this._writer.writeCmColor(border.color);
+		this._writeTableStyleColor(border.color);
 		this._writer.writeBitLong(border.lineWeight);
 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, border.lineType);
 		this._writer.writeBitLong(border.isInvisible ? 1 : 0);
@@ -4035,7 +4049,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.writeBitDouble(format.rotation);
 		this._writer.writeBitDouble(format.scale);
 		this._writer.writeBitLong(format.alignment);
-		this._writer.writeCmColor(format.color);
+		this._writeTableStyleColor(format.color);
 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, format.textStyle);
 		this._writer.writeBitDouble(format.textHeight);
 	}

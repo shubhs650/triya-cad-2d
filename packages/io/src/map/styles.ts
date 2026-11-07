@@ -139,13 +139,24 @@ const rowStyles = (s: TableStyle): CellStyle[] =>
 export const CELL_STYLE_MAP = 'ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP';
 
 /**
+ * A table style's CELLSTYLEMAP: its extension dictionary's CELL_STYLE_MAP entry, which an R14
+ * DWG names `ACAD_ROUNDTRIP_2008_TABLES` (acadsharp sample_AC1014.dwg), so it is found by type.
+ */
+export function cellStyleMapOf(s: TableStyle): CellStyleMap | undefined {
+  const named = s.xDictionary?.get(CELL_STYLE_MAP);
+  if (named instanceof CellStyleMap) return named;
+  for (const entry of s.xDictionary ?? []) if (entry instanceof CellStyleMap) return entry;
+  return undefined;
+}
+
+/**
  * The data, title and header cell styles of a table style's CELLSTYLEMAP, in the record's row
  * order, by their ids (1 `_TITLE`, 2 `_HEADER`, 3 `_DATA`, as AutoCAD numbers them); undefined
  * when the style has no readable map or the map lacks one of the three.
  */
 export function cellStyleMapRows(s: TableStyle): CellStyle[] | undefined {
-  const map = s.xDictionary?.get(CELL_STYLE_MAP);
-  if (!(map instanceof CellStyleMap)) return undefined;
+  const map = cellStyleMapOf(s);
+  if (!map) return undefined;
   const rows = [3, 1, 2].map((id) => map.cellStyles.find((c) => c.id === id));
   return rows.every((c) => c !== undefined) ? (rows as CellStyle[]) : undefined;
 }
