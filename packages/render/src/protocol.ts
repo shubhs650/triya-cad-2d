@@ -1,6 +1,6 @@
 // Messages between RendererHost (main thread) and the render worker. Plain structured-clone
-// postMessage, as ARCHITECTURE.md §3 draws it: the stream is one-way except for the two
-// requests that need an answer (hit test, flush), which carry an id.
+// postMessage, as ARCHITECTURE.md §3 draws it: the stream is one-way except for the three
+// requests that need an answer (hit test, flush, thumbnail), which carry an id.
 
 import type { ChangeSet, EntityId } from '@triya/engine';
 import type { FontSources, RenderDocument } from './session';
@@ -39,10 +39,19 @@ export type HostMessage =
       readonly screen: { readonly x: number; readonly y: number };
       readonly aperture: number;
     }
-  | { readonly type: 'flush'; readonly id: number };
+  | { readonly type: 'flush'; readonly id: number }
+  /** The last frame drawn, fitted inside width × height (M1-22 tab hover preview). */
+  | {
+      readonly type: 'thumbnail';
+      readonly id: number;
+      readonly width: number;
+      readonly height: number;
+    };
 
 export type WorkerMessage =
   | { readonly type: 'reply'; readonly id: number; readonly ids?: readonly EntityId[] }
+  /** The thumbnail asked for, transferred; null when the canvas was never sized. */
+  | { readonly type: 'thumbnail'; readonly id: number; readonly bitmap: ImageBitmap | null }
   | { readonly type: 'error'; readonly message: string; readonly id?: number };
 
 /** Both ends of the channel, typed by shape: a Worker, a worker's `self` or a test double. */

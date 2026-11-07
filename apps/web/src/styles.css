@@ -137,6 +137,63 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* M1-22 part 5: a tab being dragged along the row, and the file tab hover preview. */
+.doc-tab[data-dragging='true'] {
+  cursor: grabbing;
+  outline: 1px solid var(--accent);
+}
+
+.tab-preview {
+  position: fixed;
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  max-width: min(720px, calc(100vw - 16px));
+  padding: 6px;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 0 4px 4px 4px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
+}
+
+.tab-preview-space {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: none;
+  transition: background var(--motion);
+}
+
+.tab-preview-space:hover,
+.tab-preview-space:focus-visible {
+  background: var(--chrome-bg);
+}
+
+.tab-preview-space[aria-current='true'] {
+  border-color: var(--accent);
+}
+
+/* A space not opened yet has no picture: its canvas colour or a white sheet stands in. */
+.tab-preview .thumbnail {
+  width: 160px;
+  height: 110px;
+  object-fit: contain;
+  background: #212830;
+}
+
+.tab-preview .thumbnail.paper {
+  background: #8a8f98;
+}
+
+.tab-preview .thumbnail[data-drawn='true'] {
+  background: none;
+}
+
 .report {
   color: var(--chrome-text-muted);
   white-space: nowrap;

@@ -152,6 +152,15 @@ export class CanvasController {
     return this.#mode;
   }
 
+  /**
+   * The canvas as last drawn, fitted inside `max` CSS pixels (the document tab hover preview);
+   * undefined before the canvas is first sized.
+   */
+  thumbnail(max: { width: number; height: number }): Promise<ImageBitmap | undefined> {
+    const dpr = devicePixelRatio;
+    return this.#host.thumbnail({ width: max.width * dpr, height: max.height * dpr });
+  }
+
   /** ZOOM Extents. A layout without entities shows its sheet. */
   zoomExtents(): void {
     this.#go(extentsView(this.#extents() ?? this.#paper(), this.#size));

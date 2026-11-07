@@ -1,10 +1,11 @@
 // The render worker's message loop, kept apart from the worker entry so tests can drive it
-// with an in-process endpoint. Messages are handled in order, so a hit test or flush answers
-// after every change, view and frame posted before it.
+// with an in-process endpoint. Messages are handled in order, so a hit test, flush or thumbnail
+// answers after every change, view and frame posted before it.
 
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession } from './session';
+import type { BitmapFactory } from './thumbnail';
 
 export interface ServeOptions {
   /** The surface for the transferred canvas. */
@@ -12,6 +13,8 @@ export interface ServeOptions {
   readonly createLayer: () => Surface;
   readonly now?: () => number;
   readonly requestIdle?: (cb: () => void) => void;
+  /** `createImageBitmap` by default (thumbnails, M1-22). */
+  readonly createBitmap?: BitmapFactory;
 }
 
 export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: ServeOptions): void {
@@ -67,6 +70,23 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'flush':
         port.postMessage({ type: 'reply', id: m.id });
         break;
+      case 'thumbnail': {
+        // The copy is taken now, in message order; only the answer waits for the bitmap.
+        const id = m.id;
+        session.thumbnail({ width: m.width, height: m.height }, o.createBitmap).then(
+          (bitmap) =>
+            bitmap
+              ? port.postMessage({ type: 'thumbnail', id, bitmap }, [bitmap])
+              : port.postMessage({ type: 'thumbnail', id, bitmap: null }),
+          (e: unknown) =>
+            port.postMessage({
+              type: 'error',
+              id,
+              message: e instanceof Error ? e.message : String(e),
+            }),
+        );
+        break;
+      }
     }
   };
 

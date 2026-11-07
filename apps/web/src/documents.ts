@@ -25,6 +25,18 @@ export interface OpenDocument {
   readonly revision: number;
 }
 
+/** Model, then the layouts in tab order (DXF 71): the layout tabs and the file tab preview. */
+export function spacesOf(doc: OpenDocument): { readonly name: string; readonly block: string }[] {
+  const model = doc.opened.modelSpace!;
+  const layouts = [...(doc.opened.init.layouts ?? [])]
+    .filter((l) => l.blockRecord !== model)
+    .sort((a, b) => a.tabOrder - b.tabOrder);
+  return [
+    { name: 'Model', block: model },
+    ...layouts.map((l) => ({ name: l.name, block: l.blockRecord })),
+  ];
+}
+
 export interface DocumentsState {
   readonly docs: readonly OpenDocument[];
   readonly active: number | undefined;
@@ -83,6 +95,21 @@ export class DocumentStore {
     const rest = docs.filter((d) => d.id !== id);
     const active = this.#state.active === id ? (rest[at] ?? rest[at - 1])?.id : this.#state.active;
     this.#set({ docs: rest, active });
+  }
+
+  /**
+   * Moves a tab to position `to` among the tabs (dragging a file tab, as in AutoCAD); the tab
+   * showing stays the same. `to` is clamped to the ends.
+   */
+  move(id: number, to: number): void {
+    const docs = [...this.#state.docs];
+    const from = docs.findIndex((d) => d.id === id);
+    if (from < 0) return;
+    const at = Math.max(0, Math.min(docs.length - 1, Math.trunc(to)));
+    if (at === from) return;
+    const [doc] = docs.splice(from, 1);
+    docs.splice(at, 0, doc!);
+    this.#set({ docs });
   }
 
   /** The drawing's engine applied an edit: the palettes mirroring it re-read. */

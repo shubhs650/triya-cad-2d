@@ -20,7 +20,7 @@ Design intent: **an AutoCAD drafter finds everything where they expect it; every
 ```
 
 - Canvas always wins space. Palettes dock right by default; can float, auto-hide, or dock left/bottom; layout persisted locally.
-- Document tabs behave like AutoCAD file tabs (hover preview, close, dirty dot, drag to reorder).
+- Document tabs behave like AutoCAD file tabs (hover preview, close, dirty dot, drag to reorder). Resting the mouse on a tab for 400 ms previews the drawing's Model and layouts (each as last drawn; a space not yet shown has a blank stand-in), and clicking one shows that drawing and space; Ctrl+Shift+Page Up/Down moves the focused tab.
 - Layout tabs sit above the command line; `+` creates a layout; right-click for layout commands.
 
 ## 2. Ribbon content (tabs → panels → items)
