@@ -1512,6 +1512,65 @@ export interface Group extends NonGraphicalObject {
   readonly entities: readonly Handle[];
 }
 
+/**
+ * Where an associative dimension's definition point sits on geometry (AcDbOsnapPointRef, one of
+ * a DIMASSOC's point references): the object snap that placed it on the object, so the
+ * dimension follows when the object moves (AutoCAD 2024, DIMASSOC = 2).
+ */
+export interface DimAssocPoint {
+  /** DXF 72: the object snap, 0 none, 1 endpoint, 2 midpoint, 3 centre, … 13 start point. */
+  readonly osnap: number;
+  /**
+   * DXF 331: the object, as a path from the outermost block reference when it is nested in one
+   * (a single entity otherwise, as every corpus point reference has).
+   */
+  readonly geometry: readonly Handle[];
+  /** DXF 73: 0 unknown, 1 edge, 2 face. */
+  readonly subentType: number;
+  /** DXF 91: the subentity's GS marker. */
+  readonly gsMarker: number;
+  /** DXF 301: xref handles (as text) of an object inside an xref. */
+  readonly xrefPaths: readonly string[];
+  /** DXF 40: the curve parameter of a Nearest (and endpoint) snap. */
+  readonly parameter: number;
+  /** DXF 10: the snapped point, in WCS. */
+  readonly point: Vec3;
+  /** The second object of an intersection or apparent intersection snap (DXF 332, 74, 92, 302). */
+  readonly intersection?: {
+    readonly geometry: readonly Handle[];
+    readonly subentType: number;
+    readonly gsMarker: number;
+    readonly xrefPaths: readonly string[];
+  };
+  /** DXF 75 and the reference after it: the point reference this one was before (kept as read). */
+  readonly last?: DimAssocPoint;
+}
+
+/**
+ * An associative dimension's link to the geometry it measures (DXF DIMASSOC, the `ACAD_DIMASSOC`
+ * entry of the dimension's extension dictionary; M1-75 part 35). The dimension and each object
+ * it is associated with list the DIMASSOC in their reactors, as AutoCAD links them.
+ */
+export interface DimAssoc extends NonGraphicalObject {
+  readonly type: 'DIMASSOC';
+  /** DXF 330 after the subclass marker: the dimension. */
+  readonly dimension: Handle;
+  /** DXF 70: a paper-space dimension on model-space geometry. */
+  readonly transSpace: boolean;
+  /** DXF 71: rotated dimension type, 0 unknown, 1 parallel, 2 perpendicular. */
+  readonly rotatedType: number;
+  /**
+   * The dimension's first to fourth definition points (DXF 90 bits 1, 2, 4, 8): each the point
+   * reference that keeps it on geometry, or null where that point is not associative.
+   */
+  readonly points: readonly [
+    DimAssocPoint | null,
+    DimAssocPoint | null,
+    DimAssocPoint | null,
+    DimAssocPoint | null,
+  ];
+}
+
 /** A header variable value as read: string, number, point, or handle (as a string). */
 export type HeaderValue = string | number | boolean | Vec2 | Vec3;
 

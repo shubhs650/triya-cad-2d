@@ -349,7 +349,7 @@ describe('triyaToAcad viewport clip boundaries', () => {
         },
       ],
       [
-        /reactor .* is not a leader it annotates, a hatch it bounds, a viewport it clips or a group it is in/,
+        /reactor .* is not a leader it annotates, a hatch it bounds, a viewport it clips, a group it is in or a dimension association naming it/,
         (b, m) => {
           b.updateEntity(find(m, 'CIRCLE', 1).id, { reactors: [find(m, 'VIEWPORT', 2).handle] });
         },

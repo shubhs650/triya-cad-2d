@@ -312,7 +312,7 @@ describe('GROUP objects', () => {
       [
         'a reactor naming a group that does not list the entity',
         (m, b) => reactors(b, lines(m)[3]!, join(group(m, 'DOORS').handle)),
-        'is not a leader it annotates, a hatch it bounds, a viewport it clips or a group it is in',
+        'is not a leader it annotates, a hatch it bounds, a viewport it clips, a group it is in or a dimension association naming it',
       ],
       [
         'an erased member its group keeps',
