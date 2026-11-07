@@ -252,7 +252,8 @@ const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefi
 const UNSUPPORTED_PROPS = ['xdata', 'reactors', 'extDict', 'plotStyle', 'annotative'] as const;
 /**
  * An entity's reactors are written: the only changes accepted are those that keep a LEADER and
- * its annotation pointing at each other (`annotationProblems` in reactors.ts checks them).
+ * its annotation, or an associative HATCH and its boundary objects, pointing at each other
+ * (`reactorProblems` in reactors.ts checks them).
  * An ATTRIB's are not.
  */
 const UNSUPPORTED_ENTITY_PROPS = UNSUPPORTED_PROPS.filter((k) => k !== 'reactors');
@@ -1334,12 +1335,9 @@ const hatchWriter: Writer<HatchGeometry> = {
   problems(_r, before, g) {
     const out = planeProblems(g);
     if (g.thickness !== undefined) out.push('a thickness, which a HATCH does not have');
+    // A loop's boundary objects, and their reactors back, are checked with the whole model
+    // (reactors.ts).
     g.loops.forEach((l, i) => {
-      // An associative hatch's boundary objects point back at it through their reactors,
-      // which Triya does not write yet (M1-75), so a loop keeps the ones it was read with.
-      if (!same(l.sources, before?.loops[i]?.sources)) {
-        out.push(`loop ${i}: its boundary objects change`);
-      }
       if ((l.polyline === undefined) === (l.edges === undefined)) {
         out.push(`loop ${i}: neither a polyline nor edges, or both`);
       }
@@ -1370,7 +1368,7 @@ const hatchWriter: Writer<HatchGeometry> = {
     }
     return out;
   },
-  write(_r, e, before, g) {
+  write(r, e, before, g) {
     const h = e as Hatch;
     const d = differ(before, g);
     const pl = plane(g.normal);
@@ -1380,11 +1378,15 @@ const hatchWriter: Writer<HatchGeometry> = {
       const old = h.paths;
       h.paths = g.loops.map((l, i) => {
         if (kept && old[i] && same(kept.loops[i], l)) return old[i];
-        // A loop at the same index is rewritten in place: its boundary objects (unchanged,
-        // see `problems`) stay with it.
+        // A loop at the same index is rewritten in place, keeping the boundary objects it was
+        // read with unless they change: each names an entity of the drawing or one the same
+        // save adds (reactors.ts checks them).
         const path = old[i] ?? new HatchBoundaryPath();
         path.flags = l.flags;
         path.edges = acadHatchLoopEdges(l, pl);
+        if (!old[i] || !same(l.sources, before?.loops[i]?.sources)) {
+          path.entities = (l.sources ?? []).map((s) => resolve(r, s, AcadEntity)!);
+        }
         return path;
       });
     }

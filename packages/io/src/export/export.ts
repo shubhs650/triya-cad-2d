@@ -50,7 +50,7 @@ import { planTableStyles, writeTableStyles } from './table-styles';
 import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
-import { annotationProblems } from './reactors';
+import { reactorProblems } from './reactors';
 import { planTextStyles, writeTextStyles } from './text-styles';
 import { planAppIds, planUcs, planViews, planVports, writeViewRecords } from './view-records';
 
@@ -249,7 +249,7 @@ function plan(
   const problems = [
     ...nonEntityProblems(base, model, drawOrder),
     ...orderProblems(base, model),
-    ...annotationProblems(base, model),
+    ...reactorProblems(base, model),
   ];
   const version = doc.header?.version;
   const out: Plan = { updated: [], added: [], removed: [] };
@@ -384,7 +384,8 @@ export function triyaToAcad(
     block.entities.remove(e);
   }
   // Every entity the save adds exists before any is written, so a LEADER can name the
-  // annotation the LEADER command makes after it, and the annotation its leader (reactors).
+  // annotation the LEADER command makes after it, and the annotation its leader (reactors), and
+  // a HATCH can keep to the boundary objects the same save adds.
   const added = p.added.map(({ block, after }) => {
     const e = createAcadEntity(after.geom)!;
     // acad-ts keeps a non-zero handle it has not seen, so the entity keeps Triya's handle.
