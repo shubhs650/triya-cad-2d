@@ -179,7 +179,7 @@ Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants
 | REGEN / REGENALL | RE / REA | 1 | | partial (M1-22 part 2): Regen on the navigation bar rebuilds the space shown; REGENALL and the command wait on M2-01 |
 | REDRAW ᵀ | R | 1 | | |
 | VIEW | V | 2 | named views dialog; -VIEW | partial (M1-22 part 2): the navigation bar's Views list restores the drawing's plan views and saves new ones for the session (written to the drawing with M2-13); the dialog waits |
-| VPORTS / MVIEW / VPCLIP / VPMAX / VPMIN | — | 2 | | |
+| VPORTS / MVIEW / VPCLIP / VPMAX / VPMIN | — | 2 | | partial (M1-22 part 4): model-space tiled viewports saved in the drawing open as saved, and a click makes one current; the VPORTS command and dialog wait on M2-01 |
 | MSPACE / PSPACE / MODEL | MS / PS | 2 | | |
 | LAYOUT / LAYOUTWIZARD(no) / PAGESETUP | LO | 2 | | |
 | SCALELISTEDIT | — | 2 | | |
