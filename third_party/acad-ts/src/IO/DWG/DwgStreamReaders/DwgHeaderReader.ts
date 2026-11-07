@@ -455,7 +455,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 			this._header.dimensionTextDirection = this._reader.readBit() ? 1 : 0;
 			this._header.dimensionAltMzf = this._reader.readBitDouble();
 			this._header.dimensionAltMzs = this._reader.readVariableText();
-			this._header.dimensionFit = this._reader.readBitDouble();
+			this._header.dimensionMzf = this._reader.readBitDouble();
 			this._header.dimensionMzs = this._reader.readVariableText();
 		}
 
@@ -598,7 +598,7 @@ export class DwgHeaderReader extends DwgSectionIO {
 			this._header.tileModeLightSynch = this._reader.readRawChar();
 			this._header.dwgUnderlayFramesVisibility = String.fromCharCode(this._reader.readRawChar());
 			this._header.dgnUnderlayFramesVisibility = String.fromCharCode(this._reader.readRawChar());
-			this._reader.readBit(); // unknown
+			this._header.realWorldScale = this._reader.readBit();
 
 			this._header.interfereColor = this._reader.readCmColor();
 

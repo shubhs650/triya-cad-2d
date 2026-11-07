@@ -1,0 +1,138 @@
+diff --git a/src/IO/DWG/DwgHeaderHandlesCollection.ts b/src/IO/DWG/DwgHeaderHandlesCollection.ts
+index 1c429cc..e7fc4a6 100644
+--- a/src/IO/DWG/DwgHeaderHandlesCollection.ts
++++ b/src/IO/DWG/DwgHeaderHandlesCollection.ts
+@@ -1,5 +1,6 @@
+ import { CadHeader } from '../../Header/CadHeader.js';
+ import { BlockRecord } from '../../Tables/BlockRecord.js';
++import { LineType } from '../../Tables/LineType.js';
+ import { TableEntry } from '../../Tables/TableEntry.js';
+ import { DwgDocumentBuilder } from './DwgDocumentBuilder.js';
+ 
+@@ -199,7 +200,7 @@ export class DwgHeaderHandlesCollection {
+ 		if (record) { header.dimensionBlockName = record.name; }
+ 
+ 		record = builder.tryGetCadObject<BlockRecord>(this.dimldrblk);
+-		if (record) { header.dimensionBlockName = record.name; }
++		if (record) { header.arrowBlockName = record.name; }
+ 
+ 		record = builder.tryGetCadObject<BlockRecord>(this.dimblk1);
+ 		if (record) { header.dimensionBlockNameFirst = record.name; }
+@@ -207,6 +208,15 @@ export class DwgHeaderHandlesCollection {
+ 		record = builder.tryGetCadObject<BlockRecord>(this.dimblk2);
+ 		if (record) { header.dimensionBlockNameSecond = record.name; }
+ 
++		entry = builder.tryGetCadObject<TableEntry>(this.dimltype);
++		if (entry instanceof LineType) { header.dimensionLineType = entry.name; }
++
++		entry = builder.tryGetCadObject<TableEntry>(this.dimltex1);
++		if (entry instanceof LineType) { header.dimensionTex1 = entry.name; }
++
++		entry = builder.tryGetCadObject<TableEntry>(this.dimltex2);
++		if (entry instanceof LineType) { header.dimensionTex2 = entry.name; }
++
+ 		entry = builder.tryGetCadObject<TableEntry>(this.ucsorthoref);
+ 		if (entry) { header.ucsOrthographicReferenceName = entry.name; }
+ 
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts b/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
+index 7e069a8..45fada8 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts
+@@ -455,7 +455,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 			this._header.dimensionTextDirection = this._reader.readBit() ? 1 : 0;
+ 			this._header.dimensionAltMzf = this._reader.readBitDouble();
+ 			this._header.dimensionAltMzs = this._reader.readVariableText();
+-			this._header.dimensionFit = this._reader.readBitDouble();
++			this._header.dimensionMzf = this._reader.readBitDouble();
+ 			this._header.dimensionMzs = this._reader.readVariableText();
+ 		}
+ 
+@@ -598,7 +598,7 @@ export class DwgHeaderReader extends DwgSectionIO {
+ 			this._header.tileModeLightSynch = this._reader.readRawChar();
+ 			this._header.dwgUnderlayFramesVisibility = String.fromCharCode(this._reader.readRawChar());
+ 			this._header.dgnUnderlayFramesVisibility = String.fromCharCode(this._reader.readRawChar());
+-			this._reader.readBit(); // unknown
++			this._header.realWorldScale = this._reader.readBit();
+ 
+ 			this._header.interfereColor = this._reader.readCmColor();
+ 
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
+index e5b6994..0ace142 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts
+@@ -9,6 +9,7 @@ import { CRC8StreamHandler } from '../CRC8StreamHandler.js';
+ import { DwgStreamWriterBase } from './DwgStreamWriterBase.js';
+ import { IDwgStreamWriter } from './IDwgStreamWriter.js';
+ import { BlockRecord } from '../../../Tables/BlockRecord.js';
++import { LineType } from '../../../Tables/LineType.js';
+ 
+ export class DwgHeaderWriter extends DwgSectionIO {
+ 	override get sectionName(): string { return DwgSectionDefinition.header; }
+@@ -33,6 +34,12 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 		return records?.tryGetValue(name) ?? records?.tryGetValue(`_${name}`) ?? null;
+ 	}
+ 
++	// A linetype by name; null (ByBlock to AutoCAD) when the document has none of that name.
++	private _lineType(name: string | null): LineType | null {
++		if (!name) return null;
++		return this._document.lineTypes?.tryGetValue(name) ?? null;
++	}
++
+ 	/** A handle the header keeps as read: 0 once nothing in the document has it. */
+ 	private _objectHandle(handle: number | null): number {
+ 		return handle != null && this._document.getCadObject(handle) != null ? handle : 0;
+@@ -623,25 +630,25 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 			this._writer.writeBit(this._header.dimensionTextDirection === 1);
+ 			this._writer.writeBitDouble(this._header.dimensionAltMzf);
+ 			this._writer.writeVariableText(this._header.dimensionAltMzs);
+-			this._writer.writeBitDouble(this._header.dimensionFit);
++			this._writer.writeBitDouble(this._header.dimensionMzf);
+ 			this._writer.writeVariableText(this._header.dimensionMzs);
+ 		}
+ 
+ 		//R2000 + Only:
+ 		if (this.r2000Plus) {
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._header.dimensionTextStyle);
+-			// DIMLDRBLK (not kept by the header), then DIMBLK, DIMBLK1, DIMBLK2 by block record.
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
++			// DIMLDRBLK, DIMBLK, DIMBLK1, DIMBLK2 by block record.
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._arrowBlock(this._header.arrowBlockName));
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._arrowBlock(this._header.dimensionBlockName));
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._arrowBlock(this._header.dimensionBlockNameFirst));
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._arrowBlock(this._header.dimensionBlockNameSecond));
+ 		}
+ 
+-		//R2007+ Only:
++		//R2007+ Only: DIMLTYPE, DIMLTEX1, DIMLTEX2 by linetype record.
+ 		if (this.r2007Plus) {
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._lineType(this._header.dimensionLineType));
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._lineType(this._header.dimensionTex1));
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._lineType(this._header.dimensionTex2));
+ 		}
+ 
+ 		//R2000+ Only:
+@@ -799,7 +806,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
+ 			this._writer.writeByte(this._header.dwgUnderlayFramesVisibility.charCodeAt(0) || 0);
+ 			this._writer.writeByte(this._header.dgnUnderlayFramesVisibility.charCodeAt(0) || 0);
+ 
+-			this._writer.writeBit(false);
++			this._writer.writeBit(this._header.realWorldScale);
+ 			this._writer.writeCmColor(this._header.interfereColor);
+ 
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._objectHandle(this._header.interfereObjectVisualStyleHandle));
+diff --git a/src/Metadata/LookupTables/Core.ts b/src/Metadata/LookupTables/Core.ts
+index 73fddab..105dadd 100644
+--- a/src/Metadata/LookupTables/Core.ts
++++ b/src/Metadata/LookupTables/Core.ts
+@@ -789,7 +789,7 @@ export const metadataLookupCore: readonly ClassMetadata[] = [
+         "valueCodes": [
+           62
+         ],
+-        "referenceType": 16
++        "referenceType": 0
+       },
+       {
+         "name": "$DIMTFILL",
