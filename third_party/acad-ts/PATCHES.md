@@ -2710,3 +2710,20 @@ The VPORT object stores the UCS icon setting as two bits, on (1) and at origin (
 A drawing split into tiled viewports has one VPORT record per tile, all named `*Active` (named configurations work the same way). `DxfTablesSectionReader` skips a record whose name is already in the table when `failsafe` is set, so only the first tile is read. `VPortsTable.add` already keeps repeated names under a handle-prefixed key, which is how the DWG reader keeps them, so this exempts the VPORT table from the duplicate check.
 
 </details>
+
+### 0146 — the DXF reader keeps a MLEADERSTYLE's arrowhead and content block
+
+- **File:** `third_party/acad-ts-patches/0146-dxf-mleaderstyle-arrowhead-content-block.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** `_readMLeaderStyle` had cases for the leader linetype (340) and text style (342) handles but none for the arrowhead block (341) or the content block (343), so the class map could not assign them and every DXF MLEADERSTYLE read with the default arrowhead and no content block. The DWG reader and both writers keep them, and `CadMLeaderStyleTemplate` already resolves `arrowheadHandle` and `blockContentHandle`. Found by Triya M1-75 part 11, fixed in M1-94.
+- **Fix:** The reader stores 341 in `arrowheadHandle` and 343 in `blockContentHandle`.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0146 the DXF reader keeps a MLEADERSTYLE arrowhead (341) and content block (343)" (R2007, R2010 and R2018 DXF, ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read MLEADERSTYLE arrowhead (341) and block content (343) handles from DXF
+
+`DxfObjectsSectionReader._readMLeaderStyle` reads the leader line type (340) and MText style (342) handles into `CadMLeaderStyleTemplate`, but not the arrowhead block (341) or the block content (343), so a style read from DXF loses both, while the DWG reader keeps them and the DXF writer writes them. This adds the two cases; the template already resolves both handles when the document is built.
+
+</details>
