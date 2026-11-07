@@ -28,7 +28,10 @@ import {
   type SortEntsTable,
   type TextFields,
   type TextStyleRecord,
+  type UcsRecord,
   type Vec2,
+  type ViewRecord,
+  type VportRecord,
 } from '@triya/engine';
 import {
   documentInit,
@@ -307,6 +310,20 @@ function editedDimStyle(s: DimStyleRecord): {
       DIMCLRD: v.DIMCLRD === 1 ? 2 : 1,
     },
   };
+}
+
+/** UCS: the origin moved, as the UCS command's Origin option does. */
+function editedUcs(u: UcsRecord): Partial<UcsRecord> {
+  return { origin: { x: u.origin.x + 1, y: u.origin.y - 2, z: u.origin.z } };
+}
+
+/** VIEW and VPORT records: zoomed out 2× about a point moved off the centre, as ZOOM and PAN do. */
+function editedView<T extends ViewRecord | VportRecord>(v: T): Partial<T> {
+  return {
+    center: { x: v.center.x + 10, y: v.center.y - 5 },
+    height: v.height * 2,
+    ...('width' in v ? { width: v.width * 2 } : {}),
+  } as Partial<T>;
 }
 
 /** A record as it maps back, without the reader's link. */
@@ -609,6 +626,9 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter(kept)
           .filter(editableLinetype);
         const dimStyles = [...model.tables.dimStyles.values()].filter(kept);
+        const ucs = [...model.tables.ucs.values()].filter(kept);
+        const views = [...model.tables.views.values()].filter(kept);
+        const vports = [...model.tables.vports.values()].filter(kept);
         const header = editedHeader(model);
         // DRAWORDER: each block's draw order turned upside down among the entities it lists.
         const drawOrder = [...model.objects.values()]
@@ -629,6 +649,9 @@ describe('TriyaToAcad edits on the public corpus', () => {
         for (const t of textStyles) b.updateTableRecord('textStyles', t.handle, editedTextStyle(t));
         for (const l of linetypes) b.updateTableRecord('linetypes', l.handle, editedLinetype(l));
         for (const d of dimStyles) b.updateTableRecord('dimStyles', d.handle, editedDimStyle(d));
+        for (const u of ucs) b.updateTableRecord('ucs', u.handle, editedUcs(u));
+        for (const v of views) b.updateTableRecord('views', v.handle, editedView(v));
+        for (const v of vports) b.updateTableRecord('vports', v.handle, editedView(v));
         for (const [name, value] of header) b.setHeader(name, value);
         model.apply(b.build());
 
@@ -665,6 +688,19 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((d) => !near(withoutRaw(backDimStyles.get(d.handle)), withoutRaw(d)))
           .map((d) => d.name);
         expect(wrongDimStyles, f.path).toEqual([]);
+        const wrongViewRecords = (['ucs', 'views', 'vports'] as const).flatMap((table) => {
+          const backRecords = new Map(
+            (init.tables?.[table] ?? []).map((r: { handle: Handle; raw?: unknown }) => [
+              r.handle,
+              r,
+            ]),
+          );
+          return { ucs, views, vports }[table]
+            .map((r) => model.tables[table].get(r.handle)!)
+            .filter((r) => !near(withoutRaw(backRecords.get(r.handle)), withoutRaw(r)))
+            .map((r) => `${table} ${r.name} (${r.handle})`);
+        });
+        expect(wrongViewRecords, f.path).toEqual([]);
         const backObjects = new Map(init.objects?.map((o) => [o.handle, o]));
         const wrongDrawOrder = drawOrder
           .filter((t) => !same(backObjects.get(t.handle), t))
@@ -679,9 +715,17 @@ describe('TriyaToAcad edits on the public corpus', () => {
         // A polyline's VERTEX entities and an INSERT's ATTRIBs are edited with it, under their
         // own handles.
         const ignoreHandles = new Set(
-          [...targets, ...layers, ...textStyles, ...linetypes, ...dimStyles, ...drawOrder].map(
-            (e) => Number.parseInt(e.handle, 16),
-          ),
+          [
+            ...targets,
+            ...layers,
+            ...textStyles,
+            ...linetypes,
+            ...dimStyles,
+            ...ucs,
+            ...views,
+            ...vports,
+            ...drawOrder,
+          ].map((e) => Number.parseInt(e.handle, 16)),
         );
         for (const h of [...ignoreHandles]) {
           const o = original.getCadObject(h);
