@@ -1084,7 +1084,11 @@ describe('triyaToAcad', () => {
         b.updateEntity(e.id, {
           geom: {
             ...e.geom,
-            attributes: [{ ...no!, xdata: [] }, rev!],
+            // xdata naming an application the drawing does not register (M1-75 part 19).
+            attributes: [
+              { ...no!, xdata: [{ appId: 'FFFFF', values: [{ code: 1070, value: 1 }] }] },
+              rev!,
+            ],
           },
         });
       },
@@ -1130,7 +1134,10 @@ describe('triyaToAcad', () => {
         const part = [...m.tables.blockRecords.values()].find((r) => r.name === 'PART')!;
         b.moveEntity(byType(m, 'LINE').id, part.handle);
       },
-      (b, m) => b.updateEntity(byType(m, 'LINE').id, { xdata: [] }),
+      (b, m) =>
+        b.updateEntity(byType(m, 'LINE').id, {
+          xdata: [{ appId: 'FFFFF', values: [{ code: 1070, value: 1 }] }],
+        }),
     ];
     for (const f of cases) {
       const { model, init } = open();

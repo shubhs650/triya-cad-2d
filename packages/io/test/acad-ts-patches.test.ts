@@ -4,12 +4,15 @@ import type { Polyline } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   ArcLengthSymbolPosition,
+  AttributeDefinition,
+  AttributeType,
   BlockGripExpression,
   BlockRecord,
   BookColor,
   CadDictionary,
   CadDocument,
   Color,
+  ColumnType,
   DwgReader,
   DwgStreamReaderBase,
   DwgStreamWriterBase,
@@ -49,6 +52,7 @@ import {
   LinearUnitFormat,
   LineWeightType,
   MeasurementUnits,
+  MText,
   MultiLeader,
   MultiLeaderStyle,
   ObjectType,
@@ -1661,6 +1665,81 @@ describe('acad-ts local patches', () => {
       expect(dict.entryNames, what).toEqual(after);
       expect(dict.entryHandles, what).toEqual(styles.entryHandles);
       expect((back.getCadObject(Number(handle)) as MultiLeaderStyle).name, what).toBe('Delta');
+    }
+  });
+
+  it('0148 the DXF reader keeps an MTEXT’s xdata after its R2018 column data', () => {
+    // R2018 writes MTEXT columns as an embedded object (101) after the background groups, and
+    // the xdata (1001) after it. Unpatched, the column reader read on to the next entity and
+    // took the 1001 and its values as unknown column codes, so the MTEXT lost its xdata.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const mtext = new MText('one\\Ptwo');
+    mtext.rectangleWidth = 20;
+    mtext.columnData!.columnType = ColumnType.StaticColumns;
+    mtext.columnData!.columnCount = 2;
+    mtext.columnData!.width = 10;
+    mtext.columnData!.gutter = 2;
+    doc.entities!.add(mtext);
+    mtext.extendedData.addByName('TRIYA_TEST', undefined);
+    mtext.extendedData.getByName('TRIYA_TEST').records.push(new ExtendedDataString('kept'));
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const read = back.getCadObject(mtext.handle) as MText;
+      expect(read.columnData?.columnType, `binary ${binary}`).toBe(ColumnType.StaticColumns);
+      expect(read.extendedData.containsKeyName('TRIYA_TEST'), `binary ${binary}`).toBe(true);
+      expect(read.extendedData.getByName('TRIYA_TEST').records.map((r) => r.rawValue)).toEqual([
+        'kept',
+      ]);
+    }
+  });
+
+  it('0149 the DWG writer writes an xdata 1005 handle as read', () => {
+    // AutoCAD keeps a 1005 to an object the drawing does not hold (an erased one) on save, as
+    // the DXF writer does since 0029. Unpatched, the DWG writer wrote it as 0.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const line = new Line(new XYZ(0, 0, 0), new XYZ(1, 0, 0));
+    doc.entities!.add(line);
+    line.extendedData.addByName('TRIYA_TEST', undefined);
+    line.extendedData
+      .getByName('TRIYA_TEST')
+      .records.push(new ExtendedDataHandle(0xfeed), new ExtendedDataHandle(line.handle));
+
+    const records = dwgRoundTrip(doc)
+      .getCadObject(line.handle)!
+      .extendedData.getByName('TRIYA_TEST').records as ExtendedDataHandle[];
+
+    expect(records.map((r) => r.value)).toEqual([0xfeed, line.handle]);
+  });
+
+  it('0150 the DXF reader gives a multiline attribute’s xdata to the attribute', () => {
+    // R2018 writes a multiline ATTDEF's or ATTRIB's text as an embedded MTEXT (101) that runs to
+    // the end of the entity, and the xdata (1001) after it. Unpatched, the embedded MTEXT took
+    // the xdata, and the attribute came back without it.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('TAG');
+    doc.blockRecords!.add(block);
+    const attdef = new AttributeDefinition();
+    attdef.tag = 'NOTE';
+    attdef.prompt = 'Note';
+    attdef.attributeType = AttributeType.MultiLine;
+    attdef.mText = new MText('one\\Ptwo');
+    attdef.mText.height = 1;
+    block.entities.add(attdef);
+    attdef.extendedData.addByName('TRIYA_TEST', undefined);
+    attdef.extendedData.getByName('TRIYA_TEST').records.push(new ExtendedDataString('kept'));
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+
+      const read = back.getCadObject(attdef.handle) as AttributeDefinition;
+      expect(read.mText?.value, `binary ${binary}`).toBe('one\\Ptwo');
+      expect(read.extendedData.containsKeyName('TRIYA_TEST'), `binary ${binary}`).toBe(true);
+      expect(read.extendedData.getByName('TRIYA_TEST').records.map((r) => r.rawValue)).toEqual([
+        'kept',
+      ]);
+      expect(read.mText?.extendedData.size, `binary ${binary}`).toBe(0);
     }
   });
 });

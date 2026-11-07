@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94) and 0147 (M1-95) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95) and 0148–0150 (M1-75 part 19) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2742,5 +2742,56 @@ A drawing split into tiled viewports has one VPORT record per tile, all named `*
 **Title:** Add `CadDictionary.rename` to rename an entry in place
 
 Objects such as MLEADERSTYLE, TABLESTYLE and IMAGEDEF are named only by their dictionary entry, which `CadDictionary` keys by the name the object was added under. Changing the object's `name` does not change the key, so the writers keep writing the old name; ACadSharp handles this with `onEntryNameChanged`, which the TypeScript port does not have. `remove` + `add` works but unassigns the object from the document and moves the entry to the end of the dictionary. This adds `rename(key, newName)`, which replaces the key at the same position, keeps the object's handle and owner, sets its name, and throws if another entry already has the new name.
+
+</details>
+
+### 0148 — the DXF reader keeps an MTEXT's xdata after its R2018 column data
+
+- **File:** `third_party/acad-ts-patches/0148-dxf-mtext-columns-keep-xdata.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** R2018 DXF keeps an MTEXT's columns in an embedded object (101 "Embedded Object") after the background groups, and the entity's xdata (1001 and its values) follows it. `_readColumnData` read on until the next entity (code 0), so it took the 1001 and every xdata value as unknown column codes and the MTEXT came back without its xdata. Found by Triya M1-75 part 19 (xdata saved on every corpus entity).
+- **Fix:** The column reader also stops at 1001 and leaves it to the entity reader, which reads the xdata as for any entity.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0148 the DXF reader keeps an MTEXT’s xdata after its R2018 column data" (ASCII and binary DXF).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Stop reading MTEXT column data at the entity's extended data
+
+In R2018 DXF the MTEXT column settings are an embedded object (group 101) that AutoCAD writes after the background groups, and the entity's extended data (1001 onwards) comes after it. `DxfSectionReaderBase._readColumnData` loops until the next group 0, so it consumes the 1001 group and the xdata values as unknown column codes, and the MTEXT loses its xdata. This stops the loop at 1001 as well; the entity reader then reads the extended data as usual.
+
+</details>
+
+### 0149 — the DWG writer writes an xdata 1005 handle as read
+
+- **File:** `third_party/acad-ts-patches/0149-dwg-xdata-handle-as-read.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** `_writeExtendedDataEntry` wrote an xdata database handle (1005) as 0 when `document.getCadObject` did not find it: one naming an erased object, and one naming an object the document does not index (an ATTRIB). AutoCAD keeps a 1005 as it is on save, as the DXF writer does since patch 0029, so a DWG save lost what a DXF save kept. Found by Triya M1-75 part 19.
+- **Fix:** A 1005 is written as read. A 1003 layer reference still needs its layer, which is the only place a DWG save can take its handle from.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0149 the DWG writer writes an xdata 1005 handle as read" (a dangling handle and one naming the entity).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write extended data handles (1005) as read in DWG
+
+`DwgObjectWriter._writeExtendedDataEntry` replaces an extended data handle with 0 when the document cannot resolve it. AutoCAD keeps such handles (for example to an erased object, which a later UNDO or an application may still use), and the DXF writer writes them as read, so the two formats disagree after a save. This writes `ExtendedDataHandle` values unchanged and keeps the resolution only for the layer reference (1003), whose handle has to come from the layer.
+
+</details>
+
+### 0150 — the DXF reader gives a multiline attribute's xdata to the attribute
+
+- **File:** `third_party/acad-ts-patches/0150-dxf-multiline-attribute-xdata.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** R2018 DXF writes a multiline ATTDEF's or ATTRIB's text as an embedded MTEXT (101 "Embedded Object") that runs to the end of the entity, and the attribute's xdata after it. The attribute reader read the embedded object with `readEntityCodes`, which went on to the next entity, so the xdata went to the embedded MTEXT (which neither writer writes) and the attribute lost it. Found by Triya M1-75 part 19 (sample_AC1032_ascii.dxf's multiline ATTDEF and ATTRIB).
+- **Fix:** After the embedded MTEXT is read, the xdata it collected moves to the attribute's template.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0150 the DXF reader gives a multiline attribute’s xdata to the attribute" (ASCII and binary DXF).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep a multiline attribute's extended data on the attribute when reading DXF
+
+A multiline ATTRIB or ATTDEF in R2018 DXF carries its text as an embedded MTEXT object (group 101), which AutoCAD writes after the attribute's own groups and before its extended data. The DXF reader reads that embedded object with `readEntityCodes`, which continues to the next entity, so the 1001 groups are stored on the embedded MTEXT's template and the attribute loses its extended data (the writers write the attribute's, not the embedded MTEXT's). This moves the extended data collected while reading the embedded object back to the attribute.
 
 </details>
