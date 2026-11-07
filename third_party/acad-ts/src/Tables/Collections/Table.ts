@@ -151,6 +151,33 @@ export abstract class Table<T extends TableEntry> extends CadObject implements I
 		return `${prefix}${i}`;
 	}
 
+	/**
+	 * Swaps the names of two entries: each keeps its place in the table, and the references to it
+	 * follow it to its new name. Unlike a rename, a default entry may take part (the current
+	 * layout's block, BlockRecordsTable.setPaperSpace).
+	 */
+	protected swapEntryNames(a: T, b: T): void {
+		const aKey = a.name.toUpperCase();
+		const bKey = b.name.toUpperCase();
+		if (a === b || this.entries.get(aKey) !== a || this.entries.get(bKey) !== b) {
+			throw new Error('Both entries must be in the table under their own names.');
+		}
+		const kept = [...this.entries].map(([k, v]): [string, T] => (v === a ? [bKey, a] : v === b ? [aKey, b] : [k, v]));
+		this.entries.clear();
+		for (const [k, v] of kept) this.entries.set(k, v);
+		const handlers = [a.onNameChanged, b.onNameChanged];
+		a.onNameChanged = null;
+		b.onNameChanged = null;
+		const name = a.name;
+		a.name = b.name;
+		b.name = name;
+		[a.onNameChanged, b.onNameChanged] = handlers;
+		const swap = '\u0000swap';
+		this._referenceHandler.changeKey(aKey, swap);
+		this._referenceHandler.changeKey(bKey, aKey);
+		this._referenceHandler.changeKey(swap, bKey);
+	}
+
 	private _onEntryNameChanged(sender: unknown, e: OnNameChangedArgs): void {
 		if (this.defaultEntries.some(d => d.toUpperCase() === e.oldName.toUpperCase())) {
 			throw new Error(`The name ${e.oldName} belongs to a default entry.`);

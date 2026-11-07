@@ -30,6 +30,23 @@ export class BlockRecordsTable extends Table<BlockRecord> {
 		}
 	}
 
+	/**
+	 * Makes `record` the current layout's block, as AutoCAD does when another layout is made
+	 * current: `record` takes the name *Paper_Space and the block that had it takes `record`'s
+	 * name. Both keep their handles, entities and layouts.
+	 */
+	public setPaperSpace(record: BlockRecord): void {
+		const current = this.tryGetValue(BlockRecord.paperSpaceName);
+		if (current === record) return;
+		if (!current) {
+			throw new Error(`The table has no ${BlockRecord.paperSpaceName} block.`);
+		}
+		if (!record.layout?.isPaperSpace) {
+			throw new Error(`${record.name} is not a paper layout's block.`);
+		}
+		this.swapEntryNames(current, record);
+	}
+
 	public override add(item: BlockRecord): void {
 		if (item.isAnonymous && this.contains(item.name)) {
 			const existing = this.tryGetValue(item.name);

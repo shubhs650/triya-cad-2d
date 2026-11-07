@@ -2064,4 +2064,44 @@ describe('acad-ts local patches', () => {
     expect([...again.entities!].map((e) => e.handle)).toEqual([handle, b!.handle, c!.handle]);
     expect([...again.blockRecords!.tryGetValue('PART')!.entities]).toEqual([]);
   });
+
+  it('0163 another layout made current takes *Paper_Space, its entities written in ENTITIES', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const layouts = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadLayout)!;
+    const sheet = new BlockRecord('*Paper_Space0');
+    doc.blockRecords!.add(sheet);
+    for (const [name, space] of [
+      ['Model', doc.modelSpace!],
+      ['Layout1', doc.paperSpace!],
+      ['Layout2', sheet],
+    ] as const) {
+      const layout = new Layout(name);
+      layouts.add(layout);
+      layout.associatedBlock = space;
+    }
+    const first = doc.paperSpace!;
+    first.entities.add(new Line(new XYZ(0, 0, 0), new XYZ(1, 1, 0)));
+    sheet.entities.add(new Line(new XYZ(2, 2, 0), new XYZ(3, 3, 0)));
+    const order = [...doc.blockRecords!].map((r) => r.handle);
+    // Unpatched there is no way: renaming *Paper_Space throws (a default entry's name).
+    expect(() => {
+      first.name = 'X';
+    }).toThrow(/default entry/);
+    doc.blockRecords!.setPaperSpace(sheet);
+    expect([sheet.name, first.name]).toEqual(['*Paper_Space', '*Paper_Space0']);
+    expect(doc.paperSpace).toBe(sheet);
+    expect(doc.blockRecords!.tryGetValue('*Paper_Space0')).toBe(first);
+    expect([...doc.blockRecords!].map((r) => r.handle)).toEqual(order);
+    expect(() => doc.blockRecords!.setPaperSpace(doc.modelSpace!)).toThrow(/not a paper layout/);
+    for (const format of ['dxf', 'dwg'] as const) {
+      const back = readCadDocument(writeCadDocument(doc, { format }));
+      const record = (h: number) => back.getCadObject(h) as BlockRecord;
+      expect([record(sheet.handle).name, record(first.handle).name], format).toEqual([
+        '*Paper_Space',
+        '*Paper_Space0',
+      ]);
+      expect([...record(sheet.handle).entities].map((e) => (e as Line).startPoint.x)).toEqual([2]);
+      expect([...record(first.handle).entities].map((e) => (e as Line).startPoint.x)).toEqual([0]);
+    }
+  });
 });

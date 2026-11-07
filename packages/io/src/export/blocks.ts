@@ -8,7 +8,8 @@
 // vertices are (the engine does not know them). The record checks every table shares are in
 // records.ts; what a save cannot keep yet is refused before anything changes: removing a block
 // (PURGE), xref and layout blocks (M1-21), except the sheet block of a layout the same save adds
-// (LAYOUT New, layouts.ts), and changes to a dynamic block's links.
+// (LAYOUT New, layouts.ts), and changes to a dynamic block's links. The two sheet blocks that
+// swap names when another layout is made current are renamed by layouts.ts, which checks the swap.
 
 import {
   ACadVersion,
@@ -56,6 +57,8 @@ export interface BlockPlan {
   readonly added: { readonly acad: BlockRecord; readonly basePoint: Vec2 }[];
   /** Definitions whose base point moves. */
   readonly moved: { readonly acad: BlockRecord; readonly basePoint: Vec2 }[];
+  /** The sheet blocks whose names layouts.ts swaps (another layout made current). */
+  readonly swapping: ReadonlySet<Handle>;
 }
 
 /**
@@ -76,6 +79,7 @@ export function planBlocks(
   r: Resolver & { readonly created: Map<Handle, CadObject> },
   format: CadFormat | undefined,
   drawOrder: DrawOrderChanges,
+  swapping: ReadonlySet<Handle> = new Set(),
 ): { plan: BlockPlan; problems: string[] } {
   const version = doc.header?.version;
   const baseRecords = base.tables?.blockRecords ?? [];
@@ -105,9 +109,16 @@ export function planBlocks(
     },
     fixedNames: [],
     problems: (b, a) =>
-      recordProblems(format, version, b, a, defs.get(a.handle), sheets.has(a.handle)),
+      recordProblems(
+        format,
+        version,
+        b && swapping.has(a.handle) ? { ...b, name: a.name } : b,
+        a,
+        defs.get(a.handle),
+        sheets.has(a.handle),
+      ),
   });
-  const plan: BlockPlan = { records: records.plan, added: [], moved: [] };
+  const plan: BlockPlan = { records: records.plan, added: [], moved: [], swapping };
   const problems = [...records.problems];
   const baseDefs = new Map((base.blocks ?? []).map((d) => [d.handle, d]));
   for (const [h, a] of defs) {
@@ -226,7 +237,10 @@ export function writeBlocks(doc: CadDocument, r: Resolver, plan: BlockPlan): voi
     doc.blockRecords!.add(acad);
     writeRecord(acad, undefined, after);
   }
-  for (const { acad, before, after } of plan.records.updated) writeRecord(acad, before, after);
+  for (const { acad, before, after } of plan.records.updated) {
+    const swapped = plan.swapping.has(after.handle);
+    writeRecord(acad, swapped ? { ...before, name: after.name } : before, after);
+  }
   for (const { acad, basePoint } of plan.added) {
     acad.blockEntity.basePoint = new XYZ(basePoint.x, basePoint.y, 0);
   }
