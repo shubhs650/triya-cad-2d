@@ -164,6 +164,7 @@ import {
   writeCellFormat,
   writeMerges,
 } from './table-cells';
+import { buildGrid, newTableProblems, writeTableOverrides } from './table-new';
 import { writeXdata, xdataProblems } from './xdata';
 
 const TWO_PI = 2 * Math.PI;
@@ -1964,11 +1965,16 @@ function* cellPairs(
   before: TableGeometry,
   after: TableGeometry,
 ): Generator<[number, number, TableCell, TableCell]> {
+  for (const [i, j, b, a] of cells(before, after)) if (b) yield [i, j, b, a];
+}
+
+/** Every cell of `after` with its row, column and the cell it was in `before`, if any. */
+function* cells(
+  before: TableGeometry | undefined,
+  after: TableGeometry,
+): Generator<[number, number, TableCell | undefined, TableCell]> {
   for (const [i, row] of after.cells.entries()) {
-    for (const [j, a] of row.entries()) {
-      const b = before.cells[i]?.[j];
-      if (b) yield [i, j, b, a];
-    }
+    for (const [j, a] of row.entries()) yield [i, j, before?.cells[i]?.[j], a];
   }
 }
 
@@ -1984,44 +1990,57 @@ const gridOf = (g: TableGeometry, rows: number, columns: number): boolean =>
  * heights and column widths, cell text and blocks, cell rotation, the table style and the `*T`
  * block. The `*T` block, which AutoCAD draws the table from, is written as it is: regenerating it
  * from the new content is the table engine's (M4-05), as a dimension's block is the dimension
- * engine's. Merges and cell formats are written by table-cells.ts (M1-75 part 26). Rows and
- * columns added or removed and table-wide overrides are refused for now; so is a new table, which needs a `*T` block
- * of its own that only the TABLE command can make (block definitions, M5).
+ * engine's. Merges and cell formats are written by table-cells.ts (M1-75 part 26). A new table
+ * (TABLE, COPY; part 32) comes with the `*T` block the same save adds for it, and is built by
+ * table-new.ts with its table-wide overrides. Rows and columns added to or removed from a table
+ * and an edited table's table-wide overrides are refused for now.
  */
 const tableWriter: Writer<TableGeometry> = {
   create: () => new TableEntity(),
   problems(r, before, g) {
-    if (!before) return ['new tables (TABLE and COPY make a *T block of their own, M4-05)'];
     const out = planeProblems(g);
     if (g.thickness) out.push('a table with a thickness');
-    if (before.style !== g.style) {
+    if (before?.style !== g.style || !before) {
       if (g.style === undefined) out.push('a table without its table style');
       else if (!resolve(r, g.style, TableStyle)) out.push(`table style ${g.style} does not exist`);
     }
-    if (before.block !== g.block) {
+    if (before?.block !== g.block || !before) {
       if (g.block === undefined) out.push('a table without its block');
       else if (!insertable(r, g.block)) out.push(`block ${g.block} cannot be a table's block`);
     }
     if (g.direction.x === 0 && g.direction.y === 0) out.push('no horizontal direction');
-    if (!same(before.overrides, g.overrides)) out.push('table overrides change');
-    if (!gridOf(g, before.rowHeights.length, before.columnWidths.length)) {
+    if (!before) out.push(...newTableProblems(r, g));
+    else if (!same(before.overrides, g.overrides)) out.push('table overrides change');
+    if (before && !gridOf(g, before.rowHeights.length, before.columnWidths.length)) {
       out.push('rows or columns added or removed');
       return out;
     }
+    if (!before) {
+      const rows = g.rowHeights.length;
+      const columns = g.columnWidths.length;
+      if (rows === 0 || columns === 0) {
+        out.push('no rows or no columns');
+        return out;
+      }
+      if (!gridOf(g, rows, columns)) {
+        out.push('a grid that is not rows × columns (a height per row, a cell per column)');
+        return out;
+      }
+    }
     if (g.rowHeights.some((h) => !(h > 0))) out.push('a row height of 0 or less');
     if (g.columnWidths.some((w) => !(w > 0))) out.push('a column width of 0 or less');
-    if (mergesChange(before, g)) out.push(...mergeProblems(g));
-    for (const [i, j, b, a] of cellPairs(before, g)) {
+    if (!before || mergesChange(before, g)) out.push(...mergeProblems(g));
+    for (const [i, j, b, a] of cells(before, g)) {
       const at = `cell (${i}, ${j})`;
       out.push(...formatValueProblems(r, a, b).map((p) => `${at}: ${p}`));
-      if (a.type !== b.type) {
+      if (b && a.type !== b.type) {
         out.push(`${at}: a change between text and block`);
         continue;
       }
       if (a.type === 'block') {
         if (a.text !== '') out.push(`${at}: text in a block cell`);
         if (a.block === undefined) out.push(`${at}: a block cell without a block`);
-        else if (a.block !== b.block && !insertable(r, a.block)) {
+        else if (a.block !== b?.block && !insertable(r, a.block)) {
           out.push(`${at}: block ${a.block} cannot be a cell's block`);
         }
       } else if (a.block !== undefined) {
@@ -2035,6 +2054,7 @@ const tableWriter: Writer<TableGeometry> = {
     const d = differ(before, g);
     const pl = plane(g.normal);
     if (d('style')) t.style = resolve(r, g.style!, TableStyle)!;
+    if (!before) buildGrid(t, g);
     if (d('block')) t.block = insertable(r, g.block!)!;
     if (d('position', 'elevation')) {
       t.insertPoint = new XYZ(ocsX(g.position.x, pl), g.position.y, ocsZ(g.elevation, pl));
@@ -2045,23 +2065,24 @@ const tableWriter: Writer<TableGeometry> = {
     if (d('columnWidths')) g.columnWidths.forEach((w, j) => (t.columns[j]!.width = w));
     if (d('normal')) t.normal = xyz(g.normal);
     // Cells by their own before, not `differ`'s: a plane change must not rewrite every value.
-    for (const [i, row] of g.cells.entries()) {
-      for (const [j, a] of row.entries()) {
-        const cell = t.rows[i]!.cells[j]!;
-        const b = before?.cells[i]?.[j];
-        if (a.type === 'text' && (!b || b.text !== a.text)) writeCellText(cell, a.text);
-        if (a.type === 'block' && (!b || b.block !== a.block)) {
-          const block = insertable(r, a.block!)!;
-          if (cell.type === CellType.Block || cell.value instanceof BlockRecord) cell.value = block;
-          for (const k of cell.contents) {
-            if (k.blockRecord || k.contentType & TableCellContentType.Block) k.blockRecord = block;
-          }
-        }
-        if (!b || b.rotation !== a.rotation) cell.rotation = a.rotation;
-        if (!same(b?.format, a.format)) writeCellFormat(r, cell, b?.format, a.format);
+    for (const [i, j, b, a] of cells(before, g)) {
+      const cell = t.rows[i]!.cells[j]!;
+      // A new cell nothing was typed into holds no value, as AutoCAD leaves one.
+      if (a.type === 'text' && (b ? b.text !== a.text : a.text !== '')) {
+        writeCellText(cell, a.text);
       }
+      if (a.type === 'block' && (!b || b.block !== a.block)) {
+        const block = insertable(r, a.block!)!;
+        if (cell.type === CellType.Block || cell.value instanceof BlockRecord) cell.value = block;
+        for (const k of cell.contents) {
+          if (k.blockRecord || k.contentType & TableCellContentType.Block) k.blockRecord = block;
+        }
+      }
+      if (!b || b.rotation !== a.rotation) cell.rotation = a.rotation;
+      if (!same(b?.format, a.format)) writeCellFormat(r, cell, b?.format, a.format);
     }
-    if (before && mergesChange(before, g)) writeMerges(t, before, g);
+    if (!before || mergesChange(before, g)) writeMerges(t, before, g);
+    if (!before && g.overrides) writeTableOverrides(r, t, g.overrides);
   },
 };
 

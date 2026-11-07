@@ -63,6 +63,7 @@ import {
 } from './materials-plot-styles';
 import { planMLineStyles, writeMLineStyles } from './mline-styles';
 import { planTableStyles, writeTableStyles } from './table-styles';
+import { blockUser, newTableFileProblems } from './table-new';
 import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { planPurge, writePurge } from './purge';
@@ -225,6 +226,9 @@ function formatProblems(
     }
     return out;
   }
+  if (e.geom.kind === 'ACAD_TABLE' && !before) {
+    return newTableFileProblems(e.geom, version, format).map((p) => `${e.type} ${e.handle}: ${p}`);
+  }
   if (e.geom.kind === 'ACAD_TABLE' && before?.geom.kind === 'ACAD_TABLE') {
     if (!(acad instanceof TableEntity)) return [];
     return tableCellProblems(acad, before.geom, e.geom, version, format).map(
@@ -296,6 +300,15 @@ function plan(
       ...entityProblems(r, undefined, m),
       ...formatProblems(format, version, undefined, m, acadApp),
     );
+    // The TABLE command and COPY make a table a `*T` block of its own.
+    if (m.geom.kind === 'ACAD_TABLE' && m.geom.block !== undefined) {
+      const user = blockUser(model.entities(), m.geom.block, m.handle);
+      if (user) {
+        problems.push(
+          `${m.type} ${m.handle}: block ${m.geom.block} is already the block of ${user.type} ${user.handle}`,
+        );
+      }
+    }
     // A block the same save adds (blocks.ts) holds its entities too.
     const block = resolve(r, m.owner, BlockRecord);
     if (!block) {

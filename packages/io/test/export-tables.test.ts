@@ -3,27 +3,8 @@
 // cell text and blocks, cell rotation, the table style and the `*T` block; Merge Cells and
 // Unmerge Cells; a cell's alignment, text style, height, colours, fill and borders). The drawing is authored in memory with acad-ts
 // and saved once, so "the file" is real bytes; the corpus-wide edits are in
-// packages/testkit/src/export/export.corpus.test.ts.
-import {
-  ACadVersion,
-  BlockRecord,
-  CadDictionary,
-  CadDocument,
-  CadValueType,
-  CellContent,
-  CellOverrideFlags,
-  CellType,
-  Color,
-  Line,
-  TableCellContentType,
-  TableCellStateFlags,
-  TableEntity,
-  TableEntityCell,
-  TableEntityColumn,
-  TableEntityRow,
-  TableStyle,
-  XYZ,
-} from '@node-projects/acad-ts';
+// packages/testkit/src/export/export.corpus.test.ts. New tables: export-tables-new.test.ts.
+import { ACadVersion, TableEntity } from '@node-projects/acad-ts';
 import {
   ChangeSetBuilder,
   DocumentModel,
@@ -37,107 +18,9 @@ import {
   exportDocument,
   readCadDocument,
   UnsupportedChangeError,
-  writeCadDocument,
   type CadFormat,
 } from '../src/index';
-
-interface Options {
-  /** A field in cell (1, 1) instead of its text. */
-  readonly field?: boolean;
-  /** Cell (1, 1) has its content locked (TableCellStateFlags.ContentLocked). */
-  readonly locked?: boolean;
-  /**
-   * Cell (1, 0) overrides its alignment (middle centre), content colour (ACI 3) and top border
-   * lineweight (0.50 mm) in the cell's override flag word (DXF 177 / 91, DWG before R2010).
-   */
-  readonly formatted?: boolean;
-}
-
-/**
- * Table styles Standard and GRID; blocks MARK and FLAG; one table in model space with its `*T`
- * block (a frame line), 3 rows × 2 columns: a title, a header row and a data row whose second
- * cell shows block MARK.
- */
-function drawing(
-  version = ACadVersion.AC1032,
-  format: CadFormat = 'dxf',
-  options: Options = {},
-): Uint8Array {
-  const doc = new CadDocument(version);
-  const dict = doc.rootDictionary!.get(CadDictionary.acadTableStyle) as CadDictionary;
-  const styles = [TableStyle.defaultName, 'GRID'].map((name) => {
-    const s = new TableStyle(name);
-    s.cellStyles = [s.dataCellStyle, s.titleCellStyle, s.headerCellStyle];
-    dict.add(s);
-    return s;
-  });
-  const blocks = ['MARK', 'FLAG', '*T1'].map((name) => {
-    const b = new BlockRecord(name);
-    const l = new Line();
-    l.endPoint = new XYZ(1, 1, 0);
-    b.entities.add(l);
-    doc.blockRecords!.add(b);
-    return b;
-  });
-  const t = new TableEntity();
-  doc.entities!.add(t);
-  t.style = styles[0]!;
-  t.block = blocks[2]!;
-  t.insertPoint = new XYZ(10, 20, 0);
-  t.horizontalDirection = new XYZ(1, 0, 0);
-  for (const w of [3, 4]) {
-    const c = new TableEntityColumn();
-    c.width = w;
-    t.columns.push(c);
-  }
-  const texts = [
-    ['Schedule', ''],
-    ['Tag', 'Mark'],
-    ['N1', null],
-  ];
-  texts.forEach((row, i) => {
-    const r = new TableEntityRow();
-    r.height = 0.5 + i * 0.25;
-    row.forEach((text, j) => {
-      const cell = new TableEntityCell();
-      const content = new CellContent();
-      if (text === null) {
-        cell.type = CellType.Block;
-        cell.value = blocks[0]!;
-        content.contentType = TableCellContentType.Block;
-        content.blockRecord = blocks[0]!;
-        cell.blockScale = 1;
-      } else {
-        content.contentType = TableCellContentType.Value;
-        content.cadValue.setValue(text, CadValueType.String);
-      }
-      cell.contents.push(content);
-      // The title spans both columns (DXF 175 / 176), the cell after it is covered by it.
-      if (i === 0) {
-        cell.borderWidth = j === 0 ? 2 : 0;
-        cell.borderHeight = j === 0 ? 1 : 0;
-        cell.mergedValue = j === 0 ? 0 : 1;
-      } else {
-        cell.borderWidth = 1;
-        cell.borderHeight = 1;
-      }
-      r.cells.push(cell);
-    });
-    t.rows.push(r);
-  });
-  if (options.formatted) {
-    const c = t.rows[1]!.cells[0]!;
-    c.overrideFlags = CellOverrideFlags.CellAlignment | CellOverrideFlags.ContentColor;
-    c.overrideFlags |= CellOverrideFlags.TopGridLineWeight;
-    c.styleOverride.cellAlignment = 5;
-    c.styleOverride.contentColor = new Color(3);
-    c.styleOverride.topBorder.lineWeight = 50 as never;
-  }
-  const special = t.rows[1]!.cells[1]!;
-  if (options.locked) special.stateFlags = TableCellStateFlags.ContentLocked;
-  if (options.field) special.contents[0]!.contentType = TableCellContentType.Field;
-  return writeCadDocument(doc, { format });
-}
+import { drawing } from './table-drawing';
 
 const open = (bytes: Uint8Array) => DocumentModel.create(documentInit(readCadDocument(bytes)));
 
@@ -184,14 +67,13 @@ function cell(g: TableGeometry, i: number, j: number, change: object): TableGeom
   };
 }
 
-// An R2007 DWG of a table authored in memory leaves the table out (acad-ts finds no ACAD_TABLE
-// class for it), so R2007 DWG tables are covered by the corpus file only.
 const SAVES: [string, ACadVersion, CadFormat][] = [
   ['R2018 DXF', ACadVersion.AC1032, 'dxf'],
   ['R2010 DXF', ACadVersion.AC1024, 'dxf'],
   ['R2007 DXF', ACadVersion.AC1021, 'dxf'],
   ['R2004 DXF', ACadVersion.AC1018, 'dxf'],
   ['R2018 DWG', ACadVersion.AC1032, 'dwg'],
+  ['R2007 DWG', ACadVersion.AC1021, 'dwg'],
   ['R2004 DWG', ACadVersion.AC1018, 'dwg'],
 ];
 
@@ -392,19 +274,6 @@ describe('ACAD_TABLE', () => {
       exportDocument(readCadDocument(bytes), model, { format: 'dxf' }),
     );
     expect(problems.join('; ')).toMatch(message);
-  });
-
-  it('refuses a new table, which needs a *T block of its own', () => {
-    const bytes = drawing();
-    const model = open(bytes);
-    const t = table(model);
-    const b = new ChangeSetBuilder(model);
-    b.addEntity({ type: 'ACAD_TABLE', owner: t.owner, layer: t.layer, geom: t.geom } as never);
-    model.apply(b.build());
-    const problems = refusal(() =>
-      exportDocument(readCadDocument(bytes), model, { format: 'dxf' }),
-    );
-    expect(problems.join('; ')).toMatch(/new tables/);
   });
 
   it('refuses a text edit of a cell holding a field, and of a locked cell', () => {
