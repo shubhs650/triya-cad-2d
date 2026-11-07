@@ -2018,11 +2018,13 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
       case 283:
         if (cellStyle) cellStyle.isFillColorOn = this._reader.valueAsBool;
         return true;
+      // 90 / 91 are the cell data type and unit type (AutoCAD DXF reference, TABLESTYLE), as the
+      // DWG row style states them after its borders: not the R2010 cell style type and class.
       case 90:
-        if (cellStyle) cellStyle.cellStyleType = this._reader.valueAsShort as CellStyleType;
+        if (cellStyle) cellStyle.valueDataType = this._reader.valueAsInt;
         return true;
       case 91:
-        if (cellStyle) cellStyle.styleClass = this._reader.valueAsShort as CellStyleClass;
+        if (cellStyle) cellStyle.valueUnitType = this._reader.valueAsInt;
         return true;
       case 1:
         return true;

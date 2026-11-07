@@ -3932,7 +3932,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, style.textStyle);
 		this._writer.writeBitDouble(style.textHeight);
 		this._writer.writeBitShort(style.cellAlignment);
-		this._writeTableStyleColor(style.textColor);
+		this._writeTableStyleColor(style.color);
 		this._writeTableStyleColor(style.backgroundColor);
 		this._writer.writeBit(style.isFillColorOn);
 		this._writeBorderStyle(style.topBorder);

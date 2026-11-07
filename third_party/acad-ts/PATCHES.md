@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90) and 0136 (M1-91) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91) and 0142 (M1-75 part 12) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2555,5 +2555,22 @@ An R12 VIEWPORT has no 331 groups: its frozen layers are the 1003 layer names in
 **Title:** Read VISUALSTYLE objects from DXF into their fields
 
 `DxfObjectsSectionReader._readVisualStyle` consumes every group code without assigning anything, so a visual style read from DXF has default values everywhere and a DXF saved as DWG writes all of them as defaults. This reads the AcDbVisualStyle subclass into the same fields the DWG reader fills, in the three layouts AutoCAD writes: R2007 (also used in R2000/R2004 DXF; one code per value, with a constant 62 = 5 before the mono colour), R2010 (an operation code 176 after each value) and R2013+ (177, 291, a count of 58 in 70, then each value under its type's code — 90, 40, 290, 62, 1 — with its operation). True colours follow their index colour at code + 358 (R2007/R2010) or 420 (R2013+). Checked field by field against the DWG reads of the same drawings (the R2007, R2010, R2013 and R2018 samples, which share handles with their DXF saves). Extended data on the object is now read too.
+
+</details>
+
+### 0142 — TABLESTYLE row styles keep their text colour (DWG) and data and unit types (DXF)
+
+- **File:** `third_party/acad-ts-patches/0142-tablestyle-row-text-colour-data-type.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** a TABLESTYLE's three row styles (data, title, header; DXF and DWG before R2010) came apart between the formats. The DWG reader and writer kept a row style's text colour in `CellStyle.textColor`, where DXF (62) and the R2010 content format keep it in `color`, so a DWG style read with ByBlock text whatever it held, and a DXF style saved as DWG lost its text colour. The DXF reader and writer kept 90 and 91, the cell data type and unit type (AutoCAD DXF reference, TABLESTYLE), in `cellStyleType` and `styleClass`, the R2010 cell style's type and class, where the DWG row style keeps them in `valueDataType`/`valueUnitType`, so the same drawing read 512/0 from DXF and 0/1 from DWG, and an edited data type did not reach a DWG. Found by Triya M1-75 part 12 (TABLESTYLE writer).
+- **Fix:** the DWG row style reads and writes its text colour as `color`; DXF 90/91 are read into and written from `valueDataType`/`valueUnitType`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0142 TABLESTYLE row styles keep their text colour (DWG) and data and unit types (DXF)" (the acadsharp R2007 sample's Standard style reads alike from its DXF and DWG, and a text colour, data type and unit type edit survives a DXF and a DWG save); `packages/io/test/export-table-styles.test.ts` (every field through DXF and DWG saves R2000–R2007).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** TABLESTYLE: read the row styles' text colour and data/unit types into the same fields in DXF and DWG
+
+Before R2010 a TABLESTYLE holds three row styles (data, title, header). The DWG reader and writer put a row style's text colour in `CellStyle.textColor`, while the DXF reader and writer (group 62) and the R2010 content format use `CellStyle.color`, so a style read from DWG appears to have ByBlock text and a DXF style written to DWG loses its text colour. The DXF reader and writer put groups 90 and 91 (cell data type and unit type) into `cellStyleType` and `styleClass`, which belong to the R2010 cell style, while the DWG reader and writer use `valueDataType` and `valueUnitType`; the same drawing then reads different values from its DXF and DWG, and a data type set in memory is not written to DWG. This uses `color` for the text colour and `valueDataType`/`valueUnitType` for 90/91 in both formats.
 
 </details>

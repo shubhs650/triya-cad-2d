@@ -851,8 +851,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 		this._writer.write(62, cellStyle.color.getApproxIndex());
 		this._writer.write(63, cellStyle.backgroundColor.getApproxIndex());
 		this._writer.write(283, cellStyle.isFillColorOn ? 1 : 0);
-		this._writer.write(90, cellStyle.cellStyleType);
-		this._writer.write(91, cellStyle.styleClass);
+		this._writer.write(90, cellStyle.valueDataType);
+		this._writer.write(91, cellStyle.valueUnitType);
 		this._writeCellStyleBorder(cellStyle.topBorder, 0);
 		this._writeCellStyleBorder(cellStyle.horizontalInsideBorder, 1);
 		this._writeCellStyleBorder(cellStyle.bottomBorder, 2);
