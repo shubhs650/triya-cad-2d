@@ -40,6 +40,7 @@ import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
 import { planTextStyles, writeTextStyles } from './text-styles';
+import { planAppIds, planUcs, planViews, planVports, writeViewRecords } from './view-records';
 
 /** R12 and before, whose viewports state their view in the MVIEW xdata (as patch 0119 reads it). */
 const isR12 = (version: ACadVersion | undefined): boolean =>
@@ -91,8 +92,20 @@ function keyedProblems(
   return out;
 }
 
-/** The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts, dim-styles.ts). */
-const WRITTEN_TABLES = new Set(['layers', 'textStyles', 'linetypes', 'dimStyles']);
+/**
+ * The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts, dim-styles.ts,
+ * view-records.ts).
+ */
+const WRITTEN_TABLES = new Set([
+  'layers',
+  'textStyles',
+  'linetypes',
+  'dimStyles',
+  'appIds',
+  'ucs',
+  'views',
+  'vports',
+]);
 
 /**
  * The non-entity changes no writer handles yet (header, the tables above and draw order:
@@ -286,6 +299,12 @@ export function triyaToAcad(
   const linetypes = planLinetypes(original, base, model, r);
   const dimStyles = planDimStyles(original, base, model, r, format);
   const layers = planLayers(original, base, model, r);
+  const views = {
+    appIds: planAppIds(original, base, model, r),
+    ucs: planUcs(original, base, model, r),
+    views: planViews(original, base, model, r),
+    vports: planVports(original, base, model, r, format),
+  };
   const header = planHeader(original, base, model, format, [...created.values()]);
   const drawOrder = planDrawOrder(original, base, model, r);
   const { plan: p, problems } = plan(original, base, model, r, format, drawOrder);
@@ -295,6 +314,7 @@ export function triyaToAcad(
     ...linetypes.problems,
     ...dimStyles.problems,
     ...layers.problems,
+    ...Object.values(views).flatMap((v) => v.problems),
   );
   problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
@@ -303,6 +323,12 @@ export function triyaToAcad(
   writeLinetypes(original, r, linetypes.plan);
   writeDimStyles(original, r, dimStyles.plan);
   writeLayers(original, r, layers.plan);
+  writeViewRecords(original, {
+    appIds: views.appIds.plan,
+    ucs: views.ucs.plan,
+    views: views.views.plan,
+    vports: views.vports.plan,
+  });
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
   // it owns (§6.2 rule 3); shared objects it points to stay. Its draw order entry goes with it,
