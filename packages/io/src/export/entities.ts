@@ -153,6 +153,7 @@ import type {
   XlineGeometry,
 } from '@triya/engine';
 import type { PassthroughStore } from './passthrough';
+import { writeXdata, xdataProblems } from './xdata';
 
 const TWO_PI = 2 * Math.PI;
 const norm = (a: number): number => ((a % TWO_PI) + TWO_PI) % TWO_PI;
@@ -248,8 +249,11 @@ function linetype(r: Resolver, ref: LinetypeRef): LineType | undefined {
 
 const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefined;
 
-/** Properties whose changes no writer handles yet. */
-const UNSUPPORTED_PROPS = ['xdata', 'reactors', 'extDict', 'plotStyle', 'annotative'] as const;
+/**
+ * Properties whose changes no writer handles yet. Xdata is written (xdata.ts, M1-75 part 19), on
+ * entities and ATTRIBs alike.
+ */
+const UNSUPPORTED_PROPS = ['reactors', 'extDict', 'plotStyle', 'annotative'] as const;
 /**
  * An entity's reactors are written: the only changes accepted are those that keep a LEADER and
  * its annotation, an associative HATCH and its boundary objects, or a VIEWPORT and its clip
@@ -284,6 +288,9 @@ function propProblems(
     out.push(`${what}: material ${after.material} does not exist`);
   }
   if (changed('color') && hasBook(after.color)) out.push(`${what}: colour-book colours`);
+  if (changed('xdata')) {
+    out.push(...xdataProblems(r, before?.xdata, after.xdata).map((p) => `${what}: ${p}`));
+  }
   return out;
 }
 
@@ -324,6 +331,9 @@ function writeProps(r: Resolver, e: AcadEntity, before: Props | undefined, after
   if (changed('visible')) e.isInvisible = !after.visible;
   if (changed('material')) {
     e.material = after.material ? resolve(r, after.material, Material)! : null;
+  }
+  if (changed('xdata') && !same(before?.xdata ?? [], after.xdata ?? [])) {
+    writeXdata(r, e, before?.xdata, after.xdata);
   }
   if (changed('reactors') && !same(before?.reactors ?? [], after.reactors ?? [])) {
     // In the model's order; each names an object of the drawing or an entity the save adds.

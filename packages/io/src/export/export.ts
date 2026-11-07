@@ -24,6 +24,7 @@ import {
   type EntityInit,
   type Handle,
 } from '@triya/engine';
+import { hex } from '../map/common';
 import { documentInit } from '../map/document';
 import type { CadFormat } from '../read';
 import { writeCadDocument, type WriteOptions } from '../write';
@@ -51,6 +52,7 @@ import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
 import { reactorProblems } from './reactors';
+import { changedApps, xdataChanges } from './xdata';
 import { planTextStyles, writeTextStyles } from './text-styles';
 import { planAppIds, planUcs, planViews, planVports, writeViewRecords } from './view-records';
 
@@ -193,7 +195,8 @@ function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
 /**
  * What acad-ts cannot write to the format at hand, or an edited original cannot take: a table
  * cell's content (entities.ts `tableCellProblems`), what an R12 viewport cannot state (see
- * r12-viewport.ts), its DWG writer leaves a LARGE_RADIAL_DIMENSION out (roadmap M1-74), and a
+ * r12-viewport.ts) and its ACAD xdata, xdata before Release 11, which the save writes from its view (`acadApp` is the ACAD
+ * application's handle), its DWG writer leaves a LARGE_RADIAL_DIMENSION out (roadmap M1-74), and a
  * VIEWPORT's style sheet before R2000 or visual style before R2007, which neither format stores
  * (DXF 1 and 348 are R2000+ and R2007+, as the DWG fields are); so an edited or new one would be
  * lost. `acad` is the original of an edited entity.
@@ -203,15 +206,30 @@ function formatProblems(
   version: ACadVersion | undefined,
   before: EntityInit | undefined,
   e: Entity,
+  acadApp: Handle | undefined,
   acad?: AcadEntity,
 ): string[] {
+  // AutoCAD Release 11 (AC1009, which R12 shares) introduced xdata.
+  if (
+    version !== undefined &&
+    version !== ACadVersion.Unknown &&
+    version < ACadVersion.AC1009 &&
+    xdataChanges(before, e)
+  ) {
+    return [`${e.type} ${e.handle}: ${ACadVersion[version]} has no xdata (Release 11 added it)`];
+  }
   if (format === 'dwg' && e.type === 'LARGE_RADIAL_DIMENSION') {
     return [`${e.type} ${e.handle}: acad-ts has no DWG writer for it (M1-74)`];
   }
   if (isR12(version) && e.geom.kind === 'VIEWPORT') {
     const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;
     const v = acad instanceof Viewport ? acad : undefined;
-    return r12ViewportProblems(v, b, e.geom).map((p) => `${e.type} ${e.handle}: ${p}`);
+    const out = r12ViewportProblems(v, b, e.geom).map((p) => `${e.type} ${e.handle}: ${p}`);
+    // The viewport's ACAD xdata is its MVIEW data, which the save writes from its view.
+    if (acadApp && changedApps(before?.xdata, e.xdata).has(acadApp)) {
+      out.push(`${e.type} ${e.handle}: ACAD xdata changes (R12 keeps the viewport's view there)`);
+    }
+    return out;
   }
   if (e.geom.kind === 'ACAD_TABLE' && before?.geom.kind === 'ACAD_TABLE') {
     if (!(acad instanceof TableEntity)) return [];
@@ -252,6 +270,8 @@ function plan(
     ...reactorProblems(base, model),
   ];
   const version = doc.header?.version;
+  const acadHandle = doc.appIds?.tryGetValue('ACAD')?.handle;
+  const acadApp = acadHandle === undefined ? undefined : hex(acadHandle);
   const out: Plan = { updated: [], added: [], removed: [] };
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
   for (const b of base.entities ?? []) {
@@ -272,7 +292,7 @@ function plan(
     }
     problems.push(
       ...entityProblems(r, b as Entity, m),
-      ...formatProblems(format, version, b, m, acad),
+      ...formatProblems(format, version, b, m, acadApp, acad),
     );
     out.updated.push({ acad, before: b, after: m });
   }
@@ -280,7 +300,7 @@ function plan(
     if (baseByHandle.has(m.handle)) continue;
     problems.push(
       ...entityProblems(r, undefined, m),
-      ...formatProblems(format, version, undefined, m),
+      ...formatProblems(format, version, undefined, m, acadApp),
     );
     const block = r.store.original(m.owner);
     if (!(block instanceof BlockRecord)) {

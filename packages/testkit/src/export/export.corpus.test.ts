@@ -29,6 +29,7 @@ import {
   DocumentModel,
   type Entity,
   type EntityGeometry,
+  type EntityInit,
   type Handle,
   type DimStyleRecord,
   type MLeaderStyleRecord,
@@ -50,6 +51,8 @@ import {
   type ViewportGeometry,
   type VportRecord,
   type WipeoutVariables,
+  type Xdata,
+  type XdataApp,
 } from '@triya/engine';
 import {
   documentInit,
@@ -704,6 +707,23 @@ describe('TriyaToAcad edits on the public corpus', () => {
         message,
       );
     });
+
+    it('refuses an edit of a viewport’s ACAD xdata, which the save writes from its view', () => {
+      // M1-75 part 19: other applications' xdata is written; the MVIEW data is the view's.
+      const model = open();
+      const vp = viewports(model)[1]!;
+      const acad = vp.xdata!.find(
+        (a) => model.tables.appIds.get(a.appId)?.name.toUpperCase() === 'ACAD',
+      )!;
+      const b = new ChangeSetBuilder(model);
+      b.updateEntity(vp.id, {
+        xdata: [{ ...acad, values: [...acad.values, { code: 1000, value: 'extra' }] }],
+      });
+      model.apply(b.build());
+      expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
+        /ACAD xdata changes/,
+      );
+    });
   });
 
   it('refuses an edit of the layer 0 an R12 file does not have (acad-ts makes it up)', () => {
@@ -1111,6 +1131,132 @@ describe('TriyaToAcad edits on the public corpus', () => {
           (d) =>
             d.handle !== '0' ||
             ![...header.keys()].some((n) => d.path === n || d.path.startsWith(`${n}.`)),
+        );
+        expect(diff.slice(0, 5), f.path).toEqual([]);
+      });
+    },
+    PER_FILE_BUDGET_MS,
+  );
+
+  // M1-75 part 19: what COPY, HYPERLINK and DIMOVERRIDE do to entity xdata. Every entity and
+  // ATTRIB gains xdata of every group code under an application the save registers, after its
+  // own applications reversed; every third entity instead loses its xdata. AcadAnnotative xdata
+  // (the annotative property, not written yet) and an R12 viewport's ACAD xdata (its view) stay.
+  // A file older than Release 11 refuses them.
+  it.each(readable.map((f) => [f.path, f] as const))(
+    'saves entity xdata in %s',
+    (_path, f) => {
+      const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
+      const { format } = sniffCadFile(bytes);
+      const options = {
+        format: (format === 'dwg' ? 'dwg' : 'dxf') as CadFormat,
+        binary: format === 'dxf-binary',
+      };
+      withPinnedClock(() => {
+        const original = readCadDocument(bytes);
+        const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
+        const entities = [...model.entities()];
+        if (entities.length === 0) return;
+        const version = original.header?.version ?? ACadVersion.AC1032;
+        const r12 = version <= ACadVersion.AC1009;
+        const appNamed = (name: string): Handle | undefined =>
+          [...model.tables.appIds.values()].find((a) => a.name.toUpperCase() === name)?.handle;
+        const annotative = appNamed('ACADANNOTATIVE');
+        const acad = appNamed('ACAD');
+        const kept = (e: Entity, a: XdataApp): boolean =>
+          a.appId === annotative || (r12 && e.type === 'VIEWPORT' && a.appId === acad);
+        const b = new ChangeSetBuilder(model);
+        // R12 tables have no handles: acad-ts makes them up on read, above $HANDSEED, so a new
+        // APPID would move them all; an R12 file is marked under its ACAD application instead,
+        // where the entity has none of its own.
+        const markup = r12 ? acad! : b.addTableRecord('appIds', { name: 'TRIYA_MARKUP' }).handle;
+        const marked = (xdata: Xdata | undefined, layer: Handle, handle: Handle): XdataApp[] =>
+          (xdata ?? []).some((a) => a.appId === markup) ? [] : [mark(layer, handle)];
+        const mark = (layer: Handle, handle: Handle): XdataApp => ({
+          appId: markup,
+          values: [
+            { code: 1000, value: 'markup' },
+            { code: 1002, value: '{' },
+            { code: 1003, value: Number.parseInt(layer, 16) },
+            { code: 1004, value: new Uint8Array([0, 127, 255]) },
+            { code: 1005, value: handle },
+            { code: 1010, value: { x: 1, y: 2, z: 3 } },
+            { code: 1011, value: { x: -1, y: 0.5, z: 0 } },
+            { code: 1012, value: { x: 0.25, y: 0, z: 0 } },
+            { code: 1013, value: { x: 0, y: 1, z: 0 } },
+            { code: 1040, value: 2.5 },
+            { code: 1041, value: 0.75 },
+            { code: 1042, value: 4 },
+            { code: 1070, value: -7 },
+            { code: 1071, value: 70000 },
+            { code: 1002, value: '}' },
+          ],
+        });
+        for (const [i, e] of entities.entries()) {
+          const own = e.xdata ?? [];
+          const xdata =
+            i % 3 === 2
+              ? own.filter((a) => kept(e, a))
+              : [...own].reverse().concat(marked(e.xdata, e.layer, e.handle));
+          const attributes =
+            e.geom.kind === 'INSERT' && e.geom.attributes.length > 0
+              ? e.geom.attributes.map((a) => ({
+                  ...a,
+                  xdata: [...(a.xdata ?? []), ...marked(a.xdata, a.layer, a.handle)],
+                }))
+              : undefined;
+          b.updateEntity(e.id, {
+            xdata: xdata.length > 0 ? xdata : undefined,
+            ...(attributes && e.geom.kind === 'INSERT' ? { geom: { ...e.geom, attributes } } : {}),
+          });
+        }
+        model.apply(b.build());
+        // AutoCAD Release 11 (AC1009, which R12 shares) introduced xdata.
+        if (version < ACadVersion.AC1009) {
+          expect(() => exportDocument(readCadDocument(bytes), model, options)).toThrow(
+            /has no xdata/,
+          );
+          return;
+        }
+
+        const reopened = readCadDocument(exportDocument(readCadDocument(bytes), model, options));
+        const init = documentInit(reopened);
+        const back = new Map(init.entities?.map((e) => [e.handle, e]));
+        // A 1003 is compared by the layer it names: R12 layer handles are made up on read.
+        const layerNames = (layers: Iterable<{ handle: Handle; name: string }>) =>
+          new Map([...layers].map((l) => [Number.parseInt(l.handle, 16), l.name]));
+        const before = layerNames(model.tables.layers.values());
+        const after = layerNames(init.tables?.layers ?? []);
+        const named = (x: Xdata | undefined, names: Map<number, string>) =>
+          x?.map((a) => ({
+            ...a,
+            values: a.values.map((v) =>
+              v.code === 1003 ? { ...v, value: names.get(Number(v.value)) ?? '?' } : v,
+            ),
+          }));
+        const xdataOf = (e: Entity | EntityInit | undefined, names: Map<number, string>) => [
+          named(e?.xdata, names),
+          e?.geom.kind === 'INSERT' ? e.geom.attributes.map((a) => named(a.xdata, names)) : [],
+        ];
+        const wrong = entities
+          .map((e) => model.entity(e.id)!)
+          .filter((e) => !same(xdataOf(back.get(e.handle), after), xdataOf(e, before)))
+          .map((e) => `${e.type} ${e.handle}`);
+        expect(wrong.slice(0, 5), f.path).toEqual([]);
+        const ignoreHandles = new Set(
+          [...entities.map((e) => e.handle), ...(r12 ? [] : [markup])].map((h) =>
+            Number.parseInt(h, 16),
+          ),
+        );
+        for (const h of [...ignoreHandles]) {
+          const o = original.getCadObject(h);
+          if (o instanceof Polyline) for (const v of o.vertices) ignoreHandles.add(v.handle);
+          if (o instanceof Insert) for (const a of o.attributes) ignoreHandles.add(a.handle);
+        }
+        // The APPID table's entry for the application the save registered is the edit.
+        const diff = structuralDiff(original, reopened, { ignoreHandles }).differences.filter(
+          (d) =>
+            !(d.objectName === 'APPID' && d.path === 'entries[TRIYA_MARKUP]' && d.a === 'absent'),
         );
         expect(diff.slice(0, 5), f.path).toEqual([]);
       });

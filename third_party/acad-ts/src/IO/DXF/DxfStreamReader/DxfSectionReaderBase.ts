@@ -574,6 +574,12 @@ export abstract class DxfSectionReaderBase {
         const mtextTemplate = new CadTextEntityTemplate(att.mText);
         tmp.mTextTemplate = mtextTemplate;
         this.readEntityCodes(mtextTemplate, this._readTextEntity.bind(this), MText);
+        // The embedded object runs to the end of the entity, so the xdata after it was read into
+        // the MTEXT; it is the attribute's (the embedded MTEXT has none of its own).
+        for (const [app, records] of mtextTemplate.eDataTemplateByAppName) {
+          tmp.eDataTemplateByAppName.set(app, records);
+        }
+        mtextTemplate.eDataTemplateByAppName.clear();
         return true;
       }
       default:
@@ -1013,7 +1019,9 @@ export abstract class DxfSectionReaderBase {
 
   private _readColumnData(mtext: MText): void {
     this._reader.readNext();
-    while (this._reader.dxfCode !== DxfCode.Start) {
+    // The embedded object ends at the next entity or at the entity's xdata (1001), which the
+    // entity reader takes from here.
+    while (this._reader.dxfCode !== DxfCode.Start && this._reader.dxfCode !== DxfCode.ExtendedDataRegAppName) {
       switch (this._reader.code as number) {
         case 70:
           break;
