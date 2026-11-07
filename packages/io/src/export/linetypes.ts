@@ -9,7 +9,7 @@ import {
   LineTypeSegment,
   TextStyle,
   type CadDocument,
-  type TableEntry,
+  type CadObject,
 } from '@node-projects/acad-ts';
 import type {
   DocumentInit,
@@ -35,7 +35,7 @@ export function planLinetypes(
   doc: CadDocument,
   base: DocumentInit,
   model: DocumentModel,
-  r: Resolver & { readonly created: Map<Handle, TableEntry> },
+  r: Resolver & { readonly created: Map<Handle, CadObject> },
 ): { plan: LinetypePlan; problems: string[] } {
   return planRecords(doc, base.tables?.linetypes ?? [], model.tables.linetypes, r, {
     what: 'linetype',

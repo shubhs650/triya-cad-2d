@@ -17,7 +17,7 @@ import {
   LineType,
   TextStyle,
   type CadDocument,
-  type TableEntry,
+  type CadObject,
 } from '@node-projects/acad-ts';
 import type {
   Color,
@@ -155,7 +155,7 @@ export function planDimStyles(
   doc: CadDocument,
   base: DocumentInit,
   model: DocumentModel,
-  r: Resolver & { readonly created: Map<Handle, TableEntry> },
+  r: Resolver & { readonly created: Map<Handle, CadObject> },
   format: CadFormat | undefined,
 ): { plan: DimStylePlan; problems: string[] } {
   const reference = newStyleReference(base);
