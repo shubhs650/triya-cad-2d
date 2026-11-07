@@ -1009,7 +1009,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 			this._writer.writeBitShort(dimStyle.alternateUnitZeroHandling);
 			this._writer.writeBitShort(dimStyle.alternateUnitToleranceZeroHandling);
 			this._writer.writeBit(dimStyle.cursorUpdate);
-			this._writer.writeBitShort(3);
+			// DIMATFIT (ODA spec §20.4.53).
+			this._writer.writeBitShort(dimStyle.dimensionTextArrowFit);
 		}
 
 		if (this.r2007Plus) {

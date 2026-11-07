@@ -23,6 +23,7 @@ import { UCS } from '../../../Tables/UCS.js';
 import { View } from '../../../Tables/View.js';
 import { VPort } from '../../../Tables/VPort.js';
 import { ArcLengthSymbolPosition } from '../../../Tables/ArcLengthSymbolPosition.js';
+import { TextDirection } from '../../../Tables/TextDirection.js';
 import { MathHelper } from '../../../Math/MathHelper.js';
 import { CadFileFormat } from '../../CadFileFormat.js';
 import { NotificationType } from '../../NotificationEventHandler.js';
@@ -168,12 +169,12 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
 
     if (style.textBackgroundFillMode !== 0) {
       this._writer.write(69, style.textBackgroundFillMode, map);
-      this._writer.write(70, style.textBackgroundColor.getApproxIndex(), map);
-    } else {
-      this._writer.write(70, 0, map);
     }
+    // DIMTFILLCLR (the second 70) is kept whatever DIMTFILL is, as the DWG record keeps it.
+    this._writer.write(70, style.textBackgroundColor.getApproxIndex(), map);
 
-    if (style.arcLengthSymbolPosition !== ArcLengthSymbolPosition.AboveDimensionText) {
+    // DIMARCSYM 0 (before the text) is AutoCAD's default, which it leaves out and readers assume.
+    if (style.arcLengthSymbolPosition !== ArcLengthSymbolPosition.BeforeDimensionText) {
       this._writer.write(90, style.arcLengthSymbolPosition as number);
     }
 
@@ -210,6 +211,11 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
 
     this._writer.write(179, style.angularDecimalPlaces);
 
+    // DIMUNIT is R13/R14's: R12 has none and R2000 replaced it by DIMLUNIT (277) and DIMFRAC (276).
+    if (this.version >= ACadVersion.AC1012 && this.version < ACadVersion.AC1015) {
+      this._writer.write(270, style.dimensionUnit);
+    }
+
     this._writer.write(271, style.decimalPlaces);
     this._writer.write(272, style.toleranceDecimalPlaces);
     this._writer.write(273, style.alternateUnitFormat as number);
@@ -230,6 +236,10 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
     this._writer.write(288, style.cursorUpdate);
     this._writer.write(289, style.dimensionTextArrowFit as number);
     this._writer.write(290, style.isExtensionLineLengthFixed);
+    // DIMTXTDIRECTION is R2010+; AutoCAD leaves out its default, left to right.
+    if (this.version >= ACadVersion.AC1024 && style.textDirection === TextDirection.RightToLeft) {
+      this._writer.write(294, 1);
+    }
 
     this._writer.writeHandle(340, style.style, map);
     this._writer.writeHandle(341, style.leaderArrow, map);

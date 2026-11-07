@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90) and 0136 (M1-91) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91) and 0137–0141 (M1-92) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2555,5 +2555,90 @@ An R12 VIEWPORT has no 331 groups: its frozen layers are the 1003 layer names in
 **Title:** Read VISUALSTYLE objects from DXF into their fields
 
 `DxfObjectsSectionReader._readVisualStyle` consumes every group code without assigning anything, so a visual style read from DXF has default values everywhere and a DXF saved as DWG writes all of them as defaults. This reads the AcDbVisualStyle subclass into the same fields the DWG reader fills, in the three layouts AutoCAD writes: R2007 (also used in R2000/R2004 DXF; one code per value, with a constant 62 = 5 before the mono colour), R2010 (an operation code 176 after each value) and R2013+ (177, 291, a count of 58 in 70, then each value under its type's code — 90, 40, 290, 62, 1 — with its operation). True colours follow their index colour at code + 358 (R2007/R2010) or 420 (R2013+). Checked field by field against the DWG reads of the same drawings (the R2007, R2010, R2013 and R2018 samples, which share handles with their DXF saves). Extended data on the object is now read too.
+
+</details>
+
+### 0137 — the DXF writer writes DIMARCSYM 1 (above the text)
+
+- **File:** `third_party/acad-ts-patches/0137-dxf-dimstyle-dimarcsym-default.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:** `_writeDimensionStyle` left DIMARCSYM (90) out when it was 1 (above the dimension text), taking that for the default, and wrote it when it was 0. AutoCAD's default, and what a reader assumes when 90 is absent (the class default too), is 0 (before the text), so a style with the symbol above the text read back with it before. Found by Triya M1-75 part 9, fixed in M1-92.
+- **Fix:** 90 is left out only when DIMARCSYM is 0, as AutoCAD writes it.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0137 the DXF writer writes DIMARCSYM 1 (above the text), leaving out only 0" (0, 1 and 2 round trip through ASCII and binary DXF; ASCII states 90 only for 1 and 2).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write DIMARCSYM 1 to DXF and leave out 0, its default
+
+`DxfTablesSectionWriter._writeDimensionStyle` skipped group 90 (DIMARCSYM) when the value was `AboveDimensionText` (1). The AutoCAD default is 0 (`BeforeDimensionText`, also the `DimensionStyle` default), so the value a reader assumes for an absent 90 is 0: a style with the arc symbol above the text came back with it before the text, and every default style carried a redundant `90 0`. The writer now leaves 90 out only for 0.
+
+</details>
+
+### 0138 — DXF DIMTXTDIRECTION is group 294
+
+- **File:** `third_party/acad-ts-patches/0138-dxf-dimstyle-dimtxtdirection-294.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`, `src/Metadata/LookupTables/Tables.ts`
+- **Symptom:** The DXF writer never wrote DIMTXTDIRECTION, so a right-to-left style read back left to right, and the metadata table mapped `textDirection` to group 295, while the DXF reference's DIMSTYLE gives it as 294. Found by Triya M1-75 part 9, fixed in M1-92.
+- **Fix:** The reader reads 294 (non-zero = right to left); the R2010+ writer writes 294 = 1 after 290 when the text runs right to left and leaves out the default; the metadata entry is 294.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0138 DXF DIMTXTDIRECTION is group 294, as the DXF reference gives it" (right to left round trips through R2010 ASCII and binary DXF, written as 294 = 1; the default is left out; a record that states 294 = 1 reads right to left).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write DIMSTYLE DIMTXTDIRECTION as DXF group 294
+
+The DXF reference lists DIMTXTDIRECTION as group 294 of the DIMSTYLE record, but the metadata table maps `DimensionStyle.textDirection` to 295 and the DXF writer never writes it, so a right-to-left dimension style saved as DXF reads back left to right. This reads 294 explicitly, corrects the metadata code, and writes `294 1` for R2010+ when the direction is right to left (AutoCAD leaves the default out).
+
+</details>
+
+### 0139 — the DXF writer writes DIMTFILLCLR whatever DIMTFILL is
+
+- **File:** `third_party/acad-ts-patches/0139-dxf-dimstyle-dimtfillclr-without-fill.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:** `_writeDimensionStyle` wrote the DIMTFILLCLR colour (the record's second 70) only when DIMTFILL was not 0, and 70 = 0 otherwise, so a style with a fill colour but no fill read back ByBlock. The DWG record keeps the colour whatever the fill mode. Found by Triya M1-75 part 9, fixed in M1-92.
+- **Fix:** 69 is still left out when DIMTFILL is 0; the second 70 always holds DIMTFILLCLR's colour number.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0139 the DXF writer writes DIMTFILLCLR whatever DIMTFILL is" (colour 5 with fill modes 0, 1 and 2 through ASCII and binary DXF).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write DIMTFILLCLR to DXF when DIMTFILL is 0
+
+The DIMSTYLE writer writes the text fill colour (DIMTFILLCLR, the second group 70) only when DIMTFILL (69) is not 0, and `70 0` otherwise, so a style that has a fill colour set but the fill turned off loses the colour on a DXF save, although DWG keeps it. This always writes the colour number; 69 is still omitted at its default.
+
+</details>
+
+### 0140 — DXF DIMUNIT (270) reads into DIMUNIT and R13/R14 saves write it
+
+- **File:** `third_party/acad-ts-patches/0140-dxf-dimstyle-dimunit.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:** The DXF reader read DIMUNIT (270, R13/R14) into `linearUnitFormat` (DIMLUNIT, 277), so `dimensionUnit` kept its default and a file stating 277 before 270 had its DIMLUNIT overwritten; the DWG reader keeps DIMUNIT in `dimensionUnit`. The writer never wrote 270, so an R13/R14 DXF save lost DIMUNIT. Found by Triya M1-75 part 9, fixed in M1-92.
+- **Fix:** 270 reads into `dimensionUnit`; the writer writes it for R13 and R14 (R12 has no DIMUNIT; R2000 replaced it by DIMLUNIT and DIMFRAC and its DWG record has none).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0140 DXF DIMUNIT (270) reads into DIMUNIT, not DIMLUNIT, and R13/R14 saves write it" (DIMUNIT 4 beside DIMLUNIT 2 round trips through R13 and R14 DXF; R12, R2000 and R2018 write no 270; an R14 record with 277 before 270 keeps both).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read DIMSTYLE group 270 as DIMUNIT and write it to R13/R14 DXF
+
+Group 270 of a DIMSTYLE record is DIMUNIT, the R13/R14 unit format that R2000 replaced by DIMLUNIT (277) and DIMFRAC. The DXF reader assigned it to `linearUnitFormat` (DIMLUNIT), so `dimensionUnit` stayed at its default and a 277 before it was overwritten, unlike the DWG reader, which reads DIMUNIT into `dimensionUnit`. The writer never wrote 270. This reads 270 into `dimensionUnit` and writes it for AC1012/AC1014.
+
+</details>
+
+### 0141 — an R2000+ DWG DIMSTYLE reads and writes DIMATFIT in its own place
+
+- **File:** `third_party/acad-ts-patches/0141-dwg-dimstyle-dimatfit.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** In the R2000+ DIMSTYLE record the BS after DIMUPT is DIMATFIT (ODA Open Design Specification §20.4.53, DXF 289). The reader read it into `dimensionFit` (DIMFIT, obsolete since R2000) and the writer wrote a constant 3 there, so every R2000+ DWG read DIMATFIT 3 (the class default) and a save wrote 3. Found by Triya M1-75 part 9, fixed in M1-92.
+- **Fix:** The reader reads that BS into `dimensionTextArrowFit` and the writer writes it from there. R2000+ stores no DIMFIT, so the reader sets `dimensionFit` to 3, what the DXF reader gives a style without 287 (AutoCAD's default), keeping DWG and DXF reads of a drawing equal.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0141 an R2000+ DWG DIMSTYLE reads and writes DIMATFIT in its own place" (DIMATFIT 0, 1 and 2 round trip through R2000, R2004, R2010 and R2018 DWG; DIMFIT reads 3; R14 DIMFIT unchanged); `packages/testkit/src/mapping/tables.corpus.test.ts` "reads every DXF DIMSTYLE with the DIMVARs of its DWG twin" still passes.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write DIMATFIT in the R2000+ DWG DIMSTYLE record
+
+From R2000 the DIMSTYLE object stores DIMATFIT (BS, DXF 289) after DIMUPT (ODA spec §20.4.53); DIMFIT no longer exists. The DWG reader assigned that value to `dimensionFit` and the writer wrote a constant 3, so `dimensionTextArrowFit` always read as its default and a saved style lost its arrow/text fit. This reads and writes the value as `dimensionTextArrowFit`, and gives `dimensionFit` the value the DXF reader assumes when 287 is absent (3).
 
 </details>
