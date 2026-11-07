@@ -67,10 +67,41 @@ export interface XdataApp {
 
 export type Xdata = readonly XdataApp[];
 
-/** Annotative scale representations; M4 (annotation) refines this. */
+/**
+ * An annotative object's representations, one per annotation scale: the context data objects in
+ * the `ACDB_ANNOTATIONSCALES` dictionary of its extension dictionary's `AcDbContextDataManager`,
+ * in dictionary order. Saves write a TEXT's representations by handle (M1-75 part 37); adding
+ * or removing one (OBJECTSCALE) is annotative creation, a PRD non-goal (DEC-013).
+ */
 export interface AnnotativeData {
-  /** Handles of the SCALE objects this object has a representation for. */
-  readonly scales: readonly Handle[];
+  readonly representations: readonly AnnotationRepresentation[];
+}
+
+/** One representation of an annotative object (one context data object). */
+export interface AnnotationRepresentation {
+  /** Handle of the context data object. */
+  readonly handle: Handle;
+  /** SCALE object handle (DXF 340); absent for a context data object Triya does not read. */
+  readonly scale?: Handle;
+  /** DXF 290: the default representation. */
+  readonly isDefault?: boolean;
+  /** A TEXT's or single-line attribute's placement at this scale (ACDB_TEXTOBJECTCONTEXTDATA_CLASS). */
+  readonly text?: TextRepresentation;
+}
+
+/**
+ * Where a TEXT draws at one annotation scale: the values its context data holds, in the plan
+ * coordinates of the text's own `position`, `alignmentPoint`, `rotation` and `halign`.
+ */
+export interface TextRepresentation {
+  /** DXF 10. */
+  readonly position: Vec2;
+  /** DXF 11 (0,0 in AutoCAD's files for left-baseline text, which has none). */
+  readonly alignmentPoint: Vec2;
+  /** DXF 50, radians. */
+  readonly rotation: number;
+  /** DXF 70 after the scale: the horizontal alignment (the text's DXF 72). */
+  readonly halign: number;
 }
 
 /**

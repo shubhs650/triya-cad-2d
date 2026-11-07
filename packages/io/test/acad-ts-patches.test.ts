@@ -8,6 +8,7 @@ import {
   AttributeType,
   BlockGripExpression,
   BlockRecord,
+  BlockReferenceObjectContextData,
   BookColor,
   CadDictionary,
   CadDocument,
@@ -48,6 +49,7 @@ import {
   HatchPattern,
   HatchPatternLine,
   HatchStyleType,
+  Insert,
   Layer,
   Layout,
   Leader,
@@ -71,6 +73,7 @@ import {
   Polyline2D,
   Polyline3D,
   PolygonMesh,
+  Scale,
   SmoothSurfaceType,
   Solid,
   TableEntity,
@@ -81,6 +84,8 @@ import {
   TableStyleOverrides,
   TextArrowFitType,
   TextDirection,
+  TextEntity,
+  TextObjectContextData,
   TableStyle,
   TextStyle,
   UscIconType,
@@ -2244,5 +2249,90 @@ describe('acad-ts local patches', () => {
     expect(p2.geometry?.handle).toBe(a.handle);
     expect(p2.geometryPath.map((o) => o.handle)).toEqual([a.handle]);
     expect([p2.osnapPoint.x, p2.geometryParameter]).toEqual([10, 1]);
+  });
+  it('0168 annotative TEXT context data reads and writes its values in DWG and DXF', () => {
+    // An annotative TEXT's representation at one scale, in its extension dictionary's
+    // AcDbContextDataManager. Unpatched acad-ts had no class for it (read as an unknown object
+    // whose values Triya could not change), and its DWG reader read a bit the record does not
+    // hold before the default flag, so every value after it read shifted.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const text = new TextEntity();
+    text.value = 'ANNO';
+    text.insertPoint = new XYZ(12.5, 7.25, 0);
+    doc.entities!.add(text);
+    const ctx = new TextObjectContextData();
+    ctx.default = true;
+    ctx.version = 4;
+    const scale = new Scale();
+    scale.name = '1:2';
+    scale.paperUnits = 1;
+    scale.drawingUnits = 2;
+    const list = new CadDictionary('ACAD_SCALELIST');
+    doc.rootDictionary!.add(list);
+    list.addByKey('A0', scale);
+    ctx.scale = scale;
+    ctx.horizontalMode = 2;
+    ctx.rotation = Math.PI / 6;
+    ctx.insertionPoint = new XY(12.5, 7.25);
+    ctx.alignmentPoint = new XY(20, 7.25);
+    const scales = new CadDictionary('ACDB_ANNOTATIONSCALES');
+    const manager = new CadDictionary('AcDbContextDataManager');
+    text.createExtendedDictionary().add(manager);
+    manager.add(scales);
+    scales.addByKey('*A1', ctx);
+    // A block reference's context data: the DXF writer left out its version and default flag.
+    const block = new BlockRecord('B');
+    doc.blockRecords!.add(block);
+    const insert = new Insert(block);
+    doc.entities!.add(insert);
+    const blockCtx = new BlockReferenceObjectContextData();
+    blockCtx.default = true;
+    blockCtx.version = 4;
+    blockCtx.scale = scale;
+    const blockScales = new CadDictionary('ACDB_ANNOTATIONSCALES');
+    const blockManager = new CadDictionary('AcDbContextDataManager');
+    insert.createExtendedDictionary().add(blockManager);
+    blockManager.add(blockScales);
+    blockScales.addByKey('*A1', blockCtx);
+
+    const check = (back: CadDocument): void => {
+      const b = back.getCadObject(blockCtx.handle) as BlockReferenceObjectContextData;
+      expect([b.version, b.default, b.scale.name]).toEqual([4, true, '1:2']);
+      const c = back.getCadObject(ctx.handle) as TextObjectContextData;
+      expect(c).toBeInstanceOf(TextObjectContextData);
+      expect([c.version, c.default, c.scale.name, c.horizontalMode]).toEqual([4, true, '1:2', 2]);
+      expect(c.rotation).toBeCloseTo(Math.PI / 6, 12);
+      expect([
+        c.insertionPoint.x,
+        c.insertionPoint.y,
+        c.alignmentPoint.x,
+        c.alignmentPoint.y,
+      ]).toEqual([12.5, 7.25, 20, 7.25]);
+    };
+    check(DwgReader.readFromStream(DwgWriter.writeToBuffer(doc).slice().buffer));
+    check(DxfReader.readFromStream(writeDxf(doc, new DxfWriterConfiguration())));
+    const dxf = writeCadDocument(doc, { format: 'dxf' });
+    check(DxfReader.readFromStream(dxf));
+    // AutoCAD's group order (ACadSharp's sample_AC1024+ DXF saves).
+    const lines = Array.from(dxf, (b) => String.fromCharCode(b))
+      .join('')
+      .split(/\r?\n/)
+      .map((l) => l.trim());
+    const at = lines.indexOf('ACDB_TEXTOBJECTCONTEXTDATA_CLASS', lines.indexOf('OBJECTS'));
+    const from = lines.indexOf('AcDbObjectContextData', at);
+    const codes = lines.slice(from - 1, from + 25).filter((_, i) => i % 2 === 0);
+    expect(codes.slice(0, 11)).toEqual([
+      '100',
+      '70',
+      '290',
+      '100',
+      '340',
+      '70',
+      '50',
+      '10',
+      '20',
+      '11',
+      '21',
+    ]);
   });
 });

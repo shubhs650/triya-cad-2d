@@ -96,6 +96,35 @@ function movedText<T extends TextFields>(g: T): T {
   };
 }
 
+/**
+ * MOVE and ROTATE (in place) take every annotation scale representation of an annotative text
+ * along, as they take the text (M1-75 part 37). A left-baseline text has no 11, and the (0,0)
+ * AutoCAD's context data holds for it stays.
+ */
+function editedAnnotative(e: Entity): Pick<Entity, 'annotative'> {
+  const a = e.annotative;
+  const g = e.geom;
+  if (!a || (g.kind !== 'TEXT' && g.kind !== 'ATTDEF')) return {};
+  const aligned = g.alignmentPoint !== undefined;
+  return {
+    annotative: {
+      representations: a.representations.map((r) =>
+        r.text
+          ? {
+              ...r,
+              text: {
+                ...r.text,
+                position: move(r.text.position),
+                ...(aligned ? { alignmentPoint: move(r.text.alignmentPoint) } : {}),
+                rotation: turn(r.text.rotation),
+              },
+            }
+          : r,
+      ),
+    },
+  };
+}
+
 type DimensionGeometry = Extract<
   EntityGeometry,
   { kind: 'DIMENSION' | 'ARC_DIMENSION' | 'LARGE_RADIAL_DIMENSION' }
@@ -792,7 +821,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
         const b = new ChangeSetBuilder(model);
         for (const o of imageObjects)
           b.updateObject(o.handle, editedImageObject(o) as Partial<NonGraphicalObject>);
-        for (const e of targets) b.updateEntity(e.id, { geom: edited(e.geom) });
+        for (const e of targets)
+          b.updateEntity(e.id, { geom: edited(e.geom), ...editedAnnotative(e) });
         // Each LEADER lets go of its annotation, which drops the leader from its reactors.
         const detached = targets
           .filter((e) => e.geom.kind === 'LEADER' && e.geom.annotation !== undefined)
@@ -1007,6 +1037,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ...imageObjects,
             ...detached.map((d) => d.annotation),
             ...unhooked.flatMap((u) => u.boundary),
+            // The annotation scale representations MOVE and ROTATE took along.
+            ...targets.flatMap((e) => e.annotative?.representations ?? []),
           ].map((e) => Number.parseInt(e.handle, 16)),
         );
         // The CELLSTYLEMAP an edited table style keeps beside its rows is part of the edit.

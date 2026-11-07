@@ -174,6 +174,7 @@ import {
   regridProblems,
 } from './table-grid';
 import { writeXdata, xdataProblems } from './xdata';
+import { annotationProblems, writeAnnotation, type Annotated } from './annotation';
 
 const TWO_PI = 2 * Math.PI;
 const norm = (a: number): number => ((a % TWO_PI) + TWO_PI) % TWO_PI;
@@ -283,9 +284,10 @@ const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefi
 
 /**
  * Properties whose changes no writer handles yet. Xdata (xdata.ts, M1-75 part 19), plot style
- * names and materials (part 21) are written, on entities and ATTRIBs alike.
+ * names and materials (part 21) are written, on entities and ATTRIBs alike, and so are annotative
+ * representations (annotation.ts, part 37), checked with the shape they describe.
  */
-const UNSUPPORTED_PROPS = ['reactors', 'extDict', 'annotative'] as const;
+const UNSUPPORTED_PROPS = ['reactors', 'extDict'] as const;
 /**
  * An entity's reactors are written: the only changes accepted are those that keep a LEADER and
  * its annotation, an associative HATCH and its boundary objects, or a VIEWPORT and its clip
@@ -344,6 +346,11 @@ function propProblems(
 export function entityProblems(r: Resolver, before: Entity | undefined, after: Entity): string[] {
   const what = `${after.type} ${after.handle}`;
   const out = propProblems(r, what, before, after, UNSUPPORTED_ENTITY_PROPS);
+  out.push(
+    ...annotationProblems(r, before && annotated(before), annotated(after), same).map(
+      (p) => `${what}: ${p}`,
+    ),
+  );
   if (after.geom.kind === 'INSERT' && after.geom.block === after.owner) {
     out.push(`${what}: a block inserted into itself`);
   }
@@ -360,6 +367,38 @@ export function entityProblems(r: Resolver, before: Entity | undefined, after: E
     else out.push(...writer.problems(r, before?.geom, after.geom).map((p) => `${what}: ${p}`));
   }
   return out;
+}
+
+/** An entity as its annotative representations see it: its geometry, and its text frame. */
+function annotated(e: Entity): Annotated {
+  const g = e.geom;
+  const text = g.kind === 'TEXT' || g.kind === 'ATTDEF' ? g : undefined;
+  return { annotative: e.annotative, shape: g, text, normal: 'normal' in g ? g.normal : undefined };
+}
+
+/** The keys of an ATTRIB that are not its shape (AcDbEntity properties and common data). */
+const ATTRIB_PROPS = new Set<string>([
+  'handle',
+  'xdata',
+  'reactors',
+  'extDict',
+  'raw',
+  'layer',
+  'color',
+  'linetype',
+  'lineweight',
+  'transparency',
+  'ltScale',
+  'visible',
+  'plotStyle',
+  'material',
+  'annotative',
+]);
+
+/** An ATTRIB as its annotative representations see it: its fields apart from its properties. */
+function annotatedAttribute(a: InsertAttribute): Annotated {
+  const shape = Object.fromEntries(Object.entries(a).filter(([k]) => !ATTRIB_PROPS.has(k)));
+  return { annotative: a.annotative, shape, text: a, normal: a.normal };
 }
 
 /** Writes the AcDbEntity properties of `after` that differ from `before`. */
@@ -1003,6 +1042,11 @@ const insertWriter: Writer<InsertGeometry> = {
         out.push(`${what}: the handle is already used`);
       }
       out.push(...propProblems(r, what, b, a));
+      out.push(
+        ...annotationProblems(r, b && annotatedAttribute(b), annotatedAttribute(a), same).map(
+          (p) => `${what}: ${p}`,
+        ),
+      );
       if (!b || !same(b, a)) {
         out.push(...attributeProblems(r, b, a).map((p) => `${what}: ${p}`));
       }
@@ -1063,6 +1107,7 @@ function writeAttributes(
     const b = kept ? old.get(g.handle) : undefined;
     writeProps(r, a, b, g);
     writeAttributeFields(r, a, b, g);
+    writeAnnotation(r, b?.annotative, g.annotative, g.normal);
     return a;
   });
   // An ATTRIB Triya could not map (a tilted one) stays in its slot, untouched (§6.2 rule 4).
@@ -2226,6 +2271,8 @@ export function writeEntity(
   after: Entity,
 ): void {
   writeProps(r, e, before, after);
+  const g = after.geom;
+  writeAnnotation(r, before?.annotative, after.annotative, 'normal' in g ? g.normal : undefined);
   if (before && same(before.geom, after.geom)) return;
   const writer = WRITERS[after.type] as Writer<EntityGeometry> | undefined;
   writer!.write(r, e, before?.geom, after.geom);

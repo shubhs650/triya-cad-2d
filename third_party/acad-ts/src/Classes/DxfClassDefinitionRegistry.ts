@@ -215,6 +215,16 @@ define({
 	proxyFlags: ProxyFlags.EraseAllowed | ProxyFlags.CloningAllowed | ProxyFlags.DisablesProxyWarningDialog,
 });
 
+// As AutoCAD lists it in the CLASSES of ACadSharp's sample_AC1024+ DXF saves (90 = 1153).
+define({
+	cppClassName: DxfSubclassMarker.textObjectContextData,
+	dwgVersion: ACadVersion.AC1021,
+	dxfName: DxfFileToken.textObjectContextData,
+	itemClassId: 499,
+	maintenanceVersion: 0,
+	proxyFlags: ProxyFlags.EraseAllowed | ProxyFlags.CloningAllowed | ProxyFlags.DisablesProxyWarningDialog,
+});
+
 define({
 	cppClassName: DxfSubclassMarker.dbColor,
 	dwgVersion: ACadVersion.AC1015,
