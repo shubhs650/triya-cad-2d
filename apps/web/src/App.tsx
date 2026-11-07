@@ -1,6 +1,6 @@
-// The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs,
-// Report issue and Settings; the canvas area with its navigation bar; the layout tabs; the status bar. The
-// ribbon, palettes and command line arrive with their own tasks.
+// The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs
+// (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
+// tabs; the status bar. The ribbon, palettes and command line arrive with their own tasks.
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasMode } from './canvas/controller';
 import {
@@ -12,7 +12,8 @@ import {
   tilesOf,
 } from './canvas/registry';
 import { modelTiles, type ModelTile } from './canvas/views';
-import { DocumentStore, type OpenDocument } from './documents';
+import { DocTabs } from './DocTabs';
+import { DocumentStore, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
 import { LayersPalette } from './LayersPalette';
@@ -190,32 +191,7 @@ export function App() {
             e.currentTarget.value = '';
           }}
         />
-        <div className="doc-tabs" role="tablist" aria-label="Open drawings">
-          {state.docs.map((d) => (
-            <div key={d.id} className="doc-tab" data-active={d.id === state.active}>
-              <button
-                type="button"
-                role="tab"
-                aria-selected={d.id === state.active}
-                aria-controls={`doc-${d.id}`}
-                onClick={() => store.activate(d.id)}
-              >
-                {d.name}
-              </button>
-              <button
-                type="button"
-                className="close"
-                aria-label={`Close ${d.name}`}
-                onClick={() => {
-                  store.close(d.id);
-                  engines.stop(d.id);
-                }}
-              >
-                ×
-              </button>
-            </div>
-          ))}
-        </div>
+        <DocTabs store={store} state={state} />
         <a className="report" href={REPORT_ISSUE} target="_blank" rel="noreferrer">
           Report issue
         </a>
@@ -503,14 +479,7 @@ function ViewportCanvas({
 /** Model, then the layouts in tab order (DXF 71). */
 function LayoutTabs({ doc }: { doc: OpenDocument | undefined }) {
   if (!doc) return <nav className="layout-tabs" aria-label="Layouts" />;
-  const model = doc.opened.modelSpace!;
-  const layouts = [...(doc.opened.init.layouts ?? [])]
-    .filter((l) => l.blockRecord !== model)
-    .sort((a, b) => a.tabOrder - b.tabOrder);
-  const tabs = [
-    { name: 'Model', block: model },
-    ...layouts.map((l) => ({ name: l.name, block: l.blockRecord })),
-  ];
+  const tabs = spacesOf(doc);
   return (
     <nav className="layout-tabs" aria-label="Layouts">
       <div role="tablist" aria-label="Model and layouts">

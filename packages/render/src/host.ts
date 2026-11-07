@@ -4,13 +4,14 @@
 // call to the render worker, which runs a RenderSession on the OffscreenCanvas. Where it cannot
 // (older Safari and Firefox), the host runs the same RenderSession on the main thread. Both
 // paths draw with the same code, so they render identically; the Playwright pixel test checks
-// that. Calls are fire-and-forget either way; the two that need an answer return promises.
+// that. Calls are fire-and-forget either way; the three that need an answer return promises.
 
 import type { ChangeSet, EntityId } from '@triya/engine';
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession, type FontSources, type RenderDocument } from './session';
 import { offscreenLayer, surfaceOf } from './surface';
+import type { BitmapFactory, ThumbnailSize } from './thumbnail';
 import type { RasterPixels, RenderPrimitive, RenderStyle, ViewTransform } from './types';
 
 /** The canvas element the host draws into, typed by the members it uses. */
@@ -45,10 +46,12 @@ export interface RendererHostOptions {
   readonly createLayer?: () => Surface;
   /** A failure in the render worker that no pending request was waiting for. */
   readonly onError?: (error: Error) => void;
+  /** Main-thread thumbnails; `createImageBitmap` by default (the worker uses its own). */
+  readonly createBitmap?: BitmapFactory;
 }
 
 interface Pending {
-  resolve(ids: readonly EntityId[]): void;
+  resolve(m: WorkerMessage): void;
   reject(e: Error): void;
 }
 
@@ -58,6 +61,7 @@ export class RendererHost {
   readonly #session: RenderSession | undefined;
   readonly #pending = new Map<number, Pending>();
   readonly #onError: (error: Error) => void;
+  readonly #createBitmap: BitmapFactory | undefined;
   #nextId = 1;
 
   /** Whether `auto` would pick the worker for this canvas. */
@@ -81,6 +85,7 @@ export class RendererHost {
       throw new Error('the render worker needs createWorker and OffscreenCanvas transfer');
     }
     this.mode = worker ? 'worker' : 'main';
+    this.#createBitmap = o.createBitmap;
 
     if (worker && o.createWorker && o.canvas.transferControlToOffscreen) {
       const offscreen = o.canvas.transferControlToOffscreen();
@@ -172,8 +177,8 @@ export class RendererHost {
     aperture: number,
   ): Promise<EntityId[]> {
     if (this.#session) return Promise.resolve(this.#session.renderer.hitTest(screen, aperture));
-    return this.#request((id) => ({ type: 'hitTest', id, screen, aperture })).then((ids) => [
-      ...ids,
+    return this.#request((id) => ({ type: 'hitTest', id, screen, aperture })).then((m) => [
+      ...(m.type === 'reply' ? (m.ids ?? []) : []),
     ]);
   }
 
@@ -181,6 +186,17 @@ export class RendererHost {
   flush(): Promise<void> {
     if (this.#session) return Promise.resolve();
     return this.#request((id) => ({ type: 'flush', id })).then(() => undefined);
+  }
+
+  /**
+   * The last frame drawn, fitted inside `max` (canvas pixels), taken after everything
+   * sent so far; undefined while the canvas has never been sized.
+   */
+  thumbnail(max: ThumbnailSize): Promise<ImageBitmap | undefined> {
+    if (this.#session) return this.#session.thumbnail(max, this.#createBitmap);
+    return this.#request((id) => ({ type: 'thumbnail', id, ...max })).then((m) =>
+      m.type === 'thumbnail' && m.bitmap ? m.bitmap : undefined,
+    );
   }
 
   dispose(): void {
@@ -195,7 +211,7 @@ export class RendererHost {
     else this.#worker?.postMessage(m);
   }
 
-  #request(make: (id: number) => HostMessage): Promise<readonly EntityId[]> {
+  #request(make: (id: number) => HostMessage): Promise<WorkerMessage> {
     const id = this.#nextId++;
     return new Promise((resolve, reject) => {
       this.#pending.set(id, { resolve, reject });
@@ -206,8 +222,8 @@ export class RendererHost {
   #receive(m: WorkerMessage): void {
     const p = m.id === undefined ? undefined : this.#pending.get(m.id);
     if (m.id !== undefined) this.#pending.delete(m.id);
-    if (m.type === 'reply') {
-      p?.resolve(m.ids ?? []);
+    if (m.type !== 'error') {
+      p?.resolve(m);
       return;
     }
     const error = new Error(`render worker: ${m.message}`);

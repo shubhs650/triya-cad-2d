@@ -59,8 +59,17 @@ export async function inkWeight(page: Page): Promise<number> {
   return canvasInk(page, true);
 }
 
-async function canvasInk(page: Page, weighted: boolean): Promise<number> {
-  const png = (await activeCanvas(page).screenshot()).toString('base64');
+/** Non-background pixels of any element, against the dark model canvas colour. */
+export async function inkOf(page: Page, target: Locator): Promise<number> {
+  return canvasInk(page, false, target);
+}
+
+async function canvasInk(
+  page: Page,
+  weighted: boolean,
+  target: Locator = activeCanvas(page),
+): Promise<number> {
+  const png = (await target.screenshot()).toString('base64');
   return page.evaluate(
     async ({ b64, weighted }) => {
       const img = new Image();
