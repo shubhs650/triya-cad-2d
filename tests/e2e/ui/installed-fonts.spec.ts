@@ -87,8 +87,12 @@ test('installed fonts draw the style that names them once allowed, and on later 
   await expect.poll(() => inkWeight(page), { timeout: 15_000 }).toBeGreaterThan(standIn + FILLED);
 
   // Granted already: the next visit lists the fonts by itself, without the button.
+  // Open the drawing once and poll its ink: the fonts are listed asynchronously after the
+  // reload, and polling openDrawing itself opened the drawing again on every attempt, so a
+  // slow first attempt left several tabs of the same name (strict-mode failure on CI).
   await page.reload();
-  await expect.poll(() => openDrawing(page), { timeout: 30_000 }).toBeGreaterThan(standIn + FILLED);
+  await openDrawing(page);
+  await expect.poll(() => inkWeight(page), { timeout: 30_000 }).toBeGreaterThan(standIn + FILLED);
   expect(await queries(page)).toBe(1);
   await page.getByRole('button', { name: 'Settings' }).click();
   await expect(settings.getByRole('button', { name: 'Use installed fonts…' })).toHaveCount(0);
