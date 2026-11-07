@@ -39,7 +39,7 @@ import type {
 } from '@triya/engine';
 import { common, hex, mapColor, mapLineweight, ref, vec2, vec3 } from './common';
 import { dimStyle } from './dimvars';
-import { mleaderStyle, tableStyle } from './styles';
+import { mleaderStyle, mlineStyle, tableStyle } from './styles';
 
 export type MappedTables = { [K in TableName]: TableRecords[K][] };
 
@@ -229,21 +229,20 @@ function styleEntries<T>(
 /**
  * The entries of a named-object dictionary that PURGE takes (M1-75 part 29), by the entry name
  * AutoCAD lists them under: MLINESTYLE, MATERIAL, VISUALSTYLE and the ACDBPLACEHOLDER plot
- * style names. Only the name is mapped: an MLINESTYLE's DXF 70 is its fill and cap flags, not
- * the standard flags of a record. An entry acad-ts did not read as its class (a visual style
- * kept as a proxy) is left to the passthrough.
+ * style names. `map` makes the record (only the name, but for MLINE styles, M1-75 part 31). An
+ * entry acad-ts did not read as its class (a visual style kept as a proxy) is left to the
+ * passthrough.
  */
-function namedEntries(
+function namedEntries<T extends CadObject, R extends SymbolTableRecord = SymbolTableRecord>(
   doc: CadDocument,
   key: string,
-  type: abstract new (...args: never[]) => CadObject,
-): SymbolTableRecord[] {
+  type: abstract new (...args: never[]) => T,
+  map: (o: T, name: string) => R = (o, name) => ({ ...common(o), name }) as R,
+): R[] {
   const dict = doc.rootDictionary?.get(key);
   if (!(dict instanceof CadDictionary)) return [];
   const names = dict.entryNames;
-  return [...dict].flatMap((o, i) =>
-    o instanceof type ? [{ ...common(o), name: names[i] ?? o.name }] : [],
-  );
+  return [...dict].flatMap((o, i) => (o instanceof type ? [map(o, names[i] ?? o.name)] : []));
 }
 
 const each = <T, R>(items: Iterable<T> | null | undefined, f: (t: T) => R): R[] =>
@@ -266,7 +265,7 @@ export function mapTables(doc: CadDocument): MappedTables {
     ucs: each(doc.uCSs, ucs),
     vports: each(doc.vPorts, vport),
     blockRecords: each(doc.blockRecords, blockRecord),
-    mlineStyles: namedEntries(doc, CadDictionary.acadMLineStyle, MLineStyle),
+    mlineStyles: namedEntries(doc, CadDictionary.acadMLineStyle, MLineStyle, mlineStyle),
     materials: namedEntries(doc, CadDictionary.acadMaterial, Material),
     visualStyles: namedEntries(doc, CadDictionary.acadVisualStyle, VisualStyle),
     plotStyles: namedEntries(doc, CadDictionary.acadPlotStyleName, AcdbPlaceHolder),

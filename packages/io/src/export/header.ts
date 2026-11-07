@@ -13,6 +13,7 @@ import {
   DxfHeaderSectionWriter,
   Layer,
   LineType,
+  MLineStyle,
   MultiLeaderStyle,
   TableStyle,
   TextStyle,
@@ -97,7 +98,12 @@ const NAME_TABLES: Record<string, { readonly records: Records; readonly empty?: 
       ...added.filter((r) => r instanceof DimensionStyle),
     ],
   },
-  $CMLSTYLE: { records: (d) => [...(namedDictionary(d, CadDictionary.acadMLineStyle) ?? [])] },
+  $CMLSTYLE: {
+    records: (d, added) => [
+      ...(namedDictionary(d, CadDictionary.acadMLineStyle) ?? []),
+      ...added.filter((r) => r instanceof MLineStyle),
+    ],
+  },
   $DIMBLK: { records: blocks, empty: true },
   $DIMBLK1: { records: blocks, empty: true },
   $DIMBLK2: { records: blocks, empty: true },

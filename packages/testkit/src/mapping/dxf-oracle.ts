@@ -37,7 +37,11 @@ export interface DxfEntity extends DxfRecord {
 }
 
 /** The OBJECTS-section types Triya keeps beside the tables. */
-export const STYLE_OBJECTS: ReadonlySet<string> = new Set(['MLEADERSTYLE', 'TABLESTYLE']);
+export const STYLE_OBJECTS: ReadonlySet<string> = new Set([
+  'MLEADERSTYLE',
+  'TABLESTYLE',
+  'MLINESTYLE',
+]);
 
 /**
  * The OBJECTS-section types that hold the system variables AutoCAD saves outside the HEADER
