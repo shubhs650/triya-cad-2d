@@ -2768,4 +2768,64 @@ describe('acad-ts local patches (corpus-backed)', () => {
     // The codes are still written back as read (DEC-043).
     expect(table(dxfRawRoundTrip(doc, false), 0x528).tableOverrides!.data.textHeight).toBe(0.3);
   });
+
+  it.each(['AC1021', 'AC1024', 'AC1027', 'AC1032'])(
+    "0133 DXF writer writes a DWG's VISUALSTYLEs as AutoCAD's DXF save of the drawing: %s",
+    (version) => {
+      // The DXF writer wrote VISUALSTYLE only as read from DXF, so a DWG saved as DXF lost
+      // every visual style and the viewports naming one (M1-88). AutoCAD's DXF of the same
+      // drawing is the oracle: same handles, codes, operations and extension data.
+      const styles = (d: CadDocument): Map<number, VisualStyle> =>
+        new Map(
+          [...d.getCadObjects()]
+            .filter((o): o is VisualStyle => o instanceof VisualStyle)
+            .map((o) => [o.handle, o]),
+        );
+      const dwg = readDwgRaw(`third-party/acadsharp/sample_${version}.dwg`);
+      const autocad = styles(
+        readDxfRaw(corpusBytes(`third-party/acadsharp/sample_${version}_ascii.dxf`)),
+      );
+      expect(autocad.size).toBe(24);
+      for (const binary of [false, true]) {
+        const saved = dxfRawRoundTrip(dwg, binary);
+        const written = styles(saved);
+        expect([...written.keys()].sort(), `${version} binary ${binary}`).toEqual(
+          [...autocad.keys()].sort(),
+        );
+        // Every code but 360: AutoCAD gave the two saves' extension dictionaries other handles.
+        const differ = [...autocad].flatMap(([handle, o]) => {
+          const ours = written.get(handle)!.rawDxfCodes!;
+          return o.rawDxfCodes!.flatMap((c, i) =>
+            asJson(c) === asJson(ours[i]) || c.code === 360
+              ? []
+              : [[handleHex(o), c.code, c.value, ours[i]?.value]],
+          );
+        });
+        // Realistic's face lighting quality is 3 in every DXF and in the R2010+ DWGs, but AutoCAD
+        // stored 2 in the R2007 DWG; the DWG value is all a DWG read has to go on.
+        expect(differ, `${version} binary ${binary}`).toEqual(
+          version === 'AC1021' ? [['A3', 72, 3, 2]] : [],
+        );
+        const lengths = (m: Map<number, VisualStyle>) =>
+          [...autocad.keys()].map((h) => m.get(h)!.rawDxfCodes!.length);
+        expect(lengths(written)).toEqual(lengths(autocad));
+        const entries = (d: CadDocument) => {
+          const dict = d.rootDictionary!.getEntry<CadDictionary>('ACAD_VISUALSTYLE')!;
+          return [...dict.entryNames].map((n) => [n, handleHex(dict.getEntry(n))]);
+        };
+        expect(entries(saved), version).toEqual(entries(dwg));
+        // Viewports still name their visual style (348 was written only for DXF-read ones).
+        const named = (d: CadDocument) =>
+          [...d.getCadObjects()]
+            .filter((v): v is Viewport => v instanceof Viewport)
+            .map((v) => [handleHex(v), handleHex(v.visualStyle)])
+            .sort(([a], [b]) => a!.localeCompare(b!));
+        expect(named(saved), version).toEqual(named(dwg));
+        expect(
+          named(dwg).some(([, s]) => s !== undefined),
+          version,
+        ).toBe(true);
+      }
+    },
+  );
 });

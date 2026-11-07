@@ -14,7 +14,7 @@ export interface WriteOptions {
   binary?: boolean;
   /** DXF ASCII only: starting size of the output buffer; it doubles until the file fits. */
   initialBufferBytes?: number;
-  /** Writer diagnostics, e.g. "Object not implemented : VisualStyle" for objects it drops. */
+  /** Writer diagnostics, e.g. "Object not implemented : Material" for objects it drops. */
   onNotification?: (message: string, type: number) => void;
 }
 

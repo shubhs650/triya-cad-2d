@@ -61,6 +61,7 @@ import { XYZ } from '../../../Math/XYZ.js';
 import { XY } from '../../../Math/XY.js';
 import { NotificationType } from '../../NotificationEventHandler.js';
 import { CadFileFormat } from '../../CadFileFormat.js';
+import { writeDxfVisualStyle } from './DxfVisualStyle.js';
 
 export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 	private readonly _writtenHandles = new Set<number>();
@@ -503,6 +504,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this._writeEvaluationGraph(co);
     } else if (co instanceof BlockRepresentationData) {
       this._writeBlockRepresentationData(co);
+    } else if (co instanceof VisualStyle) {
+      // Read from DWG or made in memory: written from its fields (M1-88).
+      writeDxfVisualStyle(this._writer, this.version, co);
     } else {
       throw new Error(`Object not implemented : ${co.constructor.name}`);
     }
@@ -727,7 +731,6 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       co instanceof Material ||
       co instanceof MultiLeaderObjectContextData ||
       co instanceof TableContent ||
-      co instanceof VisualStyle ||
       co instanceof ProxyObject
     ) {
       this.notify(`Object not implemented : ${co.constructor.name}`, NotificationType.NotImplemented);
