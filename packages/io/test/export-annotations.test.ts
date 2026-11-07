@@ -130,6 +130,8 @@ function drawing(): Uint8Array {
     doc.entities!.add(e);
   }
   leader.associatedAnnotation = note;
+  // AutoCAD's annotation points back at its leader through its reactors.
+  note.addReactor(leader);
   return writeCadDocument(doc, { format: 'dxf' });
 }
 
@@ -343,6 +345,72 @@ describe('triyaToAcad annotations', () => {
     expect((e.geom as { annotation?: string }).annotation).toBeDefined();
   });
 
+  it('adds a LEADER with the annotation the same save adds, each pointing at the other', () => {
+    for (const format of ['dxf', 'dwg'] as const) {
+      const model = open();
+      const old = find(model, 'LEADER');
+      const text = find(model, 'MTEXT');
+      let leader!: Entity;
+      let note!: Entity;
+      edit(model, (b) => {
+        // AutoCAD's LEADER command makes the leader first, then its MTEXT.
+        leader = b.addEntity({ owner: old.owner, layer: old.layer, geom: old.geom });
+        note = b.addEntity({
+          owner: text.owner,
+          layer: text.layer,
+          geom: { ...text.geom, text: 'NEW NOTE' } as EntityGeometry,
+          reactors: [leader.handle],
+        });
+        leader = b.updateEntity(leader.id, {
+          geom: { ...old.geom, annotation: note.handle } as EntityGeometry,
+        });
+      });
+      const bytes = save(model, format);
+
+      expect((reopened(bytes, leader.handle)?.geom as { annotation?: string }).annotation).toBe(
+        note.handle,
+      );
+      expect(reopened(bytes, note.handle)?.reactors, format).toEqual([leader.handle]);
+      // The old pair is as it was.
+      expect(reopened(bytes, text.handle)?.reactors, format).toEqual([old.handle]);
+    }
+  });
+
+  it('moves a LEADER to another annotation, and detaches it, with the reactors', () => {
+    for (const format of ['dxf', 'dwg'] as const) {
+      const model = open();
+      const leader = find(model, 'LEADER');
+      const text = find(model, 'MTEXT');
+      const tolerance = find(model, 'TOLERANCE');
+      edit(model, (b) => {
+        b.updateEntity(text.id, { reactors: [] });
+        b.updateEntity(tolerance.id, { reactors: [leader.handle] });
+        b.updateEntity(leader.id, {
+          geom: { ...leader.geom, annotation: tolerance.handle, creationType: 1 } as EntityGeometry,
+        });
+      });
+      const bytes = save(model, format);
+
+      expect((reopened(bytes, leader.handle)?.geom as { annotation?: string }).annotation).toBe(
+        tolerance.handle,
+      );
+      expect(reopened(bytes, tolerance.handle)?.reactors, format).toEqual([leader.handle]);
+      expect(reopened(bytes, text.handle)?.reactors, format).toBeUndefined();
+
+      const detached = open();
+      edit(detached, (b) => {
+        b.updateEntity(text.id, { reactors: [] });
+        const { annotation: _annotation, ...g } = leader.geom as { annotation?: string };
+        b.updateEntity(leader.id, { geom: g as EntityGeometry });
+      });
+      const again = save(detached, format);
+      expect((reopened(again, leader.handle)?.geom as { annotation?: string }).annotation).toBe(
+        undefined,
+      );
+      expect(reopened(again, text.handle)?.reactors, format).toBeUndefined();
+    }
+  });
+
   it('writes an edited TOLERANCE, on a −Z plane too', () => {
     for (const changes of [
       { position: P(4, 5), rotation: 0.75, text: '{\\Fgdt;r}%%v0.2', elevation: 2 },
@@ -473,6 +541,10 @@ describe('triyaToAcad annotations', () => {
     const added: Entity[] = [];
     edit(model, (b) => {
       for (const geom of geoms) added.push(b.addEntity({ owner: space, layer, geom }));
+      // The MTEXT the second leader annotates points back at it too.
+      const text = find(model, 'MTEXT');
+      const second = added.find((e) => (e.geom as { annotation?: string }).annotation)!;
+      b.updateEntity(text.id, { reactors: [...(text.reactors ?? []), second.handle] });
     });
     const bytes = save(model);
 
@@ -525,6 +597,62 @@ describe('triyaToAcad annotations', () => {
       (b, m) => {
         const e = find(m, 'LEADER');
         b.updateEntity(e.id, { geom: { ...e.geom, annotation: 'FFFFF' } as EntityGeometry });
+      },
+      (b, m) => {
+        // An annotation that does not point back at its leader.
+        const e = find(m, 'LEADER');
+        const t = find(m, 'TOLERANCE');
+        b.updateEntity(e.id, { geom: { ...e.geom, annotation: t.handle } as EntityGeometry });
+        b.updateEntity(find(m, 'MTEXT').id, { reactors: [] });
+      },
+      (b, m) => {
+        // The old annotation still points at the leader.
+        const e = find(m, 'LEADER');
+        const t = find(m, 'TOLERANCE');
+        b.updateEntity(t.id, { reactors: [e.handle] });
+        b.updateEntity(e.id, { geom: { ...e.geom, annotation: t.handle } as EntityGeometry });
+      },
+      (b, m) => {
+        // A new annotation that does not point back at its leader.
+        const e = find(m, 'LEADER');
+        const t = find(m, 'MTEXT');
+        const n = b.addEntity({ owner: t.owner, layer: t.layer, geom: t.geom });
+        b.updateEntity(t.id, { reactors: [] });
+        b.updateEntity(e.id, { geom: { ...e.geom, annotation: n.handle } as EntityGeometry });
+      },
+      (b, m) => {
+        // AutoCAD annotates a leader with MTEXT, a TOLERANCE or a block reference only.
+        const e = find(m, 'LEADER');
+        const d = find(m, 'DIMENSION', 'linear');
+        b.updateEntity(d.id, { reactors: [e.handle] });
+        b.updateEntity(find(m, 'MTEXT').id, { reactors: [] });
+        b.updateEntity(e.id, { geom: { ...e.geom, annotation: d.handle } as EntityGeometry });
+      },
+      (b, m) => {
+        // An annotation in another space than its leader.
+        const e = find(m, 'LEADER');
+        const t = find(m, 'MTEXT');
+        const paper = [...m.tables.blockRecords.values()].find(
+          (r) => r.name.toUpperCase() === '*PAPER_SPACE',
+        )!.handle;
+        const n = b.addEntity({ owner: paper, layer: t.layer, geom: t.geom, reactors: [e.handle] });
+        b.updateEntity(t.id, { reactors: [] });
+        b.updateEntity(e.id, { geom: { ...e.geom, annotation: n.handle } as EntityGeometry });
+      },
+      (b, m) => {
+        // A reactor naming a leader that does not annotate the entity.
+        const e = find(m, 'LEADER');
+        const t = find(m, 'TOLERANCE');
+        b.updateEntity(t.id, { reactors: [e.handle] });
+      },
+      (b, m) => {
+        // A reactor that is no leader's (an object reactor Triya does not write yet).
+        const t = find(m, 'TOLERANCE');
+        b.updateEntity(t.id, { reactors: [find(m, 'DIMENSION', 'linear').handle] });
+      },
+      (b, m) => {
+        // Dropping the reactor of the leader the MTEXT still annotates.
+        b.updateEntity(find(m, 'MTEXT').id, { reactors: [] });
       },
       (b, m) => {
         // acad-ts writes a hook line exactly when a leader has text and a horizontal direction.
