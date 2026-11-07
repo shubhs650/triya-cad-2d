@@ -68,7 +68,7 @@ const ROWS = ['data', 'title', 'header'] as const;
 const EDGES = ['top', 'inside horizontal', 'bottom', 'left', 'inside vertical', 'right'] as const;
 
 /** The lineweights AutoCAD offers, in hundredths of a millimetre (DXF 370's values). */
-const LINEWEIGHTS: readonly number[] = [
+export const LINEWEIGHTS: readonly number[] = [
   0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200,
   211,
 ];
@@ -269,7 +269,7 @@ function cellStyleProblems(
   return out;
 }
 
-function colorProblems(
+export function colorProblems(
   version: ACadVersion | undefined,
   format: CadFormat | undefined,
   k: string,
