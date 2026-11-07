@@ -90,6 +90,7 @@ export function planBlocks(
   const defs = new Map(model.blocks);
   const records = planRecords(doc, baseRecords, after, r, {
     what: 'block',
+    removable: true,
     type: BlockRecord,
     make: (a) => {
       const acad = new BlockRecord(a.name);

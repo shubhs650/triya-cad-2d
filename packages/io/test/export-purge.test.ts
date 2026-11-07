@@ -107,11 +107,16 @@ const names = (model: DocumentModel, table: TableName): string[] =>
     .map((r) => r.name.toUpperCase())
     .sort();
 
-/** What PURGE (or LAYDEL, VIEW Delete, …) takes: a table's record, or a block and its record. */
+/**
+ * What PURGE (or LAYDEL, VIEW Delete, …) takes: a table's record, or a block and its record
+ * (with its entities, which the engine wants gone first).
+ */
 function purge(b: ChangeSetBuilder, model: DocumentModel, table: TableName, name: string): void {
   const h = named(model, table, name).handle;
-  if (table === 'blockRecords') b.removeBlock(h);
-  else b.removeTableRecord(table, h);
+  if (table === 'blockRecords') {
+    for (const id of model.blockEntities(h)) b.removeEntity(id);
+    b.removeBlock(h);
+  } else b.removeTableRecord(table, h);
 }
 
 /** Saves `model` over a fresh read of `bytes` and maps the result back. */
@@ -278,9 +283,9 @@ describe('TriyaToAcad PURGE', () => {
     expect(problems('appIds', 'ACAD')).toContainEqual(
       expect.stringMatching(/ACAD cannot be purged$/),
     );
-    expect(problems('blockRecords', '*Model_Space')).toContainEqual(
-      expect.stringMatching(/a layout's block goes with its layout/),
-    );
+    expect(
+      refused((b, model) => purge(b, model, 'blockRecords', '*Paper_Space'), bytes),
+    ).toContainEqual(expect.stringMatching(/a layout's block goes with its layout/));
   });
 
   it('refuses the tables this part does not purge', () => {
@@ -290,6 +295,6 @@ describe('TriyaToAcad PURGE', () => {
         (b, model) => b.removeTableRecord('vports', named(model, 'vports', '*Active').handle),
         bytes,
       ),
-    ).toContainEqual(expect.stringMatching(/removing a viewport configuration/));
+    ).toContainEqual(expect.stringMatching(/: removing a viewport$/));
   });
 });

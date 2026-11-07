@@ -52,6 +52,7 @@ import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
 import { planTableStyles, writeTableStyles } from './table-styles';
 import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
+import { planPurge, writePurge } from './purge';
 import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
 import { reactorProblems } from './reactors';
 import { changedApps, xdataChanges } from './xdata';
@@ -390,6 +391,8 @@ export function triyaToAcad(
   // Before the entities: a new block holds entities and INSERTs, dimensions and tables name it.
   const blocks = planBlocks(original, base, model, r, format, drawOrder);
   const { plan: p, problems } = plan(original, base, model, r, format);
+  // After the entities: a record the save removes may lose its last referrer in the same save.
+  const purge = planPurge(original, base, model, r, p.removed);
   problems.unshift(
     ...header.problems,
     ...textStyles.problems,
@@ -403,6 +406,7 @@ export function triyaToAcad(
     ...layouts.problems,
     ...blocks.problems,
     ...groups.problems,
+    ...purge.problems,
   );
   problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
@@ -463,6 +467,8 @@ export function triyaToAcad(
   writeGroupMembers(r, groups.plan);
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
+  // Last: nothing written above may still refer to what goes.
+  writePurge(purge.plan);
   // New objects are allocated above $HANDSEED; the seed written back covers every handle the
   // engine handed out, used or not, as AutoCAD skips handles of cancelled objects, and every
   // held child the save numbered.
