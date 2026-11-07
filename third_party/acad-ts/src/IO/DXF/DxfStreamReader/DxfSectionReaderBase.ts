@@ -477,6 +477,7 @@ export abstract class DxfSectionReaderBase {
         template.layerName = this._reader.valueAsString;
         break;
       case 67:
+        template.isPaperSpace = this._reader.valueAsShort === 1;
         break;
       case 92:
       case 160:
@@ -2204,6 +2205,7 @@ export abstract class DxfSectionReaderBase {
         tmp.sunHandle = this._reader.valueAsHandle;
         return true;
       case 67:
+        template.isPaperSpace = this._reader.valueAsShort === 1;
         return true;
       case 68:
         // Off (0), or on with its stacking order (1 for the active viewport).

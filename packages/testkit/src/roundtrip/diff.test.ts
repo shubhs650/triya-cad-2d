@@ -6,6 +6,7 @@ import type { AttributeEntity, Vertex } from '@node-projects/acad-ts';
 import { readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { structuralDiff, summarizeDiff } from './diff.ts';
+import { withPinnedClock } from './clock.ts';
 import { documentObjects } from './handle-coverage.ts';
 import { ACadVersion, entityOfType, twinDocuments } from './fixtures.ts';
 
@@ -260,5 +261,33 @@ describe('summarizeDiff', () => {
       { key: 'LWPOLYLINE vertices[].bulge', count: 2 },
       { key: 'LINE <missing>', count: 1 },
     ]);
+  });
+  it('matches R12 objects whose made-up handles moved, through handleOfB (M1-89)', () => {
+    // acad-ts numbers the R12 objects that state no handle from $HANDSEED up, so a higher seed
+    // (a save that added an object) moves every one of them and every reference to them.
+    const bytes = readFileSync(
+      fileURLToPath(
+        new URL(
+          '../../../../corpus/public/third-party/acadsharp/sample_AC1009_ascii.dxf',
+          import.meta.url,
+        ),
+      ),
+    );
+    const text = new TextDecoder('latin1').decode(bytes);
+    const moved = text.replace('$HANDSEED\n  5\n2459\n', '$HANDSEED\n  5\n2559\n');
+    expect(moved).not.toBe(text);
+    // R12 states no $TDUCREATE, so the reader takes the clock.
+    const [a, b] = withPinnedClock(() => [
+      readCadDocument(bytes),
+      readCadDocument(Uint8Array.from(moved, (c) => c.charCodeAt(0))),
+    ]);
+    const was = a.madeUpHandles!;
+    const now = b.madeUpHandles!;
+    expect(now.first - was.first).toBe(0x100);
+    expect(structuralDiff(a, b).differences.length).toBeGreaterThan(1000);
+    const handleOfB = (h: number): number =>
+      h >= now.first && h <= now.last ? h - now.first + was.first : h;
+    // Only the seed itself differs, and it went up.
+    expect(structuralDiff(a, b, { handleOfB }).differences).toEqual([]);
   });
 });

@@ -7,6 +7,7 @@
 // acad-ts read it into, so it comes back as it was.
 
 import {
+  AppId,
   ExtendedDataControlString,
   ExtendedDataCoordinate,
   ExtendedDataInteger16,
@@ -14,6 +15,7 @@ import {
   ExtendedDataString,
   ViewportStatusFlags as F,
   XYZ,
+  type CadDocument,
   type ExtendedDataRecord,
   type Viewport,
 } from '@node-projects/acad-ts';
@@ -57,6 +59,9 @@ const R2000_FIELDS = [
   ['visualStyle', 'visual style'],
 ] as const;
 
+/** What a new viewport is compared with: the settings R12 cannot state, unset. */
+const EMPTY: Partial<ViewportGeometry> = { frozenLayers: [], plotStyleSheet: '', renderMode: 0 };
+
 /** The MVIEW group of an R12 viewport's ACAD xdata: its records and where its braces are. */
 function mview(v: Viewport): { records: ExtendedDataRecord[]; open: number; close: number } | null {
   for (const [app, data] of v.extendedData) {
@@ -81,18 +86,18 @@ function mview(v: Viewport): { records: ExtendedDataRecord[]; open: number; clos
 
 /**
  * Why the change from `before` to `after` of an R12 viewport (`v`, as read) cannot be saved;
- * `before` undefined is a new viewport.
+ * `before` undefined is a new viewport, which goes into paper space by its 67 = 1 (acad-ts
+ * patch 0134, M1-89) with the MVIEW xdata `addR12View` gives it.
  */
 export function r12ViewportProblems(
   v: Viewport | undefined,
   before: ViewportGeometry | undefined,
   after: ViewportGeometry,
 ): string[] {
-  // acad-ts reads an R12 drawing's paper-space entities (67 = 1) into *Model_Space, which has
-  // no layout, and writes them without 67.
-  if (!before || !v) return ['a new viewport: R12 paper space reads into model space (M1-89)'];
   const out: string[] = [];
-  const d = (k: keyof ViewportGeometry): boolean => !same(before[k], after[k]);
+  // A new viewport is held to an empty one: it may set nothing R12 has no place for.
+  const d = (k: keyof ViewportGeometry): boolean => !same((before ?? EMPTY)[k], after[k]);
+  if (!before && after.clipBoundary !== undefined) out.push('R12 has no viewport clip boundary');
   for (const [k, name] of R2000_FIELDS) if (d(k)) out.push(`R12 has no ${name}`);
   if (d('frozenLayers')) {
     out.push(
@@ -113,7 +118,10 @@ export function r12ViewportProblems(
   ) {
     out.push('R12 says a viewport is off only by status 0, and status 0 is always off');
   }
-  if (R12_MVIEW_FIELDS.some(d) && !mview(v)) out.push('no MVIEW xdata to hold its view');
+  // A new viewport gets its MVIEW xdata from `addR12View`.
+  if (before && v && R12_MVIEW_FIELDS.some(d) && !mview(v)) {
+    out.push('no MVIEW xdata to hold its view');
+  }
   return out;
 }
 
@@ -163,4 +171,25 @@ export function writeR12View(v: Viewport): void {
   ];
   const frozen = nested < 0 ? [] : inside.slice(nested);
   g.records.splice(g.open + 1, g.close - g.open - 1, ...view, ...frozen);
+}
+
+/**
+ * Gives a new R12 viewport the ACAD MVIEW xdata that holds its view (version 16, as AutoCAD R12
+ * writes it, and an empty group of frozen layers), then writes the view into it.
+ */
+export function addR12View(doc: CadDocument, v: Viewport): void {
+  let app = doc.appIds?.tryGetValue('ACAD') ?? null;
+  if (!app) {
+    app = new AppId('ACAD');
+    doc.appIds!.add(app);
+  }
+  v.extendedData.addWithRecords(app, [
+    new ExtendedDataString('MVIEW'),
+    new ExtendedDataControlString(false),
+    new ExtendedDataInteger16(16),
+    new ExtendedDataControlString(false),
+    new ExtendedDataControlString(true),
+    new ExtendedDataControlString(true),
+  ]);
+  writeR12View(v);
 }

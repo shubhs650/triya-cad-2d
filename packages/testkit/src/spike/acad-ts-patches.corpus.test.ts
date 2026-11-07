@@ -2828,4 +2828,76 @@ describe('acad-ts local patches (corpus-backed)', () => {
       }
     },
   );
+
+  it('0134 an R12 DXF keeps its paper space (67 = 1) through a save', () => {
+    // R12 states no owner (330) and has no LAYOUT objects: an entity is in paper space when it
+    // states 67 = 1, and AutoCAD opens that one paper space as Layout1. The sample's two
+    // viewports and its $PAPER_SPACE BLOCK and ENDBLK state it.
+    const ascii = 'third-party/acadsharp/sample_AC1009_ascii.dxf';
+    // Every record (type and handle, or block name) that states 67 = 1, from ASCII DXF text.
+    const paperRecords = (bytes: Uint8Array): string[] => {
+      const lines = new TextDecoder('latin1').decode(bytes).split(/\r?\n/);
+      const out: string[] = [];
+      let record: Map<string, string> | null = null;
+      const close = (): void => {
+        if (record?.get('67')?.trim() === '1') {
+          out.push(`${record.get('0')}:${record.get('5') ?? record.get('2') ?? ''}`);
+        }
+      };
+      for (let i = 0; i + 1 < lines.length; i += 2) {
+        const code = lines[i]!.trim();
+        const value = lines[i + 1]!.trim();
+        if (code === '0') {
+          close();
+          record = new Map([['0', value]]);
+        } else if (record && !record.has(code)) record.set(code, value);
+      }
+      close();
+      return out;
+    };
+    const original = paperRecords(corpusBytes(ascii));
+    expect(original).toEqual(['BLOCK:$PAPER_SPACE', 'ENDBLK:25C', 'VIEWPORT:267', 'VIEWPORT:26B']);
+    const spaces = (doc: CadDocument) => {
+      const paper = doc.paperSpace!;
+      return {
+        paper: [...paper.entities].map(handleHex),
+        modelViewports: [...doc.modelSpace!.entities]
+          .filter((e) => e instanceof Viewport)
+          .map(handleHex),
+        layout: paper.layout?.name,
+        listed: [...doc.layouts!].includes(paper.layout!),
+        limits: [paper.layout?.minLimits, paper.layout?.maxLimits].map((p) => [p?.x, p?.y]),
+        headerLimits: [doc.header!.paperSpaceLimitsMin, doc.header!.paperSpaceLimitsMax].map(
+          (p) => [p.x, p.y],
+        ),
+        flags: paper.layout?.layoutFlags,
+      };
+    };
+    const expected = {
+      paper: ['267', '26B'],
+      modelViewports: [],
+      layout: 'Layout1',
+      listed: true,
+      // $PSLTSCALE 1, $PLIMCHECK 0.
+      flags: LayoutFlags.PaperSpaceLinetypeScaling,
+    };
+    // The limits are $PLIMMIN/$PLIMMAX (about -0.17,-0.17 and 11.53,8.10).
+    const check = (doc: CadDocument, what: string): void => {
+      const { limits, headerLimits, ...rest } = spaces(doc);
+      expect(rest, what).toEqual(expected);
+      expect(limits, what).toEqual(headerLimits);
+      expect(limits[1]![0], what).toBeCloseTo(11.5262465589628391, 12);
+    };
+    for (const path of [ascii, 'third-party/acadsharp/sample_AC1009_binary.dxf']) {
+      check(readDxfRaw(corpusBytes(path)), path);
+    }
+    // Every header variable, as @triya/io saves (the default writes no $PLIMMIN/$PLIMMAX).
+    const config = new DxfWriterConfiguration();
+    config.writeAllHeaderVariables = true;
+    for (const binary of [false, true]) {
+      const saved = writeDxf(readDxfRaw(corpusBytes(ascii)), binary, config);
+      if (!binary) expect(paperRecords(saved)).toEqual(original);
+      check(readDxfRaw(saved), `binary ${binary}`);
+    }
+  });
 });

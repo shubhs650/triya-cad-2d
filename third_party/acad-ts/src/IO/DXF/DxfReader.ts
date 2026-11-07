@@ -166,6 +166,9 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
     const firstMadeUp = Math.max(this._document.header.handleSeed, this._builder.maxStatedHandle()) + 1;
 
     this._builder.buildDocument();
+    if (this._document.header.version !== ACadVersion.Unknown && this._document.header.version <= ACadVersion.AC1009) {
+      this._builder.addR12PaperSpaceLayout();
+    }
 		this._builder.buildDataStorage();
 
     const lastMadeUp = this._document.header.handleSeed - 1;
@@ -174,6 +177,7 @@ export class DxfReader extends CadReaderBase<DxfReaderConfiguration> {
       // when an entity refers to it, *PAPER_SPACE when the file has none, and so on).
       const read = this._builder.readObjects();
       if (this._builder.madeUpModelSpace) read.delete(this._builder.madeUpModelSpace);
+      if (this._builder.madeUpPaperSpace) read.delete(this._builder.madeUpPaperSpace);
       const added = new Set<number>();
       for (const obj of this._document.getCadObjects()) {
         if (obj.handle >= firstMadeUp && obj.handle <= lastMadeUp && !read.has(obj)) added.add(obj.handle);

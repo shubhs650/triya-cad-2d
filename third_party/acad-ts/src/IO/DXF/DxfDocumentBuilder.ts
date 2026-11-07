@@ -18,6 +18,11 @@ import { DxfReaderConfiguration } from './DxfReaderConfiguration.js';
 import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
 import { NotificationType } from '../NotificationEventHandler.js';
 import { ICadOwnerTemplate } from '../Templates/ICadOwnerTemplate.js';
+import { Layout } from '../../Objects/Layout.js';
+import { LayoutFlags } from '../../Objects/LayoutFlags.js';
+import { SpaceLineTypeScaling } from '../../Header/SpaceLineTypeScaling.js';
+import { XY } from '../../Math/XY.js';
+import { XYZ } from '../../Math/XYZ.js';
 
 export class DxfDocumentBuilder extends CadDocumentBuilder {
 	public override get ignoreProxyGraphics(): boolean { return this.configuration.ignoreProxyGraphics; }
@@ -33,6 +38,9 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
 
   public modelSpaceEntities: Set<Entity> = new Set<Entity>();
 
+  /** Entities with no owner that state 67 = 1 (R12 paper space). */
+  public paperSpaceEntities: Set<Entity> = new Set<Entity>();
+
   public modelSpaceTemplate: CadBlockRecordTemplate | null = null;
 
   public orphanTemplates: CadTemplate[] = [];
@@ -44,6 +52,9 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
 
   /** The model space record made up because the file has none (an R12 file with no BLOCKS). */
   public madeUpModelSpace: BlockRecord | null = null;
+
+  /** The paper space record made up because the file states paper-space entities but has no $PAPER_SPACE block. */
+  public madeUpPaperSpace: BlockRecord | null = null;
 
   /** 1003 xdata records whose layer had no handle yet when they were read. */
   public unnumberedXDataLayers: [ExtendedDataLayer, Layer][] = [];
@@ -57,12 +68,27 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
       this.addTemplate(this.modelSpaceTemplate);
     }
 
+    let paperSpace = this.tryGetTableEntry<BlockRecord>(BlockRecord.paperSpaceName);
+    if (paperSpace === null && this.paperSpaceEntities.size > 0) {
+      paperSpace = new BlockRecord(BlockRecord.paperSpaceName);
+      this.madeUpPaperSpace = paperSpace;
+      this.blockRecords.add(paperSpace);
+      this.addTemplate(new CadBlockRecordTemplate(paperSpace));
+    }
+
     this.createMissingHandles();
 
     for (const [record, layer] of this.unnumberedXDataLayers) record.value = layer.handle;
 
     for (const entity of this.modelSpaceEntities) {
       this.modelSpaceTemplate!.ownedObjectsHandlers.add(entity.handle);
+    }
+
+    if (paperSpace !== null) {
+      const paperSpaceTemplate = this.tryGetObjectTemplate<CadBlockRecordTemplate>(paperSpace.handle)!;
+      for (const entity of this.paperSpaceEntities) {
+        paperSpaceTemplate.ownedObjectsHandlers.add(entity.handle);
+      }
     }
 
     this.registerTables();
@@ -90,6 +116,33 @@ export class DxfDocumentBuilder extends CadDocumentBuilder {
     if (this.configuration.createDefaults) {
       this.documentToBuild.createDefaults();
     }
+  }
+
+  /**
+   * R12 has one paper space and no LAYOUT objects; AutoCAD opens it as Layout1, with the paper
+   * space limits, extents and PSLTSCALE of the header. The layout is made up like the other
+   * defaults, so an R12 save leaves it out.
+   */
+  public addR12PaperSpaceLayout(): void {
+    const doc = this.documentToBuild;
+    const record = doc.paperSpace;
+    if (record === null || record.layout !== null || doc.layouts === null) {
+      return;
+    }
+    const header = doc.header;
+    const layout = new Layout(Layout.paperLayoutName);
+    layout.tabOrder = 1;
+    layout.minLimits = new XY(header.paperSpaceLimitsMin.x, header.paperSpaceLimitsMin.y);
+    layout.maxLimits = new XY(header.paperSpaceLimitsMax.x, header.paperSpaceLimitsMax.y);
+    layout.minExtents = new XYZ(header.paperSpaceExtMin.x, header.paperSpaceExtMin.y, header.paperSpaceExtMin.z);
+    layout.maxExtents = new XYZ(header.paperSpaceExtMax.x, header.paperSpaceExtMax.y, header.paperSpaceExtMax.z);
+    layout.insertionBasePoint = new XYZ(header.paperSpaceInsertionBase.x, header.paperSpaceInsertionBase.y, header.paperSpaceInsertionBase.z);
+    layout.elevation = header.paperSpaceElevation;
+    layout.layoutFlags =
+      (header.paperSpaceLineTypeScaling === SpaceLineTypeScaling.Normal ? LayoutFlags.PaperSpaceLinetypeScaling : LayoutFlags.None) |
+      (header.paperSpaceLimitsChecking ? LayoutFlags.LimitsChecking : LayoutFlags.None);
+    layout.associatedBlock = record;
+    doc.layouts.add(layout);
   }
 
   public buildEntities(): Entity[] {
