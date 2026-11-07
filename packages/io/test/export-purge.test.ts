@@ -657,17 +657,18 @@ describe('TriyaToAcad PURGE of MLINE styles, materials, visual styles and plot s
     ).toEqual([]);
   });
 
-  it('refuses a new or changed record of these tables', () => {
+  // Materials and plot style names have writers since part 33 (export-materials-plot-styles.test.ts).
+  it('refuses a new or changed visual style', () => {
     const bytes = purgeable();
     expect(
       refused(
         (b, model) =>
-          b.updateTableRecord('materials', named(model, 'materials', 'SPARE').handle, {
+          b.updateTableRecord('visualStyles', named(model, 'visualStyles', 'SPARE').handle, {
             name: 'RENAMED',
           }),
         bytes,
         'dwg',
       ),
-    ).toEqual([expect.stringMatching(/^materials record [0-9A-F]+ changes$/)]);
+    ).toEqual([expect.stringMatching(/^visualStyles record [0-9A-F]+ changes$/)]);
   });
 });
