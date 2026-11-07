@@ -144,11 +144,18 @@ export function mergeProblems(g: TableGeometry): string[] {
   return out;
 }
 
-/** Writes the merges of `g` onto `t`: every changed cell's spans and flag, and the ranges. */
-export function writeMerges(t: TableEntity, before: TableGeometry, g: TableGeometry): void {
+/**
+ * Writes the merges of `g` onto `t`: every changed cell's spans and flag (every cell of a new
+ * table, `before` undefined), and the ranges.
+ */
+export function writeMerges(
+  t: TableEntity,
+  before: TableGeometry | undefined,
+  g: TableGeometry,
+): void {
   for (const [i, row] of g.cells.entries()) {
     for (const [j, a] of row.entries()) {
-      const b = before.cells[i]?.[j];
+      const b = before?.cells[i]?.[j];
       if (b && a.rowSpan === b.rowSpan && a.columnSpan === b.columnSpan && a.merged === b.merged) {
         continue;
       }

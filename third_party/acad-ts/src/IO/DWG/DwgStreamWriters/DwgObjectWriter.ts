@@ -2861,9 +2861,9 @@ export class DwgObjectWriter extends DwgSectionIO {
 				}
 			});
 		};
-		perRowType(TableOverrideFlags.TitleRowColor, (row) => this._writer.writeCmColor(row.contentColor));
+		perRowType(TableOverrideFlags.TitleRowColor, (row) => this._writeTableStyleColor(row.contentColor));
 		perRowType(TableOverrideFlags.TitleRowFillNone, (row) => this._writer.writeBit(row.fillNone));
-		perRowType(TableOverrideFlags.TitleRowFillColor, (row) => this._writer.writeCmColor(row.fillColor));
+		perRowType(TableOverrideFlags.TitleRowFillColor, (row) => this._writeTableStyleColor(row.fillColor));
 		perRowType(TableOverrideFlags.TitleRowAlign, (row) => this._writer.writeBitShort(row.alignment));
 		perRowType(TableOverrideFlags.TitleTextStyle, (row) => this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, row.textStyle));
 		perRowType(TableOverrideFlags.TitleRowHeight, (row) => this._writer.writeBitDouble(row.textHeight));

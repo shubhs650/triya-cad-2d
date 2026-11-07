@@ -5265,6 +5265,9 @@ export class DwgObjectReader extends DwgSectionIO {
     if (!this.r2007Plus || !value.isEmpty) {
       switch (value.valueType) {
         case CadValueType.Unknown:
+          // The writer states an unknown value as a BitLong; setValue refuses the type.
+          value.value = this._mergedReaders.readBitLong();
+          break;
         case CadValueType.Long:
           value.setValue(this._mergedReaders.readBitLong());
           break;
