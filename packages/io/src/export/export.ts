@@ -40,7 +40,7 @@ import {
   type PlotStyleNames,
   type Resolver,
 } from './entities';
-import { planDrawOrder, writeDrawOrder, type DrawOrderChanges } from './draw-order';
+import { planDrawOrder, writeDrawOrder } from './draw-order';
 import { planBlocks, writeBlocks } from './blocks';
 import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';

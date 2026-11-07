@@ -13,9 +13,10 @@
 //
 // Block definitions (M1-75 part 22) are keyed by their BLOCK_RECORD handle and travel with
 // that record: a new block adds both (BLOCK, and the dimension and table commands' anonymous
-// blocks), a removed one drops both once its entities are gone (PURGE). Layouts can be updated (renamed, reordered, given a new
-// page setup or limits, M1-75 part 20), not added or removed: a new layout needs its own
-// `*Paper_Space` block record and definition, which LAYOUT New (M6) brings with it.
+// blocks), a removed one drops both once its entities are gone (PURGE). Layouts can be
+// updated (renamed, reordered, given a new page setup or limits, M1-75 part 20), not added or
+// removed: a new layout needs its own `*Paper_Space` block record and definition, which LAYOUT
+// New (M6) brings with it.
 
 import type {
   BlockDefinition,
