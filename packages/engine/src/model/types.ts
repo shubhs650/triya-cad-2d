@@ -1293,6 +1293,20 @@ export interface BlockDefinition extends ObjectCommon {
   readonly beginHandle?: Handle;
   readonly endHandle?: Handle;
   readonly flags?: number;
+  /**
+   * Set on a dynamic block definition: its extension dictionary holds the `ACAD_ENHANCEDBLOCK`
+   * evaluation graph. Triya draws dynamic blocks in their stored state and does not evaluate
+   * them (PRD non-goal 2, FR-B3). `name` is what AutoCAD shows: the AcDbDynamicBlockTrueName
+   * xdata when there is one (R2000 saves a dynamic block under an anonymous `*U` name),
+   * otherwise the block's own name.
+   */
+  readonly dynamic?: { readonly name: string };
+  /**
+   * Set on an anonymous `*U` block holding one state of a dynamic block (the geometry a
+   * reference with changed parameters draws): the dynamic block's record, from its
+   * AcDbBlockRepBTag xdata. `dynamicBlockOf` resolves it.
+   */
+  readonly dynamicOf?: Handle;
 }
 
 export interface Layout extends ObjectCommon {
