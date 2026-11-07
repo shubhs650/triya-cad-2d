@@ -89,7 +89,12 @@ function layerProblems(
     out.push(`a layer lineweight cannot be ${a.lineweight}`);
   if (changed('material') && a.material && !resolve(r, a.material, Material))
     out.push(`material ${a.material} does not exist`);
-  if (changed('plotStyle') && a.plotStyle && !r.store.original(a.plotStyle))
+  if (
+    changed('plotStyle') &&
+    a.plotStyle &&
+    !r.store.original(a.plotStyle) &&
+    !r.created.has(a.plotStyle)
+  )
     out.push(`plot style ${a.plotStyle} does not exist`);
   if (version !== undefined && version <= ACadVersion.AC1009) {
     for (const k of NOT_IN_R12) {

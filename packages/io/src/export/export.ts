@@ -37,7 +37,6 @@ import {
   same,
   tableCellProblems,
   writeEntity,
-  type PlotStyleNames,
   type Resolver,
 } from './entities';
 import { planDrawOrder, writeDrawOrder } from './draw-order';
@@ -56,6 +55,12 @@ import { planGroups, writeGroupMembers, writeGroups } from './groups';
 import { planLayouts, writeLayouts } from './layouts';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
+import {
+  planMaterials,
+  planPlotStyles,
+  writeMaterials,
+  writePlotStyles,
+} from './materials-plot-styles';
 import { planMLineStyles, writeMLineStyles } from './mline-styles';
 import { planTableStyles, writeTableStyles } from './table-styles';
 import { planLinetypes, writeLinetypes } from './linetypes';
@@ -137,14 +142,16 @@ const WRITTEN_TABLES = new Set([
   'tableStyles',
   'blockRecords',
   'mlineStyles',
+  'materials',
+  'plotStyles',
 ]);
 
 /**
  * The tables PURGE is the only writer of (purge.ts, M1-75 part 29): a record that goes is
- * written, one added or changed is not yet (MATERIALS, VISUALSTYLES, plot style tables are later
- * work; MLINE styles have a writer since part 31).
+ * written, one added or changed is not (visual styles; MLINE styles have a writer since part 31,
+ * materials and plot style names since part 33).
  */
-const PURGE_ONLY_TABLES = new Set(['materials', 'visualStyles', 'plotStyles']);
+const PURGE_ONLY_TABLES = new Set(['visualStyles']);
 
 /**
  * The non-entity changes no writer handles yet (header, the tables above, block definitions,
@@ -309,7 +316,12 @@ function plan(
  * default, in a named-plot-style drawing ($PSTYLEMODE 0 as the save leaves it) from R2000, which
  * introduced plot styles; elsewhere why none.
  */
-function plotStyleNames(doc: CadDocument, model: DocumentModel): PlotStyleNames {
+function plotStyleNames(
+  doc: CadDocument,
+  model: DocumentModel,
+):
+  | { readonly refusal: string; readonly names?: undefined }
+  | { readonly names: Set<Handle>; readonly refusal?: undefined } {
   const version = doc.header?.version;
   if (version !== undefined && version !== ACadVersion.Unknown && version < ACadVersion.AC1015) {
     return { refusal: `${ACadVersion[version]} has no plot style names (R2000 added them)` };
@@ -344,6 +356,8 @@ export function triyaToAcad(
   // allocated, so they meet neither an engine handle nor one the file already uses.
   let next = Math.max(Number.parseInt(model.handSeed, 16), docHeader?.handleSeed ?? 0);
   const created = new Map<Handle, CadObject>();
+  // A save may add plot style names, which entities and layers may name (part 33).
+  const plotStyles = plotStyleNames(original, model);
   const r = {
     store,
     byLayer: lineTypes?.tryGetValue('ByLayer') ?? LineType.byLayer,
@@ -351,10 +365,13 @@ export function triyaToAcad(
     allocate: () => next++,
     created,
     version: docHeader?.version,
-    plotStyles: plotStyleNames(original, model),
+    plotStyles,
   } satisfies Resolver;
   // Records first: entities and the header may name one the same save adds, a linetype's text
-  // a text style, a dimension style a text style or linetype, a layer a linetype.
+  // a text style, a dimension style a text style or linetype, a layer a linetype or plot style.
+  const plotStyleNamePlan = planPlotStyles(original, base, model, r, plotStyles.refusal);
+  for (const { after } of plotStyleNamePlan.plan.added) plotStyles.names?.add(after.handle);
+  const materials = planMaterials(original, base, model, r);
   const textStyles = planTextStyles(original, base, model, r);
   const linetypes = planLinetypes(original, base, model, r);
   const dimStyles = planDimStyles(original, base, model, r, format);
@@ -395,6 +412,8 @@ export function triyaToAcad(
   const purge = planPurge(original, base, model, r, p.removed);
   problems.unshift(
     ...header.problems,
+    ...plotStyleNamePlan.problems,
+    ...materials.problems,
     ...textStyles.problems,
     ...linetypes.problems,
     ...dimStyles.problems,
@@ -412,6 +431,8 @@ export function triyaToAcad(
   problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
 
+  writePlotStyles(original, plotStyleNamePlan.plan);
+  writeMaterials(materials.plan);
   writeTextStyles(original, textStyles.plan);
   writeLinetypes(original, r, linetypes.plan);
   writeDimStyles(original, r, dimStyles.plan);
