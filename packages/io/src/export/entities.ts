@@ -154,7 +154,16 @@ import type {
   ViewportGeometry,
   XlineGeometry,
 } from '@triya/engine';
+import type { CadFormat } from '../read';
 import type { PassthroughStore } from './passthrough';
+import {
+  formatFileProblems,
+  formatValueProblems,
+  mergeProblems,
+  mergesChange,
+  writeCellFormat,
+  writeMerges,
+} from './table-cells';
 import { writeXdata, xdataProblems } from './xdata';
 
 const TWO_PI = 2 * Math.PI;
@@ -1975,8 +1984,8 @@ const gridOf = (g: TableGeometry, rows: number, columns: number): boolean =>
  * heights and column widths, cell text and blocks, cell rotation, the table style and the `*T`
  * block. The `*T` block, which AutoCAD draws the table from, is written as it is: regenerating it
  * from the new content is the table engine's (M4-05), as a dimension's block is the dimension
- * engine's. What changes the grid or formatting (rows and columns added or removed, merges, cell
- * formats, table-wide overrides) is refused for now; so is a new table, which needs a `*T` block
+ * engine's. Merges and cell formats are written by table-cells.ts (M1-75 part 26). Rows and
+ * columns added or removed and table-wide overrides are refused for now; so is a new table, which needs a `*T` block
  * of its own that only the TABLE command can make (block definitions, M5).
  */
 const tableWriter: Writer<TableGeometry> = {
@@ -2001,14 +2010,10 @@ const tableWriter: Writer<TableGeometry> = {
     }
     if (g.rowHeights.some((h) => !(h > 0))) out.push('a row height of 0 or less');
     if (g.columnWidths.some((w) => !(w > 0))) out.push('a column width of 0 or less');
-    let merges = false;
-    let formats = false;
+    if (mergesChange(before, g)) out.push(...mergeProblems(g));
     for (const [i, j, b, a] of cellPairs(before, g)) {
       const at = `cell (${i}, ${j})`;
-      if (a.rowSpan !== b.rowSpan || a.columnSpan !== b.columnSpan || a.merged !== b.merged) {
-        merges = true;
-      }
-      if (!same(a.format, b.format)) formats = true;
+      out.push(...formatValueProblems(r, a, b).map((p) => `${at}: ${p}`));
       if (a.type !== b.type) {
         out.push(`${at}: a change between text and block`);
         continue;
@@ -2023,8 +2028,6 @@ const tableWriter: Writer<TableGeometry> = {
         out.push(`${at}: a block in a text cell`);
       }
     }
-    if (merges) out.push('merged cells change');
-    if (formats) out.push('cell formats change (M1-75)');
     return out;
   },
   write(r, e, before, g) {
@@ -2055,8 +2058,10 @@ const tableWriter: Writer<TableGeometry> = {
           }
         }
         if (!b || b.rotation !== a.rotation) cell.rotation = a.rotation;
+        if (!same(b?.format, a.format)) writeCellFormat(r, cell, b?.format, a.format);
       }
     }
+    if (before && mergesChange(before, g)) writeMerges(t, before, g);
   },
 };
 
@@ -2092,14 +2097,21 @@ export function tableCellProblems(
   acad: TableEntity,
   before: TableGeometry,
   after: TableGeometry,
-  dwgFrom2010: boolean,
+  version: ACadVersion | undefined,
+  format: CadFormat | undefined,
 ): string[] {
   const out: string[] = [];
   if (!gridOf(after, acad.rows.length, acad.columns.length)) return out;
+  const dwgFrom2010 = format === 'dwg' && version !== undefined && version >= ACadVersion.AC1024;
   for (const [i, j, b, a] of cellPairs(before, after)) {
     const at = `cell (${i}, ${j})`;
     const cell = acad.rows[i]?.cells[j];
     if (!cell) continue;
+    out.push(
+      ...formatFileProblems(b.format, a.format, version, format, dwgFrom2010).map(
+        (p) => `${at}: ${p}`,
+      ),
+    );
     if (b.text !== a.text || b.block !== a.block) {
       const k = cell.contents[0];
       if (cell.contents.length > 1) out.push(`${at} holds more than one content`);
