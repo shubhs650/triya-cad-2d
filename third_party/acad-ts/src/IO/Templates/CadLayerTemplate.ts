@@ -25,6 +25,10 @@ export class CadLayerTemplate extends CadTableEntryTemplate<Layer> {
 	protected override _build(builder: CadDocumentBuilder): void {
 		super._build(builder);
 
+		// The layer's plot style name (DWG R2000+; the DXF reader sets 390 on the layer itself):
+		// upstream read the handle and dropped it.
+		if (this.plotStyleHandle) this.cadObject.plotStyleName = this.plotStyleHandle;
+
 		// The layer's material (DXF 347, DWG R2007+): upstream looked it up and dropped it.
 		const material = builder.tryGetCadObject<Material>(this.materialHandle);
 		if (material instanceof Material) {

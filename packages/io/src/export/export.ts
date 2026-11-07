@@ -11,6 +11,8 @@ import type { CadDocument, CadObject } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   BlockRecord,
+  CadDictionary,
+  CadDictionaryWithDefault,
   Entity as AcadEntity,
   LineType,
   TableEntity,
@@ -34,6 +36,7 @@ import {
   same,
   tableCellProblems,
   writeEntity,
+  type PlotStyleNames,
   type Resolver,
 } from './entities';
 import {
@@ -317,6 +320,28 @@ function plan(
 }
 
 /**
+ * The plot style names an entity may name (M1-75 part 21): the ACAD_PLOTSTYLENAME entries and its
+ * default, in a named-plot-style drawing ($PSTYLEMODE 0 as the save leaves it) from R2000, which
+ * introduced plot styles; elsewhere why none.
+ */
+function plotStyleNames(doc: CadDocument, model: DocumentModel): PlotStyleNames {
+  const version = doc.header?.version;
+  if (version !== undefined && version !== ACadVersion.Unknown && version < ACadVersion.AC1015) {
+    return { refusal: `${ACadVersion[version]} has no plot style names (R2000 added them)` };
+  }
+  const mode = model.header.get('$PSTYLEMODE') ?? doc.header?.plotStyleMode;
+  if (mode === 1 || mode === true) {
+    return { refusal: 'a plot style name in a colour-dependent drawing ($PSTYLEMODE 1)' };
+  }
+  const dict = doc.rootDictionary?.getEntry<CadDictionary>(CadDictionary.acadPlotStyleName);
+  const names = new Set<Handle>(dict?.entryHandles.map(hex) ?? []);
+  if (dict instanceof CadDictionaryWithDefault && dict.defaultEntry) {
+    names.add(hex(dict.defaultEntry.handle));
+  }
+  return { names };
+}
+
+/**
  * Applies the Triya document's differences from `original`'s own mapping onto `original`, by
  * handle (ARCHITECTURE.md §6.1). Throws `UnsupportedChangeError`, leaving `original` as it was,
  * when a difference has no writer yet (for the `format` the save is for, when given).
@@ -340,6 +365,8 @@ export function triyaToAcad(
     byBlock: lineTypes?.tryGetValue('ByBlock') ?? LineType.byBlock,
     allocate: () => next++,
     created,
+    version: docHeader?.version,
+    plotStyles: plotStyleNames(original, model),
   } satisfies Resolver;
   // Records first: entities and the header may name one the same save adds, a linetype's text
   // a text style, a dimension style a text style or linetype, a layer a linetype.

@@ -48,6 +48,8 @@ import {
   LeaderLine,
   LeaderRoot,
   Line,
+  AcdbPlaceHolder,
+  EntityPlotStyleType,
   LineType,
   LineTypeSegment,
   LineTypeShapeFlags,
@@ -1787,6 +1789,50 @@ describe('acad-ts local patches', () => {
     }
   });
 
+  it('0154 an entity keeps its plot style name (DXF 390, DWG R2000+) through a save', () => {
+    // In a named-plot-style drawing ($PSTYLEMODE 0) an entity names its plot style by a hard
+    // pointer to an ACDBPLACEHOLDER (DXF 390; DWG plot style flags 11 and the handle), and a DWG
+    // states ByLayer, ByBlock and the dictionary default as the flags 00, 01 and 10. Unpatched,
+    // both readers dropped it and both writers wrote ByLayer.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    doc.header!.plotStyleMode = 0;
+    const style = new AcdbPlaceHolder('TRIYA_PLOT_STYLE');
+    doc.rootDictionary!.add(style);
+    const lines = [0, 1, 2, 3].map((i) => {
+      const line = new Line(new XYZ(i, 0, 0), new XYZ(i, 1, 0));
+      doc.entities!.add(line);
+      return line;
+    });
+    lines[1]!.plotStyleType = EntityPlotStyleType.ByBlock;
+    lines[2]!.plotStyleType = EntityPlotStyleType.ByDictionaryDefault;
+    lines[3]!.plotStyleType = EntityPlotStyleType.ByObjectId;
+    lines[3]!.plotStyleName = style.handle;
+    const styles = (d: CadDocument) =>
+      lines.map((l) => {
+        const e = d.getCadObject(l.handle) as Line;
+        return [e.plotStyleType, e.plotStyleName];
+      });
+
+    const all = [
+      [EntityPlotStyleType.ByLayer, 0],
+      [EntityPlotStyleType.ByBlock, 0],
+      [EntityPlotStyleType.ByDictionaryDefault, 0],
+      [EntityPlotStyleType.ByObjectId, style.handle],
+    ];
+    expect(styles(dwgRoundTrip(doc))).toEqual(all);
+    doc.header!.version = ACadVersion.AC1015;
+    expect(styles(dwgRoundTrip(doc))).toEqual(all);
+    // DXF has 390 only: ByBlock and the dictionary default have no group of their own.
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+      expect(styles(back), `binary ${binary}`).toEqual([
+        [EntityPlotStyleType.ByLayer, 0],
+        [EntityPlotStyleType.ByLayer, 0],
+        [EntityPlotStyleType.ByLayer, 0],
+        [EntityPlotStyleType.ByObjectId, style.handle],
+      ]);
+    }
+  });
   // A CELLSTYLEMAP cell style as AutoCAD saves one, with overrides a style may carry.
   function styleMapDocument(version: ACadVersion): { doc: CadDocument; map: CellStyleMap } {
     const doc = new CadDocument(version);
@@ -1836,7 +1882,7 @@ describe('acad-ts local patches', () => {
     ],
   });
 
-  it('0152 the DXF TABLEFORMAT states 170, 91 and 93, and GRIDFORMAT 90 and 91, where AutoCAD does', () => {
+  it('0155 the DXF TABLEFORMAT states 170, 91 and 93, and GRIDFORMAT 90 and 91, where AutoCAD does', () => {
     // AutoCAD's TABLEFORMAT is the DWG cell style record in DXF codes: 170 the data flag, 91 the
     // cell style's own override flags, 93 its content layout flags; its GRIDFORMAT states the
     // border's override flags at 90 and its type at 91 (every corpus DXF: 90 = 0, 91 = 1, as
@@ -1875,7 +1921,7 @@ describe('acad-ts local patches', () => {
     ['R2000', ACadVersion.AC1015],
     ['R2004', ACadVersion.AC1018],
     ['R2007', ACadVersion.AC1021],
-  ])('0153 the DWG writer and reader keep a CELLSTYLEMAP (%s)', (_name, version) => {
+  ])('0156 the DWG writer and reader keep a CELLSTYLEMAP (%s)', (_name, version) => {
     // AutoCAD 2008 and later save the CELLSTYLEMAP in a DWG before R2010 too. Unpatched,
     // acad-ts read it as an unknown object (so it could not be edited) and could not write
     // one it read from DXF ("Object not implemented"); before R2004 its colours are full

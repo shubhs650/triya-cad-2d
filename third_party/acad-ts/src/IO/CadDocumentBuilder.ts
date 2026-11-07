@@ -260,6 +260,26 @@ export abstract class CadDocumentBuilder {
 		this.documentToBuild.registerCollection(this.vPorts);
 	}
 
+	private _found = new Map<string, CadObject | null>();
+
+	/**
+	 * The first object read that `test` accepts, remembered under `key`: for a reference a file
+	 * states by flag rather than by handle (a DWG entity's ByBlock material).
+	 */
+	findCadObject(key: string, test: (o: CadObject) => boolean): CadObject | null {
+		if (!this._found.has(key)) {
+			let found: CadObject | null = null;
+			for (const template of this.templatesMap.values()) {
+				if (test(template.cadObject)) {
+					found = template.cadObject;
+					break;
+				}
+			}
+			this._found.set(key, found);
+		}
+		return this._found.get(key) ?? null;
+	}
+
 	tryGetCadObject<T extends CadObject>(handle: number | null | undefined): T | null {
 		if (handle == null || handle === 0) {
 			return null;

@@ -16,7 +16,7 @@
 // as the CELLSTYLEMAP the style's extension dictionary names
 // (ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP), in every DXF they save and in a DWG before
 // R2010: a row's edit is written to its cell style there too, so that the two still agree
-// (acad-ts reads and writes the DWG one since patch 0153, M1-98).
+// (acad-ts reads and writes the DWG one since patch 0156, M1-98).
 //
 // The record's margins are table-wide, but every named cell style holds its own (AutoCAD's
 // samples state the Table cell style's in each): a cell style whose margin is the one the edit

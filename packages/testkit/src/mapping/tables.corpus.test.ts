@@ -782,7 +782,7 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
   it('maps every TABLESTYLE CELLSTYLEMAP like the row styles it is kept in step with (M1-96)', () => {
     // AutoCAD 2008 and later save a table style's named cell styles beside its row styles in
     // every DXF (and a DWG before R2010), and the two say the same; Triya's saves keep them so.
-    // A DWG before R2010 keeps it too, which acad-ts reads since patch 0153 (M1-98).
+    // A DWG before R2010 keeps it too, which acad-ts reads since patch 0156 (M1-98).
     const problems: string[] = [];
     let compared = 0;
     let dwgs = 0;

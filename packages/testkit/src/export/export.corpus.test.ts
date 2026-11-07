@@ -957,7 +957,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
           mapChecks.flatMap((p) => p ?? []),
           f.path,
         ).toEqual([]);
-        // M1-98: a DWG before R2010 keeps one too, read and kept in step since patch 0153.
+        // M1-98: a DWG before R2010 keeps one too, read and kept in step since patch 0156.
         if (/sample_AC10(14|15|18|21)\.dwg$/.test(f.path))
           expect(mapChecks.filter((p) => p !== undefined).length, f.path).toBeGreaterThan(0);
         const wrongViewRecords = (['ucs', 'views', 'vports'] as const).flatMap((table) => {

@@ -1,8 +1,8 @@
 diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
-index cb73be5..6b55b8d 100644
+index 4d95ae3..687a088 100644
 --- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
 +++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
-@@ -85,6 +85,7 @@ import { CadFieldTemplate } from '../../Templates/CadFieldTemplate.js';
+@@ -86,6 +86,7 @@ import { CadFieldTemplate } from '../../Templates/CadFieldTemplate.js';
  import { CadFieldListTemplate } from '../../Templates/CadFieldListTemplate.js';
  import { CadValueTemplate } from '../../Templates/CadValueTemplate.js';
  import { CadWallTemplate } from '../../Templates/CadWallTemplate.js';
@@ -10,7 +10,7 @@ index cb73be5..6b55b8d 100644
  import { CadTableCellTemplate, CadCellStyleTemplate, CadTableCellContentTemplate, CadTableCellContentFormatTemplate, CadTableAttributeTemplate } from '../../Templates/CadTableEntityTemplate.js';
  import { NotificationType } from '../../NotificationEventHandler.js';
  import { Entity } from '../../../Entities/Entity.js';
-@@ -1012,6 +1013,7 @@ export class DwgObjectReader extends DwgSectionIO {
+@@ -1017,6 +1018,7 @@ export class DwgObjectReader extends DwgSectionIO {
        case DxfFileToken.objectVisualStyle: template = this._readVisualStyle(); break;
        case DxfFileToken.objectPlotSettings: template = this._readPlotSettings(); break;
        case DxfFileToken.objectTableStyle: template = this._readTableStyle(); break;
@@ -18,7 +18,7 @@ index cb73be5..6b55b8d 100644
        case DxfFileToken.blkRefObjectContextData: template = this._readBlkRefObjectContextData(); break;
        case DxfFileToken.mTextAttributeObjectContextData: template = this._readMTextAttributeObjectContextData(); break;
        case DxfFileToken.objectFieldList: template = this._readFieldList(); break;
-@@ -3790,6 +3792,27 @@ export class DwgObjectReader extends DwgSectionIO {
+@@ -3795,6 +3797,27 @@ export class DwgObjectReader extends DwgSectionIO {
      return template;
    }
  
@@ -47,10 +47,10 @@ index cb73be5..6b55b8d 100644
      const visualStyle = new VisualStyle();
      const template = new CadNonGraphicalObjectTemplate(visualStyle);
 diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
-index 7080d2c..ae801cd 100644
+index b72f62e..2123bf8 100644
 --- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
 +++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
-@@ -198,6 +198,7 @@ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalO
+@@ -199,6 +199,7 @@ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalO
  import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
  import { VisualStyle } from '../../../Objects/VisualStyle.js';
  import { TableStyle } from '../../../Objects/TableStyle.js';
@@ -58,7 +58,7 @@ index 7080d2c..ae801cd 100644
  import { writeDwgVisualStyle } from '../DwgVisualStyle.js';
  import { ProxyObject } from '../../../Objects/ProxyObject.js';
  import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
-@@ -3591,6 +3592,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+@@ -3608,6 +3609,8 @@ export class DwgObjectWriter extends DwgSectionIO {
  		} else if (obj instanceof DynamicBlockPurgePreventer) {
  			this._writer.writeBitShort(obj.version);
  			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, obj.block ?? obj.blockHandle);
@@ -67,7 +67,7 @@ index 7080d2c..ae801cd 100644
  		} else if (obj instanceof TableStyle) {
  			this._writeTableStyle(obj);
  		} else if (obj instanceof Material) {
-@@ -3926,6 +3929,17 @@ export class DwgObjectWriter extends DwgSectionIO {
+@@ -3943,6 +3946,17 @@ export class DwgObjectWriter extends DwgSectionIO {
  		this._writeRowCellStyle(tableStyle.headerCellStyle);
  	}
  
@@ -85,7 +85,7 @@ index 7080d2c..ae801cd 100644
  	private _writeTableStyleColor(color: Color): void {
  		if (this.r2004Pre && this._writer instanceof DwgMergedStreamWriter) {
  			this._writer.writeMergedCmColor(color);
-@@ -3970,7 +3984,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+@@ -3987,7 +4001,7 @@ export class DwgObjectWriter extends DwgSectionIO {
  
  		this._writer.writeBitLong(style.cellPropertyOverrideFlags ?? style.propertyOverrideFlags);
  		this._writer.writeBitLong(style.tableCellStylePropertyFlags);
@@ -94,7 +94,7 @@ index 7080d2c..ae801cd 100644
  		this._writer.writeBitLong(style.contentLayoutFlags);
  		this._writeCellContentFormat(style);
  		this._writer.writeBitShort(style.marginOverrideFlags);
-@@ -4002,7 +4016,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+@@ -4019,7 +4033,7 @@ export class DwgObjectWriter extends DwgSectionIO {
  	private _writeBorder(border: CellBorder): void {
  		this._writer.writeBitLong(border.propertyOverrideFlags);
  		this._writer.writeBitLong(border.type);
@@ -103,7 +103,7 @@ index 7080d2c..ae801cd 100644
  		this._writer.writeBitLong(border.lineWeight);
  		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, border.lineType);
  		this._writer.writeBitLong(border.isInvisible ? 1 : 0);
-@@ -4018,7 +4032,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+@@ -4035,7 +4049,7 @@ export class DwgObjectWriter extends DwgSectionIO {
  		this._writer.writeBitDouble(format.rotation);
  		this._writer.writeBitDouble(format.scale);
  		this._writer.writeBitLong(format.alignment);

@@ -1,0 +1,124 @@
+diff --git a/src/Entities/Entity.ts b/src/Entities/Entity.ts
+index 4faafbb..108c3e8 100644
+--- a/src/Entities/Entity.ts
++++ b/src/Entities/Entity.ts
+@@ -5,6 +5,7 @@ import { Color } from '../Color.js';
+ import { Layer } from '../Tables/Layer.js';
+ import { LineType } from '../Tables/LineType.js';
+ import { LineWeightType } from '../Types/LineWeightType.js';
++import { EntityPlotStyleType } from '../Header/EntityPlotStyleType.js';
+ import { Transparency } from '../Transparency.js';
+ import { DxfSubclassMarker } from '../DxfSubclassMarker.js';
+ import { CollectionChangedEventArgs } from '../CollectionChangedEventArgs.js';
+@@ -61,6 +62,15 @@ export abstract class Entity extends CadObject implements IEntity {
+ 		this._material = this.updateCollectionEntry(value, material => this._material = material, this.document?.materials ?? null);
+ 	}
+ 
++	/**
++	 * How the entity names its plot style in a named-plot-style drawing (DWG R2000+ flags; a DXF
++	 * states only ByObjectId, as 390).
++	 */
++	plotStyleType: EntityPlotStyleType = EntityPlotStyleType.ByLayer;
++
++	/** Handle of the plot style name (an ACDBPLACEHOLDER in ACAD_PLOTSTYLENAME) for ByObjectId. */
++	plotStyleName: number = 0;
++
+ 	proxyGeometries: IProxyGeometry[] = [];
+ 	get hasProxyGeometries(): boolean { return this.proxyGeometries.length > 0; }
+ 
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 3f7b8a5..4d95ae3 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -1,5 +1,6 @@
+ import { DwgSectionIO } from '../DwgSectionIO.js';
+ import { DwgSectionDefinition } from '../FileHeaders/DwgSectionDefinition.js';
++import { EntityPlotStyleType } from '../../../Header/EntityPlotStyleType.js';
+ import { DwgDocumentBuilder } from '../DwgDocumentBuilder.js';
+ import { DwgStreamReaderBase } from './DwgStreamReaderBase.js';
+ import { DwgMergedReader } from './DwgMergedReader.js';
+@@ -598,8 +599,11 @@ export class DwgObjectReader extends DwgSectionIO {
+       this._objectReader.readByte();
+     }
+ 
+-    if (this._objectReader.read2Bits() === 3) {
+-      this._handleReference();
++    // The plot style flags (00 ByLayer, 01 ByBlock, 10 dictionary default, 11 and a hard
++    // pointer): upstream read and dropped them.
++    entity.plotStyleType = this._objectReader.read2Bits() as EntityPlotStyleType;
++    if (entity.plotStyleType === EntityPlotStyleType.ByObjectId) {
++      entity.plotStyleName = this._handleReference();
+     }
+ 
+     if (this.r2010Plus) {
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index a63bf75..b72f62e 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -194,6 +194,7 @@ import { ParameterValueSet } from '../../../Objects/Evaluations/ParameterValueSe
+ import { StretchActionBase } from '../../../Objects/Evaluations/StretchActionBase.js';
+ import { DynamicBlockPurgePreventer } from '../../../Objects/DynamicBlockPurgePreventer.js';
+ import { Material, ColorMethod, MapSource } from '../../../Objects/Material.js';
++import { EntityPlotStyleType } from '../../../Header/EntityPlotStyleType.js';
+ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalObject.js';
+ import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
+ import { VisualStyle } from '../../../Objects/VisualStyle.js';
+@@ -1419,7 +1420,11 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 			this._writer.writeByte(0);
+ 		}
+ 
+-		this._writer.write2Bits(0b00);
++		// The plot style flags, and the plot style name for ByObjectId; upstream always wrote ByLayer.
++		this._writer.write2Bits(entity.plotStyleType);
++		if (entity.plotStyleType === EntityPlotStyleType.ByObjectId) {
++			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, entity.plotStyleName);
++		}
+ 
+ 		if (this._version > ACadVersion.AC1021) {
+ 			this._writer.writeBit(false);
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index e3f3adb..3a40571 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -1,4 +1,5 @@
+ import { Entity } from '../../../Entities/Entity.js';
++import { EntityPlotStyleType } from '../../../Header/EntityPlotStyleType.js';
+ import { ProxyEntity } from '../../../Entities/ProxyEntity.js';
+ import { Arc } from '../../../Entities/Arc.js';
+ import { AttributeEntity } from '../../../Entities/AttributeEntity.js';
+@@ -486,6 +487,11 @@ export abstract class DxfSectionReaderBase {
+       case 347:
+         template.materialHandle = this._reader.valueAsHandle;
+         break;
++      case 390:
++        // The entity's plot style name (named plot styles); upstream dropped it.
++        template.cadObject.plotStyleType = EntityPlotStyleType.ByObjectId;
++        template.cadObject.plotStyleName = this._reader.valueAsHandle;
++        break;
+       case 430:
+         template.bookColorName = this._reader.valueAsString;
+         break;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 53ae4b8..c4805a3 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -13,6 +13,7 @@ import { CadObject } from '../../../CadObject.js';
+ import { CadValue } from '../../../CadValue.js';
+ import { CadValueType } from '../../../CadValueType.js';
+ import { Entity } from '../../../Entities/Entity.js';
++import { EntityPlotStyleType } from '../../../Header/EntityPlotStyleType.js';
+ import { Arc } from '../../../Entities/Arc.js';
+ import { Circle } from '../../../Entities/Circle.js';
+ import { DimensionAligned } from '../../../Entities/DimensionAligned.js';
+@@ -351,6 +352,11 @@ export abstract class DxfSectionWriterBase {
+ 
+     if (this.version >= ACadVersion.AC1015) {
+       this._writer.writeIfNotDefault(370, entity.lineWeight, LineWeightType.ByLayer, map);
++      // The entity's plot style name; upstream never wrote it. DXF has no group for ByBlock or the
++      // dictionary default, which a DWG states by flag.
++      if (entity.plotStyleType === EntityPlotStyleType.ByObjectId) {
++        this._writer.write(390, entity.plotStyleName, map);
++      }
+     }
+   }
+ 

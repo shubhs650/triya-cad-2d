@@ -1,0 +1,123 @@
+diff --git a/src/IO/CadDocumentBuilder.ts b/src/IO/CadDocumentBuilder.ts
+index 3014144..b004a65 100644
+--- a/src/IO/CadDocumentBuilder.ts
++++ b/src/IO/CadDocumentBuilder.ts
+@@ -260,6 +260,26 @@ export abstract class CadDocumentBuilder {
+ 		this.documentToBuild.registerCollection(this.vPorts);
+ 	}
+ 
++	private _found = new Map<string, CadObject | null>();
++
++	/**
++	 * The first object read that `test` accepts, remembered under `key`: for a reference a file
++	 * states by flag rather than by handle (a DWG entity's ByBlock material).
++	 */
++	findCadObject(key: string, test: (o: CadObject) => boolean): CadObject | null {
++		if (!this._found.has(key)) {
++			let found: CadObject | null = null;
++			for (const template of this.templatesMap.values()) {
++				if (test(template.cadObject)) {
++					found = template.cadObject;
++					break;
++				}
++			}
++			this._found.set(key, found);
++		}
++		return this._found.get(key) ?? null;
++	}
++
+ 	tryGetCadObject<T extends CadObject>(handle: number | null | undefined): T | null {
+ 		if (handle == null || handle === 0) {
+ 			return null;
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index cb73be5..3f7b8a5 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -591,7 +591,8 @@ export class DwgObjectReader extends DwgSectionIO {
+     }
+ 
+     if (this.r2007Plus) {
+-      if (this._objectReader.read2Bits() === 3) {
++      template.materialFlags = this._objectReader.read2Bits();
++      if (template.materialFlags === 3) {
+         template.materialHandle = this._handleReference();
+       }
+       this._objectReader.readByte();
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 7080d2c..b437baf 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -1403,7 +1403,18 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		}
+ 
+ 		if (this.r2007Plus) {
+-			this._writer.write2Bits(0b00);
++			// The entity's material: 00 ByLayer (none), 01 ByBlock, 11 and a hard pointer (AutoCAD also
++			// points some entities at the ByLayer material itself). Upstream always wrote ByLayer, so a
++			// save detached every entity from its material.
++			const material = entity.material;
++			if (material === null) {
++				this._writer.write2Bits(0b00);
++			} else if (material.name.toUpperCase() === 'BYBLOCK') {
++				this._writer.write2Bits(0b01);
++			} else {
++				this._writer.write2Bits(0b11);
++				this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, material);
++			}
+ 			this._writer.writeByte(0);
+ 		}
+ 
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 35b5e1c..53ae4b8 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -317,6 +317,11 @@ export abstract class DxfSectionWriterBase {
+     if (this.version <= ACadVersion.AC1009) this._writer.write(8, entity.layer?.name ?? '0');
+     else this._writer.writeIfNotDefault(8, entity.layer?.name ?? '0', '0');
+     this._writer.writeIfNotDefault(6, entity.lineType?.name ?? 'ByLayer', 'ByLayer');
++    // The entity's material (R2007+; AutoCAD writes it only when it is not ByLayer, the default an
++    // entity reads without one). Upstream never wrote it, so a save detached every entity from it.
++    if (this.version >= ACadVersion.AC1021 && entity.material !== null) {
++      this._writer.writeHandle(347, entity.material, map);
++    }
+ 
+     if (entity.bookColor !== null) {
+       this._writer.write(62, entity.bookColor.color.getApproxIndex());
+diff --git a/src/IO/Templates/CadEntityTemplate.ts b/src/IO/Templates/CadEntityTemplate.ts
+index 649a078..b2dbeb2 100644
+--- a/src/IO/Templates/CadEntityTemplate.ts
++++ b/src/IO/Templates/CadEntityTemplate.ts
+@@ -1,5 +1,6 @@
+ import { Entity } from '../../Entities/Entity.js';
+ import { BookColor } from '../../Objects/BookColor.js';
++import { Material } from '../../Objects/Material.js';
+ import { Layer } from '../../Tables/Layer.js';
+ import { LineType } from '../../Tables/LineType.js';
+ import { CadDocumentBuilder } from '../CadDocumentBuilder.js';
+@@ -29,6 +30,9 @@ export class CadEntityTemplate extends CadTemplateT<Entity> {
+ 
+ 	materialHandle: number | null = null;
+ 
++	/** DWG R2007+ material flags: 00 ByLayer, 01 ByBlock, 11 the handle above. */
++	materialFlags: number | null = null;
++
+ 	nextEntity: number | null = null;
+ 
+ 	prevEntity: number | null = null;
+@@ -95,6 +99,16 @@ export class CadEntityTemplate extends CadTemplateT<Entity> {
+ 			}
+ 		}
+ 
++		// The entity's material (DXF 347; DWG R2007+ by handle, or by flag for ByBlock): upstream
++		// kept the handle and never assigned it, so every entity read without its material.
++		const material = builder.tryGetCadObject<Material>(this.materialHandle);
++		if (material instanceof Material) {
++			this.cadObject.material = material;
++		} else if (this.materialFlags === 1) {
++			const byBlock = builder.findCadObject('material:BYBLOCK', o => o instanceof Material && o.name.toUpperCase() === 'BYBLOCK');
++			if (byBlock instanceof Material) this.cadObject.material = byBlock;
++		}
++
+ 		if (this.proxyGraphics != null && !builder.ignoreProxyGraphics) {
+ 			this.cadObject.proxyGeometries.push(...ProxyGeometryReader.readGeometries(this.proxyGraphics));
+ 		}

@@ -1,4 +1,5 @@
 import { Entity } from '../../../Entities/Entity.js';
+import { EntityPlotStyleType } from '../../../Header/EntityPlotStyleType.js';
 import { ProxyEntity } from '../../../Entities/ProxyEntity.js';
 import { Arc } from '../../../Entities/Arc.js';
 import { AttributeEntity } from '../../../Entities/AttributeEntity.js';
@@ -485,6 +486,11 @@ export abstract class DxfSectionReaderBase {
         break;
       case 347:
         template.materialHandle = this._reader.valueAsHandle;
+        break;
+      case 390:
+        // The entity's plot style name (named plot styles); upstream dropped it.
+        template.cadObject.plotStyleType = EntityPlotStyleType.ByObjectId;
+        template.cadObject.plotStyleName = this._reader.valueAsHandle;
         break;
       case 430:
         template.bookColorName = this._reader.valueAsString;
