@@ -1987,8 +1987,48 @@ describe('acad-ts local patches', () => {
     expect(doc.blockRecords!.tryGetValue('a2')?.name).toBe('A2');
     expect(doc.blockRecords!.tryGetValue('A')).toBeUndefined();
   });
+  it.each([
+    ['DXF', 'dxf'],
+    ['binary DXF', 'dxf-binary'],
+    ['DWG', 'dwg'],
+  ] as const)(
+    '0160 a grouped entity reads with its group in its reactors once (%s)',
+    (_name, f) => {
+      // A grouped entity lists its group in its reactors (102 {ACAD_REACTORS 330}), which the
+      // reader keeps; the group template then added the member with `Group.add`, which pushed the
+      // group onto its reactors again, so every grouped entity read (and saved) the group twice.
+      const doc = new CadDocument(ACadVersion.AC1032);
+      doc.updateCollections(true, false);
+      const lines = [0, 1].map((i) => {
+        const l = new Line();
+        l.startPoint = new XYZ(i, 0, 0);
+        l.endPoint = new XYZ(i, 1, 0);
+        doc.entities!.add(l);
+        return l;
+      });
+      const group = doc.groups!.createGroup(lines, 'DOORS');
+      expect(lines.map((l) => l.reactors.map((r) => r.handle))).toEqual([
+        [group.handle],
+        [group.handle],
+      ]);
 
-  it('0160 an entity moves to another block and is reordered keeping its handle', () => {
+      const bytes = writeCadDocument(doc, {
+        format: f === 'dwg' ? 'dwg' : 'dxf',
+        binary: f === 'dxf-binary',
+      });
+      const back = readCadDocument(bytes);
+
+      expect(lines.map((l) => back.getCadObject(l.handle)!.reactors.map((r) => r.handle))).toEqual([
+        [group.handle],
+        [group.handle],
+      ]);
+      expect([...back.groups!][0]!.entities.map((e) => e.handle)).toEqual(
+        lines.map((l) => l.handle),
+      );
+    },
+  );
+
+  it('0161 an entity moves to another block and is reordered keeping its handle', () => {
     // `remove` then `add` unregisters the entity: it came back under a new handle, with no
     // reactors and its extension dictionary renumbered, so CHSPACE could not keep handles.
     const doc = new CadDocument(ACadVersion.AC1032);

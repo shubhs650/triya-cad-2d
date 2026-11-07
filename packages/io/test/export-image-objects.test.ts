@@ -384,7 +384,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
         (b) => b.addObject({ type: 'WIPEOUTVARIABLES', owner: imageDict, frame: true } as never),
         /the drawing already has its ACAD_WIPEOUT_VARS/,
       ],
-      [(b) => b.addObject({ type: 'GROUP', owner: root } as never), /new object [0-9A-F]+/],
+      [(b) => b.addObject({ type: 'XRECORD', owner: root } as never), /new object [0-9A-F]+/],
     ];
     for (const [change, message] of cases) {
       const model = open(bytes);

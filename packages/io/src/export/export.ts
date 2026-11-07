@@ -52,6 +52,7 @@ import { planBlocks, writeBlocks } from './blocks';
 import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
 import { IMAGE_OBJECT_TYPES, planImageObjects, writeImageObjects } from './image-objects';
+import { planGroups, writeGroupMembers, writeGroups } from './groups';
 import { planLayouts, writeLayouts } from './layouts';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
@@ -136,7 +137,8 @@ const WRITTEN_TABLES = new Set([
 
 /**
  * The non-entity changes no writer handles yet (header, the tables above, block definitions,
- * draw order and the image objects: header.ts, blocks.ts, draw-order.ts, image-objects.ts).
+ * draw order, the image objects and groups: header.ts, blocks.ts, draw-order.ts,
+ * image-objects.ts, groups.ts).
  */
 function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
   const out: string[] = [];
@@ -145,9 +147,10 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
     if (WRITTEN_TABLES.has(name)) continue;
     out.push(...keyedProblems(`${name} record`, baseTables[name] ?? [], table));
   }
-  // Draw order tables and the image objects have writers (draw-order.ts, image-objects.ts).
+  // Draw order tables, the image objects and groups have writers (draw-order.ts,
+  // image-objects.ts, groups.ts).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
-    o.type !== 'SORTENTSTABLE' && !IMAGE_OBJECT_TYPES.has(o.type);
+    o.type !== 'SORTENTSTABLE' && o.type !== 'GROUP' && !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
       'object',
@@ -351,6 +354,8 @@ export function triyaToAcad(
   // Before the entities: a new IMAGE may show a definition the same save adds.
   const imageObjects = planImageObjects(original, base, model, r);
   const layouts = planLayouts(original, base, model, r);
+  // Before the entities: a member's reactors may name a group the same save adds.
+  const groups = planGroups(original, base, model, r);
   // A current style variable may name a style, and an arrow-block variable a block, by the name
   // the same save gives it (RENAME).
   const renamed = new Map<CadObject, string>(
@@ -380,6 +385,7 @@ export function triyaToAcad(
     ...imageObjects.problems,
     ...layouts.problems,
     ...blocks.problems,
+    ...groups.problems,
   );
   problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
@@ -399,6 +405,7 @@ export function triyaToAcad(
   writeImageObjects(original, imageObjects.plan);
   writeLayouts(layouts.plan);
   writeBlocks(original, r, blocks.plan);
+  writeGroups(groups.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
   // it owns (§6.2 rule 3); shared objects it points to stay. Its draw order entry goes with it,
@@ -438,6 +445,7 @@ export function triyaToAcad(
     if (r12 && e instanceof Viewport) addR12View(original, e);
   }
   writeEntityOrder(original, model, r);
+  writeGroupMembers(r, groups.plan);
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
   // New objects are allocated above $HANDSEED; the seed written back covers every handle the

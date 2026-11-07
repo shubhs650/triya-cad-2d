@@ -2,7 +2,7 @@
 // BLOCK's Convert to block, the engine's `moveEntity`) and the order of a block's entities.
 //
 // A moved entity keeps its handle, extension dictionary, xdata and reactors: acad-ts's
-// `CadObjectCollection.moveTo` (patch 0160) changes its owner without unregistering it from the
+// `CadObjectCollection.moveTo` (patch 0161) changes its owner without unregistering it from the
 // document, which `remove` and `add` would do (they give it a new handle). Its draw order entry
 // in the old block goes, as AutoCAD keeps no entry for an entity outside the block.
 //
