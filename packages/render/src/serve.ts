@@ -1,6 +1,6 @@
 // The render worker's message loop, kept apart from the worker entry so tests can drive it
-// with an in-process endpoint. Messages are handled in order, so a hit test, flush or thumbnail
-// answers after every change, view and frame posted before it.
+// with an in-process endpoint. Messages are handled in order, so a hit test, flush, thumbnail or
+// extents request answers after every change, view and frame posted before it.
 
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
@@ -69,6 +69,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         break;
       case 'flush':
         port.postMessage({ type: 'reply', id: m.id });
+        break;
+      case 'extents':
+        port.postMessage({ type: 'extents', id: m.id, box: session.extents() ?? null });
         break;
       case 'thumbnail': {
         // The copy is taken now, in message order; only the answer waits for the bitmap.

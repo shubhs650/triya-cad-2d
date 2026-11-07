@@ -1,0 +1,1 @@
+- M1-35 part 2 (#197): ZOOM Extents, ZOOM All and the opening view of a drawing with no saved view now include text, measured by its glyphs in the loaded fonts, and follow edits and font changes; on `sample_AC1018.dwg` the extents now equal the ones AutoCAD saved in the file.

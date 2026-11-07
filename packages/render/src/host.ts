@@ -4,9 +4,9 @@
 // call to the render worker, which runs a RenderSession on the OffscreenCanvas. Where it cannot
 // (older Safari and Firefox), the host runs the same RenderSession on the main thread. Both
 // paths draw with the same code, so they render identically; the Playwright pixel test checks
-// that. Calls are fire-and-forget either way; the three that need an answer return promises.
+// that. Calls are fire-and-forget either way; those that need an answer return promises.
 
-import type { ChangeSet, EntityId } from '@triya/engine';
+import type { Box, ChangeSet, EntityId } from '@triya/engine';
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession, type FontSources, type RenderDocument } from './session';
@@ -196,6 +196,17 @@ export class RendererHost {
     if (this.#session) return this.#session.thumbnail(max, this.#createBitmap);
     return this.#request((id) => ({ type: 'thumbnail', id, ...max })).then((m) =>
       m.type === 'thumbnail' && m.bitmap ? m.bitmap : undefined,
+    );
+  }
+
+  /**
+   * ZOOM Extents of the space drawn, text bounded by its glyphs (M1-35 part 2), measured
+   * after everything sent so far; undefined when nothing drawn has a known extent.
+   */
+  extents(): Promise<Box | undefined> {
+    if (this.#session) return Promise.resolve(this.#session.extents());
+    return this.#request((id) => ({ type: 'extents', id })).then((m) =>
+      m.type === 'extents' && m.box ? m.box : undefined,
     );
   }
 
