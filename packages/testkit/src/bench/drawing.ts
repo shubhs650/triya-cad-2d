@@ -23,7 +23,7 @@ import {
   LwPolyline,
   MText,
   TextEntity,
-  type XY,
+  XY,
   XYZ,
   type Entity,
 } from '@node-projects/acad-ts';
@@ -47,6 +47,12 @@ export const BENCH_100K: BenchSpec = {
   layers: 20,
   seed: 100_000,
 };
+
+/**
+ * The app's canvas, in CSS pixels, in the 1366 × 768 window the app perf spec (M1-60) uses.
+ * The drawings are saved zoomed to their extents in it.
+ */
+export const BENCH_WINDOW = { width: 1341, height: 682 } as const;
 
 export const BENCH_GA: BenchSpec = {
   name: 'bench-ga',
@@ -155,6 +161,8 @@ export function benchDocument(spec: BenchSpec, version = ACadVersion.AC1032): Ca
     }
   }
 
+  saveZoomedToExtents(doc, i);
+
   // Layouts: the default one plus new ones, each with a sheet border and title block.
   doc.layouts!.add(doc.modelSpace!.layout!);
   doc.layouts!.add(doc.paperSpace!.layout!);
@@ -185,6 +193,22 @@ export function benchDocument(spec: BenchSpec, version = ACadVersion.AC1032): Ca
     sheet.entities.add(title);
   }
   return doc;
+}
+
+/**
+ * Saves the model-space view (the `*Active` VPORT) zoomed to the extents of the `n` entities'
+ * 20-unit grid cells in BENCH_WINDOW, with Zoom Extents' 5 % margin, as a drafter saves a
+ * finished drawing. The app opens a drawing in that view (M1-22 part 3), so the perf
+ * gestures start with every entity in view, as they did when the app opened at the extents.
+ */
+function saveZoomedToExtents(doc: CadDocument, n: number): void {
+  const w = Math.min(n, 1000) * 20 + 4;
+  const h = Math.ceil(n / 1000) * 20 + 4;
+  const aspect = BENCH_WINDOW.width / BENCH_WINDOW.height;
+  const active = [...doc.vPorts!].find((v) => v.name.toUpperCase() === '*ACTIVE')!;
+  active.center = new XY(w / 2, h / 2);
+  active.viewHeight = Math.max(h, w / aspect) / 0.9;
+  active.aspectRatio = aspect;
 }
 
 function entity(

@@ -1,6 +1,17 @@
-// ZOOM options and named views as view functions (M1-22 part 2). The navigation bar calls them
-// now; the ZOOM and VIEW commands will when the command line arrives (M2-01).
-import { unionBox, type Box, type ViewRecord } from '@triya/engine';
+// ZOOM options and named views as view functions (M1-22 part 2), and the views a drawing was
+// saved in (part 3). The navigation bar calls them now; the ZOOM and VIEW commands will when
+// the command line arrives (M2-01).
+import {
+  unionBox,
+  type Box,
+  type EntityInit,
+  type Handle,
+  type Vec3,
+  type ViewParams,
+  type ViewRecord,
+  type ViewportGeometry,
+  type VportRecord,
+} from '@triya/engine';
 import { fitView, type ViewTransform } from '@triya/render';
 import type { ViewportSize } from './navigate';
 
@@ -74,9 +85,7 @@ const sameView = (a: ViewTransform, b: ViewTransform): boolean =>
  * transform cannot express, so it is not restorable yet.
  */
 export function namedView(view: ViewRecord, size: ViewportSize): ViewTransform | undefined {
-  const d = view.direction;
-  const plan = Math.abs(d.x) < 1e-12 && Math.abs(d.y) < 1e-12 && d.z > 0;
-  if (!plan || Math.abs(view.twist) > 1e-12) return undefined;
+  if (!isPlan(view.direction, view.twist)) return undefined;
   if (!(view.width > 0) || !(view.height > 0)) return undefined;
   const cx = view.center.x + view.target.x;
   const cy = view.center.y + view.target.y;
@@ -87,4 +96,87 @@ export function namedView(view: ViewRecord, size: ViewportSize): ViewTransform |
     maxY: cy + view.height / 2,
   };
   return { center: { x: cx, y: cy }, scale: fitView(box, size.width, size.height, 0).scale };
+}
+
+/**
+ * Looking straight down +Z without a twist, the only views a 2D transform can show. Files
+ * store the direction at any length (geoloc.dxf: 484.29) and with rounding noise in X and Y
+ * (uncommon.dxf: -7.8e-14), so the test is relative to its length.
+ */
+function isPlan(d: Vec3, twist: number): boolean {
+  const len = Math.hypot(d.x, d.y, d.z);
+  return (
+    d.z > 0 &&
+    Math.abs(d.x) <= 1e-9 * len &&
+    Math.abs(d.y) <= 1e-9 * len &&
+    Math.abs(twist) <= 1e-12
+  );
+}
+
+/**
+ * The model-space view a drawing was saved in: the `*Active` VPORT. Several of them make a
+ * tiled-viewport configuration, and the DXF reference says the first is the current viewport;
+ * the app shows that one alone until tiled viewports come.
+ */
+export function activeVport(vports: readonly VportRecord[] | undefined): VportRecord | undefined {
+  return vports?.find((v) => v.name.toUpperCase() === '*ACTIVE');
+}
+
+/**
+ * A space's saved view at its centre and height: `height` world units fill the window's
+ * height and the width follows the window, as VIEWSIZE ("the height of the view displayed in
+ * the current viewport") stays when AutoCAD's window changes shape. The VPORT's aspect ratio
+ * is the window it was saved from, so it is not used. Undefined when there is nothing to show.
+ */
+function heightView(
+  center: { readonly x: number; readonly y: number },
+  height: number,
+  size: ViewportSize,
+): ViewTransform | undefined {
+  if (!(height > 0) || !Number.isFinite(height) || !(size.height > 0)) return undefined;
+  if (!Number.isFinite(center.x) || !Number.isFinite(center.y)) return undefined;
+  return { center: { x: center.x, y: center.y }, scale: size.height / height };
+}
+
+/**
+ * Model space as the drawing was saved: the VPORT's centre (display coordinates, so plus
+ * the target in a plan view) and height. A 3D or twisted view, which a 2D transform cannot
+ * show, is left to the caller (Zoom Extents).
+ */
+export function savedModelView(
+  vport: ViewParams | undefined,
+  size: ViewportSize,
+): ViewTransform | undefined {
+  if (!vport || !isPlan(vport.direction, vport.twist)) return undefined;
+  const center = { x: vport.center.x + vport.target.x, y: vport.center.y + vport.target.y };
+  return heightView(center, vport.height, size);
+}
+
+/**
+ * A layout's own paper-space viewport (DXF 69 id 1), which holds the layout's paper-space
+ * view. AutoCAD makes it the first time a layout is shown, so a layout never shown has none.
+ */
+export function paperSpaceViewport(
+  entities: readonly EntityInit[] | undefined,
+  layoutBlock: Handle,
+): ViewportGeometry | undefined {
+  for (const e of entities ?? []) {
+    if (e.owner === layoutBlock && e.geom.kind === 'VIEWPORT' && e.geom.id === 1) return e.geom;
+  }
+  return undefined;
+}
+
+/**
+ * A layout as it was saved: its paper-space viewport's view centre and height (DXF 12 / 45).
+ * Paper space is a plan view, and the viewport's frame (10 / 41) is the same window, so the
+ * frame stands in when the view is not stated (acad-ts reads none from an R14 DWG). ezdxf
+ * writes the frame at (0, 0) beside a stated view, so the view comes first.
+ */
+export function paperSpaceView(
+  vp: ViewportGeometry | undefined,
+  size: ViewportSize,
+): ViewTransform | undefined {
+  if (!vp) return undefined;
+  if (vp.viewHeight > 0) return heightView(vp.viewCenter, vp.viewHeight, size);
+  return heightView(vp.center, vp.height, size);
 }
