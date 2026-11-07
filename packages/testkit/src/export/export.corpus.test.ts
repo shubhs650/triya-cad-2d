@@ -11,7 +11,7 @@
 // (TESTING.md §3).
 // The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
 import { readFileSync } from 'node:fs';
-import { Insert, Polyline } from '@node-projects/acad-ts';
+import { Insert, Polyline, type Viewport } from '@node-projects/acad-ts';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
@@ -431,10 +431,45 @@ describe('TriyaToAcad edits on the public corpus', () => {
       });
     });
 
-    const refused: [string, (g: View, layer: Handle) => Partial<View>, RegExp][] = [
-      // R12 keeps a viewport's frozen layers as 1003 names in the MVIEW xdata, which acad-ts
-      // does not read into the viewport yet.
-      ['frozen layers', (_g, layer) => ({ frozenLayers: [layer] }), /frozen layers.*M1-90/],
+    // R12 names a viewport's frozen layers as 1003 strings in its MVIEW xdata (acad-ts patch
+    // 0135). No corpus R12 viewport freezes a layer: freeze two, save, then thaw one.
+    it('freezes and thaws layers in a viewport and maps them back (M1-90)', () => {
+      withPinnedClock(() => {
+        const saveAndCheck = (from: Uint8Array, frozen: string[]): Uint8Array => {
+          const model = DocumentModel.create(documentInit(readCadDocument(from)));
+          const layer = (name: string): Handle =>
+            [...model.tables.layers.values()].find((l) => l.name === name)!.handle;
+          const [first, second] = viewports(model);
+          edit(model, first!, {
+            ...first!.geom,
+            frozenLayers: frozen.map(layer),
+          } as EntityGeometry);
+          const original = readCadDocument(from);
+          const saved = exportDocument(readCadDocument(from), model, { format: 'dxf' });
+          const reopened = readCadDocument(saved);
+          const back = new Map(documentInit(reopened).entities?.map((e) => [e.handle, e]));
+          for (const vp of [first!, second!].map((e) => model.entity(e.id)!)) {
+            expect(near(back.get(vp.handle)?.geom, vp.geom), vp.handle).toBe(true);
+          }
+          const v = reopened.getCadObject(Number.parseInt(first!.handle, 16)) as Viewport;
+          const names = v.frozenLayers.map((l) => l.name);
+          expect(names).toEqual(frozen);
+          const ignoreHandles = new Set([Number.parseInt(first!.handle, 16)]);
+          expect(structuralDiff(original, reopened, { ignoreHandles }).differences).toEqual([]);
+          return saved;
+        };
+        const frozen = saveAndCheck(bytes, ['LAYER_VP_FREEZE', 'LAYER2']);
+        // As R12 says it: 1003 names in the MVIEW xdata, no 331 handles.
+        const text = new TextDecoder('latin1').decode(frozen);
+        expect(text).toMatch(
+          /1002\r?\n\{\r?\n1003\r?\nLAYER_VP_FREEZE\r?\n1003\r?\nLAYER2\r?\n1002\r?\n\}/,
+        );
+        expect(text).not.toMatch(/\n331\r?\n/);
+        saveAndCheck(frozen, ['LAYER2']);
+      });
+    });
+
+    const refused: [string, (g: View) => Partial<View>, RegExp][] = [
       ['a plot style table', () => ({ plotStyleSheet: 'monochrome.ctb' }), /R12 has no/],
       ['a render mode', () => ({ renderMode: 1 }), /R12 has no/],
       ['a flag R12 has no place for', (g) => ({ flags: g.flags | ZOOM_LOCK }), /R12 has no/],
@@ -447,6 +482,9 @@ describe('TriyaToAcad edits on the public corpus', () => {
         const model = open();
         const like = viewports(model)[1]!;
         const g = like.geom as View;
+        const vpFreeze = [...model.tables.layers.values()].find(
+          (l) => l.name === 'LAYER_VP_FREEZE',
+        )!.handle;
         const b = new ChangeSetBuilder(model);
         const draft = b.addEntity({
           owner: like.owner,
@@ -458,6 +496,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
             viewCenter: { x: 1, y: 2 },
             viewHeight: 4,
             flags: g.flags | GRID,
+            frozenLayers: [vpFreeze],
           },
         });
         model.apply(b.build());
@@ -474,7 +513,14 @@ describe('TriyaToAcad edits on the public corpus', () => {
         expect(back.get(added.handle)?.owner).toBe(
           reopened.paperSpace!.handle.toString(16).toUpperCase(),
         );
-        expect(near(back.get(added.handle)?.geom, added.geom)).toBe(true);
+        // The frozen layer's handle is made up too, so it is compared by name.
+        const { frozenLayers: _, ...geom } = added.geom as View;
+        const { frozenLayers, ...backGeom } = back.get(added.handle)?.geom as View;
+        expect(near(backGeom, geom)).toBe(true);
+        expect((v as Viewport).frozenLayers.map((l) => l.name)).toEqual(['LAYER_VP_FREEZE']);
+        expect(frozenLayers).toEqual([
+          (v as Viewport).frozenLayers[0]!.handle.toString(16).toUpperCase(),
+        ]);
         // The edit: the viewport and the paper space record that lists it.
         const ignoreHandles = new Set([
           Number.parseInt(added.handle, 16),
@@ -494,7 +540,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
       });
     });
 
-    it('refuses a new viewport with a clip boundary or frozen layers', () => {
+    it('refuses a new viewport with a clip boundary', () => {
       const model = open();
       const like = viewports(model)[1]!;
       const b = new ChangeSetBuilder(model);
@@ -505,12 +551,11 @@ describe('TriyaToAcad edits on the public corpus', () => {
           ...(like.geom as View),
           id: 3,
           clipBoundary: like.handle,
-          frozenLayers: [like.layer],
         },
       });
       model.apply(b.build());
       expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
-        /clip boundary(.|\n)*frozen layers.*M1-90/,
+        /R12 has no viewport clip boundary/,
       );
     });
 
@@ -518,7 +563,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
       const model = open();
       const vp = viewports(model)[1]!;
       const g = vp.geom as View;
-      edit(model, vp, { ...g, ...change(g, vp.layer) } as EntityGeometry);
+      edit(model, vp, { ...g, ...change(g) } as EntityGeometry);
       expect(() => exportDocument(readCadDocument(bytes), model, { format: 'dxf' })).toThrow(
         message,
       );

@@ -1,0 +1,57 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 6913605..35b5e1c 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1700,8 +1700,11 @@ export abstract class DxfSectionWriterBase {
+     this._writer.write(51, viewport.twistAngle, subclass);
+     this._writer.write(72, viewport.circleZoomPercent, subclass);
+ 
+-    for (const layer of viewport.frozenLayers) {
+-      this._writer.writeHandle(331, layer);
++    // R12 names frozen layers in the MVIEW xdata (written with it), not as 331 handles.
++    if (this.version > ACadVersion.AC1009) {
++      for (const layer of viewport.frozenLayers) {
++        this._writer.writeHandle(331, layer);
++      }
+     }
+ 
+     this._writer.write(90, viewport.status, subclass);
+diff --git a/src/IO/Templates/CadViewportTemplate.ts b/src/IO/Templates/CadViewportTemplate.ts
+index 27cf89a..3231ae5 100644
+--- a/src/IO/Templates/CadViewportTemplate.ts
++++ b/src/IO/Templates/CadViewportTemplate.ts
+@@ -10,6 +10,7 @@ import { ACadVersion } from '../../ACadVersion.js';
+ import { ExtendedDataControlString } from '../../XData/ExtendedDataControlString.js';
+ import { ExtendedDataCoordinate } from '../../XData/ExtendedDataCoordinate.js';
+ import { ExtendedDataInteger16 } from '../../XData/ExtendedDataInteger16.js';
++import { ExtendedDataLayer } from '../../XData/ExtendedDataLayer.js';
+ import { ExtendedDataReal } from '../../XData/ExtendedDataReal.js';
+ import { ExtendedDataString } from '../../XData/ExtendedDataString.js';
+ import { ViewportStatusFlags } from '../../Entities/ViewportStatusFlags.js';
+@@ -117,7 +118,8 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
+ 	 * direction, twist, view height, view centre X and Y, lens length, front and back clip, then
+ 	 * the 1070s view mode, circle zoom, fast zoom, UCSICON, snap, grid, snap style and isopair,
+ 	 * the 1040s snap angle, snap base X/Y, snap spacing X/Y and grid spacing X/Y, the hidden-in-plot
+-	 * 1070, and a nested group of frozen layers. The xdata stays as read, so a save writes it back.
++	 * 1070, and a nested group of frozen layers, 1003 layer names (R12 has no 331 handles). The
++	 * xdata stays as read, so a save writes it back.
+ 	 */
+ 	private _readR12View(): void {
+ 		let records = null;
+@@ -131,10 +133,15 @@ export class CadViewportTemplate extends CadEntityTemplateT<Viewport> {
+ 		const reals: number[] = [];
+ 		const ints: number[] = [];
+ 		let depth = 0;
++		let nested = false;
+ 		for (const r of records.slice(start + 1)) {
+ 			if (r instanceof ExtendedDataControlString) {
+ 				depth += r.isClosing ? -1 : 1;
+-				if (depth !== 1) break; // the frozen-layer group, or the end of MVIEW
++				if (depth === 0) break; // the end of MVIEW
++				if (depth > 1) nested = true; // the frozen-layer group
++			} else if (nested) {
++				// The reader resolved each 1003 name to its layer's handle; build() looks them up.
++				if (depth === 2 && r instanceof ExtendedDataLayer) this.frozenLayerHandles.add(r.value);
+ 			} else if (r instanceof ExtendedDataCoordinate) points.push(r.value);
+ 			else if (r instanceof ExtendedDataReal) reals.push(r.value);
+ 			else if (r instanceof ExtendedDataInteger16) ints.push(r.value);

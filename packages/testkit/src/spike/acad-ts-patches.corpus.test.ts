@@ -2900,4 +2900,35 @@ describe('acad-ts local patches (corpus-backed)', () => {
       check(readDxfRaw(saved), `binary ${binary}`);
     }
   });
+  it('0135 an R12 viewport reads its frozen layers from the MVIEW xdata and saves them there', () => {
+    // R12 names a viewport's frozen layers as 1003 strings in the group nested at the end of its
+    // MVIEW xdata (DXF R12 reference, VIEWPORT); it has no 331 handles. No corpus R12 viewport
+    // freezes a layer, so freeze two in viewport 267 of the sample.
+    const text = new TextDecoder('latin1').decode(
+      corpusBytes('third-party/acadsharp/sample_AC1009_ascii.dxf'),
+    );
+    const frozen = text.replace(
+      /(\n267\r?\n(?:.*\r?\n)*?1002\r?\n\{\r?\n)(1002\r?\n\}\r?\n1002\r?\n\})/,
+      '$11003\nLAYER_VP_FREEZE\n1003\nLAYER2\n$2',
+    );
+    expect(frozen).not.toBe(text);
+    const names = (doc: CadDocument, handle: number): string[] =>
+      (doc.getCadObject(handle) as Viewport).frozenLayers.map((l) => l.name);
+    const doc = readDxfRaw(Uint8Array.from(frozen, (c) => c.charCodeAt(0)));
+    expect(names(doc, 0x267)).toEqual(['LAYER_VP_FREEZE', 'LAYER2']);
+    expect(names(doc, 0x26b)).toEqual([]);
+    for (const binary of [false, true]) {
+      const saved = writeDxf(doc, binary);
+      if (!binary) {
+        // The save names them in the MVIEW xdata as read, and writes no 331 (not R12 vocabulary,
+        // and the layers' handles are made up on read, so an R12 save leaves them out).
+        const out = new TextDecoder('latin1').decode(saved);
+        expect(out).toMatch(/1003\r?\nLAYER_VP_FREEZE\r?\n1003\r?\nLAYER2\r?\n/);
+        expect(out).not.toMatch(/\n331\r?\n/);
+      }
+      const back = readDxfRaw(saved);
+      expect(names(back, 0x267), `binary ${binary}`).toEqual(['LAYER_VP_FREEZE', 'LAYER2']);
+      expect(names(back, 0x26b), `binary ${binary}`).toEqual([]);
+    }
+  });
 });
