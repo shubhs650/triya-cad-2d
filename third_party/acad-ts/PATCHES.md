@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95) 0148–0150 (M1-75 part 19) and 0157–0159 (M1-75 part 22) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98) and 0157–0159 (M1-75 part 22) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2861,6 +2861,40 @@ The DXF reader stores an entity's 347 and the DWG reader the R2007+ material han
 **Title:** Read and write an entity's plot style name
 
 An entity in a named-plot-style drawing points at its plot style name (an ACDBPLACEHOLDER in ACAD_PLOTSTYLENAME) with DXF group 390, and a DWG from R2000 states the plot style flags (ByLayer, ByBlock, dictionary default, or by object id followed by a hard pointer). `Entity` has no field for it, so the DXF reader drops 390, `DwgObjectReader` reads and discards the flags and handle, and both writers always write ByLayer. This adds `Entity.plotStyleType` and `Entity.plotStyleName` (the handle, as `Layer.plotStyleName` holds it), reads them in both formats and writes them back; DXF, which has no code for ByBlock or the dictionary default, gets 390 for a plot style by object id only.
+
+</details>
+
+### 0155 — the DXF TABLEFORMAT's data flag, override flags and content layout flags, and GRIDFORMAT 90 / 91
+
+- **File:** `third_party/acad-ts-patches/0155-dxf-tableformat-gridformat-codes.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** A TABLEFORMAT (the cell style record of a CELLSTYLEMAP, and of a table's cell, row and column overrides) states 90 the cell style type, 170 the data flag, 91 the cell style's own property override flags, 92 the merge flags, 62 the background colour and 93 the content layout flags, the fields the DWG cell style holds in the same order; each GRIDFORMAT states 90 the border's override flags and 91 its type (every corpus DXF: 170 = 1, 93 = 1, GRIDFORMAT 90 = 0 and 91 = 1, as the DWG saves of the same drawings read). acad-ts read 170 as the cell alignment and 91 as the class, skipped 93, and read GRIDFORMAT 90 and 91 swapped; its CELLSTYLEMAP writer wrote the alignment at 170, the class at 91 (which the CELLSTYLE_BEGIN 91 then overwrote on read), no 93, 90 and 91 swapped, the borders in another order than their edge flags and no 340 for a border without a linetype. Found by Triya M1-96 part 2 and fixed in M1-98.
+- **Fix:** The TABLEFORMAT reader takes 170 as `hasData`, 91 as `cellPropertyOverrideFlags` and 93 as `contentLayoutFlags`, and GRIDFORMAT 90 as `propertyOverrideFlags` and 91 as `type`; the CELLSTYLEMAP writer writes them back there, the borders in edge flag order (top, inside horizontal, bottom, left, inside vertical, right) and 340 = 0 when a border has no linetype, as AutoCAD does.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0155 the DXF TABLEFORMAT states 170, 91 and 93, and GRIDFORMAT 90 and 91, where AutoCAD does" (ASCII and binary DXF); `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0155 a DXF save of every corpus CELLSTYLEMAP states the groups the file did".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write the TABLEFORMAT and GRIDFORMAT codes of table cell styles where AutoCAD states them
+
+A table cell style's TABLEFORMAT in DXF holds the fields of the DWG cell style in the same order: 90 cell style type, 170 data flag, 91 property override flags, 92 merge flags, 62 background colour, 93 content layout flags; each GRIDFORMAT holds 90 the override flags and 91 the border type. AutoCAD's own DXF saves confirm it against the DWG saves of the same drawings (170 = 1, 93 = 1, GRIDFORMAT 90 = 0, 91 = 1 for a single-line border). The reader took 170 as the cell alignment and 91 as the cell style class, ignored 93 and swapped GRIDFORMAT 90 and 91, and the CELLSTYLEMAP writer wrote the same fields back at those codes, its borders in a different order than AutoCAD and no 340 for a border without a linetype. This reads the codes into `HasData`, the cell style's override flags, `ContentLayoutFlags`, the border's override flags and type, and writes them back the same way, with the borders in edge flag order and 340 = 0 when there is no linetype, so a save of an AutoCAD CELLSTYLEMAP states the groups it read.
+
+</details>
+
+### 0156 — CELLSTYLEMAP read and written in DWG
+
+- **File:** `third_party/acad-ts-patches/0156-dwg-cellstylemap.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** AutoCAD 2008 and later save a table style's named cell styles (the CELLSTYLEMAP in its extension dictionary) in a DWG before R2010 as well as in DXF. The DWG reader had no CELLSTYLEMAP branch, so it kept the object as an unknown one, which could only be written back as read: a table style edit could not reach it, and a CELLSTYLEMAP read from DXF could not be saved to DWG at all ("Object not implemented"). The cell style writer also wrote its colours with `writeCmColor`, which before R2004 is an index, where the reader reads full CMC colours from the merged stream. Found by Triya M1-96 part 2 and fixed in M1-98.
+- **Fix:** A CELLSTYLEMAP reader and writer: a count, then each cell style as the R2010 TABLESTYLE cell style record is read and written, followed by its id, class and name (ODA Open Design Specification for .dwg, CELLSTYLEMAP). The cell style, content format and border colours go through `_writeTableStyleColor`, which writes the merged CMC colour before R2004 as the row style writer already did. The acadsharp R14–R2007 sample DWGs read with no notification, field for field as their DXF saves (0155), and write back unchanged.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0156 the DWG writer and reader keep a CELLSTYLEMAP" (R14, R2000, R2004, R2007); `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0156 the CELLSTYLEMAP of sample_%s.dwg reads like its DXF save and survives a DWG save".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write CELLSTYLEMAP objects in DWG
+
+AutoCAD 2008 and later keep a table style's named cell styles in a CELLSTYLEMAP (extension dictionary entry `ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP`) in every DXF and in DWG files before R2010. The DWG reader read it as an unknown object and the DWG writer had no branch for `CellStyleMap`, so a map read from DXF threw "Object not implemented" when saved to DWG. This adds both: the object is a cell style count followed by each cell style in the TABLESTYLE R2010 cell style layout, then its id, class and name. It also writes the cell style colours with the merged-stream CMC colour before R2004, which the reader already expects there. Verified on the ACadSharp R14–R2007 sample DWGs, which read field for field like their DXF saves and write back unchanged.
 
 </details>
 

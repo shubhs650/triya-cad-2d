@@ -775,11 +775,14 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
       this._writer.write(300, 'CELLSTYLE');
       this._writer.write(1, 'TABLEFORMAT_BEGIN');
       this._writer.write(90, style.cellStyleType);
-      this._writer.write(170, style.cellAlignment);
-      this._writer.write(91, style.styleClass);
+      // 170 the data flag, 91 the cell style's own override flags (its class is the
+      // CELLSTYLE_BEGIN 91 below), 92 the merge flags, 93 the content layout flags.
+      this._writer.write(170, style.hasData ? 1 : 0);
+      this._writer.write(91, style.cellPropertyOverrideFlags ?? 0);
       this._writer.write(92, style.tableCellStylePropertyFlags);
       // The background colour: the content colour is the CONTENTFORMAT's 62 below.
       this._writer.write(62, style.backgroundColor.index);
+      this._writer.write(93, style.contentLayoutFlags);
       this._writer.write(300, 'CONTENTFORMAT');
       this._writer.write(1, 'CONTENTFORMAT_BEGIN');
       this._writer.write(90, style.propertyFlags);
@@ -803,18 +806,21 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
         this._writer.write(40, margin);
       }
       this._writer.write(309, 'CELLMARGIN_END');
-      const borders = [style.topBorder, style.rightBorder, style.bottomBorder, style.leftBorder,
-        style.verticalInsideBorder, style.horizontalInsideBorder];
+      // In edge flag order (top 1, inside horizontal 2, bottom 4, left 8, inside vertical 16,
+      // right 32), as AutoCAD lists them.
+      const borders = [style.topBorder, style.horizontalInsideBorder, style.bottomBorder,
+        style.leftBorder, style.verticalInsideBorder, style.rightBorder];
       this._writer.write(94, borders.length);
       for (const border of borders) {
         this._writer.write(95, border.edgeFlags);
         this._writer.write(302, 'GRIDFORMAT');
         this._writer.write(1, 'GRIDFORMAT_BEGIN');
-        this._writer.write(90, border.type);
-        this._writer.write(91, border.propertyOverrideFlags);
+        this._writer.write(90, border.propertyOverrideFlags);
+        this._writer.write(91, border.type);
         this._writer.write(62, border.color.index);
         this._writer.write(92, border.lineWeight);
-        this._writer.writeHandle(340, border.lineType);
+        // AutoCAD states 340 = 0 for a border without a linetype of its own.
+        this._writer.write(340, border.lineType?.handle ?? 0);
         this._writer.write(93, border.isInvisible ? 1 : 0);
         this._writer.write(40, border.doubleLineSpacing);
         this._writer.write(309, 'GRIDFORMAT_END');

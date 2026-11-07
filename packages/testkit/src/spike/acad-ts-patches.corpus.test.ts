@@ -78,6 +78,7 @@ import {
   type Layout,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
+import { loadManifest } from '../corpus/manifest.ts';
 import { documentObjects } from '../roundtrip/handle-coverage.js';
 
 const corpusBytes = (path: string): Uint8Array =>
@@ -469,7 +470,8 @@ describe('acad-ts local patches (corpus-backed)', () => {
     const title = styleMap(doc).cellStyles.find((c) => c.name === '_TITLE')!;
     expect(cell(title)).toMatchObject({
       margins: [0.06, 0.06, 0.06, 0.06, 0.18, 0.18],
-      borders: Array(6).fill([-2, false, 0, 0.045, 1]),
+      // The override flags are 0: the 1 after them in the file is the border type (0155).
+      borders: Array(6).fill([-2, false, 0, 0.045, 0]),
     });
 
     for (const binary of [false, true]) {
@@ -3038,7 +3040,8 @@ describe('acad-ts local patches (corpus-backed)', () => {
     const byName = new Map([...read.values()].map((f) => [f.name, f]));
     expect(byName.get('Realistic')?.['faceLightingModel']).toBe(2);
     expect(byName.get('Conceptual')?.['edgeModifiers']).not.toBe(0);
-    // acad-ts cannot write cell style maps or table contents to DWG (not M1-91's); leave them out.
+    // acad-ts cannot write table contents to DWG (not M1-91's); leave them and the cell style maps
+    // (written since 0156, M1-98) out.
     for (const o of [...doc.getCadObjects()]) {
       if (!(o instanceof CadDictionary)) continue;
       for (const n of o.entryNames) {
@@ -3129,4 +3132,132 @@ describe('acad-ts local patches (corpus-backed)', () => {
       expect(styles(dwgRawRoundTrip(dwg)), `${version} DWG saved`).toEqual(want);
     }
   });
+  // The groups of every CELLSTYLEMAP in an ASCII DXF, by handle, from its subclass marker on,
+  // with numbers compared as numbers (the writer pads and formats them its own way).
+  function cellStyleMapGroups(text: string): Map<string, string[]> {
+    const lines = text.split(/\r?\n/).map((l) => l.trim());
+    const maps = new Map<string, string[]>();
+    for (let i = 0; i + 1 < lines.length; i += 2) {
+      if (lines[i] !== '0' || lines[i + 1] !== 'CELLSTYLEMAP') continue;
+      let handle = '';
+      const groups: string[] = [];
+      for (let j = i + 2; j + 1 < lines.length && lines[j] !== '0'; j += 2) {
+        const [code, value] = [lines[j]!, lines[j + 1]!];
+        if (code === '5') handle = value;
+        if (code === '100' || groups.length > 0)
+          groups.push(
+            `${code}=${/^-?\d+(\.\d*)?(e[-+]?\d+)?$/i.test(value) ? Number(value) : value}`,
+          );
+      }
+      maps.set(handle, groups);
+    }
+    return maps;
+  }
+
+  // One test per file, as the corpus open test does, so the files share no time budget.
+  const styleMapFiles = loadManifest(
+    fileURLToPath(new URL('../../../../corpus/corpus.json', import.meta.url)),
+  )
+    .files.filter((f) => f.format === 'dxf-ascii' && !f.knownIssues.some((k) => /read/i.test(k)))
+    .map((f) => f.path.replace(/^public\//, ''))
+    .filter(
+      (path) => cellStyleMapGroups(Buffer.from(corpusBytes(path)).toString('latin1')).size > 0,
+    );
+
+  it('0155 finds the corpus DXFs with a CELLSTYLEMAP', () => {
+    expect(styleMapFiles.length).toBeGreaterThan(40);
+  });
+
+  it.each(styleMapFiles)(
+    '0155 a DXF save of the CELLSTYLEMAPs in %s states their groups',
+    (path) => {
+      // M1-98: AutoCAD saves a CELLSTYLEMAP in every DXF from AutoCAD 2008 on. Unpatched, a save
+      // wrote the cell alignment at 170 and the class at 91, no 93, GRIDFORMAT 90 and 91 swapped,
+      // the borders in another order and no 340 for a border without a linetype.
+      const bytes = corpusBytes(path);
+      const read = cellStyleMapGroups(Buffer.from(bytes).toString('latin1'));
+      const saved = cellStyleMapGroups(
+        Buffer.from(writeDxf(readDxfRaw(bytes), false)).toString('latin1'),
+      );
+      expect(read.size).toBeGreaterThan(0);
+      for (const [handle, groups] of read) expect(saved.get(handle), handle).toEqual(groups);
+    },
+  );
+
+  // The fields of a cell style both formats state, with the text style and linetypes by name.
+  const mapCell = (c: CellStyle): unknown => ({
+    id: c.id,
+    styleClass: c.styleClass,
+    name: c.name,
+    type: c.cellStyleType,
+    hasData: c.hasData,
+    overrides: c.cellPropertyOverrideFlags,
+    merge: c.tableCellStylePropertyFlags,
+    background: c.backgroundColor.index,
+    layout: c.contentLayoutFlags,
+    content: [
+      c.propertyOverrideFlags,
+      c.propertyFlags,
+      c.valueDataType,
+      c.valueUnitType,
+      c.valueFormatString,
+      c.rotation,
+      c.scale,
+      c.alignment,
+      c.color.index,
+      c.textStyle?.name.toUpperCase(),
+      c.textHeight,
+    ],
+    margins: [
+      c.marginOverrideFlags,
+      c.verticalMargin,
+      c.horizontalMargin,
+      c.bottomMargin,
+      c.rightMargin,
+      c.marginHorizontalSpacing,
+      c.marginVerticalSpacing,
+    ],
+    borders: [
+      c.topBorder,
+      c.horizontalInsideBorder,
+      c.bottomBorder,
+      c.leftBorder,
+      c.verticalInsideBorder,
+      c.rightBorder,
+    ].map((b) => [
+      b.propertyOverrideFlags,
+      b.type,
+      b.color.index,
+      b.lineWeight,
+      b.lineType?.name,
+      b.isInvisible,
+      b.doubleLineSpacing,
+    ]),
+  });
+  const styleMaps = (doc: CadDocument): CellStyleMap[] =>
+    [...doc.getCadObjects()].filter((o): o is CellStyleMap => o instanceof CellStyleMap);
+
+  it.each(['AC1014', 'AC1015', 'AC1018', 'AC1021'])(
+    '0156 the CELLSTYLEMAP of sample_%s.dwg reads like its DXF save and survives a DWG save',
+    (version) => {
+      // M1-98: AutoCAD 2008 and later keep the CELLSTYLEMAP in a DWG before R2010, which acad-ts
+      // read as an unknown object. The R2000–R2007 DXF saves of the same drawing state the
+      // same cell styles (0155), and AC1014 has no DXF twin.
+      const doc = readDwgRaw(`third-party/acadsharp/sample_${version}.dwg`);
+      const maps = styleMaps(doc);
+      expect(maps).toHaveLength(1);
+      expect(maps[0]!.cellStyles.map((c) => c.name)).toEqual(['_TITLE', '_HEADER', '_DATA']);
+      if (version !== 'AC1014') {
+        const dxf = readDxfRaw(corpusBytes(`third-party/acadsharp/sample_${version}_ascii.dxf`));
+        expect(maps[0]!.cellStyles.map(mapCell)).toEqual(
+          styleMaps(dxf)[0]!.cellStyles.map(mapCell),
+        );
+      }
+      const back = dwgRawRoundTrip(doc).getCadObject(maps[0]!.handle);
+      expect(back).toBeInstanceOf(CellStyleMap);
+      expect((back as CellStyleMap).cellStyles.map(mapCell)).toEqual(
+        maps[0]!.cellStyles.map(mapCell),
+      );
+    },
+  );
 });
