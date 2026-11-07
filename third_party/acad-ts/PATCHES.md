@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98) and 0157–0159 (M1-75 part 22) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22) and 0160 (M1-75 part 23) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2946,5 +2946,22 @@ AutoCAD 2008 and later keep a table style's named cell styles in a CELLSTYLEMAP 
 **Title:** Keep a renamed table entry in place
 
 When a table entry is renamed, `Table` re-keys it with `entries.set(newKey)` followed by `entries.delete(oldKey)`, which moves the entry to the end of the map. Tables are written in entry order, so renaming a layer or block reorders the written file. This rebuilds the map with the entry re-keyed at its original position.
+
+</details>
+
+### 0160 — a grouped entity reads with its group in its reactors twice
+
+- **File:** `third_party/acad-ts-patches/0160-group-member-reactor-once.patch`
+- **Touches:** `src/Objects/Group.ts`
+- **Symptom:** A grouped entity lists its group in its reactors (102 {ACAD_REACTORS 330}), and the reader keeps them; the group template then adds each member with `Group.add`, which pushed the group onto the entity's reactors again. Every grouped entity of the corpus (the acadsharp samples' two unnamed groups, ezdxf `groups.dxf`) read with its group twice, in DXF and DWG, and a save wrote it twice. Found by Triya M1-75 part 23.
+- **Fix:** `Group.add` adds the group to the entity's reactors only when the entity does not list it already.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0160 a grouped entity reads with its group in its reactors once" (DXF, binary DXF, DWG).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Do not add a group to a member's reactors twice
+
+When a file is read, an entity keeps the reactors it states, which for a grouped entity include its group. The group template then adds each member through `Group.add`, which calls `entity.addReactor(group)` again, so every grouped entity read from DXF or DWG lists its group twice and is written back that way. `Group.add` now adds the reactor only when the entity does not already list the group, which keeps the API behaviour for new members and reads AutoCAD's files as they are.
 
 </details>

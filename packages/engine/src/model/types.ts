@@ -1424,6 +1424,26 @@ export interface WipeoutVariables extends NonGraphicalObject {
   readonly frame: boolean;
 }
 
+/**
+ * A group (DXF GROUP, an entry of the `ACAD_GROUP` dictionary; M1-75 part 23): a named or
+ * unnamed set of entities that GROUP makes and selects together while it is selectable. Each
+ * member lists the group in its reactors, as AutoCAD links them both ways.
+ */
+export interface Group extends NonGraphicalObject {
+  readonly type: 'GROUP';
+  /**
+   * Its `ACAD_GROUP` entry. AutoCAD names an unnamed group (DXF 70 1) `*A` and a number, so a
+   * name starting with `*` is an unnamed group's.
+   */
+  readonly name: string;
+  /** DXF 300. */
+  readonly description: string;
+  /** DXF 71: picking one member selects the whole group. */
+  readonly selectable: boolean;
+  /** DXF 340: the members, in the group's order (GROUPEDIT and the Object Grouping dialog's Reorder). */
+  readonly entities: readonly Handle[];
+}
+
 /** A header variable value as read: string, number, point, or handle (as a string). */
 export type HeaderValue = string | number | boolean | Vec2 | Vec3;
 
