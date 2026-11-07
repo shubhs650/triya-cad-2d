@@ -206,6 +206,7 @@ function formatProblems(
   before: EntityInit | undefined,
   e: Entity,
   acadApp: Handle | undefined,
+  r: Resolver,
   acad?: AcadEntity,
 ): string[] {
   // AutoCAD Release 11 (AC1009, which R12 shares) introduced xdata.
@@ -231,11 +232,11 @@ function formatProblems(
     return out;
   }
   if (e.geom.kind === 'ACAD_TABLE' && !before) {
-    return newTableFileProblems(e.geom, version, format).map((p) => `${e.type} ${e.handle}: ${p}`);
+    return newTableFileProblems(r, e.geom).map((p) => `${e.type} ${e.handle}: ${p}`);
   }
   if (e.geom.kind === 'ACAD_TABLE' && before?.geom.kind === 'ACAD_TABLE') {
     if (!(acad instanceof TableEntity)) return [];
-    return tableCellProblems(acad, before.geom, e.geom, version, format).map(
+    return tableCellProblems(r, acad, before.geom, e.geom).map(
       (p) => `${e.type} ${e.handle}: ${p}`,
     );
   }
@@ -295,7 +296,7 @@ function plan(
     }
     problems.push(
       ...entityProblems(r, b as Entity, m),
-      ...formatProblems(format, version, b, m, acadApp, acad),
+      ...formatProblems(format, version, b, m, acadApp, r, acad),
     );
     out.updated.push({ acad, before: b, after: m });
   }
@@ -304,7 +305,7 @@ function plan(
     const m = withNewDictionary(e, undefined, newDictionaries)!;
     problems.push(
       ...entityProblems(r, undefined, m),
-      ...formatProblems(format, version, undefined, m, acadApp),
+      ...formatProblems(format, version, undefined, m, acadApp, r),
     );
     // The TABLE command and COPY make a table a `*T` block of its own.
     if (m.geom.kind === 'ACAD_TABLE' && m.geom.block !== undefined) {

@@ -37,6 +37,7 @@ import {
   type Color as AcadColor,
   type ContentFormat,
   type TableEntityCell,
+  type TableStyle,
   type TableRowTypeOverrides,
   type TableStyleOverrides,
   CadWipeoutBase,
@@ -656,6 +657,7 @@ const CELL_EDGES: readonly [Edge, number, number, number][] = [
 ];
 
 /** The cell style and content format property flags of DWG R2010+ (AcDb::CellProperty). */
+const PROP_ROTATION = 0x4;
 const PROP_ALIGNMENT = 0x10;
 const PROP_CONTENT_COLOR = 0x20;
 const PROP_TEXT_STYLE = 0x40;
@@ -815,6 +817,25 @@ export function tableMargins(tableStyle: CellStyle): NonNullable<TableCellFormat
   return d.margins;
 }
 
+/**
+ * A cell's rotation. DXF (145) and DWG before R2010 state it per cell; a DWG from R2010 states it
+ * as a content property (AcDb::CellProperty rotation bit), folded as the cell formats are:
+ * content format over cell over row over column (`tableCellFormat`). A cell none of them rotates
+ * keeps its own field, which such a DWG leaves at 0.
+ */
+export function tableCellRotation(
+  column: CellStyle | undefined,
+  row: CellStyle | undefined,
+  c: TableEntityCell,
+): number {
+  const k = c.content?.format;
+  if (k?.hasData && k.propertyOverrideFlags & PROP_ROTATION) return k.rotation;
+  for (const s of [c.styleOverride, row, column]) {
+    if (s?.hasData && (s.cellPropertyOverrideFlags ?? 0) & PROP_ROTATION) return s.rotation;
+  }
+  return c.rotation;
+}
+
 /** The row format properties, in the order they are listed in `TableRowFormat`. */
 function rowFormat(d: FormatDraft): TableRowFormat | undefined {
   const f: Mutable<TableRowFormat> = {};
@@ -867,6 +888,21 @@ function statedOverrides(o: TableStyleOverrides): TableOverrides {
 }
 
 /**
+ * The row type a DWG R2010+ row's style id names: the TABLESTYLE cell style `_TITLE`, `_HEADER`
+ * or `_DATA` (ids 1 to 3 when the style lists none), or none.
+ */
+export function rowTypeOf(
+  style: TableStyle | null,
+): (id: number) => (typeof ROW_TYPES)[number] | undefined {
+  const names = new Map((style?.cellStyles ?? []).map((c) => [c.id, c.name.toUpperCase()]));
+  return (id) => {
+    const name = names.get(id);
+    const k = name ? ['_TITLE', '_HEADER', '_DATA'].indexOf(name) : id - 1;
+    return ROW_TYPES[k];
+  };
+}
+
+/**
  * The table-wide overrides of a DWG R2010+ table: the margins are the table's own cell style;
  * a row type's values are what every row of that type overrides alike in its cell style (the
  * row's style id names the TABLESTYLE cell style `_TITLE`, `_HEADER` or `_DATA`). AutoCAD's DXF
@@ -878,12 +914,7 @@ function contentOverrides(t: TableEntity): TableOverrides {
   applyCellStyle(table, t.cellStyleOverride);
   const out: Mutable<TableOverrides> =
     Object.keys(table.margins).length > 0 ? { margins: table.margins } : {};
-  const names = new Map((t.style?.cellStyles ?? []).map((c) => [c.id, c.name.toUpperCase()]));
-  const typeOf = (id: number) => {
-    const name = names.get(id);
-    const k = name ? ['_TITLE', '_HEADER', '_DATA'].indexOf(name) : id - 1;
-    return ROW_TYPES[k];
-  };
+  const typeOf = rowTypeOf(t.style);
   for (const type of ROW_TYPES) {
     const formats = t.rows
       .filter((r) => typeOf(r.styleId) === type)
@@ -941,7 +972,11 @@ function tableGeometry(t: TableEntity): TableGeometry | UnmappedEntity['reason']
         rowSpan: ranges ? (span?.rows ?? 1) : Math.max(1, c.borderHeight),
         columnSpan: ranges ? (span?.columns ?? 1) : Math.max(1, c.borderWidth),
         merged: ranges ? covered.has(`${i},${j}`) : c.mergedValue !== 0,
-        rotation: c.rotation,
+        rotation: tableCellRotation(
+          t.columns[j]?.cellStyleOverride,
+          t.rows[i]?.cellStyleOverride,
+          c,
+        ),
         ...(format ? { format } : {}),
       };
     }),
