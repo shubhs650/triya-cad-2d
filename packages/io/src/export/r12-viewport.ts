@@ -1,8 +1,8 @@
 // An R12 viewport (M1-86). DXF R12 states only a viewport's frame, status and ID as groups (10,
 // 40, 41, 68, 69); its view, snap, grid and frozen layers are the ACAD xdata after the string
-// MVIEW (DXF R12 reference, VIEWPORT). acad-ts reads that xdata into the viewport (patch 0119)
-// and writes it back as read, so a save that changes the view rewrites it here, after the
-// viewport writer has set the acad-ts properties. Everything the MVIEW states but Triya does
+// MVIEW (DXF R12 reference, VIEWPORT). acad-ts reads that xdata into the viewport (patches 0119
+// and 0135, M1-90) and writes it back as read, so a save that changes the view or the frozen
+// layers rewrites it here, after the viewport writer has set the acad-ts properties. Everything the MVIEW states but Triya does
 // not map (its version, circle zoom, snap and grid settings) is written from the properties
 // acad-ts read it into, so it comes back as it was.
 
@@ -11,6 +11,7 @@ import {
   ExtendedDataControlString,
   ExtendedDataCoordinate,
   ExtendedDataInteger16,
+  ExtendedDataLayer,
   ExtendedDataReal,
   ExtendedDataString,
   ViewportStatusFlags as F,
@@ -22,7 +23,7 @@ import {
 import type { ViewportGeometry } from '@triya/engine';
 import { same } from './entities';
 
-/** The view fields R12 states in the MVIEW xdata, which `writeR12View` writes. */
+/** The fields R12 states in the MVIEW xdata, which `writeR12View` writes. */
 export const R12_MVIEW_FIELDS = [
   'viewCenter',
   'viewHeight',
@@ -33,6 +34,7 @@ export const R12_MVIEW_FIELDS = [
   'frontClip',
   'backClip',
   'flags',
+  'frozenLayers',
 ] as const;
 
 /** VIEWMODE: perspective, front and back clipping, UCS follow, front clip not at the eye. */
@@ -60,7 +62,7 @@ const R2000_FIELDS = [
 ] as const;
 
 /** What a new viewport is compared with: the settings R12 cannot state, unset. */
-const EMPTY: Partial<ViewportGeometry> = { frozenLayers: [], plotStyleSheet: '', renderMode: 0 };
+const EMPTY: Partial<ViewportGeometry> = { plotStyleSheet: '', renderMode: 0 };
 
 /** The MVIEW group of an R12 viewport's ACAD xdata: its records and where its braces are. */
 function mview(v: Viewport): { records: ExtendedDataRecord[]; open: number; close: number } | null {
@@ -99,11 +101,6 @@ export function r12ViewportProblems(
   const d = (k: keyof ViewportGeometry): boolean => !same((before ?? EMPTY)[k], after[k]);
   if (!before && after.clipBoundary !== undefined) out.push('R12 has no viewport clip boundary');
   for (const [k, name] of R2000_FIELDS) if (d(k)) out.push(`R12 has no ${name}`);
-  if (d('frozenLayers')) {
-    out.push(
-      'frozen layers: R12 names them in the MVIEW xdata, which acad-ts does not read (M1-90)',
-    );
-  }
   if (d('flags')) {
     const lost = after.flags & ~R12_FLAGS;
     if (lost) out.push(`R12 has no place for viewport flags 0x${lost.toString(16)}`);
@@ -120,12 +117,12 @@ export function r12ViewportProblems(
   }
   // A new viewport gets its MVIEW xdata from `addR12View`.
   if (before && v && R12_MVIEW_FIELDS.some(d) && !mview(v)) {
-    out.push('no MVIEW xdata to hold its view');
+    out.push('no MVIEW xdata to hold its view and frozen layers');
   }
   return out;
 }
 
-/** Whether the change from `before` to `after` is one of the view `writeR12View` writes. */
+/** Whether the change from `before` to `after` is one `writeR12View` writes. */
 export function r12ViewChanges(before: ViewportGeometry, after: ViewportGeometry): boolean {
   return R12_MVIEW_FIELDS.some((k) => !same(before[k], after[k]));
 }
@@ -135,12 +132,12 @@ export function r12ViewChanges(before: ViewportGeometry, after: ViewportGeometry
  * patch 0119's reader: version, target, direction, twist, view height, view centre X and Y,
  * lens length, front and back clip; VIEWMODE, circle zoom, fast zoom, UCSICON, snap, grid,
  * snap style and isopair; snap angle, snap base X/Y, snap spacing X/Y, grid spacing X/Y; and
- * hidden in plot. The nested group of frozen layers after them stays as read.
+ * hidden in plot; then the nested group of frozen layers, a 1003 name each (the DXF writer
+ * writes an `ExtendedDataLayer` by its layer's name).
  */
 export function writeR12View(v: Viewport): void {
   const g = mview(v)!;
   const inside = g.records.slice(g.open + 1, g.close);
-  const nested = inside.findIndex((r) => r instanceof ExtendedDataControlString);
   const version = inside.find((r) => r instanceof ExtendedDataInteger16)?.value as number;
   const s = v.status;
   const on = (flag: F): number => (s & flag ? 1 : 0);
@@ -169,13 +166,17 @@ export function writeR12View(v: Viewport): void {
     ...[v.snapBase, v.snapSpacing, v.gridSpacing].flatMap((p) => [real(p.x), real(p.y)]),
     int(on(F.HidePlotMode)),
   ];
-  const frozen = nested < 0 ? [] : inside.slice(nested);
+  const frozen: ExtendedDataRecord[] = [
+    new ExtendedDataControlString(false),
+    ...v.frozenLayers.map((l) => new ExtendedDataLayer(l.handle)),
+    new ExtendedDataControlString(true),
+  ];
   g.records.splice(g.open + 1, g.close - g.open - 1, ...view, ...frozen);
 }
 
 /**
- * Gives a new R12 viewport the ACAD MVIEW xdata that holds its view (version 16, as AutoCAD R12
- * writes it, and an empty group of frozen layers), then writes the view into it.
+ * Gives a new R12 viewport the ACAD MVIEW xdata that holds its view and frozen layers (version
+ * 16, as AutoCAD R12 writes it), then writes them into it.
  */
 export function addR12View(doc: CadDocument, v: Viewport): void {
   let app = doc.appIds?.tryGetValue('ACAD') ?? null;

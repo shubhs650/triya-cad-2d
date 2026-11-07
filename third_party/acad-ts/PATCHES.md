@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88) and 0134 (M1-89) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89) and 0135 (M1-90) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2521,5 +2521,22 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 **Title:** Read DXF group 67 into paper space for entities with no owner handle
 
 `DxfSectionReaderBase.readCommonEntityCodes` ignores group 67, and `DxfEntitiesSectionReader` adds every entity without an owner handle (330) to model space. R12 DXF files never state 330, so their paper-space entities (67 = 1), including every viewport, are read into model space and written back there. This keeps 67 on the entity template and adds such entities to the paper space block record, making one up when the file has no `$PAPER_SPACE` block. Since R12 has no LAYOUT objects, the reader also gives an R12 paper space the Layout1 layout AutoCAD opens it as, from the header's paper-space limits, extents, insertion base and elevation and its PSLTSCALE/PLIMCHECK flags, so the writer states 67 = 1 again on save.
+
+</details>
+
+### 0135 — an R12 viewport reads and saves its frozen layers in the MVIEW xdata
+
+- **File:** `third_party/acad-ts-patches/0135-r12-viewport-frozen-layers.patch`
+- **Touches:** `src/IO/Templates/CadViewportTemplate.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** R12 names a viewport's frozen layers as 1003 strings in the group nested at the end of its ACAD MVIEW xdata (DXF R12 reference, VIEWPORT); it has no 331 handles. Patch 0119 read the view from that xdata but stopped at the nested group, so every R12 viewport read with no frozen layers. The R12 DXF writer wrote `frozenLayers` as 331 handles, which R12 does not have, naming handles made up on read that an R12 save leaves out. Found by Triya M1-86, fixed in M1-90.
+- **Fix:** `_readR12View` adds the layer of each 1003 record in the nested group (the reader has already resolved the name to its layer's handle) to the template's frozen-layer handles, which `build` resolves with the 331s; the DXF writer writes 331 only after R12. The xdata is still written back as read.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0135 an R12 viewport reads its frozen layers from the MVIEW xdata and saves them there" (two layers named in viewport 267 of the R12 sample read into `frozenLayers`; ASCII and binary R12 saves keep the names and write no 331, and read back the same).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read an R12 viewport's frozen layers from its MVIEW xdata, and write no 331 to R12
+
+An R12 VIEWPORT has no 331 groups: its frozen layers are the 1003 layer names in the group nested at the end of its ACAD xdata after the string MVIEW (DXF R12 reference, VIEWPORT). This reads them into `Viewport.frozenLayers` alongside the view settings in that xdata, and stops the DXF writer from writing 331 handles for R12, where they are not part of the format and name handles that an R12 file usually does not state. The xdata itself is still written back as read, so a save keeps the names.
 
 </details>

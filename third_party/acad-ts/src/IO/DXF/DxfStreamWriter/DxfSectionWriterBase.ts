@@ -1700,8 +1700,11 @@ export abstract class DxfSectionWriterBase {
     this._writer.write(51, viewport.twistAngle, subclass);
     this._writer.write(72, viewport.circleZoomPercent, subclass);
 
-    for (const layer of viewport.frozenLayers) {
-      this._writer.writeHandle(331, layer);
+    // R12 names frozen layers in the MVIEW xdata (written with it), not as 331 handles.
+    if (this.version > ACadVersion.AC1009) {
+      for (const layer of viewport.frozenLayers) {
+        this._writer.writeHandle(331, layer);
+      }
     }
 
     this._writer.write(90, viewport.status, subclass);
