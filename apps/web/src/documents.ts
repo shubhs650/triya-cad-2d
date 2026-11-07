@@ -27,12 +27,16 @@ export interface OpenDocument {
 }
 
 /**
- * The drawing's layouts as they are now: as opened, with the updates the engine's change sets
- * carried since (renamed, reordered, a new page setup or limits; M1-97), in tab order.
+ * The drawing's layouts as they are now: as opened, with what the engine's change sets carried
+ * since (renamed, reordered, a new page setup or limits, M1-97; added or removed), in tab order.
  */
 export function layoutsOf(init: DocumentInit, changes: readonly ChangeSet[]): Layout[] {
   const now = new Map((init.layouts ?? []).map((l) => [l.handle, l]));
-  for (const cs of changes) for (const { after } of cs.layouts ?? []) now.set(after.handle, after);
+  for (const { layouts: c } of changes) {
+    for (const l of c?.removed ?? []) now.delete(l.handle);
+    for (const { after } of c?.updated ?? []) now.set(after.handle, after);
+    for (const l of c?.added ?? []) now.set(l.handle, l);
+  }
   return [...now.values()].sort((a, b) => a.tabOrder - b.tabOrder);
 }
 

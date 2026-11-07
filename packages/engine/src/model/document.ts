@@ -44,6 +44,9 @@ export interface DocumentInit {
 }
 
 /** Tab order, then name, as AutoCAD lists layout tabs (the order is stable for equal keys). */
+const emptyLayouts = (c: KeyedChanges<Layout>): boolean =>
+  !c.added?.length && !c.updated?.length && !c.removed?.length;
+
 const byTabOrder = (a: Layout, b: Layout): number =>
   a.tabOrder - b.tabOrder || a.name.localeCompare(b.name);
 
@@ -353,19 +356,33 @@ export class DocumentModel {
       }
     }
 
+    // Layouts (M1-75 parts 20 and 28): a new one sits on a block record that exists once the
+    // change set is applied.
+    const lays = cs.layouts ?? {};
     const layoutsSeen = new Set<Handle>();
-    for (const { before, after } of cs.layouts ?? []) {
-      if (layoutsSeen.has(before.handle))
-        throw new Error(`layout ${before.handle} is changed more than once`);
-      layoutsSeen.add(before.handle);
-      const cur = this.#layouts.find((l) => l.handle === before.handle);
-      if (cur === undefined) throw new Error(`layout ${before.handle} is not in the model`);
-      if (cur !== before)
-        throw new Error(
-          `layout ${before.handle} is stale (changed since this change set was built)`,
-        );
+    const once = (h: Handle) => {
+      if (layoutsSeen.has(h)) throw new Error(`layout ${h} is changed more than once`);
+      layoutsSeen.add(h);
+    };
+    for (const l of lays.removed ?? []) {
+      once(l.handle);
+      this.#checkCurrentLayout(l);
+      freed.add(l.handle);
+    }
+    for (const { before, after } of lays.updated ?? []) {
+      once(before.handle);
+      this.#checkCurrentLayout(before);
       if (after.handle !== before.handle)
         throw new Error(`layout ${before.handle}: an update cannot change handle`);
+    }
+    for (const l of lays.added ?? []) {
+      once(l.handle);
+      claim(l.handle);
+      const record =
+        recordNew.has(l.blockRecord) ||
+        (this.#tables.blockRecords.has(l.blockRecord) && !recordGone.has(l.blockRecord));
+      if (!record)
+        throw new Error(`layout ${l.handle}: its block record ${l.blockRecord} does not exist`);
     }
 
     const names = new Set<string>();
@@ -410,9 +427,18 @@ export class DocumentModel {
         this.handles.observe(r.handle);
       }
     }
-    if (cs.layouts?.length) {
-      for (const { after } of cs.layouts) {
+    if (!emptyLayouts(lays)) {
+      for (const l of lays.removed ?? []) {
+        this.#layouts.splice(this.#layouts.indexOf(l), 1);
+        this.#used.delete(l.handle);
+      }
+      for (const { after } of lays.updated ?? []) {
         this.#layouts[this.#layouts.findIndex((l) => l.handle === after.handle)] = after;
+      }
+      for (const l of lays.added ?? []) {
+        this.#layouts.push(l);
+        this.#used.add(l.handle);
+        this.handles.observe(l.handle);
       }
       this.#layouts.sort(byTabOrder);
     }
@@ -428,6 +454,13 @@ export class DocumentModel {
     if (cur === undefined) throw new Error(`entity ${e.handle} is not in the model`);
     if (cur !== e)
       throw new Error(`entity ${e.handle} is stale (changed since this change set was built)`);
+  }
+
+  #checkCurrentLayout(l: Layout): void {
+    const cur = this.#layouts.find((x) => x.handle === l.handle);
+    if (cur === undefined) throw new Error(`layout ${l.handle} is not in the model`);
+    if (cur !== l)
+      throw new Error(`layout ${l.handle} is stale (changed since this change set was built)`);
   }
 
   #checkCurrentBlock(d: BlockDefinition): void {

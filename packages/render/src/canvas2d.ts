@@ -584,7 +584,7 @@ export class Canvas2DRenderer implements Renderer {
     // The layout shown was renamed, reordered or given a new page setup, limits or PSLTSCALE
     // (M1-97): its sheet, paper units and viewport linetype scale are read again. They are
     // used at draw time only, so nothing is re-tessellated.
-    const layout = cs.layouts?.find((l) => l.after.handle === this.#layoutHandle)?.after;
+    const layout = cs.layouts?.updated?.find((l) => l.after.handle === this.#layoutHandle)?.after;
     if (layout) this.#readLayout(layout);
     // A layer, linetype, text style, LTSCALE, FILLMODE or ATTMODE change can restyle or hide any
     // entity, and an IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the

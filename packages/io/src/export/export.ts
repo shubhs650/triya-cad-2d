@@ -420,8 +420,9 @@ export function triyaToAcad(
     vports: views.vports.plan,
   });
   writeImageObjects(original, imageObjects.plan);
-  writeLayouts(layouts.plan);
   writeBlocks(original, r, blocks.plan);
+  // After the blocks: a new layout's block record is in its table.
+  writeLayouts(original, r, layouts.plan);
   writeGroups(groups.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only

@@ -199,7 +199,7 @@ const TABLES: Readonly<Record<Purgeable, TableRules>> = {
 const XREF_DEPENDENT = 16 | 32;
 const XREF_BLOCK = 4 | 8;
 
-/** A layout's block: it goes with its layout (LAYOUT Delete, M6). */
+/** A layout's block: it goes with its layout (LAYOUT Delete, layouts.ts). */
 const LAYOUT_BLOCK = /^\*(model|paper)_space/i;
 
 /**
@@ -530,8 +530,11 @@ function blockProblems(
   model: DocumentModel,
   removedEntities: readonly AcadEntity[],
 ): string[] {
-  if (b.layout !== undefined || LAYOUT_BLOCK.test(b.name))
-    return ["a layout's block goes with its layout (LAYOUT Delete, M6)"];
+  // A layout's block goes with its layout (LAYOUT Delete), which layouts.ts checks.
+  const layoutGoes =
+    typeof b.layout === 'string' && !model.layouts.some((l) => l.handle === b.layout);
+  if (!layoutGoes && (b.layout !== undefined || LAYOUT_BLOCK.test(b.name)))
+    return ["a layout's block goes with its layout (LAYOUT Delete)"];
   if (((b.flags ?? 0) & XREF_BLOCK) !== 0) return ['an xref goes with XREF Detach (M1-21)'];
   const out: string[] = [];
   if (model.blocks.has(hex(acad.handle))) out.push('its block definition stays');
