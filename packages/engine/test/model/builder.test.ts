@@ -182,6 +182,17 @@ describe('ChangeSetBuilder', () => {
       blockRecord: '40',
       flags: 1,
       limits,
+      // An empty sheet: AutoCAD's 1E+20 to -1E+20 for no extents, world UCS.
+      space: {
+        insertionBase: { x: 0, y: 0, z: 0 },
+        extents: { min: { x: 1e20, y: 1e20, z: 1e20 }, max: { x: -1e20, y: -1e20, z: -1e20 } },
+        elevation: 0,
+        ucs: {
+          origin: { x: 0, y: 0, z: 0 },
+          xAxis: { x: 1, y: 0, z: 0 },
+          yAxis: { x: 0, y: 1, z: 0 },
+        },
+      },
     });
     expect(b.layout('41')).toBe(sheet);
     expect(b.tableRecord('blockRecords', '40')).toEqual({
@@ -252,6 +263,102 @@ describe('ChangeSetBuilder', () => {
       '3:Sheet 4',
     ]);
     expect(m.tables.blockRecords.get(m.layouts[3]!.blockRecord)?.name).toBe('*Paper_Space2');
+  });
+
+  it('makes another layout current, swapping the sheet blocks and the header, and undoes it', () => {
+    const m = sampleModel();
+    const space = (z: number) => ({
+      insertionBase: { x: z, y: 0, z: 0 },
+      extents: { min: { x: z, y: z, z: 0 }, max: { x: z + 10, y: z + 10, z: 0 } },
+      elevation: z,
+      ucs: {
+        origin: { x: z, y: 0, z: 0 },
+        xAxis: { x: 1, y: 0, z: 0 },
+        yAxis: { x: 0, y: 1, z: 0 },
+      },
+    });
+    const a3 = { min: { x: 0, y: 0 }, max: { x: 420, y: 297 } };
+    const setup = new ChangeSetBuilder(m);
+    // The header holds Layout1's live state; its LAYOUT still has an older one.
+    setup.updateLayout('1E', { flags: 1, limits: a3, space: space(1) });
+    for (const [name, value] of [
+      ['$PLIMMIN', { x: -10, y: -10 }],
+      ['$PLIMMAX', { x: 400, y: 280 }],
+      ['$PLIMCHECK', true],
+      ['$PSLTSCALE', 0],
+      ['$PINSBASE', { x: 7, y: 0, z: 0 }],
+      ['$PEXTMIN', { x: 7, y: 7, z: 0 }],
+      ['$PEXTMAX', { x: 17, y: 17, z: 0 }],
+      ['$PELEVATION', 7],
+      ['$PUCSORG', { x: 7, y: 0, z: 0 }],
+      ['$PUCSXDIR', { x: 1, y: 0, z: 0 }],
+      ['$PUCSYDIR', { x: 0, y: 1, z: 0 }],
+    ] as const)
+      setup.setHeader(name, value);
+    const sheet = setup.addLayout({ name: 'Sheet 2', flags: 3, limits: a3, space: space(2) });
+    m.apply(setup.build());
+    const before = snapshot(m);
+
+    const b = new ChangeSetBuilder(m);
+    b.setCurrentLayout(sheet.handle);
+    // Making the current layout current again changes nothing.
+    b.setCurrentLayout(sheet.handle);
+    expect(() => b.setCurrentLayout('22')).toThrow(/the Model layout is not a paper layout/);
+    expect(() => b.setCurrentLayout('99')).toThrow(/layout 99 does not exist/);
+    const cs = b.build();
+    m.apply(cs);
+    const name = (h: string) => m.tables.blockRecords.get(h)?.name;
+    expect([name(PAPER_SPACE), name(sheet.blockRecord)]).toEqual(['*Paper_Space0', '*Paper_Space']);
+    expect([m.blocks.get(PAPER_SPACE)?.name, m.blocks.get(sheet.blockRecord)?.name]).toEqual([
+      '*Paper_Space0',
+      '*Paper_Space',
+    ]);
+    // The blocks keep their handles and entities.
+    expect(m.blockEntities(PAPER_SPACE).map((id) => m.entity(id)!.handle)).toEqual(['24']);
+    // Layout1 keeps what the header held for it, and the header takes Sheet 2's.
+    expect(m.layouts.find((l) => l.handle === '1E')).toMatchObject({
+      flags: 2,
+      limits: { min: { x: -10, y: -10 }, max: { x: 400, y: 280 } },
+      space: {
+        insertionBase: { x: 7, y: 0, z: 0 },
+        extents: { min: { x: 7, y: 7, z: 0 }, max: { x: 17, y: 17, z: 0 } },
+        elevation: 7,
+        ucs: { origin: { x: 7, y: 0, z: 0 } },
+      },
+    });
+    expect(Object.fromEntries([...m.header].filter(([k]) => k.startsWith('$P')))).toEqual({
+      $PLIMMIN: a3.min,
+      $PLIMMAX: a3.max,
+      $PLIMCHECK: true,
+      $PSLTSCALE: 1,
+      $PINSBASE: { x: 2, y: 0, z: 0 },
+      $PEXTMIN: { x: 2, y: 2, z: 0 },
+      $PEXTMAX: { x: 12, y: 12, z: 0 },
+      $PELEVATION: 2,
+      $PUCSORG: { x: 2, y: 0, z: 0 },
+      $PUCSXDIR: { x: 1, y: 0, z: 0 },
+      $PUCSYDIR: { x: 0, y: 1, z: 0 },
+    });
+    m.apply(invertChangeSet(cs));
+    expect(snapshot(m)).toEqual(before);
+  });
+
+  it('makes a layout current in a drawing whose header states no paper space', () => {
+    const m = sampleModel();
+    const setup = new ChangeSetBuilder(m);
+    const sheet = setup.addLayout({ name: 'Sheet 2' });
+    m.apply(setup.build());
+    const b = new ChangeSetBuilder(m);
+    b.setCurrentLayout(sheet.handle);
+    m.apply(b.build());
+    expect(m.tables.blockRecords.get(sheet.blockRecord)?.name).toBe('*Paper_Space');
+    // Its flags (PSLTSCALE on) and empty sheet go to the header; Layout1 has none to keep.
+    expect([
+      m.header.get('$PSLTSCALE'),
+      m.header.get('$PLIMCHECK'),
+      m.header.get('$PEXTMIN'),
+    ]).toEqual([1, 0, { x: 1e20, y: 1e20, z: 1e20 }]);
+    expect(m.layouts.find((l) => l.handle === '1E')).not.toHaveProperty('space');
   });
 
   it('takes back a layout added in the same change set', () => {
