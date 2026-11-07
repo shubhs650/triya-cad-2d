@@ -33,8 +33,8 @@ import type {
   ObjectCommon,
   TableName,
   TableRecords,
-  Vec2,
 } from './types';
+import type { Vec2 } from '../geom/types';
 import {
   createEntity,
   createRecord,
@@ -331,7 +331,8 @@ export class ChangeSetBuilder {
   updateBlock(handle: Handle, patch: RecordPatch<BlockDefinition>): BlockDefinition {
     this.#open();
     const next = this.#blocks.update(handle, patch);
-    if (patch.name !== undefined) this.#table('blockRecords').update(handle, { name: patch.name });
+    if (patch.name !== undefined)
+      this.updateTableRecord('blockRecords', handle, { name: patch.name });
     return next;
   }
 

@@ -162,8 +162,10 @@ export abstract class Table<T extends TableEntry> extends CadObject implements I
 			: [...this.entries].find(([, v]) => v === sender)?.[0];
 		const entry = oldKey === undefined ? undefined : this.entries.get(oldKey);
 		if (entry && oldKey !== undefined) {
-			this.entries.set(e.newName.toUpperCase(), entry);
-			this.entries.delete(oldKey);
+			// Re-keyed in place: the table is written in entry order.
+			const kept = [...this.entries].map(([k, v]): [string, T] => (k === oldKey ? [e.newName.toUpperCase(), entry] : [k, v]));
+			this.entries.clear();
+			for (const [k, v] of kept) this.entries.set(k, v);
 		}
 		this._referenceHandler.changeKey(e.oldName.toUpperCase(), e.newName.toUpperCase());
 	}

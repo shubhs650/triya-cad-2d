@@ -93,7 +93,8 @@ export class BlockRecord extends TableEntry {
 		return this.evaluationGraph != null;
 	}
 
-	public isExplodable: boolean = false;
+	// Allow exploding came with AutoCAD 2006; a block in a file without the field can be exploded.
+	public isExplodable: boolean = true;
 	public insertHandles: number[] = [];
 	public ownedObjectHandles: number[] = [];
 
