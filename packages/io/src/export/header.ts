@@ -65,8 +65,6 @@ const WRITER_OWNED = new Set([
  */
 const UCS_NAMES = /^\$P?UCS(NAME|BASE|ORTHOREF)$/;
 
-const CMLEADERSTYLE = 'CMLEADERSTYLE';
-
 /** The records a name can name: the drawing's, and those of its table the same save adds. */
 type Records = (doc: CadDocument, added: readonly CadObject[]) => Iterable<{ name: string }> | null;
 
@@ -383,7 +381,7 @@ function headerProblem(
     if (!dictionary.has(name)) return 'new DICTIONARYVAR objects';
     if (typeof value !== 'string') return 'a DICTIONARYVAR holds text';
     // The current multileader style, which AutoCAD looks up by name like $DIMSTYLE's.
-    if (name === CMLEADERSTYLE) {
+    if (name === DictionaryVariable.currentMultiLeaderStyle) {
       const styles = [
         ...(namedDictionary(doc, CadDictionary.acadMLeaderStyle) ?? []),
         ...added.filter((r) => r instanceof MultiLeaderStyle),
