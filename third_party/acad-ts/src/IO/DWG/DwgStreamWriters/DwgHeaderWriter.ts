@@ -9,6 +9,7 @@ import { CRC8StreamHandler } from '../CRC8StreamHandler.js';
 import { DwgStreamWriterBase } from './DwgStreamWriterBase.js';
 import { IDwgStreamWriter } from './IDwgStreamWriter.js';
 import { BlockRecord } from '../../../Tables/BlockRecord.js';
+import { LineType } from '../../../Tables/LineType.js';
 
 export class DwgHeaderWriter extends DwgSectionIO {
 	override get sectionName(): string { return DwgSectionDefinition.header; }
@@ -31,6 +32,12 @@ export class DwgHeaderWriter extends DwgSectionIO {
 		if (!name) return null;
 		const records = this._document.blockRecords;
 		return records?.tryGetValue(name) ?? records?.tryGetValue(`_${name}`) ?? null;
+	}
+
+	// A linetype by name; null (ByBlock to AutoCAD) when the document has none of that name.
+	private _lineType(name: string | null): LineType | null {
+		if (!name) return null;
+		return this._document.lineTypes?.tryGetValue(name) ?? null;
 	}
 
 	/** A handle the header keeps as read: 0 once nothing in the document has it. */
@@ -623,25 +630,25 @@ export class DwgHeaderWriter extends DwgSectionIO {
 			this._writer.writeBit(this._header.dimensionTextDirection === 1);
 			this._writer.writeBitDouble(this._header.dimensionAltMzf);
 			this._writer.writeVariableText(this._header.dimensionAltMzs);
-			this._writer.writeBitDouble(this._header.dimensionFit);
+			this._writer.writeBitDouble(this._header.dimensionMzf);
 			this._writer.writeVariableText(this._header.dimensionMzs);
 		}
 
 		//R2000 + Only:
 		if (this.r2000Plus) {
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._header.dimensionTextStyle);
-			// DIMLDRBLK (not kept by the header), then DIMBLK, DIMBLK1, DIMBLK2 by block record.
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+			// DIMLDRBLK, DIMBLK, DIMBLK1, DIMBLK2 by block record.
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._arrowBlock(this._header.arrowBlockName));
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._arrowBlock(this._header.dimensionBlockName));
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._arrowBlock(this._header.dimensionBlockNameFirst));
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._arrowBlock(this._header.dimensionBlockNameSecond));
 		}
 
-		//R2007+ Only:
+		//R2007+ Only: DIMLTYPE, DIMLTEX1, DIMLTEX2 by linetype record.
 		if (this.r2007Plus) {
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
-			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, null!);
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._lineType(this._header.dimensionLineType));
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._lineType(this._header.dimensionTex1));
+			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._lineType(this._header.dimensionTex2));
 		}
 
 		//R2000+ Only:
@@ -799,7 +806,7 @@ export class DwgHeaderWriter extends DwgSectionIO {
 			this._writer.writeByte(this._header.dwgUnderlayFramesVisibility.charCodeAt(0) || 0);
 			this._writer.writeByte(this._header.dgnUnderlayFramesVisibility.charCodeAt(0) || 0);
 
-			this._writer.writeBit(false);
+			this._writer.writeBit(this._header.realWorldScale);
 			this._writer.writeCmColor(this._header.interfereColor);
 
 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, this._objectHandle(this._header.interfereObjectVisualStyleHandle));

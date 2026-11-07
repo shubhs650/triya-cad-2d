@@ -61,6 +61,8 @@ function changes(model: DocumentModel): Map<string, HeaderValue> {
     // The default arrowhead, as no arrow block can be counted on.
     else if (/^\$(DIMBLK|DIMLDRBLK)/.test(name)) next = v === '' ? undefined : '';
     else if (variable.isName || name === '$CMLSTYLE') next = undefined;
+    // AutoCAD takes 1 to 30 steps a second.
+    else if (name === '$STEPSPERSEC') next = v === 1 ? 2 : 1;
     else if (typeof v === 'number') next = Number.isInteger(v) ? (v === 0 ? 1 : 0) : v + 0.5;
     else if (typeof v === 'boolean') next = !v;
     // A handle variable ($CMATERIAL) has to name an object of its kind; leave it.

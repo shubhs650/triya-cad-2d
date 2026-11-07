@@ -88,11 +88,22 @@ const NAME_TABLES: Record<string, { readonly records: Records; readonly empty?: 
 };
 
 /**
+ * Variables AutoCAD bounds where acad-ts's setter does not, so a value outside the range would
+ * be written and then dropped on reading (acad-ts's DWG reader keeps STEPSPERSEC only within
+ * it). The ranges are those of the AutoCAD 2024 system variable reference (STEPSPERSEC: 1 to 30).
+ */
+const VALUE_RANGES: Readonly<Record<string, readonly [number, number]>> = {
+  $STEPSPERSEC: [1, 30],
+};
+
+/**
  * What a DWG header does not store, by version, as found by saving every variable of the
  * public corpus's DWG samples (export-header.corpus.test.ts keeps this list true). The
  * R13–R14-only variables (ATTDIA, OSMODE, …) moved to the registry in AutoCAD 2000; the
- * R2000+/R2004+/R2007+/R2010+ ones did not exist before; DIMLTYPE, DIMLTEX1/2, DIMLDRBLK,
- * DIMMZF, REALWORLDSCALE, SAVEIMAGES and STEPSPERSEC are acad-ts DWG writer gaps (M1-87).
+ * R2000+/R2004+/R2007+/R2010+ ones did not exist before (the header layouts of the ODA's Open
+ * Design Specification for .dwg, §9). DIMFIT gave way to DIMATFIT and DIMTMOVE in R2000; R2010+
+ * stores DIMMZF where acad-ts read DIMFIT until patch 0132. SAVEIMAGES is an R13 DXF variable no
+ * DWG header has.
  */
 const DWG_LOSSES: readonly {
   readonly from?: ACadVersion;
@@ -112,6 +123,7 @@ const DWG_LOSSES: readonly {
       '$DIMAZIN',
       '$DIMDSEP',
       '$DIMFRAC',
+      '$DIMLDRBLK',
       '$DIMLUNIT',
       '$DIMLWD',
       '$DIMLWE',
@@ -172,6 +184,9 @@ const DWG_LOSSES: readonly {
       '$DIMFXL',
       '$DIMFXLON',
       '$DIMJOGANG',
+      '$DIMLTEX1',
+      '$DIMLTEX2',
+      '$DIMLTYPE',
       '$DIMTFILL',
       '$DIMTFILLCLR',
       '$INTERFERECOLOR',
@@ -186,10 +201,12 @@ const DWG_LOSSES: readonly {
       '$NORTHDIRECTION',
       '$PSOLHEIGHT',
       '$PSOLWIDTH',
+      '$REALWORLDSCALE',
       '$SHADOWPLANELOCATION',
       '$SHOWHIST',
       '$SOLIDHIST',
       '$STEPSIZE',
+      '$STEPSPERSEC',
       '$TILEMODELIGHTSYNCH',
       '$TIMEZONE',
     ],
@@ -197,13 +214,16 @@ const DWG_LOSSES: readonly {
   {
     through: ACadVersion.AC1021,
     why: 'DWG before R2010 does not store it',
-    names: ['$DIMALTMZF', '$DIMALTMZS', '$DIMMZS', '$DIMTXTDIRECTION'],
+    names: ['$DIMALTMZF', '$DIMALTMZS', '$DIMMZF', '$DIMMZS', '$DIMTXTDIRECTION'],
   },
   {
     from: ACadVersion.AC1015,
-    through: ACadVersion.AC1021,
-    why: 'R2000–R2007 DWG does not store it',
+    why: 'DWG from R2000 does not store it (DIMATFIT and DIMTMOVE replaced it)',
     names: ['$DIMFIT'],
+  },
+  {
+    why: 'DWG does not store it',
+    names: ['$SAVEIMAGES'],
   },
   {
     from: ACadVersion.AC1015,
@@ -218,19 +238,6 @@ const DWG_LOSSES: readonly {
       '$DRAGMODE',
       '$OSMODE',
       '$PICKSTYLE',
-    ],
-  },
-  {
-    why: 'acad-ts writes no DWG value for it (M1-87)',
-    names: [
-      '$DIMLDRBLK',
-      '$DIMLTEX1',
-      '$DIMLTEX2',
-      '$DIMLTYPE',
-      '$DIMMZF',
-      '$REALWORLDSCALE',
-      '$SAVEIMAGES',
-      '$STEPSPERSEC',
     ],
   },
 ];
@@ -252,7 +259,7 @@ function formatProblem(
   }
   // acad-ts marks the variables its DXF writer skips as Ignored (DxfReferenceType 16).
   if (format === 'dxf' && (variable.referenceType & 16) !== 0) {
-    return 'acad-ts writes no DXF value for it (M1-87)';
+    return 'acad-ts writes no DXF value for it';
   }
   if (format !== 'dwg' || version === undefined) return undefined;
   for (const l of DWG_LOSSES) {
@@ -375,6 +382,9 @@ function headerProblem(
     }
     if (!same(headerVariableValue(name, variable, scratch), value))
       return `it cannot hold ${JSON.stringify(value)}`;
+    const range = VALUE_RANGES[name];
+    if (range && (typeof value !== 'number' || value < range[0] || value > range[1]))
+      return `it cannot hold ${JSON.stringify(value)} (AutoCAD takes ${range[0]}–${range[1]})`;
   }
   return formatProblem(name, variable, format, version);
 }
