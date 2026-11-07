@@ -1,5 +1,6 @@
 // The open documents and which tab shows (M1-22). A small external store read with
 // useSyncExternalStore: only the chrome (tabs, start screen, banners) subscribes.
+import type { ChangeSet, DocumentInit, Layout } from '@triya/engine';
 import type { OpenResult } from '@triya/io';
 import type { ViewTransform } from '@triya/render';
 
@@ -25,12 +26,26 @@ export interface OpenDocument {
   readonly revision: number;
 }
 
-/** Model, then the layouts in tab order (DXF 71): the layout tabs and the file tab preview. */
-export function spacesOf(doc: OpenDocument): { readonly name: string; readonly block: string }[] {
+/**
+ * The drawing's layouts as they are now: as opened, with the updates the engine's change sets
+ * carried since (renamed, reordered, a new page setup or limits; M1-97), in tab order.
+ */
+export function layoutsOf(init: DocumentInit, changes: readonly ChangeSet[]): Layout[] {
+  const now = new Map((init.layouts ?? []).map((l) => [l.handle, l]));
+  for (const cs of changes) for (const { after } of cs.layouts ?? []) now.set(after.handle, after);
+  return [...now.values()].sort((a, b) => a.tabOrder - b.tabOrder);
+}
+
+/**
+ * Model, then the layouts in tab order (DXF 71): the layout tabs and the file tab preview.
+ * `changes` are the edits the drawing's engine applied since it opened.
+ */
+export function spacesOf(
+  doc: OpenDocument,
+  changes: readonly ChangeSet[],
+): { readonly name: string; readonly block: string }[] {
   const model = doc.opened.modelSpace!;
-  const layouts = [...(doc.opened.init.layouts ?? [])]
-    .filter((l) => l.blockRecord !== model)
-    .sort((a, b) => a.tabOrder - b.tabOrder);
+  const layouts = layoutsOf(doc.opened.init, changes).filter((l) => l.blockRecord !== model);
   return [
     { name: 'Model', block: model },
     ...layouts.map((l) => ({ name: l.name, block: l.blockRecord })),

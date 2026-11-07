@@ -1,8 +1,9 @@
 // M1-22: document tabs. Opening adds a tab that shows; closing the showing tab shows the one
 // to its right, else the one to its left, as AutoCAD's file tabs do.
+import type { ChangeSet, Layout } from '@triya/engine';
 import type { OpenResult } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { DocumentStore } from '../src/documents';
+import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from '../src/documents';
 
 const opened = {} as OpenResult;
 
@@ -109,6 +110,48 @@ describe('DocumentStore spaces and saved views', () => {
     expect(s.getSnapshot().docs[0]!.savedViews).toEqual([
       { name: 'Sheet', block: '58', view: v(2) },
       { name: 'FRONT', block: '58', view: v(3) },
+    ]);
+  });
+});
+
+describe('spacesOf (M1-97)', () => {
+  const layouts = [
+    { handle: 'A', name: 'Model', tabOrder: 0, blockRecord: '1F' },
+    { handle: 'B', name: 'Layout1', tabOrder: 1, blockRecord: '1B' },
+    { handle: 'C', name: 'Layout2', tabOrder: 2, blockRecord: '50' },
+  ];
+  const doc = {
+    opened: { modelSpace: '1F', init: { layouts } } as unknown as OpenResult,
+  } as OpenDocument;
+  /** A change set updating layouts, each from its state after the change sets before. */
+  const current = new Map<string, Layout>();
+  const update = (...patches: [string, Partial<Layout>][]): ChangeSet => ({
+    layouts: patches.map(([handle, patch]) => {
+      const before = current.get(handle) ?? layouts.find((l) => l.handle === handle)!;
+      const after = { ...before, ...patch };
+      current.set(handle, after);
+      return { before, after };
+    }),
+  });
+
+  it('lists Model, then the layouts in tab order as opened', () => {
+    expect(spacesOf(doc, [])).toEqual([
+      { name: 'Model', block: '1F' },
+      { name: 'Layout1', block: '1B' },
+      { name: 'Layout2', block: '50' },
+    ]);
+  });
+
+  it('follows the layouts the engine renamed and reordered since', () => {
+    const changes = [
+      update(['C', { name: 'Plan' }]),
+      update(['B', { tabOrder: 2 }], ['C', { tabOrder: 1 }]),
+    ];
+    expect(spacesOf(doc, changes).map((s) => s.name)).toEqual(['Model', 'Plan', 'Layout1']);
+    expect(layoutsOf(doc.opened.init, changes).map((l) => `${l.tabOrder}:${l.name}`)).toEqual([
+      '0:Model',
+      '1:Plan',
+      '2:Layout1',
     ]);
   });
 });

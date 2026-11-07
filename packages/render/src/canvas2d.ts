@@ -45,6 +45,7 @@ import {
   type EntityId,
   type Handle,
   type KeyedChanges,
+  type Layout,
   type LayoutSheet,
   type Matrix2D,
   type NonGraphicalObject,
@@ -373,14 +374,19 @@ export class Canvas2DRenderer implements Renderer {
    * paper millimetres at the zoom.
    */
   readonly #paperSpace: boolean;
+  /**
+   * The layout whose block is shown (Model's or a sheet's); a change set that updates it
+   * (renamed, new page setup or flags, M1-97) re-reads what follows from it.
+   */
+  readonly #layoutHandle: Handle | undefined;
   /** Paper drawing units per millimetre, from the layout's page setup (M1-18). */
-  readonly #paperUnitsPerMm: number;
+  #paperUnitsPerMm = 1;
   /** The layout's PSLTSCALE (DXF 70 bit 1): viewport linetypes in paper units. */
-  readonly #psltscale: boolean;
+  #psltscale = true;
   /** The block shown is model space: the Model tab, where MSLTSCALE applies (M1-63). */
   readonly #modelTab: boolean;
   /** The layout's sheet, when the block shown is a set-up layout. */
-  readonly #sheet: LayoutSheet | undefined;
+  #sheet: LayoutSheet | undefined;
   /** Model space, when the block shown is a layout whose viewports show it. */
   readonly #modelBlock: Handle | undefined;
   /** The layout's model-space viewports in stacking order; undefined until first needed. */
@@ -460,16 +466,8 @@ export class Canvas2DRenderer implements Renderer {
     const layout = this.#model.layouts.find((l) => l.blockRecord === this.#block);
     this.#paperSpace = layout !== undefined && !isModel(layout.blockRecord);
     this.#modelTab = isModel(this.#block);
-    const plot = this.#paperSpace ? layout?.plot : undefined;
-    this.#sheet = this.#paperSpace && layout ? layoutSheet(layout) : undefined;
-    // A layout without stated flags takes AutoCAD's default, PSLTSCALE 1.
-    this.#psltscale = ((layout?.flags ?? 1) & 1) !== 0;
-    // Without a page setup the paper units follow the drawing's measurement.
-    this.#paperUnitsPerMm = plot
-      ? paperUnitsPerMm(plot)
-      : this.#model.meta.measurement === 'imperial'
-        ? 1 / 25.4
-        : 1;
+    this.#layoutHandle = layout?.handle;
+    this.#readLayout(layout);
     this.#modelBlock = this.#paperSpace
       ? [...records.values()].find((r) => isModel(r.handle))?.handle
       : undefined;
@@ -581,6 +579,11 @@ export class Canvas2DRenderer implements Renderer {
     this.#tessellate.fill = fillMode(this.#model);
     this.#tessellate.attributeMode = attributeMode(this.#model);
     if (cs.tables?.layers) this.#locked = undefined;
+    // The layout shown was renamed, reordered or given a new page setup, limits or PSLTSCALE
+    // (M1-97): its sheet, paper units and viewport linetype scale are read again. They are
+    // used at draw time only, so nothing is re-tessellated.
+    const layout = cs.layouts?.find((l) => l.after.handle === this.#layoutHandle)?.after;
+    if (layout) this.#readLayout(layout);
     // A layer, linetype, text style, LTSCALE, FILLMODE or ATTMODE change can restyle or hide any
     // entity, and an IMAGEFRAME or WIPEOUTFRAME change reframes every image: re-resolve the
     // whole block.
@@ -696,6 +699,20 @@ export class Canvas2DRenderer implements Renderer {
       this.frame();
     };
     this.#requestIdle(check);
+  }
+
+  /** The sheet, PSLTSCALE and paper units of the layout shown. */
+  #readLayout(layout: Layout | undefined): void {
+    const plot = this.#paperSpace ? layout?.plot : undefined;
+    this.#sheet = this.#paperSpace && layout ? layoutSheet(layout) : undefined;
+    // A layout without stated flags takes AutoCAD's default, PSLTSCALE 1.
+    this.#psltscale = ((layout?.flags ?? 1) & 1) !== 0;
+    // Without a page setup the paper units follow the drawing's measurement.
+    this.#paperUnitsPerMm = plot
+      ? paperUnitsPerMm(plot)
+      : this.#model.meta.measurement === 'imperial'
+        ? 1 / 25.4
+        : 1;
   }
 
   /** What shows around a layout's sheet, or the model background. */

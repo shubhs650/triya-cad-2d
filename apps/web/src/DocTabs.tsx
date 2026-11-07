@@ -195,7 +195,7 @@ function TabPreview({
   onLeave: () => void;
   onPick: (block: string) => void;
 }) {
-  const spaces = spacesOf(doc);
+  const spaces = spacesOf(doc, engines.changesOf(doc.id));
   const [pictures, setPictures] = useState<ReadonlyMap<string, ImageBitmap>>(new Map());
   const box = useRef<HTMLDivElement>(null);
   // A tab near the right edge: the preview moves left so it stays in the window.
