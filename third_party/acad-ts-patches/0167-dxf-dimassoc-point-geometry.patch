@@ -1,0 +1,88 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index b426b16..fe150aa 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -2447,7 +2447,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           if ((dimassoc.associativityFlags & AssociativityFlags.FirstPointReference) !== 0
+             && dimassoc.firstPointRef === null) {
+             dimassoc.firstPointRef = new OsnapPointRef();
+-            this._readOsnapPointRef(dimassoc.firstPointRef);
++            tmp.firstPointRef = this._readOsnapPointRef(dimassoc.firstPointRef);
+             this.lockPointer = true;
+             return true;
+           }
+@@ -2455,7 +2455,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           if ((dimassoc.associativityFlags & AssociativityFlags.SecondPointReference) !== 0
+             && dimassoc.secondPointRef === null) {
+             dimassoc.secondPointRef = new OsnapPointRef();
+-            this._readOsnapPointRef(dimassoc.secondPointRef);
++            tmp.secondPointRef = this._readOsnapPointRef(dimassoc.secondPointRef);
+             this.lockPointer = true;
+             return true;
+           }
+@@ -2463,7 +2463,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           if ((dimassoc.associativityFlags & AssociativityFlags.ThirdPointReference) !== 0
+             && dimassoc.thirdPointRef === null) {
+             dimassoc.thirdPointRef = new OsnapPointRef();
+-            this._readOsnapPointRef(dimassoc.thirdPointRef);
++            tmp.thirdPointRef = this._readOsnapPointRef(dimassoc.thirdPointRef);
+             this.lockPointer = true;
+             return true;
+           }
+@@ -2471,7 +2471,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           if ((dimassoc.associativityFlags & AssociativityFlags.FourthPointReference) !== 0
+             && dimassoc.fourthPointRef === null) {
+             dimassoc.fourthPointRef = new OsnapPointRef();
+-            this._readOsnapPointRef(dimassoc.fourthPointRef);
++            tmp.fourthPointRef = this._readOsnapPointRef(dimassoc.fourthPointRef);
+             this.lockPointer = true;
+             return true;
+           }
+@@ -2529,10 +2529,17 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           osnapPoint.intersectionGsMarker = this._reader.valueAsInt;
+           break;
+         case 331:
+-          template.objectHandle = this._reader.valueAsHandle;
++          template.objectHandles.push(this._reader.valueAsHandle);
++          template.objectHandle ??= this._reader.valueAsHandle;
++          break;
++        case 301:
++          osnapPoint.xrefPaths.push(this._reader.valueAsString);
+           break;
+         case 302:
++          osnapPoint.intersectionXrefPaths.push(this._reader.valueAsString);
++          break;
+         case 332:
++          template.intersectionHandles.push(this._reader.valueAsHandle);
+           break;
+         default:
+           end = true;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 06dcf8a..fcd3042 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -967,13 +967,23 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+     this._writer.write(1, DimensionAssociation.osnapPointRefClassName);
+ 
+     this._writer.write(72, osnapPoint.objectOsnapType);
+-    this._writer.writeHandle(331, osnapPoint.geometry);
++    // The geometry and its path (as the DWG writer takes it), then the DXF reference's order.
++    const geometry = osnapPoint.geometryPath.length > 0 ? osnapPoint.geometryPath : [osnapPoint.geometry];
++    for (const object of geometry) this._writer.writeHandle(331, object);
+     this._writer.write(73, osnapPoint.subentType);
+     this._writer.write(91, osnapPoint.gsMarker);
++    for (const path of osnapPoint.xrefPaths) this._writer.write(301, path);
+     this._writer.write(40, osnapPoint.geometryParameter);
+ 
+     this._writer.writeVector(10, osnapPoint.osnapPoint);
+ 
++    if (osnapPoint.objectOsnapType === 6 || osnapPoint.objectOsnapType === 11) {
++      for (const object of osnapPoint.intersectionGeometry) this._writer.writeHandle(332, object);
++      this._writer.write(74, osnapPoint.intersectionSubType);
++      this._writer.write(92, osnapPoint.intersectionGsMarker);
++      for (const path of osnapPoint.intersectionXrefPaths) this._writer.write(302, path);
++    }
++
+     this._writer.write(75, osnapPoint.hasLastPointRef ? 1 : 0);
+   }
+ 

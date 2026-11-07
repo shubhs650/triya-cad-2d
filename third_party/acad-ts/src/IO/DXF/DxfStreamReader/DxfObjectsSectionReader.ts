@@ -2447,7 +2447,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           if ((dimassoc.associativityFlags & AssociativityFlags.FirstPointReference) !== 0
             && dimassoc.firstPointRef === null) {
             dimassoc.firstPointRef = new OsnapPointRef();
-            this._readOsnapPointRef(dimassoc.firstPointRef);
+            tmp.firstPointRef = this._readOsnapPointRef(dimassoc.firstPointRef);
             this.lockPointer = true;
             return true;
           }
@@ -2455,7 +2455,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           if ((dimassoc.associativityFlags & AssociativityFlags.SecondPointReference) !== 0
             && dimassoc.secondPointRef === null) {
             dimassoc.secondPointRef = new OsnapPointRef();
-            this._readOsnapPointRef(dimassoc.secondPointRef);
+            tmp.secondPointRef = this._readOsnapPointRef(dimassoc.secondPointRef);
             this.lockPointer = true;
             return true;
           }
@@ -2463,7 +2463,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           if ((dimassoc.associativityFlags & AssociativityFlags.ThirdPointReference) !== 0
             && dimassoc.thirdPointRef === null) {
             dimassoc.thirdPointRef = new OsnapPointRef();
-            this._readOsnapPointRef(dimassoc.thirdPointRef);
+            tmp.thirdPointRef = this._readOsnapPointRef(dimassoc.thirdPointRef);
             this.lockPointer = true;
             return true;
           }
@@ -2471,7 +2471,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           if ((dimassoc.associativityFlags & AssociativityFlags.FourthPointReference) !== 0
             && dimassoc.fourthPointRef === null) {
             dimassoc.fourthPointRef = new OsnapPointRef();
-            this._readOsnapPointRef(dimassoc.fourthPointRef);
+            tmp.fourthPointRef = this._readOsnapPointRef(dimassoc.fourthPointRef);
             this.lockPointer = true;
             return true;
           }
@@ -2529,10 +2529,17 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           osnapPoint.intersectionGsMarker = this._reader.valueAsInt;
           break;
         case 331:
-          template.objectHandle = this._reader.valueAsHandle;
+          template.objectHandles.push(this._reader.valueAsHandle);
+          template.objectHandle ??= this._reader.valueAsHandle;
+          break;
+        case 301:
+          osnapPoint.xrefPaths.push(this._reader.valueAsString);
           break;
         case 302:
+          osnapPoint.intersectionXrefPaths.push(this._reader.valueAsString);
+          break;
         case 332:
+          template.intersectionHandles.push(this._reader.valueAsHandle);
           break;
         default:
           end = true;

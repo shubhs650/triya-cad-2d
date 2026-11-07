@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) and 0164–0165 (M1-75 part 32) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32) and 0166–0167 (M1-75 part 35) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -3042,5 +3042,39 @@ AutoCAD keeps the current paper layout on the block record named `*Paper_Space`;
 **Title:** Read a DWG CadValue of unknown type without throwing
 
 `DwgObjectReader._readCadValue` reads a non-empty value of type `CadValueType.Unknown` as a BitLong, as `DwgObjectWriter._writeCadValue` writes it, but stores it through `CadValue.setValue`, which throws "Invalid operation for value type" for Unknown. The exception drops the whole object; a table whose cell has a fresh `CellContent` (whose value is Unknown) disappears when its R2007+ DWG is read back. The reader now assigns the BitLong to `value` directly, as it does for Buffer and ResultBuffer.
+
+</details>
+
+### 0166 — the DIMASSOC object class is not exported
+
+- **File:** `third_party/acad-ts-patches/0166-export-dimassoc-object.patch`
+- **Touches:** `src/index.ts`
+- **Symptom:** `index.ts` exports `DimensionAssociation` from `Header/` (the enum of the DIMASSOC system variable) and only `OsnapPointRef` from `Objects/DimensionAssociation.ts`, so the DIMASSOC object class cannot be imported: a consumer can neither test for it with `instanceof` nor make one. Found by Triya M1-75 part 35 (associative dimensions saved).
+- **Fix:** the object class is also exported as `DimensionAssociationObject`.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0166 the DIMASSOC object class is exported".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Export the DIMASSOC object class
+
+`Objects/DimensionAssociation.ts` (the DIMASSOC object) shares its class name with the `Header/DimensionAssociation` enum, and `index.ts` exports only the enum, so the object class is unreachable from the package. This exports it as `DimensionAssociationObject` beside `OsnapPointRef`, leaving the existing export unchanged.
+
+</details>
+
+### 0167 — a DXF DIMASSOC loses the geometry of its point references
+
+- **File:** `third_party/acad-ts-patches/0167-dxf-dimassoc-point-geometry.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** the DXF reader read each `AcDbOsnapPointRef` into a template it then threw away, so the 331 handle of the geometry a dimension point is associated with was never resolved: every DIMASSOC read from DXF had no geometry (ACadSharp's `sample_AC10xx` DXF saves, where the DWG saves name the circles and line), and a DXF save wrote `331 0`. The reader also skipped 301, 302 and 332, and the writer wrote neither the xref paths nor an intersection's second object (332, 74, 92, 302). Found by Triya M1-75 part 35; the round-trip diff cannot see it, because both sides are read by the same reader.
+- **Fix:** the reader keeps the point reference templates on the DIMASSOC template, so they are built, and reads 331 (each into the geometry path, the first as the geometry), 332, 301 and 302 as the DWG reader does; the writer writes the path's 331s, 301, and for an intersection or apparent intersection 332, 74, 92 and 302, in the DXF reference's order.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0167 a DXF DIMASSOC keeps the geometry of its point references"; `packages/testkit/src/mapping/dimassoc.corpus.test.ts` maps each ACadSharp sample's DXF saves alike to its DWG.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep DIMASSOC point reference geometry through DXF read and write
+
+`DxfObjectsSectionReader._readDimensionAssociation` called `_readOsnapPointRef` but dropped the `OsnapPointRefTemplate` it returned, so `CadDimensionAssociationTemplate._build` never resolved the 331 handle and every DIMASSOC read from DXF had `geometry === null` (its DWG twin has it). The returned templates are now stored on the DIMASSOC template; 331 is collected into the geometry path (the first being `geometry`), and 301, 302 and 332 are read into the xref paths and the intersection geometry instead of being skipped. `DxfObjectsSectionWriter._writeOsnapPointRef` now writes the same values back (331 per path entry, 301, and for intersection osnaps 332, 74, 92 and 302), matching the order of the DXF reference.
 
 </details>
