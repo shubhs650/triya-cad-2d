@@ -13,6 +13,7 @@ import {
   BlockRecord,
   Entity as AcadEntity,
   LineType,
+  TableEntity,
   Viewport,
 } from '@node-projects/acad-ts';
 import {
@@ -26,7 +27,14 @@ import {
 import { documentInit } from '../map/document';
 import type { CadFormat } from '../read';
 import { writeCadDocument, type WriteOptions } from '../write';
-import { createAcadEntity, entityProblems, same, writeEntity, type Resolver } from './entities';
+import {
+  createAcadEntity,
+  entityProblems,
+  same,
+  tableCellProblems,
+  writeEntity,
+  type Resolver,
+} from './entities';
 import {
   onlyNewDictionary,
   planDrawOrder,
@@ -182,7 +190,8 @@ function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
 }
 
 /**
- * What acad-ts cannot write to the format at hand: what an R12 viewport cannot state (see
+ * What acad-ts cannot write to the format at hand, or an edited original cannot take: a table
+ * cell's content (entities.ts `tableCellProblems`), what an R12 viewport cannot state (see
  * r12-viewport.ts), its DWG writer leaves a LARGE_RADIAL_DIMENSION out (roadmap M1-74), and a
  * VIEWPORT's style sheet before R2000 or visual style before R2007, which neither format stores
  * (DXF 1 and 348 are R2000+ and R2007+, as the DWG fields are); so an edited or new one would be
@@ -202,6 +211,13 @@ function formatProblems(
     const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;
     const v = acad instanceof Viewport ? acad : undefined;
     return r12ViewportProblems(v, b, e.geom).map((p) => `${e.type} ${e.handle}: ${p}`);
+  }
+  if (e.geom.kind === 'ACAD_TABLE' && before?.geom.kind === 'ACAD_TABLE') {
+    if (!(acad instanceof TableEntity)) return [];
+    const dwgFrom2010 = format === 'dwg' && version !== undefined && version >= ACadVersion.AC1024;
+    return tableCellProblems(acad, before.geom, e.geom, dwgFrom2010).map(
+      (p) => `${e.type} ${e.handle}: ${p}`,
+    );
   }
   if (e.geom.kind === 'VIEWPORT') {
     const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;

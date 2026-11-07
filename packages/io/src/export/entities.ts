@@ -20,6 +20,9 @@ import {
   AttributeDefinition,
   AttributeEntity,
   BlockRecord,
+  CadValueType,
+  CellContent,
+  CellType,
   Circle,
   ClipMode,
   ClipType,
@@ -80,6 +83,10 @@ import {
   Solid,
   Spline,
   SplineFlags,
+  TableCellContentType,
+  TableCellStateFlags,
+  TableEntity,
+  TableStyle,
   TextColumnData,
   TextEntity,
   TextStyle,
@@ -133,6 +140,8 @@ import type {
   RayGeometry,
   SolidGeometry,
   SplineGeometry,
+  TableCell,
+  TableGeometry,
   TextFields,
   TextGeometry,
   ToleranceGeometry,
@@ -1880,6 +1889,178 @@ const viewportWriter: Writer<ViewportGeometry> = {
   },
 };
 
+// ── ACAD_TABLE ─────────────────────────────────────────────────────────────────────────────
+
+/** The cells of `before` and `after` side by side, with their row and column. */
+function* cellPairs(
+  before: TableGeometry,
+  after: TableGeometry,
+): Generator<[number, number, TableCell, TableCell]> {
+  for (const [i, row] of after.cells.entries()) {
+    for (const [j, a] of row.entries()) {
+      const b = before.cells[i]?.[j];
+      if (b) yield [i, j, b, a];
+    }
+  }
+}
+
+/** The grid of `g` is `rows` × `columns`, every row holding a cell per column. */
+const gridOf = (g: TableGeometry, rows: number, columns: number): boolean =>
+  g.rowHeights.length === rows &&
+  g.columnWidths.length === columns &&
+  g.cells.length === rows &&
+  g.cells.every((r) => r.length === columns);
+
+/**
+ * ACAD_TABLE, edited as the table grips and the cell editor edit it (M4-05): placement, row
+ * heights and column widths, cell text and blocks, cell rotation, the table style and the `*T`
+ * block. The `*T` block, which AutoCAD draws the table from, is written as it is: regenerating it
+ * from the new content is the table engine's (M4-05), as a dimension's block is the dimension
+ * engine's. What changes the grid or formatting (rows and columns added or removed, merges, cell
+ * formats, table-wide overrides) is refused for now; so is a new table, which needs a `*T` block
+ * of its own that only the TABLE command can make (block definitions, M5).
+ */
+const tableWriter: Writer<TableGeometry> = {
+  create: () => new TableEntity(),
+  problems(r, before, g) {
+    if (!before) return ['new tables (TABLE and COPY make a *T block of their own, M4-05)'];
+    const out = planeProblems(g);
+    if (g.thickness) out.push('a table with a thickness');
+    if (before.style !== g.style) {
+      if (g.style === undefined) out.push('a table without its table style');
+      else if (!resolve(r, g.style, TableStyle)) out.push(`table style ${g.style} does not exist`);
+    }
+    if (before.block !== g.block) {
+      if (g.block === undefined) out.push('a table without its block');
+      else if (!insertable(r, g.block)) out.push(`block ${g.block} cannot be a table's block`);
+    }
+    if (g.direction.x === 0 && g.direction.y === 0) out.push('no horizontal direction');
+    if (!same(before.overrides, g.overrides)) out.push('table overrides change');
+    if (!gridOf(g, before.rowHeights.length, before.columnWidths.length)) {
+      out.push('rows or columns added or removed');
+      return out;
+    }
+    if (g.rowHeights.some((h) => !(h > 0))) out.push('a row height of 0 or less');
+    if (g.columnWidths.some((w) => !(w > 0))) out.push('a column width of 0 or less');
+    let merges = false;
+    let formats = false;
+    for (const [i, j, b, a] of cellPairs(before, g)) {
+      const at = `cell (${i}, ${j})`;
+      if (a.rowSpan !== b.rowSpan || a.columnSpan !== b.columnSpan || a.merged !== b.merged) {
+        merges = true;
+      }
+      if (!same(a.format, b.format)) formats = true;
+      if (a.type !== b.type) {
+        out.push(`${at}: a change between text and block`);
+        continue;
+      }
+      if (a.type === 'block') {
+        if (a.text !== '') out.push(`${at}: text in a block cell`);
+        if (a.block === undefined) out.push(`${at}: a block cell without a block`);
+        else if (a.block !== b.block && !insertable(r, a.block)) {
+          out.push(`${at}: block ${a.block} cannot be a cell's block`);
+        }
+      } else if (a.block !== undefined) {
+        out.push(`${at}: a block in a text cell`);
+      }
+    }
+    if (merges) out.push('merged cells change');
+    if (formats) out.push('cell formats change (M1-75)');
+    return out;
+  },
+  write(r, e, before, g) {
+    const t = e as TableEntity;
+    const d = differ(before, g);
+    const pl = plane(g.normal);
+    if (d('style')) t.style = resolve(r, g.style!, TableStyle)!;
+    if (d('block')) t.block = insertable(r, g.block!)!;
+    if (d('position', 'elevation')) {
+      t.insertPoint = new XYZ(ocsX(g.position.x, pl), g.position.y, ocsZ(g.elevation, pl));
+    }
+    // DXF 11 is WCS, in the table's plane.
+    if (d('direction')) t.horizontalDirection = new XYZ(g.direction.x, g.direction.y, 0);
+    if (d('rowHeights')) g.rowHeights.forEach((h, i) => (t.rows[i]!.height = h));
+    if (d('columnWidths')) g.columnWidths.forEach((w, j) => (t.columns[j]!.width = w));
+    if (d('normal')) t.normal = xyz(g.normal);
+    // Cells by their own before, not `differ`'s: a plane change must not rewrite every value.
+    for (const [i, row] of g.cells.entries()) {
+      for (const [j, a] of row.entries()) {
+        const cell = t.rows[i]!.cells[j]!;
+        const b = before?.cells[i]?.[j];
+        if (a.type === 'text' && (!b || b.text !== a.text)) writeCellText(cell, a.text);
+        if (a.type === 'block' && (!b || b.block !== a.block)) {
+          const block = insertable(r, a.block!)!;
+          if (cell.type === CellType.Block || cell.value instanceof BlockRecord) cell.value = block;
+          for (const k of cell.contents) {
+            if (k.blockRecord || k.contentType & TableCellContentType.Block) k.blockRecord = block;
+          }
+        }
+        if (!b || b.rotation !== a.rotation) cell.rotation = a.rotation;
+      }
+    }
+  },
+};
+
+/**
+ * A cell's text, as the cell editor leaves it: a string value, whatever the value was (a number
+ * or date cell typed over keeps what was typed; AutoCAD would parse it by the cell's data format,
+ * which Triya does not map, so the drafter's text is what is kept). AutoCAD 2007 and later state
+ * a value's formatted text beside it; a value that had one gets the new text as its own.
+ */
+function writeCellText(cell: TableEntity['rows'][number]['cells'][number], text: string): void {
+  let content = cell.contents[0];
+  if (!content) {
+    // A DWG R2010+ cell that was never typed in has no content at all.
+    content = new CellContent();
+    content.contentType = TableCellContentType.Value;
+    cell.contents.push(content);
+  }
+  const v = content.cadValue;
+  const formatted = v.formattedValue !== '';
+  v.setValue(text, CadValueType.String);
+  v.isEmpty = false;
+  v.formattedValue = formatted ? text : '';
+}
+
+/**
+ * What an edited table's original holds that its writer cannot change, by the cell: a cell with
+ * a field (FIELD, M4-10), several contents, locked content or a data link is not typed over (the
+ * cell editor refuses a locked one; the link and the field would put their own value back), a
+ * block with attribute values keeps them, and a DWG from R2010 keeps a cell's rotation in its
+ * content format, which Triya does not map.
+ */
+export function tableCellProblems(
+  acad: TableEntity,
+  before: TableGeometry,
+  after: TableGeometry,
+  dwgFrom2010: boolean,
+): string[] {
+  const out: string[] = [];
+  if (!gridOf(after, acad.rows.length, acad.columns.length)) return out;
+  for (const [i, j, b, a] of cellPairs(before, after)) {
+    const at = `cell (${i}, ${j})`;
+    const cell = acad.rows[i]?.cells[j];
+    if (!cell) continue;
+    if (b.text !== a.text || b.block !== a.block) {
+      const k = cell.contents[0];
+      if (cell.contents.length > 1) out.push(`${at} holds more than one content`);
+      if (k && (k.field || k.contentType & TableCellContentType.Field)) {
+        out.push(`${at} holds a field (M4-10)`);
+      }
+      if (cell.stateFlags & TableCellStateFlags.ContentLocked)
+        out.push(`${at}: its content is locked`);
+      if (cell.hasLinkedData) out.push(`${at} is linked to external data`);
+      if (b.block !== a.block && (cell.attributes.length > 0 || (k?.attributes.length ?? 0) > 0)) {
+        out.push(`${at}: a block with attribute values`);
+      }
+    }
+    if (b.rotation !== a.rotation && dwgFrom2010) {
+      out.push(`${at}: a cell rotation in a DWG from R2010, which keeps it in the content format`);
+    }
+  }
+  return out;
+}
+
 const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   LINE: lineWriter,
   XLINE: xlineWriter('XLINE'),
@@ -1910,6 +2091,7 @@ const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   MLINE: mlineWriter,
   MULTILEADER: multiLeaderWriter,
   VIEWPORT: viewportWriter,
+  ACAD_TABLE: tableWriter,
 } as Partial<Record<EntityType, Writer<never>>>;
 
 /** The entity types whose geometry Triya can write (the rest: roadmap M1-75). */
