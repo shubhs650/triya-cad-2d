@@ -1604,6 +1604,11 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
         case 95:
           currBorder = this._reader.valueAsInt as CellEdgeFlags;
           break;
+        // The cell style's background colour (AutoCAD DXF reference, TABLESTYLE cell style:
+        // 62 after the merge flags 92; 257 is None). The content colour is the CONTENTFORMAT's 62.
+        case 62:
+          style.backgroundColor = new Color(this._reader.valueAsShort);
+          break;
         case 1:
           break;
         case 300:

@@ -8,6 +8,7 @@ import type { Color, HeaderValue, TableName, TableRecords, Vec2, Vec3 } from '@t
 import type { CadDocument } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
 import { mapHeader, mapTables, readCadDocument, type MappedTables } from '@triya/io';
+import { cellStyleMapProblems } from './cell-style-map.ts';
 import { loadManifest } from '../corpus/manifest.ts';
 import {
   all,
@@ -778,6 +779,30 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
   // legacy data, title and header row styles (kept in step with its CELLSTYLEMAP), so a DWG's
   // table style only maps like its DXF twin's if the rows are taken from the named cell styles
   // (M1-96). Before R2010 both formats store the same row styles.
+  it('maps every TABLESTYLE CELLSTYLEMAP like the row styles it is kept in step with (M1-96)', () => {
+    // AutoCAD 2008 and later save a table style's named cell styles beside its row styles in
+    // every DXF (and a DWG before R2010), and the two say the same; Triya's saves keep them so.
+    const problems: string[] = [];
+    let compared = 0;
+    for (const f of manifest.files.filter((x) => !x.knownIssues.some((k) => /read/i.test(k)))) {
+      if (!f.format.startsWith('dxf')) continue;
+      let doc;
+      try {
+        doc = readCadDocument(load(f.path));
+      } catch {
+        continue;
+      }
+      for (const record of mapTables(doc).tableStyles) {
+        const found = cellStyleMapProblems(doc, record);
+        if (!found) continue;
+        compared++;
+        problems.push(...found.map((p) => `${f.path} ${p}`));
+      }
+    }
+    expect(problems).toEqual([]);
+    expect(compared).toBeGreaterThan(50);
+  });
+
   it('maps every DWG TABLESTYLE like its DXF twin (M1-96)', () => {
     const dir = 'third-party/acadsharp/';
     const read = (path: string) =>

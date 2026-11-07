@@ -6,6 +6,7 @@ import {
   CadDictionary,
   CadDocument,
   DictionaryVariable,
+  MarginFlags,
   TableStyle,
   TextStyle,
 } from '@node-projects/acad-ts';
@@ -150,67 +151,77 @@ const SAVES: readonly [ACadVersion, CadFormat][] = [
   [ACadVersion.AC1032, 'dwg'],
 ];
 
+/** Whether the save keeps named cell styles: a DWG from R2010 (M1-96). */
+const named = (version: ACadVersion, format: CadFormat): boolean =>
+  format === 'dwg' && version >= ACadVersion.AC1024;
+
 /**
- * From R2010 the cell styles hold a table style (M1-96); a true colour is an ACI in DXF and in
- * a DWG before R2004; the data and unit types need R2007.
+ * A true colour is an ACI in DXF and in a DWG before R2004; the data and unit types need R2007.
+ * Named cell styles (M1-96) have no place for the style's flags or the suppress settings, and
+ * keep no colour for an unfilled row (the fixture's rows are unfilled).
  */
 const refused = (version: ACadVersion, format: CadFormat, field: string): boolean =>
-  version >= ACadVersion.AC1024 ||
   (field.endsWith(' rgb') && (format === 'dxf' || version < ACadVersion.AC1018)) ||
-  ((field === 'dataType' || field === 'unitType') && version < ACadVersion.AC1021);
-
-const formats: readonly CadFormat[] = ['dxf', 'dwg'];
+  ((field === 'dataType' || field === 'unitType') && version < ACadVersion.AC1021) ||
+  (named(version, format) &&
+    ['styleFlags', 'suppressTitle', 'suppressHeader', 'fillColor', 'fillColor rgb'].includes(
+      field,
+    ));
 
 describe('TABLESTYLE objects', () => {
-  it.each(formats)('writes edited and new styles (%s)', (format) => {
-    const bytes = drawing(ACadVersion.AC1021, format);
-    const model = open(bytes);
-    const grid = style(model, 'GRID');
-    let added = '';
-    let notes = '';
-    edit(model, (b) => {
-      // The text style the new table style names is one the same save adds.
-      const standard = [...model.tables.textStyles.values()].find((s) => s.name === 'Standard')!;
-      const { handle: _h, raw: _raw, ...text } = standard;
-      notes = b.addTableRecord('textStyles', {
-        ...(text as Omit<TextStyleRecord, 'handle'>),
-        name: 'NOTES',
-        font: 'romans.shx',
-        height: 0,
-        widthFactor: 0.8,
-      }).handle;
-      b.updateTableRecord('tableStyles', grid.handle, {
-        description: 'Parts lists',
-        flowDirection: 1,
-        horizontalMargin: 0.1,
-        ...row(grid, 1, { textHeight: 0.35, fillOn: true, fillColor: { kind: 'aci', index: 8 } }),
+  it.each(SAVES.filter(([v]) => v >= ACadVersion.AC1021))(
+    'writes edited and new styles (%s %s)',
+    (version, format) => {
+      const bytes = drawing(version, format);
+      const model = open(bytes);
+      const grid = style(model, 'GRID');
+      let added = '';
+      let notes = '';
+      edit(model, (b) => {
+        // The text style the new table style names is one the same save adds.
+        const standard = [...model.tables.textStyles.values()].find((s) => s.name === 'Standard')!;
+        const { handle: _h, raw: _raw, ...text } = standard;
+        notes = b.addTableRecord('textStyles', {
+          ...(text as Omit<TextStyleRecord, 'handle'>),
+          name: 'NOTES',
+          font: 'romans.shx',
+          height: 0,
+          widthFactor: 0.8,
+        }).handle;
+        b.updateTableRecord('tableStyles', grid.handle, {
+          description: 'Parts lists',
+          flowDirection: 1,
+          horizontalMargin: 0.1,
+          ...row(grid, 1, { textHeight: 0.35, fillOn: true, fillColor: { kind: 'aci', index: 8 } }),
+        });
+        const { handle: _h2, raw: _raw2, ...rest } = grid;
+        added = b.addTableRecord('tableStyles', {
+          ...rest,
+          name: 'Door Schedule',
+          // Named cell styles (M1-96) have no suppress settings.
+          suppressTitle: !named(version, format),
+          cellStyles: rest.cellStyles.map((c, i) => ({
+            ...c,
+            textStyle: notes,
+            textHeight: [0.2, 0.4, 0.3][i]!,
+            alignment: [4, 5, 5][i]!,
+            dataType: 512,
+            borders: c.borders.map((e, k) => ({ ...e, lineweight: k === 0 ? 50 : 25 })),
+          })),
+        }).handle;
+        b.setHeader('CTABLESTYLE', 'Door Schedule');
       });
-      const { handle: _h2, raw: _raw2, ...rest } = grid;
-      added = b.addTableRecord('tableStyles', {
-        ...rest,
-        name: 'Door Schedule',
-        suppressTitle: true,
-        cellStyles: rest.cellStyles.map((c, i) => ({
-          ...c,
-          textStyle: notes,
-          textHeight: [0.2, 0.4, 0.3][i]!,
-          alignment: [4, 5, 5][i]!,
-          dataType: 512,
-          borders: c.borders.map((e, k) => ({ ...e, lineweight: k === 0 ? 50 : 25 })),
-        })),
-      }).handle;
-      b.setHeader('CTABLESTYLE', 'Door Schedule');
-    });
 
-    const back = saved(bytes, model, format);
-    const get = (h: string) => back.tables!.tableStyles!.find((s) => s.handle === h);
-    expect(comparable(get(grid.handle))).toEqual(
-      comparable(model.tables.tableStyles.get(grid.handle)),
-    );
-    expect(comparable(get(added))).toEqual(comparable(model.tables.tableStyles.get(added)));
-    expect(get(added)?.cellStyles.map((c) => c.textStyle)).toEqual([notes, notes, notes]);
-    expect(new Map(back.header).get('CTABLESTYLE')).toBe('Door Schedule');
-  });
+      const back = saved(bytes, model, format);
+      const get = (h: string) => back.tables!.tableStyles!.find((s) => s.handle === h);
+      expect(comparable(get(grid.handle))).toEqual(
+        comparable(model.tables.tableStyles.get(grid.handle)),
+      );
+      expect(comparable(get(added))).toEqual(comparable(model.tables.tableStyles.get(added)));
+      expect(get(added)?.cellStyles.map((c) => c.textStyle)).toEqual([notes, notes, notes]);
+      expect(new Map(back.header).get('CTABLESTYLE')).toBe('Door Schedule');
+    },
+  );
 
   it('keeps everything else as it was', () => {
     const bytes = drawing();
@@ -258,7 +269,7 @@ describe('TABLESTYLE objects', () => {
     },
   );
 
-  it.each(SAVES.filter(([v]) => v < ACadVersion.AC1024))(
+  it.each(SAVES)(
     'renames a style in its dictionary entry, and CTABLESTYLE with it (%s %s, M1-95)',
     (version, format) => {
       const bytes = drawing(version, format, 'GRID');
@@ -388,7 +399,7 @@ describe('TABLESTYLE objects', () => {
     }
   });
 
-  it('refuses a new style before R2004 and any change from R2010 (M1-96)', () => {
+  it('refuses a new style before R2004', () => {
     const r2000 = drawing(ACadVersion.AC1015, 'dwg');
     const model = open(r2000);
     edit(model, (b) => {
@@ -404,21 +415,64 @@ describe('TABLESTYLE objects', () => {
       b.updateTableRecord('tableStyles', style(m2, 'GRID').handle, { description: 'Kept' }),
     );
     expect(refusal(() => triyaToAcad(readCadDocument(r2000), m2, 'dwg'))).toEqual([]);
+  });
 
-    for (const format of formats) {
-      const r2010 = drawing(ACadVersion.AC1024, format);
-      const m3 = open(r2010);
-      edit(m3, (b) => {
-        b.updateTableRecord('tableStyles', style(m3, 'GRID').handle, { description: 'No' });
-        const { handle: _h, raw: _raw, ...rest } = style(m3, 'GRID');
-        b.addTableRecord('tableStyles', { ...rest, name: 'NEW' });
-      });
-      const out = refusal(() => triyaToAcad(readCadDocument(r2010), m3, format));
-      expect(
-        out.filter((p) => /named cell styles.*\(M1-96\)/.test(p)),
-        format,
-      ).toHaveLength(2);
+  it('refuses what R2010+ named cell styles have no place for (M1-96)', () => {
+    const bytes = drawing(ACadVersion.AC1024, 'dwg');
+    const cases: [(s: TableStyleRecord) => Partial<TableStyleRecord>, RegExp][] = [
+      [() => ({ styleFlags: 1 }), /styleFlags: an R2010\+ DWG table style has no place/],
+      [() => ({ suppressHeader: true }), /suppressHeader: an R2010\+ DWG table style has none/],
+      [
+        (s) => row(s, 1, { fillOn: true, fillColor: { kind: 'byLayer' } }),
+        /title row fillColor: an R2010\+ cell style fills with a colour/,
+      ],
+      [
+        (s) => row(s, 2, { fillColor: { kind: 'aci', index: 3 } }),
+        /header row fillColor: an unfilled R2010\+ cell style keeps none/,
+      ],
+    ];
+    for (const [change, message] of cases) {
+      const model = open(bytes);
+      const s = style(model, 'GRID');
+      edit(model, (b) => b.updateTableRecord('tableStyles', s.handle, change(s)));
+      expect(refusal(() => triyaToAcad(readCadDocument(bytes), model, 'dwg')).join('\n')).toMatch(
+        message,
+      );
     }
+  });
+
+  it('moves the margins of the named cell styles that had the table’s with it (M1-96)', () => {
+    const doc = readCadDocument(drawing(ACadVersion.AC1024, 'dwg'));
+    // Every cell style overrides the margins, as AutoCAD's do; the title row with its own, the
+    // others with the table's.
+    const grid = (d: typeof doc) =>
+      (d.rootDictionary!.get(CadDictionary.acadTableStyle) as CadDictionary).get(
+        'GRID',
+      ) as TableStyle;
+    const g = grid(doc);
+    for (const c of [g.tableCellStyle, g.dataCellStyle, g.titleCellStyle, g.headerCellStyle])
+      c.marginOverrideFlags = MarginFlags.Override;
+    grid(doc).titleCellStyle.horizontalMargin = 0.5;
+    const bytes = writeCadDocument(doc, { format: 'dwg' });
+    const model = open(bytes);
+    const s = style(model, 'GRID');
+    edit(model, (b) =>
+      b.updateTableRecord('tableStyles', s.handle, { horizontalMargin: 0.2, verticalMargin: 0.1 }),
+    );
+    const back = grid(
+      readCadDocument(exportDocument(readCadDocument(bytes), model, { format: 'dwg' })),
+    );
+    const margins = (c: TableStyle['tableCellStyle']) => [c.horizontalMargin, c.verticalMargin];
+    expect(
+      [back.tableCellStyle, back.dataCellStyle, back.titleCellStyle, back.headerCellStyle].map(
+        margins,
+      ),
+    ).toEqual([
+      [0.2, 0.1],
+      [0.2, 0.1],
+      [0.5, 0.1],
+      [0.2, 0.1],
+    ]);
   });
 
   it('adds the ACAD_TABLESTYLE dictionary to a drawing that has none', () => {

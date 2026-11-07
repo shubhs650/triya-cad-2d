@@ -18,6 +18,7 @@
 import { readFileSync } from 'node:fs';
 import {
   ACadVersion,
+  CellStyleMap,
   Insert,
   Polyline,
   type CadDictionary,
@@ -55,6 +56,7 @@ import {
   type XdataApp,
 } from '@triya/engine';
 import {
+  CELL_STYLE_MAP,
   documentInit,
   exportDocument,
   readCadDocument,
@@ -66,6 +68,7 @@ import { loadManifest } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
+import { cellStyleMapProblems } from '../mapping/cell-style-map.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -766,10 +769,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter(editableLinetype);
         const dimStyles = [...model.tables.dimStyles.values()].filter(kept);
         const mleaderStyles = [...model.tables.mleaderStyles.values()];
-        // From R2010 AutoCAD keeps a table style's cell styles, which Triya does not write (M1-96).
         const version = original.header?.version ?? ACadVersion.AC1032;
-        const tableStyles =
-          version < ACadVersion.AC1024 ? [...model.tables.tableStyles.values()] : [];
+        const tableStyles = [...model.tables.tableStyles.values()];
         const ucs = [...model.tables.ucs.values()].filter(kept);
         const views = [...model.tables.views.values()].filter(kept);
         const vports = [...model.tables.vports.values()].filter(kept);
@@ -948,6 +949,11 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((s) => !near(withoutRaw(backTableStyles.get(s.handle)), withoutRaw(s)))
           .map((s) => s.name);
         expect(wrongTableStyles, f.path).toEqual([]);
+        // M1-96: the CELLSTYLEMAP beside the row styles says what the rows say.
+        const outOfStep = tableStyles.flatMap(
+          (s) => cellStyleMapProblems(reopened, model.tables.tableStyles.get(s.handle)!) ?? [],
+        );
+        expect(outOfStep, f.path).toEqual([]);
         const wrongViewRecords = (['ucs', 'views', 'vports'] as const).flatMap((table) => {
           const backRecords = new Map(
             (init.tables?.[table] ?? []).map((r: { handle: Handle; raw?: unknown }) => [
@@ -997,6 +1003,13 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ...unhooked.flatMap((u) => u.boundary),
           ].map((e) => Number.parseInt(e.handle, 16)),
         );
+        // The CELLSTYLEMAP an edited table style keeps beside its rows is part of the edit.
+        for (const t of tableStyles) {
+          const map = original
+            .getCadObject(Number.parseInt(t.handle, 16))
+            ?.xDictionary?.get(CELL_STYLE_MAP);
+          if (map instanceof CellStyleMap) ignoreHandles.add(map.handle);
+        }
         // The AcCmTransparency application the save registered for the layers' transparency.
         for (const h of transparencyApps) {
           const handle = Number.parseInt(h, 16);
@@ -1025,8 +1038,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
     PER_FILE_BUDGET_MS,
   );
 
-  // M1-95: every multileader style but Standard, every table style but Standard before R2010
-  // (from R2010 a table style keeps cell styles Triya does not write, M1-96) and every image
+  // M1-95: every multileader style but Standard, every table style but Standard and every image
   // definition renamed, with CMLEADERSTYLE and CTABLESTYLE following, as AutoCAD's RENAME and
   // the External References palette do. Each keeps its dictionary entry, in place, under its
   // handle; MULTILEADERs, TABLEs and IMAGEs point at it by handle and come back as read.
@@ -1042,17 +1054,13 @@ describe('TriyaToAcad edits on the public corpus', () => {
       withPinnedClock(() => {
         const original = readCadDocument(bytes);
         const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
-        const version = original.header?.version ?? ACadVersion.AC1032;
         const renamed = (name: string) => `${name} renamed`;
         const mleaderStyles = [...model.tables.mleaderStyles.values()].filter(
           (s) => s.name.toUpperCase() !== 'STANDARD',
         );
-        const tableStyles =
-          version < ACadVersion.AC1024
-            ? [...model.tables.tableStyles.values()].filter(
-                (s) => s.name.toUpperCase() !== 'STANDARD',
-              )
-            : [];
+        const tableStyles = [...model.tables.tableStyles.values()].filter(
+          (s) => s.name.toUpperCase() !== 'STANDARD',
+        );
         const images = [...model.objects.values()].filter(
           (o): o is ImageDefinition => o.type === 'IMAGEDEF',
         );

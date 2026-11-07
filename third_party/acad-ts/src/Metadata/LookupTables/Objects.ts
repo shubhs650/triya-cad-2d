@@ -9,8 +9,8 @@ export const metadataLookupObjects: readonly ClassMetadata[] = [
     { "propertyName": "propertyFlags", "valueCodes": [90], "referenceType": 0 },
     { "propertyName": "propertyOverrideFlags", "valueCodes": [91], "referenceType": 0 },
     { "propertyName": "rotation", "valueCodes": [40], "referenceType": 32 },
-    { "propertyName": "scale", "valueCodes": [144], "referenceType": 0 },
-    { "propertyName": "textHeight", "valueCodes": [140], "referenceType": 0 },
+    { "propertyName": "scale", "valueCodes": [140], "referenceType": 0 },
+    { "propertyName": "textHeight", "valueCodes": [144], "referenceType": 0 },
     { "propertyName": "valueDataType", "valueCodes": [92], "referenceType": 0 },
     { "propertyName": "valueUnitType", "valueCodes": [93], "referenceType": 0 },
     { "propertyName": "valueFormatString", "valueCodes": [300], "referenceType": 0 }
