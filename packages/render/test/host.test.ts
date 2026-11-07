@@ -19,7 +19,17 @@ import {
   type RenderWorker,
   type WorkerMessage,
 } from '../src/index';
-import { change, drawing, drawingInit, entity, LAYER_RED, line, MODEL, surface } from './fixtures';
+import {
+  change,
+  drawing,
+  drawingInit,
+  entity,
+  LAYER_RED,
+  line,
+  MODEL,
+  PAPER,
+  surface,
+} from './fixtures';
 
 type Recorded = ReturnType<typeof surface>;
 
@@ -388,6 +398,18 @@ describe('RenderSession', () => {
     for (const h of handles) expect(s.model.ids.idOf(h)).toBe(engine.model.ids.idOf(h));
     const last = engine.model.ids.idOf(handles[2]!)!;
     expect(s.index.bounds(last)).toEqual(engine.index.bounds(last));
+  });
+
+  it('applies a layout change set that crossed a postMessage (M1-97)', () => {
+    const engine = drawing([]);
+    const s = new RenderSession({
+      document: { init: drawingInit([]), block: PAPER },
+      surface: surface('v'),
+      createLayer: () => surface('l'),
+    });
+    const cs = change(engine, (b) => b.updateLayout('AB', { name: 'Plan', tabOrder: 1 }));
+    s.apply(structuredClone(cs));
+    expect(s.model.layouts.map((l) => l.name)).toEqual(['Model', 'Plan']);
   });
 
   it('takes its tolerance from the header extents', () => {

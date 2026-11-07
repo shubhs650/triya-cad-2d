@@ -14,6 +14,7 @@ import {
   type Box,
   type ChangeSet,
   type Handle,
+  type HeaderValue,
   type Layout,
   type VportRecord,
 } from '@triya/engine';
@@ -28,6 +29,7 @@ import {
   type ViewTransform,
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
+import { layoutsOf } from '../documents';
 import { BUNDLED_FONTS } from '../fonts';
 import { extentsView, panBy, wheelFactor, zoomAt, type ViewportSize } from './navigate';
 import {
@@ -97,7 +99,10 @@ type Point = { readonly x: number; readonly y: number };
 export class CanvasController {
   readonly block: Handle;
   readonly #opened: OpenResult;
-  readonly #layout: Layout | undefined;
+  /** The layout shown as it is now (renamed or given a new page setup since, M1-97). */
+  #layout: Layout | undefined;
+  /** The header as it is now: model space's LIMMIN and LIMMAX are read from it. */
+  readonly #header: Map<string, HeaderValue>;
   readonly #hooks: CanvasHooks;
   readonly #observer: ResizeObserver;
   readonly #history = new ViewHistory();
@@ -120,10 +125,14 @@ export class CanvasController {
   constructor(container: HTMLElement, opened: OpenResult, block: Handle, hooks: CanvasHooks) {
     this.#opened = opened;
     this.block = block;
+    // A canvas made after edits (a layout first shown) starts from the drawing as it is now.
+    const changes = hooks.changes?.() ?? [];
     this.#layout =
       block === opened.modelSpace
         ? undefined
-        : opened.init.layouts?.find((l) => l.blockRecord === block);
+        : layoutsOf(opened.init, changes).find((l) => l.blockRecord === block);
+    this.#header = new Map(opened.init.header ?? []);
+    for (const cs of changes) this.#followHeader(cs);
     this.#hooks = hooks;
     const canvas = document.createElement('canvas');
     canvas.className = 'drawing-canvas';
@@ -233,6 +242,15 @@ export class CanvasController {
   /** A change the drawing's engine applied (M1-67): the renderer applies it and redraws. */
   apply(change: ChangeSet): void {
     this.#host.apply(change);
+    // The layout renamed or given a new page setup or limits (M1-97): its sheet frames ZOOM
+    // Extents and All from now on, and the canvas takes its new name.
+    const layout = this.#layout;
+    const after = layout && change.layouts?.find((u) => u.after.handle === layout.handle)?.after;
+    if (after) {
+      this.#layout = after;
+      this.#canvas.setAttribute('aria-label', `Layout ${after.name}`);
+    }
+    this.#followHeader(change);
     // Drawn now rather than on the next animation frame, so `flush` resolves once the change
     // is on screen (the palette measures toggle → canvas, M1-23).
     if (this.#view && this.#size.width > 0) {
@@ -282,6 +300,13 @@ export class CanvasController {
     return host;
   }
 
+  #followHeader(change: ChangeSet): void {
+    for (const h of change.header ?? []) {
+      if (h.after === undefined) this.#header.delete(h.name);
+      else this.#header.set(h.name, h.after);
+    }
+  }
+
   #extents(): Box | undefined {
     return this.#opened.extents[this.block];
   }
@@ -319,9 +344,8 @@ export class CanvasController {
       const l = this.#layout.limits;
       return l ? { minX: l.min.x, minY: l.min.y, maxX: l.max.x, maxY: l.max.y } : this.#paper();
     }
-    const h = new Map(this.#opened.init.header ?? []);
-    const min = h.get('$LIMMIN');
-    const max = h.get('$LIMMAX');
+    const min = this.#header.get('$LIMMIN');
+    const max = this.#header.get('$LIMMAX');
     if (typeof min !== 'object' || typeof max !== 'object') return undefined;
     return { minX: min.x, minY: min.y, maxX: max.x, maxY: max.y };
   }

@@ -1,6 +1,7 @@
 // M1-18: a layout drawn on its sheet, with each viewport's view of model space clipped to its
 // frame, checked on the calls the renderer makes to a recording context.
 import type { EntityGeometry, EntityInit, LayoutPlot, ViewportGeometry } from '@triya/engine';
+import { invertChangeSet } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer, type RenderStyle } from '../src/index';
 import {
@@ -497,5 +498,84 @@ describe('Model-tab linetype scale (MSLTSCALE, M1-63)', () => {
     const inside = clipped(scene.ctx.calls)[0]!;
     const m = inside.findIndex((c) => c[0] === 'moveTo');
     expect(Number(inside[m + 1]![1]) - Number(inside[m]![1])).toBeCloseTo(0.1875, 9);
+  });
+});
+
+describe('layout change sets (M1-97)', () => {
+  it('draws the sheet from a page setup changed after the renderer was made, and back', () => {
+    const { d, r, scene } = setup([]);
+    r.frame();
+    // A 100 × 50 mm sheet with no margins: paper 0…100 × 0…50 → device x 10…110, y 40…90.
+    const cs = change(d, (b) =>
+      b.updateLayout('AB', {
+        plot: {
+          ...PLOT,
+          paperWidth: 100,
+          paperHeight: 50,
+          margins: { left: 0, bottom: 0, right: 0, top: 0 },
+        },
+      }),
+    );
+    r.apply(cs);
+    scene.ctx.clear();
+    r.frame();
+    expect(scene.ctx.named('fillRect')).toEqual([
+      ['fillRect', 0, 0, 200, 100],
+      ['fillRect', 10, 40, 100, 50],
+    ]);
+    expect(scene.ctx.named('rect')).toEqual([['rect', 10.5, 40.5, 99, 49]]);
+
+    // Undo: the inverse change set restores the sheet the drawing opened with.
+    const undo = invertChangeSet(cs);
+    d.model.apply(undo);
+    d.index.apply(undo);
+    r.apply(undo);
+    scene.ctx.clear();
+    r.frame();
+    expect(scene.ctx.named('fillRect')).toEqual([
+      ['fillRect', 0, 0, 200, 100],
+      ['fillRect', 0, 0, 200, 100],
+    ]);
+    expect(scene.ctx.named('rect')).toEqual([['rect', 10.5, 10.5, 179, 79]]);
+  });
+
+  it('measures lineweights by the paper units a page setup change gives the layout', () => {
+    const { d, r, scene } = setup(
+      [onPaper('30', viewport()), onPaper('31', line(0, 0, 10, 0), { lineweight: 100 })],
+      { style: { ...LIGHT, showLineweights: true } },
+    );
+    r.setView({ center: { x: 0, y: 0 }, scale: 254 });
+    r.apply(change(d, (b) => b.updateLayout('AB', { plot: { ...PLOT, paperUnits: 'inches' } })));
+    r.frame();
+    expect(scene.ctx.named('stroke').at(-1)).toEqual(['stroke', '#000000', 10]);
+  });
+
+  it('follows a PSLTSCALE change in the viewports’ dashes', () => {
+    const { d, r, scene } = setup(
+      [onPaper('30', viewport()), entity('20', line(0, 10, 20, 10), { layer: LAYER_DASHED })],
+      { extra: { layoutFlags: 1 } },
+    );
+    r.setView({ center: { x: 90, y: 40 }, scale: 8 });
+    const dash = () => {
+      scene.ctx.clear();
+      r.frame();
+      const inside = clipped(scene.ctx.calls)[0]!;
+      const m = inside.findIndex((c) => c[0] === 'moveTo');
+      return Number(inside[m + 1]![1]) - Number(inside[m]![1]);
+    };
+    expect(dash()).toBeCloseTo(0.1875, 9);
+    r.apply(change(d, (b) => b.updateLayout('AB', { flags: 0 })));
+    expect(dash()).toBeCloseTo(0.5, 9);
+  });
+
+  it('ignores a change to another layout', () => {
+    const { d, r, scene } = setup([]);
+    r.apply(
+      change(d, (b) =>
+        b.updateLayout('AA', { limits: { min: { x: 0, y: 0 }, max: { x: 5, y: 5 } } }),
+      ),
+    );
+    r.frame();
+    expect(scene.ctx.named('rect')).toEqual([['rect', 10.5, 10.5, 179, 79]]);
   });
 });
