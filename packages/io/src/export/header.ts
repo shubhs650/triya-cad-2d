@@ -318,9 +318,36 @@ export interface HeaderChange {
   readonly value: HeaderValue;
 }
 
+/** The DICTIONARYVARs that name a style by its dictionary entry, and the style's acad-ts type. */
+const CURRENT_STYLES: readonly (readonly [
+  string,
+  string,
+  abstract new (...args: never[]) => CadObject & { name: string },
+])[] = [
+  [DictionaryVariable.currentMultiLeaderStyle, CadDictionary.acadMLeaderStyle, MultiLeaderStyle],
+  [DictionaryVariable.currentTableStyle, CadDictionary.acadTableStyle, TableStyle],
+];
+
+/**
+ * The names the styles of `entry` (ACAD_MLEADERSTYLE …) end the save with: the drawing's, as
+ * `renamed` renames them, and the ones it adds.
+ */
+function styleNames(
+  doc: CadDocument,
+  entry: string,
+  type: abstract new (...args: never[]) => CadObject & { name: string },
+  added: readonly CadObject[],
+  renamed: ReadonlyMap<CadObject, string>,
+): string[] {
+  return [...(namedDictionary(doc, entry) ?? []), ...added]
+    .filter((s): s is CadObject & { name: string } => s instanceof type)
+    .map((s) => renamed.get(s) ?? s.name);
+}
+
 /**
  * The header changes of `model` against `base` (the original's mapping), and why any cannot be
- * written to `doc` for `format`.
+ * written to `doc` for `format`. `added` are the records and styles the save adds, `renamed` the
+ * new names of the styles it renames (M1-95).
  */
 export function planHeader(
   doc: CadDocument,
@@ -328,6 +355,7 @@ export function planHeader(
   model: DocumentModel,
   format: CadFormat | undefined,
   added: readonly CadObject[],
+  renamed: ReadonlyMap<CadObject, string> = new Map(),
 ): { changes: HeaderChange[]; problems: string[] } {
   const before = new Map(base.header ?? []);
   const names = new Set([...before.keys(), ...model.header.keys()]);
@@ -342,6 +370,7 @@ export function planHeader(
     const problem = headerProblem(
       doc,
       added,
+      renamed,
       name,
       value,
       map.get(name),
@@ -351,6 +380,18 @@ export function planHeader(
     );
     if (problem) problems.push(`header variable ${name}: ${problem}`);
     else changes.push({ name, value: value! });
+  }
+  // AutoCAD's RENAME changes the current style's name with the style: a renamed style must not
+  // leave the variable naming it by its old name.
+  for (const [name, entry, type] of CURRENT_STYLES) {
+    const value = model.header.get(name);
+    if (typeof value !== 'string' || !same(before.get(name), value)) continue;
+    const key = value.toUpperCase();
+    const was = [...renamed].find(
+      ([s, n]) => s instanceof type && s.name.toUpperCase() === key && n.toUpperCase() !== key,
+    );
+    if (was && !styleNames(doc, entry, type, added, renamed).some((n) => n.toUpperCase() === key))
+      problems.push(`header variable ${name}: it names ${value}, which the save renames ${was[1]}`);
   }
   // CANNOSCALEVALUE is not stored: it is the CANNOSCALE scale's ratio, so it must follow it.
   const scale = model.header.get(DictionaryVariable.currentAnnotationScale);
@@ -367,6 +408,7 @@ export function planHeader(
 function headerProblem(
   doc: CadDocument,
   added: readonly CadObject[],
+  renamed: ReadonlyMap<CadObject, string>,
   name: string,
   value: HeaderValue | undefined,
   variable: CadSystemVariable | undefined,
@@ -381,23 +423,13 @@ function headerProblem(
     if (name.startsWith('$')) return 'acad-ts has no such header variable';
     if (!dictionary.has(name)) return 'new DICTIONARYVAR objects';
     if (typeof value !== 'string') return 'a DICTIONARYVAR holds text';
-    // The current multileader style, which AutoCAD looks up by name like $DIMSTYLE's.
-    if (name === DictionaryVariable.currentMultiLeaderStyle) {
-      const styles = [
-        ...(namedDictionary(doc, CadDictionary.acadMLeaderStyle) ?? []),
-        ...added.filter((r) => r instanceof MultiLeaderStyle),
-      ];
-      if (!styles.some((s) => s instanceof MultiLeaderStyle && s.name === value))
-        return `no multileader style named ${JSON.stringify(value)}`;
-    }
-    // The current table style, likewise.
-    if (name === DictionaryVariable.currentTableStyle) {
-      const styles = [
-        ...(namedDictionary(doc, CadDictionary.acadTableStyle) ?? []),
-        ...added.filter((r) => r instanceof TableStyle),
-      ];
-      if (!styles.some((s) => s instanceof TableStyle && s.name === value))
-        return `no table style named ${JSON.stringify(value)}`;
+    // The current multileader and table styles, which AutoCAD looks up by name like $DIMSTYLE's,
+    // without regard to case (the corpus files write STANDARD for the style named Standard).
+    for (const [variable, entry, type] of CURRENT_STYLES) {
+      if (name !== variable) continue;
+      const key = value.toUpperCase();
+      if (!styleNames(doc, entry, type, added, renamed).some((n) => n.toUpperCase() === key))
+        return `no ${type === TableStyle ? 'table' : 'multileader'} style named ${JSON.stringify(value)}`;
     }
     return undefined;
   }

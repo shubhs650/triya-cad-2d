@@ -1618,4 +1618,49 @@ describe('acad-ts local patches', () => {
       }
     }
   });
+
+  it('0147 CadDictionary.rename renames an entry in place, keeping its handle and owner', () => {
+    const formats = [
+      [ACadVersion.AC1015, 'dxf'],
+      [ACadVersion.AC1018, 'dwg'],
+      [ACadVersion.AC1032, 'dxf'],
+      [ACadVersion.AC1032, 'dwg'],
+    ] as const;
+    for (const [version, format] of formats) {
+      const doc = new CadDocument(version);
+      const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadMLeaderStyle)!;
+      const [a, b, c] = ['ALPHA', 'BRAVO', 'CHARLIE'].map((name) => {
+        const s = new MultiLeaderStyle(name);
+        styles.add(s);
+        return s;
+      });
+      const handle = b!.handle;
+      const before = styles.entryNames;
+      const at = before.indexOf('BRAVO');
+
+      expect(styles.rename('bravo', 'Delta')).toBe(true);
+      // A case-only change keeps the key and still spells the entry as given.
+      expect(styles.rename('ALPHA', 'Alpha')).toBe(true);
+      expect(styles.rename('NOPE', 'ECHO')).toBe(false);
+      expect(() => styles.rename('Delta', 'charlie')).toThrow(/CHARLIE|charlie/);
+      expect(() => styles.rename('Delta', '')).toThrow();
+
+      const after = [...before];
+      after[at] = 'Delta';
+      after[before.indexOf('ALPHA')] = 'Alpha';
+      expect(styles.entryNames).toEqual(after);
+      expect(styles.getEntry('DELTA')).toBe(b);
+      expect(styles.getEntry('BRAVO')).toBeNull();
+      expect([b!.name, a!.name, c!.name]).toEqual(['Delta', 'Alpha', 'CHARLIE']);
+      expect(b!.owner).toBe(styles);
+      expect(b!.handle).toBe(handle);
+
+      const back = readCadDocument(writeCadDocument(doc, { format }));
+      const dict = back.getCadObject(Number(styles.handle)) as CadDictionary;
+      const what = `${ACadVersion[version]} ${format}`;
+      expect(dict.entryNames, what).toEqual(after);
+      expect(dict.entryHandles, what).toEqual(styles.entryHandles);
+      expect((back.getCadObject(Number(handle)) as MultiLeaderStyle).name, what).toBe('Delta');
+    }
+  });
 });

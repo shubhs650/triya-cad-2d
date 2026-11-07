@@ -30,8 +30,12 @@ import {
   type CadFormat,
 } from '../src/index';
 
-/** Table styles Standard and GRID, the text style ROMANS, and CTABLESTYLE = Standard. */
-function drawing(version = ACadVersion.AC1018, format: CadFormat = 'dxf'): Uint8Array {
+/** Table styles Standard and GRID, the text style ROMANS, and CTABLESTYLE = `current`. */
+function drawing(
+  version = ACadVersion.AC1018,
+  format: CadFormat = 'dxf',
+  current = TableStyle.defaultName,
+): Uint8Array {
   const doc = new CadDocument(version);
   const romans = new TextStyle('ROMANS');
   romans.filename = 'romans.shx';
@@ -49,10 +53,10 @@ function drawing(version = ACadVersion.AC1018, format: CadFormat = 'dxf'): Uint8
     dict.add(s);
   }
   const vars = doc.rootDictionary!.get(CadDictionary.variableDictionary) as CadDictionary;
-  const current = new DictionaryVariable();
-  current.name = 'CTABLESTYLE';
-  current.value = TableStyle.defaultName;
-  vars.add(current);
+  const variable = new DictionaryVariable();
+  variable.name = 'CTABLESTYLE';
+  variable.value = current;
+  vars.add(variable);
   return writeCadDocument(doc, { format });
 }
 
@@ -254,6 +258,45 @@ describe('TABLESTYLE objects', () => {
     },
   );
 
+  it.each(SAVES.filter(([v]) => v < ACadVersion.AC1024))(
+    'renames a style in its dictionary entry, and CTABLESTYLE with it (%s %s, M1-95)',
+    (version, format) => {
+      const bytes = drawing(version, format, 'GRID');
+      const model = open(bytes);
+      const grid = style(model, 'GRID');
+      edit(model, (b) => {
+        b.updateTableRecord('tableStyles', grid.handle, { name: 'Schedule', horizontalMargin: 1 });
+        b.setHeader('CTABLESTYLE', 'Schedule');
+      });
+      const entries = (doc: ReturnType<typeof readCadDocument>) => {
+        const dict = doc.rootDictionary!.get(CadDictionary.acadTableStyle) as CadDictionary;
+        return { names: dict.entryNames, handles: dict.entryHandles };
+      };
+      const original = entries(readCadDocument(bytes));
+      const reopened = readCadDocument(exportDocument(readCadDocument(bytes), model, { format }));
+      expect(entries(reopened)).toEqual({
+        names: original.names.map((n) => (n === 'GRID' ? 'Schedule' : n)),
+        handles: original.handles,
+      });
+      const back = documentInit(reopened);
+      expect(comparable(back.tables!.tableStyles!.find((s) => s.handle === grid.handle))).toEqual(
+        comparable(model.tables.tableStyles.get(grid.handle)),
+      );
+      expect(new Map(back.header).get('CTABLESTYLE')).toBe('Schedule');
+    },
+  );
+
+  it('refuses a rename that leaves CTABLESTYLE naming the old name', () => {
+    const bytes = drawing(ACadVersion.AC1018, 'dxf', 'GRID');
+    const model = open(bytes);
+    edit(model, (b) =>
+      b.updateTableRecord('tableStyles', style(model, 'GRID').handle, { name: 'LIST' }),
+    );
+    expect(refusal(() => triyaToAcad(readCadDocument(bytes), model, 'dxf'))).toEqual([
+      'header variable CTABLESTYLE: it names GRID, which the save renames LIST',
+    ]);
+  });
+
   it('refuses what it cannot write and leaves the original as it was', () => {
     const update =
       (name: string, change: (s: TableStyleRecord) => Partial<TableStyleRecord>) =>
@@ -268,7 +311,14 @@ describe('TABLESTYLE objects', () => {
         (b, m) => b.removeTableRecord('tableStyles', style(m, 'GRID').handle),
         /removing a table style/,
       ],
-      [update('GRID', () => ({ name: 'LIST' })), /cannot rename a dictionary entry.*M1-95/],
+      [update('GRID', () => ({ name: 'STANDARD' })), /another table style is named STANDARD/],
+      [
+        (b, m) => {
+          b.updateTableRecord('tableStyles', style(m, 'GRID').handle, { name: 'LIST' });
+          b.setHeader('CTABLESTYLE', 'GRID');
+        },
+        /CTABLESTYLE: no table style named "GRID"/,
+      ],
       [update('Standard', () => ({ name: 'Default' })), /Standard cannot be renamed/],
       [add({ name: 'grid' }), /another table style is named grid/],
       [add({ name: 'A<B' }), /is not a valid table style name/],

@@ -13,8 +13,11 @@
 // to the row styles alone could be undone by the cell styles AutoCAD reads back: R2010 and later
 // are refused until Triya maps those cell styles (M1-96).
 //
-// Refused besides: renaming a style, which acad-ts's dictionary cannot do in place (M1-95); a
-// new style before R2004 (AutoCAD 2005 introduced tables); the data and unit types before R2007,
+// A renamed style keeps its ACAD_TABLESTYLE entry where it stands under the new name (M1-95);
+// the TABLEs using it point at it by handle, and CTABLESTYLE, which names it, must change with
+// it (header.ts).
+//
+// Refused besides: a new style before R2004 (AutoCAD 2005 introduced tables); the data and unit types before R2007,
 // which the format has no place for; a true colour where acad-ts writes an ACI (DXF, which has
 // no true colour code for a table style, and DWG before R2004); colour-book colours; adding,
 // removing or reordering cell styles or borders; and values AutoCAD's dialog does not take.
@@ -40,6 +43,7 @@ import type {
 } from '@triya/engine';
 import type { CadFormat } from '../read';
 import { acadColor, acadLineweight, resolve, same, type Resolver } from './entities';
+import { entryRenameProblems, renameEntries } from './dictionary-entries';
 import { changes, planRecords, type RecordPlan } from './records';
 
 export type TableStylePlan = RecordPlan<TableStyle, TableStyleRecord>;
@@ -75,7 +79,17 @@ export function planTableStyles(
       return s;
     },
     fixedNames: [TableStyle.defaultName],
-    problems: (b, a) => tableStyleProblems(r, version, format, b, a),
+    problems: (b, a, acad) => {
+      const out = tableStyleProblems(r, version, format, b, a);
+      // From R2010 every change is refused already (M1-96).
+      if (b && acad && b.name !== a.name && !(known(version) && version >= ACadVersion.AC1024))
+        out.push(
+          ...entryRenameProblems(acad, a.name, (o) =>
+            model.tables.tableStyles.has(o.handle.toString(16).toUpperCase()),
+          ),
+        );
+      return out;
+    },
   });
 }
 
@@ -100,7 +114,6 @@ function tableStyleProblems(
     ];
   if (!b && known(version) && version < ACadVersion.AC1018)
     out.push(`${ACadVersion[version]} has no table styles (AutoCAD 2005 introduced tables)`);
-  if (b && b.name !== a.name) out.push('acad-ts cannot rename a dictionary entry in place (M1-95)');
   // A TABLESTYLE is an object, not a table record: its 70 is the flow direction.
   if (changed('flags') && a.flags !== undefined) out.push('a table style has no flags');
   if (changed('description') && typeof a.description !== 'string')
@@ -267,6 +280,12 @@ function writeTableStyle(
  * dictionary first (made when the drawing has none, as a new document's root holds one).
  */
 export function writeTableStyles(doc: CadDocument, r: Resolver, plan: TableStylePlan): void {
+  // Renamed styles first, as a new style may take a name one gives up.
+  renameEntries(
+    plan.updated
+      .filter(({ before, after }) => before.name !== after.name)
+      .map(({ acad, after }) => ({ acad, name: after.name })),
+  );
   if (plan.added.length > 0) {
     const root = doc.rootDictionary!;
     let dict = root.get(CadDictionary.acadTableStyle);

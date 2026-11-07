@@ -7,9 +7,11 @@
 // content block may name a record the same save adds, except blocks, as block definitions are
 // not written yet.
 //
-// Refused: renaming a style, because acad-ts's dictionary keys an entry by the name it was
-// added under and can only re-add it at the end under a new one (M1-95); a new style before
-// R2007 (AutoCAD 2008 introduced multileaders); the text attachment direction and the top and
+// A renamed style keeps its ACAD_MLEADERSTYLE entry where it stands under the new name (M1-95);
+// the MULTILEADERs using it point at it by handle and follow, and CMLEADERSTYLE, which names
+// it, must change with it (header.ts).
+//
+// Refused: a new style before R2007 (AutoCAD 2008 introduced multileaders); the text attachment direction and the top and
 // bottom attachments in a DWG before R2010, whose MLEADERSTYLE has no place for them (the ODA's
 // Open Design Specification for .dwg, MLEADERSTYLE: "R2010+"; acad-ts reads them back as 0);
 // and values AutoCAD's dialog does not take.
@@ -28,6 +30,7 @@ import {
 import type { Color, DocumentInit, DocumentModel, Handle, MLeaderStyleRecord } from '@triya/engine';
 import type { CadFormat } from '../read';
 import { acadColor, acadLineweight, resolve, type Resolver } from './entities';
+import { entryRenameProblems, renameEntries } from './dictionary-entries';
 import { changes, planRecords, type RecordPlan } from './records';
 
 export type MLeaderStylePlan = RecordPlan<MultiLeaderStyle, MLeaderStyleRecord>;
@@ -130,7 +133,14 @@ export function planMLeaderStyles(
     type: MultiLeaderStyle,
     make: (a) => new MultiLeaderStyle(a.name),
     fixedNames: [MultiLeaderStyle.defaultName],
-    problems: (b, a) => mleaderStyleProblems(r, version, format, b, a),
+    problems: (b, a, acad) => [
+      ...mleaderStyleProblems(r, version, format, b, a),
+      ...(b && acad && b.name !== a.name
+        ? entryRenameProblems(acad, a.name, (o) =>
+            model.tables.mleaderStyles.has(o.handle.toString(16).toUpperCase()),
+          )
+        : []),
+    ],
   });
 }
 
@@ -146,7 +156,6 @@ function mleaderStyleProblems(
 ): string[] {
   const out: string[] = [];
   const changed = changes(b, a);
-  if (b && b.name !== a.name) out.push('acad-ts cannot rename a dictionary entry in place (M1-95)');
   // A MLEADERSTYLE is an object, not a table record: it has no DXF 70 flags.
   if (changed('flags') && a.flags !== undefined) out.push('a multileader style has no flags');
   if (!b && known(version) && version < ACadVersion.AC1021)
@@ -254,10 +263,16 @@ function writeMLeaderStyle(
 }
 
 /**
- * Writes the planned multileader style changes onto `doc`; new styles join its ACAD_MLEADERSTYLE
- * dictionary first (made when the drawing has none, as a new document's root holds one).
+ * Writes the planned multileader style changes onto `doc`: renamed styles first, as a new style
+ * may take a name one gives up; then new styles join its ACAD_MLEADERSTYLE dictionary (made when
+ * the drawing has none, as a new document's root holds one).
  */
 export function writeMLeaderStyles(doc: CadDocument, r: Resolver, plan: MLeaderStylePlan): void {
+  renameEntries(
+    plan.updated
+      .filter(({ before, after }) => before.name !== after.name)
+      .map(({ acad, after }) => ({ acad, name: after.name })),
+  );
   if (plan.added.length > 0) {
     const root = doc.rootDictionary!;
     let dict = root.get(CadDictionary.acadMLeaderStyle);
