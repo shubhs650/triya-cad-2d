@@ -2097,8 +2097,15 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
       case 340:
         tmp.leaderLineTypeHandle = this._reader.valueAsHandle;
         return true;
+      // The arrowhead and content blocks: BLOCK_RECORD handles the map cannot assign.
+      case 341:
+        tmp.arrowheadHandle = this._reader.valueAsHandle;
+        return true;
       case 342:
         tmp.mTextStyleHandle = this._reader.valueAsHandle;
+        return true;
+      case 343:
+        tmp.blockContentHandle = this._reader.valueAsHandle;
         return true;
       // Leader line, text and block colours: AcCmEntityColor values, not integers.
       case 91:

@@ -143,15 +143,11 @@ const SAVES: readonly [ACadVersion, CadFormat][] = [
   [ACadVersion.AC1032, 'dwg'],
 ];
 
-/**
- * A DWG MLEADERSTYLE stores the text attachment direction and vertical attachments from R2010;
- * acad-ts's DXF reader drops the arrowhead and content block (M1-94).
- */
+/** A DWG MLEADERSTYLE stores the text attachment direction and vertical attachments from R2010. */
 const refused = (version: ACadVersion, format: CadFormat, field: string): boolean =>
-  format === 'dwg'
-    ? version < ACadVersion.AC1024 &&
-      ['textAttachmentDirection', 'textTopAttachment', 'textBottomAttachment'].includes(field)
-    : field === 'arrowhead' || field === 'block';
+  format === 'dwg' &&
+  version < ACadVersion.AC1024 &&
+  ['textAttachmentDirection', 'textTopAttachment', 'textBottomAttachment'].includes(field);
 
 const formats: readonly CadFormat[] = ['dxf', 'dwg'];
 
@@ -176,8 +172,7 @@ describe('MLEADERSTYLE objects', () => {
       b.updateTableRecord('mleaderStyles', callout.handle, {
         description: 'Balloon callouts',
         contentType: 1,
-        // acad-ts's DXF reader drops the content block and arrowhead (M1-94).
-        ...(format === 'dwg' ? { block: block(model, 'TAG') } : {}),
+        block: block(model, 'TAG'),
         blockScale: { x: 2, y: 2, z: 2 },
         landing: false,
         textHeight: 3.5,
@@ -193,7 +188,7 @@ describe('MLEADERSTYLE objects', () => {
         arrowheadSize: 3,
         doglegLength: 6,
         landingGap: 1,
-        ...(format === 'dwg' ? { arrowhead: block(model, 'TAG') } : {}),
+        arrowhead: block(model, 'TAG'),
       }).handle;
       b.setHeader('CMLEADERSTYLE', 'Detail Notes');
     });
@@ -288,10 +283,6 @@ describe('MLEADERSTYLE objects', () => {
       ],
       [update('CALLOUT', { linetype: 'FFFF' }), /linetype: FFFF does not exist/],
       [update('CALLOUT', { block: 'FFFF' }), /block: FFFF does not exist/],
-      [
-        (b, m) => update('CALLOUT', { arrowhead: block(m, 'TAG') })(b, m),
-        /arrowhead: acad-ts's DXF reader drops it \(M1-94\)/,
-      ],
       [update('CALLOUT', { xdata: [{ appId: '12', values: [] }] } as never), /xdata changes/],
       [(b) => b.setHeader('CMLEADERSTYLE', 'NOPE'), /CMLEADERSTYLE: no multileader style named/],
     ];
