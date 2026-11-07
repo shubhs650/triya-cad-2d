@@ -3,7 +3,7 @@
 // move hatches with their pattern origin, images, wipeouts, underlays, multilines, multileaders
 // and viewport frames), with what the Layers palette and a markup session change outside the
 // entities (every layer turned off or on, locked or unlocked and recoloured; $LTSCALE,
-// $TEXTSIZE and the current layer), must save so that the edited entities, layers and header
+// $TEXTSIZE and the current layer; every block's draw order turned upside down), must save so that the edited entities, layers and header
 // variables map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles and variables reports nothing
 // (TESTING.md §3).
@@ -20,6 +20,8 @@ import {
   type HatchGeometry,
   type HeaderValue,
   type LayerRecord,
+  type NonGraphicalObject,
+  type SortEntsTable,
   type TextFields,
   type Vec2,
 } from '@triya/engine';
@@ -440,8 +442,21 @@ describe('TriyaToAcad edits on the public corpus', () => {
           (l) => !madeUp?.has(Number.parseInt(l.handle, 16)),
         );
         const header = editedHeader(model);
+        // DRAWORDER: each block's draw order turned upside down among the entities it lists.
+        const drawOrder = [...model.objects.values()]
+          .filter((o): o is SortEntsTable => o.type === 'SORTENTSTABLE')
+          .filter((t) => t.entries.length > 1)
+          .map((t) => ({
+            ...t,
+            entries: t.entries.map((en, i, all) => ({
+              ...en,
+              sort: all[all.length - 1 - i]!.sort,
+            })),
+          }));
         const b = new ChangeSetBuilder(model);
         for (const e of targets) b.updateEntity(e.id, { geom: edited(e.geom) });
+        for (const t of drawOrder)
+          b.updateObject(t.handle, { entries: t.entries } as Partial<NonGraphicalObject>);
         for (const l of layers) b.updateTableRecord('layers', l.handle, editedLayer(l));
         for (const [name, value] of header) b.setHeader(name, value);
         model.apply(b.build());
@@ -461,6 +476,11 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((l) => !same(comparableLayer(backLayers.get(l.handle)), comparableLayer(l)))
           .map((l) => l.name);
         expect(wrongLayers, f.path).toEqual([]);
+        const backObjects = new Map(init.objects?.map((o) => [o.handle, o]));
+        const wrongDrawOrder = drawOrder
+          .filter((t) => !same(backObjects.get(t.handle), t))
+          .map((t) => t.handle);
+        expect(wrongDrawOrder, f.path).toEqual([]);
         const backHeader = new Map(init.header);
         expect(
           [...header.keys()].filter((n) => !same(backHeader.get(n), header.get(n))),
@@ -470,7 +490,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
         // A polyline's VERTEX entities and an INSERT's ATTRIBs are edited with it, under their
         // own handles.
         const ignoreHandles = new Set(
-          [...targets, ...layers].map((e) => Number.parseInt(e.handle, 16)),
+          [...targets, ...layers, ...drawOrder].map((e) => Number.parseInt(e.handle, 16)),
         );
         for (const h of [...ignoreHandles]) {
           const o = original.getCadObject(h);

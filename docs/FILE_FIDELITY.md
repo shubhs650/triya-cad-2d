@@ -86,7 +86,7 @@ Header writes (M1-75 part 6): a save writes every header variable whose value ch
 | GROUP | | | | |
 | XRECORD | | | | |
 | PLACEHOLDER / IDBUFFER | | | | |
-| SORTENTSTABLE | ✓ entries in stored order (`mapSortEnts`), draw order by sort handle (`drawOrder`; M1-13 part 2) | | | `style.corpus.test.ts` (75 tables, 28 reorder their block) |
+| SORTENTSTABLE | ✓ entries in stored order (`mapSortEnts`), draw order by sort handle (`drawOrder`; M1-13 part 2) | | ✓ (edited, new or removed, M1-75 part 7: entries written in the model's order; a new table goes into its block record's extension dictionary, which the save creates, hard-owner, when the model gives the record one under the table's owner; an entity the save removes loses its entry; refused: an entry naming an entity outside the block, two entries for one entity, a table moving block or owner, a second table for a block, xdata or reactor changes, a new table before R14; `export.corpus.test.ts` turns every corpus table upside down) | `style.corpus.test.ts` (75 tables, 28 reorder their block), `export-draw-order.test.ts` |
 | IMAGEDEF / RASTERVARIABLES | ✓ file name, pixel size, default pixel size, loaded flag and units; IMAGEFRAME, IMAGEQUALITY and units (`mapImageObjects`, M1-19 part 1) | | | `images.corpus.test.ts` (25 IMAGEDEFs, each IMAGE's found) |
 | PDFDEFINITION / DWFDEFINITION / DGNDEFINITION | | | | |
 | SPATIAL_FILTER (XCLIP) | | | | |
