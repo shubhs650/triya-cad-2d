@@ -1,0 +1,16 @@
+diff --git a/src/Objects/Group.ts b/src/Objects/Group.ts
+index 609f768..11cd89c 100644
+--- a/src/Objects/Group.ts
++++ b/src/Objects/Group.ts
+@@ -39,7 +39,10 @@ export class Group extends NonGraphicalObject {
+ 			throw new Error('The Group and the entity must belong to the same document.');
+ 		}
+ 		this._entities.push(entity);
+-		entity.addReactor(this);
++		// A member read from a file already lists its group among its reactors.
++		if (!entity.reactors.includes(this)) {
++			entity.addReactor(this);
++		}
+ 	}
+ 
+ 	addRange(entities: Entity[]): void {

@@ -13,8 +13,12 @@
 //   the entity lists the viewport in its reactors, as every clipped viewport of the corpus
 //   shows. VPCLIP Polygonal and MVIEW Polygonal draw the polygon first, so a viewport may be
 //   clipped by an entity the same save adds.
-// Other reactor changes (groups, associative dimensions, ...) are still refused: their other
-// end is not written yet.
+// - a GROUP and its members (M1-75 part 23): the group lists them (DXF 340), and each lists the
+//   group in its reactors, as every grouped entity of the corpus shows. GROUP makes the group
+//   with its members, so a new group's members list it in the same save; the group's own side
+//   is checked in groups.ts.
+// Other reactor changes (associative dimensions, ...) are still refused: their other end is not
+// written yet.
 
 import type {
   DocumentInit,
@@ -22,8 +26,10 @@ import type {
   Entity,
   EntityGeometry,
   EntityInit,
+  Group,
   Handle,
   HatchLoop,
+  NonGraphicalObject,
 } from '@triya/engine';
 import { same } from './entities';
 
@@ -94,12 +100,19 @@ const loopsOf = (e: Entity | EntityInit | undefined): readonly HatchLoop[] =>
 const sourcesOf = (e: Entity | EntityInit | undefined): Handle[] =>
   loopsOf(e).flatMap((l) => l.sources ?? []);
 
+const isGroup = (o: NonGraphicalObject | undefined): o is Group => o?.type === 'GROUP';
+
 /** Whether `owner`, listed in an entity's reactors, names entity `handle` back. */
-function linked(owner: Entity | undefined, handle: Handle): boolean {
+function linked(owner: Entity | Group | undefined, handle: Handle): boolean {
   if (!owner) return false;
-  return (
-    annotationOf(owner) === handle || sourcesOf(owner).includes(handle) || clipOf(owner) === handle
-  );
+  if ('geom' in owner) {
+    return (
+      annotationOf(owner) === handle ||
+      sourcesOf(owner).includes(handle) ||
+      clipOf(owner) === handle
+    );
+  }
+  return owner.entities.includes(handle);
 }
 
 /** The entity kinds that list themselves in another's reactors, and what they call the link. */
@@ -107,6 +120,7 @@ const LINKS: Record<string, string> = {
   LEADER: 'leader still annotates it',
   HATCH: 'hatch still names it',
   VIEWPORT: 'viewport is still clipped by it',
+  GROUP: 'group still lists it',
 };
 
 /**
@@ -116,6 +130,13 @@ const LINKS: Record<string, string> = {
 export function reactorProblems(base: DocumentInit, model: DocumentModel): string[] {
   const out: string[] = [];
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
+  const baseGroups = new Map(
+    (base.objects ?? []).filter(isGroup).map((g) => [g.handle, g] as const),
+  );
+  const owner = (h: Handle): Entity | Group | undefined => {
+    const o = model.objects.get(h);
+    return isGroup(o) ? o : model.entityByHandle(h);
+  };
   for (const m of model.entities()) {
     const b = baseByHandle.get(m.handle);
     const what = `${m.type} ${m.handle}`;
@@ -123,21 +144,21 @@ export function reactorProblems(base: DocumentInit, model: DocumentModel): strin
     const before = b?.reactors ?? [];
     if (!same(before, after)) {
       for (const h of after.filter((x) => !before.includes(x))) {
-        if (!linked(model.entityByHandle(h), m.handle)) {
+        if (!linked(owner(h), m.handle)) {
           out.push(
-            `${what}: reactor ${h} is not a leader it annotates, a hatch it bounds or a viewport it clips`,
+            `${what}: reactor ${h} is not a leader it annotates, a hatch it bounds, a viewport it clips or a group it is in`,
           );
         }
       }
       for (const h of before.filter((x) => !after.includes(x))) {
-        const was = baseByHandle.get(h);
-        const now = model.entityByHandle(h);
-        if (!was || !(was.geom.kind in LINKS)) {
+        const was = baseGroups.get(h) ?? baseByHandle.get(h);
+        const kind = was && ('geom' in was ? was.geom.kind : was.type);
+        if (!kind || !(kind in LINKS)) {
           out.push(
-            `${what}: reactor ${h} goes, which is not a leader's, a hatch's or a viewport's`,
+            `${what}: reactor ${h} goes, which is not a leader's, a hatch's, a viewport's or a group's`,
           );
-        } else if (linked(now, m.handle)) {
-          out.push(`${what}: reactor ${h} goes, but that ${LINKS[was.geom.kind]}`);
+        } else if (linked(owner(h), m.handle)) {
+          out.push(`${what}: reactor ${h} goes, but that ${LINKS[kind]}`);
         }
       }
     }
