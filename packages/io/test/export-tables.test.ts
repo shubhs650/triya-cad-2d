@@ -153,7 +153,7 @@ describe('ACAD_TABLE', () => {
     [
       'a cell less in a row',
       (g) => ({ ...g, cells: [g.cells[0]!, g.cells[1]!.slice(0, 1), g.cells[2]!] }),
-      /rows or columns added or removed/,
+      /a grid that is not rows × columns/,
     ],
     ['a row height of 0', (g) => ({ ...g, rowHeights: [0.5, 0, 1] }), /row height of 0 or less/],
     [
