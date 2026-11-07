@@ -313,7 +313,7 @@ export function triyaToAcad(
     appIds: planAppIds(original, base, model, r),
     ucs: planUcs(original, base, model, r),
     views: planViews(original, base, model, r),
-    vports: planVports(original, base, model, r, format),
+    vports: planVports(original, base, model, r),
   };
   // Before the entities: a new IMAGE may show a definition the same save adds.
   const imageObjects = planImageObjects(original, base, model, r);

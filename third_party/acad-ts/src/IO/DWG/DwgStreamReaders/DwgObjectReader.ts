@@ -3106,6 +3106,8 @@ export class DwgObjectReader extends DwgSectionIO {
     vport.lensLength = this._objectReader.readBitDouble();
     vport.frontClippingPlane = this._objectReader.readBitDouble();
     vport.backClippingPlane = this._objectReader.readBitDouble();
+    // The record states every view mode bit: start from none, not VPort's default (16).
+    vport.viewMode = ViewModeType.Off;
     if (this._objectReader.readBit()) vport.viewMode |= ViewModeType.PerspectiveView;
     if (this._objectReader.readBit()) vport.viewMode |= ViewModeType.FrontClipping;
     if (this._objectReader.readBit()) vport.viewMode |= ViewModeType.BackClipping;
@@ -3125,8 +3127,11 @@ export class DwgObjectReader extends DwgSectionIO {
     if (this._objectReader.readBit()) vport.viewMode |= ViewModeType.Follow;
     vport.circleZoomPercent = this._objectReader.readBitShort();
     this._objectReader.readBit();
-    if (this._objectReader.readBit()) vport.ucsIconDisplay = UscIconType.OnLower;
-    if (this._objectReader.readBit()) vport.ucsIconDisplay = UscIconType.OnOrigin;
+    // Two bits, on (1) and at origin (2): they add up, and neither set is off.
+    let ucsIcon = UscIconType.Off as number;
+    if (this._objectReader.readBit()) ucsIcon |= UscIconType.OnLower;
+    if (this._objectReader.readBit()) ucsIcon |= UscIconType.OffOrigin;
+    vport.ucsIconDisplay = ucsIcon as UscIconType;
     vport.showGrid = this._objectReader.readBit();
     vport.gridSpacing = this._objectReader.read2RawDouble();
     vport.snapOn = this._objectReader.readBit();

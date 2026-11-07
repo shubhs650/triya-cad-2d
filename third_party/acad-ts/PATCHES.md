@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92) and 0142 (M1-75 part 12) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) and 0143–0145 (M1-93) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2657,5 +2657,56 @@ From R2000 the DIMSTYLE object stores DIMATFIT (BS, DXF 289) after DIMUPT (ODA s
 **Title:** TABLESTYLE: read the row styles' text colour and data/unit types into the same fields in DXF and DWG
 
 Before R2010 a TABLESTYLE holds three row styles (data, title, header). The DWG reader and writer put a row style's text colour in `CellStyle.textColor`, while the DXF reader and writer (group 62) and the R2010 content format use `CellStyle.color`, so a style read from DWG appears to have ByBlock text and a DXF style written to DWG loses its text colour. The DXF reader and writer put groups 90 and 91 (cell data type and unit type) into `cellStyleType` and `styleClass`, which belong to the R2010 cell style, while the DWG reader and writer use `valueDataType` and `valueUnitType`; the same drawing then reads different values from its DXF and DWG, and a data type set in memory is not written to DWG. This uses `color` for the text colour and `valueDataType`/`valueUnitType` for 90/91 in both formats.
+
+</details>
+
+### 0143 — the DWG reader reads a viewport's view mode as stored
+
+- **File:** `third_party/acad-ts-patches/0143-dwg-vport-view-mode.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
+- **Symptom:** The VPORT record stores each view mode bit (perspective, front clip, back clip, front clip not at eye, follow UCS) as its own B (ODA Open Design Specification §20.4.56). The reader ORs the bits it reads onto `VPort.viewMode`, whose default is 16 (front clip not at eye), so a viewport without bit 16 read with it: every DWG viewport read 16 or more, and a save of view mode 0 read back 16. Found by Triya M1-75 part 10, fixed in M1-93.
+- **Fix:** Start the view mode from 0 before reading the bits, as the VIEW reader does (View's default is 0).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0143 the DWG reader reads a viewport view mode as stored, not onto the default 16" (modes 0, 1|4, 2|8 and 16|8 round trip through R14–R2018 DWG).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read a DWG VPORT's view mode without VPort's default bit
+
+`DwgObjectReader._readVPort` sets each view mode bit it reads with `vport.viewMode |= ...` on a fresh `VPort`, whose `viewMode` defaults to `FrontClippingZ` (16). The record stores all five bits, so the default is never cleared and every DWG viewport reads with bit 16, whatever the file says. This resets `viewMode` to `Off` before reading the bits.
+
+</details>
+
+### 0144 — DWG viewports read and write the UCS icon's on and at-origin bits
+
+- **File:** `third_party/acad-ts-patches/0144-dwg-vport-ucs-icon-bits.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** The VPORT record stores UCSICON as two B (ODA spec §20.4.56: bit 0 on, bit 1 at origin; DXF 71 `UscIconType` 0–3). The reader assigned `OnLower` (1) or `OnOrigin` (3) for each bit set, so an icon that is off (0) kept the default 3 and one off at the origin (2) read 3; the writer wrote the second bit as `icon & OnOrigin`, which is also set for an icon that is on but not at the origin (1), so 1 read back as 3. Found by Triya M1-75 part 10, fixed in M1-93.
+- **Fix:** The reader adds the two bits up from 0; the writer writes the second from the at-origin bit (2) alone.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0144 the DWG reader reads the UCS icon on and at-origin bits as stored" (0–3 round trip through R14–R2018 DWG).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write a DWG VPORT's UCS icon as two bits
+
+The VPORT object stores the UCS icon setting as two bits, on (1) and at origin (2), which together are `UscIconType` 0–3. The reader assigned `OnLower` or `OnOrigin` per bit instead of adding them, so `Off` read as the default `OnOrigin` and `OffOrigin` as `OnOrigin`; the writer tested the second bit with `OnOrigin` (3), so `OnLower` was written with the at-origin bit. This adds the bits up on reading and writes the second bit from `OffOrigin` (2).
+
+</details>
+
+### 0145 — the DXF reader keeps every tiled viewport sharing a name
+
+- **File:** `third_party/acad-ts-patches/0145-dxf-repeated-vport-names.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`
+- **Symptom:** All tiled viewports of the current configuration are VPORT records named `*Active`, and a saved configuration's tiles share its name. With `failsafe` on (the default and Triya's setting) the tables reader skipped any record whose name the table already had, so a DXF with two or more tiles read only the first; the DWG reader and `VPortsTable.add` (which keys a repeat by handle) keep them all, and the writer writes them all. Found by Triya M1-75 part 10, fixed in M1-93.
+- **Fix:** The duplicate-name skip leaves out the VPORT table, whose `add` keeps repeated names.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0145 the DXF reader keeps every tiled *Active viewport, as the DWG reader does" (two `*Active` tiles read back with their own corners and handles from R12, R2000 and R2018 DXF, ASCII and binary).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep repeated VPORT names when reading DXF in failsafe mode
+
+A drawing split into tiled viewports has one VPORT record per tile, all named `*Active` (named configurations work the same way). `DxfTablesSectionReader` skips a record whose name is already in the table when `failsafe` is set, so only the first tile is read. `VPortsTable.add` already keeps repeated names under a handle-prefixed key, which is how the DWG reader keeps them, so this exempts the VPORT table from the duplicate check.
 
 </details>

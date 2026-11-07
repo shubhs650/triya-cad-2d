@@ -66,11 +66,13 @@ import {
   TextArrowFitType,
   TextDirection,
   TextStyle,
+  UscIconType,
   Vertex2D,
   Vertex3D,
   ViewModeType,
   Viewport,
   VisualStyle,
+  VPort,
   XY,
   XYZ,
 } from '@node-projects/acad-ts';
@@ -1513,5 +1515,79 @@ describe('acad-ts local patches', () => {
     // R13/R14 store DIMFIT and no DIMATFIT.
     const { style } = dimStyleBack(ACadVersion.AC1014, 'dwg', (s) => (s.dimensionFit = 5));
     expect(style.dimensionFit).toBe(5);
+  });
+
+  /** Saves a drawing whose `*Active` viewport `set` changed and reads its viewports back. */
+  const vportsBack = (
+    version: ACadVersion,
+    format: 'dxf' | 'dwg',
+    set: (doc: CadDocument, active: VPort) => void,
+    binary = false,
+  ): VPort[] => {
+    const doc = new CadDocument(version);
+    set(doc, doc.vPorts!.tryGetValue(VPort.defaultName)!);
+    const back = readCadDocument(writeCadDocument(doc, { format, binary }));
+    return [...back.vPorts!].filter((v) => v.name.toUpperCase() === '*ACTIVE');
+  };
+  const dwgVersions = [
+    ACadVersion.AC1014,
+    ACadVersion.AC1015,
+    ACadVersion.AC1018,
+    ACadVersion.AC1021,
+    ACadVersion.AC1024,
+    ACadVersion.AC1027,
+    ACadVersion.AC1032,
+  ];
+
+  it('0143 the DWG reader reads a viewport view mode as stored, not onto the default 16', () => {
+    for (const version of dwgVersions) {
+      for (const mode of [
+        ViewModeType.Off,
+        ViewModeType.PerspectiveView | ViewModeType.BackClipping,
+        ViewModeType.FrontClipping | ViewModeType.Follow,
+        ViewModeType.FrontClippingZ | ViewModeType.Follow,
+      ]) {
+        const [active] = vportsBack(version, 'dwg', (_, v) => (v.viewMode = mode));
+        expect(active!.viewMode, `${ACadVersion[version]} ${mode}`).toBe(mode);
+      }
+    }
+  });
+
+  it('0144 the DWG reader reads the UCS icon on and at-origin bits as stored', () => {
+    for (const version of dwgVersions) {
+      for (const icon of [
+        UscIconType.Off,
+        UscIconType.OnLower,
+        UscIconType.OffOrigin,
+        UscIconType.OnOrigin,
+      ]) {
+        const [active] = vportsBack(version, 'dwg', (_, v) => (v.ucsIconDisplay = icon));
+        expect(active!.ucsIconDisplay, `${ACadVersion[version]} ${icon}`).toBe(icon);
+      }
+    }
+  });
+
+  it('0145 the DXF reader keeps every tiled *Active viewport, as the DWG reader does', () => {
+    const tiles = (doc: CadDocument, active: VPort) => {
+      active.topRight = new XY(0.5, 1);
+      const right = new VPort(VPort.defaultName);
+      right.bottomLeft = new XY(0.5, 0);
+      right.viewHeight = 60;
+      doc.vPorts!.add(right);
+    };
+    for (const version of [ACadVersion.AC1009, ACadVersion.AC1015, ACadVersion.AC1032]) {
+      for (const binary of [false, true]) {
+        const back = vportsBack(version, 'dxf', tiles, binary);
+        const what = `${ACadVersion[version]} ${binary ? 'binary' : 'ascii'}`;
+        expect(
+          back.map((v) => [v.bottomLeft.x, v.topRight.x, v.viewHeight]),
+          what,
+        ).toEqual([
+          [0, 0.5, back[0]!.viewHeight],
+          [0.5, 1, 60],
+        ]);
+        expect(new Set(back.map((v) => v.handle)).size, what).toBe(2);
+      }
+    }
   });
 });

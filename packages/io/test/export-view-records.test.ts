@@ -178,21 +178,15 @@ const SAVES: readonly [ACadVersion, CadFormat][] = [
 /**
  * The field edits a save must refuse, as the format has no place for them (AutoCAD DXF reference
  * and ODA spec: AutoCAD 2000 brought the UCS elevation and orthographic type, a view's UCS and
- * the render mode, and a VPORT's UCS; AutoCAD 2007 the grid display flags and major lines) or
- * acad-ts's DWG reader reads them back wrong (M1-93).
+ * the render mode, and a VPORT's UCS; AutoCAD 2007 the grid display flags and major lines).
  */
-function refused(version: ACadVersion, format: CadFormat, table: string, field: string): boolean {
+function refused(version: ACadVersion, table: string, field: string): boolean {
   const r2000 = version >= ACadVersion.AC1015;
   const r2007 = version >= ACadVersion.AC1021;
   if (table === 'ucs') return !r2000 && (field === 'elevation' || field === 'orthographic');
   if (field === 'ucs' || field === 'renderMode') return !r2000;
   if (table !== 'vports') return false;
-  if (field === 'gridFlags' || field === 'gridMajor') return !r2007;
-  return (
-    format === 'dwg' &&
-    (field.startsWith('viewMode') || field === 'ucsIcon') &&
-    field !== 'viewMode front clip not at eye'
-  );
+  return (field === 'gridFlags' || field === 'gridMajor') && !r2007;
 }
 
 const formats: readonly CadFormat[] = ['dxf', 'dwg'];
@@ -238,8 +232,7 @@ describe('APPID, UCS, VIEW and VPORT records', () => {
           width: 7.5,
         }).handle,
       });
-      // The last view a save keeps, and VPORTS: two tiles that share the *Active name (a DWG's;
-      // acad-ts's DXF reader keeps one, M1-93, so the DXF save adds a saved configuration).
+      // The last view a save keeps, and VPORTS: two tiles that share the *Active name.
       b.updateTableRecord('vports', active.handle, {
         center: { x: 100, y: 50 },
         height: 25,
@@ -256,7 +249,6 @@ describe('APPID, UCS, VIEW and VPORT records', () => {
         table: 'vports',
         handle: b.addTableRecord('vports', {
           ...like(active),
-          ...(format === 'dxf' ? { name: 'SPLIT' } : {}),
           lowerLeft: { x: 0.5, y: 0 },
           upperRight: { x: 1, y: 1 },
           center: { x: 0, y: 0 },
@@ -277,9 +269,7 @@ describe('APPID, UCS, VIEW and VPORT records', () => {
     check('views', plan.handle);
     check('vports', active.handle);
     for (const { table, handle } of added) check(table, handle);
-    expect(back.vports!.filter((v) => v.name.toUpperCase() === '*ACTIVE')).toHaveLength(
-      format === 'dwg' ? 2 : 1,
-    );
+    expect(back.vports!.filter((v) => v.name.toUpperCase() === '*ACTIVE')).toHaveLength(2);
   });
 
   it.each(SAVES)(
@@ -296,7 +286,7 @@ describe('APPID, UCS, VIEW and VPORT records', () => {
           const r = named(model, table, RECORD_OF[table]);
           edit(model, (b) => b.updateTableRecord(table, r.handle, patch as never));
           const what = `${table} ${field}`;
-          if (refused(version, format, table, field)) {
+          if (refused(version, table, field)) {
             const out = refusal(() => triyaToAcad(readCadDocument(bytes), model, format));
             if (out.length === 0) problems.push(`${what} is not refused`);
             continue;
@@ -367,30 +357,31 @@ describe('APPID, UCS, VIEW and VPORT records', () => {
     }
   });
 
-  it('refuses a viewport edit acad-ts would read back otherwise (M1-93)', () => {
-    const bytes = drawing(ACadVersion.AC1032, 'dwg');
-    for (const [change, message] of [
-      [{ viewMode: 0 }, /view mode without 16/],
-      [{ ucsIcon: 2 }, /UCS icon that is off/],
-    ] as const) {
+  it.each(formats)(
+    'saves the viewport edits acad-ts used to read back wrong or drop (M1-93, %s)',
+    (format) => {
+      const bytes = drawing(ACadVersion.AC1032, format);
       const model = open(bytes);
-      edit(model, (b) =>
-        b.updateTableRecord('vports', named(model, 'vports', '*Active').handle, change),
-      );
-      expect(() => triyaToAcad(readCadDocument(bytes), model, 'dwg')).toThrow(message);
-      // The same edit saves to DXF.
-      expect(() => triyaToAcad(readCadDocument(bytes), model, 'dxf')).not.toThrow();
-    }
-    // A second *Active tile saves to DWG, but acad-ts's DXF reader would drop it.
-    const model = open(bytes);
-    edit(model, (b) =>
-      b.addTableRecord('vports', like(named<VportRecord>(model, 'vports', '*Active'))),
-    );
-    expect(() => triyaToAcad(readCadDocument(bytes), model, 'dxf')).toThrow(
-      /drops a second viewport/,
-    );
-    expect(() => triyaToAcad(readCadDocument(bytes), model, 'dwg')).not.toThrow();
-  });
+      const active = named<VportRecord>(model, 'vports', '*Active');
+      const added: string[] = [];
+      edit(model, (b) => {
+        // No view mode bit, and a UCS icon that is off but at the origin.
+        b.updateTableRecord('vports', active.handle, { viewMode: 0, ucsIcon: 2 });
+        // A second *Active tile, and a saved configuration of two tiles.
+        for (const name of ['*Active', 'SPLIT', 'SPLIT'])
+          added.push(
+            b.addTableRecord('vports', { ...like(active), name, viewMode: 8, ucsIcon: 1 }).handle,
+          );
+      });
+      const back = saved(bytes, model, format).tables!.vports!;
+      for (const h of [active.handle, ...added])
+        expect(comparable(back.find((r) => r.handle === h)), h).toEqual(
+          comparable(model.tables.vports.get(h)!),
+        );
+      expect(back.filter((v) => v.name.toUpperCase() === '*ACTIVE')).toHaveLength(2);
+      expect(back.filter((v) => v.name === 'SPLIT')).toHaveLength(2);
+    },
+  );
 });
 
 const ucsRecord = (name: string): Omit<UcsRecord, 'handle'> => ({ name, ...frontFrame });

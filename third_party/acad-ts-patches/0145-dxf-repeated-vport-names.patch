@@ -1,0 +1,16 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index dba92ba..92f125d 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -259,7 +259,10 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+ 
+       if (template !== null) {
+         const entry = template.cadObject as T;
+-        if (tableTemplate.cadObject.contains(template.name) && this._builder.configuration.failsafe) {
++        // Tiled viewports all share one name (*Active, or a saved configuration's), and
++        // VPortsTable.add keeps each, as the DWG reader does.
++        const repeats = tableTemplate.cadObject instanceof VPortsTable;
++        if (!repeats && tableTemplate.cadObject.contains(template.name) && this._builder.configuration.failsafe) {
+           this._builder.notify(`Duplicated entry with name ${template.name} found in ${template.cadObject.objectName}`, NotificationType.Warning);
+ 
+           continue;
