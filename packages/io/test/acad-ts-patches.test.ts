@@ -11,6 +11,7 @@ import {
   BookColor,
   CadDictionary,
   CadDocument,
+  CellStyleMap,
   Color,
   ColumnType,
   DwgReader,
@@ -69,6 +70,7 @@ import {
   TableEntityRow,
   TextArrowFitType,
   TextDirection,
+  TableStyle,
   TextStyle,
   UscIconType,
   Vertex2D,
@@ -1740,6 +1742,47 @@ describe('acad-ts local patches', () => {
         'kept',
       ]);
       expect(read.mText?.extendedData.size, `binary ${binary}`).toBe(0);
+    }
+  });
+
+  it('0151 the DXF CELLSTYLEMAP states the text height at 144 and the background at 62', () => {
+    // AutoCAD's CELLSTYLEMAP content format holds the block scale at 140 and the text height at
+    // 144 (every corpus DXF: 140 is 1.0, 144 the row's text height), and the cell style's 62
+    // before its CONTENTFORMAT is the background colour (257 when None). Unpatched, acad-ts
+    // read and wrote the two codes swapped and the background as a text colour.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadTableStyle)!;
+    const style = new TableStyle('GRID');
+    styles.add(style);
+    const map = new CellStyleMap();
+    const title = TableStyle.createDefaultCellStyle('_TITLE', 1);
+    title.textHeight = 0.25;
+    title.scale = 1;
+    title.backgroundColor = new Color(30);
+    map.cellStyles = [title];
+    style.createExtendedDictionary().addByKey('ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP', map);
+
+    for (const binary of [false, true]) {
+      const bytes = writeCadDocument(doc, { format: 'dxf', binary });
+      if (!binary) {
+        const groups = Array.from(bytes, (b) => String.fromCharCode(b))
+          .join('')
+          .split(/\r?\n/)
+          .map((l) => l.trim());
+        const start = groups.indexOf('CELLSTYLEMAP', groups.indexOf('OBJECTS'));
+        const value = (code: number, from: string) => {
+          let i = groups.indexOf(from, start);
+          while (groups[i - 1] !== String(code)) i += 2;
+          return Number(groups[i]);
+        };
+        expect(value(140, 'CONTENTFORMAT_BEGIN')).toBe(1);
+        expect(value(144, 'CONTENTFORMAT_BEGIN')).toBe(0.25);
+        expect(value(62, 'TABLEFORMAT_BEGIN')).toBe(30);
+      }
+      const back = readCadDocument(bytes).getCadObject(map.handle) as CellStyleMap;
+      expect(back.cellStyles[0]!.textHeight, `binary ${binary}`).toBe(0.25);
+      expect(back.cellStyles[0]!.scale, `binary ${binary}`).toBe(1);
+      expect(back.cellStyles[0]!.backgroundColor.index, `binary ${binary}`).toBe(30);
     }
   });
 });

@@ -2,12 +2,13 @@
 // OBJECTS section, named by their ACAD_MLEADERSTYLE / ACAD_TABLESTYLE dictionary entry, but
 // Triya keeps them beside the symbol tables because commands pick them by name like a DIMSTYLE.
 
-import type {
-  CellBorder,
-  CellStyle,
-  Color as AcadColor,
-  MultiLeaderStyle,
-  TableStyle,
+import {
+  CellStyleMap,
+  type CellBorder,
+  type CellStyle,
+  type Color as AcadColor,
+  type MultiLeaderStyle,
+  type TableStyle,
 } from '@node-projects/acad-ts';
 import type {
   MLeaderStyleRecord,
@@ -83,7 +84,7 @@ const border = (b: CellBorder): TableCellBorder => ({
  * cell style (ODA Open Design Specification for .dwg, "Cell style"): only that reader sets the
  * cell style's own override flags.
  */
-const isNamedCellStyle = (c: CellStyle): boolean => c.cellPropertyOverrideFlags !== null;
+export const isNamedCellStyle = (c: CellStyle): boolean => c.cellPropertyOverrideFlags !== null;
 
 /**
  * Whether a named cell style's background colour fills the cell. AutoCAD leaves it None (DWG
@@ -93,13 +94,12 @@ const isNamedCellStyle = (c: CellStyle): boolean => c.cellPropertyOverrideFlags 
  */
 const fills = (c: AcadColor): boolean => c.isTrueColor || (c.index >= 1 && c.index <= 255);
 
-function cellStyle(c: CellStyle): TableCellStyle {
+function cellStyle(c: CellStyle, named = isNamedCellStyle(c)): TableCellStyle {
   // A named cell style has no fill flag and no row alignment: AutoCAD keeps the alignment in its
   // content format and leaves the background colour None when unfilled. Its DXF save (the
   // R2010+ DXF still lists data, title and header row styles, kept in step with the
   // CELLSTYLEMAP) states such a row as fill off with colour 7, the colour a style made before
   // R2010 holds too (acadsharp sample_AC1024–AC1032 DWG against their DXF saves).
-  const named = isNamedCellStyle(c);
   const filled = named ? fills(c.backgroundColor) : c.isFillColorOn;
   return {
     ...opt('textStyle', c.textStyle),
@@ -131,8 +131,34 @@ function cellStyle(c: CellStyle): TableCellStyle {
 const rowStyles = (s: TableStyle): CellStyle[] =>
   s.cellStyles.length === 0 ? [] : [s.dataCellStyle, s.titleCellStyle, s.headerCellStyle];
 
+/**
+ * The extension dictionary entry of the CELLSTYLEMAP that holds a table style's named cell
+ * styles where the file keeps row styles: in every DXF AutoCAD 2008 or later saves, whatever its
+ * version, and in a DWG before R2010 (which acad-ts keeps unread).
+ */
+export const CELL_STYLE_MAP = 'ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP';
+
+/**
+ * The data, title and header cell styles of a table style's CELLSTYLEMAP, in the record's row
+ * order, by their ids (1 `_TITLE`, 2 `_HEADER`, 3 `_DATA`, as AutoCAD numbers them); undefined
+ * when the style has no readable map or the map lacks one of the three.
+ */
+export function cellStyleMapRows(s: TableStyle): CellStyle[] | undefined {
+  const map = s.xDictionary?.get(CELL_STYLE_MAP);
+  if (!(map instanceof CellStyleMap)) return undefined;
+  const rows = [3, 1, 2].map((id) => map.cellStyles.find((c) => c.id === id));
+  return rows.every((c) => c !== undefined) ? (rows as CellStyle[]) : undefined;
+}
+
+/**
+ * A table style's CELLSTYLEMAP mapped as the record's row styles, which AutoCAD keeps in step
+ * with the rows (M1-96); undefined as for `cellStyleMapRows`.
+ */
+export const mappedCellStyleMap = (s: TableStyle): TableCellStyle[] | undefined =>
+  cellStyleMapRows(s)?.map((c) => cellStyle(c, true));
+
 /** DWG "merge flags" bit of the Table cell style for a table that grows up (ODA spec). */
-const FLOW_BOTTOM_TO_TOP = 0x10000;
+export const FLOW_BOTTOM_TO_TOP = 0x10000;
 
 export function tableStyle(s: TableStyle): TableStyleRecord {
   // From R2010 a DWG keeps the table-wide settings in the style's "Table" cell style: its
@@ -156,6 +182,6 @@ export function tableStyle(s: TableStyle): TableStyleRecord {
     verticalMargin: table ? table.verticalMargin : s.verticalCellMargin,
     suppressTitle: table ? false : s.suppressTitle,
     suppressHeader: table ? false : s.suppressHeaderRow,
-    cellStyles: rowStyles(s).map(cellStyle),
+    cellStyles: rowStyles(s).map((c) => cellStyle(c)),
   };
 }
