@@ -11,7 +11,8 @@
 // named cell styles instead, and AutoCAD saves them in a DXF too, as the CELLSTYLEMAP its
 // extension dictionary names (ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP), so a change written
 // to the row styles alone could be undone by the cell styles AutoCAD reads back: R2010 and later
-// are refused until Triya maps those cell styles (M1-96).
+// are refused until Triya writes those cell styles (M1-96; since its part 1 Triya maps the
+// data, title and header cell styles of an R2010+ DWG into the same three row styles).
 //
 // A renamed style keeps its ACAD_TABLESTYLE entry where it stands under the new name (M1-95);
 // the TABLEs using it point at it by handle, and CTABLESTYLE, which names it, must change with
@@ -110,7 +111,7 @@ function tableStyleProblems(
   const changed = changes(b, a);
   if (known(version) && version >= ACadVersion.AC1024)
     return [
-      'from R2010 a table style keeps named cell styles, which Triya does not map yet (M1-96)',
+      'from R2010 a table style keeps named cell styles, which Triya does not write yet (M1-96)',
     ];
   if (!b && known(version) && version < ACadVersion.AC1018)
     out.push(`${ACadVersion[version]} has no table styles (AutoCAD 2005 introduced tables)`);

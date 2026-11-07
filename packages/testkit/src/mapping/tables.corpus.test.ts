@@ -773,4 +773,42 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
     expect(problems).toEqual([]);
     expect(compared).toBeGreaterThanOrEqual(6 * 2 * 6);
   });
+
+  // From R2010 a DWG TABLESTYLE is its named cell styles, while the DXF save still lists the
+  // legacy data, title and header row styles (kept in step with its CELLSTYLEMAP), so a DWG's
+  // table style only maps like its DXF twin's if the rows are taken from the named cell styles
+  // (M1-96). Before R2010 both formats store the same row styles.
+  it('maps every DWG TABLESTYLE like its DXF twin (M1-96)', () => {
+    const dir = 'third-party/acadsharp/';
+    const read = (path: string) =>
+      mapTables(readCadDocument(new Uint8Array(readFileSync(`${corpusDir}public/${dir}${path}`))));
+    const problems: string[] = [];
+    let compared = 0;
+    const paths = new Set(manifest.files.map((x) => x.path));
+    for (const f of manifest.files.filter((x) => x.path.startsWith(`public/${dir}`))) {
+      const m = /sample_(AC\d{4})\.dwg$/.exec(f.path);
+      if (!m || !paths.has(`public/${dir}sample_${m[1]}_ascii.dxf`)) continue;
+      const dwg = read(`sample_${m[1]}.dwg`);
+      for (const kind of ['ascii', 'binary']) {
+        const dxf = read(`sample_${m[1]}_${kind}.dxf`);
+        for (const want of dwg.tableStyles) {
+          const got = dxf.tableStyles.find((s) => s.name === want.name);
+          if (!got) {
+            problems.push(`${m[1]} ${kind} ${want.name}: missing`);
+            continue;
+          }
+          compared++;
+          for (const key of new Set([...Object.keys(want), ...Object.keys(got)]))
+            if (
+              JSON.stringify(want[key as keyof typeof want]) !==
+              JSON.stringify(got[key as keyof typeof got])
+            )
+              problems.push(`${m[1]} ${kind} ${want.name} ${key}`);
+        }
+      }
+    }
+    expect(problems).toEqual([]);
+    // Standard in each of AC1015–AC1032, against the ASCII and binary saves.
+    expect(compared).toBeGreaterThanOrEqual(6 * 2);
+  });
 });
