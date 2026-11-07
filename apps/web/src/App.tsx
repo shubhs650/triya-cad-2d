@@ -1,11 +1,13 @@
 // The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs
 // (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
 // tabs; the status bar. The ribbon, palettes and command line arrive with their own tasks.
+import type { EditResult, EngineEdit, Layout } from '@triya/engine';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasMode } from './canvas/controller';
 import {
   allControllers,
   controllerOf,
+  controllersOf,
   currentTile,
   register,
   setCurrentTile,
@@ -13,7 +15,7 @@ import {
 } from './canvas/registry';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { DocTabs } from './DocTabs';
-import { DocumentStore, spacesOf, type OpenDocument } from './documents';
+import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
 import { LayersPalette } from './LayersPalette';
@@ -100,6 +102,42 @@ async function open(file: { readonly name: string; getFile(): Promise<Blob> }): 
 }
 
 const fromFile = (f: File) => ({ name: f.name, getFile: () => Promise.resolve(f) });
+
+/**
+ * The browser tests' front end to the showing drawing's engine, on the dev server only (Vite
+ * drops it from the production build): edits with no command or dialog yet, such as the layout
+ * edits LAYOUT Rename and PAGESETUP will send (M6), go through the same `engines.edit` path a
+ * palette's do (M1-97).
+ */
+export interface DevHooks {
+  /** The showing drawing's layouts as they are now. */
+  layouts(): Layout[];
+  edit(edit: EngineEdit): Promise<EditResult>;
+}
+
+if (import.meta.env.DEV) {
+  const showing = () => {
+    const s = store.getSnapshot();
+    return s.docs.find((d) => d.id === s.active);
+  };
+  const hooks: DevHooks = {
+    layouts: () => {
+      const doc = showing();
+      return doc ? layoutsOf(doc.opened.init, engines.changesOf(doc.id)) : [];
+    },
+    edit: async (edit) => {
+      const doc = showing();
+      if (!doc) return { ok: false, message: 'No drawing is open.' };
+      const result = await engines.edit(doc.id, edit);
+      if (result.ok) {
+        await Promise.all(controllersOf(doc.id).map((c) => c.flush()));
+        store.edited(doc.id);
+      }
+      return result;
+    },
+  };
+  (window as { triyaDev?: DevHooks }).triyaDev = hooks;
+}
 
 interface LaunchParams {
   readonly files: readonly {
@@ -479,7 +517,7 @@ function ViewportCanvas({
 /** Model, then the layouts in tab order (DXF 71). */
 function LayoutTabs({ doc }: { doc: OpenDocument | undefined }) {
   if (!doc) return <nav className="layout-tabs" aria-label="Layouts" />;
-  const tabs = spacesOf(doc);
+  const tabs = spacesOf(doc, engines.changesOf(doc.id));
   return (
     <nav className="layout-tabs" aria-label="Layouts">
       <div role="tablist" aria-label="Model and layouts">
