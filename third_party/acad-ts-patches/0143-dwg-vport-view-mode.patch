@@ -1,0 +1,13 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 99ee561..43f12db 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -3106,6 +3106,8 @@ export class DwgObjectReader extends DwgSectionIO {
+     vport.lensLength = this._objectReader.readBitDouble();
+     vport.frontClippingPlane = this._objectReader.readBitDouble();
+     vport.backClippingPlane = this._objectReader.readBitDouble();
++    // The record states every view mode bit: start from none, not VPort's default (16).
++    vport.viewMode = ViewModeType.Off;
+     if (this._objectReader.readBit()) vport.viewMode |= ViewModeType.PerspectiveView;
+     if (this._objectReader.readBit()) vport.viewMode |= ViewModeType.FrontClipping;
+     if (this._objectReader.readBit()) vport.viewMode |= ViewModeType.BackClipping;

@@ -1090,7 +1090,8 @@ export class DwgObjectWriter extends DwgSectionIO {
 		this._writer.writeBit(true); //Fast zoom
 
 		this._writer.writeBit((vport.ucsIconDisplay & UscIconType.OnLower) !== 0);
-		this._writer.writeBit((vport.ucsIconDisplay & UscIconType.OnOrigin) !== 0);
+		// The at-origin bit alone: OnOrigin (3) includes the on bit too.
+		this._writer.writeBit((vport.ucsIconDisplay & UscIconType.OffOrigin) !== 0);
 
 		this._writer.writeBit(vport.showGrid);
 		this._writer.write2RawDouble(vport.gridSpacing);

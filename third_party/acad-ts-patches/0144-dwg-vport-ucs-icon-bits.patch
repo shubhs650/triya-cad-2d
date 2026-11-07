@@ -1,0 +1,32 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 43f12db..15eaa38 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -3127,8 +3127,11 @@ export class DwgObjectReader extends DwgSectionIO {
+     if (this._objectReader.readBit()) vport.viewMode |= ViewModeType.Follow;
+     vport.circleZoomPercent = this._objectReader.readBitShort();
+     this._objectReader.readBit();
+-    if (this._objectReader.readBit()) vport.ucsIconDisplay = UscIconType.OnLower;
+-    if (this._objectReader.readBit()) vport.ucsIconDisplay = UscIconType.OnOrigin;
++    // Two bits, on (1) and at origin (2): they add up, and neither set is off.
++    let ucsIcon = UscIconType.Off as number;
++    if (this._objectReader.readBit()) ucsIcon |= UscIconType.OnLower;
++    if (this._objectReader.readBit()) ucsIcon |= UscIconType.OffOrigin;
++    vport.ucsIconDisplay = ucsIcon as UscIconType;
+     vport.showGrid = this._objectReader.readBit();
+     vport.gridSpacing = this._objectReader.read2RawDouble();
+     vport.snapOn = this._objectReader.readBit();
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index f93077a..ebf8b16 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -1090,7 +1090,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		this._writer.writeBit(true); //Fast zoom
+ 
+ 		this._writer.writeBit((vport.ucsIconDisplay & UscIconType.OnLower) !== 0);
+-		this._writer.writeBit((vport.ucsIconDisplay & UscIconType.OnOrigin) !== 0);
++		// The at-origin bit alone: OnOrigin (3) includes the on bit too.
++		this._writer.writeBit((vport.ucsIconDisplay & UscIconType.OffOrigin) !== 0);
+ 
+ 		this._writer.writeBit(vport.showGrid);
+ 		this._writer.write2RawDouble(vport.gridSpacing);
