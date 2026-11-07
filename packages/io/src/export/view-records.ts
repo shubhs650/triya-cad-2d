@@ -298,6 +298,7 @@ export function planVports(
     // AutoCAD's tiled viewports are all *Active, and a saved configuration's tiles share its name.
     namesRepeat: true,
     fixedNames: [VPort.defaultName],
+    removable: true,
     problems: (b, a) => {
       const changed = changes(b, a);
       const out = [...flagProblems(b, a), ...viewProblems(a, changed)];
