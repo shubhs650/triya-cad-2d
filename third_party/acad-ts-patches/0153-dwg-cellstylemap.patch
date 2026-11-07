@@ -1,0 +1,114 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index cb73be5..6b55b8d 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -85,6 +85,7 @@ import { CadFieldTemplate } from '../../Templates/CadFieldTemplate.js';
+ import { CadFieldListTemplate } from '../../Templates/CadFieldListTemplate.js';
+ import { CadValueTemplate } from '../../Templates/CadValueTemplate.js';
+ import { CadWallTemplate } from '../../Templates/CadWallTemplate.js';
++import { CadCellStyleMapTemplate } from '../../Templates/CadCellStyleMapTemplate.js';
+ import { CadTableCellTemplate, CadCellStyleTemplate, CadTableCellContentTemplate, CadTableCellContentFormatTemplate, CadTableAttributeTemplate } from '../../Templates/CadTableEntityTemplate.js';
+ import { NotificationType } from '../../NotificationEventHandler.js';
+ import { Entity } from '../../../Entities/Entity.js';
+@@ -1012,6 +1013,7 @@ export class DwgObjectReader extends DwgSectionIO {
+       case DxfFileToken.objectVisualStyle: template = this._readVisualStyle(); break;
+       case DxfFileToken.objectPlotSettings: template = this._readPlotSettings(); break;
+       case DxfFileToken.objectTableStyle: template = this._readTableStyle(); break;
++      case DxfFileToken.objectCellStyleMap: template = this._readCellStyleMap(); break;
+       case DxfFileToken.blkRefObjectContextData: template = this._readBlkRefObjectContextData(); break;
+       case DxfFileToken.mTextAttributeObjectContextData: template = this._readMTextAttributeObjectContextData(); break;
+       case DxfFileToken.objectFieldList: template = this._readFieldList(); break;
+@@ -3790,6 +3792,27 @@ export class DwgObjectReader extends DwgSectionIO {
+     return template;
+   }
+ 
++  /**
++   * CELLSTYLEMAP: the named cell styles (_TITLE, _HEADER, _DATA) AutoCAD 2008 and later keep
++   * beside a table style's row styles in a DWG before R2010 (ODA Open Design Specification for
++   * .dwg, CELLSTYLEMAP): a count, then per cell style the TABLESTYLE R2010 cell style record
++   * followed by its id, class and name.
++   */
++  private _readCellStyleMap(): CadTemplate {
++    const template = new CadCellStyleMapTemplate();
++    this._readCommonNonEntityData(template);
++    const count = this._mergedReaders.readBitLong();
++    for (let i = 0; i < count; i++) {
++      template.addEntry();
++      const style = template.styles[template.styles.length - 1];
++      this._readCellStyle(style);
++      style.cellStyle.id = this._mergedReaders.readBitLong();
++      style.cellStyle.styleClass = this._mergedReaders.readBitLong() as CellStyleClass;
++      style.cellStyle.name = this._mergedReaders.readVariableText();
++    }
++    return template;
++  }
++
+   private _readVisualStyle(): CadTemplate {
+     const visualStyle = new VisualStyle();
+     const template = new CadNonGraphicalObjectTemplate(visualStyle);
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 7080d2c..ae801cd 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -198,6 +198,7 @@ import { UnknownNonGraphicalObject } from '../../../Objects/UnknownNonGraphicalO
+ import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
+ import { VisualStyle } from '../../../Objects/VisualStyle.js';
+ import { TableStyle } from '../../../Objects/TableStyle.js';
++import { CellStyleMap } from '../../../Objects/CellStyleMap.js';
+ import { writeDwgVisualStyle } from '../DwgVisualStyle.js';
+ import { ProxyObject } from '../../../Objects/ProxyObject.js';
+ import { BlockRepresentationData } from '../../../Objects/BlockRepresentationData.js';
+@@ -3591,6 +3592,8 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		} else if (obj instanceof DynamicBlockPurgePreventer) {
+ 			this._writer.writeBitShort(obj.version);
+ 			this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, obj.block ?? obj.blockHandle);
++		} else if (obj instanceof CellStyleMap) {
++			this._writeCellStyleMap(obj);
+ 		} else if (obj instanceof TableStyle) {
+ 			this._writeTableStyle(obj);
+ 		} else if (obj instanceof Material) {
+@@ -3926,6 +3929,17 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		this._writeRowCellStyle(tableStyle.headerCellStyle);
+ 	}
+ 
++	/** CELLSTYLEMAP, as the reader reads it: a count, then each cell style with its id, class and name. */
++	private _writeCellStyleMap(map: CellStyleMap): void {
++		this._writer.writeBitLong(map.cellStyles.length);
++		for (const style of map.cellStyles) {
++			this._writeCellStyle(style);
++			this._writer.writeBitLong(style.id);
++			this._writer.writeBitLong(style.styleClass);
++			this._writer.writeVariableText(style.name);
++		}
++	}
++
+ 	private _writeTableStyleColor(color: Color): void {
+ 		if (this.r2004Pre && this._writer instanceof DwgMergedStreamWriter) {
+ 			this._writer.writeMergedCmColor(color);
+@@ -3970,7 +3984,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 
+ 		this._writer.writeBitLong(style.cellPropertyOverrideFlags ?? style.propertyOverrideFlags);
+ 		this._writer.writeBitLong(style.tableCellStylePropertyFlags);
+-		this._writer.writeCmColor(style.backgroundColor);
++		this._writeTableStyleColor(style.backgroundColor);
+ 		this._writer.writeBitLong(style.contentLayoutFlags);
+ 		this._writeCellContentFormat(style);
+ 		this._writer.writeBitShort(style.marginOverrideFlags);
+@@ -4002,7 +4016,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 	private _writeBorder(border: CellBorder): void {
+ 		this._writer.writeBitLong(border.propertyOverrideFlags);
+ 		this._writer.writeBitLong(border.type);
+-		this._writer.writeCmColor(border.color);
++		this._writeTableStyleColor(border.color);
+ 		this._writer.writeBitLong(border.lineWeight);
+ 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, border.lineType);
+ 		this._writer.writeBitLong(border.isInvisible ? 1 : 0);
+@@ -4018,7 +4032,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 		this._writer.writeBitDouble(format.rotation);
+ 		this._writer.writeBitDouble(format.scale);
+ 		this._writer.writeBitLong(format.alignment);
+-		this._writer.writeCmColor(format.color);
++		this._writeTableStyleColor(format.color);
+ 		this._writer.handleReferenceTyped(DwgReferenceType.HardPointer, format.textStyle);
+ 		this._writer.writeBitDouble(format.textHeight);
+ 	}

@@ -1598,9 +1598,21 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
     let currBorder: CellEdgeFlags = CellEdgeFlags.Unknown;
     while (this._reader.dxfCode !== DxfCode.Start) {
       switch (this._reader.code as number) {
+        // The cell style record (AutoCAD DXF reference, TABLESTYLE cell style; the same fields,
+        // in the same order, as the DWG R2010 cell style): 90 type, 170 data flag, 91 the cell
+        // style's own property override flags, 92 merge flags, 62 background, 93 content layout
+        // flags; 94 is the border count, the borders are read below.
+        case 170:
+          style.hasData = this._reader.valueAsInt !== 0;
+          break;
+        case 91:
+          style.cellPropertyOverrideFlags = this._reader.valueAsInt;
+          break;
         case 93:
+          style.contentLayoutFlags = this._reader.valueAsInt;
+          break;
         case 94:
-          break; // Content-format and grid-format counts; records are read below.
+          break;
         case 95:
           currBorder = this._reader.valueAsInt as CellEdgeFlags;
           break;
@@ -1670,11 +1682,13 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
         case 92:
           border.lineWeight = this._reader.valueAsInt as LineWeightType;
           break;
+        // 90 the border's override flags and 91 its type (single 1, double 2), as the DWG
+        // states them in that order; AutoCAD's DXF saves state 90 = 0 and 91 = 1.
         case 90:
-          border.type = this._reader.valueAsInt as TableEntityBorderType;
+          border.propertyOverrideFlags = this._reader.valueAsInt as TableBorderPropertyFlags;
           break;
         case 91:
-          border.propertyOverrideFlags = this._reader.valueAsInt as TableBorderPropertyFlags;
+          border.type = this._reader.valueAsInt as TableEntityBorderType;
           break;
         case 40:
           border.doubleLineSpacing = this._reader.valueAsDouble;

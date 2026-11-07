@@ -11,6 +11,7 @@ import {
   BookColor,
   CadDictionary,
   CadDocument,
+  type CellStyle,
   CellStyleMap,
   Color,
   ColumnType,
@@ -1784,5 +1785,107 @@ describe('acad-ts local patches', () => {
       expect(back.cellStyles[0]!.scale, `binary ${binary}`).toBe(1);
       expect(back.cellStyles[0]!.backgroundColor.index, `binary ${binary}`).toBe(30);
     }
+  });
+
+  // A CELLSTYLEMAP cell style as AutoCAD saves one, with overrides a style may carry.
+  function styleMapDocument(version: ACadVersion): { doc: CadDocument; map: CellStyleMap } {
+    const doc = new CadDocument(version);
+    const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadTableStyle)!;
+    const style = new TableStyle('GRID');
+    styles.add(style);
+    const map = new CellStyleMap();
+    const data = TableStyle.createDefaultCellStyle('_DATA', 3);
+    data.styleClass = 2 as never;
+    data.cellStyleType = 5 as never;
+    data.hasData = true;
+    data.cellPropertyOverrideFlags = 0x40 as never;
+    data.contentLayoutFlags = 1 as never;
+    data.tableCellStylePropertyFlags = 0x8000 as never;
+    data.backgroundColor = new Color(30);
+    data.textHeight = 0.18;
+    data.scale = 1;
+    data.alignment = 2;
+    data.marginOverrideFlags = 1 as never;
+    data.marginHorizontalSpacing = 0.18;
+    data.topBorder.propertyOverrideFlags = 0x08 as never;
+    data.topBorder.type = 2 as never;
+    data.topBorder.color = new Color(5);
+    data.topBorder.doubleLineSpacing = 0.045;
+    map.cellStyles = [data];
+    style.createExtendedDictionary().addByKey('ACAD_ROUNDTRIP_2008_TABLESTYLE_CELLSTYLEMAP', map);
+    return { doc, map };
+  }
+  const styleMapFields = (c: CellStyle): unknown => ({
+    id: c.id,
+    styleClass: c.styleClass,
+    name: c.name,
+    type: c.cellStyleType,
+    hasData: c.hasData,
+    overrides: c.cellPropertyOverrideFlags,
+    merge: c.tableCellStylePropertyFlags,
+    background: c.backgroundColor.index,
+    layout: c.contentLayoutFlags,
+    textHeight: c.textHeight,
+    alignment: c.alignment,
+    margins: [c.marginOverrideFlags, c.verticalMargin, c.marginHorizontalSpacing],
+    top: [
+      c.topBorder.propertyOverrideFlags,
+      c.topBorder.type,
+      c.topBorder.color.index,
+      c.topBorder.doubleLineSpacing,
+    ],
+  });
+
+  it('0152 the DXF TABLEFORMAT states 170, 91 and 93, and GRIDFORMAT 90 and 91, where AutoCAD does', () => {
+    // AutoCAD's TABLEFORMAT is the DWG cell style record in DXF codes: 170 the data flag, 91 the
+    // cell style's own override flags, 93 its content layout flags; its GRIDFORMAT states the
+    // border's override flags at 90 and its type at 91 (every corpus DXF: 90 = 0, 91 = 1, as
+    // the DWG save reads). Unpatched, acad-ts read 170 as the cell alignment and 91 as the
+    // class (wrote the class there, which CELLSTYLE_BEGIN 91 overwrote), skipped 93, and read
+    // and wrote GRIDFORMAT 90 and 91 swapped.
+    const { doc, map } = styleMapDocument(ACadVersion.AC1032);
+    const want = styleMapFields(map.cellStyles[0]!);
+
+    for (const binary of [false, true]) {
+      const bytes = writeCadDocument(doc, { format: 'dxf', binary });
+      if (!binary) {
+        const groups = Array.from(bytes, (b) => String.fromCharCode(b))
+          .join('')
+          .split(/\r?\n/)
+          .map((l) => l.trim());
+        const start = groups.indexOf('CELLSTYLEMAP', groups.indexOf('OBJECTS'));
+        const value = (code: number, from: string) => {
+          let i = groups.indexOf(from, start);
+          while (groups[i - 1] !== String(code)) i += 2;
+          return Number(groups[i]);
+        };
+        expect(value(170, 'TABLEFORMAT_BEGIN')).toBe(1);
+        expect(value(91, 'TABLEFORMAT_BEGIN')).toBe(0x40);
+        expect(value(93, 'TABLEFORMAT_BEGIN')).toBe(1);
+        expect(value(90, 'GRIDFORMAT_BEGIN')).toBe(0x08);
+        expect(value(91, 'GRIDFORMAT_BEGIN')).toBe(2);
+      }
+      const back = readCadDocument(bytes).getCadObject(map.handle) as CellStyleMap;
+      expect(styleMapFields(back.cellStyles[0]!), `binary ${binary}`).toEqual(want);
+    }
+  });
+
+  it.each([
+    ['R14', ACadVersion.AC1014],
+    ['R2000', ACadVersion.AC1015],
+    ['R2004', ACadVersion.AC1018],
+    ['R2007', ACadVersion.AC1021],
+  ])('0153 the DWG writer and reader keep a CELLSTYLEMAP (%s)', (_name, version) => {
+    // AutoCAD 2008 and later save the CELLSTYLEMAP in a DWG before R2010 too. Unpatched,
+    // acad-ts read it as an unknown object (so it could not be edited) and could not write
+    // one it read from DXF ("Object not implemented"); before R2004 its colours are full
+    // CMC colours in the merged stream, which the cell style writer wrote as indexes.
+    const { doc, map } = styleMapDocument(version);
+    const want = styleMapFields(map.cellStyles[0]!);
+
+    const back = dwgRoundTrip(doc).getCadObject(map.handle);
+
+    expect(back).toBeInstanceOf(CellStyleMap);
+    expect((back as CellStyleMap).cellStyles.map(styleMapFields)).toEqual([want]);
   });
 });

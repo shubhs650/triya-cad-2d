@@ -782,10 +782,11 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
   it('maps every TABLESTYLE CELLSTYLEMAP like the row styles it is kept in step with (M1-96)', () => {
     // AutoCAD 2008 and later save a table style's named cell styles beside its row styles in
     // every DXF (and a DWG before R2010), and the two say the same; Triya's saves keep them so.
+    // A DWG before R2010 keeps it too, which acad-ts reads since patch 0153 (M1-98).
     const problems: string[] = [];
     let compared = 0;
+    let dwgs = 0;
     for (const f of manifest.files.filter((x) => !x.knownIssues.some((k) => /read/i.test(k)))) {
-      if (!f.format.startsWith('dxf')) continue;
       let doc;
       try {
         doc = readCadDocument(load(f.path));
@@ -796,11 +797,14 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
         const found = cellStyleMapProblems(doc, record);
         if (!found) continue;
         compared++;
+        if (f.format === 'dwg') dwgs++;
         problems.push(...found.map((p) => `${f.path} ${p}`));
       }
     }
     expect(problems).toEqual([]);
     expect(compared).toBeGreaterThan(50);
+    // sample_AC1014, AC1015, AC1018 and AC1021.dwg.
+    expect(dwgs).toBeGreaterThanOrEqual(4);
   });
 
   it('maps every DWG TABLESTYLE like its DXF twin (M1-96)', () => {

@@ -18,9 +18,9 @@
 import { readFileSync } from 'node:fs';
 import {
   ACadVersion,
-  CellStyleMap,
   Insert,
   Polyline,
+  TableStyle,
   type CadDictionary,
   type Viewport,
 } from '@node-projects/acad-ts';
@@ -56,7 +56,7 @@ import {
   type XdataApp,
 } from '@triya/engine';
 import {
-  CELL_STYLE_MAP,
+  cellStyleMapOf,
   documentInit,
   exportDocument,
   readCadDocument,
@@ -950,10 +950,16 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .map((s) => s.name);
         expect(wrongTableStyles, f.path).toEqual([]);
         // M1-96: the CELLSTYLEMAP beside the row styles says what the rows say.
-        const outOfStep = tableStyles.flatMap(
-          (s) => cellStyleMapProblems(reopened, model.tables.tableStyles.get(s.handle)!) ?? [],
+        const mapChecks = tableStyles.map((s) =>
+          cellStyleMapProblems(reopened, model.tables.tableStyles.get(s.handle)!),
         );
-        expect(outOfStep, f.path).toEqual([]);
+        expect(
+          mapChecks.flatMap((p) => p ?? []),
+          f.path,
+        ).toEqual([]);
+        // M1-98: a DWG before R2010 keeps one too, read and kept in step since patch 0153.
+        if (/sample_AC10(14|15|18|21)\.dwg$/.test(f.path))
+          expect(mapChecks.filter((p) => p !== undefined).length, f.path).toBeGreaterThan(0);
         const wrongViewRecords = (['ucs', 'views', 'vports'] as const).flatMap((table) => {
           const backRecords = new Map(
             (init.tables?.[table] ?? []).map((r: { handle: Handle; raw?: unknown }) => [
@@ -1005,10 +1011,9 @@ describe('TriyaToAcad edits on the public corpus', () => {
         );
         // The CELLSTYLEMAP an edited table style keeps beside its rows is part of the edit.
         for (const t of tableStyles) {
-          const map = original
-            .getCadObject(Number.parseInt(t.handle, 16))
-            ?.xDictionary?.get(CELL_STYLE_MAP);
-          if (map instanceof CellStyleMap) ignoreHandles.add(map.handle);
+          const style = original.getCadObject(Number.parseInt(t.handle, 16));
+          const map = style instanceof TableStyle ? cellStyleMapOf(style) : undefined;
+          if (map) ignoreHandles.add(map.handle);
         }
         // The AcCmTransparency application the save registered for the layers' transparency.
         for (const h of transparencyApps) {

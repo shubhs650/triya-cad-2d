@@ -85,6 +85,7 @@ import { CadFieldTemplate } from '../../Templates/CadFieldTemplate.js';
 import { CadFieldListTemplate } from '../../Templates/CadFieldListTemplate.js';
 import { CadValueTemplate } from '../../Templates/CadValueTemplate.js';
 import { CadWallTemplate } from '../../Templates/CadWallTemplate.js';
+import { CadCellStyleMapTemplate } from '../../Templates/CadCellStyleMapTemplate.js';
 import { CadTableCellTemplate, CadCellStyleTemplate, CadTableCellContentTemplate, CadTableCellContentFormatTemplate, CadTableAttributeTemplate } from '../../Templates/CadTableEntityTemplate.js';
 import { NotificationType } from '../../NotificationEventHandler.js';
 import { Entity } from '../../../Entities/Entity.js';
@@ -1012,6 +1013,7 @@ export class DwgObjectReader extends DwgSectionIO {
       case DxfFileToken.objectVisualStyle: template = this._readVisualStyle(); break;
       case DxfFileToken.objectPlotSettings: template = this._readPlotSettings(); break;
       case DxfFileToken.objectTableStyle: template = this._readTableStyle(); break;
+      case DxfFileToken.objectCellStyleMap: template = this._readCellStyleMap(); break;
       case DxfFileToken.blkRefObjectContextData: template = this._readBlkRefObjectContextData(); break;
       case DxfFileToken.mTextAttributeObjectContextData: template = this._readMTextAttributeObjectContextData(); break;
       case DxfFileToken.objectFieldList: template = this._readFieldList(); break;
@@ -3786,6 +3788,27 @@ export class DwgObjectReader extends DwgSectionIO {
       cellStyle.id = this._mergedReaders.readBitLong();
       cellStyle.styleClass = this._mergedReaders.readBitLong() as CellStyleClass;
       cellStyle.name = this._mergedReaders.readVariableText();
+    }
+    return template;
+  }
+
+  /**
+   * CELLSTYLEMAP: the named cell styles (_TITLE, _HEADER, _DATA) AutoCAD 2008 and later keep
+   * beside a table style's row styles in a DWG before R2010 (ODA Open Design Specification for
+   * .dwg, CELLSTYLEMAP): a count, then per cell style the TABLESTYLE R2010 cell style record
+   * followed by its id, class and name.
+   */
+  private _readCellStyleMap(): CadTemplate {
+    const template = new CadCellStyleMapTemplate();
+    this._readCommonNonEntityData(template);
+    const count = this._mergedReaders.readBitLong();
+    for (let i = 0; i < count; i++) {
+      template.addEntry();
+      const style = template.styles[template.styles.length - 1];
+      this._readCellStyle(style);
+      style.cellStyle.id = this._mergedReaders.readBitLong();
+      style.cellStyle.styleClass = this._mergedReaders.readBitLong() as CellStyleClass;
+      style.cellStyle.name = this._mergedReaders.readVariableText();
     }
     return template;
   }
