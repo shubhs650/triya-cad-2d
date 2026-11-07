@@ -2,7 +2,13 @@
 // OBJECTS section, named by their ACAD_MLEADERSTYLE / ACAD_TABLESTYLE dictionary entry, but
 // Triya keeps them beside the symbol tables because commands pick them by name like a DIMSTYLE.
 
-import type { CellBorder, CellStyle, MultiLeaderStyle, TableStyle } from '@node-projects/acad-ts';
+import type {
+  CellBorder,
+  CellStyle,
+  Color as AcadColor,
+  MultiLeaderStyle,
+  TableStyle,
+} from '@node-projects/acad-ts';
 import type {
   MLeaderStyleRecord,
   TableCellBorder,
@@ -72,15 +78,37 @@ const border = (b: CellBorder): TableCellBorder => ({
   color: mapColor(b.color),
 });
 
+/**
+ * Whether acad-ts read the cell style from a DWG TABLESTYLE from R2010, where it is a named
+ * cell style (ODA Open Design Specification for .dwg, "Cell style"): only that reader sets the
+ * cell style's own override flags.
+ */
+const isNamedCellStyle = (c: CellStyle): boolean => c.cellPropertyOverrideFlags !== null;
+
+/**
+ * Whether a named cell style's background colour fills the cell. AutoCAD leaves it None (DWG
+ * method 0xC8, ACI 257 in acad-ts) when unfilled, and its table style dialog offers a fill of
+ * None or a colour only, so ByBlock and ByLayer (which acad-ts gives a style it makes) fill
+ * nothing either.
+ */
+const fills = (c: AcadColor): boolean => c.isTrueColor || (c.index >= 1 && c.index <= 255);
+
 function cellStyle(c: CellStyle): TableCellStyle {
+  // A named cell style has no fill flag and no row alignment: AutoCAD keeps the alignment in its
+  // content format and leaves the background colour None when unfilled. Its DXF save (the
+  // R2010+ DXF still lists data, title and header row styles, kept in step with the
+  // CELLSTYLEMAP) states such a row as fill off with colour 7, the colour a style made before
+  // R2010 holds too (acadsharp sample_AC1024–AC1032 DWG against their DXF saves).
+  const named = isNamedCellStyle(c);
+  const filled = named ? fills(c.backgroundColor) : c.isFillColorOn;
   return {
     ...opt('textStyle', c.textStyle),
     textHeight: c.textHeight,
-    alignment: c.cellAlignment as number,
+    alignment: (named ? c.alignment : c.cellAlignment) as number,
     // DXF 62 is the cell's content colour, which acad-ts keeps on the content format.
     textColor: mapColor(c.color),
-    fillColor: mapColor(c.backgroundColor),
-    fillOn: c.isFillColorOn,
+    fillColor: named && !filled ? { kind: 'aci', index: 7 } : mapColor(c.backgroundColor),
+    fillOn: filled,
     dataType: c.valueDataType,
     unitType: c.valueUnitType,
     borders: [
@@ -94,19 +122,40 @@ function cellStyle(c: CellStyle): TableCellStyle {
   };
 }
 
+/**
+ * The row styles in the order DXF lists them and the record keeps them: data, title, header.
+ * acad-ts lists a DWG's named cell styles from R2010 as stored (title, header, data, then any
+ * user cell styles) but files the three by id, as it does a DXF's rows. A style that holds no
+ * cell styles (made in memory) keeps none.
+ */
+const rowStyles = (s: TableStyle): CellStyle[] =>
+  s.cellStyles.length === 0 ? [] : [s.dataCellStyle, s.titleCellStyle, s.headerCellStyle];
+
+/** DWG "merge flags" bit of the Table cell style for a table that grows up (ODA spec). */
+const FLOW_BOTTOM_TO_TOP = 0x10000;
+
 export function tableStyle(s: TableStyle): TableStyleRecord {
+  // From R2010 a DWG keeps the table-wide settings in the style's "Table" cell style: its
+  // margins, and the flow direction as a flag (the ODA spec's cell style merge flags, which may
+  // only hold 0x8000 merge all and 0x10000 flow bottom to top). It has no suppress flags (the
+  // AutoCAD 2008 table style dialog dropped them), and AutoCAD's DXF save states 0 for both.
+  const table = isNamedCellStyle(s.tableCellStyle) ? s.tableCellStyle : null;
   return {
     // Not `base`: a TABLESTYLE has no DXF 70 standard flags; its 70 is the flow direction
     // and its flags are 71.
     ...common(s),
     name: s.name,
     description: s.description,
-    flowDirection: s.flowDirection as number,
+    flowDirection: table
+      ? (table.tableCellStylePropertyFlags & FLOW_BOTTOM_TO_TOP) !== 0
+        ? 1
+        : 0
+      : (s.flowDirection as number),
     styleFlags: s.flags,
-    horizontalMargin: s.horizontalCellMargin,
-    verticalMargin: s.verticalCellMargin,
-    suppressTitle: s.suppressTitle,
-    suppressHeader: s.suppressHeaderRow,
-    cellStyles: s.cellStyles.map(cellStyle),
+    horizontalMargin: table ? table.horizontalMargin : s.horizontalCellMargin,
+    verticalMargin: table ? table.verticalMargin : s.verticalCellMargin,
+    suppressTitle: table ? false : s.suppressTitle,
+    suppressHeader: table ? false : s.suppressHeaderRow,
+    cellStyles: rowStyles(s).map(cellStyle),
   };
 }

@@ -7,6 +7,7 @@ import {
   BlockRecord,
   CadDictionary,
   CadDocument,
+  CellStyle,
   Color,
   DictionaryVariable,
   DimensionStyle,
@@ -312,6 +313,77 @@ describe('multileader and table styles', () => {
 
     expect(mapped).not.toHaveProperty('flags');
     expect(mapped).toMatchObject({ styleFlags: 3, suppressTitle: true, cellStyles: [] });
+  });
+
+  // From R2010 a DWG TABLESTYLE is its named cell styles (ODA Open Design Specification for .dwg,
+  // TABLESTYLE R2010+ and "Cell style"): acad-ts lists them as stored (title, header, data and
+  // any user ones), keeps each one's alignment in its content format and its fill as the
+  // background colour (None when unfilled), and the table-wide flow direction and margins in the
+  // "Table" cell style. The record must hold what the DXF save of the same style states.
+  it('maps an R2010+ DWG table style as its DXF save states it (M1-96)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const style = new TableStyle('R2010');
+    const named = (name: string, id: number, height: number, alignment: number, fill: Color) => {
+      const c = new CellStyle();
+      c.name = name;
+      c.id = id;
+      c.cellPropertyOverrideFlags = 0;
+      c.textHeight = height;
+      c.alignment = alignment;
+      c.backgroundColor = fill;
+      return c;
+    };
+    const title = named('_TITLE', 1, 0.25, 5, Color.byBlock);
+    const header = named('_HEADER', 2, 0.18, 5, new Color(3));
+    const data = named('_DATA', 3, 0.18, 2, new Color(257));
+    const user = named('Notes', 101, 0.1, 1, new Color(257));
+    style.cellStyles = [title, header, data, user];
+    style.titleCellStyle = title;
+    style.headerCellStyle = header;
+    style.dataCellStyle = data;
+    const table = style.tableCellStyle;
+    table.cellPropertyOverrideFlags = 0;
+    table.tableCellStylePropertyFlags = 0x10000;
+    table.horizontalMargin = 0.1;
+    table.verticalMargin = 0.2;
+    styleDictionary(doc, CadDictionary.acadTableStyle).add(style);
+    const mapped = mapTables(doc).tableStyles.find((t) => t.name === 'R2010')!;
+
+    expect(mapped).toMatchObject({
+      flowDirection: 1,
+      horizontalMargin: 0.1,
+      verticalMargin: 0.2,
+      suppressTitle: false,
+      suppressHeader: false,
+    });
+    // Data, title, header, as DXF and the record list the row styles; user styles are not rows.
+    expect(
+      mapped.cellStyles.map((c) => [c.textHeight, c.alignment, c.fillOn, c.fillColor]),
+    ).toEqual([
+      [0.18, 2, false, { kind: 'aci', index: 7 }],
+      [0.25, 5, false, { kind: 'aci', index: 7 }],
+      [0.18, 5, true, { kind: 'aci', index: 3 }],
+    ]);
+  });
+
+  it('keeps a table style read before R2010 as it is stored (M1-96)', () => {
+    const doc = new CadDocument(ACadVersion.AC1021);
+    const style = new TableStyle('R2007');
+    style.flowDirection = 1;
+    style.horizontalCellMargin = 0.3;
+    style.cellStyles = [style.dataCellStyle, style.titleCellStyle, style.headerCellStyle];
+    style.dataCellStyle.cellAlignment = 4;
+    style.dataCellStyle.alignment = 9;
+    style.titleCellStyle.backgroundColor = new Color(2);
+    styleDictionary(doc, CadDictionary.acadTableStyle).add(style);
+    const mapped = mapTables(doc).tableStyles.find((t) => t.name === 'R2007')!;
+
+    expect(mapped).toMatchObject({ flowDirection: 1, horizontalMargin: 0.3 });
+    expect(mapped.cellStyles[0]!.alignment).toBe(4);
+    expect(mapped.cellStyles[1]).toMatchObject({
+      fillOn: false,
+      fillColor: { kind: 'aci', index: 2 },
+    });
   });
 });
 

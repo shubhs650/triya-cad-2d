@@ -766,7 +766,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter(editableLinetype);
         const dimStyles = [...model.tables.dimStyles.values()].filter(kept);
         const mleaderStyles = [...model.tables.mleaderStyles.values()];
-        // From R2010 AutoCAD keeps a table style's cell styles, which Triya does not map (M1-96).
+        // From R2010 AutoCAD keeps a table style's cell styles, which Triya does not write (M1-96).
         const version = original.header?.version ?? ACadVersion.AC1032;
         const tableStyles =
           version < ACadVersion.AC1024 ? [...model.tables.tableStyles.values()] : [];
@@ -1026,7 +1026,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
   );
 
   // M1-95: every multileader style but Standard, every table style but Standard before R2010
-  // (from R2010 a table style keeps cell styles Triya does not map, M1-96) and every image
+  // (from R2010 a table style keeps cell styles Triya does not write, M1-96) and every image
   // definition renamed, with CMLEADERSTYLE and CTABLESTYLE following, as AutoCAD's RENAME and
   // the External References palette do. Each keeps its dictionary entry, in place, under its
   // handle; MULTILEADERs, TABLEs and IMAGEs point at it by handle and come back as read.
