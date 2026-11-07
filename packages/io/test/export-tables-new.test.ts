@@ -58,9 +58,23 @@ const text = (t: string, more: Partial<TableCell> = {}): TableCell => ({
 /**
  * A 3 × 3 table as the TABLE command leaves it after typing: a title merged over the three
  * columns, a header row and a data row with block MARK in its last cell. `formats` adds cell
- * formats, a rotation and table-wide overrides; a DWG from R2010 does not take the last two yet.
+ * formats, a rotation and table-wide overrides, each row type's values carried into the format
+ * of each of its cells (`TableOverrides`), which a DWG from R2010 folds in from the row.
  */
 function newTable(model: DocumentModel, block: string, formats: boolean): TableGeometry {
+  const g = authored(model, block, formats);
+  const o = g.overrides;
+  if (!o) return g;
+  const types = ['title', 'header', 'data'] as const;
+  return {
+    ...g,
+    cells: g.cells.map((row, i) =>
+      row.map((c) => ({ ...c, format: { ...o[types[i]!], ...c.format } })),
+    ),
+  };
+}
+
+function authored(model: DocumentModel, block: string, formats: boolean): TableGeometry {
   const standard = textStyleNamed(model, 'STANDARD');
   return {
     kind: 'ACAD_TABLE',
@@ -162,17 +176,12 @@ const SAVES: [string, ACadVersion, CadFormat][] = [
   ['R2000 DWG', ACadVersion.AC1015, 'dwg'],
 ];
 
-/** A DWG from R2010 keeps cell rotations and table-wide overrides in cell styles (not written yet). */
-const dwgFrom2010 = (version: ACadVersion, format: CadFormat) =>
-  format === 'dwg' && version >= ACadVersion.AC1024;
-
 describe('new ACAD_TABLE', () => {
   it.each(SAVES)('saves a table the TABLE command adds to %s', (_w, version, format) => {
     const bytes = drawing(version, format);
     const model = open(bytes);
     const before = tables(model)[0]!.geom;
-    const formats = !dwgFrom2010(version, format);
-    const t = addTable(model, (block) => newTable(model, block, formats));
+    const t = addTable(model, (block) => newTable(model, block, true));
     const back = savedTable(bytes, model, format, t.handle);
     expect(back).toEqual(t.geom);
     // The drawing's own table is left as it was.
@@ -316,24 +325,15 @@ describe('new ACAD_TABLE', () => {
     expect(problems.join('; ')).toMatch(message);
   });
 
-  it("saves the cell formats of a new table to an R2018 DWG in its cells' cell styles", () => {
+  it('states the overrides of a new table in an R2018 DWG in the cell styles of its rows', () => {
     const bytes = drawing(ACadVersion.AC1032, 'dwg');
     const model = open(bytes);
-    const t = addTable(model, (block) => {
-      const { overrides: _o, ...g } = newTable(model, block, true);
-      return { ...g, cells: g.cells.map((r) => r.map((c) => ({ ...c, rotation: 0 }))) };
-    });
-    expect(savedTable(bytes, model, 'dwg', t.handle)).toEqual(t.geom);
-  });
-
-  it('refuses rotations and overrides in a new table in an R2018 DWG', () => {
-    const bytes = drawing(ACadVersion.AC1032, 'dwg');
-    const model = open(bytes);
-    addTable(model, (block) => newTable(model, block, true));
-    const problems = refusal(() => save(bytes, model, 'dwg')).join('; ');
-    expect(problems).not.toMatch(/cell format/);
-    expect(problems).toMatch(/cell \(2, 0\): a cell rotation in a DWG from R2010/);
-    expect(problems).toMatch(/table overrides in a DWG from R2010, which states them in cell/);
+    const t = addTable(model, (block) => newTable(model, block, true));
+    const doc = readCadDocument(save(bytes, model, 'dwg'));
+    const acad = doc.getCadObject(Number.parseInt(t.handle, 16)) as TableEntity;
+    expect(acad.tableOverrides).toBeNull();
+    expect(acad.rows.map((r) => r.cellStyleOverride.textHeight)).toEqual([0.35, 0, 0.18]);
+    expect(acad.cellStyleOverride.horizontalMargin).toBe(0.1);
   });
 
   it('refuses a true colour override in a DWG before R2004, which holds ACI colours only', () => {

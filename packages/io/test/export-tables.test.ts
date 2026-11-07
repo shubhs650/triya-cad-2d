@@ -4,13 +4,14 @@
 // Unmerge Cells; a cell's alignment, text style, height, colours, fill and borders). The drawing is authored in memory with acad-ts
 // and saved once, so "the file" is real bytes; the corpus-wide edits are in
 // packages/testkit/src/export/export.corpus.test.ts. New tables: export-tables-new.test.ts.
-import { ACadVersion, TableEntity } from '@node-projects/acad-ts';
+import { ACadVersion, TableCellStylePropertyFlags, TableEntity } from '@node-projects/acad-ts';
 import {
   ChangeSetBuilder,
   DocumentModel,
   type Entity,
   type EntityGeometry,
   type TableGeometry,
+  type TableOverrides,
 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
@@ -18,9 +19,11 @@ import {
   exportDocument,
   readCadDocument,
   UnsupportedChangeError,
+  writeCadDocument,
   type CadFormat,
 } from '../src/index';
-import { drawing } from './table-drawing';
+import { same } from '../src/export/entities';
+import { drawing, type Options } from './table-drawing';
 
 const open = (bytes: Uint8Array) => DocumentModel.create(documentInit(readCadDocument(bytes)));
 
@@ -111,15 +114,17 @@ describe('ACAD_TABLE', () => {
     expect(saved(bytes, model, format)).toEqual(table(model).geom);
   });
 
-  it.each(SAVES.filter(([w]) => !/R2018 DWG/.test(w)))(
-    'saves a cell rotation to %s',
-    (_w, version, format) => {
-      const bytes = drawing(version, format);
-      const model = open(bytes);
-      edit(model, cell(table(model).geom, 1, 0, { rotation: Math.PI / 2 }));
-      expect(saved(bytes, model, format).cells[1]![0]!.rotation).toBeCloseTo(Math.PI / 2, 12);
-    },
-  );
+  it.each(SAVES)('saves a cell rotation to %s, and takes it off again', (_w, version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    edit(model, cell(table(model).geom, 1, 0, { rotation: Math.PI / 2 }));
+    const once = exportDocument(readCadDocument(bytes), model, { format });
+    const again = open(once);
+    expect(table(again).geom.cells[1]![0]!.rotation).toBeCloseTo(Math.PI / 2, 12);
+    expect(table(again).geom).toEqual(table(model).geom);
+    edit(again, cell(table(again).geom, 1, 0, { rotation: 0 }));
+    expect(saved(once, again, format)).toEqual(table(again).geom);
+  });
 
   it('writes text into a cell that had none, and a number cell as the text typed', () => {
     const bytes = drawing();
@@ -261,9 +266,19 @@ describe('ACAD_TABLE', () => {
       /cell \(1, 0\): cell margins, which only a DWG from R2010 states per cell/,
     ],
     [
-      'a table-wide override',
-      (g) => ({ ...g, overrides: { margins: { left: 0.2 } } }),
-      /table overrides change/,
+      'a horizontal margin override whose left and right differ',
+      (g) => ({ ...g, overrides: { margins: { left: 0.2, right: 0.3 } } }),
+      /table margins: left and right differ/,
+    ],
+    [
+      'a true colour override in DXF',
+      (g) => ({ ...g, overrides: { data: { contentColor: { kind: 'rgb', r: 1, g: 2, b: 3 } } } }),
+      /data rows: contentColor: a DXF table holds ACI colours only/,
+    ],
+    [
+      'a text height override of 0',
+      (g) => ({ ...g, overrides: { title: { textHeight: 0 } } }),
+      /title rows: textHeight 0 is not a number more than 0/,
     ],
   ];
   it.each(refused)('refuses %s', (_what, change, message) => {
@@ -288,16 +303,126 @@ describe('ACAD_TABLE', () => {
     }
   });
 
-  it('refuses a cell rotation in a DWG from R2010, which keeps it in the content format', () => {
+  it("maps a DWG from R2010 cell's rotation from its content format and cell styles", () => {
     const bytes = drawing(ACadVersion.AC1032, 'dwg');
+    const doc = readCadDocument(bytes);
+    const t = [...doc.entities!].find((e) => e instanceof TableEntity) as TableEntity;
+    const f = t.rows[1]!.cells[0]!.contents[0]!.format;
+    f.hasData = true;
+    f.propertyOverrideFlags = TableCellStylePropertyFlags.Rotation;
+    f.rotation = Math.PI / 2;
+    const row = t.rows[2]!.cellStyleOverride;
+    row.hasData = true;
+    row.cellPropertyOverrideFlags = TableCellStylePropertyFlags.Rotation;
+    row.rotation = Math.PI;
+    const g = table(open(writeCadDocument(doc, { format: 'dwg' }))).geom;
+    expect(g.cells.map((r) => r.map((c) => c.rotation))).toEqual([
+      [0, 0],
+      [Math.PI / 2, 0],
+      [Math.PI, Math.PI],
+    ]);
+  });
+
+  // Table-wide overrides (M1-75 part 38), as AutoCAD keeps them: DXF and DWG before R2010 in the
+  // flag word and values (DXF 93 on), a DWG from R2010 in the table's own cell style (margins)
+  // and the cell styles of each row of the type. Each row type's values are also in the format
+  // of each of its cells (`TableOverrides`), which is what a DWG from R2010 folds in from the row.
+  const ROW_TYPES = ['title', 'header', 'data'] as const;
+
+  /** `g` with overrides `o`, each row type's values carried into its cells (rows by place). */
+  function withOverrides(g: TableGeometry, o: TableOverrides | undefined): TableGeometry {
+    const was = g.overrides;
+    const { overrides: _o, ...rest } = g;
+    return {
+      ...rest,
+      ...(o ? { overrides: o } : {}),
+      cells: g.cells.map((row, i) =>
+        row.map((c) => {
+          const type = ROW_TYPES[Math.min(i, 2)]!;
+          const own = Object.fromEntries(
+            Object.entries(c.format ?? {}).filter(
+              ([k, v]) => !same(v, (was?.[type] as Record<string, unknown> | undefined)?.[k]),
+            ),
+          );
+          const format = { ...o?.[type], ...own };
+          const { format: _f, ...plain } = c;
+          return Object.keys(format).length > 0 ? { ...plain, format } : plain;
+        }),
+      ),
+    };
+  }
+
+  it.each(SAVES)(
+    'saves table-wide overrides added, changed and taken off to %s',
+    (_w, version, format) => {
+      const bytes = drawing(version, format, { rowStyles: true });
+      const model = open(bytes);
+      const standard = [...model.tables.textStyles.values()].find(
+        (s) => s.name.toUpperCase() === 'STANDARD',
+      )!.handle;
+      edit(
+        model,
+        withOverrides(table(model).geom, {
+          margins: { left: 0.1, top: 0.05, right: 0.1, bottom: 0.05 },
+          title: { textHeight: 0.35, alignment: 2, background: { kind: 'aci', index: 4 } },
+          header: { textStyle: standard, contentColor: { kind: 'aci', index: 1 } },
+          data: { textHeight: 0.18, background: null },
+        }),
+      );
+      const once = exportDocument(readCadDocument(bytes), model, { format });
+      const again = open(once);
+      expect(table(again).geom).toEqual(table(model).geom);
+      // Another title height and margins, the header's colour and the data rows' overrides off.
+      edit(
+        again,
+        withOverrides(table(again).geom, {
+          margins: { left: 0.2, top: 0.15, right: 0.2, bottom: 0.15 },
+          title: { textHeight: 0.4, alignment: 2, background: { kind: 'aci', index: 4 } },
+          header: { textStyle: standard },
+        }),
+      );
+      const twice = exportDocument(readCadDocument(once), again, { format });
+      const third = open(twice);
+      expect(table(third).geom).toEqual(table(again).geom);
+      // And none at all.
+      edit(third, withOverrides(table(third).geom, undefined));
+      expect(saved(twice, third, format)).toEqual(table(third).geom);
+    },
+  );
+
+  it("keeps a cell's own value over its row type's override in an R2018 DWG", () => {
+    const bytes = drawing(ACadVersion.AC1032, 'dwg', { rowStyles: true, cellStyles: true });
     const model = open(bytes);
-    edit(model, cell(table(model).geom, 1, 0, { rotation: Math.PI / 2 }));
-    const problems = refusal(() =>
-      exportDocument(readCadDocument(bytes), model, { format: 'dwg' }),
-    );
-    expect(problems.join('; ')).toMatch(/cell rotation in a DWG from R2010/);
-    // The same edit saves to DXF, which states it per cell (145).
-    expect(saved(bytes, model, 'dxf').cells[1]![0]!.rotation).toBeCloseTo(Math.PI / 2, 12);
+    const g = table(model).geom;
+    // Cell (1, 0) overrides the alignment itself; the header rows now align top right.
+    const next = withOverrides(g, { ...g.overrides, header: { alignment: 3 } });
+    expect(next.cells[1]![0]!.format!.alignment).toBe(5);
+    edit(model, next);
+    expect(saved(bytes, model, 'dwg')).toEqual(table(model).geom);
+  });
+
+  const OVERRIDES_REFUSED: [string, ACadVersion, CadFormat, Options, RegExp][] = [
+    [
+      'a row type with no rows in a DWG from R2010',
+      ACadVersion.AC1032,
+      'dwg',
+      {},
+      /title rows: an override in a DWG from R2010, which states it in the rows of the type, and the table has none/,
+    ],
+    [
+      'an override in a DXF table that overrides its borders',
+      ACadVersion.AC1032,
+      'dxf',
+      { borderOverrides: true },
+      /table overrides change in a DXF table that overrides its borders \(M1-81\)/,
+    ],
+  ];
+  it.each(OVERRIDES_REFUSED)('refuses %s', (_what, version, format, options, message) => {
+    const bytes = drawing(version, format, options);
+    const model = open(bytes);
+    edit(model, withOverrides(table(model).geom, { title: { textHeight: 0.3 } }));
+    const problems = refusal(() => exportDocument(readCadDocument(bytes), model, { format }));
+    expect(problems.join('; ')).toMatch(message);
   });
 
   // Merge Cells and Unmerge Cells (M1-75 part 26): DXF and DWG before R2010 state a merge per
