@@ -1833,7 +1833,7 @@ describe('acad-ts local patches', () => {
     }
   });
 
-  it('0155 the DXF reader gives every block its own base point', () => {
+  it('0157 the DXF reader gives every block its own base point', () => {
     // A BLOCK's 10/20/30 were written into the XYZ the block already had, in place; every new
     // Block starts with the same shared XYZ_Zero, so each block read set every other block's base
     // point (and every Block made afterwards started at the last one read).
@@ -1850,7 +1850,7 @@ describe('acad-ts local patches', () => {
     expect(new BlockRecord('NEW').blockEntity.basePoint).toEqual(XYZ.zero);
   });
 
-  it('0156 a block is explodable unless the file says otherwise', () => {
+  it('0158 a block is explodable unless the file says otherwise', () => {
     // Allow exploding came with AutoCAD 2006: a DWG before R2007 and an R12 DXF have no field for
     // it, and every block in them can be exploded. Unpatched, they read as not explodable.
     const make = (version: ACadVersion) => {
@@ -1873,7 +1873,7 @@ describe('acad-ts local patches', () => {
     expect(back.blockRecords!.tryGetValue('DOOR')!.isExplodable).toBe(false);
   });
 
-  it('0157 renaming a table entry keeps its place in the table', () => {
+  it('0159 renaming a table entry keeps its place in the table', () => {
     // A table is written in its entries' order; a rename moved the entry to the end, so it
     // reordered the file (and in R12, whose block records have no handles, renumbered every
     // record acad-ts makes up after it on the next read).

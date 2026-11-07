@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95) 0148–0150 (M1-75 part 19) and 0155–0157 (M1-75 part 22) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95) 0148–0150 (M1-75 part 19) and 0157–0159 (M1-75 part 22) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2864,13 +2864,13 @@ An entity in a named-plot-style drawing points at its plot style name (an ACDBPL
 
 </details>
 
-### 0155 — every DXF block reads with the last block's base point
+### 0157 — every DXF block reads with the last block's base point
 
-- **File:** `third_party/acad-ts-patches/0155-dxf-block-base-point.patch`
+- **File:** `third_party/acad-ts-patches/0157-dxf-block-base-point.patch`
 - **Touches:** `src/DxfPropertyBase.ts`
 - **Symptom:** `DxfPropertyBase.setValue` wrote a vector group (10/20/30 …) into the object's current `XY`/`XYZ` in place. Every `Block` starts with the same shared `XYZ_Zero`, so reading a BLOCK's base point changed the base point of every block read so far, and of every `Block` made afterwards: all blocks of a DXF ended up with the base point of the last one read. Found by Triya M1-75 part 22 (BASE in the block editor).
 - **Fix:** the setter writes into a copy of the vector and assigns it, so no default vector is shared.
-- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0155 the DXF reader gives every block its own base point".
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0157 the DXF reader gives every block its own base point".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2881,13 +2881,13 @@ An entity in a named-plot-style drawing points at its plot style name (an ACDBPL
 
 </details>
 
-### 0156 — a block from a file without Allow exploding reads as not explodable
+### 0158 — a block from a file without Allow exploding reads as not explodable
 
-- **File:** `third_party/acad-ts-patches/0156-block-explodable-default.patch`
+- **File:** `third_party/acad-ts-patches/0158-block-explodable-default.patch`
 - **Touches:** `src/Tables/BlockRecord.ts`
 - **Symptom:** `BlockRecord.isExplodable` defaulted to false. A DWG before R2007 has no explodability field (the BLOCK_HEADER states it from R2007) and an R12 DXF has no BLOCK_RECORD, so every block in them read as one that cannot be exploded, though AutoCAD (Allow exploding came with AutoCAD 2006) explodes them. A new block saved to such a file came back not explodable. Found by Triya M1-75 part 22.
 - **Fix:** the default is true; a file that states the field is read as it says.
-- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0156 a block is explodable unless the file says otherwise" (R2004 DWG, R12 DXF, and an R2018 DXF stating 280 = 0).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0158 a block is explodable unless the file says otherwise" (R2004 DWG, R12 DXF, and an R2018 DXF stating 280 = 0).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2898,13 +2898,13 @@ An entity in a named-plot-style drawing points at its plot style name (an ACDBPL
 
 </details>
 
-### 0157 — renaming a table entry moves it to the end of its table
+### 0159 — renaming a table entry moves it to the end of its table
 
-- **File:** `third_party/acad-ts-patches/0157-table-rename-keeps-order.patch`
+- **File:** `third_party/acad-ts-patches/0159-table-rename-keeps-order.patch`
 - **Touches:** `src/Tables/Collections/Table.ts`
 - **Symptom:** `Table._onEntryNameChanged` re-keyed a renamed entry by deleting it and adding it again, which moves it to the end of the table's entries. Tables (and the BLOCKS section) are written in entry order, so a rename reordered the file; in R12, whose block records and table entries state no handle, acad-ts numbers the ones it makes up in read order, so a renamed block renumbered every block record after it on the next read. Found by Triya M1-75 part 22 (RENAME).
 - **Fix:** the entries are re-keyed in place, keeping their order.
-- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0157 renaming a table entry keeps its place in the table"; `packages/testkit/src/export/export-blocks.corpus.test.ts` renames blocks in the R12 samples with no other difference.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0159 renaming a table entry keeps its place in the table"; `packages/testkit/src/export/export-blocks.corpus.test.ts` renames blocks in the R12 samples with no other difference.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
