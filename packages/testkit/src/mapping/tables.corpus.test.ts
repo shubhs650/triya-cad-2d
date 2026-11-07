@@ -34,6 +34,7 @@ const TABLE_OF: Record<string, TableName> = {
   BLOCK_RECORD: 'blockRecords',
   MLEADERSTYLE: 'mleaderStyles',
   TABLESTYLE: 'tableStyles',
+  MLINESTYLE: 'mlineStyles',
 };
 
 type Getter<R> = (r: R, t: MappedTables) => unknown;
@@ -327,6 +328,21 @@ const TABLESTYLE: Checks<TableRecords['tableStyles']> = {
   281: ['bool', (r) => r.suppressHeader],
 };
 
+/**
+ * MLINESTYLE (M1-75 part 31): the style's own groups; its 62 before the first element (49) is the
+ * fill colour, and each element is a 49, 62, 6 run, checked apart.
+ */
+const MLINESTYLE: Checks<TableRecords['mlineStyles']> = {
+  // The name is the dictionary entry's; AutoCAD writes the same name in DXF 2.
+  2: ['name', (r) => r.name],
+  70: ['int', (r) => r.styleFlags],
+  3: ['str', (r) => r.description],
+  62: ['aci', (r) => r.fillColor],
+  51: ['deg', (r) => r.startAngle],
+  52: ['deg', (r) => r.endAngle],
+  71: ['int', (r) => r.elements.length],
+};
+
 /** TABLESTYLE cell-style groups, which repeat for each cell style starting at its 7. */
 const CELL_STYLE: Checks<TableRecords['tableStyles']['cellStyles'][number]> = {
   140: ['num', (c) => c.textHeight],
@@ -357,6 +373,7 @@ const CELL_STYLE: Checks<TableRecords['tableStyles']['cellStyles'][number]> = {
 
 const CHECKS: Record<string, Checks<never>> = {
   MLEADERSTYLE,
+  MLINESTYLE,
   TABLESTYLE,
   DIMSTYLE,
   LAYER,
@@ -535,6 +552,26 @@ function compareRecord(
     // The style's own groups are those before the first cell style.
     r = { type: r.type, groups: r.groups.slice(0, starts[0] ?? r.groups.length) };
   }
+  if (r.type === 'MLINESTYLE') {
+    // Each element is a 49 (offset), then its 62 (colour) and 6 (linetype name).
+    const starts = r.groups.flatMap(([c], k) => (c === 49 ? [k] : []));
+    const elements = (rec as TableRecords['mlineStyles']).elements;
+    if (elements.length !== starts.length) report(49, `${starts.length} elements`, elements.length);
+    starts.forEach((start, n) => {
+      const groups = r.groups.slice(start, starts[n + 1] ?? r.groups.length);
+      const e = elements[n];
+      if (!e) return;
+      if (!same('num', groups[0]![1], e.offset)) report(49, groups[0]![1], e.offset);
+      const color = first(groups, 62);
+      if (color !== undefined && !same('aci', color, e.color))
+        report(62, color, JSON.stringify(e.color));
+      const linetype = first(groups, 6);
+      // No linetype is drawn ByLayer, as acad-ts writes it.
+      const got = e.linetype === undefined ? 'BYLAYER' : nameOf(t, 'linetypes', e.linetype);
+      if (linetype !== undefined && !same('name', linetype.trim(), got)) report(6, linetype, got);
+    });
+    r = { type: r.type, groups: r.groups.slice(0, starts[0] ?? r.groups.length) };
+  }
   if (r.type === 'DIMSTYLE') {
     const d = rec as TableRecords['dimStyles'];
     // 70 is the flags and, after DIMTFILL (69), DIMTFILLCLR.
@@ -705,6 +742,7 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
         // which stay passthrough (FILE_FIDELITY: ACAD_PROXY_OBJECT).
         ['mleaderStyles', dictionaryEntries(doc, 'ACAD_MLEADERSTYLE', 'MLEADERSTYLE')],
         ['tableStyles', dictionaryEntries(doc, 'ACAD_TABLESTYLE', 'TABLESTYLE')],
+        ['mlineStyles', dictionaryEntries(doc, 'ACAD_MLINESTYLE', 'MLINESTYLE')],
       ];
       for (const [name, src] of sources) {
         const want = [...(src ?? [])].map((e) => e.handle.toString(16).toUpperCase()).sort();
@@ -726,6 +764,10 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
       for (const [what, h] of styleRefs)
         if (h !== undefined && !textStyles.has(h))
           problems.push(`${f.path} ${what}: text style ${h}`);
+      for (const m of t.mlineStyles)
+        for (const e of m.elements)
+          if (e.linetype !== undefined && !linetypes.has(e.linetype))
+            problems.push(`${f.path} MLINE style ${m.name}: linetype ${e.linetype}`);
     }
     expect(problems).toEqual([]);
   }, 300_000);

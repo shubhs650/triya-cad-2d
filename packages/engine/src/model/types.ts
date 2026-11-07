@@ -1246,6 +1246,39 @@ export interface TableStyleRecord extends SymbolTableRecord {
   readonly cellStyles: readonly TableCellStyle[];
 }
 
+/** One line of a multiline style (DXF 49, 62 and 6, repeated per element). */
+export interface MLineStyleElement {
+  /** DXF 49: the offset from the multiline's origin, in drawing units before the MLINE scale. */
+  readonly offset: number;
+  /** DXF 62 (a DWG CMC colour). */
+  readonly color: Color;
+  /** DXF 6: the linetype; absent only where acad-ts holds none and the drawing has no ByLayer. */
+  readonly linetype?: Handle;
+}
+
+/**
+ * An MLINESTYLE object (AutoCAD DXF reference, MLINESTYLE; M1-75 part 31). Like a multileader
+ * style it is an object named by its `ACAD_MLINESTYLE` entry, so its DXF 70 is `styleFlags`, not
+ * the standard flags of a record.
+ */
+export interface MLineStyleRecord extends SymbolTableRecord {
+  /** DXF 3. */
+  readonly description: string;
+  /**
+   * DXF 70: 1 fill on, 2 display miters (joints), 16 start square cap (line), 32 start inner
+   * arcs, 64 start round cap (outer arcs), 256 end square cap, 512 end inner arcs, 1024 end round
+   * cap.
+   */
+  readonly styleFlags: number;
+  /** DXF 62 before the first element: the fill colour. */
+  readonly fillColor: Color;
+  /** DXF 51 and 52: the start and end cap angles, radians. */
+  readonly startAngle: number;
+  readonly endAngle: number;
+  /** DXF 71 elements, in file order (AutoCAD keeps them from the highest offset down). */
+  readonly elements: readonly MLineStyleElement[];
+}
+
 /** The record type of each table and style collection. */
 export interface TableRecords {
   layers: LayerRecord;
@@ -1263,11 +1296,12 @@ export interface TableRecords {
    * The styles and definitions PURGE also takes, which the file keeps as entries of a dictionary
    * of the named-object dictionary (M1-75 part 29): MLINESTYLE (`ACAD_MLINESTYLE`), MATERIAL
    * (`ACAD_MATERIAL`), VISUALSTYLE (`ACAD_VISUALSTYLE`) and the plot style names of a
-   * named-plot-style drawing (ACDBPLACEHOLDER in `ACAD_PLOTSTYLENAME`). Triya keeps them by name
-   * only; what they hold stays in the original. Entities, layers and viewports point at them by
+   * named-plot-style drawing (ACDBPLACEHOLDER in `ACAD_PLOTSTYLENAME`). Triya keeps materials,
+   * visual styles and plot styles by name only, what they hold staying in the original; MLINE
+   * styles are mapped whole (M1-75 part 31). Entities, layers and viewports point at them by
    * handle (MLINE `style`, `material`, `plotStyle`, `visualStyle`).
    */
-  mlineStyles: SymbolTableRecord;
+  mlineStyles: MLineStyleRecord;
   materials: SymbolTableRecord;
   visualStyles: SymbolTableRecord;
   plotStyles: SymbolTableRecord;

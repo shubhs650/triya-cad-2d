@@ -7,11 +7,13 @@ import {
   type CellBorder,
   type CellStyle,
   type Color as AcadColor,
+  type MLineStyle,
   type MultiLeaderStyle,
   type TableStyle,
 } from '@node-projects/acad-ts';
 import type {
   MLeaderStyleRecord,
+  MLineStyleRecord,
   TableCellBorder,
   TableCellStyle,
   TableStyleRecord,
@@ -70,6 +72,28 @@ export function mleaderStyle(s: MultiLeaderStyle): MLeaderStyleRecord {
     overwriteProperties: s.overwritePropertyValue,
     annotative: s.isAnnotative,
     breakGap: s.breakGapSize,
+  };
+}
+
+/**
+ * An MLINESTYLE under its `ACAD_MLINESTYLE` entry name (M1-75 part 31). Its DXF 70 is the fill,
+ * miter and cap flags, kept as `styleFlags` (acad-ts's MLineStyleFlags are the DXF bits).
+ */
+export function mlineStyle(s: MLineStyle, name: string): MLineStyleRecord {
+  return {
+    ...common(s),
+    name,
+    description: s.description,
+    styleFlags: s.flags as number,
+    fillColor: mapColor(s.fillColor),
+    startAngle: s.startAngle,
+    endAngle: s.endAngle,
+    elements: s.elements.map((e) => ({
+      offset: e.offset,
+      color: mapColor(e.color),
+      // An element without one is written BYLAYER (acad-ts's writers), so it is read as ByLayer.
+      ...opt('linetype', e.lineType ?? s.document?.lineTypes?.byLayer),
+    })),
   };
 }
 

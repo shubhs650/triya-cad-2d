@@ -56,6 +56,7 @@ import { planGroups, writeGroupMembers, writeGroups } from './groups';
 import { planLayouts, writeLayouts } from './layouts';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
+import { planMLineStyles, writeMLineStyles } from './mline-styles';
 import { planTableStyles, writeTableStyles } from './table-styles';
 import { blockUser, newTableFileProblems } from './table-new';
 import { planLinetypes, writeLinetypes } from './linetypes';
@@ -121,7 +122,8 @@ function keyedProblems(
 
 /**
  * The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts, dim-styles.ts,
- * view-records.ts, mleader-styles.ts, table-styles.ts, and blocks.ts with the block definitions).
+ * view-records.ts, mleader-styles.ts, table-styles.ts, mline-styles.ts, and blocks.ts with the block
+ * definitions).
  */
 const WRITTEN_TABLES = new Set([
   'layers',
@@ -135,14 +137,15 @@ const WRITTEN_TABLES = new Set([
   'mleaderStyles',
   'tableStyles',
   'blockRecords',
+  'mlineStyles',
 ]);
 
 /**
  * The tables PURGE is the only writer of (purge.ts, M1-75 part 29): a record that goes is
- * written, one added or changed is not yet (MLSTYLE, MATERIALS, VISUALSTYLES, plot style
- * tables are later work).
+ * written, one added or changed is not yet (MATERIALS, VISUALSTYLES, plot style tables are later
+ * work; MLINE styles have a writer since part 31).
  */
-const PURGE_ONLY_TABLES = new Set(['mlineStyles', 'materials', 'visualStyles', 'plotStyles']);
+const PURGE_ONLY_TABLES = new Set(['materials', 'visualStyles', 'plotStyles']);
 
 /**
  * The non-entity changes no writer handles yet (header, the tables above, block definitions,
@@ -372,6 +375,7 @@ export function triyaToAcad(
   // After the text styles and linetypes they may name.
   const mleaderStyles = planMLeaderStyles(original, base, model, r, format);
   const tableStyles = planTableStyles(original, base, model, r, format);
+  const mlineStyles = planMLineStyles(original, base, model, r, format);
   const views = {
     appIds: planAppIds(original, base, model, r),
     ucs: planUcs(original, base, model, r),
@@ -386,7 +390,7 @@ export function triyaToAcad(
   // A current style variable may name a style, and an arrow-block variable a block, by the name
   // the same save gives it (RENAME).
   const renamed = new Map<CadObject, string>(
-    [...mleaderStyles.plan.updated, ...tableStyles.plan.updated]
+    [...mleaderStyles.plan.updated, ...tableStyles.plan.updated, ...mlineStyles.plan.updated]
       .filter(({ before, after }) => before.name !== after.name)
       .map(({ acad, after }) => [acad, after.name]),
   );
@@ -410,6 +414,7 @@ export function triyaToAcad(
     ...layers.problems,
     ...mleaderStyles.problems,
     ...tableStyles.problems,
+    ...mlineStyles.problems,
     ...Object.values(views).flatMap((v) => v.problems),
     ...imageObjects.problems,
     ...layouts.problems,
@@ -426,6 +431,7 @@ export function triyaToAcad(
   writeLayers(original, r, layers.plan);
   writeMLeaderStyles(original, r, mleaderStyles.plan);
   writeTableStyles(original, r, tableStyles.plan);
+  writeMLineStyles(original, r, mlineStyles.plan);
   writeViewRecords(original, {
     appIds: views.appIds.plan,
     ucs: views.ucs.plan,
