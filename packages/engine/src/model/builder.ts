@@ -26,6 +26,7 @@ import type {
   EntityGeometry,
   EntityProps,
   HeaderValue,
+  Layout,
   NonGraphicalObject,
   ObjectCommon,
   TableName,
@@ -119,6 +120,7 @@ export class ChangeSetBuilder {
   readonly #header = new Map<string, HeaderChange>();
   readonly #objects: KeyedDraft<NonGraphicalObject>;
   readonly #tables = new Map<TableName, KeyedDraft<ObjectCommon>>();
+  #layouts: KeyedDraft<Layout> | undefined;
   #built = false;
 
   constructor(model: DocumentModel) {
@@ -146,6 +148,10 @@ export class ChangeSetBuilder {
 
   object(handle: Handle): NonGraphicalObject | undefined {
     return this.#objects.get(handle);
+  }
+
+  layout(handle: Handle): Layout | undefined {
+    return this.#layoutDraft().get(handle);
   }
 
   tableRecord<K extends TableName>(table: K, handle: Handle): TableRecords[K] | undefined {
@@ -265,6 +271,12 @@ export class ChangeSetBuilder {
     this.#table(table).remove(handle);
   }
 
+  /** Renames, reorders or edits a layout (adding and removing one is LAYOUT, M6). */
+  updateLayout(handle: Handle, patch: RecordPatch<Layout>): Layout {
+    this.#open();
+    return this.#layoutDraft().update(handle, patch);
+  }
+
   // ── Result ──────────────────────────────────────────────────────────────────────────────
 
   build(): ChangeSet {
@@ -275,6 +287,7 @@ export class ChangeSetBuilder {
       tables?: TableChanges;
       objects?: KeyedChanges<NonGraphicalObject>;
       header?: readonly HeaderChange[];
+      layouts?: readonly Replacement<Layout>[];
     } = {};
 
     const entities = this.#entityChanges();
@@ -289,6 +302,8 @@ export class ChangeSetBuilder {
     if (objects) cs.objects = objects;
     const header = [...this.#header.values()].filter((h) => !sameValue(h.before, h.after));
     if (header.length) cs.header = header;
+    const layouts = this.#layouts?.changes()?.updated;
+    if (layouts?.length) cs.layouts = layouts;
     return cs;
   }
 
@@ -321,6 +336,14 @@ export class ChangeSetBuilder {
       next.set(entity.owner, index + 1);
     }
     return { added, updated: [...this.#updated.values()], removed };
+  }
+
+  #layoutDraft(): KeyedDraft<Layout> {
+    this.#layouts ??= new KeyedDraft(
+      'layout',
+      new Map(this.#model.layouts.map((l) => [l.handle, l])),
+    );
+    return this.#layouts;
   }
 
   #table(table: TableName): KeyedDraft<ObjectCommon> {

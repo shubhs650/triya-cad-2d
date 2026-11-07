@@ -43,6 +43,10 @@ export interface DocumentInit {
   readonly entities?: readonly EntityInit[];
 }
 
+/** Tab order, then name, as AutoCAD lists layout tabs (the order is stable for equal keys). */
+const byTabOrder = (a: Layout, b: Layout): number =>
+  a.tabOrder - b.tabOrder || a.name.localeCompare(b.name);
+
 type MutableTables = { [K in TableName]: Map<Handle, TableRecords[K]> };
 
 function sameHeaderValue(a: HeaderValue | undefined, b: HeaderValue | undefined): boolean {
@@ -63,6 +67,7 @@ export class DocumentModel {
   readonly #tables = Object.fromEntries(TABLE_NAMES.map((t) => [t, new Map()])) as MutableTables;
   readonly #blocks = new Map<Handle, BlockDefinition>();
   readonly #blockEntities = new Map<Handle, EntityId[]>();
+  /** In tab order (`byTabOrder`). */
   readonly #layouts: Layout[] = [];
   readonly #objects = new Map<Handle, NonGraphicalObject>();
   readonly #entities = new Map<EntityId, Entity>();
@@ -100,6 +105,7 @@ export class DocumentModel {
       claim(l.handle, 'layout handle');
       this.#layouts.push(deepFreeze({ ...l }));
     }
+    this.#layouts.sort(byTabOrder);
     for (const o of init.objects ?? []) {
       claim(o.handle, 'object handle');
       this.#objects.set(o.handle, createRecord(o));
@@ -145,6 +151,7 @@ export class DocumentModel {
     return this.#blocks;
   }
 
+  /** Every layout in tab order (Model first), ties by name. */
   get layouts(): readonly Layout[] {
     return this.#layouts;
   }
@@ -294,6 +301,21 @@ export class DocumentModel {
       }
     }
 
+    const layoutsSeen = new Set<Handle>();
+    for (const { before, after } of cs.layouts ?? []) {
+      if (layoutsSeen.has(before.handle))
+        throw new Error(`layout ${before.handle} is changed more than once`);
+      layoutsSeen.add(before.handle);
+      const cur = this.#layouts.find((l) => l.handle === before.handle);
+      if (cur === undefined) throw new Error(`layout ${before.handle} is not in the model`);
+      if (cur !== before)
+        throw new Error(
+          `layout ${before.handle} is stale (changed since this change set was built)`,
+        );
+      if (after.handle !== before.handle)
+        throw new Error(`layout ${before.handle}: an update cannot change handle`);
+    }
+
     const names = new Set<string>();
     for (const { name, before } of cs.header ?? []) {
       if (names.has(name)) throw new Error(`header ${name} is changed more than once`);
@@ -319,6 +341,12 @@ export class DocumentModel {
         this.#used.add(r.handle);
         this.handles.observe(r.handle);
       }
+    }
+    if (cs.layouts?.length) {
+      for (const { after } of cs.layouts) {
+        this.#layouts[this.#layouts.findIndex((l) => l.handle === after.handle)] = after;
+      }
+      this.#layouts.sort(byTabOrder);
     }
     for (const { name, after } of cs.header ?? []) {
       if (after === undefined) this.#header.delete(name);
