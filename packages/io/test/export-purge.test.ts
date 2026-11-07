@@ -9,17 +9,23 @@ import {
   ACadVersion,
   AppId,
   BlockRecord,
+  CadDictionary,
   CadDocument,
+  DictionaryVariable,
   DimensionStyle,
   ExtendedDataString,
   Insert,
   Layer,
   Line,
   LineType,
+  MultiLeaderStyle,
+  TableStyle,
   TextStyle,
   UCS,
   View,
+  VPort,
   XRecord,
+  XY,
   XYZ,
 } from '@node-projects/acad-ts';
 import {
@@ -287,14 +293,153 @@ describe('TriyaToAcad PURGE', () => {
       refused((b, model) => purge(b, model, 'blockRecords', '*Paper_Space'), bytes),
     ).toContainEqual(expect.stringMatching(/a layout's block goes with its layout/));
   });
+});
 
-  it('refuses the tables this part does not purge', () => {
-    const bytes = drawing();
+/**
+ * Multileader styles and table styles Standard, SPARE, CURRENT (CMLEADERSTYLE, CTABLESTYLE) and
+ * HELD (named only by an XRECORD Triya does not map); viewports: the current *Active tile, a
+ * second *Active tile beside it, and the named configuration SAVED (two tiles).
+ */
+function styled(version = ACadVersion.AC1032, format: CadFormat = 'dxf'): Uint8Array {
+  const doc = new CadDocument(version);
+  const note = new XRecord('TRIYA_NOTE');
+  doc.rootDictionary!.add(note);
+  const mleaders = doc.rootDictionary!.get(CadDictionary.acadMLeaderStyle) as CadDictionary;
+  for (const name of [MultiLeaderStyle.defaultName, 'SPARE', 'CURRENT', 'HELD']) {
+    const s = new MultiLeaderStyle(name);
+    mleaders.add(s);
+    s.textStyle = doc.textStyles!.get('Standard')!;
+    s.leaderLineType = doc.lineTypes!.get('ByBlock')!;
+    if (name === 'HELD') note.createEntry(340, s);
+  }
+  const tables = doc.rootDictionary!.get(CadDictionary.acadTableStyle) as CadDictionary;
+  for (const name of [TableStyle.defaultName, 'SPARE', 'CURRENT', 'HELD']) {
+    const s = new TableStyle(name);
+    s.cellStyles = [s.dataCellStyle, s.titleCellStyle, s.headerCellStyle];
+    for (const c of s.cellStyles) c.textStyle = doc.textStyles!.get('Standard')!;
+    tables.add(s);
+    if (name === 'HELD') note.createEntry(341, s);
+  }
+  const vars = doc.rootDictionary!.get(CadDictionary.variableDictionary) as CadDictionary;
+  for (const name of ['CMLEADERSTYLE', 'CTABLESTYLE']) {
+    const variable = new DictionaryVariable();
+    variable.name = name;
+    variable.value = 'CURRENT';
+    vars.add(variable);
+  }
+  const tile = (name: string, from: number, to: number) => {
+    const v = new VPort(name);
+    v.bottomLeft = new XY(from, 0);
+    v.topRight = new XY(to, 1);
+    doc.vPorts!.add(v);
+  };
+  doc.vPorts!.get(VPort.defaultName).topRight = new XY(0.5, 1);
+  tile(VPort.defaultName, 0.5, 1);
+  tile('SAVED', 0, 0.5);
+  tile('SAVED', 0.5, 1);
+  return writeCadDocument(doc, { format });
+}
+
+/** Viewports as the model lists them: name and left edge. */
+const tiles = (model: DocumentModel): string[] =>
+  [...model.tables.vports.values()].map((v) => `${v.name.toUpperCase()} ${v.lowerLeft.x}`);
+
+const STYLE_CASES: readonly (readonly [string, ACadVersion, CadFormat])[] = [
+  ['R2018 DXF', ACadVersion.AC1032, 'dxf'],
+  ['R2018 DWG', ACadVersion.AC1032, 'dwg'],
+  ['R2010 DWG', ACadVersion.AC1024, 'dwg'],
+  ['R2007 DXF', ACadVersion.AC1021, 'dxf'],
+];
+
+describe('TriyaToAcad PURGE of styles and viewports (M1-75 part 27)', () => {
+  describe.each(STYLE_CASES)('%s', (_label, version, format) => {
+    const bytes = styled(version, format);
+
+    it('drops an unused multileader and table style, a tile and a named configuration', () => {
+      const model = open(bytes);
+      expect(tiles(model)).toEqual(['*ACTIVE 0', '*ACTIVE 0.5', 'SAVED 0', 'SAVED 0.5']);
+      const vports = [...model.tables.vports.values()];
+      const gone = [
+        named(model, 'mleaderStyles', 'SPARE').handle,
+        named(model, 'tableStyles', 'SPARE').handle,
+        vports[1]!.handle,
+        vports[2]!.handle,
+        vports[3]!.handle,
+      ];
+      edit(model, (b) => {
+        b.removeTableRecord('mleaderStyles', gone[0]!);
+        b.removeTableRecord('tableStyles', gone[1]!);
+        for (const h of gone.slice(2)) b.removeTableRecord('vports', h);
+      });
+      const back = saved(bytes, model, format);
+      expect(names(back, 'mleaderStyles')).toEqual(['CURRENT', 'HELD', 'STANDARD']);
+      expect(names(back, 'tableStyles')).toEqual(['CURRENT', 'HELD', 'STANDARD']);
+      expect(tiles(back)).toEqual(['*ACTIVE 0']);
+      expect(gone.filter((h) => back.hasHandle(h))).toEqual([]);
+      // What stays maps back as it was.
+      expect(named(back, 'mleaderStyles', 'CURRENT')).toEqual(
+        named(model, 'mleaderStyles', 'CURRENT'),
+      );
+      expect(named(back, 'tableStyles', 'CURRENT')).toEqual(named(model, 'tableStyles', 'CURRENT'));
+    });
+
+    it('drops the current styles once the same save makes Standard current', () => {
+      const model = open(bytes);
+      edit(model, (b) => {
+        b.setHeader('CMLEADERSTYLE', 'Standard');
+        b.setHeader('CTABLESTYLE', 'Standard');
+        b.removeTableRecord('mleaderStyles', named(model, 'mleaderStyles', 'CURRENT').handle);
+        b.removeTableRecord('tableStyles', named(model, 'tableStyles', 'CURRENT').handle);
+      });
+      const back = saved(bytes, model, format);
+      expect(names(back, 'mleaderStyles')).toEqual(['HELD', 'SPARE', 'STANDARD']);
+      expect(names(back, 'tableStyles')).toEqual(['HELD', 'SPARE', 'STANDARD']);
+      expect(back.header.get('CMLEADERSTYLE')).toBe('Standard');
+    });
+  });
+
+  it('refuses a style something still refers to, Standard, and the current viewport', () => {
+    const bytes = styled();
+    const problems = (table: TableName, name: string) =>
+      refused((b, model) => b.removeTableRecord(table, named(model, table, name).handle), bytes);
+    expect(problems('mleaderStyles', 'CURRENT')).toEqual([
+      expect.stringMatching(/^multileader style CURRENT \([0-9A-F]+\): CMLEADERSTYLE names it$/),
+    ]);
+    expect(problems('tableStyles', 'CURRENT')).toEqual([
+      expect.stringMatching(/^table style CURRENT \([0-9A-F]+\): CTABLESTYLE names it$/),
+    ]);
+    expect(problems('mleaderStyles', 'HELD')).toEqual([
+      expect.stringMatching(
+        /^multileader style HELD \([0-9A-F]+\): XRECORD [0-9A-F]+ refers to it$/,
+      ),
+    ]);
+    expect(problems('tableStyles', 'HELD')).toEqual([
+      expect.stringMatching(/^table style HELD \([0-9A-F]+\): XRECORD [0-9A-F]+ refers to it$/),
+    ]);
+    expect(problems('mleaderStyles', 'Standard')).toContainEqual(
+      expect.stringMatching(/Standard cannot be purged$/),
+    );
+    expect(problems('tableStyles', 'Standard')).toContainEqual(
+      expect.stringMatching(/Standard cannot be purged$/),
+    );
     expect(
       refused(
-        (b, model) => b.removeTableRecord('vports', named(model, 'vports', '*Active').handle),
+        (b, model) => b.removeTableRecord('vports', [...model.tables.vports.keys()][0]!),
         bytes,
       ),
-    ).toContainEqual(expect.stringMatching(/: removing a viewport$/));
+    ).toEqual([
+      expect.stringMatching(
+        /^viewport \*Active \([0-9A-F]+\): the first \*Active viewport is the current one/,
+      ),
+    ]);
+  });
+
+  it('drops a named configuration from an R12 file that states its handle', () => {
+    const doc = new CadDocument(ACadVersion.AC1009);
+    doc.vPorts!.add(new VPort('SAVED'));
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const model = open(bytes);
+    edit(model, (b) => b.removeTableRecord('vports', named(model, 'vports', 'SAVED').handle));
+    expect(tiles(saved(bytes, model, 'dxf'))).toEqual(['*ACTIVE 0']);
   });
 });

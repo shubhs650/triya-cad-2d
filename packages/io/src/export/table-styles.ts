@@ -96,6 +96,7 @@ export function planTableStyles(
       return s;
     },
     fixedNames: [TableStyle.defaultName],
+    removable: true,
     problems: (b, a, acad) => {
       const named = acad ? isNamedCellStyle(acad.tableCellStyle) : namedNew;
       const out = tableStyleProblems(r, version, format, named, b, a);
