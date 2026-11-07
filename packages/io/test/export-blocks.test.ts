@@ -284,9 +284,10 @@ describe('block definitions', () => {
     expect(refused((b) => b.addBlock({ name: 'X', basePoint: { x: 0, y: 0 }, units: 25 }))).toEqual(
       [expect.stringMatching(/block units 25/)],
     );
-    // PURGE comes later; an R2004 DWG has no place for a block's units.
-    expect(refused((b, m) => b.removeBlock(named(m, 'EMPTY')))).toEqual([
-      expect.stringMatching(/EMPTY .*removing a block/),
+    // PURGE (export-purge.test.ts) never takes a layout's block; an R2004 DWG has no place for a
+    // block's units.
+    expect(refused((b, m) => b.removeBlock(named(m, '*Paper_Space')))).toEqual([
+      expect.stringMatching(/\*Paper_Space .*a layout's block goes with its layout/),
     ]);
     expect(
       refused(

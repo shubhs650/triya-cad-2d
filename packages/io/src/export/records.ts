@@ -38,6 +38,8 @@ export interface RecordRules<A extends CadObject & { name: string }, R extends S
   readonly namesRepeat?: boolean;
   /** A name may be empty (a shape file's STYLE record). */
   readonly mayBeNameless?: (after: R) => boolean;
+  /** Removing a record is purge.ts's to check (PURGE, M1-75 part 25). */
+  readonly removable?: true;
 }
 
 /** The model's changes to one table against the original's mapping, and why any cannot be written. */
@@ -53,7 +55,8 @@ export function planRecords<A extends CadObject & { name: string }, R extends Sy
   const version = doc.header?.version;
   const before = new Map(base.map((l) => [l.handle, l]));
   for (const [h, b] of before) {
-    if (!after.has(h)) problems.push(`${rules.what} ${b.name} (${h}): removing a ${rules.what}`);
+    if (!after.has(h) && !rules.removable)
+      problems.push(`${rules.what} ${b.name} (${h}): removing a ${rules.what}`);
   }
   // Names are unique without regard to case, among the records the drawing ends up with.
   const names = new Map<string, number>();

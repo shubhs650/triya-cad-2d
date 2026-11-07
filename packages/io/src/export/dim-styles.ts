@@ -161,6 +161,7 @@ export function planDimStyles(
   const reference = newStyleReference(base);
   return planRecords(doc, base.tables?.dimStyles ?? [], model.tables.dimStyles, r, {
     what: 'dimension style',
+    removable: true,
     type: DimensionStyle,
     make: (a) => new DimensionStyle(a.name),
     // acad-ts's table cannot rename its default entry, which DIMSTYLE commands fall back to.

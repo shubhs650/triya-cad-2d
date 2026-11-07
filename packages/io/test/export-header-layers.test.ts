@@ -280,7 +280,7 @@ describe('layers', () => {
 
   it('refuses what it cannot write yet and leaves the original as it was', () => {
     const cases: ((b: ChangeSetBuilder, m: DocumentModel) => void)[] = [
-      (b, m) => b.removeTableRecord('layers', layerNamed(m, 'NOTES').handle),
+      (b, m) => b.removeTableRecord('layers', layerNamed(m, '0').handle),
       (b, m) => b.updateTableRecord('layers', layerNamed(m, '0').handle, { name: 'ZERO' }),
       (b, m) => b.updateTableRecord('layers', layerNamed(m, 'NOTES').handle, { name: 'walls' }),
       (b, m) => b.updateTableRecord('layers', layerNamed(m, 'NOTES').handle, { name: 'A<B' }),
