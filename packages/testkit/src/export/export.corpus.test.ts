@@ -20,6 +20,7 @@ import {
   type EntityGeometry,
   type Handle,
   type DimStyleRecord,
+  type MLeaderStyleRecord,
   type HatchGeometry,
   type HeaderValue,
   type LayerRecord,
@@ -308,6 +309,21 @@ function editedDimStyle(s: DimStyleRecord): {
       DIMTXT: (v.DIMTXT as number) * 1.5,
       DIMTIX: !v.DIMTIX,
       DIMCLRD: v.DIMCLRD === 1 ? 2 : 1,
+    },
+  };
+}
+
+/** MLEADERSTYLE: text, landing and colour edits, as the multileader style manager makes. */
+function editedMLeaderStyle(s: MLeaderStyleRecord): Partial<MLeaderStyleRecord> {
+  return {
+    description: `${s.description} (edited)`,
+    textHeight: s.textHeight * 2,
+    landingGap: s.landingGap + 0.5,
+    maxLeaderPoints: s.maxLeaderPoints + 1,
+    textFrame: !s.textFrame,
+    lineColor: {
+      kind: 'aci',
+      index: s.lineColor.kind === 'aci' && s.lineColor.index === 1 ? 2 : 1,
     },
   };
 }
@@ -626,6 +642,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter(kept)
           .filter(editableLinetype);
         const dimStyles = [...model.tables.dimStyles.values()].filter(kept);
+        const mleaderStyles = [...model.tables.mleaderStyles.values()];
         const ucs = [...model.tables.ucs.values()].filter(kept);
         const views = [...model.tables.views.values()].filter(kept);
         const vports = [...model.tables.vports.values()].filter(kept);
@@ -649,6 +666,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
         for (const t of textStyles) b.updateTableRecord('textStyles', t.handle, editedTextStyle(t));
         for (const l of linetypes) b.updateTableRecord('linetypes', l.handle, editedLinetype(l));
         for (const d of dimStyles) b.updateTableRecord('dimStyles', d.handle, editedDimStyle(d));
+        for (const s of mleaderStyles)
+          b.updateTableRecord('mleaderStyles', s.handle, editedMLeaderStyle(s));
         for (const u of ucs) b.updateTableRecord('ucs', u.handle, editedUcs(u));
         for (const v of views) b.updateTableRecord('views', v.handle, editedView(v));
         for (const v of vports) b.updateTableRecord('vports', v.handle, editedView(v));
@@ -688,6 +707,12 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((d) => !near(withoutRaw(backDimStyles.get(d.handle)), withoutRaw(d)))
           .map((d) => d.name);
         expect(wrongDimStyles, f.path).toEqual([]);
+        const backMLeaderStyles = new Map(init.tables?.mleaderStyles?.map((s) => [s.handle, s]));
+        const wrongMLeaderStyles = mleaderStyles
+          .map((s) => model.tables.mleaderStyles.get(s.handle)!)
+          .filter((s) => !near(withoutRaw(backMLeaderStyles.get(s.handle)), withoutRaw(s)))
+          .map((s) => s.name);
+        expect(wrongMLeaderStyles, f.path).toEqual([]);
         const wrongViewRecords = (['ucs', 'views', 'vports'] as const).flatMap((table) => {
           const backRecords = new Map(
             (init.tables?.[table] ?? []).map((r: { handle: Handle; raw?: unknown }) => [
@@ -721,6 +746,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ...textStyles,
             ...linetypes,
             ...dimStyles,
+            ...mleaderStyles,
             ...ucs,
             ...views,
             ...vports,

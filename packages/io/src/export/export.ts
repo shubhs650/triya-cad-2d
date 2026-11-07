@@ -7,7 +7,7 @@
 // from the I/O side, and the original only has to be the file as opened (the I/O worker reads
 // it again from the bytes it kept). The original is mutated, so each export needs a fresh read.
 
-import type { CadDocument, TableEntry } from '@node-projects/acad-ts';
+import type { CadDocument, CadObject } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   BlockRecord,
@@ -36,6 +36,7 @@ import {
 import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
 import { planLayers, writeLayers } from './layers';
+import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
 import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
 import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
@@ -94,7 +95,7 @@ function keyedProblems(
 
 /**
  * The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts, dim-styles.ts,
- * view-records.ts).
+ * view-records.ts, mleader-styles.ts).
  */
 const WRITTEN_TABLES = new Set([
   'layers',
@@ -105,6 +106,7 @@ const WRITTEN_TABLES = new Set([
   'ucs',
   'views',
   'vports',
+  'mleaderStyles',
 ]);
 
 /**
@@ -285,7 +287,7 @@ export function triyaToAcad(
   // Held children a save creates (polyline vertices) are numbered after everything the engine
   // allocated, so they meet neither an engine handle nor one the file already uses.
   let next = Math.max(Number.parseInt(model.handSeed, 16), docHeader?.handleSeed ?? 0);
-  const created = new Map<Handle, TableEntry>();
+  const created = new Map<Handle, CadObject>();
   const r = {
     store,
     byLayer: lineTypes?.tryGetValue('ByLayer') ?? LineType.byLayer,
@@ -299,6 +301,8 @@ export function triyaToAcad(
   const linetypes = planLinetypes(original, base, model, r);
   const dimStyles = planDimStyles(original, base, model, r, format);
   const layers = planLayers(original, base, model, r);
+  // After the text styles and linetypes it may name.
+  const mleaderStyles = planMLeaderStyles(original, base, model, r, format);
   const views = {
     appIds: planAppIds(original, base, model, r),
     ucs: planUcs(original, base, model, r),
@@ -314,6 +318,7 @@ export function triyaToAcad(
     ...linetypes.problems,
     ...dimStyles.problems,
     ...layers.problems,
+    ...mleaderStyles.problems,
     ...Object.values(views).flatMap((v) => v.problems),
   );
   problems.push(...drawOrder.problems);
@@ -323,6 +328,7 @@ export function triyaToAcad(
   writeLinetypes(original, r, linetypes.plan);
   writeDimStyles(original, r, dimStyles.plan);
   writeLayers(original, r, layers.plan);
+  writeMLeaderStyles(original, r, mleaderStyles.plan);
   writeViewRecords(original, {
     appIds: views.appIds.plan,
     ucs: views.ucs.plan,

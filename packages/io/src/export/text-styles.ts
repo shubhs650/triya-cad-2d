@@ -15,7 +15,7 @@ import {
   ExtendedDataString,
   TextStyle,
   type CadDocument,
-  type TableEntry,
+  type CadObject,
 } from '@node-projects/acad-ts';
 import type { DocumentInit, DocumentModel, Handle, TextStyleRecord } from '@triya/engine';
 import type { Resolver } from './entities';
@@ -45,7 +45,7 @@ export function planTextStyles(
   doc: CadDocument,
   base: DocumentInit,
   model: DocumentModel,
-  r: Resolver & { readonly created: Map<Handle, TableEntry> },
+  r: Resolver & { readonly created: Map<Handle, CadObject> },
 ): { plan: TextStylePlan; problems: string[] } {
   return planRecords(doc, base.tables?.textStyles ?? [], model.tables.textStyles, r, {
     what: 'text style',

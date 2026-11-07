@@ -13,8 +13,9 @@ import {
   DxfHeaderSectionWriter,
   Layer,
   LineType,
+  MultiLeaderStyle,
   TextStyle,
-  type TableEntry,
+  type CadObject,
   type CadDocument,
   type CadSystemVariable,
 } from '@node-projects/acad-ts';
@@ -64,11 +65,10 @@ const WRITER_OWNED = new Set([
  */
 const UCS_NAMES = /^\$P?UCS(NAME|BASE|ORTHOREF)$/;
 
+const CMLEADERSTYLE = 'CMLEADERSTYLE';
+
 /** The records a name can name: the drawing's, and those of its table the same save adds. */
-type Records = (
-  doc: CadDocument,
-  added: readonly TableEntry[],
-) => Iterable<{ name: string }> | null;
+type Records = (doc: CadDocument, added: readonly CadObject[]) => Iterable<{ name: string }> | null;
 
 const blocks: Records = (d) => d.blockRecords;
 const linetypes: Records = (d, added) => [
@@ -328,7 +328,7 @@ export function planHeader(
   base: DocumentInit,
   model: DocumentModel,
   format: CadFormat | undefined,
-  added: readonly TableEntry[],
+  added: readonly CadObject[],
 ): { changes: HeaderChange[]; problems: string[] } {
   const before = new Map(base.header ?? []);
   const names = new Set([...before.keys(), ...model.header.keys()]);
@@ -367,7 +367,7 @@ export function planHeader(
 
 function headerProblem(
   doc: CadDocument,
-  added: readonly TableEntry[],
+  added: readonly CadObject[],
   name: string,
   value: HeaderValue | undefined,
   variable: CadSystemVariable | undefined,
@@ -381,7 +381,17 @@ function headerProblem(
     // A DICTIONARYVAR (bare name) holds text; a new one would be a new object (M1-75).
     if (name.startsWith('$')) return 'acad-ts has no such header variable';
     if (!dictionary.has(name)) return 'new DICTIONARYVAR objects';
-    return typeof value === 'string' ? undefined : 'a DICTIONARYVAR holds text';
+    if (typeof value !== 'string') return 'a DICTIONARYVAR holds text';
+    // The current multileader style, which AutoCAD looks up by name like $DIMSTYLE's.
+    if (name === CMLEADERSTYLE) {
+      const styles = [
+        ...(namedDictionary(doc, CadDictionary.acadMLeaderStyle) ?? []),
+        ...added.filter((r) => r instanceof MultiLeaderStyle),
+      ];
+      if (!styles.some((s) => s instanceof MultiLeaderStyle && s.name === value))
+        return `no multileader style named ${JSON.stringify(value)}`;
+    }
+    return undefined;
   }
   if (WRITER_OWNED.has(name)) return 'the save sets it';
   if (UCS_NAMES.test(name)) return 'it names the UCS record acad-ts holds (renaming it)';
