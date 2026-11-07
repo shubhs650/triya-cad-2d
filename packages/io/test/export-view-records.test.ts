@@ -311,7 +311,7 @@ describe('APPID, UCS, VIEW and VPORT records', () => {
     const cases: [(b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
       [
         (b, m) => b.removeTableRecord('vports', named(m, 'vports', '*Active').handle),
-        /removing a viewport/,
+        /the first \*Active viewport is the current one/,
       ],
       [
         (b, m) => b.removeTableRecord('appIds', named(m, 'appIds', 'ACAD').handle),
