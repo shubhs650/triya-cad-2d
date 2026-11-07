@@ -17,7 +17,7 @@ export const FRAGMENT_DIR = 'changes';
 const README = 'README.md';
 
 // A roadmap task id (optionally split into parts), or `infra-<slug>` for work outside the roadmap.
-const NAME = /^(M\d+-(\d{2}|GO)(-part-\d+[a-z]?)?|infra-[a-z0-9]+(-[a-z0-9]+)*)\.md$/;
+const NAME = /^(M\d+-(\d{2,}|GO)(-part-\d+[a-z]?)?|infra-[a-z0-9]+(-[a-z0-9]+)*)\.md$/;
 const PR_REF = /\(#(\d+)\)/;
 
 export interface Fragment {
