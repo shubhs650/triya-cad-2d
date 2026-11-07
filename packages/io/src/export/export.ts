@@ -38,7 +38,7 @@ import { planHeader, writeHeader } from './header';
 import { planLayers, writeLayers } from './layers';
 import { planLinetypes, writeLinetypes } from './linetypes';
 import { PassthroughStore } from './passthrough';
-import { r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
+import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
 import { planTextStyles, writeTextStyles } from './text-styles';
 import { planAppIds, planUcs, planViews, planVports, writeViewRecords } from './view-records';
 
@@ -357,6 +357,7 @@ export function triyaToAcad(
     e.handle = Number.parseInt(after.handle, 16);
     block.entities.add(e);
     writeEntity(r, e, undefined, after);
+    if (r12 && e instanceof Viewport) addR12View(original, e);
   }
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);

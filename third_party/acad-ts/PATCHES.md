@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87) and 0133 (M1-88) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88) and 0134 (M1-89) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -2504,5 +2504,22 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 **Title:** Write VISUALSTYLE objects to DXF from their fields
 
 `DxfObjectsSectionWriter` has no VISUALSTYLE writer, so a DWG saved as DXF drops every visual style, their dictionary entries and the viewports' 348 references. This adds a writer for the AcDbVisualStyle subclass from the fields the DWG reader fills, in the three layouts AutoCAD uses: R2007 (also used for R2000/R2004 DXF), R2010 (an operation code 176 after each value) and R2013+ (a count of 58 values in 70, each value under its type's code with its operation). Checked code for code against AutoCAD's own DXF saves of the R2007, R2010, R2013 and R2018 sample drawings, whose DWGs hold the same styles. Two values AutoCAD writes have no DWG field and are written as the constants AutoCAD uses: 62 = 5 before the R2007 mono colour, and 177 = 2 (R2010) or 3 (R2013+).
+
+</details>
+
+### 0134 — an R12 DXF keeps its paper space (67 = 1)
+
+- **File:** `third_party/acad-ts-patches/0134-r12-paper-space.patch`
+- **Touches:** `src/IO/Templates/CadEntityTemplate.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamReader/DxfEntitiesSectionReader.ts`, `src/IO/DXF/DxfDocumentBuilder.ts`, `src/IO/DXF/DxfReader.ts`
+- **Symptom:** the DXF reader skipped group 67 and put every entity that states no owner (330) into `*Model_Space`. R12 states no owners, so an R12 drawing's paper-space entities (the R12 sample's two viewports) read into model space, which has no layout there, and the writer, which writes 67 from the owner's layout, wrote them back without it: an R12 save moved paper space into model space. The round-trip diff compares acad-ts with itself and could not see it. Found by Triya M1-86, fixed in M1-89.
+- **Fix:** the reader keeps 67 = 1 on the entity template (`isPaperSpace`), and an entity with no owner that states it goes to `*Paper_Space` (a record is made up, like the model space one, when the file has no `$PAPER_SPACE` block). An R12 read then gives `*Paper_Space` the Layout1 AutoCAD opens it as (tab 1, limits, extents, insertion base and elevation from `$PLIM*`, `$PEXT*`, `$PINSBASE`, `$PELEVATION`, PSLTSCALE and LIMCHECK flags from `$PSLTSCALE`/`$PLIMCHECK`), made up like the other R12 defaults, so an R12 save leaves it out; the writer then writes 67 = 1 for the record's BLOCK, ENDBLK and entities as it does for any paper-space layout.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0134 an R12 DXF keeps its paper space (67 = 1) through a save" (the ASCII and binary R12 samples read both viewports into `*Paper_Space` with Layout1; an ASCII R12 save states 67 = 1 on the same BLOCK, ENDBLK and two VIEWPORTs as the original); `packages/io/test/acad-ts-patches.test.ts` → "0134 an R12 entity that states 67 = 1 reads into paper space, which saves back" (a file with no BLOCKS section).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read DXF group 67 into paper space for entities with no owner handle
+
+`DxfSectionReaderBase.readCommonEntityCodes` ignores group 67, and `DxfEntitiesSectionReader` adds every entity without an owner handle (330) to model space. R12 DXF files never state 330, so their paper-space entities (67 = 1), including every viewport, are read into model space and written back there. This keeps 67 on the entity template and adds such entities to the paper space block record, making one up when the file has no `$PAPER_SPACE` block. Since R12 has no LAYOUT objects, the reader also gives an R12 paper space the Layout1 layout AutoCAD opens it as, from the header's paper-space limits, extents, insertion base and elevation and its PSLTSCALE/PLIMCHECK flags, so the writer states 67 = 1 again on save.
 
 </details>

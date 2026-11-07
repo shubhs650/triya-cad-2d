@@ -11,7 +11,14 @@
  * Deliberately not compared (not part of the object graph): DXF CLASSES instance counts, DWG
  * summary info, the preview image, and acad-ts' internal reference bookkeeping.
  */
-import { ACadVersion, CadDocument, CadHeader, CadObject, DxfClass } from '@node-projects/acad-ts';
+import {
+  ACadVersion,
+  CadDocument,
+  CadHeader,
+  CadObject,
+  DxfClass,
+  ExtendedDataReference,
+} from '@node-projects/acad-ts';
 import { documentObjects } from './handle-coverage.js';
 
 export type DifferenceKind = 'missing' | 'added' | 'type' | 'value' | 'order';
@@ -42,7 +49,17 @@ export interface DiffOptions {
   ignoreHandles?: ReadonlySet<number>;
   /** Stop recording after this many differences. Default 10 000. */
   maxDifferences?: number;
+  /**
+   * The handle A gives the object B numbers `handle`. An R12 save that adds an object moves the
+   * handles acad-ts makes up on read (it numbers them above the highest handle the file states),
+   * so A and B number those objects apart; objects are matched, and B's references compared,
+   * through this map.
+   */
+  handleOfB?: (handle: number) => number;
 }
+
+/** `DiffOptions.handleOfB` of the running comparison (the identity outside one). */
+let handleOfB: (handle: number) => number = (h) => h;
 
 /** acad-ts internals that describe bookkeeping, not drawing data. */
 const SKIP_FIELDS = new Set(['document', '_referenceHandler']);
@@ -85,10 +102,21 @@ export function structuralDiff(
   b: CadDocument,
   options: DiffOptions = {},
 ): DiffReport {
+  const map = options.handleOfB;
+  if (!map) return diffByHandle(a, b, options);
+  handleOfB = map;
+  try {
+    return diffByHandle(a, b, options);
+  } finally {
+    handleOfB = (h) => h;
+  }
+}
+
+function diffByHandle(a: CadDocument, b: CadDocument, options: DiffOptions): DiffReport {
   const out = new Collector(options.maxDifferences ?? 10_000);
   const ignore = options.ignoreHandles ?? new Set<number>();
   const objsA = indexByHandle(a);
-  const objsB = indexByHandle(b);
+  const objsB = new Map([...indexByHandle(b)].map(([h, o]) => [handleOfB(h), o] as const));
 
   if (a.header && b.header) compareHeader(a.header, b.header, out);
 
@@ -220,6 +248,25 @@ function compareFields(
     // Instance counts are not part of the object graph (see the file comment). Objects kept raw
     // carry their DxfClass, and the writer stores the real count where the file may be stale.
     if (key === 'instanceCount' && a instanceof DxfClass) continue;
+    // An object's own handle, and the handle an xdata record (1003, 1005) holds: A's numbering
+    // of B's (`DiffOptions.handleOfB`).
+    const own = key === 'handle' && path === '' && a instanceof CadObject;
+    const xdata = key === '_value' && a instanceof ExtendedDataReference;
+    if (own || xdata) {
+      const ha = (a as unknown as Record<string, unknown>)[key];
+      const hb = (b as unknown as Record<string, unknown>)[key];
+      if (typeof ha === 'number' && typeof hb === 'number') {
+        if (ha !== handleOfB(hb)) {
+          report({
+            path: path ? `${path}.${key}` : key,
+            kind: 'value',
+            a: hex(ha),
+            b: hex(handleOfB(hb)),
+          });
+        }
+        continue;
+      }
+    }
     compareValues(
       (a as Record<string, unknown>)[key],
       (b as Record<string, unknown>)[key],
@@ -234,6 +281,14 @@ function compareFields(
 /** A field that names another registered object is a reference, compared by handle. */
 function isReference(v: unknown): boolean {
   return v instanceof CadDocument || (v instanceof CadObject && v.handle !== 0);
+}
+
+/** `describe` for a value of B: a reference as A numbers it. */
+function describeB(v: unknown): string {
+  if (v instanceof CadObject && !(v instanceof CadDocument) && v.handle !== 0) {
+    return `${v.objectName}#${hex(handleOfB(v.handle))}`;
+  }
+  return describe(v);
 }
 
 function describe(v: unknown): string {
@@ -274,6 +329,10 @@ function keyOf(k: unknown): string {
   return isReference(k) ? describe(k) : String(k);
 }
 
+function keyOfB(k: unknown): string {
+  return isReference(k) ? describeB(k) : String(k);
+}
+
 function asList(v: unknown): unknown[] | null {
   if (Array.isArray(v)) return v;
   if (v instanceof Set) return [...v];
@@ -290,8 +349,8 @@ function compareValues(
 ): void {
   if (va === vb) return;
   if (isReference(va) || isReference(vb)) {
-    if (describe(va) !== describe(vb)) {
-      report({ path, kind: 'value', a: describe(va), b: describe(vb) });
+    if (describe(va) !== describeB(vb)) {
+      report({ path, kind: 'value', a: describe(va), b: describeB(vb) });
     }
     return;
   }
@@ -303,16 +362,16 @@ function compareValues(
     va === undefined ||
     vb === undefined
   ) {
-    report({ path, kind: 'value', a: describe(va), b: describe(vb) });
+    report({ path, kind: 'value', a: describe(va), b: describeB(vb) });
     return;
   }
   if (typeof va === 'number') {
     if (!numbersEqual(va, vb as number))
-      report({ path, kind: 'value', a: describe(va), b: describe(vb) });
+      report({ path, kind: 'value', a: describe(va), b: describeB(vb) });
     return;
   }
   if (typeof va !== 'object') {
-    if (va !== vb) report({ path, kind: 'value', a: describe(va), b: describe(vb) });
+    if (va !== vb) report({ path, kind: 'value', a: describe(va), b: describeB(vb) });
     return;
   }
   if (depth > MAX_DEPTH || seen.has(va)) return;
@@ -321,7 +380,7 @@ function compareValues(
   if (va instanceof Date || vb instanceof Date) {
     const ta = va instanceof Date ? va.getTime() : NaN;
     const tb = vb instanceof Date ? vb.getTime() : NaN;
-    if (!numbersEqual(ta, tb)) report({ path, kind: 'value', a: describe(va), b: describe(vb) });
+    if (!numbersEqual(ta, tb)) report({ path, kind: 'value', a: describe(va), b: describeB(vb) });
     return;
   }
   if (ArrayBuffer.isView(va) || ArrayBuffer.isView(vb)) {
@@ -332,7 +391,7 @@ function compareValues(
       ? new Uint8Array(vb.buffer, vb.byteOffset, vb.byteLength)
       : null;
     if (!ba || !bb || ba.length !== bb.length || ba.some((x, i) => x !== bb[i])) {
-      report({ path, kind: 'value', a: describe(va), b: describe(vb) });
+      report({ path, kind: 'value', a: describe(va), b: describeB(vb) });
     }
     return;
   }
@@ -341,7 +400,7 @@ function compareValues(
   const lb = asList(vb);
   if (la || lb) {
     if (!la || !lb) {
-      report({ path, kind: 'value', a: describe(va), b: describe(vb) });
+      report({ path, kind: 'value', a: describe(va), b: describeB(vb) });
       return;
     }
     compareLists(la, lb, path, depth, seen, report);
@@ -350,15 +409,16 @@ function compareValues(
 
   if (va instanceof Map || vb instanceof Map) {
     if (!(va instanceof Map) || !(vb instanceof Map)) {
-      report({ path, kind: 'value', a: describe(va), b: describe(vb) });
+      report({ path, kind: 'value', a: describe(va), b: describeB(vb) });
       return;
     }
     // Keyed collections (dictionary entries, table entries, xdata by app) are unordered.
     const ma = new Map([...va].map(([k, v]) => [keyOf(k), v] as const));
-    const mb = new Map([...vb].map(([k, v]) => [keyOf(k), v] as const));
+    const mb = new Map([...vb].map(([k, v]) => [keyOfB(k), v] as const));
     for (const key of new Set([...ma.keys(), ...mb.keys()])) {
       const sub = `${path}[${key}]`;
-      if (!ma.has(key)) report({ path: sub, kind: 'value', a: 'absent', b: describe(mb.get(key)) });
+      if (!ma.has(key))
+        report({ path: sub, kind: 'value', a: 'absent', b: describeB(mb.get(key)) });
       else if (!mb.has(key))
         report({ path: sub, kind: 'value', a: describe(ma.get(key)), b: 'absent' });
       else compareValues(ma.get(key), mb.get(key), sub, depth + 1, seen, report);
@@ -367,7 +427,7 @@ function compareValues(
   }
 
   if (va.constructor !== (vb as object).constructor) {
-    report({ path, kind: 'type', a: describe(va), b: describe(vb) });
+    report({ path, kind: 'type', a: describe(va), b: describeB(vb) });
     return;
   }
   compareFields(va, vb as object, path, depth, seen, report);
@@ -385,7 +445,7 @@ function compareLists(
   // and tell a pure reordering apart from a membership change.
   if (la.every(isReference) && lb.every(isReference)) {
     const ra = la.map(describe);
-    const rb = lb.map(describe);
+    const rb = lb.map(describeB);
     if (ra.join() === rb.join()) return;
     const sameMembers = ra.length === rb.length && [...ra].sort().join() === [...rb].sort().join();
     report({

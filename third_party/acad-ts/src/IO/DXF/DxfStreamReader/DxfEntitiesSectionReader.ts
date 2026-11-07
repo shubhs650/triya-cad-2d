@@ -44,7 +44,10 @@ export class DxfEntitiesSectionReader extends DxfSectionReaderBase {
 
       const owner = this._builder.tryGetObjectTemplate<ICadOwnerTemplate>(template.ownerHandle);
 
-      if (template.ownerHandle === null) {
+      if (template.ownerHandle === null && template.isPaperSpace) {
+        // R12 states no owner; 67 = 1 puts an entity in paper space.
+        this._builder.paperSpaceEntities.add(template.cadObject);
+      } else if (template.ownerHandle === null) {
         this._builder.modelSpaceEntities.add(template.cadObject);
       } else if (owner) {
         owner.ownedObjectsHandlers.add(template.cadObject.handle);
