@@ -8,8 +8,7 @@
 // not written yet.
 //
 // Refused: renaming a style, because acad-ts's dictionary keys an entry by the name it was
-// added under and can only re-add it at the end under a new one (M1-95); the arrowhead and
-// content block on a DXF save, which acad-ts's DXF reader drops (M1-94); a new style before
+// added under and can only re-add it at the end under a new one (M1-95); a new style before
 // R2007 (AutoCAD 2008 introduced multileaders); the text attachment direction and the top and
 // bottom attachments in a DWG before R2010, whose MLEADERSTYLE has no place for them (the ODA's
 // Open Design Specification for .dwg, MLEADERSTYLE: "R2010+"; acad-ts reads them back as 0);
@@ -107,9 +106,6 @@ const LINEWEIGHTS: readonly number[] = [
   211,
 ];
 
-/** References acad-ts's DXF reader drops (M1-94): it reads no MLEADERSTYLE 341 or 343. */
-const DXF_LOST: readonly Field[] = ['arrowhead', 'block'];
-
 const COLORS: readonly Field[] = ['lineColor', 'textColor', 'blockColor'];
 
 /** Reference fields and what each names; the text style and linetype are never empty. */
@@ -158,10 +154,6 @@ function mleaderStyleProblems(
   if (format === 'dwg' && known(version) && version < ACadVersion.AC1024) {
     for (const k of R2010_FIELDS.filter((k) => changed(k)))
       out.push(`${k}: a DWG MLEADERSTYLE before R2010 does not store it`);
-  }
-  if (format === 'dxf') {
-    for (const k of DXF_LOST.filter((k) => changed(k) && (b !== undefined || a[k] !== undefined)))
-      out.push(`${k}: acad-ts's DXF reader drops it (M1-94)`);
   }
   for (const [k, [min, max]] of Object.entries(WHOLE) as [Field, [number, number]][]) {
     const v = a[k];

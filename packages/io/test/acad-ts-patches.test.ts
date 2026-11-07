@@ -1590,4 +1590,32 @@ describe('acad-ts local patches', () => {
       }
     }
   });
+
+  it('0146 the DXF reader keeps a MLEADERSTYLE arrowhead (341) and content block (343)', () => {
+    for (const version of [ACadVersion.AC1021, ACadVersion.AC1024, ACadVersion.AC1032]) {
+      for (const binary of [false, true]) {
+        const doc = new CadDocument(version);
+        const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadMLeaderStyle)!;
+        const style = new MultiLeaderStyle('CALLOUT');
+        styles.add(style);
+        const [tag, dot] = ['TAG', 'DOT'].map((name) => {
+          const b = new BlockRecord(name);
+          b.entities.add(new Line());
+          doc.blockRecords!.add(b);
+          return b;
+        });
+        // References resolve through the document's collections, so they are set once it has them.
+        style.arrowhead = dot!;
+        style.blockContent = tag!;
+
+        const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+        const same = back.getCadObject(Number(style.handle)) as MultiLeaderStyle;
+        const what = `${ACadVersion[version]} ${binary ? 'binary' : 'ascii'}`;
+
+        expect(same, what).toBeInstanceOf(MultiLeaderStyle);
+        expect(same.arrowhead?.name, what).toBe('DOT');
+        expect(same.blockContent?.name, what).toBe('TAG');
+      }
+    }
+  });
 });
