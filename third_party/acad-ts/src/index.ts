@@ -409,6 +409,8 @@ export { DesignCoordinatesType } from './Objects/DesignCoordinatesType.js';
 export { DictionaryCloningFlags } from './Objects/DictionaryCloningFlags.js';
 export { DictionaryVariable } from './Objects/DictionaryVariable.js';
 export { OsnapPointRef } from './Objects/DimensionAssociation.js';
+// The DIMASSOC object; `DimensionAssociation` is the header enum (DIMASSOC system variable).
+export { DimensionAssociation as DimensionAssociationObject } from './Objects/DimensionAssociation.js';
 export { EdgeStyleModel } from './Objects/EdgeStyleModel.js';
 export { EvaluationOptionFlags } from './Objects/EvaluationOptionFlags.js';
 export { Block1PtParameter } from './Objects/Evaluations/Block1PtParameter.js';

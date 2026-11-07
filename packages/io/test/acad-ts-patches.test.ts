@@ -26,6 +26,11 @@ import {
   EvaluationGraph,
   EvaluationGraphNode,
   DimensionAligned,
+  DimensionAssociationObject,
+  AssociativityFlags,
+  ObjectOsnapType,
+  OsnapPointRef,
+  SubentType,
   DimensionArc,
   DimensionLinear,
   DimensionRadius,
@@ -2181,5 +2186,63 @@ describe('acad-ts local patches', () => {
     const read = back.getCadObject(table.handle);
     expect(read).toBeInstanceOf(TableEntity);
     expect((read as TableEntity).rows[0]!.cells[0]!.content!.cadValue.value).toBe(0);
+  });
+
+  it('0166 the DIMASSOC object class is exported', () => {
+    // index.ts exported only the header enum of the same name, so a DIMASSOC could not be made.
+    const assoc = new DimensionAssociationObject();
+    expect(assoc.objectName).toBe('DIMASSOC');
+    expect(assoc.associativityFlags).toBe(AssociativityFlags.None);
+  });
+
+  it('0167 a DXF DIMASSOC keeps the geometry of its point references', () => {
+    // An associative DIMLINEAR whose first point is the intersection of two lines and whose
+    // second is a line's end point. Unpatched the reader dropped the 331/332 handles (and the
+    // writer had no 301/332/74/92/302), so a DXF read lost what each point is associated with.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const a = new Line(new XYZ(0, 0, 0), new XYZ(10, 0, 0));
+    const b = new Line(new XYZ(5, -5, 0), new XYZ(5, 5, 0));
+    const dim = new DimensionLinear();
+    dim.firstPoint = new XYZ(5, 0, 0);
+    dim.secondPoint = new XYZ(10, 0, 0);
+    dim.definitionPoint = new XYZ(10, 3, 0);
+    for (const e of [a, b, dim]) doc.entities!.add(e);
+    const assoc = new DimensionAssociationObject();
+    assoc.dimension = dim;
+    assoc.associativityFlags = (AssociativityFlags.FirstPointReference |
+      AssociativityFlags.SecondPointReference) as AssociativityFlags;
+    const first = new OsnapPointRef();
+    first.objectOsnapType = ObjectOsnapType.Intersection;
+    first.geometry = a;
+    first.subentType = SubentType.Edge;
+    first.gsMarker = 1;
+    first.intersectionGeometry = [b];
+    first.intersectionSubType = SubentType.Edge;
+    first.intersectionGsMarker = 2;
+    first.osnapPoint = new XYZ(5, 0, 0);
+    const second = new OsnapPointRef();
+    second.objectOsnapType = ObjectOsnapType.Endpoint;
+    second.geometry = a;
+    second.subentType = SubentType.Edge;
+    second.geometryParameter = 1;
+    second.osnapPoint = new XYZ(10, 0, 0);
+    assoc.firstPointRef = first;
+    assoc.secondPointRef = second;
+    dim.createExtendedDictionary().addByKey('ACAD_DIMASSOC', assoc);
+
+    const reread = DxfReader.readFromStream(writeDxf(doc, new DxfWriterConfiguration()));
+
+    const back = reread.getCadObject(assoc.handle) as DimensionAssociationObject;
+    expect(back).toBeInstanceOf(DimensionAssociationObject);
+    expect(back.dimension?.handle).toBe(dim.handle);
+    const p1 = back.firstPointRef!;
+    expect(p1.geometry?.handle).toBe(a.handle);
+    expect(p1.geometryPath.map((o) => o.handle)).toEqual([a.handle]);
+    expect(p1.intersectionGeometry.map((o) => o.handle)).toEqual([b.handle]);
+    expect([p1.intersectionSubType, p1.intersectionGsMarker]).toEqual([SubentType.Edge, 2]);
+    const p2 = back.secondPointRef!;
+    expect(p2.geometry?.handle).toBe(a.handle);
+    expect(p2.geometryPath.map((o) => o.handle)).toEqual([a.handle]);
+    expect([p2.osnapPoint.x, p2.geometryParameter]).toEqual([10, 1]);
   });
 });

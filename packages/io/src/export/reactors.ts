@@ -17,8 +17,10 @@
 //   group in its reactors, as every grouped entity of the corpus shows. GROUP makes the group
 //   with its members, so a new group's members list it in the same save; the group's own side
 //   is checked in groups.ts.
-// Other reactor changes (associative dimensions, ...) are still refused: their other end is not
-// written yet.
+// - a DIMASSOC and the dimension and geometry it links (M1-75 part 35): the DIMASSOC names
+//   them (DXF 330, 331, 332), and each lists the DIMASSOC in its reactors, as every associative
+//   dimension of the corpus shows; the DIMASSOC's side is checked in dim-assocs.ts.
+// Other reactor changes are still refused: their other end is not written yet.
 
 import type {
   DocumentInit,
@@ -26,11 +28,13 @@ import type {
   Entity,
   EntityGeometry,
   EntityInit,
+  DimAssoc,
   Group,
   Handle,
   HatchLoop,
   NonGraphicalObject,
 } from '@triya/engine';
+import { dimAssocGeometry } from './dim-assocs';
 import { same } from './entities';
 
 /** What AutoCAD attaches to a leader as its annotation (AcDbLeader::attachAnnotation). */
@@ -101,9 +105,13 @@ const sourcesOf = (e: Entity | EntityInit | undefined): Handle[] =>
   loopsOf(e).flatMap((l) => l.sources ?? []);
 
 const isGroup = (o: NonGraphicalObject | undefined): o is Group => o?.type === 'GROUP';
+const isAssoc = (o: NonGraphicalObject | undefined): o is DimAssoc => o?.type === 'DIMASSOC';
+
+/** The objects that list themselves in entities' reactors and are written. */
+type Linker = Entity | Group | DimAssoc;
 
 /** Whether `owner`, listed in an entity's reactors, names entity `handle` back. */
-function linked(owner: Entity | Group | undefined, handle: Handle): boolean {
+function linked(owner: Linker | undefined, handle: Handle): boolean {
   if (!owner) return false;
   if ('geom' in owner) {
     return (
@@ -111,6 +119,9 @@ function linked(owner: Entity | Group | undefined, handle: Handle): boolean {
       sourcesOf(owner).includes(handle) ||
       clipOf(owner) === handle
     );
+  }
+  if (isAssoc(owner)) {
+    return owner.dimension === handle || dimAssocGeometry(owner).includes(handle);
   }
   return owner.entities.includes(handle);
 }
@@ -121,6 +132,7 @@ const LINKS: Record<string, string> = {
   HATCH: 'hatch still names it',
   VIEWPORT: 'viewport is still clipped by it',
   GROUP: 'group still lists it',
+  DIMASSOC: 'dimension association still names it',
 };
 
 /**
@@ -131,11 +143,13 @@ export function reactorProblems(base: DocumentInit, model: DocumentModel): strin
   const out: string[] = [];
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
   const baseGroups = new Map(
-    (base.objects ?? []).filter(isGroup).map((g) => [g.handle, g] as const),
+    (base.objects ?? [])
+      .filter((o): o is Group | DimAssoc => isGroup(o) || isAssoc(o))
+      .map((g) => [g.handle, g] as const),
   );
-  const owner = (h: Handle): Entity | Group | undefined => {
+  const owner = (h: Handle): Linker | undefined => {
     const o = model.objects.get(h);
-    return isGroup(o) ? o : model.entityByHandle(h);
+    return isGroup(o) || isAssoc(o) ? o : model.entityByHandle(h);
   };
   for (const m of model.entities()) {
     const b = baseByHandle.get(m.handle);
@@ -146,7 +160,7 @@ export function reactorProblems(base: DocumentInit, model: DocumentModel): strin
       for (const h of after.filter((x) => !before.includes(x))) {
         if (!linked(owner(h), m.handle)) {
           out.push(
-            `${what}: reactor ${h} is not a leader it annotates, a hatch it bounds, a viewport it clips or a group it is in`,
+            `${what}: reactor ${h} is not a leader it annotates, a hatch it bounds, a viewport it clips, a group it is in or a dimension association naming it`,
           );
         }
       }
@@ -155,7 +169,7 @@ export function reactorProblems(base: DocumentInit, model: DocumentModel): strin
         const kind = was && ('geom' in was ? was.geom.kind : was.type);
         if (!kind || !(kind in LINKS)) {
           out.push(
-            `${what}: reactor ${h} goes, which is not a leader's, a hatch's, a viewport's or a group's`,
+            `${what}: reactor ${h} goes, which is not a leader's, a hatch's, a viewport's, a group's or a dimension association's`,
           );
         } else if (linked(owner(h), m.handle)) {
           out.push(`${what}: reactor ${h} goes, but that ${LINKS[kind]}`);

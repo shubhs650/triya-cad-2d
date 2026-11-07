@@ -52,6 +52,7 @@ import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
 import { IMAGE_OBJECT_TYPES, planImageObjects, writeImageObjects } from './image-objects';
 import { planGroups, writeGroupMembers, writeGroups } from './groups';
+import { newDimAssocDictionaries, planDimAssocs, writeDimAssocs } from './dim-assocs';
 import { planLayouts, writeLayouts } from './layouts';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
@@ -173,10 +174,13 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
       ),
     );
   }
-  // Draw order tables, the image objects and groups have writers (draw-order.ts,
-  // image-objects.ts, groups.ts).
+  // Draw order tables, the image objects, groups and DIMASSOCs have writers (draw-order.ts,
+  // image-objects.ts, groups.ts, dim-assocs.ts).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
-    o.type !== 'SORTENTSTABLE' && o.type !== 'GROUP' && !IMAGE_OBJECT_TYPES.has(o.type);
+    o.type !== 'SORTENTSTABLE' &&
+    o.type !== 'GROUP' &&
+    o.type !== 'DIMASSOC' &&
+    !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
       'object',
@@ -259,6 +263,7 @@ function plan(
   model: DocumentModel,
   r: Resolver,
   format: CadFormat | undefined,
+  newDictionaries: ReadonlyMap<Handle, Handle>,
 ): { plan: Plan; problems: string[] } {
   const problems = [
     ...nonEntityProblems(base, model),
@@ -272,7 +277,7 @@ function plan(
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
   for (const b of base.entities ?? []) {
     const acad = r.store.original(b.handle);
-    const m = model.entityByHandle(b.handle);
+    const m = withNewDictionary(model.entityByHandle(b.handle), b.extDict, newDictionaries);
     if (!(acad instanceof AcadEntity)) {
       problems.push(`${b.type} ${b.handle}: the original is not an entity`);
       continue;
@@ -294,8 +299,9 @@ function plan(
     );
     out.updated.push({ acad, before: b, after: m });
   }
-  for (const m of model.entities()) {
-    if (baseByHandle.has(m.handle)) continue;
+  for (const e of model.entities()) {
+    if (baseByHandle.has(e.handle)) continue;
+    const m = withNewDictionary(e, undefined, newDictionaries)!;
     problems.push(
       ...entityProblems(r, undefined, m),
       ...formatProblems(format, version, undefined, m, acadApp),
@@ -322,6 +328,20 @@ function plan(
   // Additions go in handle order, which is the order the engine allocated them in.
   out.added.sort((a, b) => compareHandles(a.after.handle, b.after.handle));
   return { plan: out, problems };
+}
+
+/**
+ * `m` as compared with its original: the extension dictionary the save makes for its new DIMASSOC
+ * (dim-assocs.ts) is that writer's, so it is no property change.
+ */
+function withNewDictionary(
+  m: Entity | undefined,
+  was: Handle | undefined,
+  newDictionaries: ReadonlyMap<Handle, Handle>,
+): Entity | undefined {
+  if (!m || was !== undefined || newDictionaries.get(m.handle) !== m.extDict) return m;
+  const { extDict: _new, ...rest } = m;
+  return rest as Entity;
 }
 
 /**
@@ -405,6 +425,9 @@ export function triyaToAcad(
   const layouts = planLayouts(original, base, model, r);
   // Before the entities: a member's reactors may name a group the same save adds.
   const groups = planGroups(original, base, model, r);
+  // Before the entities: a dimension's and its geometry's reactors may name a DIMASSOC the same
+  // save adds.
+  const dimAssocs = planDimAssocs(original, base, model, r);
   // A current style variable may name a style, and an arrow-block variable a block, by the name
   // the same save gives it (RENAME).
   const renamed = new Map<CadObject, string>(
@@ -421,7 +444,14 @@ export function triyaToAcad(
   const drawOrder = planDrawOrder(original, base, model, r);
   // Before the entities: a new block holds entities and INSERTs, dimensions and tables name it.
   const blocks = planBlocks(original, base, model, r, format, drawOrder, layouts.plan.swapping);
-  const { plan: p, problems } = plan(original, base, model, r, format);
+  const { plan: p, problems } = plan(
+    original,
+    base,
+    model,
+    r,
+    format,
+    newDimAssocDictionaries(dimAssocs.plan),
+  );
   // After the entities: a record the save removes may lose its last referrer in the same save.
   const purge = planPurge(original, base, model, r, p.removed);
   problems.unshift(
@@ -440,6 +470,7 @@ export function triyaToAcad(
     ...layouts.problems,
     ...blocks.problems,
     ...groups.problems,
+    ...dimAssocs.problems,
     ...purge.problems,
   );
   problems.push(...drawOrder.problems);
@@ -505,6 +536,7 @@ export function triyaToAcad(
   }
   writeEntityOrder(original, model, r);
   writeGroupMembers(r, groups.plan);
+  writeDimAssocs(r, dimAssocs.plan);
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
   // Last: nothing written above may still refer to what goes.
