@@ -8,18 +8,28 @@
 // $PLIMMAX, $PLIMCHECK and $PSLTSCALE. LIMITS and PSLTSCALE set both, so where the drawing's
 // header agreed with its layout, a change to the layout must change the header alike.
 //
-// Refused, before anything changes: adding or removing a layout (its block record and
-// definition come with it: LAYOUT New and Delete, M6), a layout moving to another block record
-// (AutoCAD swaps *Paper_Space between layouts only when another one is made current), any
-// layout change before R2000, which introduced layouts, values AutoCAD does not take, and
-// xdata, reactor and extension dictionary changes.
+// LAYOUT New and Delete (part 28): a new layout joins ACAD_LAYOUT under the engine's handle, on
+// the new `*Paper_Space` block the same save adds (blocks.ts), linked both ways; a removed one
+// leaves ACAD_LAYOUT, and its block, with everything on its sheet, goes as PURGE takes a block
+// (purge.ts). AutoCAD sets every layout up for plotting, so a new one states its limits and
+// page setup.
+//
+// Refused, before anything changes: removing the Model layout, or the current layout (the one
+// on *Paper_Space: AutoCAD first makes another current, which moves *Paper_Space to that one's
+// block); a layout removed without its block or added without a new one; a layout moving to
+// another block record (AutoCAD swaps *Paper_Space between layouts only when another one is
+// made current); any layout change before R2000, which introduced layouts; values AutoCAD
+// does not take; and xdata, reactor and extension dictionary changes.
 
 import {
   ACadVersion,
+  BlockRecord,
+  CadDictionary,
   Layout as AcadLayout,
   PaperMargin,
   XY,
   type CadDocument,
+  type CadObject,
 } from '@node-projects/acad-ts';
 import type {
   BlockTableRecord,
@@ -40,7 +50,13 @@ export interface LayoutsPlan {
     readonly before: Layout;
     readonly after: Layout;
   }[];
+  /** New layouts, each made on the block record the same save adds. */
+  readonly added: Layout[];
+  readonly removed: AcadLayout[];
 }
+
+/** The sheet block of a layout other than the current one: `*Paper_Space` and a number. */
+const SHEET_BLOCK = /^\*paper_space\d+$/i;
 
 /** DXF 70 of AcDbLayout: 1 PSLTSCALE, 2 LIMCHECK. */
 const LAYOUT_FLAGS = 1 | 2;
@@ -102,14 +118,15 @@ export function planLayouts(
   model: DocumentModel,
   r: Resolver,
 ): { plan: LayoutsPlan; problems: string[] } {
-  const plan: LayoutsPlan = { updated: [] };
+  const plan: LayoutsPlan = { updated: [], added: [], removed: [] };
   const problems: string[] = [];
   const version = doc.header?.version;
   const before = new Map((base.layouts ?? []).map((l) => [l.handle, l]));
   const after = new Map(model.layouts.map((l) => [l.handle, l]));
-  for (const [h, b] of before)
-    if (!after.has(h)) problems.push(`layout ${b.name} (${h}): removing a layout`);
-
+  const noLayouts =
+    known(version) && version < ACadVersion.AC1015
+      ? `${ACadVersion[version]} has no layouts (R2000 added them)`
+      : undefined;
   const baseRecords = new Map((base.tables?.blockRecords ?? []).map((b) => [b.handle, b]));
   const baseHeader = new Map(base.header ?? []);
   // Names are unique without regard to case, among the layouts the drawing ends up with.
@@ -119,16 +136,37 @@ export function planLayouts(
     names.set(key, (names.get(key) ?? 0) + 1);
   }
   let tabsChange = false;
+  for (const [h, b] of before) {
+    if (after.has(h)) continue;
+    tabsChange = true;
+    const out = removalProblems(b, baseRecords, model, noLayouts);
+    const acad = resolve(r, h, AcadLayout);
+    if (!acad) out.push('the original is not a LAYOUT');
+    else if (entryKey(doc, acad) === undefined) out.push('ACAD_LAYOUT does not list it');
+    if (out.length > 0) problems.push(...out.map((p) => `layout ${b.name} (${h}): ${p}`));
+    else plan.removed.push(acad!);
+  }
   for (const [h, a] of after) {
     const b = before.get(h);
     if (b && same(b, a)) continue;
     const label = `layout ${a.name} (${h})`;
     if (!b) {
-      problems.push(`${label}: adding a layout`);
+      tabsChange = true;
+      const out = additionProblems(
+        doc,
+        a,
+        baseRecords,
+        model,
+        names,
+        new Set(before.keys()),
+        noLayouts,
+      );
+      if (out.length > 0) problems.push(...out.map((p) => `${label}: ${p}`));
+      else plan.added.push(a);
       continue;
     }
-    if (known(version) && version < ACadVersion.AC1015) {
-      problems.push(`${label}: ${ACadVersion[version]} has no layouts (R2000 added them)`);
+    if (noLayouts) {
+      problems.push(`${label}: ${noLayouts}`);
       continue;
     }
     const out: string[] = [];
@@ -167,6 +205,85 @@ export function planLayouts(
       problems.push(`layout tabs: the layouts' tab orders are not 1 to ${tabs.length}, each once`);
   }
   return { plan, problems };
+}
+
+function removalProblems(
+  b: Layout,
+  baseRecords: ReadonlyMap<Handle, BlockTableRecord>,
+  model: DocumentModel,
+  noLayouts: string | undefined,
+): string[] {
+  if (noLayouts) return [noLayouts];
+  const space = spaceOf(b, baseRecords);
+  if (space === 'model') return ['the Model layout cannot be removed'];
+  if (space === 'paper')
+    return [
+      'the current layout (on *Paper_Space) goes only once another is made current, which moves *Paper_Space to its block',
+    ];
+  const record = model.tables.blockRecords.get(b.blockRecord);
+  if (record) return [`its block ${record.name} (${b.blockRecord}) stays; LAYOUT Delete takes it`];
+  return [];
+}
+
+const layoutDictionary = (doc: CadDocument) =>
+  doc.rootDictionary?.getEntry<CadDictionary>(CadDictionary.acadLayout) ?? undefined;
+
+/** The ACAD_LAYOUT entry name `acad` is listed under, if it is. */
+function entryKey(doc: CadDocument, acad: AcadLayout): string | undefined {
+  const dict = layoutDictionary(doc);
+  return dict?.entryNames.find((n): n is string => typeof n === 'string' && dict.get(n) === acad);
+}
+
+/** Whether ACAD_LAYOUT lists `name` for an object Triya does not map as a layout. */
+function unmappedEntry(doc: CadDocument, name: string, mapped: ReadonlySet<Handle>): boolean {
+  const o = layoutDictionary(doc)?.get(name);
+  return o !== undefined && !mapped.has(hex(o.handle));
+}
+
+/** Why a layout the model adds cannot be written. */
+function additionProblems(
+  doc: CadDocument,
+  a: Layout,
+  baseRecords: ReadonlyMap<Handle, BlockTableRecord>,
+  model: DocumentModel,
+  names: ReadonlyMap<string, number>,
+  baseHandles: ReadonlySet<Handle>,
+  noLayouts: string | undefined,
+): string[] {
+  if (noLayouts) return [noLayouts];
+  const out: string[] = [];
+  if (doc.getCadObject(Number.parseInt(a.handle, 16))) out.push('the handle is already used');
+  if (!layoutDictionary(doc)) out.push('the drawing has no ACAD_LAYOUT dictionary to list it in');
+  const record = model.tables.blockRecords.get(a.blockRecord);
+  if (
+    baseRecords.has(a.blockRecord) ||
+    !record ||
+    !SHEET_BLOCK.test(record.name) ||
+    record.layout !== a.handle
+  )
+    return [
+      'a new layout comes with a new *Paper_Space block of its own (ChangeSetBuilder.addLayout)',
+    ];
+  const name = a.name;
+  if (typeof name !== 'string' || name === '') out.push('a layout needs a name');
+  else if (name.toUpperCase() === AcadLayout.modelLayoutName.toUpperCase())
+    out.push("Model is the model layout's name");
+  else if ((names.get(name.toUpperCase()) ?? 0) > 1) out.push(`another layout is named ${name}`);
+  else if (INVALID_NAME.test(name) || name.length > NAME_LENGTH)
+    out.push(`${JSON.stringify(name)} is not a valid layout name`);
+  else if (unmappedEntry(doc, name, baseHandles)) out.push(`another layout is named ${name}`);
+  if (!Number.isInteger(a.tabOrder) || a.tabOrder < 1)
+    out.push(`tabOrder: ${JSON.stringify(a.tabOrder)} is not a whole number of 1 or more`);
+  for (const k of UNSUPPORTED) if (a[k] !== undefined) out.push(`${k} changes`);
+  if (!validFlags(a.flags))
+    out.push(
+      `flags: ${JSON.stringify(a.flags)} has bits other than 1 (PSLTSCALE) and 2 (LIMCHECK)`,
+    );
+  if (!a.limits) out.push('a new layout needs its limits');
+  else out.push(...limitsProblems(a.limits));
+  if (!a.plot) out.push('a new layout needs its page setup');
+  else out.push(...plotProblems(undefined, a.plot, 'other'));
+  return out;
 }
 
 function nameProblems(
@@ -299,8 +416,22 @@ function headerProblems(
   return out;
 }
 
-/** Writes the planned layout changes onto their originals; renames go first, as names may swap. */
-export function writeLayouts(plan: LayoutsPlan): void {
+/**
+ * Writes the planned layout changes onto their originals, after the blocks (a new layout's block
+ * record must be in its table): removed layouts leave ACAD_LAYOUT first and renames go next, as
+ * names may swap or pass to a new layout; new layouts join last.
+ */
+export function writeLayouts(
+  doc: CadDocument,
+  r: Resolver & { readonly created: Map<Handle, CadObject> },
+  plan: LayoutsPlan,
+): void {
+  const dict = layoutDictionary(doc);
+  for (const acad of plan.removed) {
+    const key = entryKey(doc, acad);
+    if (key === undefined || !dict!.remove(key))
+      throw new Error(`LAYOUT ${acad.name}: acad-ts did not list it in ACAD_LAYOUT`);
+  }
   const renamed = plan.updated.filter(({ before, after }) => before.name !== after.name);
   renameEntries(renamed.map(({ acad, after }) => ({ acad, name: after.name })));
   for (const { acad, after } of renamed) acad.name = after.name;
@@ -313,6 +444,20 @@ export function writeLayouts(plan: LayoutsPlan): void {
       acad.maxLimits = new XY(a.limits.max.x, a.limits.max.y);
     }
     if (changed('plot') && a.plot) writePlot(acad, b.plot, a.plot);
+  }
+  for (const a of plan.added) {
+    const acad = new AcadLayout(a.name);
+    // acad-ts keeps a non-zero handle it has not seen, so the layout keeps Triya's handle.
+    acad.handle = Number.parseInt(a.handle, 16);
+    acad.associatedBlock = resolve(r, a.blockRecord, BlockRecord)!;
+    acad.tabOrder = a.tabOrder;
+    acad.layoutFlags = (a.flags ?? 0) as never;
+    acad.minLimits = new XY(a.limits!.min.x, a.limits!.min.y);
+    acad.maxLimits = new XY(a.limits!.max.x, a.limits!.max.y);
+    writePlot(acad, undefined, a.plot!);
+    // planLayouts refuses a new layout where ACAD_LAYOUT is missing (additionProblems).
+    dict!.add(acad);
+    r.created.set(a.handle, acad);
   }
 }
 

@@ -71,6 +71,7 @@ export interface NewLayout {
   readonly name: string;
   /** The tab's place; omitted, after the last layout. */
   readonly tabOrder?: number;
+  /** DXF 70: 1 PSLTSCALE, 2 LIMCHECK; omitted, 1. */
   readonly flags?: number;
   readonly limits?: Layout['limits'];
   readonly plot?: Layout['plot'];
@@ -321,15 +322,21 @@ export class ChangeSetBuilder {
 
   /**
    * Adds a layout (LAYOUT New) with the block that holds its sheet: a record and definition named
-   * `*Paper_Space` and the lowest number no block has, as AutoCAD names them, linked to the
+   * `*Paper_Space` and the lowest number no block has had, as AutoCAD names them, linked to the
    * layout, base point at the origin. The record's handle is allocated first.
    */
   addLayout(init: NewLayout): Layout {
     this.#open();
+    // A name the same change set frees stays taken: the saved file drops the old block only
+    // after it adds the new ones.
     const taken = new Set<number>();
     const records = this.#table('blockRecords');
-    for (const h of [...this.#model.tables.blockRecords.keys(), ...this.#addedRecords()]) {
-      const n = PAPER_SPACE.exec(this.tableRecord('blockRecords', h)?.name ?? '')?.[1];
+    const names = [
+      ...[...this.#model.tables.blockRecords.values()].map((r) => r.name),
+      ...this.#addedRecords().map((h) => this.tableRecord('blockRecords', h)?.name ?? ''),
+    ];
+    for (const name of names) {
+      const n = PAPER_SPACE.exec(name)?.[1];
       if (n) taken.add(Number(n));
     }
     let n = 0;
@@ -357,7 +364,8 @@ export class ChangeSetBuilder {
       name: init.name,
       tabOrder: init.tabOrder ?? last + 1,
       blockRecord: block,
-      ...(init.flags !== undefined ? { flags: init.flags } : {}),
+      // PSLTSCALE on and LIMCHECK off unless given: the two variables' AutoCAD defaults.
+      flags: init.flags ?? 1,
       ...(init.limits ? { limits: init.limits } : {}),
       ...(init.plot ? { plot: init.plot } : {}),
     });
@@ -368,7 +376,7 @@ export class ChangeSetBuilder {
 
   /**
    * Removes a layout (LAYOUT Delete) with its block record, definition and everything on its
-   * sheet. The Model layout cannot go.
+   * sheet; the tabs after it move up. The Model layout cannot go.
    */
   removeLayout(handle: Handle): void {
     this.#open();
@@ -379,6 +387,11 @@ export class ChangeSetBuilder {
     if (this.tableRecord('blockRecords', block)?.name.toUpperCase() === MODEL_SPACE)
       throw new Error(`layout ${handle}: the Model layout cannot be removed`);
     draft.remove(handle);
+    // The tabs after it move up one, as AutoCAD keeps them numbered 1 to N.
+    for (const h of this.#layoutHandles()) {
+      const l = draft.get(h);
+      if (l && l.tabOrder > layout.tabOrder) draft.update(h, { tabOrder: l.tabOrder - 1 });
+    }
     if (!this.#blocks.get(block)) return;
     for (const id of this.blockEntities(block)) this.removeEntity(id);
     this.removeBlock(block);

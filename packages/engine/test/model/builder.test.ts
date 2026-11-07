@@ -180,6 +180,7 @@ describe('ChangeSetBuilder', () => {
       name: 'Sheet 2',
       tabOrder: 2,
       blockRecord: '40',
+      flags: 1,
       limits,
     });
     expect(b.layout('41')).toBe(sheet);
@@ -229,6 +230,28 @@ describe('ChangeSetBuilder', () => {
     expect(m.hasBlock(PAPER_SPACE)).toBe(false);
     m.apply(invertChangeSet(cs));
     expect(snapshot(m)).toEqual(before);
+  });
+
+  it('moves the tabs after a removed layout up one', () => {
+    const m = sampleModel();
+    const b = new ChangeSetBuilder(m);
+    const two = b.addLayout({ name: 'Sheet 2' });
+    b.addLayout({ name: 'Sheet 3' });
+    m.apply(b.build());
+    const b2 = new ChangeSetBuilder(m);
+    b2.removeLayout(two.handle);
+    // Its block name stays taken in this change set, so a new sheet does not reuse it.
+    expect(m.tables.blockRecords.get(b2.addLayout({ name: 'Sheet 4' }).blockRecord)?.name).toBe(
+      undefined,
+    );
+    m.apply(b2.build());
+    expect(m.layouts.map((l) => `${l.tabOrder}:${l.name}`)).toEqual([
+      '0:Model',
+      '1:Layout1',
+      '2:Sheet 3',
+      '3:Sheet 4',
+    ]);
+    expect(m.tables.blockRecords.get(m.layouts[3]!.blockRecord)?.name).toBe('*Paper_Space2');
   });
 
   it('takes back a layout added in the same change set', () => {

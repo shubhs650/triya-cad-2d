@@ -8,7 +8,9 @@ import {
   CadDictionary,
   CadDocument,
   Layout as AcadLayout,
+  Line,
   XY,
+  XYZ,
 } from '@node-projects/acad-ts';
 import { ChangeSetBuilder, DocumentModel, type Layout, type LayoutPlot } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
@@ -28,7 +30,8 @@ interface Options {
 
 /**
  * Model, Layout1 (on *Paper_Space, an A3 page setup with a standard scale) and Layout2 (on
- * *Paper_Space0, a custom 1:2 scale), as AutoCAD saves them: Model's plot flags carry ModelType.
+ * *Paper_Space0, a custom 1:2 scale, with a line drawn on its sheet), as AutoCAD saves them:
+ * Model's plot flags carry ModelType.
  */
 function drawing(
   version = ACadVersion.AC1032,
@@ -40,6 +43,7 @@ function drawing(
   const layouts = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadLayout)!;
   const sheet2 = new BlockRecord('*Paper_Space0');
   doc.blockRecords!.add(sheet2);
+  sheet2.entities.add(new Line(new XYZ(10, 10, 0), new XYZ(100, 50, 0)));
   const made: AcadLayout[] = [];
   for (const [name, space, tab] of [
     ['Model', doc.modelSpace!, 0],
@@ -354,20 +358,196 @@ describe('LAYOUT objects', () => {
     expect(problems).toEqual([expect.stringMatching(/AC1014 has no layouts \(R2000 added them\)/)]);
   });
 
-  it('refuses a layout added or removed outside a change set', () => {
+  it('refuses a layout added or removed without its block', () => {
     const bytes = drawing();
     const init = documentInit(readCadDocument(bytes));
     const [model, one, two] = init.layouts!;
     const less = DocumentModel.create({ ...init, layouts: [model!, one!] });
     expect(refusal(() => exportDocument(readCadDocument(bytes), less, { format: 'dxf' }))).toEqual([
-      expect.stringMatching(/layout Layout2 .*: removing a layout/),
+      expect.stringMatching(
+        /layout Layout2 .*: its block \*Paper_Space0 \(.*\) stays; LAYOUT Delete takes it/,
+      ),
     ]);
+    // A second layout on Layout2's sheet.
     const more = DocumentModel.create({
       ...init,
       layouts: [model!, one!, two!, { ...two!, handle: 'FFF0', name: 'Layout3', tabOrder: 3 }],
     });
     expect(refusal(() => exportDocument(readCadDocument(bytes), more, { format: 'dxf' }))).toEqual([
-      expect.stringMatching(/layout Layout3 \(FFF0\): adding a layout/),
+      expect.stringMatching(
+        /layout Layout3 \(FFF0\): a new layout comes with a new \*Paper_Space block/,
+      ),
     ]);
+  });
+});
+
+/** Layout1's A3 page setup at a custom scale: DXF 75, which names a standard one, is not mapped. */
+const sheetPlot = (m: DocumentModel): LayoutPlot => ({ ...plotOf(m, 'Layout1'), flags: 672 });
+
+describe('LAYOUT New and Delete', () => {
+  /**
+   * What the drawing maps to, without what LAYOUT New and Delete change (BLOCK and ENDBLK, which
+   * Triya does not map, are among the passthrough handles: `changedPassthrough` checks those).
+   */
+  const rest = (doc: CadDocument) => {
+    const {
+      layouts: _l,
+      blocks: _b,
+      entities: _e,
+      tables,
+      header: _h,
+      meta: _m,
+      handSeed: _s,
+      passthrough: _p,
+      ...others
+    } = documentInit(doc);
+    const { blockRecords: _r, ...otherTables } = tables ?? {};
+    return JSON.parse(JSON.stringify({ ...others, tables: otherTables })) as unknown;
+  };
+
+  /** The passthrough objects one of `a`, `b` has and the other not, by DXF name. */
+  const changedPassthrough = (a: CadDocument, b: CadDocument): string[] => {
+    const [x, y] = [a, b].map((d) => new Set(documentInit(d).passthrough));
+    const names = (d: CadDocument, hs: string[]) =>
+      hs.map((h) => d.getCadObject(Number.parseInt(h, 16))?.objectName ?? h);
+    return [
+      ...names(
+        a,
+        [...x!].filter((h) => !y!.has(h)),
+      ),
+      ...names(
+        b,
+        [...y!].filter((h) => !x!.has(h)),
+      ),
+    ].sort();
+  };
+
+  it.each(SAVES)('writes a new layout and draws on its sheet (%s %s)', (version, format) => {
+    const bytes = drawing(version, format);
+    const model = open(bytes);
+    const two = layout(model, 'Layout2');
+    let sheet!: Layout;
+    edit(model, (b) => {
+      sheet = b.addLayout({
+        name: 'Details',
+        flags: 1,
+        limits: { min: { x: 0, y: 0 }, max: { x: 594, y: 420 } },
+        plot: {
+          ...two.plot!,
+          paperSize: 'ISO_A2_(594.00_x_420.00_MM)',
+          paperWidth: 594,
+          paperHeight: 420,
+        },
+      });
+      b.addEntity({
+        owner: sheet.blockRecord,
+        layer: model.tables.layers.keys().next().value!,
+        geom: { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 594, y: 420 } },
+      });
+    });
+    const doc = saved(bytes, model, format);
+    const back = documentInit(doc);
+    expect(back.layouts!.map(comparable)).toEqual(model.layouts.map(comparable));
+    // Its block is the next *Paper_Space, linked both ways, and holds the line.
+    const record = back.tables!.blockRecords!.find((r) => r.handle === sheet.blockRecord);
+    expect(record).toMatchObject({ name: '*Paper_Space1', layout: sheet.handle });
+    expect(back.blocks!.find((d) => d.handle === sheet.blockRecord)?.basePoint).toEqual({
+      x: 0,
+      y: 0,
+    });
+    const lines = back.entities!.filter((e) => e.owner === sheet.blockRecord);
+    expect(lines.map((e) => e.geom)).toEqual([
+      { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 594, y: 420 } },
+    ]);
+    // The ACAD_LAYOUT dictionary lists it; nothing else changes.
+    const dict = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadLayout)!;
+    expect(dict.get('Details')).toBe(doc.layouts!.get('Details'));
+    expect(doc.layouts!.get('Details')!.associatedBlock?.name).toBe('*Paper_Space1');
+    expect(rest(doc)).toEqual(rest(readCadDocument(bytes)));
+    expect(changedPassthrough(readCadDocument(bytes), doc)).toEqual(['BLOCK', 'ENDBLK']);
+    expect(back.entities!.length).toBe(documentInit(readCadDocument(bytes)).entities!.length + 1);
+  });
+
+  it.each(SAVES)(
+    'removes a layout with its block and what is on its sheet (%s %s)',
+    (version, format) => {
+      const bytes = drawing(version, format);
+      const model = open(bytes);
+      const two = layout(model, 'Layout2');
+      const was = documentInit(readCadDocument(bytes));
+      expect(was.entities!.filter((e) => e.owner === two.blockRecord)).toHaveLength(1);
+      edit(model, (b) => b.removeLayout(two.handle));
+      const doc = saved(bytes, model, format);
+      const back = documentInit(doc);
+      expect(back.layouts!.map((l) => l.name)).toEqual(['Model', 'Layout1']);
+      expect(back.tables!.blockRecords!.some((r) => r.handle === two.blockRecord)).toBe(false);
+      expect(back.blocks!.some((d) => d.handle === two.blockRecord)).toBe(false);
+      expect(back.entities!.length).toBe(was.entities!.length - 1);
+      const dict = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadLayout)!;
+      expect([...dict.entryNames].sort()).toEqual(['Layout1', 'Model']);
+      expect(doc.getCadObject(Number.parseInt(two.handle, 16))).toBeNull();
+      expect(rest(doc)).toEqual(rest(readCadDocument(bytes)));
+      expect(changedPassthrough(readCadDocument(bytes), doc)).toEqual(['BLOCK', 'ENDBLK']);
+    },
+  );
+
+  it('deletes a layout and makes another in one save', () => {
+    const bytes = drawing();
+    const model = open(bytes);
+    edit(model, (b) => {
+      b.removeLayout(layout(model, 'Layout2').handle);
+      // *Paper_Space0 goes in the same save, so the new sheet is *Paper_Space1.
+      b.addLayout({
+        name: 'Layout2',
+        limits: layout(model, 'Layout1').limits!,
+        plot: sheetPlot(model),
+      });
+    });
+    const back = documentInit(saved(bytes, model, 'dwg'));
+    expect(back.layouts!.map(comparable)).toEqual(model.layouts.map(comparable));
+    const sheet = model.layouts.find((l) => l.name === 'Layout2')!;
+    expect(back.tables!.blockRecords!.find((r) => r.handle === sheet.blockRecord)?.name).toBe(
+      '*Paper_Space1',
+    );
+  });
+
+  it('refuses what LAYOUT New and Delete do not do', () => {
+    // AutoCAD makes another layout current before deleting the current one, which moves
+    // *Paper_Space to that layout's block.
+    expect(refused((b, m) => b.removeLayout(layout(m, 'Layout1').handle))).toEqual([
+      expect.stringMatching(
+        /layout Layout1 .*: the current layout \(on \*Paper_Space\) goes only once another is made current/,
+      ),
+    ]);
+    // Every layout is set up for plotting.
+    expect(refused((b) => b.addLayout({ name: 'Sheet' }))).toEqual([
+      expect.stringMatching(/layout Sheet .*: a new layout needs its limits/),
+      expect.stringMatching(/layout Sheet .*: a new layout needs its page setup/),
+    ]);
+    const full = (m: DocumentModel) => ({
+      limits: layout(m, 'Layout1').limits!,
+      plot: sheetPlot(m),
+    });
+    expect(refused((b, m) => b.addLayout({ name: 'layout1', ...full(m) }))).toEqual([
+      expect.stringMatching(/layout layout1 .*: another layout is named layout1/),
+    ]);
+    expect(refused((b, m) => b.addLayout({ name: 'A|B', ...full(m) }))).toEqual([
+      expect.stringMatching(/is not a valid layout name/),
+    ]);
+    expect(refused((b, m) => b.addLayout({ name: 'Sheet', tabOrder: 5, ...full(m) }))).toEqual([
+      expect.stringMatching(/layout tabs: the layouts' tab orders are not 1 to 3/),
+    ]);
+    expect(
+      refused((b, m) => {
+        const sheet = b.addLayout({ name: 'Sheet', ...full(m) });
+        b.updateBlock(sheet.blockRecord, { basePoint: { x: 5, y: 5 } });
+      }),
+    ).toEqual([expect.stringMatching(/a new layout's block has its base point at 0,0/)]);
+    expect(
+      refused(
+        (b, m) => b.addLayout({ name: 'Sheet', ...full(m) }),
+        drawing(ACadVersion.AC1014, 'dwg'),
+      ),
+    ).toEqual([expect.stringMatching(/AC1014 has no layouts \(R2000 added them\)/)]);
   });
 });
