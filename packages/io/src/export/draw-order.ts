@@ -127,9 +127,11 @@ function entryProblems(
   for (const { entity, sort } of t.entries) {
     if (seen.has(entity)) out.push(`more than one entry for ${entity}`);
     seen.add(entity);
-    // An entity the save removes from the block drops out of the table with it; one Triya does
+    // An entity the save removes from the block, or moves to another, drops out of the table with
+    // it (entity-order.ts); one Triya does
     // not map (a MESH, a 3DSOLID) stays in its block as read.
-    const removed = had.get(t.block)?.has(entity) && !model.entityByHandle(entity);
+    const removed =
+      had.get(t.block)?.has(entity) && model.entityByHandle(entity)?.owner !== t.block;
     const original = mapped.has(entity) ? undefined : r.store.original(entity);
     const kept = original instanceof AcadEntity && ref(original.owner) === t.block;
     if (!has.has(entity) && !removed && !kept)
@@ -199,7 +201,8 @@ export function onlyNewDictionary(
 
 /**
  * Writes the plan, after the entity changes (an entry may name an entity the same save adds).
- * Entries of entities the save removed are left out; `removed` are their originals.
+ * Entries of entities the save removed or moved to another block are left out; `removed` are
+ * the removed entities' originals.
  */
 export function writeDrawOrder(
   doc: CadDocument,
@@ -215,7 +218,8 @@ export function writeDrawOrder(
     t.clear();
     for (const { entity, sort } of after.entries) {
       const e = doc.getCadObject(Number.parseInt(entity, 16));
-      if (e instanceof AcadEntity && !removed.has(e)) t.add(e, Number.parseInt(sort, 16));
+      if (e instanceof AcadEntity && !removed.has(e) && ref(e.owner) === after.block)
+        t.add(e, Number.parseInt(sort, 16));
     }
   };
   for (const { acad, after } of plan.updated) fill(acad, after);

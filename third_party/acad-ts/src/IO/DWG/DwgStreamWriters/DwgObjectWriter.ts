@@ -476,13 +476,33 @@ export class DwgObjectWriter extends DwgSectionIO {
 	private _writeBlockHeader(record: BlockRecord): void {
 		const entities = this._getCompatibleEntities(record.entities);
 		const ownedEntityHandles = entities.map((entity) => entity.handle);
-		const ownedObjectHandles = record.layout == null && record.ownedObjectHandles.length > 0
-			? [...record.ownedObjectHandles]
-			: [...ownedEntityHandles];
 		// Sets and maps instead of Array.includes/find: those made a block's header O(n²) in its
 		// entity count (100k model-space entities took ~80 s to save).
-		const ownedSet = new Set(ownedObjectHandles);
-		for (const handle of ownedEntityHandles) {
+		const entitySet = new Set(ownedEntityHandles);
+		const ownedObjectHandles: number[] = [];
+		const ownedSet = new Set<number>();
+		let next = 0;
+		if (record.layout == null) {
+			// The list as read keeps what is not an entity of the collection in its place; the slots of
+			// the collection's entities take them in collection order, so a reordered collection is
+			// written reordered, and an object another block now owns leaves the list.
+			const read = new Set<number>();
+			for (const handle of record.ownedObjectHandles) {
+				if (read.has(handle)) continue;
+				read.add(handle);
+				if (entitySet.has(handle)) {
+					const entityHandle = ownedEntityHandles[next++];
+					ownedSet.add(entityHandle);
+					ownedObjectHandles.push(entityHandle);
+					continue;
+				}
+				const owner = this._document.getCadObject(handle)?.owner;
+				if (owner instanceof BlockRecord && owner !== record) continue;
+				ownedSet.add(handle);
+				ownedObjectHandles.push(handle);
+			}
+		}
+		for (const handle of ownedEntityHandles.slice(next)) {
 			if (!ownedSet.has(handle)) {
 				ownedSet.add(handle);
 				ownedObjectHandles.push(handle);

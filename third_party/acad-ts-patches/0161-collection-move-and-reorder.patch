@@ -1,0 +1,78 @@
+diff --git a/src/CadObjectCollection.ts b/src/CadObjectCollection.ts
+index 8aa9d8d..234facd 100644
+--- a/src/CadObjectCollection.ts
++++ b/src/CadObjectCollection.ts
+@@ -61,6 +61,30 @@ export class CadObjectCollection<T extends CadObject> implements Iterable<T> {
+ 		}
+ 	}
+ 
++	/**
++	 * Moves `item` from this collection to `target`, another collection of the same document,
++	 * as `item`'s new owner. Unlike `remove` and `add`, the item stays registered with its
++	 * document: it keeps its handle, its reactors and its extension dictionary.
++	 */
++	public moveTo(item: T, target: CadObjectCollection<T>): void {
++		if (!this._entries.has(item)) throw new Error(`Item is not in the collection`);
++		if (target === this) throw new Error(`Item is already in the collection`);
++		if (target.owner.document !== this.owner.document) throw new Error(`The collections belong to different documents`);
++		this._entries.delete(item);
++		target._entries.add(item);
++		item.owner = target.owner;
++	}
++
++	/** Puts the entries in `order`, which must hold every entry of the collection once. */
++	public reorder(order: readonly T[]): void {
++		const next = new Set<T>(order);
++		if (next.size !== order.length || next.size !== this._entries.size || order.some((item) => !this._entries.has(item))) {
++			throw new Error(`The order must hold every entry of the collection once`);
++		}
++		this._entries.clear();
++		for (const item of order) this._entries.add(item);
++	}
++
+ 	[Symbol.iterator](): Iterator<T> {
+ 		return this._entries[Symbol.iterator]();
+ 	}
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index 2123bf8..8875fa7 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -476,13 +476,33 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 	private _writeBlockHeader(record: BlockRecord): void {
+ 		const entities = this._getCompatibleEntities(record.entities);
+ 		const ownedEntityHandles = entities.map((entity) => entity.handle);
+-		const ownedObjectHandles = record.layout == null && record.ownedObjectHandles.length > 0
+-			? [...record.ownedObjectHandles]
+-			: [...ownedEntityHandles];
+ 		// Sets and maps instead of Array.includes/find: those made a block's header O(n²) in its
+ 		// entity count (100k model-space entities took ~80 s to save).
+-		const ownedSet = new Set(ownedObjectHandles);
+-		for (const handle of ownedEntityHandles) {
++		const entitySet = new Set(ownedEntityHandles);
++		const ownedObjectHandles: number[] = [];
++		const ownedSet = new Set<number>();
++		let next = 0;
++		if (record.layout == null) {
++			// The list as read keeps what is not an entity of the collection in its place; the slots of
++			// the collection's entities take them in collection order, so a reordered collection is
++			// written reordered, and an object another block now owns leaves the list.
++			const read = new Set<number>();
++			for (const handle of record.ownedObjectHandles) {
++				if (read.has(handle)) continue;
++				read.add(handle);
++				if (entitySet.has(handle)) {
++					const entityHandle = ownedEntityHandles[next++];
++					ownedSet.add(entityHandle);
++					ownedObjectHandles.push(entityHandle);
++					continue;
++				}
++				const owner = this._document.getCadObject(handle)?.owner;
++				if (owner instanceof BlockRecord && owner !== record) continue;
++				ownedSet.add(handle);
++				ownedObjectHandles.push(handle);
++			}
++		}
++		for (const handle of ownedEntityHandles.slice(next)) {
+ 			if (!ownedSet.has(handle)) {
+ 				ownedSet.add(handle);
+ 				ownedObjectHandles.push(handle);
