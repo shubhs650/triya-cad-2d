@@ -41,6 +41,13 @@ import {
   type Resolver,
 } from './entities';
 import { planDrawOrder, writeDrawOrder } from './draw-order';
+import {
+  madeUpOrderProblems,
+  moveProblems,
+  writeEntityOrder,
+  writeMoves,
+  type Move,
+} from './entity-order';
 import { planBlocks, writeBlocks } from './blocks';
 import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
@@ -87,6 +94,8 @@ interface Plan {
   }[];
   readonly added: { readonly block: BlockRecord; readonly after: Entity }[];
   readonly removed: AcadEntity[];
+  /** Entities moved to another block (entity-order.ts). */
+  readonly moved: Move[];
 }
 
 /** Mapped entities as the engine holds them, without the session-local id. */
@@ -146,34 +155,6 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
       new Map([...model.objects].filter(([, o]) => unwritten(o))),
     ),
   );
-  return out;
-}
-
-/**
- * Entity order: survivors must keep their order and new entities follow them, which is how
- * acad-ts appends to a block. Reordering is roadmap M1-75 (DRAWORDER edits SORTENTS instead).
- */
-function orderProblems(base: DocumentInit, model: DocumentModel): string[] {
-  const out: string[] = [];
-  const baseOrder = new Map<Handle, Handle[]>();
-  for (const e of base.entities ?? []) {
-    const list = baseOrder.get(e.owner) ?? [];
-    list.push(e.handle);
-    baseOrder.set(e.owner, list);
-  }
-  for (const block of model.blocks.keys()) {
-    const old = baseOrder.get(block) ?? [];
-    const oldSet = new Set(old);
-    const now = model.blockEntities(block).map((id) => model.entity(id)!.handle);
-    const survivors = now.filter((h) => oldSet.has(h));
-    const nowSet = new Set(now);
-    const expected = old.filter((h) => nowSet.has(h));
-    const firstNew = now.findIndex((h) => !oldSet.has(h));
-    const lastOld = now.reduce((last, h, i) => (oldSet.has(h) ? i : last), -1);
-    if (!same(survivors, expected) || (firstNew >= 0 && firstNew < lastOld)) {
-      out.push(`entity order in block ${block} changes`);
-    }
-  }
   return out;
 }
 
@@ -250,13 +231,13 @@ function plan(
 ): { plan: Plan; problems: string[] } {
   const problems = [
     ...nonEntityProblems(base, model),
-    ...orderProblems(base, model),
+    ...madeUpOrderProblems(doc, base, model),
     ...reactorProblems(base, model),
   ];
   const version = doc.header?.version;
   const acadHandle = doc.appIds?.tryGetValue('ACAD')?.handle;
   const acadApp = acadHandle === undefined ? undefined : hex(acadHandle);
-  const out: Plan = { updated: [], added: [], removed: [] };
+  const out: Plan = { updated: [], added: [], removed: [], moved: [] };
   const baseByHandle = new Map((base.entities ?? []).map((e) => [e.handle, e]));
   for (const b of base.entities ?? []) {
     const acad = r.store.original(b.handle);
@@ -271,8 +252,10 @@ function plan(
     }
     if (same(b, withoutId(m))) continue;
     if (m.owner !== b.owner) {
-      problems.push(`${m.type} ${m.handle}: moves to another block`);
-      continue;
+      const move = moveProblems(model, r, b, m);
+      problems.push(...move.problems);
+      if (move.block) out.moved.push({ acad, block: move.block });
+      if (same({ ...b, owner: m.owner }, withoutId(m))) continue;
     }
     problems.push(
       ...entityProblems(r, b as Entity, m),
@@ -425,6 +408,7 @@ export function triyaToAcad(
     block.sortEntitiesTable?.remove(e);
     block.entities.remove(e);
   }
+  writeMoves(p.moved);
   // Every entity the save adds exists before any is written, so a LEADER can name the
   // annotation the LEADER command makes after it, and the annotation its leader (reactors), and
   // a HATCH can keep to the boundary objects the same save adds.
@@ -453,6 +437,7 @@ export function triyaToAcad(
     writeEntity(r, e, undefined, after);
     if (r12 && e instanceof Viewport) addR12View(original, e);
   }
+  writeEntityOrder(original, model, r);
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
   // New objects are allocated above $HANDSEED; the seed written back covers every handle the

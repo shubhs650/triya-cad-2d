@@ -1130,10 +1130,6 @@ describe('triyaToAcad', () => {
         });
       },
       (b) => b.setHeader('$ACADVER', 'AC1015'),
-      (b, m) => {
-        const part = [...m.tables.blockRecords.values()].find((r) => r.name === 'PART')!;
-        b.moveEntity(byType(m, 'LINE').id, part.handle);
-      },
       (b, m) =>
         b.updateEntity(byType(m, 'LINE').id, {
           xdata: [{ appId: 'FFFFF', values: [{ code: 1070, value: 1 }] }],
