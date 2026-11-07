@@ -1,0 +1,59 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index 029e398..6c20525 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -44,6 +44,7 @@ import { ToleranceAlignment } from '../../../Tables/ToleranceAlignment.js';
+ import { ZeroHandling } from '../../../Tables/ZeroHandling.js';
+ import { AngularZeroHandling } from '../../../Tables/ZeroHandling.js';
+ import { ArcLengthSymbolPosition } from '../../../Tables/ArcLengthSymbolPosition.js';
++import { TextDirection } from '../../../Tables/TextDirection.js';
+ import { FractionFormat } from '../../../Tables/FractionFormat.js';
+ import { LinearUnitFormat } from '../../../Types/Units/LinearUnitFormat.js';
+ import { AngularUnitFormat } from '../../../Types/Units/AngularUnitFormat.js';
+@@ -596,6 +597,10 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+       case 290:
+         dimensionStyle.isExtensionLineLengthFixed = this._reader.valueAsBool;
+         return true;
++      case 294:
++        // DIMTXTDIRECTION (DXF reference, DIMSTYLE): 1 draws the text right to left.
++        dimensionStyle.textDirection = this._reader.valueAsShort !== 0 ? TextDirection.RightToLeft : TextDirection.LeftToRight;
++        return true;
+       case 340:
+         template.textStyleHandle = this._reader.valueAsHandle;
+         return true;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index d7f00ef..2205e5b 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -23,6 +23,7 @@ import { UCS } from '../../../Tables/UCS.js';
+ import { View } from '../../../Tables/View.js';
+ import { VPort } from '../../../Tables/VPort.js';
+ import { ArcLengthSymbolPosition } from '../../../Tables/ArcLengthSymbolPosition.js';
++import { TextDirection } from '../../../Tables/TextDirection.js';
+ import { MathHelper } from '../../../Math/MathHelper.js';
+ import { CadFileFormat } from '../../CadFileFormat.js';
+ import { NotificationType } from '../../NotificationEventHandler.js';
+@@ -231,6 +232,10 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+     this._writer.write(288, style.cursorUpdate);
+     this._writer.write(289, style.dimensionTextArrowFit as number);
+     this._writer.write(290, style.isExtensionLineLengthFixed);
++    // DIMTXTDIRECTION is R2010+; AutoCAD leaves out its default, left to right.
++    if (this.version >= ACadVersion.AC1024 && style.textDirection === TextDirection.RightToLeft) {
++      this._writer.write(294, 1);
++    }
+ 
+     this._writer.writeHandle(340, style.style, map);
+     this._writer.writeHandle(341, style.leaderArrow, map);
+diff --git a/src/Metadata/LookupTables/Tables.ts b/src/Metadata/LookupTables/Tables.ts
+index c9ced56..d46e340 100644
+--- a/src/Metadata/LookupTables/Tables.ts
++++ b/src/Metadata/LookupTables/Tables.ts
+@@ -466,7 +466,7 @@ export const metadataLookupTables: readonly ClassMetadata[] = [
+       {
+         "propertyName": "textDirection",
+         "valueCodes": [
+-          295
++          294
+         ],
+         "referenceType": 0
+       },

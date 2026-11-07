@@ -1,0 +1,30 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index 6c20525..dba92ba 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -535,7 +535,8 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+         dimensionStyle.angularDecimalPlaces = this._reader.valueAsShort;
+         return true;
+       case 270:
+-        dimensionStyle.linearUnitFormat = this._reader.valueAsShort as LinearUnitFormat;
++        // DIMUNIT (R13/R14), which DIMLUNIT (277) and DIMFRAC replaced; the DWG reader keeps it apart too.
++        dimensionStyle.dimensionUnit = this._reader.valueAsShort;
+         return true;
+       case 271:
+         dimensionStyle.decimalPlaces = this._reader.valueAsShort;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index 6597870..b19a494 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -211,6 +211,11 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+ 
+     this._writer.write(179, style.angularDecimalPlaces);
+ 
++    // DIMUNIT is R13/R14's: R12 has none and R2000 replaced it by DIMLUNIT (277) and DIMFRAC (276).
++    if (this.version >= ACadVersion.AC1012 && this.version < ACadVersion.AC1015) {
++      this._writer.write(270, style.dimensionUnit);
++    }
++
+     this._writer.write(271, style.decimalPlaces);
+     this._writer.write(272, style.toleranceDecimalPlaces);
+     this._writer.write(273, style.alternateUnitFormat as number);

@@ -466,7 +466,7 @@ export const metadataLookupTables: readonly ClassMetadata[] = [
       {
         "propertyName": "textDirection",
         "valueCodes": [
-          295
+          294
         ],
         "referenceType": 0
       },

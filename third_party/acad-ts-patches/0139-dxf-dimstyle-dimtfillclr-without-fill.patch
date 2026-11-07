@@ -1,0 +1,17 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index 2205e5b..6597870 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -169,10 +169,9 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+ 
+     if (style.textBackgroundFillMode !== 0) {
+       this._writer.write(69, style.textBackgroundFillMode, map);
+-      this._writer.write(70, style.textBackgroundColor.getApproxIndex(), map);
+-    } else {
+-      this._writer.write(70, 0, map);
+     }
++    // DIMTFILLCLR (the second 70) is kept whatever DIMTFILL is, as the DWG record keeps it.
++    this._writer.write(70, style.textBackgroundColor.getApproxIndex(), map);
+ 
+     // DIMARCSYM 0 (before the text) is AutoCAD's default, which it leaves out and readers assume.
+     if (style.arcLengthSymbolPosition !== ArcLengthSymbolPosition.BeforeDimensionText) {
