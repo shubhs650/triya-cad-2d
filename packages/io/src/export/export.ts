@@ -35,6 +35,7 @@ import {
 } from './draw-order';
 import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
+import { IMAGE_OBJECT_TYPES, planImageObjects, writeImageObjects } from './image-objects';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
 import { planTableStyles, writeTableStyles } from './table-styles';
@@ -112,8 +113,8 @@ const WRITTEN_TABLES = new Set([
 ]);
 
 /**
- * The non-entity changes no writer handles yet (header, the tables above and draw order:
- * header.ts, draw-order.ts). A block record may gain the extension dictionary a new draw order
+ * The non-entity changes no writer handles yet (header, the tables above, draw order and the
+ * image objects: header.ts, draw-order.ts, image-objects.ts). A block record may gain the extension dictionary a new draw order
  * table needs.
  */
 function nonEntityProblems(
@@ -137,12 +138,14 @@ function nonEntityProblems(
     }
     out.push(...keyedProblems(`${name} record`, baseTables[name] ?? [], records));
   }
-  const notDrawOrder = <T extends { type: string }>(o: T): boolean => o.type !== 'SORTENTSTABLE';
+  // Draw order tables and the image objects have writers (draw-order.ts, image-objects.ts).
+  const unwritten = <T extends { type: string }>(o: T): boolean =>
+    o.type !== 'SORTENTSTABLE' && !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
       'object',
-      (base.objects ?? []).filter(notDrawOrder),
-      new Map([...model.objects].filter(([, o]) => notDrawOrder(o))),
+      (base.objects ?? []).filter(unwritten),
+      new Map([...model.objects].filter(([, o]) => unwritten(o))),
     ),
   );
   if (!same(base.layouts ?? [], model.layouts)) out.push('layout changes');
@@ -312,6 +315,8 @@ export function triyaToAcad(
     views: planViews(original, base, model, r),
     vports: planVports(original, base, model, r),
   };
+  // Before the entities: a new IMAGE may show a definition the same save adds.
+  const imageObjects = planImageObjects(original, base, model, r);
   const header = planHeader(original, base, model, format, [...created.values()]);
   const drawOrder = planDrawOrder(original, base, model, r);
   const { plan: p, problems } = plan(original, base, model, r, format, drawOrder);
@@ -324,6 +329,7 @@ export function triyaToAcad(
     ...mleaderStyles.problems,
     ...tableStyles.problems,
     ...Object.values(views).flatMap((v) => v.problems),
+    ...imageObjects.problems,
   );
   problems.push(...drawOrder.problems);
   if (problems.length > 0) throw new UnsupportedChangeError(problems);
@@ -340,6 +346,7 @@ export function triyaToAcad(
     views: views.views.plan,
     vports: views.vports.plan,
   });
+  writeImageObjects(original, imageObjects.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
   // it owns (§6.2 rule 3); shared objects it points to stay. Its draw order entry goes with it,

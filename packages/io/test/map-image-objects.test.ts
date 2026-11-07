@@ -21,7 +21,7 @@ function drawing(): CadDocument {
 }
 
 describe('mapImageObjects', () => {
-  it('maps an image definition’s file, pixel size and resolution', () => {
+  it('maps an image definition’s name, file, pixel size and resolution', () => {
     const doc = drawing();
     const def = new ImageDefinition('site-photo');
     def.fileName = '.\\site-photo.png';
@@ -36,6 +36,7 @@ describe('mapImageObjects', () => {
         handle: H(def),
         type: 'IMAGEDEF',
         owner: H(doc.rootDictionary!),
+        name: 'site-photo',
         fileName: '.\\site-photo.png',
         size: { x: 640, y: 480 },
         pixelSize: { x: 0.25, y: 0.25 },
