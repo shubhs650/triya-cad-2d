@@ -11,6 +11,7 @@ import {
   BookColor,
   CadDictionary,
   CadDocument,
+  CellContent,
   type CellStyle,
   CellStyleMap,
   Color,
@@ -71,6 +72,8 @@ import {
   TableEntityCell,
   TableEntityColumn,
   TableEntityRow,
+  TableOverrideFlags,
+  TableStyleOverrides,
   TextArrowFitType,
   TextDirection,
   TableStyle,
@@ -2115,5 +2118,68 @@ describe('acad-ts local patches', () => {
       expect([...record(sheet.handle).entities].map((e) => (e as Line).startPoint.x)).toEqual([2]);
       expect([...record(first.handle).entities].map((e) => (e as Line).startPoint.x)).toEqual([0]);
     }
+  });
+
+  it('0164 a DWG before R2004 keeps a table-wide override colour', () => {
+    for (const version of [ACadVersion.AC1015, ACadVersion.AC1018]) {
+      const doc = new CadDocument(version);
+      const block = new BlockRecord('*T1');
+      doc.blockRecords!.add(block);
+      const table = new TableEntity();
+      table.block = block;
+      table.horizontalDirection = new XYZ(1, 0, 0);
+      const column = new TableEntityColumn();
+      column.width = 10;
+      table.columns.push(column);
+      for (const height of [5, 4]) {
+        const row = new TableEntityRow();
+        row.height = height;
+        row.cells.push(new TableEntityCell());
+        table.rows.push(row);
+      }
+      const o = new TableStyleOverrides();
+      // Title content colour and fill, then the data rows' text height after them.
+      o.flags = (TableOverrideFlags.TitleRowColor |
+        TableOverrideFlags.TitleRowFillColor |
+        TableOverrideFlags.DataRowHeight) as never;
+      o.title.contentColor = new Color(1);
+      o.title.fillColor = new Color(4);
+      o.data.textHeight = 0.25;
+      table.tableOverrides = o;
+      doc.entities!.add(table);
+
+      // Unpatched, the colours were written as plain CMC colours where an R2000 reader takes a
+      // merged-stream one, so everything after them (and the table) was misread.
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dwg' }));
+      const read = [...back.entities!].find((e): e is TableEntity => e instanceof TableEntity);
+      const r = read?.tableOverrides;
+      expect([r?.title.contentColor.index, r?.title.fillColor.index], `${version}`).toEqual([1, 4]);
+      expect(r?.data.textHeight, `${version}`).toBe(0.25);
+    }
+  });
+
+  it('0165 the DWG reader reads a table cell value of unknown type', () => {
+    // A cell value nobody typed a type for (acad-ts's default, CadValueType.Unknown) is written
+    // as a BitLong from R2007; unpatched the reader's setValue threw and the table was lost.
+    const doc = new CadDocument(ACadVersion.AC1021);
+    const block = new BlockRecord('*T1');
+    doc.blockRecords!.add(block);
+    const table = new TableEntity();
+    table.block = block;
+    table.horizontalDirection = new XYZ(1, 0, 0);
+    const column = new TableEntityColumn();
+    column.width = 10;
+    table.columns.push(column);
+    const row = new TableEntityRow();
+    row.height = 5;
+    const cell = new TableEntityCell();
+    cell.contents.push(new CellContent());
+    row.cells.push(cell);
+    table.rows.push(row);
+    doc.entities!.add(table);
+    const back = readCadDocument(writeCadDocument(doc, { format: 'dwg' }));
+    const read = back.getCadObject(table.handle);
+    expect(read).toBeInstanceOf(TableEntity);
+    expect((read as TableEntity).rows[0]!.cells[0]!.content!.cadValue.value).toBe(0);
   });
 });

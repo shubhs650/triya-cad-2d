@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29) and 0163 (M1-75 part 30) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) and 0164–0165 (M1-75 part 32) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -3008,5 +3008,39 @@ The R2004+ DWG writer also writes a non-layout block's owned-object handles as r
 **Title:** Make another layout current (`BlockRecordsTable.setPaperSpace`)
 
 AutoCAD keeps the current paper layout on the block record named `*Paper_Space`; making another layout current swaps the names of the two layouts' block records, and both keep their handles and entities. In acad-ts `*Paper_Space` is one of the block table's default entries, so renaming it throws and a document's current layout cannot change. This adds `BlockRecordsTable.setPaperSpace(record)`, which gives `record` the name `*Paper_Space` and the previous paper space block `record`'s name, built on a protected `Table.swapEntryNames` that re-keys both entries in place (the table is written in entry order) and moves the name references with them. `CadDocument.paperSpace`, the DWG header's paper space handle and the DXF ENTITIES section follow the name, so the new current layout is written as such.
+
+</details>
+
+### 0164 — a DWG before R2004 misreads a table's table-wide override colours
+
+- **File:** `third_party/acad-ts-patches/0164-dwg-table-override-colours.patch`
+- **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
+- **Symptom:** the DWG writer wrote a table's per-row-type content and fill colour overrides (R2004/R2007 table override flags 0x20–0x80 and 0x800–0x2000) as plain CMC colours, while the reader takes them, as it takes a cell's override colours, through the merged-stream colour reader, which in a DWG before R2004 expects the colour the table style writer writes (`_writeTableStyleColor`). In an R2000 DWG every value after such a colour was misread, and the table with it. Found by Triya M1-75 part 32 (a new table with a title fill).
+- **Fix:** the two override colours are written with `_writeTableStyleColor`, as the cell override colours already were.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0164 a DWG before R2004 keeps a table-wide override colour" (R2000 and R2004 DWG); `packages/io/test/export-tables-new.test.ts` saves a new table with override colours to an R2000 DWG.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write a table's override colours as the reader reads them in DWG before R2004
+
+`DwgObjectWriter._writeTableOverrides` wrote the table-wide row colour and fill colour overrides with `writeCmColor`, but `DwgObjectReader` reads them with `readCmColor(r2004Pre)` on the merged reader, which before R2004 expects the colour as `_writeTableStyleColor` writes it (the cell override colours already go through it). In an R2000 DWG the colour bits were misaligned, so the rest of the table read wrong. The two colours now go through `_writeTableStyleColor`.
+
+</details>
+
+### 0165 — the DWG reader drops a table whose cell value has the unknown type
+
+- **File:** `third_party/acad-ts-patches/0165-dwg-cad-value-unknown.patch`
+- **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
+- **Symptom:** a CadValue of type Unknown (0) that is not empty is stated as a BitLong, which the writer writes and the reader reads, but the reader then passes it to `CadValue.setValue`, which throws for that type, and the object reading it is lost. `new CellContent()` holds such a value, so a table built in memory with a cell content of its own vanished from its R2007+ DWG save (the reason `export-tables.test.ts` covered R2007 DWG tables by the corpus only). Found by Triya M1-75 part 32 (a new table's block cell).
+- **Fix:** the reader keeps an unknown value's BitLong as the raw value, as it does for buffer values.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0165 the DWG reader reads a table cell value of unknown type" (R2007 DWG).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read a DWG CadValue of unknown type without throwing
+
+`DwgObjectReader._readCadValue` reads a non-empty value of type `CadValueType.Unknown` as a BitLong, as `DwgObjectWriter._writeCadValue` writes it, but stores it through `CadValue.setValue`, which throws "Invalid operation for value type" for Unknown. The exception drops the whole object; a table whose cell has a fresh `CellContent` (whose value is Unknown) disappears when its R2007+ DWG is read back. The reader now assigns the BitLong to `value` directly, as it does for Buffer and ResultBuffer.
 
 </details>
