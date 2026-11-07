@@ -1370,6 +1370,12 @@ export interface SortEntsTable extends NonGraphicalObject {
  */
 export interface ImageDefinition extends NonGraphicalObject {
   readonly type: 'IMAGEDEF';
+  /**
+   * The image's name: its entry in the `ACAD_IMAGE_DICT` dictionary, which AutoCAD shows in the
+   * External References palette and IMAGE prompts for (the file name without its extension
+   * unless the user named it otherwise).
+   */
+  readonly name: string;
   /** DXF 1: the path as saved, often relative (`.\photo.jpg`). */
   readonly fileName: string;
   /** DXF 10: the image size in pixels. */

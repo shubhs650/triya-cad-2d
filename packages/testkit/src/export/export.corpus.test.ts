@@ -7,7 +7,9 @@
 // rescaled, its text enlarged and moved inside, and its dimension lines recoloured; every table
 // style before R2010 redescribed, its margins and data text doubled, its title filled and its
 // header's top border thickened; $LTSCALE, $TEXTSIZE
-// and the current layer; every block's draw order turned upside down), must save so that the
+// and the current layer; every block's draw order turned upside down; every image definition
+// repathed, unloaded or reloaded and its pixel size doubled, and IMAGEFRAME, IMAGEQUALITY and
+// WIPEOUTFRAME toggled), must save so that the
 // edited entities, records and header variables map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles and variables reports nothing
 // (TESTING.md §3).
@@ -25,9 +27,11 @@ import {
   type MLeaderStyleRecord,
   type HatchGeometry,
   type HeaderValue,
+  type ImageDefinition,
   type LayerRecord,
   type LinetypeRecord,
   type NonGraphicalObject,
+  type RasterVariables,
   type SortEntsTable,
   type TableStyleRecord,
   type TextFields,
@@ -36,6 +40,7 @@ import {
   type Vec2,
   type ViewRecord,
   type VportRecord,
+  type WipeoutVariables,
 } from '@triya/engine';
 import {
   documentInit,
@@ -372,6 +377,33 @@ function editedView<T extends ViewRecord | VportRecord>(v: T): Partial<T> {
   } as Partial<T>;
 }
 
+type ImageObject = ImageDefinition | RasterVariables | WipeoutVariables;
+
+const IMAGE_OBJECTS = new Set(['IMAGEDEF', 'RASTERVARIABLES', 'WIPEOUTVARIABLES']);
+
+/**
+ * The External References palette's repath and Unload / Reload with a doubled pixel size;
+ * IMAGEFRAME, IMAGEQUALITY (and the insertion units) and WIPEOUTFRAME toggled.
+ */
+function editedImageObject(o: ImageObject): Partial<ImageObject> {
+  if (o.type === 'IMAGEDEF') {
+    return {
+      fileName: `..\\moved\\${o.fileName.split(/[\\/]/).pop() ?? 'image.png'}`,
+      loaded: !o.loaded,
+      pixelSize: { x: o.pixelSize.x * 2, y: o.pixelSize.y * 2 },
+      units: o.units === 5 ? 2 : 5,
+    };
+  }
+  if (o.type === 'RASTERVARIABLES') {
+    return {
+      frame: !o.frame,
+      quality: o.quality === 'draft' ? 'high' : 'draft',
+      units: (o.units + 1) % 9,
+    };
+  }
+  return { frame: !o.frame };
+}
+
 /** A record as it maps back, without the reader's link. */
 function withoutRaw<T extends { raw?: unknown }>(r: T | undefined): Omit<T, 'raw'> | undefined {
   if (!r) return r;
@@ -692,7 +724,12 @@ describe('TriyaToAcad edits on the public corpus', () => {
               sort: all[all.length - 1 - i]!.sort,
             })),
           }));
+        const imageObjects = [...model.objects.values()].filter((o): o is ImageObject =>
+          IMAGE_OBJECTS.has(o.type),
+        );
         const b = new ChangeSetBuilder(model);
+        for (const o of imageObjects)
+          b.updateObject(o.handle, editedImageObject(o) as Partial<NonGraphicalObject>);
         for (const e of targets) b.updateEntity(e.id, { geom: edited(e.geom) });
         for (const t of drawOrder)
           b.updateObject(t.handle, { entries: t.entries } as Partial<NonGraphicalObject>);
@@ -773,6 +810,11 @@ describe('TriyaToAcad edits on the public corpus', () => {
           .filter((t) => !same(backObjects.get(t.handle), t))
           .map((t) => t.handle);
         expect(wrongDrawOrder, f.path).toEqual([]);
+        const wrongImageObjects = imageObjects
+          .map((o) => model.objects.get(o.handle)!)
+          .filter((o) => !near(withoutRaw(backObjects.get(o.handle)), withoutRaw(o)))
+          .map((o) => `${o.type} ${o.handle}`);
+        expect(wrongImageObjects, f.path).toEqual([]);
         const backHeader = new Map(init.header);
         expect(
           [...header.keys()].filter((n) => !same(backHeader.get(n), header.get(n))),
@@ -794,6 +836,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
             ...views,
             ...vports,
             ...drawOrder,
+            ...imageObjects,
           ].map((e) => Number.parseInt(e.handle, 16)),
         );
         for (const h of [...ignoreHandles]) {
