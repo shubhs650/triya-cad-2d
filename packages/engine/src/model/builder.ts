@@ -66,6 +66,21 @@ export interface NewBlock {
   readonly scalable?: boolean;
 }
 
+/** LAYOUT New: the tab; the builder makes the `*Paper_Space` block that holds its sheet. */
+export interface NewLayout {
+  readonly name: string;
+  /** The tab's place; omitted, after the last layout. */
+  readonly tabOrder?: number;
+  /** DXF 70: 1 PSLTSCALE, 2 LIMCHECK; omitted, 1. */
+  readonly flags?: number;
+  readonly limits?: Layout['limits'];
+  readonly plot?: Layout['plot'];
+}
+
+/** A layout's sheet block: `*Paper_Space` (the current layout's) or `*Paper_Space` and a number. */
+const PAPER_SPACE = /^\*paper_space(\d*)$/i;
+const MODEL_SPACE = '*MODEL_SPACE';
+
 function sameValue(a: HeaderValue | undefined, b: HeaderValue | undefined): boolean {
   if (a === b) return true;
   if (typeof a !== 'object' || typeof b !== 'object') return false;
@@ -138,6 +153,8 @@ export class ChangeSetBuilder {
   readonly #objects: KeyedDraft<NonGraphicalObject>;
   readonly #tables = new Map<TableName, KeyedDraft<ObjectCommon>>();
   #layouts: KeyedDraft<Layout> | undefined;
+  /** Layouts this builder added, in order (the draft keeps no list of them). */
+  readonly #addedLayouts: Handle[] = [];
   readonly #blocks: KeyedDraft<BlockDefinition>;
   #built = false;
 
@@ -297,10 +314,87 @@ export class ChangeSetBuilder {
     this.#table(table).remove(handle);
   }
 
-  /** Renames, reorders or edits a layout (adding and removing one is LAYOUT, M6). */
+  /** Renames, reorders or edits a layout. */
   updateLayout(handle: Handle, patch: RecordPatch<Layout>): Layout {
     this.#open();
     return this.#layoutDraft().update(handle, patch);
+  }
+
+  /**
+   * Adds a layout (LAYOUT New) with the block that holds its sheet: a record and definition named
+   * `*Paper_Space` and the lowest number no block has had, as AutoCAD names them, linked to the
+   * layout, base point at the origin. The record's handle is allocated first.
+   */
+  addLayout(init: NewLayout): Layout {
+    this.#open();
+    // A name the same change set frees stays taken: the saved file drops the old block only
+    // after it adds the new ones.
+    const taken = new Set<number>();
+    const records = this.#table('blockRecords');
+    const names = [
+      ...[...this.#model.tables.blockRecords.values()].map((r) => r.name),
+      ...this.#addedRecords().map((h) => this.tableRecord('blockRecords', h)?.name ?? ''),
+    ];
+    for (const name of names) {
+      const n = PAPER_SPACE.exec(name)?.[1];
+      if (n) taken.add(Number(n));
+    }
+    let n = 0;
+    while (taken.has(n)) n++;
+    const name = `*Paper_Space${n}`;
+    const block = this.#model.handles.allocate();
+    const handle = this.#model.handles.allocate();
+    records.add(
+      createRecord<BlockTableRecord>({
+        handle: block,
+        name,
+        layout: handle,
+        units: 0,
+        explodable: true,
+        scalable: true,
+      }),
+    );
+    this.#blocks.add(
+      createRecord<BlockDefinition>({ handle: block, name, basePoint: { x: 0, y: 0 } }),
+    );
+    const draft = this.#layoutDraft();
+    const last = Math.max(0, ...[...this.#layoutHandles()].map((h) => draft.get(h)?.tabOrder ?? 0));
+    const layout = createRecord<Layout>({
+      handle,
+      name: init.name,
+      tabOrder: init.tabOrder ?? last + 1,
+      blockRecord: block,
+      // PSLTSCALE on and LIMCHECK off unless given: the two variables' AutoCAD defaults.
+      flags: init.flags ?? 1,
+      ...(init.limits ? { limits: init.limits } : {}),
+      ...(init.plot ? { plot: init.plot } : {}),
+    });
+    draft.add(layout);
+    this.#addedLayouts.push(handle);
+    return layout;
+  }
+
+  /**
+   * Removes a layout (LAYOUT Delete) with its block record, definition and everything on its
+   * sheet; the tabs after it move up. The Model layout cannot go.
+   */
+  removeLayout(handle: Handle): void {
+    this.#open();
+    const draft = this.#layoutDraft();
+    const layout = draft.get(handle);
+    if (!layout) throw new Error(`layout ${handle} does not exist`);
+    const block = layout.blockRecord;
+    if (this.tableRecord('blockRecords', block)?.name.toUpperCase() === MODEL_SPACE)
+      throw new Error(`layout ${handle}: the Model layout cannot be removed`);
+    draft.remove(handle);
+    // The tabs after it move up one, as AutoCAD keeps them numbered 1 to N.
+    for (const h of this.#layoutHandles()) {
+      const l = draft.get(h);
+      if (l && l.tabOrder > layout.tabOrder) draft.update(h, { tabOrder: l.tabOrder - 1 });
+    }
+    if (!this.#blocks.get(block)) return;
+    for (const id of this.blockEntities(block)) this.removeEntity(id);
+    this.removeBlock(block);
   }
 
   // ── Blocks ──────────────────────────────────────────────────────────────────────────────
@@ -357,7 +451,7 @@ export class ChangeSetBuilder {
       objects?: KeyedChanges<NonGraphicalObject>;
       blocks?: KeyedChanges<BlockDefinition>;
       header?: readonly HeaderChange[];
-      layouts?: readonly Replacement<Layout>[];
+      layouts?: KeyedChanges<Layout>;
     } = {};
 
     const entities = this.#entityChanges();
@@ -374,8 +468,8 @@ export class ChangeSetBuilder {
     if (blocks) cs.blocks = blocks;
     const header = [...this.#header.values()].filter((h) => !sameValue(h.before, h.after));
     if (header.length) cs.header = header;
-    const layouts = this.#layouts?.changes()?.updated;
-    if (layouts?.length) cs.layouts = layouts;
+    const layouts = this.#layouts?.changes();
+    if (layouts) cs.layouts = layouts;
     return cs;
   }
 
@@ -409,6 +503,16 @@ export class ChangeSetBuilder {
       next.set(entity.owner, index + 1);
     }
     return { added, updated: [...this.#updated.values()], removed };
+  }
+
+  /** Every layout handle the change set may hold: the model's and those added. */
+  #layoutHandles(): Handle[] {
+    return [...this.#model.layouts.map((l) => l.handle), ...this.#addedLayouts];
+  }
+
+  /** Block records added so far. */
+  #addedRecords(): Handle[] {
+    return (this.#tables.get('blockRecords')?.changes()?.added ?? []).map((r) => r.handle);
   }
 
   #layoutDraft(): KeyedDraft<Layout> {

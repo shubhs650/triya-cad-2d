@@ -7,7 +7,8 @@
 // ENDBLK of a new block are numbered above every handle the engine handed out, as a polyline's
 // vertices are (the engine does not know them). The record checks every table shares are in
 // records.ts; what a save cannot keep yet is refused before anything changes: removing a block
-// (PURGE), xref and layout blocks (M1-21, M6), and changes to a dynamic block's links.
+// (PURGE), xref and layout blocks (M1-21), except the sheet block of a layout the same save adds
+// (LAYOUT New, layouts.ts), and changes to a dynamic block's links.
 
 import {
   ACadVersion,
@@ -88,6 +89,11 @@ export function planBlocks(
     ]),
   );
   const defs = new Map(model.blocks);
+  // The sheet blocks of the layouts the same save adds (LAYOUT New): layouts.ts checks the pair.
+  const baseLayouts = new Set((base.layouts ?? []).map((l) => l.handle));
+  const sheets = new Set(
+    model.layouts.filter((l) => !baseLayouts.has(l.handle)).map((l) => l.blockRecord),
+  );
   const records = planRecords(doc, baseRecords, after, r, {
     what: 'block',
     removable: true,
@@ -98,7 +104,8 @@ export function planBlocks(
       return acad;
     },
     fixedNames: [],
-    problems: (b, a) => recordProblems(format, version, b, a, defs.get(a.handle)),
+    problems: (b, a) =>
+      recordProblems(format, version, b, a, defs.get(a.handle), sheets.has(a.handle)),
   });
   const plan: BlockPlan = { records: records.plan, added: [], moved: [] };
   const problems = [...records.problems];
@@ -120,6 +127,8 @@ export function planBlocks(
     const moved = !b || !same(b.basePoint, a.basePoint);
     if (b && moved && (LAYOUT_BLOCK.test(b.name) || record?.layout !== undefined))
       out.push("a layout block's base point is $INSBASE");
+    else if (!b && sheets.has(h) && (a.basePoint.x !== 0 || a.basePoint.y !== 0))
+      out.push("a new layout's block has its base point at 0,0");
     else if (b && moved && ((record?.flags ?? 0) & XREF_BLOCK) !== 0)
       out.push("an xref's base point is its drawing's (M1-21)");
     if (out.length > 0) {
@@ -141,6 +150,7 @@ function recordProblems(
   b: BlockTableRecord | undefined,
   a: BlockTableRecord,
   def: BlockDefinition | undefined,
+  sheet: boolean,
 ): string[] {
   const out: string[] = [];
   const renamed = !b || b.name !== a.name;
@@ -155,8 +165,8 @@ function recordProblems(
       return ['an anonymous block cannot be renamed'];
     if (def?.dynamic) out.push("a dynamic block's name is in its AcDbDynamicBlockTrueName xdata");
   }
-  if (!b && LAYOUT_BLOCK.test(a.name)) out.push("a layout's block comes with its layout (M6)");
-  if (!b && a.layout !== undefined) out.push("a layout's block comes with its layout (M6)");
+  if (!b && !sheet && (LAYOUT_BLOCK.test(a.name) || a.layout !== undefined))
+    out.push("a layout's block comes with its layout (LAYOUT New)");
   if (b && !same(b.layout, a.layout)) out.push('its layout changes');
   if (!b || !same(b.flags ?? 0, flags)) {
     if ((flags & ~OWN_FLAGS) !== 0 || ((b?.flags ?? 0) & ~OWN_FLAGS) !== 0)
@@ -164,7 +174,7 @@ function recordProblems(
     else if (b && ((b.flags ?? 0) & ANONYMOUS) !== (flags & ANONYMOUS))
       out.push('a block cannot become anonymous or named');
   }
-  if (renamed && out.length === 0) {
+  if (renamed && out.length === 0 && !sheet) {
     if (a.name.startsWith('*') && (flags & ANONYMOUS) === 0)
       out.push('a name starting with * needs the anonymous flag (1)');
     else if (!a.name.startsWith('*') && (flags & ANONYMOUS) !== 0)

@@ -126,12 +126,14 @@ describe('spacesOf (M1-97)', () => {
   /** A change set updating layouts, each from its state after the change sets before. */
   const current = new Map<string, Layout>();
   const update = (...patches: [string, Partial<Layout>][]): ChangeSet => ({
-    layouts: patches.map(([handle, patch]) => {
-      const before = current.get(handle) ?? layouts.find((l) => l.handle === handle)!;
-      const after = { ...before, ...patch };
-      current.set(handle, after);
-      return { before, after };
-    }),
+    layouts: {
+      updated: patches.map(([handle, patch]) => {
+        const before = current.get(handle) ?? layouts.find((l) => l.handle === handle)!;
+        const after = { ...before, ...patch };
+        current.set(handle, after);
+        return { before, after };
+      }),
+    },
   });
 
   it('lists Model, then the layouts in tab order as opened', () => {
@@ -152,6 +154,19 @@ describe('spacesOf (M1-97)', () => {
       '0:Model',
       '1:Plan',
       '2:Layout1',
+    ]);
+  });
+
+  it('follows the layouts the engine added and removed since (LAYOUT New and Delete)', () => {
+    const sheet = { handle: 'D', name: 'Sheet', tabOrder: 3, blockRecord: '60' };
+    const changes: ChangeSet[] = [
+      { layouts: { added: [sheet] } },
+      { layouts: { removed: [layouts[1]!] } },
+    ];
+    expect(spacesOf(doc, changes)).toEqual([
+      { name: 'Model', block: '1F' },
+      { name: 'Layout2', block: '50' },
+      { name: 'Sheet', block: '60' },
     ]);
   });
 });

@@ -292,27 +292,77 @@ describe('applyChangeSet validation is atomic', () => {
     const layout = (m: DocumentModel) => m.layouts.find((l) => l.handle === '1E')!;
     rejects((m) => {
       const stale = { ...layout(m) };
-      return { header: [okHeader], layouts: [{ before: stale, after: { ...stale, name: 'A' } }] };
+      return {
+        header: [okHeader],
+        layouts: { updated: [{ before: stale, after: { ...stale, name: 'A' } }] },
+      };
     }, /layout 1E is stale/);
     rejects((m) => {
       const ghost = { ...layout(m), handle: '77' };
-      return { header: [okHeader], layouts: [{ before: ghost, after: ghost }] };
+      return { header: [okHeader], layouts: { updated: [{ before: ghost, after: ghost }] } };
     }, /layout 77 is not in the model/);
     rejects((m) => {
       const l = layout(m);
       const after = { ...l, name: 'A' };
       return {
         header: [okHeader],
-        layouts: [
-          { before: l, after },
-          { before: l, after },
-        ],
+        layouts: {
+          updated: [
+            { before: l, after },
+            { before: l, after },
+          ],
+        },
       };
     }, /layout 1E is changed more than once/);
     rejects((m) => {
       const l = layout(m);
-      return { header: [okHeader], layouts: [{ before: l, after: { ...l, handle: '78' } }] };
+      return {
+        header: [okHeader],
+        layouts: { updated: [{ before: l, after: { ...l, handle: '78' } }] },
+      };
     }, /layout 1E: an update cannot change handle/);
+  });
+
+  it('rejects a layout added on no block record, twice or over a used handle', () => {
+    const sheet = { handle: '50', name: 'Sheet', tabOrder: 2, blockRecord: '51' };
+    rejects(
+      () => ({ header: [okHeader], layouts: { added: [sheet] } }),
+      /layout 50: its block record 51 does not exist/,
+    );
+    rejects(
+      () => ({
+        header: [okHeader],
+        layouts: {
+          added: [
+            { ...sheet, blockRecord: PAPER_SPACE },
+            { ...sheet, blockRecord: PAPER_SPACE },
+          ],
+        },
+      }),
+      /layout 50 is changed more than once/,
+    );
+    rejects(
+      () => ({
+        header: [okHeader],
+        layouts: { added: [{ ...sheet, handle: '20', blockRecord: PAPER_SPACE }] },
+      }),
+      /handle 20 is already used/,
+    );
+  });
+
+  it('rejects removing a stale layout, or a layout whose block record goes but not the layout', () => {
+    const layout = (m: DocumentModel) => m.layouts.find((l) => l.handle === '1E')!;
+    rejects(
+      (m) => ({ header: [okHeader], layouts: { removed: [{ ...layout(m) }] } }),
+      /layout 1E is stale/,
+    );
+    rejects(
+      (m) => ({
+        header: [okHeader],
+        layouts: { removed: [layout(m)], updated: [{ before: layout(m), after: layout(m) }] },
+      }),
+      /layout 1E is changed more than once/,
+    );
   });
 
   it('rejects an update that changes identity or type', () => {

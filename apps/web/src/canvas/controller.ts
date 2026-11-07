@@ -245,7 +245,8 @@ export class CanvasController {
     // The layout renamed or given a new page setup or limits (M1-97): its sheet frames ZOOM
     // Extents and All from now on, and the canvas takes its new name.
     const layout = this.#layout;
-    const after = layout && change.layouts?.find((u) => u.after.handle === layout.handle)?.after;
+    const after =
+      layout && change.layouts?.updated?.find((u) => u.after.handle === layout.handle)?.after;
     if (after) {
       this.#layout = after;
       this.#canvas.setAttribute('aria-label', `Layout ${after.name}`);

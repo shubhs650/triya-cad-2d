@@ -13,10 +13,10 @@
 //
 // Block definitions (M1-75 part 22) are keyed by their BLOCK_RECORD handle and travel with
 // that record: a new block adds both (BLOCK, and the dimension and table commands' anonymous
-// blocks), a removed one drops both once its entities are gone (PURGE). Layouts can be
-// updated (renamed, reordered, given a new page setup or limits, M1-75 part 20), not added or
-// removed: a new layout needs its own `*Paper_Space` block record and definition, which LAYOUT
-// New (M6) brings with it.
+// blocks), a removed one drops both once its entities are gone (PURGE). Layouts are keyed by
+// their LAYOUT handle: updated (renamed, reordered, given a new page setup or limits, M1-75
+// part 20), added with the `*Paper_Space` block record and definition that hold their sheet
+// (LAYOUT New), and removed with them and everything on the sheet (LAYOUT Delete, part 28).
 
 import type {
   BlockDefinition,
@@ -67,8 +67,8 @@ export interface ChangeSet {
   /** Block definitions, by their BLOCK_RECORD handle (the record changes in `tables`). */
   readonly blocks?: KeyedChanges<BlockDefinition>;
   readonly header?: readonly HeaderChange[];
-  /** Updated layouts, by handle. */
-  readonly layouts?: readonly Replacement<Layout>[];
+  /** Layouts, by their LAYOUT handle (their block records and definitions change alongside). */
+  readonly layouts?: KeyedChanges<Layout>;
 }
 
 const swap = <T>({ before, after }: Replacement<T>): Replacement<T> => ({
@@ -93,7 +93,7 @@ export function invertChangeSet(cs: ChangeSet): ChangeSet {
     objects?: KeyedChanges<NonGraphicalObject>;
     blocks?: KeyedChanges<BlockDefinition>;
     header?: readonly HeaderChange[];
-    layouts?: readonly Replacement<Layout>[];
+    layouts?: KeyedChanges<Layout>;
   } = {};
   if (cs.entities) {
     const e = cs.entities;
@@ -123,7 +123,7 @@ export function invertChangeSet(cs: ChangeSet): ChangeSet {
       after: before,
     }));
   }
-  if (cs.layouts) out.layouts = cs.layouts.map(swap);
+  if (cs.layouts) out.layouts = invertKeyed(cs.layouts);
   return out;
 }
 
@@ -136,7 +136,7 @@ export function isEmptyChangeSet(cs: ChangeSet): boolean {
     emptyKeyed(cs.objects) &&
     emptyKeyed(cs.blocks) &&
     !cs.header?.length &&
-    !cs.layouts?.length &&
+    emptyKeyed(cs.layouts) &&
     Object.values(cs.tables ?? {}).every((c) => emptyKeyed(c as KeyedChanges<unknown> | undefined))
   );
 }
