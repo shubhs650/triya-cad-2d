@@ -34,6 +34,7 @@ import {
   writeDrawOrder,
   type DrawOrderChanges,
 } from './draw-order';
+import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
 import { planLayers, writeLayers } from './layers';
 import { planLinetypes, writeLinetypes } from './linetypes';
@@ -91,8 +92,8 @@ function keyedProblems(
   return out;
 }
 
-/** The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts). */
-const WRITTEN_TABLES = new Set(['layers', 'textStyles', 'linetypes']);
+/** The tables whose records have writers (layers.ts, text-styles.ts, linetypes.ts, dim-styles.ts). */
+const WRITTEN_TABLES = new Set(['layers', 'textStyles', 'linetypes', 'dimStyles']);
 
 /**
  * The non-entity changes no writer handles yet (header, the tables above and draw order:
@@ -288,9 +289,10 @@ export function triyaToAcad(
     created,
   } satisfies Resolver;
   // Records first: entities and the header may name one the same save adds, a linetype's text
-  // a text style, a layer a linetype.
+  // a text style, a dimension style a text style or linetype, a layer a linetype.
   const textStyles = planTextStyles(original, base, model, r);
   const linetypes = planLinetypes(original, base, model, r);
+  const dimStyles = planDimStyles(original, base, model, r, format);
   const layers = planLayers(original, base, model, r);
   const header = planHeader(original, base, model, format, [...created.values()]);
   const drawOrder = planDrawOrder(original, base, model, r);
@@ -299,6 +301,7 @@ export function triyaToAcad(
     ...header.problems,
     ...textStyles.problems,
     ...linetypes.problems,
+    ...dimStyles.problems,
     ...layers.problems,
   );
   problems.push(...drawOrder.problems);
@@ -306,6 +309,7 @@ export function triyaToAcad(
 
   writeTextStyles(original, textStyles.plan);
   writeLinetypes(original, r, linetypes.plan);
+  writeDimStyles(original, r, dimStyles.plan);
   writeLayers(original, r, layers.plan);
 
   // Removing an entity from its block unregisters it and its extension dictionary, which only
