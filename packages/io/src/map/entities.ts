@@ -626,7 +626,8 @@ function multiLeaderGeometry(
     branches: c.leaderRoots.map((r) => ({
       index: r.leaderIndex,
       connection: xy(r.connectionPoint),
-      direction: xy(r.direction),
+      // −0 as 0: a DXF save writes −0 as 0 (ezdxf files the landing direction −X as −1, −0).
+      direction: { x: r.direction.x + 0, y: r.direction.y + 0 },
       doglegLength: r.landingDistance,
       lines: r.lines.map((l) => {
         const overrides = leaderLineOverrides(l);
