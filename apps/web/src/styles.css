@@ -852,3 +852,195 @@ button {
   padding: 4px 8px;
   white-space: pre;
 }
+
+/* Dynamic Input (M2-02 part 2, UI_SPEC.md §5): the prompt and its fields beside the cursor,
+   placed by a transform the pointer moves (no layout on the pointer path). */
+.dyn-input {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 20;
+  pointer-events: none;
+  padding: 3px 6px;
+  background: var(--chrome-bg-raised);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 8px rgb(0 0 0 / 25%);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+  font-size: 12px;
+  line-height: 16px;
+  white-space: pre;
+}
+
+.dyn-fields {
+  display: flex;
+  gap: 4px;
+  margin-top: 2px;
+}
+
+.dyn-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 64px;
+  padding: 0 4px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  color: var(--chrome-text-muted);
+  transition: box-shadow var(--motion);
+}
+
+.dyn-field[data-active='true'] {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgb(37 99 235 / 25%);
+}
+
+.dyn-typed {
+  color: var(--chrome-text);
+}
+
+/* A locked field: a padlock drawn with borders (Fluent's 12 px grid). */
+.dyn-lock {
+  width: 7px;
+  height: 5px;
+  margin-top: 3px;
+  border: 1.5px solid currentcolor;
+  border-radius: 1px;
+  position: relative;
+}
+
+.dyn-lock::before {
+  content: '';
+  position: absolute;
+  left: 0.5px;
+  bottom: 100%;
+  width: 3px;
+  height: 3px;
+  border: 1.5px solid currentcolor;
+  border-bottom: 0;
+  border-radius: 3px 3px 0 0;
+}
+
+.dyn-more {
+  color: var(--accent);
+}
+
+.dyn-menu {
+  margin: 3px 0 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: auto;
+}
+
+.dyn-menu li {
+  padding: 0 4px;
+  cursor: pointer;
+}
+
+.dyn-menu li[aria-selected='true'] {
+  background: var(--accent);
+  color: #ffffff;
+}
+
+.dyn-menu .alias {
+  opacity: 0.7;
+}
+
+/* The status bar's toggles (DYN; ORTHO, POLAR, OSNAP… join with M2-04). */
+.status-toggle {
+  padding: 0 6px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--chrome-text-muted);
+  font: inherit;
+  cursor: pointer;
+}
+
+.status-toggle[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--chrome-border);
+  background: var(--chrome-bg-raised);
+}
+
+/* The Ctrl+K palette (M2-02 part 2): a search box over the drawing, near the top. */
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgb(0 0 0 / 15%);
+}
+
+.command-palette {
+  position: fixed;
+  top: 12vh;
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(560px, calc(100vw - 32px));
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 8px;
+  background: var(--chrome-bg-raised);
+  color: var(--chrome-text);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 25%);
+}
+
+.command-palette input {
+  box-sizing: border-box;
+  width: 100%;
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 14px;
+  color: var(--chrome-text);
+  background: var(--chrome-bg-raised);
+}
+
+.command-palette ul {
+  max-height: 50vh;
+  overflow-y: auto;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.command-palette li {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.command-palette li[aria-selected='true'] {
+  background: var(--chrome-bg);
+  outline: 1px solid var(--chrome-border);
+}
+
+.command-palette .label {
+  flex: 1;
+}
+
+.command-palette .alias {
+  color: var(--chrome-text-muted);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+  font-size: 12px;
+}
+
+.command-palette kbd {
+  padding: 0 4px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--chrome-text-muted);
+}
+
+.command-palette .empty {
+  color: var(--chrome-text-muted);
+  cursor: default;
+}

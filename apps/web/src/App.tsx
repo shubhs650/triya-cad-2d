@@ -21,6 +21,7 @@ import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
+import { dynMode } from './dynamic-input';
 import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
@@ -666,13 +667,34 @@ export function App() {
       </div>
 
       <LayoutTabs doc={active} />
-      <CommandLine doc={active?.id} lines={commandLines} cursor={() => lastCursor} />
+      <CommandLine
+        doc={active?.id}
+        lines={commandLines}
+        cursor={() => lastCursor}
+        onSettings={() => setSettings(true)}
+      />
       <StatusBar
         doc={active}
         missingReferences={missingReferences}
         onReferences={() => setPalette('references')}
       />
     </div>
+  );
+}
+
+/** The status bar's Dynamic Input toggle (DYNMODE; F12 toggles it too). */
+function DynToggle() {
+  const on = useSyncExternalStore(dynMode.subscribe, dynMode.get);
+  return (
+    <button
+      type="button"
+      className="status-toggle"
+      aria-pressed={on}
+      title="Dynamic Input (F12)"
+      onClick={() => dynMode.toggle()}
+    >
+      DYN
+    </button>
   );
 }
 
@@ -952,6 +974,7 @@ function StatusBar({
             : `${missingReferences} references not found`}
         </button>
       )}
+      <DynToggle />
       {doc && (
         <>
           <span className="version">{doc.opened.summary.version}</span>
