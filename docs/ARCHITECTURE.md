@@ -297,6 +297,8 @@ interface Renderer {
 - `PdfSink` (vector), `SvgSink`, `PngSink` (raster via Canvas2D at DPI), and the in-canvas **plot-preview** sink.
 PUBLISH loops layouts into a multi-page `PdfSink` with bookmarks and page labels. Same resolver drives the on-screen plot preview so what you see is what prints.
 
+Plot style tables (M2-15, `packages/render/src/plot`, no DOM so `packages/pdf` and workers use it): `parsePlotStyleTable`/`writePlotStyleTable` read and write .ctb/.stb files, `PlotResolver(table?)` maps a `PlotObject` (the object's colour, lineweight, linetype and plot style name with ByLayer/ByBlock already resolved) to `PlotProperties` (paper colour after grayscale and screening, lineweight in mm, linetype, end/join/fill style, pens), and `bundledPlotStyleTable(sheetName)` finds the bundled tables in `assets/plotstyles` (default, monochrome and grayscale CTB; default and monochrome STB), also under the names AutoCAD gives its own.
+
 ## 13. Persistence (`apps/web/src/storage`)
 
 - **OPFS** for: autosave snapshots (`recovery/<docId>.triya` = acad-ts document + Triya change log), user fonts/linetypes/CTBs/templates, library cache.
