@@ -44,6 +44,7 @@ Offline, UI and io suites still run after a fidelity failure, so one red run sho
   - `r12.dxf`, `r2000.dwg`, `r2007.dwg`, `r2013.dwg`, `r2018.dwg` — same drawing saved by AutoCAD in each version
   - `dynamic-block.dwg` — one dynamic block in two states (render-only test)
   - `constraints-acad.dwg` — AutoCAD constraints (passthrough test)
+  - `viewport-overrides.dxf` — **committed** (M1-62, `scripts/corpus/viewport-overrides.py`): four viewports on one view, the second with VP colour, linetype, lineweight and transparency overrides on two layers, one clipped by a closed polyline and one by a circle
 - **Generated benchmark drawings** (DEC-045): `bench-100k` (100k entities, 50 blocks, 5 layouts) and `bench-ga` (25k entities, 30 blocks, 2 layouts) are built in the test from a seeded generator (`packages/testkit/src/bench/drawing.ts`), not committed or owner-provided. The mix is 40 % LINE, 15 % LWPOLYLINE, 10 % each CIRCLE, ARC, INSERT and TEXT, 5 % MTEXT; dimensions and hatches join it once Triya generates their geometry.
 - **Third-party samples** with redistributable licenses: ezdxf test files (MIT), ACadSharp samples (MIT). Record source + license per file in `corpus.json`.
 - **References (DEC-047):** for each file, golden PNGs rendered by Triya itself (M1-24) per layout and for model extents, committed after review in the PR that adds them. AutoCAD reference plots are not required; if one is ever contributed, `pnpm corpus:ref` rasterises it and it takes precedence for that file.

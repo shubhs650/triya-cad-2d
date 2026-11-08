@@ -12,6 +12,7 @@ import {
   MultiLeaderStyle,
   TableStyle,
   VisualStyle,
+  XRecord,
   type BlockRecord,
   type CadDocument,
   type CadObject,
@@ -24,7 +25,9 @@ import {
 } from '@node-projects/acad-ts';
 import type {
   BlockTableRecord,
+  Color,
   LayerRecord,
+  LayerViewportOverride,
   LinetypeRecord,
   SymbolTableRecord,
   TableName,
@@ -79,11 +82,79 @@ function layerDescription(l: Layer): string | undefined {
   return undefined;
 }
 
+/**
+ * Viewport layer overrides (M1-62): AutoCAD files each property in an XRECORD of the layer's
+ * extension dictionary, one `102 {ADSK_LYR_…_OVERRIDE` group per viewport holding the
+ * viewport (335) and the value. Names and codes as AutoCAD writes them and ezdxf reads them
+ * (`ezdxf.entities.layer.load_layer_overrides`); the transparency key is `_ALPHA_OVR`.
+ */
+const OVERRIDES = [
+  ['ADSK_XREC_LAYER_COLOR_OVR', 420, 'color'],
+  ['ADSK_XREC_LAYER_LINETYPE_OVR', 343, 'linetype'],
+  ['ADSK_XREC_LAYER_LINEWT_OVR', 91, 'lineweight'],
+  ['ADSK_XREC_LAYER_ALPHA_OVR', 440, 'transparency'],
+] as const;
+/** The viewport's group in each override. */
+const OVERRIDE_VIEWPORT = 335;
+
+/** A pointer group's value: acad-ts keeps a number from DXF, an object once resolved. */
+function pointer(v: unknown): string | undefined {
+  if (typeof v === 'number' || typeof v === 'bigint') return v ? hex(v) : undefined;
+  if (typeof v === 'object' && v !== null && 'handle' in v) return pointer(v.handle);
+  return undefined;
+}
+
+/**
+ * An AcCmEntityColor as one 32-bit group (420 here): the method in the high byte, 0xC3 an ACI
+ * in the low byte, 0xC2 a true colour. ByLayer (0xC0) and ByBlock (0xC1) override nothing.
+ */
+function rawColor(v: number): Color | undefined {
+  const method = (v >>> 24) & 0xff;
+  if (method === 0xc3) return { kind: 'aci', index: v & 0xff };
+  if (method === 0xc2) return { kind: 'rgb', r: (v >> 16) & 0xff, g: (v >> 8) & 0xff, b: v & 0xff };
+  return undefined;
+}
+
+function viewportOverrides(l: Layer): LayerViewportOverride[] | undefined {
+  const xdict = l.xDictionary;
+  if (!xdict) return undefined;
+  const byViewport = new Map<string, Record<string, unknown>>();
+  for (const [name, code, field] of OVERRIDES) {
+    const x = xdict.getEntry(name);
+    if (!(x instanceof XRecord)) continue;
+    let viewport: string | undefined;
+    for (const e of x.entries) {
+      if (e.code === 102) viewport = undefined;
+      else if (e.code === OVERRIDE_VIEWPORT) viewport = pointer(e.value);
+      else if (e.code === code && viewport !== undefined) {
+        const value =
+          field === 'color'
+            ? rawColor(Number(e.value))
+            : field === 'linetype'
+              ? pointer(e.value)
+              : field === 'lineweight'
+                ? mapLineweight(Number(e.value))
+                : (Number(e.value) & 0x02000000) !== 0
+                  ? { alpha: Number(e.value) & 0xff }
+                  : undefined;
+        if (value === undefined) continue;
+        const o = byViewport.get(viewport) ?? { viewport };
+        o[field] = value;
+        byViewport.set(viewport, o);
+      }
+    }
+  }
+  return byViewport.size > 0
+    ? ([...byViewport.values()] as unknown as LayerViewportOverride[])
+    : undefined;
+}
+
 function layer(l: Layer): LayerRecord {
   const flags = l.flags as number;
   const plotStyle = l.plotStyleName ? hex(l.plotStyleName) : undefined;
   const material = ref(l.material);
   const description = layerDescription(l);
+  const overrides = viewportOverrides(l);
   return {
     ...base(l),
     color: mapColor(l.color),
@@ -98,6 +169,7 @@ function layer(l: Layer): LayerRecord {
     ...(plotStyle ? { plotStyle } : {}),
     ...(material ? { material } : {}),
     ...(description ? { description } : {}),
+    ...(overrides ? { viewportOverrides: overrides } : {}),
   };
 }
 

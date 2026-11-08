@@ -37,7 +37,11 @@ import {
   viewportFrame,
   viewportScale,
   viewportShowsModel,
+  VIEWPORT_NON_RECT_CLIP,
+  viewportLayers,
   viewportTransform,
+  type LayerRecord,
+  type ViewportLayers,
   type Box,
   type ChangeSet,
   type DocumentModel,
@@ -253,9 +257,17 @@ interface DrawFrame {
 
 /** A viewport to draw: its geometry, model → paper map, and whether it is drawn. */
 interface ViewportEntry {
+  readonly handle: Handle;
   readonly geom: ViewportGeometry;
   readonly toPaper: Matrix2D;
   readonly frozen: ReadonlySet<Handle> | undefined;
+  /** Its layer overrides (M1-62), when any layer has one in this viewport. */
+  readonly layers: ViewportLayers | undefined;
+  /**
+   * A non-rectangular viewport's clip (DXF 340, M1-62): the clip entity's outline paths in
+   * paper coordinates, filled even-odd so a REGION's holes stay out.
+   */
+  readonly clip: readonly (readonly number[])[] | undefined;
 }
 
 /** The block's entities in draw order, and each id's position in it. */
@@ -438,6 +450,11 @@ export class Canvas2DRenderer implements Renderer {
   readonly #modelBlock: Handle | undefined;
   /** The layout's model-space viewports in stacking order; undefined until first needed. */
   #viewports: readonly ViewportEntry[] | undefined;
+  /**
+   * Per viewport with layer overrides (M1-62): the entries of entities those overrides restyle,
+   * built on first draw and dropped by every change set (they are rare and few).
+   */
+  #overridden = new Map<Handle, Map<EntityId, CacheEntry | undefined>>();
 
   /** Per entity id (ids are dense): its primitives and screen-size data; hidden ones absent. */
   #cache: (CacheEntry | undefined)[] = [];
@@ -596,8 +613,10 @@ export class Canvas2DRenderer implements Renderer {
       sortEnts
     )
       this.#ordered.clear();
-    // A viewport may have been added, moved, rescaled or switched off.
-    if (this.#paperSpace && e) this.#viewports = undefined;
+    // A viewport may have been added, moved, rescaled or switched off, a layer's viewport
+    // overrides changed (M1-62), or a clip entity reshaped.
+    if (this.#paperSpace && (e || cs.tables?.layers)) this.#viewports = undefined;
+    this.#overridden.clear();
     // Block definitions whose contents or draw order changed: the INSERTs drawing from them
     // (directly or through nesting) are expanded again.
     const changed = new Set<Handle>();
@@ -876,29 +895,36 @@ export class Canvas2DRenderer implements Renderer {
   #cacheEntity(id: EntityId): void {
     const e = this.#model.entity(id);
     if (!e) return;
+    this.#cache[id] = this.#entryOf(e, id, this.#model, this.#blockSource);
+  }
+
+  /**
+   * An entity's cache entry, painted against `model`'s tables (a viewport's overridden layers,
+   * M1-62) and expanded through `source`; undefined when it draws nothing.
+   */
+  #entryOf(
+    e: Entity,
+    id: EntityId,
+    model: DocumentModel,
+    source: BlockSource,
+  ): CacheEntry | undefined {
     let prims: readonly RenderPrimitive[];
     let extra: Pick<CacheEntry, 'dashes' | 'blocks' | 'layer'>;
     if (expands(e, this.#blockDef)) {
       // The reference decides its own visibility: an off layer still shows its contents on
       // other layers.
-      const x = expandInsert(e, this.#blockSource, { dashes: false });
-      if (x.prims.length === 0 && x.blocks.size === 0) {
-        this.#cache[id] = undefined;
-        return;
-      }
+      const x = expandInsert(e, source, { dashes: false });
+      if (x.prims.length === 0 && x.blocks.size === 0) return undefined;
       prims = x.prims;
       const build = (linetypeScale: number) =>
-        expandInsert(e, this.#blockSource, { dashes: true, linetypeScale }).prims;
+        expandInsert(e, source, { dashes: true, linetypeScale }).prims;
       extra = {
         blocks: x.blocks,
         ...(x.period > 0 ? { dashes: { period: x.period, build, built: new Map() } } : {}),
       };
     } else {
-      const paint = this.#paint(e, this.#model);
-      if (!paint) {
-        this.#cache[id] = undefined;
-        return;
-      }
+      const paint = this.#paint(e, model);
+      if (!paint) return undefined;
       const { linetype: lt, ...continuous } = paint;
       prims = tessellate(e.geom, continuous, this.#tessellate);
       const period = lt ? patternLength(lt.pattern) * lt.scale : 0;
@@ -913,16 +939,15 @@ export class Canvas2DRenderer implements Renderer {
     extra = { ...extra, layer: e.layer };
     // The size and centre drive the sub-pixel LOD; unknown bounds never count as small.
     const b = this.#index.bounds(id);
-    this.#cache[id] =
-      b?.kind === 'box'
-        ? {
-            prims,
-            size: Math.max(b.box.maxX - b.box.minX, b.box.maxY - b.box.minY),
-            x: (b.box.minX + b.box.maxX) / 2,
-            y: (b.box.minY + b.box.maxY) / 2,
-            ...extra,
-          }
-        : { prims, size: Infinity, x: 0, y: 0, ...extra };
+    return b?.kind === 'box'
+      ? {
+          prims,
+          size: Math.max(b.box.maxX - b.box.minX, b.box.maxY - b.box.minY),
+          x: (b.box.minX + b.box.maxX) / 2,
+          y: (b.box.minY + b.box.maxY) / 2,
+          ...extra,
+        }
+      : { prims, size: Infinity, x: 0, y: 0, ...extra };
   }
 
   /**
@@ -973,8 +998,15 @@ export class Canvas2DRenderer implements Renderer {
     return o;
   }
 
-  /** The cached entries of `block` the index returns for `box`, in draw order. */
-  #visibleEntries(block: Handle, box: Box): CacheEntry[] {
+  /**
+   * The cached entries of `block` the index returns for `box`, in draw order; `swap` replaces an
+   * entry (a viewport's overridden one, M1-62) or drops it (undefined).
+   */
+  #visibleEntries(
+    block: Handle,
+    box: Box,
+    swap?: (id: EntityId, entry: CacheEntry) => CacheEntry | undefined,
+  ): CacheEntry[] {
     const { order, rank } = this.#orderedOf(block);
     const hits = this.#index.query(block, box);
     const entries: CacheEntry[] = [];
@@ -988,13 +1020,15 @@ export class Canvas2DRenderer implements Renderer {
         if (mark[id] !== 1) continue;
         mark[id] = 0;
         const entry = this.#cache[id];
-        if (entry) entries.push(entry);
+        const shown = entry && swap ? swap(id, entry) : entry;
+        if (shown) entries.push(shown);
       }
     } else {
       hits.sort((a, b) => (rank[a] ?? 0) - (rank[b] ?? 0));
       for (const id of hits) {
         const entry = this.#cache[id];
-        if (entry) entries.push(entry);
+        const shown = entry && swap ? swap(id, entry) : entry;
+        if (shown) entries.push(shown);
       }
     }
     return entries;
@@ -1031,11 +1065,69 @@ export class Canvas2DRenderer implements Renderer {
         // layer is taken the same way; AutoCAD's help does not say.
         if (e?.geom.kind !== 'VIEWPORT' || !viewportShowsModel(e.geom)) continue;
         const frozen = e.geom.frozenLayers.length > 0 ? new Set(e.geom.frozenLayers) : undefined;
-        out.push({ geom: e.geom, toPaper: viewportTransform(e.geom), frozen });
+        out.push({
+          handle: e.handle,
+          geom: e.geom,
+          toPaper: viewportTransform(e.geom),
+          frozen,
+          layers: viewportLayers(this.#model.tables.layers, e.handle),
+          clip: this.#viewportClip(e.geom),
+        });
       }
     }
     this.#viewports = out;
     return out;
+  }
+
+  /**
+   * A non-rectangular viewport's clip outline (M1-62): the paths of the entity DXF 340 names,
+   * drawn continuous whatever its layer and visibility (AutoCAD clips by the object's shape;
+   * hiding the object's layer is how drafters hide the frame). Undefined, and the frame
+   * rectangle clips, without the flag, the entity, or a stroked outline (a wide polyline fills).
+   */
+  #viewportClip(g: ViewportGeometry): readonly (readonly number[])[] | undefined {
+    if ((g.flags & VIEWPORT_NON_RECT_CLIP) === 0 || g.clipBoundary === undefined) return undefined;
+    const id = this.#model.ids.idOf(g.clipBoundary);
+    const e = id === undefined ? undefined : this.#model.entity(id);
+    if (!e) return undefined;
+    const paths = tessellate(e.geom, { color: 'foreground' }, this.#tessellate).flatMap((p) =>
+      p.kind === 'stroke' ? [p.path] : [],
+    );
+    return paths.length > 0 ? paths : undefined;
+  }
+
+  /**
+   * `entry` as viewport `vp` draws it (M1-62): repainted with the viewport's layers when the
+   * entity, or a block part of it, is on an overridden layer; otherwise as cached.
+   */
+  #overriddenEntry(
+    vp: ViewportEntry,
+    shown: ViewportLayers,
+    id: EntityId,
+    entry: CacheEntry,
+  ): CacheEntry | undefined {
+    const over = shown.overridden;
+    const affected =
+      (entry.layer !== undefined && over.has(entry.layer)) ||
+      (entry.blocks !== undefined && entry.prims.some((p) => p.layers?.some((l) => over.has(l))));
+    if (!affected) return entry;
+    let cache = this.#overridden.get(vp.handle);
+    if (!cache) this.#overridden.set(vp.handle, (cache = new Map()));
+    if (cache.has(id)) return cache.get(id);
+    const e = this.#model.entity(id);
+    let built: CacheEntry | undefined;
+    if (e) {
+      const model = withLayers(this.#model, shown.layers);
+      const paint = this.#paint;
+      const context = this.#blockSource.insertContext;
+      built = this.#entryOf(e, id, model, {
+        ...this.#blockSource,
+        paint: (x, _m, block) => paint(x, model, block),
+        insertContext: (insert, _m, outer) => context(insert, model, outer),
+      });
+    }
+    cache.set(id, built);
+    return built;
   }
 
   #drawScene(reduced: boolean): void {
@@ -1132,7 +1224,12 @@ export class Canvas2DRenderer implements Renderer {
       maxX: Math.max(...corners.map((p) => p.x)),
       maxY: Math.max(...corners.map((p) => p.y)),
     };
-    const entries = this.#visibleEntries(this.#modelBlock!, box);
+    const shownLayers = vp.layers;
+    const entries = this.#visibleEntries(
+      this.#modelBlock!,
+      box,
+      shownLayers ? (id, entry) => this.#overriddenEntry(vp, shownLayers, id, entry) : undefined,
+    );
     if (entries.length === 0) return;
     this.#sceneEntries += entries.length;
     // Model coordinates are taken about the model point at the frame centre.
@@ -1156,6 +1253,13 @@ export class Canvas2DRenderer implements Renderer {
     ctx.beginPath();
     ctx.rect(clip.x, clip.y, clip.w, clip.h);
     ctx.clip();
+    if (vp.clip) {
+      // The clip entity's outline, from paper coordinates to the device as the sheet is drawn.
+      ctx.setTransform(view.m.a, view.m.b, view.m.c, view.m.d, view.m.e, view.m.f);
+      ctx.beginPath();
+      for (const path of vp.clip) buildPath(ctx, path, view.ox, view.oy);
+      ctx.clip('evenodd');
+    }
     const vs = viewportScale(vp.geom);
     this.#drawPrimitives(ctx, entries, reduced, {
       ox: o.x,
@@ -1913,4 +2017,19 @@ function distanceTo(prim: RenderPrimitive, p: { x: number; y: number }): number 
     }
   }
   return prim.kind === 'fill' && crossings % 2 === 1 ? 0 : best;
+}
+
+/**
+ * `model` with `layers` in place of its LAYER table (a viewport's overridden layers, M1-62), for
+ * the paint functions, which read tables and the header. Everything else is the model's own.
+ */
+function withLayers(model: DocumentModel, layers: ReadonlyMap<Handle, LayerRecord>): DocumentModel {
+  const tables = { ...model.tables, layers };
+  return new Proxy(model, {
+    get(target, key) {
+      if (key === 'tables') return tables;
+      const v: unknown = Reflect.get(target, key, target);
+      return typeof v === 'function' ? v.bind(target) : v;
+    },
+  });
 }
