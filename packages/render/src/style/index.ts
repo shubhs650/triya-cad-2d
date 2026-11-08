@@ -29,6 +29,7 @@ export {
   lineweightPixels,
   resolveColor,
   resolveLineweight,
+  resolveTransparency,
   resolveLinetype,
   type BlockContext,
   type LineweightDisplay,

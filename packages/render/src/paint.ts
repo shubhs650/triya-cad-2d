@@ -1,4 +1,4 @@
-// Entity colour, lineweight and linetype → `Paint`, resolved at cache time (ARCHITECTURE.md
+// Entity colour, lineweight, linetype and transparency (M1-108) → `Paint`, resolved at cache time (ARCHITECTURE.md
 // §7.2) with the M1-13 rules in `style/`: the computed ACI palette, ByLayer and ByBlock, the
 // LWDEFAULT lineweight, and the linetype pattern at LTSCALE × the object's linetype scale.
 //
@@ -15,6 +15,7 @@ import {
   resolveColor,
   resolveLinetype,
   resolveLineweight,
+  resolveTransparency,
   type BlockContext,
 } from './style/resolve';
 import type { InsertContextFunction } from './blocks';
@@ -80,10 +81,12 @@ export function createPaint(o: PaintOptions = {}): PaintFunction & {
             }),
           }
         : undefined;
+    const alpha = resolveTransparency(e, src, block);
     return {
       color: resolveColor(e, src, block),
       lineweight: resolveLineweight(e, src, block) / 100,
       ...(linetype ? { linetype } : {}),
+      ...(alpha < 255 ? { opacity: alpha / 255 } : {}),
     };
   };
   // AutoCAD: an invisible reference or one whose layer is frozen draws nothing; one whose layer

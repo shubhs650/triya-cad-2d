@@ -149,6 +149,25 @@ describe('linetype', () => {
   });
 });
 
+// M1-108: transparency reaches the paint as an opacity, absent when opaque.
+describe('transparency', () => {
+  it('paints a transparent entity at its opacity, an opaque one without', () => {
+    expect(defaultPaint(entity({ transparency: { alpha: 51 } }), model(layer()))?.opacity).toBe(
+      0.2,
+    );
+    expect(defaultPaint(entity(), model(layer()))).not.toHaveProperty('opacity');
+    expect(defaultPaint(entity(), model(layer({ transparency: { alpha: 153 } })))?.opacity).toBe(
+      0.6,
+    );
+  });
+
+  it('paints ByBlock at the INSERT’s transparency', () => {
+    const m = model(layer());
+    const block = createPaint().insertContext(entity({ transparency: { alpha: 102 } }), m);
+    expect(defaultPaint(entity({ transparency: 'ByBlock' }), m, block)?.opacity).toBe(0.4);
+  });
+});
+
 describe('visibility', () => {
   it('hides invisible entities and entities on layers that are off or frozen', () => {
     expect(defaultPaint(entity(), model(layer()))).toEqual({ color: '#ff0000', lineweight: 0.35 });

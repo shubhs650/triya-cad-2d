@@ -3468,6 +3468,31 @@
         "txt"
       ],
       "knownIssues": []
+    },
+    {
+      "path": "public/self-authored/transparency.dxf",
+      "version": "AC1032",
+      "format": "dxf-ascii",
+      "source": "self-authored",
+      "license": "MIT",
+      "sha256": "25fe487dbff4258a4c883eb3d92fd9a718b7329f4a092c5c7c17b0730b766215",
+      "tags": [
+        "dxf-ascii",
+        "layouts",
+        "r2018",
+        "viewports",
+        "viewport-overrides",
+        "transparency"
+      ],
+      "references": [],
+      "tolerance": {
+        "pixelMismatch": 2,
+        "ssim": 0.95
+      },
+      "fonts": [
+        "txt"
+      ],
+      "knownIssues": []
     }
   ]
 }

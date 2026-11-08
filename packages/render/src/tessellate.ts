@@ -87,6 +87,8 @@ export interface Paint {
   readonly lineweight?: number;
   /** The linetype and its scale (`linetypeScale`); absent for Continuous. */
   readonly linetype?: { readonly pattern: LinePattern; readonly scale: number };
+  /** Object transparency as an opacity below 1 (M1-108); absent is opaque. */
+  readonly opacity?: number;
 }
 
 /**
@@ -234,11 +236,23 @@ function loopPath(path: number[], loop: HatchLoop): void {
   if (edges.length) path.push(PATH_Z);
 }
 
-/** The primitives that draw one entity's geometry. */
+/** The primitives that draw one entity's geometry, each carrying the paint's opacity. */
 export function tessellate(
   g: EntityGeometry,
   paint: Paint,
   ctx: TessellateContext = {},
+): RenderPrimitive[] {
+  const prims = geometryPrimitives(g, paint, ctx);
+  const opacity = paint.opacity;
+  if (opacity === undefined || opacity >= 1) return prims;
+  // Copied, not tagged in place: text and pattern primitives may be shared between entities.
+  return prims.map((p) => ({ ...p, opacity }));
+}
+
+function geometryPrimitives(
+  g: EntityGeometry,
+  paint: Paint,
+  ctx: TessellateContext,
 ): RenderPrimitive[] {
   // Text takes no linetype: AutoCAD draws glyphs continuous.
   if (g.kind === 'TEXT' || g.kind === 'MTEXT')

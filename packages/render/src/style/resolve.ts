@@ -9,7 +9,7 @@
 // ByBlock rules; the layer-0 rule is long-standing AutoCAD behaviour that the help pages we
 // could reach do not spell out, so it is encoded here as drafters expect it.
 
-import type { Color, Handle, LayerRecord, Lineweight } from '@triya/engine';
+import type { Color, Handle, LayerRecord, Lineweight, Transparency } from '@triya/engine';
 import { aciRgb, rgbHex } from './aci';
 
 /**
@@ -28,6 +28,8 @@ export interface BlockContext {
   readonly linetype: Handle | undefined;
   /** Hundredths of a millimetre. */
   readonly lineweight: number;
+  /** Alpha, 0 clear to 255 opaque (M1-108). */
+  readonly transparency: number;
 }
 
 /** What resolution reads from the drawing. */
@@ -42,6 +44,8 @@ export interface Styled {
   readonly layer: Handle;
   readonly linetype: Handle | 'ByLayer' | 'ByBlock';
   readonly lineweight: Lineweight;
+  /** DXF 440 (M1-108); absent is ByLayer. */
+  readonly transparency?: Transparency;
 }
 
 /** The layer whose values ByLayer takes: the INSERT's for an object on layer 0 in a block. */
@@ -98,6 +102,27 @@ export function resolveLineweight(e: Styled, src: StyleSource, block?: BlockCont
   return fixed(e.lineweight);
 }
 
+/** Opaque: alpha 255. */
+const OPAQUE = 255;
+
+/**
+ * Alpha, 0 clear to 255 opaque (M1-108), resolved as colour is: ByLayer from the layer (the
+ * INSERT's for an object on layer 0 in a block), ByBlock from the INSERT. AutoCAD's help: "ByBlock
+ * — the transparency of the block", and objects created ByBlock are opaque "until the objects are
+ * grouped into a block", so ByBlock outside a block is opaque. A reference's transparency reaches
+ * only its ByBlock objects; those with a value of their own (or ByLayer) keep it, as with colour.
+ */
+export function resolveTransparency(e: Styled, src: StyleSource, block?: BlockContext): number {
+  const t = e.transparency ?? 'ByLayer';
+  if (t === 'ByBlock') return block ? block.transparency : OPAQUE;
+  if (t === 'ByLayer') {
+    const l = effectiveLayer(e, src, block)?.transparency;
+    // A layer has a value; one read as ByLayer or ByBlock shows opaque.
+    return typeof l === 'object' ? l.alpha : OPAQUE;
+  }
+  return t.alpha;
+}
+
 /** The context an INSERT hands to the entities of its block. */
 export function blockContext(insert: Styled, src: StyleSource, outer?: BlockContext): BlockContext {
   return {
@@ -105,6 +130,7 @@ export function blockContext(insert: Styled, src: StyleSource, outer?: BlockCont
     layer: effectiveLayer(insert, src, outer),
     linetype: resolveLinetype(insert, src, outer),
     lineweight: resolveLineweight(insert, src, outer),
+    transparency: resolveTransparency(insert, src, outer),
   };
 }
 
