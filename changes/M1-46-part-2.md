@@ -1,0 +1,1 @@
+- M1-46 (#215): closed. Wide polylines are checked by the M1-24 golden images; comparing their joins with AutoCAD plots is post-launch (DEC-047).

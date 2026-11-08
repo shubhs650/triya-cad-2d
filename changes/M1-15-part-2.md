@@ -1,0 +1,1 @@
+- M1-15 (#215): closed. Dimension text draws since M1-41 and the dimension files are checked by the M1-24 golden images; annotative dimension representations are post-launch with M1-63 and M1-102 (DEC-047).
