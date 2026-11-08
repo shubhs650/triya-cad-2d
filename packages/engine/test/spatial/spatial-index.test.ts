@@ -331,6 +331,51 @@ describe('queries', () => {
     expect(index.query(MODEL_SPACE, box(204, 0.5, 210, 2))).toEqual([insert]);
   });
 
+  it('measures ZOOM Extents with text by its bounds once known, without construction lines (M1-35)', () => {
+    const model = blockModel();
+    const b = new ChangeSetBuilder(model);
+    b.addEntity({
+      owner: MODEL_SPACE,
+      layer: LAYER_0,
+      geom: {
+        kind: 'TEXT',
+        value: 'FAR',
+        style: '11',
+        position: { x: 400, y: 400 },
+        height: 10,
+        rotation: 0,
+        widthFactor: 1,
+        oblique: 0,
+        halign: 0,
+        valign: 0,
+        backward: false,
+        upsideDown: false,
+      },
+    });
+    b.addEntity({
+      owner: MODEL_SPACE,
+      layer: LAYER_0,
+      geom: { kind: 'XLINE', base: { x: 0, y: 0 }, direction: { x: 1, y: 1 } },
+    });
+    model.apply(b.build());
+    let fontLoaded = false;
+    const index = SpatialIndex.build(model, {
+      tol,
+      annotationBounds: (g) =>
+        'kind' in g && g.kind === 'TEXT' && fontLoaded ? box(400, 400, 430, 410) : undefined,
+    });
+    // The line, the circle and the two block references (B's nested A ends at x = 311); the
+    // text has no bounds yet and the XLINE never counts.
+    expect(index.drawnExtents(MODEL_SPACE)).toEqual(box(0, 0, 311, 105));
+    expect(index.drawnExtents(PAPER_SPACE)).toEqual(box(1, 1, 2, 2));
+    fontLoaded = true;
+    index.reboundAnnotations();
+    expect(index.drawnExtents(MODEL_SPACE)).toEqual(box(0, 0, 430, 410));
+    // Nothing with a known extent (a block holding only itself), or no such block.
+    expect(index.drawnExtents(CYCLE)).toBeUndefined();
+    expect(index.drawnExtents('FFFF')).toBeUndefined();
+  });
+
   it('bounds invisible attributes under ATTMODE 2 and re-bounds when ATTMODE changes (M1-14)', () => {
     const model = blockModel();
     const b = new ChangeSetBuilder(model);

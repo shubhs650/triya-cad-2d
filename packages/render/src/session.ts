@@ -11,6 +11,7 @@ import {
   SpatialIndex,
   toleranceForSize,
   toleranceFromExtents,
+  type Box,
   type ChangeSet,
   type DocumentInit,
   type Entity,
@@ -114,10 +115,13 @@ export class RenderSession {
   /** Decoded bitmaps by IMAGEDEF handle, as the app sends them (M1-19). */
   readonly #images = new Map<Handle, RasterPixels>();
   readonly #surface: Surface;
+  /** The block record drawn: model space or a layout's paper space. */
+  readonly #block: Handle;
 
   constructor(o: RenderSessionOptions) {
     this.#surface = o.surface;
     const { init, block } = o.document;
+    this.#block = block;
     this.model = DocumentModel.create(init);
     const model = this.model;
     const failed: string[] = [];
@@ -163,6 +167,15 @@ export class RenderSession {
     this.fontWarnings = failed;
     this.renderer.setFonts(this.#text.fonts);
     this.index.reboundAnnotations();
+  }
+
+  /**
+   * ZOOM Extents of the space drawn (M1-35 part 2), from the spatial index as it stands: text
+   * counts by its glyphs in the fonts loaded now, and edits are followed. Undefined when
+   * nothing in it has a known extent.
+   */
+  extents(): Box | undefined {
+    return this.index.drawnExtents(this.#block);
   }
 
   /** The last frame drawn, fitted inside `max` (the document tab hover preview, M1-22). */
