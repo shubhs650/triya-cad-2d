@@ -14,12 +14,13 @@ Run from the repository root with the pinned ezdxf of scripts/dxf-audit/requirem
 
     python3 -I scripts/corpus/viewport-overrides.py
 
-Output is byte-for-byte reproducible (fixed metadata, fixed handles), so the committed file's
+Output is byte-for-byte reproducible (fixed metadata, fixed handles, string hashing pinned), so the committed file's
 sha256 in corpus/corpus.json only changes when this script does.
 """
 
 from __future__ import annotations
 
+import os
 import pathlib
 import sys
 
@@ -129,7 +130,17 @@ def clip(vp, entity, size=None) -> None:
     entity.set_reactors([vp.dxf.handle])
 
 
+def pin_hash_seed() -> None:
+    """ezdxf orders some OBJECTS (the layouts' placeholders) by set iteration, so the bytes depend
+    on string hashing. Run again with PYTHONHASHSEED=0, which `-I` would ignore."""
+    if os.environ.get("TRIYA_HASH_SEED") == "0":
+        return
+    env = {"PATH": os.environ.get("PATH", ""), "PYTHONHASHSEED": "0", "TRIYA_HASH_SEED": "0"}
+    os.execve(sys.executable, [sys.executable, "-P", "-s", __file__], env)
+
+
 def main() -> int:
+    pin_hash_seed()
     if ezdxf.__version__ != "1.4.5":
         print(f"expected ezdxf 1.4.5 (scripts/dxf-audit/requirements.txt), got {ezdxf.__version__}")
         return 1
