@@ -36,6 +36,7 @@ import {
   type Prompt,
   type PromptAnswer,
 } from './prompt';
+import { UndoStack, type UndoState } from './undo';
 
 /** One command's edits, in order: what the undo stack (M2-05) keeps as one step. */
 export interface CommandRecord {
@@ -54,13 +55,17 @@ export type BusEvent =
   | { readonly type: 'start'; readonly command: string; readonly transparent: boolean }
   | { readonly type: 'end'; readonly command: string; readonly cancelled: boolean }
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
-  | { readonly type: 'commit'; readonly record: CommandRecord };
+  | { readonly type: 'commit'; readonly record: CommandRecord }
+  /** The undo history changed (a step added, undone or redone, a mark, a group, Control). */
+  | { readonly type: 'undo'; readonly state: UndoState };
 
 export interface PromptBusOptions {
   readonly model: DocumentModel;
   readonly registry: CommandRegistry;
   /** Applies an edit; by default to `model`. The engine worker also sends it to the renderers. */
   readonly apply?: (change: ChangeSet) => void;
+  /** The undo history's memory bound (ARCHITECTURE.md §4.2; 256 MB by default). */
+  readonly undoLimitBytes?: number | undefined;
 }
 
 interface Frame {
@@ -115,11 +120,23 @@ export class PromptBus {
   #queue: Promise<void> = Promise.resolve();
   readonly #history: string[] = [];
   readonly #recent: string[] = [];
+  readonly #undo: UndoStack;
 
   constructor(options: PromptBusOptions) {
     this.#model = options.model;
     this.#registry = options.registry;
     this.#apply = options.apply ?? ((cs) => this.#model.apply(cs));
+    this.#undo = new UndoStack({
+      apply: (cs) => this.#apply(cs),
+      ...(options.undoLimitBytes !== undefined ? { maxBytes: options.undoLimitBytes } : {}),
+      onChange: (state) => this.#emit({ type: 'undo', state }),
+      onMessage: (line) => this.#log(line),
+    });
+  }
+
+  /** The drawing's undo history: each command that edited is one step (M2-05). */
+  get undo(): UndoStack {
+    return this.#undo;
   }
 
   /** Listens for bus events; returns the unsubscribe. */
@@ -335,6 +352,7 @@ export class PromptBus {
       dash,
       transparent,
       prompt: prompts,
+      undo: this.#undo,
       get lastPoint() {
         return bus.#lastPoint;
       },
@@ -388,8 +406,10 @@ export class PromptBus {
       this.#emit({ type: 'preview', geometry: [] });
     }
     if (this.#changes.length === 0) return;
-    const record: CommandRecord = { command: this.#last!.def.name, changes: this.#changes };
+    const def = this.#last!.def;
+    const record: CommandRecord = { command: def.name, changes: this.#changes };
     this.#changes = [];
+    this.#undo.push(record, { erases: def.erases === true });
     this.#emit({ type: 'commit', record });
   }
 
