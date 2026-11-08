@@ -121,6 +121,8 @@ export class CanvasController {
   #lastMiddle: { readonly t: number; readonly x: number; readonly y: number } | undefined;
   #lastWheel = -Infinity;
   #corner: { readonly world: Point; readonly screen: Point; dragged: boolean } | undefined;
+  /** Where the pointer is over the canvas (offset), or undefined when it is not. */
+  #pointer: { readonly offsetX: number; readonly offsetY: number } | undefined;
   /**
    * The space's extents as its renderer last measured them (M1-35 part 2): text by its glyphs
    * once the fonts load, and edits followed, which the extents the drawing opened with (from
@@ -421,8 +423,12 @@ export class CanvasController {
     // waits for the renderer's measure; it answers once it has built the drawing, which the
     // first frame waits for anyway.
     void this.#firstMeasure.then(() => {
-      if (!this.#view && this.#size.width > 0)
+      if (!this.#view && this.#size.width > 0) {
         this.#setView(extentsView(this.#opening(), this.#size));
+        // A cursor that came onto the canvas before there was a view showed no coordinates;
+        // show them now rather than after it next moves.
+        if (this.#pointer) this.#hooks.onCursor(this.#world(this.#pointer));
+      }
     });
   }
 
@@ -563,6 +569,7 @@ export class CanvasController {
           drag.x = e.clientX;
           drag.y = e.clientY;
         }
+        this.#pointer = { offsetX: e.offsetX, offsetY: e.offsetY };
         const world = this.#world(e);
         const corner = this.#corner;
         if (corner && world) {
@@ -583,7 +590,14 @@ export class CanvasController {
     };
     c.addEventListener('pointerup', endDrag, opts);
     c.addEventListener('pointercancel', endDrag, opts);
-    c.addEventListener('pointerleave', () => this.#hooks.onCursor(undefined), opts);
+    c.addEventListener(
+      'pointerleave',
+      () => {
+        this.#pointer = undefined;
+        this.#hooks.onCursor(undefined);
+      },
+      opts,
+    );
     c.addEventListener('auxclick', (e) => e.preventDefault(), opts);
   }
 

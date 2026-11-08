@@ -63,10 +63,27 @@ function layerTransparency(l: Layer): Transparency {
   return { alpha: 255 };
 }
 
+/**
+ * The Description of the Layer Properties Manager (M1-104): AutoCAD files it as
+ * `AcAecLayerStandard` xdata, an empty 1000 string and then the text (every ACadSharp sample's
+ * Layer_desc; AecObjects.dwg's layer 0 holds the first string only). Names match without regard
+ * to case (sample_AC1014.dwg has ACAECLAYERSTANDARD).
+ */
+function layerDescription(l: Layer): string | undefined {
+  for (const [app, data] of l.extendedData) {
+    if (app.name.toUpperCase() !== 'ACAECLAYERSTANDARD') continue;
+    const strings = data.records.filter((r) => (r.code as number) === 1000);
+    const v = strings[1]?.rawValue;
+    return typeof v === 'string' && v !== '' ? v : undefined;
+  }
+  return undefined;
+}
+
 function layer(l: Layer): LayerRecord {
   const flags = l.flags as number;
   const plotStyle = l.plotStyleName ? hex(l.plotStyleName) : undefined;
   const material = ref(l.material);
+  const description = layerDescription(l);
   return {
     ...base(l),
     color: mapColor(l.color),
@@ -80,6 +97,7 @@ function layer(l: Layer): LayerRecord {
     locked: (flags & 4) !== 0,
     ...(plotStyle ? { plotStyle } : {}),
     ...(material ? { material } : {}),
+    ...(description ? { description } : {}),
   };
 }
 

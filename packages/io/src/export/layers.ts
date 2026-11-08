@@ -9,12 +9,19 @@
 // (every layer of the AutoCAD-saved sample_AC1027 but its 70 % one). The model's `xdata` keeps
 // the entry as read; the save rewrites it from `transparency`, registering the application
 // when the drawing has none, as AutoCAD does.
+//
+// A layer's description (M1-104) is xdata too: `AcAecLayerStandard`, an empty 1000 string and
+// then the text, on every layer AutoCAD has shown in the Layer Properties Manager. The save
+// rewrites the second string, keeping the first (AecObjects.dwg's layer 0 holds that one only)
+// and the layer's other applications; a cleared description keeps the entry with an empty
+// string, as AutoCAD's layers without one do.
 
 import {
   ACadVersion,
   AppId,
   ExtendedData,
   ExtendedDataInteger32,
+  ExtendedDataString,
   Layer,
   LineType,
   Material,
@@ -34,6 +41,10 @@ const NOT_IN_R12 = ['lineweight', 'plot', 'plotStyle', 'material', 'transparency
 
 /** The application AutoCAD files a layer's transparency under. */
 const TRANSPARENCY_APP = 'AcCmTransparency';
+/** The application AutoCAD files a layer's description under. */
+const DESCRIPTION_APP = 'AcAecLayerStandard';
+/** DXF reference: strings in extended data "can be up to 255 bytes long". */
+const MAX_DESCRIPTION = 255;
 /** AcCmTransparency method "by alpha" (the high byte), beside the alpha in the low one. */
 const BY_ALPHA = 0x02000000;
 /**
@@ -79,6 +90,14 @@ function layerProblems(
       out.push(`transparency alpha ${t.alpha} is not a whole number from 0 to 255`);
     else if (t.alpha < MIN_ALPHA) out.push('a layer cannot be more than 90 % transparent');
   }
+  const description = a.description ?? '';
+  const descriptionChanged = description !== (b?.description ?? '');
+  if (descriptionChanged && description.length > MAX_DESCRIPTION)
+    out.push(`a description longer than ${MAX_DESCRIPTION} characters`);
+  // AutoCAD's own R12 save drops every layer's description (ACadSharp's sample_AC1009 keeps the
+  // AcAecLayerStandard APPID but no layer's entry), so an R12 file has nowhere AutoCAD reads one.
+  if (descriptionChanged && version !== undefined && version <= ACadVersion.AC1009)
+    out.push('an R12 layer does not store its description');
   if (changed('color') && (a.color.kind === 'byLayer' || a.color.kind === 'byBlock'))
     out.push(`a layer colour cannot be ${a.color.kind}`);
   if (changed('color') && a.color.kind === 'rgb' && a.color.bookName !== undefined)
@@ -115,16 +134,16 @@ function layerProblems(
 }
 
 /**
- * The AcCmTransparency application: the drawing's own (names are matched without regard to
- * case: sample_AC1009 has ACCMTRANSPARENCY), one the same save adds, or one registered now
- * under a handle above every handle the engine handed out.
+ * The application `name`: the drawing's own (names are matched without regard to case:
+ * sample_AC1009 has ACCMTRANSPARENCY), one the same save adds, or one registered now under a
+ * handle above every handle the engine handed out.
  */
-function transparencyApp(doc: CadDocument, r: Resolver) {
+function layerApp(doc: CadDocument, r: Resolver, name: string) {
   const named = (o: unknown): o is AppId =>
-    o instanceof AppId && o.name.toUpperCase() === TRANSPARENCY_APP.toUpperCase();
+    o instanceof AppId && o.name.toUpperCase() === name.toUpperCase();
   const own = [...doc.appIds!].find(named) ?? [...r.created.values()].find(named);
   if (own) return own;
-  const app = new AppId(TRANSPARENCY_APP);
+  const app = new AppId(name);
   app.handle = r.allocate();
   doc.appIds!.add(app);
   return app;
@@ -144,7 +163,25 @@ function writeTransparency(doc: CadDocument, r: Resolver, l: Layer, a: LayerReco
   const next = [...records];
   if (at >= 0) next[at] = new ExtendedDataInteger32(value);
   else next.push(new ExtendedDataInteger32(value));
-  l.extendedData.set(entry?.[0] ?? transparencyApp(doc, r), new ExtendedData(next));
+  l.extendedData.set(entry?.[0] ?? layerApp(doc, r, TRANSPARENCY_APP), new ExtendedData(next));
+}
+
+/** Rewrites the second 1000 string of a layer's AcAecLayerStandard entry from `description`. */
+function writeDescription(doc: CadDocument, r: Resolver, l: Layer, a: LayerRecord): void {
+  const text = a.description ?? '';
+  const entry = [...l.extendedData].find(
+    ([app]) => app.name.toUpperCase() === DESCRIPTION_APP.toUpperCase(),
+  );
+  // A layer without the entry reads back without a description already.
+  if (!entry && text === '') return;
+  const next = [...(entry?.[1].records ?? [])];
+  const strings = next.flatMap((x, i) => (x instanceof ExtendedDataString ? [i] : []));
+  if (strings.length >= 2) next[strings[1]!] = new ExtendedDataString(text);
+  else {
+    if (strings.length === 0) next.push(new ExtendedDataString(''));
+    next.push(new ExtendedDataString(text));
+  }
+  l.extendedData.set(entry?.[0] ?? layerApp(doc, r, DESCRIPTION_APP), new ExtendedData(next));
 }
 
 /** Writes the fields of `a` that differ from `b` (every field when `b` is undefined). */
@@ -169,6 +206,7 @@ function writeLayer(
   if (changed('plotStyle')) l.plotStyleName = a.plotStyle ? Number.parseInt(a.plotStyle, 16) : 0;
   if (changed('material')) l.material = a.material ? resolve(r, a.material, Material)! : null;
   if (changed('transparency')) writeTransparency(doc, r, l, a);
+  if ((a.description ?? '') !== (b?.description ?? '')) writeDescription(doc, r, l, a);
 }
 
 /** Writes the planned layer changes onto `doc`; new layers join its LAYER table first. */
