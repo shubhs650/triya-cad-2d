@@ -20,9 +20,17 @@ function takesText(t: EventTarget | null): boolean {
   return t.isContentEditable || t.closest('input, textarea, select, dialog') !== null;
 }
 
-/** Elements that Enter and Space press (a button, a link, a tab) rather than end the input. */
+/**
+ * Elements that take Enter and Space themselves (a button, a link, a tab, a `<summary>`):
+ * anything focusable. On the page itself or the canvas they end the command line's input.
+ */
 function pressable(t: EventTarget | null): boolean {
-  return t instanceof HTMLElement && t.closest('button, a, [role="tab"]') !== null;
+  return (
+    t instanceof HTMLElement &&
+    t !== document.body &&
+    t !== document.documentElement &&
+    t.tabIndex >= 0
+  );
 }
 
 export function CommandLine({
@@ -57,7 +65,9 @@ export function CommandLine({
   const cancel = () => {
     setText('');
     setRecall(undefined);
-    if (doc !== undefined && lines.get(doc).prompt) engines.command(doc, { kind: 'cancel' });
+    // Sent whatever the mirror shows: it may not have heard yet of a command typed just before
+    // (AutoCAD also answers Esc at `Command:` with `*Cancel*`).
+    if (doc !== undefined) engines.command(doc, { kind: 'cancel' });
   };
   const sendRef = useRef(send);
   sendRef.current = send;
