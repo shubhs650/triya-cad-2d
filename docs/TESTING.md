@@ -9,13 +9,13 @@ Fidelity is the product. This document defines the corpus, the harnesses, the to
 | Unit | Vitest (Node) | `engine`, `io` adapters, `text`, `hatch`, `dims`, `constraints`, `library`, `compare`, `pdf` | every PR |
 | Command | Vitest (Node) | commands driven by scripted `PromptAnswer` sequences on the `PromptBus`; assert resulting `ChangeSet` | every PR |
 | Round-trip | Vitest (Node) + `testkit` | open → save → reopen → `structuralDiff` on every public corpus file | every PR |
-| Fidelity | Playwright (Chromium headless) + `testkit` | render each public corpus file through the real `Canvas2DRenderer` to PNG; perceptual diff vs AutoCAD reference | every PR |
+| Fidelity | Playwright (Chromium headless) + `testkit` | render each public corpus file through the real `Canvas2DRenderer` to PNG; perceptual diff vs its reviewed Triya golden image (DEC-047) | every PR |
 | Perf | Playwright | T1–T3, T5–T7 on the generated bench drawings | PRs touching `render`/`engine`/`io`; nightly |
 | Offline/privacy | Playwright with network blocked | T8; assert zero requests | every PR |
 | UI | Playwright | dialogs, ribbon breakpoints (T9), grips, keyboard | every PR |
 | Cross-browser | Playwright WebKit + Firefox | degraded-mode paths | nightly |
 | Private corpus | same harnesses | owner's real drawings | owner, locally |
-| AUDIT | AutoCAD (owner) | AutoCAD `AUDIT`/`RECOVER` on Triya-saved files | milestone gates |
+| DXF audit | ezdxf (CI only, MIT) | `ezdxf.recover` + `audit` on every Triya-saved corpus DXF, 0 errors (M1-105, replaces AutoCAD AUDIT, DEC-047) | every PR |
 
 ### 1.1 CI wiring (`.github/workflows/ci.yml`)
 
@@ -31,7 +31,7 @@ Offline, UI and io suites still run after a fidelity failure, so one red run sho
 
 ### 2.1 Public corpus (`corpus/public/`, committed)
 
-- **Self-authored set** (owner provides DWGs + AutoCAD reference PDFs; threads may author DXF test files with acad-ts for unit-level cases):
+- **Self-authored set** (DEC-047: threads author these as AC1032 DXF with acad-ts, a committed ezdxf script or by hand from the DXF reference, when the task that needs one starts; the owner is never asked for them. The names below say what each drawing must contain; DWG and multi-version items are post-launch):
   - `ga-vessel-a1.dwg` — horizontal vessel GA, 3 layouts, viewports at 1:10/1:20, title block with attributes, nozzle schedule table, ISO-25 dims, ROMANS text, ANSI31 sections
   - `nozzle-orientation.dwg` — polar array, angular dims, mleaders
   - `saddle-detail.dwg` — hatched sections, chamfers, fillets, ordinate dims
@@ -46,7 +46,7 @@ Offline, UI and io suites still run after a fidelity failure, so one red run sho
   - `constraints-acad.dwg` — AutoCAD constraints (passthrough test)
 - **Generated benchmark drawings** (DEC-045): `bench-100k` (100k entities, 50 blocks, 5 layouts) and `bench-ga` (25k entities, 30 blocks, 2 layouts) are built in the test from a seeded generator (`packages/testkit/src/bench/drawing.ts`), not committed or owner-provided. The mix is 40 % LINE, 15 % LWPOLYLINE, 10 % each CIRCLE, ARC, INSERT and TEXT, 5 % MTEXT; dimensions and hatches join it once Triya generates their geometry.
 - **Third-party samples** with redistributable licenses: ezdxf test files (MIT), ACadSharp samples (MIT). Record source + license per file in `corpus.json`.
-- **References:** for each file, a PDF plotted from AutoCAD (monochrome.ctb unless the file's own CTB is included) per layout and for model extents, plus PNGs rasterised from those PDFs at 150 dpi by `pnpm corpus:ref`.
+- **References (DEC-047):** for each file, golden PNGs rendered by Triya itself (M1-24) per layout and for model extents, committed after review in the PR that adds them. AutoCAD reference plots are not required; if one is ever contributed, `pnpm corpus:ref` rasterises it and it takes precedence for that file.
 
 ### 2.2 Private corpus (`corpus/private/`, gitignored)
 
@@ -118,6 +118,8 @@ The round-trip diff compares acad-ts with itself, so a value acad-ts never reads
 
 ## 4. Fidelity harness
 
+The references are Triya golden images (DEC-047): the first run of a file renders its PNGs, a person or the PR's reviewer looks at them, and they are committed under `corpus/public/refs/`. Later runs compare against them. A change that is meant to alter the picture updates the golden image in the same PR and says why; anything else that differs fails.
+
 1. Headless Chromium loads the app in test mode and opens the corpus file.
 2. For each reference: set the space/layout, zoom to the reference's plot area, render at the reference PNG's pixel size with the matching CTB in plot-preview mode.
 3. Compare with `pixelmatch` (threshold 0.1) and SSIM; pass if mismatch ≤ `tolerance.pixelMismatch` % **and** SSIM ≥ `tolerance.ssim`.
@@ -125,7 +127,7 @@ The round-trip diff compares acad-ts with itself, so a value acad-ts never reads
 
 Tolerances start loose (2 %) for a new file and are tightened to 0.5 % as features land; a PR may not loosen a tolerance.
 
-Entity-level fidelity (T4's "≥99 % of entities") is measured by rendering each entity in isolation into its bounds and comparing with the reference crop; reported per type into `docs/reports/fidelity-latest.md`.
+Entity-level results (each entity rendered in isolation into its bounds and compared with the golden crop) are reported per type into `docs/reports/fidelity-latest.md`.
 
 ## 5. Performance harness
 
@@ -156,8 +158,8 @@ Each command has a test file that drives it through the `PromptBus` with typed a
 
 ## 8. Owner-only gates
 
-- **AUDIT sweep:** open each Triya-saved corpus file in AutoCAD, run `AUDIT` (fix N), record error counts; required 0 at M0 (go/no-go), M2, M5, M10.
-- **Reference regeneration:** when a corpus file changes, re-plot references from AutoCAD.
+Since DEC-047 no gate needs the owner or AutoCAD. The AutoCAD AUDIT sweep is replaced by the ezdxf audit in CI (M1-105) and AutoCAD reference plots by Triya golden images (§4). What remains with the owner is optional:
+- **Private corpus:** `pnpm test:private` on the owner's own drawings, whenever convenient.
 - **Drafter sessions:** PRD §11.3 at M10.
 
 ## 9. Scripts

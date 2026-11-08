@@ -4,6 +4,8 @@ One row per DXF/DWG entity, object or table type. A type is **done** only when a
 
 Since M1-05 every save goes through `exportDocument`: it starts from the retained original and writes back only what differs from the original's own mapping, so a type Triya does not edit is written back untouched (its Write cell stays empty until its writer exists, roadmap M1-75), and the round-trip suite gates zero differences on every readable corpus file.
 
+**Scope since DEC-047 (2026-11-08):** Triya saves DXF only, as AC1032. DWG cells and pre-AC1032 rows record what was built before that decision; they get no new work before launch. The **Render** column means drawn following AutoCAD's documented rules and checked against Triya's own golden images, not AutoCAD plots. Anything marked as waiting on an owner sample is post-launch.
+
 Columns: **Read** (mapped into Triya model) · **Render** (drawn like AutoCAD) · **Edit** (modifiable by Triya commands) · **Write** (rebuilt on export without loss) · **Test** (corpus file + round-trip + fidelity reference).
 
 ## Entities

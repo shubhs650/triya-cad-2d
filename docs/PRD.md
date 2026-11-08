@@ -7,9 +7,13 @@ This document is the source of truth for *what* Triya CAD 2D is and is not. `ARC
 
 ---
 
+## 0. Rule 0 — purpose (owner, 2026-11-08; DEC-047)
+
+Triya CAD 2D is a **standalone 2D drafting application with functionality similar to AutoCAD**. Compatibility with AutoCAD is welcome but not mandatory. **DXF is the save format**, and all file work focuses on it; DWG save and older file versions are post-launch work, done only if users ask for them. Threads never ask the owner for AutoCAD files (reference plots, sample DWGs, AUDIT runs) to make progress. Where this section and the rest of the PRD disagree, this section wins.
+
 ## 1. One-paragraph summary
 
-Triya CAD 2D is a free, open-source, installable web app (PWA) that gives engineers an AutoCAD-grade 2D drafting environment that runs entirely in the browser — no login, no cookies, no server-side processing, fully offline-capable. It opens real-world DWG/DXF files faithfully (model + paper space, blocks, dimensions, tables, hatches, SHX fonts, xrefs), lets an experienced AutoCAD drafter work with their existing muscle memory (full command line with aliases, dynamic input, osnaps, grips, layers at AutoCAD depth), and prints vector PDFs with CTB plot styles. It is purpose-built for pressure-vessel and general mechanical drawings, with a parametric constraint solver and a pressure-vessel symbol library as differentiators.
+Triya CAD 2D is a free, open-source, installable web app (PWA) that gives engineers an AutoCAD-grade 2D drafting environment that runs entirely in the browser — no login, no cookies, no server-side processing, fully offline-capable. It opens DXF files (and DWG files, best effort) with model + paper space, blocks, dimensions, tables, hatches, SHX fonts and xrefs, saves DXF, lets an experienced AutoCAD drafter work with their existing muscle memory (full command line with aliases, dynamic input, osnaps, grips, layers at AutoCAD depth), and prints vector PDFs with CTB plot styles. It is purpose-built for pressure-vessel and general mechanical drawings, with a parametric constraint solver and a pressure-vessel symbol library as differentiators.
 
 ## 2. Problem
 
@@ -21,9 +25,9 @@ Triya CAD 2D is a free, open-source, installable web app (PWA) that gives engine
 
 | # | Goal | Measure |
 |---|------|---------|
-| G1 | Open any real-world DWG/DXF (R12–R2018) and display it as AutoCAD would | ≥99 % entity pixel-match on the public fidelity corpus; 100 % of private corpus opens without error |
+| G1 | Open DXF (any version) and DWG (best effort) and display them following AutoCAD's documented rules | Every public corpus file opens and matches its reviewed golden image (DEC-047); 100 % of private corpus opens without error |
 | G2 | An experienced AutoCAD drafter can work for a full session without hitting a "major missing feature" | Command coverage in `COMMANDS.md` at 100 % "done" for tier-1 and tier-2 |
-| G3 | What the user doesn't touch is never damaged | Round-trip structural diff = 0; AutoCAD `AUDIT` reports 0 errors on every Triya-saved file |
+| G3 | What the user doesn't touch is never damaged | DXF round-trip structural diff = 0; every Triya-saved corpus DXF passes ezdxf `recover` + `audit` with 0 errors (DEC-047) |
 | G4 | Prints are deliverable-quality | Vector PDF with CTB lineweights verified in Acrobat and PDF-XChange |
 | G5 | Native-app feel | Acceptance targets in §12 all pass |
 | G6 | Privacy is absolute | Zero network requests after app load except user-initiated error reports; auditable "Clear all local data" |
@@ -45,6 +49,8 @@ Triya CAD 2D is a free, open-source, installable web app (PWA) that gives engine
 13. Rendering/visual styles, materials, lights.
 14. Mac/Linux-specific native integrations beyond the PWA.
 15. Local MCP server and smart revision workflow — post-v1 roadmap.
+16. Saving DWG, and Save As to DXF versions older than AC1032 — post-launch, only if users ask (DEC-047).
+17. Matching AutoCAD's plots pixel for pixel, AutoCAD `AUDIT` runs, and any other check that needs AutoCAD or AutoCAD-made files — post-launch, only if users ask (DEC-047).
 
 Anything on this list that appears in a plan, issue, or PR is a defect in the plan.
 
@@ -64,16 +70,16 @@ Each requirement has an ID for traceability from `ROADMAP.md` milestones and tes
 
 ### 6.1 File I/O (FR-F)
 
-- **FR-F1** Open DWG (AC1009–AC1032) and DXF (ASCII + binary, all versions) via acad-ts in a Web Worker. Must.
-- **FR-F2** Save DWG and DXF in the version the file was opened in by default; Save As to any supported version. Must.
+- **FR-F1** Open DXF (ASCII + binary, all versions) via acad-ts in a Web Worker. Must. Open DWG (AC1012–AC1032) as already built, best effort; no new DWG-only work before launch (DEC-047). Should.
+- **FR-F2** Save DXF, written as AC1032 (the current DXF version). A drawing opened from a DWG or an older DXF is saved as an AC1032 `.dxf` (Save As); the original file is never overwritten in another format. Must. DWG save and older DXF versions: post-launch (non-goal 16).
 - **FR-F3** Opaque passthrough: every object not mapped to Triya's model (xdata, xrecords, extension dictionaries, proxies, dynamic-block definitions, unknown entities, constraint objects, custom classes) is retained verbatim and written back unchanged. Must.
 - **FR-F4** In-place save via File System Access API (Chromium); download fallback elsewhere. Must.
 - **FR-F5** Silent crash-recovery autosave to OPFS ≤5 s after the last edit, never to the original file; "Recover unsaved drawing?" on next launch. Must.
 - **FR-F6** Recent drawings list (cached file handles). Multi-document tabs with cross-document copy/paste. Must.
 - **FR-F7** Export SVG, PNG (with DPI/scale/background options). Must.
-- **FR-F8** New from template: bundled "Triya ISO (mm)" and "Triya ANSI (inch)"; user templates folder (.dwt/.dwg); user default template opens on one click. Must.
+- **FR-F8** New from template: bundled "Triya ISO (mm)" and "Triya ANSI (inch)"; user templates folder (.dxf); user default template opens on one click. Must.
 - **FR-F9** Units: honour `$INSUNITS`, `$MEASUREMENT`, `$LUNITS`, `$AUNITS`; never silently rescale; block/xref insert scales by unit ratio with prompt when unitless. Must.
-- **FR-F10** PWA registered as `.dwg`/`.dxf` file handler; installable; fully offline after first load. Must.
+- **FR-F10** PWA registered as `.dxf` file handler (and `.dwg`, for opening); installable; fully offline after first load. Must.
 - **FR-F11** "Clear all local data" in settings, removing OPFS, IndexedDB, caches. Must.
 
 ### 6.2 Spaces, layouts, viewports (FR-L)
@@ -102,7 +108,7 @@ Full list with aliases and tiers in `COMMANDS.md`. Summary:
 - **FR-A3 Leaders:** MLEADER with styles (block/text/none content, spline/straight, dogleg, landing, attachment), MLEADERALIGN, MLEADERCOLLECT, MLEADEREDIT (add/remove leader), legacy LEADER/QLEADER read + edit. Must.
 - **FR-A4 Centerlines:** CENTERMARK, CENTERLINE (associative to the picked lines/circles). Must.
 - **FR-A5 Tables:** render all imported ACAD_TABLE; in-place cell editing; insert/delete rows/columns; merge/unmerge; borders/alignment; TABLE command from table style; TABLESTYLE manager (title/header/data); whole-table SCALE; table text-height rescale; grip resize of rows/columns; CSV/clipboard paste into table (fast-follow). Must (except CSV: Should).
-- **FR-A6 Annotative:** render annotative objects at the correct representation per viewport and at `CANNOSCALE` in model space; preserve all representations. No creation. Must.
+- **FR-A6 Annotative:** draw annotative objects as stored and preserve all their representations through DXF saves. Must. Choosing the representation per viewport and by `CANNOSCALE`: post-launch (DEC-047; it needs AutoCAD-made samples). No creation.
 - **FR-A7 Hatch:** `acad.pat`-syntax pattern engine; bundled re-authored ANSI/ISO/other patterns; user `.pat` drop; pick-internal-point boundary detection with islands (normal/outer/ignore) and gap tolerance; associative hatch off at launch; gradient fills; hatch origin/angle/scale/annotative-scale; HATCHEDIT; hatch draw order (`HPDRAWORDER`). Must.
 - **FR-A8 Markup:** REVCLOUD, WIPEOUT, drawing-order commands (DRAWORDER, TEXTTOFRONT, HATCHTOBACK). Must.
 
@@ -152,7 +158,7 @@ Full list with aliases and tiers in `COMMANDS.md`. Summary:
 
 - **FR-Z1 Pressure-vessel symbol & standards library:** parametric 2D blocks generated to scale for ASME B16.5 (NPS ½–24, classes 150–2500, WN/SO/BL/LJ/SW/TH) and B16.47 A/B flanges; nozzle details (set-in/set-on, with reinforcement pad outline); saddle, leg, bracket, skirt and anchor chair outlines with editable principal dimensions; weld symbols (AWS A2.4 / ISO 2553); surface-finish and GD&T feature-control frames; standard notes blocks. Library panel with search, preview, units-aware insertion. Must.
 - **FR-Z2 PDF underlay red-lining:** promote FR-B6 to a headline: open PDF directly from the start screen, calibrate scale with two picks, mark up, print. Must.
-- **FR-Z3 Drawing compare:** diff two drawings (or two revisions) on normalised geometry + handles; overlay (added green, removed red, modified amber); results list with click-to-zoom; export as marked-up DWG/PDF. Must.
+- **FR-Z3 Drawing compare:** diff two drawings (or two revisions) on normalised geometry + handles; overlay (added green, removed red, modified amber); results list with click-to-zoom; export as marked-up DXF/PDF. Must.
 - **FR-Z4 Drawing health report:** on open and on demand: unused layers/blocks/styles, empty text, zero-length, duplicate (OVERKILL candidates), non-standard dim styles, missing refs, missing fonts, units/scale sanity, file version; one-click fixes. Must.
 
 ### 6.11 UI shell (FR-U)
@@ -191,7 +197,7 @@ Detailed in `UI_SPEC.md`. Summary:
 
 | Dependency | Role | Risk | Mitigation |
 |---|---|---|---|
-| acad-ts (MIT) | DWG/DXF read/write | Young; AI-ported; writer fidelity unproven | Milestone M0 spike (`SPIKE_M0_ACAD_TS.md`) is a go/no-go gate; vendored fork with patches upstreamed |
+| acad-ts (MIT) | DXF read/write, DWG read | Young; AI-ported; writer fidelity unproven | Milestone M0 spike (`SPIKE_M0_ACAD_TS.md`) is a go/no-go gate; vendored fork with patches upstreamed |
 | PlaneGCS (LGPL) | constraint solver | Build to WASM; LGPL boundary | Separate module; build script in repo; dynamically loaded |
 | pdf.js | PDF underlay rendering | Large; path extraction limited | Lazy-loaded; osnap to underlay best-effort |
 | pdf-lib or custom writer | PDF output | Font embedding, size | Stroke fonts as paths; TTF subset embedding |
@@ -202,7 +208,7 @@ Detailed in `UI_SPEC.md`. Summary:
 1. All "Must" requirements implemented and traced to passing tests.
 2. All acceptance targets in §12 pass in CI on the public corpus and locally on the private corpus.
 3. Two experienced AutoCAD drafters complete a scripted 2-hour drafting session and a 30-minute markup session each without a blocking missing feature (logged issues only "nice to have").
-4. AutoCAD `AUDIT` = 0 errors on every Triya-saved corpus file; AutoCAD opens them without "proxy" or "unknown object" warnings beyond those in the source.
+4. Every Triya-saved corpus DXF passes ezdxf `recover` + `audit` with 0 errors (DEC-047; replaces the AutoCAD `AUDIT` check).
 5. Lighthouse PWA: installable, offline, performance ≥ 90 on desktop.
 
 ## 12. Quantitative acceptance targets
@@ -214,7 +220,7 @@ Measured on a mid-range laptop (i5-class, integrated GPU, 16 GB) in headless Chr
 | T1 | Cold start (installed, offline): canvas interactive < 1.5 s; first-ever load ≤ 10 MB before usable, remainder streamed with "Ready offline" indicator |
 | T2 | Open: `bench-100k` (100k entities, 50 blocks, 5 layouts) renders < 3 s; `bench-ga` (25k entities, a vessel-GA-sized drawing) < 0.5 s |
 | T3 | Pan/zoom ≥ 60 fps with 100k entities visible; input latency ≤ 16 ms on command prompts; osnap marker response < 50 ms at 100k entities |
-| T4 | Fidelity: ≥ 99 % of entities in public corpus pixel-match AutoCAD reference plots within tolerance; 100 % of private corpus opens without error; AUDIT = 0 on all Triya-saved files; round-trip structural diff = 0 |
+| T4 | Fidelity: every public corpus file matches its reviewed Triya golden image within tolerance (DEC-047); 100 % of private corpus opens without error; ezdxf audit = 0 errors on all Triya-saved DXF; DXF round-trip structural diff = 0 |
 | T5 | In-place save of `bench-100k` < 2 s; autosave within 5 s of last edit, never to the original |
 | T6 | A1 sheet with CTB to vector PDF < 2 s; lineweights verified in Acrobat and PDF-XChange at 100 % |
 | T7 | Memory < 1 GB for `bench-100k`; no growth across 20 open/close cycles (±5 %) |
@@ -231,6 +237,6 @@ If T2/T3 fail on the real corpus after Canvas 2D optimisation, that is the trigg
 
 ## 14. Open items tracked outside this PRD
 
-- M0 go/no-go on acad-ts (see `SPIKE_M0_ACAD_TS.md`).
-- Private corpus assembly (owner task).
+- M0 go/no-go on acad-ts: decided (M0-GO, CONDITIONAL GO, 2026-11-01).
+- Private corpus assembly (optional owner task; never a blocker, DEC-047).
 - Two drafter test sessions (owner task, §11.3).
