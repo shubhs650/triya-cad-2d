@@ -18,6 +18,7 @@ describe('palette search', () => {
       'PAN',
       'REGEN',
       'REGENALL',
+      'SELECT',
       'VIEW',
       'ZOOM',
     ]);

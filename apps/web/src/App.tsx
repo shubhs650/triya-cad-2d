@@ -2,7 +2,14 @@
 // (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
 // tabs; the command line (CommandLine.tsx, M2-02); the status bar. The ribbon and the palette
 // stack arrive with their own tasks.
-import type { ChangeSet, EditResult, EngineEdit, Layout, PdfDefinition } from '@triya/engine';
+import type {
+  ChangeSet,
+  EditResult,
+  EngineEdit,
+  EntityId,
+  Layout,
+  PdfDefinition,
+} from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
@@ -71,14 +78,25 @@ engines.onCommand((doc, o) => {
     for (const c of controllersOf(doc)) c.setPrompt(prompt);
   }
   if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
+  if (o.type === 'selection') {
+    selections.set(doc, o.ids);
+    for (const c of controllersOf(doc)) c.setHighlight(o.ids);
+  }
   if (o.type === 'view') {
-    engines.command(doc, {
-      kind: 'view',
-      id: o.id,
-      reply: answerView(o.request, viewContext(doc)),
-    });
+    void Promise.resolve(answerView(o.request, viewContext(doc))).then(
+      (reply) => engines.command(doc, { kind: 'view', id: o.id, reply }),
+      (e: unknown) =>
+        engines.command(doc, {
+          kind: 'view',
+          id: o.id,
+          reply: { ok: false, message: e instanceof Error ? e.message : String(e) },
+        }),
+    );
   }
 });
+
+/** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
+const selections = new Map<number, readonly EntityId[]>();
 
 /** The view commands' link to a drawing's canvas: the current viewport of the space shown. */
 function viewContext(id: number): ViewContext {
@@ -399,6 +417,8 @@ export interface DevHooks {
    * top-left corner: the fidelity harness names them where a golden image differs (M1-106).
    */
   entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]>;
+  /** The showing drawing's selected objects (M2-03), as its command engine last said. */
+  selection(): readonly EntityId[];
 }
 
 if (import.meta.env.DEV) {
@@ -415,6 +435,10 @@ if (import.meta.env.DEV) {
     changes: () => {
       const doc = showing();
       return doc ? engines.changesOf(doc.id) : [];
+    },
+    selection: () => {
+      const doc = showing();
+      return (doc && selections.get(doc.id)) ?? [];
     },
     entitiesIn: async (rect) => {
       const doc = showing();
@@ -875,7 +899,13 @@ function ViewportCanvas({
         showCursor(p);
       },
       onError: (e) => store.failed(name, openError(name, e)),
-      onPick: (point) => engines.command(id, { kind: 'answer', answer: { kind: 'point', point } }),
+      onPick: (point, o) =>
+        engines.command(id, {
+          kind: 'pick',
+          point,
+          ...(o.shift && { shift: true }),
+          ...(o.release && { release: true }),
+        }),
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },
@@ -890,6 +920,8 @@ function ViewportCanvas({
     });
     const unregister = register(id, block, c, index);
     c.setPrompt(commandLines.get(id).prompt);
+    const selected = selections.get(id);
+    if (selected?.length) c.setHighlight(selected);
     showCurrent(id, block, visibleRef.current);
     return () => {
       unregister();

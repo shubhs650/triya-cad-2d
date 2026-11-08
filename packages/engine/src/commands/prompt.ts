@@ -24,8 +24,16 @@ interface PromptBase {
 /** A point; with `rubberBand` the front-end draws a line from it and a number is a direct distance. */
 export interface PointPrompt extends PromptBase {
   readonly kind: 'point';
-  /** With `box`, a rectangle with its corners at `from` and the cursor (a window's corners). */
-  readonly rubberBand?: { readonly from: Vec2; readonly box?: boolean };
+  /**
+   * With `box`, a rectangle with its corners at `from` and the cursor (a window's corners);
+   * with `selection` too, a selection window (M2-03), drawn as AutoCAD draws one: a window
+   * solid on blue, a crossing dashed on green, `auto` either by the cursor's side of `from`.
+   */
+  readonly rubberBand?: {
+    readonly from: Vec2;
+    readonly box?: boolean;
+    readonly selection?: 'auto' | 'window' | 'crossing';
+  };
   /**
    * Text that is neither a point nor an option answers `{ kind: 'string' }` instead of being
    * refused (AutoCAD's "arbitrary input", initget bit 128): ZOOM's `2x` and `0.5xp`.
@@ -66,9 +74,14 @@ export interface RealPrompt extends PromptBase {
   readonly kind: 'real';
 }
 
-/** "Select objects": the selection front-end (M2-03) answers with the chosen entities. */
+/**
+ * "Select objects": the bus builds the selection pick by pick (M2-03, `SelectionLoop`) and
+ * answers with the chosen entities once Enter ends it (none if nothing was chosen).
+ */
 export interface SelectionPrompt extends PromptBase {
   readonly kind: 'selection';
+  /** The command edits what it selects: objects on locked layers are refused, as AutoCAD does. */
+  readonly editable?: boolean;
 }
 
 export type Prompt =

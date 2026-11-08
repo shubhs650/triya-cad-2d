@@ -1,6 +1,6 @@
 // M2-02 part 2: the app's answers to the view commands, against a recording canvas, and the view
 // maths they add (ZOOM n relative to the limits, real-time ZOOM's drag factor).
-import type { Vec2, ViewRequest } from '@triya/engine';
+import type { Vec2, ViewReply, ViewRequest } from '@triya/engine';
 import type { ViewTransform } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import type { CanvasMode } from '../src/canvas/controller';
@@ -32,7 +32,23 @@ class Target implements ViewTarget {
   show = (v: ViewTransform) => void this.calls.push(`show ${v.center.x},${v.center.y} ${v.scale}`);
   setMode = (m: CanvasMode) => void this.calls.push(`mode ${m}`);
   regen = () => void this.calls.push('regen');
+  pick = (p: Vec2) => (this.calls.push(`pick ${p.x},${p.y}`), Promise.resolve([7]));
+  selectWindow = (a: Vec2, b: Vec2, crossing: boolean) => (
+    this.calls.push(`select ${a.x},${a.y} ${b.x},${b.y}${crossing ? ' crossing' : ''}`),
+    Promise.resolve([7, 8])
+  );
+  objectsKnown = true;
+  zoomObjects = (ids: readonly number[]) => (
+    this.calls.push(`objects ${ids.join(',')}`),
+    Promise.resolve(this.objectsKnown)
+  );
 }
+
+/** The view requests answer at once; only selection's wait for the renderer. */
+const now = (r: ViewReply | Promise<ViewReply>): ViewReply => {
+  if (r instanceof Promise) throw new Error('expected an immediate reply');
+  return r;
+};
 
 const VIEWS: NamedView[] = [
   { name: 'Front', inDrawing: true, view: { center: { x: 1, y: 2 }, scale: 3 } },
@@ -51,6 +67,25 @@ function context(target: Target | undefined, others: Target[] = []) {
 }
 
 describe('answerView', () => {
+  it('answers selection from the renderer (M2-03): picks, windows and ZOOM Object', async () => {
+    const t = new Target();
+    const { ctx } = context(t);
+    expect(await answerView({ op: 'pick', point: { x: 1, y: 2 } }, ctx)).toEqual({
+      ok: true,
+      ids: [7],
+    });
+    expect(
+      await answerView({ op: 'select', a: { x: 0, y: 0 }, b: { x: 5, y: 5 }, crossing: true }, ctx),
+    ).toEqual({ ok: true, ids: [7, 8] });
+    expect(await answerView({ op: 'objects', ids: [7, 8] }, ctx)).toMatchObject({ ok: true });
+    t.objectsKnown = false;
+    expect(await answerView({ op: 'objects', ids: [9] }, ctx)).toEqual({
+      ok: false,
+      message: 'The objects have no extents.',
+    });
+    expect(t.calls).toEqual(['pick 1,2', 'select 0,0 5,5 crossing', 'objects 7,8', 'objects 9']);
+  });
+
   it('answers the view as VIEWSIZE and width, and whether paper space shows', () => {
     const t = new Target(true);
     expect(answerView({ op: 'get' }, context(t).ctx)).toEqual({
@@ -66,7 +101,7 @@ describe('answerView', () => {
     });
     const t = new Target();
     t.size = { width: 0, height: 0 };
-    expect(answerView({ op: 'get' }, context(t).ctx).ok).toBe(false);
+    expect(now(answerView({ op: 'get' }, context(t).ctx)).ok).toBe(false);
   });
 
   it('calls the canvas as the navigation bar does', () => {
@@ -86,7 +121,7 @@ describe('answerView', () => {
       { op: 'realtime', mode: 'none' },
       { op: 'restore', name: 'front' },
     ];
-    for (const r of requests) expect(answerView(r, ctx).ok).toBe(true);
+    for (const r of requests) expect(now(answerView(r, ctx)).ok).toBe(true);
     expect(t.calls).toEqual([
       'extents',
       'all',
@@ -114,7 +149,7 @@ describe('answerView', () => {
 
   it('refuses nXP on the Model tab', () => {
     const t = new Target(false);
-    const r = answerView({ op: 'scale', factor: 1, relativeTo: 'paper' }, context(t).ctx);
+    const r = now(answerView({ op: 'scale', factor: 1, relativeTo: 'paper' }, context(t).ctx));
     expect(r.ok).toBe(false);
     expect(t.calls).toEqual([]);
   });
@@ -143,7 +178,7 @@ describe('answerView', () => {
       ok: false,
       message: 'Cannot find view "Back".',
     });
-    expect(answerView({ op: 'restore', name: 'ISO' }, ctx).ok).toBe(false);
+    expect(now(answerView({ op: 'restore', name: 'ISO' }, ctx)).ok).toBe(false);
     answerView({ op: 'save', name: 'Here' }, ctx);
     answerView(
       { op: 'save', name: 'Box', window: { a: { x: 0, y: 0 }, b: { x: 20, y: 10 } } },

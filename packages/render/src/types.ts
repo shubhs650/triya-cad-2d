@@ -37,6 +37,8 @@ export interface RenderStyle {
    * AutoCAD's initial value is 1, so absent shows it.
    */
   readonly showTransparency?: boolean;
+  /** The selection highlight's colour (M2-03, UI_SPEC.md §6), a CSS colour; a blue by default. */
+  readonly selection?: string;
 }
 
 /**
@@ -319,6 +321,19 @@ export interface Renderer {
    * (M1-106).
    */
   entitiesIn(rect: ScreenRect): DrawnEntity[];
+  /**
+   * The entities of the space shown a selection window takes (M2-03): a `window` those wholly
+   * inside `box` (world units), a `crossing` window those inside it or crossing its edge.
+   */
+  select(query: SelectQuery): EntityId[];
+  /** The entities to draw selected (M2-03): highlighted over the scene; none clears it. */
+  setHighlight(ids: readonly EntityId[]): void;
+}
+
+/** A selection window in world units (M2-03). */
+export interface SelectQuery {
+  readonly kind: 'window' | 'crossing';
+  readonly box: Box;
 }
 
 /** The world box a view shows on a viewport of the given CSS size. */

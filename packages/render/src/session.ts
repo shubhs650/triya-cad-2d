@@ -11,10 +11,12 @@ import {
   SpatialIndex,
   toleranceForSize,
   toleranceFromExtents,
+  unionBox,
   type Box,
   type ChangeSet,
   type DocumentInit,
   type Entity,
+  type EntityId,
   type Handle,
   type HeaderValue,
   type KeyedChanges,
@@ -184,6 +186,20 @@ export class RenderSession {
    */
   extents(): Box | undefined {
     return this.index.drawnExtents(this.#block);
+  }
+
+  /**
+   * The extents of some entities (ZOOM Object, M2-03), from the spatial index: text by its
+   * glyphs. Undefined when none of them has a known extent.
+   */
+  boundsOf(ids: readonly EntityId[]): Box | undefined {
+    let out: Box | undefined;
+    for (const id of ids) {
+      const b = this.index.bounds(id);
+      if (b?.kind !== 'box') continue;
+      out = out ? unionBox(out, b.box) : b.box;
+    }
+    return out;
   }
 
   /** The last frame drawn, fitted inside `max` (the document tab hover preview, M1-22). */

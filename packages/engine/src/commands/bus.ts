@@ -6,11 +6,18 @@
 // The bus owns what AutoCAD does around every command: Enter repeats the last command, Esc
 // cancels, defaults, transparent commands (`'ZOOM`), the point modifiers FROM, M2P and `.X`
 // filters, direct distance entry, two-point distances and angles, and the history (F2).
+//
+// It owns selection too (M2-03): a command's "Select objects" prompt is built pick by pick here
+// (`SelectionLoop`), picks and windows made at `Command:` are the pre-selection (PICKFIRST) the
+// next command that selects takes, and the set it last selected is the Previous set.
 import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
+import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
+import { SelectionLoop, type StepResult } from '../selection/loop';
+import { onLockedLayers } from '../selection/rules';
 import type { EntityGeometry } from '../model/types';
 import {
   prompts,
@@ -55,6 +62,11 @@ export type BusEvent =
   | { readonly type: 'preview'; readonly geometry: readonly EntityGeometry[] }
   | { readonly type: 'start'; readonly command: string; readonly transparent: boolean }
   | { readonly type: 'end'; readonly command: string; readonly cancelled: boolean }
+  /**
+   * The objects to show selected changed (M2-03): the pre-selection at `Command:`, or the set a
+   * "Select objects" prompt is building.
+   */
+  | { readonly type: 'selection'; readonly ids: readonly EntityId[] }
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
   | { readonly type: 'commit'; readonly record: CommandRecord };
 
@@ -67,6 +79,11 @@ export interface PromptBusOptions {
   readonly space?: () => Handle;
   /** The canvas the view commands act on; by default none (they say so). */
   readonly view?: ViewHost;
+  /**
+   * PICKFIRST: objects picked at `Command:` are selected and a command that selects takes them
+   * (noun-verb). AutoCAD's default, 1; false ignores picks at `Command:`.
+   */
+  readonly pickfirst?: boolean;
 }
 
 interface Frame {
@@ -75,6 +92,8 @@ interface Frame {
   readonly gen: CommandGenerator;
   readonly transparent: boolean;
   prompt: Prompt | undefined;
+  /** The selection its "Select objects" prompt is building (M2-03). */
+  select?: SelectionLoop | undefined;
   /** The point the command it runs inside was collecting (`'ZOOM` typed at FROM's base point). */
   readonly outerCollectors: Collector[];
 }
@@ -123,13 +142,28 @@ export class PromptBus {
   #queue: Promise<void> = Promise.resolve();
   readonly #history: string[] = [];
   readonly #recent: string[] = [];
+  readonly #pickfirstOn: boolean;
+  /** The pre-selection made at `Command:` (PICKFIRST). */
+  readonly #idle: SelectionLoop;
+  /** The pre-selection the running command takes at its first "Select objects" prompt. */
+  #pickfirst: readonly EntityId[] | undefined;
+  /** The Previous selection set. */
+  #previous: readonly EntityId[] = [];
+  /** The selection last shown (the `selection` event). */
+  #shown: readonly EntityId[] = [];
 
   constructor(options: PromptBusOptions) {
     this.#model = options.model;
     this.#registry = options.registry;
-    this.#apply = options.apply ?? ((cs) => this.#model.apply(cs));
+    const apply = options.apply ?? ((cs: ChangeSet) => this.#model.apply(cs));
+    this.#apply = (cs) => {
+      apply(cs);
+      this.#forget(cs);
+    };
     this.#space = options.space ?? (() => modelSpaceOf(this.#model));
     this.#view = options.view ?? NO_VIEW;
+    this.#pickfirstOn = options.pickfirst ?? true;
+    this.#idle = this.#selectionLoop({ message: 'Command', atCommand: true });
   }
 
   /** Listens for bus events; returns the unsubscribe. */
@@ -142,15 +176,26 @@ export class PromptBus {
   get prompt(): Prompt | undefined {
     const c = this.#collectors.at(-1);
     if (c) return prompts.point({ message: c.text.replace(/:$/, '') });
-    return this.#stack.at(-1)?.prompt;
+    const frame = this.#stack.at(-1);
+    if (!frame) return this.#idle.prompt;
+    return frame.select?.prompt ?? frame.prompt;
   }
 
   /** The command line's prompt text. */
   get promptText(): string {
     const c = this.#collectors.at(-1);
     if (c) return this.#nested(c.text);
-    const frame = this.#stack.at(-1);
-    return frame?.prompt ? this.#nested(formatPrompt(frame.prompt, this.#precision())) : 'Command:';
+    const prompt = this.prompt;
+    return prompt ? this.#nested(formatPrompt(prompt, this.#precision())) : 'Command:';
+  }
+
+  /** The objects shown selected: the set being built at "Select objects", or the pre-selection. */
+  get selection(): readonly EntityId[] {
+    for (let i = this.#stack.length - 1; i >= 0; i--) {
+      const loop = this.#stack[i]!.select;
+      if (loop) return loop.ids;
+    }
+    return this.#idle.ids;
   }
 
   /** The running command (the innermost, when one runs transparently), or undefined. */
@@ -207,6 +252,53 @@ export class PromptBus {
     });
   }
 
+  /**
+   * A click on the canvas (M2-03). At "Select objects" or at `Command:` it picks, or starts or
+   * ends a selection window, removing with `shift`; at a prompt for a point it is the point.
+   * `release` ends a dragged window and does nothing when no window is open.
+   */
+  pick(
+    point: Vec2,
+    o: { readonly shift?: boolean; readonly release?: boolean } = {},
+  ): Promise<void> {
+    return this.#enqueue(async () => {
+      this.#cursor = point;
+      const frame = this.#stack.at(-1);
+      if (frame?.select && this.#collectors.length === 0) {
+        return this.#step(frame, await frame.select.point(point, o));
+      }
+      if (frame) return o.release ? undefined : this.#direct({ kind: 'point', point });
+      if (!this.#pickfirstOn) return;
+      this.#step(undefined, await this.#idle.point(point, o));
+    });
+  }
+
+  /** Ctrl+A: everything ALL takes, at `Command:` (replacing the pre-selection) or "Select objects". */
+  selectAll(): Promise<void> {
+    return this.#enqueue(async () => {
+      const frame = this.#stack.at(-1);
+      if (frame?.select) {
+        const step = await frame.select.keyword('ALL');
+        return this.#step(frame, step ?? 'more');
+      }
+      if (frame || !this.#pickfirstOn) return;
+      this.#idle.clear();
+      await this.#idle.keyword('ALL');
+      this.#step(undefined, 'more');
+    });
+  }
+
+  /** Deselects what was picked at `Command:` (another space shown, M2-03). */
+  clearSelection(): Promise<void> {
+    return this.#enqueue(() => {
+      if (this.#idle.ids.length === 0 && !this.#idle.wantsPoint) return;
+      const corner = this.#idle.wantsPoint;
+      this.#idle.clear();
+      this.#showSelection();
+      if (corner && this.#stack.length === 0) this.#showPrompt();
+    });
+  }
+
   /** Runs each line as typed input, in order (scripts and tests). */
   async script(lines: readonly string[]): Promise<void> {
     for (const line of lines) await this.submit(line);
@@ -259,10 +351,27 @@ export class PromptBus {
 
   async #input(text: string): Promise<void> {
     const frame = this.#stack.at(-1);
-    if (!frame) return this.#commandLine(text);
+    if (!frame) {
+      // A point typed while a window opened at `Command:` waits for its corner ends it.
+      if (this.#idle.wantsPoint) {
+        const p = parseCoordinate(text.trim(), {
+          lastPoint: this.#lastPoint,
+          angles: this.#angles(),
+        });
+        if (p !== undefined && p !== 'invalid') {
+          this.#log(`${this.promptText} ${text.trim()}`);
+          return this.#step(undefined, await this.#idle.point(p));
+        }
+        this.#idle.cancelWindow();
+      }
+      return this.#commandLine(text);
+    }
     const t = text.trim();
     if (this.#collectors.length > 0) {
       return t.length > 1 && t.startsWith("'") ? this.#transparent(t) : this.#collectorInput(t);
+    }
+    if (frame.select && !(t.length > 1 && t.startsWith("'"))) {
+      return this.#selectionInput(frame, frame.select, t);
     }
     // At a text prompt an apostrophe is text ('Note' as a TEXT string), not a transparent command.
     if (t.length > 1 && t.startsWith("'") && frame.prompt!.kind !== 'string') {
@@ -278,6 +387,17 @@ export class PromptBus {
       return;
     }
     const echo = formatAnswer(answer, this.#precision());
+    const loop = frame.select;
+    if (loop && this.#collectors.length === 0 && answer.kind !== 'selection') {
+      if (answer.kind === 'point') {
+        if (!loop.wantsPoint) this.#log(`${this.promptText} ${echo}`);
+        return this.#step(frame, await loop.point(answer.point));
+      }
+      if (answer.kind === 'enter') return this.#selectionInput(frame, loop, '');
+      if (answer.kind === 'keyword') return this.#selectionInput(frame, loop, answer.keyword);
+      return this.#reject(INVALID.selection);
+    }
+    if (loop) frame.select = undefined;
     if (this.#collectors.length > 0) {
       if (answer.kind !== 'point') return this.#reject('Invalid point.');
       this.#log(`${this.promptText} ${echo}`.trimEnd());
@@ -321,6 +441,15 @@ export class PromptBus {
     if (!transparent) {
       this.#last = { def, dash };
       this.#changes = [];
+      // Noun-verb: a command that selects takes the pre-selection at its first "Select objects"
+      // prompt. One that does not clears it, as AutoCAD deselects when LINE starts; a view
+      // command (one that may run transparently) leaves it selected, and ZOOM Object takes it.
+      const selects = def.usesSelection === 'during' || def.usesSelection === 'before';
+      this.#idle.cancelWindow();
+      this.#pickfirst =
+        (selects || def.transparent) && this.#idle.ids.length > 0 ? [...this.#idle.ids] : undefined;
+      if (!def.transparent) this.#idle.clear();
+      this.#showSelection();
     }
     const ctx = this.#context(dash, transparent);
     const frame: Frame = {
@@ -379,7 +508,122 @@ export class PromptBus {
     }
     if (step.done) return this.#end(frame, false);
     frame.prompt = step.value;
+    if (step.value.kind === 'selection') return this.#beginSelection(frame, step.value);
     this.#showPrompt();
+  }
+
+  /** A "Select objects" prompt: answered by the pre-selection, or built pick by pick. */
+  async #beginSelection(frame: Frame, prompt: Extract<Prompt, { kind: 'selection' }>) {
+    const pre = frame.transparent ? undefined : this.#pickfirst;
+    this.#pickfirst = undefined;
+    if (pre) {
+      this.#idle.clear();
+      let ids = pre;
+      if (prompt.editable) {
+        const locked = onLockedLayers(this.#model, pre);
+        ids = pre.filter((id) => !locked.has(id));
+        if (locked.size > 0) {
+          this.#log(`${locked.size} ${locked.size === 1 ? 'was' : 'were'} on a locked layer.`);
+        }
+      }
+      if (ids.length > 0) this.#previous = ids;
+      this.#showSelection();
+      frame.prompt = undefined;
+      return this.#advance(frame, { kind: 'selection', ids });
+    }
+    frame.select = this.#selectionLoop({
+      message: prompt.message,
+      ...(prompt.options && { options: prompt.options }),
+      ...(prompt.editable && { editable: true }),
+    });
+    this.#showSelection();
+    this.#showPrompt();
+  }
+
+  #selectionLoop(o: ConstructorParameters<typeof SelectionLoop>[1]): SelectionLoop {
+    return new SelectionLoop(
+      {
+        model: this.#model,
+        space: () => this.#space(),
+        request: (r) => this.#view.request(r),
+        log: (line) => this.#log(line),
+        previous: () => this.#previous,
+      },
+      o,
+    );
+  }
+
+  /** Text at "Select objects": Enter ends it, then a command option, a mode or a point. */
+  async #selectionInput(frame: Frame, loop: SelectionLoop, t: string): Promise<void> {
+    if (t === '') {
+      if (loop.wantsPoint) return this.#reject('Invalid window specification.');
+      return this.#finishSelection(frame, loop);
+    }
+    const parsePoint = () => {
+      const p = parseCoordinate(t, { lastPoint: this.#lastPoint, angles: this.#angles() });
+      return p === 'invalid' ? undefined : p;
+    };
+    if (loop.wantsPoint) {
+      const p = parsePoint();
+      if (!p) return this.#reject('Invalid point.');
+      this.#log(`${this.promptText} ${t}`);
+      this.#lastPoint = p;
+      return this.#step(frame, await loop.point(p));
+    }
+    const option = matchKeyword(t, frame.prompt?.options ?? []);
+    if (option) {
+      frame.select = undefined;
+      this.#showSelection();
+      return this.#deliver({ kind: 'keyword', keyword: option }, t);
+    }
+    const mode = await loop.keyword(t);
+    if (mode) return this.#step(frame, mode);
+    const p = parsePoint();
+    if (p) {
+      this.#log(`${this.promptText} ${t}`);
+      this.#lastPoint = p;
+      return this.#step(frame, await loop.point(p));
+    }
+    loop.invalid(t);
+    this.#showPrompt();
+  }
+
+  /** After a selection step: the set is shown, and complete (SIngle) or prompted for again. */
+  async #step(frame: Frame | undefined, result: StepResult): Promise<void> {
+    if (frame?.select && result === 'done') return this.#finishSelection(frame, frame.select);
+    this.#showSelection();
+    this.#showPrompt();
+  }
+
+  /** "Select objects" ended: the command gets the set, which becomes the Previous set. */
+  async #finishSelection(frame: Frame, loop: SelectionLoop): Promise<void> {
+    const ids = [...loop.ids];
+    this.#log(this.promptText);
+    frame.select = undefined;
+    if (ids.length > 0) this.#previous = ids;
+    this.#showSelection();
+    return this.#deliver({ kind: 'selection', ids }, '', false);
+  }
+
+  #showSelection(): void {
+    const ids = this.selection;
+    const shown = this.#shown;
+    if (ids.length === shown.length && ids.every((id, i) => id === shown[i])) return;
+    this.#shown = [...ids];
+    this.#emit({ type: 'selection', ids: this.#shown });
+  }
+
+  /** Erased objects leave every selection, the Previous set included. */
+  #forget(cs: ChangeSet): void {
+    const removed = cs.entities?.removed;
+    if (!removed?.length) return;
+    const gone = new Set(removed.map((r) => r.entity.id));
+    this.#idle.forget(gone);
+    for (const f of this.#stack) f.select?.forget(gone);
+    // AutoCAD: "The Previous selection set is cleared by operations that delete objects".
+    this.#previous = this.#previous.filter((id) => !gone.has(id));
+    if (this.#pickfirst) this.#pickfirst = this.#pickfirst.filter((id) => !gone.has(id));
+    this.#showSelection();
   }
 
   /** A command ended: close its record, or resume the one it ran inside. */
@@ -397,6 +641,8 @@ export class PromptBus {
   }
 
   #close(): void {
+    this.#pickfirst = undefined;
+    this.#showSelection();
     if (this.#previewing) {
       this.#previewing = false;
       this.#emit({ type: 'preview', geometry: [] });
@@ -410,6 +656,8 @@ export class PromptBus {
   async #cancel(): Promise<void> {
     this.#log(`${this.promptText} *Cancel*`);
     this.#collectors = [];
+    // Esc at `Command:` deselects, as in AutoCAD.
+    if (this.#stack.length === 0) this.#idle.clear();
     while (this.#stack.length > 0) {
       const frame = this.#stack.pop()!;
       try {
@@ -538,7 +786,10 @@ export class PromptBus {
 
   /** A point given at the command's prompt: the point itself, or a distance or angle from it. */
   async #pointFor(p: Vec2, echo: string, log = true): Promise<void> {
-    const prompt = this.#stack.at(-1)!.prompt!;
+    const frame = this.#stack.at(-1)!;
+    // A point made with FROM or a filter at "Select objects" picks there.
+    if (frame.select) return this.#step(frame, await frame.select.point(p));
+    const prompt = frame.prompt!;
     if (prompt.kind === 'point') return this.#deliver({ kind: 'point', point: p }, echo, log);
     if (prompt.kind !== 'distance' && prompt.kind !== 'angle') {
       return this.#reject(INVALID[prompt.kind]);

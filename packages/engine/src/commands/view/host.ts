@@ -3,6 +3,7 @@
 // does, on the main thread. A command asks the host and awaits its reply; the engine session
 // carries each request to the app as a `CommandOutput` and the reply back as a `CommandInput`.
 import type { Vec2 } from '../../geom/types';
+import type { EntityId } from '../../model/entity-ids';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -51,7 +52,16 @@ export type ViewRequest =
       readonly op: 'save';
       readonly name: string;
       readonly window?: { readonly a: Vec2; readonly b: Vec2 };
-    };
+    }
+  /**
+   * Selection (M2-03): the objects of the space shown within the pickbox of `point`, nearest
+   * first. What a pick takes depends on what is drawn, so the canvas answers it.
+   */
+  | { readonly op: 'pick'; readonly point: Vec2 }
+  /** The objects a window takes: wholly inside it, or, `crossing`, inside or crossing it. */
+  | { readonly op: 'select'; readonly a: Vec2; readonly b: Vec2; readonly crossing: boolean }
+  /** ZOOM Object: the view fitted around the objects' extents. */
+  | { readonly op: 'objects'; readonly ids: readonly EntityId[] };
 
 export type ViewReply =
   | {
@@ -59,6 +69,8 @@ export type ViewReply =
       /** The view after the request (every request but `views` answers it). */
       readonly view?: ViewState;
       readonly views?: readonly NamedViewInfo[];
+      /** What a `pick` or `select` took. */
+      readonly ids?: readonly EntityId[];
     }
   | { readonly ok: false; readonly message: string };
 
