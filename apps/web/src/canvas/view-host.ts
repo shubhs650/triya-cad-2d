@@ -1,7 +1,16 @@
 // The app's side of the view host (M2-02 part 2): answers the view commands' requests (ZOOM,
 // PAN, REGEN, VIEW) with the canvas of the space shown, the same calls the navigation bar makes.
 // Every request gets a reply, a refusal when nothing is shown, because the command waits for it.
-import type { NamedViewInfo, Vec2, ViewReply, ViewRequest, ViewState } from '@triya/engine';
+// Selection asks it too (M2-03): what a pick or a window takes, and ZOOM Object's extents, which
+// the renderer answers, so those replies come later.
+import type {
+  EntityId,
+  NamedViewInfo,
+  Vec2,
+  ViewReply,
+  ViewRequest,
+  ViewState,
+} from '@triya/engine';
 import type { ViewTransform } from '@triya/render';
 import type { CanvasMode } from './controller';
 import type { ViewportSize } from './navigate';
@@ -24,6 +33,9 @@ export interface ViewTarget {
   show(view: ViewTransform): void;
   setMode(mode: CanvasMode): void;
   regen(): void;
+  pick(point: Vec2): Promise<EntityId[]>;
+  selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]>;
+  zoomObjects(ids: readonly EntityId[]): Promise<boolean>;
 }
 
 /** A named view of the space shown; `view` is undefined when a 2D canvas cannot show it. */
@@ -57,7 +69,7 @@ export function stateOf(t: ViewTarget): ViewState | undefined {
   };
 }
 
-export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply {
+export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promise<ViewReply> {
   const t = ctx.target;
   if (!t || !stateOf(t)) return { ok: false, message: NO_CANVAS };
   const done = (): ViewReply => {
@@ -121,6 +133,14 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply {
       t.show(found.view);
       return done();
     }
+    case 'pick':
+      return t.pick(r.point).then((ids) => ({ ok: true, ids }));
+    case 'select':
+      return t.selectWindow(r.a, r.b, r.crossing).then((ids) => ({ ok: true, ids }));
+    case 'objects':
+      return t
+        .zoomObjects(r.ids)
+        .then((ok) => (ok ? done() : { ok: false, message: 'The objects have no extents.' }));
     case 'save': {
       const view = r.window ? windowView(r.window.a, r.window.b, t.size) : t.view;
       if (!view) return { ok: false, message: 'The window has no area.' };

@@ -103,6 +103,11 @@ export function CommandLine({
   sendRef.current = send;
   const cancelRef = useRef(cancel);
   cancelRef.current = cancel;
+  const selectAll = () => {
+    if (doc !== undefined) engines.command(doc, { kind: 'select-all' });
+  };
+  const selectAllRef = useRef(selectAll);
+  selectAllRef.current = selectAll;
 
   // Keys typed outside any field go to the command line, as in AutoCAD.
   useEffect(() => {
@@ -121,6 +126,14 @@ export function CommandLine({
         e.preventDefault();
         setPaletteOpen(true);
         return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
+        // Ctrl+A selects every object (M2-03, AutoCAD's SELECTALL), unless it would select
+        // text typed in a field.
+        const field = e.target instanceof HTMLInputElement ? e.target : undefined;
+        if ((field && field.value !== '') || (!field && takesText(e.target))) return;
+        e.preventDefault();
+        return selectAllRef.current();
       }
       if (e.target === input.current || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
