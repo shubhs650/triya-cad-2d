@@ -5,3 +5,6 @@ export * from './parse';
 export * from './prompt';
 export * from './builtin';
 export { currentLayer, lineCommand } from './draw/line';
+export * from './view/host';
+export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale } from './view/zoom';
+export { viewCommand, viewNameMatches } from './view/named-view';

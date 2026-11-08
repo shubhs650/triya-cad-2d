@@ -16,16 +16,18 @@ import {
   setCurrentTile,
   tilesOf,
 } from './canvas/registry';
+import { answerView, type ViewContext } from './canvas/view-host';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
+import { dynMode } from './dynamic-input';
 import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile } from './images';
 import { LayersPalette } from './LayersPalette';
-import { NavBar } from './NavBar';
+import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import {
@@ -68,7 +70,27 @@ engines.onCommand((doc, o) => {
     const prompt = commandLines.get(doc).prompt;
     for (const c of controllersOf(doc)) c.setPrompt(prompt);
   }
+  if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
+  if (o.type === 'view') {
+    engines.command(doc, {
+      kind: 'view',
+      id: o.id,
+      reply: answerView(o.request, viewContext(doc)),
+    });
+  }
 });
+
+/** The view commands' link to a drawing's canvas: the current viewport of the space shown. */
+function viewContext(id: number): ViewContext {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  const target = doc && controllerOf(doc.id, doc.block);
+  return {
+    target,
+    all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
+    views: () => (doc && target ? namedViewsOf(doc, target.size) : []),
+    save: (name, view) => doc && store.saveView(doc.id, name, view),
+  };
+}
 
 /** The last world point the cursor was at on a canvas: direct distance entry aims at it. */
 let lastCursor: { x: number; y: number } | undefined;
@@ -645,13 +667,34 @@ export function App() {
       </div>
 
       <LayoutTabs doc={active} />
-      <CommandLine doc={active?.id} lines={commandLines} cursor={() => lastCursor} />
+      <CommandLine
+        doc={active?.id}
+        lines={commandLines}
+        cursor={() => lastCursor}
+        onSettings={() => setSettings(true)}
+      />
       <StatusBar
         doc={active}
         missingReferences={missingReferences}
         onReferences={() => setPalette('references')}
       />
     </div>
+  );
+}
+
+/** The status bar's Dynamic Input toggle (DYNMODE; F12 toggles it too). */
+function DynToggle() {
+  const on = useSyncExternalStore(dynMode.subscribe, dynMode.get);
+  return (
+    <button
+      type="button"
+      className="status-toggle"
+      aria-pressed={on}
+      title="Dynamic Input (F12)"
+      onClick={() => dynMode.toggle()}
+    >
+      DYN
+    </button>
   );
 }
 
@@ -931,6 +974,7 @@ function StatusBar({
             : `${missingReferences} references not found`}
         </button>
       )}
+      <DynToggle />
       {doc && (
         <>
           <span className="version">{doc.opened.summary.version}</span>

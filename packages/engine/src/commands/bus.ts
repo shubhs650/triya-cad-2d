@@ -37,6 +37,7 @@ import {
   type Prompt,
   type PromptAnswer,
 } from './prompt';
+import { NO_VIEW, type ViewHost } from './view/host';
 
 /** One command's edits, in order: what the undo stack (M2-05) keeps as one step. */
 export interface CommandRecord {
@@ -64,6 +65,8 @@ export interface PromptBusOptions {
   readonly apply?: (change: ChangeSet) => void;
   /** The space commands draw in (the layout shown); by default model space. */
   readonly space?: () => Handle;
+  /** The canvas the view commands act on; by default none (they say so). */
+  readonly view?: ViewHost;
 }
 
 interface Frame {
@@ -108,6 +111,7 @@ export class PromptBus {
   readonly #registry: CommandRegistry;
   readonly #apply: (change: ChangeSet) => void;
   readonly #space: () => Handle;
+  readonly #view: ViewHost;
   readonly #listeners = new Set<(e: BusEvent) => void>();
   readonly #stack: Frame[] = [];
   #collectors: Collector[] = [];
@@ -125,6 +129,7 @@ export class PromptBus {
     this.#registry = options.registry;
     this.#apply = options.apply ?? ((cs) => this.#model.apply(cs));
     this.#space = options.space ?? (() => modelSpaceOf(this.#model));
+    this.#view = options.view ?? NO_VIEW;
   }
 
   /** Listens for bus events; returns the unsubscribe. */
@@ -359,6 +364,7 @@ export class PromptBus {
         this.#emit({ type: 'preview', geometry });
       },
       message: (text) => this.#log(text),
+      view: this.#view,
     };
   }
 
@@ -432,6 +438,10 @@ export class PromptBus {
         if (modifier) return this.#modifier(modifier, t);
         const p = parseCoordinate(t, { lastPoint: this.#lastPoint, angles });
         if (p !== undefined && p !== 'invalid') return this.#pointFor(p, t);
+        const arbitrary = prompt.kind !== 'angle' && prompt.arbitrary;
+        if (arbitrary && (prompt.kind === 'point' || parseNumber(t) === undefined)) {
+          return this.#deliver({ kind: 'string', value: t }, t);
+        }
         if (prompt.kind === 'distance') {
           const d = parseNumber(t);
           if (d !== undefined) return this.#deliver({ kind: 'distance', value: d }, t);

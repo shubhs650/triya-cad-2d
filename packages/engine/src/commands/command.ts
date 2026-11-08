@@ -8,6 +8,7 @@ import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { EntityGeometry } from '../model/types';
 import { ALIASES } from './aliases';
+import type { ViewHost } from './view/host';
 import type {
   AnglePrompt,
   DistancePrompt,
@@ -63,6 +64,8 @@ export interface CommandContext {
   preview(geometry: readonly EntityGeometry[]): void;
   /** A line on the command line ("1 found", "Invalid number of sides."). */
   message(text: string): void;
+  /** The canvas of the space shown, for the view commands (ZOOM, PAN, REGEN, VIEW; M2-02). */
+  readonly view: ViewHost;
 }
 
 export interface CommandDef {

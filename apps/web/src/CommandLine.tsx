@@ -2,11 +2,17 @@
 // tabs. The last history lines above the prompt line; the prompt's options as chips; commands
 // completed as they are typed; Up/Down recall; F2 opens the whole history. Typing anywhere
 // outside a text field goes to it, and Enter or Space there ends the input, as in AutoCAD. It
-// is a front-end of the drawing's command engine, which runs in the engine worker.
+// is a front-end of the drawing's command engine, which runs in the engine worker. Dynamic
+// Input (F12) and the Ctrl+K palette (part 2) are two more front-ends, kept here beside it: they
+// send what the command line would.
 import { builtinCommands, keywordShortcut } from '@triya/engine';
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
+import { CommandPalette } from './CommandPalette';
 import { completions, promptParts, type CommandLines } from './command-line';
+import { DynamicInput } from './DynamicInput';
+import { dynMode } from './dynamic-input';
 import { engines } from './engine/registry';
+import { commandItems, type PaletteItem } from './palette';
 
 /** The commands for completion: the same registry each drawing's engine runs. */
 const registry = builtinCommands();
@@ -37,18 +43,22 @@ export function CommandLine({
   doc,
   lines,
   cursor,
+  onSettings,
 }: {
   /** The drawing shown, or undefined with none open. */
   doc: number | undefined;
   lines: CommandLines;
   /** The world point under the cursor, for direct distance entry. */
   cursor: () => { readonly x: number; readonly y: number } | undefined;
+  /** Opens the Settings dialog (from the palette). */
+  onSettings: () => void;
 }) {
   useSyncExternalStore(lines.subscribe, lines.version);
   const state = doc === undefined ? undefined : lines.get(doc);
   const [text, setText] = useState('');
   const [recall, setRecall] = useState<number | undefined>();
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [paletteOpen, setPaletteOpen] = useState(false);
   const input = useRef<HTMLInputElement>(null);
   const full = useRef<HTMLDivElement>(null);
   const prompt = state?.prompt;
@@ -69,6 +79,26 @@ export function CommandLine({
     // (AutoCAD also answers Esc at `Command:` with `*Cancel*`).
     if (doc !== undefined) engines.command(doc, { kind: 'cancel' });
   };
+  const answerKeyword = (keyword: string) => {
+    if (doc !== undefined)
+      engines.command(doc, { kind: 'answer', answer: { kind: 'keyword', keyword } });
+  };
+  const paletteItems = useMemo<PaletteItem[]>(
+    () => [
+      ...commandItems(registry),
+      { id: 'history', kind: 'action', label: 'Command history', aliases: [], keys: 'F2' },
+      { id: 'dyn', kind: 'action', label: 'Dynamic Input on/off', aliases: [], keys: 'F12' },
+      { id: 'settings', kind: 'action', label: 'Settings', aliases: [] },
+    ],
+    [],
+  );
+  const runItem = (item: PaletteItem) => {
+    if (item.kind === 'command') {
+      if (doc !== undefined) engines.command(doc, { kind: 'invoke', name: item.id });
+    } else if (item.id === 'history') setHistoryOpen(true);
+    else if (item.id === 'dyn') dynMode.toggle();
+    else onSettings();
+  };
   const sendRef = useRef(send);
   sendRef.current = send;
   const cancelRef = useRef(cancel);
@@ -80,6 +110,16 @@ export function CommandLine({
       if (e.key === 'F2') {
         e.preventDefault();
         setHistoryOpen((o) => !o);
+        return;
+      }
+      if (e.key === 'F12') {
+        e.preventDefault();
+        dynMode.toggle();
+        return;
+      }
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setPaletteOpen(true);
         return;
       }
       if (e.target === input.current || takesText(e.target)) return;
@@ -133,6 +173,22 @@ export function CommandLine({
   const shown = state?.lines.slice(-SHOWN_LINES) ?? [];
   return (
     <section className="command-line" aria-label="Command line">
+      {doc !== undefined && (
+        <DynamicInput
+          prompt={prompt}
+          message={prompt?.message ?? ''}
+          cursor={cursor}
+          onSubmit={send}
+          onKeyword={answerKeyword}
+        />
+      )}
+      {paletteOpen && (
+        <CommandPalette
+          items={paletteItems}
+          onRun={runItem}
+          onClose={() => setPaletteOpen(false)}
+        />
+      )}
       {historyOpen && (
         <div className="command-history-window" role="dialog" aria-label="Command history">
           <div className="command-history-header">
@@ -167,11 +223,7 @@ export function CommandLine({
                     className="command-option"
                     title={`${o} (${keywordShortcut(o)})`}
                     onClick={() => {
-                      if (doc === undefined) return;
-                      engines.command(doc, {
-                        kind: 'answer',
-                        answer: { kind: 'keyword', keyword: o },
-                      });
+                      answerKeyword(o);
                       input.current?.focus();
                     }}
                   >

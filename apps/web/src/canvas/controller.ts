@@ -9,7 +9,11 @@
 // and REGEN (part 2).
 //
 // While a command waits for a point (M2-02), a left click gives it the point under the cursor,
-// and a rubber band follows the cursor from the prompt's base point, as AutoCAD draws it.
+// and a rubber band follows the cursor from the prompt's base point, as AutoCAD draws it: a
+// line, or a rectangle for a window's corners. A command's preview geometry (`ctx.preview`)
+// shows on the same transient layer. The view commands (ZOOM, PAN, REGEN, VIEW; part 2) call
+// the same methods as the navigation bar through the view host (view-host.ts), and add
+// real-time ZOOM: dragging up with the left button zooms in, down zooms out.
 import RenderWorker from '@triya/render/worker?worker';
 import {
   layoutSheet,
@@ -19,6 +23,7 @@ import {
   type Handle,
   type HeaderValue,
   type Layout,
+  type EntityGeometry,
   type Prompt,
   type Vec2,
   type VportRecord,
@@ -29,9 +34,11 @@ import {
   PATH_Z,
   RendererHost,
   screenToWorld,
+  tessellate,
   type DrawnEntity,
   type FontSources,
   type RasterPixels,
+  type RenderPrimitive,
   type RenderStyle,
   type ScreenRect,
   type UnderlayRaster,
@@ -42,13 +49,21 @@ import { layoutsOf } from '../documents';
 import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
-import { extentsView, panBy, wheelFactor, zoomAt, type ViewportSize } from './navigate';
+import {
+  extentsView,
+  panBy,
+  realtimeZoomFactor,
+  wheelFactor,
+  zoomAt,
+  type ViewportSize,
+} from './navigate';
 import {
   ViewHistory,
   activeVport,
   allView,
   paperSpaceView,
   paperSpaceViewport,
+  limitsView,
   savedModelView,
   scaleView,
   windowView,
@@ -71,8 +86,11 @@ const WHEEL_GESTURE_MS = 400;
 /** A press that moves less than this is a click, not a drag. */
 const CLICK_PX = 4;
 
-/** What the left button does: select (nothing yet), real-time PAN, or pick ZOOM Window corners. */
-export type CanvasMode = 'none' | 'pan' | 'window';
+/**
+ * What the left button does: select (nothing yet), real-time PAN or ZOOM, or pick ZOOM Window
+ * corners.
+ */
+export type CanvasMode = 'none' | 'pan' | 'zoom' | 'window';
 
 export interface CanvasHooks {
   /** The world point under the cursor, or undefined when it leaves the canvas. */
@@ -151,7 +169,9 @@ export class CanvasController {
   #mode: CanvasMode = 'none';
   /** The prompt the drawing's command waits at, when it takes points; undefined otherwise. */
   #prompt: Prompt | undefined;
-  #drag: { readonly pointer: number; x: number; y: number } | undefined;
+  /** The running command's preview geometry, drawn with the rubber band. */
+  #preview: readonly RenderPrimitive[] = [];
+  #drag: { readonly pointer: number; readonly zoom: boolean; x: number; y: number } | undefined;
   #lastMiddle: { readonly t: number; readonly x: number; readonly y: number } | undefined;
   #lastWheel = -Infinity;
   #corner: { readonly world: Point; readonly screen: Point; dragged: boolean } | undefined;
@@ -256,10 +276,38 @@ export class CanvasController {
     if (this.#view) this.#go(scaleView(this.#view, factor));
   }
 
-  /** ZOOM Previous: back to the view before the last zoom or pan. */
-  zoomPrevious(): void {
+  /** ZOOM Previous: back to the view before the last zoom or pan; false with none left. */
+  zoomPrevious(): boolean {
     const v = this.#history.previous();
     if (v) this.#setView(v);
+    return v !== undefined;
+  }
+
+  /** ZOOM Window from the command: the box between two world points fills the window. */
+  zoomWindow(a: Vec2, b: Vec2): void {
+    const v = windowView(a, b, this.#size);
+    if (v) this.#go(v);
+  }
+
+  /** ZOOM Center: `center` in the middle with `height` world units from top to bottom. */
+  zoomCenter(center: Vec2, height: number): void {
+    if (height > 0 && this.#size.height > 0)
+      this.#go({ center, scale: this.#size.height / height });
+  }
+
+  /**
+   * ZOOM n: `factor` relative to the limits (1 fits them, 2 shows half as much) about the view's
+   * centre; the extents stand in for limits a space does not have.
+   */
+  zoomLimits(factor: number): void {
+    const v = limitsView(this.#limits() ?? this.#extents(), this.#size, factor, this.#view);
+    if (v) this.#go(v);
+  }
+
+  /** -PAN: moves the drawing by `by` world units. */
+  panWorld(by: Vec2): void {
+    const v = this.#view;
+    if (v) this.#go({ scale: v.scale, center: { x: v.center.x - by.x, y: v.center.y - by.y } });
   }
 
   /** Shows `view`, recording the current one for ZOOM Previous (VIEW restore). */
@@ -280,8 +328,8 @@ export class CanvasController {
     if (mode === this.#mode) return;
     this.#mode = mode;
     this.#corner = undefined;
-    this.#host.setTransient([]);
-    this.#requestFrame();
+    this.#drag = undefined;
+    this.#rubberBand(undefined);
     this.canvas.dataset['mode'] = mode;
     this.#hooks.onMode?.(mode);
   }
@@ -298,6 +346,13 @@ export class CanvasController {
     this.canvas.dataset['picking'] = String(!!picking);
     if (this.#mode !== 'none') return;
     const world = this.#pointer && this.#world(this.#pointer);
+    this.#rubberBand(world);
+  }
+
+  /** The running command's preview (`ctx.preview`), or none: drawn in the foreground colour. */
+  setPreview(geometry: readonly EntityGeometry[]): void {
+    this.#preview = geometry.flatMap((g) => tessellate(g, { color: 'foreground' }));
+    const world = this.#mode === 'none' && this.#pointer ? this.#world(this.#pointer) : undefined;
     this.#rubberBand(world);
   }
 
@@ -579,21 +634,41 @@ export class CanvasController {
     this.#requestFrame();
   }
 
-  /** The command's rubber band from its base point to the cursor, or none. */
+  /**
+   * The command's rubber band from its base point to the cursor (a rectangle for a window's
+   * corners), or none, over the command's preview.
+   */
   #rubberBand(cursor: Point | undefined): void {
     const p = this.#prompt;
     const from = p?.kind === 'point' ? p.rubberBand?.from : p && 'base' in p ? p.base : undefined;
-    this.#host.setTransient(
-      from && cursor
+    const box = p?.kind === 'point' && p.rubberBand?.box;
+    const band: RenderPrimitive[] =
+      from && cursor && this.#mode === 'none'
         ? [
             {
               kind: 'stroke',
               color: 'foreground',
-              path: [PATH_M, from.x, from.y, PATH_L, cursor.x, cursor.y],
+              path: box
+                ? [
+                    PATH_M,
+                    from.x,
+                    from.y,
+                    PATH_L,
+                    cursor.x,
+                    from.y,
+                    PATH_L,
+                    cursor.x,
+                    cursor.y,
+                    PATH_L,
+                    from.x,
+                    cursor.y,
+                    PATH_Z,
+                  ]
+                : [PATH_M, from.x, from.y, PATH_L, cursor.x, cursor.y],
             },
           ]
-        : [],
-    );
+        : [];
+    this.#host.setTransient([...this.#preview, ...band]);
     this.#requestFrame();
   }
 
@@ -654,7 +729,7 @@ export class CanvasController {
           if (world) this.#hooks.onPick?.(world);
           return;
         }
-        if (this.#mode === 'pan') this.#startDrag(e);
+        if (this.#mode === 'pan' || this.#mode === 'zoom') this.#startDrag(e);
         else if (this.#mode === 'window') {
           const world = this.#world(e);
           if (!world) return;
@@ -672,7 +747,13 @@ export class CanvasController {
       (e) => {
         const drag = this.#drag;
         if (drag && drag.pointer === e.pointerId && this.#view) {
-          this.#setView(panBy(this.#view, e.clientX - drag.x, e.clientY - drag.y));
+          const factor = realtimeZoomFactor(e.clientY - drag.y, this.#size.height);
+          // Real-time ZOOM is about the window's centre, as AutoCAD's.
+          this.#setView(
+            drag.zoom
+              ? scaleView(this.#view, factor)
+              : panBy(this.#view, e.clientX - drag.x, e.clientY - drag.y),
+          );
           drag.x = e.clientX;
           drag.y = e.clientY;
         }
@@ -719,7 +800,12 @@ export class CanvasController {
 
   #startDrag(e: PointerEvent): void {
     if (this.#view) this.#history.push(this.#view);
-    this.#drag = { pointer: e.pointerId, x: e.clientX, y: e.clientY };
+    this.#drag = {
+      pointer: e.pointerId,
+      zoom: e.button === 0 && this.#mode === 'zoom',
+      x: e.clientX,
+      y: e.clientY,
+    };
     this.canvas.setPointerCapture(e.pointerId);
   }
 }
