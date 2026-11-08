@@ -1519,6 +1519,21 @@ export interface ImageDefinition extends NonGraphicalObject {
 }
 
 /**
+ * A PDF underlay's definition (DXF PDFDEFINITION, M1-20): the file and the page a PDFUNDERLAY
+ * shows. Like an image's, the page is not in the drawing; the app resolves `fileName` to a
+ * file and hands the renderer the page drawn at the resolution the view needs.
+ */
+export interface PdfDefinition extends NonGraphicalObject {
+  readonly type: 'PDFDEFINITION';
+  /** Its entry in the `ACAD_PDFDEFINITIONS` dictionary (the External References palette name). */
+  readonly name: string;
+  /** DXF 1: the path as saved, often relative (`..\plan.pdf`). */
+  readonly fileName: string;
+  /** DXF 2: the page, as AutoCAD stores it: its number from 1 (or the page label it showed). */
+  readonly page: string;
+}
+
+/**
  * The drawing's image display settings (DXF RASTERVARIABLES, `ACAD_IMAGE_VARS`): IMAGEFRAME
  * and IMAGEQUALITY. A drawing without the object uses AutoCAD's initial values, frame on and
  * high quality.

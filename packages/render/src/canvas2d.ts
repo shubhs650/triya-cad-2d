@@ -60,6 +60,14 @@ import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { mixColors, parseHex, tintColor } from './style/mix';
 import { adjustPixels, type ImageFrames } from './image';
+import {
+  adjustUnderlayPixels,
+  mergeNeeds,
+  pagePath,
+  rasterCovers,
+  underlayNeed,
+  underlayRequest,
+} from './underlay';
 import { annotationLinetypeScale, patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
 import { patternLibrary, tessellate } from './tessellate';
@@ -84,6 +92,9 @@ import {
   type RenderPrimitive,
   type RenderStyle,
   type Renderer,
+  type UnderlayFill,
+  type UnderlayRaster,
+  type UnderlayRequest,
   type ViewTransform,
 } from './types';
 
@@ -183,6 +194,17 @@ export interface Canvas2DRendererOptions {
    * until it answers, and once per bitmap and setting after that.
    */
   readonly images?: (definition: Handle) => RasterPixels | undefined;
+  /**
+   * A PDFDEFINITION's page as the app last drew it (M1-20), or undefined while it has none:
+   * a clipped underlay then shows its boundary, an unclipped one nothing.
+   */
+  readonly underlays?: (definition: Handle) => UnderlayRaster | undefined;
+  /**
+   * Asks the app to draw a page (M1-20): called after a scene is drawn, for each page whose
+   * raster does not show what is on screen at the screen's resolution, once per distinct
+   * request until a new raster arrives.
+   */
+  readonly onUnderlayRequest?: (request: UnderlayRequest) => void;
 }
 
 /** An entity's primitives, with its world size and centre for the sub-pixel LOD. */
@@ -369,6 +391,14 @@ export class Canvas2DRenderer implements Renderer {
   } = {};
   readonly #createLayer: () => Surface;
   readonly #images: ((definition: Handle) => RasterPixels | undefined) | undefined;
+  readonly #underlays: ((definition: Handle) => UnderlayRaster | undefined) | undefined;
+  readonly #onUnderlayRequest: ((request: UnderlayRequest) => void) | undefined;
+  /** What the scene being drawn needs of each page, merged over every underlay showing it. */
+  #underlayNeeds = new Map<Handle, { readonly scale: number; readonly region: Box }>();
+  /** The last request sent per page, as a key, so an unanswerable one is not sent again. */
+  #underlayAsked = new Map<Handle, string>();
+  /** Page raster → its adjusted layers, by setting and background. */
+  #pages = new WeakMap<RasterPixels, Map<string, Surface>>();
   /** IMAGEQUALITY from RASTERVARIABLES; AutoCAD's initial value is high. */
   #imageQuality: 'draft' | 'high' = 'high';
   /** Bitmap → its adjusted layers, by setting, colour and background. */
@@ -454,6 +484,8 @@ export class Canvas2DRenderer implements Renderer {
     this.#paint = o.paint ?? defaultPaint;
     this.#createLayer = o.createLayer;
     this.#images = o.images;
+    this.#underlays = o.underlays;
+    this.#onUnderlayRequest = o.onUnderlayRequest;
     if (o.fonts) {
       const model = this.#model;
       this.#tessellate.text = {
@@ -975,6 +1007,24 @@ export class Canvas2DRenderer implements Renderer {
       reduced,
       annotation === undefined ? view : { ...view, linetypeScale: annotation },
     );
+    this.#askForPages();
+  }
+
+  /** Sends what the scene just drawn needed of each page and its raster does not show (M1-20). */
+  #askForPages(): void {
+    const needs = this.#underlayNeeds;
+    this.#underlayNeeds = new Map();
+    const send = this.#onUnderlayRequest;
+    if (!send) return;
+    for (const [definition, need] of needs) {
+      const raster = this.#underlays?.(definition);
+      if (raster && rasterCovers(raster, need)) continue;
+      const request = underlayRequest(definition, need, raster?.page);
+      const key = JSON.stringify(request);
+      if (this.#underlayAsked.get(definition) === key) continue;
+      this.#underlayAsked.set(definition, key);
+      send(request);
+    }
   }
 
   /** The paper in the background colour and the printable area dashed, in device pixels. */
@@ -1205,6 +1255,13 @@ export class Canvas2DRenderer implements Renderer {
           ctx.fill('nonzero');
           continue;
         }
+        if (prim.kind === 'fill' && prim.underlay) {
+          flush();
+          setAlpha(a);
+          this.#drawUnderlay(ctx, prim.path, prim.underlay, prim, color, frame);
+          inWorld = false;
+          continue;
+        }
         if (prim.kind === 'fill' && prim.image) {
           flush();
           setAlpha(a);
@@ -1344,6 +1401,97 @@ export class Canvas2DRenderer implements Renderer {
     ctx.drawImage(layer.image, 0, 0);
     ctx.restore();
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+
+  /**
+   * A PDF underlay (M1-20): what of its page the view needs is noted for `#askForPages`; the
+   * page raster the app has is drawn through world ∘ frame, clipped to the boundary or the
+   * page, and the boundary (or page) outlined in the entity's colour, as PDFFRAME's initial
+   * value 1 shows it. Leaves the canvas transform at identity.
+   */
+  #drawUnderlay(
+    ctx: Canvas2D,
+    clipPath: readonly number[],
+    u: UnderlayFill,
+    prim: { readonly lineweight?: number },
+    color: string,
+    frame: DrawFrame,
+  ): void {
+    const { ox, oy, m } = frame;
+    const raster = this.#underlays?.(u.definition);
+    const need = underlayNeed(u, clipPath, frame.box, frame.scale * this.#dpr, raster?.page);
+    if (need) {
+      const had = this.#underlayNeeds.get(u.definition);
+      this.#underlayNeeds.set(u.definition, had ? mergeNeeds(had, need) : need);
+    }
+    const path = u.clipped ? clipPath : raster ? pagePath(u.frame, raster.page) : undefined;
+    if (!path) return;
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    const r = raster?.region;
+    const px = raster?.pixels;
+    if (r && px && px.width > 0 && px.height > 0 && r.maxX > r.minX && r.maxY > r.minY) {
+      ctx.save();
+      ctx.beginPath();
+      buildPath(ctx, path, ox, oy);
+      ctx.clip('nonzero');
+      // Raster pixels (rows top first) → underlay units → world → device.
+      const sx = (r.maxX - r.minX) / px.width;
+      const sy = -(r.maxY - r.minY) / px.height;
+      const f = u.frame;
+      const fa = m.a * f.a + m.c * f.b;
+      const fb = m.b * f.a + m.d * f.b;
+      const fc = m.a * f.c + m.c * f.d;
+      const fd = m.b * f.c + m.d * f.d;
+      const fe = f.e - ox;
+      const ff = f.f - oy;
+      const ex = m.a * fe + m.c * ff + m.e;
+      const ey = m.b * fe + m.d * ff + m.f;
+      ctx.setTransform(
+        fa * sx,
+        fb * sx,
+        fc * sy,
+        fd * sy,
+        fa * r.minX + fc * r.maxY + ex,
+        fb * r.minX + fd * r.maxY + ey,
+      );
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(this.#page(px, u).image, 0, 0);
+      ctx.restore();
+      ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    }
+    ctx.beginPath();
+    buildPath(ctx, path, ox, oy);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.strokeStyle = color;
+    ctx.lineWidth = this.#lineWidth(prim.lineweight);
+    ctx.stroke();
+  }
+
+  /** A page raster with the underlay's settings applied, made once per setting and background. */
+  #page(pixels: RasterPixels, u: UnderlayFill): Surface {
+    const background = this.#style.background;
+    const key = `${u.contrast}|${u.fade}|${u.monochrome}|${u.adjustColors}|${background}`;
+    let byKey = this.#pages.get(pixels);
+    if (!byKey) this.#pages.set(pixels, (byKey = new Map()));
+    let layer = byKey.get(key);
+    if (!layer) {
+      layer = this.#createLayer();
+      layer.canvas.width = pixels.width;
+      layer.canvas.height = pixels.height;
+      const data = layer.ctx.createImageData(pixels.width, pixels.height);
+      data.data.set(
+        adjustUnderlayPixels(pixels, {
+          contrast: u.contrast,
+          fade: u.fade,
+          monochrome: u.monochrome,
+          adjustColors: u.adjustColors,
+          background: parseHex(background) ?? BLACK,
+        }),
+      );
+      layer.ctx.putImageData(data, 0, 0);
+      byKey.set(key, layer);
+    }
+    return layer;
   }
 
   /** The bitmap with the image's settings applied, made once per setting and colours. */

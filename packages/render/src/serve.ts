@@ -31,6 +31,7 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         ...(m.fonts && { fonts: m.fonts }),
         ...(o.now && { now: o.now }),
         ...(o.requestIdle && { requestIdle: o.requestIdle }),
+        onUnderlayRequest: (request) => port.postMessage({ type: 'underlayRequest', request }),
       });
       return;
     }
@@ -63,6 +64,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         break;
       case 'image':
         session.setImage(m.definition, m.pixels ?? undefined);
+        break;
+      case 'underlay':
+        session.setUnderlay(m.definition, m.raster ?? undefined);
         break;
       case 'hitTest':
         port.postMessage({ type: 'reply', id: m.id, ids: r.hitTest(m.screen, m.aperture) });

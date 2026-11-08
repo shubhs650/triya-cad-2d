@@ -28,7 +28,7 @@ import type { Paint } from './tessellate';
 import type { TextContext } from './text';
 import { textBounds } from './text-bounds';
 import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
-import type { RasterPixels, RenderStyle } from './types';
+import type { RasterPixels, RenderStyle, UnderlayRaster, UnderlayRequest } from './types';
 
 /** What the render side needs to build its replica: the engine's init and the block shown. */
 export interface RenderDocument {
@@ -91,6 +91,8 @@ export interface RenderSessionOptions {
   readonly paint?: (e: Entity, model: DocumentModel) => Paint | undefined;
   readonly now?: () => number;
   readonly requestIdle?: (cb: () => void) => void;
+  /** A PDF underlay's page the view needs drawn (M1-20); the app answers with `setUnderlay`. */
+  readonly onUnderlayRequest?: (request: UnderlayRequest) => void;
 }
 
 const isPoint = (v: HeaderValue | undefined): v is { x: number; y: number } =>
@@ -114,6 +116,8 @@ export class RenderSession {
   fontWarnings: readonly string[] = [];
   /** Decoded bitmaps by IMAGEDEF handle, as the app sends them (M1-19). */
   readonly #images = new Map<Handle, RasterPixels>();
+  /** PDF underlay pages by PDFDEFINITION handle, as the app draws them (M1-20). */
+  readonly #underlays = new Map<Handle, UnderlayRaster>();
   readonly #surface: Surface;
   /** The block record drawn: model space or a layout's paper space. */
   readonly #block: Handle;
@@ -149,6 +153,8 @@ export class RenderSession {
       ...(o.now && { now: o.now }),
       ...(o.requestIdle && { requestIdle: o.requestIdle }),
       images: (h) => this.#images.get(h),
+      underlays: (h) => this.#underlays.get(h),
+      ...(o.onUnderlayRequest && { onUnderlayRequest: o.onUnderlayRequest }),
     });
   }
 
@@ -190,6 +196,16 @@ export class RenderSession {
   setImage(definition: Handle, pixels: RasterPixels | undefined): void {
     if (pixels) this.#images.set(definition, pixels);
     else this.#images.delete(definition);
+    this.renderer.invalidate();
+  }
+
+  /**
+   * A PDFDEFINITION's page as the app drew it for a request, or undefined to forget it (file
+   * gone or detached): underlays showing it redraw on the next frame (M1-20).
+   */
+  setUnderlay(definition: Handle, raster: UnderlayRaster | undefined): void {
+    if (raster) this.#underlays.set(definition, raster);
+    else this.#underlays.delete(definition);
     this.renderer.invalidate();
   }
 

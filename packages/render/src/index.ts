@@ -4,6 +4,17 @@ export * from './types';
 export { patternLibrary, tessellate, type Paint, type TessellateContext } from './tessellate';
 export { adjustPixels, imagePrimitives, type ImageFrames, type PixelAdjustment } from './image';
 export {
+  adjustUnderlayPixels,
+  mergeNeeds,
+  pagePath,
+  rasterCovers,
+  underlayFrame,
+  underlayNeed,
+  underlayPrimitives,
+  underlayRequest,
+  type UnderlayAdjustment,
+} from './underlay';
+export {
   browserDecode,
   decodeBmp,
   decodeRaster,

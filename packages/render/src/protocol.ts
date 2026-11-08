@@ -4,7 +4,14 @@
 
 import type { Box, ChangeSet, EntityId } from '@triya/engine';
 import type { FontSources, RenderDocument } from './session';
-import type { RasterPixels, RenderPrimitive, RenderStyle, ViewTransform } from './types';
+import type {
+  RasterPixels,
+  RenderPrimitive,
+  RenderStyle,
+  UnderlayRaster,
+  UnderlayRequest,
+  ViewTransform,
+} from './types';
 
 export type HostMessage =
   | {
@@ -33,6 +40,12 @@ export type HostMessage =
   | { readonly type: 'frame' }
   /** An IMAGEDEF's decoded bitmap, its pixel buffer transferred; null forgets it (M1-19). */
   | { readonly type: 'image'; readonly definition: string; readonly pixels: RasterPixels | null }
+  /** A PDFDEFINITION's page as the app drew it, copied; null forgets it (M1-20). */
+  | {
+      readonly type: 'underlay';
+      readonly definition: string;
+      readonly raster: UnderlayRaster | null;
+    }
   | {
       readonly type: 'hitTest';
       readonly id: number;
@@ -56,7 +69,9 @@ export type WorkerMessage =
   | { readonly type: 'thumbnail'; readonly id: number; readonly bitmap: ImageBitmap | null }
   /** The extents asked for; null when nothing drawn has a known extent. */
   | { readonly type: 'extents'; readonly id: number; readonly box: Box | null }
-  | { readonly type: 'error'; readonly message: string; readonly id?: number };
+  | { readonly type: 'error'; readonly message: string; readonly id?: number }
+  /** A PDF underlay page the view needs drawn (M1-20); unasked, so it carries no id. */
+  | { readonly type: 'underlayRequest'; readonly request: UnderlayRequest; readonly id?: never };
 
 /** Both ends of the channel, typed by shape: a Worker, a worker's `self` or a test double. */
 export interface Endpoint<In, Out> {
