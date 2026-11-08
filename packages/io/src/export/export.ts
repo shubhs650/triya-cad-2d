@@ -26,6 +26,7 @@ import {
   type Entity,
   type EntityInit,
   type Handle,
+  withoutXrefContent,
 } from '@triya/engine';
 import { hex } from '../map/common';
 import { documentInit } from '../map/document';
@@ -387,9 +388,12 @@ function plotStyleNames(
  */
 export function triyaToAcad(
   original: CadDocument,
-  model: DocumentModel,
+  shown: DocumentModel,
   format?: CadFormat,
 ): ExportSummary {
+  // Loaded xrefs (M1-21) are read-only and live in their own files: the save writes the
+  // drawing as if none were loaded.
+  const model = withoutXrefContent(shown);
   const base = documentInit(original);
   const store = PassthroughStore.of(original, base);
   const lineTypes = original.lineTypes;

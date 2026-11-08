@@ -27,6 +27,7 @@ import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
 import { PdfPages } from './underlay/pages';
 import { openPdf } from './underlay/pdfjs';
+import { pendingXrefs, xrefsAnsweredBy } from './xrefs';
 
 export const OET_HOME = 'https://openengtools.com/';
 export const REPORT_ISSUE = 'https://github.com/shubhs650/triya-cad-2d/issues/new';
@@ -87,7 +88,8 @@ function addFonts(files: Iterable<File>): void {
 
 /**
  * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf the fonts, a .pdf the files
- * PDF underlays show, anything else opens as a drawing.
+ * PDF underlays show, a drawing an xref of the drawing showing is waiting for loads as that
+ * xref (M1-21), anything else opens as a drawing.
  */
 function dropped(files: Iterable<File>): void {
   const pats: File[] = [];
@@ -97,7 +99,7 @@ function dropped(files: Iterable<File>): void {
     else if (isFontFile(f.name)) fontFiles.push(f);
     else if (isPdfFile(f.name))
       void f.arrayBuffer().then((b) => pdfPages.add(f.name, new Uint8Array(b)));
-    else void open(fromFile(f));
+    else if (!loadXref(f)) void open(fromFile(f));
   }
   addPatterns(pats);
   addFonts(fontFiles);
@@ -117,6 +119,40 @@ async function open(file: { readonly name: string; getFile(): Promise<Blob> }): 
 }
 
 const fromFile = (f: File) => ({ name: f.name, getFile: () => Promise.resolve(f) });
+
+/**
+ * Loads `file` into every xref of the drawing showing whose saved path names it (M1-21), as
+ * AutoCAD resolves an xref found by name; false when none does, and the file opens as a drawing
+ * of its own. An xref that is loaded already keeps its content (RELOAD is M5-04).
+ */
+function loadXref(file: File): boolean {
+  const s = store.getSnapshot();
+  const doc = s.docs.find((d) => d.id === s.active);
+  if (!doc) return false;
+  const answered = xrefsAnsweredBy(
+    pendingXrefs(doc.opened.init, engines.changesOf(doc.id)),
+    file.name,
+  );
+  if (answered.length === 0) return false;
+  void (async () => {
+    try {
+      const opened = await openDrawing(file);
+      for (const x of answered) {
+        const result = await engines.edit(doc.id, {
+          kind: 'xref-load',
+          block: x.block,
+          drawing: opened.init,
+        });
+        if (!result.ok) throw new Error(result.message);
+      }
+      await Promise.all(controllersOf(doc.id).map((c) => c.flush()));
+      store.edited(doc.id);
+    } catch (e) {
+      store.failed(file.name, openError(file.name, e));
+    }
+  })();
+  return true;
+}
 
 /**
  * The browser tests' front end to the showing drawing's engine, on the dev server only (Vite
