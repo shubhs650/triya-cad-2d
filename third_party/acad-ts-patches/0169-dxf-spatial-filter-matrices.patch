@@ -1,0 +1,18 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 540719a..f0b757c 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -1996,11 +1996,12 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+           }
+         }
+ 
++        // The first matrix is the inverse insert transform, the second the clip boundary's.
+         if (tmp.insertTransformRead) {
+           filter.insertTransform = new Matrix4(array);
+-          tmp.insertTransformRead = true;
+         } else {
+           filter.inverseInsertTransform = new Matrix4(array);
++          tmp.insertTransformRead = true;
+         }
+ 
+         return true;
