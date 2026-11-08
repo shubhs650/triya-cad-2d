@@ -1,0 +1,6 @@
+# DXF validity gate (M1-105): CI only, never shipped in the app. Licenses in ATTRIBUTION.md.
+ezdxf==1.4.5
+fonttools==4.68.0
+numpy==2.5.4
+pyparsing==3.3.3
+typing_extensions==4.16.0

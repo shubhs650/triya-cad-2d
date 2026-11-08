@@ -43,6 +43,7 @@ import { AecCleanupGroup } from '../../../Objects/AEC/AecCleanupGroup.js';
 import { AecBinRecord } from '../../../Objects/AEC/AecBinRecord.js';
 import { EvaluationGraph } from '../../../Objects/Evaluations/EvaluationGraph.js';
 import { EvaluationExpression } from '../../../Objects/Evaluations/EvaluationExpression.js';
+import { BlockVisibilityParameter } from '../../../Objects/Evaluations/BlockVisibilityParameter.js';
 import { DynamicBlockPurgePreventer } from '../../../Objects/DynamicBlockPurgePreventer.js';
 import { Material } from '../../../Objects/Material.js';
 import { MultiLeaderObjectContextData } from '../../../Objects/MultiLeaderObjectContextData.js';
@@ -522,6 +523,8 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     for (const [subclassName, subclass] of map.subClasses) {
       if (subclassName) this._writer.write(DxfCode.Subclass, subclassName);
       for (const [code, property] of subclass.dxfProperties) {
+        // A visibility parameter's states are a map, written last in its subclass (below).
+        if (co instanceof BlockVisibilityParameter && code === 92) continue;
         const value = property.getValue(co);
         const collectionCodes = property.getCollectionCodes();
         if (collectionCodes && Array.isArray(value)) {
@@ -534,6 +537,21 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
           this._writer.write(code, property.getRawValue(co), subclass);
         }
       }
+      if (co instanceof BlockVisibilityParameter && subclassName === DxfSubclassMarker.blockVisibilityParameter) {
+        this._writeVisibilityStates(co);
+      }
+    }
+  }
+
+  /** 92 state count, then per state 303 name, 94 + 332 entities, 95 + 333 expressions (DXF reference). */
+  private _writeVisibilityStates(parameter: BlockVisibilityParameter): void {
+    this._writer.write(92, parameter.states.size);
+    for (const state of parameter.states.values()) {
+      this._writer.write(303, state.name);
+      this._writer.write(94, state.entities.length);
+      for (const e of state.entities) this._writer.write(332, e.handle);
+      this._writer.write(95, state.expressions.length);
+      for (const e of state.expressions) this._writer.write(333, e.handle);
     }
   }
 

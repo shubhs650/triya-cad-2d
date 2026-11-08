@@ -20,3 +20,4 @@ node-compile-cache/
 
 # acad-ts spike output for the owner's AutoCAD AUDIT sweep (M0-06/M0-07): written drawings, not sources.
 docs/reports/M0-written/
+__pycache__/
