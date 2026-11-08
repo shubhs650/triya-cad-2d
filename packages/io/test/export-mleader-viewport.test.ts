@@ -4,6 +4,7 @@
 // with one branch, so block content, −Z planes and branch edits are covered here.
 import {
   ACadVersion,
+  AttributeDefinition,
   BlockRecord,
   CadDictionary,
   CadDocument,
@@ -81,6 +82,11 @@ function drawing(version = ACadVersion.AC1032): Uint8Array {
     b.entities.add(c);
     doc.blockRecords!.add(b);
   }
+  // The content block's attribute, whose value a block MULTILEADER states itself (M1-111).
+  const attdef = new AttributeDefinition();
+  attdef.tag = 'NO';
+  attdef.height = 1;
+  doc.blockRecords!.get('TAG').entities.add(attdef);
 
   const text = new MultiLeader();
   const tc = text.contextData;
@@ -215,6 +221,13 @@ function handleOf(
                 )!
                 .getEntry(name)!;
   return o.handle.toString(16).toUpperCase();
+}
+
+/** The handle of the content block's ATTDEF. */
+function attdefHandle(): string {
+  const tag = readCadDocument(FILE).blockRecords!.get('TAG');
+  const a = [...tag.entities].find((e) => e instanceof AttributeDefinition)!;
+  return a.handle.toString(16).toUpperCase();
 }
 
 /** Geometry values compared to 9 digits, −0 as 0, angles mod 2π. */
@@ -409,6 +422,45 @@ describe('triyaToAcad multileaders and viewports', () => {
       }),
     ],
     ['a VIEWPORT thawing its layers', 'VIEWPORT', 1, () => ({ frozenLayers: [] })],
+    [
+      // acad-ts's DXF reader dropped them until patch 0173 (M1-111).
+      'a block MULTILEADER’s attribute values (DXF-only)',
+      'MULTILEADER',
+      1,
+      (g) => ({
+        block: {
+          ...ml(g).block!,
+          attributes: [{ definition: attdefHandle(), index: 0, width: 1, value: 'A12' }],
+        },
+      }),
+    ],
+    [
+      // acad-ts read and wrote none of them in DXF until patch 0173 (M1-111).
+      'a leader line’s own properties (DXF-only)',
+      'MULTILEADER',
+      1,
+      (g) => ({
+        branches: [
+          {
+            ...ml(g).branches[0]!,
+            lines: [
+              {
+                ...ml(g).branches[0]!.lines[0]!,
+                overrides: {
+                  flags: 63,
+                  pathType: 2,
+                  color: { kind: 'aci', index: 1 },
+                  linetype: handleOf('linetype', 'DASHED'),
+                  lineweight: 50,
+                  arrowheadSize: 2.5,
+                  arrowhead: handleOf('block', 'DOT'),
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    ],
   ];
 
   for (const format of ['dxf', 'dwg'] as const) {

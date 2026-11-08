@@ -4,12 +4,15 @@
 // −Z or tilted multileader, and its DXF files lose the branch fields (M1-32).
 import {
   ACadVersion,
+  AttributeDefinition,
   BlockRecord,
   CadDocument,
   Color,
   LeaderLine,
   LeaderRoot,
+  LineType,
   MultiLeader,
+  MultiLeaderBlockAttribute,
   XYZ,
 } from '@node-projects/acad-ts';
 import type { MultiLeaderGeometry } from '@triya/engine';
@@ -186,6 +189,77 @@ describe('MULTILEADER', () => {
       color: { kind: 'aci', index: 5 },
     });
     expect(g.style).toBe(style ? H(style) : undefined);
+  });
+
+  it('maps block content attribute values (M1-111)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('TAG');
+    const attdef = new AttributeDefinition();
+    attdef.tag = 'NO';
+    block.entities.add(attdef);
+    doc.blockRecords?.add(block);
+    const m = textLeader(doc);
+    m.contentType = 1 as never;
+    const c = m.contextData;
+    c.hasTextContents = false;
+    c.hasContentsBlock = true;
+    c.blockContent = block;
+    const value = (text: string, index: number, def: AttributeDefinition | null) => {
+      const a = new MultiLeaderBlockAttribute();
+      a.attributeDefinition = def;
+      a.index = index;
+      a.width = 1.5;
+      a.text = text;
+      return a;
+    };
+    m.blockAttributes = [value('12', 0, attdef), value('lost', 1, null)];
+
+    expect(mapOne(doc, m).block?.attributes).toEqual([
+      { definition: H(attdef), index: 0, width: 1.5, value: '12' },
+      { index: 1, width: 1.5, value: 'lost' },
+    ]);
+    // None stated: no attributes at all.
+    m.blockAttributes = [];
+    expect(mapOne(doc, m).block).not.toHaveProperty('attributes');
+  });
+
+  it('maps the properties a leader line overrides, and only those (M1-111)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const arrow = new BlockRecord('_DOT');
+    doc.blockRecords?.add(arrow);
+    const dashed = new LineType('DASHED');
+    doc.lineTypes?.add(dashed);
+    const m = textLeader(doc);
+    const [plain, over] = m.contextData.leaderRoots[0]!.lines;
+    // Stored but not flagged: AutoCAD writes these for every line.
+    plain!.lineColor = new Color(3);
+    plain!.lineWeight = 50;
+    over!.pathType = 2;
+    over!.lineColor = new Color(1);
+    over!.lineType = dashed;
+    over!.lineWeight = 50;
+    over!.arrowheadSize = 2.5;
+    over!.arrowhead = arrow;
+    over!.overrideFlags = 63;
+    const lines = mapOne(doc, m).branches[0]!.lines;
+
+    expect(lines[0]).not.toHaveProperty('overrides');
+    expect(lines[1]!.overrides).toEqual({
+      flags: 63,
+      pathType: 2,
+      color: { kind: 'aci', index: 1 },
+      linetype: H(dashed),
+      lineweight: 50,
+      arrowheadSize: 2.5,
+      arrowhead: H(arrow),
+    });
+    // Flag 32 without an arrowhead block is the closed filled arrow; unflagged values stay out.
+    over!.arrowhead = null;
+    over!.overrideFlags = 2 | 32;
+    expect(mapOne(doc, m).branches[0]!.lines[1]!.overrides).toEqual({
+      flags: 34,
+      color: { kind: 'aci', index: 1 },
+    });
   });
 
   it('drops Z from a −Z multileader, whose points are WCS, and marks its text', () => {
