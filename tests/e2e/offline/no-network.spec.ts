@@ -1,10 +1,11 @@
 // Privacy (PRD G6, §8): after the app loads it makes no network request of its own. Every
 // request the page or its workers make while starting, opening a DWG and a DXF, zooming and
-// panning must go to the app's own origin (or be a blob:/data: URL); anything else is
-// blocked here and fails the test. Service-worker update checks and the user-confirmed error
-// report (the only allowed exceptions) do not exist yet (M2-19, M10).
+// panning, and drawing a PDF underlay through pdf.js (M1-20), must go to the app's own origin
+// (or be a blob:/data: URL); anything else is blocked here and fails the test. Service-worker
+// update checks and the user-confirmed error report (the only allowed exceptions) do not
+// exist yet (M2-19, M10).
 import { expect, test } from '@playwright/test';
-import { DWG, DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { DWG, DXF, activeCanvas, expectShown, openWithDrop, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -43,6 +44,22 @@ test('opens and navigates drawings without leaving the origin', async ({ context
   await page.mouse.down({ button: 'middle' });
   await page.mouse.move(box.x + box.width / 3, box.y + box.height / 3, { steps: 3 });
   await page.mouse.up({ button: 'middle' });
+
+  // A PDF underlay (M1-20): pdf.js and its worker load from the app, and the page's standard
+  // font is not fetched from anywhere.
+  const underlays = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
+  await openWithPicker(page, path.join(underlays, 'pdf-underlay.dxf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  await openWithDrop(page, path.join(underlays, 'pdf-underlay.pdf'));
+  await expect
+    .poll(
+      () =>
+        page.evaluate(() =>
+          (window as unknown as { triyaDev: { pdfRenders(): number } }).triyaDev.pdfRenders(),
+        ),
+      { timeout: 30_000 },
+    )
+    .toBeGreaterThan(0);
 
   expect([...new Set(foreign)]).toEqual([]);
 });

@@ -146,6 +146,9 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
           ? { gradient: { ...p.gradient, frame: composeAffine(m, p.gradient.frame) } }
           : {}),
         ...(p.image ? { image: { ...p.image, frame: composeAffine(m, p.image.frame) } } : {}),
+        ...(p.underlay
+          ? { underlay: { ...p.underlay, frame: composeAffine(m, p.underlay.frame) } }
+          : {}),
         ...(p.text
           ? {
               text: {

@@ -1,0 +1,1 @@
+- M1-20 part 1 (#205): PDF underlays: drop a drawing's PDF on the window and its PDFUNDERLAYs show their pages, drawn by a lazily loaded pdf.js at screen resolution, placed, scaled, turned and clipped as attached, with contrast, fade, monochrome and adjust-for-background; pages are cached, so revisiting a view draws nothing again.

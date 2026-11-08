@@ -12,7 +12,14 @@ import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession, type FontSources, type RenderDocument } from './session';
 import { offscreenLayer, surfaceOf } from './surface';
 import type { BitmapFactory, ThumbnailSize } from './thumbnail';
-import type { RasterPixels, RenderPrimitive, RenderStyle, ViewTransform } from './types';
+import type {
+  RasterPixels,
+  RenderPrimitive,
+  RenderStyle,
+  UnderlayRaster,
+  UnderlayRequest,
+  ViewTransform,
+} from './types';
 
 /** The canvas element the host draws into, typed by the members it uses. */
 export interface HostCanvas {
@@ -48,6 +55,11 @@ export interface RendererHostOptions {
   readonly onError?: (error: Error) => void;
   /** Main-thread thumbnails; `createImageBitmap` by default (the worker uses its own). */
   readonly createBitmap?: BitmapFactory;
+  /**
+   * A PDF underlay page the view needs drawn (M1-20), asked after a scene is drawn; the app
+   * answers, when it can, with `setUnderlay`.
+   */
+  readonly onUnderlayRequest?: (request: UnderlayRequest) => void;
 }
 
 interface Pending {
@@ -62,6 +74,7 @@ export class RendererHost {
   readonly #pending = new Map<number, Pending>();
   readonly #onError: (error: Error) => void;
   readonly #createBitmap: BitmapFactory | undefined;
+  readonly #onUnderlayRequest: ((request: UnderlayRequest) => void) | undefined;
   #nextId = 1;
 
   /** Whether `auto` would pick the worker for this canvas. */
@@ -86,6 +99,7 @@ export class RendererHost {
     }
     this.mode = worker ? 'worker' : 'main';
     this.#createBitmap = o.createBitmap;
+    this.#onUnderlayRequest = o.onUnderlayRequest;
 
     if (worker && o.createWorker && o.canvas.transferControlToOffscreen) {
       const offscreen = o.canvas.transferControlToOffscreen();
@@ -111,6 +125,7 @@ export class RendererHost {
         ...(o.style && { style: o.style }),
         ...(o.patterns && { patterns: o.patterns }),
         ...(o.fonts && { fonts: o.fonts }),
+        ...(o.onUnderlayRequest && { onUnderlayRequest: o.onUnderlayRequest }),
       });
     }
   }
@@ -169,6 +184,15 @@ export class RendererHost {
         { type: 'image', definition, pixels: pixels ?? null },
         pixels ? [pixels.data.buffer as ArrayBuffer] : [],
       );
+  }
+
+  /**
+   * A PDFDEFINITION's page as the app drew it for an `UnderlayRequest`, or undefined to forget
+   * it. The worker gets a copy (the app keeps its pages cached), so `raster` stays usable.
+   */
+  setUnderlay(definition: string, raster: UnderlayRaster | undefined): void {
+    if (this.#session) this.#session.setUnderlay(definition, raster);
+    else this.#post({ type: 'underlay', definition, raster: raster ?? null });
   }
 
   /** Entities within `aperture` CSS pixels of a screen point, nearest first. */
@@ -231,6 +255,10 @@ export class RendererHost {
   }
 
   #receive(m: WorkerMessage): void {
+    if (m.type === 'underlayRequest') {
+      this.#onUnderlayRequest?.(m.request);
+      return;
+    }
     const p = m.id === undefined ? undefined : this.#pending.get(m.id);
     if (m.id !== undefined) this.#pending.delete(m.id);
     if (m.type !== 'error') {

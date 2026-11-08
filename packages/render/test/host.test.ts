@@ -17,6 +17,8 @@ import {
   type HostCanvas,
   type HostMessage,
   type RenderWorker,
+  type UnderlayRaster,
+  type UnderlayRequest,
   type WorkerMessage,
 } from '../src/index';
 import {
@@ -104,6 +106,7 @@ function canvas(visible: Recorded, transferable: boolean): HostCanvas {
 const STYLE = { background: '#000000', foreground: '#ffffff', showLineweights: false };
 
 function hosts(entities = [entity('20', line(0, 0, 10, 0))], patterns?: readonly string[]) {
+  const asked: { main: UnderlayRequest[]; off: UnderlayRequest[] } = { main: [], off: [] };
   const engine = drawing(entities);
   const document = { init: drawingInit(entities), block: MODEL, tol: toleranceForSize(1000) };
   const mainSurfaces: Recorded[] = [];
@@ -118,6 +121,7 @@ function hosts(entities = [entity('20', line(0, 0, 10, 0))], patterns?: readonly
     style: STYLE,
     createLayer: () => record(mainSurfaces, 'layer'),
     createBitmap: fakeBitmap,
+    onUnderlayRequest: (r) => asked.main.push(r),
     ...(patterns && { patterns }),
   });
   const errors: Error[] = [];
@@ -127,9 +131,10 @@ function hosts(entities = [entity('20', line(0, 0, 10, 0))], patterns?: readonly
     createWorker: () => worker,
     style: STYLE,
     onError: (e) => errors.push(e),
+    onUnderlayRequest: (r) => asked.off.push(r),
     ...(patterns && { patterns }),
   });
-  return { engine, main, off, worker, mainSurfaces, workerSurfaces, errors };
+  return { engine, main, off, worker, mainSurfaces, workerSurfaces, errors, asked };
 }
 
 /** Every call each surface received, by surface. */
@@ -317,6 +322,42 @@ describe('RendererHost', () => {
     expect(putImages).toHaveLength(1);
     // The scene layer (after the visible surface) draws the bitmap in that frame only; once
     // forgotten the image is outlined instead.
+    expect(mainSurfaces[1]!.ctx.named('drawImage')).toHaveLength(1);
+  });
+
+  it('asks for a PDF underlay page from either side alike and draws the page sent (M1-20)', async () => {
+    const plan: EntityGeometry = {
+      kind: 'PDFUNDERLAY',
+      definition: '9A',
+      position: { x: 0, y: 0 },
+      scale: { x: 1, y: 1, z: 1 },
+      rotation: 0,
+      flags: 2,
+      contrast: 100,
+      fade: 0,
+      clip: [],
+    };
+    const { main, off, mainSurfaces, workerSurfaces, asked } = hosts([entity('20', plan)]);
+    const page = (): UnderlayRaster => ({
+      page: { width: 2, height: 1 },
+      region: { minX: 0, minY: 0, maxX: 2, maxY: 1 },
+      pixels: { width: 40, height: 20, data: new Uint8ClampedArray(3200).fill(90) },
+    });
+    for (const h of [main, off]) {
+      h.resize(100, 50, 1);
+      h.setView({ center: { x: 1, y: 0.5 }, scale: 10 });
+      h.frame();
+      const sent = page();
+      h.setUnderlay('9A', sent);
+      h.frame();
+      // The app keeps its pages cached: nothing it sent is detached.
+      expect(sent.pixels.data.length).toBe(3200);
+    }
+    await off.flush();
+    await main.flush();
+    expect(asked.main).toHaveLength(1);
+    expect(asked.off).toEqual(asked.main);
+    expect(log(workerSurfaces)).toEqual(log(mainSurfaces));
     expect(mainSurfaces[1]!.ctx.named('drawImage')).toHaveLength(1);
   });
 

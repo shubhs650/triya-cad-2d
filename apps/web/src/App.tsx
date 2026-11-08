@@ -1,7 +1,7 @@
 // The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs
 // (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
 // tabs; the status bar. The ribbon, palettes and command line arrive with their own tasks.
-import type { EditResult, EngineEdit, Layout } from '@triya/engine';
+import type { EditResult, EngineEdit, Layout, PdfDefinition } from '@triya/engine';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasMode } from './canvas/controller';
 import {
@@ -25,6 +25,8 @@ import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import { Settings } from './Settings';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
+import { PdfPages } from './underlay/pages';
+import { openPdf } from './underlay/pdfjs';
 
 export const OET_HOME = 'https://openengtools.com/';
 export const REPORT_ISSUE = 'https://github.com/shubhs650/triya-cad-2d/issues/new';
@@ -66,6 +68,17 @@ const deviceFonts = new DeviceFonts(browserFontAccess());
 void deviceFonts.init();
 deviceFonts.subscribe(() => fonts.setDeviceFonts(deviceFonts.files()));
 
+/**
+ * The PDF files PDF underlays show (M1-20): dropped on the window this session, matched to the
+ * drawings' PDFDEFINITIONs by file name. pdf.js loads with the first page a canvas asks for.
+ */
+const pdfPages = new PdfPages(openPdf);
+
+const isPdfFile = (name: string) => /\.pdf$/i.test(name);
+
+const pdfDefinitionsOf = (opened: OpenDocument['opened']): PdfDefinition[] =>
+  (opened.init.objects ?? []).filter((o): o is PdfDefinition => o.type === 'PDFDEFINITION');
+
 function addFonts(files: Iterable<File>): void {
   for (const f of files) {
     void f.arrayBuffer().then((b) => fonts.add(f.name, new Uint8Array(b)));
@@ -73,8 +86,8 @@ function addFonts(files: Iterable<File>): void {
 }
 
 /**
- * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf the fonts, anything else
- * opens as a drawing.
+ * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf the fonts, a .pdf the files
+ * PDF underlays show, anything else opens as a drawing.
  */
 function dropped(files: Iterable<File>): void {
   const pats: File[] = [];
@@ -82,6 +95,8 @@ function dropped(files: Iterable<File>): void {
   for (const f of files) {
     if (isPatFile(f.name)) pats.push(f);
     else if (isFontFile(f.name)) fontFiles.push(f);
+    else if (isPdfFile(f.name))
+      void f.arrayBuffer().then((b) => pdfPages.add(f.name, new Uint8Array(b)));
     else void open(fromFile(f));
   }
   addPatterns(pats);
@@ -112,6 +127,8 @@ const fromFile = (f: File) => ({ name: f.name, getFile: () => Promise.resolve(f)
 export interface DevHooks {
   /** The showing drawing's layouts as they are now. */
   layouts(): Layout[];
+  /** PDF underlay pages drawn by pdf.js so far (M1-20: the cache spares repeats). */
+  pdfRenders(): number;
   edit(edit: EngineEdit): Promise<EditResult>;
 }
 
@@ -125,6 +142,7 @@ if (import.meta.env.DEV) {
       const doc = showing();
       return doc ? layoutsOf(doc.opened.init, engines.changesOf(doc.id)) : [];
     },
+    pdfRenders: () => pdfPages.renders,
     edit: async (edit) => {
       const doc = showing();
       if (!doc) return { ok: false, message: 'No drawing is open.' };
@@ -481,6 +499,7 @@ function ViewportCanvas({
       patterns: () => patterns.sources(),
       fonts: () => fonts.sources(),
       changes: () => engines.changesOf(id),
+      underlays: (deliver) => pdfPages.client(pdfDefinitionsOf(opened), deliver),
       ...(tile && {
         tile: {
           vport: tile.vport,
