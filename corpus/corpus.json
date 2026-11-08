@@ -3512,7 +3512,9 @@
         "pixelMismatch": 2,
         "ssim": 0.95
       },
-      "fonts": [],
+      "fonts": [
+        "txt"
+      ],
       "knownIssues": []
     }
   ]
