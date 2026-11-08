@@ -112,7 +112,7 @@ export function formatFidelityReport(
   const lines = [
     `# ${o.title}`,
     '',
-    'Written by `pnpm test:fidelity` (M1-106, TESTING.md §4) from the golden-image comparison of each space.',
+    'Written by the fidelity reporter after a golden-image run (M1-106, TESTING.md §4).',
     '',
     `${files.length} files${unreadable > 0 ? ` (${unreadable} unreadable)` : ''}, ${spaces.length} spaces, ${failing.length} failing.`,
     '',

@@ -50,7 +50,7 @@ Offline, UI and io suites still run after a fidelity failure, so one red run sho
 
 ### 2.2 Private corpus (`corpus/private/`, gitignored)
 
-Owner's real vessel GAs and vendor drawings. Same `corpus.json` schema, same harness (`pnpm test:private`). Results are summarised into `docs/reports/` without file names or content.
+Owner's real vessel GAs and vendor drawings. Same `corpus.json` schema, same harness (`pnpm test:private`, M1-106): the round-trip suite (`vitest.private.config.ts`, `corpus-roundtrip.private.ts`) and the golden-image suite with `TRIYA_CORPUS=private`. Without `corpus/private/corpus.json` it says so and exits 0. Every readable private file must come back clean, or, once `TRIYA_UPDATE_BASELINE=1 pnpm test:private` has written `corpus/private/roundtrip-baseline.json`, no worse than that baseline. Golden images are kept beside the drawings in `corpus/private/refs/golden/` (written with `TRIYA_UPDATE_GOLDEN=1 pnpm test:private`). Everything stays in the gitignored `corpus/private/` and `test-reports/`: the private fidelity report (`test-reports/fidelity-private/fidelity-latest.md`) has the type table and the number of failing spaces but no file names or handles, so it can be summarised into `docs/reports/` as it is.
 
 ### 2.3 `corpus.json` schema
 
@@ -125,13 +125,13 @@ The references are Triya golden images (DEC-047): the first run of a file render
 1. Headless Chromium loads the app (its Vite dev server, as the ui suite does) in a 1100 × 760 window, pins the canvas area to 960 × 600 (the chrome around it is set in the system UI font, so left to fill the window its size differs between machines), and opens the corpus file through the Open button's file picker, as a user would.
 2. Each space is shown in tab order: model space at its extents (ZOOM E, the navigation bar's Zoom Extents), each layout in the paper view it opens in. A shot is taken once the canvas has settled: the network is idle and three shots 300 ms apart are the same bytes. Model space is zoomed only after it has settled, because text extents need their fonts. The navigation bar, which floats over the canvas in the system UI font, is hidden from the shots. Shots are of the screen canvas; plot-preview mode with a CTB comes with M2-18.
 3. Compare with `pixelmatch` (threshold 0.1, its anti-aliasing detection on) and mean SSIM over 8 × 8 windows (`packages/testkit/src/fidelity/compare.ts`); pass if mismatch ≤ `tolerance.pixelMismatch` % **and** SSIM ≥ `tolerance.ssim`, both from the file's `corpus.json` entry.
-4. On failure the test names each failing space with its numbers and the boxes (pixels, merged 32-pixel cells) where it differs, and writes `<space>-actual.png`, `-golden.png` and `-diff.png` to its `test-results/` folder, which CI uploads as `fidelity-diffs`. Naming the entity types in each differing region (by R-tree lookup) is M1-106.
+4. On failure the test names each failing space with its numbers and the boxes (pixels, merged 32-pixel cells) where it differs, and writes `<space>-actual.png`, `-golden.png` and `-diff.png` to its `test-results/` folder, which CI uploads as `fidelity-diffs`. Each region names the entities the app draws there, by type and handle (`TEXT 2F, INSERT 31`), from the renderer's R-tree in the view shot (`Renderer.entitiesIn`, reached through the dev server's `triyaDev` hook; M1-106). A region that names no entity (`no entity drawn there`) is drawn by the golden image only: something moved away or disappeared.
 
 Golden images are `corpus/public/refs/golden/<path below public/third-party>/<space>.png`, where `<space>` is `model` or `layout-<name>` (characters outside `[A-Za-z0-9.-]` spelled `_` for a space, otherwise `~` and the code point in hex). A missing golden image fails, as does a golden image for a space the file no longer has. `TRIYA_UPDATE_GOLDEN=1 pnpm test:fidelity` writes the missing and the out-of-tolerance ones and deletes stale ones; look at every image it changed before committing. A file the app cannot open is listed in the spec's `UNREADABLE` with its reason (today only `recover02.dxf`), and the test checks it still fails to open.
 
 Tolerances start loose (2 %, SSIM 0.95) for a new file and are tightened to 0.5 % as features land; a PR may not loosen a tolerance.
 
-Entity-level results (each entity rendered in isolation into its bounds and compared with the golden crop) are reported per type into `docs/reports/fidelity-latest.md` (M1-106).
+Entity-level results are reported per type into `docs/reports/fidelity-latest.md` (M1-106) by the fidelity reporter (`tests/e2e/fidelity/report.ts`) after a run: for each entity type, how many entities are in view summed over the corpus's spaces, in how many spaces, how many are drawn in a region that differs from its golden image, and in how many failing spaces; then each failing space with its regions and their entities. The report is sorted, so a run that matches every golden image rewrites the same bytes. Every run writes `test-reports/fidelity/fidelity-latest.md`; only a run that covered every public corpus file also rewrites the committed `docs/reports/fidelity-latest.md`. (Rendering each entity in isolation against a crop of its golden image, the earlier plan here, was dropped: the goldens are Triya's own renders, so the region lookup already says which entities to look at.)
 
 ## 5. Performance harness
 
@@ -175,7 +175,7 @@ pnpm test:perf          # perf targets
 pnpm test:offline       # offline/privacy
 pnpm test:ui            # dialogs, ribbon, grips
 pnpm test:io            # @triya/io worker in Chromium via a Vite dev server (M0-03; responsiveness, progress, cancel M1-06)
-pnpm test:private       # all of the above on corpus/private (local only)
+pnpm test:private       # round-trip + golden images on corpus/private (local only; exits 0 without it)
 pnpm corpus:list        # print corpus manifest
 pnpm corpus:ref <file>  # rasterise reference PDFs → PNGs
 pnpm corpus:validate    # schema + license fields + reference presence

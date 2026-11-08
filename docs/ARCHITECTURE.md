@@ -234,6 +234,7 @@ interface Renderer {
   setStyle(style: RenderStyle): void;                // theme, plot-preview, selection colours, LWT on/off
   frame(): void;                                     // draw one frame
   hitTest(screenPt, aperture): EntityId[];           // delegated to engine's R-tree via mirror
+  entitiesIn(screenRect): DrawnEntity[];             // handle + type drawn there (fidelity triage, M1-106)
 }
 ```
 
