@@ -14,7 +14,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | pdf.js (`pdfjs-dist` 6.4.299) | PDF underlay page rendering, lazy-loaded in `apps/web` (M1-20); its optional Node canvas dependency `@napi-rs/canvas` (MIT) is installed by pnpm but never shipped or used by the app | Apache-2.0 | https://github.com/mozilla/pdf.js |
 | opentype.js 2.0 | TrueType/OpenType parsing, glyph outlines and advance widths (`packages/text`, M1-10); no dependencies of its own | MIT | https://github.com/opentypejs/opentype.js |
 | UTIF.js (`utif` 3.1.0) | TIFF decoding for raster images (`packages/render`, M1-19 part 2); its embedded JPEG decoder is Mozilla pdf.js code (Apache-2.0) | MIT | https://github.com/photopea/UTIF.js |
-| fflate 0.8.2 | zlib inflate for Deflate TIFF strips, behind the `pako` stand-in `third_party/pako-inflate` (MIT, ours) that replaces pako, whose Zlib license is not on the allowed list (M1-19 part 2) | MIT | https://github.com/101arrowz/fflate |
+| fflate 0.8.2 | zlib inflate for Deflate TIFF strips, behind the `pako` stand-in `third_party/pako-inflate` (MIT, ours) that replaces pako, whose Zlib license is not on the allowed list (M1-19 part 2); zlib inflate and deflate of CTB/STB plot style tables, a direct dependency of `@triya/render` (M2-15) | MIT | https://github.com/101arrowz/fflate |
 | React, Vite, Zustand, Radix, flatbush, Playwright, Vitest | app/tooling | MIT | npm |
 | pixelmatch 7 | golden-image pixel comparison in `@triya/testkit` (fidelity harness, M1-24); dev only, not shipped | ISC | https://github.com/mapbox/pixelmatch |
 | pngjs 7 (and `@types/pngjs`, MIT) | PNG decode/encode for the golden-image comparison (`@triya/testkit`, M1-24); dev only, not shipped | MIT | https://github.com/pngjs/pngjs |
