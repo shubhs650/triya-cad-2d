@@ -141,9 +141,10 @@ interface Entity {
 
 ### 4.2 Undo
 
-- Command-level grouping; each command produces one `UndoRecord { forward: ChangeSet, inverse: ChangeSet, label }`.
+- Command-level grouping; each command produces one `UndoRecord { label, changes, bytes }`: its change sets in order (the bus's `CommandRecord`), undone by applying their inverses in reverse order (`invertChangeSet` is a swap) and redone by applying them again.
 - Unlimited by count, bounded by memory (configurable, default 256 MB); oldest records drop with a warning.
 - `UNDO` options: Back, Mark, Begin/End groups, number; `REDO`; `OOPS` (restores last erased set without undoing the command).
+- **As built (M2-05, `packages/engine/src/commands/undo.ts`, DEC-049):** every `PromptBus` owns an `UndoStack` (`bus.undo`, also `ctx.undo` for the undo commands). When a command ends having edited (DEC-048), the bus pushes its record; a record whose change sets are all empty is no step. Undo and redo apply through the bus's `apply` (so the render replicas follow) and never through `ctx.edit`, so U is not itself a step. The undo side is a list of steps and marks; the redo side a stack of what each U or UNDO took off (REDO reverses one whole U or UNDO, as AutoCAD's help says); a new step drops the redo side, a command that edits nothing keeps it. BEgin collects the steps until End into one `GROUP` step (BEgin ends an open group first; U, Back, Mark and Control One end it too). Control None drops the history and turns it off, One keeps one step; Combine, Layer and Auto are kept as settings for the commands they concern. The memory bound uses `estimateBytes` (an overcount: the versions are shared with the drawing) and always keeps the newest step. A step that no longer applies (the drawing changed outside the bus) clears the history rather than half-undoing. `CommandDef.erases` marks ERASE, BLOCK and WBLOCK: their net entity removals become the OOPS set, which OOPS puts back, appended to their blocks under their own handles and ids (`ChangeSetBuilder.restoreEntity`), as one new step; entities already back are skipped. The bus emits `undo` with an `UndoState` (step counts, next labels, grouping, control) whenever the history changes, for the undo/redo buttons (M2-23).
 
 ### 4.3 Selection
 

@@ -166,3 +166,13 @@ Context: M2-01 builds the `PromptBus` and command contract of ARCHITECTURE.md §
 5. **Keywords** are typed as their capital letters or spelled out at least to their last capital. AutoCAD's help says "the capitalized letters or the whole keyword"; AutoCAD 2024 also takes the prefixes in between, which is what drafters type.
 6. **Angles typed at prompts follow ANGBASE and ANGDIR**, read from the drawing's `$ANGBASE` (radians, as acad-ts carries the header) and `$ANGDIR`; answers are world radians.
 Consequences: ARCHITECTURE.md §5.1 "As built"; ROADMAP M2-01 done and M2-02 takes the F2 window and the view commands; COMMANDS.md's alias column is held to the engine table by a test.
+
+**DEC-049 — Undo semantics: a step is a command that edited; REDO reverses one U or UNDO; OOPS appends** · Accepted · 2026-11-08
+Context: M2-05 builds the undo history of ARCHITECTURE.md §4.2 on M2-01's command records. AutoCAD is the spec (CLAUDE.md); where its help is silent, the common drafter expectation is encoded in `packages/engine/test/commands/undo.test.ts`.
+1. **A step is a command that edited the drawing** (DEC-048 emits no record otherwise). AutoCAD also records commands that change nothing, so U after LIST "undoes" LIST; drafters press U to take back a change, so here U always does.
+2. **REDO reverses one whole U or UNDO** ("REDO reverses the effects of a single U or UNDO command"): REDO after UNDO 5 redoes all five. The help says REDO must immediately follow U or UNDO; AutoCAD 2024 lets repeated REDO (Ctrl+Y) reverse the U's before, and so does this. A new step drops what could be redone; a command that edits nothing (ZOOM, LIST) does not.
+3. **Marks move with the steps around them**: U passes over a mark and REDO puts it back; Back undoes to the last mark and removes it ("Mark encountered"), and with no mark asks "This will undo everything. OK?" first.
+4. **An open BEgin group ends before U, UNDO n, Back, Mark or Control One** acts, so U undoes the whole group; the help does not say what U inside a group does.
+5. **OOPS appends** what it restores to the end of each block (the help does not say where restored objects go in draw order) and is a new step, so U takes the restored objects away again; "Nothing to restore." is our message for an OOPS with nothing to restore.
+6. **The memory bound drops the oldest steps** with one command-line warning per drawing, always keeping the newest, and a step that no longer applies clears the history.
+Consequences: ARCHITECTURE.md §4.2 "As built"; COMMANDS.md UNDO/U, REDO and OOPS rows; ROADMAP M2-05 done and M2-23 (app wiring: Ctrl+Z/Ctrl+Y, buttons, session edits as steps) added.
