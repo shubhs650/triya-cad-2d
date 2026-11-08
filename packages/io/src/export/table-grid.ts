@@ -115,7 +115,7 @@ function neighbour(origins: Origins, i: number): number | undefined {
 }
 
 /** A copy of a row's or column's cell style; the styles and linetypes it names are shared. */
-function copyStyle(s: CellStyle): CellStyle {
+export function copyStyle(s: CellStyle): CellStyle {
   const out = Object.assign(new CellStyle(), s);
   for (const k of [
     'topBorder',
@@ -136,6 +136,15 @@ function stylesAt<T extends { cellStyleOverride: CellStyle }>(
   origins: Origins,
 ): (CellStyle | undefined)[] {
   return origins.map((o, i) => read[o ?? neighbour(origins, i) ?? -1]?.cellStyleOverride);
+}
+
+/**
+ * The row of the table as read each row of `g` is once saved, or copies (`regrid`): its own, or
+ * for a new one its neighbour; undefined for a new row with no row of the table left to copy.
+ */
+export function rowsAt(acad: TableEntity, g: TableGeometry): (TableEntityRow | undefined)[] {
+  const origins = rowOrigins(g);
+  return origins.map((o, i) => acad.rows[o ?? neighbour(origins, i) ?? -1]);
 }
 
 /**

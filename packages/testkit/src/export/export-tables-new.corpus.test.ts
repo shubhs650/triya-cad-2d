@@ -2,9 +2,8 @@
 // ACAD_TABLE in the drawing, and what the TABLE command adds to a drawing with a table style and
 // no table, each on an anonymous `*T` block of its own that the same save adds. The new tables
 // map back as they were saved and nothing else in the drawing changes. A DWG from R2010 states
-// rotations and table-wide overrides in cell styles, which are not written yet: a copy carrying
-// them is refused, and the copy without them saves; its cell formats go into the new cells' own
-// cell styles (M1-75 part 36). A file before R14 holds no
+// rotations and table-wide overrides in cell styles (M1-75 part 38) and cell formats in the new
+// cells' own cell styles (M1-75 part 36), so a copy there carries all of them. A file before R14 holds no
 // tables and refuses one.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -59,15 +58,6 @@ const typed = (style: Handle, block: Handle): TableGeometry => ({
   ],
 });
 
-/** `g` without what a DWG from R2010 states in cell styles unwritten: rotations, overrides. */
-function plain(g: TableGeometry): TableGeometry {
-  const { overrides: _o, ...rest } = g;
-  return { ...rest, cells: g.cells.map((row) => row.map((c) => ({ ...c, rotation: 0 }))) };
-}
-
-const stated = (g: TableGeometry): boolean =>
-  g.overrides !== undefined || g.cells.some((row) => row.some((c) => c.rotation !== 0));
-
 describe('TriyaToAcad new tables on the public corpus', () => {
   it('finds files to copy tables in and files to add one to', () => {
     const files = readable.filter((f) =>
@@ -99,7 +89,6 @@ describe('TriyaToAcad new tables on the public corpus', () => {
         const tables = [...model.entities()].filter(
           (e): e is Table => e.geom.kind === 'ACAD_TABLE',
         );
-        const dwgFrom2010 = options.format === 'dwg' && version >= ACadVersion.AC1024;
         const names = new Set([...model.blocks.values()].map((d) => d.name.toUpperCase()));
         let n = 1000;
         const blockName = () => {
@@ -140,20 +129,9 @@ describe('TriyaToAcad new tables on the public corpus', () => {
           );
           return;
         }
-        if (dwgFrom2010 && tables.some((t) => stated(t.geom))) {
-          const refused = open();
-          add(refused, copies);
-          expect(() => exportDocument(readCadDocument(bytes), refused, options), f.path).toThrow(
-            /in a DWG from R2010/,
-          );
-        }
         const added = add(
           model,
-          tables.length === 0
-            ? [(block) => typed(style.handle, block)]
-            : dwgFrom2010
-              ? copies.map((c) => (block: Handle) => plain(c(block)))
-              : copies,
+          tables.length === 0 ? [(block) => typed(style.handle, block)] : copies,
         );
 
         const reopened = readCadDocument(exportDocument(readCadDocument(bytes), model, options));

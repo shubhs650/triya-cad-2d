@@ -43,6 +43,17 @@ export interface Options {
    * overrides the alignment (middle left) of every cell in it.
    */
   readonly cellStyles?: boolean;
+  /**
+   * Each row names the cell style of its row type (title, header, data) by the table style's
+   * ids, as every row of an AutoCAD-saved DWG from R2010 does: a DWG from R2010 states the
+   * table-wide overrides of a row type in the cell styles of its rows.
+   */
+  readonly rowStyles?: boolean;
+  /**
+   * DXF 94 (the border colour override flags) set, as a table overriding a border colour states
+   * it; the values after it are not mapped (M1-81).
+   */
+  readonly borderOverrides?: boolean;
 }
 
 /**
@@ -143,6 +154,13 @@ export function drawing(
     row.hasData = true;
     row.cellPropertyOverrideFlags = TableCellStylePropertyFlags.Alignment;
     row.alignment = 4;
+  }
+  if (options.rowStyles) t.rows.forEach((r, i) => (r.styleId = i + 1));
+  if (options.borderOverrides) {
+    t.tableOverrideDxfCodes = [93, 94, 95, 96].map((code) => ({
+      code,
+      value: code === 94 ? 1 : 0,
+    }));
   }
   const special = t.rows[1]!.cells[1]!;
   if (options.locked) special.stateFlags = TableCellStateFlags.ContentLocked;

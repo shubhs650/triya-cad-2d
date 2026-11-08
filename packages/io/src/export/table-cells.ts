@@ -38,6 +38,7 @@ import {
   TextStyle,
   ACadVersion,
   type CellBorder,
+  type CellStyle,
   type TableEntity,
   type TableEntityCell,
 } from '@node-projects/acad-ts';
@@ -438,6 +439,21 @@ export function cellStyleProblems(
 }
 
 /**
+ * Begins cell style `s` of `type` as AutoCAD writes one overriding nothing (every corpus R2010+
+ * cell style: content flowing, background None, scale 1, data type unknown 512), unless it
+ * states something already.
+ */
+export function beginCellStyle(s: CellStyle, type: CellStyleType): void {
+  if (s.hasData) return;
+  s.hasData = true;
+  s.cellStyleType = type;
+  s.contentLayoutFlags = TableCellContentLayoutFlags.Flow;
+  s.backgroundColor = AcadColor.byEntity;
+  s.scale = 1;
+  s.valueDataType = 512;
+}
+
+/**
  * Writes the format change from `b` to `a` into a DWG R2010+ cell: its content format where that
  * overrides a content property already, its own cell style otherwise. A cell style that stated
  * nothing is begun as AutoCAD writes one overriding nothing (every corpus R2010+ cell style:
@@ -450,14 +466,7 @@ export function writeCellStyleFormat(
   a: TableCellFormat | undefined,
 ): void {
   const s = cell.styleOverride;
-  if (!s.hasData) {
-    s.hasData = true;
-    s.cellStyleType = CellStyleType.Cell;
-    s.contentLayoutFlags = TableCellContentLayoutFlags.Flow;
-    s.backgroundColor = AcadColor.byEntity;
-    s.scale = 1;
-    s.valueDataType = 512;
-  }
+  beginCellStyle(s, CellStyleType.Cell);
   let own = s.cellPropertyOverrideFlags ?? 0;
   const content = cell.content?.format;
   const changed = (k: keyof TableCellFormat): boolean => !same(a?.[k], b?.[k]);

@@ -89,6 +89,8 @@ import {
   TableCellStateFlags,
   TableEntity,
   TableEntityCell,
+  CellStyleType,
+  TableCellStylePropertyFlags,
   TableStyle,
   TextColumnData,
   TextEntity,
@@ -157,8 +159,9 @@ import type {
 } from '@triya/engine';
 import type { CadFormat } from '../read';
 import type { PassthroughStore } from './passthrough';
-import { tableCellFormat, tableMargins } from '../map/entities';
+import { tableCellFormat, tableCellRotation, tableMargins } from '../map/entities';
 import {
+  beginCellStyle,
   cellStyleProblems,
   dwgFrom2010,
   formatFileProblems,
@@ -169,7 +172,13 @@ import {
   writeCellStyleFormat,
   writeMerges,
 } from './table-cells';
-import { buildGrid, newTableProblems, writeTableOverrides } from './table-new';
+import { buildGrid, newTableProblems } from './table-new';
+import {
+  overrideFileProblems,
+  overrideValueProblems,
+  stylesAfter,
+  writeTableOverrides,
+} from './table-overrides';
 import {
   alignedBefore,
   cellStylesAt,
@@ -2046,8 +2055,9 @@ const gridOf = (g: TableGeometry, rows: number, columns: number): boolean =>
  * engine's. Merges and cell formats are written by table-cells.ts (M1-75 part 26). A new table
  * (TABLE, COPY; part 32) comes with the `*T` block the same save adds for it, and is built by
  * table-new.ts with its table-wide overrides. Rows and columns inserted or deleted (part 34) are
- * moved into place by table-grid.ts, from where the table says each came from. An edited table's
- * table-wide overrides are refused for now.
+ * moved into place by table-grid.ts, from where the table says each came from. Table-wide
+ * overrides, new or changed, are written by table-overrides.ts (part 38), and a DWG from R2010
+ * cell's rotation into its content format or cell style (`writeCellRotation`).
  */
 const tableWriter: Writer<TableGeometry> = {
   create: () => new TableEntity(),
@@ -2064,7 +2074,7 @@ const tableWriter: Writer<TableGeometry> = {
     }
     if (g.direction.x === 0 && g.direction.y === 0) out.push('no horizontal direction');
     if (!before) out.push(...newTableProblems(r, g));
-    else if (!same(before.overrides, g.overrides)) out.push('table overrides change');
+    else out.push(...overrideValueProblems(r, before.overrides, g.overrides));
     if (before) {
       const origins = originProblems(before, g);
       if (origins.length > 0) return [...out, ...origins];
@@ -2124,6 +2134,19 @@ const tableWriter: Writer<TableGeometry> = {
     if (d('rowHeights')) g.rowHeights.forEach((h, i) => (t.rows[i]!.height = h));
     if (d('columnWidths')) g.columnWidths.forEach((w, j) => (t.columns[j]!.width = w));
     if (d('normal')) t.normal = xyz(g.normal);
+    // The table-wide overrides (table-overrides.ts) before the cells: a DWG from R2010 states them
+    // in the rows' cell styles, which each cell folds in, so a cell there is then written against
+    // what it maps as on its new row.
+    const styles = dwgFrom2010(r.format, r.version);
+    const overrides = !before || !same(before.overrides, g.overrides);
+    if (overrides) writeTableOverrides(r, t, before?.overrides, g.overrides);
+    const onRow = (i: number, j: number, cell: TableEntityCell) =>
+      tableCellFormat(
+        t.cellStyleOverride,
+        t.columns[j]?.cellStyleOverride,
+        t.rows[i]?.cellStyleOverride,
+        cell,
+      );
     // Cells by their own before, not `differ`'s: a plane change must not rewrite every value.
     for (const [i, j, b, a] of cells(was, g)) {
       const cell = t.rows[i]!.cells[j]!;
@@ -2138,16 +2161,47 @@ const tableWriter: Writer<TableGeometry> = {
           if (k.blockRecord || k.contentType & TableCellContentType.Block) k.blockRecord = block;
         }
       }
-      if (!b || b.rotation !== a.rotation) cell.rotation = a.rotation;
-      const format = formats ? formats[i]![j] : b?.format;
+      if (!b || b.rotation !== a.rotation) {
+        if (styles) writeCellRotation(t, i, j, a.rotation);
+        cell.rotation = a.rotation;
+      }
+      const format = styles && overrides ? onRow(i, j, cell) : formats ? formats[i]![j] : b?.format;
       if (same(format, a.format)) continue;
-      if (dwgFrom2010(r.format, r.version)) writeCellStyleFormat(r, cell, format, a.format);
+      if (styles) writeCellStyleFormat(r, cell, format, a.format);
       else writeCellFormat(r, cell, format, a.format);
     }
     if (!was || grid || mergesChange(was, g)) writeMerges(t, was, g);
-    if (!before && g.overrides) writeTableOverrides(r, t, g.overrides);
   },
 };
+
+/**
+ * Writes cell (i, j)'s rotation into a DWG R2010+ table, where it is a content property folded
+ * like the cell formats (map/entities.ts `tableCellRotation`): into the content format when that
+ * rotates the content already, since it wins, into the cell's own cell style otherwise. A
+ * rotation the cell's row or column gives it already (none rotate a cell 0) is the cell's by
+ * stating none of its own.
+ */
+function writeCellRotation(t: TableEntity, i: number, j: number, rotation: number): void {
+  const cell = t.rows[i]!.cells[j]!;
+  const bit = TableCellStylePropertyFlags.Rotation;
+  const inherited = tableCellRotation(
+    t.columns[j]?.cellStyleOverride,
+    t.rows[i]?.cellStyleOverride,
+    new TableEntityCell(),
+  );
+  const content = cell.content?.format;
+  const s = cell.styleOverride;
+  if (rotation === inherited) {
+    if (content?.hasData) content.propertyOverrideFlags &= ~bit;
+    if (s.hasData) s.cellPropertyOverrideFlags = (s.cellPropertyOverrideFlags ?? 0) & ~bit;
+  } else if (content?.hasData && content.propertyOverrideFlags & bit) {
+    content.rotation = rotation;
+  } else {
+    beginCellStyle(s, CellStyleType.Cell);
+    s.cellPropertyOverrideFlags = (s.cellPropertyOverrideFlags ?? 0) | bit;
+    s.rotation = rotation;
+  }
+}
 
 /**
  * A cell's text, as the cell editor leaves it: a string value, whatever the value was (a number
@@ -2174,17 +2228,18 @@ function writeCellText(cell: TableEntity['rows'][number]['cells'][number], text:
  * What an edited table's original holds that its writer cannot change, by the cell: a cell with
  * a field (FIELD, M4-10), several contents, locked content or a data link is not typed over (the
  * cell editor refuses a locked one; the link and the field would put their own value back), a
- * block with attribute values keeps them, and a DWG from R2010 keeps a cell's rotation in its
- * content format, which Triya does not map.
+ * block with attribute values keeps them. What the table-wide overrides cannot state in the file
+ * is checked here too (table-overrides.ts); in a DWG from R2010 a cell format is checked against
+ * what the cell's row gives it once changed overrides are in the rows.
  */
 export function tableCellProblems(
+  r: Resolver,
   acad: TableEntity,
   before: TableGeometry,
   after: TableGeometry,
-  version: ACadVersion | undefined,
-  format: CadFormat | undefined,
 ): string[] {
-  const out: string[] = [];
+  const { version, format } = r;
+  const out: string[] = [...overrideFileProblems(r, acad, after, before.overrides)];
   const grid = regridded(after);
   if (grid) {
     if (originProblems(before, after).length > 0) return out;
@@ -2195,21 +2250,29 @@ export function tableCellProblems(
   // A cell a row or column insert makes is checked against what it maps as where it sits.
   const formats = grid ? formatsBefore(acad, before, after) : undefined;
   const at2010 = styles ? cellStylesAt(acad, after) : undefined;
-  const margins = styles ? tableMargins(acad.cellStyleOverride) : {};
+  // In a DWG from R2010 new overrides go into the rows first, and each cell is checked against
+  // what it then maps as.
+  const restyled =
+    styles && !same(before.overrides, after.overrides)
+      ? stylesAfter(r, acad, before, after)
+      : undefined;
+  const margins = restyled?.margins ?? (styles ? tableMargins(acad.cellStyleOverride) : {});
   for (const [i, j, b, a] of cells(was, after)) {
     const at = `cell (${i}, ${j})`;
-    const formatWas = formats ? formats[i]![j] : b?.format;
+    const formatWas = restyled ? restyled.format[i]![j] : formats ? formats[i]![j] : b?.format;
     out.push(
       ...formatFileProblems(formatWas, a.format, version, format, styles).map((p) => `${at}: ${p}`),
     );
     if (at2010 && !same(formatWas, a.format)) {
       // What the cell's row and column give it, which it keeps unless it overrides them.
-      const inherited = tableCellFormat(
-        acad.cellStyleOverride,
-        at2010.columns[j],
-        at2010.rows[i],
-        new TableEntityCell(),
-      );
+      const inherited = restyled
+        ? restyled.inherited[i]![j]
+        : tableCellFormat(
+            acad.cellStyleOverride,
+            at2010.columns[j],
+            at2010.rows[i],
+            new TableEntityCell(),
+          );
       out.push(
         ...cellStyleProblems(inherited, margins, formatWas, a.format).map((p) => `${at}: ${p}`),
       );
@@ -2229,9 +2292,6 @@ export function tableCellProblems(
       if (b.block !== a.block && (cell.attributes.length > 0 || (k?.attributes.length ?? 0) > 0)) {
         out.push(`${at}: a block with attribute values`);
       }
-    }
-    if (b.rotation !== a.rotation && styles) {
-      out.push(`${at}: a cell rotation in a DWG from R2010, which keeps it in the content format`);
     }
   }
   return out;
