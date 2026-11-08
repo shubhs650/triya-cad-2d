@@ -412,10 +412,10 @@ describe('PromptBus', () => {
     ]);
   });
 
-  it('takes selections only from the selection front-end', async () => {
+  it('takes a whole selection from a front-end; text that is no mode is refused (M2-03)', async () => {
     const { bus } = setup();
-    await bus.script(['SELECT', 'W']);
-    expect(bus.history.at(-1)).toBe('*Invalid selection*');
+    await bus.script(['SELECT', 'XYZ']);
+    expect(bus.history.at(-2)).toBe('*Invalid selection*');
     await bus.answer({ kind: 'selection', ids: [1, 2] });
     expect(got).toEqual([{ kind: 'selection', ids: [1, 2] }]);
     expect(bus.history.at(-1)).toBe('Select objects: 2 found');

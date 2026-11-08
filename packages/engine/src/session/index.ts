@@ -71,6 +71,18 @@ export type CommandInput =
   | { readonly kind: 'answer'; readonly answer: PromptAnswer }
   | { readonly kind: 'cancel' }
   | { readonly kind: 'invoke'; readonly name: string }
+  /**
+   * A left click on the canvas (M2-03, `PromptBus.pick`): a pick or a selection window's corner
+   * at `Command:` and "Select objects", the point at a point prompt; `release` ends a drag.
+   */
+  | {
+      readonly kind: 'pick';
+      readonly point: Vec2;
+      readonly shift?: boolean;
+      readonly release?: boolean;
+    }
+  /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
+  | { readonly kind: 'select-all' }
   /** The space the drafter works in now: model space or a layout's paper space. */
   | { readonly kind: 'space'; readonly block: Handle }
   /** The app's reply to the view request `id` (M2-02 part 2). */
@@ -143,6 +155,13 @@ export class EngineSession {
         return this.#bus.cancel();
       case 'invoke':
         return this.#bus.invoke(input.name);
+      case 'pick':
+        return this.#bus.pick(input.point, {
+          ...(input.shift && { shift: true }),
+          ...(input.release && { release: true }),
+        });
+      case 'select-all':
+        return this.#bus.selectAll();
       case 'space':
         if (this.model.hasBlock(input.block)) this.#space = input.block;
         return Promise.resolve();

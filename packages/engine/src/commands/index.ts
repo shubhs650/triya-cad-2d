@@ -8,3 +8,6 @@ export { currentLayer, lineCommand } from './draw/line';
 export * from './view/host';
 export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale } from './view/zoom';
 export { viewCommand, viewNameMatches } from './view/named-view';
+export { selectCommand } from './select';
+export * from '../selection/loop';
+export * from '../selection/rules';

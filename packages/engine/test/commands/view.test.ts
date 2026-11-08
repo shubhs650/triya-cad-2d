@@ -55,7 +55,7 @@ describe('ZOOM', () => {
     await bus.submit('Z');
     expect(bus.promptText).toBe(
       'Specify corner of window, enter a scale factor (nX or nXP), or ' +
-        '[All/Center/Dynamic/Extents/Previous/Scale/Window] <real time>:',
+        '[All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
     );
   });
 
@@ -186,7 +186,7 @@ describe('ZOOM', () => {
     expect(asked).toEqual([{ op: 'extents' }]);
     expect(bus.history.slice(-2)).toEqual([
       '>>Specify corner of window, enter a scale factor (nX or nXP), or ' +
-        '[All/Center/Dynamic/Extents/Previous/Scale/Window] <real time>: E',
+        '[All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>: E',
       'Resuming LINE command.',
     ]);
     expect(bus.promptText).toBe('Specify next point or [Undo]:');

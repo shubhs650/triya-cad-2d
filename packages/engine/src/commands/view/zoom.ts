@@ -1,16 +1,25 @@
 // ZOOM, PAN, REGEN and REGENALL (M2-02 part 2), AutoCAD 2024's prompts and options; they change
 // the view through the view host (host.ts), never the drawing. ZOOM and PAN are transparent
 // (`'Z`, `'P`). ZOOM Dynamic picks a window, as COMMANDS.md allows (AutoCAD's view box is a
-// relic of slow regenerations); ZOOM Object waits on M2-03, which gives "Select objects" its
-// front-end.
+// relic of slow regenerations). ZOOM Object (M2-03) fits the view around the objects selected,
+// the pre-selection if there is one.
 //   Specify corner of window, enter a scale factor (nX or nXP), or
-//   [All/Center/Dynamic/Extents/Previous/Scale/Window] <real time>:
+//   [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:
 // (AutoCAD 2024 Help, "ZOOM (Command)", "PAN (Command)", "-PAN (Command)", "REGEN (Command)").
 import type { Vec2 } from '../../geom/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { ViewReply, ViewRequest } from './host';
 
-const ZOOM_OPTIONS = ['All', 'Center', 'Dynamic', 'Extents', 'Previous', 'Scale', 'Window'];
+const ZOOM_OPTIONS = [
+  'All',
+  'Center',
+  'Dynamic',
+  'Extents',
+  'Previous',
+  'Scale',
+  'Window',
+  'Object',
+];
 
 /** AutoCAD's answer to anything ZOOM cannot read. */
 export const ZOOM_INVALID = 'Requires a distance, numberX, or option keyword.';
@@ -140,6 +149,11 @@ export function zoomCommand(): CommandDef {
             return void (await viewRequest(ctx, { op: 'extents' }));
           case 'Previous':
             return void (await viewRequest(ctx, { op: 'previous' }));
+          case 'Object': {
+            const sel = yield ctx.prompt.selection({ message: 'Select objects' });
+            if (sel.kind !== 'selection' || sel.ids.length === 0) return;
+            return void (await viewRequest(ctx, { op: 'objects', ids: sel.ids }));
+          }
           case 'Scale':
             for (;;) {
               const t = yield ctx.prompt.string({ message: 'Enter a scale factor (nX or nXP)' });
