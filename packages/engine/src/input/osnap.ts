@@ -130,8 +130,14 @@ export interface OsnapHit {
 /** Block nesting followed, and MINSERT cells taken per reference, before giving up. */
 const MAX_DEPTH = 8;
 const MAX_CELLS = 1024;
-/** Objects under the aperture paired for INT and APP: the nearest this many. */
-const MAX_PAIRED = 48;
+/**
+ * Of the curves under the aperture, the nearest this many offer their points, and the nearest
+ * MAX_PAIRED of those are paired for INT and APP. Zoomed out over a dense drawing the aperture
+ * holds hundreds of objects; AutoSnap marks the ones nearest the cursor, and these bounds keep
+ * a query within PRD §12 T3's 50 ms (`tests/e2e/perf/render.spec.ts`).
+ */
+const MAX_NEAR = 24;
+const MAX_PAIRED = 12;
 
 type Simple = Line | Arc | Circle | Ellipse | Spline | Curve;
 
@@ -155,8 +161,8 @@ interface PointPart {
 interface LoopPart {
   readonly id: EntityId;
   readonly groups: readonly number[];
-  /** The closed outline, flattened, for its centroid (GCE). */
-  readonly points: readonly Vec2[];
+  /** The closed outline, flattened when GCE needs it, for its centroid. */
+  readonly points: () => readonly Vec2[];
 }
 
 interface Parts {
@@ -188,6 +194,7 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
     for (const g of part.groups) nearGroups.add(g);
   }
   near.sort((a, b) => a.d - b.d);
+  near.length = Math.min(near.length, MAX_NEAR);
 
   for (const { part, nearest } of near) {
     curvePoints(part, q, src.tol, add, on);
@@ -202,7 +209,12 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
   if (on('GCE')) {
     for (const loop of parts.loops) {
       if (!loop.groups.some((g) => nearGroups.has(g))) continue;
-      const c = centroid(loop.points);
+      let c: Vec2 | undefined;
+      try {
+        c = centroid(loop.points());
+      } catch {
+        // An outline that cannot be flattened has no centroid to offer.
+      }
       if (c) add('GCE', c, loop.id);
     }
   }
@@ -444,6 +456,8 @@ function collect(src: OsnapSource, q: OsnapQuery): Parts {
     let near: boolean | undefined;
     const b = src.index.bounds(id);
     if (b?.kind === 'box') near = boxDistance(b.box, q.point) <= r;
+    // Text no loaded font bounds is in every query: it counts only by its insertion point.
+    else if (isText(e.geom) && distance(textInsertion(e.geom), q.point) > r) continue;
     addEntity(ctx, e, IDENTITY, id, [], 0, near);
   }
   return parts;
@@ -495,16 +509,14 @@ function addEntity(
   };
   const point = (mode: OsnapMode, p: Vec2, near?: boolean) =>
     parts.points.push({ id, groups, mode, point: pt(p), ...(near !== undefined && { near }) });
+  const loop = (c: Polyline | Spline) => {
+    if ((ctx.q.modes & OSNAP.GCE) === 0) return;
+    const dev = Math.max(ctx.q.aperture * 1e-3, src.tol.linear);
+    parts.loops.push({ id, groups, points: () => flatten(c, dev).points.map(pt) });
+  };
   const polyline = (p: Polyline) => {
     for (const s of explodePolyline(p)) curve(s);
-    if (p.closed && p.vertices.length >= 2) {
-      try {
-        const f = flatten(p, Math.max(ctx.q.aperture * 1e-3, src.tol.linear));
-        parts.loops.push({ id, groups, points: f.points.map(pt) });
-      } catch {
-        // A polyline whose segments cannot be flattened has no centroid to offer.
-      }
-    }
+    if (p.closed && p.vertices.length >= 2) loop(p);
   };
   const lines = (corners: readonly Vec2[], skip: (i: number) => boolean = () => false) => {
     for (let i = 0; i < corners.length; i++) {
@@ -527,14 +539,7 @@ function addEntity(
       break;
     case 'SPLINE':
       curve(g, !g.closed);
-      if (g.closed) {
-        try {
-          const f = flatten(g, Math.max(ctx.q.aperture * 1e-3, src.tol.linear));
-          parts.loops.push({ id, groups, points: f.points.map(pt) });
-        } catch {
-          // No centroid for a spline that cannot be flattened.
-        }
-      }
+      if (g.closed) loop(g);
       break;
     case 'LWPOLYLINE':
       polyline(g);
@@ -565,15 +570,9 @@ function addEntity(
       point('NOD', g.position);
       break;
     case 'TEXT':
-    case 'ATTDEF': {
-      // INSertion: the alignment point, except for left, aligned and fitted text.
-      const first = g.halign === 0 || g.halign === 3 || g.halign === 5;
-      const p = !first && g.alignmentPoint ? g.alignmentPoint : g.position;
-      point('INS', p, depth === 0 ? boxNear : undefined);
-      break;
-    }
+    case 'ATTDEF':
     case 'MTEXT':
-      point('INS', g.position, depth === 0 ? boxNear : undefined);
+      point('INS', textInsertion(g), depth === 0 ? boxNear : undefined);
       break;
     case 'INSERT':
       point('INS', g.position);
@@ -605,6 +604,18 @@ function addEntity(
       // HATCH (OSNAPHATCH 0), images, tables, multileaders and the rest offer nothing yet.
       break;
   }
+}
+
+type TextGeometry = Extract<EntityGeometry, { readonly kind: 'TEXT' | 'ATTDEF' | 'MTEXT' }>;
+
+const isText = (g: EntityGeometry): g is TextGeometry =>
+  g.kind === 'TEXT' || g.kind === 'ATTDEF' || g.kind === 'MTEXT';
+
+/** INSertion of text: the alignment point, except for left, aligned and fitted text. */
+function textInsertion(g: TextGeometry): Vec2 {
+  if (g.kind === 'MTEXT') return g.position;
+  const first = g.halign === 0 || g.halign === 3 || g.halign === 5;
+  return !first && g.alignmentPoint ? g.alignmentPoint : g.position;
 }
 
 function definitionPoints(g: Extract<EntityGeometry, { readonly definitionPoint: Vec2 }>): Vec2[] {
