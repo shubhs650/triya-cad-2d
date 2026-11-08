@@ -1,6 +1,7 @@
 // M1-22 part 2: the navigation bar (PAN, ZOOM Extents/Window/Previous/All/In/Out, REGEN,
 // named views) and the layout tabs, on sample_AC1018.dwg: three layouts, LIMMAX 12,9, model
-// extents about (0, -566)–(1852, 161), and a saved plan view `view_custom` centred at
+// extents about (0, -566)–(1852, 111) (its text measured by its glyphs since M1-35 part 2,
+// which matches the $EXTMIN/$EXTMAX AutoCAD saved), and a saved plan view `view_custom` centred at
 // (65.70, 15.93). It was saved with model space centred at (1121.82, -261.37), 1100.22 units
 // high (the `*Active` VPORT), and Layout1 centred at (7.62, 4), 8.99 high (its paper-space
 // viewport). The status bar's coordinates are how the test reads the view.
@@ -67,13 +68,13 @@ test.describe('navigation bar and layout tabs', () => {
     expect(Math.abs(c.y - 4)).toBeLessThan(2 * u);
     expect(u * box.height).toBeCloseTo(8.99, 0);
 
-    // Zoom Extents still frames the drawing: here the extents' centre, about (926, -203).
+    // Zoom Extents still frames the drawing: here the extents' centre, about (926, -227).
     await tabs.first().click();
     await nav(page, 'Zoom Extents').click();
     u = await unit(page, cx, cy);
     c = await worldAt(page, cx, cy);
-    expect(Math.abs(c.x - 926.1)).toBeLessThan(2 * u + 1);
-    expect(Math.abs(c.y + 202.66)).toBeLessThan(2 * u + 1);
+    expect(Math.abs(c.x - 926.09)).toBeLessThan(2 * u + 1);
+    expect(Math.abs(c.y + 227.47)).toBeLessThan(2 * u + 1);
   });
 
   test('lists Model and the layouts in tab order and shows a layout on its paper', async ({
@@ -143,9 +144,9 @@ test.describe('navigation bar and layout tabs', () => {
     const u = await unit(page, cx, cy);
     const centre = await worldAt(page, cx, cy);
     // The union of limits (0,0)–(12,9) and the extents is the extents here, so ZOOM All
-    // centres on the extents' centre, about (926, -203).
+    // centres on the extents' centre, about (926, -227).
     expect(Math.abs(centre.x - 926)).toBeLessThan(2 * u + 2);
-    expect(Math.abs(centre.y + 203)).toBeLessThan(2 * u + 2);
+    expect(Math.abs(centre.y + 227.5)).toBeLessThan(2 * u + 2);
   });
 
   test('PAN drags the drawing with the left button until Esc', async ({ page }) => {

@@ -121,6 +121,18 @@ export class CanvasController {
   #lastMiddle: { readonly t: number; readonly x: number; readonly y: number } | undefined;
   #lastWheel = -Infinity;
   #corner: { readonly world: Point; readonly screen: Point; dragged: boolean } | undefined;
+  /**
+   * The space's extents as its renderer last measured them (M1-35 part 2): text by its glyphs
+   * once the fonts load, and edits followed, which the extents the drawing opened with (from
+   * the I/O worker, which has no fonts) are not. `measured` is false until the first answer.
+   */
+  #measured: { readonly done: boolean; readonly box: Box | undefined } = {
+    done: false,
+    box: undefined,
+  };
+  #measuring = 0;
+  /** Settles once the renderer first answered (or failed to): the opening view waits on it. */
+  #firstMeasure: Promise<void> = Promise.resolve();
 
   constructor(container: HTMLElement, opened: OpenResult, block: Handle, hooks: CanvasHooks) {
     this.#opened = opened;
@@ -143,6 +155,7 @@ export class CanvasController {
     container.append(canvas);
     this.#canvas = canvas;
     this.#host = this.#createHost();
+    this.#firstMeasure = this.#measure();
 
     this.#observer = new ResizeObserver(() => this.#resize());
     this.#observer.observe(container);
@@ -232,6 +245,7 @@ export class CanvasController {
     this.#canvas = canvas;
     this.#listeners = new AbortController();
     this.#host = this.#createHost();
+    this.#measure();
     this.#drawing = this.#again = false;
     this.#listen();
     this.#size = { width: 0, height: 0 };
@@ -242,6 +256,7 @@ export class CanvasController {
   /** A change the drawing's engine applied (M1-67): the renderer applies it and redraws. */
   apply(change: ChangeSet): void {
     this.#host.apply(change);
+    this.#measure();
     // The layout renamed or given a new page setup or limits (M1-97): its sheet frames ZOOM
     // Extents and All from now on, and the canvas takes its new name.
     const layout = this.#layout;
@@ -274,6 +289,7 @@ export class CanvasController {
   /** The user's font files changed (M1-38): text redraws with them. */
   setFonts(fonts: FontSources): void {
     this.#host.setFonts(fonts);
+    this.#measure();
     this.#requestFrame();
   }
 
@@ -308,24 +324,44 @@ export class CanvasController {
     }
   }
 
+  /**
+   * The renderer's measure, else the extents the drawing opened with: those also hold the
+   * header's $EXTMIN/$EXTMAX for a model space with nothing of known extent (text no loaded
+   * font serves).
+   */
   #extents(): Box | undefined {
-    return this.#opened.extents[this.block];
+    return (
+      (this.#measured.done ? this.#measured.box : undefined) ?? this.#opened.extents[this.block]
+    );
   }
 
   /**
-   * The view a space opens in, as AutoCAD reopens a drawing: model space in the `*Active`
+   * Asks the renderer for the space's extents, after everything sent to it so far; only the
+   * latest request's answer is kept. A failure (the renderer disposed) keeps the last measure.
+   */
+  #measure(): Promise<void> {
+    const n = ++this.#measuring;
+    return this.#host.extents().then(
+      (box) => {
+        if (n === this.#measuring) this.#measured = { done: true, box };
+      },
+      () => undefined,
+    );
+  }
+
+  /**
+   * The view a space was saved in, as AutoCAD reopens a drawing: model space in the `*Active`
    * VPORT's view, a layout in its paper-space viewport's view (M1-22 part 3). Without one (no
    * VPORT table, a 3D view, a layout never shown) model space opens at its extents and a
-   * layout with its whole sheet in view.
+   * layout with its whole sheet in view (`#opening`).
    */
-  #openingView(): ViewTransform {
-    const saved = this.#layout
+  #savedView(): ViewTransform | undefined {
+    return this.#layout
       ? paperSpaceView(paperSpaceViewport(this.#opened.init.entities, this.block), this.#size)
       : savedModelView(
           this.#hooks.tile ? this.#hooks.tile.vport : activeVport(this.#opened.init.tables?.vports),
           this.#size,
         );
-    return saved ?? extentsView(this.#opening(), this.#size);
   }
 
   /** The extents, and a layout's sheet with anything drawn off it. */
@@ -372,8 +408,22 @@ export class CanvasController {
     if (width === this.#size.width && height === this.#size.height) return;
     this.#size = { width, height };
     this.#host.resize(width, height, devicePixelRatio);
-    if (this.#view) this.#setView(this.#view);
-    else this.#setView(this.#openingView());
+    if (this.#view) {
+      this.#setView(this.#view);
+      return;
+    }
+    const saved = this.#savedView();
+    if (saved) {
+      this.#setView(saved);
+      return;
+    }
+    // Without a saved view the space opens at its extents, text included, so the first view
+    // waits for the renderer's measure; it answers once it has built the drawing, which the
+    // first frame waits for anyway.
+    void this.#firstMeasure.then(() => {
+      if (!this.#view && this.#size.width > 0)
+        this.#setView(extentsView(this.#opening(), this.#size));
+    });
   }
 
   /** A discrete view change (a ZOOM option, VIEW restore): recorded for ZOOM Previous. */

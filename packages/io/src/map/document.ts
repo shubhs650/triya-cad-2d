@@ -6,10 +6,8 @@
 import type { CadDocument } from '@node-projects/acad-ts';
 import {
   DocumentModel,
-  EMPTY_BOX,
   SpatialIndex,
   toleranceFromExtents,
-  unionBox,
   type Box,
   type DocumentInit,
   type Handle,
@@ -82,8 +80,9 @@ export function openDocument(doc: CadDocument): OpenedDocument {
 
 /**
  * The union of what each space draws whose extent the engine knows. AutoCAD's extents leave
- * out XLINE and RAY; text has no extent until the text engine supplies bounds (M1-35), so a
- * model space of text alone falls back to the header's `$EXTMIN`/`$EXTMAX`.
+ * out XLINE and RAY; this worker has no fonts, so text has no extent here and a model space
+ * of text alone falls back to the header's `$EXTMIN`/`$EXTMAX`. The app measures again with
+ * text once its renderer has loaded the fonts (`RendererHost.extents`, M1-35 part 2).
  */
 function spaceExtents(init: DocumentInit, modelSpace: Handle | undefined): Record<Handle, Box> {
   const model = DocumentModel.create(init);
@@ -96,13 +95,8 @@ function spaceExtents(init: DocumentInit, modelSpace: Handle | undefined): Recor
   const spaces = new Set(model.layouts.map((l) => l.blockRecord));
   if (modelSpace !== undefined) spaces.add(modelSpace);
   for (const block of spaces) {
-    if (!model.hasBlock(block)) continue;
-    let box: Box = EMPTY_BOX;
-    for (const id of model.blockEntities(block)) {
-      const b = index.bounds(id);
-      if (b?.kind === 'box') box = unionBox(box, b.box);
-    }
-    if (box.minX <= box.maxX && box.minY <= box.maxY) out[block] = box;
+    const box = index.drawnExtents(block);
+    if (box) out[block] = box;
   }
   if (
     modelSpace !== undefined &&

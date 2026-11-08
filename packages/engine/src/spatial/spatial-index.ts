@@ -13,7 +13,7 @@
 // ACAD_TABLE, through their *D and *T blocks) whose block's contents changed, up through
 // nesting, because their boxes are built from block extents.
 
-import { boxesOverlap, type Box } from '../geom/bounds';
+import { boxesOverlap, EMPTY_BOX, unionBox, type Box } from '../geom/bounds';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
@@ -296,6 +296,21 @@ export class SpatialIndex {
     const ext = cyclic ? 'unknown' : this.#tree(block).extents();
     this.#extents.set(block, ext);
     return ext;
+  }
+
+  /**
+   * ZOOM Extents of a block record (model space, a layout's paper space): the union of its
+   * entities' boxes, as the index bounds them now, so text counts by its glyphs once fonts
+   * load (M1-35). XLINEs and RAYs are left out, as AutoCAD's extents leave them out, and so
+   * is anything without known bounds (text no loaded font serves); undefined when nothing
+   * has a known extent.
+   */
+  drawnExtents(block: Handle): Box | undefined {
+    const entries = this.#trees.get(block)?.entries;
+    if (!entries) return undefined;
+    let out: Box = EMPTY_BOX;
+    for (const b of entries.values()) if (b.kind === 'box') out = unionBox(out, b.box);
+    return out.minX <= out.maxX && out.minY <= out.maxY ? out : undefined;
   }
 
   #tree(block: Handle): BlockTree {
