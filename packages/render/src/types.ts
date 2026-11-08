@@ -145,6 +145,14 @@ export interface ImageFill {
   readonly transparent: boolean;
 }
 
+/**
+ * XCLIP boundaries (M1-103), each a closed polygon as flat world `x, y` pairs: a primitive shows
+ * only where it is inside every one (nonzero winding), one per clipped reference around it,
+ * outermost first. Shared by reference among the parts of one reference, so the renderer sets a
+ * clip once per run of parts.
+ */
+export type PrimitiveClip = readonly (readonly number[])[];
+
 export type RenderPrimitive =
   | {
       readonly kind: 'stroke' | 'fill';
@@ -155,6 +163,8 @@ export type RenderPrimitive =
        * viewport, its own effective layer and every nested reference's above it.
        */
       readonly layers?: readonly string[];
+      /** Inside XCLIPped references (M1-103): the clip polygons it shows within. */
+      readonly clip?: PrimitiveClip;
       /** Lineweight in millimetres; undefined is the default (drawn 1 px). */
       readonly lineweight?: number;
       /** Fill rule for `fill`: AutoCAD hatch loops use odd parity. */
@@ -195,6 +205,8 @@ export type RenderPrimitive =
        * viewport, its own effective layer and every nested reference's above it.
        */
       readonly layers?: readonly string[];
+      /** Inside XCLIPped references (M1-103): the clip polygons it shows within. */
+      readonly clip?: PrimitiveClip;
       readonly lineweight?: number;
     }
   /** A POINT drawn as a dot (PDMODE 0); other PDMODE shapes come with the POINT style task. */
@@ -208,6 +220,8 @@ export type RenderPrimitive =
        * viewport, its own effective layer and every nested reference's above it.
        */
       readonly layers?: readonly string[];
+      /** Inside XCLIPped references (M1-103): the clip polygons it shows within. */
+      readonly clip?: PrimitiveClip;
     };
 
 export interface Renderer {

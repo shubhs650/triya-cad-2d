@@ -30,12 +30,14 @@ export {
   expandInsert,
   expands,
   referenceOf,
+  insertClips,
   insertTransforms,
   transformPath,
   transformPrimitive,
   type Affine,
   type BlockExpansion,
   type BlockSource,
+  type InsertClip,
   type InsertContextFunction,
 } from './blocks';
 export {
