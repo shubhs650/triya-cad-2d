@@ -1,1 +1,23 @@
-{ "files": {} }
+{
+  "//": "M1-105: findings ezdxf also reports on the source file itself, allowed per file with the reason. audit.py fails an entry the source or the saves no longer report.",
+  "files": {
+    "public/third-party/ezdxf/examples_dxf/valid_lineweights.dxf": [
+      {
+        "code": 205,
+        "reason": "the source's LINE #33 has lineweight 10, which is not a DXF lineweight (ezdxf's test of its own lineweight fix); Triya keeps what it read (passthrough invariant)"
+      }
+    ],
+    "public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf": [
+      {
+        "code": 12,
+        "reason": "the source (an R2000 binary DXF saved down from a newer AutoCAD) holds 48 ACAD_PROXY_OBJECTs in the visual style, scale list, detail/section view style and multileader style dictionaries; Triya keeps unknown objects as read (passthrough invariant)"
+      }
+    ],
+    "public/third-party/ezdxf/integration_tests/bin_dxf_r14.dxf": [
+      {
+        "code": 12,
+        "reason": "the source (an R2000 binary DXF saved down from a newer AutoCAD) holds 48 ACAD_PROXY_OBJECTs in the visual style, scale list, detail/section view style and multileader style dictionaries; Triya keeps unknown objects as read (passthrough invariant)"
+      }
+    ]
+  }
+}

@@ -47,8 +47,10 @@ class JudgeTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def run_judge(self, results, exceptions=None) -> gate.Report:
-        return gate.judge(FILES, self.saves, Path("/corpus"), exceptions or {}, fake_audit(results))
+    def run_judge(self, results, exceptions=None, limitation=lambda _save, _x: None) -> gate.Report:
+        return gate.judge(
+            FILES, self.saves, Path("/corpus"), exceptions or {}, fake_audit(results), limitation
+        )
 
     def test_clean_saves_pass(self) -> None:
         report = self.run_judge({})
@@ -59,6 +61,13 @@ class JudgeTest(unittest.TestCase):
         name = gate.save_name(DXF, "edited")
         report = self.run_judge({name: [gate.Finding("audit", 202, "Deleted FIELD")]})
         self.assertEqual(report.failures, [f"{name}: audit 202 Deleted FIELD"])
+
+    def test_a_verified_ezdxf_limitation_is_allowed(self) -> None:
+        name = gate.save_name(DWG, "unedited")
+        x = gate.Finding("recover", 202, "Deleted XRECORD(#11AF) entity with invalid owner handle #11AE.")
+        report = self.run_judge({name: [x]}, limitation=lambda _save, _x: "ezdxf limitation")
+        self.assertEqual(report.failures, [])
+        self.assertEqual(len(report.allowed), 1)
 
     def test_a_missing_or_failed_save_fails(self) -> None:
         (self.saves / gate.save_name(DWG, "edited")).unlink()
@@ -130,6 +139,37 @@ class CanaryTest(unittest.TestCase):
             doc.modelspace().add_line((0, 0), (1, 1))
             doc.saveas(saves / gate.save_name(DXF, "unedited"))
             self.assertIsNone(gate.canary(saves))
+
+
+@unittest.skipUnless(importlib.util.find_spec("ezdxf"), "ezdxf not installed")
+class EzdxfLimitationTest(unittest.TestCase):
+    def save(self, tmp: str, dangle: bool) -> Path:
+        import ezdxf
+
+        doc = ezdxf.new("R2018")
+        host = doc.rootdict.add_new_dict("TRIYA_TEST")
+        xrecord = host.new_extension_dict().add_xrecord("ACAD_XREC_ROUNDTRIP")
+        xrecord.reset([(1, "kept")])
+        if dangle:
+            xrecord.dxf.owner = "DEAD0"
+        path = Path(tmp) / f"save-{dangle}.dxf"
+        doc.saveas(path)
+        return path
+
+    def test_an_extension_dictionary_on_a_dictionary_is_ezdxfs_limitation(self) -> None:
+        # ezdxf reports this on a file it wrote itself: the save is valid.
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.save(tmp, dangle=False)
+            findings = gate.audit_file(path)
+            self.assertEqual([x.code for x in findings], [gate.INVALID_OWNER_HANDLE])
+            self.assertEqual(gate.ezdxf_limitation(path, findings[0]), gate.XDICT_ON_DICTIONARY)
+
+    def test_a_really_dangling_xrecord_owner_is_not(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self.save(tmp, dangle=True)
+            findings = gate.audit_file(path)
+            self.assertIn(gate.INVALID_OWNER_HANDLE, [x.code for x in findings])
+            self.assertTrue(all(gate.ezdxf_limitation(path, x) is None for x in findings))
 
 
 if __name__ == "__main__":

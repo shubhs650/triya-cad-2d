@@ -1672,8 +1672,10 @@ export abstract class DxfSectionWriterBase {
     this._writer.writeVector(11, text.alignmentPoint, subclass);
     this._writer.writeVector(210, text.normal, subclass);
 
+    // TEXT's second AcDbText holds its 73; an attribute has none and goes on to AcDbAttribute.
+    if (text instanceof AttributeBase) return;
     this._writer.write(DxfCode.Subclass, DxfSubclassMarker.text);
-    if (!(text instanceof AttributeBase)) this._writer.write(73, text.verticalAlignment, subclass);
+    this._writer.write(73, text.verticalAlignment, subclass);
   }
 
   private _writeTolerance(tolerance: Tolerance, map: DxfMap): void {

@@ -44,14 +44,20 @@ class Finding:
 
 def audit_file(path: Path) -> list[Finding]:
     """Every problem ezdxf reports while recovering and auditing ``path``."""
-    from ezdxf import recover  # imported here so the pure logic is testable without ezdxf
+    import ezdxf  # imported here so the pure logic is testable without ezdxf
+    from ezdxf import recover
 
+    findings: list[Finding] = []
     try:
-        doc, recovered = recover.readfile(str(path))
+        if path.read_bytes()[:18] == b"AutoCAD Binary DXF":
+            # recover reads ASCII only; Triya's saves are ASCII, some corpus sources are binary.
+            doc = ezdxf.readfile(str(path))
+        else:
+            doc, recovered = recover.readfile(str(path))
+            findings += [Finding("recover", int(e.code), e.message) for e in recovered.errors]
+            findings += [Finding("recover", int(e.code), e.message) for e in recovered.fixes]
     except Exception as err:  # noqa: BLE001 - any load failure is a finding
         return [Finding("load", -1, f"{type(err).__name__}: {err}")]
-    findings = [Finding("recover", int(e.code), e.message) for e in recovered.errors]
-    findings += [Finding("recover", int(e.code), e.message) for e in recovered.fixes]
     audited = doc.audit()
     findings += [Finding("audit", int(e.code), e.message) for e in audited.errors]
     findings += [Finding("audit", int(e.code), e.message) for e in audited.fixes]
@@ -69,6 +75,47 @@ def readable_files(manifest: dict) -> list[dict]:
     ]
 
 
+# ezdxf's audit treats a DICTIONARY owned by a DICTIONARY that has no key for it as orphaned
+# (ObjectsSection reorg, remove_orphaned_dictionaries) and silently drops it, then reports each
+# XRECORD in it as having an invalid owner. An extension dictionary attached to a DICTIONARY is
+# exactly that, and it is valid: AutoCAD keeps ACAD_XREC_ROUNDTRIP data there in R14–R2004 files
+# (sample_AC1014.dwg), and ezdxf reports the same on a file it wrote itself (test_audit.py).
+XDICT_OWNER = re.compile(r"^Deleted XRECORD\(#([0-9A-F]+)\) entity with invalid owner handle #([0-9A-F]+)\.$")
+XDICT_ON_DICTIONARY = (
+    "ezdxf limitation: its audit drops an extension dictionary attached to a DICTIONARY, which "
+    "the save holds as read; verified in the save"
+)
+
+
+def ezdxf_limitation(save: Path, finding: Finding, _docs: dict = {}) -> str | None:  # noqa: B006
+    """Why ``finding`` is ezdxf's limitation rather than a fault of the save, or None.
+
+    Checked in the save itself, loaded without audit: the XRECORD must be owned, as written, by a
+    DICTIONARY that is the extension dictionary of the DICTIONARY that owns it.
+    """
+    match = XDICT_OWNER.match(finding.message)
+    if finding.code != INVALID_OWNER_HANDLE or match is None:
+        return None
+    import ezdxf
+    from ezdxf.entities import Dictionary
+
+    if save not in _docs:
+        _docs.clear()  # one save at a time
+        _docs[save] = ezdxf.readfile(str(save))
+    db = _docs[save].entitydb
+    xrecord, xdict = db.get(match.group(1)), db.get(match.group(2))
+    if xrecord is None or xdict is None or xrecord.dxf.get("owner") != xdict.dxf.handle:
+        return None
+    host = db.get(xdict.dxf.get("owner")) if isinstance(xdict, Dictionary) else None
+    if (
+        isinstance(host, Dictionary)
+        and host.has_extension_dict
+        and host.get_extension_dict().dictionary is xdict
+    ):
+        return XDICT_ON_DICTIONARY
+    return None
+
+
 @dataclass
 class Report:
     failures: list[str] = field(default_factory=list)
@@ -82,8 +129,9 @@ def judge(
     corpus_dir: Path,
     exceptions: dict[str, list[dict]],
     audit=audit_file,
+    limitation=ezdxf_limitation,
 ) -> Report:
-    """Audit the saves of ``files``; ``audit`` is injectable for the unit tests."""
+    """Audit the saves of ``files``; ``audit`` and ``limitation`` are injectable for the tests."""
     report = Report()
     known = {f["path"] for f in files}
     for path in sorted(set(exceptions) - known):
@@ -119,6 +167,8 @@ def judge(
                 if x.code in allowed:
                     seen.add(x.code)
                     report.allowed.append(f"{name}: {x.stage} {x.code} {x.message} ({allowed[x.code]})")
+                elif (why := limitation(save, x)) is not None:
+                    report.allowed.append(f"{name}: {x.stage} {x.code} {x.message} ({why})")
                 else:
                     report.failures.append(f"{name}: {x.stage} {x.code} {x.message}")
         for code in sorted(set(allowed) - seen):

@@ -8,6 +8,8 @@ import {
   AttributeType,
   BlockGripExpression,
   BlockRecord,
+  BlockVisibilityParameter,
+  BlockVisibilityState,
   BlockReferenceObjectContextData,
   BookColor,
   CadDictionary,
@@ -2384,6 +2386,113 @@ describe('acad-ts local patches', () => {
     expect(back.boundaryPoints.map((q) => [q.x, q.y])).toEqual([
       [102, 52],
       [110, 60],
+    ]);
+  });
+  it('0170 a DXF ATTRIB or ATTDEF has one AcDbText subclass, as in AutoCAD’s files', () => {
+    // AutoCAD writes an attribute as AcDbEntity, AcDbText, then AcDbAttribute (or
+    // AcDbAttributeDefinition): TEXT's second AcDbText, which holds its 73, is not there (DXF
+    // reference, ATTRIB and ATTDEF; every corpus DXF). Unpatched acad-ts wrote it, and readers
+    // that map subclasses by position (ezdxf) read the tag from the empty AcDbText and dropped
+    // every attribute as tagless.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('TITLE');
+    doc.blockRecords!.add(block);
+    const attdef = new AttributeDefinition();
+    attdef.tag = 'SHEET';
+    attdef.prompt = 'Sheet';
+    attdef.value = 'A1';
+    attdef.verticalAlignment = 2;
+    block.entities.add(attdef);
+    const insert = new Insert(block);
+    doc.entities!.add(insert);
+    const text = new TextEntity();
+    text.value = 'plain';
+    doc.entities!.add(text);
+
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const lines = Array.from(bytes, (c) => String.fromCharCode(c))
+      .join('')
+      .split(/\r?\n/);
+    const subclasses = new Map<string, string[]>();
+    let current = '';
+    for (let i = 0; i + 1 < lines.length; i += 2) {
+      const code = lines[i]!.trim();
+      const value = lines[i + 1]!.trim();
+      if (code === '0') current = value;
+      else if (code === '5' && ['ATTRIB', 'ATTDEF', 'TEXT'].includes(current))
+        subclasses.set(current, []);
+      else if (code === '100' && subclasses.has(current)) subclasses.get(current)!.push(value);
+    }
+    expect(Object.fromEntries(subclasses)).toEqual({
+      ATTDEF: ['AcDbEntity', 'AcDbText', 'AcDbAttributeDefinition'],
+      ATTRIB: ['AcDbEntity', 'AcDbText', 'AcDbAttribute'],
+      TEXT: ['AcDbEntity', 'AcDbText', 'AcDbText'],
+    });
+
+    const back = readCadDocument(bytes);
+    const def = back.getCadObject(attdef.handle) as AttributeDefinition;
+    expect([def.tag, def.prompt, def.value, def.verticalAlignment]).toEqual([
+      'SHEET',
+      'Sheet',
+      'A1',
+      2,
+    ]);
+    const att = (back.getCadObject(insert.handle) as Insert).attributes[0]!;
+    expect([att.tag, att.value]).toEqual(['SHEET', 'A1']);
+  });
+  it('0171 a DXF BLOCKVISIBILITYPARAMETER read from DWG writes its visibility states', () => {
+    // A visibility parameter read from DXF writes the group codes it was read from; one read
+    // from DWG (or made in memory) goes through the mapped writer, which wrote the states map
+    // as `92 NaN`: the DXF did not load in other readers (ezdxf: "Invalid tag (92, NaN)") and
+    // acad-ts read it back without its states. AutoCAD writes 92 as the state count, then per
+    // state its name (303), entities (94 + 332s) and expressions (95 + 333s), last in the
+    // subclass (DXF reference, BLOCKVISIBILITYPARAMETER; acadsharp BLOCKVISIBILITYPARAMETER.dxf).
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('DYN');
+    doc.blockRecords!.add(block);
+    const a = new Line(new XYZ(0, 0, 0), new XYZ(10, 0, 0));
+    const b = new Line(new XYZ(0, 5, 0), new XYZ(10, 5, 0));
+    block.entities.add(a);
+    block.entities.add(b);
+    const graph = new EvaluationGraph();
+    block.createExtendedDictionary().addByKey(EvaluationGraph.dictionaryEntryName, graph);
+    const node = new EvaluationGraphNode();
+    const parameter = new BlockVisibilityParameter();
+    parameter.name = 'Visibility1';
+    parameter.description = 'Pick a state';
+    parameter.value91 = true;
+    parameter.entities.push(a, b);
+    const both = new BlockVisibilityState();
+    both.name = 'Both';
+    both.entities.push(a, b);
+    const one = new BlockVisibilityState();
+    one.name = 'One';
+    one.entities.push(a);
+    parameter.addState(both);
+    parameter.addState(one);
+    parameter.handle = doc.header!.handleSeed + 0x100;
+    node.expression = parameter;
+    graph.nodes.push(node);
+
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    expect(Array.from(bytes, (c) => String.fromCharCode(c)).join('')).not.toMatch(/\bNaN\b/);
+
+    const back = readCadDocument(bytes);
+    const dict = back.blockRecords!.tryGetValue('DYN')!.xDictionary!;
+    const read = dict.getEntry<EvaluationGraph>(EvaluationGraph.dictionaryEntryName)!.nodes[0]!
+      .expression as BlockVisibilityParameter;
+    expect(read).toBeInstanceOf(BlockVisibilityParameter);
+    expect([read.name, read.description, read.value91]).toEqual([
+      'Visibility1',
+      'Pick a state',
+      true,
+    ]);
+    expect(read.entities.map((e) => e.handle)).toEqual([a.handle, b.handle]);
+    expect(
+      [...read.states.values()].map((st) => [st.name, st.entities.map((e) => e.handle)]),
+    ).toEqual([
+      ['Both', [a.handle, b.handle]],
+      ['One', [a.handle]],
     ]);
   });
 });

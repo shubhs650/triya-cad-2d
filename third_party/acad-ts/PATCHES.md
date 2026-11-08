@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35) and 0168 (M1-75 part 37) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) and 0170–0171 (M1-105) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -3110,5 +3110,39 @@ An annotative TEXT stores where it draws at each annotation scale in an `ACDB_TE
 **Title:** Read both SPATIAL_FILTER matrices from DXF
 
 `DxfObjectsSectionReader._readSpatialFilter` reads the 12 values of a 4×3 matrix at each DXF 40 run, and is meant to store the first in `inverseInsertTransform` and the second in `insertTransform`. The flag that tells them apart (`CadSpatialFilterTemplate.insertTransformRead`) was set only inside the `if (insertTransformRead)` branch, so it never became true: the second matrix overwrote the first and `insertTransform` was never read. This sets the flag after the first matrix. A test writes a filter with a scaled and moved inverse insert transform and a translated boundary transform to DXF and reads both back.
+
+</details>
+
+### 0170 — the DXF writer gives ATTRIB and ATTDEF a second, empty AcDbText subclass
+
+- **File:** `third_party/acad-ts-patches/0170-dxf-attribute-single-text-subclass.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** `_writeTextEntity` ends every text-like entity with TEXT's second `100 AcDbText` (which carries TEXT's 73), and for an attribute only skipped the 73, so every ATTRIB and ATTDEF went out as AcDbEntity, AcDbText, AcDbText, AcDbAttribute. AutoCAD writes one AcDbText (DXF reference, ATTRIB/ATTDEF; every attribute in the public corpus). Readers that map subclasses by position read the tag from the empty AcDbText: ezdxf's `recover` dropped every attribute of every Triya save as "Missing mandatory tag attribute", and with them the FIELDs under their extension dictionaries (found by the M1-105 ezdxf gate on 30 corpus files).
+- **Fix:** an attribute returns after its 210, before TEXT's second AcDbText; `_writeAttributeBase` goes on with its own subclass as before.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0170 a DXF ATTRIB or ATTDEF has one AcDbText subclass, as in AutoCAD’s files"; the M1-105 gate (`scripts/dxf-audit/audit.py`) on every corpus save.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write ATTRIB and ATTDEF with a single AcDbText subclass
+
+`DxfSectionWriterBase._writeTextEntity` writes TEXT's second `100 AcDbText` marker for attributes too (it only skips the 73 that follows), so ATTRIB and ATTDEF come out as AcDbText, AcDbText, AcDbAttribute(Definition). AutoCAD writes a single AcDbText before AcDbAttribute, and readers that map subclasses by position (ezdxf) then miss the tag and drop the attribute. This returns before the second marker for `AttributeBase`. A test writes a block with an ATTDEF, an INSERT with its ATTRIB and a TEXT, checks the subclass markers of each, and reads the attributes back.
+
+</details>
+
+### 0171 — the DXF writer writes a visibility parameter's states as `92 NaN`
+
+- **File:** `third_party/acad-ts-patches/0171-dxf-visibility-parameter-states.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
+- **Symptom:** a BLOCKVISIBILITYPARAMETER read from DXF is written back from its raw group codes, but one read from DWG (or made in memory) goes through `_writeMappedObject`, whose metadata maps `states` to 92 with no collection codes. The states are a `Map`, so the writer wrote `92 NaN` and no state: the DXF save of every DWG with a visibility parameter (9 ACadSharp samples) did not load in ezdxf ("Invalid tag (92, NaN)"), and acad-ts read it back with no visibility states.
+- **Fix:** `_writeMappedObject` skips 92 for a visibility parameter and writes the states last in its subclass, as AutoCAD does and as the reader expects (it reads states up to the next 0): 92 count, then per state 303 name, 94 + 332 entity handles, 95 + 333 expression handles (DXF reference, BLOCKVISIBILITYPARAMETER; ACadSharp `BLOCKVISIBILITYPARAMETER.dxf`).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0171 a DXF BLOCKVISIBILITYPARAMETER read from DWG writes its visibility states"; the M1-105 gate on the AC1032 DXF save of every corpus DWG.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write BLOCKVISIBILITYPARAMETER states to DXF
+
+A visibility parameter without raw DXF codes (read from DWG or created in code) is written by `_writeMappedObject`, which writes the `states` map as a scalar: `92 NaN`, and no state data. Other readers reject the file and acad-ts reads the states back empty. This writes them after the subclass's other values, matching AutoCAD and `DxfObjectsSectionReader._readBlockVisibilityParameter`: the count (92), then for each state its name (303), entity handles (94, 332) and expression handles (95, 333). A test writes a parameter with two states to DXF and reads names and handles back.
 
 </details>
