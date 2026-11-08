@@ -1,0 +1,1 @@
+- M1-13 (#215): closed. The linetype fidelity check is the M1-24 golden images, complex linetypes and XLINE/RAY dashes shipped as M1-45, and the owner's linetype sample is post-launch (DEC-047).
