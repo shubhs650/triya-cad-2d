@@ -7,6 +7,7 @@ import type { ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { Layout, LayoutPlot } from '../model/types';
+import { xrefLoadChange, xrefLoadProblem } from '../model/xref';
 
 /** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
 export interface LayerStateEdit {
@@ -30,7 +31,18 @@ export interface LayoutEdit {
   readonly plot?: LayoutPlot;
 }
 
-export type EngineEdit = LayerStateEdit | LayoutEdit;
+/**
+ * An xref's drawing found (M1-21): its file as the importer maps it, loaded as the content of
+ * the host's xref block (`xrefLoadChange`). Not an undoable edit in AutoCAD either: loading
+ * changes what the drawing shows, not the drawing.
+ */
+export interface XrefLoadEdit {
+  readonly kind: 'xref-load';
+  readonly block: Handle;
+  readonly drawing: DocumentInit;
+}
+
+export type EngineEdit = LayerStateEdit | LayoutEdit | XrefLoadEdit;
 
 /**
  * Characters AutoCAD refuses in a layout name (LAYOUT Rename: "Invalid layout name"), and its
@@ -52,7 +64,21 @@ export class EngineSession {
 
   /** Applies an edit to the document; a refused edit changes nothing. */
   edit(e: EngineEdit): EditResult {
+    if (e.kind === 'xref-load') return this.#xrefLoad(e);
     return e.kind === 'layout' ? this.#layoutEdit(e) : this.#layerEdit(e);
+  }
+
+  #xrefLoad(e: XrefLoadEdit): EditResult {
+    const problem = xrefLoadProblem(this.model, e.block);
+    if (problem) return { ok: false, message: problem };
+    let change: ChangeSet;
+    try {
+      change = xrefLoadChange(this.model, e.block, e.drawing);
+      this.model.apply(change);
+    } catch (err) {
+      return { ok: false, message: err instanceof Error ? err.message : String(err) };
+    }
+    return { ok: true, change };
   }
 
   #layerEdit(e: LayerStateEdit): EditResult {
