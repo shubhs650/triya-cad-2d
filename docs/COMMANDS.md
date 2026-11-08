@@ -4,6 +4,8 @@ This is the command surface a drafter expects. Aliases are the AutoCAD `acad.pgp
 
 Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants (`-NAME`) are required where noted.
 
+The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/src/commands/aliases.ts`, M2-01); `tests/docs/commands-aliases.test.ts` fails if the two differ, so change both together. Keyboard shortcuts (Ctrl+…, F-keys) in that column belong to the UI.
+
 ## Draw
 
 | Command | Aliases | Tier | Options / notes | Status |
@@ -174,12 +176,12 @@ Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | partial (M1-22): real-time wheel zoom at the cursor; Extents (also middle double-click), Window, Previous, All and Scale 2X/0.5X on the navigation bar; Center, Dynamic, Object, nXP and the command line wait on M2-01 |
-| PAN ᵀ | P | 1 | real-time, -PAN | partial (M1-22): real-time pan by middle-button drag, and with the left button from the navigation bar until Esc; -PAN and the command wait on M2-01 |
-| REGEN / REGENALL | RE / REA | 1 | | partial (M1-22 part 2): Regen on the navigation bar rebuilds the space shown; REGENALL and the command wait on M2-01 |
+| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | partial (M1-22): real-time wheel zoom at the cursor; Extents (also middle double-click), Window, Previous, All and Scale 2X/0.5X on the navigation bar; Center, Dynamic, Object, nXP and the command line wait on M2-02 (the command line; the command engine is M2-01) |
+| PAN ᵀ | P | 1 | real-time, -PAN | partial (M1-22): real-time pan by middle-button drag, and with the left button from the navigation bar until Esc; -PAN and the command wait on M2-02 (the command line; the command engine is M2-01) |
+| REGEN / REGENALL | RE / REA | 1 | | partial (M1-22 part 2): Regen on the navigation bar rebuilds the space shown; REGENALL and the command wait on M2-02 (the command line; the command engine is M2-01) |
 | REDRAW ᵀ | R | 1 | | |
 | VIEW | V | 2 | named views dialog; -VIEW | partial (M1-22 part 2): the navigation bar's Views list restores the drawing's plan views and saves new ones for the session (written to the drawing with M2-13); the dialog waits |
-| VPORTS / MVIEW / VPCLIP / VPMAX / VPMIN | — | 2 | | partial (M1-22 part 4): model-space tiled viewports saved in the drawing open as saved, and a click makes one current; the VPORTS command and dialog wait on M2-01 |
+| VPORTS / MVIEW / VPCLIP / VPMAX / VPMIN | — | 2 | | partial (M1-22 part 4): model-space tiled viewports saved in the drawing open as saved, and a click makes one current; the VPORTS command and dialog wait on M2-02 (the command line; the command engine is M2-01) |
 | MSPACE / PSPACE / MODEL | MS / PS | 2 | | |
 | LAYOUT / LAYOUTWIZARD(no) / PAGESETUP | LO | 2 | | |
 | SCALELISTEDIT | — | 2 | | |
@@ -187,7 +189,7 @@ Transparent commands (usable mid-command with `'`) are marked ᵀ. Dash variants
 | DSETTINGS / OSNAP / DDPTYPE | DS, SE / OS / — | 2 | | |
 | ORTHO / GRID / SNAP / POLAR(F10) / OTRACK(F11) / DYN(F12) | F8 / F7 / F9 | 1 | status toggles | |
 | OPTIONS | OP | 2 | | |
-| TEXTSCR / GRAPHSCR | F2 | 1 | history window | |
+| TEXTSCR / GRAPHSCR | F2 | 1 | history window | partial (M2-01): `PromptBus.history` holds the text window's lines; the window is M2-02 |
 
 ## Output and file
 
