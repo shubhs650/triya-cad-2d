@@ -2615,4 +2615,35 @@ describe('acad-ts local patches', () => {
     ]).toEqual([2, 1, 'DASHED', 50, 2.5]);
     expect(l.arrowhead?.name).toBe('_DOT');
   });
+  it('0174 a DXF MULTILEADER states its block content and text rotations in radians', () => {
+    // The MULTILEADER's angles are radians in DXF as in DWG (ezdxf, entities/mleader.py: block
+    // rotation 43 "in radians!!!", context 42 and 46 "in radians!"; ezdxf checks its findings
+    // against AutoCAD and BricsCAD files). Unpatched acad-ts read and wrote 43, 46 and 42 as
+    // degrees, so an ezdxf or AutoCAD block turned 15° came in turned 0.26°.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const ml = new MultiLeader();
+    const ctx = ml.contextData;
+    ml.contentType = 1 as never;
+    ml.blockContentRotation = Math.PI / 6;
+    ctx.hasContentsBlock = true;
+    ctx.blockContentRotation = Math.PI / 6;
+    ctx.hasTextContents = true;
+    ctx.textLabel = 'X';
+    ctx.textRotation = Math.PI / 4;
+    doc.entities!.add(ml);
+
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const text = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+    const entity = text.slice(text.lastIndexOf('AcDbMLeader'));
+    const value = (code: number, from: string) =>
+      Number(from.match(new RegExp(`\\n *${code}\\r?\\n([^\\r\\n]+)`))![1]);
+    // Context data first (42 text rotation, 46 block rotation), then the entity's 43.
+    expect(value(42, entity)).toBeCloseTo(Math.PI / 4, 9);
+    expect(value(46, entity)).toBeCloseTo(Math.PI / 6, 9);
+    expect(value(43, entity.slice(entity.search(/301\r?\n}/)))).toBeCloseTo(Math.PI / 6, 9);
+    const same = readCadDocument(bytes).getCadObject(Number(ml.handle)) as MultiLeader;
+    expect(same.blockContentRotation).toBeCloseTo(Math.PI / 6, 9);
+    expect(same.contextData.blockContentRotation).toBeCloseTo(Math.PI / 6, 9);
+    expect(same.contextData.textRotation).toBeCloseTo(Math.PI / 4, 9);
+  });
 });

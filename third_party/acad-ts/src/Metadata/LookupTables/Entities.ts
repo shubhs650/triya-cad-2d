@@ -1835,7 +1835,7 @@ export const metadataLookupEntities: readonly ClassMetadata[] = [
         "valueCodes": [
           43
         ],
-        "referenceType": 32
+        "referenceType": 0
       },
       {
         "propertyName": "blockContentScale",

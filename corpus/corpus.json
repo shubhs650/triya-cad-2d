@@ -3516,6 +3516,30 @@
         "txt"
       ],
       "knownIssues": []
+    },
+    {
+      "path": "public/self-authored/multileaders.dxf",
+      "version": "AC1032",
+      "format": "dxf-ascii",
+      "source": "self-authored",
+      "license": "MIT",
+      "sha256": "512f07ff82e863ca98eed3b77303009c9f5591773eeab4bd81e61138944437ae",
+      "tags": [
+        "dxf-ascii",
+        "r2018",
+        "mleader",
+        "blocks",
+        "attributes"
+      ],
+      "references": [],
+      "tolerance": {
+        "pixelMismatch": 2,
+        "ssim": 0.95
+      },
+      "fonts": [
+        "txt"
+      ],
+      "knownIssues": []
     }
   ]
 }

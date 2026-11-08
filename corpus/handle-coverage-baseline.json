@@ -1,6 +1,10 @@
 {
   "note": "Handle-coverage ratchet (docs/TESTING.md §3.2, M1-27): declared handles each corpus file loses on a save, by type. pnpm test fails on any handle not listed here; after a fix, TRIYA_UPDATE_BASELINE=1 pnpm corpus:roundtrip removes it. Expected end state (M1-31): every lost list empty.",
   "files": {
+    "public/self-authored/multileaders.dxf": {
+      "declared": 70,
+      "lost": {}
+    },
     "public/self-authored/traces.dxf": {
       "declared": 64,
       "lost": {}
