@@ -24,6 +24,8 @@ export class Engines {
   readonly #engines = new Map<number, EngineHost>();
   readonly #logs = new Map<number, ChangeSet[]>();
   readonly #listeners = new Set<(doc: number, o: CommandOutput) => void>();
+  /** Input waiting behind a click whose point is still being worked out (M2-04), per drawing. */
+  readonly #queued = new Map<number, Promise<void>>();
 
   constructor(
     create: (init: DocumentInit) => EngineHost,
@@ -45,9 +47,30 @@ export class Engines {
     });
   }
 
-  /** Hands command input to a drawing's command engine (the command line, the canvas). */
-  command(doc: number, input: CommandInput): void {
-    this.#engines.get(doc)?.command(input);
+  /**
+   * Hands command input to a drawing's command engine (the command line, the canvas). Input
+   * still being worked out (a click waiting for its object snap, M2-04) holds back what
+   * follows it, so Enter typed right after a click reaches the command after the click; input
+   * worked out to undefined is dropped.
+   */
+  command(doc: number, input: CommandInput | Promise<CommandInput | undefined>): void {
+    const before = this.#queued.get(doc);
+    if (!before && !(input instanceof Promise)) {
+      this.#engines.get(doc)?.command(input);
+      return;
+    }
+    const next = (before ?? Promise.resolve())
+      .then(() => input)
+      .then(
+        (i) => {
+          if (i) this.#engines.get(doc)?.command(i);
+        },
+        () => undefined,
+      );
+    this.#queued.set(doc, next);
+    void next.then(() => {
+      if (this.#queued.get(doc) === next) this.#queued.delete(doc);
+    });
   }
 
   /**

@@ -130,7 +130,10 @@ export interface CanvasHooks {
    * command engine to take as a point, a pick or a window's corner. `release` is the end of a
    * drag that began with a click.
    */
-  readonly onPick?: (p: Vec2, o: { readonly shift: boolean; readonly release: boolean }) => void;
+  readonly onPick?: (
+    p: Vec2 | Promise<Vec2>,
+    o: { readonly shift: boolean; readonly release: boolean },
+  ) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
@@ -887,7 +890,7 @@ export class CanvasController {
             return;
           }
           // At a point prompt the click gives the point the drafting aids make of it.
-          void this.#pointAt(world).then((p) => this.#hooks.onPick?.(p, { shift, release: false }));
+          this.#hooks.onPick?.(this.#pointAt(world), { shift, release: false });
           return;
         }
         if (this.#mode === 'pan' || this.#mode === 'zoom') this.#startDrag(e);

@@ -4,11 +4,13 @@
 // stack arrive with their own tasks.
 import type {
   ChangeSet,
+  CommandInput,
   EditResult,
   EngineEdit,
   EntityId,
   Layout,
   PdfDefinition,
+  Vec2,
 } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -906,13 +908,15 @@ function ViewportCanvas({
         showCursor(p);
       },
       onError: (e) => store.failed(name, openError(name, e)),
-      onPick: (point, o) =>
-        engines.command(id, {
+      onPick: (point, o) => {
+        const pick = (p: Vec2): CommandInput => ({
           kind: 'pick',
-          point,
+          point: p,
           ...(o.shift && { shift: true }),
           ...(o.release && { release: true }),
-        }),
+        });
+        engines.command(id, point instanceof Promise ? point.then(pick) : pick(point));
+      },
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },
