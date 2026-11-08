@@ -332,3 +332,61 @@ describe('control', () => {
 function round(n: number): number {
   return Math.round(n * 1e9) / 1e9;
 }
+
+describe('vertical text (M1-110)', () => {
+  // A dual-orientation character the way classic .shp text fonts write one: in vertical text
+  // code 14 moves the pen half a width left and a cap height down first, so the character
+  // hangs centred below the pen, and moves it to the next character's top at the end.
+  const A = [
+    2,
+    14,
+    8,
+    s8(-2),
+    s8(-6),
+    1,
+    0x40,
+    0x64,
+    0x48,
+    0x6c,
+    2,
+    0x60,
+    14,
+    8,
+    s8(-4),
+    s8(-3),
+    0,
+  ];
+  const font = (modes: number) =>
+    parseShx(
+      buildShapes([{ code: 65, name: 'A', bytes: A }], { name: 'V', above: 6, below: 2, modes }),
+    );
+  const box = (x: number, y: number) => [
+    [
+      [x, y, 0],
+      [x + 4, y, 0],
+      [x + 4, y + 6, 0],
+      [x, y + 6, 0],
+      [x, y, 0],
+    ],
+  ];
+
+  it('says a font supports vertical text when its font info has mode 2', () => {
+    expect(font(2).supportsVertical).toBe(true);
+    expect(font(0).supportsVertical).toBe(false);
+  });
+
+  it('runs the commands after code 14 in a vertical glyph, and skips them in a horizontal one', () => {
+    const f = font(2);
+    const h = f.glyph(65)!;
+    expect(pts(h)).toEqual(box(0, 0));
+    expect(h.advance).toEqual({ x: 6, y: 0 });
+    const v = f.verticalGlyph(65)!;
+    expect(pts(v)).toEqual(box(-2, -6));
+    expect(v.advance).toEqual({ x: 0, y: -9 });
+    expect(f.verticalGlyph(66)).toBeUndefined();
+  });
+
+  it('has no vertical glyphs in a horizontal-only font', () => {
+    expect(font(0).verticalGlyph(65)).toBeUndefined();
+  });
+});

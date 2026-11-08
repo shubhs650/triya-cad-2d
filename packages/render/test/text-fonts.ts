@@ -31,12 +31,53 @@ export const bigfont = () =>
     ]),
   );
 
+/**
+ * `vert`: a dual-orientation font (mode 2), above 6, below 2, as classic .shp text fonts
+ * write one. A is a 4 × 6 box; horizontal advance 6. In vertical text code 14 first moves the
+ * pen 2 left and 6 down, so A hangs centred below the pen, and last moves it to 9 below the
+ * start. `?` is the same box.
+ */
+const verticalBox = [
+  2,
+  14,
+  8,
+  s8(-2),
+  s8(-6),
+  1,
+  0x40,
+  0x64,
+  0x48,
+  0x6c,
+  2,
+  0x60,
+  14,
+  8,
+  s8(-4),
+  s8(-3),
+  0,
+];
+export const vertical = (modes = 2) =>
+  parseShx(
+    buildShapes(
+      [
+        { code: 63, name: 'question', bytes: verticalBox },
+        { code: 65, name: 'UCA', bytes: verticalBox },
+      ],
+      { name: 'Test vertical', above: 6, below: 2, modes },
+    ),
+  );
+
 export const sans = () => parseTtf(fontBytes(testFont()));
 
-/** romans.shx, the big font big.shx, and the test TrueType font as testsans.ttf. */
+/**
+ * romans.shx, the big font big.shx, the vertical font vert.shx and the same font without its
+ * vertical mode as flat.shx, and the test TrueType font as testsans.ttf.
+ */
 export function fontBook(): FontBook {
   const book = new FontBook();
   book.addShx('romans.shx', romans());
+  book.addShx('vert.shx', vertical());
+  book.addShx('flat.shx', vertical(0));
   book.addShx('big.shx', bigfont());
   book.addTtf(sans(), 'testsans.ttf');
   return book;
