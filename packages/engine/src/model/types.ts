@@ -1071,6 +1071,28 @@ export interface LayerRecord extends SymbolTableRecord {
    * the layer has none (no entry, or an empty or missing second string).
    */
   readonly description?: string;
+  /**
+   * Viewport layer overrides (M1-62), one per layout viewport that overrides any of this layer's
+   * colour, linetype, lineweight or transparency (VPLAYER, the Layer Properties Manager's "VP"
+   * columns). Not DXF groups: AutoCAD files them as the `ADSK_XREC_LAYER_COLOR_OVR`,
+   * `_LINETYPE_OVR`, `_LINEWT_OVR` and `_ALPHA_OVR` XRECORDs of the layer's extension
+   * dictionary. Absent when the layer has none.
+   */
+  readonly viewportOverrides?: readonly LayerViewportOverride[];
+}
+
+/** What one viewport shows a layer with instead of its own values (M1-62). */
+export interface LayerViewportOverride {
+  /** The VIEWPORT entity's handle (XRECORD group 335). */
+  readonly viewport: Handle;
+  /** XRECORD group 420: an ACI or true colour, never ByLayer or ByBlock. */
+  readonly color?: Color;
+  /** XRECORD group 343: the LTYPE record. */
+  readonly linetype?: Handle;
+  /** XRECORD group 91: hundredths of a millimetre, or Default. */
+  readonly lineweight?: Lineweight;
+  /** XRECORD group 440. */
+  readonly transparency?: Transparency;
 }
 
 /** One dash, gap or dot of a linetype (DXF 49), with its optional shape or text (74–75, 340, 9). */
