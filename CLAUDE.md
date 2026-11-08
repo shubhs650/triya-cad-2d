@@ -75,7 +75,8 @@ Everything else: decide, document the decision in the PR, move on.
 pnpm install
 pnpm dev                 # apps/web on :5173
 pnpm lint | typecheck | test | test:fidelity | test:perf | test:offline | test:private
-pnpm corpus:ref <file>   # rasterise a reference PDF to PNG (golden images come from M1-24 since DEC-047)
+pnpm corpus:ref <file>   # rasterise a contributed AutoCAD reference PDF (post-launch M1-26; optional since DEC-047)
+TRIYA_UPDATE_GOLDEN=1 pnpm test:fidelity   # rewrite golden images (M1-24); review every changed PNG
 pnpm build               # production build
 pnpm planegcs:build      # Emscripten build (docker)
 gh pr create --fill && gh pr merge --auto --squash

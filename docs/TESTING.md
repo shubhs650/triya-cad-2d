@@ -118,16 +118,20 @@ The round-trip diff compares acad-ts with itself, so a value acad-ts never reads
 
 ## 4. Fidelity harness
 
-The references are Triya golden images (DEC-047): the first run of a file renders its PNGs, a person or the PR's reviewer looks at them, and they are committed under `corpus/public/refs/`. Later runs compare against them. A change that is meant to alter the picture updates the golden image in the same PR and says why; anything else that differs fails.
+The references are Triya golden images (DEC-047): the first run of a file renders its PNGs, a person or the PR's reviewer looks at them, and they are committed under `corpus/public/refs/golden/`. Later runs compare against them. A change that is meant to alter the picture updates the golden image in the same PR and says why; anything else that differs fails.
 
-1. Headless Chromium loads the app in test mode and opens the corpus file.
-2. For each reference: set the space/layout, zoom to the reference's plot area, render at the reference PNG's pixel size with the matching CTB in plot-preview mode.
-3. Compare with `pixelmatch` (threshold 0.1) and SSIM; pass if mismatch ≤ `tolerance.pixelMismatch` % **and** SSIM ≥ `tolerance.ssim`.
-4. On failure, upload original/actual/diff PNGs as CI artifacts and print the entity types in the differing regions (by R-tree lookup) to make triage fast.
+**Harness (M1-24):** `tests/e2e/fidelity/golden.spec.ts`, one Playwright test per public corpus file, run by `pnpm test:fidelity` in the required `fidelity · offline · ui` job.
 
-Tolerances start loose (2 %) for a new file and are tightened to 0.5 % as features land; a PR may not loosen a tolerance.
+1. Headless Chromium loads the app (its Vite dev server, as the ui suite does) in a 1100 × 760 window, pins the canvas area to 960 × 600 (the chrome around it is set in the system UI font, so left to fill the window its size differs between machines), and opens the corpus file through the Open button's file picker, as a user would.
+2. Each space is shown in tab order: model space at its extents (ZOOM E, the navigation bar's Zoom Extents), each layout in the paper view it opens in. A shot is taken once the canvas has settled: the network is idle and three shots 300 ms apart are the same bytes. Model space is zoomed only after it has settled, because text extents need their fonts. The navigation bar, which floats over the canvas in the system UI font, is hidden from the shots. Shots are of the screen canvas; plot-preview mode with a CTB comes with M2-18.
+3. Compare with `pixelmatch` (threshold 0.1, its anti-aliasing detection on) and mean SSIM over 8 × 8 windows (`packages/testkit/src/fidelity/compare.ts`); pass if mismatch ≤ `tolerance.pixelMismatch` % **and** SSIM ≥ `tolerance.ssim`, both from the file's `corpus.json` entry.
+4. On failure the test names each failing space with its numbers and the boxes (pixels, merged 32-pixel cells) where it differs, and writes `<space>-actual.png`, `-golden.png` and `-diff.png` to its `test-results/` folder, which CI uploads as `fidelity-diffs`. Naming the entity types in each differing region (by R-tree lookup) is M1-106.
 
-Entity-level results (each entity rendered in isolation into its bounds and compared with the golden crop) are reported per type into `docs/reports/fidelity-latest.md`.
+Golden images are `corpus/public/refs/golden/<path below public/third-party>/<space>.png`, where `<space>` is `model` or `layout-<name>` (characters outside `[A-Za-z0-9.-]` spelled `_` for a space, otherwise `~` and the code point in hex). A missing golden image fails, as does a golden image for a space the file no longer has. `TRIYA_UPDATE_GOLDEN=1 pnpm test:fidelity` writes the missing and the out-of-tolerance ones and deletes stale ones; look at every image it changed before committing. A file the app cannot open is listed in the spec's `UNREADABLE` with its reason (today only `recover02.dxf`), and the test checks it still fails to open.
+
+Tolerances start loose (2 %, SSIM 0.95) for a new file and are tightened to 0.5 % as features land; a PR may not loosen a tolerance.
+
+Entity-level results (each entity rendered in isolation into its bounds and compared with the golden crop) are reported per type into `docs/reports/fidelity-latest.md` (M1-106).
 
 ## 5. Performance harness
 
@@ -166,7 +170,7 @@ Since DEC-047 no gate needs the owner or AutoCAD. The AutoCAD AUDIT sweep is rep
 
 ```
 pnpm test               # unit + command + round-trip (public), with coverage gates (test-reports/coverage/)
-pnpm test:fidelity      # Playwright fidelity on public corpus
+pnpm test:fidelity      # Playwright fidelity on public corpus (TRIYA_UPDATE_GOLDEN=1 rewrites golden images)
 pnpm test:perf          # perf targets
 pnpm test:offline       # offline/privacy
 pnpm test:ui            # dialogs, ribbon, grips

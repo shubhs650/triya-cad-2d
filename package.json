@@ -31,7 +31,7 @@
     "test:ui": "playwright test --project=ui --pass-with-no-tests",
     "test:perf": "playwright test --project=perf --pass-with-no-tests",
     "test:io": "playwright test --project=io",
-    "test:private": "node scripts/not-yet.mjs test:private M1-24",
+    "test:private": "node scripts/not-yet.mjs test:private M1-106",
     "corpus:list": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts list",
     "corpus:validate": "node --experimental-strip-types packages/testkit/src/corpus/cli.ts validate",
     "changelog": "node --experimental-strip-types scripts/changelog.ts",
@@ -42,7 +42,7 @@
     "corpus:roundtrip": "vitest run packages/testkit/src/roundtrip/corpus-roundtrip.test.ts",
     "spike:read": "vitest run --config vitest.spike.config.ts packages/testkit/src/spike/read.spike.ts",
     "spike:roundtrip": "vitest run --config vitest.spike.config.ts packages/testkit/src/spike/roundtrip.spike.ts",
-    "corpus:ref": "node scripts/not-yet.mjs corpus:ref M1-24",
+    "corpus:ref": "node scripts/not-yet.mjs corpus:ref M1-26",
     "planegcs:build": "node scripts/not-yet.mjs planegcs:build M9-01"
   },
   "devDependencies": {
