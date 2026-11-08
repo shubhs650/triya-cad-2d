@@ -350,6 +350,25 @@ describe('infinite lines and hit testing', () => {
     expect(r.hitTest({ x: 50, y: 0 }, 2)).toEqual([]);
   });
 
+  // M1-106: the fidelity harness names what is drawn where a golden image differs.
+  it('names the entities drawn in a screen rectangle by handle and type, in handle order', () => {
+    const { r } = setup([
+      entity('2A', { kind: 'CIRCLE', center: { x: 8, y: 0 }, radius: 1 }),
+      entity('20', line(0, 0, 3, 0)),
+      entity('21', line(0, 2, 3, 2)),
+    ]);
+    // Screen x 0…40, y 20…30 is world x 0…4, y −0.5…0.5.
+    expect(r.entitiesIn({ x: 0, y: 20, width: 40, height: 10 })).toEqual([
+      { handle: '20', type: 'LINE' },
+    ]);
+    expect(r.entitiesIn({ x: 0, y: 0, width: 100, height: 50 })).toEqual([
+      { handle: '20', type: 'LINE' },
+      { handle: '21', type: 'LINE' },
+      { handle: '2A', type: 'CIRCLE' },
+    ]);
+    expect(r.entitiesIn({ x: 45, y: 40, width: 10, height: 10 })).toEqual([]);
+  });
+
   it('hits the inside of a fill', () => {
     const { r, d } = setup([
       entity('20', {

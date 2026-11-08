@@ -13,9 +13,11 @@ import { RenderSession, type FontSources, type RenderDocument } from './session'
 import { offscreenLayer, surfaceOf } from './surface';
 import type { BitmapFactory, ThumbnailSize } from './thumbnail';
 import type {
+  DrawnEntity,
   RasterPixels,
   RenderPrimitive,
   RenderStyle,
+  ScreenRect,
   UnderlayRaster,
   UnderlayRequest,
   ViewTransform,
@@ -203,6 +205,17 @@ export class RendererHost {
     if (this.#session) return Promise.resolve(this.#session.renderer.hitTest(screen, aperture));
     return this.#request((id) => ({ type: 'hitTest', id, screen, aperture })).then((m) => [
       ...(m.type === 'reply' ? (m.ids ?? []) : []),
+    ]);
+  }
+
+  /**
+   * The entities drawn in a rectangle of the canvas, in handle order: what the fidelity harness
+   * names where a golden image differs (M1-106).
+   */
+  entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]> {
+    if (this.#session) return Promise.resolve(this.#session.renderer.entitiesIn(rect));
+    return this.#request((id) => ({ type: 'entitiesIn', id, rect })).then((m) => [
+      ...(m.type === 'entities' ? m.entities : []),
     ]);
   }
 

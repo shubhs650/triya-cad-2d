@@ -71,6 +71,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'hitTest':
         port.postMessage({ type: 'reply', id: m.id, ids: r.hitTest(m.screen, m.aperture) });
         break;
+      case 'entitiesIn':
+        port.postMessage({ type: 'entities', id: m.id, entities: r.entitiesIn(m.rect) });
+        break;
       case 'flush':
         port.postMessage({ type: 'reply', id: m.id });
         break;

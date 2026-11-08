@@ -229,9 +229,12 @@ export function spaceSlug(space: string): string {
 
 /**
  * Where the golden image of `space` in corpus file `file` lives, relative to `corpus/`:
- * `public/refs/golden/<the file's path below public/third-party or public>/<space>.png`.
+ * `public/refs/golden/<the file's path below public/third-party or public>/<space>.png`, and
+ * for a private file `private/refs/golden/<the file's path below private>/<space>.png`, beside
+ * the private files and as gitignored as they are (M1-106).
  */
 export function goldenPath(file: string, space: string): string {
-  const rest = file.replace(/^public\/(third-party\/)?/, '');
-  return `public/refs/golden/${rest}/${spaceSlug(space)}.png`;
+  const root = file.startsWith('private/') ? 'private' : 'public';
+  const rest = file.replace(/^(public\/(third-party\/)?|private\/)/, '');
+  return `${root}/refs/golden/${rest}/${spaceSlug(space)}.png`;
 }

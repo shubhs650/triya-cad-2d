@@ -373,6 +373,18 @@ describe('RendererHost', () => {
     expect(await off.hitTest(at, 8)).toEqual(fromMain);
   });
 
+  it('names the entities in a screen rectangle from either side alike (M1-106)', async () => {
+    const { main, off } = hosts([entity('20', line(0, 0, 10, 0)), entity('21', line(0, 1, 10, 1))]);
+    for (const h of [main, off]) {
+      h.resize(100, 50, 1);
+      h.setView({ center: { x: 5, y: 0 }, scale: 10 });
+    }
+    const rect = { x: 0, y: 20, width: 100, height: 10 };
+    const fromMain = await main.entitiesIn(rect);
+    expect(fromMain).toEqual([{ handle: '20', type: 'LINE' }]);
+    expect(await off.entitiesIn(rect)).toEqual(fromMain);
+  });
+
   it('reports a replica that fell out of step', async () => {
     const { engine, main, off, errors } = hosts();
     const real = change(engine, (b) => b.addEntity(entity('21', line(0, 0, 1, 1))));
