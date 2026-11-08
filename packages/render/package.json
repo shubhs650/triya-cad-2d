@@ -13,6 +13,7 @@
     "typecheck": "tsc -p tsconfig.json"
   },
   "dependencies": {
+    "fflate": "0.8.2",
     "utif": "3.1.0"
   }
 }
