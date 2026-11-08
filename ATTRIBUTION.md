@@ -15,7 +15,9 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | opentype.js 2.0 | TrueType/OpenType parsing, glyph outlines and advance widths (`packages/text`, M1-10); no dependencies of its own | MIT | https://github.com/opentypejs/opentype.js |
 | UTIF.js (`utif` 3.1.0) | TIFF decoding for raster images (`packages/render`, M1-19 part 2); its embedded JPEG decoder is Mozilla pdf.js code (Apache-2.0) | MIT | https://github.com/photopea/UTIF.js |
 | fflate 0.8.2 | zlib inflate for Deflate TIFF strips, behind the `pako` stand-in `third_party/pako-inflate` (MIT, ours) that replaces pako, whose Zlib license is not on the allowed list (M1-19 part 2) | MIT | https://github.com/101arrowz/fflate |
-| React, Vite, Zustand, Radix, flatbush, pixelmatch, Playwright, Vitest | app/tooling | MIT | npm |
+| React, Vite, Zustand, Radix, flatbush, Playwright, Vitest | app/tooling | MIT | npm |
+| pixelmatch 7 | golden-image pixel comparison in `@triya/testkit` (fidelity harness, M1-24); dev only, not shipped | ISC | https://github.com/mapbox/pixelmatch |
+| pngjs 7 (and `@types/pngjs`, MIT) | PNG decode/encode for the golden-image comparison (`@triya/testkit`, M1-24); dev only, not shipped | MIT | https://github.com/pngjs/pngjs |
 | React 19.2 and React DOM (`apps/web`, M1-22); `@vitejs/plugin-react` 5 and `@types/react`, `@types/react-dom` (build and types only, not shipped) | app shell UI | MIT | https://github.com/facebook/react, https://github.com/vitejs/vite-plugin-react |
 | Comlink 4.4.2 | `@triya/io` worker RPC (M1-06) | Apache-2.0 | https://github.com/GoogleChromeLabs/comlink |
 | ESLint, @eslint/js, typescript-eslint, eslint-plugin-boundaries, globals, Prettier, Turborepo, Husky | dev tooling (lint, module boundaries, format, task runner, git hooks); not shipped | MIT | npm |
