@@ -86,7 +86,10 @@ const files = manifest.files;
 let checked = 0;
 let viewportsDrawn = 0;
 
-/** A canvas that only counts what the renderer does inside clips. */
+/**
+ * A canvas that only counts what the renderer does inside clips, one group per outermost clip
+ * (a viewport's); clips inside it (an XCLIPped reference's, M1-103) count towards it.
+ */
 function recorder(): Surface & { groups: number[] } {
   let depth = 0;
   const groups: number[] = [];
@@ -96,8 +99,8 @@ function recorder(): Surface & { groups: number[] } {
       get: (_t, name) => {
         if (name === 'save')
           return () => {
+            if (depth === 0) groups.push(0);
             depth++;
-            groups.push(0);
           };
         if (name === 'restore') return () => void depth--;
         if (name === 'moveTo' || name === 'fillRect' || name === 'arc' || name === 'ellipse')

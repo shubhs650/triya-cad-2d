@@ -1619,6 +1619,42 @@ export interface DimAssoc extends NonGraphicalObject {
   ];
 }
 
+/**
+ * A row-major 3×4 affine matrix (DXF 40 × 12 of a SPATIAL_FILTER): rows x, y and z of
+ * `[m00 m01 m02 m03]`, the last column the translation, applied to column vectors.
+ */
+export type Matrix3x4 = readonly number[];
+
+/**
+ * XCLIP (DXF SPATIAL_FILTER, M1-103): the clip of a block reference, the `SPATIAL` entry of the
+ * `ACAD_FILTER` dictionary in the INSERT's extension dictionary. The boundary is stored where
+ * the reference stood when it was clipped; the inverse of that insert transform carries it into
+ * the block's coordinates, so the clip moves, turns and scales with the reference afterwards.
+ */
+export interface SpatialFilter extends NonGraphicalObject {
+  readonly type: 'SPATIAL_FILTER';
+  /** The INSERT it clips (the owner of its ACAD_FILTER dictionary). */
+  readonly insert: Handle;
+  /**
+   * DXF 10: the boundary, a closed polygon, or two points for the rectangle on those corners.
+   * For an inverted clip AutoCAD stores the region outside the inner boundary and inside the
+   * block's extents as one polygon joined by a zero-width slit.
+   */
+  readonly boundary: readonly Vec2[];
+  /** DXF 210 and 11: the boundary's plane. */
+  readonly normal: Vec3;
+  readonly origin: Vec3;
+  /** DXF 71: clipping on (XCLIP ON) or off (XCLIP OFF, the whole block shows). */
+  readonly enabled: boolean;
+  /** DXF 72/40 and 73/41: the front and back clipping planes' distances, when set. */
+  readonly frontClip?: number;
+  readonly backClip?: number;
+  /** The first 12 DXF 40s: the inverse of the insert transform at the time of clipping. */
+  readonly inverseInsert: Matrix3x4;
+  /** The last 12 DXF 40s: the clip boundary's own transform (the identity in every sample). */
+  readonly boundaryTransform: Matrix3x4;
+}
+
 /** A header variable value as read: string, number, point, or handle (as a string). */
 export type HeaderValue = string | number | boolean | Vec2 | Vec3;
 

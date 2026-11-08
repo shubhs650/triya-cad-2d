@@ -3095,3 +3095,20 @@ AutoCAD keeps the current paper layout on the block record named `*Paper_Space`;
 An annotative TEXT stores where it draws at each annotation scale in an `ACDB_TEXTOBJECTCONTEXTDATA_CLASS` object, which was read as an `UnknownNonGraphicalObject`. This adds `TextObjectContextData` (horizontal mode 70, rotation 50, insertion point 10/20, alignment point 11/21) with DWG and DXF readers and writers and its class definition. Typing it exposed a reader bug shared by every context data object: `_readObjectContextData` read `version`, then a `hasFileToExtensionDictionary` bit, then `default`, while the record (and `_writeObjectContextData`) holds only the version and the default flag, so every value after them was read one bit late; ACadSharp's own `sample_AC1024.dwg` text context data now reads as its DXF save states it. The DXF writer also wrote a block reference's and an MTEXT attribute's context data without the AcDbObjectContextData group (70 version, 290 default); it now writes it for every annotation scale context data object.
 
 </details>
+
+### 0169 — the DXF reader drops a SPATIAL_FILTER's inverse insert transform
+
+- **File:** `third_party/acad-ts-patches/0169-dxf-spatial-filter-matrices.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** an XCLIP's SPATIAL_FILTER stores two 4×3 matrices as 24 DXF 40s: the inverse of the reference's insert transform at clipping time, then the clip boundary's transform. `_readSpatialFilter` tested `insertTransformRead` but only ever set it in the branch it could not reach, so both matrices went to `inverseInsertTransform`, the second (the identity in AutoCAD's files) overwriting the first, and `insertTransform` stayed the identity. Every DXF read lost where the clip sits in the block: ACadSharp's `sample_AC10xx` DXF saves read the inverse as the identity where their DWG twins read a scale of 25.4 and a translation, and a DXF save wrote the loss back.
+- **Fix:** the first matrix sets the flag, so the second goes to `insertTransform`.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0169 a DXF SPATIAL_FILTER keeps its inverse insert transform"; `packages/testkit/src/mapping/xclip.corpus.test.ts` maps each ACadSharp sample's DXF saves alike to its DWG.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read both SPATIAL_FILTER matrices from DXF
+
+`DxfObjectsSectionReader._readSpatialFilter` reads the 12 values of a 4×3 matrix at each DXF 40 run, and is meant to store the first in `inverseInsertTransform` and the second in `insertTransform`. The flag that tells them apart (`CadSpatialFilterTemplate.insertTransformRead`) was set only inside the `if (insertTransformRead)` branch, so it never became true: the second matrix overwrote the first and `insertTransform` was never read. This sets the flag after the first matrix. A test writes a filter with a scaled and moved inverse insert transform and a translated boundary transform to DXF and reads both back.
+
+</details>

@@ -31,13 +31,23 @@
 // drafter expectation (AutoCAD's documentation only says ATTRIBs belong to the INSERT). A
 // block's ATTDEFs do not draw through a reference, except a constant one, which no ATTRIB
 // stands for and which shows its value. ATTMODE decides which of them show (`attributeShown`).
+// XCLIP (M1-103): a reference with a SPATIAL_FILTER (`BlockSource.clip`) shows its block's
+// contents only inside the clip boundary, which is kept in the block's coordinates and so follows
+// the reference; each part carries the boundaries of every clipped reference around it (nested
+// clips intersect). XCLIP OFF shows the whole block. The frame is the boundary drawn with the
+// reference's own properties, unless XCLIPFRAME is 0 (AutoCAD 2024 help: 1 and 2 display it).
+// The reference's ATTRIBs are not clipped: the filter clips the block's contents, and ATTRIBs
+// belong to the INSERT (AutoCAD's help does not say; the drafter's expectation that XCLIP leaves
+// attributes showing is encoded here, an ambiguity noted in the PR).
 // A block that (through nesting) contains itself draws its contents once per level up to
 // MAX_DEPTH, as AutoCAD never lets such a drawing be built; this keeps a damaged file finite.
 
 import {
   annotationParts,
+  clipBoundary,
   partEntity,
   tableAxes,
+  type SpatialFilter,
   type BlockDefinition,
   type DocumentModel,
   type Entity,
@@ -49,7 +59,7 @@ import {
 import type { Paint, TessellateContext } from './tessellate';
 import { tessellate } from './tessellate';
 import { attributeShown, attributeText, textMeasure } from './text';
-import type { RenderPrimitive } from './types';
+import type { PrimitiveClip, RenderPrimitive } from './types';
 import {
   affineScale,
   applyAffine,
@@ -98,6 +108,11 @@ export function insertTransforms(g: InsertGeometry, base: Vec2): Affine[] {
 
 /** A primitive carried through a transform. Lineweights are display widths and do not scale. */
 export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimitive {
+  if (p.clip) {
+    const { clip, ...rest } = p;
+    const moved = transformPrimitive(rest as RenderPrimitive, m);
+    return { ...moved, clip: clip.map((c) => transformPoints(c, m)) } as RenderPrimitive;
+  }
   switch (p.kind) {
     case 'point': {
       const q = applyAffine(m, p);
@@ -152,6 +167,42 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
           : {}),
       };
   }
+}
+
+/** Flat `x, y` pairs through a transform. */
+function transformPoints(points: readonly number[], m: Affine): number[] {
+  const out = new Array<number>(points.length);
+  for (let i = 0; i + 1 < points.length; i += 2) {
+    const q = applyAffine(m, { x: points[i]!, y: points[i + 1]! });
+    out[i] = q.x;
+    out[i + 1] = q.y;
+  }
+  return out;
+}
+
+/** XCLIP (M1-103): where a reference is clipped, in its block's coordinates. */
+export interface InsertClip {
+  /** The closed boundary polygon. */
+  readonly boundary: readonly Vec2[];
+  /** Whether the frame shows (XCLIPFRAME not 0). */
+  readonly frame: boolean;
+}
+
+/**
+ * The drawing's XCLIPs by INSERT handle: each filter that clips (XCLIP ON) and encloses an area.
+ * XCLIPFRAME is AutoCAD's 2 (displayed, not plotted) when the header has none.
+ */
+export function insertClips(model: DocumentModel): (insert: Handle) => InsertClip | undefined {
+  const xclipFrame = model.header.get('$XCLIPFRAME');
+  const frame = xclipFrame !== 0 && xclipFrame !== false;
+  const clips = new Map<Handle, InsertClip>();
+  for (const o of model.objects.values()) {
+    if (o.type !== 'SPATIAL_FILTER') continue;
+    const f = o as SpatialFilter;
+    const boundary = f.enabled ? clipBoundary(f) : undefined;
+    if (boundary) clips.set(f.insert, { boundary, frame });
+  }
+  return (insert) => clips.get(insert);
 }
 
 /**
@@ -224,6 +275,8 @@ export interface BlockSource {
   readonly order: (block: Handle) => readonly EntityId[];
   /** Fonts and styles for the text inside blocks (dimension text, table cells). */
   readonly tessellate?: TessellateContext;
+  /** XCLIP (M1-103): a reference's clip, by INSERT handle (`insertClips`); none without it. */
+  readonly clip?: (insert: Handle) => InsertClip | undefined;
 }
 
 export interface BlockExpansion {
@@ -282,17 +335,18 @@ export function expandInsert(
     ctx: BlockContext | undefined,
     depth: number,
     chain: readonly Handle[],
+    clip: PrimitiveClip | undefined,
   ): void => {
     const g = e.geom;
     if (g.kind === 'ATTDEF') {
       // Only a constant definition shows through a reference, as its value.
       if (!(g.flags & 2) || !attributeShown(g.flags, attMode)) return;
       const shown = attributeText(g);
-      draw({ ...e, geom: shown, type: shown.kind }, m, ctx, depth, chain);
+      draw({ ...e, geom: shown, type: shown.kind }, m, ctx, depth, chain, clip);
       return;
     }
     if (expands(e, def)) {
-      walk(e, m, ctx, depth + 1, chain);
+      walk(e, m, ctx, depth + 1, chain, clip);
       return;
     }
     const paint = src.paint(e, src.model, ctx);
@@ -309,8 +363,12 @@ export function expandInsert(
     const tag = tagOf(chain, effectiveLayer(e, { layers, lwDefault: 0 }, ctx)?.handle);
     for (const p of tessellate(e.geom, used, src.tessellate)) {
       // transformPrimitive makes a fresh object, so tagging it in place copies nothing.
-      const q = transformPrimitive(p, m) as { layers?: readonly Handle[] };
+      const q = transformPrimitive(p, m) as {
+        layers?: readonly Handle[];
+        clip?: PrimitiveClip;
+      };
       if (tag.length > 0) q.layers = tag;
+      if (clip) q.clip = clip;
       prims.push(q as RenderPrimitive);
     }
   };
@@ -320,6 +378,7 @@ export function expandInsert(
     outer: BlockContext | undefined,
     depth: number,
     above: readonly Handle[],
+    clip: PrimitiveClip | undefined,
   ): void => {
     if (depth > MAX_DEPTH) return;
     // Below the top level, a reference's own layer hides everything in it when frozen in a
@@ -330,7 +389,7 @@ export function expandInsert(
     // (M1-52); its arrowhead blocks expand as inserts.
     const parts = annotationParts(e.geom, src.model, e.xdata, measure);
     if (parts) {
-      for (const part of parts) draw(partEntity(e, part), m, outer, depth, chain);
+      for (const part of parts) draw(partEntity(e, part), m, outer, depth, chain, clip);
       return;
     }
     const ref = referenceOf(e, def);
@@ -339,11 +398,21 @@ export function expandInsert(
     if (!ctx) return;
     blocks.add(ref.block);
     const order = src.order(ref.block);
+    const xclip = e.geom.kind === 'INSERT' ? src.clip?.(e.handle) : undefined;
+    const flat = xclip?.boundary.flatMap((p) => [p.x, p.y]);
     for (const cell of ref.cells) {
       const cm = composeAffine(m, cell);
+      // One array per cell, shared by every part inside it (and nested clips add theirs).
+      const inner = flat ? [...(clip ?? []), transformPoints(flat, cm)] : clip;
       for (const id of order) {
         const child = src.model.entity(id);
-        if (child) draw(child, cm, ctx, depth, chain);
+        if (child) draw(child, cm, ctx, depth, chain, inner);
+      }
+      if (xclip?.frame) {
+        // The frame, in the reference's owner coordinates, painted as the reference itself.
+        const vertices = xclip.boundary.map((p) => ({ ...applyAffine(cell, p), bulge: 0 }));
+        const geom = { kind: 'LWPOLYLINE', vertices, closed: true } as const;
+        draw({ ...e, type: 'LWPOLYLINE', geom }, m, outer, depth, chain, clip);
       }
     }
     if (e.geom.kind !== 'INSERT') return;
@@ -364,9 +433,9 @@ export function expandInsert(
         ltScale: a.ltScale,
         visible: a.visible,
       };
-      draw(attrib, m, ctx, depth, chain);
+      draw(attrib, m, ctx, depth, chain, clip);
     }
   };
-  walk(insert, IDENTITY, undefined, 0, []);
+  walk(insert, IDENTITY, undefined, 0, [], undefined);
   return { prims, period, blocks };
 }

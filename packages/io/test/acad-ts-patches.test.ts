@@ -56,6 +56,8 @@ import {
   LeaderLine,
   LeaderRoot,
   Line,
+  Matrix4,
+  SpatialFilter,
   AcdbPlaceHolder,
   EntityPlotStyleType,
   LineType,
@@ -2333,6 +2335,55 @@ describe('acad-ts local patches', () => {
       '20',
       '11',
       '21',
+    ]);
+  });
+  it('0169 a DXF SPATIAL_FILTER keeps its inverse insert transform', () => {
+    // XCLIP on a reference inserted at (100, 50) scale 2: the filter's first 4×3 matrix is the
+    // inverse of that insert transform, the second the clip boundary's. Unpatched the DXF reader
+    // never set its "first matrix read" flag, so the second matrix overwrote the first and the
+    // insert transform stayed identity: every DXF read put the clip at the wrong place.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('CLIPPED');
+    block.entities.add(new Line(new XYZ(0, 0, 0), new XYZ(10, 10, 0)));
+    doc.blockRecords!.add(block);
+    const insert = new Insert(block);
+    insert.insertPoint = new XYZ(100, 50, 0);
+    insert.xScale = insert.yScale = insert.zScale = 2;
+    doc.entities!.add(insert);
+    const filter = new SpatialFilter();
+    filter.boundaryPoints = [new XY(102, 52), new XY(110, 60)];
+    filter.displayBoundary = true;
+    filter.clipFrontPlane = true;
+    filter.frontDistance = 7;
+    // prettier-ignore
+    filter.inverseInsertTransform = new Matrix4([
+      0.5, 0, 0, -50,
+      0, 0.5, 0, -25,
+      0, 0, 0.5, 0,
+      0, 0, 0, 1,
+    ]);
+    // prettier-ignore
+    filter.insertTransform = new Matrix4([
+      1, 0, 0, 3,
+      0, 1, 0, 4,
+      0, 0, 1, 0,
+      0, 0, 0, 1,
+    ]);
+    const dict = new CadDictionary('ACAD_FILTER');
+    insert.createExtendedDictionary().addByKey('ACAD_FILTER', dict);
+    dict.addByKey('SPATIAL', filter);
+
+    const reread = DxfReader.readFromStream(writeDxf(doc, new DxfWriterConfiguration()));
+
+    const back = reread.getCadObject(filter.handle) as SpatialFilter;
+    expect(back).toBeInstanceOf(SpatialFilter);
+    const row = (m: Matrix4) => [m.m00, m.m01, m.m02, m.m03, m.m10, m.m11, m.m12, m.m13];
+    expect(row(back.inverseInsertTransform)).toEqual([0.5, 0, 0, -50, 0, 0.5, 0, -25]);
+    expect(row(back.insertTransform)).toEqual([1, 0, 0, 3, 0, 1, 0, 4]);
+    expect(back.frontDistance).toBe(7);
+    expect(back.boundaryPoints.map((q) => [q.x, q.y])).toEqual([
+      [102, 52],
+      [110, 60],
     ]);
   });
 });
