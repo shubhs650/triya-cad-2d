@@ -1,0 +1,1 @@
+- M1-20 part 2 (#213): ZOOM Extents takes in an unclipped PDF underlay's page once its PDF is dropped, and the PDF underlay test drawing has its golden image; M1-20 is done.

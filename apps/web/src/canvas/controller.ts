@@ -155,6 +155,8 @@ export class CanvasController {
     box: undefined,
   };
   #measuring = 0;
+  /** The PDF page size last sent per PDFDEFINITION, so only a new size re-measures (M1-20). */
+  readonly #pages = new Map<Handle, string>();
   /** Settles once the renderer first answered (or failed to): the opening view waits on it. */
   #firstMeasure: Promise<void> = Promise.resolve();
 
@@ -172,6 +174,13 @@ export class CanvasController {
     this.#hooks = hooks;
     this.#underlays = hooks.underlays?.((definition, raster) => {
       this.#host.setUnderlay(definition, raster);
+      // An unclipped underlay's page joins the extents once its PDF gives its size (M1-20).
+      const page = raster ? `${raster.page.width}x${raster.page.height}` : undefined;
+      if (this.#pages.get(definition) !== page) {
+        if (page) this.#pages.set(definition, page);
+        else this.#pages.delete(definition);
+        void this.#measure();
+      }
       this.#requestFrame();
     });
     const canvas = document.createElement('canvas');

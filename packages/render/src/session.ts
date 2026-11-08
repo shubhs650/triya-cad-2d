@@ -139,6 +139,8 @@ export class RenderSession {
     this.index = SpatialIndex.build(this.model, {
       tol: o.document.tol ?? documentTolerance(init),
       annotationBounds: textBounds(this.#text),
+      // An unclipped underlay shows its whole page, whose size only its PDF gives (M1-20).
+      underlayPage: (h) => this.#underlays.get(h)?.page,
     });
     this.renderer = new Canvas2DRenderer({
       model: this.model,
@@ -204,8 +206,13 @@ export class RenderSession {
    * gone or detached): underlays showing it redraw on the next frame (M1-20).
    */
   setUnderlay(definition: Handle, raster: UnderlayRaster | undefined): void {
+    const before = this.#underlays.get(definition)?.page;
     if (raster) this.#underlays.set(definition, raster);
     else this.#underlays.delete(definition);
+    // Every raster of a page states its size; only a new size moves the extents.
+    const after = raster?.page;
+    if (before?.width !== after?.width || before?.height !== after?.height)
+      this.index.reboundUnderlays();
     this.renderer.invalidate();
   }
 
