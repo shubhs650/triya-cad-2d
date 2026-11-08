@@ -716,3 +716,13 @@ button {
   border-color: var(--danger-text);
   color: var(--danger-text);
 }
+
+/* A canvas made only to picture a layout not shown yet (the document tab preview): drawn off
+   screen at the drawing area's size, then thrown away. */
+.picture-stage {
+  position: fixed;
+  top: 0;
+  left: -100000px;
+  visibility: hidden;
+  pointer-events: none;
+}

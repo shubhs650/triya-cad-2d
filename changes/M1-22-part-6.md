@@ -1,0 +1,1 @@
+- M1-22 part 6 (#217): the document tab preview pictures layouts not shown yet (a canvas made only for the picture, off screen), and resting on a thumbnail shows that drawing and space in the drawing area until the pointer leaves the preview, as AutoCAD does; closes M1-22, whose command-line and save leftovers are M2-01 and M2-13.

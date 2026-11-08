@@ -115,9 +115,12 @@ export async function worldAt(page: Page, x: number, y: number): Promise<{ x: nu
   return { x: wx!, y: wy! };
 }
 
-/** Pixels of the visible canvas close to white: a layout's paper. */
-export async function paperPixels(page: Page): Promise<number> {
-  const png = (await activeCanvas(page).screenshot()).toString('base64');
+/** Pixels of the visible canvas (or of `target`) close to white: a layout's paper. */
+export async function paperPixels(
+  page: Page,
+  target: Locator = activeCanvas(page),
+): Promise<number> {
+  const png = (await target.screenshot()).toString('base64');
   return page.evaluate(async (b64) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;

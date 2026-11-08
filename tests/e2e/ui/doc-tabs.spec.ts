@@ -1,10 +1,12 @@
 // M1-22 part 5: the document tabs behave like AutoCAD's file tabs (UI_SPEC.md §1). Dragging a
 // tab moves it along the row; resting the pointer on a tab shows a preview of the drawing's
 // Model and layouts, Model pictured as last drawn, and clicking one shows that drawing and
-// space. The keyboard moves the focused tab with Ctrl+Shift+Page Up / Page Down.
+// space. The keyboard moves the focused tab with Ctrl+Shift+Page Up / Page Down. The close-out
+// pictures the layouts not shown yet too, and resting on a thumbnail previews that space in the
+// drawing area until the pointer leaves the preview, as AutoCAD does.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DWG, DXF, expectShown, inkOf, openWithPicker } from '../app/page';
+import { DWG, DXF, expectShown, inkOf, openWithPicker, paperPixels } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -100,5 +102,71 @@ test.describe('document tabs', () => {
       .click();
     await expectShown(page, DXF_NAME);
     await expect(page.getByTestId('space')).toHaveText('MODEL');
+  });
+
+  test('pictures layouts not shown yet on their sheets', async ({ page }) => {
+    await openBoth(page);
+    // The DWG has only shown its Model; its three layouts are pictured for the preview.
+    await docTabs(page).nth(1).hover();
+    const dwg = page.getByRole('group', { name: `${DWG_NAME} preview` });
+    const thumbs = dwg.locator('canvas.thumbnail');
+    await expect(thumbs).toHaveCount(4);
+    for (let i = 1; i < 4; i++) {
+      const layout = thumbs.nth(i);
+      await expect(layout).toHaveAttribute('data-drawn', 'true', { timeout: 30_000 });
+      // The white sheet on the grey surround: the stand-in is grey all over.
+      expect(await paperPixels(page, layout)).toBeGreaterThan(500);
+    }
+    // Picturing a layout leaves the drawing as it was: still the DWG's Model, one Model canvas.
+    await expect(page.getByTestId('space')).toHaveText('MODEL');
+    const panel = await docTabs(page).nth(1).getAttribute('aria-controls');
+    await expect(page.locator(`#${panel} canvas.drawing-canvas`)).toHaveCount(1);
+  });
+
+  test('previews a hovered thumbnail in the drawing area until the pointer leaves', async ({
+    page,
+  }) => {
+    await openBoth(page);
+    await docTabs(page).first().click();
+    await expectShown(page, DXF_NAME);
+
+    // Resting on the DWG's Layout2 thumbnail shows that drawing and layout.
+    await docTabs(page).nth(1).hover();
+    const dwg = page.getByRole('group', { name: `${DWG_NAME} preview` });
+    await dwg.getByRole('button', { name: 'Layout2' }).hover();
+    await expect(page.getByTestId('space')).toHaveText('PAPER');
+    await expect(docTabs(page).nth(1)).toHaveAttribute('aria-selected', 'true');
+    const layoutTab = (name: string) =>
+      page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab', { name });
+    await expect(layoutTab('Layout2')).toHaveAttribute('aria-selected', 'true');
+    // The preview still marks the space the drawing was in.
+    await expect(dwg.getByRole('button', { name: 'Model' })).toHaveAttribute(
+      'aria-current',
+      'true',
+    );
+    // Another thumbnail: that one shows.
+    await dwg.getByRole('button', { name: 'MyLayout' }).hover();
+    await expect(layoutTab('MyLayout')).toHaveAttribute('aria-selected', 'true');
+
+    // Leaving the preview brings back what showed before.
+    await page.mouse.move(400, 500);
+    await expect(dwg).toBeHidden();
+    await expectShown(page, DXF_NAME);
+    await expect(page.getByTestId('space')).toHaveText('MODEL');
+    // And the DWG is still in its Model.
+    await docTabs(page).nth(1).click();
+    await expect(page.getByTestId('space')).toHaveText('MODEL');
+
+    // A click on a previewed thumbnail keeps it.
+    await docTabs(page).first().click();
+    await expectShown(page, DXF_NAME);
+    await docTabs(page).nth(1).hover();
+    await dwg.getByRole('button', { name: 'Layout1' }).hover();
+    await expect(layoutTab('Layout1')).toHaveAttribute('aria-selected', 'true');
+    await dwg.getByRole('button', { name: 'Layout1' }).click();
+    await expect(dwg).toBeHidden();
+    await page.mouse.move(400, 500);
+    await expect(layoutTab('Layout1')).toHaveAttribute('aria-selected', 'true');
+    await expect(page.getByTestId('space')).toHaveText('PAPER');
   });
 });
