@@ -251,8 +251,13 @@ export class PromptBus {
     const frame = this.#stack.at(-1);
     if (!frame) return this.#commandLine(text);
     const t = text.trim();
-    if (t.length > 1 && t.startsWith("'")) return this.#transparent(t);
-    if (this.#collectors.length > 0) return this.#collectorInput(t);
+    if (this.#collectors.length > 0) {
+      return t.length > 1 && t.startsWith("'") ? this.#transparent(t) : this.#collectorInput(t);
+    }
+    // At a text prompt an apostrophe is text ('Note' as a TEXT string), not a transparent command.
+    if (t.length > 1 && t.startsWith("'") && frame.prompt!.kind !== 'string') {
+      return this.#transparent(t);
+    }
     return this.#typed(frame.prompt!, text);
   }
 

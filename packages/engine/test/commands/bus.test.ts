@@ -282,12 +282,12 @@ describe('PromptBus', () => {
     expect(bus.command).toBe('CIRCLE');
     await bus.cancel();
     await bus.script(['-la', 'Walls, Doors']);
-    await bus.script(['LAYER', 'x']);
+    await bus.script(['LAYER', "'ZOOM"]);
     expect(got).toEqual([
       { kind: 'string', value: 'dash' },
       { kind: 'string', value: 'Walls, Doors' },
       { kind: 'string', value: 'dialog' },
-      { kind: 'string', value: 'x' },
+      { kind: 'string', value: "'ZOOM" },
     ]);
   });
 
