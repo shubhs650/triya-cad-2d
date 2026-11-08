@@ -1044,3 +1044,73 @@ button {
   color: var(--chrome-text-muted);
   cursor: default;
 }
+
+/* Drafting aids (M2-04): the status bar's toggles, OSNAP's menu of modes, and the AutoSnap and
+   polar tracking tooltip beside the cursor, as AutoCAD shows them. */
+.status-group {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.status-menu-button {
+  padding: 0 3px;
+  border: 0;
+  background: transparent;
+  color: var(--chrome-text-muted);
+  font: inherit;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.osnap-menu {
+  position: absolute;
+  right: 0;
+  bottom: calc(100% + 4px);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  min-width: 190px;
+  padding: 4px 0;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+}
+
+.osnap-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 12px 3px 8px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.osnap-menu-item:hover,
+.osnap-menu-item:focus-visible {
+  background: var(--chrome-hover, rgb(0 0 0 / 6%));
+  outline: none;
+}
+
+.osnap-check {
+  width: 14px;
+  color: var(--accent);
+}
+
+.autosnap-tip {
+  position: absolute;
+  z-index: 4;
+  padding: 1px 6px;
+  background: #fffbe0;
+  color: #202020;
+  border: 1px solid #8a7a30;
+  border-radius: 2px;
+  font-size: 12px;
+  white-space: nowrap;
+  pointer-events: none;
+}

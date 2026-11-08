@@ -9,6 +9,7 @@
 import {
   DocumentModel,
   SpatialIndex,
+  osnap,
   toleranceForSize,
   toleranceFromExtents,
   unionBox,
@@ -22,6 +23,8 @@ import {
   type KeyedChanges,
   type TableChanges,
   type TableName,
+  type OsnapHit,
+  type OsnapQuery,
   type Tolerance,
 } from '@triya/engine';
 import { FontBook, loadStrokeFont, parseShx, parseTtf, type TriyaStrokeFont } from '@triya/text';
@@ -123,6 +126,7 @@ export class RenderSession {
   readonly #surface: Surface;
   /** The block record drawn: model space or a layout's paper space. */
   readonly #block: Handle;
+  readonly #tol: Tolerance;
 
   constructor(o: RenderSessionOptions) {
     this.#surface = o.surface;
@@ -138,8 +142,9 @@ export class RenderSession {
     this.fontWarnings = failed;
     // Text is bounded by its glyphs (M1-35), through the fonts in force at each query, so
     // culling and extents see it; text no loaded font serves stays unknown and always draws.
+    this.#tol = o.document.tol ?? documentTolerance(init);
     this.index = SpatialIndex.build(this.model, {
-      tol: o.document.tol ?? documentTolerance(init),
+      tol: this.#tol,
       annotationBounds: textBounds(this.#text),
       // An unclipped underlay shows its whole page, whose size only its PDF gives (M1-20).
       underlayPage: (h) => this.#underlays.get(h)?.page,
@@ -200,6 +205,17 @@ export class RenderSession {
       out = out ? unionBox(out, b.box) : b.box;
     }
     return out;
+  }
+
+  /**
+   * The running object snap points under the aperture in the space drawn, best first (M2-04):
+   * text is bounded by its glyphs here, which the engine worker, having no fonts, cannot do.
+   */
+  snap(query: OsnapQuery): OsnapHit[] {
+    return osnap(
+      { model: this.model, index: this.index, block: this.#block, tol: this.#tol },
+      query,
+    );
   }
 
   /** The last frame drawn, fitted inside `max` (the document tab hover preview, M1-22). */

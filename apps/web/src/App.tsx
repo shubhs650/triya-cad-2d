@@ -29,6 +29,8 @@ import { CommandLine } from './CommandLine';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
+import { drafting } from './drafting';
+import { DraftingToggles } from './DraftingToggles';
 import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
@@ -93,6 +95,11 @@ engines.onCommand((doc, o) => {
         }),
     );
   }
+});
+
+// Every canvas applies the status bar's drafting aids as they change (M2-04).
+drafting.subscribe(() => {
+  for (const c of allControllers()) c.setDrafting(drafting.get());
 });
 
 /** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
@@ -919,6 +926,7 @@ function ViewportCanvas({
       }),
     });
     const unregister = register(id, block, c, index);
+    c.setDrafting(drafting.get());
     c.setPrompt(commandLines.get(id).prompt);
     const selected = selections.get(id);
     if (selected?.length) c.setHighlight(selected);
@@ -1006,6 +1014,7 @@ function StatusBar({
             : `${missingReferences} references not found`}
         </button>
       )}
+      <DraftingToggles />
       <DynToggle />
       {doc && (
         <>

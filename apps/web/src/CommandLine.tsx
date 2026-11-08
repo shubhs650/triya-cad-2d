@@ -11,6 +11,7 @@ import { CommandPalette } from './CommandPalette';
 import { completions, promptParts, type CommandLines } from './command-line';
 import { DynamicInput } from './DynamicInput';
 import { dynMode } from './dynamic-input';
+import { DRAFTING_ITEMS, DRAFTING_KEYS, drafting, type DraftingToggle } from './drafting';
 import { engines } from './engine/registry';
 import { commandItems, type PaletteItem } from './palette';
 
@@ -88,6 +89,7 @@ export function CommandLine({
       ...commandItems(registry),
       { id: 'history', kind: 'action', label: 'Command history', aliases: [], keys: 'F2' },
       { id: 'dyn', kind: 'action', label: 'Dynamic Input on/off', aliases: [], keys: 'F12' },
+      ...DRAFTING_ITEMS,
       { id: 'settings', kind: 'action', label: 'Settings', aliases: [] },
     ],
     [],
@@ -97,6 +99,8 @@ export function CommandLine({
       if (doc !== undefined) engines.command(doc, { kind: 'invoke', name: item.id });
     } else if (item.id === 'history') setHistoryOpen(true);
     else if (item.id === 'dyn') dynMode.toggle();
+    else if (item.id.startsWith('drafting:'))
+      drafting.toggle(item.id.slice('drafting:'.length) as DraftingToggle);
     else onSettings();
   };
   const sendRef = useRef(send);
@@ -120,6 +124,13 @@ export function CommandLine({
       if (e.key === 'F12') {
         e.preventDefault();
         dynMode.toggle();
+        return;
+      }
+      // F3 OSNAP, F8 ORTHO, F9 SNAP, F10 POLAR (M2-04), wherever the focus is, as in AutoCAD.
+      const aid = DRAFTING_KEYS[e.key];
+      if (aid && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+        e.preventDefault();
+        drafting.toggle(aid);
         return;
       }
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'k') {
