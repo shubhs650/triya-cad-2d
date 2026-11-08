@@ -678,3 +678,41 @@ button {
   padding: 4px 8px 8px;
   color: var(--chrome-text-muted);
 }
+
+/* References palette (M1-21): xrefs, images and PDF underlays with their status. */
+.references-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 6px 8px;
+}
+
+.references-actions button,
+.references-alert {
+  padding: 2px 8px;
+  font: inherit;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg);
+}
+
+.references-palette .hint {
+  margin: 0 8px 6px;
+  color: var(--chrome-text-muted);
+}
+
+.references-table tr[data-status='not-found'] .status {
+  color: var(--danger-text);
+  font-weight: 600;
+}
+
+.references-table .path {
+  color: var(--chrome-text-muted);
+}
+
+/* AutoCAD's status-bar balloon: some references could not be found. */
+.status-bar .references-alert {
+  padding: 0 8px;
+  border-color: var(--danger-text);
+  color: var(--danger-text);
+}

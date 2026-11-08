@@ -65,7 +65,7 @@ ANSI_1252
   9
 $TDCREATE
  40
-2461353.198655301
+2461353.4951358447
   9
 $PELLIPSE
  70
@@ -485,7 +485,7 @@ $FILLMODE
   9
 $FINGERPRINTGUID
   2
-237bfd6e-45c7-4311-a23e-ccaff524bdd1
+b0ef124f-e4a1-41d5-8d42-41048790d51b
   9
 $HALOGAP
 280
@@ -493,7 +493,7 @@ $HALOGAP
   9
 $HANDSEED
   5
-40
+43
   9
 $INDEXCTL
 280
@@ -937,15 +937,15 @@ $UNITMODE
   9
 $TDUCREATE
  40
-2461353.198655301
+2461353.4951358447
   9
 $TDUUPDATE
  40
-2461353.198655301
+2461353.4951358447
   9
 $TDUPDATE
  40
-2461353.198655301
+2461353.4951358447
   9
 $DIMSHO
  70
@@ -1001,7 +1001,7 @@ $USRTIMER
   9
 $VERSIONGUID
   2
-44cabea9-30fa-4513-b8ed-d2992fca6b6a
+7f92bade-2bc8-44fe-8d7c-af8245b37e2e
   9
 $ACADVER
   1
@@ -1156,6 +1156,54 @@ ObjectDBX Classes
 1153
  91
 3
+280
+0
+281
+0
+  0
+CLASS
+  1
+IMAGEDEF
+  2
+AcDbRasterImageDef
+  3
+ISM
+ 90
+0
+ 91
+1
+280
+0
+281
+0
+  0
+CLASS
+  1
+IMAGE
+  2
+AcDbRasterImage
+  3
+ISM
+ 90
+32895
+ 91
+1
+280
+0
+281
+1
+  0
+CLASS
+  1
+IMAGEDEF_REACTOR
+  2
+AcDbRasterImageDefReactor
+  3
+ISM
+ 90
+1
+ 91
+1
 280
 0
 281
@@ -1809,7 +1857,7 @@ LOGO
   0
 BLOCK_RECORD
   5
-38
+3A
 330
 11
 100
@@ -1827,7 +1875,7 @@ xref-grandchild
   0
 BLOCK_RECORD
   5
-3B
+3D
 330
 11
 100
@@ -2061,9 +2109,9 @@ AcDbBlockEnd
   0
 BLOCK
   5
-39
+3B
 330
-38
+3A
 100
 AcDbEntity
  62
@@ -2087,9 +2135,9 @@ xref-grandchild
   0
 ENDBLK
   5
-3A
+3C
 330
-38
+3A
 100
 AcDbEntity
  62
@@ -2099,9 +2147,9 @@ AcDbBlockEnd
   0
 BLOCK
   5
-3C
+3E
 330
-3B
+3D
 100
 AcDbEntity
  62
@@ -2125,9 +2173,9 @@ xref-missing-overlay
   0
 ENDBLK
   5
-3D
+3F
 330
-3B
+3D
 100
 AcDbEntity
  62
@@ -2333,9 +2381,69 @@ LOGO
 230
 1
   0
+IMAGE
+  5
+39
+330
+1D
+100
+AcDbEntity
+  8
+TB-LOGO
+ 62
+256
+ 67
+0
+100
+AcDbRasterImage
+ 90
+0
+ 10
+46
+ 20
+36
+ 30
+0
+ 11
+3
+ 21
+0
+ 31
+0
+ 12
+0
+ 22
+3
+ 32
+0
+ 13
+12
+ 23
+6
+340
+38
+ 70
+3
+280
+0
+281
+50
+282
+50
+283
+0
+360
+42
+ 71
+1
+ 91
+0
+290
+0
+  0
 INSERT
   5
-3E
+40
 330
 1D
 100
@@ -2351,9 +2459,9 @@ AcDbBlockReference
   2
 xref-grandchild
  10
-120
+140
  20
-10
+30
  30
 0
  41
@@ -2381,7 +2489,7 @@ xref-grandchild
   0
 INSERT
   5
-3F
+41
 330
 1D
 100
@@ -2499,6 +2607,18 @@ ACAD_IMAGE_DICT
 350
 F
   0
+IMAGEDEF_REACTOR
+  5
+42
+330
+39
+100
+AcDbRasterImageDefReactor
+ 90
+2
+330
+39
+  0
 DICTIONARY
   5
 2
@@ -2670,6 +2790,10 @@ AcDbDictionary
 0
 281
 0
+  3
+xref-stamp
+350
+38
   0
 MLINESTYLE
   5
@@ -2704,6 +2828,36 @@ ByLayer
 256
   6
 ByLayer
+  0
+IMAGEDEF
+  5
+38
+102
+{ACAD_REACTORS
+330
+42
+102
+}
+330
+F
+100
+AcDbRasterImageDef
+ 90
+0
+  1
+.\xref-stamp.png
+ 10
+12
+ 20
+6
+ 11
+1
+ 21
+1
+280
+1
+281
+0
   0
 ENDSEC
   0
