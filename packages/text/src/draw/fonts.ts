@@ -176,21 +176,58 @@ export function charAdvance(face: TextFace, codePoint: number): number {
   return code === undefined ? 0 : (face.font.glyph(code)?.advance.x ?? 0);
 }
 
+/** Whether a face draws vertical text (M1-110): an SHX font with both orientations. */
+export function verticalFace(face: TextFace | undefined): boolean {
+  return face?.kind === 'shx' && face.font.supportsVertical;
+}
+
+/**
+ * A character's advance down the column in vertical text, in font units: how far its
+ * vertical glyph moves the pen down. 0 in a face without vertical text.
+ */
+export function verticalAdvance(face: TextFace, codePoint: number): number {
+  if (face.kind !== 'shx') return 0;
+  const code = shxCode(face.font, codePoint);
+  return code === undefined ? 0 : -(face.font.verticalGlyph(code)?.advance.y ?? 0);
+}
+
+export interface FontMeasureOptions {
+  /**
+   * Measure down the column of vertical text (M1-110): the advance is the vertical pen
+   * advance, which the width factor (a horizontal scale) leaves alone. Faces without vertical
+   * text measure as in horizontal text.
+   */
+  readonly vertical?: boolean;
+}
+
 /**
  * Exact advances from the loaded fonts. A style whose font is not loaded measures with fixed
  * cells one height wide, so layout still places it (it draws nothing until the font arrives).
  */
-export function fontMeasure(fonts: TextFonts, bigFont?: ShxFont): MTextMeasure {
+export function fontMeasure(
+  fonts: TextFonts,
+  bigFont?: ShxFont,
+  options: FontMeasureOptions = {},
+): MTextMeasure {
+  const vertical = options.vertical === true;
   return {
     advance(text: string, style: MTextCharStyle): number {
       const face = fonts.face(style.font);
       let units = 0;
       if (!face) return [...text].length * style.height * style.widthFactor;
+      if (vertical && verticalFace(face)) {
+        for (const ch of text) units += verticalAdvance(face, ch.codePointAt(0)!);
+        return units * faceScale(face, style.height);
+      }
       if (face.kind === 'ttf') units = face.font.advance(text);
       else for (const ch of text) units += charAdvance(face, ch.codePointAt(0)!);
       return units * faceScale(face, style.height) * style.widthFactor;
     },
     mbcs(_codepage: number, code: number, style: MTextCharStyle): number {
+      if (vertical && bigFont?.supportsVertical) {
+        const v = bigFont.verticalGlyph(code);
+        return v ? -v.advance.y * bigFont.scaleFor(style.height) : style.height;
+      }
       const g = bigFont?.glyph(code);
       if (!bigFont || !g) return style.height;
       return g.advance.x * bigFont.scaleFor(style.height) * style.widthFactor;

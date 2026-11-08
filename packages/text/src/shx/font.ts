@@ -90,10 +90,13 @@ export class ShxFont {
   readonly escapeRanges: readonly (readonly [number, number])[];
   /** Whether the file has font info (shape 0), i.e. is a text font rather than shapes. */
   readonly isFont: boolean;
+  /** Font info mode 2: the font draws vertical text too (its code 14 commands). */
+  readonly supportsVertical: boolean;
 
   readonly #shapes: ReadonlyMap<number, RawShape>;
   readonly #byName = new Map<string, number>();
   readonly #glyphs = new Map<number, ShxGlyph>();
+  readonly #verticalGlyphs = new Map<number, ShxGlyph>();
   readonly #source: ShapeSource;
 
   constructor(
@@ -110,6 +113,7 @@ export class ShxFont {
     this.above = at(0);
     this.below = at(1);
     this.modes = at(2);
+    this.supportsVertical = this.isFont && (this.modes & 2) !== 0;
     this.encoding = kind === 'unifont' ? at(3) : 0;
     this.type = kind === 'unifont' ? at(4) : 0;
     this.width = kind === 'bigfont' ? at(3) : 0;
@@ -149,15 +153,30 @@ export class ShxFont {
 
   /** The glyph for a shape number, interpreted once and cached; undefined if absent. */
   glyph(code: number): ShxGlyph | undefined {
-    const cached = this.#glyphs.get(code);
+    return this.#glyph(code, false, this.#glyphs);
+  }
+
+  /**
+   * The glyph for vertical text (M1-110): the commands after code 14 run, so the pen starts
+   * and ends where the font puts characters stacked top to bottom. Undefined if absent or the
+   * font has no vertical mode.
+   */
+  verticalGlyph(code: number): ShxGlyph | undefined {
+    if (!this.supportsVertical) return undefined;
+    return this.#glyph(code, true, this.#verticalGlyphs);
+  }
+
+  #glyph(code: number, vertical: boolean, cache: Map<number, ShxGlyph>): ShxGlyph | undefined {
+    const cached = cache.get(code);
     if (cached) return cached;
     const raw = code === 0 ? undefined : this.#shapes.get(code);
     if (!raw) return undefined;
-    const g = interpretShape(code, raw.name, this.#source, (c) => {
+    const label = (c: number) => {
       const n = this.#shapes.get(c)?.name;
       return n ? `shape ${c} (${n})` : `shape ${c}`;
-    });
-    this.#glyphs.set(code, g);
+    };
+    const g = interpretShape(code, raw.name, this.#source, label, vertical);
+    cache.set(code, g);
     return g;
   }
 }

@@ -17,6 +17,22 @@
 // - "Middle" (72 = 4) centres on "the vertical middle of the text"; the docs do not say whether
 //   that is the glyphs drawn or the font's lines. This uses the middle between the descender
 //   line and the cap height, which keeps the anchor fixed as the string changes.
+//
+// Vertical text (M1-110, "Text Style Dialog Box", "MTEXT (DXF)"): TEXT in a STYLE with the
+// vertical flag (DXF 70 bit 4), and MTEXT drawn top to bottom (DXF 72 = 3, or 5 "by style"
+// with that flag), stack their characters down a column, but only in an SHX font that supports
+// both orientations (font info mode 2): AutoCAD offers vertical text for no other font, so text
+// in any other font (Hershey, TrueType, a mode-0 SHX) draws horizontally. The font's own code 14
+// commands place each character, which classic fonts hang centred below the pen. AutoCAD does
+// not document the rest; these are our readings, the common drafter expectation:
+// - a vertical TEXT starts its column at its point for Left (and Top) justification, centres
+//   it there for Center and Middle, and ends it there for Right (and Bottom); Aligned and Fit
+//   scale it between its two points, Aligned the characters too;
+// - a vertical MTEXT turns each line into a column and sets the columns right to left, the way
+//   vertical (East Asian) writing reads; its attachment point places the block of columns, and
+//   it does not wrap, as the reference width (DXF 41) is a horizontal measure;
+// - an MTEXT with a run in a font without vertical text, or with a stacked fraction, draws
+//   horizontally as a whole rather than mixing orientations.
 
 import {
   bulgeArc,
@@ -45,6 +61,8 @@ import {
   type TextFace,
   type TextFonts,
   type TtfGlyph,
+  verticalAdvance,
+  verticalFace,
 } from '@triya/text';
 import { composeAffine, transformPath, type Affine } from './affine';
 import type { EmbedPlacement } from './style/dash';
@@ -81,10 +99,17 @@ interface GlyphShape {
 
 /** Glyph paths per font object and shape number (SHX) or code point (TrueType), built once. */
 const shapes = new WeakMap<object, Map<number, GlyphShape>>();
+/** The same for SHX glyphs in vertical text. */
+const verticalShapes = new WeakMap<object, Map<number, GlyphShape>>();
 
-function cached(font: object, key: number, build: () => GlyphShape): GlyphShape {
-  let m = shapes.get(font);
-  if (!m) shapes.set(font, (m = new Map()));
+function cached(
+  font: object,
+  key: number,
+  build: () => GlyphShape,
+  cache: WeakMap<object, Map<number, GlyphShape>> = shapes,
+): GlyphShape {
+  let m = cache.get(font);
+  if (!m) cache.set(font, (m = new Map()));
   let s = m.get(key);
   if (!s) m.set(key, (s = build()));
   return s;
@@ -136,6 +161,13 @@ function shxShape(font: ShxFont, code: number | undefined): GlyphShape | undefin
   if (code === undefined) return undefined;
   const g = font.glyph(code);
   return g && cached(font, code, () => shxPath(g));
+}
+
+/** A shape's glyph in vertical text, from a font that supports it. */
+function verticalShape(font: ShxFont, code: number | undefined): GlyphShape | undefined {
+  if (code === undefined) return undefined;
+  const g = font.verticalGlyph(code);
+  return g && cached(font, code, () => shxPath(g), verticalShapes);
 }
 
 interface Group {
@@ -303,6 +335,92 @@ function drawLayout(
   }
 }
 
+/**
+ * Vertical text is laid out as horizontal text whose x runs down the column and whose y runs
+ * across the columns; this turns those layout coordinates into the upright text frame.
+ */
+const DOWN: Affine = { a: 0, b: -1, c: 1, d: 0, e: 0, f: 0 };
+
+/** STYLE DXF 70 bit: vertical text. */
+const VERTICAL_STYLE = 4;
+
+/** Whether every run of a layout can draw vertically (see the header). */
+function verticalLayout(layout: MTextLayout, fonts: TextFonts, bigFont?: ShxFont): boolean {
+  return layout.lines.every((line) =>
+    line.runs.every((run) =>
+      run.kind === 'text'
+        ? verticalFace(fonts.face(run.style.font))
+        : run.kind === 'mbcs' && bigFont !== undefined && bigFont.supportsVertical,
+    ),
+  );
+}
+
+/**
+ * Draws a string down its column in vertical text, from `along` down the column, on the
+ * column line `pen` across, in the upright frame.
+ */
+function placeVertical(
+  out: Collector,
+  fonts: TextFonts,
+  frame: Affine,
+  text: string,
+  along: number,
+  pen: number,
+  style: MTextCharStyle,
+): void {
+  const face = fonts.face(style.font);
+  if (face?.kind !== 'shx') return;
+  const s = face.font.scaleFor(style.height);
+  const shear = Math.tan((style.oblique * Math.PI) / 180) * s;
+  const color = runColor(style.color, out.paint);
+  let y = along;
+  for (const ch of text) {
+    const cp = ch.codePointAt(0)!;
+    const shape = verticalShape(face.font, shxCode(face.font, cp));
+    if (shape && shape.path.length > 0) {
+      const m = { a: s * style.widthFactor, b: 0, c: shear, d: s, e: pen, f: -y };
+      out.add(shape, composeAffine(frame, m), color);
+    }
+    y += verticalAdvance(face, cp) * s * style.tracking;
+  }
+  // Greeking: the column the run fills, a height wide.
+  const box = { x0: along, x1: y, y: pen - style.height / 2, height: style.height };
+  out.run(face, composeAffine(frame, DOWN), color, box);
+}
+
+/**
+ * Every run and decoration of a vertical layout. A line's column runs along the line's
+ * baseline (TEXT, whose font centres characters on it) or half its height above it (MTEXT, so
+ * the columns sit inside the block like lines inside the box).
+ */
+function drawVerticalLayout(
+  out: Collector,
+  layout: MTextLayout,
+  frame: Affine,
+  fonts: TextFonts,
+  bigFont: ShxFont | undefined,
+  centred: boolean,
+): void {
+  for (const line of layout.lines) {
+    const lift = centred ? line.height / 2 : 0;
+    for (const run of line.runs) {
+      if (run.kind === 'text') {
+        placeVertical(out, fonts, frame, run.text, run.x, run.y + lift, run.style);
+      } else if (run.kind === 'mbcs' && bigFont) {
+        const shape = verticalShape(bigFont, bigFont.hasShape(run.code) ? run.code : undefined);
+        if (!shape) continue;
+        const s = bigFont.scaleFor(run.style.height);
+        const m = { a: s * run.style.widthFactor, b: 0, c: 0, d: s, e: run.y + lift, f: -run.x };
+        out.add(shape, composeAffine(frame, m), runColor(run.style.color, out.paint));
+      }
+    }
+    // Decorations keep their place beside the characters, which sit `lift` above the baseline
+    // instead of filling the height above it.
+    const turned = composeAffine(frame, { ...DOWN, e: lift - line.height / 2 });
+    for (const d of line.decorations) out.line(turned, d.x1, d.y, d.x2, d.y, out.paint.color);
+  }
+}
+
 /** Font units below the baseline to the descender line, in drawing units. */
 function descent(face: TextFace | undefined, height: number): number {
   if (!face) return 0;
@@ -351,7 +469,7 @@ function textPrimitivesOf(g: TextGeometry, paint: Paint, ctx: TextContext): Rend
 /** Lays a TEXT out and adds its glyphs to `out`. */
 function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
   if (!(g.height > 0) || g.value === '') return;
-  const { base } = baseOf(ctx, g.style, g.height);
+  const { base, record } = baseOf(ctx, g.style, g.height);
   const charBase: MTextBase = {
     ...base,
     widthFactor: g.widthFactor || base.widthFactor,
@@ -368,6 +486,11 @@ function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
     lineSpacingStyle: 1,
     lineSpacing: 1,
   };
+  if (((record?.flags ?? 0) & VERTICAL_STYLE) !== 0) {
+    const measure = fontMeasure(ctx.fonts, undefined, { vertical: true });
+    const layout = layoutMText(doc, measure, options);
+    if (verticalLayout(layout, ctx.fonts)) return drawVerticalText(out, g, layout, ctx);
+  }
   const layout = layoutMText(doc, fontMeasure(ctx.fonts), options);
   const width = layout.lines[0]?.width ?? 0;
   const h = g.height;
@@ -397,14 +520,68 @@ function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
   drawLayout(out, layout, frame, ctx.fonts, undefined);
 }
 
+/** A vertical TEXT's column placed by its justification (see the header). */
+function drawVerticalText(
+  out: Collector,
+  g: TextGeometry,
+  layout: MTextLayout,
+  ctx: TextContext,
+): void {
+  const length = layout.lines[0]?.width ?? 0;
+  let at = g.position;
+  let local: Affine;
+  if ((g.halign === 3 || g.halign === 5) && g.alignmentPoint) {
+    const len = Math.hypot(g.alignmentPoint.x - g.position.x, g.alignmentPoint.y - g.position.y);
+    const k = length > 0 && len > 0 ? len / length : 1;
+    local = { a: g.halign === 3 ? k : 1, b: 0, c: 0, d: k, e: 0, f: 0 };
+  } else {
+    if ((g.halign !== 0 || g.valign !== 0) && g.alignmentPoint) at = g.alignmentPoint;
+    // How much of the column lies above the point: none from the start, half, or all of it.
+    const part =
+      g.valign === 3
+        ? 0
+        : g.valign === 2 || g.halign === 1 || g.halign === 4
+          ? 0.5
+          : g.valign === 1 || g.halign === 2
+            ? 1
+            : 0;
+    local = { a: 1, b: 0, c: 0, d: 1, e: 0, f: part * length };
+  }
+  const frame = composeAffine(textFrame(at, g.rotation, g.backward, g.upsideDown), local);
+  drawVerticalLayout(out, layout, frame, ctx.fonts, undefined, false);
+}
+
 function mtextPrimitives(g: MTextGeometry, paint: Paint, ctx: TextContext): RenderPrimitive[] {
   if (!(g.height > 0) || g.contents === '') return [];
-  const { layout, bigFont } = mtextLayout(g, ctx);
   const frame = textFrame(g.position, g.rotation, false, !!g.upsideDown);
   const out = new Collector(paint);
+  const vertical = verticalMText(g, ctx);
+  if (vertical) {
+    const turned = composeAffine(frame, DOWN);
+    background(out, g, vertical.layout, turned);
+    drawVerticalLayout(out, vertical.layout, frame, ctx.fonts, vertical.bigFont, true);
+    return out.primitives();
+  }
+  const { layout, bigFont } = mtextLayout(g, ctx);
   background(out, g, layout, frame);
   drawLayout(out, layout, frame, ctx.fonts, bigFont);
   return out.primitives();
+}
+
+/**
+ * An MTEXT drawn top to bottom, laid out with lines as columns, or undefined when it draws
+ * horizontally (see the header). The attachment point of the block of columns becomes the
+ * attachment of the turned layout: its top, middle and bottom are the layout's left, centre
+ * and right, and its left, centre and right the layout's bottom, middle and top.
+ */
+function verticalMText(g: MTextGeometry, ctx: TextContext) {
+  const record = ctx.style(g.style);
+  const byStyle = g.direction === 5 && ((record?.flags ?? 0) & VERTICAL_STYLE) !== 0;
+  if (g.direction !== 3 && !byStyle) return undefined;
+  const a = Math.min(9, Math.max(1, Math.round(g.attachment))) - 1;
+  const attachment = 3 * (2 - (a % 3)) + Math.floor(a / 3) + 1;
+  const v = mtextLayout({ ...g, width: 0, attachment, columns: undefined }, ctx, true);
+  return verticalLayout(v.layout, ctx.fonts, v.bigFont) ? v : undefined;
 }
 
 /**
@@ -420,13 +597,17 @@ export function textMeasure(ctx: TextContext): TextMeasure {
   };
 }
 
-function mtextLayout(g: MTextGeometry, ctx: TextContext) {
+function mtextLayout(
+  g: Omit<MTextGeometry, 'columns'> & { readonly columns?: MTextGeometry['columns'] | undefined },
+  ctx: TextContext,
+  vertical = false,
+) {
   const { base, record } = baseOf(ctx, g.style, g.height);
   const doc = parseMText(g.contents, base, {
     ...(ctx.evaluateField ? { evaluateField: ctx.evaluateField } : {}),
   });
   const bigFont = record?.bigFont ? ctx.fonts.bigFont(record.bigFont) : undefined;
-  const layout = layoutMText(doc, fontMeasure(ctx.fonts, bigFont), {
+  const layout = layoutMText(doc, fontMeasure(ctx.fonts, bigFont, { vertical }), {
     height: g.height,
     width: g.width,
     attachment: g.attachment,
