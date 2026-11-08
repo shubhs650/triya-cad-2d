@@ -4,7 +4,8 @@
 import type { EditResult, EngineEdit, Layout, PdfDefinition } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
-import { CanvasController, type CanvasMode } from './canvas/controller';
+import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
+import { pictureOf, type PictureSize } from './canvas/picture';
 import {
   allControllers,
   controllerOf,
@@ -302,7 +303,7 @@ export function App() {
             e.currentTarget.value = '';
           }}
         />
-        <DocTabs store={store} state={state} />
+        <DocTabs store={store} state={state} picture={picture} />
         <a className="report" href={REPORT_ISSUE} target="_blank" rel="noreferrer">
           Report issue
         </a>
@@ -498,6 +499,50 @@ function SpaceCanvas({
   );
 }
 
+/**
+ * What every canvas of a drawing draws with: the user's patterns and fonts, the edits made
+ * since it opened, and the PDF and image files supplied.
+ */
+function drawingHooks(
+  id: number,
+  opened: OpenDocument['opened'],
+): Pick<CanvasHooks, 'patterns' | 'fonts' | 'changes' | 'underlays' | 'images'> {
+  return {
+    patterns: () => patterns.sources(),
+    fonts: () => fonts.sources(),
+    changes: () => engines.changesOf(id),
+    underlays: (deliver) => pdfPages.client(pdfDefinitionsOf(opened), deliver),
+    images: (deliver) =>
+      images.client(() => imageDefinitionsOf(opened.init, engines.changesOf(id)), deliver),
+  };
+}
+
+/**
+ * A picture of a space not shown yet, for the document tab preview (M1-22 close-out): a
+ * canvas made only for it, at the drawing area's size so the space is framed as it would
+ * open there.
+ */
+function picture(
+  doc: OpenDocument,
+  block: string,
+  max: PictureSize,
+  cancelled: () => boolean,
+): Promise<ImageBitmap | undefined> {
+  const area = document.querySelector('.canvas-area')?.getBoundingClientRect();
+  return pictureOf(
+    (container) =>
+      new CanvasController(container, doc.opened, block, {
+        ...drawingHooks(doc.id, doc.opened),
+        onCursor: () => undefined,
+        // A picture that fails keeps its stand-in; the drawing itself is not at fault.
+        onError: () => undefined,
+      }),
+    { width: Math.round(area?.width ?? 0), height: Math.round(area?.height ?? 0) },
+    max,
+    cancelled,
+  );
+}
+
 /** Marks the canvas on screen: the current viewport of the space shown. */
 function showCurrent(doc: number, block: string, visible: boolean): void {
   const current = currentTile(doc, block);
@@ -546,17 +591,12 @@ function ViewportCanvas({
   visibleRef.current = visible;
   useEffect(() => {
     const c = new CanvasController(ref.current!, opened, block, {
+      ...drawingHooks(id, opened),
       onCursor: (p) => showCursor(p),
       onError: (e) => store.failed(name, openError(name, e)),
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },
-      patterns: () => patterns.sources(),
-      fonts: () => fonts.sources(),
-      changes: () => engines.changesOf(id),
-      underlays: (deliver) => pdfPages.client(pdfDefinitionsOf(opened), deliver),
-      images: (deliver) =>
-        images.client(() => imageDefinitionsOf(opened.init, engines.changesOf(id)), deliver),
       ...(tile && {
         tile: {
           vport: tile.vport,

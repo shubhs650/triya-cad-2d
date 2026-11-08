@@ -1,7 +1,9 @@
 // The document (file) tabs in the title bar (UI_SPEC.md §1, M1-22): a tab per open drawing
 // with its close button, as AutoCAD's file tabs. Part 5 adds what AutoCAD's tabs also do:
 // dragging a tab moves it along the row, and resting the pointer on a tab shows a preview of
-// the drawing's Model and layouts, each picked with a click.
+// the drawing's Model and layouts, each picked with a click. The close-out pictures layouts not
+// shown yet too, and resting on a thumbnail shows that drawing and space in the drawing area
+// until the pointer leaves the preview, which brings back what showed before, as in AutoCAD.
 //
 // The drag uses pointer events, not HTML drag and drop, which the window already takes for
 // dropped files. Pointer capture starts only once the pointer has moved, so a plain click
@@ -33,6 +35,21 @@ interface Drag {
   moved: boolean;
 }
 
+/** What showed before the preview showed a thumbnail's space in the drawing area. */
+interface Peek {
+  readonly active: number | undefined;
+  readonly doc: number;
+  readonly block: string;
+}
+
+/** Pictures a space not shown yet (a canvas made only for it), fitted inside `max`. */
+export type PictureSpace = (
+  doc: OpenDocument,
+  block: string,
+  max: { width: number; height: number },
+  cancelled: () => boolean,
+) => Promise<ImageBitmap | undefined>;
+
 interface Preview {
   readonly id: number;
   /** Where the preview hangs: the tab's lower left corner, in viewport pixels. */
@@ -40,12 +57,36 @@ interface Preview {
   readonly top: number;
 }
 
-export function DocTabs({ store, state }: { store: DocumentStore; state: DocumentsState }) {
+export function DocTabs({
+  store,
+  state,
+  picture,
+}: {
+  store: DocumentStore;
+  state: DocumentsState;
+  picture?: PictureSpace;
+}) {
   const row = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | undefined>(undefined);
   const [dragged, setDragged] = useState<number | undefined>();
   const [preview, setPreview] = useState<Preview | undefined>();
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const peeked = useRef<Peek | undefined>(undefined);
+
+  /** Shows a thumbnail's drawing and space, remembering what showed before the first one. */
+  const peek = (doc: OpenDocument, block: string) => {
+    peeked.current ??= { active: state.active, doc: doc.id, block: doc.block };
+    store.activate(doc.id);
+    store.showSpace(doc.id, block);
+  };
+  /** Brings back what showed before the preview showed a thumbnail's space. */
+  const unpeek = () => {
+    const p = peeked.current;
+    if (!p) return;
+    peeked.current = undefined;
+    store.showSpace(p.doc, p.block);
+    if (p.active !== undefined) store.activate(p.active);
+  };
 
   const later = (f: () => void, ms: number) => {
     clearTimeout(timer.current);
@@ -54,6 +95,7 @@ export function DocTabs({ store, state }: { store: DocumentStore; state: Documen
   const keep = () => clearTimeout(timer.current);
   const hide = () => {
     clearTimeout(timer.current);
+    unpeek();
     setPreview(undefined);
   };
   useEffect(() => () => clearTimeout(timer.current), []);
@@ -162,9 +204,17 @@ export function DocTabs({ store, state }: { store: DocumentStore; state: Documen
           doc={previewed}
           left={preview.left}
           top={preview.top}
+          current={peeked.current?.doc === previewed.id ? peeked.current.block : previewed.block}
+          picture={picture}
           onEnter={keep}
-          onLeave={() => later(() => setPreview(undefined), PREVIEW_LINGER)}
+          onLeave={() => {
+            unpeek();
+            later(() => setPreview(undefined), PREVIEW_LINGER);
+          }}
+          onPeek={(block) => peek(previewed, block)}
           onPick={(block) => {
+            // What the preview shows stays: nothing to bring back.
+            peeked.current = undefined;
             hide();
             store.activate(previewed.id);
             store.showSpace(previewed.id, block);
@@ -177,22 +227,30 @@ export function DocTabs({ store, state }: { store: DocumentStore; state: Documen
 
 /**
  * AutoCAD's file tab preview: a thumbnail per space, Model first, then the layouts in tab
- * order. A space shows as it was last drawn; one not yet opened in this session has no
- * picture yet (its canvas is made the first time it shows).
+ * order. A space shows as it was last drawn; one not yet opened in this session is pictured
+ * as it would open, by a canvas made only for the picture, one space at a time after those
+ * already drawn.
  */
 function TabPreview({
   doc,
   left,
   top,
+  current,
+  picture,
   onEnter,
   onLeave,
+  onPeek,
   onPick,
 }: {
   doc: OpenDocument;
   left: number;
   top: number;
+  /** The space the drawing was in before the preview showed another. */
+  current: string;
+  picture: PictureSpace | undefined;
   onEnter: () => void;
   onLeave: () => void;
+  onPeek: (block: string) => void;
   onPick: (block: string) => void;
 }) {
   const spaces = spacesOf(doc, engines.changesOf(doc.id));
@@ -208,16 +266,27 @@ function TabPreview({
   useEffect(() => {
     let live = true;
     const taken = new Map<string, ImageBitmap>();
+    const keep = (block: string, bitmap: ImageBitmap | undefined) => {
+      if (!bitmap) return;
+      if (!live) {
+        bitmap.close();
+        return;
+      }
+      taken.set(block, bitmap);
+      setPictures(new Map(taken));
+    };
+    const unseen = spaces.filter((s) => !controllerOf(doc.id, s.block));
     void Promise.all(
       spaces.map(async (s) => {
-        const bitmap = await controllerOf(doc.id, s.block)
-          ?.thumbnail(THUMB)
-          .catch(() => undefined);
-        if (bitmap) taken.set(s.block, bitmap);
+        const c = controllerOf(doc.id, s.block);
+        if (c) keep(s.block, await c.thumbnail(THUMB).catch(() => undefined));
       }),
-    ).then(() => {
-      if (live) setPictures(taken);
-      else for (const b of taken.values()) b.close();
+    ).then(async () => {
+      // Spaces not shown yet, one at a time: each is a renderer of its own while pictured.
+      for (const s of unseen) {
+        if (!live || !picture) return;
+        keep(s.block, await picture(doc, s.block, THUMB, () => !live));
+      }
     });
     return () => {
       live = false;
@@ -240,7 +309,10 @@ function TabPreview({
           key={s.block}
           type="button"
           className="tab-preview-space"
-          aria-current={s.block === doc.block}
+          aria-current={s.block === current}
+          onPointerEnter={(e) => {
+            if (e.pointerType === 'mouse') onPeek(s.block);
+          }}
           onClick={() => onPick(s.block)}
         >
           <Thumbnail bitmap={pictures.get(s.block)} paper={s.block !== doc.opened.modelSpace} />
