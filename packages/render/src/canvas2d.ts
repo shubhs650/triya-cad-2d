@@ -55,7 +55,7 @@ import {
   type ViewportGeometry,
   type WipeoutVariables,
 } from '@triya/engine';
-import { expandInsert, expands, type BlockSource } from './blocks';
+import { expandInsert, expands, insertClips, type BlockSource, type InsertClip } from './blocks';
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { mixColors, parseHex, tintColor } from './style/mix';
@@ -78,6 +78,7 @@ import {
   visibleBox,
   type FillGradient,
   type ImageFill,
+  type PrimitiveClip,
   type PrimitiveColor,
   type RasterPixels,
   type RenderPrimitive,
@@ -275,7 +276,7 @@ const GREEK_ALPHA = 0.35;
 const LAYLOCKFADE_DEFAULT = 50;
 const LAYLOCKFADE_MAX = 90;
 /** Header variables that change how every entity is painted. */
-const PAINT_HEADER = new Set(['$LTSCALE', '$FILLMODE', '$ATTMODE']);
+const PAINT_HEADER = new Set(['$LTSCALE', '$FILLMODE', '$ATTMODE', '$XCLIPFRAME']);
 
 /** FILLMODE (M1-46): off, as 0 or false, outlines wide polylines; on when the header has none. */
 function fillMode(model: DocumentModel): boolean {
@@ -325,6 +326,18 @@ function touchesFrames(c: KeyedChanges<NonGraphicalObject> | undefined): boolean
   );
 }
 
+const isSpatialFilter = (o: NonGraphicalObject): boolean => o.type === 'SPATIAL_FILTER';
+
+/** Whether a change set adds, removes or changes an XCLIP (M1-103). */
+function touchesClips(c: KeyedChanges<NonGraphicalObject> | undefined): boolean {
+  if (!c) return false;
+  return (
+    (c.added ?? []).some(isSpatialFilter) ||
+    (c.removed ?? []).some(isSpatialFilter) ||
+    (c.updated ?? []).some((u) => isSpatialFilter(u.before) || isSpatialFilter(u.after))
+  );
+}
+
 function touchesSortEnts(c: KeyedChanges<NonGraphicalObject> | undefined): boolean {
   if (!c) return false;
   return (
@@ -367,6 +380,8 @@ export class Canvas2DRenderer implements Renderer {
   #blockOrders = new Map<Handle, readonly EntityId[]>();
   /** Block definition → its SORTENTSTABLE, built on demand. */
   #sortTables: Map<Handle, SortEntsTable> | undefined;
+  /** XCLIPs by INSERT (M1-103), built on demand. */
+  #clips: ((insert: Handle) => InsertClip | undefined) | undefined;
   readonly #now: () => number;
   readonly #requestIdle: (cb: () => void) => void;
   /**
@@ -458,6 +473,7 @@ export class Canvas2DRenderer implements Renderer {
       insertContext: this.#paint.insertContext ?? defaultPaint.insertContext,
       order: (block) => this.#blockOrder(block),
       tessellate: this.#tessellate,
+      clip: (insert) => (this.#clips ??= insertClips(this.#model))(insert),
     };
     this.#now = o.now ?? (() => performance.now());
     this.#requestIdle = o.requestIdle ?? ((cb) => setTimeout(cb, 50));
@@ -581,6 +597,10 @@ export class Canvas2DRenderer implements Renderer {
     this.#tessellate.fill = fillMode(this.#model);
     this.#tessellate.attributeMode = attributeMode(this.#model);
     if (cs.tables?.layers) this.#locked = undefined;
+    // An XCLIP turned on or off, reshaped, added or removed, or XCLIPFRAME changed (M1-103):
+    // the references drawing it may sit anywhere, nested in any block, so the block is redrawn.
+    const clips = touchesClips(cs.objects) || cs.header?.some((h) => h.name === '$XCLIPFRAME');
+    if (clips) this.#clips = undefined;
     // The layout shown was renamed, reordered or given a new page setup, limits or PSLTSCALE
     // (M1-97): its sheet, paper units and viewport linetype scale are read again. They are
     // used at draw time only, so nothing is re-tessellated.
@@ -591,6 +611,7 @@ export class Canvas2DRenderer implements Renderer {
     // whole block.
     if (
       frames ||
+      clips ||
       cs.tables?.layers ||
       cs.tables?.linetypes ||
       cs.tables?.textStyles ||
@@ -734,7 +755,11 @@ export class Canvas2DRenderer implements Renderer {
       const entry = this.#cache[id];
       if (!entry) continue;
       let d = Infinity;
-      for (const prim of entry.prims) d = Math.min(d, distanceTo(prim, p));
+      for (const prim of entry.prims) {
+        // A part clipped away by XCLIP (M1-103) is not there to pick.
+        if (prim.clip && !insideClips(prim.clip, p)) continue;
+        d = Math.min(d, distanceTo(prim, p));
+      }
       if (d <= r) hits.push({ id, d });
     }
     return hits.sort((a, b) => a.d - b.d).map((h) => h.id);
@@ -1090,6 +1115,35 @@ export class Canvas2DRenderer implements Renderer {
       batch = undefined;
     };
     const dot = Math.max(1, Math.round(this.#dpr));
+    // XCLIP (M1-103): the clip in force, set by save + clip and lifted by restore, which also
+    // puts back the transform and alpha the save saw; parts of one reference share one array,
+    // so the clip changes once per run of them.
+    let clipped: PrimitiveClip | undefined;
+    let alphaAtSave = 1;
+    const setClip = (clip: PrimitiveClip | undefined): void => {
+      if (clip === clipped) return;
+      flush();
+      if (clipped) {
+        ctx.restore();
+        alpha = alphaAtSave;
+        inWorld = false;
+        device();
+      }
+      clipped = clip;
+      if (!clip) return;
+      ctx.save();
+      alphaAtSave = alpha;
+      world();
+      for (const poly of clip) {
+        ctx.beginPath();
+        for (let i = 0; i + 1 < poly.length; i += 2) {
+          if (i === 0) ctx.moveTo(poly[0]! - ox, poly[1]! - oy);
+          else ctx.lineTo(poly[i]! - ox, poly[i + 1]! - oy);
+        }
+        ctx.closePath();
+        ctx.clip('nonzero');
+      }
+    };
 
     for (const entry of entries) {
       if (frozen && entry.layer !== undefined && frozen.has(entry.layer)) continue;
@@ -1100,6 +1154,7 @@ export class Canvas2DRenderer implements Renderer {
         if (reduced) continue;
         const first = entry.prims[0];
         if (!first) continue;
+        setClip(undefined);
         flush();
         device();
         setAlpha(entryAlpha);
@@ -1114,6 +1169,7 @@ export class Canvas2DRenderer implements Renderer {
       }
       for (const prim of this.#primitives(entry, scale, ltMul)) {
         if (frozen && prim.layers?.some((l) => frozen.has(l))) continue;
+        setClip(prim.clip);
         // In a block, a part fades when the reference's layer (the entry's) or a layer below it
         // is locked; AutoCAD's help does not say for the nested case (ambiguity noted, M1-69).
         const a =
@@ -1236,6 +1292,7 @@ export class Canvas2DRenderer implements Renderer {
       }
     }
     flush();
+    setClip(undefined);
     setAlpha(1);
   }
 
@@ -1370,6 +1427,25 @@ export class Canvas2DRenderer implements Renderer {
 }
 
 /** Replays packed path commands, offset by the view centre. */
+/** Whether `p` is inside every XCLIP polygon (nonzero winding, as the canvas clips). */
+function insideClips(clip: PrimitiveClip, p: { x: number; y: number }): boolean {
+  return clip.every((poly) => {
+    let winding = 0;
+    for (let i = 0; i + 1 < poly.length; i += 2) {
+      const x1 = poly[i]!;
+      const y1 = poly[i + 1]!;
+      const j = i + 2 < poly.length ? i + 2 : 0;
+      const x2 = poly[j]!;
+      const y2 = poly[j + 1]!;
+      const side = (x2 - x1) * (p.y - y1) - (p.x - x1) * (y2 - y1);
+      if (y1 <= p.y) {
+        if (y2 > p.y && side > 0) winding++;
+      } else if (y2 <= p.y && side < 0) winding--;
+    }
+    return winding !== 0;
+  });
+}
+
 function buildPath(ctx: Canvas2D, a: readonly number[], ox: number, oy: number): void {
   for (let i = 0; i < a.length;) {
     switch (a[i]) {

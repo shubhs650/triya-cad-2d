@@ -24,6 +24,12 @@ export interface AcisModel {
   readonly version: number;
   /** Indexed by the pointers in the records. */
   readonly records: readonly AcisRecord[];
+  /**
+   * Where each record's fields start in the data read, per record and field: the character
+   * offset of the token in SAT text, the byte offset of the tag in SAB. A writer edits a record
+   * in place through them (acis/transform.ts).
+   */
+  readonly offsets: readonly (readonly number[])[];
 }
 
 export const isPointer = (v: AcisValue | undefined): v is AcisPointer =>
@@ -36,9 +42,10 @@ export const isPointer = (v: AcisValue | undefined): v is AcisPointer =>
  * (versions 20800 to 22300) shows this. The 400 files have the attribute pointer only.
  */
 const NO_THIRD = new Set(['transform', 'asmheader']);
+const headerLength = (type: string, version: number): number =>
+  version < 700 ? 1 : NO_THIRD.has(type) ? 2 : 3;
 function stripHeader(type: string, values: AcisValue[], version: number): AcisRecord {
-  const skip = version < 700 ? 1 : NO_THIRD.has(type) ? 2 : 3;
-  return { type, fields: values.slice(skip) };
+  return { type, fields: values.slice(headerLength(type, version)) };
 }
 
 /** SAT text: one to three header lines, then records ending in `#`. */
@@ -50,44 +57,64 @@ export function readSat(text: string): AcisModel {
   // line and a units line. A record line starts with its type and the attribute pointer.
   let k = 1;
   while (k < 3 && k < lines.length && !/^\s*(-\d+\s+)?[a-z][\w-]*\s+\$/.test(lines[k]!)) k++;
-  const body = lines.slice(k).join('\n');
-  const records: AcisRecord[] = [];
+  // Offsets are into `text` itself, so the body starts where its first line does.
   let i = 0;
+  for (let line = 0; line < k; line++) {
+    i += lines[line]!.length;
+    if (text[i] === '\r') i++;
+    if (text[i] === '\n') i++;
+  }
+  const records: AcisRecord[] = [];
+  const offsets: number[][] = [];
   let current: string[] = [];
+  let at: number[] = [];
   const tokens: string[] = [];
+  const starts: number[] = [];
   // Tokens are space separated, except @n strings, which are n characters after the space.
-  while (i < body.length) {
-    const c = body[i]!;
+  while (i < text.length) {
+    const c = text[i]!;
     if (c === ' ' || c === '\n' || c === '\r' || c === '\t') {
       i++;
       continue;
     }
     if (c === '@') {
-      const m = /^@(\d+) /.exec(body.slice(i, i + 12));
+      const m = /^@(\d+) /.exec(text.slice(i, i + 12));
       if (m) {
         const start = i + m[0].length;
-        tokens.push(`@${body.slice(start, start + Number(m[1]))}`);
+        tokens.push(`@${text.slice(start, start + Number(m[1]))}`);
+        starts.push(i);
         i = start + Number(m[1]);
         continue;
       }
     }
     let j = i;
-    while (j < body.length && !' \n\r\t'.includes(body[j]!)) j++;
-    tokens.push(body.slice(i, j));
+    while (j < text.length && !' \n\r\t'.includes(text[j]!)) j++;
+    tokens.push(text.slice(i, j));
+    starts.push(i);
     i = j;
   }
-  for (const t of tokens) {
-    if (t === '#') {
-      if (current.length > 0) records.push(satRecord(current, version));
+  for (let t = 0; t < tokens.length; t++) {
+    const token = tokens[t]!;
+    if (token === '#') {
+      if (current.length > 0) {
+        const r = satRecord(current, version);
+        records.push(r.record);
+        offsets.push(at.slice(r.skip));
+      }
       current = [];
-    } else if (t === 'End-of-ACIS-data' || t === 'End-of-ASM-data') {
+      at = [];
+    } else if (token === 'End-of-ACIS-data' || token === 'End-of-ASM-data') {
       break;
-    } else current.push(t);
+    } else {
+      current.push(token);
+      at.push(starts[t]!);
+    }
   }
-  return { version, records };
+  return { version, records, offsets };
 }
 
-function satRecord(tokens: string[], version: number): AcisRecord {
+/** A record and how many of its tokens come before its fields (sequence number, type, header). */
+function satRecord(tokens: string[], version: number): { record: AcisRecord; skip: number } {
   // Files saved with sequence numbers start each record with "-n".
   const start = /^-\d+$/.test(tokens[0]!) ? 1 : 0;
   const type = tokens[start]!;
@@ -97,11 +124,14 @@ function satRecord(tokens: string[], version: number): AcisRecord {
     const n = Number(t);
     return t !== '' && Number.isFinite(n) ? n : t;
   });
-  return stripHeader(type, values, version);
+  return {
+    record: stripHeader(type, values, version),
+    skip: start + 1 + headerLength(type, version),
+  };
 }
 
 /** Latin-1, one byte per character (io has no TextDecoder: it runs without DOM or Node types). */
-const latin1 = (b: Uint8Array): string => {
+export const latin1 = (b: Uint8Array): string => {
   let s = '';
   for (let i = 0; i < b.length; i += 4096)
     s += String.fromCharCode(...b.subarray(i, Math.min(i + 4096, b.length)));
@@ -125,11 +155,15 @@ export function readSab(bytes: Uint8Array): AcisModel {
     return s;
   };
   const records: AcisRecord[] = [];
+  const offsets: number[][] = [];
   let names: string[] = [];
   let values: AcisValue[] = [];
+  let at: number[] = [];
   let header = true; // product, ACIS version, date and three doubles before the first record
   while (p < bytes.length) {
+    const tagAt = p;
     const tag = bytes[p++]!;
+    const count = values.length;
     switch (tag) {
       case 2: // char
         values.push(bytes[p++]!);
@@ -183,6 +217,7 @@ export function readSab(bytes: Uint8Array): AcisModel {
         if (header) {
           header = false;
           values = [];
+          at = [];
         }
         names.push(str(bytes[p++]!));
         break;
@@ -194,9 +229,14 @@ export function readSab(bytes: Uint8Array): AcisModel {
         values.push('}');
         break;
       case 17:
-        if (names.length > 0) records.push(stripHeader(names.join('-'), values, version));
+        if (names.length > 0) {
+          const type = names.join('-');
+          records.push(stripHeader(type, values, version));
+          offsets.push(at.slice(headerLength(type, version)));
+        }
         names = [];
         values = [];
+        at = [];
         break;
       case 19: // position
       case 20: // vector
@@ -210,6 +250,7 @@ export function readSab(bytes: Uint8Array): AcisModel {
       default:
         throw new Error(`SAB: unknown tag ${tag} at ${p - 1}`);
     }
+    if (values.length > count) at.push(tagAt);
   }
-  return { version, records };
+  return { version, records, offsets };
 }
