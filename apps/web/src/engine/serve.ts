@@ -9,9 +9,18 @@ export function serveEngine(port: Endpoint<EngineRequest, EngineReply>): void {
     try {
       if (data.type === 'init') {
         session = new EngineSession(data.init);
+        session.onCommand((output) => port.postMessage({ type: 'command', output }));
         return;
       }
       if (!session) throw new Error(`engine worker got '${data.type}' before 'init'`);
+      if (data.type === 'command') {
+        // The bus reports a command's own failure itself; anything else lands here.
+        session.command(data.input).catch((e: unknown) => {
+          const line = `; error: ${e instanceof Error ? e.message : String(e)}`;
+          port.postMessage({ type: 'command', output: { type: 'log', line } });
+        });
+        return;
+      }
       port.postMessage({ type: 'result', id: data.id, result: session.edit(data.edit) });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);

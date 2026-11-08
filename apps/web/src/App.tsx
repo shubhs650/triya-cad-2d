@@ -1,7 +1,8 @@
 // The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs
 // (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
-// tabs; the status bar. The ribbon, palettes and command line arrive with their own tasks.
-import type { EditResult, EngineEdit, Layout, PdfDefinition } from '@triya/engine';
+// tabs; the command line (CommandLine.tsx, M2-02); the status bar. The ribbon and the palette
+// stack arrive with their own tasks.
+import type { ChangeSet, EditResult, EngineEdit, Layout, PdfDefinition } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
@@ -16,6 +17,8 @@ import {
   tilesOf,
 } from './canvas/registry';
 import { modelTiles, type ModelTile } from './canvas/views';
+import { CommandLine } from './CommandLine';
+import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
@@ -52,6 +55,23 @@ export const OET_HOME = 'https://openengtools.com/';
 export const REPORT_ISSUE = 'https://github.com/shubhs650/triya-cad-2d/issues/new';
 
 const store = new DocumentStore();
+
+/**
+ * What each drawing's command engine says (M2-02): its command line follows it, its edits are
+ * already on its canvases (Engines), the palettes re-read after an edit, and its canvases learn
+ * the prompt it waits at, which makes a click a pick and draws the rubber band.
+ */
+engines.onCommand((doc, o) => {
+  commandLines.follow(doc, o);
+  if (o.type === 'change') store.edited(doc);
+  if (o.type === 'prompt' || o.type === 'idle') {
+    const prompt = commandLines.get(doc).prompt;
+    for (const c of controllersOf(doc)) c.setPrompt(prompt);
+  }
+});
+
+/** The last world point the cursor was at on a canvas: direct distance entry aims at it. */
+let lastCursor: { x: number; y: number } | undefined;
 
 /** The user's .pat files (M1-50), read back from this device and handed to every renderer. */
 const patterns = new PatternStore(indexedDbPatterns());
@@ -350,6 +370,8 @@ export interface DevHooks {
   /** PDF underlay pages drawn by pdf.js so far (M1-20: the cache spares repeats). */
   pdfRenders(): number;
   edit(edit: EngineEdit): Promise<EditResult>;
+  /** Every change the showing drawing's engine applied since it opened (commands', M2-02). */
+  changes(): readonly ChangeSet[];
   /**
    * The entities drawn in a rectangle of the space on screen, CSS pixels from the canvas's
    * top-left corner: the fidelity harness names them where a golden image differs (M1-106).
@@ -368,6 +390,10 @@ if (import.meta.env.DEV) {
       return doc ? layoutsOf(doc.opened.init, engines.changesOf(doc.id)) : [];
     },
     pdfRenders: () => pdfPages.renders,
+    changes: () => {
+      const doc = showing();
+      return doc ? engines.changesOf(doc.id) : [];
+    },
     entitiesIn: async (rect) => {
       const doc = showing();
       return (doc && (await controllerOf(doc.id, doc.block)?.entitiesIn(rect))) ?? [];
@@ -619,6 +645,7 @@ export function App() {
       </div>
 
       <LayoutTabs doc={active} />
+      <CommandLine doc={active?.id} lines={commandLines} cursor={() => lastCursor} />
       <StatusBar
         doc={active}
         missingReferences={missingReferences}
@@ -644,7 +671,9 @@ function DocumentCanvas({
   const [shown, setShown] = useState<readonly string[]>([doc.block]);
   useEffect(() => {
     setShown((s) => (s.includes(doc.block) ? s : [...s, doc.block]));
-  }, [doc.block]);
+    // Commands draw in the space shown, as AutoCAD's current space.
+    engines.command(doc.id, { kind: 'space', block: doc.block });
+  }, [doc.id, doc.block]);
   return (
     <div id={`doc-${doc.id}`} role="tabpanel" className="doc-canvas" hidden={!active}>
       {shown.map((block) => (
@@ -798,8 +827,12 @@ function ViewportCanvas({
   useEffect(() => {
     const c = new CanvasController(ref.current!, opened, block, {
       ...drawingHooks(id, opened),
-      onCursor: (p) => showCursor(p),
+      onCursor: (p) => {
+        if (p) lastCursor = p;
+        showCursor(p);
+      },
       onError: (e) => store.failed(name, openError(name, e)),
+      onPick: (point) => engines.command(id, { kind: 'answer', answer: { kind: 'point', point } }),
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },
@@ -813,6 +846,7 @@ function ViewportCanvas({
       }),
     });
     const unregister = register(id, block, c, index);
+    c.setPrompt(commandLines.get(id).prompt);
     showCurrent(id, block, visibleRef.current);
     return () => {
       unregister();

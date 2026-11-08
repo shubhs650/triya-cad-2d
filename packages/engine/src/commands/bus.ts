@@ -10,6 +10,7 @@ import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
+import type { Handle } from '../model/handle';
 import type { EntityGeometry } from '../model/types';
 import {
   prompts,
@@ -61,6 +62,8 @@ export interface PromptBusOptions {
   readonly registry: CommandRegistry;
   /** Applies an edit; by default to `model`. The engine worker also sends it to the renderers. */
   readonly apply?: (change: ChangeSet) => void;
+  /** The space commands draw in (the layout shown); by default model space. */
+  readonly space?: () => Handle;
 }
 
 interface Frame {
@@ -104,6 +107,7 @@ export class PromptBus {
   readonly #model: DocumentModel;
   readonly #registry: CommandRegistry;
   readonly #apply: (change: ChangeSet) => void;
+  readonly #space: () => Handle;
   readonly #listeners = new Set<(e: BusEvent) => void>();
   readonly #stack: Frame[] = [];
   #collectors: Collector[] = [];
@@ -120,6 +124,7 @@ export class PromptBus {
     this.#model = options.model;
     this.#registry = options.registry;
     this.#apply = options.apply ?? ((cs) => this.#model.apply(cs));
+    this.#space = options.space ?? (() => modelSpaceOf(this.#model));
   }
 
   /** Listens for bus events; returns the unsubscribe. */
@@ -338,6 +343,9 @@ export class PromptBus {
       get lastPoint() {
         return bus.#lastPoint;
       },
+      get space() {
+        return bus.#space();
+      },
       edit: (build) => {
         const b = new ChangeSetBuilder(this.#model);
         build(b);
@@ -553,4 +561,12 @@ export class PromptBus {
     frame.prompt = undefined;
     await this.#advance(frame, given);
   }
+}
+
+/** Model space's BLOCK_RECORD: `*Model_Space`, as AutoCAD names it whatever the file's case. */
+export function modelSpaceOf(model: DocumentModel): Handle {
+  for (const r of model.tables.blockRecords.values()) {
+    if (r.name.toUpperCase() === '*MODEL_SPACE') return r.handle;
+  }
+  throw new Error('the drawing has no *Model_Space block record');
 }

@@ -1,7 +1,7 @@
 // M1-67: the engine host. The app talks to each drawing's engine session through it, in the
 // engine worker or (where no worker is given) on the main thread; both answer alike, and a
 // change set that crossed the worker boundary still applies to a render replica.
-import { DocumentModel, type DocumentInit } from '@triya/engine';
+import { DocumentModel, type CommandOutput, type DocumentInit } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Engines } from '../src/engine/engines';
 import { EngineHost, type EngineWorker } from '../src/engine/host';
@@ -25,8 +25,26 @@ const init: DocumentInit = {
       frozen: false,
       locked: false,
     })),
+    blockRecords: [
+      { handle: '1F', name: '*Model_Space', units: 0, explodable: true, scalable: true },
+    ],
   },
+  blocks: [{ handle: '1F', name: '*Model_Space', basePoint: { x: 0, y: 0 } }],
 };
+
+/** Resolves once the host has said `n` things about commands. */
+function outputs(host: { onCommand(l: (o: CommandOutput) => void): () => void }, n: number) {
+  const got: CommandOutput[] = [];
+  return {
+    got,
+    done: new Promise<CommandOutput[]>((resolve) => {
+      host.onCommand((o) => {
+        got.push(o);
+        if (got.length === n) resolve(got);
+      });
+    }),
+  };
+}
 
 /** An engine worker running in-process: messages are cloned and delivered asynchronously. */
 function inProcessWorker(): EngineWorker & { terminated: boolean } {
@@ -87,6 +105,35 @@ describe('EngineHost', () => {
     });
   });
 
+  it('runs commands in the worker or on the main thread, reporting alike (M2-02)', async () => {
+    const off = new EngineHost(init, inProcessWorker);
+    const main = new EngineHost(init);
+    const script = ['L', '0,0', '@100<45', ''];
+    const results = await Promise.all(
+      [off, main].map((host) => {
+        // L: start, prompt; each point: log, (change,) prompt; Enter: log, end, commit, idle.
+        const o = outputs(host, 12);
+        for (const text of script) host.command({ kind: 'submit', text });
+        return o.done;
+      }),
+    );
+    expect(results[0]).toEqual(results[1]);
+    const change = results[0]!.find((o) => o.type === 'change');
+    expect(change?.type === 'change' && change.change.entities?.added?.[0]?.entity.type).toBe(
+      'LINE',
+    );
+  });
+
+  it('ignores command input once disposed', async () => {
+    const main = new EngineHost(init);
+    const heard: CommandOutput[] = [];
+    main.onCommand((o) => heard.push(o));
+    main.dispose();
+    main.command({ kind: 'submit', text: 'L' });
+    await new Promise((r) => setTimeout(r, 0));
+    expect(heard).toEqual([]);
+  });
+
   it('answers in order and rejects what is pending when disposed', async () => {
     const worker = inProcessWorker();
     const host = new EngineHost(init, () => worker);
@@ -128,6 +175,25 @@ describe('Engines', () => {
     await engines.edit(1, { kind: 'layer', layer: '10', on: true });
     expect(applied).toEqual([]);
     expect(engines.changesOf(1)).toEqual([]);
+  });
+
+  it("logs a command's edits and sends them to the drawing's canvases first", async () => {
+    const { engines, applied } = setup();
+    engines.start(1, init);
+    const heard: { doc: number; type: string; logged: number }[] = [];
+    const stop = engines.onCommand((doc, o) =>
+      heard.push({ doc, type: o.type, logged: engines.changesOf(doc).length }),
+    );
+    engines.command(1, { kind: 'submit', text: 'L' });
+    engines.command(1, { kind: 'submit', text: '0,0' });
+    engines.command(1, { kind: 'submit', text: '10,0' });
+    engines.command(2, { kind: 'submit', text: 'L' });
+    await new Promise((r) => setTimeout(r, 0));
+    const change = heard.find((h) => h.type === 'change');
+    expect(change).toEqual({ doc: 1, type: 'change', logged: 1 });
+    expect(applied.map((a) => a.doc)).toEqual([1]);
+    stop();
+    engines.stop(1);
   });
 
   it('forgets a closed drawing', async () => {

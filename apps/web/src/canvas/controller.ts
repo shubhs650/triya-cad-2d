@@ -7,6 +7,9 @@
 // button pans, and double-clicking the middle button zooms to the extents (ZOOM E). The
 // navigation bar adds ZOOM Window, Previous, All and Scale, real-time PAN with the left button,
 // and REGEN (part 2).
+//
+// While a command waits for a point (M2-02), a left click gives it the point under the cursor,
+// and a rubber band follows the cursor from the prompt's base point, as AutoCAD draws it.
 import RenderWorker from '@triya/render/worker?worker';
 import {
   layoutSheet,
@@ -16,6 +19,8 @@ import {
   type Handle,
   type HeaderValue,
   type Layout,
+  type Prompt,
+  type Vec2,
   type VportRecord,
 } from '@triya/engine';
 import {
@@ -73,6 +78,11 @@ export interface CanvasHooks {
   /** The world point under the cursor, or undefined when it leaves the canvas. */
   readonly onCursor: (p: { readonly x: number; readonly y: number } | undefined) => void;
   readonly onError: (e: Error) => void;
+  /**
+   * A point picked for the command waiting at a point, distance or angle prompt (M2-02): the
+   * world point under a left click, in this canvas's space.
+   */
+  readonly onPick?: (p: Vec2) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
@@ -139,6 +149,8 @@ export class CanvasController {
   /** A view change arrived while a frame was in flight. */
   #again = false;
   #mode: CanvasMode = 'none';
+  /** The prompt the drawing's command waits at, when it takes points; undefined otherwise. */
+  #prompt: Prompt | undefined;
   #drag: { readonly pointer: number; x: number; y: number } | undefined;
   #lastMiddle: { readonly t: number; readonly x: number; readonly y: number } | undefined;
   #lastWheel = -Infinity;
@@ -272,6 +284,21 @@ export class CanvasController {
     this.#requestFrame();
     this.canvas.dataset['mode'] = mode;
     this.#hooks.onMode?.(mode);
+  }
+
+  /**
+   * The prompt the drawing's command engine waits at (M2-02). One that takes points makes a
+   * left click a pick and shows the crosshairs; with a base point, a rubber band follows the
+   * cursor from it.
+   */
+  setPrompt(prompt: Prompt | undefined): void {
+    const picking =
+      prompt && (prompt.kind === 'point' || prompt.kind === 'distance' || prompt.kind === 'angle');
+    this.#prompt = picking ? prompt : undefined;
+    this.canvas.dataset['picking'] = String(!!picking);
+    if (this.#mode !== 'none') return;
+    const world = this.#pointer && this.#world(this.#pointer);
+    this.#rubberBand(world);
   }
 
   /**
@@ -552,6 +579,24 @@ export class CanvasController {
     this.#requestFrame();
   }
 
+  /** The command's rubber band from its base point to the cursor, or none. */
+  #rubberBand(cursor: Point | undefined): void {
+    const p = this.#prompt;
+    const from = p?.kind === 'point' ? p.rubberBand?.from : p && 'base' in p ? p.base : undefined;
+    this.#host.setTransient(
+      from && cursor
+        ? [
+            {
+              kind: 'stroke',
+              color: 'foreground',
+              path: [PATH_M, from.x, from.y, PATH_L, cursor.x, cursor.y],
+            },
+          ]
+        : [],
+    );
+    this.#requestFrame();
+  }
+
   #finishWindow(b: Point): void {
     const a = this.#corner?.world;
     if (!a) return;
@@ -604,6 +649,11 @@ export class CanvasController {
           return;
         }
         if (e.button !== 0) return;
+        if (this.#mode === 'none' && this.#prompt) {
+          const world = this.#world(e);
+          if (world) this.#hooks.onPick?.(world);
+          return;
+        }
         if (this.#mode === 'pan') this.#startDrag(e);
         else if (this.#mode === 'window') {
           const world = this.#world(e);
@@ -633,7 +683,7 @@ export class CanvasController {
           const moved = Math.hypot(e.offsetX - corner.screen.x, e.offsetY - corner.screen.y);
           if (moved > CLICK_PX && e.buttons & 1) corner.dragged = true;
           this.#band(corner.world, world);
-        }
+        } else if (this.#prompt && this.#mode === 'none') this.#rubberBand(world);
         this.#hooks.onCursor(world);
       },
       opts,
@@ -651,6 +701,7 @@ export class CanvasController {
       'pointerleave',
       () => {
         this.#pointer = undefined;
+        if (this.#prompt && this.#mode === 'none') this.#rubberBand(undefined);
         this.#hooks.onCursor(undefined);
       },
       opts,
