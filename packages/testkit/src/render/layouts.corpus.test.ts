@@ -88,10 +88,12 @@ let viewportsDrawn = 0;
 
 /**
  * A canvas that only counts what the renderer does inside clips, one group per outermost clip
- * (a viewport's); clips inside it (an XCLIPped reference's, M1-103) count towards it.
+ * (a viewport's); clips inside it (an XCLIPped reference's, M1-103) count towards it. Paths
+ * count once stroked or filled, so the outline a viewport is clipped by (M1-62) does not.
  */
 function recorder(): Surface & { groups: number[] } {
   let depth = 0;
+  let pending = 0;
   const groups: number[] = [];
   const ctx = new Proxy(
     {},
@@ -103,9 +105,12 @@ function recorder(): Surface & { groups: number[] } {
             depth++;
           };
         if (name === 'restore') return () => void depth--;
-        if (name === 'moveTo' || name === 'fillRect' || name === 'arc' || name === 'ellipse')
+        if (name === 'moveTo' || name === 'arc' || name === 'ellipse') return () => void pending++;
+        if (name === 'clip' || name === 'beginPath') return () => void (pending = 0);
+        if (name === 'stroke' || name === 'fill' || name === 'fillRect')
           return () => {
-            if (depth > 0) groups[groups.length - 1]!++;
+            if (depth > 0) groups[groups.length - 1]! += Math.max(pending, 1);
+            pending = 0;
           };
         if (name === 'createLinearGradient' || name === 'createRadialGradient')
           return () => ({ addColorStop: () => undefined });
@@ -187,11 +192,13 @@ function drawLayout(
   r.frame();
   return { expected, drawn: layers[0]!.groups.filter((n) => n > 0).length };
 }
-const MATCHING = 70;
+// 70 → 71 with self-authored/viewport-overrides.dxf (M1-62), whose ezdxf page setup sets limits.
+const MATCHING = 71;
 // 74 → 82 with images and wipeouts (M1-19): viewports that show only those now draw.
 // 82 → 84 with R12 paper space (M1-89): the R12 sample's viewport, ASCII and binary, draws in
 // the Layout1 its paper space now reads with.
-const VIEWPORTS_DRAWN = 84;
+// 84 → 88 with the four viewports of self-authored/viewport-overrides.dxf (M1-62).
+const VIEWPORTS_DRAWN = 88;
 
 describe('layouts on the public corpus', () => {
   it.each(files.map((f) => [f.path]))('%s', (path) => {

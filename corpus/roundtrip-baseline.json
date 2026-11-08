@@ -1,6 +1,10 @@
 {
   "note": "Round-trip ratchet (docs/TESTING.md §3). pnpm test fails if a file gets worse than this; regenerate with TRIYA_UPDATE_BASELINE=1 pnpm corpus:roundtrip after an improvement.",
   "files": {
+    "public/self-authored/viewport-overrides.dxf": {
+      "status": "clean",
+      "differences": 0
+    },
     "public/third-party/acadsharp/aec_objects/AecObjects.dwg": {
       "status": "clean",
       "differences": 0
