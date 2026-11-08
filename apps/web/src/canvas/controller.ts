@@ -26,10 +26,12 @@ import {
   screenToWorld,
   type FontSources,
   type RenderStyle,
+  type UnderlayRaster,
   type ViewTransform,
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
 import { layoutsOf } from '../documents';
+import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
 import { extentsView, panBy, wheelFactor, zoomAt, type ViewportSize } from './navigate';
 import {
@@ -82,6 +84,13 @@ export interface CanvasHooks {
    */
   readonly changes?: () => readonly ChangeSet[];
   /**
+   * PDF underlay pages (M1-20): the canvas's link to the PDF files supplied, which draws the
+   * pages its renderer asks for and hands them back through `deliver`.
+   */
+  readonly underlays?: (
+    deliver: (definition: string, raster: UnderlayRaster | undefined) => void,
+  ) => UnderlayClient;
+  /**
    * One of model space's tiled viewports (M1-22 part 4): the `*Active` VPORT it opens in, its
    * name for assistive technology, whether it is the current viewport, and how a press or a
    * wheel roll in it makes it current. Without it the canvas is the space's only viewport.
@@ -108,6 +117,7 @@ export class CanvasController {
   readonly #history = new ViewHistory();
   #canvas: HTMLCanvasElement;
   #host: RendererHost;
+  readonly #underlays: UnderlayClient | undefined;
   #listeners = new AbortController();
   #size: ViewportSize = { width: 0, height: 0 };
   #view: ViewTransform | undefined;
@@ -148,6 +158,10 @@ export class CanvasController {
     this.#header = new Map(opened.init.header ?? []);
     for (const cs of changes) this.#followHeader(cs);
     this.#hooks = hooks;
+    this.#underlays = hooks.underlays?.((definition, raster) => {
+      this.#host.setUnderlay(definition, raster);
+      this.#requestFrame();
+    });
     const canvas = document.createElement('canvas');
     canvas.className = 'drawing-canvas';
     canvas.setAttribute(
@@ -299,6 +313,7 @@ export class CanvasController {
     this.#listeners.abort();
     this.#observer.disconnect();
     cancelAnimationFrame(this.#pending);
+    this.#underlays?.dispose();
     this.#host.dispose();
     this.canvas.remove();
   }
@@ -313,6 +328,7 @@ export class CanvasController {
       onError: this.#hooks.onError,
       fonts: this.#hooks.fonts?.() ?? BUNDLED_FONTS,
       ...(patterns.length > 0 && { patterns }),
+      ...(this.#underlays && { onUnderlayRequest: (r) => this.#underlays?.request(r) }),
     });
     for (const change of this.#hooks.changes?.() ?? []) host.apply(change);
     this.canvas.dataset['renderer'] = host.mode;
