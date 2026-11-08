@@ -115,3 +115,12 @@ test('a layout shows how many of its viewports freeze each layer', async ({ page
   await expect(palette.getByRole('columnheader', { name: 'VP Freeze' })).toBeVisible();
   await expect(palette.locator('td.vp-freeze').first()).toHaveText(/^(\d+ of \d+|—)$/);
 });
+
+test('shows each layer’s description (M1-104)', async ({ page }) => {
+  const palette = await openLayers(page, DWG);
+  await expect(palette.getByRole('columnheader', { name: 'Description' })).toBeVisible();
+  const row = palette.getByRole('row').filter({
+    has: page.getByRole('rowheader', { name: 'Layer_desc', exact: true }),
+  });
+  await expect(row.locator('td.description')).toHaveText("This layer has it's own description");
+});

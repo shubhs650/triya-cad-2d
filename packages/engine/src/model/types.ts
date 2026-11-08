@@ -1065,6 +1065,12 @@ export interface LayerRecord extends SymbolTableRecord {
   readonly locked: boolean;
   readonly plotStyle?: Handle;
   readonly material?: Handle;
+  /**
+   * What the Layer Properties Manager shows as Description (M1-104). Not a DXF group: AutoCAD
+   * files it as `AcAecLayerStandard` xdata, an empty 1000 string and then the text; absent when
+   * the layer has none (no entry, or an empty or missing second string).
+   */
+  readonly description?: string;
 }
 
 /** One dash, gap or dot of a linetype (DXF 49), with its optional shape or text (74–75, 340, 9). */

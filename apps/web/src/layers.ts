@@ -17,6 +17,8 @@ export interface LayerRow {
   readonly color: { readonly label: string; readonly css: string };
   readonly linetype: string;
   readonly lineweight: string;
+  /** What AutoCAD's Layer Properties Manager shows as Description (M1-104); '' for none. */
+  readonly description: string;
   /** In a layout: of its viewports (not its own paper-space view), how many freeze the layer. */
   readonly vpFrozen?: { readonly frozen: number; readonly of: number };
 }
@@ -78,6 +80,7 @@ export function layerRows(
       color: colorCell(l.color),
       linetype: linetypes.get(l.linetype) ?? l.linetype,
       lineweight: lineweightCell(l.lineweight),
+      description: l.description ?? '',
       ...(viewports && {
         vpFrozen: {
           frozen: viewports.filter((f) => f.includes(l.handle)).length,

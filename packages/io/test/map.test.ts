@@ -129,6 +129,26 @@ describe('layers', () => {
     expect(layerNamed(doc, 'SOLID').transparency).toEqual({ alpha: 255 });
   });
 
+  it('reads the description from AcAecLayerStandard xdata, whatever the application’s case', () => {
+    const { doc, layer } = docWithLayer('WALLS');
+    // As AutoCAD files it (every ACadSharp sample's Layer_desc): an empty 1000, then the text.
+    const app = new AppId('ACAECLAYERSTANDARD');
+    doc.appIds?.add(app);
+    layer.extendedData.addByAppId(
+      app,
+      new ExtendedData([new ExtendedDataString(''), new ExtendedDataString('Outer walls')]),
+    );
+    // AecObjects.dwg's layer 0 holds the first string only: no description.
+    const zero = new Layer('ZERO');
+    doc.layers?.add(zero);
+    zero.extendedData.addByAppId(app, new ExtendedData([new ExtendedDataString('')]));
+    doc.layers?.add(new Layer('PLAIN'));
+
+    expect(layerNamed(doc, 'WALLS').description).toBe('Outer walls');
+    expect(layerNamed(doc, 'ZERO').description).toBeUndefined();
+    expect(layerNamed(doc, 'PLAIN').description).toBeUndefined();
+  });
+
   it('carries xdata per application with handles as hex and points as Vec3', () => {
     const { doc, layer } = docWithLayer('TAGGED');
     const app = new AppId('TRIYA_TEST');
