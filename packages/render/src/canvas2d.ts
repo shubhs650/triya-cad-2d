@@ -84,6 +84,7 @@ import {
   PATH_Z,
   screenToWorld,
   visibleBox,
+  type DrawnEntity,
   type FillGradient,
   type ImageFill,
   type PrimitiveClip,
@@ -92,6 +93,7 @@ import {
   type RenderPrimitive,
   type RenderStyle,
   type Renderer,
+  type ScreenRect,
   type UnderlayFill,
   type UnderlayRaster,
   type UnderlayRequest,
@@ -795,6 +797,57 @@ export class Canvas2DRenderer implements Renderer {
       if (d <= r) hits.push({ id, d });
     }
     return hits.sort((a, b) => a.d - b.d).map((h) => h.id);
+  }
+
+  entitiesIn(rect: ScreenRect): DrawnEntity[] {
+    const toWorld = (x: number, y: number) =>
+      screenToWorld(this.#view, this.#width, this.#height, { x, y });
+    const box = boxAround([
+      toWorld(rect.x, rect.y),
+      toWorld(rect.x + rect.width, rect.y + rect.height),
+    ]);
+    const found = new Set<EntityId>();
+    this.#drawnIn(this.#block, box, found);
+    // Model space through each viewport, under the part of the rectangle inside its frame.
+    for (const vp of this.#viewportList()) {
+      const frame = viewportFrame(vp.geom);
+      const shown = {
+        minX: Math.max(frame.minX, box.minX),
+        minY: Math.max(frame.minY, box.minY),
+        maxX: Math.min(frame.maxX, box.maxX),
+        maxY: Math.min(frame.maxY, box.maxY),
+      };
+      if (shown.minX >= shown.maxX || shown.minY >= shown.maxY) continue;
+      const t = invert(vp.toPaper);
+      const corners = [
+        [shown.minX, shown.minY],
+        [shown.maxX, shown.minY],
+        [shown.maxX, shown.maxY],
+        [shown.minX, shown.maxY],
+      ].map(([x, y]) => ({ x: t.a * x! + t.c * y! + t.e, y: t.b * x! + t.d * y! + t.f }));
+      this.#drawnIn(this.#modelBlock!, boxAround(corners), found);
+    }
+    const out: DrawnEntity[] = [];
+    for (const id of found) {
+      const e = this.#model.entity(id);
+      const handle = this.#model.ids.handleOf(id);
+      if (e && handle !== undefined) out.push({ handle, type: e.geom.kind });
+    }
+    return out.sort((a, b) => compareHandles(a.handle, b.handle));
+  }
+
+  /**
+   * Adds the entities of `block` drawn in `box`: the R-tree's candidates whose drawing comes
+   * within the circle around the box (a fill counts its inside), so a big entity whose bounds
+   * merely cover the box, such as a viewport frame around it, is left out.
+   */
+  #drawnIn(block: Handle, box: Box, out: Set<EntityId>): void {
+    const c = { x: (box.minX + box.maxX) / 2, y: (box.minY + box.maxY) / 2 };
+    const r = Math.hypot(box.maxX - box.minX, box.maxY - box.minY) / 2;
+    for (const id of this.#index.query(block, box)) {
+      const entry = this.#cache[id];
+      if (entry?.prims.some((prim) => distanceTo(prim, c) <= r)) out.add(id);
+    }
   }
 
   /** Whether entities of `block` are drawn: the block shown, or model space in a layout. */
@@ -1744,6 +1797,21 @@ function onSweep(a: number, a0: number, a1: number, ccw: boolean): boolean {
   const sweep = Math.abs(a1 - a0);
   if (sweep >= TAU - 1e-12) return true;
   return ccw ? norm(a - a0) <= sweep : norm(a0 - a) <= sweep;
+}
+
+/** The box around some points. */
+function boxAround(points: readonly { x: number; y: number }[]): Box {
+  return {
+    minX: Math.min(...points.map((p) => p.x)),
+    minY: Math.min(...points.map((p) => p.y)),
+    maxX: Math.max(...points.map((p) => p.x)),
+    maxY: Math.max(...points.map((p) => p.y)),
+  };
+}
+
+/** Handles in numeric order (hexadecimal; a longer handle is the larger). */
+function compareHandles(a: string, b: string): number {
+  return a.length - b.length || (a < b ? -1 : a > b ? 1 : 0);
 }
 
 /** Distance from a world point to a primitive; 0 inside a fill. */

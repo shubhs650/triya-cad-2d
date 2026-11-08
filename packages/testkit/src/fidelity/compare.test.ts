@@ -125,6 +125,12 @@ describe('golden paths', () => {
     );
   });
 
+  it('keeps a private file’s golden images beside the private files, never under public (M1-106)', () => {
+    expect(goldenPath('private/vessel/ga.dwg', 'Model')).toBe(
+      'private/refs/golden/vessel/ga.dwg/model.png',
+    );
+  });
+
   it('keeps distinct layout names distinct', () => {
     expect(spaceSlug('A/B')).not.toBe(spaceSlug('A_B'));
     expect(spaceSlug('Model')).toBe('model');

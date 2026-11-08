@@ -114,6 +114,7 @@ jobs:
           path: |
             test-results/
             playwright-report/
+            test-reports/fidelity/
           retention-days: 14
 
   perf:

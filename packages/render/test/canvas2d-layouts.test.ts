@@ -177,6 +177,31 @@ describe('viewports', () => {
     ]);
   });
 
+  // M1-106: the fidelity harness names what a layout draws where its golden image differs.
+  it('names model-space entities seen through a viewport and the paper-space entities drawn there', () => {
+    const { r } = setup([
+      onPaper('30', viewport()),
+      onPaper('31', line(100, 0, 120, 0)),
+      entity('20', line(0, 10, 20, 10)),
+      entity('21', line(0, 2, 20, 2)),
+      // Model space right of the view: under the rectangle on the sheet, but not shown there.
+      entity('22', line(25, 10, 30, 10)),
+    ]);
+    // Device 60…80 × 45…55, inside the frame: model line 20 runs through it at y 50; line 21
+    // (device y 66) is shown below it and the frame's edges are 10 px away or more.
+    expect(r.entitiesIn({ x: 60, y: 45, width: 20, height: 10 })).toEqual([
+      { handle: '20', type: 'LINE' },
+    ]);
+    // Over the frame's left edge, where model line 20 starts.
+    expect(r.entitiesIn({ x: 45, y: 45, width: 10, height: 10 })).toEqual([
+      { handle: '20', type: 'LINE' },
+      { handle: '30', type: 'VIEWPORT' },
+    ]);
+    // Right of the frame (device x 94…100): the paper line is far below, model line 22 is not
+    // shown on the sheet.
+    expect(r.entitiesIn({ x: 94, y: 45, width: 6, height: 10 })).toEqual([]);
+  });
+
   it('strokes the viewport frame as a paper-space entity, after the views', () => {
     const { r, scene } = setup([
       onPaper('30', viewport(), { layer: LAYER_RED }),

@@ -15,7 +15,12 @@ const suite = (name: string) => ({
 export default defineConfig({
   forbidOnly: !!process.env['CI'],
   retries: 0,
-  reporter: process.env['CI'] ? [['list'], ['html', { open: 'never' }]] : 'list',
+  // The fidelity reporter writes the entity-level report after a golden-image run (M1-106).
+  reporter: [
+    ['list'],
+    ...(process.env['CI'] ? [['html', { open: 'never' }] as const] : []),
+    ['./tests/e2e/fidelity/report.ts'],
+  ],
   outputDir: 'test-results',
   projects: [suite('fidelity'), suite('offline'), suite('ui'), suite('perf'), suite('io')],
 });
