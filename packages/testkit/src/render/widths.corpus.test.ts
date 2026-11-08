@@ -36,8 +36,9 @@ let tapered = 0;
 let dashed = 0;
 const styled = createPaint();
 // Ratchets: what the public corpus holds today.
-const WIDE = 73;
-const ARCS = 23;
+// M1-111: + 1 wide arc polyline, the _DOT arrowhead block of multileaders.dxf.
+const WIDE = 74;
+const ARCS = 24;
 const TAPERED = 45;
 // No public corpus file has a wide polyline with a linetype today; the dashing itself is checked
 // in render/test/wide-linetype.test.ts, and this keeps a sample added later checked here.

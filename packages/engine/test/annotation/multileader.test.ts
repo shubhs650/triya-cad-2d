@@ -320,6 +320,272 @@ describe('MULTILEADER bounds', () => {
   });
 });
 
+// M1-111: block content attribute values, per-leader-line overrides, and the text underline and
+// overline attachments.
+describe('multiLeaderParts (M1-111)', () => {
+  const NO = '52';
+  const CONST = '53';
+  /** An ATTDEF in the custom block, its text 1 right of the block's origin, 2 high. */
+  const attdef = (handle: string, tag: string, flags = 0): EntityInit =>
+    entityInit(
+      handle,
+      {
+        kind: 'ATTDEF',
+        tag,
+        prompt: '',
+        flags,
+        value: 'default',
+        style: '0',
+        position: { x: 1, y: 0 },
+        alignmentPoint: { x: 1, y: 0.5 },
+        height: 2,
+        rotation: 0,
+        widthFactor: 0.8,
+        oblique: 0,
+        halign: 1,
+        valign: 2,
+        backward: false,
+        upsideDown: false,
+      },
+      { owner: CUSTOM, color: { kind: 'byBlock' } },
+    );
+  const content = (attributes: NonNullable<MultiLeaderGeometry['block']>['attributes']) =>
+    noText({
+      contentType: 1,
+      block: {
+        block: CUSTOM,
+        position: { x: 14, y: 10 },
+        scale: { x: 2, y: 2, z: 2 },
+        rotation: Math.PI / 2,
+        color: { kind: 'aci', index: 3 },
+        ...(attributes ? { attributes } : {}),
+      },
+    });
+
+  it('draws block content with the attribute values the MULTILEADER states', () => {
+    const m = model([attdef(NO, 'NO'), attdef(CONST, 'C', 2)]);
+    const g = content([
+      { definition: NO, index: 0, width: 1, value: '12' },
+      // A value whose ATTDEF the drawing lacks, or that is not an ATTDEF, draws nothing.
+      { definition: '99', index: 1, width: 1, value: 'lost' },
+      { definition: TICK, index: 2, width: 1, value: 'not an attdef' },
+    ]);
+    const insert = multiLeaderParts(g, m).at(-1)!.geom as InsertGeometry;
+    expect(insert.attributes).toHaveLength(1);
+    const a = insert.attributes[0]!;
+    // The ATTDEF's text where the block puts it: turned a quarter, twice the size.
+    expect(a).toMatchObject({
+      handle: NO,
+      tag: 'NO',
+      value: '12',
+      flags: 0,
+      height: 4,
+      widthFactor: 0.8,
+      halign: 1,
+      valign: 2,
+      color: { kind: 'byBlock' },
+      layer: LAYER_0,
+    });
+    expect(a.position.x).toBeCloseTo(14);
+    expect(a.position.y).toBeCloseTo(12);
+    expect(a.alignmentPoint!.x).toBeCloseTo(13);
+    expect(a.alignmentPoint!.y).toBeCloseTo(12);
+    expect(a.rotation).toBeCloseTo(Math.PI / 2);
+    // Without values the block draws as before.
+    expect(
+      (multiLeaderParts(content(undefined), m).at(-1)!.geom as InsertGeometry).attributes,
+    ).toEqual([]);
+  });
+
+  it('bounds block content with its attribute values', () => {
+    const m = model([attdef(NO, 'NO')]);
+    const g = content([{ definition: NO, index: 0, width: 1, value: '12' }]);
+    const ctx = {
+      tol: toleranceForSize(1000),
+      tables: m,
+      blockExtents: () => ({ minX: -1, minY: 0, maxX: 0, maxY: 0 }),
+      annotationBounds: () => ({ minX: 100, minY: 100, maxX: 101, maxY: 101 }),
+    };
+    const b = entityBounds(g, ctx);
+    expect(b.kind === 'box' && b.box.maxX).toBe(101);
+  });
+
+  it('draws a leader line in the colour, linetype and lineweight it overrides', () => {
+    const g = mleader({
+      branches: [
+        {
+          ...mleader().branches[0]!,
+          lines: [
+            { index: 0, vertices: [{ x: 0, y: 0 }] },
+            {
+              index: 1,
+              vertices: [{ x: 0, y: 5 }],
+              overrides: {
+                flags: 2 | 4 | 8,
+                color: { kind: 'aci', index: 5 },
+                linetype: BYBLOCK_LT,
+                lineweight: 50,
+              },
+            },
+          ],
+        },
+      ],
+    });
+    const parts = multiLeaderParts(g, model());
+    expect(kinds(parts)).toEqual([
+      'SOLID',
+      'LWPOLYLINE',
+      'SOLID',
+      'LWPOLYLINE',
+      'LWPOLYLINE',
+      'MTEXT',
+    ]);
+    const own = { color: { kind: 'aci', index: 1 }, linetype: DASHED, lineweight: 25 };
+    expect(parts[0]).toMatchObject(own);
+    expect(parts[1]).toMatchObject(own);
+    const over = { color: { kind: 'aci', index: 5 }, linetype: 'ByBlock', lineweight: 50 };
+    expect(parts[2]).toMatchObject(over);
+    expect(parts[3]).toMatchObject(over);
+    // The landing is the MULTILEADER's.
+    expect(parts[4]).toMatchObject(own);
+  });
+
+  it('draws a leader line with the arrowhead, size and path type it overrides', () => {
+    const line = (
+      overrides: MultiLeaderGeometry['branches'][number]['lines'][number]['overrides'],
+    ) =>
+      mleader({
+        branches: [
+          {
+            ...mleader().branches[0]!,
+            lines: [{ index: 0, vertices: [{ x: 0, y: 0 }], ...(overrides ? { overrides } : {}) }],
+          },
+        ],
+      });
+    const tick = multiLeaderParts(
+      line({ flags: 16 | 32, arrowhead: TICK, arrowheadSize: 1.5 }),
+      model(),
+    );
+    expect(tick[0]!.geom).toMatchObject({ kind: 'INSERT', block: TICK, scale: { x: 1.5, y: 1.5 } });
+    // The line's own size takes the MULTILEADER's overall scale, as its drawn size (140) does.
+    const scaled = multiLeaderParts(
+      { ...line({ flags: 16, arrowheadSize: 1.5 }), arrowheadSize: 1.5, drawnArrowheadSize: 3 },
+      model(),
+    );
+    expect((scaled[0]!.geom as SolidGeometry).corners[1].x).toBeCloseTo(3 * s - 0.5 * s);
+    // Flag 32 without an arrowhead is the closed filled arrow, whatever the MULTILEADER has.
+    const filled = multiLeaderParts({ ...line({ flags: 32 }), arrowhead: TICK }, model());
+    expect(filled[0]!.geom.kind).toBe('SOLID');
+    // Path type 2 makes that line a spline; 0 hides it and its arrowhead.
+    expect(kinds(multiLeaderParts(line({ flags: 1, pathType: 2 }), model()))).toEqual([
+      'SOLID',
+      'SPLINE',
+      'LWPOLYLINE',
+      'MTEXT',
+    ]);
+    expect(kinds(multiLeaderParts(line({ flags: 1, pathType: 0 }), model()))).toEqual([
+      'LWPOLYLINE',
+      'MTEXT',
+    ]);
+    // Values the flags do not name are not drawn.
+    const unflagged = multiLeaderParts(
+      line({ flags: 2, color: { kind: 'aci', index: 5 }, lineweight: 100, arrowhead: TICK }),
+      model(),
+    );
+    expect(unflagged[0]).toMatchObject({ geom: { kind: 'SOLID' }, lineweight: 25 });
+    expect(unflagged[1]).toMatchObject({ color: { kind: 'aci', index: 5 }, lineweight: 25 });
+  });
+
+  const measure = () => 7;
+
+  it('underlines the text from the landing end for horizontal attachments 5, 6 and 8', () => {
+    for (const attachment of [5, 6, 8]) {
+      const parts = multiLeaderParts(mleader({ textLeftAttachment: attachment }), model(), measure);
+      expect(kinds(parts)).toEqual(['SOLID', 'LWPOLYLINE', 'LWPOLYLINE', 'LWPOLYLINE', 'MTEXT']);
+      // Landing gap plus the text's width, in the leader line's properties.
+      expect(parts[3]).toMatchObject({
+        geom: {
+          vertices: [
+            { x: 12.5, y: 10 },
+            { x: 20, y: 10 },
+          ],
+        },
+        color: { kind: 'aci', index: 1 },
+        linetype: DASHED,
+        lineweight: 25,
+      });
+    }
+    // Other attachments, a right attachment on the left, or text not yet measurable: none.
+    for (const extra of [{ textLeftAttachment: 4 }, { textRightAttachment: 5 }])
+      expect(kinds(multiLeaderParts(mleader(extra), model(), measure))).toHaveLength(4);
+    expect(kinds(multiLeaderParts(mleader({ textLeftAttachment: 5 }), model()))).toHaveLength(4);
+    expect(
+      kinds(multiLeaderParts(mleader({ textLeftAttachment: 5 }), model(), () => undefined)),
+    ).toHaveLength(4);
+    // Block content, and invisible leaders, have no underline.
+    expect(
+      kinds(multiLeaderParts(mleader({ textLeftAttachment: 5, pathType: 0 }), model(), measure)),
+    ).toEqual(['MTEXT']);
+  });
+
+  it('underlines towards the text when the leader comes from the right', () => {
+    const g = mleader({
+      textRightAttachment: 6,
+      text: { ...mleader().text!, position: { x: 0, y: 11.25 }, attachment: 3 },
+      branches: [
+        { ...mleader().branches[0]!, connection: { x: 15, y: 10 }, direction: { x: -1, y: 0 } },
+      ],
+    });
+    const parts = multiLeaderParts(g, model(), measure);
+    expect(parts[3]!.geom).toMatchObject({
+      vertices: [
+        { x: 12.5, y: 10 },
+        { x: 5, y: 10 },
+      ],
+    });
+  });
+
+  it('draws the overline or underline of vertical attachment 10 across the text', () => {
+    const vertical = (extra: Partial<MultiLeaderGeometry>, y: number) =>
+      mleader({
+        textAttachmentDirection: 1,
+        text: { ...mleader().text!, position: { x: 10, y }, attachment: 2 },
+        ...extra,
+      });
+    // Text below the leader's end: its top attachment.
+    const over = multiLeaderParts(vertical({ textTopAttachment: 10 }, 9), model(), measure);
+    expect(kinds(over)).toEqual(['SOLID', 'LWPOLYLINE', 'LWPOLYLINE', 'MTEXT']);
+    expect(over[2]!.geom).toMatchObject({
+      vertices: [
+        { x: 6.5, y: 10 },
+        { x: 13.5, y: 10 },
+      ],
+    });
+    expect(
+      kinds(multiLeaderParts(vertical({ textTopAttachment: 10 }, 12), model(), measure)),
+    ).toHaveLength(3);
+    // Text above it: its bottom attachment.
+    const under = multiLeaderParts(vertical({ textBottomAttachment: 10 }, 12), model(), measure);
+    expect(kinds(under)).toHaveLength(4);
+    expect(
+      kinds(multiLeaderParts(vertical({ textBottomAttachment: 9 }, 12), model(), measure)),
+    ).toHaveLength(3);
+  });
+
+  it('bounds the underline with the rest', () => {
+    const m = model();
+    const ctx = {
+      tol: toleranceForSize(1000),
+      tables: m,
+      blockExtents: () => undefined,
+      annotationBounds: () => ({ minX: 13, minY: 8.75, maxX: 17, maxY: 11.25 }),
+      measureText: measure,
+    };
+    const b = entityBounds(mleader({ textLeftAttachment: 5 }), ctx);
+    expect(b.kind === 'box' && b.box.maxX).toBe(20);
+  });
+});
+
 function initOf(m: DocumentModel) {
   return {
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },

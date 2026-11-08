@@ -6,6 +6,7 @@
 // The comparison against AutoCAD plots is the task's acceptance with M1-24 and M1-26.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import { annotationParts } from '@triya/engine';
 import { readCadDocument } from '@triya/io';
 import {
   defaultPaint,
@@ -46,6 +47,7 @@ describe('leaders on the public corpus (M1-52)', () => {
         (m) => textMeasure({ fonts, style: (h) => m.tables.textStyles.get(h) }),
       );
       const text = { fonts, style: (h: string) => model.tables.textStyles.get(h) };
+      const measure = textMeasure(text);
       const src: BlockSource = {
         model,
         paint: defaultPaint,
@@ -91,12 +93,25 @@ describe('leaders on the public corpus (M1-52)', () => {
             continue;
           }
           const size = Math.max(1, b.box.maxX - b.box.minX, b.box.maxY - b.box.minY);
-          const off = Math.max(
-            Math.abs(drawn.minX - b.box.minX),
-            Math.abs(drawn.minY - b.box.minY),
-            Math.abs(drawn.maxX - b.box.maxX),
-            Math.abs(drawn.maxY - b.box.maxY),
+          // A block turned off the axes is bounded by its extents' turned corners, as every
+          // INSERT is, so it may reach past what it draws (M1-111's turned balloon); the bounds
+          // must still hold all of it. Everything else is bounded exactly.
+          const turned = (annotationParts(e.geom, model, e.xdata, measure) ?? []).some(
+            (p) => p.geom.kind === 'INSERT' && Math.abs(Math.sin(2 * p.geom.rotation)) > 1e-9,
           );
+          const off = turned
+            ? Math.max(
+                b.box.minX - drawn.minX,
+                b.box.minY - drawn.minY,
+                drawn.maxX - b.box.maxX,
+                drawn.maxY - b.box.maxY,
+              )
+            : Math.max(
+                Math.abs(drawn.minX - b.box.minX),
+                Math.abs(drawn.minY - b.box.minY),
+                Math.abs(drawn.maxX - b.box.maxX),
+                Math.abs(drawn.maxY - b.box.maxY),
+              );
           if (off > 1e-9 * size)
             wrong.push(
               `${f.path} ${e.handle}: drawn ${JSON.stringify(drawn)} vs ${JSON.stringify(b.box)}`,

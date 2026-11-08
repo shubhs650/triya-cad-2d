@@ -2001,7 +2001,7 @@ export const metadataLookupObjects: readonly ClassMetadata[] = [
         "valueCodes": [
           46
         ],
-        "referenceType": 32
+        "referenceType": 0
       },
       {
         "propertyName": "blockContentScale",
@@ -2221,7 +2221,7 @@ export const metadataLookupObjects: readonly ClassMetadata[] = [
         "valueCodes": [
           42
         ],
-        "referenceType": 32
+        "referenceType": 0
       },
       {
         "propertyName": "textStyle",

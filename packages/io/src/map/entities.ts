@@ -3,6 +3,7 @@
 // plan view (DEC-039). Types not mapped yet, and entities whose plane is tilted, are reported
 // in `unmapped` and stay with the retained original only.
 
+import type { LeaderLine, MultiLeaderBlockAttribute } from '@node-projects/acad-ts';
 import {
   AnnotScaleObjectContextData,
   CadDictionary,
@@ -88,7 +89,9 @@ import type {
   InsertAttribute,
   LinetypeRef,
   MTextGeometry,
+  MultiLeaderAttribute,
   MultiLeaderGeometry,
+  MultiLeaderLineOverrides,
   ObjectCommon,
   TableBorderFormat,
   TableCell,
@@ -614,18 +617,52 @@ function multiLeaderGeometry(
             scale: { x: c.blockContentScale.x, y: c.blockContentScale.y, z: c.blockContentScale.z },
             rotation: c.blockContentRotation,
             color: mapEntityColor(c.blockContentColor),
+            ...(m.blockAttributes.length > 0
+              ? { attributes: m.blockAttributes.map(multiLeaderAttribute) }
+              : {}),
           },
         }
       : {}),
     branches: c.leaderRoots.map((r) => ({
       index: r.leaderIndex,
       connection: xy(r.connectionPoint),
-      direction: xy(r.direction),
+      // −0 as 0: a DXF save writes −0 as 0 (ezdxf files the landing direction −X as −1, −0).
+      direction: { x: r.direction.x + 0, y: r.direction.y + 0 },
       doglegLength: r.landingDistance,
-      lines: r.lines.map((l) => ({ index: l.index, vertices: l.points.map(xy) })),
+      lines: r.lines.map((l) => {
+        const overrides = leaderLineOverrides(l);
+        return { index: l.index, vertices: l.points.map(xy), ...(overrides ? { overrides } : {}) };
+      }),
     })),
     ...(z !== 0 ? { elevation: z } : {}),
     ...(pl !== 'up' ? { normal: { x: n.x, y: n.y, z: n.z } } : {}),
+  };
+}
+
+/** A block content attribute value of a MULTILEADER (DXF 330/177/44/302, M1-111). */
+function multiLeaderAttribute(a: MultiLeaderBlockAttribute): MultiLeaderAttribute {
+  const definition = ref(a.attributeDefinition);
+  return { ...(definition ? { definition } : {}), index: a.index, width: a.width, value: a.text };
+}
+
+/**
+ * The properties a leader line overrides (LEADER_LINE DXF 93, M1-111), only those its flags
+ * name: AutoCAD stores the others for every line without drawing them.
+ */
+function leaderLineOverrides(l: LeaderLine): MultiLeaderLineOverrides | undefined {
+  const flags = l.overrideFlags as number;
+  if (!flags) return undefined;
+  const has = (bit: number): boolean => (flags & bit) !== 0;
+  const linetype = ref(l.lineType);
+  const arrowhead = ref(l.arrowhead);
+  return {
+    flags,
+    ...(has(1) ? { pathType: l.pathType as number } : {}),
+    ...(has(2) ? { color: mapEntityColor(l.lineColor) } : {}),
+    ...(has(4) && linetype ? { linetype } : {}),
+    ...(has(8) ? { lineweight: mapLineweight(l.lineWeight as number) } : {}),
+    ...(has(16) ? { arrowheadSize: l.arrowheadSize } : {}),
+    ...(has(32) && arrowhead ? { arrowhead } : {}),
   };
 }
 

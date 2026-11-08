@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) 0170–0171 (M1-105) and 0172 (M1-107) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) 0170–0171 (M1-105), 0172 (M1-107) and 0173–0174 (M1-111) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -3161,5 +3161,39 @@ A visibility parameter without raw DXF codes (read from DWG or created in code) 
 **Title:** Keep xref-dependent `xref|symbol` table records in DXF, and DIMSTYLE flags on read
 
 `TableEntry.validate` refuses any record whose name contains `|`, so `DxfWriter` drops every xref-dependent record (`CHILD|WALLS` and the like, DXF 70 bit 16) that AutoCAD stores in a host drawing for VISRETAIN; the host loses its overrides of the xref's layers on the next load. AutoCAD adds the `|` itself and a user can never type one, so this allows it only in records flagged xref-dependent (for a block record, the dependent bit of its BLOCK), each part still checked as a name of its own. The DXF tables reader also dropped a DIMSTYLE's flags: it used the first 70 only to know the second is DIMTFILLCLR, so an xref-dependent dimension style read back with flags 0. It now keeps that value as the flags. Repro: add a `Layer('CHILD|WALLS')` with `flags = 48` to a document, write it with `DxfWriter` and read it back: the layer is gone and a "name is invalid for a DXF file" warning was raised.
+
+</details>
+
+### 0173 — a DXF MULTILEADER loses its block attribute values and its leader lines' own properties
+
+- **File:** `third_party/acad-ts-patches/0173-dxf-multileader-attributes-line-overrides.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** a block-content MULTILEADER states the values of its block's attributes itself (DXF reference, MLEADER: 330 ATTDEF handle, 177 index, 44 width, 302 value). The writer wrote them but the DXF reader dropped them, so they never reached Triya and a DXF save lost them. Each LEADER_LINE of an R2010+ file also states its own path type (170), colour (92), linetype (340), lineweight (171), arrowhead size (40) and arrowhead (341) with the flags (93) that say which of them override the MULTILEADER's, in the order of the ODA DWG specification's LEADER_LINE (which the DWG reader already reads). The DXF reader dropped all of them and the writer wrote none, so a line drawn red and dashed came back as the MULTILEADER's.
+- **Fix:** `_readMLeader` starts an attribute at a 330 that follows the owner and fills it from 177, 44 and 302; the template resolves the ATTDEF as before. `_readMultiLeaderLine` reads 170, 92 (an AcCmColor value, as the MULTILEADER's colours), 171, 40 and 93, and the 340 and 341 handles into the line template, which resolves them. `_writeLeaderLine` writes the seven groups after 91 from R2010 on.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0173 a DXF MULTILEADER keeps its block attribute values and its leader lines' own properties"; the M1-111 test drawing `corpus/public/self-authored/multileaders.dxf` (`packages/testkit/src/render/multileaders.corpus.test.ts`).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read MULTILEADER block attributes and leader line properties from DXF, and write the line properties
+
+`DxfSectionReaderBase._readMLeader` has no case for the block attribute records (330 ATTDEF, 177 index, 44 width, 302 value), although `CadMLeaderTemplate` resolves `blockAttributeHandles` and the writer writes the records, so they are lost on every DXF read. `_readMultiLeaderLine` likewise drops the R2010+ line properties (170 path type, 92 colour, 340 linetype, 171 lineweight, 40 arrowhead size, 341 arrowhead, 93 override flags; the DWG reader reads the same fields and `LeaderLineTemplate` already has the two handles), and `_writeLeaderLine` writes none of them. This reads the attributes (a 330 after the entity's owner starts one) and the line properties, and writes the line properties from AC1024 on. A test builds a block MULTILEADER with an attribute value and a leader line overriding all six properties, writes it to DXF and reads it back.
+
+</details>
+
+### 0174 — a DXF MULTILEADER's block and text rotations are read and written as degrees
+
+- **File:** `third_party/acad-ts-patches/0174-dxf-multileader-angles-radians.patch`
+- **Touches:** `src/Metadata/LookupTables/Entities.ts`, `src/Metadata/LookupTables/Objects.ts`
+- **Symptom:** the DXF map flags a MULTILEADER's block content rotation (43), and its context data's text rotation (42) and block content rotation (46), as angles, so the reader turned their values from degrees to radians and the writer back. AutoCAD files them in radians, as DWG stores them (ezdxf, `entities/mleader.py`: 43 "in radians!!!", the context's 42 and 46 "in radians!", findings ezdxf checks against AutoCAD and BricsCAD files), so a block content turned 15° read as turned 0.26°, and a DXF save wrote AutoCAD a rotation 57 times too big. The public corpus has no turned multileader content, so nothing showed it before M1-111's test drawing.
+- **Fix:** the three properties map as plain values (reference type 0), so DXF reads and writes them as stored.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0174 a DXF MULTILEADER states its block content and text rotations in radians"; the turned balloon of `corpus/public/self-authored/multileaders.dxf` (`packages/testkit/src/render/multileaders.corpus.test.ts`).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** MULTILEADER block and text rotations are radians in DXF
+
+`MultiLeader.BlockContentRotation` (43) and `MultiLeaderObjectContextData.TextRotation` (42) and `BlockContentRotation` (46) carry `DxfReferenceType.IsAngle`, so DXF values are converted from degrees. AutoCAD writes these MLEADER angles in radians, like the DWG fields they mirror (ezdxf documents the same: "All angles in MultiLeader are radians"), so a block content rotated 30° reads back as about 0.52° and a written file states 30 where AutoCAD expects 0.52. This drops `IsAngle` from the three codes. A test writes a multileader with rotations of π/6 and π/4 to DXF, checks the written values and reads them back.
 
 </details>

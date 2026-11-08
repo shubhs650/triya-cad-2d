@@ -33,7 +33,7 @@ import { Mesh } from '../../../Entities/Mesh.js';
 import { MLine } from '../../../Entities/MLine.js';
 import { MText } from '../../../Entities/MText.js';
 import { ColumnType } from '../../../Entities/ColumnType.js';
-import { MultiLeader } from '../../../Entities/MultiLeader.js';
+import { MultiLeader, MultiLeaderBlockAttribute } from '../../../Entities/MultiLeader.js';
 import { MultiLeaderObjectContextData , LeaderRoot, LeaderLine} from '../../../Objects/MultiLeaderObjectContextData.js';
 import { Point } from '../../../Entities/Point.js';
 import { IPolyline } from '../../../Entities/IPolyline.js';
@@ -1753,6 +1753,30 @@ export abstract class DxfSectionReaderBase {
       case 93:
         (tmp.cadObject as MultiLeader).blockContentColor = Color.fromCmValue(this._reader.valueAsInt);
         return true;
+      // The block content's attribute values (DXF reference, MLEADER): 330 starts one with its
+      // ATTDEF, then 177 index, 44 width and 302 value. The writer writes them. The first 330
+      // is the entity's owner (common codes), which every entity states before its subclasses.
+      case 330: {
+        if (tmp.ownerHandle === null) {
+          return false;
+        }
+        const attribute = new MultiLeaderBlockAttribute();
+        (tmp.cadObject as MultiLeader).blockAttributes.push(attribute);
+        tmp.blockAttributeHandles.set(attribute, this._reader.valueAsHandle);
+        return true;
+      }
+      case 177:
+      case 44:
+      case 302: {
+        const attribute = (tmp.cadObject as MultiLeader).blockAttributes.at(-1);
+        if (!attribute) {
+          return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
+        }
+        if (this._reader.code === 177) attribute.index = this._reader.valueAsInt;
+        else if (this._reader.code === 44) attribute.width = this._reader.valueAsDouble;
+        else attribute.text = this._reader.valueAsString;
+        return true;
+      }
       default:
         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
     }
@@ -1910,6 +1934,29 @@ export abstract class DxfSectionReaderBase {
         // The line's index in its leader (DXF reference, MULTILEADER); the writer writes it.
         case 91:
           line.index = this._reader.valueAsInt;
+          break;
+        // R2010+: the line's own properties and the flags that say which override the
+        // MULTILEADER's (ODA DWG specification, LEADER_LINE; the writer writes them).
+        case 170:
+          line.pathType = this._reader.valueAsShort;
+          break;
+        case 92:
+          line.lineColor = Color.fromCmValue(this._reader.valueAsInt);
+          break;
+        case 340:
+          template.lineTypeHandle = this._reader.valueAsHandle;
+          break;
+        case 171:
+          line.lineWeight = this._reader.valueAsShort;
+          break;
+        case 40:
+          line.arrowheadSize = this._reader.valueAsDouble;
+          break;
+        case 341:
+          template.arrowSymbolHandle = this._reader.valueAsHandle;
+          break;
+        case 93:
+          line.overrideFlags = this._reader.valueAsInt;
           break;
         case 305:
           if (this._reader.valueAsString === '}') {

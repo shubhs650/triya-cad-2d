@@ -71,6 +71,7 @@ import {
   MLineVertex,
   MText,
   MultiLeader,
+  MultiLeaderBlockAttribute,
   MultiLeaderStyle,
   PdfUnderlay,
   Region,
@@ -139,6 +140,7 @@ import type {
   MTextGeometry,
   MultiLeaderBlock,
   MultiLeaderGeometry,
+  MultiLeaderLineOverrides,
   MultiLeaderText,
   ObjectCommon,
   PointGeometry,
@@ -1807,6 +1809,24 @@ function multiLeaderProblems(
   if (d('block') && g.block?.block !== undefined && !resolve(r, g.block.block, BlockRecord)) {
     out.push(`content block ${g.block.block} does not exist`);
   }
+  if (d('block') && !same(before?.block?.attributes, g.block?.attributes)) {
+    for (const a of g.block?.attributes ?? []) {
+      if (a.definition !== undefined && !resolve(r, a.definition, AttributeDefinition)) {
+        out.push(`attribute definition ${a.definition} does not exist`);
+      }
+    }
+  }
+  if (d('branches')) {
+    for (const o of g.branches.flatMap((b) => b.lines.flatMap((l) => l.overrides ?? []))) {
+      if (o.linetype !== undefined && !resolve(r, o.linetype, LineType)) {
+        out.push(`linetype ${o.linetype} does not exist`);
+      }
+      if (o.arrowhead !== undefined && !resolve(r, o.arrowhead, BlockRecord)) {
+        out.push(`arrowhead block ${o.arrowhead} does not exist`);
+      }
+      if (o.color && hasBook(o.color)) out.push('colour-book colours');
+    }
+  }
   // The text's normal is the leader plane's, so it runs upside down exactly on −Z, as MTEXT.
   if (g.text && (g.text.upsideDown === true) !== (plane(g.normal) === 'down')) {
     out.push('upside-down MULTILEADER text on a +Z plane');
@@ -1886,8 +1906,8 @@ const multiLeaderWriter: Writer<MultiLeaderGeometry> = {
     if (d('branches') || elevation) {
       const roots = c.leaderRoots;
       c.leaderRoots = g.branches.map((b, i) => {
-        // A branch or line keeps what Triya does not map (its breaks, a line's own colour,
-        // linetype and arrowhead overrides) by its position in the list.
+        // A branch or line keeps what Triya does not map (its breaks, the values a line stores
+        // but does not flag as overriding) by its position in the list.
         const root = roots[i] ?? new LeaderRoot();
         root.leaderIndex = b.index;
         root.connectionPoint = at(b.connection, roots[i]?.connectionPoint);
@@ -1898,6 +1918,7 @@ const multiLeaderWriter: Writer<MultiLeaderGeometry> = {
           const line = lines[j] ?? new LeaderLine();
           line.index = l.index;
           line.points = l.vertices.map((p, k) => at(p, lines[j]?.points[k]));
+          writeLeaderLineOverrides(r, line, l.overrides);
           return line;
         });
         return root;
@@ -1905,6 +1926,30 @@ const multiLeaderWriter: Writer<MultiLeaderGeometry> = {
     }
   },
 };
+
+/**
+ * A leader line's own properties (M1-111): the flagged ones from the model. The values the
+ * flags do not name are not mapped, so the line keeps what the file stored for them.
+ */
+function writeLeaderLineOverrides(
+  r: Resolver,
+  line: LeaderLine,
+  o: MultiLeaderLineOverrides | undefined,
+): void {
+  if (!o) {
+    // No override: the stored values go back to being only stored.
+    if (line.overrideFlags) line.overrideFlags = 0;
+    return;
+  }
+  const flags = o.flags;
+  line.overrideFlags = flags;
+  if (o.pathType !== undefined) line.pathType = o.pathType;
+  if (o.color) line.lineColor = acadColor(o.color);
+  if (flags & 4) line.lineType = o.linetype ? resolve(r, o.linetype, LineType)! : null;
+  if (o.lineweight !== undefined) line.lineWeight = acadLineweight(o.lineweight);
+  if (o.arrowheadSize !== undefined) line.arrowheadSize = o.arrowheadSize;
+  if (flags & 32) line.arrowhead = o.arrowhead ? resolve(r, o.arrowhead, BlockRecord)! : null;
+}
 
 function writeMultiLeaderText(
   r: Resolver,
@@ -1959,10 +2004,25 @@ function writeMultiLeaderBlock(
   const c = m.contextData;
   const k = g.block;
   c.hasContentsBlock = k !== undefined;
-  if (!k) return;
   const b = before;
+  if (!k) {
+    // Text content has no attribute values.
+    if (b?.attributes) m.blockAttributes = [];
+    return;
+  }
   const d = (...keys: (keyof MultiLeaderBlock)[]): boolean =>
     !b || keys.some((key) => !same(b[key], k[key]));
+  if (d('attributes')) {
+    m.blockAttributes = (k.attributes ?? []).map((a) => {
+      const out = new MultiLeaderBlockAttribute();
+      out.attributeDefinition =
+        a.definition === undefined ? null : resolve(r, a.definition, AttributeDefinition)!;
+      out.index = a.index;
+      out.width = a.width;
+      out.text = a.value;
+      return out;
+    });
+  }
   // The block's normal (context 14) is the leader plane's; Triya does not map it.
   if (!b) c.blockContentNormal = new XYZ(0, 0, plane(g.normal) === 'down' ? -1 : 1);
   if (d('block')) {

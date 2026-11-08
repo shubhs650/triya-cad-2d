@@ -481,6 +481,30 @@ export interface MultiLeaderLine {
   readonly index: number;
   /** DXF 10, from the arrowhead end towards the branch's connection point, which is not repeated. */
   readonly vertices: readonly Vec2[];
+  /** The line's own properties, when DXF 93 flags any (M1-111); absent means the MULTILEADER's. */
+  readonly overrides?: MultiLeaderLineOverrides;
+}
+
+/**
+ * A leader line's own properties (R2010+ LEADER_LINE: ODA DWG specification; DXF 170, 92, 340,
+ * 171, 40, 341 with the flags in 93). Only the flagged ones are mapped: the others are what the
+ * file happens to store and AutoCAD does not draw them.
+ */
+export interface MultiLeaderLineOverrides {
+  /** DXF 93: 1 path type, 2 colour, 4 linetype, 8 lineweight, 16 arrowhead size, 32 arrowhead. */
+  readonly flags: number;
+  /** DXF 170: 0 invisible, 1 straight, 2 spline. */
+  readonly pathType?: number;
+  /** DXF 92. */
+  readonly color?: Color;
+  /** LTYPE handle (DXF 340). */
+  readonly linetype?: Handle;
+  /** DXF 171. */
+  readonly lineweight?: Lineweight;
+  /** DXF 40, before the MULTILEADER's overall scale. */
+  readonly arrowheadSize?: number;
+  /** BLOCK_RECORD handle of the arrowhead (DXF 341); flag 32 without one is closed filled. */
+  readonly arrowhead?: Handle;
 }
 
 /** One branch of a MULTILEADER (DXF `LEADER{`): its leader lines and their landing. */
@@ -536,6 +560,23 @@ export interface MultiLeaderBlock {
   readonly rotation: number;
   /** DXF 93. */
   readonly color: Color;
+  /**
+   * The values of the block's attributes, stated on the MULTILEADER (DXF 330/177/44/302), not as
+   * ATTRIBs. Absent when it states none.
+   */
+  readonly attributes?: readonly MultiLeaderAttribute[];
+}
+
+/** One attribute value of a MULTILEADER's block content. */
+export interface MultiLeaderAttribute {
+  /** The ATTDEF in the content block (DXF 330). */
+  readonly definition?: Handle;
+  /** DXF 177. */
+  readonly index: number;
+  /** DXF 44. */
+  readonly width: number;
+  /** DXF 302. */
+  readonly value: string;
 }
 
 /**

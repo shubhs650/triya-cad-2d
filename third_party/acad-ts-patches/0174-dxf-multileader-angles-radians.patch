@@ -1,0 +1,35 @@
+diff --git a/src/Metadata/LookupTables/Entities.ts b/src/Metadata/LookupTables/Entities.ts
+index 89ccf35..f82307c 100644
+--- a/src/Metadata/LookupTables/Entities.ts
++++ b/src/Metadata/LookupTables/Entities.ts
+@@ -1835,7 +1835,7 @@ export const metadataLookupEntities: readonly ClassMetadata[] = [
+         "valueCodes": [
+           43
+         ],
+-        "referenceType": 32
++        "referenceType": 0
+       },
+       {
+         "propertyName": "blockContentScale",
+diff --git a/src/Metadata/LookupTables/Objects.ts b/src/Metadata/LookupTables/Objects.ts
+index 25228ec..abd219d 100644
+--- a/src/Metadata/LookupTables/Objects.ts
++++ b/src/Metadata/LookupTables/Objects.ts
+@@ -2001,7 +2001,7 @@ export const metadataLookupObjects: readonly ClassMetadata[] = [
+         "valueCodes": [
+           46
+         ],
+-        "referenceType": 32
++        "referenceType": 0
+       },
+       {
+         "propertyName": "blockContentScale",
+@@ -2221,7 +2221,7 @@ export const metadataLookupObjects: readonly ClassMetadata[] = [
+         "valueCodes": [
+           42
+         ],
+-        "referenceType": 32
++        "referenceType": 0
+       },
+       {
+         "propertyName": "textStyle",

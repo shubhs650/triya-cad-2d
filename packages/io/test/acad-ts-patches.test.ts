@@ -72,6 +72,7 @@ import {
   MeasurementUnits,
   MText,
   MultiLeader,
+  MultiLeaderBlockAttribute,
   MultiLeaderStyle,
   ObjectType,
   PdfUnderlay,
@@ -2543,5 +2544,106 @@ describe('acad-ts local patches', () => {
     expect(readBlock.blockFlags & BlockTypeFlags.XRefDependent).toBe(BlockTypeFlags.XRefDependent);
     expect([...readBlock.entities]).toHaveLength(1);
     expect(back.layers!.tryGetValue('NOT|DEPENDENT')).toBeUndefined();
+  });
+  it('0173 a DXF MULTILEADER keeps its block attribute values and its leader lines’ own properties', () => {
+    // The MULTILEADER states its block content's attribute values itself (DXF reference,
+    // MLEADER: 330 ATTDEF, 177 index, 44 width, 302 value), and each LEADER_LINE its own path
+    // type, colour, linetype, lineweight, arrowhead size and arrowhead with the flags that say
+    // which override the MULTILEADER's (R2010+: 170, 92, 340, 171, 40, 341, 93; the ODA DWG
+    // specification's LEADER_LINE has them in that order). Unpatched acad-ts read none of them
+    // from DXF and wrote no line property, so a DXF save lost them.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const styles = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadMLeaderStyle)!;
+    const style = new MultiLeaderStyle('STANDARD');
+    styles.add(style);
+    const tag = new BlockRecord('TAG');
+    const attdef = new AttributeDefinition();
+    attdef.tag = 'NO';
+    attdef.value = '1';
+    tag.entities.add(attdef);
+    doc.blockRecords!.add(tag);
+    const dot = new BlockRecord('_DOT');
+    dot.entities.add(new Line());
+    doc.blockRecords!.add(dot);
+    const dashed = new LineType('DASHED');
+    doc.lineTypes!.add(dashed);
+    const ml = new MultiLeader();
+    const ctx = ml.contextData;
+    const r = new LeaderRoot();
+    r.connectionPoint = new XYZ(28, 10, 0);
+    r.direction = new XYZ(1, 0, 0);
+    const plain = new LeaderLine();
+    plain.points = [new XYZ(20, 0, 0)];
+    const over = new LeaderLine();
+    over.index = 1;
+    over.points = [new XYZ(20, 5, 0)];
+    over.pathType = 2;
+    over.lineColor = new Color(1);
+    over.lineWeight = 50;
+    over.arrowheadSize = 2.5;
+    over.overrideFlags = 63;
+    r.lines = [plain, over];
+    ctx.leaderRoots = [r];
+    ml.contentType = 1 as never;
+    const value = new MultiLeaderBlockAttribute();
+    value.index = 0;
+    value.width = 1.5;
+    value.text = '12';
+    ml.blockAttributes = [value];
+    doc.entities!.add(ml);
+    ml.style = style;
+    ml.blockContentId = tag;
+    ctx.blockContent = tag;
+    value.attributeDefinition = attdef;
+    over.lineType = dashed;
+    over.arrowhead = dot;
+
+    const back = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+    const same = back.getCadObject(Number(ml.handle)) as MultiLeader;
+    expect(
+      same.blockAttributes.map((a) => [a.attributeDefinition?.tag, a.index, a.width, a.text]),
+    ).toEqual([['NO', 0, 1.5, '12']]);
+    const lines = same.contextData.leaderRoots[0]!.lines;
+    expect(lines.map((l) => l.overrideFlags)).toEqual([0, 63]);
+    const l = lines[1]!;
+    expect([
+      l.pathType,
+      l.lineColor.index,
+      l.lineType?.name,
+      l.lineWeight,
+      l.arrowheadSize,
+    ]).toEqual([2, 1, 'DASHED', 50, 2.5]);
+    expect(l.arrowhead?.name).toBe('_DOT');
+  });
+  it('0174 a DXF MULTILEADER states its block content and text rotations in radians', () => {
+    // The MULTILEADER's angles are radians in DXF as in DWG (ezdxf, entities/mleader.py: block
+    // rotation 43 "in radians!!!", context 42 and 46 "in radians!"; ezdxf checks its findings
+    // against AutoCAD and BricsCAD files). Unpatched acad-ts read and wrote 43, 46 and 42 as
+    // degrees, so an ezdxf or AutoCAD block turned 15° came in turned 0.26°.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const ml = new MultiLeader();
+    const ctx = ml.contextData;
+    ml.contentType = 1 as never;
+    ml.blockContentRotation = Math.PI / 6;
+    ctx.hasContentsBlock = true;
+    ctx.blockContentRotation = Math.PI / 6;
+    ctx.hasTextContents = true;
+    ctx.textLabel = 'X';
+    ctx.textRotation = Math.PI / 4;
+    doc.entities!.add(ml);
+
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const text = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+    const entity = text.slice(text.lastIndexOf('AcDbMLeader'));
+    const value = (code: number, from: string) =>
+      Number(from.match(new RegExp(`\\n *${code}\\r?\\n([^\\r\\n]+)`))![1]);
+    // Context data first (42 text rotation, 46 block rotation), then the entity's 43.
+    expect(value(42, entity)).toBeCloseTo(Math.PI / 4, 9);
+    expect(value(46, entity)).toBeCloseTo(Math.PI / 6, 9);
+    expect(value(43, entity.slice(entity.search(/301\r?\n}/)))).toBeCloseTo(Math.PI / 6, 9);
+    const same = readCadDocument(bytes).getCadObject(Number(ml.handle)) as MultiLeader;
+    expect(same.blockContentRotation).toBeCloseTo(Math.PI / 6, 9);
+    expect(same.contextData.blockContentRotation).toBeCloseTo(Math.PI / 6, 9);
+    expect(same.contextData.textRotation).toBeCloseTo(Math.PI / 4, 9);
   });
 });
