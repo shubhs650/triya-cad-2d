@@ -1,7 +1,7 @@
 // Golden images of the thread-authored test drawings whose content lives in files beside them
-// (DEC-047, M1-24's harness): the raster image drawing (M1-19) with its bitmaps. (The PDF
-// underlay drawing joins once ZOOM Extents takes in an unclipped page, whose size only its PDF
-// gives: today its golden image would crop page 1, see M1-20.) The corpus suite (golden.spec.ts)
+// (DEC-047, M1-24's harness): the raster image drawing (M1-19) with its bitmaps and the PDF
+// underlay drawing (M1-20) with its PDF, whose unclipped page 1 ZOOM Extents takes in once the
+// PDF gives its size. The corpus suite (golden.spec.ts)
 // opens a drawing alone, so these open theirs and then drop the files on the window, as a user
 // supplies them, and shoot each space once it settles. Golden images live in a `golden/` folder beside each
 // fixture; `TRIYA_UPDATE_GOLDEN=1 pnpm test:fidelity` writes the missing and differing ones.
@@ -32,6 +32,7 @@ const SETS: { readonly drawing: string; readonly files: readonly string[] }[] = 
     drawing: 'raster/raster-images.dxf',
     files: ['raster/checker.png', 'raster/bars.bmp', 'raster/scan.tif'],
   },
+  { drawing: 'underlay/pdf-underlay.dxf', files: ['underlay/pdf-underlay.pdf'] },
 ];
 
 let app: { url: string; close(): Promise<void> };

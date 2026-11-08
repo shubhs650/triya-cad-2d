@@ -25,6 +25,7 @@ import {
   type AnnotationBounds,
   type BoundsContext,
   type EntityBounds,
+  type UnderlayPage,
 } from './entity-bounds';
 import { PackedRTree } from './packed-tree';
 import { annotationParts } from '../annotation/parts';
@@ -51,6 +52,8 @@ export interface SpatialIndexOptions {
   readonly annotationBounds?: AnnotationBounds;
   /** Text widths from the same text engine, for TOLERANCE frames (M1-52 part 4). */
   readonly measureText?: TextMeasure;
+  /** PDF page sizes as the app reads them (M1-20); `reboundUnderlays` when they change. */
+  readonly underlayPage?: UnderlayPage;
   /**
    * Edits a block's tree absorbs before it is repacked. Default: 1/16 of the block's entries,
    * at least 256. Tests set it low to exercise repacking.
@@ -184,6 +187,7 @@ export class SpatialIndex {
       tol: options.tol,
       annotationBounds: options.annotationBounds,
       measureText: options.measureText,
+      underlayPage: options.underlayPage,
       blockExtents: (h) => this.extents(h),
       basePoint: (h) => model.blocks.get(h)?.basePoint,
       tables: model,
@@ -250,6 +254,20 @@ export class SpatialIndex {
         if (ANNOTATION_KINDS.has(e.geom.kind)) all.push(e);
       }
     this.#update(all, all);
+  }
+
+  /**
+   * Re-bounds every PDF underlay and the references whose blocks hold one: after the app read
+   * a PDF's page size, or forgot it (M1-20).
+   */
+  reboundUnderlays(): void {
+    const all: Entity[] = [];
+    for (const h of this.#model.blocks.keys())
+      for (const id of this.#model.blockEntities(h)) {
+        const e = this.#model.entity(id)!;
+        if (e.geom.kind === 'PDFUNDERLAY') all.push(e);
+      }
+    if (all.length > 0) this.#update(all, all);
   }
 
   /**

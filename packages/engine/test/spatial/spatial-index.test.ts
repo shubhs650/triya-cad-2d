@@ -376,6 +376,48 @@ describe('queries', () => {
     expect(index.drawnExtents('FFFF')).toBeUndefined();
   });
 
+  it('bounds an unclipped PDF underlay by its page once the app reads it (M1-20)', () => {
+    const model = blockModel();
+    const b = new ChangeSetBuilder(model);
+    const underlay = (definition: string, x: number, y: number): EntityGeometry => ({
+      kind: 'PDFUNDERLAY',
+      definition,
+      position: { x, y },
+      scale: { x: 1, y: 1, z: 1 },
+      rotation: 0,
+      flags: 2,
+      contrast: 100,
+      fade: 0,
+      clip: [],
+    });
+    const inModel = b.addEntity({
+      owner: MODEL_SPACE,
+      layer: LAYER_0,
+      geom: underlay('9A', 500, 500),
+    });
+    b.addEntity({ owner: BLOCK_A, layer: LAYER_0, geom: underlay('9B', 0, 0) });
+    model.apply(b.build());
+    const pages = new Map<string, { width: number; height: number }>();
+    const index = SpatialIndex.build(model, { tol, underlayPage: (h) => pages.get(h) });
+    // Until then neither underlay has an extent, nor do the references of block A that holds one.
+    expect(index.bounds(inModel.id)).toEqual({ kind: 'unknown' });
+    expect(index.bounds(idOf(model, '52'))).toEqual({ kind: 'unknown' });
+    expect(index.drawnExtents(MODEL_SPACE)).toEqual(box(0, 0, 105, 105));
+
+    pages.set('9A', { width: 8.5, height: 11 });
+    pages.set('9B', { width: 2, height: 1 });
+    index.reboundUnderlays();
+    expect(index.bounds(inModel.id)).toEqual({ kind: 'box', box: box(500, 500, 508.5, 511) });
+    // Block A now reaches x = 2, in its own references and in B's nested one.
+    expect(index.bounds(idOf(model, '52'))).toEqual({ kind: 'box', box: box(200, 0, 202, 1) });
+    expect(index.bounds(idOf(model, '53'))).toEqual({ kind: 'box', box: box(310, 0, 312, 1) });
+    expect(index.drawnExtents(MODEL_SPACE)).toEqual(box(0, 0, 508.5, 511));
+
+    pages.clear(); // the PDFs were detached
+    index.reboundUnderlays();
+    expect(index.drawnExtents(MODEL_SPACE)).toEqual(box(0, 0, 105, 105));
+  });
+
   it('bounds invisible attributes under ATTMODE 2 and re-bounds when ATTMODE changes (M1-14)', () => {
     const model = blockModel();
     const b = new ChangeSetBuilder(model);
