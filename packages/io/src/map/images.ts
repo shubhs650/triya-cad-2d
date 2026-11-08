@@ -1,16 +1,24 @@
 // IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES to Triya (M1-19): an IMAGE's file and pixel
-// size, and the IMAGEFRAME / IMAGEQUALITY / WIPEOUTFRAME settings the renderer draws with.
+// size, and the IMAGEFRAME / IMAGEQUALITY / WIPEOUTFRAME settings the renderer draws with; and
+// PDFDEFINITION (M1-20), the file and page a PDF underlay shows. None has a writer: the save
+// refuses an edited one (export.ts `unwritten`) and keeps the original untouched.
 
 import {
   ImageDefinition as AcadImageDefinition,
+  PdfUnderlayDefinition as AcadPdfDefinition,
   RasterVariables as AcadRasterVariables,
   WipeoutVariables as AcadWipeoutVariables,
   type CadDocument,
 } from '@node-projects/acad-ts';
-import type { ImageDefinition, RasterVariables, WipeoutVariables } from '@triya/engine';
+import type {
+  ImageDefinition,
+  PdfDefinition,
+  RasterVariables,
+  WipeoutVariables,
+} from '@triya/engine';
 import { common, ref, vec2 } from './common';
 
-export type ImageObject = ImageDefinition | RasterVariables | WipeoutVariables;
+export type ImageObject = ImageDefinition | RasterVariables | WipeoutVariables | PdfDefinition;
 
 /** The drawing's image definitions and image display settings, by handle. */
 export function mapImageObjects(doc: CadDocument): ImageObject[] {
@@ -40,6 +48,15 @@ export function mapImageObjects(doc: CadDocument): ImageObject[] {
       });
     } else if (o instanceof AcadWipeoutVariables) {
       out.push({ ...common(o), type: 'WIPEOUTVARIABLES', owner, frame: o.displayImageFrame });
+    } else if (o instanceof AcadPdfDefinition) {
+      out.push({
+        ...common(o),
+        type: 'PDFDEFINITION',
+        owner,
+        name: o.name,
+        fileName: o.file,
+        page: o.page,
+      });
     }
   }
   return out.sort((a, b) => parseInt(a.handle, 16) - parseInt(b.handle, 16));

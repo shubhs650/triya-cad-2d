@@ -146,6 +146,50 @@ export interface ImageFill {
 }
 
 /**
+ * A PDF underlay on a `fill` (M1-20). The path is the clip boundary in world coordinates when
+ * `clipped`, else empty: the whole page shows, and its size is known only once the app has
+ * drawn it (`UnderlayRaster.page`).
+ */
+export interface UnderlayFill {
+  /** The PDFDEFINITION whose page is drawn. */
+  readonly definition: string;
+  /** Underlay space (the page in inches, origin at its lower-left corner, y up) → world. */
+  readonly frame: PrimitiveFrame;
+  readonly clipped: boolean;
+  /** DXF 281, 20–100 (100 unchanged), and 282, 0–80. */
+  readonly contrast: number;
+  readonly fade: number;
+  /** DXF 280 bit 4. */
+  readonly monochrome: boolean;
+  /** DXF 280 bit 8: colours adjusted for the background. */
+  readonly adjustColors: boolean;
+}
+
+/**
+ * Part of a PDF underlay's page drawn by the app (M1-20), as it answers an `UnderlayRequest`.
+ * Pixels are straight RGBA, rows top first; the paper is clear, as AutoCAD shows only the
+ * page's content.
+ */
+export interface UnderlayRaster {
+  /** The page size in underlay units (inches: 72 PDF points). */
+  readonly page: { readonly width: number; readonly height: number };
+  /** The part of the page the pixels cover, underlay units, y up. */
+  readonly region: Box;
+  readonly pixels: RasterPixels;
+}
+
+/**
+ * The page a PDF underlay needs drawn (M1-20): `region` of it at `scale` pixels per underlay
+ * unit. The renderer asks whenever the view needs more than the raster it has shows; the app
+ * draws the page clipped to the page and to its own pixel budget.
+ */
+export interface UnderlayRequest {
+  readonly definition: string;
+  readonly scale: number;
+  readonly region: Box;
+}
+
+/**
  * XCLIP boundaries (M1-103), each a closed polygon as flat world `x, y` pairs: a primitive shows
  * only where it is inside every one (nonzero winding), one per clipped reference around it,
  * outermost first. Shared by reference among the parts of one reference, so the renderer sets a
@@ -183,6 +227,8 @@ export type RenderPrimitive =
        * for it, the path outlined in `color`.
        */
       readonly image?: ImageFill;
+      /** A PDF underlay `fill` (M1-20): its page drawn clipped to the path or the page. */
+      readonly underlay?: UnderlayFill;
       /** A pattern hatch family's `stroke`, with its sub-pixel tint. */
       readonly hatch?: HatchTint;
       /** Text glyphs, with their greeking. */

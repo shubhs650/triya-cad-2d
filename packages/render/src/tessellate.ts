@@ -13,8 +13,8 @@
 // INSERT, DIMENSION, ACAD_TABLE and MULTILEADER yield nothing here: the renderer draws them
 // from their blocks or parts (`expandInsert`, M1-14, M1-15, M1-17 and M1-52). Kinds drawn by later tasks yield nothing
 // either, each noted where it falls through:
-// underlays (M1-20), attributes (M1-14) and the MTEXT background mask (M1-41 part 2). IMAGE
-// and WIPEOUT come from `imagePrimitives` (M1-19). TEXT and MTEXT draw their glyphs (`textPrimitives`, M1-41)
+// attributes (M1-14) and the MTEXT background mask (M1-41 part 2). IMAGE
+// and WIPEOUT come from `imagePrimitives` (M1-19), PDFUNDERLAY from `underlayPrimitives` (M1-20). TEXT and MTEXT draw their glyphs (`textPrimitives`, M1-41)
 // when the caller passes the loaded fonts, and nothing without them.
 
 import {
@@ -58,6 +58,7 @@ import { colorValue } from './style/resolve';
 import { patternLength, type LinePattern } from './style/pattern';
 import { linetypeEmbedPrimitives, textPrimitives, type TextContext } from './text';
 import { imagePrimitives, type ImageFrames } from './image';
+import { underlayPrimitives } from './underlay';
 
 /** What tessellating some kinds needs beyond the geometry and paint. */
 export interface TessellateContext {
@@ -248,6 +249,7 @@ export function tessellate(
     return ctx.text ? textPrimitives({ ...g, kind: 'TEXT', value: g.tag }, paint, ctx.text) : [];
   // Image frames are drawn continuous: a frame is a display aid, not linework (ours).
   if (g.kind === 'IMAGE' || g.kind === 'WIPEOUT') return imagePrimitives(g, paint, ctx.frames);
+  if (g.kind === 'PDFUNDERLAY') return underlayPrimitives(g, paint);
   if (g.kind === 'LWPOLYLINE' || g.kind === 'POLYLINE') {
     const widths = polylineWidths(g);
     if (widths) {

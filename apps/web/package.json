@@ -20,6 +20,7 @@
     "@triya/io": "workspace:*",
     "@triya/render": "workspace:*",
     "@triya/text": "workspace:*",
+    "pdfjs-dist": "6.4.299",
     "react": "^19.2.9",
     "react-dom": "^19.2.9"
   },

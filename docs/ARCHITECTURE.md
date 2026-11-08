@@ -218,7 +218,7 @@ Maintained in `docs/FILE_FIDELITY.md` with one row per DXF entity/object type an
 - **SVG export:** from the `Renderer` pipeline (same primitives), with layers as `<g id>`, lineweights in px at chosen scale, text as `<path>` for SHX and `<text>` for TTF.
 - **PNG export:** `OffscreenCanvas` at requested DPI; transparent or coloured background.
 - **PDF output:** `packages/pdf` — own vector writer (content streams, page tree, bookmarks, embedded subset TTF, lineweight/colour/screening from the resolved plot style). Stroke fonts emit path operators. See §9.
-- **PDF underlay:** pdf.js lazy-loaded; page rendered to a bitmap at viewport resolution + path extraction (where available) for osnaps.
+- **PDF underlay (M1-20):** the renderer asks for the part of each underlay page on screen at screen resolution (`UnderlayRequest`, stepped by √2 and padded so small pans and zooms reuse the raster); the app (`apps/web/src/underlay`) lazy-loads pdf.js, draws the region with clear paper and answers with `setUnderlay`, keeping drawn pages in a byte-bounded cache. pdf.js lives in the app because it draws onto a DOM canvas and the app owns the files. Path extraction for osnaps is M2-22.
 
 ## 7. Rendering (`packages/render`)
 

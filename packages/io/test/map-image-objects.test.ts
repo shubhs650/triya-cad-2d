@@ -4,6 +4,7 @@ import {
   ACadVersion,
   CadDocument,
   ImageDefinition,
+  PdfUnderlayDefinition,
   RasterVariables,
   ResolutionUnit,
   WipeoutVariables,
@@ -71,6 +72,25 @@ describe('mapImageObjects', () => {
       ]),
     );
     expect(mapped).toHaveLength(2);
+  });
+
+  it('maps a PDF underlay definition’s name, file and page (M1-20)', () => {
+    const doc = drawing();
+    const def = new PdfUnderlayDefinition('plan - 2');
+    def.file = '..\\plans\\plan.pdf';
+    def.page = '2';
+    doc.rootDictionary!.add(def);
+
+    expect(mapImageObjects(doc)).toEqual([
+      expect.objectContaining({
+        handle: H(def),
+        type: 'PDFDEFINITION',
+        owner: H(doc.rootDictionary!),
+        name: 'plan - 2',
+        fileName: '..\\plans\\plan.pdf',
+        page: '2',
+      }),
+    ]);
   });
 
   it('gives nothing for a drawing without images', () => {
