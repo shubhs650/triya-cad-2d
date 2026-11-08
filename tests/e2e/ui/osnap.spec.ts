@@ -94,6 +94,9 @@ test('AutoSnap marks and takes the endpoint; POLAR, ORTHO and F3; the OSNAP menu
   await move(X0 + 140, Y0, 0, -3);
   await expect(tip(page)).toHaveText(/^Polar: \d+\.\d{4} < 0°$/);
   await click(X0 + 140, Y0, 0, -3);
+  // The prompt reads the same before and after this point, so wait for its segment: ORTHO
+  // below works from the point this click gives.
+  await expect.poll(async () => (await linesAdded(page)).length).toBe(2);
   await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
 
   // F8: ORTHO on turns POLAR off; a click well off the vertical lands on it.
