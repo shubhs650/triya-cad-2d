@@ -1,0 +1,63 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+index 92f125d..89a7bea 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts
+@@ -437,6 +437,8 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
+         return true;
+       case 70:
+         if (!template.dxfFlagsAssigned) {
++          // The first 70 is the record's flags (xref-dependent bit 16), the second DIMTFILLCLR.
++          dimensionStyle.flags = this._reader.valueAsUShort as StandardFlags;
+           template.dxfFlagsAssigned = true;
+           return true;
+         } else if (this._reader.valueAsShort >= 0) {
+diff --git a/src/Tables/BlockRecord.ts b/src/Tables/BlockRecord.ts
+index 8d7c1eb..f2205b2 100644
+--- a/src/Tables/BlockRecord.ts
++++ b/src/Tables/BlockRecord.ts
+@@ -74,6 +74,11 @@ export class BlockRecord extends TableEntry {
+ 		return (this.blockEntity.flags | (this.flags as unknown as BlockTypeFlags)) as BlockTypeFlags;
+ 	}
+ 
++	/** A block an xref brought in carries the dependent bit in its BLOCK's flags (DXF 70 bit 16). */
++	public override get isXrefDependent(): boolean {
++		return (this.combinedFlags & BlockTypeFlags.XRefDependent) !== 0;
++	}
++
+ 	public get hasAttributes(): boolean {
+ 		return this.attributeDefinitions.length > 0;
+ 	}
+diff --git a/src/Tables/TableEntry.ts b/src/Tables/TableEntry.ts
+index b0b69d6..23b6963 100644
+--- a/src/Tables/TableEntry.ts
++++ b/src/Tables/TableEntry.ts
+@@ -52,14 +52,28 @@ export abstract class TableEntry extends CadObject implements INamedCadObject {
+ 		return false;
+ 	}
+ 
++	/** True for a record an xref brought in (DXF 70 bit 16), which AutoCAD names `xref|symbol`. */
++	public get isXrefDependent(): boolean {
++		return (this.flags & StandardFlags.XrefDependent) !== 0;
++	}
++
+ 	public override validate(format: CadFileFormat, version: ACadVersion): string[] {
+ 		const errors = super.validate(format, version);
+ 		if (this.name === '' && this.keepsEmptyName) return errors;
+-		if (format === CadFileFormat.DXF && !INamedCadObjectExtensions.isValidDxfName(this, version)) {
++		if (format === CadFileFormat.DXF && !this._isValidDxfName(version)) {
+ 			errors.push(`${this.constructor.name}: name is invalid for a DXF file.`);
+ 		}
+ 		return errors;
+ 	}
++
++	// The `|` between an xref-dependent record's xref and symbol names is allowed; each part
++	// must be a valid name on its own (AutoCAD help, "About Xref-Dependent Named Objects").
++	private _isValidDxfName(version: ACadVersion): boolean {
++		if (!this.isXrefDependent) return INamedCadObjectExtensions.isValidDxfName(this, version);
++		const parts = this.name.split('|');
++		return parts.every((part) => part !== '')
++			&& INamedCadObjectExtensions.isValidDxfName({ onNameChanged: null, name: parts.join('_') }, version);
++	}
+ 
+ 	public override toString(): string {
+ 		return `${this.objectName}:${this.name}`;

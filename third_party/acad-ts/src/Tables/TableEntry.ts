@@ -52,13 +52,27 @@ export abstract class TableEntry extends CadObject implements INamedCadObject {
 		return false;
 	}
 
+	/** True for a record an xref brought in (DXF 70 bit 16), which AutoCAD names `xref|symbol`. */
+	public get isXrefDependent(): boolean {
+		return (this.flags & StandardFlags.XrefDependent) !== 0;
+	}
+
 	public override validate(format: CadFileFormat, version: ACadVersion): string[] {
 		const errors = super.validate(format, version);
 		if (this.name === '' && this.keepsEmptyName) return errors;
-		if (format === CadFileFormat.DXF && !INamedCadObjectExtensions.isValidDxfName(this, version)) {
+		if (format === CadFileFormat.DXF && !this._isValidDxfName(version)) {
 			errors.push(`${this.constructor.name}: name is invalid for a DXF file.`);
 		}
 		return errors;
+	}
+
+	// The `|` between an xref-dependent record's xref and symbol names is allowed; each part
+	// must be a valid name on its own (AutoCAD help, "About Xref-Dependent Named Objects").
+	private _isValidDxfName(version: ACadVersion): boolean {
+		if (!this.isXrefDependent) return INamedCadObjectExtensions.isValidDxfName(this, version);
+		const parts = this.name.split('|');
+		return parts.every((part) => part !== '')
+			&& INamedCadObjectExtensions.isValidDxfName({ onNameChanged: null, name: parts.join('_') }, version);
 	}
 
 	public override toString(): string {
