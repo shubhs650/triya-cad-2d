@@ -6,6 +6,7 @@
 import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
+import type { ViewReply, ViewRequest } from '../commands/view/host';
 import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
@@ -71,7 +72,9 @@ export type CommandInput =
   | { readonly kind: 'cancel' }
   | { readonly kind: 'invoke'; readonly name: string }
   /** The space the drafter works in now: model space or a layout's paper space. */
-  | { readonly kind: 'space'; readonly block: Handle };
+  | { readonly kind: 'space'; readonly block: Handle }
+  /** The app's reply to the view request `id` (M2-02 part 2). */
+  | { readonly kind: 'view'; readonly id: number; readonly reply: ViewReply };
 
 /**
  * What the command engine tells the front-ends: the bus's events, with every edit a command
@@ -81,13 +84,21 @@ export type CommandInput =
 export type CommandOutput =
   | Exclude<BusEvent, { readonly type: 'commit' }>
   | { readonly type: 'commit'; readonly command: string }
-  | { readonly type: 'change'; readonly change: ChangeSet };
+  | { readonly type: 'change'; readonly change: ChangeSet }
+  /**
+   * A view command asks the canvas of the space shown (ZOOM, PAN, REGEN, VIEW): the app answers
+   * with a `view` input carrying the same id. The command waits for it, so the app must answer
+   * every request, with a refusal when it has no canvas.
+   */
+  | { readonly type: 'view'; readonly id: number; readonly request: ViewRequest };
 
 export class EngineSession {
   readonly model: DocumentModel;
   readonly #bus: PromptBus;
   #space: Handle | undefined;
   readonly #listeners = new Set<(o: CommandOutput) => void>();
+  readonly #viewReplies = new Map<number, (r: ViewReply) => void>();
+  #nextView = 1;
 
   constructor(init: DocumentInit) {
     this.model = DocumentModel.create(init);
@@ -99,6 +110,14 @@ export class EngineSession {
         this.#emit({ type: 'change', change });
       },
       space: () => this.#space ?? modelSpaceOf(this.model),
+      view: {
+        request: (request) =>
+          new Promise((resolve) => {
+            const id = this.#nextView++;
+            this.#viewReplies.set(id, resolve);
+            this.#emit({ type: 'view', id, request });
+          }),
+      },
     });
     this.#bus.on((e) =>
       this.#emit(e.type === 'commit' ? { type: 'commit', command: e.record.command } : e),
@@ -127,6 +146,13 @@ export class EngineSession {
       case 'space':
         if (this.model.hasBlock(input.block)) this.#space = input.block;
         return Promise.resolve();
+      case 'view': {
+        // Not queued on the bus: the command awaiting it holds the bus's queue.
+        const resolve = this.#viewReplies.get(input.id);
+        this.#viewReplies.delete(input.id);
+        resolve?.(input.reply);
+        return Promise.resolve();
+      }
     }
   }
 

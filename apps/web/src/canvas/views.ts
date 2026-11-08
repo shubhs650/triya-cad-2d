@@ -55,6 +55,22 @@ export function scaleView(view: ViewTransform, factor: number): ViewTransform {
   return { center: view.center, scale: view.scale * factor };
 }
 
+/**
+ * ZOOM n (no X): `factor` relative to the limits, about the current view's centre. 1 shows the
+ * limits' whole height or width, whichever fits, as ZOOM All of the limits alone would (without
+ * its margin); 2 shows half that. Undefined without limits or a usable factor.
+ */
+export function limitsView(
+  limits: Box | undefined,
+  size: ViewportSize,
+  factor: number,
+  current: ViewTransform | undefined,
+): ViewTransform | undefined {
+  if (!valid(limits) || !(factor > 0) || !Number.isFinite(factor)) return undefined;
+  const fit = fitView(limits, size.width, size.height, 0);
+  return { center: current?.center ?? fit.center, scale: fit.scale * factor };
+}
+
 /** AutoCAD keeps the last ten views of each viewport for ZOOM Previous. */
 export const HISTORY_LIMIT = 10;
 
