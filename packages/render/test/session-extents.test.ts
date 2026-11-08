@@ -97,6 +97,47 @@ describe('the render session measures its space (M1-35 part 2)', () => {
     expect(s.extents()).toEqual({ minX: -20, minY: -5, maxX: 10, maxY: 0 });
   });
 
+  it('takes in an unclipped PDF underlay page once the app supplies it (M1-20)', () => {
+    const s = new RenderSession({
+      document: {
+        init: drawingInit([
+          entity('20', line(0, 0, 10, 0)),
+          entity('22', {
+            kind: 'PDFUNDERLAY',
+            definition: '9A',
+            position: { x: 20, y: 0 },
+            scale: { x: 2, y: 2, z: 1 },
+            rotation: 0,
+            flags: 2, // on, not clipped
+            contrast: 100,
+            fade: 0,
+            clip: [],
+          }),
+        ]),
+        block: MODEL,
+        tol: toleranceForSize(1000),
+      },
+      surface: surface('visible'),
+      createLayer: () => surface('layer'),
+      requestIdle: () => {},
+    });
+    // The page's size is only in its PDF: until the app has read it the underlay has no extent.
+    expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
+    const pixels = { width: 1, height: 1, data: new Uint8ClampedArray(4) };
+    const region = { minX: 0, minY: 0, maxX: 1, maxY: 1 };
+    s.setUnderlay('9A', { page: { width: 8.5, height: 11 }, region, pixels });
+    expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 37, maxY: 22 });
+    // Another raster of the same page (a zoom) changes nothing; forgetting the PDF does.
+    s.setUnderlay('9A', {
+      page: { width: 8.5, height: 11 },
+      region: { ...region, maxX: 0.5 },
+      pixels,
+    });
+    expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 37, maxY: 22 });
+    s.setUnderlay('9A', undefined);
+    expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
+  });
+
   it('has no extents for a space with nothing of known extent', () => {
     const empty = new RenderSession({
       document: { init: drawingInit([]), block: MODEL, tol: toleranceForSize(1000) },

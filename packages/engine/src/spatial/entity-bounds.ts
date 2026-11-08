@@ -87,7 +87,17 @@ export interface BoundsContext {
    * bounds. Other values bound the visible ones (ATTMODE 0 shows none, which those cover).
    */
   readonly attributeMode?: number | undefined;
+  /**
+   * A PDFDEFINITION's page size in underlay units (inches), once the app has read its PDF
+   * (M1-20): the page is not in the drawing, so without it an unclipped underlay is unknown.
+   */
+  readonly underlayPage?: UnderlayPage | undefined;
 }
+
+/** A PDF page's size in underlay units (inches: 72 PDF points), or undefined while unread. */
+export type UnderlayPage = (
+  definition: Handle,
+) => { readonly width: number; readonly height: number } | undefined;
 
 const UNKNOWN: EntityBounds = Object.freeze({ kind: 'unknown' });
 
@@ -272,25 +282,47 @@ function mlineBounds(geom: MLineGeometry): EntityBounds {
   return boxed(pad(boxOf(pts), half));
 }
 
-/** The PDF's own extent is not in the drawing; only a clip boundary bounds an underlay. */
-function underlayBounds(geom: UnderlayGeometry): EntityBounds {
-  if (geom.clip.length === 0) return UNKNOWN;
+/** DXF 280 bit 1: the underlay shows only inside its clip boundary. */
+const UNDERLAY_CLIPPING = 1;
+
+/**
+ * An underlay draws its page, inside its clip boundary while clipping is on (DXF 280 bit 1).
+ * The page's size is not in the drawing, only in its PDF: once the app has read it
+ * (`underlayPage`) an unclipped underlay is bounded by its page; before, by its stored
+ * boundary if it has one (what a clip-off underlay showed before, M1-20 part 1), else unknown.
+ */
+function underlayBounds(geom: UnderlayGeometry, ctx: BoundsContext): EntityBounds {
   const cos = Math.cos(geom.rotation);
   const sin = Math.sin(geom.rotation);
   const flip = geom.upsideDown ? -1 : 1;
+  const world = (pts: readonly Vec2[]): EntityBounds =>
+    boxed(
+      boxOf(
+        pts.map((c) => {
+          const x = c.x * geom.scale.x;
+          const y = c.y * geom.scale.y * flip;
+          return { x: geom.position.x + x * cos - y * sin, y: geom.position.y + x * sin + y * cos };
+        }),
+      ),
+    );
   // Two vertices are opposite corners of a rectangle; rotated, all four corners count.
   const [a, b] = geom.clip;
-  const pts =
-    geom.clip.length === 2 ? [a!, b!, { x: a!.x, y: b!.y }, { x: b!.x, y: a!.y }] : geom.clip;
-  return boxed(
-    boxOf(
-      pts.map((c) => {
-        const x = c.x * geom.scale.x;
-        const y = c.y * geom.scale.y * flip;
-        return { x: geom.position.x + x * cos - y * sin, y: geom.position.y + x * sin + y * cos };
-      }),
-    ),
-  );
+  const clip =
+    geom.clip.length === 0
+      ? undefined
+      : geom.clip.length === 2
+        ? [a!, b!, { x: a!.x, y: b!.y }, { x: b!.x, y: a!.y }]
+        : geom.clip;
+  const page = geom.definition === undefined ? undefined : ctx.underlayPage?.(geom.definition);
+  if (page && !(clip && (geom.flags & UNDERLAY_CLIPPING) !== 0)) {
+    return world([
+      { x: 0, y: 0 },
+      { x: page.width, y: page.height },
+      { x: 0, y: page.height },
+      { x: page.width, y: 0 },
+    ]);
+  }
+  return clip ? world(clip) : UNKNOWN;
 }
 
 /** `xdata` is the entity's own, for annotations whose style it overrides (a LEADER's DSTYLE). */
@@ -389,7 +421,7 @@ export function entityBounds(
     case 'WIPEOUT':
       return imageBounds(geom);
     case 'PDFUNDERLAY':
-      return underlayBounds(geom);
+      return underlayBounds(geom, ctx);
     case 'MLINE':
       return mlineBounds(geom);
     case 'OLE2FRAME':

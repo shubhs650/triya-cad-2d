@@ -404,6 +404,38 @@ describe('images and underlays', () => {
       box(-3 * r, 0, 4 * r, 7 * r),
     );
   });
+
+  it('bounds an unclipped underlay by its page once the PDF gives its size (M1-20)', () => {
+    const u: EntityGeometry = {
+      kind: 'PDFUNDERLAY',
+      definition: '9A',
+      position: { x: 1, y: 2 },
+      scale: { x: 2, y: 2, z: 1 },
+      rotation: Math.PI / 2,
+      flags: 2, // on, clipping off
+      contrast: 100,
+      fade: 0,
+      clip: [
+        { x: 0, y: 0 },
+        { x: 4, y: 3 },
+      ],
+    };
+    const pages = ctx(
+      {},
+      { underlayPage: (h) => (h === '9A' ? { width: 8.5, height: 11 } : undefined) },
+    );
+    // Turned 90° about (1, 2) at scale 2: the page's 17 × 22 runs up and to the left.
+    expectBox(entityBounds(u, pages), box(-21, 2, 1, 19));
+    // Upside down (−Z) the page's Y axis is reversed.
+    expectBox(entityBounds({ ...u, upsideDown: true }, pages), box(1, 2, 23, 19));
+    // Clipping on: the boundary bounds it, page known or not.
+    expectBox(entityBounds({ ...u, flags: 3 }, pages), box(-5, 2, 1, 10));
+    // Page not read yet: the stored boundary, else unknown, as before.
+    expectBox(entityBounds(u, ctx()), box(-5, 2, 1, 10));
+    expect(entityBounds({ ...u, clip: [] }, ctx()).kind).toBe('unknown');
+    expect(entityBounds({ ...u, definition: '9B', clip: [] }, pages).kind).toBe('unknown');
+    expectBox(entityBounds({ ...u, clip: [] }, pages), box(-21, 2, 1, 19));
+  });
 });
 
 describe('construction lines', () => {
