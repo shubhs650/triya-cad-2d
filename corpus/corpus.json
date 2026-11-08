@@ -3493,6 +3493,29 @@
         "txt"
       ],
       "knownIssues": []
+    },
+    {
+      "path": "public/self-authored/traces.dxf",
+      "version": "AC1032",
+      "format": "dxf-ascii",
+      "source": "self-authored",
+      "license": "MIT",
+      "sha256": "078928bc6d4764f0e47fe3701a382b5225d54e63d988b3471040def6208977e7",
+      "tags": [
+        "dxf-ascii",
+        "r2018",
+        "trace",
+        "blocks"
+      ],
+      "references": [],
+      "tolerance": {
+        "pixelMismatch": 2,
+        "ssim": 0.95
+      },
+      "fonts": [
+        "txt"
+      ],
+      "knownIssues": []
     }
   ]
 }

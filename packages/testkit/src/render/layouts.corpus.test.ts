@@ -49,6 +49,8 @@ const STALE =
 
 /** Sheets that differ from the stored limits, by `file | layout`, and why. */
 const LIMITS_DIFFER: Record<string, string> = {
+  // M1-75: traces.dxf draws in model space only and leaves ezdxf's Layout1 as made.
+  'public/self-authored/traces.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/examples_dxf/caret_encoding.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/examples_dxf/circle_radius_le_0.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/examples_dxf/clockwise_arcs_hatch.dxf | Layout1': EZDXF,
