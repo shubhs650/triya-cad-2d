@@ -11,6 +11,7 @@ import {
   dynFor,
   dynLive,
   dynMode,
+  dynReplay,
   dynTab,
   dynText,
   dynType,
@@ -56,8 +57,10 @@ export function DynamicInput({
   const at = useRef({ x: 0, y: 0 });
   const shown = on && over && prompt !== undefined && state !== undefined;
 
-  // A new prompt starts with empty fields.
-  useEffect(() => setState(prompt && dynFor(prompt)), [prompt]);
+  /** Keys typed since the last Enter: replayed on a prompt that arrives after them. */
+  const typed = useRef<string[]>([]);
+  // A new prompt starts with empty fields, or with what was typed ahead of it.
+  useEffect(() => setState(prompt && dynReplay(prompt, typed.current)), [prompt]);
 
   const props = useRef({ prompt, state, shown, cursor, onSubmit, onKeyword });
   props.current = { prompt, state, shown, cursor, onSubmit, onKeyword };
@@ -93,14 +96,18 @@ export function DynamicInput({
       const { prompt: p, state: s, shown: visible } = props.current;
       if (!visible || !p || !s || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
-      const take = (next: DynState) => {
+      const take = (next: DynState, key?: string) => {
         e.preventDefault();
         e.stopImmediatePropagation();
+        // Enter starts afresh; the ↓ menu (key '') leaves what was typed alone.
+        if (key === undefined) typed.current = [];
+        else if (key !== '') typed.current.push(key);
         setState(next);
       };
       const spaces = p.kind === 'string' && p.spaces && s.raw;
       if (e.key === 'Escape') {
         // The command line's listener cancels the command.
+        typed.current = [];
         setState(dynFor(p));
         return;
       }
@@ -115,17 +122,20 @@ export function DynamicInput({
         props.current.onSubmit(dynText(s, p, props.current.cursor()));
         return;
       }
-      if (e.key === 'Tab') return take(dynTab(s));
-      if (e.key === 'Backspace') return take(dynBackspace(s, p));
+      if (e.key === 'Tab') return take(dynTab(s), 'Tab');
+      if (e.key === 'Backspace') return take(dynBackspace(s, p), 'Backspace');
       if ((e.key === 'ArrowDown' || e.key === 'ArrowUp') && p.options?.length) {
         const n = p.options.length;
         const step = e.key === 'ArrowDown' ? 1 : -1;
-        return take({
-          ...s,
-          menu: s.menu === undefined ? (step > 0 ? 0 : n - 1) : (s.menu + step + n) % n,
-        });
+        return take(
+          {
+            ...s,
+            menu: s.menu === undefined ? (step > 0 ? 0 : n - 1) : (s.menu + step + n) % n,
+          },
+          '',
+        );
       }
-      if (e.key.length === 1) return take(dynType(s, e.key));
+      if (e.key.length === 1) return take(dynType(s, e.key), e.key);
     };
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
@@ -176,6 +186,7 @@ export function DynamicInput({
               aria-selected={i === state.menu}
               onPointerDown={(e) => {
                 e.preventDefault();
+                typed.current = [];
                 setState(dynFor(prompt));
                 onKeyword(o);
               }}

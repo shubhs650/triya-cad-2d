@@ -108,6 +108,18 @@ export function dynBackspace(s: DynState, prompt: Prompt): DynState {
   return withField(s, s.active, { text, locked: text !== '' && f.locked });
 }
 
+/**
+ * The fields of a prompt after `keys` (characters, `Tab`, `Backspace`): what was typed ahead
+ * of a prompt that had not arrived yet carries over to it rather than being lost.
+ */
+export function dynReplay(prompt: Prompt, keys: readonly string[]): DynState {
+  let s = dynFor(prompt);
+  for (const k of keys) {
+    s = k === 'Tab' ? dynTab(s) : k === 'Backspace' ? dynBackspace(s, prompt) : dynType(s, k);
+  }
+  return s;
+}
+
 /** Whether anything was typed. */
 export const dynTyped = (s: DynState): boolean => s.fields.some((f) => f.text !== '');
 

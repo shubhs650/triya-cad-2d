@@ -6,6 +6,7 @@ import {
   dynBackspace,
   dynFor,
   dynLive,
+  dynReplay,
   dynTab,
   dynText,
   dynType,
@@ -107,5 +108,14 @@ describe('Dynamic Input fields', () => {
     expect(dynLive(dynFor(angle), angle, { x: 0, y: 4 })).toEqual(['90.0000']);
     expect(dynLive(dynFor(angle), prompts.angle({ message: 'a' }), cursor)).toEqual(['']);
     expect(dynLive(dynFor(first), first, undefined)).toEqual(['', '']);
+  });
+
+  it('carries keys typed ahead of a prompt over to it', () => {
+    const s = dynReplay(next, ['1', '0', 'Tab', '4', '5', 'Backspace']);
+    expect(s.fields.map((f) => [f.text, f.locked])).toEqual([
+      ['10', true],
+      ['4', false],
+    ]);
+    expect(dynReplay(first, [])).toEqual(dynFor(first));
   });
 });
