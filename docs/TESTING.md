@@ -15,7 +15,7 @@ Fidelity is the product. This document defines the corpus, the harnesses, the to
 | UI | Playwright | dialogs, ribbon breakpoints (T9), grips, keyboard | every PR |
 | Cross-browser | Playwright WebKit + Firefox | degraded-mode paths | nightly |
 | Private corpus | same harnesses | owner's real drawings | owner, locally |
-| DXF audit | ezdxf (CI only, MIT) | `ezdxf.recover` + `audit` on every Triya-saved corpus DXF, 0 errors (M1-103, replaces AutoCAD AUDIT, DEC-047) | every PR |
+| DXF audit | ezdxf (CI only, MIT) | `ezdxf.recover` + `audit` on every Triya-saved corpus DXF, 0 errors (M1-105, replaces AutoCAD AUDIT, DEC-047) | every PR |
 
 ### 1.1 CI wiring (`.github/workflows/ci.yml`)
 
@@ -158,7 +158,7 @@ Each command has a test file that drives it through the `PromptBus` with typed a
 
 ## 8. Owner-only gates
 
-Since DEC-047 no gate needs the owner or AutoCAD. The AutoCAD AUDIT sweep is replaced by the ezdxf audit in CI (M1-103) and AutoCAD reference plots by Triya golden images (§4). What remains with the owner is optional:
+Since DEC-047 no gate needs the owner or AutoCAD. The AutoCAD AUDIT sweep is replaced by the ezdxf audit in CI (M1-105) and AutoCAD reference plots by Triya golden images (§4). What remains with the owner is optional:
 - **Private corpus:** `pnpm test:private` on the owner's own drawings, whenever convenient.
 - **Drafter sessions:** PRD §11.3 at M10.
 

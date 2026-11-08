@@ -319,7 +319,7 @@ PUBLISH loops layouts into a multi-page `PdfSink` with bookmarks and page labels
 - `packages/engine` unit tests (Vitest): geometry, parser, commands via scripted `PromptAnswer` sequences — no browser.
 - `packages/io` round-trip tests on `corpus/public/*` (Node): open → save → reopen → structural diff.
 - Fidelity tests: headless Chromium (Playwright) renders each corpus file via the real renderer to PNG; perceptual diff vs its reviewed Triya golden image with per-file tolerance (DEC-047).
-- DXF validity: every Triya-saved corpus DXF goes through ezdxf `recover` + `audit` in CI (M1-103).
+- DXF validity: every Triya-saved corpus DXF goes through ezdxf `recover` + `audit` in CI (M1-105).
 - Perf tests: Playwright + `performance.now()` around open/pan/zoom/osnap on the generated bench drawings (`packages/testkit/src/bench`, DEC-045); thresholds from `PRD.md` §12.
 - Offline test: Playwright with network blocked after load.
 - Private corpus: same harness, run locally with `pnpm test:private`, never in CI.
