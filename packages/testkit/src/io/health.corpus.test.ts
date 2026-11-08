@@ -127,7 +127,7 @@ describe('health report on the public corpus', () => {
       withReferences: all.filter((r) => r.references.length > 0).length,
       missingFonts: sum((r) => r.fonts.missing.length),
       missingPatterns: sum((r) => r.patterns.missing.length),
-    }).toEqual({ files: 118, withReferences: 22, missingFonts: 233, missingPatterns: 0 });
+    }).toEqual({ files: 119, withReferences: 22, missingFonts: 234, missingPatterns: 0 });
     // Unknown-object and unmapped-entity totals are left out: they move whenever acad-ts reads
     // more of a file (M1-32, M1-33) or Triya maps more types, which is not this report's doing.
   });

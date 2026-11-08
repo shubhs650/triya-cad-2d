@@ -10,6 +10,9 @@
 // the entry as read; the save rewrites it from `transparency`, registering the application
 // when the drawing has none, as AutoCAD does.
 //
+// A layer's viewport overrides (M1-62) are XRECORDs of its extension dictionary, kept as read;
+// a save refuses to change them and to remove a viewport they name.
+//
 // A layer's description (M1-104) is xdata too: `AcAecLayerStandard`, an empty 1000 string and
 // then the text, on every layer AutoCAD has shown in the Layer Properties Manager. The save
 // rewrites the second string, keeping the first (AecObjects.dwg's layer 0 holds that one only)
@@ -63,7 +66,7 @@ export function planLayers(
   model: DocumentModel,
   r: Resolver & { readonly created: Map<Handle, CadObject> },
 ): { plan: LayerPlan; problems: string[] } {
-  return planRecords(doc, base.tables?.layers ?? [], model.tables.layers, r, {
+  const planned = planRecords(doc, base.tables?.layers ?? [], model.tables.layers, r, {
     what: 'layer',
     removable: true,
     type: Layer,
@@ -72,6 +75,18 @@ export function planLayers(
     fixedNames: [Layer.defaultName],
     problems: (b, a) => layerProblems(r, doc.header?.version, b, a),
   });
+  // The overrides stay in the layer's XRECORDs as read, so a viewport the save removes would
+  // leave them naming a handle the file no longer has.
+  for (const l of model.tables.layers.values()) {
+    for (const o of l.viewportOverrides ?? []) {
+      const id = model.ids.idOf(o.viewport);
+      if (id === undefined || model.entity(id) === undefined)
+        planned.problems.push(
+          `layer ${l.name} (${l.handle}): overrides viewport ${o.viewport}, which the save removes`,
+        );
+    }
+  }
+  return planned;
 }
 
 function layerProblems(
@@ -98,6 +113,9 @@ function layerProblems(
   // AcAecLayerStandard APPID but no layer's entry), so an R12 file has nowhere AutoCAD reads one.
   if (descriptionChanged && version !== undefined && version <= ACadVersion.AC1009)
     out.push('an R12 layer does not store its description');
+  // No command edits them yet: the writer comes with VPLAYER and the Layer Properties
+  // Manager's VP columns (M6-02, M5-05), as DEC-047 has missing writers wait for their command.
+  if (changed('viewportOverrides')) out.push('viewport layer overrides change');
   if (changed('color') && (a.color.kind === 'byLayer' || a.color.kind === 'byBlock'))
     out.push(`a layer colour cannot be ${a.color.kind}`);
   if (changed('color') && a.color.kind === 'rgb' && a.color.bookName !== undefined)

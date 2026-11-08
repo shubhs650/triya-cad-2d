@@ -3443,6 +3443,31 @@
         "txt"
       ],
       "knownIssues": []
+    },
+    {
+      "path": "public/self-authored/viewport-overrides.dxf",
+      "version": "AC1032",
+      "format": "dxf-ascii",
+      "source": "self-authored",
+      "license": "MIT",
+      "sha256": "f5c3ba43e3929e2f97ff74ba972d4c55c798a1c9c4c8f32009ff7c005c0bf624",
+      "tags": [
+        "dxf-ascii",
+        "layouts",
+        "r2018",
+        "viewports",
+        "viewport-overrides",
+        "viewport-clip"
+      ],
+      "references": [],
+      "tolerance": {
+        "pixelMismatch": 2,
+        "ssim": 0.95
+      },
+      "fonts": [
+        "txt"
+      ],
+      "knownIssues": []
     }
   ]
 }
