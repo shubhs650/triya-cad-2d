@@ -78,7 +78,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| SELECT | — | 1 | all modes: W, C, F, WP, CP, L, P, ALL, BOX, AU, A, R, M, U, SI, G | |
+| SELECT | — | 1 | all modes: W, C, F, WP, CP, L, P, ALL, BOX, AU, A, R, M, U, SI, G | ~ (#225): pick, implied windowing (window left to right, crossing right to left, clicked or dragged), Shift-remove, W, C, BOX, ALL, L, P, A, R, U, AU, SI; Ctrl+A; PICKFIRST pre-selection at `Command:`. F, WP, CP, M, G in M3-04 |
 | QSELECT | — | 2 | dialog | |
 | FILTER | FI | 2 | dialog, named filters | |
 | SELECTSIMILAR | — | 2 | settings | |
@@ -176,7 +176,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | ~ (#224): window corner, n/nX/nXP (nXP in a layout; refused on the Model tab, where Triya has no floating viewport), All, Center, Dynamic (a window), Extents, Previous, Scale, Window, real time (drag up/down), transparent `'Z`; also the wheel, middle double-click and navigation bar (M1-22). Object waits on M2-03's selection |
+| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | ~ (#224): window corner, n/nX/nXP (nXP in a layout; refused on the Model tab, where Triya has no floating viewport), All, Center, Dynamic (a window), Extents, Previous, Scale, Window, real time (drag up/down), transparent `'Z`; also the wheel, middle double-click and navigation bar (M1-22). Object (#225), the pre-selection too |
 | PAN ᵀ | P | 1 | real-time, -PAN | x (#224): real time (left button until Esc or Enter) and -PAN (two points, or a displacement with Enter), transparent `'P`; middle-button drag and the navigation bar (M1-22) |
 | REGEN / REGENALL | RE / REA | 1 | x (#224): REGEN rebuilds the current viewport's display, REGENALL every viewport of the space shown; Regen on the navigation bar (M1-22) |
 | REDRAW ᵀ | R | 1 | | |

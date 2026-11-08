@@ -81,7 +81,7 @@ Breakpoints (viewport width): **≥1920 "full"**, **1600–1919 "wide"**, **1366
 - **Default:** light chrome (OET house style), dark model canvas `#212830` with `#2B3340` grid, white paper space with `#8A8F98` surround and dashed printable area. Dark chrome available. Canvas colours configurable (model, paper, grid, crosshair, selection, transient).
 - ACI 7 renders white on dark and black on light backgrounds; ACI 0 as ByBlock; true colours unchanged.
 - Plot-preview toggle (status bar / View) renders the drawing with the current CTB resolution on white.
-- Selection: AutoCAD-like highlight (dashed + glow), hover highlight, grips blue/hot red, osnap markers per mode shape, tracking vectors dashed.
+- Selection: AutoCAD-like highlight (dashed + glow), hover highlight, grips blue/hot red, osnap markers per mode shape, tracking vectors dashed. *As built (M2-03):* selected objects get a 5 px glow at 35 % and a 1 px 4/3 dashed line in `#4DA3FF` (`RenderStyle.selection`); a selection window is filled at 18 % and edged in blue, solid, when it is a window (left to right) and in green `#5FD35F`, dashed, when it is a crossing window (right to left). Hover highlight is M3-04.
 - Motion: 120 ms hover/press transitions, 160 ms panel open, respect `prefers-reduced-motion`.
 - Icons: Microsoft Fluent UI System Icons (filled on hover), 20 px in laptop mode, 32 px large in full mode; custom CAD glyph set for commands Fluent lacks (drawn in the same grid and stroke weight).
 
