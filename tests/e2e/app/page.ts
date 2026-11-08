@@ -168,3 +168,42 @@ export async function colourAt(page: Page, p: { x: number; y: number }): Promise
     { b64: png, ...p },
   );
 }
+
+/**
+ * Neutral light pixels (each channel over 120, within 30 of each other) in the CSS-pixel
+ * rectangle of the active canvas between corners `a` and `b`: white text and linework on the
+ * dark canvas, which coloured images and their blends never are (M1-109).
+ */
+export async function lightPixels(
+  page: Page,
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+): Promise<number> {
+  const png = (await activeCanvas(page).screenshot()).toString('base64');
+  const x0 = Math.round(Math.min(a.x, b.x));
+  const y0 = Math.round(Math.min(a.y, b.y));
+  const w = Math.round(Math.abs(b.x - a.x));
+  const h = Math.round(Math.abs(b.y - a.y));
+  return page.evaluate(
+    async ({ b64, x0, y0, w, h }) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.width;
+      c.height = img.height;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(x0, y0, w, h).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) {
+        const r = d[i]!;
+        const g = d[i + 1]!;
+        const b = d[i + 2]!;
+        if (Math.min(r, g, b) > 120 && Math.max(r, g, b) - Math.min(r, g, b) < 30) n++;
+      }
+      return n;
+    },
+    { b64: png, x0, y0, w, h },
+  );
+}

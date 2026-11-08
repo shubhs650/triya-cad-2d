@@ -28,6 +28,7 @@ import {
   type TextStyleRecord,
 } from '@triya/engine';
 import {
+  DEFAULT_BUNDLED_FONT,
   charAdvance,
   fontMeasure,
   layoutMText,
@@ -561,5 +562,49 @@ export function linetypeEmbedPrimitives(
     const s = Math.sin(p.angle) * k;
     out.shape(shape, { a: c, b: s, c: -s, d: c, e: p.at.x, f: p.at.y }, p.scale, paint.color);
   }
+  return out.primitives();
+}
+
+/** A label's font (M1-109): the bundled default, so it reads the same whatever the styles. */
+const LABEL_FONT = { name: DEFAULT_BUNDLED_FONT, kind: 'shx', bold: false, italic: false } as const;
+
+/** A frame label's width per unit of height, or undefined when it cannot be drawn. */
+export function labelWidth(label: string, ctx: TextContext): number | undefined {
+  const face = label === '' ? undefined : ctx.fonts.face(LABEL_FONT);
+  if (!face) return undefined;
+  let advance = 0;
+  for (const ch of label) advance += charAdvance(face, ch.codePointAt(0)!);
+  const unit = advance * face.font.scaleFor(1);
+  return unit > 0 ? unit : undefined;
+}
+
+/**
+ * A label (M1-109: a missing image's file name) `height` tall, centred on the origin of
+ * `frame`, which maps label coordinates (x along the label, y up, unit scale) to drawing ones;
+ * in the paint's colour and lineweight, in the bundled default font. AutoCAD documents that a
+ * missing image shows its file name in its frame, but not the font or size.
+ */
+export function frameLabelPrimitives(
+  label: string,
+  frame: Affine,
+  height: number,
+  paint: Paint,
+  ctx: TextContext,
+): RenderPrimitive[] {
+  const unit = labelWidth(label, ctx);
+  if (unit === undefined || !(height > 0)) return [];
+  const out = new Collector(paint);
+  const style: MTextCharStyle = {
+    font: LABEL_FONT,
+    height,
+    widthFactor: 1,
+    oblique: 0,
+    tracking: 1,
+    underline: false,
+    overline: false,
+    strike: false,
+    valign: 'bottom',
+  };
+  placeText(out, ctx.fonts, frame, label, (-unit * height) / 2, -height / 2, style);
   return out.primitives();
 }

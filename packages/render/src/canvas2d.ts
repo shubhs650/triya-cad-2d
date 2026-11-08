@@ -48,6 +48,7 @@ import {
   type Entity,
   type EntityId,
   type Handle,
+  type ImageDefinition,
   type KeyedChanges,
   type Layout,
   type LayoutSheet,
@@ -63,7 +64,7 @@ import { expandInsert, expands, insertClips, type BlockSource, type InsertClip }
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { mixColors, parseHex, tintColor } from './style/mix';
-import { adjustPixels, type ImageFrames } from './image';
+import { adjustPixels, imageLabel, type ImageFrames } from './image';
 import {
   adjustUnderlayPixels,
   mergeNeeds,
@@ -362,6 +363,19 @@ function touchesFrames(c: KeyedChanges<NonGraphicalObject> | undefined): boolean
   );
 }
 
+/**
+ * Whether a change set reloads, unloads or renames an image's definition (M1-109): the name a
+ * missing image shows changes. An added definition comes with the images it brings, which are
+ * tessellated anyway, and a removed one goes with them.
+ */
+function touchesImageNames(c: KeyedChanges<NonGraphicalObject> | undefined): boolean {
+  return (c?.updated ?? []).some((u) => {
+    if (u.before.type !== 'IMAGEDEF' || u.after.type !== 'IMAGEDEF') return false;
+    const [a, b] = [u.before as ImageDefinition, u.after as ImageDefinition];
+    return imageLabel(a) !== imageLabel(b);
+  });
+}
+
 const isSpatialFilter = (o: NonGraphicalObject): boolean => o.type === 'SPATIAL_FILTER';
 
 /** Whether a change set adds, removes or changes an XCLIP (M1-103). */
@@ -399,6 +413,7 @@ export class Canvas2DRenderer implements Renderer {
   readonly #tessellate: {
     text?: TextContext;
     frames?: ImageFrames;
+    imageName?: (definition: Handle) => string | undefined;
     patterns?: PatternLibrary;
     fill?: boolean;
     attributeMode?: number | undefined;
@@ -514,6 +529,13 @@ export class Canvas2DRenderer implements Renderer {
       };
     }
     this.#tessellate.frames = imageFrames(this.#model);
+    {
+      const model = this.#model;
+      this.#tessellate.imageName = (h) => {
+        const o = model.objects.get(h);
+        return o?.type === 'IMAGEDEF' ? imageLabel(o as ImageDefinition) : undefined;
+      };
+    }
     this.#tessellate.fill = fillMode(this.#model);
     this.#tessellate.attributeMode = attributeMode(this.#model);
     this.#imageQuality = imageQuality(this.#model);
@@ -642,7 +664,7 @@ export class Canvas2DRenderer implements Renderer {
         if (entry?.blocks && [...changed].some((b) => entry.blocks!.has(b))) this.#cacheEntity(id);
       });
     }
-    const frames = touchesFrames(cs.objects);
+    const frames = touchesFrames(cs.objects) || touchesImageNames(cs.objects);
     if (frames) {
       this.#tessellate.frames = imageFrames(this.#model);
       this.#imageQuality = imageQuality(this.#model);
@@ -1383,6 +1405,10 @@ export class Canvas2DRenderer implements Renderer {
       }
       for (const prim of this.#primitives(entry, scale, ltMul)) {
         if (frozen && prim.layers?.some((l) => frozen.has(l))) continue;
+        // A missing image's name (M1-109) goes once the app has the image's bitmap.
+        if (prim.kind !== 'point' && prim.kind !== 'infinite' && prim.missingImage !== undefined) {
+          if (this.#hasBitmap(prim.missingImage)) continue;
+        }
         setClip(prim.clip);
         // In a block, a part fades when the reference's layer (the entry's) or a layer below it
         // is locked; AutoCAD's help does not say for the nested case (ambiguity noted, M1-69).
@@ -1522,6 +1548,12 @@ export class Canvas2DRenderer implements Renderer {
     flush();
     setClip(undefined);
     setAlpha(1);
+  }
+
+  /** Whether the app has a bitmap for an IMAGEDEF this frame (M1-19, M1-109). */
+  #hasBitmap(definition: Handle): boolean {
+    const pixels = this.#images?.(definition);
+    return !!pixels && pixels.width > 0 && pixels.height > 0;
   }
 
   /**

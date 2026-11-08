@@ -4,18 +4,22 @@
 // top edge, so a vertex (x, y) sits at position + u (x + ½) + v (h − y − ½). The public corpus
 // pins the direction: wipeout_door.dxf's door-opening wipeouts state y from 0.5 to 0.376 of a
 // 1 × 1 image and only this reading puts them in the wall, from the insertion point up.
-import type { ImageGeometry } from '@triya/engine';
+import type { ImageDefinition, ImageGeometry } from '@triya/engine';
+import { FontBook } from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import {
   PATH_L,
   PATH_M,
   PATH_Z,
   adjustPixels,
+  imageLabel,
   tessellate,
+  type TessellateContext,
   type Paint,
   type RasterPixels,
   type RenderPrimitive,
 } from '../src/index';
+import { romans } from './text-fonts';
 
 const PAINT: Paint = { color: '#ff0000' };
 
@@ -191,6 +195,143 @@ describe('IMAGE', () => {
 
   it('draws nothing for an image with no size', () => {
     expect(tessellate(image({ size: { x: 0, y: 4 } }), PAINT)).toEqual([]);
+  });
+});
+
+// M1-109: an image whose bitmap the app has not supplied shows its file name inside its frame.
+// The test font's `A` is a square a tenth of the text height across, advancing two tenths, so
+// `AAAA` is 0.8 heights wide.
+describe('missing image name', () => {
+  const book = new FontBook();
+  // The name is drawn in the bundled default font; the test's romans stands in for it.
+  book.addShx('oet-simplex.shx', romans());
+  const ctx = (name: string | undefined): TessellateContext => ({
+    text: { fonts: book, style: () => undefined },
+    imageName: (h) => (h === '7F' ? name : undefined),
+  });
+  type Glyphs = Fill & { readonly missingImage?: string };
+  const glyphs = (prims: RenderPrimitive[]) =>
+    prims.filter((p): p is Glyphs => p.kind !== 'point' && p.kind !== 'infinite' && !!p.text);
+  const extent = (prims: Glyphs[]): [number, number, number, number] => {
+    const pts = prims.flatMap((p) => points(p.path));
+    const xs = pts.map((p) => p[0]);
+    const ys = pts.map((p) => p[1]);
+    return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  };
+
+  it('centres the name in the frame, a quarter of its height tall at most', () => {
+    // The 4 × 2 frame centred on (12, 21): height 0.5 (a quarter of 2), so 0.4 wide.
+    const prims = tessellate(image(), PAINT, ctx('AAAA'));
+    const g = glyphs(prims);
+    expect(g).toHaveLength(1);
+    expect(g[0]).toMatchObject({ kind: 'stroke', color: '#ff0000', missingImage: '7F' });
+    const [x0, y0, x1, y1] = extent(g);
+    expect(x0).toBeCloseTo(11.8, 9);
+    expect(y0).toBeCloseTo(20.75, 9);
+    // The last square starts 0.6 heights in and is 0.1 across.
+    expect(x1).toBeCloseTo(12.15, 9);
+    expect(y1).toBeCloseTo(20.8, 9);
+    // The fill (the bitmap, when it comes) and the frame are still there.
+    expect(fillOf(prims)?.image).toBeDefined();
+    expect(prims.at(-1)).toMatchObject({ kind: 'stroke' });
+    expect((prims.at(-1) as Fill).text).toBeUndefined();
+  });
+
+  it('shrinks a long name to 80 % of the frame’s width', () => {
+    // 40 squares: 8 heights wide, so 0.4 tall to span 3.2 of the 4 units.
+    const [x0, y0, x1] = extent(glyphs(tessellate(image(), PAINT, ctx('A'.repeat(40)))));
+    expect(x0).toBeCloseTo(10.4, 9);
+    expect(y0).toBeCloseTo(20.8, 9);
+    expect(x1).toBeCloseTo(13.6 - 0.04, 9);
+  });
+
+  it('runs along the image’s U axis', () => {
+    // Turned 90°: U up, V to the left, the frame x 8–10, y 20–24 centred on (9, 22).
+    const turned = image({ u: { x: 0, y: 0.5 }, v: { x: -0.5, y: 0 } });
+    const [x0, y0, x1, y1] = extent(glyphs(tessellate(turned, PAINT, ctx('AAAA'))));
+    // The baseline is a quarter height right of the centre and the glyphs rise to the left.
+    expect(x0).toBeCloseTo(9.2, 9);
+    expect(x1).toBeCloseTo(9.25, 9);
+    expect(y0).toBeCloseTo(21.8, 9);
+    expect(y1).toBeCloseTo(22.15, 9);
+  });
+
+  it('fits a clipped image’s name to its clip boundary', () => {
+    // The left half: pixels 0–3 of 8, world x 10–12, centred on (11, 21).
+    const half = image({
+      clipping: true,
+      clip: {
+        type: 'rectangle',
+        vertices: [
+          { x: -0.5, y: -0.5 },
+          { x: 3.5, y: 3.5 },
+        ],
+        inverted: false,
+      },
+    });
+    const [x0, , x1] = extent(glyphs(tessellate(half, PAINT, ctx('AAAA'))));
+    expect((x0 + x1 + 0.05) / 2).toBeCloseTo(11, 9);
+  });
+
+  it('shrinks the name until it lies inside a clip polygon', () => {
+    // A triangle of pixels: base along the bottom edge, apex at the top middle; in world
+    // (10, 20), (14, 20), (12, 22).
+    const triangle = image({
+      clipping: true,
+      clip: {
+        type: 'polygon',
+        vertices: [
+          { x: -0.5, y: 3.5 },
+          { x: 7.5, y: 3.5 },
+          { x: 3.5, y: -0.5 },
+        ],
+        inverted: false,
+      },
+    });
+    // 40 squares fit the extents at 0.4 tall (3.2 wide), which would cross the sides.
+    const g = glyphs(tessellate(triangle, PAINT, ctx('A'.repeat(40))));
+    const pts = g.flatMap((p) => points(p.path));
+    expect(pts.length).toBeGreaterThan(0);
+    // Inside: above the base and below both sides.
+    for (const [x, y] of pts) {
+      expect(y).toBeGreaterThanOrEqual(20);
+      expect(y - 20).toBeLessThanOrEqual(x - 10 + 1e-9);
+      expect(y - 20).toBeLessThanOrEqual(14 - x + 1e-9);
+    }
+    // Centred on the triangle's centroid, (12, 20.667), along U.
+    const [x0, , x1] = extent(g);
+    expect((x0 + x1) / 2).toBeGreaterThan(11.9);
+    expect((x0 + x1) / 2).toBeLessThan(12);
+  });
+
+  it('shows no name for an unloaded definition, without fonts, or with the image hidden', () => {
+    expect(glyphs(tessellate(image(), PAINT, ctx(undefined)))).toEqual([]);
+    expect(glyphs(tessellate(image(), PAINT, { imageName: () => 'AAAA' }))).toEqual([]);
+    expect(glyphs(tessellate(image({ displayFlags: 6 }), PAINT, ctx('AAAA')))).toEqual([]);
+    const { definition: _, ...none } = image();
+    expect(glyphs(tessellate(none, PAINT, ctx('AAAA')))).toEqual([]);
+  });
+});
+
+describe('imageLabel', () => {
+  const def = (extra: Partial<ImageDefinition> = {}): ImageDefinition => ({
+    handle: '7F',
+    type: 'IMAGEDEF',
+    owner: '80',
+    name: 'site-photo',
+    fileName: '.\\images\\site-photo.jpg',
+    size: { x: 40, y: 30 },
+    pixelSize: { x: 1, y: 1 },
+    loaded: true,
+    units: 0,
+    ...extra,
+  });
+
+  it('is the file name without its folder, for a loaded definition only', () => {
+    expect(imageLabel(def())).toBe('site-photo.jpg');
+    expect(imageLabel(def({ fileName: 'C:/photos/Site.PNG' }))).toBe('Site.PNG');
+    expect(imageLabel(def({ fileName: '' }))).toBe('site-photo');
+    expect(imageLabel(def({ loaded: false }))).toBeUndefined();
   });
 });
 

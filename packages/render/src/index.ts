@@ -2,7 +2,14 @@
 // Browser package: DOM types are available here. Nothing outside it may use Canvas 2D.
 export * from './types';
 export { patternLibrary, tessellate, type Paint, type TessellateContext } from './tessellate';
-export { adjustPixels, imagePrimitives, type ImageFrames, type PixelAdjustment } from './image';
+export {
+  adjustPixels,
+  imageLabel,
+  imagePrimitives,
+  type ImageFrames,
+  type ImageLabel,
+  type PixelAdjustment,
+} from './image';
 export {
   adjustUnderlayPixels,
   mergeNeeds,
