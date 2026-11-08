@@ -34,8 +34,14 @@ const UNREADABLE: Record<string, string> = {
     'a damaged DXF for ezdxf recover mode; acad-ts cannot read it (round-trip read-error)',
 };
 
-/** The window every render is taken in: the canvas size follows from the app's chrome. */
-const VIEWPORT = { width: 1000, height: 700 };
+/**
+ * The size every render is taken at. The canvas area is pinned to it rather than left to fill
+ * the window: the chrome around it is set in the system UI font, so its width differs between
+ * machines (a 1-pixel wider canvas on CI than locally), and the window is large enough to hold it.
+ */
+const CANVAS = { width: 960, height: 600 };
+const VIEWPORT = { width: 1100, height: 760 };
+const PIN_CANVAS = `.canvas-area { flex: none !important; width: ${CANVAS.width}px !important; height: ${CANVAS.height}px !important; }`;
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -85,6 +91,7 @@ for (const file of manifest.files) {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await page.goto(app.url);
+    await page.addStyleTag({ content: PIN_CANVAS });
     await openWithPicker(page, path.join(CORPUS_DIR, file.path));
     const name = path.basename(file.path);
     const tab = page.getByRole('tablist', { name: 'Open drawings' }).getByRole('tab', { name });
@@ -99,6 +106,11 @@ for (const file of manifest.files) {
     await expect(alert).toHaveCount(0);
     await expect(tab).toHaveAttribute('aria-selected', 'true', { timeout: 60_000 });
 
+    const box = await activeCanvas(page).boundingBox();
+    expect([box?.width, box?.height], 'the canvas is pinned to its render size').toEqual([
+      CANVAS.width,
+      CANVAS.height,
+    ]);
     const spaces = await tabs(page).allTextContents();
     const failures: string[] = [];
     const expected = new Set<string>();
