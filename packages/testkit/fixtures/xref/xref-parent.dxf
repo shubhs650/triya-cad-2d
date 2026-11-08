@@ -65,7 +65,7 @@ ANSI_1252
   9
 $TDCREATE
  40
-2461353.236244294
+2461353.495135567
   9
 $PELLIPSE
  70
@@ -485,7 +485,7 @@ $FILLMODE
   9
 $FINGERPRINTGUID
   2
-63d7b869-92fc-4d15-8418-fd35c177143e
+92ebf8d1-24b9-44e5-b942-56219811c99f
   9
 $HALOGAP
 280
@@ -493,7 +493,7 @@ $HALOGAP
   9
 $HANDSEED
   5
-36
+39
   9
 $INDEXCTL
 280
@@ -937,15 +937,15 @@ $UNITMODE
   9
 $TDUCREATE
  40
-2461353.236244317
+2461353.4951355904
   9
 $TDUUPDATE
  40
-2461353.236244317
+2461353.4951355904
   9
 $TDUPDATE
  40
-2461353.236244317
+2461353.4951355904
   9
 $DIMSHO
  70
@@ -1001,7 +1001,7 @@ $USRTIMER
   9
 $VERSIONGUID
   2
-c6468582-48c3-40ed-b44b-e60a517522ff
+5eff768e-e82d-4c89-af0e-c173d504c79e
   9
 $ACADVER
   1
@@ -1156,6 +1156,22 @@ ObjectDBX Classes
 1153
  91
 3
+280
+0
+281
+0
+  0
+CLASS
+  1
+SPATIAL_FILTER
+  2
+AcDbSpatialFilter
+  3
+ObjectDBX Classes
+ 90
+0
+ 91
+1
 280
 0
 281
@@ -1785,7 +1801,7 @@ xref-child-tb
   0
 BLOCK_RECORD
   5
-31
+32
 330
 11
 100
@@ -1929,9 +1945,9 @@ AcDbBlockEnd
   0
 BLOCK
   5
-32
+33
 330
-31
+32
 100
 AcDbEntity
  62
@@ -1955,9 +1971,9 @@ xref-child-ovl
   0
 ENDBLK
   5
-33
+34
 330
-31
+32
 100
 AcDbEntity
  62
@@ -2045,7 +2061,7 @@ AcDbPolyline
   0
 INSERT
   5
-34
+31
 330
 1D
 100
@@ -2092,6 +2108,12 @@ xref-child-tb
 INSERT
   5
 35
+102
+{ACAD_XDICTIONARY
+360
+36
+102
+}
 330
 1D
 100
@@ -2211,6 +2233,22 @@ F
   0
 DICTIONARY
   5
+36
+330
+35
+100
+AcDbDictionary
+280
+0
+281
+0
+  3
+ACAD_FILTER
+350
+37
+  0
+DICTIONARY
+  5
 2
 330
 1
@@ -2381,6 +2419,22 @@ AcDbDictionary
 281
 0
   0
+DICTIONARY
+  5
+37
+330
+36
+100
+AcDbDictionary
+280
+0
+281
+0
+  3
+SPATIAL
+350
+38
+  0
 MLINESTYLE
   5
 2A
@@ -2414,6 +2468,98 @@ ByLayer
 256
   6
 ByLayer
+  0
+SPATIAL_FILTER
+  5
+38
+102
+{ACAD_REACTORS
+330
+37
+102
+}
+330
+37
+100
+AcDbFilter
+100
+AcDbSpatialFilter
+ 70
+2
+ 10
+15
+ 20
+145
+ 10
+120
+ 20
+215
+210
+0
+220
+0
+230
+1
+ 11
+0
+ 21
+0
+ 31
+1
+ 71
+1
+ 72
+0
+ 73
+0
+ 40
+1
+ 40
+0
+ 40
+0
+ 40
+-20
+ 40
+0
+ 40
+1
+ 40
+0
+ 40
+-150
+ 40
+0
+ 40
+0
+ 40
+1
+ 40
+0
+ 40
+1
+ 40
+0
+ 40
+0
+ 40
+0
+ 40
+0
+ 40
+1
+ 40
+0
+ 40
+0
+ 40
+0
+ 40
+0
+ 40
+1
+ 40
+0
   0
 ENDSEC
   0

@@ -201,6 +201,21 @@ describe('xrefLoadChange (M1-21)', () => {
     expect(model.tables.layers.get('35')?.frozen).toBe(true);
   });
 
+  it("takes the reference's base point from the xref's INSBASE, as every load does", () => {
+    // AutoCAD 2024 help, INSBASE: "the base point used when the drawing is inserted or
+    // referenced as an xref". The host's BLOCK holds the point of the last load; a drawing
+    // whose INSBASE moved since moves its references when it loads again.
+    const model = DocumentModel.create(hostInit());
+    model.apply(
+      xrefLoadChange(model, XREF, { ...childInit(), header: [['$INSBASE', { x: 5, y: 2, z: 0 }]] }),
+    );
+    expect(model.blocks.get(XREF)?.basePoint).toEqual({ x: 5, y: 2 });
+    // The save keeps the point the load found, as AutoCAD writes it back.
+    expect(withoutXrefContent(model).blocks.get(XREF)?.basePoint).toEqual({ x: 5, y: 2 });
+    // A drawing that states none keeps the host's point.
+    expect(loaded().model.blocks.get(XREF)?.basePoint).toEqual({ x: 0, y: 0 });
+  });
+
   it('refuses a block that is not an xref, and a second load', () => {
     const model = DocumentModel.create(hostInit());
     expect(() => xrefLoadChange(model, MODEL_SPACE, childInit())).toThrow(
