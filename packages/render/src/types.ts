@@ -233,6 +233,11 @@ export type RenderPrimitive =
       readonly hatch?: HatchTint;
       /** Text glyphs, with their greeking. */
       readonly text?: TextLod;
+      /**
+       * A missing image's file name (M1-109): drawn only while the app has no bitmap for this
+       * IMAGEDEF, which the renderer asks each frame as bitmaps arrive after tessellation.
+       */
+      readonly missingImage?: string;
     }
   /** XLINE (both directions) or RAY (one direction), clipped to the view when drawn. */
   | {

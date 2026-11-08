@@ -66,6 +66,11 @@ export interface TessellateContext {
   readonly text?: TextContext;
   /** IMAGEFRAME and WIPEOUTFRAME; both on (AutoCAD's initial values) when absent. */
   readonly frames?: ImageFrames;
+  /**
+   * The name an IMAGE shows while the app has no bitmap for its definition (`imageLabel`,
+   * M1-109); undefined for an unloaded or unknown definition, which shows its frame alone.
+   */
+  readonly imageName?: (definition: string) => string | undefined;
   /** FILLMODE: false outlines wide polyline segments instead of filling them; on when absent. */
   readonly fill?: boolean;
   /**
@@ -248,7 +253,11 @@ export function tessellate(
   if (g.kind === 'ATTDEF')
     return ctx.text ? textPrimitives({ ...g, kind: 'TEXT', value: g.tag }, paint, ctx.text) : [];
   // Image frames are drawn continuous: a frame is a display aid, not linework (ours).
-  if (g.kind === 'IMAGE' || g.kind === 'WIPEOUT') return imagePrimitives(g, paint, ctx.frames);
+  if (g.kind === 'IMAGE' || g.kind === 'WIPEOUT') {
+    const name = g.kind === 'IMAGE' && g.definition ? ctx.imageName?.(g.definition) : undefined;
+    const label = name && ctx.text ? { name, text: ctx.text } : undefined;
+    return imagePrimitives(g, paint, ctx.frames, label);
+  }
   if (g.kind === 'PDFUNDERLAY') return underlayPrimitives(g, paint);
   if (g.kind === 'LWPOLYLINE' || g.kind === 'POLYLINE') {
     const widths = polylineWidths(g);

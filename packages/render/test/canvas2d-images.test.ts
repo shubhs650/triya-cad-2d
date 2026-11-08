@@ -4,11 +4,13 @@
 // masking in the background colour; an image inside a block reference.
 import type {
   EntityGeometry,
+  ImageDefinition,
   ImageGeometry,
   NonGraphicalObject,
   RasterVariables,
 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
+import { FontBook } from '@triya/text';
 import { Canvas2DRenderer, type RasterPixels, type RenderStyle } from '../src/index';
 import {
   change,
@@ -20,6 +22,7 @@ import {
   type DrawingExtra,
   type FakeContext,
 } from './fixtures';
+import { romans } from './text-fonts';
 
 const DARK: RenderStyle = { background: '#000000', foreground: '#ffffff', showLineweights: false };
 
@@ -57,7 +60,7 @@ const rasterVars = (frame: boolean): RasterVariables => ({
 
 function setup(
   geoms: { handle: string; geom: EntityGeometry; owner?: string }[],
-  o: { pixels?: Record<string, RasterPixels>; extra?: DrawingExtra } = {},
+  o: { pixels?: Record<string, RasterPixels>; extra?: DrawingExtra; fonts?: FontBook } = {},
 ) {
   const d = drawing(
     geoms.map((g) => entity(g.handle, g.geom, g.owner ? { owner: g.owner } : {})),
@@ -78,6 +81,7 @@ function setup(
     },
     style: DARK,
     requestIdle: () => {},
+    ...(o.fonts ? { fonts: o.fonts } : {}),
     images: (h) => {
       asked.push(h);
       return o.pixels?.[h];
@@ -254,5 +258,56 @@ describe('images', () => {
     expect(c.named('fill')).toEqual([['fill', '#000000', 'nonzero', 1]]);
     expect(c.named('stroke')).toEqual([]);
     expect(c.named('drawImage')).toEqual([]);
+  });
+});
+
+// M1-109: an image the app has no bitmap for shows its file name inside its frame, decided each
+// frame as bitmaps arrive after tessellation; an unloaded definition shows its frame only.
+describe('missing image name', () => {
+  const fonts = () => {
+    const book = new FontBook();
+    book.addShx('oet-simplex.shx', romans());
+    return book;
+  };
+  const def = (loaded: boolean): ImageDefinition => ({
+    handle: '7F',
+    type: 'IMAGEDEF',
+    owner: '80',
+    name: 'AB',
+    fileName: '.\\images\\AB',
+    size: { x: 8, y: 4 },
+    pixelSize: { x: 1, y: 1 },
+    loaded,
+    units: 0,
+  });
+
+  // The name's glyphs batch with the frame (one colour and width), so they show as paths: the
+  // missing image's outline and its frame are one move each, `A` (a square) and `B` (an arc)
+  // one each.
+  const moves = (c: FakeContext) => c.named('moveTo').length;
+
+  it('draws the name while the bitmap is missing, and stops once it arrives', () => {
+    const pixels: Record<string, RasterPixels> = {};
+    const { redraw } = setup([{ handle: '20', geom: image() }], {
+      pixels,
+      fonts: fonts(),
+      extra: { objects: [def(true)] },
+    });
+    expect(moves(redraw())).toBe(4);
+    pixels['7F'] = grey();
+    const c = redraw();
+    expect(c.named('drawImage')).toHaveLength(1);
+    // The bitmap's clip path and the frame.
+    expect(moves(c)).toBe(2);
+  });
+
+  it('shows no name for an unloaded definition, and one once it is loaded', () => {
+    const { d, r, redraw } = setup([{ handle: '20', geom: image() }], {
+      fonts: fonts(),
+      extra: { objects: [def(false)] },
+    });
+    expect(moves(redraw())).toBe(2);
+    r.apply(change(d, (b) => b.updateObject('7F', { loaded: true } as never)));
+    expect(moves(redraw())).toBe(4);
   });
 });

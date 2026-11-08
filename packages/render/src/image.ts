@@ -10,9 +10,15 @@
 // from the top edge, so vertex (x, y) is bitmap point (x + ½, y + ½); the unclipped boundary
 // AutoCAD writes is (−½, −½)–(width − ½, height − ½). The DXF reference gives no origin; the
 // public corpus pins it (see image.test.ts). A WIPEOUT is a 1 × 1 image with the same rules.
+//
+// A missing image (M1-109): AutoCAD shows an image whose file it cannot find by its frame with
+// the file name inside, and an unloaded one by its frame alone. Bitmaps arrive after
+// tessellation, so the name's glyphs are made here, for every loaded definition, and carry
+// `missingImage`: the renderer skips them each frame the app has the bitmap.
 
-import type { ImageGeometry, Vec2 } from '@triya/engine';
+import type { ImageDefinition, ImageGeometry, Vec2 } from '@triya/engine';
 import type { Paint } from './tessellate';
+import { frameLabelPrimitives, labelWidth, type TextContext } from './text';
 import {
   PATH_L,
   PATH_M,
@@ -85,11 +91,131 @@ function boundary(g: ImageGeometry, f: PrimitiveFrame): Vec2[] | undefined {
   return pts.length >= 3 ? pts : undefined;
 }
 
-/** An IMAGE or WIPEOUT: its fill (bitmap or background mask), then its frame when shown. */
+/**
+ * The name a missing image shows in its frame: its file name without the folder (the path as
+ * saved is often relative, `.\\images\\photo.jpg`; ours, as the frame is small), or the
+ * definition's name when no file is stated. None for an unloaded definition, which AutoCAD
+ * shows by its frame alone.
+ */
+export function imageLabel(def: ImageDefinition): string | undefined {
+  if (!def.loaded) return undefined;
+  const file = def.fileName.split(/[\\/]/).pop() ?? '';
+  return file || def.name;
+}
+
+/** What a missing image's name needs: the name and the fonts to draw it with. */
+export interface ImageLabel {
+  readonly name: string;
+  readonly text: TextContext;
+}
+
+/** The most of a frame's width and height a missing image's name takes (ours). */
+const LABEL_WIDTH = 0.8;
+const LABEL_HEIGHT = 0.25;
+
+/** Whether a point is inside a polygon (even-odd). */
+function inside(p: Vec2, poly: readonly Vec2[]): boolean {
+  let inPoly = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]!;
+    const b = poly[j]!;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x)
+      inPoly = !inPoly;
+  }
+  return inPoly;
+}
+
+/** A polygon's area centroid, or its vertices' mean when it has no area. */
+function centroid(poly: readonly Vec2[]): Vec2 {
+  let a = 0;
+  let cx = 0;
+  let cy = 0;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const p = poly[j]!;
+    const q = poly[i]!;
+    const k = p.x * q.y - q.x * p.y;
+    a += k;
+    cx += (p.x + q.x) * k;
+    cy += (p.y + q.y) * k;
+  }
+  if (Math.abs(a) > 0) return { x: cx / (3 * a), y: cy / (3 * a) };
+  const n = poly.length;
+  return {
+    x: poly.reduce((t, p) => t + p.x, 0) / n,
+    y: poly.reduce((t, p) => t + p.y, 0) / n,
+  };
+}
+
+/**
+ * The name's glyphs, running along U, in the frame drawn (the clip boundary, or the whole
+ * image): centred on its centroid, as tall as fits LABEL_WIDTH of the frame's width and
+ * LABEL_HEIGHT of its height along U, and shrunk until the name's box lies inside a clip
+ * polygon. The label's y axis is U turned a quarter left, so a mirrored image's name still
+ * reads forwards (AutoCAD documents none of this; ours).
+ */
+function labelPrimitives(
+  g: ImageGeometry,
+  shape: readonly Vec2[],
+  paint: Paint,
+  label: ImageLabel,
+): RenderPrimitive[] {
+  const len = Math.hypot(g.u.x, g.u.y);
+  const unit = labelWidth(label.name, label.text);
+  if (!(len > 0) || unit === undefined) return [];
+  const x = { x: g.u.x / len, y: g.u.y / len };
+  const y = { x: -x.y, y: x.x };
+  // The frame in label axes.
+  const local = shape.map((p) => ({ x: p.x * x.x + p.y * x.y, y: p.x * y.x + p.y * y.y }));
+  const xs = local.map((p) => p.x);
+  const ys = local.map((p) => p.y);
+  const width = Math.max(...xs) - Math.min(...xs);
+  const height = Math.max(...ys) - Math.min(...ys);
+  const c = centroid(local);
+  const fits = (h: number) => {
+    const w = (unit * h) / 2;
+    const corners = [
+      { x: c.x - w, y: c.y - h / 2 },
+      { x: c.x + w, y: c.y - h / 2 },
+      { x: c.x + w, y: c.y + h / 2 },
+      { x: c.x - w, y: c.y + h / 2 },
+    ];
+    const inBox = (p: Vec2) =>
+      p.x > c.x - w && p.x < c.x + w && p.y > c.y - h / 2 && p.y < c.y + h / 2;
+    return corners.every((p) => inside(p, local)) && !local.some(inBox);
+  };
+  let h = Math.min((LABEL_WIDTH * width) / unit, LABEL_HEIGHT * height);
+  if (!fits(h)) {
+    // Bisect between nothing and the most the frame's extents allow.
+    let lo = 0;
+    for (let i = 0; i < 30; i++) {
+      const mid = (lo + h) / 2;
+      if (fits(mid)) lo = mid;
+      else h = mid;
+    }
+    h = lo;
+  }
+  const frame = {
+    a: x.x,
+    b: x.y,
+    c: y.x,
+    d: y.y,
+    e: x.x * c.x + y.x * c.y,
+    f: x.y * c.x + y.y * c.y,
+  };
+  return frameLabelPrimitives(label.name, frame, h, paint, label.text).map((p) =>
+    p.kind === 'point' || p.kind === 'infinite' ? p : { ...p, missingImage: g.definition! },
+  );
+}
+
+/**
+ * An IMAGE or WIPEOUT: its fill (bitmap or background mask), the name it shows while its
+ * bitmap is missing (`label`, for a loaded definition), then its frame when shown.
+ */
 export function imagePrimitives(
   g: ImageGeometry,
   paint: Paint,
   frames: ImageFrames = FRAMES_ON,
+  label?: ImageLabel,
 ): RenderPrimitive[] {
   if (!(g.size.x > 0 && g.size.y > 0)) return [];
   const f = bitmapFrame(g);
@@ -120,6 +246,7 @@ export function imagePrimitives(
         transparent: (g.displayFlags & TRANSPARENT) !== 0,
       },
     });
+    if (label) out.push(...labelPrimitives(g, shape, paint, label));
   }
   if (g.kind === 'WIPEOUT' ? frames.wipeout : frames.image) {
     // The frame is the clip boundary (an inverted clip's too), in the entity's colour.
