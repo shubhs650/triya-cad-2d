@@ -1,0 +1,1 @@
+- M1-17 (#215): closed. Table cell text draws since M1-41 and the table files are checked by the M1-24 golden images; tables without stored graphics wait for the table engine (M4-05).

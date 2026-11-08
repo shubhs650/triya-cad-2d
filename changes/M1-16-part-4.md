@@ -1,0 +1,1 @@
+- M1-16 (#215): closed. The user .pat drop shipped as M1-50 and hatch rendering, ANSI31 included, is checked by the M1-24 golden images.

@@ -1,0 +1,1 @@
+- M1-18 (#215): closed. Viewport layer overrides and shaped clips shipped as M1-62 and every layout is checked by the M1-24 golden images; per-viewport annotative scales are post-launch with M1-63 (DEC-047).

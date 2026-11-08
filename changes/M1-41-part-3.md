@@ -1,0 +1,1 @@
+- M1-41 (#215): closed. MTEXT is checked by the M1-24 golden images; tuning against AutoCAD plots is post-launch, and vertical text is now its own task, M1-110.

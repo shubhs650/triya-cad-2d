@@ -1,0 +1,1 @@
+- M1-14 (#215): closed. Block rendering is checked by the M1-24 golden images; shared block tessellation was not needed, since M1-44 met the pan/zoom budget without it.

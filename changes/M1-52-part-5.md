@@ -1,0 +1,1 @@
+- M1-52 (#215): closed. Leaders and tolerance frames are checked by the M1-24 golden images; multileader block attributes, per-line overrides and underline/overline attachments are now their own task, M1-111, with a self-authored sample.
