@@ -73,6 +73,7 @@ import {
   MultiLeader,
   MultiLeaderStyle,
   PdfUnderlay,
+  Region,
   PdfUnderlayDefinition,
   Point,
   Polyline,
@@ -156,6 +157,7 @@ import type {
   Vec3,
   ViewportGeometry,
   XlineGeometry,
+  RegionGeometry,
 } from '@triya/engine';
 import type { CadFormat } from '../read';
 import type { PassthroughStore } from './passthrough';
@@ -190,6 +192,7 @@ import {
 } from './table-grid';
 import { writeXdata, xdataProblems } from './xdata';
 import { annotationProblems, writeAnnotation, type Annotated } from './annotation';
+import { regionProblems, writeRegion } from './region';
 
 const TWO_PI = 2 * Math.PI;
 const norm = (a: number): number => ((a % TWO_PI) + TWO_PI) % TWO_PI;
@@ -1688,6 +1691,17 @@ const underlayWriter: Writer<UnderlayGeometry> = {
   },
 };
 
+// ── REGION ─────────────────────────────────────────────────────────────────────────────────
+
+/** Moved, turned or scaled only (export/region.ts); the ACIS body's own transform takes it. */
+const regionWriter: Writer<RegionGeometry> = {
+  create: () => new Region(),
+  problems: (_r, before, g) => regionProblems(before, g),
+  write(_r, e, before, g) {
+    writeRegion(e as Region, before!, g);
+  },
+};
+
 // ── MLINE ──────────────────────────────────────────────────────────────────────────────────
 
 const mlineWriter: Writer<MLineGeometry> = {
@@ -2328,6 +2342,7 @@ const WRITERS: Partial<Record<EntityType, Writer<never>>> = {
   MULTILEADER: multiLeaderWriter,
   VIEWPORT: viewportWriter,
   ACAD_TABLE: tableWriter,
+  REGION: regionWriter,
 } as Partial<Record<EntityType, Writer<never>>>;
 
 /** The entity types whose geometry Triya can write (the rest: roadmap M1-75). */
