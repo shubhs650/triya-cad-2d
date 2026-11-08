@@ -2,6 +2,7 @@
 // (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
 // tabs; the status bar. The ribbon, palettes and command line arrive with their own tasks.
 import type { EditResult, EngineEdit, Layout, PdfDefinition } from '@triya/engine';
+import type { DrawnEntity, ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasMode } from './canvas/controller';
 import {
@@ -166,6 +167,11 @@ export interface DevHooks {
   /** PDF underlay pages drawn by pdf.js so far (M1-20: the cache spares repeats). */
   pdfRenders(): number;
   edit(edit: EngineEdit): Promise<EditResult>;
+  /**
+   * The entities drawn in a rectangle of the space on screen, CSS pixels from the canvas's
+   * top-left corner: the fidelity harness names them where a golden image differs (M1-106).
+   */
+  entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]>;
 }
 
 if (import.meta.env.DEV) {
@@ -179,6 +185,10 @@ if (import.meta.env.DEV) {
       return doc ? layoutsOf(doc.opened.init, engines.changesOf(doc.id)) : [];
     },
     pdfRenders: () => pdfPages.renders,
+    entitiesIn: async (rect) => {
+      const doc = showing();
+      return (doc && (await controllerOf(doc.id, doc.block)?.entitiesIn(rect))) ?? [];
+    },
     edit: async (edit) => {
       const doc = showing();
       if (!doc) return { ok: false, message: 'No drawing is open.' };

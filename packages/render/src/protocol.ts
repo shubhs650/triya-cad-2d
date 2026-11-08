@@ -1,13 +1,15 @@
 // Messages between RendererHost (main thread) and the render worker. Plain structured-clone
 // postMessage, as ARCHITECTURE.md §3 draws it: the stream is one-way except for the requests
-// that need an answer (hit test, flush, thumbnail, extents), which carry an id.
+// that need an answer (hit test, entities in a rectangle, flush, thumbnail, extents), which carry an id.
 
 import type { Box, ChangeSet, EntityId } from '@triya/engine';
 import type { FontSources, RenderDocument } from './session';
 import type {
+  DrawnEntity,
   RasterPixels,
   RenderPrimitive,
   RenderStyle,
+  ScreenRect,
   UnderlayRaster,
   UnderlayRequest,
   ViewTransform,
@@ -52,6 +54,8 @@ export type HostMessage =
       readonly screen: { readonly x: number; readonly y: number };
       readonly aperture: number;
     }
+  /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
+  | { readonly type: 'entitiesIn'; readonly id: number; readonly rect: ScreenRect }
   | { readonly type: 'flush'; readonly id: number }
   /** ZOOM Extents of the space drawn, as measured after everything before (M1-35 part 2). */
   | { readonly type: 'extents'; readonly id: number }
@@ -65,6 +69,7 @@ export type HostMessage =
 
 export type WorkerMessage =
   | { readonly type: 'reply'; readonly id: number; readonly ids?: readonly EntityId[] }
+  | { readonly type: 'entities'; readonly id: number; readonly entities: readonly DrawnEntity[] }
   /** The thumbnail asked for, transferred; null when the canvas was never sized. */
   | { readonly type: 'thumbnail'; readonly id: number; readonly bitmap: ImageBitmap | null }
   /** The extents asked for; null when nothing drawn has a known extent. */

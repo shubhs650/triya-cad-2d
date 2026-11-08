@@ -24,8 +24,10 @@ import {
   PATH_Z,
   RendererHost,
   screenToWorld,
+  type DrawnEntity,
   type FontSources,
   type RenderStyle,
+  type ScreenRect,
   type UnderlayRaster,
   type ViewTransform,
 } from '@triya/render';
@@ -200,6 +202,11 @@ export class CanvasController {
   }
 
   /** ZOOM Extents. A layout without entities shows its sheet. */
+  /** The entities drawn in a rectangle of the canvas, CSS pixels (M1-106 fidelity triage). */
+  entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]> {
+    return this.#host.entitiesIn(rect);
+  }
+
   zoomExtents(): void {
     this.#go(extentsView(this.#extents() ?? this.#paper(), this.#size));
   }

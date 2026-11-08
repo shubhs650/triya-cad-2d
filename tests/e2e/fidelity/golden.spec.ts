@@ -6,23 +6,38 @@
 // Golden images live under corpus/public/refs/golden/ (one folder per corpus file, one PNG per
 // space). `TRIYA_UPDATE_GOLDEN=1 pnpm test:fidelity` writes the missing and differing ones; a PR
 // that changes one says why, and its reviewer looks at it. Without the flag a missing golden,
-// a golden for a space the file no longer has, or a render outside tolerance fails, and the
-// actual, golden and diff PNGs are attached to the test (CI uploads them as `fidelity-diffs`).
+// a golden for a space the file no longer has, or a render outside tolerance fails, naming the
+// entities drawn in each differing region by type and handle (M1-106), and the actual, golden
+// and diff PNGs are attached to the test (CI uploads them as `fidelity-diffs`).
+//
+// Each test attaches its per-space results as `triage.json`; the fidelity reporter
+// (report.ts) folds them into the entity-level report after the run.
+//
+// `pnpm test:private` runs this suite on the owner's private corpus (TRIYA_CORPUS=private, the
+// manifest in TRIYA_PRIVATE_MANIFEST): golden images then live under corpus/private/refs/golden/,
+// gitignored with the drawings.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 import { loadManifest } from '../../../packages/testkit/src/corpus/manifest';
-import {
-  compareImages,
-  decodePng,
-  goldenPath,
-  type Comparison,
-} from '../../../packages/testkit/src/fidelity/compare';
-import { activeCanvas, openWithPicker } from '../app/page';
+import { goldenPath } from '../../../packages/testkit/src/fidelity/compare';
+import type { FileTriage, SpaceTriage } from '../../../packages/testkit/src/fidelity/triage';
+import { activeCanvas } from '../app/page';
 import { startApp } from '../app/server';
+import {
+  CANVAS,
+  VIEWPORT,
+  attachPng,
+  checkSpace,
+  loadApp,
+  openDrawing,
+  shootSpace,
+  spaceTabs,
+} from './harness';
+import { corpusDir, manifestPath } from './corpus';
 
-const CORPUS_DIR = path.join(import.meta.dirname, '../../../corpus');
-const manifest = loadManifest(path.join(CORPUS_DIR, 'corpus.json'));
+const CORPUS_DIR = corpusDir();
+const manifest = loadManifest(manifestPath());
 const UPDATE = process.env['TRIYA_UPDATE_GOLDEN'] === '1';
 
 /**
@@ -33,15 +48,6 @@ const UNREADABLE: Record<string, string> = {
   'public/third-party/ezdxf/integration_tests/recover02.dxf':
     'a damaged DXF for ezdxf recover mode; acad-ts cannot read it (round-trip read-error)',
 };
-
-/**
- * The size every render is taken at. The canvas area is pinned to it rather than left to fill
- * the window: the chrome around it is set in the system UI font, so its width differs between
- * machines (a 1-pixel wider canvas on CI than locally), and the window is large enough to hold it.
- */
-const CANVAS = { width: 960, height: 600 };
-const VIEWPORT = { width: 1100, height: 760 };
-const PIN_CANVAS = `.canvas-area { flex: none !important; width: ${CANVAS.width}px !important; height: ${CANVAS.height}px !important; }`;
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -54,53 +60,24 @@ test.afterAll(async () => {
 test.describe.configure({ mode: 'parallel', timeout: 180_000 });
 test.use({ viewport: VIEWPORT });
 
-const tabs = (page: Page) =>
-  page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
-const zoomExtents = (page: Page) =>
-  page
-    .getByRole('toolbar', { name: 'Navigation' })
-    .getByRole('button', { name: 'Zoom Extents', exact: true });
-
-/** Chrome drawn over the canvas (the navigation bar), hidden from the shots: its text is set in
- * the system UI font, which differs between machines. */
-const HIDE_CHROME = '.nav-bar { visibility: hidden !important; }';
-
-/**
- * The canvas once it has stopped changing. Fonts, patterns and images are fetched and decoded
- * after the first frame, and text is measured once its font is in, so this waits for the network
- * to go quiet and then for three shots 300 ms apart to be the same bytes.
- */
-async function settled(page: Page): Promise<Buffer> {
-  await page.waitForLoadState('networkidle');
-  const shot = () => activeCanvas(page).screenshot({ animations: 'disabled', style: HIDE_CHROME });
-  let last = await shot();
-  let same = 0;
-  const deadline = Date.now() + 60_000;
-  while (same < 2) {
-    await page.waitForTimeout(300);
-    const next = await shot();
-    same = Buffer.compare(next, last) === 0 ? same + 1 : 0;
-    if (Date.now() > deadline) throw new Error('the canvas did not settle within 60 s');
-    last = next;
-  }
-  return last;
-}
-
 for (const file of manifest.files) {
   test(file.path, async ({ page }, info) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
-    await page.goto(app.url);
-    await page.addStyleTag({ content: PIN_CANVAS });
-    await openWithPicker(page, path.join(CORPUS_DIR, file.path));
-    const name = path.basename(file.path);
-    const tab = page.getByRole('tablist', { name: 'Open drawings' }).getByRole('tab', { name });
-    const alert = page.getByRole('alert');
-    await expect(tab.or(alert).first()).toBeVisible({ timeout: 60_000 });
+    await loadApp(page, app.url);
+    const { tab, alert } = await openDrawing(page, path.join(CORPUS_DIR, file.path));
+    const triage = (spaces: SpaceTriage[], unreadable?: string): Promise<void> => {
+      const body: FileTriage = { path: file.path, spaces, ...(unreadable && { unreadable }) };
+      return info.attach('triage.json', {
+        body: JSON.stringify(body),
+        contentType: 'application/json',
+      });
+    };
 
     const unreadable = UNREADABLE[file.path];
     if (unreadable !== undefined) {
       await expect(alert, `${file.path} opens now: give it golden images`).toBeVisible();
+      await triage([], unreadable);
       return;
     }
     await expect(alert).toHaveCount(0);
@@ -111,50 +88,37 @@ for (const file of manifest.files) {
       CANVAS.width,
       CANVAS.height,
     ]);
-    const spaces = await tabs(page).allTextContents();
+    const spaces = await spaceTabs(page).allTextContents();
     const failures: string[] = [];
+    const results: SpaceTriage[] = [];
     const expected = new Set<string>();
     for (const [i, space] of spaces.entries()) {
-      await tabs(page).nth(i).click();
-      await expect(tabs(page).nth(i)).toHaveAttribute('aria-selected', 'true');
-      // ZOOM E only once the drawing has settled: text extents need their fonts.
-      let shot = await settled(page);
-      if (i === 0) {
-        await zoomExtents(page).click();
-        shot = await settled(page);
-      }
+      const shot = await shootSpace(page, i);
       const rel = goldenPath(file.path, space);
       expected.add(path.basename(rel));
       const abs = path.join(CORPUS_DIR, rel);
-      const result: Comparison | undefined = existsSync(abs)
-        ? compareImages(decodePng(shot), decodePng(readFileSync(abs)), file.tolerance)
-        : undefined;
-      if (result?.pass) continue;
+      const golden = existsSync(abs) ? readFileSync(abs) : undefined;
+      const check = await checkSpace(page, space, shot, golden, file.tolerance);
+      if (check.triage.pass) {
+        results.push(check.triage);
+        continue;
+      }
       if (UPDATE) {
         mkdirSync(path.dirname(abs), { recursive: true });
         writeFileSync(abs, shot);
+        results.push({ space, pass: true, drawn: check.triage.drawn, regions: [] });
         continue;
       }
+      results.push(check.triage);
       // Written to the test's output folder, which CI uploads as `fidelity-diffs` on failure.
       const slug = path.basename(rel, '.png');
-      const save = async (kind: string, body: Uint8Array) => {
-        const out = info.outputPath(`${slug}-${kind}.png`);
-        writeFileSync(out, body);
-        await info.attach(`${slug}-${kind}.png`, { path: out, contentType: 'image/png' });
-      };
-      await save('actual', shot);
-      if (!result) {
-        failures.push(`${space}: no golden image ${rel}`);
-        continue;
-      }
-      await save('golden', readFileSync(abs));
-      if (result.diffPng) await save('diff', result.diffPng);
-      const where = result.regions
-        .slice(0, 8)
-        .map((r) => `${r.width}×${r.height}@${r.x},${r.y}`)
-        .join(' ');
-      failures.push(`${space}: ${result.reason} (differs at ${where})`);
+      await attachPng(info, `${slug}-actual.png`, shot);
+      if (golden) await attachPng(info, `${slug}-golden.png`, golden);
+      if (check.comparison?.diffPng)
+        await attachPng(info, `${slug}-diff.png`, check.comparison.diffPng);
+      failures.push(golden ? `${space}: ${check.failure}` : `${space}: no golden image ${rel}`);
     }
+    await triage(results);
 
     // A golden image for a space the file no longer has.
     const dir = path.join(CORPUS_DIR, path.dirname(goldenPath(file.path, 'Model')));

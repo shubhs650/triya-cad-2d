@@ -2,7 +2,7 @@
 // `Renderer`; only this package knows it is Canvas 2D underneath, so a WebGL renderer can
 // replace it behind the same interface (DEC-006).
 
-import type { Box, ChangeSet, EntityId } from '@triya/engine';
+import type { Box, ChangeSet, EntityId, Handle } from '@triya/engine';
 
 /**
  * World → screen: the world point `center` sits at the middle of the viewport, `scale` is
@@ -270,6 +270,20 @@ export type RenderPrimitive =
       readonly clip?: PrimitiveClip;
     };
 
+/** A rectangle of the canvas, CSS pixels from its top-left corner. */
+export interface ScreenRect {
+  readonly x: number;
+  readonly y: number;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** An entity drawn on the canvas: its handle and its DXF type (the geometry's kind). */
+export interface DrawnEntity {
+  readonly handle: Handle;
+  readonly type: string;
+}
+
 export interface Renderer {
   /** The viewport's CSS size and device pixel ratio. */
   resize(width: number, height: number, dpr: number): void;
@@ -283,6 +297,12 @@ export interface Renderer {
   frame(): void;
   /** Entities within `aperture` CSS pixels of a screen point, nearest first. */
   hitTest(screen: { readonly x: number; readonly y: number }, aperture: number): EntityId[];
+  /**
+   * The entities drawn in a rectangle of the canvas, model space through a layout's viewports
+   * included, in handle order: the fidelity harness names them where a golden image differs
+   * (M1-106).
+   */
+  entitiesIn(rect: ScreenRect): DrawnEntity[];
 }
 
 /** The world box a view shows on a viewport of the given CSS size. */
