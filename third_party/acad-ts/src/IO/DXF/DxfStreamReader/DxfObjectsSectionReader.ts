@@ -1996,11 +1996,12 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           }
         }
 
+        // The first matrix is the inverse insert transform, the second the clip boundary's.
         if (tmp.insertTransformRead) {
           filter.insertTransform = new Matrix4(array);
-          tmp.insertTransformRead = true;
         } else {
           filter.inverseInsertTransform = new Matrix4(array);
+          tmp.insertTransformRead = true;
         }
 
         return true;

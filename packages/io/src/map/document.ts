@@ -1,6 +1,6 @@
 // A whole drawing as a Triya document (M1-22): header, tables, every block definition with its
 // base point and dynamic-block links (`mapBlock`), the mapped entities in block order, the
-// SORTENTSTABLEs, the image definitions and settings (M1-19), the groups (M1-75 part 23) and the layouts with their page setups (M1-18), which is what the app builds
+// SORTENTSTABLEs, the image definitions and settings (M1-19), the groups (M1-75 part 23), the XCLIP filters (M1-103) and the layouts with their page setups (M1-18), which is what the app builds
 // its engine and renderer from. The objects Triya keeps without mapping are listed by handle
 // only (`passthrough`, M1-05), so the engine never allocates one of their handles again.
 import type { CadDocument } from '@node-projects/acad-ts';
@@ -24,6 +24,7 @@ import { mapImageObjects } from './images';
 import { mapLayouts } from './layouts';
 import { mapSortEnts } from './sortents';
 import { mapTables } from './tables';
+import { mapSpatialFilters } from './xclip';
 
 export function documentInit(doc: CadDocument): DocumentInit {
   return mapDocument(doc).init;
@@ -43,6 +44,7 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
       ...mapImageObjects(doc),
       ...mapGroups(doc),
       ...mapDimAssocs(doc),
+      ...mapSpatialFilters(doc),
     ],
     layouts: mapLayouts(doc),
     entities,
