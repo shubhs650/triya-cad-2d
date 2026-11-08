@@ -1,0 +1,1 @@
+- M1-19 part 3 (#210): raster images now show in the app: image files dropped on the window (BMP, JPEG, PNG, TIFF, GIF) are matched to the drawing's images by file name, before or after the drawing opens, and an image saved unloaded shows only its frame. A thread-authored image test drawing with its own bitmaps has a reviewed golden image, which closes M1-19.
