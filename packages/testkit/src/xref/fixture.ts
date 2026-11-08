@@ -5,7 +5,9 @@
 //
 // - xref-parent.dxf: an A3 sheet border (420 × 297) on BORDER. It attaches xref-child-tb.dxf
 //   as `xref-child-tb` at (230, 10) and overlays the same file as `xref-child-ovl` at (20, 150).
-//   (No VISRETAIN `xref|layer` record: acad-ts refuses to write a name with `|`, M1-107.)
+//   VISRETAIN is on, and the parent keeps its own `xref-child-tb|TB-LINES` record (xref-dependent
+//   and resolved, DXF 70 48), turned red where the child has it green: the attachment's dividers
+//   draw red and the overlay's stay green (M1-107).
 // - xref-child-tb.dxf: a 180 × 60 title block: frame on TB-FRAME (red), dividers on TB-LINES
 //   (green), a block LOGO (circle and cross on layer 0) inserted on TB-LOGO (blue). It attaches
 //   xref-grandchild.dxf at (120, 10) and overlays xref-missing-overlay.dxf at (150, 10), a file
@@ -22,6 +24,7 @@ import {
   Layer,
   Line,
   LwPolyline,
+  StandardFlags,
   XY,
   XYZ,
   type Entity,
@@ -32,6 +35,8 @@ export const XREF_PARENT = 'xref-parent.dxf';
 export const XREF_CHILD = 'xref-child-tb.dxf';
 export const XREF_GRANDCHILD = 'xref-grandchild.dxf';
 export const XREF_MISSING_OVERLAY = 'xref-missing-overlay.dxf';
+/** The parent's own record of a layer of its attached child (VISRETAIN). */
+export const VISRETAIN_LAYER = 'xref-child-tb|TB-LINES';
 
 /** Where the parent places the child's attachment and overlay. */
 export const CHILD_AT = { x: 230, y: 10 };
@@ -137,6 +142,12 @@ export function xrefParentDxf(): Uint8Array {
   const doc = newDocument({ x: 0, y: 0, w: 420, h: 297 });
   const border = layer(doc, 'BORDER', 7);
   add(doc, border, rectangle(0, 0, 420, 297));
+  // What AutoCAD keeps of an xref layer the user recoloured in the host (VISRETAIN 1).
+  doc.header!.retainXRefDependentVisibilitySettings = true;
+  const kept = new Layer(VISRETAIN_LAYER);
+  kept.flags = StandardFlags.XrefDependent | StandardFlags.XrefResolved;
+  kept.color = new Color(1);
+  doc.layers!.add(kept);
   const zero = doc.layers!.tryGetValue('0')!;
   add(
     doc,

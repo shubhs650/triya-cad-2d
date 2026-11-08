@@ -65,7 +65,7 @@ ANSI_1252
   9
 $TDCREATE
  40
-2461353.1986549655
+2461353.236244294
   9
 $PELLIPSE
  70
@@ -485,7 +485,7 @@ $FILLMODE
   9
 $FINGERPRINTGUID
   2
-a382cfa2-0866-41ee-90b9-c5599968741a
+63d7b869-92fc-4d15-8418-fd35c177143e
   9
 $HALOGAP
 280
@@ -493,7 +493,7 @@ $HALOGAP
   9
 $HANDSEED
   5
-35
+36
   9
 $INDEXCTL
 280
@@ -825,7 +825,7 @@ $REGENMODE
   9
 $VISRETAIN
  70
-0
+1
   9
 $SHADEDIF
  70
@@ -937,15 +937,15 @@ $UNITMODE
   9
 $TDUCREATE
  40
-2461353.1986549883
+2461353.236244317
   9
 $TDUUPDATE
  40
-2461353.1986549883
+2461353.236244317
   9
 $TDUPDATE
  40
-2461353.1986549883
+2461353.236244317
   9
 $DIMSHO
  70
@@ -1001,7 +1001,7 @@ $USRTIMER
   9
 $VERSIONGUID
   2
-8d89a14a-6f04-4e0c-a707-082bba41a213
+c6468582-48c3-40ed-b44b-e60a517522ff
   9
 $ACADVER
   1
@@ -1383,7 +1383,7 @@ LAYER
 100
 AcDbSymbolTable
  70
-2
+3
   0
 LAYER
   5
@@ -1424,6 +1424,30 @@ BORDER
 0
  62
 7
+  6
+Continuous
+290
+1
+370
+-3
+390
+0
+  0
+LAYER
+  5
+2D
+330
+13
+100
+AcDbSymbolTableRecord
+100
+AcDbLayerTableRecord
+  2
+xref-child-tb|TB-LINES
+ 70
+48
+ 62
+1
   6
 Continuous
 290
@@ -1743,7 +1767,7 @@ AcDbBlockTableRecord
   0
 BLOCK_RECORD
   5
-2D
+2E
 330
 11
 100
@@ -1761,7 +1785,7 @@ xref-child-tb
   0
 BLOCK_RECORD
   5
-30
+31
 330
 11
 100
@@ -1867,9 +1891,9 @@ AcDbBlockEnd
   0
 BLOCK
   5
-2E
+2F
 330
-2D
+2E
 100
 AcDbEntity
  62
@@ -1893,9 +1917,9 @@ xref-child-tb
   0
 ENDBLK
   5
-2F
+30
 330
-2D
+2E
 100
 AcDbEntity
  62
@@ -1905,9 +1929,9 @@ AcDbBlockEnd
   0
 BLOCK
   5
-31
+32
 330
-30
+31
 100
 AcDbEntity
  62
@@ -1931,9 +1955,9 @@ xref-child-ovl
   0
 ENDBLK
   5
-32
+33
 330
-30
+31
 100
 AcDbEntity
  62
@@ -2021,7 +2045,7 @@ AcDbPolyline
   0
 INSERT
   5
-33
+34
 330
 1D
 100
@@ -2067,7 +2091,7 @@ xref-child-tb
   0
 INSERT
   5
-34
+35
 330
 1D
 100

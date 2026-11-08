@@ -74,6 +74,11 @@ export class BlockRecord extends TableEntry {
 		return (this.blockEntity.flags | (this.flags as unknown as BlockTypeFlags)) as BlockTypeFlags;
 	}
 
+	/** A block an xref brought in carries the dependent bit in its BLOCK's flags (DXF 70 bit 16). */
+	public override get isXrefDependent(): boolean {
+		return (this.combinedFlags & BlockTypeFlags.XRefDependent) !== 0;
+	}
+
 	public get hasAttributes(): boolean {
 		return this.attributeDefinitions.length > 0;
 	}
