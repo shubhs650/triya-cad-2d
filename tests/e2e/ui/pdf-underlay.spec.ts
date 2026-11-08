@@ -7,7 +7,7 @@
 // drawing comes with the fidelity harness (M1-24).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { activeCanvas, expectShown, ink, openWithDrop, openWithPicker, worldAt } from '../app/page';
+import { colourAt, expectShown, ink, openWithDrop, openWithPicker, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 
 const FIXTURES = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
@@ -21,41 +21,6 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   await app.close();
 });
-
-/** Screen ↔ world on the active canvas, from the status bar's cursor coordinates. */
-async function viewOf(page: Page) {
-  const box = (await activeCanvas(page).boundingBox())!;
-  const cx = Math.round(box.width / 2);
-  const cy = Math.round(box.height / 2);
-  const c = await worldAt(page, cx, cy);
-  const r = await worldAt(page, cx + 100, cy);
-  const unit = (r.x - c.x) / 100;
-  return {
-    box,
-    /** CSS pixel of the canvas at world (x, y). */
-    at: (x: number, y: number) => ({ x: cx + (x - c.x) / unit, y: cy - (y - c.y) / unit }),
-  };
-}
-
-/** The canvas's colour at CSS pixel (x, y), from a screenshot (the worker's canvas cannot be read). */
-async function colourAt(page: Page, p: { x: number; y: number }): Promise<number[]> {
-  const png = (await activeCanvas(page).screenshot()).toString('base64');
-  return page.evaluate(
-    async ({ b64, x, y }) => {
-      const img = new Image();
-      img.src = `data:image/png;base64,${b64}`;
-      await img.decode();
-      const c = document.createElement('canvas');
-      c.width = img.width;
-      c.height = img.height;
-      const ctx = c.getContext('2d')!;
-      ctx.drawImage(img, 0, 0);
-      // The screenshot is in CSS pixels (scale factor 1).
-      return [...ctx.getImageData(Math.round(x), Math.round(y), 1, 1).data];
-    },
-    { b64: png, ...p },
-  );
-}
 
 const pdfRenders = (page: Page) =>
   page.evaluate(() =>

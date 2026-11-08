@@ -26,6 +26,7 @@ import {
   screenToWorld,
   type DrawnEntity,
   type FontSources,
+  type RasterPixels,
   type RenderStyle,
   type ScreenRect,
   type UnderlayRaster,
@@ -33,6 +34,7 @@ import {
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
 import { layoutsOf } from '../documents';
+import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
 import { extentsView, panBy, wheelFactor, zoomAt, type ViewportSize } from './navigate';
@@ -93,6 +95,13 @@ export interface CanvasHooks {
     deliver: (definition: string, raster: UnderlayRaster | undefined) => void,
   ) => UnderlayClient;
   /**
+   * Raster images (M1-19 part 3): the canvas's link to the image files supplied, which hands
+   * over the bitmap of each IMAGEDEF whose file it has, now and as files arrive.
+   */
+  readonly images?: (
+    deliver: (definition: string, pixels: RasterPixels | undefined) => void,
+  ) => ImageClient;
+  /**
    * One of model space's tiled viewports (M1-22 part 4): the `*Active` VPORT it opens in, its
    * name for assistive technology, whether it is the current viewport, and how a press or a
    * wheel roll in it makes it current. Without it the canvas is the space's only viewport.
@@ -120,6 +129,7 @@ export class CanvasController {
   #canvas: HTMLCanvasElement;
   #host: RendererHost;
   readonly #underlays: UnderlayClient | undefined;
+  readonly #images: ImageClient | undefined;
   #listeners = new AbortController();
   #size: ViewportSize = { width: 0, height: 0 };
   #view: ViewTransform | undefined;
@@ -173,6 +183,10 @@ export class CanvasController {
     container.append(canvas);
     this.#canvas = canvas;
     this.#host = this.#createHost();
+    this.#images = hooks.images?.((definition, pixels) => {
+      this.#host.setImage(definition, pixels);
+      this.#requestFrame();
+    });
     this.#firstMeasure = this.#measure();
 
     this.#observer = new ResizeObserver(() => this.#resize());
@@ -268,6 +282,8 @@ export class CanvasController {
     this.#canvas = canvas;
     this.#listeners = new AbortController();
     this.#host = this.#createHost();
+    // The new renderer has none of the bitmaps the old one was given.
+    this.#images?.resend();
     this.#measure();
     this.#drawing = this.#again = false;
     this.#listen();
@@ -279,6 +295,14 @@ export class CanvasController {
   /** A change the drawing's engine applied (M1-67): the renderer applies it and redraws. */
   apply(change: ChangeSet): void {
     this.#host.apply(change);
+    // An IMAGEDEF brought in or changed (a loaded xref's images, a new path): its bitmap.
+    const o = change.objects;
+    if (
+      [...(o?.added ?? []), ...(o?.updated ?? []).map((u) => u.after)].some(
+        (d) => d.type === 'IMAGEDEF',
+      )
+    )
+      this.#images?.resend();
     this.#measure();
     // The layout renamed or given a new page setup or limits (M1-97): its sheet frames ZOOM
     // Extents and All from now on, and the canvas takes its new name.
@@ -321,6 +345,7 @@ export class CanvasController {
     this.#observer.disconnect();
     cancelAnimationFrame(this.#pending);
     this.#underlays?.dispose();
+    this.#images?.dispose();
     this.#host.dispose();
     this.canvas.remove();
   }
