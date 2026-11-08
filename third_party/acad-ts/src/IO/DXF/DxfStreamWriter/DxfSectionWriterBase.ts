@@ -1437,6 +1437,15 @@ export abstract class DxfSectionWriterBase {
       }
     }
     this._writer.write(91, line.index);
+    if (this.version >= ACadVersion.AC1024) {
+      this._writer.write(170, line.pathType);
+      this._writeMLeaderColor(92, line.lineColor);
+      this._writer.writeHandle(340, line.lineType);
+      this._writer.write(171, line.lineWeight);
+      this._writer.write(40, line.arrowheadSize);
+      this._writer.writeHandle(341, line.arrowhead);
+      this._writer.write(93, line.overrideFlags);
+    }
   }
 
   private _writeOle2Frame(ole: Ole2Frame, map: DxfMap): void {

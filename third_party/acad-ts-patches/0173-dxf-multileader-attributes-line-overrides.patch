@@ -1,0 +1,94 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+index 3a40571..49b44fb 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts
+@@ -33,7 +33,7 @@ import { Mesh } from '../../../Entities/Mesh.js';
+ import { MLine } from '../../../Entities/MLine.js';
+ import { MText } from '../../../Entities/MText.js';
+ import { ColumnType } from '../../../Entities/ColumnType.js';
+-import { MultiLeader } from '../../../Entities/MultiLeader.js';
++import { MultiLeader, MultiLeaderBlockAttribute } from '../../../Entities/MultiLeader.js';
+ import { MultiLeaderObjectContextData , LeaderRoot, LeaderLine} from '../../../Objects/MultiLeaderObjectContextData.js';
+ import { Point } from '../../../Entities/Point.js';
+ import { IPolyline } from '../../../Entities/IPolyline.js';
+@@ -1753,6 +1753,30 @@ export abstract class DxfSectionReaderBase {
+       case 93:
+         (tmp.cadObject as MultiLeader).blockContentColor = Color.fromCmValue(this._reader.valueAsInt);
+         return true;
++      // The block content's attribute values (DXF reference, MLEADER): 330 starts one with its
++      // ATTDEF, then 177 index, 44 width and 302 value. The writer writes them. The first 330
++      // is the entity's owner (common codes), which every entity states before its subclasses.
++      case 330: {
++        if (tmp.ownerHandle === null) {
++          return false;
++        }
++        const attribute = new MultiLeaderBlockAttribute();
++        (tmp.cadObject as MultiLeader).blockAttributes.push(attribute);
++        tmp.blockAttributeHandles.set(attribute, this._reader.valueAsHandle);
++        return true;
++      }
++      case 177:
++      case 44:
++      case 302: {
++        const attribute = (tmp.cadObject as MultiLeader).blockAttributes.at(-1);
++        if (!attribute) {
++          return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
++        }
++        if (this._reader.code === 177) attribute.index = this._reader.valueAsInt;
++        else if (this._reader.code === 44) attribute.width = this._reader.valueAsDouble;
++        else attribute.text = this._reader.valueAsString;
++        return true;
++      }
+       default:
+         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(tmp.cadObject.subclassMarker)!);
+     }
+@@ -1911,6 +1935,29 @@ export abstract class DxfSectionReaderBase {
+         case 91:
+           line.index = this._reader.valueAsInt;
+           break;
++        // R2010+: the line's own properties and the flags that say which override the
++        // MULTILEADER's (ODA DWG specification, LEADER_LINE; the writer writes them).
++        case 170:
++          line.pathType = this._reader.valueAsShort;
++          break;
++        case 92:
++          line.lineColor = Color.fromCmValue(this._reader.valueAsInt);
++          break;
++        case 340:
++          template.lineTypeHandle = this._reader.valueAsHandle;
++          break;
++        case 171:
++          line.lineWeight = this._reader.valueAsShort;
++          break;
++        case 40:
++          line.arrowheadSize = this._reader.valueAsDouble;
++          break;
++        case 341:
++          template.arrowSymbolHandle = this._reader.valueAsHandle;
++          break;
++        case 93:
++          line.overrideFlags = this._reader.valueAsInt;
++          break;
+         case 305:
+           if (this._reader.valueAsString === '}') {
+             end = true;
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index 8f40867..d8de958 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1437,6 +1437,15 @@ export abstract class DxfSectionWriterBase {
+       }
+     }
+     this._writer.write(91, line.index);
++    if (this.version >= ACadVersion.AC1024) {
++      this._writer.write(170, line.pathType);
++      this._writeMLeaderColor(92, line.lineColor);
++      this._writer.writeHandle(340, line.lineType);
++      this._writer.write(171, line.lineWeight);
++      this._writer.write(40, line.arrowheadSize);
++      this._writer.writeHandle(341, line.arrowhead);
++      this._writer.write(93, line.overrideFlags);
++    }
+   }
+ 
+   private _writeOle2Frame(ole: Ole2Frame, map: DxfMap): void {
