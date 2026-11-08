@@ -2,6 +2,10 @@
 
 You are building **Triya CAD 2D**, an AutoCAD-grade 2D drafting PWA for Open Engineering Tools. This file is loaded into every Claude Code thread. Read it fully before doing anything.
 
+## Rule 0 — purpose (owner, 2026-11-08; DEC-047)
+
+Triya is a **standalone 2D drafting app with functionality similar to AutoCAD**. AutoCAD compatibility is welcome, not mandatory. **Save is DXF only (AC1032)**: focus file work on it. DWG save, older DXF versions and other cross-compatibility work wait until after launch, and only if users ask. **Never ask the owner for AutoCAD files** (reference plots, sample DWGs, AUDIT runs, SHX renders). Author test drawings yourself (acad-ts, a committed ezdxf script, or by hand from the DXF reference), or move the item to the roadmap's post-launch list. Rendering is checked against Triya's own reviewed golden images. When anything below conflicts with Rule 0, Rule 0 wins.
+
 ## Read these first, in this order
 
 1. `docs/PRD.md` — what we build and the 15 non-goals. Scope disputes end here.
@@ -30,12 +34,12 @@ Ship milestones from `ROADMAP.md` in order, one task per branch, tests first, fi
 
 ## Non-negotiable engineering rules
 
-- **Passthrough invariant.** Any change to `packages/io` must keep the round-trip structural diff at zero on every corpus file. If you cannot, the change is wrong, not the test.
+- **Passthrough invariant.** Any change to `packages/io` must keep the DXF round-trip structural diff at zero on every corpus file. If you cannot, the change is wrong, not the test. DWG and pre-AC1032 files stay as regression guards; DEC-047 item 4 says when one of their differences may be recorded in the baseline instead.
 - **No DOM in the engine.** `packages/engine`, `io`, `text`, `hatch`, `dims`, `constraints`, `library`, `compare`, `pdf` must run in Node. `window`/`document`/`navigator` are build errors there.
 - **Handles are never renumbered.** New objects get handles above `$HANDSEED`.
 - **Commands are generators** on the `PromptBus`; they never read UI state directly. The command line, Dynamic Input and tests are front-ends to the same bus.
 - **Renderer only via the `Renderer` interface.** No Canvas2D calls outside `packages/render`.
-- **AutoCAD behaviour is the spec.** When unsure how a command, osnap, DIMVAR or dialog behaves, match AutoCAD 2024's documented behaviour. If documentation is ambiguous, write a test that encodes the most common drafter expectation and note the ambiguity in the PR.
+- **AutoCAD behaviour is the spec for how commands work.** When unsure how a command, osnap, DIMVAR or dialog behaves, match AutoCAD 2024's documented behaviour. If documentation is ambiguous, write a test that encodes the most common drafter expectation and note the ambiguity in the PR.
 - **No Autodesk assets.** Never commit `.shx`, `acad.pat`, `acad.lin`, `acad.dwt`, `acad.ctb` or anything copied from an Autodesk install. Re-author from the published format specs.
 - **No new dependencies without a line in `ATTRIBUTION.md`** and a license that is MIT/BSD/Apache/ISC/LGPL-as-separate-module. GPL/AGPL are forbidden.
 - **Performance budgets are tests.** A regression in `pnpm test:perf` is a failing build.
@@ -46,10 +50,10 @@ Ship milestones from `ROADMAP.md` in order, one task per branch, tests first, fi
 
 Open an issue labelled `needs-human`, post it in your final message, and **do not** proceed on that item (continue with other tasks):
 
-1. The M0 spike concludes acad-ts cannot reach the fidelity gate (go/no-go decision).
+1. *(Retired: the M0 go/no-go was decided on 2026-11-01.)*
 2. A roadmap task contradicts `PRD.md` or a decision in `DECISIONS.md`.
 3. A dependency you need has an incompatible license.
-4. A test requires a private-corpus file or an AutoCAD AUDIT run (owner-only).
+4. *(Retired by DEC-047: never ask for AutoCAD files or AUDIT runs. Author the test drawing yourself or move the item to the post-launch list.)*
 5. A change would alter the privacy model, the licensing, or the public API of the saved-file format (`TRIYA_*` dictionaries).
 6. You have evidence a performance target in `PRD.md` §12 is unreachable with Canvas 2D (triggers the WebGL decision).
 
@@ -71,7 +75,7 @@ Everything else: decide, document the decision in the PR, move on.
 pnpm install
 pnpm dev                 # apps/web on :5173
 pnpm lint | typecheck | test | test:fidelity | test:perf | test:offline | test:private
-pnpm corpus:ref <file>   # regenerate reference PNGs from a reference PDF (owner provides PDFs)
+pnpm corpus:ref <file>   # rasterise a reference PDF to PNG (golden images come from M1-24 since DEC-047)
 pnpm build               # production build
 pnpm planegcs:build      # Emscripten build (docker)
 gh pr create --fill && gh pr merge --auto --squash
