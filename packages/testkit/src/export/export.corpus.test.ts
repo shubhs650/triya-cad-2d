@@ -347,7 +347,9 @@ function edited(g: EntityGeometry): EntityGeometry {
 /** The Layers palette's toggles and a colour change, on every layer. */
 /**
  * The LAYER dialog on every layer: on or off, locked or unlocked, another colour, and (but in
- * R12, which has no transparency) an opaque layer made 70 % transparent, a transparent one opaque.
+ * R12, which has no transparency or description) an opaque layer made 70 % transparent, a
+ * transparent one opaque, a description given to a layer without one and cleared on one with
+ * one (M1-104).
  */
 function editedLayer(l: LayerRecord, r12: boolean): Partial<LayerRecord> {
   const index = l.color.kind === 'aci' && l.color.index === 3 ? 4 : 3;
@@ -356,7 +358,12 @@ function editedLayer(l: LayerRecord, r12: boolean): Partial<LayerRecord> {
     on: !l.on,
     locked: !l.locked,
     color: { kind: 'aci', index },
-    ...(r12 ? {} : { transparency: { alpha: opaque ? 76 : 255 } }),
+    ...(r12
+      ? {}
+      : {
+          transparency: { alpha: opaque ? 76 : 255 },
+          description: l.description ? '' : `Triya ${l.name}`.slice(0, 255),
+        }),
   };
 }
 
@@ -512,15 +519,22 @@ function editedHeader(model: DocumentModel): Map<string, HeaderValue> {
 
 /** A layer as it maps back: `raw` is the reader's link, and DXF 70 holds frozen/locked. */
 /**
- * A layer as it maps back: DXF 70 holds frozen and locked, and its AcCmTransparency xdata
- * (`apps`) is what the save rewrites from `transparency`, which is compared instead.
+ * A layer as it maps back: DXF 70 holds frozen and locked, and its AcCmTransparency and
+ * AcAecLayerStandard xdata (`apps`) is what the save rewrites from `transparency` and
+ * `description`, which are compared instead.
  */
 function comparableLayer(l: LayerRecord | undefined, apps: ReadonlySet<Handle>): unknown {
   if (!l) return l;
-  const { raw: _raw, flags, xdata, ...rest } = l;
+  // A cleared description ('') reads back as none.
+  const { raw: _raw, flags, xdata, description, ...rest } = l;
   const others = (flags ?? 0) & ~5;
   const kept = xdata?.filter((x) => !apps.has(x.appId)) ?? [];
-  return { ...rest, ...(others ? { flags: others } : {}), ...(kept.length ? { xdata: kept } : {}) };
+  return {
+    ...rest,
+    ...(others ? { flags: others } : {}),
+    ...(kept.length ? { xdata: kept } : {}),
+    ...(description ? { description } : {}),
+  };
 }
 
 function edit(model: DocumentModel, e: Entity, geom: EntityGeometry): void {
@@ -948,13 +962,19 @@ describe('TriyaToAcad edits on the public corpus', () => {
         ];
         expect(wrongClips, f.path).toEqual([]);
         const backLayers = new Map(init.tables?.layers?.map((l) => [l.handle, l]));
-        const transparencyApps = new Set(
+        const appsNamed = (name: string) =>
           (init.tables?.appIds ?? [])
-            .filter((a) => a.name.toUpperCase() === 'ACCMTRANSPARENCY')
-            .map((a) => a.handle),
-        );
-        // A drawing without the application has it registered by the save, once.
-        if (!r12 && layers.length > 0) expect(transparencyApps.size, f.path).toBe(1);
+            .filter((a) => a.name.toUpperCase() === name)
+            .map((a) => a.handle);
+        // A drawing without either application has it registered by the save, once.
+        if (!r12 && layers.length > 0) {
+          expect(appsNamed('ACCMTRANSPARENCY').length, f.path).toBe(1);
+          expect(appsNamed('ACAECLAYERSTANDARD').length, f.path).toBe(1);
+        }
+        const transparencyApps = new Set([
+          ...appsNamed('ACCMTRANSPARENCY'),
+          ...appsNamed('ACAECLAYERSTANDARD'),
+        ]);
         const wrongLayers = layers
           .map((l) => model.tables.layers.get(l.handle)!)
           .filter(
@@ -1075,9 +1095,11 @@ describe('TriyaToAcad edits on the public corpus', () => {
           if (o instanceof Insert) for (const a of o.attributes) ignoreHandles.add(a.handle);
         }
         // The edited variables, and the header's current-layer record ($CLAYER), are the edit,
-        // as is the APPID table's entry for the application the save registered.
+        // as are the APPID table's entries for the applications the save registered.
         const registered = (d: { objectName: string; path: string; a?: string }): boolean =>
-          d.objectName === 'APPID' && d.path === 'entries[ACCMTRANSPARENCY]' && d.a === 'absent';
+          d.objectName === 'APPID' &&
+          ['entries[ACCMTRANSPARENCY]', 'entries[ACAECLAYERSTANDARD]'].includes(d.path) &&
+          d.a === 'absent';
         const diff = structuralDiff(original, reopened, { ignoreHandles }).differences.filter(
           (d) =>
             !registered(d) &&

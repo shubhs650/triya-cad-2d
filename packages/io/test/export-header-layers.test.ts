@@ -9,6 +9,8 @@ import {
   CadDocument,
   Color,
   DictionaryVariable,
+  ExtendedData,
+  ExtendedDataString,
   Layer,
   Line,
   LineType,
@@ -402,6 +404,140 @@ describe('layers', () => {
     expect(apps.map((a) => a.handle)).toEqual([app!.handle]);
     expect(back.tables?.layers?.find((l) => l.name === 'WALLS')?.xdata?.[0]?.appId).toBe(
       app!.handle,
+    );
+  });
+
+  /** The AcAecLayerStandard entries of a mapped drawing's layer, by application name. */
+  const descriptionEntry = (back: ReturnType<typeof saved>, handle: string) => {
+    const apps = new Map((back.tables?.appIds ?? []).map((a) => [a.handle, a.name]));
+    const layer = back.tables?.layers?.find((l) => l.handle === handle);
+    return layer?.xdata?.filter((x) => apps.get(x.appId)?.toUpperCase() === 'ACAECLAYERSTANDARD');
+  };
+
+  it.each(formats)('writes a layer’s description as AcAecLayerStandard xdata (%s)', (format) => {
+    const bytes = drawing(ACadVersion.AC1032, format);
+    const { model } = open(bytes);
+    const walls = layerNamed(model, 'WALLS');
+    let added: LayerRecord | undefined;
+    edit(model, (b) => {
+      b.updateTableRecord('layers', walls.handle, { description: 'Outer walls' });
+      const { handle: _h, raw: _raw, ...init } = layerNamed(model, 'NOTES');
+      added = b.addTableRecord('layers', { ...init, name: 'GLASS', description: 'Glazing' });
+    });
+
+    const back = saved(bytes, model, format);
+    const apps = (back.tables?.appIds ?? []).filter(
+      (a) => a.name.toUpperCase() === 'ACAECLAYERSTANDARD',
+    );
+    // The drawing had no AcAecLayerStandard application: the save registers it, once.
+    expect(apps).toHaveLength(1);
+    const layers = new Map(back.tables?.layers?.map((l) => [l.handle, l]));
+    expect(layers.get(walls.handle)?.description).toBe('Outer walls');
+    expect(layers.get(added!.handle)?.description).toBe('Glazing');
+    // As AutoCAD files it: an empty string, then the description.
+    expect(descriptionEntry(back, walls.handle)).toEqual([
+      {
+        appId: apps[0]!.handle,
+        values: [
+          { code: 1000, value: '' },
+          { code: 1000, value: 'Outer walls' },
+        ],
+      },
+    ]);
+    const without = (l: LayerRecord | undefined) => {
+      if (!l) return l;
+      const { xdata: _x, ...rest } = l;
+      return comparable(rest);
+    };
+    expect(without(layers.get(added!.handle))).toEqual(
+      without(model.tables.layers.get(added!.handle)),
+    );
+
+    // Cleared: the layer keeps its entry with an empty description, as AutoCAD's layers do.
+    const again = exportDocument(readCadDocument(bytes), model, { format });
+    const second = open(again).model;
+    edit(second, (b) => b.updateTableRecord('layers', walls.handle, { description: '' }));
+    const cleared = saved(again, second, format);
+    expect(cleared.tables?.layers?.find((l) => l.handle === walls.handle)?.description).toBe(
+      undefined,
+    );
+    expect(descriptionEntry(cleared, walls.handle)?.[0]?.values).toEqual([
+      { code: 1000, value: '' },
+      { code: 1000, value: '' },
+    ]);
+  });
+
+  it('keeps the first string and the other applications of a layer’s entry', () => {
+    const doc = readCadDocument(drawing());
+    const own = new AppId('ACAECLAYERSTANDARD');
+    doc.appIds!.add(own);
+    const other = new AppId('TRIYA_TEST');
+    doc.appIds!.add(other);
+    const walls = doc.layers!.get('WALLS')!;
+    walls.extendedData.addByAppId(other, new ExtendedData([new ExtendedDataString('kept')]));
+    // AecObjects.dwg's layer 0: the first string only.
+    walls.extendedData.addByAppId(own, new ExtendedData([new ExtendedDataString('standard')]));
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const { model } = open(bytes);
+    edit(model, (b) =>
+      b.updateTableRecord('layers', layerNamed(model, 'WALLS').handle, { description: 'Walls' }),
+    );
+
+    const back = saved(bytes, model, 'dxf');
+    expect(
+      (back.tables?.appIds ?? []).filter((a) => a.name.toUpperCase() === 'ACAECLAYERSTANDARD'),
+    ).toHaveLength(1);
+    const layer = back.tables?.layers?.find((l) => l.name === 'WALLS');
+    expect(layer?.description).toBe('Walls');
+    const byApp = new Map(
+      (layer?.xdata ?? []).map((x) => [
+        back.tables?.appIds?.find((a) => a.handle === x.appId)?.name,
+        x.values,
+      ]),
+    );
+    expect(byApp.get('TRIYA_TEST')).toEqual([{ code: 1000, value: 'kept' }]);
+    expect(byApp.get('ACAECLAYERSTANDARD')).toEqual([
+      { code: 1000, value: 'standard' },
+      { code: 1000, value: 'Walls' },
+    ]);
+  });
+
+  it('uses an AcAecLayerStandard application the same save adds', () => {
+    const bytes = drawing();
+    const { model } = open(bytes);
+    let app: { handle: string } | undefined;
+    edit(model, (b) => {
+      app = b.addTableRecord('appIds', { name: 'AcAecLayerStandard' });
+      b.updateTableRecord('layers', layerNamed(model, 'WALLS').handle, { description: 'Walls' });
+    });
+
+    const back = saved(bytes, model, 'dxf');
+    const apps = (back.tables?.appIds ?? []).filter(
+      (a) => a.name.toUpperCase() === 'ACAECLAYERSTANDARD',
+    );
+    expect(apps.map((a) => a.handle)).toEqual([app!.handle]);
+    expect(back.tables?.layers?.find((l) => l.name === 'WALLS')?.description).toBe('Walls');
+  });
+
+  it('refuses a description xdata cannot hold, and one an R12 layer does not store', () => {
+    const bytes = drawing();
+    const { model } = open(bytes);
+    edit(model, (b) =>
+      b.updateTableRecord('layers', layerNamed(model, 'WALLS').handle, {
+        description: 'x'.repeat(256),
+      }),
+    );
+    expect(() => triyaToAcad(readCadDocument(bytes), model)).toThrow(
+      /description longer than 255 characters/,
+    );
+
+    const r12 = drawing(ACadVersion.AC1009);
+    const { model: old } = open(r12);
+    edit(old, (b) =>
+      b.updateTableRecord('layers', layerNamed(old, 'WALLS').handle, { description: 'Walls' }),
+    );
+    expect(() => triyaToAcad(readCadDocument(r12), old, 'dxf')).toThrow(
+      /an R12 layer does not store its description/,
     );
   });
 

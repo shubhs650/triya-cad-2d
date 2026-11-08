@@ -59,7 +59,12 @@ const init: DocumentInit = {
   header: [['$CLAYER', 'walls']],
   tables: {
     layers: [
-      layer('12', 'Walls', { color: { kind: 'aci', index: 1 }, lineweight: 50, linetype: '15' }),
+      layer('12', 'Walls', {
+        color: { kind: 'aci', index: 1 },
+        lineweight: 50,
+        linetype: '15',
+        description: 'Outer walls',
+      }),
       layer('10', '0'),
       layer('11', 'doors', { color: { kind: 'rgb', r: 10, g: 20, b: 30 }, plot: false }),
     ],
@@ -100,12 +105,14 @@ describe('layerRows', () => {
       color: { label: 'red', css: '#ff0000' },
       linetype: 'DASHED',
       lineweight: '0.50 mm',
+      description: 'Outer walls',
     });
     expect(rows[1]).toMatchObject({ color: { label: '10,20,30', css: '#0a141e' }, plot: false });
     expect(rows[0]).toMatchObject({
       current: false,
       lineweight: 'Default',
       color: { label: 'white' },
+      description: '',
     });
   });
 

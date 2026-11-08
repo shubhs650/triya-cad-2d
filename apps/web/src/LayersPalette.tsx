@@ -1,7 +1,8 @@
 // The Layers palette (M1-23, UI_SPEC.md §4), docked right as AutoCAD's Layer Properties
-// Manager: the layers by name with Status, On, Freeze, Lock, Plot, Color, Linetype and
-// Lineweight columns, and VP Freeze in a layout. On, Freeze and Lock toggle; each toggle is a
-// document edit the drawing's engine applies (M1-67) and every canvas of the drawing redraws.
+// Manager: the layers by name with Status, On, Freeze, Lock, Plot, Color, Linetype,
+// Lineweight and Description (M1-104) columns, and VP Freeze in a layout. On, Freeze and Lock
+// toggle; each toggle is a document edit the drawing's engine applies (M1-67) and every canvas
+// of the drawing redraws.
 // The rest is read-only until property editing (M2). Fully keyboard operable: every toggle is a
 // button.
 import { useMemo, useState } from 'react';
@@ -98,6 +99,7 @@ export function LayersPalette({
               <th scope="col">Color</th>
               <th scope="col">Linetype</th>
               <th scope="col">Lineweight</th>
+              <th scope="col">Description</th>
             </tr>
           </thead>
           <tbody>
@@ -137,6 +139,7 @@ export function LayersPalette({
                 </td>
                 <td>{r.linetype}</td>
                 <td>{r.lineweight}</td>
+                <td className="description">{r.description}</td>
               </tr>
             ))}
           </tbody>
