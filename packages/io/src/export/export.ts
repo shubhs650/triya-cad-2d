@@ -15,6 +15,7 @@ import {
   CadDictionaryWithDefault,
   Entity as AcadEntity,
   LineType,
+  Region,
   TableEntity,
   Viewport,
 } from '@node-projects/acad-ts';
@@ -70,6 +71,7 @@ import { PassthroughStore } from './passthrough';
 import { planPurge, writePurge } from './purge';
 import { addR12View, r12ViewChanges, r12ViewportProblems, writeR12View } from './r12-viewport';
 import { reactorProblems } from './reactors';
+import { regionDataProblems } from './region';
 import { changedApps, xdataChanges } from './xdata';
 import { planTextStyles, writeTextStyles } from './text-styles';
 import { planAppIds, planUcs, planViews, planVports, writeViewRecords } from './view-records';
@@ -239,6 +241,10 @@ function formatProblems(
     return tableCellProblems(r, acad, before.geom, e.geom).map(
       (p) => `${e.type} ${e.handle}: ${p}`,
     );
+  }
+  if (e.geom.kind === 'REGION' && before?.geom.kind === 'REGION' && !same(before.geom, e.geom)) {
+    if (!(acad instanceof Region)) return [];
+    return regionDataProblems(acad, before.geom, e.geom).map((p) => `${e.type} ${e.handle}: ${p}`);
   }
   if (e.geom.kind === 'VIEWPORT') {
     const b = before?.geom.kind === 'VIEWPORT' ? before.geom : undefined;

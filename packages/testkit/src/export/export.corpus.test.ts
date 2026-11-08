@@ -310,6 +310,19 @@ function edited(g: EntityGeometry): EntityGeometry {
     case 'VIEWPORT':
       // MOVE of the frame in paper space; the view it shows stays.
       return { ...g, center: move(g.center) };
+    case 'REGION':
+      // MOVE (ROTATE and SCALE are in export-region.corpus.test.ts).
+      return {
+        ...g,
+        loops: g.loops.map((l) => ({
+          ...l,
+          edges: l.edges.map((e) =>
+            e.kind === 'LINE'
+              ? { ...e, start: move(e.start), end: move(e.end) }
+              : { ...e, center: move(e.center) },
+          ),
+        })),
+      };
     case 'ACAD_TABLE':
       // MOVE, a wider first column and a taller first row (the grips), and every cell that can
       // be typed in retyped (number and date cells become the text typed).
