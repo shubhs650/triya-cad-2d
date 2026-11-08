@@ -176,18 +176,18 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | partial (M1-22): real-time wheel zoom at the cursor; Extents (also middle double-click), Window, Previous, All and Scale 2X/0.5X on the navigation bar; Center, Dynamic, Object, nXP and the command line wait on M2-02 (the command line; the command engine is M2-01) |
-| PAN ᵀ | P | 1 | real-time, -PAN | partial (M1-22): real-time pan by middle-button drag, and with the left button from the navigation bar until Esc; -PAN and the command wait on M2-02 (the command line; the command engine is M2-01) |
-| REGEN / REGENALL | RE / REA | 1 | | partial (M1-22 part 2): Regen on the navigation bar rebuilds the space shown; REGENALL and the command wait on M2-02 (the command line; the command engine is M2-01) |
+| ZOOM ᵀ | Z | 1 | All, Center, Dynamic(≈window), Extents, Previous, Scale (nX/nXP), Window, Object, real-time | ~ (#224): window corner, n/nX/nXP (nXP in a layout; refused on the Model tab, where Triya has no floating viewport), All, Center, Dynamic (a window), Extents, Previous, Scale, Window, real time (drag up/down), transparent `'Z`; also the wheel, middle double-click and navigation bar (M1-22). Object waits on M2-03's selection |
+| PAN ᵀ | P | 1 | real-time, -PAN | x (#224): real time (left button until Esc or Enter) and -PAN (two points, or a displacement with Enter), transparent `'P`; middle-button drag and the navigation bar (M1-22) |
+| REGEN / REGENALL | RE / REA | 1 | x (#224): REGEN rebuilds the current viewport's display, REGENALL every viewport of the space shown; Regen on the navigation bar (M1-22) |
 | REDRAW ᵀ | R | 1 | | |
-| VIEW | V | 2 | named views dialog; -VIEW | partial (M1-22 part 2): the navigation bar's Views list restores the drawing's plan views and saves new ones for the session (written to the drawing with M2-13); the dialog waits |
+| VIEW | V | 2 | named views dialog; -VIEW | ~ (#224): VIEW and -VIEW run the -VIEW prompts ?, Restore, Save and Window on the space shown (the drawing's plan views and this session's; saved views reach the file with M2-13); the View Manager dialog, Delete and the 3D options wait |
 | VPORTS / MVIEW / VPCLIP / VPMAX / VPMIN | — | 2 | | partial (M1-22 part 4): model-space tiled viewports saved in the drawing open as saved, and a click makes one current; the VPORTS command and dialog wait on M2-02 (the command line; the command engine is M2-01) |
 | MSPACE / PSPACE / MODEL | MS / PS | 2 | | |
 | LAYOUT / LAYOUTWIZARD(no) / PAGESETUP | LO | 2 | | |
 | SCALELISTEDIT | — | 2 | | |
 | CLEANSCREENON/OFF | Ctrl+0 | 2 | | |
 | DSETTINGS / OSNAP / DDPTYPE | DS, SE / OS / — | 2 | | |
-| ORTHO / GRID / SNAP / POLAR(F10) / OTRACK(F11) / DYN(F12) | F8 / F7 / F9 | 1 | status toggles | |
+| ORTHO / GRID / SNAP / POLAR(F10) / OTRACK(F11) / DYN(F12) | F8 / F7 / F9 | 1 | ~ (#224): DYN (F12 and the status bar) toggles Dynamic Input; the others come with M2-04 |
 | OPTIONS | OP | 2 | | |
 | TEXTSCR / GRAPHSCR | F2 | 1 | history window | partial (M2-01): `PromptBus.history` holds the text window's lines; the window is M2-02 |
 
