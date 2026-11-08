@@ -26,6 +26,7 @@ Every runtime or asset dependency is listed here. Adding a dependency without a 
 | TypeScript, Playwright (`@playwright/test`) | compiler; browser test runner; not shipped | Apache-2.0 | npm |
 | fast-check | property-based tests (dev only); not shipped | MIT | https://github.com/dubzzz/fast-check |
 | @vitest/coverage-v8 (and its MIT/ISC dependencies: @vitest/istanbul-lib-*, ast-v8-to-istanbul, @bcoe/v8-coverage, magicast, semver) | coverage gates in `pnpm test` (dev only); not shipped | MIT | npm |
+| ezdxf 1.4.5 (Python; with its dependencies numpy (BSD-3-Clause), fontTools (MIT), pyparsing (MIT) and typing_extensions (PSF-2.0, permissive, OSI-approved), pinned in `scripts/dxf-audit/requirements.txt`) | DXF validity gate in CI (M1-105, DEC-047 item 7): `recover` + `audit` of every Triya-saved corpus DXF; CI only, not shipped | MIT | https://github.com/mozman/ezdxf |
 | minimatch 10 (transitive, via ESLint) | dev tooling only; not shipped | BlueOak-1.0.0 (permissive, OSI-approved) | npm |
 
 Hatch patterns (`assets/patterns`), linetypes (`assets/linetypes`), plot-style tables (`assets/plotstyles`) and templates (`assets/templates`) are **re-authored** for this project from the published file-format descriptions and are MIT. No file copied from an Autodesk installation is included.
