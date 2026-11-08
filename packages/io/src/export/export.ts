@@ -54,6 +54,7 @@ import { planHeader, writeHeader } from './header';
 import { IMAGE_OBJECT_TYPES, planImageObjects, writeImageObjects } from './image-objects';
 import { planGroups, writeGroupMembers, writeGroups } from './groups';
 import { newDimAssocDictionaries, planDimAssocs, writeDimAssocs } from './dim-assocs';
+import { newSpatialFilterDictionaries, planSpatialFilters, writeSpatialFilters } from './xclips';
 import { planLayouts, writeLayouts } from './layouts';
 import { planLayers, writeLayers } from './layers';
 import { planMLeaderStyles, writeMLeaderStyles } from './mleader-styles';
@@ -176,12 +177,13 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
       ),
     );
   }
-  // Draw order tables, the image objects, groups and DIMASSOCs have writers (draw-order.ts,
-  // image-objects.ts, groups.ts, dim-assocs.ts).
+  // Draw order tables, the image objects, groups, DIMASSOCs and XCLIP filters have writers
+  // (draw-order.ts, image-objects.ts, groups.ts, dim-assocs.ts, xclips.ts).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'GROUP' &&
     o.type !== 'DIMASSOC' &&
+    o.type !== 'SPATIAL_FILTER' &&
     !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
@@ -339,7 +341,7 @@ function plan(
 
 /**
  * `m` as compared with its original: the extension dictionary the save makes for its new DIMASSOC
- * (dim-assocs.ts) is that writer's, so it is no property change.
+ * (dim-assocs.ts) or XCLIP filter (xclips.ts) is that writer's, so it is no property change.
  */
 function withNewDictionary(
   m: Entity | undefined,
@@ -435,6 +437,8 @@ export function triyaToAcad(
   // Before the entities: a dimension's and its geometry's reactors may name a DIMASSOC the same
   // save adds.
   const dimAssocs = planDimAssocs(original, base, model, r);
+  // Before the entities: a reference's new extension dictionary is the new clip's.
+  const xclips = planSpatialFilters(original, base, model, r);
   // A current style variable may name a style, and an arrow-block variable a block, by the name
   // the same save gives it (RENAME).
   const renamed = new Map<CadObject, string>(
@@ -457,7 +461,10 @@ export function triyaToAcad(
     model,
     r,
     format,
-    newDimAssocDictionaries(dimAssocs.plan),
+    new Map([
+      ...newDimAssocDictionaries(dimAssocs.plan),
+      ...newSpatialFilterDictionaries(xclips.plan),
+    ]),
   );
   // After the entities: a record the save removes may lose its last referrer in the same save.
   const purge = planPurge(original, base, model, r, p.removed);
@@ -478,6 +485,7 @@ export function triyaToAcad(
     ...blocks.problems,
     ...groups.problems,
     ...dimAssocs.problems,
+    ...xclips.problems,
     ...purge.problems,
   );
   problems.push(...drawOrder.problems);
@@ -544,6 +552,7 @@ export function triyaToAcad(
   writeEntityOrder(original, model, r);
   writeGroupMembers(r, groups.plan);
   writeDimAssocs(r, dimAssocs.plan);
+  writeSpatialFilters(r, xclips.plan);
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
   // Last: nothing written above may still refer to what goes.
