@@ -10,6 +10,8 @@ import {
   loadStrokeFont,
   shxCode,
   styleFont,
+  verticalAdvance,
+  verticalFace,
   type MTextCharStyle,
 } from '../../src/index';
 import { buildBigfont, buildShapes, buildUnifont } from '../shx/builder';
@@ -249,5 +251,44 @@ describe('fontMeasure', () => {
       lineSpacing: 1,
     });
     expect(layout.lines[0]!.width).toBeCloseTo(4, 12); // 2 × 2 units × 10 / 10
+  });
+});
+
+describe('vertical text (M1-110)', () => {
+  // Dual orientation: horizontal advance 6; in vertical text the pen ends 9 below the start.
+  const A = [2, 14, 8, 0xfe, 0xfa, 1, 0x40, 0x64, 0x48, 0x6c, 2, 0x60, 14, 8, 0xfc, 0xfd, 0];
+  const vert = (modes = 2) =>
+    parseShx(
+      buildShapes(
+        [
+          { code: 63, name: 'question', bytes: A },
+          { code: 65, name: 'UCA', bytes: A },
+        ],
+        { name: 'Vertical', above: 6, below: 2, modes },
+      ),
+    );
+
+  it('serves a vertical face only from an SHX font with mode 2', () => {
+    const book = new FontBook();
+    book.addShx('vert', vert());
+    book.addShx('flat', vert(0));
+    book.addTtf(ttf(), 'testsans.ttf');
+    expect(verticalFace(book.face(shx('vert')))).toBe(true);
+    expect(verticalFace(book.face(shx('flat')))).toBe(false);
+    expect(
+      verticalFace(book.face({ name: 'testsans.ttf', kind: 'ttf', bold: false, italic: false })),
+    ).toBe(false);
+    expect(verticalFace(undefined)).toBe(false);
+  });
+
+  it('measures down the column: the vertical pen advance, not the width factor', () => {
+    const book = new FontBook();
+    book.addShx('vert', vert());
+    const face = book.face(shx('vert'))!;
+    expect(verticalAdvance(face, 65)).toBe(9);
+    expect(verticalAdvance(face, 0x42)).toBe(9); // B, missing, as ?
+    const m = fontMeasure(book, undefined, { vertical: true });
+    expect(m.advance('AA', style(shx('vert'), 12, 0.5))).toBeCloseTo(36, 12); // 2 × 9 × 12 / 6
+    expect(fontMeasure(book).advance('AA', style(shx('vert'), 12, 0.5))).toBeCloseTo(12, 12);
   });
 });

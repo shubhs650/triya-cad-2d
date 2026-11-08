@@ -247,6 +247,7 @@ function run(
   pen: Pen,
   active: Set<number>,
   label: (code: number) => string,
+  vertical: boolean,
 ): void {
   const spec = src.spec(code);
   if (!spec || active.has(code)) return; // a missing or cyclic subshape draws nothing
@@ -257,11 +258,11 @@ function run(
     const cmd = decode(r, src);
     if (cmd.op === 'end') break;
     if (cmd.op === 'vertical') {
-      // Horizontal text only: the next command belongs to vertical text and is skipped.
-      decode(r, src);
+      // The next command belongs to vertical text: run in vertical text, skipped otherwise.
+      if (!vertical) decode(r, src);
       continue;
     }
-    execute(cmd, src, pen, active, label);
+    execute(cmd, src, pen, active, label, vertical);
   }
   active.delete(code);
 }
@@ -272,6 +273,7 @@ function execute(
   pen: Pen,
   active: Set<number>,
   label: (code: number) => string,
+  vertical: boolean,
 ): void {
   const s = pen.scale;
   switch (cmd.op) {
@@ -294,7 +296,7 @@ function execute(
     case 'subshape': {
       if (!cmd.place) {
         // The subshape continues with the caller's pen state and scale.
-        run(cmd.code, src, pen, active, label);
+        run(cmd.code, src, pen, active, label, vertical);
         return;
       }
       // Extended big-font subshape: drawn in a w×h cell at (x, y) from the pen, scaled from
@@ -304,7 +306,7 @@ function execute(
       const saved = { x: pen.x, y: pen.y, scale: pen.scale };
       moveTo(pen, pen.x + x * s, pen.y + y * s);
       pen.scale = (s * Math.max(w, h)) / k;
-      run(cmd.code, src, pen, active, label);
+      run(cmd.code, src, pen, active, label, vertical);
       pen.scale = saved.scale;
       moveTo(pen, saved.x + w * s, saved.y);
       return;
@@ -325,12 +327,16 @@ function execute(
   }
 }
 
-/** Interprets one shape and every subshape it calls. */
+/**
+ * Interprets one shape and every subshape it calls, for horizontal text or, in a font that
+ * supports both orientations, for vertical text (the commands after code 14 run).
+ */
 export function interpretShape(
   code: number,
   name: string,
   src: ShapeSource,
   label: (code: number) => string,
+  vertical = false,
 ): ShxGlyph {
   const pen: Pen = {
     x: 0,
@@ -342,7 +348,7 @@ export function interpretShape(
     current: undefined,
   };
   try {
-    run(code, src, pen, new Set(), label);
+    run(code, src, pen, new Set(), label, vertical);
   } catch (e) {
     if (e instanceof ShapeError) throw new Error(e.message, { cause: e });
     throw e;
