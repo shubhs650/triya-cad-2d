@@ -16,6 +16,7 @@ import { openDocument, readCadDocument, triyaToAcad } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import {
   CHILD_AT,
+  VISRETAIN_LAYER,
   XREF_CHILD,
   XREF_GRANDCHILD,
   XREF_MISSING_OVERLAY,
@@ -85,6 +86,15 @@ describe('xref fixture (M1-21)', () => {
     }
   });
 
+  it('keeps the VISRETAIN record of a layer of the attached child', () => {
+    const doc = readCadDocument(bytesOf(XREF_PARENT));
+    expect(doc.header?.retainXRefDependentVisibilitySettings).toBe(true);
+    const kept = doc.layers!.tryGetValue(VISRETAIN_LAYER);
+    expect([kept?.flags, kept?.color.index]).toEqual([48, 1]);
+    const layer = initOf(XREF_PARENT).tables?.layers?.find((l) => l.name === VISRETAIN_LAYER);
+    expect([layer?.flags, layer?.color]).toEqual([48, { kind: 'aci', index: 1 }]);
+  });
+
   it('attaches and overlays the child, which attaches the grandchild and overlays a missing file', () => {
     const parent = initOf(XREF_PARENT);
     const xrefs = (init: DocumentInit) =>
@@ -114,9 +124,13 @@ describe('xref fixture (M1-21)', () => {
     const model = loadedParent().model;
     expect(unloadedXrefs(model)).toEqual([]);
     expect(blockNamed(model, 'xref-missing-overlay')).toBeUndefined();
-    // Each reference's layers are its own: the attachment's and the overlay's.
-    for (const name of ['xref-child-tb|TB-LINES', 'xref-child-ovl|TB-LINES'])
-      expect(layerNamed(model, name)?.color).toEqual({ kind: 'aci', index: 3 });
+    // Each reference's layers are its own: the attachment's and the overlay's. The parent's
+    // own record of the attachment's TB-LINES (VISRETAIN) is used as it is: red, not green.
+    expect(layerNamed(model, 'xref-child-ovl|TB-LINES')?.color).toEqual({ kind: 'aci', index: 3 });
+    expect(layerNamed(model, VISRETAIN_LAYER)?.color).toEqual({ kind: 'aci', index: 1 });
+    expect(layerNamed(model, VISRETAIN_LAYER)?.handle).toBe(
+      layerNamed(new EngineSession(initOf(XREF_PARENT)).model, VISRETAIN_LAYER)?.handle,
+    );
     expect(layerNamed(model, 'xref-grandchild|GC')?.flags).toBe(48);
     expect(blockNamed(model, 'xref-child-tb|LOGO')).toBeDefined();
   });

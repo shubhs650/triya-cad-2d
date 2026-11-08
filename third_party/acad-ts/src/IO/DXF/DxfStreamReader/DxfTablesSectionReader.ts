@@ -437,6 +437,8 @@ export class DxfTablesSectionReader extends DxfSectionReaderBase {
         return true;
       case 70:
         if (!template.dxfFlagsAssigned) {
+          // The first 70 is the record's flags (xref-dependent bit 16), the second DIMTFILLCLR.
+          dimensionStyle.flags = this._reader.valueAsUShort as StandardFlags;
           template.dxfFlagsAssigned = true;
           return true;
         } else if (this._reader.valueAsShort >= 0) {

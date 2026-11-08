@@ -8,6 +8,7 @@ import {
   AttributeType,
   BlockGripExpression,
   BlockRecord,
+  BlockTypeFlags,
   BlockVisibilityParameter,
   BlockVisibilityState,
   BlockReferenceObjectContextData,
@@ -53,6 +54,7 @@ import {
   HatchStyleType,
   Insert,
   Layer,
+  LayerFlags,
   Layout,
   Leader,
   LeaderLine,
@@ -91,6 +93,7 @@ import {
   TextEntity,
   TextObjectContextData,
   TableStyle,
+  StandardFlags,
   TextStyle,
   UscIconType,
   Vertex2D,
@@ -2494,5 +2497,51 @@ describe('acad-ts local patches', () => {
       ['Both', [a.handle, b.handle]],
       ['One', [a.handle]],
     ]);
+  });
+  it('0172 a DXF keeps xref-dependent `xref|symbol` records', () => {
+    // AutoCAD names the symbols an xref brings in `xref|symbol` (DXF 70 bit 16, resolved bit
+    // 32) and keeps them in the host file, so VISRETAIN can restore the host's settings of the
+    // xref's layers on the next load (AutoCAD help, "About Xref-Dependent Named Objects"). `|`
+    // is not allowed in a name a user types, and unpatched acad-ts refused it in every record,
+    // so a DXF save dropped them all (with a warning) and the host lost its xref layer settings.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const dependent = StandardFlags.XrefDependent | StandardFlags.XrefResolved;
+    const layer = new Layer('CHILD|WALLS');
+    layer.flags = dependent | LayerFlags.Frozen;
+    layer.color = new Color(1);
+    doc.layers!.add(layer);
+    const linetype = new LineType('CHILD|DASHED');
+    linetype.flags = dependent;
+    doc.lineTypes!.add(linetype);
+    const style = new TextStyle('CHILD|NOTES');
+    style.flags = dependent;
+    style.filename = 'txt';
+    doc.textStyles!.add(style);
+    const dimstyle = new DimensionStyle('CHILD|ISO');
+    dimstyle.flags = dependent;
+    doc.dimensionStyles!.add(dimstyle);
+    const block = new BlockRecord('CHILD|LOGO');
+    block.blockFlags |= BlockTypeFlags.XRefDependent | BlockTypeFlags.XRefResolved;
+    block.entities.add(new Line(new XYZ(0, 0, 0), new XYZ(1, 1, 0)));
+    doc.blockRecords!.add(block);
+    // A record that is not xref-dependent still may not have `|` in its name.
+    const plain = new Layer('NOT|DEPENDENT');
+    doc.layers!.add(plain);
+
+    const back = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+    const read = back.layers!.tryGetValue('CHILD|WALLS')!;
+    expect(read).toBeDefined();
+    expect([read.handle, read.flags, read.color.index]).toEqual([
+      layer.handle,
+      dependent | LayerFlags.Frozen,
+      1,
+    ]);
+    expect(back.lineTypes!.tryGetValue('CHILD|DASHED')?.flags).toBe(dependent);
+    expect(back.textStyles!.tryGetValue('CHILD|NOTES')?.flags).toBe(dependent);
+    expect(back.dimensionStyles!.tryGetValue('CHILD|ISO')?.flags).toBe(dependent);
+    const readBlock = back.blockRecords!.tryGetValue('CHILD|LOGO')!;
+    expect(readBlock.blockFlags & BlockTypeFlags.XRefDependent).toBe(BlockTypeFlags.XRefDependent);
+    expect([...readBlock.entities]).toHaveLength(1);
+    expect(back.layers!.tryGetValue('NOT|DEPENDENT')).toBeUndefined();
   });
 });
