@@ -62,7 +62,7 @@ Breakpoints (viewport width): **≥1920 "full"**, **1600–1919 "wide"**, **1366
 - **Properties:** AutoCAD grouping (General, 3D Visualization omitted, Geometry, Misc, per-type sections); multi-select shows `*VARIES*`; inline edit with units formatting; Quick Properties overlay on hover (toggle in status bar).
 - **Layers:** manager with column chooser, search, filters tree, states menu, VP overrides when a viewport is active, inline edit.
 - **Blocks / Library:** current drawing blocks, recent, user library folders, PV standards library with search and preview thumbnails.
-- **References:** tree of xrefs/images/PDF underlays with status (loaded/missing/unloaded), paths, actions.
+- **References:** tree of xrefs/images/PDF underlays with status (loaded/missing/unloaded), paths, actions. M1-21: columns Reference name, Status (Loaded, Not found, Unloaded), Type (Attach, Overlay, Image, PDF underlay), Saved path; Find files…, Choose folder… and Reconnect (kept folders the browser asks about); a status-bar button names how many references are not found and opens the palette. Attach/detach/reload/unload/bind are M5-04.
 - **Constraints:** list with DOF, conflicts, parameters manager.
 - **Compare:** source/target pickers, results list, filters.
 - **Health:** report cards with fix buttons.
