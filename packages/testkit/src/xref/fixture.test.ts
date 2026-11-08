@@ -11,19 +11,26 @@ import {
   unloadedXrefs,
   type DocumentInit,
   type DocumentModel,
+  type ImageDefinition,
+  type SpatialFilter,
 } from '@triya/engine';
 import { openDocument, readCadDocument, triyaToAcad } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import {
   CHILD_AT,
+  CHILD_OVERLAY_AT,
+  GRANDCHILD_INSBASE,
+  OVERLAY_CLIP,
   VISRETAIN_LAYER,
   XREF_CHILD,
   XREF_GRANDCHILD,
   XREF_MISSING_OVERLAY,
   XREF_PARENT,
+  XREF_STAMP,
   xrefChildDxf,
   xrefGrandchildDxf,
   xrefParentDxf,
+  xrefStampPng,
 } from './fixture';
 
 const DIR = fileURLToPath(new URL('../../fixtures/xref/', import.meta.url));
@@ -33,6 +40,7 @@ if (process.env['TRIYA_UPDATE_FIXTURES'] === '1') {
   writeFileSync(DIR + XREF_PARENT, xrefParentDxf());
   writeFileSync(DIR + XREF_CHILD, xrefChildDxf());
   writeFileSync(DIR + XREF_GRANDCHILD, xrefGrandchildDxf());
+  writeFileSync(DIR + XREF_STAMP, xrefStampPng());
 }
 
 const bytesOf = (name: string) => new Uint8Array(readFileSync(DIR + name));
@@ -86,6 +94,27 @@ describe('xref fixture (M1-21)', () => {
     }
   });
 
+  it('commits the stamp PNG the generator writes', () => {
+    expect(bytesOf(XREF_STAMP)).toEqual(xrefStampPng());
+  });
+
+  it('XCLIPs the overlay to the left part of the title block', () => {
+    const init = initOf(XREF_PARENT);
+    const overlay = (init.blocks ?? []).find((b) => b.name === 'xref-child-ovl')!;
+    const ref = (init.entities ?? []).find(
+      (e) => e.geom.kind === 'INSERT' && e.geom.block === overlay.handle,
+    )!;
+    const filter = (init.objects ?? []).find((o) => o.type === 'SPATIAL_FILTER') as
+      SpatialFilter | undefined;
+    expect(filter?.insert).toBe(ref.handle);
+    expect(filter?.enabled).toBe(true);
+    const at = CHILD_OVERLAY_AT;
+    expect(filter?.boundary).toEqual([
+      { x: at.x + OVERLAY_CLIP.min.x, y: at.y + OVERLAY_CLIP.min.y },
+      { x: at.x + OVERLAY_CLIP.max.x, y: at.y + OVERLAY_CLIP.max.y },
+    ]);
+  });
+
   it('keeps the VISRETAIN record of a layer of the attached child', () => {
     const doc = readCadDocument(bytesOf(XREF_PARENT));
     expect(doc.header?.retainXRefDependentVisibilitySettings).toBe(true);
@@ -133,6 +162,30 @@ describe('xref fixture (M1-21)', () => {
     );
     expect(layerNamed(model, 'xref-grandchild|GC')?.flags).toBe(48);
     expect(blockNamed(model, 'xref-child-tb|LOGO')).toBeDefined();
+  });
+
+  it('places the grandchild by its own INSBASE, not the base point the child stored', () => {
+    const stored = blockNamed(new EngineSession(initOf(XREF_CHILD)).model, 'xref-grandchild');
+    expect(stored.basePoint).toEqual({ x: 0, y: 0 });
+    expect(blockNamed(loadedParent().model, 'xref-grandchild').basePoint).toEqual(
+      GRANDCHILD_INSBASE,
+    );
+  });
+
+  it("brings the child's PNG image in with each reference, its file named as saved", () => {
+    const model = loadedParent().model;
+    const defs = [...model.objects.values()].filter(
+      (o): o is ImageDefinition => o.type === 'IMAGEDEF',
+    );
+    expect(defs.map((d) => d.fileName)).toEqual([`.\\${XREF_STAMP}`, `.\\${XREF_STAMP}`]);
+    for (const name of ['xref-child-tb', 'xref-child-ovl']) {
+      const images = model
+        .blockEntities(blockNamed(model, name).handle)
+        .map((id) => model.entity(id)!.geom)
+        .filter((g) => g.kind === 'IMAGE');
+      expect(images).toHaveLength(1);
+      expect(defs.map((d) => d.handle)).toContain((images[0] as { definition: string }).definition);
+    }
   });
 
   it('bounds each reference by its content', () => {

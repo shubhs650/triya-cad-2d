@@ -28,18 +28,19 @@ export async function serve(page: Page, file: string): Promise<string> {
   return url;
 }
 
-/** Drops a file on the app window, as dragging it from the desktop does. */
-export async function openWithDrop(page: Page, file: string): Promise<void> {
-  const url = await serve(page, file);
-  const data = await page.evaluateHandle(
-    async ({ url, name }) => {
+/** Drops a file, or several at once, on the app window, as dragging them from the desktop does. */
+export async function openWithDrop(page: Page, file: string | readonly string[]): Promise<void> {
+  const files = typeof file === 'string' ? [file] : file;
+  const sources = [];
+  for (const f of files) sources.push({ url: await serve(page, f), name: path.basename(f) });
+  const data = await page.evaluateHandle(async (sources) => {
+    const dt = new DataTransfer();
+    for (const { url, name } of sources) {
       const bytes = await (await fetch(url)).arrayBuffer();
-      const dt = new DataTransfer();
       dt.items.add(new File([bytes], name));
-      return dt;
-    },
-    { url, name: path.basename(file) },
-  );
+    }
+    return dt;
+  }, sources);
   const target = page.getByTestId('app');
   await target.dispatchEvent('dragenter', { dataTransfer: data });
   await target.dispatchEvent('dragover', { dataTransfer: data });

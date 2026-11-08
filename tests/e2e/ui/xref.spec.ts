@@ -4,8 +4,9 @@
 // title block attaches xref-grandchild.dxf, a square with its diagonals. Before their files are
 // supplied the references draw nothing. Dropping the title block loads it into both references
 // (the drawing does not open in a tab of its own) and brings its layers in as
-// `xref-child-tb|…`; dropping the grandchild then loads the nested reference. The golden images
-// of the set come with the fidelity harness (M1-24).
+// `xref-child-tb|…`; dropping the grandchild then loads the nested reference. The set's golden
+// image is shot by tests/e2e/fidelity/fixtures.spec.ts; references.spec.ts covers the palette,
+// folders and kept handles.
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
 import { expectShown, ink, openWithDrop, openWithPicker } from '../app/page';

@@ -20,9 +20,10 @@
 //   nested overlay is not loaded at all ("overlays are ignored when the drawing is attached
 //   or overlaid as an xref"), so its references inside the xref draw nothing.
 // - Only the xref's model space comes in; its layouts never do.
-// The xref's block keeps the base point the host file stores (what AutoCAD wrote from the
-// xref's INSBASE when it last loaded it); an INSBASE changed since moves the xref in AutoCAD
-// when it reloads, which is left for RELOAD (M5-04).
+// - The xref's block takes its base point from the xref's INSBASE on every load (AutoCAD 2024
+//   help, INSBASE: "the insertion base point used when the drawing is inserted or referenced
+//   as an xref"). The host file stores the point of the last load, so an INSBASE moved since
+//   moves the references, and the save writes the new point back, as AutoCAD's does.
 
 import type { ChangeSet, KeyedChanges, PositionedEntity } from './changeset';
 import { DocumentModel, type DocumentInit } from './document';
@@ -311,7 +312,13 @@ export function xrefLoadChange(
     );
   }
 
-  const after = deepFreeze({ ...xrefDef, xrefLoaded: added });
+  const insBase = new Map(drawing.header ?? []).get('$INSBASE');
+  const basePoint =
+    typeof insBase === 'object' && insBase !== null && 'x' in insBase
+      ? { x: insBase.x, y: insBase.y }
+      : xrefDef.basePoint;
+  const moved = basePoint.x !== xrefDef.basePoint.x || basePoint.y !== xrefDef.basePoint.y;
+  const after = deepFreeze({ ...xrefDef, ...(moved ? { basePoint } : {}), xrefLoaded: added });
   return {
     ...(Object.keys(tables).length ? { tables: tables as NonNullable<ChangeSet['tables']> } : {}),
     blocks: { added: blocks, updated: [{ before: xrefDef, after }] },
