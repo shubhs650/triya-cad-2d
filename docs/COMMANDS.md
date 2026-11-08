@@ -10,7 +10,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Options / notes | Status |
 |---|---|---|---|---|
-| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | ~ (#222: Undo, Close, ↵ from the last line; osnap starts M2-04, arcs M3-01) |
+| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | ~ (#222: Undo, Close, ↵ from the last line; #226: running osnaps incl. PER and TAN from the last point; arcs M3-01) |
 | PLINE | PL | 1 | Arc (Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width), Halfwidth, Length, Undo, Width, Close | |
 | CIRCLE | C | 1 | 3P, 2P, TTR, TTT, Diameter | |
 | ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | |
@@ -186,8 +186,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | LAYOUT / LAYOUTWIZARD(no) / PAGESETUP | LO | 2 | | |
 | SCALELISTEDIT | — | 2 | | |
 | CLEANSCREENON/OFF | Ctrl+0 | 2 | | |
-| DSETTINGS / OSNAP / DDPTYPE | DS, SE / OS / — | 2 | | |
-| ORTHO / GRID / SNAP / POLAR(F10) / OTRACK(F11) / DYN(F12) | F8 / F7 / F9 | 1 | ~ (#224): DYN (F12 and the status bar) toggles Dynamic Input; the others come with M2-04 |
+| DSETTINGS / OSNAP / DDPTYPE | DS, SE / OS / — | 2 | | ~ (#226): running object snaps (OSMODE) are chosen from the status bar's OSNAP menu, F3 toggles them; the dialog is M3-06 |
+| ORTHO / GRID / SNAP / POLAR(F10) / OTRACK(F11) / DYN(F12) | F8 / F7 / F9 | 1 | ~ (#224): DYN (F12 and the status bar) toggles Dynamic Input; #226: ORTHO (F8), SNAP (F9) and POLAR (F10) toggle on the status bar and in the Ctrl+K palette (not yet typed as commands); GRID and OTRACK are M2-04 part 2 |
 | OPTIONS | OP | 2 | | |
 | TEXTSCR / GRAPHSCR | F2 | 1 | history window | partial (M2-01): `PromptBus.history` holds the text window's lines; the window is M2-02 |
 

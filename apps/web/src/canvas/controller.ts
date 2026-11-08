@@ -1100,7 +1100,7 @@ export class CanvasController {
       this.#tip.textContent = tip;
       this.#tip.dataset['mode'] = hit?.mode ?? 'polar';
       this.#tip.style.left = `${this.#pointer!.offsetX + 16}px`;
-      this.#tip.style.top = `${this.#pointer!.offsetY + 16}px`;
+      this.#tip.style.top = `${this.#pointer!.offsetY - 34}px`;
     }
     this.#hooks.onCursor(point);
   }
