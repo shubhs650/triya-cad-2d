@@ -2,8 +2,16 @@
 // it returns goes to every renderer of that drawing (one per space shown), which is how the
 // render replicas stay in step with the authoritative document. A renderer made later (a
 // layout tab shown for the first time, REGEN) starts from the drawing as opened, so it replays
-// the drawing's change log first.
-import type { ChangeSet, DocumentInit, EditResult, EngineEdit } from '@triya/engine';
+// the drawing's change log first. A command's edits (M2-02) take the same way: each ChangeSet the
+// command engine reports joins the change log and goes to every renderer of the drawing.
+import type {
+  ChangeSet,
+  CommandInput,
+  CommandOutput,
+  DocumentInit,
+  EditResult,
+  EngineEdit,
+} from '@triya/engine';
 import type { EngineHost } from './host';
 
 export interface ChangeTarget {
@@ -15,6 +23,7 @@ export class Engines {
   readonly #targets: (doc: number) => Iterable<ChangeTarget>;
   readonly #engines = new Map<number, EngineHost>();
   readonly #logs = new Map<number, ChangeSet[]>();
+  readonly #listeners = new Set<(doc: number, o: CommandOutput) => void>();
 
   constructor(
     create: (init: DocumentInit) => EngineHost,
@@ -26,8 +35,28 @@ export class Engines {
 
   start(doc: number, init: DocumentInit): void {
     this.stop(doc);
-    this.#engines.set(doc, this.#create(init));
+    const engine = this.#create(init);
+    this.#engines.set(doc, engine);
     this.#logs.set(doc, []);
+    engine.onCommand((o) => {
+      if (this.#engines.get(doc) !== engine) return;
+      if (o.type === 'change') this.#applied(doc, o.change);
+      for (const l of this.#listeners) l(doc, o);
+    });
+  }
+
+  /** Hands command input to a drawing's command engine (the command line, the canvas). */
+  command(doc: number, input: CommandInput): void {
+    this.#engines.get(doc)?.command(input);
+  }
+
+  /**
+   * Listens to every drawing's command engine; a command's edits are already on the drawing's
+   * canvases and in its change log when the listener hears of them.
+   */
+  onCommand(listener: (doc: number, o: CommandOutput) => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
   }
 
   stop(doc: number): void {
@@ -51,11 +80,14 @@ export class Engines {
     if (!engine) return { ok: false, message: 'The drawing is not open.' };
     const result = await engine.edit(edit);
     // The drawing may have closed while the engine answered.
-    const log = this.#logs.get(doc);
-    if (result.ok && log && Object.keys(result.change).length > 0) {
-      log.push(result.change);
-      for (const t of this.#targets(doc)) t.apply(result.change);
-    }
+    if (result.ok) this.#applied(doc, result.change);
     return result;
+  }
+
+  #applied(doc: number, change: ChangeSet): void {
+    const log = this.#logs.get(doc);
+    if (!log || Object.keys(change).length === 0) return;
+    log.push(change);
+    for (const t of this.#targets(doc)) t.apply(change);
   }
 }

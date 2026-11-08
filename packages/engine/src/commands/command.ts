@@ -5,6 +5,7 @@ import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
+import type { Handle } from '../model/handle';
 import type { EntityGeometry } from '../model/types';
 import { ALIASES } from './aliases';
 import type {
@@ -44,6 +45,11 @@ export interface CommandContext {
   readonly dash: boolean;
   /** Run inside another command (`'ZOOM`). */
   readonly transparent: boolean;
+  /**
+   * The BLOCK_RECORD new objects go into: model space, or the paper space of the layout shown
+   * (the space the drafter draws in, as AutoCAD's current space; M2-02).
+   */
+  readonly space: Handle;
   readonly prompt: typeof prompts;
   /** LASTPOINT: the last point given at any prompt. */
   readonly lastPoint: Vec2 | undefined;

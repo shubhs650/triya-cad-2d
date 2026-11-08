@@ -726,3 +726,129 @@ button {
   visibility: hidden;
   pointer-events: none;
 }
+
+/* A command waits for a point (M2-02): AutoCAD's crosshairs. */
+.drawing-canvas[data-picking='true'][data-mode='none'],
+.drawing-canvas[data-picking='true']:not([data-mode]) {
+  cursor: crosshair;
+}
+
+/* The command line (M2-02, UI_SPEC.md §5): AutoCAD's docked command window, two history lines
+   over the prompt line, set in a monospace face as AutoCAD's is. */
+.command-line {
+  position: relative;
+  padding: 2px 8px 3px;
+  background: var(--chrome-bg-raised);
+  border-top: 1px solid var(--chrome-border);
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.command-lines {
+  height: 32px;
+  overflow: hidden;
+  color: var(--chrome-text-muted);
+  white-space: pre;
+}
+
+.command-input-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.command-prompt {
+  white-space: pre;
+}
+
+.command-option {
+  padding: 0 3px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  background: var(--chrome-bg);
+  color: var(--accent);
+  font: inherit;
+  cursor: pointer;
+  transition: background-color var(--motion);
+}
+
+.command-option:hover,
+.command-option:focus-visible {
+  background: var(--chrome-border);
+}
+
+.command-input {
+  flex: 1;
+  min-width: 80px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 3px;
+  font: inherit;
+  color: var(--chrome-text);
+  background: var(--chrome-bg-raised);
+}
+
+.command-input:focus {
+  outline: 1px solid var(--accent);
+  border-color: var(--accent);
+}
+
+.command-suggestions {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  z-index: 3;
+  min-width: 200px;
+  margin: 0;
+  padding: 2px 0;
+  list-style: none;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 15%);
+}
+
+.command-suggestions li {
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.command-suggestions li:hover {
+  background: var(--chrome-bg);
+}
+
+.command-suggestions .alias {
+  color: var(--chrome-text-muted);
+}
+
+/* F2: the whole command history, over the bottom of the drawing area. */
+.command-history-window {
+  position: absolute;
+  bottom: 100%;
+  left: 8px;
+  right: 8px;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  max-height: 40vh;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px 4px 0 0;
+  box-shadow: 0 -4px 12px rgb(0 0 0 / 15%);
+}
+
+.command-history-header {
+  display: flex;
+  justify-content: space-between;
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--chrome-border);
+  font-family: system-ui, sans-serif;
+}
+
+.command-history-full {
+  overflow: auto;
+  padding: 4px 8px;
+  white-space: pre;
+}

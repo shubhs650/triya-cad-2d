@@ -10,7 +10,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Options / notes | Status |
 |---|---|---|---|---|
-| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | |
+| LINE | L | 1 | Undo, Close, continue from last (↵), tangent/perp via osnap | ~ (#222: Undo, Close, ↵ from the last line; osnap starts M2-04, arcs M3-01) |
 | PLINE | PL | 1 | Arc (Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width), Halfwidth, Length, Undo, Width, Close | |
 | CIRCLE | C | 1 | 3P, 2P, TTR, TTT, Diameter | |
 | ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | |
