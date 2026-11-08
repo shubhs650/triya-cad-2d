@@ -2,7 +2,7 @@
 
 Written by the fidelity reporter after a golden-image run (M1-106, TESTING.md §4).
 
-122 files (1 unreadable), 319 spaces, 0 failing.
+123 files (1 unreadable), 321 spaces, 0 failing.
 
 ## Entity types
 
@@ -26,7 +26,7 @@ Written by the fidelity reporter after a golden-image run (M1-106, TESTING.md §
 | LINE | 2244 | 114 | 0 | 0 |
 | LWPOLYLINE | 942 | 106 | 0 | 0 |
 | MTEXT | 471 | 51 | 0 | 0 |
-| MULTILEADER | 304 | 22 | 0 | 0 |
+| MULTILEADER | 312 | 23 | 0 | 0 |
 | POINT | 499 | 84 | 0 | 0 |
 | POLYLINE | 90 | 25 | 0 | 0 |
 | RAY | 26 | 22 | 0 | 0 |
