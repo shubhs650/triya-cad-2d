@@ -76,6 +76,8 @@ const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url))
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 const writable = new Set<string>(WRITABLE_TYPES);
+/** The entity types the per-file edit below changed on some corpus file (M1-75's acceptance). */
+const editedTypes = new Set<string>();
 /** Each file opens, maps, saves and reopens twice; the slowest takes about 1 s alone. */
 const PER_FILE_BUDGET_MS = 10_000;
 
@@ -261,6 +263,7 @@ function edited(g: EntityGeometry): EntityGeometry {
     case 'MTEXT':
       return { ...g, position: move(g.position), rotation: turn(g.rotation) };
     case 'SOLID':
+    case 'TRACE':
     case '3DFACE': {
       const [a, b, c, d] = g.corners.map(move);
       return { ...g, corners: [a!, b!, c!, d!] };
@@ -814,6 +817,7 @@ describe('TriyaToAcad edits on the public corpus', () => {
         const original = readCadDocument(bytes);
         const model = DocumentModel.create(documentInit(readCadDocument(bytes)));
         const targets = [...model.entities()].filter((e) => writable.has(e.type));
+        for (const e of targets) editedTypes.add(e.type);
         // An R12 file without layer 0 reads with a made-up one, which saves only as read.
         const madeUp = original.madeUpHandles?.added;
         const layers = [...model.tables.layers.values()].filter(
@@ -1113,6 +1117,13 @@ describe('TriyaToAcad edits on the public corpus', () => {
     },
     PER_FILE_BUDGET_MS,
   );
+
+  // M1-75's acceptance: every type with a geometry writer is edited above on at least one corpus
+  // file, so no writer ships with unit cases alone. Runs after the per-file edits (Vitest runs a
+  // file's tests in order).
+  it('edits every type Triya writes on some corpus file', () => {
+    expect(WRITABLE_TYPES.filter((t) => !editedTypes.has(t))).toEqual([]);
+  });
 
   // M1-95: every multileader style but Standard, every table style but Standard and every image
   // definition renamed, with CMLEADERSTYLE and CTABLESTYLE following, as AutoCAD's RENAME and
