@@ -2,7 +2,7 @@
 // (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
 // tabs; the status bar. The ribbon, palettes and command line arrive with their own tasks.
 import type { EditResult, EngineEdit, Layout, PdfDefinition } from '@triya/engine';
-import type { DrawnEntity, ScreenRect } from '@triya/render';
+import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasMode } from './canvas/controller';
 import {
@@ -19,6 +19,7 @@ import { DocTabs } from './DocTabs';
 import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
+import { RasterImages, imageDefinitionsOf, isRasterFile } from './images';
 import { LayersPalette } from './LayersPalette';
 import { NavBar } from './NavBar';
 import { openDrawing, openError } from './open';
@@ -78,6 +79,12 @@ const pdfPages = new PdfPages(openPdf);
 
 const isPdfFile = (name: string) => /\.pdf$/i.test(name);
 
+/**
+ * The image files raster IMAGEs show (M1-19 part 3): dropped on the window this session,
+ * matched to the drawings' IMAGEDEFs by file name and decoded once each.
+ */
+const images = new RasterImages((bytes) => decodeRaster(bytes));
+
 const pdfDefinitionsOf = (opened: OpenDocument['opened']): PdfDefinition[] =>
   (opened.init.objects ?? []).filter((o): o is PdfDefinition => o.type === 'PDFDEFINITION');
 
@@ -89,7 +96,7 @@ function addFonts(files: Iterable<File>): void {
 
 /**
  * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf the fonts, a .pdf the files
- * PDF underlays show, a drawing an xref of the drawing showing is waiting for loads as that
+ * PDF underlays show, an image file (.png, .jpg, .bmp, .tif, .gif) the files IMAGEs show, a drawing an xref of the drawing showing is waiting for loads as that
  * xref (M1-21), anything else opens as a drawing.
  */
 function dropped(files: Iterable<File>): void {
@@ -100,6 +107,8 @@ function dropped(files: Iterable<File>): void {
     else if (isFontFile(f.name)) fontFiles.push(f);
     else if (isPdfFile(f.name))
       void f.arrayBuffer().then((b) => pdfPages.add(f.name, new Uint8Array(b)));
+    else if (isRasterFile(f.name))
+      void f.arrayBuffer().then((b) => images.add(f.name, new Uint8Array(b)));
     else if (!loadXref(f)) void open(fromFile(f));
   }
   addPatterns(pats);
@@ -546,6 +555,8 @@ function ViewportCanvas({
       fonts: () => fonts.sources(),
       changes: () => engines.changesOf(id),
       underlays: (deliver) => pdfPages.client(pdfDefinitionsOf(opened), deliver),
+      images: (deliver) =>
+        images.client(() => imageDefinitionsOf(opened.init, engines.changesOf(id)), deliver),
       ...(tile && {
         tile: {
           vport: tile.vport,
