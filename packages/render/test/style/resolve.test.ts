@@ -12,6 +12,7 @@ import {
   resolveColor,
   resolveLineweight,
   resolveLinetype,
+  resolveTransparency,
   type StyleSource,
   type Styled,
 } from '../../src/index';
@@ -160,6 +161,45 @@ describe('resolveLinetype and resolveLineweight', () => {
     expect(resolveLineweight(ent({ layer: RED.handle }), src)).toBe(50);
     const insert = blockContext(ent({ lineweight: 70 }), src);
     expect(resolveLineweight(ent({ lineweight: 'ByBlock' }), src, insert)).toBe(70);
+  });
+});
+
+// M1-108: object transparency as alpha 0 (clear) – 255 (opaque), the way AutoCAD resolves it.
+describe('resolveTransparency', () => {
+  const GLASS = layer('14', 'GLASS', aci(4), { transparency: { alpha: 127 } });
+  const s: StyleSource = { ...src, layers: new Map([...src.layers, [GLASS.handle, GLASS]]) };
+
+  it('takes an explicit value, and ByLayer from the layer', () => {
+    expect(resolveTransparency(ent({ transparency: { alpha: 76 } }), s)).toBe(76);
+    expect(resolveTransparency(ent({ transparency: 'ByLayer', layer: GLASS.handle }), s)).toBe(127);
+    expect(resolveTransparency(ent({ transparency: 'ByLayer' }), s)).toBe(255);
+    // An entity read without one (older files) is ByLayer.
+    expect(resolveTransparency(ent({ layer: GLASS.handle }), s)).toBe(127);
+  });
+
+  it('shows ByBlock outside a block, and a layer without a value, as opaque', () => {
+    expect(resolveTransparency(ent({ transparency: 'ByBlock', layer: GLASS.handle }), s)).toBe(255);
+    const odd = layer('15', 'ODD', aci(1), { transparency: 'ByLayer' });
+    const t: StyleSource = { ...src, layers: new Map([[odd.handle, odd]]) };
+    expect(resolveTransparency(ent({ layer: odd.handle }), t)).toBe(255);
+  });
+
+  it('takes ByBlock from the INSERT, and ByLayer on layer 0 from the INSERT’s layer', () => {
+    const insert = blockContext(ent({ layer: GLASS.handle, transparency: { alpha: 51 } }), s);
+    expect(insert.transparency).toBe(51);
+    expect(resolveTransparency(ent({ transparency: 'ByBlock' }), s, insert)).toBe(51);
+    // Layer 0 inside the block: the INSERT's layer, GLASS.
+    expect(resolveTransparency(ent({ layer: L0.handle }), s, insert)).toBe(127);
+    // Its own layer, or its own value: the INSERT's transparency does not apply.
+    expect(resolveTransparency(ent({ layer: RED.handle }), s, insert)).toBe(255);
+    expect(resolveTransparency(ent({ transparency: { alpha: 200 } }), s, insert)).toBe(200);
+  });
+
+  it('passes ByBlock down through nested inserts', () => {
+    const outer = blockContext(ent({ layer: RED.handle, transparency: { alpha: 102 } }), s);
+    const inner = blockContext(ent({ transparency: 'ByBlock' }), s, outer);
+    expect(inner.transparency).toBe(102);
+    expect(resolveTransparency(ent({ transparency: 'ByBlock' }), s, inner)).toBe(102);
   });
 });
 

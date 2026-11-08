@@ -1327,13 +1327,20 @@ export class Canvas2DRenderer implements Renderer {
     // Locked-layer fading (M1-69): the canvas alpha is set only when it changes, and is back
     // at 1 when the frame ends.
     const fade = this.#fade();
+    // Object transparency (M1-108) multiplies in, unless TRANSPARENCYDISPLAY is off.
+    const transparent = this.#style.showTransparency !== false;
+    const opacity = (p: RenderPrimitive): number => (transparent ? (p.opacity ?? 1) : 1);
     let alpha = 1;
     const setAlpha = (a: number): void => {
       if (a === alpha) return;
       ctx.globalAlpha = a;
       alpha = a;
     };
-    let batch: { color: string; width: number; alpha: number } | undefined;
+    // `entry` is set for a transparent object's strokes: AutoCAD blends each object over what is
+    // beneath, so two overlapping transparent objects darken where they cross, and one batch
+    // must not hold strokes of two of them.
+    let batch:
+      { color: string; width: number; alpha: number; entry: CacheEntry | undefined } | undefined;
     const flush = (): void => {
       if (!batch) return;
       device();
@@ -1386,7 +1393,7 @@ export class Canvas2DRenderer implements Renderer {
         setClip(undefined);
         flush();
         device();
-        setAlpha(entryAlpha);
+        setAlpha(entryAlpha * opacity(first));
         ctx.fillStyle = this.#color(first.color);
         ctx.fillRect(
           Math.floor(devX(entry.x, entry.y)),
@@ -1406,9 +1413,9 @@ export class Canvas2DRenderer implements Renderer {
         // In a block, a part fades when the reference's layer (the entry's) or a layer below it
         // is locked; AutoCAD's help does not say for the nested case (ambiguity noted, M1-69).
         const a =
-          entryAlpha === 1 && fade && prim.layers?.some((l) => fade.locked.has(l))
+          (entryAlpha === 1 && fade && prim.layers?.some((l) => fade.locked.has(l))
             ? fade.alpha
-            : entryAlpha;
+            : entryAlpha) * opacity(prim);
         const color = this.#color(prim.color);
         if (prim.kind === 'point') {
           flush();
@@ -1504,9 +1511,16 @@ export class Canvas2DRenderer implements Renderer {
           continue;
         }
         const width = this.#lineWidth(prim.lineweight);
-        if (!batch || batch.color !== color || batch.width !== width || batch.alpha !== a) {
+        const own = opacity(prim) < 1 ? entry : undefined;
+        if (
+          !batch ||
+          batch.color !== color ||
+          batch.width !== width ||
+          batch.alpha !== a ||
+          batch.entry !== own
+        ) {
           flush();
-          batch = { color, width, alpha: a };
+          batch = { color, width, alpha: a, entry: own };
           ctx.beginPath();
         }
         world();

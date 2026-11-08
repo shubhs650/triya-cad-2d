@@ -32,6 +32,11 @@ export interface RenderStyle {
    * drawing, and starts it at 50.
    */
   readonly layLockFade?: number;
+  /**
+   * TRANSPARENCYDISPLAY (M1-108): object transparency shown; false draws every object opaque.
+   * AutoCAD's initial value is 1, so absent shows it.
+   */
+  readonly showTransparency?: boolean;
 }
 
 /**
@@ -209,6 +214,8 @@ export type RenderPrimitive =
       readonly layers?: readonly string[];
       /** Inside XCLIPped references (M1-103): the clip polygons it shows within. */
       readonly clip?: PrimitiveClip;
+      /** Object transparency (M1-108): the opacity it draws at, below 1; absent is opaque. */
+      readonly opacity?: number;
       /** Lineweight in millimetres; undefined is the default (drawn 1 px). */
       readonly lineweight?: number;
       /** Fill rule for `fill`: AutoCAD hatch loops use odd parity. */
@@ -258,6 +265,8 @@ export type RenderPrimitive =
       readonly layers?: readonly string[];
       /** Inside XCLIPped references (M1-103): the clip polygons it shows within. */
       readonly clip?: PrimitiveClip;
+      /** Object transparency (M1-108): the opacity it draws at, below 1; absent is opaque. */
+      readonly opacity?: number;
       readonly lineweight?: number;
     }
   /** A POINT drawn as a dot (PDMODE 0); other PDMODE shapes come with the POINT style task. */
@@ -273,6 +282,8 @@ export type RenderPrimitive =
       readonly layers?: readonly string[];
       /** Inside XCLIPped references (M1-103): the clip polygons it shows within. */
       readonly clip?: PrimitiveClip;
+      /** Object transparency (M1-108): the opacity it draws at, below 1; absent is opaque. */
+      readonly opacity?: number;
     };
 
 /** A rectangle of the canvas, CSS pixels from its top-left corner. */

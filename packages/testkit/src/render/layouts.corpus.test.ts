@@ -193,12 +193,14 @@ function drawLayout(
   return { expected, drawn: layers[0]!.groups.filter((n) => n > 0).length };
 }
 // 70 → 71 with self-authored/viewport-overrides.dxf (M1-62), whose ezdxf page setup sets limits.
-const MATCHING = 71;
+// 71 → 72 with self-authored/transparency.dxf (M1-108), the same.
+const MATCHING = 72;
 // 74 → 82 with images and wipeouts (M1-19): viewports that show only those now draw.
 // 82 → 84 with R12 paper space (M1-89): the R12 sample's viewport, ASCII and binary, draws in
 // the Layout1 its paper space now reads with.
 // 84 → 88 with the four viewports of self-authored/viewport-overrides.dxf (M1-62).
-const VIEWPORTS_DRAWN = 88;
+// 88 → 90 with the two viewports of self-authored/transparency.dxf (M1-108).
+const VIEWPORTS_DRAWN = 90;
 
 describe('layouts on the public corpus', () => {
   it.each(files.map((f) => [f.path]))('%s', (path) => {
