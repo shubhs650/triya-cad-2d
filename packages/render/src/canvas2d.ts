@@ -1314,7 +1314,11 @@ export class Canvas2DRenderer implements Renderer {
       ctx.globalAlpha = a;
       alpha = a;
     };
-    let batch: { color: string; width: number; alpha: number } | undefined;
+    // `entry` is set for a transparent object's strokes: AutoCAD blends each object over what is
+    // beneath, so two overlapping transparent objects darken where they cross, and one batch
+    // must not hold strokes of two of them.
+    let batch:
+      { color: string; width: number; alpha: number; entry: CacheEntry | undefined } | undefined;
     const flush = (): void => {
       if (!batch) return;
       device();
@@ -1481,9 +1485,16 @@ export class Canvas2DRenderer implements Renderer {
           continue;
         }
         const width = this.#lineWidth(prim.lineweight);
-        if (!batch || batch.color !== color || batch.width !== width || batch.alpha !== a) {
+        const own = opacity(prim) < 1 ? entry : undefined;
+        if (
+          !batch ||
+          batch.color !== color ||
+          batch.width !== width ||
+          batch.alpha !== a ||
+          batch.entry !== own
+        ) {
           flush();
-          batch = { color, width, alpha: a };
+          batch = { color, width, alpha: a, entry: own };
           ctx.beginPath();
         }
         world();

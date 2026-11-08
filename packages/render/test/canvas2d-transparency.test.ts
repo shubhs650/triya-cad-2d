@@ -125,6 +125,17 @@ describe('object transparency (M1-108)', () => {
     expect(ends(c)?.[1]).toBe(1);
   });
 
+  it('blends each transparent object on its own, so overlapping ones darken where they cross', () => {
+    const { redraw } = setup([
+      entity('20', line(0, 0, 10, 0), { transparency: { alpha: 127 } }),
+      entity('21', line(5, -1, 5, 1), { transparency: { alpha: 127 } }),
+      // Opaque objects of one colour still share a stroke.
+      entity('22', line(0, 2, 10, 2)),
+      entity('23', line(0, 3, 10, 3)),
+    ]);
+    expect(alphas(redraw())).toEqual([127 / 255, 127 / 255, 1]);
+  });
+
   it('draws fills transparent too', () => {
     const { redraw } = setup([entity('20', solid(0), { transparency: { alpha: 51 } })]);
     expect(marks(redraw()).filter((m) => m[0] === 'fill')).toEqual([['fill', '#ffffff', 0.2]]);

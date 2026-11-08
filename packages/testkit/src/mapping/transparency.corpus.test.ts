@@ -58,7 +58,7 @@ describe('object transparency in the corpus drawing (M1-108)', () => {
       (e): e is Entity & { geom: ViewportGeometry } =>
         e.geom.kind === 'VIEWPORT' && e.geom.id !== 1,
     );
-    const right = vps.find((v) => v.geom.center.x === 310)!.handle;
+    const right = vps.find((v) => v.geom.center.x === 300)!.handle;
     expect(layer('BACK').viewportOverrides).toEqual([
       { viewport: right, transparency: { alpha: 102 } },
     ]);

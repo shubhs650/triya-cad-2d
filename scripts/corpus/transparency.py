@@ -35,15 +35,17 @@ OUT = pathlib.Path(__file__).resolve().parents[2] / "corpus/public/self-authored
 VIEW_CENTER = (100.0, 60.0)
 VIEW_HEIGHT = 140.0
 FRAME_W, FRAME_H = 190.0, 150.0
-CENTERS = {"plain": (110.0, 148.5), "overrides": (310.0, 148.5)}
+# Paper-space coordinates start at the printable area's lower-left corner (400 × 277 mm).
+CENTERS = {"plain": (100.0, 138.5), "overrides": (300.0, 138.5)}
 
 
 def square(x: float, y: float, size: float) -> list[tuple[float, float]]:
     return [(x, y), (x + size, y), (x + size, y + size), (x, y + size)]
 
 
-def solid_hatch(layout, points, **dxfattribs):
-    hatch = layout.add_hatch(dxfattribs=dxfattribs)
+def solid_hatch(layout, points, color: int, **dxfattribs):
+    # add_hatch sets DXF 62 from its own `color` argument, over any in dxfattribs.
+    hatch = layout.add_hatch(color=color, dxfattribs=dxfattribs)
     hatch.paths.add_polyline_path(points, is_closed=True)
     return hatch
 
@@ -122,6 +124,8 @@ def main() -> int:
     doc.header["$LWDISPLAY"] = 1
     model(doc)
     layout(doc)
+    # The Model tab opens on the drawing, not on ezdxf's default view.
+    doc.set_modelspace_vport(height=VIEW_HEIGHT, center=VIEW_CENTER)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     doc.saveas(OUT)
     print(f"wrote {OUT}")
