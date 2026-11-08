@@ -14,6 +14,7 @@ interface Step {
   run?: string;
   if?: string;
   with?: Record<string, unknown>;
+  env?: Record<string, string>;
 }
 interface Job {
   name?: string;
@@ -69,6 +70,34 @@ describe('ci.yml gates', () => {
       expect(jobRunning(script)?.[1].name).toBe(REQUIRED_CHECKS[0]);
     },
   );
+
+  // M1-105 (DEC-047 item 7): the corpus suites write every AC1032 DXF save, unedited and edited,
+  // and ezdxf's recover + audit must pass on each before the required check goes green.
+  it('audits the DXF saves `pnpm test` writes with ezdxf in the required checks job', () => {
+    const job = ci.jobs['checks']!;
+    expect(job.name).toBe(REQUIRED_CHECKS[0]);
+    const steps = job.steps ?? [];
+    const at = (pred: (s: Step) => boolean) => steps.findIndex(pred);
+    const test = at((s) => s.run?.trim() === 'pnpm test');
+    const dir = steps[test]?.env?.['TRIYA_DXF_AUDIT_DIR'];
+    expect(dir).toBe('test-reports/dxf-audit');
+    const install = at((s) => s.run?.includes('-r scripts/dxf-audit/requirements.txt') === true);
+    const unit = at((s) => s.run?.includes('unittest discover -s scripts/dxf-audit') === true);
+    const audit = at((s) => s.run?.trim() === `python scripts/dxf-audit/audit.py ${dir}`);
+    expect(install).toBeGreaterThan(-1);
+    expect(unit).toBeGreaterThan(install);
+    expect(audit).toBeGreaterThan(Math.max(test, unit));
+    const upload = steps.find((s) => s.uses?.startsWith('actions/upload-artifact@'));
+    expect(upload?.if).toBe('failure()');
+    expect(String(upload?.with?.['path'])).toContain(dir);
+  });
+
+  it('pins ezdxf, which runs in CI only', () => {
+    const req = readFileSync(path.join(root, 'scripts/dxf-audit/requirements.txt'), 'utf8');
+    const version = /^ezdxf==(\d+\.\d+\.\d+)$/m.exec(req)?.[1];
+    expect(version).toBeDefined();
+    expect(readFileSync(path.join(root, 'ATTRIBUTION.md'), 'utf8')).toContain(`ezdxf ${version}`);
+  });
 
   it.each(['test:fidelity', 'test:offline', 'test:ui', 'test:io'])(
     '`pnpm %s` runs in the required browser job',

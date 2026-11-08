@@ -35,9 +35,24 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
+      # The corpus suites also write every AC1032 DXF save, unedited and edited, for the ezdxf
+      # audit below (M1-105, DEC-047 item 7).
       - run: pnpm test
+        env:
+          TRIYA_DXF_AUDIT_DIR: test-reports/dxf-audit
       - run: pnpm corpus:validate
       - run: pnpm changelog:check
+      - uses: actions/setup-python@v5
+        with: { python-version: '3.13' }
+      - run: python -m pip install -r scripts/dxf-audit/requirements.txt
+      - run: python -m unittest discover -s scripts/dxf-audit
+      - run: python scripts/dxf-audit/audit.py test-reports/dxf-audit
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: dxf-audit
+          path: test-reports/dxf-audit
+          retention-days: 14
 
   # Decides whether the perf budgets must run on this PR (TESTING.md §1: PRs touching
   # render/engine/io). On a PR, HEAD is the merge commit, so HEAD^1..HEAD is exactly the PR's diff.

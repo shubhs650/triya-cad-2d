@@ -14,7 +14,8 @@
 // edited entities, records and header variables map back to the edit, and every other object in the file comes back exactly as
 // read: `structuralDiff` ignoring only the edited handles and variables reports nothing
 // (TESTING.md §3).
-// The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts).
+// The unedited save is the round-trip suite (roundtrip/corpus-roundtrip.test.ts). With
+// TRIYA_DXF_AUDIT_DIR set, each edit is also saved as AC1032 DXF for the ezdxf audit (M1-105).
 import { readFileSync } from 'node:fs';
 import {
   ACadVersion,
@@ -69,6 +70,7 @@ import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
 import { cellStyleMapProblems } from '../mapping/cell-style-map.ts';
+import { saveAc1032Dxf, writeAuditSave } from '../dxf-audit/saves.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -901,6 +903,8 @@ describe('TriyaToAcad edits on the public corpus', () => {
         model.apply(b.build());
 
         const saved = exportDocument(readCadDocument(bytes), model, options);
+        // M1-105: the same edit saved as AC1032 DXF, for the ezdxf audit.
+        writeAuditSave(f.path, 'edited', () => saveAc1032Dxf(readCadDocument(bytes), model));
         const reopened = readCadDocument(saved);
         const init = documentInit(reopened);
         const back = new Map(init.entities?.map((e) => [e.handle, e]));
