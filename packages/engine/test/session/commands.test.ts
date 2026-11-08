@@ -67,6 +67,35 @@ describe('EngineSession commands', () => {
     expect(added?.geom).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 0, y: 20 } });
   });
 
+  it('selects by Ctrl+A and canvas picks, and clears the selection when another space shows (M2-03)', async () => {
+    const { s, out } = setup();
+    const shown = () =>
+      out
+        .flatMap((o) =>
+          o.type === 'selection' ? [o.ids.map((id) => s.model.ids.handleOf(id))] : [],
+        )
+        .at(-1);
+    // The canvas's answers: picks and windows here find nothing.
+    s.onCommand((o) => {
+      if (o.type === 'view')
+        void s.command({ kind: 'view', id: o.id, reply: { ok: true, ids: [] } });
+    });
+    await s.command({ kind: 'select-all' });
+    expect(shown()).toEqual(['20', '21', '23']);
+    await s.command({ kind: 'space', block: MODEL_SPACE });
+    expect(shown()).toEqual([]);
+    await s.command({ kind: 'select-all' });
+    // A pick that finds nothing opens a window, which the end of the drag closes.
+    await s.command({ kind: 'pick', point: { x: 1, y: 1 }, shift: true });
+    expect(out.at(-1)).toMatchObject({ type: 'prompt', text: 'Specify opposite corner:' });
+    await s.command({ kind: 'pick', point: { x: 2, y: 2 }, release: true });
+    expect(out.at(-1)).toMatchObject({ type: 'idle' });
+    await s.command({ kind: 'space', block: PAPER_SPACE });
+    expect(shown()).toEqual([]);
+    await s.command({ kind: 'select-all' });
+    expect(shown()).toEqual(['24']);
+  });
+
   it('stops telling a listener that unsubscribed', async () => {
     const { s, out, stop } = setup();
     stop();

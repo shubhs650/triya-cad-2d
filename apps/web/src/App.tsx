@@ -417,6 +417,8 @@ export interface DevHooks {
    * top-left corner: the fidelity harness names them where a golden image differs (M1-106).
    */
   entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]>;
+  /** The showing drawing's selected objects (M2-03), as its command engine last said. */
+  selection(): readonly EntityId[];
 }
 
 if (import.meta.env.DEV) {
@@ -433,6 +435,10 @@ if (import.meta.env.DEV) {
     changes: () => {
       const doc = showing();
       return doc ? engines.changesOf(doc.id) : [];
+    },
+    selection: () => {
+      const doc = showing();
+      return (doc && selections.get(doc.id)) ?? [];
     },
     entitiesIn: async (rect) => {
       const doc = showing();

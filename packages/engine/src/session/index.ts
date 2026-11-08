@@ -163,8 +163,12 @@ export class EngineSession {
       case 'select-all':
         return this.#bus.selectAll();
       case 'space':
-        if (this.model.hasBlock(input.block)) this.#space = input.block;
-        return Promise.resolve();
+        if (!this.model.hasBlock(input.block) || input.block === this.#space) {
+          return Promise.resolve();
+        }
+        this.#space = input.block;
+        // Objects are selected in one space: another layout shown starts with none (M2-03).
+        return this.#bus.clearSelection();
       case 'view': {
         // Not queued on the bus: the command awaiting it holds the bus's queue.
         const resolve = this.#viewReplies.get(input.id);

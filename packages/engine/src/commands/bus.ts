@@ -288,6 +288,17 @@ export class PromptBus {
     });
   }
 
+  /** Deselects what was picked at `Command:` (another space shown, M2-03). */
+  clearSelection(): Promise<void> {
+    return this.#enqueue(() => {
+      if (this.#idle.ids.length === 0 && !this.#idle.wantsPoint) return;
+      const corner = this.#idle.wantsPoint;
+      this.#idle.clear();
+      this.#showSelection();
+      if (corner && this.#stack.length === 0) this.#showPrompt();
+    });
+  }
+
   /** Runs each line as typed input, in order (scripts and tests). */
   async script(lines: readonly string[]): Promise<void> {
     for (const line of lines) await this.submit(line);

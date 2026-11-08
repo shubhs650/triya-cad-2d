@@ -1220,7 +1220,9 @@ export class Canvas2DRenderer implements Renderer {
     ctx.beginPath();
     for (const id of this.#highlight) {
       const entry = this.#cache[id];
-      if (!entry) continue;
+      // In a layout the cache holds model space too (for its viewports); only the space shown
+      // is selected in.
+      if (!entry || this.#model.entity(id)?.owner !== this.#block) continue;
       const r = entry.size / 2;
       if (
         Number.isFinite(entry.size) &&
