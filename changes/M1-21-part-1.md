@@ -1,0 +1,1 @@
+- M1-21 part 1 (#206): xrefs load when their drawing is dropped on the window: the xref's model space draws in its references, its layers and styles come in as `xref|symbol` records (Layers palette lists them), nested attached xrefs load in turn and nested overlays never do; saves leave loaded xrefs out. Thread-authored xref test set and `pnpm fixtures:xref`.
