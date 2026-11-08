@@ -71,6 +71,15 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'hitTest':
         port.postMessage({ type: 'reply', id: m.id, ids: r.hitTest(m.screen, m.aperture) });
         break;
+      case 'select':
+        port.postMessage({ type: 'reply', id: m.id, ids: r.select(m.query) });
+        break;
+      case 'highlight':
+        r.setHighlight(m.ids);
+        break;
+      case 'bounds':
+        port.postMessage({ type: 'extents', id: m.id, box: session.boundsOf(m.ids) ?? null });
+        break;
       case 'entitiesIn':
         port.postMessage({ type: 'entities', id: m.id, entities: r.entitiesIn(m.rect) });
         break;

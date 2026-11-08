@@ -14,18 +14,39 @@ interface PromptBase {
   readonly options?: readonly string[];
   /** What Enter gives, shown as `<…>`; without one Enter answers `{ kind: 'enter' }`. */
   readonly default?: PromptAnswer;
+  /**
+   * What Enter does when that is not an answer, shown as `<…>`: ZOOM's `<real time>`. Enter
+   * still answers `{ kind: 'enter' }`; `default` wins when both are given.
+   */
+  readonly defaultLabel?: string;
 }
 
 /** A point; with `rubberBand` the front-end draws a line from it and a number is a direct distance. */
 export interface PointPrompt extends PromptBase {
   readonly kind: 'point';
-  readonly rubberBand?: { readonly from: Vec2 };
+  /**
+   * With `box`, a rectangle with its corners at `from` and the cursor (a window's corners);
+   * with `selection` too, a selection window (M2-03), drawn as AutoCAD draws one: a window
+   * solid on blue, a crossing dashed on green, `auto` either by the cursor's side of `from`.
+   */
+  readonly rubberBand?: {
+    readonly from: Vec2;
+    readonly box?: boolean;
+    readonly selection?: 'auto' | 'window' | 'crossing';
+  };
+  /**
+   * Text that is neither a point nor an option answers `{ kind: 'string' }` instead of being
+   * refused (AutoCAD's "arbitrary input", initget bit 128): ZOOM's `2x` and `0.5xp`.
+   */
+  readonly arbitrary?: boolean;
 }
 
 /** A distance: a number, or two points (one when `base` is given). */
 export interface DistancePrompt extends PromptBase {
   readonly kind: 'distance';
   readonly base?: Vec2;
+  /** As `PointPrompt.arbitrary`: ZOOM Center's magnification `2x`. */
+  readonly arbitrary?: boolean;
 }
 
 /** An angle: a number in the drawing's angle units, or two points (one when `base` is given). */
@@ -53,9 +74,14 @@ export interface RealPrompt extends PromptBase {
   readonly kind: 'real';
 }
 
-/** "Select objects": the selection front-end (M2-03) answers with the chosen entities. */
+/**
+ * "Select objects": the bus builds the selection pick by pick (M2-03, `SelectionLoop`) and
+ * answers with the chosen entities once Enter ends it (none if nothing was chosen).
+ */
 export interface SelectionPrompt extends PromptBase {
   readonly kind: 'selection';
+  /** The command edits what it selects: objects on locked layers are refused, as AutoCAD does. */
+  readonly editable?: boolean;
 }
 
 export type Prompt =
@@ -103,6 +129,7 @@ export function answerFits(prompt: Prompt, answer: PromptAnswer): boolean {
   if (answer.kind === 'keyword') {
     return (prompt.options ?? []).some((o) => o.toUpperCase() === answer.keyword.toUpperCase());
   }
+  if (answer.kind === 'string' && 'arbitrary' in prompt && prompt.arbitrary) return true;
   if (!ANSWER_KINDS[prompt.kind].includes(answer.kind)) return false;
   return prompt.kind !== 'integer' || (answer.kind === 'number' && Number.isInteger(answer.value));
 }
@@ -176,6 +203,6 @@ export function formatPrompt(prompt: Prompt, precision = 4): string {
         ? formatNumber(prompt.default.value, prompt.kind === 'integer' ? 0 : precision)
         : formatAnswer(prompt.default, precision);
     text += ` <${value}>`;
-  }
+  } else if (prompt.defaultLabel) text += ` <${prompt.defaultLabel}>`;
   return `${text}:`;
 }

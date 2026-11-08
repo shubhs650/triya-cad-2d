@@ -75,6 +75,7 @@ import {
 } from './underlay';
 import { annotationLinetypeScale, patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
+import { primCrosses, primInside } from './select';
 import { patternLibrary, tessellate } from './tessellate';
 import type { TextContext } from './text';
 import type { PatternLibrary } from '@triya/hatch';
@@ -99,6 +100,7 @@ import {
   type RenderStyle,
   type Renderer,
   type ScreenRect,
+  type SelectQuery,
   type UnderlayFill,
   type UnderlayRaster,
   type UnderlayRequest,
@@ -285,6 +287,11 @@ interface Ordered {
 const LAYOUT_SURROUND_MIX = 1 / 3;
 /** The printable area's dashes, CSS px (AutoCAD draws it dashed; the lengths are ours). */
 const PRINTABLE_DASH = [6, 4];
+/** The selection highlight (M2-03): colour, glow width and alpha, and dash, in CSS pixels. */
+const SELECTION_COLOR = '#4da3ff';
+const SELECTION_GLOW_PX = 5;
+const SELECTION_GLOW_ALPHA = 0.35;
+const SELECTION_DASH = [4, 3];
 
 export const DEFAULT_STYLE: RenderStyle = {
   background: '#212830',
@@ -483,6 +490,8 @@ export class Canvas2DRenderer implements Renderer {
   #height = 0;
   #dpr = 1;
   #transient: readonly RenderPrimitive[] = [];
+  /** The entities drawn selected (M2-03). */
+  #highlight: ReadonlySet<EntityId> = new Set();
   /** The locked layers (M1-69), found again after a layer change; undefined until needed. */
   #locked: ReadonlySet<Handle> | undefined;
   #sceneDirty = true;
@@ -612,6 +621,25 @@ export class Canvas2DRenderer implements Renderer {
   setTransient(primitives: readonly RenderPrimitive[]): void {
     this.#transient = primitives;
     this.#transientDirty = true;
+  }
+
+  setHighlight(ids: readonly EntityId[]): void {
+    if (ids.length === 0 && this.#highlight.size === 0) return;
+    this.#highlight = new Set(ids);
+    this.#sceneDirty = this.#contentDirty = true;
+  }
+
+  select(query: SelectQuery): EntityId[] {
+    const test = query.kind === 'window' ? primInside : primCrosses;
+    const all = query.kind === 'window' ? 'every' : 'some';
+    const out: EntityId[] = [];
+    for (const id of this.#index.query(this.#block, query.box)) {
+      const prims = this.#cache[id]?.prims;
+      // Nothing drawn (a layer off or frozen): nothing to take.
+      if (!prims || prims.length === 0) continue;
+      if (prims[all]((p) => test(p, query.box))) out.push(id);
+    }
+    return out.sort((a, b) => a - b);
   }
 
   /** Redraws the scene on the next frame: something it draws from changed (a bitmap, M1-19). */
@@ -1174,7 +1202,65 @@ export class Canvas2DRenderer implements Renderer {
       reduced,
       annotation === undefined ? view : { ...view, linetypeScale: annotation },
     );
+    this.#drawHighlight(ctx, view);
     this.#askForPages();
+  }
+
+  /**
+   * The selection over the scene (M2-03, UI_SPEC.md §6 "AutoCAD-like highlight (dashed +
+   * glow)"): each selected entity's outline as a wide translucent glow, then a dashed line, in
+   * the selection colour. Text shows by the boxes of its runs; fills by their outlines.
+   */
+  #drawHighlight(ctx: Canvas2D, frame: DrawFrame): void {
+    if (this.#highlight.size === 0) return;
+    const { ox, oy, m, scale, box } = frame;
+    const dot = 2 / scale;
+    let any = false;
+    ctx.setTransform(m.a, m.b, m.c, m.d, m.e, m.f);
+    ctx.beginPath();
+    for (const id of this.#highlight) {
+      const entry = this.#cache[id];
+      // In a layout the cache holds model space too (for its viewports); only the space shown
+      // is selected in.
+      if (!entry || this.#model.entity(id)?.owner !== this.#block) continue;
+      const r = entry.size / 2;
+      if (
+        Number.isFinite(entry.size) &&
+        (entry.x + r < box.minX ||
+          entry.x - r > box.maxX ||
+          entry.y + r < box.minY ||
+          entry.y - r > box.maxY)
+      )
+        continue;
+      for (const prim of entry.prims) {
+        any = true;
+        if (prim.kind === 'point') {
+          ctx.moveTo(prim.x - ox - dot, prim.y - oy - dot);
+          ctx.lineTo(prim.x - ox + dot, prim.y - oy + dot);
+        } else if (prim.kind === 'infinite') {
+          const seg = clipInfinite(prim, box);
+          if (!seg) continue;
+          ctx.moveTo(seg.x1 - ox, seg.y1 - oy);
+          ctx.lineTo(seg.x2 - ox, seg.y2 - oy);
+        } else {
+          const runs = prim.text?.greek;
+          buildPath(ctx, runs && runs.length > 0 ? runs : (prim.continuous ?? prim.path), ox, oy);
+        }
+      }
+    }
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    if (!any) return;
+    const color = this.#style.selection ?? SELECTION_COLOR;
+    const px = this.#dpr;
+    ctx.strokeStyle = color;
+    ctx.globalAlpha = SELECTION_GLOW_ALPHA;
+    ctx.lineWidth = SELECTION_GLOW_PX * px;
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+    ctx.lineWidth = px;
+    ctx.setLineDash(SELECTION_DASH.map((d) => d * px));
+    ctx.stroke();
+    ctx.setLineDash([]);
   }
 
   /** Sends what the scene just drawn needed of each page and its raster does not show (M1-20). */

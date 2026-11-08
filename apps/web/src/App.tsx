@@ -1,7 +1,15 @@
 // The app shell (UI_SPEC.md §1, M1-22): title bar with the OET home button, document tabs
 // (DocTabs.tsx), Report issue and Settings; the canvas area with its navigation bar; the layout
-// tabs; the status bar. The ribbon, palettes and command line arrive with their own tasks.
-import type { EditResult, EngineEdit, Layout, PdfDefinition } from '@triya/engine';
+// tabs; the command line (CommandLine.tsx, M2-02); the status bar. The ribbon and the palette
+// stack arrive with their own tasks.
+import type {
+  ChangeSet,
+  EditResult,
+  EngineEdit,
+  EntityId,
+  Layout,
+  PdfDefinition,
+} from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
@@ -15,14 +23,18 @@ import {
   setCurrentTile,
   tilesOf,
 } from './canvas/registry';
+import { answerView, type ViewContext } from './canvas/view-host';
 import { modelTiles, type ModelTile } from './canvas/views';
+import { CommandLine } from './CommandLine';
+import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
+import { dynMode } from './dynamic-input';
 import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile } from './images';
 import { LayersPalette } from './LayersPalette';
-import { NavBar } from './NavBar';
+import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import {
@@ -52,6 +64,54 @@ export const OET_HOME = 'https://openengtools.com/';
 export const REPORT_ISSUE = 'https://github.com/shubhs650/triya-cad-2d/issues/new';
 
 const store = new DocumentStore();
+
+/**
+ * What each drawing's command engine says (M2-02): its command line follows it, its edits are
+ * already on its canvases (Engines), the palettes re-read after an edit, and its canvases learn
+ * the prompt it waits at, which makes a click a pick and draws the rubber band.
+ */
+engines.onCommand((doc, o) => {
+  commandLines.follow(doc, o);
+  if (o.type === 'change') store.edited(doc);
+  if (o.type === 'prompt' || o.type === 'idle') {
+    const prompt = commandLines.get(doc).prompt;
+    for (const c of controllersOf(doc)) c.setPrompt(prompt);
+  }
+  if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
+  if (o.type === 'selection') {
+    selections.set(doc, o.ids);
+    for (const c of controllersOf(doc)) c.setHighlight(o.ids);
+  }
+  if (o.type === 'view') {
+    void Promise.resolve(answerView(o.request, viewContext(doc))).then(
+      (reply) => engines.command(doc, { kind: 'view', id: o.id, reply }),
+      (e: unknown) =>
+        engines.command(doc, {
+          kind: 'view',
+          id: o.id,
+          reply: { ok: false, message: e instanceof Error ? e.message : String(e) },
+        }),
+    );
+  }
+});
+
+/** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
+const selections = new Map<number, readonly EntityId[]>();
+
+/** The view commands' link to a drawing's canvas: the current viewport of the space shown. */
+function viewContext(id: number): ViewContext {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  const target = doc && controllerOf(doc.id, doc.block);
+  return {
+    target,
+    all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
+    views: () => (doc && target ? namedViewsOf(doc, target.size) : []),
+    save: (name, view) => doc && store.saveView(doc.id, name, view),
+  };
+}
+
+/** The last world point the cursor was at on a canvas: direct distance entry aims at it. */
+let lastCursor: { x: number; y: number } | undefined;
 
 /** The user's .pat files (M1-50), read back from this device and handed to every renderer. */
 const patterns = new PatternStore(indexedDbPatterns());
@@ -350,11 +410,15 @@ export interface DevHooks {
   /** PDF underlay pages drawn by pdf.js so far (M1-20: the cache spares repeats). */
   pdfRenders(): number;
   edit(edit: EngineEdit): Promise<EditResult>;
+  /** Every change the showing drawing's engine applied since it opened (commands', M2-02). */
+  changes(): readonly ChangeSet[];
   /**
    * The entities drawn in a rectangle of the space on screen, CSS pixels from the canvas's
    * top-left corner: the fidelity harness names them where a golden image differs (M1-106).
    */
   entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]>;
+  /** The showing drawing's selected objects (M2-03), as its command engine last said. */
+  selection(): readonly EntityId[];
 }
 
 if (import.meta.env.DEV) {
@@ -368,6 +432,14 @@ if (import.meta.env.DEV) {
       return doc ? layoutsOf(doc.opened.init, engines.changesOf(doc.id)) : [];
     },
     pdfRenders: () => pdfPages.renders,
+    changes: () => {
+      const doc = showing();
+      return doc ? engines.changesOf(doc.id) : [];
+    },
+    selection: () => {
+      const doc = showing();
+      return (doc && selections.get(doc.id)) ?? [];
+    },
     entitiesIn: async (rect) => {
       const doc = showing();
       return (doc && (await controllerOf(doc.id, doc.block)?.entitiesIn(rect))) ?? [];
@@ -619,12 +691,34 @@ export function App() {
       </div>
 
       <LayoutTabs doc={active} />
+      <CommandLine
+        doc={active?.id}
+        lines={commandLines}
+        cursor={() => lastCursor}
+        onSettings={() => setSettings(true)}
+      />
       <StatusBar
         doc={active}
         missingReferences={missingReferences}
         onReferences={() => setPalette('references')}
       />
     </div>
+  );
+}
+
+/** The status bar's Dynamic Input toggle (DYNMODE; F12 toggles it too). */
+function DynToggle() {
+  const on = useSyncExternalStore(dynMode.subscribe, dynMode.get);
+  return (
+    <button
+      type="button"
+      className="status-toggle"
+      aria-pressed={on}
+      title="Dynamic Input (F12)"
+      onClick={() => dynMode.toggle()}
+    >
+      DYN
+    </button>
   );
 }
 
@@ -644,7 +738,9 @@ function DocumentCanvas({
   const [shown, setShown] = useState<readonly string[]>([doc.block]);
   useEffect(() => {
     setShown((s) => (s.includes(doc.block) ? s : [...s, doc.block]));
-  }, [doc.block]);
+    // Commands draw in the space shown, as AutoCAD's current space.
+    engines.command(doc.id, { kind: 'space', block: doc.block });
+  }, [doc.id, doc.block]);
   return (
     <div id={`doc-${doc.id}`} role="tabpanel" className="doc-canvas" hidden={!active}>
       {shown.map((block) => (
@@ -798,8 +894,18 @@ function ViewportCanvas({
   useEffect(() => {
     const c = new CanvasController(ref.current!, opened, block, {
       ...drawingHooks(id, opened),
-      onCursor: (p) => showCursor(p),
+      onCursor: (p) => {
+        if (p) lastCursor = p;
+        showCursor(p);
+      },
       onError: (e) => store.failed(name, openError(name, e)),
+      onPick: (point, o) =>
+        engines.command(id, {
+          kind: 'pick',
+          point,
+          ...(o.shift && { shift: true }),
+          ...(o.release && { release: true }),
+        }),
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },
@@ -813,6 +919,9 @@ function ViewportCanvas({
       }),
     });
     const unregister = register(id, block, c, index);
+    c.setPrompt(commandLines.get(id).prompt);
+    const selected = selections.get(id);
+    if (selected?.length) c.setHighlight(selected);
     showCurrent(id, block, visibleRef.current);
     return () => {
       unregister();
@@ -897,6 +1006,7 @@ function StatusBar({
             : `${missingReferences} references not found`}
         </button>
       )}
+      <DynToggle />
       {doc && (
         <>
           <span className="version">{doc.opened.summary.version}</span>

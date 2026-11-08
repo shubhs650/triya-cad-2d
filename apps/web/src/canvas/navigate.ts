@@ -70,3 +70,12 @@ export function extentsView(extents: Box | undefined, size: ViewportSize): ViewT
   if (!extents) return { center: { x: 0, y: 0 }, scale: Math.max(size.width, 1) / 100 };
   return fitView(extents, size.width, size.height);
 }
+
+/**
+ * Real-time ZOOM: dragging from the window's middle to its top edge zooms in 2x, to the bottom
+ * edge out 2x (AutoCAD 2024 Help, "ZOOM (Command)": "drag from the midpoint of the window to the
+ * top edge to zoom in by 100%").
+ */
+export function realtimeZoomFactor(dy: number, height: number): number {
+  return height > 0 ? 2 ** (-dy / (height / 2)) : 1;
+}

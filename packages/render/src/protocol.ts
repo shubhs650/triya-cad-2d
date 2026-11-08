@@ -10,6 +10,7 @@ import type {
   RenderPrimitive,
   RenderStyle,
   ScreenRect,
+  SelectQuery,
   UnderlayRaster,
   UnderlayRequest,
   ViewTransform,
@@ -54,6 +55,12 @@ export type HostMessage =
       readonly screen: { readonly x: number; readonly y: number };
       readonly aperture: number;
     }
+  /** The entities a selection window takes (M2-03); the answer is a `reply` with ids. */
+  | { readonly type: 'select'; readonly id: number; readonly query: SelectQuery }
+  /** The entities to draw selected (M2-03). */
+  | { readonly type: 'highlight'; readonly ids: readonly EntityId[] }
+  /** The extents of some entities (ZOOM Object, M2-03); the answer is an `extents`. */
+  | { readonly type: 'bounds'; readonly id: number; readonly ids: readonly EntityId[] }
   /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
   | { readonly type: 'entitiesIn'; readonly id: number; readonly rect: ScreenRect }
   | { readonly type: 'flush'; readonly id: number }

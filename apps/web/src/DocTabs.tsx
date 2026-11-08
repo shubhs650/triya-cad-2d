@@ -19,6 +19,7 @@ import {
 import { controllerOf } from './canvas/registry';
 import { spacesOf, type DocumentStore, type DocumentsState, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
+import { commandLines } from './command-line';
 
 /** How far the pointer moves before a press on a tab becomes a drag (CSS pixels). */
 const DRAG_START = 5;
@@ -192,6 +193,7 @@ export function DocTabs({
               onClick={() => {
                 store.close(d.id);
                 engines.stop(d.id);
+                commandLines.forget(d.id);
               }}
             >
               ×

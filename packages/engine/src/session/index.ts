@@ -1,7 +1,13 @@
 // The engine session (M1-67, ARCHITECTURE.md §3): the authoritative document of one open drawing,
 // as the engine worker holds it. It is built from the same `DocumentInit` as every render
 // replica, applies the app's edits, and returns each edit's ChangeSet for the replicas to apply.
-// M2's command engine runs here too; for now the edits are the viewer's (M1-23 layer toggles).
+// The document's command engine runs here too (M2-02): the front-ends send `CommandInput`s and
+// hear `CommandOutput`s, each edit a command makes among them as its ChangeSet.
+import { builtinCommands } from '../commands/builtin';
+import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
+import type { PromptAnswer } from '../commands/prompt';
+import type { ViewReply, ViewRequest } from '../commands/view/host';
+import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
@@ -55,11 +61,127 @@ export type EditResult =
   | { readonly ok: true; readonly change: ChangeSet }
   | { readonly ok: false; readonly message: string };
 
+/**
+ * What a front-end (the command line, Dynamic Input, the canvas, the Ctrl+K palette) sends a
+ * document's command engine: the `PromptBus` calls as plain messages, plus the space shown.
+ */
+export type CommandInput =
+  /** Typed input ended by Enter; `cursor` is where the cursor is, for direct distance entry. */
+  | { readonly kind: 'submit'; readonly text: string; readonly cursor?: Vec2 }
+  | { readonly kind: 'answer'; readonly answer: PromptAnswer }
+  | { readonly kind: 'cancel' }
+  | { readonly kind: 'invoke'; readonly name: string }
+  /**
+   * A left click on the canvas (M2-03, `PromptBus.pick`): a pick or a selection window's corner
+   * at `Command:` and "Select objects", the point at a point prompt; `release` ends a drag.
+   */
+  | {
+      readonly kind: 'pick';
+      readonly point: Vec2;
+      readonly shift?: boolean;
+      readonly release?: boolean;
+    }
+  /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
+  | { readonly kind: 'select-all' }
+  /** The space the drafter works in now: model space or a layout's paper space. */
+  | { readonly kind: 'space'; readonly block: Handle }
+  /** The app's reply to the view request `id` (M2-02 part 2). */
+  | { readonly kind: 'view'; readonly id: number; readonly reply: ViewReply };
+
+/**
+ * What the command engine tells the front-ends: the bus's events, with every edit a command
+ * makes as its ChangeSet the moment it is applied (the render replicas and the change log take
+ * it), and a finished command's record as its name only (the undo stack, M2-05, stays here;
+ * its state goes out as `undo`, for the undo/redo buttons).
+ */
+export type CommandOutput =
+  | Exclude<BusEvent, { readonly type: 'commit' }>
+  | { readonly type: 'commit'; readonly command: string }
+  | { readonly type: 'change'; readonly change: ChangeSet }
+  /**
+   * A view command asks the canvas of the space shown (ZOOM, PAN, REGEN, VIEW): the app answers
+   * with a `view` input carrying the same id. The command waits for it, so the app must answer
+   * every request, with a refusal when it has no canvas.
+   */
+  | { readonly type: 'view'; readonly id: number; readonly request: ViewRequest };
+
 export class EngineSession {
   readonly model: DocumentModel;
+  readonly #bus: PromptBus;
+  #space: Handle | undefined;
+  readonly #listeners = new Set<(o: CommandOutput) => void>();
+  readonly #viewReplies = new Map<number, (r: ViewReply) => void>();
+  #nextView = 1;
 
   constructor(init: DocumentInit) {
     this.model = DocumentModel.create(init);
+    this.#bus = new PromptBus({
+      model: this.model,
+      registry: builtinCommands(),
+      apply: (change) => {
+        this.model.apply(change);
+        this.#emit({ type: 'change', change });
+      },
+      space: () => this.#space ?? modelSpaceOf(this.model),
+      view: {
+        request: (request) =>
+          new Promise((resolve) => {
+            const id = this.#nextView++;
+            this.#viewReplies.set(id, resolve);
+            this.#emit({ type: 'view', id, request });
+          }),
+      },
+    });
+    this.#bus.on((e) =>
+      this.#emit(e.type === 'commit' ? { type: 'commit', command: e.record.command } : e),
+    );
+  }
+
+  /** Listens to the command engine; returns the unsubscribe. */
+  onCommand(listener: (o: CommandOutput) => void): () => void {
+    this.#listeners.add(listener);
+    return () => this.#listeners.delete(listener);
+  }
+
+  /** Hands a front-end's input to the command engine; resolves once it has been handled. */
+  command(input: CommandInput): Promise<void> {
+    switch (input.kind) {
+      case 'submit':
+        if (input.cursor) this.#bus.pointer(input.cursor);
+        return this.#bus.submit(input.text);
+      case 'answer':
+        if (input.answer.kind === 'point') this.#bus.pointer(input.answer.point);
+        return this.#bus.answer(input.answer);
+      case 'cancel':
+        return this.#bus.cancel();
+      case 'invoke':
+        return this.#bus.invoke(input.name);
+      case 'pick':
+        return this.#bus.pick(input.point, {
+          ...(input.shift && { shift: true }),
+          ...(input.release && { release: true }),
+        });
+      case 'select-all':
+        return this.#bus.selectAll();
+      case 'space':
+        if (!this.model.hasBlock(input.block) || input.block === this.#space) {
+          return Promise.resolve();
+        }
+        this.#space = input.block;
+        // Objects are selected in one space: another layout shown starts with none (M2-03).
+        return this.#bus.clearSelection();
+      case 'view': {
+        // Not queued on the bus: the command awaiting it holds the bus's queue.
+        const resolve = this.#viewReplies.get(input.id);
+        this.#viewReplies.delete(input.id);
+        resolve?.(input.reply);
+        return Promise.resolve();
+      }
+    }
+  }
+
+  #emit(o: CommandOutput): void {
+    for (const l of this.#listeners) l(o);
   }
 
   /** Applies an edit to the document; a refused edit changes nothing. */

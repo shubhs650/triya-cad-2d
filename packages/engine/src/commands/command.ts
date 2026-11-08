@@ -5,8 +5,10 @@ import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
+import type { Handle } from '../model/handle';
 import type { EntityGeometry } from '../model/types';
 import { ALIASES } from './aliases';
+import type { ViewHost } from './view/host';
 import type { UndoStack } from './undo';
 import type {
   AnglePrompt,
@@ -45,6 +47,11 @@ export interface CommandContext {
   readonly dash: boolean;
   /** Run inside another command (`'ZOOM`). */
   readonly transparent: boolean;
+  /**
+   * The BLOCK_RECORD new objects go into: model space, or the paper space of the layout shown
+   * (the space the drafter draws in, as AutoCAD's current space; M2-02).
+   */
+  readonly space: Handle;
   readonly prompt: typeof prompts;
   /**
    * The drawing's undo history, for UNDO, U, REDO and OOPS. Undoing goes around `edit`: it is
@@ -63,6 +70,8 @@ export interface CommandContext {
   preview(geometry: readonly EntityGeometry[]): void;
   /** A line on the command line ("1 found", "Invalid number of sides."). */
   message(text: string): void;
+  /** The canvas of the space shown, for the view commands (ZOOM, PAN, REGEN, VIEW; M2-02). */
+  readonly view: ViewHost;
 }
 
 export interface CommandDef {

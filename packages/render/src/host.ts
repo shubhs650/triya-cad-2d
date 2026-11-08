@@ -18,6 +18,7 @@ import type {
   RenderPrimitive,
   RenderStyle,
   ScreenRect,
+  SelectQuery,
   UnderlayRaster,
   UnderlayRequest,
   ViewTransform,
@@ -206,6 +207,28 @@ export class RendererHost {
     return this.#request((id) => ({ type: 'hitTest', id, screen, aperture })).then((m) => [
       ...(m.type === 'reply' ? (m.ids ?? []) : []),
     ]);
+  }
+
+  /** The entities a selection window takes (M2-03). */
+  select(query: SelectQuery): Promise<EntityId[]> {
+    if (this.#session) return Promise.resolve(this.#session.renderer.select(query));
+    return this.#request((id) => ({ type: 'select', id, query })).then((m) => [
+      ...(m.type === 'reply' ? (m.ids ?? []) : []),
+    ]);
+  }
+
+  /** The entities to draw selected (M2-03). */
+  setHighlight(ids: readonly EntityId[]): void {
+    if (this.#session) this.#session.renderer.setHighlight(ids);
+    else this.#post({ type: 'highlight', ids });
+  }
+
+  /** The extents of some entities (ZOOM Object, M2-03); undefined when none is known. */
+  boundsOf(ids: readonly EntityId[]): Promise<Box | undefined> {
+    if (this.#session) return Promise.resolve(this.#session.boundsOf(ids));
+    return this.#request((id) => ({ type: 'bounds', id, ids })).then((m) =>
+      m.type === 'extents' && m.box ? m.box : undefined,
+    );
   }
 
   /**

@@ -1,16 +1,39 @@
 // The navigation bar on the canvas (M1-22 part 2), as AutoCAD's: PAN, the ZOOM options
 // (Extents, Window, Previous, All, In and Out = Scale 2X and 0.5X), REGEN, and the named views
 // (VIEW restore and New). Each button calls the canvas controller of the space on screen; the
-// ZOOM and VIEW commands will call the same functions when the command line arrives (M2-01).
+// ZOOM, PAN, REGEN and VIEW commands call the same functions through the view host (M2-02).
 import { useState } from 'react';
 import type { ViewRecord } from '@triya/engine';
 import type { CanvasMode } from './canvas/controller';
 import { controllerOf } from './canvas/registry';
+import type { ViewportSize } from './canvas/navigate';
+import type { NamedView } from './canvas/view-host';
 import { namedView } from './canvas/views';
 import type { DocumentStore, OpenDocument } from './documents';
 
 /** VIEW table flag 1: a paper-space view. */
 const PAPER_VIEW = 1;
+
+/** The drawing's own views: model-space views on the Model tab, paper-space views in a layout. */
+function fileViewsOf(doc: OpenDocument): ViewRecord[] {
+  const inModel = doc.block === doc.opened.modelSpace;
+  return [...(doc.opened.init.tables?.views ?? [])].filter((v: ViewRecord) =>
+    (v.flags ?? 0) & PAPER_VIEW ? !inModel : inModel,
+  );
+}
+
+/**
+ * The named views of the space shown, as the Views list has them (the drawing's, then this
+ * session's), each with the view a canvas of `size` restores it to: what VIEW lists and restores.
+ */
+export function namedViewsOf(doc: OpenDocument, size: ViewportSize): NamedView[] {
+  return [
+    ...fileViewsOf(doc).map((v) => ({ name: v.name, inDrawing: true, view: namedView(v, size) })),
+    ...doc.savedViews
+      .filter((v) => v.block === doc.block)
+      .map((v) => ({ name: v.name, inDrawing: false, view: v.view })),
+  ];
+}
 
 export function NavBar({
   doc,
@@ -29,11 +52,7 @@ export function NavBar({
     if (ctl) ctl.setMode(ctl.mode === m ? 'none' : m);
   };
 
-  const inModel = doc.block === doc.opened.modelSpace;
-  // The drawing's own views: model-space views on the Model tab, paper-space views in a layout.
-  const fileViews = [...(doc.opened.init.tables?.views ?? [])].filter((v: ViewRecord) =>
-    (v.flags ?? 0) & PAPER_VIEW ? !inModel : inModel,
-  );
+  const fileViews = fileViewsOf(doc);
   const saved = doc.savedViews.filter((v) => v.block === doc.block);
 
   return (
