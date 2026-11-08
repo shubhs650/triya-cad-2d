@@ -1405,6 +1405,18 @@ export interface BlockDefinition extends ObjectCommon {
    * AcDbBlockRepBTag xdata. `dynamicBlockOf` resolves it.
    */
   readonly dynamicOf?: Handle;
+  /**
+   * An external reference's block (its record has the DXF 70 xref bit 4, overlay 8): the path
+   * the BLOCK's DXF 1 saves, as written (often relative). M1-21.
+   */
+  readonly xrefPath?: string;
+  /**
+   * Set while the xref's drawing is loaded (M1-21, `xrefLoadChange`): every handle the load
+   * added to the host, its `name|symbol` records, its blocks, its model space's entities (owned
+   * by this block) and the objects they need. None of them is saved: AutoCAD keeps an xref's
+   * contents in its own file, and the save leaves them out (`withoutXrefContent`).
+   */
+  readonly xrefLoaded?: readonly Handle[];
 }
 
 export interface Layout extends ObjectCommon {

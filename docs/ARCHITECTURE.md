@@ -219,6 +219,7 @@ Maintained in `docs/FILE_FIDELITY.md` with one row per DXF entity/object type an
 - **PNG export:** `OffscreenCanvas` at requested DPI; transparent or coloured background.
 - **PDF output:** `packages/pdf` — own vector writer (content streams, page tree, bookmarks, embedded subset TTF, lineweight/colour/screening from the resolved plot style). Stroke fonts emit path operators. See §9.
 - **PDF underlay (M1-20):** the renderer asks for the part of each underlay page on screen at screen resolution (`UnderlayRequest`, stepped by √2 and padded so small pans and zooms reuse the raster); the app (`apps/web/src/underlay`) lazy-loads pdf.js, draws the region with clear paper and answers with `setUnderlay`, keeping drawn pages in a byte-bounded cache. pdf.js lives in the app because it draws onto a DOM canvas and the app owns the files. Path extraction for osnaps is M2-22.
+- **Xrefs (M1-21):** an xref's drawing is read by an I/O worker like any drawing and handed to the host's engine as an `xref-load` edit; the engine renumbers it into the host (`name|symbol` records, the xref's model space as the xref block's entities, handles from the host's allocator) and the ChangeSet reaches every replica, so nothing downstream knows xrefs apart from blocks. The xref block's `xrefLoaded` lists what came in; export starts from `withoutXrefContent(model)`, so loaded xrefs are never saved.
 
 ## 7. Rendering (`packages/render`)
 

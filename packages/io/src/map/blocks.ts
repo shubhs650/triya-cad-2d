@@ -9,7 +9,7 @@
 // - A reference whose parameters differ from the definition's names an anonymous `*U` record
 //   holding that state; the record's AcDbBlockRepBTag xdata (1070 version, 1005 handle) names
 //   the dynamic block it came from.
-import type { BlockRecord, CadObject } from '@node-projects/acad-ts';
+import { BlockTypeFlags, type BlockRecord, type CadObject } from '@node-projects/acad-ts';
 import type { BlockDefinition, Handle } from '@triya/engine';
 import { hex } from './common';
 
@@ -40,5 +40,9 @@ export function mapBlock(b: BlockRecord): BlockDefinition {
     basePoint: { x: p?.x ?? 0, y: p?.y ?? 0 },
     ...(name !== undefined ? { dynamic: { name } } : {}),
     ...(of !== undefined ? { dynamicOf: of } : {}),
+    // An xref's file (M1-21): DXF 1 of its BLOCK.
+    ...((b.blockFlags & (BlockTypeFlags.XRef | BlockTypeFlags.XRefOverlay)) !== 0
+      ? { xrefPath: b.blockEntity?.xRefPath ?? '' }
+      : {}),
   };
 }
