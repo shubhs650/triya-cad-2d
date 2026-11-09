@@ -137,7 +137,11 @@ function props(
  * R2007 linetype variables to R2004 and older files as `ACAD_DSTYLE_DIM*_LINETYPE` xdata, a
  * 1070 code (380 DIMLTYPE, 381 DIMLTEX1, 382 DIMLTEX2) then the linetype's 1005 handle.
  */
-const LEGACY: Readonly<Record<number, string>> = { 380: 'DIMLTYPE', 381: 'DIMLTEX1', 382: 'DIMLTEX2' };
+const LEGACY: Readonly<Record<number, string>> = {
+  380: 'DIMLTYPE',
+  381: 'DIMLTEX1',
+  382: 'DIMLTEX2',
+};
 
 function legacyVars(style: Handle, model: AnnotationTables): Record<string, DimVarValue> {
   const out: Record<string, DimVarValue> = {};
@@ -151,11 +155,7 @@ function legacyVars(style: Handle, model: AnnotationTables): Record<string, DimV
 }
 
 /** The dimension's resolved style. */
-export function dimStyle(
-  style: Handle,
-  xdata: Entity['xdata'],
-  model: AnnotationTables,
-): DimStyle {
+export function dimStyle(style: Handle, xdata: Entity['xdata'], model: AnnotationTables): DimStyle {
   const vars = { ...DEFAULTS, ...legacyVars(style, model), ...dimVars(style, xdata, model) };
   const trueColors = dimTrueColors(style, xdata, model);
   const scale = num(vars.DIMSCALE, 1) || 1;

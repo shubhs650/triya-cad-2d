@@ -49,10 +49,7 @@ function fraction(n: number, den: number, vars: Vars): string {
 }
 
 /** Whole inches and a reduced fraction of 2^DIMDEC, the fraction empty when it is 0. */
-function inchesAndFraction(
-  inches: number,
-  vars: Vars,
-): { whole: number; frac: string } {
+function inchesAndFraction(inches: number, vars: Vars): { whole: number; frac: string } {
   const den = 2 ** Math.min(8, Math.max(0, Math.round(num(vars.DIMDEC))));
   let units = Math.round(inches * den);
   const whole = Math.floor(units / den);
@@ -77,7 +74,9 @@ function feetInches(value: number, vars: Vars, architectural: boolean): string {
   let inchText: string;
   let zeroInches: boolean;
   if (architectural) {
-    let { whole, frac } = inchesAndFraction(v - feet * 12, vars);
+    const parts = inchesAndFraction(v - feet * 12, vars);
+    const { frac } = parts;
+    let { whole } = parts;
     if (whole >= 12) {
       feet += 1;
       whole -= 12;

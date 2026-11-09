@@ -13,9 +13,11 @@
 //   Outside arrows get a DIMASZ tail beyond their back.
 // - The line between the extension lines is drawn when the arrows are inside, DIMTOFL is on,
 //   or text moved out with a leader (DIMTMOVE 1) hangs its leader from the line's middle.
-// - The text's middle is DXF 11, except for text moved out with a leader, where DXF 11 is the
-//   middle of the text's near edge: a leader runs from the dimension line's middle to DIMASZ +
-//   DIMGAP short of it, its last DIMASZ along the text (the landing).
+// - While the dimension keeps the graphics its writer stored (or its text was moved by the
+//   user, DXF 70 bit 128), its text stays where the writer put it: DXF 11 is the text's middle,
+//   except for text moved out with a leader, where DXF 11 is the middle of the text's near edge: a leader runs from the dimension line's middle to DIMASZ +
+//   DIMGAP short of it, its last DIMASZ along the text (the landing). Otherwise the engine
+//   places it (`defaultTextAt`).
 // - Text moved out without a leader (DIMTMOVE 0) takes the dimension line with it: the line
 //   goes on from the nearer extension line to the text.
 // - Dimension lines stay out of the text's box widened by DIMGAP.
@@ -82,11 +84,63 @@ export function fit(
   }
 }
 
+/**
+ * The side of the dimension line text sits on for DIMTAD (and DIMTVP with DIMTAD 0): above
+ * is the text's up side; DIMTAD 2 the side away from the measured points; 4 below.
+ */
+export function textOffset(s: DimStyle, normal: Vec2, away: Vec2): Vec2 {
+  if (s.tad === 0)
+    return { x: normal.x * s.tvp * s.textHeight, y: normal.y * s.tvp * s.textHeight };
+  const k = s.textHeight / 2 + s.gap;
+  const sign = s.tad === 4 ? -1 : s.tad === 2 && dot(normal, away) < 0 ? -1 : 1;
+  return { x: normal.x * k * sign, y: normal.y * k * sign };
+}
+
+/**
+ * Where AutoCAD puts the text's middle (DXF 11) when it places it: on the middle of the line
+ * (DIMJUST 1 and 2 next to the first or second extension line), or, when it does not fit,
+ * beyond the second extension line (and its arrow); DIMTMOVE 1 hangs it over the middle, DXF 11
+ * then being its near edge. Off the line by DIMTAD.
+ */
+function defaultTextAt(
+  g: Linear,
+  s: DimStyle,
+  f: {
+    s1: Vec2;
+    s2: Vec2;
+    along: Vec2;
+    width: number;
+    outside: boolean;
+    textDir: Vec2;
+    arrowsInside: boolean;
+  },
+): Vec2 {
+  const room = dist(f.s1, f.s2);
+  // The dimension line's normal on the text's up side (none for text across the line).
+  let normal = perp(f.along);
+  const up = perp(f.textDir);
+  if (dot(normal, up) < 0) normal = { x: -normal.x, y: -normal.y };
+  const across = Math.abs(dot(normal, up)) < 1e-9;
+  const off = across ? { x: 0, y: 0 } : textOffset(s, normal, sub(f.s1, g.first));
+  if (f.outside && s.tmove === 1) {
+    const m = lerp(f.s1, f.s2, 0.5);
+    const lift = across ? s.textHeight + s.asz : s.asz + s.textHeight / 2 + s.gap;
+    return add(add(m, normal, lift), f.textDir, s.asz + s.gap);
+  }
+  let along: number;
+  if (f.outside) along = room + (f.arrowsInside ? 1 : 2) * s.asz + s.gap + f.width / 2;
+  else if (s.just === 1) along = s.asz + s.gap + f.width / 2;
+  else if (s.just === 2) along = room - s.asz - s.gap - f.width / 2;
+  else along = room / 2;
+  return add(add(f.s1, f.along, along), off);
+}
+
 export function linearParts(
   g: Linear,
   s: DimStyle,
   model: AnnotationTables,
   measure: TextMeasure,
+  keepText: boolean,
 ): DimPart[] | undefined {
   const u =
     g.dimType === 'aligned'
@@ -125,23 +179,37 @@ export function linearParts(
     if (w === undefined) return undefined;
     width = w;
     placement = fit(room, width, centred, s, ticks);
-    const t = dot(sub(g.textPosition, s1), along) / (room || 1);
-    const offLine = t < -1e-9 || t > 1 + 1e-9;
-    const outside = !placement.textInside || (g.textUserPositioned && offLine);
-    if (!placement.textInside && s.tix) placement.textInside = true;
+    let at = g.textPosition;
+    let outside: boolean;
+    if (keepText) {
+      const t = dot(sub(at, s1), along) / (room || 1);
+      const offLine = t < -1e-9 || t > 1 + 1e-9;
+      outside = !placement.textInside || (g.textUserPositioned && offLine);
+    } else {
+      outside = !placement.textInside;
+    }
     const horizontal = outside ? s.toh : s.tih;
-    const rotation =
-      g.textRotation !== 0 ? g.textRotation : horizontal ? 0 : upright(lineAngle);
+    const rotation = g.textRotation !== 0 ? g.textRotation : horizontal ? 0 : upright(lineAngle);
     const textDir = fromAngle(rotation);
-    let middle = g.textPosition;
+    if (!keepText)
+      at = defaultTextAt(g, s, {
+        s1,
+        s2,
+        along,
+        width,
+        outside,
+        textDir,
+        arrowsInside: placement.arrowsInside,
+      });
+    let middle = at;
     if (outside && s.tmove === 1) {
       // Leader from the line's middle to the text's near edge (DXF 11).
       const m = lerp(s1, s2, 0.5);
-      const side = dot(sub(g.textPosition, m), textDir) < 0 ? -1 : 1;
-      const landEnd = add(g.textPosition, textDir, -side * s.gap);
+      const side = dot(sub(at, m), textDir) < 0 ? -1 : 1;
+      const landEnd = add(at, textDir, -side * s.gap);
       const landStart = add(landEnd, textDir, -side * s.asz);
       leader = [m, landStart, landEnd];
-      middle = add(g.textPosition, textDir, side * (width / 2));
+      middle = add(at, textDir, side * (width / 2));
     }
     text = { ...probe, position: middle, rotation };
     placement = { textInside: !outside, arrowsInside: placement.arrowsInside };

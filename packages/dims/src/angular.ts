@@ -10,7 +10,8 @@
 // - Arrowheads sit on the arc's ends with their back on the arc a DIMASZ chord away (inside the angle
 //   when they fit, else outside it with a DIMASZ tail of arc beyond); arrows not drawn about
 //   their tip trim the arc to their backs.
-// - The text's middle is DXF 11; aligned text runs along the arc's tangent there, upright. The
+// - The text's middle is DXF 11 (the arc's middle, outwards by DIMTAD, when the engine places
+//   it); aligned text runs along the arc's tangent there, upright. The
 //   arc stays out of the text's box widened by DIMGAP.
 
 import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
@@ -57,7 +58,9 @@ interface End {
 /** The centre and the two ends, `first` the end the arc starts from (counter-clockwise). */
 function frame(
   g: Angular,
-): { centre: Vec2; arcPoint: Vec2; ends: [End & { first: boolean }, End & { first: boolean }] } | undefined {
+):
+  | { centre: Vec2; arcPoint: Vec2; ends: [End & { first: boolean }, End & { first: boolean }] }
+  | undefined {
   if (g.dimType === 'angular3pt') {
     const d1 = unit(sub(g.first, g.vertex));
     const d2 = unit(sub(g.second, g.vertex));
@@ -70,8 +73,14 @@ function frame(
       centre: g.vertex,
       arcPoint: g.definitionPoint,
       ends: inside
-        ? [{ ...e1, first: true }, { ...e2, first: false }]
-        : [{ ...e1, first: false }, { ...e2, first: true }],
+        ? [
+            { ...e1, first: true },
+            { ...e2, first: false },
+          ]
+        : [
+            { ...e1, first: false },
+            { ...e2, first: true },
+          ],
     };
   }
   const u = unit(sub(g.line1End, g.line1Start));
@@ -88,9 +97,23 @@ function frame(
       const e1 = { dir: a, seg: [g.line1Start, g.line1End] as const };
       const e2 = { dir: b, seg: [g.line2Start, g.definitionPoint] as const };
       if (ab <= Math.PI && normAngle(at - angleOf(a)) <= ab)
-        return { centre, arcPoint: g.arcPoint, ends: [{ ...e1, first: true }, { ...e2, first: false }] };
+        return {
+          centre,
+          arcPoint: g.arcPoint,
+          ends: [
+            { ...e1, first: true },
+            { ...e2, first: false },
+          ],
+        };
       if (ba < Math.PI && normAngle(at - angleOf(b)) <= ba)
-        return { centre, arcPoint: g.arcPoint, ends: [{ ...e1, first: false }, { ...e2, first: true }] };
+        return {
+          centre,
+          arcPoint: g.arcPoint,
+          ends: [
+            { ...e1, first: false },
+            { ...e2, first: true },
+          ],
+        };
     }
   }
   return undefined;
@@ -101,6 +124,7 @@ export function angularParts(
   s: DimStyle,
   model: AnnotationTables,
   measure: TextMeasure,
+  keepText: boolean,
 ): DimPart[] | undefined {
   const f = frame(g);
   if (!f) return undefined;
@@ -138,7 +162,18 @@ export function angularParts(
     if (w === undefined) return undefined;
     width = w;
     placement = fit(r * sweep, width, centred, s, ticks);
-    const ta = normAngle(angleOf(sub(g.textPosition, c)) - a0);
+    // Placed by the engine: on the arc's middle, outwards by DIMTAD.
+    const mid = fromAngle(a0 + sweep / 2);
+    const at = keepText
+      ? g.textPosition
+      : add(
+          c,
+          mid,
+          r +
+            (s.tad === 0 ? s.tvp * s.textHeight : s.textHeight / 2 + s.gap) *
+              (s.tad === 4 ? -1 : 1),
+        );
+    const ta = normAngle(angleOf(sub(at, c)) - a0);
     const inside = ta <= sweep;
     const horizontal = inside ? s.tih : s.toh;
     const rotation =
@@ -146,8 +181,8 @@ export function angularParts(
         ? g.textRotation
         : horizontal
           ? 0
-          : upright(angleOf(sub(g.textPosition, c)) + Math.PI / 2);
-    text = { ...probe, rotation };
+          : upright(angleOf(sub(at, c)) + Math.PI / 2);
+    text = { ...probe, position: at, rotation };
   }
   const box = text ? textBox(text, width, s) : undefined;
 
@@ -184,7 +219,9 @@ export function angularParts(
     const pEnd = at(a0 + sweep);
     const bStart = at(baseStart);
     const bEnd = at(baseEnd);
-    out.push(...arrowParts(pStart, bStart, blkStart, s, model, unit(sub(bStart, pStart)) ?? fromAngle(0)));
+    out.push(
+      ...arrowParts(pStart, bStart, blkStart, s, model, unit(sub(bStart, pStart)) ?? fromAngle(0)),
+    );
     out.push(...arrowParts(pEnd, bEnd, blkEnd, s, model, unit(sub(bEnd, pEnd)) ?? fromAngle(0)));
   }
   if (text) out.push({ ...s.text, geom: text });
@@ -197,7 +234,12 @@ export function angularParts(
       defpoint(g.arcPoint),
     );
   } else {
-    out.push(defpoint(g.first), defpoint(g.second), defpoint(g.vertex), defpoint(g.definitionPoint));
+    out.push(
+      defpoint(g.first),
+      defpoint(g.second),
+      defpoint(g.vertex),
+      defpoint(g.definitionPoint),
+    );
   }
   return out;
 }

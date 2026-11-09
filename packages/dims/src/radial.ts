@@ -13,9 +13,17 @@
 //   across the circle with an arrowhead at each end); without it the centre gets DIMCEN's mark
 //   (a cross DIMCEN either side; negative adds centre lines out past the circle).
 // - DXF 11 is the text's middle; user-positioned text above an aligned line (DIMTAD) sits a
-//   gap and half a text height above it.
+//   gap and half a text height above it. Text the engine places (no stored graphics, not moved
+//   by the user) goes outside: two DIMASZ beyond the chord point along the radius, or, kept
+//   horizontal, a landing on from there.
 
-import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
+import type {
+  AnnotationTables,
+  DimensionGeometry,
+  MTextGeometry,
+  TextMeasure,
+  Vec2,
+} from '@triya/engine';
 import { dimensionText, formatLinear } from './format';
 import {
   add,
@@ -62,6 +70,7 @@ export function radialParts(
   s: DimStyle,
   model: AnnotationTables,
   measure: TextMeasure,
+  keepText: boolean,
 ): DimPart[] | undefined {
   const diameter = g.dimType === 'diameter';
   const p = g.chordPoint;
@@ -75,29 +84,38 @@ export function radialParts(
     s.vars,
   );
   const centred = s.tad === 0 && s.tvp === 0;
-  const t = g.textPosition;
+  const probe =
+    label === undefined
+      ? undefined
+      : textGeometry((centred ? '\\A1;' : '') + label, g.textPosition, 0, s);
+  const width = probe ? measure(probe) : 0;
+  if (width === undefined) return undefined;
+  // Placed by the engine: outside, beyond the arrow along the radius (or, kept horizontal,
+  // a landing's length on from there).
+  const side = v.x < 0 ? -1 : 1;
+  const t = keepText
+    ? g.textPosition
+    : s.toh && g.textRotation === 0
+      ? add(add(p, v, 2 * s.asz), { x: side, y: 0 }, s.asz + s.gap + width / 2)
+      : add(p, v, 2 * s.asz + width / 2);
   const inside = dist(t, c) < r;
   const base = add(p, v, inside ? -s.asz : s.asz);
   const lines: [Vec2, Vec2][] = [];
-  let text: ReturnType<typeof textGeometry> | undefined;
-  let width = 0;
-  if (label !== undefined) {
-    const probe = textGeometry((centred ? '\\A1;' : '') + label, t, 0, s);
-    const w = measure(probe);
-    if (w === undefined) return undefined;
-    width = w;
+  let text: MTextGeometry | undefined;
+  if (probe) {
     const horizontal = inside ? s.tih : s.toh;
     if (horizontal && g.textRotation === 0) {
       // Leader from the arrow's back, then a landing along the text.
-      const side = t.x < base.x ? -1 : 1;
-      const landEnd = add(t, { x: 1, y: 0 }, -side * (width / 2 + s.gap));
-      const landStart = add(landEnd, { x: 1, y: 0 }, -side * s.asz);
+      const toward = t.x < base.x ? -1 : 1;
+      const landEnd = add(t, { x: 1, y: 0 }, -toward * (width / 2 + s.gap));
+      const landStart = add(landEnd, { x: 1, y: 0 }, -toward * s.asz);
       lines.push([landEnd, landStart], [landStart, base]);
-      text = probe;
+      text = { ...probe, position: t };
     } else {
       const rotation = g.textRotation !== 0 ? g.textRotation : upright(angleOf(v));
       const up = perp(fromAngle(rotation));
-      const middle = !centred && g.textUserPositioned ? add(t, up, s.gap + s.textHeight / 2) : t;
+      const lifted = !centred && (g.textUserPositioned || !keepText);
+      const middle = lifted ? add(t, up, s.gap + s.textHeight / 2) : t;
       text = { ...probe, position: middle, rotation };
       // Along the radius from the text's far end to the arrow's back.
       const k = dot(sub(t, c), v) + (inside ? -1 : 1) * (width / 2);

@@ -102,15 +102,17 @@ const propsLabel = (p: DimPart): string =>
 
 /** The text's characters, its writers' spellings of the same thing made equal. */
 export function normalText(s: string): string {
-  return s
-    .replace(/\\A[012];/g, '')
-    // A stacked fraction's size and stacking style vary between writers (R2000 writes `\S1/4;`
-    // where later versions write `{\H1x;\S1#4;}`); its numbers do not.
-    .replace(/\{\\H[\d.]+x;(\\S[^;]*;)\}/g, '$1')
-    .replace(/\\S([^;#/^]*)[#^]([^;]*);/g, '\\S$1/$2;')
-    .replace(/%%[cC]|\\U\+2205|\\U\+00D8|∅/g, 'Ø')
-    .replace(/%%[dD]|\\U\+00B0/g, '°')
-    .replace(/%%[pP]|\\U\+00B1/g, '±');
+  return (
+    s
+      .replace(/\\A[012];/g, '')
+      // A stacked fraction's size and stacking style vary between writers (R2000 writes `\S1/4;`
+      // where later versions write `{\H1x;\S1#4;}`); its numbers do not.
+      .replace(/\{\\H[\d.]+x;(\\S[^;]*;)\}/g, '$1')
+      .replace(/\\S([^;#/^]*)[#^]([^;]*);/g, '\\S$1/$2;')
+      .replace(/%%[cC]|\\U\+2205|\\U\+00D8|∅/g, 'Ø')
+      .replace(/%%[dD]|\\U\+00B0/g, '°')
+      .replace(/%%[pP]|\\U\+00B1/g, '±')
+  );
 }
 
 interface Text {
@@ -124,22 +126,40 @@ interface Text {
 function textOf(p: DimPart): Text | undefined {
   const g = p.geom;
   if (g.kind === 'MTEXT')
-    return { contents: normalText(g.contents), position: g.position, rotation: g.rotation, height: g.height, part: p };
+    return {
+      contents: normalText(g.contents),
+      position: g.position,
+      rotation: g.rotation,
+      height: g.height,
+      part: p,
+    };
   if (g.kind === 'TEXT') {
     // R12 dimension text: middle-centred TEXT (DXF 72 = 1 or 4, 73 = 0 or 2) about DXF 11.
     const at = g.alignmentPoint ?? g.position;
-    const middle = g.valign === 2 || g.halign === 4 ? at : add(at, fromAngle(g.rotation + Math.PI / 2), g.height / 2);
-    return { contents: normalText(g.value), position: middle, rotation: g.rotation, height: g.height, part: p };
+    const middle =
+      g.valign === 2 || g.halign === 4
+        ? at
+        : add(at, fromAngle(g.rotation + Math.PI / 2), g.height / 2);
+    return {
+      contents: normalText(g.value),
+      position: middle,
+      rotation: g.rotation,
+      height: g.height,
+      part: p,
+    };
   }
   return undefined;
 }
 
 /** Points along a line or arc path. */
 function samples(g: EntityGeometry): Vec2[] {
-  if (g.kind === 'LINE') return [0, 0.25, 0.5, 0.75, 1].map((t) => add(g.start, sub(g.end, g.start), t));
+  if (g.kind === 'LINE')
+    return [0, 0.25, 0.5, 0.75, 1].map((t) => add(g.start, sub(g.end, g.start), t));
   if (g.kind === 'ARC') {
     const sweep = normAngle(g.endAngle - g.startAngle) || 2 * Math.PI;
-    return [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) => add(g.center, fromAngle(g.startAngle + (sweep * i) / 8), g.radius));
+    return [0, 1, 2, 3, 4, 5, 6, 7, 8].map((i) =>
+      add(g.center, fromAngle(g.startAngle + (sweep * i) / 8), g.radius),
+    );
   }
   return [];
 }
@@ -187,17 +207,22 @@ export function compareParts(
   const nearText = (p: Vec2) => zones.some((z) => dist(p, z.at) <= z.r);
 
   // Linework, both ways.
-  const paths = (ps: readonly DimPart[]) => ps.filter((p) => p.geom.kind === 'LINE' || p.geom.kind === 'ARC');
+  const paths = (ps: readonly DimPart[]) =>
+    ps.filter((p) => p.geom.kind === 'LINE' || p.geom.kind === 'ARC');
   const gp = paths(generated);
   const sp = paths(stored);
   const covered = (from: readonly DimPart[], to: readonly DimPart[], label: string) => {
     const generatedSide = label === 'generated';
     for (const p of from) {
-      const same = to.filter((q) => (generatedSide ? sameProps(p, q, colors) : sameProps(q, p, colors)));
+      const same = to.filter((q) =>
+        generatedSide ? sameProps(p, q, colors) : sameProps(q, p, colors),
+      );
       for (const pt of samples(p.geom)) {
         const d = Math.min(...same.map((q) => distanceTo(pt, q.geom)));
         if (d <= tol || (nearText(pt) && d <= h)) continue;
-        problems.push(`${label} ${p.geom.kind} point (${pt.x.toFixed(4)}, ${pt.y.toFixed(4)}) is ${d === Infinity ? 'unmatched' : d.toPrecision(3) + ' off'}`);
+        problems.push(
+          `${label} ${p.geom.kind} point (${pt.x.toFixed(4)}, ${pt.y.toFixed(4)}) is ${d === Infinity ? 'unmatched' : d.toPrecision(3) + ' off'}`,
+        );
         break;
       }
     }
@@ -208,15 +233,20 @@ export function compareParts(
   // Arrowheads: SOLIDs by their corners, INSERTs by placement.
   const solids = (ps: readonly DimPart[]) => ps.filter((p) => p.geom.kind === 'SOLID');
   const sameCorners = (a: DimPart, b: DimPart) => {
-    if (a.geom.kind !== 'SOLID' || b.geom.kind !== 'SOLID' || !sameProps(b, a, colors)) return false;
+    if (a.geom.kind !== 'SOLID' || b.geom.kind !== 'SOLID' || !sameProps(b, a, colors))
+      return false;
     const ca = a.geom.corners;
     const cb = b.geom.corners;
-    return ca.every((p) => cb.some((q) => dist(p, q) <= tol)) && cb.every((p) => ca.some((q) => dist(p, q) <= tol));
+    return (
+      ca.every((p) => cb.some((q) => dist(p, q) <= tol)) &&
+      cb.every((p) => ca.some((q) => dist(p, q) <= tol))
+    );
   };
   const gs = solids(generated);
   const ss = solids(stored);
   if (gs.length !== ss.length) problems.push(`${gs.length} SOLIDs generated, ${ss.length} stored`);
-  for (const a of ss) if (!gs.some((b) => sameCorners(a, b))) problems.push('stored SOLID unmatched');
+  for (const a of ss)
+    if (!gs.some((b) => sameCorners(a, b))) problems.push('stored SOLID unmatched');
   const inserts = (ps: readonly DimPart[]) => ps.filter((p) => p.geom.kind === 'INSERT');
   const sameInsert = (a: DimPart, b: DimPart) => {
     const x = a.geom;
@@ -233,30 +263,44 @@ export function compareParts(
   };
   const gi = inserts(generated);
   const si = inserts(stored);
-  if (gi.length !== si.length) problems.push(`${gi.length} arrowhead blocks generated, ${si.length} stored`);
-  for (const a of si) if (!gi.some((b) => sameInsert(a, b))) problems.push('stored arrowhead block unmatched');
+  if (gi.length !== si.length)
+    problems.push(`${gi.length} arrowhead blocks generated, ${si.length} stored`);
+  for (const a of si)
+    if (!gi.some((b) => sameInsert(a, b))) problems.push('stored arrowhead block unmatched');
 
   // Text.
   if (gt.length !== st.length) problems.push(`${gt.length} texts generated, ${st.length} stored`);
   for (const a of st) {
     const b = gt.find((t) => t.contents === a.contents);
     if (!b) {
-      problems.push(`stored text "${a.contents}" not generated (${gt.map((t) => `"${t.contents}"`).join(', ')})`);
+      problems.push(
+        `stored text "${a.contents}" not generated (${gt.map((t) => `"${t.contents}"`).join(', ')})`,
+      );
       continue;
     }
-    if (dist(a.position, b.position) > h) problems.push(`text "${a.contents}" ${dist(a.position, b.position).toPrecision(3)} off`);
-    if (angleDiff(a.rotation, b.rotation) > 1e-4) problems.push(`text "${a.contents}" turned ${angleDiff(a.rotation, b.rotation).toPrecision(3)}`);
-    if (Math.abs(a.height - b.height) > tol) problems.push(`text "${a.contents}" height ${b.height} ≠ ${a.height}`);
+    if (dist(a.position, b.position) > h)
+      problems.push(`text "${a.contents}" ${dist(a.position, b.position).toPrecision(3)} off`);
+    if (angleDiff(a.rotation, b.rotation) > 1e-4)
+      problems.push(
+        `text "${a.contents}" turned ${angleDiff(a.rotation, b.rotation).toPrecision(3)}`,
+      );
+    if (Math.abs(a.height - b.height) > tol)
+      problems.push(`text "${a.contents}" height ${b.height} ≠ ${a.height}`);
     if (!sameProps(b.part, a.part, colors))
-      problems.push(`text "${a.contents}" drawn in ${propsLabel(b.part)}, stored ${propsLabel(a.part)}`);
+      problems.push(
+        `text "${a.contents}" drawn in ${propsLabel(b.part)}, stored ${propsLabel(a.part)}`,
+      );
   }
 
   // Definition points.
   const points = (ps: readonly DimPart[]) =>
-    ps.filter((p) => p.defpoint && p.geom.kind === 'POINT').map((p) => (p.geom.kind === 'POINT' ? p.geom.position : { x: 0, y: 0 }));
+    ps
+      .filter((p) => p.defpoint && p.geom.kind === 'POINT')
+      .map((p) => (p.geom.kind === 'POINT' ? p.geom.position : { x: 0, y: 0 }));
   const gd = points(generated);
   for (const p of points(stored)) {
-    if (!gd.some((q) => dist(p, q) <= tol)) problems.push(`definition point (${p.x}, ${p.y}) not generated`);
+    if (!gd.some((q) => dist(p, q) <= tol))
+      problems.push(`definition point (${p.x}, ${p.y}) not generated`);
   }
   return { ok: problems.length === 0, problems };
 }
@@ -272,7 +316,8 @@ export function dimensionHealth(
   colors?: ColorMatch,
 ): DimComparison | undefined {
   const g = e.geom;
-  if (g.kind !== 'DIMENSION' || g.block === undefined || !model.blocks.get(g.block)) return undefined;
+  if (g.kind !== 'DIMENSION' || g.block === undefined || !model.blocks.get(g.block))
+    return undefined;
   const generated = dimensionParts(e, model, measure);
   if (!generated) return undefined;
   const h = dimStyle(g.style, e.xdata, model).textHeight;

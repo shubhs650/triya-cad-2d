@@ -1,10 +1,12 @@
 // Canvas2DRenderer with leaders (M1-52): a MULTILEADER draws its arrowhead, leader line,
 // landing and text in their own colours, inside blocks too, is bounded by what it draws, and is
 // picked by its line; a LEADER draws its path and arrowhead in its DIMSTYLE's DIMCLRD, and a
-// TOLERANCE its frame in DIMCLRD and its text in DIMCLRT.
+// TOLERANCE its frame in DIMCLRD and its text in DIMCLRT. A DIMENSION with no stored block
+// draws what the dimension engine generates (M2-10).
 import {
   SpatialIndex,
   toleranceForSize,
+  type DimensionGeometry,
   type EntityInit,
   type InsertGeometry,
   type LeaderGeometry,
@@ -220,5 +222,33 @@ describe('multileaders in the renderer', () => {
     // The frame's left edge at x = 0 is screen x 30 (centre 7 at 100, 10 px per unit).
     expect(r.hitTest({ x: 30, y: 50 }, 2)).toEqual([id]);
     expect(r.hitTest({ x: 30, y: 90 }, 2)).toEqual([]);
+  });
+
+  it('draws a dimension without a stored block from the dimension engine', () => {
+    const dim: DimensionGeometry = {
+      kind: 'DIMENSION',
+      dimType: 'linear',
+      style: DIMSTYLE,
+      first: { x: 0, y: -3 },
+      second: { x: 12, y: -3 },
+      definitionPoint: { x: 12, y: 0 },
+      textPosition: { x: 6, y: 0 },
+      textUserPositioned: false,
+      text: '',
+      textRotation: 0,
+      horizontalDirection: 0,
+      attachment: 5,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+      rotation: 0,
+    };
+    const { d, r, redraw } = setup([entity('20', dim)]);
+    const c = redraw();
+    // Closed filled arrows and the dimension line in DIMCLRD (green), the extension lines
+    // ByBlock (white), the text in DIMCLRT (red).
+    expect(new Set(painted(c, 'fill'))).toEqual(new Set(['#00ff00']));
+    expect(painted(c, 'stroke').sort()).toEqual(['#00ff00', '#ff0000', '#ffffff']);
+    // Picked by its dimension line at (2, 0): screen (50 + 20, 50).
+    expect(r.hitTest({ x: 70, y: 50 }, 2)).toEqual([d.model.ids.idOf('20')]);
   });
 });

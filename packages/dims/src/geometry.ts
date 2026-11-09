@@ -56,7 +56,14 @@ export const defpoint = (p: Vec2): DimPart => ({
 });
 
 /** Arrowhead blocks drawn about the tip: the dimension line runs to the tip, and DIMDLE applies. */
-const DRAWN_AT_TIP = new Set(['_archtick', '_oblique', '_dotsmall', '_small', '_integral', '_none']);
+const DRAWN_AT_TIP = new Set([
+  '_archtick',
+  '_oblique',
+  '_dotsmall',
+  '_small',
+  '_integral',
+  '_none',
+]);
 
 /** Whether the arrowhead `block` is drawn about the tip (ticks are; closed filled is not). */
 export function atTip(block: Handle | undefined, s: DimStyle, model: AnnotationTables): boolean {
@@ -113,7 +120,12 @@ export function arrowParts(
 }
 
 /** The dimension text as AutoCAD writes it: an MTEXT about its middle (attachment 5). */
-export function textGeometry(contents: string, position: Vec2, rotation: number, s: DimStyle): MTextGeometry {
+export function textGeometry(
+  contents: string,
+  position: Vec2,
+  rotation: number,
+  s: DimStyle,
+): MTextGeometry {
   // Text centred on the dimension line is written vertically centred (`\A1;`).
   const fill =
     s.fill.mode === 1
@@ -145,11 +157,7 @@ export interface TextBox {
   readonly halfHeight: number;
 }
 
-export function textBox(
-  text: MTextGeometry,
-  width: number,
-  s: DimStyle,
-): TextBox {
+export function textBox(text: MTextGeometry, width: number, s: DimStyle): TextBox {
   return {
     center: text.position,
     dir: fromAngle(text.rotation),
