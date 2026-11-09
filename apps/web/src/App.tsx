@@ -29,6 +29,7 @@ import { answerView, type ViewContext } from './canvas/view-host';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
+import { AttributeDialogs } from './AttributeDialogs';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
@@ -714,6 +715,7 @@ export function App() {
         fonts={fontState.files.map((f) => f.name)}
         sources={fonts.sources()}
       />
+      <AttributeDialogs doc={active} />
       <SnapMenu />
       <CommandLine
         doc={active?.id}

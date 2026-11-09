@@ -1419,3 +1419,133 @@ button {
   height: 24px;
   padding: 0 10px;
 }
+
+/* The attribute dialogs (M2-12): AutoCAD's modal dialogs, in the chrome's colours. */
+.cad-dialog {
+  min-width: 320px;
+  max-width: min(560px, calc(100vw - 32px));
+  padding: 10px 12px;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgb(0 0 0 / 24%);
+  color: var(--chrome-text);
+  font-size: 13px;
+}
+
+.cad-dialog::backdrop {
+  background: rgb(0 0 0 / 12%);
+}
+
+.cad-dialog-title {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.cad-dialog-tabs {
+  display: flex;
+  gap: 2px;
+  margin-top: 8px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.cad-dialog-tabs [role='tab'] {
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  background: none;
+  color: inherit;
+}
+
+.cad-dialog-tabs [role='tab'][aria-selected='true'] {
+  border-color: var(--chrome-border);
+  background: var(--chrome-bg);
+  font-weight: 600;
+}
+
+.cad-dialog-panel {
+  padding: 8px 0;
+  min-height: 180px;
+}
+
+.cad-dialog-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px 12px;
+}
+
+.cad-dialog-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.cad-dialog-field > span {
+  flex: 0 0 auto;
+  min-width: 84px;
+}
+
+.cad-dialog-field input,
+.cad-dialog-field select,
+.cad-dialog-field textarea {
+  flex: 1 1 auto;
+  min-width: 0;
+  font: inherit;
+}
+
+.cad-dialog-check {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.cad-dialog-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.eattedit-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.eattedit-list {
+  width: 100%;
+  border-collapse: collapse;
+  margin-bottom: 8px;
+}
+
+.eattedit-list th,
+.eattedit-list td {
+  padding: 2px 6px;
+  border: 1px solid var(--chrome-border);
+  text-align: left;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.eattedit-list tr[aria-selected='true'] td {
+  background: var(--accent);
+  color: #fff;
+}
+
+.eattedit-list tbody:focus-visible {
+  outline: 2px solid var(--accent);
+}
+
+.attedit-rows {
+  grid-template-columns: 1fr;
+  margin: 8px 0;
+}
+
+.attedit-rows .cad-dialog-field > span {
+  min-width: 140px;
+}
