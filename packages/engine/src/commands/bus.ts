@@ -53,6 +53,10 @@ import { gripsOf } from '../edit/grips';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
 import { UndoStack, type UndoState } from './undo';
+import { applyPropertyEdit, type PropertyEdit } from '../properties/edit';
+import { filtered } from '../properties/sheet';
+import type { EntityType } from '../model/types';
+import { refusalMessages } from '../edit/edit';
 
 /**
  * What a double click on an object of each type runs (AutoCAD's DBLCLKEDIT; its CUI's
@@ -419,6 +423,37 @@ export class PromptBus {
       this.#idle.clear();
       this.#showSelection();
       if (corner && this.#stack.length === 0) this.#showPrompt();
+    });
+  }
+
+  /**
+   * A Properties palette edit (M2-21): `edit` set on the objects selected at `Command:` (of the
+   * type `filter`, when the palette shows one type). One undo step, which the command line does
+   * not echo, as AutoCAD's palette edits; the objects stay selected. A command running is
+   * cancelled first, as a palette or ribbon button does (^C^C); grip editing keeps its
+   * selection, so the edit applies to it.
+   */
+  setProperty(edit: PropertyEdit, filter?: EntityType): Promise<void> {
+    return this.#enqueue(async () => {
+      if (this.#stack.length > 0) await this.#cancel();
+      const ids = [...this.#idle.ids];
+      if (ids.length === 0) return;
+      const model = this.#model;
+      const def: CommandDef = {
+        name: 'PROPERTIES',
+        usesSelection: 'none',
+        keepsSelection: true,
+        // eslint-disable-next-line require-yield -- the palette gave the value
+        async *run(ctx) {
+          let report: ReturnType<typeof applyPropertyEdit> | undefined;
+          ctx.edit((b) => {
+            report = applyPropertyEdit(b, model, filtered(model, ids, filter), edit);
+          });
+          if (report!.invalid) ctx.message(`${report!.invalid}.`);
+          for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
+        },
+      };
+      await this.#start(def, false, false);
     });
   }
 

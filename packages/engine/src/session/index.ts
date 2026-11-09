@@ -16,6 +16,10 @@ import type { Handle } from '../model/handle';
 import { applyToReplica } from '../model/replica';
 import type { Layout, LayoutPlot } from '../model/types';
 import { xrefLoadChange, xrefLoadProblem } from '../model/xref';
+import type { EntityId } from '../model/entity-ids';
+import type { EntityType } from '../model/types';
+import type { PropertyEdit } from '../properties/edit';
+import { propertySheet, type PropertySheet } from '../properties/sheet';
 
 /** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
 export interface LayerStateEdit {
@@ -94,7 +98,15 @@ export type CommandInput =
   /** The space the drafter works in now: model space or a layout's paper space. */
   | { readonly kind: 'space'; readonly block: Handle }
   /** The app's reply to the view request `id` (M2-02 part 2). */
-  | { readonly kind: 'view'; readonly id: number; readonly reply: ViewReply };
+  | { readonly kind: 'view'; readonly id: number; readonly reply: ViewReply }
+  /**
+   * The Properties palette (M2-21) opened or closed, or narrowed to one type of the selected
+   * objects (`filter`, null for all). While it is open the engine sends a `properties` sheet
+   * whenever the selection or the selected objects change.
+   */
+  | { readonly kind: 'properties'; readonly open: boolean; readonly filter?: EntityType | null }
+  /** A Properties palette edit on the selected objects of the type it shows (one undo step). */
+  | { readonly kind: 'property'; readonly edit: PropertyEdit };
 
 /**
  * What the command engine tells the front-ends: the bus's events, with every edit a command
@@ -111,7 +123,9 @@ export type CommandOutput =
    * with a `view` input carrying the same id. The command waits for it, so the app must answer
    * every request, with a refusal when it has no canvas.
    */
-  | { readonly type: 'view'; readonly id: number; readonly request: ViewRequest };
+  | { readonly type: 'view'; readonly id: number; readonly request: ViewRequest }
+  /** The Properties palette's sheet for the objects selected now (M2-21), while it is open. */
+  | { readonly type: 'properties'; readonly sheet: PropertySheet };
 
 /** What the app hands the engine from the packages above it. */
 export interface EngineServices {
@@ -125,6 +139,12 @@ export class EngineSession {
   readonly #listeners = new Set<(o: CommandOutput) => void>();
   readonly #viewReplies = new Map<number, (r: ViewReply) => void>();
   #nextView = 1;
+  /** The Properties palette is open: sheets are sent (M2-21). */
+  #properties = false;
+  #filter: EntityType | undefined;
+  /** The selection the last sheet showed, so a new selection shows all types again. */
+  #sheetIds: readonly EntityId[] = [];
+  #sheetQueued = false;
 
   /**
    * `services` are what the engine cannot be built with because they sit above it: the
@@ -158,9 +178,34 @@ export class EngineSession {
           }),
       },
     });
-    this.#bus.on((e) =>
-      this.#emit(e.type === 'commit' ? { type: 'commit', command: e.record.command } : e),
-    );
+    this.#bus.on((e) => {
+      this.#emit(e.type === 'commit' ? { type: 'commit', command: e.record.command } : e);
+      if (e.type === 'selection' || e.type === 'commit' || e.type === 'undo') this.#queueSheet();
+    });
+  }
+
+  /**
+   * Sends the Properties palette's sheet once whatever changed it has settled (a command's
+   * edits and the selection it leaves come in one go).
+   */
+  #queueSheet(): void {
+    if (!this.#properties || this.#sheetQueued) return;
+    this.#sheetQueued = true;
+    void Promise.resolve().then(() => {
+      this.#sheetQueued = false;
+      if (this.#properties) this.#sendSheet();
+    });
+  }
+
+  #sendSheet(): void {
+    const ids = this.#bus.selection;
+    // A different selection shows every type again, as AutoCAD's palette does.
+    const same =
+      ids.length === this.#sheetIds.length && ids.every((id, i) => id === this.#sheetIds[i]);
+    if (!same) this.#filter = undefined;
+    this.#sheetIds = [...ids];
+    const sheet = propertySheet(this.model, ids, this.#filter);
+    this.#emit({ type: 'properties', sheet });
   }
 
   /** Listens to the command engine; returns the unsubscribe. */
@@ -200,6 +245,18 @@ export class EngineSession {
         this.#space = input.block;
         // Objects are selected in one space: another layout shown starts with none (M2-03).
         return this.#bus.clearSelection();
+      case 'properties':
+        this.#properties = input.open;
+        if (input.filter !== undefined) this.#filter = input.filter ?? undefined;
+        if (input.open) {
+          // Narrowing keeps the selection the sheet showed; opening starts from it.
+          if (input.filter === undefined) this.#sheetIds = [];
+          else this.#sheetIds = [...this.#bus.selection];
+          this.#sendSheet();
+        }
+        return Promise.resolve();
+      case 'property':
+        return this.#bus.setProperty(input.edit, this.#filter);
       case 'view': {
         // Not queued on the bus: the command awaiting it holds the bus's queue.
         const resolve = this.#viewReplies.get(input.id);

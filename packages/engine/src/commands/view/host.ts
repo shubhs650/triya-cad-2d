@@ -89,7 +89,12 @@ export type ViewRequest =
    * The app's Clipboard (M2-14 part 2), shared by its drawings: with `content`, COPYCLIP puts it
    * there; without, a paste reads it.
    */
-  | { readonly op: 'clipboard'; readonly content?: Clipboard };
+  | { readonly op: 'clipboard'; readonly content?: Clipboard }
+  /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes a palette. */
+  | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean };
+
+/** The palettes a command opens or closes (M2-21). */
+export type PaletteName = 'properties';
 
 /**
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows
