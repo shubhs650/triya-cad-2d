@@ -88,6 +88,11 @@ export interface CommandDef {
    * WBLOCK (M2-05).
    */
   readonly erases?: boolean;
+  /**
+   * The objects selected at `Command:` stay selected while it runs and after (grip editing,
+   * M2-06), where any other command that does not select deselects them.
+   */
+  readonly keepsSelection?: boolean;
   /** Where its selection comes from (PICKFIRST pre-selection, M2-03). */
   readonly usesSelection?: 'before' | 'during' | 'none';
   run(ctx: CommandContext): CommandGenerator;

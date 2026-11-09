@@ -34,6 +34,8 @@ import type {
 } from '../model/types';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
 import { stretchGeometry } from './stretch';
+import { moveGrip } from './grips';
+import { sub } from '../geom/vec';
 import {
   annotativeData,
   transformGeometry,
@@ -392,7 +394,46 @@ export function stretchObjects(
   w: StretchWindow | undefined,
   d: Vec2,
 ): EditReport {
-  const plan = planStretch(model, ids, w, d);
+  return applyStretch(b, model, planStretch(model, ids, w, d), d);
+}
+
+/** What dragging the grip at `grip` to `to` does to each of `ids` (`grips.ts`). */
+export function planGrip(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  grip: Vec2,
+  to: Vec2,
+): StretchPlan {
+  const move: EntityId[] = [];
+  const shape = new Map<EntityId, EntityGeometry>();
+  for (const id of ids) {
+    const e = model.entity(id);
+    if (!e) continue;
+    const r = moveGrip(e.geom, grip, to);
+    if (r.kind === 'move') move.push(id);
+    else if (r.kind === 'shape') shape.set(id, r.geom);
+  }
+  return { move, shape, refused: new Map() };
+}
+
+/** The STRETCH grip mode: the grip at `grip` of each of `ids` that has one dragged to `to`. */
+export function gripObjects(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  grip: Vec2,
+  to: Vec2,
+): EditReport {
+  return applyStretch(b, model, planGrip(model, ids, grip, to), sub(to, grip));
+}
+
+/** A stretch plan carried out: reshaped objects let go of their links, moved ones carry them. */
+function applyStretch(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  plan: StretchPlan,
+  d: Vec2,
+): EditReport {
   const links = new Links(b, model);
   const refused = new Map(plan.refused);
   const reshaped: EntityId[] = [];

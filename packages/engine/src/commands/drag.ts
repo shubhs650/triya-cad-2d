@@ -3,9 +3,9 @@
 // what is dragged and how (`DragPreview`); the front-end turns each cursor position into the
 // motion the renderer draws (`dragMotion`), the same motion the answer will make.
 import type { Box } from '../geom/bounds';
-import { mirror, rotation, scaling, translation, type Matrix2D } from '../geom/transform';
+import { IDENTITY, mirror, rotation, scaling, translation, type Matrix2D } from '../geom/transform';
 import type { Vec2 } from '../geom/types';
-import { angleOf, distance, sub } from '../geom/vec';
+import { add, angleOf, distance, sub } from '../geom/vec';
 import type { EntityId } from '../model/entity-ids';
 
 export type DragPreview =
@@ -37,6 +37,16 @@ export type DragPreview =
       readonly shape: readonly EntityId[];
       readonly window: Box;
       readonly from: Vec2;
+    }
+  /**
+   * The STRETCH grip mode: the grip at `grip` of each of `ids` moved by the cursor less `from`
+   * (the grip itself unless another base point was given).
+   */
+  | {
+      readonly kind: 'grip';
+      readonly ids: readonly EntityId[];
+      readonly grip: Vec2;
+      readonly from: Vec2;
     };
 
 /** What the renderer draws for a cursor position: `ids` through `m`, `shape` stretched by `d`. */
@@ -47,6 +57,12 @@ export interface DragMotion {
     readonly ids: readonly EntityId[];
     readonly window: Box;
     readonly d: Vec2;
+  };
+  /** Each of `ids` with its grip at `from` dragged to `to` (`moveGrip`). */
+  readonly grip?: {
+    readonly ids: readonly EntityId[];
+    readonly from: Vec2;
+    readonly to: Vec2;
   };
 }
 
@@ -77,6 +93,10 @@ export function dragMotion(drag: DragPreview, cursor: Vec2): DragMotion | undefi
         m: translation(d.x, d.y),
         ...(drag.shape.length > 0 && { stretch: { ids: drag.shape, window: drag.window, d } }),
       };
+    }
+    case 'grip': {
+      const to = add(drag.grip, sub(cursor, drag.from));
+      return { ids: [], m: IDENTITY, grip: { ids: drag.ids, from: drag.grip, to } };
     }
   }
 }

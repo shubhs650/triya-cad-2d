@@ -46,6 +46,9 @@ import {
   type SelectionWindow,
 } from './prompt';
 import { NO_VIEW, type ViewHost } from './view/host';
+import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
+import { gripsOf } from '../edit/grips';
+import { distance } from '../geom/vec';
 import { UndoStack, type UndoState } from './undo';
 
 /** One command's edits, in order: what the undo stack (M2-05) keeps as one step. */
@@ -72,7 +75,12 @@ export type BusEvent =
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
   | { readonly type: 'commit'; readonly record: CommandRecord }
   /** The undo history changed (a step added, undone or redone, a mark, a group, Control). */
-  | { readonly type: 'undo'; readonly state: UndoState };
+  | { readonly type: 'undo'; readonly state: UndoState }
+  /**
+   * The objects to show grips on (M2-06): the selection at `Command:` (up to GRIPOBJLIMIT
+   * objects), with the hot grip while grip editing; none while another command runs.
+   */
+  | { readonly type: 'grips'; readonly ids: readonly EntityId[]; readonly hot?: Vec2 };
 
 export interface PromptBusOptions {
   readonly model: DocumentModel;
@@ -155,6 +163,10 @@ export class PromptBus {
   #pickfirst: readonly EntityId[] | undefined;
   /** The window the pre-selection was last made with (STRETCH's, M2-06). */
   #pickfirstWindow: SelectionWindow | undefined;
+  /** The hot grip while grip editing runs (M2-06). */
+  #hot: Vec2 | undefined;
+  /** The grips last shown, as a key, so only a change is sent. */
+  #gripsShown = '';
   /** The Previous selection set. */
   #previous: readonly EntityId[] = [];
   /** The selection last shown (the `selection` event). */
@@ -281,11 +293,21 @@ export class PromptBus {
    */
   pick(
     point: Vec2,
-    o: { readonly shift?: boolean; readonly release?: boolean } = {},
+    o: { readonly shift?: boolean; readonly release?: boolean; readonly grip?: number } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
       this.#cursor = point;
       const frame = this.#stack.at(-1);
+      // A click on a grip of the selection at `Command:` starts grip editing (M2-06): `grip` is
+      // how near, in drawing units, the canvas counts as on a grip.
+      if (!frame && o.grip !== undefined && !o.shift && !o.release && !this.#idle.wantsPoint) {
+        const ids = this.#gripIds();
+        const hot = ids.length > 0 ? nearestGrip(this.#model, ids, point, o.grip) : undefined;
+        if (hot) {
+          this.#hot = hot;
+          return this.#start(gripCommand(ids, hot), false, false);
+        }
+      }
       if (frame?.select && this.#collectors.length === 0) {
         return this.#step(frame, await frame.select.point(point, o));
       }
@@ -477,7 +499,7 @@ export class PromptBus {
       this.#pickfirst =
         (selects || def.transparent) && this.#idle.ids.length > 0 ? [...this.#idle.ids] : undefined;
       this.#pickfirstWindow = this.#pickfirst ? this.#idle.window : undefined;
-      if (!def.transparent) this.#idle.clear();
+      if (!def.transparent && !def.keepsSelection) this.#idle.clear();
       this.#showSelection();
     }
     const ctx = this.#context(dash, transparent);
@@ -490,6 +512,7 @@ export class PromptBus {
       outerCollectors: this.#collectors,
     };
     this.#stack.push(frame);
+    this.#showGrips();
     this.#collectors = [];
     this.#emit({ type: 'start', command: def.name, transparent });
     await this.#advance(frame, undefined);
@@ -641,7 +664,24 @@ export class PromptBus {
     return this.#deliver({ kind: 'selection', ids, ...(window && { window }) }, '', false);
   }
 
+  /** The selection at `Command:` grips show on: none past GRIPOBJLIMIT. */
+  #gripIds(): readonly EntityId[] {
+    const ids = this.#idle.ids;
+    return ids.length <= GRIP_OBJECT_LIMIT ? ids : [];
+  }
+
+  #showGrips(): void {
+    const top = this.#stack.at(-1);
+    const ids = !top || (top.def.keepsSelection && this.#hot) ? this.#gripIds() : [];
+    const hot = top ? this.#hot : undefined;
+    const key = `${ids.join(',')}|${hot ? `${hot.x},${hot.y}` : ''}`;
+    if (key === this.#gripsShown) return;
+    this.#gripsShown = key;
+    this.#emit({ type: 'grips', ids: [...ids], ...(hot && ids.length > 0 && { hot }) });
+  }
+
   #showSelection(): void {
+    this.#showGrips();
     const ids = this.selection;
     const shown = this.#shown;
     if (ids.length === shown.length && ids.every((id, i) => id === shown[i])) return;
@@ -665,6 +705,8 @@ export class PromptBus {
   /** A command ended: close its record, or resume the one it ran inside. */
   #end(frame: Frame, cancelled: boolean): void {
     this.#stack.pop();
+    if (frame.def.keepsSelection) this.#hot = undefined;
+    this.#showGrips();
     this.#collectors = frame.outerCollectors;
     this.#emit({ type: 'end', command: frame.def.name, cancelled });
     const outer = this.#stack.at(-1);
@@ -868,4 +910,27 @@ export function modelSpaceOf(model: DocumentModel): Handle {
     if (r.name.toUpperCase() === '*MODEL_SPACE') return r.handle;
   }
   throw new Error('the drawing has no *Model_Space block record');
+}
+
+/** The grip of `ids` nearest `p` within `within`, or undefined (M2-06). */
+function nearestGrip(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  p: Vec2,
+  within: number,
+): Vec2 | undefined {
+  let best: Vec2 | undefined;
+  let bestD = within;
+  for (const id of ids) {
+    const e = model.entity(id);
+    if (!e) continue;
+    for (const g of gripsOf(e.geom)) {
+      const d = distance(g.point, p);
+      if (d <= bestD) {
+        best = g.point;
+        bestD = d;
+      }
+    }
+  }
+  return best;
 }

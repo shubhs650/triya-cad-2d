@@ -15,3 +15,4 @@ export * from './undo';
 export * from './undo-commands';
 export * from './modify/edit';
 export * from './drag';
+export { GRIP_MODES, GRIP_OBJECT_LIMIT, gripCommand, type GripMode } from './modify/grips';

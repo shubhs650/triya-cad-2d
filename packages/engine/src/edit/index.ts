@@ -10,6 +10,8 @@ export {
   copyObjects,
   inBox,
   planStretch,
+  planGrip,
+  gripObjects,
   stretchObjects,
   type StretchPlan,
   type StretchWindow,
@@ -19,3 +21,4 @@ export {
   type EditReport,
 } from './edit';
 export { stretchGeometry, type StretchResult } from './stretch';
+export { gripsOf, moveGrip, sameGrip, type Grip, type GripKind } from './grips';
