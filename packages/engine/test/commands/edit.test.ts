@@ -580,6 +580,19 @@ describe('STRETCH', () => {
     expect(s.ends('20')).toEqual([3, 0, 10, 0]);
   });
 
+  it('stretches by a displacement, the last one by default', async () => {
+    const s = withCanvas();
+    await s.bus.script(['STRETCH', 'C', '8,-1', '12,1', '', 'D', '2,0']);
+    expect(s.ends('20')).toEqual([0, 0, 12, 0]);
+    await s.bus.script(['STRETCH', 'C', '11,-1', '13,1', '', '', '']);
+    expect(s.ends('20')).toEqual([0, 0, 14, 0]);
+    // Enter at the second point takes the base point as the displacement.
+    await s.bus.script(['STRETCH', 'C', '13,-1', '15,1', '', '1,1', '']);
+    expect(s.ends('20')).toEqual([0, 0, 15, 1]);
+    await s.bus.script(['STRETCH', '']);
+    expect(s.bus.command).toBeUndefined();
+  });
+
   it('just moves a selection made without a window', async () => {
     const s = withCanvas();
     await s.bus.script(['STRETCH', 'ALL', '', '0,0', '1,1']);
@@ -688,6 +701,14 @@ describe('dragMotion', () => {
       window: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
       d: { x: 2, y: 0 },
     });
+  });
+
+  it('moves a grip by the cursor less its base point', () => {
+    const m = dragMotion(
+      { kind: 'grip', ids: [1], grip: { x: 10, y: 0 }, from: { x: 0, y: 0 } },
+      { x: 1, y: 2 },
+    );
+    expect(m?.grip).toEqual({ ids: [1], from: { x: 10, y: 0 }, to: { x: 11, y: 2 } });
   });
 
   it('makes none where the cursor gives no motion', () => {

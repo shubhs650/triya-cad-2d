@@ -150,6 +150,8 @@ export class PromptBus {
   #collectors: Collector[] = [];
   #changes: ChangeSet[] = [];
   #last: { readonly def: CommandDef; readonly dash: boolean } | undefined;
+  /** The outermost command running, whose record `#close` makes. */
+  #current: CommandDef | undefined;
   #lastPoint: Vec2 | undefined;
   #cursor: Vec2 | undefined;
   #previewing = false;
@@ -489,7 +491,9 @@ export class PromptBus {
 
   async #start(def: CommandDef, dash: boolean, transparent: boolean): Promise<void> {
     if (!transparent) {
-      this.#last = { def, dash };
+      // Enter at `Command:` repeats the last command typed or picked, never grip editing.
+      if (!def.keepsSelection) this.#last = { def, dash };
+      this.#current = def;
       this.#changes = [];
       // Noun-verb: a command that selects takes the pre-selection at its first "Select objects"
       // prompt. One that does not clears it, as AutoCAD deselects when LINE starts; a view
@@ -726,7 +730,7 @@ export class PromptBus {
       this.#emit({ type: 'preview', geometry: [] });
     }
     if (this.#changes.length === 0) return;
-    const def = this.#last!.def;
+    const def = this.#current!;
     const record: CommandRecord = { command: def.name, changes: this.#changes };
     this.#changes = [];
     this.#undo.push(record, { erases: def.erases === true });

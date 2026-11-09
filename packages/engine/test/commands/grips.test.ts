@@ -167,6 +167,50 @@ describe('grips', () => {
     expect(s.ends('20')).toEqual([0, 0, 0, 5]);
   });
 
+  it('asks again for a zero scale or a one-point mirror line, and ignores Undo with no copy', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    await s.bus.pick({ x: 0, y: 0 }, { grip: 0.5 });
+    await s.bus.script(['U', '', '', '', '0']);
+    expect(s.log).toContain('Value must be positive and nonzero.');
+    expect(s.bus.promptText).toBe('Specify scale factor or [Base point/Copy/Undo/Reference/eXit]:');
+    await s.bus.script(['', '0,0']);
+    expect(s.log).toContain('Mirror line points must be different.');
+    await s.bus.script(['X']);
+    expect(s.ends('20')).toEqual([0, 0, 10, 0]);
+  });
+
+  it('takes a Reference back to the mode when it is not completed', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    await s.bus.pick({ x: 0, y: 0 }, { grip: 0.5 });
+    await s.bus.script(['', '', 'R', '0']);
+    expect(s.bus.promptText).toBe('Specify new angle:');
+    await s.bus.submit('');
+    expect(s.bus.promptText).toBe(
+      'Specify rotation angle or [Base point/Copy/Undo/Reference/eXit]:',
+    );
+    await s.bus.script(['', 'R', '0']);
+    expect(s.bus.promptText).toBe('Specify scale factor or [Base point/Copy/Undo/Reference/eXit]:');
+    await s.bus.script(['R', '2', '']);
+    expect(s.bus.promptText).toBe('Specify scale factor or [Base point/Copy/Undo/Reference/eXit]:');
+    await s.bus.script(['C', 'R', '2', '4', '']);
+    expect(s.bus.command).toBeUndefined();
+    // Enter at Command: repeats the last command, never grip editing.
+    await s.bus.submit('');
+    expect(s.bus.command).toBeUndefined();
+    // One copy at twice the size.
+    expect(s.model.blockEntities(MODEL_SPACE)).toHaveLength(6);
+  });
+
+  it('rotates copies, keeping going until Enter', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    await s.bus.pick({ x: 0, y: 0 }, { grip: 0.5 });
+    await s.bus.script(['', '', 'C', '90', '180', '']);
+    expect(s.model.blockEntities(MODEL_SPACE)).toHaveLength(9);
+  });
+
   it('shows no grips past GRIPOBJLIMIT', async () => {
     const init = sampleInit();
     const many = Array.from({ length: 101 }, (_, i) => ({
