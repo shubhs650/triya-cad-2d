@@ -2,7 +2,15 @@
 // postMessage, as ARCHITECTURE.md §3 draws it: the stream is one-way except for the requests
 // that need an answer (hit test, entities in a rectangle, flush, thumbnail, extents), which carry an id.
 
-import type { Box, ChangeSet, DragMotion, EntityId, OsnapHit, OsnapQuery } from '@triya/engine';
+import type {
+  Box,
+  ChangeSet,
+  DragMotion,
+  EntityId,
+  OsnapHit,
+  OsnapQuery,
+  Vec2,
+} from '@triya/engine';
 import type { FontSources, RenderDocument } from './session';
 import type {
   DrawnEntity,
@@ -61,6 +69,8 @@ export type HostMessage =
   | { readonly type: 'highlight'; readonly ids: readonly EntityId[] }
   /** The objects a command drags with the cursor (M2-06 part 2); null ends the drag. */
   | { readonly type: 'drag'; readonly motion: DragMotion | null }
+  /** The objects to show grips on and the hot grip (M2-06 part 2). */
+  | { readonly type: 'grips'; readonly ids: readonly EntityId[]; readonly hot: Vec2 | null }
   /** The extents of some entities (ZOOM Object, M2-03); the answer is an `extents`. */
   | { readonly type: 'bounds'; readonly id: number; readonly ids: readonly EntityId[] }
   /** The object snap points under the aperture (M2-04); the answer is a `snap`. */

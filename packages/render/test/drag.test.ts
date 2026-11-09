@@ -103,3 +103,59 @@ describe('Canvas2DRenderer.setDrag', () => {
     expect(devicePoints(transient().calls)).toEqual([]);
   });
 });
+
+describe('Canvas2DRenderer grips', () => {
+  const squares = (calls: readonly Call[]) => {
+    const out: [string, number, number, number][] = [];
+    let fill = '';
+    for (const c of calls) {
+      if (c[0] === 'fillStyle') fill = String(c[1]);
+      if (c[0] === 'fillRect' && fill !== '#1a1a1a') {
+        const [x, y, w] = c.slice(1) as number[];
+        out.push([fill, x! + w! / 2, y! + w! / 2, w!]);
+      }
+    }
+    return out;
+  };
+
+  it('draws a line’s grips, the hot one in GRIPHOT', () => {
+    const { r, id, transient } = setup();
+    transient().clear();
+    r.setGrips([id('20')], { x: 10, y: 0 });
+    r.frame();
+    expect(squares(transient().calls).map(([, x, y]) => [x, y])).toEqual([
+      [0, 50],
+      [50, 50],
+      [100, 50],
+    ]);
+    const [a, b, c] = squares(transient().calls);
+    expect(a![0]).toBe(b![0]);
+    expect(c![0]).not.toBe(a![0]);
+    expect(a![3]).toBe(8);
+  });
+
+  it('draws a grip dragged in the STRETCH grip mode from the stretched object', () => {
+    const { r, id, transient } = setup();
+    transient().clear();
+    r.setDrag({
+      ids: [],
+      m: translation(0, 0),
+      grip: { ids: [id('20'), id('21')], from: { x: 10, y: 0 }, to: { x: 10, y: 5 } },
+    });
+    r.frame();
+    expect(devicePoints(transient().calls)).toEqual([
+      [0, 50],
+      [100, 0],
+    ]);
+  });
+
+  it('hides them with none', () => {
+    const { r, id, transient } = setup();
+    r.setGrips([id('20')]);
+    r.frame();
+    transient().clear();
+    r.setGrips([]);
+    r.frame();
+    expect(squares(transient().calls)).toEqual([]);
+  });
+});

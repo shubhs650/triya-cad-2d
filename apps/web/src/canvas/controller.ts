@@ -119,6 +119,8 @@ const WINDOW_COLOR = '#4da3ff';
 const CROSSING_COLOR = '#5fd35f';
 const SELECTION_FILL_OPACITY = 0.18;
 const DASH_PX = 6;
+/** A click this near a grip (CSS pixels) is on it: the grip's half size and a pixel (M2-06). */
+const GRIP_PICK_PX = 5;
 
 /**
  * What the left button does: select (nothing yet), real-time PAN or ZOOM, or pick ZOOM Window
@@ -137,7 +139,12 @@ export interface CanvasHooks {
    */
   readonly onPick?: (
     p: Vec2 | Promise<Vec2>,
-    o: { readonly shift: boolean; readonly release: boolean },
+    o: {
+      readonly shift: boolean;
+      readonly release: boolean;
+      /** At `Command:`: how near a grip, in drawing units, counts as on it (M2-06). */
+      readonly grip?: number;
+    },
   ) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
@@ -419,6 +426,12 @@ export class CanvasController {
       this.#requestSnap();
       this.#track();
     }
+  }
+
+  /** The objects to show grips on, and the hot grip (M2-06 part 2). */
+  setGrips(ids: readonly EntityId[], hot?: Vec2): void {
+    this.#host.setGrips(ids, hot);
+    this.#requestFrame();
   }
 
   /** The objects to draw selected (M2-03). */
@@ -900,7 +913,7 @@ export class CanvasController {
           c.setPointerCapture(e.pointerId);
           const shift = e.shiftKey;
           if (!this.#precise()) {
-            this.#hooks.onPick?.(world, { shift, release: false });
+            this.#hooks.onPick?.(world, { shift, release: false, grip: GRIP_PICK_PX * this.#px() });
             return;
           }
           // At a point prompt the click gives the point the drafting aids make of it.

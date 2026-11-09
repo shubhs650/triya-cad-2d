@@ -39,7 +39,16 @@ export function dynFor(prompt: Prompt): DynState {
   }
   if (prompt.kind === 'point')
     return { ...base, kind: 'pointer', fields: [field('X'), field('Y')] };
-  const label = prompt.kind === 'distance' ? 'Distance' : prompt.kind === 'angle' ? 'Angle' : '';
+  // SCALE and the SCALE grip mode take a factor, which the cursor's distance gives (M2-06).
+  const scale = prompt.kind === 'distance' && prompt.drag?.kind === 'scale';
+  const label =
+    prompt.kind === 'distance'
+      ? scale
+        ? 'Scale'
+        : 'Distance'
+      : prompt.kind === 'angle'
+        ? 'Angle'
+        : '';
   return { ...base, kind: 'single', fields: [field(label)] };
 }
 
