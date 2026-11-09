@@ -26,6 +26,7 @@ import {
   layer,
   linetype,
   MODEL_SPACE,
+  PAPER_SPACE,
   lineGeom,
   circleGeom,
 } from '../model/fixtures';
@@ -40,13 +41,21 @@ function source(entities: EntityInit[], o: { walls?: { on?: boolean; frozen?: bo
     tables: {
       layers: [layer(LAYER_0, '0'), { ...layer(LAYER_WALLS, 'WALLS'), ...o.walls }],
       linetypes: [linetype('14', 'Continuous')],
-      blockRecords: [blockRecord(MODEL_SPACE, '*Model_Space'), blockRecord(BLOCK, 'BOLT')],
+      blockRecords: [
+        blockRecord(MODEL_SPACE, '*Model_Space'),
+        blockRecord(PAPER_SPACE, '*Paper_Space'),
+        blockRecord(BLOCK, 'BOLT'),
+      ],
     },
     blocks: [
       { handle: MODEL_SPACE, name: '*Model_Space', basePoint: { x: 0, y: 0 } },
+      { handle: PAPER_SPACE, name: '*Paper_Space', basePoint: { x: 0, y: 0 } },
       { handle: BLOCK, name: 'BOLT', basePoint: { x: 1, y: 0 } },
     ],
-    layouts: [{ handle: '22', name: 'Model', tabOrder: 0, blockRecord: MODEL_SPACE }],
+    layouts: [
+      { handle: '22', name: 'Model', tabOrder: 0, blockRecord: MODEL_SPACE },
+      { handle: '23', name: 'Layout1', tabOrder: 1, blockRecord: PAPER_SPACE },
+    ],
     entities,
   });
   return { model, index: SpatialIndex.build(model, { tol }), block: MODEL_SPACE, tol };
@@ -402,5 +411,106 @@ describe('ranking (AutoSnap)', () => {
   it('lists every candidate once, best first', () => {
     const hits = snap([e(LINE)], at(98, 1), OSNAP.END | OSNAP.MID | OSNAP.NEA);
     expect(hits.map((h) => h.mode)).toEqual(['END', 'NEA', 'MID']);
+  });
+});
+
+describe('EXTension and PARallel acquisition (M2-04 part 2)', () => {
+  it("offers a line's nearer end, pointing out of the line, for EXT to acquire", () => {
+    const hits = snap([e(lineGeom(0, 0, 100, 0))], at(97, 2), OSNAP.EXT);
+    expect(hits).toEqual([
+      expect.objectContaining({
+        mode: 'EXT',
+        point: { x: 100, y: 0 },
+        direction: { x: 100, y: 0 },
+        track: true,
+      }),
+    ]);
+    // An arc's or circle's end has no line to run on.
+    expect(snap([e(circleGeom(0, 0, 10))], at(10, 1), OSNAP.EXT)).toEqual([]);
+  });
+
+  it('offers the line under the cursor for PAR, once there is a base point', () => {
+    const line = e(lineGeom(0, 0, 30, 40));
+    expect(snap([line], at(15, 21), OSNAP.PAR)).toEqual([]);
+    const [hit] = snap([line], at(15, 21), OSNAP.PAR, { from: at(200, 0) });
+    expect(hit).toMatchObject({ mode: 'PAR', direction: { x: 30, y: 40 }, track: true });
+  });
+
+  it('lists acquisition hits after the snap points, nearest first', () => {
+    const hits = snap([e(lineGeom(0, 0, 100, 0))], at(97, 2), OSNAP.END | OSNAP.EXT | OSNAP.PAR, {
+      from: at(0, 50),
+    });
+    expect(hits.map((h) => [h.mode, !!h.track])).toEqual([
+      ['END', false],
+      ['PAR', true],
+      ['EXT', true],
+    ]);
+  });
+});
+
+describe("through a layout's viewports (M2-04 part 2)", () => {
+  // A viewport centred on paper (150,100), 100 × 60, its view centred on model (50,0) at half
+  // size: model (x,y) is paper (125 + x/2, 100 + y/2), so (0,0)–(100,0) is (125,100)–(175,100).
+  const viewport = (extra: Record<string, unknown> = {}) =>
+    e(
+      {
+        kind: 'VIEWPORT',
+        center: { x: 150, y: 100 },
+        width: 100,
+        height: 60,
+        id: 2,
+        status: 1,
+        flags: 0,
+        viewCenter: { x: 50, y: 0 },
+        viewHeight: 120,
+        viewDirection: { x: 0, y: 0, z: 1 },
+        viewTarget: { x: 0, y: 0, z: 0 },
+        twist: 0,
+        lensLength: 50,
+        frontClip: 0,
+        backClip: 0,
+        frozenLayers: [],
+        plotStyleSheet: '',
+        renderMode: 0,
+        ...extra,
+      } as EntityGeometry,
+      { owner: PAPER_SPACE },
+    );
+
+  function paper(entities: EntityInit[], point: Vec2, modes = OSNAP.END | OSNAP.MID) {
+    const src = { ...source(entities), block: PAPER_SPACE, modelSpace: MODEL_SPACE };
+    return osnap(src, { point, aperture: 2, modes });
+  }
+
+  it('snaps to model space objects shown in a viewport, in paper coordinates', () => {
+    const line = e(lineGeom(0, 0, 100, 0));
+    const vp = viewport();
+    expect(paper([line, vp], at(174, 101))[0]).toMatchObject({
+      mode: 'END',
+      point: { x: 175, y: 100 },
+    });
+    expect(paper([line, vp], at(151, 100.5))[0]).toMatchObject({
+      mode: 'MID',
+      point: { x: 150, y: 100 },
+    });
+  });
+
+  it('snaps to nothing outside the frame, nor to layers frozen in the viewport', () => {
+    const long = e(lineGeom(0, 0, 300, 0));
+    const vp = viewport();
+    // Model x = 300 is paper x = 275, beyond the frame's right edge at 200; the cursor outside
+    // the frame does not look into the viewport at all.
+    const points = (p: Vec2) => paper([long, vp], p, OSNAP.END).map((h) => h.point);
+    // Inside the frame the line's near end is offered and its far end is not; the frame's
+    // own corner is there either way.
+    expect(points(at(199, 100))).toContainEqual({ x: 125, y: 100 });
+    expect(points(at(199, 100))).not.toContainEqual({ x: 275, y: 100 });
+    expect(points(at(201, 100))).not.toContainEqual({ x: 125, y: 100 });
+    expect(points(at(201, 100)).length).toBeGreaterThan(0);
+    const walls = e(lineGeom(0, 0, 100, 0), { layer: LAYER_WALLS });
+    expect(paper([walls, viewport({ frozenLayers: [LAYER_WALLS] })], at(174, 100))).toEqual([]);
+    // A viewport turned off shows, and snaps to, nothing.
+    expect(paper([walls, viewport({ flags: 0x20000 })], at(174, 100))).toEqual([]);
+    expect(paper([walls, viewport()], at(174, 100))[0]).toMatchObject({ mode: 'END' });
   });
 });

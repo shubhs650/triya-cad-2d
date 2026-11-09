@@ -31,6 +31,7 @@ import {
   parseAngle,
   parseCoordinate,
   parseNumber,
+  parseOsnapOverride,
   parsePointModifier,
   type AngleConvention,
   type PointModifier,
@@ -108,6 +109,10 @@ interface Collector {
   readonly text: string;
   /** What `@` is relative to here (FROM's offset is relative to its base point). */
   readonly relativeTo?: Vec2;
+  /** A typed object snap override's modes (M2-04): the point it asks for snaps with these. */
+  readonly osnap?: number;
+  /** The rubber band the prompt it was typed at had, kept while the override asks "of". */
+  readonly band?: Vec2;
   accept(p: Vec2): Vec2 | Collector | { readonly answer: PromptAnswer };
 }
 
@@ -192,7 +197,13 @@ export class PromptBus {
   /** The prompt the bus waits at, or undefined at `Command:`. */
   get prompt(): Prompt | undefined {
     const c = this.#collectors.at(-1);
-    if (c) return prompts.point({ message: c.text.replace(/:$/, '') });
+    if (c) {
+      return prompts.point({
+        message: c.text.replace(/:$/, ''),
+        ...(c.band && { rubberBand: { from: c.band } }),
+        ...(c.osnap !== undefined && { osnap: c.osnap }),
+      });
+    }
     const frame = this.#stack.at(-1);
     if (!frame) return this.#idle.prompt;
     return frame.select?.prompt ?? frame.prompt;
@@ -272,14 +283,18 @@ export class PromptBus {
   /**
    * A click on the canvas (M2-03). At "Select objects" or at `Command:` it picks, or starts or
    * ends a selection window, removing with `shift`; at a prompt for a point it is the point.
-   * `release` ends a dragged window and does nothing when no window is open.
+   * `release` ends a dragged window and does nothing when no window is open. `missed` says the
+   * prompt's object snap override found nothing at the point, which refuses it (M2-04).
    */
   pick(
     point: Vec2,
-    o: { readonly shift?: boolean; readonly release?: boolean } = {},
+    o: { readonly shift?: boolean; readonly release?: boolean; readonly missed?: boolean } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
       this.#cursor = point;
+      // AutoCAD refuses a pick an override found no object at with "Invalid point." and asks
+      // again; its help does not say what follows, so the override stays for the next pick.
+      if (o.missed && this.#collectors.at(-1)?.osnap) return this.#reject('Invalid point.');
       const frame = this.#stack.at(-1);
       if (frame?.select && this.#collectors.length === 0) {
         return this.#step(frame, await frame.select.point(point, o));
@@ -704,6 +719,8 @@ export class PromptBus {
       case 'angle': {
         const modifier = parsePointModifier(t);
         if (modifier) return this.#modifier(modifier, t);
+        const override = parseOsnapOverride(t);
+        if (override !== undefined) return this.#override(override, t);
         const p = parseCoordinate(t, { lastPoint: this.#lastPoint, angles });
         if (p !== undefined && p !== 'invalid') return this.#pointFor(p, t);
         const arbitrary = prompt.kind !== 'angle' && prompt.arbitrary;
@@ -781,10 +798,31 @@ export class PromptBus {
     this.#showPrompt();
   }
 
+  /**
+   * A one-shot object snap override typed at a point prompt (M2-04): AutoCAD asks "of" for the
+   * point, which the front-end snaps with the override's modes; a typed point is taken as typed.
+   */
+  #override(modes: number, echo: string): void {
+    const shown = this.prompt;
+    const band =
+      shown?.kind === 'point'
+        ? shown.rubberBand && !shown.rubberBand.box && !shown.rubberBand.selection
+          ? shown.rubberBand.from
+          : undefined
+        : shown && 'base' in shown
+          ? shown.base
+          : undefined;
+    this.#log(`${this.promptText} ${echo}`);
+    this.#collectors.push({ text: 'of', osnap: modes, ...(band && { band }), accept: (p) => p });
+    this.#showPrompt();
+  }
+
   async #collectorInput(t: string): Promise<void> {
     const c = this.#collectors.at(-1)!;
     const modifier = parsePointModifier(t);
     if (modifier) return this.#modifier(modifier, t);
+    const override = parseOsnapOverride(t);
+    if (override !== undefined) return this.#override(override, t);
     const lastPoint = c.relativeTo ?? this.#lastPoint;
     const p = parseCoordinate(t, { lastPoint, angles: this.#angles() });
     if (p === undefined || p === 'invalid') return this.#reject('Invalid point.');

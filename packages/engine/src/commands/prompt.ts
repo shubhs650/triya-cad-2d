@@ -39,6 +39,13 @@ export interface PointPrompt extends PromptBase {
    * refused (AutoCAD's "arbitrary input", initget bit 128): ZOOM's `2x` and `0.5xp`.
    */
   readonly arbitrary?: boolean;
+  /**
+   * A one-shot object snap override typed at the prompt before (M2-04: `END`, `MID,END`,
+   * `NONe`): the OSMODE bits the front-end snaps this point with instead of the running ones;
+   * 0 snaps to nothing. A click the override finds nothing at is refused (`PromptBus.pick`
+   * with `missed`).
+   */
+  readonly osnap?: number;
 }
 
 /** A distance: a number, or two points (one when `base` is given). */

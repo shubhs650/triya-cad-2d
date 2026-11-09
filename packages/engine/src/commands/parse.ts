@@ -2,6 +2,7 @@
 // angles, and AutoCAD's coordinate forms. Everything here is in world coordinates: there is no
 // UCS yet, so AutoCAD's `*` (WCS) prefix means the same as `#` (absolute).
 import type { Vec2 } from '../geom/types';
+import { OSNAP, type OsnapMode } from '../input/osnap';
 
 /**
  * A number, allowing `+ - * / ( )` between numbers (`'cal`-lite, ARCHITECTURE.md §5.1), so
@@ -166,4 +167,53 @@ export function parsePointModifier(text: string): PointModifier | undefined {
   if (!filter) return undefined;
   const take = filter[1]!.replace('Z', '').toLowerCase() as '' | 'x' | 'y' | 'xy';
   return { kind: 'filter', take };
+}
+
+/**
+ * Each object snap mode's override keyword written out (AutoCAD 2024 Help, "Object Snap
+ * Overrides"): a typed override is at least its first three letters (`END`, `ENDP`, `ENDPOINT`).
+ * APParent intersection is AutoCAD's `APPINT`; `APPARENT` is taken too, and INSert as
+ * `INSERTION`, as the Drafting Settings dialog names it.
+ */
+const OVERRIDES: readonly (readonly [OsnapMode | 'NON', readonly string[]])[] = [
+  ['END', ['ENDPOINT']],
+  ['MID', ['MIDPOINT']],
+  ['INT', ['INTERSECTION']],
+  ['APP', ['APPINT', 'APPARENT']],
+  ['EXT', ['EXTENSION']],
+  ['CEN', ['CENTER']],
+  ['GCE', ['GCENTER']],
+  ['QUA', ['QUADRANT']],
+  ['TAN', ['TANGENT']],
+  ['PER', ['PERPENDICULAR']],
+  ['PAR', ['PARALLEL']],
+  ['NOD', ['NODE']],
+  ['INS', ['INSERTION']],
+  ['NEA', ['NEAREST']],
+  ['NON', ['NONE']],
+];
+
+/**
+ * A one-shot object snap override typed at a point prompt (M2-04): the OSMODE bits the next
+ * point snaps with, 0 for `NONe` (no object snap for it). Several modes may be given at once,
+ * separated by commas (`END,MID`), as AutoCAD takes them; NONe stands alone.
+ */
+export function parseOsnapOverride(text: string): number | undefined {
+  const tokens = text
+    .trim()
+    .toUpperCase()
+    .split(',')
+    .map((t) => t.trim());
+  let modes = 0;
+  for (const token of tokens) {
+    if (token.length < 3) return undefined;
+    const found = OVERRIDES.find(([, names]) => names.some((n) => n.startsWith(token)));
+    if (!found) return undefined;
+    if (found[0] === 'NON') {
+      if (tokens.length > 1) return undefined;
+      return 0;
+    }
+    modes |= OSNAP[found[0]];
+  }
+  return modes;
 }
