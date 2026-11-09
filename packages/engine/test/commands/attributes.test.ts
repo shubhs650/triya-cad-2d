@@ -28,6 +28,8 @@ const NOTES_STYLE = '31';
 const TB = '50';
 const EMPTY = '51';
 const LAYER_TITLE = '12';
+const DOOR = '57';
+const DOOR_STATE = '58';
 
 const style = (handle: string, name: string): TextStyleRecord => ({
   handle,
@@ -124,12 +126,16 @@ function setup() {
         ...init.tables!.blockRecords!,
         blockRecord(TB, 'TB'),
         blockRecord(EMPTY, 'EMPTY'),
+        blockRecord(DOOR, 'DOOR'),
+        blockRecord(DOOR_STATE, '*U5'),
       ],
     },
     blocks: [
       ...init.blocks!,
       { handle: TB, name: 'TB', basePoint: { x: 0, y: 0 } },
       { handle: EMPTY, name: 'EMPTY', basePoint: { x: 0, y: 0 } },
+      { handle: DOOR, name: 'DOOR', basePoint: { x: 0, y: 0 }, dynamic: { name: 'Door' } },
+      { handle: DOOR_STATE, name: '*U5', basePoint: { x: 0, y: 0 }, dynamicOf: DOOR },
     ],
     entities: [
       ...init.entities!,
@@ -163,6 +169,27 @@ function setup() {
         ]),
       ),
       entityInit('80', insert(EMPTY, { x: 500, y: 0 }, [])),
+      entityInit(
+        '59',
+        { kind: 'ATTDEF', ...text('MARK', '', { x: 0, y: 0 }), prompt: 'Door mark' },
+        { owner: DOOR },
+      ),
+      // A dynamic block's state: its prompts come from the dynamic block; EXTRA has no ATTDEF
+      // and is centred (DXF 72 = 1) about its alignment point; SPEC is multiline.
+      entityInit(
+        '85',
+        insert(DOOR_STATE, { x: 900, y: 0 }, [
+          attrib('86', 'MARK', 'D1', { x: 900, y: 10 }),
+          attrib(
+            '87',
+            'EXTRA',
+            'x',
+            { x: 895, y: 5 },
+            { halign: 1, alignmentPoint: { x: 900, y: 5 } },
+          ),
+          attrib('88', 'SPEC', '', { x: 900, y: -5 }, { mtext: mtext('Oak', { x: 900, y: -5 }) }),
+        ]),
+      ),
       entityInit('90', {
         kind: 'ATTDEF',
         ...text('PART', 'P-1', { x: 700, y: 0 }),
@@ -585,5 +612,191 @@ describe('patchAttribute', () => {
   it('returns the same attribute when nothing changes', () => {
     const a = attrib('61', 'TITLE', 'X', { x: 0, y: 0 });
     expect(patchAttribute(a, { handle: '61', value: 'X', color: { kind: 'byLayer' } })).toEqual(a);
+  });
+});
+
+describe("attribute editing: the rest of AutoCAD's behaviour", () => {
+  it("names a dynamic block's state by its dynamic block, with its prompts; an attribute without an ATTDEF shows its tag", async () => {
+    const { bus } = setup();
+    await bus.script(['EATTEDIT']);
+    await bus.pick({ x: 900, y: 0 });
+    const d = dialog(bus);
+    expect(d.type === 'eattedit' && d.block).toBe('Door');
+    expect(d.type === 'eattedit' && d.attributes.map((a) => a.prompt)).toEqual([
+      'Door mark',
+      'EXTRA',
+      'SPEC',
+    ]);
+  });
+
+  it('Enter on the command line closes the dialogs unchanged; an empty pick ends EATTEDIT', async () => {
+    const { bus, attr } = setup();
+    await bus.script(['EATTEDIT']);
+    await bus.pick({ x: 100, y: 0 });
+    await bus.submit('');
+    expect(bus.command).toBeUndefined();
+    await bus.script(['ATTEDIT']);
+    await bus.pick({ x: 100, y: 0 });
+    await bus.submit('');
+    expect(bus.command).toBeUndefined();
+    await bus.script(['EATTEDIT']);
+    await bus.submit('');
+    expect(bus.command).toBeUndefined();
+    expect(attr('60', '61').value).toBe('Pump house');
+  });
+
+  it('the MTEXT editor closed with Enter keeps the value; one cancelled ends the command', async () => {
+    const { bus, attr } = setup();
+    await bus.script(['EATTEDIT']);
+    await bus.pick({ x: 900, y: 0 });
+    await bus.answer({ kind: 'dialog', action: 'mtext', target: '88' });
+    await bus.submit('');
+    expect(bus.prompt?.kind).toBe('dialog');
+    // A target that is not multiline opens no editor.
+    await bus.answer({ kind: 'dialog', action: 'mtext', target: '86' });
+    expect(bus.prompt?.kind).toBe('dialog');
+    await bus.answer({ kind: 'dialog', action: 'mtext', target: '88' });
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+    expect(attr('85', '88').mtext?.contents).toBe('Oak');
+  });
+
+  it('-ATTEDIT: Value Change not found, Replace with nothing, Position, Height, Angle and Style defaults', async () => {
+    const { bus, attr } = setup();
+    await bus.script(['-ATTEDIT', '', 'door', '*', '*']);
+    await bus.pick({ x: 900, y: 0 });
+    await bus.submit('');
+    expect(bus.history).toContain('3 attributes selected.');
+    // MARK.
+    await bus.script(['V', 'C', 'zz', 'y']);
+    expect(bus.history.at(-1)).toBe('String not found.');
+    await bus.script(['V', 'R', '']);
+    expect(attr('85', '86').value).toBe('');
+    await bus.script(['P', '']);
+    await bus.script(['H', '0']);
+    expect(bus.history.at(-1)).toBe('Value must be positive and nonzero.');
+    await bus.script(['H', '', 'A', '', 'S', '', 'L', '']);
+    expect(attr('85', '86')).toMatchObject({
+      height: 2.5,
+      rotation: 0,
+      style: STANDARD,
+      position: { x: 900, y: 10 },
+    });
+    await bus.submit('N');
+    // EXTRA: moved by its alignment point, both points with it.
+    await bus.script(['P', '910,20']);
+    expect(attr('85', '87')).toMatchObject({
+      position: { x: 905, y: 20 },
+      alignmentPoint: { x: 910, y: 20 },
+    });
+    await bus.submit('N');
+    // SPEC: multiline, its MTEXT moves, turns and takes the new value.
+    await bus.script(['P', '900,-15', 'A', '90', 'V', 'C', 'Oak', 'Ash']);
+    const spec = attr('85', '88');
+    expect(spec.mtext).toMatchObject({ contents: 'Ash', position: { x: 900, y: -15 } });
+    expect(spec.mtext?.rotation).toBeCloseTo(Math.PI / 2);
+    await bus.submit('');
+    expect(bus.command).toBeUndefined();
+  });
+
+  it('-ATTEDIT Color: names, numbers, ByBlock, Truecolor; bad input is refused', async () => {
+    const { bus, attr } = setup();
+    await bus.script(['-ATTEDIT', 'Y', '*', 'TITLE', '*']);
+    await bus.pick({ x: 300, y: 0 });
+    await bus.submit('');
+    const color = () => attr('70', '71').color;
+    expect(bus.promptText).toMatch(/<Next>:$/);
+    await bus.submit('C');
+    expect(bus.promptText).toBe('Enter new color [Truecolor] <BYLAYER>:');
+    await bus.submit('3');
+    expect(color()).toEqual({ kind: 'aci', index: 3 });
+    await bus.script(['C', '']);
+    expect(color()).toEqual({ kind: 'aci', index: 3 });
+    for (const [typed, want] of [
+      ['0', { kind: 'byBlock' }],
+      ['256', { kind: 'byLayer' }],
+      ['byblock', { kind: 'byBlock' }],
+      ['bylayer', { kind: 'byLayer' }],
+      ['white', { kind: 'aci', index: 7 }],
+      ['200', { kind: 'aci', index: 200 }],
+    ] as const) {
+      await bus.script(['C', typed]);
+      expect(color()).toEqual(want);
+    }
+    await bus.script(['C', '']);
+    expect(bus.history.some((l) => l.includes('<200>'))).toBe(true);
+    for (const bad of ['300', 'mauve']) {
+      await bus.script(['C', bad]);
+      expect(bus.history.at(-1)).toBe('Invalid color.');
+    }
+    await bus.script(['C', 'T', '10,20,30']);
+    expect(color()).toEqual({ kind: 'rgb', r: 10, g: 20, b: 30 });
+    await bus.script(['C', '']);
+    expect(bus.history.some((l) => l.includes('<10,20,30>'))).toBe(true);
+    for (const bad of ['1,2', '1,2,300']) {
+      await bus.script(['C', 'T', bad]);
+      expect(bus.history.at(-1)).toBe('Invalid color.');
+    }
+    await bus.script(['C', 'red']);
+    await bus.script(['C', '']);
+    expect(bus.history.some((l) => l.includes('<RED>'))).toBe(true);
+  });
+
+  it('-ATTEDIT lists invisible attributes under ATTMODE 2, skips other blocks and non-blocks', async () => {
+    const { bus, model, byHandle } = setup();
+    model.apply({
+      header: [{ name: '$ATTMODE', before: undefined, after: 2 }],
+    } as never);
+    await bus.script(['-ATTEDIT', 'Y', 'TB', 'SECRET', '*']);
+    await bus.answer({
+      kind: 'selection',
+      ids: [byHandle('60').id, byHandle('20').id, byHandle('85').id],
+    });
+    expect(bus.history).toContain('1 attributes selected.');
+  });
+
+  it('global editing: Enter for the string changes nothing; no attributes found ends', async () => {
+    const { bus, attr } = setup();
+    await bus.script(['-ATTEDIT', 'N', 'N', '*', 'REV', '*', '', '']);
+    expect(bus.command).toBeUndefined();
+    expect(attr('60', '62').value).toBe('A');
+    await bus.script(['-ATTEDIT', 'N', 'N', 'NONE', '*', '*']);
+    expect(bus.history).toContain('0 attributes selected.');
+    expect(bus.command).toBeUndefined();
+    // A string replaced by nothing.
+    await bus.script(['-ATTEDIT', 'N', 'N', '*', 'TITLE', '*', 'Pump ', '']);
+    expect(attr('60', '61').value).toBe('house');
+  });
+
+  it('TEXTEDIT on an ATTDEF: Enter closes unchanged, OK without fields keeps it, Enter in the editor keeps the default', async () => {
+    const { bus, byHandle } = setup();
+    const changes: unknown[] = [];
+    bus.on((e) => (e.type === 'commit' ? changes.push(e) : undefined));
+    await bus.submit('TEXTEDIT');
+    await bus.pick({ x: 700, y: 0 });
+    await bus.submit('');
+    expect(bus.promptText).toBe('Select an annotation object or [Undo/Mode]:');
+    await bus.pick({ x: 700, y: 0 });
+    await bus.answer({ kind: 'dialog', action: 'ok' });
+    await bus.answer({ kind: 'selection', ids: [byHandle('54').id] });
+    await bus.answer({ kind: 'dialog', action: 'mtext' });
+    await bus.submit('');
+    expect(dialog(bus)).toMatchObject({ type: 'attdef', value: '' });
+    await bus.answer({ kind: 'dialog', action: 'ok' });
+    await bus.submit('');
+    expect(changes).toEqual([]);
+  });
+
+  it('patchAttribute leaves a multiline attribute alone when its value is the same', () => {
+    const a = attrib('9', 'N', '', { x: 0, y: 0 }, { mtext: mtext('Same', { x: 0, y: 0 }) });
+    expect(patchAttribute(a, { handle: '9', value: 'Same' })).toBe(a);
+    expect(patchAttribute(a, { handle: '9', layer: '11' }).mtext).toBe(a.mtext);
+  });
+
+  it('wcmatch takes an unclosed [ and an escaped wildcard as themselves', () => {
+    expect(wcmatch('[A', '[A')).toBe(true);
+    expect(wcmatch('A*', 'A`*')).toBe(true);
+    expect(wcmatch('AB', 'A`*')).toBe(false);
+    expect(wcmatch('~', '~')).toBe(true);
   });
 });

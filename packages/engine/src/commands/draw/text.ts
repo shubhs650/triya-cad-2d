@@ -769,7 +769,7 @@ const TEXTEDIT_KINDS = new Set(['TEXT', 'MTEXT', 'ATTDEF']);
 async function* editAttdef(
   ctx: CommandContext,
   entity: Entity,
-): AsyncGenerator<Prompt, TextEdit | false | undefined, PromptAnswer> {
+): AsyncGenerator<Prompt, TextEdit | false, PromptAnswer> {
   let g = entity.geom as AttdefGeometry;
   for (;;) {
     const d = yield ctx.prompt.dialog({
@@ -782,8 +782,8 @@ async function* editAttdef(
         multiline: g.mtext !== undefined,
       },
     });
-    if (d.kind === 'enter') return false;
-    if (d.kind !== 'dialog') return undefined;
+    // Enter on the command line closes it unchanged; the dialog answers otherwise.
+    if (d.kind !== 'dialog') return false;
     const f = d.attdef;
     if (f) {
       const tag = f.tag.trim().toUpperCase();
@@ -804,8 +804,8 @@ async function* editAttdef(
         spaces: true,
         editor: mtextEditorRequest(ctx.model, g.mtext),
       });
+      // The editor answers the contents; Enter on the command line keeps them.
       if (a.kind === 'string') g = { ...g, mtext: { ...g.mtext, contents: a.value } };
-      else if (a.kind !== 'enter') return undefined;
       continue;
     }
     break;

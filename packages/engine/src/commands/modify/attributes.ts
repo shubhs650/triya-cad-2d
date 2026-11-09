@@ -19,13 +19,7 @@ import { dynamicBlockOf } from '../../model/dynamic-block';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
-import type {
-  Color,
-  Entity,
-  InsertAttribute,
-  InsertGeometry,
-  MTextGeometry,
-} from '../../model/types';
+import type { Color, Entity, InsertAttribute, InsertGeometry } from '../../model/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { AttributeEntry, AttributePatch, NamedRecord, Prompt, PromptAnswer } from '../prompt';
 import { mtextEditorRequest } from '../draw/text';
@@ -41,26 +35,21 @@ export function hasEditableAttributes(e: Entity | undefined): boolean {
 
 /** The block's name as AutoCAD shows it: a dynamic block's own, not its `*U` state's. */
 export function blockNameOf(model: DocumentModel, block: Handle): string {
-  return (
-    dynamicBlockOf(model.blocks, block)?.name ??
-    model.blocks.get(block)?.name ??
-    model.tables.blockRecords.get(block)?.name ??
-    block
-  );
+  return dynamicBlockOf(model.blocks, block)?.name ?? model.blocks.get(block)?.name ?? block;
 }
 
 /** The prompts of the block's ATTDEFs by tag (upper case); a dynamic block's from its definition. */
 function promptsOf(model: DocumentModel, block: Handle): Map<string, string> {
   const out = new Map<string, string>();
+  const blocks = [block];
   const definition = dynamicBlockOf(model.blocks, block)?.handle;
-  for (const h of definition !== undefined && definition !== block
-    ? [block, definition]
-    : [block]) {
-    if (!model.hasBlock(h)) continue;
+  if (definition !== undefined && definition !== block) blocks.push(definition);
+  for (const h of blocks) {
     for (const id of model.blockEntities(h)) {
-      const g = model.entity(id)?.geom;
-      if (g?.kind === 'ATTDEF' && !out.has(g.tag.toUpperCase()))
+      const g = model.entity(id)!.geom;
+      if (g.kind === 'ATTDEF' && !out.has(g.tag.toUpperCase())) {
         out.set(g.tag.toUpperCase(), g.prompt);
+      }
     }
   }
   return out;
@@ -94,46 +83,44 @@ export function attributeEntries(model: DocumentModel, g: InsertGeometry): Attri
     }));
 }
 
-const sameColor = (a: Color, b: Color) => JSON.stringify(a) === JSON.stringify(b);
+/** What a patch may change on the ATTRIB itself, and on a multiline one's MTEXT too. */
+const PATCHED = [
+  'value',
+  'style',
+  'height',
+  'rotation',
+  'widthFactor',
+  'oblique',
+  'backward',
+  'upsideDown',
+  'layer',
+  'color',
+  'linetype',
+  'lineweight',
+] as const;
+const MTEXT_PATCHED = ['style', 'height', 'rotation'] as const;
+
+const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
- * One attribute with a dialog's changes. A multiline attribute keeps its text in its embedded
- * MTEXT: the value is the MTEXT's contents (DXF 1 of the ATTRIB stays as read), and the style,
- * height and rotation change on both, so the two never disagree.
+ * One attribute with a dialog's changes; the same object when nothing changes. A multiline
+ * attribute keeps its text in its embedded MTEXT: the value is the MTEXT's contents (DXF 1 of
+ * the ATTRIB stays as read), and the style, height and rotation change on both, so the two
+ * never disagree.
  */
 export function patchAttribute(a: InsertAttribute, p: AttributePatch): InsertAttribute {
-  let next: InsertAttribute = { ...a };
-  let mtext: MTextGeometry | undefined = a.mtext;
-  const set = <K extends keyof InsertAttribute>(k: K, v: InsertAttribute[K] | undefined) => {
-    if (v !== undefined && v !== a[k]) next = { ...next, [k]: v };
-  };
-  if (p.value !== undefined) {
-    if (mtext) {
-      if (p.value !== mtext.contents) mtext = { ...mtext, contents: p.value };
-    } else set('value', p.value);
+  const changes: Record<string, unknown> = {};
+  for (const k of PATCHED) {
+    if (p[k] !== undefined && !same(p[k], a[k])) changes[k] = p[k];
   }
-  set('style', p.style);
-  set('height', p.height);
-  set('rotation', p.rotation);
-  set('widthFactor', p.widthFactor);
-  set('oblique', p.oblique);
-  set('backward', p.backward);
-  set('upsideDown', p.upsideDown);
-  set('layer', p.layer);
-  set('linetype', p.linetype);
-  set('lineweight', p.lineweight);
-  if (p.color !== undefined && !sameColor(p.color, a.color)) next = { ...next, color: p.color };
-  if (mtext) {
-    const m: Partial<MTextGeometry> = {};
-    if (p.style !== undefined && p.style !== mtext.style) Object.assign(m, { style: p.style });
-    if (p.height !== undefined && p.height !== mtext.height) Object.assign(m, { height: p.height });
-    if (p.rotation !== undefined && p.rotation !== mtext.rotation) {
-      Object.assign(m, { rotation: p.rotation });
-    }
-    if (Object.keys(m).length > 0) mtext = { ...mtext, ...m };
-    if (mtext !== a.mtext) next = { ...next, mtext };
+  if (a.mtext) {
+    delete changes['value'];
+    const m: Record<string, unknown> = {};
+    if (p.value !== undefined && p.value !== a.mtext.contents) m['contents'] = p.value;
+    for (const k of MTEXT_PATCHED) if (k in changes) m[k] = changes[k];
+    if (Object.keys(m).length > 0) changes['mtext'] = { ...a.mtext, ...m };
   }
-  return next;
+  return Object.keys(changes).length > 0 ? { ...a, ...changes } : a;
 }
 
 /** An attribute moved by `d` (-ATTEDIT Position): both alignment points and its MTEXT. */
@@ -151,35 +138,20 @@ function moved(a: InsertAttribute, d: Vec2): InsertAttribute {
  * Applies a dialog's changes to the reference's attributes as one edit. Returns whether
  * anything changed (a dialog closed without changes edits nothing).
  */
-function applyPatches(
-  ctx: CommandContext,
-  id: EntityId,
-  patches: readonly AttributePatch[],
-): boolean {
-  const e = ctx.model.entity(id);
-  if (e?.geom.kind !== 'INSERT' || patches.length === 0) return false;
+function applyPatches(ctx: CommandContext, id: EntityId, patches: readonly AttributePatch[]): void {
+  const g = ctx.model.entity(id)!.geom as InsertGeometry;
   const byHandle = new Map(patches.map((p) => [p.handle, p]));
-  let changed = false;
-  const attributes = e.geom.attributes.map((a) => {
+  const attributes = g.attributes.map((a) => {
     const p = byHandle.get(a.handle);
-    const next = p ? patchAttribute(a, p) : a;
-    if (next !== a && JSON.stringify(next) !== JSON.stringify(a)) {
-      changed = true;
-      return next;
-    }
-    return a;
+    return p ? patchAttribute(a, p) : a;
   });
-  if (!changed) return false;
-  const g = e.geom;
+  if (attributes.every((a, i) => a === g.attributes[i])) return;
   ctx.edit((b) => b.updateEntity(id, { geom: { ...g, attributes } }));
-  return true;
 }
 
 /** Replaces one attribute of the reference (the -ATTEDIT options and the MTEXT editor). */
 function replaceAttribute(ctx: CommandContext, id: EntityId, next: InsertAttribute): void {
-  const e = ctx.model.entity(id);
-  if (e?.geom.kind !== 'INSERT') return;
-  const g = e.geom;
+  const g = ctx.model.entity(id)!.geom as InsertGeometry;
   const attributes = g.attributes.map((a) => (a.handle === next.handle ? next : a));
   ctx.edit((b) => b.updateEntity(id, { geom: { ...g, attributes } }));
 }
@@ -197,19 +169,16 @@ async function* editMultiline(
   id: EntityId,
   handle: Handle,
 ): AsyncGenerator<Prompt, boolean, PromptAnswer> {
-  const e = ctx.model.entity(id);
-  const a =
-    e?.geom.kind === 'INSERT' ? e.geom.attributes.find((x) => x.handle === handle) : undefined;
-  if (!a?.mtext) return true;
+  const g = ctx.model.entity(id)!.geom as InsertGeometry;
+  const mtext = g.attributes.find((x) => x.handle === handle)?.mtext;
+  if (!mtext) return true;
   const answer = yield ctx.prompt.string({
     message: 'Enter attribute value',
     spaces: true,
-    editor: mtextEditorRequest(ctx.model, a.mtext),
+    editor: mtextEditorRequest(ctx.model, mtext),
   });
-  if (answer.kind === 'enter') return true;
-  if (answer.kind !== 'string') return false;
-  applyPatches(ctx, id, [{ handle, value: answer.value }]);
-  return true;
+  if (answer.kind === 'string') applyPatches(ctx, id, [{ handle, value: answer.value }]);
+  return answer.kind === 'string' || answer.kind === 'enter';
 }
 
 /**
@@ -223,8 +192,9 @@ async function* pickReference(
 ): AsyncGenerator<Prompt, EntityId | undefined, PromptAnswer> {
   for (;;) {
     const a = yield ctx.prompt.selection({ message, editable: true, single: true, pickfirst });
-    if (a.kind !== 'selection' || a.ids.length === 0) return undefined;
-    const e = a.ids.map((id) => ctx.model.entity(id)).find((x) => x?.geom.kind === 'INSERT');
+    const ids = (a as Answer<'selection'>).ids;
+    if (ids.length === 0) return undefined;
+    const e = ids.map((id) => ctx.model.entity(id)!).find((x) => x.geom.kind === 'INSERT');
     if (!e) {
       ctx.message('That object is not a block.');
       continue;
@@ -254,14 +224,13 @@ export function eatteditCommand(): CommandDef {
         if (id === undefined) return;
         let selected: Handle | undefined;
         for (;;) {
-          const e = ctx.model.entity(id);
-          if (e?.geom.kind !== 'INSERT') return;
+          const g = ctx.model.entity(id)!.geom as InsertGeometry;
           const d = yield ctx.prompt.dialog({
             message: 'Enhanced Attribute Editor',
             dialog: {
               type: 'eattedit',
-              block: blockNameOf(ctx.model, e.geom.block),
-              attributes: attributeEntries(ctx.model, e.geom),
+              block: blockNameOf(ctx.model, g.block),
+              attributes: attributeEntries(ctx.model, g),
               ...(selected !== undefined && { selected }),
               styles: records(ctx.model.tables.textStyles.values()),
               layers: records(ctx.model.tables.layers.values()),
@@ -295,8 +264,7 @@ export function atteditCommand(): CommandDef {
       if (ctx.dash) return yield* dashAttedit(ctx);
       const id = yield* pickReference(ctx, 'Select block reference', false);
       if (id === undefined) return;
-      const e = ctx.model.entity(id)!;
-      const g = e.geom as InsertGeometry;
+      const g = ctx.model.entity(id)!.geom as InsertGeometry;
       const d = yield ctx.prompt.dialog({
         message: 'Edit Attributes',
         dialog: {
@@ -382,25 +350,17 @@ interface Specs {
   readonly value: string;
 }
 
-async function* askSpecs(
-  ctx: CommandContext,
-): AsyncGenerator<Prompt, Specs | undefined, PromptAnswer> {
-  const ask = async function* (
-    message: string,
-  ): AsyncGenerator<Prompt, string | undefined, PromptAnswer> {
+async function* askSpecs(ctx: CommandContext): AsyncGenerator<Prompt, Specs, PromptAnswer> {
+  const specs: string[] = [];
+  for (const what of ['block name', 'attribute tag', 'attribute value']) {
     const a = yield ctx.prompt.string({
-      message,
+      message: `Enter ${what} specification`,
       spaces: true,
       default: { kind: 'string', value: '*' },
     });
-    return a.kind === 'string' ? a.value.trim() || '*' : undefined;
-  };
-  const block = yield* ask('Enter block name specification');
-  if (block === undefined) return undefined;
-  const tag = yield* ask('Enter attribute tag specification');
-  if (tag === undefined) return undefined;
-  const value = yield* ask('Enter attribute value specification');
-  if (value === undefined) return undefined;
+    specs.push(textOf(a).trim() || '*');
+  }
+  const [block, tag, value] = specs as [string, string, string];
   return { block, tag, value };
 }
 
@@ -424,12 +384,8 @@ function matching(ctx: CommandContext, refs: readonly EntityId[], specs: Specs):
   return out;
 }
 
-const attributeOf = (ctx: CommandContext, f: Found): InsertAttribute | undefined => {
-  const e = ctx.model.entity(f.id);
-  return e?.geom.kind === 'INSERT'
-    ? e.geom.attributes.find((a) => a.handle === f.handle)
-    : undefined;
-};
+const attributeOf = (ctx: CommandContext, f: Found): InsertAttribute =>
+  (ctx.model.entity(f.id)!.geom as InsertGeometry).attributes.find((a) => a.handle === f.handle)!;
 
 const valueOf = (a: InsertAttribute) => (a.mtext ? a.mtext.contents : a.value);
 
@@ -448,38 +404,53 @@ async function* dashAttedit(ctx: CommandContext): CommandGenerator {
     options: ['Yes', 'No'],
     default: { kind: 'keyword', keyword: 'Yes' },
   });
-  if (one.kind !== 'keyword') return;
-  if (one.keyword === 'No') return yield* globalEdit(ctx);
+  if (keywordOf(one) === 'No') return yield* globalEdit(ctx);
   const specs = yield* askSpecs(ctx);
-  if (!specs) return;
   const sel = yield ctx.prompt.selection({ message: 'Select Attributes', editable: true });
-  if (sel.kind !== 'selection') return;
-  const found = matching(ctx, sel.ids, specs);
+  const found = matching(ctx, (sel as Answer<'selection'>).ids, specs);
   ctx.message(`${found.length} attributes selected.`);
   for (const f of found) {
     for (;;) {
       const a = attributeOf(ctx, f);
-      if (!a) break;
       const o = yield ctx.prompt.keyword({
         message: 'Enter an option',
         options: ['Value', 'Position', 'Height', 'Angle', 'Style', 'Layer', 'Color', 'Next'],
         default: { kind: 'keyword', keyword: 'Next' },
       });
-      if (o.kind !== 'keyword') return;
-      if (o.keyword === 'Next') break;
-      const next = yield* option(ctx, a, o.keyword);
-      if (next === undefined) return;
+      if (keywordOf(o) === 'Next') break;
+      const next = yield* option(ctx, a, keywordOf(o));
       if (next !== a) replaceAttribute(ctx, f.id, next);
     }
   }
 }
 
-/** One -ATTEDIT option on one attribute: the attribute as changed, or undefined to end. */
+// Answers a prompt can give. Esc never answers (the bus ends the command at the prompt), Enter
+// at a prompt with a default answers the default, and the bus refuses answers of other kinds.
+type Answer<K extends PromptAnswer['kind']> = Extract<PromptAnswer, { kind: K }>;
+const keywordOf = (a: PromptAnswer) => (a as Answer<'keyword'>).keyword;
+const textOf = (a: PromptAnswer) => (a.kind === 'string' ? a.value : '');
+
+/** A table record named as typed, any case, or undefined (with AutoCAD's message). */
+function named<R extends { readonly name: string }>(
+  ctx: CommandContext,
+  records: Iterable<R>,
+  what: string,
+  typed: string,
+): R | undefined {
+  const name = typed.trim();
+  const found = [...records].find((r) => r.name.toUpperCase() === name.toUpperCase());
+  if (!found) ctx.message(`Cannot find ${what} "${name}".`);
+  return found;
+}
+
+/** One -ATTEDIT option on one attribute: the attribute as changed (the same when unchanged). */
 async function* option(
   ctx: CommandContext,
   a: InsertAttribute,
   keyword: string,
-): AsyncGenerator<Prompt, InsertAttribute | undefined, PromptAnswer> {
+): AsyncGenerator<Prompt, InsertAttribute, PromptAnswer> {
+  const patched = (p: Omit<AttributePatch, 'handle'>) =>
+    patchAttribute(a, { handle: a.handle, ...p });
   switch (keyword) {
     case 'Value': {
       const t = yield ctx.prompt.keyword({
@@ -487,36 +458,22 @@ async function* option(
         options: ['Change', 'Replace'],
         default: { kind: 'keyword', keyword: 'Replace' },
       });
-      if (t.kind !== 'keyword') return undefined;
-      if (t.keyword === 'Replace') {
+      if (keywordOf(t) === 'Replace') {
         const v = yield ctx.prompt.string({ message: 'Enter new attribute value', spaces: true });
-        if (v.kind === 'enter') return patchAttribute(a, { handle: a.handle, value: '' });
-        return v.kind === 'string'
-          ? patchAttribute(a, { handle: a.handle, value: v.value })
-          : undefined;
+        return patched({ value: textOf(v) });
       }
       const from = yield ctx.prompt.string({ message: 'Enter string to change', spaces: true });
-      if (from.kind !== 'string' && from.kind !== 'enter') return undefined;
       const to = yield ctx.prompt.string({ message: 'Enter new string', spaces: true });
-      if (to.kind !== 'string' && to.kind !== 'enter') return undefined;
-      const value = changed(
-        valueOf(a),
-        from.kind === 'string' ? from.value : '',
-        to.kind === 'string' ? to.value : '',
-      );
-      if (value === undefined) {
-        ctx.message('String not found.');
-        return a;
-      }
-      return patchAttribute(a, { handle: a.handle, value });
+      const value = changed(valueOf(a), textOf(from), textOf(to));
+      if (value === undefined) ctx.message('String not found.');
+      return value === undefined ? a : patched({ value });
     }
     case 'Position': {
       const p = yield ctx.prompt.point({
         message: 'Specify new text insertion point',
         defaultLabel: 'no change',
       });
-      if (p.kind === 'enter') return a;
-      if (p.kind !== 'point') return undefined;
+      if (p.kind !== 'point') return a;
       const at = a.halign === 0 && a.valign === 0 ? a.position : (a.alignmentPoint ?? a.position);
       return moved(a, { x: p.point.x - at.x, y: p.point.y - at.y });
     }
@@ -526,12 +483,10 @@ async function* option(
         base: a.position,
         default: { kind: 'distance', value: a.height },
       });
-      if (h.kind !== 'distance') return h.kind === 'enter' ? a : undefined;
-      if (!(h.value > 0)) {
-        ctx.message('Value must be positive and nonzero.');
-        return a;
-      }
-      return patchAttribute(a, { handle: a.handle, height: h.value });
+      const height = (h as Answer<'distance'>).value;
+      if (height > 0) return patched({ height });
+      ctx.message('Value must be positive and nonzero.');
+      return a;
     }
     case 'Angle': {
       const r = yield ctx.prompt.angle({
@@ -539,69 +494,40 @@ async function* option(
         base: a.position,
         default: { kind: 'angle', value: a.rotation },
       });
-      if (r.kind !== 'angle') return r.kind === 'enter' ? a : undefined;
-      return patchAttribute(a, { handle: a.handle, rotation: r.value });
+      return patched({ rotation: (r as Answer<'angle'>).value });
     }
     case 'Style': {
-      const current = ctx.model.tables.textStyles.get(a.style)?.name ?? '';
       const s = yield ctx.prompt.string({
         message: 'Enter text style name',
         spaces: true,
-        default: { kind: 'string', value: current },
+        default: { kind: 'string', value: ctx.model.tables.textStyles.get(a.style)?.name ?? '' },
       });
-      if (s.kind !== 'string') return s.kind === 'enter' ? a : undefined;
-      const style = [...ctx.model.tables.textStyles.values()].find(
-        (x) => x.name.toUpperCase() === s.value.trim().toUpperCase(),
-      );
-      if (!style) {
-        ctx.message(`Cannot find text style "${s.value.trim()}".`);
-        return a;
-      }
-      return patchAttribute(a, { handle: a.handle, style: style.handle });
+      const style = named(ctx, ctx.model.tables.textStyles.values(), 'text style', textOf(s));
+      return style ? patched({ style: style.handle }) : a;
     }
     case 'Layer': {
-      const current = ctx.model.tables.layers.get(a.layer)?.name ?? '';
       const s = yield ctx.prompt.string({
         message: 'Enter new layer name',
         spaces: true,
-        default: { kind: 'string', value: current },
+        default: { kind: 'string', value: ctx.model.tables.layers.get(a.layer)?.name ?? '' },
       });
-      if (s.kind !== 'string') return s.kind === 'enter' ? a : undefined;
-      const layer = [...ctx.model.tables.layers.values()].find(
-        (x) => x.name.toUpperCase() === s.value.trim().toUpperCase(),
-      );
-      if (!layer) {
-        ctx.message(`Cannot find layer "${s.value.trim()}".`);
-        return a;
-      }
-      return patchAttribute(a, { handle: a.handle, layer: layer.handle });
+      const layer = named(ctx, ctx.model.tables.layers.values(), 'layer', textOf(s));
+      return layer ? patched({ layer: layer.handle }) : a;
     }
-    case 'Color': {
+    default: {
+      // Color.
       const c = yield ctx.prompt.string({
         message: 'Enter new color',
         options: ['Truecolor'],
         default: { kind: 'string', value: colorText(a.color) },
       });
-      if (c.kind === 'keyword') {
-        const rgb = yield ctx.prompt.string({ message: 'Red, Green, Blue' });
-        if (rgb.kind !== 'string') return rgb.kind === 'enter' ? a : undefined;
-        const color = parseTrueColor(rgb.value);
-        if (!color) {
-          ctx.message('Invalid color.');
-          return a;
-        }
-        return patchAttribute(a, { handle: a.handle, color });
-      }
-      if (c.kind !== 'string') return c.kind === 'enter' ? a : undefined;
-      const color = parseColor(c.value);
-      if (!color) {
-        ctx.message('Invalid color.');
-        return a;
-      }
-      return patchAttribute(a, { handle: a.handle, color });
+      const color =
+        c.kind === 'keyword'
+          ? parseTrueColor(textOf(yield ctx.prompt.string({ message: 'Red, Green, Blue' })))
+          : parseColor(textOf(c));
+      if (!color) ctx.message('Invalid color.');
+      return color ? patched({ color }) : a;
     }
-    default:
-      return a;
   }
 }
 
@@ -655,14 +581,11 @@ async function* globalEdit(ctx: CommandContext): CommandGenerator {
     options: ['Yes', 'No'],
     default: { kind: 'keyword', keyword: 'Yes' },
   });
-  if (vis.kind !== 'keyword') return;
   const specs = yield* askSpecs(ctx);
-  if (!specs) return;
-  let refs: EntityId[];
-  if (vis.keyword === 'Yes') {
+  let refs: readonly EntityId[];
+  if (keywordOf(vis) === 'Yes') {
     const sel = yield ctx.prompt.selection({ message: 'Select Attributes', editable: true });
-    if (sel.kind !== 'selection') return;
-    refs = [...sel.ids];
+    refs = (sel as Answer<'selection'>).ids;
   } else {
     ctx.message('Drawing must be regenerated afterwards.');
     refs = [...ctx.model.entities()]
@@ -673,13 +596,10 @@ async function* globalEdit(ctx: CommandContext): CommandGenerator {
   ctx.message(`${found.length} attributes selected.`);
   if (found.length === 0) return;
   const from = yield ctx.prompt.string({ message: 'Enter string to change', spaces: true });
-  if (from.kind !== 'string') return;
   const to = yield ctx.prompt.string({ message: 'Enter new string', spaces: true });
-  if (to.kind !== 'string' && to.kind !== 'enter') return;
   const byRef = new Map<EntityId, AttributePatch[]>();
   for (const f of found) {
-    const a = attributeOf(ctx, f);
-    const value = a && changed(valueOf(a), from.value, to.kind === 'string' ? to.value : '');
+    const value = changed(valueOf(attributeOf(ctx, f)), textOf(from), textOf(to));
     if (value === undefined) continue;
     byRef.set(f.id, [...(byRef.get(f.id) ?? []), { handle: f.handle, value }]);
   }
