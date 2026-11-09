@@ -160,6 +160,17 @@ describe('DRAWORDER', () => {
     expect(s.order()).toEqual(['27', '21', '23', '25', '20', '26']);
   });
 
+  it('ends on Enter with nothing selected, or no reference objects', async () => {
+    let picks: EntityId[] = [];
+    const s = setup(init(), () => picks);
+    await s.bus.script(['DRAWORDER', '']);
+    expect(s.bus.command).toBeUndefined();
+    picks = [s.id('27')];
+    await s.bus.script(['DRAWORDER', '3,3', '', 'A', '']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.table()).toBeUndefined();
+  });
+
   it('creates the record’s extension dictionary when it has none', () => {
     const s = setup();
     const b = new ChangeSetBuilder(s.model);

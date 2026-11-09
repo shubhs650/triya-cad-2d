@@ -36,6 +36,11 @@ import { currentLayer } from './line';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
+// A prompt with a default or only options answers with its kind (Enter gives the default; the bus
+// refuses any other kind), and Esc ends the command rather than answering.
+const value = (a: PromptAnswer): number => (a as { value: number }).value;
+const keyword = (a: PromptAnswer): string => (a as { keyword: string }).keyword;
+
 export type CloudType = 'Rectangular' | 'Polygonal' | 'Freehand';
 
 const OPTIONS = ['Arc length', 'Object', 'Rectangular', 'Polygonal', 'Freehand', 'Style'];
@@ -160,8 +165,7 @@ export function revcloudCommand(): CommandDef {
         message: 'Specify minimum length of arc',
         default: { kind: 'distance', value: s.minArc },
       });
-      if (a.kind !== 'distance') return;
-      if (a.value > 0) min = a.value;
+      if (value(a) > 0) min = value(a);
       else ctx.message('Requires a positive value.');
     }
     for (;;) {
@@ -169,12 +173,12 @@ export function revcloudCommand(): CommandDef {
         message: 'Specify maximum length of arc',
         default: { kind: 'distance', value: Math.min(Math.max(s.maxArc, min), MAX_OVER_MIN * min) },
       });
-      if (a.kind !== 'distance') return;
-      if (a.value < min) ctx.message('Maximum arc length cannot be less than minimum arc length.');
-      else if (a.value > MAX_OVER_MIN * min) {
+      const max = value(a);
+      if (max < min) ctx.message('Maximum arc length cannot be less than minimum arc length.');
+      else if (max > MAX_OVER_MIN * min) {
         ctx.message('Maximum arc length cannot exceed 3 times the minimum arc length.');
       } else {
-        style = { ...s, minArc: min, maxArc: a.value };
+        style = { ...s, minArc: min, maxArc: max };
         return;
       }
     }
@@ -187,19 +191,18 @@ export function revcloudCommand(): CommandDef {
       options: ['Normal', 'Calligraphy'],
       default: { kind: 'keyword', keyword: now },
     });
-    if (a.kind !== 'keyword') return;
-    style = { ...style!, calligraphy: a.keyword === 'Calligraphy' };
-    ctx.message(`Arc style = ${a.keyword}`);
+    style = { ...style!, calligraphy: keyword(a) === 'Calligraphy' };
+    ctx.message(`Arc style = ${keyword(a)}`);
   }
 
-  /** "Reverse direction [Yes/No] <No>:", undefined when cancelled by another answer. */
-  async function* reverse(ctx: CommandContext): Sub<boolean | undefined> {
+  /** "Reverse direction [Yes/No] <No>:". */
+  async function* reverse(ctx: CommandContext): Sub<boolean> {
     const a = yield ctx.prompt.keyword({
       message: 'Reverse direction',
       options: ['Yes', 'No'],
       default: { kind: 'keyword', keyword: 'No' },
     });
-    return a.kind === 'keyword' ? a.keyword === 'Yes' : undefined;
+    return keyword(a) === 'Yes';
   }
 
   async function* object(ctx: CommandContext): Sub<void> {
@@ -209,8 +212,9 @@ export function revcloudCommand(): CommandDef {
         single: true,
         editable: true,
       });
-      if (a.kind !== 'selection' || a.ids.length === 0) return;
-      const e = ctx.model.entity(a.ids[0]!)!;
+      const picked = (a as { ids: readonly EntityId[] }).ids;
+      if (picked.length === 0) return;
+      const e = ctx.model.entity(picked[0]!)!;
       const s = style!;
       const runs = cloudRunsOf(e.geom, s.minArc / 1000);
       if (!runs) {
@@ -219,7 +223,6 @@ export function revcloudCommand(): CommandDef {
       }
       if (tooMany(ctx, runs.runs)) return;
       const back = yield* reverse(ctx);
-      if (back === undefined) return;
       const points = cloudPoints(runs.runs, runs.closed, s, cloudRandom());
       add(ctx, points, runs.closed, back, e);
       ctx.message('Revision cloud finished.');
@@ -260,7 +263,8 @@ export function revcloudCommand(): CommandDef {
       });
       if (a.kind === 'point') corners.push(a.point);
       else if (a.kind === 'keyword') corners.pop();
-      else if (a.kind === 'enter') {
+      else {
+        // Enter.
         if (corners.length < 3) {
           ctx.message('A polygonal cloud needs three or more points.');
           if (corners.length === 1) return;
@@ -270,8 +274,7 @@ export function revcloudCommand(): CommandDef {
         if (tooMany(ctx, runs)) return;
         add(ctx, cloudPoints(runs, true, style!), true);
         return;
-      } else return;
-      if (corners.length === 0) return;
+      }
     }
   }
 
@@ -297,19 +300,15 @@ export function revcloudCommand(): CommandDef {
           return;
         }
         if (distance(a.point, points.at(-1)!) > 0) points.push(a.point);
-        if (points.length > REVCLOUD_MAX_ARCS) {
-          ctx.message(`A revision cloud has at most ${REVCLOUD_MAX_ARCS} arcs.`);
-          return;
-        }
         gap = spacing();
-      } else if (a.kind === 'enter') {
-        if (points.length < 2) return;
-        const back = yield* reverse(ctx);
-        if (back === undefined) return;
-        add(ctx, points, false, back);
-        ctx.message('Revision cloud finished.');
-        return;
-      } else return;
+        continue;
+      }
+      // Enter: the cloud ends open, where the crosshairs got to.
+      if (points.length < 2) return;
+      const back = yield* reverse(ctx);
+      add(ctx, points, false, back);
+      ctx.message('Revision cloud finished.');
+      return;
     }
   }
 
@@ -330,8 +329,7 @@ export function revcloudCommand(): CommandDef {
           return yield* freehand(ctx, a.point);
         }
         if (a.kind === 'enter') return yield* object(ctx);
-        if (a.kind !== 'keyword') return;
-        switch (a.keyword) {
+        switch (keyword(a)) {
           case 'Arc length':
             yield* arcLength(ctx);
             break;
@@ -341,7 +339,7 @@ export function revcloudCommand(): CommandDef {
             yield* arcStyle(ctx);
             break;
           default:
-            type = a.keyword as CloudType;
+            type = keyword(a) as CloudType;
         }
         status(ctx, style);
       }

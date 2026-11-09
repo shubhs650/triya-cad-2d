@@ -280,6 +280,51 @@ describe('REVCLOUD', () => {
   });
 });
 
+describe('REVCLOUD ends and refusals', () => {
+  it('refuses an arc length that is not positive', async () => {
+    const s = setup();
+    await s.bus.script(['REVCLOUD', 'A', '0']);
+    expect(s.log).toContain('Requires a positive value.');
+    expect(s.bus.promptText).toBe('Specify minimum length of arc <0.5000>:');
+  });
+
+  it('ends without a cloud on Enter at the opposite corner, or with corners in a line', async () => {
+    const s = setup();
+    await s.bus.script(['REVCLOUD', '0,0', '']);
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.script(['REVCLOUD', '0,0', '5,0']);
+    expect(s.log).toContain('The corners must not be on one horizontal or vertical line.');
+    expect(s.added()).toHaveLength(0);
+  });
+
+  it('ends a polygonal cloud of one point on Enter, and refuses one of too many arcs', async () => {
+    const s = setup();
+    await s.bus.script(['REVCLOUD', 'P', '0,0', '']);
+    expect(s.log).toContain('A polygonal cloud needs three or more points.');
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.script(['REVCLOUD', 'A', '0.01', '0.01', '0,0', '100,0', '100,100', '']);
+    expect(s.log.at(-1)).toMatch(/^The arc length is too small/);
+    expect(s.added()).toHaveLength(0);
+  });
+
+  it('ends a freehand cloud of one point on Enter, and ignores a point given twice', async () => {
+    const s = setup();
+    await s.bus.script(['REVCLOUD', 'A', '1', '1', 'F', '0,0', '']);
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.script(['REVCLOUD', '0,0', '0,0']);
+    expect(s.bus.prompt).toMatchObject({ trace: { from: { x: 0, y: 0 } } });
+    await s.bus.cancel();
+    expect(s.added()).toHaveLength(0);
+  });
+
+  it('ends Object on Enter with nothing selected', async () => {
+    const s = setup(sampleInit(), host());
+    await s.bus.script(['REVCLOUD', 'O', '']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.added()).toHaveLength(0);
+  });
+});
+
 describe('revision cloud geometry', () => {
   it('cuts a run into chords adding up to it, each within the limits where it can be', () => {
     const next = cloudRandom(7);
@@ -446,6 +491,30 @@ describe('WIPEOUT', () => {
     picks = [s.model.entityByHandle('31')!.id];
     await s.bus.script(['WIPEOUT', 'P', '5,0']);
     await s.bus.cancel();
+  });
+
+  it('refuses a closed polyline with no area, and ends on Enter with nothing selected', async () => {
+    const init = sampleInit();
+    const flat = entityInit('32', {
+      kind: 'LWPOLYLINE',
+      closed: true,
+      vertices: [
+        { x: 0, y: 0, bulge: 0 },
+        { x: 3, y: 0, bulge: 0 },
+      ],
+    });
+    let picks: EntityId[] = [];
+    const s = setup(
+      { ...init, entities: [...init.entities!, flat] },
+      host(undefined, () => picks),
+    );
+    picks = [s.model.entityByHandle('32')!.id];
+    await s.bus.script(['WIPEOUT', 'P', '1,0']);
+    expect(s.log).toContain('Polyline must enclose an area.');
+    picks = [];
+    await s.bus.script(['']);
+    expect(s.bus.command).toBeUndefined();
+    expect(wipeouts(s)).toHaveLength(0);
   });
 
   it('turns frames off and on through the drawing’s WIPEOUTVARIABLES', async () => {

@@ -15,6 +15,11 @@ import {
   type DrawOrderMove,
 } from '../../edit/draw-order';
 import type { CommandDef } from '../command';
+import type { EntityId } from '../../model/entity-ids';
+import type { PromptAnswer } from '../prompt';
+
+/** A selection prompt answers the selection (none when Enter ends it at once). */
+const selected = (a: PromptAnswer): readonly EntityId[] => (a as { ids: readonly EntityId[] }).ids;
 
 const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
 
@@ -24,22 +29,25 @@ export function drawOrderCommand(): CommandDef {
     usesSelection: 'during',
     async *run(ctx) {
       const s = yield ctx.prompt.selection({ message: 'Select objects', editable: true });
-      if (s.kind !== 'selection' || s.ids.length === 0) return;
+      const ids = selected(s);
+      if (ids.length === 0) return;
       const a = yield ctx.prompt.keyword({
         message: 'Enter object ordering option',
         options: ['Above objects', 'Under objects', 'Front', 'Back'],
         default: { kind: 'keyword', keyword: 'Back' },
       });
-      if (a.kind !== 'keyword') return;
+      // A default: Enter answers Back, so the answer is a keyword.
+      const option = (a as { keyword: string }).keyword;
       let move: DrawOrderMove;
-      if (a.keyword === 'Front' || a.keyword === 'Back') {
-        move = { to: a.keyword === 'Front' ? 'front' : 'back' };
+      if (option === 'Front' || option === 'Back') {
+        move = { to: option === 'Front' ? 'front' : 'back' };
       } else {
         const r = yield ctx.prompt.selection({ message: 'Select reference objects' });
-        if (r.kind !== 'selection' || r.ids.length === 0) return;
-        move = { to: a.keyword === 'Above objects' ? 'above' : 'under', reference: r.ids };
+        const reference = selected(r);
+        if (reference.length === 0) return;
+        move = { to: option === 'Above objects' ? 'above' : 'under', reference };
       }
-      ctx.edit((b) => moveInDrawOrder(b, ctx.model, s.ids, move));
+      ctx.edit((b) => moveInDrawOrder(b, ctx.model, ids, move));
     },
   };
 }
@@ -53,11 +61,11 @@ export function textToFrontCommand(): CommandDef {
         options: ['Text', 'Dimensions', 'Leaders', 'All'],
         default: { kind: 'keyword', keyword: 'All' },
       });
-      if (a.kind !== 'keyword') return;
+      const option = (a as { keyword: string }).keyword; // Enter answers All
       const kinds = new Set<string>(
-        a.keyword === 'All'
+        option === 'All'
           ? Object.values(TEXT_TO_FRONT_KINDS).flat()
-          : TEXT_TO_FRONT_KINDS[a.keyword as keyof typeof TEXT_TO_FRONT_KINDS],
+          : TEXT_TO_FRONT_KINDS[option as keyof typeof TEXT_TO_FRONT_KINDS],
       );
       const ids = layoutObjects(ctx.model, (e) => kinds.has(e.geom.kind));
       if (ids.length > 0) ctx.edit((b) => moveInDrawOrder(b, ctx.model, ids, { to: 'front' }));

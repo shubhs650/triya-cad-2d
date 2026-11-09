@@ -11,6 +11,7 @@
 import type { Vec2 } from '../../geom/types';
 import { flatten } from '../../geom/flatten';
 import type { DocumentModel } from '../../model/document';
+import type { EntityId } from '../../model/entity-ids';
 import type { NonGraphicalObject, WipeoutVariables } from '../../model/types';
 import { distinctVertices, wipeoutGeometry } from '../../edit/revcloud';
 import type { CommandContext, CommandDef } from '../command';
@@ -18,6 +19,11 @@ import { currentLayer } from './line';
 import type { Prompt, PromptAnswer } from '../prompt';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
+
+/** A keyword prompt with a default answers a keyword (Enter gives the default). */
+const keyword = (a: PromptAnswer): string => (a as { keyword: string }).keyword;
+/** A selection prompt answers the selection (none when Enter ends it at once). */
+const selected = (a: PromptAnswer): readonly EntityId[] => (a as { ids: readonly EntityId[] }).ids;
 
 /** The drawing's WIPEOUTVARIABLES, if it has one. */
 function wipeoutVariables(model: DocumentModel): WipeoutVariables | undefined {
@@ -38,8 +44,7 @@ async function* frames(ctx: CommandContext): Sub<void> {
     options: ['ON', 'OFF'],
     default: { kind: 'keyword', keyword: on ? 'ON' : 'OFF' },
   });
-  if (a.kind !== 'keyword') return;
-  const frame = a.keyword === 'ON';
+  const frame = keyword(a) === 'ON';
   const vars = wipeoutVariables(ctx.model);
   if (vars) {
     if (vars.frame !== frame) {
@@ -80,8 +85,9 @@ async function* fromPolyline(ctx: CommandContext): Sub<void> {
       single: true,
       editable: true,
     });
-    if (a.kind !== 'selection' || a.ids.length === 0) return;
-    const e = ctx.model.entity(a.ids[0]!)!;
+    const picked = selected(a);
+    if (picked.length === 0) return;
+    const e = ctx.model.entity(picked[0]!)!;
     const g = e.geom;
     if ((g.kind !== 'LWPOLYLINE' && g.kind !== 'POLYLINE') || !g.closed) {
       ctx.message('Polyline must be closed.');
@@ -100,9 +106,8 @@ async function* fromPolyline(ctx: CommandContext): Sub<void> {
       options: ['Yes', 'No'],
       default: { kind: 'keyword', keyword: 'No' },
     });
-    if (erase.kind !== 'keyword') return;
     add(ctx, points);
-    if (erase.keyword === 'Yes') ctx.edit((b) => b.removeEntity(e.id));
+    if (keyword(erase) === 'Yes') ctx.edit((b) => b.removeEntity(e.id));
     return;
   }
 }
@@ -118,8 +123,7 @@ export function wipeoutCommand(): CommandDef {
       });
       if (a.kind === 'keyword' && a.keyword === 'Frames') return yield* frames(ctx);
       if (a.kind === 'enter' || a.kind === 'keyword') return yield* fromPolyline(ctx);
-      if (a.kind !== 'point') return;
-      const points: Vec2[] = [a.point];
+      const points: Vec2[] = [(a as { point: Vec2 }).point];
       for (;;) {
         ctx.preview(
           points.length > 1
@@ -140,7 +144,8 @@ export function wipeoutCommand(): CommandDef {
         });
         if (n.kind === 'point') points.push(n.point);
         else if (n.kind === 'keyword' && n.keyword === 'Undo') points.pop();
-        else if (n.kind === 'enter' || n.kind === 'keyword') {
+        else {
+          // Enter or Close.
           const ring = distinctVertices(points, 0);
           if (ring.length < 3) {
             ctx.message('A wipeout needs three or more points.');
@@ -149,7 +154,7 @@ export function wipeoutCommand(): CommandDef {
           }
           add(ctx, ring);
           return;
-        } else return;
+        }
       }
     },
   };
