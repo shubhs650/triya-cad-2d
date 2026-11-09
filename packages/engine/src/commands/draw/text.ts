@@ -12,9 +12,21 @@ import type { Vec2 } from '../../geom/types';
 import type { DocumentModel } from '../../model/document';
 import type { Handle } from '../../model/handle';
 import type { EntityId } from '../../model/entity-ids';
-import type { Entity, MTextGeometry, TextGeometry, TextStyleRecord } from '../../model/types';
+import type {
+  AttdefGeometry,
+  Entity,
+  MTextGeometry,
+  TextGeometry,
+  TextStyleRecord,
+} from '../../model/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
-import { formatNumber, type Prompt, type PromptAnswer, type TextEditorColumns } from '../prompt';
+import {
+  formatNumber,
+  type Prompt,
+  type PromptAnswer,
+  type TextEditorColumns,
+  type TextEditorRequest,
+} from '../prompt';
 import { currentLayer } from './line';
 
 /** AutoCAD's single line spacing: 5/3 of the text height (DXF 44 = 1 for MTEXT). */
@@ -638,6 +650,32 @@ function editorColumns(g: MTextGeometry): TextEditorColumns | undefined {
 const sameColumns = (a: TextEditorColumns | undefined, b: TextEditorColumns | null): boolean =>
   JSON.stringify(a ?? null) === JSON.stringify(b);
 
+/**
+ * The MTEXT editor opened on an MTEXT (TEXTEDIT, M2-07 part 2) or on a multiline attribute's
+ * embedded MTEXT (EATTEDIT, M2-12): holding its contents, where and as it is drawn.
+ */
+export function mtextEditorRequest(model: DocumentModel, g: MTextGeometry): TextEditorRequest {
+  const style = model.tables.textStyles.get(g.style);
+  const cols = editorColumns(g);
+  return {
+    kind: 'mtext',
+    position: g.position,
+    rotation: g.rotation,
+    height: g.height,
+    width: g.width,
+    attachment: g.attachment,
+    style: g.style,
+    fontFile: style?.font ?? '',
+    trueTypeFlags: style?.trueTypeFlags ?? 0,
+    widthFactor: style?.widthFactor ?? 1,
+    obliqueAngle: style?.obliqueAngle ?? 0,
+    value: g.contents,
+    lineSpacingStyle: g.lineSpacingStyle,
+    lineSpacing: g.lineSpacing,
+    ...(cols && { columns: cols }),
+  };
+}
+
 /** An edit TEXTEDIT made, for its Undo: the object as it was. */
 interface TextEdit {
   readonly id: EntityId;
@@ -657,7 +695,8 @@ interface TextEdit {
  *
  * Where AutoCAD's documentation is silent: a TEXT left empty is erased, as an emptied MTEXT is
  * (the common drafter expectation; a TEXT with no characters can be neither seen nor picked).
- * ATTDEF, dimension and table text are edited by their own tasks (M2-12, M2-11, M4).
+ * An ATTDEF opens the Edit Attribute Definition dialog (M2-12); dimension and table text are
+ * edited by their own tasks (M2-11, M4).
  */
 export function textEditCommand(): CommandDef {
   let multiple = true;
@@ -701,18 +740,79 @@ export function textEditCommand(): CommandDef {
         if (a.kind !== 'selection' || a.ids.length === 0) return;
         const entity = a.ids
           .map((id) => ctx.model.entity(id))
-          .find((e) => e?.geom.kind === 'TEXT' || e?.geom.kind === 'MTEXT');
+          .find((e) => e && TEXTEDIT_KINDS.has(e.geom.kind));
         if (!entity) {
           ctx.message('The object selected is not text or multiline text.');
           continue;
         }
-        const edited = yield* editText(ctx, entity);
+        const edited =
+          entity.geom.kind === 'ATTDEF'
+            ? yield* editAttdef(ctx, entity)
+            : yield* editText(ctx, entity);
         if (edited === undefined) return;
         if (edited) done.push(edited);
         if (!multiple) return;
       }
     },
   };
+}
+
+/** What TEXTEDIT edits: text, multiline text and attribute definitions (M2-12). */
+const TEXTEDIT_KINDS = new Set(['TEXT', 'MTEXT', 'ATTDEF']);
+
+/**
+ * An ATTDEF in AutoCAD's Edit Attribute Definition dialog (TEXTEDIT on an attribute definition,
+ * M2-12): its tag, prompt and default. A tag is stored in upper case and may hold no spaces, as
+ * AutoCAD's ATTDEF takes it; one it refuses shows the dialog again. A multiline definition's
+ * default is its MTEXT's contents, also edited in the MTEXT editor from the dialog's `...`.
+ */
+async function* editAttdef(
+  ctx: CommandContext,
+  entity: Entity,
+): AsyncGenerator<Prompt, TextEdit | false | undefined, PromptAnswer> {
+  let g = entity.geom as AttdefGeometry;
+  for (;;) {
+    const d = yield ctx.prompt.dialog({
+      message: 'Edit Attribute Definition',
+      dialog: {
+        type: 'attdef',
+        tag: g.tag,
+        prompt: g.prompt,
+        value: g.mtext ? g.mtext.contents : g.value,
+        multiline: g.mtext !== undefined,
+      },
+    });
+    if (d.kind === 'enter') return false;
+    if (d.kind !== 'dialog') return undefined;
+    const f = d.attdef;
+    if (f) {
+      const tag = f.tag.trim().toUpperCase();
+      if (tag === '' || /\s/.test(tag)) {
+        ctx.message('Invalid attribute tag: it must hold at least one character and no spaces.');
+        continue;
+      }
+      g = {
+        ...g,
+        tag,
+        prompt: f.prompt,
+        ...(g.mtext ? { mtext: { ...g.mtext, contents: f.value } } : { value: f.value }),
+      };
+    }
+    if (d.action === 'mtext' && g.mtext) {
+      const a = yield ctx.prompt.string({
+        message: 'Enter default value',
+        spaces: true,
+        editor: mtextEditorRequest(ctx.model, g.mtext),
+      });
+      if (a.kind === 'string') g = { ...g, mtext: { ...g.mtext, contents: a.value } };
+      else if (a.kind !== 'enter') return undefined;
+      continue;
+    }
+    break;
+  }
+  if (JSON.stringify(g) === JSON.stringify(entity.geom)) return false;
+  ctx.edit((b) => b.updateEntity(entity.id, { geom: g }));
+  return { id: entity.id, before: entity, erased: false };
 }
 
 /**
@@ -751,20 +851,7 @@ async function* editText(
             ...font,
             value: old,
           }
-        : {
-            kind: 'mtext',
-            position: g.position,
-            rotation: g.rotation,
-            height: g.height,
-            width: g.width,
-            attachment: g.attachment,
-            style: g.style,
-            ...font,
-            value: old,
-            lineSpacingStyle: g.lineSpacingStyle,
-            lineSpacing: g.lineSpacing,
-            ...(cols && { columns: cols }),
-          },
+        : mtextEditorRequest(ctx.model, g),
   });
   if (a.kind === 'enter') return false;
   if (a.kind !== 'string') return undefined;

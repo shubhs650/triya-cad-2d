@@ -19,3 +19,13 @@ export { GRIP_MODES, GRIP_OBJECT_LIMIT, gripCommand, type GripMode } from './mod
 export { revcloudCommand, revcloudAppId, revcloudXdata, type CloudType } from './draw/revcloud';
 export { wipeoutCommand, wipeoutFrame } from './draw/wipeout';
 export * from './modify/draw-order';
+export {
+  ATTRIBUTE_COMMANDS,
+  atteditCommand,
+  attributeEntries,
+  blockNameOf,
+  eatteditCommand,
+  hasEditableAttributes,
+  patchAttribute,
+  wcmatch,
+} from './modify/attributes';
