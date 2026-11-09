@@ -19,6 +19,7 @@ import {
   EntityPlotStyleType,
   Arc,
   AttributeDefinition,
+  AttributeType,
   CadObject,
   AttributeEntity,
   BlockRecord,
@@ -994,7 +995,9 @@ function writeVertices(
 /**
  * What an ATTDEF and an ATTRIB have beyond their text frame. A multiline attribute's embedded
  * MTEXT is edited in place; making a single-line attribute multiline or back is refused, because
- * DXF before R2018 keeps that text in an extension-dictionary XRECORD Triya does not write.
+ * DXF before R2018 keeps that text in an extension-dictionary XRECORD Triya does not write. A
+ * new multiline attribute (an INSERT that COPY makes, M2-06) is written as R2018 states it, so
+ * it is refused in a file read from an older version.
  */
 function attributeProblems(
   r: Resolver,
@@ -1002,7 +1005,15 @@ function attributeProblems(
   g: AttributeFields,
 ): string[] {
   const out = textProblems(r, before, g);
-  if ((before?.mtext !== undefined) !== (g.mtext !== undefined)) {
+  if (!before && g.mtext) {
+    const v = r.version;
+    if (v !== undefined && v !== ACadVersion.Unknown && v < ACadVersion.AC1032) {
+      out.push(
+        `a new multiline attribute in ${ACadVersion[v]} (R2018 states one without an XRECORD)`,
+      );
+    }
+    out.push(...mtextWriter.problems(r, undefined, g.mtext));
+  } else if ((before?.mtext !== undefined) !== (g.mtext !== undefined)) {
     out.push(
       g.mtext ? 'a single-line attribute made multiline' : 'a multiline attribute made single-line',
     );
@@ -1025,6 +1036,13 @@ function writeAttributeFields(
   if (d('lockPosition')) a.isReallyLocked = g.lockPosition === true;
   if (before?.mtext && g.mtext && a.mText && !same(before.mtext, g.mtext)) {
     mtextWriter.write(r, a.mText, before.mtext, g.mtext);
+  }
+  if (!before && g.mtext) {
+    if ((a.attributeType as number) === AttributeType.SingleLine) {
+      a.attributeType = AttributeType.MultiLine;
+    }
+    a.mText = new MText();
+    mtextWriter.write(r, a.mText, undefined, g.mtext);
   }
 }
 

@@ -301,6 +301,16 @@ export class ChangeSetBuilder {
     return entity;
   }
 
+  /**
+   * A new handle for an object an entity carries inside itself rather than as an entity of its
+   * own: the ATTRIBs of an INSERT that COPY makes (M2-06). Allocated above `$HANDSEED` as every
+   * other new object's.
+   */
+  allocateHandle(): Handle {
+    this.#open();
+    return this.#model.handles.allocate();
+  }
+
   /** Moves an entity to another block (appended), keeping its handle and id. */
   moveEntity(id: EntityId, owner: Handle): Entity {
     this.#open();
