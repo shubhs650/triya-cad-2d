@@ -1,12 +1,12 @@
 // The status bar's drafting aids (M2-04): OSNAP (F3), GRID (F7), ORTHO (F8), SNAP (F9), POLAR
 // (F10) and OTRACK (F11), with the running object snap modes (OSMODE), and the display toggles
 // LWT and TPY. AutoCAD keeps OSMODE, AUTOSNAP and the polar settings per user (registry) and
-// ORTHOMODE, SNAPMODE, GRIDMODE and LWDISPLAY in each drawing; Triya keeps them all per session
-// for now, starting from AutoCAD's initial values (OSNAP on with Endpoint, Center, Intersection
-// and Extension, POLAR on at 90°, OTRACK and TPY on, ORTHO and SNAP off). GRID starts off, so a
-// drawing opens looking as it was drawn; LWT shows each drawing's own LWDISPLAY until the
-// drafter turns it, and is then the same for every drawing. Nothing is written back to the
-// file. Keeping them between sessions is M2-20's settings work; the snap and grid spacing are
+// ORTHOMODE, SNAPMODE, GRIDMODE and LWDISPLAY in each drawing. Triya starts from AutoCAD's
+// initial values (OSNAP on with Endpoint, Center, Intersection and Extension, POLAR on at 90°,
+// OTRACK and TPY on, ORTHO and SNAP off) and keeps the per-user ones between sessions (M2-20,
+// preferences.ts), the others per session. GRID starts off, so a drawing opens looking as it
+// was drawn; LWT shows each drawing's own LWDISPLAY until the drafter turns it, and is then the
+// same for every drawing. Nothing is written back to the file. The snap and grid spacing are
 // each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas.
 import { OSMODE_DEFAULT, OSNAP, OSNAP_OFF, type OsnapMode } from '@triya/engine';
 
@@ -26,6 +26,10 @@ export interface DraftingState {
   readonly lwt: boolean | undefined;
   /** TRANSPARENCYDISPLAY. */
   readonly tpy: boolean;
+  /** AUTOSNAPSIZE: half the AutoSnap marker's size, CSS pixels (M2-20). */
+  readonly markerSize: number;
+  /** APERTURE: how near an object must be to the cursor to be snapped to, CSS pixels. */
+  readonly aperture: number;
 }
 
 export type DraftingToggle =
@@ -63,6 +67,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   grid: false,
   lwt: undefined,
   tpy: true,
+  markerSize: 5,
+  aperture: 10,
 };
 
 /**
@@ -138,6 +144,14 @@ export class Drafting {
     const bit = OSNAP[mode];
     const modes = on ? (s.osmode | bit) & ~OSNAP_OFF : s.osmode & ~bit;
     this.#set({ ...s, osmode: modes });
+  }
+
+  /** Settings (M2-20) changed some of the state: the stored settings or the dialog's. */
+  configure(patch: Partial<DraftingState>): void {
+    const next = { ...this.#state, ...patch };
+    // ORTHO and POLAR cannot both be on; the stored POLAR wins over this session's ORTHO.
+    if (patch.polar && next.ortho) next.ortho = false;
+    this.#set(next);
   }
 
   #set(next: DraftingState): void {

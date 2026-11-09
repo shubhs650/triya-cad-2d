@@ -131,8 +131,9 @@ export class OfflineCache {
 
   /** How many of the build's files are cached. */
   async status(): Promise<OfflineProgress> {
-    const cache = await this.caches.open(this.#name);
+    const cache = await this.#existing();
     const all = [...this.assets.core, ...this.assets.lazy];
+    if (!cache) return { cached: 0, total: all.length };
     const hits = await Promise.all(all.map((p) => cache.match(p)));
     return { cached: hits.filter(Boolean).length, total: all.length };
   }
@@ -142,7 +143,8 @@ export class OfflineCache {
    * reporting after each; stops at the first that cannot be fetched (no connection).
    */
   async warm(progress: (p: OfflineProgress) => void): Promise<OfflineProgress> {
-    const cache = await this.caches.open(this.#name);
+    const cache = await this.#existing();
+    if (!cache) return this.status();
     for (const path of this.assets.lazy) {
       if (await cache.match(path)) continue;
       try {
@@ -157,17 +159,27 @@ export class OfflineCache {
     return this.status();
   }
 
+  /**
+   * This version's cache, unless it is gone: "Clear all local data" (M2-20) deletes it and
+   * unregisters the worker, which still answers its page until the page goes; opening the
+   * cache then would make it again.
+   */
+  async #existing(): Promise<CacheLike | undefined> {
+    if (!(await this.caches.keys()).includes(this.#name)) return undefined;
+    return this.caches.open(this.#name);
+  }
+
   async #cached(path: string, request: Request): Promise<Response> {
-    const cache = await this.caches.open(this.#name);
-    return (await cache.match(path)) ?? this.fetch(request);
+    const cache = await this.#existing();
+    return (await cache?.match(path)) ?? this.fetch(request);
   }
 
   async #lazily(path: string, request: Request): Promise<Response> {
-    const cache = await this.caches.open(this.#name);
-    const hit = await cache.match(path);
+    const cache = await this.#existing();
+    const hit = await cache?.match(path);
     if (hit) return hit;
     const res = await this.fetch(request);
-    if (res.ok) await cache.put(path, res.clone());
+    if (res.ok) await cache?.put(path, res.clone());
     return res;
   }
 }

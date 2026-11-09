@@ -165,3 +165,27 @@ async function offersInstall(page: Page): Promise<void> {
   expect(await page.evaluate(() => (window as unknown as { prompted?: number }).prompted)).toBe(1);
   await expect(page.getByRole('button', { name: 'Install' })).toHaveCount(0);
 }
+
+test('Clear all local data unregisters the service worker and deletes its caches (M2-20)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await readyOffline(page);
+  expect(await page.evaluate(() => caches.keys())).not.toEqual([]);
+  // The reload after clearing is a first visit, which would install the worker again: with a
+  // worker script that fails to run, what is left afterwards is only what the clearing left.
+  app.override('/sw.js', "throw new Error('no worker this time');");
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await settings.getByRole('button', { name: 'Clear all local data…' }).click();
+  await Promise.all([
+    page.waitForEvent('load'),
+    settings.getByRole('button', { name: 'Clear and restart' }).click(),
+  ]);
+  await expect(page.getByRole('button', { name: 'Open', exact: true })).toBeVisible();
+  expect(await page.evaluate(() => caches.keys())).toEqual([]);
+  expect(
+    await page.evaluate(() => navigator.serviceWorker.getRegistrations().then((r) => r.length)),
+  ).toBe(0);
+});

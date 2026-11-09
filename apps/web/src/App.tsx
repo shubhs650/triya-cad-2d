@@ -67,6 +67,9 @@ import { browserSave } from './save-browser';
 import { saveChanges } from './save-changes';
 import { SaveChanges } from './SaveChanges';
 import { Settings } from './Settings';
+import { PreferencesStore, bindPreferences, indexedDbPreferences, type Theme } from './preferences';
+import { browserLocalData, clearLocalData, type ClearReport } from './local-data';
+import { coordinateText } from './coordinates';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
 import { PdfPages, fileKey } from './underlay/pages';
@@ -166,6 +169,48 @@ engines.onCommand((doc, o) => {
 drafting.subscribe(() => {
   for (const c of allControllers()) c.setDrafting(drafting.get());
 });
+
+/**
+ * The user's settings (M2-20, preferences.ts), kept on this device: Dynamic Input and the
+ * object snap settings follow them, the chrome takes the theme and every canvas its colours.
+ */
+const preferences = new PreferencesStore(indexedDbPreferences());
+bindPreferences(preferences, drafting, dynMode);
+let canvasColours = preferences.get().canvas;
+function applyTheme(theme: Theme): void {
+  const root = globalThis.document?.documentElement;
+  if (!root) return;
+  // "System" follows prefers-color-scheme in the stylesheet.
+  if (theme === 'system') delete root.dataset['theme'];
+  else root.dataset['theme'] = theme;
+  root.style.setProperty('--canvas-model', canvasColours.model);
+}
+applyTheme(preferences.get().theme);
+preferences.subscribe(() => {
+  const p = preferences.get();
+  if (JSON.stringify(p.canvas) !== JSON.stringify(canvasColours)) {
+    canvasColours = p.canvas;
+    for (const c of allControllers()) c.setColours(canvasColours);
+  }
+  applyTheme(p.theme);
+});
+void preferences.load();
+
+/** Set while "Clear all local data" reloads the page, so leaving it asks nothing. */
+let clearing = false;
+
+/**
+ * "Clear all local data" (M2-20, local-data.ts): autosave stops first so it cannot write a
+ * snapshot back, then everything on the device goes and the page starts afresh. A database
+ * another Triya tab keeps open is reported instead.
+ */
+async function clearAllLocalData(): Promise<ClearReport> {
+  clearing = true;
+  autosaver.stop();
+  const report = await clearLocalData(browserLocalData());
+  if (report.failed.length === 0) globalThis.location.reload();
+  return report;
+}
 
 /** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
 const selections = new Map<number, readonly EntityId[]>();
@@ -766,7 +811,7 @@ export function App() {
   useEffect(() => {
     // Leaving the page with unsaved changes asks first, as closing a drawing does (M2-13).
     const onLeave = (e: BeforeUnloadEvent) => {
-      if (!store.getSnapshot().docs.some(isDirty)) return;
+      if (clearing || !store.getSnapshot().docs.some(isDirty)) return;
       e.preventDefault();
       e.returnValue = '';
     };
@@ -869,6 +914,8 @@ export function App() {
         </button>
       </header>
       <Settings
+        preferences={preferences}
+        onClearAll={clearAllLocalData}
         patterns={patterns}
         fonts={fonts}
         deviceFonts={deviceFonts}
@@ -1265,6 +1312,7 @@ function ViewportCanvas({
       }),
     });
     const unregister = register(id, block, c, index);
+    c.setColours(canvasColours);
     c.setDrafting(drafting.get());
     c.setPrompt(commandLines.get(id).prompt);
     const selected = selections.get(id);
@@ -1329,25 +1377,23 @@ function StatusBar({
   onReferences: () => void;
 }) {
   const coords = useRef<HTMLSpanElement>(null);
-  const header = doc && new Map(doc.opened.init.header ?? []);
-  const luprec = header?.get('$LUPREC');
-  const lwdisplay = header?.get('$LWDISPLAY');
+  const header = useMemo(() => new Map<string, unknown>(doc?.opened.init.header ?? []), [doc]);
+  const lwdisplay = header.get('$LWDISPLAY');
+  // The drawing's units or decimal, as Settings has it (M2-20, coordinates.ts).
+  const display = useSyncExternalStore(preferences.subscribe, preferences.get).coordinates;
   // LWT shows the drawing's LWDISPLAY until the drafter turns it (M2-04 part 2).
   useEffect(() => {
     drafting.setDrawingLineweights(lwdisplay === 1 || lwdisplay === true);
   }, [lwdisplay]);
-  const digits = typeof luprec === 'number' ? Math.min(Math.max(luprec, 0), 8) : 4;
   useEffect(() => {
     showCursor = (p) => {
       if (!coords.current) return;
-      coords.current.textContent = p
-        ? `${p.x.toFixed(digits)}, ${p.y.toFixed(digits)}, ${(0).toFixed(digits)}`
-        : '';
+      coords.current.textContent = p ? coordinateText(p, header, display) : '';
     };
     return () => {
       showCursor = () => {};
     };
-  }, [digits]);
+  }, [header, display]);
   return (
     <footer className="status-bar">
       <span className="coords" data-testid="coords" ref={coords} />

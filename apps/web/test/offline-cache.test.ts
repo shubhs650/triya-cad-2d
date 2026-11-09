@@ -126,6 +126,22 @@ describe('OfflineCache', () => {
     expect(await cache.status()).toEqual({ cached: assets.core.length, total: 11 });
   });
 
+  it('never makes its cache again once "Clear all local data" deleted it (M2-20)', async () => {
+    const { s, all } = storage();
+    const net = server();
+    const cache = new OfflineCache(assets, s, net.fetch, ORIGIN);
+    await cache.install();
+    await s.delete(`${CACHE_PREFIX}${assets.version}`);
+    // The worker still answers the page until it goes, from the network.
+    const shell = await cache.respond(nav('/'));
+    expect(await shell?.text()).toBe('body of /');
+    const lazy = assets.lazy[0]!;
+    await cache.respond(get(lazy));
+    expect(await cache.warm(() => {})).toEqual({ cached: 0, total: 11 });
+    expect(await cache.status()).toEqual({ cached: 0, total: 11 });
+    expect(all.size).toBe(0);
+  });
+
   it('fails the install when a core file cannot be fetched, so the old version stays', async () => {
     const { s } = storage();
     const net = server({ missing: ['/assets/io.worker-CIaNE-lB.js'] });

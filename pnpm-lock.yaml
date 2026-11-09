@@ -65,6 +65,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@triya/dims':
+        specifier: workspace:*
+        version: link:../../packages/dims
       '@triya/engine':
         specifier: workspace:*
         version: link:../../packages/engine
