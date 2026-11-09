@@ -38,15 +38,15 @@ describe('the plot sheet PDF (M2-16)', () => {
     expect(new Uint8Array(readFileSync(SHEET_DIR + SHEET_PDF))).toEqual(bytes);
   });
 
-  it('opens in pdf.js with three A4 landscape pages, their labels and bookmarks', async () => {
+  it('opens in pdf.js with five A4 landscape pages, their labels and bookmarks', async () => {
     const task = getDocument({ data: bytes.slice() });
     const doc = await task.promise;
     try {
-      expect(doc.numPages).toBe(3);
+      expect(doc.numPages).toBe(5);
       expect(await doc.getPageLabels()).toEqual(SHEET_PAGES.map((p) => p.label));
       const outline = await doc.getOutline();
       expect(outline.map((o) => o.title)).toEqual(SHEET_PAGES.map((p) => p.bookmark));
-      for (let n = 1; n <= 3; n++) {
+      for (let n = 1; n <= 5; n++) {
         const page = await doc.getPage(n);
         const [x0, y0, x1, y1] = page.view;
         expect([x0, y0]).toEqual([0, 0]);
@@ -56,7 +56,10 @@ describe('the plot sheet PDF (M2-16)', () => {
         // Paths only: stroke-font text plots as paths, no text object.
         expect(ops.fnArray).toContain(OPS.constructPath);
         expect(ops.fnArray).not.toContain(OPS.beginText);
-        expect(ops.fnArray).not.toContain(OPS.dependency);
+        // Pages 4 and 5 paint shadings, an image and (page 5) fill style patterns.
+        expect(ops.fnArray.includes(OPS.shadingFill)).toBe(n >= 4);
+        expect(ops.fnArray.includes(OPS.paintImageXObject)).toBe(n >= 4);
+        expect(ops.fnArray.includes(OPS.setFillColorN)).toBe(n === 5);
       }
       const meta = await doc.getMetadata();
       expect((meta.info as { Producer?: string }).Producer).toBe('Triya CAD 2D');
@@ -82,6 +85,39 @@ describe('the plot sheet PDF (M2-16)', () => {
     const aci150 = render.aciRgb(150);
     const screened = aci150.map((v) => Math.round(255 - (255 - v) * 0.4) / 255);
     expect(linetypes).toContain(`${screened.map(pdf.pdfNumber).join(' ')} rg`);
+  });
+
+  it('plots gradients, a masked image, dots and clipped infinite lines on page 4 (part 2)', () => {
+    const latin = Buffer.from(bytes).toString('latin1');
+    const page4 = contents(bytes)[3]!;
+    // LINEAR and the one-colour CYLINDER are axial, SPHERICAL radial.
+    expect(latin.match(/\/ShadingType 2 /g)?.length).toBeGreaterThanOrEqual(2);
+    expect(latin).toMatch(/\/ShadingType 3 /);
+    expect(latin).toMatch(
+      /\/Subtype \/Image \/Width 64 \/Height 32 \/ColorSpace \/DeviceRGB .*\/SMask/,
+    );
+    // Five points at (30 + 15i, 70) mm, each a filled disc whose top is the point raised by
+    // its radius: half its lineweight, at least 0.25 mm.
+    [0, 0.25, 0.5, 1, 2].forEach((lw, i) => {
+      const r = Math.max(lw, 0.25) / 2;
+      const x = pdf.pdfNumber((30 + 15 * i) * pdf.POINTS_PER_MM);
+      const y = pdf.pdfNumber((70 + r) * pdf.POINTS_PER_MM);
+      expect(page4.split('\n').some((l) => l.endsWith(` ${x} ${y} c`))).toBe(true);
+    });
+    // The dashed XLINE: many short subpaths in one stroke.
+    expect(page4).toMatch(/(^[\d.-]+ [\d.-]+ m\n[\d.-]+ [\d.-]+ l\n){20}/m);
+  });
+
+  it('fills ACI 40–47 with the eight fill style patterns on page 5', () => {
+    const page5 = contents(bytes)[4]!;
+    const used = new Set([...page5.matchAll(/\/(P\w+) scn$/gm)].map((m) => m[1]));
+    expect([...used].sort()).toEqual(
+      Object.keys(pdf.FILL_STYLES)
+        .map((s) => `P${s}`)
+        .sort(),
+    );
+    // The XLINE and RAY dashed by their plot style linetypes, phased from the base point.
+    expect(page5).toMatch(/^\[[\d. ]+\] [\d.]+ d$/m);
   });
 
   it('shares the renderer’s path opcodes', () => {

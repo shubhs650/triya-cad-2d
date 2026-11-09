@@ -280,23 +280,29 @@ function plotFill(
 /** The smallest dot a point plots as, millimetres (ours: AutoCAD's default lineweight). */
 const POINT_MIN_MM = 0.25;
 
+/** Bézier handle length of a quarter circle of radius 1. */
+const KAPPA = (4 / 3) * Math.tan(Math.PI / 8);
+
 /**
- * A point as a round dot as wide as its lineweight: a zero-length subpath, which PDF strokes
- * as a filled circle with round caps (§8.5.3.2). AutoCAD plots a PDMODE 0 point as a dot and
- * does not say how big; under 0.25 mm (and at the thinnest width) it would hardly show.
+ * A point as a round dot as wide as its lineweight, filled as a circle of four cubics. AutoCAD
+ * plots a PDMODE 0 point as a dot and does not say how big; under 0.25 mm (and at the thinnest
+ * width) it would hardly show. A zero-length round-capped subpath is what PDF itself offers
+ * (§8.5.3.2), but viewers drawing through a canvas drop those (pdf.js in Chromium does).
  */
 function plotPoint(cs: ContentStream, item: PlotPointItem, o: PlotPageOptions): void {
   const m = o.toPaper;
   const x = m.a * item.x + m.c * item.y + m.e;
   const y = m.b * item.x + m.d * item.y + m.f;
-  const mm = Math.max(plottedWeight(item.paint, o), POINT_MIN_MM);
-  cs.strokeColor(item.paint.color)
-    .lineWidth(mm * POINTS_PER_MM)
-    .lineCap(1)
-    .dash([])
-    .moveTo(x, y)
-    .lineTo(x, y)
-    .stroke();
+  const r = (Math.max(plottedWeight(item.paint, o), POINT_MIN_MM) * POINTS_PER_MM) / 2;
+  const k = r * KAPPA;
+  cs.fillColor(item.paint.color)
+    .moveTo(x + r, y)
+    .curveTo(x + r, y + k, x + k, y + r, x, y + r)
+    .curveTo(x - k, y + r, x - r, y + k, x - r, y)
+    .curveTo(x - r, y - k, x - k, y - r, x, y - r)
+    .curveTo(x + k, y - r, x + r, y - k, x + r, y)
+    .closePath()
+    .fill();
 }
 
 /** Below this many points per repetition a linetype plots continuous (it would be a blur). */

@@ -232,15 +232,18 @@ describe('raster images', () => {
 describe('points and infinite lines', () => {
   it('plots a point as a round dot of its lineweight, at least 0.25 mm', () => {
     const { lines } = plot([
-      { kind: 'point', x: 5, y: 6, paint },
+      { kind: 'point', x: 5, y: 6, paint: { ...paint, color: [255, 0, 0] } },
       { kind: 'point', x: 7, y: 8, paint: { ...paint, lineweight: 0 } },
     ]);
-    const w = (mm: number) => `${(mm * POINTS_PER_MM).toFixed(4).replace(/0+$/, '')} w`;
-    expect(lines).toContain(w(0.5));
-    expect(lines).toContain(w(0.25));
-    expect(lines).toContain('1 J');
-    expect(lines.join('\n')).toContain('5 6 m\n5 6 l\nS');
-    expect(lines.join('\n')).toContain('7 8 m\n7 8 l\nS');
+    const r = (mm: number) => (mm * POINTS_PER_MM) / 2;
+    const n = (v: number) => v.toFixed(4).replace(/0+$/, '').replace(/\.$/, '');
+    // A filled circle: four quarter cubics from the rightmost point, closed.
+    const red = lines.indexOf('1 0 0 rg');
+    expect(lines[red + 1]).toBe(`${n(5 + r(0.5))} 6 m`);
+    expect(lines.slice(red + 2, red + 6).every((l) => / c$/.test(l))).toBe(true);
+    expect(lines[red + 2]).toMatch(new RegExp(` 5 ${n(6 + r(0.5)).replace('.', '\\.')} c$`));
+    expect(lines.slice(red + 6, red + 8)).toEqual(['h', 'f']);
+    expect(lines).toContain(`${n(7 + r(0.25))} 8 m`);
   });
 
   it('clips an XLINE to the page and a RAY from its base', () => {
