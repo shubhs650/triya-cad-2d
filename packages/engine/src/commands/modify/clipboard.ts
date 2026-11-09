@@ -46,7 +46,7 @@ async function toClipboard(
   // Scripts and tests have no renderer to measure the objects: their extents are then unknown.
   const bounds = await ctx.view.request({ op: 'bounds', ids });
   const box: Box | undefined = bounds.ok ? bounds.box : undefined;
-  const at = base ?? (box ? { x: box.minX, y: box.minY, bulge: 0 } : { x: 0, y: 0 });
+  const at = base ?? (box ? { x: box.minX, y: box.minY } : { x: 0, y: 0 });
   const { clipboard, refused, unannotated } = copyToClipboard(ctx.model, ids, at, box);
   for (const line of refusalMessages(refused, 'copied')) ctx.message(line);
   if (unannotated > 0) {
