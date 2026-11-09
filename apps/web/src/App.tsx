@@ -228,8 +228,15 @@ async function closeDoc(id: number): Promise<boolean> {
   return true;
 }
 
-/** QSAVE, SAVE/SAVEAS and CLOSE typed at the command line (M2-13). */
+/** QSAVE, SAVE/SAVEAS and CLOSE typed at the command line (M2-13), and DRAWINGRECOVERY (M2-14). */
 async function fileCommand(id: number, action: FileAction): Promise<ViewReply> {
+  if (action === 'recover') {
+    // DRAWINGRECOVERY (M2-14 part 2): the recovery banner lists them again.
+    await recoveryOffers.load();
+    return recoveryOffers.getSnapshot().length > 0
+      ? { ok: true }
+      : { ok: false, message: 'There are no drawings to recover.' };
+  }
   if (action === 'close') {
     // The engine stops with the drawing, so it hears first that the request is done.
     queueMicrotask(() => void closeDoc(id));

@@ -235,6 +235,8 @@ export class RecoveryOffers {
   readonly #locks: SessionLocks;
   readonly #session: string;
   #offers: readonly RecoveryInfo[] = [];
+  /** Snapshots recovered on this page: they stay stored a moment (`take`), never offered again. */
+  readonly #taken = new Set<string>();
   readonly #listeners = new Set<() => void>();
 
   constructor(persistence: RecoveryPersistence, locks: SessionLocks, session: string) {
@@ -250,7 +252,10 @@ export class RecoveryOffers {
 
   readonly getSnapshot = (): readonly RecoveryInfo[] => this.#offers;
 
-  /** Lists what a page that is gone left behind; a store that cannot be read offers nothing. */
+  /**
+   * Lists what a page that is gone left behind; a store that cannot be read offers nothing. On
+   * launch, and again for DRAWINGRECOVERY (M2-14 part 2), which shows the banner again.
+   */
   async load(): Promise<void> {
     let all: RecoveryInfo[];
     let held: ReadonlySet<string> | undefined;
@@ -261,7 +266,9 @@ export class RecoveryOffers {
     }
     this.#set(
       all
-        .filter((i) => i.session !== this.#session && !held?.has(i.session))
+        .filter(
+          (i) => i.session !== this.#session && !held?.has(i.session) && !this.#taken.has(i.key),
+        )
         .sort((a, b) => b.savedAt - a.savedAt),
     );
   }
@@ -271,6 +278,7 @@ export class RecoveryOffers {
    * until the recovered drawing's own snapshot replaces it (`Autosaver.recovered`).
    */
   async take(key: string): Promise<RecoveryEntry | undefined> {
+    this.#taken.add(key);
     this.#set(this.#offers.filter((i) => i.key !== key));
     return this.#persistence.get(key);
   }

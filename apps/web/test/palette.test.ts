@@ -22,6 +22,7 @@ describe('palette search', () => {
       'COPYBASE',
       'COPYCLIP',
       'CUTCLIP',
+      'DRAWINGRECOVERY',
       'DRAWORDER',
       'EATTEDIT',
       'ERASE',

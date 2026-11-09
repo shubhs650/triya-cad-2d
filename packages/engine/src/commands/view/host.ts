@@ -91,8 +91,11 @@ export type ViewRequest =
    */
   | { readonly op: 'clipboard'; readonly content?: Clipboard };
 
-/** What a file command asks of the app (M2-13). */
-export type FileAction = 'qsave' | 'saveas' | 'close';
+/**
+ * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows
+ * the drawings it can recover again.
+ */
+export type FileAction = 'qsave' | 'saveas' | 'close' | 'recover';
 
 export type ViewReply =
   | {
