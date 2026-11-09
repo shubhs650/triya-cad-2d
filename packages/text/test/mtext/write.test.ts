@@ -306,3 +306,17 @@ describe('write then parse', () => {
     );
   });
 });
+
+describe('double-byte characters (M2-07 part 3)', () => {
+  it('keeps a \\M+ character as written', () => {
+    const contents = 'A\\M+18140B{\\L\\M+3B0A1}';
+    const spans = back(contents, shxBase);
+    expect(spans).toEqual([
+      text('A'),
+      { type: 'mbcs', codepage: 932, code: 0x8140, format: {} },
+      text('B'),
+      { type: 'mbcs', codepage: 949, code: 0xb0a1, format: { underline: true } },
+    ]);
+    expect(write(spans, shxBase)).toBe(contents);
+  });
+});

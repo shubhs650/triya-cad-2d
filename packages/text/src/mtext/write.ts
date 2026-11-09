@@ -12,7 +12,14 @@
 // (`\W`), tracking (`\T`), obliquing (`\Q`) and alignment (`\A`) are run formats, a font's
 // charset and pitch stay on it, column and dimension-line breaks stay what they were, and each
 // paragraph keeps the `\p` values in effect for it, as written (`MTextParagraph.codes`).
-import type { MTextColor, MTextDocument, MTextFont, MTextItem, MTextBase } from './parse';
+import {
+  MBCS_CODEPAGES,
+  type MTextColor,
+  type MTextDocument,
+  type MTextFont,
+  type MTextItem,
+  type MTextBase,
+} from './parse';
 
 /** A run's character format; an absent key is the entity's own (its style and height). */
 export interface MTextFormat {
@@ -65,7 +72,17 @@ export type MTextSpan =
       readonly format: MTextFormat;
     }
   /** A field: its code, without the `%<` `>%` around it. */
-  | { readonly type: 'field'; readonly code: string; readonly format: MTextFormat };
+  | { readonly type: 'field'; readonly code: string; readonly format: MTextFormat }
+  /**
+   * A double-byte character (`\M+nXXXX`): its big font's code page and its code there, kept as
+   * written (M2-07 part 3; it has no Unicode code to be text by).
+   */
+  | {
+      readonly type: 'mbcs';
+      readonly codepage: number;
+      readonly code: number;
+      readonly format: MTextFormat;
+    };
 
 const SEPARATOR = { fraction: '/', diagonal: '#', tolerance: '^' } as const;
 
@@ -286,6 +303,12 @@ export function writeMText(
   return out;
 }
 
+/** `\M+nXXXX` for a code page's character. */
+function mbcs(codepage: number, code: number): string {
+  const n = Object.entries(MBCS_CODEPAGES).find(([, cp]) => cp === codepage)![0];
+  return `\\M+${n}${code.toString(16).toUpperCase().padStart(4, '0')}`;
+}
+
 /** One paragraph's runs, each format change a `{…}` group. */
 function runs(spans: readonly Exclude<MTextSpan, MTextBreak>[], base: MTextFont): string {
   let out = '';
@@ -303,6 +326,7 @@ function runs(spans: readonly Exclude<MTextSpan, MTextBreak>[], base: MTextFont)
     }
     if (s.type === 'text') group.body += literal(s.text);
     else if (s.type === 'field') group.body += `%<${s.code}>%`;
+    else if (s.type === 'mbcs') group.body += mbcs(s.codepage, s.code);
     else {
       // After ^ the parser drops one space (it keeps the lower part from reading as a caret
       // code), so one is always written.
@@ -348,8 +372,7 @@ export interface MTextContent {
 
 /**
  * Parsed contents as editor spans, with everything the editor has no control for kept (see the
- * file comment), so that `writeMText` gives contents that read back the same. Not kept: a
- * double-byte `\M+` character is read as the character of its code.
+ * file comment), so that `writeMText` gives contents that read back the same.
  */
 export function contentOf(doc: MTextDocument, base: MTextBase): MTextContent {
   const spans: MTextSpan[] = [];
@@ -373,7 +396,7 @@ export function contentOf(doc: MTextDocument, base: MTextBase): MTextContent {
           spans.push({ type: 'text', text: '\t', format });
           break;
         case 'mbcs':
-          spans.push({ type: 'text', text: String.fromCharCode(item.code), format });
+          spans.push({ type: 'mbcs', codepage: item.codepage, code: item.code, format });
           break;
         case 'field':
           spans.push({ type: 'field', code: item.code, format });

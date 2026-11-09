@@ -87,7 +87,7 @@ Breakpoints (viewport width): **≥1920 "full"**, **1600–1919 "wide"**, **1366
 
 ## 7. Dialogs
 
-AutoCAD-equivalent structure (tabs, groups, labels) with modern controls. Required set: DIMSTYLE (manager + modify dialog, all tabs), TEXTSTYLE, TABLESTYLE, MLEADERSTYLE, LAYER (palette), PAGESETUP, PLOT, PUBLISH, OPTIONS, DRAFTINGSETTINGS, ATTDEF, EATTEDIT, BATTMAN, INSERT, BLOCK, WBLOCK, XREF/IMAGEATTACH/PDFATTACH, LINETYPE, LWEIGHT, UNITS, HATCH (dialog alternative to contextual tab), QSELECT, FILTER, PURGE, FIELD, TOLERANCE, UNITS, ALIAS editor, KEYBOARD editor.
+AutoCAD-equivalent structure (tabs, groups, labels) with modern controls. Required set: DIMSTYLE (manager + modify dialog, all tabs), TEXTSTYLE, TABLESTYLE, MLEADERSTYLE, LAYER (palette), PAGESETUP, PLOT, PUBLISH, OPTIONS, DRAFTINGSETTINGS, ATTDEF, EATTEDIT, BATTMAN, INSERT, BLOCK, WBLOCK, XREF/IMAGEATTACH/PDFATTACH, LINETYPE, LWEIGHT, UNITS, HATCH (dialog alternative to contextual tab), QSELECT, FILTER, PURGE, FIELD, TOLERANCE, UNITS, ALIAS editor, KEYBOARD editor, the MTEXT editor's Column Settings (M2-07 part 3).
 Every dialog is keyboard-operable and has an Esc/Enter contract matching AutoCAD.
 
 ## 8. Status bar

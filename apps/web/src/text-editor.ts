@@ -206,3 +206,44 @@ export function autoStack(
   }
   return undefined;
 }
+
+/** The paragraph `at` is in: 0 for the first, then one more after each break before it. */
+export function paragraphIndex(spans: Spans, at: number): number {
+  let index = 0;
+  let pos = 0;
+  for (const s of spans) {
+    if (pos >= at) break;
+    if (s.type === 'break') index++;
+    pos += unitLength(s);
+  }
+  return index;
+}
+
+/** Each paragraph's `\p` values: the first paragraph's, then those each break carries. */
+export function paragraphCodes(spans: Spans, first: readonly string[]): (readonly string[])[] {
+  return [first, ...spans.flatMap((s) => (s.type === 'break' ? [s.paragraph ?? []] : []))];
+}
+
+/**
+ * The ruler's edits (M2-07 part 3): the `\p` values of paragraphs `from` to `to` mapped by `f`,
+ * the first paragraph's kept apart as the editor keeps them.
+ */
+export function mapParagraphs(
+  spans: Spans,
+  first: readonly string[],
+  from: number,
+  to: number,
+  f: (codes: readonly string[]) => readonly string[],
+): { spans: MTextSpan[]; first: readonly string[] } {
+  let index = 0;
+  const at = (codes: readonly string[]) => (index >= from && index <= to ? f(codes) : codes);
+  const head = at(first);
+  const out = spans.map((s): MTextSpan => {
+    if (s.type !== 'break') return s;
+    index++;
+    const codes = at(s.paragraph ?? []);
+    const { paragraph: _, ...rest } = s;
+    return codes.length > 0 ? { ...rest, paragraph: codes } : rest;
+  });
+  return { spans: out, first: head };
+}

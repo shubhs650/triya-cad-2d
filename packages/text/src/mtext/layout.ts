@@ -133,6 +133,11 @@ export interface MTextLayout {
   readonly bounds: MTextBox;
   /** One box per column, when the MTEXT has columns. */
   readonly columns: readonly MTextBox[];
+  /**
+   * With columns: how many the text reaches, column breaks included (a dynamic MTEXT's count,
+   * M2-07 part 3).
+   */
+  readonly columnsUsed?: number;
   /** The background fill or mask, when the MTEXT has one. */
   readonly mask?: MTextBox;
 }
@@ -189,6 +194,26 @@ interface BuiltLine {
   readonly first: boolean;
   readonly last: boolean;
   readonly para: MTextParagraph;
+}
+
+/**
+ * How many columns dynamic columns of `width`, `gutter` and `height` take for the text: those
+ * it flows into and those its column breaks start (AutoCAD adds and removes dynamic columns as
+ * the text needs them). At most `limit`.
+ */
+export function dynamicColumnCount(
+  doc: MTextDocument,
+  measure: MTextMeasure,
+  options: Omit<MTextLayoutOptions, 'columns'> & {
+    readonly columns: Pick<MTextColumns, 'width' | 'gutter' | 'height'>;
+  },
+  limit = 100,
+): number {
+  const layout = layoutMText(doc, measure, {
+    ...options,
+    columns: { ...options.columns, type: 'dynamic', count: limit },
+  });
+  return layout.columnsUsed ?? 1;
 }
 
 /** Lays out parsed MTEXT for a measure and the entity's box properties. */
@@ -292,7 +317,14 @@ export function layoutMText(
         maxY: top,
       }))
     : [];
-  const result: MTextLayout = { lines, width: boxWidth, height: textHeight, bounds, columns };
+  const result: MTextLayout = {
+    lines,
+    width: boxWidth,
+    height: textHeight,
+    bounds,
+    columns,
+    ...(cols && { columnsUsed: column + 1 }),
+  };
   if (!options.background) return result;
   const pad = (options.background.scale - 1) * h0;
   return {

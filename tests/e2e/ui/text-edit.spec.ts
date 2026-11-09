@@ -129,7 +129,7 @@ test('MTEXT: AutoStack, the Font list, and editing that keeps codes', async ({ p
   await type(
     page,
     '1000020,1000080',
-    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width]:',
+    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
   );
   await type(page, '1000140,1000040', 'Enter text:');
   await type(page, '\\pxqc;{\\W0.8;Narrow} title', 'Enter text:');
@@ -169,7 +169,7 @@ test('closing the editor unchanged leaves the MTEXT as it was', async ({ page })
   await type(
     page,
     '1000020,1000080',
-    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width]:',
+    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
   );
   await type(page, '1000140,1000040', 'Enter text:');
   // Written as AutoCAD does, not as the editor would write it: a no-op must keep it so.

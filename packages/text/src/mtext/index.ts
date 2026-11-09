@@ -1,4 +1,6 @@
 export {
+  MBCS_CODEPAGES,
+  paragraphStyleOf,
   parseMText,
   type MTextAlign,
   type MTextBase,
@@ -13,6 +15,7 @@ export {
   type MTextTabStop,
 } from './parse';
 export {
+  dynamicColumnCount,
   layoutMText,
   type MTextBox,
   type MTextColumns,
@@ -35,3 +38,4 @@ export {
   type MTextFormat,
   type MTextSpan,
 } from './write';
+export { rulerOf, sameRuler, withRuler, type MTextRuler } from './ruler';

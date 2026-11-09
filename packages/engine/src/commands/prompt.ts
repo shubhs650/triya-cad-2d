@@ -87,6 +87,20 @@ export interface KeywordPrompt extends PromptBase {
  * Where an in-place text editor opens (M2-07): TEXT's one line at a time, or MTEXT's editor
  * with its formatting toolbar, which answers with the whole contents (`editor: true`).
  */
+/**
+ * MTEXT columns as the MTEXT editor shows and sets them (M2-07 part 3; AutoCAD's Column
+ * Settings dialog). The drawing's values: one column's width (DXF 48, and the MTEXT's DXF 41),
+ * the gutter between columns (DXF 49) and the column height (DXF 46).
+ */
+export interface TextEditorColumns {
+  /** 1 static: `count` columns. 2 dynamic: as many as the text needs (`count` is that). */
+  readonly type: 1 | 2;
+  readonly count: number;
+  readonly width: number;
+  readonly gutter: number;
+  readonly height: number;
+}
+
 export interface TextEditorRequest {
   readonly kind: 'text' | 'mtext';
   /** TEXT: the line's alignment point; MTEXT: the insertion point, on the box by `attachment`. */
@@ -110,6 +124,11 @@ export interface TextEditorRequest {
    * editor opens holding it and answers once, `editor: true`, with the whole new value.
    */
   readonly value?: string;
+  /** MTEXT's columns, when it has them (M2-07 part 3). */
+  readonly columns?: TextEditorColumns;
+  /** MTEXT's line spacing style (1 at least, 2 exactly) and factor, for laying out columns. */
+  readonly lineSpacingStyle?: number;
+  readonly lineSpacing?: number;
 }
 
 /** Free text; without `spaces` a space ends the input (the front-end's job, as Space is Enter). */
@@ -180,6 +199,11 @@ export type PromptAnswer =
       readonly value: string;
       /** From an in-place MTEXT editor: the whole contents, not one typed line (M2-07). */
       readonly editor?: true;
+      /**
+       * From the MTEXT editor: the columns it closed with, null for none (M2-07 part 3).
+       * Undefined: as requested.
+       */
+      readonly columns?: TextEditorColumns | null;
     }
   | { readonly kind: 'number'; readonly value: number }
   | {

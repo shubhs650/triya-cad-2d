@@ -3,6 +3,7 @@
 // keeps the expected positions hand-checkable; real fonts plug in through `MTextMeasure`.
 import { describe, expect, it } from 'vitest';
 import {
+  dynamicColumnCount,
   layoutMText,
   parseMText,
   type MTextBase,
@@ -348,5 +349,37 @@ describe('background mask', () => {
       maxY: 0,
     });
     expect(lay('abc').mask).toBeUndefined();
+  });
+});
+
+describe('dynamic column count (M2-07 part 3)', () => {
+  const count = (contents: string, height: number) =>
+    dynamicColumnCount(parseMText(contents, base), mono, {
+      height: 1,
+      width: 0,
+      attachment: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+      columns: { width: 4, gutter: 1, height },
+    });
+
+  it('counts the columns the text flows into', () => {
+    // Lines are 5/3 apart: a column 4 high takes three lines (baselines 1, 2.67, 4.33 > 4: two).
+    expect(count('a', 4)).toBe(1);
+    expect(count('a\\Pb', 4)).toBe(1);
+    expect(count('a\\Pb\\Pc', 4)).toBe(2);
+    expect(count('a\\Pb\\Pc\\Pd\\Pe', 4)).toBe(3);
+  });
+
+  it('counts the columns breaks start', () => {
+    expect(count('a\\Nb\\Nc', 100)).toBe(3);
+  });
+
+  it('reports the columns used in the layout', () => {
+    const l = lay('a\\Nb', {
+      columns: { type: 'static', count: 3, width: 4, gutter: 1, height: 9 },
+    });
+    expect(l.columnsUsed).toBe(2);
+    expect(lay('a').columnsUsed).toBeUndefined();
   });
 });

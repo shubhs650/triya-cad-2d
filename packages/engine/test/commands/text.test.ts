@@ -225,7 +225,7 @@ describe('MTEXT', () => {
     expect(bus.promptText).toBe('Specify first corner:');
     await bus.submit('10,50');
     expect(bus.promptText).toBe(
-      'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width]:',
+      'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
     );
     expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: 10, y: 50 }, box: true } });
     await bus.submit('70,30');
@@ -267,7 +267,7 @@ describe('MTEXT', () => {
     expect(bus.promptText).toBe('Enter justification [TL/TC/TR/ML/MC/MR/BL/BC/BR] <TL>:');
     await bus.submit('BR');
     expect(bus.promptText).toBe(
-      'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width]:',
+      'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
     );
     await bus.submit('10,50');
     expect(contentsPrompt(bus).editor).toMatchObject({
@@ -341,5 +341,111 @@ describe('MTEXT', () => {
     await bus.answer({ kind: 'string', value: '', editor: true });
     expect(bus.command).toBeUndefined();
     expect(added()).toEqual([]);
+  });
+});
+
+describe('MTEXT columns (M2-07 part 3)', () => {
+  const editorOf = (bus: PromptBus) => (bus.prompt as StringPrompt).editor!;
+
+  it('asks for static columns: total width, number, gutter and height', async () => {
+    const { bus, added } = setup();
+    await bus.script(['MTEXT', '0,50', 'C']);
+    expect(bus.promptText).toBe('Enter column type [Dynamic/Static/No columns] <Dynamic>:');
+    await bus.submit('S');
+    expect(bus.promptText).toBe('Specify total width <42.5000>:');
+    await bus.submit('100');
+    expect(bus.promptText).toBe('Specify number of columns <2>:');
+    await bus.submit('3');
+    // The gutter's default is five times the text height (AutoCAD's Column Settings).
+    expect(bus.promptText).toBe('Specify gutter width <12.5000>:');
+    await bus.submit('5');
+    expect(bus.promptText).toBe('Specify column height <62.5000>:');
+    await bus.submit('40');
+    expect(editorOf(bus)).toMatchObject({
+      width: 30,
+      columns: { type: 1, count: 3, width: 30, gutter: 5, height: 40 },
+    });
+    await bus.answer({ kind: 'string', value: 'a\\Nb', editor: true });
+    expect(added()[0]!.geom).toMatchObject({
+      width: 30,
+      definedHeight: 40,
+      columns: {
+        type: 1,
+        count: 3,
+        flowReversed: false,
+        autoHeight: false,
+        width: 30,
+        gutter: 5,
+        heights: [],
+      },
+    } satisfies Partial<MTextGeometry>);
+  });
+
+  it('asks for dynamic columns and takes the count the editor found', async () => {
+    const { bus, added } = setup();
+    await bus.script(['MTEXT', '0,50', 'C', '', '20', '', '30']);
+    expect(editorOf(bus).columns).toEqual({
+      type: 2,
+      count: 1,
+      width: 20,
+      gutter: 12.5,
+      height: 30,
+    });
+    await bus.answer({
+      kind: 'string',
+      value: 'long text',
+      editor: true,
+      columns: { type: 2, count: 4, width: 20, gutter: 12.5, height: 30 },
+    });
+    expect(added()[0]!.geom).toMatchObject({
+      width: 20,
+      definedHeight: 30,
+      columns: { type: 2, count: 4, autoHeight: true, width: 20, gutter: 12.5, heights: [] },
+    });
+  });
+
+  it('counts the column breaks of dynamic columns typed on the command line', async () => {
+    const { bus, added } = setup();
+    await bus.script(['-MTEXT', '0,50', 'C', 'D', '20', '5', '30', 'a\\Nb\\\\N\\Nc', '']);
+    expect((added()[0]!.geom as MTextGeometry).columns?.count).toBe(3);
+  });
+
+  it('remembers the settings as the next defaults, and No columns makes none', async () => {
+    const { bus, added } = setup();
+    await bus.script(['MTEXT', '0,50', 'C', 'S', '60', '2', '4', '25']);
+    await bus.cancel();
+    await bus.script(['MTEXT', '0,50', 'C']);
+    expect(bus.promptText).toBe('Enter column type [Dynamic/Static/No columns] <Static>:');
+    await bus.script(['N']);
+    expect(bus.promptText).toBe(
+      'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
+    );
+    await bus.submit('30,0');
+    expect(editorOf(bus).columns).toBeUndefined();
+    await bus.answer({ kind: 'string', value: 'x', editor: true });
+    expect((added()[0]!.geom as MTextGeometry).columns).toBeUndefined();
+  });
+
+  it('refuses columns that do not fit the total width', async () => {
+    const { bus } = setup();
+    await bus.script(['MTEXT', '0,50', 'C', 'S', '10', '3', '5']);
+    expect(bus.history.at(-1)).toBe('The gutters leave no room for the columns.');
+    expect(bus.promptText).toBe('Specify gutter width <12.5000>:');
+  });
+
+  it('lets the editor add or drop columns', async () => {
+    const { bus, added } = setup();
+    await bus.script(['MTEXT', '0,50', '40,0']);
+    await bus.answer({
+      kind: 'string',
+      value: 'x',
+      editor: true,
+      columns: { type: 1, count: 2, width: 15, gutter: 10, height: 50 },
+    });
+    expect(added()[0]!.geom).toMatchObject({
+      width: 15,
+      definedHeight: 50,
+      columns: { type: 1, count: 2 },
+    });
   });
 });
