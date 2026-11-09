@@ -5,6 +5,7 @@
 // through its handle, so Save still writes in place. A file opened without a handle (the file
 // input, a drop without File System Access) cannot be opened again by the app, so it is not
 // listed.
+import { closeOnDelete } from './local-data';
 
 /** The parts of a File System Access file handle the list uses. */
 export interface RecentHandle {
@@ -160,7 +161,7 @@ export function indexedDbRecent(
     db ??= new Promise((resolve, reject) => {
       const r = idb.open(DB, 1);
       r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'key' });
-      r.onsuccess = () => resolve(r.result);
+      r.onsuccess = () => resolve(closeOnDelete(r.result, () => (db = undefined)));
       r.onerror = () => reject(r.error ?? new Error('IndexedDB open failed'));
     });
     return db;

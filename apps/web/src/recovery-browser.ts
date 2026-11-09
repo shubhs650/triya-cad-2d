@@ -5,6 +5,7 @@
 // writes a snapshot whole or not at all, so a crash mid-write leaves the previous one.
 import type { ChangeSet } from '@triya/engine';
 import type { RecoveryEntry, RecoveryInfo, RecoveryPersistence, SessionLocks } from './recovery';
+import { closeOnDelete } from './local-data';
 
 const DB = 'triya-recovery';
 /** The listing: `RecoveryInfo` rows. */
@@ -40,7 +41,7 @@ export function indexedDbRecovery(
         for (const s of [DRAWINGS, LOGS, SOURCES])
           r.result.createObjectStore(s, { keyPath: 'key' });
       };
-      r.onsuccess = () => resolve(r.result);
+      r.onsuccess = () => resolve(closeOnDelete(r.result, () => (db = undefined)));
       r.onerror = () => reject(r.error ?? new Error('IndexedDB open failed'));
     });
     return db;

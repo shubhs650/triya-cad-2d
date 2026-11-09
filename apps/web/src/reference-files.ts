@@ -11,6 +11,7 @@
 // Browsers without file system handles (Firefox, Safari) give dropped folders as entries
 // (`webkitGetAsEntry`), which work for the drop itself and cannot be kept.
 import type { FileSource } from './xrefs';
+import { closeOnDelete } from './local-data';
 
 type Permission = 'granted' | 'denied' | 'prompt';
 
@@ -221,7 +222,7 @@ export function indexedDbHandles(
     db ??= new Promise((resolve, reject) => {
       const r = idb.open(DB, 1);
       r.onupgradeneeded = () => r.result.createObjectStore(STORE, { keyPath: 'key' });
-      r.onsuccess = () => resolve(r.result);
+      r.onsuccess = () => resolve(closeOnDelete(r.result, () => (db = undefined)));
       r.onerror = () => reject(r.error ?? new Error('IndexedDB open failed'));
     });
     return db;

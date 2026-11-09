@@ -100,14 +100,23 @@ export class Autosaver {
   readonly #tracked = new Map<number, Tracked>();
   /** Store operations run one at a time, in order: a removal never overtakes a write. */
   #queue: Promise<void> = Promise.resolve();
+  #stopped = false;
 
   constructor(options: AutosaverOptions) {
     this.#o = options;
     this.#timers = options.timers ?? browserTimers;
   }
 
+  /** "Clear all local data" (M2-20) runs: nothing is written or removed from now on. */
+  stop(): void {
+    this.#stopped = true;
+    for (const t of this.#tracked.values()) this.#cancel(t);
+    this.#tracked.clear();
+  }
+
   /** The open documents as they are now (`DocumentStore` snapshots). */
   update(docs: readonly OpenDocument[]): void {
+    if (this.#stopped) return;
     const open = new Set<number>();
     for (const doc of docs) {
       if (!doc.file) continue;

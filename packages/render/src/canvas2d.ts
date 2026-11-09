@@ -1502,6 +1502,8 @@ export class Canvas2DRenderer implements Renderer {
     const { m, ox, oy } = view;
     const w = this.#width * this.#dpr;
     const h = this.#height * this.#dpr;
+    const { background, foreground } = this.#style;
+    const toward = spec.color ?? foreground;
     const stroke = (xs: readonly number[], ys: readonly number[], mix: number) => {
       ctx.beginPath();
       for (const x of xs) {
@@ -1514,7 +1516,7 @@ export class Canvas2DRenderer implements Renderer {
         ctx.moveTo(0, d);
         ctx.lineTo(w, d);
       }
-      ctx.strokeStyle = mixColors(this.#style.background, this.#style.foreground, mix);
+      ctx.strokeStyle = mixColors(background, toward, mix);
       ctx.lineWidth = this.#dpr;
       ctx.stroke();
     };
@@ -1523,9 +1525,9 @@ export class Canvas2DRenderer implements Renderer {
     stroke(
       lines.xs.filter((x) => !majorX.has(x)),
       lines.ys.filter((y) => !majorY.has(y)),
-      GRID_MINOR_MIX,
+      spec.color ? 0.5 : GRID_MINOR_MIX,
     );
-    stroke(lines.majorXs, lines.majorYs, GRID_MAJOR_MIX);
+    stroke(lines.majorXs, lines.majorYs, spec.color ? 1 : GRID_MAJOR_MIX);
   }
 
   /** The paper in the background colour and the printable area dashed, in device pixels. */
