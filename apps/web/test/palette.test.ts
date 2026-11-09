@@ -15,18 +15,23 @@ describe('palette search', () => {
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       'COPY',
+      'DRAWORDER',
       'ERASE',
+      'HATCHTOBACK',
       'LINE',
       'MIRROR',
       'MOVE',
       'PAN',
       'REGEN',
       'REGENALL',
+      'REVCLOUD',
       'ROTATE',
       'SCALE',
       'SELECT',
       'STRETCH',
+      'TEXTTOFRONT',
       'VIEW',
+      'WIPEOUT',
       'ZOOM',
     ]);
     const erase = commandItems(builtinCommands()).find((i) => i.id === 'ERASE');

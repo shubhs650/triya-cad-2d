@@ -16,3 +16,6 @@ export * from './undo-commands';
 export * from './modify/edit';
 export * from './drag';
 export { GRIP_MODES, GRIP_OBJECT_LIMIT, gripCommand, type GripMode } from './modify/grips';
+export { revcloudCommand, revcloudAppId, revcloudXdata, type CloudType } from './draw/revcloud';
+export { wipeoutCommand, wipeoutFrame } from './draw/wipeout';
+export * from './modify/draw-order';

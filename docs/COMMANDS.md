@@ -26,8 +26,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | GRADIENT | GD | 2 | | |
 | BOUNDARY | BO | 2 | Island detection, object type (polyline/region) | |
 | REGION | REG | 3 | 2D only | |
-| WIPEOUT | — | 1 | Frames, Polyline | |
-| REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | |
+| WIPEOUT | — | 1 | Frames, Polyline | x (#231; Frames ON/OFF, "Display but not plot" in M2-24) |
+| REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | ~ (#231: all but Modify, which is M2-24) |
 | DIVIDE | DIV | 2 | Block | |
 | MEASURE | ME | 2 | Block | |
 | MLINE | ML | 3 | read/render required; creation Should | |
@@ -69,9 +69,9 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | REDO | Ctrl+Y | 1 | | x (#223; Ctrl+Y in M2-23) |
 | MREDO | — | 2 | | |
 | COPYBASE / PASTECLIP / PASTEBLOCK / PASTEORIG / COPYCLIP / CUTCLIP | Ctrl+Shift+C, Ctrl+V, Ctrl+Shift+V, Ctrl+C, Ctrl+X | 1 | cross-document | |
-| DRAWORDER | DR | 1 | Above, Under, Front, Back | |
-| TEXTTOFRONT | — | 1 | Text, Dims, Leaders, All | |
-| HATCHTOBACK | — | 1 | | |
+| DRAWORDER | DR | 1 | Above, Under, Front, Back | x (#231) |
+| TEXTTOFRONT | — | 1 | Text, Dims, Leaders, All | x (#231) |
+| HATCHTOBACK | — | 1 | | x (#231) |
 | GROUP / UNGROUP / GROUPEDIT / CLASSICGROUP | G / UNG | 2 | Ctrl+Shift+A toggle | |
 
 ## Selection and inquiry
@@ -131,7 +131,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | TABLESTYLE | TS | 2 | | |
 | TABLEDIT / TINSERT (cell edit) | — | 2 | | |
 | TOLERANCE | TOL | 2 | | |
-| WIPEOUT / REVCLOUD | — | 1 | (see Draw) | |
+| WIPEOUT / REVCLOUD | — | 1 | (see Draw) | (see Draw) |
 
 ## Blocks and references
 
