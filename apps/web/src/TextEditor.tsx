@@ -14,21 +14,35 @@
 // typed so far and starts the next where the click was (the engine takes the click's point).
 // Typing `1/2 ` stacks the fraction (AutoStack); the Font list sets a run's font.
 //
-// The editor's DOM is the record of what was typed: plain runs as <span data-fmt>, paragraph
-// breaks as <br>, stacks as uneditable <span data-stack>. Typing, pasting, Enter and the
+// Columns and the ruler (M2-07 part 3): the Columns menu (No Columns, Dynamic Columns, Static
+// Columns, Insert Column Break, Column Settings) sets the MTEXT's columns, which the editor
+// shows as CSS columns and answers with (`columns`; a dynamic MTEXT's count is laid out with
+// the drawing's fonts, as the renderer will). Alt+Enter breaks the column. The ruler above the
+// box shows the paragraph's first-line and left indents and its tab stops: drag a marker, click
+// to add a tab stop, drag a tab stop off to remove it. They are written as the paragraph's `\p`
+// values (`withRuler`) and the editor indents its paragraphs by them.
+//
+// The editor's DOM is the record of what was typed: one <div> per paragraph, plain runs as
+// <span data-fmt>, paragraph breaks as <br> ending their paragraph, stacks, fields and
+// double-byte characters as uneditable atoms. Typing, pasting, Enter and the
 // toolbar are applied to the spans (text-editor.ts) and the DOM repainted from them, so the
 // DOM never takes a shape the spans cannot hold.
-import type { StringPrompt, TextEditorRequest } from '@triya/engine';
-import { aciRgb, worldToScreen } from '@triya/render';
+import type { StringPrompt, TextEditorColumns, TextEditorRequest } from '@triya/engine';
+import { aciRgb, worldToScreen, type FontSources } from '@triya/render';
 import {
   contentOf,
+  dynamicColumnCount,
+  fontMeasure,
   mtextBase,
   parseMText,
+  rulerOf,
   sameContent,
   SHX_EQUIVALENTS,
+  withRuler,
   writeMText,
   type MTextContent,
   type MTextFormat,
+  type MTextRuler,
   type MTextSpan,
 } from '@triya/text';
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
@@ -36,13 +50,17 @@ import { controllerOf } from './canvas/registry';
 import type { CanvasController } from './canvas/controller';
 import { commandLines } from './command-line';
 import { engines } from './engine/registry';
+import { appFonts } from './fonts';
 import {
   autoStack,
   formatAt,
   formatRange,
   hasFormat,
   insertSpans,
+  mapParagraphs,
   paragraphAt,
+  paragraphCodes,
+  paragraphIndex,
   removeRange,
   toggleStack,
   type FormatPatch,
@@ -71,10 +89,13 @@ const SHX_FONTS: readonly string[] = Object.keys(SHX_EQUIVALENTS)
 export function TextEditor({
   doc,
   fonts = [],
+  sources,
 }: {
   doc: { id: number; block: string } | undefined;
   /** The user's font files (M1-38), offered in the Font list too. */
   fonts?: readonly string[];
+  /** The renderers' fonts, to lay out dynamic columns as they draw (M2-07 part 3). */
+  sources?: FontSources;
 }) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
@@ -88,7 +109,14 @@ export function TextEditor({
   return request.kind === 'text' ? (
     <TextLine key={key} doc={doc.id} request={request} controller={controller} />
   ) : (
-    <MTextBox key={key} doc={doc.id} request={request} controller={controller} fonts={fonts} />
+    <MTextBox
+      key={key}
+      doc={doc.id}
+      request={request}
+      controller={controller}
+      fonts={fonts}
+      sources={sources}
+    />
   );
 }
 
@@ -252,16 +280,53 @@ function applyStyle(el: HTMLElement, style: CSSProperties): void {
   }
 }
 
-/** The editor's DOM for the spans. */
-function paint(root: HTMLElement, spans: readonly MTextSpan[], height: number): void {
-  const nodes: Node[] = [];
+/** The decoders of the big-font code pages a browser has (Johab has none). */
+const MBCS_ENCODINGS: Readonly<Record<number, string>> = {
+  932: 'shift_jis',
+  950: 'big5',
+  949: 'euc-kr',
+  936: 'gbk',
+};
+
+/** A double-byte character as the browser can show it; `?` when it cannot. */
+function mbcsText(codepage: number, code: number): string {
+  const encoding = MBCS_ENCODINGS[codepage];
+  if (!encoding) return '?';
+  try {
+    return new TextDecoder(encoding).decode(new Uint8Array([code >> 8, code & 0xff]));
+  } catch {
+    return '?';
+  }
+}
+
+/** A paragraph's <div>, indented by its ruler (in text heights; one is CAP_HEIGHT em). */
+function paragraphBox(codes: readonly string[], columnBreak: boolean): HTMLElement {
+  const div = document.createElement('div');
+  div.className = 'mtext-para';
+  const r = rulerOf(codes);
+  if (r.indentLeft !== 0) div.style.paddingLeft = `${r.indentLeft * CAP_HEIGHT}em`;
+  if (r.indentFirst !== 0) div.style.textIndent = `${r.indentFirst * CAP_HEIGHT}em`;
+  if (columnBreak) div.style.breakBefore = 'column';
+  return div;
+}
+
+/** The editor's DOM for the spans; `first` is the first paragraph's `\p` values. */
+function paint(
+  root: HTMLElement,
+  spans: readonly MTextSpan[],
+  height: number,
+  first: readonly string[],
+): void {
+  const paragraphs: HTMLElement[] = [paragraphBox(first, false)];
   for (const s of spans) {
+    const box = paragraphs.at(-1)!;
     if (s.type === 'break') {
       const br = document.createElement('br');
       // What the break keeps: its kind and the next paragraph's `\p` values.
       br.dataset['para'] = JSON.stringify(s.paragraph ?? []);
       if (s.end) br.dataset['end'] = s.end;
-      nodes.push(br);
+      box.append(br);
+      paragraphs.push(paragraphBox(s.paragraph ?? [], s.end === 'column'));
       continue;
     }
     const el = document.createElement('span');
@@ -278,26 +343,33 @@ function paint(root: HTMLElement, spans: readonly MTextSpan[], height: number): 
       const down = document.createElement('span');
       down.textContent = s.lower;
       el.append(up, down);
+    } else if (s.type === 'mbcs') {
+      el.dataset['mbcs'] = JSON.stringify(s);
+      el.contentEditable = 'false';
+      el.textContent = mbcsText(s.codepage, s.code);
     } else {
       el.dataset['field'] = JSON.stringify(s);
       el.contentEditable = 'false';
       el.className = 'mtext-field';
       el.textContent = '----';
     }
-    nodes.push(el);
+    box.append(el);
   }
-  // A last <br> shows no empty line by itself.
-  if (spans.at(-1)?.type === 'break') {
+  // An empty paragraph shows no line by itself.
+  const last = paragraphs.at(-1)!;
+  if (last.childNodes.length === 0) {
     const filler = document.createElement('br');
     filler.dataset['filler'] = '';
-    nodes.push(filler);
+    last.append(filler);
   }
-  root.replaceChildren(...nodes);
+  root.replaceChildren(...paragraphs);
 }
 
 const isAtom = (n: Node): boolean =>
   n instanceof HTMLElement &&
-  (n.dataset['stack'] !== undefined || n.dataset['field'] !== undefined);
+  (n.dataset['stack'] !== undefined ||
+    n.dataset['field'] !== undefined ||
+    n.dataset['mbcs'] !== undefined);
 const isFiller = (n: Node): boolean =>
   n instanceof HTMLElement && n.dataset['filler'] !== undefined;
 
@@ -334,7 +406,7 @@ function read(root: HTMLElement): MTextSpan[] {
           ...(codes.length > 0 && { paragraph: codes }),
         });
       } else if (isAtom(child)) {
-        const data = child.dataset['stack'] ?? child.dataset['field']!;
+        const data = child.dataset['stack'] ?? child.dataset['field'] ?? child.dataset['mbcs']!;
         out.push(JSON.parse(data) as MTextSpan);
       } else {
         // A block the browser made is a paragraph.
@@ -396,6 +468,8 @@ function pointOf(root: HTMLElement, unit: number): [Node, number] {
         }
         count += k.length;
       } else if (isFiller(k)) {
+        // The empty last paragraph.
+        if (unit === count) found = [node, [...node.childNodes].indexOf(k)];
         continue;
       } else if (isAtom(k) || (k instanceof HTMLElement && k.tagName === 'BR')) {
         const at = [...node.childNodes].indexOf(k);
@@ -404,7 +478,9 @@ function pointOf(root: HTMLElement, unit: number): [Node, number] {
           return;
         }
         count += 1;
-        if (unit === count && k instanceof HTMLElement && k.tagName === 'BR') {
+        // After a paragraph's break the caret goes to the next paragraph's start.
+        const ends = k === node.lastChild && node instanceof HTMLElement && node !== root;
+        if (unit === count && k instanceof HTMLElement && k.tagName === 'BR' && !ends) {
           found = [node, at + 1];
           return;
         }
@@ -456,11 +532,13 @@ function MTextBox({
   request,
   controller,
   fonts,
+  sources,
 }: {
   doc: number;
   request: TextEditorRequest;
   controller: CanvasController;
   fonts: readonly string[];
+  sources: FontSources | undefined;
 }) {
   const placement = usePlacement(controller, request);
   const root = useRef<HTMLDivElement>(null);
@@ -480,8 +558,17 @@ function MTextBox({
   if (request.value !== undefined && !initial.current) {
     initial.current = contentOf(parseMText(request.value, base), base);
   }
-  /** The first paragraph's `\p` values (none for new text). */
-  const first = initial.current?.paragraph ?? [];
+  /** The first paragraph's `\p` values (none for new text); the ruler changes them. */
+  const first = useRef<readonly string[]>(initial.current?.paragraph ?? []);
+  /** The columns the editor shows and answers with (M2-07 part 3). */
+  const [columns, setColumnsState] = useState<TextEditorColumns | null>(request.columns ?? null);
+  const columnsNow = useRef(columns);
+  const setColumns = (c: TextEditorColumns | null) => {
+    columnsNow.current = c;
+    setColumnsState(c);
+  };
+  const [ruler, setRulerShown] = useState<MTextRuler>(rulerOf(first.current));
+  const [menu, setMenu] = useState<'columns' | 'settings' | undefined>(undefined);
   /** The format typing takes next, when a toolbar change was made with nothing selected. */
   const pending = useRef<MTextFormat | undefined>(undefined);
   /** The last selection in the editor, for the toolbar's fields, which take the focus. */
@@ -507,9 +594,10 @@ function MTextBox({
             formatAt(s, a + 1),
           ));
     setShown(f);
+    setRulerShown(rulerOf(paragraphCodes(s, first.current)[paragraphIndex(s, a)] ?? []));
   };
   const commit = (next: MTextSpan[], a: number, b = a) => {
-    paint(root.current!, next, request.height);
+    paint(root.current!, next, request.height, first.current);
     root.current!.focus();
     select(root.current!, a, b);
     lastSel.current = [a, b];
@@ -521,17 +609,83 @@ function MTextBox({
     const now = spans();
     const old = initial.current;
     const value =
-      old && request.value !== undefined && sameContent(old, { paragraph: first, spans: now }, font)
+      old &&
+      request.value !== undefined &&
+      sameContent(old, { paragraph: first.current, spans: now }, font)
         ? request.value
-        : writeMText(now, font, first);
-    engines.command(doc, { kind: 'answer', answer: { kind: 'string', value, editor: true } });
+        : writeMText(now, font, first.current);
+    const c = columnsNow.current;
+    // Dynamic columns: as many as the text takes, laid out with the renderers' fonts.
+    const answered =
+      c?.type === 2
+        ? {
+            ...c,
+            count: dynamicColumnCount(
+              parseMText(value, base),
+              fontMeasure(appFonts(sources).book),
+              {
+                height: request.height,
+                width: c.width,
+                attachment: request.attachment,
+                lineSpacingStyle: request.lineSpacingStyle ?? 1,
+                lineSpacing: request.lineSpacing ?? 1,
+                columns: c,
+              },
+            ),
+          }
+        : c;
+    engines.command(doc, {
+      kind: 'answer',
+      answer: {
+        kind: 'string',
+        value,
+        editor: true,
+        ...((answered || request.columns) && { columns: answered }),
+      },
+    });
+  };
+  /** The selection replaced by `inserted`, typed in the format at the caret. */
+  const insert = (inserted: MTextSpan[]) => {
+    const el = root.current!;
+    const [a, b] = selectionIn(el) ?? lastSel.current;
+    const s = spans();
+    const format = pending.current ?? (a === b ? formatAt(s, a) : formatAt(s, a + 1));
+    pending.current = undefined;
+    const typed = inserted.map((x) => (x.type === 'text' ? { ...x, format } : x));
+    const next = insertSpans(removeRange(s, a, b), a, typed);
+    const len = typed.reduce((n, x) => n + (x.type === 'text' ? x.text.length : 1), 0);
+    // AutoStack: a space typed after `1/2` stacks it.
+    const stacked =
+      inserted.at(-1)?.type === 'text' &&
+      /^ $/.test((inserted.at(-1) as { text: string }).text.slice(-1))
+        ? autoStack(next, a + len)
+        : undefined;
+    if (stacked) commit(stacked.spans, stacked.caret);
+    else commit(next, a + len);
+  };
+  /** A paragraph (or column) break that keeps the formatting of the paragraph it is typed in. */
+  const breakHere = (end?: 'column') => {
+    const [a] = selectionIn(root.current!) ?? lastSel.current;
+    const codes = paragraphAt(spans(), first.current, a);
+    insert([{ type: 'break', ...(end && { end }), ...(codes.length > 0 && { paragraph: codes }) }]);
+  };
+  /** The ruler's change, made to every paragraph the selection touches. */
+  const setRuler = (r: MTextRuler) => {
+    const [a, b] = selection();
+    const s = spans();
+    const next = mapParagraphs(s, first.current, paragraphIndex(s, a), paragraphIndex(s, b), (c) =>
+      withRuler(c, r),
+    );
+    first.current = next.first;
+    root.current!.dataset['para'] = JSON.stringify(next.first);
+    commit(next.spans, a, b);
   };
 
   useEffect(() => {
     const el = root.current!;
-    el.dataset['para'] = JSON.stringify(first);
+    el.dataset['para'] = JSON.stringify(first.current);
+    paint(el, initial.current?.spans ?? [], request.height, first.current);
     if (initial.current) {
-      paint(el, initial.current.spans, request.height);
       el.focus();
       const end = initial.current.spans.reduce(
         (n, x) => n + (x.type === 'text' ? x.text.length : 1),
@@ -541,6 +695,7 @@ function MTextBox({
       lastSel.current = [end, end];
     }
     el.focus();
+    if (!initial.current) select(el, 0, 0);
     const onSelection = () => {
       const s = selectionIn(el);
       if (!s) return;
@@ -549,23 +704,7 @@ function MTextBox({
       if (moved) pending.current = undefined;
       refresh();
     };
-    const replace = (inserted: MTextSpan[]) => {
-      const [a, b] = selectionIn(el) ?? lastSel.current;
-      const s = spans();
-      const format = pending.current ?? (a === b ? formatAt(s, a) : formatAt(s, a + 1));
-      pending.current = undefined;
-      const typed = inserted.map((x) => (x.type === 'text' ? { ...x, format } : x));
-      const next = insertSpans(removeRange(s, a, b), a, typed);
-      const len = typed.reduce((n, x) => n + (x.type === 'text' ? x.text.length : 1), 0);
-      // AutoStack: a space typed after `1/2` stacks it.
-      const stacked =
-        inserted.at(-1)?.type === 'text' &&
-        /^ $/.test((inserted.at(-1) as { text: string }).text.slice(-1))
-          ? autoStack(next, a + len)
-          : undefined;
-      if (stacked) commit(stacked.spans, stacked.caret);
-      else commit(next, a + len);
-    };
+    const replace = insert;
     const asSpans = (text: string): MTextSpan[] =>
       text
         .replace(/\r\n?/g, '\n')
@@ -589,12 +728,7 @@ function MTextBox({
         case 'insertParagraph':
         case 'insertLineBreak':
           e.preventDefault();
-          {
-            // The new paragraph keeps the formatting of the one it was typed in.
-            const [a] = selectionIn(el) ?? lastSel.current;
-            const codes = paragraphAt(spans(), first, a);
-            replace([{ type: 'break', ...(codes.length > 0 && { paragraph: codes }) }]);
-          }
+          breakHere();
           return;
         case 'deleteContentBackward':
         case 'deleteContentForward': {
@@ -659,6 +793,14 @@ function MTextBox({
     if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       finish();
+    } else if (e.key === 'Enter' && e.altKey) {
+      // AutoCAD's Insert Column Break.
+      e.preventDefault();
+      breakHere('column');
+    } else if (e.key === 'Escape' && menu) {
+      e.preventDefault();
+      setMenu(undefined);
+      root.current!.focus();
     } else if (e.key === 'Escape') {
       e.preventDefault();
       done.current = true;
@@ -775,28 +917,371 @@ function MTextBox({
         </select>
         <button
           type="button"
+          aria-label="Columns"
+          title="Columns"
+          aria-haspopup="menu"
+          aria-expanded={menu === 'columns'}
+          className="mtext-tool"
+          onClick={() => setMenu(menu === 'columns' ? undefined : 'columns')}
+        >
+          ▥
+        </button>
+        <button
+          type="button"
           className="mtext-ok"
           title="Close Text Editor (Ctrl+Enter)"
           onClick={finish}
         >
           OK
         </button>
+        {menu === 'columns' && (
+          <ColumnsMenu
+            columns={columns}
+            onPick={(pick) => {
+              setMenu(pick === 'settings' ? 'settings' : undefined);
+              if (pick === 'break') breakHere('column');
+              else if (pick !== 'settings') setColumns(columnsFor(pick, columns, request, root));
+              if (pick !== 'settings') root.current!.focus();
+            }}
+          />
+        )}
       </div>
-      <div
-        ref={root}
-        className="mtext-content"
-        role="textbox"
-        aria-multiline="true"
-        aria-label="Multiline text"
-        contentEditable
-        suppressContentEditableWarning
-        spellCheck={false}
-        style={{
-          transform: style.transform,
-          fontSize: style.fontSize,
-          ...(request.width > 0 && { width: style.width }),
-        }}
+      {menu === 'settings' && (
+        <ColumnSettings
+          columns={columns ?? columnsFor('dynamic', null, request, root)!}
+          none={!columns}
+          height={request.height}
+          onClose={(c) => {
+            if (c !== undefined) setColumns(c);
+            setMenu(undefined);
+            root.current!.focus();
+          }}
+        />
+      )}
+      <div className="mtext-box" style={{ transform: style.transform, fontSize: style.fontSize }}>
+        <Ruler
+          ruler={ruler}
+          unit={request.height * placement.scale}
+          width={boxWidth(request, columns) * placement.scale}
+          onChange={setRuler}
+        />
+        <div
+          ref={root}
+          className="mtext-content"
+          role="textbox"
+          aria-multiline="true"
+          aria-label="Multiline text"
+          contentEditable
+          suppressContentEditableWarning
+          spellCheck={false}
+          style={columnStyle(request, columns, placement.scale)}
+        />
+      </div>
+    </div>
+  );
+}
+
+// ---- Columns and the ruler (M2-07 part 3) ----
+
+type ColumnsPick = 'none' | 'dynamic' | 2 | 3 | 4 | 5 | 6 | 'break' | 'settings';
+
+/** The box's width in drawing units: all the static columns, one dynamic column, else DXF 41. */
+function boxWidth(request: TextEditorRequest, c: TextEditorColumns | null): number {
+  if (!c) return request.width;
+  return c.type === 1 ? c.count * c.width + (c.count - 1) * c.gutter : c.width;
+}
+
+/**
+ * The content's CSS: the box width, and with columns their width, gutter and height, flowing
+ * into more columns past the box as dynamic columns do (and static ones overflow).
+ */
+function columnStyle(
+  request: TextEditorRequest,
+  c: TextEditorColumns | null,
+  scale: number,
+): CSSProperties {
+  const width = boxWidth(request, c);
+  return {
+    ...(width > 0 && { width: `${width * scale}px` }),
+    ...(c && {
+      height: `${c.height * scale}px`,
+      columnWidth: `${c.width * scale}px`,
+      columnGap: `${c.gutter * scale}px`,
+      columnFill: 'auto',
+      ...(c.type === 1 && { columnCount: c.count }),
+    }),
+  };
+}
+
+/**
+ * The columns a menu pick sets. Static columns split the box's width, else take columns six
+ * text heights wide; the gutter is five text heights ("Column Settings Dialog Box"); the height
+ * is that of the text typed so far (at least five lines' worth), as the box stood when the
+ * columns were set (our reading of AutoCAD's editor, which keeps the box).
+ */
+function columnsFor(
+  pick: Exclude<ColumnsPick, 'break' | 'settings'>,
+  now: TextEditorColumns | null,
+  request: TextEditorRequest,
+  root: { readonly current: HTMLElement | null },
+): TextEditorColumns | null {
+  if (pick === 'none') return null;
+  const h = request.height;
+  const gutter = now?.gutter ?? 5 * h;
+  const scale = (root.current?.getBoundingClientRect().width ?? 0) / (boxWidth(request, now) || 1);
+  const height =
+    now?.height ?? Math.max(5 * h, scale > 0 ? (root.current?.scrollHeight ?? 0) / scale : 25 * h);
+  if (pick === 'dynamic') {
+    const width = now?.width ?? (request.width > 0 ? request.width : 6 * h);
+    return { type: 2, count: now?.count ?? 1, width, gutter, height };
+  }
+  const total = now ? boxWidth(request, now) : request.width > 0 ? request.width : 0;
+  const width = (total - (pick - 1) * gutter) / pick;
+  return { type: 1, count: pick, width: width > 0 ? width : 6 * h, gutter, height };
+}
+
+function ColumnsMenu({
+  columns,
+  onPick,
+}: {
+  columns: TextEditorColumns | null;
+  onPick: (p: ColumnsPick) => void;
+}) {
+  const item = (label: string, pick: ColumnsPick, checked?: boolean) => (
+    <button
+      key={label}
+      type="button"
+      role={checked === undefined ? 'menuitem' : 'menuitemradio'}
+      {...(checked !== undefined && { 'aria-checked': checked })}
+      onClick={() => onPick(pick)}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="mtext-menu" role="menu" aria-label="Columns">
+      {item('No Columns', 'none', !columns)}
+      {item('Dynamic Columns', 'dynamic', columns?.type === 2)}
+      {([2, 3, 4, 5, 6] as const).map((n) =>
+        item(`Static Columns: ${n}`, n, columns?.type === 1 && columns.count === n),
+      )}
+      {item('Insert Column Break (Alt+Enter)', 'break')}
+      {item('Column Settings…', 'settings')}
+    </div>
+  );
+}
+
+/** AutoCAD's Column Settings dialog: type, number, height, column and gutter widths. */
+function ColumnSettings({
+  columns,
+  none,
+  height,
+  onClose,
+}: {
+  /** The columns, or the defaults when there are none. */
+  columns: TextEditorColumns;
+  none: boolean;
+  height: number;
+  /** The settings, null for no columns; undefined when cancelled. */
+  onClose: (c: TextEditorColumns | null | undefined) => void;
+}) {
+  const [type, setType] = useState<0 | 1 | 2>(none ? 0 : columns.type);
+  const [count, setCount] = useState(columns.type === 1 ? columns.count : 2);
+  const [colHeight, setColHeight] = useState(columns.height);
+  const [width, setWidth] = useState(columns.width);
+  const [gutter, setGutter] = useState(columns.gutter);
+  const total = type === 1 ? count * width + (count - 1) * gutter : width;
+  const ok = () => {
+    if (type === 0) return onClose(null);
+    if (!(width > 0 && gutter >= 0 && colHeight > 0 && count >= 1)) return;
+    onClose({
+      type,
+      count: type === 1 ? Math.round(count) : columns.count,
+      width,
+      gutter,
+      height: colHeight,
+    });
+  };
+  const num = (label: string, value: number, set: (v: number) => void, disabled = false) => (
+    <label>
+      {label}
+      <input
+        type="number"
+        min={0}
+        step="any"
+        value={Number(value.toPrecision(10))}
+        disabled={disabled}
+        onChange={(e) => set(Number(e.target.value))}
       />
+    </label>
+  );
+  return (
+    <div
+      className="mtext-dialog"
+      role="dialog"
+      aria-label="Column Settings"
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose(undefined);
+        } else if (e.key === 'Enter') {
+          e.preventDefault();
+          ok();
+        }
+      }}
+    >
+      <fieldset>
+        <legend>Column Type</legend>
+        {(
+          [
+            [2, 'Dynamic Columns'],
+            [1, 'Static Columns'],
+            [0, 'No Columns'],
+          ] as const
+        ).map(([v, label]) => (
+          <label key={v}>
+            <input
+              type="radio"
+              name="mtext-column-type"
+              checked={type === v}
+              onChange={() => setType(v)}
+            />
+            {label}
+          </label>
+        ))}
+      </fieldset>
+      <fieldset disabled={type === 0}>
+        <legend>Column Number</legend>
+        {num('Number', count, setCount, type !== 1)}
+      </fieldset>
+      <fieldset disabled={type === 0}>
+        <legend>Height</legend>
+        {num('Height', colHeight, setColHeight)}
+      </fieldset>
+      <fieldset disabled={type === 0}>
+        <legend>Width</legend>
+        {num('Column', width, setWidth)}
+        {num('Gutter', gutter, setGutter)}
+        <output aria-label="Total">Total: {Number(total.toPrecision(10))}</output>
+      </fieldset>
+      <p className="mtext-dialog-note">
+        Gutter default: five times the text height ({5 * height}).
+      </p>
+      <div className="mtext-dialog-buttons">
+        <button type="button" onClick={ok}>
+          OK
+        </button>
+        <button type="button" onClick={() => onClose(undefined)}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** Where a pointer is along the ruler, in text heights from the box's left edge. */
+const along = (e: React.PointerEvent, unit: number): number =>
+  Math.round((e.nativeEvent.offsetX / unit) * 10) / 10;
+
+type Drag =
+  | { readonly kind: 'first' }
+  | { readonly kind: 'left' }
+  | { readonly kind: 'tab'; readonly index: number };
+
+/**
+ * The ruler: the first-line indent (the top marker), the left indent (the bottom marker) and
+ * the tab stops of the paragraph at the caret, in text heights (`unit` px each). A click on
+ * it adds a left tab stop; a tab stop dragged off it goes. Dragging the left indent leaves the
+ * first line where it is, as in AutoCAD's ruler.
+ */
+function Ruler({
+  ruler,
+  unit,
+  width,
+  onChange,
+}: {
+  ruler: MTextRuler;
+  unit: number;
+  width: number;
+  onChange: (r: MTextRuler) => void;
+}) {
+  const [live, setLive] = useState<MTextRuler | undefined>(undefined);
+  const drag = useRef<Drag | undefined>(undefined);
+  const shown = live ?? ruler;
+  const moved = (d: Drag, at: number, off: boolean): MTextRuler => {
+    if (d.kind === 'first') return { ...ruler, indentFirst: at - ruler.indentLeft };
+    if (d.kind === 'left') {
+      return { ...ruler, indentLeft: at, indentFirst: ruler.indentLeft + ruler.indentFirst - at };
+    }
+    const tabs = ruler.tabs.filter((_, i) => i !== d.index);
+    return {
+      ...ruler,
+      tabs: off
+        ? tabs
+        : [...tabs, { at: Math.max(0, at), kind: ruler.tabs[d.index]?.kind ?? 'left' }],
+    };
+  };
+  const offRuler = (e: React.PointerEvent) =>
+    e.nativeEvent.offsetY < -12 ||
+    e.nativeEvent.offsetY > (e.currentTarget as HTMLElement).clientHeight + 12;
+  const x = (v: number) => `${v * unit}px`;
+  return (
+    <div
+      className="mtext-ruler"
+      role="slider"
+      aria-label="Ruler"
+      aria-valuetext={`First line ${shown.indentFirst}, left ${shown.indentLeft}, tabs ${
+        shown.tabs.map((t) => t.at).join(' ') || 'none'
+      }`}
+      style={{ width: `${Math.max(width, 6 * unit)}px`, backgroundSize: `${unit}px 100%` }}
+      onMouseDown={(e) => e.preventDefault()}
+      onPointerDown={(e) => {
+        if (e.button !== 0) return;
+        const at = along(e, unit);
+        const near = (v: number) => Math.abs(v - at) * unit <= 5;
+        const top = e.nativeEvent.offsetY < e.currentTarget.clientHeight / 2;
+        const tab = ruler.tabs.findIndex((t) => near(t.at));
+        let d: Drag;
+        if (tab >= 0) d = { kind: 'tab', index: tab };
+        else if (top && near(ruler.indentLeft + ruler.indentFirst)) d = { kind: 'first' };
+        else if (near(ruler.indentLeft)) d = { kind: 'left' };
+        else {
+          // A new left tab stop where the click was, dragged on from there.
+          d = { kind: 'tab', index: ruler.tabs.length };
+        }
+        drag.current = d;
+        e.currentTarget.setPointerCapture(e.pointerId);
+        setLive(moved(d, at, false));
+      }}
+      onPointerMove={(e) => {
+        if (drag.current) setLive(moved(drag.current, along(e, unit), offRuler(e)));
+      }}
+      onPointerUp={(e) => {
+        const d = drag.current;
+        drag.current = undefined;
+        setLive(undefined);
+        if (d) onChange(moved(d, along(e, unit), offRuler(e)));
+      }}
+    >
+      <span
+        className="mtext-ruler-first"
+        title="First line indent"
+        style={{ left: x(shown.indentLeft + shown.indentFirst) }}
+      />
+      <span
+        className="mtext-ruler-left"
+        title="Paragraph indent"
+        style={{ left: x(shown.indentLeft) }}
+      />
+      {shown.tabs.map((t, i) => (
+        <span
+          key={i}
+          className={`mtext-ruler-tab mtext-ruler-tab-${t.kind}`}
+          title={`Tab stop ${t.at}`}
+          style={{ left: x(t.at) }}
+        />
+      ))}
     </div>
   );
 }

@@ -476,6 +476,8 @@ export function mtextCommand(): CommandDef {
                 trueTypeFlags: style.trueTypeFlags,
                 widthFactor: style.widthFactor,
                 obliqueAngle: style.obliqueAngle,
+                lineSpacingStyle: spacing.style,
+                lineSpacing: spacing.factor,
                 ...(columns && { columns }),
               },
             }),
@@ -759,6 +761,8 @@ async function* editText(
             style: g.style,
             ...font,
             value: old,
+            lineSpacingStyle: g.lineSpacingStyle,
+            lineSpacing: g.lineSpacing,
             ...(cols && { columns: cols }),
           },
   });

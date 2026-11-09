@@ -126,6 +126,9 @@ export interface TextEditorRequest {
   readonly value?: string;
   /** MTEXT's columns, when it has them (M2-07 part 3). */
   readonly columns?: TextEditorColumns;
+  /** MTEXT's line spacing style (1 at least, 2 exactly) and factor, for laying out columns. */
+  readonly lineSpacingStyle?: number;
+  readonly lineSpacing?: number;
 }
 
 /** Free text; without `spaces` a space ends the input (the front-end's job, as Space is Enter). */

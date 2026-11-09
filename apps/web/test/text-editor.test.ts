@@ -9,6 +9,9 @@ import {
   formatRange,
   hasFormat,
   insertSpans,
+  mapParagraphs,
+  paragraphCodes,
+  paragraphIndex,
   removeRange,
   toggleStack,
   unitsOf,
@@ -129,5 +132,37 @@ describe('paragraph values', () => {
     expect(paragraphAt(spans, ['xqr'], 1)).toEqual(['xqr']);
     expect(paragraphAt(spans, ['xqr'], 4)).toEqual(['xqc']);
     expect(paragraphAt(spans, ['xqr'], 7)).toEqual([]);
+  });
+});
+
+describe('paragraphs for the ruler (M2-07 part 3)', () => {
+  const spans: MTextSpan[] = [
+    t('ab'),
+    { type: 'break', paragraph: ['qc'] },
+    t('cd'),
+    { type: 'break', end: 'column' },
+    t('e'),
+  ];
+
+  it('finds the paragraph of an offset', () => {
+    expect([0, 2, 3, 5, 6, 7].map((at) => paragraphIndex(spans, at))).toEqual([0, 0, 1, 1, 2, 2]);
+  });
+
+  it('lists each paragraph`s values', () => {
+    expect(paragraphCodes(spans, ['l1'])).toEqual([['l1'], ['qc'], []]);
+  });
+
+  it('maps the values of a range of paragraphs, keeping column breaks', () => {
+    const r = mapParagraphs(spans, ['l1'], 1, 2, (c) => [...c, 'i2']);
+    expect(r.first).toEqual(['l1']);
+    expect(r.spans).toEqual([
+      t('ab'),
+      { type: 'break', paragraph: ['qc', 'i2'] },
+      t('cd'),
+      { type: 'break', end: 'column', paragraph: ['i2'] },
+      t('e'),
+    ]);
+    expect(mapParagraphs(spans, ['l1'], 0, 0, () => []).first).toEqual([]);
+    expect(mapParagraphs(spans, [], 1, 1, () => []).spans[1]).toEqual({ type: 'break' });
   });
 });
