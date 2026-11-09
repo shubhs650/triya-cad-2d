@@ -14,10 +14,14 @@
 // - A plot style linetype replaces the object's (its continuous path dashed with the style's
 //   pattern, `linetypes.ts`); "Use object linetype" keeps the dashes tessellation made.
 // - Object transparency plots as PDF constant alpha (the "Plot transparency" option).
+// - A plot style's fill style fills an object's filled areas with its pattern (`fills.ts`) in
+//   the object's plot colour; gradient fills and raster images paint their own colours.
+// - A POINT (PDMODE 0) plots as a dot, an XLINE or RAY as the part of it on the plot area.
 
 import type { ContentStream, LineCap, LineJoin, Rgb } from './content';
 import type { PdfPage } from './document';
-import { adaptDashes, plotDashes, POINTS_PER_MM } from './linetypes';
+import type { FillStyle, GradientStop, PlotPixels } from './fills';
+import { adaptDashes, dashPeriod, plotDashes, POINTS_PER_MM } from './linetypes';
 import { emitSegments, pathSegments, subpathLength, subpaths, type Affine } from './path';
 
 /** What an object plots with: `PlotProperties` from the render package's `PlotResolver`. */
@@ -36,15 +40,32 @@ export interface PlotPaint {
       };
   readonly endStyle: 'butt' | 'square' | 'round' | 'diamond';
   readonly joinStyle: 'miter' | 'bevel' | 'round' | 'diamond';
+  /** The fill style a `fill` plots with; solid when absent. */
+  readonly fillStyle?: 'solid' | FillStyle;
 }
 
-export interface PlotItem {
-  readonly kind: 'stroke' | 'fill';
-  /** A packed render path in world units. */
-  readonly path: readonly number[];
+/** A gradient fill's ramp, colours resolved for the plot. */
+export interface PlotGradient {
+  /** `linear` runs along x from 0 to 1 of the unit frame; `radial` from its origin to radius 1. */
+  readonly kind: 'linear' | 'radial';
+  /** Unit frame → world (the renderer's `FillGradient.frame`). */
+  readonly frame: Affine;
+  readonly stops: readonly GradientStop[];
+}
+
+/** A raster image's bitmap on a `fill`, drawn clipped to the fill's path. */
+export interface PlotImage {
+  /** Straight RGBA after the image's brightness, contrast and fade. */
+  readonly pixels: PlotPixels;
+  /** Bitmap space (pixels, y down from the top-left corner) → world. */
+  readonly frame: Affine;
+  /** The size in pixels the frame is laid out for; another bitmap size is stretched to it. */
+  readonly width: number;
+  readonly height: number;
+}
+
+interface PlotItemBase {
   readonly paint: PlotPaint;
-  /** Fill rule for `fill`: AutoCAD hatch loops use odd parity. */
-  readonly evenOdd?: boolean;
   /** Below 1: object transparency. */
   readonly opacity?: number;
   /**
@@ -53,6 +74,40 @@ export interface PlotItem {
    */
   readonly clip?: readonly (readonly number[])[];
 }
+
+export interface PlotPathItem extends PlotItemBase {
+  readonly kind: 'stroke' | 'fill';
+  /** A packed render path in world units. */
+  readonly path: readonly number[];
+  /** Fill rule for `fill`: AutoCAD hatch loops use odd parity. */
+  readonly evenOdd?: boolean;
+  /** A `fill` painted with this ramp instead of the paint's colour. */
+  readonly gradient?: PlotGradient;
+  /** A `fill` showing this bitmap. */
+  readonly image?: PlotImage;
+}
+
+/** A POINT, plotted as a dot. */
+export interface PlotPointItem extends PlotItemBase {
+  readonly kind: 'point';
+  readonly x: number;
+  readonly y: number;
+}
+
+/** An XLINE (`both`) or RAY, plotted where it crosses the plot area. */
+export interface PlotInfiniteItem extends PlotItemBase {
+  readonly kind: 'infinite';
+  readonly base: { readonly x: number; readonly y: number };
+  readonly direction: { readonly x: number; readonly y: number };
+  readonly both: boolean;
+  /**
+   * The object's linetype in world units (dash > 0, gap < 0, dot 0) and one repetition, laid
+   * out from `base` both ways (the renderer's `dashes`); a plot style linetype replaces it.
+   */
+  readonly dashes?: { readonly lengths: readonly number[]; readonly period: number };
+}
+
+export type PlotItem = PlotPathItem | PlotPointItem | PlotInfiniteItem;
 
 export interface PlotPageOptions {
   /** World → page points. */
@@ -99,30 +154,25 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
       }
     }
     cs.graphicsState(page.alpha(item.opacity ?? 1));
+    if (item.kind === 'point') {
+      plotPoint(cs, item, o);
+      continue;
+    }
+    if (item.kind === 'infinite') {
+      plotInfinite(page, item, o);
+      continue;
+    }
     const segments = pathSegments(item.path, o.toPaper);
     if (segments.length === 0) continue;
     if (item.kind === 'fill') {
-      cs.fillColor(item.paint.color);
-      emitSegments(cs, segments);
-      cs.fill(item.evenOdd ?? false);
+      plotFill(page, item, segments, o);
       continue;
     }
     const p = item.paint;
-    const mm = o.lineweights === false ? 0 : p.lineweight * (o.lineweightScale ?? 1);
-    cs.strokeColor(p.color)
-      .lineWidth(mm * POINTS_PER_MM)
-      .lineCap(CAPS[p.endStyle])
-      .lineJoin(JOINS[p.joinStyle]);
+    const mm = plottedWeight(p, o);
+    pen(cs, p, mm);
     const lt = p.linetype;
-    const dashes =
-      lt.kind === 'plot'
-        ? plotDashes(lt.index, {
-            patternSize: lt.patternSize,
-            lineweight: mm,
-            ...(o.nonIsoScale !== undefined ? { nonIsoScale: o.nonIsoScale } : {}),
-            dotsVisible: mm > 0 && p.endStyle !== 'butt',
-          })
-        : [];
+    const dashes = lt.kind === 'plot' ? styleDashes(p, mm, o) : [];
     if (dashes.length > 0 && lt.kind === 'plot' && lt.adaptive) {
       // Each subpath completes its own pattern, so each is stroked with its own dashes.
       for (const sub of subpaths(segments)) {
@@ -138,6 +188,204 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
   }
   if (clip) cs.restore();
   cs.restore();
+}
+
+/** Millimetres a stroke plots at. */
+function plottedWeight(p: PlotPaint, o: PlotPageOptions): number {
+  return o.lineweights === false ? 0 : p.lineweight * (o.lineweightScale ?? 1);
+}
+
+function pen(cs: ContentStream, p: PlotPaint, mm: number): void {
+  cs.strokeColor(p.color)
+    .lineWidth(mm * POINTS_PER_MM)
+    .lineCap(CAPS[p.endStyle])
+    .lineJoin(JOINS[p.joinStyle]);
+}
+
+/** A plot style linetype's dash array in points; empty for none. */
+function styleDashes(p: PlotPaint, mm: number, o: PlotPageOptions): number[] {
+  const lt = p.linetype;
+  if (lt.kind !== 'plot') return [];
+  return plotDashes(lt.index, {
+    patternSize: lt.patternSize,
+    lineweight: mm,
+    ...(o.nonIsoScale !== undefined ? { nonIsoScale: o.nonIsoScale } : {}),
+    dotsVisible: mm > 0 && p.endStyle !== 'butt',
+  });
+}
+
+/** `m` after `n`: first `n`, then `m`. */
+function compose(m: Affine, n: Affine): Affine {
+  return {
+    a: m.a * n.a + m.c * n.b,
+    b: m.b * n.a + m.d * n.b,
+    c: m.a * n.c + m.c * n.d,
+    d: m.b * n.c + m.d * n.d,
+    e: m.a * n.e + m.c * n.f + m.e,
+    f: m.b * n.e + m.d * n.f + m.f,
+  };
+}
+
+const invertible = (m: Affine) => Math.abs(m.a * m.d - m.b * m.c) > 1e-12;
+
+function plotFill(
+  page: PdfPage,
+  item: PlotPathItem,
+  segments: ReturnType<typeof pathSegments>,
+  o: PlotPageOptions,
+): void {
+  const cs = page.content;
+  const g = item.gradient;
+  const img = item.image;
+  if (g && g.stops.length > 0) {
+    const m = compose(o.toPaper, g.frame);
+    if (!invertible(m)) {
+      // No ramp to lay out: the fill takes the ramp's first colour.
+      cs.fillColor(g.stops[0]!.color);
+      emitSegments(cs, segments);
+      cs.fill(item.evenOdd ?? false);
+      return;
+    }
+    const name = page.shading(g.kind, g.stops);
+    cs.save();
+    emitSegments(cs, segments);
+    cs.clip(item.evenOdd ?? false);
+    cs.transform(m).shade(name);
+    cs.restore();
+    return;
+  }
+  if (img) {
+    // Unit square (an image's space, its first row at the top) → bitmap → world → paper.
+    const unit: Affine = { a: img.width, b: 0, c: 0, d: -img.height, e: 0, f: img.height };
+    const m = compose(o.toPaper, compose(img.frame, unit));
+    if (!invertible(m) || img.pixels.width * img.pixels.height === 0) return;
+    const name = page.image(img.pixels);
+    cs.save();
+    emitSegments(cs, segments);
+    cs.clip(item.evenOdd ?? false);
+    cs.transform(m).xobject(name);
+    cs.restore();
+    return;
+  }
+  const p = item.paint;
+  if (p.fillStyle && p.fillStyle !== 'solid') {
+    const [r, gr, b] = p.color;
+    const space = page.patternSpace(r === gr && gr === b);
+    cs.fillPattern(space, page.pattern(p.fillStyle), p.color);
+  } else cs.fillColor(p.color);
+  emitSegments(cs, segments);
+  cs.fill(item.evenOdd ?? false);
+}
+
+/** The smallest dot a point plots as, millimetres (ours: AutoCAD's default lineweight). */
+const POINT_MIN_MM = 0.25;
+
+/**
+ * A point as a round dot as wide as its lineweight: a zero-length subpath, which PDF strokes
+ * as a filled circle with round caps (§8.5.3.2). AutoCAD plots a PDMODE 0 point as a dot and
+ * does not say how big; under 0.25 mm (and at the thinnest width) it would hardly show.
+ */
+function plotPoint(cs: ContentStream, item: PlotPointItem, o: PlotPageOptions): void {
+  const m = o.toPaper;
+  const x = m.a * item.x + m.c * item.y + m.e;
+  const y = m.b * item.x + m.d * item.y + m.f;
+  const mm = Math.max(plottedWeight(item.paint, o), POINT_MIN_MM);
+  cs.strokeColor(item.paint.color)
+    .lineWidth(mm * POINTS_PER_MM)
+    .lineCap(1)
+    .dash([])
+    .moveTo(x, y)
+    .lineTo(x, y)
+    .stroke();
+}
+
+/** Below this many points per repetition a linetype plots continuous (it would be a blur). */
+const MIN_PERIOD_POINTS = 0.1;
+
+/**
+ * An XLINE or RAY over the plot area (Liang–Barsky on paper). A plot style linetype is phased
+ * so its pattern starts at the base point, and an object linetype is laid out from the base
+ * point both ways in world units, as the screen draws it (canvas2d `dashInfinite`): where the
+ * plot area falls does not move the dashes.
+ */
+function plotInfinite(page: PdfPage, item: PlotInfiniteItem, o: PlotPageOptions): void {
+  const m = o.toPaper;
+  const wl = Math.hypot(item.direction.x, item.direction.y);
+  if (!(wl > 0)) return;
+  // Unit world direction, and its image on paper (k points per world unit).
+  const ux = item.direction.x / wl;
+  const uy = item.direction.y / wl;
+  const px = m.a * ux + m.c * uy;
+  const py = m.b * ux + m.d * uy;
+  const k = Math.hypot(px, py);
+  if (!(k > 0)) return;
+  const dx = px / k;
+  const dy = py / k;
+  const bx = m.a * item.base.x + m.c * item.base.y + m.e;
+  const by = m.b * item.base.x + m.d * item.base.y + m.f;
+  const box = o.area ?? { x: 0, y: 0, width: page.width, height: page.height };
+  let t0 = item.both ? -Infinity : 0;
+  let t1 = Infinity;
+  const clip = (q: number, d: number, lo: number, hi: number): boolean => {
+    if (d === 0) return q >= lo && q <= hi;
+    let a = (lo - q) / d;
+    let b = (hi - q) / d;
+    if (a > b) [a, b] = [b, a];
+    t0 = Math.max(t0, a);
+    t1 = Math.min(t1, b);
+    return t0 <= t1;
+  };
+  if (
+    !clip(bx, dx, box.x, box.x + box.width) ||
+    !clip(by, dy, box.y, box.y + box.height) ||
+    !(t1 > t0)
+  )
+    return;
+  const cs = page.content;
+  const p = item.paint;
+  const mm = plottedWeight(p, o);
+  pen(cs, p, mm);
+  const at = (t: number): [number, number] => [bx + dx * t, by + dy * t];
+  const styled = styleDashes(p, mm, o);
+  const period = dashPeriod(styled);
+  if (p.linetype.kind === 'plot' && period > 0) {
+    // Adaptive adjustment has no length to complete a pattern on: the pattern plots as is.
+    cs.dash(styled, ((t0 % period) + period) % period);
+    cs.moveTo(...at(t0))
+      .lineTo(...at(t1))
+      .stroke();
+    return;
+  }
+  cs.dash([]);
+  const d = p.linetype.kind === 'object' ? item.dashes : undefined;
+  const count = d && d.period > 0 ? (t1 - t0) / k / d.period : 0;
+  if (!d || d.period * k < MIN_PERIOD_POINTS || count > 100_000) {
+    cs.moveTo(...at(t0))
+      .lineTo(...at(t1))
+      .stroke();
+    return;
+  }
+  // World parameters along the line from the base point.
+  const w0 = t0 / k;
+  const w1 = t1 / k;
+  let any = false;
+  for (let r = Math.floor(w0 / d.period); r * d.period <= w1; r++) {
+    let s = r * d.period;
+    for (const len of d.lengths) {
+      const e = s + Math.abs(len);
+      if (len >= 0) {
+        const a = Math.max(s, w0);
+        const b = Math.min(e, w1);
+        // A dot as a zero-length subpath, which the cap draws.
+        if (b > a || (len === 0 && s >= w0 && s <= w1)) {
+          cs.moveTo(...at(a * k)).lineTo(...at((len === 0 ? a : b) * k));
+          any = true;
+        }
+      }
+      s = e;
+    }
+  }
+  if (any) cs.stroke();
 }
 
 function emitPolygon(cs: ContentStream, flat: readonly number[], m: Affine): void {

@@ -39,8 +39,23 @@ export {
 export {
   paperTransform,
   plotItems,
+  type PlotGradient,
+  type PlotImage,
+  type PlotInfiniteItem,
   type PlotItem,
   type PlotPageOptions,
   type PlotPaint,
+  type PlotPathItem,
+  type PlotPointItem,
 } from './plot';
+export {
+  FILL_CELL,
+  FILL_STYLES,
+  encodeImage,
+  gradientFunction,
+  type EncodedImage,
+  type FillStyle,
+  type GradientStop,
+  type PlotPixels,
+} from './fills';
 export { PAPER_SIZES, mmToPoints, paperSize, type PaperSize } from './paper';
