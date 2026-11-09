@@ -57,6 +57,8 @@ export interface SelectionLoopOptions {
   readonly editable?: boolean;
   /** The pre-selection at `Command:`, which shows no prompt but its window's corner. */
   readonly atCommand?: boolean;
+  /** Ends at the first selection, as SIngle does, without saying so. */
+  readonly single?: boolean;
 }
 
 /** What a step did: the selection is complete (SIngle), or the loop goes on. */
@@ -85,6 +87,7 @@ export class SelectionLoop {
   constructor(host: SelectionLoopHost, o: SelectionLoopOptions) {
     this.#host = host;
     this.#o = o;
+    this.#single = o.single === true;
   }
 
   get ids(): readonly EntityId[] {

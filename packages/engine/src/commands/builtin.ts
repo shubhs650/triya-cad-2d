@@ -2,7 +2,7 @@
 // own registry, so a command's remembered state (LINE's last end point) is per drawing.
 import { CommandRegistry } from './command';
 import { lineCommand } from './draw/line';
-import { mtextCommand, textCommand } from './draw/text';
+import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
 import { selectCommand } from './select';
 import { viewCommand } from './view/named-view';
@@ -13,6 +13,7 @@ export function builtinCommands(): CommandRegistry {
     lineCommand(),
     textCommand(),
     mtextCommand(),
+    textEditCommand(),
     zoomCommand(),
     panCommand(),
     regenCommand(false),

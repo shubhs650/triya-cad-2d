@@ -87,6 +87,8 @@ export type CommandInput =
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
+  /** A double click on the canvas: edits the object there (M2-07 part 2, `PromptBus.doubleClick`). */
+  | { readonly kind: 'double-click'; readonly point: Vec2 }
   /** The space the drafter works in now: model space or a layout's paper space. */
   | { readonly kind: 'space'; readonly block: Handle }
   /** The app's reply to the view request `id` (M2-02 part 2). */
@@ -169,6 +171,8 @@ export class EngineSession {
         });
       case 'select-all':
         return this.#bus.selectAll();
+      case 'double-click':
+        return this.#bus.doubleClick(input.point);
       case 'space':
         if (!this.model.hasBlock(input.block) || input.block === this.#space) {
           return Promise.resolve();

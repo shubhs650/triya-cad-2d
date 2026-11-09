@@ -11,7 +11,8 @@
 import type { Vec2 } from '../../geom/types';
 import type { DocumentModel } from '../../model/document';
 import type { Handle } from '../../model/handle';
-import type { TextGeometry, TextStyleRecord } from '../../model/types';
+import type { EntityId } from '../../model/entity-ids';
+import type { Entity, MTextGeometry, TextGeometry, TextStyleRecord } from '../../model/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import { formatNumber, type Prompt, type PromptAnswer } from '../prompt';
 import { currentLayer } from './line';
@@ -225,13 +226,15 @@ export function textCommand(): CommandDef {
       const down = { x: Math.sin(angle), y: -Math.cos(angle) };
       const step = height * LINE_PITCH;
       const layer = currentLayer(ctx.model);
+      let line: Vec2 = at;
       for (;;) {
-        const a = yield ctx.prompt.string({
+        const a: PromptAnswer = yield ctx.prompt.string({
           message: 'Enter text',
           spaces: true,
+          pick: true,
           editor: {
             kind: 'text',
-            position: at,
+            position: line,
             rotation: angle,
             height,
             width: 0,
@@ -241,13 +244,20 @@ export function textCommand(): CommandDef {
             trueTypeFlags: style.trueTypeFlags,
           },
         });
+        if (a.kind === 'point') {
+          // A click elsewhere: the next line starts there, as in AutoCAD's in-place TEXT
+          // editor. A second point (Align, Fit) moves with it.
+          if (second) second = add(second, { x: a.point.x - line.x, y: a.point.y - line.y }, 1);
+          line = a.point;
+          continue;
+        }
         if (a.kind !== 'string' || a.value === '') return;
         const geom: TextGeometry = {
           kind: 'TEXT',
           value: a.value,
           style: style.handle,
-          position: at,
-          ...((j.h !== 0 || j.v !== 0) && { alignmentPoint: second ?? at }),
+          position: line,
+          ...((j.h !== 0 || j.v !== 0) && { alignmentPoint: second ?? line }),
           height,
           rotation: angle,
           widthFactor: style.widthFactor,
@@ -261,12 +271,12 @@ export function textCommand(): CommandDef {
         last = {
           style: style.handle,
           justify,
-          at,
+          at: line,
           ...(second && { second }),
           height,
           rotation: angle,
         };
-        at = add(at, down, step);
+        line = add(line, down, step);
         if (second) second = add(second, down, step);
       }
     },
@@ -484,4 +494,134 @@ export function mtextCommand(): CommandDef {
       });
     },
   };
+}
+
+/** An edit TEXTEDIT made, for its Undo: the object as it was. */
+interface TextEdit {
+  readonly id: EntityId;
+  readonly before: Entity;
+  readonly erased: boolean;
+}
+
+/**
+ * TEXTEDIT (DDEDIT, ED) for one document, as AutoCAD 2024's "TEXTEDIT (Command)":
+ *   Current settings: Edit mode = Multiple
+ *   Select an annotation object or [Undo/Mode]:
+ * A TEXT opens the in-place line editor holding its value, an MTEXT the MTEXT editor holding
+ * its contents (`TextEditorRequest.value`); the editor answers with the whole new text. Mode is
+ * TEXTEDITMODE: Multiple (AutoCAD's default) asks for the next object until Enter, Single ends
+ * after one. Undo takes back the command's last edit. A double click on a text runs it too
+ * (`DOUBLE_CLICK`, with the text as the pre-selection).
+ *
+ * Where AutoCAD's documentation is silent: a TEXT left empty is erased, as an emptied MTEXT is
+ * (the common drafter expectation; a TEXT with no characters can be neither seen nor picked).
+ * ATTDEF, dimension and table text are edited by their own tasks (M2-12, M2-11, M4).
+ */
+export function textEditCommand(): CommandDef {
+  let multiple = true;
+  return {
+    name: 'TEXTEDIT',
+    aliases: ['DDEDIT'],
+    usesSelection: 'before',
+    async *run(ctx): CommandGenerator {
+      ctx.message(`Current settings: Edit mode = ${multiple ? 'Multiple' : 'Single'}`);
+      const done: TextEdit[] = [];
+      for (;;) {
+        const a = yield ctx.prompt.selection({
+          message: 'Select an annotation object or',
+          options: ['Undo', 'Mode'],
+          editable: true,
+          single: true,
+        });
+        if (a.kind === 'keyword' && a.keyword === 'Undo') {
+          const last = done.pop();
+          if (!last) {
+            ctx.message('Everything has been undone.');
+            continue;
+          }
+          ctx.edit((b) => {
+            if (last.erased) b.restoreEntity(last.before);
+            else b.updateEntity(last.id, { geom: last.before.geom });
+          });
+          continue;
+        }
+        if (a.kind === 'keyword' && a.keyword === 'Mode') {
+          const m = yield ctx.prompt.keyword({
+            message: 'Enter a text edit mode option',
+            options: ['Single', 'Multiple'],
+            default: { kind: 'keyword', keyword: multiple ? 'Multiple' : 'Single' },
+          });
+          if (m.kind !== 'keyword') return;
+          multiple = m.keyword === 'Multiple';
+          continue;
+        }
+        if (a.kind !== 'selection' || a.ids.length === 0) return;
+        const entity = a.ids
+          .map((id) => ctx.model.entity(id))
+          .find((e) => e?.geom.kind === 'TEXT' || e?.geom.kind === 'MTEXT');
+        if (!entity) {
+          ctx.message('The object selected is not text or multiline text.');
+          continue;
+        }
+        const edited = yield* editText(ctx, entity);
+        if (edited === undefined) return;
+        if (edited) done.push(edited);
+        if (!multiple) return;
+      }
+    },
+  };
+}
+
+/**
+ * Opens the editor on one TEXT or MTEXT and applies what comes back. Returns the edit, false
+ * when the text came back unchanged, undefined when the command was ended.
+ */
+async function* editText(
+  ctx: CommandContext,
+  entity: Entity,
+): AsyncGenerator<Prompt, TextEdit | false | undefined, PromptAnswer> {
+  const g = entity.geom as TextGeometry | MTextGeometry;
+  const style = ctx.model.tables.textStyles.get(g.style);
+  const font = { fontFile: style?.font ?? '', trueTypeFlags: style?.trueTypeFlags ?? 0 };
+  const old = g.kind === 'TEXT' ? g.value : g.contents;
+  const a = yield ctx.prompt.string({
+    message: 'Enter text',
+    spaces: true,
+    editor:
+      g.kind === 'TEXT'
+        ? {
+            kind: 'text',
+            // The point the justification names: DXF 10 for left-baseline text, else DXF 11.
+            position:
+              g.halign === 0 && g.valign === 0 ? g.position : (g.alignmentPoint ?? g.position),
+            rotation: g.rotation,
+            height: g.height,
+            width: 0,
+            attachment: attachmentOf(g.halign, g.valign),
+            style: g.style,
+            ...font,
+            value: old,
+          }
+        : {
+            kind: 'mtext',
+            position: g.position,
+            rotation: g.rotation,
+            height: g.height,
+            width: g.width,
+            attachment: g.attachment,
+            style: g.style,
+            ...font,
+            value: old,
+          },
+  });
+  if (a.kind === 'enter') return false;
+  if (a.kind !== 'string') return undefined;
+  if (a.value === old) return false;
+  if (a.value === '') {
+    ctx.edit((b) => b.removeEntity(entity.id));
+    return { id: entity.id, before: entity, erased: true };
+  }
+  const geom = g.kind === 'TEXT' ? { ...g, value: a.value } : { ...g, contents: a.value };
+  ctx.edit((b) => b.updateEntity(entity.id, { geom }));
+  return { id: entity.id, before: entity, erased: false };
 }

@@ -96,6 +96,11 @@ export interface TextEditorRequest {
   readonly style: Handle;
   readonly fontFile: string;
   readonly trueTypeFlags: number;
+  /**
+   * The text being edited (TEXTEDIT, M2-07 part 2): a TEXT's value or an MTEXT's contents. The
+   * editor opens holding it and answers once, `editor: true`, with the whole new value.
+   */
+  readonly value?: string;
 }
 
 /** Free text; without `spaces` a space ends the input (the front-end's job, as Space is Enter). */
@@ -104,6 +109,11 @@ export interface StringPrompt extends PromptBase {
   readonly spaces?: boolean;
   /** Typed in place on the canvas, where a front-end can (M2-07). */
   readonly editor?: TextEditorRequest;
+  /**
+   * A click on the canvas answers with its point (TEXT: a click elsewhere starts the next line
+   * there, M2-07 part 2).
+   */
+  readonly pick?: boolean;
 }
 
 export interface IntegerPrompt extends PromptBase {
@@ -122,6 +132,8 @@ export interface SelectionPrompt extends PromptBase {
   readonly kind: 'selection';
   /** The command edits what it selects: objects on locked layers are refused, as AutoCAD does. */
   readonly editable?: boolean;
+  /** One pick or window ends it, as the SIngle mode does (TEXTEDIT's "Select an annotation object"). */
+  readonly single?: boolean;
 }
 
 export type Prompt =
@@ -183,6 +195,7 @@ export function answerFits(prompt: Prompt, answer: PromptAnswer): boolean {
     return (prompt.options ?? []).some((o) => o.toUpperCase() === answer.keyword.toUpperCase());
   }
   if (answer.kind === 'string' && 'arbitrary' in prompt && prompt.arbitrary) return true;
+  if (answer.kind === 'point' && prompt.kind === 'string' && prompt.pick) return true;
   if (!ANSWER_KINDS[prompt.kind].includes(answer.kind)) return false;
   return prompt.kind !== 'integer' || (answer.kind === 'number' && Number.isInteger(answer.value));
 }
