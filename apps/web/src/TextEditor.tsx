@@ -623,7 +623,8 @@ function MTextBox({
       </div>
       <div
         ref={root}
-        className="mtext-content"
+        // Width 0 is MTEXT's "no wrapping" (a multileader's text, M2-09): lines run on.
+        className={request.width > 0 ? 'mtext-content' : 'mtext-content no-wrap'}
         role="textbox"
         aria-multiline="true"
         aria-label="Multiline text"

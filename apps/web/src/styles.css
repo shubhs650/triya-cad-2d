@@ -1195,6 +1195,10 @@ button {
   overflow-wrap: anywhere;
 }
 
+.mtext-content.no-wrap {
+  white-space: pre;
+}
+
 .mtext-stack {
   display: inline-flex;
   flex-direction: column;
