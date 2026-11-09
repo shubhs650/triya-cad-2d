@@ -244,7 +244,7 @@ export function angularParts(
   // Arrowheads and the arc.
   const [blkStart, blkEnd] = f.ends[0].first ? [s.blk1, s.blk2] : [s.blk2, s.blk1];
   out.push(...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [blkStart, blkEnd], s, model));
-  if (text) out.push({ ...s.text, geom: text });
+  if (text) out.push({ ...s.text, geom: text, textPosition: text.position });
   if (g.dimType === 'angular') {
     out.push(
       defpoint(g.line1Start),

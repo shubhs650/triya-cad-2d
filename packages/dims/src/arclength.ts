@@ -114,7 +114,7 @@ export function arcLengthParts(
   out.push(...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [s.blk1, s.blk2], s, model));
 
   if (text) {
-    out.push({ ...s.text, geom: text });
+    out.push({ ...s.text, geom: text, textPosition: text.position });
     const sym = num(s.vars.DIMARCSYM);
     if (sym === 0 || sym === 1) {
       const rs = SYMBOL * s.textHeight;

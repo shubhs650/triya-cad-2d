@@ -20,19 +20,22 @@ export function generates(g: EntityGeometry): boolean {
 
 /**
  * The parts a dimension draws, in drawing coordinates; undefined for a dimension the engine
- * does not draw yet, or while `measure` cannot measure its text.
+ * does not draw yet, or while `measure` cannot measure its text. `regenerate` draws it as its
+ * block is about to be rewritten (M2-10 part 3), which places the text afresh.
  */
 export function dimensionParts(
   e: Pick<Entity, 'geom' | 'xdata'>,
   model: AnnotationTables,
   measure: TextMeasure,
+  options: { readonly regenerate?: boolean } = {},
 ): DimPart[] | undefined {
   const g = e.geom;
   if (!('dimType' in g) || !generates(g)) return undefined;
   const s = dimStyle(g.style, e.xdata, model);
   // The text stays where the writer put it while the dimension keeps its stored graphics or
   // the user moved it; otherwise the engine places it, as AutoCAD does when it regenerates.
-  const keepText = g.textUserPositioned || (g.block !== undefined && !!model.blocks.get(g.block));
+  const stored = !options.regenerate && g.block !== undefined && !!model.blocks.get(g.block);
+  const keepText = g.textUserPositioned || stored;
   switch (g.dimType) {
     case 'linear':
     case 'aligned':

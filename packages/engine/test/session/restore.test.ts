@@ -36,7 +36,7 @@ describe('EngineSession restored from a change log', () => {
     // An undo's change set removes the second line again.
     expect(changes.length).toBeGreaterThanOrEqual(4);
 
-    const restored = new EngineSession(sampleInit(), clone(changes));
+    const restored = new EngineSession(sampleInit(), {}, clone(changes));
     expect(snapshot(restored.model)).toEqual(snapshot(live.model));
   });
 
@@ -47,7 +47,7 @@ describe('EngineSession restored from a change log', () => {
       ['5,5', '20,5'],
     ]);
     const used = changes.flatMap((c) => c.entities?.added?.map((a) => a.entity.handle) ?? []);
-    const restored = new EngineSession(sampleInit(), clone(changes));
+    const restored = new EngineSession(sampleInit(), {}, clone(changes));
     const after = await drawLines(restored, [['1,1', '2,2']]);
     const added = after.flatMap((c) => c.entities?.added?.map((a) => a.entity.handle) ?? []);
     expect(added).toHaveLength(1);
@@ -64,6 +64,6 @@ describe('EngineSession restored from a change log', () => {
     const bad: ChangeSet = {
       tables: { layers: { updated: [{ before: { handle: 'FFFF' }, after: { handle: 'FFFF' } }] } },
     } as unknown as ChangeSet;
-    expect(() => new EngineSession(sampleInit(), [bad])).toThrow();
+    expect(() => new EngineSession(sampleInit(), {}, [bad])).toThrow();
   });
 });

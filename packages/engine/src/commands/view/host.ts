@@ -71,6 +71,12 @@ export type ViewRequest =
    */
   | { readonly op: 'textBox'; readonly text: MTextGeometry }
   /**
+   * The widths the renderer lays MTEXTs out at, each its widest line's advance (the
+   * `TextMeasure` of TOLERANCE frames), null for one no loaded font draws: what a dimension's
+   * regeneration measures its text by (M2-10 part 3).
+   */
+  | { readonly op: 'textWidths'; readonly texts: readonly MTextGeometry[] }
+  /**
    * The file commands (M2-13): QSAVE saves the drawing (in place when it can), SAVEAS and SAVE
    * save it under a name the drafter picks, CLOSE closes it (asking to save changes first). The
    * app holds the file, so the host does it; the reply's `file` is the name saved under.
@@ -90,6 +96,8 @@ export type ViewReply =
       readonly ids?: readonly EntityId[];
       /** What `textBox` measured. */
       readonly box?: Box;
+      /** What `textWidths` measured, one per text. */
+      readonly widths?: readonly (number | null)[];
       /** The file a `file` request saved the drawing as. */
       readonly file?: string;
     }

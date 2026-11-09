@@ -91,7 +91,7 @@ export function ordinateParts(
   for (const [a, b] of lines) {
     for (const [p, q] of clipSegment(a, b, box)) out.push(linePart(p, q, s.dimLine));
   }
-  if (text) out.push({ ...s.text, geom: text });
+  if (text) out.push({ ...s.text, geom: text, textPosition: text.position });
   out.push(defpoint(g.feature), defpoint(g.leaderEnd), defpoint(g.definitionPoint));
   return out;
 }

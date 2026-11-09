@@ -15,6 +15,12 @@ import type { DimStyle, PartProps } from './style';
 /** One thing a dimension draws; `defpoint` POINTs go on the DEFPOINTS layer. */
 export interface DimPart extends AnnotationPart {
   readonly defpoint?: true;
+  /**
+   * The text part's DXF 11, the point the dimension keeps for its text (M2-10 part 3: written
+   * back when the dimension is regenerated). It is the text's middle except where a rule moves
+   * the text off it (a leader's landing, text lifted off a radius).
+   */
+  readonly textPosition?: Vec2;
 }
 
 export const add = (a: Vec2, b: Vec2, k = 1): Vec2 => ({ x: a.x + b.x * k, y: a.y + b.y * k });

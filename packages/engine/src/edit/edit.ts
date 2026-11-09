@@ -33,7 +33,7 @@ import type {
   Xdata,
 } from '../model/types';
 import { moveBy, point, scaleAbout, type Similarity } from './similarity';
-import { stretchGeometry } from './stretch';
+import { stretchGeometry, type StretchOptions } from './stretch';
 import { moveGrip } from './grips';
 import { sub } from '../geom/vec';
 import {
@@ -51,7 +51,19 @@ export interface EditReport {
   readonly refused: ReadonlyMap<string, number>;
   /** How many copies of annotative objects were made without their annotation scales. */
   readonly unannotated: number;
+  /**
+   * The dimensions whose measurement the edit changed (reshaped by STRETCH, scaled), to be
+   * regenerated (M2-10 part 3): their blocks were carried, not redrawn.
+   */
+  readonly regenerate?: readonly EntityId[];
 }
+
+const isDimension = (g: EntityGeometry): boolean =>
+  g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'LARGE_RADIAL_DIMENSION';
+
+/** The dimensions among `entities` a similarity changes the measurement of (it scales). */
+const scaledDimensions = (entities: readonly Entity[], t: Similarity): EntityId[] =>
+  t.scale === 1 ? [] : entities.filter((e) => isDimension(e.geom)).map((e) => e.id);
 
 /** DXF 90 bit 65536: the viewport is clipped by its 340 entity. */
 const NON_RECTANGULAR = 0x10000;
@@ -279,7 +291,12 @@ export function transformObjects(
     });
     b.updateObject(a.handle, { points } as Partial<NonGraphicalObject>);
   }
-  return { ids: moving.map((e) => e.id), refused, unannotated: 0 };
+  return {
+    ids: moving.map((e) => e.id),
+    refused,
+    unannotated: 0,
+    regenerate: scaledDimensions(moving, t),
+  };
 }
 
 /** An entity's geometry carried, with its annotative representations. */
@@ -362,6 +379,7 @@ export function planStretch(
   ids: readonly EntityId[],
   w: StretchWindow | undefined,
   d: Vec2,
+  options: StretchOptions = {},
 ): StretchPlan {
   const move: EntityId[] = [];
   const shape = new Map<EntityId, EntityGeometry>();
@@ -374,7 +392,7 @@ export function planStretch(
       move.push(id);
       continue;
     }
-    const r = stretchGeometry(e.geom, inside, d);
+    const r = stretchGeometry(e.geom, inside, d, options);
     if (r.kind === 'move') move.push(id);
     else if (r.kind === 'shape') shape.set(id, r.geom);
     else if (r.kind === 'whole') count(refused, r.reason);
@@ -385,7 +403,8 @@ export function planStretch(
 /**
  * STRETCH: the objects' points inside the window move by `d`, objects wholly inside (or picked
  * individually) move whole. What linked to a reshaped object lets go of it: an associative
- * hatch, a dimension association (Triya cannot regenerate either yet, M2-10, M4-07).
+ * hatch, a dimension association (Triya cannot regenerate hatches yet, M4-07). With
+ * `dimensions`, dimensions stretch too and the report lists them for regeneration.
  */
 export function stretchObjects(
   b: ChangeSetBuilder,
@@ -393,8 +412,9 @@ export function stretchObjects(
   ids: readonly EntityId[],
   w: StretchWindow | undefined,
   d: Vec2,
+  options: StretchOptions = {},
 ): EditReport {
-  return applyStretch(b, model, planStretch(model, ids, w, d), d);
+  return applyStretch(b, model, planStretch(model, ids, w, d, options), d);
 }
 
 /** What dragging the grip at `grip` to `to` does to each of `ids` (`grips.ts`). */
@@ -452,7 +472,12 @@ function applyStretch(
   }
   const moved = transformObjects(b, model, plan.move, moveBy(d));
   for (const [reason, n] of moved.refused) refused.set(reason, (refused.get(reason) ?? 0) + n);
-  return { ids: [...moved.ids, ...reshaped], refused, unannotated: 0 };
+  return {
+    ids: [...moved.ids, ...reshaped],
+    refused,
+    unannotated: 0,
+    regenerate: reshaped.filter((id) => isDimension(b.entity(id)!.geom)),
+  };
 }
 
 // ── COPY ────────────────────────────────────────────────────────────────────────────────────
@@ -509,11 +534,17 @@ export function copyObjects(
       b.updateEntity(s.id, { reactors: [...(s.reactors ?? []), copy.handle] });
     }
   }
-  return { ids: [...copies.values()].map((e) => e.id), refused, unannotated };
+  const made = [...copies.values()];
+  return {
+    ids: made.map((e) => e.id),
+    refused,
+    unannotated,
+    regenerate: scaledDimensions(made, t),
+  };
 }
 
 /** The next free `*D<n>` or `*T<n>` name, for the block a dimension's or table's copy draws. */
-class AnonymousNames {
+export class AnonymousNames {
   readonly #next = new Map<string, number>();
   readonly #model: DocumentModel;
   constructor(model: DocumentModel) {

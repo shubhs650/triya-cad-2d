@@ -10,4 +10,5 @@ export type { DimPart } from './geometry';
 export { dimStyle, type DimStyle } from './style';
 export { formatAngle, formatLinear, dimensionText, applyPost, linearText } from './format';
 export { dimensionParts, generates } from './parts';
+export { regenerateDimension, type RegeneratedDimension } from './regenerate';
 export * from './health';
