@@ -133,6 +133,16 @@ function setup(o: { styles?: DimStyleRecord[]; dimensions?: boolean } = {}) {
         endAngle: Math.PI / 3,
       }),
       entityInit('26', { kind: 'LINE', start: { x: 0, y: 20 }, end: { x: 10, y: 20 } }),
+      entityInit('28', {
+        kind: 'LWPOLYLINE',
+        closed: true,
+        vertices: [
+          { x: 100, y: 0, bulge: 0 },
+          { x: 120, y: 0, bulge: 0 },
+          { x: 120, y: 10, bulge: 0 },
+          { x: 100, y: 10, bulge: 0 },
+        ],
+      }),
     ],
   });
   const before = new Set([...model.entities()].map((e) => e.id));
@@ -145,6 +155,10 @@ function setup(o: { styles?: DimStyleRecord[]; dimensions?: boolean } = {}) {
       case 'CIRCLE':
       case 'ARC':
         return Math.abs(Math.hypot(p.x - g.center.x, p.y - g.center.y) - g.radius) <= 0.5;
+      case 'LWPOLYLINE':
+        return g.vertices.some(
+          (v, i) => toSegment(p, v, g.vertices[(i + 1) % g.vertices.length]!) <= 0.5,
+        );
       case 'DIMENSION':
         return Object.values(g).some(
           (v) => v && typeof v === 'object' && 'x' in v && Math.hypot(v.x - p.x, v.y - p.y) <= 0.5,
@@ -679,5 +693,132 @@ describe('TEXTEDIT on a dimension', () => {
     const s = setup();
     await s.bus.script(['DIMLINEAR', '0,0', '10,0', '5,5']);
     expect(doubleClickCommand(s.dims()[0]!)).toBe('TEXTEDIT');
+  });
+});
+
+describe('dimension commands: other answers', () => {
+  it('DIMLINEAR takes the picked segment of a polyline', async () => {
+    const s = setup();
+    await s.bus.script(['DIMLINEAR', '']);
+    await s.bus.pick({ x: 110, y: 10 });
+    await s.bus.submit('110,15');
+    expect(s.dim<'linear'>()).toMatchObject({
+      first: { x: 120, y: 10 },
+      second: { x: 100, y: 10 },
+    });
+  });
+
+  it('ends at Enter or Esc wherever a command asks', async () => {
+    const s = setup();
+    const ends = [
+      ['DIMLINEAR', '', ''],
+      ['DIMLINEAR', '0,0', '10,0', ''],
+      ['DIMRADIUS', ''],
+      ['DIMANGULAR', '', ''],
+      ['DIMANGULAR', '', '0,0', ''],
+      ['DIMANGULAR', '', '0,0', '1,0', ''],
+    ];
+    for (const lines of ends) {
+      await s.bus.script(lines);
+      expect(s.bus.command, lines.join(' ')).toBeUndefined();
+    }
+    await s.bus.script(['DIMLINEAR', '0,0']);
+    await s.bus.cancel();
+    await s.bus.script(['DIMANGULAR']);
+    await s.bus.pick({ x: 7, y: 5 });
+    await s.bus.cancel();
+    await s.bus.script(['DIMANGULAR']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.submit('');
+    expect(s.bus.command).toBeUndefined();
+    expect(s.dims()).toHaveLength(0);
+  });
+
+  it('says no style for each command', async () => {
+    const s = setup({ styles: [] });
+    for (const c of ['DIMRADIUS', 'DIMANGULAR', 'DIMDIAMETER', 'DIMALIGNED']) {
+      await s.bus.submit(c);
+      expect(s.bus.command).toBeUndefined();
+    }
+    expect(s.bus.history.filter((l) => l === 'The drawing has no dimension style.')).toHaveLength(
+      4,
+    );
+  });
+
+  it('DIMANGULAR refuses what is not an arc, circle or line, and a second object not a line', async () => {
+    const s = setup();
+    await s.bus.script(['DIMANGULAR']);
+    await s.bus.pick({ x: 110, y: 0 });
+    expect(s.bus.history).toContain('Object selected is not an arc, circle or line.');
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick({ x: 7, y: 5 });
+    expect(s.bus.history).toContain('Object selected is not a line.');
+  });
+
+  it('refuses a location the dimension cannot be made at', async () => {
+    const s = setup();
+    await s.bus.script(['DIMANGULAR', '', '0,0', '10,0', '0,10', '0,0']);
+    expect(s.bus.history).toContain('Invalid point.');
+    expect(s.bus.promptText).toMatch(/^Specify dimension arc line location/);
+  });
+
+  it('Text on radial and angular dimensions defaults to their measurement', async () => {
+    const s = setup();
+    await s.bus.script(['DIMRADIUS']);
+    await s.bus.pick({ x: 7, y: 5 });
+    await s.bus.submit('T');
+    expect(s.bus.promptText).toBe('Enter dimension text <2>:');
+    await s.bus.script(['', '10,5', 'DIMANGULAR', '', '0,0', '10,0', '0,10', 'T']);
+    expect(s.bus.promptText).toBe('Enter dimension text <90°>:');
+    await s.bus.script(['', '4,4', 'DIMANGULAR']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick({ x: 0, y: 5 });
+    await s.bus.submit('T');
+    expect(s.bus.promptText).toBe('Enter dimension text <90°>:');
+  });
+
+  it('without a dimension engine: no default text, no measurement said, Undo still clean', async () => {
+    const s = setup({ dimensions: false });
+    await s.bus.script(['DIMLINEAR', '0,0', '10,0', 'T']);
+    expect(s.bus.promptText).toBe('Enter dimension text:');
+    await s.bus.script(['', 'A', '', 'M']);
+    await s.bus.answer({ kind: 'string', value: 'A <>', editor: true });
+    await s.bus.submit('M');
+    expect(s.editors.at(-1)).toMatchObject({ value: 'A <>' });
+    await s.bus.submit('');
+    await s.bus.submit('5,5');
+    expect(s.dim<'linear'>()).toMatchObject({ text: 'A <>', textRotation: 0 });
+    expect(said(s.bus)).not.toMatch(/Dimension text =/);
+    await s.bus.script(['DIMCONTINUE', '20,0', 'U', 'U', '', '']);
+    expect(s.bus.history).toContain('Everything has been undone.');
+    expect(s.dims()).toHaveLength(1);
+  });
+
+  it('DIMCONTINUE: asks for a dimension when none was made, refuses others and bad points', async () => {
+    const s = setup();
+    await s.bus.script(['DIMRADIUS']);
+    await s.bus.pick({ x: 7, y: 5 });
+    await s.bus.submit('10,5');
+    await s.bus.submit('DIMCONTINUE');
+    expect(s.bus.promptText).toBe('Select continued dimension:');
+    await s.bus.pick({ x: 10, y: 5 });
+    expect(s.bus.history).toContain('Dimension must be linear or angular.');
+    await s.bus.cancel();
+    await s.bus.script(['DIMLINEAR', '0,0', '10,0', '5,5', 'DIMCONTINUE', 'S']);
+    // Picked by its text, nearer its second extension line: a point there measures nothing.
+    await s.bus.pick({ x: 10, y: 6 });
+    await s.bus.submit('10,0');
+    expect(s.bus.history).toContain('Invalid point.');
+    await s.bus.cancel();
+    expect(s.dims()).toHaveLength(2);
+  });
+
+  it('an angular chain refuses a point on the vertex and turns a straight angle', async () => {
+    const s = setup();
+    await s.bus.script(['DIMANGULAR', '', '0,0', '10,0', '0,10', '4,4', 'DIMCONTINUE', '0,0']);
+    expect(s.bus.history).toContain('Invalid point.');
+    await s.bus.script(['0,-10', '', '']);
+    const g = s.dim<'angular3pt'>();
+    expect(g).toMatchObject({ first: { x: 0, y: 10 }, second: { x: 0, y: -10 } });
   });
 });
