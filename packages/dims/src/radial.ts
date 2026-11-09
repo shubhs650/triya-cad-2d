@@ -134,7 +134,7 @@ export function radialParts(
     const far = g.definitionPoint;
     out.push(...arrowParts(far, add(far, v, s.asz), s.blk2, s, model, v));
   }
-  if (text) out.push({ ...s.text, geom: text });
+  if (text) out.push({ ...s.text, geom: text, textPosition: t });
   out.push(defpoint(g.definitionPoint), defpoint(p));
   return out;
 }

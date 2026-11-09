@@ -10,6 +10,7 @@ import {
   type EngineEdit,
 } from '@triya/engine';
 import type { Endpoint, EngineReply, EngineRequest } from './protocol';
+import { ENGINE_SERVICES } from './services';
 
 export type EngineWorker = Endpoint<EngineReply, EngineRequest> & { terminate(): void };
 
@@ -36,7 +37,7 @@ export class EngineHost {
       w.postMessage({ type: 'init', init });
     } else {
       this.mode = 'main';
-      this.#session = new EngineSession(init);
+      this.#session = new EngineSession(init, ENGINE_SERVICES);
       this.#session.onCommand((o) => this.#commandOutput(o));
     }
   }

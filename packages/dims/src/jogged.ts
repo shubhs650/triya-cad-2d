@@ -76,6 +76,7 @@ export function joggedParts(
   let text: ReturnType<typeof textGeometry> | undefined;
   let width = 0;
   let inside = false;
+  let dxf11: Vec2 | undefined;
   if (label !== undefined) {
     const probe = textGeometry((centred ? '\\A1;' : '') + label, g.textPosition, 0, s);
     const w = measure(probe);
@@ -88,6 +89,7 @@ export function joggedParts(
     const up = perp(fromAngle(rotation));
     const position = keepText || horizontal ? at : add(at, textOffset(s, up, up));
     text = { ...probe, position, rotation };
+    dxf11 = at;
   }
   const base = add(p, v, inside ? -s.asz : s.asz);
   if (inside || !text) lines.push([onRadius, base]);
@@ -97,7 +99,7 @@ export function joggedParts(
     for (const [q, w] of clipSegment(a, b, box)) out.push(linePart(q, w, s.dimLine));
   }
   out.push(...arrowParts(p, base, s.blk1, s, model, unit(sub(p, base)) ?? v));
-  if (text) out.push({ ...s.text, geom: text });
+  if (text) out.push({ ...s.text, geom: text, textPosition: dxf11 ?? text.position });
   out.push(defpoint(p), defpoint(g.overrideCenter), defpoint(g.jogPoint));
   return out;
 }

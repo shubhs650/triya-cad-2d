@@ -2,13 +2,14 @@
 // in-process. Messages are handled in order, so replies come back in the order asked.
 import { EngineSession } from '@triya/engine';
 import type { Endpoint, EngineReply, EngineRequest } from './protocol';
+import { ENGINE_SERVICES } from './services';
 
 export function serveEngine(port: Endpoint<EngineRequest, EngineReply>): void {
   let session: EngineSession | undefined;
   port.addEventListener('message', ({ data }) => {
     try {
       if (data.type === 'init') {
-        session = new EngineSession(data.init);
+        session = new EngineSession(data.init, ENGINE_SERVICES);
         session.onCommand((output) => port.postMessage({ type: 'command', output }));
         return;
       }

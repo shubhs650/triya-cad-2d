@@ -15,6 +15,13 @@
 // - Dimensions, hatches, multilines, multileaders, regions, viewports and curve-fit polylines
 //   need their regeneration (M2-10, M4-07) to follow a stretched point: Triya moves them when
 //   the window holds all of them and leaves them otherwise, saying so.
+// - Dimensions are regenerated once a dimension engine is at hand (`dimensions`, M2-10 part 3):
+//   their definition points inside move, as AutoCAD 2024 stretches an associative dimension's
+//   definition points, and the dimension is drawn afresh. Text moved on its own (its DXF 11
+//   the only point inside) becomes text the user placed (DXF 70 bit 128), as dragging it does;
+//   text that moves with other points keeps its flag, so text the engine places is placed
+//   again (AutoCAD does not say which; this keeps a stretched dimension's text centred, the
+//   common drafter expectation).
 import { ccwSweep } from '../geom/angle';
 import { bulgeArc } from '../geom/eval';
 import type { Vec2 } from '../geom/types';
@@ -164,12 +171,43 @@ function stretchArc(
   };
 }
 
+/** What stretching may do beyond the geometry alone. */
+export interface StretchOptions {
+  /** Dimensions can be regenerated, so their points stretch (M2-10 part 3). */
+  readonly dimensions?: boolean;
+}
+
+const isDimension = (g: EntityGeometry): boolean =>
+  g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'LARGE_RADIAL_DIMENSION';
+
+/** A dimension with its definition points that `inside` takes moved by `d`. */
+function stretchDimension(g: EntityGeometry, inside: (p: Vec2) => boolean, d: Vec2): StretchResult {
+  const out: Record<string, unknown> = { ...g };
+  let moved = 0;
+  let total = 0;
+  let textOnly = true;
+  for (const [k, v] of Object.entries(g)) {
+    if (!v || typeof v !== 'object' || !('x' in v) || !('y' in v) || 'z' in v) continue;
+    total++;
+    if (!inside(v as Vec2)) continue;
+    moved++;
+    if (k !== 'textPosition') textOnly = false;
+    out[k] = add(v as Vec2, d);
+  }
+  if (moved === 0) return NONE;
+  if (moved === total) return MOVE;
+  if (textOnly) out.textUserPositioned = true;
+  return { kind: 'shape', geom: out as unknown as EntityGeometry };
+}
+
 /** `g` with its points that `inside` takes moved by `d`. */
 export function stretchGeometry(
   g: EntityGeometry,
   inside: (p: Vec2) => boolean,
   d: Vec2,
+  options: StretchOptions = {},
 ): StretchResult {
+  if (options.dimensions && isDimension(g)) return stretchDimension(g, inside, d);
   const whole =
     WHOLE[g.kind] ?? (g.kind === 'POLYLINE' && g.fit ? 'a curve-fit polyline' : undefined);
   if (whole) {

@@ -42,8 +42,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | MOVE | M | 1 | Displacement, Base | x (#227, #229: base/second point, Displacement, ↵ as displacement; dragged with the cursor) |
 | COPY | CO, CP | 1 | Displacement, mOde (Single/Multiple), Array | x (#227, #229: all options incl. Array Fit and Undo; dragged with the cursor, an Array is not) |
 | ROTATE | RO | 1 | Copy, Reference | x (#227, #229: Copy, Reference with Points, ANGDIR/ANGBASE line; dragged with the cursor) |
-| SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | ~ (#227, #229: Copy, Reference with Points, dragged with the cursor; a table's cell text heights do not rescale yet) |
-| STRETCH | S | 1 | crossing/polygon; dims/defpoints follow | ~ (#229: the last crossing window (CPolygon with M3-04), Displacement, dragged with the cursor; dimensions, hatches, multilines, multileaders, regions and viewports move only when wholly inside until M2-10) |
+| SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | ~ (#227, #229: Copy, Reference with Points, dragged with the cursor; a table's cell text heights do not rescale yet; scaled dimensions are regenerated, #239) |
+| STRETCH | S | 1 | crossing/polygon; dims/defpoints follow | ~ (#229: the last crossing window (CPolygon with M3-04), Displacement, dragged with the cursor; hatches, multilines, multileaders, regions and viewports move only when wholly inside; dimensions stretch their definition points inside and are regenerated, #239) |
 | MIRROR | MI | 1 | MIRRTEXT | x (#227, #229: MIRRTEXT and MIRRHATCH, Erase source; MTEXT always stays readable; dragged with the cursor) |
 | OFFSET | O | 2 | Through, Erase, Layer, Multiple, Undo; gap types | |
 | TRIM | TR | 2 | Fence, Crossing, Project(2D), Edge, eRase, Undo; Shift→Extend; ↵↵ all | |

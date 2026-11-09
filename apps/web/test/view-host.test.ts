@@ -48,6 +48,10 @@ class Target implements ViewTarget {
     this.calls.push(`text ${t.contents}`),
     Promise.resolve(this.textKnown ? { minX: 0, minY: 0, maxX: 2, maxY: 1 } : undefined)
   );
+  textWidths = (texts: readonly MTextGeometry[]) => (
+    this.calls.push(`widths ${texts.map((t) => t.contents).join(',')}`),
+    Promise.resolve(texts.map((t) => (this.textKnown ? t.contents.length : null)))
+  );
 }
 
 /** The view requests answer at once; only selection's wait for the renderer. */
@@ -136,6 +140,35 @@ describe('answerView', () => {
       message: 'The text cannot be measured.',
     });
     expect(t.calls).toEqual(['text NOTE', 'text NOTE']);
+  });
+
+  it('measures the widths of texts for dimension regeneration (M2-10 part 3)', async () => {
+    const t = new Target(true);
+    const ctx = context(t).ctx;
+    const text: MTextGeometry = {
+      kind: 'MTEXT',
+      contents: '12.5',
+      style: '11',
+      position: { x: 0, y: 0 },
+      height: 1,
+      width: 0,
+      rotation: 0,
+      attachment: 5,
+      direction: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    };
+    const texts = [text, { ...text, contents: 'R4' }];
+    expect(await answerView({ op: 'textWidths', texts }, ctx)).toEqual({
+      ok: true,
+      widths: [4, 2],
+    });
+    t.textKnown = false;
+    expect(await answerView({ op: 'textWidths', texts }, ctx)).toEqual({
+      ok: true,
+      widths: [null, null],
+    });
+    expect(t.calls).toEqual(['widths 12.5,R4', 'widths 12.5,R4']);
   });
 
   it('answers the view as VIEWSIZE and width, and whether paper space shows', () => {

@@ -24,6 +24,7 @@ import type { TransformOptions } from '../../edit/transform';
 import { formatNumber, type Prompt, type PromptAnswer, type SelectionWindow } from '../prompt';
 import type { Box } from '../../geom/bounds';
 import type { CommandContext, CommandDef } from '../command';
+import { regenerateDimensions } from './dimensions';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -427,8 +428,9 @@ export function scaleCommand(): CommandDef {
         if (factor === undefined) return;
         last = factor;
         const t = scaleAbout(base, factor);
-        if (copying) copy(ctx, ids, t, 'copied');
-        else transform(ctx, ids, t, 'scaled');
+        const report = copying ? copy(ctx, ids, t, 'copied') : transform(ctx, ids, t, 'scaled');
+        // A scaled dimension measures the scaled distance, in its own text height.
+        await regenerateDimensions(ctx, report.regenerate ?? []);
         return;
       }
     },
@@ -514,6 +516,8 @@ export function stretchCommand(): CommandDef {
       if (sel.kind !== 'selection' || sel.ids.length === 0) return;
       const ids = sel.ids;
       const w = sel.window ? await stretchWindow(ctx, sel.window) : undefined;
+      // Dimensions stretch when they can be regenerated (M2-10 part 3).
+      const options = { dimensions: ctx.dimensions !== undefined };
       const a = yield ctx.prompt.point({
         message: 'Specify base point or',
         options: ['Displacement'],
@@ -523,7 +527,7 @@ export function stretchCommand(): CommandDef {
       if (a.kind === 'point') {
         const base = a.point;
         // What moves whole and what is reshaped does not depend on the displacement.
-        const plan = planStretch(ctx.model, ids, w, { x: 0, y: 0 });
+        const plan = planStretch(ctx.model, ids, w, { x: 0, y: 0 }, options);
         const b = yield ctx.prompt.point({
           message: 'Specify second point or',
           defaultLabel: 'use first point as displacement',
@@ -544,7 +548,10 @@ export function stretchCommand(): CommandDef {
       if (!d) return;
       last = d;
       const disp = d;
-      run(ctx, 'stretched', (b) => stretchObjects(b, ctx.model, ids, w, disp));
+      const report = run(ctx, 'stretched', (b) =>
+        stretchObjects(b, ctx.model, ids, w, disp, options),
+      );
+      await regenerateDimensions(ctx, report.regenerate ?? []);
     },
   };
 }

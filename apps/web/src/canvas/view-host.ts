@@ -42,6 +42,8 @@ export interface ViewTarget {
   zoomObjects(ids: readonly EntityId[]): Promise<boolean>;
   /** The box an MTEXT's glyphs fill (M2-09), or undefined when no loaded font draws it. */
   textBox(text: MTextGeometry): Promise<Box | undefined>;
+  /** The widths MTEXTs are laid out at (M2-10 part 3), null for one no loaded font draws. */
+  textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
 }
 
 /** A named view of the space shown; `view` is undefined when a 2D canvas cannot show it. */
@@ -158,6 +160,8 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
         .then((box) =>
           box ? { ok: true, box } : { ok: false, message: 'The text cannot be measured.' },
         );
+    case 'textWidths':
+      return t.textWidths(r.texts).then((widths) => ({ ok: true, widths }));
     case 'save': {
       const view = r.window ? windowView(r.window.a, r.window.b, t.size) : t.view;
       if (!view) return { ok: false, message: 'The window has no area.' };

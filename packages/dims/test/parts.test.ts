@@ -9,7 +9,7 @@ import {
   type HeaderValue,
   type TextMeasure,
 } from '@triya/engine';
-import { compareParts, dimensionParts, type DimPart } from '../src/index';
+import { compareParts, dimensionParts, regenerateDimension, type DimPart } from '../src/index';
 
 const STYLE = '27';
 const TICK = 'A1';
@@ -562,5 +562,77 @@ describe('tolerances, limits and alternate units (part 2)', () => {
     };
     const ps = parts(geom, model({ ...ISO, DIMALT: true, DIMALTF: 25.4, DIMALTD: 0, DIMALTU: 2 }));
     expect(of(ps, 'MTEXT')[0]).toMatchObject({ contents: 'R10 [R254]' });
+  });
+});
+
+describe('regeneration on touch (M2-10 part 3)', () => {
+  /** A model whose dimension keeps a stored `*D` block (empty: only its existence matters). */
+  function stored(): DocumentModel {
+    const m = model();
+    const init = {
+      handle: '60',
+      name: '*D1',
+      basePoint: { x: 0, y: 0 },
+    };
+    (m.blocks as Map<string, typeof init>).set('60', init);
+    return m;
+  }
+
+  it('places the text afresh where the stored block kept it, and writes DXF 11 back', () => {
+    const m = stored();
+    // Stretched: the second origin moved to x = 120, the text still where it was stored.
+    const geom = linear({ block: '60', second: { x: 120, y: 0 } });
+    const kept = of(dimensionParts({ geom }, m, measure)!, 'MTEXT')[0];
+    expect(kept).toMatchObject({ contents: '120', position: { x: 50, y: 21.875 } });
+    const r = regenerateDimension({ geom }, m, measure)!;
+    expect(of(r.parts, 'MTEXT')[0]).toMatchObject({
+      contents: '120',
+      position: { x: 60, y: 21.875 },
+    });
+    expect(r.geom.textPosition).toEqual({ x: 60, y: 21.875 });
+    expect(r.geom.block).toBe('60');
+    expect(r.parts.filter((p) => p.defpoint)).toHaveLength(3);
+  });
+
+  it('puts a linear DXF 10 back on the second extension line', () => {
+    const geom = linear({ second: { x: 120, y: -5 }, definitionPoint: { x: 100, y: 20 } });
+    const r = regenerateDimension({ geom }, model(), measure)!;
+    expect(r.geom.definitionPoint).toEqual({ x: 120, y: 20 });
+    const aligned = regenerateDimension(
+      {
+        geom: linear({
+          dimType: 'aligned',
+          second: { x: 100, y: 0 },
+          definitionPoint: { x: 90, y: 20 },
+        }),
+      },
+      model(),
+      measure,
+    )!;
+    expect(aligned.geom.definitionPoint).toEqual({ x: 100, y: 20 });
+  });
+
+  it('keeps text the user placed (DXF 70 bit 128)', () => {
+    const geom = linear({
+      second: { x: 120, y: 0 },
+      textUserPositioned: true,
+      textPosition: { x: 30, y: 25 },
+    });
+    const r = regenerateDimension({ geom }, model(), measure)!;
+    expect(r.geom.textPosition).toEqual({ x: 30, y: 25 });
+    expect(of(r.parts, 'MTEXT')[0]).toMatchObject({ position: { x: 30, y: 25 } });
+  });
+
+  it('gives the text part DXF 11, and nothing for what it cannot measure or draw', () => {
+    for (const geom of [linear(), linear({ dimType: 'aligned' })] as DimensionGeometry[]) {
+      const r = regenerateDimension({ geom }, model(), measure)!;
+      expect(r.parts.find((p) => p.geom.kind === 'MTEXT')?.textPosition).toEqual(
+        r.geom.textPosition,
+      );
+    }
+    expect(regenerateDimension({ geom: linear() }, model(), () => undefined)).toBeUndefined();
+    expect(
+      regenerateDimension({ geom: { kind: 'POINT', position: { x: 0, y: 0 } } }, model(), measure),
+    ).toBeUndefined();
   });
 });

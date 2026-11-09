@@ -7,6 +7,7 @@ import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
 import type { EntityGeometry } from '../model/types';
+import type { DimensionRegenerator } from '../edit/dimension-block';
 import { ALIASES } from './aliases';
 import type { ViewHost } from './view/host';
 import type { UndoStack } from './undo';
@@ -74,6 +75,11 @@ export interface CommandContext {
   message(text: string): void;
   /** The canvas of the space shown, for the view commands (ZOOM, PAN, REGEN, VIEW; M2-02). */
   readonly view: ViewHost;
+  /**
+   * The dimension engine (M2-10 part 3): what an edited dimension's block is rewritten with.
+   * Without it (scripts, tests that do not give one) dimensions are only carried whole.
+   */
+  readonly dimensions?: DimensionRegenerator | undefined;
 }
 
 export interface CommandDef {

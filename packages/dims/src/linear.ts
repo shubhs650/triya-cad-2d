@@ -139,6 +139,20 @@ function defaultTextAt(
   return add(add(f.s1, f.along, along), off);
 }
 
+/**
+ * DXF 10 of a linear or aligned dimension as AutoCAD writes it when it regenerates: where the
+ * dimension line meets the second extension line. STRETCH moves the points inside its window
+ * one by one; regeneration puts DXF 10 back on the second extension line (M2-10 part 3).
+ */
+export function linearDefinitionPoint(g: Linear): Vec2 {
+  const u =
+    g.dimType === 'aligned'
+      ? (unit(sub(g.second, g.first)) ?? fromAngle(0))
+      : fromAngle(g.rotation ?? 0);
+  const extDir = g.oblique !== undefined && g.oblique !== 0 ? fromAngle(g.oblique) : perp(u);
+  return meet(g.second, extDir, g.definitionPoint, u);
+}
+
 export function linearParts(
   g: Linear,
   s: DimStyle,
@@ -184,6 +198,7 @@ export function linearParts(
   let placement = { textInside: true, arrowsInside: true };
   let text: ReturnType<typeof textGeometry> | undefined;
   let leader: Vec2[] | undefined;
+  let dxf11: Vec2 | undefined;
   if (label !== undefined) {
     const lineAngle = angleOf(along);
     const probe = textGeometry((centred ? '\\A1;' : '') + label, g.textPosition, 0, s);
@@ -198,6 +213,7 @@ export function linearParts(
         ? g.textPosition
         : add(add(overExt.at, outward, s.gap + width / 2), textOffset(s, up, up));
       text = { ...probe, position: at, rotation };
+      dxf11 = at;
     }
     placement = fit(room, overExt ? 0 : width, overExt ? false : centred, s, ticks);
     if (!overExt) {
@@ -234,6 +250,7 @@ export function linearParts(
         middle = add(at, textDir, side * (width / 2));
       }
       text = { ...probe, position: middle, rotation };
+      dxf11 = at;
       placement = { textInside: !outside, arrowsInside: placement.arrowsInside };
     }
   }
@@ -298,7 +315,7 @@ export function linearParts(
     out.push(...arrowParts(s1, base1, s.blk1, s, model, along));
     out.push(...arrowParts(s2, base2, s.blk2, s, model, along));
   }
-  if (text) out.push({ ...s.text, geom: text });
+  if (text) out.push({ ...s.text, geom: text, textPosition: dxf11 ?? text.position });
   out.push(defpoint(g.first), defpoint(g.second), defpoint(g.definitionPoint));
   return out;
 }

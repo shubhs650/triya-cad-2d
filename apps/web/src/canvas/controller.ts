@@ -528,6 +528,11 @@ export class CanvasController {
     return true;
   }
 
+  /** The widths MTEXTs are laid out at (M2-10 part 3: dimension regeneration). */
+  textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
+    return this.#host.textWidths(texts);
+  }
+
   /** The box an MTEXT's glyphs fill in the fonts loaded (M2-09, MLEADEREDIT). */
   textBox(text: MTextGeometry): Promise<Box | undefined> {
     return this.#host.textBox(text);
