@@ -137,6 +137,9 @@ test('typed and menu overrides, OTRACK from an acquired endpoint, Tab, GRID and 
   // Tab: where that line meets the first, Endpoint and Intersection; Tab steps to the other.
   await type(page, 'L', 'Specify first point:');
   await move(X0 + 100, Y0, -3, -3);
+  // The tip may still show the Endpoint the cursor was at when L started; wait for the corner's
+  // two candidates before Tab.
+  await expect(tip(page)).toHaveAttribute('data-candidates', '2');
   await expect(tip(page)).toHaveText('Endpoint');
   await page.keyboard.press('Tab');
   await expect(tip(page)).toHaveText('Intersection');

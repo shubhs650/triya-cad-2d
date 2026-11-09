@@ -1284,6 +1284,8 @@ export class CanvasController {
     if (tip) {
       this.#tip.textContent = tip;
       this.#tip.dataset['mode'] = hit?.mode ?? (c.polar ? 'polar' : 'track');
+      // How many snap points Tab steps through here (tests wait on it).
+      this.#tip.dataset['candidates'] = String(hit ? this.#hits.length : 0);
       this.#tip.style.left = `${this.#pointer!.offsetX + 16}px`;
       this.#tip.style.top = `${this.#pointer!.offsetY - 34}px`;
     }
