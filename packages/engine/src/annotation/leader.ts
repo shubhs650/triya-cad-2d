@@ -29,6 +29,7 @@ import type {
   LinetypeRef,
   Lineweight,
 } from '../model/types';
+import { DIMVAR_BY_CODE } from './dimvars';
 import {
   arrowheadParts,
   linetypeRef,
@@ -36,23 +37,8 @@ import {
   type AnnotationTables,
 } from './multileader';
 
-/** DIMVARs leaders and tolerances read, by their DXF group code in a `DSTYLE` override list. */
-const DSTYLE_VARS: Readonly<Record<number, string>> = {
-  40: 'DIMSCALE',
-  41: 'DIMASZ',
-  77: 'DIMTAD',
-  140: 'DIMTXT',
-  147: 'DIMGAP',
-  176: 'DIMCLRD',
-  178: 'DIMCLRT',
-  340: 'DIMTXSTY',
-  341: 'DIMLDRBLK',
-  345: 'DIMLTYPE',
-  371: 'DIMLWD',
-};
-
 /** The `DSTYLE` overrides in an entity's ACAD xdata (each a 1070 group code, then its value). */
-function dstyleOverrides(
+export function dstyleOverrides(
   xdata: Entity['xdata'],
   model: AnnotationTables,
 ): Record<string, DimVarValue> {
@@ -65,7 +51,7 @@ function dstyleOverrides(
     for (let i = at + 2; i + 1 < v.length; i += 2) {
       const code = v[i]!;
       if (code.code !== 1070) break; // the closing 1002 "}"
-      const name = DSTYLE_VARS[Number(code.value)];
+      const name = DIMVAR_BY_CODE[Number(code.value)];
       const value = v[i + 1]!.value;
       if (name && (typeof value === 'number' || typeof value === 'string')) out[name] = value;
     }
