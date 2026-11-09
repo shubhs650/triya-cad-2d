@@ -57,7 +57,7 @@ export interface SelectionLoopOptions {
   readonly editable?: boolean;
   /** The pre-selection at `Command:`, which shows no prompt but its window's corner. */
   readonly atCommand?: boolean;
-  /** Ends at the first selection, as SIngle does, without saying so. */
+  /** Ends at the first step that takes objects, as SIngle does (M2-08). */
   readonly single?: boolean;
 }
 

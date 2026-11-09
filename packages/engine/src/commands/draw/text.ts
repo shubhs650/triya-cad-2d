@@ -534,6 +534,7 @@ export function textEditCommand(): CommandDef {
           options: ['Undo', 'Mode'],
           editable: true,
           single: true,
+          pickfirst: true,
         });
         if (a.kind === 'keyword' && a.keyword === 'Undo') {
           const last = done.pop();

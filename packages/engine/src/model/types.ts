@@ -1758,4 +1758,9 @@ export interface DocumentMeta {
   readonly insUnits: number;
   /** `$MEASUREMENT`. */
   readonly measurement: 'imperial' | 'metric';
+  /**
+   * The named-object (root) dictionary's handle, which drawing-wide objects a command creates
+   * are filed under (WIPEOUT Frames' WIPEOUTVARIABLES, M2-08).
+   */
+  readonly rootDictionary?: Handle;
 }

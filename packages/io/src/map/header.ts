@@ -87,6 +87,7 @@ export function mapHeader(doc: CadDocument): MappedHeader {
       codePage: h.codePage,
       insUnits: h.insUnits as number,
       measurement: (h.measurementUnits as number) === 0 ? 'imperial' : 'metric',
+      ...(doc.rootDictionary && { rootDictionary: hex(doc.rootDictionary.handle) }),
     },
   };
 }

@@ -250,6 +250,8 @@ export class CanvasController {
   #mode: CanvasMode = 'none';
   /** The prompt the drawing's command waits at, when it takes points; undefined otherwise. */
   #prompt: Prompt | undefined;
+  /** The freehand prompt shown has been answered by the cursor (one answer per prompt). */
+  #traced = false;
   /** The running command's preview geometry, drawn with the rubber band. */
   #preview: readonly RenderPrimitive[] = [];
   /** The renderer is drawing objects dragged with the cursor (M2-06 part 2). */
@@ -454,6 +456,7 @@ export class CanvasController {
     const picking =
       prompt && (prompt.kind === 'point' || prompt.kind === 'distance' || prompt.kind === 'angle');
     this.#prompt = picking ? prompt : undefined;
+    this.#traced = false;
     this.canvas.dataset['picking'] = String(!!picking);
     // A new prompt has a new base point, which PER and TAN are drawn from.
     this.#hit = undefined;
@@ -1041,6 +1044,7 @@ export class CanvasController {
           if (moved > CLICK_PX && e.buttons & 1) corner.dragged = true;
           this.#band(corner.world, world);
         } else if (this.#prompt && this.#mode === 'none') {
+          this.#traceTo(world);
           this.#requestSnap();
           this.#track();
           return;
@@ -1271,6 +1275,19 @@ export class CanvasController {
     const p = this.#prompt;
     const missed = p?.kind === 'point' && p.osnap !== undefined && p.osnap !== 0;
     return { point: this.#constrain(world).point, ...(missed && { missed: true }) };
+  }
+
+  /**
+   * REVCLOUD Freehand (M2-08): at a prompt that traces, the cursor answers once it has moved the
+   * prompt's spacing from its last point, without a click, as AutoCAD follows the crosshairs.
+   */
+  #traceTo(world: Vec2 | undefined): void {
+    const p = this.#prompt;
+    const trace = p?.kind === 'point' ? p.trace : undefined;
+    if (!trace || !world || this.#traced) return;
+    if (Math.hypot(world.x - trace.from.x, world.y - trace.from.y) < trace.spacing) return;
+    this.#traced = true;
+    this.#hooks.onPick?.(world, { shift: false, release: false });
   }
 
   /**

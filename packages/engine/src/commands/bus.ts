@@ -624,7 +624,8 @@ export class PromptBus {
 
   /** A "Select objects" prompt: answered by the pre-selection, or built pick by pick. */
   async #beginSelection(frame: Frame, prompt: Extract<Prompt, { kind: 'selection' }>) {
-    const pre = frame.transparent ? undefined : this.#pickfirst;
+    const pre =
+      frame.transparent || (prompt.single && !prompt.pickfirst) ? undefined : this.#pickfirst;
     const preWindow = this.#pickfirstWindow;
     this.#pickfirst = this.#pickfirstWindow = undefined;
     if (pre) {
