@@ -96,6 +96,9 @@ export interface TextEditorRequest {
   readonly style: Handle;
   readonly fontFile: string;
   readonly trueTypeFlags: number;
+  /** The style's width factor and obliquing (radians), which MTEXT contents are relative to. */
+  readonly widthFactor?: number;
+  readonly obliqueAngle?: number;
   /**
    * The text being edited (TEXTEDIT, M2-07 part 2): a TEXT's value or an MTEXT's contents. The
    * editor opens holding it and answers once, `editor: true`, with the whole new value.

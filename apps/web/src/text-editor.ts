@@ -149,3 +149,60 @@ export function toggleStack(
   };
   return { spans: tidy([...head, stack, ...tail]), caret: a + 1 };
 }
+
+/**
+ * The `\p` values of the paragraph `at` is in: those of the break before it, or the first
+ * paragraph's. A paragraph break typed there takes them, so the new paragraph keeps its
+ * formatting, as in AutoCAD's editor.
+ */
+export function paragraphAt(spans: Spans, first: readonly string[], at: number): readonly string[] {
+  let codes = first;
+  let pos = 0;
+  for (const s of spans) {
+    if (pos >= at) break;
+    if (s.type === 'break') codes = s.paragraph ?? [];
+    pos += unitLength(s);
+  }
+  return codes;
+}
+
+/**
+ * AutoStack (AutoCAD's "AutoStack Properties", defaults): numbers either side of `/`, `#` or
+ * `^`, followed by the space just typed before `caret`, become a stack. `/` and `#` give a
+ * diagonal fraction (AutoCAD's default for `/`), `^` a tolerance; the space stays. Undefined
+ * when there is nothing to stack.
+ */
+export function autoStack(
+  spans: Spans,
+  caret: number,
+): { spans: MTextSpan[]; caret: number } | undefined {
+  let pos = 0;
+  for (let i = 0; i < spans.length; i++) {
+    const s = spans[i]!;
+    const len = unitLength(s);
+    if (s.type === 'text' && caret > pos && caret <= pos + len) {
+      const before = s.text.slice(0, caret - pos);
+      const m = /(?:^|[^\w.])(\d+(?:\.\d+)?)([/#^])(\d+(?:\.\d+)?) $/.exec(before);
+      if (!m) return undefined;
+      const whole = m[1]!.length + 1 + m[3]!.length;
+      const start = before.length - 1 - whole;
+      const stack: MTextSpan = {
+        type: 'stack',
+        upper: m[1]!,
+        lower: m[3]!,
+        kind: m[2] === '^' ? 'tolerance' : 'diagonal',
+        format: s.format,
+      };
+      const out = [
+        ...spans.slice(0, i),
+        { ...s, text: s.text.slice(0, start) },
+        stack,
+        { ...s, text: s.text.slice(start + whole) },
+        ...spans.slice(i + 1),
+      ];
+      return { spans: tidy(out), caret: pos + start + 2 };
+    }
+    pos += len;
+  }
+  return undefined;
+}

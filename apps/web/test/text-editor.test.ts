@@ -3,7 +3,9 @@
 import type { MTextSpan } from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import {
+  autoStack,
   formatAt,
+  paragraphAt,
   formatRange,
   hasFormat,
   insertSpans,
@@ -82,5 +84,50 @@ describe('editor spans', () => {
     const back = toggleStack(r.spans, 2, 3);
     expect(back.spans).toEqual([t('x 1/2 y', { underline: true })]);
     expect(back.caret).toBe(5);
+  });
+});
+
+describe('AutoStack', () => {
+  const stack = (upper: string, lower: string, kind: string, format = {}): MTextSpan =>
+    ({ type: 'stack', upper, lower, kind, format }) as MTextSpan;
+
+  it('stacks numbers around / as a diagonal fraction when a space follows', () => {
+    expect(autoStack([t('Gap 1/2 ')], 8)).toEqual({
+      spans: [t('Gap '), stack('1', '2', 'diagonal'), t(' ')],
+      caret: 6,
+    });
+    expect(autoStack([t('3#4 more')], 4)).toEqual({
+      spans: [stack('3', '4', 'diagonal'), t(' more')],
+      caret: 2,
+    });
+    expect(autoStack([t('+0.1^0.05 ', { underline: true })], 10)?.spans).toEqual(
+      [
+        t('+'),
+        stack('0.1', '0.05', 'tolerance', { underline: true }),
+        t(' ', { underline: true }),
+      ].map((s, i) => (i === 0 ? t('+', { underline: true }) : s)),
+    );
+  });
+
+  it('leaves anything else', () => {
+    expect(autoStack([t('a/b ')], 4)).toBeUndefined();
+    expect(autoStack([t('1/2')], 3)).toBeUndefined();
+    expect(autoStack([t('x1/2 ')], 5)).toBeUndefined();
+    expect(autoStack([t('1/ 2 ')], 5)).toBeUndefined();
+  });
+});
+
+describe('paragraph values', () => {
+  it("is the first paragraph's, then each break's", () => {
+    const spans: MTextSpan[] = [
+      t('ab'),
+      { type: 'break', paragraph: ['xqc'] },
+      t('cd'),
+      { type: 'break' },
+      t('e'),
+    ];
+    expect(paragraphAt(spans, ['xqr'], 1)).toEqual(['xqr']);
+    expect(paragraphAt(spans, ['xqr'], 4)).toEqual(['xqc']);
+    expect(paragraphAt(spans, ['xqr'], 7)).toEqual([]);
   });
 });

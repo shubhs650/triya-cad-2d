@@ -456,6 +456,8 @@ export function mtextCommand(): CommandDef {
                 style: style.handle,
                 fontFile: style.font,
                 trueTypeFlags: style.trueTypeFlags,
+                widthFactor: style.widthFactor,
+                obliqueAngle: style.obliqueAngle,
               },
             }),
         });
@@ -582,7 +584,12 @@ async function* editText(
 ): AsyncGenerator<Prompt, TextEdit | false | undefined, PromptAnswer> {
   const g = entity.geom as TextGeometry | MTextGeometry;
   const style = ctx.model.tables.textStyles.get(g.style);
-  const font = { fontFile: style?.font ?? '', trueTypeFlags: style?.trueTypeFlags ?? 0 };
+  const font = {
+    fontFile: style?.font ?? '',
+    trueTypeFlags: style?.trueTypeFlags ?? 0,
+    widthFactor: style?.widthFactor ?? 1,
+    obliqueAngle: style?.obliqueAngle ?? 0,
+  };
   const old = g.kind === 'TEXT' ? g.value : g.contents;
   const a = yield ctx.prompt.string({
     message: 'Enter text',
