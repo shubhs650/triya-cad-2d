@@ -1,7 +1,7 @@
 // The dimension engine's health check over the public corpus (M2-10, DEC-011, DEC-050): every
 // linear, aligned, radius, diameter and angular dimension with a stored `*D` block is
 // regenerated and compared with that block (`dimensionHealth`). The roadmap asks for ≥ 95 %
-// within tolerance. Two legacy samples cannot state their dimensions as their blocks were drawn
+// within tolerance. Three legacy sample files cannot state their dimensions as their blocks were drawn
 // (below); their dimensions are counted apart (DEC-050) and may not get worse.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
