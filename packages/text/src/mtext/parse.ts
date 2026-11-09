@@ -93,6 +93,12 @@ export interface MTextParagraph {
   readonly items: readonly MTextItem[];
   /** What ends it: `\P`, `\N` (column break), `\X` (dimension line) or the contents' end. */
   readonly end: 'paragraph' | 'column' | 'dimline' | 'end';
+  /**
+   * The `\p` values in effect for it, as written and in order (those carried in from earlier
+   * paragraphs first); absent when none. The in-place editor keeps them as they are (M2-07),
+   * since its `style` drops the keys layout does not draw (bullets, numbering, line spacing).
+   */
+  readonly codes?: readonly string[];
 }
 
 export interface MTextDocument {
@@ -310,12 +316,15 @@ function fieldEnd(s: string, start: number): number {
 interface Context {
   char: MTextCharStyle;
   para: MTextParagraphStyle;
+  /** The `\p` values `para` was made from. */
+  codes: readonly string[];
 }
 
 class Builder {
   readonly paragraphs: MTextParagraph[] = [];
   items: MTextItem[] = [];
   paraStyle: MTextParagraphStyle;
+  paraCodes: readonly string[] = [];
   pending = '';
   pendingStyle: MTextCharStyle | undefined;
 
@@ -346,11 +355,17 @@ class Builder {
     this.items.push(i);
   }
 
-  end(kind: MTextParagraph['end'], next: MTextParagraphStyle): void {
+  end(kind: MTextParagraph['end'], next: Context): void {
     this.flush();
-    this.paragraphs.push({ style: this.paraStyle, items: this.items, end: kind });
+    this.paragraphs.push({
+      style: this.paraStyle,
+      items: this.items,
+      end: kind,
+      ...(this.paraCodes.length > 0 && { codes: this.paraCodes }),
+    });
     this.items = [];
-    this.paraStyle = next;
+    this.paraStyle = next.para;
+    this.paraCodes = next.codes;
   }
 }
 
@@ -372,7 +387,7 @@ export function parseMText(
     strike: false,
     valign: 'bottom',
   };
-  let ctx: Context = { char: initial, para: DEFAULT_PARAGRAPH };
+  let ctx: Context = { char: initial, para: DEFAULT_PARAGRAPH, codes: [] };
   const stack: Context[] = [];
   const out = new Builder(ctx.para);
   const s = contents;
@@ -422,7 +437,7 @@ export function parseMText(
   };
   const newParagraph = (kind: MTextParagraph['end']): void => {
     flushLiteral();
-    out.end(kind, ctx.para);
+    out.end(kind, ctx);
   };
 
   while (i < s.length) {
@@ -594,7 +609,7 @@ export function parseMText(
     i++;
   }
   flushLiteral();
-  out.end('end', ctx.para);
+  out.end('end', ctx);
   return { paragraphs: out.paragraphs };
 
   function applyCode(code: string, v: string): void {
@@ -639,9 +654,10 @@ export function parseMText(
         setChar({ font: parseFont(v, code === 'F') });
         return;
       case 'p': {
-        ctx = { ...ctx, para: parseParagraph(v, ctx.para) };
+        ctx = { ...ctx, para: parseParagraph(v, ctx.para), codes: [...ctx.codes, v] };
         // A paragraph's properties are those last set in it, wherever in it they are set.
         out.paraStyle = ctx.para;
+        out.paraCodes = ctx.codes;
         return;
       }
     }
