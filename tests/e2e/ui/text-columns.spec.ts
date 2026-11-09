@@ -80,7 +80,16 @@ test('the Columns menu sets static columns and Alt+Enter breaks the column', asy
   await expect(menu).toHaveCount(0);
   // The paragraph after the column break starts the second column.
   const editor = page.getByRole('textbox', { name: 'Multiline text' });
-  await expect(editor.locator('.mtext-para').nth(1)).toHaveCSS('break-before', 'column');
+  const second = editor.locator('.mtext-para').nth(1);
+  await expect(second).toHaveCSS('break-before', 'column');
+  // The editor shows the columns: the second starts within the box, past the first's width.
+  const outer = (await editor.boundingBox())!;
+  const [a, b] = [
+    (await editor.locator('.mtext-para').first().boundingBox())!,
+    (await second.boundingBox())!,
+  ];
+  expect(b.x).toBeGreaterThan(a.x + a.width);
+  expect(b.x + b.width).toBeLessThanOrEqual(outer.x + outer.width + 1);
   await page.keyboard.press('Control+Enter');
   await expect(prompt(page)).toHaveText('Command:');
   const [g] = await mtexts(page);

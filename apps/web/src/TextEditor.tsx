@@ -1004,11 +1004,13 @@ function columnStyle(
   return {
     ...(width > 0 && { width: `${width * scale}px` }),
     ...(c && {
+      // The box's border and padding stay outside the columns: with the app's border-box
+      // sizing two columns and their gutter would not fit and the browser would make one.
+      boxSizing: 'content-box',
       height: `${c.height * scale}px`,
-      columnWidth: `${c.width * scale}px`,
       columnGap: `${c.gutter * scale}px`,
       columnFill: 'auto',
-      ...(c.type === 1 && { columnCount: c.count }),
+      ...(c.type === 1 ? { columnCount: c.count } : { columnWidth: `${c.width * scale}px` }),
     }),
   };
 }
@@ -1029,8 +1031,8 @@ function columnsFor(
   const h = request.height;
   const gutter = now?.gutter ?? 5 * h;
   const scale = (root.current?.getBoundingClientRect().width ?? 0) / (boxWidth(request, now) || 1);
-  const height =
-    now?.height ?? Math.max(5 * h, scale > 0 ? (root.current?.scrollHeight ?? 0) / scale : 25 * h);
+  const typed = scale > 0 ? (root.current?.scrollHeight ?? 0) / scale : 25 * h;
+  const height = now?.height ?? Math.max(5 * h, Math.round(typed * 1000) / 1000);
   if (pick === 'dynamic') {
     const width = now?.width ?? (request.width > 0 ? request.width : 6 * h);
     return { type: 2, count: now?.count ?? 1, width, gutter, height };
