@@ -6,7 +6,7 @@
 // paths draw with the same code, so they render identically; the Playwright pixel test checks
 // that. Calls are fire-and-forget either way; those that need an answer return promises.
 
-import type { Box, ChangeSet, EntityId, OsnapHit, OsnapQuery } from '@triya/engine';
+import type { Box, ChangeSet, DragMotion, EntityId, OsnapHit, OsnapQuery } from '@triya/engine';
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession, type FontSources, type RenderDocument } from './session';
@@ -221,6 +221,12 @@ export class RendererHost {
   setHighlight(ids: readonly EntityId[]): void {
     if (this.#session) this.#session.renderer.setHighlight(ids);
     else this.#post({ type: 'highlight', ids });
+  }
+
+  /** The objects a command drags with the cursor (M2-06 part 2); undefined ends the drag. */
+  setDrag(motion: DragMotion | undefined): void {
+    if (this.#session) this.#session.renderer.setDrag(motion);
+    else this.#post({ type: 'drag', motion: motion ?? null });
   }
 
   /** The extents of some entities (ZOOM Object, M2-03); undefined when none is known. */

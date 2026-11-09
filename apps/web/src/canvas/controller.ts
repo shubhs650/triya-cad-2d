@@ -28,9 +28,14 @@
 // (AutoSnap's marker and the mode's name). The render worker finds the snaps (`snap`), one
 // request in flight at a time; a click waits for the snaps at its own point before it is
 // sent, so what is marked is what is picked. Typed points are never changed.
+//
+// Dragging (M2-06 part 2): a prompt that drags objects (MOVE's second point, ROTATE's angle,
+// STRETCH's second point…) has the renderer draw them moved to the cursor on the transient
+// layer, by the same motion the answer will make (`dragMotion`).
 import RenderWorker from '@triya/render/worker?worker';
 import {
   constrainCursor,
+  dragMotion,
   layoutSheet,
   polarLabel,
   unionBox,
@@ -204,6 +209,8 @@ export class CanvasController {
   #prompt: Prompt | undefined;
   /** The running command's preview geometry, drawn with the rubber band. */
   #preview: readonly RenderPrimitive[] = [];
+  /** The renderer is drawing objects dragged with the cursor (M2-06 part 2). */
+  #dragging = false;
   #drag: { readonly pointer: number; readonly zoom: boolean; x: number; y: number } | undefined;
   #lastMiddle: { readonly t: number; readonly x: number; readonly y: number } | undefined;
   #lastWheel = -Infinity;
@@ -742,6 +749,13 @@ export class CanvasController {
    */
   #rubberBand(cursor: Point | undefined): void {
     const p = this.#prompt;
+    // The objects the prompt drags follow the cursor as the drafting aids place it (M2-06).
+    const motion =
+      p?.drag && cursor && this.#mode === 'none' ? dragMotion(p.drag, cursor) : undefined;
+    if (motion || this.#dragging) {
+      this.#host.setDrag(motion);
+      this.#dragging = motion !== undefined;
+    }
     const from = p?.kind === 'point' ? p.rubberBand?.from : p && 'base' in p ? p.base : undefined;
     const box = p?.kind === 'point' && p.rubberBand?.box;
     const selection = p?.kind === 'point' ? p.rubberBand?.selection : undefined;

@@ -2,7 +2,7 @@
 // `Renderer`; only this package knows it is Canvas 2D underneath, so a WebGL renderer can
 // replace it behind the same interface (DEC-006).
 
-import type { Box, ChangeSet, EntityId, Handle } from '@triya/engine';
+import type { Box, ChangeSet, DragMotion, EntityId, Handle } from '@triya/engine';
 
 /**
  * World → screen: the world point `center` sits at the middle of the viewport, `scale` is
@@ -328,6 +328,11 @@ export interface Renderer {
   select(query: SelectQuery): EntityId[];
   /** The entities to draw selected (M2-03): highlighted over the scene; none clears it. */
   setHighlight(ids: readonly EntityId[]): void;
+  /**
+   * The objects a command drags with the cursor (M2-06 part 2), drawn moved on the transient
+   * layer over their originals; undefined ends the drag.
+   */
+  setDrag(motion: DragMotion | undefined): void;
 }
 
 /** A selection window in world units (M2-03). */
