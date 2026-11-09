@@ -1,0 +1,328 @@
+// A Properties palette edit (M2-21): one property set on every selected object of the type the
+// palette shows. Each edit is one undo step, as in AutoCAD, and goes through the same edits the
+// commands use where the property moves the object (Position, Center, Rotation of a reference or
+// a text: MOVE and ROTATE's `transformObjects`, which keep attributes, associativity and a
+// dimension's block in step).
+//
+// Objects on locked layers are not changed ("on a locked layer"); a value the property cannot
+// take changes nothing and says why, as AutoCAD's palette refuses it ("Invalid input").
+import { parseAngleValue, parseNumber } from '../commands/parse';
+import { moveBy, turnAbout } from '../edit/similarity';
+import { transformObjects } from '../edit/edit';
+import type { Vec2 } from '../geom/types';
+import type { ChangeSetBuilder } from '../model/builder';
+import type { DocumentModel } from '../model/document';
+import type { EntityPatch } from '../model/update';
+import type { Entity, EntityGeometry, InsertAttribute } from '../model/types';
+import {
+  MAX_TRANSPARENCY,
+  parseColorValue,
+  parseLineweightValue,
+  textPositionOf,
+  transparencyOf,
+  type PropertyValue,
+} from './sheet';
+
+/** What the palette sends: the row's key and the value chosen or typed. */
+export interface PropertyEdit {
+  readonly key: string;
+  /** A choice's option value, a number, or typed text (parsed as the row's kind). */
+  readonly value: PropertyValue;
+}
+
+export interface PropertyEditReport {
+  /** How many objects changed. */
+  readonly changed: number;
+  /** Reason → how many objects it kept out. */
+  readonly refused: ReadonlyMap<string, number>;
+  /** Why the value itself was refused (nothing changed), or undefined. */
+  readonly invalid?: string;
+}
+
+const LOCKED = 'on a locked layer';
+const INVALID = 'Invalid input';
+
+type Kind = 'distance' | 'positive' | 'angle' | 'number' | 'text' | 'yesNo';
+
+/** A typed or chosen value as a number of `kind`, or undefined when it does not read. */
+function numeric(v: PropertyValue, kind: Kind): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  if (typeof v !== 'string') return undefined;
+  if (kind === 'angle') return parseAngleValue(v);
+  return parseNumber(v.trim());
+}
+
+function yesNo(v: PropertyValue): boolean | undefined {
+  if (typeof v === 'boolean') return v;
+  if (v === 'yes') return true;
+  if (v === 'no') return false;
+  return undefined;
+}
+
+/**
+ * The patch a geometric property makes to one object, or a reason it cannot take it. Moves and
+ * turns are returned as such, for `transformObjects`.
+ */
+type Change =
+  | { readonly patch: EntityPatch }
+  | { readonly move: Vec2 }
+  | { readonly turn: { readonly about: Vec2; readonly by: number } }
+  | { readonly skip: true };
+
+const geomPatch = (geom: EntityGeometry): Change => ({ patch: { geom } });
+
+const delta = (from: number, to: number, axis: 'x' | 'y'): Vec2 =>
+  axis === 'x' ? { x: to - from, y: 0 } : { x: 0, y: to - from };
+
+/** How a geometry key changes `e` to `n`; undefined for a key the type does not have. */
+function geometryChange(
+  e: Entity,
+  key: string,
+  n: number | undefined,
+  b: boolean | undefined,
+  text: string | undefined,
+): Change | undefined | 'invalid' {
+  const g = e.geom;
+  const pos = n !== undefined && n > 0;
+  switch (g.kind) {
+    case 'LINE':
+      if (n === undefined) return key.match(/^(start|end)[XY]$/) ? 'invalid' : undefined;
+      if (key === 'startX') return geomPatch({ ...g, start: { ...g.start, x: n } });
+      if (key === 'startY') return geomPatch({ ...g, start: { ...g.start, y: n } });
+      if (key === 'endX') return geomPatch({ ...g, end: { ...g.end, x: n } });
+      if (key === 'endY') return geomPatch({ ...g, end: { ...g.end, y: n } });
+      return undefined;
+    case 'CIRCLE':
+    case 'ARC': {
+      if (key === 'centerX' || key === 'centerY') {
+        if (n === undefined) return 'invalid';
+        const axis = key === 'centerX' ? 'x' : 'y';
+        return { move: delta(g.center[axis], n, axis) };
+      }
+      const radius =
+        key === 'radius'
+          ? n
+          : g.kind === 'CIRCLE' && key === 'diameter' && n !== undefined
+            ? n / 2
+            : g.kind === 'CIRCLE' && key === 'circumference' && n !== undefined
+              ? n / (2 * Math.PI)
+              : g.kind === 'CIRCLE' && key === 'area' && n !== undefined && n > 0
+                ? Math.sqrt(n / Math.PI)
+                : undefined;
+      if (['radius', 'diameter', 'circumference', 'area'].includes(key)) {
+        if (g.kind === 'ARC' && key !== 'radius') return undefined;
+        if (radius === undefined || !pos) return 'invalid';
+        return geomPatch({ ...g, radius });
+      }
+      if (g.kind === 'ARC' && (key === 'startAngle' || key === 'endAngle')) {
+        if (n === undefined) return 'invalid';
+        return geomPatch({ ...g, [key]: normalizeAngle(n) });
+      }
+      return undefined;
+    }
+    case 'ELLIPSE':
+      if (key === 'centerX' || key === 'centerY') {
+        if (n === undefined) return 'invalid';
+        const axis = key === 'centerX' ? 'x' : 'y';
+        return { move: delta(g.center[axis], n, axis) };
+      }
+      return undefined;
+    case 'POINT':
+    case 'MTEXT':
+    case 'INSERT':
+    case 'TEXT': {
+      if (key === 'positionX' || key === 'positionY') {
+        if (n === undefined) return 'invalid';
+        const axis = key === 'positionX' ? 'x' : 'y';
+        const at = g.kind === 'TEXT' ? textPositionOf(g) : g.position;
+        return { move: delta(at[axis], n, axis) };
+      }
+      if (g.kind === 'POINT') return undefined;
+      if (key === 'rotation') {
+        if (n === undefined) return 'invalid';
+        const at = g.kind === 'TEXT' ? textPositionOf(g) : g.position;
+        return { turn: { about: at, by: n - g.rotation } };
+      }
+      if (g.kind === 'INSERT') return undefined;
+      if (key === 'height') {
+        if (n === undefined || n <= 0) return 'invalid';
+        return geomPatch({ ...g, height: n });
+      }
+      if (g.kind === 'MTEXT') {
+        if (key === 'width') {
+          if (n === undefined || n < 0) return 'invalid';
+          return geomPatch({ ...g, width: n });
+        }
+        if (key === 'lineSpacing') {
+          // MTEXT's line spacing factor: 0.25 to 4.00 (AutoCAD's range).
+          if (n === undefined || n < 0.25 || n > 4) return 'invalid';
+          return geomPatch({ ...g, lineSpacing: n });
+        }
+        return undefined;
+      }
+      if (key === 'contents') {
+        if (text === undefined) return 'invalid';
+        return geomPatch({ ...g, value: text });
+      }
+      if (key === 'widthFactor') {
+        // TEXT width factor: 0.01 to 100 (STYLE's range).
+        if (n === undefined || n < 0.01 || n > 100) return 'invalid';
+        return geomPatch({ ...g, widthFactor: n });
+      }
+      if (key === 'oblique') {
+        // Obliquing angle: −85° to 85°.
+        if (n === undefined || Math.abs(n) > (85 * Math.PI) / 180 + 1e-12) return 'invalid';
+        return geomPatch({ ...g, oblique: n });
+      }
+      if (key === 'upsideDown' || key === 'backward') {
+        if (b === undefined) return 'invalid';
+        return geomPatch({ ...g, [key]: b });
+      }
+      return undefined;
+    }
+    case 'LWPOLYLINE':
+      if (key === 'closed') {
+        if (b === undefined) return 'invalid';
+        return geomPatch({ ...g, closed: b });
+      }
+      if (key === 'elevation') {
+        if (n === undefined) return 'invalid';
+        return geomPatch(n === 0 ? withoutElevation(g) : { ...g, elevation: n });
+      }
+      return undefined;
+    default:
+      return undefined;
+  }
+}
+
+function withoutElevation<T extends { readonly elevation?: number }>(g: T): T {
+  const { elevation: _elevation, ...rest } = g;
+  return rest as T;
+}
+
+function normalizeAngle(a: number): number {
+  const tau = 2 * Math.PI;
+  return ((a % tau) + tau) % tau;
+}
+
+const ANGLE_KEYS = new Set(['rotation', 'startAngle', 'endAngle', 'oblique']);
+
+/** The General properties' patch, or 'invalid'; undefined for a key that is not General. */
+function generalPatch(model: DocumentModel, key: string, v: PropertyValue) {
+  switch (key) {
+    case 'color': {
+      const color = typeof v === 'string' ? parseColorValue(v) : undefined;
+      return color ? { color } : 'invalid';
+    }
+    case 'layer':
+      return typeof v === 'string' && model.tables.layers.has(v) ? { layer: v } : 'invalid';
+    case 'linetype':
+      return typeof v === 'string' &&
+        (v === 'ByLayer' || v === 'ByBlock' || model.tables.linetypes.has(v))
+        ? { linetype: v }
+        : 'invalid';
+    case 'ltScale': {
+      const n = numeric(v, 'number');
+      return n !== undefined && n > 0 ? { ltScale: n } : 'invalid';
+    }
+    case 'lineweight': {
+      const w = typeof v === 'string' ? parseLineweightValue(v) : parseLineweightValue(String(v));
+      return w !== undefined ? { lineweight: w } : 'invalid';
+    }
+    case 'transparency': {
+      if (v === 'ByLayer' || v === 'ByBlock') return { transparency: v };
+      const n = numeric(v, 'number');
+      return n !== undefined && Number.isInteger(n) && n >= 0 && n <= MAX_TRANSPARENCY
+        ? { transparency: transparencyOf(n) }
+        : 'invalid';
+    }
+    default:
+      return undefined;
+  }
+}
+
+const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Sets `edit` on `entities` (the selected objects of the type the palette shows) through `b`.
+ * A value that does not read changes nothing and reports `invalid`.
+ */
+export function applyPropertyEdit(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  entities: readonly Entity[],
+  edit: PropertyEdit,
+): PropertyEditReport {
+  const refused = new Map<string, number>();
+  const editable = entities.filter((e) => {
+    const locked = model.tables.layers.get(e.layer)?.locked === true;
+    if (locked) refused.set(LOCKED, (refused.get(LOCKED) ?? 0) + 1);
+    return !locked;
+  });
+  const general = generalPatch(model, edit.key, edit.value);
+  if (general === 'invalid') return { changed: 0, refused, invalid: INVALID };
+  if (general) {
+    let changed = 0;
+    for (const e of editable) {
+      const patch = general as EntityPatch;
+      const differs = Object.entries(patch).some(([k, v]) => !same(e[k as keyof Entity], v));
+      if (!differs) continue;
+      b.updateEntity(e.id, patch);
+      changed++;
+    }
+    return { changed, refused };
+  }
+
+  const attribute = /^attribute:(.+)$/.exec(edit.key);
+  if (attribute) return { ...attributeEdit(b, editable, attribute[1]!, edit.value), refused };
+
+  const n = numeric(edit.value, ANGLE_KEYS.has(edit.key) ? 'angle' : 'number');
+  const flag = yesNo(edit.value);
+  const text = typeof edit.value === 'string' ? edit.value : undefined;
+  // Work out every object's change first: a value one of them cannot take changes none.
+  const changes: [Entity, Change][] = [];
+  for (const e of editable) {
+    const c = geometryChange(e, edit.key, n, flag, text);
+    if (c === 'invalid') return { changed: 0, refused, invalid: INVALID };
+    if (c) changes.push([e, c]);
+  }
+  let changed = 0;
+  for (const [e, c] of changes) {
+    if ('patch' in c) {
+      if (same(c.patch.geom, e.geom)) continue;
+      b.updateEntity(e.id, c.patch);
+      changed++;
+    } else if ('move' in c) {
+      if (c.move.x === 0 && c.move.y === 0) continue;
+      changed += transformObjects(b, model, [e.id], moveBy(c.move)).ids.length;
+    } else if ('turn' in c) {
+      if (Math.abs(c.turn.by) < 1e-15) continue;
+      changed += transformObjects(b, model, [e.id], turnAbout(c.turn.about, c.turn.by)).ids.length;
+    }
+  }
+  return { changed, refused };
+}
+
+/** One reference's attribute value (the Attributes section, a single reference shown). */
+function attributeEdit(
+  b: ChangeSetBuilder,
+  entities: readonly Entity[],
+  handle: string,
+  v: PropertyValue,
+): Omit<PropertyEditReport, 'refused'> {
+  if (typeof v !== 'string') return { changed: 0, invalid: INVALID };
+  for (const e of entities) {
+    if (e.geom.kind !== 'INSERT') continue;
+    const g = e.geom;
+    const i = g.attributes.findIndex((a) => a.handle === handle);
+    if (i < 0) continue;
+    const a = g.attributes[i]!;
+    if (a.mtext) return { changed: 0, invalid: INVALID };
+    if (a.value === v) return { changed: 0 };
+    const attributes: InsertAttribute[] = [...g.attributes];
+    attributes[i] = { ...a, value: v };
+    b.updateEntity(e.id, { geom: { ...g, attributes } });
+    return { changed: 1 };
+  }
+  return { changed: 0, invalid: INVALID };
+}

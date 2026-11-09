@@ -13,6 +13,7 @@ import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
+import { PALETTE_COMMANDS } from './palettes';
 import { viewCommand } from './view/named-view';
 import { panCommand, regenCommand, zoomCommand } from './view/zoom';
 
@@ -37,5 +38,6 @@ export function builtinCommands(): CommandRegistry {
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
+    ...PALETTE_COMMANDS.map((make) => make()),
   ]);
 }

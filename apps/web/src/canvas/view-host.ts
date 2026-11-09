@@ -12,6 +12,7 @@ import type {
   FileAction,
   MTextGeometry,
   NamedViewInfo,
+  PaletteName,
   Vec2,
   ViewReply,
   ViewRequest,
@@ -73,11 +74,14 @@ export interface ViewContext {
    * it, none reads it.
    */
   readonly clipboard?: (content: Clipboard | undefined) => ViewReply;
+  /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes the palette. */
+  readonly palette?: (name: PaletteName, open: boolean) => ViewReply;
 }
 
 export const NO_CANVAS = 'There is no view to change.';
 export const NO_FILE = 'There is no drawing to save.';
 export const NO_CLIPBOARD = 'There is no Clipboard here.';
+export const NO_PALETTE = 'There are no palettes here.';
 
 export function stateOf(t: ViewTarget): ViewState | undefined {
   const v = t.view;
@@ -93,6 +97,9 @@ export function stateOf(t: ViewTarget): ViewState | undefined {
 export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promise<ViewReply> {
   // The file commands need the drawing, not a canvas.
   if (r.op === 'file') return ctx.file ? ctx.file(r.action) : { ok: false, message: NO_FILE };
+  if (r.op === 'palette') {
+    return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };
+  }
   if (r.op === 'clipboard') {
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };
   }
