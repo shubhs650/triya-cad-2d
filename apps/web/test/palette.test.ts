@@ -16,8 +16,10 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       'AIMLEADEREDITADD',
       'AIMLEADEREDITREMOVE',
+      'ATTEDIT',
       'COPY',
       'DRAWORDER',
+      'EATTEDIT',
       'ERASE',
       'HATCHTOBACK',
       'LINE',

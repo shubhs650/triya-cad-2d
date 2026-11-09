@@ -96,7 +96,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 |---|---|---|---|---|
 | TEXT / DTEXT | DT | 1 | Justify (all), Style | ~ (#230: every justification incl. Align/Fit, Style with `?`, ↵ continues below the last text, typed in place one line at a time; TEXTSIZE follows the height; a click elsewhere starts the next line there, #232) |
 | MTEXT | T, MT | 1 | in-place editor; -MTEXT dash | x (#230: two corners or Width, Height/Justify/Line spacing/Rotation/Style; in-place editor with Bold, Italic, Underline, Overline, Strikethrough, Height, Color and Stack, Ctrl+Enter or a click outside to close, Esc to drop; -MTEXT and the command line take lines until an empty one. #232: Font list, AutoStack (`1/2 ` → diagonal fraction, `^` tolerance), Enter keeps the paragraph's formatting. #234: Columns option (Dynamic/Static/No columns, widths, gutter, height), the editor's Columns menu, Column Settings dialog and Alt+Enter column break, and the ruler (first-line and paragraph indents, tab stops). Manual column heights, column grips, tab types: M2-26; fields: M4-10) |
-| TEXTEDIT / DDEDIT | ED | 1 | Undo, Mode (Single/Multiple); double-click | ~ (#232: TEXT in its in-place line, MTEXT in its editor keeping the codes it has no control for; Undo, Mode; a double click on a TEXT or MTEXT runs it (DBLCLKEDIT); an emptied text is erased. ATTDEF: M2-12; dimension text: M2-11) |
+| TEXTEDIT / DDEDIT | ED | 1 | Undo, Mode (Single/Multiple); double-click | ~ (#232: TEXT in its in-place line, MTEXT in its editor keeping the codes it has no control for; Undo, Mode; a double click on a TEXT or MTEXT runs it (DBLCLKEDIT); an emptied text is erased. an ATTDEF opens Edit Attribute Definition (tag, prompt, default; a multiline default in the MTEXT editor), #236; dimension text: M2-11) |
 | STYLE | ST | 2 | dialog; -STYLE dash | |
 | FIND | — | 2 | | |
 | SPELL | SP | 3 | | |
@@ -143,7 +143,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | BEDIT / BCLOSE / BSAVE | BE | 2 | block editor | |
 | REFEDIT / REFCLOSE / REFSET | — | 2 | | |
 | ATTDEF | ATT | 2 | dialog + -ATTDEF | |
-| ATTEDIT / EATTEDIT | ATE / ATE | 1 | | |
+| ATTEDIT / EATTEDIT | ATE / ATE | 1 | dialogs; -ATTEDIT dash; double-click | ~ (#236: EATTEDIT's Enhanced Attribute Editor (Attribute: values, a multiline one's `...` opening the MTEXT editor; Text Options: style, height, rotation, width factor, obliquing, backwards, upside down; Properties: layer, linetype, colour, lineweight; Apply, Select block), ATTEDIT's Edit Attributes (values, eight a page), -ATTEDIT one at a time (Value Change/Replace, Position, Height, Angle, Style, Layer, Color with Truecolor, Next) and global (string replaced, visible-on-screen or the whole drawing), block/tag/value wildcards; a double click on a reference with attributes runs EATTEDIT. Justification, annotative, plot style, picking single attributes: M2-27) |
 | BATTMAN / ATTSYNC / ATTDISP / ATTREDEF | — | 2 | | |
 | XREF / XATTACH / XBIND / XCLIP / XOPEN | XR / XA / XB / XC | 2 | manager palette; bind/insert | |
 | IMAGEATTACH / IMAGECLIP / IMAGEADJUST / IMAGEFRAME / IMAGEQUALITY | IAT / ICL / IAD | 2 | | |
