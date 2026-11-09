@@ -193,6 +193,7 @@ A typed registry (`SysVarRegistry`) with AutoCAD names, types, defaults, scope (
 - `OsnapEngine`: given cursor world point, aperture, active modes and the visible entity set from the R-tree, returns ranked candidates (AutoCAD priority order: endpoint > midpoint > … with `OSNAPCOORD`/`OSNAPZ` ignored for 2D). Computes INT/APP/EXT/PAR/TAN/PER against all entity pairs within the aperture. Must respond < 50 ms at 100k entities (T3): aperture query hits the R-tree, candidates computed only for hit entities.
 - `TrackingEngine`: acquired points for OTRACK and `TK`; alignment paths; polar angles.
 - `OrthoPolar`: constrains the cursor point; `POLARANG`, `POLARADDANG`, `POLARMODE`.
+- *As built (M2-04 part 1):* `engine/input/osnap.ts` (`osnap(source, query)`) and `engine/input/constrain.ts` (`constrainCursor`, `orthoPoint`, `polarTrack`, `snapToGrid`) are pure functions. The canvas asks the render worker for snaps (`RendererHost.snap`, protocol `snap`), because the render replica's spatial index bounds text by its glyphs; the engine worker has no fonts. The canvas applies SNAP/ORTHO/POLAR itself and sends the resulting point as the pick, so the command engine sees an ordinary point (typed points are never constrained). A click waits for its own snap query; `Engines.command` holds later input for the drawing behind it, so Enter typed right after a click arrives after it.
 
 ## 6. File layer and passthrough (`packages/io`)
 

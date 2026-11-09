@@ -4,11 +4,13 @@
 // stack arrive with their own tasks.
 import type {
   ChangeSet,
+  CommandInput,
   EditResult,
   EngineEdit,
   EntityId,
   Layout,
   PdfDefinition,
+  Vec2,
 } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -29,6 +31,8 @@ import { CommandLine } from './CommandLine';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
+import { drafting } from './drafting';
+import { DraftingToggles } from './DraftingToggles';
 import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
@@ -93,6 +97,11 @@ engines.onCommand((doc, o) => {
         }),
     );
   }
+});
+
+// Every canvas applies the status bar's drafting aids as they change (M2-04).
+drafting.subscribe(() => {
+  for (const c of allControllers()) c.setDrafting(drafting.get());
 });
 
 /** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
@@ -899,13 +908,15 @@ function ViewportCanvas({
         showCursor(p);
       },
       onError: (e) => store.failed(name, openError(name, e)),
-      onPick: (point, o) =>
-        engines.command(id, {
+      onPick: (point, o) => {
+        const pick = (p: Vec2): CommandInput => ({
           kind: 'pick',
-          point,
+          point: p,
           ...(o.shift && { shift: true }),
           ...(o.release && { release: true }),
-        }),
+        });
+        engines.command(id, point instanceof Promise ? point.then(pick) : pick(point));
+      },
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },
@@ -919,6 +930,7 @@ function ViewportCanvas({
       }),
     });
     const unregister = register(id, block, c, index);
+    c.setDrafting(drafting.get());
     c.setPrompt(commandLines.get(id).prompt);
     const selected = selections.get(id);
     if (selected?.length) c.setHighlight(selected);
@@ -1006,6 +1018,7 @@ function StatusBar({
             : `${missingReferences} references not found`}
         </button>
       )}
+      <DraftingToggles />
       <DynToggle />
       {doc && (
         <>

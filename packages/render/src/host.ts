@@ -6,7 +6,7 @@
 // paths draw with the same code, so they render identically; the Playwright pixel test checks
 // that. Calls are fire-and-forget either way; those that need an answer return promises.
 
-import type { Box, ChangeSet, EntityId } from '@triya/engine';
+import type { Box, ChangeSet, EntityId, OsnapHit, OsnapQuery } from '@triya/engine';
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession, type FontSources, type RenderDocument } from './session';
@@ -228,6 +228,14 @@ export class RendererHost {
     if (this.#session) return Promise.resolve(this.#session.boundsOf(ids));
     return this.#request((id) => ({ type: 'bounds', id, ids })).then((m) =>
       m.type === 'extents' && m.box ? m.box : undefined,
+    );
+  }
+
+  /** The object snap points under the aperture, best first (M2-04). */
+  snap(query: OsnapQuery): Promise<OsnapHit[]> {
+    if (this.#session) return Promise.resolve(this.#session.snap(query));
+    return this.#request((id) => ({ type: 'snap', id, query })).then((m) =>
+      m.type === 'snap' ? [...m.hits] : [],
     );
   }
 

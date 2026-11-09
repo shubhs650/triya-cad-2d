@@ -196,6 +196,35 @@ describe('Engines', () => {
     engines.stop(1);
   });
 
+  it('holds input back behind a click still waiting for its point (M2-04)', async () => {
+    const { engines } = setup();
+    engines.start(1, init);
+    const lines: string[] = [];
+    const stop = engines.onCommand((_, o) => {
+      if (o.type === 'log') lines.push(o.line);
+    });
+    let resolve!: (p: { x: number; y: number }) => void;
+    const point = new Promise<{ x: number; y: number }>((r) => (resolve = r));
+    engines.command(1, { kind: 'submit', text: 'L' });
+    engines.command(1, { kind: 'submit', text: '0,0' });
+    // The click's object snap is still being worked out when Enter is typed.
+    engines.command(
+      1,
+      point.then((p) => ({ kind: 'pick', point: p })),
+    );
+    engines.command(1, { kind: 'submit', text: '' });
+    // An input worked out to nothing is dropped.
+    engines.command(1, Promise.resolve(undefined));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(engines.changesOf(1)).toEqual([]);
+    resolve({ x: 10, y: 0 });
+    await new Promise((r) => setTimeout(r, 10));
+    expect(engines.changesOf(1)).toHaveLength(1);
+    expect(lines.at(-1)).toBe('Specify next point or [Undo]:');
+    stop();
+    engines.stop(1);
+  });
+
   it('forgets a closed drawing', async () => {
     const { engines } = setup();
     engines.start(1, init);

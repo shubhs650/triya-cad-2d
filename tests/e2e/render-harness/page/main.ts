@@ -309,6 +309,48 @@ async function panZoom(mode: RendererMode, ms: number): Promise<PanZoomResult> {
   return { frames, fps: frames / seconds, maxFrameMs };
 }
 
+export interface OsnapTiming {
+  readonly queries: number;
+  /** Queries that found a snap point. */
+  readonly found: number;
+  readonly p50Ms: number;
+  readonly p95Ms: number;
+  readonly maxMs: number;
+}
+
+/**
+ * M2-04, PRD §12 T3: running object snap queries at `n` seeded random cursor points, as the
+ * canvas asks them (APERTURE 10 px at the extents view, every mode, the last point for PER
+ * and TAN), timed from the request to the answer from the host.
+ */
+async function osnapTiming(mode: RendererMode, n: number): Promise<OsnapTiming> {
+  const h = hosts.find((x) => x.mode === mode)?.host;
+  if (!h) throw new Error(`no ${mode} host`);
+  const view = fitView(extents, size.width, size.height);
+  let seed = 42;
+  const rnd = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed / 2147483648;
+  };
+  const times: number[] = [];
+  let found = 0;
+  let from = { x: 0, y: 0 };
+  for (let i = 0; i < n; i++) {
+    const point = {
+      x: extents.minX + rnd() * (extents.maxX - extents.minX),
+      y: extents.minY + rnd() * (extents.maxY - extents.minY),
+    };
+    const t0 = performance.now();
+    const hits = await h.snap({ point, aperture: 10 / view.scale, modes: 0x3fff, from });
+    times.push(performance.now() - t0);
+    if (hits.length > 0) found++;
+    from = point;
+  }
+  times.sort((a, b) => a - b);
+  const at = (q: number) => times[Math.min(times.length - 1, Math.floor(q * times.length))]!;
+  return { queries: n, found, p50Ms: at(0.5), p95Ms: at(0.95), maxMs: times.at(-1)! };
+}
+
 /** An image file through `decodeRaster` with the browser's own codecs (M1-19 part 2). */
 async function decodeImage(
   bytes: number[],
@@ -332,6 +374,7 @@ declare global {
     setup(o: SetupOptions): Promise<SetupResult>;
     edit(): Promise<number>;
     panZoom(mode: RendererMode, ms: number): Promise<PanZoomResult>;
+    osnapTiming(mode: RendererMode, n: number): Promise<OsnapTiming>;
   }
 }
 
@@ -340,4 +383,5 @@ window.encodeImage = encodeImage;
 window.setup = setup;
 window.edit = edit;
 window.panZoom = panZoom;
+window.osnapTiming = osnapTiming;
 document.title = 'ready';
