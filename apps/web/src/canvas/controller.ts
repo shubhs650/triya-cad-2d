@@ -28,11 +28,22 @@
 // (AutoSnap's marker and the mode's name). The render worker finds the snaps (`snap`), one
 // request in flight at a time; a click waits for the snaps at its own point before it is
 // sent, so what is marked is what is picked. Typed points are never changed.
+//
+// Part 2: a pause over an object snap point acquires it for object snap tracking (OTRACK: a
+// small cross, paths horizontal and vertical from it), over a line's end for EXTension, over a
+// line for PARallel; pausing over it again lets it go, and a command's end clears them all.
+// The cursor follows the paths (`constrainCursor`), with a tooltip as AutoCAD's. Tab steps
+// through the snap points under the aperture; a typed override (`END`) snaps the next point
+// with its own modes, and a click it finds nothing at is sent as missed; Shift+right-click
+// opens the object snap menu (`onSnapMenu`). GRID, LWT and TPY are the renderer's style.
 import RenderWorker from '@triya/render/worker?worker';
 import {
+  MAX_ACQUIRED,
   constrainCursor,
   layoutSheet,
   polarLabel,
+  trackLabel,
+  type Acquired,
   unionBox,
   type Box,
   type ChangeSet,
@@ -70,7 +81,15 @@ import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
 import { INITIAL_DRAFTING, type DraftingState } from '../drafting';
-import { APERTURE_PX, TRACK_PX, markerPrimitives, snapLabel, trackingPrimitives } from './autosnap';
+import {
+  ACQUIRE_MS,
+  APERTURE_PX,
+  TRACK_PX,
+  acquiredPrimitives,
+  markerPrimitives,
+  snapLabel,
+  trackingPrimitives,
+} from './autosnap';
 import {
   extentsView,
   panBy,
@@ -131,9 +150,11 @@ export interface CanvasHooks {
    * drag that began with a click.
    */
   readonly onPick?: (
-    p: Vec2 | Promise<Vec2>,
+    p: Vec2 | Promise<PickedPoint>,
     o: { readonly shift: boolean; readonly release: boolean },
   ) => void;
+  /** Shift+right-click at a point prompt (M2-04 part 2): the object snap menu, at client px. */
+  readonly onSnapMenu?: (at: { readonly x: number; readonly y: number }) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
@@ -176,6 +197,16 @@ export interface CanvasHooks {
 }
 
 type Point = { readonly x: number; readonly y: number };
+
+/** A click's point at a point prompt; `missed` when its object snap override found nothing. */
+export interface PickedPoint {
+  readonly point: Vec2;
+  readonly missed?: boolean;
+}
+
+const sameHit = (a: OsnapHit | undefined, b: OsnapHit | undefined): boolean =>
+  a === b ||
+  (!!a && !!b && a.mode === b.mode && a.point.x === b.point.x && a.point.y === b.point.y);
 
 export class CanvasController {
   readonly block: Handle;
@@ -230,8 +261,16 @@ export class CanvasController {
   #firstMeasure: Promise<void> = Promise.resolve();
   /** OSNAP, ORTHO, POLAR and SNAP as the status bar has them (M2-04). */
   #drafting: DraftingState = INITIAL_DRAFTING;
-  /** The best object snap at the cursor as the renderer last answered, if any (M2-04). */
+  /** The object snap at the cursor as the renderer last answered, if any (M2-04). */
   #hit: OsnapHit | undefined;
+  /** Every snap point under the aperture, best first, and which one Tab stepped to. */
+  #hits: readonly OsnapHit[] = [];
+  #cycle = 0;
+  /** What the cursor pauses over to acquire, and the timer that acquires it (part 2). */
+  #candidate: { readonly key: string; readonly items: readonly Acquired[] } | undefined;
+  #acquireTimer = 0;
+  /** The points and lines acquired for tracking, oldest first. */
+  #acquired: Acquired[] = [];
   /** A snap request is in flight, and whether the cursor moved since it was sent. */
   #snapping = false;
   #snapAgain = false;
@@ -399,6 +438,10 @@ export class CanvasController {
     this.canvas.dataset['picking'] = String(!!picking);
     // A new prompt has a new base point, which PER and TAN are drawn from.
     this.#hit = undefined;
+    this.#hits = [];
+    this.#cycle = 0;
+    // Acquired points last while the command runs (AutoCAD clears them when it ends).
+    if (!prompt) this.#acquired = [];
     if (this.#mode !== 'none') return;
     if (this.#prompt) this.#requestSnap();
     this.#track();
@@ -406,8 +449,14 @@ export class CanvasController {
 
   /** The status bar's drafting aids changed (M2-04). */
   setDrafting(state: DraftingState): void {
+    const before = this.#drafting;
     this.#drafting = state;
     this.#hit = undefined;
+    if (!state.otrack) this.#acquired = this.#acquired.filter((a) => a.kind !== 'point');
+    if (before.grid !== state.grid || before.lwt !== state.lwt || before.tpy !== state.tpy) {
+      this.#host.setStyle(this.#style());
+      this.#requestFrame();
+    }
     if (this.#prompt && this.#mode === 'none') {
       this.#requestSnap();
       this.#track();
@@ -533,6 +582,7 @@ export class CanvasController {
   }
 
   dispose(): void {
+    clearTimeout(this.#acquireTimer);
     this.#listeners.abort();
     this.#observer.disconnect();
     cancelAnimationFrame(this.#pending);
@@ -632,16 +682,40 @@ export class CanvasController {
 
   /** Model space on the dark canvas; a layout's white paper on a grey surround. */
   #style(): RenderStyle {
-    const lw = new Map(this.#opened.init.header ?? []).get('$LWDISPLAY');
-    const showLineweights = lw === true || lw === 1;
+    const lw = this.#header.get('$LWDISPLAY');
+    // LWT and TPY from the status bar (M2-04 part 2): LWT is the drawing's until turned.
+    const d = this.#drafting;
+    const showLineweights = d.lwt ?? (lw === true || lw === 1);
+    const shared = {
+      showLineweights,
+      ...(!d.tpy && { showTransparency: false }),
+      ...(d.grid && { grid: this.#grid() }),
+    };
     return this.#layout
-      ? {
-          background: PAPER,
-          foreground: '#000000',
-          layoutBackground: PAPER_SURROUND,
-          showLineweights,
-        }
-      : { background: MODEL_CANVAS, foreground: '#ffffff', showLineweights };
+      ? { background: PAPER, foreground: '#000000', layoutBackground: PAPER_SURROUND, ...shared }
+      : { background: MODEL_CANVAS, foreground: '#ffffff', ...shared };
+  }
+
+  /** GRIDUNIT and GRIDMAJOR of the viewport shown (10 × 10 and 5 when it has none). */
+  #grid(): { spacing: Vec2; base?: Vec2; major: number } {
+    const vport = this.#vport();
+    const g = vport?.gridSpacing;
+    const s = this.#snapSpacing();
+    // A GRIDUNIT of 0 follows the snap spacing, as AutoCAD's does.
+    const spacing = g && g.x > 0 && g.y > 0 ? g : s;
+    return {
+      spacing,
+      ...(vport?.snapBase && { base: vport.snapBase }),
+      major: vport?.gridMajor && vport.gridMajor > 0 ? vport.gridMajor : 5,
+    };
+  }
+
+  /** The `*Active` VPORT of model space, or this tile's; none in a layout. */
+  #vport(): VportRecord | undefined {
+    if (this.#layout) return undefined;
+    return this.#hooks.tile
+      ? this.#hooks.tile.vport
+      : activeVport(this.#opened.init.tables?.vports);
   }
 
   #resize(): void {
@@ -965,12 +1039,39 @@ export class CanvasController {
       () => {
         this.#pointer = undefined;
         this.#hit = undefined;
+        this.#hits = [];
+        this.#cycle = 0;
+        this.#candidate = undefined;
+        clearTimeout(this.#acquireTimer);
         if (this.#prompt && this.#mode === 'none') this.#track();
         this.#hooks.onCursor(undefined);
       },
       opts,
     );
     c.addEventListener('auxclick', (e) => e.preventDefault(), opts);
+    // Shift+right-click: AutoCAD's object snap menu, at a point prompt (M2-04 part 2).
+    c.addEventListener(
+      'contextmenu',
+      (e) => {
+        if (!e.shiftKey || !this.#precise() || this.#mode !== 'none') return;
+        e.preventDefault();
+        this.#hooks.onSnapMenu?.({ x: e.clientX, y: e.clientY });
+      },
+      opts,
+    );
+  }
+
+  /**
+   * Tab over the canvas (M2-04 part 2): AutoSnap's next snap point under the aperture, as
+   * AutoCAD steps through them; false when there is no other to step to.
+   */
+  cycleSnap(): boolean {
+    if (!this.#pointer || !this.#prompt || this.#mode !== 'none' || this.#hits.length < 2)
+      return false;
+    this.#cycle = (this.#cycle + 1) % this.#hits.length;
+    this.#hit = this.#hits[this.#cycle];
+    this.#track();
+    return true;
   }
 
   /**
@@ -997,10 +1098,7 @@ export class CanvasController {
 
   /** SNAPUNIT of the viewport shown (10 × 10 when it has none). */
   #snapSpacing(): Vec2 {
-    const vport = this.#hooks.tile
-      ? this.#hooks.tile.vport
-      : activeVport(this.#opened.init.tables?.vports);
-    const s = vport?.snapSpacing;
+    const s = this.#vport()?.snapSpacing;
     return s && s.x > 0 && s.y > 0 ? s : { x: 10, y: 10 };
   }
 
@@ -1008,9 +1106,7 @@ export class CanvasController {
   #constrain(world: Vec2): ReturnType<typeof constrainCursor> {
     const d = this.#drafting;
     const base = this.#base();
-    const vport = this.#hooks.tile
-      ? this.#hooks.tile.vport
-      : activeVport(this.#opened.init.tables?.vports);
+    const vport = this.#vport();
     return constrainCursor(world, {
       ...(base && { base }),
       ...(d.snap && {
@@ -1020,18 +1116,26 @@ export class CanvasController {
       ortho: d.ortho,
       ...(d.polar && { polar: { increment: (d.polarAngle * Math.PI) / 180 } }),
       tolerance: TRACK_PX * this.#px(),
+      ...(this.#acquired.length > 0 && { acquired: this.#acquired }),
     });
   }
 
-  /** The running object snaps at a point, best first; none with OSNAP off. */
+  /** The modes the next point snaps with: a typed override's, else the running ones. */
+  #modes(): number {
+    const p = this.#prompt;
+    return p?.kind === 'point' && p.osnap !== undefined ? p.osnap : this.#drafting.osmode;
+  }
+
+  /** The object snaps at a point, best first, then what may be acquired; none with OSNAP off. */
   #snapAt(world: Vec2): Promise<OsnapHit[]> {
     const base = this.#base();
-    if (this.#drafting.osmode === 0 || !this.#view) return Promise.resolve([]);
+    const modes = this.#modes();
+    if (modes === 0 || !this.#view) return Promise.resolve([]);
     return this.#host
       .snap({
         point: world,
         aperture: APERTURE_PX * this.#px(),
-        modes: this.#drafting.osmode,
+        modes,
         ...(base && { from: base }),
       })
       .catch(() => []);
@@ -1050,7 +1154,13 @@ export class CanvasController {
       this.#snapping = false;
       const at = this.#pointer && this.#world(this.#pointer);
       // An answer for where the cursor was a moment ago still shows; it is replaced next.
-      this.#hit = at && this.#prompt ? hits[0] : undefined;
+      const points = at && this.#prompt ? hits.filter((h) => !h.track) : [];
+      // Tab's choice stays while the same points are under the aperture.
+      if (!sameHit(points[0], this.#hits[0]) || points.length !== this.#hits.length)
+        this.#cycle = 0;
+      this.#hits = points;
+      this.#hit = points[this.#cycle];
+      this.#watchAcquire(at && this.#prompt ? hits : []);
       this.#track();
       if (this.#snapAgain) {
         this.#snapAgain = false;
@@ -1059,10 +1169,66 @@ export class CanvasController {
     });
   }
 
-  /** The point a click at `world` gives a point prompt: an object snap, else the constrained cursor. */
-  async #pointAt(world: Vec2): Promise<Vec2> {
-    const [hit] = await this.#snapAt(world);
-    return hit?.point ?? this.#constrain(world).point;
+  /**
+   * What the cursor pauses over to acquire (part 2): an object snap point for OTRACK, a line's
+   * end for EXT, a line for PAR. Held still for ACQUIRE_MS, it is acquired, or let go if it
+   * was; moving onto something else restarts the wait.
+   */
+  #watchAcquire(hits: readonly OsnapHit[]): void {
+    const items: Acquired[] = [];
+    const point = this.#hit;
+    if (point && this.#drafting.otrack && this.#prompt?.kind === 'point' && !this.#prompt.osnap)
+      items.push({ kind: 'point', point: point.point, mode: point.mode });
+    for (const h of hits) {
+      if (!h.track || !h.direction) continue;
+      if (h.mode === 'EXT' && (!point || sameAt(h.point, point.point)))
+        items.push({ kind: 'extension', point: h.point, direction: h.direction });
+      else if (h.mode === 'PAR' && !point && !items.some((i) => i.kind === 'parallel'))
+        items.push({ kind: 'parallel', point: h.point, direction: h.direction });
+    }
+    const key = items.map((i) => `${i.kind}:${i.point.x},${i.point.y}`).join('|');
+    if (key === this.#candidate?.key) return;
+    clearTimeout(this.#acquireTimer);
+    this.#candidate = key ? { key, items } : undefined;
+    if (!key) return;
+    this.#acquireTimer = window.setTimeout(() => {
+      if (this.#candidate?.key !== key) return;
+      this.#acquire(items);
+      this.#track();
+    }, ACQUIRE_MS);
+  }
+
+  /** Acquires what the cursor paused over, or lets it go if it was acquired already. */
+  #acquire(items: readonly Acquired[]): void {
+    const has = (i: Acquired) =>
+      this.#acquired.findIndex((a) => a.kind === i.kind && sameAt(a.point, i.point));
+    const known = items.filter((i) => i.kind !== 'parallel' && has(i) >= 0);
+    if (known.length > 0) {
+      this.#acquired = this.#acquired.filter(
+        (a) => !known.some((k) => k.kind === a.kind && sameAt(a.point, k.point)),
+      );
+      return;
+    }
+    for (const i of items) {
+      // One parallel line at a time: a new one replaces the last.
+      if (i.kind === 'parallel')
+        this.#acquired = this.#acquired.filter((a) => a.kind !== 'parallel');
+      this.#acquired.push(i);
+    }
+    while (this.#acquired.length > MAX_ACQUIRED) this.#acquired.shift();
+  }
+
+  /**
+   * The point a click at `world` gives a point prompt: the object snap marked (Tab's choice),
+   * else the constrained cursor; missed when the prompt's override found nothing there.
+   */
+  async #pointAt(world: Vec2): Promise<PickedPoint> {
+    const hits = (await this.#snapAt(world)).filter((h) => !h.track);
+    const hit = hits[this.#cycle < hits.length ? this.#cycle : 0];
+    if (hit) return { point: hit.point };
+    const p = this.#prompt;
+    const missed = p?.kind === 'point' && p.osnap !== undefined && p.osnap !== 0;
+    return { point: this.#constrain(world).point, ...(missed && { missed: true }) };
   }
 
   /**
@@ -1084,21 +1250,40 @@ export class CanvasController {
     const hit = this.#hit;
     let point: Vec2 = c.point;
     let tip = '';
+    const reach = Math.hypot(this.#size.width, this.#size.height) * px;
+    const acquired = acquiredPrimitives(
+      this.#acquired.map((a) => a.point),
+      px,
+      dark,
+    );
     if (hit) {
       point = hit.point;
-      this.#overlay = markerPrimitives(hit.mode, hit.point, px, dark);
+      this.#overlay = [...acquired, ...markerPrimitives(hit.mode, hit.point, px, dark)];
       tip = snapLabel(hit.mode);
     } else if (c.polar) {
       const base = this.#base()!;
-      const reach = Math.hypot(this.#size.width, this.#size.height) * px + c.polar.distance;
-      this.#overlay = trackingPrimitives(base, c.polar.angle, reach, px, dark);
+      this.#overlay = [
+        ...acquired,
+        ...trackingPrimitives(base, c.polar.angle, reach + c.polar.distance, px, dark),
+      ];
       tip = polarLabel(c.polar, this.#precision());
-    } else this.#overlay = [];
+    } else if (c.track) {
+      // Each path from where it starts to past the cursor, and a cross where it ends.
+      this.#overlay = [
+        ...acquired,
+        ...c.track.paths.flatMap((t) => {
+          const to = Math.hypot(c.point.x - t.from.x, c.point.y - t.from.y);
+          return trackingPrimitives(t.from, t.angle, to + reach, px, dark);
+        }),
+        ...markerPrimitives('INT', c.point, px * 0.6, dark),
+      ];
+      tip = trackLabel(c.track, this.#precision());
+    } else this.#overlay = acquired;
     this.#rubberBand(point);
     this.#tip.hidden = tip === '';
     if (tip) {
       this.#tip.textContent = tip;
-      this.#tip.dataset['mode'] = hit?.mode ?? 'polar';
+      this.#tip.dataset['mode'] = hit?.mode ?? (c.polar ? 'polar' : 'track');
       this.#tip.style.left = `${this.#pointer!.offsetX + 16}px`;
       this.#tip.style.top = `${this.#pointer!.offsetY - 34}px`;
     }
@@ -1130,3 +1315,5 @@ export class CanvasController {
     this.canvas.setPointerCapture(e.pointerId);
   }
 }
+
+const sameAt = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;

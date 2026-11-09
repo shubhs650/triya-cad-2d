@@ -11,6 +11,13 @@ export const APERTURE_PX = 10;
 export const MARKER_PX = 5;
 /** How near, in CSS pixels, the cursor must pass a polar angle for tracking to lock on. */
 export const TRACK_PX = 10;
+/**
+ * How long the cursor rests on a point before it is acquired for tracking (M2-04 part 2).
+ * AutoCAD says only "pause"; this is about the moment its acquisition marker appears.
+ */
+export const ACQUIRE_MS = 400;
+/** Half the size of an acquired point's cross, CSS pixels. */
+const ACQUIRED_PX = 4;
 const DASH_PX = 4;
 
 /** The marker on the dark model canvas and on a layout's white paper. */
@@ -250,6 +257,34 @@ export function trackingPrimitives(
     const a = 2 * i * step;
     const b = a + step;
     path.push(PATH_M, base.x + ux * a, base.y + uy * a, PATH_L, base.x + ux * b, base.y + uy * b);
+  }
+  return [{ kind: 'stroke', color: dark ? TRACK_COLOR.dark : TRACK_COLOR.light, path }];
+}
+
+/** Acquired tracking points: AutoCAD's small cross at each (M2-04 part 2). */
+export function acquiredPrimitives(
+  points: readonly Vec2[],
+  px: number,
+  dark: boolean,
+): RenderPrimitive[] {
+  if (points.length === 0) return [];
+  const s = ACQUIRED_PX * px;
+  const path: number[] = [];
+  for (const p of points) {
+    path.push(
+      PATH_M,
+      p.x - s,
+      p.y,
+      PATH_L,
+      p.x + s,
+      p.y,
+      PATH_M,
+      p.x,
+      p.y - s,
+      PATH_L,
+      p.x,
+      p.y + s,
+    );
   }
   return [{ kind: 'stroke', color: dark ? TRACK_COLOR.dark : TRACK_COLOR.light, path }];
 }

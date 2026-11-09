@@ -55,3 +55,11 @@ export function controllersOf(doc: number): CanvasController[] {
     .filter(([k]) => k.startsWith(prefix))
     .flatMap(([, tiles]) => [...tiles.values()]);
 }
+
+/**
+ * Tab over a canvas at a point prompt (M2-04 part 2): steps AutoSnap to its next snap point;
+ * false when no canvas has another to step to, so Tab does what it otherwise would.
+ */
+export function cycleSnap(): boolean {
+  return allControllers().some((c) => c.cycleSnap());
+}
