@@ -145,10 +145,9 @@ test('is installable, and offers Install when the browser would install it', asy
 
 /** The Install button follows the browser's beforeinstallprompt and shows its prompt once. */
 async function offersInstall(page: Page): Promise<void> {
-  // Chromium itself fired beforeinstallprompt for the installable app: the Install button shows.
-  await expect(page.getByRole('button', { name: 'Install' })).toBeVisible();
-  // A stand-in for the browser's next event, so pressing Install does not open the real
-  // installation dialog in the test browser.
+  // The browser's beforeinstallprompt, as Chromium fires it for an installable app. Full
+  // Chromium fires its own here, but CI's headless shell never does, so the test fires one; it
+  // also keeps a press of Install from opening the real installation dialog.
   await page.evaluate(() => {
     const e = new Event('beforeinstallprompt', { cancelable: true }) as Event & {
       prompt(): Promise<void>;
@@ -161,6 +160,7 @@ async function offersInstall(page: Page): Promise<void> {
     e.userChoice = Promise.resolve({ outcome: 'accepted' });
     dispatchEvent(e);
   });
+  await expect(page.getByRole('button', { name: 'Install' })).toBeVisible();
   await page.getByRole('button', { name: 'Install' }).click();
   expect(await page.evaluate(() => (window as unknown as { prompted?: number }).prompted)).toBe(1);
   await expect(page.getByRole('button', { name: 'Install' })).toHaveCount(0);
