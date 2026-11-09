@@ -259,7 +259,7 @@ export function generatedDimension(
   def: (block: Handle) => BlockDefinition | undefined,
 ): boolean {
   const g = e.geom;
-  return g.kind === 'DIMENSION' && (g.block === undefined || !def(g.block)) && generates(g);
+  return 'dimType' in g && generates(g) && (g.block === undefined || !def(g.block));
 }
 
 /**

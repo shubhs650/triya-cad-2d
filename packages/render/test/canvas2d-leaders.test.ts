@@ -251,4 +251,58 @@ describe('multileaders in the renderer', () => {
     // Picked by its dimension line at (2, 0): screen (50 + 20, 50).
     expect(r.hitTest({ x: 70, y: 50 }, 2)).toEqual([d.model.ids.idOf('20')]);
   });
+
+  it('draws blockless ordinate, jogged radius and arc length dimensions from the engine (part 2)', () => {
+    const common = {
+      style: DIMSTYLE,
+      textUserPositioned: false,
+      text: '',
+      textRotation: 0,
+      horizontalDirection: 0,
+      attachment: 5,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+      textPosition: { x: 0, y: 0 },
+    } as const;
+    const dims: DimensionGeometry[] = [
+      {
+        ...common,
+        kind: 'DIMENSION',
+        dimType: 'ordinate',
+        definitionPoint: { x: 0, y: 0 },
+        axis: 'x',
+        feature: { x: 2, y: -4 },
+        leaderEnd: { x: 2, y: -1 },
+      },
+      {
+        ...common,
+        kind: 'LARGE_RADIAL_DIMENSION',
+        dimType: 'jogged',
+        definitionPoint: { x: -20, y: 0 },
+        chordPoint: { x: -10, y: 0 },
+        overrideCenter: { x: -20, y: 1 },
+        jogPoint: { x: -15, y: 0.5 },
+        leaderLength: 0,
+      },
+      {
+        ...common,
+        kind: 'ARC_DIMENSION',
+        dimType: 'arc',
+        center: { x: 0, y: 0 },
+        first: { x: 3, y: 0 },
+        second: { x: 0, y: 3 },
+        startAngle: 0,
+        endAngle: Math.PI / 2,
+        partial: false,
+        definitionPoint: { x: 3, y: 3 },
+      },
+    ];
+    for (const dim of dims) {
+      const { redraw } = setup([entity('20', dim)]);
+      // Its lines in DIMCLRD (green) and its text in DIMCLRT (red).
+      expect(painted(redraw(), 'stroke'), dim.dimType).toEqual(
+        expect.arrayContaining(['#00ff00', '#ff0000']),
+      );
+    }
+  });
 });

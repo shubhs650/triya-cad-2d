@@ -14,7 +14,7 @@
 //   it); aligned text runs along the arc's tangent there, upright. The
 //   arc stays out of the text's box widened by DIMGAP.
 
-import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
+import type { AnnotationTables, DimensionGeometry, Handle, TextMeasure, Vec2 } from '@triya/engine';
 import { dimensionText, formatAngle } from './format';
 import {
   add,
@@ -35,6 +35,7 @@ import {
   unit,
   upright,
   type DimPart,
+  type TextBox,
 } from './geometry';
 import { fit } from './linear';
 import type { DimStyle } from './style';
@@ -119,6 +120,60 @@ function frame(
   return undefined;
 }
 
+/**
+ * A dimension arc from `a0` counter-clockwise by `sweep` with its arrowheads: inside (backs a
+ * DIMASZ chord in, the arc trimmed to them unless drawn about the tip) or outside (a chord out,
+ * a DIMASZ tail of arc beyond); DIMSOXD drops outside arrows. The arc stays out of `box`.
+ */
+export function arcLine(
+  c: Vec2,
+  r: number,
+  a0: number,
+  sweep: number,
+  inside: boolean,
+  box: TextBox | undefined,
+  [blkStart, blkEnd]: readonly [Handle | undefined, Handle | undefined],
+  s: DimStyle,
+  model: AnnotationTables,
+): DimPart[] {
+  const out: DimPart[] = [];
+  const showArrows = inside || !s.soxd;
+  // The arrow's back is a chord of DIMASZ from its tip.
+  const step = s.asz < 2 * r ? 2 * Math.asin(s.asz / (2 * r)) : Math.PI;
+  const tipStart = atTip(blkStart, s, model);
+  const tipEnd = atTip(blkEnd, s, model);
+  const k = inside ? 1 : -1;
+  const baseStart = a0 + k * step;
+  const baseEnd = a0 + sweep - k * step;
+  let from = a0;
+  let to = a0 + sweep;
+  if (inside && showArrows && s.asz > 0) {
+    if (!tipStart) from = baseStart;
+    if (!tipEnd) to = baseEnd;
+  }
+  const arcs: [number, number][] = [];
+  if (to > from) arcs.push([from, to]);
+  if (!inside && showArrows) {
+    if (!tipStart) arcs.push([baseStart - step, baseStart]);
+    if (!tipEnd) arcs.push([baseEnd, baseEnd + step]);
+  }
+  for (const [a, b] of arcs) {
+    for (const [p, q] of clipArc(c, r, a, b, box)) out.push(arcPart(c, r, p, q, s.dimLine));
+  }
+  if (showArrows) {
+    const at = (a: number): Vec2 => add(c, fromAngle(a), r);
+    const pStart = at(a0);
+    const pEnd = at(a0 + sweep);
+    const bStart = at(baseStart);
+    const bEnd = at(baseEnd);
+    out.push(
+      ...arrowParts(pStart, bStart, blkStart, s, model, unit(sub(bStart, pStart)) ?? fromAngle(0)),
+    );
+    out.push(...arrowParts(pEnd, bEnd, blkEnd, s, model, unit(sub(bEnd, pEnd)) ?? fromAngle(0)));
+  }
+  return out;
+}
+
 export function angularParts(
   g: Angular,
   s: DimStyle,
@@ -187,43 +242,8 @@ export function angularParts(
   const box = text ? textBox(text, width, s) : undefined;
 
   // Arrowheads and the arc.
-  const inside = placement.arrowsInside;
-  const showArrows = inside || !s.soxd;
-  // The arrow's back is a chord of DIMASZ from its tip.
-  const step = s.asz < 2 * r ? 2 * Math.asin(s.asz / (2 * r)) : Math.PI;
-  const blkStart = f.ends[0].first ? s.blk1 : s.blk2;
-  const blkEnd = f.ends[0].first ? s.blk2 : s.blk1;
-  const tipStart = atTip(blkStart, s, model);
-  const tipEnd = atTip(blkEnd, s, model);
-  const k = inside ? 1 : -1;
-  const baseStart = a0 + k * step;
-  const baseEnd = a0 + sweep - k * step;
-  let from = a0;
-  let to = a0 + sweep;
-  if (inside && showArrows && s.asz > 0) {
-    if (!tipStart) from = baseStart;
-    if (!tipEnd) to = baseEnd;
-  }
-  const arcs: [number, number][] = [];
-  if (to > from) arcs.push([from, to]);
-  if (!inside && showArrows) {
-    if (!tipStart) arcs.push([baseStart - step, baseStart]);
-    if (!tipEnd) arcs.push([baseEnd, baseEnd + step]);
-  }
-  for (const [a, b] of arcs) {
-    for (const [p, q] of clipArc(c, r, a, b, box)) out.push(arcPart(c, r, p, q, s.dimLine));
-  }
-  if (showArrows) {
-    const at = (a: number): Vec2 => add(c, fromAngle(a), r);
-    const pStart = at(a0);
-    const pEnd = at(a0 + sweep);
-    const bStart = at(baseStart);
-    const bEnd = at(baseEnd);
-    out.push(
-      ...arrowParts(pStart, bStart, blkStart, s, model, unit(sub(bStart, pStart)) ?? fromAngle(0)),
-    );
-    out.push(...arrowParts(pEnd, bEnd, blkEnd, s, model, unit(sub(bEnd, pEnd)) ?? fromAngle(0)));
-  }
+  const [blkStart, blkEnd] = f.ends[0].first ? [s.blk1, s.blk2] : [s.blk2, s.blk1];
+  out.push(...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [blkStart, blkEnd], s, model));
   if (text) out.push({ ...s.text, geom: text });
   if (g.dimType === 'angular') {
     out.push(

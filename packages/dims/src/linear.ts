@@ -21,9 +21,13 @@
 // - Text moved out without a leader (DIMTMOVE 0) takes the dimension line with it: the line
 //   goes on from the nearer extension line to the text.
 // - Dimension lines stay out of the text's box widened by DIMGAP.
+// - DIMJUST 3 and 4 put the text over the first or second extension line: turned along it
+//   (upright), its middle DIMGAP and half its width beyond the dimension line, beside the line
+//   by DIMTAD as text beside a dimension line is; the extension line stays out of its box. The
+//   text then takes no room between the extension lines.
 
 import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
-import { dimensionText, formatLinear } from './format';
+import { linearText } from './format';
 import {
   add,
   angleOf,
@@ -155,17 +159,25 @@ export function linearParts(
   const out: DimPart[] = [];
 
   // Extension lines.
+  const extLines: [Vec2, Vec2, DimStyle['ext1']][] = [];
   const ext = (p: Vec2, at: Vec2, props: DimStyle['ext1']) => {
     const v = unit(sub(at, p)) ?? extDir;
     const len = dist(p, at);
     const start = s.fxlon && s.fxl < len - s.exo ? add(at, v, -s.fxl) : add(p, v, s.exo);
-    out.push(linePart(start, add(at, v, s.exe), props));
+    extLines.push([start, add(at, v, s.exe), props]);
   };
   if (!s.se1) ext(g.first, s1, s.ext1);
   if (!s.se2) ext(g.second, s2, s.ext2);
 
   // Text.
-  const label = dimensionText(g.text, formatLinear(room, s.vars), s.vars);
+  const label = linearText(g.text, room, s.vars);
+  // DIMJUST 3/4: over the first or second extension line.
+  const overExt =
+    s.just === 3
+      ? { origin: g.first, at: s1 }
+      : s.just === 4
+        ? { origin: g.second, at: s2 }
+        : undefined;
   const centred = s.tad === 0 && s.tvp === 0;
   const ticks = s.tsz > 0;
   let width = 0;
@@ -178,43 +190,60 @@ export function linearParts(
     const w = measure(probe);
     if (w === undefined) return undefined;
     width = w;
-    placement = fit(room, width, centred, s, ticks);
-    let at = g.textPosition;
-    let outside: boolean;
-    if (keepText) {
-      const t = dot(sub(at, s1), along) / (room || 1);
-      const offLine = t < -1e-9 || t > 1 + 1e-9;
-      outside = !placement.textInside || (g.textUserPositioned && offLine);
-    } else {
-      outside = !placement.textInside;
+    if (overExt) {
+      const outward = unit(sub(overExt.at, overExt.origin)) ?? extDir;
+      const rotation = g.textRotation !== 0 ? g.textRotation : upright(angleOf(outward));
+      const up = perp(fromAngle(rotation));
+      const at = keepText
+        ? g.textPosition
+        : add(add(overExt.at, outward, s.gap + width / 2), textOffset(s, up, up));
+      text = { ...probe, position: at, rotation };
     }
-    const horizontal = outside ? s.toh : s.tih;
-    const rotation = g.textRotation !== 0 ? g.textRotation : horizontal ? 0 : upright(lineAngle);
-    const textDir = fromAngle(rotation);
-    if (!keepText)
-      at = defaultTextAt(g, s, {
-        s1,
-        s2,
-        along,
-        width,
-        outside,
-        textDir,
-        arrowsInside: placement.arrowsInside,
-      });
-    let middle = at;
-    if (outside && s.tmove === 1) {
-      // Leader from the line's middle to the text's near edge (DXF 11).
-      const m = lerp(s1, s2, 0.5);
-      const side = dot(sub(at, m), textDir) < 0 ? -1 : 1;
-      const landEnd = add(at, textDir, -side * s.gap);
-      const landStart = add(landEnd, textDir, -side * s.asz);
-      leader = [m, landStart, landEnd];
-      middle = add(at, textDir, side * (width / 2));
+    placement = fit(room, overExt ? 0 : width, overExt ? false : centred, s, ticks);
+    if (!overExt) {
+      let at = g.textPosition;
+      let outside: boolean;
+      if (keepText) {
+        const t = dot(sub(at, s1), along) / (room || 1);
+        const offLine = t < -1e-9 || t > 1 + 1e-9;
+        outside = !placement.textInside || (g.textUserPositioned && offLine);
+      } else {
+        outside = !placement.textInside;
+      }
+      const horizontal = outside ? s.toh : s.tih;
+      const rotation = g.textRotation !== 0 ? g.textRotation : horizontal ? 0 : upright(lineAngle);
+      const textDir = fromAngle(rotation);
+      if (!keepText)
+        at = defaultTextAt(g, s, {
+          s1,
+          s2,
+          along,
+          width,
+          outside,
+          textDir,
+          arrowsInside: placement.arrowsInside,
+        });
+      let middle = at;
+      if (outside && s.tmove === 1) {
+        // Leader from the line's middle to the text's near edge (DXF 11).
+        const m = lerp(s1, s2, 0.5);
+        const side = dot(sub(at, m), textDir) < 0 ? -1 : 1;
+        const landEnd = add(at, textDir, -side * s.gap);
+        const landStart = add(landEnd, textDir, -side * s.asz);
+        leader = [m, landStart, landEnd];
+        middle = add(at, textDir, side * (width / 2));
+      }
+      text = { ...probe, position: middle, rotation };
+      placement = { textInside: !outside, arrowsInside: placement.arrowsInside };
     }
-    text = { ...probe, position: middle, rotation };
-    placement = { textInside: !outside, arrowsInside: placement.arrowsInside };
   }
   const box = text ? textBox(text, width, s) : undefined;
+  for (const [a, b, props] of extLines) {
+    for (const [p, q] of clipSegment(a, b, overExt ? box : undefined))
+      out.push(linePart(p, q, props));
+  }
+  // Text over an extension line leaves the dimension line whole.
+  const lineBox = overExt ? undefined : box;
 
   // Arrowheads and the dimension line.
   const arrowsInside = placement.arrowsInside;
@@ -236,7 +265,7 @@ export function linearParts(
   const inner = arrowsInside || s.tofl || (!placement.textInside && s.tmove === 1);
   if (inner) {
     // DIMSD1/DIMSD2 drop the half of the line on each side of the text (or the middle).
-    const tMid = text ? dot(sub(text.position, s1), along) : room / 2;
+    const tMid = text && !overExt ? dot(sub(text.position, s1), along) : room / 2;
     const split = add(s1, along, Math.min(room, Math.max(0, tMid)));
     if (s.sd1 && s.sd2) {
       // Both halves suppressed.
@@ -259,7 +288,7 @@ export function linearParts(
     if (reach > 0) lines.push([near, add(near, along, k * reach)]);
   }
   for (const [a, b] of lines) {
-    for (const [p, q] of clipSegment(a, b, box)) out.push(linePart(p, q, s.dimLine));
+    for (const [p, q] of clipSegment(a, b, lineBox)) out.push(linePart(p, q, s.dimLine));
   }
   if (leader) {
     for (let i = 0; i + 1 < leader.length; i++)

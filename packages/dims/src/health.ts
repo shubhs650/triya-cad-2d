@@ -316,8 +316,7 @@ export function dimensionHealth(
   colors?: ColorMatch,
 ): DimComparison | undefined {
   const g = e.geom;
-  if (g.kind !== 'DIMENSION' || g.block === undefined || !model.blocks.get(g.block))
-    return undefined;
+  if (!('dimType' in g) || g.block === undefined || !model.blocks.get(g.block)) return undefined;
   const generated = dimensionParts(e, model, measure);
   if (!generated) return undefined;
   const h = dimStyle(g.style, e.xdata, model).textHeight;

@@ -1,5 +1,6 @@
 // The dimension engine's health check over the public corpus (M2-10, DEC-011, DEC-050): every
-// linear, aligned, radius, diameter and angular dimension with a stored `*D` block is
+// dimension with a stored `*D` block (linear, aligned, radius, diameter, angular, and since
+// part 2 ordinate, jogged radius and arc length) is
 // regenerated and compared with that block (`dimensionHealth`). The roadmap asks for ≥ 95 %
 // within tolerance. Three legacy sample files cannot state their dimensions as their blocks were drawn
 // (below); their dimensions are counted apart (DEC-050) and may not get worse.
@@ -35,8 +36,12 @@ const LEGACY: Readonly<Record<string, string>> = {
   // DIMTIH on and DIMSE1 off). DWG reading gets no new work before launch (DEC-047).
   'public/third-party/acadsharp/sample_AC1014.dwg': 'R14: no DIMDSEP; DIMSTYLE switches misread',
 };
-/** Mismatches in the legacy files: may only go down. */
-const LEGACY_MISMATCHES = 25;
+/**
+ * Mismatches in the legacy files: may only go down. Part 1 left 25; part 2 added the six
+ * ordinate dimensions of these files (drawn in ISO-25 like the rest, read as STANDARD or with
+ * the misread switches).
+ */
+const LEGACY_MISMATCHES = 31;
 
 describe('dimension health over the public corpus (M2-10)', () => {
   it('regenerates ≥ 95 % of stored dimensions within tolerance', () => {
@@ -67,8 +72,8 @@ describe('dimension health over the public corpus (M2-10)', () => {
     const legacy = (r: { key: string }) => r.key.split(' ')[0]! in LEGACY;
     const counted = results.filter((r) => !legacy(r));
     const mismatched = counted.filter((r) => !r.ok);
-    expect(results.length).toBe(210);
-    expect(counted.length).toBe(183);
+    expect(results.length).toBe(261);
+    expect(counted.length).toBe(228);
     expect((counted.length - mismatched.length) / counted.length, report).toBeGreaterThanOrEqual(
       0.95,
     );

@@ -339,3 +339,228 @@ describe('health comparison', () => {
     );
   });
 });
+
+describe('ordinate dimensions (part 2)', () => {
+  const ordinate = (
+    extra: Partial<Extract<DimensionGeometry, { dimType: 'ordinate' }>> = {},
+  ): DimensionGeometry => ({
+    ...common,
+    dimType: 'ordinate',
+    definitionPoint: { x: 0, y: 0 },
+    axis: 'y',
+    feature: { x: 10, y: 5 },
+    leaderEnd: { x: 40, y: 8 },
+    textPosition: { x: 0, y: 0 },
+    ...extra,
+  });
+
+  it('jogs a leader whose end is off the feature: 4 × DIMASZ short, over 2 × DIMASZ', () => {
+    const ps = parts(ordinate());
+    expect(of(ps, 'LINE')).toEqual([
+      { kind: 'LINE', start: { x: 10.625, y: 5 }, end: { x: 30, y: 5 } },
+      { kind: 'LINE', start: { x: 30, y: 5 }, end: { x: 35, y: 8 } },
+      // DIMTAD 1: on under the text, to its far end ("5" is 2.5 wide, a gap past the end).
+      { kind: 'LINE', start: { x: 35, y: 8 }, end: { x: 43.125, y: 8 } },
+    ]);
+    // The Y ordinate is the feature's distance from the origin along Y, aligned with the leader.
+    expect(of(ps, 'MTEXT')[0]).toMatchObject({
+      contents: '5',
+      position: { x: 41.875, y: 9.875 },
+      rotation: 0,
+    });
+    expect(of(ps, 'SOLID')).toEqual([]);
+    expect(
+      ps.filter((p) => p.defpoint).map((p) => (p.geom as { position: unknown }).position),
+    ).toEqual([
+      { x: 10, y: 5 },
+      { x: 40, y: 8 },
+      { x: 0, y: 0 },
+    ]);
+  });
+
+  it('runs a straight X leader downwards, text along it whatever DIMTIH says', () => {
+    const geom = ordinate({
+      axis: 'x',
+      definitionPoint: { x: 5, y: 0 },
+      feature: { x: 20, y: 30 },
+      leaderEnd: { x: 20, y: 10 },
+    });
+    const ps = parts(geom, model({ ...ISO, DIMTAD: 0, DIMTIH: true, DIMTOH: true }));
+    expect(of(ps, 'LINE')).toEqual([
+      { kind: 'LINE', start: { x: 20, y: 29.375 }, end: { x: 20, y: 10 } },
+    ]);
+    const [text] = of(ps, 'MTEXT') as Extract<EntityGeometry, { kind: 'MTEXT' }>[];
+    expect(text).toMatchObject({ contents: '\\A1;15' });
+    close(text!.position.x, 20);
+    close(text!.position.y, 10 - 0.625 - 2.5);
+    close(text!.rotation, Math.PI / 2);
+  });
+});
+
+describe('jogged radius dimensions (part 2)', () => {
+  const jogged = (
+    extra: Partial<Extract<DimensionGeometry, { dimType: 'jogged' }>> = {},
+  ): DimensionGeometry => ({
+    ...common,
+    kind: 'LARGE_RADIAL_DIMENSION',
+    dimType: 'jogged',
+    definitionPoint: { x: 0, y: 0 },
+    chordPoint: { x: 40, y: 0 },
+    overrideCenter: { x: 0, y: 4 },
+    jogPoint: { x: 20, y: 2 },
+    leaderLength: 0,
+    textPosition: { x: 30, y: 0 },
+    textUserPositioned: true,
+    ...extra,
+  });
+
+  it('draws from the displaced centre, jogs at DIMJOGANG through the jog point, and on to the arrow', () => {
+    const ps = parts(jogged(), model({ ...ISO, DIMTAD: 0, DIMJOGANG: Math.PI / 4 }));
+    const lines = (of(ps, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[]).map((l) => [
+      l.start.x,
+      l.start.y,
+      l.end.x,
+      l.end.y,
+    ]);
+    const want = [
+      [0, 4, 22, 4],
+      [22, 4, 18, 0],
+      // The radius line, out of the centred text's box ("R40" 7.5 wide, DIMGAP either side).
+      [18, 0, 25.625, 0],
+      [34.375, 0, 37.5, 0],
+    ];
+    expect(lines).toHaveLength(want.length);
+    lines.forEach((l, i) => l.forEach((v, j) => close(v, want[i]![j]!)));
+    const [solid] = of(ps, 'SOLID') as Extract<EntityGeometry, { kind: 'SOLID' }>[];
+    expect(solid!.corners[2]).toEqual({ x: 40, y: 0 });
+    expect(of(ps, 'MTEXT')[0]).toMatchObject({ contents: '\\A1;R40', position: { x: 30, y: 0 } });
+    expect(ps.filter((p) => p.defpoint)).toHaveLength(3);
+  });
+
+  it('jogs the other way when the displaced centre is on the right of the radius', () => {
+    const ps = parts(
+      jogged({ overrideCenter: { x: 0, y: -4 }, jogPoint: { x: 20, y: -2 } }),
+      model({ ...ISO, DIMTAD: 0, DIMJOGANG: Math.PI / 4 }),
+    );
+    const [, jog] = of(ps, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[];
+    close(jog!.start.x, 22);
+    close(jog!.start.y, -4);
+    close(jog!.end.x, 18);
+    close(jog!.end.y, 0);
+  });
+});
+
+describe('arc length dimensions (part 2)', () => {
+  const r = 10;
+  const sweep = Math.PI / 3;
+  const arcLength = (extra: object = {}): DimensionGeometry => ({
+    ...common,
+    kind: 'ARC_DIMENSION',
+    dimType: 'arc',
+    center: { x: 0, y: 0 },
+    first: { x: r, y: 0 },
+    second: { x: r * Math.cos(sweep), y: r * Math.sin(sweep) },
+    startAngle: 0,
+    endAngle: sweep,
+    partial: false,
+    // The dimension arc's radius is 15.
+    definitionPoint: { x: 15 * Math.cos(sweep / 2), y: 15 * Math.sin(sweep / 2) },
+    textPosition: { x: 0, y: 0 },
+    ...extra,
+  });
+
+  it('measures along the arc, with extension lines parallel under 90° and the arc symbol before the text', () => {
+    const ps = parts(arcLength(), model({ ...ISO, DIMTAD: 0, DIMTIH: true }));
+    const lines = of(ps, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[];
+    expect(lines).toHaveLength(2);
+    for (const l of lines) {
+      // Along the bisector (30°), from DIMEXO off the arc's end to DIMEXE past the dimension arc.
+      close(Math.atan2(l.end.y - l.start.y, l.end.x - l.start.x), sweep / 2);
+      close(Math.hypot(l.end.x, l.end.y) > 15 ? 1 : 0, 1);
+    }
+    close(lines[0]!.start.x, r + 0.625 * Math.cos(sweep / 2));
+    const [text] = of(ps, 'MTEXT') as Extract<EntityGeometry, { kind: 'MTEXT' }>[];
+    expect(text).toMatchObject({ contents: '\\A1;10.47', rotation: 0 });
+    // Placed on the dimension arc's middle.
+    close(text!.position.x, 15 * Math.cos(sweep / 2));
+    close(text!.position.y, 15 * Math.sin(sweep / 2));
+    const arcs = of(ps, 'ARC') as Extract<EntityGeometry, { kind: 'ARC' }>[];
+    const dimArcs = arcs.filter((a) => Math.abs(a.radius - 15) < 1e-9);
+    expect(dimArcs.length).toBeGreaterThanOrEqual(1);
+    // The arc symbol: a half circle just before the text, in Continuous.
+    const symbol = ps.find((p) => p.geom.kind === 'ARC' && p.geom.radius < 15);
+    expect(symbol).toMatchObject({ linetype: '14' });
+    const sg = symbol!.geom as Extract<EntityGeometry, { kind: 'ARC' }>;
+    close(sg.startAngle, 0);
+    close(sg.endAngle, Math.PI);
+    close(sg.center.x + sg.radius, text!.position.x - (5 * 2.5) / 2);
+    // DIMARCSYM 2: no symbol.
+    const none = parts(arcLength(), model({ ...ISO, DIMTAD: 0, DIMARCSYM: 2 }));
+    expect(of(none, 'ARC').every((a) => (a as { radius: number }).radius === 15)).toBe(true);
+    expect(of(ps, 'SOLID')).toHaveLength(2);
+    expect(ps.filter((p) => p.defpoint)).toHaveLength(4);
+  });
+
+  it('runs extension lines radially over 90°', () => {
+    const wide = (2 * Math.PI) / 3;
+    const ps = parts(
+      arcLength({
+        second: { x: r * Math.cos(wide), y: r * Math.sin(wide) },
+        endAngle: wide,
+        definitionPoint: { x: 15 * Math.cos(wide / 2), y: 15 * Math.sin(wide / 2) },
+      }),
+    );
+    const lines = of(ps, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[];
+    close(Math.atan2(lines[0]!.end.y - lines[0]!.start.y, lines[0]!.end.x - lines[0]!.start.x), 0);
+    expect(lines[0]).toMatchObject({ start: { x: 10.625 } });
+    close(lines[0]!.end.x, 15 + 1.25);
+  });
+});
+
+describe('text over an extension line, DIMJUST 3 and 4 (part 2)', () => {
+  it('turns the text along the extension line, past the dimension line, and leaves that line whole', () => {
+    const ps = parts(linear(), model({ ...ISO, DIMJUST: 3 }));
+    const [text] = of(ps, 'MTEXT') as Extract<EntityGeometry, { kind: 'MTEXT' }>[];
+    close(text!.rotation, Math.PI / 2);
+    // "100" is 7.5 wide: its middle a gap and half its width up the first extension line,
+    // DIMTAD 1 putting it on the line's far side from the text's reading direction.
+    close(text!.position.x, -1.875);
+    close(text!.position.y, 20 + 0.625 + 3.75);
+    const lines = of(ps, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[];
+    expect(lines[2]).toEqual({ kind: 'LINE', start: { x: 2.5, y: 20 }, end: { x: 97.5, y: 20 } });
+    const second = of(parts(linear(), model({ ...ISO, DIMJUST: 4 })), 'MTEXT')[0] as Extract<
+      EntityGeometry,
+      { kind: 'MTEXT' }
+    >;
+    close(second.position.x, 100 - 1.875);
+  });
+});
+
+describe('tolerances, limits and alternate units (part 2)', () => {
+  const textOf = (vars: DimStyleRecord['vars'], extra = {}) =>
+    (of(parts(linear(extra), model({ ...ISO, ...vars })), 'MTEXT')[0] as { contents: string })
+      .contents;
+
+  it('appends DIMTOL deviations and alternate units to a linear dimension', () => {
+    expect(
+      textOf({ DIMTOL: true, DIMTP: 0.1, DIMTM: 0.05, DIMTFAC: 0.7, DIMTDEC: 2, DIMTZIN: 0 }),
+    ).toBe('100{\\H0.7x;\\S+0.10^-0.05;}');
+    expect(textOf({ DIMALT: true, DIMALTF: 0.03937, DIMALTD: 2, DIMALTU: 2, DIMALTZ: 0 })).toBe(
+      '100 [3.94]',
+    );
+  });
+
+  it('prefixes R to a radius in both units', () => {
+    const geom: DimensionGeometry = {
+      ...common,
+      dimType: 'radius',
+      definitionPoint: { x: 0, y: 0 },
+      chordPoint: { x: 10, y: 0 },
+      leaderLength: 0,
+      textPosition: { x: 20, y: 0 },
+      textUserPositioned: true,
+    };
+    const ps = parts(geom, model({ ...ISO, DIMALT: true, DIMALTF: 25.4, DIMALTD: 0, DIMALTU: 2 }));
+    expect(of(ps, 'MTEXT')[0]).toMatchObject({ contents: 'R10 [R254]' });
+  });
+});
