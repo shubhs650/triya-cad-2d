@@ -94,9 +94,9 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| TEXT / DTEXT | DT | 1 | Justify (all), Style | ~ (#230: every justification incl. Align/Fit, Style with `?`, ↵ continues below the last text, typed in place one line at a time; TEXTSIZE follows the height; in-place click to start a new line elsewhere is M2-07 part 2) |
-| MTEXT | T, MT | 1 | in-place editor; -MTEXT dash | ~ (#230: two corners or Width, Height/Justify/Line spacing/Rotation/Style; in-place editor with Bold, Italic, Underline, Overline, Strikethrough, Height, Color and Stack, Ctrl+Enter or a click outside to close, Esc to drop; -MTEXT and the command line take lines until an empty one. Columns, fonts list, fields, AutoStack: M2-07 part 2) |
-| TEXTEDIT / DDEDIT | ED | 1 | | |
+| TEXT / DTEXT | DT | 1 | Justify (all), Style | ~ (#230: every justification incl. Align/Fit, Style with `?`, ↵ continues below the last text, typed in place one line at a time; TEXTSIZE follows the height; a click elsewhere starts the next line there, #232) |
+| MTEXT | T, MT | 1 | in-place editor; -MTEXT dash | ~ (#230: two corners or Width, Height/Justify/Line spacing/Rotation/Style; in-place editor with Bold, Italic, Underline, Overline, Strikethrough, Height, Color and Stack, Ctrl+Enter or a click outside to close, Esc to drop; -MTEXT and the command line take lines until an empty one. #232: Font list, AutoStack (`1/2 ` → diagonal fraction, `^` tolerance), Enter keeps the paragraph's formatting. Columns and the ruler: M2-07 part 3; fields: M4-10) |
+| TEXTEDIT / DDEDIT | ED | 1 | Undo, Mode (Single/Multiple); double-click | ~ (#232: TEXT in its in-place line, MTEXT in its editor keeping the codes it has no control for; Undo, Mode; a double click on a TEXT or MTEXT runs it (DBLCLKEDIT); an emptied text is erased. ATTDEF: M2-12; dimension text: M2-11) |
 | STYLE | ST | 2 | dialog; -STYLE dash | |
 | FIND | — | 2 | | |
 | SPELL | SP | 3 | | |

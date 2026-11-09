@@ -709,7 +709,7 @@ export function App() {
       </div>
 
       <LayoutTabs doc={active} />
-      <TextEditor doc={active} />
+      <TextEditor doc={active} fonts={fontState.files.map((f) => f.name)} />
       <SnapMenu />
       <CommandLine
         doc={active?.id}
@@ -933,6 +933,7 @@ function ViewportCanvas({
           point instanceof Promise ? point.then((r) => pick(r.point, r.missed)) : pick(point),
         );
       },
+      onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
       onSnapMenu: (at) => snapMenu.open(id, at),
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);

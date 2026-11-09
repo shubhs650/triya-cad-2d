@@ -4,7 +4,9 @@
 import fc from 'fast-check';
 import { describe, expect, it } from 'vitest';
 import {
+  contentOf,
   normalizeSpans,
+  sameContent,
   parseMText,
   spansOf,
   writeMText,
@@ -112,6 +114,84 @@ describe('spansOf', () => {
   });
 });
 
+describe('editing existing contents (M2-07 part 2)', () => {
+  const again = (contents: string, b: MTextBase = base) => {
+    const c = contentOf(parseMText(contents, b), b);
+    return writeMText(c.spans, b.font, c.paragraph);
+  };
+  const effective = (contents: string) =>
+    parseMText(contents, base).paragraphs.map((p) => ({
+      style: p.style,
+      codes: p.codes,
+      items: p.items,
+      end: p.end,
+    }));
+
+  it('keeps width, tracking, obliquing and alignment codes as run formats', () => {
+    expect(back('{\\W0.8;narrow}{\\T1.2;wide}{\\Q15;slant}{\\A1;mid}')).toEqual([
+      text('narrow', { widthFactor: 0.8 }),
+      text('wide', { tracking: 1.2 }),
+      text('slant', { oblique: 15 }),
+      text('mid', { valign: 'middle' }),
+    ]);
+    expect(again('{\\W0.8;\\T1.2;\\Q15;\\A2;x}')).toBe('{\\W0.8;\\T1.2;\\Q15;\\A2;x}');
+  });
+
+  it("keeps a font's charset and pitch", () => {
+    expect(again('{\\fArial|b1|i0|c0|p34;B}')).toBe('{\\fArial|b1|i0|c0|p34;B}');
+  });
+
+  it('keeps column and dimension-line breaks', () => {
+    expect(back('a\\Nb\\Xc')).toEqual([
+      text('a'),
+      { type: 'break', end: 'column' },
+      text('b'),
+      { type: 'break', end: 'dimline' },
+      text('c'),
+    ]);
+    expect(again('a\\Nb\\Xc\\Pd')).toBe('a\\Nb\\Xc\\Pd');
+  });
+
+  it("keeps each paragraph's \\p values, including keys layout does not draw", () => {
+    const contents = 'Title\\P\\pxi-3,l4t4;item\\P\\pxqc;centred\\P\\pi*,l*,t;plain';
+    const c = contentOf(parseMText(contents, base), base);
+    expect(c.paragraph).toEqual([]);
+    expect(c.spans.filter((x) => x.type === 'break')).toEqual([
+      { type: 'break', paragraph: ['xi-3,l4t4'] },
+      { type: 'break', paragraph: ['xi-3,l4t4', 'xqc'] },
+      { type: 'break', paragraph: ['xi-3,l4t4', 'xqc', 'i*,l*,t'] },
+    ]);
+    expect(again(contents)).toBe(contents);
+    // AutoCAD's bullets (`\\pxn…`) are no key layout draws, but stay.
+    expect(again('\\pxn1,i-3,l3;one\\Ptwo')).toBe('\\pxn1,i-3,l3;one\\Ptwo');
+  });
+
+  it('scopes a paragraph whose values a later paragraph does not carry', () => {
+    // {\\pxqc;a} ends its value with the group: b is not centred.
+    const contents = '{\\pxqc;a}\\Pb';
+    expect(again(contents)).toBe('{\\pxqc;a}\\Pb');
+    expect(effective(again(contents))).toEqual(effective(contents));
+    // A paragraph break typed inside a centred paragraph keeps it centred.
+    const c = contentOf(parseMText('\\pxqc;ab', base), base);
+    expect(
+      writeMText(
+        [text('a'), { type: 'break', paragraph: ['xqc'] }, text('b')],
+        base.font,
+        c.paragraph,
+      ),
+    ).toBe('\\pxqc;a\\Pb');
+  });
+
+  it('tells an edit that changed nothing from one that did', () => {
+    const c = contentOf(parseMText('\\pxqc;{\\Lab}c', base), base);
+    expect(sameContent(c, { paragraph: c.paragraph, spans: [...c.spans] }, base.font)).toBe(true);
+    expect(sameContent(c, { paragraph: [], spans: c.spans }, base.font)).toBe(false);
+    expect(
+      sameContent(c, { ...c, spans: [text('ab', { underline: true }), text('d')] }, base.font),
+    ).toBe(false);
+  });
+});
+
 // Text a drafter can type: anything but the `%%` and `%<` sequences, which are codes in
 // MTEXT whatever the editor does with them, and the carriage return, which MTEXT drops.
 const typed = fc
@@ -152,6 +232,10 @@ const format: fc.Arbitrary<MTextFormat> = fc.record(
       { name: 'Segoe UI', kind: 'ttf' as const },
       { name: 'romans.shx', kind: 'shx' as const },
     ),
+    widthFactor: fc.constantFrom(0.8, 1.5),
+    tracking: fc.constantFrom(0.9, 1.25),
+    oblique: fc.constantFrom(15, -10),
+    valign: fc.constantFrom('middle' as const, 'top' as const),
     color: fc.oneof(
       fc.integer({ min: 1, max: 255 }).map((index) => ({ kind: 'aci' as const, index })),
       fc
@@ -163,7 +247,21 @@ const format: fc.Arbitrary<MTextFormat> = fc.record(
 );
 const span: fc.Arbitrary<MTextSpan> = fc.oneof(
   { weight: 4, arbitrary: fc.tuple(typed, format).map(([t, f]) => text(t, f)) },
-  { weight: 1, arbitrary: fc.constant<MTextSpan>({ type: 'break' }) },
+  {
+    weight: 1,
+    arbitrary: fc
+      .tuple(
+        fc.constantFrom(undefined, 'column' as const, 'dimline' as const),
+        fc.array(fc.constantFrom('xqr', 'xqc', 'i1,l2', 'xi-3,l4t4', 'tz', 'xn1'), {
+          maxLength: 3,
+        }),
+      )
+      .map(([end, paragraph]): MTextSpan => ({
+        type: 'break',
+        ...(end && { end }),
+        ...(paragraph.length > 0 && { paragraph }),
+      })),
+  },
   {
     weight: 1,
     arbitrary: fc
@@ -184,7 +282,20 @@ const span: fc.Arbitrary<MTextSpan> = fc.oneof(
   },
 );
 
+const paragraphCodes = fc.array(fc.constantFrom('xqr', 'xqc', 'i1,l2', 'tz'), { maxLength: 2 });
+
 describe('write then parse', () => {
+  it('reads back paragraph values and breaks of any order', () => {
+    fc.assert(
+      fc.property(fc.array(span, { maxLength: 12 }), paragraphCodes, (spans, paragraph) => {
+        const c = contentOf(parseMText(writeMText(spans, base.font, paragraph), base), base);
+        expect(c.paragraph).toEqual(paragraph);
+        expect(c.spans).toEqual(normalizeSpans(spans, base.font));
+      }),
+      { numRuns: 1000 },
+    );
+  });
+
   it('reads back every span the editor can make, on a TrueType and an SHX style', () => {
     fc.assert(
       fc.property(fc.array(span, { maxLength: 12 }), fc.boolean(), (spans, shx) => {

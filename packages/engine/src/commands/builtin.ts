@@ -5,7 +5,7 @@ import { lineCommand } from './draw/line';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
 import { DRAW_ORDER_COMMANDS } from './modify/draw-order';
-import { mtextCommand, textCommand } from './draw/text';
+import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
 import { selectCommand } from './select';
 import { viewCommand } from './view/named-view';
@@ -16,6 +16,7 @@ export function builtinCommands(): CommandRegistry {
     lineCommand(),
     textCommand(),
     mtextCommand(),
+    textEditCommand(),
     zoomCommand(),
     panCommand(),
     regenCommand(false),

@@ -24,4 +24,14 @@ export {
   type MTextRun,
   type MTextStackPart,
 } from './layout';
-export { normalizeSpans, spansOf, writeMText, type MTextFormat, type MTextSpan } from './write';
+export {
+  contentOf,
+  normalizeSpans,
+  sameContent,
+  spansOf,
+  writeMText,
+  type MTextBreak,
+  type MTextContent,
+  type MTextFormat,
+  type MTextSpan,
+} from './write';

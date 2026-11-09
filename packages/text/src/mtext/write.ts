@@ -7,6 +7,11 @@
 // format leaks into the next run; heights are absolute `\H`, bold and italic are the `|b|i`
 // flags of a `\f` TrueType font change (SHX fonts have neither, as in AutoCAD's editor, where
 // the buttons are off for them).
+//
+// Editing existing MTEXT (M2-07 part 2) keeps what the editor has no control for: width
+// (`\W`), tracking (`\T`), obliquing (`\Q`) and alignment (`\A`) are run formats, a font's
+// charset and pitch stay on it, column and dimension-line breaks stay what they were, and each
+// paragraph keeps the `\p` values in effect for it, as written (`MTextParagraph.codes`).
 import type { MTextColor, MTextDocument, MTextFont, MTextItem, MTextBase } from './parse';
 
 /** A run's character format; an absent key is the entity's own (its style and height). */
@@ -18,15 +23,39 @@ export interface MTextFormat {
   readonly strike?: boolean;
   /** Text height in drawing units. */
   readonly height?: number;
-  /** Another font: a TrueType family (or file) or an SHX file. */
-  readonly font?: { readonly name: string; readonly kind: 'shx' | 'ttf' };
+  /** Another font: a TrueType family (or file) or an SHX file, with its `|c` and `|p` flags. */
+  readonly font?: {
+    readonly name: string;
+    readonly kind: 'shx' | 'ttf';
+    readonly charset?: number;
+    readonly pitch?: number;
+  };
   readonly color?: MTextColor;
+  /** `\W`: width factor, absolute. */
+  readonly widthFactor?: number;
+  /** `\T`: tracking factor, absolute (1 is the font's own spacing). */
+  readonly tracking?: number;
+  /** `\Q`: obliquing angle in degrees, absolute. */
+  readonly oblique?: number;
+  /** `\A`: where a smaller run sits on its line (bottom is the default). */
+  readonly valign?: 'middle' | 'top';
+}
+
+/**
+ * A paragraph break. `end` is a column (`\N`) or dimension-line (`\X`) break kept from the
+ * contents read; `paragraph` the `\p` values in effect for the paragraph after it (none: no
+ * paragraph formatting).
+ */
+export interface MTextBreak {
+  readonly type: 'break';
+  readonly end?: 'column' | 'dimline';
+  readonly paragraph?: readonly string[];
 }
 
 export type MTextSpan =
   /** Text; a tab is `\t`. No line breaks: a paragraph ends with a `break`. */
   | { readonly type: 'text'; readonly text: string; readonly format: MTextFormat }
-  | { readonly type: 'break' }
+  | MTextBreak
   /** A stacked fraction (`/`), diagonal fraction (`#`) or tolerance (`^`). */
   | {
       readonly type: 'stack';
@@ -61,6 +90,13 @@ function stackPart(text: string): string {
   return text.replace(/;/g, '').replace(/[\\/#^]/g, (c) => `\\${c}`);
 }
 
+const VALIGN = { middle: 1, top: 2 } as const;
+
+/** A number as MTEXT writes it: no exponent for the sizes drawings use. */
+function num(v: number): string {
+  return String(Number(v.toPrecision(12)));
+}
+
 function sameColor(a: MTextColor | undefined, b: MTextColor | undefined): boolean {
   if (!a || !b) return a === b;
   if (a.kind === 'aci' || b.kind === 'aci') {
@@ -84,8 +120,19 @@ function normalFormat(f: MTextFormat, base: MTextFont): MTextFormat {
     ...(f.overline && { overline: true }),
     ...(f.strike && { strike: true }),
     ...(f.height !== undefined && { height: f.height }),
-    ...(font && { font: { name: font.name, kind: font.kind } }),
+    ...(font && {
+      font: {
+        name: font.name,
+        kind: font.kind,
+        ...(font.charset !== undefined && { charset: font.charset }),
+        ...(font.pitch !== undefined && { pitch: font.pitch }),
+      },
+    }),
     ...(f.color && { color: f.color }),
+    ...(f.widthFactor !== undefined && { widthFactor: f.widthFactor }),
+    ...(f.tracking !== undefined && { tracking: f.tracking }),
+    ...(f.oblique !== undefined && { oblique: f.oblique }),
+    ...(f.valign !== undefined && { valign: f.valign }),
   };
 }
 
@@ -99,8 +146,30 @@ function sameFormat(a: MTextFormat, b: MTextFormat): boolean {
     a.height === b.height &&
     a.font?.name === b.font?.name &&
     a.font?.kind === b.font?.kind &&
-    sameColor(a.color, b.color)
+    a.font?.charset === b.font?.charset &&
+    a.font?.pitch === b.font?.pitch &&
+    sameColor(a.color, b.color) &&
+    a.widthFactor === b.widthFactor &&
+    a.tracking === b.tracking &&
+    a.oblique === b.oblique &&
+    a.valign === b.valign
   );
+}
+
+const sameCodes = (a: readonly string[], b: readonly string[]): boolean =>
+  a.length === b.length && a.every((c, i) => c === b[i]);
+
+/** Whether `chain` starts with `head`. */
+const extendsCodes = (chain: readonly string[], head: readonly string[]): boolean =>
+  head.length <= chain.length && head.every((c, i) => c === chain[i]);
+
+/** A break as written: no empty paragraph codes. */
+function normalBreak(b: MTextBreak): MTextBreak {
+  return {
+    type: 'break',
+    ...(b.end && { end: b.end }),
+    ...(b.paragraph && b.paragraph.length > 0 && { paragraph: [...b.paragraph] }),
+  };
 }
 
 /**
@@ -111,7 +180,7 @@ export function normalizeSpans(spans: readonly MTextSpan[], base: MTextFont): MT
   const out: MTextSpan[] = [];
   for (const s of spans) {
     if (s.type === 'break') {
-      out.push(s);
+      out.push(normalBreak(s));
       continue;
     }
     const format = normalFormat(s.format, base);
@@ -139,15 +208,22 @@ function codes(f: MTextFormat, base: MTextFont): string {
   let out = '';
   if (f.font || f.bold !== undefined || f.italic !== undefined) {
     const font = f.font ?? base;
+    const flags =
+      (font.charset !== undefined ? `|c${font.charset}` : '') +
+      (font.pitch !== undefined ? `|p${font.pitch}` : '');
     if (font.kind === 'shx') {
-      if (f.font) out += `\\F${font.name};`;
+      if (f.font) out += `\\F${font.name}${flags};`;
     } else {
       const bold = f.bold ?? base.bold;
       const italic = f.italic ?? base.italic;
-      out += `\\f${font.name}|b${bold ? 1 : 0}|i${italic ? 1 : 0};`;
+      out += `\\f${font.name}|b${bold ? 1 : 0}|i${italic ? 1 : 0}${flags};`;
     }
   }
-  if (f.height !== undefined) out += `\\H${f.height};`;
+  if (f.height !== undefined) out += `\\H${num(f.height)};`;
+  if (f.widthFactor !== undefined) out += `\\W${num(f.widthFactor)};`;
+  if (f.tracking !== undefined) out += `\\T${num(f.tracking)};`;
+  if (f.oblique !== undefined) out += `\\Q${num(f.oblique)};`;
+  if (f.valign !== undefined) out += `\\A${VALIGN[f.valign]};`;
   if (f.color?.kind === 'aci') out += `\\C${f.color.index};`;
   else if (f.color) out += `\\c${f.color.r | (f.color.g << 8) | (f.color.b << 16)};`;
   if (f.underline) out += '\\L';
@@ -156,8 +232,62 @@ function codes(f: MTextFormat, base: MTextFont): string {
   return out;
 }
 
-/** MTEXT contents (DXF 1 and 3) for the spans, on a style whose font is `base`. */
-export function writeMText(spans: readonly MTextSpan[], base: MTextFont): string {
+/** One paragraph's runs and what ends it. */
+interface Paragraph {
+  readonly codes: readonly string[];
+  readonly spans: Exclude<MTextSpan, MTextBreak>[];
+  /** The break after it; none for the last. */
+  readonly end?: MTextBreak;
+}
+
+function paragraphsOf(spans: readonly MTextSpan[], first: readonly string[]): Paragraph[] {
+  const out: {
+    codes: readonly string[];
+    spans: Exclude<MTextSpan, MTextBreak>[];
+    end?: MTextBreak;
+  }[] = [{ codes: first, spans: [] }];
+  for (const s of spans) {
+    if (s.type === 'break') {
+      out.at(-1)!.end = s;
+      out.push({ codes: s.paragraph ?? [], spans: [] });
+    } else out.at(-1)!.spans.push(s);
+  }
+  return out;
+}
+
+/**
+ * MTEXT contents (DXF 1 and 3) for the spans, on a style whose font is `base`. `paragraph` is
+ * the first paragraph's `\p` values (`MTextContent.paragraph`); each break carries the next's.
+ *
+ * Paragraph properties carry into later paragraphs, so a paragraph's values are written as
+ * what they add to those already in effect. A paragraph whose values some later paragraph does
+ * not start with is written in braces, which end them with it.
+ */
+export function writeMText(
+  spans: readonly MTextSpan[],
+  base: MTextFont,
+  paragraph: readonly string[] = [],
+): string {
+  const paragraphs = paragraphsOf(normalizeSpans(spans, base), paragraph);
+  let out = '';
+  let outer: readonly string[] = [];
+  paragraphs.forEach((p, i) => {
+    const later = paragraphs.slice(i + 1);
+    // Every paragraph's values start with those in effect outside it (`outer`), since a
+    // paragraph's values become `outer` only when all later ones start with them.
+    const scoped = !later.every((q) => extendsCodes(q.codes, p.codes));
+    const added = p.codes.slice(outer.length);
+    const head = added.map((c) => `\\p${c};`).join('');
+    const body = runs(p.spans, base);
+    out += scoped && head !== '' ? `{${head}${body}}` : `${head}${body}`;
+    if (!scoped) outer = p.codes;
+    if (p.end) out += p.end.end === 'column' ? '\\N' : p.end.end === 'dimline' ? '\\X' : '\\P';
+  });
+  return out;
+}
+
+/** One paragraph's runs, each format change a `{…}` group. */
+function runs(spans: readonly Exclude<MTextSpan, MTextBreak>[], base: MTextFont): string {
   let out = '';
   let group: { codes: string; body: string } | undefined;
   const close = (): void => {
@@ -165,12 +295,7 @@ export function writeMText(spans: readonly MTextSpan[], base: MTextFont): string
     out += group.codes === '' ? group.body : `{${group.codes}${group.body}}`;
     group = undefined;
   };
-  for (const s of normalizeSpans(spans, base)) {
-    if (s.type === 'break') {
-      close();
-      out += '\\P';
-      continue;
-    }
+  for (const s of spans) {
     const c = codes(s.format, base);
     if (group?.codes !== c) {
       close();
@@ -191,7 +316,11 @@ export function writeMText(spans: readonly MTextSpan[], base: MTextFont): string
 
 /** The format of a parsed run, relative to the entity's. */
 function formatOf(style: MTextItem['style'], base: MTextBase): MTextFormat {
-  const sameFont = style.font.name === base.font.name && style.font.kind === base.font.kind;
+  const sameFont =
+    style.font.name === base.font.name &&
+    style.font.kind === base.font.kind &&
+    style.font.charset === base.font.charset &&
+    style.font.pitch === base.font.pitch;
   return normalFormat(
     {
       bold: style.font.bold,
@@ -200,21 +329,40 @@ function formatOf(style: MTextItem['style'], base: MTextBase): MTextFormat {
       overline: style.overline,
       strike: style.strike,
       ...(style.height !== base.height && { height: style.height }),
-      ...(!sameFont && { font: { name: style.font.name, kind: style.font.kind } }),
+      ...(!sameFont && { font: style.font }),
       ...(style.color && { color: style.color }),
+      ...(style.widthFactor !== base.widthFactor && { widthFactor: style.widthFactor }),
+      ...(style.tracking !== 1 && { tracking: style.tracking }),
+      ...(style.oblique !== base.oblique && { oblique: style.oblique }),
+      ...(style.valign !== 'bottom' && { valign: style.valign }),
     },
     base.font,
   );
 }
 
+/** MTEXT contents as the editor holds them: the first paragraph's `\p` values and the spans. */
+export interface MTextContent {
+  readonly paragraph: readonly string[];
+  readonly spans: MTextSpan[];
+}
+
 /**
- * Parsed contents as editor spans. What the editor has no control for is dropped: paragraph
- * formatting, width, tracking, obliquing and alignment changes, and column and dimension-line
- * breaks (read as paragraph breaks).
+ * Parsed contents as editor spans, with everything the editor has no control for kept (see the
+ * file comment), so that `writeMText` gives contents that read back the same. Not kept: a
+ * double-byte `\M+` character is read as the character of its code.
  */
-export function spansOf(doc: MTextDocument, base: MTextBase): MTextSpan[] {
+export function contentOf(doc: MTextDocument, base: MTextBase): MTextContent {
   const spans: MTextSpan[] = [];
   doc.paragraphs.forEach((p, i) => {
+    if (i > 0) {
+      const prev = doc.paragraphs[i - 1]!;
+      spans.push({
+        type: 'break',
+        ...(prev.end === 'column' && { end: 'column' as const }),
+        ...(prev.end === 'dimline' && { end: 'dimline' as const }),
+        ...(p.codes && { paragraph: p.codes }),
+      });
+    }
     for (const item of p.items) {
       const format = formatOf(item.style, base);
       switch (item.type) {
@@ -241,7 +389,22 @@ export function spansOf(doc: MTextDocument, base: MTextBase): MTextSpan[] {
           break;
       }
     }
-    if (i < doc.paragraphs.length - 1) spans.push({ type: 'break' });
   });
-  return normalizeSpans(spans, base.font);
+  return {
+    paragraph: doc.paragraphs[0]?.codes ?? [],
+    spans: normalizeSpans(spans, base.font),
+  };
+}
+
+/** The spans of parsed contents (`contentOf` without the first paragraph's values). */
+export function spansOf(doc: MTextDocument, base: MTextBase): MTextSpan[] {
+  return contentOf(doc, base).spans;
+}
+
+/** Whether two contents are the same once normalized (an edit that changed nothing). */
+export function sameContent(a: MTextContent, b: MTextContent, base: MTextFont): boolean {
+  return (
+    sameCodes(a.paragraph, b.paragraph) &&
+    JSON.stringify(normalizeSpans(a.spans, base)) === JSON.stringify(normalizeSpans(b.spans, base))
+  );
 }

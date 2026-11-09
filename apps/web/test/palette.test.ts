@@ -31,6 +31,7 @@ describe('palette search', () => {
       'SELECT',
       'STRETCH',
       'TEXT',
+      'TEXTEDIT',
       'TEXTTOFRONT',
       'VIEW',
       'WIPEOUT',
@@ -40,6 +41,9 @@ describe('palette search', () => {
     expect(erase?.aliases).toEqual(expect.arrayContaining(['E', 'DEL']));
     const text = commandItems(builtinCommands()).find((i) => i.id === 'TEXT');
     expect(text?.aliases).toEqual(['DT']);
+    expect(commandItems(builtinCommands()).find((i) => i.id === 'TEXTEDIT')?.aliases).toEqual([
+      'ED',
+    ]);
   });
 
   it('scores whole, prefix, word-start and scattered matches in that order', () => {

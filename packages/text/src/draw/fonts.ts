@@ -8,7 +8,7 @@
 // font (AutoCAD's FONTALT, itself through the same name map), else the default bundled font,
 // else nothing. Every font drawn with another one is reported (`missing`, `substitutions`).
 
-import type { MTextCharStyle, MTextFont } from '../mtext/parse';
+import type { MTextBase, MTextCharStyle, MTextFont } from '../mtext/parse';
 import type { MTextMeasure } from '../mtext/layout';
 import type { ShxFont } from '../shx/font';
 import type { TtfFont } from '../ttf/font';
@@ -44,6 +44,28 @@ export function styleFont(style: {
     kind: TRUETYPE_FILE.test(style.font) ? 'ttf' : 'shx',
     bold: (style.trueTypeFlags & 2) !== 0,
     italic: (style.trueTypeFlags & 1) !== 0,
+  };
+}
+
+/**
+ * The format an MTEXT on a style starts from, as the renderer reads it: the style's font,
+ * width factor (0 read as 1) and obliquing (radians in the style, degrees here), at the
+ * entity's height. The in-place editor reads contents relative to it (M2-07 part 2).
+ */
+export function mtextBase(
+  style: {
+    readonly font: string;
+    readonly trueTypeFlags: number;
+    readonly widthFactor?: number;
+    readonly obliqueAngle?: number;
+  },
+  height: number,
+): MTextBase {
+  return {
+    font: styleFont(style),
+    height,
+    widthFactor: style.widthFactor || 1,
+    oblique: ((style.obliqueAngle ?? 0) * 180) / Math.PI,
   };
 }
 

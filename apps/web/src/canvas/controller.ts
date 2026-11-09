@@ -165,6 +165,11 @@ export interface CanvasHooks {
       readonly grip?: number;
     },
   ) => void;
+  /**
+   * A left double click (M2-07 part 2): the world point under it, for the command engine to
+   * edit the object there (TEXTEDIT on a text, AutoCAD's DBLCLKEDIT).
+   */
+  readonly onDoubleClick?: (p: Vec2) => void;
   /** Shift+right-click at a point prompt (M2-04 part 2): the object snap menu, at client px. */
   readonly onSnapMenu?: (at: { readonly x: number; readonly y: number }) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
@@ -1080,6 +1085,16 @@ export class CanvasController {
       opts,
     );
     c.addEventListener('auxclick', (e) => e.preventDefault(), opts);
+    // A double click edits the object under it (M2-07 part 2).
+    c.addEventListener(
+      'dblclick',
+      (e) => {
+        if (e.button !== 0 || this.#mode !== 'none') return;
+        const world = this.#world(e);
+        if (world) this.#hooks.onDoubleClick?.(world);
+      },
+      opts,
+    );
     // Shift+right-click: AutoCAD's object snap menu, at a point prompt (M2-04 part 2).
     c.addEventListener(
       'contextmenu',

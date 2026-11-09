@@ -102,6 +102,14 @@ export interface TextEditorRequest {
   readonly style: Handle;
   readonly fontFile: string;
   readonly trueTypeFlags: number;
+  /** The style's width factor and obliquing (radians), which MTEXT contents are relative to. */
+  readonly widthFactor?: number;
+  readonly obliqueAngle?: number;
+  /**
+   * The text being edited (TEXTEDIT, M2-07 part 2): a TEXT's value or an MTEXT's contents. The
+   * editor opens holding it and answers once, `editor: true`, with the whole new value.
+   */
+  readonly value?: string;
 }
 
 /** Free text; without `spaces` a space ends the input (the front-end's job, as Space is Enter). */
@@ -110,6 +118,11 @@ export interface StringPrompt extends PromptBase {
   readonly spaces?: boolean;
   /** Typed in place on the canvas, where a front-end can (M2-07). */
   readonly editor?: TextEditorRequest;
+  /**
+   * A click on the canvas answers with its point (TEXT: a click elsewhere starts the next line
+   * there, M2-07 part 2).
+   */
+  readonly pick?: boolean;
 }
 
 export interface IntegerPrompt extends PromptBase {
@@ -133,6 +146,11 @@ export interface SelectionPrompt extends PromptBase {
    * mode), and a pre-selection is not taken (M2-08: REVCLOUD Object, WIPEOUT Polyline).
    */
   readonly single?: boolean;
+  /**
+   * With `single`, the pre-selection still answers it, as for any "Select objects" (TEXTEDIT,
+   * M2-07 part 2: a text selected first, or double-clicked, is edited).
+   */
+  readonly pickfirst?: boolean;
 }
 
 export type Prompt =
@@ -194,6 +212,7 @@ export function answerFits(prompt: Prompt, answer: PromptAnswer): boolean {
     return (prompt.options ?? []).some((o) => o.toUpperCase() === answer.keyword.toUpperCase());
   }
   if (answer.kind === 'string' && 'arbitrary' in prompt && prompt.arbitrary) return true;
+  if (answer.kind === 'point' && prompt.kind === 'string' && prompt.pick) return true;
   if (!ANSWER_KINDS[prompt.kind].includes(answer.kind)) return false;
   return prompt.kind !== 'integer' || (answer.kind === 'number' && Number.isInteger(answer.value));
 }
