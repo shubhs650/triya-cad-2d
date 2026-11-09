@@ -4,6 +4,8 @@
 
 import type { Box, ChangeSet, DragMotion, EntityId, Handle, Vec2 } from '@triya/engine';
 import type { GridSpec } from './grid';
+import type { TtfFont } from '@triya/text';
+import type { Affine } from './affine';
 
 /**
  * World → screen: the world point `center` sits at the middle of the viewport, `scale` is
@@ -59,6 +61,21 @@ export type PrimitiveColor = string | 'foreground' | 'background';
 export interface TextLod {
   readonly height: number;
   readonly greek: readonly number[];
+  /**
+   * The TrueType glyphs a `fill` of text draws, in order (M2-16 part 3): a PDF plot writes them
+   * as text in the embedded font instead of filling their outlines.
+   */
+  readonly glyphs?: readonly PlacedGlyph[];
+}
+
+/** A TrueType glyph placed in the drawing (structurally the PDF writer's `PlotGlyph`). */
+export interface PlacedGlyph {
+  readonly font: TtfFont;
+  /** Glyph number in the font file. */
+  readonly index: number;
+  readonly codePoint: number;
+  /** Font units (y up, origin on the baseline) → world. */
+  readonly m: Affine;
 }
 
 /**

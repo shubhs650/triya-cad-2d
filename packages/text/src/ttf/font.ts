@@ -87,12 +87,15 @@ export class TtfFont {
   /** Height of capitals in font units: OS/2 sCapHeight, else the 'H' outline, else ascender. */
   readonly capHeight: number;
   readonly style: TtfStyle;
+  /** The font file, when read from one: a PDF plot embeds it (M2-16 part 3). */
+  readonly bytes?: Uint8Array;
 
   readonly #font: Font;
   readonly #glyphs = new Map<number, TtfGlyph>();
 
-  constructor(font: Font) {
+  constructor(font: Font, bytes?: Uint8Array) {
     this.#font = font;
+    if (bytes) this.bytes = bytes;
     this.family = nameOf(font.names, 'fontFamily');
     this.subfamily = nameOf(font.names, 'fontSubfamily');
     this.fullName = nameOf(font.names, 'fullName');
@@ -187,5 +190,5 @@ export function parseTtf(bytes: Uint8Array): TtfFont {
   } catch (e) {
     throw new Error(`not a TrueType/OpenType font: ${(e as Error).message}`, { cause: e });
   }
-  return new TtfFont(font);
+  return new TtfFont(font, new Uint8Array(buffer as ArrayBuffer));
 }
