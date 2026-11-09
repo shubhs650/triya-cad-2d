@@ -58,6 +58,37 @@ describe('drafting aids', () => {
   });
 
   it('has the F-keys AutoCAD gives them', () => {
-    expect(DRAFTING_KEYS).toEqual({ F3: 'osnap', F8: 'ortho', F9: 'snap', F10: 'polar' });
+    expect(DRAFTING_KEYS).toEqual({
+      F3: 'osnap',
+      F7: 'grid',
+      F8: 'ortho',
+      F9: 'snap',
+      F10: 'polar',
+      F11: 'otrack',
+    });
+  });
+
+  it('starts OTRACK and TPY on and GRID off; LWT follows the drawing until toggled (part 2)', () => {
+    const d = new Drafting();
+    expect(['otrack', 'grid', 'tpy'].map((t) => d.isOn(t as 'otrack'))).toEqual([
+      true,
+      false,
+      true,
+    ]);
+    // LWT shows the drawing's LWDISPLAY until the drafter turns it; then it stays as set.
+    expect(d.isOn('lwt', true)).toBe(true);
+    expect(d.isOn('lwt', false)).toBe(false);
+    d.toggle('lwt', true);
+    expect([d.isOn('lwt', true), d.isOn('lwt', false)]).toEqual([false, false]);
+    d.toggle('lwt');
+    expect(d.isOn('lwt', false)).toBe(true);
+    d.toggle('grid');
+    d.toggle('otrack');
+    d.toggle('tpy');
+    expect(['otrack', 'grid', 'tpy'].map((t) => d.isOn(t as 'otrack'))).toEqual([
+      false,
+      true,
+      false,
+    ]);
   });
 });

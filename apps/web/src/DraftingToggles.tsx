@@ -1,15 +1,19 @@
-// The status bar's drafting aids (M2-04): SNAP, ORTHO, POLAR and OSNAP, in AutoCAD's order,
-// each with its function key in the tooltip, and OSNAP's menu of running object snap modes
-// (AutoCAD's arrow beside the OSNAP button), a checkbox per mode.
+// The status bar's drafting aids (M2-04): GRID, SNAP, ORTHO, POLAR, OTRACK and OSNAP, then
+// LWT and TPY, in AutoCAD's order, each with its function key in the tooltip, and OSNAP's menu
+// of running object snap modes (AutoCAD's arrow beside the OSNAP button), a checkbox per mode.
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { OSNAP, OSNAP_MODES } from '@triya/engine';
 import { drafting, isOn, type DraftingToggle } from './drafting';
 
 const TOGGLES: readonly { toggle: DraftingToggle; label: string; title: string }[] = [
+  { toggle: 'grid', label: 'GRID', title: 'Grid Display (F7)' },
   { toggle: 'snap', label: 'SNAP', title: 'Snap Mode (F9)' },
   { toggle: 'ortho', label: 'ORTHO', title: 'Ortho Mode (F8)' },
   { toggle: 'polar', label: 'POLAR', title: 'Polar Tracking (F10)' },
+  { toggle: 'otrack', label: 'OTRACK', title: 'Object Snap Tracking (F11)' },
   { toggle: 'osnap', label: 'OSNAP', title: 'Object Snap (F3)' },
+  { toggle: 'lwt', label: 'LWT', title: 'Show/Hide Lineweight' },
+  { toggle: 'tpy', label: 'TPY', title: 'Show/Hide Transparency' },
 ];
 
 export function DraftingToggles() {
@@ -23,7 +27,7 @@ export function DraftingToggles() {
           <button
             type="button"
             className="status-toggle"
-            aria-pressed={isOn(state, t.toggle)}
+            aria-pressed={isOn(state, t.toggle, drafting.drawingLineweights)}
             title={t.title}
             onClick={() => drafting.toggle(t.toggle)}
           >

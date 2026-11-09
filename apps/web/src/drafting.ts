@@ -1,10 +1,13 @@
-// The status bar's drafting aids (M2-04): OSNAP (F3), ORTHO (F8), SNAP (F9) and POLAR (F10),
-// with the running object snap modes (OSMODE). AutoCAD keeps OSMODE and the polar settings
-// per user (registry) and ORTHOMODE and SNAPMODE in each drawing; Triya keeps them all per
-// session for now, starting from AutoCAD's initial values (OSNAP on with Endpoint, Center,
-// Intersection and Extension, POLAR on at 90°, ORTHO and SNAP off). Keeping them between
-// sessions is M2-20's settings work; the snap spacing is each drawing's own (its *Active
-// VPORT's SNAPUNIT), read by the canvas.
+// The status bar's drafting aids (M2-04): OSNAP (F3), GRID (F7), ORTHO (F8), SNAP (F9), POLAR
+// (F10) and OTRACK (F11), with the running object snap modes (OSMODE), and the display toggles
+// LWT and TPY. AutoCAD keeps OSMODE, AUTOSNAP and the polar settings per user (registry) and
+// ORTHOMODE, SNAPMODE, GRIDMODE and LWDISPLAY in each drawing; Triya keeps them all per session
+// for now, starting from AutoCAD's initial values (OSNAP on with Endpoint, Center, Intersection
+// and Extension, POLAR on at 90°, OTRACK and TPY on, ORTHO and SNAP off). GRID starts off, so a
+// drawing opens looking as it was drawn; LWT shows each drawing's own LWDISPLAY until the
+// drafter turns it, and is then the same for every drawing. Nothing is written back to the
+// file. Keeping them between sessions is M2-20's settings work; the snap and grid spacing are
+// each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas.
 import { OSMODE_DEFAULT, OSNAP, OSNAP_OFF, type OsnapMode } from '@triya/engine';
 
 export interface DraftingState {
@@ -15,24 +18,39 @@ export interface DraftingState {
   /** POLARANG, degrees. */
   readonly polarAngle: number;
   readonly snap: boolean;
+  /** Object snap tracking (AUTOSNAP bit 16). */
+  readonly otrack: boolean;
+  /** GRIDMODE. */
+  readonly grid: boolean;
+  /** LWDISPLAY as the drafter set it; undefined follows each drawing's own. */
+  readonly lwt: boolean | undefined;
+  /** TRANSPARENCYDISPLAY. */
+  readonly tpy: boolean;
 }
 
-export type DraftingToggle = 'osnap' | 'ortho' | 'polar' | 'snap';
+export type DraftingToggle =
+  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy';
 
 /** The function keys AutoCAD gives the toggles. */
 export const DRAFTING_KEYS: Readonly<Record<string, DraftingToggle>> = {
   F3: 'osnap',
+  F7: 'grid',
   F8: 'ortho',
   F9: 'snap',
   F10: 'polar',
+  F11: 'otrack',
 };
 
 /** The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). */
 export const DRAFTING_ITEMS = [
   { id: 'drafting:osnap', label: 'Object Snap on/off', keys: 'F3' },
+  { id: 'drafting:grid', label: 'Grid Display on/off', keys: 'F7' },
   { id: 'drafting:ortho', label: 'Ortho Mode on/off', keys: 'F8' },
   { id: 'drafting:snap', label: 'Snap Mode on/off', keys: 'F9' },
   { id: 'drafting:polar', label: 'Polar Tracking on/off', keys: 'F10' },
+  { id: 'drafting:otrack', label: 'Object Snap Tracking on/off', keys: 'F11' },
+  { id: 'drafting:lwt', label: 'Show/Hide Lineweight', keys: '' },
+  { id: 'drafting:tpy', label: 'Show/Hide Transparency', keys: '' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -41,16 +59,26 @@ export const INITIAL_DRAFTING: DraftingState = {
   polar: true,
   polarAngle: 90,
   snap: false,
+  otrack: true,
+  grid: false,
+  lwt: undefined,
+  tpy: true,
 };
 
-/** Whether a toggle is on: OSNAP is on while OSMODE has modes and no OSNAP_OFF. */
-export function isOn(s: DraftingState, t: DraftingToggle): boolean {
+/**
+ * Whether a toggle is on: OSNAP is on while OSMODE has modes and no OSNAP_OFF; LWT is the
+ * drawing's LWDISPLAY (`lwdisplay`) until the drafter turns it.
+ */
+export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): boolean {
   if (t === 'osnap') return (s.osmode & OSNAP_OFF) === 0 && s.osmode !== 0;
+  if (t === 'lwt') return s.lwt ?? lwdisplay;
   return s[t];
 }
 
 export class Drafting {
   #state: DraftingState;
+  /** The LWDISPLAY of the drawing shown, which LWT shows until the drafter turns it. */
+  #drawingLwt = false;
   readonly #listeners = new Set<() => void>();
 
   constructor(initial: DraftingState = INITIAL_DRAFTING) {
@@ -64,11 +92,23 @@ export class Drafting {
 
   get = (): DraftingState => this.#state;
 
-  isOn(t: DraftingToggle): boolean {
-    return isOn(this.#state, t);
+  isOn(t: DraftingToggle, lwdisplay = this.#drawingLwt): boolean {
+    return isOn(this.#state, t, lwdisplay);
   }
 
-  toggle(t: DraftingToggle): void {
+  /** The drawing shown changed: its LWDISPLAY is what LWT shows until turned. */
+  setDrawingLineweights(on: boolean): void {
+    if (on === this.#drawingLwt) return;
+    this.#drawingLwt = on;
+    this.#set({ ...this.#state });
+  }
+
+  get drawingLineweights(): boolean {
+    return this.#drawingLwt;
+  }
+
+  /** Turns a toggle; `lwdisplay` is the shown drawing's LWDISPLAY, which LWT turns from. */
+  toggle(t: DraftingToggle, lwdisplay = this.#drawingLwt): void {
     const s = this.#state;
     switch (t) {
       case 'osnap': {
@@ -82,8 +122,13 @@ export class Drafting {
         return this.#set({ ...s, ortho: !s.ortho, polar: s.ortho ? s.polar : false });
       case 'polar':
         return this.#set({ ...s, polar: !s.polar, ortho: s.polar ? s.ortho : false });
+      case 'lwt':
+        return this.#set({ ...s, lwt: !(s.lwt ?? lwdisplay) });
       case 'snap':
-        return this.#set({ ...s, snap: !s.snap });
+      case 'otrack':
+      case 'grid':
+      case 'tpy':
+        return this.#set({ ...s, [t]: !s[t] });
     }
   }
 
