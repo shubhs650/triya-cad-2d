@@ -61,9 +61,9 @@ describe('completions', () => {
     expect(completions(registry, '0,0')).toEqual([]);
     expect(completions(registry, '')).toEqual([]);
     expect(completions(registry, 'ZZZ')).toEqual([]);
-    // An acad.pgp alias of a command not built yet (C, CIRCLE's, now completes COPY).
+    // An acad.pgp alias of a command not built yet (C, CIRCLE's, now completes CLOSE and COPY).
     expect(completions(registry, 'REC')).toEqual([]);
-    expect(completions(registry, 'C')).toEqual([{ name: 'COPY' }]);
+    expect(completions(registry, 'C')).toEqual([{ name: 'CLOSE' }, { name: 'COPY' }]);
   });
 });
 
