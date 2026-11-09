@@ -4,6 +4,7 @@
 import type { Vec2 } from '../geom/types';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
+import type { Color, LinetypeRef, Lineweight } from '../model/types';
 import type { DragPreview } from './drag';
 
 /** A selection window's corners as the drafter gave them. */
@@ -172,6 +173,100 @@ export interface SelectionPrompt extends PromptBase {
   readonly pickfirst?: boolean;
 }
 
+/**
+ * One attribute as the attribute dialogs show it (M2-12): an INSERT's ATTRIB with the prompt of
+ * the block's ATTDEF of the same tag. A multiline attribute's `value` is its embedded MTEXT's
+ * contents, `\P` between its lines.
+ */
+export interface AttributeEntry {
+  readonly handle: Handle;
+  readonly tag: string;
+  /** The block's ATTDEF prompt for the tag, or the tag when the block has none. */
+  readonly prompt: string;
+  readonly value: string;
+  readonly multiline: boolean;
+  /** DXF 70: 1 invisible, 2 constant, 4 verify, 8 preset. */
+  readonly flags: number;
+  readonly style: Handle;
+  /** DXF 72/73 (justification), shown and not changed here. */
+  readonly halign: number;
+  readonly valign: number;
+  readonly height: number;
+  /** Radians, the WCS angle of the baseline. */
+  readonly rotation: number;
+  readonly widthFactor: number;
+  /** Radians. */
+  readonly oblique: number;
+  readonly backward: boolean;
+  readonly upsideDown: boolean;
+  readonly layer: Handle;
+  readonly color: Color;
+  readonly linetype: LinetypeRef;
+  readonly lineweight: Lineweight;
+}
+
+/** What an attribute dialog may change of one attribute (absent: unchanged). */
+export type AttributePatch = { readonly handle: Handle } & Partial<
+  Pick<
+    AttributeEntry,
+    | 'value'
+    | 'style'
+    | 'height'
+    | 'rotation'
+    | 'widthFactor'
+    | 'oblique'
+    | 'backward'
+    | 'upsideDown'
+    | 'layer'
+    | 'color'
+    | 'linetype'
+    | 'lineweight'
+  >
+>;
+
+/** A table record a dialog's list offers. */
+export interface NamedRecord {
+  readonly handle: Handle;
+  readonly name: string;
+}
+
+/**
+ * A dialog a command opens (M2-12), as AutoCAD's: EATTEDIT's Enhanced Attribute Editor (tabs
+ * Attribute, Text Options, Properties), ATTEDIT's Edit Attributes (values only) and TEXTEDIT's
+ * Edit Attribute Definition (an ATTDEF's tag, prompt and default).
+ */
+export type DialogRequest =
+  | {
+      readonly type: 'eattedit';
+      /** The block's name, as AutoCAD shows it (a dynamic block's, not its `*U` state's). */
+      readonly block: string;
+      readonly attributes: readonly AttributeEntry[];
+      /** The attribute the list opens on. */
+      readonly selected?: Handle;
+      readonly styles: readonly NamedRecord[];
+      readonly layers: readonly NamedRecord[];
+      readonly linetypes: readonly NamedRecord[];
+    }
+  | {
+      readonly type: 'attedit';
+      readonly block: string;
+      readonly attributes: readonly AttributeEntry[];
+    }
+  | {
+      readonly type: 'attdef';
+      readonly tag: string;
+      readonly prompt: string;
+      /** The default value; a multiline ATTDEF's MTEXT contents. */
+      readonly value: string;
+      readonly multiline: boolean;
+    };
+
+/** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
+export interface DialogPrompt extends PromptBase {
+  readonly kind: 'dialog';
+  readonly dialog: DialogRequest;
+}
+
 export type Prompt =
   | PointPrompt
   | DistancePrompt
@@ -180,7 +275,8 @@ export type Prompt =
   | StringPrompt
   | IntegerPrompt
   | RealPrompt
-  | SelectionPrompt;
+  | SelectionPrompt
+  | DialogPrompt;
 
 export type PromptKind = Prompt['kind'];
 
@@ -215,6 +311,19 @@ export type PromptAnswer =
        */
       readonly window?: SelectionWindow;
     }
+  | {
+      readonly kind: 'dialog';
+      /**
+       * OK closes the dialog with its changes; Apply makes them and keeps it open; Select block
+       * makes them and picks another block; `mtext` makes them and opens the MTEXT editor on the
+       * multiline attribute `target` (the value's `...` button).
+       */
+      readonly action: 'ok' | 'apply' | 'select' | 'mtext';
+      readonly attributes?: readonly AttributePatch[];
+      /** Edit Attribute Definition's fields. */
+      readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
+      readonly target?: Handle;
+    }
   | { readonly kind: 'enter' };
 
 /** The answer kinds each prompt kind takes, besides `keyword` (when it has options) and `enter`. */
@@ -227,6 +336,7 @@ export const ANSWER_KINDS: { readonly [K in PromptKind]: readonly PromptAnswer['
   integer: ['number'],
   real: ['number'],
   selection: ['selection'],
+  dialog: ['dialog'],
 };
 
 /** Whether an answer suits a prompt (the bus refuses others before the command sees them). */
@@ -302,6 +412,7 @@ export function formatAnswer(
       return answer.value;
     case 'selection':
       return `${answer.ids.length} found`;
+    case 'dialog':
     case 'enter':
       return '';
   }

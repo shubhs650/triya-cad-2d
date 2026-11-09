@@ -18,7 +18,8 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import { SelectionLoop, type StepResult } from '../selection/loop';
 import { onLockedLayers } from '../selection/rules';
-import type { EntityGeometry } from '../model/types';
+import type { Entity, EntityGeometry } from '../model/types';
+import { hasEditableAttributes } from './modify/attributes';
 import {
   prompts,
   type CommandContext,
@@ -59,7 +60,20 @@ import { UndoStack, type UndoState } from './undo';
 export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
   TEXT: 'TEXTEDIT',
   MTEXT: 'TEXTEDIT',
+  ATTDEF: 'TEXTEDIT',
+  INSERT: 'EATTEDIT',
 };
+
+/**
+ * The command a double click on `e` runs: `DOUBLE_CLICK`'s for its type, except that only a
+ * block reference with attributes to edit opens EATTEDIT (one without opens the Block Editor in
+ * AutoCAD, which Triya does not have: nothing opens).
+ */
+export function doubleClickCommand(e: Entity | undefined): string | undefined {
+  if (!e) return undefined;
+  if (e.geom.kind === 'INSERT' && !hasEditableAttributes(e)) return undefined;
+  return DOUBLE_CLICK[e.geom.kind];
+}
 
 /** One command's edits, in order: what the undo stack (M2-05) keeps as one step. */
 export interface CommandRecord {
@@ -148,6 +162,7 @@ const INVALID: { readonly [K in Prompt['kind']]: string } = {
   integer: 'Requires an integer value.',
   real: 'Requires numeric value.',
   selection: '*Invalid selection*',
+  dialog: 'Invalid input.',
 };
 
 const takesPoints = (p: Prompt): boolean =>
@@ -360,9 +375,9 @@ export class PromptBus {
       if (top && !top.def.keepsSelection) return;
       const r = await this.#view.request({ op: 'pick', point });
       const ids = r.ok ? (r.ids ?? []) : [];
-      const id = ids.find((i) => DOUBLE_CLICK[this.#model.entity(i)?.type ?? ''] !== undefined);
+      const id = ids.find((i) => doubleClickCommand(this.#model.entity(i)) !== undefined);
       if (id === undefined) return;
-      const found = this.#registry.resolve(DOUBLE_CLICK[this.#model.entity(id)!.type]!);
+      const found = this.#registry.resolve(doubleClickCommand(this.#model.entity(id))!);
       if (!found) return;
       if (top) await this.#cancel();
       this.#idle.clear();
@@ -979,7 +994,8 @@ export class PromptBus {
       if (log) this.#log(`${this.promptText} ${echo}`.trimEnd());
       return this.#reject(INVALID[prompt.kind]);
     }
-    if (log) this.#log(`${this.promptText} ${echo}`.trimEnd());
+    // A dialog's answer is not a line of command history, as AutoCAD logs nothing for it.
+    if (log && prompt.kind !== 'dialog') this.#log(`${this.promptText} ${echo}`.trimEnd());
     if (given.kind === 'point') this.#lastPoint = given.point;
     frame.prompt = undefined;
     await this.#advance(frame, given);

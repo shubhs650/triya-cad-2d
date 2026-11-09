@@ -40,6 +40,7 @@
     "fixtures:underlay": "TRIYA_UPDATE_FIXTURES=1 vitest run packages/testkit/src/underlay",
     "fixtures:xref": "TRIYA_UPDATE_FIXTURES=1 vitest run packages/testkit/src/xref",
     "fixtures:raster": "TRIYA_UPDATE_FIXTURES=1 vitest run packages/testkit/src/raster",
+    "fixtures:attributes": "TRIYA_UPDATE_FIXTURES=1 vitest run packages/testkit/src/attributes/fixture.test.ts",
     "plotstyles:build": "TRIYA_UPDATE_PLOTSTYLES=1 vitest run packages/testkit/src/plot",
     "corpus:roundtrip": "vitest run packages/testkit/src/roundtrip/corpus-roundtrip.test.ts",
     "spike:read": "vitest run --config vitest.spike.config.ts packages/testkit/src/spike/read.spike.ts",

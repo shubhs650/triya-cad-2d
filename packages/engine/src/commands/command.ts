@@ -12,6 +12,7 @@ import type { ViewHost } from './view/host';
 import type { UndoStack } from './undo';
 import type {
   AnglePrompt,
+  DialogPrompt,
   DistancePrompt,
   IntegerPrompt,
   KeywordPrompt,
@@ -38,6 +39,7 @@ export const prompts = {
   integer: (o: Options<IntegerPrompt>): IntegerPrompt => ({ kind: 'integer', ...o }),
   real: (o: Options<RealPrompt>): RealPrompt => ({ kind: 'real', ...o }),
   selection: (o: Options<SelectionPrompt>): SelectionPrompt => ({ kind: 'selection', ...o }),
+  dialog: (o: Options<DialogPrompt>): DialogPrompt => ({ kind: 'dialog', ...o }),
 };
 
 export interface CommandContext {
