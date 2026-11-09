@@ -9,6 +9,7 @@
   --accent: #2563eb;
   --danger-bg: #fdecec;
   --danger-text: #8a1c1c;
+  --ok-text: #1f7a3a;
   --canvas-model: #212830;
   --motion: 120ms;
   font-family:
@@ -87,9 +88,21 @@ button {
   white-space: nowrap;
 }
 
+/* M2-19: the offline status beside the version; green once the app works offline. */
+.offline-status.ready {
+  color: var(--ok-text);
+  border-color: currentColor;
+}
+
+.banner-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .open-button,
 .save-button,
 .save-as-button,
+.install-button,
 .settings-button,
 .start button,
 .banner button,

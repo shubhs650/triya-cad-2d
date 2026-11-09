@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vite';
+import { pwa } from './pwa-plugin';
 
 const { version } = JSON.parse(
   readFileSync(new URL('../../package.json', import.meta.url), 'utf8'),
@@ -12,7 +13,7 @@ const { version } = JSON.parse(
 };
 
 export default defineConfig({
-  plugins: [react()],
+  plugins: [react(), pwa()],
   resolve: {
     alias: [
       {
@@ -25,6 +26,10 @@ export default defineConfig({
     ],
   },
   define: { __APP_VERSION__: JSON.stringify(version) },
+  // acad-ts finds its DXF property maps by class name (`DxfMap.create(type.name)`), so the
+  // production build keeps class and function names through minification; without them the
+  // minified I/O worker read no PDFDEFINITION file name, among others (found by M2-19).
+  esbuild: { keepNames: true },
   worker: { format: 'es' },
   build: { target: 'es2023', sourcemap: true },
 });
