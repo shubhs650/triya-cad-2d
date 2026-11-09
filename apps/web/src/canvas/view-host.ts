@@ -4,7 +4,9 @@
 // Selection asks it too (M2-03): what a pick or a window takes, and ZOOM Object's extents, which
 // the renderer answers, so those replies come later.
 import type {
+  Box,
   EntityId,
+  MTextGeometry,
   NamedViewInfo,
   Vec2,
   ViewReply,
@@ -36,6 +38,8 @@ export interface ViewTarget {
   pick(point: Vec2): Promise<EntityId[]>;
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]>;
   zoomObjects(ids: readonly EntityId[]): Promise<boolean>;
+  /** The box an MTEXT's glyphs fill (M2-09), or undefined when no loaded font draws it. */
+  textBox(text: MTextGeometry): Promise<Box | undefined>;
 }
 
 /** A named view of the space shown; `view` is undefined when a 2D canvas cannot show it. */
@@ -141,6 +145,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       return t
         .zoomObjects(r.ids)
         .then((ok) => (ok ? done() : { ok: false, message: 'The objects have no extents.' }));
+    case 'textBox':
+      return t
+        .textBox(r.text)
+        .then((box) =>
+          box ? { ok: true, box } : { ok: false, message: 'The text cannot be measured.' },
+        );
     case 'save': {
       const view = r.window ? windowView(r.window.a, r.window.b, t.size) : t.view;
       if (!view) return { ok: false, message: 'The window has no area.' };

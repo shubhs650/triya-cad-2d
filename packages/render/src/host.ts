@@ -11,6 +11,7 @@ import type {
   ChangeSet,
   DragMotion,
   EntityId,
+  MTextGeometry,
   OsnapHit,
   OsnapQuery,
   Vec2,
@@ -247,6 +248,14 @@ export class RendererHost {
   boundsOf(ids: readonly EntityId[]): Promise<Box | undefined> {
     if (this.#session) return Promise.resolve(this.#session.boundsOf(ids));
     return this.#request((id) => ({ type: 'bounds', id, ids })).then((m) =>
+      m.type === 'extents' && m.box ? m.box : undefined,
+    );
+  }
+
+  /** The box an MTEXT's glyphs fill in the fonts loaded (M2-09); undefined when none draws it. */
+  textBox(text: MTextGeometry): Promise<Box | undefined> {
+    if (this.#session) return Promise.resolve(this.#session.textBox(text));
+    return this.#request((id) => ({ type: 'textBox', id, text })).then((m) =>
       m.type === 'extents' && m.box ? m.box : undefined,
     );
   }

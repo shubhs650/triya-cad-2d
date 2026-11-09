@@ -2,6 +2,7 @@
 // own registry, so a command's remembered state (LINE's last end point) is per drawing.
 import { CommandRegistry } from './command';
 import { lineCommand } from './draw/line';
+import { MLEADER_COMMANDS } from './draw/mleader';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
 import { DRAW_ORDER_COMMANDS } from './modify/draw-order';
@@ -27,5 +28,6 @@ export function builtinCommands(): CommandRegistry {
     revcloudCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
+    ...MLEADER_COMMANDS.map((make) => make()),
   ]);
 }
