@@ -994,7 +994,8 @@ export class PromptBus {
       if (log) this.#log(`${this.promptText} ${echo}`.trimEnd());
       return this.#reject(INVALID[prompt.kind]);
     }
-    if (log) this.#log(`${this.promptText} ${echo}`.trimEnd());
+    // A dialog's answer is not a line of command history, as AutoCAD logs nothing for it.
+    if (log && prompt.kind !== 'dialog') this.#log(`${this.promptText} ${echo}`.trimEnd());
     if (given.kind === 'point') this.#lastPoint = given.point;
     frame.prompt = undefined;
     await this.#advance(frame, given);

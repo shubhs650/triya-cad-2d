@@ -5,7 +5,7 @@
 //
 // title-block.dxf: an A3 sheet border (420 × 297) on BORDER and, at (230, 10), the block
 // TITLE-BLOCK (180 × 60, drawn on layer 0): its frame and a revision table of three rows
-// (number, date, description, by) under the title fields. The block's ATTDEFs: TITLE, DWG_NO,
+// (number, date, description, by) with its headings, under the title fields. The block's ATTDEFs: TITLE, DWG_NO,
 // SCALE, DRAWN, REV<n>_NO / _DATE / _DESC / _BY for rows 1–3, a multiline NOTES and a constant
 // COMPANY. The reference fills the title, number, scale, drafter, revision row 1 and two lines
 // of notes; rows 2 and 3 are empty, as a sheet issued once leaves them.
@@ -24,6 +24,7 @@ import {
   Line,
   LwPolyline,
   MText,
+  TextEntity,
   XY,
   XYZ,
   type Entity,
@@ -52,6 +53,14 @@ const COLUMNS = [
   ['DATE', 'Revision date', 12, '2026-10-01'],
   ['DESC', 'Revision description', 40, 'FIRST ISSUE'],
   ['BY', 'Revised by', 160, 'SP'],
+] as const;
+
+/** The revision table's column headings and where they start. */
+const HEADINGS = [
+  ['REV', 2],
+  ['DATE', 12],
+  ['DESCRIPTION', 40],
+  ['BY', 160],
 ] as const;
 
 /** Row n's baseline in the block: row 1 lowest, as revision tables grow upwards. */
@@ -150,11 +159,19 @@ export function titleBlockDxf(): Uint8Array {
     line(0, 34, 180, 34),
     line(40, 34, 40, 60),
     line(0, 26, 180, 26),
-    ...Array.from({ length: REVISION_ROWS - 1 }, (_, i) =>
+    ...Array.from({ length: REVISION_ROWS }, (_, i) =>
       line(0, rowY(i + 2) - 2, 180, rowY(i + 2) - 2),
     ),
     ...COLUMNS.slice(1).map(([, , x]) => line(x - 2, 0, x - 2, 26)),
   ];
+  // The table's headings, above its rows.
+  for (const [heading, x] of HEADINGS) {
+    const t = new TextEntity();
+    t.value = heading;
+    t.insertPoint = new XYZ(x, rowY(REVISION_ROWS + 1), 0);
+    t.height = 2;
+    geometry.push(t);
+  }
   for (const e of geometry) block.entities.add(e);
 
   for (const f of FIELDS) {

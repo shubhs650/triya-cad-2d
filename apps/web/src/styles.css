@@ -1472,7 +1472,7 @@ button {
 
 .cad-dialog-grid {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 6px 12px;
 }
 
@@ -1506,6 +1506,10 @@ button {
   justify-content: flex-end;
   gap: 6px;
   margin-top: 8px;
+}
+
+.cad-dialog.eattedit {
+  width: min(520px, calc(100vw - 32px));
 }
 
 .eattedit-head {
@@ -1542,7 +1546,7 @@ button {
 }
 
 .attedit-rows {
-  grid-template-columns: 1fr;
+  grid-template-columns: minmax(0, 1fr);
   margin: 8px 0;
 }
 

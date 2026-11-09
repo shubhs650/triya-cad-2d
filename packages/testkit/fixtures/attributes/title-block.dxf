@@ -65,7 +65,7 @@ ANSI_1252
   9
 $TDCREATE
  40
-2461354.3361283448
+2461354.3392798495
   9
 $PELLIPSE
  70
@@ -485,7 +485,7 @@ $FILLMODE
   9
 $FINGERPRINTGUID
   2
-38e3757f-1e15-444e-b49d-8a023b8c68c8
+1b0bd6b4-2592-471c-bcbf-e4154cc925a8
   9
 $HALOGAP
 280
@@ -493,7 +493,7 @@ $HALOGAP
   9
 $HANDSEED
   5
-5E
+63
   9
 $INDEXCTL
 280
@@ -937,15 +937,15 @@ $UNITMODE
   9
 $TDUCREATE
  40
-2461354.336128368
+2461354.3392798956
   9
 $TDUUPDATE
  40
-2461354.336128368
+2461354.3392798956
   9
 $TDUPDATE
  40
-2461354.336128368
+2461354.3392798956
   9
 $DIMSHO
  70
@@ -1001,7 +1001,7 @@ $USRTIMER
   9
 $VERSIONGUID
   2
-af22a6ce-1ed4-4203-b390-c956a3b1e4eb
+1943c5e6-18e1-47e9-96c0-a9013bff41c2
   9
 $ACADVER
   1
@@ -2113,15 +2113,15 @@ AcDbLine
  39
 0
  10
-10
- 20
 0
+ 20
+18
  30
 0
  11
-10
+180
  21
-26
+18
  31
 0
 210
@@ -2145,6 +2145,38 @@ AcDbLine
  39
 0
  10
+10
+ 20
+0
+ 30
+0
+ 11
+10
+ 21
+26
+ 31
+0
+210
+0
+220
+0
+230
+1
+  0
+LINE
+  5
+38
+330
+2D
+100
+AcDbEntity
+ 62
+256
+100
+AcDbLine
+ 39
+0
+ 10
 38
  20
 0
@@ -2165,7 +2197,7 @@ AcDbLine
   0
 LINE
   5
-38
+39
 330
 2D
 100
@@ -2195,9 +2227,217 @@ AcDbLine
 230
 1
   0
+TEXT
+  5
+3A
+330
+2D
+100
+AcDbEntity
+ 62
+256
+100
+AcDbText
+ 39
+0
+ 10
+2
+ 20
+20
+ 30
+0
+ 40
+2
+  1
+REV
+ 50
+0
+ 41
+1
+ 51
+0
+  7
+Standard
+ 71
+0
+ 72
+0
+ 11
+0
+ 21
+0
+ 31
+0
+210
+0
+220
+0
+230
+1
+100
+AcDbText
+ 73
+0
+  0
+TEXT
+  5
+3B
+330
+2D
+100
+AcDbEntity
+ 62
+256
+100
+AcDbText
+ 39
+0
+ 10
+12
+ 20
+20
+ 30
+0
+ 40
+2
+  1
+DATE
+ 50
+0
+ 41
+1
+ 51
+0
+  7
+Standard
+ 71
+0
+ 72
+0
+ 11
+0
+ 21
+0
+ 31
+0
+210
+0
+220
+0
+230
+1
+100
+AcDbText
+ 73
+0
+  0
+TEXT
+  5
+3C
+330
+2D
+100
+AcDbEntity
+ 62
+256
+100
+AcDbText
+ 39
+0
+ 10
+40
+ 20
+20
+ 30
+0
+ 40
+2
+  1
+DESCRIPTION
+ 50
+0
+ 41
+1
+ 51
+0
+  7
+Standard
+ 71
+0
+ 72
+0
+ 11
+0
+ 21
+0
+ 31
+0
+210
+0
+220
+0
+230
+1
+100
+AcDbText
+ 73
+0
+  0
+TEXT
+  5
+3D
+330
+2D
+100
+AcDbEntity
+ 62
+256
+100
+AcDbText
+ 39
+0
+ 10
+160
+ 20
+20
+ 30
+0
+ 40
+2
+  1
+BY
+ 50
+0
+ 41
+1
+ 51
+0
+  7
+Standard
+ 71
+0
+ 72
+0
+ 11
+0
+ 21
+0
+ 31
+0
+210
+0
+220
+0
+230
+1
+100
+AcDbText
+ 73
+0
+  0
 ATTDEF
   5
-39
+3E
 330
 2D
 100
@@ -2261,7 +2501,7 @@ TITLE
   0
 ATTDEF
   5
-3A
+3F
 330
 2D
 100
@@ -2325,7 +2565,7 @@ DWG_NO
   0
 ATTDEF
   5
-3B
+40
 330
 2D
 100
@@ -2389,7 +2629,7 @@ SCALE
   0
 ATTDEF
   5
-3C
+41
 330
 2D
 100
@@ -2453,7 +2693,7 @@ DRAWN
   0
 ATTDEF
   5
-3D
+42
 330
 2D
 100
@@ -2517,7 +2757,7 @@ REV1_NO
   0
 ATTDEF
   5
-3E
+43
 330
 2D
 100
@@ -2581,7 +2821,7 @@ REV1_DATE
   0
 ATTDEF
   5
-3F
+44
 330
 2D
 100
@@ -2645,7 +2885,7 @@ REV1_DESC
   0
 ATTDEF
   5
-40
+45
 330
 2D
 100
@@ -2709,7 +2949,7 @@ REV1_BY
   0
 ATTDEF
   5
-41
+46
 330
 2D
 100
@@ -2773,7 +3013,7 @@ REV2_NO
   0
 ATTDEF
   5
-42
+47
 330
 2D
 100
@@ -2837,7 +3077,7 @@ REV2_DATE
   0
 ATTDEF
   5
-43
+48
 330
 2D
 100
@@ -2901,7 +3141,7 @@ REV2_DESC
   0
 ATTDEF
   5
-44
+49
 330
 2D
 100
@@ -2965,7 +3205,7 @@ REV2_BY
   0
 ATTDEF
   5
-45
+4A
 330
 2D
 100
@@ -3029,7 +3269,7 @@ REV3_NO
   0
 ATTDEF
   5
-46
+4B
 330
 2D
 100
@@ -3093,7 +3333,7 @@ REV3_DATE
   0
 ATTDEF
   5
-47
+4C
 330
 2D
 100
@@ -3157,7 +3397,7 @@ REV3_DESC
   0
 ATTDEF
   5
-48
+4D
 330
 2D
 100
@@ -3221,7 +3461,7 @@ REV3_BY
   0
 ATTDEF
   5
-49
+4E
 330
 2D
 100
@@ -3319,7 +3559,7 @@ Embedded Object
   0
 ATTDEF
   5
-4A
+4F
 330
 2D
 100
@@ -3473,7 +3713,7 @@ AcDbPolyline
   0
 INSERT
   5
-4B
+50
 330
 1D
 100
@@ -3519,9 +3759,9 @@ TITLE-BLOCK
   0
 ATTRIB
   5
-4C
+51
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -3581,9 +3821,9 @@ TITLE
   0
 ATTRIB
   5
-4D
+52
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -3643,9 +3883,9 @@ DWG_NO
   0
 ATTRIB
   5
-4E
+53
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -3705,9 +3945,9 @@ SCALE
   0
 ATTRIB
   5
-4F
+54
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -3767,9 +4007,9 @@ DRAWN
   0
 ATTRIB
   5
-50
+55
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -3829,9 +4069,9 @@ REV1_NO
   0
 ATTRIB
   5
-51
+56
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -3891,9 +4131,9 @@ REV1_DATE
   0
 ATTRIB
   5
-52
+57
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -3953,9 +4193,9 @@ REV1_DESC
   0
 ATTRIB
   5
-53
+58
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4015,9 +4255,9 @@ REV1_BY
   0
 ATTRIB
   5
-54
+59
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4077,9 +4317,9 @@ REV2_NO
   0
 ATTRIB
   5
-55
+5A
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4139,9 +4379,9 @@ REV2_DATE
   0
 ATTRIB
   5
-56
+5B
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4201,9 +4441,9 @@ REV2_DESC
   0
 ATTRIB
   5
-57
+5C
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4263,9 +4503,9 @@ REV2_BY
   0
 ATTRIB
   5
-58
+5D
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4325,9 +4565,9 @@ REV3_NO
   0
 ATTRIB
   5
-59
+5E
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4387,9 +4627,9 @@ REV3_DATE
   0
 ATTRIB
   5
-5A
+5F
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4449,9 +4689,9 @@ REV3_DESC
   0
 ATTRIB
   5
-5B
+60
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4511,9 +4751,9 @@ REV3_BY
   0
 ATTRIB
   5
-5C
+61
 330
-4B
+50
 100
 AcDbEntity
  62
@@ -4607,9 +4847,9 @@ ALL DIMENSIONS IN MM\PDO NOT SCALE
   0
 SEQEND
   5
-5D
+62
 330
-4B
+50
 100
 AcDbEntity
  62

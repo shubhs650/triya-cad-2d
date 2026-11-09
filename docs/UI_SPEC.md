@@ -90,6 +90,8 @@ Breakpoints (viewport width): **≥1920 "full"**, **1600–1919 "wide"**, **1366
 AutoCAD-equivalent structure (tabs, groups, labels) with modern controls. Required set: DIMSTYLE (manager + modify dialog, all tabs), TEXTSTYLE, TABLESTYLE, MLEADERSTYLE, LAYER (palette), PAGESETUP, PLOT, PUBLISH, OPTIONS, DRAFTINGSETTINGS, ATTDEF, EATTEDIT, BATTMAN, INSERT, BLOCK, WBLOCK, XREF/IMAGEATTACH/PDFATTACH, LINETYPE, LWEIGHT, UNITS, HATCH (dialog alternative to contextual tab), QSELECT, FILTER, PURGE, FIELD, TOLERANCE, UNITS, ALIAS editor, KEYBOARD editor, the MTEXT editor's Column Settings (M2-07 part 3).
 Every dialog is keyboard-operable and has an Esc/Enter contract matching AutoCAD.
 
+*As built (M2-12):* the Enhanced Attribute Editor (EATTEDIT), Edit Attributes (ATTEDIT) and Edit Attribute Definition (TEXTEDIT on an ATTDEF) are modal `<dialog>`s with AutoCAD's labels: Enter is OK outside a text area or button, Esc is Cancel, the attribute list moves with the arrow keys, and the tabs and fields are reached with Tab. A multiline value shows one line per paragraph and its `...` button opens the in-place MTEXT editor, after which the dialog returns.
+
 ## 8. Status bar
 
 Coordinates (absolute/relative/geographic n/a), SNAP (F9), GRID (F7), ORTHO (F8), POLAR (F10), OSNAP (F3), OTRACK (F11), DYN (F12), LWT, TPY (transparency), Quick Properties, Selection Cycling, MODEL/PAPER, annotation scale dropdown, workspace, hardware acceleration indicator (renderer type), clean screen (Ctrl+0), customisation menu.
