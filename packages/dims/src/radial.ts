@@ -24,7 +24,7 @@ import type {
   TextMeasure,
   Vec2,
 } from '@triya/engine';
-import { dimensionText, formatLinear } from './format';
+import { linearText } from './format';
 import {
   add,
   angleOf,
@@ -78,11 +78,7 @@ export function radialParts(
   const r = dist(c, p);
   const v = unit(sub(p, c)) ?? fromAngle(0);
   const out: DimPart[] = [];
-  const label = dimensionText(
-    g.text,
-    (diameter ? '%%c' : 'R') + formatLinear(diameter ? 2 * r : r, s.vars),
-    s.vars,
-  );
+  const label = linearText(g.text, diameter ? 2 * r : r, s.vars, diameter ? '%%c' : 'R');
   const centred = s.tad === 0 && s.tvp === 0;
   const probe =
     label === undefined

@@ -1,22 +1,20 @@
-// A DIMENSION's parts by its type (M2-10 part 1).
+// A dimension's parts by its type (M2-10: DIMENSION of every type, LARGE_RADIAL_DIMENSION and
+// ARC_DIMENSION).
 
 import type { AnnotationTables, Entity, EntityGeometry, TextMeasure } from '@triya/engine';
 import { angularParts } from './angular';
+import { arcLengthParts } from './arclength';
 import type { DimPart } from './geometry';
+import { joggedParts } from './jogged';
 import { linearParts } from './linear';
+import { ordinateParts } from './ordinate';
 import { radialParts } from './radial';
 import { dimStyle } from './style';
 
 /** Whether the engine draws this kind of dimension. */
 export function generates(g: EntityGeometry): boolean {
   return (
-    g.kind === 'DIMENSION' &&
-    (g.dimType === 'linear' ||
-      g.dimType === 'aligned' ||
-      g.dimType === 'radius' ||
-      g.dimType === 'diameter' ||
-      g.dimType === 'angular' ||
-      g.dimType === 'angular3pt')
+    g.kind === 'DIMENSION' || g.kind === 'LARGE_RADIAL_DIMENSION' || g.kind === 'ARC_DIMENSION'
   );
 }
 
@@ -30,7 +28,7 @@ export function dimensionParts(
   measure: TextMeasure,
 ): DimPart[] | undefined {
   const g = e.geom;
-  if (g.kind !== 'DIMENSION' || !generates(g)) return undefined;
+  if (!('dimType' in g) || !generates(g)) return undefined;
   const s = dimStyle(g.style, e.xdata, model);
   // The text stays where the writer put it while the dimension keeps its stored graphics or
   // the user moved it; otherwise the engine places it, as AutoCAD does when it regenerates.
@@ -45,7 +43,11 @@ export function dimensionParts(
     case 'angular':
     case 'angular3pt':
       return angularParts(g, s, model, measure, keepText);
-    default:
-      return undefined;
+    case 'ordinate':
+      return ordinateParts(g, s, model, measure, keepText);
+    case 'jogged':
+      return joggedParts(g, s, model, measure, keepText);
+    case 'arc':
+      return arcLengthParts(g, s, model, measure, keepText);
   }
 }

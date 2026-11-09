@@ -1,7 +1,7 @@
 // M2-10: dimension text by DIMLUNIT, DIMDEC, DIMZIN, DIMRND, DIMLFAC, DIMDSEP, DIMFRAC,
 // DIMAUNIT, DIMADEC, DIMAZIN, DIMPOST and the text override, as AutoCAD formats it.
 import { describe, expect, it } from 'vitest';
-import { dimensionText, formatAngle, formatLinear } from '../src/index';
+import { dimensionText, formatAngle, formatLinear, linearText } from '../src/index';
 
 describe('linear measurement text', () => {
   it('decimal: DIMDEC places, DIMZIN leading/trailing zeros, DIMDSEP, DIMRND, DIMLFAC', () => {
@@ -85,5 +85,50 @@ describe('dimension text', () => {
     expect(dimensionText('2x <>', '12.5', { DIMPOST: '' })).toBe('2x 12.5');
     expect(dimensionText('SEE NOTE', '12.5', { DIMPOST: '' })).toBe('SEE NOTE');
     expect(dimensionText(' ', '12.5', { DIMPOST: '' })).toBeUndefined();
+  });
+});
+
+describe('tolerances, limits and alternate units (M2-10 part 2)', () => {
+  const tol = { DIMDEC: 2, DIMTDEC: 2, DIMTFAC: 0.7, DIMTP: 0.1, DIMTM: 0.05 };
+
+  it('DIMTOL: stacked deviations at DIMTFAC, DIMTDEC and DIMTZIN; symmetrical with %%p', () => {
+    expect(linearText('', 10, { ...tol, DIMTOL: 1 })).toBe('10.00{\\H0.7x;\\S+0.10^-0.05;}');
+    expect(linearText('', 10, { ...tol, DIMTOL: 1, DIMTZIN: 8 })).toBe(
+      '10.00{\\H0.7x;\\S+0.1^-0.05;}',
+    );
+    expect(linearText('', 10, { ...tol, DIMTOL: 1, DIMTM: 0.1 })).toBe('10.00%%p0.10');
+    // A negative DIMTM is a plus deviation below; zero has no sign.
+    expect(linearText('', 10, { ...tol, DIMTOL: 1, DIMTP: 0, DIMTM: -0.05 })).toBe(
+      '10.00{\\H0.7x;\\S0.00^+0.05;}',
+    );
+    // After DIMPOST and the prefix.
+    expect(linearText('', 10, { ...tol, DIMTOL: 1, DIMTM: 0.1, DIMPOST: '<> mm' }, 'R')).toBe(
+      'R10.00 mm%%p0.10',
+    );
+  });
+
+  it('DIMLIM: the upper and lower limits stacked in place of the measurement', () => {
+    expect(linearText('', 10, { ...tol, DIMLIM: 1 })).toBe('{\\H0.7x;\\S10.10^9.95;}');
+  });
+
+  it('DIMALT: the alternate measurement in brackets by DIMALTF, DIMALTU, DIMALTD, DIMALTZ, DIMALTRND, DIMAPOST', () => {
+    const alt = { DIMDEC: 2, DIMALT: 1, DIMALTF: 25.4, DIMALTD: 1, DIMALTU: 2, DIMALTZ: 0 };
+    expect(linearText('', 1, alt)).toBe('1.00 [25.4]');
+    expect(linearText('', 1, { ...alt, DIMAPOST: '<> mm' })).toBe('1.00 [25.4 mm]');
+    expect(linearText('', 1, { ...alt, DIMALTRND: 5 })).toBe('1.00 [25.0]');
+    // DIMLFAC scales both.
+    expect(linearText('', 1, { ...alt, DIMLFAC: 2 })).toBe('2.00 [50.8]');
+    // Alternate tolerances by DIMALTTD and DIMALTTZ.
+    expect(
+      linearText('', 1, { ...alt, ...tol, DIMTOL: 1, DIMTM: 0.1, DIMALTTD: 1, DIMALTTZ: 0 }),
+    ).toBe('1.00%%p0.10 [25.4%%p2.5]');
+  });
+
+  it('a text override: <> is the primary text and [] the alternate one, else <> stands for both', () => {
+    const alt = { DIMDEC: 2, DIMALT: 1, DIMALTF: 25.4, DIMALTD: 1, DIMALTU: 2 };
+    expect(linearText('<> TYP', 1, alt)).toBe('1.00 [25.4] TYP');
+    expect(linearText('<>/[]', 1, alt)).toBe('1.00/25.4');
+    expect(linearText('SEE NOTE', 1, alt)).toBe('SEE NOTE');
+    expect(linearText(' ', 1, alt)).toBeUndefined();
   });
 });

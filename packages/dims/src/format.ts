@@ -16,9 +16,17 @@
 // - DIMPOST is a prefix/suffix around `<>`, or a suffix when it has none.
 // - A text override (DXF 1) replaces the measurement, its first `<>` standing for it, and a
 //   single space suppresses the text.
+// - DIMTOL appends the deviations: `%%p` and DIMTP when DIMTP equals DIMTM, else +DIMTP over
+//   −DIMTM stacked at DIMTFAC times the text height (`{\H<f>x;\S+<p>^-<m>;}`), at DIMTDEC
+//   places with DIMTZIN's zeros. DIMLIM writes the upper and lower limits stacked the same way
+//   in place of the measurement (the two switch each other off; a file with both shows the
+//   limits). DIMTOLJ is not encoded: a stack sits on the text's middle (its default, 1).
+// - DIMALT appends the alternate measurement in brackets: the measurement × DIMLFAC × DIMALTF
+//   by DIMALTU, DIMALTD, DIMALTZ and DIMALTRND, DIMAPOST around it, its deviations by DIMALTTD
+//   and DIMALTTZ. In an override `[]` stands for it; otherwise `<>` stands for both.
 
 import type { DimVarValue } from '@triya/engine';
-import { num, str } from './style';
+import { num, on, str } from './style';
 
 type Vars = Readonly<Record<string, DimVarValue>>;
 
@@ -182,4 +190,83 @@ export function dimensionText(override: string, measured: string, vars: Vars): s
   const value = applyPost(measured, str(vars.DIMPOST));
   if (override === '') return value;
   return override.includes('<>') ? override.replace('<>', value) : override;
+}
+
+/** A signed deviation as AutoCAD writes it: + or − before it, none on zero. */
+function deviation(value: number, vars: Vars): string {
+  const text = formatLinear(Math.abs(value), vars);
+  if (!/[1-9]/.test(text)) return text;
+  return (value < 0 ? '-' : '+') + text;
+}
+
+const stack = (upper: string, lower: string, vars: Vars): string =>
+  `{\\H${+num(vars.DIMTFAC, 1).toFixed(6)}x;\\S${upper}^${lower};}`;
+
+/** One unit system's text: the measurement (or limits) with its prefix, post and deviations. */
+function unitsText(
+  value: number,
+  vars: Vars,
+  units: { readonly tdec: number; readonly tzin: number; readonly tfactor: number },
+  prefix: string,
+  post: string,
+): string {
+  const tp = num(vars.DIMTP) * units.tfactor;
+  const tm = num(vars.DIMTM) * units.tfactor;
+  // Deviations and limits are at the tolerance precision; DIMLFAC does not scale deviations.
+  const tolVars: Vars = { ...vars, DIMDEC: units.tdec, DIMZIN: units.tzin, DIMRND: 0, DIMLFAC: 1 };
+  const scaled = value * Math.abs(num(vars.DIMLFAC, 1) || 1);
+  if (on(vars.DIMLIM)) {
+    const upper = formatLinear(scaled + tp, tolVars);
+    const lower = formatLinear(scaled - tm, tolVars);
+    return applyPost(prefix + stack(upper, lower, vars), post);
+  }
+  const text = applyPost(prefix + formatLinear(value, vars), post);
+  if (!on(vars.DIMTOL)) return text;
+  if (tp === tm) return `${text}%%p${formatLinear(Math.abs(tp), tolVars)}`;
+  return text + stack(deviation(tp, tolVars), deviation(-tm, tolVars), vars);
+}
+
+/**
+ * A linear measurement's whole text (linear, aligned, radial, ordinate, arc length): the
+ * override, the primary units with tolerances or limits, and the alternate units. `prefix` is
+ * `R` or `%%c` for radii and diameters. Undefined when a single space suppresses the text.
+ */
+export function linearText(
+  override: string,
+  measurement: number,
+  vars: Vars,
+  prefix = '',
+): string | undefined {
+  if (override === ' ') return undefined;
+  const primary = unitsText(
+    measurement,
+    vars,
+    { tdec: num(vars.DIMTDEC, num(vars.DIMDEC, 4)), tzin: num(vars.DIMTZIN), tfactor: 1 },
+    prefix,
+    str(vars.DIMPOST),
+  );
+  let alternate: string | undefined;
+  if (on(vars.DIMALT)) {
+    const factor = num(vars.DIMALTF, 25.4);
+    const altVars: Vars = {
+      ...vars,
+      DIMLUNIT: num(vars.DIMALTU, 2),
+      DIMDEC: num(vars.DIMALTD, 2),
+      DIMZIN: num(vars.DIMALTZ),
+      DIMRND: num(vars.DIMALTRND),
+      DIMLFAC: (num(vars.DIMLFAC, 1) || 1) * factor,
+    };
+    alternate = unitsText(
+      measurement,
+      altVars,
+      { tdec: num(vars.DIMALTTD, 2), tzin: num(vars.DIMALTTZ), tfactor: factor },
+      prefix,
+      str(vars.DIMAPOST),
+    );
+  }
+  if (override === '') return alternate === undefined ? primary : `${primary} [${alternate}]`;
+  if (alternate !== undefined && override.includes('[]'))
+    return override.replace('<>', primary).replace('[]', alternate);
+  const both = alternate === undefined ? primary : `${primary} [${alternate}]`;
+  return override.includes('<>') ? override.replace('<>', both) : override;
 }
