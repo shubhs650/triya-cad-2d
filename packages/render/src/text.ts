@@ -75,6 +75,7 @@ import {
   PATH_M,
   PATH_Q,
   PATH_Z,
+  type PlacedGlyph,
   type PrimitiveColor,
   type RenderPrimitive,
 } from './types';
@@ -176,6 +177,8 @@ interface Group {
   readonly path: number[];
   /** One box per run, cap height tall, for the greeking LOD; and the tallest run's height. */
   readonly greek: number[];
+  /** TrueType glyphs, as a PDF plot writes them as text. */
+  readonly glyphs: PlacedGlyph[];
   height: number;
 }
 
@@ -190,6 +193,21 @@ class Collector {
   add(shape: GlyphShape, m: Affine, color: PrimitiveColor): void {
     const path = this.#group(shape.fill, color).path;
     for (const v of transformPath(shape.path, m)) path.push(v);
+  }
+
+  /**
+   * A TrueType glyph: its outline (when it has one) and, for a PDF plot, the glyph itself, so
+   * a space between words is kept too.
+   */
+  ttf(face: TextFace & { kind: 'ttf' }, glyph: TtfGlyph, m: Affine, color: PrimitiveColor): void {
+    const shape = cached(face.font, glyph.codePoint, () => ttfPath(glyph));
+    if (shape.path.length > 0) this.add(shape, m, color);
+    this.#group(true, color).glyphs.push({
+      font: face.font,
+      index: glyph.index,
+      codePoint: glyph.codePoint,
+      m,
+    });
   }
 
   /** A shape (complex linetypes): its strokes, and its height for the greeking LOD. */
@@ -232,15 +250,16 @@ class Collector {
   #group(fill: boolean, color: PrimitiveColor): Group {
     const key = `${fill ? 'f' : 's'}${color}`;
     let g = this.#groups.get(key);
-    if (!g) this.#groups.set(key, (g = { fill, color, path: [], greek: [], height: 0 }));
+    if (!g)
+      this.#groups.set(key, (g = { fill, color, path: [], greek: [], glyphs: [], height: 0 }));
     return g;
   }
 
   primitives(): RenderPrimitive[] {
     const glyphs = [...this.#groups.values()]
       .filter((g) => g.path.length > 0)
-      .map(({ fill, color, path, greek, height }): RenderPrimitive => {
-        const text = { height, greek };
+      .map(({ fill, color, path, greek, glyphs, height }): RenderPrimitive => {
+        const text = { height, greek, ...(glyphs.length > 0 ? { glyphs } : {}) };
         return fill
           ? { kind: 'fill', path, color, evenOdd: false, text }
           : { ...this.#stroke(path, color), text };
@@ -299,9 +318,12 @@ function placeText(
   let pen = x;
   for (const ch of text) {
     const cp = ch.codePointAt(0)!;
-    const shape = glyphShape(face, cp);
-    if (shape && shape.path.length > 0)
-      out.add(shape, composeAffine(frame, { a: sx, b: 0, c: shear, d: s, e: pen, f: y }), color);
+    const m = composeAffine(frame, { a: sx, b: 0, c: shear, d: s, e: pen, f: y });
+    if (face.kind === 'ttf') out.ttf(face, face.font.glyph(cp), m, color);
+    else {
+      const shape = glyphShape(face, cp);
+      if (shape && shape.path.length > 0) out.add(shape, m, color);
+    }
     pen += charAdvance(face, cp) * sx * style.tracking;
   }
   out.run(face, frame, color, { x0: x, x1: pen, y, height: style.height });

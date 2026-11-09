@@ -8,6 +8,7 @@
 
 import { zlibSync } from 'fflate';
 import { ContentStream, pdfNumber } from './content';
+import { PdfFonts, type EmbeddedFont, type PlotFont } from './fonts';
 import {
   encodeImage,
   FILL_CELL,
@@ -52,14 +53,28 @@ export class PdfPage {
   readonly shadings: string[] = [];
   /** Images, `Im1`, `Im2`, …, by the bitmap they were made from, so one is written once. */
   readonly images = new Map<PlotPixels, { readonly name: string; readonly image: EncodedImage }>();
+  /** TrueType fonts the page shows text in (M2-16 part 3), embedded once per document. */
+  readonly fonts = new Set<EmbeddedFont>();
 
   constructor(
     /** Points. */
     readonly width: number,
     readonly height: number,
     readonly options: PdfPageOptions = {},
+    /** The document's fonts, shared by its pages. */
+    private readonly documentFonts: PdfFonts = new PdfFonts(),
   ) {
     if (!(width > 0 && height > 0)) throw new RangeError(`page size ${width} × ${height}`);
+  }
+
+  /**
+   * The embedded font showing text in `font`, named for the page's resources; undefined when
+   * the font cannot be embedded (not TrueType, or its licence forbids it): plot outlines then.
+   */
+  font(font: PlotFont): EmbeddedFont | undefined {
+    const e = this.documentFonts.embed(font);
+    if (e) this.fonts.add(e);
+    return e;
   }
 
   /**
@@ -139,12 +154,13 @@ const latin1 = (s: string): Uint8Array => {
 
 export class PdfDocument {
   private readonly pages: PdfPage[] = [];
+  private readonly fonts = new PdfFonts();
 
   constructor(readonly options: PdfDocumentOptions = {}) {}
 
   /** A new page at the end, `width` × `height` points. */
   addPage(width: number, height: number, options: PdfPageOptions = {}): PdfPage {
-    const page = new PdfPage(width, height, options);
+    const page = new PdfPage(width, height, options, this.fonts);
     this.pages.push(page);
     return page;
   }
@@ -168,6 +184,8 @@ export class PdfDocument {
     const catalog = add('');
     const pagesId = add('');
     const pageIds: number[] = [];
+    // Each font's Type 0 dictionary, numbered when a page first names it, written at the end.
+    const fontIds = new Map<EmbeddedFont, number>();
     for (const page of this.pages) {
       if (page.content.depth !== 0) throw new Error('a page ends with an unbalanced save');
       const text = page.content.toString();
@@ -221,8 +239,14 @@ export class PdfDocument {
         };
         return `/${name} ${ref(id)}`;
       });
+      const fonts = [...page.fonts].map((f) => {
+        let id = fontIds.get(f);
+        if (id === undefined) fontIds.set(f, (id = add('')));
+        return `/${f.name} ${ref(id)}`;
+      });
       const entries = [
         gs ? `/ExtGState << ${gs} >>` : '',
+        fonts.length > 0 ? `/Font << ${fonts.join(' ')} >>` : '',
         spaces.length > 0 ? `/ColorSpace << ${spaces.join(' ')} >>` : '',
         patterns.length > 0 ? `/Pattern << ${patterns.join(' ')} >>` : '',
         shadings.length > 0 ? `/Shading << ${shadings.join(' ')} >>` : '',
@@ -235,6 +259,20 @@ export class PdfDocument {
             page.height,
           )}] /Resources ${resources} /Contents ${ref(contents)} >>`,
         ),
+      );
+    }
+    for (const [font, id] of fontIds) {
+      font.write(
+        id,
+        (at, body) => (bodies[at - 1] = body),
+        add,
+        (dict, data) => {
+          const body = compress ? zlibSync(data, { level: 6 }) : data;
+          return add({
+            dict: `<< ${dict ? `${dict} ` : ''}/Length ${body.length}${compress ? ' /Filter /FlateDecode' : ''} >>`,
+            data: body,
+          });
+        },
       );
     }
     bodies[pagesId - 1] =

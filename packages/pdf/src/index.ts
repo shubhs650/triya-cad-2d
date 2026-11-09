@@ -39,6 +39,7 @@ export {
 export {
   paperTransform,
   plotItems,
+  type PlotGlyph,
   type PlotGradient,
   type PlotImage,
   type PlotInfiniteItem,
@@ -59,3 +60,5 @@ export {
   type PlotPixels,
 } from './fills';
 export { PAPER_SIZES, mmToPoints, paperSize, type PaperSize } from './paper';
+export { EmbeddedFont, PdfFonts, type PlotFont } from './fonts';
+export { TrueTypeFont, writeSfnt } from './truetype';

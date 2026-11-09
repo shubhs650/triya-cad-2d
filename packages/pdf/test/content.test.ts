@@ -57,4 +57,27 @@ describe('ContentStream', () => {
     ]);
     expect(new ContentStream().toString()).toBe('');
   });
+
+  it('writes text objects of glyph runs with Identity-H codes and TJ adjustments (M2-16 part 3)', () => {
+    const cs = new ContentStream();
+    cs.text('F1', []);
+    expect(cs.toString()).toBe('');
+    cs.text('F1', [
+      { m: { a: 10, b: 0, c: 0, d: 10, e: 72, f: 144.5 }, show: [{ code: 1 }, { code: 0x2a }] },
+      {
+        m: { a: 0, b: 10, c: -10, d: 0, e: 0, f: 0 },
+        show: [{ code: 3 }, -250, { code: 300 }, 12.5],
+      },
+    ]);
+    expect(cs.toString().split('\n')).toEqual([
+      'BT',
+      '/F1 1 Tf',
+      '10 0 0 10 72 144.5 Tm',
+      '[<0001002A>] TJ',
+      '0 10 -10 0 0 0 Tm',
+      '[<0003> -250 <012C> 12.5] TJ',
+      'ET',
+      '',
+    ]);
+  });
 });
