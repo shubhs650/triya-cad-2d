@@ -429,6 +429,9 @@ const GRIP_HOT = rgbHex(aciRgb(12));
 const GRIP_EDGE = '#1a1a1a';
 
 /** A dimension without its block, so the engine draws it (a STRETCH preview, M2-10 part 3). */
+/** The id an object being placed is drawn under: no object of the drawing has it. */
+const ADDING = -1 as EntityId;
+
 function unblocked(g: EntityGeometry): EntityGeometry {
   if (!('dimType' in g)) return g;
   const { block: _block, ...rest } = g;
@@ -713,9 +716,32 @@ export class Canvas2DRenderer implements Renderer {
         const r = moveGrip(e.geom, g.from, g.to);
         if (r.kind === 'move') gripMoved.push(this.#cache[id]);
         if (r.kind !== 'shape') continue;
-        const entry = this.#entryOf({ ...e, geom: r.geom }, id, this.#model, this.#blockSource);
+        // A dimension's grip reshapes it and the engine regenerates it (M2-11): drawn afresh.
+        const geom = unblocked(r.geom);
+        const entry = this.#entryOf({ ...e, geom }, id, this.#model, this.#blockSource);
         if (entry) stretched.push(entry);
       }
+    }
+    const a = motion.adding;
+    if (a) {
+      // An object a command is placing (a dimension, M2-11), as it will be made: ByLayer on
+      // its layer, in the space shown.
+      const e: Entity = {
+        id: ADDING,
+        handle: '',
+        type: a.geom.kind,
+        owner: this.#block,
+        layer: a.layer,
+        color: { kind: 'byLayer' },
+        linetype: 'ByLayer',
+        lineweight: 'ByLayer',
+        transparency: 'ByLayer',
+        ltScale: 1,
+        visible: true,
+        geom: unblocked(a.geom),
+      };
+      const entry = this.#entryOf(e, ADDING, this.#model, this.#blockSource);
+      if (entry) stretched.push(entry);
     }
     const gripMove = g ? translation(g.to.x - g.from.x, g.to.y - g.from.y) : motion.m;
     this.#drag = { moved, m: motion.m, stretched, gripMoved, gripMove };

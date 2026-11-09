@@ -52,6 +52,12 @@ export function DynamicInput({
 }) {
   const on = useSyncExternalStore(dynMode.subscribe, dynMode.get);
   const [over, setOver] = useState(false);
+  /**
+   * Whether the cursor is over a drawing now. The keys read this rather than `over`: a key typed
+   * right after the cursor leaves the drawing can come before React renders that, and would go
+   * to a tooltip about to close (CI lost the 3 of a 350,-15 typed so).
+   */
+  const overNow = useRef(false);
   const [state, setState] = useState<DynState | undefined>(prompt && dynFor(prompt));
   const box = useRef<HTMLDivElement>(null);
   const live = useRef<(HTMLSpanElement | null)[]>([]);
@@ -83,7 +89,8 @@ export function DynamicInput({
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
       at.current = { x: e.clientX, y: e.clientY };
-      setOver(overCanvas(e.target));
+      overNow.current = overCanvas(e.target);
+      setOver(overNow.current);
       place();
     };
     window.addEventListener('pointermove', onMove);
@@ -95,7 +102,7 @@ export function DynamicInput({
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const { prompt: p, state: s, shown: visible } = props.current;
-      if (!visible || !p || !s || takesText(e.target)) return;
+      if (!visible || !overNow.current || !p || !s || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const take = (next: DynState, key?: string) => {
         e.preventDefault();

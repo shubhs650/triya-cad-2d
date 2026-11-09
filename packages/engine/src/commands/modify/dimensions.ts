@@ -17,15 +17,15 @@ const ROUNDS = 4;
 /**
  * Rewrites the blocks of the dimensions `ids` as the dimension engine draws them now. Says on
  * the command line how many could not be (no dimension engine, no canvas, a font not loaded),
- * which keep the graphics carried with them. Returns how many were regenerated.
+ * which keep the graphics carried with them. Returns what each regenerated one draws.
  */
 export async function regenerateDimensions(
   ctx: CommandContext,
   ids: readonly EntityId[],
-): Promise<number> {
-  if (ids.length === 0) return 0;
-  const regenerate = ctx.dimensions;
+): Promise<ReadonlyMap<EntityId, RegeneratedParts>> {
   const drawn = new Map<EntityId, RegeneratedParts>();
+  if (ids.length === 0) return drawn;
+  const regenerate = ctx.dimensions;
   if (regenerate) {
     const widths = new Map<string, number | undefined>();
     for (let round = 0; round < ROUNDS; round++) {
@@ -61,5 +61,5 @@ export async function regenerateDimensions(
       `${left} ${left === 1 ? 'dimension was' : 'dimensions were'} not regenerated (its text cannot be measured).`,
     );
   }
-  return drawn.size;
+  return drawn;
 }

@@ -53,6 +53,8 @@ export interface SelectionLoopOptions {
   /** The prompt's own message and options ("Select objects"). */
   readonly message: string;
   readonly options?: readonly string[];
+  /** What Enter does, shown as `<…>` (DIMANGULAR's `<specify vertex>`, M2-11). */
+  readonly defaultLabel?: string;
   /** Objects on locked layers are refused (a command that edits). */
   readonly editable?: boolean;
   /** The pre-selection at `Command:`, which shows no prompt but its window's corner. */
@@ -83,6 +85,7 @@ export class SelectionLoop {
   #corner: Corner | undefined;
   /** The last window that added objects (STRETCH's window, M2-06). */
   #window: SelectionWindow | undefined;
+  #pick: Vec2 | undefined;
 
   constructor(host: SelectionLoopHost, o: SelectionLoopOptions) {
     this.#host = host;
@@ -95,6 +98,11 @@ export class SelectionLoop {
   }
 
   /** The last window or crossing window that added objects, if any. */
+  /** Where the last pick that took an object was made (DIMLINEAR's object, M2-11). */
+  get pick(): Vec2 | undefined {
+    return this.#pick;
+  }
+
   get window(): SelectionWindow | undefined {
     return this.#window;
   }
@@ -120,6 +128,10 @@ export class SelectionLoop {
       kind: 'selection',
       message: this.#remove ? 'Remove objects' : this.#o.message,
       ...(this.#o.options && { options: this.#o.options }),
+      ...(!this.#remove &&
+        this.#o.defaultLabel !== undefined && {
+          defaultLabel: this.#o.defaultLabel,
+        }),
     };
   }
 
@@ -179,6 +191,7 @@ export class SelectionLoop {
       this.#corner = { from: p, kind: 'auto', remove };
       return 'more';
     }
+    if (!remove) this.#pick = p;
     return this.#apply([hit], remove, this.#label());
   }
 
