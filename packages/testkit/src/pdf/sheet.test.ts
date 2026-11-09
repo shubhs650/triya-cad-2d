@@ -38,27 +38,27 @@ describe('the plot sheet PDF (M2-16)', () => {
     expect(new Uint8Array(readFileSync(SHEET_DIR + SHEET_PDF))).toEqual(bytes);
   });
 
-  it('opens in pdf.js with five A4 landscape pages, their labels and bookmarks', async () => {
+  it('opens in pdf.js with six A4 landscape pages, their labels and bookmarks', async () => {
     const task = getDocument({ data: bytes.slice() });
     const doc = await task.promise;
     try {
-      expect(doc.numPages).toBe(5);
+      expect(doc.numPages).toBe(6);
       expect(await doc.getPageLabels()).toEqual(SHEET_PAGES.map((p) => p.label));
       const outline = await doc.getOutline();
       expect(outline.map((o) => o.title)).toEqual(SHEET_PAGES.map((p) => p.bookmark));
-      for (let n = 1; n <= 5; n++) {
+      for (let n = 1; n <= 6; n++) {
         const page = await doc.getPage(n);
         const [x0, y0, x1, y1] = page.view;
         expect([x0, y0]).toEqual([0, 0]);
         expect(x1).toBeCloseTo((297 * 72) / 25.4, 3);
         expect(y1).toBeCloseTo((210 * 72) / 25.4, 3);
         const ops = await page.getOperatorList();
-        // Paths only: stroke-font text plots as paths, no text object.
+        // Stroke-font text plots as paths; only page 6's TrueType text is text.
         expect(ops.fnArray).toContain(OPS.constructPath);
-        expect(ops.fnArray).not.toContain(OPS.beginText);
+        expect(ops.fnArray.includes(OPS.beginText)).toBe(n === 6);
         // Pages 4 and 5 paint shadings, an image and (page 5) fill style patterns.
-        expect(ops.fnArray.includes(OPS.shadingFill)).toBe(n >= 4);
-        expect(ops.fnArray.includes(OPS.paintImageXObject)).toBe(n >= 4);
+        expect(ops.fnArray.includes(OPS.shadingFill)).toBe(n === 4 || n === 5);
+        expect(ops.fnArray.includes(OPS.paintImageXObject)).toBe(n === 4 || n === 5);
         expect(ops.fnArray.includes(OPS.setFillColorN)).toBe(n === 5);
       }
       const meta = await doc.getMetadata();
@@ -118,6 +118,45 @@ describe('the plot sheet PDF (M2-16)', () => {
     );
     // The XLINE and RAY dashed by their plot style linetypes, phased from the base point.
     expect(page5).toMatch(/^\[[\d. ]+\] [\d.]+ d$/m);
+  });
+
+  it('writes page 6’s TrueType text as searchable text in one embedded subset (part 3)', async () => {
+    const latin = Buffer.from(bytes).toString('latin1');
+    // One embedded font: the restricted-licence twin is not embedded.
+    expect(latin.match(/\/FontFile2 /g)).toHaveLength(1);
+    expect(latin).toMatch(/\/BaseFont \/[A-Z]{6}\+TriyaPixel /);
+    expect(latin).not.toContain('TriyaLocked');
+    const task = getDocument({ data: bytes.slice() });
+    const doc = await task.promise;
+    try {
+      const page = await doc.getPage(6);
+      const items = (await page.getTextContent()).items;
+      // pdf.js splits a run into items at wide spaces: read them back as one line of words.
+      const text = items
+        .map((i) => ('str' in i ? i.str : ''))
+        .join(' ')
+        .replace(/\s+/g, ' ');
+      for (const s of [
+        'TRUETYPE TEXT 1:100',
+        'HEIGHT 5 = 2.5 X 2',
+        'ROTATED 30°',
+        'WIDTH 1.5 OBLIQUE 15',
+        'FIT TEXT',
+        'BACKWARD',
+        'UPSIDE DOWN',
+        'ÅÄ COMPOSITE GLYPHS',
+        'MTEXT LINE ONE',
+        'MISSING: q',
+        'RED',
+      ])
+        expect(text).toContain(s);
+      // Tracked 1.5, its letters spaced half an advance apart, reads as spaced letters.
+      expect(text.replace(/ /g, '')).toContain('TRACKED1.5');
+      // The ROMANS run and the locked font are outlines, not text.
+      expect(text).not.toMatch(/romans|LOCKED/);
+    } finally {
+      await task.destroy();
+    }
   });
 
   it('shares the renderer’s path opcodes', () => {

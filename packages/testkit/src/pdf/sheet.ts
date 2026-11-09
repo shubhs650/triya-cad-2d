@@ -11,6 +11,9 @@
 //    XLINE/RAY in their own colours;
 // 5. "Fill styles": a CTB that keeps object colours but plots ACI 40–47 with the eight
 //    patterned fill styles, and the XLINE and RAY with plot style linetypes.
+// Then the text drawing (M2-16 part 3, `scripts/pdf/plot-text.py`, fixtures/pdf/plot-text.dxf):
+// 6. "TrueType text": TEXT and MTEXT in the test TrueType font (fonts/truetype.ts), written as
+//    text in an embedded subset font, and in its restricted-licence twin, plotted as outlines.
 // Glyphs and hatch pattern lines plot continuous whatever the linetype, as AutoCAD draws them.
 // Model space is tessellated by the renderer (`tessellate`, with the bundled fonts, so ROMANS
 // text plots as stroke paths) and each object's plot properties come from `PlotResolver`, as
@@ -48,12 +51,15 @@ import {
   type PrimitiveColor,
   type RenderPrimitive,
 } from '@triya/render';
+import { parseTtf, type FontBook } from '@triya/text';
+import { testTrueType } from '../fonts/truetype';
 import { bundledFontBook } from '../render/bundled-fonts';
 import { corpusDrawing } from '../render/document';
 
 export const SHEET_DIR = fileURLToPath(new URL('../../fixtures/pdf/', import.meta.url));
 export const SHEET_DXF = 'plot-sheet.dxf';
 export const FILLS_DXF = 'plot-fills.dxf';
+export const TEXT_DXF = 'plot-text.dxf';
 export const SHEET_PDF = 'plot-sheet.pdf';
 
 /** The CTB of page 3: colour 9 + k plots black with plot style linetype k; colour 150 at 40 %. */
@@ -149,14 +155,26 @@ function paperRgb(c: PrimitiveColor): readonly [number, number, number] {
   return rgb;
 }
 
+/**
+ * The bundled stroke fonts and the two TrueType fonts the text drawing's styles name: the test
+ * font as triya-pixel.ttf and its restricted-licence twin as triya-locked.ttf.
+ */
+export function sheetFontBook(): FontBook {
+  const book = bundledFontBook();
+  book.addTtf(parseTtf(testTrueType()), 'triya-pixel.ttf');
+  book.addTtf(parseTtf(testTrueType({ family: 'Triya Locked', fsType: 2 })), 'triya-locked.ttf');
+  return book;
+}
+
 /** A model space as plot items through `resolver`; `images` gives each IMAGEDEF's bitmap. */
 export function sheetItems(
   model: DocumentModel,
   resolver: PlotResolver,
   images: (definition: string) => PlotPixels | undefined = () => undefined,
+  fonts: FontBook = sheetFontBook(),
 ): PlotItem[] {
   const paint = createPaint();
-  const text = { fonts: bundledFontBook(), style: (h: string) => model.tables.textStyles.get(h) };
+  const text = { fonts, style: (h: string) => model.tables.textStyles.get(h) };
   const space = [...model.blocks.values()].find((b) => b.name.toUpperCase() === '*MODEL_SPACE');
   if (!space) throw new Error('the plot sheet has no model space');
   const items: PlotItem[] = [];
@@ -191,7 +209,12 @@ export function sheetItems(
         });
         continue;
       }
-      items.push(pathItem(prim, props, solid, onPaper, images, common));
+      // An MTEXT colour override: the run's own colour, through the table (ours, as gradients).
+      const own =
+        prim.kind === 'fill' && prim.text && prim.color !== p.color
+          ? { ...solid, color: onPaper(prim.color) }
+          : solid;
+      items.push(pathItem(prim, props, own, onPaper, images, common));
     }
   }
   return items;
@@ -256,10 +279,12 @@ function pathItem(
   const continuous = prim.text !== undefined || prim.hatch !== undefined;
   // A plot style linetype dashes the object's continuous path itself.
   const dashed = props.linetype.kind === 'plot' && !continuous;
+  const glyphs = prim.kind === 'fill' ? prim.text?.glyphs : undefined;
   return {
     ...base,
     path: dashed ? (prim.continuous ?? prim.path) : prim.path,
     paint: continuous ? solid : props,
+    ...(glyphs ? { glyphs } : {}),
   };
 }
 
@@ -276,33 +301,41 @@ export function sheetModel(file: string = SHEET_DXF): DocumentModel {
 }
 
 export const SHEET_PAGES = [
-  { label: 'Colour', bookmark: 'Colour (no plot style table)', table: undefined, fills: false },
+  { label: 'Colour', bookmark: 'Colour (no plot style table)', table: undefined, drawing: 'sheet' },
   {
     label: 'Monochrome',
     bookmark: 'Monochrome (monochrome.ctb)',
     table: 'monochrome',
-    fills: false,
+    drawing: 'sheet',
   },
   {
     label: 'Plot linetypes',
     bookmark: 'Plot linetypes (screening 40 %)',
     table: 'linetypes',
-    fills: false,
+    drawing: 'sheet',
   },
   {
     label: 'Fills',
     bookmark: 'Gradients, images, points, XLINE/RAY',
     table: undefined,
-    fills: true,
+    drawing: 'fills',
   },
-  { label: 'Fill styles', bookmark: 'Fill styles (CTB)', table: 'fillStyles', fills: true },
+  { label: 'Fill styles', bookmark: 'Fill styles (CTB)', table: 'fillStyles', drawing: 'fills' },
+  {
+    label: 'TrueType text',
+    bookmark: 'TrueType text (embedded subset fonts)',
+    table: undefined,
+    drawing: 'text',
+  },
 ] as const;
 
-/** The five-page plot of the two drawings, deterministic to the byte. */
+/** The six-page plot of the three drawings, deterministic to the byte. */
 export function sheetPdf(
   model: DocumentModel = sheetModel(),
   fills: DocumentModel = sheetModel(FILLS_DXF),
+  text: DocumentModel = sheetModel(TEXT_DXF),
 ): Uint8Array {
+  const fonts = sheetFontBook();
   const pixels = fillsImagePixels();
   const a4 = paperSize('ISO A4')!;
   // Landscape: the sheet's 297 × 210 mm drawing fills the paper at 1:1.
@@ -320,7 +353,10 @@ export function sheetPdf(
             : undefined;
     const page = doc.addPage(width, height, { label: p.label, bookmark: p.bookmark });
     const resolver = new PlotResolver(table);
-    const items = p.fills ? sheetItems(fills, resolver, () => pixels) : sheetItems(model, resolver);
+    const items =
+      p.drawing === 'fills'
+        ? sheetItems(fills, resolver, () => pixels, fonts)
+        : sheetItems(p.drawing === 'text' ? text : model, resolver, undefined, fonts);
     plotItems(page, items, {
       toPaper: paperTransform(1, { x: 0, y: 0 }, { x: 0, y: 0 }),
       nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
