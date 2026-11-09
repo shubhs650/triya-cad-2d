@@ -28,6 +28,8 @@ import type {
   HatchGeometry,
   InsertAttribute,
   NonGraphicalObject,
+  SpatialFilter,
+  Xdata,
 } from '../model/types';
 import { point, scaleAbout, type Similarity } from './similarity';
 import {
@@ -133,10 +135,33 @@ export function eraseObjects(
   b: ChangeSetBuilder,
   model: DocumentModel,
   ids: readonly EntityId[],
-): EntityId[] {
+): EditReport {
   const links = new Links(b, model);
-  const erased = ids.map((id) => b.entity(id)).filter((e): e is Entity => e !== undefined);
+  const refused = new Map<string, number>();
+  // A layer's viewport overrides name the viewport; Triya cannot rewrite them yet (M1-62).
+  const overridden = new Set<Handle>();
+  for (const l of model.tables.layers.values()) {
+    for (const o of l.viewportOverrides ?? []) overridden.add(o.viewport);
+  }
+  const erased: Entity[] = [];
+  for (const id of ids) {
+    const e = b.entity(id);
+    if (!e) continue;
+    if (overridden.has(e.handle))
+      count(refused, 'a viewport with layer overrides cannot be erased yet');
+    else erased.push(e);
+  }
   const gone = new Set(erased.map((e) => e.handle));
+  // An XCLIP goes with its reference.
+  for (const o of model.objects.values()) {
+    if (
+      o.type === 'SPATIAL_FILTER' &&
+      gone.has((o as SpatialFilter).insert) &&
+      b.object(o.handle)
+    ) {
+      b.removeObject(o.handle);
+    }
+  }
   for (const a of links.assocs) {
     if (gone.has(a.dimension) || assocGeometry(a).some((h) => gone.has(h))) links.disassociate(a);
   }
@@ -169,7 +194,7 @@ export function eraseObjects(
     }
   }
   for (const e of erased) b.removeEntity(e.id);
-  return erased.map((e) => e.id);
+  return { ids: erased.map((e) => e.id), refused, unannotated: 0 };
 }
 
 // ── MOVE, ROTATE, SCALE, MIRROR ─────────────────────────────────────────────────────────────
@@ -380,11 +405,35 @@ class AnonymousNames {
   }
 }
 
+/**
+ * The xdata a copy keeps: all but the annotative property's (`AcadAnnotative`, which goes with
+ * the annotation scales a copy does not keep) and an R12 viewport's view (`ACAD`'s MVIEW data,
+ * which the save writes from the viewport itself).
+ */
+function copiedXdata(
+  b: ChangeSetBuilder,
+  e: Entity | InsertAttribute,
+  viewport: boolean,
+): Xdata | undefined {
+  if (!e.xdata) return undefined;
+  const kept = e.xdata.filter((x) => {
+    const name = b.tableRecord('appIds', x.appId)?.name.toUpperCase();
+    return name !== 'ACADANNOTATIVE' && !(viewport && name === 'ACAD');
+  });
+  return kept.length > 0 ? kept : undefined;
+}
+
 /** The properties a copy keeps: everything but identity, links and annotation scales. */
-function copiedProps(e: Entity | InsertAttribute) {
+function copiedProps(b: ChangeSetBuilder, e: Entity | InsertAttribute, viewport = false) {
+  const xdata = copiedXdata(b, e, viewport);
   return {
     layer: e.layer,
-    color: e.color,
+    // A new object cannot take a colour book's name yet (the save refuses it): the copy keeps
+    // the colour's RGB value.
+    color:
+      e.color.kind === 'rgb' && (e.color.bookName !== undefined || e.color.colorName !== undefined)
+        ? { kind: 'rgb' as const, r: e.color.r, g: e.color.g, b: e.color.b }
+        : e.color,
     linetype: e.linetype,
     lineweight: e.lineweight,
     transparency: e.transparency,
@@ -392,7 +441,7 @@ function copiedProps(e: Entity | InsertAttribute) {
     visible: e.visible,
     ...(e.plotStyle !== undefined ? { plotStyle: e.plotStyle } : {}),
     ...(e.material !== undefined ? { material: e.material } : {}),
-    ...(e.xdata !== undefined ? { xdata: e.xdata } : {}),
+    ...(xdata !== undefined ? { xdata } : {}),
   };
 }
 
@@ -416,9 +465,11 @@ function copyEntity(
             reactors: _reactors,
             extDict: _extDict,
             annotative: _annotative,
+            xdata: _xdata,
             ...rest
           } = a;
-          return { ...rest, handle: b.allocateHandle() };
+          const xdata = copiedXdata(b, a, false);
+          return { ...rest, ...(xdata ? { xdata } : {}), handle: b.allocateHandle() };
         }),
       };
       break;
@@ -454,7 +505,7 @@ function copyEntity(
       break;
     }
   }
-  return b.addEntity({ ...copiedProps(e), owner, geom });
+  return b.addEntity({ ...copiedProps(b, e, geom.kind === 'VIEWPORT'), owner, geom });
 }
 
 /** A copy of an anonymous block, its contents carried by `t`; returns the copy's handle. */

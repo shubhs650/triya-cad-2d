@@ -45,8 +45,9 @@ export const turnAbout = (base: Vec2, angle: number): Similarity =>
   similarity(rotation(angle, base));
 export const scaleAbout = (base: Vec2, k: number): Similarity => similarity(scaling(k, k, base));
 export const mirrorIn = (p1: Vec2, p2: Vec2): Similarity => similarity(mirror(p1, p2));
-/** `a`, then `b`. */
-export const then = (a: Similarity, b: Similarity): Similarity => similarity(compose(a.m, b.m));
+/** `a`, then `b` (not named `then`: a module exporting `then` is thenable). */
+export const followedBy = (a: Similarity, b: Similarity): Similarity =>
+  similarity(compose(a.m, b.m));
 
 export const point = (t: Similarity, p: Vec2): Vec2 => applyPoint(t.m, p);
 export const vector = (t: Similarity, v: Vec2): Vec2 => applyVector(t.m, v);

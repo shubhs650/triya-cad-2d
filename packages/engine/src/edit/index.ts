@@ -1,12 +1,5 @@
 // The core edits behind ERASE, MOVE, COPY, ROTATE, SCALE and MIRROR (M2-06).
-export {
-  similarity,
-  moveBy,
-  turnAbout,
-  scaleAbout,
-  mirrorIn,
-  type Similarity,
-} from './similarity';
+export { similarity, moveBy, turnAbout, scaleAbout, mirrorIn, type Similarity } from './similarity';
 export {
   FIXED_KINDS,
   transformGeometry,

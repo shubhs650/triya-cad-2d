@@ -170,21 +170,18 @@ function textPlace(t: Similarity, g: TextPlace, height: number, o: TransformOpti
   // The point the text hangs from stays where its mirror image is; only the field that holds
   // it changes with the justification.
   const anchor = byAlignment(g.halign, g.valign) && alignmentPoint ? alignmentPoint : position;
+  // A left, baseline text has no alignment point (DXF 11 is read only for the others).
+  const { alignmentPoint: _dropped, ...rest } = g;
   return byAlignment(halign, valign)
     ? { ...g, halign, valign, rotation: u.rotation, position, alignmentPoint: anchor }
-    : {
-        ...g,
-        halign,
-        valign,
-        rotation: u.rotation,
-        position: anchor,
-        ...(alignmentPoint ? { alignmentPoint: anchor } : {}),
-      };
+    : { ...rest, halign, valign, rotation: u.rotation, position: anchor };
 }
 
 function textFields<T extends TextFields>(t: Similarity, g: T, o: TransformOptions): T {
   const placed = textPlace(t, g, g.height, o);
-  return { ...planar(t, g), ...placed, height: len(t, g.height) } as T;
+  // The placement decides whether there is an alignment point.
+  const { alignmentPoint: _replaced, ...base } = planar(t, g);
+  return { ...base, ...placed, height: len(t, g.height) } as T;
 }
 
 /** An annotative text's representations follow the text (each has its own placement). */
@@ -448,7 +445,8 @@ function hatch(t: Similarity, g: HatchGeometry, o: TransformOptions): HatchGeome
   // MIRRHATCH 0: under a reflection the pattern keeps its direction (its lines keep their
   // angles, their offsets and dashes only scale) and its origin moves to its mirror image.
   const keepPattern = t.reflect && !o.mirrorHatch;
-  const patternAngle = keepPattern ? g.patternAngle : angle(t, g.patternAngle);
+  // A solid fill has no pattern to turn (AutoCAD keeps its 52 at 0).
+  const patternAngle = keepPattern || g.solid ? g.patternAngle : angle(t, g.patternAngle);
   return {
     ...planar(t, g),
     loops: g.loops.map((l) => ({
@@ -495,13 +493,16 @@ function image(t: Similarity, g: ImageGeometry): ImageGeometry {
   const position = point(t, g.position);
   const u = vector(t, g.u);
   const v = vector(t, g.v);
-  if (!t.reflect) return { ...planar(t, g), position, u, v };
+  // A −Z image states its plane as the raw U × V (the mapping's normal), which the save checks.
+  const normal = (u: Vec2, v: Vec2) =>
+    g.normal ? { normal: { ...g.normal, z: u.x * v.y - u.y * v.x } } : {};
+  if (!t.reflect) return { ...planar(t, g), position, u, v, ...normal(u, v) };
   const flip = upright(t, Math.atan2(g.u.y, g.u.x)).flip;
   const frame =
     flip === 'x'
       ? { position: add(position, scale(u, g.size.x)), u: scale(u, -1), v }
       : { position: add(position, scale(v, g.size.y)), u, v: scale(v, -1) };
-  if (g.kind !== 'WIPEOUT') return { ...planar(t, g), ...frame };
+  if (g.kind !== 'WIPEOUT') return { ...planar(t, g), ...frame, ...normal(frame.u, frame.v) };
   const mirrored = g.clip.vertices.map((q) =>
     flip === 'x' ? { x: g.size.x - 1 - q.x, y: q.y } : { x: q.x, y: g.size.y - 1 - q.y },
   );
@@ -518,7 +519,7 @@ function image(t: Similarity, g: ImageGeometry): ImageGeometry {
           },
         ]
       : mirrored.reverse();
-  return { ...planar(t, g), ...frame, clip: { ...g.clip, vertices } };
+  return { ...planar(t, g), ...frame, ...normal(frame.u, frame.v), clip: { ...g.clip, vertices } };
 }
 
 // ── All kinds ───────────────────────────────────────────────────────────────────────────────
@@ -532,6 +533,12 @@ export const FIXED_KINDS: ReadonlySet<EntityGeometry['kind']> = new Set([
 /** Why `g` cannot be carried by `t`, or undefined when it can. */
 export function transformProblem(g: EntityGeometry, t: Similarity): string | undefined {
   if (FIXED_KINDS.has(g.kind)) return 'OLE and proxy objects cannot be edited';
+  // Geometry is the plan view (DEC-039): turning or mirroring an object whose plane is not
+  // the XY plane would need its 3D plane turned too.
+  const n = 'normal' in g ? g.normal : undefined;
+  if (n && (n.x !== 0 || n.y !== 0) && (t.reflect || t.angle !== 0)) {
+    return 'an object outside the XY plane can only be moved or scaled';
+  }
   if (g.kind === 'REGION' && t.reflect) return 'a region cannot be mirrored';
   if (g.kind === 'VIEWPORT') {
     if (g.id === 1) return 'the paper space viewport cannot be edited';
@@ -669,6 +676,8 @@ export function transformGeometry(
     }
     case 'MULTILEADER':
       return multiLeader(t, g);
+    case 'HATCH':
+      return hatch(t, g, o);
     case 'ACAD_TABLE': {
       const dir = { x: g.direction.x, y: g.direction.y };
       const position = p(g.position);
