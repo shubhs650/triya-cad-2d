@@ -1,4 +1,12 @@
-export { parseTtf, TtfFont, type TtfGlyph, type TtfPathCommand, type TtfStyle } from './font';
+export { collectionFaces } from './collection';
+export {
+  parseTtf,
+  parseTtfCollection,
+  TtfFont,
+  type TtfGlyph,
+  type TtfPathCommand,
+  type TtfStyle,
+} from './font';
 export {
   TtfRegistry,
   type FontSource,

@@ -26,7 +26,13 @@ import {
   type OsnapQuery,
   type Tolerance,
 } from '@triya/engine';
-import { FontBook, loadStrokeFont, parseShx, parseTtf, type TriyaStrokeFont } from '@triya/text';
+import {
+  FontBook,
+  loadStrokeFont,
+  parseShx,
+  parseTtfCollection,
+  type TriyaStrokeFont,
+} from '@triya/text';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
 import { textMeasure, type TextContext } from './text';
@@ -54,7 +60,7 @@ export interface FontSources {
   readonly files?: readonly { readonly name: string; readonly bytes: Uint8Array }[];
 }
 
-const TRUETYPE = /\.(ttf|otf)$/i;
+const TRUETYPE = /\.(ttf|otf|ttc)$/i;
 
 /**
  * A FontBook holding the given fonts. A file that does not parse is left out and its name
@@ -74,8 +80,13 @@ export function fontBookOf(sources: FontSources, failed: string[] = []): FontBoo
   // the bundled fonts only stand in for what is missing (ARCHITECTURE.md §8).
   for (const { name, bytes } of sources.files ?? []) {
     try {
-      if (TRUETYPE.test(name)) book.addTtf(parseTtf(bytes), name);
-      else book.addShx(name, parseShx(bytes));
+      if (TRUETYPE.test(name)) {
+        // A collection's first face answers to the file name, as AutoCAD draws a style naming
+        // it; every face answers to its family (M2-16 part 4).
+        parseTtfCollection(bytes).forEach((face, i) =>
+          book.addTtf(face, i === 0 ? name : undefined),
+        );
+      } else book.addShx(name, parseShx(bytes));
     } catch {
       failed.push(name);
     }
