@@ -36,6 +36,7 @@ import type {
   SymbolTableRecord,
   TableName,
   TableRecords,
+  TableStyleRecord,
   Xdata,
 } from '../model/types';
 import { HANDLE_KEYS, isXrefRecord, renumber } from '../model/xref';
@@ -114,9 +115,19 @@ export const DIMVAR_REFERENCES: readonly string[] = [
 
 /** DXF 1005: a database handle in xdata, which AutoCAD translates when objects are copied in. */
 const XDATA_HANDLE = 1005;
+/** DXF 1003: a layer name in xdata, which the save checks names a layer. */
+const XDATA_LAYER = 1003;
 
-/** Every handle `value` names in a reference field, its xdata's included. */
-function references(value: unknown, out: Handle[], key?: string): void {
+/**
+ * Every handle `value` names in a reference field, its xdata's included (a 1003 layer name as
+ * the handle `layers` gives it).
+ */
+function references(
+  value: unknown,
+  out: Handle[],
+  layers: ReadonlyMap<string, Handle>,
+  key?: string,
+): void {
   if (typeof value === 'string') {
     if (key !== undefined && HANDLE_KEYS.has(key) && !LINKS.has(key) && isHandle(value)) {
       out.push(value);
@@ -124,7 +135,7 @@ function references(value: unknown, out: Handle[], key?: string): void {
     return;
   }
   if (Array.isArray(value)) {
-    for (const item of value) references(item, out, key);
+    for (const item of value) references(item, out, layers, key);
     return;
   }
   if (typeof value !== 'object' || value === null || ArrayBuffer.isView(value)) return;
@@ -134,6 +145,10 @@ function references(value: unknown, out: Handle[], key?: string): void {
         out.push(app.appId);
         for (const v of app.values) {
           if (v.code === XDATA_HANDLE && typeof v.value === 'string') out.push(v.value);
+          if (v.code === XDATA_LAYER && typeof v.value === 'string') {
+            const layer = layers.get(v.value.toUpperCase());
+            if (layer !== undefined) out.push(layer);
+          }
         }
       }
     } else if (k === 'vars') {
@@ -142,7 +157,7 @@ function references(value: unknown, out: Handle[], key?: string): void {
         const v = (item as Record<string, unknown>)[name];
         if (typeof v === 'string' && isHandle(v)) out.push(v);
       }
-    } else if (k !== 'raw') references(item, out, k);
+    } else if (k !== 'raw') references(item, out, layers, k);
   }
 }
 
@@ -154,6 +169,11 @@ function clipboardProblem(model: DocumentModel, e: Entity): string | undefined {
   }
   if (g.kind === 'PDFUNDERLAY') return 'an underlay cannot be pasted into another drawing yet';
   if (g.kind === 'VIEWPORT') return 'a viewport cannot be pasted';
+  if (g.kind === 'MULTILEADER' && g.block?.attributes?.some((a) => a.definition !== undefined)) {
+    // Its attribute values name the content block's ATTDEFs, which the save can only find in
+    // the drawing it read (export entities.ts), not among the ones the paste adds.
+    return 'a multileader with block attributes cannot be pasted into another drawing yet';
+  }
   if (g.kind === 'INSERT' && isXrefRecord(model.tables.blockRecords.get(g.block))) {
     return 'an external reference cannot be pasted yet';
   }
@@ -202,13 +222,35 @@ function clipEntity(model: DocumentModel, e: Entity): EntityInit {
   return { ...rest, color, geom };
 }
 
-/** A record as the Clipboard holds it. */
+/**
+ * A record as the Clipboard holds it. Its xdata stays behind: what Triya reads of a record's
+ * xdata is in its fields (a text style's TrueType bits, a layer's description), which the save
+ * writes for a new record, and the save takes no other xdata on one.
+ */
 function clipRecord(model: DocumentModel, table: TableName, r: ObjectCommon): ObjectCommon {
-  const out = common(model, r);
+  const { xdata: _xdata, ...out } = common(model, r);
   if (table === 'layers') {
     // A layer's viewport overrides name viewports of the source's layouts.
     const { viewportOverrides: _v, ...layer } = out as LayerRecord;
     return layer;
+  }
+  if (table === 'tableStyles') {
+    // An unfilled row reads its fill colour as the file states it, which can be 257 (none);
+    // a new style keeps ACI 7 there, as AutoCAD reads an unfilled one back (table-styles.ts).
+    const style = out as TableStyleRecord;
+    const cellStyles = style.cellStyles.map((c) =>
+      !c.fillOn &&
+      c.fillColor.kind === 'aci' &&
+      !(c.fillColor.index >= 1 && c.fillColor.index <= 255)
+        ? { ...c, fillColor: { kind: 'aci' as const, index: 7 } }
+        : c,
+    );
+    return { ...style, cellStyles } as TableStyleRecord;
+  }
+  if (table === 'dimStyles') {
+    // DXF states DIMVAR colours as ACIs only (`vars` holds them); the true colours are a DWG's.
+    const { trueColors: _t, ...style } = out as DimStyleRecord;
+    return style;
   }
   return out;
 }
@@ -222,6 +264,8 @@ function clipBlock(model: DocumentModel, d: BlockDefinition): BlockDefinition {
     dynamic: _dynamic,
     dynamicOf: _dynamicOf,
     xrefLoaded: _loaded,
+    // As a record's (clipRecord).
+    xdata: _xdata,
     ...rest
   } = common(model, d);
   return rest;
@@ -245,6 +289,9 @@ export function copyToClipboard(
   let unannotated = 0;
   const tableOf = new Map<Handle, TableName>();
   for (const t of CARRIED_TABLES) for (const h of model.tables[t].keys()) tableOf.set(h, t);
+  const layers = new Map(
+    [...model.tables.layers.values()].map((l) => [l.name.toUpperCase(), l.handle]),
+  );
 
   // The objects in drawing order, whatever order they were picked in.
   const order = new Map<EntityId, number>();
@@ -270,7 +317,7 @@ export function copyToClipboard(
     if (e.annotative) unannotated++;
     const c = clipEntity(model, e);
     into.push(c);
-    references(c, pending);
+    references(c, pending, layers);
   };
   for (const e of sorted) take(e, entities);
   while (pending.length > 0) {
@@ -282,12 +329,12 @@ export function copyToClipboard(
     if (list.has(h)) continue;
     const r = clipRecord(model, table, model.tables[table].get(h)!);
     list.set(h, r);
-    references(r, pending);
+    references(r, pending, layers);
     const def = table === 'blockRecords' ? model.blocks.get(h) : undefined;
     if (def) {
       const d = clipBlock(model, def);
       blocks.set(h, d);
-      references(d, pending);
+      references(d, pending, layers);
       for (const id of model.blockEntities(h)) take(model.entity(id)!, blockEntities);
     }
   }
@@ -356,18 +403,31 @@ export function pasteObjects(
     }
   }
   const contents = clip.blockEntities.filter((e) => !kept.has(e.owner));
-  // Each object's own handle and those of what it carries (an INSERT's ATTRIBs).
+  // Each object's own handle and those of what it carries (an INSERT's ATTRIBs), these first, as
+  // COPY allocates them.
   for (const e of [...contents, ...clip.entities]) {
-    map.set(e.handle, b.allocateHandle());
     if (e.geom.kind === 'INSERT') {
       for (const a of e.geom.attributes) map.set(a.handle, b.allocateHandle());
     }
+    map.set(e.handle, b.allocateHandle());
   }
 
+  // The layers the target will have, by name: an application's xdata naming another (a source
+  // whose 1003 names no layer at all) stays behind, as the save would refuse it.
+  const layerNames = new Set([...model.tables.layers.values()].map((l) => l.name.toUpperCase()));
+  for (const [t, r] of added) {
+    if (t === 'layers') layerNames.add((r as SymbolTableRecord).name.toUpperCase());
+  }
   const xdata = (x: Xdata): Xdata | undefined => {
     const out = x.flatMap((app) => {
       const appId = map.get(app.appId);
       if (appId === undefined) return [];
+      const named = app.values.every(
+        (v) =>
+          v.code !== XDATA_LAYER ||
+          (typeof v.value === 'string' && layerNames.has(v.value.toUpperCase())),
+      );
+      if (!named) return [];
       const values = app.values.map((v) =>
         v.code === XDATA_HANDLE && typeof v.value === 'string'
           ? { ...v, value: map.get(v.value) ?? '0' }

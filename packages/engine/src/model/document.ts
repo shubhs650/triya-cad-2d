@@ -395,7 +395,10 @@ export class DocumentModel {
 
     // Commit. Nothing below can throw.
     this.#removeEntities(ents.removed ?? []);
-    for (const { after } of ents.updated ?? []) this.#entities.set(after.id, after);
+    for (const { after } of ents.updated ?? []) {
+      this.#entities.set(after.id, after);
+      this.#observeCarried(after);
+    }
     for (const [, map, c] of keyed) {
       for (const r of c.removed ?? []) {
         map.delete(r.handle);
@@ -491,6 +494,17 @@ export class DocumentModel {
       this.#entities.set(entity.id, entity);
       this.#used.add(entity.handle);
       this.handles.observe(entity.handle);
+      this.#observeCarried(entity);
     }
+  }
+
+  /**
+   * Keeps the seed above the handles an entity carries inside itself (an INSERT's ATTRIBs): a
+   * replica that replays the change set (the save's) must not hand one of them out again
+   * (M2-14 part 2 found a pasted reference's ATTRIB handle reused for a new BLOCK).
+   */
+  #observeCarried(entity: Entity): void {
+    if (entity.geom.kind !== 'INSERT') return;
+    for (const a of entity.geom.attributes) this.handles.observe(a.handle);
   }
 }
