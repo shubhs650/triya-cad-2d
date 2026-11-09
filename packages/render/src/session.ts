@@ -21,6 +21,7 @@ import {
   type Handle,
   type HeaderValue,
   type KeyedChanges,
+  type MTextGeometry,
   type TableChanges,
   type TableName,
   type OsnapHit,
@@ -205,6 +206,14 @@ export class RenderSession {
       out = out ? unionBox(out, b.box) : b.box;
     }
     return out;
+  }
+
+  /**
+   * The box an MTEXT that is not in the drawing would fill (M2-09: MLEADEREDIT's landing on the
+   * far side of a multileader's text), in the fonts loaded now.
+   */
+  textBox(text: MTextGeometry): Box | undefined {
+    return textBounds(this.#text)(text);
   }
 
   /**

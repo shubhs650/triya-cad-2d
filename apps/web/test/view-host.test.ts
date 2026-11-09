@@ -1,6 +1,6 @@
 // M2-02 part 2: the app's answers to the view commands, against a recording canvas, and the view
 // maths they add (ZOOM n relative to the limits, real-time ZOOM's drag factor).
-import type { Vec2, ViewReply, ViewRequest } from '@triya/engine';
+import type { MTextGeometry, Vec2, ViewReply, ViewRequest } from '@triya/engine';
 import type { ViewTransform } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import type { CanvasMode } from '../src/canvas/controller';
@@ -41,6 +41,11 @@ class Target implements ViewTarget {
   zoomObjects = (ids: readonly number[]) => (
     this.calls.push(`objects ${ids.join(',')}`),
     Promise.resolve(this.objectsKnown)
+  );
+  textKnown = true;
+  textBox = (t: MTextGeometry) => (
+    this.calls.push(`text ${t.contents}`),
+    Promise.resolve(this.textKnown ? { minX: 0, minY: 0, maxX: 2, maxY: 1 } : undefined)
   );
 }
 
@@ -84,6 +89,34 @@ describe('answerView', () => {
       message: 'The objects have no extents.',
     });
     expect(t.calls).toEqual(['pick 1,2', 'select 0,0 5,5 crossing', 'objects 7,8', 'objects 9']);
+  });
+
+  it('measures text with the renderer (M2-09, MLEADEREDIT)', async () => {
+    const t = new Target();
+    const { ctx } = context(t);
+    const text: MTextGeometry = {
+      kind: 'MTEXT',
+      contents: 'NOTE',
+      style: '11',
+      position: { x: 0, y: 0 },
+      height: 1,
+      width: 0,
+      rotation: 0,
+      attachment: 1,
+      direction: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    };
+    expect(await answerView({ op: 'textBox', text }, ctx)).toEqual({
+      ok: true,
+      box: { minX: 0, minY: 0, maxX: 2, maxY: 1 },
+    });
+    t.textKnown = false;
+    expect(await answerView({ op: 'textBox', text }, ctx)).toEqual({
+      ok: false,
+      message: 'The text cannot be measured.',
+    });
+    expect(t.calls).toEqual(['text NOTE', 'text NOTE']);
   });
 
   it('answers the view as VIEWSIZE and width, and whether paper space shows', () => {

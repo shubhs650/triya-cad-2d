@@ -14,12 +14,16 @@ describe('palette search', () => {
     const zoom = commandItems(builtinCommands()).find((i) => i.id === 'ZOOM');
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
+      'AIMLEADEREDITADD',
+      'AIMLEADEREDITREMOVE',
       'COPY',
       'DRAWORDER',
       'ERASE',
       'HATCHTOBACK',
       'LINE',
       'MIRROR',
+      'MLEADER',
+      'MLEADEREDIT',
       'MOVE',
       'MTEXT',
       'PAN',
@@ -40,6 +44,8 @@ describe('palette search', () => {
     expect(erase?.aliases).toEqual(expect.arrayContaining(['E', 'DEL']));
     const text = commandItems(builtinCommands()).find((i) => i.id === 'TEXT');
     expect(text?.aliases).toEqual(['DT']);
+    const mleader = commandItems(builtinCommands()).find((i) => i.id === 'MLEADER');
+    expect(mleader?.aliases).toEqual(['MLD']);
   });
 
   it('scores whole, prefix, word-start and scattered matches in that order', () => {

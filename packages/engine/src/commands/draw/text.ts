@@ -20,7 +20,7 @@ import { currentLayer } from './line';
 const LINE_PITCH = 5 / 3;
 
 /** The style TEXTSTYLE names, else Standard, else the first; undefined in a drawing with none. */
-function currentStyle(model: DocumentModel): TextStyleRecord | undefined {
+export function currentTextStyle(model: DocumentModel): TextStyleRecord | undefined {
   const name = model.header.get('$TEXTSTYLE');
   const styles = [...model.tables.textStyles.values()];
   const named = (n: string) => styles.find((s) => s.name.toUpperCase() === n.toUpperCase());
@@ -126,7 +126,7 @@ export function textCommand(): CommandDef {
     name: 'TEXT',
     aliases: ['DTEXT'],
     async *run(ctx): CommandGenerator {
-      const initial = currentStyle(ctx.model);
+      const initial = currentTextStyle(ctx.model);
       if (!initial) {
         ctx.message('The drawing has no text style.');
         return;
@@ -304,7 +304,7 @@ export function mtextCommand(): CommandDef {
     name: 'MTEXT',
     dashVariant: true,
     async *run(ctx): CommandGenerator {
-      const initial = currentStyle(ctx.model);
+      const initial = currentTextStyle(ctx.model);
       if (!initial) {
         ctx.message('The drawing has no text style.');
         return;

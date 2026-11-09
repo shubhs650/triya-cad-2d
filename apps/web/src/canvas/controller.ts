@@ -57,6 +57,7 @@ import {
   type HeaderValue,
   type Layout,
   type EntityGeometry,
+  type MTextGeometry,
   type OsnapHit,
   type Prompt,
   type Vec2,
@@ -520,6 +521,11 @@ export class CanvasController {
     const flat = box.maxX === box.minX && box.maxY === box.minY;
     this.#go(flat && this.#view ? { ...fit, scale: this.#view.scale } : fit);
     return true;
+  }
+
+  /** The box an MTEXT's glyphs fill in the fonts loaded (M2-09, MLEADEREDIT). */
+  textBox(text: MTextGeometry): Promise<Box | undefined> {
+    return this.#host.textBox(text);
   }
 
   /** The running command's preview (`ctx.preview`), or none: drawn in the foreground colour. */

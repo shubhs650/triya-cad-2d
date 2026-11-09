@@ -3,7 +3,9 @@
 // does, on the main thread. A command asks the host and awaits its reply; the engine session
 // carries each request to the app as a `CommandOutput` and the reply back as a `CommandInput`.
 import type { Vec2 } from '../../geom/types';
+import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
+import type { MTextGeometry } from '../../model/types';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -61,7 +63,12 @@ export type ViewRequest =
   /** The objects a window takes: wholly inside it, or, `crossing`, inside or crossing it. */
   | { readonly op: 'select'; readonly a: Vec2; readonly b: Vec2; readonly crossing: boolean }
   /** ZOOM Object: the view fitted around the objects' extents. */
-  | { readonly op: 'objects'; readonly ids: readonly EntityId[] };
+  | { readonly op: 'objects'; readonly ids: readonly EntityId[] }
+  /**
+   * The box an MTEXT's glyphs fill (M2-09: MLEADEREDIT places a landing on the far side of a
+   * multileader's text), which only the renderer, with the fonts, can measure.
+   */
+  | { readonly op: 'textBox'; readonly text: MTextGeometry };
 
 export type ViewReply =
   | {
@@ -71,6 +78,8 @@ export type ViewReply =
       readonly views?: readonly NamedViewInfo[];
       /** What a `pick` or `select` took. */
       readonly ids?: readonly EntityId[];
+      /** What `textBox` measured. */
+      readonly box?: Box;
     }
   | { readonly ok: false; readonly message: string };
 

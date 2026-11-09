@@ -86,6 +86,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'bounds':
         port.postMessage({ type: 'extents', id: m.id, box: session.boundsOf(m.ids) ?? null });
         break;
+      case 'textBox':
+        port.postMessage({ type: 'extents', id: m.id, box: session.textBox(m.text) ?? null });
+        break;
       case 'snap':
         port.postMessage({ type: 'snap', id: m.id, hits: session.snap(m.query) });
         break;
