@@ -1,22 +1,26 @@
 // A TrueType/OpenType collection (.ttc) of test fonts (M2-16 part 4), written here so no
 // third-party collection is committed or read: a 'ttcf' version 1.0 header, one table directory
 // per face, and each distinct table stored once (identical tables are shared between faces, as
-// real collections share them).
-import { readSfnt } from '@triya/pdf';
+// real collections share them). Self-contained, so the app's tests can use it too.
 
 const pad4 = (n: number) => (n + 3) & ~3;
 
 /** The collection of `fonts` (single-font files), faces in the order given. */
 export function testCollection(fonts: readonly Uint8Array[]): Uint8Array {
   const faces = fonts.map((f) => {
-    const sfnt = readSfnt(f);
-    if (!sfnt) throw new Error('not a font file');
     const v = new DataView(f.buffer, f.byteOffset, f.byteLength);
-    const tags = [...sfnt.tables.keys()].sort();
-    const sums = new Map(tags.map((_, i) => [tags[i]!, v.getUint32(12 + 16 * i + 4)]));
-    return { header: f.subarray(0, 12), tables: sfnt.tables, tags, sums };
+    const tables = new Map<string, Uint8Array>();
+    const sums = new Map<string, number>();
+    for (let i = 0; i < v.getUint16(4); i++) {
+      const e = 12 + 16 * i;
+      const tag = String.fromCharCode(...f.subarray(e, e + 4));
+      const at = v.getUint32(e + 8);
+      tables.set(tag, f.subarray(at, at + v.getUint32(e + 12)));
+      sums.set(tag, v.getUint32(e + 4));
+    }
+    return { header: f.subarray(0, 12), tables, tags: [...tables.keys()].sort(), sums };
   });
-  const key = (b: Uint8Array) => Buffer.from(b).toString('base64');
+  const key = (b: Uint8Array) => b.join(',');
   const stored = new Map<string, { at: number; data: Uint8Array }>();
   let at = 12 + 4 * faces.length;
   for (const f of faces) at += 12 + 16 * f.tags.length;

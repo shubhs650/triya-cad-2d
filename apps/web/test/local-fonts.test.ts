@@ -4,6 +4,8 @@
 // names it. A denial leaves the bundled stand-ins without an error.
 import { describe, expect, it } from 'vitest';
 import type { EntityInit, TextStyleRecord } from '@triya/engine';
+import { collectionFaces, parseTtf } from '@triya/text';
+import { testCollection } from '../../../packages/testkit/src/fonts/collection';
 import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
 import {
   DeviceFonts,
@@ -39,8 +41,15 @@ function face(
   return f;
 }
 
+/** A two-face collection (.ttc): the browser may hand a face over as its whole file. */
+const PAIR = testCollection([
+  fontBytes(testFont({ familyName: 'Pair Gothic' })),
+  fontBytes(testFont({ familyName: 'Pair PGothic' })),
+]);
+
 const INSTALLED = [
   face('Arial', 'Regular', 'ArialMT'),
+  face('Pair PGothic', 'Regular', 'PairPGothicRegular', PAIR),
   face('Arial', 'Bold', 'Arial-BoldMT', SANS_BOLD),
   face('Arial', 'Italic', 'Arial-ItalicMT'),
   face('Arial Narrow', 'Regular', 'ArialNarrow'),
@@ -246,6 +255,16 @@ describe('DeviceFonts', () => {
     await d.need([{ name: 'Arial', kind: 'ttf', bold: false, italic: true }]);
     expect(d.files().map((f) => f.name)).toEqual(['arial.ttf', 'Arial-ItalicMT.ttf']);
     expect(d.getSnapshot().used.map((u) => u.requested)).toEqual(['Arial', 'arial.ttf']);
+  });
+
+  it('hands on the face asked for, not its whole collection (M2-16 part 4)', async () => {
+    const d = new DeviceFonts(access('granted'));
+    await d.init();
+    await d.need([{ name: 'Pair PGothic', kind: 'ttf', bold: false, italic: false }]);
+    const [file] = d.files();
+    expect(file!.name).toBe('PairPGothicRegular.ttf');
+    expect(collectionFaces(file!.bytes)).toBeUndefined();
+    expect(parseTtf(file!.bytes).family).toBe('Pair PGothic');
   });
 });
 
