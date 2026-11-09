@@ -63,6 +63,10 @@ export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
   MTEXT: 'TEXTEDIT',
   ATTDEF: 'TEXTEDIT',
   INSERT: 'EATTEDIT',
+  // A dimension's text opens in the MTEXT editor (AutoCAD 2024's DBLCLKEDIT; M2-11).
+  DIMENSION: 'TEXTEDIT',
+  ARC_DIMENSION: 'TEXTEDIT',
+  LARGE_RADIAL_DIMENSION: 'TEXTEDIT',
 };
 
 /**
@@ -673,6 +677,7 @@ export class PromptBus {
       ...(prompt.options && { options: prompt.options }),
       ...(prompt.editable && { editable: true }),
       ...(prompt.single && { single: true }),
+      ...(prompt.defaultLabel !== undefined && { defaultLabel: prompt.defaultLabel }),
     });
     this.#showSelection();
     this.#showPrompt();
@@ -741,7 +746,12 @@ export class PromptBus {
     if (ids.length > 0) this.#previous = ids;
     this.#showSelection();
     const window = loop.window;
-    return this.#deliver({ kind: 'selection', ids, ...(window && { window }) }, '', false);
+    const pick = loop.pick;
+    return this.#deliver(
+      { kind: 'selection', ids, ...(window && { window }), ...(pick && { pick }) },
+      '',
+      false,
+    );
   }
 
   /** The selection at `Command:` grips show on: none past GRIPOBJLIMIT. */

@@ -310,6 +310,8 @@ export type PromptAnswer =
        * what lies in it, M2-06); none when every object was picked or came from a set.
        */
       readonly window?: SelectionWindow;
+      /** Where the last pick that took an object was made, when one did (M2-11). */
+      readonly pick?: Vec2;
     }
   | {
       readonly kind: 'dialog';

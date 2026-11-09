@@ -14,12 +14,15 @@ import type { Handle } from '../../model/handle';
 import type { EntityId } from '../../model/entity-ids';
 import type {
   AttdefGeometry,
+  DimensionGeometry,
   Entity,
   MTextGeometry,
   TextGeometry,
   TextStyleRecord,
 } from '../../model/types';
+import { dimensionTextHeight, type NewDimension } from '../../edit/dimension';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
+import { regenerateDimensions } from '../modify/dimensions';
 import {
   formatNumber,
   type Prompt,
@@ -725,6 +728,8 @@ export function textEditCommand(): CommandDef {
             if (last.erased) b.restoreEntity(last.before);
             else b.updateEntity(last.id, { geom: last.before.geom });
           });
+          // A dimension is drawn again with its old text.
+          if ('dimType' in last.before.geom) await regenerateDimensions(ctx, [last.id]);
           continue;
         }
         if (a.kind === 'keyword' && a.keyword === 'Mode') {
@@ -742,13 +747,15 @@ export function textEditCommand(): CommandDef {
           .map((id) => ctx.model.entity(id))
           .find((e) => e && TEXTEDIT_KINDS.has(e.geom.kind));
         if (!entity) {
-          ctx.message('The object selected is not text or multiline text.');
+          ctx.message('The object selected is not text, multiline text or a dimension.');
           continue;
         }
         const edited =
           entity.geom.kind === 'ATTDEF'
             ? yield* editAttdef(ctx, entity)
-            : yield* editText(ctx, entity);
+            : 'dimType' in entity.geom
+              ? yield* editDimension(ctx, entity)
+              : yield* editText(ctx, entity);
         if (edited === undefined) return;
         if (edited) done.push(edited);
         if (!multiple) return;
@@ -757,8 +764,89 @@ export function textEditCommand(): CommandDef {
   };
 }
 
-/** What TEXTEDIT edits: text, multiline text and attribute definitions (M2-12). */
-const TEXTEDIT_KINDS = new Set(['TEXT', 'MTEXT', 'ATTDEF']);
+/**
+ * What TEXTEDIT edits: text, multiline text, attribute definitions (M2-12) and the text of
+ * dimensions (M2-11).
+ */
+const TEXTEDIT_KINDS = new Set([
+  'TEXT',
+  'MTEXT',
+  'ATTDEF',
+  'DIMENSION',
+  'ARC_DIMENSION',
+  'LARGE_RADIAL_DIMENSION',
+]);
+
+/**
+ * A dimension's text as the MTEXT editor edits it (M2-11): `contents` with `<>` for the
+ * measurement, at `at`, DIMTXT high (times DIMSCALE), in DIMTXSTY's text style.
+ */
+export function dimensionTextEditor(
+  model: DocumentModel,
+  dim: Pick<NewDimension, 'style' | 'textRotation' | 'lineSpacingStyle' | 'lineSpacing'>,
+  at: Vec2,
+  contents: string,
+  xdata?: Entity['xdata'],
+): TextEditorRequest {
+  const vars = model.tables.dimStyles.get(dim.style)?.vars ?? {};
+  const own = typeof vars.DIMTXSTY === 'string' ? vars.DIMTXSTY : undefined;
+  const style =
+    own !== undefined && model.tables.textStyles.has(own)
+      ? own
+      : (currentTextStyle(model)?.handle ?? '');
+  return mtextEditorRequest(model, {
+    kind: 'MTEXT',
+    contents,
+    style,
+    position: at,
+    height: dimensionTextHeight(model, dim, xdata),
+    width: 0,
+    rotation: dim.textRotation,
+    attachment: 5,
+    direction: 1,
+    lineSpacingStyle: dim.lineSpacingStyle,
+    lineSpacing: dim.lineSpacing,
+  });
+}
+
+/**
+ * A dimension's text override (DXF 1) from what the MTEXT editor answers: `<>` alone, or
+ * nothing, is the measurement alone, stored empty, as AutoCAD restores the measurement when
+ * the text is cleared.
+ */
+export const dimensionOverride = (contents: string): string => {
+  const t = contents.trim();
+  return t === '<>' || t === '' ? '' : contents;
+};
+
+/**
+ * TEXTEDIT on a dimension (AutoCAD 2024: "TEXTEDIT (Command)", a dimension's text opens in the
+ * In-Place Text Editor): its override with `<>` the measurement. The dimension is drawn again.
+ */
+async function* editDimension(
+  ctx: CommandContext,
+  entity: Entity,
+): AsyncGenerator<Prompt, TextEdit | false | undefined, PromptAnswer> {
+  const g = entity.geom as DimensionGeometry;
+  const a = yield ctx.prompt.string({
+    message: 'Enter text',
+    spaces: true,
+    editor: dimensionTextEditor(
+      ctx.model,
+      g,
+      g.textPosition,
+      g.text === '' ? '<>' : g.text,
+      entity.xdata,
+    ),
+  });
+  if (a.kind === 'enter') return false;
+  if (a.kind !== 'string') return undefined;
+  const text = dimensionOverride(a.value);
+  if (text === g.text) return false;
+  ctx.edit((b) => b.updateEntity(entity.id, { geom: { ...g, text } }));
+  await regenerateDimensions(ctx, [entity.id]);
+  return { id: entity.id, before: entity, erased: false };
+}
 
 /**
  * An ATTDEF in AutoCAD's Edit Attribute Definition dialog (TEXTEDIT on an attribute definition,

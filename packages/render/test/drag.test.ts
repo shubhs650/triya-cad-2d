@@ -4,7 +4,7 @@
 import { rotation, translation, type EntityId } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer } from '../src/index';
-import { drawing, entity, line, MODEL, surface, type Call } from './fixtures';
+import { drawing, entity, LAYER_0, line, MODEL, surface, type Call } from './fixtures';
 
 function setup() {
   const d = drawing([entity('20', line(0, 0, 10, 0)), entity('21', line(0, 20, 0, 30))]);
@@ -91,6 +91,23 @@ describe('Canvas2DRenderer.setDrag', () => {
       [0, 50],
       [100, 0],
     ]);
+  });
+
+  it('draws an object a command is placing, not yet in the drawing (M2-11)', () => {
+    const { r, transient, scene } = setup();
+    transient().clear();
+    scene().clear();
+    r.setDrag({
+      ids: [],
+      m: translation(0, 0),
+      adding: { layer: LAYER_0, geom: line(0, 1, 5, 1) },
+    });
+    r.frame();
+    expect(devicePoints(transient().calls)).toEqual([
+      [0, 40],
+      [50, 40],
+    ]);
+    expect(scene().calls).toEqual([]);
   });
 
   it('stops drawing them when the drag ends', () => {

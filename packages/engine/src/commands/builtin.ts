@@ -1,6 +1,7 @@
 // The commands every document runs (M2-02 onwards): each document's engine session makes its
 // own registry, so a command's remembered state (LINE's last end point) is per drawing.
 import { CommandRegistry } from './command';
+import { dimensionCommands } from './draw/dimension';
 import { lineCommand } from './draw/line';
 import { MLEADER_COMMANDS } from './draw/mleader';
 import { revcloudCommand } from './draw/revcloud';
@@ -32,6 +33,7 @@ export function builtinCommands(): CommandRegistry {
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
     ...MLEADER_COMMANDS.map((make) => make()),
+    ...dimensionCommands(),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),

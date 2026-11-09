@@ -31,3 +31,4 @@ export {
   type DimensionRegenerator,
   type RegeneratedParts,
 } from './dimension-block';
+export * from './dimension';

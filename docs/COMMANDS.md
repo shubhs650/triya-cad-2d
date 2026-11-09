@@ -96,19 +96,19 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 |---|---|---|---|---|
 | TEXT / DTEXT | DT | 1 | Justify (all), Style | ~ (#230: every justification incl. Align/Fit, Style with `?`, ↵ continues below the last text, typed in place one line at a time; TEXTSIZE follows the height; a click elsewhere starts the next line there, #232) |
 | MTEXT | T, MT | 1 | in-place editor; -MTEXT dash | x (#230: two corners or Width, Height/Justify/Line spacing/Rotation/Style; in-place editor with Bold, Italic, Underline, Overline, Strikethrough, Height, Color and Stack, Ctrl+Enter or a click outside to close, Esc to drop; -MTEXT and the command line take lines until an empty one. #232: Font list, AutoStack (`1/2 ` → diagonal fraction, `^` tolerance), Enter keeps the paragraph's formatting. #234: Columns option (Dynamic/Static/No columns, widths, gutter, height), the editor's Columns menu, Column Settings dialog and Alt+Enter column break, and the ruler (first-line and paragraph indents, tab stops). Manual column heights, column grips, tab types: M2-26; fields: M4-10) |
-| TEXTEDIT / DDEDIT | ED | 1 | Undo, Mode (Single/Multiple); double-click | ~ (#232: TEXT in its in-place line, MTEXT in its editor keeping the codes it has no control for; Undo, Mode; a double click on a TEXT or MTEXT runs it (DBLCLKEDIT); an emptied text is erased. an ATTDEF opens Edit Attribute Definition (tag, prompt, default; a multiline default in the MTEXT editor), #236; dimension text: M2-11) |
+| TEXTEDIT / DDEDIT | ED | 1 | Undo, Mode (Single/Multiple); double-click | ~ (#232: TEXT in its in-place line, MTEXT in its editor keeping the codes it has no control for; Undo, Mode; a double click on a TEXT or MTEXT runs it (DBLCLKEDIT); an emptied text is erased. an ATTDEF opens Edit Attribute Definition (tag, prompt, default; a multiline default in the MTEXT editor), #236; a dimension's text in the MTEXT editor with `<>` for the measurement, also on a double click, #241) |
 | STYLE | ST | 2 | dialog; -STYLE dash | |
 | FIND | — | 2 | | |
 | SPELL | SP | 3 | | |
 | SCALETEXT / JUSTIFYTEXT / TEXTALIGN | — | 2 | | |
 | FIELD / UPDATEFIELD | — | 2 | | |
-| DIMLINEAR | DLI | 1 | Mtext, Text, Angle, Horizontal, Vertical, Rotated | |
-| DIMALIGNED | DAL | 1 | | |
-| DIMRADIUS | DRA | 1 | | |
-| DIMDIAMETER | DDI | 1 | | |
-| DIMANGULAR | DAN | 1 | Quadrant | |
-| DIMCONTINUE | DCO | 1 | Select, Undo | |
-| DIMBASELINE | DBA | 1 | | |
+| DIMLINEAR | DLI | 1 | Mtext, Text, Angle, Horizontal, Vertical, Rotated | x (#241: two origins or a selected line, arc or polyline segment (a circle: M2-31); horizontal or vertical by the location; dragged while placed; non-associative, DIMASSOC 1) |
+| DIMALIGNED | DAL | 1 | Mtext, Text, Angle | x (#241) |
+| DIMRADIUS | DRA | 1 | Mtext, Text, Angle | x (#241: circle or arc; the text where the location is) |
+| DIMDIAMETER | DDI | 1 | Mtext, Text, Angle | x (#241) |
+| DIMANGULAR | DAN | 1 | Quadrant | ~ (#241: two lines, an arc, a circle and a second point, or three points; Mtext, Text, Angle; Quadrant: M2-31) |
+| DIMCONTINUE | DCO | 1 | Select, Undo | ~ (#241: from the last linear, aligned or three-point angular dimension made, or one selected (its extension line nearest the pick); ordinate and two-line angular bases: M2-31) |
+| DIMBASELINE | DBA | 1 | Select, Undo | ~ (#241: as DIMCONTINUE, each one DIMDLI further out) |
 | DIMORDINATE | DOR | 2 | X/Y datum | |
 | DIMARC | DAR | 2 | Partial, Leader | |
 | DIMJOGGED | DJO, JOG | 2 | | |
