@@ -23,6 +23,7 @@ export {
 export { stretchGeometry, type StretchOptions, type StretchResult } from './stretch';
 export { gripsOf, moveGrip, sameGrip, type Grip, type GripKind } from './grips';
 export * from './revcloud';
+export * from './clipboard';
 export * from './draw-order';
 export * from './mleader';
 export {

@@ -4,6 +4,7 @@
 // stack arrive with their own tasks.
 import type {
   ChangeSet,
+  Clipboard,
   CommandInput,
   EditResult,
   EngineEdit,
@@ -161,7 +162,24 @@ function viewContext(id: number): ViewContext {
     views: () => (doc && target ? namedViewsOf(doc, target.size) : []),
     save: (name, view) => doc && store.saveView(doc.id, name, view),
     file: (action) => fileCommand(id, action),
+    clipboard: (content) => clipboardRequest(id, content),
   };
+}
+
+/**
+ * The app's Clipboard (M2-14 part 2): what COPYCLIP, CUTCLIP or COPYBASE last put there, and the
+ * drawing it came from (PASTEORIG pastes only another drawing's). Every open drawing shares it;
+ * it lives as long as the page, as AutoCAD's lasts the session.
+ */
+let clipboard: { readonly doc: number; readonly content: Clipboard } | undefined;
+
+function clipboardRequest(id: number, content: Clipboard | undefined): ViewReply {
+  if (content) {
+    clipboard = { doc: id, content };
+    return { ok: true };
+  }
+  if (!clipboard) return { ok: true };
+  return { ok: true, clipboard: clipboard.content, sameDrawing: clipboard.doc === id };
 }
 
 /** The browser's save (save-browser.ts), made when first used. */

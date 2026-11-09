@@ -1,5 +1,5 @@
 // The view host (M2-02 part 2): how the view commands (ZOOM, PAN, REGEN, VIEW) reach the canvas,
-// and the file commands (QSAVE, SAVEAS, CLOSE; M2-13) the app.
+// and the file commands (QSAVE, SAVEAS, CLOSE; M2-13) and the Clipboard (M2-14 part 2) the app.
 // The command engine runs in the engine worker and holds no view; the canvas of the space shown
 // does, on the main thread. A command asks the host and awaits its reply; the engine session
 // carries each request to the app as a `CommandOutput` and the reply back as a `CommandInput`.
@@ -7,6 +7,7 @@ import type { Vec2 } from '../../geom/types';
 import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
 import type { MTextGeometry } from '../../model/types';
+import type { Clipboard } from '../../edit/clipboard';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -81,7 +82,14 @@ export type ViewRequest =
    * save it under a name the drafter picks, CLOSE closes it (asking to save changes first). The
    * app holds the file, so the host does it; the reply's `file` is the name saved under.
    */
-  | { readonly op: 'file'; readonly action: FileAction };
+  | { readonly op: 'file'; readonly action: FileAction }
+  /** The objects' extents (COPYCLIP's base point, M2-14 part 2), which the renderer answers. */
+  | { readonly op: 'bounds'; readonly ids: readonly EntityId[] }
+  /**
+   * The app's Clipboard (M2-14 part 2), shared by its drawings: with `content`, COPYCLIP puts it
+   * there; without, a paste reads it.
+   */
+  | { readonly op: 'clipboard'; readonly content?: Clipboard };
 
 /** What a file command asks of the app (M2-13). */
 export type FileAction = 'qsave' | 'saveas' | 'close';
@@ -100,6 +108,10 @@ export type ViewReply =
       readonly widths?: readonly (number | null)[];
       /** The file a `file` request saved the drawing as. */
       readonly file?: string;
+      /** What a `clipboard` read found; absent when the Clipboard is empty. */
+      readonly clipboard?: Clipboard;
+      /** The Clipboard's objects were copied from this drawing (PASTEORIG refuses them). */
+      readonly sameDrawing?: boolean;
     }
   | { readonly ok: false; readonly message: string };
 

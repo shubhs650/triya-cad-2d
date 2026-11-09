@@ -2,7 +2,15 @@
 // completion as AutoCAD's AUTOCOMPLETE offers it, and the prompt split around its options.
 import { builtinCommands, type CommandOutput } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { CommandLines, IDLE, completions, follow, promptParts, typed } from '../src/command-line';
+import {
+  CommandLines,
+  IDLE,
+  clipboardCommand,
+  completions,
+  follow,
+  promptParts,
+  typed,
+} from '../src/command-line';
 
 describe('the command line state', () => {
   it('follows the log, the prompt and the return to Command:', () => {
@@ -61,9 +69,16 @@ describe('completions', () => {
     expect(completions(registry, '0,0')).toEqual([]);
     expect(completions(registry, '')).toEqual([]);
     expect(completions(registry, 'ZZZ')).toEqual([]);
-    // An acad.pgp alias of a command not built yet (C, CIRCLE's, now completes CLOSE and COPY).
+    // An acad.pgp alias of a command not built yet (C, CIRCLE's, now completes CLOSE, COPY and
+    // the Clipboard commands).
     expect(completions(registry, 'REC')).toEqual([]);
-    expect(completions(registry, 'C')).toEqual([{ name: 'CLOSE' }, { name: 'COPY' }]);
+    expect(completions(registry, 'C')).toEqual([
+      { name: 'CLOSE' },
+      { name: 'COPY' },
+      { name: 'COPYBASE' },
+      { name: 'COPYCLIP' },
+      { name: 'CUTCLIP' },
+    ]);
   });
 });
 
@@ -88,5 +103,39 @@ describe('promptParts', () => {
       after: '',
     });
     expect(promptParts('Odd:', ['X'])).toEqual({ before: 'Odd:', options: [], after: '' });
+  });
+});
+
+describe('clipboardCommand (M2-14 part 2)', () => {
+  const press = (key: string, o: { shift?: boolean; meta?: boolean; alt?: boolean } = {}) =>
+    clipboardCommand({
+      key,
+      ctrlKey: !o.meta,
+      metaKey: o.meta === true,
+      shiftKey: o.shift === true,
+      altKey: o.alt === true,
+    });
+
+  it('binds the Clipboard keys as AutoCAD does', () => {
+    expect(press('c')).toBe('COPYCLIP');
+    expect(press('x')).toBe('CUTCLIP');
+    expect(press('v')).toBe('PASTECLIP');
+    expect(press('C', { shift: true })).toBe('COPYBASE');
+    expect(press('V', { shift: true })).toBe('PASTEBLOCK');
+    expect(press('v', { meta: true })).toBe('PASTECLIP');
+  });
+
+  it('leaves other keys alone', () => {
+    expect(press('x', { shift: true })).toBeUndefined();
+    expect(press('c', { alt: true })).toBeUndefined();
+    expect(
+      clipboardCommand({
+        key: 'c',
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+        altKey: false,
+      }),
+    ).toBeUndefined();
   });
 });

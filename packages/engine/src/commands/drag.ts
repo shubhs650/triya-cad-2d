@@ -9,6 +9,11 @@ import { add, angleOf, distance, sub } from '../geom/vec';
 import type { EntityId } from '../model/entity-ids';
 
 export type DragPreview =
+  /**
+   * PASTECLIP, PASTEBLOCK (M2-14 part 2): the command's preview geometry (`ctx.preview`), which
+   * is not in the drawing yet, by the cursor less `from`.
+   */
+  | { readonly kind: 'preview'; readonly from: Vec2 }
   /** MOVE, COPY: by the cursor less `from`. */
   | { readonly kind: 'move'; readonly ids: readonly EntityId[]; readonly from: Vec2 }
   /** ROTATE: about `base` by the cursor's angle less `reference` (radians). */
@@ -69,6 +74,9 @@ export interface DragMotion {
 /** The motion a drag makes with the cursor at `cursor`; undefined where it makes none. */
 export function dragMotion(drag: DragPreview, cursor: Vec2): DragMotion | undefined {
   switch (drag.kind) {
+    case 'preview':
+      // The front-end moves the preview itself; no object of the drawing moves.
+      return undefined;
     case 'move': {
       const d = sub(cursor, drag.from);
       return { ids: drag.ids, m: translation(d.x, d.y) };

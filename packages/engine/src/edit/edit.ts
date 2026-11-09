@@ -483,7 +483,7 @@ function applyStretch(
 // ── COPY ────────────────────────────────────────────────────────────────────────────────────
 
 /** Why `e` cannot be copied, beyond what keeps it from moving. */
-function copyProblem(e: Entity, t: Similarity): string | undefined {
+export function copyProblem(e: Entity, t: Similarity): string | undefined {
   const g = e.geom;
   if (g.kind === 'REGION') return 'a region cannot be copied';
   if (g.kind === 'VIEWPORT' && g.clipBoundary !== undefined) {
