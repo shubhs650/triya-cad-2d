@@ -229,6 +229,12 @@ export function mleaderCommand(): CommandDef {
       const model = ctx.model;
       const existing = currentMLeaderStyle(model);
       const text = currentTextStyle(model);
+      // A multileader style names a text style, and the save writes none without one (an R1 or
+      // R2.5 drawing has no text styles; AutoCAD's always have STANDARD, so it never says this).
+      if (!existing && !text) {
+        ctx.message('The drawing has no text style, which a multileader style needs.');
+        return;
+      }
       // A drawing without multileader styles gets AutoCAD's Standard when the leader is made.
       const style: MLeaderStyleRecord = existing ?? {
         handle: '',

@@ -9,12 +9,13 @@
 // block) as before the save. With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit
 // as the file's `mleader` save.
 //
-// A drawing older than R2007 (AC1021) without a multileader style is refused: MLEADER gives it
-// AutoCAD's Standard style, and the save checks the objects against the version the drawing was
-// read from, which has no multileader styles, though it is written as AC1032. (Older drawings
-// that acad-ts or AutoCAD gave styles save their multileaders.) M2-13's
-// Save As checks them against AC1032 instead (ROADMAP M2-13); until then the gate holds those
-// files to that refusal and audits their unedited save.
+// A drawing older than R2007 (AC1021) without a multileader style gets AutoCAD's Standard style
+// from MLEADER and saves it: the save checks what it adds against AC1032, the version it writes
+// (M2-13). Two R13/R14 drawings ezdxf wrote keep an R2007 STANDARD style as a proxy object, which
+// the engine does not see; the save refuses to replace it (mleader-styles.ts), and the gate holds
+// them to that refusal and audits their unedited save. R1 and R2.5 drawings have no text style,
+// which a multileader style names, so MLEADER makes nothing there and their unedited save is
+// audited.
 //
 // The fake canvas measures text as 0.6 of its height per character on one line: the far-side
 // landing only needs some box, and the renderer's own measuring is tested in packages/render.
@@ -40,8 +41,13 @@ const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url))
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 const PER_FILE_BUDGET_MS = 30_000;
-/** What a pre-R2007 source refuses: multileader styles (and so the multileaders using them). */
-const PRE_R2007_REFUSAL = /R2007 introduced them/;
+/** The save's refusal to replace a STANDARD style kept as a proxy object (mleader-styles.ts). */
+const TAKEN = /the dictionary has an entry named STANDARD that Triya keeps as read/;
+/** The drawings that keep one: R13 and R14 binary DXFs ezdxf wrote. */
+const PROXY_STYLE = [
+  'public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf',
+  'public/third-party/ezdxf/integration_tests/bin_dxf_r14.dxf',
+];
 
 /** The drawing as read, for the audit's mleader save of a file the session cannot save yet. */
 const unedited = (bytes: Uint8Array) =>
@@ -91,7 +97,8 @@ const partsOf = (model: DocumentModel, e: Entity) =>
 
 describe('MLEADER on the public corpus', () => {
   let saved = 0;
-  let older = 0;
+  const refused: string[] = [];
+  const textless: string[] = [];
   let blocks = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
@@ -110,6 +117,18 @@ describe('MLEADER on the public corpus', () => {
         view: canvas,
         ...(space && { space: () => space }),
       });
+      // R1 and R2.5 drawings have no text style, which a multileader style needs: MLEADER says
+      // so before it asks for anything, and makes nothing.
+      if (model.tables.textStyles.size === 0) {
+        await bus.submit('MLEADER');
+        expect(bus.command).toBeUndefined();
+        expect([...model.entities()].filter((e) => !before.has(e.id))).toEqual([]);
+        writeAuditSave(f.path, 'mleader', () =>
+          withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), unedited(bytes))),
+        );
+        textless.push(f.path);
+        return;
+      }
       await bus.script(['MLEADER', '0,0', '100,50', 'Check {\\Ldetail} A', '']);
       await bus.script(['MLEADEREDIT', 'L', '20,80', '300,0', 'R', '20,79', '']);
       await bus.script(['MLEADER', 'O', 'L', 'P', 'A', 'N', 'X', '0,200', '50,250']);
@@ -126,12 +145,13 @@ describe('MLEADER on the public corpus', () => {
       }
       expect(bus.command).toBeUndefined();
       const added = [...model.entities()].filter((e) => !before.has(e.id));
-      if (model.meta.sourceVersion < 'AC1021' && !styled) {
-        expect(() => saveAc1032Dxf(readCadDocument(bytes), model)).toThrow(PRE_R2007_REFUSAL);
+      if (PROXY_STYLE.includes(f.path)) {
+        expect(styled).toBe(false);
+        expect(() => saveAc1032Dxf(readCadDocument(bytes), model)).toThrow(TAKEN);
         writeAuditSave(f.path, 'mleader', () =>
           withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), unedited(bytes))),
         );
-        older++;
+        refused.push(f.path);
         return;
       }
       expect(added.map((e) => e.type)).toEqual(
@@ -156,9 +176,13 @@ describe('MLEADER on the public corpus', () => {
     PER_FILE_BUDGET_MS,
   );
 
-  it('saved multileaders on every readable file from R2007 on, block content on most', () => {
-    expect(saved).toBeGreaterThan(90);
-    expect(saved + older).toBe(readable.length);
+  it('saved multileaders on every readable file but two, block content on most', () => {
+    expect(refused).toEqual(PROXY_STYLE);
+    expect(textless).toEqual([
+      'public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1006.dxf',
+      'public/third-party/ezdxf/integration_tests/AC1003_LINE_Example.dxf',
+    ]);
+    expect(saved + refused.length + textless.length).toBe(readable.length);
     expect(blocks).toBeGreaterThan(saved / 2);
   });
 });
