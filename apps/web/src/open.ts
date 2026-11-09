@@ -4,8 +4,8 @@ import IoWorker from '@triya/io/worker?worker';
 import { openInWorker } from '@triya/io/client';
 import type { OpenResult } from '@triya/io';
 
-export async function openDrawing(file: Blob): Promise<OpenResult> {
-  const bytes = new Uint8Array(await file.arrayBuffer());
+export async function openDrawing(file: Blob | Uint8Array): Promise<OpenResult> {
+  const bytes = file instanceof Uint8Array ? file : new Uint8Array(await file.arrayBuffer());
   return openInWorker(bytes, { createWorker: () => new IoWorker() });
 }
 

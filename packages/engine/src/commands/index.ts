@@ -30,3 +30,4 @@ export {
   wcmatch,
 } from './modify/attributes';
 export { regenerateDimensions } from './modify/dimensions';
+export { FILE_COMMANDS } from './file';

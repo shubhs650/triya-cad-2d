@@ -476,6 +476,19 @@ describe('MLEADER', () => {
     expect(g!.text!.height).toBe(4);
   });
 
+  it('makes no Standard style, and no multileader, in a drawing without a text style', async () => {
+    // AutoCAD's Standard multileader style names a text style; R1 and R2.5 drawings have none.
+    const { bus, model, added, log } = setup({ styles: [], textStyles: [] });
+    // It says so before asking for anything.
+    await bus.submit('MLEADER');
+    expect(bus.command).toBeUndefined();
+    expect(log.filter((l) => l.startsWith('The drawing has no text style'))).toEqual([
+      'The drawing has no text style, which a multileader style needs.',
+    ]);
+    expect(added().filter((e) => e.type === 'MULTILEADER')).toEqual([]);
+    expect(model.tables.mleaderStyles.size).toBe(0);
+  });
+
   it('takes CMLEADERSTYLE, its scale and the text style it names', async () => {
     const notes: TextStyleRecord = { ...textStyle, handle: '31', name: 'Notes' };
     const callout: MLeaderStyleRecord = {

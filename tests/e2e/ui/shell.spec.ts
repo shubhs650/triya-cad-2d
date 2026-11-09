@@ -14,6 +14,7 @@ import {
   openWithDrop,
   openWithPicker,
   serve,
+  withFileInput,
   worldAt,
 } from '../app/page';
 import { startApp } from '../app/server';
@@ -148,6 +149,7 @@ test.describe('app shell', () => {
 
   test('reports a file it cannot read and keeps working', async ({ page }) => {
     await page.goto(app.url);
+    await withFileInput(page);
     const chooser = page.waitForEvent('filechooser');
     await page.getByRole('button', { name: 'Open', exact: true }).click();
     await (

@@ -5,6 +5,7 @@
 // io compiles without DOM types, so the worker and the abort signal are typed structurally;
 // a browser `Worker` and `AbortSignal` satisfy them.
 import * as Comlink from 'comlink';
+import type { ChangeSet } from '@triya/engine';
 import type { CadFormat, ReadSummary } from '../read';
 import type { IoApi, IoProgress, OpenResult } from './api';
 
@@ -53,6 +54,21 @@ export function readInWorker(
 export function openInWorker(bytes: Uint8Array, options: ReadInWorkerOptions): Promise<OpenResult> {
   return runJob(bytes, options, (remote, own, progress) =>
     remote.open(own, options.format, progress),
+  );
+}
+
+export interface SaveInWorkerOptions extends ReadInWorkerOptions {
+  /** The change sets the drawing's engine applied since it opened, in order. */
+  readonly changes: readonly ChangeSet[];
+}
+
+/**
+ * Save and Save As (M2-13): writes the drawing opened from `bytes`, with `changes`, as an AC1032
+ * DXF in a new worker. `bytes` are copied, not transferred: the app keeps them for later saves.
+ */
+export function saveInWorker(bytes: Uint8Array, options: SaveInWorkerOptions): Promise<Uint8Array> {
+  return runJob(bytes.slice(), options, (remote, own, progress) =>
+    remote.save(own, options.changes, options.format, progress),
   );
 }
 

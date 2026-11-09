@@ -10,10 +10,9 @@
 // frame and boundary, WIPEOUTFRAME is off, and every layout draws in the order the session left.
 // With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit as the file's `markup` save.
 //
-// A drawing older than R14 (AC1014) is refused: the save checks the objects against the version
-// the drawing was read from, which has no wipeouts or draw order (and before R11 no xdata),
-// though it is written as AC1032. M2-13's Save As checks them against AC1032 instead
-// (ROADMAP M2-13); until then the gate holds those files to that refusal.
+// A drawing older than R14 (AC1014), which had no wipeouts or draw order (and before R11 no
+// xdata), saves them too: the save checks what it adds against AC1032, the version it writes
+// (M2-13).
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -42,8 +41,6 @@ const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url))
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 const PER_FILE_BUDGET_MS = 30_000;
-/** What a pre-R14 source refuses: raster images (wipeouts), draw order, and xdata before R11. */
-const PRE_R14_REFUSAL = /R14 introduced them|it came with R14|Release 11 added it/;
 
 /** The layouts' blocks' draw orders, as entity handles. */
 function layoutOrders(model: DocumentModel): Map<Handle, Handle[]> {
@@ -60,15 +57,10 @@ function layoutOrders(model: DocumentModel): Map<Handle, Handle[]> {
   return out;
 }
 
-/** The drawing as read, for the audit's markup save of a file the session cannot save yet. */
-const unedited = (bytes: Uint8Array) =>
-  withPinnedClock(() => DocumentModel.create(documentInit(readCadDocument(bytes))));
-
 const near = (a: number, b: number) => Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a));
 
 describe('the markup commands on the public corpus', () => {
   let clouds = 0;
-  let older = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves after REVCLOUD, WIPEOUT, TEXTTOFRONT, HATCHTOBACK and DRAWORDER',
@@ -103,14 +95,6 @@ describe('the markup commands on the public corpus', () => {
       model.apply(b.build());
       const orders = layoutOrders(model);
 
-      if (model.meta.sourceVersion < 'AC1014') {
-        expect(() => saveAc1032Dxf(readCadDocument(bytes), model)).toThrow(PRE_R14_REFUSAL);
-        writeAuditSave(f.path, 'markup', () =>
-          withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), unedited(bytes))),
-        );
-        older++;
-        return;
-      }
       const saved = withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), model));
       writeAuditSave(f.path, 'markup', () => saved);
       const back = DocumentModel.create(documentInit(readCadDocument(saved)));
@@ -152,8 +136,7 @@ describe('the markup commands on the public corpus', () => {
     PER_FILE_BUDGET_MS,
   );
 
-  it('saved clouds on every readable file from R14 on', () => {
-    expect(clouds).toBeGreaterThan(90);
-    expect(clouds + older).toBe(readable.length);
+  it('saved clouds on every readable file', () => {
+    expect(clouds).toBe(readable.length);
   });
 });

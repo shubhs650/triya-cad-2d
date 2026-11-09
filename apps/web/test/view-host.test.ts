@@ -8,6 +8,7 @@ import { realtimeZoomFactor } from '../src/canvas/navigate';
 import {
   NO_CANVAS,
   answerView,
+  NO_FILE,
   type NamedView,
   type ViewContext,
   type ViewTarget,
@@ -76,6 +77,24 @@ function context(target: Target | undefined, others: Target[] = []) {
 }
 
 describe('answerView', () => {
+  it('hands the file commands to the app, with or without a canvas (M2-13)', async () => {
+    const { ctx } = context(undefined);
+    expect(await answerView({ op: 'file', action: 'qsave' }, ctx)).toEqual({
+      ok: false,
+      message: NO_FILE,
+    });
+    const asked: string[] = [];
+    const file = (action: string) => {
+      asked.push(action);
+      return Promise.resolve({ ok: true as const, file: 'a.dxf' });
+    };
+    expect(await answerView({ op: 'file', action: 'saveas' }, { ...ctx, file })).toEqual({
+      ok: true,
+      file: 'a.dxf',
+    });
+    expect(asked).toEqual(['saveas']);
+  });
+
   it('answers selection from the renderer (M2-03): picks, windows and ZOOM Object', async () => {
     const t = new Target();
     const { ctx } = context(t);

@@ -381,15 +381,26 @@ function plotStyleNames(
   return { names };
 }
 
+export interface TriyaToAcadOptions {
+  /**
+   * The version the save writes, when not the one `original` was read in (M2-13: Save As
+   * AC1032 of a DWG or an older DXF, DEC-047). What the save adds is checked against it, and
+   * `original`'s header is set to it; undefined keeps the version read.
+   */
+  readonly version?: ACadVersion;
+}
+
 /**
  * Applies the Triya document's differences from `original`'s own mapping onto `original`, by
  * handle (ARCHITECTURE.md §6.1). Throws `UnsupportedChangeError`, leaving `original` as it was,
- * when a difference has no writer yet (for the `format` the save is for, when given).
+ * when a difference has no writer yet (for the `format` and version the save is for, when
+ * given).
  */
 export function triyaToAcad(
   original: CadDocument,
   shown: DocumentModel,
   format?: CadFormat,
+  options: TriyaToAcadOptions = {},
 ): ExportSummary {
   // Loaded xrefs (M1-21) are read-only and live in their own files: the save writes the
   // drawing as if none were loaded.
@@ -398,6 +409,10 @@ export function triyaToAcad(
   const store = PassthroughStore.of(original, base);
   const lineTypes = original.lineTypes;
   const docHeader = original.header;
+  // The checks below ask the header which version the save writes; the drawing's own $ACADVER
+  // (in `base` and the model) is not a change the user made, so the header plan leaves it be.
+  const readVersion = docHeader?.version;
+  if (docHeader && options.version !== undefined) docHeader.version = options.version;
   // Held children a save creates (polyline vertices) are numbered after everything the engine
   // allocated, so they meet neither an engine handle nor one the file already uses.
   let next = Math.max(Number.parseInt(model.handSeed, 16), docHeader?.handleSeed ?? 0);
@@ -493,7 +508,10 @@ export function triyaToAcad(
     ...purge.problems,
   );
   problems.push(...drawOrder.problems);
-  if (problems.length > 0) throw new UnsupportedChangeError(problems);
+  if (problems.length > 0) {
+    if (docHeader && readVersion !== undefined) docHeader.version = readVersion;
+    throw new UnsupportedChangeError(problems);
+  }
 
   writePlotStyles(original, plotStyleNamePlan.plan);
   writeMaterials(materials.plan);

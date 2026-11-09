@@ -3,6 +3,7 @@
 import type { ChangeSet, DocumentInit, Layout } from '@triya/engine';
 import type { OpenResult } from '@triya/io';
 import type { ViewTransform } from '@triya/render';
+import type { DrawingFile } from './save';
 
 /** A view saved with VIEW (New) in this session, in the space it was saved in. */
 export interface SavedView {
@@ -24,7 +25,22 @@ export interface OpenDocument {
   readonly savedViews: readonly SavedView[];
   /** Edits applied by the drawing's engine so far (M1-67): chrome that mirrors it re-reads. */
   readonly revision: number;
+  /**
+   * The file the drawing came from and Save writes (M2-13); undefined for a document opened
+   * without its bytes (tests).
+   */
+  readonly file?: DrawingFile;
+  /**
+   * Edits that change the drawing (loading an xref does not), counted since it opened, and how
+   * many of them the last save holds: the tab shows its dirty dot and closing asks to save
+   * while they differ (AutoCAD's DBMOD).
+   */
+  readonly edits: number;
+  readonly savedEdits: number;
 }
+
+/** The drawing has changes no save holds (M2-13). */
+export const isDirty = (d: OpenDocument): boolean => d.edits !== d.savedEdits;
 
 /**
  * The drawing's layouts as they are now: as opened, with what the engine's change sets carried
@@ -62,6 +78,8 @@ export interface DocumentsState {
   /** Files being opened, by name. */
   readonly opening: readonly string[];
   readonly error: string | undefined;
+  /** A passing note, such as a save's (M2-13). */
+  readonly notice?: string | undefined;
 }
 
 export class DocumentStore {
@@ -81,7 +99,7 @@ export class DocumentStore {
   }
 
   /** A file opened: it gets a tab, which shows. Returns the new document's id. */
-  opened(name: string, opened: OpenResult, block: string): number {
+  opened(name: string, opened: OpenResult, block: string, file?: DrawingFile): number {
     const doc: OpenDocument = {
       id: this.#nextId++,
       name,
@@ -89,6 +107,9 @@ export class DocumentStore {
       block,
       savedViews: [],
       revision: 0,
+      ...(file && { file }),
+      edits: 0,
+      savedEdits: 0,
     };
     this.#set({
       docs: [...this.#state.docs, doc],
@@ -131,9 +152,34 @@ export class DocumentStore {
     this.#set({ docs });
   }
 
-  /** The drawing's engine applied an edit: the palettes mirroring it re-read. */
-  edited(id: number): void {
-    this.#update(id, (d) => ({ ...d, revision: d.revision + 1 }));
+  /**
+   * The drawing's engine applied an edit: the palettes mirroring it re-read. An edit that
+   * `modifies` the drawing (all but loading an xref) leaves it with unsaved changes.
+   */
+  edited(id: number, modifies = true): void {
+    this.#update(id, (d) => ({
+      ...d,
+      revision: d.revision + 1,
+      edits: d.edits + (modifies ? 1 : 0),
+    }));
+  }
+
+  /**
+   * The drawing was saved as `name` to `file`, holding its first `edits` edits (those made while
+   * the save ran stay unsaved).
+   */
+  saved(id: number, name: string, file: DrawingFile, edits: number): void {
+    this.#update(id, (d) => ({ ...d, name, file, savedEdits: edits }));
+    this.#set({ notice: `Saved ${name}.` });
+  }
+
+  /** Shows an error that is not about opening a file (a failed save). */
+  fail(message: string): void {
+    this.#set({ error: message, notice: undefined });
+  }
+
+  dismissNotice(): void {
+    this.#set({ notice: undefined });
   }
 
   /** Shows the Model tab or a layout tab of a document. */

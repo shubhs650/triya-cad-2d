@@ -8,6 +8,7 @@ import { wipeoutCommand } from './draw/wipeout';
 import { DRAW_ORDER_COMMANDS } from './modify/draw-order';
 import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
+import { FILE_COMMANDS } from './file';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
 import { viewCommand } from './view/named-view';
@@ -31,5 +32,6 @@ export function builtinCommands(): CommandRegistry {
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
     ...MLEADER_COMMANDS.map((make) => make()),
     ...ATTRIBUTE_COMMANDS.map((make) => make()),
+    ...FILE_COMMANDS.map((make) => make()),
   ]);
 }
