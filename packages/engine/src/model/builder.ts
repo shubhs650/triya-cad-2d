@@ -26,6 +26,7 @@ import type {
   BlockTableRecord,
   Entity,
   EntityGeometry,
+  EntityInit,
   EntityProps,
   HeaderValue,
   Layout,
@@ -199,6 +200,8 @@ export class ChangeSetBuilder {
   /** Layouts this builder added, in order (the draft keeps no list of them). */
   readonly #addedLayouts: Handle[] = [];
   readonly #blocks: KeyedDraft<BlockDefinition>;
+  /** Handles `allocateHandle` gave out, which the `adopt…` methods may use. */
+  readonly #allocated = new Set<Handle>();
   #built = false;
 
   constructor(model: DocumentModel) {
@@ -308,7 +311,47 @@ export class ChangeSetBuilder {
    */
   allocateHandle(): Handle {
     this.#open();
-    return this.#model.handles.allocate();
+    const handle = this.#model.handles.allocate();
+    this.#allocated.add(handle);
+    return handle;
+  }
+
+  /**
+   * Adds a whole entity under a handle `allocateHandle` gave out, for objects that arrive with
+   * their references already settled (PASTECLIP's, M2-14): a block's contents name their block,
+   * an associative hatch its boundary, before any of them is added.
+   */
+  adoptEntity(init: EntityInit): Entity {
+    this.#open();
+    this.#requireAllocated(init.handle);
+    if (!this.#blocks.get(init.owner)) throw new Error(`owner block ${init.owner} does not exist`);
+    const entity = createEntity(this.#model.ids.assign(init.handle), init);
+    this.#added.set(entity.id, entity);
+    return entity;
+  }
+
+  /** Adds a whole table record under a handle `allocateHandle` gave out (see `adoptEntity`). */
+  adoptTableRecord<K extends TableName>(table: K, record: TableRecords[K]): TableRecords[K] {
+    this.#open();
+    this.#requireAllocated(record.handle);
+    const r = createRecord(record);
+    this.#table(table).add(r);
+    return r;
+  }
+
+  /**
+   * Adds a whole block definition under a handle `allocateHandle` gave out, its BLOCK_RECORD
+   * adopted first (see `adoptEntity`).
+   */
+  adoptBlock(def: BlockDefinition): BlockDefinition {
+    this.#open();
+    this.#requireAllocated(def.handle);
+    if (!this.#table('blockRecords').get(def.handle)) {
+      throw new Error(`block ${def.handle} has no BLOCK_RECORD`);
+    }
+    const d = createRecord(def);
+    this.#blocks.add(d);
+    return d;
   }
 
   /** Moves an entity to another block (appended), keeping its handle and id. */
@@ -708,6 +751,12 @@ export class ChangeSetBuilder {
       this.#tables.set(table, draft);
     }
     return draft;
+  }
+
+  #requireAllocated(handle: Handle): void {
+    if (!this.#allocated.has(handle)) {
+      throw new Error(`handle ${handle} was not allocated by this change set`);
+    }
   }
 
   #requireEntity(id: EntityId): Entity {

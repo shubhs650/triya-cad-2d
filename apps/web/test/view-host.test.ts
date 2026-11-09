@@ -7,6 +7,7 @@ import type { CanvasMode } from '../src/canvas/controller';
 import { realtimeZoomFactor } from '../src/canvas/navigate';
 import {
   NO_CANVAS,
+  NO_CLIPBOARD,
   answerView,
   NO_FILE,
   type NamedView,
@@ -52,6 +53,10 @@ class Target implements ViewTarget {
     this.calls.push(`widths ${texts.map((t) => t.contents).join(',')}`),
     Promise.resolve(texts.map((t) => (this.textKnown ? t.contents.length : null)))
   );
+  boundsOf = (ids: readonly number[]) => (
+    this.calls.push(`bounds ${ids.join(',')}`),
+    Promise.resolve(this.objectsKnown ? { minX: 1, minY: 2, maxX: 3, maxY: 4 } : undefined)
+  );
 }
 
 /** The view requests answer at once; only selection's wait for the renderer. */
@@ -93,6 +98,43 @@ describe('answerView', () => {
       file: 'a.dxf',
     });
     expect(asked).toEqual(['saveas']);
+  });
+
+  it('hands the Clipboard to the app, with or without a canvas (M2-14 part 2)', () => {
+    const { ctx } = context(undefined);
+    expect(now(answerView({ op: 'clipboard' }, ctx))).toEqual({ ok: false, message: NO_CLIPBOARD });
+    const asked: unknown[] = [];
+    const clipboard = (content: unknown): ViewReply => {
+      asked.push(content);
+      return { ok: true };
+    };
+    const content = {
+      base: { x: 0, y: 0 },
+      entities: [],
+      blockEntities: [],
+      tables: {},
+      blocks: [],
+    };
+    expect(now(answerView({ op: 'clipboard', content }, { ...ctx, clipboard }))).toEqual({
+      ok: true,
+    });
+    now(answerView({ op: 'clipboard' }, { ...ctx, clipboard }));
+    expect(asked).toEqual([content, undefined]);
+  });
+
+  it("measures objects' extents with the renderer (M2-14 part 2, COPYCLIP)", async () => {
+    const t = new Target();
+    const { ctx } = context(t);
+    expect(await answerView({ op: 'bounds', ids: [3, 4] }, ctx)).toEqual({
+      ok: true,
+      box: { minX: 1, minY: 2, maxX: 3, maxY: 4 },
+    });
+    t.objectsKnown = false;
+    expect(await answerView({ op: 'bounds', ids: [3] }, ctx)).toEqual({
+      ok: false,
+      message: 'The objects have no extents.',
+    });
+    expect(t.calls).toEqual(['bounds 3,4', 'bounds 3']);
   });
 
   it('answers selection from the renderer (M2-03): picks, windows and ZOOM Object', async () => {

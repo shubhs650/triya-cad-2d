@@ -436,6 +436,12 @@ export function triyaToAcad(
   const materials = planMaterials(original, base, model, r);
   const textStyles = planTextStyles(original, base, model, r);
   const linetypes = planLinetypes(original, base, model, r);
+  const layouts = planLayouts(original, base, model, r);
+  const drawOrder = planDrawOrder(original, base, model, r);
+  // Before the entities, which a new block holds and INSERTs, dimensions and tables name, and
+  // before the styles: a dimension style's arrows, a multileader style's content and a table
+  // style's cells may name a block the same save adds (PASTECLIP, M2-14 part 2).
+  const blocks = planBlocks(original, base, model, r, format, drawOrder, layouts.plan.swapping);
   const dimStyles = planDimStyles(original, base, model, r, format);
   const layers = planLayers(original, base, model, r);
   // After the text styles and linetypes they may name.
@@ -450,7 +456,6 @@ export function triyaToAcad(
   };
   // Before the entities: a new IMAGE may show a definition the same save adds.
   const imageObjects = planImageObjects(original, base, model, r);
-  const layouts = planLayouts(original, base, model, r);
   // Before the entities: a member's reactors may name a group the same save adds.
   const groups = planGroups(original, base, model, r);
   // Before the entities: a dimension's and its geometry's reactors may name a DIMASSOC the same
@@ -471,9 +476,6 @@ export function triyaToAcad(
     if (acad && name !== undefined && name !== b.name) renamed.set(acad, name);
   }
   const header = planHeader(original, base, model, format, [...created.values()], renamed);
-  const drawOrder = planDrawOrder(original, base, model, r);
-  // Before the entities: a new block holds entities and INSERTs, dimensions and tables name it.
-  const blocks = planBlocks(original, base, model, r, format, drawOrder, layouts.plan.swapping);
   const { plan: p, problems } = plan(
     original,
     base,
@@ -517,6 +519,10 @@ export function triyaToAcad(
   writeMaterials(materials.plan);
   writeTextStyles(original, textStyles.plan);
   writeLinetypes(original, r, linetypes.plan);
+  // Before the styles that may name a new block (a dimension style's arrows, a multileader
+  // style's content): naming a record not in its table yet would have acad-ts add it, numbering
+  // its BLOCK and ENDBLK itself.
+  writeBlocks(original, r, blocks.plan);
   writeDimStyles(original, r, dimStyles.plan);
   writeLayers(original, r, layers.plan);
   writeMLeaderStyles(original, r, mleaderStyles.plan);
@@ -529,7 +535,6 @@ export function triyaToAcad(
     vports: views.vports.plan,
   });
   writeImageObjects(original, imageObjects.plan);
-  writeBlocks(original, r, blocks.plan);
   // After the blocks: a new layout's block record is in its table.
   writeLayouts(original, r, layouts.plan);
   writeGroups(groups.plan);

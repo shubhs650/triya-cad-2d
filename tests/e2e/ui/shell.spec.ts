@@ -133,8 +133,9 @@ test.describe('app shell', () => {
     expect(Math.abs(moved.y - grab.y)).toBeLessThan(2 * unit1);
 
     // Middle-button double click: Zoom Extents. The drawing opened in the view it was saved
-    // in (centre (-265, 575), M1-22 part 3); the extents (-320.71, 509.59)–(-230.86, 612.29)
-    // centre on (-275.79, 560.94).
+    // in (centre (-265, 575), M1-22 part 3); the extents (-292.65, 536.68)–(-236.65, 606.68),
+    // the hatch's clockwise arc edges counted by their sweep (M2-14 part 2), centre on
+    // (-264.65, 571.68).
     expect(Math.abs(startCentre.x + 265)).toBeLessThan(2 * unit);
     expect(Math.abs(startCentre.y - 575)).toBeLessThan(2 * unit);
     await page.mouse.move(box.x + cx, box.y + cy);
@@ -143,8 +144,8 @@ test.describe('app shell', () => {
       await page.mouse.up({ button: 'middle' });
     }
     const back = await worldAt(page, cx, cy);
-    expect(Math.abs(back.x + 275.79)).toBeLessThan(2 * unit);
-    expect(Math.abs(back.y - 560.94)).toBeLessThan(2 * unit);
+    expect(Math.abs(back.x + 264.65)).toBeLessThan(2 * unit);
+    expect(Math.abs(back.y - 571.68)).toBeLessThan(2 * unit);
   });
 
   test('reports a file it cannot read and keeps working', async ({ page }) => {

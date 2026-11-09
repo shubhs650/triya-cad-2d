@@ -125,3 +125,27 @@ export class CommandLines {
 
 /** The app's command lines, one per open drawing. */
 export const commandLines = new CommandLines();
+
+/** The keys that run the Clipboard commands (M2-14 part 2, COMMANDS.md), as AutoCAD binds them. */
+const CLIPBOARD_KEYS: Readonly<Record<string, string>> = {
+  c: 'COPYCLIP',
+  x: 'CUTCLIP',
+  v: 'PASTECLIP',
+  'shift+c': 'COPYBASE',
+  'shift+v': 'PASTEBLOCK',
+};
+
+/**
+ * The Clipboard command a key press runs: Ctrl+C COPYCLIP, Ctrl+X CUTCLIP, Ctrl+V PASTECLIP,
+ * Ctrl+Shift+C COPYBASE, Ctrl+Shift+V PASTEBLOCK (Cmd for Ctrl on a Mac), or undefined.
+ */
+export function clipboardCommand(e: {
+  readonly key: string;
+  readonly ctrlKey: boolean;
+  readonly metaKey: boolean;
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+}): string | undefined {
+  if (!(e.ctrlKey || e.metaKey) || e.altKey) return undefined;
+  return CLIPBOARD_KEYS[`${e.shiftKey ? 'shift+' : ''}${e.key.toLowerCase()}`];
+}

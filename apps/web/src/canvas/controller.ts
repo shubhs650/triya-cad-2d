@@ -71,6 +71,7 @@ import {
   fitView,
   screenToWorld,
   tessellate,
+  transformPrimitive,
   worldToScreen,
   type DrawnEntity,
   type FontSources,
@@ -528,6 +529,11 @@ export class CanvasController {
     return true;
   }
 
+  /** The objects' extents as drawn (M2-14 part 2: COPYCLIP's base point). */
+  boundsOf(ids: readonly EntityId[]): Promise<Box | undefined> {
+    return this.#host.boundsOf(ids);
+  }
+
   /** The widths MTEXTs are laid out at (M2-10 part 3: dimension regeneration). */
   textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
     return this.#host.textWidths(texts);
@@ -862,12 +868,28 @@ export class CanvasController {
       this.#host.setDrag(motion);
       this.#dragging = motion !== undefined;
     }
+    // PASTECLIP's objects are not in the drawing yet: its preview follows the cursor (M2-14).
+    const ghost = p?.drag?.kind === 'preview' && this.#mode === 'none' ? p.drag.from : undefined;
+    const preview = ghost
+      ? !cursor
+        ? []
+        : this.#preview.map((q) =>
+            transformPrimitive(q, {
+              a: 1,
+              b: 0,
+              c: 0,
+              d: 1,
+              e: cursor.x - ghost.x,
+              f: cursor.y - ghost.y,
+            }),
+          )
+      : this.#preview;
     const from = p?.kind === 'point' ? p.rubberBand?.from : p && 'base' in p ? p.base : undefined;
     const box = p?.kind === 'point' && p.rubberBand?.box;
     const selection = p?.kind === 'point' ? p.rubberBand?.selection : undefined;
     if (from && cursor && selection && this.#mode === 'none') {
       const crossing = selection === 'auto' ? cursor.x < from.x : selection === 'crossing';
-      this.#host.setTransient([...this.#preview, ...this.#selectionBand(from, cursor, crossing)]);
+      this.#host.setTransient([...preview, ...this.#selectionBand(from, cursor, crossing)]);
       this.#requestFrame();
       return;
     }
@@ -897,7 +919,7 @@ export class CanvasController {
             },
           ]
         : [];
-    this.#host.setTransient([...this.#preview, ...band, ...this.#overlay]);
+    this.#host.setTransient([...preview, ...band, ...this.#overlay]);
     this.#requestFrame();
   }
 

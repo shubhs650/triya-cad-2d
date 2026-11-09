@@ -271,4 +271,13 @@ describe('RecoveryOffers', () => {
     expect(mem.rows.has('a')).toBe(false);
     expect(o.getSnapshot()).toEqual([]);
   });
+
+  it('lists them again for DRAWINGRECOVERY, but not one already recovered (M2-14 part 2)', async () => {
+    const { o } = await offers([]);
+    await o.take('b');
+    expect(o.getSnapshot().map((i) => i.key)).toEqual(['a']);
+    // The banner was closed by recovering or discarding; DRAWINGRECOVERY shows it again.
+    await o.load();
+    expect(o.getSnapshot().map((i) => i.key)).toEqual(['a']);
+  });
 });

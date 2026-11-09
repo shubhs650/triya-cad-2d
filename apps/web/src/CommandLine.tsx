@@ -8,7 +8,7 @@
 import { builtinCommands, keywordShortcut } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from './CommandPalette';
-import { completions, promptParts, type CommandLines } from './command-line';
+import { clipboardCommand, completions, promptParts, type CommandLines } from './command-line';
 import { DynamicInput } from './DynamicInput';
 import { dynMode } from './dynamic-input';
 import { DRAFTING_ITEMS, DRAFTING_KEYS, drafting, type DraftingToggle } from './drafting';
@@ -126,6 +126,11 @@ export function CommandLine({
   };
   const selectAllRef = useRef(selectAll);
   selectAllRef.current = selectAll;
+  const invoke = (name: string) => {
+    if (doc !== undefined) engines.command(doc, { kind: 'invoke', name });
+  };
+  const invokeRef = useRef(invoke);
+  invokeRef.current = invoke;
 
   // Keys typed outside any field go to the command line, as in AutoCAD.
   useEffect(() => {
@@ -159,6 +164,19 @@ export function CommandLine({
         if ((field && field.value !== '') || (!field && takesText(e.target))) return;
         e.preventDefault();
         return selectAllRef.current();
+      }
+      // The Clipboard keys (M2-14 part 2) copy and paste objects, unless they would copy or
+      // paste text: anywhere text is typed but an empty command line.
+      const clip = clipboardCommand(e);
+      if (clip) {
+        const field = e.target instanceof HTMLInputElement ? e.target : undefined;
+        const typing =
+          field === input.current
+            ? field?.value !== ''
+            : field !== undefined || takesText(e.target);
+        if (typing) return;
+        e.preventDefault();
+        return invokeRef.current(clip);
       }
       // Tab with nothing typed steps AutoSnap through the snap points under the cursor (M2-04).
       const empty = e.target === input.current ? input.current?.value === '' : !takesText(e.target);
