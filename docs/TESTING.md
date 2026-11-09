@@ -158,6 +158,8 @@ Runs on the CI runner with fixed CPU class; thresholds carry a 20 % margin over 
 
 Load app → go offline (Playwright route abort) → run a scripted session covering open, font drop, pattern drop, CTB drop, edit, save, PDF → assert zero network requests besides SW. A second test asserts the error-report payload contains no drawing content for a drawing with known marker strings.
 
+*As built (M2-19):* `tests/e2e/offline/no-network.spec.ts` runs on the dev server and blocks every request that leaves the origin. `tests/e2e/offline/pwa.spec.ts` serves the production build (`apps/web/dist`, so CI's `pnpm build` comes first; `tests/e2e/app/static.ts`) and checks the service worker: the first visit reaches "Ready offline" (pdf.js warmed without being used); with the server stopped and the browser offline a reload starts the app, which opens a DWG and a DXF, draws a PDF underlay and keeps a dropped `.pat`, with no request leaving the page; a new `sw.js` is offered by the update banner and the page reloads only on Reload, after which only the new cache is left; and in a persistent profile Chromium reports no installability errors, and a `beforeinstallprompt` (fired by the test, as CI's headless shell fires none) shows the Install button, whose press shows the prompt once. Font and CTB drops, an edit, a save and PDF export join it in M2-33.
+
 ## 7. Command tests
 
 Each command has a test file that drives it through the `PromptBus` with typed answers and asserts the `ChangeSet` (entity types, geometry within tolerance, properties, handles allocated). Tests encode AutoCAD behaviour; when behaviour is ambiguous, the test documents the chosen interpretation with a comment linking the AutoCAD reference.

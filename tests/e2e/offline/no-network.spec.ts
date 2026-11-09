@@ -1,9 +1,10 @@
 // Privacy (PRD G6, §8): after the app loads it makes no network request of its own. Every
 // request the page or its workers make while starting, opening a DWG and a DXF, zooming and
 // panning, and drawing a PDF underlay through pdf.js (M1-20), must go to the app's own origin
-// (or be a blob:/data: URL); anything else is blocked here and fails the test. Service-worker
-// update checks and the user-confirmed error report (the only allowed exceptions) do not
-// exist yet (M2-19, M10).
+// (or be a blob:/data: URL); anything else is blocked here and fails the test. The service
+// worker's update check goes to the app's own origin too (M2-19, offline/pwa.spec.ts, which
+// runs the production build with the worker); the user-confirmed error report, the only other
+// allowed exception, does not exist yet (M10).
 import { expect, test } from '@playwright/test';
 import { DWG, DXF, activeCanvas, expectShown, openWithDrop, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
