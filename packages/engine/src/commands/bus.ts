@@ -52,6 +52,15 @@ import { gripsOf } from '../edit/grips';
 import { distance } from '../geom/vec';
 import { UndoStack, type UndoState } from './undo';
 
+/**
+ * What a double click on an object of each type runs (AutoCAD's DBLCLKEDIT; its CUI's
+ * "Double Click Actions"). Types not listed open nothing yet.
+ */
+export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
+  TEXT: 'TEXTEDIT',
+  MTEXT: 'TEXTEDIT',
+};
+
 /** One command's edits, in order: what the undo stack (M2-05) keeps as one step. */
 export interface CommandRecord {
   readonly command: string;
@@ -339,6 +348,30 @@ export class PromptBus {
     });
   }
 
+  /**
+   * A double click on the canvas (M2-07 part 2): at `Command:`, the object under it is edited
+   * with the command `DOUBLE_CLICK` names for its type (AutoCAD's DBLCLKEDIT), with that object
+   * alone as the pre-selection. Grip editing the double click's own clicks started is dropped;
+   * inside any other command it does nothing, nor on an object no command edits this way.
+   */
+  doubleClick(point: Vec2): Promise<void> {
+    return this.#enqueue(async () => {
+      const top = this.#stack.at(-1);
+      if (top && !top.def.keepsSelection) return;
+      const r = await this.#view.request({ op: 'pick', point });
+      const ids = r.ok ? (r.ids ?? []) : [];
+      const id = ids.find((i) => DOUBLE_CLICK[this.#model.entity(i)?.type ?? ''] !== undefined);
+      if (id === undefined) return;
+      const found = this.#registry.resolve(DOUBLE_CLICK[this.#model.entity(id)!.type]!);
+      if (!found) return;
+      if (top) await this.#cancel();
+      this.#idle.clear();
+      this.#idle.set([id]);
+      this.#log(`Command: ${found.def.name}`);
+      await this.#start(found.def, false, false);
+    });
+  }
+
   /** Ctrl+A: everything ALL takes, at `Command:` (replacing the pre-selection) or "Select objects". */
   selectAll(): Promise<void> {
     return this.#enqueue(async () => {
@@ -591,7 +624,8 @@ export class PromptBus {
 
   /** A "Select objects" prompt: answered by the pre-selection, or built pick by pick. */
   async #beginSelection(frame: Frame, prompt: Extract<Prompt, { kind: 'selection' }>) {
-    const pre = frame.transparent || prompt.single ? undefined : this.#pickfirst;
+    const pre =
+      frame.transparent || (prompt.single && !prompt.pickfirst) ? undefined : this.#pickfirst;
     const preWindow = this.#pickfirstWindow;
     this.#pickfirst = this.#pickfirstWindow = undefined;
     if (pre) {

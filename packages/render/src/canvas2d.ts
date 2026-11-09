@@ -967,6 +967,11 @@ export class Canvas2DRenderer implements Renderer {
         // A part clipped away by XCLIP (M1-103) is not there to pick.
         if (prim.clip && !insideClips(prim.clip, p)) continue;
         d = Math.min(d, distanceTo(prim, p));
+        // Text picks anywhere in its runs' boxes, between and inside the letters, as in
+        // AutoCAD (M2-07 part 2: a double click on a word edits it).
+        if (prim.kind !== 'infinite' && prim.kind !== 'point' && prim.text) {
+          d = Math.min(d, distanceTo({ kind: 'fill', path: prim.text.greek, color: '' }, p));
+        }
       }
       if (d <= r) hits.push({ id, d });
     }

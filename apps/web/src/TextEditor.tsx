@@ -4,7 +4,15 @@
 // it). MTEXT's editor carries AutoCAD's Text Formatting toolbar (UI_SPEC.md §7: Bold, Italic,
 // Underline, Overline, Strikethrough, Stack, Color, Height, OK); Ctrl+Enter or a click outside
 // it keeps the text, Esc drops it. Its contents are formatted spans, written as MTEXT format
-// codes (`writeMText`) when it closes. Fonts, fields and columns come with M2-07's leftovers.
+// codes (`writeMText`) when it closes.
+//
+// TEXTEDIT and a double click (M2-07 part 2) open the same editors on an existing text: the
+// request carries its `value`. TEXT's line then holds the value, selected, and Enter or a click
+// outside answers once with the whole line. MTEXT's editor holds the contents as spans
+// (`contentOf`), keeping what it has no control for; a close that changed nothing answers with
+// the contents as they were. While TEXT is placing lines, a click on the canvas places the line
+// typed so far and starts the next where the click was (the engine takes the click's point).
+// Typing `1/2 ` stacks the fraction (AutoStack); the Font list sets a run's font.
 //
 // The editor's DOM is the record of what was typed: plain runs as <span data-fmt>, paragraph
 // breaks as <br>, stacks as uneditable <span data-stack>. Typing, pasting, Enter and the
@@ -12,17 +20,29 @@
 // DOM never takes a shape the spans cannot hold.
 import type { StringPrompt, TextEditorRequest } from '@triya/engine';
 import { aciRgb, worldToScreen } from '@triya/render';
-import { styleFont, writeMText, type MTextFormat, type MTextSpan } from '@triya/text';
+import {
+  contentOf,
+  mtextBase,
+  parseMText,
+  sameContent,
+  SHX_EQUIVALENTS,
+  writeMText,
+  type MTextContent,
+  type MTextFormat,
+  type MTextSpan,
+} from '@triya/text';
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { controllerOf } from './canvas/registry';
 import type { CanvasController } from './canvas/controller';
 import { commandLines } from './command-line';
 import { engines } from './engine/registry';
 import {
+  autoStack,
   formatAt,
   formatRange,
   hasFormat,
   insertSpans,
+  paragraphAt,
   removeRange,
   toggleStack,
   type FormatPatch,
@@ -43,7 +63,19 @@ const COLORS: readonly { readonly label: string; readonly index?: number }[] = [
   { label: 'White', index: 7 },
 ];
 
-export function TextEditor({ doc }: { doc: { id: number; block: string } | undefined }) {
+/** The fonts the Font list offers besides the style's: AutoCAD's SHX fonts, drawn by the bundled ones. */
+const SHX_FONTS: readonly string[] = Object.keys(SHX_EQUIVALENTS)
+  .map((n) => `${n}.shx`)
+  .sort();
+
+export function TextEditor({
+  doc,
+  fonts = [],
+}: {
+  doc: { id: number; block: string } | undefined;
+  /** The user's font files (M1-38), offered in the Font list too. */
+  fonts?: readonly string[];
+}) {
   useSyncExternalStore(commandLines.subscribe, commandLines.version);
   const prompt = doc ? commandLines.get(doc.id).prompt : undefined;
   const request = prompt?.kind === 'string' ? (prompt as StringPrompt).editor : undefined;
@@ -51,11 +83,12 @@ export function TextEditor({ doc }: { doc: { id: number; block: string } | undef
   if (!doc || !request || !controller) return null;
   // TEXT's line editor is one input for all the lines, so typing runs on while the engine
   // places a line and asks for the next.
-  const key = request.kind === 'text' ? 'text' : JSON.stringify(request);
+  const key =
+    request.kind === 'text' && request.value === undefined ? 'text' : JSON.stringify(request);
   return request.kind === 'text' ? (
     <TextLine key={key} doc={doc.id} request={request} controller={controller} />
   ) : (
-    <MTextBox key={key} doc={doc.id} request={request} controller={controller} />
+    <MTextBox key={key} doc={doc.id} request={request} controller={controller} fonts={fonts} />
   );
 }
 
@@ -125,10 +158,47 @@ function TextLine({
   controller: CanvasController;
 }) {
   const placement = usePlacement(controller, request);
-  const [value, setValue] = useState('');
+  const editing = request.value !== undefined;
+  const [value, setValue] = useState(request.value ?? '');
+  const input = useRef<HTMLInputElement>(null);
+  const typed = useRef(value);
+  typed.current = value;
+  const done = useRef(false);
+  /** TEXTEDIT: the whole line, once. */
+  const keep = () => {
+    if (done.current) return;
+    done.current = true;
+    engines.command(doc, {
+      kind: 'answer',
+      answer: { kind: 'string', value: typed.current, editor: true },
+    });
+  };
+  useEffect(() => {
+    if (editing) input.current?.select();
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target instanceof Element) || input.current?.contains(e.target)) return;
+      if (editing) {
+        keep();
+        return;
+      }
+      // Placing TEXT: the line typed so far is placed before the click reaches the engine,
+      // which starts the next line at the click.
+      if (e.button === 0 && e.target.closest('.drawing-canvas') && typed.current !== '') {
+        engines.command(doc, {
+          kind: 'answer',
+          answer: { kind: 'string', value: typed.current },
+        });
+        typed.current = '';
+        setValue('');
+      }
+    };
+    document.addEventListener('pointerdown', onDown, true);
+    return () => document.removeEventListener('pointerdown', onDown, true);
+  }, []);
   return (
     <div className="text-editor text-line" style={boxStyle(placement, request)}>
       <input
+        ref={input}
         aria-label="Text"
         autoFocus
         value={value}
@@ -138,6 +208,7 @@ function TextLine({
           e.stopPropagation();
           if (e.key === 'Enter') {
             e.preventDefault();
+            if (editing) return keep();
             engines.command(doc, {
               kind: 'answer',
               answer: value === '' ? { kind: 'enter' } : { kind: 'string', value },
@@ -186,7 +257,11 @@ function paint(root: HTMLElement, spans: readonly MTextSpan[], height: number): 
   const nodes: Node[] = [];
   for (const s of spans) {
     if (s.type === 'break') {
-      nodes.push(document.createElement('br'));
+      const br = document.createElement('br');
+      // What the break keeps: its kind and the next paragraph's `\p` values.
+      br.dataset['para'] = JSON.stringify(s.paragraph ?? []);
+      if (s.end) br.dataset['end'] = s.end;
+      nodes.push(br);
       continue;
     }
     const el = document.createElement('span');
@@ -229,25 +304,42 @@ const isFiller = (n: Node): boolean =>
 /** The spans the editor's DOM holds (it may hold what the browser typed itself, e.g. IME). */
 function read(root: HTMLElement): MTextSpan[] {
   const out: MTextSpan[] = [];
+  // A break the browser made takes the values of the paragraph it was made in.
+  let codes: readonly string[] = JSON.parse(root.dataset['para'] ?? '[]') as string[];
+  const browserBreak = (): MTextSpan => ({
+    type: 'break',
+    ...(codes.length > 0 && { paragraph: codes }),
+  });
   const walk = (node: Node, format: MTextFormat): void => {
     for (const child of node.childNodes) {
       if (child instanceof Text) {
         const parts = child.data.replace(/\r/g, '').split('\n');
         parts.forEach((text, i) => {
-          if (i > 0) out.push({ type: 'break' });
+          if (i > 0) out.push(browserBreak());
           out.push({ type: 'text', text, format });
         });
       } else if (!(child instanceof HTMLElement) || isFiller(child)) {
         continue;
       } else if (child.tagName === 'BR') {
-        out.push({ type: 'break' });
+        const para = child.dataset['para'];
+        if (para === undefined) {
+          out.push(browserBreak());
+          continue;
+        }
+        codes = JSON.parse(para) as string[];
+        const end = child.dataset['end'];
+        out.push({
+          type: 'break',
+          ...((end === 'column' || end === 'dimline') && { end }),
+          ...(codes.length > 0 && { paragraph: codes }),
+        });
       } else if (isAtom(child)) {
         const data = child.dataset['stack'] ?? child.dataset['field']!;
         out.push(JSON.parse(data) as MTextSpan);
       } else {
         // A block the browser made is a paragraph.
         const block = child.tagName === 'DIV' || child.tagName === 'P';
-        if (block && out.length > 0 && out.at(-1)?.type !== 'break') out.push({ type: 'break' });
+        if (block && out.length > 0 && out.at(-1)?.type !== 'break') out.push(browserBreak());
         const own = child.dataset['fmt'];
         walk(child, own ? (JSON.parse(own) as MTextFormat) : format);
       }
@@ -363,15 +455,33 @@ function MTextBox({
   doc,
   request,
   controller,
+  fonts,
 }: {
   doc: number;
   request: TextEditorRequest;
   controller: CanvasController;
+  fonts: readonly string[];
 }) {
   const placement = usePlacement(controller, request);
   const root = useRef<HTMLDivElement>(null);
   const frame = useRef<HTMLDivElement>(null);
-  const font = styleFont({ font: request.fontFile, trueTypeFlags: request.trueTypeFlags });
+  const base = mtextBase(
+    {
+      font: request.fontFile,
+      trueTypeFlags: request.trueTypeFlags,
+      ...(request.widthFactor !== undefined && { widthFactor: request.widthFactor }),
+      ...(request.obliqueAngle !== undefined && { obliqueAngle: request.obliqueAngle }),
+    },
+    request.height,
+  );
+  const font = base.font;
+  /** TEXTEDIT: the contents being edited, as spans. */
+  const initial = useRef<MTextContent | undefined>(undefined);
+  if (request.value !== undefined && !initial.current) {
+    initial.current = contentOf(parseMText(request.value, base), base);
+  }
+  /** The first paragraph's `\p` values (none for new text). */
+  const first = initial.current?.paragraph ?? [];
   /** The format typing takes next, when a toolbar change was made with nothing selected. */
   const pending = useRef<MTextFormat | undefined>(undefined);
   /** The last selection in the editor, for the toolbar's fields, which take the focus. */
@@ -408,12 +518,28 @@ function MTextBox({
   const finish = () => {
     if (done.current) return;
     done.current = true;
-    const value = writeMText(spans(), font);
+    const now = spans();
+    const old = initial.current;
+    const value =
+      old && request.value !== undefined && sameContent(old, { paragraph: first, spans: now }, font)
+        ? request.value
+        : writeMText(now, font, first);
     engines.command(doc, { kind: 'answer', answer: { kind: 'string', value, editor: true } });
   };
 
   useEffect(() => {
     const el = root.current!;
+    el.dataset['para'] = JSON.stringify(first);
+    if (initial.current) {
+      paint(el, initial.current.spans, request.height);
+      el.focus();
+      const end = initial.current.spans.reduce(
+        (n, x) => n + (x.type === 'text' ? x.text.length : 1),
+        0,
+      );
+      select(el, end, end);
+      lastSel.current = [end, end];
+    }
     el.focus();
     const onSelection = () => {
       const s = selectionIn(el);
@@ -431,7 +557,14 @@ function MTextBox({
       const typed = inserted.map((x) => (x.type === 'text' ? { ...x, format } : x));
       const next = insertSpans(removeRange(s, a, b), a, typed);
       const len = typed.reduce((n, x) => n + (x.type === 'text' ? x.text.length : 1), 0);
-      commit(next, a + len);
+      // AutoStack: a space typed after `1/2` stacks it.
+      const stacked =
+        inserted.at(-1)?.type === 'text' &&
+        /^ $/.test((inserted.at(-1) as { text: string }).text.slice(-1))
+          ? autoStack(next, a + len)
+          : undefined;
+      if (stacked) commit(stacked.spans, stacked.caret);
+      else commit(next, a + len);
     };
     const asSpans = (text: string): MTextSpan[] =>
       text
@@ -456,7 +589,12 @@ function MTextBox({
         case 'insertParagraph':
         case 'insertLineBreak':
           e.preventDefault();
-          replace([{ type: 'break' }]);
+          {
+            // The new paragraph keeps the formatting of the one it was typed in.
+            const [a] = selectionIn(el) ?? lastSel.current;
+            const codes = paragraphAt(spans(), first, a);
+            replace([{ type: 'break', ...(codes.length > 0 && { paragraph: codes }) }]);
+          }
           return;
         case 'deleteContentBackward':
         case 'deleteContentForward': {
@@ -514,7 +652,7 @@ function MTextBox({
     const on = a === b ? !!(pending.current ?? formatAt(s, a))[key] : hasFormat(s, a, b, key);
     change({ [key]: !on });
   };
-  const ttf = font.kind === 'ttf';
+  const ttf = (shown.font ?? font).kind === 'ttf';
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     e.stopPropagation();
@@ -581,6 +719,29 @@ function MTextBox({
         >
           a⁄b
         </button>
+        <select
+          aria-label="Font"
+          title="Font"
+          value={shown.font?.name ?? ''}
+          onChange={(e) => {
+            const name = e.target.value;
+            if (name === '') return change({ font: undefined, bold: undefined, italic: undefined });
+            const kind = /\.(ttf|otf|ttc)$/i.test(name) ? 'ttf' : 'shx';
+            change({
+              font: { name, kind },
+              ...(kind === 'shx' && { bold: undefined, italic: undefined }),
+            });
+          }}
+        >
+          <option value="">{request.fontFile || 'Style font'}</option>
+          {[...new Set([...SHX_FONTS, ...fonts, ...(shown.font ? [shown.font.name] : [])])]
+            .filter((n) => n.toLowerCase() !== request.fontFile.toLowerCase())
+            .map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+        </select>
         <input
           aria-label="Height"
           title="Height"

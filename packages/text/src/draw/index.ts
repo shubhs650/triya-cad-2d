@@ -4,6 +4,7 @@ export {
   FontBook,
   fontMeasure,
   shxCode,
+  mtextBase,
   styleFont,
   verticalAdvance,
   verticalFace,
