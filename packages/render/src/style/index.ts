@@ -11,6 +11,7 @@ export {
   type EmbedPlacement,
 } from './dash';
 export { parseLin, type LinFile, type LinIssue } from './lin';
+export { mixColors, parseHex, tintColor } from './mix';
 export {
   annotationLinetypeScale,
   linetypeScale,

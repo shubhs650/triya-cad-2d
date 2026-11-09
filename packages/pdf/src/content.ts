@@ -140,6 +140,45 @@ export class ContentStream {
     return this;
   }
 
+  /**
+   * Fills with an uncoloured tiling pattern (`PdfPage.pattern`) painted in `c`, through the
+   * page's pattern colour space over DeviceGray or DeviceRGB (`PdfPage.patternSpace`).
+   */
+  fillPattern(space: string, pattern: string, c: Rgb): this {
+    const { text } = colorOperands(c);
+    const op = `/${space} cs ${text} /${pattern} scn`;
+    if (this.state.fill !== op) {
+      this.ops.push(op);
+      this.state.fill = op;
+    }
+    return this;
+  }
+
+  /** `cm`: maps user space through `m` (x' = a·x + c·y + e, y' = b·x + d·y + f). */
+  transform(m: {
+    readonly a: number;
+    readonly b: number;
+    readonly c: number;
+    readonly d: number;
+    readonly e: number;
+    readonly f: number;
+  }): this {
+    this.ops.push(`${n(m.a)} ${n(m.b)} ${n(m.c)} ${n(m.d)} ${n(m.e)} ${n(m.f)} cm`);
+    return this;
+  }
+
+  /** `sh`: paints a shading of the page's resources over the current clip. */
+  shade(name: string): this {
+    this.ops.push(`/${name} sh`);
+    return this;
+  }
+
+  /** `Do`: paints an XObject of the page's resources (an image fills the unit square). */
+  xobject(name: string): this {
+    this.ops.push(`/${name} Do`);
+    return this;
+  }
+
   /** `gs`: an ExtGState of the page's resources, by name (`PdfPage.alpha`). */
   graphicsState(name: string): this {
     if (this.state.gs !== name) {
