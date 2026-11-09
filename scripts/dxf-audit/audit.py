@@ -26,7 +26,7 @@ import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 
-KINDS = ("unedited", "edited", "markup", "mleader", "session", "dimension")
+KINDS = ("unedited", "edited", "markup", "mleader", "session", "paste", "dimension")
 # corpus.json marks files acad-ts cannot read with a known issue mentioning "read"; the corpus
 # suites skip them (packages/testkit/src/export/export.corpus.test.ts), so there is no save.
 UNREADABLE = re.compile("read", re.IGNORECASE)

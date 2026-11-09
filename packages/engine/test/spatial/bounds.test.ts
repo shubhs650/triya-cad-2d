@@ -246,13 +246,14 @@ describe('hatches', () => {
         flags: 1,
         edges: [
           { type: 'line', start: { x: 20, y: 0 }, end: { x: 22, y: 1 } },
-          // Arcs and ellipses count whole, whatever their (clockwise-negated) angles.
+          // Arcs and ellipses count by their sweep: this clockwise arc's angles are stored
+          // negated, so it runs from −90° to 0°, the quarter below and right of (20, 10).
           {
             type: 'arc',
             center: { x: 20, y: 10 },
             radius: 1,
             startAngle: 0,
-            endAngle: 0.1,
+            endAngle: Math.PI / 2,
             ccw: false,
           },
           {
@@ -261,7 +262,7 @@ describe('hatches', () => {
             majorAxis: { x: 2, y: 0 },
             ratio: 0.5,
             startAngle: 0,
-            endAngle: 1,
+            endAngle: Math.PI / 2,
             ccw: true,
           },
           {
@@ -277,7 +278,7 @@ describe('hatches', () => {
         ],
       },
     ]);
-    expectBox(entityBounds(geom, ctx()), box(-7, -4, 22, 11));
+    expectBox(entityBounds(geom, ctx()), box(-5, -4, 22, 10));
   });
 
   it('bounds a spline edge kept only as fit points by their interpolation', () => {

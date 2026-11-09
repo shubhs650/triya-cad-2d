@@ -1,11 +1,13 @@
 // The app's side of the view host (M2-02 part 2): answers the view commands' requests (ZOOM,
 // PAN, REGEN, VIEW) with the canvas of the space shown, the same calls the navigation bar makes.
 // Every request gets a reply, a refusal when nothing is shown, because the command waits for it.
-// The file commands (QSAVE, SAVEAS, CLOSE; M2-13) go to the app's `file`.
+// The file commands (QSAVE, SAVEAS, CLOSE; M2-13) go to the app's `file`, the Clipboard commands'
+// requests (M2-14 part 2) to its `clipboard`.
 // Selection asks it too (M2-03): what a pick or a window takes, and ZOOM Object's extents, which
 // the renderer answers, so those replies come later.
 import type {
   Box,
+  Clipboard,
   EntityId,
   FileAction,
   MTextGeometry,
@@ -44,6 +46,8 @@ export interface ViewTarget {
   textBox(text: MTextGeometry): Promise<Box | undefined>;
   /** The widths MTEXTs are laid out at (M2-10 part 3), null for one no loaded font draws. */
   textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
+  /** The objects' extents as drawn (M2-14 part 2: COPYCLIP's base point), or undefined. */
+  boundsOf(ids: readonly EntityId[]): Promise<Box | undefined>;
 }
 
 /** A named view of the space shown; `view` is undefined when a 2D canvas cannot show it. */
@@ -64,10 +68,16 @@ export interface ViewContext {
   readonly save: (name: string, view: ViewTransform) => void;
   /** QSAVE, SAVEAS and CLOSE (M2-13): the app saves or closes the drawing. */
   readonly file?: (action: FileAction) => Promise<ViewReply>;
+  /**
+   * The app's Clipboard (M2-14 part 2), which every drawing shares: `content` puts objects on
+   * it, none reads it.
+   */
+  readonly clipboard?: (content: Clipboard | undefined) => ViewReply;
 }
 
 export const NO_CANVAS = 'There is no view to change.';
 export const NO_FILE = 'There is no drawing to save.';
+export const NO_CLIPBOARD = 'There is no Clipboard here.';
 
 export function stateOf(t: ViewTarget): ViewState | undefined {
   const v = t.view;
@@ -83,6 +93,9 @@ export function stateOf(t: ViewTarget): ViewState | undefined {
 export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promise<ViewReply> {
   // The file commands need the drawing, not a canvas.
   if (r.op === 'file') return ctx.file ? ctx.file(r.action) : { ok: false, message: NO_FILE };
+  if (r.op === 'clipboard') {
+    return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };
+  }
   const t = ctx.target;
   if (!t || !stateOf(t)) return { ok: false, message: NO_CANVAS };
   const done = (): ViewReply => {
@@ -162,6 +175,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
         );
     case 'textWidths':
       return t.textWidths(r.texts).then((widths) => ({ ok: true, widths }));
+    case 'bounds':
+      return t
+        .boundsOf(r.ids)
+        .then((box) =>
+          box ? { ok: true, box } : { ok: false, message: 'The objects have no extents.' },
+        );
     case 'save': {
       const view = r.window ? windowView(r.window.a, r.window.b, t.size) : t.view;
       if (!view) return { ok: false, message: 'The window has no area.' };

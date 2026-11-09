@@ -56,9 +56,9 @@ class JudgeTest(unittest.TestCase):
         report = self.run_judge({})
         self.assertEqual(report.failures, [])
         # Two files, each saved unedited, edited, after a markup session (M2-08), after
-        # MLEADER (M2-09), by the app's Save after a session (M2-13) and after the dimension
-        # commands (M2-11).
-        self.assertEqual(report.checked, 12)
+        # MLEADER (M2-09), by the app's Save after a session (M2-13), after a paste from
+        # another drawing (M2-14) and after the dimension commands (M2-11).
+        self.assertEqual(report.checked, 14)
 
     def test_any_recover_or_audit_finding_fails(self) -> None:
         name = gate.save_name(DXF, "edited")

@@ -4,6 +4,10 @@
 // Drawing As when it has none (here also when its file is a DWG or an older DXF, which Triya never
 // overwrites: DEC-047); SAVE and SAVEAS open Save Drawing As; CLOSE closes the drawing and asks
 // "Save changes to <file>?" first when it has unsaved changes. None of them is an undo step.
+//
+// DRAWINGRECOVERY (M2-14 part 2): AutoCAD 2024 Help, "DRAWINGRECOVERY": "Displays a list of
+// drawing files that can be recovered after a program or system failure" (the Drawing Recovery
+// Manager). Triya's list is the recovery banner (DEC-051), which the app shows again.
 import type { CommandDef } from './command';
 import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
@@ -23,4 +27,5 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => fileCommand('SAVE', 'saveas'),
   () => fileCommand('SAVEAS', 'saveas'),
   () => fileCommand('CLOSE', 'close'),
+  () => fileCommand('DRAWINGRECOVERY', 'recover'),
 ];

@@ -39,6 +39,7 @@ import type {
   TableRecords,
   SortEntsTable,
   SymbolTableRecord,
+  Xdata,
 } from './types';
 import { createEntity, createRecord, deepFreeze } from './update';
 
@@ -79,7 +80,7 @@ const SHARED_NAMES: Partial<Record<TableName, ReadonlySet<string>>> = {
  * string under one of these keys is a handle of the xref and is renumbered; xdata is carried as
  * it is (its 1005 handles are application data).
  */
-const HANDLE_KEYS = new Set([
+export const HANDLE_KEYS: ReadonlySet<string> = new Set([
   'handle',
   'owner',
   'layer',
@@ -118,9 +119,14 @@ const isModelSpace = (name: string) => name.toUpperCase() === '*MODEL_SPACE';
 
 /**
  * A copy of `value` with the xref's handles renumbered by `map`. A handle the load leaves out
- * (a layout, a dictionary, an overlay's block) is dropped with its key.
+ * (a layout, a dictionary, an overlay's block) is dropped with its key. Xdata is carried as it is
+ * unless `xdata` says what becomes of it (PASTECLIP's, M2-14: another drawing's application ids).
  */
-function renumber<T>(value: T, map: ReadonlyMap<Handle, Handle>): T {
+export function renumber<T>(
+  value: T,
+  map: ReadonlyMap<Handle, Handle>,
+  xdata: (x: Xdata) => Xdata | undefined = (x) => x,
+): T {
   const walk = (v: unknown, key: string | undefined): unknown => {
     if (typeof v === 'string') {
       if (key === undefined || !HANDLE_KEYS.has(key) || v === '0' || !isHandle(v)) return v;
@@ -140,7 +146,7 @@ function renumber<T>(value: T, map: ReadonlyMap<Handle, Handle>): T {
     for (const [k, item] of Object.entries(v)) {
       // The xref's original objects stay in its own file; xdata is application data.
       if (k === 'raw') continue;
-      const w = k === 'xdata' ? item : walk(item, k);
+      const w = k === 'xdata' ? xdata(item as Xdata) : walk(item, k);
       if (w !== undefined) out[k] = w;
     }
     return out;

@@ -68,7 +68,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | UNDO / U | U | 1 | Auto, Control, BEgin/End, Mark, Back, number | x (#223; Auto/Combine/Layer kept as settings until macros, undoable views and the layer manager exist; Ctrl+Z in M2-23) |
 | REDO | Ctrl+Y | 1 | | x (#223; Ctrl+Y in M2-23) |
 | MREDO | — | 2 | | |
-| COPYBASE / PASTECLIP / PASTEBLOCK / PASTEORIG / COPYCLIP / CUTCLIP | Ctrl+Shift+C, Ctrl+V, Ctrl+Shift+V, Ctrl+C, Ctrl+X | 1 | cross-document | |
+| COPYBASE / PASTECLIP / PASTEBLOCK / PASTEORIG / COPYCLIP / CUTCLIP | Ctrl+Shift+C, Ctrl+V, Ctrl+Shift+V, Ctrl+C, Ctrl+X | 1 | cross-document | x (#242: one Clipboard for every open drawing; the layers, linetypes, styles and blocks the objects use come along, matched by name in the target; new handles above its $HANDSEED; base point the extents' lower-left corner; PASTECLIP and PASTEBLOCK drag the curves and the extents' frame; PASTEBLOCK makes an `A$C…` block; PASTEORIG only from another drawing. Not yet pasted: images, underlays, multileaders with block attributes, xrefs, M2-32) |
 | DRAWORDER | DR | 1 | Above, Under, Front, Back | x (#231) |
 | TEXTTOFRONT | — | 1 | Text, Dims, Leaders, All | x (#231) |
 | HATCHTOBACK | — | 1 | | x (#231) |
@@ -204,7 +204,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | PUBLISH | — | 2 | | |
 | EXPORTPDF / EXPORT (svg/png) | — | 1 | | |
 | PLOTSTYLE / STYLESMANAGER | — | 2 | CTB/STB store | |
-| RECOVERYDRAWING | — | 1 | recovery flow | ~ (#240): the launch's recovery banner offers each unsaved drawing a closed or crashed page left (Recover, Discard); the command to show it again is M2-14 part 2 |
+| DRAWINGRECOVERY | — | 1 | recovery flow | x (#240, #242): the launch's recovery banner offers each unsaved drawing a closed or crashed page left (Recover, Discard); DRAWINGRECOVERY shows it again with every drawing not yet recovered, or says there are none |
 
 ## Parametric (M9)
 

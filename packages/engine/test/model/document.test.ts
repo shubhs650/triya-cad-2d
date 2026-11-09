@@ -222,6 +222,42 @@ describe('applyChangeSet and invertChangeSet', () => {
     expect(m.handles.allocate()).toBe('41');
   });
 
+  it("raises $HANDSEED above an added or edited INSERT's ATTRIB handles (M2-14 part 2)", () => {
+    // A replica replaying another model's change set (the save's) allocates from its own seed.
+    const m = sampleModel();
+    const attribute = (handle: string) => ({
+      ...entityInit(handle, lineGeom(0, 0, 1, 1)),
+      value: 'A',
+      style: '0',
+      position: { x: 0, y: 0 },
+      height: 1,
+      rotation: 0,
+      widthFactor: 1,
+      oblique: 0,
+      halign: 0,
+      valign: 0,
+      backward: false,
+      upsideDown: false,
+      tag: 'T',
+      flags: 0,
+    });
+    const insert = (attributes: unknown[]) =>
+      ({
+        kind: 'INSERT',
+        block: PAPER_SPACE,
+        position: { x: 0, y: 0 },
+        scale: { x: 1, y: 1, z: 1 },
+        rotation: 0,
+        attributes,
+      }) as never;
+    const e = createEntity(m.ids.assign('50'), entityInit('50', insert([attribute('60')])));
+    m.apply({ entities: { added: [{ entity: e, index: 3 }] } });
+    expect(m.handSeed).toBe('61');
+    const after = updateEntity(e, { geom: insert([attribute('60'), attribute('70')]) });
+    m.apply({ entities: { updated: [{ before: e, after }] } });
+    expect(m.handSeed).toBe('71');
+  });
+
   it('raises $HANDSEED above a handle added from outside the allocator', () => {
     const m = sampleModel();
     m.apply({ objects: { added: [{ handle: '90', type: 'XRECORD', owner: '0' }] } });

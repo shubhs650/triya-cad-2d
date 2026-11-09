@@ -197,11 +197,21 @@ function insertBounds(geom: InsertGeometry, ctx: BoundsContext): EntityBounds {
   return boxed(out);
 }
 
+/** A hatch arc or ellipse edge's counter-clockwise sweep, from its stored angles. */
+function sweepOf(edge: {
+  readonly ccw: boolean;
+  readonly startAngle: number;
+  readonly endAngle: number;
+}): [number, number] {
+  return edge.ccw ? [edge.startAngle, edge.endAngle] : [-edge.endAngle, -edge.startAngle];
+}
+
 /**
  * HATCH: the fill and pattern stay inside the boundary loops, so the loops' union bounds it.
- * Arc and ellipse edges count as their whole circle or ellipse and spline edges as their
- * control points (a NURBS curve lies in their convex hull), which never misses and spares
- * the clockwise-edge angle conventions.
+ * Arc and ellipse edges count by their sweep and spline edges by their control points (a NURBS
+ * curve lies in their convex hull). A clockwise edge stores its angles negated (DXF 73 = 0), so
+ * it sweeps counter-clockwise from −end to −start. Exact edges matter beyond culling: COPYCLIP's
+ * base point is the extents' lower-left corner (M2-14 part 2).
  */
 function hatchBounds(geom: HatchGeometry, tol: Tolerance): EntityBounds {
   let out: Box | undefined;
@@ -216,22 +226,13 @@ function hatchBounds(geom: HatchGeometry, tol: Tolerance): EntityBounds {
     for (const edge of loop.edges ?? []) {
       if (edge.type === 'line') add(boxOf([edge.start, edge.end]));
       else if (edge.type === 'arc') {
-        const { center: c, radius: r } = edge;
-        add({ minX: c.x - r, minY: c.y - r, maxX: c.x + r, maxY: c.y + r });
+        const [startAngle, endAngle] = sweepOf(edge);
+        const { center, radius } = edge;
+        add(curveBounds({ kind: 'ARC', center, radius, startAngle, endAngle }, tol));
       } else if (edge.type === 'ellipse') {
-        add(
-          curveBounds(
-            {
-              kind: 'ELLIPSE',
-              center: edge.center,
-              majorAxis: edge.majorAxis,
-              ratio: edge.ratio,
-              startParam: 0,
-              endParam: 2 * Math.PI,
-            },
-            tol,
-          ),
-        );
+        const [startParam, endParam] = sweepOf(edge);
+        const { center, majorAxis, ratio } = edge;
+        add(curveBounds({ kind: 'ELLIPSE', center, majorAxis, ratio, startParam, endParam }, tol));
       } else {
         const points = splineCurve(edge)?.controlPoints ?? edge.controlPoints;
         if (points.length > 0) add(boxOf(points));
