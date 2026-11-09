@@ -92,6 +92,19 @@ describe('ci.yml gates', () => {
     expect(String(upload?.with?.['path'])).toContain(dir);
   });
 
+  it('checks the PDF writer’s test plot with qpdf in the required checks job (M2-16)', () => {
+    const steps = ci.jobs['checks']!.steps ?? [];
+    const install = steps.findIndex(
+      (s) => s.run?.includes('apt-get install') && s.run.includes('qpdf'),
+    );
+    const check = steps.findIndex(
+      (s) => s.run?.trim() === 'qpdf --check packages/testkit/fixtures/pdf/plot-sheet.pdf',
+    );
+    expect(install).toBeGreaterThan(-1);
+    expect(check).toBeGreaterThan(install);
+    expect(readFileSync(path.join(root, 'ATTRIBUTION.md'), 'utf8')).toMatch(/\| qpdf \(/);
+  });
+
   it('pins ezdxf, which runs in CI only', () => {
     const req = readFileSync(path.join(root, 'scripts/dxf-audit/requirements.txt'), 'utf8');
     const version = /^ezdxf==(\d+\.\d+\.\d+)$/m.exec(req)?.[1];
