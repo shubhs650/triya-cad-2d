@@ -82,6 +82,8 @@ export type CommandInput =
       readonly shift?: boolean;
       readonly release?: boolean;
       readonly missed?: boolean;
+      /** How near a grip, in drawing units, counts as on it (M2-06 grip editing). */
+      readonly grip?: number;
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
@@ -163,6 +165,7 @@ export class EngineSession {
           ...(input.shift && { shift: true }),
           ...(input.release && { release: true }),
           ...(input.missed && { missed: true }),
+          ...(input.grip !== undefined && { grip: input.grip }),
         });
       case 'select-all':
         return this.#bus.selectAll();

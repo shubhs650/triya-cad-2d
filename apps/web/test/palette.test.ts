@@ -25,6 +25,7 @@ describe('palette search', () => {
       'ROTATE',
       'SCALE',
       'SELECT',
+      'STRETCH',
       'VIEW',
       'ZOOM',
     ]);

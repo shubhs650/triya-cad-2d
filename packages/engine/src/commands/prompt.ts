@@ -3,6 +3,13 @@
 // tests are front-ends that turn typed text or picks into answers on the `PromptBus`.
 import type { Vec2 } from '../geom/types';
 import type { EntityId } from '../model/entity-ids';
+import type { DragPreview } from './drag';
+
+/** A selection window's corners as the drafter gave them. */
+export interface SelectionWindow {
+  readonly a: Vec2;
+  readonly b: Vec2;
+}
 
 interface PromptBase {
   /** The prompt without options or default, as AutoCAD words it: "Specify next point". */
@@ -19,6 +26,8 @@ interface PromptBase {
    * still answers `{ kind: 'enter' }`; `default` wins when both are given.
    */
   readonly defaultLabel?: string;
+  /** The objects dragged with the cursor while this prompt waits (M2-06 part 2). */
+  readonly drag?: DragPreview;
 }
 
 /** A point; with `rubberBand` the front-end draws a line from it and a number is a direct distance. */
@@ -115,7 +124,15 @@ export type PromptAnswer =
   | { readonly kind: 'keyword'; readonly keyword: string }
   | { readonly kind: 'string'; readonly value: string }
   | { readonly kind: 'number'; readonly value: number }
-  | { readonly kind: 'selection'; readonly ids: readonly EntityId[] }
+  | {
+      readonly kind: 'selection';
+      readonly ids: readonly EntityId[];
+      /**
+       * The last window or crossing window the selection was made with (STRETCH stretches
+       * what lies in it, M2-06); none when every object was picked or came from a set.
+       */
+      readonly window?: SelectionWindow;
+    }
   | { readonly kind: 'enter' };
 
 /** The answer kinds each prompt kind takes, besides `keyword` (when it has options) and `enter`. */

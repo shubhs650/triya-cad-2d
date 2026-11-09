@@ -14,6 +14,13 @@ import {
   type DocumentInit,
   type Entity,
   type HeaderValue,
+  type DragMotion,
+  type Prompt,
+  type ViewReply,
+  type ViewRequest,
+  applyPoint,
+  dragMotion,
+  inBox,
 } from '../../src/index';
 import { MODEL_SPACE, entityInit, lineGeom, sampleInit } from '../model/fixtures';
 
@@ -375,6 +382,7 @@ describe('registry', () => {
       ['RO', 'ROTATE'],
       ['SC', 'SCALE'],
       ['MI', 'MIRROR'],
+      ['S', 'STRETCH'],
     ]) {
       expect(r.resolve(alias!)?.def.name).toBe(name);
     }
@@ -501,5 +509,213 @@ describe('settings and toggles', () => {
     });
     await one.bus.script(['COPY', 'ALL', '', 'D', '1,1']);
     expect(one.log).toContain('1 copy is not annotative (annotative copies are not saved yet).');
+  });
+});
+
+/**
+ * A bus whose canvas takes a window or crossing by the lines' end points (the renderer's exact
+ * rules are tested in packages/render): a window holds a line with both ends inside, a
+ * crossing one with either.
+ */
+function withCanvas(init: DocumentInit = sampleInit()) {
+  const model = DocumentModel.create(init);
+  const registry = builtinCommands();
+  const answer = (r: ViewRequest): ViewReply => {
+    if (r.op !== 'select') return { ok: true, ids: [] };
+    const box = {
+      minX: Math.min(r.a.x, r.b.x),
+      minY: Math.min(r.a.y, r.b.y),
+      maxX: Math.max(r.a.x, r.b.x),
+      maxY: Math.max(r.a.y, r.b.y),
+    };
+    const ids = [...model.blockEntities(MODEL_SPACE)].filter((id) => {
+      const g = model.entity(id)!.geom;
+      const pts = g.kind === 'LINE' ? [g.start, g.end] : g.kind === 'CIRCLE' ? [g.center] : [];
+      const ins = pts.filter(inBox(box)).length;
+      return r.crossing ? ins > 0 : ins === pts.length && ins > 0;
+    });
+    return { ok: true, ids };
+  };
+  const bus = new PromptBus({
+    model,
+    registry,
+    view: { request: (r) => Promise.resolve(answer(r)) },
+  });
+  const log: string[] = [];
+  const prompts: Prompt[] = [];
+  bus.on((e: BusEvent) => {
+    if (e.type === 'log') log.push(e.line);
+    if (e.type === 'prompt') prompts.push(e.prompt);
+  });
+  const ends = (h: string) => {
+    const g = model.entityByHandle(h)!.geom as {
+      start: { x: number; y: number };
+      end: { x: number; y: number };
+    };
+    return [g.start.x, g.start.y, g.end.x, g.end.y].map(r6);
+  };
+  return { model, bus, log, prompts, ends, id: (h: string) => model.entityByHandle(h)!.id };
+}
+
+describe('STRETCH', () => {
+  it('stretches what the crossing window crosses and moves what it holds', async () => {
+    // 20 (0,0)-(10,0), 23 (0,0)-(0,10), circle 21 at (5,5).
+    const s = withCanvas();
+    await s.bus.script(['STRETCH']);
+    expect(s.log).toContain('Select objects to stretch by crossing-window or crossing-polygon...');
+    // A crossing window around x = 10 takes 20's end; one around (0,10) takes 23's end.
+    await s.bus.script(['C', '8,-1', '12,1', '', '0,0', '5,2']);
+    expect(s.ends('20')).toEqual([0, 0, 15, 2]);
+    expect(s.ends('23')).toEqual([0, 0, 0, 10]);
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it('moves objects picked individually and those wholly inside', async () => {
+    const s = withCanvas();
+    await s.bus.script(['S', 'C', '-1,-1', '1,11', '']);
+    expect(s.bus.promptText).toBe('Specify base point or [Displacement] <Displacement>:');
+    await s.bus.script(['D', '3,0']);
+    // 23 lies wholly in the window: moved. 20 has its start inside: stretched.
+    expect(s.ends('23')).toEqual([3, 0, 3, 10]);
+    expect(s.ends('20')).toEqual([3, 0, 10, 0]);
+  });
+
+  it('stretches by a displacement, the last one by default', async () => {
+    const s = withCanvas();
+    await s.bus.script(['STRETCH', 'C', '8,-1', '12,1', '', 'D', '2,0']);
+    expect(s.ends('20')).toEqual([0, 0, 12, 0]);
+    await s.bus.script(['STRETCH', 'C', '11,-1', '13,1', '', '', '']);
+    expect(s.ends('20')).toEqual([0, 0, 14, 0]);
+    // Enter at the second point takes the base point as the displacement.
+    await s.bus.script(['STRETCH', 'C', '13,-1', '15,1', '', '1,1', '']);
+    expect(s.ends('20')).toEqual([0, 0, 15, 1]);
+    await s.bus.script(['STRETCH', '']);
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it('just moves a selection made without a window', async () => {
+    const s = withCanvas();
+    await s.bus.script(['STRETCH', 'ALL', '', '0,0', '1,1']);
+    expect(s.ends('20')).toEqual([1, 1, 11, 1]);
+    expect(s.ends('23')).toEqual([1, 1, 1, 11]);
+  });
+
+  it('drags the objects it moves and stretches with the cursor', async () => {
+    const s = withCanvas();
+    await s.bus.script(['STRETCH', 'C', '-1,-1', '1,11', '', '0,0']);
+    expect(s.bus.prompt).toMatchObject({
+      drag: {
+        kind: 'stretch',
+        ids: [s.id('23')],
+        shape: [s.id('20')],
+        window: { minX: -1, minY: -1, maxX: 1, maxY: 11 },
+        from: { x: 0, y: 0 },
+      },
+    });
+  });
+
+  it('takes the window of a pre-selection', async () => {
+    const s = withCanvas();
+    await s.bus.pick({ x: 12, y: 1 });
+    await s.bus.pick({ x: 8, y: -1 });
+    await s.bus.script(['STRETCH', '0,0', '2,0']);
+    expect(s.ends('20')).toEqual([0, 0, 12, 0]);
+  });
+});
+
+describe('dragging', () => {
+  it('drags the selection at each command’s point, angle and scale prompts', async () => {
+    const s = withCanvas();
+    const all = [s.id('20'), s.id('21'), s.id('23')];
+    await s.bus.script(['MOVE', 'ALL', '', '1,2']);
+    expect(s.bus.prompt?.drag).toEqual({ kind: 'move', ids: all, from: { x: 1, y: 2 } });
+    await s.bus.cancel();
+    await s.bus.script(['COPY', 'ALL', '', '1,2']);
+    expect(s.bus.prompt?.drag).toEqual({ kind: 'move', ids: all, from: { x: 1, y: 2 } });
+    await s.bus.cancel();
+    await s.bus.script(['ROTATE', 'ALL', '', '1,2']);
+    expect(s.bus.prompt?.drag).toEqual({
+      kind: 'rotate',
+      ids: all,
+      base: { x: 1, y: 2 },
+      reference: 0,
+    });
+    await s.bus.script(['R', '90']);
+    expect(s.bus.prompt?.drag).toMatchObject({ kind: 'rotate', base: { x: 1, y: 2 } });
+    expect(r6((s.bus.prompt?.drag as { reference: number }).reference)).toBe(r6(Math.PI / 2));
+    await s.bus.cancel();
+    await s.bus.script(['SCALE', 'ALL', '', '1,2']);
+    expect(s.bus.prompt?.drag).toEqual({
+      kind: 'scale',
+      ids: all,
+      base: { x: 1, y: 2 },
+      reference: 1,
+    });
+    await s.bus.script(['R', '4']);
+    expect(s.bus.prompt?.drag).toMatchObject({ kind: 'scale', reference: 4 });
+    await s.bus.cancel();
+    await s.bus.script(['MIRROR', 'ALL', '', '1,2']);
+    expect(s.bus.prompt?.drag).toEqual({ kind: 'mirror', ids: all, from: { x: 1, y: 2 } });
+  });
+});
+
+describe('dragMotion', () => {
+  const at = (m: DragMotion | undefined, x: number, y: number) => {
+    const p = applyPoint(m!.m, { x, y });
+    return [r6(p.x), r6(p.y)];
+  };
+  it('is the motion the answer makes', () => {
+    const ids = [1];
+    expect(
+      at(dragMotion({ kind: 'move', ids, from: { x: 1, y: 1 } }, { x: 4, y: 5 }), 0, 0),
+    ).toEqual([3, 4]);
+    const turn = dragMotion(
+      { kind: 'rotate', ids, base: { x: 1, y: 0 }, reference: 0 },
+      { x: 1, y: 3 },
+    );
+    expect(at(turn, 2, 0)).toEqual([1, 1]);
+    const ref = dragMotion(
+      { kind: 'rotate', ids, base: { x: 0, y: 0 }, reference: Math.PI / 2 },
+      { x: 0, y: 1 },
+    );
+    expect(at(ref, 2, 0)).toEqual([2, 0]);
+    const k = dragMotion(
+      { kind: 'scale', ids, base: { x: 0, y: 0 }, reference: 2 },
+      { x: 0, y: 6 },
+    );
+    expect(at(k, 1, 1)).toEqual([3, 3]);
+    const mirror = dragMotion({ kind: 'mirror', ids, from: { x: 0, y: 0 } }, { x: 0, y: 1 });
+    expect(at(mirror, 2, 3)).toEqual([-2, 3]);
+    const stretch = dragMotion(
+      {
+        kind: 'stretch',
+        ids,
+        shape: [2],
+        window: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+        from: { x: 0, y: 0 },
+      },
+      { x: 2, y: 0 },
+    );
+    expect(stretch?.stretch).toEqual({
+      ids: [2],
+      window: { minX: 0, minY: 0, maxX: 1, maxY: 1 },
+      d: { x: 2, y: 0 },
+    });
+  });
+
+  it('moves a grip by the cursor less its base point', () => {
+    const m = dragMotion(
+      { kind: 'grip', ids: [1], grip: { x: 10, y: 0 }, from: { x: 0, y: 0 } },
+      { x: 1, y: 2 },
+    );
+    expect(m?.grip).toEqual({ ids: [1], from: { x: 10, y: 0 }, to: { x: 11, y: 2 } });
+  });
+
+  it('makes none where the cursor gives no motion', () => {
+    const ids = [1];
+    const o = { x: 0, y: 0 };
+    expect(dragMotion({ kind: 'rotate', ids, base: o, reference: 0 }, o)).toBeUndefined();
+    expect(dragMotion({ kind: 'scale', ids, base: o, reference: 1 }, o)).toBeUndefined();
+    expect(dragMotion({ kind: 'mirror', ids, from: o }, o)).toBeUndefined();
   });
 });

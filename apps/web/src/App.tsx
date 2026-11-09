@@ -88,6 +88,10 @@ engines.onCommand((doc, o) => {
     selections.set(doc, o.ids);
     for (const c of controllersOf(doc)) c.setHighlight(o.ids);
   }
+  if (o.type === 'grips') {
+    grips.set(doc, o);
+    for (const c of controllersOf(doc)) c.setGrips(o.ids, o.hot);
+  }
   if (o.type === 'view') {
     void Promise.resolve(answerView(o.request, viewContext(doc))).then(
       (reply) => engines.command(doc, { kind: 'view', id: o.id, reply }),
@@ -108,6 +112,8 @@ drafting.subscribe(() => {
 
 /** Each drawing's selected objects (M2-03), for canvases made after the selection changed. */
 const selections = new Map<number, readonly EntityId[]>();
+/** Each drawing's grips as its engine last showed them (M2-06), for canvases made later. */
+const grips = new Map<number, { readonly ids: readonly EntityId[]; readonly hot?: Vec2 }>();
 
 /** The view commands' link to a drawing's canvas: the current viewport of the space shown. */
 function viewContext(id: number): ViewContext {
@@ -918,6 +924,7 @@ function ViewportCanvas({
           ...(o.shift && { shift: true }),
           ...(o.release && { release: true }),
           ...(missed && { missed: true }),
+          ...(o.grip !== undefined && { grip: o.grip }),
         });
         engines.command(
           id,
@@ -942,6 +949,8 @@ function ViewportCanvas({
     c.setPrompt(commandLines.get(id).prompt);
     const selected = selections.get(id);
     if (selected?.length) c.setHighlight(selected);
+    const shown = grips.get(id);
+    if (shown?.ids.length) c.setGrips(shown.ids, shown.hot);
     showCurrent(id, block, visibleRef.current);
     return () => {
       unregister();

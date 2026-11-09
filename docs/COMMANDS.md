@@ -39,12 +39,12 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 |---|---|---|---|---|
 | ERASE | E, DEL | 1 | | x (#227: unhooks hatches, DIMASSOCs, groups, XCLIPs, leaders and viewport clips; a viewport named by layer overrides is refused) |
 | OOPS | — | 1 | | x (#223) |
-| MOVE | M | 1 | Displacement, Base | ~ (#227: base/second point, Displacement, ↵ as displacement; drag preview with the grips, M2-06 part 2) |
-| COPY | CO, CP | 1 | Displacement, mOde (Single/Multiple), Array | ~ (#227: all options incl. Array Fit and Undo; drag preview M2-06 part 2) |
-| ROTATE | RO | 1 | Copy, Reference | ~ (#227: Copy, Reference with Points, ANGDIR/ANGBASE line; drag preview M2-06 part 2) |
-| SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | ~ (#227: Copy, Reference with Points; a table's cell text heights do not rescale yet; drag preview M2-06 part 2) |
-| STRETCH | S | 1 | crossing/polygon; dims/defpoints follow | |
-| MIRROR | MI | 1 | MIRRTEXT | ~ (#227: MIRRTEXT and MIRRHATCH, Erase source; MTEXT always stays readable; drag preview M2-06 part 2) |
+| MOVE | M | 1 | Displacement, Base | x (#227, #229: base/second point, Displacement, ↵ as displacement; dragged with the cursor) |
+| COPY | CO, CP | 1 | Displacement, mOde (Single/Multiple), Array | x (#227, #229: all options incl. Array Fit and Undo; dragged with the cursor, an Array is not) |
+| ROTATE | RO | 1 | Copy, Reference | x (#227, #229: Copy, Reference with Points, ANGDIR/ANGBASE line; dragged with the cursor) |
+| SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | ~ (#227, #229: Copy, Reference with Points, dragged with the cursor; a table's cell text heights do not rescale yet) |
+| STRETCH | S | 1 | crossing/polygon; dims/defpoints follow | ~ (#229: the last crossing window (CPolygon with M3-04), Displacement, dragged with the cursor; dimensions, hatches, multilines, multileaders, regions and viewports move only when wholly inside until M2-10) |
+| MIRROR | MI | 1 | MIRRTEXT | x (#227, #229: MIRRTEXT and MIRRHATCH, Erase source; MTEXT always stays readable; dragged with the cursor) |
 | OFFSET | O | 2 | Through, Erase, Layer, Multiple, Undo; gap types | |
 | TRIM | TR | 2 | Fence, Crossing, Project(2D), Edge, eRase, Undo; Shift→Extend; ↵↵ all | |
 | EXTEND | EX | 2 | same as TRIM; Shift→Trim | |

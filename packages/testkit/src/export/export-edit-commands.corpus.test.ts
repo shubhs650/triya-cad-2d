@@ -16,6 +16,8 @@ import {
   scaleAbout,
   transformObjects,
   turnAbout,
+  gripsOf,
+  stretchObjects,
   type Entity,
   type EntityId,
   type Similarity,
@@ -117,7 +119,7 @@ describe('the core edit commands on the public corpus', () => {
   let edited = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
-    '%s saves after ROTATE, SCALE, MOVE, MIRROR, COPY and ERASE',
+    '%s saves after ROTATE, SCALE, MOVE, MIRROR, STRETCH, COPY and ERASE',
     (_path, f) => {
       const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
       withPinnedClock(() => {
@@ -138,6 +140,16 @@ describe('the core edit commands on the public corpus', () => {
             const r = transformObjects(b, model, ids, t);
             refusedMoves.push(...r.refused.keys());
           });
+        }
+        // STRETCH (M2-06 part 2): a window over the right half of the objects' grips, so that
+        // every stretchable kind has some objects reshaped, some moved and some left.
+        const xs = ids
+          .flatMap((id) => gripsOf(model.entity(id)!.geom).map((g) => g.point.x))
+          .sort((a, b) => a - b);
+        const mid = xs[Math.floor(xs.length / 2)];
+        if (mid !== undefined) {
+          const box = { minX: mid, minY: -Infinity, maxX: Infinity, maxY: Infinity };
+          apply(model, (b) => stretchObjects(b, model, ids, { box }, { x: 2, y: 1 }));
         }
         const saved = saveAc1032Dxf(readCadDocument(bytes), model);
         const back = new Map(
