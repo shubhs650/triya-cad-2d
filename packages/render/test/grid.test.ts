@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { GRID_MIN_PX, gridLines } from '../src/grid';
 import { Canvas2DRenderer } from '../src/index';
+import { mixColors } from '../src/style/mix';
 import { drawing, entity, line, MODEL, surface } from './fixtures';
 
 const box = { minX: 0, minY: 0, maxX: 100, maxY: 50 };
@@ -73,5 +74,11 @@ describe('Canvas2DRenderer grid', () => {
     expect(strokes()).toBe(plain + 2);
     r.setStyle(style);
     expect(strokes()).toBe(plain);
+    // A grid colour from Settings (M2-20): the major lines in it, the minor ones half way.
+    r.setStyle({ ...style, grid: { spacing: { x: 10, y: 10 }, major: 5, color: '#00ff00' } });
+    layers[0]!.ctx.clear();
+    r.frame();
+    const colours = layers[0]!.ctx.calls.filter((c) => c[0] === 'strokeStyle').map((c) => c[1]);
+    expect(colours.slice(0, 2)).toEqual([mixColors(style.background, '#00ff00', 0.5), '#00ff00']);
   });
 });

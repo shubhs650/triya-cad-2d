@@ -15,6 +15,7 @@
     "typecheck": "tsc -p tsconfig.json && tsc -p tsconfig.node.json"
   },
   "dependencies": {
+    "@triya/dims": "workspace:*",
     "@triya/engine": "workspace:*",
     "@triya/hatch": "workspace:*",
     "@triya/io": "workspace:*",

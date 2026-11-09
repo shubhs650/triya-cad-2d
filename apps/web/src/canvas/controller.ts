@@ -88,9 +88,11 @@ import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
 import { INITIAL_DRAFTING, type DraftingState } from '../drafting';
+import { DEFAULT_CANVAS, type CanvasColours } from '../preferences';
+import { foregroundOn, isDarkColor } from './colours';
 import {
   ACQUIRE_MS,
-  APERTURE_PX,
+  MARKER_PX,
   TRACK_PX,
   acquiredPrimitives,
   markerPrimitives,
@@ -116,11 +118,6 @@ import {
   scaleView,
   windowView,
 } from './views';
-
-/** The dark model canvas, and the paper and its surround in a layout (UI_SPEC.md §6). */
-export const MODEL_CANVAS = '#212830';
-export const PAPER = '#ffffff';
-export const PAPER_SURROUND = '#8a8f98';
 
 /** Two middle-button presses this close in time and place are a double click. */
 const DOUBLE_CLICK_MS = 500;
@@ -284,6 +281,8 @@ export class CanvasController {
   #firstMeasure: Promise<void> = Promise.resolve();
   /** OSNAP, ORTHO, POLAR and SNAP as the status bar has them (M2-04). */
   #drafting: DraftingState = INITIAL_DRAFTING;
+  /** The canvas colours from Settings (M2-20). */
+  #colours: CanvasColours = DEFAULT_CANVAS;
   /** The object snap at the cursor as the renderer last answered, if any (M2-04). */
   #hit: OsnapHit | undefined;
   /** Every snap point under the aperture, best first, and which one Tab stepped to. */
@@ -485,6 +484,15 @@ export class CanvasController {
       this.#requestSnap();
       this.#track();
     }
+  }
+
+  /** The canvas colours changed in Settings (M2-20). */
+  setColours(colours: CanvasColours): void {
+    if (colours === this.#colours) return;
+    this.#colours = colours;
+    this.#host.setStyle(this.#style());
+    this.#requestFrame();
+    if (this.#prompt && this.#mode === 'none') this.#track();
   }
 
   /** The objects to show grips on, and the hot grip (M2-06 part 2). */
@@ -725,20 +733,29 @@ export class CanvasController {
     return { minX: min.x, minY: min.y, maxX: max.x, maxY: max.y };
   }
 
-  /** Model space on the dark canvas; a layout's white paper on a grey surround. */
+  /**
+   * Model space on its canvas colour (dark by default); a layout's paper on its surround. ACI 7
+   * draws white on a dark background and black on a light one (UI_SPEC.md §6).
+   */
   #style(): RenderStyle {
     const lw = this.#header.get('$LWDISPLAY');
     // LWT and TPY from the status bar (M2-04 part 2): LWT is the drawing's until turned.
     const d = this.#drafting;
     const showLineweights = d.lwt ?? (lw === true || lw === 1);
+    const c = this.#colours;
     const shared = {
       showLineweights,
+      selection: c.selection,
       ...(!d.tpy && { showTransparency: false }),
-      ...(d.grid && { grid: this.#grid() }),
+      ...(d.grid && { grid: { ...this.#grid(), ...(c.grid && { color: c.grid }) } }),
     };
-    return this.#layout
-      ? { background: PAPER, foreground: '#000000', layoutBackground: PAPER_SURROUND, ...shared }
-      : { background: MODEL_CANVAS, foreground: '#ffffff', ...shared };
+    const background = this.#layout ? c.paper : c.model;
+    return {
+      background,
+      foreground: foregroundOn(background),
+      ...(this.#layout && { layoutBackground: c.surround }),
+      ...shared,
+    };
   }
 
   /** GRIDUNIT and GRIDMAJOR of the viewport shown (10 × 10 and 5 when it has none). */
@@ -1213,7 +1230,7 @@ export class CanvasController {
     return this.#host
       .snap({
         point: world,
-        aperture: APERTURE_PX * this.#px(),
+        aperture: this.#drafting.aperture * this.#px(),
         modes,
         ...(base && { from: base }),
       })
@@ -1336,8 +1353,10 @@ export class CanvasController {
       if (world) this.#hooks.onCursor(world);
       return;
     }
-    const dark = !this.#layout;
+    const dark = isDarkColor(this.#layout ? this.#colours.paper : this.#colours.model);
     const px = this.#px();
+    // AUTOSNAPSIZE scales the marker from AutoCAD's default 5 px (M2-20).
+    const marker = (px * this.#drafting.markerSize) / MARKER_PX;
     const c = this.#constrain(world);
     const hit = this.#hit;
     let point: Vec2 = c.point;
@@ -1350,7 +1369,7 @@ export class CanvasController {
     );
     if (hit) {
       point = hit.point;
-      this.#overlay = [...acquired, ...markerPrimitives(hit.mode, hit.point, px, dark)];
+      this.#overlay = [...acquired, ...markerPrimitives(hit.mode, hit.point, marker, dark)];
       tip = snapLabel(hit.mode);
     } else if (c.polar) {
       const base = this.#base()!;
@@ -1367,7 +1386,7 @@ export class CanvasController {
           const to = Math.hypot(c.point.x - t.from.x, c.point.y - t.from.y);
           return trackingPrimitives(t.from, t.angle, to + reach, px, dark);
         }),
-        ...markerPrimitives('INT', c.point, px * 0.6, dark),
+        ...markerPrimitives('INT', c.point, marker * 0.6, dark),
       ];
       tip = trackLabel(c.track, this.#precision());
     } else this.#overlay = acquired;

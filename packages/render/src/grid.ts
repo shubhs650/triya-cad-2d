@@ -13,6 +13,11 @@ export interface GridSpec {
   readonly base?: { readonly x: number; readonly y: number };
   /** GRIDMAJOR: every this-many lines one is a major line (AutoCAD's default 5). */
   readonly major: number;
+  /**
+   * The major lines' colour (M2-20, the Settings grid colour), the minor ones half way to the
+   * background; absent mixes both from the background and the foreground.
+   */
+  readonly color?: string;
 }
 
 /** The grid's lines in the box, drawing coordinates. */

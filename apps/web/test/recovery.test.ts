@@ -199,6 +199,19 @@ describe('Autosaver', () => {
     expect(mem.log).toEqual([`put S1-${id} 1 +bytes`]);
   });
 
+  it('writes nothing more once stopped, for "Clear all local data" (M2-20)', async () => {
+    const { mem, c, saver, open, edit } = setup();
+    const id = open('plan.dxf');
+    edit(id);
+    saver.stop();
+    expect(c.pending()).toBe(0);
+    edit(id);
+    saver.flush();
+    c.advance(AUTOSAVE_DELAY_MS);
+    await saver.idle();
+    expect(mem.log).toEqual([]);
+  });
+
   it('writes a recovered drawing at once and then removes the snapshot it came from', async () => {
     const { mem, c, saver, store, open } = setup();
     await mem.p.put(

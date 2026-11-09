@@ -97,7 +97,13 @@ export function CommandLine({
       { id: 'history', kind: 'action', label: 'Command history', aliases: [], keys: 'F2' },
       { id: 'dyn', kind: 'action', label: 'Dynamic Input on/off', aliases: [], keys: 'F12' },
       ...DRAFTING_ITEMS,
-      { id: 'settings', kind: 'action', label: 'Settings', aliases: [] },
+      {
+        id: 'settings',
+        kind: 'action',
+        label: 'Settings',
+        // AutoCAD's OPTIONS, and what Settings holds (M2-20).
+        aliases: ['Options', 'Theme', 'Canvas colors', 'Clear all local data'],
+      },
       ...recent.map((r): PaletteItem => ({
         id: `recent:${r.key}`,
         kind: 'action',
