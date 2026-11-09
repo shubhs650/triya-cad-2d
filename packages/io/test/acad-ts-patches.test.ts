@@ -2646,4 +2646,35 @@ describe('acad-ts local patches', () => {
     expect(same.contextData.blockContentRotation).toBeCloseTo(Math.PI / 6, 9);
     expect(same.contextData.textRotation).toBeCloseTo(Math.PI / 4, 9);
   });
+
+  it('0175 a DXF multiline attribute keeps its embedded MTEXT turned', () => {
+    // An ATTDEF's or ATTRIB's embedded MTEXT (101) takes the MTEXT's groups (DXF reference,
+    // ATTRIB: "embedded object" codes follow MTEXT), its X-axis direction (11) among them.
+    // Unpatched, the writer left 11 out, so a multiline attribute turned with its block (ROTATE,
+    // M2-06) came back reading along +X.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const block = new BlockRecord('TAG');
+    doc.blockRecords!.add(block);
+    const attdef = new AttributeDefinition();
+    attdef.tag = 'NOTE';
+    attdef.prompt = 'Note';
+    attdef.attributeType = AttributeType.MultiLine;
+    attdef.mText = new MText('one\\Ptwo');
+    attdef.mText.height = 1;
+    attdef.mText.rotation = Math.PI / 6;
+    block.entities.add(attdef);
+
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+      const read = back.getCadObject(attdef.handle) as AttributeDefinition;
+      expect(read.mText?.rotation, `binary ${binary}`).toBeCloseTo(Math.PI / 6, 12);
+      expect(read.mText?.value, `binary ${binary}`).toBe('one\\Ptwo');
+    }
+    // One along +X writes no 11, as before (AutoCAD's own files leave it out).
+    attdef.mText.rotation = 0;
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const text = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+    const embedded = text.slice(text.indexOf('Embedded Object'));
+    expect(embedded.slice(0, embedded.indexOf('\n  0')).match(/\n 11\r?\n/)).toBeNull();
+  });
 });

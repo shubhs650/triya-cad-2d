@@ -1,0 +1,14 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+index d8de958..9d755ec 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts
+@@ -1839,6 +1839,9 @@ export abstract class DxfSectionWriterBase {
+       this._writer.write(71, mtext.attachmentPoint);
+       this._writer.write(72, mtext.drawingDirection);
+       this.writeLongTextValue(1, 3, mtext.value ?? '');
++      // The MTEXT's X-axis direction, as an MTEXT states it; one along +X is left out.
++      const dir = mtext.alignmentPoint;
++      if (dir.y !== 0 || dir.x < 0 || dir.z !== 0) this._writer.writeVector(11, dir);
+       this._writer.write(73, mtext.lineSpacingStyle);
+       this._writer.write(44, mtext.lineSpacing);
+     }

@@ -14,14 +14,22 @@ describe('palette search', () => {
     const zoom = commandItems(builtinCommands()).find((i) => i.id === 'ZOOM');
     expect(zoom).toEqual({ id: 'ZOOM', kind: 'command', label: 'ZOOM', aliases: ['Z'] });
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
+      'COPY',
+      'ERASE',
       'LINE',
+      'MIRROR',
+      'MOVE',
       'PAN',
       'REGEN',
       'REGENALL',
+      'ROTATE',
+      'SCALE',
       'SELECT',
       'VIEW',
       'ZOOM',
     ]);
+    const erase = commandItems(builtinCommands()).find((i) => i.id === 'ERASE');
+    expect(erase?.aliases).toEqual(expect.arrayContaining(['E', 'DEL']));
   });
 
   it('scores whole, prefix, word-start and scattered matches in that order', () => {

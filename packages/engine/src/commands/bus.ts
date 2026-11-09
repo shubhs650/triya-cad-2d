@@ -214,7 +214,9 @@ export class PromptBus {
     const c = this.#collectors.at(-1);
     if (c) return this.#nested(c.text);
     const prompt = this.prompt;
-    return prompt ? this.#nested(formatPrompt(prompt, this.#precision())) : 'Command:';
+    return prompt
+      ? this.#nested(formatPrompt(prompt, this.#precision(), this.#anglePrecision()))
+      : 'Command:';
   }
 
   /** The objects shown selected: the set being built at "Select objects", or the pre-selection. */
@@ -360,6 +362,12 @@ export class PromptBus {
     return typeof v === 'number' && v >= 0 && v <= 8 ? v : 4;
   }
 
+  /** AUPREC: decimal places of angles shown in degrees (AutoCAD's default 0). */
+  #anglePrecision(): number {
+    const v = this.#model.header.get('$AUPREC');
+    return typeof v === 'number' && v >= 0 && v <= 8 ? v : 0;
+  }
+
   /** ANGBASE (radians, as acad-ts carries the header) and ANGDIR, for typed angles. */
   #angles(): AngleConvention {
     const base = this.#model.header.get('$ANGBASE');
@@ -418,7 +426,7 @@ export class PromptBus {
       if (answer.kind === 'enter') await this.#commandLine('');
       return;
     }
-    const echo = formatAnswer(answer, this.#precision());
+    const echo = formatAnswer(answer, this.#precision(), this.#anglePrecision());
     const loop = frame.select;
     if (loop && this.#collectors.length === 0 && answer.kind !== 'selection') {
       if (answer.kind === 'point') {

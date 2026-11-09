@@ -6,5 +6,6 @@ export * from './spatial/index';
 export * from './annotation/index';
 export * from './layout/index';
 export * from './session/index';
+export * from './edit/index';
 export * from './commands/index';
 export * from './input/index';

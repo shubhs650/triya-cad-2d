@@ -37,14 +37,14 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Options / notes | Status |
 |---|---|---|---|---|
-| ERASE | E, DEL | 1 | | |
+| ERASE | E, DEL | 1 | | x (#227: unhooks hatches, DIMASSOCs, groups, XCLIPs, leaders and viewport clips; a viewport named by layer overrides is refused) |
 | OOPS | — | 1 | | x (#223) |
-| MOVE | M | 1 | Displacement, Base | |
-| COPY | CO, CP | 1 | Displacement, mOde (Single/Multiple), Array | |
-| ROTATE | RO | 1 | Copy, Reference | |
-| SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | |
+| MOVE | M | 1 | Displacement, Base | ~ (#227: base/second point, Displacement, ↵ as displacement; drag preview with the grips, M2-06 part 2) |
+| COPY | CO, CP | 1 | Displacement, mOde (Single/Multiple), Array | ~ (#227: all options incl. Array Fit and Undo; drag preview M2-06 part 2) |
+| ROTATE | RO | 1 | Copy, Reference | ~ (#227: Copy, Reference with Points, ANGDIR/ANGBASE line; drag preview M2-06 part 2) |
+| SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | ~ (#227: Copy, Reference with Points; a table's cell text heights do not rescale yet; drag preview M2-06 part 2) |
 | STRETCH | S | 1 | crossing/polygon; dims/defpoints follow | |
-| MIRROR | MI | 1 | MIRRTEXT | |
+| MIRROR | MI | 1 | MIRRTEXT | ~ (#227: MIRRTEXT and MIRRHATCH, Erase source; MTEXT always stays readable; drag preview M2-06 part 2) |
 | OFFSET | O | 2 | Through, Erase, Layer, Multiple, Undo; gap types | |
 | TRIM | TR | 2 | Fence, Crossing, Project(2D), Edge, eRase, Undo; Shift→Extend; ↵↵ all | |
 | EXTEND | EX | 2 | same as TRIM; Shift→Trim | |

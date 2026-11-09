@@ -179,8 +179,15 @@ export function formatNumber(value: number, precision = 4): string {
   return s === `-${(0).toFixed(precision)}` ? s.slice(1) : s;
 }
 
-/** An answer as the command line echoes it, and as a prompt shows it as its default. */
-export function formatAnswer(answer: PromptAnswer, precision = 4): string {
+/**
+ * An answer as the command line echoes it, and as a prompt shows it as its default. Angles show
+ * in degrees to `anglePrecision` places (AUPREC in the bus; AutoCAD's ROTATE shows `<0>`).
+ */
+export function formatAnswer(
+  answer: PromptAnswer,
+  precision = 4,
+  anglePrecision = Math.min(precision, 4),
+): string {
   switch (answer.kind) {
     case 'point':
       return `${formatNumber(answer.point.x, precision)},${formatNumber(answer.point.y, precision)}`;
@@ -188,7 +195,7 @@ export function formatAnswer(answer: PromptAnswer, precision = 4): string {
     case 'number':
       return formatNumber(answer.value, Number.isInteger(answer.value) ? 0 : precision);
     case 'angle':
-      return formatNumber((answer.value * 180) / Math.PI, Math.min(precision, 4));
+      return formatNumber((answer.value * 180) / Math.PI, anglePrecision);
     case 'keyword':
       return answer.keyword;
     case 'string':
@@ -201,14 +208,18 @@ export function formatAnswer(answer: PromptAnswer, precision = 4): string {
 }
 
 /** The prompt line: `Specify next point or [Undo/Close] <10.0000>:` (AutoCAD's layout). */
-export function formatPrompt(prompt: Prompt, precision = 4): string {
+export function formatPrompt(
+  prompt: Prompt,
+  precision = 4,
+  anglePrecision = Math.min(precision, 4),
+): string {
   let text = prompt.message;
   if (prompt.options && prompt.options.length > 0) text += ` [${prompt.options.join('/')}]`;
   if (prompt.default) {
     const value =
       prompt.default.kind === 'distance' || prompt.default.kind === 'number'
         ? formatNumber(prompt.default.value, prompt.kind === 'integer' ? 0 : precision)
-        : formatAnswer(prompt.default, precision);
+        : formatAnswer(prompt.default, precision, anglePrecision);
     text += ` <${value}>`;
   } else if (prompt.defaultLabel) text += ` <${prompt.defaultLabel}>`;
   return `${text}:`;
