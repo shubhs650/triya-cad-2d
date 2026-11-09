@@ -121,7 +121,11 @@ importers:
 
   packages/library: {}
 
-  packages/pdf: {}
+  packages/pdf:
+    dependencies:
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
 
   packages/render:
     dependencies:
