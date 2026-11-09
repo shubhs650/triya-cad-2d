@@ -12,8 +12,20 @@ export const DWG = path.join(CORPUS, 'acadsharp/sample_AC1018.dwg');
 /** The canvas of the document tab that is showing. */
 export const activeCanvas = (page: Page): Locator => page.locator('canvas[data-active="true"]');
 
+/**
+ * Makes the Open button use its file input, which Playwright's `filechooser` answers: Chromium's
+ * open picker (`showOpenFilePicker`, which the app prefers since M2-13 for its file handles) is
+ * not one Playwright can fill. save.spec.ts stands in for it instead.
+ */
+export async function withFileInput(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    delete (window as { showOpenFilePicker?: unknown }).showOpenFilePicker;
+  });
+}
+
 /** Opens a file through the Open button's file picker. */
 export async function openWithPicker(page: Page, file: string): Promise<void> {
+  await withFileInput(page);
   const chooser = page.waitForEvent('filechooser');
   await page.getByRole('button', { name: 'Open', exact: true }).click();
   await (await chooser).setFiles(file);

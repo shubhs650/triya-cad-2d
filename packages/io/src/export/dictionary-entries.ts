@@ -33,6 +33,26 @@ export function entryRenameProblems(
 }
 
 /**
+ * Why a new object cannot be added to `dict` as `name` (M2-13): an entry Triya does not map holds
+ * the name already (keys are compared without regard to case, as AutoCAD's), and adding it would
+ * replace that entry, losing the object kept as read. An R13 drawing can list an R2007 style as a
+ * proxy object, which the engine does not see.
+ */
+export function entryTakenProblems(
+  dict: CadObject | undefined,
+  name: string,
+  mapped: (o: CadObject) => boolean,
+): string[] {
+  if (!(dict instanceof CadDictionary)) return [];
+  const key = name.toUpperCase();
+  const i = dict.entryNames.findIndex((n) => n.toUpperCase() === key);
+  const other = i < 0 ? undefined : [...dict][i];
+  if (other && !mapped(other))
+    return [`the dictionary has an entry named ${dict.entryNames[i]} that Triya keeps as read`];
+  return [];
+}
+
+/**
  * Renames each object's dictionary entry in place. Every entry first takes a name no drawing can
  * hold (`*` is not allowed in one), so that two objects may trade names; then each its new one.
  * Call it before adding new entries, which may take a name a rename frees.

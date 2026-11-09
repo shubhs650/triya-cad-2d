@@ -8,6 +8,7 @@ import {
   CadDocument,
   DictionaryVariable,
   MultiLeaderStyle,
+  XRecord,
 } from '@node-projects/acad-ts';
 import {
   ChangeSetBuilder,
@@ -482,5 +483,24 @@ describe('MLEADERSTYLE objects', () => {
     expect(comparable(back.tables!.mleaderStyles!.find((s) => s.handle === h))).toEqual(
       comparable(model.tables.mleaderStyles.get(h)),
     );
+  });
+
+  it('refuses a new style named as an entry it keeps as read, which the save would replace (M2-13)', () => {
+    // An R13 drawing can list an R2007 style as a proxy object; here an XRECORD stands in.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const dict = doc.rootDictionary!.get(CadDictionary.acadMLeaderStyle) as CadDictionary;
+    const standard0 = new MultiLeaderStyle(MultiLeaderStyle.defaultName);
+    dict.add(standard0);
+    standard0.textStyle = doc.textStyles!.get('Standard')!;
+    standard0.leaderLineType = doc.lineTypes!.get('ByBlock')!;
+    dict.add(new XRecord('NOTES'));
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const model = open(bytes);
+    const { handle: _h, raw: _raw, ...standard } = style(model, 'Standard');
+    edit(model, (b) => void b.addTableRecord('mleaderStyles', { ...standard, name: 'Notes' }));
+    const problems = refusal(() => triyaToAcad(readCadDocument(bytes), model, 'dxf'));
+    expect(problems).toEqual([
+      expect.stringMatching(/the dictionary has an entry named NOTES that Triya keeps as read/),
+    ]);
   });
 });

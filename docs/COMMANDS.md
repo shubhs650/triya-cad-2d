@@ -196,9 +196,9 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
 | NEW / QNEW | Ctrl+N | 1 | template dialog / default template | |
-| OPEN / CLOSE / CLOSEALL | Ctrl+O | 1 | | |
-| SAVE / QSAVE / SAVEAS | Ctrl+S / Ctrl+Shift+S | 1 | version picker | |
-| DXFOUT / DXFIN (via SAVEAS/OPEN) | — | 1 | | |
+| OPEN / CLOSE / CLOSEALL | Ctrl+O | 1 | | ~ (#83: OPEN from the Open button, Ctrl+O, a drop or the file handler; #238: CLOSE asks to save unsaved changes, Yes / No / Cancel; CLOSEALL is M2-29) |
+| SAVE / QSAVE / SAVEAS | Ctrl+S / Ctrl+Shift+S | 1 | AC1032 DXF only (DEC-047); a version picker is post-launch | ✓ (#238): QSAVE writes in place over an AC1032 `.dxf` opened through File System Access, else goes to Save As; SAVE and SAVEAS always ask, offering "AutoCAD 2018 DXF (*.dxf)"; without File System Access the `.dxf` downloads |
+| DXFOUT / DXFIN (via SAVEAS/OPEN) | — | 1 | | ~ (#238): through SAVEAS / OPEN; not typed as commands |
 | PLOT / PRINT | Ctrl+P | 1 | dialog; -PLOT dash (scriptable) | |
 | PREVIEW | PRE | 1 | | |
 | PUBLISH | — | 2 | | |
