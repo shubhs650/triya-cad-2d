@@ -94,8 +94,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| TEXT / DTEXT | DT | 1 | Justify (all), Style | |
-| MTEXT | T, MT | 1 | in-place editor; -MTEXT dash | |
+| TEXT / DTEXT | DT | 1 | Justify (all), Style | ~ (#230: every justification incl. Align/Fit, Style with `?`, ↵ continues below the last text, typed in place one line at a time; TEXTSIZE follows the height; in-place click to start a new line elsewhere is M2-07 part 2) |
+| MTEXT | T, MT | 1 | in-place editor; -MTEXT dash | ~ (#230: two corners or Width, Height/Justify/Line spacing/Rotation/Style; in-place editor with Bold, Italic, Underline, Overline, Strikethrough, Height, Color and Stack, Ctrl+Enter or a click outside to close, Esc to drop; -MTEXT and the command line take lines until an empty one. Columns, fonts list, fields, AutoStack: M2-07 part 2) |
 | TEXTEDIT / DDEDIT | ED | 1 | | |
 | STYLE | ST | 2 | dialog; -STYLE dash | |
 | FIND | — | 2 | | |

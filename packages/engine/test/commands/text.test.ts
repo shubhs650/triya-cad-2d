@@ -103,6 +103,12 @@ describe('TEXT', () => {
     expect(model.header.get('$TEXTSIZE')).toBe(3);
   });
 
+  it('runs as DTEXT too', async () => {
+    const { bus } = setup();
+    await bus.submit('DTEXT');
+    expect(bus.command).toBe('TEXT');
+  });
+
   it('takes the height and rotation it was last given as defaults', async () => {
     const { bus } = setup([['$TEXTSIZE', 4]]);
     await bus.script(['TEXT', '0,0']);
@@ -190,6 +196,13 @@ describe('TEXT', () => {
     expect(bus.prompt?.kind).toBe('string');
     await bus.script(['two', '']);
     expect(texts()[1]!.position.y).toBeCloseTo(-2.5 * (5 / 3), 9);
+  });
+
+  it('says there is nothing to continue before any text was placed', async () => {
+    const { bus } = setup();
+    await bus.script(['TEXT', '']);
+    expect(bus.history.at(-1)).toBe('No text to continue.');
+    expect(bus.promptText).toBe('Specify start point of text or [Justify/Style]:');
   });
 
   it('keeps the lines already placed when cancelled', async () => {
@@ -295,6 +308,31 @@ describe('MTEXT', () => {
     const { bus, added } = setup();
     await bus.script(['MTEXT', '0,10', '30,0', 'first', 'second {x}', '']);
     expect((added()[0]!.geom as MTextGeometry).contents).toBe('first\\Psecond {x}');
+  });
+
+  it('takes a line spacing distance as a factor of single spacing, and refuses nonsense', async () => {
+    const { bus, added } = setup();
+    await bus.script(['MTEXT', '0,0', 'L', '', 'abc']);
+    expect(bus.history.at(-1)).toBe('Requires a positive number or a factor such as 1.5x.');
+    await bus.script(['8.3333333333', '10,-10', 'x', '']);
+    expect((added()[0]!.geom as MTextGeometry).lineSpacing).toBeCloseTo(2, 6);
+    expect((added()[0]!.geom as MTextGeometry).lineSpacingStyle).toBe(1);
+  });
+
+  it('opens no editor as -MTEXT', async () => {
+    const { bus } = setup();
+    await bus.script(['-MTEXT', '0,10', '30,0']);
+    expect(contentsPrompt(bus).editor).toBeUndefined();
+  });
+
+  it('says so in a drawing without text styles', async () => {
+    const model = DocumentModel.create(sampleInit());
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    await bus.submit('MTEXT');
+    expect(bus.history.at(-1)).toBe('The drawing has no text style.');
+    await bus.submit('TEXT');
+    expect(bus.history.at(-1)).toBe('The drawing has no text style.');
+    expect(bus.command).toBeUndefined();
   });
 
   it('makes nothing from empty contents', async () => {
