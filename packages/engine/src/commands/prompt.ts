@@ -56,6 +56,12 @@ export interface PointPrompt extends PromptBase {
    * with `missed`).
    */
   readonly osnap?: number;
+  /**
+   * Freehand (REVCLOUD Freehand, M2-08): the front-end answers with the cursor's point, without
+   * a click, each time the cursor has moved `spacing` world units from `from`, as AutoCAD draws
+   * a freehand cloud while the crosshairs are guided along its path. A click answers too.
+   */
+  readonly trace?: { readonly from: Vec2; readonly spacing: number };
 }
 
 /** A distance: a number, or two points (one when `base` is given). */
@@ -122,6 +128,11 @@ export interface SelectionPrompt extends PromptBase {
   readonly kind: 'selection';
   /** The command edits what it selects: objects on locked layers are refused, as AutoCAD does. */
   readonly editable?: boolean;
+  /**
+   * "Select object": the first pick or window that takes objects ends it (AutoCAD's SIngle
+   * mode), and a pre-selection is not taken (M2-08: REVCLOUD Object, WIPEOUT Polyline).
+   */
+  readonly single?: boolean;
 }
 
 export type Prompt =

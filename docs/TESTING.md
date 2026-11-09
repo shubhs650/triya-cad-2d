@@ -15,7 +15,7 @@ Fidelity is the product. This document defines the corpus, the harnesses, the to
 | UI | Playwright | dialogs, ribbon breakpoints (T9), grips, keyboard | every PR |
 | Cross-browser | Playwright WebKit + Firefox | degraded-mode paths | nightly |
 | Private corpus | same harnesses | owner's real drawings | owner, locally |
-| DXF audit | ezdxf (CI only, MIT) | `ezdxf.recover` + `audit` on every Triya-saved corpus DXF, 0 errors (M1-105, replaces AutoCAD AUDIT, DEC-047): `TRIYA_DXF_AUDIT_DIR=test-reports/dxf-audit pnpm test` writes the AC1032 save of each readable corpus file unedited (`testkit/src/dxf-audit`) and edited (`export.corpus.test.ts`), then `python scripts/dxf-audit/audit.py test-reports/dxf-audit` (after `pip install -r scripts/dxf-audit/requirements.txt`) audits them, allowing only what ezdxf reports on the source too (`exceptions.json`), and first checks that a save with a dangling owner handle fails | every PR |
+| DXF audit | ezdxf (CI only, MIT) | `ezdxf.recover` + `audit` on every Triya-saved corpus DXF, 0 errors (M1-105, replaces AutoCAD AUDIT, DEC-047): `TRIYA_DXF_AUDIT_DIR=test-reports/dxf-audit pnpm test` writes the AC1032 save of each readable corpus file unedited (`testkit/src/dxf-audit`), edited (`export.corpus.test.ts`) and after a markup session (`export-markup-commands.corpus.test.ts`, M2-08: clouds, a wipeout, WIPEOUTFRAME and draw order), then `python scripts/dxf-audit/audit.py test-reports/dxf-audit` (after `pip install -r scripts/dxf-audit/requirements.txt`) audits them, allowing only what ezdxf reports on the source too (`exceptions.json`), and first checks that a save with a dangling owner handle fails | every PR |
 
 ### 1.1 CI wiring (`.github/workflows/ci.yml`)
 
