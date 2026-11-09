@@ -1114,3 +1114,137 @@ button {
   white-space: nowrap;
   pointer-events: none;
 }
+
+/* In-place text editors (M2-07): fixed at the text's insertion point on the canvas. */
+.text-editor {
+  position: fixed;
+  z-index: 20;
+  width: 0;
+  height: 0;
+}
+
+.text-line,
+.mtext-content {
+  transform-origin: 0 0;
+}
+
+.text-line {
+  position: fixed;
+  width: auto;
+  height: auto;
+}
+
+.text-line input,
+.mtext-content {
+  font-family: Arial, Helvetica, sans-serif;
+  color: #f0f0f0;
+  background: rgb(0 0 0 / 35%);
+  border: 1px dashed #9aa4b2;
+  outline: none;
+  white-space: pre-wrap;
+  line-height: 1.4;
+}
+
+.text-line input {
+  font-size: inherit;
+  padding: 0 2px;
+}
+
+.mtext-content {
+  position: absolute;
+  left: 0;
+  top: 0;
+  min-width: 2em;
+  min-height: 1.4em;
+  padding: 0 2px;
+  overflow-wrap: anywhere;
+}
+
+.mtext-stack {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  vertical-align: middle;
+  font-size: 0.7em;
+  line-height: 1;
+}
+
+.mtext-stack-fraction > :first-child {
+  border-bottom: 1px solid currentColor;
+}
+
+.mtext-field {
+  background: rgb(128 128 128 / 50%);
+}
+
+.mtext-toolbar {
+  position: absolute;
+  left: 0;
+  bottom: 4px;
+  display: flex;
+  gap: 2px;
+  align-items: center;
+  padding: 3px;
+  white-space: nowrap;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 2px 6px rgb(0 0 0 / 25%);
+  font-size: 12px;
+}
+
+.mtext-tool {
+  min-width: 24px;
+  height: 24px;
+  border: 1px solid transparent;
+  border-radius: 3px;
+  background: none;
+  color: var(--chrome-text);
+  font: inherit;
+  cursor: pointer;
+}
+
+.mtext-tool[aria-pressed='true'] {
+  background: #dbe6fd;
+  border-color: var(--accent);
+}
+
+.mtext-tool:disabled {
+  color: var(--chrome-text-muted);
+  opacity: 0.5;
+  cursor: default;
+}
+
+.mtext-tool-bold {
+  font-weight: 700;
+}
+
+.mtext-tool-italic {
+  font-style: italic;
+}
+
+.mtext-tool-underline {
+  text-decoration: underline;
+}
+
+.mtext-tool-overline {
+  text-decoration: overline;
+}
+
+.mtext-tool-strike {
+  text-decoration: line-through;
+}
+
+.mtext-height {
+  width: 64px;
+  height: 24px;
+}
+
+.mtext-toolbar select {
+  height: 24px;
+}
+
+.mtext-ok {
+  height: 24px;
+  padding: 0 10px;
+}

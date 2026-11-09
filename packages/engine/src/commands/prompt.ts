@@ -85,8 +85,10 @@ export interface TextEditorRequest {
   readonly width: number;
   /** MTEXT's attachment point 1–9 (top-left to bottom-right); TEXT's DXF 72/73 as 1–9 too. */
   readonly attachment: number;
-  /** The STYLE record. */
+  /** The STYLE record, its font file (DXF 3) and TrueType flags (1 italic, 2 bold). */
   readonly style: Handle;
+  readonly fontFile: string;
+  readonly trueTypeFlags: number;
 }
 
 /** Free text; without `spaces` a space ends the input (the front-end's job, as Space is Enter). */

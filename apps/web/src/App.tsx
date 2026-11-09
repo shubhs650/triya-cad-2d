@@ -28,6 +28,7 @@ import {
 import { answerView, type ViewContext } from './canvas/view-host';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
+import { TextEditor } from './TextEditor';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
@@ -706,6 +707,7 @@ export function App() {
       </div>
 
       <LayoutTabs doc={active} />
+      <TextEditor doc={active} />
       <CommandLine
         doc={active?.id}
         lines={commandLines}

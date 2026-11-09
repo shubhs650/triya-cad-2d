@@ -237,6 +237,8 @@ export function textCommand(): CommandDef {
             width: 0,
             attachment: attachmentOf(j.h, j.v),
             style: style.handle,
+            fontFile: style.font,
+            trueTypeFlags: style.trueTypeFlags,
           },
         });
         if (a.kind !== 'string' || a.value === '') return;
@@ -442,6 +444,8 @@ export function mtextCommand(): CommandDef {
                 width,
                 attachment,
                 style: style.handle,
+                fontFile: style.font,
+                trueTypeFlags: style.trueTypeFlags,
               },
             }),
         });
