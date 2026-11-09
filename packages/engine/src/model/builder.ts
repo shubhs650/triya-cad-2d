@@ -284,6 +284,23 @@ export class ChangeSetBuilder {
     this.#removed.set(id, this.#model.entity(id)!);
   }
 
+  /**
+   * Puts an erased entity back under its own handle and id, appended to its block (OOPS,
+   * M2-05). Handles only grow and ids are bound for the session, so both are still its own.
+   */
+  restoreEntity(entity: Entity): Entity {
+    this.#open();
+    if (this.entity(entity.id)) throw new Error(`entity ${entity.handle} is in the drawing`);
+    if (this.#model.ids.idOf(entity.handle) !== entity.id) {
+      throw new Error(`id ${entity.id} is not bound to handle ${entity.handle}`);
+    }
+    if (!this.#blocks.get(entity.owner)) {
+      throw new Error(`owner block ${entity.owner} does not exist`);
+    }
+    this.#added.set(entity.id, entity);
+    return entity;
+  }
+
   /** Moves an entity to another block (appended), keeping its handle and id. */
   moveEntity(id: EntityId, owner: Handle): Entity {
     this.#open();

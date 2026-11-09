@@ -45,6 +45,7 @@ import {
   type PromptAnswer,
 } from './prompt';
 import { NO_VIEW, type ViewHost } from './view/host';
+import { UndoStack, type UndoState } from './undo';
 
 /** One command's edits, in order: what the undo stack (M2-05) keeps as one step. */
 export interface CommandRecord {
@@ -68,7 +69,9 @@ export type BusEvent =
    */
   | { readonly type: 'selection'; readonly ids: readonly EntityId[] }
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
-  | { readonly type: 'commit'; readonly record: CommandRecord };
+  | { readonly type: 'commit'; readonly record: CommandRecord }
+  /** The undo history changed (a step added, undone or redone, a mark, a group, Control). */
+  | { readonly type: 'undo'; readonly state: UndoState };
 
 export interface PromptBusOptions {
   readonly model: DocumentModel;
@@ -84,6 +87,8 @@ export interface PromptBusOptions {
    * (noun-verb). AutoCAD's default, 1; false ignores picks at `Command:`.
    */
   readonly pickfirst?: boolean;
+  /** The undo history's memory bound (ARCHITECTURE.md §4.2; 256 MB by default). */
+  readonly undoLimitBytes?: number | undefined;
 }
 
 interface Frame {
@@ -151,6 +156,7 @@ export class PromptBus {
   #previous: readonly EntityId[] = [];
   /** The selection last shown (the `selection` event). */
   #shown: readonly EntityId[] = [];
+  readonly #undo: UndoStack;
 
   constructor(options: PromptBusOptions) {
     this.#model = options.model;
@@ -164,6 +170,17 @@ export class PromptBus {
     this.#view = options.view ?? NO_VIEW;
     this.#pickfirstOn = options.pickfirst ?? true;
     this.#idle = this.#selectionLoop({ message: 'Command', atCommand: true });
+    this.#undo = new UndoStack({
+      apply: (cs) => this.#apply(cs),
+      ...(options.undoLimitBytes !== undefined ? { maxBytes: options.undoLimitBytes } : {}),
+      onChange: (state) => this.#emit({ type: 'undo', state }),
+      onMessage: (line) => this.#log(line),
+    });
+  }
+
+  /** The drawing's undo history: each command that edited is one step (M2-05). */
+  get undo(): UndoStack {
+    return this.#undo;
   }
 
   /** Listens for bus events; returns the unsubscribe. */
@@ -474,6 +491,7 @@ export class PromptBus {
       dash,
       transparent,
       prompt: prompts,
+      undo: this.#undo,
       get lastPoint() {
         return bus.#lastPoint;
       },
@@ -648,8 +666,10 @@ export class PromptBus {
       this.#emit({ type: 'preview', geometry: [] });
     }
     if (this.#changes.length === 0) return;
-    const record: CommandRecord = { command: this.#last!.def.name, changes: this.#changes };
+    const def = this.#last!.def;
+    const record: CommandRecord = { command: def.name, changes: this.#changes };
     this.#changes = [];
+    this.#undo.push(record, { erases: def.erases === true });
     this.#emit({ type: 'commit', record });
   }
 

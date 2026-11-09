@@ -25,6 +25,8 @@ describe('EngineSession commands', () => {
       'prompt',
       'log',
       'end',
+      // The undo history's new state (M2-05), for the undo/redo buttons (M2-23).
+      'undo',
       'commit',
       'idle',
     ]);

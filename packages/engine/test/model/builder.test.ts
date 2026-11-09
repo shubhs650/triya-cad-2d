@@ -577,3 +577,51 @@ describe('ChangeSet properties', () => {
     );
   });
 });
+
+describe('ChangeSetBuilder.restoreEntity (OOPS, M2-05)', () => {
+  function erased(m: DocumentModel) {
+    const e = entityAt(m, MODEL_SPACE, 0);
+    const b = new ChangeSetBuilder(m);
+    b.removeEntity(e.id);
+    m.apply(b.build());
+    return e;
+  }
+
+  it('puts an erased entity back under its own handle and id, at the end of its block', () => {
+    const m = sampleModel();
+    const e = erased(m);
+    const b = new ChangeSetBuilder(m);
+    expect(b.restoreEntity(e)).toBe(e);
+    expect(b.entity(e.id)).toBe(e);
+    m.apply(b.build());
+    expect(m.blockEntities(MODEL_SPACE).at(-1)).toBe(e.id);
+    expect(m.entityByHandle(e.handle)).toBe(e);
+  });
+
+  it('refuses an entity that is in the drawing, or whose block is gone', () => {
+    const m = sampleModel();
+    const present = entityAt(m, MODEL_SPACE, 1);
+    expect(() => new ChangeSetBuilder(m).restoreEntity(present)).toThrow(/is in the drawing/);
+    const e = erased(m);
+    expect(() => new ChangeSetBuilder(m).restoreEntity({ ...e, owner: 'FFF' })).toThrow(
+      /owner block FFF does not exist/,
+    );
+    expect(() => new ChangeSetBuilder(m).restoreEntity({ ...e, id: 99 as typeof e.id })).toThrow(
+      /not bound/,
+    );
+  });
+
+  it('undoes a removal made in the same change set', () => {
+    const m = sampleModel();
+    const before = snapshot(m);
+    const e = entityAt(m, MODEL_SPACE, 0);
+    const b = new ChangeSetBuilder(m);
+    b.removeEntity(e.id);
+    b.restoreEntity(e);
+    const cs = b.build();
+    m.apply(cs);
+    expect(m.blockEntities(MODEL_SPACE).at(-1)).toBe(e.id);
+    m.apply(invertChangeSet(cs));
+    expect(snapshot(m)).toEqual(before);
+  });
+});
