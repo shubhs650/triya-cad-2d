@@ -14,7 +14,7 @@ export function OfflineStatus({ pwa }: { pwa: Pwa }) {
     <span
       className={ready ? 'badge offline-status ready' : 'badge offline-status'}
       data-testid="offline-status"
-      role="status"
+      aria-live="polite"
       title={
         ready
           ? 'Triya CAD 2D is saved on this device and works without a connection.'

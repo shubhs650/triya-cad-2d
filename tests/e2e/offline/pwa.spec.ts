@@ -1,11 +1,13 @@
 // T8 (PRD §12, FR-F10; ARCHITECTURE.md §14): the installed app works with no connection. On the
 // production build, the first visit installs the service worker, which caches the app and then
 // pdf.js until the title bar says "Ready offline"; with the server gone and the browser offline
-// a reload still starts the app, which opens a DWG and a DXF and draws a PDF underlay (pdf.js
-// from the cache) without a request leaving the page. A new version is offered, never loaded
-// behind the user's back, and the app passes Chromium's installability check.
+// a reload still starts the app, which opens a DWG and a DXF, draws a PDF underlay (pdf.js from
+// the cache) and keeps a dropped .pat, without a request leaving the page. A new version is
+// offered, never loaded behind the user's back, and the app passes Chromium's installability
+// check.
 import { expect, test, type BrowserContext, type Page } from '@playwright/test';
-import { readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { DWG, DXF, expectShown, ink, openWithDrop, openWithPicker } from '../app/page';
 import { DIST, serveBuild, type StaticApp } from '../app/static';
@@ -69,6 +71,13 @@ test('starts, opens drawings and draws a PDF underlay with no connection', async
   // The PDF the underlays name (M1-20's fixture): pdf.js, from the cache, draws its pages.
   await openWithDrop(page, path.join(UNDERLAYS, 'pdf-underlay.pdf'));
   await expect.poll(() => ink(page), { timeout: 30_000 }).toBeGreaterThan(before + 1000);
+  // A dropped hatch pattern file is kept on the device (M1-50).
+  const pat = test.info().outputPath('my-grid.pat');
+  writeFileSync(pat, '*MY_GRID, a test grid\n0, 0,0, 0,5\n90, 0,0, 0,5\n');
+  await openWithDrop(page, pat);
+  await expect(page.locator('.banner[role="status"]')).toHaveText(
+    /Added 1 hatch pattern from my-grid\.pat: MY_GRID\./,
+  );
 
   expect([...new Set(foreign)]).toEqual([]);
 });
@@ -109,21 +118,37 @@ test('offers a new version and reloads only when the user takes it', async ({ pa
 });
 
 test('is installable, and offers Install when the browser would install it', async ({
-  context,
-  page,
+  playwright,
+  launchOptions,
 }) => {
   test.setTimeout(60_000);
-  await page.goto(app.url);
-  await readyOffline(page);
-  // Chromium's own installability check (what Lighthouse's "installable" audit asked).
-  const cdp = await context.newCDPSession(page);
-  const { installabilityErrors } = (await cdp.send('Page.getInstallabilityErrors')) as {
-    installabilityErrors: { errorId: string }[];
-  };
-  expect(installabilityErrors.map((e) => e.errorId)).toEqual([]);
+  // A profile on disk: Chromium never installs from an incognito context, which a test's own
+  // context is.
+  const profile = mkdtempSync(path.join(tmpdir(), 'triya-pwa-'));
+  const context = await playwright.chromium.launchPersistentContext(profile, launchOptions);
+  try {
+    const page = context.pages()[0] ?? (await context.newPage());
+    await page.goto(app.url);
+    await readyOffline(page);
+    // Chromium's own installability check (the criteria Lighthouse's "installable" audit used).
+    const cdp = await context.newCDPSession(page);
+    const { installabilityErrors } = (await cdp.send('Page.getInstallabilityErrors')) as {
+      installabilityErrors: { errorId: string }[];
+    };
+    expect(installabilityErrors.map((e) => e.errorId)).toEqual([]);
+    await offersInstall(page);
+  } finally {
+    await context.close();
+    rmSync(profile, { recursive: true, force: true });
+  }
+});
 
-  await expect(page.getByRole('button', { name: 'Install' })).toHaveCount(0);
-  // The browser's beforeinstallprompt, as Chromium fires it for an installable site.
+/** The Install button follows the browser's beforeinstallprompt and shows its prompt once. */
+async function offersInstall(page: Page): Promise<void> {
+  // Chromium itself fired beforeinstallprompt for the installable app: the Install button shows.
+  await expect(page.getByRole('button', { name: 'Install' })).toBeVisible();
+  // A stand-in for the browser's next event, so pressing Install does not open the real
+  // installation dialog in the test browser.
   await page.evaluate(() => {
     const e = new Event('beforeinstallprompt', { cancelable: true }) as Event & {
       prompt(): Promise<void>;
@@ -139,4 +164,4 @@ test('is installable, and offers Install when the browser would install it', asy
   await page.getByRole('button', { name: 'Install' }).click();
   expect(await page.evaluate(() => (window as unknown as { prompted?: number }).prompted)).toBe(1);
   await expect(page.getByRole('button', { name: 'Install' })).toHaveCount(0);
-});
+}

@@ -26,6 +26,10 @@ export default defineConfig({
     ],
   },
   define: { __APP_VERSION__: JSON.stringify(version) },
+  // acad-ts finds its DXF property maps by class name (`DxfMap.create(type.name)`), so the
+  // production build keeps class and function names through minification; without them the
+  // minified I/O worker read no PDFDEFINITION file name, among others (found by M2-19).
+  esbuild: { keepNames: true },
   worker: { format: 'es' },
   build: { target: 'es2023', sourcemap: true },
 });
