@@ -23,6 +23,8 @@ import { AnonymousNames } from './edit';
 export interface RegeneratedParts {
   readonly parts: readonly (AnnotationPart & { readonly defpoint?: true })[];
   readonly geom: EntityGeometry;
+  /** What it measures, formatted ("Dimension text = 10.0000", M2-11). */
+  readonly measurement?: string;
 }
 
 /** The layer named `name` (any case), as the change being built sees the drawing. */

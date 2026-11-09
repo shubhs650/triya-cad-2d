@@ -10,13 +10,18 @@
 // - spline control (or fit) points, solid and face corners and leader vertices stretch;
 // - an object placed by one point (text, a block reference, a point, an ellipse's centre, a
 //   table, an image…) has that one grip, which moves it.
-// Dimensions, hatches, multileaders, multilines, regions and viewports have no grips yet: their
-// grips (dimension text, defpoints, hatch origin, viewport corners) need the regeneration of
-// M2-10/M2-11 and FR-D4's multi-functional grips.
+// - a dimension's definition points and its text stretch, and the dimension is regenerated
+//   (M2-11; AutoCAD 2024's grips on a non-associative dimension, DIMASSOC 1): a linear or
+//   aligned dimension shows its extension line origins, its dimension line's two ends (either
+//   moves the dimension line, as AutoCAD's dimension line grips do) and its text, which then
+//   stays where it is put (DXF 70 bit 128); the other kinds show each definition point.
+// Hatches, multileaders, multilines, regions and viewports have no grips yet: their grips
+// (hatch origin, viewport corners) need FR-D4's multi-functional grips.
 import { ccwSweep } from '../geom/angle';
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, fromAngle, midpoint, sub } from '../geom/vec';
-import type { EntityGeometry } from '../model/types';
+import type { DimensionGeometry, EntityGeometry } from '../model/types';
+import { dimensionLineEnds } from './dimension';
 import { stretchGeometry, type StretchResult } from './stretch';
 
 export type GripKind =
@@ -29,7 +34,9 @@ export type GripKind =
   /** An arc's midpoint: the arc through its ends and the new point. */
   | 'arc'
   /** A straight polyline segment's midpoint: both its ends move. */
-  | 'segment';
+  | 'segment'
+  /** A linear or aligned dimension's dimension line end: the dimension line moves. */
+  | 'dimline';
 
 export interface Grip {
   readonly point: Vec2;
@@ -39,8 +46,37 @@ export interface Grip {
 const g = (point: Vec2, kind: GripKind): Grip => ({ point, kind });
 const stretchAll = (points: readonly Vec2[]): Grip[] => points.map((p) => g(p, 'stretch'));
 
+const isDimension = (g: EntityGeometry): g is DimensionGeometry =>
+  g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'LARGE_RADIAL_DIMENSION';
+
+/** A dimension's grips: its definition points and its text. */
+function dimensionGrips(dim: DimensionGeometry): Grip[] {
+  if (dim.kind === 'DIMENSION' && (dim.dimType === 'linear' || dim.dimType === 'aligned')) {
+    const [a, b] = dimensionLineEnds(dim);
+    return [
+      g(dim.first, 'stretch'),
+      g(dim.second, 'stretch'),
+      g(a, 'dimline'),
+      g(b, 'dimline'),
+      g(dim.textPosition, 'stretch'),
+    ].filter((x, i, all) => all.findIndex((y) => sameGrip(x.point, y.point)) === i);
+  }
+  const out: Grip[] = [];
+  for (const [k, v] of Object.entries(dim)) {
+    if (!v || typeof v !== 'object' || !('x' in v) || !('y' in v) || 'z' in v) continue;
+    const p = v as Vec2;
+    if (k !== 'textPosition' && out.some((x) => sameGrip(x.point, p))) continue;
+    out.push(g(p, 'stretch'));
+  }
+  // The text last: where it sits on a definition point, the point's grip is found first.
+  const text = out.findIndex((x) => x.point === dim.textPosition);
+  if (text >= 0) out.push(...out.splice(text, 1));
+  return out;
+}
+
 /** The grips an object shows, none for kinds without standard grips yet. */
 export function gripsOf(geom: EntityGeometry): Grip[] {
+  if (isDimension(geom)) return dimensionGrips(geom);
   switch (geom.kind) {
     case 'LINE':
       return [
@@ -153,7 +189,14 @@ export function moveGrip(geom: EntityGeometry, grip: Vec2, to: Vec2): StretchRes
     case 'move':
       return { kind: 'move' };
     case 'stretch':
-      return stretchGeometry(geom, (p) => sameGrip(p, grip), d);
+      return stretchGeometry(geom, (p) => sameGrip(p, grip), d, {
+        dimensions: isDimension(geom),
+      });
+    case 'dimline': {
+      if (!isDimension(geom)) return { kind: 'none' };
+      const definitionPoint = add(geom.definitionPoint, d);
+      return { kind: 'shape', geom: { ...geom, definitionPoint } };
+    }
     case 'radius': {
       if (geom.kind !== 'CIRCLE') return { kind: 'none' };
       const radius = distance(geom.center, to);

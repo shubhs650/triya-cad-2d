@@ -174,6 +174,15 @@ export function arcLine(
   return out;
 }
 
+/** The angle an angular dimension measures, radians; undefined for a degenerate one. */
+export function angularSweep(g: Angular): number | undefined {
+  const f = frame(g);
+  if (!f) return undefined;
+  const startEnd = f.ends[0].first ? f.ends[0] : f.ends[1];
+  const endEnd = f.ends[0].first ? f.ends[1] : f.ends[0];
+  return normAngle(angleOf(endEnd.dir) - angleOf(startEnd.dir));
+}
+
 export function angularParts(
   g: Angular,
   s: DimStyle,

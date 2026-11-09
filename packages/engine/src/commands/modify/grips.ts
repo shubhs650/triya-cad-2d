@@ -15,6 +15,7 @@ import type { DocumentModel } from '../../model/document';
 import type { TransformOptions } from '../../edit/transform';
 import type { Prompt, PromptAnswer } from '../prompt';
 import type { CommandContext, CommandDef } from '../command';
+import { regenerateDimensions } from './dimensions';
 
 export const GRIP_MODES = ['STRETCH', 'MOVE', 'ROTATE', 'SCALE', 'MIRROR'] as const;
 export type GripMode = (typeof GRIP_MODES)[number];
@@ -47,7 +48,13 @@ function copyStretched(
       const t = r.kind === 'move' ? moveBy(sub(to, grip)) : moveBy({ x: 0, y: 0 });
       const [copy] = copyObjects(b, ctx.model, [id], t, mirrorOptions(ctx.model)).ids;
       if (copy === undefined) continue;
-      if (r.kind === 'shape') b.updateEntity(copy, { geom: r.geom });
+      if (r.kind === 'shape') {
+        // A dimension's copy keeps the block of its own that the copy gave it.
+        const own = b.entity(copy)!.geom;
+        const geom =
+          'dimType' in r.geom && 'dimType' in own ? { ...r.geom, block: own.block } : r.geom;
+        b.updateEntity(copy, { geom: geom as typeof r.geom });
+      }
       out.push(copy);
     }
   });
@@ -169,13 +176,22 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
         let ended = false;
         if (name === 'STRETCH' && a.kind === 'point') {
           const to = add(hot, sub(a.point, base));
-          if (copying) made.push(copyStretched(ctx, ids, hot, to));
+          if (copying) {
+            const copies = copyStretched(ctx, ids, hot, to);
+            made.push(copies);
+            await regenerateDimensions(
+              ctx,
+              copies.filter((id) => 'dimType' in ctx.model.entity(id)!.geom),
+            );
+          }
           else {
             let r: ReturnType<typeof gripObjects> | undefined;
             ctx.edit((b) => {
               r = gripObjects(b, ctx.model, ids, hot, to);
             });
             say(refusalMessages(r!.refused, 'stretched'));
+            // A dimension's grip reshapes it: the dimension engine draws it afresh (M2-11).
+            await regenerateDimensions(ctx, r!.regenerate ?? []);
             ended = true;
           }
         } else if (name === 'MOVE' && a.kind === 'point') {

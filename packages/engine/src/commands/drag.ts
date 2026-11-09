@@ -7,6 +7,9 @@ import { IDENTITY, mirror, rotation, scaling, translation, type Matrix2D } from 
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, sub } from '../geom/vec';
 import type { EntityId } from '../model/entity-ids';
+import type { Handle } from '../model/handle';
+import type { EntityGeometry } from '../model/types';
+import { placeDimension, type DimPlacement } from '../edit/dimension';
 
 export type DragPreview =
   /** MOVE, COPY: by the cursor less `from`. */
@@ -47,7 +50,12 @@ export type DragPreview =
       readonly ids: readonly EntityId[];
       readonly grip: Vec2;
       readonly from: Vec2;
-    };
+    }
+  /**
+   * A dimension being placed (DIMLINEAR and the others, M2-11): drawn, on `layer`, as
+   * `placeDimension` makes it with its dimension line at the cursor.
+   */
+  | { readonly kind: 'dimension'; readonly place: DimPlacement; readonly layer: Handle };
 
 /** What the renderer draws for a cursor position: `ids` through `m`, `shape` stretched by `d`. */
 export interface DragMotion {
@@ -64,6 +72,8 @@ export interface DragMotion {
     readonly from: Vec2;
     readonly to: Vec2;
   };
+  /** An object not in the drawing yet, drawn as it would be on `layer` (a dimension placed). */
+  readonly adding?: { readonly layer: Handle; readonly geom: EntityGeometry };
 }
 
 /** The motion a drag makes with the cursor at `cursor`; undefined where it makes none. */
@@ -97,6 +107,10 @@ export function dragMotion(drag: DragPreview, cursor: Vec2): DragMotion | undefi
     case 'grip': {
       const to = add(drag.grip, sub(cursor, drag.from));
       return { ids: [], m: IDENTITY, grip: { ids: drag.ids, from: drag.grip, to } };
+    }
+    case 'dimension': {
+      const geom = placeDimension(drag.place, cursor);
+      return geom && { ids: [], m: IDENTITY, adding: { layer: drag.layer, geom } };
     }
   }
 }

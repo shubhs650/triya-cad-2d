@@ -7,7 +7,7 @@ import type { CadDocument } from '@node-projects/acad-ts';
 import type { DocumentModel } from '@triya/engine';
 import { saveDxf } from '@triya/io';
 
-export type AuditSaveKind = 'unedited' | 'edited' | 'markup' | 'mleader' | 'session';
+export type AuditSaveKind = 'unedited' | 'edited' | 'markup' | 'mleader' | 'session' | 'dimension';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version
