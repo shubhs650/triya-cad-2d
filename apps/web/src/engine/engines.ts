@@ -19,7 +19,7 @@ export interface ChangeTarget {
 }
 
 export class Engines {
-  readonly #create: (init: DocumentInit) => EngineHost;
+  readonly #create: (init: DocumentInit, changes: readonly ChangeSet[]) => EngineHost;
   readonly #targets: (doc: number) => Iterable<ChangeTarget>;
   readonly #engines = new Map<number, EngineHost>();
   readonly #logs = new Map<number, ChangeSet[]>();
@@ -28,18 +28,23 @@ export class Engines {
   readonly #queued = new Map<number, Promise<void>>();
 
   constructor(
-    create: (init: DocumentInit) => EngineHost,
+    create: (init: DocumentInit, changes: readonly ChangeSet[]) => EngineHost,
     targets: (doc: number) => Iterable<ChangeTarget>,
   ) {
     this.#create = create;
     this.#targets = targets;
   }
 
-  start(doc: number, init: DocumentInit): void {
+  /**
+   * Starts a drawing's engine from `init`, the drawing as opened. A recovered drawing (M2-14)
+   * also passes the change log its last session applied: the engine replays it, and it starts
+   * this session's log, so the drawing's canvases replay it too.
+   */
+  start(doc: number, init: DocumentInit, changes: readonly ChangeSet[] = []): void {
     this.stop(doc);
-    const engine = this.#create(init);
+    const engine = this.#create(init, changes);
     this.#engines.set(doc, engine);
-    this.#logs.set(doc, []);
+    this.#logs.set(doc, [...changes]);
     engine.onCommand((o) => {
       if (this.#engines.get(doc) !== engine) return;
       if (o.type === 'change') this.#applied(doc, o.change);

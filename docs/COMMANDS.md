@@ -204,7 +204,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | PUBLISH | — | 2 | | |
 | EXPORTPDF / EXPORT (svg/png) | — | 1 | | |
 | PLOTSTYLE / STYLESMANAGER | — | 2 | CTB/STB store | |
-| RECOVERYDRAWING | — | 1 | recovery flow | |
+| RECOVERYDRAWING | — | 1 | recovery flow | ~ (#240): the launch's recovery banner offers each unsaved drawing a closed or crashed page left (Recover, Discard); the command to show it again is M2-14 part 2 |
 
 ## Parametric (M9)
 

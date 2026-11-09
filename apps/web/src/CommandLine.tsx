@@ -46,6 +46,8 @@ export function CommandLine({
   lines,
   cursor,
   onSettings,
+  recent = [],
+  onOpenRecent,
 }: {
   /** The drawing shown, or undefined with none open. */
   doc: number | undefined;
@@ -54,6 +56,10 @@ export function CommandLine({
   cursor: () => { readonly x: number; readonly y: number } | undefined;
   /** Opens the Settings dialog (from the palette). */
   onSettings: () => void;
+  /** The recent drawings the palette lists (M2-14, UI_SPEC §5), newest first. */
+  recent?: readonly { readonly key: string; readonly name: string }[];
+  /** Opens a recent drawing by its key. */
+  onOpenRecent?: (key: string) => void;
 }) {
   useSyncExternalStore(lines.subscribe, lines.version);
   const state = doc === undefined ? undefined : lines.get(doc);
@@ -92,14 +98,21 @@ export function CommandLine({
       { id: 'dyn', kind: 'action', label: 'Dynamic Input on/off', aliases: [], keys: 'F12' },
       ...DRAFTING_ITEMS,
       { id: 'settings', kind: 'action', label: 'Settings', aliases: [] },
+      ...recent.map((r): PaletteItem => ({
+        id: `recent:${r.key}`,
+        kind: 'action',
+        label: `Open recent: ${r.name}`,
+        aliases: [],
+      })),
     ],
-    [],
+    [recent],
   );
   const runItem = (item: PaletteItem) => {
     if (item.kind === 'command') {
       if (doc !== undefined) engines.command(doc, { kind: 'invoke', name: item.id });
     } else if (item.id === 'history') setHistoryOpen(true);
     else if (item.id === 'dyn') dynMode.toggle();
+    else if (item.id.startsWith('recent:')) onOpenRecent?.(item.id.slice('recent:'.length));
     else if (item.id.startsWith('drafting:'))
       drafting.toggle(item.id.slice('drafting:'.length) as DraftingToggle);
     else onSettings();
