@@ -121,8 +121,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | DIMINSPECT | — | 3 | | |
 | DIMSTYLE | D, DST, DIMSTY | 2 | manager; -DIMSTYLE dash (Restore/Save/STatus/Variables/Apply) | |
 | DIMREGEN | — | 2 | regenerate from engine | |
-| MLEADER | MLD | 1 | leader/content first, Options | |
-| MLEADEREDIT | MLE | 1 | Add/Remove | |
+| MLEADER | MLD | 1 | leader/content first, Options | ~ (#233: arrowhead/landing/content first, Options, text and block content; annotative and built-in content blocks are M2-25) |
+| MLEADEREDIT | MLE | 1 | Add/Remove | x (#233: also AIMLEADEREDITADD / AIMLEADEREDITREMOVE) |
 | MLEADERALIGN / MLEADERCOLLECT | MLA / MLC | 2 | | |
 | MLEADERSTYLE | MLS | 2 | | |
 | LEADER / QLEADER | LEAD / LE | 2 | legacy; read/edit; create Should | |

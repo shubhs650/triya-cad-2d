@@ -55,8 +55,9 @@ class JudgeTest(unittest.TestCase):
     def test_clean_saves_pass(self) -> None:
         report = self.run_judge({})
         self.assertEqual(report.failures, [])
-        # Two files, each saved unedited, edited and after a markup session (M2-08).
-        self.assertEqual(report.checked, 6)
+        # Two files, each saved unedited, edited, after a markup session (M2-08) and after
+        # MLEADER (M2-09).
+        self.assertEqual(report.checked, 8)
 
     def test_any_recover_or_audit_finding_fails(self) -> None:
         name = gate.save_name(DXF, "edited")

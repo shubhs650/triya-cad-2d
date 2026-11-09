@@ -3,7 +3,12 @@
 // alone, the header's $EXTMIN/$EXTMAX stood in). The render session bounds text by its glyphs
 // in its spatial index, so it measures the space it draws: text included once its font
 // loads, edits and font changes followed, the same through the worker as on the main thread.
-import { toleranceForSize, type EntityInit, type TextStyleRecord } from '@triya/engine';
+import {
+  toleranceForSize,
+  type EntityInit,
+  type MTextGeometry,
+  type TextStyleRecord,
+} from '@triya/engine';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   RenderSession,
@@ -238,5 +243,68 @@ describe('RendererHost.extents (M1-35 part 2)', () => {
       createWorker: inProcessWorker,
     });
     expect(await off.extents()).toBeUndefined();
+  });
+});
+
+describe('RendererHost.textBox (M2-09)', () => {
+  beforeEach(() => {
+    vi.stubGlobal('OffscreenCanvas', class {});
+  });
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  const canvas = (): HostCanvas => {
+    const visible = surface('visible');
+    return {
+      width: 0,
+      height: 0,
+      getContext: () => visible.ctx,
+      transferControlToOffscreen: () => visible,
+    };
+  };
+  // MLEADEREDIT asks how far a multileader's text reaches before it is in the drawing.
+  const text: MTextGeometry = {
+    kind: 'MTEXT',
+    contents: 'HELLO',
+    style: STYLE,
+    position: { x: 100, y: 60 },
+    height: 10,
+    width: 0,
+    rotation: 0,
+    attachment: 1,
+    direction: 1,
+    lineSpacingStyle: 1,
+    lineSpacing: 1,
+  };
+
+  it('measures an MTEXT by its glyphs, alike from the worker and the main thread', async () => {
+    const main = new RendererHost({
+      canvas: canvas(),
+      document,
+      mode: 'main',
+      fonts: FONTS,
+      createLayer: () => surface('layer'),
+    });
+    const off = new RendererHost({
+      canvas: canvas(),
+      document,
+      createWorker: inProcessWorker,
+      fonts: FONTS,
+    });
+    for (const h of [main, off]) {
+      const box = (await h.textBox(text))!;
+      expect(box.minX).toBeCloseTo(100, 0);
+      expect(box.maxY).toBeCloseTo(60, 0);
+      expect(box.minY).toBeCloseTo(50, 0);
+      expect(box.maxX).toBeGreaterThan(130);
+      expect(box.maxX).toBeLessThan(160);
+    }
+  });
+
+  it('answers undefined while no font draws the text', async () => {
+    const off = new RendererHost({ canvas: canvas(), document, createWorker: inProcessWorker });
+    expect(await off.textBox(text)).toBeUndefined();
+    expect(session().textBox(text)).toBeUndefined();
   });
 });
