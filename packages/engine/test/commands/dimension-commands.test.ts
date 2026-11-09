@@ -42,14 +42,21 @@ function measured(g: DimensionGeometry): string {
   switch (g.dimType) {
     case 'linear':
     case 'aligned': {
-      const a = g.dimType === 'aligned' ? Math.atan2(g.second.y - g.first.y, g.second.x - g.first.x) : (g.rotation ?? 0);
+      const a =
+        g.dimType === 'aligned'
+          ? Math.atan2(g.second.y - g.first.y, g.second.x - g.first.x)
+          : (g.rotation ?? 0);
       const d = (g.second.x - g.first.x) * Math.cos(a) + (g.second.y - g.first.y) * Math.sin(a);
       return String(Math.round(Math.abs(d) * 1000) / 1000);
     }
     case 'radius':
-      return String(Math.hypot(g.chordPoint.x - g.definitionPoint.x, g.chordPoint.y - g.definitionPoint.y));
+      return String(
+        Math.hypot(g.chordPoint.x - g.definitionPoint.x, g.chordPoint.y - g.definitionPoint.y),
+      );
     case 'diameter':
-      return String(Math.hypot(g.chordPoint.x - g.definitionPoint.x, g.chordPoint.y - g.definitionPoint.y));
+      return String(
+        Math.hypot(g.chordPoint.x - g.definitionPoint.x, g.chordPoint.y - g.definitionPoint.y),
+      );
     case 'angular3pt': {
       const a = Math.atan2(g.first.y - g.vertex.y, g.first.x - g.vertex.x);
       const b = Math.atan2(g.second.y - g.vertex.y, g.second.x - g.vertex.x);
@@ -57,7 +64,10 @@ function measured(g: DimensionGeometry): string {
     }
     case 'angular': {
       const a = Math.atan2(g.line1End.y - g.line1Start.y, g.line1End.x - g.line1Start.x);
-      const b = Math.atan2(g.definitionPoint.y - g.line2Start.y, g.definitionPoint.x - g.line2Start.x);
+      const b = Math.atan2(
+        g.definitionPoint.y - g.line2Start.y,
+        g.definitionPoint.x - g.line2Start.x,
+      );
       return `${Math.abs(deg(b - a))}°`;
     }
     default:
@@ -83,7 +93,9 @@ const regenerate: DimensionRegenerator = (e, _model, measure) => {
     lineSpacing: 1,
   });
   if (width === undefined) return undefined;
-  const at = g.textUserPositioned ? g.textPosition : { x: g.definitionPoint.x, y: g.definitionPoint.y + 1 };
+  const at = g.textUserPositioned
+    ? g.textPosition
+    : { x: g.definitionPoint.x, y: g.definitionPoint.y + 1 };
   return {
     parts: [{ geom: { kind: 'POINT', position: g.definitionPoint }, defpoint: true }],
     geom: { ...g, textPosition: at },
@@ -92,7 +104,11 @@ const regenerate: DimensionRegenerator = (e, _model, measure) => {
 };
 
 /** Distance from `p` to segment a–b. */
-function toSegment(p: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) {
+function toSegment(
+  p: { x: number; y: number },
+  a: { x: number; y: number },
+  b: { x: number; y: number },
+) {
   const dx = b.x - a.x;
   const dy = b.y - a.y;
   const l2 = dx * dx + dy * dy;
@@ -334,7 +350,9 @@ describe('DIMALIGNED', () => {
     expect(g.definitionPoint.x).toBeCloseTo(5, 12);
     expect(g.definitionPoint.y).toBeCloseTo(15, 12);
     expect(g).not.toHaveProperty('rotation');
-    expect(s.bus.history).toContain(`Dimension text = ${Math.round(Math.hypot(10, 10) * 1000) / 1000}`);
+    expect(s.bus.history).toContain(
+      `Dimension text = ${Math.round(Math.hypot(10, 10) * 1000) / 1000}`,
+    );
   });
 });
 
@@ -537,13 +555,20 @@ describe('DIMCONTINUE and DIMBASELINE', () => {
     await s.bus.script(['DIMANGULAR', '', '0,0', '10,0', '10,10', '4,1']);
     await s.bus.script(['DIMCONTINUE', '0,10', '', '']);
     const c = s.dim<'angular3pt'>();
-    expect(c).toMatchObject({ vertex: { x: 0, y: 0 }, first: { x: 10, y: 10 }, second: { x: 0, y: 10 } });
+    expect(c).toMatchObject({
+      vertex: { x: 0, y: 0 },
+      first: { x: 10, y: 10 },
+      second: { x: 0, y: 10 },
+    });
     expect(Math.hypot(c.definitionPoint.x, c.definitionPoint.y)).toBeCloseTo(Math.hypot(4, 1), 12);
     // From the last one made, the continued dimension: its first origin, a DIMDLI further out.
     await s.bus.script(['DIMBASELINE', '-10,0', '', '']);
     const b = s.dim<'angular3pt'>();
     expect(b.first).toEqual({ x: 10, y: 10 });
-    expect(Math.hypot(b.definitionPoint.x, b.definitionPoint.y)).toBeCloseTo(Math.hypot(4, 1) + 1, 12);
+    expect(Math.hypot(b.definitionPoint.x, b.definitionPoint.y)).toBeCloseTo(
+      Math.hypot(4, 1) + 1,
+      12,
+    );
   });
 });
 
@@ -591,7 +616,12 @@ describe('dimension grips (DIMASSOC 1)', () => {
   });
 
   it('other kinds show each definition point once, the text last', () => {
-    const { first: _f, second: _s, rotation: _r, ...fields } = linear() as DimensionGeometry & {
+    const {
+      first: _f,
+      second: _s,
+      rotation: _r,
+      ...fields
+    } = linear() as DimensionGeometry & {
       dimType: 'linear';
     };
     const g = {

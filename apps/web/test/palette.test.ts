@@ -19,6 +19,13 @@ describe('palette search', () => {
       'ATTEDIT',
       'CLOSE',
       'COPY',
+      'DIMALIGNED',
+      'DIMANGULAR',
+      'DIMBASELINE',
+      'DIMCONTINUE',
+      'DIMDIAMETER',
+      'DIMLINEAR',
+      'DIMRADIUS',
       'DRAWORDER',
       'EATTEDIT',
       'ERASE',
@@ -55,6 +62,9 @@ describe('palette search', () => {
     expect(mleader?.aliases).toEqual(['MLD']);
     expect(commandItems(builtinCommands()).find((i) => i.id === 'TEXTEDIT')?.aliases).toEqual([
       'ED',
+    ]);
+    expect(commandItems(builtinCommands()).find((i) => i.id === 'DIMLINEAR')?.aliases).toEqual([
+      'DLI',
     ]);
   });
 

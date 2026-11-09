@@ -39,7 +39,12 @@ export type DimPlacement =
       readonly rotation?: number;
       readonly base: NewDimension;
     }
-  | { readonly kind: 'aligned'; readonly first: Vec2; readonly second: Vec2; readonly base: NewDimension }
+  | {
+      readonly kind: 'aligned';
+      readonly first: Vec2;
+      readonly second: Vec2;
+      readonly base: NewDimension;
+    }
   | {
       readonly kind: 'radius' | 'diameter';
       readonly center: Vec2;
@@ -121,8 +126,7 @@ export function placeDimension(p: DimPlacement, at: Vec2): DimensionGeometry | u
     case 'aligned': {
       const rotation =
         p.kind === 'linear' ? (p.rotation ?? linearRotation(p.first, p.second, at)) : undefined;
-      const u =
-        rotation !== undefined ? fromAngle(rotation) : unitOf(sub(p.second, p.first));
+      const u = rotation !== undefined ? fromAngle(rotation) : unitOf(sub(p.second, p.first));
       if (!u || distance(p.first, p.second) === 0) return undefined;
       // DXF 10: on the dimension line through `at`, at the second extension line.
       const definitionPoint = add(at, scale(u, dot(sub(p.second, at), u)));

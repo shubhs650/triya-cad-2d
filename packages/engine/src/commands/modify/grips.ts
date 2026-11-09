@@ -183,8 +183,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
               ctx,
               copies.filter((id) => 'dimType' in ctx.model.entity(id)!.geom),
             );
-          }
-          else {
+          } else {
             let r: ReturnType<typeof gripObjects> | undefined;
             ctx.edit((b) => {
               r = gripObjects(b, ctx.model, ids, hot, to);

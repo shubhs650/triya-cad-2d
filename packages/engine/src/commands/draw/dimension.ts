@@ -244,7 +244,10 @@ function endsOf(g: EntityGeometry, at: Vec2 | undefined): [Vec2, Vec2] | undefin
         const d = at ? distanceToSegment(at, a, b) : i;
         if (d < bestD) {
           bestD = d;
-          best = [{ x: a.x, y: a.y }, { x: b.x, y: b.y }];
+          best = [
+            { x: a.x, y: a.y },
+            { x: b.x, y: b.y },
+          ];
         }
       }
       return best;

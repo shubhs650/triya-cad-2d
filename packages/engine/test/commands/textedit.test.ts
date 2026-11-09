@@ -178,7 +178,9 @@ describe('TEXTEDIT', () => {
     const line = [...model.entities()].find((e) => e.type === 'LINE')!;
     await bus.script(['TEXTEDIT']);
     await bus.answer({ kind: 'selection', ids: [line.id] });
-    expect(bus.history).toContain('The object selected is not text, multiline text or a dimension.');
+    expect(bus.history).toContain(
+      'The object selected is not text, multiline text or a dimension.',
+    );
     expect(bus.promptText).toBe('Select an annotation object or [Undo/Mode]:');
   });
 

@@ -651,25 +651,56 @@ describe('dimensions the commands make (M2-11)', () => {
     regenerateDimension({ geom: placeDimension(p, at)! }, model(), measure)!;
 
   it('says what each kind measures, formatted by the style', () => {
-    const linear = make({ kind: 'linear', first: { x: 0, y: 0 }, second: { x: 30, y: 40 }, base }, { x: 15, y: 60 });
+    const linear = make(
+      { kind: 'linear', first: { x: 0, y: 0 }, second: { x: 30, y: 40 }, base },
+      { x: 15, y: 60 },
+    );
     expect(linear.measurement).toBe('30');
-    const aligned = make({ kind: 'aligned', first: { x: 0, y: 0 }, second: { x: 30, y: 40 }, base }, { x: 0, y: 10 });
+    const aligned = make(
+      { kind: 'aligned', first: { x: 0, y: 0 }, second: { x: 30, y: 40 }, base },
+      { x: 0, y: 10 },
+    );
     expect(aligned.measurement).toBe('50');
-    const radius = make({ kind: 'radius', center: { x: 0, y: 0 }, radius: 12.5, base }, { x: 20, y: 0 });
+    const radius = make(
+      { kind: 'radius', center: { x: 0, y: 0 }, radius: 12.5, base },
+      { x: 20, y: 0 },
+    );
     expect(radius.measurement).toBe('12.5');
-    const diameter = make({ kind: 'diameter', center: { x: 0, y: 0 }, radius: 12.5, base }, { x: 20, y: 0 });
+    const diameter = make(
+      { kind: 'diameter', center: { x: 0, y: 0 }, radius: 12.5, base },
+      { x: 20, y: 0 },
+    );
     expect(diameter.measurement).toBe('25');
     const angle = make(
-      { kind: 'angular3pt', vertex: { x: 0, y: 0 }, first: { x: 10, y: 0 }, second: { x: 0, y: 10 }, base },
+      {
+        kind: 'angular3pt',
+        vertex: { x: 0, y: 0 },
+        first: { x: 10, y: 0 },
+        second: { x: 0, y: 10 },
+        base,
+      },
       { x: 5, y: 5 },
     );
     expect(angle.measurement).toBe('90°');
     const lines = make(
-      { kind: 'angular', line1: [{ x: 0, y: 0 }, { x: 10, y: 0 }], line2: [{ x: 0, y: 0 }, { x: 10, y: 10 }], base },
+      {
+        kind: 'angular',
+        line1: [
+          { x: 0, y: 0 },
+          { x: 10, y: 0 },
+        ],
+        line2: [
+          { x: 0, y: 0 },
+          { x: 10, y: 10 },
+        ],
+        base,
+      },
       { x: 8, y: 3 },
     );
     expect(lines.measurement).toBe('45°');
-    expect(measuredText({ geom: { kind: 'POINT', position: { x: 0, y: 0 } } }, model())).toBeUndefined();
+    expect(
+      measuredText({ geom: { kind: 'POINT', position: { x: 0, y: 0 } } }, model()),
+    ).toBeUndefined();
   });
 
   it('draws a new radius dimension with its text where the location put it', () => {
@@ -680,7 +711,13 @@ describe('dimensions the commands make (M2-11)', () => {
 
   it('measures the reflex angle when the arc point is outside the three-point angle', () => {
     const r = make(
-      { kind: 'angular3pt', vertex: { x: 0, y: 0 }, first: { x: 10, y: 0 }, second: { x: 0, y: 10 }, base },
+      {
+        kind: 'angular3pt',
+        vertex: { x: 0, y: 0 },
+        first: { x: 10, y: 0 },
+        second: { x: 0, y: 10 },
+        base,
+      },
       { x: -5, y: -5 },
     );
     expect(r.measurement).toBe('270°');

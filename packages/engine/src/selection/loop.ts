@@ -128,9 +128,10 @@ export class SelectionLoop {
       kind: 'selection',
       message: this.#remove ? 'Remove objects' : this.#o.message,
       ...(this.#o.options && { options: this.#o.options }),
-      ...(!this.#remove && this.#o.defaultLabel !== undefined && {
-        defaultLabel: this.#o.defaultLabel,
-      }),
+      ...(!this.#remove &&
+        this.#o.defaultLabel !== undefined && {
+          defaultLabel: this.#o.defaultLabel,
+        }),
     };
   }
 

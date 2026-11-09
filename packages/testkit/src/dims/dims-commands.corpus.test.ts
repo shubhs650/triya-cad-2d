@@ -75,7 +75,11 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         model.layouts.find((l) => l.name === 'Model')?.blockRecord ??
         [...model.blocks.values()].find((b) => b.name.toUpperCase() === '*MODEL_SPACE')?.handle;
       if (model.tables.dimStyles.size === 0 || space === undefined) {
-        const bus = new PromptBus({ model, registry: builtinCommands(), view: { request: () => Promise.resolve({ ok: false, message: 'no view' }) } });
+        const bus = new PromptBus({
+          model,
+          registry: builtinCommands(),
+          view: { request: () => Promise.resolve({ ok: false, message: 'no view' }) },
+        });
         await bus.submit('DIMLINEAR');
         expect(bus.history).toContain('The drawing has no dimension style.');
         writeAuditSave(f.path, 'dimension', () =>
@@ -130,7 +134,8 @@ describe('dimension commands on the public corpus (M2-11)', () => {
       await bus.script(['DIMDIAMETER', '500,20', '500,-60']);
       await bus.script(['DIMANGULAR', '', '0,-200', '100,-200', '0,-100', '30,-170']);
       expect(bus.command).toBeUndefined();
-      const added = () => [...model.entities()].filter((e) => !before.has(e.id) && e.owner === space);
+      const added = () =>
+        [...model.entities()].filter((e) => !before.has(e.id) && e.owner === space);
       expect(added().map((e) => (e.geom as DimensionGeometry).dimType)).toEqual([
         'linear',
         'linear',
