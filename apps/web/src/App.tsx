@@ -48,6 +48,8 @@ import { LayersPalette } from './LayersPalette';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
+import { Pwa, type ContainerLike, type InstallPromptLike } from './pwa';
+import { InstallButton, OfflineStatus, UpdateBanner } from './PwaChrome';
 import { RecentFiles, indexedDbRecent, type RecentHandle } from './recent';
 import { Autosaver, RecoveryOffers } from './recovery';
 import { indexedDbRecovery, webLocks } from './recovery-browser';
@@ -107,6 +109,24 @@ void recoveryOffers.load();
 /** Recent drawings (M2-14, recent.ts): the start screen and the Ctrl+K palette list them. */
 const recent = new RecentFiles(indexedDbRecent());
 void recent.load();
+
+/**
+ * The service worker (M2-19, pwa.ts): offline caching and "Ready offline", the update prompt and
+ * the install prompt. The dev server serves no worker, so only a production build registers one.
+ * Besides the browser's own check on each page load, a long session looks for a new version
+ * hourly (the update check is the one request to the origin the app makes by itself, PRD G6).
+ */
+const pwa = new Pwa({ reload: () => location.reload() });
+const UPDATE_CHECK_MS = 60 * 60 * 1000;
+if (import.meta.env.PROD && 'serviceWorker' in navigator) {
+  void pwa.register(navigator.serviceWorker as unknown as ContainerLike);
+  setInterval(() => void pwa.checkForUpdate(), UPDATE_CHECK_MS);
+}
+pwa.setOnline(navigator.onLine);
+addEventListener('online', () => pwa.setOnline(true));
+addEventListener('offline', () => pwa.setOnline(false));
+addEventListener('beforeinstallprompt', (e) => pwa.offerInstall(e as unknown as InstallPromptLike));
+addEventListener('appinstalled', () => pwa.installed());
 
 /**
  * What each drawing's command engine says (M2-02): its command line follows it, its edits are
@@ -801,6 +821,7 @@ export function App() {
         </a>
         <span className="app-name">Triya CAD 2D</span>
         <span className="badge">v{__APP_VERSION__} beta</span>
+        <OfflineStatus pwa={pwa} />
         <button type="button" className="open-button" onClick={pick} aria-keyshortcuts="Control+O">
           Open
         </button>
@@ -842,6 +863,7 @@ export function App() {
         <a className="report" href={REPORT_ISSUE} target="_blank" rel="noreferrer">
           Report issue
         </a>
+        <InstallButton pwa={pwa} />
         <button type="button" className="settings-button" onClick={() => setSettings(true)}>
           Settings
         </button>
@@ -856,6 +878,7 @@ export function App() {
         onAddFonts={addFonts}
       />
 
+      <UpdateBanner pwa={pwa} />
       <RecoveryBanner offers={recoveryOffers} onRecover={(key) => void recover(key)} />
       {state.error && (
         <div className="banner error" role="alert">

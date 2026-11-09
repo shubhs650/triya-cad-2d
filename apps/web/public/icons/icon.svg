@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Triya CAD 2D (M2-19): a set square under a drafting crosshair, on the app's chrome. -->
+  <rect width="512" height="512" rx="96" fill="#212830"/>
+  <path d="M112 400V112l288 288Z" fill="#f5f6f8"/>
+  <path d="M164 348V237l111 111Z" fill="#212830"/>
+  <g stroke="#4cc2ff" stroke-width="20" stroke-linecap="round" fill="none">
+    <path d="M276 176h52M400 176h52M364 88v52M364 212v52"/>
+    <rect x="340" y="152" width="48" height="48" stroke-width="14"/>
+  </g>
+</svg>
