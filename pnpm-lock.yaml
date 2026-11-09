@@ -121,7 +121,11 @@ importers:
 
   packages/library: {}
 
-  packages/pdf: {}
+  packages/pdf:
+    dependencies:
+      fflate:
+        specifier: 0.8.2
+        version: 0.8.2
 
   packages/render:
     dependencies:
@@ -150,6 +154,9 @@ importers:
       '@types/pngjs':
         specifier: ^6.0.5
         version: 6.0.5
+      pdfjs-dist:
+        specifier: 6.4.299
+        version: 6.4.299
 
   packages/text:
     dependencies:

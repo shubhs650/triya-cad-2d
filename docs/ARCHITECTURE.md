@@ -308,6 +308,8 @@ PUBLISH loops layouts into a multi-page `PdfSink` with bookmarks and page labels
 
 Plot style tables (M2-15, `packages/render/src/plot`, no DOM so `packages/pdf` and workers use it): `parsePlotStyleTable`/`writePlotStyleTable` read and write .ctb/.stb files, `PlotResolver(table?)` maps a `PlotObject` (the object's colour, lineweight, linetype and plot style name with ByLayer/ByBlock already resolved) to `PlotProperties` (paper colour after grayscale and screening, lineweight in mm, linetype, end/join/fill style, pens), and `bundledPlotStyleTable(sheetName)` finds the bundled tables in `assets/plotstyles` (default, monochrome and grayscale CTB; default and monochrome STB), also under the names AutoCAD gives its own.
 
+PDF writer (M2-16 part 1, `packages/pdf`, no DOM): `PdfDocument` (pages at their exact paper size, Flate content streams, page labels, bookmarks; deterministic bytes) and `ContentStream` (path and painting operators, graphics state written once while it holds, ExtGState alpha). `plotItems(page, items, options)` is the vector `PdfSink`: each `PlotItem` is a renderer path in world units with its `PlotPaint` (the `PlotProperties` a `PlotResolver` returned, taken structurally so `pdf` never imports the DOM-typed renderer entry point), drawn through the plot's world → paper affine (`paperTransform`): arcs and ellipses become cubics, lineweights are paper millimetres, plot style linetypes are dash arrays (`linetypes.ts`). The plot job that turns a layout's viewports and blocks into items is M2-17's.
+
 ## 13. Persistence (`apps/web/src/storage`)
 
 - **OPFS** for: autosave snapshots (`recovery/<docId>.triya` = acad-ts document + Triya change log), user fonts/linetypes/CTBs/templates, library cache.
