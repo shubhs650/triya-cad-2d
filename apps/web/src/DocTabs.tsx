@@ -17,9 +17,14 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from 'react';
 import { controllerOf } from './canvas/registry';
-import { spacesOf, type DocumentStore, type DocumentsState, type OpenDocument } from './documents';
+import {
+  isDirty,
+  spacesOf,
+  type DocumentStore,
+  type DocumentsState,
+  type OpenDocument,
+} from './documents';
 import { engines } from './engine/registry';
-import { commandLines } from './command-line';
 
 /** How far the pointer moves before a press on a tab becomes a drag (CSS pixels). */
 const DRAG_START = 5;
@@ -62,10 +67,13 @@ export function DocTabs({
   store,
   state,
   picture,
+  onClose,
 }: {
   store: DocumentStore;
   state: DocumentsState;
   picture?: PictureSpace;
+  /** The close button: the app asks to save unsaved changes first (M2-13). */
+  onClose: (id: number) => void;
 }) {
   const row = useRef<HTMLDivElement>(null);
   const drag = useRef<Drag | undefined>(undefined);
@@ -165,6 +173,7 @@ export function DocTabs({
             data-id={d.id}
             data-active={d.id === state.active}
             data-dragging={d.id === dragged}
+            data-dirty={isDirty(d)}
             onPointerEnter={(e) => rest(d.id, e)}
             onPointerLeave={() => {
               if (!drag.current) later(() => setPreview(undefined), PREVIEW_LINGER);
@@ -185,16 +194,18 @@ export function DocTabs({
               onFocus={hide}
             >
               {d.name}
+              {/* AutoCAD marks a drawing with unsaved changes; UI_SPEC §1 asks for a dot. */}
+              {isDirty(d) && (
+                <span className="dirty-dot" aria-hidden="true" title="Unsaved changes">
+                  ●
+                </span>
+              )}
             </button>
             <button
               type="button"
               className="close"
               aria-label={`Close ${d.name}`}
-              onClick={() => {
-                store.close(d.id);
-                engines.stop(d.id);
-                commandLines.forget(d.id);
-              }}
+              onClick={() => onClose(d.id)}
             >
               ×
             </button>

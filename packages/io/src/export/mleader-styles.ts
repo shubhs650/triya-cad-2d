@@ -30,7 +30,7 @@ import {
 import type { Color, DocumentInit, DocumentModel, Handle, MLeaderStyleRecord } from '@triya/engine';
 import type { CadFormat } from '../read';
 import { acadColor, acadLineweight, resolve, type Resolver } from './entities';
-import { entryRenameProblems, renameEntries } from './dictionary-entries';
+import { entryRenameProblems, entryTakenProblems, renameEntries } from './dictionary-entries';
 import { changes, planRecords, type RecordPlan } from './records';
 
 export type MLeaderStylePlan = RecordPlan<MultiLeaderStyle, MLeaderStyleRecord>;
@@ -141,6 +141,11 @@ export function planMLeaderStyles(
             model.tables.mleaderStyles.has(o.handle.toString(16).toUpperCase()),
           )
         : []),
+      ...(b
+        ? []
+        : entryTakenProblems(doc.rootDictionary?.get(CadDictionary.acadMLeaderStyle), a.name, (o) =>
+            model.tables.mleaderStyles.has(o.handle.toString(16).toUpperCase()),
+          )),
     ],
   });
 }

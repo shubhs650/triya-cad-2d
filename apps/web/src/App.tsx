@@ -8,9 +8,11 @@ import type {
   EditResult,
   EngineEdit,
   EntityId,
+  FileAction,
   Layout,
   PdfDefinition,
   Vec2,
+  ViewReply,
 } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -37,7 +39,7 @@ import { drafting } from './drafting';
 import { snapMenu } from './snap-menu';
 import { SnapMenu } from './SnapMenu';
 import { DraftingToggles } from './DraftingToggles';
-import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
+import { DocumentStore, isDirty, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile } from './images';
@@ -53,6 +55,10 @@ import {
   type ReferenceHandle,
 } from './reference-files';
 import { ReferencesPalette } from './ReferencesPalette';
+import { drawingFile, saveDrawing, type SaveEnv, type SaveHandle, type SaveMode } from './save';
+import { browserSave } from './save-browser';
+import { saveChanges } from './save-changes';
+import { SaveChanges } from './SaveChanges';
 import { Settings } from './Settings';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
@@ -126,7 +132,66 @@ function viewContext(id: number): ViewContext {
     all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
     views: () => (doc && target ? namedViewsOf(doc, target.size) : []),
     save: (name, view) => doc && store.saveView(doc.id, name, view),
+    file: (action) => fileCommand(id, action),
   };
+}
+
+/** The browser's save (save-browser.ts), made when first used. */
+let saveEnv: SaveEnv | undefined;
+/** Drawings being saved: a second Save waits for nothing and does nothing. */
+const saving = new Set<number>();
+
+/**
+ * Saves a drawing (M2-13): QSAVE in place where it can, else Save As (save.ts). Resolves true
+ * once the drawing is saved; a refusal shows in the error banner.
+ */
+async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  if (!doc?.file || saving.has(id)) return false;
+  saving.add(id);
+  try {
+    // Edits made while the save runs are not in it.
+    const edits = doc.edits;
+    saveEnv ??= browserSave();
+    const r = await saveDrawing(doc.name, doc.file, engines.changesOf(id), mode, saveEnv);
+    if (r.ok) store.saved(id, r.name, r.file, edits);
+    else if (!r.cancelled) store.fail(r.message);
+    return r.ok;
+  } finally {
+    saving.delete(id);
+  }
+}
+
+/**
+ * Closes a drawing (the tab's ×, CLOSE): one with unsaved changes asks "Save changes to …?"
+ * first, as AutoCAD does; Yes closes it only once it is saved. Resolves true when it closed.
+ */
+async function closeDoc(id: number): Promise<boolean> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  if (!doc) return false;
+  if (isDirty(doc)) {
+    const answer = await saveChanges.ask(doc.name);
+    if (answer === 'cancel') return false;
+    if (answer === 'yes' && !(await saveDoc(id, 'qsave'))) return false;
+  }
+  store.close(id);
+  engines.stop(id);
+  commandLines.forget(id);
+  return true;
+}
+
+/** QSAVE, SAVE/SAVEAS and CLOSE typed at the command line (M2-13). */
+async function fileCommand(id: number, action: FileAction): Promise<ViewReply> {
+  if (action === 'close') {
+    // The engine stops with the drawing, so it hears first that the request is done.
+    queueMicrotask(() => void closeDoc(id));
+    return { ok: true };
+  }
+  if (await saveDoc(id, action)) {
+    const doc = store.getSnapshot().docs.find((d) => d.id === id);
+    return { ok: true, ...(doc && { file: doc.name }) };
+  }
+  return { ok: false, message: store.getSnapshot().error ?? 'Save cancelled.' };
 }
 
 /** The last world point the cursor was at on a canvas: direct distance entry aims at it. */
@@ -375,7 +440,8 @@ async function loadXrefs(
       if (!result.ok) throw new Error(result.message);
     }
     await Promise.all(controllersOf(doc).map((c) => c.flush()));
-    store.edited(doc);
+    // An xref shows another file: the drawing itself has no new changes to save.
+    store.edited(doc, false);
   } catch (e) {
     store.failed(name, openError(name, e));
     throw e;
@@ -398,13 +464,21 @@ async function resolveKept(ask = false): Promise<void> {
   supply(await referenceFiles.files(ask), 'references');
 }
 
-async function open(file: { readonly name: string; getFile(): Promise<Blob> }): Promise<void> {
+async function open(file: {
+  readonly name: string;
+  getFile(): Promise<Blob>;
+  readonly handle?: { readonly kind: string };
+}): Promise<void> {
   store.startOpening(file.name);
   try {
-    const opened = await openDrawing(await file.getFile());
+    const bytes = new Uint8Array(await (await file.getFile()).arrayBuffer());
+    // The I/O worker takes its own copy: the app keeps the bytes, which every save starts from.
+    const opened = await openDrawing(bytes.slice());
     if (!opened.modelSpace) throw new Error('the drawing has no model space');
+    const handle = file.handle?.kind === 'file' ? (file.handle as SaveHandle) : undefined;
+    const saved = drawingFile(bytes, opened.summary, handle);
     // The drawing's authoritative document goes to its engine worker (M1-67).
-    engines.start(store.opened(file.name, opened, opened.modelSpace), opened.init);
+    engines.start(store.opened(file.name, opened, opened.modelSpace, saved), opened.init);
     void deviceFonts.need(trueTypeFontsOf(opened.init));
     void resolveKept();
   } catch (e) {
@@ -477,6 +551,23 @@ if (import.meta.env.DEV) {
   (window as { triyaDev?: DevHooks }).triyaDev = hooks;
 }
 
+/** How long a save's note shows. */
+const NOTICE_MS = 4000;
+
+/** Drawings, as the open picker filters them. */
+const DRAWING_TYPE = {
+  description: 'Drawings (*.dwg, *.dxf)',
+  accept: { 'application/acad': ['.dwg', '.dxf'] },
+};
+
+interface OpenPickerWindow {
+  showOpenFilePicker?(o: {
+    multiple: boolean;
+    types: (typeof DRAWING_TYPE)[];
+    excludeAcceptAllOption: boolean;
+  }): Promise<(SaveHandle & { getFile(): Promise<File> })[]>;
+}
+
 interface LaunchParams {
   readonly files: readonly {
     readonly kind: string;
@@ -498,14 +589,29 @@ export function App() {
   const waitingHandles = useSyncExternalStore(referenceFiles.subscribe, referenceFiles.waiting);
   const picker = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
-  const pick = useCallback(() => picker.current?.click(), []);
+  const pick = useCallback(() => {
+    // Chromium's open picker hands back file handles, so Save can write the file in place
+    // (M2-13); elsewhere the file input.
+    const showOpen = (window as OpenPickerWindow).showOpenFilePicker;
+    if (!showOpen) return picker.current?.click();
+    showOpen
+      .call(window, { multiple: true, types: [DRAWING_TYPE], excludeAcceptAllOption: false })
+      .then(
+        (handles) => {
+          for (const h of handles)
+            void open({ name: h.name, getFile: () => h.getFile(), handle: h });
+        },
+        () => undefined, // dismissed
+      );
+  }, []);
 
   useEffect(() => {
     // The installed app's file handler (manifest `file_handlers`): files it was launched with.
     const queue = (window as { launchQueue?: { setConsumer(c: (p: LaunchParams) => void): void } })
       .launchQueue;
     queue?.setConsumer((p) => {
-      for (const h of p.files) if (h.kind === 'file') void open(h);
+      for (const h of p.files)
+        if (h.kind === 'file') void open({ name: h.name, getFile: () => h.getFile(), handle: h });
     });
   }, []);
 
@@ -514,6 +620,12 @@ export function App() {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         pick();
+      }
+      // Ctrl+S QSAVE, Ctrl+Shift+S SAVEAS (M2-13), whatever has the focus.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        const { active } = store.getSnapshot();
+        if (active !== undefined) void saveDoc(active, e.shiftKey ? 'saveas' : 'qsave');
       }
       // Esc ends real-time PAN and cancels ZOOM Window, as in AutoCAD.
       if (e.key === 'Escape') {
@@ -525,6 +637,24 @@ export function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [pick]);
+
+  useEffect(() => {
+    // Leaving the page with unsaved changes asks first, as closing a drawing does (M2-13).
+    const onLeave = (e: BeforeUnloadEvent) => {
+      if (!store.getSnapshot().docs.some(isDirty)) return;
+      e.preventDefault();
+      e.returnValue = '';
+    };
+    window.addEventListener('beforeunload', onLeave);
+    return () => window.removeEventListener('beforeunload', onLeave);
+  }, []);
+
+  useEffect(() => {
+    // A save's note goes after a while; an error stays until dismissed.
+    if (!state.notice) return;
+    const t = setTimeout(() => store.dismissNotice(), NOTICE_MS);
+    return () => clearTimeout(t);
+  }, [state.notice]);
 
   const active = state.docs.find((d) => d.id === state.active);
   const [mode, setMode] = useState<CanvasMode>('none');
@@ -566,8 +696,26 @@ export function App() {
         </a>
         <span className="app-name">Triya CAD 2D</span>
         <span className="badge">v{__APP_VERSION__} beta</span>
-        <button type="button" className="open-button" onClick={pick}>
+        <button type="button" className="open-button" onClick={pick} aria-keyshortcuts="Control+O">
           Open
+        </button>
+        <button
+          type="button"
+          className="save-button"
+          disabled={!active?.file}
+          aria-keyshortcuts="Control+S"
+          onClick={() => active && void saveDoc(active.id, 'qsave')}
+        >
+          Save
+        </button>
+        <button
+          type="button"
+          className="save-as-button"
+          disabled={!active?.file}
+          aria-keyshortcuts="Control+Shift+S"
+          onClick={() => active && void saveDoc(active.id, 'saveas')}
+        >
+          Save As…
         </button>
         <input
           ref={picker}
@@ -580,7 +728,12 @@ export function App() {
             e.currentTarget.value = '';
           }}
         />
-        <DocTabs store={store} state={state} picture={picture} />
+        <DocTabs
+          store={store}
+          state={state}
+          picture={picture}
+          onClose={(id) => void closeDoc(id)}
+        />
         <a className="report" href={REPORT_ISSUE} target="_blank" rel="noreferrer">
           Report issue
         </a>
@@ -634,6 +787,14 @@ export function App() {
         <div className="banner" role="status">
           <span>{fontState.notice}</span>
           <button type="button" aria-label="Dismiss" onClick={() => fonts.dismiss()}>
+            ×
+          </button>
+        </div>
+      )}
+      {state.notice && (
+        <div className="banner" role="status">
+          <span>{state.notice}</span>
+          <button type="button" aria-label="Dismiss" onClick={() => store.dismissNotice()}>
             ×
           </button>
         </div>
@@ -716,6 +877,7 @@ export function App() {
         sources={fonts.sources()}
       />
       <AttributeDialogs doc={active} />
+      <SaveChanges prompt={saveChanges} />
       <SnapMenu />
       <CommandLine
         doc={active?.id}

@@ -111,12 +111,16 @@ export async function saveDrawing(
   }
   try {
     const w = await target.createWritable!();
-    await w.write(new Blob([out], { type: 'application/dxf' }));
+    await w.write(new Blob([out as Uint8Array<ArrayBuffer>], { type: 'application/dxf' }));
     await w.close();
   } catch (e) {
     return { ok: false, message: `${target.name} was not saved: ${reason(e)}` };
   }
-  return { ok: true, name: target.name, file: { bytes: file.bytes, handle: target, inPlace: true } };
+  return {
+    ok: true,
+    name: target.name,
+    file: { bytes: file.bytes, handle: target, inPlace: true },
+  };
 }
 
 /** Asks for write access to a file opened for reading (Chromium asks the user once). */

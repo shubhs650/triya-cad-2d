@@ -1,0 +1,258 @@
+// M2-13: Save, Save As, the dirty dot and the close prompts, in the app. Chromium's File System
+// Access pickers cannot be driven by Playwright, so the page gets stand-ins before it loads: the
+// open picker hands out an in-memory file handle for the bytes a test serves, the save picker one
+// named as the app suggests, and every handle keeps what the app writes to it. The DXF the save
+// writes is the I/O worker's (unit and corpus tests check its content); here the app's routing:
+// in place over an AC1032 DXF, Save As a `.dxf` for a DWG, a download without File System Access.
+import path from 'node:path';
+import { expect, test, type Page } from '@playwright/test';
+import { DWG, activeCanvas, expectShown, serve, withFileInput } from '../app/page';
+import { CORPUS, startApp } from '../app/server';
+
+let app: { url: string; close(): Promise<void> };
+test.beforeAll(async () => {
+  app = await startApp();
+});
+test.afterAll(async () => {
+  await app.close();
+});
+
+/** An AC1032 ASCII DXF, which Save writes over in place. */
+const DXF32 = path.join(CORPUS, 'ezdxf/examples_dxf/hatches_1.dxf');
+
+interface Fs {
+  /** The next file the open picker hands out. */
+  next?: { name: string; bytes: ArrayBuffer };
+  /** What the save picker was asked to suggest, in order. */
+  suggested: string[];
+  /** What the app wrote to each handle, by name, latest last. */
+  written: Record<string, string[]>;
+  /** Write permission asks. */
+  asked: string[];
+}
+type FsWindow = { __fs: Fs };
+
+/** The pickers' stand-ins, installed before the app loads. */
+async function fakePickers(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const fs: Fs = { suggested: [], written: {}, asked: [] };
+    (window as unknown as FsWindow).__fs = fs;
+    const handle = (name: string, bytes: ArrayBuffer) => ({
+      kind: 'file',
+      name,
+      getFile: () => Promise.resolve(new File([bytes], name)),
+      queryPermission: () => Promise.resolve('prompt'),
+      requestPermission: () => {
+        fs.asked.push(name);
+        return Promise.resolve('granted');
+      },
+      createWritable: () => {
+        const parts: Blob[] = [];
+        return Promise.resolve({
+          write: (b: Blob) => Promise.resolve(void parts.push(b)),
+          close: async () => {
+            const text = await new Blob(parts).text();
+            (fs.written[name] ??= []).push(text);
+          },
+        });
+      },
+    });
+    Object.assign(window, {
+      showOpenFilePicker: () => {
+        const n = fs.next!;
+        fs.next = undefined;
+        return Promise.resolve([handle(n.name, n.bytes)]);
+      },
+      showSaveFilePicker: (o: { suggestedName: string }) => {
+        fs.suggested.push(o.suggestedName);
+        return Promise.resolve(handle(o.suggestedName, new ArrayBuffer(0)));
+      },
+    });
+  });
+}
+
+/** Opens `file` through the Open button, as Chromium's open picker hands it over. */
+async function openFile(page: Page, file: string): Promise<void> {
+  const url = await serve(page, file);
+  await page.evaluate(
+    async ({ url, name }) => {
+      const bytes = await (await fetch(url)).arrayBuffer();
+      (window as unknown as FsWindow).__fs.next = { name, bytes };
+    },
+    { url, name: path.basename(file) },
+  );
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
+  await expectShown(page, path.basename(file));
+}
+
+const fs = (page: Page) => page.evaluate(() => (window as unknown as FsWindow).__fs);
+const prompt = (page: Page) => page.getByTestId('command-prompt');
+const tab = (page: Page, name: string) => page.locator('.doc-tab', { hasText: name });
+
+/** Draws a line with the command line, which leaves the drawing with unsaved changes. */
+async function drawLine(page: Page): Promise<void> {
+  await activeCanvas(page).hover();
+  const steps: [string, string | RegExp][] = [
+    ['LINE', 'Specify first point:'],
+    ['0,0', /^Specify next point/],
+    ['@40<30', /^Specify next point/],
+    ['', 'Command:'],
+  ];
+  for (const [text, next] of steps) {
+    if (text) await page.keyboard.type(text);
+    await page.keyboard.press('Enter');
+    await expect(prompt(page)).toHaveText(next);
+  }
+  await expect(page.locator('.doc-tab[data-active="true"]')).toHaveAttribute('data-dirty', 'true');
+}
+
+/** The DXF's $ACADVER and how many LINEs its ENTITIES and BLOCKS sections hold. */
+function dxfFacts(text: string): { version: string | undefined; lines: number } {
+  return {
+    version: /\$ACADVER\r?\n\s*1\r?\n(\w+)/.exec(text)?.[1],
+    lines: text.match(/\r?\n\s*0\r?\nLINE\r?\n/g)?.length ?? 0,
+  };
+}
+
+test('Ctrl+S saves an AC1032 DXF in place, and the dirty dot follows the changes', async ({
+  page,
+}) => {
+  await fakePickers(page);
+  await page.goto(app.url);
+  await openFile(page, DXF32);
+  const name = path.basename(DXF32);
+  await expect(tab(page, name)).toHaveAttribute('data-dirty', 'false');
+  await drawLine(page);
+  await expect(tab(page, name)).toHaveAttribute('data-dirty', 'true');
+  // The dot is not part of the tab's name.
+  await expect(page.getByRole('tab', { name, exact: true })).toBeVisible();
+  await page.screenshot({ path: test.info().outputPath('1-unsaved-changes.png') });
+
+  await page.keyboard.press('Control+s');
+  await expect(page.getByRole('status')).toHaveText(new RegExp(`Saved ${name}\\.`));
+  await expect(tab(page, name)).toHaveAttribute('data-dirty', 'false');
+  const f = await fs(page);
+  expect(f.suggested).toEqual([]);
+  expect(f.asked).toEqual([name]);
+  expect(f.written[name]).toHaveLength(1);
+  const saved = dxfFacts(f.written[name]![0]!);
+  expect(saved.version).toBe('AC1032');
+  await page.screenshot({ path: test.info().outputPath('2-saved.png') });
+
+  // QSAVE at the command line saves the next change the same way.
+  await drawLine(page);
+  await page.keyboard.type('QSAVE');
+  await page.keyboard.press('Enter');
+  await expect.poll(async () => (await fs(page)).written[name]?.length).toBe(2);
+  await expect(tab(page, name)).toHaveAttribute('data-dirty', 'false');
+  expect(dxfFacts((await fs(page)).written[name]![1]!).lines).toBe(saved.lines + 1);
+});
+
+test('a DWG goes to Save As a .dxf, never over the DWG; Save then writes the .dxf', async ({
+  page,
+}) => {
+  await fakePickers(page);
+  await page.goto(app.url);
+  await openFile(page, DWG);
+  const dwg = path.basename(DWG);
+  const dxf = dwg.replace(/\.dwg$/, '.dxf');
+  await drawLine(page);
+  await page.getByRole('button', { name: 'Save', exact: true }).click();
+  await expectShown(page, dxf);
+  let f = await fs(page);
+  expect(f.suggested).toEqual([dxf]);
+  expect(f.written[dwg]).toBeUndefined();
+  expect(dxfFacts(f.written[dxf]![0]!).version).toBe('AC1032');
+
+  await drawLine(page);
+  await page.keyboard.press('Control+s');
+  await expect.poll(async () => (await fs(page)).written[dxf]?.length).toBe(2);
+  f = await fs(page);
+  expect(f.suggested).toEqual([dxf]);
+  // Ctrl+Shift+S always asks.
+  await page.keyboard.press('Control+Shift+S');
+  await expect.poll(async () => (await fs(page)).suggested).toEqual([dxf, dxf]);
+});
+
+test('closing a drawing with unsaved changes asks to save them first', async ({ page }) => {
+  await fakePickers(page);
+  await page.goto(app.url);
+  await openFile(page, DXF32);
+  const name = path.basename(DXF32);
+  const dialog = page.getByRole('dialog', { name: 'Triya CAD 2D' });
+  const close = page.getByRole('button', { name: `Close ${name}` });
+
+  // Nothing changed yet: the tab just closes.
+  await close.click();
+  await expect(tab(page, name)).toHaveCount(0);
+  await expect(dialog).toBeHidden();
+
+  await openFile(page, DXF32);
+  await drawLine(page);
+  await close.click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText(`Save changes to ${name}?`);
+  await expect(dialog.getByRole('button', { name: 'Yes' })).toBeFocused();
+  await page.screenshot({ path: test.info().outputPath('3-save-changes.png') });
+  // Cancel (Esc) keeps it open.
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(tab(page, name)).toHaveCount(1);
+  // Yes saves, then closes.
+  await close.click();
+  await dialog.getByRole('button', { name: 'Yes' }).click();
+  await expect(tab(page, name)).toHaveCount(0);
+  expect((await fs(page)).written[name]).toHaveLength(1);
+
+  // CLOSE at the command line asks too; No closes without saving.
+  await openFile(page, DXF32);
+  await drawLine(page);
+  await page.keyboard.type('CLOSE');
+  await page.keyboard.press('Enter');
+  await dialog.getByRole('button', { name: 'No' }).click();
+  await expect(tab(page, name)).toHaveCount(0);
+  expect((await fs(page)).written[name]).toHaveLength(1);
+});
+
+test('leaving the page with unsaved changes asks first', async ({ page }) => {
+  await fakePickers(page);
+  await page.goto(app.url);
+  await openFile(page, DXF32);
+  // What the browser asks before unloading: whether the page's beforeunload cancels it.
+  const asks = () =>
+    page.evaluate(() => {
+      const e = new Event('beforeunload', { cancelable: true });
+      window.dispatchEvent(e);
+      return e.defaultPrevented;
+    });
+  expect(await asks()).toBe(false);
+  await drawLine(page);
+  expect(await asks()).toBe(true);
+  await page.keyboard.press('Control+s');
+  await expect(tab(page, path.basename(DXF32))).toHaveAttribute('data-dirty', 'false');
+  expect(await asks()).toBe(false);
+});
+
+test('without File System Access, Save downloads the .dxf', async ({ page }) => {
+  await page.goto(app.url);
+  await withFileInput(page);
+  await page.evaluate(() => {
+    delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
+  await (await chooser).setFiles(DWG);
+  await expectShown(page, path.basename(DWG));
+  await drawLine(page);
+  const download = page.waitForEvent('download');
+  await page.keyboard.press('Control+s');
+  const d = await download;
+  const dxf = path.basename(DWG).replace(/\.dwg$/, '.dxf');
+  expect(d.suggestedFilename()).toBe(dxf);
+  const file = test.info().outputPath(dxf);
+  await d.saveAs(file);
+  const { readFileSync } = await import('node:fs');
+  expect(dxfFacts(readFileSync(file, 'latin1')).version).toBe('AC1032');
+  await expectShown(page, dxf);
+  await expect(tab(page, dxf)).toHaveAttribute('data-dirty', 'false');
+});

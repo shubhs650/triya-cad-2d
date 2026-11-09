@@ -5,6 +5,7 @@ import type { ChangeSet } from '@triya/engine';
 import type { OpenResult } from '@triya/io';
 import { describe, expect, it, vi } from 'vitest';
 import { DocumentStore, isDirty } from '../src/documents';
+import { SaveChangesPrompt } from '../src/save-changes';
 import {
   drawingFile,
   dxfName,
@@ -189,5 +190,22 @@ describe('unsaved changes (DocumentStore)', () => {
     expect(s.getSnapshot().notice).toBeUndefined();
     s.fail('b.dxf was not saved: x');
     expect(s.getSnapshot().error).toBe('b.dxf was not saved: x');
+  });
+});
+
+describe('the Save changes question (CLOSE)', () => {
+  it('waits for Yes, No or Cancel, one question at a time', async () => {
+    const p = new SaveChangesPrompt();
+    const seen: (string | undefined)[] = [];
+    p.subscribe(() => seen.push(p.get()?.name));
+    const first = p.ask('a.dxf');
+    expect(p.get()).toEqual({ name: 'a.dxf' });
+    const second = p.ask('b.dxf');
+    expect(await first).toBe('cancel');
+    p.answer('yes');
+    expect(await second).toBe('yes');
+    expect(p.get()).toBeUndefined();
+    p.answer('no');
+    expect(seen).toEqual(['a.dxf', undefined, 'b.dxf', undefined]);
   });
 });

@@ -52,7 +52,9 @@ async function session(
 
 const header = (dxf: Uint8Array) => readCadDocument(dxf, 'dxf').header!;
 const isDxf = (bytes: Uint8Array) =>
-  String.fromCharCode(...bytes.subarray(0, 12)).trimStart().startsWith('0');
+  String.fromCharCode(...bytes.subarray(0, 12))
+    .trimStart()
+    .startsWith('0');
 
 describe('saveSession', () => {
   it('writes the session’s edits onto the drawing as opened, as an AC1032 DXF', async () => {

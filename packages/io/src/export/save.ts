@@ -41,4 +41,3 @@ export function saveSession(
   for (const cs of changes) applyToReplica(model, cs, 'saved document');
   return saveDxf(original, model);
 }
-

@@ -1,11 +1,13 @@
 // The app's side of the view host (M2-02 part 2): answers the view commands' requests (ZOOM,
 // PAN, REGEN, VIEW) with the canvas of the space shown, the same calls the navigation bar makes.
 // Every request gets a reply, a refusal when nothing is shown, because the command waits for it.
+// The file commands (QSAVE, SAVEAS, CLOSE; M2-13) go to the app's `file`.
 // Selection asks it too (M2-03): what a pick or a window takes, and ZOOM Object's extents, which
 // the renderer answers, so those replies come later.
 import type {
   Box,
   EntityId,
+  FileAction,
   MTextGeometry,
   NamedViewInfo,
   Vec2,
@@ -58,9 +60,12 @@ export interface ViewContext {
   readonly views: () => readonly NamedView[];
   /** Saves a view of the space shown for the session (VIEW Save, as the navigation bar's). */
   readonly save: (name: string, view: ViewTransform) => void;
+  /** QSAVE, SAVEAS and CLOSE (M2-13): the app saves or closes the drawing. */
+  readonly file?: (action: FileAction) => Promise<ViewReply>;
 }
 
 export const NO_CANVAS = 'There is no view to change.';
+export const NO_FILE = 'There is no drawing to save.';
 
 export function stateOf(t: ViewTarget): ViewState | undefined {
   const v = t.view;
@@ -74,6 +79,8 @@ export function stateOf(t: ViewTarget): ViewState | undefined {
 }
 
 export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promise<ViewReply> {
+  // The file commands need the drawing, not a canvas.
+  if (r.op === 'file') return ctx.file ? ctx.file(r.action) : { ok: false, message: NO_FILE };
   const t = ctx.target;
   if (!t || !stateOf(t)) return { ok: false, message: NO_CANVAS };
   const done = (): ViewReply => {

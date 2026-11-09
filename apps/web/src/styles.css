@@ -88,10 +88,13 @@ button {
 }
 
 .open-button,
+.save-button,
+.save-as-button,
 .settings-button,
 .start button,
 .banner button,
-.settings button {
+.settings button,
+.save-changes button {
   padding: 3px 10px;
   border: 1px solid var(--chrome-border);
   border-radius: 4px;
@@ -100,9 +103,12 @@ button {
 }
 
 .open-button:hover,
+.save-button:hover:enabled,
+.save-as-button:hover:enabled,
 .settings-button:hover,
 .start button:hover,
-.settings button:hover {
+.settings button:hover,
+.save-changes button:hover {
   background: var(--chrome-border);
 }
 
@@ -430,6 +436,43 @@ button {
 
 .settings::backdrop {
   background: rgb(0 0 0 / 30%);
+}
+
+/* M2-13: Save and Save As beside Open, the dirty dot of a tab, and "Save changes to …?". */
+.save-button:disabled,
+.save-as-button:disabled {
+  color: var(--chrome-text-muted);
+}
+
+.doc-tab .dirty-dot {
+  margin-left: 4px;
+  color: var(--accent);
+  font-size: 0.7em;
+  vertical-align: middle;
+}
+
+.save-changes {
+  width: min(360px, calc(100vw - 32px));
+  padding: 16px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  color: var(--chrome-text);
+  background: var(--chrome-bg-raised);
+}
+
+.save-changes::backdrop {
+  background: rgb(0 0 0 / 30%);
+}
+
+.save-changes h2 {
+  margin: 0 0 8px;
+  font-size: 1em;
+}
+
+.save-changes .buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 .settings h2 {
