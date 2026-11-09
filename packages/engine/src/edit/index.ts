@@ -8,8 +8,14 @@ export {
 } from './transform';
 export {
   copyObjects,
+  inBox,
+  planStretch,
+  stretchObjects,
+  type StretchPlan,
+  type StretchWindow,
   eraseObjects,
   refusalMessages,
   transformObjects,
   type EditReport,
 } from './edit';
+export { stretchGeometry, type StretchResult } from './stretch';

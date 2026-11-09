@@ -43,6 +43,7 @@ import {
   type PointPrompt,
   type Prompt,
   type PromptAnswer,
+  type SelectionWindow,
 } from './prompt';
 import { NO_VIEW, type ViewHost } from './view/host';
 import { UndoStack, type UndoState } from './undo';
@@ -152,6 +153,8 @@ export class PromptBus {
   readonly #idle: SelectionLoop;
   /** The pre-selection the running command takes at its first "Select objects" prompt. */
   #pickfirst: readonly EntityId[] | undefined;
+  /** The window the pre-selection was last made with (STRETCH's, M2-06). */
+  #pickfirstWindow: SelectionWindow | undefined;
   /** The Previous selection set. */
   #previous: readonly EntityId[] = [];
   /** The selection last shown (the `selection` event). */
@@ -473,6 +476,7 @@ export class PromptBus {
       this.#idle.cancelWindow();
       this.#pickfirst =
         (selects || def.transparent) && this.#idle.ids.length > 0 ? [...this.#idle.ids] : undefined;
+      this.#pickfirstWindow = this.#pickfirst ? this.#idle.window : undefined;
       if (!def.transparent) this.#idle.clear();
       this.#showSelection();
     }
@@ -541,7 +545,8 @@ export class PromptBus {
   /** A "Select objects" prompt: answered by the pre-selection, or built pick by pick. */
   async #beginSelection(frame: Frame, prompt: Extract<Prompt, { kind: 'selection' }>) {
     const pre = frame.transparent ? undefined : this.#pickfirst;
-    this.#pickfirst = undefined;
+    const preWindow = this.#pickfirstWindow;
+    this.#pickfirst = this.#pickfirstWindow = undefined;
     if (pre) {
       this.#idle.clear();
       let ids = pre;
@@ -555,7 +560,11 @@ export class PromptBus {
       if (ids.length > 0) this.#previous = ids;
       this.#showSelection();
       frame.prompt = undefined;
-      return this.#advance(frame, { kind: 'selection', ids });
+      return this.#advance(frame, {
+        kind: 'selection',
+        ids,
+        ...(preWindow && { window: preWindow }),
+      });
     }
     frame.select = this.#selectionLoop({
       message: prompt.message,
@@ -628,7 +637,8 @@ export class PromptBus {
     frame.select = undefined;
     if (ids.length > 0) this.#previous = ids;
     this.#showSelection();
-    return this.#deliver({ kind: 'selection', ids }, '', false);
+    const window = loop.window;
+    return this.#deliver({ kind: 'selection', ids, ...(window && { window }) }, '', false);
   }
 
   #showSelection(): void {

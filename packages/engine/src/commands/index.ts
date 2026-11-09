@@ -14,3 +14,4 @@ export * from '../selection/rules';
 export * from './undo';
 export * from './undo-commands';
 export * from './modify/edit';
+export * from './drag';

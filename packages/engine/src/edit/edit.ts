@@ -15,6 +15,7 @@
 //   dictionary, so no associativity or group membership, except that hatches copied with their
 //   whole boundary stay associative with the copies. Copies of annotative objects are not
 //   annotative (a new annotative object is DEC-013's, not saved yet).
+import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
@@ -31,7 +32,8 @@ import type {
   SpatialFilter,
   Xdata,
 } from '../model/types';
-import { point, scaleAbout, type Similarity } from './similarity';
+import { moveBy, point, scaleAbout, type Similarity } from './similarity';
+import { stretchGeometry } from './stretch';
 import {
   annotativeData,
   transformGeometry,
@@ -323,6 +325,93 @@ function blockMotion(
     if (d) return { block: g.block, t: scaleAbout(d.basePoint, t.scale) };
   }
   return undefined;
+}
+
+// ── STRETCH ─────────────────────────────────────────────────────────────────────────────────
+
+/** Where STRETCH's window is, and what the canvas says lies in it. */
+export interface StretchWindow {
+  readonly box: Box;
+  /** The objects wholly inside it (moved whatever their kind); unknown without a canvas. */
+  readonly inside?: ReadonlySet<EntityId>;
+  /**
+   * The objects it crosses or holds. One the selection took that is not here was picked
+   * individually, and moves ("objects selected individually are moved rather than stretched").
+   */
+  readonly crossing?: ReadonlySet<EntityId>;
+}
+
+/** How STRETCH treats each selected object: moved whole, given a new shape, or left. */
+export interface StretchPlan {
+  readonly move: readonly EntityId[];
+  readonly shape: ReadonlyMap<EntityId, EntityGeometry>;
+  readonly refused: ReadonlyMap<string, number>;
+}
+
+/** The points of a box (edges included, as AutoCAD's window takes a point on its edge). */
+export const inBox =
+  (box: Box) =>
+  (p: Vec2): boolean =>
+    p.x >= box.minX && p.x <= box.maxX && p.y >= box.minY && p.y <= box.maxY;
+
+/** What STRETCH by `d` does to each of `ids` (`stretch.ts` per object). */
+export function planStretch(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  w: StretchWindow | undefined,
+  d: Vec2,
+): StretchPlan {
+  const move: EntityId[] = [];
+  const shape = new Map<EntityId, EntityGeometry>();
+  const refused = new Map<string, number>();
+  const inside = w ? inBox(w.box) : () => false;
+  for (const id of ids) {
+    const e = model.entity(id);
+    if (!e) continue;
+    if (!w || w.inside?.has(id) || (w.crossing && !w.crossing.has(id))) {
+      move.push(id);
+      continue;
+    }
+    const r = stretchGeometry(e.geom, inside, d);
+    if (r.kind === 'move') move.push(id);
+    else if (r.kind === 'shape') shape.set(id, r.geom);
+    else if (r.kind === 'whole') count(refused, r.reason);
+  }
+  return { move, shape, refused };
+}
+
+/**
+ * STRETCH: the objects' points inside the window move by `d`, objects wholly inside (or picked
+ * individually) move whole. What linked to a reshaped object lets go of it: an associative
+ * hatch, a dimension association (Triya cannot regenerate either yet, M2-10, M4-07).
+ */
+export function stretchObjects(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  w: StretchWindow | undefined,
+  d: Vec2,
+): EditReport {
+  const plan = planStretch(model, ids, w, d);
+  const links = new Links(b, model);
+  const refused = new Map(plan.refused);
+  const reshaped: EntityId[] = [];
+  for (const [id, geom] of plan.shape) {
+    const e = b.entity(id);
+    if (!e || isLocked(b, e)) continue;
+    for (const r of e.reactors ?? []) {
+      const other = links.entity(r);
+      if (other?.geom.kind === 'HATCH') links.dissociateHatch(other);
+    }
+    for (const a of links.assocs) {
+      if (assocGeometry(a).includes(e.handle) || a.dimension === e.handle) links.disassociate(a);
+    }
+    b.updateEntity(id, { geom });
+    reshaped.push(id);
+  }
+  const moved = transformObjects(b, model, plan.move, moveBy(d));
+  for (const [reason, n] of moved.refused) refused.set(reason, (refused.get(reason) ?? 0) + n);
+  return { ids: [...moved.ids, ...reshaped], refused, unannotated: 0 };
 }
 
 // ── COPY ────────────────────────────────────────────────────────────────────────────────────
