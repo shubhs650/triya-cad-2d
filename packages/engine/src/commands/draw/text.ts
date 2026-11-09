@@ -14,7 +14,7 @@ import type { Handle } from '../../model/handle';
 import type { EntityId } from '../../model/entity-ids';
 import type { Entity, MTextGeometry, TextGeometry, TextStyleRecord } from '../../model/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
-import { formatNumber, type Prompt, type PromptAnswer } from '../prompt';
+import { formatNumber, type Prompt, type PromptAnswer, type TextEditorColumns } from '../prompt';
 import { currentLayer } from './line';
 
 /** AutoCAD's single line spacing: 5/3 of the text height (DXF 44 = 1 for MTEXT). */
@@ -310,6 +310,8 @@ export function mtextCommand(): CommandDef {
   let rotation = 0;
   let attachment = 1;
   let spacing = { style: 1, factor: 1 };
+  /** The last column settings given, the next defaults (AutoCAD keeps them in MTEXTCOLUMN). */
+  let lastColumns: TextEditorColumns | undefined;
   return {
     name: 'MTEXT',
     dashVariant: true,
@@ -335,10 +337,11 @@ export function mtextCommand(): CommandDef {
 
       let width: number | undefined;
       let opposite: Vec2 | undefined;
+      let columns: TextEditorColumns | undefined;
       while (width === undefined) {
         const a = yield ctx.prompt.point({
           message: 'Specify opposite corner or',
-          options: ['Height', 'Justify', 'Line spacing', 'Rotation', 'Style', 'Width'],
+          options: ['Height', 'Justify', 'Line spacing', 'Rotation', 'Style', 'Width', 'Columns'],
           rubberBand: { from: first, box: true },
         });
         if (a.kind === 'point') {
@@ -417,6 +420,21 @@ export function mtextCommand(): CommandDef {
             width = w.value;
             break;
           }
+          case 'Columns': {
+            const c: TextEditorColumns | null | undefined = yield* askColumns(
+              ctx,
+              lastColumns,
+              shownHeight(),
+            );
+            if (c === undefined) return;
+            // With columns the box is set: its width is the column width, as Width sets it.
+            if (c) {
+              lastColumns = c;
+              columns = c;
+              width = c.width;
+            }
+            break;
+          }
         }
       }
 
@@ -458,11 +476,15 @@ export function mtextCommand(): CommandDef {
                 trueTypeFlags: style.trueTypeFlags,
                 widthFactor: style.widthFactor,
                 obliqueAngle: style.obliqueAngle,
+                lineSpacingStyle: spacing.style,
+                lineSpacing: spacing.factor,
+                ...(columns && { columns }),
               },
             }),
         });
         if (a.kind === 'string' && a.editor) {
           contents = a.value;
+          if (a.columns !== undefined) columns = a.columns ?? undefined;
           break;
         }
         if (a.kind !== 'string' || a.value === '') {
@@ -474,29 +496,147 @@ export function mtextCommand(): CommandDef {
       if (contents === '') return;
       const layer = currentLayer(ctx.model);
       const s = style;
+      const geom: MTextGeometry = {
+        kind: 'MTEXT',
+        contents,
+        style: s.handle,
+        position,
+        height: h,
+        width,
+        rotation,
+        attachment,
+        direction: 1,
+        lineSpacingStyle: spacing.style,
+        lineSpacing: spacing.factor,
+      };
       ctx.edit((b) => {
         b.addEntity({
           owner: ctx.space,
           layer,
-          geom: {
-            kind: 'MTEXT',
-            contents,
-            style: s.handle,
-            position,
-            height: h,
-            width,
-            rotation,
-            attachment,
-            direction: 1,
-            lineSpacingStyle: spacing.style,
-            lineSpacing: spacing.factor,
-          },
+          geom: columns ? withColumns(geom, typedCount(columns, contents)) : geom,
         });
         if (s.height <= 0 && height !== undefined) b.setHeader('$TEXTSIZE', height);
       });
     },
   };
 }
+
+/**
+ * MTEXT's Columns option, with the prompts of the "MTEXT (Command)" Columns option:
+ *   Enter column type [Dynamic/Static/No columns] <Dynamic>:
+ *   Static:  Specify total width / number of columns / gutter width / column height
+ *   Dynamic: Specify column width / gutter width / column height
+ * AutoCAD documents the values each asks for, not their defaults beyond the gutter's (five
+ * times the text height, "Column Settings Dialog Box"); ours are the last values given, else a
+ * column 6 heights wide and 25 high (our reading). Dynamic columns get auto height, all one
+ * height; their count is what the text needs (`count` 1 until the editor or the contents say).
+ * Null: No columns. Undefined: the command was ended.
+ */
+async function* askColumns(
+  ctx: CommandContext,
+  last: TextEditorColumns | undefined,
+  height: number,
+): AsyncGenerator<Prompt, TextEditorColumns | null | undefined, PromptAnswer> {
+  const k = yield ctx.prompt.keyword({
+    message: 'Enter column type',
+    options: ['Dynamic', 'Static', 'No columns'],
+    default: { kind: 'keyword', keyword: last?.type === 1 ? 'Static' : 'Dynamic' },
+  });
+  if (k.kind !== 'keyword') return undefined;
+  if (k.keyword === 'No columns') return null;
+  const staticCols = k.keyword === 'Static';
+  const columnWidth = last?.width ?? 6 * height;
+  const gutterWidth = last?.gutter ?? 5 * height;
+  const columnCount = last?.type === 1 ? last.count : 2;
+  const distance = async function* (
+    message: string,
+    value: number,
+  ): AsyncGenerator<Prompt, number | undefined, PromptAnswer> {
+    const a = yield ctx.prompt.distance({ message, default: { kind: 'distance', value } });
+    return a.kind === 'distance' && a.value > 0 ? a.value : undefined;
+  };
+  let total: number | undefined;
+  let count = 1;
+  if (staticCols) {
+    total = yield* distance(
+      'Specify total width',
+      columnCount * columnWidth + (columnCount - 1) * gutterWidth,
+    );
+    if (total === undefined) return undefined;
+    const n = yield ctx.prompt.integer({
+      message: 'Specify number of columns',
+      default: { kind: 'number', value: columnCount },
+    });
+    if (n.kind !== 'number' || n.value < 1) return undefined;
+    count = n.value;
+  }
+  const width = staticCols ? undefined : yield* distance('Specify column width', columnWidth);
+  if (!staticCols && width === undefined) return undefined;
+  let gutter: number | undefined;
+  for (;;) {
+    gutter = yield* distance('Specify gutter width', gutterWidth);
+    if (gutter === undefined) return undefined;
+    if (total === undefined || total - (count - 1) * gutter > 0) break;
+    ctx.message('The gutters leave no room for the columns.');
+  }
+  const columnHeight = yield* distance('Specify column height', last?.height ?? 25 * height);
+  if (columnHeight === undefined) return undefined;
+  return {
+    type: staticCols ? 1 : 2,
+    count,
+    width: total === undefined ? width! : (total - (count - 1) * gutter) / count,
+    gutter,
+    height: columnHeight,
+  };
+}
+
+/**
+ * Dynamic columns typed on the command line: at least one column per column break (`\N`), the
+ * one count known without laying the text out. The editor answers the count it laid out.
+ */
+function typedCount(c: TextEditorColumns, contents: string): TextEditorColumns {
+  if (c.type !== 2) return c;
+  const breaks = contents.match(/\\\\|\\N/g)?.filter((m) => m === '\\N').length ?? 0;
+  return { ...c, count: Math.max(c.count, breaks + 1) };
+}
+
+/** An MTEXT with the editor's columns: its width is the column width, DXF 46 their height. */
+function withColumns(g: MTextGeometry, c: TextEditorColumns | null): MTextGeometry {
+  const { columns: old, ...rest } = g;
+  if (!c) return rest;
+  return {
+    ...rest,
+    width: c.width,
+    definedHeight: c.height,
+    columns: {
+      type: c.type,
+      count: c.count,
+      flowReversed: old?.flowReversed ?? false,
+      // Dynamic columns of one height (auto height); per-column heights stay while the
+      // editor leaves the columns as they were (`editorColumns`).
+      autoHeight: c.type === 2,
+      width: c.width,
+      gutter: c.gutter,
+      heights: [],
+    },
+  };
+}
+
+/** An MTEXT's columns as the editor shows them; undefined without columns. */
+function editorColumns(g: MTextGeometry): TextEditorColumns | undefined {
+  const c = g.columns;
+  if (!c || (c.type !== 1 && c.type !== 2) || c.count < 1) return undefined;
+  return {
+    type: c.type,
+    count: c.count,
+    width: c.width,
+    gutter: c.gutter,
+    height: g.definedHeight ?? (c.heights.length > 0 ? Math.max(...c.heights) : 0),
+  };
+}
+
+const sameColumns = (a: TextEditorColumns | undefined, b: TextEditorColumns | null): boolean =>
+  JSON.stringify(a ?? null) === JSON.stringify(b);
 
 /** An edit TEXTEDIT made, for its Undo: the object as it was. */
 interface TextEdit {
@@ -592,6 +732,7 @@ async function* editText(
     obliqueAngle: style?.obliqueAngle ?? 0,
   };
   const old = g.kind === 'TEXT' ? g.value : g.contents;
+  const cols = g.kind === 'MTEXT' ? editorColumns(g) : undefined;
   const a = yield ctx.prompt.string({
     message: 'Enter text',
     spaces: true,
@@ -620,16 +761,29 @@ async function* editText(
             style: g.style,
             ...font,
             value: old,
+            lineSpacingStyle: g.lineSpacingStyle,
+            lineSpacing: g.lineSpacing,
+            ...(cols && { columns: cols }),
           },
   });
   if (a.kind === 'enter') return false;
   if (a.kind !== 'string') return undefined;
-  if (a.value === old) return false;
+  // Columns the editor left as they were stay as written (manual heights, flow direction).
+  const newColumns =
+    g.kind === 'MTEXT' && a.columns !== undefined && !sameColumns(cols, a.columns)
+      ? a.columns
+      : undefined;
+  if (a.value === old && newColumns === undefined) return false;
   if (a.value === '') {
     ctx.edit((b) => b.removeEntity(entity.id));
     return { id: entity.id, before: entity, erased: true };
   }
-  const geom = g.kind === 'TEXT' ? { ...g, value: a.value } : { ...g, contents: a.value };
+  const geom =
+    g.kind === 'TEXT'
+      ? { ...g, value: a.value }
+      : newColumns !== undefined
+        ? withColumns({ ...g, contents: a.value }, newColumns)
+        : { ...g, contents: a.value };
   ctx.edit((b) => b.updateEntity(entity.id, { geom }));
   return { id: entity.id, before: entity, erased: false };
 }

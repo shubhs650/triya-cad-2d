@@ -87,7 +87,7 @@ test('MTEXT editor formats, stacks and saves its contents as MTEXT codes', async
   await type(
     page,
     '1000020,1000080',
-    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width]:',
+    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
   );
   await type(page, '1000140,1000020', 'Enter text:');
 
@@ -132,7 +132,7 @@ test('Esc in the MTEXT editor cancels the command and makes nothing', async ({ p
   await type(
     page,
     '1000020,1000080',
-    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width]:',
+    'Specify opposite corner or [Height/Justify/Line spacing/Rotation/Style/Width/Columns]:',
   );
   await type(page, '1000140,1000020', 'Enter text:');
   await page.keyboard.type('dropped');

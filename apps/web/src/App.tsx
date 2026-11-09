@@ -709,7 +709,11 @@ export function App() {
       </div>
 
       <LayoutTabs doc={active} />
-      <TextEditor doc={active} fonts={fontState.files.map((f) => f.name)} />
+      <TextEditor
+        doc={active}
+        fonts={fontState.files.map((f) => f.name)}
+        sources={fonts.sources()}
+      />
       <SnapMenu />
       <CommandLine
         doc={active?.id}
