@@ -9,3 +9,4 @@ export * from './session/index';
 export * from './edit/index';
 export * from './commands/index';
 export * from './input/index';
+export * from './properties/index';

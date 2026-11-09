@@ -826,6 +826,87 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* Properties palette (M2-21): AutoCAD's two-column property grid, by section. */
+.properties-objects {
+  margin: 6px 8px;
+  font: inherit;
+}
+
+.dynamic-badge {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 8px 6px;
+  padding: 4px 8px;
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+}
+
+.dynamic-badge span {
+  color: var(--chrome-text-muted);
+}
+
+.properties-wrap {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+}
+
+.properties-section summary {
+  padding: 3px 8px;
+  background: var(--chrome-bg);
+  border-bottom: 1px solid var(--chrome-border);
+  font-weight: 600;
+  cursor: default;
+}
+
+.properties-section table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.properties-section th,
+.properties-section td {
+  padding: 1px 6px;
+  border-bottom: 1px solid var(--chrome-border);
+  text-align: left;
+  font-weight: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.properties-section th {
+  width: 42%;
+  color: var(--chrome-text-muted);
+}
+
+.properties-section input,
+.properties-section select {
+  width: 100%;
+  padding: 1px 4px;
+  font: inherit;
+  color: inherit;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.properties-section input:hover,
+.properties-section input:focus,
+.properties-section select:hover,
+.properties-section select:focus {
+  border-color: var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.properties-section .read-only {
+  display: block;
+  padding: 1px 5px;
+  color: var(--chrome-text-muted);
+}
+
 /* Health palette (M1-70): the drawing health report as folding cards. */
 .health-cards {
   flex: 1;

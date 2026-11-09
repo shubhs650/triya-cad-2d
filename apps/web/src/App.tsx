@@ -45,6 +45,8 @@ import { engines } from './engine/registry';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile } from './images';
 import { LayersPalette } from './LayersPalette';
+import { PropertiesPalette } from './PropertiesPalette';
+import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
@@ -144,6 +146,7 @@ engines.onCommand((doc, o) => {
     for (const c of controllersOf(doc)) c.setPrompt(prompt);
   }
   if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
+  if (o.type === 'properties') propertySheets.set(doc, o.sheet);
   if (o.type === 'selection') {
     selections.set(doc, o.ids);
     for (const c of controllersOf(doc)) c.setHighlight(o.ids);
@@ -228,6 +231,12 @@ function viewContext(id: number): ViewContext {
     save: (name, view) => doc && store.saveView(doc.id, name, view),
     file: (action) => fileCommand(id, action),
     clipboard: (content) => clipboardRequest(id, content),
+    // PROPERTIES and PROPERTIESCLOSE (M2-21).
+    palette: (name, open) => {
+      if (open) dockedPalette.set(name);
+      else if (dockedPalette.get() === name) dockedPalette.set(undefined);
+      return { ok: true };
+    },
   };
 }
 
@@ -611,6 +620,9 @@ async function open(
     const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits);
     // The drawing's authoritative document goes to its engine worker (M1-67).
     engines.start(id, opened.init, recovered?.changes);
+    // The Properties palette, docked, showed the drawing before its engine started (M2-21).
+    if (dockedPalette.get() === 'properties' && store.getSnapshot().active === id)
+      engines.command(id, { kind: 'properties', open: true });
     if (recovered) autosaver.recovered(id, recovered.from);
     if (handle) void recent.add(handle as RecentHandle);
     void deviceFonts.need(trueTypeFontsOf(opened.init));
@@ -744,10 +756,10 @@ export function App() {
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
   const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
   const [settings, setSettings] = useState(false);
-  // One palette docks at a time until the palette stack (M7-03).
-  type Palette = 'layers' | 'health' | 'references';
-  const [palette, setPalette] = useState<Palette | undefined>();
-  const togglePalette = (p: Palette) => setPalette((o) => (o === p ? undefined : p));
+  // One palette docks at a time until the palette stack (M7-03); PROPERTIES opens one too.
+  const palette = useSyncExternalStore(dockedPalette.subscribe, dockedPalette.get);
+  const setPalette = (p: PaletteName | undefined) => dockedPalette.set(p);
+  const togglePalette = (p: PaletteName) => dockedPalette.toggle(p);
   const suppliedVersion = useSyncExternalStore(supplied.subscribe, () => supplied.version);
   const waitingHandles = useSyncExternalStore(referenceFiles.subscribe, referenceFiles.waiting);
   const picker = useRef<HTMLInputElement>(null);
@@ -789,6 +801,11 @@ export function App() {
         e.preventDefault();
         const { active } = store.getSnapshot();
         if (active !== undefined) void saveDoc(active, e.shiftKey ? 'saveas' : 'qsave');
+      }
+      // Ctrl+1 opens or closes the Properties palette (PROPERTIES, M2-21), as in AutoCAD.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === '1') {
+        e.preventDefault();
+        if (store.getSnapshot().active !== undefined) dockedPalette.toggle('properties');
       }
       // Esc ends real-time PAN and cancels ZOOM Window, as in AutoCAD.
       if (e.key === 'Escape') {
@@ -1016,6 +1033,9 @@ export function App() {
             </div>
           )}
         </main>
+        {active && palette === 'properties' && (
+          <PropertiesPalette doc={active} onClose={() => setPalette(undefined)} />
+        )}
         {active && palette === 'layers' && (
           <LayersPalette doc={active} store={store} onClose={() => setPalette(undefined)} />
         )}
@@ -1039,6 +1059,13 @@ export function App() {
         )}
         {active && (
           <nav className="palette-rail" aria-label="Palettes">
+            <button
+              type="button"
+              aria-expanded={palette === 'properties'}
+              onClick={() => togglePalette('properties')}
+            >
+              Properties
+            </button>
             <button
               type="button"
               aria-expanded={palette === 'layers'}

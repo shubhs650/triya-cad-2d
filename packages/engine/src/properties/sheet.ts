@@ -1,0 +1,950 @@
+// The Properties palette's contents (M2-21, UI_SPEC.md §4 "Properties"): what AutoCAD 2024's
+// Properties palette lists for the selected objects, grouped as AutoCAD groups it (General,
+// then the type's own sections; 3D Visualization omitted). With objects of more than one type
+// selected it shows General only, and the type list ("All (5)", "Line (3)", …) narrows the
+// sheet, and the edits, to one type. A value the objects do not share is `*VARIES*` (`varies`).
+//
+// Values are raw (distances and coordinates in drawing units, angles in radians counter-clockwise
+// from world +X, as Properties shows them whatever ANGBASE says); the front-end formats them
+// with the drawing's LUNITS/LUPREC and AUNITS/AUPREC (`units`).
+import { distance, sub } from '../geom/vec';
+import type { Vec2 } from '../geom/types';
+import type { DocumentModel } from '../model/document';
+import { dynamicBlockOf } from '../model/dynamic-block';
+import type { EntityId } from '../model/entity-ids';
+import type { Handle } from '../model/handle';
+import type {
+  Color,
+  Entity,
+  EntityGeometry,
+  EntityType,
+  Lineweight,
+  LinetypeRef,
+  Transparency,
+} from '../model/types';
+import { polylineArea, polylineLength } from './measure';
+
+/** How a row's value is shown and typed. */
+export type PropertyKind =
+  /** A choice among `options` (Color, Layer, Linetype, Lineweight, Yes/No, …). */
+  | 'choice'
+  /** A choice that also takes a typed value (Transparency: ByLayer, ByBlock or 0–90). */
+  | 'transparency'
+  /** A length or coordinate, in drawing units (LUNITS). */
+  | 'distance'
+  /** An angle (AUNITS), radians. */
+  | 'angle'
+  /** An area, square drawing units. */
+  | 'area'
+  /** A plain number (scale factors, ratios). */
+  | 'number'
+  /** Text. */
+  | 'text';
+
+export type PropertyValue = number | string | boolean;
+
+export interface PropertyOption {
+  readonly value: string;
+  readonly label: string;
+}
+
+export interface PropertyRow {
+  /** What an edit names (`PropertyEdit.key`). */
+  readonly key: string;
+  /** AutoCAD's label: "Color", "Start X", "Linetype scale". */
+  readonly label: string;
+  readonly kind: PropertyKind;
+  /** The shared value; undefined when it varies. A choice's value is an option's `value`. */
+  readonly value?: PropertyValue;
+  /** The objects do not share the value: shown as `*VARIES*`. */
+  readonly varies?: true;
+  readonly readOnly?: true;
+  readonly options?: readonly PropertyOption[];
+}
+
+export interface PropertySection {
+  /** "General", "Geometry", "Text", "Misc", "Attributes", "Pattern". */
+  readonly title: string;
+  readonly rows: readonly PropertyRow[];
+}
+
+export interface PropertyTypeCount {
+  readonly type: EntityType;
+  /** AutoCAD's name for the type in the palette's list: "Line", "Block Reference". */
+  readonly label: string;
+  readonly count: number;
+}
+
+export interface PropertySheet {
+  /** How many objects are selected (all types). */
+  readonly count: number;
+  /** The selected objects' types, in the order first selected. */
+  readonly types: readonly PropertyTypeCount[];
+  /** The one type the sheet is narrowed to; undefined for all. */
+  readonly filter?: EntityType;
+  readonly sections: readonly PropertySection[];
+  /**
+   * FR-B3: the objects shown are references to one dynamic block, which Triya does not
+   * evaluate (PRD non-goal 2): the palette shows "Dynamic — edit in AutoCAD", named by the
+   * dynamic block (not its anonymous `*U` state).
+   */
+  readonly dynamic?: string;
+  /** How the front-end formats distances and angles: the drawing's units. */
+  readonly units: PropertyUnits;
+}
+
+export interface PropertyUnits {
+  readonly lunits: number;
+  readonly luprec: number;
+  readonly aunits: number;
+  readonly auprec: number;
+}
+
+/** AutoCAD's names for the types, as the Properties palette's list shows them. */
+const TYPE_LABELS: Partial<Record<EntityType, string>> = {
+  LINE: 'Line',
+  XLINE: 'Xline',
+  RAY: 'Ray',
+  CIRCLE: 'Circle',
+  ARC: 'Arc',
+  ELLIPSE: 'Ellipse',
+  POINT: 'Point',
+  LWPOLYLINE: 'Polyline',
+  POLYLINE: '2D Polyline',
+  SPLINE: 'Spline',
+  SOLID: '2D Solid',
+  TRACE: 'Trace',
+  '3DFACE': '3D Face',
+  TEXT: 'Text',
+  MTEXT: 'MText',
+  ATTDEF: 'Attribute Definition',
+  INSERT: 'Block Reference',
+  DIMENSION: 'Dimension',
+  ARC_DIMENSION: 'Arc Dimension',
+  LARGE_RADIAL_DIMENSION: 'Jogged Radius Dimension',
+  LEADER: 'Leader',
+  TOLERANCE: 'Tolerance',
+  MULTILEADER: 'MultiLeader',
+  ACAD_TABLE: 'Table',
+  IMAGE: 'Raster Image',
+  WIPEOUT: 'Wipeout',
+  PDFUNDERLAY: 'PDF Underlay',
+  MLINE: 'MLine',
+  VIEWPORT: 'Viewport',
+  REGION: 'Region',
+  OLE2FRAME: 'OLE Object',
+  ACAD_PROXY_ENTITY: 'Proxy Entity',
+  HATCH: 'Hatch',
+};
+
+export const typeLabel = (t: EntityType): string => TYPE_LABELS[t] ?? t;
+
+/** ACI 1–7 by AutoCAD's names; other indices show as "Color n". */
+const ACI_NAMES = ['', 'Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta', 'White'];
+
+/** An entity colour as a choice value: `ByLayer`, `ByBlock`, `aci:n`, `rgb:r,g,b`. */
+export function colorValue(c: Color): string {
+  switch (c.kind) {
+    case 'byLayer':
+      return 'ByLayer';
+    case 'byBlock':
+      return 'ByBlock';
+    case 'aci':
+      return `aci:${c.index}`;
+    case 'rgb':
+      // A colour-book colour keeps its book and name in the value, so it is one choice.
+      return `rgb:${c.r},${c.g},${c.b}${c.bookName ? `;${c.bookName};${c.colorName ?? ''}` : ''}`;
+  }
+}
+
+export function colorLabel(c: Color): string {
+  switch (c.kind) {
+    case 'byLayer':
+      return 'ByLayer';
+    case 'byBlock':
+      return 'ByBlock';
+    case 'aci':
+      return ACI_NAMES[c.index] ?? `Color ${c.index}`;
+    case 'rgb':
+      return c.bookName ? `${c.bookName}$${c.colorName ?? ''}` : `${c.r},${c.g},${c.b}`;
+  }
+}
+
+/** The colour a choice value names, or undefined. */
+export function parseColorValue(v: string): Color | undefined {
+  if (v === 'ByLayer') return { kind: 'byLayer' };
+  if (v === 'ByBlock') return { kind: 'byBlock' };
+  const aci = /^aci:(\d+)$/.exec(v);
+  if (aci) {
+    const index = Number(aci[1]);
+    return index >= 1 && index <= 255 ? { kind: 'aci', index } : undefined;
+  }
+  const rgb = /^rgb:(\d+),(\d+),(\d+)(?:;([^;]*);(.*))?$/.exec(v);
+  if (!rgb) return undefined;
+  const [r, g, b] = [rgb[1], rgb[2], rgb[3]].map(Number) as [number, number, number];
+  if ([r, g, b].some((n) => n > 255)) return undefined;
+  return rgb[4]
+    ? { kind: 'rgb', r, g, b, bookName: rgb[4], colorName: rgb[5] ?? '' }
+    : { kind: 'rgb', r, g, b };
+}
+
+const STANDARD_COLORS: readonly Color[] = [
+  { kind: 'byLayer' },
+  { kind: 'byBlock' },
+  ...[1, 2, 3, 4, 5, 6, 7].map((index): Color => ({ kind: 'aci', index })),
+];
+
+/** AutoCAD's lineweights, hundredths of a millimetre (the Lineweight list). */
+export const LINEWEIGHTS: readonly number[] = [
+  0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200,
+  211,
+];
+
+export const lineweightValue = (w: Lineweight): string => String(w);
+
+export function lineweightLabel(w: Lineweight): string {
+  return typeof w === 'number' ? `${(w / 100).toFixed(2)} mm` : w;
+}
+
+export function parseLineweightValue(v: string): Lineweight | undefined {
+  if (v === 'ByLayer' || v === 'ByBlock' || v === 'Default') return v;
+  const n = Number(v);
+  return LINEWEIGHTS.includes(n) ? n : undefined;
+}
+
+/**
+ * Transparency as Properties shows it: ByLayer, ByBlock, or a percentage 0–90 (AutoCAD's
+ * range). DXF 440 keeps alpha 0–255, 255 opaque: percent = (1 − alpha/255) · 100.
+ */
+export function transparencyValue(t: Transparency): string | number {
+  if (t === 'ByLayer' || t === 'ByBlock') return t;
+  return Math.round((1 - t.alpha / 255) * 100);
+}
+
+export function transparencyOf(percent: number): Transparency {
+  return { alpha: Math.round(((100 - percent) / 100) * 255) };
+}
+
+export const MAX_TRANSPARENCY = 90;
+
+/** The value every one of `values` shares, by `key`, or `varies`. */
+function shared<T>(
+  values: readonly T[],
+  key: (v: T) => unknown = (v) => v,
+): { value?: T; varies?: true } {
+  if (values.length === 0) return {};
+  const first = values[0]!;
+  const k = key(first);
+  for (let i = 1; i < values.length; i++) if (key(values[i]!) !== k) return { varies: true };
+  return { value: first };
+}
+
+/** How near two computed numbers must be to show as one value. */
+const close = (a: number, b: number): boolean =>
+  Math.abs(a - b) <= 1e-9 * Math.max(1, Math.abs(a), Math.abs(b));
+
+function sharedNumber(values: readonly number[]): { value?: number; varies?: true } {
+  if (values.length === 0) return {};
+  const first = values[0]!;
+  return values.every((v) => close(v, first)) ? { value: first } : { varies: true };
+}
+
+interface RowSpec<E> {
+  readonly key: string;
+  readonly label: string;
+  readonly kind: PropertyKind;
+  readonly get: (e: E) => PropertyValue;
+  readonly readOnly?: boolean;
+  readonly options?: readonly PropertyOption[];
+}
+
+function row<E>(objects: readonly E[], spec: RowSpec<E>): PropertyRow {
+  const values = objects.map(spec.get);
+  const s =
+    typeof values[0] === 'number'
+      ? sharedNumber(values as number[])
+      : shared<PropertyValue>(values);
+  return {
+    key: spec.key,
+    label: spec.label,
+    kind: spec.kind,
+    ...(s.value !== undefined && { value: s.value }),
+    ...(s.varies && { varies: true as const }),
+    ...(spec.readOnly && { readOnly: true as const }),
+    ...(spec.options && { options: spec.options }),
+  };
+}
+
+const YES_NO: readonly PropertyOption[] = [
+  { value: 'yes', label: 'Yes' },
+  { value: 'no', label: 'No' },
+];
+const yesNo = (b: boolean): string => (b ? 'yes' : 'no');
+
+/** DXF 72/73 as AutoCAD's justification names (TEXT's Justify). */
+export function textJustify(h: number, v: number): string {
+  if (v === 0) return ['Left', 'Center', 'Right', 'Aligned', 'Middle', 'Fit'][h] ?? 'Left';
+  const vertical = ['', 'Bottom', 'Middle', 'Top'][v] ?? '';
+  return `${vertical} ${['left', 'center', 'right'][h] ?? 'left'}`;
+}
+
+/** MTEXT attachment 1–9 as AutoCAD's names. */
+const MTEXT_JUSTIFY = [
+  '',
+  'Top left',
+  'Top center',
+  'Top right',
+  'Middle left',
+  'Middle center',
+  'Middle right',
+  'Bottom left',
+  'Bottom center',
+  'Bottom right',
+];
+
+const arcSweep = (start: number, end: number): number => {
+  const tau = 2 * Math.PI;
+  const s = (((end - start) % tau) + tau) % tau;
+  return s === 0 ? tau : s;
+};
+
+const polar = (c: Vec2, r: number, a: number): Vec2 => ({
+  x: c.x + r * Math.cos(a),
+  y: c.y + r * Math.sin(a),
+});
+
+const angleOf = (v: Vec2): number => {
+  const a = Math.atan2(v.y, v.x);
+  return a < 0 ? a + 2 * Math.PI : a;
+};
+
+type G<K extends EntityType> = Extract<EntityGeometry, { kind: K }>;
+const geomOf = <K extends EntityType>(e: Entity): G<K> => e.geom as G<K>;
+
+/** The sections a selection of one type shows after General. */
+function typeSections(model: DocumentModel, type: EntityType, es: readonly Entity[]) {
+  const sections: PropertySection[] = [];
+  const add = (title: string, rows: PropertyRow[]) => {
+    if (rows.length > 0) sections.push({ title, rows });
+  };
+  const name = (table: 'textStyles' | 'dimStyles', h: Handle) =>
+    model.tables[table].get(h)?.name ?? h;
+  switch (type) {
+    case 'LINE': {
+      const g = (e: Entity) => geomOf<'LINE'>(e);
+      add('Geometry', [
+        row(es, { key: 'startX', label: 'Start X', kind: 'distance', get: (e) => g(e).start.x }),
+        row(es, { key: 'startY', label: 'Start Y', kind: 'distance', get: (e) => g(e).start.y }),
+        row(es, { key: 'endX', label: 'End X', kind: 'distance', get: (e) => g(e).end.x }),
+        row(es, { key: 'endY', label: 'End Y', kind: 'distance', get: (e) => g(e).end.y }),
+        row(es, {
+          key: 'deltaX',
+          label: 'Delta X',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => g(e).end.x - g(e).start.x,
+        }),
+        row(es, {
+          key: 'deltaY',
+          label: 'Delta Y',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => g(e).end.y - g(e).start.y,
+        }),
+        row(es, {
+          key: 'length',
+          label: 'Length',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => distance(g(e).start, g(e).end),
+        }),
+        row(es, {
+          key: 'angle',
+          label: 'Angle',
+          kind: 'angle',
+          readOnly: true,
+          get: (e) => angleOf(sub(g(e).end, g(e).start)),
+        }),
+      ]);
+      break;
+    }
+    case 'CIRCLE': {
+      const g = (e: Entity) => geomOf<'CIRCLE'>(e);
+      add('Geometry', [
+        row(es, { key: 'centerX', label: 'Center X', kind: 'distance', get: (e) => g(e).center.x }),
+        row(es, { key: 'centerY', label: 'Center Y', kind: 'distance', get: (e) => g(e).center.y }),
+        row(es, { key: 'radius', label: 'Radius', kind: 'distance', get: (e) => g(e).radius }),
+        row(es, {
+          key: 'diameter',
+          label: 'Diameter',
+          kind: 'distance',
+          get: (e) => 2 * g(e).radius,
+        }),
+        row(es, {
+          key: 'circumference',
+          label: 'Circumference',
+          kind: 'distance',
+          get: (e) => 2 * Math.PI * g(e).radius,
+        }),
+        row(es, {
+          key: 'area',
+          label: 'Area',
+          kind: 'area',
+          get: (e) => Math.PI * g(e).radius ** 2,
+        }),
+      ]);
+      break;
+    }
+    case 'ARC': {
+      const g = (e: Entity) => geomOf<'ARC'>(e);
+      const sweep = (e: Entity) => arcSweep(g(e).startAngle, g(e).endAngle);
+      add('Geometry', [
+        row(es, {
+          key: 'startX',
+          label: 'Start X',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => polar(g(e).center, g(e).radius, g(e).startAngle).x,
+        }),
+        row(es, {
+          key: 'startY',
+          label: 'Start Y',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => polar(g(e).center, g(e).radius, g(e).startAngle).y,
+        }),
+        row(es, { key: 'centerX', label: 'Center X', kind: 'distance', get: (e) => g(e).center.x }),
+        row(es, { key: 'centerY', label: 'Center Y', kind: 'distance', get: (e) => g(e).center.y }),
+        row(es, {
+          key: 'endX',
+          label: 'End X',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => polar(g(e).center, g(e).radius, g(e).endAngle).x,
+        }),
+        row(es, {
+          key: 'endY',
+          label: 'End Y',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => polar(g(e).center, g(e).radius, g(e).endAngle).y,
+        }),
+        row(es, { key: 'radius', label: 'Radius', kind: 'distance', get: (e) => g(e).radius }),
+        row(es, {
+          key: 'startAngle',
+          label: 'Start angle',
+          kind: 'angle',
+          get: (e) => g(e).startAngle,
+        }),
+        row(es, { key: 'endAngle', label: 'End angle', kind: 'angle', get: (e) => g(e).endAngle }),
+        row(es, {
+          key: 'totalAngle',
+          label: 'Total angle',
+          kind: 'angle',
+          readOnly: true,
+          get: sweep,
+        }),
+        row(es, {
+          key: 'arcLength',
+          label: 'Arc length',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => g(e).radius * sweep(e),
+        }),
+        row(es, {
+          key: 'area',
+          label: 'Area',
+          kind: 'area',
+          readOnly: true,
+          // The area between the arc and its chord, as AutoCAD's Area for an arc.
+          get: (e) => (g(e).radius ** 2 / 2) * (sweep(e) - Math.sin(sweep(e))),
+        }),
+      ]);
+      break;
+    }
+    case 'ELLIPSE': {
+      const g = (e: Entity) => geomOf<'ELLIPSE'>(e);
+      const major = (e: Entity) => Math.hypot(g(e).majorAxis.x, g(e).majorAxis.y);
+      add('Geometry', [
+        row(es, { key: 'centerX', label: 'Center X', kind: 'distance', get: (e) => g(e).center.x }),
+        row(es, { key: 'centerY', label: 'Center Y', kind: 'distance', get: (e) => g(e).center.y }),
+        row(es, {
+          key: 'majorRadius',
+          label: 'Major radius',
+          kind: 'distance',
+          readOnly: true,
+          get: major,
+        }),
+        row(es, {
+          key: 'minorRadius',
+          label: 'Minor radius',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => major(e) * g(e).ratio,
+        }),
+        row(es, {
+          key: 'radiusRatio',
+          label: 'Radius ratio',
+          kind: 'number',
+          readOnly: true,
+          get: (e) => g(e).ratio,
+        }),
+      ]);
+      break;
+    }
+    case 'POINT': {
+      const g = (e: Entity) => geomOf<'POINT'>(e);
+      add('Geometry', [
+        row(es, {
+          key: 'positionX',
+          label: 'Position X',
+          kind: 'distance',
+          get: (e) => g(e).position.x,
+        }),
+        row(es, {
+          key: 'positionY',
+          label: 'Position Y',
+          kind: 'distance',
+          get: (e) => g(e).position.y,
+        }),
+      ]);
+      break;
+    }
+    case 'LWPOLYLINE': {
+      const g = (e: Entity) => geomOf<'LWPOLYLINE'>(e);
+      add('Geometry', [
+        row(es, {
+          key: 'elevation',
+          label: 'Elevation',
+          kind: 'distance',
+          get: (e) => g(e).elevation ?? 0,
+        }),
+        row(es, {
+          key: 'length',
+          label: 'Length',
+          kind: 'distance',
+          readOnly: true,
+          get: (e) => polylineLength(g(e)),
+        }),
+        row(es, {
+          key: 'area',
+          label: 'Area',
+          kind: 'area',
+          readOnly: true,
+          get: (e) => polylineArea(g(e)),
+        }),
+      ]);
+      add('Misc', [
+        row(es, {
+          key: 'closed',
+          label: 'Closed',
+          kind: 'choice',
+          options: YES_NO,
+          get: (e) => yesNo(g(e).closed),
+        }),
+      ]);
+      break;
+    }
+    case 'TEXT': {
+      const g = (e: Entity) => geomOf<'TEXT'>(e);
+      add('Text', [
+        row(es, { key: 'contents', label: 'Contents', kind: 'text', get: (e) => g(e).value }),
+        row(es, {
+          key: 'style',
+          label: 'Style',
+          kind: 'text',
+          readOnly: true,
+          get: (e) => name('textStyles', g(e).style),
+        }),
+        row(es, {
+          key: 'justify',
+          label: 'Justify',
+          kind: 'text',
+          readOnly: true,
+          get: (e) => textJustify(g(e).halign, g(e).valign),
+        }),
+        row(es, { key: 'height', label: 'Height', kind: 'distance', get: (e) => g(e).height }),
+        row(es, { key: 'rotation', label: 'Rotation', kind: 'angle', get: (e) => g(e).rotation }),
+        row(es, {
+          key: 'widthFactor',
+          label: 'Width factor',
+          kind: 'number',
+          get: (e) => g(e).widthFactor,
+        }),
+        row(es, { key: 'oblique', label: 'Obliquing', kind: 'angle', get: (e) => g(e).oblique }),
+      ]);
+      add('Geometry', [
+        row(es, {
+          key: 'positionX',
+          label: 'Position X',
+          kind: 'distance',
+          get: (e) => textPositionOf(g(e)).x,
+        }),
+        row(es, {
+          key: 'positionY',
+          label: 'Position Y',
+          kind: 'distance',
+          get: (e) => textPositionOf(g(e)).y,
+        }),
+      ]);
+      add('Misc', [
+        row(es, {
+          key: 'upsideDown',
+          label: 'Upside down',
+          kind: 'choice',
+          options: YES_NO,
+          get: (e) => yesNo(g(e).upsideDown),
+        }),
+        row(es, {
+          key: 'backward',
+          label: 'Backward',
+          kind: 'choice',
+          options: YES_NO,
+          get: (e) => yesNo(g(e).backward),
+        }),
+      ]);
+      break;
+    }
+    case 'MTEXT': {
+      const g = (e: Entity) => geomOf<'MTEXT'>(e);
+      add('Text', [
+        row(es, {
+          key: 'contents',
+          label: 'Contents',
+          kind: 'text',
+          readOnly: true,
+          get: (e) => g(e).contents,
+        }),
+        row(es, {
+          key: 'style',
+          label: 'Style',
+          kind: 'text',
+          readOnly: true,
+          get: (e) => name('textStyles', g(e).style),
+        }),
+        row(es, {
+          key: 'justify',
+          label: 'Justify',
+          kind: 'text',
+          readOnly: true,
+          get: (e) => MTEXT_JUSTIFY[g(e).attachment] ?? 'Top left',
+        }),
+        row(es, { key: 'height', label: 'Text height', kind: 'distance', get: (e) => g(e).height }),
+        row(es, { key: 'rotation', label: 'Rotation', kind: 'angle', get: (e) => g(e).rotation }),
+        row(es, {
+          key: 'lineSpacing',
+          label: 'Line space factor',
+          kind: 'number',
+          get: (e) => g(e).lineSpacing,
+        }),
+        row(es, {
+          key: 'width',
+          label: 'Defined width',
+          kind: 'distance',
+          get: (e) => g(e).width,
+        }),
+      ]);
+      add('Geometry', [
+        row(es, {
+          key: 'positionX',
+          label: 'Position X',
+          kind: 'distance',
+          get: (e) => g(e).position.x,
+        }),
+        row(es, {
+          key: 'positionY',
+          label: 'Position Y',
+          kind: 'distance',
+          get: (e) => g(e).position.y,
+        }),
+      ]);
+      break;
+    }
+    case 'INSERT': {
+      const g = (e: Entity) => geomOf<'INSERT'>(e);
+      add('Geometry', [
+        row(es, {
+          key: 'positionX',
+          label: 'Position X',
+          kind: 'distance',
+          get: (e) => g(e).position.x,
+        }),
+        row(es, {
+          key: 'positionY',
+          label: 'Position Y',
+          kind: 'distance',
+          get: (e) => g(e).position.y,
+        }),
+        row(es, {
+          key: 'scaleX',
+          label: 'Scale X',
+          kind: 'number',
+          readOnly: true,
+          get: (e) => g(e).scale.x,
+        }),
+        row(es, {
+          key: 'scaleY',
+          label: 'Scale Y',
+          kind: 'number',
+          readOnly: true,
+          get: (e) => g(e).scale.y,
+        }),
+        row(es, {
+          key: 'scaleZ',
+          label: 'Scale Z',
+          kind: 'number',
+          readOnly: true,
+          get: (e) => g(e).scale.z,
+        }),
+      ]);
+      add('Misc', [
+        row(es, {
+          key: 'name',
+          label: 'Name',
+          kind: 'text',
+          readOnly: true,
+          // A dynamic block's reference is named by the dynamic block, not its `*U` state.
+          get: (e) =>
+            dynamicBlockOf(model.blocks, g(e).block)?.name ??
+            model.tables.blockRecords.get(g(e).block)?.name ??
+            g(e).block,
+        }),
+        row(es, { key: 'rotation', label: 'Rotation', kind: 'angle', get: (e) => g(e).rotation }),
+      ]);
+      if (es.length === 1) {
+        // One reference: its attributes by tag, as AutoCAD's Attributes section lists them.
+        // A multiline attribute is edited in the Enhanced Attribute Editor (EATTEDIT).
+        const attributes = g(es[0]!).attributes;
+        add(
+          'Attributes',
+          attributes.map((a) => ({
+            key: `attribute:${a.handle}`,
+            label: a.tag,
+            kind: 'text' as const,
+            value: a.mtext ? a.mtext.contents : a.value,
+            ...(a.mtext && { readOnly: true as const }),
+          })),
+        );
+      }
+      break;
+    }
+    case 'DIMENSION':
+    case 'ARC_DIMENSION':
+    case 'LARGE_RADIAL_DIMENSION': {
+      const g = (e: Entity) => geomOf<'DIMENSION'>(e);
+      add('Misc', [
+        row(es, {
+          key: 'dimStyle',
+          label: 'Dim style',
+          kind: 'text',
+          readOnly: true,
+          get: (e) => name('dimStyles', g(e).style),
+        }),
+      ]);
+      add('Text', [
+        row(es, {
+          key: 'textOverride',
+          label: 'Text override',
+          kind: 'text',
+          readOnly: true,
+          get: (e) => g(e).text,
+        }),
+        row(es, {
+          key: 'textRotation',
+          label: 'Text rotation',
+          kind: 'angle',
+          readOnly: true,
+          get: (e) => g(e).textRotation,
+        }),
+      ]);
+      break;
+    }
+    case 'HATCH': {
+      const g = (e: Entity) => geomOf<'HATCH'>(e);
+      add('Pattern', [
+        row(es, {
+          key: 'patternType',
+          label: 'Type',
+          kind: 'text',
+          readOnly: true,
+          get: (e) =>
+            g(e).gradient
+              ? 'Gradient'
+              : (['User defined', 'Predefined', 'Custom'][g(e).patternType] ?? 'Predefined'),
+        }),
+        row(es, {
+          key: 'patternName',
+          label: 'Pattern name',
+          kind: 'text',
+          readOnly: true,
+          get: (e) => g(e).gradient?.name ?? g(e).pattern,
+        }),
+        row(es, {
+          key: 'patternAngle',
+          label: 'Angle',
+          kind: 'angle',
+          readOnly: true,
+          get: (e) => g(e).patternAngle,
+        }),
+        row(es, {
+          key: 'patternScale',
+          label: 'Scale',
+          kind: 'number',
+          readOnly: true,
+          get: (e) => g(e).patternScale,
+        }),
+        row(es, {
+          key: 'associative',
+          label: 'Associative',
+          kind: 'choice',
+          readOnly: true,
+          options: YES_NO,
+          get: (e) => yesNo(g(e).associative),
+        }),
+      ]);
+      break;
+    }
+    default:
+      break;
+  }
+  return sections;
+}
+
+/**
+ * Where Properties puts a TEXT (Position X/Y): its alignment point when the text is not
+ * left-baseline (DXF 11, which AutoCAD keeps while DXF 10 is recomputed), otherwise DXF 10.
+ */
+export function textPositionOf(g: {
+  readonly position: Vec2;
+  readonly alignmentPoint?: Vec2;
+  readonly halign: number;
+  readonly valign: number;
+}): Vec2 {
+  return (g.halign !== 0 || g.valign !== 0) && g.alignmentPoint ? g.alignmentPoint : g.position;
+}
+
+function headerNumber(model: DocumentModel, name: string, fallback: number): number {
+  const v = model.header.get(name);
+  return typeof v === 'number' ? v : fallback;
+}
+
+export function propertyUnits(model: DocumentModel): PropertyUnits {
+  return {
+    lunits: headerNumber(model, '$LUNITS', 2),
+    luprec: headerNumber(model, '$LUPREC', 4),
+    aunits: headerNumber(model, '$AUNITS', 0),
+    auprec: headerNumber(model, '$AUPREC', 0),
+  };
+}
+
+/** The selected objects of the type the sheet is narrowed to (all when `filter` is undefined). */
+export function filtered(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  filter: EntityType | undefined,
+): Entity[] {
+  const out: Entity[] = [];
+  for (const id of ids) {
+    const e = model.entity(id);
+    if (e && (filter === undefined || e.type === filter)) out.push(e);
+  }
+  return out;
+}
+
+/**
+ * The Properties palette's sheet for the objects `ids`, narrowed to `filter` (a type among
+ * them; any other shows all). No objects: General with the drawing's current settings is
+ * AutoCAD's; Triya shows "No selection" and no rows (M2-21 leftover).
+ */
+export function propertySheet(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  filter?: EntityType,
+): PropertySheet {
+  const all = filtered(model, ids, undefined);
+  const counts = new Map<EntityType, number>();
+  for (const e of all) counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
+  const types = [...counts].map(([type, count]) => ({ type, label: typeLabel(type), count }));
+  const narrowed = filter !== undefined && counts.has(filter) ? filter : undefined;
+  const es = narrowed ? all.filter((e) => e.type === narrowed) : all;
+  const units = propertyUnits(model);
+  if (es.length === 0) return { count: 0, types: [], sections: [], units };
+
+  const layers = [...model.tables.layers.values()]
+    .map((l) => ({ value: l.handle as string, label: l.name }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const linetypes: PropertyOption[] = [
+    { value: 'ByLayer', label: 'ByLayer' },
+    { value: 'ByBlock', label: 'ByBlock' },
+    ...[...model.tables.linetypes.values()]
+      .filter((l) => !/^(BYLAYER|BYBLOCK)$/i.test(l.name))
+      .map((l) => ({ value: l.handle as string, label: l.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  ];
+  const colors = new Map<string, string>(
+    STANDARD_COLORS.map((c) => [colorValue(c), colorLabel(c)]),
+  );
+  for (const e of es) {
+    const v = colorValue(e.color);
+    if (!colors.has(v)) colors.set(v, colorLabel(e.color));
+  }
+  const weights: PropertyOption[] = [
+    ...(['ByLayer', 'ByBlock', 'Default'] as const).map((w) => ({ value: w, label: w })),
+    ...LINEWEIGHTS.map((w) => ({ value: String(w), label: lineweightLabel(w) })),
+  ];
+  const linetypeValue = (l: LinetypeRef): string => l;
+
+  const general: PropertyRow[] = [
+    row(es, {
+      key: 'color',
+      label: 'Color',
+      kind: 'choice',
+      options: [...colors].map(([value, label]) => ({ value, label })),
+      get: (e) => colorValue(e.color),
+    }),
+    row(es, { key: 'layer', label: 'Layer', kind: 'choice', options: layers, get: (e) => e.layer }),
+    row(es, {
+      key: 'linetype',
+      label: 'Linetype',
+      kind: 'choice',
+      options: linetypes,
+      get: (e) => linetypeValue(e.linetype),
+    }),
+    row(es, { key: 'ltScale', label: 'Linetype scale', kind: 'number', get: (e) => e.ltScale }),
+    row(es, {
+      key: 'lineweight',
+      label: 'Lineweight',
+      kind: 'choice',
+      options: weights,
+      get: (e) => lineweightValue(e.lineweight),
+    }),
+    row(es, {
+      key: 'transparency',
+      label: 'Transparency',
+      kind: 'transparency',
+      options: [
+        { value: 'ByLayer', label: 'ByLayer' },
+        { value: 'ByBlock', label: 'ByBlock' },
+      ],
+      get: (e) => transparencyValue(e.transparency),
+    }),
+  ];
+  const oneType = narrowed ?? (counts.size === 1 ? es[0]!.type : undefined);
+  const sections: PropertySection[] = [
+    { title: 'General', rows: general },
+    ...(oneType ? typeSections(model, oneType, es) : []),
+  ];
+  const dynamic =
+    oneType === 'INSERT'
+      ? shared(es.map((e) => dynamicBlockOf(model.blocks, geomOf<'INSERT'>(e).block)?.name ?? ''))
+          .value || undefined
+      : undefined;
+  return {
+    count: all.length,
+    types,
+    ...(narrowed && { filter: narrowed }),
+    sections,
+    ...(dynamic && { dynamic }),
+    units,
+  };
+}

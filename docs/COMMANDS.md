@@ -64,7 +64,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | OVERKILL | — | 2 | tolerance, ignore props, combine | |
 | CHANGE / CHPROP | -CH / CH→PROPERTIES | 2 | | |
 | MATCHPROP | MA | 1 | Settings dialog | |
-| PROPERTIES | PR, CH, MO, Ctrl+1 | 1 | palette | |
+| PROPERTIES | PR, CH, MO, Ctrl+1 | 1 | palette | ~ (#247: palette v1, General + per-type sections, undoable edits; leftovers M2-35) |
+| PROPERTIESCLOSE | — | 2 | closes the palette | x (#247) |
 | UNDO / U | U | 1 | Auto, Control, BEgin/End, Mark, Back, number | x (#223; Auto/Combine/Layer kept as settings until macros, undoable views and the layer manager exist; Ctrl+Z in M2-23) |
 | REDO | Ctrl+Y | 1 | | x (#223; Ctrl+Y in M2-23) |
 | MREDO | — | 2 | | |

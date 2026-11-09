@@ -44,6 +44,8 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      'PROPERTIES',
+      'PROPERTIESCLOSE',
       'QSAVE',
       'REGEN',
       'REGENALL',
@@ -72,6 +74,11 @@ describe('palette search', () => {
     ]);
     expect(commandItems(builtinCommands()).find((i) => i.id === 'DIMLINEAR')?.aliases).toEqual([
       'DLI',
+    ]);
+    expect(commandItems(builtinCommands()).find((i) => i.id === 'PROPERTIES')?.aliases).toEqual([
+      'CH',
+      'MO',
+      'PR',
     ]);
   });
 

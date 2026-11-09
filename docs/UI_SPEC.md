@@ -60,7 +60,7 @@ Breakpoints (viewport width): **≥1920 "full"**, **1600–1919 "wide"**, **1366
 ## 4. Palettes
 
 - Dockable stack with tabs; drag to reorder; float; auto-hide; width persisted. Below 1366 px palettes open as a right slide-over that overlays the canvas and closes on Esc.
-- **Properties:** AutoCAD grouping (General, 3D Visualization omitted, Geometry, Misc, per-type sections); multi-select shows `*VARIES*`; inline edit with units formatting; Quick Properties overlay on hover (toggle in status bar).
+- **Properties:** AutoCAD grouping (General, 3D Visualization omitted, Geometry, Misc, per-type sections); multi-select shows `*VARIES*`; inline edit with units formatting; Quick Properties overlay on hover (toggle in status bar). Docked from the palette rail, Ctrl+1 or PROPERTIES; the object list ("All (n)", "Line (n)") narrows it to one type; a choice applies when picked, a typed value on Enter or blur (Esc restores); each edit is one undo step (M2-21, #247; Quick Properties is M2-35).
 - **Layers:** manager with column chooser, search, filters tree, states menu, VP overrides when a viewport is active, inline edit.
 - **Blocks / Library:** current drawing blocks, recent, user library folders, PV standards library with search and preview thumbnails.
 - **References:** tree of xrefs/images/PDF underlays with status (loaded/missing/unloaded), paths, actions. M1-21: columns Reference name, Status (Loaded, Not found, Unloaded), Type (Attach, Overlay, Image, PDF underlay), Saved path; Find files…, Choose folder… and Reconnect (kept folders the browser asks about); a status-bar button names how many references are not found and opens the palette. Attach/detach/reload/unload/bind are M5-04.
