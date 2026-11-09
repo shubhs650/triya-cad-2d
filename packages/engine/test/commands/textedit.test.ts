@@ -242,3 +242,42 @@ describe('TEXT: a click elsewhere starts the next line there', () => {
     expect(c!.position.y).toBeCloseTo(50 - 5 * Math.cos(Math.PI / 6));
   });
 });
+
+describe('TEXTEDIT and MTEXT columns (M2-07 part 3)', () => {
+  async function columned(bus: PromptBus) {
+    await bus.script(['MTEXT', '50,0', 'C', 'S', '50', '2', '10', '30']);
+    await bus.answer({ kind: 'string', value: 'a\\Nb', editor: true });
+    await bus.submit('ED');
+    await bus.pick({ x: 50, y: 0 });
+    return bus.prompt as StringPrompt;
+  }
+
+  it('opens the editor with the columns, and keeps them as written when they come back unchanged', async () => {
+    const { bus, model, added } = setup();
+    const p = await columned(bus);
+    expect(p.editor?.columns).toEqual({ type: 1, count: 2, width: 20, gutter: 10, height: 30 });
+    const before = added()[0]!.geom;
+    await bus.answer({ kind: 'string', value: 'a\\Nb', editor: true, columns: p.editor!.columns! });
+    expect(model.entity(added()[0]!.id)!.geom).toBe(before);
+  });
+
+  it('applies columns the editor changed or dropped', async () => {
+    const { bus, model, added } = setup();
+    const p = await columned(bus);
+    await bus.answer({
+      kind: 'string',
+      value: 'a\\Nb',
+      editor: true,
+      columns: { ...p.editor!.columns!, type: 2, count: 3 },
+    });
+    expect(geom<MTextGeometry>(model.entity(added()[0]!.id))).toMatchObject({
+      contents: 'a\\Nb',
+      columns: { type: 2, count: 3, autoHeight: true, width: 20 },
+    });
+    await bus.cancel();
+    await bus.submit('ED');
+    await bus.pick({ x: 50, y: 0 });
+    await bus.answer({ kind: 'string', value: 'a\\Nb', editor: true, columns: null });
+    expect(geom<MTextGeometry>(model.entity(added()[0]!.id)).columns).toBeUndefined();
+  });
+});

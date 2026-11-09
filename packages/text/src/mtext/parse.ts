@@ -124,7 +124,7 @@ export interface MTextParseOptions {
 }
 
 /** `\M+n`: the code page of each big-font index. */
-const MBCS_CODEPAGES: Readonly<Record<string, number>> = {
+export const MBCS_CODEPAGES: Readonly<Record<string, number>> = {
   '1': 932, // Japanese (Shift-JIS)
   '2': 950, // Traditional Chinese (Big5)
   '3': 949, // Korean (Wansung)
@@ -201,6 +201,14 @@ function tabStop(tok: string): MTextTabStop | undefined {
   const at = m ? num(m[2]!) : undefined;
   if (!m || at === undefined) return undefined;
   return { at, kind: m[1] === 'c' ? 'center' : m[1] === 'r' ? 'right' : 'left' };
+}
+
+/**
+ * The paragraph properties a chain of `\p` values sets (`MTextParagraph.codes`), each on top of
+ * the ones before it, from the defaults.
+ */
+export function paragraphStyleOf(codes: readonly string[]): MTextParagraphStyle {
+  return codes.reduce((style, v) => parseParagraph(v, style), DEFAULT_PARAGRAPH);
 }
 
 /** `\p` value: comma-separated keys, an optional leading x (extended form). */
