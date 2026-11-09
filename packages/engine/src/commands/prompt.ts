@@ -3,6 +3,7 @@
 // tests are front-ends that turn typed text or picks into answers on the `PromptBus`.
 import type { Vec2 } from '../geom/types';
 import type { EntityId } from '../model/entity-ids';
+import type { Handle } from '../model/handle';
 import type { DragPreview } from './drag';
 
 /** A selection window's corners as the drafter gave them. */
@@ -82,10 +83,33 @@ export interface KeywordPrompt extends PromptBase {
   readonly kind: 'keyword';
 }
 
+/**
+ * Where an in-place text editor opens (M2-07): TEXT's one line at a time, or MTEXT's editor
+ * with its formatting toolbar, which answers with the whole contents (`editor: true`).
+ */
+export interface TextEditorRequest {
+  readonly kind: 'text' | 'mtext';
+  /** TEXT: the line's alignment point; MTEXT: the insertion point, on the box by `attachment`. */
+  readonly position: Vec2;
+  /** Radians, counter-clockwise from world +X. */
+  readonly rotation: number;
+  readonly height: number;
+  /** MTEXT's box width (0: no wrapping); 0 for TEXT. */
+  readonly width: number;
+  /** MTEXT's attachment point 1–9 (top-left to bottom-right); TEXT's DXF 72/73 as 1–9 too. */
+  readonly attachment: number;
+  /** The STYLE record, its font file (DXF 3) and TrueType flags (1 italic, 2 bold). */
+  readonly style: Handle;
+  readonly fontFile: string;
+  readonly trueTypeFlags: number;
+}
+
 /** Free text; without `spaces` a space ends the input (the front-end's job, as Space is Enter). */
 export interface StringPrompt extends PromptBase {
   readonly kind: 'string';
   readonly spaces?: boolean;
+  /** Typed in place on the canvas, where a front-end can (M2-07). */
+  readonly editor?: TextEditorRequest;
 }
 
 export interface IntegerPrompt extends PromptBase {
@@ -133,7 +157,12 @@ export type PromptAnswer =
   | { readonly kind: 'distance'; readonly value: number }
   | { readonly kind: 'angle'; readonly value: number }
   | { readonly kind: 'keyword'; readonly keyword: string }
-  | { readonly kind: 'string'; readonly value: string }
+  | {
+      readonly kind: 'string';
+      readonly value: string;
+      /** From an in-place MTEXT editor: the whole contents, not one typed line (M2-07). */
+      readonly editor?: true;
+    }
   | { readonly kind: 'number'; readonly value: number }
   | {
       readonly kind: 'selection';

@@ -21,6 +21,7 @@ describe('palette search', () => {
       'LINE',
       'MIRROR',
       'MOVE',
+      'MTEXT',
       'PAN',
       'REGEN',
       'REGENALL',
@@ -29,6 +30,7 @@ describe('palette search', () => {
       'SCALE',
       'SELECT',
       'STRETCH',
+      'TEXT',
       'TEXTTOFRONT',
       'VIEW',
       'WIPEOUT',
@@ -36,6 +38,8 @@ describe('palette search', () => {
     ]);
     const erase = commandItems(builtinCommands()).find((i) => i.id === 'ERASE');
     expect(erase?.aliases).toEqual(expect.arrayContaining(['E', 'DEL']));
+    const text = commandItems(builtinCommands()).find((i) => i.id === 'TEXT');
+    expect(text?.aliases).toEqual(['DT']);
   });
 
   it('scores whole, prefix, word-start and scattered matches in that order', () => {
