@@ -60,7 +60,28 @@ async function installedFonts(page: Page, answer: 'allow' | 'deny'): Promise<voi
 async function openDrawing(page: Page): Promise<number> {
   await openWithPicker(page, DRAWING);
   await expectShown(page, 'hatch_text_box_in_hole.dxf');
-  return inkWeight(page);
+  return settledInk(page);
+}
+
+/**
+ * The canvas's ink once two looks half a second apart agree. A drawing's first frame can come
+ * before its solid hatch (about a tenth of the ink, 100–250 ms earlier), and a stand-in
+ * measured on it made every later look seem to have gained a font (M2-28).
+ */
+async function settledInk(page: Page): Promise<number> {
+  let last = -1;
+  await expect
+    .poll(
+      async () => {
+        const now = await inkWeight(page);
+        const same = now === last;
+        last = now;
+        return same;
+      },
+      { intervals: [500], timeout: 15_000 },
+    )
+    .toBe(true);
+  return last;
 }
 
 const queries = (page: Page) =>
