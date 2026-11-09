@@ -16,7 +16,7 @@ Written by the fidelity reporter after a golden-image run (M1-106, TESTING.md §
 | ARC_DIMENSION | 2 | 2 | 0 | 0 |
 | ATTDEF | 16 | 4 | 0 | 0 |
 | CIRCLE | 2287 | 40 | 0 | 0 |
-| DIMENSION | 269 | 25 | 0 | 0 |
+| DIMENSION | 276 | 26 | 0 | 0 |
 | ELLIPSE | 30 | 23 | 0 | 0 |
 | HATCH | 198 | 30 | 0 | 0 |
 | IMAGE | 89 | 23 | 0 | 0 |
