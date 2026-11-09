@@ -16,8 +16,9 @@
 // its colour, linetype, lineweight and layer down to it as an INSERT does. DXF 12 ("insertion
 // point for clones", OCS) is not applied: the DXF reference leaves its use open, every
 // dimension in the public corpus has it at the origin, and the spatial index bounds a
-// dimension by its block's extents as they stand. A dimension without a block draws nothing
-// until the dimension engine (M5) generates one.
+// dimension by its block's extents as they stand. A dimension without a block (one a script
+// wrote without its graphics) draws what the dimension engine (`@triya/dims`, M2-10)
+// generates for it, as parts like a MULTILEADER's; its definition points are not drawn.
 // An ACAD_TABLE (M1-17) draws its anonymous `*T` block in the table's frame: its insertion
 // point is the block's origin and the table's top-left corner, the block's x axis runs along
 // the horizontal direction and its y axis along normal × direction (every corpus table's
@@ -56,6 +57,7 @@ import {
   type InsertGeometry,
   type Vec2,
 } from '@triya/engine';
+import { dimensionParts, generates } from '@triya/dims';
 import type { Paint, TessellateContext } from './tessellate';
 import { tessellate } from './tessellate';
 import { attributeShown, attributeText, textMeasure } from './text';
@@ -251,14 +253,28 @@ export function referenceOf(
   return undefined;
 }
 
+/** A dimension with no stored block that the dimension engine draws (M2-10). */
+export function generatedDimension(
+  e: Entity,
+  def: (block: Handle) => BlockDefinition | undefined,
+): boolean {
+  const g = e.geom;
+  return g.kind === 'DIMENSION' && (g.block === undefined || !def(g.block)) && generates(g);
+}
+
 /**
- * Whether an entity draws through `expandInsert`: a block reference (`referenceOf`), or an
- * annotation drawn as parts (MULTILEADER, LEADER and TOLERANCE, M1-52).
+ * Whether an entity draws through `expandInsert`: a block reference (`referenceOf`), an
+ * annotation drawn as parts (MULTILEADER, LEADER and TOLERANCE, M1-52), or a dimension the
+ * engine generates (M2-10).
  */
 export function expands(e: Entity, def: (block: Handle) => BlockDefinition | undefined): boolean {
   const k = e.geom.kind;
   return (
-    k === 'MULTILEADER' || k === 'LEADER' || k === 'TOLERANCE' || referenceOf(e, def) !== undefined
+    k === 'MULTILEADER' ||
+    k === 'LEADER' ||
+    k === 'TOLERANCE' ||
+    referenceOf(e, def) !== undefined ||
+    generatedDimension(e, def)
   );
 }
 
@@ -390,7 +406,11 @@ export function expandInsert(
     const chain = own === undefined || above.includes(own) ? above : [...above, own];
     // A MULTILEADER draws its parts where it stands, each painted as an entity of its own
     // (M1-52); its arrowhead blocks expand as inserts.
-    const parts = annotationParts(e.geom, src.model, e.xdata, measure);
+    const parts =
+      annotationParts(e.geom, src.model, e.xdata, measure) ??
+      (measure && generatedDimension(e, def)
+        ? dimensionParts(e, src.model, measure)?.filter((p) => !p.defpoint)
+        : undefined);
     if (parts) {
       for (const part of parts) draw(partEntity(e, part), m, outer, depth, chain, clip);
       return;
