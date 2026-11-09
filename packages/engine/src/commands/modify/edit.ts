@@ -2,9 +2,9 @@
 // 2024's prompts and options (AutoCAD 2024 Help: ERASE, MOVE, COPY, ROTATE, SCALE and MIRROR
 // (Command), MIRRTEXT, MIRRHATCH, COPYMODE). The geometry is `edit/`'s; these are the dialogues.
 //
-// Not yet here: the objects dragged with the cursor while a point is asked for (part 2, with the
-// grips, which drag the same way), and Dynamic Input's angle and scale fields for ROTATE and
-// SCALE (they take typed values and two picks).
+// While a second point, angle or scale is asked for, the objects are dragged with the cursor
+// (`drag` on the prompt, part 2), as AutoCAD drags them (DRAGMODE Auto). STRETCH (part 2) takes
+// the last crossing window of its selection.
 import { angleOf, distance, sub } from '../../geom/vec';
 import type { Vec2 } from '../../geom/types';
 import type { EntityId } from '../../model/entity-ids';
@@ -12,13 +12,17 @@ import type { DocumentModel } from '../../model/document';
 import {
   copyObjects,
   eraseObjects,
+  planStretch,
+  stretchObjects,
+  type StretchWindow,
   refusalMessages,
   transformObjects,
   type EditReport,
 } from '../../edit/edit';
 import { mirrorIn, moveBy, scaleAbout, turnAbout, type Similarity } from '../../edit/similarity';
 import type { TransformOptions } from '../../edit/transform';
-import { formatNumber, type Prompt, type PromptAnswer } from '../prompt';
+import { formatNumber, type Prompt, type PromptAnswer, type SelectionWindow } from '../prompt';
+import type { Box } from '../../geom/bounds';
 import type { CommandContext, CommandDef } from '../command';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -119,6 +123,7 @@ export function moveCommand(): CommandDef {
           message: 'Specify second point or',
           defaultLabel: 'use first point as displacement',
           rubberBand: { from: base },
+          drag: { kind: 'move', ids, from: base },
         });
         if (b.kind === 'enter') d = base;
         else if (b.kind === 'point') d = sub(b.point, base);
@@ -183,6 +188,7 @@ export function copyCommand(): CommandDef {
           options: first ? ['Array'] : ['Array', 'Exit', 'Undo'],
           defaultLabel: first ? 'use first point as displacement' : 'Exit',
           rubberBand: { from: base },
+          drag: { kind: 'move', ids, from: base },
         });
         if (a.kind === 'keyword' && a.keyword === 'Undo') {
           const ids = made.pop();
@@ -298,6 +304,7 @@ export function rotateCommand(): CommandDef {
           options: ['Copy', 'Reference'],
           default: { kind: 'angle', value: last },
           base,
+          drag: { kind: 'rotate', ids, base, reference: 0 },
         });
         if (a.kind === 'keyword' && a.keyword === 'Copy') {
           copying = !copying;
@@ -321,6 +328,7 @@ export function rotateCommand(): CommandDef {
               options: ['Points'],
               default: { kind: 'angle', value: 0 },
               base,
+              drag: { kind: 'rotate', ids, base, reference: r.value },
             });
             if (n.kind === 'keyword') {
               to = yield* twoPointAngle(ctx);
@@ -368,6 +376,7 @@ export function scaleCommand(): CommandDef {
           options: ['Copy', 'Reference'],
           default: { kind: 'distance', value: last },
           base,
+          drag: { kind: 'scale', ids, base, reference: 1 },
         });
         if (a.kind === 'keyword' && a.keyword === 'Copy') {
           copying = !copying;
@@ -397,6 +406,7 @@ export function scaleCommand(): CommandDef {
               options: ['Points'],
               default: { kind: 'distance', value: 1 },
               base,
+              drag: { kind: 'scale', ids, base, reference: ref },
             });
             let v: number | undefined;
             if (n.kind === 'keyword') {
@@ -442,6 +452,7 @@ export function mirrorCommand(): CommandDef {
         const b = yield ctx.prompt.point({
           message: 'Specify second point of mirror line',
           rubberBand: { from: a.point },
+          drag: { kind: 'mirror', ids, from: a.point },
         });
         if (b.kind !== 'point') return;
         if (b.point.x === a.point.x && b.point.y === a.point.y) {
@@ -463,6 +474,81 @@ export function mirrorCommand(): CommandDef {
   };
 }
 
+// ── STRETCH ─────────────────────────────────────────────────────────────────────────────────
+
+/** The window corners as a box. */
+const boxOf = (w: SelectionWindow): Box => ({
+  minX: Math.min(w.a.x, w.b.x),
+  minY: Math.min(w.a.y, w.b.y),
+  maxX: Math.max(w.a.x, w.b.x),
+  maxY: Math.max(w.a.y, w.b.y),
+});
+
+/**
+ * What the canvas says of STRETCH's window: what lies wholly inside it and what it crosses.
+ * Without a canvas (scripts) neither is known and points decide alone.
+ */
+async function stretchWindow(ctx: CommandContext, w: SelectionWindow): Promise<StretchWindow> {
+  const ask = async (crossing: boolean) => {
+    const r = await ctx.view.request({ op: 'select', a: w.a, b: w.b, crossing });
+    return r.ok && r.ids ? new Set(r.ids) : undefined;
+  };
+  const inside = await ask(false);
+  const crossing = inside && (await ask(true));
+  return { box: boxOf(w), ...(inside && { inside }), ...(crossing && { crossing }) };
+}
+
+/**
+ * STRETCH: the points of the selected objects inside the last crossing window move by a
+ * displacement, objects wholly inside it or picked individually move whole (AutoCAD 2024 Help,
+ * "STRETCH (Command)"). Its base point and displacement are MOVE's.
+ */
+export function stretchCommand(): CommandDef {
+  let last: Vec2 = { x: 0, y: 0 };
+  return {
+    name: 'STRETCH',
+    usesSelection: 'during',
+    async *run(ctx) {
+      ctx.message('Select objects to stretch by crossing-window or crossing-polygon...');
+      const sel = yield ctx.prompt.selection({ message: 'Select objects', editable: true });
+      if (sel.kind !== 'selection' || sel.ids.length === 0) return;
+      const ids = sel.ids;
+      const w = sel.window ? await stretchWindow(ctx, sel.window) : undefined;
+      const a = yield ctx.prompt.point({
+        message: 'Specify base point or',
+        options: ['Displacement'],
+        defaultLabel: 'Displacement',
+      });
+      let d: Vec2 | undefined;
+      if (a.kind === 'point') {
+        const base = a.point;
+        // What moves whole and what is reshaped does not depend on the displacement.
+        const plan = planStretch(ctx.model, ids, w, { x: 0, y: 0 });
+        const b = yield ctx.prompt.point({
+          message: 'Specify second point or',
+          defaultLabel: 'use first point as displacement',
+          rubberBand: { from: base },
+          drag: {
+            kind: 'stretch',
+            ids: plan.move,
+            shape: [...plan.shape.keys()],
+            window: w?.box ?? { minX: 0, minY: 0, maxX: -1, maxY: -1 },
+            from: base,
+          },
+        });
+        if (b.kind === 'enter') d = base;
+        else if (b.kind === 'point') d = sub(b.point, base);
+      } else if (a.kind === 'enter' || a.kind === 'keyword') {
+        d = yield* displacement(ctx, last);
+      }
+      if (!d) return;
+      last = d;
+      const disp = d;
+      run(ctx, 'stretched', (b) => stretchObjects(b, ctx.model, ids, w, disp));
+    },
+  };
+}
+
 export const EDIT_COMMANDS: readonly (() => CommandDef)[] = [
   eraseCommand,
   moveCommand,
@@ -470,4 +556,5 @@ export const EDIT_COMMANDS: readonly (() => CommandDef)[] = [
   rotateCommand,
   scaleCommand,
   mirrorCommand,
+  stretchCommand,
 ];

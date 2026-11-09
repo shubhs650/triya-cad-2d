@@ -77,6 +77,12 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'highlight':
         r.setHighlight(m.ids);
         break;
+      case 'drag':
+        r.setDrag(m.motion ?? undefined);
+        break;
+      case 'grips':
+        r.setGrips(m.ids, m.hot ?? undefined);
+        break;
       case 'bounds':
         port.postMessage({ type: 'extents', id: m.id, box: session.boundsOf(m.ids) ?? null });
         break;

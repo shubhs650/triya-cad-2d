@@ -1,0 +1,1 @@
+- M2-06 part 2 (#229): STRETCH (points inside the crossing window move, objects wholly inside or picked move, arcs keep their chord height), standard grips with the STRETCH, MOVE, ROTATE, SCALE and MIRROR grip modes (Base point, Copy, Undo, Reference, eXit), and the objects dragged with the cursor while MOVE, COPY, ROTATE, SCALE, MIRROR, STRETCH or a grip asks for a point.

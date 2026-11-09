@@ -31,8 +31,15 @@
 // both first, then to the renderer (the order `SpatialIndex.apply` already requires).
 
 import {
+  applyPoint,
+  inBox,
   invert,
   layoutSheet,
+  stretchGeometry,
+  gripsOf,
+  moveGrip,
+  sameGrip,
+  translation,
   paperUnitsPerMm,
   viewportFrame,
   viewportScale,
@@ -45,6 +52,8 @@ import {
   type Box,
   type ChangeSet,
   type DocumentModel,
+  type DragMotion,
+  type Vec2,
   type Entity,
   type EntityId,
   type Handle,
@@ -63,6 +72,7 @@ import {
 import { expandInsert, expands, insertClips, type BlockSource, type InsertClip } from './blocks';
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
+import { aciRgb, rgbHex } from './style/aci';
 import { mixColors, parseHex, tintColor } from './style/mix';
 import { adjustPixels, imageLabel, type ImageFrames } from './image';
 import {
@@ -404,6 +414,15 @@ function touchesSortEnts(c: KeyedChanges<NonGraphicalObject> | undefined): boole
   );
 }
 
+/**
+ * Grips (M2-06 part 2): GRIPSIZE's half size in CSS pixels, GRIPCOLOR (ACI 150), GRIPHOT (ACI 12)
+ * and a dark edge.
+ */
+const GRIP_SIZE = 4;
+const GRIP_COLOR = rgbHex(aciRgb(150));
+const GRIP_HOT = rgbHex(aciRgb(12));
+const GRIP_EDGE = '#1a1a1a';
+
 export class Canvas2DRenderer implements Renderer {
   readonly #model: DocumentModel;
   readonly #index: SpatialIndex;
@@ -492,6 +511,22 @@ export class Canvas2DRenderer implements Renderer {
   #transient: readonly RenderPrimitive[] = [];
   /** The entities drawn selected (M2-03). */
   #highlight: ReadonlySet<EntityId> = new Set();
+  /**
+   * What a command drags (M2-06 part 2): cached entries drawn through `m`, and the stretched
+   * objects' entries tessellated from their stretched geometry.
+   */
+  #drag:
+    | {
+        readonly moved: readonly CacheEntry[];
+        readonly m: Matrix2D;
+        readonly stretched: readonly CacheEntry[];
+        /** Objects a grip moves whole, by `gripMove`. */
+        readonly gripMoved: readonly CacheEntry[];
+        readonly gripMove: Matrix2D;
+      }
+    | undefined;
+  /** The objects grips show on, and the hot grip (M2-06 part 2). */
+  #grips: { readonly ids: readonly EntityId[]; readonly hot: Vec2 | undefined } | undefined;
   /** The locked layers (M1-69), found again after a layer change; undefined until needed. */
   #locked: ReadonlySet<Handle> | undefined;
   #sceneDirty = true;
@@ -629,6 +664,60 @@ export class Canvas2DRenderer implements Renderer {
     this.#sceneDirty = this.#contentDirty = true;
   }
 
+  setDrag(motion: DragMotion | undefined): void {
+    if (!motion) {
+      if (!this.#drag) return;
+      this.#drag = undefined;
+      this.#transientDirty = true;
+      return;
+    }
+    const moved: CacheEntry[] = [];
+    for (const id of motion.ids) {
+      const entry = this.#cache[id];
+      if (entry) moved.push(entry);
+    }
+    const stretched: CacheEntry[] = [];
+    const s = motion.stretch;
+    if (s) {
+      const inside = inBox(s.window);
+      for (const id of s.ids) {
+        const e = this.#model.entity(id);
+        if (!e || !this.#cache[id]) continue;
+        const r = stretchGeometry(e.geom, inside, s.d);
+        const geom = r.kind === 'shape' ? r.geom : r.kind === 'none' ? e.geom : undefined;
+        const entry = geom && this.#entryOf({ ...e, geom }, id, this.#model, this.#blockSource);
+        if (entry) stretched.push(entry);
+      }
+    }
+    const gripMoved: CacheEntry[] = [];
+    const g = motion.grip;
+    if (g) {
+      for (const id of g.ids) {
+        const e = this.#model.entity(id);
+        if (!e || !this.#cache[id]) continue;
+        const r = moveGrip(e.geom, g.from, g.to);
+        if (r.kind === 'move') gripMoved.push(this.#cache[id]);
+        if (r.kind !== 'shape') continue;
+        const entry = this.#entryOf({ ...e, geom: r.geom }, id, this.#model, this.#blockSource);
+        if (entry) stretched.push(entry);
+      }
+    }
+    const gripMove = g ? translation(g.to.x - g.from.x, g.to.y - g.from.y) : motion.m;
+    this.#drag = { moved, m: motion.m, stretched, gripMoved, gripMove };
+    this.#transientDirty = true;
+  }
+
+  /**
+   * The objects to show grips on, the hot one red (M2-06 part 2); undefined or none hides them.
+   * Grips are drawn GRIPSIZE pixels square in GRIPCOLOR (ACI 150) and GRIPHOT (ACI 12), over
+   * everything, AutoCAD's defaults.
+   */
+  setGrips(ids: readonly EntityId[], hot?: Vec2): void {
+    if (ids.length === 0 && !this.#grips) return;
+    this.#grips = ids.length > 0 ? { ids, hot } : undefined;
+    this.#transientDirty = true;
+  }
+
   select(query: SelectQuery): EntityId[] {
     const test = query.kind === 'window' ? primInside : primCrosses;
     const all = query.kind === 'window' ? 'every' : 'some';
@@ -649,6 +738,8 @@ export class Canvas2DRenderer implements Renderer {
 
   apply(cs: ChangeSet): void {
     const e = cs.entities;
+    // Grips sit on the objects' points, which the change may have moved.
+    if (this.#grips) this.#transientDirty = true;
     for (const r of e?.removed ?? []) this.#forget(r.entity);
     for (const a of e?.added ?? []) this.#cacheIfShown(a.entity);
     for (const u of e?.updated ?? []) {
@@ -740,12 +831,22 @@ export class Canvas2DRenderer implements Renderer {
       const t = this.#transientLayer;
       t.ctx.setTransform(1, 0, 0, 1, 0, 0);
       t.ctx.clearRect(0, 0, t.canvas.width, t.canvas.height);
+      const drag = this.#drag;
+      if (drag) {
+        const view = this.#viewFrame();
+        this.#drawPrimitives(t.ctx, drag.moved, false, this.#dragFrame(view, drag.m));
+        this.#drawPrimitives(t.ctx, drag.stretched, false, view);
+        if (drag.gripMoved.length > 0) {
+          this.#drawPrimitives(t.ctx, drag.gripMoved, false, this.#dragFrame(view, drag.gripMove));
+        }
+      }
       this.#drawPrimitives(
         t.ctx,
         [{ prims: this.#transient, size: Infinity, x: 0, y: 0 }],
         false,
         this.#viewFrame(),
       );
+      if (this.#grips) this.#drawGrips(t.ctx);
       this.#transientDirty = false;
     }
     const out = this.#surface.ctx;
@@ -1085,6 +1186,68 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   /** The frame of the block shown: its coordinates about the view centre. */
+  /**
+   * The view frame for primitives carried by `s` first: device = V·(s(p) − o) is
+   * V·A·(p − s⁻¹(o)) for s(p) = A·p + t, so the linear part composes and the origin goes back
+   * through s, keeping the numbers the canvas sees small.
+   */
+  #dragFrame(view: DrawFrame, s: Matrix2D): DrawFrame {
+    const v = view.m;
+    const back = invert(s);
+    const o = applyPoint(back, { x: view.ox, y: view.oy });
+    const corners = [
+      applyPoint(back, { x: view.box.minX, y: view.box.minY }),
+      applyPoint(back, { x: view.box.maxX, y: view.box.minY }),
+      applyPoint(back, { x: view.box.maxX, y: view.box.maxY }),
+      applyPoint(back, { x: view.box.minX, y: view.box.maxY }),
+    ];
+    return {
+      ox: o.x,
+      oy: o.y,
+      m: {
+        a: v.a * s.a + v.c * s.b,
+        b: v.b * s.a + v.d * s.b,
+        c: v.a * s.c + v.c * s.d,
+        d: v.b * s.c + v.d * s.d,
+        e: v.e,
+        f: v.f,
+      },
+      scale: view.scale * Math.sqrt(Math.abs(s.a * s.d - s.b * s.c)),
+      box: {
+        minX: Math.min(...corners.map((c) => c.x)),
+        minY: Math.min(...corners.map((c) => c.y)),
+        maxX: Math.max(...corners.map((c) => c.x)),
+        maxY: Math.max(...corners.map((c) => c.y)),
+      },
+    };
+  }
+
+  /** The grips of the objects grips show on, as device-pixel squares. */
+  #drawGrips(ctx: Canvas2D): void {
+    const grips = this.#grips!;
+    const { ox, oy, m } = this.#viewFrame();
+    const half = Math.round(GRIP_SIZE * this.#dpr);
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.globalAlpha = 1;
+    const seen = new Set<string>();
+    for (const id of grips.ids) {
+      const e = this.#model.entity(id);
+      if (!e) continue;
+      for (const g of gripsOf(e.geom)) {
+        const x = Math.round(m.a * (g.point.x - ox) + m.c * (g.point.y - oy) + m.e);
+        const y = Math.round(m.b * (g.point.x - ox) + m.d * (g.point.y - oy) + m.f);
+        if (seen.has(`${x},${y}`)) continue;
+        seen.add(`${x},${y}`);
+        const hot = grips.hot !== undefined && sameGrip(g.point, grips.hot);
+        // A dark edge keeps the grip visible on any background.
+        ctx.fillStyle = GRIP_EDGE;
+        ctx.fillRect(x - half - 1, y - half - 1, 2 * half + 2, 2 * half + 2);
+        ctx.fillStyle = hot ? GRIP_HOT : GRIP_COLOR;
+        ctx.fillRect(x - half, y - half, 2 * half, 2 * half);
+      }
+    }
+  }
+
   #viewFrame(): DrawFrame {
     const k = this.#view.scale * this.#dpr;
     return {

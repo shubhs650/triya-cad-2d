@@ -41,6 +41,14 @@ describe('Dynamic Input fields', () => {
       'Distance',
     );
     expect(dynFor(prompts.angle({ message: 'Specify angle' })).fields[0]!.label).toBe('Angle');
+    // SCALE's factor (M2-06): the dragged objects' scale, the cursor's distance from the base.
+    const factor = prompts.distance({
+      message: 'Specify scale factor or',
+      base: { x: 0, y: 0 },
+      drag: { kind: 'scale', ids: [], base: { x: 0, y: 0 }, reference: 1 },
+    });
+    expect(dynFor(factor).fields[0]!.label).toBe('Scale');
+    expect(dynLive(dynFor(factor), factor, { x: 3, y: 4 })).toEqual(['5.0000']);
     expect(dynFor(prompts.keyword({ message: 'Enter an option', options: ['A'] })).kind).toBe(
       'single',
     );

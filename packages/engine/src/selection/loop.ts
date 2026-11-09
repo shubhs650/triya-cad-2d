@@ -16,7 +16,7 @@ import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import { matchKeyword, type Prompt } from '../commands/prompt';
+import { matchKeyword, type Prompt, type SelectionWindow } from '../commands/prompt';
 import type { ViewReply, ViewRequest } from '../commands/view/host';
 import { inSpace, onLockedLayers, selectAll, selectLast } from './rules';
 
@@ -79,6 +79,8 @@ export class SelectionLoop {
   /** W or C typed: waiting for the first corner. */
   #first: 'window' | 'crossing' | 'auto' | undefined;
   #corner: Corner | undefined;
+  /** The last window that added objects (STRETCH's window, M2-06). */
+  #window: SelectionWindow | undefined;
 
   constructor(host: SelectionLoopHost, o: SelectionLoopOptions) {
     this.#host = host;
@@ -87,6 +89,11 @@ export class SelectionLoop {
 
   get ids(): readonly EntityId[] {
     return this.#ids;
+  }
+
+  /** The last window or crossing window that added objects, if any. */
+  get window(): SelectionWindow | undefined {
+    return this.#window;
   }
 
   /** A corner is asked for: the next point completes a window rather than picking. */
@@ -122,6 +129,7 @@ export class SelectionLoop {
   clear(): void {
     this.#ids = [];
     this.#undo.length = 0;
+    this.#window = undefined;
     this.cancelWindow();
   }
 
@@ -156,6 +164,7 @@ export class SelectionLoop {
       this.#corner = undefined;
       const crossing = c.kind === 'auto' ? p.x < c.from.x : c.kind === 'crossing';
       const r = await this.#host.request({ op: 'select', a: c.from, b: p, crossing });
+      if (!c.remove && r.ok) this.#window = { a: c.from, b: p };
       return this.#take(r, c.remove, 'Specify opposite corner:');
     }
     if (o.release) return 'more';
