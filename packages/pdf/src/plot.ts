@@ -17,10 +17,14 @@
 // - A plot style's fill style fills an object's filled areas with its pattern (`fills.ts`) in
 //   the object's plot colour; gradient fills and raster images paint their own colours.
 // - A POINT (PDMODE 0) plots as a dot, an XLINE or RAY as the part of it on the plot area.
+// - TrueType text plots as text in its own font, embedded as a subset (`fonts.ts`), so it stays
+//   searchable, unless the plot converts all text to geometry (AutoCAD's PDF option "Convert
+//   all text to geometry") or the font cannot be embedded; then its glyph outlines are filled.
 
-import type { ContentStream, LineCap, LineJoin, Rgb } from './content';
+import { pdfNumber, type ContentStream, type LineCap, type LineJoin, type Rgb } from './content';
 import type { PdfPage } from './document';
 import type { FillStyle, GradientStop, PlotPixels } from './fills';
+import type { PlotFont } from './fonts';
 import { adaptDashes, dashPeriod, plotDashes, POINTS_PER_MM } from './linetypes';
 import { emitSegments, pathSegments, subpathLength, subpaths, type Affine } from './path';
 
@@ -85,6 +89,22 @@ export interface PlotPathItem extends PlotItemBase {
   readonly gradient?: PlotGradient;
   /** A `fill` showing this bitmap. */
   readonly image?: PlotImage;
+  /**
+   * A `fill` of TrueType glyphs (its `path` their outlines): each glyph of a font and the
+   * matrix placing it, font units → world, so the text can plot as text.
+   */
+  readonly glyphs?: readonly PlotGlyph[];
+}
+
+/** A TrueType glyph placed in the drawing. */
+export interface PlotGlyph {
+  readonly font: PlotFont;
+  /** Glyph number in the font file. */
+  readonly index: number;
+  /** The character it shows (for searching and copying the text). */
+  readonly codePoint: number;
+  /** Font units (y up, origin on the baseline) → world. */
+  readonly m: Affine;
 }
 
 /** A POINT, plotted as a dot. */
@@ -118,6 +138,8 @@ export interface PlotPageOptions {
   readonly lineweightScale?: number;
   /** The plot style table's scale factor when it applies to non-ISO linetypes, else 1. */
   readonly nonIsoScale?: number;
+  /** "Convert all text to geometry": TrueType text plots as filled outlines, not as text. */
+  readonly textAsGeometry?: boolean;
   /** Paper area the plot may draw on, points (the printable area); the whole page when absent. */
   readonly area?: {
     readonly x: number;
@@ -273,8 +295,70 @@ function plotFill(
     const space = page.patternSpace(r === gr && gr === b);
     cs.fillPattern(space, page.pattern(p.fillStyle), p.color);
   } else cs.fillColor(p.color);
+  if (item.glyphs && item.glyphs.length > 0 && !o.textAsGeometry && plotText(page, item.glyphs, o))
+    return;
   emitSegments(cs, segments);
   cs.fill(item.evenOdd ?? false);
+}
+
+/** Relative difference under which two glyphs' matrices share a text run. */
+const SAME = 1e-9;
+
+/**
+ * TrueType glyphs as text, in the fill colour already set: false, writing nothing, when a font
+ * cannot be embedded. Consecutive glyphs of one font whose matrices differ only by a move
+ * along their baseline share a text matrix, with `TJ` adjustments for the difference between
+ * where the next glyph stands and where the font's advance would put it (tracking, a width
+ * factor's rounding, kerning none); other glyphs start a new run.
+ */
+function plotText(page: PdfPage, glyphs: readonly PlotGlyph[], o: PlotPageOptions): boolean {
+  const fonts = glyphs.map((g) => page.font(g.font));
+  if (fonts.some((f) => f === undefined)) return false;
+  type Run = { m: Affine; show: (number | { code: number })[]; pen: number };
+  const byFont: { name: string; runs: Run[] }[] = [];
+  let run: Run | undefined;
+  let font: string | undefined;
+  glyphs.forEach((g, i) => {
+    const f = fonts[i]!;
+    const upm = f.font.unitsPerEm;
+    // One em of the font (size 1 text space) → paper.
+    const m = compose(o.toPaper, compose(g.m, { a: upm, b: 0, c: 0, d: upm, e: 0, f: 0 }));
+    if (!invertible(m)) return;
+    const code = f.cid(g.index, g.codePoint);
+    const width = f.width(code) / 1000;
+    if (run && font === f.name && sameLinear(run.m, m)) {
+      // Where this glyph's origin lies in the run's text space.
+      const r = run.m;
+      const det = r.a * r.d - r.b * r.c;
+      const dx = m.e - r.e;
+      const dy = m.f - r.f;
+      const u = (r.d * dx - r.c * dy) / det;
+      const v = (-r.b * dx + r.a * dy) / det;
+      if (Math.abs(v) < 1e-6) {
+        const adjust = Number(pdfNumber((run.pen - u) * 1000));
+        if (adjust !== 0) run.show.push(adjust);
+        run.show.push({ code });
+        run.pen = run.pen - adjust / 1000 + width;
+        return;
+      }
+    }
+    run = { m, show: [{ code }], pen: width };
+    if (font !== f.name || byFont.length === 0) byFont.push({ name: f.name, runs: [] });
+    font = f.name;
+    byFont[byFont.length - 1]!.runs.push(run);
+  });
+  for (const { name, runs } of byFont) page.content.text(name, runs);
+  return true;
+}
+
+function sameLinear(p: Affine, q: Affine): boolean {
+  const k = Math.max(Math.abs(p.a), Math.abs(p.b), Math.abs(p.c), Math.abs(p.d)) * SAME;
+  return (
+    Math.abs(p.a - q.a) <= k &&
+    Math.abs(p.b - q.b) <= k &&
+    Math.abs(p.c - q.c) <= k &&
+    Math.abs(p.d - q.d) <= k
+  );
 }
 
 /** The smallest dot a point plots as, millimetres (ours: AutoCAD's default lineweight). */

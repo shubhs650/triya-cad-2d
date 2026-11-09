@@ -230,6 +230,46 @@ export class ContentStream {
     return this;
   }
 
+  /**
+   * A text object (§9.4) showing glyph runs in `font` (a page resource) at size 1: each run's
+   * text matrix maps one em to user space, and its `TJ` array holds two-byte codes (Identity-H)
+   * and, between them, adjustments in thousandths of an em (positive moves back).
+   */
+  text(
+    font: string,
+    runs: readonly {
+      readonly m: {
+        readonly a: number;
+        readonly b: number;
+        readonly c: number;
+        readonly d: number;
+        readonly e: number;
+        readonly f: number;
+      };
+      readonly show: readonly (number | { readonly code: number })[];
+    }[],
+  ): this {
+    if (runs.length === 0) return this;
+    this.ops.push('BT', `/${font} 1 Tf`);
+    for (const { m, show } of runs) {
+      this.ops.push(`${n(m.a)} ${n(m.b)} ${n(m.c)} ${n(m.d)} ${n(m.e)} ${n(m.f)} Tm`);
+      // Codes in a row share one hex string; an adjustment sits between strings.
+      const parts: string[] = [];
+      let codes = '';
+      for (const s of show) {
+        if (typeof s === 'number') {
+          if (codes) parts.push(`<${codes}>`);
+          codes = '';
+          parts.push(n(s));
+        } else codes += s.code.toString(16).toUpperCase().padStart(4, '0');
+      }
+      if (codes) parts.push(`<${codes}>`);
+      this.ops.push(`[${parts.join(' ')}] TJ`);
+    }
+    this.ops.push('ET');
+    return this;
+  }
+
   /** The operators written so far, one per line. */
   toString(): string {
     return this.ops.length > 0 ? `${this.ops.join('\n')}\n` : '';

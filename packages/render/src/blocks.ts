@@ -156,6 +156,9 @@ export function transformPrimitive(p: RenderPrimitive, m: Affine): RenderPrimiti
               text: {
                 height: p.text.height * affineScale(m),
                 greek: transformPath(p.text.greek, m),
+                ...(p.text.glyphs
+                  ? { glyphs: p.text.glyphs.map((g) => ({ ...g, m: composeAffine(m, g.m) })) }
+                  : {}),
               },
             }
           : {}),
