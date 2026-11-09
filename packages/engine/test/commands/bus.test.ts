@@ -15,6 +15,7 @@ import {
   type HeaderValue,
   type PromptAnswer,
   type Vec2,
+  OSNAP,
 } from '../../src/index';
 import { LAYER_0, MODEL_SPACE, sampleInit } from '../model/fixtures';
 
@@ -471,6 +472,65 @@ describe('PromptBus', () => {
     await bus.cancel();
     await bus.script(['DIST', 'm2p', '0,0', '2,0', '1,3']);
     expect(got.at(-1)).toEqual({ kind: 'distance', value: 3 });
+  });
+
+  it('asks "of" after a typed object snap override, keeping the rubber band (M2-04)', async () => {
+    const { bus, lines, events } = setup();
+    const before = lines().length;
+    await bus.script(['LINE', '0,0', 'end']);
+    expect(bus.promptText).toBe('of');
+    expect(bus.prompt).toMatchObject({
+      kind: 'point',
+      message: 'of',
+      osnap: OSNAP.END,
+      rubberBand: { from: { x: 0, y: 0 } },
+    });
+    expect(events.at(-1)).toMatchObject({ type: 'prompt', text: 'of' });
+    // The front-end snapped the click with the override's modes: the point is the command's.
+    await bus.pick({ x: 10, y: 5 });
+    expect(bus.prompt).toMatchObject({ message: 'Specify next point or' });
+    expect(bus.prompt).not.toHaveProperty('osnap');
+    // NONe: no object snap for the next point; a typed point at "of" is taken as typed.
+    await bus.script(['non']);
+    expect(bus.prompt).toMatchObject({ osnap: 0 });
+    await bus.script(['20,0', '']);
+    const ends = lines()
+      .slice(before)
+      .map((l) => l.end);
+    expect(ends).toEqual([
+      { x: 10, y: 5 },
+      { x: 20, y: 0 },
+    ]);
+    expect(bus.history).toContain('Specify next point or [Undo]: end');
+    expect(bus.history).toContain('of 20,0');
+  });
+
+  it('refuses a click an override found nothing at, and keeps asking "of" (M2-04)', async () => {
+    const { bus } = setup();
+    await bus.script(['LINE', '0,0', 'mid,end']);
+    expect(bus.prompt).toMatchObject({ osnap: OSNAP.MID | OSNAP.END });
+    await bus.pick({ x: 3, y: 3 }, { missed: true });
+    expect(bus.history.at(-1)).toBe('Invalid point.');
+    expect(bus.promptText).toBe('of');
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+  });
+
+  it("takes an override at FROM's base point and at a distance prompt (M2-04)", async () => {
+    const { bus } = setup();
+    await bus.script(['LINE', 'FROM', 'cen']);
+    expect(bus.promptText).toBe('of');
+    expect(bus.prompt).toMatchObject({ osnap: OSNAP.CEN });
+    await bus.pick({ x: 10, y: 10 });
+    expect(bus.promptText).toBe('<Offset>:');
+    await bus.submit('@5,0');
+    expect(bus.lastPoint).toEqual({ x: 15, y: 10 });
+    await bus.cancel();
+    await bus.script(['DIST', 'int']);
+    expect(bus.prompt).toMatchObject({ kind: 'point', osnap: OSNAP.INT });
+    await bus.pick({ x: 1, y: 1 });
+    await bus.script(['@0,4']);
+    expect(got.at(-1)).toEqual({ kind: 'distance', value: 4 });
   });
 
   it('takes a number at a rubber band as a direct distance towards the cursor', async () => {

@@ -10,6 +10,7 @@
 // Not in this version (M3-06): SNAPANG and isometric snap, PolarSnap distances, polar angles
 // relative to the last segment (POLARMODE bit 1), UCS.
 import type { Vec2 } from '../geom/types';
+import { orthoTrack, trackCursor, type Acquired, type TrackLock } from './track';
 
 /** ORTHO: the horizontal or vertical from `base`, whichever the cursor is nearer to. */
 export function orthoPoint(base: Vec2, p: Vec2): Vec2 {
@@ -102,21 +103,55 @@ export interface ConstrainOptions {
   readonly ortho?: boolean;
   /** Polar tracking settings when POLAR is on. */
   readonly polar?: PolarSettings;
-  /** Polar tracking's reach, drawing units. */
+  /** Polar and object snap tracking's reach, drawing units. */
   readonly tolerance?: number;
+  /** Points acquired for OTRACK, EXTension and PARallel (M2-04 part 2, `track.ts`). */
+  readonly acquired?: readonly Acquired[];
+  /** POLARMODE bit 2: OTRACK follows the polar angles. */
+  readonly trackPolar?: boolean;
 }
 
-/** The cursor after SNAP, then ORTHO or POLAR; `polar` says which path it locked onto. */
-export function constrainCursor(
-  p: Vec2,
-  o: ConstrainOptions,
-): { readonly point: Vec2; readonly polar?: PolarLock } {
+export interface Constrained {
+  readonly point: Vec2;
+  /** The polar tracking path from the base the cursor locked onto, alone. */
+  readonly polar?: PolarLock;
+  /** The tracking paths otherwise: from acquired points, or two crossing. */
+  readonly track?: TrackLock;
+}
+
+/**
+ * The cursor after SNAP, then ORTHO or tracking (POLAR, OTRACK, EXT, PAR); `polar` or `track`
+ * says which paths it locked onto. ORTHO keeps it on its axis, where an acquired point's path
+ * may say how far along; tracking otherwise takes it onto the nearest path, or two crossing.
+ */
+export function constrainCursor(p: Vec2, o: ConstrainOptions): Constrained {
   const snapped = o.snap ? snapToGrid(p, o.snap, o.snapBase) : p;
-  if (!o.base) return { point: snapped };
-  if (o.ortho) return { point: orthoPoint(o.base, snapped) };
-  if (o.polar) {
-    const lock = polarTrack(o.base, p, o.polar, o.tolerance ?? 0);
-    if (lock) return { point: lock.point, polar: lock };
+  const acquired = o.acquired ?? [];
+  const tolerance = o.tolerance ?? 0;
+  if (o.base && o.ortho) {
+    const point = orthoPoint(o.base, snapped);
+    const axis = Math.atan2(point.y - o.base.y, point.x - o.base.x);
+    const lock =
+      acquired.length > 0 && (point.x !== o.base.x || point.y !== o.base.y)
+        ? orthoTrack(o.base, axis, p, acquired, tolerance)
+        : undefined;
+    return lock ? { point: lock.point, track: lock } : { point };
+  }
+  const polar = o.base ? o.polar : undefined;
+  if (polar || acquired.length > 0) {
+    const lock = trackCursor(p, {
+      ...(o.base && { base: o.base }),
+      ...(o.polar && { polar: o.polar }),
+      acquired,
+      ...(o.trackPolar && { trackPolar: true }),
+      tolerance,
+    });
+    const only = lock?.paths.length === 1 ? lock.paths[0]! : undefined;
+    if (lock && only?.label === 'Polar') {
+      const distance = Math.hypot(lock.point.x - only.from.x, lock.point.y - only.from.y);
+      return { point: lock.point, polar: { point: lock.point, angle: only.angle, distance } };
+    }
+    if (lock) return { point: lock.point, track: lock };
   }
   return { point: snapped };
 }

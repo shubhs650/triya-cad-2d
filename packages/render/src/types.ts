@@ -3,6 +3,7 @@
 // replace it behind the same interface (DEC-006).
 
 import type { Box, ChangeSet, DragMotion, EntityId, Handle, Vec2 } from '@triya/engine';
+import type { GridSpec } from './grid';
 
 /**
  * World → screen: the world point `center` sits at the middle of the viewport, `scale` is
@@ -39,6 +40,8 @@ export interface RenderStyle {
   readonly showTransparency?: boolean;
   /** The selection highlight's colour (M2-03, UI_SPEC.md §6), a CSS colour; a blue by default. */
   readonly selection?: string;
+  /** GRID on (M2-04 part 2): the grid drawn under the drawing; absent draws none. */
+  readonly grid?: GridSpec;
 }
 
 /**

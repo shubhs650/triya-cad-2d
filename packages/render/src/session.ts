@@ -210,10 +210,21 @@ export class RenderSession {
   /**
    * The running object snap points under the aperture in the space drawn, best first (M2-04):
    * text is bounded by its glyphs here, which the engine worker, having no fonts, cannot do.
+   * Tracking acquisitions (EXT, PAR) follow them, marked `track`.
    */
   snap(query: OsnapQuery): OsnapHit[] {
+    // In a layout, model space is snapped to through its viewports (M2-04 part 2).
+    const model = [...this.model.tables.blockRecords.values()].find(
+      (r) => r.name.toLowerCase() === '*model_space',
+    )?.handle;
     return osnap(
-      { model: this.model, index: this.index, block: this.#block, tol: this.#tol },
+      {
+        model: this.model,
+        index: this.index,
+        block: this.#block,
+        tol: this.#tol,
+        ...(model !== undefined && { modelSpace: model }),
+      },
       query,
     );
   }

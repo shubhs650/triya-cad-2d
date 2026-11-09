@@ -12,6 +12,7 @@ import { completions, promptParts, type CommandLines } from './command-line';
 import { DynamicInput } from './DynamicInput';
 import { dynMode } from './dynamic-input';
 import { DRAFTING_ITEMS, DRAFTING_KEYS, drafting, type DraftingToggle } from './drafting';
+import { cycleSnap } from './canvas/registry';
 import { engines } from './engine/registry';
 import { commandItems, type PaletteItem } from './palette';
 
@@ -145,6 +146,12 @@ export function CommandLine({
         if ((field && field.value !== '') || (!field && takesText(e.target))) return;
         e.preventDefault();
         return selectAllRef.current();
+      }
+      // Tab with nothing typed steps AutoSnap through the snap points under the cursor (M2-04).
+      const empty = e.target === input.current ? input.current?.value === '' : !takesText(e.target);
+      if (e.key === 'Tab' && !e.shiftKey && empty && !e.defaultPrevented && cycleSnap()) {
+        e.preventDefault();
+        return;
       }
       if (e.target === input.current || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;

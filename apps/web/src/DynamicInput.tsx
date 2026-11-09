@@ -6,6 +6,7 @@
 // React (.claude/rules/ui.md).
 import { keywordShortcut, type Prompt, type Vec2 } from '@triya/engine';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { cycleSnap } from './canvas/registry';
 import {
   dynBackspace,
   dynFor,
@@ -120,6 +121,12 @@ export function DynamicInput({
         }
         take(dynFor(p));
         props.current.onSubmit(dynText(s, p, props.current.cursor()));
+        return;
+      }
+      // Tab steps through the snap points under the cursor until something is typed (M2-04).
+      if (e.key === 'Tab' && typed.current.length === 0 && !e.shiftKey && cycleSnap()) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
         return;
       }
       if (e.key === 'Tab') return take(dynTab(s), 'Tab');

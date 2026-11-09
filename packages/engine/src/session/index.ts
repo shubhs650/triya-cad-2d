@@ -73,13 +73,15 @@ export type CommandInput =
   | { readonly kind: 'invoke'; readonly name: string }
   /**
    * A left click on the canvas (M2-03, `PromptBus.pick`): a pick or a selection window's corner
-   * at `Command:` and "Select objects", the point at a point prompt; `release` ends a drag.
+   * at `Command:` and "Select objects", the point at a point prompt; `release` ends a drag;
+   * `missed`: the prompt's object snap override found nothing there (M2-04 part 2).
    */
   | {
       readonly kind: 'pick';
       readonly point: Vec2;
       readonly shift?: boolean;
       readonly release?: boolean;
+      readonly missed?: boolean;
       /** How near a grip, in drawing units, counts as on it (M2-06 grip editing). */
       readonly grip?: number;
     }
@@ -162,6 +164,7 @@ export class EngineSession {
         return this.#bus.pick(input.point, {
           ...(input.shift && { shift: true }),
           ...(input.release && { release: true }),
+          ...(input.missed && { missed: true }),
           ...(input.grip !== undefined && { grip: input.grip }),
         });
       case 'select-all':

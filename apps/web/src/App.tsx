@@ -32,6 +32,8 @@ import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
 import { drafting } from './drafting';
+import { snapMenu } from './snap-menu';
+import { SnapMenu } from './SnapMenu';
 import { DraftingToggles } from './DraftingToggles';
 import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
@@ -706,6 +708,7 @@ export function App() {
       </div>
 
       <LayoutTabs doc={active} />
+      <SnapMenu />
       <CommandLine
         doc={active?.id}
         lines={commandLines}
@@ -915,15 +918,20 @@ function ViewportCanvas({
       },
       onError: (e) => store.failed(name, openError(name, e)),
       onPick: (point, o) => {
-        const pick = (p: Vec2): CommandInput => ({
+        const pick = (p: Vec2, missed = false): CommandInput => ({
           kind: 'pick',
           point: p,
           ...(o.shift && { shift: true }),
           ...(o.release && { release: true }),
+          ...(missed && { missed: true }),
           ...(o.grip !== undefined && { grip: o.grip }),
         });
-        engines.command(id, point instanceof Promise ? point.then(pick) : pick(point));
+        engines.command(
+          id,
+          point instanceof Promise ? point.then((r) => pick(r.point, r.missed)) : pick(point),
+        );
       },
+      onSnapMenu: (at) => snapMenu.open(id, at),
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },
@@ -1003,6 +1011,11 @@ function StatusBar({
   const coords = useRef<HTMLSpanElement>(null);
   const header = doc && new Map(doc.opened.init.header ?? []);
   const luprec = header?.get('$LUPREC');
+  const lwdisplay = header?.get('$LWDISPLAY');
+  // LWT shows the drawing's LWDISPLAY until the drafter turns it (M2-04 part 2).
+  useEffect(() => {
+    drafting.setDrawingLineweights(lwdisplay === 1 || lwdisplay === true);
+  }, [lwdisplay]);
   const digits = typeof luprec === 'number' ? Math.min(Math.max(luprec, 0), 8) : 4;
   useEffect(() => {
     showCursor = (p) => {

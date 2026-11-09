@@ -73,6 +73,7 @@ import { expandInsert, expands, insertClips, type BlockSource, type InsertClip }
 import { defaultPaint, type PaintFunction } from './paint';
 import { drawOrder } from './style/draw-order';
 import { aciRgb, rgbHex } from './style/aci';
+import { gridLines } from './grid';
 import { mixColors, parseHex, tintColor } from './style/mix';
 import { adjustPixels, imageLabel, type ImageFrames } from './image';
 import {
@@ -297,6 +298,9 @@ interface Ordered {
 const LAYOUT_SURROUND_MIX = 1 / 3;
 /** The printable area's dashes, CSS px (AutoCAD draws it dashed; the lengths are ours). */
 const PRINTABLE_DASH = [6, 4];
+/** GRID's lines: the foreground's share of their colour, minor and major (M2-04 part 2). */
+const GRID_MINOR_MIX = 0.12;
+const GRID_MAJOR_MIX = 0.24;
 /** The selection highlight (M2-03): colour, glow width and alpha, and dash, in CSS pixels. */
 const SELECTION_COLOR = '#4da3ff';
 const SELECTION_GLOW_PX = 5;
@@ -1353,6 +1357,7 @@ export class Canvas2DRenderer implements Renderer {
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     const view = this.#viewFrame();
     if (sheet) this.#drawSheet(ctx, sheet, view);
+    this.#drawGrid(ctx, view);
     for (const vp of this.#viewportList()) this.#drawViewport(ctx, vp, view, reduced);
     const entries = this.#visibleEntries(this.#block, view.box);
     this.#sceneEntries += entries.length;
@@ -1441,6 +1446,44 @@ export class Canvas2DRenderer implements Renderer {
       this.#underlayAsked.set(definition, key);
       send(request);
     }
+  }
+
+  /**
+   * GRID (M2-04 part 2): the minor lines faint and the major ones stronger, a device pixel
+   * wide on whole pixels, under everything drawn (UI_SPEC.md §6).
+   */
+  #drawGrid(ctx: Canvas2D, view: DrawFrame): void {
+    const spec = this.#style.grid;
+    if (!spec) return;
+    const lines = gridLines(spec, view.box, this.#view.scale);
+    if (!lines) return;
+    const { m, ox, oy } = view;
+    const w = this.#width * this.#dpr;
+    const h = this.#height * this.#dpr;
+    const stroke = (xs: readonly number[], ys: readonly number[], mix: number) => {
+      ctx.beginPath();
+      for (const x of xs) {
+        const d = Math.round(m.a * (x - ox) + m.e) + 0.5;
+        ctx.moveTo(d, 0);
+        ctx.lineTo(d, h);
+      }
+      for (const y of ys) {
+        const d = Math.round(m.d * (y - oy) + m.f) + 0.5;
+        ctx.moveTo(0, d);
+        ctx.lineTo(w, d);
+      }
+      ctx.strokeStyle = mixColors(this.#style.background, this.#style.foreground, mix);
+      ctx.lineWidth = this.#dpr;
+      ctx.stroke();
+    };
+    const majorX = new Set(lines.majorXs);
+    const majorY = new Set(lines.majorYs);
+    stroke(
+      lines.xs.filter((x) => !majorX.has(x)),
+      lines.ys.filter((y) => !majorY.has(y)),
+      GRID_MINOR_MIX,
+    );
+    stroke(lines.majorXs, lines.majorYs, GRID_MAJOR_MIX);
   }
 
   /** The paper in the background colour and the printable area dashed, in device pixels. */

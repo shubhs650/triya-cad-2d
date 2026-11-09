@@ -81,6 +81,7 @@ export {
   type RenderDocument,
   type RenderSessionOptions,
 } from './session';
+export { GRID_MIN_PX, gridLines, type GridLines, type GridSpec } from './grid';
 export { serveRenderer, type ServeOptions } from './serve';
 export { thumbnailOf, thumbnailSize, type BitmapFactory, type ThumbnailSize } from './thumbnail';
 export type { Endpoint, HostMessage, WorkerMessage } from './protocol';

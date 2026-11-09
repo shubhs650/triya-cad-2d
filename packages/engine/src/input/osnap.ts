@@ -15,8 +15,13 @@
 //   circles, elliptical arcs to their ellipses.
 // - PERpendicular and TANgent need the last point (`from`); AutoCAD's deferred perpendicular
 //   and tangent (no last point yet) are not in this version.
-// - EXTension and PARallel need points acquired by hovering, as object snap tracking does
-//   (OTRACK); they are accepted in `modes` and offer nothing until then (M2-04 part 2).
+// - EXTension and PARallel follow lines acquired by hovering, as object snap tracking does
+//   (OTRACK, `track.ts`): here they offer what may be acquired, a line's nearer end with the
+//   direction out of it (EXT) and the line under the cursor with its direction once there is a
+//   base point (PAR), as `track` hits listed after the snap points (M2-04 part 2).
+// - In a layout's paper space, the model space objects a viewport shows are snapped to as well
+//   while the cursor is inside its frame, in paper coordinates and only within the frame (the
+//   rectangle; a non-rectangular clip is taken as its frame), skipping layers frozen in it.
 // - Hatches are ignored (OSNAPHATCH 0, AutoCAD's default). Block references are snapped into,
 //   nested blocks too; a hit names the object of the space shown.
 //
@@ -41,6 +46,7 @@ import {
 import type { Vec2 } from '../geom/types';
 import { distance, dot, normalize, sub } from '../geom/vec';
 import type { Box } from '../geom/bounds';
+import { viewportFrame, viewportShowsModel, viewportTransform } from '../layout/viewport';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
@@ -107,6 +113,8 @@ export interface OsnapSource {
   /** The block record shown: model space or a layout's paper space. */
   readonly block: Handle;
   readonly tol: Tolerance;
+  /** Model space's block record: with a layout shown, its viewports are snapped through. */
+  readonly modelSpace?: Handle;
 }
 
 export interface OsnapQuery {
@@ -123,8 +131,15 @@ export interface OsnapQuery {
 export interface OsnapHit {
   readonly mode: OsnapMode;
   readonly point: Vec2;
-  /** The object of the space shown the point belongs to (a block reference for its contents). */
+  /**
+   * The object of the space shown the point belongs to (a block reference for its contents,
+   * the viewport for model space seen through it).
+   */
   readonly id: EntityId;
+  /** EXT and PAR: the line's direction (out of the end, for EXT). */
+  readonly direction?: Vec2;
+  /** Not a point to snap to, but something to acquire for tracking (EXT, PAR). */
+  readonly track?: true;
 }
 
 /** Block nesting followed, and MINSERT cells taken per reference, before giving up. */
@@ -169,6 +184,8 @@ interface Parts {
   readonly curves: CurvePart[];
   readonly points: PointPart[];
   readonly loops: LoopPart[];
+  /** The frame of each viewport model space was snapped through: its hits stay inside it. */
+  readonly clips: Map<EntityId, Box>;
 }
 
 /** The snap points under the aperture, best first; empty when none or no mode is on. */
@@ -196,9 +213,27 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
   near.sort((a, b) => a.d - b.d);
   near.length = Math.min(near.length, MAX_NEAR);
 
-  for (const { part, nearest } of near) {
+  const tracks: { hit: OsnapHit; d: number }[] = [];
+  for (const { part, d, nearest } of near) {
     curvePoints(part, q, src.tol, add, on);
     add('NEA', nearest, part.id);
+    const c = part.curve;
+    if (on('EXT') && part.ends && c.kind === 'LINE') {
+      const atEnd = distance(c.end, q.point) < distance(c.start, q.point);
+      const [from, to] = atEnd ? [c.start, c.end] : [c.end, c.start];
+      const hit: OsnapHit = {
+        mode: 'EXT',
+        point: to,
+        id: part.id,
+        direction: sub(to, from),
+        track: true,
+      };
+      tracks.push({ hit, d: distance(to, q.point) });
+    }
+    if (on('PAR') && q.from && (c.kind === 'LINE' || c.kind === 'XLINE' || c.kind === 'RAY')) {
+      const direction = c.kind === 'LINE' ? sub(c.end, c.start) : c.direction;
+      tracks.push({ hit: { mode: 'PAR', point: nearest, id: part.id, direction, track: true }, d });
+    }
   }
   for (const p of parts.points) {
     const isNear =
@@ -237,7 +272,12 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
       }
     }
   }
-  return rank(out, q, src.tol);
+  const clipped = (h: OsnapHit) => {
+    const box = parts.clips.get(h.id);
+    return !box || boxDistance(box, h.point) <= src.tol.linear * 16;
+  };
+  tracks.sort((a, b) => a.d - b.d);
+  return [...rank(out.filter(clipped), q, src.tol), ...tracks.map((t) => t.hit).filter(clipped)];
 }
 
 function rank(hits: OsnapHit[], q: OsnapQuery, tol: Tolerance): OsnapHit[] {
@@ -441,7 +481,7 @@ function extended(c: Simple): Curve {
 // ── Collecting the geometry under the aperture ───────────────────────────────────────────
 
 function collect(src: OsnapSource, q: OsnapQuery): Parts {
-  const parts: Parts = { curves: [], points: [], loops: [] };
+  const parts: Parts = { curves: [], points: [], loops: [], clips: new Map() };
   const r = q.aperture;
   const box: Box = {
     minX: q.point.x - r,
@@ -449,10 +489,22 @@ function collect(src: OsnapSource, q: OsnapQuery): Parts {
     maxX: q.point.x + r,
     maxY: q.point.y + r,
   };
-  const ctx: Ctx = { src, q, parts, nextGroup: 0 };
+  const ctx: Ctx = { src, q, parts, nextGroup: 0, frozen: undefined };
+  const throughViewports = src.modelSpace !== undefined && src.modelSpace !== src.block;
   for (const id of src.index.query(src.block, box)) {
     const e = src.model.entity(id);
-    if (!e || !shown(src.model, e)) continue;
+    if (!e) continue;
+    // A viewport's view shows whatever its own layer and visibility (layout-render's rule).
+    if (throughViewports && e.geom.kind === 'VIEWPORT' && viewportShowsModel(e.geom)) {
+      const frame = viewportFrame(e.geom);
+      if (boxDistance(frame, q.point) === 0) {
+        parts.clips.set(id, frame);
+        ctx.frozen = e.geom.frozenLayers.length > 0 ? new Set(e.geom.frozenLayers) : undefined;
+        nested(ctx, src.modelSpace!, viewportTransform(e.geom), id, [ctx.nextGroup++], -1);
+        ctx.frozen = undefined;
+      }
+    }
+    if (!shown(src.model, e)) continue;
     let near: boolean | undefined;
     const b = src.index.bounds(id);
     if (b?.kind === 'box') near = boxDistance(b.box, q.point) <= r;
@@ -468,11 +520,13 @@ interface Ctx {
   readonly q: OsnapQuery;
   readonly parts: Parts;
   nextGroup: number;
+  /** The layers frozen in the viewport being looked through. */
+  frozen: ReadonlySet<Handle> | undefined;
 }
 
-/** Visible, on a layer neither off nor frozen. */
-function shown(model: DocumentModel, e: Entity): boolean {
-  if (!e.visible) return false;
+/** Visible, on a layer neither off nor frozen (nor frozen in the viewport looked through). */
+function shown(model: DocumentModel, e: Entity, frozen?: ReadonlySet<Handle>): boolean {
+  if (!e.visible || frozen?.has(e.layer)) return false;
   const l = model.tables.layers.get(e.layer);
   return !l || (l.on && !l.frozen);
 }
@@ -721,7 +775,7 @@ function nested(
   };
   for (const inner of src.index.query(block, box)) {
     const e = src.model.entity(inner);
-    if (!e || !shown(src.model, e)) continue;
+    if (!e || !shown(src.model, e, ctx.frozen)) continue;
     addEntity(ctx, e, m, id, groups, depth + 1, undefined);
   }
 }

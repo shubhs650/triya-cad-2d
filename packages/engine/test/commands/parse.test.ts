@@ -9,8 +9,10 @@ import {
   parseAngle,
   parseCoordinate,
   parseNumber,
+  parseOsnapOverride,
   parsePointModifier,
   prompts,
+  OSNAP,
 } from '../../src/index';
 
 const deg = (d: number): number => (d * Math.PI) / 180;
@@ -129,6 +131,42 @@ describe('parsePointModifier', () => {
   it.each(['FR', 'MID', '.', '.w', 'x'])('%j is no modifier', (text) => {
     expect(parsePointModifier(text)).toBeUndefined();
   });
+});
+
+describe('parseOsnapOverride (M2-04)', () => {
+  it.each([
+    ['END', OSNAP.END],
+    ['endp', OSNAP.END],
+    ['ENDPOINT', OSNAP.END],
+    ['mid', OSNAP.MID],
+    ['int', OSNAP.INT],
+    ['APPINT', OSNAP.APP],
+    ['app', OSNAP.APP],
+    ['ext', OSNAP.EXT],
+    ['cen', OSNAP.CEN],
+    ['gce', OSNAP.GCE],
+    ['GCEN', OSNAP.GCE],
+    ['qua', OSNAP.QUA],
+    ['tan', OSNAP.TAN],
+    ['per', OSNAP.PER],
+    ['par', OSNAP.PAR],
+    ['nod', OSNAP.NOD],
+    ['ins', OSNAP.INS],
+    ['nea', OSNAP.NEA],
+    ['NON', 0],
+    ['none', 0],
+    ['end,mid', OSNAP.END | OSNAP.MID],
+    [' int , per ', OSNAP.INT | OSNAP.PER],
+  ])('%j', (text, modes) => {
+    expect(parseOsnapOverride(text)).toBe(modes);
+  });
+
+  it.each(['EN', 'ENDX', 'FROM', 'end,', 'end,xyz', '', '10,10', 'non,end'])(
+    '%j is no override',
+    (text) => {
+      expect(parseOsnapOverride(text)).toBeUndefined();
+    },
+  );
 });
 
 describe('keywords', () => {
