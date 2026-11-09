@@ -3,6 +3,7 @@
 // carries an id and gets one reply, in order. Command input (M2-02) gets no reply: the command
 // engine's output comes back as `command` messages, in the order it happens.
 import type {
+  ChangeSet,
   CommandInput,
   CommandOutput,
   DocumentInit,
@@ -11,7 +12,8 @@ import type {
 } from '@triya/engine';
 
 export type EngineRequest =
-  | { readonly type: 'init'; readonly init: DocumentInit }
+  /** `changes`: a recovered drawing's change log, replayed onto `init` (M2-14). */
+  | { readonly type: 'init'; readonly init: DocumentInit; readonly changes?: readonly ChangeSet[] }
   | { readonly type: 'edit'; readonly id: number; readonly edit: EngineEdit }
   | { readonly type: 'command'; readonly input: CommandInput };
 

@@ -219,6 +219,42 @@ button {
   color: var(--danger-text);
 }
 
+/* M2-14: one row per unsaved drawing offered for recovery. */
+.banner.recovery {
+  flex-direction: column;
+  align-items: stretch;
+}
+
+.recovery-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.recovery-row span {
+  flex: 1;
+  min-width: 0;
+}
+
+.start .recent {
+  margin-top: 16px;
+  text-align: center;
+}
+
+.start .recent h2 {
+  margin: 0 0 6px;
+  font-size: 1em;
+}
+
+.start .recent ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
 .workspace {
   display: flex;
   flex: 1;

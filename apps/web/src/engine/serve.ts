@@ -8,7 +8,7 @@ export function serveEngine(port: Endpoint<EngineRequest, EngineReply>): void {
   port.addEventListener('message', ({ data }) => {
     try {
       if (data.type === 'init') {
-        session = new EngineSession(data.init);
+        session = new EngineSession(data.init, data.changes);
         session.onCommand((output) => port.postMessage({ type: 'command', output }));
         return;
       }

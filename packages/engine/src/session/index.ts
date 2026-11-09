@@ -12,6 +12,7 @@ import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import { DocumentModel, type DocumentInit } from '../model/document';
 import type { Handle } from '../model/handle';
+import { applyToReplica } from '../model/replica';
 import type { Layout, LayoutPlot } from '../model/types';
 import { xrefLoadChange, xrefLoadProblem } from '../model/xref';
 
@@ -119,8 +120,15 @@ export class EngineSession {
   readonly #viewReplies = new Map<number, (r: ViewReply) => void>();
   #nextView = 1;
 
-  constructor(init: DocumentInit) {
+  /**
+   * The drawing as opened from `init`; `changes`, when given, are the change sets an earlier
+   * session of it applied (an autosave's log, M2-14), replayed in order as a replica takes them.
+   * The undo history starts empty, as in a recovered AutoCAD drawing. A log that does not fit
+   * the drawing throws.
+   */
+  constructor(init: DocumentInit, changes: readonly ChangeSet[] = []) {
     this.model = DocumentModel.create(init);
+    for (const cs of changes) applyToReplica(this.model, cs, 'recovered drawing');
     this.#bus = new PromptBus({
       model: this.model,
       registry: builtinCommands(),

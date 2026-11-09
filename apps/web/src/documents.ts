@@ -98,8 +98,11 @@ export class DocumentStore {
     this.#set({ opening: [...this.#state.opening, name], error: undefined });
   }
 
-  /** A file opened: it gets a tab, which shows. Returns the new document's id. */
-  opened(name: string, opened: OpenResult, block: string, file?: DrawingFile): number {
+  /**
+   * A file opened: it gets a tab, which shows. Returns the new document's id. A drawing
+   * recovered after a crash (M2-14) opens with the `edits` it had unsaved.
+   */
+  opened(name: string, opened: OpenResult, block: string, file?: DrawingFile, edits = 0): number {
     const doc: OpenDocument = {
       id: this.#nextId++,
       name,
@@ -108,7 +111,7 @@ export class DocumentStore {
       savedViews: [],
       revision: 0,
       ...(file && { file }),
-      edits: 0,
+      edits,
       savedEdits: 0,
     };
     this.#set({
