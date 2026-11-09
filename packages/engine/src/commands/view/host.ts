@@ -1,4 +1,5 @@
-// The view host (M2-02 part 2): how the view commands (ZOOM, PAN, REGEN, VIEW) reach the canvas.
+// The view host (M2-02 part 2): how the view commands (ZOOM, PAN, REGEN, VIEW) reach the canvas,
+// and the file commands (QSAVE, SAVEAS, CLOSE; M2-13) the app.
 // The command engine runs in the engine worker and holds no view; the canvas of the space shown
 // does, on the main thread. A command asks the host and awaits its reply; the engine session
 // carries each request to the app as a `CommandOutput` and the reply back as a `CommandInput`.
@@ -68,7 +69,16 @@ export type ViewRequest =
    * The box an MTEXT's glyphs fill (M2-09: MLEADEREDIT places a landing on the far side of a
    * multileader's text), which only the renderer, with the fonts, can measure.
    */
-  | { readonly op: 'textBox'; readonly text: MTextGeometry };
+  | { readonly op: 'textBox'; readonly text: MTextGeometry }
+  /**
+   * The file commands (M2-13): QSAVE saves the drawing (in place when it can), SAVEAS and SAVE
+   * save it under a name the drafter picks, CLOSE closes it (asking to save changes first). The
+   * app holds the file, so the host does it; the reply's `file` is the name saved under.
+   */
+  | { readonly op: 'file'; readonly action: FileAction };
+
+/** What a file command asks of the app (M2-13). */
+export type FileAction = 'qsave' | 'saveas' | 'close';
 
 export type ViewReply =
   | {
@@ -80,6 +90,8 @@ export type ViewReply =
       readonly ids?: readonly EntityId[];
       /** What `textBox` measured. */
       readonly box?: Box;
+      /** The file a `file` request saved the drawing as. */
+      readonly file?: string;
     }
   | { readonly ok: false; readonly message: string };
 

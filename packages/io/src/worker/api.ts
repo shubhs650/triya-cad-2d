@@ -1,5 +1,8 @@
 // What the I/O worker exposes over Comlink (ARCHITECTURE.md §3). Pure functions of their
 // arguments, so the same object runs behind a real Worker or, in tests, a MessageChannel.
+import type { ChangeSet } from '@triya/engine';
+import * as Comlink from 'comlink';
+import { saveSession } from '../export/save';
 import { openDocument, type OpenedDocument } from '../map/document';
 import {
   detectFormat,
@@ -14,7 +17,7 @@ import {
  * (parse 0, summarize or map 0.9, done 1) rather than per byte.
  */
 export interface IoProgress {
-  readonly stage: 'parse' | 'summarize' | 'map' | 'done';
+  readonly stage: 'parse' | 'summarize' | 'map' | 'write' | 'done';
   readonly fraction: number;
 }
 
@@ -58,6 +61,23 @@ export const ioApi = {
     const result = { summary: summarizeDocument(doc, f), ...openDocument(doc) };
     await onProgress?.({ stage: 'done', fraction: 1 });
     return result;
+  },
+
+  /**
+   * Save and Save As (M2-13): the drawing `bytes` held, with the change sets its engine applied
+   * since it opened, as an AC1032 DXF (`saveSession`). Throws `UnsupportedChangeError` for a
+   * change no writer handles yet.
+   */
+  async save(
+    bytes: Uint8Array,
+    changes: readonly ChangeSet[],
+    format?: CadFormat,
+    onProgress?: ProgressCallback,
+  ): Promise<Uint8Array> {
+    await onProgress?.({ stage: 'write', fraction: 0 });
+    const out = saveSession(bytes, changes, format);
+    await onProgress?.({ stage: 'done', fraction: 1 });
+    return Comlink.transfer(out, [out.buffer]);
   },
 };
 

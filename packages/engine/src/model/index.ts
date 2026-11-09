@@ -10,3 +10,4 @@ export * from './update';
 export * from './width';
 export * from './xclip';
 export * from './xref';
+export * from './replica';

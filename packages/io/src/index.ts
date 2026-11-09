@@ -8,8 +8,13 @@ export { fidelityDwgConfiguration, fidelityDxfConfiguration, writeCadDocument } 
 export type { WriteOptions } from './write';
 export { ioApi } from './worker/api';
 export type { IoApi, IoProgress, OpenResult, ProgressCallback } from './worker/api';
-export { openInWorker, readInWorker } from './worker/client';
-export type { AbortSignalLike, IoWorker, ReadInWorkerOptions } from './worker/client';
+export { openInWorker, readInWorker, saveInWorker } from './worker/client';
+export type {
+  AbortSignalLike,
+  IoWorker,
+  ReadInWorkerOptions,
+  SaveInWorkerOptions,
+} from './worker/client';
 export { mapHeader, type MappedHeader } from './map/header';
 export { mapTables, type MappedTables } from './map/tables';
 export { CELL_STYLE_MAP, cellStyleMapOf, mappedCellStyleMap } from './map/styles';
@@ -23,7 +28,9 @@ export {
   triyaToAcad,
   UnsupportedChangeError,
   type ExportSummary,
+  type TriyaToAcadOptions,
 } from './export/export';
+export { saveDxf, saveSession, SAVE_VERSION } from './export/save';
 export { WRITABLE_TYPES } from './export/entities';
 export { documentObjects, PassthroughStore } from './export/passthrough';
 export { documentInit, openDocument, type OpenedDocument } from './map/document';

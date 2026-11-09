@@ -9,6 +9,7 @@
 import {
   DocumentModel,
   SpatialIndex,
+  applyToReplica,
   osnap,
   toleranceForSize,
   toleranceFromExtents,
@@ -20,10 +21,7 @@ import {
   type EntityId,
   type Handle,
   type HeaderValue,
-  type KeyedChanges,
   type MTextGeometry,
-  type TableChanges,
-  type TableName,
   type OsnapHit,
   type OsnapQuery,
   type Tolerance,
@@ -268,77 +266,10 @@ export class RenderSession {
     this.renderer.invalidate();
   }
 
-  /**
-   * Applies a ChangeSet the engine already applied. Entity ids are dense and handed out in
-   * order, so binding the new handles in id order reproduces the engine's ids; a mismatch means
-   * the replica missed a change, and drawing on would show the wrong entities.
-   */
+  /** Applies a ChangeSet the engine already applied (`applyToReplica`). */
   apply(cs: ChangeSet): void {
-    const added = [...(cs.entities?.added ?? [])].sort((a, b) => a.entity.id - b.entity.id);
-    for (const { entity } of added) {
-      const id = this.model.ids.assign(entity.handle);
-      if (id !== entity.id) {
-        throw new Error(
-          `render replica out of step: handle ${entity.handle} is id ${id} here, ${entity.id} in the engine`,
-        );
-      }
-    }
-    const local = this.#rebase(cs);
-    this.model.apply(local);
+    const local = applyToReplica(this.model, cs, 'render replica');
     this.index.apply(local);
     this.renderer.apply(local);
   }
-
-  /**
-   * The model checks that a change set's `before` side is the very object it holds, which a
-   * change set that crossed a postMessage (a structured clone) never is. Swap in the replica's
-   * own objects, matched by id and handle; one it does not hold means the replica missed a
-   * change, and the model then rejects the change set.
-   */
-  #rebase(cs: ChangeSet): ChangeSet {
-    const m = this.model;
-    const own = (e: Entity): Entity => m.entity(e.id) ?? e;
-    const out: { -readonly [K in keyof ChangeSet]: ChangeSet[K] } = { ...cs };
-    if (cs.entities) {
-      const { added, updated, removed } = cs.entities;
-      out.entities = {
-        ...(added && { added }),
-        ...(updated && {
-          updated: updated.map((u) => ({ before: own(u.before), after: u.after })),
-        }),
-        ...(removed && {
-          removed: removed.map((r) => ({ entity: own(r.entity), index: r.index })),
-        }),
-      };
-    }
-    if (cs.tables) {
-      const tables: Record<string, KeyedChanges<{ readonly handle: Handle }>> = {};
-      for (const [name, c] of Object.entries(cs.tables) as [TableName, KeyedChanges<never>][]) {
-        const map = m.tables[name] as ReadonlyMap<Handle, { readonly handle: Handle }>;
-        tables[name] = rebaseKeyed(c, map);
-      }
-      out.tables = tables as TableChanges;
-    }
-    if (cs.objects) out.objects = rebaseKeyed(cs.objects, m.objects);
-    if (cs.blocks) out.blocks = rebaseKeyed(cs.blocks, m.blocks);
-    if (cs.layouts) {
-      const own = new Map(m.layouts.map((l) => [l.handle, l]));
-      out.layouts = rebaseKeyed(cs.layouts, own);
-    }
-    return out;
-  }
-}
-
-function rebaseKeyed<T extends { readonly handle: Handle }>(
-  c: KeyedChanges<T>,
-  map: ReadonlyMap<Handle, T>,
-): KeyedChanges<T> {
-  const own = (r: T): T => map.get(r.handle) ?? r;
-  return {
-    ...(c.added && { added: c.added }),
-    ...(c.updated && {
-      updated: c.updated.map((u) => ({ before: own(u.before), after: u.after })),
-    }),
-    ...(c.removed && { removed: c.removed.map(own) }),
-  };
 }

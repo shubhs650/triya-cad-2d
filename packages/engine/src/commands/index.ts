@@ -29,3 +29,4 @@ export {
   patchAttribute,
   wcmatch,
 } from './modify/attributes';
+export { FILE_COMMANDS } from './file';
