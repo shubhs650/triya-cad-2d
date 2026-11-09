@@ -60,7 +60,7 @@ async function fakePickers(page: Page): Promise<void> {
     Object.assign(window, {
       showOpenFilePicker: () => {
         const n = fs.next!;
-        fs.next = undefined;
+        delete fs.next;
         return Promise.resolve([handle(n.name, n.bytes)]);
       },
       showSaveFilePicker: (o: { suggestedName: string }) => {
