@@ -31,7 +31,7 @@ import {
 import { FontBook, loadStrokeFont, parseShx, parseTtf, type TriyaStrokeFont } from '@triya/text';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
-import type { TextContext } from './text';
+import { textMeasure, type TextContext } from './text';
 import { textBounds } from './text-bounds';
 import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
 import type { RasterPixels, RenderStyle, UnderlayRaster, UnderlayRequest } from './types';
@@ -214,6 +214,16 @@ export class RenderSession {
    */
   textBox(text: MTextGeometry): Box | undefined {
     return textBounds(this.#text)(text);
+  }
+
+  /**
+   * The widths MTEXTs are laid out at in the fonts loaded now (`textMeasure`), null for one no
+   * loaded font draws: what the engine worker, having no fonts, regenerates dimensions by
+   * (M2-10 part 3).
+   */
+  textWidths(texts: readonly MTextGeometry[]): (number | null)[] {
+    const measure = textMeasure(this.#text);
+    return texts.map((t) => measure(t) ?? null);
   }
 
   /**

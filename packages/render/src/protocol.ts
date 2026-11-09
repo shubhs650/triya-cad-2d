@@ -76,6 +76,8 @@ export type HostMessage =
   | { readonly type: 'bounds'; readonly id: number; readonly ids: readonly EntityId[] }
   /** The box an MTEXT's glyphs fill (M2-09); the answer is an `extents`. */
   | { readonly type: 'textBox'; readonly id: number; readonly text: MTextGeometry }
+  /** The widths MTEXTs are laid out at (M2-10 part 3); the answer is a `widths`. */
+  | { readonly type: 'textWidths'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The object snap points under the aperture (M2-04); the answer is a `snap`. */
   | { readonly type: 'snap'; readonly id: number; readonly query: OsnapQuery }
   /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
@@ -100,6 +102,8 @@ export type WorkerMessage =
   | { readonly type: 'snap'; readonly id: number; readonly hits: readonly OsnapHit[] }
   /** The extents asked for; null when nothing drawn has a known extent. */
   | { readonly type: 'extents'; readonly id: number; readonly box: Box | null }
+  /** The text widths asked for, null for a text no loaded font draws. */
+  | { readonly type: 'widths'; readonly id: number; readonly widths: readonly (number | null)[] }
   | { readonly type: 'error'; readonly message: string; readonly id?: number }
   /** A PDF underlay page the view needs drawn (M1-20); unasked, so it carries no id. */
   | { readonly type: 'underlayRequest'; readonly request: UnderlayRequest; readonly id?: never };

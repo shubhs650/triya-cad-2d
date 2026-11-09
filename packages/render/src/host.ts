@@ -260,6 +260,14 @@ export class RendererHost {
     );
   }
 
+  /** The widths MTEXTs are laid out at (M2-10 part 3); null for one no loaded font draws. */
+  textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
+    if (this.#session) return Promise.resolve(this.#session.textWidths(texts));
+    return this.#request((id) => ({ type: 'textWidths', id, texts })).then((m) =>
+      m.type === 'widths' ? [...m.widths] : texts.map(() => null),
+    );
+  }
+
   /** The object snap points under the aperture, best first (M2-04). */
   snap(query: OsnapQuery): Promise<OsnapHit[]> {
     if (this.#session) return Promise.resolve(this.#session.snap(query));

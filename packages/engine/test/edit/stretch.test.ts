@@ -196,3 +196,56 @@ describe('stretchObjects', () => {
     expect(ends('42')).toEqual([8, 3, 10, 3]);
   });
 });
+
+describe('stretchGeometry of a dimension that can be regenerated (M2-10 part 3)', () => {
+  const dim = {
+    kind: 'DIMENSION',
+    dimType: 'linear',
+    style: '27',
+    first: { x: 0, y: 0 },
+    second: { x: 10, y: 0 },
+    definitionPoint: { x: 10, y: 3 },
+    textPosition: { x: 0, y: 4 },
+    textUserPositioned: false,
+    text: '',
+    textRotation: 0,
+    horizontalDirection: 0,
+    attachment: 5,
+    lineSpacingStyle: 1,
+    lineSpacing: 1,
+    rotation: 0,
+  } as EntityGeometry;
+  const regen = (g: EntityGeometry, inside = WINDOW) =>
+    stretchGeometry(g, inside, D, { dimensions: true });
+
+  it('moves the definition points inside the window', () => {
+    const r = regen(dim);
+    expect(r).toMatchObject({
+      kind: 'shape',
+      geom: {
+        first: { x: 0, y: 0 },
+        second: { x: 12, y: 1 },
+        definitionPoint: { x: 12, y: 4 },
+        textPosition: { x: 0, y: 4 },
+        textUserPositioned: false,
+      },
+    });
+  });
+
+  it('places text moved on its own as the user placed it', () => {
+    const r = regen(dim, inBox({ minX: -1, minY: 3.5, maxX: 1, maxY: 5 }));
+    expect(r).toMatchObject({
+      kind: 'shape',
+      geom: { textPosition: { x: 2, y: 5 }, textUserPositioned: true, second: { x: 10, y: 0 } },
+    });
+  });
+
+  it('moves a dimension wholly inside, and leaves one wholly outside', () => {
+    expect(regen(dim, () => true)).toEqual({ kind: 'move' });
+    expect(regen(dim, () => false)).toEqual({ kind: 'none' });
+  });
+
+  it('only moves a dimension whole without a dimension engine', () => {
+    expect(stretch(dim)).toMatchObject({ kind: 'whole' });
+  });
+});

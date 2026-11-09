@@ -29,3 +29,4 @@ export {
   patchAttribute,
   wcmatch,
 } from './modify/attributes';
+export { regenerateDimensions } from './modify/dimensions';

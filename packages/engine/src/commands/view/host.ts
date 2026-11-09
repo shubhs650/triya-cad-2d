@@ -68,7 +68,13 @@ export type ViewRequest =
    * The box an MTEXT's glyphs fill (M2-09: MLEADEREDIT places a landing on the far side of a
    * multileader's text), which only the renderer, with the fonts, can measure.
    */
-  | { readonly op: 'textBox'; readonly text: MTextGeometry };
+  | { readonly op: 'textBox'; readonly text: MTextGeometry }
+  /**
+   * The widths the renderer lays MTEXTs out at, each its widest line's advance (the
+   * `TextMeasure` of TOLERANCE frames), null for one no loaded font draws: what a dimension's
+   * regeneration measures its text by (M2-10 part 3).
+   */
+  | { readonly op: 'textWidths'; readonly texts: readonly MTextGeometry[] };
 
 export type ViewReply =
   | {
@@ -80,6 +86,8 @@ export type ViewReply =
       readonly ids?: readonly EntityId[];
       /** What `textBox` measured. */
       readonly box?: Box;
+      /** What `textWidths` measured, one per text. */
+      readonly widths?: readonly (number | null)[];
     }
   | { readonly ok: false; readonly message: string };
 

@@ -20,8 +20,13 @@ export {
   transformObjects,
   type EditReport,
 } from './edit';
-export { stretchGeometry, type StretchResult } from './stretch';
+export { stretchGeometry, type StretchOptions, type StretchResult } from './stretch';
 export { gripsOf, moveGrip, sameGrip, type Grip, type GripKind } from './grips';
 export * from './revcloud';
 export * from './draw-order';
 export * from './mleader';
+export {
+  writeDimensionBlock,
+  type DimensionRegenerator,
+  type RegeneratedParts,
+} from './dimension-block';

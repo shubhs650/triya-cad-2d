@@ -55,6 +55,7 @@ import {
   type DragMotion,
   type Vec2,
   type Entity,
+  type EntityGeometry,
   type EntityId,
   type Handle,
   type ImageDefinition,
@@ -427,6 +428,13 @@ const GRIP_COLOR = rgbHex(aciRgb(150));
 const GRIP_HOT = rgbHex(aciRgb(12));
 const GRIP_EDGE = '#1a1a1a';
 
+/** A dimension without its block, so the engine draws it (a STRETCH preview, M2-10 part 3). */
+function unblocked(g: EntityGeometry): EntityGeometry {
+  if (!('dimType' in g)) return g;
+  const { block: _block, ...rest } = g;
+  return rest as EntityGeometry;
+}
+
 export class Canvas2DRenderer implements Renderer {
   readonly #model: DocumentModel;
   readonly #index: SpatialIndex;
@@ -687,8 +695,11 @@ export class Canvas2DRenderer implements Renderer {
       for (const id of s.ids) {
         const e = this.#model.entity(id);
         if (!e || !this.#cache[id]) continue;
-        const r = stretchGeometry(e.geom, inside, s.d);
-        const geom = r.kind === 'shape' ? r.geom : r.kind === 'none' ? e.geom : undefined;
+        // The engine reshapes a dimension only when it can regenerate it (M2-10 part 3); the
+        // preview draws the reshaped one afresh, as its rewritten block will.
+        const r = stretchGeometry(e.geom, inside, s.d, { dimensions: true });
+        const geom =
+          r.kind === 'shape' ? unblocked(r.geom) : r.kind === 'none' ? e.geom : undefined;
         const entry = geom && this.#entryOf({ ...e, geom }, id, this.#model, this.#blockSource);
         if (entry) stretched.push(entry);
       }
