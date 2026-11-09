@@ -24,6 +24,11 @@
 //   rectangle; a non-rectangular clip is taken as its frame), skipping layers frozen in it.
 // - Hatches are ignored (OSNAPHATCH 0, AutoCAD's default). Block references are snapped into,
 //   nested blocks too; a hit names the object of the space shown.
+// - PDF underlays offer the vector geometry of their page (M2-22) while PDFOSNAP is on (the
+//   query's `underlays`, on unless false) and the app has read the page (the source's
+//   `underlays`, underlay-snap.ts): its lines, arcs and curves placed by the underlay's
+//   insertion, scale and rotation, and while clipping is on only points inside the clip
+//   boundary, so nothing outside it is snapped to, as nothing outside it shows.
 //
 // Geometry comes from the document model and candidates from the spatial index, so the cost is
 // the objects under the aperture, not the drawing (PRD §12 T3: < 50 ms at 100k entities).
@@ -52,6 +57,14 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Entity, EntityGeometry, InsertGeometry } from '../model/types';
 import type { SpatialIndex } from '../spatial/spatial-index';
+import {
+  insideRing,
+  underlayClipRing,
+  underlayMatrix,
+  underlayShown,
+  underlaySnapCurves,
+  type UnderlaySnapPage,
+} from './underlay-snap';
 
 /** OSMODE bits, as AutoCAD numbers them. 16384 (`OSNAP_OFF`) suppresses running snaps. */
 export const OSNAP = {
@@ -115,6 +128,8 @@ export interface OsnapSource {
   readonly tol: Tolerance;
   /** Model space's block record: with a layout shown, its viewports are snapped through. */
   readonly modelSpace?: Handle;
+  /** A PDFDEFINITION's page geometry, once the app has read it from the PDF (M2-22). */
+  readonly underlays?: (definition: Handle) => UnderlaySnapPage | undefined;
 }
 
 export interface OsnapQuery {
@@ -126,6 +141,8 @@ export interface OsnapQuery {
   readonly modes: number;
   /** The last point, which PERpendicular and TANgent are drawn from. */
   readonly from?: Vec2;
+  /** PDFOSNAP: PDF underlays' geometry is snapped to unless this is false (M2-22). */
+  readonly underlays?: boolean;
 }
 
 export interface OsnapHit {
@@ -162,6 +179,8 @@ interface CurvePart {
   readonly curve: Simple;
   /** Offers its ends to END (a polyline's segments do; a closed spline does not). */
   readonly ends: boolean;
+  /** Where its points may be (a clipped underlay's boundary); anywhere when absent. */
+  readonly inside?: (p: Vec2) => boolean;
 }
 
 interface PointPart {
@@ -199,6 +218,12 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
     if (on(mode) && Number.isFinite(point.x) && Number.isFinite(point.y))
       out.push({ mode, point, id });
   };
+  const within = (part: CurvePart, p: Vec2) => !part.inside || part.inside(p);
+  const addTo =
+    (part: CurvePart) =>
+    (mode: OsnapMode, point: Vec2, id: EntityId): void => {
+      if (within(part, point)) add(mode, point, id);
+    };
 
   // The curves the aperture touches, nearest first, and the groups (objects, and the block
   // references holding them) they belong to.
@@ -215,12 +240,14 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
 
   const tracks: { hit: OsnapHit; d: number }[] = [];
   for (const { part, d, nearest } of near) {
-    curvePoints(part, q, src.tol, add, on);
-    add('NEA', nearest, part.id);
+    const addPart = part.inside ? addTo(part) : add;
+    curvePoints(part, q, src.tol, addPart, on);
+    addPart('NEA', nearest, part.id);
     const c = part.curve;
     if (on('EXT') && part.ends && c.kind === 'LINE') {
       const atEnd = distance(c.end, q.point) < distance(c.start, q.point);
       const [from, to] = atEnd ? [c.start, c.end] : [c.end, c.start];
+      if (!within(part, to)) continue;
       const hit: OsnapHit = {
         mode: 'EXT',
         point: to,
@@ -230,7 +257,12 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
       };
       tracks.push({ hit, d: distance(to, q.point) });
     }
-    if (on('PAR') && q.from && (c.kind === 'LINE' || c.kind === 'XLINE' || c.kind === 'RAY')) {
+    if (
+      on('PAR') &&
+      q.from &&
+      (c.kind === 'LINE' || c.kind === 'XLINE' || c.kind === 'RAY') &&
+      within(part, nearest)
+    ) {
       const direction = c.kind === 'LINE' ? sub(c.end, c.start) : c.direction;
       tracks.push({ hit: { mode: 'PAR', point: nearest, id: part.id, direction, track: true }, d });
     }
@@ -261,12 +293,22 @@ export function osnap(src: OsnapSource, q: OsnapQuery): OsnapHit[] {
         const b = paired[j]!.part;
         if (on('INT')) {
           for (const x of intersect(a.curve as Curve, b.curve as Curve, src.tol)) {
-            if (distance(x.point, q.point) <= q.aperture) add('INT', x.point, a.id);
+            if (
+              distance(x.point, q.point) <= q.aperture &&
+              within(a, x.point) &&
+              within(b, x.point)
+            )
+              add('INT', x.point, a.id);
           }
         }
         if (on('APP')) {
           for (const x of intersect(extended(a.curve), extended(b.curve), src.tol)) {
-            if (distance(x.point, q.point) <= q.aperture) add('APP', x.point, a.id);
+            if (
+              distance(x.point, q.point) <= q.aperture &&
+              within(a, x.point) &&
+              within(b, x.point)
+            )
+              add('APP', x.point, a.id);
           }
         }
       }
@@ -641,6 +683,9 @@ function addEntity(
       if (g.block && depth < MAX_DEPTH) nested(ctx, g.block, m, id, groups, depth);
       break;
     }
+    case 'PDFUNDERLAY':
+      underlayParts(ctx, g, m, id, groups);
+      break;
     case 'VIEWPORT':
       if (g.id !== 1) {
         const w = g.width / 2;
@@ -657,6 +702,71 @@ function addEntity(
     default:
       // HATCH (OSNAPHATCH 0), images, tables, multileaders and the rest offer nothing yet.
       break;
+  }
+}
+
+/**
+ * A PDF underlay's page geometry under the aperture (M2-22), carried into the space shown by
+ * `m`: the aperture's box taken back to page inches picks the page's curves, and a clipped
+ * underlay's points must lie inside its boundary (on it counts).
+ */
+function underlayParts(
+  ctx: Ctx,
+  g: Extract<EntityGeometry, { readonly kind: 'PDFUNDERLAY' }>,
+  m: Matrix2D,
+  id: EntityId,
+  groups: readonly number[],
+): void {
+  const { src, q, parts } = ctx;
+  if (q.underlays === false || !src.underlays || g.definition === undefined) return;
+  if (!underlayShown(g)) return;
+  const page = src.underlays(g.definition);
+  if (!page) return;
+  let toShown: Matrix2D;
+  let toPage: Matrix2D;
+  try {
+    toShown = identityOr(m, underlayMatrix(g));
+    toPage = invert(toShown);
+  } catch {
+    return;
+  }
+  const r = q.aperture;
+  const corners = [
+    { x: q.point.x - r, y: q.point.y - r },
+    { x: q.point.x + r, y: q.point.y - r },
+    { x: q.point.x + r, y: q.point.y + r },
+    { x: q.point.x - r, y: q.point.y + r },
+  ].map((p) => applyPoint(toPage, p));
+  let box: Box = {
+    minX: Math.min(...corners.map((p) => p.x)),
+    minY: Math.min(...corners.map((p) => p.y)),
+    maxX: Math.max(...corners.map((p) => p.x)),
+    maxY: Math.max(...corners.map((p) => p.y)),
+  };
+  const ring = underlayClipRing(g);
+  let inside: ((p: Vec2) => boolean) | undefined;
+  if (ring) {
+    box = {
+      minX: Math.max(box.minX, Math.min(...ring.map((p) => p.x))),
+      minY: Math.max(box.minY, Math.min(...ring.map((p) => p.y))),
+      maxX: Math.min(box.maxX, Math.max(...ring.map((p) => p.x))),
+      maxY: Math.min(box.maxY, Math.max(...ring.map((p) => p.y))),
+    };
+    if (box.minX > box.maxX || box.minY > box.maxY) return;
+    // Page inches per unit of the space shown. The aperture must reach what of the page
+    // shows; then only points inside count, those on the boundary (within tolerance) too.
+    const k = Math.sqrt(Math.abs(toShown.a * toShown.d - toShown.b * toShown.c));
+    if (!insideRing(ring, applyPoint(toPage, q.point), r / k)) return;
+    const eps = (src.tol.linear * 16) / k;
+    inside = (p) => insideRing(ring, applyPoint(toPage, p), eps);
+  }
+  for (const c of underlaySnapCurves(page, box)) {
+    try {
+      const curve = transformCurve(c, toShown, src.tol);
+      parts.curves.push({ id, groups, curve, ends: true, ...(inside && { inside }) });
+    } catch {
+      // A degenerate curve: nothing to snap to.
+    }
   }
 }
 

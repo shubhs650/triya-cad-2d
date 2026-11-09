@@ -35,7 +35,7 @@ export interface CanvasColours {
 /** The drafting settings AutoCAD keeps per user. */
 export type DraftingPreferences = Pick<
   DraftingState,
-  'osmode' | 'polar' | 'polarAngle' | 'otrack' | 'markerSize' | 'aperture'
+  'osmode' | 'polar' | 'polarAngle' | 'otrack' | 'markerSize' | 'aperture' | 'pdfOsnap'
 >;
 
 export interface Preferences {
@@ -73,6 +73,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     otrack: true,
     markerSize: 5,
     aperture: 10,
+    pdfOsnap: true,
   },
 };
 
@@ -123,6 +124,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       otrack: bool(k['otrack'], d.drafting.otrack),
       markerSize: int(k['markerSize'], MARKER_SIZES, d.drafting.markerSize),
       aperture: int(k['aperture'], APERTURES, d.drafting.aperture),
+      pdfOsnap: bool(k['pdfOsnap'], d.drafting.pdfOsnap),
     },
   };
 }
@@ -188,6 +190,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     otrack: s.otrack,
     markerSize: s.markerSize,
     aperture: s.aperture,
+    pdfOsnap: s.pdfOsnap,
   };
 }
 

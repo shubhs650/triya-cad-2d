@@ -3,3 +3,4 @@
 export * from './constrain';
 export * from './osnap';
 export * from './track';
+export * from './underlay-snap';

@@ -11,6 +11,7 @@ import type {
   OsnapHit,
   OsnapQuery,
   Vec2,
+  UnderlaySnapPage,
 } from '@triya/engine';
 import type { FontSources, RenderDocument } from './session';
 import type {
@@ -57,6 +58,12 @@ export type HostMessage =
       readonly type: 'underlay';
       readonly definition: string;
       readonly raster: UnderlayRaster | null;
+    }
+  /** A PDFDEFINITION's page geometry for osnap, copied; null forgets it (M2-22). */
+  | {
+      readonly type: 'underlaySnap';
+      readonly definition: string;
+      readonly page: UnderlaySnapPage | null;
     }
   | {
       readonly type: 'hitTest';

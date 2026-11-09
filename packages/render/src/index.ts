@@ -87,3 +87,4 @@ export { thumbnailOf, thumbnailSize, type BitmapFactory, type ThumbnailSize } fr
 export type { Endpoint, HostMessage, WorkerMessage } from './protocol';
 export * from './style/index';
 export * from './plot';
+export * from './underlay-snap';

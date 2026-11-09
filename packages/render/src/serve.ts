@@ -68,6 +68,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'underlay':
         session.setUnderlay(m.definition, m.raster ?? undefined);
         break;
+      case 'underlaySnap':
+        session.setUnderlaySnap(m.definition, m.page ?? undefined);
+        break;
       case 'hitTest':
         port.postMessage({ type: 'reply', id: m.id, ids: r.hitTest(m.screen, m.aperture) });
         break;

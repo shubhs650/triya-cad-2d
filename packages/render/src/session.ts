@@ -25,6 +25,7 @@ import {
   type OsnapHit,
   type OsnapQuery,
   type Tolerance,
+  type UnderlaySnapPage,
 } from '@triya/engine';
 import { FontBook, loadStrokeFont, parseShx, parseTtf, type TriyaStrokeFont } from '@triya/text';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
@@ -122,6 +123,8 @@ export class RenderSession {
   readonly #images = new Map<Handle, RasterPixels>();
   /** PDF underlay pages by PDFDEFINITION handle, as the app draws them (M1-20). */
   readonly #underlays = new Map<Handle, UnderlayRaster>();
+  /** PDF underlay pages' vector geometry by PDFDEFINITION handle, for osnap (M2-22). */
+  readonly #underlaySnaps = new Map<Handle, UnderlaySnapPage>();
   readonly #surface: Surface;
   /** The block record drawn: model space or a layout's paper space. */
   readonly #block: Handle;
@@ -241,6 +244,7 @@ export class RenderSession {
         block: this.#block,
         tol: this.#tol,
         ...(model !== undefined && { modelSpace: model }),
+        underlays: (h) => this.#underlaySnaps.get(h),
       },
       query,
     );
@@ -274,6 +278,15 @@ export class RenderSession {
     if (before?.width !== after?.width || before?.height !== after?.height)
       this.index.reboundUnderlays();
     this.renderer.invalidate();
+  }
+
+  /**
+   * A PDFDEFINITION's page geometry as the app read it from the PDF, or undefined to forget it:
+   * running object snaps snap to it while PDFOSNAP is on (M2-22).
+   */
+  setUnderlaySnap(definition: Handle, page: UnderlaySnapPage | undefined): void {
+    if (page) this.#underlaySnaps.set(definition, page);
+    else this.#underlaySnaps.delete(definition);
   }
 
   /** Applies a ChangeSet the engine already applied (`applyToReplica`). */

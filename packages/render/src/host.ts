@@ -15,6 +15,7 @@ import type {
   OsnapHit,
   OsnapQuery,
   Vec2,
+  UnderlaySnapPage,
 } from '@triya/engine';
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
@@ -205,6 +206,15 @@ export class RendererHost {
   setUnderlay(definition: string, raster: UnderlayRaster | undefined): void {
     if (this.#session) this.#session.setUnderlay(definition, raster);
     else this.#post({ type: 'underlay', definition, raster: raster ?? null });
+  }
+
+  /**
+   * A PDFDEFINITION's page geometry for running object snaps (M2-22), or undefined to forget
+   * it. The worker gets a copy (the app keeps its pages cached).
+   */
+  setUnderlaySnap(definition: string, page: UnderlaySnapPage | undefined): void {
+    if (this.#session) this.#session.setUnderlaySnap(definition, page);
+    else this.#post({ type: 'underlaySnap', definition, page: page ?? null });
   }
 
   /** Entities within `aperture` CSS pixels of a screen point, nearest first. */
