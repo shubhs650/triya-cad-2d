@@ -10,7 +10,7 @@
 // extension dictionaries, and every handle the save handed out). With TRIYA_DXF_AUDIT_DIR set the
 // save also goes to the ezdxf audit as the file's `session` save.
 import { readFileSync } from 'node:fs';
-import { SortEntitiesTable, type CadDocument, type CadObject } from '@node-projects/acad-ts';
+import { CadObject, SortEntitiesTable, type CadDocument } from '@node-projects/acad-ts';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
@@ -127,7 +127,10 @@ function withOwned(handles: Set<number>, ...docs: CadDocument[]): Set<number> {
   const out = new Set(handles);
   for (const doc of docs) {
     for (const [h, o] of documentObjects(doc)) {
-      for (let p: CadObject | null | undefined = o.owner; p; p = p.owner === p ? null : p.owner) {
+      // An owner is a handled object; the ones that own others are CadObjects.
+      const ownerOf = (c: CadObject): CadObject | null =>
+        c.owner instanceof CadObject && c.owner !== c ? c.owner : null;
+      for (let p = ownerOf(o); p; p = ownerOf(p)) {
         if (handles.has(p.handle)) {
           out.add(h);
           break;

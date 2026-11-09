@@ -28,7 +28,9 @@ export function browserSave(win: Window = window): SaveEnv {
         picker.call(win, { suggestedName, types: [DXF_TYPE], excludeAcceptAllOption: true }),
     }),
     download: (name, bytes) => {
-      const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/dxf' }));
+      const url = URL.createObjectURL(
+        new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/dxf' }),
+      );
       const a = win.document.createElement('a');
       a.href = url;
       a.download = name;
