@@ -47,6 +47,10 @@ import { LayersPalette } from './LayersPalette';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
 import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
+import { RecentFiles, indexedDbRecent, type RecentHandle } from './recent';
+import { Autosaver, RecoveryOffers } from './recovery';
+import { indexedDbRecovery, webLocks } from './recovery-browser';
+import { RecoveryBanner } from './RecoveryBanner';
 import {
   ReferenceFiles,
   filesInEntry,
@@ -78,6 +82,30 @@ export const OET_HOME = 'https://openengtools.com/';
 export const REPORT_ISSUE = 'https://github.com/shubhs650/triya-cad-2d/issues/new';
 
 const store = new DocumentStore();
+
+/**
+ * Crash recovery (M2-14, recovery.ts): this page's session holds its lock while it lives; every
+ * drawing with unsaved changes is written to IndexedDB 5 s after its last edit, and what a page
+ * that is gone left behind is offered on launch.
+ */
+const session =
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+const sessionLocks = webLocks();
+sessionLocks.hold(session);
+const recoveryStore = indexedDbRecovery();
+const autosaver = new Autosaver({
+  persistence: recoveryStore,
+  session,
+  changesOf: (doc) => engines.changesOf(doc),
+  onError: (message) => store.fail(message),
+});
+store.subscribe(() => autosaver.update(store.getSnapshot().docs));
+const recoveryOffers = new RecoveryOffers(recoveryStore, sessionLocks, session);
+void recoveryOffers.load();
+
+/** Recent drawings (M2-14, recent.ts): the start screen and the Ctrl+K palette list them. */
+const recent = new RecentFiles(indexedDbRecent());
+void recent.load();
 
 /**
  * What each drawing's command engine says (M2-02): its command line follows it, its edits are
@@ -154,8 +182,10 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
     const edits = doc.edits;
     saveEnv ??= browserSave();
     const r = await saveDrawing(doc.name, doc.file, engines.changesOf(id), mode, saveEnv);
-    if (r.ok) store.saved(id, r.name, r.file, edits);
-    else if (!r.cancelled) store.fail(r.message);
+    if (r.ok) {
+      store.saved(id, r.name, r.file, edits);
+      if (r.file.handle) void recent.add(r.file.handle as RecentHandle);
+    } else if (!r.cancelled) store.fail(r.message);
     return r.ok;
   } finally {
     saving.delete(id);
@@ -464,11 +494,22 @@ async function resolveKept(ask = false): Promise<void> {
   supply(await referenceFiles.files(ask), 'references');
 }
 
-async function open(file: {
-  readonly name: string;
-  getFile(): Promise<Blob>;
-  readonly handle?: { readonly kind: string };
-}): Promise<void> {
+/** A drawing recovered after a crash (M2-14): its last session's change log, replayed. */
+interface Recovered {
+  readonly changes: readonly ChangeSet[];
+  readonly edits: number;
+  /** The snapshot it came from, removed once its own is written. */
+  readonly from: string;
+}
+
+async function open(
+  file: {
+    readonly name: string;
+    getFile(): Promise<Blob>;
+    readonly handle?: { readonly kind: string };
+  },
+  recovered?: Recovered,
+): Promise<void> {
   store.startOpening(file.name);
   try {
     const bytes = new Uint8Array(await (await file.getFile()).arrayBuffer());
@@ -477,13 +518,44 @@ async function open(file: {
     if (!opened.modelSpace) throw new Error('the drawing has no model space');
     const handle = file.handle?.kind === 'file' ? (file.handle as SaveHandle) : undefined;
     const saved = drawingFile(bytes, opened.summary, handle);
+    const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits);
     // The drawing's authoritative document goes to its engine worker (M1-67).
-    engines.start(store.opened(file.name, opened, opened.modelSpace, saved), opened.init);
+    engines.start(id, opened.init, recovered?.changes);
+    if (recovered) autosaver.recovered(id, recovered.from);
+    if (handle) void recent.add(handle as RecentHandle);
     void deviceFonts.need(trueTypeFontsOf(opened.init));
     void resolveKept();
   } catch (e) {
     store.failed(file.name, openError(file.name, e));
   }
+}
+
+/**
+ * Opens an unsaved drawing a page that is gone left behind (the recovery banner's Recover): the
+ * file as that page opened it, with its change log replayed. It has no file handle, so its
+ * first Save is a Save As, and its tab shows unsaved changes.
+ */
+async function recover(key: string): Promise<void> {
+  const entry = await recoveryOffers.take(key).catch(() => undefined);
+  if (!entry) {
+    store.fail('The unsaved drawing could not be read back from this device.');
+    return;
+  }
+  const bytes = entry.bytes;
+  await open(
+    {
+      name: entry.name,
+      getFile: () => Promise.resolve(new Blob([bytes as Uint8Array<ArrayBuffer>])),
+    },
+    { changes: entry.changes, edits: entry.edits, from: entry.key },
+  );
+}
+
+/** Opens a recent drawing through its file handle (the start screen, the Ctrl+K palette). */
+async function openRecent(key: string): Promise<void> {
+  const r = await recent.open(key);
+  if (!r.ok) store.fail(r.message);
+  else void open({ name: r.handle.name, getFile: () => Promise.resolve(r.file), handle: r.handle });
 }
 
 const fromFile = (f: File): Supplied => {
@@ -578,6 +650,7 @@ interface LaunchParams {
 
 export function App() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
+  const recentFiles = useSyncExternalStore(recent.subscribe, recent.getSnapshot);
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
   const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
   const [settings, setSettings] = useState(false);
@@ -637,6 +710,13 @@ export function App() {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [pick]);
+
+  useEffect(() => {
+    // A page going away writes the snapshots still waiting for their 5 s (M2-14).
+    const onHide = () => autosaver.flush();
+    window.addEventListener('pagehide', onHide);
+    return () => window.removeEventListener('pagehide', onHide);
+  }, []);
 
   useEffect(() => {
     // Leaving the page with unsaved changes asks first, as closing a drawing does (M2-13).
@@ -751,6 +831,7 @@ export function App() {
         onAddFonts={addFonts}
       />
 
+      <RecoveryBanner offers={recoveryOffers} onRecover={(key) => void recover(key)} />
       {state.error && (
         <div className="banner error" role="alert">
           <span>{state.error}</span>
@@ -818,6 +899,24 @@ export function App() {
               <button type="button" onClick={pick}>
                 Open drawing…
               </button>
+              {recentFiles.length > 0 && (
+                <section className="recent" aria-label="Recent drawings">
+                  <h2>Recent drawings</h2>
+                  <ul>
+                    {recentFiles.map((r) => (
+                      <li key={r.key}>
+                        <button
+                          type="button"
+                          title={`Opened ${new Date(r.openedAt).toLocaleString()}`}
+                          onClick={() => void openRecent(r.key)}
+                        >
+                          {r.name}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                </section>
+              )}
               <p className="privacy">Drawings never leave this device.</p>
             </div>
           )}
@@ -884,6 +983,8 @@ export function App() {
         lines={commandLines}
         cursor={() => lastCursor}
         onSettings={() => setSettings(true)}
+        recent={recentFiles}
+        onOpenRecent={(key) => void openRecent(key)}
       />
       <StatusBar
         doc={active}

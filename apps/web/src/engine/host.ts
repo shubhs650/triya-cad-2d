@@ -3,6 +3,7 @@
 // the main thread behind the same calls (tests, and any browser without module workers).
 import {
   EngineSession,
+  type ChangeSet,
   type CommandInput,
   type CommandOutput,
   type DocumentInit,
@@ -28,16 +29,21 @@ export class EngineHost {
   #nextId = 1;
   #disposed = false;
 
-  constructor(init: DocumentInit, createWorker?: () => EngineWorker) {
+  /** `changes`: a recovered drawing's change log, replayed onto `init` first (M2-14). */
+  constructor(
+    init: DocumentInit,
+    createWorker?: () => EngineWorker,
+    changes: readonly ChangeSet[] = [],
+  ) {
     if (createWorker) {
       this.mode = 'worker';
       const w = createWorker();
       this.#worker = w;
       w.addEventListener('message', ({ data }) => this.#receive(data));
-      w.postMessage({ type: 'init', init });
+      w.postMessage(changes.length ? { type: 'init', init, changes } : { type: 'init', init });
     } else {
       this.mode = 'main';
-      this.#session = new EngineSession(init, ENGINE_SERVICES);
+      this.#session = new EngineSession(init, ENGINE_SERVICES, changes);
       this.#session.onCommand((o) => this.#commandOutput(o));
     }
   }
@@ -90,6 +96,11 @@ export class EngineHost {
     if (m.id !== undefined) this.#pending.delete(m.id);
     if (m.type === 'result') p?.resolve(m.result);
     else if (p) p.reject(new Error(`engine worker: ${m.message}`));
-    else for (const q of this.#pending.values()) q.reject(new Error(`engine worker: ${m.message}`));
+    else if (this.#pending.size === 0) {
+      // Nothing waits for an answer: say it on the command line (a recovered drawing's change
+      // log that no longer fits its file, M2-14).
+      this.#commandOutput({ type: 'log', line: `; error: ${m.message}` });
+    } else
+      for (const q of this.#pending.values()) q.reject(new Error(`engine worker: ${m.message}`));
   }
 }

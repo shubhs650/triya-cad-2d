@@ -5,6 +5,6 @@ import { EngineHost } from './host';
 import EngineWorker from './worker?worker';
 
 export const engines = new Engines(
-  (init) => new EngineHost(init, () => new EngineWorker()),
+  (init, changes) => new EngineHost(init, () => new EngineWorker(), changes),
   controllersOf,
 );

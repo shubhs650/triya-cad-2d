@@ -151,7 +151,7 @@ describe('Engines', () => {
   const setup = () => {
     const applied: { doc: number; change: unknown }[] = [];
     const engines = new Engines(
-      (i) => new EngineHost(i),
+      (i, changes) => new EngineHost(i, undefined, changes),
       (doc) => [{ apply: (change) => applied.push({ doc, change }) }],
     );
     return { engines, applied };
@@ -235,5 +235,39 @@ describe('Engines', () => {
       ok: false,
       message: 'The drawing is not open.',
     });
+  });
+
+  it('starts a recovered drawing from its change log (M2-14)', async () => {
+    const live = setup();
+    live.engines.start(1, init);
+    await live.engines.edit(1, { kind: 'layer', layer: '10', on: false });
+    const log = structuredClone([...live.engines.changesOf(1)]);
+    const { engines, applied } = setup();
+    engines.start(7, init, log);
+    // Canvases made later replay the log; the engine already holds it, so a second edit
+    // to the same layer is a no-op and turning it back on is not.
+    expect(engines.changesOf(7)).toEqual(log);
+    await engines.edit(7, { kind: 'layer', layer: '10', on: false });
+    expect(applied).toEqual([]);
+    expect((await engines.edit(7, { kind: 'layer', layer: '10', on: true })).ok).toBe(true);
+    expect(engines.changesOf(7)).toHaveLength(2);
+  });
+});
+
+describe('EngineHost restoring a drawing (M2-14)', () => {
+  it('replays the change log in the worker and on the main thread alike', async () => {
+    const first = new EngineHost(init);
+    const r = await first.edit({ kind: 'layer', layer: '10', locked: true });
+    expect(r.ok).toBe(true);
+    const log = r.ok ? [structuredClone(r.change)] : [];
+    for (const host of [
+      new EngineHost(init, inProcessWorker, log),
+      new EngineHost(init, undefined, log),
+    ]) {
+      // Locked already: locking again changes nothing.
+      const again = await host.edit({ kind: 'layer', layer: '10', locked: true });
+      expect(again).toEqual({ ok: true, change: {} });
+      host.dispose();
+    }
   });
 });
