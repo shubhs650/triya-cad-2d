@@ -91,7 +91,8 @@ export type CommandInput =
 /**
  * What the command engine tells the front-ends: the bus's events, with every edit a command
  * makes as its ChangeSet the moment it is applied (the render replicas and the change log take
- * it), and a finished command's record as its name only (the undo stack, M2-05, stays here).
+ * it), and a finished command's record as its name only (the undo stack, M2-05, stays here;
+ * its state goes out as `undo`, for the undo/redo buttons).
  */
 export type CommandOutput =
   | Exclude<BusEvent, { readonly type: 'commit' }>

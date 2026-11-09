@@ -38,7 +38,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | Command | Aliases | Tier | Options / notes | Status |
 |---|---|---|---|---|
 | ERASE | E, DEL | 1 | | |
-| OOPS | — | 1 | | |
+| OOPS | — | 1 | | x (#223) |
 | MOVE | M | 1 | Displacement, Base | |
 | COPY | CO, CP | 1 | Displacement, mOde (Single/Multiple), Array | |
 | ROTATE | RO | 1 | Copy, Reference | |
@@ -65,8 +65,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | CHANGE / CHPROP | -CH / CH→PROPERTIES | 2 | | |
 | MATCHPROP | MA | 1 | Settings dialog | |
 | PROPERTIES | PR, CH, MO, Ctrl+1 | 1 | palette | |
-| UNDO / U | U | 1 | Auto, Control, BEgin/End, Mark, Back, number | |
-| REDO | Ctrl+Y | 1 | | |
+| UNDO / U | U | 1 | Auto, Control, BEgin/End, Mark, Back, number | x (#223; Auto/Combine/Layer kept as settings until macros, undoable views and the layer manager exist; Ctrl+Z in M2-23) |
+| REDO | Ctrl+Y | 1 | | x (#223; Ctrl+Y in M2-23) |
 | MREDO | — | 2 | | |
 | COPYBASE / PASTECLIP / PASTEBLOCK / PASTEORIG / COPYCLIP / CUTCLIP | Ctrl+Shift+C, Ctrl+V, Ctrl+Shift+V, Ctrl+C, Ctrl+X | 1 | cross-document | |
 | DRAWORDER | DR | 1 | Above, Under, Front, Back | |

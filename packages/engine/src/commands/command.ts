@@ -9,6 +9,7 @@ import type { Handle } from '../model/handle';
 import type { EntityGeometry } from '../model/types';
 import { ALIASES } from './aliases';
 import type { ViewHost } from './view/host';
+import type { UndoStack } from './undo';
 import type {
   AnglePrompt,
   DistancePrompt,
@@ -52,6 +53,11 @@ export interface CommandContext {
    */
   readonly space: Handle;
   readonly prompt: typeof prompts;
+  /**
+   * The drawing's undo history, for UNDO, U, REDO and OOPS. Undoing goes around `edit`: it is
+   * not itself a step.
+   */
+  readonly undo: UndoStack;
   /** LASTPOINT: the last point given at any prompt. */
   readonly lastPoint: Vec2 | undefined;
   /**
@@ -77,6 +83,11 @@ export interface CommandDef {
   readonly dashVariant?: boolean;
   /** Can run inside another command (`'NAME`). */
   readonly transparent?: boolean;
+  /**
+   * The entities it removes are the set OOPS restores, as for AutoCAD's ERASE, BLOCK and
+   * WBLOCK (M2-05).
+   */
+  readonly erases?: boolean;
   /** Where its selection comes from (PICKFIRST pre-selection, M2-03). */
   readonly usesSelection?: 'before' | 'during' | 'none';
   run(ctx: CommandContext): CommandGenerator;

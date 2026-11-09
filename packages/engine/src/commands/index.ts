@@ -11,3 +11,5 @@ export { viewCommand, viewNameMatches } from './view/named-view';
 export { selectCommand } from './select';
 export * from '../selection/loop';
 export * from '../selection/rules';
+export * from './undo';
+export * from './undo-commands';
