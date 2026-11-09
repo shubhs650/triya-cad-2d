@@ -20,9 +20,19 @@
 // window. The engine asks back what a pick or a window takes (`pick`, `selectWindow`), and the
 // canvas draws the selected objects highlighted and a selection window as AutoCAD does: blue
 // with a solid edge left to right (window), green with a dashed edge right to left (crossing).
+//
+// Precision input (M2-04): while a command waits for a point, the cursor is the point after
+// the drafting aids. SNAP rounds it to the snap spacing; from a base point ORTHO keeps it
+// horizontal or vertical and POLAR locks it onto the polar angles it passes near (a dashed
+// path and a "Polar:" tooltip); a running object snap under the aperture beats all of these
+// (AutoSnap's marker and the mode's name). The render worker finds the snaps (`snap`), one
+// request in flight at a time; a click waits for the snaps at its own point before it is
+// sent, so what is marked is what is picked. Typed points are never changed.
 import RenderWorker from '@triya/render/worker?worker';
 import {
+  constrainCursor,
   layoutSheet,
+  polarLabel,
   unionBox,
   type Box,
   type ChangeSet,
@@ -31,6 +41,7 @@ import {
   type HeaderValue,
   type Layout,
   type EntityGeometry,
+  type OsnapHit,
   type Prompt,
   type Vec2,
   type VportRecord,
@@ -58,6 +69,8 @@ import { layoutsOf } from '../documents';
 import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
+import { INITIAL_DRAFTING, type DraftingState } from '../drafting';
+import { APERTURE_PX, TRACK_PX, markerPrimitives, snapLabel, trackingPrimitives } from './autosnap';
 import {
   extentsView,
   panBy,
@@ -117,7 +130,10 @@ export interface CanvasHooks {
    * command engine to take as a point, a pick or a window's corner. `release` is the end of a
    * drag that began with a click.
    */
-  readonly onPick?: (p: Vec2, o: { readonly shift: boolean; readonly release: boolean }) => void;
+  readonly onPick?: (
+    p: Vec2 | Promise<Vec2>,
+    o: { readonly shift: boolean; readonly release: boolean },
+  ) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
@@ -212,6 +228,17 @@ export class CanvasController {
   readonly #pages = new Map<Handle, string>();
   /** Settles once the renderer first answered (or failed to): the opening view waits on it. */
   #firstMeasure: Promise<void> = Promise.resolve();
+  /** OSNAP, ORTHO, POLAR and SNAP as the status bar has them (M2-04). */
+  #drafting: DraftingState = INITIAL_DRAFTING;
+  /** The best object snap at the cursor as the renderer last answered, if any (M2-04). */
+  #hit: OsnapHit | undefined;
+  /** A snap request is in flight, and whether the cursor moved since it was sent. */
+  #snapping = false;
+  #snapAgain = false;
+  /** AutoSnap markers and the polar tracking path, drawn over the rubber band. */
+  #overlay: readonly RenderPrimitive[] = [];
+  /** The AutoSnap and polar tracking tooltip. */
+  readonly #tip: HTMLDivElement;
 
   constructor(container: HTMLElement, opened: OpenResult, block: Handle, hooks: CanvasHooks) {
     this.#opened = opened;
@@ -244,6 +271,11 @@ export class CanvasController {
     );
     container.append(canvas);
     this.#canvas = canvas;
+    this.#tip = document.createElement('div');
+    this.#tip.className = 'autosnap-tip';
+    this.#tip.dataset['testid'] = 'autosnap-tip';
+    this.#tip.hidden = true;
+    container.append(this.#tip);
     this.#host = this.#createHost();
     this.#images = hooks.images?.((definition, pixels) => {
       this.#host.setImage(definition, pixels);
@@ -365,9 +397,21 @@ export class CanvasController {
       prompt && (prompt.kind === 'point' || prompt.kind === 'distance' || prompt.kind === 'angle');
     this.#prompt = picking ? prompt : undefined;
     this.canvas.dataset['picking'] = String(!!picking);
+    // A new prompt has a new base point, which PER and TAN are drawn from.
+    this.#hit = undefined;
     if (this.#mode !== 'none') return;
-    const world = this.#pointer && this.#world(this.#pointer);
-    this.#rubberBand(world);
+    if (this.#prompt) this.#requestSnap();
+    this.#track();
+  }
+
+  /** The status bar's drafting aids changed (M2-04). */
+  setDrafting(state: DraftingState): void {
+    this.#drafting = state;
+    this.#hit = undefined;
+    if (this.#prompt && this.#mode === 'none') {
+      this.#requestSnap();
+      this.#track();
+    }
   }
 
   /** The objects to draw selected (M2-03). */
@@ -496,6 +540,7 @@ export class CanvasController {
     this.#images?.dispose();
     this.#host.dispose();
     this.canvas.remove();
+    this.#tip.remove();
   }
 
   #createHost(): RendererHost {
@@ -732,7 +777,7 @@ export class CanvasController {
             },
           ]
         : [];
-    this.#host.setTransient([...this.#preview, ...band]);
+    this.#host.setTransient([...this.#preview, ...band, ...this.#overlay]);
     this.#requestFrame();
   }
 
@@ -839,7 +884,13 @@ export class CanvasController {
           if (!world) return;
           this.#press = { pointer: e.pointerId, x: e.offsetX, y: e.offsetY, dragged: false };
           c.setPointerCapture(e.pointerId);
-          this.#hooks.onPick?.(world, { shift: e.shiftKey, release: false });
+          const shift = e.shiftKey;
+          if (!this.#precise()) {
+            this.#hooks.onPick?.(world, { shift, release: false });
+            return;
+          }
+          // At a point prompt the click gives the point the drafting aids make of it.
+          this.#hooks.onPick?.(this.#pointAt(world), { shift, release: false });
           return;
         }
         if (this.#mode === 'pan' || this.#mode === 'zoom') this.#startDrag(e);
@@ -883,7 +934,11 @@ export class CanvasController {
           const moved = Math.hypot(e.offsetX - corner.screen.x, e.offsetY - corner.screen.y);
           if (moved > CLICK_PX && e.buttons & 1) corner.dragged = true;
           this.#band(corner.world, world);
-        } else if (this.#prompt && this.#mode === 'none') this.#rubberBand(world);
+        } else if (this.#prompt && this.#mode === 'none') {
+          this.#requestSnap();
+          this.#track();
+          return;
+        }
         this.#hooks.onCursor(world);
       },
       opts,
@@ -909,12 +964,151 @@ export class CanvasController {
       'pointerleave',
       () => {
         this.#pointer = undefined;
-        if (this.#prompt && this.#mode === 'none') this.#rubberBand(undefined);
+        this.#hit = undefined;
+        if (this.#prompt && this.#mode === 'none') this.#track();
         this.#hooks.onCursor(undefined);
       },
       opts,
     );
     c.addEventListener('auxclick', (e) => e.preventDefault(), opts);
+  }
+
+  /**
+   * Whether the drafting aids apply: a command waits for a point, not for a selection
+   * window's corner (AutoCAD snaps no selection window).
+   */
+  #precise(): boolean {
+    const p = this.#prompt;
+    return !!p && !(p.kind === 'point' && p.rubberBand?.selection);
+  }
+
+  /** One CSS pixel in drawing units at the current zoom. */
+  #px(): number {
+    return 1 / (this.#view?.scale ?? 1);
+  }
+
+  /** The point the cursor is measured from: a rubber band's start (not a window's corner). */
+  #base(): Vec2 | undefined {
+    const p = this.#prompt;
+    if (p?.kind === 'point')
+      return p.rubberBand && !p.rubberBand.box ? p.rubberBand.from : undefined;
+    return p && 'base' in p ? p.base : undefined;
+  }
+
+  /** SNAPUNIT of the viewport shown (10 × 10 when it has none). */
+  #snapSpacing(): Vec2 {
+    const vport = this.#hooks.tile
+      ? this.#hooks.tile.vport
+      : activeVport(this.#opened.init.tables?.vports);
+    const s = vport?.snapSpacing;
+    return s && s.x > 0 && s.y > 0 ? s : { x: 10, y: 10 };
+  }
+
+  /** SNAP, then ORTHO or POLAR, applied to a cursor point (M2-04). */
+  #constrain(world: Vec2): ReturnType<typeof constrainCursor> {
+    const d = this.#drafting;
+    const base = this.#base();
+    const vport = this.#hooks.tile
+      ? this.#hooks.tile.vport
+      : activeVport(this.#opened.init.tables?.vports);
+    return constrainCursor(world, {
+      ...(base && { base }),
+      ...(d.snap && {
+        snap: this.#snapSpacing(),
+        ...(vport?.snapBase && { snapBase: vport.snapBase }),
+      }),
+      ortho: d.ortho,
+      ...(d.polar && { polar: { increment: (d.polarAngle * Math.PI) / 180 } }),
+      tolerance: TRACK_PX * this.#px(),
+    });
+  }
+
+  /** The running object snaps at a point, best first; none with OSNAP off. */
+  #snapAt(world: Vec2): Promise<OsnapHit[]> {
+    const base = this.#base();
+    if (this.#drafting.osmode === 0 || !this.#view) return Promise.resolve([]);
+    return this.#host
+      .snap({
+        point: world,
+        aperture: APERTURE_PX * this.#px(),
+        modes: this.#drafting.osmode,
+        ...(base && { from: base }),
+      })
+      .catch(() => []);
+  }
+
+  /** Asks for the snaps at the cursor: one request in flight, the latest cursor asked next. */
+  #requestSnap(): void {
+    if (this.#snapping) {
+      this.#snapAgain = true;
+      return;
+    }
+    const world = this.#pointer && this.#world(this.#pointer);
+    if (!world || !this.#precise()) return;
+    this.#snapping = true;
+    void this.#snapAt(world).then((hits) => {
+      this.#snapping = false;
+      const at = this.#pointer && this.#world(this.#pointer);
+      // An answer for where the cursor was a moment ago still shows; it is replaced next.
+      this.#hit = at && this.#prompt ? hits[0] : undefined;
+      this.#track();
+      if (this.#snapAgain) {
+        this.#snapAgain = false;
+        this.#requestSnap();
+      }
+    });
+  }
+
+  /** The point a click at `world` gives a point prompt: an object snap, else the constrained cursor. */
+  async #pointAt(world: Vec2): Promise<Vec2> {
+    const [hit] = await this.#snapAt(world);
+    return hit?.point ?? this.#constrain(world).point;
+  }
+
+  /**
+   * Redraws the rubber band to the cursor as the drafting aids place it, with AutoSnap's
+   * marker or polar tracking's path, and the tooltip; the status bar shows that point.
+   */
+  #track(): void {
+    const world = this.#pointer && this.#mode === 'none' ? this.#world(this.#pointer) : undefined;
+    if (!world || !this.#precise()) {
+      this.#overlay = [];
+      this.#tip.hidden = true;
+      this.#rubberBand(world);
+      if (world) this.#hooks.onCursor(world);
+      return;
+    }
+    const dark = !this.#layout;
+    const px = this.#px();
+    const c = this.#constrain(world);
+    const hit = this.#hit;
+    let point: Vec2 = c.point;
+    let tip = '';
+    if (hit) {
+      point = hit.point;
+      this.#overlay = markerPrimitives(hit.mode, hit.point, px, dark);
+      tip = snapLabel(hit.mode);
+    } else if (c.polar) {
+      const base = this.#base()!;
+      const reach = Math.hypot(this.#size.width, this.#size.height) * px + c.polar.distance;
+      this.#overlay = trackingPrimitives(base, c.polar.angle, reach, px, dark);
+      tip = polarLabel(c.polar, this.#precision());
+    } else this.#overlay = [];
+    this.#rubberBand(point);
+    this.#tip.hidden = tip === '';
+    if (tip) {
+      this.#tip.textContent = tip;
+      this.#tip.dataset['mode'] = hit?.mode ?? 'polar';
+      this.#tip.style.left = `${this.#pointer!.offsetX + 16}px`;
+      this.#tip.style.top = `${this.#pointer!.offsetY - 34}px`;
+    }
+    this.#hooks.onCursor(point);
+  }
+
+  /** LUPREC, for the tooltips. */
+  #precision(): number {
+    const v = this.#header.get('$LUPREC');
+    return typeof v === 'number' && v >= 0 && v <= 8 ? v : 4;
   }
 
   /** Makes this tiled viewport current; true when it was not. */

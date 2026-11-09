@@ -373,6 +373,14 @@ describe('RendererHost', () => {
     expect(await off.hitTest(at, 8)).toEqual(fromMain);
   });
 
+  it('answers object snaps from either side alike (M2-04)', async () => {
+    const { main, off } = hosts([entity('20', line(0, 0, 10, 0)), entity('21', line(5, -5, 5, 5))]);
+    const query = { point: { x: 5.2, y: 0.3 }, aperture: 1, modes: 1 | 32 }; // END | INT
+    const fromMain = await main.snap(query);
+    expect(fromMain[0]).toMatchObject({ mode: 'INT', point: { x: 5, y: 0 } });
+    expect(await off.snap(query)).toEqual(fromMain);
+  });
+
   it('names the entities in a screen rectangle from either side alike (M1-106)', async () => {
     const { main, off } = hosts([entity('20', line(0, 0, 10, 0)), entity('21', line(0, 1, 10, 1))]);
     for (const h of [main, off]) {

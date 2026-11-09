@@ -9,6 +9,8 @@ import { startRenderHarness } from '../render-harness/server';
 const T2_FIRST_FRAME_MS = 3000 * 1.2;
 /** PRD §12 T3 (60 fps pan/zoom) less TESTING.md §5's 20 % runner margin. */
 const T3_MIN_FPS = 60 * 0.8;
+/** PRD §12 T3: osnap marker response < 50 ms at 100k entities (M2-04). */
+const T3_OSNAP_MS = 50;
 
 let harness: Awaited<ReturnType<typeof startRenderHarness>>;
 
@@ -69,7 +71,7 @@ test('T2 and T3: 100k synthetic entities in the render worker', async ({ page },
   expect(pan.fps).toBeGreaterThanOrEqual(T3_MIN_FPS);
 });
 
-test('T3: pan/zoom on the generated bench-100k drawing in the render worker', async ({
+test('T3: pan/zoom and osnap on the generated bench-100k drawing in the render worker', async ({
   page,
 }, info) => {
   test.setTimeout(180_000);
@@ -95,4 +97,18 @@ test('T3: pan/zoom on the generated bench-100k drawing in the render worker', as
       `pan/zoom ${pan.fps.toFixed(1)} fps, slowest frame ${pan.maxFrameMs.toFixed(0)} ms`,
   );
   expect(pan.fps).toBeGreaterThanOrEqual(T3_MIN_FPS);
+
+  // M2-04: running object snaps at 1000 cursor points (TESTING.md §5 T3), every mode on, each
+  // answered by the render worker.
+  const snap = await page.evaluate(() => window.osnapTiming('worker', 1000));
+  info.annotations.push(
+    { type: 'bench-100k osnap p95 (ms)', description: snap.p95Ms.toFixed(1) },
+    { type: 'bench-100k osnap max (ms)', description: snap.maxMs.toFixed(1) },
+  );
+  console.log(
+    `osnap perf, bench-100k: ${snap.queries} queries, ${snap.found} found; ` +
+      `p50 ${snap.p50Ms.toFixed(1)} ms, p95 ${snap.p95Ms.toFixed(1)} ms, max ${snap.maxMs.toFixed(1)} ms`,
+  );
+  expect(snap.found).toBeGreaterThan(snap.queries / 2);
+  expect(snap.p95Ms).toBeLessThan(T3_OSNAP_MS);
 });

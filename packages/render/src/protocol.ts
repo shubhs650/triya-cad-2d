@@ -2,7 +2,7 @@
 // postMessage, as ARCHITECTURE.md §3 draws it: the stream is one-way except for the requests
 // that need an answer (hit test, entities in a rectangle, flush, thumbnail, extents), which carry an id.
 
-import type { Box, ChangeSet, EntityId } from '@triya/engine';
+import type { Box, ChangeSet, EntityId, OsnapHit, OsnapQuery } from '@triya/engine';
 import type { FontSources, RenderDocument } from './session';
 import type {
   DrawnEntity,
@@ -61,6 +61,8 @@ export type HostMessage =
   | { readonly type: 'highlight'; readonly ids: readonly EntityId[] }
   /** The extents of some entities (ZOOM Object, M2-03); the answer is an `extents`. */
   | { readonly type: 'bounds'; readonly id: number; readonly ids: readonly EntityId[] }
+  /** The object snap points under the aperture (M2-04); the answer is a `snap`. */
+  | { readonly type: 'snap'; readonly id: number; readonly query: OsnapQuery }
   /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
   | { readonly type: 'entitiesIn'; readonly id: number; readonly rect: ScreenRect }
   | { readonly type: 'flush'; readonly id: number }
@@ -79,6 +81,8 @@ export type WorkerMessage =
   | { readonly type: 'entities'; readonly id: number; readonly entities: readonly DrawnEntity[] }
   /** The thumbnail asked for, transferred; null when the canvas was never sized. */
   | { readonly type: 'thumbnail'; readonly id: number; readonly bitmap: ImageBitmap | null }
+  /** The object snap points asked for (M2-04), best first. */
+  | { readonly type: 'snap'; readonly id: number; readonly hits: readonly OsnapHit[] }
   /** The extents asked for; null when nothing drawn has a known extent. */
   | { readonly type: 'extents'; readonly id: number; readonly box: Box | null }
   | { readonly type: 'error'; readonly message: string; readonly id?: number }

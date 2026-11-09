@@ -94,6 +94,8 @@ Every dialog is keyboard-operable and has an Esc/Enter contract matching AutoCAD
 
 Coordinates (absolute/relative/geographic n/a), SNAP (F9), GRID (F7), ORTHO (F8), POLAR (F10), OSNAP (F3), OTRACK (F11), DYN (F12), LWT, TPY (transparency), Quick Properties, Selection Cycling, MODEL/PAPER, annotation scale dropdown, workspace, hardware acceleration indicator (renderer type), clean screen (Ctrl+0), customisation menu.
 
+*As built (M2-04 part 1):* SNAP, ORTHO, POLAR and OSNAP toggle buttons (pressed = on, the F-key in the tooltip) before DYN; OSNAP has an arrow opening a menu with a checkbox per running object snap mode (Drafting Settings order, arrow keys move, Esc closes). While a command waits for a point the coordinates show the point a click would give. AutoSnap draws a 10 px marker in each mode's shape (yellow on the model canvas, amber on paper) and the mode's name in a tooltip above right of the cursor (Dynamic Input's is below right); polar tracking draws a dashed path from the base point and a `Polar: 14.3543 < 45°` tooltip.
+
 ## 9. Templates (bundled)
 
 **Triya ISO (mm):** layers `0, DEFPOINTS, CENTER (red, CENTER2), HIDDEN (yellow, HIDDEN2), DIMENSIONS (green), TEXT (white), HATCH (8), TITLE (white, 0.5), VIEWPORT (no-plot), NOTES, REVISION (magenta)`; dim styles `ISO-25`, `ISO-25-5`, `ISO-25-10`, `ISO-25-20`, `ISO-25-50` (DIMSCALE variants); text styles `Standard (oet-simplex)`, `ROMANS (oet-romans)`, `ISOCP (oet-isocp)`, `Arial`; layouts A4–A0 landscape with a generic title block (attributes: TITLE, DWGNO, REV, SCALE, DATE, DRAWN, CHECKED, APPROVED, PROJECT, CLIENT, SHEET) and revision table (4 rows). **Triya ANSI (inch):** same with decimal-inch dim styles and ANSI A–E sheets.
