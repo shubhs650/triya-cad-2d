@@ -69,7 +69,7 @@ test('the plot sheet PDF matches its golden images, page by page', async ({ page
       (window as unknown as { renderPages(s: number): Promise<string[]> }).renderPages(scale),
     SCALE,
   );
-  expect(urls).toHaveLength(3);
+  expect(urls).toHaveLength(5);
 
   const failures: string[] = [];
   const expected = new Set<string>();

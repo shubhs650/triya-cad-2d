@@ -8,6 +8,16 @@
 
 import { zlibSync } from 'fflate';
 import { ContentStream, pdfNumber } from './content';
+import {
+  encodeImage,
+  FILL_CELL,
+  FILL_STYLES,
+  gradientFunction,
+  type EncodedImage,
+  type FillStyle,
+  type GradientStop,
+  type PlotPixels,
+} from './fills';
 
 export interface PdfDocumentOptions {
   /** The document information dictionary's Title, Author, Subject and Creator. */
@@ -34,6 +44,14 @@ export class PdfPage {
   readonly content = new ContentStream();
   /** Opacities in use, by ExtGState name. */
   readonly alphas = new Map<string, number>();
+  /** Fill style patterns in use (M2-16 part 2), each named `P<style>`. */
+  readonly patterns = new Set<FillStyle>();
+  /** Pattern colour spaces in use: `CsPg` over DeviceGray, `CsPrgb` over DeviceRGB. */
+  readonly patternSpaces = new Set<'CsPg' | 'CsPrgb'>();
+  /** Shading dictionaries, `Sh1`, `Sh2`, … in order. */
+  readonly shadings: string[] = [];
+  /** Images, `Im1`, `Im2`, …, by the bitmap they were made from, so one is written once. */
+  readonly images = new Map<PlotPixels, { readonly name: string; readonly image: EncodedImage }>();
 
   constructor(
     /** Points. */
@@ -53,6 +71,44 @@ export class PdfPage {
     const name = `GSa${Math.round(a * 1000)}`;
     if (!this.alphas.has(name)) this.alphas.set(name, Math.round(a * 1000) / 1000);
     return name;
+  }
+
+  /** The tiling pattern of a fill style, named for the page's resources. */
+  pattern(style: FillStyle): string {
+    this.patterns.add(style);
+    return `P${style}`;
+  }
+
+  /** The uncoloured pattern colour space whose colours are grey or RGB. */
+  patternSpace(gray: boolean): 'CsPg' | 'CsPrgb' {
+    const name = gray ? 'CsPg' : 'CsPrgb';
+    this.patternSpaces.add(name);
+    return name;
+  }
+
+  /**
+   * An axial shading along x from 0 to 1 (`linear`) or a radial one from the origin out to
+   * radius 1 (`radial`), extended past both ends; the content maps that unit frame with `cm`.
+   */
+  shading(kind: 'linear' | 'radial', stops: readonly GradientStop[]): string {
+    const { colorSpace, fn } = gradientFunction(stops);
+    const dict =
+      kind === 'linear'
+        ? `<< /ShadingType 2 /ColorSpace ${colorSpace} /Coords [0 0 1 0] /Function ${fn} /Extend [true true] >>`
+        : `<< /ShadingType 3 /ColorSpace ${colorSpace} /Coords [0 0 0 0 0 1] /Function ${fn} /Extend [true true] >>`;
+    let at = this.shadings.indexOf(dict);
+    if (at < 0) at = this.shadings.push(dict) - 1;
+    return `Sh${at + 1}`;
+  }
+
+  /** The image XObject of a bitmap, drawn into the unit square by `Do`. */
+  image(pixels: PlotPixels): string {
+    let entry = this.images.get(pixels);
+    if (!entry) {
+      entry = { name: `Im${this.images.size + 1}`, image: encodeImage(pixels) };
+      this.images.set(pixels, entry);
+    }
+    return entry.name;
   }
 }
 
@@ -126,7 +182,53 @@ export class PdfDocument {
           ([name, a]) => `/${name} << /Type /ExtGState /CA ${pdfNumber(a)} /ca ${pdfNumber(a)} >>`,
         )
         .join(' ');
-      const resources = gs ? `<< /ExtGState << ${gs} >> >>` : '<< >>';
+      const stream = (dict: string, text: string) => {
+        const bytes = latin1(text);
+        const body = compress ? zlibSync(bytes, { level: 6 }) : bytes;
+        return add({
+          dict: `<< ${dict} /Length ${body.length}${compress ? ' /Filter /FlateDecode' : ''} >>`,
+          data: body,
+        });
+      };
+      const patterns = [...page.patterns].map(
+        (style) =>
+          `/P${style} ${ref(
+            stream(
+              `/Type /Pattern /PatternType 1 /PaintType 2 /TilingType 1 /BBox [0 0 ${FILL_CELL} ${FILL_CELL}] /XStep ${FILL_CELL} /YStep ${FILL_CELL} /Resources << >>`,
+              `${FILL_STYLES[style]}\n`,
+            ),
+          )}`,
+      );
+      const spaces = [...page.patternSpaces].map(
+        (name) => `/${name} [/Pattern ${name === 'CsPg' ? '/DeviceGray' : '/DeviceRGB'}]`,
+      );
+      const shadings = page.shadings.map((dict, i) => `/Sh${i + 1} ${ref(add(dict))}`);
+      const xobjects = [...page.images.values()].map(({ name, image }) => {
+        const head = `/Type /XObject /Subtype /Image /Width ${image.width} /Height ${image.height}`;
+        // The colour image first, its mask after: the image's number is reserved for it.
+        const id = add('');
+        const mask = image.alpha
+          ? add({
+              dict: `<< ${head} /ColorSpace /DeviceGray /BitsPerComponent 8 /Filter /FlateDecode /Length ${image.alpha.length} >>`,
+              data: image.alpha,
+            })
+          : undefined;
+        bodies[id - 1] = {
+          dict: `<< ${head} /ColorSpace /Device${image.gray ? 'Gray' : 'RGB'} /BitsPerComponent 8 /Filter /FlateDecode${
+            mask ? ` /SMask ${ref(mask)}` : ''
+          } /Length ${image.color.length} >>`,
+          data: image.color,
+        };
+        return `/${name} ${ref(id)}`;
+      });
+      const entries = [
+        gs ? `/ExtGState << ${gs} >>` : '',
+        spaces.length > 0 ? `/ColorSpace << ${spaces.join(' ')} >>` : '',
+        patterns.length > 0 ? `/Pattern << ${patterns.join(' ')} >>` : '',
+        shadings.length > 0 ? `/Shading << ${shadings.join(' ')} >>` : '',
+        xobjects.length > 0 ? `/XObject << ${xobjects.join(' ')} >>` : '',
+      ].filter(Boolean);
+      const resources = entries.length > 0 ? `<< ${entries.join(' ')} >>` : '<< >>';
       pageIds.push(
         add(
           `<< /Type /Page /Parent ${ref(pagesId)} /MediaBox [0 0 ${pdfNumber(page.width)} ${pdfNumber(
