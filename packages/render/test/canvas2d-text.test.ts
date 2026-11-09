@@ -180,6 +180,17 @@ describe('text in the renderer', () => {
     expect(r.hitTest({ x: 160, y: 45 }, 3)).toEqual([]);
   });
 
+  it('picks the text anywhere in its box, between its strokes, as AutoCAD does (M2-07 part 2)', () => {
+    const { d, r } = setup([entity('20', text('A'))]);
+    r.frame();
+    const id = d.model.ids.idOf('20')!;
+    // Inside the square glyph, 5 px from its strokes: in the run's box (2 wide, 10 tall).
+    expect(r.hitTest({ x: 105, y: 45 }, 1)).toEqual([id]);
+    expect(r.hitTest({ x: 112, y: 0 }, 1)).toEqual([id]);
+    // Past the run's end.
+    expect(r.hitTest({ x: 130, y: 45 }, 1)).toEqual([]);
+  });
+
   it('greeks text under 3 px tall as a faint box per run', () => {
     const { r, redraw } = setup([entity('20', text('AA'))]);
     // Height 10 at 0.2 px per unit: 2 px.
