@@ -15,7 +15,7 @@ import {
   type Entity,
   type HeaderValue,
 } from '../../src/index';
-import { MODEL_SPACE, entityInit, sampleInit } from '../model/fixtures';
+import { MODEL_SPACE, entityInit, lineGeom, sampleInit } from '../model/fixtures';
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
 
@@ -378,5 +378,128 @@ describe('registry', () => {
     ]) {
       expect(r.resolve(alias!)?.def.name).toBe(name);
     }
+  });
+});
+
+describe('Enter where no default is offered ends the command unchanged', () => {
+  it.each([
+    [['ROTATE', 'ALL', '', '']],
+    [['ROTATE', 'ALL', '', '0,0', 'R', '0', 'P', '']],
+    [['ROTATE', 'ALL', '', '0,0', 'R', '0', 'P', '0,0', '']],
+    [['SCALE', 'ALL', '', '']],
+    [['SCALE', 'ALL', '', '0,0', 'R', '1', 'P', '']],
+    [['SCALE', 'ALL', '', '0,0', 'R', '1', 'P', '0,0', '']],
+    [['MIRROR', 'ALL', '', '']],
+    [['MIRROR', 'ALL', '', '0,0', '']],
+    [['MOVE', 'ALL', '', '0,0', 'X']],
+    [['MOVE', '']],
+    [['ROTATE', '']],
+    [['SCALE', '']],
+    [['MIRROR', '']],
+    [['COPY', '']],
+  ])('%j', async (steps) => {
+    const s = setup();
+    const before = [...s.model.entities()];
+    await s.bus.script(steps);
+    if (s.bus.command) await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    expect([...s.model.entities()]).toEqual(before);
+  });
+
+  it("leaves COPY's Array unmade on Enter, and offers the base point again", async () => {
+    const s = setup();
+    await s.bus.script(['COPY', 'ALL', '', '0,0', 'A', '']);
+    expect(s.bus.promptText).toBe(
+      'Specify second point or [Array] <use first point as displacement>:',
+    );
+    await s.bus.script(['A', '3', '']);
+    expect(s.added()).toHaveLength(0);
+    expect(s.bus.command).toBe('COPY');
+  });
+});
+
+describe('settings and toggles', () => {
+  it('says a clockwise ANGDIR and a fractional ANGBASE', async () => {
+    const s = setup(
+      withHeader([
+        ['$ANGDIR', 1],
+        ['$ANGBASE', 0.5],
+      ]),
+    );
+    await s.bus.script(['ROTATE']);
+    expect(s.log).toContain('Current positive angle in UCS:  ANGDIR=clockwise  ANGBASE=28.6479');
+  });
+
+  it('shows angles to AUPREC places', async () => {
+    const s = setup(withHeader([['$AUPREC', 2]]));
+    await s.bus.script(['ROTATE', 'ALL', '', '0,0']);
+    expect(s.bus.promptText).toBe('Specify rotation angle or [Copy/Reference] <0.00>:');
+  });
+
+  it('turns Copy off again when asked twice (ROTATE, SCALE)', async () => {
+    const s = setup();
+    await s.bus.script(['ROTATE', 'ALL', '', '0,0', 'C', 'C']);
+    expect(s.log.at(-1)).toBe('Rotating the selected objects.');
+    await s.bus.script(['90']);
+    await s.bus.script(['SCALE', 'ALL', '', '0,0', 'C', 'C']);
+    expect(s.log.at(-1)).toBe('Scaling the selected objects.');
+    await s.bus.script(['2']);
+    expect(s.added()).toHaveLength(0);
+    expect(s.circle(s.byHandle('21'))).toEqual([-10, 10, 4]);
+  });
+
+  it('reads MIRRTEXT given as a boolean', async () => {
+    const s = setup({
+      ...withHeader([['$MIRRTEXT', true]]),
+      entities: [
+        entityInit('30', {
+          kind: 'TEXT',
+          value: 'A',
+          style: '0',
+          position: { x: 2, y: 0 },
+          height: 1,
+          rotation: 0,
+          widthFactor: 1,
+          oblique: 0,
+          halign: 0,
+          valign: 0,
+          backward: false,
+          upsideDown: false,
+        }),
+      ],
+    });
+    await s.bus.script(['MIRROR', 'ALL', '', '0,0', '0,1', 'Y']);
+    expect(s.byHandle('30').geom).toMatchObject({ backward: true });
+  });
+
+  it('says when a copy loses its annotation scales', async () => {
+    const base = sampleInit();
+    const s = setup({
+      ...base,
+      entities: [
+        entityInit('30', lineGeom(0, 0, 1, 0), {
+          annotative: { representations: [{ handle: '31' }] },
+        }),
+        entityInit('32', lineGeom(0, 0, 1, 0), {
+          annotative: { representations: [{ handle: '33' }] },
+        }),
+      ],
+    });
+    await s.bus.script(['COPY', 'ALL', '', 'D', '1,1']);
+    expect(s.log).toContain('2 copies are not annotative (annotative copies are not saved yet).');
+    // The copies are not annotative: copying one of them says nothing more.
+    const said = s.log.length;
+    await s.bus.script(['COPY', 'L', '', 'D', '1,1']);
+    expect(s.log.slice(said).some((l) => l.includes('annotative'))).toBe(false);
+    const one = setup({
+      ...base,
+      entities: [
+        entityInit('30', lineGeom(0, 0, 1, 0), {
+          annotative: { representations: [{ handle: '31' }] },
+        }),
+      ],
+    });
+    await one.bus.script(['COPY', 'ALL', '', 'D', '1,1']);
+    expect(one.log).toContain('1 copy is not annotative (annotative copies are not saved yet).');
   });
 });
