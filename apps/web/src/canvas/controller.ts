@@ -415,9 +415,13 @@ export class CanvasController {
     };
   }
 
-  /** What plotting this canvas's space draws (M2-17), from its renderer. */
-  plot(request: Omit<PlotRequest, 'block'>): Promise<PlotPart[]> {
-    return this.#host.plot({ ...request, block: this.block });
+  /**
+   * What plotting this canvas's space draws (M2-17), from its renderer; with `block`, another
+   * space of the drawing (PUBLISH's sheets not shown, M2-17 part 2): the renderer's replica holds
+   * the whole drawing.
+   */
+  plot(request: PlotRequest): Promise<PlotPart[]> {
+    return this.#host.plot({ block: this.block, ...request });
   }
 
   zoomExtents(): void {

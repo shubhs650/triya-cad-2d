@@ -1902,6 +1902,67 @@ button {
   color: var(--danger-text);
 }
 
+/* M2-17 part 2: the Plot dialog's partial preview and the Publish dialog's sheet list. */
+.plot-preview {
+  display: block;
+  width: 100%;
+  height: 96px;
+}
+
+.plot-preview-paper {
+  fill: #fff;
+  stroke: var(--chrome-text-muted);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+.plot-preview-area {
+  fill: rgb(37 99 235 / 22%);
+  stroke: rgb(37 99 235);
+  stroke-width: 1px;
+  vector-effect: non-scaling-stroke;
+}
+
+.plot-preview-area.off-paper {
+  stroke: rgb(220 38 38);
+  stroke-width: 2px;
+}
+
+.plot-preview-none {
+  margin: 0;
+  color: var(--chrome-text-muted);
+}
+
+.plot-window-button {
+  align-self: flex-start;
+}
+
+.cad-dialog.publish-dialog {
+  width: min(560px, calc(100vw - 32px));
+  max-width: min(560px, calc(100vw - 32px));
+}
+
+.publish-sheets {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.publish-sheets th,
+.publish-sheets td {
+  padding: 3px 6px;
+  border-bottom: 1px solid var(--chrome-border);
+  text-align: left;
+}
+
+.publish-sheets th {
+  color: var(--chrome-text-muted);
+  font-weight: normal;
+}
+
+.publish-status {
+  margin: 8px 0 0;
+}
+
 /* M2-23: the undo toast (UI_SPEC §11), over the drawing area above the command line. */
 .undo-toast-region {
   position: fixed;

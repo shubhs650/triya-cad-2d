@@ -11,10 +11,17 @@
 //
 // PLOT and PRINT (M2-17): AutoCAD 2024 Help, "PLOT": "Plots a drawing to a plotter, printer, or
 // file", through the Plot dialog box. The dialog is the app's (it writes the PDF and hands the
-// file over), so the command opens it and ends; it is not an undo step.
-import type { CommandDef } from './command';
+// file over), so the command opens it and ends; it is not an undo step. The dialog's Window<
+// button (M2-17 part 2) hides it and hands back to PLOT, which asks, as AutoCAD 2024 does,
+// "Specify window for printing", "Specify first corner:", "Specify opposite corner:" and opens
+// the dialog again with that window; Esc at the corners ends PLOT.
+//
+// PUBLISH (M2-17 part 2): AutoCAD 2024 Help, "PUBLISH": "Publishes drawings to DWF, DWFx, and
+// PDF files, or to plotters", through the Publish dialog box, which is the app's too.
+import type { CommandDef, CommandGenerator } from './command';
 import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
+import type { Vec2 } from '../geom/types';
 
 function fileCommand(name: string, action: FileAction): CommandDef {
   return {
@@ -26,12 +33,41 @@ function fileCommand(name: string, action: FileAction): CommandDef {
   };
 }
 
+/** PLOT and PRINT: the dialog, then a window's corners whenever its Window< button asks. */
+function plotCommand(name: string): CommandDef {
+  return {
+    name,
+    async *run(ctx): CommandGenerator {
+      let window: { a: Vec2; b: Vec2 } | undefined;
+      for (;;) {
+        const reply = await viewRequest(ctx, {
+          op: 'file',
+          action: 'plot',
+          ...(window && { window }),
+        });
+        if (!reply.ok || !reply.pickWindow) return;
+        ctx.message('Specify window for printing');
+        const first = yield ctx.prompt.point({ message: 'Specify first corner' });
+        if (first.kind !== 'point') return;
+        const a = first.point;
+        const second = yield ctx.prompt.point({
+          message: 'Specify opposite corner',
+          rubberBand: { from: a, box: true },
+        });
+        if (second.kind !== 'point') return;
+        window = { a, b: second.point };
+      }
+    },
+  };
+}
+
 export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => fileCommand('QSAVE', 'qsave'),
   () => fileCommand('SAVE', 'saveas'),
   () => fileCommand('SAVEAS', 'saveas'),
   () => fileCommand('CLOSE', 'close'),
   () => fileCommand('DRAWINGRECOVERY', 'recover'),
-  () => fileCommand('PLOT', 'plot'),
-  () => fileCommand('PRINT', 'plot'),
+  () => plotCommand('PLOT'),
+  () => plotCommand('PRINT'),
+  () => fileCommand('PUBLISH', 'publish'),
 ];
