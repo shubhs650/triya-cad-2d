@@ -30,6 +30,7 @@ const MODEL: PlotScriptSetup = {
   paper: false,
   canSave: true,
   file: 'plan-Model.pdf',
+  pageSetups: ['Model A1 Fit', 'Model ANSI B 1:2'],
   settings: {
     device: 'pdf',
     paper: 'ISO A4',
@@ -160,11 +161,39 @@ describe('-PLOT', () => {
     expect(scripts(asked)[0]).toMatchObject({ settings: { device: 'svg' }, file: 'out.svg' });
   });
 
-  it('refuses a named page setup, which Triya does not read yet', async () => {
+  it('refuses a page setup the space lacks and asks again', async () => {
     const { bus } = setup();
     await answer(bus, '-PLOT', '', '', 'Setup A');
     expect(bus.history).toContain('Page setup "Setup A" not found.');
     expect(bus.promptText).toBe('Enter a page setup name <>:');
+  });
+
+  // Part 6: a named page setup (ACAD_PLOTSETTINGS) gives the defaults that follow.
+  it('plots with a named page setup, case aside, its settings the defaults', async () => {
+    const A1: PlotScriptSetup = {
+      ...MODEL,
+      pageSetup: 'Model A1 Fit',
+      file: 'plan-Model.pdf',
+      settings: { ...MODEL.settings, paper: 'ISO A1', area: 'extents', table: 'acad.ctb' },
+    };
+    const { bus, asked } = setup((r) =>
+      r.op === 'plotSetup' && r.pageSetup === 'Model A1 Fit'
+        ? { ok: true, plotSetup: A1 }
+        : undefined,
+    );
+    await answer(bus, '-PLOT', '', '', 'model a1 fit');
+    expect(asked.at(-1)).toEqual({ op: 'plotSetup', layout: 'Model', pageSetup: 'Model A1 Fit' });
+    await answer(bus, '', '', 'N', '');
+    expect(scripts(asked)).toEqual([
+      {
+        layout: 'Model',
+        pageSetup: 'Model A1 Fit',
+        settings: A1.settings,
+        file: 'plan-Model.pdf',
+        save: false,
+        plot: true,
+      },
+    ]);
   });
 
   it('plots nothing when the drafter does not proceed and keeps nothing', async () => {

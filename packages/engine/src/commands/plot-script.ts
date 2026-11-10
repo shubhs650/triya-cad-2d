@@ -14,8 +14,9 @@
 // its file-only devices (DWG To PDF.pc3): "Enter file name <…>:".
 //
 // Decisions where Triya differs or AutoCAD's help is silent (noted in the PR):
-// - A named page setup (ACAD_PLOTSETTINGS) is not read yet: only Enter (the space's own page
-//   setup) is taken at "Enter a page setup name"; any name is reported as not found.
+// - "Enter a page setup name" (part 6) takes a named page setup of the space's kind (model
+//   space's, or the layouts'), case aside, or Enter for the space's own; the defaults that follow
+//   are that page setup's. A name it lacks is reported and asked again (AutoCAD's help is silent).
 // - The View plot area is not offered (M6-04), as the dialog does not offer it.
 // - Shade plot and "Hide paperspace objects" are 3D settings: every answer is taken and the 2D
 //   plot is the same, as AutoCAD's own is for 2D objects.
@@ -135,8 +136,16 @@ export function parsePlotOffset(typed: string): Vec2 | undefined {
   return m ? { x: Number(m[1]), y: Number(m[2]) } : undefined;
 }
 
-async function setupOf(ctx: CommandContext, layout?: string): Promise<PlotScriptSetup | undefined> {
-  const r = await viewRequest(ctx, { op: 'plotSetup', ...(layout !== undefined && { layout }) });
+async function setupOf(
+  ctx: CommandContext,
+  layout?: string,
+  pageSetup?: string,
+): Promise<PlotScriptSetup | undefined> {
+  const r = await viewRequest(ctx, {
+    op: 'plotSetup',
+    ...(layout !== undefined && { layout }),
+    ...(pageSetup !== undefined && { pageSetup }),
+  });
   if (!r.ok) return undefined;
   if (!r.plotSetup) {
     ctx.message('There is nothing to plot.');
@@ -339,9 +348,10 @@ export async function* dashPlot(ctx: CommandContext): CommandGenerator {
     (t) => `Layout "${t}" not found.`,
   );
   if (layout === undefined) return;
-  const setup = layout === shown.layout ? shown : await setupOf(ctx, layout);
+  let setup = layout === shown.layout ? shown : await setupOf(ctx, layout);
   if (!setup) return;
 
+  let pageSetup: string | undefined;
   if (!full) {
     for (;;) {
       const a = yield ctx.prompt.string({
@@ -350,8 +360,15 @@ export async function* dashPlot(ctx: CommandContext): CommandGenerator {
         spaces: true,
       });
       if (a.kind !== 'string') return;
-      if (a.value.trim() === '') break;
-      ctx.message(`Page setup "${a.value.trim()}" not found.`);
+      const typed = a.value.trim();
+      if (typed === '') break;
+      pageSetup = setup.pageSetups.find((n) => n.toUpperCase() === typed.toUpperCase());
+      if (pageSetup !== undefined) break;
+      ctx.message(`Page setup "${typed}" not found.`);
+    }
+    if (pageSetup !== undefined) {
+      setup = await setupOf(ctx, layout, pageSetup);
+      if (!setup) return;
     }
   }
 
@@ -393,7 +410,7 @@ export async function* dashPlot(ctx: CommandContext): CommandGenerator {
   if (plot === undefined || (!plot && !save)) return;
   await viewRequest(ctx, {
     op: 'plotScript',
-    script: { layout, settings, file, save, plot },
+    script: { layout, ...(pageSetup !== undefined && { pageSetup }), settings, file, save, plot },
   });
 }
 

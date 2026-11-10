@@ -4,9 +4,18 @@
 import { describe, expect, it } from 'vitest';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, type PlotPart } from '@triya/render';
-import type { Layout } from '@triya/engine';
-import { defaultPlotSettings } from '../src/plot';
-import { publishFileName, publishPdf, publishSheets, sheetSpace } from '../src/publish';
+import type { Layout, NamedPageSetup } from '@triya/engine';
+import { defaultPlotSettings, pageSetupsOf, withPageSetup } from '../src/plot';
+import {
+  movedSheet,
+  publishFileName,
+  publishLog,
+  publishLogName,
+  publishPdf,
+  publishSheets,
+  sheetSpace,
+  withOpenDrawings,
+} from '../src/publish';
 
 const stroke: PlotPart = {
   kind: 'stroke',
@@ -137,5 +146,96 @@ describe('publishPdf', () => {
     );
     expect(bytes).toBeUndefined();
     expect(failed).toHaveLength(1);
+  });
+});
+
+// Part 6: named page setups, several drawings, the sheet list's order and the publish log.
+describe('several drawings and named page setups (part 6)', () => {
+  const plan = [
+    { name: 'Model', block: '1F' },
+    { name: 'Layout1', block: '58' },
+  ];
+  const site = [
+    { name: 'Model', block: '2A' },
+    { name: 'Survey', block: '7C' },
+  ];
+
+  it('adds the sheets of every open drawing after those listed, once', () => {
+    const listed = publishSheets('plan.dxf', plan, 1);
+    const all = withOpenDrawings(listed, [
+      { doc: 1, drawing: 'plan.dxf', spaces: plan },
+      { doc: 2, drawing: 'site.dwg', spaces: site },
+    ]);
+    expect(all.map((s) => [s.doc, s.sheet])).toEqual([
+      [1, 'plan-Model'],
+      [1, 'plan-Layout1'],
+      [2, 'site-Model'],
+      [2, 'site-Survey'],
+    ]);
+    // Loading again adds nothing; a sheet removed comes back.
+    expect(withOpenDrawings(all, [{ doc: 2, drawing: 'site.dwg', spaces: site }])).toEqual(all);
+    const removed = all.filter((s) => s.sheet !== 'site-Model');
+    expect(
+      withOpenDrawings(removed, [{ doc: 2, drawing: 'site.dwg', spaces: site }]).map(
+        (s) => s.sheet,
+      ),
+    ).toEqual(['plan-Model', 'plan-Layout1', 'site-Survey', 'site-Model']);
+  });
+
+  it('moves a sheet up or down, and not past either end', () => {
+    expect(movedSheet(['a', 'b', 'c'], 2, -1)).toEqual(['a', 'c', 'b']);
+    expect(movedSheet(['a', 'b', 'c'], 0, 1)).toEqual(['b', 'a', 'c']);
+    expect(movedSheet(['a', 'b', 'c'], 0, -1)).toEqual(['a', 'b', 'c']);
+    expect(movedSheet(['a', 'b', 'c'], 2, 1)).toEqual(['a', 'b', 'c']);
+  });
+
+  it('plots a sheet on a named page setup’s paper and table, its layout unchanged', () => {
+    const layout = a3('Layout1', '58', 1);
+    const a1: NamedPageSetup = {
+      handle: '9A',
+      type: 'PLOTSETTINGS',
+      owner: '39',
+      name: 'A1 Monochrome',
+      model: false,
+      plot: {
+        ...layout.plot!,
+        paperSize: 'ISO_full_bleed_A1_(841.00_x_594.00_MM)',
+        paperWidth: 841,
+        paperHeight: 594,
+        styleSheet: 'monochrome.ctb',
+        flags: 32 | 128,
+      },
+    };
+    const forModel: NamedPageSetup = { ...a1, handle: '9B', name: 'Model fit', model: true };
+    const setups = pageSetupsOf([forModel, a1], false);
+    expect(setups.map((p) => p.name)).toEqual(['A1 Monochrome']);
+    const own = sheetSpace({ name: 'Layout1', layout, pageSetups: setups });
+    const named = withPageSetup(own, 'a1 monochrome');
+    expect(named.pageSetupName).toBe('A1 Monochrome');
+    expect(named.sheet!.paper.maxX - named.sheet!.paper.minX).toBeCloseTo(841, 9);
+    // Apply to Layout still writes the layout's own page setup.
+    expect(named.pageSetup?.layout).toBe(layout.handle);
+    expect(defaultPlotSettings(named)).toMatchObject({ table: 'triya-monochrome.ctb' });
+    expect(withPageSetup(named, undefined).pageSetupName).toBeUndefined();
+    expect(() => withPageSetup(own, 'Model fit')).toThrow('Page setup "Model fit" not found.');
+  });
+
+  it('writes the log a row a sheet with its page setup and status', () => {
+    const [model, layout] = publishSheets('plan, rev "A".dxf', plan, 1);
+    const log = publishLog(
+      [
+        { sheet: model!, status: 'Published' },
+        { sheet: { ...layout!, pageSetup: 'A3 Monochrome' }, status: 'There is nothing to plot.' },
+      ],
+      new Date(Date.UTC(2026, 10, 10, 15, 0, 0)),
+    );
+    expect(log.split('\r\n')).toEqual([
+      'Publish log,2026-11-10T15:00:00.000Z',
+      'Drawing,Sheet Name,Layout,Page Setup,Status',
+      '"plan, rev ""A"".dxf","plan, rev ""A""-Model",Model,<Default: None>,Published',
+      '"plan, rev ""A"".dxf","plan, rev ""A""-Layout1",Layout1,A3 Monochrome,There is nothing to plot.',
+      '',
+    ]);
+    expect(publishLogName('plan.dxf')).toBe('plan.csv');
   });
 });

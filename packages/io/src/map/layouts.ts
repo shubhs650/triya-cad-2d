@@ -1,21 +1,32 @@
 // LAYOUT objects to Triya `Layout` values (M1-18): the tab, its block record, and the page
 // setup its sheet is drawn from (DXF AcDbLayout and AcDbPlotSettings groups).
 
-import type { CadDocument, Layout as AcadLayout } from '@node-projects/acad-ts';
-import type { Layout, LayoutPlot, LayoutSpace, PlotPaperUnits as Units } from '@triya/engine';
+import {
+  CadDictionary,
+  Layout as AcadLayout,
+  PlotSettings,
+  type CadDocument,
+} from '@node-projects/acad-ts';
+import type {
+  Layout,
+  LayoutPlot,
+  LayoutSpace,
+  NamedPageSetup,
+  PlotPaperUnits as Units,
+} from '@triya/engine';
 import { common, ref, vec2, vec3 } from './common';
 
 /** DXF 72: 0 inches, 1 millimetres, 2 pixels. */
 const UNITS: readonly Units[] = ['inches', 'millimeters', 'pixels'];
 
 /** DXF 48 / 49 and 140 / 141, or undefined when the page setup stores no window (all 0). */
-function windowOf(l: AcadLayout): LayoutPlot['window'] {
+function windowOf(l: PlotSettings): LayoutPlot['window'] {
   const c = [l.windowLowerLeftX, l.windowLowerLeftY, l.windowUpperLeftX, l.windowUpperLeftY];
   if (c.every((v) => v === 0)) return undefined;
   return { min: { x: c[0]!, y: c[1]! }, max: { x: c[2]!, y: c[3]! } };
 }
 
-function plotOf(l: AcadLayout): LayoutPlot {
+function plotOf(l: PlotSettings): LayoutPlot {
   const m = l.unprintableMargin;
   const window = windowOf(l);
   const rotation = l.paperRotation as number;
@@ -72,4 +83,32 @@ export function mapLayouts(doc: CadDocument): Layout[] {
     });
   }
   return out.sort((a, b) => a.tabOrder - b.tabOrder || a.name.localeCompare(b.name));
+}
+
+/** DXF 70 flag 1024 (ModelType): a page setup for model space. */
+const MODEL_TYPE = 1024;
+
+/**
+ * The named page setups (M2-17 part 6): the PLOTSETTINGS entries of the `ACAD_PLOTSETTINGS`
+ * dictionary, by their entry names as AutoCAD lists them in the Plot dialog. Layouts are
+ * PLOTSETTINGS too, but are not entries of it. Read only: PAGESETUP, which adds and changes
+ * them, is M6-01.
+ */
+export function mapPageSetups(doc: CadDocument): NamedPageSetup[] {
+  const dict = doc.rootDictionary?.get(CadDictionary.acadPlotSettings);
+  if (!(dict instanceof CadDictionary)) return [];
+  const out: NamedPageSetup[] = [];
+  const names = dict.entryNames;
+  for (const [i, o] of [...dict].entries()) {
+    if (!(o instanceof PlotSettings) || o instanceof AcadLayout || o.handle === 0) continue;
+    out.push({
+      ...common(o),
+      type: 'PLOTSETTINGS',
+      owner: ref(dict) ?? '0',
+      name: names[i] ?? o.pageName,
+      model: ((o.flags as number) & MODEL_TYPE) !== 0,
+      plot: plotOf(o),
+    });
+  }
+  return out.sort((a, b) => a.name.localeCompare(b.name));
 }

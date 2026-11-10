@@ -22,6 +22,12 @@
 // window, scale or fit, centring, offset; model space's from the Model layout), and Apply to
 // Layout (AutoCAD: "Saves the current settings in the Plot dialog box to the current layout")
 // writes the settings into it, one undo step of its own, saved with the drawing.
+//
+// Part 6: Page setup Name lists "<None>" (the space's own page setup), "<Previous plot>" once the
+// space has plotted this session, and the drawing's named page setups of the space's kind;
+// choosing one opens the dialog on its settings (a layout on its paper), the plotter kept. Apply
+// to Layout writes a named page setup's settings, as changed, into the layout's own. Add… (new
+// named page setups) is PAGESETUP's, M6-01.
 import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -49,6 +55,7 @@ import {
   type PlotArea,
   type PlotSettings,
   type PlotSpace,
+  withPageSetup,
 } from './plot';
 
 /**
@@ -109,6 +116,10 @@ export const plotDialog = (() => {
     },
   };
 })();
+
+/** Page setup Name's own entries (a named page setup cannot be named so: `<` is not allowed). */
+const NONE = '<None>';
+const PREVIOUS = '<Previous plot>';
 
 const AREA_LABELS: Record<PlotArea, string> = {
   layout: 'Layout',
@@ -185,6 +196,10 @@ function PlotBody({
   const ref = useRef<HTMLDialogElement>(null);
   const [applied, setApplied] = useState<string>();
   const [space, setSpace] = useState<PlotSpace>();
+  /** The space with its own page setup, which a named one replaces (part 6). */
+  const [own, setOwn] = useState<PlotSpace>();
+  /** Page setup Name: a named page setup's, PREVIOUS or NONE. */
+  const [setupName, setSetupName] = useState<string>(NONE);
   const [s, setSettings] = useState<PlotSettings>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
@@ -196,6 +211,7 @@ function PlotBody({
     void controller.plotSpace().then((measured) => {
       if (!live) return;
       const sp = { ...measured, userTables: userTables?.() };
+      setOwn(sp);
       setSpace(sp);
       setSettings(plotDialog.resume(doc, block) ?? defaultPlotSettings(sp));
     });
@@ -204,6 +220,32 @@ function PlotBody({
       d?.close();
     };
   }, [controller, doc, block, userTables]);
+
+  // Page setup Name (part 6): the settings of the page setup chosen, the plotter kept.
+  const choosePageSetup = (name: string) => {
+    if (!s || !own) return;
+    setApplied(undefined);
+    setError(undefined);
+    const { device, dpi, background } = s;
+    if (name === PREVIOUS) {
+      const last = lastPlotSettings.get(doc, block);
+      if (!last) return;
+      setSetupName(name);
+      setSpace(own);
+      setSettings(last);
+      return;
+    }
+    let sp;
+    try {
+      sp = withPageSetup(own, name === NONE ? undefined : name);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    setSetupName(name);
+    setSpace(sp);
+    setSettings({ ...defaultPlotSettings(sp), device, dpi, background });
+  };
 
   const set = (patch: Partial<PlotSettings>) => {
     if (!s) return;
@@ -233,11 +275,17 @@ function PlotBody({
         edited?.(doc);
       }
       const sp = { ...(await controller.plotSpace()), userTables: userTables?.() };
+      setOwn(sp);
       setSpace(sp);
       // The plotter is the dialog's, not the page setup's (Triya does not map DXF 2).
       const { device, dpi, background } = s;
       setSettings({ ...defaultPlotSettings(sp), device, dpi, background });
-      setApplied(`Applied to the ${sp.name} page setup.`);
+      // The layout's own page setup now holds what was applied (a named one's name stays shown).
+      setApplied(
+        space.pageSetupName
+          ? `Applied "${space.pageSetupName}" to the ${sp.name} page setup.`
+          : `Applied to the ${sp.name} page setup.`,
+      );
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -322,6 +370,28 @@ function PlotBody({
       }}
     >
       <h2 className="cad-dialog-title">{title}</h2>
+      {s && space && own && (
+        <Group label="Page setup">
+          <label className="cad-dialog-field">
+            <span>Name:</span>
+            <select
+              aria-label="Page setup"
+              value={setupName}
+              onChange={(e) => choosePageSetup(e.currentTarget.value)}
+            >
+              <option value={NONE}>&lt;None&gt;</option>
+              {lastPlotSettings.get(doc, block) && (
+                <option value={PREVIOUS}>&lt;Previous plot&gt;</option>
+              )}
+              {(own.pageSetups ?? []).map((p) => (
+                <option key={p.handle} value={p.name}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </Group>
+      )}
       {s && space ? (
         <PlotForm
           s={s}

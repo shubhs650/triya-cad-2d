@@ -9,6 +9,8 @@
 // Part 3: Esc at the window's corners reopens the dialog as it was; a layout opens on its page
 // setup's plot style table and plot options; the drafter's own tables are listed.
 // Part 5: -PLOT asks for the plot at the command line and plots it without the dialog.
+// Part 6: named page setups (page-setups.dxf, authored by packages/testkit/src/page-setups) in
+// the Plot dialog, -PLOT and PUBLISH, which publishes the sheets of every open drawing and its log.
 import { copyFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
@@ -26,6 +28,10 @@ import {
 import { CORPUS, startApp } from '../app/server';
 
 const VIEWPORTS = path.join(CORPUS, 'ezdxf/examples_dxf/viewports.dxf');
+const PAGE_SETUPS = path.join(
+  import.meta.dirname,
+  '../../../packages/testkit/fixtures/page-setups/page-setups.dxf',
+);
 const MONOCHROME_CTB = path.join(
   import.meta.dirname,
   '../../../assets/plotstyles/triya-monochrome.ctb',
@@ -509,4 +515,198 @@ test('plots model space to an SVG with the drawing layers and to a PNG at a reso
   // A white sheet with the drawing on it.
   expect(white).toBeGreaterThan(png.width * png.height * 0.5);
   expect(inked).toBeGreaterThan(1000);
+});
+
+// Part 6: named page setups.
+test('the Plot dialog lists the named page setups of the space’s kind and opens on one (part 6)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, PAGE_SETUPS);
+  await expectShown(page, path.basename(PAGE_SETUPS));
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d.getByRole('heading')).toHaveText('Plot - Model');
+  const name = d.getByLabel('Page setup', { exact: true });
+  await expect(name).toHaveValue('<None>');
+  // Model space's own (flag 1024); the layouts' A3 Monochrome is not listed.
+  await expect(name.locator('option')).toHaveText(['<None>', 'Model A1 Fit', 'Model ANSI B 1:2']);
+  await expect(d.getByLabel('Paper size')).toHaveValue('ISO A4');
+
+  await name.selectOption('Model A1 Fit');
+  await expect(d.getByLabel('Paper size')).toHaveValue('ISO A1');
+  await expect(d.getByLabel('What to plot')).toHaveValue('extents');
+  await expect(d.getByLabel('Fit to paper')).toBeChecked();
+  await expect(d.getByLabel('Center the plot')).toBeChecked();
+  // acad.ctb opens on the bundled table of that meaning.
+  await expect(d.getByLabel('Plot style table')).toHaveValue('triya-default.ctb');
+  await expect(d.getByLabel('Plot style table').locator('option:checked')).not.toContainText(
+    'not found',
+  );
+
+  await name.selectOption('Model ANSI B 1:2');
+  await expect(d.getByLabel('Paper size')).toHaveValue('ANSI B');
+  await expect(d.getByLabel('Fit to paper')).not.toBeChecked();
+  await expect(d.getByLabel('Scale', { exact: true })).toHaveValue('1:2');
+  await expect(d.getByLabel('inches =')).toHaveValue('1');
+  await expect(d.getByLabel('units', { exact: true })).toHaveValue('2');
+  await expect(d.getByLabel('Plot style table')).toHaveValue('');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'OK' }).click(),
+  ]);
+  const pdf = await readPdf(download);
+  // ANSI B landscape, 17 × 11 inches.
+  expect(pdf.width).toBeCloseTo(431.8, 0);
+  expect(pdf.height).toBeCloseTo(279.4, 0);
+  await expect(d).toBeHidden();
+
+  // It plotted: <Previous plot> is offered now, with those settings.
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  await expect(name.locator('option')).toHaveText([
+    '<None>',
+    '<Previous plot>',
+    'Model A1 Fit',
+    'Model ANSI B 1:2',
+  ]);
+  await name.selectOption('<Previous plot>');
+  await expect(d.getByLabel('Paper size')).toHaveValue('ANSI B');
+  await d.getByRole('button', { name: 'Cancel' }).click();
+
+  // Layout1 lists the layouts' page setup; Apply to Layout writes it into Layout1's own.
+  await page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab').nth(1).click();
+  await expect(page.getByTestId('space')).toHaveText('PAPER');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  await expect(d.getByRole('heading')).toHaveText('Plot - Layout1');
+  await expect(name.locator('option')).toHaveText(['<None>', 'A3 Monochrome']);
+  await name.selectOption('A3 Monochrome');
+  await expect(d.getByLabel('Paper size').locator('option:checked')).toHaveText(
+    'Layout paper (420 × 297 mm)',
+  );
+  await expect(d.getByLabel('Plot style table')).toHaveValue('triya-monochrome.ctb');
+  await d.getByRole('button', { name: 'Apply to Layout' }).click();
+  await expect(d.getByRole('status')).toHaveText(
+    'Applied "A3 Monochrome" to the Layout1 page setup.',
+  );
+  type Dev = { triyaDev: { layouts(): { name: string; plot?: Record<string, unknown> }[] } };
+  const layout1 = await page.evaluate(
+    () => (window as unknown as Dev).triyaDev.layouts().find((l) => l.name === 'Layout1')!.plot!,
+  );
+  expect(layout1).toMatchObject({
+    paperWidth: 420,
+    paperHeight: 297,
+    styleSheet: 'monochrome.ctb',
+  });
+  await d.getByRole('button', { name: 'Cancel' }).click();
+});
+
+test('-PLOT plots with a named page setup (part 6)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, PAGE_SETUPS);
+  await expectShown(page, path.basename(PAGE_SETUPS));
+  const input = page.getByLabel('Command', { exact: true });
+  const prompt = page.getByTestId('command-prompt');
+  const type = async (text: string) => {
+    await input.fill(text);
+    await input.press('Enter');
+  };
+  await type('-PLOT');
+  await type('');
+  await type('');
+  await expect(prompt).toHaveText('Enter a page setup name <>:');
+  await type('A3 Monochrome');
+  await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText(
+    'Page setup "A3 Monochrome" not found.',
+  );
+  await type('model a1 fit');
+  await expect(prompt).toHaveText(/^Enter an output device name or \[\?\] <Triya PDF/);
+  await type('');
+  await type('');
+  await type('');
+  const [download] = await Promise.all([page.waitForEvent('download'), type('')]);
+  const pdf = await readPdf(download);
+  // ISO A1 landscape, as the page setup says.
+  expect(pdf.width).toBeCloseTo(841, 0);
+  expect(pdf.height).toBeCloseTo(594, 0);
+  expect(pdf.paths).toBeGreaterThan(2);
+});
+
+test('PUBLISH takes the sheets of every open drawing, a named page setup each, and writes its log (part 6)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  const other = await page
+    .getByRole('tablist', { name: 'Model and layouts' })
+    .getByRole('tab')
+    .allTextContents();
+  await openWithPicker(page, PAGE_SETUPS);
+  await expectShown(page, path.basename(PAGE_SETUPS));
+  const input = page.getByLabel('Command', { exact: true });
+  await input.fill('PUBLISH');
+  await input.press('Enter');
+  const d = page.getByRole('dialog', { name: 'Publish' });
+  const table = d.getByRole('table', { name: 'Sheets to publish' });
+  const names = table.getByRole('checkbox');
+  await expect(names).toHaveCount(2);
+
+  await d.getByRole('button', { name: 'Load All Open Drawings' }).click();
+  const theirs = other.map((s) => `sample_AC1018-${s.trim()}`);
+  await expect(names).toHaveCount(2 + other.length);
+  const sheetNames = async () =>
+    await names.evaluateAll((els) => els.map((e) => e.parentElement!.textContent!.trim()));
+  expect(await sheetNames()).toEqual(['page-setups-Model', 'page-setups-Layout1', ...theirs]);
+
+  // Layout1 on the layouts' named page setup; the other drawing's model space moved up one.
+  await d.getByLabel('Page setup of page-setups-Layout1').selectOption('A3 Monochrome');
+  // A row is selected by a click on its Status cell: one on its name would toggle its check.
+  const select = (sheet: string) =>
+    table.getByRole('row').filter({ hasText: sheet }).getByRole('cell').last().click();
+  await select('sample_AC1018-Model');
+  await d.getByRole('button', { name: 'Move Sheet Up' }).click();
+  // And one of its layouts removed.
+  await select(theirs[1]!);
+  await d.getByRole('button', { name: 'Remove Sheets' }).click();
+  const order = [
+    'page-setups-Model',
+    'sample_AC1018-Model',
+    'page-setups-Layout1',
+    ...theirs.slice(2),
+  ];
+  expect(await sheetNames()).toEqual(order);
+  expect(await names.evaluateAll((els) => els.every((e) => (e as HTMLInputElement).checked))).toBe(
+    true,
+  );
+
+  await d.getByLabel('Save publish log').check();
+  const downloads: Download[] = [];
+  page.on('download', (x) => downloads.push(x));
+  await d.getByRole('button', { name: 'Publish' }).click();
+  await expect(d).toBeHidden({ timeout: 60_000 });
+  await expect.poll(() => downloads.length).toBe(2);
+  const pdfFile = downloads.find((x) => x.suggestedFilename() === 'page-setups.pdf')!;
+  const pdf = await readPdf(pdfFile);
+  expect(pdf.pages).toBe(order.length);
+  expect(pdf.labels).toEqual(order.map((s) => s.replace(/^(page-setups|sample_AC1018)-/, '')));
+  const log = downloads.find((x) => x.suggestedFilename() === 'page-setups.csv')!;
+  const rows = readFileSync((await log.path())!, 'utf8')
+    .trim()
+    .split('\r\n');
+  expect(rows[1]).toBe('Drawing,Sheet Name,Layout,Page Setup,Status');
+  expect(rows.slice(2)).toEqual(
+    order.map((s) => {
+      const [drawing, layout] = s.startsWith('page-setups-')
+        ? ['page-setups.dxf', s.slice('page-setups-'.length)]
+        : ['sample_AC1018.dwg', s.slice('sample_AC1018-'.length)];
+      const setup = s === 'page-setups-Layout1' ? 'A3 Monochrome' : '<Default: None>';
+      return `${drawing},${s},${layout},${setup},Published`;
+    }),
+  );
 });

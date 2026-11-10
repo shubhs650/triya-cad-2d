@@ -26,8 +26,24 @@
 // that name. A page setup naming a table this device lacks keeps the name, says so and plots
 // without one: AutoCAD's help does not say what its dialog does then, and plotting each object
 // with its own properties is what the table None does.
+//
+// Part 6: named page setups (ACAD_PLOTSETTINGS). AutoCAD's Plot dialog lists them under Page
+// setup Name ("<None>", "<Previous plot>" once the space has plotted, then the named page setups
+// of the space's kind: model space's, flag 1024, or the layouts'); choosing one opens the dialog on
+// its settings, and Apply to Layout writes them into the layout's own page setup. A layout plots
+// on a named page setup's paper (`withPageSetup`), as AutoCAD's does, without the layout changing
+// until it is applied.
 
-import type { Box, Handle, Layout, LayoutPlot, Vec2 } from '@triya/engine';
+import {
+  plotSheet,
+  type Box,
+  type Handle,
+  type Layout,
+  type LayoutPlot,
+  type NamedPageSetup,
+  type NonGraphicalObject,
+  type Vec2,
+} from '@triya/engine';
 import {
   PAPER_SIZES,
   PdfDocument,
@@ -68,6 +84,10 @@ export interface PlotSpace {
   readonly pageSetup?: PageSetup | undefined;
   /** The plot style tables added in Settings, by file name (part 3). */
   readonly userTables?: ReadonlyMap<string, PlotStyleTable> | undefined;
+  /** The drawing's named page setups of the space's kind, by name (part 6). */
+  readonly pageSetups?: readonly NamedPageSetup[] | undefined;
+  /** The named page setup `pageSetup` is, when one was chosen (part 6). */
+  readonly pageSetupName?: string | undefined;
 }
 
 /** What the Plot dialog opens with from a page setup (PLOTSETTINGS). */
@@ -100,6 +120,45 @@ export function pageSetupOf(layout: Layout | undefined): PageSetup | undefined {
   const plot = layout?.plot;
   if (!plot) return undefined;
   return { styleSheet: plot.styleSheet ?? '', flags: plot.flags, layout: layout.handle, plot };
+}
+
+/**
+ * The drawing's named page setups a space can plot with (part 6): model space's (flag 1024) or
+ * the layouts', by name as AutoCAD lists them.
+ */
+export function pageSetupsOf(
+  objects: readonly NonGraphicalObject[] | undefined,
+  model: boolean,
+): NamedPageSetup[] {
+  return (objects ?? [])
+    .filter((o): o is NamedPageSetup => o.type === 'PLOTSETTINGS')
+    .filter((o) => o.model === model)
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The space as a named page setup plots it (part 6): its settings in place of the space's own
+ * page setup (whose layout Apply to Layout still writes), and a layout's sheet on its paper.
+ * Undefined `name` (AutoCAD's "<None>") is the space's own. Throws for a name it lacks.
+ */
+export function withPageSetup(space: PlotSpace, name: string | undefined): PlotSpace {
+  if (name === undefined) return { ...space, pageSetupName: undefined };
+  const named = space.pageSetups?.find((p) => p.name.toUpperCase() === name.toUpperCase());
+  if (!named) throw new Error(`Page setup "${name}" not found.`);
+  const plot = named.plot;
+  const sheet = space.sheet && plotSheet(plot);
+  return {
+    ...space,
+    sheet: sheet ? { paper: sheet.paper, unitsPerMm: sheet.unitsPerMm } : space.sheet,
+    inches: plot.paperUnits === 'inches',
+    pageSetup: {
+      styleSheet: plot.styleSheet ?? '',
+      flags: plot.flags,
+      layout: space.pageSetup?.layout,
+      plot,
+    },
+    pageSetupName: named.name,
+  };
 }
 
 export type PlotArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
