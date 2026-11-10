@@ -40,6 +40,26 @@ const undoButton = (page: Page) => page.getByRole('button', { name: 'Undo', exac
 const redoButton = (page: Page) => page.getByRole('button', { name: 'Redo', exact: true });
 const toast = (page: Page) => page.getByTestId('undo-toast');
 
+/**
+ * The canvas's ink once two looks half a second apart agree: a drawing's first frame can come
+ * before its solid hatch (as M2-28 found), and an ink measured on it never drops on a freeze.
+ */
+async function settledInk(page: Page): Promise<number> {
+  let last = -1;
+  await expect
+    .poll(
+      async () => {
+        const now = await ink(page);
+        const same = now === last;
+        last = now;
+        return same;
+      },
+      { intervals: [500], timeout: 15_000 },
+    )
+    .toBe(true);
+  return last;
+}
+
 async function open(page: Page): Promise<void> {
   await page.goto(app.url);
   await openWithPicker(page, DXF);
@@ -126,7 +146,7 @@ test('Ctrl+Z with text typed at the command line undoes the text, not the drawin
 test('a layer freeze is undone by U', async ({ page }) => {
   test.setTimeout(60_000);
   await open(page);
-  const shown = await ink(page);
+  const shown = await settledInk(page);
   await page
     .getByRole('navigation', { name: 'Palettes' })
     .getByRole('button', { name: 'Layers' })

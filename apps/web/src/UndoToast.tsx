@@ -23,7 +23,7 @@ export function UndoToast({
   // Another drawing's toast is not this one's news.
   const shown = toast && toast.doc === active ? toast : undefined;
   return (
-    <div className="undo-toast-region" role="status" aria-live="polite">
+    <div className="undo-toast-region" aria-live="polite" aria-atomic="true">
       {shown && (
         <div className="undo-toast" key={shown.id} data-testid="undo-toast">
           {shown.text}
