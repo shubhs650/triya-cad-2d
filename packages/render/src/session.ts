@@ -36,6 +36,7 @@ import {
   parseTtfCollection,
   type TriyaStrokeFont,
 } from '@triya/text';
+import { dimensionParts } from '@triya/dims';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
 import { columnCounter, textMeasure, type TextContext } from './text';
@@ -174,6 +175,10 @@ export class RenderSession {
     this.index = SpatialIndex.build(this.model, {
       tol: this.#tol,
       annotationBounds: textBounds(this.#text),
+      // TOLERANCE frames and dimensions drawn without their block (from the dimension engine,
+      // M2-30) are bounded by what they draw, their text measured in the same fonts.
+      measureText: textMeasure(this.#text),
+      dimensionParts,
       // An unclipped underlay shows its whole page, whose size only its PDF gives (M1-20).
       underlayPage: (h) => this.#underlays.get(h)?.page,
     });

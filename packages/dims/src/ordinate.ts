@@ -1,8 +1,9 @@
 // Ordinate dimensions, by AutoCAD's rules (DIMORDINATE) and, where AutoCAD is silent, what its
 // files store (the acadsharp samples, read by M2-10's health comparison):
 // - The measurement is the feature's (DXF 13) distance from the origin (DXF 10) along X (DXF 70
-//   bit 64) or Y, unsigned. DXF 51 (the UCS's horizontal direction) is 0 in every file read so
-//   far; the axes are taken as the drawing's.
+//   bit 64) or Y, unsigned, along the axes of the UCS the dimension was drawn in: DXF 51 is
+//   "the negative of the angle between the OCS X axis and the UCS X axis" (DXF reference,
+//   DIMENSION), so the UCS's X runs at −DXF 51 (M2-30; 0 in every corpus file).
 // - The leader runs from DIMEXO off the feature along the other axis towards the leader end
 //   (DXF 14). When the leader end is off the feature's line, the leader jogs: straight to
 //   4 × DIMASZ short of the end, across to 2 × DIMASZ short of it on the end's line, then on.
@@ -13,7 +14,7 @@
 // - No arrowheads.
 
 import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
-import { linearText } from './format';
+import { linearText, textAlign } from './format';
 import {
   add,
   angleOf,
@@ -42,15 +43,15 @@ export function ordinateParts(
   keepText: boolean,
 ): DimPart[] | undefined {
   const xAxis = g.axis === 'x';
+  const ucsX = fromAngle(-g.horizontalDirection);
+  const ucsY = perp(ucsX);
   // The leader runs across the measured axis.
-  const along = xAxis ? { x: 0, y: 1 } : { x: 1, y: 0 };
+  const along = xAxis ? ucsY : ucsX;
   const run = dot(sub(g.leaderEnd, g.feature), along);
   const dir = run < 0 ? { x: -along.x, y: -along.y } : along;
   const length = Math.abs(run);
   const offset = dot(sub(g.leaderEnd, g.feature), perp(dir));
-  const value = Math.abs(
-    xAxis ? g.feature.x - g.definitionPoint.x : g.feature.y - g.definitionPoint.y,
-  );
+  const value = Math.abs(dot(sub(g.feature, g.definitionPoint), xAxis ? ucsX : ucsY));
   const label = linearText(g.text, value, s.vars);
   const out: DimPart[] = [];
 
@@ -70,7 +71,7 @@ export function ordinateParts(
   let width = 0;
   const centred = s.tad === 0 && s.tvp === 0;
   if (label !== undefined) {
-    const probe = textGeometry((centred ? '\\A1;' : '') + label, g.textPosition, 0, s);
+    const probe = textGeometry(textAlign(centred, s.vars) + label, g.textPosition, 0, s);
     const w = measure(probe);
     if (w === undefined) return undefined;
     width = w;

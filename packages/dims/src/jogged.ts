@@ -13,7 +13,7 @@
 
 import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
 import { num } from './style';
-import { linearText } from './format';
+import { linearText, textAlign } from './format';
 import {
   add,
   angleOf,
@@ -78,7 +78,7 @@ export function joggedParts(
   let inside = false;
   let dxf11: Vec2 | undefined;
   if (label !== undefined) {
-    const probe = textGeometry((centred ? '\\A1;' : '') + label, g.textPosition, 0, s);
+    const probe = textGeometry(textAlign(centred, s.vars) + label, g.textPosition, 0, s);
     const w = measure(probe);
     if (w === undefined) return undefined;
     width = w;

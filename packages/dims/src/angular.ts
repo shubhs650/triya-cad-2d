@@ -15,7 +15,7 @@
 //   arc stays out of the text's box widened by DIMGAP.
 
 import type { AnnotationTables, DimensionGeometry, Handle, TextMeasure, Vec2 } from '@triya/engine';
-import { dimensionText, formatAngle } from './format';
+import { angularText, textAlign } from './format';
 import {
   add,
   angleOf,
@@ -214,14 +214,14 @@ export function angularParts(
   });
 
   // Text.
-  const label = dimensionText(g.text, formatAngle(sweep, s.vars), s.vars);
+  const label = angularText(g.text, sweep, s.vars);
   const centred = s.tad === 0 && s.tvp === 0;
   let text: ReturnType<typeof textGeometry> | undefined;
   let width = 0;
   const ticks = s.tsz > 0;
   let placement = { textInside: true, arrowsInside: true };
   if (label !== undefined) {
-    const probe = textGeometry((centred ? '\\A1;' : '') + label, g.textPosition, 0, s);
+    const probe = textGeometry(textAlign(centred, s.vars) + label, g.textPosition, 0, s);
     const w = measure(probe);
     if (w === undefined) return undefined;
     width = w;

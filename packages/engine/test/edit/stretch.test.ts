@@ -248,4 +248,63 @@ describe('stretchGeometry of a dimension that can be regenerated (M2-10 part 3)'
   it('only moves a dimension whole without a dimension engine', () => {
     expect(stretch(dim)).toMatchObject({ kind: 'whole' });
   });
+
+  describe('an arc length dimension (M2-30)', () => {
+    // The arc of radius 10 about (0,0) from 0° to 90°, its dimension arc at radius 15.
+    const arc = {
+      ...dim,
+      kind: 'ARC_DIMENSION',
+      dimType: 'arc',
+      center: { x: 0, y: 0 },
+      first: { x: 10, y: 0 },
+      second: { x: 0, y: 10 },
+      startAngle: 0,
+      endAngle: Math.PI / 2,
+      partial: false,
+      definitionPoint: { x: 10.6, y: 10.6 },
+      textPosition: { x: 11, y: 11 },
+      leader: [
+        { x: 7.07, y: 7.07 },
+        { x: 10.6, y: 10.6 },
+      ],
+    } as EntityGeometry;
+
+    it('keeps DXF 40/41 the angles of its ends about the centre when STRETCH moves an end', () => {
+      // The window takes the first end (10,0) only; it moves by (2,1).
+      const r = regen(arc, inBox({ minX: 9, minY: -1, maxX: 11, maxY: 1 }));
+      if (r.kind !== 'shape') throw new Error(r.kind);
+      const g = r.geom as Extract<EntityGeometry, { kind: 'ARC_DIMENSION' }>;
+      expect(g.first).toEqual({ x: 12, y: 1 });
+      expect(g.startAngle).toBeCloseTo(Math.atan2(1, 12), 12);
+      expect(g.endAngle).toBeCloseTo(Math.PI / 2, 12);
+      // Angles stay in [0, 2π), as AutoCAD writes them.
+      const down = stretchGeometry(
+        arc,
+        inBox({ minX: 9, minY: -1, maxX: 11, maxY: 1 }),
+        { x: 0, y: -2 },
+        {
+          dimensions: true,
+        },
+      );
+      if (down.kind !== 'shape') throw new Error(down.kind);
+      const dg = down.geom as Extract<EntityGeometry, { kind: 'ARC_DIMENSION' }>;
+      expect(dg.startAngle).toBeCloseTo(2 * Math.PI + Math.atan2(-2, 10), 12);
+    });
+
+    it('stretches its leader points with the other definition points', () => {
+      const r = regen(arc, inBox({ minX: 10, minY: 10, maxX: 12, maxY: 12 }));
+      if (r.kind !== 'shape') throw new Error(r.kind);
+      const g = r.geom as Extract<EntityGeometry, { kind: 'ARC_DIMENSION' }>;
+      expect(g.leader).toEqual([
+        { x: 7.07, y: 7.07 },
+        { x: 12.6, y: 11.6 },
+      ]);
+      expect(g.definitionPoint).toEqual({ x: 12.6, y: 11.6 });
+      // All of it inside: moved whole.
+      expect(regen(arc, () => true)).toEqual({ kind: 'move' });
+      // Only the leader's points inside: a shape, not a move.
+      const leaderOnly = regen(arc, inBox({ minX: 7, minY: 7, maxX: 7.1, maxY: 7.1 }));
+      expect(leaderOnly.kind).toBe('shape');
+    });
+  });
 });

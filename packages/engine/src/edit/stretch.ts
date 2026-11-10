@@ -180,23 +180,44 @@ export interface StretchOptions {
 const isDimension = (g: EntityGeometry): boolean =>
   g.kind === 'DIMENSION' || g.kind === 'ARC_DIMENSION' || g.kind === 'LARGE_RADIAL_DIMENSION';
 
-/** A dimension with its definition points that `inside` takes moved by `d`. */
+const isPoint = (v: unknown): v is Vec2 =>
+  !!v && typeof v === 'object' && 'x' in v && 'y' in v && !('z' in v);
+
+/**
+ * A dimension with its definition points that `inside` takes moved by `d`: the points it
+ * stores alone and in pairs (an arc length dimension's leader, DXF 16/17). An arc length
+ * dimension's DXF 40/41 follow its ends (M2-30): they are the angles of 13 and 14 about 15, in
+ * [0, 2π), as AutoCAD and ezdxf write them.
+ */
 function stretchDimension(g: EntityGeometry, inside: (p: Vec2) => boolean, d: Vec2): StretchResult {
   const out: Record<string, unknown> = { ...g };
   let moved = 0;
   let total = 0;
   let textOnly = true;
-  for (const [k, v] of Object.entries(g)) {
-    if (!v || typeof v !== 'object' || !('x' in v) || !('y' in v) || 'z' in v) continue;
+  const stretch = (k: string, p: Vec2): Vec2 => {
     total++;
-    if (!inside(v as Vec2)) continue;
+    if (!inside(p)) return p;
     moved++;
     if (k !== 'textPosition') textOnly = false;
-    out[k] = add(v as Vec2, d);
+    return add(p, d);
+  };
+  for (const [k, v] of Object.entries(g)) {
+    if (isPoint(v)) out[k] = stretch(k, v);
+    else if (Array.isArray(v) && v.length > 0 && v.every(isPoint))
+      out[k] = v.map((p: Vec2) => stretch(k, p));
   }
   if (moved === 0) return NONE;
   if (moved === total) return MOVE;
   if (textOnly) out.textUserPositioned = true;
+  if (g.kind === 'ARC_DIMENSION') {
+    const c = out.center as Vec2;
+    const turn = (p: Vec2) => {
+      const a = angleOf(sub(p, c));
+      return a < 0 ? a + 2 * Math.PI : a;
+    };
+    out.startAngle = turn(out.first as Vec2);
+    out.endAngle = turn(out.second as Vec2);
+  }
   return { kind: 'shape', geom: out as unknown as EntityGeometry };
 }
 

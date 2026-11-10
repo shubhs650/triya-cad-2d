@@ -552,7 +552,7 @@ describe('tolerances, limits and alternate units (part 2)', () => {
   it('appends DIMTOL deviations and alternate units to a linear dimension', () => {
     expect(
       textOf({ DIMTOL: true, DIMTP: 0.1, DIMTM: 0.05, DIMTFAC: 0.7, DIMTDEC: 2, DIMTZIN: 0 }),
-    ).toBe('100{\\H0.7x;\\S+0.10^-0.05;}');
+    ).toBe('\\A1;100{\\H0.7x;\\S+0.10^-0.05;}');
     expect(textOf({ DIMALT: true, DIMALTF: 0.03937, DIMALTD: 2, DIMALTU: 2, DIMALTZ: 0 })).toBe(
       '100 [3.94]',
     );
@@ -721,5 +721,114 @@ describe('dimensions the commands make (M2-11)', () => {
       { x: -5, y: -5 },
     );
     expect(r.measurement).toBe('270°');
+  });
+});
+
+describe('dimension engine leftovers (M2-30)', () => {
+  const textOf = (ps: DimPart[]) => (of(ps, 'MTEXT')[0] as { contents: string }).contents;
+  const tol = { DIMTOL: true, DIMTP: 0.1, DIMTM: 0.05, DIMTFAC: 0.7, DIMTDEC: 2, DIMTZIN: 0 };
+
+  it('starts a text with deviations with DIMTOLJ as its alignment code', () => {
+    expect(textOf(parts(linear(), model({ ...ISO, ...tol, DIMTOLJ: 0 })))).toBe(
+      '\\A0;100{\\H0.7x;\\S+0.10^-0.05;}',
+    );
+    expect(textOf(parts(linear(), model({ ...ISO, ...tol, DIMTAD: 0, DIMTOLJ: 2 })))).toBe(
+      '\\A2;100{\\H0.7x;\\S+0.10^-0.05;}',
+    );
+  });
+
+  it('gives an angular dimension its tolerances in degrees', () => {
+    const geom: DimensionGeometry = {
+      ...common,
+      dimType: 'angular3pt',
+      vertex: { x: 0, y: 0 },
+      first: { x: 10, y: 0 },
+      second: { x: 0, y: 10 },
+      definitionPoint: { x: 14.142135623730951, y: 14.142135623730951 },
+      textPosition: { x: 25, y: 25 },
+    };
+    const vars = { ...ISO, DIMADEC: 0, DIMTOL: true, DIMTP: 0.5, DIMTM: 0.5, DIMTDEC: 1 };
+    expect(textOf(parts(geom, model(vars)))).toBe('\\A1;90%%d%%p0.5%%d');
+    expect(textOf(parts(geom, model({ ...vars, DIMTOL: false, DIMLIM: true, DIMTM: 1 })))).toBe(
+      '{\\H1x;\\S90.5%%d^89.0%%d;}',
+    );
+  });
+
+  describe('an arc length dimension with a leader (DXF 71, 16/17)', () => {
+    const r = 10;
+    const wide = (2 * Math.PI) / 3;
+    const mid = fromDeg(60);
+    function fromDeg(d: number) {
+      return { x: Math.cos((d * Math.PI) / 180), y: Math.sin((d * Math.PI) / 180) };
+    }
+    const at = (k: number) => ({ x: mid.x * k, y: mid.y * k });
+    const arcLength = (extra: object = {}): DimensionGeometry => ({
+      ...common,
+      kind: 'ARC_DIMENSION',
+      dimType: 'arc',
+      center: { x: 0, y: 0 },
+      first: { x: r, y: 0 },
+      second: { x: r * Math.cos(wide), y: r * Math.sin(wide) },
+      startAngle: 0,
+      endAngle: wide,
+      partial: false,
+      definitionPoint: at(15),
+      textPosition: { x: 0, y: 0 },
+      ...extra,
+    });
+
+    it('draws the leader radially to the measured arc with the leader arrowhead there', () => {
+      const plain = parts(arcLength());
+      const ps = parts(arcLength({ leader: [at(r), at(18)] }));
+      const lines = of(ps, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[];
+      expect(lines).toHaveLength(of(plain, 'LINE').length + 1);
+      const leader = lines.at(-1)!;
+      // From the far point to the arrowhead's back, DIMASZ off the arc.
+      close(leader.start.x, at(18).x);
+      close(leader.start.y, at(18).y);
+      close(leader.end.x, at(r + 2.5).x);
+      close(leader.end.y, at(r + 2.5).y);
+      const solids = of(ps, 'SOLID') as Extract<EntityGeometry, { kind: 'SOLID' }>[];
+      expect(solids).toHaveLength(of(plain, 'SOLID').length + 1);
+      // Closed filled: its tip on the measured arc.
+      const tip = solids.at(-1)!.corners[2]!;
+      close(tip.x, at(r).x);
+      close(tip.y, at(r).y);
+      // The points in either order draw the same leader.
+      const swapped = parts(arcLength({ leader: [at(18), at(r)] }));
+      expect(of(swapped, 'LINE').at(-1)).toEqual(leader);
+    });
+
+    it('uses DIMLDRBLK for the leader arrowhead', () => {
+      const ps = parts(arcLength({ leader: [at(r), at(18)] }), model({ ...ISO, DIMLDRBLK: TICK }));
+      const inserts = of(ps, 'INSERT') as Extract<EntityGeometry, { kind: 'INSERT' }>[];
+      expect(inserts).toHaveLength(1);
+      close(inserts[0]!.position.x, at(r).x);
+      close(inserts[0]!.position.y, at(r).y);
+    });
+  });
+
+  it("measures an ordinate along the UCS's axes, DXF 51 the negative of the UCS's X angle", () => {
+    // The UCS turned 90°: its X runs up the drawing, its Y to the left.
+    const geom: DimensionGeometry = {
+      ...common,
+      horizontalDirection: -Math.PI / 2,
+      dimType: 'ordinate',
+      definitionPoint: { x: 0, y: 0 },
+      axis: 'y',
+      feature: { x: -10, y: 5 },
+      leaderEnd: { x: -10, y: 40 },
+      textPosition: { x: 0, y: 0 },
+    };
+    const ps = parts(geom);
+    // The UCS Y ordinate is 10; the leader runs along the UCS X axis, up from the feature.
+    expect(textOf(ps)).toBe('10');
+    const lines = of(ps, 'LINE') as Extract<EntityGeometry, { kind: 'LINE' }>[];
+    close(lines[0]!.start.x, -10);
+    close(lines[0]!.start.y, 5.625);
+    close(lines[0]!.end.x, -10);
+    expect(lines).toHaveLength(1);
+    // An X ordinate measures up the drawing.
+    expect(textOf(parts({ ...geom, axis: 'x', leaderEnd: { x: -40, y: 5 } }))).toBe('5');
   });
 });

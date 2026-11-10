@@ -2695,4 +2695,34 @@ describe('acad-ts local patches', () => {
       }
     }
   });
+
+  it('0177 a DXF DIMENSION states its text rotation (53) and horizontal direction (51) in degrees', () => {
+    // DXF reference, DIMENSION: 53 "the rotation angle of the dimension text" and 51 "the
+    // negative of the angle between the OCS X axis and the UCS X axis", angles in degrees as
+    // every DXF angle outside MULTILEADER (ezdxf: text_rotation and horizontal_direction in
+    // degrees). acad-ts holds them in radians, as DWG stores them, but unpatched read and wrote
+    // the DXF degrees unconverted, so a text turned 30° in a DXF came in turned 30 radians.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const dim = new DimensionLinear();
+    dim.firstPoint = new XYZ(0, 0, 0);
+    dim.secondPoint = new XYZ(10, 0, 0);
+    dim.definitionPoint = new XYZ(10, 5, 0);
+    dim.textRotation = Math.PI / 6;
+    dim.horizontalDirection = -Math.PI / 4;
+    doc.entities!.add(dim);
+
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const text = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
+    const entity = text.slice(text.lastIndexOf('AcDbDimension'));
+    const value = (code: number) =>
+      Number(entity.match(new RegExp(`\\n *${code}\\r?\\n([^\\r\\n]+)`))![1]);
+    expect(value(53)).toBeCloseTo(30, 9);
+    expect(value(51)).toBeCloseTo(-45, 9);
+    for (const binary of [false, true]) {
+      const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+      const read = back.getCadObject(Number(dim.handle)) as DimensionLinear;
+      expect(read.textRotation, `binary ${binary}`).toBe(Math.PI / 6);
+      expect(read.horizontalDirection, `binary ${binary}`).toBe(-Math.PI / 4);
+    }
+  });
 });
