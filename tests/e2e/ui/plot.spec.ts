@@ -666,10 +666,13 @@ test('PUBLISH takes the sheets of every open drawing, a named page setup each, a
 
   // Layout1 on the layouts' named page setup; the other drawing's model space moved up one.
   await d.getByLabel('Page setup of page-setups-Layout1').selectOption('A3 Monochrome');
-  await table.getByRole('row').filter({ hasText: 'sample_AC1018-Model' }).click();
+  // A row is selected by a click on its Status cell: one on its name would toggle its check.
+  const select = (sheet: string) =>
+    table.getByRole('row').filter({ hasText: sheet }).getByRole('cell').last().click();
+  await select('sample_AC1018-Model');
   await d.getByRole('button', { name: 'Move Sheet Up' }).click();
   // And one of its layouts removed.
-  await table.getByRole('row').filter({ hasText: theirs[1]! }).click();
+  await select(theirs[1]!);
   await d.getByRole('button', { name: 'Remove Sheets' }).click();
   const order = [
     'page-setups-Model',
@@ -678,6 +681,9 @@ test('PUBLISH takes the sheets of every open drawing, a named page setup each, a
     ...theirs.slice(2),
   ];
   expect(await sheetNames()).toEqual(order);
+  expect(await names.evaluateAll((els) => els.every((e) => (e as HTMLInputElement).checked))).toBe(
+    true,
+  );
 
   await d.getByLabel('Save publish log').check();
   const downloads: Download[] = [];
