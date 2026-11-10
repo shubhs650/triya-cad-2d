@@ -8,6 +8,10 @@
 // DRAWINGRECOVERY (M2-14 part 2): AutoCAD 2024 Help, "DRAWINGRECOVERY": "Displays a list of
 // drawing files that can be recovered after a program or system failure" (the Drawing Recovery
 // Manager). Triya's list is the recovery banner (DEC-051), which the app shows again.
+//
+// PLOT and PRINT (M2-17): AutoCAD 2024 Help, "PLOT": "Plots a drawing to a plotter, printer, or
+// file", through the Plot dialog box. The dialog is the app's (it writes the PDF and hands the
+// file over), so the command opens it and ends; it is not an undo step.
 import type { CommandDef } from './command';
 import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
@@ -28,4 +32,6 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => fileCommand('SAVEAS', 'saveas'),
   () => fileCommand('CLOSE', 'close'),
   () => fileCommand('DRAWINGRECOVERY', 'recover'),
+  () => fileCommand('PLOT', 'plot'),
+  () => fileCommand('PRINT', 'plot'),
 ];

@@ -79,6 +79,7 @@ export {
   documentTolerance,
   fontBookOf,
   type FontSources,
+  type PlotRequest,
   type RenderDocument,
   type RenderSessionOptions,
 } from './session';

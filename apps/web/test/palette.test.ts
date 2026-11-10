@@ -44,6 +44,8 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      'PLOT',
+      'PRINT',
       'PROPERTIES',
       'PROPERTIESCLOSE',
       'QSAVE',

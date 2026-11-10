@@ -67,7 +67,6 @@ import {
   PATH_M,
   PATH_Q,
   PATH_Z,
-  type PlacedGlyph,
   type PrimitiveColor,
   type PrimitiveFrame,
   type RasterPixels,
@@ -103,7 +102,15 @@ export interface PlotPathPart extends PlotPartBase {
     readonly height: number;
   };
   /** TrueType text: the glyphs the fill's outlines draw (M2-16 part 3). */
-  readonly glyphs?: readonly PlacedGlyph[];
+  readonly glyphs?: readonly PlotGlyphPart[];
+}
+
+/** A placed TrueType glyph (`PlacedGlyph`), its font reduced to what a PDF embeds. */
+export interface PlotGlyphPart {
+  readonly font: { readonly bytes?: Uint8Array };
+  readonly index: number;
+  readonly codePoint: number;
+  readonly m: PrimitiveFrame;
 }
 
 export interface PlotPointPart extends PlotPartBase {

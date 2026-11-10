@@ -98,9 +98,9 @@ export type PaletteName = 'properties';
 
 /**
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows
- * the drawings it can recover again.
+ * the drawings it can recover again; `plot` (PLOT, PRINT; M2-17) opens the Plot dialog.
  */
-export type FileAction = 'qsave' | 'saveas' | 'close' | 'recover';
+export type FileAction = 'qsave' | 'saveas' | 'close' | 'recover' | 'plot';
 
 export type ViewReply =
   | {

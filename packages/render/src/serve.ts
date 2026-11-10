@@ -104,6 +104,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'flush':
         port.postMessage({ type: 'reply', id: m.id });
         break;
+      case 'plot':
+        port.postMessage({ type: 'plot', id: m.id, parts: session.plot(m.request) });
+        break;
       case 'extents':
         port.postMessage({ type: 'extents', id: m.id, box: session.extents() ?? null });
         break;

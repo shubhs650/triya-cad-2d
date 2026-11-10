@@ -31,6 +31,7 @@ export {
   pathPolygons,
   plotObject,
   plotParts,
+  type PlotGlyphPart,
   type PlotInfinitePart,
   type PlotPart,
   type PlotPathPart,
