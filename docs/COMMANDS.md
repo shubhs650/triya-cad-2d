@@ -97,7 +97,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 |---|---|---|---|---|
 | TEXT / DTEXT | DT | 1 | Justify (all), Style | ~ (#230: every justification incl. Align/Fit, Style with `?`, ↵ continues below the last text, typed in place one line at a time; TEXTSIZE follows the height; a click elsewhere starts the next line there, #232) |
 | MTEXT | T, MT | 1 | in-place editor; -MTEXT dash | x (#230: two corners or Width, Height/Justify/Line spacing/Rotation/Style; in-place editor with Bold, Italic, Underline, Overline, Strikethrough, Height, Color and Stack, Ctrl+Enter or a click outside to close, Esc to drop; -MTEXT and the command line take lines until an empty one. #232: Font list, AutoStack (`1/2 ` → diagonal fraction, `^` tolerance), Enter keeps the paragraph's formatting. #234: Columns option (Dynamic/Static/No columns, widths, gutter, height), the editor's Columns menu, Column Settings dialog and Alt+Enter column break, and the ruler (first-line and paragraph indents, tab stops). Manual column heights, column grips, tab types: M2-26; fields: M4-10) |
-| TEXTEDIT / DDEDIT | ED | 1 | Undo, Mode (Single/Multiple); double-click | ~ (#232: TEXT in its in-place line, MTEXT in its editor keeping the codes it has no control for; Undo, Mode; a double click on a TEXT or MTEXT runs it (DBLCLKEDIT); an emptied text is erased. an ATTDEF opens Edit Attribute Definition (tag, prompt, default; a multiline default in the MTEXT editor), #236; a dimension's text in the MTEXT editor with `<>` for the measurement, also on a double click, #241) |
+| TEXTEDIT / DDEDIT | ED | 1 | Undo, Mode (Single/Multiple); double-click | ~ (#232: TEXT in its in-place line, MTEXT in its editor keeping the codes it has no control for; Undo, Mode; a double click on a TEXT or MTEXT runs it (DBLCLKEDIT); an emptied text is erased. an ATTDEF opens Edit Attribute Definition (tag, prompt, default; a multiline default in the MTEXT editor), #236; a dimension's text in the MTEXT editor with `<>` for the measurement, also on a double click, #241; a text multileader's text in the MTEXT editor, also on a double click, #262) |
 | STYLE | ST | 2 | dialog; -STYLE dash | |
 | FIND | — | 2 | | |
 | SPELL | SP | 3 | | |
@@ -122,7 +122,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | DIMINSPECT | — | 3 | | |
 | DIMSTYLE | D, DST, DIMSTY | 2 | manager; -DIMSTYLE dash (Restore/Save/STatus/Variables/Apply) | |
 | DIMREGEN | — | 2 | regenerate from engine | |
-| MLEADER | MLD | 1 | leader/content first, Options | ~ (#233: arrowhead/landing/content first, Options, text and block content; annotative and built-in content blocks are M2-25) |
+| MLEADER | MLD | 1 | leader/content first, Options | ~ (#233: arrowhead/landing/content first, Options, text and block content; annotative multileaders are needs-human #263 / M2-43. AutoCAD's built-in content blocks `_DetailCallout`, `_TagCircle`, `_TagBox`, `_TagSlot`, `_TagHexagon`, `_TagTriangle` authored when the drawing lacks them, #262) |
 | MLEADEREDIT | MLE | 1 | Add/Remove | x (#233: also AIMLEADEREDITADD / AIMLEADEREDITREMOVE) |
 | MLEADERALIGN / MLEADERCOLLECT | MLA / MLC | 2 | | |
 | MLEADERSTYLE | MLS | 2 | | |

@@ -20,6 +20,7 @@ import type {
   MultiLeaderGeometry,
   TextStyleRecord,
 } from '../../model/types';
+import type { ChangeSetBuilder } from '../../model/builder';
 import {
   MLEADER_BLOCK,
   MLEADER_MTEXT,
@@ -32,6 +33,7 @@ import {
   constrainSegment,
   currentMLeaderStyle,
   landingAt,
+  multiLeaderMText,
   landingTo,
   newMultiLeader,
   removeLeaderLine,
@@ -43,6 +45,13 @@ import {
   type MLeaderSettings,
   type NewMultiLeader,
 } from '../../edit/mleader';
+import {
+  BUILTIN_MLEADER_BLOCKS,
+  addBuiltinMLeaderBlock,
+  builtinMLeaderBlock,
+  builtinMLeaderBlockName,
+  type BuiltinMLeaderBlock,
+} from '../../edit/mleader-blocks';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { currentLayer } from './line';
@@ -82,17 +91,27 @@ function namedBlock(model: DocumentModel, name: string): Handle | undefined {
   return undefined;
 }
 
-/** "Enter block name or [?]": a block of the drawing; undefined when the command ends. */
+/** A multileader as MLEADER builds it, with the built-in block to author for it, if any. */
+type Made = Omit<NewMultiLeader, 'style' | 'settings' | 'scale'> & {
+  readonly builtin?: BuiltinMLeaderBlock;
+};
+
+/** A block content: one of the drawing's, or a built-in one (M2-25) the drawing lacks. */
+type BlockChoice = { readonly handle: Handle } | { readonly builtin: string };
+
+/**
+ * "Enter block name or [?]": a block of the drawing, or one of AutoCAD's built-in content
+ * blocks the drawing lacks (authored with the multileader); undefined when the command ends.
+ */
 async function* askBlock(
   ctx: CommandContext,
-  current: Handle | undefined,
-): Sub<Handle | undefined> {
-  const name = current === undefined ? undefined : ctx.model.blocks.get(current)?.name;
+  current: string | undefined,
+): Sub<BlockChoice | undefined> {
   for (;;) {
     const a = yield ctx.prompt.string({
       message: 'Enter block name or',
       options: ['?'],
-      ...(name !== undefined && { default: { kind: 'string', value: name } }),
+      ...(current !== undefined && { default: { kind: 'string', value: current } }),
     });
     if (a.kind === 'keyword') {
       ctx.message('Defined blocks:');
@@ -101,21 +120,122 @@ async function* askBlock(
         .filter((n) => !n.startsWith('*'))
         .sort();
       for (const n of names) ctx.message(`  ${n}`);
+      ctx.message('Built-in blocks:');
+      for (const n of BUILTIN_MLEADER_BLOCKS) ctx.message(`  ${n}`);
       continue;
     }
     // Enter without a default ends the command; otherwise the answer is the name.
     const typed = (a as { readonly value?: string }).value;
     if (typed === undefined) return undefined;
     const h = namedBlock(ctx.model, typed);
-    if (h !== undefined) return h;
+    if (h !== undefined) return { handle: h };
+    const builtin = builtinMLeaderBlockName(typed);
+    if (builtin !== undefined) return { builtin };
     ctx.message(`Block "${typed.trim()}" not found.`);
   }
 }
 
+/** The name the settings' block content goes by, for the block name prompt's default. */
+function blockNameOf(model: DocumentModel, o: MLeaderSettings): string | undefined {
+  if (o.builtinBlock !== undefined) return o.builtinBlock;
+  return o.block === undefined ? undefined : model.blocks.get(o.block)?.name;
+}
+
+/** Settings whose block content is `choice`. */
+function withBlock(o: MLeaderSettings, choice: BlockChoice): MLeaderSettings {
+  const { block: _b, builtinBlock: _n, ...rest } = o;
+  return 'handle' in choice
+    ? { ...rest, block: choice.handle }
+    : { ...rest, builtinBlock: choice.builtin };
+}
+
+/**
+ * The block content as the multileader is built: a block of the drawing, or a built-in block
+ * to author with it (its extents and attribute definitions known before it is in the drawing).
+ */
+interface ContentBlock {
+  readonly handle?: Handle;
+  readonly builtin?: BuiltinMLeaderBlock;
+}
+
+/** The block content of settings `o`, or undefined when its block is not in the drawing. */
+function contentBlockOf(
+  model: DocumentModel,
+  style: MLeaderStyleRecord,
+  o: MLeaderSettings,
+  choice?: BlockChoice,
+): ContentBlock | undefined {
+  const c: BlockChoice | undefined =
+    choice ??
+    (o.builtinBlock !== undefined
+      ? { builtin: o.builtinBlock }
+      : o.block !== undefined && model.blocks.has(o.block)
+        ? { handle: o.block }
+        : undefined);
+  if (!c) return undefined;
+  if ('handle' in c) return { handle: c.handle };
+  // Added since it was chosen (by an earlier multileader): the drawing's own is used.
+  const there = namedBlock(model, c.builtin);
+  if (there !== undefined) return { handle: there };
+  const h =
+    style.textHeight > 0 ? style.textHeight : model.meta.measurement === 'imperial' ? 0.18 : 4;
+  const ts = textStyleFor(model, style);
+  if (!ts) return undefined;
+  const builtin = builtinMLeaderBlock(c.builtin, h, ts.handle);
+  return builtin && { builtin };
+}
+
+/** The block content of settings `o`; asks for another block when the style's is missing. */
+async function* askContentBlock(
+  ctx: CommandContext,
+  style: MLeaderStyleRecord,
+  o: MLeaderSettings,
+): Sub<ContentBlock | undefined> {
+  const known = contentBlockOf(ctx.model, style, o);
+  if (known) return known;
+  ctx.message('The style’s block is not in the drawing.');
+  const choice: BlockChoice | undefined = yield* askBlock(ctx, undefined);
+  if (choice === undefined) return undefined;
+  return contentBlockOf(ctx.model, style, o, choice);
+}
+
+/** A block content's extents about its base point. */
+const extentsOf = (model: DocumentModel, b: ContentBlock): Box | undefined =>
+  b.builtin ? b.builtin.extents : blockExtentsOf(model, b.handle!);
+
+/** Where a built-in block is not in the drawing yet: a stand-in for its handle until it is. */
+const UNAUTHORED: Handle = '';
+
+/**
+ * Authors the multileader's built-in block, if it has one, and points its content and attribute
+ * values at it. Returns the multileader as it is to be added.
+ */
+function authorBlock(b: ChangeSetBuilder, model: DocumentModel, made: Made): Omit<Made, 'builtin'> {
+  const { builtin, ...rest } = made;
+  if (!rest.block || !builtin) return rest;
+  const zero = [...model.tables.layers.values()].find((l) => l.name === '0')!.handle;
+  const authored = addBuiltinMLeaderBlock(b, builtin, zero);
+  return {
+    ...rest,
+    block: {
+      ...rest.block,
+      block: authored.block,
+      attributes: rest.block.attributes.map((a) => ({
+        ...a,
+        definition: authored.attdefs[a.index]!,
+      })),
+    },
+  };
+}
+
 /** The ATTDEFs a block's content asks values for: all but the constant ones, in order. */
-function attributeDefinitions(model: DocumentModel, block: Handle) {
+function attributeDefinitions(model: DocumentModel, block: ContentBlock) {
   const out: { handle: Handle; geom: AttdefGeometry }[] = [];
-  for (const id of model.blockEntities(block)) {
+  if (block.builtin) {
+    for (const geom of block.builtin.attdefs) out.push({ handle: UNAUTHORED, geom });
+    return out;
+  }
+  for (const id of model.blockEntities(block.handle!)) {
     const e = model.entity(id)!;
     if (e.geom.kind === 'ATTDEF' && (e.geom.flags & 2) === 0)
       out.push({ handle: e.handle, geom: e.geom });
@@ -124,7 +244,10 @@ function attributeDefinitions(model: DocumentModel, block: Handle) {
 }
 
 /** "Enter attribute values", one prompt per attribute, the definition's value the default. */
-async function* askAttributes(ctx: CommandContext, block: Handle): Sub<MultiLeaderAttribute[]> {
+async function* askAttributes(
+  ctx: CommandContext,
+  block: ContentBlock,
+): Sub<MultiLeaderAttribute[]> {
   const defs = attributeDefinitions(ctx.model, block);
   if (defs.length > 0) ctx.message('Enter attribute values');
   const out: MultiLeaderAttribute[] = [];
@@ -150,23 +273,6 @@ function textStyleFor(
   const own =
     style.textStyle === undefined ? undefined : model.tables.textStyles.get(style.textStyle);
   return own ?? currentTextStyle(model);
-}
-
-/** The multileader's text as the MTEXT it draws, for measuring. */
-function mtextOf(t: NonNullable<MultiLeaderGeometry['text']>): MTextGeometry {
-  return {
-    kind: 'MTEXT',
-    contents: t.content,
-    style: t.style,
-    position: t.position,
-    height: t.height,
-    width: t.width,
-    rotation: t.rotation,
-    attachment: t.attachment,
-    direction: t.flow,
-    lineSpacingStyle: t.lineSpacingStyle,
-    lineSpacing: t.lineSpacing,
-  };
 }
 
 /** The box the renderer measures an MTEXT to fill; undefined without a canvas or fonts. */
@@ -284,22 +390,30 @@ export function mleaderCommand(): CommandDef {
         }
         // The prompt's default is Options, so anything else is a point.
         const at = (a as { readonly point: Vec2 }).point;
-        let made: Omit<NewMultiLeader, 'style' | 'settings' | 'scale'> | undefined;
+        let made: Made | undefined;
         if (contentFirst) made = yield* contentFirstLeader(ctx, style, o, scale, at);
         else made = yield* leaderFirst(ctx, style, o, scale, mode === 'landing', at);
         if (!made) return;
         const layer = currentLayer(model);
+        const content = made;
+        let authored: Handle | undefined;
         ctx.edit((b) => {
           const { handle: _none, ...standard } = style;
           const s = existing ?? b.addTableRecord('mleaderStyles', standard);
+          const leader = authorBlock(b, model, content);
+          if (content.builtin) authored = leader.block?.block;
           const geom = newMultiLeader({
-            ...made,
+            ...leader,
             style: { ...style, handle: s.handle },
             settings: o,
             scale,
           });
           b.addEntity({ owner: ctx.space, layer, geom });
         });
+        // The next multileader takes the block now in the drawing.
+        if (authored !== undefined && o.builtinBlock !== undefined) {
+          settings = withBlock(o, { handle: authored });
+        }
         return;
       }
     },
@@ -349,9 +463,9 @@ async function* options(
         });
         const type = CONTENT_TYPES.indexOf(keyword(k));
         if (type === MLEADER_BLOCK) {
-          const block: Handle | undefined = yield* askBlock(ctx, o.block);
+          const block: BlockChoice | undefined = yield* askBlock(ctx, blockNameOf(ctx.model, o));
           if (block === undefined) return undefined;
-          o = { ...o, contentType: type, block };
+          o = { ...withBlock(o, block), contentType: type };
         } else o = { ...o, contentType: type };
         break;
       }
@@ -395,7 +509,7 @@ async function* leaderFirst(
   scale: number,
   landingFirst: boolean,
   start: Vec2,
-): Sub<Omit<NewMultiLeader, 'style' | 'settings' | 'scale'> | undefined> {
+): Sub<Made | undefined> {
   let points: Vec2[];
   let at: Vec2;
   if (landingFirst) {
@@ -441,7 +555,7 @@ function constrained(points: readonly Vec2[], p: Vec2, o: MLeaderSettings): Vec2
   return constrainSegment(points.at(-1)!, p, step);
 }
 
-type Content = Pick<NewMultiLeader, 'text' | 'block'>;
+type Content = Pick<Made, 'text' | 'block' | 'builtin'>;
 
 /** The content at the end of a landing: MTEXT from the editor, a block with its values, or none. */
 async function* contentAt(
@@ -491,22 +605,21 @@ async function* contentAt(
     return { text: { content, style: ts.handle, position, attachment, width: 0 } };
   }
   if (o.contentType === MLEADER_BLOCK) {
-    let block = o.block !== undefined && ctx.model.blocks.has(o.block) ? o.block : undefined;
-    if (block === undefined) {
-      ctx.message('The style’s block is not in the drawing.');
-      block = yield* askBlock(ctx, undefined);
-      if (block === undefined) return undefined;
-    }
+    const block: ContentBlock | undefined = yield* askContentBlock(ctx, style, o);
+    if (block === undefined) return undefined;
     const attributes: MultiLeaderAttribute[] = yield* askAttributes(ctx, block);
     const placed = blockScaleOf(style, scale);
     const position = blockAnchor(
       style,
       landing,
-      blockExtentsOf(ctx.model, block),
+      extentsOf(ctx.model, block),
       placed.scale,
       placed.rotation,
     );
-    return { block: { block, position, attributes } };
+    return {
+      block: { block: block.handle ?? UNAUTHORED, position, attributes },
+      ...(block.builtin && { builtin: block.builtin }),
+    };
   }
   return {};
 }
@@ -518,7 +631,7 @@ async function* contentFirstLeader(
   o: MLeaderSettings,
   scale: number,
   first: Vec2,
-): Sub<Omit<NewMultiLeader, 'style' | 'settings' | 'scale'> | undefined> {
+): Sub<Made | undefined> {
   const gap = style.landingGap * scale;
   const vertical = style.textAttachmentDirection === 1;
   if (o.contentType === MLEADER_MTEXT) {
@@ -580,13 +693,10 @@ async function* contentFirstLeader(
       text: { content, style: ts.handle, position, attachment, width },
     };
   }
-  let block = o.block !== undefined && ctx.model.blocks.has(o.block) ? o.block : undefined;
-  if (block === undefined) {
-    ctx.message('The style’s block is not in the drawing.');
-    block = yield* askBlock(ctx, undefined);
-    if (block === undefined) return undefined;
-  }
-  const attributes: MultiLeaderAttribute[] = yield* askAttributes(ctx, block);
+  const chosen: ContentBlock | undefined = yield* askContentBlock(ctx, style, o);
+  if (chosen === undefined) return undefined;
+  const block = chosen.handle ?? UNAUTHORED;
+  const attributes: MultiLeaderAttribute[] = yield* askAttributes(ctx, chosen);
   const a = yield ctx.prompt.point({ message: 'Specify leader arrowhead location' });
   if (a.kind !== 'point') return undefined;
   const arrow = a.point;
@@ -598,7 +708,10 @@ async function* contentFirstLeader(
     rotation: placed.rotation,
     color: style.blockColor,
   };
-  const box = style.blockConnection === 1 ? undefined : blockContentBox(ctx.model, content);
+  const box =
+    style.blockConnection === 1
+      ? undefined
+      : blockContentBox(ctx.model, content, chosen.builtin?.extents);
   const b = box ?? { minX: first.x, minY: first.y, maxX: first.x, maxY: first.y };
   const mid = { x: (b.minX + b.maxX) / 2, y: (b.minY + b.maxY) / 2 };
   let end: Vec2;
@@ -616,6 +729,7 @@ async function* contentFirstLeader(
     vertices: [arrow],
     landing: landingTo(end, d, style, scale),
     block: { block, position: first, attributes },
+    ...(chosen.builtin && { builtin: chosen.builtin }),
   };
 }
 
@@ -637,7 +751,7 @@ async function* pickMultiLeader(ctx: CommandContext): Sub<EntityId | undefined> 
 
 /** The box of a multileader's content: its text measured by the renderer, or its block's. */
 async function contentBox(ctx: CommandContext, g: MultiLeaderGeometry): Promise<Box | undefined> {
-  if (g.contentType === MLEADER_MTEXT && g.text) return measured(ctx, mtextOf(g.text));
+  if (g.contentType === MLEADER_MTEXT && g.text) return measured(ctx, multiLeaderMText(g.text));
   if (g.contentType === MLEADER_BLOCK && g.block) return blockContentBox(ctx.model, g.block);
   return undefined;
 }

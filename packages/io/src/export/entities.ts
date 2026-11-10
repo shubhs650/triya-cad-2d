@@ -245,6 +245,11 @@ export interface Resolver {
    * handed out, so it never meets one (CLAUDE.md: handles are never renumbered).
    */
   readonly allocate: () => number;
+  /**
+   * The entities the save adds, by handle: their types. They are all created before any entity
+   * is written, so one may name another.
+   */
+  readonly adding?: ReadonlyMap<Handle, string>;
   /** Table records the save adds (new layers), by handle, before they join the drawing. */
   readonly created: ReadonlyMap<Handle, CadObject>;
   /** The version the drawing is saved in (its own). */
@@ -1829,7 +1834,11 @@ function multiLeaderProblems(
   }
   if (d('block') && !same(before?.block?.attributes, g.block?.attributes)) {
     for (const a of g.block?.attributes ?? []) {
-      if (a.definition !== undefined && !resolve(r, a.definition, AttributeDefinition)) {
+      if (
+        a.definition !== undefined &&
+        !resolve(r, a.definition, AttributeDefinition) &&
+        r.adding?.get(a.definition) !== 'ATTDEF'
+      ) {
         out.push(`attribute definition ${a.definition} does not exist`);
       }
     }
