@@ -10,6 +10,7 @@ import { add, sub } from '../../geom/vec';
 import type { EntityId } from '../../model/entity-ids';
 import { copyObjects, gripObjects, refusalMessages, transformObjects } from '../../edit/edit';
 import { moveGrip } from '../../edit/grips';
+import { revcloudOf } from '../../edit/revcloud';
 import { mirrorIn, moveBy, scaleAbout, turnAbout, type Similarity } from '../../edit/similarity';
 import type { DocumentModel } from '../../model/document';
 import type { TransformOptions } from '../../edit/transform';
@@ -43,7 +44,7 @@ function copyStretched(
     for (const id of ids) {
       const e = b.entity(id);
       if (!e) continue;
-      const r = moveGrip(e.geom, grip, to);
+      const r = moveGrip(e.geom, grip, to, revcloudOf(ctx.model, e));
       if (r.kind === 'none' || r.kind === 'whole') continue;
       const t = r.kind === 'move' ? moveBy(sub(to, grip)) : moveBy({ x: 0, y: 0 });
       const [copy] = copyObjects(b, ctx.model, [id], t, mirrorOptions(ctx.model)).ids;

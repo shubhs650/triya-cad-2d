@@ -5,7 +5,15 @@
 // Rectangular asks for the opposite corner; Polygonal for points until Enter; Freehand follows
 // the crosshairs and closes when they come back to the start; Object turns a circle, ellipse,
 // polyline or spline into a cloud in its place. The cloud is an LWPOLYLINE of arcs
-// (edit/revcloud.ts). Modify (AutoCAD 2021+) is not offered yet (ROADMAP M2-24).
+// (edit/revcloud.ts).
+//
+// Modify (AutoCAD 2021+, M2-24) redraws part of a cloud: "Select polyline" (the vertex nearest
+// the pick starts the new stretch), "Specify next point" until a click lands on a vertex of the
+// cloud (within a quarter of its arc length: AutoCAD says "until you click an existing vertex"
+// and Endpoint snaps there exactly), "Pick a side to erase" and "Reverse direction". The cloud
+// keeps its handle and xdata; the new stretch takes the cloud's own arc length (its
+// RevcloudProps 1040, else its mean chord). Any polyline whose every segment is an arc can be
+// modified, as clouds drawn before AutoCAD 2021 have no xdata.
 //
 // The arc lengths and style stay for the drawing's session, as AutoCAD keeps them. AutoCAD
 // 2021+ sizes the first cloud's arcs as a fraction of the view's diagonal; the fraction is not
@@ -26,6 +34,9 @@ import {
   cloudPolyline,
   cloudRandom,
   cloudRunsOf,
+  cloudArcLength,
+  isCloudShaped,
+  modifyCloud,
   polygonRuns,
   rectangleCorners,
   type CloudStyle,
@@ -43,7 +54,7 @@ const keyword = (a: PromptAnswer): string => (a as { keyword: string }).keyword;
 
 export type CloudType = 'Rectangular' | 'Polygonal' | 'Freehand';
 
-const OPTIONS = ['Arc length', 'Object', 'Rectangular', 'Polygonal', 'Freehand', 'Style'];
+const OPTIONS = ['Arc length', 'Object', 'Rectangular', 'Polygonal', 'Freehand', 'Style', 'Modify'];
 
 const FIRST_POINT: Record<CloudType, string> = {
   Rectangular: 'Specify first corner point',
@@ -230,6 +241,83 @@ export function revcloudCommand(): CommandDef {
     }
   }
 
+  async function* modify(ctx: CommandContext): Sub<void> {
+    let picked: { e: Entity & { geom: LwPolylineGeometry }; at: Vec2 } | undefined;
+    while (!picked) {
+      const a = yield ctx.prompt.selection({
+        message: 'Select polyline',
+        single: true,
+        editable: true,
+      });
+      const sel = a as { ids: readonly EntityId[]; pick?: Vec2 };
+      if (sel.ids.length === 0) return;
+      const e = ctx.model.entity(sel.ids[0]!)!;
+      if (!isCloudShaped(e.geom)) {
+        ctx.message('Select a revision cloud.');
+        continue;
+      }
+      picked = {
+        e: e as Entity & { geom: LwPolylineGeometry },
+        at: sel.pick ?? e.geom.vertices[0]!,
+      };
+    }
+    const { e, at } = picked;
+    const g = e.geom;
+    const arc = cloudArcLength(ctx.model, e);
+    const nearest = (p: Vec2): number => {
+      let best = 0;
+      g.vertices.forEach((v, i) => {
+        if (distance(v, p) < distance(g.vertices[best]!, p)) best = i;
+      });
+      return best;
+    };
+    const start = nearest(at);
+    const points: Vec2[] = [];
+    const uniform: CloudStyle = { minArc: arc, maxArc: arc, calligraphy: false };
+    let end: number | undefined;
+    while (end === undefined) {
+      const from = points.at(-1) ?? g.vertices[start]!;
+      if (points.length > 0) {
+        const runs = polygonRuns([g.vertices[start]!, ...points]).slice(0, -1);
+        ctx.preview(
+          cloudArcCount(runs, uniform) <= REVCLOUD_MAX_ARCS
+            ? [cloudPolyline(cloudPoints(runs, false, uniform), false, uniform)]
+            : [],
+        );
+      }
+      const a = yield ctx.prompt.point({
+        message: points.length === 0 ? 'Specify next point' : 'Specify next point or',
+        ...(points.length > 0 && { options: ['Undo'] }),
+        rubberBand: { from },
+      });
+      if (a.kind === 'keyword') {
+        points.pop();
+        continue;
+      }
+      if (a.kind !== 'point') {
+        ctx.message('Click a vertex of the revision cloud to end the new stretch.');
+        continue;
+      }
+      const i = nearest(a.point);
+      if (distance(g.vertices[i]!, a.point) <= arc / 4 && i !== start) end = i;
+      else if (distance(a.point, from) > 0) points.push(a.point);
+    }
+    const path = [g.vertices[start]!, ...points, g.vertices[end]!];
+    const runs = polygonRuns(path).slice(0, -1);
+    if (tooMany(ctx, runs)) return;
+    // The new stretch shown while a side is picked.
+    ctx.preview([cloudPolyline(cloudPoints(runs, false, uniform), false, uniform)]);
+    const side = yield ctx.prompt.point({ message: 'Pick a side to erase' });
+    if (side.kind !== 'point') return;
+    let geom = modifyCloud(g, start, points, end, side.point, arc);
+    ctx.preview([geom]);
+    if (yield* reverse(ctx)) {
+      geom = { ...geom, vertices: geom.vertices.map((v) => ({ ...v, bulge: -v.bulge })) };
+    }
+    ctx.edit((b) => b.updateEntity(e.id, { geom }));
+    ctx.message('Revision cloud finished.');
+  }
+
   async function* rectangular(ctx: CommandContext, first: Vec2): Sub<void> {
     const a = yield ctx.prompt.point({
       message: 'Specify opposite corner',
@@ -338,6 +426,8 @@ export function revcloudCommand(): CommandDef {
           case 'Style':
             yield* arcStyle(ctx);
             break;
+          case 'Modify':
+            return yield* modify(ctx);
           default:
             type = keyword(a) as CloudType;
         }

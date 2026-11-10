@@ -37,6 +37,7 @@ import {
   layoutSheet,
   stretchGeometry,
   gripsOf,
+  revcloudOf,
   moveGrip,
   sameGrip,
   translation,
@@ -691,7 +692,7 @@ export class Canvas2DRenderer implements Renderer {
       for (const id of g.ids) {
         const e = this.#model.entity(id);
         if (!e || !this.#cache[id]) continue;
-        const r = moveGrip(e.geom, g.from, g.to);
+        const r = moveGrip(e.geom, g.from, g.to, revcloudOf(this.#model, e));
         if (r.kind === 'move') gripMoved.push(this.#cache[id]);
         if (r.kind !== 'shape') continue;
         // A dimension's grip reshapes it and the engine regenerates it (M2-11): drawn afresh.
@@ -1265,7 +1266,7 @@ export class Canvas2DRenderer implements Renderer {
     for (const id of grips.ids) {
       const e = this.#model.entity(id);
       if (!e) continue;
-      for (const g of gripsOf(e.geom)) {
+      for (const g of gripsOf(e.geom, revcloudOf(this.#model, e))) {
         const x = Math.round(m.a * (g.point.x - ox) + m.c * (g.point.y - oy) + m.e);
         const y = Math.round(m.b * (g.point.x - ox) + m.d * (g.point.y - oy) + m.f);
         if (seen.has(`${x},${y}`)) continue;

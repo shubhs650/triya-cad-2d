@@ -8,7 +8,11 @@
 // Reopened, each cloud is a closed LWPOLYLINE whose every bulge is AutoCAD's revision cloud bulge
 // with `RevcloudProps` xdata (what ezdxf's `revcloud.is_revcloud` asks), the wipeout keeps its
 // frame and boundary, WIPEOUTFRAME is off, and every layout draws in the order the session left.
-// With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit as the file's `markup` save.
+// The saved file is then opened again and its rectangular cloud modified with REVCLOUD Modify
+// (M2-24): saved once more, the cloud keeps its handle and xdata and has the new stretch. With
+// TRIYA_DXF_AUDIT_DIR set the first save goes to the ezdxf audit as the file's `markup` save
+// (the second is not audited: a Triya-saved file saved again loses dynamic block dictionary
+// entries on the acadsharp AC1015/AC1018 samples, ROADMAP M2-40).
 //
 // A drawing older than R14 (AC1014), which had no wipeouts or draw order (and before R11 no
 // xdata), saves them too: the save checks what it adds against AC1032, the version it writes
@@ -132,6 +136,38 @@ describe('the markup commands on the public corpus', () => {
       }
       expect(wipeoutFrame(back)).toBe(false);
       expect(layoutOrders(back)).toEqual(orders);
+
+      // REVCLOUD Modify on the saved rectangular cloud: (50,0) round (50,-30), (80,-30) to
+      // (80,0), the part of the bottom between erased.
+      const rect = back.entityByHandle(added[0]!.handle)!;
+      const backSpace = back.layouts.find((l) => l.name === 'Model')?.blockRecord;
+      const again = new PromptBus({
+        model: back,
+        registry: builtinCommands(),
+        ...(backSpace && { space: () => backSpace }),
+        view: {
+          request: (q) =>
+            Promise.resolve(
+              q.op === 'pick' ? { ok: true, ids: [rect.id] } : { ok: false, message: 'none' },
+            ),
+        },
+      });
+      await again.script(['REVCLOUD', 'M', '50,0', '50,-30', '80,-30', '80,0', '60,0', '']);
+      expect(again.command).toBeUndefined();
+      const modified = back.entity(rect.id)!.geom as LwPolylineGeometry;
+      // 60 arcs of 5 round the 300 perimeter, (55,0)…(75,0) erased, 17 vertices added.
+      expect(modified.vertices).toHaveLength(60 - 5 + 17);
+      const resaved = withPinnedClock(() => saveAc1032Dxf(readCadDocument(saved), back));
+      const third = DocumentModel.create(documentInit(readCadDocument(resaved)));
+      const r = third.entityByHandle(rect.handle)!;
+      const g = r.geom as LwPolylineGeometry;
+      expect(g.closed).toBe(true);
+      expect(g.vertices).toHaveLength(modified.vertices.length);
+      g.vertices.forEach((v, i) => {
+        const w = modified.vertices[i]!;
+        expect(near(v.x, w.x) && near(v.y, w.y) && near(v.bulge, w.bulge)).toBe(true);
+      });
+      expect(r.xdata).toEqual(rect.xdata);
     },
     PER_FILE_BUDGET_MS,
   );
