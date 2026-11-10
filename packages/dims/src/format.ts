@@ -20,7 +20,14 @@
 //   −DIMTM stacked at DIMTFAC times the text height (`{\H<f>x;\S+<p>^-<m>;}`), at DIMTDEC
 //   places with DIMTZIN's zeros. DIMLIM writes the upper and lower limits stacked the same way
 //   in place of the measurement (the two switch each other off; a file with both shows the
-//   limits). DIMTOLJ is not encoded: a stack sits on the text's middle (its default, 1).
+//   limits). DIMTOLJ (0 bottom, 1 middle, 2 top; "no effect unless DIMTOL is set to On") is
+//   the MTEXT alignment code the whole text starts with, `\A<DIMTOLJ>;`, which sets where the
+//   smaller deviations sit on the line (as ezdxf writes it; AutoCAD's help names no code). It
+//   takes the place of the `\A1;` a text centred on the dimension line starts with.
+// - Angular dimensions take deviations and limits too (M2-30): DIMTP and DIMTM in the angle's
+//   unit (degrees for DIMAUNIT 0 and 1, grads for 2, radians for 3, as ezdxf reads them),
+//   formatted like the measurement at DIMTDEC places with DIMTZIN's leading (4) and trailing (8)
+//   zeros dropped. No alternate units: DIMALT is for linear dimensions.
 // - DIMALT appends the alternate measurement in brackets: the measurement × DIMLFAC × DIMALTF
 //   by DIMALTU, DIMALTD, DIMALTZ and DIMALTRND, DIMAPOST around it, its deviations by DIMALTTD
 //   and DIMALTTZ. In an override `[]` stands for it; otherwise `<>` stands for both.
@@ -192,6 +199,18 @@ export function dimensionText(override: string, measured: string, vars: Vars): s
   return override.includes('<>') ? override.replace('<>', value) : override;
 }
 
+/**
+ * The MTEXT alignment code a dimension's text starts with: DIMTOLJ when DIMTOL adds deviations,
+ * else `\A1;` for a text centred on the dimension line (DIMTAD 0, DIMTVP 0), else nothing.
+ */
+export function textAlign(centred: boolean, vars: Vars): string {
+  if (on(vars.DIMTOL) && !on(vars.DIMLIM)) {
+    const j = Math.min(2, Math.max(0, Math.round(num(vars.DIMTOLJ, 1))));
+    return `\\A${j};`;
+  }
+  return centred ? '\\A1;' : '';
+}
+
 /** A signed deviation as AutoCAD writes it: + or − before it, none on zero. */
 function deviation(value: number, vars: Vars): string {
   const text = formatLinear(Math.abs(value), vars);
@@ -269,4 +288,46 @@ export function linearText(
     return override.replace('<>', primary).replace('[]', alternate);
   const both = alternate === undefined ? primary : `${primary} [${alternate}]`;
   return override.includes('<>') ? override.replace('<>', both) : override;
+}
+
+/** Radians in one DIMAUNIT unit: a degree (decimal or DMS), a grad or a radian. */
+function angleUnit(vars: Vars): number {
+  const u = num(vars.DIMAUNIT);
+  return u === 2 ? Math.PI / 200 : u === 3 ? 1 : Math.PI / 180;
+}
+
+/**
+ * An angular measurement's whole text: the override, the angle by DIMAUNIT with DIMPOST, and
+ * DIMTOL deviations or DIMLIM limits. Undefined when a single space suppresses the text.
+ */
+export function angularText(override: string, radians: number, vars: Vars): string | undefined {
+  if (override === ' ') return undefined;
+  const k = angleUnit(vars);
+  const tp = num(vars.DIMTP) * k;
+  const tm = num(vars.DIMTM) * k;
+  const tzin = num(vars.DIMTZIN);
+  const tolVars: Vars = {
+    ...vars,
+    DIMADEC: num(vars.DIMTDEC, num(vars.DIMDEC, 4)),
+    DIMAZIN: ((tzin & 4) !== 0 ? 1 : 0) | ((tzin & 8) !== 0 ? 2 : 0),
+  };
+  const post = str(vars.DIMPOST);
+  let value: string;
+  if (on(vars.DIMLIM)) {
+    const upper = formatAngle(radians + tp, tolVars);
+    const lower = formatAngle(radians - tm, tolVars);
+    value = applyPost(stack(upper, lower, vars), post);
+  } else {
+    value = applyPost(formatAngle(radians, vars), post);
+    if (on(vars.DIMTOL)) {
+      const dev = (v: number) => {
+        const text = formatAngle(Math.abs(v), tolVars);
+        return /[1-9]/.test(text) ? (v < 0 ? '-' : '+') + text : text;
+      };
+      value +=
+        tp === tm ? `%%p${formatAngle(Math.abs(tp), tolVars)}` : stack(dev(tp), dev(-tm), vars);
+    }
+  }
+  if (override === '') return value;
+  return override.includes('<>') ? override.replace('<>', value) : override;
 }

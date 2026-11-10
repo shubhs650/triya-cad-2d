@@ -8,7 +8,15 @@
 
 export type { DimPart } from './geometry';
 export { dimStyle, type DimStyle } from './style';
-export { formatAngle, formatLinear, dimensionText, applyPost, linearText } from './format';
+export {
+  angularText,
+  applyPost,
+  dimensionText,
+  formatAngle,
+  formatLinear,
+  linearText,
+  textAlign,
+} from './format';
 export { dimensionParts, generates } from './parts';
 export { measuredText, regenerateDimension, type RegeneratedDimension } from './regenerate';
 export * from './health';

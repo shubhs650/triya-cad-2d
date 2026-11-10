@@ -117,7 +117,7 @@ export const num = (v: DimVarValue | undefined, fallback = 0): number =>
 /** A DIMVAR switch: records keep booleans, `DSTYLE` overrides 0 and 1. */
 export const on = (v: DimVarValue | undefined): boolean => num(v) !== 0;
 export const str = (v: DimVarValue | undefined): string => (typeof v === 'string' ? v : '');
-const ref = (v: DimVarValue | undefined): Handle | undefined =>
+export const ref = (v: DimVarValue | undefined): Handle | undefined =>
   typeof v === 'string' && v !== '' && v !== '0' ? v : undefined;
 
 function props(
