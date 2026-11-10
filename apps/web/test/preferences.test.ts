@@ -45,6 +45,7 @@ describe('preferences', () => {
       otrack: true,
       markerSize: 5,
       aperture: 10,
+      pdfOsnap: true,
     });
   });
 
@@ -54,7 +55,14 @@ describe('preferences', () => {
       canvas: { model: '#FFFFFF', paper: 'red', grid: '#00ff00', selection: 7 },
       coordinates: 'hex',
       dynMode: false,
-      drafting: { osmode: OSNAP.MID, polarAngle: 33, markerSize: 40, aperture: 25, otrack: 'no' },
+      drafting: {
+        osmode: OSNAP.MID,
+        polarAngle: 33,
+        markerSize: 40,
+        aperture: 25,
+        otrack: 'no',
+        pdfOsnap: false,
+      },
       unknown: 1,
     });
     expect(p.theme).toBe('dark');
@@ -67,6 +75,7 @@ describe('preferences', () => {
       osmode: OSNAP.MID,
       markerSize: 20,
       aperture: 25,
+      pdfOsnap: false,
     });
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
     expect(normalizePreferences('junk')).toEqual(DEFAULT_PREFERENCES);
@@ -144,5 +153,8 @@ describe('preferences', () => {
     // The Settings dialog changes the store; the status bar follows.
     s.update({ drafting: { ...s.get().drafting, polarAngle: 15 } });
     expect(drafting.get().polarAngle).toBe(15);
+    // PDFOSNAP is AutoCAD's per user too (M2-22).
+    drafting.configure({ pdfOsnap: false });
+    expect(m.saved.at(-1)?.drafting.pdfOsnap).toBe(false);
   });
 });

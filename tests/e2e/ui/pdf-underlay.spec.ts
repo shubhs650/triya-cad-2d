@@ -7,6 +7,7 @@
 // drawing comes with the fidelity harness (M1-24).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
+import type { ChangeSet } from '@triya/engine';
 import { colourAt, expectShown, ink, openWithDrop, openWithPicker, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 
@@ -100,4 +101,88 @@ test('draws PDF underlay pages once their file is dropped, from the cache when r
     .toBe(true);
   await page.waitForTimeout(1000);
   expect(await pdfRenders(page)).toBe(zoomedIn);
+});
+
+/** The LINE entities the drawing's commands added, as [x1, y1, x2, y2]. */
+async function linesAdded(page: Page): Promise<number[][]> {
+  const changes = await page.evaluate(() =>
+    (window as unknown as { triyaDev: { changes(): readonly ChangeSet[] } }).triyaDev.changes(),
+  );
+  const out: number[][] = [];
+  for (const cs of changes) {
+    for (const { entity } of cs.entities?.added ?? []) {
+      if (entity.geom.kind !== 'LINE') continue;
+      const { start, end } = entity.geom;
+      out.push([start.x, start.y, end.x, end.y]);
+    }
+  }
+  return out;
+}
+
+/** A point of page 2 (inches) in the drawing: half size, turned 30° about (12, 0). */
+const onPage2 = (x: number, y: number) => {
+  const cos = Math.cos(Math.PI / 6);
+  const sin = Math.sin(Math.PI / 6);
+  return { x: 12 + 0.5 * (x * cos - y * sin), y: 0.5 * (x * sin + y * cos) };
+};
+
+test('snaps to the PDF page’s grid corners inside the clip, and nothing outside it (M2-22)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const prompt = page.getByTestId('command-prompt');
+  const tip = page.getByTestId('autosnap-tip');
+  const type = async (text: string, next: string) => {
+    if (text) await page.keyboard.type(text);
+    await page.keyboard.press('Enter');
+    await expect(prompt).toHaveText(next);
+  };
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, 'pdf-underlay.dxf');
+  await openWithDrop(page, PDF);
+  await expectShown(page, 'pdf-underlay.dxf');
+  // Page 2's grid around its corners (3, 4), inside the pentagon, and (3, 7), above its roof.
+  await type(
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type('10.8,1.8', 'Specify opposite corner:');
+  await type('13.4,4.4', 'Command:');
+  await expect.poll(() => pdfRenders(page), { timeout: 30_000 }).toBeGreaterThanOrEqual(1);
+
+  const view = await viewOf(page);
+  const move = (p: { x: number; y: number }, dx = 0, dy = 0) => {
+    const s = view.at(p.x, p.y);
+    return page.mouse.move(view.box.x + s.x + dx, view.box.y + s.y + dy);
+  };
+  const inside = onPage2(3, 4);
+  const outside = onPage2(3, 7);
+
+  await type('L', 'Specify first point:');
+  // Above the roof the grid lines are clipped away: nothing to snap to.
+  await move(outside, 4, -3);
+  await move(outside, 3, -3);
+  await page.waitForTimeout(500);
+  await expect(tip).toBeHidden();
+  // A few pixels off the corner inside: AutoSnap marks the intersection and the click takes it.
+  await expect
+    .poll(
+      async () => {
+        await move(inside, 4, -3);
+        await move(inside, 3, -3);
+        return tip.getAttribute('data-mode', { timeout: 1000 }).catch(() => null);
+      },
+      { timeout: 30_000 },
+    )
+    .toBe('INT');
+  await expect(tip).toHaveText('Intersection');
+  await page.mouse.down();
+  await page.mouse.up();
+  await expect(prompt).toHaveText('Specify next point or [Undo]:');
+  await type('@1,0', 'Specify next point or [Undo]:');
+  await type('', 'Command:');
+  const [line] = await linesAdded(page);
+  expect(Math.abs(line![0]! - inside.x)).toBeLessThan(1e-6);
+  expect(Math.abs(line![1]! - inside.y)).toBeLessThan(1e-6);
 });

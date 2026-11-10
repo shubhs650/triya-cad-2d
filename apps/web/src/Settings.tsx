@@ -378,6 +378,14 @@ function DraftingSettings() {
       <label className="setting-check">
         <input
           type="checkbox"
+          checked={d.pdfOsnap}
+          onChange={(e) => drafting.configure({ pdfOsnap: e.currentTarget.checked })}
+        />
+        Snap to PDF underlays (PDFOSNAP)
+      </label>
+      <label className="setting-check">
+        <input
+          type="checkbox"
           checked={dyn}
           onChange={(e) => dynMode.set(e.currentTarget.checked)}
         />

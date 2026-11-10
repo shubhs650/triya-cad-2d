@@ -8,10 +8,15 @@
 // little soft rather than the app running out of memory. Only the latest request per page of
 // each canvas is drawn; one superseded while waiting is skipped.
 //
+// Each page's vector geometry (M2-22), for running object snaps under PDFOSNAP, is read once
+// (pdf.js parses the page in its worker) and cached with the file; a canvas gets it for each
+// definition the first time it asks for that definition's page, and again when the file is
+// replaced.
+//
 // Files are matched to PDFDEFINITIONs by file name without its folder, ignoring case, as the
 // definition's path is the attaching computer's (`..\plans\plan.pdf`). Finding files on the
 // user's disk and the Missing References panel are M1-21.
-import type { Box, PdfDefinition } from '@triya/engine';
+import type { Box, PdfDefinition, UnderlaySnapPage } from '@triya/engine';
 import type { RasterPixels, UnderlayRaster, UnderlayRequest } from '@triya/render';
 
 /** An opened PDF, as pdf.js serves it (pdfjs.ts). */
@@ -24,6 +29,8 @@ export interface PdfFile {
    * pixels, straight RGBA with the paper clear.
    */
   render(page: number, region: Box, width: number, height: number): Promise<RasterPixels>;
+  /** A page's painted paths in page inches, for running object snaps (M2-22). */
+  snapGeometry?(page: number): Promise<UnderlaySnapPage>;
 }
 
 export type OpenPdf = (bytes: Uint8Array) => Promise<PdfFile>;
@@ -42,12 +49,16 @@ export interface UnderlayClient {
 }
 
 type Deliver = (definition: string, raster: UnderlayRaster | undefined) => void;
+type DeliverSnap = (definition: string, page: UnderlaySnapPage | undefined) => void;
 
 interface Client {
   readonly definitions: ReadonlyMap<string, PdfDefinition>;
   readonly deliver: Deliver;
   /** The latest request per definition. */
   readonly latest: Map<string, UnderlayRequest>;
+  readonly deliverSnap: DeliverSnap | undefined;
+  /** The definitions whose page geometry was sent (or is on its way). */
+  readonly snapped: Set<string>;
 }
 
 interface Cached {
@@ -75,7 +86,15 @@ export class PdfPages {
   readonly #open: OpenPdf;
   readonly #maxPixels: number;
   readonly #cacheBytes: number;
-  readonly #files = new Map<string, { readonly bytes: Uint8Array; opened?: Promise<PdfFile> }>();
+  readonly #files = new Map<
+    string,
+    {
+      readonly bytes: Uint8Array;
+      opened?: Promise<PdfFile>;
+      /** Page geometry by page number. */
+      readonly snaps: Map<number, Promise<UnderlaySnapPage | undefined>>;
+    }
+  >();
   readonly #clients = new Set<Client>();
   /** Least recently used first. */
   readonly #cache = new Map<string, Cached>();
@@ -84,6 +103,8 @@ export class PdfPages {
   #queue: Promise<void> = Promise.resolve();
   /** pdf.js renders done (tests check the cache spares them). */
   renders = 0;
+  /** Pages whose geometry pdf.js read (tests check each is read once). */
+  snapReads = 0;
 
   constructor(open: OpenPdf, o: PdfPagesOptions = {}) {
     this.#open = open;
@@ -97,7 +118,7 @@ export class PdfPages {
    */
   add(name: string, bytes: Uint8Array): void {
     const key = fileKey(name);
-    this.#files.set(key, { bytes });
+    this.#files.set(key, { bytes, snaps: new Map() });
     for (const [k, c] of this.#cache) {
       if (k.startsWith(`${key}#`)) {
         this.#cache.delete(k);
@@ -107,7 +128,10 @@ export class PdfPages {
     for (const client of this.#clients) {
       for (const r of client.latest.values()) {
         const def = client.definitions.get(r.definition);
-        if (def && fileKey(def.fileName) === key) this.#serve(client, r);
+        if (def && fileKey(def.fileName) === key) {
+          client.snapped.delete(r.definition);
+          this.#serve(client, r);
+        }
       }
     }
   }
@@ -117,12 +141,21 @@ export class PdfPages {
     return this.#files.has(fileKey(fileName));
   }
 
-  /** A canvas of a drawing with these PDFDEFINITIONs. */
-  client(definitions: readonly PdfDefinition[], deliver: Deliver): UnderlayClient {
+  /**
+   * A canvas of a drawing with these PDFDEFINITIONs: pages are delivered as asked, and with
+   * `deliverSnap` each definition's page geometry once (M2-22).
+   */
+  client(
+    definitions: readonly PdfDefinition[],
+    deliver: Deliver,
+    deliverSnap?: DeliverSnap,
+  ): UnderlayClient {
     const client: Client = {
       definitions: new Map(definitions.map((d) => [d.handle, d])),
       deliver,
       latest: new Map(),
+      deliverSnap,
+      snapped: new Set(),
     };
     this.#clients.add(client);
     return {
@@ -139,6 +172,13 @@ export class PdfPages {
     if (!def) return;
     const file = this.#files.get(fileKey(def.fileName));
     if (!file) return;
+    if (client.deliverSnap && !client.snapped.has(r.definition)) {
+      client.snapped.add(r.definition);
+      void this.#snap(file, def.page).then((page) => {
+        if (page && this.#clients.has(client) && this.#files.get(fileKey(def.fileName)) === file)
+          client.deliverSnap?.(r.definition, page);
+      });
+    }
     this.#queue = this.#queue.then(async () => {
       if (!this.#clients.has(client) || client.latest.get(r.definition) !== r) return;
       try {
@@ -149,6 +189,31 @@ export class PdfPages {
         // A file pdf.js cannot read shows as a missing page: the boundary only.
       }
     });
+  }
+
+  /** A page's geometry, read once per file; undefined when pdf.js cannot read it. */
+  #snap(
+    file: {
+      readonly bytes: Uint8Array;
+      opened?: Promise<PdfFile>;
+      readonly snaps: Map<number, Promise<UnderlaySnapPage | undefined>>;
+    },
+    pageName: string,
+  ): Promise<UnderlaySnapPage | undefined> {
+    file.opened ??= this.#open(file.bytes);
+    return file.opened
+      .then(async (pdf) => {
+        if (!pdf.snapGeometry) return undefined;
+        const n = pageNumber(pageName, pdf.pageCount);
+        let got = file.snaps.get(n);
+        if (!got) {
+          this.snapReads++;
+          got = pdf.snapGeometry(n).catch(() => undefined);
+          file.snaps.set(n, got);
+        }
+        return got;
+      })
+      .catch(() => undefined);
   }
 
   async #raster(

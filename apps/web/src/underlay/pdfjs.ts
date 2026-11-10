@@ -3,8 +3,11 @@
 // fetched: no standard-font, CMap, ICC or wasm URL is given, so a PDF naming a standard font it
 // does not embed draws with the browser's own (the privacy rule, PRD G6), and wasm decoders
 // stay off.
+//
+// Snap geometry (M2-22): pdf.js parses the page into its operator list in its worker, and the
+// painted paths are read from that list (render's `underlaySnapFromOperatorList`).
 import type { Box } from '@triya/engine';
-import type { RasterPixels } from '@triya/render';
+import { underlaySnapFromOperatorList, type RasterPixels } from '@triya/render';
 import type { OpenPdf, PdfFile } from './pages';
 
 /** PDF points per inch, the underlay unit. */
@@ -62,6 +65,11 @@ export const openPdf: OpenPdf = async (bytes) => {
       }).promise;
       const data = ctx.getImageData(0, 0, width, height).data;
       return { width, height, data };
+    },
+    async snapGeometry(n) {
+      const p = await page(n);
+      const list = await p.getOperatorList();
+      return underlaySnapFromOperatorList(list, lib.OPS, p.getViewport({ scale: 1 }));
     },
   };
   return file;
