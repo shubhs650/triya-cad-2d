@@ -317,7 +317,7 @@ export const metadataLookupEntities: readonly ClassMetadata[] = [
         "valueCodes": [
           51
         ],
-        "referenceType": 8
+        "referenceType": 40
       },
       {
         "propertyName": "insertionPoint",
@@ -386,7 +386,7 @@ export const metadataLookupEntities: readonly ClassMetadata[] = [
         "valueCodes": [
           53
         ],
-        "referenceType": 8
+        "referenceType": 40
       },
       {
         "propertyName": "version",

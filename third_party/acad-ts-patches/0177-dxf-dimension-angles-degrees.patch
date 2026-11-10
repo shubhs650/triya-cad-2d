@@ -1,0 +1,22 @@
+diff --git a/src/Metadata/LookupTables/Entities.ts b/src/Metadata/LookupTables/Entities.ts
+index f82307c..292ae37 100644
+--- a/src/Metadata/LookupTables/Entities.ts
++++ b/src/Metadata/LookupTables/Entities.ts
+@@ -317,7 +317,7 @@ export const metadataLookupEntities: readonly ClassMetadata[] = [
+         "valueCodes": [
+           51
+         ],
+-        "referenceType": 8
++        "referenceType": 40
+       },
+       {
+         "propertyName": "insertionPoint",
+@@ -386,7 +386,7 @@ export const metadataLookupEntities: readonly ClassMetadata[] = [
+         "valueCodes": [
+           53
+         ],
+-        "referenceType": 8
++        "referenceType": 40
+       },
+       {
+         "propertyName": "version",
