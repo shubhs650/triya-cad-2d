@@ -61,3 +61,27 @@ function firstFrame(canvas: HTMLCanvasElement, timeout: number): Promise<boolean
     );
   });
 }
+
+/**
+ * A thumbnail as a PNG, to keep (the start screen's recent drawings, M2-32). It goes through a
+ * `bitmaprenderer` canvas, so nothing draws in 2D outside the renderer; the bitmap is handed
+ * over and closed.
+ */
+export async function pngOf(bitmap: ImageBitmap): Promise<Blob> {
+  if (typeof OffscreenCanvas !== 'undefined') {
+    const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+    const ctx = canvas.getContext('bitmaprenderer');
+    if (!ctx) throw new Error('no bitmap renderer');
+    ctx.transferFromImageBitmap(bitmap);
+    return canvas.convertToBlob({ type: 'image/png' });
+  }
+  const canvas = document.createElement('canvas');
+  canvas.width = bitmap.width;
+  canvas.height = bitmap.height;
+  const ctx = canvas.getContext('bitmaprenderer');
+  if (!ctx) throw new Error('no bitmap renderer');
+  ctx.transferFromImageBitmap(bitmap);
+  return new Promise((resolve, reject) =>
+    canvas.toBlob((b) => (b ? resolve(b) : reject(new Error('no picture'))), 'image/png'),
+  );
+}

@@ -243,6 +243,57 @@ describe('Autosaver', () => {
   });
 });
 
+describe('Autosaver snapshots written (M2-32)', () => {
+  it('tells of each snapshot once it is written, so the start screen can picture it', async () => {
+    const store = new DocumentStore();
+    const mem = memory();
+    const c = clock();
+    const logs = new Map<number, ChangeSet[]>();
+    const written: number[] = [];
+    const saver = new Autosaver({
+      persistence: mem.p,
+      session: 'S1',
+      changesOf: (doc) => logs.get(doc) ?? [],
+      timers: c.timers,
+      now: c.now,
+      onWritten: (doc) => written.push(doc.id),
+    });
+    store.subscribe(() => saver.update(store.getSnapshot().docs));
+    store.startOpening('plan.dxf');
+    const id = store.opened('plan.dxf', opened, '1F', FILE);
+    logs.set(id, [change(0)]);
+    store.edited(id);
+    c.advance(AUTOSAVE_DELAY_MS - 1);
+    await saver.idle();
+    expect(written).toEqual([]);
+    c.advance(1);
+    await saver.idle();
+    expect(written).toEqual([id]);
+  });
+
+  it('does not tell of a write that failed', async () => {
+    const { store, c, open, edit } = setup();
+    const written: number[] = [];
+    const saver = new Autosaver({
+      persistence: {
+        list: () => Promise.resolve([]),
+        put: () => Promise.reject(new Error('quota')),
+        get: () => Promise.resolve(undefined),
+        remove: () => Promise.resolve(),
+      },
+      session: 'S2',
+      changesOf: () => [],
+      timers: c.timers,
+      onWritten: (doc) => written.push(doc.id),
+    });
+    store.subscribe(() => saver.update(store.getSnapshot().docs));
+    edit(open('plan.dxf'));
+    c.advance(AUTOSAVE_DELAY_MS);
+    await saver.idle();
+    expect(written).toEqual([]);
+  });
+});
+
 describe('RecoveryOffers', () => {
   const info = (key: string, session: string, savedAt: number): RecoveryInfo => ({
     key,

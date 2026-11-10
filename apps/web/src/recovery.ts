@@ -92,6 +92,8 @@ export interface AutosaverOptions {
   readonly now?: () => number;
   /** A write failed; said once per drawing until a write succeeds. */
   readonly onError?: (message: string) => void;
+  /** A snapshot of `doc` was written (the start screen's picture of it is taken then, M2-32). */
+  readonly onWritten?: (doc: OpenDocument) => void;
 }
 
 export class Autosaver {
@@ -215,6 +217,7 @@ export class Autosaver {
         t.failed = true;
         return;
       }
+      this.#o.onWritten?.(t.doc);
       if (t.replaces) {
         const old = t.replaces;
         delete t.replaces;

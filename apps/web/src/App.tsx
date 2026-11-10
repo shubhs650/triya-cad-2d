@@ -19,7 +19,7 @@ import type {
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
-import { pictureOf, type PictureSize } from './canvas/picture';
+import { pictureOf, pngOf, type PictureSize } from './canvas/picture';
 import {
   allControllers,
   controllerOf,
@@ -68,6 +68,7 @@ import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import { Pwa, type ContainerLike, type InstallPromptLike } from './pwa';
 import { InstallButton, OfflineStatus, UpdateBanner } from './PwaChrome';
 import { RecentFiles, indexedDbRecent, type RecentHandle } from './recent';
+import { RECENT_THUMBNAIL, RecentDrawings } from './RecentDrawings';
 import { Autosaver, RecoveryOffers } from './recovery';
 import { indexedDbRecovery, webLocks } from './recovery-browser';
 import { RecoveryBanner } from './RecoveryBanner';
@@ -138,6 +139,7 @@ const autosaver = new Autosaver({
   session,
   changesOf: (doc) => engines.changesOf(doc),
   onError: (message) => store.fail(message),
+  onWritten: (doc) => void pictureForRecent(doc.id),
 });
 store.subscribe(() => autosaver.update(store.getSnapshot().docs));
 const recoveryOffers = new RecoveryOffers(recoveryStore, sessionLocks, session);
@@ -146,6 +148,27 @@ void recoveryOffers.load();
 /** Recent drawings (M2-14, recent.ts): the start screen and the Ctrl+K palette list them. */
 const recent = new RecentFiles(indexedDbRecent());
 void recent.load();
+
+/** How long closing a drawing waits for its picture before it closes anyway. */
+const PICTURE_ON_CLOSE_MS = 2_000;
+
+/**
+ * Takes the start screen's picture of drawing `id` (M2-32, UI_SPEC §10): its canvas as last
+ * drawn, kept with its recent entry. A drawing with no file handle is not listed, so it has none.
+ */
+async function pictureForRecent(id: number): Promise<void> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  const handle = doc?.file?.handle;
+  const controller = doc && controllerOf(doc.id, doc.block);
+  if (!handle || !controller) return;
+  try {
+    const bitmap = await controller.thumbnail(RECENT_THUMBNAIL);
+    if (!bitmap) return;
+    await recent.setThumbnail(handle as RecentHandle, await pngOf(bitmap));
+  } catch {
+    // A picture is a nicety: the list works without one.
+  }
+}
 
 /**
  * The service worker (M2-19, pwa.ts): offline caching and "Ready offline", the update prompt and
@@ -333,7 +356,8 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
     const r = await saveDrawing(doc.name, doc.file, savedChanges(doc), mode, saveEnv);
     if (r.ok) {
       store.saved(id, r.name, r.file, edits);
-      if (r.file.handle) void recent.add(r.file.handle as RecentHandle);
+      const handle = r.file.handle;
+      if (handle) void recent.add(handle as RecentHandle).then(() => pictureForRecent(id));
     } else if (!r.cancelled) store.fail(r.message);
     return r.ok;
   } finally {
@@ -352,6 +376,15 @@ async function closeDoc(id: number): Promise<boolean> {
     const answer = await saveChanges.ask(doc.name);
     if (answer === 'cancel') return false;
     if (answer === 'yes' && !(await saveDoc(id, 'qsave'))) return false;
+  }
+  // Closed with nothing unsaved, the start screen pictures it as it is now; closed with its
+  // changes thrown away, it keeps the picture of its last autosave or save (M2-32).
+  const now = store.getSnapshot().docs.find((d) => d.id === id);
+  if (now && !isDirty(now)) {
+    await Promise.race([
+      pictureForRecent(id),
+      new Promise((resolve) => setTimeout(resolve, PICTURE_ON_CLOSE_MS)),
+    ]);
   }
   if (previewMode.get()?.doc === id) previewMode.close();
   lastPlotSettings.forget(id);
@@ -1287,24 +1320,7 @@ export function App() {
               <button type="button" onClick={pick}>
                 Open drawing…
               </button>
-              {recentFiles.length > 0 && (
-                <section className="recent" aria-label="Recent drawings">
-                  <h2>Recent drawings</h2>
-                  <ul>
-                    {recentFiles.map((r) => (
-                      <li key={r.key}>
-                        <button
-                          type="button"
-                          title={`Opened ${new Date(r.openedAt).toLocaleString()}`}
-                          onClick={() => void openRecent(r.key)}
-                        >
-                          {r.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
+              <RecentDrawings entries={recentFiles} onOpen={(key) => void openRecent(key)} />
               <p className="privacy">Drawings never leave this device.</p>
             </div>
           )}

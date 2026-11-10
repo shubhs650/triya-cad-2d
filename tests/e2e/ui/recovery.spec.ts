@@ -116,6 +116,100 @@ async function fakeSavePicker(page: Page): Promise<void> {
   });
 }
 
+/** The recent drawings' kept pictures (M2-32): name and a digest of each PNG, if any. */
+function recentPictures(page: Page): Promise<{ name: string; digest?: string }[]> {
+  return page.evaluate(async () => {
+    const db = await new Promise<IDBDatabase>((resolve, reject) => {
+      const r = indexedDB.open('triya-recent', 1);
+      r.onupgradeneeded = () => r.result.createObjectStore('files', { keyPath: 'key' });
+      r.onsuccess = () => resolve(r.result);
+      r.onerror = () => reject(r.error);
+    });
+    const rows = await new Promise<{ name: string; thumbnail?: Blob }[]>((resolve, reject) => {
+      const all = db.transaction('files').objectStore('files').getAll();
+      all.onsuccess = () => resolve(all.result as { name: string; thumbnail?: Blob }[]);
+      all.onerror = () => reject(all.error);
+    });
+    db.close();
+    const hex = (b: ArrayBuffer) =>
+      [...new Uint8Array(b)].map((x) => x.toString(16).padStart(2, '0')).join('');
+    return Promise.all(
+      rows.map(async (r) => ({
+        name: r.name,
+        ...(r.thumbnail
+          ? {
+              digest: hex(await crypto.subtle.digest('SHA-256', await r.thumbnail.arrayBuffer())),
+            }
+          : {}),
+      })),
+    );
+  });
+}
+
+/** How many colours the start screen's picture of `name` shows: 1 is a blank picture. */
+function pictureColours(page: Page, name: string): Promise<number> {
+  return page
+    .getByRole('region', { name: 'Recent drawings' })
+    .getByRole('button', { name })
+    .locator('img')
+    .evaluate(async (img: HTMLImageElement) => {
+      await img.decode();
+      const c = document.createElement('canvas');
+      c.width = img.naturalWidth;
+      c.height = img.naturalHeight;
+      const ctx = c.getContext('2d')!;
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(0, 0, c.width, c.height).data;
+      const seen = new Set<number>();
+      for (let i = 0; i < d.length; i += 4) seen.add((d[i]! << 16) | (d[i + 1]! << 8) | d[i + 2]!);
+      return seen.size;
+    });
+}
+
+/** A persistent profile whose open picker hands out real origin-private file handles. */
+async function handleProfile(
+  playwright: Parameters<Parameters<typeof test>[2]>[0]['playwright'],
+  launchOptions: Parameters<Parameters<typeof test>[2]>[0]['launchOptions'],
+) {
+  const profile = mkdtempSync(path.join(tmpdir(), 'triya-recent-'));
+  const context = await playwright.chromium.launchPersistentContext(profile, launchOptions);
+  const page = context.pages()[0] ?? (await context.newPage());
+  await page.addInitScript(() => {
+    Object.assign(window, {
+      showOpenFilePicker: async () => {
+        const root = await navigator.storage.getDirectory();
+        const name = (window as unknown as { __next: string }).__next;
+        return [await root.getFileHandle(name)];
+      },
+    });
+  });
+  await page.goto(app.url);
+  return {
+    page,
+    /** Opens `file` from the origin-private file system through the Open button. */
+    async open(file: string) {
+      const url = await serve(page, file);
+      await page.evaluate(
+        async ({ url, name }) => {
+          const bytes = await (await fetch(url)).arrayBuffer();
+          const root = await navigator.storage.getDirectory();
+          const w = await (await root.getFileHandle(name, { create: true })).createWritable();
+          await w.write(bytes);
+          await w.close();
+          (window as unknown as { __next: string }).__next = name;
+        },
+        { url, name: path.basename(file) },
+      );
+      await page.getByRole('button', { name: 'Open', exact: true }).click();
+      await expectShown(page, path.basename(file));
+    },
+    async close() {
+      await context.close();
+      rmSync(profile, { recursive: true, force: true });
+    },
+  };
+}
+
 const lineCount = (text: string) => text.match(/\r?\n\s*0\r?\nLINE\r?\n/g)?.length ?? 0;
 
 test('a killed tab leaves its unsaved drawing, which the next launch recovers', async ({
@@ -201,36 +295,11 @@ test('drawings opened through a file handle are listed as recent and reopen from
 }) => {
   // A profile on disk, as a user's is: a test context is off the record, and its Chromium
   // closes a page that reads a kept origin-private handle back from IndexedDB (references.spec).
-  const profile = mkdtempSync(path.join(tmpdir(), 'triya-recent-'));
-  const context = await playwright.chromium.launchPersistentContext(profile, launchOptions);
+  const p = await handleProfile(playwright, launchOptions);
+  const { page } = p;
   try {
-    const page = context.pages()[0] ?? (await context.newPage());
-    await page.addInitScript(() => {
-      // The open picker hands out a real handle to a file in the origin-private file system.
-      Object.assign(window, {
-        showOpenFilePicker: async () => {
-          const root = await navigator.storage.getDirectory();
-          const name = (window as unknown as { __next: string }).__next;
-          return [await root.getFileHandle(name)];
-        },
-      });
-    });
-    await page.goto(app.url);
     await expect(page.getByRole('region', { name: 'Recent drawings' })).toHaveCount(0);
-    const url = await serve(page, DXF32);
-    await page.evaluate(
-      async ({ url, name }) => {
-        const bytes = await (await fetch(url)).arrayBuffer();
-        const root = await navigator.storage.getDirectory();
-        const w = await (await root.getFileHandle(name, { create: true })).createWritable();
-        await w.write(bytes);
-        await w.close();
-        (window as unknown as { __next: string }).__next = name;
-      },
-      { url, name: NAME },
-    );
-    await page.getByRole('button', { name: 'Open', exact: true }).click();
-    await expectShown(page, NAME);
+    await p.open(DXF32);
     await page.getByRole('button', { name: `Close ${NAME}` }).click();
     await expect(tab(page)).toHaveCount(0);
 
@@ -252,7 +321,56 @@ test('drawings opened through a file handle are listed as recent and reopen from
     await page.keyboard.press('Enter');
     await expectShown(page, NAME);
   } finally {
-    await context.close();
-    rmSync(profile, { recursive: true, force: true });
+    await p.close();
+  }
+});
+
+test('the start screen pictures each recent drawing as last autosaved or closed (M2-32)', async ({
+  playwright,
+  launchOptions,
+}) => {
+  const p = await handleProfile(playwright, launchOptions);
+  const { page } = p;
+  try {
+    await p.open(DXF32);
+    // Opened, it is listed with no picture yet.
+    await expect.poll(() => recentPictures(page)).toEqual([{ name: NAME }]);
+    await page.screenshot({ path: test.info().outputPath('1-drawing-open.png') });
+
+    // An edit is autosaved within 5 s, and the drawing is pictured then.
+    await drawLine(page);
+    await expect.poll(() => snapshots(page), { timeout: 10_000 }).toHaveLength(1);
+    await expect
+      .poll(async () => (await recentPictures(page))[0]?.digest, { timeout: 10_000 })
+      .toBeDefined();
+    const autosaved = (await recentPictures(page))[0]!.digest;
+
+    // Closed with its changes thrown away, it keeps the picture of its last autosave.
+    await page.getByRole('button', { name: `Close ${NAME}` }).click();
+    await page.getByRole('dialog').getByRole('button', { name: 'No' }).click();
+    await expect(tab(page)).toHaveCount(0);
+    expect((await recentPictures(page))[0]!.digest).toBe(autosaved);
+
+    // The start screen shows it, after a reload too.
+    await page.reload();
+    const card = page
+      .getByRole('region', { name: 'Recent drawings' })
+      .getByRole('button', { name: NAME });
+    await expect(card.locator('.recent-thumbnail')).toHaveAttribute('data-drawn', 'true');
+    expect(await pictureColours(page, NAME)).toBeGreaterThan(2);
+    await page.screenshot({ path: test.info().outputPath('2-start-screen-pictures.png') });
+
+    // Opened again and closed with nothing unsaved, it is pictured as it shows now.
+    await card.click();
+    await expectShown(page, NAME);
+    await page.getByRole('button', { name: `Close ${NAME}` }).click();
+    await expect(tab(page)).toHaveCount(0);
+    await expect(page.getByRole('dialog')).toHaveCount(0);
+    const closed = (await recentPictures(page))[0]!.digest;
+    expect(closed).toBeDefined();
+    expect(closed).not.toBe(autosaved);
+    await expect(card.locator('.recent-thumbnail')).toHaveAttribute('data-drawn', 'true');
+  } finally {
+    await p.close();
   }
 });

@@ -106,6 +106,34 @@ describe('RecentFiles', () => {
     expect(r.getSnapshot().map((e) => e.name)).toEqual(['denied.dxf']);
   });
 
+  it('keeps a picture of a listed drawing through reloads and reopening (M2-32)', async () => {
+    const mem = memory();
+    const r = new RecentFiles(mem.p, now);
+    const h = handle('plan.dxf');
+    await r.add(h);
+    await r.add(handle('other.dxf'));
+    const picture = new Blob(['png'], { type: 'image/png' });
+    await r.setThumbnail(h, picture);
+    expect(r.getSnapshot().find((e) => e.name === 'plan.dxf')?.thumbnail).toBe(picture);
+    expect(mem.rows().find((e) => e.name === 'plan.dxf')?.thumbnail).toBe(picture);
+    // Opened again, it goes to the top with its picture until a new one is taken.
+    await r.add(h);
+    expect(r.getSnapshot()[0]).toMatchObject({ name: 'plan.dxf', thumbnail: picture });
+    const reloaded = new RecentFiles(memory(mem.rows()).p, now);
+    await reloaded.load();
+    expect(reloaded.getSnapshot()[0]?.thumbnail).toBe(picture);
+  });
+
+  it('takes no picture of a drawing it does not list', async () => {
+    const mem = memory();
+    const r = new RecentFiles(mem.p, now);
+    await r.add(handle('a.dxf'));
+    const saved = mem.rows();
+    await r.setThumbnail(handle('b.dxf'), new Blob(['png']));
+    expect(r.getSnapshot().map((e) => e.thumbnail)).toEqual([undefined]);
+    expect(mem.rows()).toBe(saved);
+  });
+
   it('works without a store, for this visit only', async () => {
     const r = new RecentFiles(
       {
