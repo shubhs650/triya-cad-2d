@@ -16,6 +16,7 @@ import { selectCommand } from './select';
 import { PALETTE_COMMANDS } from './palettes';
 import { viewCommand } from './view/named-view';
 import { panCommand, regenCommand, zoomCommand } from './view/zoom';
+import { UNDO_COMMANDS } from './undo-commands';
 
 export function builtinCommands(): CommandRegistry {
   return new CommandRegistry([
@@ -39,5 +40,7 @@ export function builtinCommands(): CommandRegistry {
     ...FILE_COMMANDS.map((make) => make()),
     ...CLIPBOARD_COMMANDS.map((make) => make()),
     ...PALETTE_COMMANDS.map((make) => make()),
+    // UNDO, U, REDO and OOPS (M2-05) keep no state of their own: the bus's history holds it.
+    ...UNDO_COMMANDS,
   ]);
 }

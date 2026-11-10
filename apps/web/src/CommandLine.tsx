@@ -9,6 +9,7 @@ import { builtinCommands, keywordShortcut } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from './CommandPalette';
 import { clipboardCommand, completions, promptParts, type CommandLines } from './command-line';
+import { undoKeyCommand } from './undo';
 import { DynamicInput } from './DynamicInput';
 import { dynMode } from './dynamic-input';
 import { DRAFTING_ITEMS, DRAFTING_KEYS, drafting, type DraftingToggle } from './drafting';
@@ -171,9 +172,10 @@ export function CommandLine({
         e.preventDefault();
         return selectAllRef.current();
       }
-      // The Clipboard keys (M2-14 part 2) copy and paste objects, unless they would copy or
-      // paste text: anywhere text is typed but an empty command line.
-      const clip = clipboardCommand(e);
+      // The Clipboard keys (M2-14 part 2) copy and paste objects, and Ctrl+Z and Ctrl+Y run U
+      // and REDO (M2-23), unless they would copy, paste or undo text: anywhere text is typed
+      // but an empty command line. Like a ribbon button, each cancels a running command first.
+      const clip = clipboardCommand(e) ?? undoKeyCommand(e);
       if (clip) {
         const field = e.target instanceof HTMLInputElement ? e.target : undefined;
         const typing =

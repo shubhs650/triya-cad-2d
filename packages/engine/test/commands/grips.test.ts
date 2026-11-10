@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   PromptBus,
-  UNDO_COMMANDS,
   builtinCommands,
   type BusEvent,
   type Entity,
@@ -19,7 +18,6 @@ const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
 function setup() {
   const model = DocumentModel.create(sampleInit());
   const registry = builtinCommands();
-  for (const def of UNDO_COMMANDS) registry.register(def);
   const bus = new PromptBus({ model, registry });
   const log: string[] = [];
   const grips: BusEvent[] = [];

@@ -8,7 +8,6 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   PromptBus,
-  UNDO_COMMANDS,
   builtinCommands,
   doubleClickCommand,
   dragMotion,
@@ -179,7 +178,6 @@ function setup(o: { styles?: DimStyleRecord[]; dimensions?: boolean } = {}) {
     return { ok: false, message: 'not drawn' };
   };
   const registry = builtinCommands();
-  for (const def of UNDO_COMMANDS) registry.register(def);
   const bus = new PromptBus({
     model,
     registry,

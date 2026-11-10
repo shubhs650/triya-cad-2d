@@ -52,7 +52,7 @@ import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
 import { gripsOf } from '../edit/grips';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
-import { UndoStack, type UndoState } from './undo';
+import { UndoStack, type UndoAction, type UndoState } from './undo';
 import { applyPropertyEdit, type PropertyEdit } from '../properties/edit';
 import { filtered } from '../properties/sheet';
 import type { EntityType } from '../model/types';
@@ -108,7 +108,12 @@ export type BusEvent =
   /** A command (with any transparent commands run inside it) ended having edited the drawing. */
   | { readonly type: 'commit'; readonly record: CommandRecord }
   /** The undo history changed (a step added, undone or redone, a mark, a group, Control). */
-  | { readonly type: 'undo'; readonly state: UndoState }
+  | {
+      readonly type: 'undo';
+      readonly state: UndoState;
+      /** What an undo or a redo did (M2-23's toast); absent for any other change. */
+      readonly action?: UndoAction;
+    }
   /**
    * The objects to show grips on (M2-06): the selection at `Command:` (up to GRIPOBJLIMIT
    * objects), with the hot grip while grip editing; none while another command runs.
@@ -232,7 +237,8 @@ export class PromptBus {
     this.#undo = new UndoStack({
       apply: (cs) => this.#apply(cs),
       ...(options.undoLimitBytes !== undefined ? { maxBytes: options.undoLimitBytes } : {}),
-      onChange: (state) => this.#emit({ type: 'undo', state }),
+      onChange: (state, action) =>
+        this.#emit(action ? { type: 'undo', state, action } : { type: 'undo', state }),
       onMessage: (line) => this.#log(line),
     });
   }

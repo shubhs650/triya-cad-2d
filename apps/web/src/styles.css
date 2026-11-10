@@ -138,6 +138,8 @@ button {
 .open-button,
 .save-button,
 .save-as-button,
+.undo-button,
+.redo-button,
 .install-button,
 .settings-button,
 .start button,
@@ -154,6 +156,8 @@ button {
 .open-button:hover,
 .save-button:hover:enabled,
 .save-as-button:hover:enabled,
+.undo-button:hover:enabled,
+.redo-button:hover:enabled,
 .settings-button:hover,
 .start button:hover,
 .settings button:hover,
@@ -606,7 +610,9 @@ button {
 
 /* M2-13: Save and Save As beside Open, the dirty dot of a tab, and "Save changes to …?". */
 .save-button:disabled,
-.save-as-button:disabled {
+.save-as-button:disabled,
+.undo-button:disabled,
+.redo-button:disabled {
   color: var(--chrome-text-muted);
 }
 
@@ -1842,4 +1848,33 @@ button {
 
 .attedit-rows .cad-dialog-field > span {
   min-width: 140px;
+}
+
+/* M2-23: the undo toast (UI_SPEC §11), over the drawing area above the command line. */
+.undo-toast-region {
+  position: fixed;
+  bottom: 96px;
+  left: 50%;
+  z-index: 20;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.undo-toast {
+  padding: 6px 14px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+  font-size: 13px;
+  white-space: nowrap;
+  animation: undo-toast-in var(--motion) ease-out;
+}
+
+@keyframes undo-toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
 }
