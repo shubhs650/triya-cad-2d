@@ -7,6 +7,11 @@
 //   factor, obliquing, backwards, upside down) and properties (layer, linetype, colour,
 //   lineweight). Apply keeps the dialog open, Select block picks another reference, OK closes.
 //   A multiline attribute's value opens the in-place MTEXT editor from its `...` button.
+//   M2-27: the Justification (the insertion point stays where it is and the text moves about
+//   it, as AutoCAD's Properties palette changes a text's justification; JUSTIFYTEXT is the one
+//   that keeps the text still), the Plot style of a named-plot-style drawing, and Annotative,
+//   shown only (DEC-013). A block picked by one of its attributes, or double-clicked on one,
+//   opens with that attribute selected in the list.
 // - ATTEDIT: "Select block reference:", then the Edit Attributes dialog: values only.
 // - -ATTEDIT: the command-line version: one at a time (Value/Position/Height/Angle/Style/Layer/
 //   Color/Next on each attribute) or globally (a string replaced in every value), filtered by
@@ -19,8 +24,17 @@ import { dynamicBlockOf } from '../../model/dynamic-block';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
-import type { Color, Entity, InsertAttribute, InsertGeometry } from '../../model/types';
+import type {
+  Color,
+  Entity,
+  InsertAttribute,
+  InsertGeometry,
+  MTextGeometry,
+  TextFields,
+  TextGeometry,
+} from '../../model/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
+import type { TextOutline } from '../view/host';
 import type { AttributeEntry, AttributePatch, NamedRecord, Prompt, PromptAnswer } from '../prompt';
 import { mtextEditorRequest } from '../draw/text';
 
@@ -76,11 +90,161 @@ export function attributeEntries(model: DocumentModel, g: InsertGeometry): Attri
       oblique: a.oblique,
       backward: a.backward,
       upsideDown: a.upsideDown,
+      ...(a.mtext && { attachment: a.mtext.attachment }),
       layer: a.layer,
       color: a.color,
       linetype: a.linetype,
       lineweight: a.lineweight,
+      plotStyle: a.plotStyle ?? null,
+      annotative: a.annotative !== undefined,
     }));
+}
+
+/**
+ * The justifications EATTEDIT offers a single-line attribute, as AutoCAD's Justification list
+ * names them, with their DXF 72/73.
+ */
+export const JUSTIFICATIONS: readonly {
+  readonly name: string;
+  readonly halign: number;
+  readonly valign: number;
+}[] = [
+  { name: 'Left', halign: 0, valign: 0 },
+  { name: 'Center', halign: 1, valign: 0 },
+  { name: 'Right', halign: 2, valign: 0 },
+  { name: 'Aligned', halign: 3, valign: 0 },
+  { name: 'Middle', halign: 4, valign: 0 },
+  { name: 'Fit', halign: 5, valign: 0 },
+  { name: 'Top left', halign: 0, valign: 3 },
+  { name: 'Top center', halign: 1, valign: 3 },
+  { name: 'Top right', halign: 2, valign: 3 },
+  { name: 'Middle left', halign: 0, valign: 2 },
+  { name: 'Middle center', halign: 1, valign: 2 },
+  { name: 'Middle right', halign: 2, valign: 2 },
+  { name: 'Bottom left', halign: 0, valign: 1 },
+  { name: 'Bottom center', halign: 1, valign: 1 },
+  { name: 'Bottom right', halign: 2, valign: 1 },
+];
+
+/** Aligned (3) and Fit (5) run between DXF 10 and DXF 11. */
+const twoPoint = (halign: number) => halign === 3 || halign === 5;
+
+/** The point a text is placed by: DXF 10 for left-baseline, Aligned and Fit, DXF 11 otherwise. */
+export function insertionPoint(t: TextFields): Vec2 {
+  if (twoPoint(t.halign) || (t.halign === 0 && t.valign === 0) || !t.alignmentPoint) {
+    return t.position;
+  }
+  return t.alignmentPoint;
+}
+
+/** A point given in the text's own axes (x along the baseline), mirrors applied, from `at`. */
+function along(t: TextFields, at: Vec2, x: number, y: number): Vec2 {
+  const cos = Math.cos(t.rotation);
+  const sin = Math.sin(t.rotation);
+  const mx = t.backward ? -x : x;
+  const my = t.upsideDown ? -y : y;
+  return { x: at.x + mx * cos - my * sin, y: at.y + mx * sin + my * cos };
+}
+
+/**
+ * A single-line text's alignment points under another justification (M2-27), its insertion
+ * point kept, as AutoCAD's Properties palette changes Justify: DXF 11 becomes the insertion
+ * point and DXF 10, which AutoCAD derives, the baseline start the renderer then draws from
+ * (`outline`, the text as drawn now: its advance and descent). Aligned and Fit run from the
+ * insertion point for the text's advance. Without an outline (no font drawing it) DXF 10 stays
+ * at the insertion point, and Aligned or Fit cannot be given (undefined).
+ */
+export function rejustified(
+  t: TextFields,
+  halign: number,
+  valign: number,
+  outline?: TextOutline,
+): Pick<TextFields, 'position' | 'alignmentPoint' | 'halign' | 'valign'> | undefined {
+  const at = insertionPoint(t);
+  if (twoPoint(halign)) {
+    // Between two points, or from the old start for as long as the text now runs.
+    if (twoPoint(t.halign) && t.alignmentPoint) {
+      return { position: t.position, alignmentPoint: t.alignmentPoint, halign, valign: 0 };
+    }
+    if (!outline) return undefined;
+    return { position: at, alignmentPoint: along(t, at, outline.width, 0), halign, valign: 0 };
+  }
+  if (halign === 0 && valign === 0) {
+    return { position: at, ...(t.alignmentPoint && { alignmentPoint: at }), halign, valign };
+  }
+  if (!outline) return { position: at, alignmentPoint: at, halign, valign };
+  // The renderer's offsets of the baseline start from the alignment point (text.ts, drawText).
+  const { width, below } = outline;
+  const h = t.height;
+  const dx = halign === 1 || halign === 4 ? -width / 2 : halign === 2 ? -width : 0;
+  const dy =
+    halign === 4
+      ? -(h - below) / 2
+      : valign === 1
+        ? below
+        : valign === 2
+          ? -h / 2
+          : valign === 3
+            ? -h
+            : 0;
+  return { position: along(t, at, dx, dy), alignmentPoint: at, halign, valign };
+}
+
+/** What an attribute draws: its value as a TEXT, or a multiline attribute's MTEXT. */
+const drawnText = (a: InsertAttribute): TextGeometry | MTextGeometry =>
+  a.mtext ?? { ...a, kind: 'TEXT' };
+
+/** ATTMODE (ATTDISP): which attributes a reference shows, as the renderer draws them. */
+function shown(ctx: CommandContext, a: InsertAttribute): boolean {
+  const mode = ctx.model.header.get('$ATTMODE');
+  if (mode === 0) return false;
+  return mode === 2 || (a.flags & INVISIBLE) === 0;
+}
+
+/** How far `p` lies outside the polygon `corners` (0 inside). */
+function outside(p: Vec2, corners: readonly Vec2[]): number {
+  let inside = false;
+  let d = Infinity;
+  for (let i = 0, j = corners.length - 1; i < corners.length; j = i++) {
+    const a = corners[i]!;
+    const b = corners[j]!;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) {
+      inside = !inside;
+    }
+    const ex = b.x - a.x;
+    const ey = b.y - a.y;
+    const len = ex * ex + ey * ey;
+    const k = len > 0 ? Math.max(0, Math.min(1, ((p.x - a.x) * ex + (p.y - a.y) * ey) / len)) : 0;
+    d = Math.min(d, Math.hypot(p.x - (a.x + k * ex), p.y - (a.y + k * ey)));
+  }
+  return inside ? 0 : d;
+}
+
+/**
+ * The editable attribute of the reference `id` whose text, as drawn, is within the pickbox of
+ * `point` (M2-27: EATTEDIT selects the attribute a block was picked or double-clicked by), the
+ * nearest when several are; undefined when none is, or nothing on the canvas draws them.
+ */
+export async function attributeAt(
+  ctx: CommandContext,
+  id: EntityId,
+  point: Vec2,
+): Promise<Handle | undefined> {
+  const g = ctx.model.entity(id)?.geom;
+  if (g?.kind !== 'INSERT') return undefined;
+  const candidates = g.attributes.filter((a) => (a.flags & CONSTANT) === 0 && shown(ctx, a));
+  if (candidates.length === 0) return undefined;
+  const r = await ctx.view.request({ op: 'textOutlines', texts: candidates.map(drawnText) });
+  if (!r.ok || !r.outlines) return undefined;
+  const pickbox = r.pickbox ?? 0;
+  let best: { handle: Handle; d: number } | undefined;
+  candidates.forEach((a, i) => {
+    const o = r.outlines![i];
+    if (!o) return;
+    const d = outside(point, o.corners);
+    if (d <= pickbox && (!best || d < best.d)) best = { handle: a.handle, d };
+  });
+  return best?.handle;
 }
 
 /** What a patch may change on the ATTRIB itself, and on a multiline one's MTEXT too. */
@@ -103,24 +267,55 @@ const MTEXT_PATCHED = ['style', 'height', 'rotation'] as const;
 const same = (a: unknown, b: unknown) => JSON.stringify(a) === JSON.stringify(b);
 
 /**
+ * The patch gives a single-line attribute another justification. An annotative one's stays:
+ * each annotation scale keeps its own placement (DEC-013 leaves those as read).
+ */
+const rejustifies = (a: InsertAttribute, p: AttributePatch): boolean =>
+  !a.mtext &&
+  !a.annotative &&
+  ((p.halign !== undefined && p.halign !== a.halign) ||
+    (p.valign !== undefined && p.valign !== a.valign));
+
+/**
  * One attribute with a dialog's changes; the same object when nothing changes. A multiline
  * attribute keeps its text in its embedded MTEXT: the value is the MTEXT's contents (DXF 1 of
  * the ATTRIB stays as read), and the style, height and rotation change on both, so the two
- * never disagree.
+ * never disagree; its justification is the MTEXT's attachment, about its insertion point. A
+ * single-line attribute's new justification keeps its insertion point (`rejustified`, with
+ * `outline`, the text as drawn before the patch); one Aligned or Fit cannot take without an
+ * outline is left as it was. A null plot style is ByLayer.
  */
-export function patchAttribute(a: InsertAttribute, p: AttributePatch): InsertAttribute {
+export function patchAttribute(
+  a: InsertAttribute,
+  p: AttributePatch,
+  outline?: TextOutline,
+): InsertAttribute {
   const changes: Record<string, unknown> = {};
   for (const k of PATCHED) {
     if (p[k] !== undefined && !same(p[k], a[k])) changes[k] = p[k];
+  }
+  if (rejustifies(a, p)) {
+    const j = rejustified(a, p.halign ?? a.halign, p.valign ?? a.valign, outline);
+    if (j) Object.assign(changes, j);
+  }
+  let base: InsertAttribute = a;
+  if (p.plotStyle !== undefined && p.plotStyle !== (a.plotStyle ?? null)) {
+    if (p.plotStyle === null) {
+      const { plotStyle: _byLayer, ...rest } = a;
+      base = rest;
+    } else changes['plotStyle'] = p.plotStyle;
   }
   if (a.mtext) {
     delete changes['value'];
     const m: Record<string, unknown> = {};
     if (p.value !== undefined && p.value !== a.mtext.contents) m['contents'] = p.value;
     for (const k of MTEXT_PATCHED) if (k in changes) m[k] = changes[k];
+    if (p.attachment !== undefined && p.attachment !== a.mtext.attachment) {
+      m['attachment'] = p.attachment;
+    }
     if (Object.keys(m).length > 0) changes['mtext'] = { ...a.mtext, ...m };
   }
-  return Object.keys(changes).length > 0 ? { ...a, ...changes } : a;
+  return Object.keys(changes).length > 0 || base !== a ? { ...base, ...changes } : a;
 }
 
 /** An attribute moved by `d` (-ATTEDIT Position): both alignment points and its MTEXT. */
@@ -135,15 +330,36 @@ function moved(a: InsertAttribute, d: Vec2): InsertAttribute {
 }
 
 /**
- * Applies a dialog's changes to the reference's attributes as one edit. Returns whether
- * anything changed (a dialog closed without changes edits nothing).
+ * Applies a dialog's changes to the reference's attributes as one edit (a dialog closed
+ * without changes edits nothing). A new justification asks the canvas where the text lies now.
  */
-function applyPatches(ctx: CommandContext, id: EntityId, patches: readonly AttributePatch[]): void {
+async function applyPatches(
+  ctx: CommandContext,
+  id: EntityId,
+  patches: readonly AttributePatch[],
+): Promise<void> {
   const g = ctx.model.entity(id)!.geom as InsertGeometry;
   const byHandle = new Map(patches.map((p) => [p.handle, p]));
+  const moving = g.attributes.filter((a) => {
+    const p = byHandle.get(a.handle);
+    return p !== undefined && rejustifies(a, p);
+  });
+  const outlines = new Map<Handle, TextOutline>();
+  if (moving.length > 0) {
+    const r = await ctx.view.request({ op: 'textOutlines', texts: moving.map(drawnText) });
+    moving.forEach((a, i) => {
+      const o = r.ok ? r.outlines?.[i] : undefined;
+      if (o) outlines.set(a.handle, o);
+    });
+  }
   const attributes = g.attributes.map((a) => {
     const p = byHandle.get(a.handle);
-    return p ? patchAttribute(a, p) : a;
+    if (!p) return a;
+    const next = patchAttribute(a, p, outlines.get(a.handle));
+    if (rejustifies(a, p) && next.halign === a.halign && next.valign === a.valign) {
+      ctx.message(`The ${a.tag} attribute cannot be measured: its justification is unchanged.`);
+    }
+    return next;
   });
   if (attributes.every((a, i) => a === g.attributes[i])) return;
   ctx.edit((b) => b.updateEntity(id, { geom: { ...g, attributes } }));
@@ -177,22 +393,22 @@ async function* editMultiline(
     spaces: true,
     editor: mtextEditorRequest(ctx.model, mtext),
   });
-  if (answer.kind === 'string') applyPatches(ctx, id, [{ handle, value: answer.value }]);
+  if (answer.kind === 'string') await applyPatches(ctx, id, [{ handle, value: answer.value }]);
   return answer.kind === 'string' || answer.kind === 'enter';
 }
 
 /**
- * Picks the reference whose attributes a dialog edits. Returns its id, or undefined when the
- * drafter ended the command.
+ * Picks the reference whose attributes a dialog edits. Returns its id and where it was picked
+ * (or double-clicked), or undefined when the drafter ended the command.
  */
 async function* pickReference(
   ctx: CommandContext,
   message: string,
   pickfirst: boolean,
-): AsyncGenerator<Prompt, EntityId | undefined, PromptAnswer> {
+): AsyncGenerator<Prompt, { id: EntityId; pick?: Vec2 } | undefined, PromptAnswer> {
   for (;;) {
     const a = yield ctx.prompt.selection({ message, editable: true, single: true, pickfirst });
-    const ids = (a as Answer<'selection'>).ids;
+    const { ids, pick } = a as Answer<'selection'>;
     if (ids.length === 0) return undefined;
     const e = ids.map((id) => ctx.model.entity(id)!).find((x) => x.geom.kind === 'INSERT');
     if (!e) {
@@ -203,8 +419,15 @@ async function* pickReference(
       ctx.message('That block has no editable attributes.');
       continue;
     }
-    return e.id;
+    return { id: e.id, ...(pick && { pick }) };
   }
+}
+
+/** The named plot styles an attribute may take: none in a colour-dependent drawing. */
+function plotStyleChoices(ctx: CommandContext): NamedRecord[] | undefined {
+  const mode = ctx.model.header.get('$PSTYLEMODE');
+  if (mode !== 0 && mode !== false) return undefined;
+  return records(ctx.model.tables.plotStyles.values());
 }
 
 /**
@@ -219,10 +442,13 @@ export function eatteditCommand(): CommandDef {
     async *run(ctx): CommandGenerator {
       let pickfirst = true;
       for (;;) {
-        const id = yield* pickReference(ctx, 'Select a block', pickfirst);
+        const picked = yield* pickReference(ctx, 'Select a block', pickfirst);
         pickfirst = false;
-        if (id === undefined) return;
-        let selected: Handle | undefined;
+        if (picked === undefined) return;
+        const id = picked.id;
+        // The attribute the block was picked by opens selected, as AutoCAD's list does.
+        let selected = picked.pick && (await attributeAt(ctx, id, picked.pick));
+        const plotStyles = plotStyleChoices(ctx);
         for (;;) {
           const g = ctx.model.entity(id)!.geom as InsertGeometry;
           const d = yield ctx.prompt.dialog({
@@ -235,10 +461,11 @@ export function eatteditCommand(): CommandDef {
               styles: records(ctx.model.tables.textStyles.values()),
               layers: records(ctx.model.tables.layers.values()),
               linetypes: records(ctx.model.tables.linetypes.values()),
+              ...(plotStyles && { plotStyles }),
             },
           });
           if (d.kind !== 'dialog') return;
-          applyPatches(ctx, id, d.attributes ?? []);
+          await applyPatches(ctx, id, d.attributes ?? []);
           if (d.action === 'ok') return;
           if (d.action === 'select') break;
           selected = d.target ?? selected;
@@ -262,8 +489,9 @@ export function atteditCommand(): CommandDef {
     usesSelection: 'during',
     async *run(ctx): CommandGenerator {
       if (ctx.dash) return yield* dashAttedit(ctx);
-      const id = yield* pickReference(ctx, 'Select block reference', false);
-      if (id === undefined) return;
+      const picked = yield* pickReference(ctx, 'Select block reference', false);
+      if (picked === undefined) return;
+      const id = picked.id;
       const g = ctx.model.entity(id)!.geom as InsertGeometry;
       const d = yield ctx.prompt.dialog({
         message: 'Edit Attributes',
@@ -275,7 +503,7 @@ export function atteditCommand(): CommandDef {
       });
       if (d.kind !== 'dialog') return;
       // The Edit Attributes dialog edits values only.
-      applyPatches(
+      await applyPatches(
         ctx,
         id,
         (d.attributes ?? []).map((p) => ({
@@ -603,7 +831,7 @@ async function* globalEdit(ctx: CommandContext): CommandGenerator {
     if (value === undefined) continue;
     byRef.set(f.id, [...(byRef.get(f.id) ?? []), { handle: f.handle, value }]);
   }
-  for (const [id, patches] of byRef) applyPatches(ctx, id, patches);
+  for (const [id, patches] of byRef) await applyPatches(ctx, id, patches);
 }
 
 export const ATTRIBUTE_COMMANDS = [eatteditCommand, atteditCommand] as const;

@@ -15,9 +15,11 @@ import type {
   Box,
   MTextGeometry,
   TextGeometry,
+  TextOutline,
 } from '@triya/engine';
 import { styleFont } from '@triya/text';
-import { attributeText, STANDARD_FONT, textPrimitives, type TextContext } from './text';
+import { applyAffine } from './affine';
+import { attributeText, placedText, STANDARD_FONT, textPrimitives, type TextContext } from './text';
 import { PATH_A, PATH_C, PATH_E, PATH_L, PATH_M, PATH_Q, type RenderPrimitive } from './types';
 
 /** Points a path never leaves: line ends, curve control points, arc and ellipse boxes. */
@@ -116,5 +118,44 @@ export function textBounds(ctx: TextContext): AnnotationBounds {
     const served = ctx.fonts.face(style ? styleFont(style) : STANDARD_FONT) !== undefined;
     const { x, y } = t.position;
     return served ? { minX: x, minY: y, maxX: x, maxY: y } : undefined;
+  };
+}
+
+/**
+ * Where a TEXT or MTEXT lies as drawn in the fonts loaded now (M2-27: an attribute picked, an
+ * attribute's justification changed), or undefined while no loaded font draws it. A TEXT's box
+ * runs along its baseline from its start to its advance and from its font's descender to its
+ * height, turned and mirrored as drawn; a vertical TEXT's and an MTEXT's is the box of their
+ * glyphs. `width` and `below` are a horizontal TEXT's advance and descent (0 otherwise).
+ */
+export function textOutline(
+  ctx: TextContext,
+): (g: TextGeometry | MTextGeometry) => TextOutline | undefined {
+  const bounds = textBounds(ctx);
+  return (g) => {
+    const placed = g.kind === 'TEXT' ? placedText(g, ctx) : undefined;
+    if (g.kind === 'TEXT' && placed && !placed.vertical) {
+      const style = ctx.style(g.style);
+      if (!ctx.fonts.face(style ? styleFont(style) : STANDARD_FONT)) return undefined;
+      const { frame, width, below } = placed;
+      const corners = [
+        { x: 0, y: -below },
+        { x: width, y: -below },
+        { x: width, y: g.height },
+        { x: 0, y: g.height },
+      ].map((p) => applyAffine(frame, p));
+      return { corners, width, below };
+    }
+    const style = ctx.style(g.style);
+    if (!ctx.fonts.face(style ? styleFont(style) : STANDARD_FONT)) return undefined;
+    const b = bounds(g);
+    if (!b) return undefined;
+    const corners = [
+      { x: b.minX, y: b.minY },
+      { x: b.maxX, y: b.minY },
+      { x: b.maxX, y: b.maxY },
+      { x: b.minX, y: b.maxY },
+    ];
+    return { corners, width: 0, below: 0 };
   };
 }

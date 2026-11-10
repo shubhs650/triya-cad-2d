@@ -6,7 +6,7 @@
 import type { Vec2 } from '../../geom/types';
 import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
-import type { MTextGeometry } from '../../model/types';
+import type { MTextGeometry, TextGeometry } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 
 /** The view of the current viewport, in world units. */
@@ -83,6 +83,12 @@ export type ViewRequest =
    */
   | { readonly op: 'columnCounts'; readonly texts: readonly MTextGeometry[] }
   /**
+   * Where TEXTs and MTEXTs lie as the renderer draws them (M2-27): an attribute picked by its
+   * text (EATTEDIT, a double click), and the baseline start of an attribute given another
+   * justification. The reply's `pickbox` says how near a pick must come.
+   */
+  | { readonly op: 'textOutlines'; readonly texts: readonly (TextGeometry | MTextGeometry)[] }
+  /**
    * The file commands (M2-13): QSAVE saves the drawing (in place when it can), SAVEAS and SAVE
    * save it under a name the drafter picks, CLOSE closes it (asking to save changes first). The
    * app holds the file, so the host does it; the reply's `file` is the name saved under.
@@ -114,6 +120,17 @@ export type ViewRequest =
   | { readonly op: 'plotSetup'; readonly layout?: string; readonly pageSetup?: string }
   /** -PLOT: plots a space with the settings given at the command line, without the dialog. */
   | { readonly op: 'plotScript'; readonly script: PlotScript };
+
+/**
+ * A text as drawn (`textOutlines`): the four corners of its box in drawing coordinates (a
+ * TEXT's along its baseline, from its font's descender to its height; otherwise the box of its
+ * glyphs), and a horizontal TEXT's advance and descent below the baseline (0 otherwise).
+ */
+export interface TextOutline {
+  readonly corners: readonly Vec2[];
+  readonly width: number;
+  readonly below: number;
+}
 
 /** -PLOT's plot areas (AutoCAD's View is not offered: M6-04). */
 export type PlotScriptArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
@@ -217,6 +234,10 @@ export type ViewReply =
       readonly widths?: readonly (number | null)[];
       /** What `columnCounts` counted, one per text. */
       readonly counts?: readonly (number | null)[];
+      /** What `textOutlines` found, one per text (null: no loaded font draws it). */
+      readonly outlines?: readonly (TextOutline | null)[];
+      /** The pickbox's half size in world units, with `outlines`. */
+      readonly pickbox?: number;
       /** The file a `file` request saved the drawing as. */
       readonly file?: string;
       /**

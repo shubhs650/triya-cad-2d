@@ -58,6 +58,8 @@ import {
   type Layout,
   type EntityGeometry,
   type MTextGeometry,
+  type TextGeometry,
+  type TextOutline,
   type OsnapHit,
   type Prompt,
   type UnderlaySnapPage,
@@ -609,6 +611,16 @@ export class CanvasController {
   /** How many dynamic columns MTEXTs take (M2-26 part 2: a column grip recounts them). */
   columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
     return this.#host.columnCounts(texts);
+  }
+
+  /** Where texts lie as drawn (M2-27: EATTEDIT's attribute under a pick). */
+  textOutlines(texts: readonly (TextGeometry | MTextGeometry)[]): Promise<(TextOutline | null)[]> {
+    return this.#host.textOutlines(texts);
+  }
+
+  /** The pickbox's half size in world units (M2-27). */
+  get pickbox(): number {
+    return PICKBOX * this.#px();
   }
 
   /** The box an MTEXT's glyphs fill in the fonts loaded (M2-09, MLEADEREDIT). */

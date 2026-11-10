@@ -3,9 +3,11 @@
 // - Enhanced Attribute Editor (EATTEDIT, a double click on a block reference with attributes):
 //   the block and the selected tag at the top, Select block beside them; tabs Attribute (Tag,
 //   Prompt, Value list and the Value field, with `...` opening the MTEXT editor on a multiline
-//   attribute), Text Options (Text Style, Justification, Height, Rotation, Backwards, Upside
-//   down, Width Factor, Oblique Angle) and Properties (Layer, Linetype, Color, Lineweight);
-//   Apply, OK, Cancel.
+//   attribute), Text Options (Text Style, Justification, Height, Rotation, Annotative,
+//   Backwards, Upside down, Width Factor, Oblique Angle) and Properties (Layer, Linetype, Color,
+//   Plot style, Lineweight); Apply, OK, Cancel. Justification keeps the insertion point (M2-27);
+//   a multiline attribute's lists the nine MTEXT attachments. Annotative is shown only
+//   (DEC-013), and the Plot style is ByColor, greyed, in a colour-dependent drawing.
 // - Edit Attributes (ATTEDIT): the block name, each attribute's prompt and value, eight to a
 //   page with Previous and Next; OK, Cancel.
 // - Edit Attribute Definition (TEXTEDIT or a double click on an ATTDEF): Tag, Prompt, Default.
@@ -15,6 +17,7 @@
 // already applied stay, as in AutoCAD. A multiline value shows its lines in a text area; its
 // `\P` paragraph breaks are the area's line breaks.
 import {
+  JUSTIFICATIONS,
   type AttributeEntry,
   type AttributePatch,
   type Color,
@@ -107,10 +110,22 @@ function Modal({
 
 /** DXF 72/73 as AutoCAD's justification names. */
 function justification(h: number, v: number): string {
-  if (v === 0) return ['Left', 'Center', 'Right', 'Aligned', 'Middle', 'Fit'][h] ?? 'Left';
-  const row = ['', 'Bottom', 'Middle', 'Top'][v] ?? '';
-  return `${row} ${['left', 'center', 'right'][h] ?? 'left'}`;
+  const named = JUSTIFICATIONS.find((j) => j.halign === h && j.valign === v);
+  return named?.name ?? `${h},${v}`;
 }
+
+/** MTEXT attachment points 1–9, as a multiline attribute's Justification list names them. */
+const ATTACHMENTS = [
+  'Top left',
+  'Top center',
+  'Top right',
+  'Middle left',
+  'Middle center',
+  'Middle right',
+  'Bottom left',
+  'Bottom center',
+  'Bottom right',
+];
 
 const COLORS: readonly [string, Color][] = [
   ['ByLayer', { kind: 'byLayer' }],
@@ -159,6 +174,10 @@ function patchOf(was: AttributeEntry, now: AttributeEntry): AttributePatch | und
     'layer',
     'linetype',
     'lineweight',
+    'halign',
+    'valign',
+    'attachment',
+    'plotStyle',
   ] as const;
   const p: Record<string, unknown> = {};
   for (const k of keys) if (now[k] !== was[k]) p[k] = now[k];
@@ -332,10 +351,41 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
             </label>
             <label className="cad-dialog-field">
               <span>Justification:</span>
-              {/* Changing it moves the text's alignment points: a later task (M2-27). */}
-              <select disabled value="j">
-                <option value="j">{justification(row.halign, row.valign)}</option>
-              </select>
+              {row.multiline ? (
+                <select
+                  value={row.attachment ?? 1}
+                  onChange={(e) => set({ attachment: Number(e.target.value) })}
+                >
+                  {ATTACHMENTS.map((name, i) => (
+                    <option key={name} value={i + 1}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                <select
+                  // An annotative attribute keeps a placement per annotation scale (DEC-013).
+                  disabled={row.annotative}
+                  value={`${row.halign},${row.valign}`}
+                  onChange={(e) => {
+                    const [halign, valign] = e.target.value.split(',').map(Number);
+                    set({ halign: halign!, valign: valign! });
+                  }}
+                >
+                  {!JUSTIFICATIONS.some(
+                    (j) => j.halign === row.halign && j.valign === row.valign,
+                  ) && (
+                    <option value={`${row.halign},${row.valign}`}>
+                      {justification(row.halign, row.valign)}
+                    </option>
+                  )}
+                  {JUSTIFICATIONS.map((j) => (
+                    <option key={j.name} value={`${j.halign},${j.valign}`}>
+                      {j.name}
+                    </option>
+                  ))}
+                </select>
+              )}
             </label>
             {num(
               'Height',
@@ -344,6 +394,13 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
               (v) => v > 0,
             )}
             {num('Rotation', deg(row.rotation), (v) => set({ rotation: rad(v) }))}
+            <label
+              className="cad-dialog-check"
+              title="Annotative objects are kept as they are; Triya does not make them (DEC-013)"
+            >
+              <input type="checkbox" checked={row.annotative} disabled readOnly />
+              Annotative
+            </label>
             {num(
               'Width Factor',
               row.widthFactor,
@@ -418,6 +475,29 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
                   </option>
                 ))}
               </select>
+            </label>
+            <label className="cad-dialog-field">
+              <span>Plot style:</span>
+              {request.plotStyles ? (
+                <select
+                  value={row.plotStyle ?? ''}
+                  onChange={(e) =>
+                    set({ plotStyle: e.target.value === '' ? null : e.target.value })
+                  }
+                >
+                  <option value="">ByLayer</option>
+                  {request.plotStyles.map((p) => (
+                    <option key={p.handle} value={p.handle}>
+                      {p.name}
+                    </option>
+                  ))}
+                </select>
+              ) : (
+                // A colour-dependent drawing plots by colour, as AutoCAD greys it out.
+                <select disabled value="ByColor">
+                  <option value="ByColor">ByColor</option>
+                </select>
+              )}
             </label>
             <label className="cad-dialog-field">
               <span>Lineweight:</span>

@@ -300,7 +300,7 @@ function runColor(c: MTextColor | undefined, paint: Paint): PrimitiveColor {
 }
 
 /** Draws a string from its baseline start (x, y) in the text frame, in its character style. */
-function placeText(
+export function placeText(
   out: Collector,
   fonts: TextFonts,
   frame: Affine,
@@ -490,7 +490,31 @@ function textPrimitivesOf(g: TextGeometry, paint: Paint, ctx: TextContext): Rend
 
 /** Lays a TEXT out and adds its glyphs to `out`. */
 function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
-  if (!(g.height > 0) || g.value === '') return;
+  const placed = placedText(g, ctx);
+  if (!placed) return;
+  if (placed.vertical) return drawVerticalText(out, g, placed.layout, ctx);
+  drawLayout(out, placed.layout, placed.frame, ctx.fonts, undefined);
+}
+
+/**
+ * A TEXT laid out in the fonts loaded now and placed by its justification: the frame taking
+ * its baseline start to the origin of the layout, the advance of its line and how far its font
+ * reaches below the baseline. A vertical style's column is placed by `drawVerticalText`.
+ */
+export function placedText(
+  g: TextGeometry,
+  ctx: TextContext,
+):
+  | { readonly vertical: true; readonly layout: MTextLayout }
+  | {
+      readonly vertical: false;
+      readonly layout: MTextLayout;
+      readonly frame: Affine;
+      readonly width: number;
+      readonly below: number;
+    }
+  | undefined {
+  if (!(g.height > 0) || g.value === '') return undefined;
   const { base, record } = baseOf(ctx, g.style, g.height);
   const charBase: MTextBase = {
     ...base,
@@ -511,11 +535,12 @@ function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
   if (((record?.flags ?? 0) & VERTICAL_STYLE) !== 0) {
     const measure = fontMeasure(ctx.fonts, undefined, { vertical: true });
     const layout = layoutMText(doc, measure, options);
-    if (verticalLayout(layout, ctx.fonts)) return drawVerticalText(out, g, layout, ctx);
+    if (verticalLayout(layout, ctx.fonts)) return { vertical: true, layout };
   }
   const layout = layoutMText(doc, fontMeasure(ctx.fonts), options);
   const width = layout.lines[0]?.width ?? 0;
   const h = g.height;
+  const below = descent(ctx.fonts.face(charBase.font), h);
   let local: Affine;
   let at = g.position;
   if ((g.halign === 3 || g.halign === 5) && g.alignmentPoint) {
@@ -525,7 +550,6 @@ function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
   } else {
     if ((g.halign !== 0 || g.valign !== 0) && g.alignmentPoint) at = g.alignmentPoint;
     const dx = g.halign === 1 || g.halign === 4 ? -width / 2 : g.halign === 2 ? -width : 0;
-    const below = descent(ctx.fonts.face(charBase.font), h);
     const dy =
       g.halign === 4
         ? -(h - below) / 2
@@ -539,7 +563,7 @@ function drawText(out: Collector, g: TextGeometry, ctx: TextContext): void {
     local = { a: 1, b: 0, c: 0, d: 1, e: dx, f: dy };
   }
   const frame = composeAffine(textFrame(at, g.rotation, g.backward, g.upsideDown), local);
-  drawLayout(out, layout, frame, ctx.fonts, undefined);
+  return { vertical: false, layout, frame, width, below };
 }
 
 /** A vertical TEXT's column placed by its justification (see the header). */

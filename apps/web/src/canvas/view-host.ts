@@ -13,6 +13,8 @@ import type {
   MTextGeometry,
   NamedViewInfo,
   PaletteName,
+  TextGeometry,
+  TextOutline,
   Vec2,
   ViewReply,
   ViewRequest,
@@ -49,6 +51,10 @@ export interface ViewTarget {
   textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
   /** How many dynamic columns MTEXTs take (M2-26 part 2), null for one no loaded font draws. */
   columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
+  /** Where texts lie as drawn (M2-27), null for one no loaded font draws. */
+  textOutlines(texts: readonly (TextGeometry | MTextGeometry)[]): Promise<(TextOutline | null)[]>;
+  /** The pickbox's half size in world units (M2-27: an attribute picked by its text). */
+  readonly pickbox: number;
   /** The objects' extents as drawn (M2-14 part 2: COPYCLIP's base point), or undefined. */
   boundsOf(ids: readonly EntityId[]): Promise<Box | undefined>;
 }
@@ -204,6 +210,10 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       return t.textWidths(r.texts).then((widths) => ({ ok: true, widths }));
     case 'columnCounts':
       return t.columnCounts(r.texts).then((counts) => ({ ok: true, counts }));
+    case 'textOutlines':
+      return t
+        .textOutlines(r.texts)
+        .then((outlines) => ({ ok: true, outlines, pickbox: t.pickbox }));
     case 'bounds':
       return t
         .boundsOf(r.ids)

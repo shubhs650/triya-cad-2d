@@ -10,6 +10,8 @@ import type {
   MTextGeometry,
   OsnapHit,
   OsnapQuery,
+  TextGeometry,
+  TextOutline,
   Vec2,
   UnderlaySnapPage,
 } from '@triya/engine';
@@ -88,6 +90,12 @@ export type HostMessage =
   | { readonly type: 'textWidths'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The dynamic column counts of MTEXTs (M2-26 part 2); the answer is a `counts`. */
   | { readonly type: 'columnCounts'; readonly id: number; readonly texts: readonly MTextGeometry[] }
+  /** Where texts lie as drawn (M2-27); the answer is an `outlines`. */
+  | {
+      readonly type: 'textOutlines';
+      readonly id: number;
+      readonly texts: readonly (TextGeometry | MTextGeometry)[];
+    }
   /** The object snap points under the aperture (M2-04); the answer is a `snap`. */
   | { readonly type: 'snap'; readonly id: number; readonly query: OsnapQuery }
   /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
@@ -118,6 +126,12 @@ export type WorkerMessage =
   | { readonly type: 'widths'; readonly id: number; readonly widths: readonly (number | null)[] }
   /** The column counts asked for, null for a text no loaded font draws. */
   | { readonly type: 'counts'; readonly id: number; readonly counts: readonly (number | null)[] }
+  /** The outlines asked for, null for a text no loaded font draws. */
+  | {
+      readonly type: 'outlines';
+      readonly id: number;
+      readonly outlines: readonly (TextOutline | null)[];
+    }
   /** The plot parts asked for (M2-17). */
   | { readonly type: 'plot'; readonly id: number; readonly parts: readonly PlotPart[] }
   | { readonly type: 'error'; readonly message: string; readonly id?: number }
