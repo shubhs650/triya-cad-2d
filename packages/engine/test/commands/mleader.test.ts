@@ -12,6 +12,7 @@ import {
   attachmentRow,
   builtinCommands,
   constrainSegment,
+  doubleClickCommand,
   multiLeaderParts,
   newMultiLeader,
   settingsOf,
@@ -130,7 +131,10 @@ function setup(o: Setup = {}) {
   });
   const before = new Set([...model.entities()].map((e) => e.id));
   const added = (): Entity[] => [...model.entities()].filter((e) => !before.has(e.id));
-  const leaders = () => added().map((e) => e.geom as MultiLeaderGeometry);
+  const leaders = () =>
+    added()
+      .filter((e) => e.geom.kind === 'MULTILEADER')
+      .map((e) => e.geom as MultiLeaderGeometry);
   return { model, bus, log, added, leaders };
 }
 
@@ -806,5 +810,210 @@ describe('MLEADEREDIT', () => {
     expect(g.branches).toHaveLength(1);
     expect(g.branches[0]!.lines).toHaveLength(2);
     expect(LAYER_0).toBe('10');
+  });
+});
+
+// M2-25: AutoCAD's built-in content blocks, authored when a drafter names one the drawing lacks
+// ("_DetailCallout", "_TagCircle", "_TagBox", "_TagSlot", "_TagHexagon", "_TagTriangle": the
+// Source block list of the Multileader Style Manager's Content tab, AutoCAD 2024 Help).
+describe('MLEADER built-in content blocks', () => {
+  const named = (model: DocumentModel, name: string) =>
+    [...model.blocks.values()].filter((b) => b.name === name);
+  const parts = (model: DocumentModel, name: string) =>
+    model.blockEntities(named(model, name)[0]!.handle).map((id) => model.entity(id)!);
+
+  it('authors _TagCircle when the drawing lacks it, its tag asked for', async () => {
+    const { bus, model, leaders } = setup();
+    await bus.script(['MLEADER', 'O', 'C', 'B', '_tagcircle', 'X', '0,0', '10,5']);
+    expect(bus.promptText).toBe('Enter tag number <TAGNUMBER>:');
+    await bus.script(['7']);
+    expect(bus.command).toBeUndefined();
+    const [def] = named(model, '_TagCircle');
+    expect(def).toBeDefined();
+    expect(def!.basePoint).toEqual({ x: 0, y: 0 });
+    // A circle round the tag number, both ByBlock on layer 0, the text the style's height.
+    const ents = parts(model, '_TagCircle');
+    expect(ents.map((e) => [e.geom.kind, e.layer, e.color])).toEqual([
+      ['CIRCLE', LAYER_0, { kind: 'byBlock' }],
+      ['ATTDEF', LAYER_0, { kind: 'byBlock' }],
+    ]);
+    expect(ents[0]!.geom).toMatchObject({ center: { x: 0, y: 0 }, radius: r6(0.18 * 1.5) });
+    expect(ents[1]!.geom).toMatchObject({
+      tag: 'TAGNUMBER',
+      prompt: 'Enter tag number',
+      value: 'TAGNUMBER',
+      style: STANDARD_TEXT,
+      height: 0.18,
+      halign: 1,
+      valign: 2,
+      position: { x: 0, y: 0 },
+      alignmentPoint: { x: 0, y: 0 },
+    });
+    const [g] = leaders();
+    expect(g!.block).toMatchObject({
+      block: def!.handle,
+      attributes: [{ definition: ents[1]!.handle, index: 0, width: 1, value: '7' }],
+    });
+    // The circle's left (radius 0.27) is at the landing's end.
+    expect(pt(g!.block!.position)).toEqual([r6(10.36 + 0.27), 5]);
+    expect(multiLeaderParts(g!, model).at(-1)!.geom).toMatchObject({ kind: 'INSERT' });
+    // The next multileader takes the block now in the drawing.
+    await bus.script(['MLEADER', '0,0', '-10,5', '8']);
+    expect(named(model, '_TagCircle')).toHaveLength(1);
+    expect(leaders()[1]!.block!.block).toBe(def!.handle);
+  });
+
+  it('authors each shape AutoCAD lists, with what it draws', async () => {
+    const shapes: [string, string[]][] = [
+      ['_DetailCallout', ['CIRCLE', 'LINE', 'ATTDEF', 'ATTDEF']],
+      ['_TagBox', ['LWPOLYLINE', 'ATTDEF']],
+      ['_TagSlot', ['LWPOLYLINE', 'ATTDEF']],
+      ['_TagHexagon', ['LWPOLYLINE', 'ATTDEF']],
+      ['_TagTriangle', ['LWPOLYLINE', 'ATTDEF']],
+    ];
+    for (const [name, kinds] of shapes) {
+      const { bus, model, leaders } = setup();
+      await bus.script(['MLEADER', 'O', 'C', 'B', name.toUpperCase(), 'X', '0,0', '10,5']);
+      while (bus.command === 'MLEADER') await bus.submit('');
+      expect(
+        parts(model, name).map((e) => e.geom.kind),
+        name,
+      ).toEqual(kinds);
+      expect(leaders()[0]!.block!.block).toBe(named(model, name)[0]!.handle);
+    }
+  });
+
+  it('asks the detail callout for its view and sheet numbers', async () => {
+    const { bus, model, leaders } = setup();
+    await bus.script(['MLEADER', 'O', 'C', 'B', '_DetailCallout', 'X', '0,0', '10,5']);
+    expect(bus.promptText).toBe('Enter view number <VIEWNUMBER>:');
+    await bus.script(['3']);
+    expect(bus.promptText).toBe('Enter sheet number <SHEETNUMBER>:');
+    await bus.script(['A-501']);
+    const defs = parts(model, '_DetailCallout').filter((e) => e.geom.kind === 'ATTDEF');
+    expect(defs.map((e) => (e.geom as { tag: string }).tag)).toEqual(['VIEWNUMBER', 'SHEETNUMBER']);
+    expect(leaders()[0]!.block!.attributes!.map((a) => a.value)).toEqual(['3', 'A-501']);
+  });
+
+  it('offers a built-in block for a style’s block the drawing lacks', async () => {
+    const { bus, model, leaders, log } = setup({
+      styles: [{ ...standard, contentType: 1, block: 'FF' }],
+    });
+    await bus.script(['MLEADER', '0,0', '10,5']);
+    expect(log).toContain('The style’s block is not in the drawing.');
+    await bus.script(['_TagHexagon', '12']);
+    expect(bus.command).toBeUndefined();
+    expect(leaders()[0]!.block!.block).toBe(named(model, '_TagHexagon')[0]!.handle);
+  });
+
+  it('lists the built-in blocks after the drawing’s at ?', async () => {
+    const { bus, log } = setup();
+    await bus.script(['MLEADER', 'O', 'C', 'B', '?']);
+    expect(log).toContain('Built-in blocks:');
+    expect(log).toContain('  _TagCircle');
+  });
+
+  it('authors no block when the command ends at the content prompts', async () => {
+    const { bus, model } = setup();
+    await bus.script(['MLEADER', 'O', 'C', 'B', '_TagBox']);
+    await bus.cancel();
+    expect(named(model, '_TagBox')).toHaveLength(0);
+  });
+});
+
+// M2-25: a multileader's text edited in place (AutoCAD 2024: double-clicking a multileader's
+// text, or TEXTEDIT on it, opens the In-Place Text Editor).
+describe('TEXTEDIT on a multileader', () => {
+  it('opens its text in the MTEXT editor and keeps everything else', async () => {
+    const { bus, id, geom } = await withLeader();
+    const before = geom();
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    expect(bus.prompt).toMatchObject({
+      kind: 'string',
+      editor: {
+        kind: 'mtext',
+        value: 'NOTE',
+        height: 0.18,
+        width: 0,
+        attachment: 1,
+        style: STANDARD_TEXT,
+      },
+    });
+    expect(pt((bus.prompt as { editor: { position: Vec2 } }).editor.position)).toEqual([
+      10.45, 5.09,
+    ]);
+    await bus.answer({ kind: 'string', value: 'NOTE\\PSee detail 3', editor: true });
+    expect(geom()).toEqual({ ...before, text: { ...before.text, content: 'NOTE\\PSee detail 3' } });
+    // Multiple mode asks for the next object; Undo takes the edit back.
+    expect(bus.promptText).toBe('Select an annotation object or [Undo/Mode]:');
+    await bus.submit('U');
+    expect(geom()).toEqual(before);
+  });
+
+  it('runs on a double click on a text multileader, not on a block one', async () => {
+    const picked: EntityId[] = [];
+    const { bus, model, id } = await withLeader({ view: host(undefined, () => picked) });
+    picked.push(id);
+    expect(doubleClickCommand(model.entity(id))).toBe('TEXTEDIT');
+    await bus.doubleClick({ x: 10.5, y: 5 });
+    expect(bus.command).toBe('TEXTEDIT');
+    expect(bus.prompt).toMatchObject({ editor: { kind: 'mtext', value: 'NOTE' } });
+    await bus.cancel();
+    // A block multileader's attributes are not edited in place yet (M2-25 leaves it).
+    const s = setup({ styles: [{ ...standard, contentType: 1, block: TAG }] });
+    await s.bus.script(['MLEADER', '0,0', '10,5', '', '']);
+    expect(doubleClickCommand(s.added()[0]!)).toBeUndefined();
+  });
+
+  it('keeps the text unchanged when it comes back the same or empty', async () => {
+    const { bus, id, geom, log } = await withLeader();
+    const before = geom();
+    await bus.script(['TEXTEDIT', 'M', 'S']);
+    await bus.answer({ kind: 'selection', ids: [id] });
+    await bus.answer({ kind: 'string', value: 'NOTE', editor: true });
+    expect(bus.command).toBeUndefined();
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    await bus.answer({ kind: 'string', value: '', editor: true });
+    expect(log).toContain('A multileader’s text cannot be empty: ERASE removes the multileader.');
+    expect(geom()).toEqual(before);
+  });
+
+  it('moves text the style always left-justifies by the change in its width', async () => {
+    // 0.6 of the height per character, on one line.
+    const view: ViewHost = {
+      request: (r): Promise<ViewReply> => {
+        if (r.op !== 'textBox') return Promise.resolve({ ok: false, message: 'no' });
+        const w = r.text.contents.length * r.text.height * 0.6;
+        const { x, y } = r.text.position;
+        return Promise.resolve({
+          ok: true,
+          box: { minX: x, maxX: x + w, minY: y - r.text.height, maxY: y },
+        });
+      },
+    };
+    const style = { ...standard, textAlignAlwaysLeft: true };
+    const s = setup({ styles: [style], view });
+    await s.bus.script(['MLEADER', '20,0', '10,5', 'Left', '']);
+    const id = s.added()[0]!.id;
+    const g = () => s.model.entity(id)!.geom as MultiLeaderGeometry;
+    const x0 = g().text!.position.x;
+    expect(g().text!.attachment).toBe(1);
+    await s.bus.script(['TEXTEDIT', 'M', 'S']);
+    await s.bus.answer({ kind: 'selection', ids: [id] });
+    await s.bus.answer({ kind: 'string', value: 'Leftmost', editor: true });
+    // Four more characters: the text's left moves 4 × 0.6 × 0.18 left; its right stays.
+    expect(r6(g().text!.position.x)).toBe(r6(x0 - 4 * 0.6 * 0.18));
+  });
+
+  it('says what it edits when something else is picked', async () => {
+    const { bus, log } = await withLeader();
+    const line = [...setup().model.entities()][0]!;
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [line.id] });
+    expect(log).toContain(
+      'The object selected is not text, multiline text, a multileader or a dimension.',
+    );
   });
 });

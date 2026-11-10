@@ -419,8 +419,14 @@ export function triyaToAcad(
   const created = new Map<Handle, CadObject>();
   // A save may add plot style names, which entities and layers may name (part 33).
   const plotStyles = plotStyleNames(original, model);
+  // The entities the save adds, which another new entity may name (M2-25: a multileader's
+  // attribute values name the ATTDEFs of the built-in block MLEADER authors with it).
+  const inBase = new Set((base.entities ?? []).map((e) => e.handle));
+  const adding = new Map<Handle, string>();
+  for (const e of model.entities()) if (!inBase.has(e.handle)) adding.set(e.handle, e.type);
   const r = {
     store,
+    adding,
     byLayer: lineTypes?.tryGetValue('ByLayer') ?? LineType.byLayer,
     byBlock: lineTypes?.tryGetValue('ByBlock') ?? LineType.byBlock,
     allocate: () => next++,

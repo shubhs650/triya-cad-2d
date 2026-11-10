@@ -33,6 +33,7 @@ import type { Handle } from '../model/handle';
 import type {
   Color,
   MLeaderStyleRecord,
+  MTextGeometry,
   MultiLeaderAttribute,
   MultiLeaderBlock,
   MultiLeaderBranch,
@@ -143,6 +144,11 @@ export interface MLeaderSettings {
   readonly contentType: number;
   /** The block for block content. */
   readonly block?: Handle;
+  /**
+   * A built-in content block (`BUILTIN_MLEADER_BLOCKS`) chosen while the drawing lacks it: it
+   * is authored with the multileader that first shows it, and takes the place of `block`.
+   */
+  readonly builtinBlock?: string;
   /** The most points a leader line takes, the arrowhead and the landing location included. */
   readonly maxPoints: number;
   /** Radians; 0 leaves the segment free. */
@@ -661,10 +667,17 @@ export function blockExtentsOf(model: DocumentModel, block: Handle): Box | undef
   };
 }
 
-/** Block content's box in drawing coordinates, from its block's extents. */
-export function blockContentBox(model: DocumentModel, b: MultiLeaderBlock): Box | undefined {
+/**
+ * Block content's box in drawing coordinates, from its block's extents (or `extents`, those of
+ * a block not in the drawing yet).
+ */
+export function blockContentBox(
+  model: DocumentModel,
+  b: MultiLeaderBlock,
+  extents?: Box,
+): Box | undefined {
   if (b.block === undefined) return undefined;
-  const ext = blockExtentsOf(model, b.block);
+  const ext = extents ?? blockExtentsOf(model, b.block);
   if (!ext) return undefined;
   const p = placedBox(ext, b.scale, b.rotation);
   return {
@@ -672,5 +685,22 @@ export function blockContentBox(model: DocumentModel, b: MultiLeaderBlock): Box 
     minY: p.minY + b.position.y,
     maxX: p.maxX + b.position.x,
     maxY: p.maxY + b.position.y,
+  };
+}
+
+/** A multileader's text as the MTEXT it draws, for measuring and the MTEXT editor. */
+export function multiLeaderMText(t: NonNullable<MultiLeaderGeometry['text']>): MTextGeometry {
+  return {
+    kind: 'MTEXT',
+    contents: t.content,
+    style: t.style,
+    position: t.position,
+    height: t.height,
+    width: t.width,
+    rotation: t.rotation,
+    attachment: t.attachment,
+    direction: t.flow,
+    lineSpacingStyle: t.lineSpacingStyle,
+    lineSpacing: t.lineSpacing,
   };
 }

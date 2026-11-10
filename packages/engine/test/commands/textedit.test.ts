@@ -179,7 +179,7 @@ describe('TEXTEDIT', () => {
     await bus.script(['TEXTEDIT']);
     await bus.answer({ kind: 'selection', ids: [line.id] });
     expect(bus.history).toContain(
-      'The object selected is not text, multiline text or a dimension.',
+      'The object selected is not text, multiline text, a multileader or a dimension.',
     );
     expect(bus.promptText).toBe('Select an annotation object or [Undo/Mode]:');
   });

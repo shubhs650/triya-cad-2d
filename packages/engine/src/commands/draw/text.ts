@@ -17,10 +17,12 @@ import type {
   DimensionGeometry,
   Entity,
   MTextGeometry,
+  MultiLeaderGeometry,
   TextGeometry,
   TextStyleRecord,
 } from '../../model/types';
 import { dimensionTextHeight, type NewDimension } from '../../edit/dimension';
+import { MLEADER_MTEXT, multiLeaderMText } from '../../edit/mleader';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import { regenerateDimensions } from '../modify/dimensions';
 import {
@@ -743,19 +745,21 @@ export function textEditCommand(): CommandDef {
           continue;
         }
         if (a.kind !== 'selection' || a.ids.length === 0) return;
-        const entity = a.ids
-          .map((id) => ctx.model.entity(id))
-          .find((e) => e && TEXTEDIT_KINDS.has(e.geom.kind));
+        const entity = a.ids.map((id) => ctx.model.entity(id)).find((e) => e && textEdited(e));
         if (!entity) {
-          ctx.message('The object selected is not text, multiline text or a dimension.');
+          ctx.message(
+            'The object selected is not text, multiline text, a multileader or a dimension.',
+          );
           continue;
         }
         const edited =
           entity.geom.kind === 'ATTDEF'
             ? yield* editAttdef(ctx, entity)
-            : 'dimType' in entity.geom
-              ? yield* editDimension(ctx, entity)
-              : yield* editText(ctx, entity);
+            : entity.geom.kind === 'MULTILEADER'
+              ? yield* editMultiLeader(ctx, entity)
+              : 'dimType' in entity.geom
+                ? yield* editDimension(ctx, entity)
+                : yield* editText(ctx, entity);
         if (edited === undefined) return;
         if (edited) done.push(edited);
         if (!multiple) return;
@@ -765,8 +769,8 @@ export function textEditCommand(): CommandDef {
 }
 
 /**
- * What TEXTEDIT edits: text, multiline text, attribute definitions (M2-12) and the text of
- * dimensions (M2-11).
+ * What TEXTEDIT edits: text, multiline text, attribute definitions (M2-12), the text of
+ * dimensions (M2-11) and of multileaders (M2-25).
  */
 const TEXTEDIT_KINDS = new Set([
   'TEXT',
@@ -776,6 +780,64 @@ const TEXTEDIT_KINDS = new Set([
   'ARC_DIMENSION',
   'LARGE_RADIAL_DIMENSION',
 ]);
+
+/** Whether TEXTEDIT edits `e`: a multileader only when its content is text. */
+export function textEdited(e: Entity): boolean {
+  if (e.geom.kind === 'MULTILEADER')
+    return e.geom.contentType === MLEADER_MTEXT && e.geom.text !== undefined;
+  return TEXTEDIT_KINDS.has(e.geom.kind);
+}
+
+/**
+ * TEXTEDIT on a multileader (M2-25; AutoCAD 2024: a multileader's text opens in the In-Place
+ * Text Editor): its text in the MTEXT editor where it draws. The leader keeps its landing; text
+ * a style always left-justifies (MLEADERSTYLE "Always left justify") on the left of its landing
+ * keeps its right edge there, so it moves by the change in its width, which the renderer
+ * measures.
+ *
+ * Where AutoCAD's documentation is silent: text emptied in the editor is kept as it was (a
+ * multileader of text with no text is neither seen nor picked by its text, and erasing it is
+ * ERASE's), and the drafter is told so.
+ */
+async function* editMultiLeader(
+  ctx: CommandContext,
+  entity: Entity,
+): AsyncGenerator<Prompt, TextEdit | false | undefined, PromptAnswer> {
+  const g = entity.geom as MultiLeaderGeometry;
+  const t = g.text!;
+  const a = yield ctx.prompt.string({
+    message: 'Enter text',
+    spaces: true,
+    editor: mtextEditorRequest(ctx.model, multiLeaderMText(t)),
+  });
+  if (a.kind === 'enter') return false;
+  if (a.kind !== 'string') return undefined;
+  if (a.value === t.content) return false;
+  if (a.value === '') {
+    ctx.message('A multileader’s text cannot be empty: ERASE removes the multileader.');
+    return false;
+  }
+  let position = t.position;
+  const style = g.style === undefined ? undefined : ctx.model.tables.mleaderStyles.get(g.style);
+  const leftOfLanding =
+    g.branches.length > 0 && g.branches.every((b) => b.direction.x < 0 && b.direction.y === 0);
+  if (style?.textAlignAlwaysLeft && leftOfLanding && t.attachment % 3 === 1) {
+    const width = async (contents: string) => {
+      const r = await ctx.view.request({
+        op: 'textBox',
+        text: { ...multiLeaderMText(t), contents },
+      });
+      return r.ok && r.box ? r.box.maxX - r.box.minX : undefined;
+    };
+    const before = await width(t.content);
+    const after = await width(a.value);
+    if (before !== undefined && after !== undefined)
+      position = { x: position.x - (after - before), y: position.y };
+  }
+  const geom: MultiLeaderGeometry = { ...g, text: { ...t, content: a.value, position } };
+  ctx.edit((b) => b.updateEntity(entity.id, { geom }));
+  return { id: entity.id, before: entity, erased: false };
+}
 
 /**
  * A dimension's text as the MTEXT editor edits it (M2-11): `contents` with `<>` for the
