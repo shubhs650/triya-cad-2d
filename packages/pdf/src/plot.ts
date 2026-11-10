@@ -20,12 +20,19 @@
 // - TrueType text plots as text in its own font, embedded as a subset (`fonts.ts`), so it stays
 //   searchable, unless the plot converts all text to geometry (AutoCAD's PDF option "Convert
 //   all text to geometry") or the font cannot be embedded; then its glyph outlines are filled.
+// - A PDF underlay plots its page's own content (`import.ts`: vectors stay vectors, text stays
+//   text), clipped to its boundary while clipping is on, with its fade, contrast and monochrome
+//   as the screen shows them on white paper. Plot style tables do not touch it: it keeps the
+//   PDF's colours, as a raster image does (ours: AutoCAD's help is silent). A page the plot
+//   cannot read (no file supplied, encrypted, damaged past reading) plots as the screen shows an
+//   underlay without its page: the clip boundary while clipping is on, else nothing.
 
 import { pdfNumber, type ContentStream, type LineCap, type LineJoin, type Rgb } from './content';
 import type { PdfPage } from './document';
 import type { FillStyle, GradientStop, PlotPixels } from './fills';
 import type { PlotFont } from './fonts';
-import { adaptDashes, dashPeriod, plotDashes, POINTS_PER_MM } from './linetypes';
+import { pdfReal } from './reader';
+import { adaptDashes, dashPeriod, plotDashes, POINTS_PER_INCH, POINTS_PER_MM } from './linetypes';
 import { emitSegments, pathSegments, subpathLength, subpaths, type Affine } from './path';
 
 /** What an object plots with: `PlotProperties` from the render package's `PlotResolver`. */
@@ -94,6 +101,26 @@ export interface PlotPathItem extends PlotItemBase {
    * matrix placing it, font units → world, so the text can plot as text.
    */
   readonly glyphs?: readonly PlotGlyph[];
+  /** A `fill` showing a PDF underlay's page; its `path` is the clip boundary (empty unclipped). */
+  readonly underlay?: PlotUnderlay;
+}
+
+/** A PDF underlay (render's `UnderlayFill` with its definition's file and page). */
+export interface PlotUnderlay {
+  /** The PDFDEFINITION's handle. */
+  readonly definition: string;
+  /** DXF 1: the file as the drawing names it (`..\\plans\\plan.pdf`). */
+  readonly fileName: string;
+  /** DXF 2: the page number from 1 (anything else shows the first page). */
+  readonly page: string;
+  /** Underlay space (inches from the displayed page's lower-left corner) → world. */
+  readonly frame: Affine;
+  readonly clipped: boolean;
+  /** 0–100 (100 the page's own colours). */
+  readonly contrast: number;
+  /** 0–100 (0 none). */
+  readonly fade: number;
+  readonly monochrome: boolean;
 }
 
 /** A TrueType glyph placed in the drawing. */
@@ -140,6 +167,8 @@ export interface PlotPageOptions {
   readonly nonIsoScale?: number;
   /** "Convert all text to geometry": TrueType text plots as filled outlines, not as text. */
   readonly textAsGeometry?: boolean;
+  /** The PDF file an underlay shows, as supplied this session; none plots its boundary only. */
+  readonly underlays?: (underlay: PlotUnderlay) => Uint8Array | undefined;
   /** Paper area the plot may draw on, points (the printable area); the whole page when absent. */
   readonly area?: {
     readonly x: number;
@@ -182,6 +211,10 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
     }
     if (item.kind === 'infinite') {
       plotInfinite(page, item, o);
+      continue;
+    }
+    if (item.kind === 'fill' && item.underlay) {
+      plotUnderlay(page, item, item.underlay, o);
       continue;
     }
     const segments = pathSegments(item.path, o.toPaper);
@@ -249,6 +282,41 @@ function compose(m: Affine, n: Affine): Affine {
 }
 
 const invertible = (m: Affine) => Math.abs(m.a * m.d - m.b * m.c) > 1e-12;
+
+function plotUnderlay(
+  page: PdfPage,
+  item: PlotPathItem,
+  u: PlotUnderlay,
+  o: PlotPageOptions,
+): void {
+  const cs = page.content;
+  const segments = pathSegments(item.path, o.toPaper);
+  const bytes = o.underlays?.(u);
+  const form =
+    bytes && page.underlay(bytes, u.page, { contrast: u.contrast, monochrome: u.monochrome });
+  if (!form) {
+    if (!u.clipped || segments.length === 0) return;
+    pen(cs, item.paint, plottedWeight(item.paint, o));
+    cs.dash([]);
+    emitSegments(cs, segments);
+    cs.stroke();
+    return;
+  }
+  // The displayed page's points → underlay inches → world → paper.
+  const k = 1 / POINTS_PER_INCH;
+  const m = compose(o.toPaper, compose(u.frame, { a: k, b: 0, c: 0, d: k, e: 0, f: 0 }));
+  if (!invertible(m) || (u.clipped && segments.length === 0)) return;
+  const keep = 1 - Math.min(100, Math.max(0, u.fade)) / 100;
+  cs.save();
+  if (u.clipped) {
+    emitSegments(cs, segments);
+    cs.clip();
+  }
+  cs.graphicsState(page.alpha((item.opacity ?? 1) * keep));
+  // Ten decimals: a page's thousands of points ride on this matrix.
+  cs.transform(m, pdfReal).xobject(form.name);
+  cs.restore();
+}
 
 function plotFill(
   page: PdfPage,
