@@ -3,6 +3,7 @@
 // ("TEXTEDIT (Command)", "DBLCLKEDIT (System Variable)", "TEXT (Command)", AutoCAD 2024 Help).
 import { describe, expect, it } from 'vitest';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
   builtinCommands,
@@ -281,5 +282,97 @@ describe('TEXTEDIT and MTEXT columns (M2-07 part 3)', () => {
     await bus.pick({ x: 50, y: 0 });
     await bus.answer({ kind: 'string', value: 'a\\Nb', editor: true, columns: null });
     expect(geom<MTextGeometry>(model.entity(added()[0]!.id)).columns).toBeUndefined();
+  });
+});
+
+describe('TEXTEDIT and manual-height, reversed MTEXT columns (M2-26)', () => {
+  /** Dynamic columns, then given manual heights and a reversed flow (as a drawing may hold). */
+  async function manual(bus: PromptBus, model: DocumentModel, id: () => Entity) {
+    await bus.script(['MTEXT', '50,0', 'C', 'D', '20', '10', '30']);
+    await bus.answer({
+      kind: 'string',
+      value: 'a\\Nb\\Nc',
+      editor: true,
+      columns: { type: 2, count: 3, width: 20, gutter: 10, height: 30, heights: [30, 12, 20] },
+    });
+    const g = geom<MTextGeometry>(id());
+    expect(g.columns).toEqual({
+      type: 2,
+      count: 3,
+      flowReversed: false,
+      autoHeight: false,
+      width: 20,
+      gutter: 10,
+      heights: [30, 12, 20],
+    });
+    expect(g.definedHeight).toBe(30);
+    // Reversed flow comes from the drawing; there is no command option for it.
+    const b = new ChangeSetBuilder(model);
+    b.updateEntity(id().id, { geom: { ...g, columns: { ...g.columns!, flowReversed: true } } });
+    model.apply(b.build());
+    await bus.submit('ED');
+    await bus.pick({ x: 50, y: 0 });
+    return bus.prompt as StringPrompt;
+  }
+
+  it("MTEXT applies the editor's manual heights, one per column", async () => {
+    const { bus, model, added } = setup();
+    await manual(bus, model, () => added()[0]!);
+  });
+
+  it('opens the editor with the heights and the flow, and keeps them when unchanged', async () => {
+    const { bus, model, added } = setup();
+    const p = await manual(bus, model, () => added()[0]!);
+    expect(p.editor?.columns).toEqual({
+      type: 2,
+      count: 3,
+      width: 20,
+      gutter: 10,
+      height: 30,
+      heights: [30, 12, 20],
+      flowReversed: true,
+    });
+    const before = added()[0]!.geom;
+    await bus.answer({
+      kind: 'string',
+      value: 'a\\Nb\\Nc',
+      editor: true,
+      columns: p.editor!.columns!,
+    });
+    expect(model.entity(added()[0]!.id)!.geom).toBe(before);
+  });
+
+  it('applies dragged heights, one per column as the count changes, keeping the flow', async () => {
+    const { bus, model, added } = setup();
+    const p = await manual(bus, model, () => added()[0]!);
+    // A fourth column: it takes the last column's height; a dropped one loses its height.
+    await bus.answer({
+      kind: 'string',
+      value: 'a\\Nb\\Nc\\Nd',
+      editor: true,
+      columns: { ...p.editor!.columns!, count: 4, heights: [30, 15, 20] },
+    });
+    expect(geom<MTextGeometry>(model.entity(added()[0]!.id)).columns).toEqual({
+      type: 2,
+      count: 4,
+      flowReversed: true,
+      autoHeight: false,
+      width: 20,
+      gutter: 10,
+      heights: [30, 15, 20, 20],
+    });
+    await bus.cancel();
+    await bus.submit('ED');
+    await bus.pick({ x: 50, y: 0 });
+    // Back to auto height: one height for all, no list.
+    const q = bus.prompt as StringPrompt;
+    const { heights: _h, ...auto } = q.editor!.columns!;
+    await bus.answer({ kind: 'string', value: 'a', editor: true, columns: { ...auto, count: 1 } });
+    expect(geom<MTextGeometry>(model.entity(added()[0]!.id)).columns).toMatchObject({
+      count: 1,
+      autoHeight: true,
+      heights: [],
+      flowReversed: true,
+    });
   });
 });

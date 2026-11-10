@@ -1,12 +1,15 @@
 // M2-07 part 3: MTEXT columns and the ruler in the in-place editor. The Columns menu sets
 // static or dynamic columns and Column Settings their sizes; Alt+Enter breaks the column; the
-// ruler's markers and tab stops become the paragraph's `\p` values. The engine side (MTEXT's
+// ruler's markers and tab stops become the paragraph's `\p` values. M2-26: dynamic columns of
+// Manual Height, each column's height dragged at its bottom edge, and columns set right to left
+// (a drawing's reversed flow, DXF 74). The engine side (MTEXT's
 // Columns option, TEXTEDIT) is unit-tested in packages/engine (test/commands/text.test.ts,
 // textedit.test.ts), the ruler's codes in packages/text (test/mtext/ruler.test.ts), and saving
 // on every corpus file in packages/testkit (export/export-mtext-columns.corpus.test.ts).
+import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, MTextGeometry } from '@triya/engine';
-import { DXF, expectShown, openWithPicker } from '../app/page';
+import { activeCanvas, DXF, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -151,4 +154,134 @@ test('the ruler sets the paragraph indent and adds tab stops', async ({ page }) 
   await expect(prompt(page)).toHaveText('Command:');
   const [g] = await mtexts(page);
   expect(g!.contents).toBe('\\pi-2,l2,t8;Item');
+});
+
+/** The editor's column height handles, AutoCAD's grips at each column's bottom (M2-26). */
+const heightHandle = (page: Page, n: number) =>
+  page.getByRole('slider', { name: `Column ${n} height` });
+
+/** A handle dragged `units` up (negative: down), at `scale` CSS px per unit. */
+async function dragUp(page: Page, n: number, units: number, scale: number): Promise<void> {
+  const h = (await heightHandle(page, n).boundingBox())!;
+  const x = h.x + h.width / 2;
+  const y = h.y + h.height / 2;
+  await page.mouse.move(x, y);
+  await page.mouse.down();
+  await page.mouse.move(x, y - (units * scale) / 2);
+  await page.mouse.move(x, y - units * scale);
+  await page.mouse.up();
+}
+
+test("Manual Height: each dynamic column's height is dragged in the editor", async ({ page }) => {
+  test.setTimeout(90_000);
+  await startMText(page);
+  for (const word of ['one', 'two', 'three', 'four', 'five']) {
+    await page.keyboard.type(word);
+    await page.keyboard.press('Enter');
+  }
+  await page.keyboard.type('six');
+  await toolbar(page).getByRole('button', { name: 'Columns' }).click();
+  await page.getByRole('menuitem', { name: 'Column Settings…' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Column Settings' });
+  await dialog.getByRole('radio', { name: 'Dynamic Columns' }).check();
+  await dialog.getByRole('spinbutton', { name: 'Height' }).fill('10');
+  await dialog.getByRole('spinbutton', { name: 'Column' }).fill('30');
+  await dialog.getByRole('spinbutton', { name: 'Gutter' }).fill('5');
+  await dialog.getByRole('radio', { name: 'Manual Height' }).check();
+  // Manual heights are each column's own, dragged in the editor: the one height goes.
+  await expect(dialog.getByRole('spinbutton', { name: 'Height' })).toBeDisabled();
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  // Two lines a column (a line is two text heights in the editor): three columns 10 high.
+  for (const n of [1, 2, 3])
+    await expect(heightHandle(page, n)).toHaveAttribute('aria-valuenow', '10');
+  await expect(heightHandle(page, 4)).toHaveCount(0);
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  const para = (i: number) => editor.locator('.mtext-para').nth(i);
+  // The second column shortened to one line: "four" moves on to the third.
+  const box = (await editor.boundingBox())!;
+  const scale = (box.width - 2 - 4) / 30;
+  await dragUp(page, 2, 4, scale);
+  await expect(heightHandle(page, 4)).toHaveCount(1);
+  const height2 = Number(await heightHandle(page, 2).getAttribute('aria-valuenow'));
+  expect(height2).toBeGreaterThan(5);
+  expect(height2).toBeLessThan(7.5);
+  const [three, four] = [(await para(2).boundingBox())!, (await para(3).boundingBox())!];
+  expect(four.x).toBeGreaterThan(three.x + three.width);
+  await page.screenshot({ path: 'test-results/text-columns/manual-heights.png' });
+
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  const [g] = await mtexts(page);
+  // The renderer's lines are 5/3 heights apart: two, one, two and one line, as in the editor.
+  expect(g!.columns).toMatchObject({ type: 2, count: 4, width: 30, gutter: 5, autoHeight: false });
+  expect(g!.columns!.heights).toEqual([10, height2, 10, 10]);
+  expect(g!.definedHeight).toBe(10);
+});
+
+/**
+ * An AC1032 drawing holding one MTEXT of dynamic columns 30 wide, 5 apart, 10, 5 and 10 high
+ * (manual), set right to left (DXF 74), at (20, 80): the R2018 embedded object as the DXF
+ * reference describes it, column heights as its repeated 46s.
+ */
+function reversedColumns(): string {
+  return [
+    ...['0', 'SECTION', '2', 'HEADER', '9', '$ACADVER', '1', 'AC1032'],
+    ...['9', '$HANDSEED', '5', 'FFFF', '0', 'ENDSEC', '0', 'SECTION', '2', 'ENTITIES'],
+    ...['0', 'LINE', '5', '100', '100', 'AcDbEntity', '8', '0', '100', 'AcDbLine'],
+    ...['10', '0', '20', '0', '30', '0', '11', '160', '21', '0', '31', '0'],
+    ...['0', 'MTEXT', '5', '101', '100', 'AcDbEntity', '8', '0', '100', 'AcDbMText'],
+    ...['10', '20', '20', '80', '30', '0', '40', '2.5', '41', '30', '46', '10', '71', '1'],
+    ...['1', 'one\\Ptwo\\Pthree\\Pfour\\Pfive', '101', 'Embedded Object', '70', '1'],
+    ...['10', '1', '20', '0', '30', '0', '11', '20', '21', '80', '31', '0'],
+    ...['40', '30', '41', '10', '42', '100', '43', '10', '71', '2', '72', '3', '44', '30'],
+    ...['45', '5', '73', '0', '74', '1', '46', '10', '46', '5', '46', '10'],
+    ...['0', 'ENDSEC', '0', 'EOF', ''],
+  ].join('\r\n');
+}
+
+test('columns set right to left open in the editor that way, and stay so', async ({ page }) => {
+  test.setTimeout(90_000);
+  const file = test.info().outputPath('reversed-columns.dxf');
+  writeFileSync(file, reversedColumns());
+  await page.goto(app.url);
+  await openWithPicker(page, file);
+  await expectShown(page, 'reversed-columns.dxf');
+  await type(
+    page,
+    'Z',
+    'Specify corner of window, enter a scale factor (nX or nXP), or [All/Center/Dynamic/Extents/Previous/Scale/Window/Object] <real time>:',
+  );
+  await type(page, '0,0', 'Specify opposite corner:');
+  await type(page, '160,100', 'Command:');
+  const canvas = (await activeCanvas(page).boundingBox())!;
+  const k = Math.min(canvas.width / 160, canvas.height / 100);
+  // The first column is the rightmost: x 90 to 120; "one" on its first line.
+  const one = {
+    x: canvas.x + canvas.width / 2 + (93 - 80) * k,
+    y: canvas.y + canvas.height / 2 - (79 - 50) * k,
+  };
+  await page.mouse.dblclick(one.x, one.y);
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  const para = async (i: number) => (await editor.locator('.mtext-para').nth(i).boundingBox())!;
+  // one, two | three | four, five: from right to left, as the renderer draws them.
+  const [p1, p3, p4] = [await para(0), await para(2), await para(3)];
+  expect(p3.x + p3.width).toBeLessThan(p1.x);
+  expect(p4.x + p4.width).toBeLessThan(p3.x);
+  expect(Math.abs(p1.x - (one.x - 3 * k))).toBeLessThan(2 * k);
+  await expect(heightHandle(page, 2)).toHaveAttribute('aria-valuenow', '5');
+  await page.screenshot({ path: 'test-results/text-columns/reversed-flow.png' });
+  // Closed unchanged: the MTEXT stays as the drawing has it.
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText(/^Select an annotation object/);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  const updated = await page.evaluate(
+    () =>
+      (window as unknown as Dev).triyaDev.changes().flatMap((cs) => cs.entities?.updated ?? [])
+        .length,
+  );
+  expect(updated).toBe(0);
 });

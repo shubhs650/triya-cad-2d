@@ -371,6 +371,22 @@ describe('dynamic column count (M2-07 part 3)', () => {
     expect(count('a\\Pb\\Pc\\Pd\\Pe', 4)).toBe(3);
   });
 
+  it('counts manual heights, the columns past them as tall as `height` (M2-26)', () => {
+    const six = parseMText('a\\Pb\\Pc\\Pd\\Pe\\Pf', base);
+    const manual = (heights: readonly number[]) =>
+      dynamicColumnCount(six, mono, {
+        height: 1,
+        width: 0,
+        attachment: 1,
+        lineSpacingStyle: 1,
+        lineSpacing: 1,
+        columns: { width: 4, gutter: 1, height: 4, heights },
+      });
+    expect(manual([])).toBe(3);
+    // Two lines, then one in each column 2 high, then two in a column 4 high.
+    expect(manual([4, 2, 2])).toBe(4);
+  });
+
   it('counts the columns breaks start', () => {
     expect(count('a\\Nb\\Nc', 100)).toBe(3);
   });

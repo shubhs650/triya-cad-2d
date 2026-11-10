@@ -205,7 +205,7 @@ export function dynamicColumnCount(
   doc: MTextDocument,
   measure: MTextMeasure,
   options: Omit<MTextLayoutOptions, 'columns'> & {
-    readonly columns: Pick<MTextColumns, 'width' | 'gutter' | 'height'>;
+    readonly columns: Pick<MTextColumns, 'width' | 'gutter' | 'height' | 'heights'>;
   },
   limit = 100,
 ): number {
