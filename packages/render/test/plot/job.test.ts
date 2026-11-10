@@ -405,4 +405,15 @@ describe('plotParts with wipeouts (M2-24 part 2)', () => {
   it('leaves out the frame the screen shows with WIPEOUTFRAME 2 (displayed but not plotted)', () => {
     expect(kinds(2)).toEqual(['fill']);
   });
+
+  it('masks in the paper colour, whatever the plot style makes of the object’s colour', () => {
+    // A wipeout hides what is under it on paper too ("WIPEOUT (Command)": it covers objects
+    // "with the current background color"; on a plot, the paper). It plotted in the wipeout's
+    // own colour through the table, a black box on a monochrome plot.
+    const { model } = drawing([entity('70', wipeout, { color: { kind: 'aci', index: 1 } })]);
+    const [mask, frame] = plotParts(model, MODEL, { resolver });
+    expect(mask?.kind).toBe('fill');
+    expect(mask?.paint.color).toEqual([255, 255, 255]);
+    expect(frame?.paint.color).toEqual([0, 255, 0]);
+  });
 });

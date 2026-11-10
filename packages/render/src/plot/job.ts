@@ -29,6 +29,9 @@
 // - A PDF underlay plots its page's own content (M2-16 part 5): the part names its definition's
 //   file and page, and the PDF writer copies that page from the file the app supplied.
 //
+// - A wipeout (and a text background mask in the background colour) plots in the paper's white,
+//   not through the table: on a monochrome plot it was a black box (M2-24 part 2).
+//
 // Not plotted: an image whose bitmap the app has not loaded, which plots its frame only.
 
 import {
@@ -461,6 +464,11 @@ class Plotter {
           height: im.height,
         },
       };
+    }
+    // A wipeout, or a text background mask in the background colour, masks in the paper's white:
+    // it hides what is under it, so no plot style table recolours it.
+    if (prim.kind === 'fill' && prim.color === 'background') {
+      return { ...base, path: prim.path, paint: { ...solid, color: WHITE } };
     }
     const continuous = prim.text !== undefined || prim.hatch !== undefined;
     // An MTEXT colour override: the run's own colour, through the table.
