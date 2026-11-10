@@ -37,6 +37,7 @@ import { PlotDialog, download, plotDialog } from './PlotDialog';
 import { PublishDialog, publishDialog } from './PublishDialog';
 import {
   appliedPageSetup,
+  withPageSetup,
   defaultPlotSettings,
   plotFile,
   plotFileName,
@@ -398,7 +399,18 @@ async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> 
   const target = spaces.find((s) => s.name.toUpperCase() === named?.toUpperCase());
   if (!target) return { ok: false, message: `Layout "${named ?? ''}" not found.` };
   const tables = userPlotStyleTables();
-  let space = await plotSpaceOf(doc, target.block, target.name, tables);
+  // Part 6: the named page setup -PLOT was given, if any, in place of the space's own.
+  const pageSetup = r.op === 'plotSetup' ? r.pageSetup : r.script.pageSetup;
+  const spaceOf = async () => {
+    const own = await plotSpaceOf(doc, target.block, target.name, tables);
+    return own && withPageSetup(own, pageSetup);
+  };
+  let space;
+  try {
+    space = await spaceOf();
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
   if (!space) return { ok: false, message: 'There is nothing to plot.' };
   if (r.op === 'plotSetup') {
     const names = spaces.map((s) => s.name);
@@ -419,6 +431,7 @@ async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> 
         await Promise.all(controllersOf(id).map((c) => c.flush()));
         store.edited(id);
       }
+      // The layout's page setup now holds the named one's settings as answered.
       space = (await plotSpaceOf(doc, target.block, target.name, tables)) ?? space;
       settings = { ...defaultPlotSettings(space), device: settings.device };
     }
@@ -1324,6 +1337,7 @@ export function App() {
       />
       <PublishDialog
         doc={active}
+        docs={state.docs}
         underlayFile={(f) => pdfPages.bytes(f)}
         userTables={userPlotStyleTables}
       />

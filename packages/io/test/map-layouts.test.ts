@@ -1,7 +1,19 @@
 // LAYOUT objects to Triya (M1-18), on drawings authored in memory with acad-ts.
-import { ACadVersion, CadDocument, Layout } from '@node-projects/acad-ts';
+import {
+  ACadVersion,
+  CadDictionary,
+  CadDocument,
+  Layout,
+  PlotSettings,
+} from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
-import { mapLayouts } from '../src/index';
+import {
+  mapLayouts,
+  mapPageSetups,
+  openDocument,
+  readCadDocument,
+  writeCadDocument,
+} from '../src/index';
 
 /** A drawing with its Model tab and one layout tab, added out of tab order. */
 function read(): { doc: CadDocument; sheet: Layout } {
@@ -102,5 +114,69 @@ describe('mapLayouts', () => {
     const p = mapLayouts(doc)[1]!.plot!;
     expect(p.paperUnits).toBe('millimeters');
     expect(p.rotation).toBe(0);
+  });
+});
+
+// M2-17 part 6: the named page setups AutoCAD's Plot dialog lists (ACAD_PLOTSETTINGS entries).
+describe('mapPageSetups', () => {
+  function named(): { doc: CadDocument; a3: PlotSettings; fit: PlotSettings } {
+    const { doc } = read();
+    const dict = doc.rootDictionary!.get(CadDictionary.acadPlotSettings) as CadDictionary;
+    const a3 = new PlotSettings('A3 Monochrome');
+    a3.pageName = 'A3 Monochrome';
+    a3.paperSize = 'ISO_full_bleed_A3_(420.00_x_297.00_MM)';
+    a3.paperWidth = 420;
+    a3.paperHeight = 297;
+    a3.plotType = 5 as never;
+    a3.styleSheet = 'monochrome.ctb';
+    a3.flags = (16 | 32 | 128) as never;
+    a3.scaledFit = 16 as never;
+    dict.add(a3);
+    const fit = new PlotSettings('Model A1 Fit');
+    fit.pageName = 'Model A1 Fit';
+    fit.paperSize = 'ISO_full_bleed_A1_(841.00_x_594.00_MM)';
+    fit.paperWidth = 841;
+    fit.paperHeight = 594;
+    fit.plotType = 1 as never;
+    fit.flags = (1024 | 16 | 4 | 32 | 128) as never;
+    fit.scaledFit = 0 as never;
+    dict.add(fit);
+    return { doc, a3, fit };
+  }
+
+  it("maps each entry with its settings, model space's by flag 1024, by name", () => {
+    const { doc, a3, fit } = named();
+    const out = mapPageSetups(doc);
+    expect(out.map((p) => [p.name, p.model])).toEqual([
+      ['A3 Monochrome', false],
+      ['Model A1 Fit', true],
+    ]);
+    expect(out[0]).toEqual(
+      expect.objectContaining({
+        type: 'PLOTSETTINGS',
+        handle: H(a3),
+        owner: H(a3.owner!),
+        plot: expect.objectContaining({
+          paperSize: 'ISO_full_bleed_A3_(420.00_x_297.00_MM)',
+          paperWidth: 420,
+          plotType: 5,
+          standardScaleType: 16,
+          styleSheet: 'monochrome.ctb',
+          flags: 16 | 32 | 128,
+        }),
+      }),
+    );
+    expect(out[1]!.handle).toBe(H(fit));
+    expect(out[1]!.plot.standardScaleType).toBe(0);
+    // A layout's own page setup is not a named one.
+    expect(out.some((p) => p.name === 'Sheet' || p.name === 'Model')).toBe(false);
+  });
+
+  it('reads them from a DXF, where they open as objects of the drawing', () => {
+    const { doc } = named();
+    const back = readCadDocument(writeCadDocument(doc, { format: 'dxf' }));
+    expect(mapPageSetups(back).map((p) => p.name)).toEqual(['A3 Monochrome', 'Model A1 Fit']);
+    const objects = openDocument(back).init.objects ?? [];
+    expect(objects.filter((o) => o.type === 'PLOTSETTINGS').length).toBe(2);
   });
 });

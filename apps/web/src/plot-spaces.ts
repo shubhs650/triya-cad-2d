@@ -5,7 +5,7 @@ import type { PlotStyleTable } from '@triya/render';
 import { controllerOf } from './canvas/registry';
 import { layoutsOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
-import type { PlotSpace } from './plot';
+import { pageSetupsOf, type PlotSpace } from './plot';
 import { sheetSpace } from './publish';
 
 export async function plotSpaceOf(
@@ -27,5 +27,6 @@ export async function plotSpaceOf(
     extents: doc.opened.extents[block],
     namedPlotStyles: here.namedPlotStyles ?? false,
     userTables,
+    pageSetups: pageSetupsOf(doc.opened.init.objects, block === doc.opened.modelSpace),
   });
 }

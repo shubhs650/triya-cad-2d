@@ -2164,6 +2164,18 @@ button {
   margin: 8px 0 0;
 }
 
+/* M2-17 part 6: the sheet list's buttons and its selected sheet. */
+.publish-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0;
+}
+
+.publish-sheets tr.selected td {
+  background: var(--selected-bg);
+}
+
 /* M2-23: the undo toast (UI_SPEC §11), over the drawing area above the command line. */
 .undo-toast-region {
   position: fixed;
