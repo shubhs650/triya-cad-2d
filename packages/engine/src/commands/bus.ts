@@ -20,6 +20,7 @@ import { SelectionLoop, type StepResult } from '../selection/loop';
 import { onLockedLayers } from '../selection/rules';
 import type { Entity, EntityGeometry } from '../model/types';
 import { hasEditableAttributes } from './modify/attributes';
+import { textEdited } from './draw/text';
 import {
   prompts,
   type CommandContext,
@@ -68,6 +69,8 @@ export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
   MTEXT: 'TEXTEDIT',
   ATTDEF: 'TEXTEDIT',
   INSERT: 'EATTEDIT',
+  // A multileader's text opens in the In-Place Text Editor (M2-25).
+  MULTILEADER: 'TEXTEDIT',
   // A dimension's text opens in the MTEXT editor (AutoCAD 2024's DBLCLKEDIT; M2-11).
   DIMENSION: 'TEXTEDIT',
   ARC_DIMENSION: 'TEXTEDIT',
@@ -82,6 +85,8 @@ export const DOUBLE_CLICK: Readonly<Record<string, string>> = {
 export function doubleClickCommand(e: Entity | undefined): string | undefined {
   if (!e) return undefined;
   if (e.geom.kind === 'INSERT' && !hasEditableAttributes(e)) return undefined;
+  // Only a multileader of text: a block one's attributes are not edited in place yet.
+  if (e.geom.kind === 'MULTILEADER' && !textEdited(e)) return undefined;
   return DOUBLE_CLICK[e.geom.kind];
 }
 

@@ -26,6 +26,7 @@ export * from './revcloud';
 export * from './clipboard';
 export * from './draw-order';
 export * from './mleader';
+export * from './mleader-blocks';
 export {
   writeDimensionBlock,
   type DimensionRegenerator,
