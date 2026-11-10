@@ -50,6 +50,20 @@ async function previewed(page: Page): Promise<{ raster: Raster; region: number[]
   return { raster: { width: width!, height: height!, data }, region };
 }
 
+/**
+ * The pixels wholly on the sheet: the last column and row are dropped, as the sheet's right and
+ * bottom edges usually fall part way through a pixel, which the preview blends with its grey
+ * surround while pdf.js, drawing the page on white, has no surround to blend with.
+ */
+function onSheet(r: Raster): Raster {
+  const width = r.width - 1;
+  const height = r.height - 1;
+  const data = new Uint8Array(width * height * 4);
+  for (let row = 0; row < height; row++)
+    data.set(r.data.subarray(row * r.width * 4, (row * r.width + width) * 4), row * width * 4);
+  return { width, height, data };
+}
+
 const HARNESS = `<!doctype html><meta charset="utf-8"><title>pdf</title>
 <script type="module">
   import * as lib from 'http://pdf.test/pdf.min.mjs';
@@ -159,7 +173,7 @@ test('Preview… shows the plot as its PDF rasterises, and its Plot button plots
   await expect(prompt(page)).toHaveText('Command:');
 
   const pdf = await rasterisePdf(context, download, shown.region, shown.raster);
-  const c = compareImages(shown.raster, pdf, TOLERANCE);
+  const c = compareImages(onSheet(shown.raster), onSheet(pdf), TOLERANCE);
   expect(c.reason ?? '', `mismatch ${c.mismatchPct} %, SSIM ${c.ssim}`).toBe('');
   expect(c.pass).toBe(true);
 });
@@ -248,7 +262,7 @@ test('PREVIEW shows a PDF underlay’s page as plotted; zoom, pan, the menu, Esc
     preview(page).getByRole('button', { name: 'Plot', exact: true }).click(),
   ]);
   const pdf = await rasterisePdf(context, download, again.region, again.raster);
-  const c = compareImages(again.raster, pdf, TOLERANCE);
+  const c = compareImages(onSheet(again.raster), onSheet(pdf), TOLERANCE);
   expect(c.reason ?? '', `mismatch ${c.mismatchPct} %, SSIM ${c.ssim}`).toBe('');
   await expect(preview(page)).toBeHidden();
   await expect(toggle).toHaveAttribute('aria-pressed', 'false');
