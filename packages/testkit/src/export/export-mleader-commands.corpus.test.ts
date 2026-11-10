@@ -13,10 +13,10 @@
 // A drawing older than R2007 (AC1021) without a multileader style gets AutoCAD's Standard style
 // from MLEADER and saves it: the save checks what it adds against AC1032, the version it writes
 // (M2-13). Two R13/R14 drawings ezdxf wrote keep an R2007 STANDARD style as a proxy object, which
-// the engine does not see; the save refuses to replace it (mleader-styles.ts), and the gate holds
-// them to that refusal and audits their unedited save. R1 and R2.5 drawings have no text style,
-// which a multileader style names, so MLEADER makes nothing there and their unedited save is
-// audited.
+// the engine does not see and the save never replaces: MLEADER names its style Standard1 there
+// (M2-29, `keptEntryNames`), and their session saves like the rest. R1 and R2.5 drawings have no
+// text style, which a multileader style names, so MLEADER makes nothing there and their unedited
+// save is audited.
 //
 // The fake canvas measures text as 0.6 of its height per character on one line: the far-side
 // landing only needs some box, and the renderer's own measuring is tested in packages/render.
@@ -42,9 +42,7 @@ const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url))
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 const PER_FILE_BUDGET_MS = 30_000;
-/** The save's refusal to replace a STANDARD style kept as a proxy object (mleader-styles.ts). */
-const TAKEN = /the dictionary has an entry named STANDARD that Triya keeps as read/;
-/** The drawings that keep one: R13 and R14 binary DXFs ezdxf wrote. */
+/** The drawings that keep a STANDARD style as a proxy object: R13 and R14 binary DXFs ezdxf wrote. */
 const PROXY_STYLE = [
   'public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf',
   'public/third-party/ezdxf/integration_tests/bin_dxf_r14.dxf',
@@ -98,7 +96,7 @@ const partsOf = (model: DocumentModel, e: Entity) =>
 
 describe('MLEADER on the public corpus', () => {
   let saved = 0;
-  const refused: string[] = [];
+  const proxied: string[] = [];
   const textless: string[] = [];
   let blocks = 0;
 
@@ -170,13 +168,11 @@ describe('MLEADER on the public corpus', () => {
         'Check {\\Ldetail} B\\Psheet 2',
       );
       if (PROXY_STYLE.includes(f.path)) {
+        // The proxy keeps its name, so the new style takes the next free one (M2-29).
         expect(styled).toBe(false);
-        expect(() => saveAc1032Dxf(readCadDocument(bytes), model)).toThrow(TAKEN);
-        writeAuditSave(f.path, 'mleader', () =>
-          withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), unedited(bytes))),
-        );
-        refused.push(f.path);
-        return;
+        expect(model.meta.keptEntryNames).toEqual({ mleaderStyles: ['STANDARD'] });
+        expect([...model.tables.mleaderStyles.values()].map((s) => s.name)).toEqual(['Standard1']);
+        proxied.push(f.path);
       }
       expect(added.map((e) => e.type)).toEqual(
         Array.from({ length: block === undefined ? 6 : 7 }, () => 'MULTILEADER'),
@@ -210,13 +206,13 @@ describe('MLEADER on the public corpus', () => {
     PER_FILE_BUDGET_MS,
   );
 
-  it('saved multileaders on every readable file but two, block content on most', () => {
-    expect(refused).toEqual(PROXY_STYLE);
+  it('saved multileaders on every readable file with a text style, block content on most', () => {
+    expect(proxied).toEqual(PROXY_STYLE);
     expect(textless).toEqual([
       'public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1006.dxf',
       'public/third-party/ezdxf/integration_tests/AC1003_LINE_Example.dxf',
     ]);
-    expect(saved + refused.length + textless.length).toBe(readable.length);
+    expect(saved + textless.length).toBe(readable.length);
     expect(blocks).toBeGreaterThan(saved / 2);
   });
 });

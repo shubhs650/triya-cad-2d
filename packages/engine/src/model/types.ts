@@ -1797,4 +1797,11 @@ export interface DocumentMeta {
    * are filed under (WIPEOUT Frames' WIPEOUTVARIABLES, M2-08).
    */
   readonly rootDictionary?: Handle;
+  /**
+   * Names of style dictionary entries the I/O layer keeps without mapping (M2-29): an R13 or R14
+   * DXF can list an R2007 STANDARD multileader style that acad-ts reads as a proxy object. The
+   * engine does not see those styles, but a new one must not take their names, which the save
+   * would refuse (it never replaces an entry it keeps as read).
+   */
+  readonly keptEntryNames?: { readonly mleaderStyles?: readonly string[] };
 }

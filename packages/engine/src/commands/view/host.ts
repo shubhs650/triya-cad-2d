@@ -19,10 +19,13 @@ export interface ViewState {
   readonly paper: boolean;
 }
 
-/** A named view the space shown can restore: one saved in the drawing or this session. */
+/** A named view the space shown can restore: one saved in the drawing's VIEW table. */
 export interface NamedViewInfo {
   readonly name: string;
-  /** Saved in the drawing's VIEW table (rather than this session). */
+  /**
+   * Saved in the drawing's VIEW table. Always true since VIEW Save writes there (M2-29); kept for
+   * hosts that keep views of their own.
+   */
   readonly inDrawing: boolean;
   /** A 2D canvas can show it (a plan view without twist). */
   readonly restorable: boolean;
@@ -51,12 +54,6 @@ export type ViewRequest =
   | { readonly op: 'regen'; readonly all: boolean }
   | { readonly op: 'views' }
   | { readonly op: 'restore'; readonly name: string }
-  /** Saves the current view, or the window between `a` and `b`, as a named view. */
-  | {
-      readonly op: 'save';
-      readonly name: string;
-      readonly window?: { readonly a: Vec2; readonly b: Vec2 };
-    }
   /**
    * Selection (M2-03): the objects of the space shown within the pickbox of `point`, nearest
    * first. What a pick takes depends on what is drawn, so the canvas answers it.
@@ -218,7 +215,8 @@ export type PaletteName = 'properties';
  * `publish` (PUBLISH, M2-17 part 2) the Publish dialog; `preview` (PREVIEW, M2-18 part 2) shows
  * the plot preview and answers when it closes.
  */
-export type FileAction = 'qsave' | 'saveas' | 'close' | 'recover' | 'plot' | 'publish' | 'preview';
+export type FileAction =
+  'qsave' | 'saveas' | 'close' | 'closeall' | 'recover' | 'plot' | 'publish' | 'preview';
 
 export type ViewReply =
   | {

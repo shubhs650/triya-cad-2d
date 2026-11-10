@@ -1,16 +1,17 @@
 // VIEW and -VIEW (M2-02 part 2): the command-line form of named views, for the space shown.
 // AutoCAD's VIEW opens the View Manager; until that dialog lands both run the -VIEW prompts.
-// Restore, Save and Window are the 2D ones (Orthographic and sEttings are 3D and UCS, Delete
-// comes with writing views to the drawing, M2-13); a view saved here lasts the session, as the
-// navigation bar's.
-//   Enter an option [?/Restore/Save/Window]:
-// (AutoCAD 2024 Help, "-VIEW (Command)").
+// Delete, Restore, Save and Window are the 2D ones (Orthographic and sEttings are 3D and UCS).
+// Save and Window write the view into the drawing's VIEW table (M2-29), an undo step the save
+// keeps, as AutoCAD's do; Delete removes views from it.
+//   Enter an option [?/Delete/Restore/Save/Window]:
+// (AutoCAD 2024 Help, "-VIEW (Command)"). Saving under a name the drawing has replaces that view:
+// the Help says nothing of asking first, and the View Manager's New asks only because a dialog
+// can; the command line keeps the drafter's flow.
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
+import { saveNamedView, validViewName, type ViewExtent } from '../../edit/named-view';
+import { modelSpaceOf } from '../bus';
 import { viewRequest } from './zoom';
-
-/** Characters AutoCAD refuses in a symbol table name. */
-const NAME_INVALID = /[<>/\\":;?*|,=`]/;
 
 /** A `?` list pattern: `*` any run, `?` one character, case ignored; commas separate several. */
 export function viewNameMatches(name: string, patterns: string): boolean {
@@ -55,9 +56,27 @@ async function* viewName(
     const a = yield ctx.prompt.string({ message, spaces: true });
     if (a.kind !== 'string') return undefined;
     const name = a.value.trim();
-    if (name !== '' && name.length <= 255 && !NAME_INVALID.test(name)) return name;
+    if (validViewName(name)) return name;
     ctx.message('Invalid view name.');
   }
+}
+
+/** Deletes the views whose names match the patterns typed (`?` and `*`, comma separated). */
+async function* deleteViews(ctx: CommandContext): CommandGenerator {
+  const a = yield ctx.prompt.string({ message: 'Enter view name(s) to delete', spaces: true });
+  if (a.kind !== 'string' || a.value.trim() === '') return;
+  const found = [...ctx.model.tables.views.values()].filter((v) =>
+    viewNameMatches(v.name, a.value),
+  );
+  if (found.length === 0) return ctx.message('No matching views found.');
+  ctx.edit((b) => {
+    for (const v of found) b.removeTableRecord('views', v.handle);
+  });
+}
+
+/** Saves `extent` of the space drawn in as the view `name`. */
+function save(ctx: CommandContext, name: string, extent: ViewExtent, paper: boolean): void {
+  ctx.edit((b) => saveNamedView(b, ctx.model, name, { ...extent, paper }));
 }
 
 export function viewCommand(): CommandDef {
@@ -67,10 +86,11 @@ export function viewCommand(): CommandDef {
     async *run(ctx) {
       const a = yield ctx.prompt.keyword({
         message: 'Enter an option',
-        options: ['?', 'Restore', 'Save', 'Window'],
+        options: ['?', 'Delete', 'Restore', 'Save', 'Window'],
       });
       if (a.kind !== 'keyword') return;
       if (a.keyword === '?') return yield* listViews(ctx);
+      if (a.keyword === 'Delete') return yield* deleteViews(ctx);
       if (a.keyword === 'Restore') {
         const name = yield* viewName(ctx, 'Enter view name to restore');
         if (name) await viewRequest(ctx, { op: 'restore', name });
@@ -78,7 +98,12 @@ export function viewCommand(): CommandDef {
       }
       const name = yield* viewName(ctx, 'Enter view name to save');
       if (!name) return;
-      if (a.keyword === 'Save') return void (await viewRequest(ctx, { op: 'save', name }));
+      if (a.keyword === 'Save') {
+        // The canvas knows what it shows; `viewRequest` reports a refusal.
+        const r = await viewRequest(ctx, { op: 'get' });
+        if (r.ok && r.view) save(ctx, name, r.view, r.view.paper);
+        return;
+      }
       const first = yield ctx.prompt.point({ message: 'Specify first corner' });
       if (first.kind !== 'point') return;
       const second = yield ctx.prompt.point({
@@ -86,7 +111,13 @@ export function viewCommand(): CommandDef {
         rubberBand: { from: first.point, box: true },
       });
       if (second.kind !== 'point') return;
-      await viewRequest(ctx, { op: 'save', name, window: { a: first.point, b: second.point } });
+      const p = first.point;
+      const q = second.point;
+      const width = Math.abs(q.x - p.x);
+      const height = Math.abs(q.y - p.y);
+      if (!(width > 0) || !(height > 0)) return ctx.message('The window has no area.');
+      const center = { x: (p.x + q.x) / 2, y: (p.y + q.y) / 2 };
+      save(ctx, name, { center, width, height }, ctx.space !== modelSpaceOf(ctx.model));
     },
   };
 }

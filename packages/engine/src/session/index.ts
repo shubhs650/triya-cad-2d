@@ -8,7 +8,8 @@ import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
 import type { UndoState } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
-import type { ViewReply, ViewRequest } from '../commands/view/host';
+import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
+import { saveNamedView, validViewName } from '../edit/named-view';
 import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
@@ -55,7 +56,17 @@ export interface XrefLoadEdit {
   readonly drawing: DocumentInit;
 }
 
-export type EngineEdit = LayerStateEdit | LayoutEdit | XrefLoadEdit;
+/**
+ * The navigation bar's Save view (M2-29): the view shown kept in the drawing as `name`, as VIEW
+ * Save keeps it (`saveNamedView`), one VIEW undo step.
+ */
+export interface NamedViewEdit {
+  readonly kind: 'view';
+  readonly name: string;
+  readonly view: ViewState;
+}
+
+export type EngineEdit = LayerStateEdit | LayoutEdit | XrefLoadEdit | NamedViewEdit;
 
 /**
  * Characters AutoCAD refuses in a layout name (LAYOUT Rename: "Invalid layout name"), and its
@@ -275,7 +286,19 @@ export class EngineSession {
   /** Applies an edit to the document; a refused edit changes nothing. */
   edit(e: EngineEdit): EditResult {
     if (e.kind === 'xref-load') return this.#xrefLoad(e);
+    if (e.kind === 'view') return this.#viewEdit(e);
     return e.kind === 'layout' ? this.#layoutEdit(e) : this.#layerEdit(e);
+  }
+
+  #viewEdit(e: NamedViewEdit): EditResult {
+    const name = e.name.trim();
+    if (!validViewName(name)) return { ok: false, message: 'Invalid view name.' };
+    const b = new ChangeSetBuilder(this.model);
+    saveNamedView(b, this.model, name, e.view);
+    const change = b.build();
+    this.model.apply(change);
+    this.#step('VIEW', change);
+    return { ok: true, change };
   }
 
   #xrefLoad(e: XrefLoadEdit): EditResult {
