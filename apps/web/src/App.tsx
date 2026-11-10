@@ -75,6 +75,8 @@ import { browserLocalData, clearLocalData, type ClearReport } from './local-data
 import { coordinateText } from './coordinates';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
+import { undoButtons, undoStates } from './undo';
+import { UndoToast } from './UndoToast';
 import { PdfPages, fileKey } from './underlay/pages';
 import { openPdf } from './underlay/pdfjs';
 import {
@@ -148,6 +150,8 @@ engines.onCommand((doc, o) => {
   }
   if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
   if (o.type === 'properties') propertySheets.set(doc, o.sheet);
+  // The Quick Access Undo and Redo buttons and the undo toast follow the history (M2-23).
+  if (o.type === 'undo') undoStates.set(doc, o.state, o.action);
   if (o.type === 'selection') {
     selections.set(doc, o.ids);
     for (const c of controllersOf(doc)) c.setHighlight(o.ids);
@@ -300,6 +304,7 @@ async function closeDoc(id: number): Promise<boolean> {
   store.close(id);
   engines.stop(id);
   commandLines.forget(id);
+  undoStates.forget(id);
   return true;
 }
 
@@ -929,6 +934,7 @@ export function App() {
         >
           Plot…
         </button>
+        <UndoButtons doc={active?.id} />
         <input
           ref={picker}
           type="file"
@@ -1008,6 +1014,7 @@ export function App() {
           </button>
         </div>
       )}
+      <UndoToast states={undoStates} active={state.active} />
       {state.notice && (
         <div className="banner" role="status">
           <span>{state.notice}</span>
@@ -1470,5 +1477,41 @@ function StatusBar({
         </>
       )}
     </footer>
+  );
+}
+
+/**
+ * The Quick Access toolbar's Undo and Redo (M2-23): U and REDO on the drawing shown, as their
+ * keys run them, named by the step each would undo or redo.
+ */
+function UndoButtons({ doc }: { readonly doc: number | undefined }) {
+  useSyncExternalStore(undoStates.subscribe, undoStates.version);
+  const { undo, redo } = undoButtons(undoStates.get(doc));
+  const run = (name: string) => {
+    if (doc !== undefined) engines.command(doc, { kind: 'invoke', name });
+  };
+  return (
+    <>
+      <button
+        type="button"
+        className="undo-button"
+        disabled={!undo.enabled}
+        title={undo.title}
+        aria-keyshortcuts="Control+Z"
+        onClick={() => run('U')}
+      >
+        Undo
+      </button>
+      <button
+        type="button"
+        className="redo-button"
+        disabled={!redo.enabled}
+        title={redo.title}
+        aria-keyshortcuts="Control+Y"
+        onClick={() => run('REDO')}
+      >
+        Redo
+      </button>
+    </>
   );
 }

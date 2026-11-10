@@ -6,7 +6,6 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   PromptBus,
-  UNDO_COMMANDS,
   builtinCommands,
   type BusEvent,
   type Clipboard,
@@ -31,7 +30,6 @@ function app() {
   const drawing = (n: number, init: DocumentInit = sampleInit(), box?: ViewReply) => {
     const model = DocumentModel.create(init);
     const registry = builtinCommands();
-    for (const def of UNDO_COMMANDS) registry.register(def);
     const answer = (r: ViewRequest): ViewReply => {
       requests.push(r);
       if (r.op === 'clipboard') {

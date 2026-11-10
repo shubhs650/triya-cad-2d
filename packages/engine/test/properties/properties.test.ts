@@ -6,7 +6,6 @@ import {
   DocumentModel,
   EngineSession,
   PromptBus,
-  UNDO_COMMANDS,
   builtinCommands,
   polylineArea,
   polylineLength,
@@ -96,7 +95,6 @@ const insertGeom = (block: string, x = 0, y = 0, attributes: unknown[] = []): En
 function setup(i: DocumentInit = init()) {
   const model = DocumentModel.create(i);
   const registry = builtinCommands();
-  for (const def of UNDO_COMMANDS) registry.register(def);
   const requests: ViewRequest[] = [];
   const bus = new PromptBus({
     model,
