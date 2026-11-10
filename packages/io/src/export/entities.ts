@@ -10,6 +10,7 @@
 
 import type {
   AttributeBase,
+  BookColor,
   CadWipeoutBase,
   HatchBoundaryPathEdge,
   Vertex,
@@ -261,6 +262,11 @@ export interface Resolver {
    * R2000), or the ACAD_PLOTSTYLENAME entries and default.
    */
   readonly plotStyles?: PlotStyleNames;
+  /**
+   * The drawing's colour-book colours (its ACAD_COLOR dictionary's DBCOLOR objects), by
+   * `BOOK$COLOR`, any case: an entity given one names it (M2-27).
+   */
+  readonly bookColor?: (name: string) => BookColor | undefined;
 }
 
 /** The plot style names entities may name in a drawing (`plotStyleNames` in export.ts). */
@@ -309,6 +315,19 @@ function linetype(r: Resolver, ref: LinetypeRef): LineType | undefined {
 }
 
 const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefined;
+
+/**
+ * The drawing's DBCOLOR for a colour-book colour, when it has one of that name and true colour.
+ * Triya ships no colour books (AutoCAD's .acb files are Autodesk's), so an entity may take only
+ * a colour the drawing already holds (M2-27).
+ */
+function drawingBookColor(r: Resolver, c: Color): BookColor | undefined {
+  if (c.kind !== 'rgb' || c.bookName === undefined) return undefined;
+  const book = r.bookColor?.(`${c.bookName}$${c.colorName ?? ''}`);
+  const rgb = book?.color;
+  if (!rgb?.isTrueColor || rgb.r !== c.r || rgb.g !== c.g || rgb.b !== c.b) return undefined;
+  return book;
+}
 
 /**
  * Properties whose changes no writer handles yet. Xdata (xdata.ts, M1-75 part 19), plot style
@@ -363,7 +382,9 @@ function propProblems(
       out.push(`${what}: plot style ${after.plotStyle} is not in ACAD_PLOTSTYLENAME`);
     }
   }
-  if (changed('color') && hasBook(after.color)) out.push(`${what}: colour-book colours`);
+  if (changed('color') && hasBook(after.color) && !drawingBookColor(r, after.color)) {
+    out.push(`${what}: colour-book colours the drawing does not hold`);
+  }
   if (changed('xdata')) {
     out.push(...xdataProblems(r, before?.xdata, after.xdata).map((p) => `${what}: ${p}`));
   }
@@ -435,7 +456,9 @@ function writeProps(r: Resolver, e: AcadEntity, before: Props | undefined, after
   if (changed('layer')) e.layer = resolve(r, after.layer, Layer)!;
   if (changed('color')) {
     e.color = acadColor(after.color);
-    if (e.bookColor && !hasBook(after.color)) e.bookColor = null;
+    const book = drawingBookColor(r, after.color);
+    if (book) e.bookColor = book;
+    else if (e.bookColor) e.bookColor = null;
   }
   if (changed('linetype')) e.lineType = linetype(r, after.linetype)!;
   if (changed('lineweight')) e.lineWeight = acadLineweight(after.lineweight);

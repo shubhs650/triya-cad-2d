@@ -115,7 +115,7 @@ const insert = (block: string, at: { x: number; y: number }, attributes: InsertA
  * A title block TB (title, revision, multiline notes, an invisible attribute and a constant
  * logo) inserted twice, at (100, 0) and (300, 0), and a block without attributes at (500, 0).
  */
-function setup(o: { fonts?: boolean; namedPlotStyles?: boolean } = {}) {
+function setup(o: { fonts?: boolean; namedPlotStyles?: boolean; books?: boolean } = {}) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
@@ -176,7 +176,7 @@ function setup(o: { fonts?: boolean; namedPlotStyles?: boolean } = {}) {
         '70',
         insert(TB, { x: 300, y: 0 }, [
           attrib('71', 'TITLE', 'Valve pit', { x: 300, y: 10 }),
-          attrib('72', 'REV', 'A', { x: 300, y: 5 }),
+          attrib('72', 'REV', 'A', { x: 300, y: 5 }, o.books ? { color: RAL_3020 } : {}),
         ]),
       ),
       entityInit('80', insert(EMPTY, { x: 500, y: 0 }, [])),
@@ -243,6 +243,20 @@ function setup(o: { fonts?: boolean; namedPlotStyles?: boolean } = {}) {
         }),
       };
     }
+    if (r.op === 'select') {
+      // A window takes the objects whose insertion point lies in it, crossing or not.
+      const [lo, hi] = [
+        { x: Math.min(r.a.x, r.b.x), y: Math.min(r.a.y, r.b.y) },
+        { x: Math.max(r.a.x, r.b.x), y: Math.max(r.a.y, r.b.y) },
+      ];
+      const ids = [...model.entities()]
+        .filter((e) => {
+          const p = (e.geom as { position?: { x: number; y: number } }).position;
+          return p && p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
+        })
+        .map((e) => e.id);
+      return { ok: true, ids };
+    }
     if (r.op !== 'pick') return { ok: false, message: 'not drawn' };
     const near = (p: { x: number; y: number } | undefined) =>
       p !== undefined && Math.hypot(p.x - r.point.x, p.y - r.point.y) <= 5;
@@ -270,6 +284,16 @@ function setup(o: { fonts?: boolean; namedPlotStyles?: boolean } = {}) {
 }
 
 const dialog = (bus: PromptBus) => (bus.prompt as DialogPrompt).dialog;
+
+/** A colour-book colour, as a drawing that uses one maps it (DXF 420 and 430). */
+const RAL_3020 = {
+  kind: 'rgb',
+  r: 204,
+  g: 6,
+  b: 5,
+  bookName: 'RAL CLASSIC',
+  colorName: 'RAL 3020',
+} as const;
 
 describe('EATTEDIT', () => {
   it('opens the Enhanced Attribute Editor on the block picked, with prompts from its ATTDEFs', async () => {
@@ -482,7 +506,9 @@ describe('-ATTEDIT', () => {
     expect(bus.promptText).toBe('Enter block name specification <*>:');
     await bus.script(['TB', 'REV,TITLE', '*']);
     expect(bus.promptText).toBe('Select Attributes:');
-    await bus.pick({ x: 100, y: 0 });
+    // Each attribute picked on its text (M2-27), in the order picked.
+    await bus.pick({ x: 101, y: 11 });
+    await bus.pick({ x: 101, y: 6 });
     await bus.submit('');
     expect(bus.history).toContain('2 attributes selected.');
     const OPTIONS = 'Enter an option [Value/Position/Height/Angle/Style/Layer/Color/Next] <Next>:';
@@ -510,7 +536,7 @@ describe('-ATTEDIT', () => {
   it('runs as -ATE too, and refuses an unknown style or layer', async () => {
     const { bus, attr } = setup();
     await bus.script(['-ATE', 'Y', '*', 'REV', '*']);
-    await bus.pick({ x: 300, y: 0 });
+    await bus.pick({ x: 301, y: 6 });
     await bus.submit('');
     await bus.script(['S', 'Nope']);
     expect(bus.history.at(-1)).toBe('Cannot find text style "Nope".');
@@ -522,13 +548,14 @@ describe('-ATTEDIT', () => {
   it('skips invisible attributes unless ATTMODE is 2, and filters by value', async () => {
     const { bus } = setup();
     await bus.script(['-ATTEDIT', 'Y', '*', '*', 'Pump*']);
-    await bus.pick({ x: 100, y: 0 });
-    await bus.pick({ x: 300, y: 0 });
+    await bus.pick({ x: 101, y: 11 });
+    await bus.pick({ x: 301, y: 11 });
     await bus.submit('');
     expect(bus.history).toContain('1 attributes selected.');
     await bus.cancel();
+    // An invisible attribute is not drawn, so a pick where it would be takes nothing.
     await bus.script(['-ATTEDIT', 'Y', '*', 'SECRET', '*']);
-    await bus.pick({ x: 100, y: 0 });
+    await bus.pick({ x: 101, y: -19 });
     await bus.submit('');
     expect(bus.history).toContain('0 attributes selected.');
     expect(bus.command).toBeUndefined();
@@ -550,7 +577,7 @@ describe('-ATTEDIT', () => {
   it('global editing on the attributes selected', async () => {
     const { bus, attr } = setup();
     await bus.script(['-ATTEDIT', 'N', 'Y', '*', 'TITLE', '*']);
-    await bus.pick({ x: 300, y: 0 });
+    await bus.pick({ x: 301, y: 11 });
     await bus.submit('');
     await bus.script(['pit', 'chamber']);
     expect(attr('70', '71').value).toBe('Valve chamber');
@@ -924,7 +951,9 @@ describe("attribute editing: the rest of AutoCAD's behaviour", () => {
   it('-ATTEDIT: Value Change not found, Replace with nothing, Position, Height, Angle and Style defaults', async () => {
     const { bus, attr } = setup();
     await bus.script(['-ATTEDIT', '', 'door', '*', '*']);
-    await bus.pick({ x: 900, y: 0 });
+    // A window round the reference holds all three attributes.
+    await bus.pick({ x: 880, y: 20 });
+    await bus.pick({ x: 925, y: -15 });
     await bus.submit('');
     expect(bus.history).toContain('3 attributes selected.');
     // MARK.
@@ -962,12 +991,12 @@ describe("attribute editing: the rest of AutoCAD's behaviour", () => {
   it('-ATTEDIT Color: names, numbers, ByBlock, Truecolor; bad input is refused', async () => {
     const { bus, attr } = setup();
     await bus.script(['-ATTEDIT', 'Y', '*', 'TITLE', '*']);
-    await bus.pick({ x: 300, y: 0 });
+    await bus.pick({ x: 301, y: 11 });
     await bus.submit('');
     const color = () => attr('70', '71').color;
     expect(bus.promptText).toMatch(/<Next>:$/);
     await bus.submit('C');
-    expect(bus.promptText).toBe('Enter new color [Truecolor] <BYLAYER>:');
+    expect(bus.promptText).toBe('Enter new color [Truecolor/COlorbook] <BYLAYER>:');
     await bus.submit('3');
     expect(color()).toEqual({ kind: 'aci', index: 3 });
     await bus.script(['C', '']);
@@ -1000,6 +1029,96 @@ describe("attribute editing: the rest of AutoCAD's behaviour", () => {
     await bus.script(['C', 'red']);
     await bus.script(['C', '']);
     expect(bus.history.some((l) => l.includes('<RED>'))).toBe(true);
+  });
+
+  it('-ATTEDIT Color COlorbook: a colour of a book the drawing uses, by book and colour name', async () => {
+    const { bus, attr } = setup({ books: true });
+    await bus.script(['-ATTEDIT', 'Y', '*', 'TITLE', '*']);
+    await bus.pick({ x: 101, y: 11 });
+    await bus.submit('');
+    const color = () => attr('60', '61').color;
+    await bus.script(['C', 'CO']);
+    expect(bus.promptText).toBe('Enter Color Book name:');
+    await bus.submit('ral classic');
+    expect(bus.promptText).toBe('Enter color name:');
+    await bus.submit('ral 3020');
+    expect(color()).toEqual(RAL_3020);
+    // Shown as BOOK$COLOR, which Enter keeps and which may be typed too.
+    await bus.script(['C', '']);
+    expect(bus.history.some((l) => l.endsWith('<RAL CLASSIC$RAL 3020>:'))).toBe(true);
+    expect(color()).toEqual(RAL_3020);
+    await bus.script(['C', '1', 'C', 'Ral Classic$Ral 3020']);
+    expect(color()).toEqual(RAL_3020);
+    // Triya ships no colour books: only the drawing's own are offered.
+    await bus.script(['C', 'CO', 'PANTONE+ Solid Coated']);
+    expect(bus.history.at(-1)).toBe('Cannot find color book "PANTONE+ Solid Coated".');
+    await bus.script(['C', 'CO', 'RAL CLASSIC', 'RAL 9999']);
+    expect(bus.history.at(-1)).toBe('Cannot find color "RAL 9999" in color book "RAL CLASSIC".');
+    await bus.script(['C', 'NOPE$RAL 3020']);
+    expect(bus.history.at(-1)).toBe('Invalid color.');
+    expect(color()).toEqual(RAL_3020);
+  });
+
+  it('-ATTEDIT takes the attribute picked, none for a pick off its attributes, and marks the current one with an X', async () => {
+    const { bus } = setup();
+    const previews: (readonly unknown[])[] = [];
+    bus.on((e) => (e.type === 'preview' ? previews.push(e.geometry) : undefined));
+    await bus.script(['-ATTEDIT', 'Y', '*', '*', '*']);
+    await bus.pick({ x: 101, y: 6 });
+    // On the reference's insertion point, clear of every attribute's text.
+    await bus.pick({ x: 100, y: 0 });
+    await bus.submit('');
+    expect(bus.history).toContain('1 attributes selected.');
+    // REV's X: twice the pickbox (0.25) each way from its insertion point (100, 5).
+    expect(previews.at(-1)).toEqual([
+      { kind: 'LINE', start: { x: 99.5, y: 4.5 }, end: { x: 100.5, y: 5.5 } },
+      { kind: 'LINE', start: { x: 99.5, y: 5.5 }, end: { x: 100.5, y: 4.5 } },
+    ]);
+    await bus.submit('');
+    expect(bus.command).toBeUndefined();
+    expect(previews.at(-1)).toEqual([]);
+  });
+
+  it('-ATTEDIT windows: a crossing takes the attributes it crosses, a window only those inside', async () => {
+    const { bus } = setup();
+    // Over the reference's insertion point and the lower half of REV's text.
+    await bus.script(['-ATTEDIT', 'Y', '*', '*', '*', 'C']);
+    await bus.pick({ x: 103, y: 6 });
+    await bus.pick({ x: 95, y: -1 });
+    await bus.submit('');
+    expect(bus.history).toContain('1 attributes selected.');
+    await bus.cancel();
+    // The same corners as a window: REV is not wholly inside.
+    await bus.script(['-ATTEDIT', 'Y', '*', '*', '*', 'W']);
+    await bus.pick({ x: 95, y: -1 });
+    await bus.pick({ x: 103, y: 6 });
+    await bus.submit('');
+    expect(bus.history.at(-1)).toBe('0 attributes selected.');
+    // A window over all the text but the multiline NOTES' lower edge.
+    await bus.script(['-ATTEDIT', 'Y', '*', '*', '*', 'W']);
+    await bus.pick({ x: 95, y: 13 });
+    await bus.pick({ x: 120, y: -12 });
+    await bus.submit('');
+    expect(bus.history).toContain('2 attributes selected.');
+  });
+
+  it('-ATTEDIT takes every attribute of a reference taken whole (ALL), or one the canvas cannot measure', async () => {
+    const { bus } = setup();
+    await bus.script(['-ATTEDIT', 'Y', 'TB', '*', '*', 'ALL', '']);
+    expect(bus.history).toContain('5 attributes selected.');
+    await bus.cancel();
+    const t = setup({ fonts: false });
+    await t.bus.script(['-ATTEDIT', 'Y', '*', '*', '*']);
+    await t.bus.pick({ x: 101, y: 11 });
+    await t.bus.submit('');
+    expect(t.bus.history).toContain('3 attributes selected.');
+    // Global editing on the attributes picked, too.
+    await t.bus.cancel();
+    const u = setup();
+    await u.bus.script(['-ATTEDIT', 'N', 'Y', '*', '*', '*']);
+    await u.bus.pick({ x: 101, y: 6 });
+    await u.bus.submit('');
+    expect(u.bus.history).toContain('1 attributes selected.');
   });
 
   it('-ATTEDIT lists invisible attributes under ATTMODE 2, skips other blocks and non-blocks', async () => {

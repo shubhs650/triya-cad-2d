@@ -434,6 +434,7 @@ export function triyaToAcad(
     version: docHeader?.version,
     format,
     plotStyles,
+    bookColor: (name) => original.colors?.tryGet(name) ?? undefined,
   } satisfies Resolver;
   // Records first: entities and the header may name one the same save adds, a linetype's text
   // a text style, a dimension style a text style or linetype, a layer a linetype or plot style.

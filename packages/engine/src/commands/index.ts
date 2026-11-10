@@ -24,6 +24,7 @@ export {
   atteditCommand,
   attributeEntries,
   blockNameOf,
+  bookColors,
   eatteditCommand,
   hasEditableAttributes,
   insertionPoint,
