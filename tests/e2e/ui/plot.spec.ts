@@ -246,11 +246,11 @@ test('a layout opens on its page setup’s plot style table and options; your ow
   await openWithPicker(page, VIEWPORTS);
   await expectShown(page, path.basename(VIEWPORTS));
   // A table of the drafter's own, dropped on the window (kept by Settings, M2-20 part 2).
-  const ctb = test.info().outputPath('Office Pens.ctb');
+  const ctb = test.info().outputPath('Office-Pens.ctb');
   copyFileSync(MONOCHROME_CTB, ctb);
   await openWithDrop(page, ctb);
   await expect(
-    page.locator('.banner', { hasText: 'Added color-dependent plot style table Office Pens.ctb.' }),
+    page.locator('.banner', { hasText: 'Added color-dependent plot style table Office-Pens.ctb.' }),
   ).toBeVisible();
   const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
   await tabs.nth(1).click();
@@ -270,9 +270,9 @@ test('a layout opens on its page setup’s plot style table and options; your ow
     'triya-default.ctb',
     'triya-monochrome.ctb',
     'triya-grayscale.ctb',
-    'Office Pens.ctb',
+    'Office-Pens.ctb',
   ]);
-  await table.selectOption('Office Pens.ctb');
+  await table.selectOption('Office-Pens.ctb');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     d.getByRole('button', { name: 'OK' }).click(),
