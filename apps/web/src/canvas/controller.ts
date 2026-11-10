@@ -87,7 +87,7 @@ import {
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
 import { layoutsOf } from '../documents';
-import type { PlotSpace } from '../plot';
+import { pageSetupOf, type PlotSpace } from '../plot';
 import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
@@ -388,7 +388,8 @@ export class CanvasController {
 
   /**
    * What the Plot dialog plots from this canvas (M2-17): the space's name, a layout's sheet, and
-   * the extents (measured afresh), the view shown and the limits.
+   * the extents (measured afresh), the view shown and the limits; the space's page setup (part
+   * 3), model space's from the Model layout.
    */
   async plotSpace(): Promise<PlotSpace> {
     await this.#measure();
@@ -413,6 +414,12 @@ export class CanvasController {
       display,
       limits: this.#limits(),
       namedPlotStyles: this.#header.get('$PSTYLEMODE') === 0,
+      pageSetup: pageSetupOf(
+        layout ??
+          layoutsOf(this.#opened.init, this.#hooks.changes?.() ?? []).find(
+            (l) => l.blockRecord === this.block,
+          ),
+      ),
     };
   }
 

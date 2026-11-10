@@ -4,11 +4,14 @@
 // dialog opens on it), and a PDF publishes as one multi-sheet file. Each page is labelled with its
 // layout's name and bookmarked with its sheet's, as AutoCAD's PDFs are. A sheet that cannot plot
 // is left out and reported, as AutoCAD's publish log reports it, and the others still publish.
+// Part 3: each sheet plots with its page setup's plot style table and plot options, and the
+// drafter's own tables, as the Plot dialog would open on it.
 
 import { layoutSheet, type Box, type Layout } from '@triya/engine';
 import { PdfDocument } from '@triya/pdf';
 import type { PlotPart } from '@triya/render';
-import { addPlotPage, defaultPlotSettings, plotPage, type PlotSpace } from './plot';
+import type { PlotStyleTable } from '@triya/render';
+import { addPlotPage, defaultPlotSettings, pageSetupOf, plotPage, type PlotSpace } from './plot';
 
 export interface PublishSheet {
   /** "<drawing>-<space>". */
@@ -38,20 +41,26 @@ export function publishFileName(drawing: string): string {
 /**
  * What a sheet that is not shown plots from: a layout's sheet from its page setup, model space
  * by its extents (the Plot dialog's Display needs the canvas, which a sheet not shown lacks).
+ * `layout` is the space's LAYOUT object, the Model layout for model space (`model`), whose page
+ * setup gives its plot style table and options but no sheet.
  */
 export function sheetSpace(s: {
   readonly name: string;
   readonly layout?: Layout | undefined;
+  readonly model?: boolean;
   readonly extents?: Box | undefined;
   readonly namedPlotStyles?: boolean;
+  readonly userTables?: ReadonlyMap<string, PlotStyleTable> | undefined;
 }): PlotSpace {
-  const sheet = s.layout ? layoutSheet(s.layout) : undefined;
+  const sheet = s.layout && !s.model ? layoutSheet(s.layout) : undefined;
   return {
     name: s.name,
     sheet: sheet && { paper: sheet.paper, unitsPerMm: sheet.unitsPerMm },
-    inches: s.layout?.plot?.paperUnits === 'inches',
+    inches: !s.model && s.layout?.plot?.paperUnits === 'inches',
     extents: s.extents,
     namedPlotStyles: s.namedPlotStyles ?? false,
+    pageSetup: pageSetupOf(s.layout),
+    userTables: s.userTables,
   };
 }
 

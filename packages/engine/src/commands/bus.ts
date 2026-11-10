@@ -322,9 +322,18 @@ export class PromptBus {
     return this.#enqueue(() => this.#direct(answer));
   }
 
-  /** Esc: cancels the running command, and any it was running inside. */
+  /**
+   * Esc: cancels the running command, and any it was running inside; a prompt that takes Esc
+   * (`escape`) has it as its answer instead.
+   */
   cancel(): Promise<void> {
-    return this.#enqueue(() => this.#cancel());
+    return this.#enqueue(() => {
+      const prompt = this.#stack.at(-1)?.prompt;
+      if (!prompt?.escape) return this.#cancel();
+      this.#log(`${this.promptText} *Cancel*`);
+      this.#collectors = [];
+      return this.#deliver({ kind: 'escape' }, '', false);
+    });
   }
 
   /**

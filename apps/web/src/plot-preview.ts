@@ -98,7 +98,7 @@ export function previewSettings(doc: number, block: string, space: PlotSpace): P
 
 /** What the renderer is asked for to plot a space with these settings. */
 export function plotRequest(settings: PlotSettings, space: PlotSpace): PlotRequest {
-  const table = plotTable(settings);
+  const table = plotTable(settings, space);
   return {
     ...(table && { table }),
     ...(settings.paperspaceLast && space.sheet && { paperspaceLast: true }),

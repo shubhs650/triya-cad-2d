@@ -15,8 +15,19 @@
 // Window in "What to plot" always) and the partial preview ("Shows an accurate representation of
 // the effective plot area relative to the paper size and printable area"; a red line marks a plot
 // area that runs off the paper).
+//
+// Part 3: page setups and the drafter's own plot style tables. AutoCAD's Plot dialog opens on the
+// space's page setup (its LAYOUT object's PLOTSETTINGS; model space's is the Model layout's): here
+// its plot style table (DXF 7) and the plot options its flags hold (DXF 70: 32 "Plot with plot
+// styles", 128 "Plot object lineweights", 64 "Scale lineweights", 512 "Plot paperspace last",
+// which ObjectARX names drawViewportsFirst). The tables listed are the bundled ones, then those
+// added in Settings (M2-20 part 2) of the drawing's kind, by name; AutoCAD's own names (acad.ctb,
+// monochrome.ctb, …) open on the bundled table of that meaning unless the drafter added a file of
+// that name. A page setup naming a table this device lacks keeps the name, says so and plots
+// without one: AutoCAD's help does not say what its dialog does then, and plotting each object
+// with its own properties is what the table None does.
 
-import type { Box, Vec2 } from '@triya/engine';
+import type { Box, Layout, Vec2 } from '@triya/engine';
 import {
   PAPER_SIZES,
   PdfDocument,
@@ -53,6 +64,34 @@ export interface PlotSpace {
   readonly inches?: boolean;
   /** `$PSTYLEMODE` 0: the drawing uses named plot styles (STB), else colour-dependent (CTB). */
   readonly namedPlotStyles?: boolean;
+  /** The space's page setup (part 3): a layout's own, model space's the Model layout's. */
+  readonly pageSetup?: PageSetup | undefined;
+  /** The plot style tables added in Settings, by file name (part 3). */
+  readonly userTables?: ReadonlyMap<string, PlotStyleTable> | undefined;
+}
+
+/** What the Plot dialog opens with from a page setup (PLOTSETTINGS). */
+export interface PageSetup {
+  /** DXF 7: the plot style table's file name, as the drawing names it; '' for none. */
+  readonly styleSheet: string;
+  /** DXF 70 plot layout flags. */
+  readonly flags: number;
+}
+
+/** The DXF 70 flags of a page setup that the dialog's plot options show. */
+export const PAGE_SETUP_FLAGS = {
+  PLOT_STYLES: 32,
+  SCALE_LINEWEIGHTS: 64,
+  LINEWEIGHTS: 128,
+  /** ObjectARX's drawViewportsFirst. */
+  PAPERSPACE_LAST: 512,
+} as const;
+
+/** A LAYOUT's page setup, as the dialog reads it. */
+export function pageSetupOf(layout: Layout | undefined): PageSetup | undefined {
+  const plot = layout?.plot;
+  if (!plot) return undefined;
+  return { styleSheet: plot.styleSheet ?? '', flags: plot.flags };
 }
 
 export type PlotArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
@@ -116,10 +155,37 @@ export const PLOT_SCALES: readonly (readonly [string, number, number])[] = [
   ['10:1', 10, 1],
 ];
 
-/** The plot style tables the dialog lists for the drawing: CTBs, or STBs for named styles. */
+/**
+ * The plot style tables the dialog lists for the drawing: CTBs, or STBs for named styles; the
+ * bundled ones, then the drafter's own in name order.
+ */
 export function plotStyleTables(space: PlotSpace): string[] {
   const ext = space.namedPlotStyles ? '.stb' : '.ctb';
-  return Object.keys(BUNDLED_PLOT_STYLE_TABLES).filter((n) => n.endsWith(ext));
+  const bundled = Object.keys(BUNDLED_PLOT_STYLE_TABLES).filter((n) => n.endsWith(ext));
+  const own = [...(space.userTables?.keys() ?? [])]
+    .filter((n) => n.toLowerCase().endsWith(ext))
+    .filter((n) => !bundled.includes(n.toLowerCase()))
+    .sort((a, b) => a.localeCompare(b, undefined, { sensitivity: 'base' }));
+  return [...bundled, ...own];
+}
+
+/** The listed table a page setup's table name stands for, or the name itself when none does. */
+function tableNamed(sheet: string, space: PlotSpace): string {
+  if (!sheet) return '';
+  const file = sheet.split(/[\\/]/).pop()!;
+  const lower = file.toLowerCase();
+  const own = [...(space.userTables?.keys() ?? [])].find((n) => n.toLowerCase() === lower);
+  if (own) return own;
+  const bundled = bundledPlotStyleTable(file);
+  const name = Object.keys(BUNDLED_PLOT_STYLE_TABLES).find(
+    (n) => BUNDLED_PLOT_STYLE_TABLES[n] === bundled,
+  );
+  return name ?? file;
+}
+
+/** The table chosen is not one this device has for the drawing (a page setup named it). */
+export function missingPlotStyleTable(settings: PlotSettings, space: PlotSpace): boolean {
+  return settings.table !== '' && !plotStyleTables(space).includes(settings.table);
 }
 
 const sizeOf = (b: Box) => ({ width: b.maxX - b.minX, height: b.maxY - b.minY });
@@ -134,6 +200,9 @@ function layoutPaper(space: PlotSpace): { width: number; height: number } | unde
 
 /** The settings the dialog opens with for a space. */
 export function defaultPlotSettings(space: PlotSpace): PlotSettings {
+  const setup = space.pageSetup;
+  const flag = (bit: number, otherwise: boolean) => (setup ? (setup.flags & bit) !== 0 : otherwise);
+  const { PLOT_STYLES, LINEWEIGHTS, SCALE_LINEWEIGHTS, PAPERSPACE_LAST } = PAGE_SETUP_FLAGS;
   const common = {
     device: 'pdf' as const,
     dpi: 150,
@@ -141,11 +210,12 @@ export function defaultPlotSettings(space: PlotSpace): PlotSettings {
     upsideDown: false,
     center: false,
     offset: { x: 0, y: 0 },
-    table: '',
-    lineweights: true,
-    plotStyles: true,
-    paperspaceLast: false,
-    scaleLineweights: false,
+    table: tableNamed(setup?.styleSheet ?? '', space),
+    lineweights: flag(LINEWEIGHTS, true),
+    plotStyles: flag(PLOT_STYLES, true),
+    // Layouts only: model space has no paper space, nor a page setup scale to scale against.
+    paperspaceLast: space.sheet !== undefined && flag(PAPERSPACE_LAST, false),
+    scaleLineweights: space.sheet !== undefined && flag(SCALE_LINEWEIGHTS, false),
   };
   const paper = layoutPaper(space);
   if (space.sheet && paper) {
@@ -284,13 +354,16 @@ export function plotPage(settings: PlotSettings, space: PlotSpace): PlotSetup {
 }
 
 /** The plot style table the settings plot with, if any. */
-export function plotTable(settings: PlotSettings): PlotStyleTable | undefined {
-  return settings.plotStyles && settings.table ? bundledPlotStyleTable(settings.table) : undefined;
+export function plotTable(settings: PlotSettings, space: PlotSpace): PlotStyleTable | undefined {
+  if (!settings.plotStyles || missingPlotStyleTable(settings, space) || !settings.table) {
+    return undefined;
+  }
+  return space.userTables?.get(settings.table) ?? bundledPlotStyleTable(settings.table);
 }
 
 /** How the parts lie on the page and plot there: what every plotter draws with. */
 function pageOptions(page: PlotSetup, settings: PlotSettings, space: PlotSpace): PlotPageOptions {
-  const table = plotTable(settings);
+  const table = plotTable(settings, space);
   // "Scale lineweights" (layouts): lineweights grow with the plot scale against the page setup's.
   const lineweightScale =
     settings.scaleLineweights && space.sheet ? page.scale * space.sheet.unitsPerMm : 1;
