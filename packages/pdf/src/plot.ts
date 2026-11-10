@@ -33,7 +33,16 @@ import type { FillStyle, GradientStop, PlotPixels } from './fills';
 import type { PlotFont } from './fonts';
 import { pdfReal } from './reader';
 import { adaptDashes, dashPeriod, plotDashes, POINTS_PER_INCH, POINTS_PER_MM } from './linetypes';
-import { emitSegments, pathSegments, subpathLength, subpaths, type Affine } from './path';
+import {
+  emitSegments,
+  PATH_L,
+  PATH_M,
+  PATH_Z,
+  pathSegments,
+  subpathLength,
+  subpaths,
+  type Affine,
+} from './path';
 
 /** What an object plots with: `PlotProperties` from the render package's `PlotResolver`. */
 export interface PlotPaint {
@@ -294,12 +303,17 @@ function plotUnderlay(
   const bytes = o.underlays?.(u);
   const form =
     bytes && page.underlay(bytes, u.page, { contrast: u.contrast, monochrome: u.monochrome });
-  if (!form) {
-    if (!u.clipped || segments.length === 0) return;
+  // The frame, as PDFFRAME's initial value 1 shows and plots it (the screen draws it too): the
+  // boundary while clipping is on, else the page's edge, in the object's plot properties.
+  const outline = (s: ReturnType<typeof pathSegments>) => {
+    if (s.length === 0) return;
     pen(cs, item.paint, plottedWeight(item.paint, o));
     cs.dash([]);
-    emitSegments(cs, segments);
+    emitSegments(cs, s);
     cs.stroke();
+  };
+  if (!form) {
+    if (u.clipped) outline(segments);
     return;
   }
   // The displayed page's points → underlay inches → world → paper.
@@ -316,6 +330,11 @@ function plotUnderlay(
   // Ten decimals: a page's thousands of points ride on this matrix.
   cs.transform(m, pdfReal).xobject(form.name);
   cs.restore();
+  if (u.clipped) outline(segments);
+  else {
+    const { width: w, height: h } = form.view;
+    outline(pathSegments([PATH_M, 0, 0, PATH_L, w, 0, PATH_L, w, h, PATH_L, 0, h, PATH_Z], m));
+  }
 }
 
 function plotFill(

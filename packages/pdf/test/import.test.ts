@@ -99,6 +99,10 @@ describe('plotting a PDF underlay', () => {
     const { content, form, src, bytes } = plot([item(underlay())]);
     // Displayed points → inches → mm → points: scale 1, moved by (10, 20) mm.
     expect(content).toContain('1 0 0 1 28.3464566929 56.6929133858 cm\n/Fm1 Do');
+    // Framed (PDFFRAME 1): the page's edge stroked after it, 200 × 100 points from (10, 20) mm.
+    expect(content).toMatch(
+      /\/Fm1 Do\nQ\n(.*\n)*28\.3465 56\.6929 m\n228\.3465 56\.6929 l\n(.*\n)*h\nS\n/,
+    );
     const f = form('Fm1');
     expect(f.dict.get('Subtype')).toEqual(new PdfName('Form'));
     expect(f.dict.get('BBox')).toEqual([0, 0, 200, 100]);
@@ -139,6 +143,8 @@ describe('plotting a PDF underlay', () => {
       item(underlay({ clipped: true, fade: 25, contrast: 50, monochrome: true }), ring),
     ]);
     expect(content).toMatch(/28\.3465 56\.6929 m\n(.*\n)+h\nW n\n\/GSa750 gs\n.* cm\n\/Fm1 Do\nQ/);
+    // Framed by its boundary.
+    expect(content).toMatch(/\/Fm1 Do\nQ\n(.*\n)*28\.3465 56\.6929 m\n(.*\n)*h\nS\n/);
     // The form shown masks the adjusted page to where the page paints.
     const masked = form('Fm1');
     expect(masked.dict.get('BBox')).toEqual([0, 0, 200, 100]);

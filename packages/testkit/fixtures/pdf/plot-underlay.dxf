@@ -553,7 +553,7 @@ $SPLINESEGS
   9
 $HANDSEED
   5
-48
+44
   9
 $SURFTAB1
  70
@@ -1409,7 +1409,7 @@ AcDbSymbolTable
   0
 VPORT
   5
-44
+40
 330
 8
 100
@@ -1605,7 +1605,7 @@ LAYER
 100
 AcDbSymbolTable
  70
-5
+4
   0
 LAYER
   5
@@ -1691,35 +1691,11 @@ AcDbSymbolTableRecord
 100
 AcDbLayerTableRecord
   2
-FRAMES
- 70
-0
- 62
-9
-  6
-Continuous
-370
--3
-390
-13
-347
-21
-  0
-LAYER
-  5
-32
-330
-1
-100
-AcDbSymbolTableRecord
-100
-AcDbLayerTableRecord
-  2
 UNDERLAYS
  70
 0
  62
-7
+8
   6
 Continuous
 370
@@ -1857,7 +1833,7 @@ ACAD
   0
 APPID
   5
-45
+41
 330
 3
 100
@@ -1871,7 +1847,7 @@ HATCHBACKGROUNDCOLOR
   0
 APPID
   5
-46
+42
 330
 3
 100
@@ -2181,7 +2157,7 @@ ENTITIES
   0
 LWPOLYLINE
   5
-33
+32
 330
 17
 100
@@ -2213,7 +2189,7 @@ AcDbPolyline
   0
 TEXT
   5
-34
+33
 330
 17
 100
@@ -2247,7 +2223,7 @@ AcDbText
   0
 TEXT
   5
-35
+34
 330
 17
 100
@@ -2279,43 +2255,9 @@ ROMANS
 100
 AcDbText
   0
-LWPOLYLINE
-  5
-39
-330
-17
-100
-AcDbEntity
-  8
-FRAMES
- 62
-9
-100
-AcDbPolyline
- 90
-4
- 70
-1
- 10
-22.0
- 20
-100.0
- 10
-128.92
- 20
-100.0
- 10
-128.92
- 20
-175.6
- 10
-22.0
- 20
-175.6
-  0
 PDFUNDERLAY
   5
-3A
+38
 330
 17
 100
@@ -2325,7 +2267,7 @@ UNDERLAYS
 100
 AcDbUnderlayReference
 340
-37
+36
  10
 22.0
  20
@@ -2349,7 +2291,7 @@ AcDbUnderlayReference
   0
 TEXT
   5
-3B
+39
 330
 17
 100
@@ -2381,43 +2323,9 @@ ROMANS
 100
 AcDbText
   0
-LWPOLYLINE
-  5
-3C
-330
-17
-100
-AcDbEntity
-  8
-FRAMES
- 62
-9
-100
-AcDbPolyline
- 90
-4
- 70
-1
- 10
-160.0
- 20
-100.0
- 10
-266.91999999999996
- 20
-100.0
- 10
-266.91999999999996
- 20
-175.6
- 10
-160.0
- 20
-175.6
-  0
 PDFUNDERLAY
   5
-3D
+3A
 330
 17
 100
@@ -2427,7 +2335,7 @@ UNDERLAYS
 100
 AcDbUnderlayReference
 340
-38
+37
  10
 160.0
  20
@@ -2451,7 +2359,7 @@ AcDbUnderlayReference
   0
 TEXT
   5
-3E
+3B
 330
 17
 100
@@ -2483,43 +2391,9 @@ ROMANS
 100
 AcDbText
   0
-LWPOLYLINE
-  5
-3F
-330
-17
-100
-AcDbEntity
-  8
-FRAMES
- 62
-9
-100
-AcDbPolyline
- 90
-4
- 70
-1
- 10
-22.0
- 20
-15.0
- 10
-128.92
- 20
-15.0
- 10
-128.92
- 20
-90.6
- 10
-22.0
- 20
-90.6
-  0
 PDFUNDERLAY
   5
-40
+3C
 330
 17
 100
@@ -2529,7 +2403,7 @@ UNDERLAYS
 100
 AcDbUnderlayReference
 340
-37
+36
  10
 22.0
  20
@@ -2553,7 +2427,7 @@ AcDbUnderlayReference
   0
 TEXT
   5
-41
+3D
 330
 17
 100
@@ -2587,7 +2461,7 @@ AcDbText
   0
 PDFUNDERLAY
   5
-42
+3E
 330
 17
 100
@@ -2597,7 +2471,7 @@ UNDERLAYS
 100
 AcDbUnderlayReference
 340
-38
+37
  10
 168.0
  20
@@ -2637,7 +2511,7 @@ AcDbUnderlayReference
   0
 TEXT
   5
-43
+3F
 330
 17
 100
@@ -2735,7 +2609,7 @@ EZDXF_META
   3
 ACAD_PDFDEFINITIONS
 350
-36
+35
   0
 DICTIONARY
   5
@@ -3663,7 +3537,7 @@ CREATED_BY_EZDXF
   3
 WRITTEN_BY_EZDXF
 350
-47
+43
   0
 DICTIONARYVAR
   5
@@ -3679,7 +3553,7 @@ DictionaryVariables
   0
 DICTIONARY
   5
-36
+35
 330
 A
 100
@@ -3689,27 +3563,27 @@ AcDbDictionary
   3
 Underlay00001
 350
-37
+36
   3
 Underlay00002
 350
-38
+37
   0
 PDFDEFINITION
   5
-37
+36
 102
 {ACAD_REACTORS
 330
-36
+35
 330
-3A
+38
 330
-40
+3C
 102
 }
 330
-36
+35
 100
 AcDbUnderlayDefinition
   1
@@ -3719,19 +3593,19 @@ plot-underlay.pdf
   0
 PDFDEFINITION
   5
-38
+37
 102
 {ACAD_REACTORS
 330
-36
+35
 330
-3D
+3A
 330
-42
+3E
 102
 }
 330
-36
+35
 100
 AcDbUnderlayDefinition
   1
@@ -3741,7 +3615,7 @@ plot-underlay.pdf
   0
 DICTIONARYVAR
   5
-47
+43
 330
 2D
 100

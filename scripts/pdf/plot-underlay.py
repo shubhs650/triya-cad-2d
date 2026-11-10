@@ -5,7 +5,8 @@ A thread-authored AC1032 drawing (DEC-047) in millimetres that fills an A4 lands
 1:1 with PDF underlays of `plot-underlay.pdf`, a two-page PDF the test kit writes itself
 (`packages/testkit/src/pdf/sheet.ts` `sheetUnderlayPdf`: the TrueType text page and the fills
 page of plot-sheet.pdf, so no PDF is committed for it). `sheet.ts` plots this drawing as page 8
-of plot-sheet.pdf, where each underlay's page is copied in as vectors and text:
+of plot-sheet.pdf, where each underlay's page is copied in as vectors and text, framed
+(PDFFRAME 1) in the underlay's colour, ACI 8:
 
 - page 1 as it is (contrast 100, fade 0), unclipped;
 - page 2 faded 50 %;
@@ -42,19 +43,10 @@ def label(msp, text: str, at: tuple[float, float], height: float = 2.5) -> None:
     t.set_placement(at)
 
 
-def frame(msp, x: float, y: float) -> None:
-    """The page's outline, so where each underlay stands shows on the sheet."""
-    w = PAGE_W * SCALE
-    h = PAGE_H * SCALE
-    msp.add_lwpolyline([(x, y), (x + w, y), (x + w, y + h), (x, y + h)], close=True,
-                       dxfattribs={"layer": "FRAMES", "color": 9})
-
-
 def model(doc: ezdxf.document.Drawing) -> None:
     doc.styles.add("ROMANS", font="romans.shx")
     doc.layers.add("SHEET", color=7, lineweight=70)
-    doc.layers.add("FRAMES", color=9)
-    doc.layers.add("UNDERLAYS", color=7)
+    doc.layers.add("UNDERLAYS", color=8)
     msp = doc.modelspace()
 
     msp.add_lwpolyline([(10, 10), (287, 10), (287, 200), (10, 200)], close=True,
@@ -85,15 +77,12 @@ def model(doc: ezdxf.document.Drawing) -> None:
             u.clipping = True
         return u
 
-    frame(msp, 22, 100)
     underlay(page1, (22, 100), contrast=100, fade=0)
     label(msp, "page 1: as drawn", (22, 95))
 
-    frame(msp, 160, 100)
     underlay(page2, (160, 100), contrast=100, fade=50)
     label(msp, "page 2: fade 50", (160, 95))
 
-    frame(msp, 22, 15)
     underlay(page1, (22, 15), contrast=50, fade=0, monochrome=True)
     label(msp, "page 1: monochrome, contrast 50", (22, 11.5))
 
