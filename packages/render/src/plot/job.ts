@@ -82,6 +82,11 @@ export type PlotRgb = readonly [number, number, number];
 
 interface PlotPartBase {
   readonly paint: PlotProperties;
+  /**
+   * The layer the part plots from: its object's effective layer (inside a block, layer 0 is the
+   * reference's), by name. An SVG plot groups parts by it (M2-18).
+   */
+  readonly layer?: string;
   /** Object transparency, below 1; absent is opaque. */
   readonly opacity?: number;
   /** Closed polygons (flat x, y pairs) the part shows within: XCLIPs and viewport frames. */
@@ -325,6 +330,7 @@ class Plotter {
     let props: PlotProperties | undefined;
     let object: PlotObject | undefined;
     let shown: PrimitiveColor = 'foreground';
+    let layer: string | undefined;
     // XCLIP polygons carried into the space, joined to `clip`; one array per source array.
     const clips = new Map<readonly (readonly number[])[], readonly (readonly number[])[]>();
     for (let i = 0; i < prims.length; i++) {
@@ -335,11 +341,9 @@ class Plotter {
         last = owner;
         object = plotObject(owner.entity, model, owner.context, this.#lwDefault);
         props = this.#src.resolver.resolve(object);
-        shown = resolveColor(
-          owner.entity,
-          { layers: model.tables.layers, lwDefault: this.#lwDefault },
-          owner.context,
-        );
+        const src = { layers: model.tables.layers, lwDefault: this.#lwDefault };
+        shown = resolveColor(owner.entity, src, owner.context);
+        layer = effectiveLayer(owner.entity, src, owner.context)?.name;
       }
       const prim = o.m ? transformPrimitive(raw, o.m) : raw;
       let clip = o.clip;
@@ -349,7 +353,9 @@ class Plotter {
         clip = joined;
       }
       const part = this.part(prim, object!, props!, shown);
-      if (part) out.push(clip ? { ...part, clip } : part);
+      if (!part) continue;
+      const tagged = layer === undefined ? part : { ...part, layer };
+      out.push(clip ? { ...tagged, clip } : tagged);
     }
   }
 

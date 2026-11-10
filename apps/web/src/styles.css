@@ -1897,6 +1897,12 @@ button {
   gap: 12px;
 }
 
+/* M2-18: the PNG plotter's image size under its resolution. */
+.plot-note {
+  margin: 0;
+  color: var(--chrome-text-muted);
+}
+
 .plot-error {
   margin: 8px 0 0;
   color: var(--danger-text);

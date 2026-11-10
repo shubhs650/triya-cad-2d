@@ -88,3 +88,5 @@ export { EmbeddedFont, PdfFonts, type PlotFont } from './fonts';
 export { TrueTypeFont } from './truetype';
 export { SFNT_CFF, SFNT_TRUETYPE, SfntFont, readSfnt, writeSfnt } from './sfnt';
 export { CffFont, cffDict, cffIndex, readDict, readIndex } from './cff';
+export { base64, crc32, encodePng, type PngOptions } from './png';
+export { plotSvg, xmlEscape, type SvgPlotOptions } from './svg';

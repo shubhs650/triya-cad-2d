@@ -8,14 +8,19 @@ import * as pdf from '@triya/pdf';
 import * as render from '@triya/render';
 import { getDocument, OPS } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { beforeAll, describe, expect, it } from 'vitest';
-import { SHEET_DIR, SHEET_PAGES, SHEET_PDF, sheetPdf } from './sheet';
+import { SHEET_DIR, SHEET_PAGES, SHEET_PDF, sheetPdf, sheetSvgs } from './sheet';
 
 let bytes: Uint8Array;
+let svgs: string[];
+/** The same plot as SVG files (M2-18), one per page; tests/e2e/fidelity/svg.spec.ts draws them. */
+const SVG_DIR = `${SHEET_DIR}svg/`;
 beforeAll(() => {
   bytes = sheetPdf();
+  svgs = sheetSvgs();
   if (process.env['TRIYA_UPDATE_FIXTURES'] === '1') {
-    mkdirSync(SHEET_DIR, { recursive: true });
+    mkdirSync(SVG_DIR, { recursive: true });
     writeFileSync(SHEET_DIR + SHEET_PDF, bytes);
+    svgs.forEach((svg, i) => writeFileSync(`${SVG_DIR}page-${i + 1}.svg`, svg));
   }
 });
 
@@ -36,6 +41,20 @@ describe('the plot sheet PDF (M2-16)', () => {
   it('commits the PDF the plot writes', () => {
     expect(existsSync(SHEET_DIR + SHEET_PDF)).toBe(true);
     expect(new Uint8Array(readFileSync(SHEET_DIR + SHEET_PDF))).toEqual(bytes);
+  });
+
+  it('commits the SVG pages the plot writes, each drawing layer an Inkscape layer', () => {
+    expect(svgs).toHaveLength(SHEET_PAGES.length);
+    svgs.forEach((svg, i) => {
+      expect(readFileSync(`${SVG_DIR}page-${i + 1}.svg`, 'utf8')).toBe(svg);
+      const labels = [...svg.matchAll(/inkscape:groupmode="layer" inkscape:label="([^"]*)"/g)].map(
+        (m) => m[1],
+      );
+      expect(labels.length).toBeGreaterThan(0);
+    });
+    // The sheet's frame and title block are on SHEET, its geometry on GEOMETRY (plot-sheet.py).
+    expect(svgs[0]).toContain('inkscape:label="SHEET"');
+    expect(svgs[0]).toContain('inkscape:label="GEOMETRY"');
   });
 
   it('opens in pdf.js with eight A4 landscape pages, their labels and bookmarks', async () => {
