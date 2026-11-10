@@ -292,6 +292,17 @@ describe('paragraph properties (\\p)', () => {
     });
   });
 
+  it('reads decimal tab stops with their symbol, a comma one too (M2-26 part 3)', () => {
+    const doc = parse('\\pxt2,D.4,D,6,D_8,r10;a');
+    expect(doc.paragraphs[0]!.style.tabs).toEqual([
+      { at: 2, kind: 'left' },
+      { at: 4, kind: 'decimal', decimal: '.' },
+      { at: 6, kind: 'decimal', decimal: ',' },
+      { at: 8, kind: 'decimal', decimal: ' ' },
+      { at: 10, kind: 'right' },
+    ]);
+  });
+
   it('maps every alignment letter', () => {
     const align = (q: string) => parse(`\\pxq${q};a`).paragraphs[0]!.style.align;
     expect(['l', 'r', 'c', 'j', 'd'].map(align)).toEqual([

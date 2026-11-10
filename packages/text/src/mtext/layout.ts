@@ -14,7 +14,13 @@
 // text is the first line's cap height and the bottom the last baseline; stacked text is 70 %
 // (the Stack Properties default); decoration offsets are fractions of the run's height.
 
-import type { MTextCharStyle, MTextDocument, MTextItem, MTextParagraph } from './parse';
+import type {
+  MTextCharStyle,
+  MTextDocument,
+  MTextItem,
+  MTextParagraph,
+  MTextTabStop,
+} from './parse';
 
 /** Exact advance widths, from the run's resolved font (SHX or TrueType). */
 export interface MTextMeasure {
@@ -236,7 +242,11 @@ export function layoutMText(
   const paragraphs: { lines: BuiltLine[]; end: MTextParagraph['end']; para: MTextParagraph }[] = [];
   for (const para of doc.paragraphs) {
     const pieces = toPieces(para.items, advance, measure, scaled);
-    paragraphs.push({ lines: breakLines(para, pieces, wrapWidth, h0), end: para.end, para });
+    paragraphs.push({
+      lines: breakLines(para, pieces, wrapWidth, h0, advance),
+      end: para.end,
+      para,
+    });
   }
 
   // 2. Box width: the reference or column width, else the widest line with its indents.
@@ -429,8 +439,8 @@ function nextStop(
   para: MTextParagraph,
   x: number,
   h0: number,
-): { at: number; kind: 'left' | 'center' | 'right' } {
-  for (const t of para.style.tabs) if (t.at * h0 > x + EPS) return { at: t.at * h0, kind: t.kind };
+): { at: number; kind: MTextTabStop['kind']; decimal?: string } {
+  for (const t of para.style.tabs) if (t.at * h0 > x + EPS) return { ...t, at: t.at * h0 };
   // Past the paragraph's own stops, the default interval continues. AutoCAD does not say
   // what a tab beyond the last stop does; repeating the default grid is the common reading.
   const step = DEFAULT_TAB * h0;
@@ -442,6 +452,7 @@ function breakLines(
   pieces: readonly Piece[],
   wrapWidth: number,
   h0: number,
+  advance: (text: string, style: MTextCharStyle) => number,
 ): BuiltLine[] {
   const segs = segments(pieces);
   const lines: BuiltLine[] = [];
@@ -478,11 +489,23 @@ function breakLines(
       const stop = nextStop(para, pen, h0);
       let to = stop.at;
       if (stop.kind !== 'left') {
-        // Centre and right stops align the text up to the next tab or the paragraph's end.
+        // Centre and right stops align the text up to the next tab or the paragraph's end; a
+        // decimal stop lines up the first decimal symbol in it, else its end (as a right stop).
         let w = 0;
-        for (let j = i + 1; j < segs.length && segs[j]![0]!.kind !== 'tab'; j++)
-          for (const p of segs[j]!) w += widthOf(p);
-        to = Math.max(pen, stop.at - (stop.kind === 'right' ? w : w / 2));
+        let found = false;
+        for (let j = i + 1; !found && j < segs.length && segs[j]![0]!.kind !== 'tab'; j++)
+          for (const p of segs[j]!) {
+            if (stop.kind === 'decimal' && p.kind === 'text') {
+              const at = p.text.indexOf(stop.decimal ?? '.');
+              if (at >= 0) {
+                w += advance(p.text.slice(0, at), p.style);
+                found = true;
+                break;
+              }
+            }
+            w += widthOf(p);
+          }
+        to = Math.max(pen, stop.at - (stop.kind === 'center' ? w / 2 : w));
       }
       placed.push({ piece: tab, x: pen, width: to - pen });
       pen = to;

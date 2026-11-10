@@ -195,6 +195,16 @@ describe('tabs', () => {
     // Text that would start before the pen stays after it.
     expect(lay('\\ptr5;abc\tdddd').lines[0]!.width).toBe(7);
   });
+
+  it('lines the decimal symbol up on a decimal stop (M2-26 part 3)', () => {
+    // `D` then the symbol, then the position (ODA's MTEXT codes: `\\pxtD.25`).
+    expect(lay('\\pxtD.6;a\t12.5').lines[0]!.runs[1]!.x).toBe(4);
+    expect(lay('\\pxtD,6;a\t1234,5').lines[0]!.runs[1]!.x).toBe(2);
+    // No symbol: the text ends at the stop, as on a right stop.
+    expect(lay('\\pxtD.6;a\t125').lines[0]!.runs[1]!.x).toBe(3);
+    // The space style (`_`) lines up the first space.
+    expect(lay('\\pxtD_6;a\t12 5').lines[0]!.runs[1]!.x).toBe(4);
+  });
 });
 
 describe('heights and line spacing', () => {

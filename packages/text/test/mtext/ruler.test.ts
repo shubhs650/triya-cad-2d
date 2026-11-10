@@ -4,7 +4,9 @@ import { describe, expect, it } from 'vitest';
 import {
   contentOf,
   parseMText,
+  alignOf,
   rulerOf,
+  withAlignment,
   withRuler,
   writeMText,
   type MTextBase,
@@ -17,7 +19,7 @@ const base: MTextBase = {
   widthFactor: 1,
   oblique: 0,
 };
-const none: MTextRuler = { indentFirst: 0, indentLeft: 0, tabs: [] };
+const none: MTextRuler = { indentFirst: 0, indentLeft: 0, indentRight: 0, tabs: [] };
 
 describe('rulerOf', () => {
   it('reads indents and tabs through the chain', () => {
@@ -25,6 +27,7 @@ describe('rulerOf', () => {
     expect(rulerOf(['xi-1,l2,t4,c8,r12', 'qc', 'i0.5'])).toEqual({
       indentFirst: 0.5,
       indentLeft: 2,
+      indentRight: 0,
       tabs: [
         { at: 4, kind: 'left' },
         { at: 8, kind: 'center' },
@@ -46,6 +49,7 @@ describe('withRuler', () => {
       withRuler([], {
         indentFirst: -1,
         indentLeft: 1.5,
+        indentRight: 0,
         tabs: [
           { at: 8, kind: 'right' },
           { at: 3, kind: 'center' },
@@ -70,7 +74,12 @@ describe('withRuler', () => {
   });
 
   it('round-trips through writeMText and the parser', () => {
-    const r: MTextRuler = { indentFirst: 0.75, indentLeft: 2, tabs: [{ at: 6, kind: 'center' }] };
+    const r: MTextRuler = {
+      indentFirst: 0.75,
+      indentLeft: 2,
+      indentRight: 0,
+      tabs: [{ at: 6, kind: 'center' }],
+    };
     const first = withRuler([], r);
     const second = withRuler(['qc'], { ...r, tabs: [] });
     const contents = writeMText(
@@ -85,5 +94,54 @@ describe('withRuler', () => {
     const doc = parseMText(contents, base);
     expect(doc.paragraphs.map((p) => rulerOf(p.codes ?? []))).toEqual([r, { ...r, tabs: [] }]);
     expect(contentOf(doc, base).paragraph).toEqual(first);
+  });
+});
+
+describe('right indent, alignment and decimal stops (M2-26 part 3)', () => {
+  it('writes a right indent as an extended value, before the tabs', () => {
+    const codes = withRuler([], { ...none, indentRight: 2, tabs: [{ at: 5, kind: 'right' }] });
+    // `r` after `t` would be read as a right tab stop, and only `\\px` holds `r`.
+    expect(codes).toEqual(['xr2,tr5']);
+    expect(rulerOf(codes)).toEqual({ ...none, indentRight: 2, tabs: [{ at: 5, kind: 'right' }] });
+    // Its own value is replaced again, the alignment before it kept.
+    expect(withRuler(['qc', ...codes], { ...none, indentRight: 3 })).toEqual(['qc', 'xr3']);
+  });
+
+  it('sets and resets the paragraph alignment (withAlignment)', () => {
+    expect(alignOf([])).toBeUndefined();
+    let codes = withAlignment(['l2'], 'justified');
+    expect(codes).toEqual(['l2', 'qj']);
+    expect(alignOf(codes)).toBe('justified');
+    codes = withAlignment(codes, 'right');
+    expect(codes).toEqual(['l2', 'qr']);
+    expect(withAlignment(codes, 'right')).toBe(codes);
+    // Back to the attachment point's alignment.
+    codes = withAlignment(['qc', 'l2'], undefined);
+    expect(codes).toEqual(['qc', 'l2', 'q*']);
+    expect(alignOf(codes)).toBeUndefined();
+    expect(rulerOf(codes).indentLeft).toBe(2);
+  });
+
+  it('writes decimal stops with their symbol, the space style as `_`', () => {
+    const tabs = [
+      { at: 3, kind: 'decimal', decimal: '.' },
+      { at: 6, kind: 'decimal', decimal: ',' },
+      { at: 9, kind: 'decimal', decimal: ' ' },
+    ] as const;
+    const codes = withRuler([], { ...none, tabs });
+    expect(codes).toEqual(['tD.3,D,6,D_9']);
+    expect(rulerOf(codes).tabs).toEqual(tabs);
+    // A value with decimal stops is still the ruler's own, so it is replaced, not piled on.
+    expect(withRuler(codes, { ...none, tabs: [tabs[0]] })).toEqual(['tD.3']);
+  });
+
+  it('round-trips a decimal stop through writeMText and the parser', () => {
+    const first = withRuler([], { ...none, tabs: [{ at: 4, kind: 'decimal', decimal: ',' }] });
+    const contents = writeMText([{ type: 'text', text: 'a\t1,5', format: {} }], base.font, first);
+    expect(contents).toBe('\\ptD,4;a^I1,5');
+    const doc = parseMText(contents, base);
+    expect(rulerOf(doc.paragraphs[0]!.codes ?? []).tabs).toEqual([
+      { at: 4, kind: 'decimal', decimal: ',' },
+    ]);
   });
 });

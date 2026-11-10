@@ -43,15 +43,19 @@ import {
   fontMeasure,
   mtextBase,
   parseMText,
+  alignOf,
   rulerOf,
   sameContent,
   SHX_EQUIVALENTS,
+  withAlignment,
   withRuler,
   writeMText,
+  type MTextAlign,
   type MTextContent,
   type MTextFormat,
   type MTextRuler,
   type MTextSpan,
+  type MTextTabStop,
 } from '@triya/text';
 import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { controllerOf } from './canvas/registry';
@@ -307,15 +311,48 @@ function mbcsText(codepage: number, code: number): string {
   }
 }
 
-/** A paragraph's <div>, indented by its ruler (in text heights; one is CAP_HEIGHT em). */
+/** CSS text-align for a paragraph's own alignment (M2-26 part 3). */
+const TEXT_ALIGN: Readonly<Record<MTextAlign, string>> = {
+  left: 'left',
+  center: 'center',
+  right: 'right',
+  justified: 'justify',
+  distributed: 'justify',
+};
+
+/**
+ * A paragraph's <div>, indented by its ruler (in text heights; one is CAP_HEIGHT em) and
+ * aligned as its `\p` values say. Its tab stops ride along for `layoutTabs`.
+ */
 function paragraphBox(codes: readonly string[], columnBreak: boolean): HTMLElement {
   const div = document.createElement('div');
   div.className = 'mtext-para';
   const r = rulerOf(codes);
   if (r.indentLeft !== 0) div.style.paddingLeft = `${r.indentLeft * CAP_HEIGHT}em`;
   if (r.indentFirst !== 0) div.style.textIndent = `${r.indentFirst * CAP_HEIGHT}em`;
+  if (r.indentRight !== 0) div.style.paddingRight = `${r.indentRight * CAP_HEIGHT}em`;
+  const align = alignOf(codes);
+  if (align) div.style.textAlign = TEXT_ALIGN[align];
+  // Distributed spreads the last line too.
+  if (align === 'distributed') div.style.textAlignLast = 'justify';
+  if (r.tabs.length > 0) div.dataset['tabs'] = JSON.stringify(r.tabs);
   if (columnBreak) div.style.breakBefore = 'column';
   return div;
+}
+
+/** A run's element: its text, with each tab character in a span of its own (`layoutTabs`). */
+function runElements(text: string, style: CSSProperties, format: MTextFormat): HTMLElement[] {
+  return text
+    .split(/(\t)/)
+    .filter((t) => t !== '')
+    .map((t) => {
+      const el = document.createElement('span');
+      applyStyle(el, style);
+      el.dataset['fmt'] = JSON.stringify(format);
+      if (t === '\t') el.className = 'mtext-tab';
+      el.textContent = t;
+      return el;
+    });
 }
 
 /** The editor's DOM for the spans; `first` is the first paragraph's `\p` values. */
@@ -337,12 +374,13 @@ function paint(
       paragraphs.push(paragraphBox(s.paragraph ?? [], s.end === 'column'));
       continue;
     }
+    if (s.type === 'text') {
+      box.append(...runElements(s.text, runStyle(s.format, height), s.format));
+      continue;
+    }
     const el = document.createElement('span');
     applyStyle(el, runStyle(s.format, height));
-    if (s.type === 'text') {
-      el.dataset['fmt'] = JSON.stringify(s.format);
-      el.textContent = s.text;
-    } else if (s.type === 'stack') {
+    if (s.type === 'stack') {
       el.dataset['stack'] = JSON.stringify(s);
       el.contentEditable = 'false';
       el.className = `mtext-stack mtext-stack-${s.kind}`;
@@ -667,6 +705,74 @@ function fitColumns(root: HTMLElement, c: TextEditorColumns | null, scale: numbe
   return { ...fitted, count: c.type === 1 ? Math.max(c.count, count) : count };
 }
 
+/** Default tab interval, in text heights, as layout's (`layoutMText`). */
+const DEFAULT_TAB = 4;
+
+/**
+ * Lays each tab out at its paragraph's next tab stop (M2-26 part 3), as the renderer does: the
+ * stop's position from the column's left edge (indents included), in text heights of `unit`
+ * px; past the paragraph's own stops, every four heights. A left stop starts the text after the
+ * tab there, a centre stop centres it, a right stop ends it there and a decimal stop puts its
+ * first decimal symbol there (its end, when it has none): "it" is the text up to the next tab
+ * or the paragraph's end. CSS has one tab size, so each tab is an inline block as wide as it
+ * reaches. Measured with the box unturned, tab by tab, as each one moves those after it.
+ */
+function layoutTabs(root: HTMLElement, unit: number): void {
+  const tabs = [...root.querySelectorAll<HTMLElement>('.mtext-tab')];
+  if (tabs.length === 0 || unit <= 0) return;
+  for (const t of tabs) t.style.width = '0px';
+  const box = root.parentElement!;
+  const turned = box.style.transform;
+  box.style.transform = 'none';
+  try {
+    const range = document.createRange();
+    for (const [i, tab] of tabs.entries()) {
+      const para = tab.closest<HTMLElement>('.mtext-para');
+      if (!para) continue;
+      const own = JSON.parse(para.dataset['tabs'] ?? '[]') as MTextTabStop[];
+      const r = tab.getBoundingClientRect();
+      // The column the tab's line is in: the paragraph's fragment beside it.
+      const mid = (r.top + r.bottom) / 2;
+      const frags = [...para.getClientRects()];
+      const frag = frags.find((f) => f.top <= mid && mid <= f.bottom) ?? frags[0]!;
+      const x = (r.left - frag.left) / unit;
+      const stop = own.find((s) => s.at > x + 1e-6) ?? {
+        at: (Math.floor(x / DEFAULT_TAB + 1e-6) + 1) * DEFAULT_TAB,
+        kind: 'left' as const,
+      };
+      let w = 0;
+      if (stop.kind !== 'left') {
+        // The text after the tab, to the next tab in the paragraph or its end.
+        const next = tabs[i + 1];
+        range.setStartAfter(tab);
+        if (next && para.contains(next)) range.setEndBefore(next);
+        else range.setEnd(para, para.childNodes.length);
+        if (stop.kind === 'decimal') {
+          const walker = document.createTreeWalker(para, NodeFilter.SHOW_TEXT);
+          walker.currentNode = tab;
+          for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+            if (range.comparePoint(n, 0) > 0) break;
+            const at = n.data.indexOf(stop.decimal ?? '.');
+            if (at >= 0) {
+              range.setEnd(n, at);
+              break;
+            }
+          }
+        }
+        // On the tab's line, from the tab (0 wide now) to the text's far end.
+        let end = r.right;
+        for (const q of range.getClientRects())
+          if (q.width > 0 && q.bottom > r.top && q.top < r.bottom) end = Math.max(end, q.right);
+        w = (end - r.right) / unit;
+        if (stop.kind === 'center') w /= 2;
+      }
+      tab.style.width = `${Math.max(0, stop.at - x - w) * unit}px`;
+    }
+  } finally {
+    box.style.transform = turned;
+  }
+}
+
 type Toggle = 'bold' | 'italic' | 'underline' | 'overline' | 'strike';
 
 const TOGGLES: readonly { key: Toggle; label: string; glyph: string; shortcut?: string }[] = [
@@ -724,10 +830,16 @@ function MTextBox({
   const scaleNow = useRef(placement.scale);
   scaleNow.current = placement.scale;
   const refit = () => {
+    layoutTabs(root.current!, request.height * scaleNow.current);
     const f = fitColumns(root.current!, columnsNow.current, scaleNow.current);
     setFitted((was) => (sameFitted(was, f) ? was : f));
   };
-  const [menu, setMenu] = useState<'columns' | 'settings' | undefined>(undefined);
+  const [menu, setMenu] = useState<'columns' | 'settings' | 'paragraph' | undefined>(undefined);
+  /** The kind of tab stop a click on the ruler adds, and the decimal style (M2-26 part 3). */
+  const [tabKind, setTabKind] = useState<TabKind>('left');
+  const [decimal, setDecimal] = useState('.');
+  /** The paragraph alignment at the caret, for the Paragraph dialog. */
+  const [align, setAlignShown] = useState<MTextAlign | undefined>(alignOf(first.current));
   /** The format typing takes next, when a toolbar change was made with nothing selected. */
   const pending = useRef<MTextFormat | undefined>(undefined);
   /** The last selection in the editor, for the toolbar's fields, which take the focus. */
@@ -753,7 +865,9 @@ function MTextBox({
             formatAt(s, a + 1),
           ));
     setShown(f);
-    setRulerShown(rulerOf(paragraphCodes(s, first.current)[paragraphIndex(s, a)] ?? []));
+    const codes = paragraphCodes(s, first.current)[paragraphIndex(s, a)] ?? [];
+    setRulerShown(rulerOf(codes));
+    setAlignShown(alignOf(codes));
   };
   const commit = (next: MTextSpan[], a: number, b = a) => {
     paint(root.current!, next, request.height, first.current);
@@ -831,16 +945,30 @@ function MTextBox({
     const codes = paragraphAt(spans(), first.current, a);
     insert([{ type: 'break', ...(end && { end }), ...(codes.length > 0 && { paragraph: codes }) }]);
   };
-  /** The ruler's change, made to every paragraph the selection touches. */
-  const setRuler = (r: MTextRuler) => {
+  /** A change to the `\\p` values of every paragraph the selection touches. */
+  const setParagraphs = (change: (codes: readonly string[]) => readonly string[]) => {
     const [a, b] = selection();
     const s = spans();
-    const next = mapParagraphs(s, first.current, paragraphIndex(s, a), paragraphIndex(s, b), (c) =>
-      withRuler(c, r),
+    const next = mapParagraphs(
+      s,
+      first.current,
+      paragraphIndex(s, a),
+      paragraphIndex(s, b),
+      change,
     );
     first.current = next.first;
     root.current!.dataset['para'] = JSON.stringify(next.first);
     commit(next.spans, a, b);
+  };
+  /** The ruler's change, made to every paragraph the selection touches. */
+  const setRuler = (r: MTextRuler) => setParagraphs((c) => withRuler(c, r));
+  /** The Paragraph dialog's settings; the alignment only when the dialog changed it. */
+  const setParagraph = (p: ParagraphSettings) => {
+    setDecimal(p.decimal);
+    setParagraphs((c) => {
+      const ruled = withRuler(c, p.ruler);
+      return p.align === align ? ruled : withAlignment(ruled, p.align);
+    });
   };
 
   useEffect(() => {
@@ -966,6 +1094,11 @@ function MTextBox({
       // AutoCAD's Insert Column Break.
       e.preventDefault();
       breakHere('column');
+    } else if (e.key === 'Tab' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+      // A tab character, as AutoCAD's editor types it (Esc or Ctrl+Enter leave the editor).
+      if (e.target !== root.current) return;
+      e.preventDefault();
+      insert([{ type: 'text', text: '\t', format: {} }]);
     } else if (e.key === 'Escape' && menu) {
       e.preventDefault();
       setMenu(undefined);
@@ -1086,6 +1219,17 @@ function MTextBox({
         </select>
         <button
           type="button"
+          aria-label="Paragraph"
+          title="Paragraph"
+          aria-haspopup="dialog"
+          aria-expanded={menu === 'paragraph'}
+          className="mtext-tool"
+          onClick={() => setMenu(menu === 'paragraph' ? undefined : 'paragraph')}
+        >
+          ¶
+        </button>
+        <button
+          type="button"
           aria-label="Columns"
           title="Columns"
           aria-haspopup="menu"
@@ -1127,6 +1271,18 @@ function MTextBox({
           }}
         />
       )}
+      {menu === 'paragraph' && (
+        <ParagraphDialog
+          settings={{ ruler, align, decimal }}
+          onClose={(p) => {
+            setMenu(undefined);
+            // To the paragraphs the selection held before the dialog took the focus (focusing
+            // the editor first would collapse it); `commit` focuses the editor again.
+            if (p) setParagraph(p);
+            else root.current!.focus();
+          }}
+        />
+      )}
       <div className="mtext-box" style={{ transform: style.transform, fontSize: style.fontSize }}>
         <Ruler
           ruler={ruler}
@@ -1140,6 +1296,9 @@ function MTextBox({
           width={
             (columns?.flowReversed ? columns.width : boxWidth(request, columns)) * placement.scale
           }
+          tabKind={tabKind}
+          decimal={decimal}
+          onTabKind={setTabKind}
           onChange={setRuler}
         />
         <div
@@ -1412,6 +1571,266 @@ function ColumnSettings({
   );
 }
 
+/** AutoCAD's decimal styles (the Paragraph dialog's "Specify decimal style"). */
+const DECIMAL_STYLES: readonly { readonly label: string; readonly symbol: string }[] = [
+  { label: 'Period', symbol: '.' },
+  { label: 'Comma', symbol: ',' },
+  { label: 'Space', symbol: ' ' },
+];
+
+const ALIGNMENTS: readonly { readonly align: MTextAlign; readonly label: string }[] = [
+  { align: 'left', label: 'Left' },
+  { align: 'center', label: 'Center' },
+  { align: 'right', label: 'Right' },
+  { align: 'justified', label: 'Justified' },
+  { align: 'distributed', label: 'Distributed' },
+];
+
+/** What the Paragraph dialog sets. */
+export interface ParagraphSettings {
+  readonly ruler: MTextRuler;
+  /** The paragraph's own alignment; undefined: by the attachment point. */
+  readonly align: MTextAlign | undefined;
+  /** The decimal style its decimal stops line up. */
+  readonly decimal: string;
+}
+
+/**
+ * AutoCAD's Paragraph dialog (M2-26 part 3; "Paragraph Dialog Box"): Tab (the stop's kind,
+ * its position, Add, Modify, Remove, the stops, Specify decimal style), Left Indent (First line,
+ * Hanging), Right Indent (Right) and Paragraph Alignment, for the paragraphs the selection
+ * touches; values in text heights, as the ruler's. AutoCAD's help does not say what First line
+ * and Hanging measure; they are read as where the ruler's two markers are, from the box's left
+ * edge (First line the first line's start, Hanging the other lines'). Paragraph Spacing and
+ * Line Spacing are left out (M2-46).
+ */
+function ParagraphDialog({
+  settings,
+  onClose,
+}: {
+  settings: ParagraphSettings;
+  /** Undefined when cancelled. */
+  onClose: (s: ParagraphSettings | undefined) => void;
+}) {
+  const r = settings.ruler;
+  const [tabs, setTabs] = useState<readonly MTextTabStop[]>(r.tabs);
+  const [kind, setKind] = useState<TabKind>('left');
+  const [position, setPosition] = useState(0);
+  const [picked, setPicked] = useState<number | undefined>(undefined);
+  const [decimal, setDecimal] = useState(
+    r.tabs.find((t) => t.kind === 'decimal')?.decimal ?? settings.decimal,
+  );
+  const [first, setFirst] = useState(r.indentLeft + r.indentFirst);
+  const [hanging, setHanging] = useState(r.indentLeft);
+  const [right, setRight] = useState(r.indentRight);
+  const [aligned, setAligned] = useState(settings.align !== undefined);
+  const [align, setAlign] = useState<MTextAlign>(settings.align ?? 'left');
+  const stopHere = (): MTextTabStop => ({
+    at: position,
+    kind,
+    ...(kind === 'decimal' && { decimal }),
+  });
+  /** The stops with one at `at` taken out (`except`: that one's index), then `t` added, sorted. */
+  const put = (list: readonly MTextTabStop[], t: MTextTabStop, except?: number) =>
+    [...list.filter((x, i) => i !== except && x.at !== t.at), t].sort((a, b) => a.at - b.at);
+  const pick = (i: number | undefined) => {
+    setPicked(i);
+    const t = i === undefined ? undefined : tabs[i];
+    if (!t) return;
+    setKind(t.kind);
+    setPosition(t.at);
+    if (t.decimal) setDecimal(t.decimal);
+  };
+  const ok = () => {
+    if (![position, first, hanging, right].every(Number.isFinite) || right < 0) return;
+    onClose({
+      ruler: {
+        indentFirst: first - hanging,
+        indentLeft: hanging,
+        indentRight: right,
+        // The decimal style is the paragraph's: its decimal stops all take it.
+        tabs: tabs.map((t) => (t.kind === 'decimal' ? { ...t, decimal } : t)),
+      },
+      align: aligned ? align : undefined,
+      decimal,
+    });
+  };
+  const num = (label: string, value: number, set: (v: number) => void, min?: number) => (
+    <label>
+      {label}
+      <input
+        type="number"
+        min={min}
+        step="any"
+        value={Number(value.toPrecision(10))}
+        onChange={(e) => set(Number(e.target.value))}
+      />
+    </label>
+  );
+  return (
+    <div
+      className="mtext-dialog mtext-paragraph"
+      role="dialog"
+      aria-label="Paragraph"
+      onKeyDown={(e) => {
+        e.stopPropagation();
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          onClose(undefined);
+        } else if (e.key === 'Enter' && !(e.target instanceof HTMLButtonElement)) {
+          e.preventDefault();
+          ok();
+        }
+      }}
+    >
+      <fieldset>
+        <legend>Tab</legend>
+        <div className="mtext-dialog-row" role="radiogroup" aria-label="Tab type">
+          {TAB_KINDS.map((k) => (
+            <label key={k}>
+              <input
+                type="radio"
+                name="mtext-tab-kind"
+                checked={kind === k}
+                onChange={() => setKind(k)}
+              />
+              {TAB_LABEL[k]}
+            </label>
+          ))}
+        </div>
+        <label>
+          Tab position
+          <input
+            type="number"
+            min={0}
+            step="any"
+            aria-label="Tab position"
+            value={Number(position.toPrecision(10))}
+            onChange={(e) => setPosition(Number(e.target.value))}
+          />
+        </label>
+        <div className="mtext-dialog-row">
+          <button
+            type="button"
+            onClick={() => {
+              if (!(position >= 0)) return;
+              const next = put(tabs, stopHere());
+              setTabs(next);
+              setPicked(next.findIndex((t) => t.at === position));
+            }}
+          >
+            Add
+          </button>
+          <button
+            type="button"
+            disabled={picked === undefined}
+            onClick={() => {
+              if (picked === undefined || !(position >= 0)) return;
+              const next = put(tabs, stopHere(), picked);
+              setTabs(next);
+              setPicked(next.findIndex((t) => t.at === position));
+            }}
+          >
+            Modify
+          </button>
+          <button
+            type="button"
+            disabled={picked === undefined}
+            onClick={() => {
+              setTabs(tabs.filter((_, i) => i !== picked));
+              setPicked(undefined);
+            }}
+          >
+            Remove
+          </button>
+        </div>
+        <ul
+          className="mtext-tab-list"
+          role="listbox"
+          aria-label="Tab stops"
+          tabIndex={0}
+          onKeyDown={(e) => {
+            if (tabs.length === 0) return;
+            if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+              e.preventDefault();
+              const d = e.key === 'ArrowDown' ? 1 : -1;
+              pick(Math.min(tabs.length - 1, Math.max(0, (picked ?? -d) + d)));
+            }
+          }}
+        >
+          {tabs.map((t, i) => (
+            <li
+              key={`${t.kind}${t.at}`}
+              role="option"
+              aria-selected={picked === i}
+              onClick={() => pick(i)}
+            >
+              {tabName(t)}
+            </li>
+          ))}
+        </ul>
+        <label>
+          Specify decimal style
+          <select
+            aria-label="Specify decimal style"
+            value={decimal}
+            onChange={(e) => setDecimal(e.target.value)}
+          >
+            {DECIMAL_STYLES.map((d) => (
+              <option key={d.label} value={d.symbol}>
+                {d.label}
+              </option>
+            ))}
+          </select>
+        </label>
+      </fieldset>
+      <fieldset>
+        <legend>Left Indent</legend>
+        {num('First line', first, setFirst)}
+        {num('Hanging', hanging, setHanging)}
+      </fieldset>
+      <fieldset>
+        <legend>Right Indent</legend>
+        {num('Right', right, setRight, 0)}
+      </fieldset>
+      <fieldset>
+        <legend>
+          <label>
+            <input
+              type="checkbox"
+              checked={aligned}
+              onChange={(e) => setAligned(e.target.checked)}
+            />
+            Paragraph Alignment
+          </label>
+        </legend>
+        <div className="mtext-dialog-row" role="radiogroup" aria-label="Paragraph Alignment">
+          {ALIGNMENTS.map((a) => (
+            <label key={a.align}>
+              <input
+                type="radio"
+                name="mtext-paragraph-align"
+                checked={align === a.align}
+                disabled={!aligned}
+                onChange={() => setAlign(a.align)}
+              />
+              {a.label}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      <div className="mtext-dialog-buttons">
+        <button type="button" onClick={ok}>
+          OK
+        </button>
+        <button type="button" onClick={() => onClose(undefined)}>
+          Cancel
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /**
  * Each column's frame, with a handle on its bottom edge (M2-26): with Manual Height one per
  * column, setting that column's height (a column the text added takes the last one's until
@@ -1507,19 +1926,40 @@ const along = (e: React.PointerEvent, unit: number): number =>
 type Drag =
   | { readonly kind: 'first' }
   | { readonly kind: 'left' }
+  | { readonly kind: 'right' }
   | { readonly kind: 'tab'; readonly index: number };
 
+type TabKind = MTextTabStop['kind'];
+
+/** The Tab Selection button's order, as AutoCAD's: left, center, right, decimal. */
+const TAB_KINDS: readonly TabKind[] = ['left', 'center', 'right', 'decimal'];
+
+const TAB_LABEL: Readonly<Record<TabKind, string>> = {
+  left: 'Left',
+  center: 'Center',
+  right: 'Right',
+  decimal: 'Decimal',
+};
+
+/** A tab stop as the ruler's value text and the Paragraph dialog's list name it. */
+const tabName = (t: MTextTabStop): string => `${TAB_LABEL[t.kind]} ${t.at}`;
+
 /**
- * The ruler: the first-line indent (the top marker), the left indent (the bottom marker) and
- * the tab stops of the paragraph at the caret, in text heights (`unit` px each). A click on
- * it adds a left tab stop; a tab stop dragged off it goes. Dragging the left indent leaves the
- * first line where it is, as in AutoCAD's ruler.
+ * The ruler: the first-line indent (the top marker), the left indent (the bottom marker), the
+ * right indent (the marker at the right end, M2-26 part 3) and the tab stops of the paragraph
+ * at the caret, in text heights (`unit` px each). A click on it adds a tab stop of the kind the
+ * Tab Selection button at its left end shows (a click on that cycles left, center, right and
+ * decimal, as in AutoCAD's ruler); a tab stop dragged off it goes. Dragging the left indent
+ * leaves the first line where it is, as in AutoCAD's ruler.
  */
 function Ruler({
   ruler,
   unit,
   offset,
   width,
+  tabKind,
+  decimal,
+  onTabKind,
   onChange,
 }: {
   ruler: MTextRuler;
@@ -1527,88 +1967,119 @@ function Ruler({
   /** From the box's left edge, px: the first column's (M2-26). */
   offset: number;
   width: number;
+  /** The kind of tab stop a click adds, and a decimal one's symbol. */
+  tabKind: TabKind;
+  decimal: string;
+  onTabKind: (k: TabKind) => void;
   onChange: (r: MTextRuler) => void;
 }) {
   const [live, setLive] = useState<MTextRuler | undefined>(undefined);
   const drag = useRef<Drag | undefined>(undefined);
   const shown = live ?? ruler;
+  /** The column's width in text heights: the right indent is measured in from it. */
+  const span = width / unit;
   const moved = (d: Drag, at: number, off: boolean): MTextRuler => {
     if (d.kind === 'first') return { ...ruler, indentFirst: at - ruler.indentLeft };
     if (d.kind === 'left') {
       return { ...ruler, indentLeft: at, indentFirst: ruler.indentLeft + ruler.indentFirst - at };
     }
+    if (d.kind === 'right') {
+      return { ...ruler, indentRight: Math.max(0, Math.round((span - at) * 10) / 10) };
+    }
     const tabs = ruler.tabs.filter((_, i) => i !== d.index);
-    return {
-      ...ruler,
-      tabs: off
-        ? tabs
-        : [...tabs, { at: Math.max(0, at), kind: ruler.tabs[d.index]?.kind ?? 'left' }],
+    const was = ruler.tabs[d.index];
+    const kind = was?.kind ?? tabKind;
+    const stop: MTextTabStop = {
+      at: Math.max(0, at),
+      kind,
+      ...(kind === 'decimal' && { decimal: was?.decimal ?? decimal }),
     };
+    return { ...ruler, tabs: off ? tabs : [...tabs, stop] };
   };
   const offRuler = (e: React.PointerEvent) =>
     e.nativeEvent.offsetY < -12 ||
     e.nativeEvent.offsetY > (e.currentTarget as HTMLElement).clientHeight + 12;
   const x = (v: number) => `${v * unit}px`;
+  const shownWidth = Math.max(width, 6 * unit);
   return (
-    <div
-      className="mtext-ruler"
-      role="slider"
-      aria-label="Ruler"
-      aria-valuetext={`First line ${shown.indentFirst}, left ${shown.indentLeft}, tabs ${
-        shown.tabs.map((t) => t.at).join(' ') || 'none'
-      }`}
-      style={{
-        left: `${offset}px`,
-        width: `${Math.max(width, 6 * unit)}px`,
-        backgroundSize: `${unit}px 100%`,
-      }}
-      onMouseDown={(e) => e.preventDefault()}
-      onPointerDown={(e) => {
-        if (e.button !== 0) return;
-        const at = along(e, unit);
-        const near = (v: number) => Math.abs(v - at) * unit <= 5;
-        const top = e.nativeEvent.offsetY < e.currentTarget.clientHeight / 2;
-        const tab = ruler.tabs.findIndex((t) => near(t.at));
-        let d: Drag;
-        if (tab >= 0) d = { kind: 'tab', index: tab };
-        else if (top && near(ruler.indentLeft + ruler.indentFirst)) d = { kind: 'first' };
-        else if (near(ruler.indentLeft)) d = { kind: 'left' };
-        else {
-          // A new left tab stop where the click was, dragged on from there.
-          d = { kind: 'tab', index: ruler.tabs.length };
-        }
-        drag.current = d;
-        e.currentTarget.setPointerCapture(e.pointerId);
-        setLive(moved(d, at, false));
-      }}
-      onPointerMove={(e) => {
-        if (drag.current) setLive(moved(drag.current, along(e, unit), offRuler(e)));
-      }}
-      onPointerUp={(e) => {
-        const d = drag.current;
-        drag.current = undefined;
-        setLive(undefined);
-        if (d) onChange(moved(d, along(e, unit), offRuler(e)));
-      }}
-    >
-      <span
-        className="mtext-ruler-first"
-        title="First line indent"
-        style={{ left: x(shown.indentLeft + shown.indentFirst) }}
+    <>
+      <button
+        type="button"
+        className={`mtext-tab-type mtext-tab-type-${tabKind}`}
+        aria-label={`Tab type: ${TAB_LABEL[tabKind]}`}
+        title={`Tab type: ${TAB_LABEL[tabKind]} (click to change)`}
+        style={{ left: `${offset - 16}px` }}
+        onMouseDown={(e) => e.preventDefault()}
+        onClick={() => onTabKind(TAB_KINDS[(TAB_KINDS.indexOf(tabKind) + 1) % TAB_KINDS.length]!)}
       />
-      <span
-        className="mtext-ruler-left"
-        title="Paragraph indent"
-        style={{ left: x(shown.indentLeft) }}
-      />
-      {shown.tabs.map((t, i) => (
+      <div
+        className="mtext-ruler"
+        role="slider"
+        aria-label="Ruler"
+        aria-valuetext={`First line ${shown.indentFirst}, left ${shown.indentLeft}, right ${
+          shown.indentRight
+        }, tabs ${shown.tabs.map((t) => (t.kind === 'left' ? t.at : tabName(t).toLowerCase())).join(' ') || 'none'}`}
+        style={{
+          left: `${offset}px`,
+          width: `${shownWidth}px`,
+          backgroundSize: `${unit}px 100%`,
+        }}
+        onMouseDown={(e) => e.preventDefault()}
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          const at = along(e, unit);
+          const near = (v: number) => Math.abs(v - at) * unit <= 5;
+          const top = e.nativeEvent.offsetY < e.currentTarget.clientHeight / 2;
+          const tab = ruler.tabs.findIndex((t) => near(t.at));
+          let d: Drag;
+          if (tab >= 0) d = { kind: 'tab', index: tab };
+          else if (top && near(ruler.indentLeft + ruler.indentFirst)) d = { kind: 'first' };
+          else if (near(ruler.indentLeft)) d = { kind: 'left' };
+          else if (!top && width > 0 && near(span - ruler.indentRight)) d = { kind: 'right' };
+          else {
+            // A new tab stop where the click was, dragged on from there.
+            d = { kind: 'tab', index: ruler.tabs.length };
+          }
+          drag.current = d;
+          e.currentTarget.setPointerCapture(e.pointerId);
+          setLive(moved(d, at, false));
+        }}
+        onPointerMove={(e) => {
+          if (drag.current) setLive(moved(drag.current, along(e, unit), offRuler(e)));
+        }}
+        onPointerUp={(e) => {
+          const d = drag.current;
+          drag.current = undefined;
+          setLive(undefined);
+          if (d) onChange(moved(d, along(e, unit), offRuler(e)));
+        }}
+      >
         <span
-          key={i}
-          className={`mtext-ruler-tab mtext-ruler-tab-${t.kind}`}
-          title={`Tab stop ${t.at}`}
-          style={{ left: x(t.at) }}
+          className="mtext-ruler-first"
+          title="First line indent"
+          style={{ left: x(shown.indentLeft + shown.indentFirst) }}
         />
-      ))}
-    </div>
+        <span
+          className="mtext-ruler-left"
+          title="Paragraph indent"
+          style={{ left: x(shown.indentLeft) }}
+        />
+        {width > 0 && (
+          <span
+            className="mtext-ruler-right"
+            title="Right indent"
+            style={{ left: x(span - shown.indentRight) }}
+          />
+        )}
+        {shown.tabs.map((t, i) => (
+          <span
+            key={i}
+            className={`mtext-ruler-tab mtext-ruler-tab-${t.kind}`}
+            title={`${TAB_LABEL[t.kind]} tab stop ${t.at}`}
+            style={{ left: x(t.at) }}
+          />
+        ))}
+      </div>
+    </>
   );
 }
