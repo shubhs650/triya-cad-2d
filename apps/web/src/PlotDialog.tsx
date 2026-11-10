@@ -375,7 +375,7 @@ function PlotBody({
           <label className="cad-dialog-field">
             <span>Name:</span>
             <select
-              aria-label="Page setup name"
+              aria-label="Page setup"
               value={setupName}
               onChange={(e) => choosePageSetup(e.currentTarget.value)}
             >

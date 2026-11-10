@@ -3,8 +3,13 @@
 // time, so the file is compared by what it maps to, not by bytes).
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { DocumentInit, NamedPageSetup } from '@triya/engine';
-import { openDocument, readCadDocument } from '@triya/io';
+import {
+  ChangeSetBuilder,
+  DocumentModel,
+  type DocumentInit,
+  type NamedPageSetup,
+} from '@triya/engine';
+import { exportDocument, mapPageSetups, openDocument, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { PAGE_SETUPS, PAGE_SETUPS_DXF, pageSetupsDxf } from './fixture';
 
@@ -59,5 +64,21 @@ describe('page-setups fixture (M2-17 part 6)', () => {
       if (spec.styleSheet) expect(s.plot.styleSheet).toBe(spec.styleSheet);
       else expect(s.plot).not.toHaveProperty('styleSheet');
     }
+  });
+
+  it('keeps the named page setups as they were through a save that changes a layout', () => {
+    const bytes = new Uint8Array(readFileSync(DIR + PAGE_SETUPS_DXF));
+    const before = mapPageSetups(readCadDocument(bytes));
+    const model = DocumentModel.create(openDocument(readCadDocument(bytes)).init);
+    const layout1 = model.layouts.find((l) => l.name === 'Layout1')!;
+    // Apply to Layout of "A3 Monochrome": its settings into Layout1's own page setup.
+    const a3 = before.find((p) => p.name === 'A3 Monochrome')!;
+    const b = new ChangeSetBuilder(model);
+    b.updateLayout(layout1.handle, { plot: a3.plot });
+    model.apply(b.build());
+    const saved = readCadDocument(exportDocument(readCadDocument(bytes), model, { format: 'dxf' }));
+    expect(mapPageSetups(saved)).toEqual(before);
+    const reopened = openDocument(saved).init.layouts!.find((l) => l.name === 'Layout1')!;
+    expect(reopened.plot).toMatchObject({ paperWidth: 420, styleSheet: 'monochrome.ctb' });
   });
 });
