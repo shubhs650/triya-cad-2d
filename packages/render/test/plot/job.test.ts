@@ -1,6 +1,12 @@
 // The plot job (M2-17): model space and layouts as plot parts, each painted through the plot
 // style table by what its object has with ByLayer and ByBlock resolved, blocks included.
-import type { EntityInit, LayoutPlot, ViewportGeometry } from '@triya/engine';
+import type {
+  EntityInit,
+  LayoutPlot,
+  PdfDefinition,
+  UnderlayGeometry,
+  ViewportGeometry,
+} from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   CTB_STYLE_COUNT,
@@ -254,4 +260,90 @@ describe('pathPolygons', () => {
       expect(Math.hypot(circle![i]! - 10, circle![i + 1]! - 10)).toBeCloseTo(2, 9);
     }
   });
+});
+
+describe('plotParts with a PDF underlay (M2-16 part 5)', () => {
+  const pdfDef: PdfDefinition = {
+    type: 'PDFDEFINITION',
+    handle: '9A',
+    owner: '0',
+    name: 'plan-2',
+    fileName: '..\\plans\\plan.pdf',
+    page: '2',
+  } as PdfDefinition;
+  const geom = (extra: Partial<UnderlayGeometry> = {}): UnderlayGeometry => ({
+    kind: 'PDFUNDERLAY',
+    definition: '9A',
+    position: { x: 10, y: 20 },
+    scale: { x: 25.4, y: 25.4, z: 1 },
+    rotation: 0,
+    flags: 2 | 4,
+    contrast: 60,
+    fade: 30,
+    clip: [],
+    ...extra,
+  });
+
+  it("names the definition's file and page, with the frame and settings the screen draws with", () => {
+    const { model } = drawing([entity('70', geom())], { objects: [pdfDef] });
+    const parts = plotParts(model, MODEL, { resolver });
+    expect(parts).toHaveLength(1);
+    const p = parts[0]!;
+    expect(p.kind).toBe('fill');
+    if (p.kind !== 'fill') return;
+    expect(p.path).toEqual([]);
+    expect(p.underlay).toEqual({
+      definition: '9A',
+      fileName: '..\\plans\\plan.pdf',
+      page: '2',
+      frame: { a: 25.4, b: 0, c: -0, d: 25.4, e: 10, f: 20 },
+      clipped: false,
+      contrast: 60,
+      fade: 30,
+      monochrome: true,
+    });
+  });
+
+  it("keeps a clipped underlay's boundary as its path and leaves out one on a non-plotting layer", () => {
+    const { model } = blockDrawingWith([
+      entity(
+        '70',
+        geom({
+          flags: 3,
+          clip: [
+            { x: 0, y: 0 },
+            { x: 1, y: 1 },
+          ],
+        }),
+      ),
+      entity('71', geom(), { layer: NO_PLOT }),
+    ]);
+    const parts = plotParts(model, MODEL, { resolver });
+    expect(parts).toHaveLength(1);
+    const p = parts[0]!;
+    if (p.kind !== 'fill') throw new Error('fill expected');
+    expect(p.underlay?.clipped).toBe(true);
+    expect(p.path).toEqual([
+      PATH_M,
+      10,
+      20,
+      PATH_L,
+      35.4,
+      20,
+      PATH_L,
+      35.4,
+      45.4,
+      PATH_L,
+      10,
+      45.4,
+      PATH_Z,
+    ]);
+  });
+
+  function blockDrawingWith(entities: EntityInit[]) {
+    const d = drawing(entities, { objects: [pdfDef] });
+    const layers = d.model.tables.layers as Map<string, ReturnType<typeof layer>>;
+    layers.set(NO_PLOT, layer(NO_PLOT, 'NOPLOT', { plot: false }));
+    return d;
+  }
 });

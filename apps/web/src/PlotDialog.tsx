@@ -63,17 +63,35 @@ function download(name: string, bytes: Uint8Array): void {
 
 export function PlotDialog({
   doc,
+  underlayFile,
 }: {
   doc: { readonly id: number; readonly block: string; readonly name: string } | undefined;
+  /** The PDF file a PDF underlay names, as supplied this session (M2-16 part 5). */
+  underlayFile?: (fileName: string) => Uint8Array | undefined;
 }) {
   const open = useSyncExternalStore(plotDialog.subscribe, plotDialog.get);
   if (!doc || open !== doc.id) return null;
   const controller = controllerOf(doc.id, doc.block);
   if (!controller) return null;
-  return <PlotBody key={`${doc.id}:${doc.block}`} name={doc.name} controller={controller} />;
+  return (
+    <PlotBody
+      key={`${doc.id}:${doc.block}`}
+      name={doc.name}
+      controller={controller}
+      {...(underlayFile && { underlayFile })}
+    />
+  );
 }
 
-function PlotBody({ name, controller }: { name: string; controller: CanvasController }) {
+function PlotBody({
+  name,
+  controller,
+  underlayFile,
+}: {
+  name: string;
+  controller: CanvasController;
+  underlayFile?: (fileName: string) => Uint8Array | undefined;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const [space, setSpace] = useState<PlotSpace>();
   const [s, setSettings] = useState<PlotSettings>();
@@ -114,7 +132,7 @@ function PlotBody({ name, controller }: { name: string; controller: CanvasContro
         ...(table && { table }),
         ...(s.paperspaceLast && space.sheet && { paperspaceLast: true }),
       });
-      const bytes = plotPdf(parts, page, s, space, `${name} - ${space.name}`);
+      const bytes = plotPdf(parts, page, s, space, `${name} - ${space.name}`, underlayFile);
       download(plotFileName(name, space), bytes);
       plotDialog.close();
     } catch (e) {

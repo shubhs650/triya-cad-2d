@@ -198,6 +198,8 @@ export function plotPdf(
   settings: PlotSettings,
   space: PlotSpace,
   title: string,
+  /** The PDF file a PDF underlay names; an underlay without one plots its boundary only. */
+  underlayFile?: (fileName: string) => Uint8Array | undefined,
 ): Uint8Array {
   const doc = new PdfDocument({ title, creator: 'Triya CAD 2D' });
   const pdfPage = doc.addPage(mmToPoints(page.width), mmToPoints(page.height), {
@@ -214,6 +216,7 @@ export function plotPdf(
     lineweightScale,
     nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
     area: page.clip,
+    ...(underlayFile && { underlays: (u) => underlayFile(u.fileName) }),
   });
   return doc.bytes();
 }

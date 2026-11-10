@@ -1,7 +1,7 @@
 // The Plot dialog's settings (M2-17): AutoCAD's defaults per space, the page they make, and the
 // one-page PDF written from plot parts.
 import { describe, expect, it } from 'vitest';
-import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
+import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, bundledPlotStyleTable, type PlotPart } from '@triya/render';
 import {
   LAYOUT_PAPER,
@@ -125,6 +125,27 @@ describe('plot style tables', () => {
   });
 });
 
+/** A one-page US Letter PDF of `content`, Helvetica as /F1. */
+function onePagePdf(content: string): Uint8Array {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Resources << /Font << /F1 4 0 R >> >> /Contents 5 0 R >>',
+    '<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica >>',
+    `<< /Length ${content.length} >>\nstream\n${content}\nendstream`,
+  ];
+  let out = '%PDF-1.4\n';
+  const offsets = objects.map((o, i) => {
+    const at = out.length;
+    out += `${i + 1} 0 obj\n${o}\nendobj\n`;
+    return at;
+  });
+  const xref = out.length;
+  out += `xref\n0 6\n0000000000 65535 f \n${offsets.map((o) => `${String(o).padStart(10, '0')} 00000 n \n`).join('')}`;
+  out += `trailer\n<< /Size 6 /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(out);
+}
+
 describe('plotPdf', () => {
   it('writes one page of the paper’s size, labelled with the space', async () => {
     const parts: PlotPart[] = [
@@ -154,6 +175,57 @@ describe('plotPdf', () => {
     expect(w! / POINTS_PER_MM).toBeCloseTo(841, 3);
     expect(h! / POINTS_PER_MM).toBeCloseTo(594, 3);
     expect(await pdf.getPageLabels()).toEqual(['Model']);
+  });
+
+  // M2-16 part 5: a PDF underlay plots its page's own content, its text still text.
+  it('copies a PDF underlay’s page from the file supplied, and plots its boundary without one', async () => {
+    const file = onePagePdf('BT /F1 48 Tf 72 400 Td (TRIYA) Tj ET 1 0 0 rg 72 72 144 144 re f');
+    const paint = {
+      color: [0, 0, 0] as const,
+      screening: 100,
+      lineweight: 0.5,
+      linetype: { kind: 'object' as const },
+      endStyle: 'round' as const,
+      joinStyle: 'round' as const,
+      fillStyle: 'solid' as const,
+      physicalPen: 0,
+      virtualPen: 0,
+    };
+    const parts: PlotPart[] = [
+      {
+        kind: 'fill',
+        path: [0, 0, 0, 1, 400, 0, 1, 400, 200, 4],
+        paint,
+        underlay: {
+          definition: '9A',
+          fileName: '..\\plans\\PDF-UNDERLAY.PDF',
+          page: '1',
+          frame: { a: 25.4, b: 0, c: 0, d: 25.4, e: 0, f: 0 },
+          clipped: true,
+          contrast: 100,
+          fade: 0,
+          monochrome: false,
+        },
+      },
+    ];
+    const s = { ...defaultPlotSettings(model), paper: 'ISO A3', area: 'extents' as const };
+    const read = async (bytes: Uint8Array) => {
+      const page = await (await getDocument({ data: bytes }).promise).getPage(1);
+      const text = (await page.getTextContent()).items.map((i) => ('str' in i ? i.str : ''));
+      return { text, ops: (await page.getOperatorList()).fnArray };
+    };
+    const files = new Map([['pdf-underlay.pdf', file]]);
+    const shown = await read(
+      plotPdf(parts, plotPage(s, model), s, model, 'plan - Model', (f) =>
+        files.get(f.split(/[\\/]/).pop()!.toLowerCase()),
+      ),
+    );
+    expect(shown.text).toContain('TRIYA');
+    expect(shown.ops).toContain(OPS.paintFormXObjectBegin);
+    const missing = await read(plotPdf(parts, plotPage(s, model), s, model, 'plan - Model'));
+    expect(missing.text).toEqual([]);
+    expect(missing.ops).not.toContain(OPS.paintFormXObjectBegin);
+    expect(missing.ops).toContain(OPS.constructPath);
   });
 
   it('names the file after the drawing and the space', () => {
