@@ -58,6 +58,7 @@ export {
   type BlockSource,
   type InsertClip,
   type InsertContextFunction,
+  type PrimitiveOwner,
 } from './blocks';
 export {
   Canvas2DRenderer,
@@ -78,6 +79,7 @@ export {
   documentTolerance,
   fontBookOf,
   type FontSources,
+  type PlotRequest,
   type RenderDocument,
   type RenderSessionOptions,
 } from './session';

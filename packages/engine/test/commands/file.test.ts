@@ -1,6 +1,7 @@
 // M2-13: QSAVE, SAVE, SAVEAS and CLOSE hand the file to the app through the host and report its
 // refusal; none changes the drawing or becomes an undo step. DRAWINGRECOVERY (M2-14 part 2) asks
-// the app to offer the drawings it can recover again.
+// the app to offer the drawings it can recover again. PLOT and PRINT (M2-17) open the app's Plot
+// dialog.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
@@ -34,6 +35,8 @@ describe('the file commands', () => {
     ['SAVEAS', 'saveas'],
     ['CLOSE', 'close'],
     ['DRAWINGRECOVERY', 'recover'],
+    ['PLOT', 'plot'],
+    ['PRINT', 'plot'],
   ] as const)('%s asks the app to %s', async (name, action) => {
     const { bus, asked, model } = setup();
     const version = model.version;

@@ -13,7 +13,8 @@ import type {
   Vec2,
   UnderlaySnapPage,
 } from '@triya/engine';
-import type { FontSources, RenderDocument } from './session';
+import type { PlotPart } from './plot/job';
+import type { FontSources, PlotRequest, RenderDocument } from './session';
 import type {
   DrawnEntity,
   RasterPixels,
@@ -90,6 +91,8 @@ export type HostMessage =
   /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
   | { readonly type: 'entitiesIn'; readonly id: number; readonly rect: ScreenRect }
   | { readonly type: 'flush'; readonly id: number }
+  /** What plotting a space draws (M2-17); the answer is a `plot`. */
+  | { readonly type: 'plot'; readonly id: number; readonly request: PlotRequest }
   /** ZOOM Extents of the space drawn, as measured after everything before (M1-35 part 2). */
   | { readonly type: 'extents'; readonly id: number }
   /** The last frame drawn, fitted inside width × height (M1-22 tab hover preview). */
@@ -111,6 +114,8 @@ export type WorkerMessage =
   | { readonly type: 'extents'; readonly id: number; readonly box: Box | null }
   /** The text widths asked for, null for a text no loaded font draws. */
   | { readonly type: 'widths'; readonly id: number; readonly widths: readonly (number | null)[] }
+  /** The plot parts asked for (M2-17). */
+  | { readonly type: 'plot'; readonly id: number; readonly parts: readonly PlotPart[] }
   | { readonly type: 'error'; readonly message: string; readonly id?: number }
   /** A PDF underlay page the view needs drawn (M1-20); unasked, so it carries no id. */
   | { readonly type: 'underlayRequest'; readonly request: UnderlayRequest; readonly id?: never };
