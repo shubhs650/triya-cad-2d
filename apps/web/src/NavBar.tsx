@@ -3,46 +3,57 @@
 // (VIEW restore and New). Each button calls the canvas controller of the space on screen; the
 // ZOOM, PAN, REGEN and VIEW commands call the same functions through the view host (M2-02).
 import { useState } from 'react';
-import type { ViewRecord } from '@triya/engine';
+import type { ChangeSet, ViewRecord, ViewState } from '@triya/engine';
 import type { CanvasMode } from './canvas/controller';
 import { controllerOf } from './canvas/registry';
 import type { ViewportSize } from './canvas/navigate';
-import type { NamedView } from './canvas/view-host';
+import { stateOf, type NamedView } from './canvas/view-host';
 import { namedView } from './canvas/views';
-import type { DocumentStore, OpenDocument } from './documents';
+import type { OpenDocument } from './documents';
+import { drawingViews } from './saved-views';
 
 /** VIEW table flag 1: a paper-space view. */
 const PAPER_VIEW = 1;
 
-/** The drawing's own views: model-space views on the Model tab, paper-space views in a layout. */
-function fileViewsOf(doc: OpenDocument): ViewRecord[] {
+/**
+ * The drawing's views of the space shown, as its engine has them (M2-29: VIEW Save and Save view
+ * write the VIEW table): model-space views on the Model tab, paper-space views in a layout.
+ */
+function fileViewsOf(doc: OpenDocument, changes: readonly ChangeSet[]): ViewRecord[] {
   const inModel = doc.block === doc.opened.modelSpace;
-  return [...(doc.opened.init.tables?.views ?? [])].filter((v: ViewRecord) =>
+  return drawingViews(doc.opened.init, changes).filter((v: ViewRecord) =>
     (v.flags ?? 0) & PAPER_VIEW ? !inModel : inModel,
   );
 }
 
 /**
- * The named views of the space shown, as the Views list has them (the drawing's, then this
- * session's), each with the view a canvas of `size` restores it to: what VIEW lists and restores.
+ * The named views of the space shown, as the Views list has them, each with the view a canvas
+ * of `size` restores it to: what VIEW lists and restores.
  */
-export function namedViewsOf(doc: OpenDocument, size: ViewportSize): NamedView[] {
-  return [
-    ...fileViewsOf(doc).map((v) => ({ name: v.name, inDrawing: true, view: namedView(v, size) })),
-    ...doc.savedViews
-      .filter((v) => v.block === doc.block)
-      .map((v) => ({ name: v.name, inDrawing: false, view: v.view })),
-  ];
+export function namedViewsOf(
+  doc: OpenDocument,
+  changes: readonly ChangeSet[],
+  size: ViewportSize,
+): NamedView[] {
+  return fileViewsOf(doc, changes).map((v) => ({
+    name: v.name,
+    inDrawing: true,
+    view: namedView(v, size),
+  }));
 }
 
 export function NavBar({
   doc,
-  store,
+  changes,
   mode,
+  onSaveView,
 }: {
   doc: OpenDocument;
-  store: DocumentStore;
+  /** The drawing's change log, which holds the views saved since it opened. */
+  changes: readonly ChangeSet[];
   mode: CanvasMode;
+  /** Save view: the view shown kept in the drawing as `name` (an engine edit, M2-29). */
+  onSaveView: (name: string, view: ViewState) => void;
 }) {
   const [viewsOpen, setViewsOpen] = useState(false);
   const [naming, setNaming] = useState('');
@@ -52,8 +63,7 @@ export function NavBar({
     if (ctl) ctl.setMode(ctl.mode === m ? 'none' : m);
   };
 
-  const fileViews = fileViewsOf(doc);
-  const saved = doc.savedViews.filter((v) => v.block === doc.block);
+  const fileViews = fileViewsOf(doc, changes);
 
   return (
     <div className="nav-bar" role="toolbar" aria-label="Navigation" aria-orientation="vertical">
@@ -112,22 +122,16 @@ export function NavBar({
                 </li>
               );
             })}
-            {saved.map((v) => (
-              <li key={`saved:${v.name}`}>
-                <button type="button" onClick={() => c()?.show(v.view)}>
-                  {v.name}
-                </button>
-              </li>
-            ))}
-            {fileViews.length + saved.length === 0 && <li className="empty">No named views</li>}
+            {fileViews.length === 0 && <li className="empty">No named views</li>}
           </ul>
           <form
             onSubmit={(e) => {
               e.preventDefault();
               const name = naming.trim();
-              const view = c()?.view;
+              const ctl = c();
+              const view = ctl && stateOf(ctl);
               if (!name || !view) return;
-              store.saveView(doc.id, name, view);
+              onSaveView(name, view);
               setNaming('');
             }}
           >

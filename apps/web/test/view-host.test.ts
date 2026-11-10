@@ -10,6 +10,7 @@ import {
   NO_CLIPBOARD,
   answerView,
   NO_FILE,
+  stateOf,
   type NamedView,
   type ViewContext,
   type ViewTarget,
@@ -75,14 +76,12 @@ const VIEWS: NamedView[] = [
 ];
 
 function context(target: Target | undefined, others: Target[] = []) {
-  const saved: [string, ViewTransform][] = [];
   const ctx: ViewContext = {
     target,
     all: () => [...(target ? [target] : []), ...others],
     views: () => VIEWS,
-    save: (name, view) => void saved.push([name, view]),
   };
-  return { ctx, saved };
+  return { ctx };
 }
 
 describe('answerView', () => {
@@ -323,9 +322,9 @@ describe('answerView', () => {
     expect([t.calls, other.calls]).toEqual([['regen', 'regen'], ['regen']]);
   });
 
-  it('lists, restores and saves named views', () => {
+  it('lists and restores named views, and tells the view VIEW Save keeps (M2-29)', () => {
     const t = new Target();
-    const { ctx, saved } = context(t);
+    const { ctx } = context(t);
     expect(answerView({ op: 'views' }, ctx)).toEqual({
       ok: true,
       views: [
@@ -338,21 +337,8 @@ describe('answerView', () => {
       message: 'Cannot find view "Back".',
     });
     expect(now(answerView({ op: 'restore', name: 'ISO' }, ctx)).ok).toBe(false);
-    answerView({ op: 'save', name: 'Here' }, ctx);
-    answerView(
-      { op: 'save', name: 'Box', window: { a: { x: 0, y: 0 }, b: { x: 20, y: 10 } } },
-      ctx,
-    );
-    expect(
-      answerView(
-        { op: 'save', name: 'Flat', window: { a: { x: 0, y: 0 }, b: { x: 9, y: 0 } } },
-        ctx,
-      ),
-    ).toEqual({ ok: false, message: 'The window has no area.' });
-    expect(saved).toEqual([
-      ['Here', t.view],
-      ['Box', { center: { x: 10, y: 5 }, scale: 40 }],
-    ]);
+    expect(t.calls).toEqual([]);
+    expect(now(answerView({ op: 'get' }, ctx))).toEqual({ ok: true, view: stateOf(t) });
   });
 });
 

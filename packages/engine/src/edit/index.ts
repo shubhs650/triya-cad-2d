@@ -34,3 +34,4 @@ export {
   type RegeneratedParts,
 } from './dimension-block';
 export * from './dimension';
+export * from './named-view';

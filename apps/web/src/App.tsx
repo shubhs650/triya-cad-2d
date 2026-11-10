@@ -14,6 +14,7 @@ import type {
   PdfDefinition,
   Vec2,
   ViewReply,
+  ViewState,
 } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
@@ -55,6 +56,7 @@ import { SnapMenu } from './SnapMenu';
 import { DraftingToggles } from './DraftingToggles';
 import { DocumentStore, isDirty, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
+import { shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile } from './images';
 import { LayersPalette } from './LayersPalette';
@@ -259,8 +261,7 @@ function viewContext(id: number): ViewContext {
   return {
     target,
     all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
-    views: () => (doc && target ? namedViewsOf(doc, target.size) : []),
-    save: (name, view) => doc && store.saveView(doc.id, name, view),
+    views: () => (doc && target ? namedViewsOf(doc, engines.changesOf(doc.id), target.size) : []),
     file: (action, window, resume) => fileCommand(id, action, window, resume),
     plot: (r) => plotScript(id, r),
     clipboard: (content) => clipboardRequest(id, content),
@@ -295,6 +296,28 @@ let saveEnv: SaveEnv | undefined;
 const saving = new Set<number>();
 
 /**
+ * What a save writes: the drawing's change log, then the view each Model tile shows written into
+ * its `*Active` VPORT (M2-29), so the drawing reopens where it was left. The views are the save's
+ * only: looking around is not an edit.
+ */
+function savedChanges(doc: OpenDocument): readonly ChangeSet[] {
+  const changes = engines.changesOf(doc.id);
+  const model = doc.opened.modelSpace;
+  if (model === undefined) return changes;
+  const shown = new Map(
+    tilesOf(doc.id, model).map(([i, c]) => [i, { view: c.view, size: c.size }]),
+  );
+  const views = shownViewsChange(doc.opened.init, changes, shown);
+  return Object.keys(views).length > 0 ? [...changes, views] : changes;
+}
+
+/** The navigation bar's Save view (M2-29): the view kept in the drawing, a VIEW undo step. */
+async function saveView(id: number, name: string, view: ViewState): Promise<void> {
+  const r = await engines.edit(id, { kind: 'view', name, view });
+  if (!r.ok) store.fail(r.message);
+}
+
+/**
  * Saves a drawing (M2-13): QSAVE in place where it can, else Save As (save.ts). Resolves true
  * once the drawing is saved; a refusal shows in the error banner.
  */
@@ -306,7 +329,7 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
     // Edits made while the save runs are not in it.
     const edits = doc.edits;
     saveEnv ??= browserSave();
-    const r = await saveDrawing(doc.name, doc.file, engines.changesOf(id), mode, saveEnv);
+    const r = await saveDrawing(doc.name, doc.file, savedChanges(doc), mode, saveEnv);
     if (r.ok) {
       store.saved(id, r.name, r.file, edits);
       if (r.file.handle) void recent.add(r.file.handle as RecentHandle);
@@ -336,6 +359,16 @@ async function closeDoc(id: number): Promise<boolean> {
   commandLines.forget(id);
   undoStates.forget(id);
   return true;
+}
+
+/**
+ * CLOSEALL (M2-29): closes every open drawing in tab order, each asking to save its changes as
+ * CLOSE does; Cancel keeps that drawing and the ones after it open, as AutoCAD's does.
+ */
+async function closeAll(): Promise<void> {
+  for (const { id } of store.getSnapshot().docs) {
+    if (!(await closeDoc(id))) return;
+  }
 }
 
 /**
@@ -374,6 +407,10 @@ async function fileCommand(
   if (action === 'close') {
     // The engine stops with the drawing, so it hears first that the request is done.
     queueMicrotask(() => void closeDoc(id));
+    return { ok: true };
+  }
+  if (action === 'closeall') {
+    queueMicrotask(() => void closeAll());
     return { ok: true };
   }
   if (await saveDoc(id, action)) {
@@ -1233,7 +1270,14 @@ export function App() {
           {state.docs.map((d) => (
             <DocumentCanvas key={d.id} doc={d} active={d.id === state.active} onMode={setMode} />
           ))}
-          {active && <NavBar doc={active} store={store} mode={mode} />}
+          {active && (
+            <NavBar
+              doc={active}
+              changes={engines.changesOf(active.id)}
+              mode={mode}
+              onSaveView={(name, view) => void saveView(active.id, name, view)}
+            />
+          )}
           <PlotPreview active={state.active} />
           {state.docs.length === 0 && (
             <div className="start" data-testid="start">

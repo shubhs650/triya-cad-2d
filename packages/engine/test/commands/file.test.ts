@@ -36,6 +36,7 @@ describe('the file commands', () => {
     ['SAVE', 'saveas'],
     ['SAVEAS', 'saveas'],
     ['CLOSE', 'close'],
+    ['CLOSEALL', 'closeall'],
     ['DRAWINGRECOVERY', 'recover'],
     ['PLOT', 'plot'],
     ['PRINT', 'plot'],

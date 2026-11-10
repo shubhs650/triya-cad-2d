@@ -21,7 +21,6 @@ import type {
 import type { ViewTransform } from '@triya/render';
 import type { CanvasMode } from './controller';
 import type { ViewportSize } from './navigate';
-import { windowView } from './views';
 
 /** What the view host needs of a canvas (CanvasController's view calls). */
 export interface ViewTarget {
@@ -67,8 +66,6 @@ export interface ViewContext {
   readonly all: () => readonly ViewTarget[];
   /** The space's named views, as `target` would show them. */
   readonly views: () => readonly NamedView[];
-  /** Saves a view of the space shown for the session (VIEW Save, as the navigation bar's). */
-  readonly save: (name: string, view: ViewTransform) => void;
   /**
    * QSAVE, SAVEAS and CLOSE (M2-13): the app saves or closes the drawing; PLOT's `window` is the
    * plot window just picked (M2-17 part 2).
@@ -210,11 +207,5 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
         .then((box) =>
           box ? { ok: true, box } : { ok: false, message: 'The objects have no extents.' },
         );
-    case 'save': {
-      const view = r.window ? windowView(r.window.a, r.window.b, t.size) : t.view;
-      if (!view) return { ok: false, message: 'The window has no area.' };
-      ctx.save(r.name, view);
-      return done();
-    }
   }
 }

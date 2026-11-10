@@ -87,12 +87,16 @@ interface Setup {
   header?: [string, HeaderValue][];
   view?: ViewHost;
   textStyles?: TextStyleRecord[];
+  keptStyleNames?: string[];
 }
 
 function setup(o: Setup = {}) {
   const base = sampleInit();
   const init: DocumentInit = {
     ...base,
+    ...(o.keptStyleNames && {
+      meta: { ...base.meta, keptEntryNames: { mleaderStyles: o.keptStyleNames } },
+    }),
     header: new Map([...base.header!, ['$TEXTSTYLE', 'Standard'], ...(o.header ?? [])]),
     tables: {
       ...base.tables,
@@ -478,6 +482,15 @@ describe('MLEADER', () => {
     expect(g!.style).toBe(styles[0]!.handle);
     expect(pt(g!.contentBase)).toEqual([18, 5]);
     expect(g!.text!.height).toBe(4);
+  });
+
+  it('names its Standard style anew where the drawing keeps one it does not map (M2-29)', async () => {
+    // An R13/R14 DXF ezdxf wrote lists an R2007 STANDARD style that acad-ts keeps as a proxy
+    // object: the save cannot replace it, so the new style takes the next free name.
+    const { bus, model } = setup({ styles: [], keptStyleNames: ['STANDARD', 'Standard1'] });
+    await bus.script(['MLEADER', '0,0', '10,5', 'Metric', '']);
+    await bus.script(['MLEADER', '0,20', '10,25', 'Again', '']);
+    expect([...model.tables.mleaderStyles.values()].map((s) => s.name)).toEqual(['Standard2']);
   });
 
   it('makes no Standard style, and no multileader, in a drawing without a text style', async () => {

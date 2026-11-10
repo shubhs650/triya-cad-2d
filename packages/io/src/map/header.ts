@@ -18,6 +18,7 @@ import {
   CadHeader,
   Color,
   DictionaryVariable,
+  MultiLeaderStyle,
   Scale,
   type CadDocument,
 } from '@node-projects/acad-ts';
@@ -88,6 +89,7 @@ export function mapHeader(doc: CadDocument): MappedHeader {
       insUnits: h.insUnits as number,
       measurement: (h.measurementUnits as number) === 0 ? 'imperial' : 'metric',
       ...(doc.rootDictionary && { rootDictionary: hex(doc.rootDictionary.handle) }),
+      ...keptEntryNames(doc),
     },
   };
 }
@@ -120,4 +122,16 @@ export function annotationScaleValue(doc: CadDocument, scale: HeaderValue): numb
     return s.paperUnits > 0 && s.drawingUnits > 0 ? s.paperUnits / s.drawingUnits : undefined;
   }
   return undefined;
+}
+
+/**
+ * The multileader style dictionary's entries Triya does not map (M2-29): an R13/R14 DXF ezdxf
+ * wrote lists an R2007 STANDARD style that acad-ts reads as a proxy object, which stays in the
+ * passthrough. MLEADER must not name a new style after one (the save refuses to replace it).
+ */
+function keptEntryNames(doc: CadDocument): Pick<DocumentMeta, 'keptEntryNames'> {
+  const dict = namedDictionary(doc, CadDictionary.acadMLeaderStyle);
+  if (!dict) return {};
+  const names = dict.entryNames.filter((_, i) => !([...dict][i] instanceof MultiLeaderStyle));
+  return names.length > 0 ? { keptEntryNames: { mleaderStyles: names } } : {};
 }
