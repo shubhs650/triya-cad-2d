@@ -1547,6 +1547,8 @@ export interface LayoutPlot {
   readonly plotType: number;
   /** DXF 70 plot flags. */
   readonly flags: number;
+  /** DXF 7: the plot style table's file name (M2-17 part 3); absent when it names none. */
+  readonly styleSheet?: string;
 }
 
 /** A non-graphical object (dictionary, xrecord, layer state, scale, image def, …). */

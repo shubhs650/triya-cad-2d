@@ -4,12 +4,17 @@
 // each page labelled with its layout and bookmarked with its sheet's name. Cancel (and Esc)
 // closes. A sheet that cannot plot is reported in its Status and the others still publish, as
 // AutoCAD's publish log does.
+//
+// Part 3: each sheet plots with its page setup's plot style table and options (the drafter's own
+// tables from Settings among them), as the Plot dialog opens on it.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { downloadPdf } from './PlotDialog';
 import { controllerOf } from './canvas/registry';
 import { layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
-import type { PlotSpace } from './plot';
+import type { PlotStyleTable } from '@triya/render';
+import { defaultPlotSettings, type PlotSpace } from './plot';
+import { plotRequest } from './plot-preview';
 import {
   publishFileName,
   publishPdf,
@@ -40,19 +45,39 @@ export const publishDialog = (() => {
 /** The PDF file a PDF underlay names (M2-16 part 5): its pages plot as the Plot dialog's do. */
 type UnderlayFile = (fileName: string) => Uint8Array | undefined;
 
+type UserTables = () => ReadonlyMap<string, PlotStyleTable>;
+
 export function PublishDialog({
   doc,
   underlayFile,
+  userTables,
 }: {
   doc: OpenDocument | undefined;
   underlayFile?: UnderlayFile;
+  /** The plot style tables added in Settings (part 3). */
+  userTables?: UserTables;
 }) {
   const open = useSyncExternalStore(publishDialog.subscribe, publishDialog.get);
   if (!doc || open !== doc.id) return null;
-  return <PublishBody key={doc.id} doc={doc} {...(underlayFile && { underlayFile })} />;
+  return (
+    <PublishBody
+      key={doc.id}
+      doc={doc}
+      {...(underlayFile && { underlayFile })}
+      {...(userTables && { userTables })}
+    />
+  );
 }
 
-function PublishBody({ doc, underlayFile }: { doc: OpenDocument; underlayFile?: UnderlayFile }) {
+function PublishBody({
+  doc,
+  underlayFile,
+  userTables,
+}: {
+  doc: OpenDocument;
+  underlayFile?: UnderlayFile;
+  userTables?: UserTables;
+}) {
   const ref = useRef<HTMLDialogElement>(null);
   const [sheets, setSheets] = useState<PublishSheet[]>(() =>
     publishSheets(doc.name, spacesOf(doc, engines.changesOf(doc.id))),
@@ -77,20 +102,26 @@ function PublishBody({ doc, underlayFile }: { doc: OpenDocument; underlayFile?: 
     try {
       const here = await active.plotSpace();
       const layouts = layoutsOf(doc.opened.init, engines.changesOf(doc.id));
+      const tables = userTables?.();
       const plotted = [];
       for (const s of included) {
         // A sheet shown on a canvas plots as the Plot dialog would (model space's Display); one
         // not shown from its page setup, or model space by its extents.
         const live = controllerOf(doc.id, s.block);
         const space: PlotSpace = live
-          ? await live.plotSpace()
+          ? { ...(await live.plotSpace()), userTables: tables }
           : sheetSpace({
               name: s.name,
               layout: layouts.find((l) => l.blockRecord === s.block),
+              model: s.block === doc.opened.modelSpace,
               extents: doc.opened.extents[s.block],
               namedPlotStyles: here.namedPlotStyles ?? false,
+              userTables: tables,
             });
-        plotted.push({ sheet: s.sheet, space, parts: await active.plot({ block: s.block }) });
+        // The page setup's plot style table resolves the parts' colours and lineweights.
+        const request = plotRequest(defaultPlotSettings(space), space);
+        const parts = await active.plot({ block: s.block, ...request });
+        plotted.push({ sheet: s.sheet, space, parts });
       }
       const { bytes, failed } = publishPdf(plotted, doc.name.replace(/\.[^.]+$/, ''), underlayFile);
       if (bytes) downloadPdf(publishFileName(doc.name), bytes);

@@ -495,6 +495,8 @@ function plotProblems(
   const changed = (k: keyof LayoutPlot) => !b || !same(b[k], a[k]);
   if (changed('paperSize') && typeof a.paperSize !== 'string')
     out.push(`paperSize: ${JSON.stringify(a.paperSize)} is not text`);
+  if (changed('styleSheet') && a.styleSheet !== undefined && typeof a.styleSheet !== 'string')
+    out.push(`styleSheet: ${JSON.stringify(a.styleSheet)} is not text`);
   for (const k of ['paperWidth', 'paperHeight'] as const) {
     if (changed(k) && !(finite(a[k]) && a[k] > 0))
       out.push(`${k}: ${JSON.stringify(a[k])} is not a number more than 0`);
@@ -670,4 +672,5 @@ function writePlot(acad: AcadLayout, b: LayoutPlot | undefined, a: LayoutPlot): 
   }
   if (changed('plotType')) acad.plotType = a.plotType as never;
   if (changed('flags')) acad.flags = a.flags as never;
+  if (changed('styleSheet')) acad.styleSheet = a.styleSheet ?? '';
 }

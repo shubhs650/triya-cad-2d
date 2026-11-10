@@ -74,6 +74,8 @@ export interface ViewContext {
   readonly file?: (
     action: FileAction,
     window?: { readonly a: Vec2; readonly b: Vec2 },
+    /** PLOT opens its dialog again as it closed (M2-17 part 3). */
+    resume?: boolean,
   ) => Promise<ViewReply>;
   /**
    * The app's Clipboard (M2-14 part 2), which every drawing shares: `content` puts objects on
@@ -103,7 +105,7 @@ export function stateOf(t: ViewTarget): ViewState | undefined {
 export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promise<ViewReply> {
   // The file commands need the drawing, not a canvas.
   if (r.op === 'file') {
-    return ctx.file ? ctx.file(r.action, r.window) : { ok: false, message: NO_FILE };
+    return ctx.file ? ctx.file(r.action, r.window, r.resume) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };

@@ -80,6 +80,7 @@ import { FontStore, isFontFile, opfsFonts } from './user-fonts';
 import {
   LINETYPE_FILES,
   PLOT_STYLE_FILES,
+  plotStyleTablesIn,
   SupportFileStore,
   opfsSupportFiles,
 } from './support-files';
@@ -244,7 +245,7 @@ function viewContext(id: number): ViewContext {
     all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
     views: () => (doc && target ? namedViewsOf(doc, target.size) : []),
     save: (name, view) => doc && store.saveView(doc.id, name, view),
-    file: (action, window) => fileCommand(id, action, window),
+    file: (action, window, resume) => fileCommand(id, action, window, resume),
     clipboard: (content) => clipboardRequest(id, content),
     // PROPERTIES and PROPERTIESCLOSE (M2-21).
     palette: (name, open) => {
@@ -328,6 +329,7 @@ async function fileCommand(
   id: number,
   action: FileAction,
   window?: { readonly a: Vec2; readonly b: Vec2 },
+  resume?: boolean,
 ): Promise<ViewReply> {
   if (action === 'recover') {
     // DRAWINGRECOVERY (M2-14 part 2): the recovery banner lists them again.
@@ -338,8 +340,12 @@ async function fileCommand(
   }
   if (action === 'plot') {
     // PLOT and PRINT (M2-17): the Plot dialog plots the space shown; PLOT waits for it, and
-    // asks for a window's corners when it closes on Window< (part 2).
-    const pickWindow = await plotDialog.show(id, window && windowBox(window.a, window.b));
+    // asks for a window's corners when it closes on Window< (part 2), then shows it again as it
+    // closed, with the window when one was picked (part 3).
+    const pickWindow = await plotDialog.show(id, {
+      window: window && windowBox(window.a, window.b),
+      resume: resume === true,
+    });
     return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
   }
   if (action === 'preview') return previewSpace(id);
@@ -368,7 +374,7 @@ async function previewSpace(id: number): Promise<ViewReply> {
   const doc = store.getSnapshot().docs.find((d) => d.id === id);
   const controller = doc && controllerOf(doc.id, doc.block);
   if (!doc || !controller) return { ok: false, message: 'There is nothing to preview.' };
-  const space = await controller.plotSpace();
+  const space = { ...(await controller.plotSpace()), userTables: userPlotStyleTables() };
   const settings = previewSettings(id, doc.block, space);
   const title = `${doc.name} - ${space.name}`;
   const underlayFile = (f: string) => pdfPages.bytes(f);
@@ -457,6 +463,8 @@ void plotStyles.load();
 const linetypes = new SupportFileStore(LINETYPE_FILES, opfsSupportFiles(LINETYPE_FILES));
 void linetypes.load();
 const supportStores = [plotStyles, linetypes] as const;
+/** The plot style tables added in Settings, which the Plot dialog lists (M2-17 part 3). */
+const userPlotStyleTables = () => plotStyleTablesIn(plotStyles);
 
 /** Files for the support stores; true when one of them takes `f`. */
 function addSupportFile(f: File): boolean {
@@ -1238,8 +1246,16 @@ export function App() {
         sources={fonts.sources()}
       />
       <AttributeDialogs doc={active} />
-      <PlotDialog doc={active} underlayFile={(f) => pdfPages.bytes(f)} />
-      <PublishDialog doc={active} underlayFile={(f) => pdfPages.bytes(f)} />
+      <PlotDialog
+        doc={active}
+        underlayFile={(f) => pdfPages.bytes(f)}
+        userTables={userPlotStyleTables}
+      />
+      <PublishDialog
+        doc={active}
+        underlayFile={(f) => pdfPages.bytes(f)}
+        userTables={userPlotStyleTables}
+      />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
       <CommandLine

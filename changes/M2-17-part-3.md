@@ -1,0 +1,1 @@
+- M2-17 part 3 (#259): the Plot dialog and PUBLISH open on the page setup's plot style table (DXF 7, now mapped and written) and plot options; the plot style tables added in Settings are listed and plotted with; a table the device lacks is shown "(not found)" and plots as None; Esc at PLOT's window corners brings the dialog back as it was.

@@ -87,6 +87,11 @@ export type ViewRequest =
       readonly action: FileAction;
       /** PLOT's window (M2-17 part 2): the corners picked after the dialog's Window< button. */
       readonly window?: { readonly a: Vec2; readonly b: Vec2 };
+      /**
+       * PLOT opens the dialog again after its Window< button (M2-17 part 3): with the settings
+       * it closed with, and `window` when one was picked (Esc at the corners picks none).
+       */
+      readonly resume?: boolean;
     }
   /** The objects' extents (COPYCLIP's base point, M2-14 part 2), which the renderer answers. */
   | { readonly op: 'bounds'; readonly ids: readonly EntityId[] }

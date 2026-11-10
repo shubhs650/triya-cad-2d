@@ -96,6 +96,32 @@ export const PLOT_STYLE_FILES: SupportKind = {
   },
 };
 
+const tablesRead = new WeakMap<SupportState, ReadonlyMap<string, PlotStyleTable>>();
+
+/**
+ * The plot style tables a store keeps, by file name (the Plot dialog's list, M2-17 part 3), read
+ * once for each state of the store.
+ */
+export function plotStyleTablesIn(store: SupportFileStore): ReadonlyMap<string, PlotStyleTable> {
+  const state = store.getSnapshot();
+  let tables = tablesRead.get(state);
+  if (!tables) {
+    const read = new Map<string, PlotStyleTable>();
+    for (const { name } of state.files) {
+      const bytes = store.file(name);
+      if (!bytes) continue;
+      try {
+        read.set(name, parsePlotStyleTable(bytes));
+      } catch {
+        // Checked when added; a file that no longer reads is listed as unusable instead.
+      }
+    }
+    tables = read;
+    tablesRead.set(state, tables);
+  }
+  return tables;
+}
+
 /** .lin files are ANSI text (AutoCAD writes them in the system code page). */
 const latin1 = new TextDecoder('windows-1252');
 
