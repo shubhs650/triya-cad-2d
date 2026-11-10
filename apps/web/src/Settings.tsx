@@ -21,28 +21,37 @@ import {
 import type { PatternStore } from './patterns';
 import type { DeviceFonts, DeviceFontsState } from './local-fonts';
 import type { FontStore } from './user-fonts';
+import type { SupportFileStore } from './support-files';
+import { interfaceColours } from './canvas/colours';
 
 export function Settings({
   preferences,
   onClearAll,
   patterns,
   fonts,
+  plotStyles,
+  linetypes,
   deviceFonts,
   open,
   onClose,
   onAdd,
   onAddFonts,
+  onAddFiles,
 }: {
   preferences: PreferencesStore;
   /** Deletes everything on the device; the page reloads unless something could not go. */
   onClearAll: () => Promise<ClearReport>;
   patterns: PatternStore;
   fonts: FontStore;
+  plotStyles: SupportFileStore;
+  linetypes: SupportFileStore;
   deviceFonts: DeviceFonts;
   open: boolean;
   onClose: () => void;
   onAdd: (files: Iterable<File>) => void;
   onAddFonts: (files: Iterable<File>) => void;
+  /** Plot style tables and linetype files, each to its store. */
+  onAddFiles: (files: Iterable<File>) => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -167,11 +176,117 @@ export function Settings({
         />
         <InstalledFonts state={device} onAllow={() => void deviceFonts.allow()} />
       </section>
+      <SupportFiles
+        title="Plot style tables"
+        about="Your .ctb and .stb files, for plotting beside the bundled tables. They stay on this device. You can also drop them on the window."
+        empty="No plot style tables added."
+        listLabel="Plot style tables"
+        button="Add plot style tables…"
+        accept=".ctb,.stb"
+        testId="plot-style-picker"
+        store={plotStyles}
+        onAdd={onAddFiles}
+      />
+      <SupportFiles
+        title="Linetypes"
+        about="Your .lin files, for loading linetypes beside the bundled ISO set. They stay on this device. You can also drop them on the window."
+        empty="No linetype files added."
+        listLabel="Linetype files"
+        button="Add linetype files…"
+        accept=".lin"
+        testId="linetype-picker"
+        store={linetypes}
+        onAdd={onAddFiles}
+      />
       <LocalData onClearAll={onClearAll} />
       <form method="dialog">
         <button type="submit">Close</button>
       </form>
     </dialog>
+  );
+}
+
+/**
+ * One kind of support file (M2-20 part 2), as OPTIONS > Files lists AutoCAD's: the files kept on
+ * this device with what each holds, the ones that could not be read back, Add and Remove.
+ */
+function SupportFiles(props: {
+  title: string;
+  about: string;
+  empty: string;
+  listLabel: string;
+  button: string;
+  accept: string;
+  testId: string;
+  store: SupportFileStore;
+  onAdd: (files: Iterable<File>) => void;
+}) {
+  const { store } = props;
+  const { files, unreadable, notice, error } = useSyncExternalStore(
+    store.subscribe,
+    store.getSnapshot,
+  );
+  const picker = useRef<HTMLInputElement>(null);
+  const id = useId();
+  return (
+    <section aria-labelledby={id}>
+      <h3 id={id}>{props.title}</h3>
+      <p>{props.about}</p>
+      {files.length === 0 ? (
+        <p className="empty">{props.empty}</p>
+      ) : (
+        <ul aria-label={props.listLabel}>
+          {files.map((f) => (
+            <li key={f.name}>
+              <span className="file-name">{f.name}</span>
+              <span className="pattern-names">{f.summary}</span>
+              <button
+                type="button"
+                aria-label={`Remove ${f.name}`}
+                onClick={() => void store.remove(f.name)}
+              >
+                Remove
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {unreadable.length > 0 && (
+        <ul aria-label={`${props.listLabel} that could not be read`}>
+          {unreadable.map((u) => (
+            <li key={u.name}>
+              <span className="file-name">{u.name}</span>
+              <span className="pattern-names">{u.problem}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {error && (
+        <p className="message error" role="alert">
+          {error}
+        </p>
+      )}
+      {notice && (
+        <p className="message" role="status">
+          {notice}
+        </p>
+      )}
+      <button type="button" onClick={() => picker.current?.click()}>
+        {props.button}
+      </button>
+      <input
+        ref={picker}
+        type="file"
+        accept={props.accept}
+        multiple
+        hidden
+        data-testid={props.testId}
+        onChange={(e) => {
+          props.onAdd(e.currentTarget.files ?? []);
+          e.currentTarget.value = '';
+        }}
+      />
+    </section>
   );
 }
 
@@ -220,7 +335,10 @@ function InstalledFonts({ state, onAllow }: { state: DeviceFontsState; onAllow: 
   );
 }
 
-const COLOURS: readonly { key: Exclude<keyof CanvasColours, 'grid'>; label: string }[] = [
+const COLOURS: readonly {
+  key: Exclude<keyof CanvasColours, 'grid' | 'crosshair' | 'autosnap' | 'autotrack'>;
+  label: string;
+}[] = [
   { key: 'model', label: 'Model space background' },
   { key: 'paper', label: 'Layout paper' },
   { key: 'surround', label: 'Layout background' },
@@ -261,27 +379,16 @@ function DisplaySettings({ preferences }: { preferences: PreferencesStore }) {
             />
           </div>
         ))}
-        <div className="setting-row">
-          <label htmlFor={`${id}-grid`}>Grid lines</label>
-          <span>
-            <input
-              id={`${id}-grid-auto`}
-              type="checkbox"
-              checked={p.canvas.grid === undefined}
-              onChange={(e) =>
-                setCanvas({ grid: e.currentTarget.checked ? undefined : gridStart(p) })
-              }
-            />
-            <label htmlFor={`${id}-grid-auto`}>Automatic</label>
-            <input
-              id={`${id}-grid`}
-              type="color"
-              disabled={p.canvas.grid === undefined}
-              value={p.canvas.grid ?? gridStart(p)}
-              onChange={(e) => setCanvas({ grid: e.currentTarget.value })}
-            />
-          </span>
-        </div>
+        {AUTO_COLOURS.map(({ key, label }) => (
+          <AutoColour
+            key={key}
+            id={`${id}-${key}`}
+            label={label}
+            value={p.canvas[key]}
+            automatic={automaticColour(p.canvas, key)}
+            onChange={(v) => setCanvas({ [key]: v })}
+          />
+        ))}
         <button type="button" onClick={() => preferences.update({ canvas: DEFAULT_CANVAS })}>
           Restore default colors
         </button>
@@ -303,8 +410,57 @@ function DisplaySettings({ preferences }: { preferences: PreferencesStore }) {
   );
 }
 
-/** The grid colour Automatic turns into: UI_SPEC.md §6's grid on the model canvas. */
-const gridStart = (p: { canvas: CanvasColours }): string => p.canvas.grid ?? '#2b3340';
+type AutoKey = 'grid' | 'crosshair' | 'autosnap' | 'autotrack';
+
+/** The colours that can be Automatic, following the background (AutoCAD's Drawing Window Colors). */
+const AUTO_COLOURS: readonly { key: AutoKey; label: string }[] = [
+  { key: 'grid', label: 'Grid lines' },
+  { key: 'crosshair', label: 'Crosshairs' },
+  { key: 'autosnap', label: 'AutoSnap marker' },
+  { key: 'autotrack', label: 'AutoTrack vector' },
+];
+
+/**
+ * The colour an Automatic setting shows on the model canvas, where unchecking Automatic starts:
+ * UI_SPEC.md §6's grid, or what the drafting aids draw in there now.
+ */
+function automaticColour(c: CanvasColours, key: AutoKey): string {
+  if (key === 'grid') return '#2b3340';
+  return interfaceColours({ background: c.model })[key];
+}
+
+/** A colour that is Automatic or chosen: the checkbox, and the swatch once unchecked. */
+function AutoColour(props: {
+  id: string;
+  label: string;
+  value: string | undefined;
+  automatic: string;
+  onChange: (value: string | undefined) => void;
+}) {
+  const { id, value } = props;
+  return (
+    <div className="setting-row">
+      <label htmlFor={id}>{props.label}</label>
+      <span>
+        <input
+          id={`${id}-auto`}
+          type="checkbox"
+          aria-label={`${props.label}: Automatic`}
+          checked={value === undefined}
+          onChange={(e) => props.onChange(e.currentTarget.checked ? undefined : props.automatic)}
+        />
+        <label htmlFor={`${id}-auto`}>Automatic</label>
+        <input
+          id={id}
+          type="color"
+          disabled={value === undefined}
+          value={value ?? props.automatic}
+          onChange={(e) => props.onChange(e.currentTarget.value)}
+        />
+      </span>
+    </div>
+  );
+}
 
 /**
  * DRAFTINGSETTINGS' object snap modes and polar increment, OPTIONS > Drafting's AutoSnap
@@ -414,8 +570,8 @@ function LocalData({ onClearAll }: { onClearAll: () => Promise<ClearReport> }) {
     <section aria-labelledby={`${id}-local`}>
       <h3 id={`${id}-local`}>Local data</h3>
       <p>
-        Settings, hatch patterns, fonts, recent drawings, autosaves and the offline copy of the app
-        are kept only in this browser on this device.
+        Settings, hatch patterns, fonts, plot style tables, linetypes, recent drawings, autosaves
+        and the offline copy of the app are kept only in this browser on this device.
       </p>
       {step === 'idle' && (
         <button type="button" className="danger" onClick={() => setStep('confirm')}>

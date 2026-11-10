@@ -93,7 +93,7 @@ import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
 import { INITIAL_DRAFTING, type DraftingState } from '../drafting';
 import { DEFAULT_CANVAS, type CanvasColours } from '../preferences';
-import { foregroundOn, isDarkColor } from './colours';
+import { crosshairCursor, foregroundOn, interfaceColours, type InterfaceColours } from './colours';
 import {
   ACQUIRE_MS,
   MARKER_PX,
@@ -341,6 +341,7 @@ export class CanvasController {
     );
     container.append(canvas);
     this.#canvas = canvas;
+    this.#paintCursor();
     this.#tip = document.createElement('div');
     this.#tip.className = 'autosnap-tip';
     this.#tip.dataset['testid'] = 'autosnap-tip';
@@ -538,6 +539,7 @@ export class CanvasController {
   setColours(colours: CanvasColours): void {
     if (colours === this.#colours) return;
     this.#colours = colours;
+    this.#paintCursor();
     this.#host.setStyle(this.#style());
     this.#requestFrame();
     if (this.#prompt && this.#mode === 'none') this.#track();
@@ -602,7 +604,7 @@ export class CanvasController {
 
   /** The running command's preview (`ctx.preview`), or none: drawn in the foreground colour. */
   setPreview(geometry: readonly EntityGeometry[]): void {
-    this.#preview = geometry.flatMap((g) => tessellate(g, { color: 'foreground' }));
+    this.#preview = geometry.flatMap((g) => tessellate(g, { color: this.#ui().crosshair }));
     const world = this.#mode === 'none' && this.#pointer ? this.#world(this.#pointer) : undefined;
     this.#rubberBand(world);
   }
@@ -622,6 +624,7 @@ export class CanvasController {
     this.#listeners.abort();
     this.#canvas.replaceWith(canvas);
     this.#canvas = canvas;
+    this.#paintCursor();
     this.#listeners = new AbortController();
     this.#host = this.#createHost();
     // The new renderer has none of the bitmaps the old one was given.
@@ -785,6 +788,22 @@ export class CanvasController {
    * Model space on its canvas colour (dark by default); a layout's paper on its surround. ACI 7
    * draws white on a dark background and black on a light one (UI_SPEC.md §6).
    */
+  /** The crosshairs', AutoSnap's and AutoTrack's colours on this canvas (M2-20 part 2). */
+  #ui(): InterfaceColours {
+    const c = this.#colours;
+    return interfaceColours({ ...c, background: this.#layout ? c.paper : c.model });
+  }
+
+  /**
+   * The crosshairs as the canvas's cursor: with the pickbox at `Command:`, without it while a
+   * prompt takes points (the stylesheet picks by `data-picking`).
+   */
+  #paintCursor(): void {
+    const { crosshair } = this.#ui();
+    this.#canvas.style.setProperty('--crosshair-box', crosshairCursor(crosshair));
+    this.#canvas.style.setProperty('--crosshair', crosshairCursor(crosshair, false));
+  }
+
   #style(): RenderStyle {
     const lw = this.#header.get('$LWDISPLAY');
     // LWT and TPY from the status bar (M2-04 part 2): LWT is the drawing's until turned.
@@ -913,7 +932,7 @@ export class CanvasController {
     this.#host.setTransient([
       {
         kind: 'stroke',
-        color: 'foreground',
+        color: this.#ui().crosshair,
         path: [PATH_M, a.x, a.y, PATH_L, b.x, a.y, PATH_L, b.x, b.y, PATH_L, a.x, b.y, PATH_Z],
       },
     ]);
@@ -963,7 +982,7 @@ export class CanvasController {
         ? [
             {
               kind: 'stroke',
-              color: 'foreground',
+              color: this.#ui().crosshair,
               path: box
                 ? [
                     PATH_M,
@@ -1402,7 +1421,7 @@ export class CanvasController {
       if (world) this.#hooks.onCursor(world);
       return;
     }
-    const dark = isDarkColor(this.#layout ? this.#colours.paper : this.#colours.model);
+    const ui = this.#ui();
     const px = this.#px();
     // AUTOSNAPSIZE scales the marker from AutoCAD's default 5 px (M2-20).
     const marker = (px * this.#drafting.markerSize) / MARKER_PX;
@@ -1414,17 +1433,17 @@ export class CanvasController {
     const acquired = acquiredPrimitives(
       this.#acquired.map((a) => a.point),
       px,
-      dark,
+      ui.autotrack,
     );
     if (hit) {
       point = hit.point;
-      this.#overlay = [...acquired, ...markerPrimitives(hit.mode, hit.point, marker, dark)];
+      this.#overlay = [...acquired, ...markerPrimitives(hit.mode, hit.point, marker, ui.autosnap)];
       tip = snapLabel(hit.mode);
     } else if (c.polar) {
       const base = this.#base()!;
       this.#overlay = [
         ...acquired,
-        ...trackingPrimitives(base, c.polar.angle, reach + c.polar.distance, px, dark),
+        ...trackingPrimitives(base, c.polar.angle, reach + c.polar.distance, px, ui.autotrack),
       ];
       tip = polarLabel(c.polar, this.#precision());
     } else if (c.track) {
@@ -1433,9 +1452,9 @@ export class CanvasController {
         ...acquired,
         ...c.track.paths.flatMap((t) => {
           const to = Math.hypot(c.point.x - t.from.x, c.point.y - t.from.y);
-          return trackingPrimitives(t.from, t.angle, to + reach, px, dark);
+          return trackingPrimitives(t.from, t.angle, to + reach, px, ui.autotrack);
         }),
-        ...markerPrimitives('INT', c.point, marker * 0.6, dark),
+        ...markerPrimitives('INT', c.point, marker * 0.6, ui.autosnap),
       ];
       tip = trackLabel(c.track, this.#precision());
     } else this.#overlay = acquired;

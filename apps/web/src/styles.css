@@ -12,6 +12,13 @@
   --ok-text: #1f7a3a;
   --canvas-model: #212830;
   --selected-bg: #dbe6fd;
+  /* In-canvas editors and tooltips (M2-20 part 2: they follow the theme too). */
+  --tip-bg: #fffbe0;
+  --tip-text: #202020;
+  --tip-border: #8a7a30;
+  --ruler-bg: rgb(245 246 248 / 92%);
+  --ruler-line: #9aa4b2;
+  --ruler-mark: #1f2933;
   --motion: 120ms;
   color-scheme: light;
   font-family:
@@ -39,6 +46,12 @@
   --ok-text: #6fd08f;
   --selected-bg: #2c4370;
   --chrome-hover: rgb(255 255 255 / 8%);
+  --tip-bg: #3a3523;
+  --tip-text: #f2ecd0;
+  --tip-border: #a8964a;
+  --ruler-bg: rgb(39 44 52 / 92%);
+  --ruler-line: #6b7480;
+  --ruler-mark: #e6e8eb;
   color-scheme: dark;
 }
 
@@ -55,6 +68,12 @@
     --ok-text: #6fd08f;
     --selected-bg: #2c4370;
     --chrome-hover: rgb(255 255 255 / 8%);
+    --tip-bg: #3a3523;
+    --tip-text: #f2ecd0;
+    --tip-border: #a8964a;
+    --ruler-bg: rgb(39 44 52 / 92%);
+    --ruler-line: #6b7480;
+    --ruler-mark: #e6e8eb;
     color-scheme: dark;
   }
 }
@@ -337,7 +356,8 @@ button {
   display: block;
   width: 100%;
   height: 100%;
-  cursor: crosshair;
+  /* M2-20 part 2: the crosshairs in their Settings colour, drawn by the canvas controller. */
+  cursor: var(--crosshair-box, crosshair);
   touch-action: none;
 }
 
@@ -1026,10 +1046,10 @@ button {
   pointer-events: none;
 }
 
-/* A command waits for a point (M2-02): AutoCAD's crosshairs. */
+/* A command waits for a point (M2-02): AutoCAD's crosshairs, without the pickbox (M2-20). */
 .drawing-canvas[data-picking='true'][data-mode='none'],
 .drawing-canvas[data-picking='true']:not([data-mode]) {
-  cursor: crosshair;
+  cursor: var(--crosshair, crosshair);
 }
 
 /* The command line (M2-02, UI_SPEC.md §5): AutoCAD's docked command window, two history lines
@@ -1440,9 +1460,9 @@ button {
   position: absolute;
   z-index: 4;
   padding: 1px 6px;
-  background: #fffbe0;
-  color: #202020;
-  border: 1px solid #8a7a30;
+  background: var(--tip-bg);
+  color: var(--tip-text);
+  border: 1px solid var(--tip-border);
   border-radius: 2px;
   font-size: 12px;
   white-space: nowrap;
@@ -1504,9 +1524,9 @@ button {
   bottom: 100%;
   height: 14px;
   font-size: 0;
-  background-color: rgb(245 246 248 / 92%);
-  background-image: linear-gradient(to right, #9aa4b2 1px, transparent 1px);
-  border: 1px solid #9aa4b2;
+  background-color: var(--ruler-bg);
+  background-image: linear-gradient(to right, var(--ruler-line) 1px, transparent 1px);
+  border: 1px solid var(--ruler-line);
   cursor: pointer;
   touch-action: none;
 }
@@ -1537,21 +1557,27 @@ button {
   height: 6px;
   margin-left: 0;
   border: none;
-  border-left: 2px solid #1f2933;
-  border-bottom: 2px solid #1f2933;
+  border-left: 2px solid var(--ruler-mark);
+  border-bottom: 2px solid var(--ruler-mark);
 }
 
 .mtext-ruler > .mtext-ruler-tab-center {
   margin-left: -3px;
   border-left: none;
   border-right: none;
-  background: linear-gradient(to right, transparent 2px, #1f2933 2px, #1f2933 4px, transparent 4px);
+  background: linear-gradient(
+    to right,
+    transparent 2px,
+    var(--ruler-mark) 2px,
+    var(--ruler-mark) 4px,
+    transparent 4px
+  );
 }
 
 .mtext-ruler > .mtext-ruler-tab-right {
   margin-left: -6px;
   border-left: none;
-  border-right: 2px solid #1f2933;
+  border-right: 2px solid var(--ruler-mark);
 }
 
 .mtext-menu,

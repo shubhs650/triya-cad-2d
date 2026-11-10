@@ -35,6 +35,10 @@ describe('preferences', () => {
       surround: '#8a8f98',
       grid: undefined,
       selection: '#4da3ff',
+      // M2-20 part 2: Automatic, following the background as ACI 7 does.
+      crosshair: undefined,
+      autosnap: undefined,
+      autotrack: undefined,
     });
     expect(DEFAULT_PREFERENCES.coordinates).toBe('drawing');
     expect(DEFAULT_PREFERENCES.dynMode).toBe(true);
@@ -52,7 +56,15 @@ describe('preferences', () => {
   it('keep what is valid of a stored record and default the rest', () => {
     const p = normalizePreferences({
       theme: 'dark',
-      canvas: { model: '#FFFFFF', paper: 'red', grid: '#00ff00', selection: 7 },
+      canvas: {
+        model: '#FFFFFF',
+        paper: 'red',
+        grid: '#00ff00',
+        selection: 7,
+        crosshair: '#FF0000',
+        autosnap: 'yellow',
+        autotrack: '#00ffff',
+      },
       coordinates: 'hex',
       dynMode: false,
       drafting: {
@@ -66,7 +78,13 @@ describe('preferences', () => {
       unknown: 1,
     });
     expect(p.theme).toBe('dark');
-    expect(p.canvas).toEqual({ ...DEFAULT_PREFERENCES.canvas, model: '#ffffff', grid: '#00ff00' });
+    expect(p.canvas).toEqual({
+      ...DEFAULT_PREFERENCES.canvas,
+      model: '#ffffff',
+      grid: '#00ff00',
+      crosshair: '#ff0000',
+      autotrack: '#00ffff',
+    });
     expect(p.coordinates).toBe('drawing');
     expect(p.dynMode).toBe(false);
     // POLARANG only from AutoCAD's list; AUTOSNAPSIZE 1–20 and APERTURE 1–50.
