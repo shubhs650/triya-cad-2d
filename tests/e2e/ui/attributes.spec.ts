@@ -268,3 +268,49 @@ test('a double click on an attribute selects it; Justification keeps its inserti
   expect(position.y).toBeCloseTo(48 - 3.5 / 2, 6);
   await page.screenshot({ path: test.info().outputPath('10-after-justification.png') });
 });
+
+// M2-27 part 2: -ATTEDIT's "Select Attributes" takes the attributes picked on their text, not
+// every attribute of the title block, and marks the one being edited with an X.
+test('-ATTEDIT edits the attributes picked, one at a time, the current one marked', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const at = await open(page);
+  await type(page, '-ATTEDIT', 'Edit attributes one at a time? [Yes/No] <Yes>:');
+  await type(page, '', 'Enter block name specification <*>:');
+  await type(page, '', 'Enter attribute tag specification <*>:');
+  await type(page, '', 'Enter attribute value specification <*>:');
+  await type(page, '', 'Select Attributes:');
+  // DWG_NO "OET-1001" at drawing (272, 48), 3.5 high; SCALE "1:50" at (350, 48), 2.5 high.
+  for (const [x, y] of [
+    [276, 49.5],
+    [351.5, 49],
+  ] as const) {
+    const p = at(x, y);
+    await page.mouse.click(p.x, p.y);
+  }
+  // A pick on the frame takes the block but none of its attributes.
+  const frame = at(FRAME.x, FRAME.y);
+  await page.mouse.click(frame.x, frame.y);
+  const options = 'Enter an option [Value/Position/Height/Angle/Style/Layer/Color/Next] <Next>:';
+  await type(page, '', options);
+  await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText(
+    '2 attributes selected.',
+  );
+  await page.screenshot({ path: test.info().outputPath('11-attedit-x-on-dwg-no.png') });
+  await type(page, 'V', 'Enter type of value modification [Change/Replace] <Replace>:');
+  await type(page, '', 'Enter new attribute value:');
+  await type(page, 'OET-1002', options);
+  await type(page, '', options);
+  await page.screenshot({ path: test.info().outputPath('12-attedit-x-on-scale.png') });
+  await type(page, 'C', 'Enter new color [Truecolor/COlorbook] <BYLAYER>:');
+  await type(page, 'red', options);
+  await type(page, '', 'Command:');
+  await expect
+    .poll(() => edited(page))
+    .toEqual({
+      DWG_NO: ['OET-1002', 3.5, '{"kind":"byLayer"}'],
+      SCALE: ['1:50', 2.5, '{"kind":"aci","index":1}'],
+    });
+  await page.screenshot({ path: test.info().outputPath('13-attedit-done.png') });
+});

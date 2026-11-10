@@ -590,8 +590,8 @@ function copiedProps(b: ChangeSetBuilder, e: Entity | InsertAttribute, viewport 
   const xdata = copiedXdata(b, e, viewport);
   return {
     layer: e.layer,
-    // A new object cannot take a colour book's name yet (the save refuses it): the copy keeps
-    // the colour's RGB value.
+    // A new object does not take a colour book's name yet (M2-48: the save now writes one the
+    // drawing holds, M2-27): the copy keeps the colour's RGB value.
     color:
       e.color.kind === 'rgb' && (e.color.bookName !== undefined || e.color.colorName !== undefined)
         ? { kind: 'rgb' as const, r: e.color.r, g: e.color.g, b: e.color.b }
