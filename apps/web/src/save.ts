@@ -74,11 +74,16 @@ export type SaveOutcome =
 
 const reason = (e: unknown): string => (e instanceof Error ? e.message : String(e));
 
-/** Saves the drawing `name`, from `file` with the engine's `changes` (QSAVE or Save As). */
+/**
+ * Saves the drawing `name`, from `file` with the engine's `changes` (QSAVE or Save As). The
+ * changes may be worked out once the file is picked (`changes()`): what only the saved file
+ * holds, such as the blocks of dimensions that have none (M2-30 part 2), asks the engine and
+ * the canvas, which must not use up the user's gesture the picker needs.
+ */
 export async function saveDrawing(
   name: string,
   file: DrawingFile,
-  changes: readonly ChangeSet[],
+  changes: readonly ChangeSet[] | (() => Promise<readonly ChangeSet[]>),
   mode: SaveMode,
   env: SaveEnv,
 ): Promise<SaveOutcome> {
@@ -100,7 +105,8 @@ export async function saveDrawing(
   }
   let out: Uint8Array;
   try {
-    out = await env.write(file.bytes, changes);
+    const all = typeof changes === 'function' ? await changes() : changes;
+    out = await env.write(file.bytes, all);
   } catch (e) {
     return { ok: false, message: `${name} was not saved: ${reason(e)}` };
   }

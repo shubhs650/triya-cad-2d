@@ -102,6 +102,15 @@ export class Engines {
     return this.#logs.get(doc) ?? [];
   }
 
+  /**
+   * The blocks a save gives the drawing's dimensions that have none (M2-30 part 2): for the
+   * saved file only, so neither the change log nor the canvases take them.
+   */
+  async blocklessDimensionBlocks(doc: number): Promise<ChangeSet | undefined> {
+    const engine = this.#engines.get(doc);
+    return engine ? engine.blocklessDimensionBlocks() : undefined;
+  }
+
   /** Applies an edit to a drawing and shows it on every canvas of that drawing. */
   async edit(doc: number, edit: EngineEdit): Promise<EditResult> {
     const engine = this.#engines.get(doc);
