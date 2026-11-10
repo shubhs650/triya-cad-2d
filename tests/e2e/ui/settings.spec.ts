@@ -225,12 +225,19 @@ test('plot style tables and linetype files are added in Settings, listed, refuse
   await page.screenshot({ path: test.info().outputPath('support-files.png') });
 
   // Kept between visits; Remove takes one off the device.
+  await expect
+    .poll(async () => (await localData(page)).files.sort())
+    .toEqual(['linetypes/fences.lin', 'plotstyles/Office.ctb']);
   await page.reload();
   const again = await openSettings(page);
   await expect(again.getByRole('list', { name: 'Plot style tables' })).toContainText('Office.ctb');
   await expect(again.getByRole('list', { name: 'Linetype files' })).toContainText('fences.lin');
   await again.getByRole('button', { name: 'Remove Office.ctb' }).click();
   await expect(again.getByText('No plot style tables added.')).toBeVisible();
+  // The list changes at once; the private file system's deletion finishes a moment later.
+  await expect
+    .poll(async () => (await localData(page)).files.sort())
+    .toEqual(['linetypes/fences.lin']);
   await page.reload();
   await expect((await openSettings(page)).getByText('No plot style tables added.')).toBeVisible();
 });
