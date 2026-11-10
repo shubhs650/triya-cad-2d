@@ -314,7 +314,8 @@ function savedChanges(doc: OpenDocument): readonly ChangeSet[] {
 /** The navigation bar's Save view (M2-29): the view kept in the drawing, a VIEW undo step. */
 async function saveView(id: number, name: string, view: ViewState): Promise<void> {
   const r = await engines.edit(id, { kind: 'view', name, view });
-  if (!r.ok) store.fail(r.message);
+  if (r.ok) store.edited(id);
+  else store.fail(r.message);
 }
 
 /**

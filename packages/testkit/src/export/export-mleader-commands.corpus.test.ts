@@ -14,9 +14,9 @@
 // from MLEADER and saves it: the save checks what it adds against AC1032, the version it writes
 // (M2-13). Two R13/R14 drawings ezdxf wrote keep an R2007 STANDARD style as a proxy object, which
 // the engine does not see and the save never replaces: MLEADER names its style Standard1 there
-// (M2-29, `keptEntryNames`), and their session saves like the rest. R1 and R2.5 drawings have no text style,
-// which a multileader style names, so MLEADER makes nothing there and their unedited save is
-// audited.
+// (M2-29, `keptEntryNames`), and their session saves like the rest. R1 and R2.5 drawings have no
+// text style, which a multileader style names, so MLEADER makes nothing there and their unedited
+// save is audited.
 //
 // The fake canvas measures text as 0.6 of its height per character on one line: the far-side
 // landing only needs some box, and the renderer's own measuring is tested in packages/render.
