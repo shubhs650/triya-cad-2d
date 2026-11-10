@@ -18,6 +18,11 @@
 //
 // PUBLISH (M2-17 part 2): AutoCAD 2024 Help, "PUBLISH": "Publishes drawings to DWF, DWFx, and
 // PDF files, or to plotters", through the Publish dialog box, which is the app's too.
+//
+// PREVIEW (M2-18 part 2): AutoCAD 2024 Help, "PREVIEW": "Displays the drawing as it will be
+// plotted", asking "Press ESC or ENTER to exit, or right-click to display shortcut menu." The
+// preview is the app's (it plots the space shown and draws that plot), so the command says how to
+// leave it and waits until the app closes it.
 import type { CommandDef, CommandGenerator } from './command';
 import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
@@ -29,6 +34,18 @@ function fileCommand(name: string, action: FileAction): CommandDef {
     // eslint-disable-next-line require-yield -- the host does the prompting (its dialogs)
     async *run(ctx) {
       await viewRequest(ctx, { op: 'file', action });
+    },
+  };
+}
+
+/** PREVIEW: the plot of the space shown, until the drafter leaves it. */
+function previewCommand(): CommandDef {
+  return {
+    name: 'PREVIEW',
+    // eslint-disable-next-line require-yield -- the host shows the preview and takes its keys
+    async *run(ctx) {
+      ctx.message('Press ESC or ENTER to exit, or right-click to display shortcut menu.');
+      await viewRequest(ctx, { op: 'file', action: 'preview' });
     },
   };
 }
@@ -70,4 +87,5 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => plotCommand('PLOT'),
   () => plotCommand('PRINT'),
   () => fileCommand('PUBLISH', 'publish'),
+  previewCommand,
 ];

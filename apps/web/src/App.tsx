@@ -33,9 +33,9 @@ import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
 import { AttributeDialogs } from './AttributeDialogs';
-import { PlotDialog, plotDialog } from './PlotDialog';
+import { PlotDialog, download, plotDialog } from './PlotDialog';
 import { PublishDialog, publishDialog } from './PublishDialog';
-import { windowBox } from './plot';
+import { plotFile, plotFileName, windowBox } from './plot';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
@@ -87,6 +87,8 @@ import { undoButtons, undoStates } from './undo';
 import { UndoToast } from './UndoToast';
 import { PdfPages, fileKey } from './underlay/pages';
 import { openPdf } from './underlay/pdfjs';
+import { PlotPreview } from './PlotPreview';
+import { lastPlotSettings, previewMode, previewOf, previewSettings } from './plot-preview';
 import {
   loadXrefFiles,
   missingFileNames,
@@ -309,6 +311,8 @@ async function closeDoc(id: number): Promise<boolean> {
     if (answer === 'cancel') return false;
     if (answer === 'yes' && !(await saveDoc(id, 'qsave'))) return false;
   }
+  if (previewMode.get()?.doc === id) previewMode.close();
+  lastPlotSettings.forget(id);
   store.close(id);
   engines.stop(id);
   commandLines.forget(id);
@@ -338,6 +342,7 @@ async function fileCommand(
     const pickWindow = await plotDialog.show(id, window && windowBox(window.a, window.b));
     return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
   }
+  if (action === 'preview') return previewSpace(id);
   if (action === 'publish') {
     // PUBLISH (M2-17 part 2): the Publish dialog lists the drawing's sheets.
     publishDialog.open(id);
@@ -353,6 +358,39 @@ async function fileCommand(
     return { ok: true, ...(doc && { file: doc.name }) };
   }
   return { ok: false, message: store.getSnapshot().error ?? 'Save cancelled.' };
+}
+
+/**
+ * PREVIEW (M2-18 part 2): the space shown as it would plot with the settings it last plotted or
+ * previewed with, until the preview closes (its Plot button plots with those settings).
+ */
+async function previewSpace(id: number): Promise<ViewReply> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  const controller = doc && controllerOf(doc.id, doc.block);
+  if (!doc || !controller) return { ok: false, message: 'There is nothing to preview.' };
+  const space = await controller.plotSpace();
+  const settings = previewSettings(id, doc.block, space);
+  const title = `${doc.name} - ${space.name}`;
+  const underlayFile = (f: string) => pdfPages.bytes(f);
+  let p;
+  try {
+    p = await previewOf((r) => controller.plot(r), space, settings, title, underlayFile);
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+  lastPlotSettings.set(id, doc.block, settings);
+  const { parts, page } = p;
+  await previewMode.show({
+    doc: id,
+    title,
+    pdf: p.pdf,
+    paper: p.paper,
+    plot: async () => {
+      const file = await plotFile(parts, page, settings, space, title, underlayFile);
+      download(plotFileName(doc.name, space, settings.device), file.bytes, file.type);
+    },
+  });
+  return { ok: true };
 }
 
 /** The last world point the cursor was at on a canvas: direct distance entry aims at it. */
@@ -1105,6 +1143,7 @@ export function App() {
             <DocumentCanvas key={d.id} doc={d} active={d.id === state.active} onMode={setMode} />
           ))}
           {active && <NavBar doc={active} store={store} mode={mode} />}
+          <PlotPreview active={state.active} />
           {state.docs.length === 0 && (
             <div className="start" data-testid="start">
               <h1>Triya CAD 2D</h1>
@@ -1232,6 +1271,30 @@ function DynToggle() {
       onClick={() => dynMode.toggle()}
     >
       DYN
+    </button>
+  );
+}
+
+/**
+ * The status bar's plot preview toggle (UI_SPEC.md §6, M2-18 part 2): PREVIEW on the drawing
+ * shown, or back to the drawing when the preview is showing.
+ */
+function PreviewToggle({ doc }: { readonly doc: number | undefined }) {
+  const shown = useSyncExternalStore(previewMode.subscribe, previewMode.get);
+  const on = shown !== undefined && shown.doc === doc;
+  return (
+    <button
+      type="button"
+      className="status-toggle"
+      aria-pressed={on}
+      disabled={doc === undefined}
+      title="Plot preview (PREVIEW)"
+      onClick={() => {
+        if (on) previewMode.close();
+        else if (doc !== undefined) engines.command(doc, { kind: 'invoke', name: 'PREVIEW' });
+      }}
+    >
+      PREVIEW
     </button>
   );
 }
@@ -1539,6 +1602,7 @@ function StatusBar({
       )}
       <DraftingToggles />
       <DynToggle />
+      <PreviewToggle doc={doc?.id} />
       {doc && (
         <>
           <span className="version">{doc.opened.summary.version}</span>

@@ -9,12 +9,16 @@
 // off the paper) and the Window plot area. Window< (or choosing Window before one is picked) hides
 // the dialog and hands back to PLOT, which asks for the corners at the command line and opens the
 // dialog again with the window and the rest of the settings as they were, as AutoCAD does.
+//
+// M2-18 part 2: Preview… (bottom left, as AutoCAD's) shows the full plot preview with these
+// settings; closing it brings the dialog back, its Plot button plots as OK does.
 import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { CanvasController } from './canvas/controller';
 import { controllerOf } from './canvas/registry';
 import { rasterSize } from '@triya/render';
+import { lastPlotSettings, previewMode, plotRequest, previewOf } from './plot-preview';
 import {
   LAYOUT_PAPER,
   PLOT_DEVICES,
@@ -28,7 +32,6 @@ import {
   plotFile,
   plotPage,
   plotStyleTables,
-  plotTable,
   type PlotArea,
   type PlotSettings,
   type PlotSpace,
@@ -94,7 +97,7 @@ const AREA_LABELS: Record<PlotArea, string> = {
 };
 
 /** Downloads the plot (a file plotter's "Plot to file"). */
-function download(name: string, bytes: Uint8Array, type: string): void {
+export function download(name: string, bytes: Uint8Array, type: string): void {
   const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type }));
   const a = document.createElement('a');
   a.href = url;
@@ -180,18 +183,49 @@ function PlotBody({
     }
     setBusy(true);
     try {
-      const table = plotTable(s);
-      const parts = await controller.plot({
-        ...(table && { table }),
-        ...(s.paperspaceLast && space.sheet && { paperspaceLast: true }),
-      });
+      const parts = await controller.plot(plotRequest(s, space));
       const file = await plotFile(parts, page, s, space, `${name} - ${space.name}`, underlayFile);
       download(plotFileName(name, space, s.device), file.bytes, file.type);
+      lastPlotSettings.set(doc, block, s);
       plotDialog.close();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
+  };
+
+  // Preview… (M2-18 part 2): the plot these settings make, in the drawing area; the dialog comes
+  // back when the preview closes, unless its Plot button plotted.
+  const preview = async () => {
+    if (!s || !space || busy) return;
+    setError(undefined);
+    setBusy(true);
+    const plotTitle = `${name} - ${space.name}`;
+    let p;
+    try {
+      p = await previewOf((r) => controller.plot(r), space, s, plotTitle, underlayFile);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      setBusy(false);
+      return;
+    }
+    lastPlotSettings.set(doc, block, s);
+    ref.current?.close();
+    const { parts, page } = p;
+    await previewMode.show({
+      doc,
+      title: plotTitle,
+      pdf: p.pdf,
+      paper: p.paper,
+      plot: async () => {
+        const file = await plotFile(parts, page, s, space, plotTitle, underlayFile);
+        download(plotFileName(name, space, s.device), file.bytes, file.type);
+        plotDialog.close();
+      },
+    });
+    const d = ref.current;
+    if (plotDialog.get() === doc && d && !d.open) d.showModal();
+    setBusy(false);
   };
 
   const title = `Plot - ${space?.name ?? ''}`;
@@ -230,6 +264,14 @@ function PlotBody({
         </p>
       )}
       <div className="cad-dialog-buttons">
+        <button
+          type="button"
+          className="plot-preview-button"
+          disabled={!s || busy}
+          onClick={() => void preview()}
+        >
+          Preview…
+        </button>
         <button type="button" disabled={!s || busy} onClick={() => void ok()}>
           {busy ? 'Plotting…' : 'OK'}
         </button>

@@ -46,6 +46,7 @@ describe('palette search', () => {
       'PASTECLIP',
       'PASTEORIG',
       'PLOT',
+      'PREVIEW',
       'PRINT',
       'PROPERTIES',
       'PROPERTIESCLOSE',
