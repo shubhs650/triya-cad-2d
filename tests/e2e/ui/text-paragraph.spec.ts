@@ -141,6 +141,12 @@ test('the Paragraph dialog sets tab stops, indents and the alignment', async ({ 
   await page.keyboard.type('Qty');
   await page.keyboard.press('Tab');
   await page.keyboard.type('1,25');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Bolt');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('12,5');
+  // The dialog sets every paragraph the selection touches.
+  await page.keyboard.press('Control+A');
   await toolbar(page).getByRole('button', { name: 'Paragraph' }).click();
   const dialog = page.getByRole('dialog', { name: 'Paragraph' });
   await expect(dialog).toBeVisible();
@@ -190,6 +196,8 @@ test('the Paragraph dialog sets tab stops, indents and the alignment', async ({ 
   // The comma sits on the decimal stop.
   const unit = (((await ruler.boundingBox())!.width - 2) / 120) * 2.5;
   await expect.poll(async () => (await charAt(page, ',')) / unit).toBeCloseTo(10, 0);
+  // The second paragraph's too: both decimal commas on the stop.
+  await expect.poll(async () => (await charAt(page, ',', 1)) / unit).toBeCloseTo(10, 0);
 
   // The dialog opens again on what it set.
   await toolbar(page).getByRole('button', { name: 'Paragraph' }).click();
@@ -202,5 +210,5 @@ test('the Paragraph dialog sets tab stops, indents and the alignment', async ({ 
   await page.keyboard.press('Control+Enter');
   await expect(prompt(page)).toHaveText('Command:');
   const [g] = await mtexts(page);
-  expect(g!.contents).toBe('\\pxi-2,l3,r2,tD,10,r24;\\pqj;Qty^I1,25');
+  expect(g!.contents).toBe('\\pxi-2,l3,r2,tD,10,r24;\\pqj;Qty^I1,25\\PBolt^I12,5');
 });

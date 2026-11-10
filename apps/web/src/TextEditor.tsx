@@ -1276,8 +1276,10 @@ function MTextBox({
           settings={{ ruler, align, decimal }}
           onClose={(p) => {
             setMenu(undefined);
-            root.current!.focus();
+            // To the paragraphs the selection held before the dialog took the focus (focusing
+            // the editor first would collapse it); `commit` focuses the editor again.
             if (p) setParagraph(p);
+            else root.current!.focus();
           }}
         />
       )}
