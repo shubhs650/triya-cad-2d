@@ -6,14 +6,27 @@
 // Layout area at 1:1 on the paper of its page setup, model space its Display, "Fit to paper"
 // and centred; "Plot object lineweights" and "Plot with plot styles" are on, "Plot paperspace
 // last" and "Scale lineweights" off (the last two apply to layouts only). "Plot with plot
-// styles" off plots objects with their own properties, as the table None does. The printer is
-// Triya's PDF writer, which prints to the paper's edge.
+// styles" off plots objects with their own properties, as the table None does. The printers are
+// Triya's own, which print to the paper's edge: the PDF writer, the SVG writer (M2-18: the same
+// plot, each drawing layer an Inkscape layer) and a PNG of that SVG at a chosen resolution, as
+// AutoCAD's "PublishToWeb PNG.pc3" plots a raster (its background colour too).
 
 import type { Box, Vec2 } from '@triya/engine';
-import { PAPER_SIZES, PdfDocument, mmToPoints, plotItems, type PlotItem } from '@triya/pdf';
+import {
+  PAPER_SIZES,
+  PdfDocument,
+  encodePng,
+  mmToPoints,
+  plotItems,
+  plotSvg,
+  type PlotItem,
+  type PlotPageOptions,
+} from '@triya/pdf';
 import {
   BUNDLED_PLOT_STYLE_TABLES,
   bundledPlotStyleTable,
+  rasterSize,
+  rasterizeSvg,
   plotSetup,
   type PlotPart,
   type PlotSetup,
@@ -41,7 +54,24 @@ export type PlotArea = 'layout' | 'extents' | 'display' | 'limits';
 /** The layout's own paper (its page setup), offered first for a layout. */
 export const LAYOUT_PAPER = 'layout';
 
+/** The plotters (AutoCAD's Printer/plotter Name list). */
+export type PlotDevice = 'pdf' | 'svg' | 'png';
+
+export const PLOT_DEVICES: readonly { readonly id: PlotDevice; readonly name: string }[] = [
+  { id: 'pdf', name: 'Triya PDF (vector, to file)' },
+  { id: 'svg', name: 'Triya SVG (vector, to file)' },
+  { id: 'png', name: 'Triya PNG (raster, to file)' },
+];
+
+/** The resolutions the PNG plotter offers, dots per inch. */
+export const PNG_RESOLUTIONS: readonly number[] = [72, 96, 150, 200, 300, 600];
+
 export interface PlotSettings {
+  readonly device: PlotDevice;
+  /** The PNG plotter's resolution, dots per inch. */
+  readonly dpi: number;
+  /** What an SVG or PNG plot lies on: a white sheet, or nothing (transparent). */
+  readonly background: 'white' | 'none';
   /** A `PAPER_SIZES` name, or `LAYOUT_PAPER`. */
   readonly paper: string;
   readonly orientation: 'portrait' | 'landscape';
@@ -97,6 +127,9 @@ function layoutPaper(space: PlotSpace): { width: number; height: number } | unde
 /** The settings the dialog opens with for a space. */
 export function defaultPlotSettings(space: PlotSpace): PlotSettings {
   const common = {
+    device: 'pdf' as const,
+    dpi: 150,
+    background: 'white' as const,
     upsideDown: false,
     center: false,
     offset: { x: 0, y: 0 },
@@ -191,6 +224,21 @@ export function plotTable(settings: PlotSettings): PlotStyleTable | undefined {
   return settings.plotStyles && settings.table ? bundledPlotStyleTable(settings.table) : undefined;
 }
 
+/** How the parts lie on the page and plot there: what every plotter draws with. */
+function pageOptions(page: PlotSetup, settings: PlotSettings, space: PlotSpace): PlotPageOptions {
+  const table = plotTable(settings);
+  // "Scale lineweights" (layouts): lineweights grow with the plot scale against the page setup's.
+  const lineweightScale =
+    settings.scaleLineweights && space.sheet ? page.scale * space.sheet.unitsPerMm : 1;
+  return {
+    toPaper: page.toPaper,
+    lineweights: settings.lineweights || settings.plotStyles,
+    lineweightScale,
+    nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
+    area: page.clip,
+  };
+}
+
 /** A plot of one space as a one-page PDF. */
 export function plotPdf(
   parts: readonly PlotPart[],
@@ -206,23 +254,80 @@ export function plotPdf(
     label: space.name,
     bookmark: space.name,
   });
-  const table = plotTable(settings);
-  // "Scale lineweights" (layouts): lineweights grow with the plot scale against the page setup's.
-  const lineweightScale =
-    settings.scaleLineweights && space.sheet ? page.scale * space.sheet.unitsPerMm : 1;
   plotItems(pdfPage, parts as readonly PlotItem[], {
-    toPaper: page.toPaper,
-    lineweights: settings.lineweights || settings.plotStyles,
-    lineweightScale,
-    nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
-    area: page.clip,
+    ...pageOptions(page, settings, space),
     ...(underlayFile && { underlays: (u) => underlayFile(u.fileName) }),
   });
   return doc.bytes();
 }
 
+/** A plot of one space as an SVG file (Triya SVG). */
+export function plotSvgFile(
+  parts: readonly PlotPart[],
+  page: PlotSetup,
+  settings: PlotSettings,
+  space: PlotSpace,
+  title: string,
+): string {
+  return plotSvg(parts as readonly PlotItem[], {
+    ...pageOptions(page, settings, space),
+    width: mmToPoints(page.width),
+    height: mmToPoints(page.height),
+    title,
+    ...(settings.background === 'white' && { background: [255, 255, 255] as const }),
+  });
+}
+
+/** A plot of one space as a PNG file (Triya PNG): its SVG drawn at the resolution chosen. */
+export async function plotPng(
+  parts: readonly PlotPart[],
+  page: PlotSetup,
+  settings: PlotSettings,
+  space: PlotSpace,
+  title: string,
+  rasterize: typeof rasterizeSvg = rasterizeSvg,
+): Promise<Uint8Array> {
+  // The sheet is the canvas's own fill, so the SVG carries none.
+  const svg = plotSvgFile(parts, page, { ...settings, background: 'none' }, space, title);
+  const size = rasterSize(page, settings.dpi);
+  const pixels = await rasterize(svg, {
+    ...size,
+    ...(settings.background === 'white' && { background: '#ffffff' }),
+  });
+  return encodePng(pixels, { dpi: settings.dpi });
+}
+
+/** A plot of one space in the plotter's format, with its media type. */
+export async function plotFile(
+  parts: readonly PlotPart[],
+  page: PlotSetup,
+  settings: PlotSettings,
+  space: PlotSpace,
+  title: string,
+  underlayFile?: (fileName: string) => Uint8Array | undefined,
+): Promise<{ readonly bytes: Uint8Array; readonly type: string }> {
+  switch (settings.device) {
+    case 'svg':
+      return {
+        bytes: new TextEncoder().encode(plotSvgFile(parts, page, settings, space, title)),
+        type: 'image/svg+xml',
+      };
+    case 'png':
+      return { bytes: await plotPng(parts, page, settings, space, title), type: 'image/png' };
+    case 'pdf':
+      return {
+        bytes: plotPdf(parts, page, settings, space, title, underlayFile),
+        type: 'application/pdf',
+      };
+  }
+}
+
 /** The PDF's file name: the drawing's name and the space plotted. */
-export function plotFileName(drawing: string, space: PlotSpace): string {
+export function plotFileName(
+  drawing: string,
+  space: PlotSpace,
+  device: PlotDevice = 'pdf',
+): string {
   const base = drawing.replace(/\.[^.]+$/, '');
-  return `${base}-${space.name}.pdf`.replace(/[\\/:*?"<>|]/g, '_');
+  return `${base}-${space.name}.${device}`.replace(/[\\/:*?"<>|]/g, '_');
 }

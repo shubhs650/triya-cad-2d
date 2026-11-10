@@ -203,7 +203,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | PLOT / PRINT | Ctrl+P | 1 | dialog; -PLOT dash (scriptable) | ~ (#251): the Plot dialog plots the space shown to a one-page PDF (paper, area Layout/Extents/Display/Limits, offset, scale or fit, bundled CTB/STB, lineweight and paperspace-last options, orientation); Preview, Window and -PLOT are M2-17 part 2 |
 | PREVIEW | PRE | 1 | | |
 | PUBLISH | — | 2 | | |
-| EXPORTPDF / EXPORT (svg/png) | — | 1 | | |
+| EXPORTPDF / EXPORT (svg/png) | — | 1 | | ~ (#255): SVG and PNG through the Plot dialog's Triya SVG and Triya PNG plotters (layers as Inkscape layers; PNG resolution and background); the commands themselves are M2-18 part 2 |
 | PLOTSTYLE / STYLESMANAGER | — | 2 | CTB/STB store | |
 | DRAWINGRECOVERY | — | 1 | recovery flow | x (#240, #242): the launch's recovery banner offers each unsaved drawing a closed or crashed page left (Recover, Discard); DRAWINGRECOVERY shows it again with every drawing not yet recovered, or says there are none |
 

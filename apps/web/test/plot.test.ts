@@ -5,13 +5,17 @@ import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, bundledPlotStyleTable, type PlotPart } from '@triya/render';
 import {
   LAYOUT_PAPER,
+  PLOT_DEVICES,
+  PNG_RESOLUTIONS,
   defaultPlotSettings,
   paperMm,
   plotAreas,
   plotFileName,
   plotPage,
   plotPdf,
+  plotPng,
   plotStyleTables,
+  plotSvgFile,
   plotTable,
   type PlotSpace,
 } from '../src/plot';
@@ -231,5 +235,113 @@ describe('plotPdf', () => {
   it('names the file after the drawing and the space', () => {
     expect(plotFileName('plan.dxf', layout)).toBe('plan-Layout1.pdf');
     expect(plotFileName('a/b.dwg', { name: 'X:1' })).toBe('a_b-X_1.pdf');
+  });
+});
+
+// M2-18: the Triya SVG and Triya PNG plotters plot the same parts with the same settings.
+describe('plotting to SVG and PNG', () => {
+  const part = (layer: string): PlotPart => ({
+    kind: 'stroke',
+    path: [0, 0, 0, 1, 400, 200],
+    layer,
+    paint: {
+      color: [255, 0, 0],
+      screening: 100,
+      lineweight: 0.5,
+      linetype: { kind: 'object' },
+      endStyle: 'round',
+      joinStyle: 'round',
+      fillStyle: 'solid',
+      physicalPen: 0,
+      virtualPen: 0,
+    },
+  });
+
+  it('lists the three plotters, PDF first, and opens on the PDF one at 150 dpi on white', () => {
+    expect(PLOT_DEVICES.map((d) => d.name)).toEqual([
+      'Triya PDF (vector, to file)',
+      'Triya SVG (vector, to file)',
+      'Triya PNG (raster, to file)',
+    ]);
+    expect(defaultPlotSettings(model)).toMatchObject({
+      device: 'pdf',
+      dpi: 150,
+      background: 'white',
+    });
+    expect(PNG_RESOLUTIONS).toContain(300);
+  });
+
+  it('writes an SVG of the paper’s size with the drawing layers as Inkscape layers', () => {
+    const s = {
+      ...defaultPlotSettings(model),
+      device: 'svg' as const,
+      paper: 'ISO A3',
+      area: 'extents' as const,
+      background: 'none' as const,
+    };
+    const svg = plotSvgFile(
+      [part('Walls'), part('Doors')],
+      plotPage(s, model),
+      s,
+      model,
+      'plan - Model',
+    );
+    expect(svg).toContain('width="420mm" height="297mm"');
+    expect(svg).toContain('<title>plan - Model</title>');
+    expect([...svg.matchAll(/inkscape:label="([^"]+)"/g)].map((m) => m[1])).toEqual([
+      'Walls',
+      'Doors',
+    ]);
+    expect(svg).not.toContain('<rect width');
+    const white = plotSvgFile([], plotPage(s, model), { ...s, background: 'white' }, model, 't');
+    expect(white).toContain('fill="#ffffff"');
+  });
+
+  it('rasterises the SVG at the resolution asked for and records it in the PNG', async () => {
+    const s = { ...defaultPlotSettings(model), device: 'png' as const, paper: 'ISO A4', dpi: 100 };
+    const seen: { svg: string; o: { width: number; height: number; background?: string } }[] = [];
+    const png = await plotPng(
+      [part('0')],
+      plotPage(s, model),
+      s,
+      model,
+      'plan - Model',
+      async (svg, o) => {
+        seen.push({ svg, o });
+        return {
+          width: o.width,
+          height: o.height,
+          data: new Uint8ClampedArray(o.width * o.height * 4),
+        };
+      },
+    );
+    // A4 landscape at 100 dpi: 297 / 25.4 × 100 by 210 / 25.4 × 100.
+    expect(seen[0]!.o).toEqual({ width: 1169, height: 827, background: '#ffffff' });
+    expect(seen[0]!.svg).toContain('inkscape:label="0"');
+    expect([...png.subarray(1, 4)].map((c) => String.fromCharCode(c)).join('')).toBe('PNG');
+    const view = new DataView(png.buffer, png.byteOffset);
+    expect([view.getUint32(16), view.getUint32(20)]).toEqual([1169, 827]);
+    // pHYs right after IHDR: 100 dpi = 3937 pixels per metre.
+    expect(view.getUint32(41)).toBe(3937);
+    await plotPng(
+      [],
+      plotPage(s, model),
+      { ...s, background: 'none' },
+      model,
+      't',
+      async (_svg, o) => {
+        expect(o.background).toBeUndefined();
+        return {
+          width: o.width,
+          height: o.height,
+          data: new Uint8ClampedArray(o.width * o.height * 4),
+        };
+      },
+    );
+  });
+
+  it('names the file by the plotter', () => {
+    expect(plotFileName('plan.dxf', layout, 'svg')).toBe('plan-Layout1.svg');
+    expect(plotFileName('plan.dxf', layout, 'png')).toBe('plan-Layout1.png');
   });
 });
