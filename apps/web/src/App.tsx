@@ -300,8 +300,11 @@ const saving = new Set<number>();
  * its `*Active` VPORT (M2-29), so the drawing reopens where it was left. The views are the save's
  * only: looking around is not an edit.
  */
-function savedChanges(doc: OpenDocument): readonly ChangeSet[] {
-  const changes = engines.changesOf(doc.id);
+function savedChanges(doc: OpenDocument, blocks?: ChangeSet): readonly ChangeSet[] {
+  // The blocks of dimensions that have none (M2-30 part 2) are the saved file's only, as the
+  // views: the drawing keeps drawing them from the dimension engine.
+  const log = engines.changesOf(doc.id);
+  const changes = blocks ? [...log, blocks] : log;
   const model = doc.opened.modelSpace;
   if (model === undefined) return changes;
   const shown = new Map(
@@ -330,7 +333,12 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
     // Edits made while the save runs are not in it.
     const edits = doc.edits;
     saveEnv ??= browserSave();
-    const r = await saveDrawing(doc.name, doc.file, savedChanges(doc), mode, saveEnv);
+    const changes = async () => {
+      // Without them the dimensions are saved without a block, as they were opened.
+      const blocks = await engines.blocklessDimensionBlocks(id).catch(() => undefined);
+      return savedChanges(doc, blocks);
+    };
+    const r = await saveDrawing(doc.name, doc.file, changes, mode, saveEnv);
     if (r.ok) {
       store.saved(id, r.name, r.file, edits);
       if (r.file.handle) void recent.add(r.file.handle as RecentHandle);

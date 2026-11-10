@@ -140,6 +140,26 @@ describe('saveDrawing', () => {
     ).toMatchObject({ cancelled: true });
   });
 
+  it('works out the saved file’s own changes once the picker answered (M2-30 part 2)', async () => {
+    const order: string[] = [];
+    const e = env(handle('b.dxf').h);
+    e.pick = vi.fn(() => {
+      order.push('pick');
+      return Promise.resolve(handle('b.dxf').h);
+    });
+    const changes = vi.fn(() => {
+      order.push('changes');
+      return Promise.resolve(CHANGES);
+    });
+    await saveDrawing('a.dwg', { bytes: BYTES, inPlace: false }, changes, 'saveas', e);
+    expect(order).toEqual(['pick', 'changes']);
+    expect(e.write).toHaveBeenCalledWith(BYTES, CHANGES);
+    // Cancelled: nothing asked of the engine.
+    const none = vi.fn(() => Promise.resolve(CHANGES));
+    await saveDrawing('a.dwg', { bytes: BYTES, inPlace: false }, none, 'saveas', env(undefined));
+    expect(none).not.toHaveBeenCalled();
+  });
+
   it('downloads the .dxf without File System Access', async () => {
     const e = env('none');
     const r = await saveDrawing('plant.dwg', { bytes: BYTES, inPlace: false }, CHANGES, 'qsave', e);

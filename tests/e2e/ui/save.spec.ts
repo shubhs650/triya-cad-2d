@@ -382,3 +382,55 @@ test('CLOSEALL closes every drawing, asking to save changes; Cancel stops it (M2
   await expect(page.locator('.doc-tab')).toHaveCount(0);
   await expect(page.getByTestId('start')).toBeVisible();
 });
+
+/** The block name (DXF 2) of each DIMENSION in a DXF's ENTITIES section, by handle. */
+function dimensionBlocks(text: string): Record<string, string | undefined> {
+  const lines = text.split(/\r?\n/);
+  const out: Record<string, string | undefined> = {};
+  const start = lines.findIndex((l, i) => l.trim() === 'ENTITIES' && lines[i - 1]?.trim() === '2');
+  for (let i = start; i > 0 && i + 1 < lines.length; i += 2) {
+    if (lines[i - 1]!.trim() === '0' && lines[i]!.trim() === 'ENDSEC') break;
+    if (lines[i - 1]!.trim() !== '0' || lines[i]!.trim() !== 'DIMENSION') continue;
+    let handle = '';
+    let block: string | undefined;
+    for (let j = i + 1; j + 1 < lines.length && lines[j]!.trim() !== '0'; j += 2) {
+      const [code, value] = [lines[j]!.trim(), lines[j + 1]!.trim()];
+      if (code === '5') handle = value;
+      if (code === '2') block = value;
+    }
+    out[handle] = block;
+  }
+  return out;
+}
+
+test('dimensions opened without a block are saved with one (M2-30 part 2)', async ({ page }) => {
+  // ezdxf's duplicate_handles.dxf (R13): seven dimensions whose blocks are missing, drawn by
+  // the dimension engine on screen.
+  const file = path.join(CORPUS, 'ezdxf/integration_tests/duplicate_handles.dxf');
+  await fakePickers(page);
+  await page.goto(app.url);
+  await openFile(page, file);
+  const dxf = path.basename(file);
+  // An R13 DXF goes to Save As.
+  await page.keyboard.press('Control+s');
+  await expect.poll(async () => (await fs(page)).written[dxf]?.length).toBe(1);
+  const saved = (await fs(page)).written[dxf]![0]!;
+  const blocks = dimensionBlocks(saved);
+  expect(Object.keys(blocks)).toHaveLength(7);
+  // Each its own `*D` block, which the BLOCKS section defines (the source names *D0 and *D1,
+  // which it has not).
+  expect(new Set(Object.values(blocks)).size).toBe(7);
+  const defined = new Set(
+    [
+      ...saved.matchAll(
+        /\r?\n\s*0\r?\nBLOCK\r?\n(?:\s*\d+\r?\n[^\r\n]*\r?\n)*?\s*2\r?\n([^\r\n]+)/g,
+      ),
+    ].map((m) => m[1]!.trim()),
+  );
+  for (const [handle, name] of Object.entries(blocks)) {
+    expect(name, handle).toMatch(/^\*D\d+$/);
+    expect(defined.has(name!), `${handle} ${name}`).toBe(true);
+  }
+  // Saved, not edited: the drawing has no unsaved changes.
+  await expect(tab(page, dxf)).toHaveAttribute('data-dirty', 'false');
+});

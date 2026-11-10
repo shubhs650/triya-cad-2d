@@ -279,6 +279,14 @@ export class EngineSession {
     }
   }
 
+  /**
+   * The blocks a save gives the dimensions that have none (M2-30 part 2): a change set for the
+   * saved file only, applied after the drawing's change log; undefined when there are none.
+   */
+  blocklessDimensionBlocks(): Promise<ChangeSet | undefined> {
+    return this.#bus.blocklessDimensionBlocks();
+  }
+
   #emit(o: CommandOutput): void {
     for (const l of this.#listeners) l(o);
   }

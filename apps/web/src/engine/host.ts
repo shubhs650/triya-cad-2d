@@ -20,11 +20,17 @@ interface Pending {
   reject(e: Error): void;
 }
 
+interface PendingBlocks {
+  resolve(c: ChangeSet | undefined): void;
+  reject(e: Error): void;
+}
+
 export class EngineHost {
   readonly mode: 'worker' | 'main';
   readonly #worker: EngineWorker | undefined;
   readonly #session: EngineSession | undefined;
   readonly #pending = new Map<number, Pending>();
+  readonly #blocks = new Map<number, PendingBlocks>();
   readonly #commandListeners = new Set<(o: CommandOutput) => void>();
   #nextId = 1;
   #disposed = false;
@@ -78,11 +84,28 @@ export class EngineHost {
     });
   }
 
+  /**
+   * The blocks a save gives the dimensions that have none (M2-30 part 2), for the saved file
+   * only; undefined when there are none.
+   */
+  blocklessDimensionBlocks(): Promise<ChangeSet | undefined> {
+    if (this.#disposed) return Promise.reject(new Error('engine host disposed'));
+    if (this.#session) return this.#session.blocklessDimensionBlocks();
+    const id = this.#nextId++;
+    return new Promise((resolve, reject) => {
+      this.#blocks.set(id, { resolve, reject });
+      this.#worker!.postMessage({ type: 'save-blocks', id });
+    });
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#worker?.terminate();
-    for (const p of this.#pending.values()) p.reject(new Error('engine host disposed'));
+    for (const p of [...this.#pending.values(), ...this.#blocks.values()]) {
+      p.reject(new Error('engine host disposed'));
+    }
     this.#pending.clear();
+    this.#blocks.clear();
     this.#commandListeners.clear();
   }
 
@@ -92,6 +115,14 @@ export class EngineHost {
 
   #receive(m: EngineReply): void {
     if (m.type === 'command') return this.#commandOutput(m.output);
+    const blocks = m.id === undefined ? undefined : this.#blocks.get(m.id);
+    if (blocks) {
+      this.#blocks.delete(m.id!);
+      if (m.type === 'save-blocks') blocks.resolve(m.change);
+      else blocks.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
+      return;
+    }
+    if (m.type === 'save-blocks') return;
     const p = m.id === undefined ? undefined : this.#pending.get(m.id);
     if (m.id !== undefined) this.#pending.delete(m.id);
     if (m.type === 'result') p?.resolve(m.result);
