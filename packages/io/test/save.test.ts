@@ -6,7 +6,6 @@ import {
   ChangeSetBuilder,
   DocumentModel,
   PromptBus,
-  UNDO_COMMANDS,
   builtinCommands,
   type ChangeSet,
 } from '@triya/engine';
@@ -39,7 +38,6 @@ async function session(
   const changes: ChangeSet[] = [];
   const space = model.layouts.find((l) => l.name === 'Model')?.blockRecord;
   const registry = builtinCommands();
-  for (const def of UNDO_COMMANDS) registry.register(def);
   // As EngineSession logs them: each change set as it is applied, cloned as postMessage does.
   const apply = (cs: ChangeSet) => {
     model.apply(cs);

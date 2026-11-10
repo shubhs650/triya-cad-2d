@@ -8,7 +8,6 @@ import {
   ChangeSetBuilder,
   DocumentModel,
   PromptBus,
-  UNDO_COMMANDS,
   builtinCommands,
   inBox,
   writeDimensionBlock,
@@ -149,7 +148,6 @@ function canvas(model: () => DocumentModel, measures = true) {
 function setup(o: { dimensions?: boolean; measures?: boolean } = {}) {
   const model = DocumentModel.create(init());
   const registry = builtinCommands();
-  for (const def of UNDO_COMMANDS) registry.register(def);
   const c = canvas(() => model, o.measures ?? true);
   const bus = new PromptBus({
     model,

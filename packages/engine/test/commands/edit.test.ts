@@ -8,7 +8,6 @@ import {
   type CommandRegistry,
   DocumentModel,
   PromptBus,
-  UNDO_COMMANDS,
   builtinCommands,
   type BusEvent,
   type DocumentInit,
@@ -29,7 +28,6 @@ const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
 function setup(init: DocumentInit = sampleInit()) {
   const model = DocumentModel.create(init);
   const registry = builtinCommands();
-  for (const def of UNDO_COMMANDS) registry.register(def);
   const bus = new PromptBus({ model, registry });
   const log: string[] = [];
   bus.on((e: BusEvent) => {

@@ -6,6 +6,7 @@
 import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
+import type { UndoState } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { ViewReply, ViewRequest } from '../commands/view/host';
 import type { Vec2 } from '../geom/types';
@@ -312,8 +313,25 @@ export class EngineSession {
     b.updateTableRecord('layers', layer.handle, patch);
     const change = b.build();
     this.model.apply(change);
+    this.#step('LAYER', change);
     return { ok: true, change };
   }
+
+  /**
+   * An edit the app made outside a command, as AutoCAD keeps it: one undo step of its own
+   * (M2-23), which U undoes through the bus, so the replicas hear of it as a `change`. AutoCAD
+   * names a Layer-control change LAYER and a layout's rename, move or page setup LAYOUT. An
+   * empty change is no step (DEC-049).
+   */
+  #step(label: string, change: ChangeSet): void {
+    this.#bus.undo.push({ command: label, changes: [change] });
+  }
+
+  /** The drawing's undo history as the undo/redo buttons show it (M2-05, M2-23). */
+  get undoState(): UndoState {
+    return this.#bus.undo.state;
+  }
+
   #layoutEdit(e: LayoutEdit): EditResult {
     const layouts = this.model.layouts;
     const layout = layouts.find((l) => l.handle === e.layout);
@@ -355,7 +373,10 @@ export class EngineSession {
       });
     }
     const change = b.build();
-    if (Object.keys(change).length > 0) this.model.apply(change);
+    if (Object.keys(change).length > 0) {
+      this.model.apply(change);
+      this.#step('LAYOUT', change);
+    }
     return { ok: true, change };
   }
 

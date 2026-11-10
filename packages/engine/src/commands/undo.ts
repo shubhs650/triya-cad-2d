@@ -36,6 +36,15 @@ export interface UndoState {
   readonly control: UndoControl;
 }
 
+/**
+ * What an undo or a redo did, for front-ends to say so (UI_SPEC's undo toast): the steps
+ * undone, newest first, or redone, oldest first.
+ */
+export interface UndoAction {
+  readonly kind: 'undo' | 'redo';
+  readonly labels: readonly string[];
+}
+
 /** One undo step: a command, or a BEgin/End group of commands (labelled GROUP). */
 export interface UndoRecord {
   readonly label: string;
@@ -51,8 +60,8 @@ export interface UndoStackOptions {
   readonly apply: (change: ChangeSet) => void;
   /** The history's memory bound; the oldest steps drop past it (default 256 MB). */
   readonly maxBytes?: number;
-  /** Called whenever the state changes. */
-  readonly onChange?: (state: UndoState) => void;
+  /** Called whenever the state changes; `action` when an undo or a redo changed it. */
+  readonly onChange?: (state: UndoState, action?: UndoAction) => void;
   /** A line for the command line (the memory bound's warning). */
   readonly onMessage?: (line: string) => void;
 }
@@ -72,7 +81,7 @@ export interface UndoResult {
 export class UndoStack {
   readonly #apply: (change: ChangeSet) => void;
   readonly #maxBytes: number;
-  readonly #onChange: ((state: UndoState) => void) | undefined;
+  readonly #onChange: ((state: UndoState, action?: UndoAction) => void) | undefined;
   readonly #onMessage: ((line: string) => void) | undefined;
   #undo: Entry[] = [];
   #redo: Entry[][] = [];
@@ -187,8 +196,9 @@ export class UndoStack {
       }
     }
     this.#redo.push(taken);
-    this.#changed();
-    return { labels: labelsOf(taken), exhausted: left > 0, mark: false };
+    const labels = labelsOf(taken);
+    this.#changed({ kind: 'undo', labels });
+    return { labels, exhausted: left > 0, mark: false };
   }
 
   /** UNDO Back: undoes to the last mark and removes it, or everything when there is none. */
@@ -206,8 +216,9 @@ export class UndoStack {
       this.#undoRecord(e.record);
     }
     if (taken.length > 0) this.#redo.push(taken);
-    this.#changed();
-    return { labels: labelsOf(taken), exhausted: !mark, mark };
+    const labels = labelsOf(taken);
+    this.#changed(labels.length > 0 ? { kind: 'undo', labels } : undefined);
+    return { labels, exhausted: !mark, mark };
   }
 
   /** REDO: reverses the last U or UNDO; the labels redone, oldest first, or undefined. */
@@ -225,8 +236,9 @@ export class UndoStack {
       }
       this.#undo.push(e);
     }
-    this.#changed();
-    return labelsOf(group).reverse();
+    const labels = labelsOf(group).reverse();
+    this.#changed({ kind: 'redo', labels });
+    return labels;
   }
 
   /** UNDO Control. None drops the history and turns undo off; One keeps the last step. */
@@ -323,8 +335,9 @@ export class UndoStack {
     }
   }
 
-  #changed(): void {
-    this.#onChange?.(this.state);
+  #changed(action?: UndoAction): void {
+    if (action) this.#onChange?.(this.state, action);
+    else this.#onChange?.(this.state);
   }
 }
 

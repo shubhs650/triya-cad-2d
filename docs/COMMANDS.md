@@ -66,8 +66,8 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | MATCHPROP | MA | 1 | Settings dialog | |
 | PROPERTIES | PR, CH, MO, Ctrl+1 | 1 | palette | ~ (#247: palette v1, General + per-type sections, undoable edits; leftovers M2-35) |
 | PROPERTIESCLOSE | — | 2 | closes the palette | x (#247) |
-| UNDO / U | U | 1 | Auto, Control, BEgin/End, Mark, Back, number | x (#223; Auto/Combine/Layer kept as settings until macros, undoable views and the layer manager exist; Ctrl+Z in M2-23) |
-| REDO | Ctrl+Y | 1 | | x (#223; Ctrl+Y in M2-23) |
+| UNDO / U | U, Ctrl+Z | 1 | Auto, Control, BEgin/End, Mark, Back, number | x (#223; Ctrl+Z, the Quick Access Undo button and the undo toast #252; a Layers palette toggle and a layout's rename, move or page setup are steps of their own, LAYER and LAYOUT; Auto/Combine/Layer kept as settings until macros, undoable views and the Layer Properties Manager exist) |
+| REDO | Ctrl+Y | 1 | | x (#223; Ctrl+Y, Cmd+Shift+Z on a Mac and the Quick Access Redo button #252) |
 | MREDO | — | 2 | | |
 | COPYBASE / PASTECLIP / PASTEBLOCK / PASTEORIG / COPYCLIP / CUTCLIP | Ctrl+Shift+C, Ctrl+V, Ctrl+Shift+V, Ctrl+C, Ctrl+X | 1 | cross-document | x (#242: one Clipboard for every open drawing; the layers, linetypes, styles and blocks the objects use come along, matched by name in the target; new handles above its $HANDSEED; base point the extents' lower-left corner; PASTECLIP and PASTEBLOCK drag the curves and the extents' frame; PASTEBLOCK makes an `A$C…` block; PASTEORIG only from another drawing. Not yet pasted: images, underlays, multileaders with block attributes, xrefs, M2-32) |
 | DRAWORDER | DR | 1 | Above, Under, Front, Back | x (#231) |
