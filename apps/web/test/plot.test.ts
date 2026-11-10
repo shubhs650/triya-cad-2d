@@ -68,8 +68,11 @@ describe('defaultPlotSettings', () => {
     const inch: PlotSpace = {
       name: 'Sheet',
       sheet: { paper: { minX: 0, minY: 0, maxX: 11, maxY: 8.5 }, unitsPerMm: 1 / 25.4 },
+      inches: true,
     };
     const s = defaultPlotSettings(inch);
+    // 1 inch = 1 unit, as the dialog shows it.
+    expect(s.scale).toEqual({ mm: 25.4, units: 1 });
     const p = paperMm(s, inch);
     expect(p.width).toBeCloseTo(279.4, 9);
     expect(p.height).toBeCloseTo(215.9, 9);

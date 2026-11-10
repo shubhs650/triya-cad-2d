@@ -30,6 +30,8 @@ export interface PlotSpace {
   /** The view shown on the canvas. */
   readonly display?: Box | undefined;
   readonly limits?: Box | undefined;
+  /** A layout whose page setup is in inches: the dialog shows the scale in inches. */
+  readonly inches?: boolean;
   /** `$PSTYLEMODE` 0: the drawing uses named plot styles (STB), else colour-dependent (CTB). */
   readonly namedPlotStyles?: boolean;
 }
@@ -112,8 +114,11 @@ export function defaultPlotSettings(space: PlotSpace): PlotSettings {
       orientation: paper.width >= paper.height ? 'landscape' : 'portrait',
       area: 'layout',
       fit: false,
-      // The page setup's scale: 1 mm of paper is `unitsPerMm` paper-space units.
-      scale: { mm: 1, units: space.sheet.unitsPerMm },
+      // The page setup's scale: 1 mm of paper is `unitsPerMm` paper-space units (1 inch is
+      // 25.4 × that for a page setup in inches, kept exact so the dialog shows 1 = 1).
+      scale: space.inches
+        ? { mm: 25.4, units: Math.round(space.sheet.unitsPerMm * 25.4 * 1e12) / 1e12 }
+        : { mm: 1, units: space.sheet.unitsPerMm },
     };
   }
   return {

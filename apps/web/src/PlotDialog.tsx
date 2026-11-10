@@ -243,7 +243,12 @@ function PlotForm({
 }) {
   const layout = space.sheet !== undefined;
   const paper = paperMm(s, space);
-  const scaleKey = PLOT_SCALES.find(([, mm, units]) => mm / units === s.scale.mm / s.scale.units);
+  // The scale in the paper's units: inches for a layout set up in inches, as AutoCAD shows it.
+  const k = space.inches ? 25.4 : 1;
+  const unit = space.inches ? 'inches' : 'mm';
+  const scaleKey = PLOT_SCALES.find(
+    ([, mm, units]) => Math.abs(mm / units - s.scale.mm / k / s.scale.units) < 1e-9,
+  );
   const layoutPaper = space.sheet
     ? `Layout paper (${Math.round(paper.width * 10) / 10} × ${Math.round(paper.height * 10) / 10} mm)`
     : undefined;
@@ -310,7 +315,7 @@ function PlotForm({
             value={scaleKey?.[0] ?? 'custom'}
             onChange={(e) => {
               const found = PLOT_SCALES.find(([l]) => l === e.currentTarget.value);
-              if (found) set({ scale: { mm: found[1], units: found[2] } });
+              if (found) set({ scale: { mm: found[1] * k, units: found[2] } });
             }}
           >
             {!scaleKey && <option value="custom">Custom</option>}
@@ -322,10 +327,10 @@ function PlotForm({
           </select>
         </label>
         <NumberField
-          label="mm ="
-          value={s.scale.mm}
+          label={`${unit} =`}
+          value={Math.round((s.scale.mm / k) * 1e9) / 1e9}
           disabled={s.fit}
-          onChange={(mm) => set({ scale: { ...s.scale, mm } })}
+          onChange={(v) => set({ scale: { ...s.scale, mm: v * k } })}
         />
         <NumberField
           label="units"

@@ -407,6 +407,7 @@ export class CanvasController {
     return {
       name: layout?.name ?? 'Model',
       sheet: sheet && { paper: sheet.paper, unitsPerMm: sheet.unitsPerMm },
+      inches: layout?.plot?.paperUnits === 'inches',
       extents: this.#extents(),
       display,
       limits: this.#limits(),
