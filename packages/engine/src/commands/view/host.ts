@@ -106,7 +106,7 @@ export type ViewRequest =
    * -PLOT (M2-17 part 5): what the space named (the space shown without `layout`) would plot
    * with, as the Plot dialog opens on it, and what the app can plot it with.
    */
-  | { readonly op: 'plotSetup'; readonly layout?: string }
+  | { readonly op: 'plotSetup'; readonly layout?: string; readonly pageSetup?: string }
   /** -PLOT: plots a space with the settings given at the command line, without the dialog. */
   | { readonly op: 'plotScript'; readonly script: PlotScript };
 
@@ -164,11 +164,20 @@ export interface PlotScriptSetup {
   /** The file the plot is written to unless another is named. */
   readonly file: string;
   readonly settings: PlotScriptSettings;
+  /**
+   * The named page setups the space can plot with (M2-17 part 6: model space's or the layouts'),
+   * as "Enter a page setup name" takes them.
+   */
+  readonly pageSetups: readonly string[];
+  /** The named page setup these settings are from; absent for the space's own. */
+  readonly pageSetup?: string;
 }
 
 /** What -PLOT plots. */
 export interface PlotScript {
   readonly layout: string;
+  /** The named page setup the settings start from (M2-17 part 6); absent for the space's own. */
+  readonly pageSetup?: string;
   readonly settings: PlotScriptSettings;
   /** The file to write, by name. */
   readonly file: string;

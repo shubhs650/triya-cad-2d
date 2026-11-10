@@ -87,7 +87,7 @@ import {
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
 import { layoutsOf } from '../documents';
-import { pageSetupOf, type PlotSpace } from '../plot';
+import { pageSetupOf, pageSetupsOf, type PlotSpace } from '../plot';
 import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
@@ -421,6 +421,7 @@ export class CanvasController {
       limits: this.#limits(),
       namedPlotStyles: this.#header.get('$PSTYLEMODE') === 0,
       pageSetup: pageSetupOf(setup),
+      pageSetups: pageSetupsOf(this.#opened.init.objects, layout === undefined),
     };
   }
 

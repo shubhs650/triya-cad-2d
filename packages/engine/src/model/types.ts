@@ -1561,6 +1561,22 @@ export interface LayoutPlot {
   readonly styleSheet?: string;
 }
 
+/**
+ * A named page setup (M2-17 part 6): a PLOTSETTINGS object in the `ACAD_PLOTSETTINGS` dictionary,
+ * which AutoCAD's Plot dialog lists under Page setup Name, PUBLISH in its Page Setup column and
+ * -PLOT takes by name. DXF 70 flag 1024 (ModelType) makes it model space's; the others are for
+ * layouts, as AutoCAD lists them.
+ */
+export interface NamedPageSetup extends NonGraphicalObject {
+  readonly type: 'PLOTSETTINGS';
+  /** Its `ACAD_PLOTSETTINGS` entry (DXF 1 holds the same name). */
+  readonly name: string;
+  /** Flag 1024: a page setup for model space. */
+  readonly model: boolean;
+  /** The settings, as a layout's page setup holds them. */
+  readonly plot: LayoutPlot;
+}
+
 /** A non-graphical object (dictionary, xrecord, layer state, scale, image def, …). */
 export interface NonGraphicalObject extends ObjectCommon {
   /** DXF object type name, e.g. `DICTIONARY`. */

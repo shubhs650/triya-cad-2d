@@ -21,7 +21,7 @@ import { mapGroups } from './groups';
 import { mapDimAssocs } from './dim-assoc';
 import { mapHeader } from './header';
 import { mapImageObjects } from './images';
-import { mapLayouts } from './layouts';
+import { mapLayouts, mapPageSetups } from './layouts';
 import { mapSortEnts } from './sortents';
 import { mapTables } from './tables';
 import { mapSpatialFilters } from './xclip';
@@ -45,6 +45,7 @@ function mapDocument(doc: CadDocument): { init: DocumentInit; unmapped: Unmapped
       ...mapGroups(doc),
       ...mapDimAssocs(doc),
       ...mapSpatialFilters(doc),
+      ...mapPageSetups(doc),
     ],
     layouts: mapLayouts(doc),
     entities,

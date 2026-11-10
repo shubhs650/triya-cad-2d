@@ -54,7 +54,14 @@ function displayedMargins(plot: LayoutPlot): [number, number, number, number] {
  * in AutoCAD, which picks a device the first time the tab is opened).
  */
 export function layoutSheet(layout: Layout): LayoutSheet | undefined {
-  const plot = layout.plot;
+  return layout.plot && plotSheet(layout.plot);
+}
+
+/**
+ * The sheet a page setup places (M2-17 part 6: a named page setup's, which the Plot dialog and
+ * PUBLISH plot a layout on without applying it to the layout).
+ */
+export function plotSheet(plot: LayoutPlot): LayoutSheet | undefined {
   if (!plot || !(plot.paperWidth > 0) || !(plot.paperHeight > 0)) return undefined;
   const turned = plot.rotation === 1 || plot.rotation === 3;
   const width = turned ? plot.paperHeight : plot.paperWidth;
