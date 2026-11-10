@@ -1,13 +1,42 @@
 // M2-06 part 2: the objects a command drags with the cursor, drawn on the transient layer over
 // their originals: cached primitives through the drag's motion (a move, turn, scale or
 // mirror), and stretched objects tessellated from their stretched geometry.
-import { rotation, translation, type EntityId } from '@triya/engine';
+import { rotation, translation, type EntityId, type MTextGeometry } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer } from '../src/index';
 import { drawing, entity, LAYER_0, line, MODEL, surface, type Call } from './fixtures';
 
+/** Static columns 3 wide, gutter 1, 2 high, inserted top left at (0, 4) (M2-26 part 2). */
+const columned: MTextGeometry = {
+  kind: 'MTEXT',
+  contents: 'A',
+  style: 'S',
+  position: { x: 0, y: 4 },
+  height: 0.5,
+  width: 3,
+  definedHeight: 2,
+  rotation: 0,
+  attachment: 1,
+  direction: 1,
+  lineSpacingStyle: 1,
+  lineSpacing: 1,
+  columns: {
+    type: 1,
+    count: 2,
+    flowReversed: false,
+    autoHeight: false,
+    width: 3,
+    gutter: 1,
+    heights: [],
+  },
+};
+
 function setup() {
-  const d = drawing([entity('20', line(0, 0, 10, 0)), entity('21', line(0, 20, 0, 30))]);
+  const d = drawing([
+    entity('20', line(0, 0, 10, 0)),
+    entity('21', line(0, 20, 0, 30)),
+    entity('22', columned),
+  ]);
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
     model: d.model,
@@ -163,6 +192,26 @@ describe('Canvas2DRenderer grips', () => {
     expect(devicePoints(transient().calls)).toEqual([
       [0, 50],
       [100, 0],
+    ]);
+  });
+
+  it('draws an MTEXT’s column grips as triangles pointing the way they size', () => {
+    const { r, id, transient } = setup();
+    transient().clear();
+    r.setGrips([id('22')]);
+    r.frame();
+    // The insertion point (0, 4) stays a square, at device (0, 10).
+    expect(squares(transient().calls).map(([, x, y]) => [x, y])).toEqual([[0, 10]]);
+    // Each triangle drawn twice (its dark edge, then the grip): the tip first.
+    const tips = devicePoints(transient().calls)
+      .filter((_, i) => i % 3 === 0)
+      .filter((_, i) => i % 2 === 1)
+      .map(([x, y]) => [Math.round(x!), Math.round(y!)]);
+    expect(tips).toEqual([
+      // Column width (3, 4) and gutter (4, 4) point right; the height (1.5, 2) points down.
+      [36, 10],
+      [46, 10],
+      [15, 36],
     ]);
   });
 

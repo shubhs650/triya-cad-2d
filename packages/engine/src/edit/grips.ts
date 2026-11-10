@@ -18,6 +18,9 @@
 // - a revision cloud (M2-24, REVCLOUDGRIPS on, AutoCAD's default) shows its corners, not every
 //   arc's ends, and dragging one cuts the sides on either side into arcs afresh
 //   (`moveCloudCorner`). REVCLOUDGRIPS off (a grip per arc) waits for a SETVAR.
+// - an MTEXT set in columns (M2-26 part 2) shows, besides its insertion point, a column width
+//   grip, a gutter grip and a column height grip (one under each column for dynamic columns of
+//   manual height): `mtext-grips.ts`.
 // Hatches, multileaders, multilines, regions and viewports have no grips yet: their grips
 // (hatch origin, viewport corners) need FR-D4's multi-functional grips.
 import { ccwSweep } from '../geom/angle';
@@ -25,6 +28,7 @@ import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, fromAngle, midpoint, sub } from '../geom/vec';
 import type { DimensionGeometry, EntityGeometry, LwPolylineGeometry } from '../model/types';
 import { dimensionLineEnds } from './dimension';
+import { columnGrips, moveColumnGrip } from './mtext-grips';
 import { cloudCorners, isCloudShaped, moveCloudCorner, type CloudInfo } from './revcloud';
 import { stretchGeometry, type StretchResult } from './stretch';
 
@@ -42,11 +46,22 @@ export type GripKind =
   /** A linear or aligned dimension's dimension line end: the dimension line moves. */
   | 'dimline'
   /** A revision cloud's corner: the sides on either side are cut into arcs afresh. */
-  | 'cloud';
+  | 'cloud'
+  /** A columned MTEXT's column width (M2-26 part 2). */
+  | 'columnWidth'
+  /** A columned MTEXT's gutter. */
+  | 'columnGutter'
+  /** A columned MTEXT's column height (one column's, with manual heights). */
+  | 'columnHeight';
 
 export interface Grip {
   readonly point: Vec2;
   readonly kind: GripKind;
+  /**
+   * The way an arrow grip points, a unit vector: AutoCAD draws grips that size something in one
+   * direction (an MTEXT's column width and height) as triangles. Square grips have none.
+   */
+  readonly towards?: Vec2;
 }
 
 const g = (point: Vec2, kind: GripKind): Grip => ({ point, kind });
@@ -154,6 +169,7 @@ export function gripsOf(geom: EntityGeometry, cloud?: CloudInfo): Grip[] {
         ),
       ];
     case 'MTEXT':
+      return [g(geom.position, 'move'), ...columnGrips(geom)];
     case 'INSERT':
     case 'TOLERANCE':
     case 'ACAD_TABLE':
@@ -231,6 +247,13 @@ export function moveGrip(
       const g = geom as LwPolylineGeometry;
       const i = g.vertices.findIndex((v) => sameGrip(v, grip));
       return { kind: 'shape', geom: moveCloudCorner(g, i, to, cloud!.arc) };
+    }
+    case 'columnWidth':
+    case 'columnGutter':
+    case 'columnHeight': {
+      if (geom.kind !== 'MTEXT') return { kind: 'none' };
+      const shaped = moveColumnGrip(geom, grip, d);
+      return shaped ? { kind: 'shape', geom: shaped } : { kind: 'none' };
     }
     case 'segment': {
       if (geom.kind !== 'LWPOLYLINE' && geom.kind !== 'POLYLINE') return { kind: 'none' };

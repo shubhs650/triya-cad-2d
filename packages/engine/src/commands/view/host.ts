@@ -78,6 +78,11 @@ export type ViewRequest =
    */
   | { readonly op: 'textWidths'; readonly texts: readonly MTextGeometry[] }
   /**
+   * How many dynamic columns each MTEXT's text takes, as the renderer lays it out in the fonts
+   * loaded now, null for one no loaded font draws: what a column grip recounts by (M2-26 part 2).
+   */
+  | { readonly op: 'columnCounts'; readonly texts: readonly MTextGeometry[] }
+  /**
    * The file commands (M2-13): QSAVE saves the drawing (in place when it can), SAVEAS and SAVE
    * save it under a name the drafter picks, CLOSE closes it (asking to save changes first). The
    * app holds the file, so the host does it; the reply's `file` is the name saved under.
@@ -210,6 +215,8 @@ export type ViewReply =
       readonly box?: Box;
       /** What `textWidths` measured, one per text. */
       readonly widths?: readonly (number | null)[];
+      /** What `columnCounts` counted, one per text. */
+      readonly counts?: readonly (number | null)[];
       /** The file a `file` request saved the drawing as. */
       readonly file?: string;
       /**

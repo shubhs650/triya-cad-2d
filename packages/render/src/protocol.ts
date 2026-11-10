@@ -86,6 +86,8 @@ export type HostMessage =
   | { readonly type: 'textBox'; readonly id: number; readonly text: MTextGeometry }
   /** The widths MTEXTs are laid out at (M2-10 part 3); the answer is a `widths`. */
   | { readonly type: 'textWidths'; readonly id: number; readonly texts: readonly MTextGeometry[] }
+  /** The dynamic column counts of MTEXTs (M2-26 part 2); the answer is a `counts`. */
+  | { readonly type: 'columnCounts'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The object snap points under the aperture (M2-04); the answer is a `snap`. */
   | { readonly type: 'snap'; readonly id: number; readonly query: OsnapQuery }
   /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
@@ -114,6 +116,8 @@ export type WorkerMessage =
   | { readonly type: 'extents'; readonly id: number; readonly box: Box | null }
   /** The text widths asked for, null for a text no loaded font draws. */
   | { readonly type: 'widths'; readonly id: number; readonly widths: readonly (number | null)[] }
+  /** The column counts asked for, null for a text no loaded font draws. */
+  | { readonly type: 'counts'; readonly id: number; readonly counts: readonly (number | null)[] }
   /** The plot parts asked for (M2-17). */
   | { readonly type: 'plot'; readonly id: number; readonly parts: readonly PlotPart[] }
   | { readonly type: 'error'; readonly message: string; readonly id?: number }

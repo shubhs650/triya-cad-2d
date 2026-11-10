@@ -37,6 +37,8 @@ import {
   layoutSheet,
   stretchGeometry,
   gripsOf,
+  hasDynamicColumns,
+  withColumnCount,
   revcloudOf,
   moveGrip,
   sameGrip,
@@ -95,7 +97,7 @@ import { annotationLinetypeScale, patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
 import { primCrosses, primInside } from './select';
 import { patternLibrary, tessellate, type TessellateContext } from './tessellate';
-import type { TextContext } from './text';
+import { columnCounter, type TextContext } from './text';
 import type { PatternLibrary } from '@triya/hatch';
 import type { TextFonts } from '@triya/text';
 import {
@@ -407,10 +409,50 @@ const GRIP_COLOR = rgbHex(aciRgb(150));
 const GRIP_HOT = rgbHex(aciRgb(12));
 const GRIP_EDGE = '#1a1a1a';
 
-/** A dimension without its block, so the engine draws it (a STRETCH preview, M2-10 part 3). */
+/**
+ * A triangular grip centred on (x, y) pointing along the unit (ux, uy), in device pixels, its
+ * dark edge drawn first as the square grips' is.
+ */
+function arrowGrip(
+  ctx: Canvas2D,
+  x: number,
+  y: number,
+  ux: number,
+  uy: number,
+  half: number,
+  fill: string,
+): void {
+  const corners = (r: number): [[number, number], [number, number], [number, number]] => [
+    [x + ux * 1.4 * r, y + uy * 1.4 * r],
+    [x - ux * r - uy * 1.2 * r, y - uy * r + ux * 1.2 * r],
+    [x - ux * r + uy * 1.2 * r, y - uy * r - ux * 1.2 * r],
+  ];
+  for (const [style, r] of [
+    [GRIP_EDGE, half + 1],
+    [fill, half],
+  ] as const) {
+    const [a, b, c] = corners(r);
+    ctx.fillStyle = style;
+    ctx.beginPath();
+    ctx.moveTo(a[0], a[1]);
+    ctx.lineTo(b[0], b[1]);
+    ctx.lineTo(c[0], c[1]);
+    ctx.closePath();
+    ctx.fill();
+  }
+}
+
 /** The id an object being placed is drawn under: no object of the drawing has it. */
 const ADDING = -1 as EntityId;
 
+/** An MTEXT's dynamic columns counted as its text needs them now (a column grip's preview). */
+function recounted(g: EntityGeometry, text: TextContext | undefined): EntityGeometry {
+  if (g.kind !== 'MTEXT' || !text || !hasDynamicColumns(g)) return g;
+  const n = columnCounter(text)(g);
+  return n === undefined ? g : withColumnCount(g, n);
+}
+
+/** A dimension without its block, so the engine draws it (a STRETCH preview, M2-10 part 3). */
 function unblocked(g: EntityGeometry): EntityGeometry {
   if (!('dimType' in g)) return g;
   const { block: _block, ...rest } = g;
@@ -696,7 +738,8 @@ export class Canvas2DRenderer implements Renderer {
         if (r.kind === 'move') gripMoved.push(this.#cache[id]);
         if (r.kind !== 'shape') continue;
         // A dimension's grip reshapes it and the engine regenerates it (M2-11): drawn afresh.
-        const geom = unblocked(r.geom);
+        // A column grip's dynamic columns take what the text needs, as they will (M2-26 part 2).
+        const geom = recounted(unblocked(r.geom), this.#tessellate.text);
         const entry = this.#entryOf({ ...e, geom }, id, this.#model, this.#blockSource);
         if (entry) stretched.push(entry);
       }
@@ -1272,6 +1315,15 @@ export class Canvas2DRenderer implements Renderer {
         if (seen.has(`${x},${y}`)) continue;
         seen.add(`${x},${y}`);
         const hot = grips.hot !== undefined && sameGrip(g.point, grips.hot);
+        if (g.towards) {
+          // An arrow grip (M2-26 part 2: an MTEXT's column width and height), pointing the way
+          // it sizes, as AutoCAD draws them.
+          const dx = m.a * g.towards.x + m.c * g.towards.y;
+          const dy = m.b * g.towards.x + m.d * g.towards.y;
+          const len = Math.hypot(dx, dy) || 1;
+          arrowGrip(ctx, x, y, dx / len, dy / len, half, hot ? GRIP_HOT : GRIP_COLOR);
+          continue;
+        }
         // A dark edge keeps the grip visible on any background.
         ctx.fillStyle = GRIP_EDGE;
         ctx.fillRect(x - half - 1, y - half - 1, 2 * half + 2, 2 * half + 2);

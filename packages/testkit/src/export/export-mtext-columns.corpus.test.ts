@@ -3,13 +3,18 @@
 // option, as the command line and the editor drive it), with contents holding a column break,
 // ruler values (indents and tab stops, `withRuler`) and a double-byte character. A third MTEXT's
 // dynamic columns come back from the editor with manual heights, one per column, and set right
-// to left (M2-26). Each drawing saves as AC1032 DXF (DEC-047) and reopens with the columns,
-// their heights and flow and the contents as written.
+// to left (M2-26). Column grips then reshape them (M2-26 part 2): the static columns' width grip
+// widens them, the manual columns' second height grip makes that column taller. Each drawing
+// saves as AC1032 DXF (DEC-047) and reopens with the columns, their heights and flow and the
+// contents as written.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
+  gripObjects,
+  gripsOf,
   builtinCommands,
   type Entity,
   type MTextGeometry,
@@ -86,20 +91,32 @@ describe('MTEXT columns and ruler values save as DXF and read back', () => {
       await place(model);
       const made = [...model.entities()].filter((e) => !before.has(e.handle));
       expect(made.map((e) => e.type)).toEqual(['MTEXT', 'MTEXT', 'MTEXT']);
-      const [st, dyn, manual] = made.map((e) => e.geom as MTextGeometry);
-      expect(st).toMatchObject({ width: 26, definedHeight: 40, columns: { type: 1, count: 3 } });
+      // The grips: 4 wider (static), the second manual column 5 taller.
+      const grip = (e: Entity, kind: string, nth = 0) =>
+        gripsOf(e.geom).filter((g) => g.kind === kind)[nth]!.point;
+      const drags = [
+        { e: made[0]!, from: grip(made[0]!, 'columnWidth'), d: { x: 4, y: 0 } },
+        { e: made[2]!, from: grip(made[2]!, 'columnHeight', 1), d: { x: 0, y: -5 } },
+      ];
+      for (const { e, from, d } of drags) {
+        const b = new ChangeSetBuilder(model);
+        gripObjects(b, model, [e.id], from, { x: from.x + d.x, y: from.y + d.y });
+        model.apply(b.build());
+      }
+      const [st, dyn, manual] = made.map((e) => model.entity(e.id)!.geom as MTextGeometry);
+      expect(st).toMatchObject({ width: 30, definedHeight: 40, columns: { type: 1, count: 3 } });
       expect(dyn).toMatchObject({ width: 25, definedHeight: 30, columns: { type: 2, count: 4 } });
       expect(manual).toMatchObject({
         width: 25,
         definedHeight: 30,
-        columns: { type: 2, count: 3, autoHeight: false, ...MANUAL },
+        columns: { type: 2, count: 3, autoHeight: false, ...MANUAL, heights: [30, 17.5, 20] },
       });
       placed++;
 
       const back = reopen(bytes, model);
       for (const e of made) {
         const g = back.get(e.handle)?.geom as MTextGeometry | undefined;
-        const mine = e.geom as MTextGeometry;
+        const mine = model.entity(e.id)!.geom as MTextGeometry;
         expect(g?.contents, f.path).toBe(mine.contents);
         expect(
           { width: g?.width, definedHeight: g?.definedHeight, columns: g?.columns },

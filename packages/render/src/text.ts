@@ -606,6 +606,35 @@ function verticalMText(g: MTextGeometry, ctx: TextContext) {
   return verticalLayout(v.layout, ctx.fonts, v.bigFont) ? v : undefined;
 }
 
+/** Dynamic columns counted up to this many: the limit `dynamicColumnCount` (@triya/text) uses. */
+const MAX_DYNAMIC_COLUMNS = 100;
+
+/**
+ * How many dynamic columns an MTEXT's text takes as laid out now (M2-26 part 2: a column grip
+ * changed their width, gutter or height), its own count for static columns, or undefined while
+ * its style's font is not loaded. A column past the manual heights takes the last one's, as
+ * TEXTEDIT gives it.
+ */
+export function columnCounter(ctx: TextContext): (g: MTextGeometry) => number | undefined {
+  return (g) => {
+    const c = g.columns;
+    if (!c || c.count < 1) return undefined;
+    if (c.type !== 2) return c.count;
+    const record = ctx.style(g.style);
+    if (!ctx.fonts.face(record ? styleFont(record) : STANDARD_FONT)) return undefined;
+    if (!(g.height > 0) || g.contents === '') return 1;
+    const heights =
+      c.heights.length > 0
+        ? Array.from(
+            { length: MAX_DYNAMIC_COLUMNS },
+            (_, i) => c.heights[Math.min(i, c.heights.length - 1)]!,
+          )
+        : [];
+    const columns = { ...c, count: MAX_DYNAMIC_COLUMNS, heights };
+    return mtextLayout({ ...g, columns }, ctx).layout.columnsUsed ?? c.count;
+  };
+}
+
 /**
  * `TextMeasure` for TOLERANCE frames (M1-52 part 4): the width the renderer lays an MTEXT out
  * at, its widest line's advance, or undefined while its style's font is not loaded.

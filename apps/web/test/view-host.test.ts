@@ -53,6 +53,10 @@ class Target implements ViewTarget {
     this.calls.push(`widths ${texts.map((t) => t.contents).join(',')}`),
     Promise.resolve(texts.map((t) => (this.textKnown ? t.contents.length : null)))
   );
+  columnCounts = (texts: readonly MTextGeometry[]) => (
+    this.calls.push(`counts ${texts.map((t) => t.contents).join(',')}`),
+    Promise.resolve(texts.map((t) => (this.textKnown ? t.contents.length : null)))
+  );
   boundsOf = (ids: readonly number[]) => (
     this.calls.push(`bounds ${ids.join(',')}`),
     Promise.resolve(this.objectsKnown ? { minX: 1, minY: 2, maxX: 3, maxY: 4 } : undefined)
@@ -211,6 +215,34 @@ describe('answerView', () => {
       widths: [null, null],
     });
     expect(t.calls).toEqual(['widths 12.5,R4', 'widths 12.5,R4']);
+  });
+
+  it('counts the dynamic columns of texts for column grips (M2-26 part 2)', async () => {
+    const t = new Target(true);
+    const ctx = context(t).ctx;
+    const text: MTextGeometry = {
+      kind: 'MTEXT',
+      contents: 'one',
+      style: '11',
+      position: { x: 0, y: 0 },
+      height: 1,
+      width: 10,
+      rotation: 0,
+      attachment: 1,
+      direction: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    };
+    expect(await answerView({ op: 'columnCounts', texts: [text] }, ctx)).toEqual({
+      ok: true,
+      counts: [3],
+    });
+    t.textKnown = false;
+    expect(await answerView({ op: 'columnCounts', texts: [text] }, ctx)).toEqual({
+      ok: true,
+      counts: [null],
+    });
+    expect(t.calls).toEqual(['counts one', 'counts one']);
   });
 
   it('answers the view as VIEWSIZE and width, and whether paper space shows', () => {
