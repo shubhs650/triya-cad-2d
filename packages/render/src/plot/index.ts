@@ -42,3 +42,17 @@ export {
 } from './job';
 export { POINTS_PER_MM, plotSetup, type PlotSetup, type PlotSetupOptions } from './setup';
 export { MAX_RASTER_PIXELS, rasterSize, rasterizeSvg, type RasterizeOptions } from './raster';
+export {
+  PREVIEW_MARGIN,
+  PREVIEW_MAX_SCALE,
+  PlotPreviewSurface,
+  fitPreview,
+  panPreview,
+  previewRegion,
+  windowPreview,
+  zoomPreview,
+  type PreviewPoint,
+  type PreviewRegion,
+  type PreviewSize,
+  type PreviewView,
+} from './preview';
