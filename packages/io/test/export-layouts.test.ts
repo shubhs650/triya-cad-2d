@@ -160,6 +160,7 @@ describe('LAYOUT objects', () => {
             scale: { numerator: 1, denominator: 50 },
             plotType: 1,
             flags: 672 | 1 | 64, // + PlotViewportBorders, ScaleLineweights
+            styleSheet: 'monochrome.ctb',
           },
         });
       });
@@ -298,6 +299,9 @@ describe('LAYOUT objects', () => {
     ]);
     expect(plot('Layout1', { paperSize: 3 as never })).toEqual([
       expect.stringMatching(/paperSize: 3 is not text/),
+    ]);
+    expect(plot('Layout1', { styleSheet: 7 as never })).toEqual([
+      expect.stringMatching(/styleSheet: 7 is not text/),
     ]);
     expect(plot('Layout1', { paperUnits: 'feet' as never, rotation: 4 as never })).toEqual([
       expect.stringMatching(/paperUnits: "feet" is not inches, millimeters or pixels/),

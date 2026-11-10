@@ -66,6 +66,13 @@ describe('mapLayouts', () => {
     );
   });
 
+  it('reads the page setup’s plot style table (DXF 7), left out when it names none', () => {
+    const { doc, sheet: l } = read();
+    expect(mapLayouts(doc)[1]!.plot).not.toHaveProperty('styleSheet');
+    l.styleSheet = 'monochrome.ctb';
+    expect(mapLayouts(doc)[1]!.plot!.styleSheet).toBe('monochrome.ctb');
+  });
+
   it('reads inch paper and keeps an unknown rotation or unit to the defaults', () => {
     const { doc, sheet: l } = read();
     l.paperUnits = 0;

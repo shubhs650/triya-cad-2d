@@ -22,6 +22,8 @@ function plotOf(l: AcadLayout): LayoutPlot {
     scale: { numerator: l.numeratorScale, denominator: l.denominatorScale },
     plotType: l.plotType as number,
     flags: l.flags as number,
+    // M2-17 part 3: the Plot dialog opens on it.
+    ...(l.styleSheet && { styleSheet: l.styleSheet }),
   };
 }
 

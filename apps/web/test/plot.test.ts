@@ -3,12 +3,16 @@
 import { describe, expect, it } from 'vitest';
 import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, bundledPlotStyleTable, type PlotPart } from '@triya/render';
+import type { Layout } from '@triya/engine';
 import {
   LAYOUT_PAPER,
+  PAGE_SETUP_FLAGS,
   PLOT_DEVICES,
   PNG_RESOLUTIONS,
   defaultPlotSettings,
+  pageSetupOf,
   paperMm,
+  missingPlotStyleTable,
   plotAreas,
   plotFileName,
   plotPage,
@@ -126,8 +130,118 @@ describe('plot style tables', () => {
 
   it('plots with the table only while "Plot with plot styles" is on', () => {
     const s = { ...defaultPlotSettings(model), table: 'triya-monochrome.ctb' };
-    expect(plotTable(s)).toBe(bundledPlotStyleTable('triya-monochrome.ctb'));
-    expect(plotTable({ ...s, plotStyles: false })).toBeUndefined();
+    expect(plotTable(s, model)).toBe(bundledPlotStyleTable('triya-monochrome.ctb'));
+    expect(plotTable({ ...s, plotStyles: false }, model)).toBeUndefined();
+  });
+});
+
+describe('page setups and your own plot style tables (part 3)', () => {
+  const { PLOT_STYLES, LINEWEIGHTS, SCALE_LINEWEIGHTS, PAPERSPACE_LAST } = PAGE_SETUP_FLAGS;
+  const pens = bundledPlotStyleTable('triya-grayscale.ctb')!;
+  const mine = bundledPlotStyleTable('triya-monochrome.ctb')!;
+
+  it('reads the plot style table and plot options of a LAYOUT’s page setup', () => {
+    const plot = { styleSheet: 'monochrome.ctb', flags: 688 } as Layout['plot'];
+    expect(pageSetupOf({ plot } as Layout)).toEqual({ styleSheet: 'monochrome.ctb', flags: 688 });
+    expect(pageSetupOf({ plot: { flags: 0 } } as Layout)).toEqual({ styleSheet: '', flags: 0 });
+    expect(pageSetupOf({} as Layout)).toBeUndefined();
+    expect(pageSetupOf(undefined)).toBeUndefined();
+  });
+
+  it('opens on the page setup’s plot style table, AutoCAD’s names answered by the bundled ones', () => {
+    const at = (styleSheet: string) =>
+      defaultPlotSettings({ ...layout, pageSetup: { styleSheet, flags: PLOT_STYLES } }).table;
+    expect(at('monochrome.ctb')).toBe('triya-monochrome.ctb');
+    expect(at('C:\\Plot Styles\\acad.ctb')).toBe('triya-default.ctb');
+    expect(at('Triya-Grayscale.CTB')).toBe('triya-grayscale.ctb');
+    expect(at('')).toBe('');
+  });
+
+  it('opens on the page setup’s plot options', () => {
+    const on = defaultPlotSettings({
+      ...layout,
+      pageSetup: {
+        styleSheet: '',
+        flags: PLOT_STYLES | LINEWEIGHTS | SCALE_LINEWEIGHTS | PAPERSPACE_LAST,
+      },
+    });
+    expect(on).toMatchObject({
+      plotStyles: true,
+      lineweights: true,
+      scaleLineweights: true,
+      paperspaceLast: true,
+    });
+    const off = defaultPlotSettings({ ...layout, pageSetup: { styleSheet: '', flags: 0 } });
+    expect(off).toMatchObject({
+      plotStyles: false,
+      lineweights: false,
+      scaleLineweights: false,
+      paperspaceLast: false,
+    });
+    // Model space has no paper space to plot last, nor lineweights to scale with a layout's.
+    const m = defaultPlotSettings({
+      ...model,
+      pageSetup: { styleSheet: '', flags: 0xffff & ~1024 },
+    });
+    expect(m).toMatchObject({ paperspaceLast: false, scaleLineweights: false, plotStyles: true });
+  });
+
+  it('lists your own tables of the drawing’s kind after the bundled ones and plots with them', () => {
+    const space: PlotSpace = {
+      ...model,
+      userTables: new Map([
+        ['Pens.ctb', pens],
+        ['site.stb', mine],
+        ['Architect.ctb', mine],
+      ]),
+    };
+    expect(plotStyleTables(space)).toEqual([
+      'triya-default.ctb',
+      'triya-monochrome.ctb',
+      'triya-grayscale.ctb',
+      'Architect.ctb',
+      'Pens.ctb',
+    ]);
+    expect(plotStyleTables({ ...space, namedPlotStyles: true })).toEqual([
+      'triya-default.stb',
+      'triya-monochrome.stb',
+      'site.stb',
+    ]);
+    const s = { ...defaultPlotSettings(space), table: 'Pens.ctb' };
+    expect(plotTable(s, space)).toBe(pens);
+    // A page setup naming it, in another case and folder, opens on it.
+    const named = defaultPlotSettings({
+      ...space,
+      pageSetup: { styleSheet: 'D:\\pens.CTB', flags: PLOT_STYLES },
+    });
+    expect(named.table).toBe('Pens.ctb');
+  });
+
+  it('prefers your own table to the bundled one AutoCAD’s name stands for', () => {
+    const space: PlotSpace = {
+      ...layout,
+      userTables: new Map([['monochrome.ctb', mine]]),
+      pageSetup: { styleSheet: 'monochrome.ctb', flags: PLOT_STYLES },
+    };
+    const s = defaultPlotSettings(space);
+    expect(s.table).toBe('monochrome.ctb');
+    expect(plotTable(s, space)).toBe(mine);
+  });
+
+  it('keeps a table this device lacks by name and plots without it', () => {
+    const space: PlotSpace = {
+      ...layout,
+      pageSetup: { styleSheet: 'Site Pens.ctb', flags: PLOT_STYLES },
+    };
+    const s = defaultPlotSettings(space);
+    expect(s.table).toBe('Site Pens.ctb');
+    expect(missingPlotStyleTable(s, space)).toBe(true);
+    expect(plotTable(s, space)).toBeUndefined();
+    // A table of the other kind cannot serve the drawing either.
+    const stb = { ...s, table: 'triya-default.stb' };
+    expect(missingPlotStyleTable(stb, space)).toBe(true);
+    expect(plotTable(stb, space)).toBeUndefined();
+    expect(missingPlotStyleTable({ ...s, table: '' }, space)).toBe(false);
   });
 });
 

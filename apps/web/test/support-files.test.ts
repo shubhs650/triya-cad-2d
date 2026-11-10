@@ -10,6 +10,7 @@ import {
   PLOT_STYLE_FILES,
   SupportFileStore,
   opfsSupportFiles,
+  plotStyleTablesIn,
   type StoredSupportFile,
   type SupportPersistence,
 } from '../src/support-files';
@@ -133,6 +134,19 @@ describe('plot style table store', () => {
     await s.add('Office.ctb', CTB);
     expect(s.file('Office.ctb')).toEqual(CTB);
     expect(s.getSnapshot().error).toMatch(/could not be kept on this device/);
+  });
+
+  it('gives the Plot dialog the tables it keeps, read once per change (M2-17 part 3)', async () => {
+    const s = new SupportFileStore(PLOT_STYLE_FILES, memory());
+    await s.add('Office.ctb', CTB);
+    await s.add('named.STB', STB);
+    const tables = plotStyleTablesIn(s);
+    expect([...tables.keys()].sort()).toEqual(['Office.ctb', 'named.STB']);
+    expect(tables.get('Office.ctb')!.description).toBe('Triya: plot every object black');
+    expect(tables.get('named.STB')!.kind).toBe('stb');
+    expect(plotStyleTablesIn(s)).toBe(tables);
+    await s.remove('Office.ctb');
+    expect([...plotStyleTablesIn(s).keys()]).toEqual(['named.STB']);
   });
 
   it('recognises plot style tables by extension', () => {

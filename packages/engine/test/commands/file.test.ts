@@ -2,7 +2,8 @@
 // refusal; none changes the drawing or becomes an undo step. DRAWINGRECOVERY (M2-14 part 2) asks
 // the app to offer the drawings it can recover again. PLOT and PRINT (M2-17) open the app's Plot
 // dialog; its Window< button hands back to PLOT, which asks for the window's corners at the command
-// line and opens the dialog again with them (part 2). PUBLISH opens the app's Publish dialog.
+// line and opens the dialog again with them (part 2), or as it was on Esc there (part 3). PUBLISH
+// opens the app's Publish dialog.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
@@ -79,16 +80,45 @@ describe('the file commands', () => {
     await bus.submit('110,5');
     expect(asked).toEqual([
       { op: 'file', action: 'plot' },
-      { op: 'file', action: 'plot', window: { a: { x: 10, y: 20 }, b: { x: 110, y: 5 } } },
+      {
+        op: 'file',
+        action: 'plot',
+        resume: true,
+        window: { a: { x: 10, y: 20 }, b: { x: 110, y: 5 } },
+      },
     ]);
     expect(bus.command).toBeUndefined();
   });
 
-  it('ends PLOT when the window is cancelled', async () => {
-    const { bus, asked } = setup(() => ({ ok: true, pickWindow: true }));
+  it('opens the dialog again, as it was, on Esc at either corner (part 3)', async () => {
+    let n = 0;
+    // The dialog asks for a window twice, then plots.
+    const { bus, asked } = setup((r) =>
+      r.op === 'file' && n++ < 2 ? { ok: true, pickWindow: true } : { ok: true },
+    );
+    await bus.submit('PLOT');
+    await bus.cancel();
+    expect(bus.history).toContain('Specify first corner: *Cancel*');
+    expect(bus.command).toBe('PLOT');
+    expect(bus.prompt?.message).toBe('Specify first corner');
+    await bus.submit('10,20');
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+    expect(asked).toEqual([
+      { op: 'file', action: 'plot' },
+      { op: 'file', action: 'plot', resume: true },
+      { op: 'file', action: 'plot', resume: true },
+    ]);
+  });
+
+  it('ends PLOT when the dialog is cancelled after a window was asked for', async () => {
+    let n = 0;
+    const { bus, asked } = setup((r) =>
+      r.op === 'file' && n++ === 0 ? { ok: true, pickWindow: true } : { ok: false, message: 'x' },
+    );
     await bus.submit('PLOT');
     await bus.cancel();
     expect(bus.command).toBeUndefined();
-    expect(asked).toHaveLength(1);
+    expect(asked).toHaveLength(2);
   });
 });

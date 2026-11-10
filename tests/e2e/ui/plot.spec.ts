@@ -6,7 +6,9 @@
 // Part 2: the partial preview, the Window plot area (picked at PLOT's prompts with the dialog
 // hidden, the other settings kept) and PUBLISH (every sheet into one PDF). The SVG and PNG
 // plotters (M2-18) write the same plot as an SVG with the drawing's layers and as a PNG.
-import { readFileSync } from 'node:fs';
+// Part 3: Esc at the window's corners reopens the dialog as it was; a layout opens on its page
+// setup's plot style table and plot options; the drafter's own tables are listed.
+import { copyFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { decodePng } from '../../../packages/testkit/src/fidelity/compare';
@@ -20,7 +22,13 @@ import {
   openWithPicker,
   paperPixels,
 } from '../app/page';
-import { startApp } from '../app/server';
+import { CORPUS, startApp } from '../app/server';
+
+const VIEWPORTS = path.join(CORPUS, 'ezdxf/examples_dxf/viewports.dxf');
+const MONOCHROME_CTB = path.join(
+  import.meta.dirname,
+  '../../../assets/plotstyles/triya-monochrome.ctb',
+);
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -190,6 +198,89 @@ test('Window< hides the dialog, takes two corners and plots that window', async 
   expect(pdf.paths).toBeGreaterThan(0);
   // PLOT is over once the dialog closes.
   await expect(prompt(page)).toHaveText('Command:');
+});
+
+test('Esc at the window’s corners brings the dialog back as it was (part 3)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  const canvas = activeCanvas(page);
+  await canvas.click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d).toBeVisible();
+  await d.getByLabel('Paper size').selectOption('ISO A3');
+  await d.getByLabel('What to plot').selectOption('window');
+  await expect(d).toBeHidden();
+  await expect(prompt(page)).toHaveText('Specify first corner:');
+  await canvas.press('Escape');
+  // Back with the plot area it had (no window was picked) and the paper chosen.
+  await expect(d).toBeVisible();
+  await expect(d.getByLabel('What to plot')).toHaveValue('display');
+  await expect(d.getByLabel('Paper size')).toHaveValue('ISO A3');
+  await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText(
+    'Specify first corner: *Cancel*',
+  );
+  // Esc after the first corner too.
+  await d.getByLabel('What to plot').selectOption('window');
+  await expect(prompt(page)).toHaveText('Specify first corner:');
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.3);
+  await expect(prompt(page)).toHaveText('Specify opposite corner:');
+  await canvas.press('Escape');
+  await expect(d).toBeVisible();
+  await expect(d.getByLabel('What to plot')).toHaveValue('display');
+  await d.getByRole('button', { name: 'Cancel' }).click();
+  await expect(d).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+});
+
+test('a layout opens on its page setup’s plot style table and options; your own CTB is listed (part 3)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  // viewports.dxf's Layout1 names acad.ctb, with "Plot with plot styles", "Plot object
+  // lineweights" and "Plot paperspace last" (DXF 70 = 672).
+  await openWithPicker(page, VIEWPORTS);
+  await expectShown(page, path.basename(VIEWPORTS));
+  // A table of the drafter's own, dropped on the window (kept by Settings, M2-20 part 2).
+  const ctb = test.info().outputPath('Office-Pens.ctb');
+  copyFileSync(MONOCHROME_CTB, ctb);
+  await openWithDrop(page, ctb);
+  await expect(
+    page.locator('.banner', { hasText: 'Added color-dependent plot style table Office-Pens.ctb.' }),
+  ).toBeVisible();
+  const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
+  await tabs.nth(1).click();
+  await expect(page.getByTestId('space')).toHaveText('PAPER');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d.getByRole('heading')).toHaveText('Plot - Layout1');
+  const table = d.getByLabel('Plot style table');
+  // AutoCAD's acad.ctb is answered by Triya's table of that meaning.
+  await expect(table).toHaveValue('triya-default.ctb');
+  await expect(d.getByLabel('Plot with plot styles')).toBeChecked();
+  await expect(d.getByLabel('Plot paperspace last')).toBeChecked();
+  await expect(d.getByLabel('Scale lineweights')).not.toBeChecked();
+  await expect(table.getByRole('option')).toHaveText([
+    'None',
+    'triya-default.ctb',
+    'triya-monochrome.ctb',
+    'triya-grayscale.ctb',
+    'Office-Pens.ctb',
+  ]);
+  await table.selectOption('Office-Pens.ctb');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'OK' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  const pdf = await readPdf(download);
+  expect(pdf.labels).toEqual(['Layout1']);
+  expect(pdf.paths).toBeGreaterThan(0);
 });
 
 test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) => {

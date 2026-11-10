@@ -12,12 +12,17 @@
 //
 // M2-18 part 2: Preview… (bottom left, as AutoCAD's) shows the full plot preview with these
 // settings; closing it brings the dialog back, its Plot button plots as OK does.
+//
+// Part 3: Esc at PLOT's window corners shows the dialog again as it was. The dialog opens on the
+// space's page setup's plot style table and plot options, and lists the drafter's own tables
+// (Settings); a table the page setup names that this device lacks is shown by name, with a note,
+// and plots as None.
 import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { CanvasController } from './canvas/controller';
 import { controllerOf } from './canvas/registry';
-import { rasterSize } from '@triya/render';
+import { rasterSize, type PlotStyleTable } from '@triya/render';
 import { lastPlotSettings, previewMode, plotRequest, previewOf } from './plot-preview';
 import {
   LAYOUT_PAPER,
@@ -25,6 +30,7 @@ import {
   PLOT_SCALES,
   PNG_RESOLUTIONS,
   defaultPlotSettings,
+  missingPlotStyleTable,
   paperMm,
   plotAreas,
   plotPreview,
@@ -40,7 +46,8 @@ import {
 /**
  * Which drawing the dialog is open for, if any. PLOT opens it (`show`) and waits until it closes:
  * true when it closed on Window<, whose settings are kept for the space it was open on until PLOT
- * shows the dialog again with the window picked.
+ * shows the dialog again (`resume`), with the window picked or, after Esc at the corners, as it
+ * closed.
  */
 export const plotDialog = (() => {
   let open: number | undefined;
@@ -62,11 +69,18 @@ export const plotDialog = (() => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    /** Opens the dialog for a drawing; `window` is the one PLOT just had picked. */
-    show(doc: number, window?: Box): Promise<boolean> {
+    /**
+     * Opens the dialog for a drawing; `resume` shows it again as Window< closed it, with the
+     * `window` PLOT just had picked, if any.
+     */
+    show(
+      doc: number,
+      again: { window?: Box | undefined; resume?: boolean } = {},
+    ): Promise<boolean> {
       finish(false);
-      if (window && kept?.doc === doc) {
-        kept = { ...kept, settings: { ...kept.settings, area: 'window', window } };
+      const { window, resume } = again;
+      if (resume && kept?.doc === doc) {
+        if (window) kept = { ...kept, settings: { ...kept.settings, area: 'window', window } };
       } else kept = undefined;
       set(doc);
       return new Promise((resolve) => (done = resolve));
@@ -114,10 +128,13 @@ export function downloadPdf(name: string, bytes: Uint8Array): void {
 export function PlotDialog({
   doc,
   underlayFile,
+  userTables,
 }: {
   doc: { readonly id: number; readonly block: string; readonly name: string } | undefined;
   /** The PDF file a PDF underlay names, as supplied this session (M2-16 part 5). */
   underlayFile?: (fileName: string) => Uint8Array | undefined;
+  /** The plot style tables added in Settings (part 3). */
+  userTables?: () => ReadonlyMap<string, PlotStyleTable>;
 }) {
   const open = useSyncExternalStore(plotDialog.subscribe, plotDialog.get);
   if (!doc || open !== doc.id) return null;
@@ -131,6 +148,7 @@ export function PlotDialog({
       name={doc.name}
       controller={controller}
       {...(underlayFile && { underlayFile })}
+      {...(userTables && { userTables })}
     />
   );
 }
@@ -141,12 +159,14 @@ function PlotBody({
   name,
   controller,
   underlayFile,
+  userTables,
 }: {
   doc: number;
   block: string;
   name: string;
   controller: CanvasController;
   underlayFile?: (fileName: string) => Uint8Array | undefined;
+  userTables?: () => ReadonlyMap<string, PlotStyleTable>;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [space, setSpace] = useState<PlotSpace>();
@@ -158,8 +178,9 @@ function PlotBody({
     const d = ref.current;
     if (d && !d.open) d.showModal();
     let live = true;
-    void controller.plotSpace().then((sp) => {
+    void controller.plotSpace().then((measured) => {
       if (!live) return;
+      const sp = { ...measured, userTables: userTables?.() };
       setSpace(sp);
       setSettings(plotDialog.resume(doc, block) ?? defaultPlotSettings(sp));
     });
@@ -167,7 +188,7 @@ function PlotBody({
       live = false;
       d?.close();
     };
-  }, [controller, doc, block]);
+  }, [controller, doc, block, userTables]);
 
   const set = (patch: Partial<PlotSettings>) => s && setSettings({ ...s, ...patch });
 
@@ -253,7 +274,7 @@ function PlotBody({
           s={s}
           space={space}
           set={set}
-          pickWindow={() => plotDialog.pickWindow(doc, block, { ...s, area: 'window' })}
+          pickWindow={() => plotDialog.pickWindow(doc, block, s)}
         />
       ) : (
         <p className="plot-loading">Reading the drawing…</p>
@@ -407,6 +428,7 @@ function PlotForm({
 }) {
   const layout = space.sheet !== undefined;
   const paper = paperMm(s, space);
+  const missing = missingPlotStyleTable(s, space);
   // The scale in the paper's units: inches for a layout set up in inches, as AutoCAD shows it.
   const k = space.inches ? 25.4 : 1;
   const unit = space.inches ? 'inches' : 'mm';
@@ -598,7 +620,14 @@ function PlotForm({
               {t}
             </option>
           ))}
+          {missing && <option value={s.table}>{`${s.table} (not found)`}</option>}
         </select>
+        {missing && (
+          <p className="plot-note" role="note">
+            {`The page setup names ${s.table}, which is not on this device: it plots as None ` +
+              'until you add the table in Settings.'}
+          </p>
+        )}
       </Group>
       <Group label="Plot options">
         <Check

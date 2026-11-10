@@ -30,6 +30,12 @@ interface PromptBase {
   readonly defaultLabel?: string;
   /** The objects dragged with the cursor while this prompt waits (M2-06 part 2). */
   readonly drag?: DragPreview;
+  /**
+   * Esc answers `{ kind: 'escape' }` rather than cancelling the command: PLOT's window corners
+   * go back to the Plot dialog, as AutoCAD's do (M2-17 part 3). A command typed or picked
+   * meanwhile still cancels it.
+   */
+  readonly escape?: boolean;
 }
 
 /** A point; with `rubberBand` the front-end draws a line from it and a number is a direct distance. */
@@ -326,7 +332,9 @@ export type PromptAnswer =
       readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
       readonly target?: Handle;
     }
-  | { readonly kind: 'enter' };
+  | { readonly kind: 'enter' }
+  /** Esc at a prompt that takes it (`escape`). */
+  | { readonly kind: 'escape' };
 
 /** The answer kinds each prompt kind takes, besides `keyword` (when it has options) and `enter`. */
 export const ANSWER_KINDS: { readonly [K in PromptKind]: readonly PromptAnswer['kind'][] } = {
@@ -344,6 +352,7 @@ export const ANSWER_KINDS: { readonly [K in PromptKind]: readonly PromptAnswer['
 /** Whether an answer suits a prompt (the bus refuses others before the command sees them). */
 export function answerFits(prompt: Prompt, answer: PromptAnswer): boolean {
   if (answer.kind === 'enter') return true;
+  if (answer.kind === 'escape') return prompt.escape === true;
   if (answer.kind === 'keyword') {
     return (prompt.options ?? []).some((o) => o.toUpperCase() === answer.keyword.toUpperCase());
   }
@@ -416,6 +425,7 @@ export function formatAnswer(
       return `${answer.ids.length} found`;
     case 'dialog':
     case 'enter':
+    case 'escape':
       return '';
   }
 }

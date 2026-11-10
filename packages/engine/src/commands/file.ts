@@ -14,7 +14,8 @@
 // file over), so the command opens it and ends; it is not an undo step. The dialog's Window<
 // button (M2-17 part 2) hides it and hands back to PLOT, which asks, as AutoCAD 2024 does,
 // "Specify window for printing", "Specify first corner:", "Specify opposite corner:" and opens
-// the dialog again with that window; Esc at the corners ends PLOT.
+// the dialog again with that window. Esc at the corners opens the dialog again as it was, as
+// AutoCAD's does (part 3).
 //
 // PUBLISH (M2-17 part 2): AutoCAD 2024 Help, "PUBLISH": "Publishes drawings to DWF, DWFx, and
 // PDF files, or to plotters", through the Publish dialog box, which is the app's too.
@@ -56,22 +57,27 @@ function plotCommand(name: string): CommandDef {
     name,
     async *run(ctx): CommandGenerator {
       let window: { a: Vec2; b: Vec2 } | undefined;
+      let resume = false;
       for (;;) {
         const reply = await viewRequest(ctx, {
           op: 'file',
           action: 'plot',
+          ...(resume && { resume }),
           ...(window && { window }),
         });
         if (!reply.ok || !reply.pickWindow) return;
+        resume = true;
+        window = undefined;
         ctx.message('Specify window for printing');
-        const first = yield ctx.prompt.point({ message: 'Specify first corner' });
-        if (first.kind !== 'point') return;
+        const first = yield ctx.prompt.point({ message: 'Specify first corner', escape: true });
+        if (first.kind !== 'point') continue;
         const a = first.point;
         const second = yield ctx.prompt.point({
           message: 'Specify opposite corner',
           rubberBand: { from: a, box: true },
+          escape: true,
         });
-        if (second.kind !== 'point') return;
+        if (second.kind !== 'point') continue;
         window = { a, b: second.point };
       }
     },

@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, type PlotPart } from '@triya/render';
 import type { Layout } from '@triya/engine';
+import { defaultPlotSettings } from '../src/plot';
 import { publishFileName, publishPdf, publishSheets, sheetSpace } from '../src/publish';
 
 const stroke: PlotPart = {
@@ -67,6 +68,37 @@ describe('sheetSpace', () => {
   it('plots model space not shown by its extents', () => {
     const extents = { minX: 0, minY: 0, maxX: 10, maxY: 5 };
     expect(sheetSpace({ name: 'Model', extents })).toMatchObject({ name: 'Model', extents });
+  });
+
+  it('takes the page setup’s plot style table and options, model space’s from its own (part 3)', () => {
+    const layout = a3('Layout1', '58', 1);
+    const styled = {
+      ...layout,
+      plot: { ...layout.plot!, styleSheet: 'monochrome.ctb', flags: 32 },
+    };
+    const space = sheetSpace({ name: 'Layout1', layout: styled });
+    expect(space.pageSetup).toEqual({ styleSheet: 'monochrome.ctb', flags: 32 });
+    expect(defaultPlotSettings(space)).toMatchObject({
+      table: 'triya-monochrome.ctb',
+      plotStyles: true,
+      lineweights: false,
+    });
+    // The Model layout's page setup has a paper too, but model space plots no sheet.
+    const extents = { minX: 0, minY: 0, maxX: 10, maxY: 5 };
+    const model = sheetSpace({
+      name: 'Model',
+      layout: { ...styled, name: 'Model' },
+      extents,
+      model: true,
+    });
+    expect(model.sheet).toBeUndefined();
+    expect(model.pageSetup?.styleSheet).toBe('monochrome.ctb');
+    expect(defaultPlotSettings(model)).toMatchObject({ area: 'extents', fit: true });
+  });
+
+  it('passes your own plot style tables on', () => {
+    const userTables = new Map();
+    expect(sheetSpace({ name: 'Model', userTables }).userTables).toBe(userTables);
   });
 });
 
