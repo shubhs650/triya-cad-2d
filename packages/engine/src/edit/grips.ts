@@ -15,13 +15,17 @@
 //   aligned dimension shows its extension line origins, its dimension line's two ends (either
 //   moves the dimension line, as AutoCAD's dimension line grips do) and its text, which then
 //   stays where it is put (DXF 70 bit 128); the other kinds show each definition point.
+// - a revision cloud (M2-24, REVCLOUDGRIPS on, AutoCAD's default) shows its corners, not every
+//   arc's ends, and dragging one cuts the sides on either side into arcs afresh
+//   (`moveCloudCorner`). REVCLOUDGRIPS off (a grip per arc) waits for a SETVAR.
 // Hatches, multileaders, multilines, regions and viewports have no grips yet: their grips
 // (hatch origin, viewport corners) need FR-D4's multi-functional grips.
 import { ccwSweep } from '../geom/angle';
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, fromAngle, midpoint, sub } from '../geom/vec';
-import type { DimensionGeometry, EntityGeometry } from '../model/types';
+import type { DimensionGeometry, EntityGeometry, LwPolylineGeometry } from '../model/types';
 import { dimensionLineEnds } from './dimension';
+import { cloudCorners, isCloudShaped, moveCloudCorner, type CloudInfo } from './revcloud';
 import { stretchGeometry, type StretchResult } from './stretch';
 
 export type GripKind =
@@ -36,7 +40,9 @@ export type GripKind =
   /** A straight polyline segment's midpoint: both its ends move. */
   | 'segment'
   /** A linear or aligned dimension's dimension line end: the dimension line moves. */
-  | 'dimline';
+  | 'dimline'
+  /** A revision cloud's corner: the sides on either side are cut into arcs afresh. */
+  | 'cloud';
 
 export interface Grip {
   readonly point: Vec2;
@@ -74,9 +80,15 @@ function dimensionGrips(dim: DimensionGeometry): Grip[] {
   return out;
 }
 
-/** The grips an object shows, none for kinds without standard grips yet. */
-export function gripsOf(geom: EntityGeometry): Grip[] {
+/**
+ * The grips an object shows, none for kinds without standard grips yet. `cloud`: the object is
+ * a revision cloud (`revcloudOf`), which shows its corners.
+ */
+export function gripsOf(geom: EntityGeometry, cloud?: CloudInfo): Grip[] {
   if (isDimension(geom)) return dimensionGrips(geom);
+  if (cloud && isCloudShaped(geom)) {
+    return cloudCorners(geom).map((i) => g(geom.vertices[i]!, 'cloud'));
+  }
   switch (geom.kind) {
     case 'LINE':
       return [
@@ -181,8 +193,13 @@ function arcThrough(a: Vec2, b: Vec2, c: Vec2) {
  * What dragging the grip at `grip` to `to` does to an object (the STRETCH grip mode): `none`
  * when it has no grip there.
  */
-export function moveGrip(geom: EntityGeometry, grip: Vec2, to: Vec2): StretchResult {
-  const found = gripsOf(geom).find((x) => sameGrip(x.point, grip));
+export function moveGrip(
+  geom: EntityGeometry,
+  grip: Vec2,
+  to: Vec2,
+  cloud?: CloudInfo,
+): StretchResult {
+  const found = gripsOf(geom, cloud).find((x) => sameGrip(x.point, grip));
   if (!found) return { kind: 'none' };
   const d = sub(to, grip);
   switch (found.kind) {
@@ -208,6 +225,12 @@ export function moveGrip(geom: EntityGeometry, grip: Vec2, to: Vec2): StretchRes
       const e = add(geom.center, fromAngle(geom.endAngle, geom.radius));
       const arc = arcThrough(s, to, e);
       return arc ? { kind: 'shape', geom: { ...geom, ...arc } } : { kind: 'none' };
+    }
+    case 'cloud': {
+      // gripsOf gives cloud grips only to a cloud-shaped LWPOLYLINE with `cloud`.
+      const g = geom as LwPolylineGeometry;
+      const i = g.vertices.findIndex((v) => sameGrip(v, grip));
+      return { kind: 'shape', geom: moveCloudCorner(g, i, to, cloud!.arc) };
     }
     case 'segment': {
       if (geom.kind !== 'LWPOLYLINE' && geom.kind !== 'POLYLINE') return { kind: 'none' };
