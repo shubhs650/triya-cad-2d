@@ -67,8 +67,14 @@ export interface ViewContext {
   readonly views: () => readonly NamedView[];
   /** Saves a view of the space shown for the session (VIEW Save, as the navigation bar's). */
   readonly save: (name: string, view: ViewTransform) => void;
-  /** QSAVE, SAVEAS and CLOSE (M2-13): the app saves or closes the drawing. */
-  readonly file?: (action: FileAction) => Promise<ViewReply>;
+  /**
+   * QSAVE, SAVEAS and CLOSE (M2-13): the app saves or closes the drawing; PLOT's `window` is the
+   * plot window just picked (M2-17 part 2).
+   */
+  readonly file?: (
+    action: FileAction,
+    window?: { readonly a: Vec2; readonly b: Vec2 },
+  ) => Promise<ViewReply>;
   /**
    * The app's Clipboard (M2-14 part 2), which every drawing shares: `content` puts objects on
    * it, none reads it.
@@ -96,7 +102,9 @@ export function stateOf(t: ViewTarget): ViewState | undefined {
 
 export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promise<ViewReply> {
   // The file commands need the drawing, not a canvas.
-  if (r.op === 'file') return ctx.file ? ctx.file(r.action) : { ok: false, message: NO_FILE };
+  if (r.op === 'file') {
+    return ctx.file ? ctx.file(r.action, r.window) : { ok: false, message: NO_FILE };
+  }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };
   }

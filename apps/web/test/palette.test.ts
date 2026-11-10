@@ -49,6 +49,7 @@ describe('palette search', () => {
       'PRINT',
       'PROPERTIES',
       'PROPERTIESCLOSE',
+      'PUBLISH',
       'QSAVE',
       'REDO',
       'REGEN',

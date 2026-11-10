@@ -1,7 +1,10 @@
 // M2-17: the Plot dialog. Ctrl+P (or PLOT at the command line) opens it on the space shown; OK
 // plots that space to a one-page PDF that downloads. The roadmap's acceptance: an A1 plot through
 // a CTB is written in under 2 s. The PDF is read back with pdf.js in Node: its page is the paper
-// chosen, it is labelled with the space, and it draws the drawing's paths. The SVG and PNG
+// chosen, it is labelled with the space, and it draws the drawing's paths.
+//
+// Part 2: the partial preview, the Window plot area (picked at PLOT's prompts with the dialog
+// hidden, the other settings kept) and PUBLISH (every sheet into one PDF). The SVG and PNG
 // plotters (M2-18) write the same plot as an SVG with the drawing's layers and as a PNG.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
@@ -135,6 +138,84 @@ test('a PDF underlay plots its page as vectors and text once its file is supplie
   // Both underlays' pages are forms; page 1's Helvetica text is still text.
   expect(pdf.forms).toBe(2);
   expect(pdf.text).toContain('TRIYA');
+});
+
+const prompt = (page: Page) => page.getByTestId('command-prompt');
+
+test('Window< hides the dialog, takes two corners and plots that window', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  const canvas = activeCanvas(page);
+  await canvas.click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d).toBeVisible();
+  // The partial preview: Display fitted and centred on A4 landscape, on the paper.
+  const preview = d.getByRole('img', { name: /^Plot area / });
+  await expect(preview).toHaveAttribute('aria-label', /on paper 297 × 210 mm$/);
+  await d.getByLabel('Paper size').selectOption('ISO A3');
+  await expect(preview).toHaveAttribute('aria-label', /on paper 420 × 297 mm$/);
+  // Window with none picked yet goes straight to the corners, as in AutoCAD.
+  await d.getByLabel('What to plot').selectOption('window');
+  await expect(d).toBeHidden();
+  await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText(
+    'Specify window for printing',
+  );
+  await expect(prompt(page)).toHaveText('Specify first corner:');
+  const box = (await canvas.boundingBox())!;
+  await page.mouse.click(box.x + box.width * 0.3, box.y + box.height * 0.3);
+  await expect(prompt(page)).toHaveText('Specify opposite corner:');
+  await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.7);
+  await expect(d).toBeVisible();
+  // Back with the window and the paper chosen before.
+  await expect(d.getByLabel('What to plot')).toHaveValue('window');
+  await expect(d.getByLabel('Paper size')).toHaveValue('ISO A3');
+  await expect(d.getByRole('button', { name: 'Window<' })).toBeVisible();
+  // Not to scale off the paper: the preview marks it.
+  await d.getByLabel('Fit to paper').uncheck();
+  await d.getByLabel('Scale', { exact: true }).selectOption('10:1');
+  await expect(preview).toHaveAttribute('data-off-paper', 'true');
+  await d.getByLabel('Fit to paper').check();
+  await expect(preview).toHaveAttribute('data-off-paper', 'false');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'OK' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  const pdf = await readPdf(download);
+  expect(pdf.width).toBeCloseTo(420, 2);
+  expect(pdf.height).toBeCloseTo(297, 2);
+  expect(pdf.paths).toBeGreaterThan(0);
+  // PLOT is over once the dialog closes.
+  await expect(prompt(page)).toHaveText('Command:');
+});
+
+test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
+  const spaces = await tabs.allTextContents();
+  const input = page.getByLabel('Command', { exact: true });
+  await input.fill('PUBLISH');
+  await input.press('Enter');
+  const d = page.getByRole('dialog', { name: 'Publish' });
+  await expect(d).toBeVisible();
+  const rows = d.getByRole('table', { name: 'Sheets to publish' }).getByRole('checkbox');
+  await expect(rows).toHaveCount(spaces.length);
+  await expect(rows.first()).toHaveAccessibleName('sample_AC1018-Model');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'Publish' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  expect(download.suggestedFilename()).toBe('sample_AC1018.pdf');
+  const pdf = await readPdf(download);
+  expect(pdf.pages).toBe(spaces.length);
+  expect(pdf.labels).toEqual(spaces.map((s) => s.trim()));
 });
 
 // M2-18: the Triya SVG and Triya PNG plotters plot the same parts as the PDF one.
