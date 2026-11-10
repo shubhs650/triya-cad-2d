@@ -1,0 +1,53 @@
+diff --git a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+index 6cc0347..efe6192 100644
+--- a/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
++++ b/src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts
+@@ -4002,7 +4002,7 @@ export class DwgObjectReader extends DwgSectionIO {
+ 		const variables = new WipeoutVariables();
+ 		const template = new CadNonGraphicalObjectTemplate(variables);
+ 		this._readCommonNonEntityData(template);
+-		variables.displayImageFrame = this._mergedReaders.readBitShort() !== 0;
++		variables.displayImageFrame = this._mergedReaders.readBitShort();
+ 		return template;
+ 	}
+ 
+diff --git a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+index c7a494b..8c153df 100644
+--- a/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
++++ b/src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts
+@@ -4959,7 +4959,7 @@ export class DwgObjectWriter extends DwgSectionIO {
+ 	}
+ 
+ 	private _writeWipeoutVariables(variables: WipeoutVariables): void {
+-		this._writer.writeBitShort(variables.displayImageFrame ? 1 : 0);
++		this._writer.writeBitShort(variables.displayImageFrame);
+ 	}
+ 
+ 	private _writeScale(scale: Scale): void {
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+index 3de1704..25aad9a 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts
+@@ -666,7 +666,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
+ 	private _writeWipeoutVariables(variables: WipeoutVariables): void {
+ 		const map = DxfClassMap.create(WipeoutVariables);
+ 		this._writer.write(DxfCode.Subclass, DxfSubclassMarker.wipeoutVariables);
+-		this._writer.write(70, variables.displayImageFrame ? 1 : 0, map);
++		this._writer.write(70, variables.displayImageFrame, map);
+ 	}
+ 
+   protected writeScale(scale: Scale): void {
+diff --git a/src/Objects/WipeoutVariables.ts b/src/Objects/WipeoutVariables.ts
+index 91989d5..1519cae 100644
+--- a/src/Objects/WipeoutVariables.ts
++++ b/src/Objects/WipeoutVariables.ts
+@@ -4,7 +4,8 @@ import { ObjectType } from '../Types/ObjectType.js';
+ import { NonGraphicalObject } from './NonGraphicalObject.js';
+ 
+ export class WipeoutVariables extends NonGraphicalObject {
+-	displayImageFrame: boolean = false;
++	/** DXF 70, WIPEOUTFRAME: 0 frames off, 1 shown and plotted, 2 shown but not plotted. */
++	displayImageFrame: number = 0;
+ 
+ 	override get objectName(): string { return DxfFileToken.objectWipeoutVariables; }
+ 	override get objectType(): ObjectType { return ObjectType.UNLISTED; }

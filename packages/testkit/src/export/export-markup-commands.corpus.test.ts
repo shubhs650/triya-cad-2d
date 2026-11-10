@@ -1,13 +1,14 @@
 // REVCLOUD, WIPEOUT, DRAWORDER, TEXTTOFRONT and HATCHTOBACK (M2-08) on every readable public
 // corpus file: a markup session saves as AC1032 DXF (DEC-047) and reopens with AutoCAD's
 // structure. The commands run on the PromptBus as the command line drives them: a rectangular
-// and a calligraphy polygonal cloud and a wipeout in model space, WIPEOUTFRAME turned off, text
+// and a calligraphy polygonal cloud and a wipeout in model space, WIPEOUTFRAME set to "Display
+// but not plot" (2, M2-24 part 2), text
 // brought to the front and hatches sent to the back; then every other object of each layout is
 // brought to the front, as DRAWORDER does, over whatever SORTENTSTABLE the drawing has.
 //
 // Reopened, each cloud is a closed LWPOLYLINE whose every bulge is AutoCAD's revision cloud bulge
 // with `RevcloudProps` xdata (what ezdxf's `revcloud.is_revcloud` asks), the wipeout keeps its
-// frame and boundary, WIPEOUTFRAME is off, and every layout draws in the order the session left.
+// frame and boundary, WIPEOUTFRAME is 2, and every layout draws in the order the session left.
 // The saved file is then opened again and its rectangular cloud modified with REVCLOUD Modify
 // (M2-24): saved once more, the cloud keeps its handle and xdata and has the new stretch. With
 // TRIYA_DXF_AUDIT_DIR set the first save goes to the ezdxf audit as the file's `markup` save
@@ -83,7 +84,7 @@ describe('the markup commands on the public corpus', () => {
       await bus.script(['REVCLOUD', 'A', '5', '5', '0,0', '100,50']);
       await bus.script(['REVCLOUD', 'A', '3', '6', 'S', 'C', 'P', '200,0', '260,0', '230,40', '']);
       await bus.script(['WIPEOUT', '0,100', '40,100', '20,130', '']);
-      await bus.script(['WIPEOUT', 'F', 'OFF']);
+      await bus.script(['WIPEOUT', 'F', 'D']);
       await bus.script(['TEXTTOFRONT', '']);
       await bus.script(['HATCHTOBACK']);
       expect(bus.command).toBeUndefined();
@@ -134,7 +135,7 @@ describe('the markup commands on the public corpus', () => {
           expect(g.clip.vertices).toEqual(want.clip.vertices);
         }
       }
-      expect(wipeoutFrame(back)).toBe(false);
+      expect(wipeoutFrame(back)).toBe(2);
       expect(layoutOrders(back)).toEqual(orders);
 
       // REVCLOUD Modify on the saved rectangular cloud: (50,0) round (50,-30), (80,-30) to

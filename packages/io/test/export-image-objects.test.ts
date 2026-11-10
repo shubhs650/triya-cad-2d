@@ -81,7 +81,7 @@ function drawing(
     raster.units = 1;
     root.add(raster);
     const wipeout = new AcadWipeoutVariables('ACAD_WIPEOUT_VARS');
-    wipeout.displayImageFrame = true;
+    wipeout.displayImageFrame = 1;
     root.add(wipeout);
   }
   return writeCadDocument(doc, { format });
@@ -154,8 +154,9 @@ const FIELD_EDITS: Record<
   'raster frame': (m) => [raster(m).handle, { frame: false }],
   'raster quality': (m) => [raster(m).handle, { quality: 'draft' }],
   'raster units': (m) => [raster(m).handle, { units: 6 }],
-  // WIPEOUTFRAME 0.
-  'wipeout frame': (m) => [wipeout(m).handle, { frame: false }],
+  // WIPEOUTFRAME 0, and 2 (displayed but not plotted, M2-24 part 2).
+  'wipeout frame': (m) => [wipeout(m).handle, { frame: 0 }],
+  'wipeout frame not plotted': (m) => [wipeout(m).handle, { frame: 2 }],
 };
 
 const SAVES: readonly [ACadVersion, CadFormat][] = [
@@ -194,7 +195,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
     edit(model, (b) => {
       b.updateObject(photo.handle, patch({ fileName: '..\\photos\\photo.png', loaded: false }));
       b.updateObject(raster(model).handle, patch({ frame: false, quality: 'draft' }));
-      b.updateObject(wipeout(model).handle, patch({ frame: false }));
+      b.updateObject(wipeout(model).handle, patch({ frame: 2 }));
       // IMAGEATTACH of a new file: its definition, and an image showing it, in one save.
       added = b.addObject(newDefinition(photo.owner, 'survey')).handle;
       shown = b.addEntity({
@@ -272,7 +273,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
           } as Omit<RasterVariables, 'handle'>).handle,
         );
         added.push(
-          b.addObject({ type: 'WIPEOUTVARIABLES', owner: root, frame: false } as Omit<
+          b.addObject({ type: 'WIPEOUTVARIABLES', owner: root, frame: 2 } as Omit<
             WipeoutVariables,
             'handle'
           >).handle,
@@ -359,7 +360,8 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
       [update(raster, { frame: 'yes' }), /frame: "yes" is not true or false/],
       [update(raster, { quality: 'low' }), /quality: "low" is not draft or high/],
       [update(raster, { units: 9 }), /units: 9 is not a whole number from 0 to 8/],
-      [update(wipeout, { frame: null }), /frame: null is not true or false/],
+      [update(wipeout, { frame: null }), /frame: null is not 0 \(off\), 1 \(on\) or 2/],
+      [update(wipeout, { frame: true }), /frame: true is not 0 \(off\), 1 \(on\) or 2/],
       [update(photo, { xdata: [{ appId: '12', values: [] }] }), /xdata changes/],
       [update(photo, { reactors: [] }), /reactors changes/],
       [update(raster, { extDict: 'FFFF' }), /extDict changes/],
@@ -381,7 +383,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
         /the drawing already has its ACAD_IMAGE_VARS/,
       ],
       [
-        (b) => b.addObject({ type: 'WIPEOUTVARIABLES', owner: imageDict, frame: true } as never),
+        (b) => b.addObject({ type: 'WIPEOUTVARIABLES', owner: imageDict, frame: 1 } as never),
         /the drawing already has its ACAD_WIPEOUT_VARS/,
       ],
       [(b) => b.addObject({ type: 'XRECORD', owner: root } as never), /new object [0-9A-F]+/],
@@ -402,7 +404,7 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
     const imageDict = dictionary(bare, CadDictionary.acadImageDict);
     const model = open(bare);
     edit(model, (b) =>
-      b.addObject({ type: 'WIPEOUTVARIABLES', owner: imageDict, frame: true } as never),
+      b.addObject({ type: 'WIPEOUTVARIABLES', owner: imageDict, frame: 1 } as never),
     );
     expect(refusal(() => triyaToAcad(readCadDocument(bare), model, 'dxf')).join()).toMatch(
       /WIPEOUTVARIABLES belongs in the root dictionary/,

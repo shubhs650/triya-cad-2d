@@ -4959,7 +4959,7 @@ export class DwgObjectWriter extends DwgSectionIO {
 	}
 
 	private _writeWipeoutVariables(variables: WipeoutVariables): void {
-		this._writer.writeBitShort(variables.displayImageFrame ? 1 : 0);
+		this._writer.writeBitShort(variables.displayImageFrame);
 	}
 
 	private _writeScale(scale: Scale): void {
