@@ -145,6 +145,8 @@ test('Preview… shows the plot as its PDF rasterises, and its Plot button plots
   await page.keyboard.press('Control+p');
   const d = dialog(page);
   await expect(d.getByRole('heading')).toHaveText('Plot - Model');
+  // The sample's page setup is ANSI A (M2-17 part 4); this preview is of A4.
+  await d.getByLabel('Paper size').selectOption('ISO A4');
   await d.getByLabel('What to plot').selectOption('extents');
   await d.getByLabel('Plot style table').selectOption('triya-monochrome.ctb');
   await d.getByRole('button', { name: 'Preview…' }).click();

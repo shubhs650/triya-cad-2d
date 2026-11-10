@@ -77,7 +77,7 @@ describe('sheetSpace', () => {
       plot: { ...layout.plot!, styleSheet: 'monochrome.ctb', flags: 32 },
     };
     const space = sheetSpace({ name: 'Layout1', layout: styled });
-    expect(space.pageSetup).toEqual({ styleSheet: 'monochrome.ctb', flags: 32 });
+    expect(space.pageSetup).toMatchObject({ styleSheet: 'monochrome.ctb', flags: 32 });
     expect(defaultPlotSettings(space)).toMatchObject({
       table: 'triya-monochrome.ctb',
       plotStyles: true,
@@ -93,7 +93,9 @@ describe('sheetSpace', () => {
     });
     expect(model.sheet).toBeUndefined();
     expect(model.pageSetup?.styleSheet).toBe('monochrome.ctb');
-    expect(defaultPlotSettings(model)).toMatchObject({ area: 'extents', fit: true });
+    // Its plot type (5, Layout) is not model space's: the extents, at the page setup's scale,
+    // since flag 16 (Fit to paper with DXF 75 = 0) is off (part 4).
+    expect(defaultPlotSettings(model)).toMatchObject({ area: 'extents', fit: false });
   });
 
   it('passes your own plot style tables on', () => {

@@ -406,20 +406,21 @@ export class CanvasController {
             maxY: v.center.y + height / 2 / v.scale,
           }
         : undefined;
+    // Model space's page setup is the Model layout's (in its paper units too, part 4).
+    const setup =
+      layout ??
+      layoutsOf(this.#opened.init, this.#hooks.changes?.() ?? []).find(
+        (l) => l.blockRecord === this.block,
+      );
     return {
       name: layout?.name ?? 'Model',
       sheet: sheet && { paper: sheet.paper, unitsPerMm: sheet.unitsPerMm },
-      inches: layout?.plot?.paperUnits === 'inches',
+      inches: setup?.plot?.paperUnits === 'inches',
       extents: this.#extents(),
       display,
       limits: this.#limits(),
       namedPlotStyles: this.#header.get('$PSTYLEMODE') === 0,
-      pageSetup: pageSetupOf(
-        layout ??
-          layoutsOf(this.#opened.init, this.#hooks.changes?.() ?? []).find(
-            (l) => l.blockRecord === this.block,
-          ),
-      ),
+      pageSetup: pageSetupOf(setup),
     };
   }
 

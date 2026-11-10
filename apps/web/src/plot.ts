@@ -27,7 +27,7 @@
 // without one: AutoCAD's help does not say what its dialog does then, and plotting each object
 // with its own properties is what the table None does.
 
-import type { Box, Layout, Vec2 } from '@triya/engine';
+import type { Box, Handle, Layout, LayoutPlot, Vec2 } from '@triya/engine';
 import {
   PAPER_SIZES,
   PdfDocument,
@@ -76,6 +76,10 @@ export interface PageSetup {
   readonly styleSheet: string;
   /** DXF 70 plot layout flags. */
   readonly flags: number;
+  /** The LAYOUT whose page setup it is, which Apply to Layout writes (part 4). */
+  readonly layout?: Handle | undefined;
+  /** The whole page setup: paper, area, scale, offset (part 4). */
+  readonly plot?: LayoutPlot | undefined;
 }
 
 /** The DXF 70 flags of a page setup that the dialog's plot options show. */
@@ -87,11 +91,15 @@ export const PAGE_SETUP_FLAGS = {
   PAPERSPACE_LAST: 512,
 } as const;
 
+/** The other DXF 70 flags the dialog reads and writes (part 4). */
+const PLOT_CENTERED = 4;
+const USE_STANDARD_SCALE = 16;
+
 /** A LAYOUT's page setup, as the dialog reads it. */
 export function pageSetupOf(layout: Layout | undefined): PageSetup | undefined {
   const plot = layout?.plot;
   if (!plot) return undefined;
-  return { styleSheet: plot.styleSheet ?? '', flags: plot.flags };
+  return { styleSheet: plot.styleSheet ?? '', flags: plot.flags, layout: layout.handle, plot };
 }
 
 export type PlotArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
@@ -190,12 +198,86 @@ export function missingPlotStyleTable(settings: PlotSettings, space: PlotSpace):
 
 const sizeOf = (b: Box) => ({ width: b.maxX - b.minX, height: b.maxY - b.minY });
 
-/** The layout's paper in millimetres, as its page setup turns it. */
+/**
+ * The page setup's own paper in millimetres, as it turns it: a layout's sheet, or (part 4) the
+ * paper model space's page setup states.
+ */
 function layoutPaper(space: PlotSpace): { width: number; height: number } | undefined {
   const s = space.sheet;
-  if (!s) return undefined;
+  if (!s) {
+    const plot = space.pageSetup?.plot;
+    if (!plot || !(plot.paperWidth > 0 && plot.paperHeight > 0)) return undefined;
+    const turned = plot.rotation === 1 || plot.rotation === 3;
+    return turned
+      ? { width: plot.paperHeight, height: plot.paperWidth }
+      : { width: plot.paperWidth, height: plot.paperHeight };
+  }
   const { width, height } = sizeOf(s.paper);
   return { width: width / s.unitsPerMm, height: height / s.unitsPerMm };
+}
+
+/**
+ * The paper the dialog lists as the page setup's own: a layout's, or the one model space's page
+ * setup states when the dialog's list lacks its size (part 4).
+ */
+export function ownPaper(space: PlotSpace): { width: number; height: number } | undefined {
+  const paper = layoutPaper(space);
+  if (space.sheet || !paper) return paper;
+  return listedPaper(space.pageSetup!.plot!) ? undefined : paper;
+}
+
+/** The listed paper of a page setup's size, either way round (to a tenth of a millimetre). */
+function listedPaper(plot: LayoutPlot): string | undefined {
+  const [w, h] = [plot.paperWidth, plot.paperHeight].sort((a, b) => a - b) as [number, number];
+  const near = (a: number, b: number) => Math.abs(a - b) < 0.15;
+  return PAPER_SIZES.find((p) => near(p.width, w) && near(p.height, h))?.name;
+}
+
+/** DXF 74 plot types and the dialog's plot areas (View, 3, is not offered). */
+const PLOT_TYPES: Readonly<Record<PlotArea, number>> = {
+  display: 0,
+  extents: 1,
+  limits: 2,
+  window: 4,
+  layout: 5,
+};
+
+/**
+ * What the rest of the page setup sets in the dialog (part 4): the paper (a listed one by its
+ * size, else the page setup's own), orientation (DXF 73 turns the paper as the device feeds it),
+ * the plot area (DXF 74, a window's from 48/49 and 140/141), Fit to paper (flag 16 with DXF 75 =
+ * 0) or the scale (142/143 in the page setup's paper units), centring (flag 4) and the offset
+ * (46/47). A plot area the space cannot plot (View; Layout or a missing window in model space)
+ * leaves the dialog's own. Triya's plotters print to the paper's edge, so the offset is from the
+ * paper's corner, where AutoCAD's PLOTOFFSET 0 measures it from the device's printable area.
+ * A layout's sheet already sits by its page setup's offset, so its Layout area opens at none.
+ */
+function fromPageSetup(
+  plot: LayoutPlot,
+  space: PlotSpace,
+  base: PlotSettings,
+): Partial<PlotSettings> {
+  const out: { -readonly [K in keyof PlotSettings]?: PlotSettings[K] } = {};
+  const paper = layoutPaper(space);
+  if (paper) {
+    if (!space.sheet) out.paper = listedPaper(plot) ?? LAYOUT_PAPER;
+    out.orientation = paper.width >= paper.height ? 'landscape' : 'portrait';
+  }
+  out.upsideDown = plot.rotation === 2 || plot.rotation === 3;
+  const w = plot.window;
+  const window = w && windowBox(w.min, w.max);
+  const area = (Object.keys(PLOT_TYPES) as PlotArea[]).find((a) => PLOT_TYPES[a] === plot.plotType);
+  const areas = plotAreas(space);
+  if (area && areas.includes(area) && (area !== 'window' || window)) out.area = area;
+  if (window) out.window = window;
+  out.fit = (plot.flags & USE_STANDARD_SCALE) !== 0 && plot.standardScaleType === 0;
+  const { numerator, denominator } = plot.scale;
+  if (!space.sheet && numerator > 0 && denominator > 0) {
+    out.scale = { mm: numerator * (plot.paperUnits === 'inches' ? 25.4 : 1), units: denominator };
+  }
+  out.center = (plot.flags & PLOT_CENTERED) !== 0;
+  out.offset = (out.area ?? base.area) === 'layout' ? { x: 0, y: 0 } : plot.origin;
+  return out;
 }
 
 /** The settings the dialog opens with for a space. */
@@ -217,7 +299,17 @@ export function defaultPlotSettings(space: PlotSpace): PlotSettings {
     paperspaceLast: space.sheet !== undefined && flag(PAPERSPACE_LAST, false),
     scaleLineweights: space.sheet !== undefined && flag(SCALE_LINEWEIGHTS, false),
   };
-  const paper = layoutPaper(space);
+  const settings = plainDefaults(space, common);
+  const plot = space.pageSetup?.plot;
+  return plot ? { ...settings, ...fromPageSetup(plot, space, settings) } : settings;
+}
+
+/** The dialog's own defaults for a space, before the rest of its page setup (part 4). */
+function plainDefaults(
+  space: PlotSpace,
+  common: Omit<PlotSettings, 'paper' | 'orientation' | 'area' | 'fit' | 'scale'>,
+): PlotSettings {
+  const paper = space.sheet && layoutPaper(space);
   if (space.sheet && paper) {
     return {
       ...common,
@@ -240,6 +332,105 @@ export function defaultPlotSettings(space: PlotSpace): PlotSettings {
     fit: true,
     scale: { mm: 1, units: 1 },
     center: true,
+  };
+}
+
+/** A paper's canonical media name (DXF 4), as AutoCAD's PDF plotters name an edge-to-edge one. */
+function mediaName(p: { name: string; width: number; height: number }): string {
+  const iso = p.name.startsWith('ISO ');
+  const k = iso ? 1 : 25.4;
+  const n = (v: number) => (v / k).toFixed(2);
+  const [series, size] = p.name.split(' ') as [string, string];
+  return `${series}_full_bleed_${size}_(${n(p.width)}_x_${n(p.height)}_${iso ? 'MM' : 'Inches'})`;
+}
+
+const setFlag = (flags: number, bit: number, on: boolean) => (on ? flags | bit : flags & ~bit);
+
+/**
+ * The page setup the settings make (part 4: AutoCAD's Apply to Layout, "Saves the current
+ * settings in the Plot dialog box to the current layout"), from the space's own: what the dialog
+ * shows is written, and what it does not show (the device's name, model space's layout-only
+ * options, a window not plotted) is kept. A scale the drafter left as it opened stays the
+ * standard scale it was; another is a custom one (flag 16 off); Fit to paper is flag 16 with
+ * DXF 75 = 0, keeping the scale fitted last. A listed paper is written edge to edge, as Triya's
+ * plotters print. Throws when the space has no page setup.
+ */
+export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): LayoutPlot {
+  const base = space.pageSetup?.plot;
+  if (!base) throw new Error('This space has no page setup to apply the settings to.');
+  const s = settings;
+  const { PLOT_STYLES, LINEWEIGHTS, SCALE_LINEWEIGHTS, PAPERSPACE_LAST } = PAGE_SETUP_FLAGS;
+  // The paper as the device feeds it.
+  let paper = {
+    paperSize: base.paperSize,
+    paperWidth: base.paperWidth,
+    paperHeight: base.paperHeight,
+    margins: base.margins,
+  };
+  const listed = PAPER_SIZES.find((p) => p.name === s.paper);
+  if (listed && !(space.sheet === undefined && listedPaper(base) === s.paper)) {
+    paper = {
+      paperSize: mediaName(listed),
+      paperWidth: listed.width,
+      paperHeight: listed.height,
+      margins: { left: 0, bottom: 0, right: 0, top: 0 },
+    };
+  }
+  const fedLandscape = paper.paperWidth > paper.paperHeight;
+  const turned = (s.orientation === 'landscape') !== fedLandscape;
+  const rotation = ((turned ? 1 : 0) + (s.upsideDown ? 2 : 0)) as LayoutPlot['rotation'];
+
+  // The scale, in the page setup's paper units.
+  const k = base.paperUnits === 'inches' ? 25.4 : 1;
+  const wasFit = (base.flags & USE_STANDARD_SCALE) !== 0 && base.standardScaleType === 0;
+  const was = (base.scale.numerator * k) / base.scale.denominator;
+  const now = s.scale.mm / s.scale.units;
+  let flags = base.flags;
+  let scale = base.scale;
+  let standardScaleType: number | undefined = base.standardScaleType;
+  if (s.fit) {
+    flags |= USE_STANDARD_SCALE;
+    standardScaleType = 0;
+  } else if (wasFit || Math.abs(now - was) > 1e-12 * Math.max(now, was)) {
+    flags &= ~USE_STANDARD_SCALE;
+    standardScaleType = undefined;
+    scale = { numerator: s.scale.mm / k, denominator: s.scale.units };
+  }
+  flags = setFlag(flags, PLOT_CENTERED, s.center);
+  flags = setFlag(flags, PLOT_STYLES, s.plotStyles);
+  flags = setFlag(flags, LINEWEIGHTS, s.lineweights || s.plotStyles);
+  if (space.sheet) {
+    flags = setFlag(flags, SCALE_LINEWEIGHTS, s.scaleLineweights);
+    flags = setFlag(flags, PAPERSPACE_LAST, s.paperspaceLast);
+  }
+
+  // A layout's Layout area: its sheet moves by the offset (layoutSheet places it by DXF 46/47).
+  const origin =
+    s.center && s.area !== 'layout'
+      ? base.origin
+      : s.area === 'layout'
+        ? { x: base.origin.x + s.offset.x, y: base.origin.y + s.offset.y }
+        : s.offset;
+  const window =
+    s.area === 'window' && s.window
+      ? { min: { x: s.window.minX, y: s.window.minY }, max: { x: s.window.maxX, y: s.window.maxY } }
+      : base.window;
+  // The table: the page setup's own name while it is the table the dialog opened on.
+  const styleSheet =
+    tableNamed(base.styleSheet ?? '', space) === s.table ? base.styleSheet : s.table;
+
+  const { window: _w, styleSheet: _t, standardScaleType: _s, ...rest } = base;
+  return {
+    ...rest,
+    ...paper,
+    rotation,
+    origin,
+    scale,
+    ...(standardScaleType !== undefined && { standardScaleType }),
+    plotType: PLOT_TYPES[s.area],
+    ...(window && { window }),
+    flags,
+    ...(styleSheet && { styleSheet }),
   };
 }
 

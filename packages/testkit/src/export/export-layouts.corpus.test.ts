@@ -6,7 +6,7 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { ACadVersion, CadDictionary } from '@node-projects/acad-ts';
-import { ChangeSetBuilder, DocumentModel, type Layout } from '@triya/engine';
+import { ChangeSetBuilder, DocumentModel, type Layout, type LayoutPlot } from '@triya/engine';
 import { documentInit, exportDocument, readCadDocument, type CadFormat } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
@@ -26,6 +26,8 @@ const LIMITS = {
   '*MODEL_SPACE': ['$LIMMIN', '$LIMMAX'],
   '*PAPER_SPACE': ['$PLIMMIN', '$PLIMMAX'],
 } as const;
+
+const withoutStandardScale = ({ standardScaleType: _, ...plot }: LayoutPlot): LayoutPlot => plot;
 
 const comparable = ({ raw: _raw, ...rest }: Layout) => rest;
 
@@ -58,7 +60,8 @@ describe('TriyaToAcad layout edits on the public corpus', () => {
               : { name: `${l.name} renamed`, tabOrder: paper.length - paper.indexOf(l) }),
             limits,
             plot: {
-              ...l.plot!,
+              // A custom scale drops the standard one DXF 75 named (M2-17 part 4).
+              ...withoutStandardScale(l.plot!),
               paperSize: 'ISO_A1_(841.00_x_594.00_MM)',
               paperWidth: 841,
               paperHeight: 594,

@@ -3,13 +3,14 @@
 import { describe, expect, it } from 'vitest';
 import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, bundledPlotStyleTable, type PlotPart } from '@triya/render';
-import type { Layout } from '@triya/engine';
+import type { Layout, LayoutPlot } from '@triya/engine';
 import {
   LAYOUT_PAPER,
   PAGE_SETUP_FLAGS,
   PLOT_DEVICES,
   PNG_RESOLUTIONS,
   defaultPlotSettings,
+  appliedPageSetup,
   pageSetupOf,
   paperMm,
   missingPlotStyleTable,
@@ -142,8 +143,14 @@ describe('page setups and your own plot style tables (part 3)', () => {
 
   it('reads the plot style table and plot options of a LAYOUT’s page setup', () => {
     const plot = { styleSheet: 'monochrome.ctb', flags: 688 } as Layout['plot'];
-    expect(pageSetupOf({ plot } as Layout)).toEqual({ styleSheet: 'monochrome.ctb', flags: 688 });
-    expect(pageSetupOf({ plot: { flags: 0 } } as Layout)).toEqual({ styleSheet: '', flags: 0 });
+    expect(pageSetupOf({ plot } as Layout)).toMatchObject({
+      styleSheet: 'monochrome.ctb',
+      flags: 688,
+    });
+    expect(pageSetupOf({ plot: { flags: 0 } } as Layout)).toMatchObject({
+      styleSheet: '',
+      flags: 0,
+    });
     expect(pageSetupOf({} as Layout)).toBeUndefined();
     expect(pageSetupOf(undefined)).toBeUndefined();
   });
@@ -515,5 +522,184 @@ describe('plotting to SVG and PNG', () => {
   it('names the file by the plotter', () => {
     expect(plotFileName('plan.dxf', layout, 'svg')).toBe('plan-Layout1.svg');
     expect(plotFileName('plan.dxf', layout, 'png')).toBe('plan-Layout1.png');
+  });
+});
+
+describe('the rest of the page setup (part 4)', () => {
+  /** Model's page setup as AutoCAD's default one: ANSI A fed portrait, landscape, display fitted. */
+  const ansi: LayoutPlot = {
+    paperSize: 'ANSI_A_(8.50_x_11.00_Inches)',
+    paperWidth: 215.9,
+    paperHeight: 279.4,
+    margins: { left: 6.35, bottom: 6.35, right: 6.35, top: 6.35 },
+    paperUnits: 'inches',
+    rotation: 1,
+    origin: { x: 0, y: 0 },
+    scale: { numerator: 1, denominator: 2.584895464708373 },
+    standardScaleType: 0,
+    plotType: 0,
+    flags: 11952 | 4,
+  };
+  const withSetup = (space: PlotSpace, plot: LayoutPlot, inches = false): PlotSpace => ({
+    ...space,
+    inches,
+    pageSetup: { ...pageSetupOf({ handle: '22', plot } as Layout)! },
+  });
+
+  it('remembers the layout whose page setup it is', () => {
+    expect(pageSetupOf({ handle: '22', plot: ansi } as Layout)).toEqual({
+      styleSheet: '',
+      flags: ansi.flags,
+      layout: '22',
+      plot: ansi,
+    });
+  });
+
+  it('opens model space on its page setup’s paper, area, fit, centring and orientation', () => {
+    const space = withSetup(model, ansi, true);
+    const s = defaultPlotSettings(space);
+    expect(s).toMatchObject({
+      // ANSI A is one of the dialog’s papers: listed by its name.
+      paper: 'ANSI A',
+      orientation: 'landscape',
+      upsideDown: false,
+      area: 'display',
+      fit: true,
+      center: true,
+    });
+    // Rotation 3 (270°) is landscape upside-down; Extents and Limits by their DXF 74 codes.
+    expect(defaultPlotSettings(withSetup(model, { ...ansi, rotation: 3 }))).toMatchObject({
+      orientation: 'landscape',
+      upsideDown: true,
+    });
+    expect(defaultPlotSettings(withSetup(model, { ...ansi, plotType: 1 })).area).toBe('extents');
+    expect(defaultPlotSettings(withSetup(model, { ...ansi, plotType: 2 })).area).toBe('limits');
+  });
+
+  it('opens on a custom scale and offset, in the page setup’s paper units', () => {
+    const plot: LayoutPlot = {
+      ...ansi,
+      paperSize: 'A3',
+      paperWidth: 420,
+      paperHeight: 297,
+      paperUnits: 'millimeters',
+      rotation: 0,
+      origin: { x: 11.55, y: -13.65 },
+      scale: { numerator: 1, denominator: 50 },
+      flags: 11952 & ~16,
+    };
+    const s = defaultPlotSettings(withSetup(model, plot));
+    expect(s).toMatchObject({
+      paper: 'ISO A3',
+      // A3 fed landscape, not turned: landscape.
+      orientation: 'landscape',
+      fit: false,
+      scale: { mm: 1, units: 50 },
+      center: false,
+      offset: { x: 11.55, y: -13.65 },
+    });
+    // An inch page setup: 1 inch = 2 units.
+    const inch = defaultPlotSettings(
+      withSetup(model, { ...ansi, flags: 11952 & ~16, scale: { numerator: 1, denominator: 2 } }),
+    );
+    expect(inch.scale).toEqual({ mm: 25.4, units: 2 });
+  });
+
+  it('opens on a Window plot area with the window the page setup stores', () => {
+    const window = { min: { x: 10, y: 20 }, max: { x: 110, y: 70 } };
+    const s = defaultPlotSettings(withSetup(model, { ...ansi, plotType: 4, window }));
+    expect(s.area).toBe('window');
+    expect(s.window).toEqual({ minX: 10, minY: 20, maxX: 110, maxY: 70 });
+    // Plot type 4 without a window, View (3) and Layout (5) in model space: the dialog’s own.
+    for (const plotType of [3, 4, 5])
+      expect(defaultPlotSettings(withSetup(model, { ...ansi, plotType })).area).toBe('display');
+  });
+
+  it('offers a paper the dialog does not list as the page setup’s own', () => {
+    const odd: LayoutPlot = { ...ansi, paperSize: 'Custom', paperWidth: 300, paperHeight: 200 };
+    const space = withSetup(model, { ...odd, rotation: 0 });
+    const s = defaultPlotSettings(space);
+    expect(s.paper).toBe(LAYOUT_PAPER);
+    expect(paperMm(s, space)).toEqual({ width: 300, height: 200 });
+    expect(s.orientation).toBe('landscape');
+    // A page setup without a paper (a device with none) opens on the dialog’s A4.
+    const none = withSetup(model, { ...ansi, paperWidth: 0, paperHeight: 0 });
+    expect(defaultPlotSettings(none).paper).toBe('ISO A4');
+  });
+
+  it('opens a layout upside-down when its page setup turns it 180°', () => {
+    const plot: LayoutPlot = { ...ansi, rotation: 2, plotType: 5, flags: 688 };
+    const s = defaultPlotSettings({ ...layout, pageSetup: pageSetupOf({ plot } as Layout) });
+    expect(s).toMatchObject({ area: 'layout', upsideDown: true, offset: { x: 0, y: 0 } });
+  });
+
+  describe('Apply to Layout', () => {
+    it('writes nothing new for the settings the page setup opened on', () => {
+      for (const plot of [
+        ansi,
+        { ...ansi, rotation: 3 as const, plotType: 1 },
+        { ...ansi, flags: 688, standardScaleType: 16, scale: { numerator: 1, denominator: 1 } },
+      ]) {
+        const space = withSetup(model, plot, plot.paperUnits === 'inches');
+        expect(appliedPageSetup(defaultPlotSettings(space), space)).toEqual(plot);
+      }
+    });
+
+    it('writes the paper, orientation, area, scale, offset and options chosen', () => {
+      const space = withSetup(model, ansi, true);
+      const s = {
+        ...defaultPlotSettings(space),
+        paper: 'ISO A3',
+        orientation: 'portrait' as const,
+        upsideDown: true,
+        area: 'window' as const,
+        window: { minX: 0, minY: 5, maxX: 200, maxY: 105 },
+        fit: false,
+        scale: { mm: 25.4, units: 20 },
+        center: false,
+        offset: { x: 10, y: 12.5 },
+        table: 'triya-monochrome.ctb',
+        lineweights: false,
+        plotStyles: false,
+      };
+      const { standardScaleType: _, ...custom } = ansi;
+      expect(appliedPageSetup(s, space)).toEqual({
+        ...custom,
+        // Triya’s plotters print to the paper’s edge.
+        paperSize: 'ISO_full_bleed_A3_(297.00_x_420.00_MM)',
+        paperWidth: 297,
+        paperHeight: 420,
+        margins: { left: 0, bottom: 0, right: 0, top: 0 },
+        // Fed portrait, plotted portrait and upside-down.
+        rotation: 2,
+        plotType: 4,
+        window: { min: { x: 0, y: 5 }, max: { x: 200, y: 105 } },
+        // 1 inch = 20 units, in the page setup’s inches; a custom scale clears 16 (and DXF 75).
+        scale: { numerator: 1, denominator: 20 },
+        origin: { x: 10, y: 12.5 },
+        flags: (11952 | 4) & ~(16 | 4 | 32 | 128),
+        styleSheet: 'triya-monochrome.ctb',
+      });
+      // Fit to paper: 16 with DXF 75 = 0, the scale kept.
+      const fitted = appliedPageSetup({ ...s, fit: true, center: true }, space);
+      expect(fitted).toMatchObject({ standardScaleType: 0, scale: ansi.scale });
+      expect(fitted.flags & (16 | 4)).toBe(16 | 4);
+    });
+
+    it('keeps the page setup’s own name for the table it opened on', () => {
+      const plot = { ...ansi, styleSheet: 'C:\\Plot Styles\\monochrome.ctb' };
+      const space = withSetup(model, plot, true);
+      const s = defaultPlotSettings(space);
+      expect(s.table).toBe('triya-monochrome.ctb');
+      expect(appliedPageSetup(s, space).styleSheet).toBe(plot.styleSheet);
+      expect(appliedPageSetup({ ...s, table: '' }, space)).not.toHaveProperty('styleSheet');
+    });
+
+    it('moves a layout’s sheet by the offset its Layout plot area is given', () => {
+      const plot: LayoutPlot = { ...ansi, plotType: 5, flags: 688, origin: { x: 1, y: 2 } };
+      const space: PlotSpace = { ...layout, pageSetup: pageSetupOf({ plot } as Layout) };
+      const s = { ...defaultPlotSettings(space), offset: { x: 3, y: -1 } };
+      expect(appliedPageSetup(s, space).origin).toEqual({ x: 4, y: 1 });
+    });
   });
 });
