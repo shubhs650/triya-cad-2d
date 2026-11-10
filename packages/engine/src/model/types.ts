@@ -1543,8 +1543,18 @@ export interface LayoutPlot {
   readonly origin: Vec2;
   /** DXF 142 / 143: `numerator` paper units plot `denominator` drawing units. */
   readonly scale: { readonly numerator: number; readonly denominator: number };
-  /** DXF 74: what is plotted (5 is the layout). */
+  /**
+   * DXF 75: the standard scale chosen while flag 16 (UseStandardScale) is on; 0 is "Scaled to
+   * Fit", 16 is 1:1 (M2-17 part 4). Absent while flag 16 is off, when 142 / 143 are the scale.
+   */
+  readonly standardScaleType?: number;
+  /** DXF 74: what is plotted: 0 display, 1 extents, 2 limits, 3 view, 4 window, 5 the layout. */
   readonly plotType: number;
+  /**
+   * DXF 48 / 49 and 140 / 141: the Window plot area's corners in the space's drawing units
+   * (M2-17 part 4); absent when the page setup stores none (all four 0).
+   */
+  readonly window?: { readonly min: Vec2; readonly max: Vec2 };
   /** DXF 70 plot flags. */
   readonly flags: number;
   /** DXF 7: the plot style table's file name (M2-17 part 3); absent when it names none. */

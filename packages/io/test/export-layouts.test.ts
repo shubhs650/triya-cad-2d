@@ -60,6 +60,7 @@ function drawing(
   model.flags = 11952 as never; // 1024 ModelType | 512 | 128 | 32 | 16 | … as AutoCAD saves it
   model.plotType = 0 as never;
   one.flags = 688 as never; // 512 | 128 | 32 | 16: a standard scale
+  one.scaledFit = 16 as never; // DXF 75: 1:1
   one.plotType = 5 as never;
   one.paperSize = 'ISO_A3_(420.00_x_297.00_MM)';
   one.paperWidth = 420;
@@ -318,7 +319,19 @@ describe('LAYOUT objects', () => {
       expect.stringMatching(/plotType: 3 \(View\) needs the view name, which Triya does not map/),
     ]);
     expect(plot('Layout1', { plotType: 4 })).toEqual([
-      expect.stringMatching(/plotType: 4 \(Window\) needs the window, which Triya does not map/),
+      expect.stringMatching(/plotType: 4 \(Window\) needs the window \(DXF 48, 49, 140, 141\)/),
+    ]);
+    expect(
+      plot('Layout1', { plotType: 4, window: { min: { x: 5, y: 5 }, max: { x: 5, y: 5 } } }),
+    ).toEqual([expect.stringMatching(/window: the upper right corner is not above or right/)]);
+    expect(
+      plot('Layout1', {
+        plotType: 4,
+        window: { min: { x: 0, y: Number.NaN }, max: { x: 5, y: 5 } },
+      }),
+    ).toEqual([expect.stringMatching(/window: each value is a number/)]);
+    expect(plot('Layout1', { standardScaleType: 33 })).toEqual([
+      expect.stringMatching(/standardScaleType: 33 is not a whole number from 0 to 32/),
     ]);
     expect(plot('Layout1', { plotType: 6 })).toEqual([
       expect.stringMatching(/plotType: 6 is not a whole number from 0 to 5/),
@@ -326,13 +339,21 @@ describe('LAYOUT objects', () => {
     expect(plot('Model', { plotType: 5 })).toEqual([
       expect.stringMatching(/plotType: the Model layout has no layout to plot \(5\)/),
     ]);
-    // Flag 16: the scale is the standard one DXF 75 names, which Triya does not map.
-    expect(plot('Layout2', { flags: 672 | 16 })).toEqual([
-      expect.stringMatching(/flags: a standard scale \(16\) is chosen by DXF 75/),
-    ]);
+    // Flag 16: the scale is the standard one DXF 75 names, which a page setup made without one
+    // does not state.
+    expect(
+      update('Layout2', (m) => {
+        const { standardScaleType: _, ...made } = plotOf(m, 'Layout2');
+        return { plot: { ...made, flags: 672 | 16 } };
+      }),
+    ).toEqual([expect.stringMatching(/flags: a standard scale \(16\) is the one DXF 75 names/)]);
     expect(plot('Layout1', { scale: { numerator: 1, denominator: 100 } })).toEqual([
       expect.stringMatching(/scale: the layout plots at a standard scale \(flag 16\)/),
     ]);
+    // Fit to paper (16 with DXF 75 = 0) stores the scale it fitted.
+    expect(
+      plot('Layout1', { standardScaleType: 0, scale: { numerator: 1, denominator: 100 } }),
+    ).toEqual([]);
     expect(plot('Layout1', { flags: 688 | 256 })).toEqual([
       expect.stringMatching(/flags: 944 has bits AutoCAD does not define \(256\)/),
     ]);
@@ -341,13 +362,44 @@ describe('LAYOUT objects', () => {
     ]);
   });
 
+  it.each(SAVES)(
+    'writes a Window plot area and Fit to paper chosen in the Plot dialog (%s %s)',
+    (version, format) => {
+      // M2-17 part 4, Apply to Layout: model space plotted from a window, fitted, centred.
+      const bytes = drawing(version, format);
+      const model = open(bytes);
+      edit(model, (b) => {
+        const m = layout(model, 'Model');
+        const two = layout(model, 'Layout2');
+        b.updateLayout(m.handle, {
+          plot: {
+            ...m.plot!,
+            plotType: 4,
+            window: { min: { x: -10, y: 2.5 }, max: { x: 300, y: 210 } },
+            standardScaleType: 0,
+            scale: { numerator: 1, denominator: 1.5 },
+            flags: m.plot!.flags | 16 | 4,
+          },
+        });
+        // Fit to paper chosen where a custom scale was.
+        b.updateLayout(two.handle, {
+          plot: { ...two.plot!, standardScaleType: 0, flags: two.plot!.flags | 16 },
+        });
+      });
+      const back = documentInit(saved(bytes, model, format)).layouts!;
+      expect(back.map(comparable)).toEqual(model.layouts.map(comparable));
+      expect(back[0]!.plot!.window).toEqual({ min: { x: -10, y: 2.5 }, max: { x: 300, y: 210 } });
+    },
+  );
+
   it('accepts a custom scale chosen in place of a standard one', () => {
     const bytes = drawing();
     const model = open(bytes);
     edit(model, (b) => {
-      const l = layout(model, 'Layout1');
-      b.updateLayout(l.handle, {
-        plot: { ...l.plot!, flags: 688 & ~16, scale: { numerator: 1, denominator: 20 } },
+      // A custom scale clears flag 16, and with it the standard scale DXF 75 named.
+      const { standardScaleType: _, ...plot } = plotOf(model, 'Layout1');
+      b.updateLayout(layout(model, 'Layout1').handle, {
+        plot: { ...plot, flags: 688 & ~16, scale: { numerator: 1, denominator: 20 } },
       });
     });
     const back = documentInit(saved(bytes, model, 'dwg')).layouts!;
@@ -386,7 +438,11 @@ describe('LAYOUT objects', () => {
 });
 
 /** Layout1's A3 page setup at a custom scale: DXF 75, which names a standard one, is not mapped. */
-const sheetPlot = (m: DocumentModel): LayoutPlot => ({ ...plotOf(m, 'Layout1'), flags: 672 });
+/** Layout1's page setup at a custom scale: flag 16 off, so no DXF 75 (M2-17 part 4). */
+const sheetPlot = (m: DocumentModel): LayoutPlot => {
+  const { standardScaleType: _, ...plot } = plotOf(m, 'Layout1');
+  return { ...plot, flags: 672 };
+};
 
 describe('LAYOUT New and Delete', () => {
   /**
