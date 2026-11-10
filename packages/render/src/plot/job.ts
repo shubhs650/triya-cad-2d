@@ -13,6 +13,8 @@
 //   has with ByLayer and ByBlock resolved: inside a block, ByBlock takes the reference's values and
 //   layer 0 the reference's layer (`blockContext`, M1-13), so "every red object plots the same
 //   way" holds for parts of blocks too.
+// - Wipeout frames plot with WIPEOUTFRAME 1 only: 2 shows them on screen and leaves them off the
+//   plot ("frames are displayed, but not plotted", M2-24 part 2).
 // - Text glyphs and hatch pattern lines plot continuous whatever the plot style linetype, as
 //   AutoCAD draws them (M2-16).
 // - A layout plots its paper space and every viewport that shows model space, clipped to its
@@ -48,7 +50,7 @@ import {
 } from '@triya/engine';
 import { expandInsert, expands, insertClips, transformPrimitive } from '../blocks';
 import type { Affine } from '../affine';
-import { withLayers } from '../document-settings';
+import { imageFrames, withLayers } from '../document-settings';
 import { adjustPixels } from '../image';
 import { createPaint } from '../paint';
 import { drawOrder } from '../style/draw-order';
@@ -236,7 +238,9 @@ class Plotter {
     this.#model = model;
     this.#src = src;
     this.#lwDefault = src.lwDefault ?? 25;
-    this.#tessellate = src.tessellate ?? {};
+    // The screen's context, with the frames a plot draws: WIPEOUTFRAME 2 shows them on screen
+    // and leaves them off the plot (AutoCAD 2024 Help, "WIPEOUTFRAME (System Variable)").
+    this.#tessellate = { ...src.tessellate, frames: imageFrames(model, 'plot') };
     this.#base = createPaint({ lwDefault: this.#lwDefault });
   }
 

@@ -105,6 +105,7 @@ import {
   VPort,
   XY,
   XYZ,
+  WipeoutVariables,
 } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
 import { aciOfTrueColor } from '../src/map/common';
@@ -2676,5 +2677,22 @@ describe('acad-ts local patches', () => {
     const text = Array.from(bytes, (b) => String.fromCharCode(b)).join('');
     const embedded = text.slice(text.indexOf('Embedded Object'));
     expect(embedded.slice(0, embedded.indexOf('\n  0')).match(/\n 11\r?\n/)).toBeNull();
+  });
+
+  it('0176 WIPEOUTFRAME keeps "Display but not plot" (2) through DXF and DWG', () => {
+    // WIPEOUTVARIABLES 70 holds WIPEOUTFRAME (AutoCAD 2024 Help, "WIPEOUTFRAME (System
+    // Variable)": 0 off, 1 displayed and plotted, 2 displayed but not plotted). Unpatched, acad-ts
+    // read it as on/off, so a drawing whose frames show but do not plot was saved with 1.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const vars = new WipeoutVariables();
+    vars.displayImageFrame = 2;
+    doc.rootDictionary!.addByKey('ACAD_WIPEOUT_VARS', vars);
+    for (const format of ['dxf', 'dwg'] as const) {
+      for (const binary of format === 'dxf' ? [false, true] : [false]) {
+        const back = readCadDocument(writeCadDocument(doc, { format, binary }));
+        const read = back.getCadObject(vars.handle) as WipeoutVariables;
+        expect(read.displayImageFrame, `${format} binary ${binary}`).toBe(2);
+      }
+    }
   });
 });

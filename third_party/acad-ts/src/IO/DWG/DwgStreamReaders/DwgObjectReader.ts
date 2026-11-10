@@ -4002,7 +4002,7 @@ export class DwgObjectReader extends DwgSectionIO {
 		const variables = new WipeoutVariables();
 		const template = new CadNonGraphicalObjectTemplate(variables);
 		this._readCommonNonEntityData(template);
-		variables.displayImageFrame = this._mergedReaders.readBitShort() !== 0;
+		variables.displayImageFrame = this._mergedReaders.readBitShort();
 		return template;
 	}
 

@@ -1623,11 +1623,17 @@ export interface RasterVariables extends NonGraphicalObject {
   readonly units: number;
 }
 
-/** WIPEOUTFRAME (DXF WIPEOUTVARIABLES, `ACAD_WIPEOUT_VARS`); without it frames show. */
+/**
+ * WIPEOUTFRAME (AutoCAD 2024 Help, "WIPEOUTFRAME (System Variable)"): 0 frames neither shown
+ * nor plotted, 1 shown and plotted (AutoCAD's initial value), 2 shown but not plotted.
+ */
+export type WipeoutFrame = 0 | 1 | 2;
+
+/** WIPEOUTFRAME (DXF WIPEOUTVARIABLES, `ACAD_WIPEOUT_VARS`); without it frames show and plot. */
 export interface WipeoutVariables extends NonGraphicalObject {
   readonly type: 'WIPEOUTVARIABLES';
-  /** DXF 70: wipeout frames shown. */
-  readonly frame: boolean;
+  /** DXF 70. */
+  readonly frame: WipeoutFrame;
 }
 
 /**

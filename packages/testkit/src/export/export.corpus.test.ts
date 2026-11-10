@@ -497,7 +497,8 @@ function editedImageObject(o: ImageObject): Partial<ImageObject> {
       units: (o.units + 1) % 9,
     };
   }
-  return { frame: !o.frame };
+  // WIPEOUTFRAME 2 (displayed but not plotted, M2-24 part 2) unless it is 2 already.
+  return { frame: o.frame === 2 ? 1 : 2 };
 }
 
 /** A record as it maps back, without the reader's link. */
