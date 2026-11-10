@@ -18,6 +18,11 @@
 // 7. "OpenType text": TEXT and MTEXT in the test font's CFF twins (plain and CID-keyed) and in
 //    both faces of a TrueType collection, embedded as CFF and TrueType subsets, and in a CFF font
 //    whose licence forbids embedding, plotted as outlines.
+// Then the underlay drawing (M2-16 part 5, `scripts/pdf/plot-underlay.py`,
+// fixtures/pdf/plot-underlay.dxf):
+// 8. "PDF underlays": PDFUNDERLAYs of `plot-underlay.pdf` (`sheetUnderlayPdf`: pages 6 and 4 of
+//    this plot as a PDF of their own, written here, so no PDF is committed for it), each page
+//    copied in as a form XObject: as drawn, faded, monochrome at contrast 50, turned and clipped.
 // Glyphs and hatch pattern lines plot continuous whatever the linetype, as AutoCAD draws them.
 // Model space is turned into plot items by the plot job (`plotParts`, M2-17: the renderer's
 // tessellation with the bundled fonts, so ROMANS text plots as stroke paths, and each object's
@@ -55,6 +60,7 @@ export const SHEET_DXF = 'plot-sheet.dxf';
 export const FILLS_DXF = 'plot-fills.dxf';
 export const TEXT_DXF = 'plot-text.dxf';
 export const OTF_DXF = 'plot-otf.dxf';
+export const UNDERLAY_DXF = 'plot-underlay.dxf';
 export const SHEET_PDF = 'plot-sheet.pdf';
 
 /** The CTB of page 3: colour 9 + k plots black with plot style linetype k; colour 150 at 40 %. */
@@ -212,21 +218,61 @@ export const SHEET_PAGES = [
     table: undefined,
     drawing: 'otf',
   },
+  {
+    label: 'PDF underlays',
+    bookmark: 'PDF underlays (pages copied as vectors and text)',
+    table: undefined,
+    drawing: 'underlay',
+  },
 ] as const;
 
-/** The seven-page plot of the four drawings, deterministic to the byte. */
+const A4_LANDSCAPE = () => {
+  const a4 = paperSize('ISO A4')!;
+  return { width: mmToPoints(a4.height), height: mmToPoints(a4.width) };
+};
+
+/**
+ * The PDF the underlay drawing attaches (`plot-underlay.pdf`): the TrueType text page and the
+ * fills page of this plot, as a two-page PDF of their own, so its text is embedded TrueType,
+ * its fills shadings and an image.
+ */
+export function sheetUnderlayPdf(
+  text: DocumentModel = sheetModel(TEXT_DXF),
+  fills: DocumentModel = sheetModel(FILLS_DXF),
+): Uint8Array {
+  const fonts = sheetFontBook();
+  const pixels = fillsImagePixels();
+  const { width, height } = A4_LANDSCAPE();
+  const doc = new PdfDocument({
+    title: 'Triya underlay source',
+    creator: 'Triya CAD 2D (M2-16 test)',
+  });
+  const resolver = new PlotResolver(undefined);
+  const toPaper = paperTransform(1, { x: 0, y: 0 }, { x: 0, y: 0 });
+  plotItems(doc.addPage(width, height), sheetItems(text, resolver, undefined, fonts), { toPaper });
+  plotItems(
+    doc.addPage(width, height),
+    sheetItems(fills, resolver, () => pixels, fonts),
+    {
+      toPaper,
+    },
+  );
+  return doc.bytes();
+}
+
+/** The eight-page plot of the five drawings, deterministic to the byte. */
 export function sheetPdf(
   model: DocumentModel = sheetModel(),
   fills: DocumentModel = sheetModel(FILLS_DXF),
   text: DocumentModel = sheetModel(TEXT_DXF),
   otf: DocumentModel = sheetModel(OTF_DXF),
+  underlay: DocumentModel = sheetModel(UNDERLAY_DXF),
 ): Uint8Array {
   const fonts = sheetFontBook();
   const pixels = fillsImagePixels();
-  const a4 = paperSize('ISO A4')!;
+  const source = sheetUnderlayPdf(text, fills);
   // Landscape: the sheet's 297 × 210 mm drawing fills the paper at 1:1.
-  const width = mmToPoints(a4.height);
-  const height = mmToPoints(a4.width);
+  const { width, height } = A4_LANDSCAPE();
   const doc = new PdfDocument({ title: 'Triya plot sheet', creator: 'Triya CAD 2D (M2-16 test)' });
   for (const p of SHEET_PAGES) {
     const table =
@@ -243,7 +289,13 @@ export function sheetPdf(
       p.drawing === 'fills'
         ? sheetItems(fills, resolver, () => pixels, fonts)
         : sheetItems(
-            p.drawing === 'text' ? text : p.drawing === 'otf' ? otf : model,
+            p.drawing === 'text'
+              ? text
+              : p.drawing === 'otf'
+                ? otf
+                : p.drawing === 'underlay'
+                  ? underlay
+                  : model,
             resolver,
             undefined,
             fonts,
@@ -251,6 +303,8 @@ export function sheetPdf(
     plotItems(page, items, {
       toPaper: paperTransform(1, { x: 0, y: 0 }, { x: 0, y: 0 }),
       nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
+      underlays: (u) =>
+        u.fileName.toLowerCase().endsWith('plot-underlay.pdf') ? source : undefined,
     });
   }
   return doc.bytes();

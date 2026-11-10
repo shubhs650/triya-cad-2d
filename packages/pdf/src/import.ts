@@ -300,16 +300,39 @@ export class PdfImports {
             const p = pageId(w);
             const { width: W, height: H } = view;
             const k = real(contrast / 100);
+            const box = `/BBox [0 0 ${real(W)} ${real(H)}]`;
+            const group = '/Group << /S /Transparency /I true >>';
             const rect = `0 0 ${real(W)} ${real(H)} re f`;
-            const ops = ['/M gs'];
+            const form = (dict: string, ops: string[]): ObjectBody => {
+              const data = zlibSync(latin1(`${ops.join('\n')}\n`), { level: 6 });
+              return {
+                dict: `<< /Type /XObject /Subtype /Form /FormType 1 ${box} ${group} ${dict} /Filter /FlateDecode /Length ${data.length} >>`,
+                data,
+              };
+            };
+            // The adjusted page: mid grey under the page at opacity k, then the luminance of
+            // the result. Its grey covers the whole box, so the form showing it masks it to
+            // where the page paints (alpha soft mask); the mask is set outside the blending
+            // group, as pdf.js loses a blend mode drawn while a soft mask is active.
+            const adjustedId = w.reserve();
+            const ops: string[] = [];
             if (contrast < 100) ops.push(`${real(128 / 255)} g ${rect}`, '/K gs');
             ops.push('/P Do');
             if (look.monochrome) ops.push(`/S gs 0.5 g ${rect}`);
-            const data = zlibSync(latin1(`${ops.join('\n')}\n`), { level: 6 });
-            w.set(id, {
-              dict: `<< /Type /XObject /Subtype /Form /FormType 1 /BBox [0 0 ${real(W)} ${real(H)}] /Group << /S /Transparency /I true >> /Resources << /XObject << /P ${p} 0 R >> /ExtGState << /M << /SMask << /S /Alpha /G ${p} 0 R >> >> /K << /ca ${k} /CA ${k} >> /S << /BM /Saturation /ca 1 /CA 1 >> >> >> /Filter /FlateDecode /Length ${data.length} >>`,
-              data,
-            });
+            w.set(
+              adjustedId,
+              form(
+                `/Resources << /XObject << /P ${p} 0 R >> /ExtGState << /K << /ca ${k} /CA ${k} >> /S << /BM /Saturation /ca 1 /CA 1 >> >> >>`,
+                ops,
+              ),
+            );
+            w.set(
+              id,
+              form(
+                `/Resources << /XObject << /A ${adjustedId} 0 R >> /ExtGState << /M << /SMask << /S /Alpha /G ${p} 0 R >> >> >> >>`,
+                ['/M gs', '/A Do'],
+              ),
+            );
           }
         : (id, w) => {
             // Painted straight: the page form itself, in the displayed page's points.

@@ -139,18 +139,24 @@ describe('plotting a PDF underlay', () => {
       item(underlay({ clipped: true, fade: 25, contrast: 50, monochrome: true }), ring),
     ]);
     expect(content).toMatch(/28\.3465 56\.6929 m\n(.*\n)+h\nW n\n\/GSa750 gs\n.* cm\n\/Fm1 Do\nQ/);
-    const wrapper = form('Fm1');
-    expect(wrapper.dict.get('BBox')).toEqual([0, 0, 200, 100]);
-    expect(textOf(src.decode(wrapper))).toBe(
-      '/M gs\n0.5019607843 g 0 0 200 100 re f\n/K gs\n/P Do\n/S gs 0.5 g 0 0 200 100 re f\n',
-    );
-    const res = wrapper.dict.get('Resources') as PdfDict;
-    const page = src.resolve((res.get('XObject') as PdfDict).get('P')) as PdfStream;
-    expect(page.dict.get('Subtype')).toEqual(new PdfName('Form'));
-    const gs = res.get('ExtGState') as PdfDict;
-    const mask = (gs.get('M') as PdfDict).get('SMask') as PdfDict;
+    // The form shown masks the adjusted page to where the page paints.
+    const masked = form('Fm1');
+    expect(masked.dict.get('BBox')).toEqual([0, 0, 200, 100]);
+    expect(textOf(src.decode(masked))).toBe('/M gs\n/A Do\n');
+    const res = masked.dict.get('Resources') as PdfDict;
+    const mask = ((res.get('ExtGState') as PdfDict).get('M') as PdfDict).get('SMask') as PdfDict;
     expect(mask.get('S')).toEqual(new PdfName('Alpha'));
+    // The adjusted page: mid grey, the page at opacity 0.5 over it, then its luminance.
+    const adjusted = src.resolve((res.get('XObject') as PdfDict).get('A')) as PdfStream;
+    expect((adjusted.dict.get('Group') as PdfDict).get('I')).toBe(true);
+    expect(textOf(src.decode(adjusted))).toBe(
+      '0.5019607843 g 0 0 200 100 re f\n/K gs\n/P Do\n/S gs 0.5 g 0 0 200 100 re f\n',
+    );
+    const ares = adjusted.dict.get('Resources') as PdfDict;
+    const page = src.resolve((ares.get('XObject') as PdfDict).get('P')) as PdfStream;
+    expect(page.dict.get('Subtype')).toEqual(new PdfName('Form'));
     expect(src.resolve(mask.get('G'))).toBe(page);
+    const gs = ares.get('ExtGState') as PdfDict;
     expect((gs.get('K') as PdfDict).get('ca')).toBe(0.5);
     expect((gs.get('S') as PdfDict).get('BM')).toEqual(new PdfName('Saturation'));
   });
