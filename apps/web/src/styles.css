@@ -2023,3 +2023,97 @@ button {
     transform: translateY(6px);
   }
 }
+
+/* The plot preview (M2-18 part 2): the sheet over the drawing area, AutoCAD's preview toolbar. */
+.plot-preview-mode {
+  position: absolute;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  background: #7f7f7f;
+}
+
+.plot-preview-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 6px;
+  background: var(--chrome-bg-raised);
+  border-bottom: 1px solid var(--chrome-border);
+  color: var(--chrome-text);
+}
+
+.plot-preview-toolbar button[aria-pressed='true'] {
+  color: var(--accent);
+  border-color: var(--accent);
+}
+
+.plot-preview-title {
+  margin-left: auto;
+  color: var(--chrome-text-muted);
+}
+
+.plot-preview-canvas {
+  display: block;
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  outline: none;
+  touch-action: none;
+  cursor: ns-resize;
+}
+
+.plot-preview-canvas[data-mode='pan'] {
+  cursor: grab;
+}
+
+.plot-preview-canvas[data-mode='window'] {
+  cursor: crosshair;
+}
+
+.plot-preview-error {
+  margin: 0;
+  padding: 4px 8px;
+  background: var(--chrome-bg-raised);
+  color: rgb(185 28 28);
+}
+
+.plot-preview-menu {
+  position: absolute;
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  min-width: 160px;
+  padding: 4px 0;
+  background: var(--chrome-bg-raised);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+}
+
+.plot-preview-menu-item {
+  padding: 3px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.plot-preview-menu-item[aria-checked='true']::before {
+  content: '✓ ';
+}
+
+.plot-preview-menu-item:hover,
+.plot-preview-menu-item:focus-visible {
+  background: var(--chrome-hover, rgb(0 0 0 / 6%));
+}
+
+/* Preview… sits at the dialog's lower left, as AutoCAD's. */
+.plot-preview-button {
+  margin-right: auto;
+}

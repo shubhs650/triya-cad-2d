@@ -39,6 +39,7 @@ describe('the file commands', () => {
     ['PLOT', 'plot'],
     ['PRINT', 'plot'],
     ['PUBLISH', 'publish'],
+    ['PREVIEW', 'preview'],
   ] as const)('%s asks the app to %s', async (name, action) => {
     const { bus, asked, model } = setup();
     const version = model.version;
@@ -47,6 +48,15 @@ describe('the file commands', () => {
     expect(bus.command).toBeUndefined();
     expect(model.version).toBe(version);
     expect(bus.undo.state.undoable).toBe(0);
+  });
+
+  it('PREVIEW (PRE) tells the drafter how to leave the preview while the app shows it', async () => {
+    const { bus, asked } = setup();
+    await bus.submit('PRE');
+    expect(asked).toEqual([{ op: 'file', action: 'preview' }]);
+    expect(bus.history).toContain(
+      'Press ESC or ENTER to exit, or right-click to display shortcut menu.',
+    );
   });
 
   it('reports what the app could not do', async () => {
