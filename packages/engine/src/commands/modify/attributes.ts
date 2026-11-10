@@ -15,7 +15,9 @@
 // - ATTEDIT: "Select block reference:", then the Edit Attributes dialog: values only.
 // - -ATTEDIT: the command-line version: one at a time (Value/Position/Height/Angle/Style/Layer/
 //   Color/Next on each attribute) or globally (a string replaced in every value), filtered by
-//   block name, tag and value patterns with AutoCAD's wildcards.
+//   block name, tag and value patterns with AutoCAD's wildcards. M2-27 part 2: "Select
+//   Attributes" takes the attributes picked or windowed, not whole references; the one being
+//   edited is marked with an X; Color offers COlorbook with the colour books the drawing uses.
 //
 // Commands edit only through `ctx.edit`; a dialog is a prompt (`DialogPrompt`) the front-end
 // answers with what changed (`AttributePatch`es), so tests answer it as the app does.

@@ -212,8 +212,8 @@ function clipEntity(model: DocumentModel, e: Entity): EntityInit {
     const { annotation: _annotation, ...leader } = geom;
     geom = leader;
   }
-  // A new object cannot take a colour book's name yet (the save refuses it): the copy keeps
-  // the colour's RGB value, as COPY's does.
+  // A new object does not take a colour book's name yet (M2-48; the drawing pasted into may not
+  // hold the book's DBCOLOR, which the save needs): the copy keeps the colour's RGB value.
   const c = rest.color;
   const color =
     c.kind === 'rgb' && (c.bookName !== undefined || c.colorName !== undefined)

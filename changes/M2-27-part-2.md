@@ -1,0 +1,1 @@
+- M2-27 part 2 (#272): -ATTEDIT now edits just the attributes you pick (or window), not every attribute of the block, and marks the one being edited with an X, as AutoCAD does. Its Color option takes COlorbook colours from the colour books the drawing already uses, and colour-book colours on objects and attributes now save to DXF.
