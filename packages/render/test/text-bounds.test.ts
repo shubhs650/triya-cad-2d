@@ -16,6 +16,7 @@ import {
   primitivesBox,
   tessellate,
   textBounds,
+  textOutline,
   type TextContext,
 } from '../src/index';
 import { drawing, entity, MODEL, surface } from './fixtures';
@@ -164,5 +165,73 @@ describe('the renderer with text bounds', () => {
     expect(scene.ctx.calls.some((c) => c[0] === 'lineTo')).toBe(false);
     r.setView({ center: { x: 0, y: 0 }, scale: 10 });
     expect(r.hitTest({ x: 100, y: 45 }, 3)).toEqual([model.ids.idOf('20')!]);
+  });
+});
+
+// M2-27: where a text lies as drawn, for an attribute picked by its text and an attribute's
+// justification changed with its insertion point kept.
+describe('textOutline', () => {
+  const round = (ps: readonly { x: number; y: number }[]) =>
+    ps.map((p) => [Number(p.x.toFixed(9)), Number(p.y.toFixed(9))]);
+
+  it("runs a TEXT's box along its baseline from its descender to its height", () => {
+    const o = textOutline(ctx())(text('AA'))!;
+    expect(o.width).toBe(2);
+    expect(o.below).toBeGreaterThanOrEqual(0);
+    expect(round(o.corners)).toEqual([
+      [10, 20 - o.below],
+      [12, 20 - o.below],
+      [12, 25],
+      [10, 25],
+    ]);
+  });
+
+  it('places the box by the justification and turns it with the text', () => {
+    const centred = textOutline(ctx())(
+      text('AA', { halign: 1, valign: 3, alignmentPoint: { x: 50, y: 50 } }),
+    )!;
+    // Top center: the alignment point at the middle of the top edge.
+    expect(round(centred.corners)).toEqual([
+      [49, 45 - centred.below],
+      [51, 45 - centred.below],
+      [51, 50],
+      [49, 50],
+    ]);
+    const turned = textOutline(ctx())(text('AA', { rotation: Math.PI / 2 }))!;
+    expect(round(turned.corners)).toEqual([
+      [10 + turned.below, 20],
+      [10 + turned.below, 22],
+      [5, 22],
+      [5, 20],
+    ]);
+  });
+
+  it("bounds an MTEXT by its glyphs' box, and knows nothing without the font", () => {
+    const m: MTextGeometry = {
+      kind: 'MTEXT',
+      contents: 'AA',
+      style: STYLE,
+      position: { x: 10, y: 25 },
+      height: 5,
+      width: 0,
+      rotation: 0,
+      attachment: 1,
+      direction: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    };
+    const b = textBounds(ctx())(m)!;
+    expect(textOutline(ctx())(m)).toEqual({
+      corners: [
+        { x: b.minX, y: b.minY },
+        { x: b.maxX, y: b.minY },
+        { x: b.maxX, y: b.maxY },
+        { x: b.minX, y: b.maxY },
+      ],
+      width: 0,
+      below: 0,
+    });
+    expect(textOutline(ctx(new FontBook()))(text('AA'))).toBeUndefined();
+    expect(textOutline(ctx(new FontBook()))(m)).toBeUndefined();
   });
 });

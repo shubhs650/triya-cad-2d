@@ -57,7 +57,10 @@ test('a dropped TrueType file draws the style that names it, and stays after a r
   await expect.poll(() => inkWeight(page), { timeout: 15_000 }).toBeGreaterThan(standIn + FILLED);
 
   await page.reload();
-  await expect.poll(() => openDrawing(page), { timeout: 30_000 }).toBeGreaterThan(standIn + FILLED);
+  // Opened once: polling `openDrawing` itself opened the file again on each retry, and a second
+  // tab of the same name broke `expectShown` (seen in CI on #269). The font may load after it.
+  await openDrawing(page);
+  await expect.poll(() => inkWeight(page), { timeout: 30_000 }).toBeGreaterThan(standIn + FILLED);
 
   await page.getByRole('button', { name: 'Settings' }).click();
   const settings = page.getByRole('dialog', { name: 'Settings' });

@@ -14,6 +14,8 @@ import type {
   MTextGeometry,
   OsnapHit,
   OsnapQuery,
+  TextGeometry,
+  TextOutline,
   Vec2,
   UnderlaySnapPage,
 } from '@triya/engine';
@@ -284,6 +286,14 @@ export class RendererHost {
     if (this.#session) return Promise.resolve(this.#session.columnCounts(texts));
     return this.#request((id) => ({ type: 'columnCounts', id, texts })).then((m) =>
       m.type === 'counts' ? [...m.counts] : texts.map(() => null),
+    );
+  }
+
+  /** Where texts lie as drawn (M2-27); null for one no loaded font draws. */
+  textOutlines(texts: readonly (TextGeometry | MTextGeometry)[]): Promise<(TextOutline | null)[]> {
+    if (this.#session) return Promise.resolve(this.#session.textOutlines(texts));
+    return this.#request((id) => ({ type: 'textOutlines', id, texts })).then((m) =>
+      m.type === 'outlines' ? [...m.outlines] : texts.map(() => null),
     );
   }
 

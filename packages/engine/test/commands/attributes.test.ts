@@ -6,9 +6,12 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   PromptBus,
+  attributeEntries,
   builtinCommands,
   doubleClickCommand,
+  insertionPoint,
   patchAttribute,
+  rejustified,
   wcmatch,
   type AttdefGeometry,
   type DialogPrompt,
@@ -112,14 +115,22 @@ const insert = (block: string, at: { x: number; y: number }, attributes: InsertA
  * A title block TB (title, revision, multiline notes, an invisible attribute and a constant
  * logo) inserted twice, at (100, 0) and (300, 0), and a block without attributes at (500, 0).
  */
-function setup() {
+function setup(o: { fonts?: boolean; namedPlotStyles?: boolean } = {}) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
     handSeed: '100',
-    header: new Map([...init.header!, ['$TEXTSTYLE', 'Standard']]),
+    header: new Map([
+      ...init.header!,
+      ['$TEXTSTYLE', 'Standard'],
+      ['$PSTYLEMODE', o.namedPlotStyles ? 0 : 1],
+    ]),
     tables: {
       ...init.tables,
+      plotStyles: [
+        { handle: '40', name: 'Normal' },
+        { handle: '41', name: 'Thick' },
+      ],
       layers: [...init.tables!.layers!, layer(LAYER_TITLE, 'TITLE')],
       textStyles: [style(STANDARD, 'Standard'), style(NOTES_STYLE, 'Notes')],
       blockRecords: [
@@ -197,13 +208,52 @@ function setup() {
       }),
     ],
   });
-  // The test canvas: a pick finds the objects whose insertion point is within 5 of it.
+  // The test canvas: a pick finds the objects whose insertion point is within 5 of it; a
+  // TEXT's characters are 2 wide with 0.5 below the baseline, an MTEXT is a 10 by 5 box below
+  // its insertion point, and the pickbox is 0.25.
   const answer = (r: ViewRequest): ViewReply => {
+    if (r.op === 'textOutlines') {
+      // Without fonts the canvas measures nothing.
+      if (o.fonts === false) return { ok: true, pickbox: 0.25, outlines: r.texts.map(() => null) };
+      return {
+        ok: true,
+        pickbox: 0.25,
+        outlines: r.texts.map((t) => {
+          if (t.kind === 'MTEXT') {
+            const { x, y } = t.position;
+            const corners = [
+              { x, y: y - 5 },
+              { x: x + 10, y: y - 5 },
+              { x: x + 10, y },
+              { x, y },
+            ];
+            return { corners, width: 0, below: 0 };
+          }
+          const width = t.value.length * 2;
+          const at = insertionPoint(t);
+          const x0 = t.halign === 1 ? at.x - width / 2 : t.halign === 2 ? at.x - width : at.x;
+          const y0 = t.valign === 3 ? at.y - t.height : at.y;
+          const corners = [
+            { x: x0, y: y0 - 0.5 },
+            { x: x0 + width, y: y0 - 0.5 },
+            { x: x0 + width, y: y0 + t.height },
+            { x: x0, y: y0 + t.height },
+          ];
+          return { corners, width, below: 0.5 };
+        }),
+      };
+    }
     if (r.op !== 'pick') return { ok: false, message: 'not drawn' };
+    const near = (p: { x: number; y: number } | undefined) =>
+      p !== undefined && Math.hypot(p.x - r.point.x, p.y - r.point.y) <= 5;
     const ids = [...model.entities()]
       .filter((e) => {
         const g = e.geom as { position?: { x: number; y: number } };
-        return g.position && Math.hypot(g.position.x - r.point.x, g.position.y - r.point.y) <= 5;
+        // A reference is picked by its attributes too.
+        return (
+          near(g.position) ||
+          (e.geom.kind === 'INSERT' && e.geom.attributes.some((a) => near(a.position)))
+        );
       })
       .map((e) => e.id);
     return { ok: true, ids };
@@ -558,6 +608,216 @@ describe('TEXTEDIT on an attribute definition', () => {
     });
     const g = model.entity(byHandle('54').id)!.geom as AttdefGeometry;
     expect(g.mtext?.contents).toBe('See\\Psheet 2');
+  });
+});
+
+// M2-27: the Enhanced Attribute Editor's Justification, Plot style and Annotative, and the
+// attribute a block was picked or double-clicked by opening selected.
+describe('EATTEDIT: the attribute under the cursor', () => {
+  it('opens on the attribute the block was picked by', async () => {
+    const { bus } = setup();
+    await bus.submit('EATTEDIT');
+    // REV's text runs from (100, 4.5) to (102, 7.5); the reference is at (100, 0).
+    await bus.pick({ x: 101, y: 4.8 });
+    const d = dialog(bus);
+    expect(d.type === 'eattedit' && d.selected).toBe('62');
+  });
+
+  it('takes a pick within the pickbox of the text, and none on the rest of the block', async () => {
+    const { bus } = setup();
+    await bus.submit('EATTEDIT');
+    await bus.pick({ x: 102.1, y: 4.4 });
+    const near = dialog(bus);
+    expect(near.type === 'eattedit' && near.selected).toBe('62');
+    await bus.answer({ kind: 'dialog', action: 'select' });
+    await bus.pick({ x: 103, y: 2 });
+    const off = dialog(bus);
+    expect(off.type === 'eattedit' && off.selected).toBeUndefined();
+  });
+
+  it('a double click on an attribute opens EATTEDIT on it', async () => {
+    const { bus } = setup();
+    await bus.doubleClick({ x: 101, y: 4.8 });
+    expect(bus.command).toBe('EATTEDIT');
+    const d = dialog(bus);
+    expect(d.type === 'eattedit' && d.selected).toBe('62');
+  });
+
+  it('a block picked at Command: then EATTEDIT opens on the attribute picked', async () => {
+    const { bus } = setup();
+    await bus.pick({ x: 101, y: 4.8 });
+    await bus.submit('EATTEDIT');
+    const d = dialog(bus);
+    expect(d.type === 'eattedit' && d.selected).toBe('62');
+  });
+
+  it('a multiline attribute is picked by its box; an invisible one is not drawn to pick', async () => {
+    const { bus } = setup();
+    await bus.doubleClick({ x: 101, y: -11 });
+    const d = dialog(bus);
+    expect(d.type === 'eattedit' && d.selected).toBe('63');
+    expect(d.type === 'eattedit' && d.attributes.find((a) => a.tag === 'NOTES')?.attachment).toBe(
+      1,
+    );
+    await bus.cancel();
+    // SECRET is invisible (ATTMODE 1): its text is not drawn, so a pick there selects nothing.
+    await bus.doubleClick({ x: 101, y: -19 });
+    const hidden = dialog(bus);
+    expect(hidden.type === 'eattedit' && hidden.selected).toBeUndefined();
+  });
+
+  it('without a font to measure the text, the list opens on the first attribute', async () => {
+    const { bus } = setup({ fonts: false });
+    await bus.doubleClick({ x: 101, y: 4.8 });
+    const d = dialog(bus);
+    expect(d.type === 'eattedit' && d.selected).toBeUndefined();
+  });
+});
+
+describe('EATTEDIT: Justification', () => {
+  const justify = async (o: Parameters<typeof setup>[0], patch: Record<string, unknown>) => {
+    const s = setup(o);
+    await s.bus.submit('EATTEDIT');
+    await s.bus.pick({ x: 300, y: 0 });
+    await s.bus.answer({ kind: 'dialog', action: 'ok', attributes: [{ handle: '72', ...patch }] });
+    return { ...s, rev: s.attr('70', '72') };
+  };
+
+  it('keeps the insertion point and moves the text about it', async () => {
+    // REV "A" is left-baseline at (300, 5), 2 wide: Center puts DXF 11 there, DXF 10 at 299.
+    const centred = (await justify({}, { halign: 1 })).rev;
+    expect([centred.halign, centred.valign]).toEqual([1, 0]);
+    expect(centred.alignmentPoint).toEqual({ x: 300, y: 5 });
+    expect(centred.position).toEqual({ x: 299, y: 5 });
+    // Top right: the baseline start one width left and one height down.
+    const topRight = (await justify({}, { halign: 2, valign: 3 })).rev;
+    expect(topRight.alignmentPoint).toEqual({ x: 300, y: 5 });
+    expect(topRight.position).toEqual({ x: 298, y: 2.5 });
+    // Bottom left: the descender line on the point.
+    const bottom = (await justify({}, { halign: 0, valign: 1 })).rev;
+    expect(bottom.position).toEqual({ x: 300, y: 5.5 });
+  });
+
+  it('Aligned and Fit run from the insertion point for the text as drawn', async () => {
+    const fit = (await justify({}, { halign: 5 })).rev;
+    expect([fit.halign, fit.valign]).toEqual([5, 0]);
+    expect(fit.position).toEqual({ x: 300, y: 5 });
+    expect(fit.alignmentPoint).toEqual({ x: 302, y: 5 });
+  });
+
+  it('without a font, DXF 10 stays at the insertion point and Aligned is refused', async () => {
+    const centred = (await justify({ fonts: false }, { halign: 1 })).rev;
+    expect(centred.halign).toBe(1);
+    expect(centred.position).toEqual({ x: 300, y: 5 });
+    expect(centred.alignmentPoint).toEqual({ x: 300, y: 5 });
+    const aligned = await justify({ fonts: false }, { halign: 3 });
+    expect(aligned.rev.halign).toBe(0);
+    expect(aligned.bus.history).toContain(
+      'The REV attribute cannot be measured: its justification is unchanged.',
+    );
+  });
+
+  it("a centred attribute made Left starts at its old alignment point; a multiline one's attachment changes in place", async () => {
+    const { bus, attr } = setup();
+    await bus.submit('EATTEDIT');
+    await bus.pick({ x: 900, y: 0 });
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      attributes: [
+        { handle: '87', halign: 0, valign: 0 },
+        { handle: '88', attachment: 5, halign: 2 },
+      ],
+    });
+    const extra = attr('85', '87');
+    expect([extra.halign, extra.valign]).toEqual([0, 0]);
+    expect(extra.position).toEqual({ x: 900, y: 5 });
+    expect(extra.alignmentPoint).toEqual({ x: 900, y: 5 });
+    const spec = attr('85', '88');
+    expect(spec.mtext?.attachment).toBe(5);
+    expect(spec.mtext?.position).toEqual({ x: 900, y: -5 });
+    // A multiline attribute's DXF 72 is not its justification.
+    expect(spec.halign).toBe(0);
+  });
+
+  it('rejustified turns the offsets with the text and mirrors them when backwards', () => {
+    const t = {
+      value: 'AB',
+      style: '30',
+      position: { x: 10, y: 10 },
+      height: 2,
+      rotation: Math.PI / 2,
+      widthFactor: 1,
+      oblique: 0,
+      halign: 0,
+      valign: 0,
+      backward: false,
+      upsideDown: false,
+    };
+    const outline = { corners: [], width: 4, below: 0.5 };
+    const r = rejustified(t, 2, 0, outline)!;
+    expect(r.alignmentPoint).toEqual({ x: 10, y: 10 });
+    expect(r.position.x).toBeCloseTo(10);
+    expect(r.position.y).toBeCloseTo(6);
+    const back = rejustified({ ...t, rotation: 0, backward: true }, 2, 0, outline)!;
+    expect(back.position).toEqual({ x: 14, y: 10 });
+    // Middle (DXF 72 = 4): centred on the run between descender and height.
+    const middle = rejustified({ ...t, rotation: 0 }, 4, 0, outline)!;
+    expect(middle.position).toEqual({ x: 8, y: 10 - 0.75 });
+    // Aligned to Fit keeps both points.
+    const aligned = { ...t, halign: 3, alignmentPoint: { x: 10, y: 20 } };
+    expect(rejustified(aligned, 5, 0)).toEqual({
+      position: { x: 10, y: 10 },
+      alignmentPoint: { x: 10, y: 20 },
+      halign: 5,
+      valign: 0,
+    });
+    expect(insertionPoint(aligned)).toEqual({ x: 10, y: 10 });
+  });
+});
+
+describe('EATTEDIT: Plot style and Annotative', () => {
+  it('offers the named plot styles in a named-plot-style drawing; ByLayer takes the name off', async () => {
+    const { bus, attr } = setup({ namedPlotStyles: true });
+    await bus.submit('EATTEDIT');
+    await bus.pick({ x: 300, y: 0 });
+    const d = dialog(bus);
+    if (d.type !== 'eattedit') throw new Error('no dialog');
+    expect(d.plotStyles?.map((p) => p.name)).toEqual(['Normal', 'Thick']);
+    expect(d.attributes[0]!.plotStyle).toBeNull();
+    await bus.answer({
+      kind: 'dialog',
+      action: 'apply',
+      attributes: [{ handle: '71', plotStyle: '41' }],
+    });
+    expect(attr('70', '71').plotStyle).toBe('41');
+    const again = dialog(bus);
+    expect(again.type === 'eattedit' && again.attributes[0]!.plotStyle).toBe('41');
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      attributes: [{ handle: '71', plotStyle: null }],
+    });
+    expect('plotStyle' in attr('70', '71')).toBe(false);
+  });
+
+  it('a colour-dependent drawing offers none (the dialog shows ByColor)', async () => {
+    const { bus } = setup();
+    await bus.submit('EATTEDIT');
+    await bus.pick({ x: 300, y: 0 });
+    const d = dialog(bus);
+    expect(d.type === 'eattedit' && d.plotStyles).toBeUndefined();
+  });
+
+  it('shows whether an attribute is annotative, whose justification stays', () => {
+    const annotative: InsertAttribute = {
+      ...attrib('99', 'NOTE', 'x', { x: 0, y: 0 }),
+      annotative: { representations: [{ handle: '9A' }] },
+    };
+    const { model } = setup();
+    const g = insert('50', { x: 0, y: 0 }, [annotative]);
+    expect(attributeEntries(model, g)[0]!.annotative).toBe(true);
+    expect(patchAttribute(annotative, { handle: '99', halign: 1 })).toBe(annotative);
   });
 });
 

@@ -217,6 +217,8 @@ export class PromptBus {
   #pickfirst: readonly EntityId[] | undefined;
   /** The window the pre-selection was last made with (STRETCH's, M2-06). */
   #pickfirstWindow: SelectionWindow | undefined;
+  /** Where the pre-selection's last pick was made (EATTEDIT's attribute, M2-27). */
+  #pickfirstPick: Vec2 | undefined;
   /** The hot grip while grip editing runs (M2-06). */
   #hot: Vec2 | undefined;
   /** The grips last shown, as a key, so only a change is sent. */
@@ -415,7 +417,7 @@ export class PromptBus {
       if (!found) return;
       if (top) await this.#cancel();
       this.#idle.clear();
-      this.#idle.set([id]);
+      this.#idle.set([id], point);
       this.#log(`Command: ${found.def.name}`);
       await this.#start(found.def, false, false);
     });
@@ -636,6 +638,7 @@ export class PromptBus {
       this.#pickfirst =
         (selects || def.transparent) && this.#idle.ids.length > 0 ? [...this.#idle.ids] : undefined;
       this.#pickfirstWindow = this.#pickfirst ? this.#idle.window : undefined;
+      this.#pickfirstPick = this.#pickfirst ? this.#idle.pick : undefined;
       if (!def.transparent && !def.keepsSelection) this.#idle.clear();
       this.#showSelection();
     }
@@ -708,7 +711,8 @@ export class PromptBus {
     const pre =
       frame.transparent || (prompt.single && !prompt.pickfirst) ? undefined : this.#pickfirst;
     const preWindow = this.#pickfirstWindow;
-    this.#pickfirst = this.#pickfirstWindow = undefined;
+    const prePick = this.#pickfirstPick;
+    this.#pickfirst = this.#pickfirstWindow = this.#pickfirstPick = undefined;
     if (pre) {
       this.#idle.clear();
       let ids = pre;
@@ -726,6 +730,7 @@ export class PromptBus {
         kind: 'selection',
         ids,
         ...(preWindow && { window: preWindow }),
+        ...(prePick && { pick: prePick }),
       });
     }
     frame.select = this.#selectionLoop({

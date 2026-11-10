@@ -205,3 +205,66 @@ test('ATTEDIT opens Edit Attributes; Esc in a dialog changes nothing', async ({ 
   await expect(prompt(page)).toHaveText('Command:');
   expect(await edited(page)).toEqual(before);
 });
+
+/** The justification of an attribute edited so far: DXF 72/73 and its two points. */
+const placement = (page: Page, tag: string) =>
+  page.evaluate((tag) => {
+    let out: [number, number, { x: number; y: number }, { x: number; y: number } | null] | null =
+      null;
+    for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+      for (const u of cs.entities?.updated ?? []) {
+        if (u.after.geom.kind !== 'INSERT') continue;
+        const a = (u.after.geom as InsertGeometry).attributes.find((x) => x.tag === tag);
+        if (a) out = [a.halign, a.valign, a.position, a.alignmentPoint ?? null];
+      }
+    }
+    return out;
+  }, tag);
+
+// M2-27: a double click on an attribute's text opens the editor on that attribute; its
+// Justification moves the text about the insertion point, which stays; Annotative is shown
+// only, and the Plot style offers the drawing's named plot styles.
+test('a double click on an attribute selects it; Justification keeps its insertion point', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const at = await open(page);
+  // DWG_NO "OET-1001", 3.5 high, starts at block (42, 38): drawing (272, 48).
+  const dwgNo = at(276, 49.5);
+  await page.screenshot({ path: test.info().outputPath('8-before-justification.png') });
+  await page.mouse.dblclick(dwgNo.x, dwgNo.y);
+  const dialog = page.getByRole('dialog', { name: 'Enhanced Attribute Editor' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByTestId('eattedit-tag')).toHaveText('DWG_NO');
+  await expect(
+    dialog.getByRole('listbox', { name: 'Attributes' }).getByRole('option', { selected: true }),
+  ).toContainText('OET-1001');
+
+  await dialog.getByRole('tab', { name: 'Text Options' }).click();
+  const justification = dialog.getByRole('combobox', { name: 'Justification:' });
+  await expect(justification).toBeEnabled();
+  await expect(justification).toHaveValue('0,0');
+  await justification.selectOption({ label: 'Middle center' });
+  const annotative = dialog.getByRole('checkbox', { name: 'Annotative' });
+  await expect(annotative).toBeDisabled();
+  await expect(annotative).not.toBeChecked();
+  await page.screenshot({ path: test.info().outputPath('9-justification.png') });
+  await dialog.getByRole('tab', { name: 'Properties' }).click();
+  // The test drawing uses named plot styles ($PSTYLEMODE 0) and names none: ByLayer only.
+  const plotStyle = dialog.getByRole('combobox', { name: 'Plot style:' });
+  await expect(plotStyle).toBeEnabled();
+  await expect(plotStyle).toHaveValue('');
+  await expect(plotStyle.getByRole('option')).toHaveText(['ByLayer']);
+
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toBeHidden();
+  await expect.poll(() => placement(page, 'DWG_NO')).not.toBeNull();
+  const [halign, valign, position, alignmentPoint] = (await placement(page, 'DWG_NO'))!;
+  expect([halign, valign]).toEqual([1, 2]);
+  // The insertion point stays; the baseline start moves left by half the text and down by half
+  // its height, as measured in the drawing's font.
+  expect(alignmentPoint).toEqual({ x: 272, y: 48 });
+  expect(position.x).toBeLessThan(272);
+  expect(position.y).toBeCloseTo(48 - 3.5 / 2, 6);
+  await page.screenshot({ path: test.info().outputPath('10-after-justification.png') });
+});

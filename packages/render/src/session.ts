@@ -24,6 +24,8 @@ import {
   type MTextGeometry,
   type OsnapHit,
   type OsnapQuery,
+  type TextGeometry,
+  type TextOutline,
   type Tolerance,
   type UnderlaySnapPage,
 } from '@triya/engine';
@@ -37,7 +39,7 @@ import {
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
 import { columnCounter, textMeasure, type TextContext } from './text';
-import { textBounds } from './text-bounds';
+import { textBounds, textOutline } from './text-bounds';
 import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
 import { plotParts, type PlotPart } from './plot/job';
 import type { PlotStyleTable } from './plot/plot-style-table';
@@ -259,6 +261,12 @@ export class RenderSession {
   columnCounts(texts: readonly MTextGeometry[]): (number | null)[] {
     const count = columnCounter(this.#text);
     return texts.map((t) => count(t) ?? null);
+  }
+
+  /** Where texts lie as drawn in the fonts loaded now (`textOutline`, M2-27). */
+  textOutlines(texts: readonly (TextGeometry | MTextGeometry)[]): (TextOutline | null)[] {
+    const outline = textOutline(this.#text);
+    return texts.map((t) => outline(t) ?? null);
   }
 
   /**

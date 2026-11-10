@@ -202,9 +202,14 @@ export interface AttributeEntry {
   /** DXF 70: 1 invisible, 2 constant, 4 verify, 8 preset. */
   readonly flags: number;
   readonly style: Handle;
-  /** DXF 72/73 (justification), shown and not changed here. */
+  /**
+   * DXF 72/73, the justification (M2-27: EATTEDIT changes it, keeping the insertion point). A
+   * multiline attribute's is its MTEXT's `attachment` instead.
+   */
   readonly halign: number;
   readonly valign: number;
+  /** A multiline attribute's MTEXT attachment point, 1–9 (top left to bottom right). */
+  readonly attachment?: number;
   readonly height: number;
   /** Radians, the WCS angle of the baseline. */
   readonly rotation: number;
@@ -217,6 +222,13 @@ export interface AttributeEntry {
   readonly color: Color;
   readonly linetype: LinetypeRef;
   readonly lineweight: Lineweight;
+  /** The named plot style (DXF 390), null for ByLayer (M2-27). */
+  readonly plotStyle: Handle | null;
+  /**
+   * The attribute is annotative: shown, not changed, as making an object annotative is a PRD
+   * non-goal (DEC-013).
+   */
+  readonly annotative: boolean;
 }
 
 /** What an attribute dialog may change of one attribute (absent: unchanged). */
@@ -235,6 +247,10 @@ export type AttributePatch = { readonly handle: Handle } & Partial<
     | 'color'
     | 'linetype'
     | 'lineweight'
+    | 'halign'
+    | 'valign'
+    | 'attachment'
+    | 'plotStyle'
   >
 >;
 
@@ -260,6 +276,11 @@ export type DialogRequest =
       readonly styles: readonly NamedRecord[];
       readonly layers: readonly NamedRecord[];
       readonly linetypes: readonly NamedRecord[];
+      /**
+       * The drawing's named plot styles (ACAD_PLOTSTYLENAME), offered with ByLayer; absent in a
+       * colour-dependent drawing ($PSTYLEMODE 1), where the Plot style shows ByColor (M2-27).
+       */
+      readonly plotStyles?: readonly NamedRecord[];
     }
   | {
       readonly type: 'attedit';
