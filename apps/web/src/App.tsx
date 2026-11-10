@@ -28,14 +28,23 @@ import {
   setCurrentTile,
   tilesOf,
 } from './canvas/registry';
-import { answerView, type ViewContext } from './canvas/view-host';
+import { answerView, type PlotScriptRequest, type ViewContext } from './canvas/view-host';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
 import { AttributeDialogs } from './AttributeDialogs';
 import { PlotDialog, download, plotDialog } from './PlotDialog';
 import { PublishDialog, publishDialog } from './PublishDialog';
-import { plotFile, plotFileName, windowBox } from './plot';
+import {
+  appliedPageSetup,
+  defaultPlotSettings,
+  plotFile,
+  plotFileName,
+  plotPage,
+  windowBox,
+} from './plot';
+import { scriptSettings, scriptSetup } from './plot-script';
+import { plotSpaceOf } from './plot-spaces';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
@@ -89,7 +98,13 @@ import { UndoToast } from './UndoToast';
 import { PdfPages, fileKey } from './underlay/pages';
 import { openPdf } from './underlay/pdfjs';
 import { PlotPreview } from './PlotPreview';
-import { lastPlotSettings, previewMode, previewOf, previewSettings } from './plot-preview';
+import {
+  lastPlotSettings,
+  plotRequest,
+  previewMode,
+  previewOf,
+  previewSettings,
+} from './plot-preview';
 import {
   loadXrefFiles,
   missingFileNames,
@@ -246,6 +261,7 @@ function viewContext(id: number): ViewContext {
     views: () => (doc && target ? namedViewsOf(doc, target.size) : []),
     save: (name, view) => doc && store.saveView(doc.id, name, view),
     file: (action, window, resume) => fileCommand(id, action, window, resume),
+    plot: (r) => plotScript(id, r),
     clipboard: (content) => clipboardRequest(id, content),
     // PROPERTIES and PROPERTIESCLOSE (M2-21).
     palette: (name, open) => {
@@ -364,6 +380,60 @@ async function fileCommand(
     return { ok: true, ...(doc && { file: doc.name }) };
   }
   return { ok: false, message: store.getSnapshot().error ?? 'Save cancelled.' };
+}
+
+/**
+ * -PLOT (M2-17 part 5): the settings a space plots with, as the Plot dialog opens on it, and the
+ * plot the command line's answers make, written as the dialog's OK writes it. "Save changes to
+ * page setup" applies them to the space's page setup first, as Apply to Layout does, and the
+ * plot is then what the page setup says (the plotter as answered).
+ */
+async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  const active = doc && controllerOf(doc.id, doc.block);
+  if (!doc || !active) return { ok: false, message: 'There is nothing to plot.' };
+  const spaces = spacesOf(doc, engines.changesOf(doc.id));
+  const shown = spaces.find((s) => s.block === doc.block);
+  const named = r.op === 'plotSetup' ? (r.layout ?? shown?.name) : r.script.layout;
+  const target = spaces.find((s) => s.name.toUpperCase() === named?.toUpperCase());
+  if (!target) return { ok: false, message: `Layout "${named ?? ''}" not found.` };
+  const tables = userPlotStyleTables();
+  let space = await plotSpaceOf(doc, target.block, target.name, tables);
+  if (!space) return { ok: false, message: 'There is nothing to plot.' };
+  if (r.op === 'plotSetup') {
+    const names = spaces.map((s) => s.name);
+    return { ok: true, plotSetup: scriptSetup(space, doc.name, names) };
+  }
+  try {
+    let settings = scriptSettings(space, r.script.settings);
+    plotPage(settings, space);
+    const layout = space.pageSetup?.layout;
+    if (r.script.save && layout) {
+      const result = await engines.edit(id, {
+        kind: 'layout',
+        layout,
+        plot: appliedPageSetup(settings, space),
+      });
+      if (!result.ok) throw new Error(result.message);
+      if (Object.keys(result.change).length > 0) {
+        await Promise.all(controllersOf(id).map((c) => c.flush()));
+        store.edited(id);
+      }
+      space = (await plotSpaceOf(doc, target.block, target.name, tables)) ?? space;
+      settings = { ...defaultPlotSettings(space), device: settings.device };
+    }
+    if (!r.script.plot) return { ok: true };
+    const page = plotPage(settings, space);
+    const parts = await active.plot({ block: target.block, ...plotRequest(settings, space) });
+    const title = `${doc.name} - ${space.name}`;
+    const underlayFile = (f: string) => pdfPages.bytes(f);
+    const file = await plotFile(parts, page, settings, space, title, underlayFile);
+    download(r.script.file, file.bytes, file.type);
+    lastPlotSettings.set(id, target.block, settings);
+    return { ok: true, file: r.script.file };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
 }
 
 /**

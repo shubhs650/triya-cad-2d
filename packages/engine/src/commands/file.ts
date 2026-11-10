@@ -17,6 +17,8 @@
 // the dialog again with that window. Esc at the corners opens the dialog again as it was, as
 // AutoCAD's does (part 3).
 //
+// -PLOT (part 5) asks for the plot at the command line instead: see plot-script.ts.
+//
 // PUBLISH (M2-17 part 2): AutoCAD 2024 Help, "PUBLISH": "Publishes drawings to DWF, DWFx, and
 // PDF files, or to plotters", through the Publish dialog box, which is the app's too.
 //
@@ -27,6 +29,7 @@
 import type { CommandDef, CommandGenerator } from './command';
 import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
+import { dashPlot } from './plot-script';
 import type { Vec2 } from '../geom/types';
 
 function fileCommand(name: string, action: FileAction): CommandDef {
@@ -51,11 +54,16 @@ function previewCommand(): CommandDef {
   };
 }
 
-/** PLOT and PRINT: the dialog, then a window's corners whenever its Window< button asks. */
+/**
+ * PLOT and PRINT: the dialog, then a window's corners whenever its Window< button asks; -PLOT
+ * asks for everything at the command line (part 5).
+ */
 function plotCommand(name: string): CommandDef {
   return {
     name,
+    ...(name === 'PLOT' && { dashVariant: true }),
     async *run(ctx): CommandGenerator {
+      if (ctx.dash) return yield* dashPlot(ctx);
       let window: { a: Vec2; b: Vec2 } | undefined;
       let resume = false;
       for (;;) {
