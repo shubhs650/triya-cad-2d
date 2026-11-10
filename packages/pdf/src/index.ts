@@ -1,4 +1,4 @@
-// @triya/pdf: Vector PDF writer (CTB-aware), PDF underlay via pdf.js.
+// @triya/pdf: Vector PDF writer (CTB-aware); PDF underlay pages copied into plots (reader.ts).
 // Runs in Node and in a Web Worker: no DOM or browser globals (enforced by tsconfig `lib` and ESLint).
 export { ContentStream, pdfNumber, type LineCap, type LineJoin, type Rgb } from './content';
 export {
@@ -48,7 +48,31 @@ export {
   type PlotPaint,
   type PlotPathItem,
   type PlotPointItem,
+  type PlotUnderlay,
 } from './plot';
+export {
+  PdfImports,
+  pageView,
+  underlayPageIndex,
+  type ImportedForm,
+  type ObjectBody,
+  type ObjectWriter,
+  type PageView,
+  type UnderlayLook,
+} from './import';
+export {
+  PdfName,
+  PdfReadError,
+  PdfRef,
+  PdfSource,
+  PdfStream,
+  PdfString,
+  pdfReal,
+  writeValue,
+  type PdfDict,
+  type PdfPageEntry,
+  type PdfValue,
+} from './reader';
 export {
   FILL_CELL,
   FILL_STYLES,

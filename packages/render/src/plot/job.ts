@@ -24,8 +24,10 @@
 //   model space geometry", which contradicts its name; the name and the usual reading (off:
 //   paper space first) are encoded here, an ambiguity noted in the PR.
 //
-// Not plotted yet: PDF underlays (their page's own content in a plot is M2-16 part 5) and an
-// image whose bitmap the app has not loaded, which plots its frame only.
+// - A PDF underlay plots its page's own content (M2-16 part 5): the part names its definition's
+//   file and page, and the PDF writer copies that page from the file the app supplied.
+//
+// Not plotted: an image whose bitmap the app has not loaded, which plots its frame only.
 
 import {
   viewportFrame,
@@ -40,6 +42,7 @@ import {
   type EntityId,
   type Handle,
   type NonGraphicalObject,
+  type PdfDefinition,
   type SortEntsTable,
   type ViewportGeometry,
 } from '@triya/engine';
@@ -103,6 +106,23 @@ export interface PlotPathPart extends PlotPartBase {
   };
   /** TrueType text: the glyphs the fill's outlines draw (M2-16 part 3). */
   readonly glyphs?: readonly PlotGlyphPart[];
+  /** A PDF underlay (`@triya/pdf` `PlotUnderlay`); the path is its clip boundary. */
+  readonly underlay?: PlotUnderlayPart;
+}
+
+/** A PDF underlay's page as a plot shows it: the definition's file and page, and its settings. */
+export interface PlotUnderlayPart {
+  readonly definition: Handle;
+  /** DXF 1 of the PDFDEFINITION: the file as the drawing names it. */
+  readonly fileName: string;
+  /** DXF 2 of the PDFDEFINITION: the page number from 1. */
+  readonly page: string;
+  /** Underlay space (inches) → the space's units. */
+  readonly frame: PrimitiveFrame;
+  readonly clipped: boolean;
+  readonly contrast: number;
+  readonly fade: number;
+  readonly monochrome: boolean;
 }
 
 /** A placed TrueType glyph (`PlacedGlyph`), its font reduced to what a PDF embeds. */
@@ -355,7 +375,27 @@ class Plotter {
         ...common,
       };
     }
-    if (prim.underlay) return undefined;
+    const u = prim.underlay;
+    if (u) {
+      const def = this.#model.objects.get(u.definition);
+      const pdf = def?.type === 'PDFDEFINITION' ? (def as PdfDefinition) : undefined;
+      return {
+        kind: 'fill',
+        path: prim.path,
+        paint: props,
+        underlay: {
+          definition: u.definition,
+          fileName: pdf?.fileName ?? '',
+          page: pdf?.page ?? '1',
+          frame: u.frame,
+          clipped: u.clipped,
+          contrast: u.contrast,
+          fade: u.fade,
+          monochrome: u.monochrome,
+        },
+        ...common,
+      };
+    }
     // A missing image's name shows only while its bitmap is not loaded.
     if (prim.missingImage !== undefined && this.#src.images?.(prim.missingImage)) return undefined;
     const solid: PlotProperties = { ...props, linetype: { kind: 'object' }, fillStyle: 'solid' };

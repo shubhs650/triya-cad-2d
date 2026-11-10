@@ -9,7 +9,15 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
-import { DWG, activeCanvas, expectShown, openWithPicker, paperPixels } from '../app/page';
+import {
+  DWG,
+  activeCanvas,
+  expectShown,
+  ink,
+  openWithDrop,
+  openWithPicker,
+  paperPixels,
+} from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -101,6 +109,33 @@ test('PLOT on a layout plots its sheet on the paper of its page setup', async ({
   expect(pdf.height).toBeCloseTo(h!, 0);
   expect(pdf.labels).toEqual(['Layout1']);
   expect(pdf.paths).toBeGreaterThan(10);
+});
+
+// M2-16 part 5: a PDF underlay plots its page's own content from the file the user dropped.
+test('a PDF underlay plots its page as vectors and text once its file is supplied', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const fixtures = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
+  await page.goto(app.url);
+  await openWithPicker(page, path.join(fixtures, 'pdf-underlay.dxf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(50);
+  await openWithDrop(page, path.join(fixtures, 'pdf-underlay.pdf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d.getByRole('heading')).toHaveText('Plot - Model');
+  await d.getByLabel('What to plot').selectOption('extents');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'OK' }).click(),
+  ]);
+  const pdf = await readPdf(download);
+  // Both underlays' pages are forms; page 1's Helvetica text is still text.
+  expect(pdf.forms).toBe(2);
+  expect(pdf.text).toContain('TRIYA');
 });
 
 const prompt = (page: Page) => page.getByTestId('command-prompt');

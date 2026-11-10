@@ -71,6 +71,8 @@ export function publishPdf(
     readonly parts: readonly PlotPart[];
   }[],
   title: string,
+  /** The PDF file a PDF underlay names (M2-16 part 5), as the Plot dialog plots it. */
+  underlayFile?: (fileName: string) => Uint8Array | undefined,
 ): { bytes: Uint8Array | undefined; failed: PublishFailure[] } {
   const doc = new PdfDocument({ title, creator: 'Triya CAD 2D' });
   const failed: PublishFailure[] = [];
@@ -78,7 +80,7 @@ export function publishPdf(
   for (const { sheet, space, parts } of sheets) {
     const settings = defaultPlotSettings(space);
     try {
-      addPlotPage(doc, parts, plotPage(settings, space), settings, space, sheet);
+      addPlotPage(doc, parts, plotPage(settings, space), settings, space, sheet, underlayFile);
       pages++;
     } catch (e) {
       failed.push({ sheet, message: e instanceof Error ? e.message : String(e) });

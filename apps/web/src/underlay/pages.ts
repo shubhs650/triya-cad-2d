@@ -136,6 +136,11 @@ export class PdfPages {
     }
   }
 
+  /** The bytes of the file of this name, as supplied (a plot copies its pages, M2-16 part 5). */
+  bytes(fileName: string): Uint8Array | undefined {
+    return this.#files.get(fileKey(fileName))?.bytes;
+  }
+
   /** Whether a file of this name was supplied. */
   has(fileName: string): boolean {
     return this.#files.has(fileKey(fileName));

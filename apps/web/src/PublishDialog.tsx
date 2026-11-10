@@ -37,13 +37,22 @@ export const publishDialog = (() => {
   };
 })();
 
-export function PublishDialog({ doc }: { doc: OpenDocument | undefined }) {
+/** The PDF file a PDF underlay names (M2-16 part 5): its pages plot as the Plot dialog's do. */
+type UnderlayFile = (fileName: string) => Uint8Array | undefined;
+
+export function PublishDialog({
+  doc,
+  underlayFile,
+}: {
+  doc: OpenDocument | undefined;
+  underlayFile?: UnderlayFile;
+}) {
   const open = useSyncExternalStore(publishDialog.subscribe, publishDialog.get);
   if (!doc || open !== doc.id) return null;
-  return <PublishBody key={doc.id} doc={doc} />;
+  return <PublishBody key={doc.id} doc={doc} {...(underlayFile && { underlayFile })} />;
 }
 
-function PublishBody({ doc }: { doc: OpenDocument }) {
+function PublishBody({ doc, underlayFile }: { doc: OpenDocument; underlayFile?: UnderlayFile }) {
   const ref = useRef<HTMLDialogElement>(null);
   const [sheets, setSheets] = useState<PublishSheet[]>(() =>
     publishSheets(doc.name, spacesOf(doc, engines.changesOf(doc.id))),
@@ -83,7 +92,7 @@ function PublishBody({ doc }: { doc: OpenDocument }) {
             });
         plotted.push({ sheet: s.sheet, space, parts: await active.plot({ block: s.block }) });
       }
-      const { bytes, failed } = publishPdf(plotted, doc.name.replace(/\.[^.]+$/, ''));
+      const { bytes, failed } = publishPdf(plotted, doc.name.replace(/\.[^.]+$/, ''), underlayFile);
       if (bytes) downloadPdf(publishFileName(doc.name), bytes);
       if (failed.length === 0) {
         publishDialog.close();

@@ -154,16 +154,23 @@ export class ContentStream {
     return this;
   }
 
-  /** `cm`: maps user space through `m` (x' = a·x + c·y + e, y' = b·x + d·y + f). */
-  transform(m: {
-    readonly a: number;
-    readonly b: number;
-    readonly c: number;
-    readonly d: number;
-    readonly e: number;
-    readonly f: number;
-  }): this {
-    this.ops.push(`${n(m.a)} ${n(m.b)} ${n(m.c)} ${n(m.d)} ${n(m.e)} ${n(m.f)} cm`);
+  /**
+   * `cm`: maps user space through `m` (x' = a·x + c·y + e, y' = b·x + d·y + f), its numbers
+   * written by `write` (four decimals unless given).
+   */
+  transform(
+    m: {
+      readonly a: number;
+      readonly b: number;
+      readonly c: number;
+      readonly d: number;
+      readonly e: number;
+      readonly f: number;
+    },
+    write: (v: number) => string = n,
+  ): this {
+    const w = write;
+    this.ops.push(`${w(m.a)} ${w(m.b)} ${w(m.c)} ${w(m.d)} ${w(m.e)} ${w(m.f)} cm`);
     return this;
   }
 
