@@ -13,7 +13,15 @@
 // None of the copying commands changes the drawing, so none is an undo step; a paste is one.
 import type { Box } from '../../geom/bounds';
 import type { Vec2 } from '../../geom/types';
-import { copyToClipboard, pasteAsBlock, pasteObjects, type Clipboard } from '../../edit/clipboard';
+import {
+  copyToClipboard,
+  pasteAsBlock,
+  pasteObjects,
+  pasteScale,
+  type Clipboard,
+} from '../../edit/clipboard';
+import { point, scaleAbout } from '../../edit/similarity';
+import { transformGeometry } from '../../edit/transform';
 import { eraseObjects, refusalMessages } from '../../edit/edit';
 import type { EntityId } from '../../model/entity-ids';
 import type { EntityGeometry } from '../../model/types';
@@ -80,23 +88,30 @@ async function fromClipboard(
   return { clipboard: reply.clipboard, sameDrawing: reply.sameDrawing === true };
 }
 
-/** What PASTECLIP drags: the curves among the objects, and their extents' frame. */
-function previewOf(clip: Clipboard): EntityGeometry[] {
+/**
+ * What PASTECLIP drags: the curves among the objects, and their extents' frame, scaled by `k`
+ * about the base point as the paste will scale them (M2-32).
+ */
+function previewOf(clip: Clipboard, k: number): EntityGeometry[] {
+  const t = scaleAbout(clip.base, k);
   const out: EntityGeometry[] = [];
   if (clip.entities.length <= DRAGGED) {
-    for (const e of clip.entities) if (DRAWN.has(e.geom.kind)) out.push(e.geom);
+    for (const e of clip.entities) {
+      if (DRAWN.has(e.geom.kind)) out.push(k === 1 ? e.geom : transformGeometry(e.geom, t));
+    }
   }
   const box = clip.extents;
   if (box) {
+    const corners = [
+      { x: box.minX, y: box.minY },
+      { x: box.maxX, y: box.minY },
+      { x: box.maxX, y: box.maxY },
+      { x: box.minX, y: box.maxY },
+    ];
     out.push({
       kind: 'LWPOLYLINE',
       closed: true,
-      vertices: [
-        { x: box.minX, y: box.minY, bulge: 0 },
-        { x: box.maxX, y: box.minY, bulge: 0 },
-        { x: box.maxX, y: box.maxY, bulge: 0 },
-        { x: box.minX, y: box.maxY, bulge: 0 },
-      ],
+      vertices: corners.map((c) => ({ ...(k === 1 ? c : point(t, c)), bulge: 0 })),
     });
   }
   return out;
@@ -104,7 +119,7 @@ function previewOf(clip: Clipboard): EntityGeometry[] {
 
 /** "Specify insertion point:" with the Clipboard's objects at the cursor. */
 async function* insertionPoint(ctx: CommandContext, clip: Clipboard): Sub<Vec2 | undefined> {
-  ctx.preview(previewOf(clip));
+  ctx.preview(previewOf(clip, pasteScale(ctx.model, clip)));
   const a = yield ctx.prompt.point({
     message: 'Specify insertion point',
     drag: { kind: 'preview', from: clip.base },

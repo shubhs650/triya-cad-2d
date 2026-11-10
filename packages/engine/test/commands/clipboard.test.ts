@@ -133,6 +133,30 @@ describe('COPYCLIP and PASTECLIP', () => {
   });
 });
 
+describe('PASTECLIP between drawings of other units (M2-32)', () => {
+  it('drags and pastes the objects scaled into the units of the drawing pasted into', async () => {
+    const a = app();
+    // The sample drawing is in millimetres; the one pasted into, in inches.
+    const one = a.drawing(1, sampleInit(), BOX);
+    const inches = sampleInit();
+    const two = a.drawing(2, { ...inches, meta: { ...inches.meta, insUnits: 1 } });
+    await one.bus.script(['COPYCLIP', 'ALL', '']);
+    expect(a.held()?.content.insUnits).toBe(4);
+    await two.bus.script(['PASTECLIP']);
+    const k = 1 / 25.4;
+    // What is dragged is as it will be pasted: the line 10 mm long, the frame 10 mm wide.
+    const dragged = two.previews.at(-1)!;
+    const [line] = dragged as unknown as { start: { x: number }; end: { x: number } }[];
+    expect(r6(line!.end.x - line!.start.x)).toBe(r6(10 * k));
+    const frame = dragged.at(-1) as unknown as { vertices: { x: number }[] };
+    expect(r6(frame.vertices[1]!.x - frame.vertices[0]!.x)).toBe(r6(10 * k));
+    await two.bus.script(['100,50']);
+    const pasted = two.added();
+    expect(ends(pasted[0]!)).toEqual([100, 50, r6(100 + 10 * k), 50]);
+    expect(pasted[1]!.geom).toMatchObject({ radius: expect.closeTo(2 * k, 9) });
+  });
+});
+
 describe('CUTCLIP', () => {
   it('puts the objects on the Clipboard and removes them, as one undo step', async () => {
     const a = app();

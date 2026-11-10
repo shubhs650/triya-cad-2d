@@ -11,3 +11,4 @@ export * from './width';
 export * from './xclip';
 export * from './xref';
 export * from './replica';
+export { insUnitsScale, metresPerUnit } from './units';
