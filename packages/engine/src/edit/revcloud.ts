@@ -21,7 +21,9 @@ import { flatten } from '../geom/flatten';
 import type { BoundedCurve } from '../geom/curves';
 import type { Vec2 } from '../geom/types';
 import { distance, lerp } from '../geom/vec';
+import type { DocumentModel } from '../model/document';
 import type {
+  Entity,
   EntityGeometry,
   ImageGeometry,
   LwPolylineGeometry,
@@ -253,4 +255,251 @@ export function wipeoutGeometry(points: readonly Vec2[]): ImageGeometry {
     fade: 0,
     clip: { type: 'polygon', vertices: ring, inverted: false },
   };
+}
+
+// ── Editing a cloud (M2-24) ─────────────────────────────────────────────────────────────────
+//
+// REVCLOUD's Modify option and the cloud's grips (REVCLOUDGRIPS on, AutoCAD's default) change
+// part of a cloud and keep the rest: the vertices of the part kept stay where they are, the new
+// part is cut into arcs of the cloud's own arc length, and every arc then bulges the way the
+// cloud's arcs did (out of the area for a Normal cloud, in for a reversed one).
+
+/** What editing a cloud needs to know of it. */
+export interface CloudInfo {
+  /** The arc length new arcs are cut to: the RevcloudProps 1040, else the mean chord. */
+  readonly arc: number;
+}
+
+/** Whether every segment of the polyline is an arc (the last vertex of an open one aside). */
+export function isCloudShaped(g: EntityGeometry): g is LwPolylineGeometry {
+  if (g.kind !== 'LWPOLYLINE' || g.vertices.length < 2) return false;
+  const n = g.closed ? g.vertices.length : g.vertices.length - 1;
+  return g.vertices.slice(0, n).every((v) => v.bulge !== 0);
+}
+
+const meanChord = (g: LwPolylineGeometry): number => {
+  const v = g.vertices;
+  const n = g.closed ? v.length : v.length - 1;
+  let l = 0;
+  for (let i = 0; i < n; i++) l += distance(v[i]!, v[(i + 1) % v.length]!);
+  return l / n;
+};
+
+/** The arc length a `RevcloudProps` xdata gives, if it has one. */
+function xdataArc(e: Entity, model: DocumentModel): number | undefined {
+  for (const app of e.xdata ?? []) {
+    const name = model.tables.appIds.get(app.appId)?.name;
+    if (name?.toUpperCase() !== REVCLOUD_APP.toUpperCase()) continue;
+    const arc = app.values.find((x) => x.code === 1040)?.value;
+    if (typeof arc === 'number' && arc > 0) return arc;
+  }
+  return undefined;
+}
+
+/** A polyline AutoCAD 2021+ knows as a revision cloud (its RevcloudProps xdata), else none. */
+export function revcloudOf(model: DocumentModel, e: Entity): CloudInfo | undefined {
+  if (!isCloudShaped(e.geom)) return undefined;
+  const arc = xdataArc(e, model);
+  return arc === undefined ? undefined : { arc };
+}
+
+/** A cloud-shaped polyline's arc length: its xdata's when it has one, else its mean chord. */
+export function cloudArcLength(model: DocumentModel, e: Entity & { geom: LwPolylineGeometry }) {
+  return xdataArc(e, model) ?? meanChord(e.geom);
+}
+
+/** +1 when the cloud's arcs bulge out of the area it encloses (Normal), −1 when in. */
+function cloudSense(g: LwPolylineGeometry): number {
+  const b = g.vertices.find((v) => v.bulge !== 0)?.bulge ?? REVCLOUD_BULGE;
+  return Math.sign(b) === (signedArea2(g.vertices) >= 0 ? 1 : -1) ? 1 : -1;
+}
+
+/**
+ * `vertices` as a cloud bulging as `sense` says (+1 out, −1 in): each arc keeps its own size,
+ * new vertices (bulge 0) take AutoCAD's; the last vertex of an open cloud has none.
+ */
+function rebulge(
+  vertices: readonly PolylineVertex[],
+  closed: boolean,
+  sense: number,
+): LwPolylineGeometry {
+  const sign = sense * (signedArea2(vertices) >= 0 ? 1 : -1);
+  const out = vertices.map((v, i) => {
+    if (!closed && i === vertices.length - 1) {
+      const { startWidth: _s, endWidth: _e, ...rest } = v;
+      return { ...rest, bulge: 0 };
+    }
+    return { ...v, bulge: sign * (v.bulge !== 0 ? Math.abs(v.bulge) : REVCLOUD_BULGE) };
+  });
+  return { kind: 'LWPOLYLINE', closed, vertices: out };
+}
+
+/** New vertices at `points`, as wide as the cloud's calligraphy arcs when it has them. */
+function newVertices(g: LwPolylineGeometry, points: readonly Vec2[]): PolylineVertex[] {
+  const width = Math.max(0, ...g.vertices.map((v) => v.endWidth ?? 0));
+  return points.map((p) => ({
+    x: p.x,
+    y: p.y,
+    bulge: 0,
+    ...(width > 0 && { startWidth: 0, endWidth: width }),
+  }));
+}
+
+/** The vertices strictly between the ends of a cloud run through `path` (straight sides). */
+function between(path: readonly Vec2[], arc: number): Vec2[] {
+  const runs = path.slice(1).map((p, i) => [path[i]!, p]);
+  return cloudPoints(runs, false, { minArc: arc, maxArc: arc, calligraphy: false }).slice(1, -1);
+}
+
+/** Vertex indices from `from` to `to` going forward, both included (round a closed cloud). */
+function forward(n: number, from: number, to: number): number[] {
+  const out = [from];
+  for (let i = from; i !== to;) {
+    i = (i + 1) % n;
+    out.push(i);
+  }
+  return out;
+}
+
+/**
+ * The cloud's corners, as REVCLOUDGRIPS shows them: the vertices where its chords turn (a
+ * rectangular or polygonal cloud's corners), and an open cloud's ends. AutoCAD's help says
+ * only that a cloud shows "the minimal number of grips required"; Triya reads the corners from
+ * the chords, which REVCLOUD lays straight along each side, so a curved cloud (from a circle,
+ * an ellipse, freehand) keeps a grip at every vertex.
+ */
+export function cloudCorners(g: LwPolylineGeometry): number[] {
+  const v = g.vertices;
+  const n = v.length;
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) {
+    if (!g.closed && (i === 0 || i === n - 1)) {
+      out.push(i);
+      continue;
+    }
+    const a = v[(i - 1 + n) % n]!;
+    const b = v[i]!;
+    const c = v[(i + 1) % n]!;
+    const d1 = { x: b.x - a.x, y: b.y - a.y };
+    const d2 = { x: c.x - b.x, y: c.y - b.y };
+    const l = Math.hypot(d1.x, d1.y) * Math.hypot(d2.x, d2.y);
+    const cross = d1.x * d2.y - d1.y * d2.x;
+    const dot = d1.x * d2.x + d1.y * d2.y;
+    if (!(l > 0) || Math.abs(cross) > 1e-9 * l || dot < 0) out.push(i);
+  }
+  return out;
+}
+
+/**
+ * The cloud with its corner `index` dragged to `to`: the sides from the corners on either side
+ * cut into arcs afresh, every other vertex kept.
+ */
+export function moveCloudCorner(
+  g: LwPolylineGeometry,
+  index: number,
+  to: Vec2,
+  arc: number,
+): LwPolylineGeometry {
+  const v = g.vertices;
+  const n = v.length;
+  const corners = cloudCorners(g);
+  const k = corners.indexOf(index);
+  const sense = cloudSense(g);
+  const at = (i: number) => v[i]!;
+  if (g.closed) {
+    if (corners.length < 2) {
+      return rebulge(newVertices(g, [to]), true, sense);
+    }
+    const prev = corners[(k - 1 + corners.length) % corners.length]!;
+    const next = corners[(k + 1) % corners.length]!;
+    const kept = forward(n, next, prev).map(at);
+    const fresh = newVertices(g, [
+      ...between([at(prev), to], arc),
+      to,
+      ...between([to, at(next)], arc),
+    ]);
+    return rebulge([...kept, ...fresh], true, sense);
+  }
+  const before = k > 0 ? corners[k - 1]! : undefined;
+  const after = k < corners.length - 1 ? corners[k + 1]! : undefined;
+  const head = before === undefined ? [] : v.slice(0, before + 1);
+  const tail = after === undefined ? [] : v.slice(after);
+  const fresh = newVertices(g, [
+    ...(before === undefined ? [] : between([at(before), to], arc)),
+    to,
+    ...(after === undefined ? [] : between([to, at(after)], arc)),
+  ]);
+  return rebulge([...head, ...fresh, ...tail], false, sense);
+}
+
+/** The distance from `p` to the chain of chords through `points` (Infinity when none). */
+function chainDistance(p: Vec2, points: readonly Vec2[]): number {
+  let best = points.length === 1 ? distance(p, points[0]!) : Infinity;
+  for (let i = 1; i < points.length; i++) {
+    const a = points[i - 1]!;
+    const b = points[i]!;
+    const d = { x: b.x - a.x, y: b.y - a.y };
+    const l2 = d.x * d.x + d.y * d.y;
+    const t = l2 > 0 ? Math.min(1, Math.max(0, ((p.x - a.x) * d.x + (p.y - a.y) * d.y) / l2)) : 0;
+    best = Math.min(best, distance(p, { x: a.x + t * d.x, y: a.y + t * d.y }));
+  }
+  return best;
+}
+
+/**
+ * REVCLOUD Modify: the cloud with a new stretch from vertex `start` through `points` to vertex
+ * `end`, the part of the cloud between them that lies nearer `side` erased. A closed cloud has
+ * two parts between the vertices; an open one the part between them and the parts outside
+ * them (erasing those closes the cloud: the part kept and the new stretch go round). AutoCAD's
+ * help describes only the closed case ("Pick a side to erase").
+ */
+export function modifyCloud(
+  g: LwPolylineGeometry,
+  start: number,
+  points: readonly Vec2[],
+  end: number,
+  side: Vec2,
+  arc: number,
+): LwPolylineGeometry {
+  const v = g.vertices;
+  const n = v.length;
+  const sense = cloudSense(g);
+  const at = (i: number) => v[i]!;
+  if (g.closed) {
+    const ahead = forward(n, start, end).map(at); // erased when picked: start → end
+    const behind = forward(n, end, start).map(at);
+    const path = [at(start), ...points, at(end)];
+    if (chainDistance(side, ahead) <= chainDistance(side, behind)) {
+      // Kept: end → start; the stretch goes on from start to end.
+      const fresh = newVertices(g, stretch(path, arc));
+      return rebulge([...behind, ...fresh], true, sense);
+    }
+    const fresh = newVertices(g, stretch([...path].reverse(), arc));
+    return rebulge([...ahead, ...fresh], true, sense);
+  }
+  const [a, b, path] =
+    start < end
+      ? [start, end, [at(start), ...points, at(end)]]
+      : [end, start, [at(start), ...points, at(end)].reverse()];
+  const inside = v.slice(a, b + 1);
+  const outside = Math.min(
+    a > 0 ? chainDistance(side, v.slice(0, a + 1)) : Infinity,
+    b < n - 1 ? chainDistance(side, v.slice(b)) : Infinity,
+  );
+  if (chainDistance(side, inside) <= outside) {
+    const fresh = newVertices(g, stretch(path, arc));
+    return rebulge([...v.slice(0, a + 1), ...fresh, ...v.slice(b)], false, sense);
+  }
+  const fresh = newVertices(g, stretch([...path].reverse(), arc));
+  return rebulge([...inside, ...fresh], true, sense);
+}
+
+/** A stretch's own vertices: its corners and its arcs' ends, without its two ends. */
+function stretch(path: readonly Vec2[], arc: number): Vec2[] {
+  const out: Vec2[] = [];
+  for (let i = 1; i < path.length; i++) {
+    out.push(...between([path[i - 1]!, path[i]!], arc));
+    if (i < path.length - 1) out.push(path[i]!);
+  }
+  return out;
 }

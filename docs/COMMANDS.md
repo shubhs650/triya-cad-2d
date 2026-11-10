@@ -27,7 +27,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | BOUNDARY | BO | 2 | Island detection, object type (polyline/region) | |
 | REGION | REG | 3 | 2D only | |
 | WIPEOUT | — | 1 | Frames, Polyline | x (#231; Frames ON/OFF, "Display but not plot" in M2-24) |
-| REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | ~ (#231: all but Modify, which is M2-24) |
+| REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | x (#231; Modify and corner grips #258) |
 | DIVIDE | DIV | 2 | Block | |
 | MEASURE | ME | 2 | Block | |
 | MLINE | ML | 3 | read/render required; creation Should | |

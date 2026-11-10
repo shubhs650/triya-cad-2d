@@ -15,7 +15,12 @@ import {
   cloudPoints,
   cloudRandom,
   cloudRunsOf,
+  cloudCorners,
   distinctVertices,
+  gripsOf,
+  modifyCloud,
+  moveCloudCorner,
+  revcloudOf,
   rectangleCorners,
   signedArea2,
   wipeoutGeometry,
@@ -95,7 +100,7 @@ describe('REVCLOUD', () => {
       'Minimum arc length: 0.5000   Maximum arc length: 0.5000   Style: Normal   Type: Rectangular',
     );
     expect(s.bus.promptText).toBe(
-      'Specify first corner point or [Arc length/Object/Rectangular/Polygonal/Freehand/Style] <Object>:',
+      'Specify first corner point or [Arc length/Object/Rectangular/Polygonal/Freehand/Style/Modify] <Object>:',
     );
   });
 
@@ -568,6 +573,334 @@ describe('WIPEOUT', () => {
     ).toEqual([
       { x: 0, y: 0 },
       { x: 1, y: 0 },
+    ]);
+  });
+});
+
+// M2-24: REVCLOUD Modify (AutoCAD 2021+, "REVCLOUD (Command)": "The closest vertex to where you
+// select the revision cloud determines the start of the section that you want to replace";
+// "Next point … repeats until you click an existing vertex in the revision cloud"; "Pick a side
+// to erase … Removes the section of the revision cloud that you select"; "Reverse direction
+// … Inverts the arcs") and the cloud's grips with REVCLOUDGRIPS on.
+describe('REVCLOUD Modify', () => {
+  /** A 10 × 5 rectangular cloud of 1-unit arcs from (0,0), and a canvas whose picks take it. */
+  async function clouded() {
+    let picks: EntityId[] = [];
+    const s = setup(
+      sampleInit(),
+      host(undefined, () => picks),
+    );
+    await s.bus.script(['REVCLOUD', 'A', '1', '1', '0,0', '10,5']);
+    const [cloud] = s.added();
+    picks = [cloud!.id];
+    const pickLine = () => (picks = [s.model.entityByHandle('20')!.id]);
+    const geom = () => cloudOf(s.model.entity(cloud!.id)!);
+    const has = (x: number, y: number) =>
+      geom().vertices.some((v) => r6(v.x) === x && r6(v.y) === y);
+    return { ...s, cloud: cloud!, geom, has, pickLine };
+  }
+
+  it('offers Modify, and replaces the side picked with the new stretch, keeping the cloud', async () => {
+    const s = await clouded();
+    await s.bus.script(['REVCLOUD']);
+    expect(s.bus.promptText).toMatch(/\/Style\/Modify\] <Object>:$/);
+    await s.bus.script(['M']);
+    expect(s.bus.promptText).toBe('Select polyline:');
+    // The vertex nearest the pick, (5,0), starts the new stretch.
+    await s.bus.script(['5.1,0.2']);
+    expect(s.bus.promptText).toBe('Specify next point:');
+    expect(s.bus.prompt).toMatchObject({ rubberBand: { from: { x: 5, y: 0 } } });
+    await s.bus.script(['5,-3']);
+    expect(s.bus.promptText).toBe('Specify next point or [Undo]:');
+    expect(s.bus.prompt).toMatchObject({ rubberBand: { from: { x: 5, y: -3 } } });
+    await s.bus.script(['8,-3', '8.1,0.1']);
+    expect(s.bus.promptText).toBe('Pick a side to erase:');
+    await s.bus.script(['6.5,0.3']);
+    expect(s.bus.promptText).toBe('Reverse direction [Yes/No] <No>:');
+    await s.bus.script(['']);
+    expect(s.log.at(-1)).toBe('Revision cloud finished.');
+    // Still the one cloud, its handle and xdata kept.
+    expect(s.added()).toHaveLength(1);
+    const after = s.model.entity(s.cloud.id)!;
+    expect(after.handle).toBe(s.cloud.handle);
+    expect(after.xdata).toEqual(s.cloud.xdata);
+    const g = s.geom();
+    expect(g.closed).toBe(true);
+    // 30 vertices less (6,0) and (7,0), and the stretch's 1-unit arcs: 3 + 3 + 3 chords.
+    expect(g.vertices).toHaveLength(28 + 8);
+    expect(s.has(6, 0) || s.has(7, 0)).toBe(false);
+    for (const [x, y] of [
+      [5, -1],
+      [5, -3],
+      [6, -3],
+      [8, -3],
+      [8, -1],
+      [5, 0],
+      [8, 0],
+      [0, 5],
+    ]) {
+      expect(s.has(x!, y!)).toBe(true);
+    }
+    expect(g.vertices.every((v) => v.bulge === REVCLOUD_BULGE)).toBe(true);
+    expect(signedArea2(g.vertices)).toBeGreaterThan(0);
+    // One undo step.
+    await s.bus.script(['U']);
+    expect(s.geom().vertices).toHaveLength(30);
+  });
+
+  it('erases the other side when it is picked, the arcs still bulging out', async () => {
+    const s = await clouded();
+    await s.bus.script(['REVCLOUD', 'M', '5,0', '5,-3', '8,-3', '8,0', '5,4', '']);
+    const g = s.geom();
+    expect(g.closed).toBe(true);
+    // (5,0)…(8,0) kept and the stretch back round: a 3 × 3 cloud.
+    expect(g.vertices).toHaveLength(12);
+    expect(g.vertices.every((v) => v.y <= 1e-9 && v.x >= 5 - 1e-9 && v.x <= 8 + 1e-9)).toBe(true);
+    expect(bulgesOut(g, { x: 5, y: -3 }, { x: 8, y: 0 })).toBe(true);
+  });
+
+  it('reverses the whole cloud on Yes', async () => {
+    const s = await clouded();
+    await s.bus.script(['REVCLOUD', 'M', '5,0', '5,-3', '8,-3', '8,0', '6,0', 'Y']);
+    expect(s.geom().vertices.every((v) => v.bulge === -REVCLOUD_BULGE)).toBe(true);
+  });
+
+  it('takes Undo, ignores a click on the last point, and asks again on Enter', async () => {
+    const s = await clouded();
+    await s.bus.script(['REVCLOUD', 'M', '5,0', '5,0', '5,-3', '5,-3', '9,-9', 'U']);
+    expect(s.bus.prompt).toMatchObject({ rubberBand: { from: { x: 5, y: -3 } } });
+    await s.bus.script(['U']);
+    expect(s.bus.promptText).toBe('Specify next point:');
+    await s.bus.script(['']);
+    expect(s.log.at(-1)).toBe('Click a vertex of the revision cloud to end the new stretch.');
+    expect(s.bus.promptText).toBe('Specify next point:');
+    // Straight to another vertex: the side between is cut into arcs afresh.
+    await s.bus.script(['8,0', '6,0', '']);
+    expect(s.geom().vertices).toHaveLength(30);
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it('refuses an object that is not a cloud, and ends on Enter with nothing selected', async () => {
+    const s = await clouded();
+    s.pickLine();
+    await s.bus.script(['REVCLOUD', 'M', '3,0']);
+    expect(s.log.at(-1)).toBe('Select a revision cloud.');
+    expect(s.bus.promptText).toBe('Select polyline:');
+    await s.bus.script(['']);
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it('starts at the first vertex when the cloud is selected without a pick (Last)', async () => {
+    const s = await clouded();
+    await s.bus.script(['REVCLOUD', 'M', 'L']);
+    expect(s.bus.prompt).toMatchObject({ rubberBand: { from: { x: 0, y: 0 } } });
+  });
+
+  it('shows a cloud its corners as grips, and dragging one recuts the sides beside it', async () => {
+    const s = await clouded();
+    await s.bus.selectAll();
+    // An arc's end is no grip (REVCLOUDGRIPS on): the click selects, it starts no grip edit.
+    await s.bus.pick({ x: 2, y: 5 }, { grip: 0.2 });
+    expect(s.bus.command).toBeUndefined();
+    await s.bus.pick({ x: 10.1, y: 5.1 }, { grip: 0.5 });
+    expect(s.bus.command).toBe('GRIP');
+    await s.bus.submit('12,7');
+    const g = s.geom();
+    expect(cloudCorners(g).map((i) => [r6(g.vertices[i]!.x), r6(g.vertices[i]!.y)])).toEqual(
+      expect.arrayContaining([
+        [0, 0],
+        [10, 0],
+        [12, 7],
+        [0, 5],
+      ]),
+    );
+    expect(cloudCorners(g)).toHaveLength(4);
+    // Left and bottom kept (16 vertices), 7 + 12 new arcs on the sides dragged.
+    expect(g.vertices).toHaveLength(16 + 6 + 1 + 11);
+    expect(g.vertices.every((v) => v.bulge === REVCLOUD_BULGE)).toBe(true);
+    expect(s.model.entity(s.cloud.id)!.xdata).toEqual(s.cloud.xdata);
+  });
+
+  it('ends on Enter at the side, and refuses a stretch of too many arcs', async () => {
+    const s = await clouded();
+    await s.bus.script(['REVCLOUD', 'M', '5,0', '5,-3', '8,0', '']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.geom().vertices).toHaveLength(30);
+    await s.bus.script(['REVCLOUD', 'M', '5,0', '5,-100000', '8,0']);
+    expect(s.log.at(-1)).toMatch(/^The arc length is too small for this cloud/);
+    expect(s.geom().vertices).toHaveLength(30);
+  });
+});
+
+describe('revision cloud editing geometry', () => {
+  const style = { minArc: 1, maxArc: 1, calligraphy: false };
+  const open: LwPolylineGeometry = {
+    kind: 'LWPOLYLINE',
+    closed: false,
+    vertices: cloudPoints(
+      [
+        [
+          { x: 0, y: 0 },
+          { x: 6, y: 0 },
+        ],
+      ],
+      false,
+      style,
+    ).map((p, i, all) => ({
+      ...p,
+      bulge: i < all.length - 1 ? REVCLOUD_BULGE : 0,
+    })),
+  };
+
+  it('finds a cloud by its RevcloudProps xdata and arc length', async () => {
+    const s = setup();
+    await s.bus.script(['REVCLOUD', 'A', '1', '1', '0,0', '10,5']);
+    const [cloud] = s.added();
+    expect(revcloudOf(s.model, cloud!)).toEqual({ arc: 1 });
+    expect(revcloudOf(s.model, { ...cloud!, xdata: [] })).toBeUndefined();
+    expect(revcloudOf(s.model, s.model.entityByHandle('20')!)).toBeUndefined();
+  });
+
+  it('shows a rectangular cloud its four corners, a curved one every vertex, an open one its ends', () => {
+    const rect = cloudPoints(
+      [
+        [
+          { x: 0, y: 0 },
+          { x: 4, y: 0 },
+        ],
+        [
+          { x: 4, y: 0 },
+          { x: 4, y: 2 },
+        ],
+        [
+          { x: 4, y: 2 },
+          { x: 0, y: 2 },
+        ],
+        [
+          { x: 0, y: 2 },
+          { x: 0, y: 0 },
+        ],
+      ],
+      true,
+      style,
+    );
+    const g: LwPolylineGeometry = {
+      kind: 'LWPOLYLINE',
+      closed: true,
+      vertices: rect.map((p) => ({ ...p, bulge: REVCLOUD_BULGE })),
+    };
+    expect(gripsOf(g, { arc: 1 }).map((x) => [x.point.x, x.point.y, x.kind])).toEqual([
+      [0, 0, 'cloud'],
+      [4, 0, 'cloud'],
+      [4, 2, 'cloud'],
+      [0, 2, 'cloud'],
+    ]);
+    // Without the cloud's xdata a polyline's grips: every vertex.
+    expect(gripsOf(g)).toHaveLength(12);
+    const circle = cloudRunsOf({ kind: 'CIRCLE', center: { x: 0, y: 0 }, radius: 2 }, 1e-3)!;
+    const round = cloudPoints(circle.runs, true, style);
+    expect(
+      cloudCorners({
+        kind: 'LWPOLYLINE',
+        closed: true,
+        vertices: round.map((p) => ({ ...p, bulge: REVCLOUD_BULGE })),
+      }),
+    ).toHaveLength(round.length);
+    expect(cloudCorners(open)).toEqual([0, 6]);
+  });
+
+  it('drags an open cloud end, cutting its side into arcs afresh', () => {
+    const end = moveCloudCorner(open, 6, { x: 0, y: 3 }, 1);
+    // From (0,0) straight to (0,3): three arcs.
+    expect(end.vertices.map((v) => [r6(v.x), r6(v.y)])).toEqual([
+      [0, 0],
+      [0, 1],
+      [0, 2],
+      [0, 3],
+    ]);
+    expect(end.vertices.at(-1)!.bulge).toBe(0);
+    const start = moveCloudCorner(open, 0, { x: 6, y: 2 }, 1);
+    expect(start.vertices.map((v) => [r6(v.x), r6(v.y)])).toEqual([
+      [6, 2],
+      [6, 1],
+      [6, 0],
+    ]);
+  });
+
+  it('drags a corner of a closed cloud of two corners, and keeps calligraphy widths', () => {
+    const lens: LwPolylineGeometry = {
+      kind: 'LWPOLYLINE',
+      closed: true,
+      vertices: [
+        { x: 0, y: 0, bulge: REVCLOUD_BULGE, startWidth: 0, endWidth: 0.1 },
+        { x: 2, y: 0, bulge: REVCLOUD_BULGE, startWidth: 0, endWidth: 0.1 },
+      ],
+    };
+    expect(cloudCorners(lens)).toEqual([0, 1]);
+    const g = moveCloudCorner(lens, 1, { x: 3, y: 0 }, 1);
+    expect(g.vertices.map((v) => [r6(v.x), r6(v.y)])).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+      [3, 0],
+      [2, 0],
+      [1, 0],
+    ]);
+    expect(g.vertices.every((v) => v.endWidth === 0.1)).toBe(true);
+  });
+
+  it('modifies an open cloud between two vertices, or round the outside (closing it)', () => {
+    const stretch = [
+      { x: 4, y: 2 },
+      { x: 2, y: 2 },
+    ];
+    // From vertex 4 (4,0) to vertex 2 (2,0): the stretch runs back, so it is turned round.
+    const inside = modifyCloud(open, 4, stretch, 2, { x: 3, y: 0.2 }, 1);
+    expect(inside.closed).toBe(false);
+    expect(inside.vertices.map((v) => [r6(v.x), r6(v.y)])).toEqual([
+      [0, 0],
+      [1, 0],
+      [2, 0],
+      [2, 1],
+      [2, 2],
+      [3, 2],
+      [4, 2],
+      [4, 1],
+      [4, 0],
+      [5, 0],
+      [6, 0],
+    ]);
+    const outside = modifyCloud(open, 4, stretch, 2, { x: 0.5, y: 0.2 }, 1);
+    expect(outside.closed).toBe(true);
+    expect(outside.vertices.map((v) => [r6(v.x), r6(v.y)])).toEqual([
+      [2, 0],
+      [3, 0],
+      [4, 0],
+      [4, 1],
+      [4, 2],
+      [3, 2],
+      [2, 2],
+      [2, 1],
+    ]);
+    // Bulging out of the 2 × 2 square either way.
+    expect(bulgesOut(outside, { x: 2, y: 0 }, { x: 4, y: 2 })).toBe(true);
+    // From one end to the other there is no outside: the whole cloud is the side erased.
+    const ends = modifyCloud(
+      open,
+      0,
+      [
+        { x: 0, y: 1 },
+        { x: 6, y: 1 },
+      ],
+      6,
+      { x: 9, y: 9 },
+      1,
+    );
+    expect(ends.closed).toBe(false);
+    expect(ends.vertices).toHaveLength(9);
+    expect([ends.vertices[0], ends.vertices.at(-1)].map((v) => [r6(v!.x), r6(v!.y)])).toEqual([
+      [0, 0],
+      [6, 0],
     ]);
   });
 });
