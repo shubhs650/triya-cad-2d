@@ -37,7 +37,9 @@ import {
   paperSize,
   paperTransform,
   plotItems,
+  plotSvg,
   type PlotItem,
+  type PlotPageOptions,
 } from '@triya/pdf';
 import {
   CTB_STYLE_COUNT,
@@ -260,21 +262,22 @@ export function sheetUnderlayPdf(
   return doc.bytes();
 }
 
-/** The eight-page plot of the five drawings, deterministic to the byte. */
-export function sheetPdf(
+/** Each page of the plot sheet: its entry in `SHEET_PAGES`, its items and its options. */
+export function sheetPages(
   model: DocumentModel = sheetModel(),
   fills: DocumentModel = sheetModel(FILLS_DXF),
   text: DocumentModel = sheetModel(TEXT_DXF),
   otf: DocumentModel = sheetModel(OTF_DXF),
   underlay: DocumentModel = sheetModel(UNDERLAY_DXF),
-): Uint8Array {
+): {
+  readonly page: (typeof SHEET_PAGES)[number];
+  readonly items: PlotItem[];
+  readonly options: PlotPageOptions;
+}[] {
   const fonts = sheetFontBook();
   const pixels = fillsImagePixels();
   const source = sheetUnderlayPdf(text, fills);
-  // Landscape: the sheet's 297 × 210 mm drawing fills the paper at 1:1.
-  const { width, height } = A4_LANDSCAPE();
-  const doc = new PdfDocument({ title: 'Triya plot sheet', creator: 'Triya CAD 2D (M2-16 test)' });
-  for (const p of SHEET_PAGES) {
+  return SHEET_PAGES.map((p) => {
     const table =
       p.table === 'monochrome'
         ? bundledPlotStyleTable('monochrome.ctb')
@@ -283,7 +286,6 @@ export function sheetPdf(
           : p.table === 'fillStyles'
             ? fillStyleTable()
             : undefined;
-    const page = doc.addPage(width, height, { label: p.label, bookmark: p.bookmark });
     const resolver = new PlotResolver(table);
     const items =
       p.drawing === 'fills'
@@ -300,12 +302,34 @@ export function sheetPdf(
             undefined,
             fonts,
           );
-    plotItems(page, items, {
-      toPaper: paperTransform(1, { x: 0, y: 0 }, { x: 0, y: 0 }),
-      nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
-      underlays: (u) =>
-        u.fileName.toLowerCase().endsWith('plot-underlay.pdf') ? source : undefined,
-    });
+    return {
+      page: p,
+      items,
+      options: {
+        // Landscape: the sheet's 297 × 210 mm drawing fills the paper at 1:1.
+        toPaper: paperTransform(1, { x: 0, y: 0 }, { x: 0, y: 0 }),
+        nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
+        underlays: (u) =>
+          u.fileName.toLowerCase().endsWith('plot-underlay.pdf') ? source : undefined,
+      },
+    };
+  });
+}
+
+/** The eight-page plot of the five drawings, deterministic to the byte. */
+export function sheetPdf(...drawings: Parameters<typeof sheetPages>): Uint8Array {
+  const { width, height } = A4_LANDSCAPE();
+  const doc = new PdfDocument({ title: 'Triya plot sheet', creator: 'Triya CAD 2D (M2-16 test)' });
+  for (const { page: p, items, options } of sheetPages(...drawings)) {
+    plotItems(doc.addPage(width, height, { label: p.label, bookmark: p.bookmark }), items, options);
   }
   return doc.bytes();
+}
+
+/** The plot sheet's pages as SVG files (M2-18), the same items and options as the PDF's. */
+export function sheetSvgs(...drawings: Parameters<typeof sheetPages>): string[] {
+  const { width, height } = A4_LANDSCAPE();
+  return sheetPages(...drawings).map(({ page: p, items, options }) =>
+    plotSvg(items, { ...options, width, height, title: `Triya plot sheet - ${p.label}` }),
+  );
 }
