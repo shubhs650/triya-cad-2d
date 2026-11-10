@@ -5,6 +5,7 @@
 
 import type { Font, Glyph, LocalizedName, NameTable } from 'opentype.js';
 import { opentype } from './lib';
+import { collectionFaces } from './collection';
 
 export type TtfPathCommand =
   | { readonly op: 'M' | 'L'; readonly x: number; readonly y: number }
@@ -81,6 +82,8 @@ export class TtfFont {
   readonly family: string;
   readonly subfamily: string;
   readonly fullName: string;
+  /** name ID 6; may be empty. */
+  readonly postScriptName: string;
   readonly unitsPerEm: number;
   readonly ascender: number;
   readonly descender: number;
@@ -99,6 +102,7 @@ export class TtfFont {
     this.family = nameOf(font.names, 'fontFamily');
     this.subfamily = nameOf(font.names, 'fontSubfamily');
     this.fullName = nameOf(font.names, 'fullName');
+    this.postScriptName = nameOf(font.names, 'postScriptName');
     this.unitsPerEm = font.unitsPerEm;
     this.ascender = font.ascender;
     this.descender = font.descender;
@@ -181,8 +185,27 @@ export class TtfFont {
   }
 }
 
-/** Reads a .ttf/.otf file (TrueType or CFF outlines). */
-export function parseTtf(bytes: Uint8Array): TtfFont {
+/**
+ * Reads a .ttf/.otf file (TrueType or CFF outlines), or one face of a .ttc collection: the face
+ * whose PostScript name is `face` (any case), else the first (AutoCAD draws a style naming a
+ * collection file with its first face).
+ */
+export function parseTtf(bytes: Uint8Array, face?: string): TtfFont {
+  const faces = collectionFaces(bytes);
+  if (!faces) return parseSingle(bytes);
+  const fonts = faces.map(parseSingle);
+  const key = face?.toLowerCase();
+  return (
+    fonts.find((f) => key !== undefined && f.postScriptName.toLowerCase() === key) ?? fonts[0]!
+  );
+}
+
+/** Every face of a .ttc collection, or the one font of a .ttf/.otf file. */
+export function parseTtfCollection(bytes: Uint8Array): TtfFont[] {
+  return (collectionFaces(bytes) ?? [bytes]).map(parseSingle);
+}
+
+function parseSingle(bytes: Uint8Array): TtfFont {
   const buffer = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength);
   let font: Font;
   try {

@@ -61,4 +61,6 @@ export {
 } from './fills';
 export { PAPER_SIZES, mmToPoints, paperSize, type PaperSize } from './paper';
 export { EmbeddedFont, PdfFonts, type PlotFont } from './fonts';
-export { TrueTypeFont, writeSfnt } from './truetype';
+export { TrueTypeFont } from './truetype';
+export { SFNT_CFF, SFNT_TRUETYPE, SfntFont, readSfnt, writeSfnt } from './sfnt';
+export { CffFont, cffDict, cffIndex, readDict, readIndex } from './cff';

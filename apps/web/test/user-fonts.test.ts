@@ -158,8 +158,9 @@ describe('FontStore', () => {
   });
 
   it('recognises font files by extension', () => {
-    expect(['a.SHX', 'b.ttf', 'c.OTF'].every(isFontFile)).toBe(true);
+    // TrueType collections too, since M2-16 part 4 reads their faces.
+    expect(['a.SHX', 'b.ttf', 'c.OTF', 'msgothic.ttc'].every(isFontFile)).toBe(true);
     expect(isFontFile('drawing.dxf')).toBe(false);
-    expect(isFontFile('fonts.ttc')).toBe(false);
+    expect(isFontFile('fonts.ttf.zip')).toBe(false);
   });
 });

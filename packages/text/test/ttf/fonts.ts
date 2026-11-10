@@ -17,10 +17,15 @@ function glyph(
 }
 
 export function testFont(
-  options: { styleName?: string; weightClass?: number; italicAngle?: number } = {},
+  options: {
+    familyName?: string;
+    styleName?: string;
+    weightClass?: number;
+    italicAngle?: number;
+  } = {},
 ): Font {
   return new opentype.Font({
-    familyName: 'Triya Test Sans',
+    familyName: options.familyName ?? 'Triya Test Sans',
     styleName: options.styleName ?? 'Regular',
     unitsPerEm: 1000,
     ascender: 800,

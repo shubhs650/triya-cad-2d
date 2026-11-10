@@ -10,6 +10,8 @@
 // does the looking: it checks each candidate parses and keeps a warning for one that does not.
 import {
   TtfRegistry,
+  collectionFaces,
+  parseTtf,
   parseMText,
   styleFont,
   type FontSource,
@@ -249,7 +251,9 @@ export class DeviceFonts {
       load: async (name, style) => {
         const face = this.#installed && matchLocalFont(this.#installed, name, style);
         if (!face) return undefined;
-        const bytes = new Uint8Array(await (await face.blob()).arrayBuffer());
+        const file = new Uint8Array(await (await face.blob()).arrayBuffer());
+        // An installed face may come as its whole collection (.ttc): keep that face alone.
+        const bytes = collectionFaces(file) ? parseTtf(file, face.postscriptName).bytes! : file;
         this.#picked.set(`${name.toLowerCase()}|${Number(style.bold)}${Number(style.italic)}`, {
           face,
           bytes,

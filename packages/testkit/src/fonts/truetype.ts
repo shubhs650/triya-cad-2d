@@ -3,7 +3,8 @@
 // grid of 100-unit squares, an O of quadratic Béziers (off-curve points, a counter), and Å and Ä
 // as composite glyphs over two glyphs no character maps to (ring, dieresis). opentype.js reads
 // it like any TrueType font, and the PDF writer embeds subsets of it.
-import { writeSfnt } from '@triya/pdf';
+import { SFNT_CFF, writeSfnt } from '@triya/pdf';
+import { testCffTable, type CffGlyph } from './cff';
 
 type Point = readonly [x: number, y: number, on: boolean];
 type Contour = readonly Point[];
@@ -74,6 +75,25 @@ const BITMAPS: Record<string, readonly string[]> = {
   '°': ['.##..', '#..#.', '#..#.', '.##..', '.....', '.....', '.....'],
 };
 
+/** Each '#' its own 80-unit square: the "dots" look that tells one test face from another. */
+function dotContours(rows: readonly string[]): Contour[] {
+  const out: Contour[] = [];
+  rows.forEach((row, r) => {
+    for (let c = 0; c < row.length; c++) {
+      if (row[c] !== '#') continue;
+      const xa = 60 + c * PX;
+      const ya = 7 * PX - r * PX - 10;
+      out.push([
+        [xa, ya - 80, true],
+        [xa, ya, true],
+        [xa + 80, ya, true],
+        [xa + 80, ya - 80, true],
+      ]);
+    }
+  });
+  return out;
+}
+
 /**
  * Squares of ink as rectangles: runs along each row, stacked where rows repeat. Each one
  * reaches 2 units below its last row (but not below the baseline), so rows overlap and no
@@ -128,7 +148,7 @@ function roundO(): Contour[] {
 }
 
 /** The glyphs in font order; .notdef first, then the unencoded components. */
-function glyphDefs(): Map<string, GlyphDef> {
+function glyphDefs(dots = false): Map<string, GlyphDef> {
   const g = new Map<string, GlyphDef>();
   g.set('.notdef', {
     kind: 'simple',
@@ -156,7 +176,8 @@ function glyphDefs(): Map<string, GlyphDef> {
   g.set('dieresis', { kind: 'simple', advance: 0, contours: pixelContours(['#.#'], 100, 0, 900) });
   g.set(' ', { kind: 'simple', advance: ADVANCE, contours: [] });
   for (const [ch, rows] of Object.entries(BITMAPS)) {
-    g.set(ch, { kind: 'simple', advance: ADVANCE, contours: pixelContours(rows) });
+    const contours = dots ? dotContours(rows) : pixelContours(rows);
+    g.set(ch, { kind: 'simple', advance: ADVANCE, contours });
     if (ch === 'N') g.set('O', { kind: 'simple', advance: ADVANCE, contours: roundO() });
   }
   g.set('Å', {
@@ -250,12 +271,19 @@ export interface TestTrueTypeOptions {
   readonly family?: string;
   /** OS/2 fsType: 0 installable; 2 restricted licence (not embeddable). */
   readonly fsType?: number;
+  /**
+   * The outlines: TrueType 'glyf' (the default), or a 'CFF ' table of Type 2 charstrings,
+   * plain or CID-keyed (M2-16 part 4: CFF-flavoured OpenType).
+   */
+  readonly outlines?: 'glyf' | 'cff' | 'cid';
+  /** Letters and digits as separate dots, so a page shows which face drew a string. */
+  readonly dots?: boolean;
 }
 
-/** "Triya Pixel" as a TrueType font file. */
+/** "Triya Pixel" as a TrueType font file, or as CFF-flavoured OpenType (`outlines`). */
 export function testTrueType(options: TestTrueTypeOptions = {}): Uint8Array {
   const family = options.family ?? 'Triya Pixel';
-  const defs = glyphDefs();
+  const defs = glyphDefs(options.dots);
   const names = [...defs.keys()];
   const index = new Map(names.map((n, i) => [n, i]));
   const bounds = new Map<string, Bounds>();
@@ -454,20 +482,43 @@ export function testTrueType(options: TestTrueTypeOptions = {}): Uint8Array {
     .u32(0)
     .u32(0);
 
-  return writeSfnt(
-    new Map([
-      ['OS/2', os2.out()],
-      ['cmap', cmap.out()],
-      ['glyf', glyf.out()],
-      ['head', head.out()],
-      ['hhea', hhea.out()],
-      ['hmtx', hmtx.out()],
-      ['loca', loca.out()],
-      ['maxp', maxp.out()],
-      ['name', name.out()],
-      ['post', post.out()],
-    ]),
+  const tables = new Map<string, Uint8Array>([
+    ['OS/2', os2.out()],
+    ['cmap', cmap.out()],
+    ['head', head.out()],
+    ['hhea', hhea.out()],
+    ['hmtx', hmtx.out()],
+    ['name', name.out()],
+    ['post', post.out()],
+  ]);
+  const outlines = options.outlines ?? 'glyf';
+  if (outlines === 'glyf') {
+    tables.set('glyf', glyf.out());
+    tables.set('loca', loca.out());
+    tables.set('maxp', maxp.out());
+    return writeSfnt(tables);
+  }
+  // CFF outlines: maxp version 0.5 (the glyph count only), composites drawn out.
+  tables.set('maxp', new Writer().u32(0x00005000).u16(names.length).out());
+  const flat = (n: string, dx = 0, dy = 0): Contour[] => {
+    const d = defs.get(n)!;
+    if (d.kind === 'simple')
+      return d.contours.map((c) => c.map(([x, y, on]) => [x + dx, y + dy, on] as Point));
+    return d.parts.flatMap((p) => flat(p.glyph, dx + p.dx, dy + p.dy));
+  };
+  const cffGlyphs: CffGlyph[] = names.map((n) => ({
+    name:
+      [...n].length === 1
+        ? `uni${n.codePointAt(0)!.toString(16).toUpperCase().padStart(4, '0')}`
+        : n,
+    advance: defs.get(n)!.advance,
+    contours: flat(n),
+  }));
+  tables.set(
+    'CFF ',
+    testCffTable({ postScriptName: postscript, glyphs: cffGlyphs, cidKeyed: outlines === 'cid' }),
   );
+  return writeSfnt(tables, SFNT_CFF);
 }
 
 /** The characters the test font draws. */

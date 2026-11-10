@@ -14,6 +14,10 @@
 // Then the text drawing (M2-16 part 3, `scripts/pdf/plot-text.py`, fixtures/pdf/plot-text.dxf):
 // 6. "TrueType text": TEXT and MTEXT in the test TrueType font (fonts/truetype.ts), written as
 //    text in an embedded subset font, and in its restricted-licence twin, plotted as outlines.
+// Then the OpenType drawing (M2-16 part 4, `scripts/pdf/plot-otf.py`, fixtures/pdf/plot-otf.dxf):
+// 7. "OpenType text": TEXT and MTEXT in the test font's CFF twins (plain and CID-keyed) and in
+//    both faces of a TrueType collection, embedded as CFF and TrueType subsets, and in a CFF font
+//    whose licence forbids embedding, plotted as outlines.
 // Glyphs and hatch pattern lines plot continuous whatever the linetype, as AutoCAD draws them.
 // Model space is tessellated by the renderer (`tessellate`, with the bundled fonts, so ROMANS
 // text plots as stroke paths) and each object's plot properties come from `PlotResolver`, as
@@ -51,8 +55,9 @@ import {
   type PrimitiveColor,
   type RenderPrimitive,
 } from '@triya/render';
-import { parseTtf, type FontBook } from '@triya/text';
-import { testTrueType } from '../fonts/truetype';
+import { parseTtf, parseTtfCollection, type FontBook } from '@triya/text';
+import { testCollection } from '../fonts/collection';
+import { testTrueType, type TestTrueTypeOptions } from '../fonts/truetype';
 import { bundledFontBook } from '../render/bundled-fonts';
 import { corpusDrawing } from '../render/document';
 
@@ -60,6 +65,7 @@ export const SHEET_DIR = fileURLToPath(new URL('../../fixtures/pdf/', import.met
 export const SHEET_DXF = 'plot-sheet.dxf';
 export const FILLS_DXF = 'plot-fills.dxf';
 export const TEXT_DXF = 'plot-text.dxf';
+export const OTF_DXF = 'plot-otf.dxf';
 export const SHEET_PDF = 'plot-sheet.pdf';
 
 /** The CTB of page 3: colour 9 + k plots black with plot style linetype k; colour 150 at 40 %. */
@@ -156,13 +162,35 @@ function paperRgb(c: PrimitiveColor): readonly [number, number, number] {
 }
 
 /**
- * The bundled stroke fonts and the two TrueType fonts the text drawing's styles name: the test
- * font as triya-pixel.ttf and its restricted-licence twin as triya-locked.ttf.
+ * The bundled stroke fonts and the fonts the text drawings' styles name: the test font as
+ * triya-pixel.ttf and its restricted-licence twin as triya-locked.ttf (page 6); its CFF twins,
+ * plain, CID-keyed and restricted, and a two-face collection (page 7), read as the app reads a
+ * user's font files (`fontBookOf`: a collection's first face by its file name, every face by
+ * its family).
  */
 export function sheetFontBook(): FontBook {
   const book = bundledFontBook();
   book.addTtf(parseTtf(testTrueType()), 'triya-pixel.ttf');
   book.addTtf(parseTtf(testTrueType({ family: 'Triya Locked', fsType: 2 })), 'triya-locked.ttf');
+  const otf = (family: string, o: TestTrueTypeOptions) => testTrueType({ family, ...o });
+  const files = [
+    { name: 'triya-pixel-cff.otf', bytes: otf('Triya Pixel CFF', { outlines: 'cff' }) },
+    { name: 'triya-pixel-cid.otf', bytes: otf('Triya Pixel CID', { outlines: 'cid', dots: true }) },
+    {
+      name: 'triya-locked-cff.otf',
+      bytes: otf('Triya Locked CFF', { outlines: 'cff', fsType: 2 }),
+    },
+    {
+      name: 'triya-pair.ttc',
+      bytes: testCollection([
+        otf('Triya Pair', { dots: true }),
+        otf('Triya Pair Sans', { outlines: 'cff' }),
+      ]),
+    },
+  ];
+  for (const { name, bytes } of files) {
+    parseTtfCollection(bytes).forEach((face, i) => book.addTtf(face, i === 0 ? name : undefined));
+  }
   return book;
 }
 
@@ -327,13 +355,20 @@ export const SHEET_PAGES = [
     table: undefined,
     drawing: 'text',
   },
+  {
+    label: 'OpenType text',
+    bookmark: 'CFF OpenType and collection text',
+    table: undefined,
+    drawing: 'otf',
+  },
 ] as const;
 
-/** The six-page plot of the three drawings, deterministic to the byte. */
+/** The seven-page plot of the four drawings, deterministic to the byte. */
 export function sheetPdf(
   model: DocumentModel = sheetModel(),
   fills: DocumentModel = sheetModel(FILLS_DXF),
   text: DocumentModel = sheetModel(TEXT_DXF),
+  otf: DocumentModel = sheetModel(OTF_DXF),
 ): Uint8Array {
   const fonts = sheetFontBook();
   const pixels = fillsImagePixels();
@@ -356,7 +391,12 @@ export function sheetPdf(
     const items =
       p.drawing === 'fills'
         ? sheetItems(fills, resolver, () => pixels, fonts)
-        : sheetItems(p.drawing === 'text' ? text : model, resolver, undefined, fonts);
+        : sheetItems(
+            p.drawing === 'text' ? text : p.drawing === 'otf' ? otf : model,
+            resolver,
+            undefined,
+            fonts,
+          );
     plotItems(page, items, {
       toPaper: paperTransform(1, { x: 0, y: 0 }, { x: 0, y: 0 }),
       nonIsoScale: table?.applyFactor ? table.scaleFactor : 1,
