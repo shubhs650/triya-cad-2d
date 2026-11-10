@@ -20,3 +20,4 @@ export {
 export { dimensionParts, generates } from './parts';
 export { measuredText, regenerateDimension, type RegeneratedDimension } from './regenerate';
 export * from './health';
+export * from './drawing-health';
