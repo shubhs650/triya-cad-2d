@@ -1,6 +1,6 @@
 // M2-02 part 2: the app's answers to the view commands, against a recording canvas, and the view
 // maths they add (ZOOM n relative to the limits, real-time ZOOM's drag factor).
-import type { MTextGeometry, Vec2, ViewReply, ViewRequest } from '@triya/engine';
+import type { MTextGeometry, TextGeometry, Vec2, ViewReply, ViewRequest } from '@triya/engine';
 import type { ViewTransform } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import type { CanvasMode } from '../src/canvas/controller';
@@ -57,6 +57,17 @@ class Target implements ViewTarget {
   columnCounts = (texts: readonly MTextGeometry[]) => (
     this.calls.push(`counts ${texts.map((t) => t.contents).join(',')}`),
     Promise.resolve(texts.map((t) => (this.textKnown ? t.contents.length : null)))
+  );
+  pickbox = 0.75;
+  textOutlines = (texts: readonly (TextGeometry | MTextGeometry)[]) => (
+    this.calls.push(`outlines ${texts.length}`),
+    Promise.resolve(
+      texts.map((t) =>
+        this.textKnown
+          ? { corners: [t.position, t.position, t.position, t.position], width: 2, below: 0.5 }
+          : null,
+      ),
+    )
   );
   boundsOf = (ids: readonly number[]) => (
     this.calls.push(`bounds ${ids.join(',')}`),
@@ -242,6 +253,38 @@ describe('answerView', () => {
       counts: [null],
     });
     expect(t.calls).toEqual(['counts one', 'counts one']);
+  });
+
+  it('answers where texts lie as drawn, with the pickbox in drawing units (M2-27)', async () => {
+    const t = new Target();
+    const { ctx } = context(t);
+    const text = {
+      kind: 'TEXT' as const,
+      value: 'A',
+      style: '11',
+      position: { x: 1, y: 2 },
+      height: 1,
+      rotation: 0,
+      widthFactor: 1,
+      oblique: 0,
+      halign: 0,
+      valign: 0,
+      backward: false,
+      upsideDown: false,
+    };
+    const corners = [text.position, text.position, text.position, text.position];
+    expect(await answerView({ op: 'textOutlines', texts: [text] }, ctx)).toEqual({
+      ok: true,
+      outlines: [{ corners, width: 2, below: 0.5 }],
+      pickbox: 0.75,
+    });
+    t.textKnown = false;
+    expect(await answerView({ op: 'textOutlines', texts: [text] }, ctx)).toEqual({
+      ok: true,
+      outlines: [null],
+      pickbox: 0.75,
+    });
+    expect(t.calls).toEqual(['outlines 1', 'outlines 1']);
   });
 
   it('answers the view as VIEWSIZE and width, and whether paper space shows', () => {

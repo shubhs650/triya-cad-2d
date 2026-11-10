@@ -39,7 +39,7 @@ export {
   textPrimitives,
   type TextContext,
 } from './text';
-export { primitivesBox, textBounds } from './text-bounds';
+export { primitivesBox, textBounds, textOutline } from './text-bounds';
 export { primCrosses, primInside } from './select';
 export { createPaint, defaultPaint, type PaintFunction, type PaintOptions } from './paint';
 export {

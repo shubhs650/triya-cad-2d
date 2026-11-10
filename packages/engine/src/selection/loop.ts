@@ -135,16 +135,20 @@ export class SelectionLoop {
     };
   }
 
-  /** Replaces the set (the pre-selection carried into a command, Ctrl+A at `Command:`). */
-  set(ids: readonly EntityId[]): void {
+  /**
+   * Replaces the set (the pre-selection carried into a command, Ctrl+A at `Command:`), `pick`
+   * where it was picked (a double click, M2-27).
+   */
+  set(ids: readonly EntityId[], pick?: Vec2): void {
     this.#ids = [...new Set(ids)];
+    this.#pick = pick;
   }
 
   /** Esc at `Command:`: the window and the pre-selection go. */
   clear(): void {
     this.#ids = [];
     this.#undo.length = 0;
-    this.#window = undefined;
+    this.#window = this.#pick = undefined;
     this.cancelWindow();
   }
 

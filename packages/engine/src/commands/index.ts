@@ -26,7 +26,10 @@ export {
   blockNameOf,
   eatteditCommand,
   hasEditableAttributes,
+  insertionPoint,
+  JUSTIFICATIONS,
   patchAttribute,
+  rejustified,
   wcmatch,
 } from './modify/attributes';
 export { regenerateDimensions } from './modify/dimensions';
