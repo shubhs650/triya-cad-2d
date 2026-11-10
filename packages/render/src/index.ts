@@ -34,6 +34,7 @@ export {
 export {
   attributeShown,
   attributeText,
+  columnCounter,
   textMeasure,
   textPrimitives,
   type TextContext,

@@ -47,6 +47,8 @@ export interface ViewTarget {
   textBox(text: MTextGeometry): Promise<Box | undefined>;
   /** The widths MTEXTs are laid out at (M2-10 part 3), null for one no loaded font draws. */
   textWidths(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
+  /** How many dynamic columns MTEXTs take (M2-26 part 2), null for one no loaded font draws. */
+  columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
   /** The objects' extents as drawn (M2-14 part 2: COPYCLIP's base point), or undefined. */
   boundsOf(ids: readonly EntityId[]): Promise<Box | undefined>;
 }
@@ -192,6 +194,8 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
         );
     case 'textWidths':
       return t.textWidths(r.texts).then((widths) => ({ ok: true, widths }));
+    case 'columnCounts':
+      return t.columnCounts(r.texts).then((counts) => ({ ok: true, counts }));
     case 'bounds':
       return t
         .boundsOf(r.ids)

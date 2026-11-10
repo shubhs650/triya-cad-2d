@@ -279,6 +279,14 @@ export class RendererHost {
     );
   }
 
+  /** How many dynamic columns MTEXTs take (M2-26 part 2); null for one no loaded font draws. */
+  columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
+    if (this.#session) return Promise.resolve(this.#session.columnCounts(texts));
+    return this.#request((id) => ({ type: 'columnCounts', id, texts })).then((m) =>
+      m.type === 'counts' ? [...m.counts] : texts.map(() => null),
+    );
+  }
+
   /** What plotting a space draws (M2-17): the parts in the space's drawing units. */
   plot(request: PlotRequest = {}): Promise<PlotPart[]> {
     if (this.#session) return Promise.resolve(this.#session.plot(request));

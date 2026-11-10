@@ -36,7 +36,7 @@ import {
 } from '@triya/text';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
-import { textMeasure, type TextContext } from './text';
+import { columnCounter, textMeasure, type TextContext } from './text';
 import { textBounds } from './text-bounds';
 import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
 import { plotParts, type PlotPart } from './plot/job';
@@ -249,6 +249,16 @@ export class RenderSession {
   textWidths(texts: readonly MTextGeometry[]): (number | null)[] {
     const measure = textMeasure(this.#text);
     return texts.map((t) => measure(t) ?? null);
+  }
+
+  /**
+   * How many dynamic columns MTEXTs take in the fonts loaded now (`columnCounter`), null for one
+   * no loaded font draws: what the engine worker recounts columns by after a column grip (M2-26
+   * part 2).
+   */
+  columnCounts(texts: readonly MTextGeometry[]): (number | null)[] {
+    const count = columnCounter(this.#text);
+    return texts.map((t) => count(t) ?? null);
   }
 
   /**
