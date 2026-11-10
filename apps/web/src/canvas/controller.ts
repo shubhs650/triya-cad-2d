@@ -76,6 +76,8 @@ import {
   worldToScreen,
   type DrawnEntity,
   type FontSources,
+  type PlotPart,
+  type PlotRequest,
   type RasterPixels,
   type RenderPrimitive,
   type RenderStyle,
@@ -85,6 +87,7 @@ import {
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
 import { layoutsOf } from '../documents';
+import type { PlotSpace } from '../plot';
 import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
@@ -380,6 +383,41 @@ export class CanvasController {
   /** The entities drawn in a rectangle of the canvas, CSS pixels (M1-106 fidelity triage). */
   entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]> {
     return this.#host.entitiesIn(rect);
+  }
+
+  /**
+   * What the Plot dialog plots from this canvas (M2-17): the space's name, a layout's sheet, and
+   * the extents (measured afresh), the view shown and the limits.
+   */
+  async plotSpace(): Promise<PlotSpace> {
+    await this.#measure();
+    const layout = this.#layout;
+    const sheet = layout ? layoutSheet(layout) : undefined;
+    const v = this.#view;
+    const { width, height } = this.#size;
+    const display =
+      v && width > 0 && height > 0
+        ? {
+            minX: v.center.x - width / 2 / v.scale,
+            minY: v.center.y - height / 2 / v.scale,
+            maxX: v.center.x + width / 2 / v.scale,
+            maxY: v.center.y + height / 2 / v.scale,
+          }
+        : undefined;
+    return {
+      name: layout?.name ?? 'Model',
+      sheet: sheet && { paper: sheet.paper, unitsPerMm: sheet.unitsPerMm },
+      inches: layout?.plot?.paperUnits === 'inches',
+      extents: this.#extents(),
+      display,
+      limits: this.#limits(),
+      namedPlotStyles: this.#header.get('$PSTYLEMODE') === 0,
+    };
+  }
+
+  /** What plotting this canvas's space draws (M2-17), from its renderer. */
+  plot(request: Omit<PlotRequest, 'block'>): Promise<PlotPart[]> {
+    return this.#host.plot({ ...request, block: this.block });
   }
 
   zoomExtents(): void {

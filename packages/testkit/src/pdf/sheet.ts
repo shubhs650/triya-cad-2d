@@ -19,12 +19,12 @@
 //    both faces of a TrueType collection, embedded as CFF and TrueType subsets, and in a CFF font
 //    whose licence forbids embedding, plotted as outlines.
 // Glyphs and hatch pattern lines plot continuous whatever the linetype, as AutoCAD draws them.
-// Model space is tessellated by the renderer (`tessellate`, with the bundled fonts, so ROMANS
-// text plots as stroke paths) and each object's plot properties come from `PlotResolver`, as
-// the PLOT dialog (M2-17) will plot a layout. Block references are the plot job's (M2-17).
+// Model space is turned into plot items by the plot job (`plotParts`, M2-17: the renderer's
+// tessellation with the bundled fonts, so ROMANS text plots as stroke paths, and each object's
+// plot properties from `PlotResolver`), as the PLOT dialog plots a drawing.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import type { Color, DocumentModel, Entity } from '@triya/engine';
+import type { DocumentModel } from '@triya/engine';
 import { readCadDocument } from '@triya/io';
 import {
   PdfDocument,
@@ -33,27 +33,16 @@ import {
   paperTransform,
   plotItems,
   type PlotItem,
-  type PlotPixels,
 } from '@triya/pdf';
 import {
   CTB_STYLE_COUNT,
   DEFAULT_PLOT_LINEWEIGHTS,
   PlotResolver,
-  adjustPixels,
   bundledPlotStyleTable,
-  createPaint,
-  effectiveLayer,
-  mixColors,
   newPlotStyle,
-  parseHex,
-  resolveLinetype,
-  resolveLineweight,
-  tessellate,
-  tintColor,
-  type PlotObject,
+  plotParts,
   type PlotStyleTable,
-  type PrimitiveColor,
-  type RenderPrimitive,
+  type RasterPixels,
 } from '@triya/render';
 import { parseTtf, parseTtfCollection, type FontBook } from '@triya/text';
 import { testCollection } from '../fonts/collection';
@@ -112,7 +101,7 @@ export function fillStyleTable(): PlotStyleTable {
  * 64 × 32 pixels, hue across and darker down, with a clear disc and a half-clear band so the
  * line beneath shows through.
  */
-export function fillsImagePixels(): PlotPixels {
+export function fillsImagePixels(): RasterPixels {
   const width = 64;
   const height = 32;
   const data = new Uint8ClampedArray(width * height * 4);
@@ -133,32 +122,6 @@ export function fillsImagePixels(): PlotPixels {
     }
   }
   return { width, height, data };
-}
-
-/** What an entity plots with before the table: ByLayer resolved (no block references here). */
-function plotObject(e: Entity, model: DocumentModel): PlotObject {
-  const src = { layers: model.tables.layers, lwDefault: 25 };
-  const color =
-    e.color.kind === 'byLayer'
-      ? (effectiveLayer(e, src)?.color ?? { kind: 'aci' as const, index: 7 })
-      : e.color;
-  const linetype = resolveLinetype(e, src);
-  return {
-    color: color.kind === 'aci' ? { kind: 'aci', index: Math.abs(color.index) } : color,
-    lineweight: resolveLineweight(e, src),
-    ...(linetype ? { linetype } : {}),
-  };
-}
-
-const WHITE = [255, 255, 255] as const;
-
-/** A primitive's colour on paper: the foreground (ACI 7) black, the background white. */
-function paperRgb(c: PrimitiveColor): readonly [number, number, number] {
-  if (c === 'foreground') return [0, 0, 0];
-  if (c === 'background') return WHITE;
-  const rgb = parseHex(c);
-  if (!rgb) throw new Error(`the plot sheet draws no ${c} colour`);
-  return rgb;
 }
 
 /**
@@ -194,132 +157,20 @@ export function sheetFontBook(): FontBook {
   return book;
 }
 
-/** A model space as plot items through `resolver`; `images` gives each IMAGEDEF's bitmap. */
+/**
+ * A model space as plot items through `resolver` (the plot job, M2-17); `images` gives each
+ * IMAGEDEF's bitmap.
+ */
 export function sheetItems(
   model: DocumentModel,
   resolver: PlotResolver,
-  images: (definition: string) => PlotPixels | undefined = () => undefined,
+  images: (definition: string) => RasterPixels | undefined = () => undefined,
   fonts: FontBook = sheetFontBook(),
 ): PlotItem[] {
-  const paint = createPaint();
   const text = { fonts, style: (h: string) => model.tables.textStyles.get(h) };
   const space = [...model.blocks.values()].find((b) => b.name.toUpperCase() === '*MODEL_SPACE');
   if (!space) throw new Error('the plot sheet has no model space');
-  const items: PlotItem[] = [];
-  for (const id of model.blockEntities(space.handle)) {
-    const e = model.entity(id)!;
-    const p = paint(e, model);
-    if (!p) continue;
-    const object = plotObject(e, model);
-    const props = resolver.resolve(object);
-    const solid = { ...props, linetype: { kind: 'object' as const }, fillStyle: 'solid' as const };
-    // A gradient's colours plot through the style each colour takes (ours: the help is silent).
-    const onPaper = (c: PrimitiveColor) => {
-      const [r, g, b] = paperRgb(c);
-      const color: Color = { kind: 'rgb', r, g, b };
-      return resolver.resolve({ ...object, color }).color;
-    };
-    for (const prim of tessellate(e.geom, p, { text })) {
-      const common = prim.opacity !== undefined ? { opacity: prim.opacity } : {};
-      if (prim.kind === 'point') {
-        items.push({ kind: 'point', x: prim.x, y: prim.y, paint: props, ...common });
-        continue;
-      }
-      if (prim.kind === 'infinite') {
-        items.push({
-          kind: 'infinite',
-          base: prim.base,
-          direction: prim.direction,
-          both: prim.both,
-          paint: props,
-          ...(prim.dashes ? { dashes: prim.dashes } : {}),
-          ...common,
-        });
-        continue;
-      }
-      // An MTEXT colour override: the run's own colour, through the table (ours, as gradients).
-      const own =
-        prim.kind === 'fill' && prim.text && prim.color !== p.color
-          ? { ...solid, color: onPaper(prim.color) }
-          : solid;
-      items.push(pathItem(prim, props, own, onPaper, images, common));
-    }
-  }
-  return items;
-}
-
-type PathPrimitive = Extract<RenderPrimitive, { kind: 'stroke' | 'fill' }>;
-
-function pathItem(
-  prim: PathPrimitive,
-  props: ReturnType<PlotResolver['resolve']>,
-  solid: ReturnType<PlotResolver['resolve']>,
-  onPaper: (c: PrimitiveColor) => readonly [number, number, number],
-  images: (definition: string) => PlotPixels | undefined,
-  common: { readonly opacity?: number },
-): PlotItem {
-  if (prim.underlay || prim.missingImage !== undefined) {
-    throw new Error('the plot sheet draws no underlays or missing images');
-  }
-  const base = { kind: prim.kind, ...(prim.evenOdd ? { evenOdd: true } : {}), ...common };
-  const g = prim.gradient;
-  if (g) {
-    const c1 = paperHex(g.colors[0]);
-    const c2 = g.tint === undefined ? paperHex(g.colors[1]) : tintColor(c1, g.tint);
-    return {
-      ...base,
-      path: prim.path,
-      paint: solid,
-      gradient: {
-        kind: g.kind,
-        frame: g.frame,
-        stops: g.stops.map(([offset, mix]) => ({ offset, color: onPaper(mixColors(c1, c2, mix)) })),
-      },
-    };
-  }
-  const im = prim.image;
-  if (im) {
-    const src = images(im.definition);
-    if (!src) throw new Error(`the plot sheet has no bitmap for IMAGEDEF ${im.definition}`);
-    const data = adjustPixels(
-      { width: src.width, height: src.height, data: Uint8ClampedArray.from(src.data) },
-      {
-        brightness: im.brightness,
-        contrast: im.contrast,
-        fade: im.fade,
-        transparent: im.transparent,
-        color: paperRgb(prim.color),
-        background: WHITE,
-      },
-    );
-    return {
-      ...base,
-      path: prim.path,
-      paint: solid,
-      image: {
-        pixels: { width: src.width, height: src.height, data },
-        frame: im.frame,
-        width: im.width,
-        height: im.height,
-      },
-    };
-  }
-  const continuous = prim.text !== undefined || prim.hatch !== undefined;
-  // A plot style linetype dashes the object's continuous path itself.
-  const dashed = props.linetype.kind === 'plot' && !continuous;
-  const glyphs = prim.kind === 'fill' ? prim.text?.glyphs : undefined;
-  return {
-    ...base,
-    path: dashed ? (prim.continuous ?? prim.path) : prim.path,
-    paint: continuous ? solid : props,
-    ...(glyphs ? { glyphs } : {}),
-  };
-}
-
-/** A gradient colour as hex for mixing, the foreground black. */
-function paperHex(c: PrimitiveColor): string {
-  const [r, g, b] = paperRgb(c);
-  return `#${[r, g, b].map((v) => v.toString(16).padStart(2, '0')).join('')}`;
+  return plotParts(model, space.handle, { resolver, tessellate: { text }, images });
 }
 
 /** A test drawing, read from its committed DXF. */

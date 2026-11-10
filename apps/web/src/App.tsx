@@ -33,6 +33,7 @@ import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
 import { AttributeDialogs } from './AttributeDialogs';
+import { PlotDialog, plotDialog } from './PlotDialog';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
@@ -307,7 +308,10 @@ async function closeDoc(id: number): Promise<boolean> {
   return true;
 }
 
-/** QSAVE, SAVE/SAVEAS and CLOSE typed at the command line (M2-13), and DRAWINGRECOVERY (M2-14). */
+/**
+ * QSAVE, SAVE/SAVEAS and CLOSE typed at the command line (M2-13), DRAWINGRECOVERY (M2-14) and
+ * PLOT/PRINT (M2-17).
+ */
 async function fileCommand(id: number, action: FileAction): Promise<ViewReply> {
   if (action === 'recover') {
     // DRAWINGRECOVERY (M2-14 part 2): the recovery banner lists them again.
@@ -315,6 +319,11 @@ async function fileCommand(id: number, action: FileAction): Promise<ViewReply> {
     return recoveryOffers.getSnapshot().length > 0
       ? { ok: true }
       : { ok: false, message: 'There are no drawings to recover.' };
+  }
+  if (action === 'plot') {
+    // PLOT and PRINT (M2-17): the Plot dialog plots the space shown.
+    plotDialog.open(id);
+    return { ok: true };
   }
   if (action === 'close') {
     // The engine stops with the drawing, so it hears first that the request is done.
@@ -807,6 +816,12 @@ export function App() {
         const { active } = store.getSnapshot();
         if (active !== undefined) void saveDoc(active, e.shiftKey ? 'saveas' : 'qsave');
       }
+      // Ctrl+P opens the Plot dialog (PLOT, M2-17), as in AutoCAD.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        const { active } = store.getSnapshot();
+        if (active !== undefined) plotDialog.open(active);
+      }
       // Ctrl+1 opens or closes the Properties palette (PROPERTIES, M2-21), as in AutoCAD.
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === '1') {
         e.preventDefault();
@@ -909,6 +924,15 @@ export function App() {
           onClick={() => active && void saveDoc(active.id, 'saveas')}
         >
           Save As…
+        </button>
+        <button
+          type="button"
+          className="plot-button"
+          disabled={!active}
+          aria-keyshortcuts="Control+P"
+          onClick={() => active && plotDialog.open(active.id)}
+        >
+          Plot…
         </button>
         <UndoButtons doc={active?.id} />
         <input
@@ -1105,6 +1129,7 @@ export function App() {
         sources={fonts.sources()}
       />
       <AttributeDialogs doc={active} />
+      <PlotDialog doc={active} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
       <CommandLine

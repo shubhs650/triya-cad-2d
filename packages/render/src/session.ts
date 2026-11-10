@@ -39,7 +39,20 @@ import type { Paint } from './tessellate';
 import { textMeasure, type TextContext } from './text';
 import { textBounds } from './text-bounds';
 import { thumbnailOf, type BitmapFactory, type ThumbnailSize } from './thumbnail';
+import { plotParts, type PlotPart } from './plot/job';
+import type { PlotStyleTable } from './plot/plot-style-table';
+import { PlotResolver } from './plot/resolver';
 import type { RasterPixels, RenderStyle, UnderlayRaster, UnderlayRequest } from './types';
+
+/** What to plot (M2-17): a space of the drawing through a plot style table. */
+export interface PlotRequest {
+  /** Model space or a layout's paper space; the space drawn when absent. */
+  readonly block?: Handle;
+  /** The plot style table; none plots objects with their own properties. */
+  readonly table?: PlotStyleTable;
+  /** "Plot paperspace last" (a layout only). */
+  readonly paperspaceLast?: boolean;
+}
 
 /** What the render side needs to build its replica: the engine's init and the block shown. */
 export interface RenderDocument {
@@ -298,6 +311,31 @@ export class RenderSession {
   setUnderlaySnap(definition: Handle, page: UnderlaySnapPage | undefined): void {
     if (page) this.#underlaySnaps.set(definition, page);
     else this.#underlaySnaps.delete(definition);
+  }
+
+  /**
+   * What plotting a space draws (M2-17), tessellated as the screen is (fonts, patterns, the
+   * bitmaps the app loaded). Each TrueType glyph's font is reduced to its file's bytes, one
+   * object per font, so the parts cross a worker boundary and a PDF embeds each font once.
+   */
+  plot(request: PlotRequest = {}): PlotPart[] {
+    const parts = plotParts(this.model, request.block ?? this.#block, {
+      resolver: new PlotResolver(request.table),
+      tessellate: this.renderer.tessellateContext,
+      images: (h) => this.#images.get(h),
+      ...(request.paperspaceLast && { paperspaceLast: true }),
+    });
+    const fonts = new Map<object, { readonly bytes?: Uint8Array }>();
+    const slim = (font: { readonly bytes?: Uint8Array }) => {
+      let f = fonts.get(font);
+      if (!f) fonts.set(font, (f = font.bytes ? { bytes: font.bytes } : {}));
+      return f;
+    };
+    return parts.map((p) =>
+      p.kind !== 'fill' || !p.glyphs
+        ? p
+        : { ...p, glyphs: p.glyphs.map((g) => ({ ...g, font: slim(g.font) })) },
+    );
   }
 
   /** Applies a ChangeSet the engine already applied (`applyToReplica`). */

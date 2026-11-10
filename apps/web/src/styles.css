@@ -138,6 +138,7 @@ button {
 .open-button,
 .save-button,
 .save-as-button,
+.plot-button,
 .undo-button,
 .redo-button,
 .install-button,
@@ -156,6 +157,7 @@ button {
 .open-button:hover,
 .save-button:hover:enabled,
 .save-as-button:hover:enabled,
+.plot-button:hover:enabled,
 .undo-button:hover:enabled,
 .redo-button:hover:enabled,
 .settings-button:hover,
@@ -611,6 +613,7 @@ button {
 /* M2-13: Save and Save As beside Open, the dirty dot of a tab, and "Save changes to …?". */
 .save-button:disabled,
 .save-as-button:disabled,
+.plot-button:disabled,
 .undo-button:disabled,
 .redo-button:disabled {
   color: var(--chrome-text-muted);
@@ -1848,6 +1851,55 @@ button {
 
 .attedit-rows .cad-dialog-field > span {
   min-width: 140px;
+}
+
+/* M2-17: the Plot dialog, AutoCAD's groups in two columns (one on a narrow window). */
+.cad-dialog.plot-dialog {
+  width: min(640px, calc(100vw - 32px));
+  max-width: min(640px, calc(100vw - 32px));
+}
+
+.plot-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 10px;
+}
+
+@media (width <= 560px) {
+  .plot-form {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.plot-group {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  margin: 0;
+  padding: 4px 8px 6px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+.plot-group legend {
+  padding: 0 4px;
+  color: var(--chrome-text-muted);
+}
+
+.plot-group select {
+  min-width: 0;
+  font: inherit;
+}
+
+.plot-orientation {
+  display: flex;
+  gap: 12px;
+}
+
+.plot-error {
+  margin: 8px 0 0;
+  color: var(--danger-text);
 }
 
 /* M2-23: the undo toast (UI_SPEC §11), over the drawing area above the command line. */

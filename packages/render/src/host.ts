@@ -19,7 +19,8 @@ import type {
 } from '@triya/engine';
 import type { Surface } from './canvas2d';
 import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
-import { RenderSession, type FontSources, type RenderDocument } from './session';
+import { RenderSession, type FontSources, type PlotRequest, type RenderDocument } from './session';
+import type { PlotPart } from './plot/job';
 import { offscreenLayer, surfaceOf } from './surface';
 import type { BitmapFactory, ThumbnailSize } from './thumbnail';
 import type {
@@ -275,6 +276,14 @@ export class RendererHost {
     if (this.#session) return Promise.resolve(this.#session.textWidths(texts));
     return this.#request((id) => ({ type: 'textWidths', id, texts })).then((m) =>
       m.type === 'widths' ? [...m.widths] : texts.map(() => null),
+    );
+  }
+
+  /** What plotting a space draws (M2-17): the parts in the space's drawing units. */
+  plot(request: PlotRequest = {}): Promise<PlotPart[]> {
+    if (this.#session) return Promise.resolve(this.#session.plot(request));
+    return this.#request((id) => ({ type: 'plot', id, request })).then((m) =>
+      m.type === 'plot' ? [...m.parts] : [],
     );
   }
 

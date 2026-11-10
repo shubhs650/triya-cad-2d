@@ -77,6 +77,9 @@ importers:
       '@triya/io':
         specifier: workspace:*
         version: link:../../packages/io
+      '@triya/pdf':
+        specifier: workspace:*
+        version: link:../../packages/pdf
       '@triya/render':
         specifier: workspace:*
         version: link:../../packages/render

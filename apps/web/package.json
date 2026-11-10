@@ -19,6 +19,7 @@
     "@triya/engine": "workspace:*",
     "@triya/hatch": "workspace:*",
     "@triya/io": "workspace:*",
+    "@triya/pdf": "workspace:*",
     "@triya/render": "workspace:*",
     "@triya/text": "workspace:*",
     "pdfjs-dist": "6.4.299",
