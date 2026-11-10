@@ -1,5 +1,6 @@
 export {
   MBCS_CODEPAGES,
+  paragraphKeys,
   paragraphStyleOf,
   parseMText,
   type MTextAlign,
@@ -38,4 +39,4 @@ export {
   type MTextFormat,
   type MTextSpan,
 } from './write';
-export { rulerOf, sameRuler, withRuler, type MTextRuler } from './ruler';
+export { alignOf, rulerOf, sameRuler, withAlignment, withRuler, type MTextRuler } from './ruler';

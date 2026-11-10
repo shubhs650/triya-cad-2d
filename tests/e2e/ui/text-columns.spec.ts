@@ -140,14 +140,14 @@ test('the ruler sets the paragraph indent and adds tab stops', async ({ page }) 
   const at = (heights: number) => box.x + 1 + heights * unit;
   // A click adds a tab stop; the bottom marker at 0 is the paragraph indent.
   await page.mouse.click(at(8), box.y + box.height / 2);
-  await expect(ruler).toHaveAttribute('aria-valuetext', 'First line 0, left 0, tabs 8');
+  await expect(ruler).toHaveAttribute('aria-valuetext', 'First line 0, left 0, right 0, tabs 8');
   await page.mouse.move(at(0), box.y + box.height - 3);
   await page.mouse.down();
   await page.mouse.move(at(1), box.y + box.height - 3);
   await page.mouse.move(at(2), box.y + box.height - 3);
   await page.mouse.up();
   // The first line stays where it was: its indent is relative to the paragraph's.
-  await expect(ruler).toHaveAttribute('aria-valuetext', 'First line -2, left 2, tabs 8');
+  await expect(ruler).toHaveAttribute('aria-valuetext', 'First line -2, left 2, right 0, tabs 8');
   const editor = page.getByRole('textbox', { name: 'Multiline text' });
   await expect(editor.locator('.mtext-para').first()).toHaveCSS('padding-left', /^[1-9]/);
   await page.keyboard.press('Control+Enter');

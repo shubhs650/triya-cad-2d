@@ -21,7 +21,14 @@ import {
   type StringPrompt,
 } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
-import { rulerOf, styleFont, withRuler, writeMText, type MTextSpan } from '@triya/text';
+import {
+  rulerOf,
+  styleFont,
+  withAlignment,
+  withRuler,
+  writeMText,
+  type MTextSpan,
+} from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import { loadManifest } from '../corpus/manifest.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
@@ -31,7 +38,16 @@ const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url))
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 
-const RULER = { indentFirst: -1, indentLeft: 2, tabs: [{ at: 6, kind: 'center' as const }] };
+/** M2-26 part 3: a right indent and a decimal stop with the comma style too. */
+const RULER = {
+  indentFirst: -1,
+  indentLeft: 2,
+  indentRight: 1.5,
+  tabs: [
+    { at: 6, kind: 'center' as const },
+    { at: 10, kind: 'decimal' as const, decimal: ',' },
+  ],
+};
 
 /** A first paragraph with the ruler, a column break, a paragraph with its own tabs. */
 const SPANS: readonly MTextSpan[] = [
@@ -39,7 +55,7 @@ const SPANS: readonly MTextSpan[] = [
   {
     type: 'break',
     end: 'column',
-    paragraph: withRuler(withRuler([], RULER), { ...RULER, tabs: [] }),
+    paragraph: withAlignment(withRuler(withRuler([], RULER), { ...RULER, tabs: [] }), 'justified'),
   },
   { type: 'text', text: 'Next ', format: {} },
   { type: 'mbcs', codepage: 932, code: 0x8140, format: {} },
@@ -131,7 +147,7 @@ describe('MTEXT columns and ruler values save as DXF and read back', () => {
   });
 
   it('writes the ruler as one paragraph value', () => {
-    expect(withRuler([], RULER)).toEqual(['i-1,l2,tc6']);
+    expect(withRuler([], RULER)).toEqual(['xi-1,l2,r1.5,tc6,D,10']);
     expect(rulerOf(withRuler([], RULER))).toEqual(RULER);
   });
 });
