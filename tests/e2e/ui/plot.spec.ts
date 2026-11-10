@@ -8,6 +8,7 @@
 // plotters (M2-18) write the same plot as an SVG with the drawing's layers and as a PNG.
 // Part 3: Esc at the window's corners reopens the dialog as it was; a layout opens on its page
 // setup's plot style table and plot options; the drafter's own tables are listed.
+// Part 5: -PLOT asks for the plot at the command line and plots it without the dialog.
 import { copyFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
@@ -352,6 +353,72 @@ test('model space opens on its page setup, and Apply to Layout saves the setting
   await page.keyboard.press('Control+p');
   await expect(d.getByLabel('Paper size')).toHaveValue('ANSI A');
   await expect(d.getByLabel('Fit to paper')).toBeChecked();
+});
+
+test('-PLOT plots at the command line without the dialog (part 5)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  const input = page.getByLabel('Command', { exact: true });
+  const prompt = page.getByTestId('command-prompt');
+  const type = async (text: string) => {
+    await input.fill(text);
+    await input.press('Enter');
+  };
+
+  // Every default: the space shown, its page setup, the PDF plotter, the file named after it.
+  await type('-PLOT');
+  await expect(prompt).toHaveText('Detailed plot configuration? [Yes/No] <No>:');
+  await type('');
+  await expect(prompt).toHaveText('Enter a layout name or [?] <Model>:');
+  await type('?');
+  await type('');
+  await expect(prompt).toHaveText('Enter a page setup name <>:');
+  await type('');
+  await type('svg');
+  await expect(prompt).toHaveText('Enter file name <sample_AC1018-Model.svg>:');
+  await type('');
+  await type('');
+  const [svg] = await Promise.all([page.waitForEvent('download'), type('')]);
+  expect(svg.suggestedFilename()).toBe('sample_AC1018-Model.svg');
+  await expect(dialog(page)).toBeHidden();
+  const svgText = readFileSync((await svg.path())!, 'utf8');
+  expect(svgText).toContain('<svg');
+
+  // The detailed configuration of a layout not shown, saved into its page setup.
+  await type('-PLOT');
+  await type('Y');
+  await type('?');
+  await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText('MyLayout');
+  await type('Layout1');
+  await expect(prompt).toHaveText(/^Enter an output device name or \[\?\] <Triya PDF/);
+  for (const answer of ['', '', '', '', '', '']) await type(answer);
+  await expect(prompt).toHaveText(
+    'Enter plot scale (Plotted Inches=Drawing Units) or [Fit] <1=1>:',
+  );
+  await type('');
+  await type('');
+  await type('');
+  await expect(prompt).toHaveText(/^Enter plot style table name \(enter \. for none\) or \[\?\] </);
+  await type('triya-monochrome.ctb');
+  for (const answer of ['', '', '', '']) await type(answer);
+  await expect(prompt).toHaveText('Enter file name <sample_AC1018-Layout1.pdf>:');
+  await type('Sheet A');
+  await type('Y');
+  const [pdf] = await Promise.all([page.waitForEvent('download'), type('')]);
+  expect(pdf.suggestedFilename()).toBe('Sheet A.pdf');
+  const read = await readPdf(pdf);
+  expect(read.labels).toEqual(['Layout1']);
+  expect(read.paths).toBeGreaterThan(10);
+  // Saved into Layout1's page setup, as Apply to Layout would.
+  type Dev = { triyaDev: { layouts(): { name: string; plot?: { styleSheet?: string } }[] } };
+  const layout1 = await page.evaluate(
+    () => (window as unknown as Dev).triyaDev.layouts().find((l) => l.name === 'Layout1')!.plot!,
+  );
+  expect(layout1.styleSheet).toBe('triya-monochrome.ctb');
+  await expect(page.locator('.doc-tab[data-active="true"]')).toHaveAttribute('data-dirty', 'true');
+  await expect(dialog(page)).toBeHidden();
 });
 
 test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) => {

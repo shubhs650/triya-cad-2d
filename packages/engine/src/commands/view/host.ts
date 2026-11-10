@@ -101,7 +101,82 @@ export type ViewRequest =
    */
   | { readonly op: 'clipboard'; readonly content?: Clipboard }
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes a palette. */
-  | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean };
+  | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean }
+  /**
+   * -PLOT (M2-17 part 5): what the space named (the space shown without `layout`) would plot
+   * with, as the Plot dialog opens on it, and what the app can plot it with.
+   */
+  | { readonly op: 'plotSetup'; readonly layout?: string }
+  /** -PLOT: plots a space with the settings given at the command line, without the dialog. */
+  | { readonly op: 'plotScript'; readonly script: PlotScript };
+
+/** -PLOT's plot areas (AutoCAD's View is not offered: M6-04). */
+export type PlotScriptArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
+
+/**
+ * What -PLOT sets, as the Plot dialog's settings hold it: millimetres of paper throughout (the
+ * prompts show inches for a page setup in inches), the paper and device by the app's own ids.
+ */
+export interface PlotScriptSettings {
+  readonly device: string;
+  readonly paper: string;
+  readonly orientation: 'portrait' | 'landscape';
+  readonly upsideDown: boolean;
+  readonly area: PlotScriptArea;
+  readonly window?: Box | undefined;
+  readonly fit: boolean;
+  /** `mm` millimetres of paper = `units` drawing units. */
+  readonly scale: { readonly mm: number; readonly units: number };
+  readonly center: boolean;
+  /** Millimetres from the paper's lower-left corner. */
+  readonly offset: Vec2;
+  readonly plotStyles: boolean;
+  /** The plot style table's name; '' for none. */
+  readonly table: string;
+  readonly lineweights: boolean;
+  readonly scaleLineweights: boolean;
+  readonly paperspaceLast: boolean;
+}
+
+/** A name -PLOT accepts and shows (`name`) for one of the app's ids. */
+export interface PlotScriptChoice {
+  readonly id: string;
+  readonly name: string;
+}
+
+/** The answer to `plotSetup`: one space's plot settings and what -PLOT may choose from. */
+export interface PlotScriptSetup {
+  /** The space these settings are for: `Model` or a layout's name. */
+  readonly layout: string;
+  /** Model, then the layouts in tab order. */
+  readonly layouts: readonly string[];
+  readonly devices: readonly PlotScriptChoice[];
+  readonly papers: readonly PlotScriptChoice[];
+  readonly areas: readonly PlotScriptArea[];
+  /** The plot style tables the device has for the drawing (CTBs, or STBs). */
+  readonly tables: readonly string[];
+  /** The space's page setup is in inches: the prompts show inches. */
+  readonly inches: boolean;
+  /** The space is a layout: its own plot options are asked. */
+  readonly paper: boolean;
+  /** The space has a page setup "Save changes to page setup" can write. */
+  readonly canSave: boolean;
+  /** The file the plot is written to unless another is named. */
+  readonly file: string;
+  readonly settings: PlotScriptSettings;
+}
+
+/** What -PLOT plots. */
+export interface PlotScript {
+  readonly layout: string;
+  readonly settings: PlotScriptSettings;
+  /** The file to write, by name. */
+  readonly file: string;
+  /** "Save changes to page setup": the settings into the space's page setup first. */
+  readonly save: boolean;
+  /** "Proceed with plot". */
+  readonly plot: boolean;
+}
 
 /** The palettes a command opens or closes (M2-21). */
 export type PaletteName = 'properties';
@@ -137,6 +212,8 @@ export type ViewReply =
       readonly clipboard?: Clipboard;
       /** The Clipboard's objects were copied from this drawing (PASTEORIG refuses them). */
       readonly sameDrawing?: boolean;
+      /** What `plotSetup` found (-PLOT, M2-17 part 5). */
+      readonly plotSetup?: PlotScriptSetup;
     }
   | { readonly ok: false; readonly message: string };
 

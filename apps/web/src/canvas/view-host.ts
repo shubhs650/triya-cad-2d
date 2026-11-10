@@ -84,7 +84,12 @@ export interface ViewContext {
   readonly clipboard?: (content: Clipboard | undefined) => ViewReply;
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes the palette. */
   readonly palette?: (name: PaletteName, open: boolean) => ViewReply;
+  /** -PLOT (M2-17 part 5): a space's plot settings, and a plot made without the dialog. */
+  readonly plot?: (r: PlotScriptRequest) => Promise<ViewReply>;
 }
+
+/** What -PLOT asks of the app. */
+export type PlotScriptRequest = Extract<ViewRequest, { op: 'plotSetup' | 'plotScript' }>;
 
 export const NO_CANVAS = 'There is no view to change.';
 export const NO_FILE = 'There is no drawing to save.';
@@ -106,6 +111,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   // The file commands need the drawing, not a canvas.
   if (r.op === 'file') {
     return ctx.file ? ctx.file(r.action, r.window, r.resume) : { ok: false, message: NO_FILE };
+  }
+  if (r.op === 'plotSetup' || r.op === 'plotScript') {
+    return ctx.plot ? ctx.plot(r) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };
