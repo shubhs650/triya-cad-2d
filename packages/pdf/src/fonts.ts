@@ -1,13 +1,19 @@
-// TrueType text in a plot (M2-16 part 3): each TrueType font a plot's text uses is embedded
-// once per document as a subset of the glyphs shown, as PDF 32000-1:2008 §9.7 builds a
-// composite font: a Type 0 font with the Identity-H encoding (two-byte codes, code = CID) over a
-// CIDFontType2 descendant whose CIDs are the subset's glyph numbers (CIDToGIDMap Identity),
-// its widths in /W, and a ToUnicode CMap (§9.10.3) so the text stays searchable and copies as
-// the characters typed. CIDs are handed out as glyphs are first shown, so a page's content can
-// be written before the subset is known. A font that is not TrueType ('glyf'), or whose OS/2
-// fsType forbids embedding outlines, is not embedded: its text plots as outlines (AutoCAD's PDF
-// export also turns such fonts into geometry). No DOM here.
+// Text in a plot (M2-16 parts 3 and 4): each OpenType font a plot's text uses is embedded once
+// per document as a subset of the glyphs shown, as PDF 32000-1:2008 §9.7 builds a composite
+// font: a Type 0 font with the Identity-H encoding (two-byte codes, code = CID) over a
+// descendant CIDFont, its widths in /W, and a ToUnicode CMap (§9.10.3) so the text stays
+// searchable and copies as the characters typed.
+// - TrueType ('glyf') fonts: a CIDFontType2 whose CIDs are the subset's glyph numbers
+//   (CIDToGIDMap Identity), handed out as glyphs are first shown, so a page's content can be
+//   written before the subset is known; the file is a FontFile2.
+// - CFF-flavoured OpenType ('OTTO'): a CIDFontType0 over a bare CFF program (FontFile3
+//   /CIDFontType0C) in which glyphs keep their numbers (`cff.ts`), so a CID is the glyph number,
+//   or the font's own CID when the CFF is CID-keyed, and /W lists only the CIDs shown.
+// A font whose OS/2 fsType forbids embedding outlines, or any other kind of file, is not
+// embedded: its text plots as outlines (AutoCAD's PDF export also turns such fonts into
+// geometry). No DOM here.
 
+import { CffFont } from './cff';
 import { pdfNumber } from './content';
 import { TrueTypeFont } from './truetype';
 
@@ -17,29 +23,45 @@ export interface PlotFont {
   readonly bytes?: Uint8Array;
 }
 
-/** A TrueType font embedded in a document, named `F<n>` in page resources. */
+/** An OpenType font embedded in a document, named `F<n>` in page resources. */
 export class EmbeddedFont {
-  /** Subset glyph (= CID) → glyph of the font; .notdef is CID 0. */
+  /**
+   * The glyphs shown, .notdef first. TrueType: subset glyph (= CID) → glyph of the font. CFF:
+   * in the order first shown (the CID is `font.cid` of the glyph).
+   */
   readonly glyphs: number[] = [0];
   /** CID → the character it was first shown for. */
   readonly unicode = new Map<number, number>();
+  /** Glyph of the font → CID, and back. */
   readonly #cids = new Map<number, number>([[0, 0]]);
+  readonly #gids = new Map<number, number>([[0, 0]]);
 
   constructor(
     readonly name: string,
-    readonly font: TrueTypeFont,
+    readonly font: TrueTypeFont | CffFont,
   ) {
-    // A font that must not be subset is embedded whole, its glyphs keeping their numbers.
-    if (font.noSubsetting) {
-      for (let g = 1; g < font.numGlyphs; g++) this.#cids.set(g, this.glyphs.push(g) - 1);
+    // A TrueType font that must not be subset is embedded whole, its glyphs keeping their
+    // numbers (a CFF one keeps them anyway).
+    if (font.noSubsetting && font instanceof TrueTypeFont) {
+      for (let g = 1; g < font.numGlyphs; g++) this.#add(g, g);
     }
+  }
+
+  #add(gid: number, cid: number): void {
+    this.glyphs.push(gid);
+    this.#cids.set(gid, cid);
+    this.#gids.set(cid, gid);
   }
 
   /** The CID showing glyph `gid` of the font, for the character `codePoint`. */
   cid(gid: number, codePoint: number): number {
-    const g = gid >= 0 && gid < this.font.numGlyphs ? gid : 0;
+    const f = this.font;
+    const g = gid >= 0 && gid < f.numGlyphs ? gid : 0;
     let cid = this.#cids.get(g);
-    if (cid === undefined) this.#cids.set(g, (cid = this.glyphs.push(g) - 1));
+    if (cid === undefined) {
+      cid = f instanceof CffFont ? f.cid(g) : this.glyphs.length;
+      this.#add(g, cid);
+    }
     if (!this.unicode.has(cid) && codePoint > 0) this.unicode.set(cid, codePoint);
     return cid;
   }
@@ -47,7 +69,7 @@ export class EmbeddedFont {
   /** A CID's advance in thousandths of an em, as /W writes it. */
   width(cid: number): number {
     return Number(
-      pdfNumber((this.font.advance(this.glyphs[cid] ?? 0) * 1000) / this.font.unitsPerEm),
+      pdfNumber((this.font.advance(this.#gids.get(cid) ?? 0) * 1000) / this.font.unitsPerEm),
     );
   }
 
@@ -63,10 +85,16 @@ export class EmbeddedFont {
     stream: (dict: string, data: Uint8Array) => number,
   ): void {
     const f = this.font;
-    const { bytes } = f.subset(this.glyphs);
     const k = 1000 / f.unitsPerEm;
-    const base = `${subsetTag(this.glyphs, f.postScriptName)}+${pdfName(f.postScriptName) || this.name}`;
-    const file = stream(`/Length1 ${bytes.length}`, bytes);
+    const cff = f instanceof CffFont;
+    const whole = cff && f.noSubsetting;
+    const bytes = cff ? (whole ? f.program : f.subset(this.glyphs)) : f.subset(this.glyphs).bytes;
+    const name = pdfName(f.postScriptName) || this.name;
+    // §9.6.4: a subset's name starts with a tag; a font embedded whole has none.
+    const base = whole ? name : `${subsetTag(this.glyphs, f.postScriptName)}+${name}`;
+    const file = cff
+      ? stream('/Subtype /CIDFontType0C', bytes)
+      : stream(`/Length1 ${bytes.length}`, bytes);
     const flags = (f.fixedPitch ? 1 : 0) | 4 | (f.italicAngle !== 0 ? 64 : 0);
     const descriptor = add(
       `<< /Type /FontDescriptor /FontName /${base} /Flags ${flags} /FontBBox [${f.bbox
@@ -75,19 +103,38 @@ export class EmbeddedFont {
         f.ascender * k,
       )} /Descent ${pdfNumber(f.descender * k)} /CapHeight ${pdfNumber(
         f.capHeight * k,
-      )} /StemV 80 /FontFile2 ${file} 0 R >>`,
+      )} /StemV 80 /${cff ? 'FontFile3' : 'FontFile2'} ${file} 0 R >>`,
     );
-    const widths = this.glyphs.map((_, cid) => pdfNumber(this.width(cid)));
-    const cidFont = add(
-      `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${base} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${descriptor} 0 R /W [0 [${widths.join(
-        ' ',
-      )}]] /CIDToGIDMap /Identity >>`,
-    );
+    const cidFont = cff
+      ? add(
+          `<< /Type /Font /Subtype /CIDFontType0 /BaseFont /${base} /CIDSystemInfo << /Registry (${pdfName(
+            f.registry,
+          )}) /Ordering (${pdfName(f.ordering)}) /Supplement ${f.supplement} >> /FontDescriptor ${descriptor} 0 R /W [${this.sparseWidths()}] >>`,
+        )
+      : add(
+          `<< /Type /Font /Subtype /CIDFontType2 /BaseFont /${base} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor ${descriptor} 0 R /W [0 [${this.glyphs
+            .map((_, cid) => pdfNumber(this.width(cid)))
+            .join(' ')}]] /CIDToGIDMap /Identity >>`,
+        );
     const toUnicode = stream('', latin1(this.cmap()));
     set(
       type0,
       `<< /Type /Font /Subtype /Type0 /BaseFont /${base} /Encoding /Identity-H /DescendantFonts [${cidFont} 0 R] /ToUnicode ${toUnicode} 0 R >>`,
     );
+  }
+
+  /** /W for the CIDs shown, in order, consecutive CIDs sharing one array: `c [w w …] …`. */
+  sparseWidths(): string {
+    const cids = [...this.#gids.keys()].sort((a, b) => a - b);
+    const runs: string[] = [];
+    for (let i = 0; i < cids.length;) {
+      let j = i + 1;
+      while (j < cids.length && cids[j] === cids[j - 1]! + 1) j++;
+      const ws = cids.slice(i, j).map((c) => pdfNumber(this.width(c)));
+      runs.push(`${cids[i]} [${ws.join(' ')}]`);
+      i = j;
+    }
+    return runs.join(' ');
   }
 
   /** The ToUnicode CMap: each CID shown to the character it was shown for. */
@@ -119,7 +166,7 @@ export class EmbeddedFont {
   }
 }
 
-/** The TrueType fonts of one document, each embedded once whichever pages show it. */
+/** The OpenType fonts of one document, each embedded once whichever pages show it. */
 export class PdfFonts {
   readonly #byFile = new Map<Uint8Array, EmbeddedFont | null>();
   readonly embedded: EmbeddedFont[] = [];
@@ -130,8 +177,8 @@ export class PdfFonts {
     if (!bytes) return undefined;
     let e = this.#byFile.get(bytes);
     if (e === undefined) {
-      const ttf = TrueTypeFont.parse(bytes);
-      e = ttf?.embeddable ? new EmbeddedFont(`F${this.embedded.length + 1}`, ttf) : null;
+      const font = TrueTypeFont.parse(bytes) ?? CffFont.parse(bytes);
+      e = font?.embeddable ? new EmbeddedFont(`F${this.embedded.length + 1}`, font) : null;
       if (e) this.embedded.push(e);
       this.#byFile.set(bytes, e);
     }

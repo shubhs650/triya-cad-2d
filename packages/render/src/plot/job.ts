@@ -24,7 +24,7 @@
 //   model space geometry", which contradicts its name; the name and the usual reading (off:
 //   paper space first) are encoded here, an ambiguity noted in the PR.
 //
-// Not plotted yet: PDF underlays (their page's own content in a plot is M2-16 part 4) and an
+// Not plotted yet: PDF underlays (their page's own content in a plot is M2-16 part 5) and an
 // image whose bitmap the app has not loaded, which plots its frame only.
 
 import {

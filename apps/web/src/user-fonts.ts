@@ -6,7 +6,7 @@
 import { fontBookOf, type FontSources } from '@triya/render';
 import { BUNDLED_FONTS } from './fonts';
 
-export const isFontFile = (name: string): boolean => /\.(shx|ttf|otf)$/i.test(name);
+export const isFontFile = (name: string): boolean => /\.(shx|ttf|otf|ttc)$/i.test(name);
 
 /** One kept file, by its name as dropped. */
 export interface StoredFont {
@@ -50,6 +50,7 @@ const KEEP_FAILED = 'could not be kept on this device; it works until the page i
 function kindOf(name: string): string {
   if (/\.ttf$/i.test(name)) return 'TrueType font';
   if (/\.otf$/i.test(name)) return 'OpenType font';
+  if (/\.ttc$/i.test(name)) return 'TrueType collection';
   return 'SHX font';
 }
 
@@ -155,7 +156,7 @@ export class FontStore {
       a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
     );
     // FontBook looks files up without their extension, so arial.otf serves arial.ttf too.
-    const stem = (name: string) => keyOf(name).replace(/\.(shx|ttf|otf)$/, '');
+    const stem = (name: string) => keyOf(name).replace(/\.(shx|ttf|otf|ttc)$/, '');
     const own = new Set(this.#files.map((f) => stem(f.name)));
     // User files first: FontBook keeps the first face added for a family and style.
     this.#sources = {

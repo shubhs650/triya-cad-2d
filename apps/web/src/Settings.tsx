@@ -156,7 +156,7 @@ export function Settings({
         <input
           ref={fontPicker}
           type="file"
-          accept=".shx,.ttf,.otf"
+          accept=".shx,.ttf,.otf,.ttc"
           multiple
           hidden
           data-testid="font-picker"

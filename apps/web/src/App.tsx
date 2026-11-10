@@ -425,7 +425,7 @@ void referenceFiles.load();
 type Supplied = FileSource & { readonly handle?: ReferenceHandle };
 
 /**
- * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf the fonts, a .pdf the files
+ * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf/.ttc the fonts, a .pdf the files
  * PDF underlays show, an image file (.png, .jpg, .bmp, .tif, .gif) the files IMAGEs show, a
  * drawing an xref of an open drawing is waiting for loads as that xref (M1-21), anything else
  * opens as a drawing. A dropped folder's files answer references only.
