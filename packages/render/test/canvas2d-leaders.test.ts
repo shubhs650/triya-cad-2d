@@ -14,6 +14,7 @@ import {
   type TextStyleRecord,
   type ToleranceGeometry,
 } from '@triya/engine';
+import { dimensionParts } from '@triya/dims';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer, textBounds, textMeasure, type RenderStyle } from '../src/index';
 import { drawing, entity, MODEL, surface } from './fixtures';
@@ -103,6 +104,7 @@ function setup(entities: EntityInit[]) {
     tol: toleranceForSize(1000),
     annotationBounds: textBounds(text),
     measureText: textMeasure(text),
+    dimensionParts,
   });
   const layers: ReturnType<typeof surface>[] = [];
   const r = new Canvas2DRenderer({
@@ -252,6 +254,38 @@ describe('multileaders in the renderer', () => {
     expect(r.hitTest({ x: 70, y: 50 }, 2)).toEqual([d.model.ids.idOf('20')]);
   });
 
+  it('bounds a dimension without a stored block by what the engine draws (M2-30)', () => {
+    const dim: DimensionGeometry = {
+      kind: 'DIMENSION',
+      dimType: 'linear',
+      style: DIMSTYLE,
+      first: { x: 0, y: -3 },
+      second: { x: 12, y: -3 },
+      definitionPoint: { x: 12, y: 0 },
+      textPosition: { x: 6, y: 0 },
+      textUserPositioned: false,
+      text: '',
+      textRotation: 0,
+      horizontalDirection: 0,
+      attachment: 5,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+      rotation: 0,
+    };
+    const { d, index } = setup([entity('20', dim)]);
+    const b = index.bounds(d.model.ids.idOf('20')!);
+    if (b?.kind !== 'box') throw new Error(`expected a box, got ${b?.kind}`);
+    // The extension lines from DIMEXO (0.0625) above their origins at x = 0 and 12 to DIMEXE
+    // (0.18) above the dimension line at y = 0; the text "12" (1 high) centred on that line.
+    expect(b.box.minX).toBeCloseTo(0);
+    expect(b.box.maxX).toBeCloseTo(12);
+    expect(b.box.minY).toBeCloseTo(-3 + 0.0625);
+    expect(b.box.maxY).toBeGreaterThanOrEqual(0.18);
+    expect(b.box.maxY).toBeLessThan(1);
+    // Culled by its box: a query far from it no longer returns it.
+    expect(index.query(MODEL, { minX: 100, minY: 100, maxX: 110, maxY: 110 })).toEqual([]);
+  });
+
   it('draws blockless ordinate, jogged radius and arc length dimensions from the engine (part 2)', () => {
     const common = {
       style: DIMSTYLE,
@@ -298,7 +332,9 @@ describe('multileaders in the renderer', () => {
       },
     ];
     for (const dim of dims) {
-      const { redraw } = setup([entity('20', dim)]);
+      const { r, redraw } = setup([entity('20', dim)]);
+      // All three in view (x −25 … 15): culled by their bounds since M2-30.
+      r.setView({ center: { x: -5, y: 0 }, scale: 5 });
       // Its lines in DIMCLRD (green) and its text in DIMCLRT (red).
       expect(painted(redraw(), 'stroke'), dim.dimType).toEqual(
         expect.arrayContaining(['#00ff00', '#ff0000']),

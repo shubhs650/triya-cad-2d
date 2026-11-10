@@ -68,6 +68,16 @@ export type AnnotationGeometry =
 /** Exact bounds for annotation geometry, or undefined when the provider cannot tell. */
 export type AnnotationBounds = (geom: AnnotationGeometry) => Box | undefined;
 
+/**
+ * What the dimension engine (`@triya/dims`' `dimensionParts`, which the engine cannot import)
+ * draws for a dimension, in drawing coordinates; undefined when it cannot draw it (yet).
+ */
+export type DimensionPartsProvider = (
+  e: Pick<Entity, 'geom' | 'xdata'>,
+  tables: AnnotationTables,
+  measure: TextMeasure,
+) => readonly { readonly geom: EntityGeometry; readonly defpoint?: true }[] | undefined;
+
 export interface BoundsContext {
   readonly tol: Tolerance;
   /**
@@ -82,6 +92,12 @@ export interface BoundsContext {
   readonly tables?: AnnotationTables | undefined;
   /** Text widths, for TOLERANCE frames (M1-52 part 4); without it a TOLERANCE is unknown. */
   readonly measureText?: TextMeasure | undefined;
+  /**
+   * The dimension engine (M2-30), which draws a dimension without its stored block (the
+   * renderer's `generatedDimension`): such a dimension is bounded by those parts, with
+   * `tables` and `measureText`, and is unknown without them.
+   */
+  readonly dimensionParts?: DimensionPartsProvider | undefined;
   /**
    * ATTMODE (M1-14 part 2): 2 shows invisible attributes too, so they count in an INSERT's
    * bounds. Other values bound the visible ones (ATTMODE 0 shows none, which those cover).
@@ -132,6 +148,28 @@ function maxWidth(vertices: readonly PolylineVertex[], start = 0, end = 0, const
   let w = constant;
   for (const v of vertices) w = Math.max(w, v.startWidth ?? start, v.endWidth ?? end);
   return w;
+}
+
+/** A dimension without its block: the union of what the dimension engine draws for it. */
+function generatedDimensionBounds(
+  geom: DimensionGeometry,
+  xdata: Entity['xdata'] | undefined,
+  ctx: BoundsContext,
+): EntityBounds {
+  const parts =
+    ctx.tables && ctx.measureText
+      ? ctx.dimensionParts?.({ geom, ...(xdata ? { xdata } : {}) }, ctx.tables, ctx.measureText)
+      : undefined;
+  if (!parts) return UNKNOWN;
+  let out: Box | undefined;
+  for (const p of parts) {
+    // Definition points are on the DEFPOINTS layer, never plotted; the renderer skips them.
+    if (p.defpoint) continue;
+    const b = entityBounds(p.geom, ctx);
+    if (b.kind === 'unknown' || b.kind === 'infinite') return UNKNOWN;
+    if (b.kind === 'box') out = out ? unionBox(out, b.box) : b.box;
+  }
+  return out ? boxed(out) : EMPTY;
 }
 
 function annotation(geom: AnnotationGeometry, ctx: BoundsContext): Box | undefined {
@@ -412,7 +450,8 @@ export function entityBounds(
       if (b) return boxed(b);
       // The *D block holds the dimension as last drawn, in plan coordinates (no transform).
       const ext = geom.block === undefined ? undefined : ctx.blockExtents(geom.block);
-      return ext === undefined || ext === 'unknown' || isEmptyBox(ext) ? UNKNOWN : boxed(ext);
+      if (ext === undefined) return generatedDimensionBounds(geom, xdata, ctx);
+      return ext === 'unknown' || isEmptyBox(ext) ? UNKNOWN : boxed(ext);
     }
     case 'INSERT':
       return insertBounds(geom, ctx);

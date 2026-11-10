@@ -1,7 +1,14 @@
 // M2-10: dimension text by DIMLUNIT, DIMDEC, DIMZIN, DIMRND, DIMLFAC, DIMDSEP, DIMFRAC,
 // DIMAUNIT, DIMADEC, DIMAZIN, DIMPOST and the text override, as AutoCAD formats it.
 import { describe, expect, it } from 'vitest';
-import { dimensionText, formatAngle, formatLinear, linearText } from '../src/index';
+import {
+  angularText,
+  dimensionText,
+  formatAngle,
+  formatLinear,
+  linearText,
+  textAlign,
+} from '../src/index';
 
 describe('linear measurement text', () => {
   it('decimal: DIMDEC places, DIMZIN leading/trailing zeros, DIMDSEP, DIMRND, DIMLFAC', () => {
@@ -130,5 +137,52 @@ describe('tolerances, limits and alternate units (M2-10 part 2)', () => {
     expect(linearText('<>/[]', 1, alt)).toBe('1.00/25.4');
     expect(linearText('SEE NOTE', 1, alt)).toBe('SEE NOTE');
     expect(linearText(' ', 1, alt)).toBeUndefined();
+  });
+});
+
+describe('DIMTOLJ and angular tolerances (M2-30)', () => {
+  const deg = (d: number) => (d * Math.PI) / 180;
+  const tol = { DIMADEC: 0, DIMTDEC: 1, DIMTFAC: 0.7, DIMTP: 0.5, DIMTM: 0.2, DIMTZIN: 0 };
+
+  it('DIMTOLJ is the alignment code a text with deviations starts with (\\A0; bottom, 1 middle, 2 top)', () => {
+    // AutoCAD's default DIMTOLJ is 1 (middle).
+    expect(textAlign(false, { DIMTOL: 1 })).toBe('\\A1;');
+    expect(textAlign(false, { DIMTOL: 1, DIMTOLJ: 0 })).toBe('\\A0;');
+    expect(textAlign(true, { DIMTOL: 1, DIMTOLJ: 2 })).toBe('\\A2;');
+    // Out of range values are clamped.
+    expect(textAlign(false, { DIMTOL: 1, DIMTOLJ: 7 })).toBe('\\A2;');
+    // No effect unless DIMTOL is on (DIMTOLJ system variable); limits are not deviations.
+    expect(textAlign(true, { DIMTOLJ: 0 })).toBe('\\A1;');
+    expect(textAlign(false, { DIMTOLJ: 0 })).toBe('');
+    expect(textAlign(true, { DIMLIM: 1, DIMTOLJ: 0 })).toBe('\\A1;');
+  });
+
+  it('angular DIMTOL: deviations in the angle unit at DIMTDEC with DIMTZIN, stacked or %%p', () => {
+    expect(angularText('', deg(90), { ...tol, DIMTOL: 1 })).toBe(
+      '90%%d{\\H0.7x;\\S+0.5%%d^-0.2%%d;}',
+    );
+    expect(angularText('', deg(90), { ...tol, DIMTOL: 1, DIMTM: 0.5 })).toBe('90%%d%%p0.5%%d');
+    // DIMTZIN 8 drops trailing zeros, 4 leading ones (DIMAZIN's 2 and 1 for the deviations).
+    expect(angularText('', deg(90), { ...tol, DIMTDEC: 2, DIMTZIN: 12, DIMTOL: 1 })).toBe(
+      '90%%d{\\H0.7x;\\S+.5%%d^-.2%%d;}',
+    );
+    // Grads: DIMTP is in grads.
+    expect(angularText('', Math.PI / 2, { ...tol, DIMAUNIT: 2, DIMTOL: 1, DIMTM: 0.5 })).toBe(
+      '100g%%p0.5g',
+    );
+    // A zero deviation has no sign.
+    expect(angularText('', deg(90), { ...tol, DIMTOL: 1, DIMTP: 0 })).toBe(
+      '90%%d{\\H0.7x;\\S0.0%%d^-0.2%%d;}',
+    );
+  });
+
+  it('angular DIMLIM: the limits stacked in place of the measurement; overrides and DIMPOST as before', () => {
+    expect(angularText('', deg(90), { ...tol, DIMLIM: 1 })).toBe('{\\H0.7x;\\S90.5%%d^89.8%%d;}');
+    expect(angularText('<> TYP', deg(90), { ...tol, DIMTOL: 1, DIMTM: 0.5 })).toBe(
+      '90%%d%%p0.5%%d TYP',
+    );
+    expect(angularText('SEE NOTE', deg(90), { ...tol, DIMTOL: 1 })).toBe('SEE NOTE');
+    expect(angularText(' ', deg(90), tol)).toBeUndefined();
+    expect(angularText('', deg(90), { ...tol, DIMPOST: '<> REF' })).toBe('90%%d REF');
   });
 });

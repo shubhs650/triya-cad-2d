@@ -143,6 +143,49 @@ describe('the render session measures its space (M1-35 part 2)', () => {
     expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
   });
 
+  it('counts a dimension drawn without its block by what the dimension engine draws (M2-30)', () => {
+    const dim: EntityInit = entity('22', {
+      kind: 'DIMENSION',
+      dimType: 'linear',
+      style: '31',
+      first: { x: 0, y: -30 },
+      second: { x: 40, y: -30 },
+      definitionPoint: { x: 40, y: -20 },
+      textPosition: { x: 20, y: -20 },
+      textUserPositioned: false,
+      text: '',
+      textRotation: 0,
+      horizontalDirection: 0,
+      attachment: 5,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+      rotation: 0,
+    });
+    const withDim = (fonts?: FontSources) =>
+      new RenderSession({
+        document: {
+          init: drawingInit([entities[0]!, dim], {
+            textStyles: [style],
+            dimStyles: [{ handle: '31', name: 'Standard', vars: { DIMTXT: 2, DIMTXSTY: STYLE } }],
+          }),
+          block: MODEL,
+          tol: toleranceForSize(1000),
+        },
+        surface: surface('visible'),
+        createLayer: () => surface('layer'),
+        requestIdle: () => {},
+        ...(fonts && { fonts }),
+      });
+    // Its text needs a font to be measured: unknown until one serves it.
+    expect(withDim().extents()).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
+    const box = withDim(FONTS).extents()!;
+    expect(box.minX).toBeCloseTo(0, 6);
+    expect(box.maxX).toBeCloseTo(40, 6);
+    // From DIMEXO (0.0625) above the extension lines' origins.
+    expect(box.minY).toBeCloseTo(-30 + 0.0625, 6);
+    expect(box.maxY).toBeCloseTo(0, 6);
+  });
+
   it('has no extents for a space with nothing of known extent', () => {
     const empty = new RenderSession({
       document: { init: drawingInit([]), block: MODEL, tol: toleranceForSize(1000) },

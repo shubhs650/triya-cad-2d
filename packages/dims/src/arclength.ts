@@ -12,15 +12,21 @@
 // - DIMARCSYM 0 puts the arc symbol before the text, 1 above it, 2 nowhere. AutoCAD files store
 //   it as an ARC in Continuous: an upper half circle 0.817 text heights across the radius,
 //   ending at the text's near edge with its centre half a radius below the text's middle.
-//   (DXF 71's leader for a dimension of a long arc is not drawn yet.)
+// - DIMARC's Leader (DXF 71, its points 16 and 17; M2-30) "is drawn radially, pointing towards
+//   the center of the arc being dimensioned": a line between the two points with the leader
+//   arrowhead (DIMLDRBLK, closed filled by default) at the one nearer the measured arc, the
+//   line ending at the arrowhead's back. AutoCAD's help does not say which point is which, so
+//   the nearer one is taken whatever their order.
 
 import type { AnnotationTables, DimensionGeometry, TextMeasure, Vec2 } from '@triya/engine';
 import { arcLine } from './angular';
-import { linearText } from './format';
+import { linearText, textAlign } from './format';
 import {
   add,
   angleOf,
   arcPart,
+  arrowParts,
+  atTip,
   defpoint,
   dist,
   dot,
@@ -31,11 +37,12 @@ import {
   sub,
   textBox,
   textGeometry,
+  unit,
   upright,
   type DimPart,
 } from './geometry';
 import { fit } from './linear';
-import { num, type DimStyle } from './style';
+import { num, ref, type DimStyle } from './style';
 
 type ArcLength = Extract<DimensionGeometry, { dimType: 'arc' }>;
 
@@ -91,7 +98,7 @@ export function arcLengthParts(
   let width = 0;
   let placement = { textInside: true, arrowsInside: true };
   if (label !== undefined) {
-    const probe = textGeometry((centred ? '\\A1;' : '') + label, g.textPosition, 0, s);
+    const probe = textGeometry(textAlign(centred, s.vars) + label, g.textPosition, 0, s);
     const w = measure(probe);
     if (w === undefined) return undefined;
     width = w;
@@ -133,6 +140,31 @@ export function arcLengthParts(
       });
     }
   }
+  if (g.leader) out.push(...leaderParts(g.leader, c, r0, s, model));
   out.push(defpoint(c), defpoint(g.first), defpoint(g.second), defpoint(g.definitionPoint));
+  return out;
+}
+
+/** The leader between `points`, its arrowhead on the end nearer the measured arc (radius r0). */
+function leaderParts(
+  points: readonly [Vec2, Vec2],
+  c: Vec2,
+  r0: number,
+  s: DimStyle,
+  model: AnnotationTables,
+): DimPart[] {
+  const off = (p: Vec2) => Math.abs(dist(p, c) - r0);
+  const [tip, from] = off(points[0]) <= off(points[1]) ? points : [points[1], points[0]];
+  const d = unit(sub(from, tip));
+  if (!d) return [];
+  const blk = ref(s.vars.DIMLDRBLK);
+  // A leader keeps its arrowhead when the dimension draws ticks (DIMTSZ is the dimension
+  // line's); its line ends at the arrowhead's back unless the arrowhead is drawn about the tip.
+  const ls: DimStyle = { ...s, tsz: 0 };
+  const length = dist(tip, from);
+  const back = atTip(blk, ls, model) || !(s.asz > 0) ? 0 : Math.min(s.asz, length);
+  const out: DimPart[] = [];
+  if (length > back) out.push(linePart(from, add(tip, d, back), s.dimLine));
+  out.push(...arrowParts(tip, add(tip, d, s.asz), blk, ls, model, d));
   return out;
 }

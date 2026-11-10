@@ -24,6 +24,7 @@ import {
   entityBounds,
   type AnnotationBounds,
   type BoundsContext,
+  type DimensionPartsProvider,
   type EntityBounds,
   type UnderlayPage,
 } from './entity-bounds';
@@ -52,6 +53,8 @@ export interface SpatialIndexOptions {
   readonly annotationBounds?: AnnotationBounds;
   /** Text widths from the same text engine, for TOLERANCE frames (M1-52 part 4). */
   readonly measureText?: TextMeasure;
+  /** The dimension engine, bounding dimensions drawn without their block (M2-30). */
+  readonly dimensionParts?: DimensionPartsProvider;
   /** PDF page sizes as the app reads them (M1-20); `reboundUnderlays` when they change. */
   readonly underlayPage?: UnderlayPage;
   /**
@@ -187,6 +190,7 @@ export class SpatialIndex {
       tol: options.tol,
       annotationBounds: options.annotationBounds,
       measureText: options.measureText,
+      dimensionParts: options.dimensionParts,
       underlayPage: options.underlayPage,
       blockExtents: (h) => this.extents(h),
       basePoint: (h) => model.blocks.get(h)?.basePoint,

@@ -24,7 +24,7 @@ import type {
   TextMeasure,
   Vec2,
 } from '@triya/engine';
-import { linearText } from './format';
+import { linearText, textAlign } from './format';
 import {
   add,
   angleOf,
@@ -83,7 +83,7 @@ export function radialParts(
   const probe =
     label === undefined
       ? undefined
-      : textGeometry((centred ? '\\A1;' : '') + label, g.textPosition, 0, s);
+      : textGeometry(textAlign(centred, s.vars) + label, g.textPosition, 0, s);
   const width = probe ? measure(probe) : 0;
   if (width === undefined) return undefined;
   // Placed by the engine: outside, beyond the arrow along the radius (or, kept horizontal,

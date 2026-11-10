@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) 0170–0171 (M1-105), 0172 (M1-107), 0173–0174 (M1-111), 0175 (M2-06) and 0176 (M2-24 part 2) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) 0170–0171 (M1-105), 0172 (M1-107), 0173–0174 (M1-111), 0175 (M2-06), 0176 (M2-24 part 2) and 0177 (M2-30) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -3231,5 +3231,22 @@ A visibility parameter without raw DXF codes (read from DWG or created in code) 
 `WipeoutVariables.DisplayImageFrame` is a bool, but DXF group 70 (DWG BS) of WIPEOUTVARIABLES holds the WIPEOUTFRAME system variable, which AutoCAD sets to 0 (frames off), 1 (displayed and plotted) or 2 (displayed but not plotted). Reading 2 gave `true`, and writing it back stored 1, so a drawing whose wipeout frames were meant to stay off the plot plotted them after a round trip.
 
 This change makes the property the stored number (default 0, the same as `false` before), read and written unchanged by the DWG reader and the DXF and DWG writers. Callers that tested it for truth keep working for 0 and 1. This is a breaking type change of a public property; an alternative is a `WipeoutFrameMode` enum with the same values.
+
+</details>
+
+### 0177 — a DXF DIMENSION's text rotation (53) and horizontal direction (51) read as radians
+
+- **File:** `third_party/acad-ts-patches/0177-dxf-dimension-angles-degrees.patch`
+- **Touches:** `src/Metadata/LookupTables/Entities.ts`
+- **Symptom:** `Dimension.textRotation` and `horizontalDirection` are radians (the DWG reader and writer carry the BDs as they are, and `DimensionOrdinate` takes the sine of `horizontalDirection`), but their DXF codes 53 and 51 had no `IsAngle` flag, so the DXF degrees were read and written unconverted: a dimension text turned 30° in a DXF came in turned 30 radians, and an ordinate drawn in a UCS turned 30° (51 = −30) measured along a direction 30 radians off. No public corpus DXF has either code non-zero, so the round-trip suite never saw it; M2-30's ordinate UCS rule showed it.
+- **Fix:** both codes carry `IsAngle` (with their `Optional`), as every other DXF angle outside MULTILEADER does, so the reader converts from degrees and the writer back (`radToDegRoundTrip`, so a value read from a file is written as it was).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0177 a DXF DIMENSION states its text rotation (53) and horizontal direction (51) in degrees".
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write a DXF DIMENSION's text rotation and horizontal direction in degrees
+
+`Dimension.TextRotation` (53) and `Dimension.HorizontalDirection` (51) are radians in the object model: the DWG reader stores the BDs unchanged and `DimensionOrdinate` uses `Math.Sin(HorizontalDirection)`. In DXF both are degrees (DXF reference, DIMENSION; ezdxf reads them as degrees), but their `DxfCodeValue` attributes lack `DxfReferenceType.IsAngle`, so the DXF reader stored the degrees as radians and the writer wrote radians as degrees. This adds `IsAngle` to both. A test writes a linear dimension with a text rotation of π/6 and a horizontal direction of −π/4 to ASCII and binary DXF, checks 53 = 30 and 51 = −45, and reads both back exactly.
 
 </details>
