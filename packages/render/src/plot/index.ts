@@ -35,6 +35,7 @@ export {
   type PlotInfinitePart,
   type PlotPart,
   type PlotPathPart,
+  type PlotUnderlayPart,
   type PlotPointPart,
   type PlotRgb,
   type PlotSource,

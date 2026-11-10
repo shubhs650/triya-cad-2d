@@ -9,6 +9,7 @@
 import { zlibSync } from 'fflate';
 import { ContentStream, pdfNumber } from './content';
 import { PdfFonts, type EmbeddedFont, type PlotFont } from './fonts';
+import { PdfImports, type ImportedForm, type UnderlayLook } from './import';
 import {
   encodeImage,
   FILL_CELL,
@@ -55,6 +56,8 @@ export class PdfPage {
   readonly images = new Map<PlotPixels, { readonly name: string; readonly image: EncodedImage }>();
   /** TrueType fonts the page shows text in (M2-16 part 3), embedded once per document. */
   readonly fonts = new Set<EmbeddedFont>();
+  /** Pages of other PDFs shown on the page (M2-16 part 5, PDF underlays). */
+  readonly forms = new Set<ImportedForm>();
 
   constructor(
     /** Points. */
@@ -63,6 +66,8 @@ export class PdfPage {
     readonly options: PdfPageOptions = {},
     /** The document's fonts, shared by its pages. */
     private readonly documentFonts: PdfFonts = new PdfFonts(),
+    /** The document's imported pages, shared by its pages. */
+    private readonly documentImports: PdfImports = new PdfImports(),
   ) {
     if (!(width > 0 && height > 0)) throw new RangeError(`page size ${width} × ${height}`);
   }
@@ -75,6 +80,17 @@ export class PdfPage {
     const e = this.documentFonts.embed(font);
     if (e) this.fonts.add(e);
     return e;
+  }
+
+  /**
+   * Page `page` (DXF 2: its number from 1) of the PDF file `bytes` as a form XObject drawn into
+   * the displayed page's points, named for the page's resources; undefined when the file cannot
+   * be read (not a PDF, encrypted) or its page's content cannot be decoded.
+   */
+  underlay(bytes: Uint8Array, page: string, look: UnderlayLook): ImportedForm | undefined {
+    const f = this.documentImports.form(bytes, page, look);
+    if (f) this.forms.add(f);
+    return f;
   }
 
   /**
@@ -155,12 +171,13 @@ const latin1 = (s: string): Uint8Array => {
 export class PdfDocument {
   private readonly pages: PdfPage[] = [];
   private readonly fonts = new PdfFonts();
+  private readonly imports = new PdfImports();
 
   constructor(readonly options: PdfDocumentOptions = {}) {}
 
   /** A new page at the end, `width` × `height` points. */
   addPage(width: number, height: number, options: PdfPageOptions = {}): PdfPage {
-    const page = new PdfPage(width, height, options, this.fonts);
+    const page = new PdfPage(width, height, options, this.fonts, this.imports);
     this.pages.push(page);
     return page;
   }
@@ -186,6 +203,8 @@ export class PdfDocument {
     const pageIds: number[] = [];
     // Each font's Type 0 dictionary, numbered when a page first names it, written at the end.
     const fontIds = new Map<EmbeddedFont, number>();
+    // Each imported page's form, numbered when a page first shows it, written at the end.
+    const formIds = new Map<ImportedForm, number>();
     for (const page of this.pages) {
       if (page.content.depth !== 0) throw new Error('a page ends with an unbalanced save');
       const text = page.content.toString();
@@ -239,6 +258,11 @@ export class PdfDocument {
         };
         return `/${name} ${ref(id)}`;
       });
+      for (const f of page.forms) {
+        let id = formIds.get(f);
+        if (id === undefined) formIds.set(f, (id = add('')));
+        xobjects.push(`/${f.name} ${ref(id)}`);
+      }
       const fonts = [...page.fonts].map((f) => {
         let id = fontIds.get(f);
         if (id === undefined) fontIds.set(f, (id = add('')));
@@ -275,6 +299,8 @@ export class PdfDocument {
         },
       );
     }
+    for (const [form, id] of formIds)
+      form.write(id, { reserve: () => add(''), set: (at, body) => (bodies[at - 1] = body) });
     bodies[pagesId - 1] =
       `<< /Type /Pages /Kids [${pageIds.map(ref).join(' ')}] /Count ${pageIds.length} >>`;
 

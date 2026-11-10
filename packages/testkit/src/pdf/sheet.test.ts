@@ -38,15 +38,15 @@ describe('the plot sheet PDF (M2-16)', () => {
     expect(new Uint8Array(readFileSync(SHEET_DIR + SHEET_PDF))).toEqual(bytes);
   });
 
-  it('opens in pdf.js with seven A4 landscape pages, their labels and bookmarks', async () => {
+  it('opens in pdf.js with eight A4 landscape pages, their labels and bookmarks', async () => {
     const task = getDocument({ data: bytes.slice() });
     const doc = await task.promise;
     try {
-      expect(doc.numPages).toBe(7);
+      expect(doc.numPages).toBe(8);
       expect(await doc.getPageLabels()).toEqual(SHEET_PAGES.map((p) => p.label));
       const outline = await doc.getOutline();
       expect(outline.map((o) => o.title)).toEqual(SHEET_PAGES.map((p) => p.bookmark));
-      for (let n = 1; n <= 7; n++) {
+      for (let n = 1; n <= 8; n++) {
         const page = await doc.getPage(n);
         const [x0, y0, x1, y1] = page.view;
         expect([x0, y0]).toEqual([0, 0]);
@@ -56,10 +56,13 @@ describe('the plot sheet PDF (M2-16)', () => {
         // Stroke-font text plots as paths; only pages 6 and 7's OpenType text is text.
         expect(ops.fnArray).toContain(OPS.constructPath);
         expect(ops.fnArray.includes(OPS.beginText)).toBe(n >= 6);
-        // Pages 4 and 5 paint shadings, an image and (page 5) fill style patterns.
-        expect(ops.fnArray.includes(OPS.shadingFill)).toBe(n === 4 || n === 5);
-        expect(ops.fnArray.includes(OPS.paintImageXObject)).toBe(n === 4 || n === 5);
+        // Pages 4 and 5 paint shadings, an image and (page 5) fill style patterns; page 8's
+        // underlays show page 4 again.
+        expect(ops.fnArray.includes(OPS.shadingFill)).toBe(n === 4 || n === 5 || n === 8);
+        expect(ops.fnArray.includes(OPS.paintImageXObject)).toBe(n === 4 || n === 5 || n === 8);
         expect(ops.fnArray.includes(OPS.setFillColorN)).toBe(n === 5);
+        // Only page 8 paints form XObjects: the underlays' pages.
+        expect(ops.fnArray.includes(OPS.paintFormXObjectBegin)).toBe(n === 8);
       }
       const meta = await doc.getMetadata();
       expect((meta.info as { Producer?: string }).Producer).toBe('Triya CAD 2D');
@@ -122,9 +125,9 @@ describe('the plot sheet PDF (M2-16)', () => {
 
   it('writes page 6’s TrueType text as searchable text in one embedded subset (part 3)', async () => {
     const latin = Buffer.from(bytes).toString('latin1');
-    // One TrueType font embedded for page 6 (the restricted-licence twin is not), and page 7's
-    // collection face.
-    expect(latin.match(/\/FontFile2 /g)).toHaveLength(2);
+    // One TrueType font embedded for page 6 (the restricted-licence twin is not), page 7's
+    // collection face, and page 8's copy of the underlay PDF's own subset.
+    expect(latin.match(/\/FontFile2 /g)).toHaveLength(3);
     expect(latin).toMatch(/\/BaseFont \/[A-Z]{6}\+TriyaPixel /);
     expect(latin).not.toContain('TriyaLocked');
     const task = getDocument({ data: bytes.slice() });
@@ -211,6 +214,28 @@ describe('the plot sheet PDF (M2-16)', () => {
       ])
         expect(text).toContain(s);
       expect(text).not.toMatch(/romans|LOCKED/);
+    } finally {
+      await task.destroy();
+    }
+  });
+
+  it('copies page 8’s underlay pages in as forms, their text still text (part 5)', async () => {
+    const latin = Buffer.from(bytes).toString('latin1');
+    // Four underlays of two pages: each page's form once, page 1's shared by the monochrome,
+    // contrast 50 copy (a form greying it, and one masking that to where the page paints).
+    expect(latin.match(/\/Subtype \/Form /g)).toHaveLength(4);
+    expect(latin.match(/\/SMask << \/S \/Alpha /g)).toHaveLength(1);
+    expect(latin).toContain('/BM /Saturation');
+    const task = getDocument({ data: bytes.slice() });
+    const doc = await task.promise;
+    try {
+      const page = await doc.getPage(8);
+      const text = (await page.getTextContent()).items
+        .map((i) => ('str' in i ? i.str : ''))
+        .join(' ')
+        .replace(/\s+/g, ' ');
+      // Page 1 of the underlay PDF (the TrueType text page) is shown twice.
+      expect(text.match(/TRUETYPE TEXT 1:100/g)).toHaveLength(2);
     } finally {
       await task.destroy();
     }

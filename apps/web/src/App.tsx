@@ -1129,7 +1129,7 @@ export function App() {
         sources={fonts.sources()}
       />
       <AttributeDialogs doc={active} />
-      <PlotDialog doc={active} />
+      <PlotDialog doc={active} underlayFile={(f) => pdfPages.bytes(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
       <CommandLine
