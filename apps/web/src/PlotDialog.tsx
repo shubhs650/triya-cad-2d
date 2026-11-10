@@ -1,5 +1,6 @@
 // The Plot dialog (M2-17; PLOT, PRINT, Ctrl+P), with AutoCAD's groups and labels (UI_SPEC.md §7):
-// Printer/plotter (Triya's PDF writer), Paper size, Plot area, Plot offset, Plot scale, Plot
+// Printer/plotter (Triya's PDF, SVG or PNG writer, M2-18; the PNG's resolution and the SVG's and
+// PNG's background beside it, as a PNG plotter's custom properties hold them), Paper size, Plot area, Plot offset, Plot scale, Plot
 // style table, Plot options and Drawing orientation; OK plots the space shown to a PDF that
 // downloads, Cancel (and Esc) closes. Enter is OK. The settings are the dialog's own: a layout
 // opens with its page setup, model space with its display fitted to A4 landscape (plot.ts).
@@ -13,16 +14,19 @@ import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { CanvasController } from './canvas/controller';
 import { controllerOf } from './canvas/registry';
+import { rasterSize } from '@triya/render';
 import {
   LAYOUT_PAPER,
+  PLOT_DEVICES,
   PLOT_SCALES,
+  PNG_RESOLUTIONS,
   defaultPlotSettings,
   paperMm,
   plotAreas,
   plotPreview,
   plotFileName,
+  plotFile,
   plotPage,
-  plotPdf,
   plotStyleTables,
   plotTable,
   type PlotArea,
@@ -89,16 +93,19 @@ const AREA_LABELS: Record<PlotArea, string> = {
   window: 'Window',
 };
 
-/** Downloads the plot (a PDF printer's "Plot to file"). */
-export function downloadPdf(name: string, bytes: Uint8Array): void {
-  const url = URL.createObjectURL(
-    new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' }),
-  );
+/** Downloads the plot (a file plotter's "Plot to file"). */
+function download(name: string, bytes: Uint8Array, type: string): void {
+  const url = URL.createObjectURL(new Blob([bytes as Uint8Array<ArrayBuffer>], { type }));
   const a = document.createElement('a');
   a.href = url;
   a.download = name;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 10_000);
+}
+
+/** Downloads a PDF (PUBLISH's). */
+export function downloadPdf(name: string, bytes: Uint8Array): void {
+  download(name, bytes, 'application/pdf');
 }
 
 export function PlotDialog({
@@ -178,8 +185,8 @@ function PlotBody({
         ...(table && { table }),
         ...(s.paperspaceLast && space.sheet && { paperspaceLast: true }),
       });
-      const bytes = plotPdf(parts, page, s, space, `${name} - ${space.name}`, underlayFile);
-      downloadPdf(plotFileName(name, space), bytes);
+      const file = await plotFile(parts, page, s, space, `${name} - ${space.name}`, underlayFile);
+      download(plotFileName(name, space, s.device), file.bytes, file.type);
       plotDialog.close();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -372,8 +379,71 @@ function PlotForm({
       <Group label="Printer/plotter">
         <label className="cad-dialog-field">
           <span>Name:</span>
-          <input type="text" value="Triya PDF (vector, to file)" readOnly aria-label="Name" />
+          <select
+            aria-label="Name"
+            value={s.device}
+            onChange={(e) => {
+              const device = e.currentTarget.value as PlotSettings['device'];
+              // A PNG lies on white, as a raster plotter's background; an SVG on nothing.
+              set({ device, background: device === 'svg' ? 'none' : 'white' });
+            }}
+          >
+            {PLOT_DEVICES.map((d) => (
+              <option key={d.id} value={d.id}>
+                {d.name}
+              </option>
+            ))}
+          </select>
         </label>
+        {s.device === 'png' && (
+          <label className="cad-dialog-field">
+            <span>Resolution:</span>
+            <select
+              aria-label="Resolution"
+              value={s.dpi}
+              onChange={(e) => set({ dpi: Number(e.currentTarget.value) })}
+            >
+              {PNG_RESOLUTIONS.map((dpi) => (
+                <option key={dpi} value={dpi}>
+                  {`${dpi} dpi`}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+        {s.device !== 'pdf' && (
+          <label className="cad-dialog-field">
+            <span>Background:</span>
+            <select
+              aria-label="Background"
+              value={s.background}
+              onChange={(e) =>
+                set({ background: e.currentTarget.value as PlotSettings['background'] })
+              }
+            >
+              <option value="white">White</option>
+              <option value="none">None (transparent)</option>
+            </select>
+          </label>
+        )}
+        {s.device === 'png' && (
+          <p className="plot-note" aria-label="Image size">
+            {(({ width, height }) => `${width} × ${height} pixels`)(
+              rasterSize(
+                s.orientation === 'landscape'
+                  ? {
+                      width: Math.max(paper.width, paper.height),
+                      height: Math.min(paper.width, paper.height),
+                    }
+                  : {
+                      width: Math.min(paper.width, paper.height),
+                      height: Math.max(paper.width, paper.height),
+                    },
+                s.dpi,
+              ),
+            )}
+          </p>
+        )}
       </Group>
       <Group label="Paper size">
         <select

@@ -91,6 +91,17 @@ describe('plotParts in model space', () => {
     expect(paths(parts)[0]).toEqual([PATH_M, 100, 0, PATH_L, 101, 0]);
   });
 
+  it('names the layer each part plots from, a reference’s layer-0 parts on its layer (M2-18)', () => {
+    const model = blockDrawing([
+      entity('50', line(0, 0, 1, 0), { owner: BLOCK }),
+      entity('51', line(0, 1, 1, 1), { owner: BLOCK, layer: LAYER_0 }),
+      entity('52', line(5, 5, 6, 6)),
+      insert('60', { layer: LAYER_RED }),
+    ]);
+    const parts = plotParts(model, MODEL, { resolver });
+    expect(parts.map((p) => p.layer)).toEqual(['0', 'RED', 'RED']);
+  });
+
   it('carries ByBlock through nested references', () => {
     const model = blockDrawing([
       entity('50', line(0, 0, 1, 0), { owner: BLOCK, color: { kind: 'byBlock' } }),

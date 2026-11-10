@@ -86,6 +86,8 @@ export interface PlotImage {
 
 interface PlotItemBase {
   readonly paint: PlotPaint;
+  /** The drawing layer it plots from (its effective layer's name): an SVG plot's layer. */
+  readonly layer?: string;
   /** Below 1: object transparency. */
   readonly opacity?: number;
   /**
@@ -255,7 +257,7 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
 }
 
 /** Millimetres a stroke plots at. */
-function plottedWeight(p: PlotPaint, o: PlotPageOptions): number {
+export function plottedWeight(p: PlotPaint, o: PlotPageOptions): number {
   return o.lineweights === false ? 0 : p.lineweight * (o.lineweightScale ?? 1);
 }
 
@@ -267,7 +269,7 @@ function pen(cs: ContentStream, p: PlotPaint, mm: number): void {
 }
 
 /** A plot style linetype's dash array in points; empty for none. */
-function styleDashes(p: PlotPaint, mm: number, o: PlotPageOptions): number[] {
+export function styleDashes(p: PlotPaint, mm: number, o: PlotPageOptions): number[] {
   const lt = p.linetype;
   if (lt.kind !== 'plot') return [];
   return plotDashes(lt.index, {
@@ -279,7 +281,7 @@ function styleDashes(p: PlotPaint, mm: number, o: PlotPageOptions): number[] {
 }
 
 /** `m` after `n`: first `n`, then `m`. */
-function compose(m: Affine, n: Affine): Affine {
+export function compose(m: Affine, n: Affine): Affine {
   return {
     a: m.a * n.a + m.c * n.b,
     b: m.b * n.a + m.d * n.b,
@@ -290,7 +292,7 @@ function compose(m: Affine, n: Affine): Affine {
   };
 }
 
-const invertible = (m: Affine) => Math.abs(m.a * m.d - m.b * m.c) > 1e-12;
+export const invertible = (m: Affine) => Math.abs(m.a * m.d - m.b * m.c) > 1e-12;
 
 function plotUnderlay(
   page: PdfPage,
@@ -449,7 +451,7 @@ function sameLinear(p: Affine, q: Affine): boolean {
 }
 
 /** The smallest dot a point plots as, millimetres (ours: AutoCAD's default lineweight). */
-const POINT_MIN_MM = 0.25;
+export const POINT_MIN_MM = 0.25;
 
 /** Bézier handle length of a quarter circle of radius 1. */
 const KAPPA = (4 / 3) * Math.tan(Math.PI / 8);
@@ -486,21 +488,51 @@ const MIN_PERIOD_POINTS = 0.1;
  * plot area falls does not move the dashes.
  */
 function plotInfinite(page: PdfPage, item: PlotInfiniteItem, o: PlotPageOptions): void {
-  const m = o.toPaper;
+  const p = item.paint;
+  const mm = plottedWeight(p, o);
+  const box = o.area ?? { x: 0, y: 0, width: page.width, height: page.height };
+  const s = infiniteStroke(item, o.toPaper, box, styleDashes(p, mm, o));
+  if (!s) return;
+  const cs = page.content;
+  pen(cs, p, mm);
+  cs.dash(s.dash, s.phase);
+  for (const [x0, y0, x1, y1] of s.lines) cs.moveTo(x0, y0).lineTo(x1, y1);
+  if (s.lines.length > 0) cs.stroke();
+}
+
+/** What an XLINE or RAY strokes on paper: the dash array and phase, and its lines. */
+export interface InfiniteStroke {
+  /** Paper units; empty for continuous (the lines are the dashes). */
+  readonly dash: readonly number[];
+  readonly phase: number;
+  /** `[x0, y0, x1, y1]` on paper; a dot is a zero-length line, which the cap draws. */
+  readonly lines: readonly (readonly [number, number, number, number])[];
+}
+
+/**
+ * Where an XLINE or RAY crosses `box` (paper units, the space `m` maps the world into) and how it
+ * is dashed there: `styled` is its plot style linetype's dash array on paper (empty for none).
+ * Undefined when it misses the box. Shared by the PDF and SVG writers.
+ */
+export function infiniteStroke(
+  item: PlotInfiniteItem,
+  m: Affine,
+  box: { readonly x: number; readonly y: number; readonly width: number; readonly height: number },
+  styled: readonly number[],
+): InfiniteStroke | undefined {
   const wl = Math.hypot(item.direction.x, item.direction.y);
-  if (!(wl > 0)) return;
+  if (!(wl > 0)) return undefined;
   // Unit world direction, and its image on paper (k points per world unit).
   const ux = item.direction.x / wl;
   const uy = item.direction.y / wl;
   const px = m.a * ux + m.c * uy;
   const py = m.b * ux + m.d * uy;
   const k = Math.hypot(px, py);
-  if (!(k > 0)) return;
+  if (!(k > 0)) return undefined;
   const dx = px / k;
   const dy = py / k;
   const bx = m.a * item.base.x + m.c * item.base.y + m.e;
   const by = m.b * item.base.x + m.d * item.base.y + m.f;
-  const box = o.area ?? { x: 0, y: 0, width: page.width, height: page.height };
   let t0 = item.both ? -Infinity : 0;
   let t1 = Infinity;
   const clip = (q: number, d: number, lo: number, hi: number): boolean => {
@@ -517,35 +549,28 @@ function plotInfinite(page: PdfPage, item: PlotInfiniteItem, o: PlotPageOptions)
     !clip(by, dy, box.y, box.y + box.height) ||
     !(t1 > t0)
   )
-    return;
-  const cs = page.content;
+    return undefined;
   const p = item.paint;
-  const mm = plottedWeight(p, o);
-  pen(cs, p, mm);
-  const at = (t: number): [number, number] => [bx + dx * t, by + dy * t];
-  const styled = styleDashes(p, mm, o);
+  const at = (a: number, b: number): [number, number, number, number] => [
+    bx + dx * a,
+    by + dy * a,
+    bx + dx * b,
+    by + dy * b,
+  ];
   const period = dashPeriod(styled);
   if (p.linetype.kind === 'plot' && period > 0) {
     // Adaptive adjustment has no length to complete a pattern on: the pattern plots as is.
-    cs.dash(styled, ((t0 % period) + period) % period);
-    cs.moveTo(...at(t0))
-      .lineTo(...at(t1))
-      .stroke();
-    return;
+    return { dash: styled, phase: ((t0 % period) + period) % period, lines: [at(t0, t1)] };
   }
-  cs.dash([]);
   const d = p.linetype.kind === 'object' ? item.dashes : undefined;
   const count = d && d.period > 0 ? (t1 - t0) / k / d.period : 0;
   if (!d || d.period * k < MIN_PERIOD_POINTS || count > 100_000) {
-    cs.moveTo(...at(t0))
-      .lineTo(...at(t1))
-      .stroke();
-    return;
+    return { dash: [], phase: 0, lines: [at(t0, t1)] };
   }
   // World parameters along the line from the base point.
   const w0 = t0 / k;
   const w1 = t1 / k;
-  let any = false;
+  const lines: [number, number, number, number][] = [];
   for (let r = Math.floor(w0 / d.period); r * d.period <= w1; r++) {
     let s = r * d.period;
     for (const len of d.lengths) {
@@ -554,15 +579,13 @@ function plotInfinite(page: PdfPage, item: PlotInfiniteItem, o: PlotPageOptions)
         const a = Math.max(s, w0);
         const b = Math.min(e, w1);
         // A dot as a zero-length subpath, which the cap draws.
-        if (b > a || (len === 0 && s >= w0 && s <= w1)) {
-          cs.moveTo(...at(a * k)).lineTo(...at((len === 0 ? a : b) * k));
-          any = true;
-        }
+        if (b > a || (len === 0 && s >= w0 && s <= w1))
+          lines.push(at(a * k, (len === 0 ? a : b) * k));
       }
       s = e;
     }
   }
-  if (any) cs.stroke();
+  return { dash: [], phase: 0, lines };
 }
 
 function emitPolygon(cs: ContentStream, flat: readonly number[], m: Affine): void {

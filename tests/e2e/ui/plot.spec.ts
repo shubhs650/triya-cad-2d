@@ -4,10 +4,12 @@
 // chosen, it is labelled with the space, and it draws the drawing's paths.
 //
 // Part 2: the partial preview, the Window plot area (picked at PLOT's prompts with the dialog
-// hidden, the other settings kept) and PUBLISH (every sheet into one PDF).
+// hidden, the other settings kept) and PUBLISH (every sheet into one PDF). The SVG and PNG
+// plotters (M2-18) write the same plot as an SVG with the drawing's layers and as a PNG.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
+import { decodePng } from '../../../packages/testkit/src/fidelity/compare';
 import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
 import {
   DWG,
@@ -214,4 +216,68 @@ test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) 
   const pdf = await readPdf(download);
   expect(pdf.pages).toBe(spaces.length);
   expect(pdf.labels).toEqual(spaces.map((s) => s.trim()));
+});
+
+// M2-18: the Triya SVG and Triya PNG plotters plot the same parts as the PDF one.
+test('plots model space to an SVG with the drawing layers and to a PNG at a resolution', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d.getByLabel('Name')).toHaveValue('pdf');
+  await expect(d.getByLabel('Resolution')).toHaveCount(0);
+  await d.getByLabel('Paper size').selectOption('ISO A4');
+  await d.getByLabel('What to plot').selectOption('extents');
+
+  await d.getByLabel('Name').selectOption('svg');
+  await expect(d.getByLabel('Background')).toHaveValue('none');
+  await expect(d.getByLabel('Resolution')).toHaveCount(0);
+  const [svgDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'OK' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  expect(svgDownload.suggestedFilename()).toBe('sample_AC1018-Model.svg');
+  const svg = readFileSync((await svgDownload.path())!, 'utf8');
+  expect(svg).toContain('width="297mm" height="210mm"');
+  const labels = new Set(
+    [...svg.matchAll(/inkscape:groupmode="layer" inkscape:label="([^"]*)"/g)].map((m) => m[1]),
+  );
+  expect(labels.size).toBeGreaterThan(1);
+  // The browser reads it as an SVG document with those layers at its top level.
+  const layers = await page.evaluate((text) => {
+    const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    if (doc.querySelector('parsererror')) return -1;
+    return [...doc.documentElement.children].filter((e) => e.localName === 'g').length;
+  }, svg);
+  expect(layers).toBeGreaterThanOrEqual(labels.size);
+
+  await page.keyboard.press('Control+p');
+  await d.getByLabel('Paper size').selectOption('ISO A4');
+  await d.getByLabel('What to plot').selectOption('extents');
+  await d.getByLabel('Name').selectOption('png');
+  await expect(d.getByLabel('Background')).toHaveValue('white');
+  await d.getByLabel('Resolution').selectOption('96');
+  await expect(d.getByLabel('Image size')).toHaveText('1123 × 794 pixels');
+  const [pngDownload] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'OK' }).click(),
+  ]);
+  expect(pngDownload.suggestedFilename()).toBe('sample_AC1018-Model.png');
+  const png = decodePng(new Uint8Array(readFileSync((await pngDownload.path())!)));
+  expect([png.width, png.height]).toEqual([1123, 794]);
+  let white = 0;
+  let inked = 0;
+  for (let i = 0; i < png.data.length; i += 4) {
+    if (png.data[i] === 255 && png.data[i + 1] === 255 && png.data[i + 2] === 255) white++;
+    else if (png.data[i + 3] === 255) inked++;
+  }
+  // A white sheet with the drawing on it.
+  expect(white).toBeGreaterThan(png.width * png.height * 0.5);
+  expect(inked).toBeGreaterThan(1000);
 });

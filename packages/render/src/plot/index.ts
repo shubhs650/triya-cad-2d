@@ -41,3 +41,4 @@ export {
   type PlotSource,
 } from './job';
 export { POINTS_PER_MM, plotSetup, type PlotSetup, type PlotSetupOptions } from './setup';
+export { MAX_RASTER_PIXELS, rasterSize, rasterizeSvg, type RasterizeOptions } from './raster';
