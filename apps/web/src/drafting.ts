@@ -30,6 +30,11 @@ export interface DraftingState {
   readonly markerSize: number;
   /** APERTURE: how near an object must be to the cursor to be snapped to, CSS pixels. */
   readonly aperture: number;
+  /**
+   * PDFOSNAP: running object snaps snap to PDF underlays' geometry (M2-22). AutoCAD keeps it
+   * per user, initially on.
+   */
+  readonly pdfOsnap: boolean;
 }
 
 export type DraftingToggle =
@@ -69,6 +74,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   tpy: true,
   markerSize: 5,
   aperture: 10,
+  pdfOsnap: true,
 };
 
 /**

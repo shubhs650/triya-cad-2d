@@ -1,7 +1,7 @@
 // PDF underlay pages (M1-20): files matched to definitions by name, a page drawn once and served
 // from the cache after, the pixel budget, the latest request winning, and pages served when
 // their file arrives after the request.
-import type { PdfDefinition } from '@triya/engine';
+import type { PdfDefinition, UnderlaySnapPage } from '@triya/engine';
 import type { UnderlayRaster, UnderlayRequest } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import { PdfPages, fileKey, type PdfFile } from '../src/underlay/pages';
@@ -29,6 +29,12 @@ function fakePdf() {
         drawn.push({ page, width, height });
         return Promise.resolve({ width, height, data: new Uint8ClampedArray(width * height * 4) });
       },
+      snapGeometry: (page) =>
+        Promise.resolve({
+          lines: new Float64Array([0, 0, page, page]),
+          arcs: new Float64Array(),
+          beziers: new Float64Array(),
+        }),
     });
   };
   return { open, opened, drawn };
@@ -174,5 +180,60 @@ describe('PdfPages', () => {
     c.request(req('9B', 12));
     await settle();
     expect(pdf.drawn.map((d) => d.page)).toEqual([1, 1]);
+  });
+
+  it('delivers each definition its page geometry once, read once per page (M2-22)', async () => {
+    const pages = new PdfPages(fakePdf().open);
+    pages.add('plan.pdf', new Uint8Array([1]));
+    const snaps: [string, number[]][] = [];
+    const c = pages.client(
+      [def('9A', 'plan.pdf', '2'), def('9B', 'plan.pdf', '2'), def('9C', 'plan.pdf', '1')],
+      () => {},
+      (d, page) => snaps.push([d, Array.from(page!.lines)]),
+    );
+    c.request(req('9A', 10));
+    c.request(req('9A', 20));
+    c.request(req('9B', 10));
+    c.request(req('9C', 10));
+    await settle();
+    await settle();
+    expect(snaps.sort()).toEqual([
+      ['9A', [0, 0, 2, 2]],
+      ['9B', [0, 0, 2, 2]],
+      ['9C', [0, 0, 1, 1]],
+    ]);
+    expect(pages.snapReads).toBe(2);
+  });
+
+  it('sends the geometry again when the file is replaced, and none for a file it cannot read', async () => {
+    const pdf = fakePdf();
+    let fail = false;
+    const open = async (bytes: Uint8Array) => {
+      const f = await pdf.open(bytes);
+      return fail
+        ? {
+            ...f,
+            snapGeometry: () => Promise.reject(new Error('bad')) as Promise<UnderlaySnapPage>,
+          }
+        : f;
+    };
+    const pages = new PdfPages(open);
+    pages.add('plan.pdf', new Uint8Array([1]));
+    const snaps: string[] = [];
+    const c = pages.client(
+      [def('9A', 'plan.pdf', '2')],
+      () => {},
+      (d) => snaps.push(d),
+    );
+    c.request(req('9A', 10));
+    await settle();
+    expect(snaps).toEqual(['9A']);
+    pages.add('PLAN.PDF', new Uint8Array([2]));
+    await settle();
+    expect(snaps).toEqual(['9A', '9A']);
+    fail = true;
+    pages.add('plan.pdf', new Uint8Array([3]));
+    await settle();
+    expect(snaps).toEqual(['9A', '9A']);
   });
 });

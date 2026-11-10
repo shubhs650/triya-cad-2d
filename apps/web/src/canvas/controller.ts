@@ -60,6 +60,7 @@ import {
   type MTextGeometry,
   type OsnapHit,
   type Prompt,
+  type UnderlaySnapPage,
   type Vec2,
   type VportRecord,
 } from '@triya/engine';
@@ -191,6 +192,8 @@ export interface CanvasHooks {
    */
   readonly underlays?: (
     deliver: (definition: string, raster: UnderlayRaster | undefined) => void,
+    /** A definition's page geometry for running object snaps (M2-22). */
+    deliverSnap?: (definition: string, page: UnderlaySnapPage | undefined) => void,
   ) => UnderlayClient;
   /**
    * Raster images (M1-19 part 3): the canvas's link to the image files supplied, which hands
@@ -313,17 +316,20 @@ export class CanvasController {
     this.#header = new Map(opened.init.header ?? []);
     for (const cs of changes) this.#followHeader(cs);
     this.#hooks = hooks;
-    this.#underlays = hooks.underlays?.((definition, raster) => {
-      this.#host.setUnderlay(definition, raster);
-      // An unclipped underlay's page joins the extents once its PDF gives its size (M1-20).
-      const page = raster ? `${raster.page.width}x${raster.page.height}` : undefined;
-      if (this.#pages.get(definition) !== page) {
-        if (page) this.#pages.set(definition, page);
-        else this.#pages.delete(definition);
-        void this.#measure();
-      }
-      this.#requestFrame();
-    });
+    this.#underlays = hooks.underlays?.(
+      (definition, raster) => {
+        this.#host.setUnderlay(definition, raster);
+        // An unclipped underlay's page joins the extents once its PDF gives its size (M1-20).
+        const page = raster ? `${raster.page.width}x${raster.page.height}` : undefined;
+        if (this.#pages.get(definition) !== page) {
+          if (page) this.#pages.set(definition, page);
+          else this.#pages.delete(definition);
+          void this.#measure();
+        }
+        this.#requestFrame();
+      },
+      (definition, page) => this.#host.setUnderlaySnap(definition, page),
+    );
     const canvas = document.createElement('canvas');
     canvas.className = 'drawing-canvas';
     canvas.setAttribute(
@@ -1232,6 +1238,7 @@ export class CanvasController {
         point: world,
         aperture: this.#drafting.aperture * this.#px(),
         modes,
+        underlays: this.#drafting.pdfOsnap,
         ...(base && { from: base }),
       })
       .catch(() => []);

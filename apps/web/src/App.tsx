@@ -1224,7 +1224,8 @@ function drawingHooks(
     patterns: () => patterns.sources(),
     fonts: () => fonts.sources(),
     changes: () => engines.changesOf(id),
-    underlays: (deliver) => pdfPages.client(pdfDefinitionsOf(opened), deliver),
+    underlays: (deliver, deliverSnap) =>
+      pdfPages.client(pdfDefinitionsOf(opened), deliver, deliverSnap),
     images: (deliver) =>
       images.client(() => imageDefinitionsOf(opened.init, engines.changesOf(id)), deliver),
   };

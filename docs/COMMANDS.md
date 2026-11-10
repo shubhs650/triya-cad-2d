@@ -187,7 +187,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | LAYOUT / LAYOUTWIZARD(no) / PAGESETUP | LO | 2 | | |
 | SCALELISTEDIT | — | 2 | | |
 | CLEANSCREENON/OFF | Ctrl+0 | 2 | | |
-| DSETTINGS / OSNAP / DDPTYPE | DS, SE / OS / — | 2 | | ~ (#226): running object snaps (OSMODE) are chosen from the status bar's OSNAP menu, F3 toggles them; #228: one-shot overrides typed at a point prompt (`END`, `MID,END`, `NON`…) or chosen from the Shift+right-click menu; the dialog is M3-06 |
+| DSETTINGS / OSNAP / DDPTYPE | DS, SE / OS / — | 2 | | ~ (#226): running object snaps (OSMODE) are chosen from the status bar's OSNAP menu, F3 toggles them; #228: one-shot overrides typed at a point prompt (`END`, `MID,END`, `NON`…) or chosen from the Shift+right-click menu; #249: PDF underlays' geometry snapped to while PDFOSNAP is on (Settings > Drafting); the dialog is M3-06 |
 | ORTHO / GRID / SNAP / POLAR(F10) / OTRACK(F11) / DYN(F12) | F8 / F7 / F9 | 1 | ~ (#224): DYN (F12 and the status bar) toggles Dynamic Input; #226: ORTHO (F8), SNAP (F9) and POLAR (F10) toggle on the status bar and in the Ctrl+K palette (not yet typed as commands); #228: GRID (F7, GRIDUNIT lines with GRIDMAJOR, adaptive) and OTRACK (F11) too, with LWT and TPY |
 | OPTIONS | OP | 2 | | |
 | TEXTSCR / GRAPHSCR | F2 | 1 | history window | partial (M2-01): `PromptBus.history` holds the text window's lines; the window is M2-02 |
