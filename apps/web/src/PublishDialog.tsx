@@ -10,18 +10,13 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { downloadPdf } from './PlotDialog';
 import { controllerOf } from './canvas/registry';
-import { layoutsOf, spacesOf, type OpenDocument } from './documents';
+import { spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import type { PlotStyleTable } from '@triya/render';
-import { defaultPlotSettings, type PlotSpace } from './plot';
+import { defaultPlotSettings } from './plot';
+import { plotSpaceOf } from './plot-spaces';
 import { plotRequest } from './plot-preview';
-import {
-  publishFileName,
-  publishPdf,
-  publishSheets,
-  sheetSpace,
-  type PublishSheet,
-} from './publish';
+import { publishFileName, publishPdf, publishSheets, type PublishSheet } from './publish';
 
 /** Which drawing the dialog is open for, if any. */
 export const publishDialog = (() => {
@@ -100,24 +95,11 @@ function PublishBody({
     setBusy(true);
     setError(undefined);
     try {
-      const here = await active.plotSpace();
-      const layouts = layoutsOf(doc.opened.init, engines.changesOf(doc.id));
       const tables = userTables?.();
       const plotted = [];
       for (const s of included) {
-        // A sheet shown on a canvas plots as the Plot dialog would (model space's Display); one
-        // not shown from its page setup, or model space by its extents.
-        const live = controllerOf(doc.id, s.block);
-        const space: PlotSpace = live
-          ? { ...(await live.plotSpace()), userTables: tables }
-          : sheetSpace({
-              name: s.name,
-              layout: layouts.find((l) => l.blockRecord === s.block),
-              model: s.block === doc.opened.modelSpace,
-              extents: doc.opened.extents[s.block],
-              namedPlotStyles: here.namedPlotStyles ?? false,
-              userTables: tables,
-            });
+        const space = await plotSpaceOf(doc, s.block, s.name, tables);
+        if (!space) throw new Error('There is nothing to plot.');
         // The page setup's plot style table resolves the parts' colours and lineweights.
         const request = plotRequest(defaultPlotSettings(space), space);
         const parts = await active.plot({ block: s.block, ...request });
