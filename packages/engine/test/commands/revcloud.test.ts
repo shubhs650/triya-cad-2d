@@ -525,17 +525,48 @@ describe('WIPEOUT', () => {
   it('turns frames off and on through the drawing’s WIPEOUTVARIABLES', async () => {
     const init = { ...sampleInit(), meta: { ...sampleInit().meta, rootDictionary: 'C' } };
     const s = setup(init);
-    expect(wipeoutFrame(s.model)).toBe(true);
+    expect(wipeoutFrame(s.model)).toBe(1);
     await s.bus.script(['WIPEOUT', 'F']);
-    expect(s.bus.promptText).toBe('Enter mode [ON/OFF] <ON>:');
+    expect(s.bus.promptText).toBe('Enter mode [ON/OFF/Display but not plot] <ON>:');
     await s.bus.script(['ON']);
     expect([...s.model.objects.values()].some((o) => o.type === 'WIPEOUTVARIABLES')).toBe(false);
     await s.bus.script(['WIPEOUT', 'F', 'OFF']);
     const vars = [...s.model.objects.values()].find((o) => o.type === 'WIPEOUTVARIABLES');
-    expect(vars).toMatchObject({ owner: 'C', frame: false });
-    expect(wipeoutFrame(s.model)).toBe(false);
+    expect(vars).toMatchObject({ owner: 'C', frame: 0 });
+    expect(wipeoutFrame(s.model)).toBe(0);
     await s.bus.script(['WIPEOUT', 'F', '', 'WIPEOUT', 'F', 'ON']);
-    expect(wipeoutFrame(s.model)).toBe(true);
+    expect(wipeoutFrame(s.model)).toBe(1);
+  });
+
+  it('shows frames but leaves them off the plot with Display but not plot', async () => {
+    // AutoCAD 2024 Help, "WIPEOUT (Command)": Frames "Enter mode [ON/OFF/Display but not plot]";
+    // WIPEOUTFRAME 2 "frames are displayed, but not plotted".
+    const init = { ...sampleInit(), meta: { ...sampleInit().meta, rootDictionary: 'C' } };
+    const s = setup(init);
+    await s.bus.script(['WIPEOUT', 'F', 'D']);
+    const vars = [...s.model.objects.values()].filter((o) => o.type === 'WIPEOUTVARIABLES');
+    expect(vars).toEqual([expect.objectContaining({ owner: 'C', frame: 2 })]);
+    expect(wipeoutFrame(s.model)).toBe(2);
+    // The current mode is the default, and Enter keeps it.
+    await s.bus.script(['WIPEOUT', 'F']);
+    expect(s.bus.promptText).toBe(
+      'Enter mode [ON/OFF/Display but not plot] <Display but not plot>:',
+    );
+    const before = s.model.objects.get(vars[0]!.handle);
+    await s.bus.script(['']);
+    expect(s.model.objects.get(vars[0]!.handle)).toBe(before);
+    await s.bus.script(['WIPEOUT', 'F', 'ON']);
+    expect(wipeoutFrame(s.model)).toBe(1);
+    await s.bus.script(['WIPEOUT', 'F', 'Display but not plot']);
+    expect(wipeoutFrame(s.model)).toBe(2);
+  });
+
+  it('says so when Display but not plot has nowhere to be kept', async () => {
+    const s = setup();
+    await s.bus.script(['WIPEOUT', 'F', 'D']);
+    expect(s.log.at(-1)).toBe(
+      'The drawing has no named object dictionary to keep WIPEOUTFRAME in.',
+    );
   });
 
   it('says so when the drawing has nowhere to keep WIPEOUTFRAME', async () => {

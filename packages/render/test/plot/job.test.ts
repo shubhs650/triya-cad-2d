@@ -2,7 +2,9 @@
 // style table by what its object has with ByLayer and ByBlock resolved, blocks included.
 import type {
   EntityInit,
+  ImageGeometry,
   LayoutPlot,
+  NonGraphicalObject,
   PdfDefinition,
   UnderlayGeometry,
   ViewportGeometry,
@@ -357,4 +359,61 @@ describe('plotParts with a PDF underlay (M2-16 part 5)', () => {
     layers.set(NO_PLOT, layer(NO_PLOT, 'NOPLOT', { plot: false }));
     return d;
   }
+});
+
+describe('plotParts with wipeouts (M2-24 part 2)', () => {
+  const wipeout: ImageGeometry = {
+    kind: 'WIPEOUT',
+    position: { x: 0, y: 0 },
+    u: { x: 4, y: 0 },
+    v: { x: 0, y: 4 },
+    size: { x: 1, y: 1 },
+    displayFlags: 7,
+    clipping: true,
+    brightness: 50,
+    contrast: 50,
+    fade: 0,
+    clip: {
+      type: 'polygon',
+      vertices: [
+        { x: -0.5, y: 0.5 },
+        { x: 0.5, y: 0.5 },
+        { x: 0.5, y: -0.5 },
+        { x: -0.5, y: -0.5 },
+        { x: -0.5, y: 0.5 },
+      ],
+      inverted: false,
+    },
+  } as ImageGeometry;
+  const kinds = (frame?: number) => {
+    const objects =
+      frame === undefined
+        ? []
+        : [{ handle: '83', type: 'WIPEOUTVARIABLES', owner: '0C', frame } as NonGraphicalObject];
+    const { model } = drawing([entity('70', wipeout)], { objects });
+    // The screen's tessellation context draws frames (WIPEOUTFRAME 1 and 2 both show them).
+    const tessellate = { frames: { image: true, wipeout: frame !== 0 } };
+    return plotParts(model, MODEL, { resolver, tessellate }).map((p) => p.kind);
+  };
+
+  it('plots the frame with WIPEOUTFRAME 1, AutoCAD’s initial value, and not with 0', () => {
+    expect(kinds()).toEqual(['fill', 'stroke']);
+    expect(kinds(1)).toEqual(['fill', 'stroke']);
+    expect(kinds(0)).toEqual(['fill']);
+  });
+
+  it('leaves out the frame the screen shows with WIPEOUTFRAME 2 (displayed but not plotted)', () => {
+    expect(kinds(2)).toEqual(['fill']);
+  });
+
+  it('masks in the paper colour, whatever the plot style makes of the object’s colour', () => {
+    // A wipeout hides what is under it on paper too ("WIPEOUT (Command)": it covers objects
+    // "with the current background color"; on a plot, the paper). It plotted in the wipeout's
+    // own colour through the table, a black box on a monochrome plot.
+    const { model } = drawing([entity('70', wipeout, { color: { kind: 'aci', index: 1 } })]);
+    const [mask, frame] = plotParts(model, MODEL, { resolver });
+    expect(mask?.kind).toBe('fill');
+    expect(mask?.paint.color).toEqual([255, 255, 255]);
+    expect(frame?.paint.color).toEqual([0, 255, 0]);
+  });
 });

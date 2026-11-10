@@ -2,17 +2,17 @@
 // WIPEOUTFRAME):
 //   Specify first point or [Frames/Polyline] <Polyline>:
 //   Specify next point:  /  Specify next point or [Undo]:  /  Specify next point or [Close/Undo]:
-//   Enter mode [ON/OFF] <ON>:                                        (Frames)
+//   Enter mode [ON/OFF/Display but not plot] <ON>:                   (Frames)
 //   Select a closed polyline:  Erase polyline? [Yes/No] <No>:         (Polyline)
 // The wipeout masks the polygon in the background colour (edit/revcloud.ts `wipeoutGeometry`).
-// AutoCAD 2024's Frames also offers "Display but not plot" (WIPEOUTFRAME 2); Triya's model keeps
-// WIPEOUTFRAME on or off (acad-ts reads it so, M1-19), so only ON and OFF are offered. A polyline's
-// arc segments are followed by chords, as AutoCAD 2015+ approximates them.
+// Frames sets WIPEOUTFRAME: OFF 0, ON 1, "Display but not plot" 2 (M2-24 part 2: the screen
+// draws the frames and the plot job leaves them out). A polyline's arc segments are followed by
+// chords, as AutoCAD 2015+ approximates them.
 import type { Vec2 } from '../../geom/types';
 import { flatten } from '../../geom/flatten';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
-import type { NonGraphicalObject, WipeoutVariables } from '../../model/types';
+import type { NonGraphicalObject, WipeoutFrame, WipeoutVariables } from '../../model/types';
 import { distinctVertices, wipeoutGeometry } from '../../edit/revcloud';
 import type { CommandContext, CommandDef } from '../command';
 import { currentLayer } from './line';
@@ -33,18 +33,22 @@ function wipeoutVariables(model: DocumentModel): WipeoutVariables | undefined {
   return undefined;
 }
 
-/** WIPEOUTFRAME: on unless the drawing's WIPEOUTVARIABLES says off. */
-export const wipeoutFrame = (model: DocumentModel): boolean =>
-  wipeoutVariables(model)?.frame ?? true;
+/** WIPEOUTFRAME: the drawing's WIPEOUTVARIABLES, else AutoCAD's initial 1 (shown and plotted). */
+export const wipeoutFrame = (model: DocumentModel): WipeoutFrame =>
+  wipeoutVariables(model)?.frame ?? 1;
+
+/** Frames' options, by the WIPEOUTFRAME each sets. */
+const MODES = ['OFF', 'ON', 'Display but not plot'] as const;
 
 async function* frames(ctx: CommandContext): Sub<void> {
-  const on = wipeoutFrame(ctx.model);
   const a = yield ctx.prompt.keyword({
     message: 'Enter mode',
-    options: ['ON', 'OFF'],
-    default: { kind: 'keyword', keyword: on ? 'ON' : 'OFF' },
+    options: ['ON', 'OFF', 'Display but not plot'],
+    default: { kind: 'keyword', keyword: MODES[wipeoutFrame(ctx.model)] },
   });
-  const frame = keyword(a) === 'ON';
+  const frame = MODES.findIndex(
+    (m) => m.toUpperCase() === keyword(a).toUpperCase(),
+  ) as WipeoutFrame;
   const vars = wipeoutVariables(ctx.model);
   if (vars) {
     if (vars.frame !== frame) {
@@ -52,7 +56,7 @@ async function* frames(ctx: CommandContext): Sub<void> {
     }
     return;
   }
-  if (frame) return; // no object means frames on already
+  if (frame === 1) return; // no object means frames on already
   const root = ctx.model.meta.rootDictionary;
   if (root === undefined) {
     ctx.message('The drawing has no named object dictionary to keep WIPEOUTFRAME in.');

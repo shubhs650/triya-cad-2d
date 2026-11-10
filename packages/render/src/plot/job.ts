@@ -13,6 +13,8 @@
 //   has with ByLayer and ByBlock resolved: inside a block, ByBlock takes the reference's values and
 //   layer 0 the reference's layer (`blockContext`, M1-13), so "every red object plots the same
 //   way" holds for parts of blocks too.
+// - Wipeout frames plot with WIPEOUTFRAME 1 only: 2 shows them on screen and leaves them off the
+//   plot ("frames are displayed, but not plotted", M2-24 part 2).
 // - Text glyphs and hatch pattern lines plot continuous whatever the plot style linetype, as
 //   AutoCAD draws them (M2-16).
 // - A layout plots its paper space and every viewport that shows model space, clipped to its
@@ -26,6 +28,9 @@
 //
 // - A PDF underlay plots its page's own content (M2-16 part 5): the part names its definition's
 //   file and page, and the PDF writer copies that page from the file the app supplied.
+//
+// - A wipeout (and a text background mask in the background colour) plots in the paper's white,
+//   not through the table: on a monochrome plot it was a black box (M2-24 part 2).
 //
 // Not plotted: an image whose bitmap the app has not loaded, which plots its frame only.
 
@@ -48,7 +53,7 @@ import {
 } from '@triya/engine';
 import { expandInsert, expands, insertClips, transformPrimitive } from '../blocks';
 import type { Affine } from '../affine';
-import { withLayers } from '../document-settings';
+import { imageFrames, withLayers } from '../document-settings';
 import { adjustPixels } from '../image';
 import { createPaint } from '../paint';
 import { drawOrder } from '../style/draw-order';
@@ -236,7 +241,9 @@ class Plotter {
     this.#model = model;
     this.#src = src;
     this.#lwDefault = src.lwDefault ?? 25;
-    this.#tessellate = src.tessellate ?? {};
+    // The screen's context, with the frames a plot draws: WIPEOUTFRAME 2 shows them on screen
+    // and leaves them off the plot (AutoCAD 2024 Help, "WIPEOUTFRAME (System Variable)").
+    this.#tessellate = { ...src.tessellate, frames: imageFrames(model, 'plot') };
     this.#base = createPaint({ lwDefault: this.#lwDefault });
   }
 
@@ -457,6 +464,11 @@ class Plotter {
           height: im.height,
         },
       };
+    }
+    // A wipeout, or a text background mask in the background colour, masks in the paper's white:
+    // it hides what is under it, so no plot style table recolours it.
+    if (prim.kind === 'fill' && prim.color === 'background') {
+      return { ...base, path: prim.path, paint: { ...solid, color: WHITE } };
     }
     const continuous = prim.text !== undefined || prim.hatch !== undefined;
     // An MTEXT colour override: the run's own colour, through the table.

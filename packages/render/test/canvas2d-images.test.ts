@@ -252,12 +252,37 @@ describe('images', () => {
       },
     };
     const objects: NonGraphicalObject[] = [
-      { handle: '83', type: 'WIPEOUTVARIABLES', owner: '0C', frame: false } as NonGraphicalObject,
+      { handle: '83', type: 'WIPEOUTVARIABLES', owner: '0C', frame: 0 } as NonGraphicalObject,
     ];
     const c = setup([{ handle: '20', geom: wipeout }], { extra: { objects } }).redraw();
     expect(c.named('fill')).toEqual([['fill', '#000000', 'nonzero', 1]]);
     expect(c.named('stroke')).toEqual([]);
     expect(c.named('drawImage')).toEqual([]);
+  });
+
+  it('draws a wipeout’s frame on screen with WIPEOUTFRAME 2, which only the plot leaves out', () => {
+    const wipeout: ImageGeometry = {
+      ...image({ size: { x: 1, y: 1 }, u: { x: 4, y: 0 }, v: { x: 0, y: 2 } }),
+      kind: 'WIPEOUT',
+      clipping: true,
+      clip: {
+        type: 'polygon',
+        vertices: [
+          { x: -0.5, y: 0.5 },
+          { x: 0.5, y: 0.5 },
+          { x: 0.5, y: -0.5 },
+          { x: -0.5, y: -0.5 },
+          { x: -0.5, y: 0.5 },
+        ],
+        inverted: false,
+      },
+    };
+    const objects: NonGraphicalObject[] = [
+      { handle: '83', type: 'WIPEOUTVARIABLES', owner: '0C', frame: 2 } as NonGraphicalObject,
+    ];
+    const c = setup([{ handle: '20', geom: wipeout }], { extra: { objects } }).redraw();
+    expect(c.named('fill')).toEqual([['fill', '#000000', 'nonzero', 1]]);
+    expect(c.named('stroke')).toHaveLength(1);
   });
 });
 

@@ -54,7 +54,7 @@ describe('mapImageObjects', () => {
     raster.displayQuality = 0;
     raster.units = 1;
     const wipeout = new WipeoutVariables('ACAD_WIPEOUT_VARS');
-    wipeout.displayImageFrame = true;
+    wipeout.displayImageFrame = 2;
     doc.rootDictionary!.add(raster);
     doc.rootDictionary!.add(wipeout);
 
@@ -68,7 +68,7 @@ describe('mapImageObjects', () => {
           quality: 'draft',
           units: 1,
         }),
-        expect.objectContaining({ handle: H(wipeout), type: 'WIPEOUTVARIABLES', frame: true }),
+        expect.objectContaining({ handle: H(wipeout), type: 'WIPEOUTVARIABLES', frame: 2 }),
       ]),
     );
     expect(mapped).toHaveLength(2);

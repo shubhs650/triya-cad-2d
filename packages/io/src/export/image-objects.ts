@@ -71,6 +71,8 @@ const RESOLUTION_UNITS: readonly number[] = [0, 2, 5];
 
 /** DXF RASTERVARIABLES 72: insertion units 0 none, 1 millimetres … 8 miles. */
 const INSERTION_UNITS: readonly [number, number] = [0, 8];
+/** WIPEOUTFRAME: off, on, displayed but not plotted (M2-24 part 2). */
+const WIPEOUT_FRAMES: readonly unknown[] = [0, 1, 2];
 
 /** Fields no writer handles yet. */
 const UNSUPPORTED = ['xdata', 'reactors', 'extDict'] as const;
@@ -267,8 +269,10 @@ function valueProblems(b: ImageObject | undefined, a: ImageObject): string[] {
     const [min, max] = INSERTION_UNITS;
     if (changed('units') && !(Number.isInteger(a.units) && a.units >= min && a.units <= max))
       out.push(`units: ${JSON.stringify(a.units)} is not a whole number from ${min} to ${max}`);
-  } else {
-    bool('frame', a.frame);
+  } else if (changed('frame') && !WIPEOUT_FRAMES.includes(a.frame)) {
+    out.push(
+      `frame: ${JSON.stringify(a.frame)} is not 0 (off), 1 (on) or 2 (displayed but not plotted)`,
+    );
   }
   return out;
 }

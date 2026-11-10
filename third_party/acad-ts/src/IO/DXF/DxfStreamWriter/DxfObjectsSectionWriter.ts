@@ -666,7 +666,7 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
 	private _writeWipeoutVariables(variables: WipeoutVariables): void {
 		const map = DxfClassMap.create(WipeoutVariables);
 		this._writer.write(DxfCode.Subclass, DxfSubclassMarker.wipeoutVariables);
-		this._writer.write(70, variables.displayImageFrame ? 1 : 0, map);
+		this._writer.write(70, variables.displayImageFrame, map);
 	}
 
   protected writeScale(scale: Scale): void {
