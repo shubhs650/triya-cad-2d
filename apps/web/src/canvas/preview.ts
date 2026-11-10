@@ -215,7 +215,9 @@ export class PreviewController {
       const d = this.#drag;
       if (d?.kind === 'window') this.#surface.drawWindow(d.start, d.end);
       const { px } = region;
+      // What was drawn where, for tests: device pixels, and the paper millimetres they cover.
       this.#canvas.dataset['raster'] = `${px.x} ${px.y} ${px.width} ${px.height}`;
+      this.#canvas.dataset['region'] = [region.x, region.y, region.width, region.height].join(' ');
       this.#canvas.dataset['drawn'] = String(++this.#drawCount);
       this.#canvas.dataset['state'] = 'ready';
     } catch {
