@@ -4,7 +4,8 @@
 // multileader style (AutoCAD's Standard where it has none): a text multileader arrowhead first,
 // a spline one without a landing, a text-first one in a box, one without content, a block one
 // where the drawing has a block, then MLEADEREDIT adds a leader on each side of the first and
-// removes one. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
+// removes one. M2-25 adds two with AutoCAD's built-in content blocks, which MLEADER authors
+// (`_TagCircle`, and `_DetailCallout` content first), and TEXTEDIT edits the first one's text. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
 // each multileader draws the same parts (`multiLeaderParts`: lines, landings, arrowheads, text,
 // block) as before the save. With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit
 // as the file's `mleader` save.
@@ -143,8 +144,31 @@ describe('MLEADER on the public corpus', () => {
         while (bus.command === 'MLEADER') await bus.submit('');
         hasBlock = true;
       }
+      await bus.script(['MLEADER', 'O', 'C', 'B', '_TagCircle', 'X', '-200,0', '-150,40', '7']);
+      await bus.script(['MLEADER', 'O', 'C', 'B', '_DetailCallout', 'X', 'C', '-200,-200']);
+      await bus.script(['3', 'A-501', '-260,-150']);
+      await bus.script(['TEXTEDIT']);
+      const firstLeader = [...model.entities()].find(
+        (e) => !before.has(e.id) && e.geom.kind === 'MULTILEADER',
+      )!;
+      await bus.answer({ kind: 'selection', ids: [firstLeader.id] });
+      await bus.answer({ kind: 'string', value: 'Check {\\Ldetail} B\\Psheet 2', editor: true });
+      await bus.submit('');
       expect(bus.command).toBeUndefined();
-      const added = [...model.entities()].filter((e) => !before.has(e.id));
+      const added = [...model.entities()].filter(
+        (e) => !before.has(e.id) && e.geom.kind === 'MULTILEADER',
+      );
+      // The built-in blocks: definitions with their parts, the multileaders' attribute values.
+      const builtins = ['_TagCircle', '_DetailCallout'].map((n) =>
+        [...model.blocks.values()].find((b) => b.name === n)!,
+      );
+      expect(builtins.every((b) => b !== undefined)).toBe(true);
+      const tags = added.slice(-2).map((e) => (e.geom as MultiLeaderGeometry).block!);
+      expect(tags.map((b) => b.block)).toEqual(builtins.map((b) => b.handle));
+      expect(tags.map((b) => b.attributes!.map((a) => a.value))).toEqual([['7'], ['3', 'A-501']]);
+      expect((added[0]!.geom as MultiLeaderGeometry).text!.content).toBe(
+        'Check {\\Ldetail} B\\Psheet 2',
+      );
       if (PROXY_STYLE.includes(f.path)) {
         expect(styled).toBe(false);
         expect(() => saveAc1032Dxf(readCadDocument(bytes), model)).toThrow(TAKEN);
@@ -155,7 +179,7 @@ describe('MLEADER on the public corpus', () => {
         return;
       }
       expect(added.map((e) => e.type)).toEqual(
-        Array.from({ length: block === undefined ? 4 : 5 }, () => 'MULTILEADER'),
+        Array.from({ length: block === undefined ? 6 : 7 }, () => 'MULTILEADER'),
       );
       const first = added[0]!.geom as MultiLeaderGeometry;
       expect(first.branches.map((b) => b.lines.length)).toEqual([1, 1]);
@@ -171,6 +195,16 @@ describe('MLEADER on the public corpus', () => {
         expect(r.type).toBe('MULTILEADER');
         expect(partsOf(back, r), `MULTILEADER ${e.handle}`).toEqual(partsOf(model, e));
         expect((r.geom as MultiLeaderGeometry).style).toBe((e.geom as MultiLeaderGeometry).style);
+      }
+      // The built-in blocks come back with what they draw and their attribute definitions.
+      for (const b of builtins) {
+        const kinds = (m: DocumentModel, h: string) =>
+          m.blockEntities(h).map((id) => {
+            const g = m.entity(id)!.geom;
+            return g.kind === 'ATTDEF' ? `ATTDEF ${g.tag}` : g.kind;
+          });
+        expect(back.blocks.get(b.handle)?.name).toBe(b.name);
+        expect(kinds(back, b.handle)).toEqual(kinds(model, b.handle));
       }
     },
     PER_FILE_BUDGET_MS,
