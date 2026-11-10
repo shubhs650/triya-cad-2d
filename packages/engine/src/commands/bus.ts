@@ -28,6 +28,7 @@ import {
   type CommandGenerator,
   type CommandRegistry,
 } from './command';
+import { blocklessDimensionBlocks, regenerateRestyled } from './modify/dimensions';
 import {
   DEFAULT_ANGLES,
   parseAngle,
@@ -149,6 +150,7 @@ export interface PromptBusOptions {
 interface Frame {
   readonly def: CommandDef;
   readonly label: string;
+  readonly ctx: CommandContext;
   readonly gen: CommandGenerator;
   readonly transparent: boolean;
   prompt: Prompt | undefined;
@@ -480,6 +482,15 @@ export class PromptBus {
     });
   }
 
+  /**
+   * The blocks a save gives the dimensions that have none (M2-30 part 2,
+   * `blocklessDimensionBlocks`): a change set for the saved file only, not applied to the
+   * drawing. Not queued: QSAVE, which holds the queue while the app saves, asks for it.
+   */
+  blocklessDimensionBlocks(): Promise<ChangeSet | undefined> {
+    return blocklessDimensionBlocks(this.#model, this.#dimensions, this.#view);
+  }
+
   /** Runs each line as typed input, in order (scripts and tests). */
   async script(lines: readonly string[]): Promise<void> {
     for (const line of lines) await this.submit(line);
@@ -646,6 +657,7 @@ export class PromptBus {
     const frame: Frame = {
       def,
       label: `${dash ? '-' : ''}${def.name}`,
+      ctx,
       gen: def.run(ctx),
       transparent,
       prompt: undefined,
@@ -700,7 +712,18 @@ export class PromptBus {
       this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
       return this.#end(frame, true);
     }
-    if (step.done) return this.#end(frame, false);
+    if (step.done) {
+      // The dimensions the command restyled are redrawn as it ends, in its undo step (M2-30
+      // part 2): a transparent command's edits wait for the command it ran inside.
+      if (!frame.transparent && this.#changes.length > 0) {
+        try {
+          await regenerateRestyled(frame.ctx, this.#changes);
+        } catch (err) {
+          this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
+      return this.#end(frame, false);
+    }
     frame.prompt = step.value;
     if (step.value.kind === 'selection') return this.#beginSelection(frame, step.value);
     this.#showPrompt();

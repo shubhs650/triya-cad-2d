@@ -14,7 +14,10 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityPatch } from '../model/update';
 import type { Entity, EntityGeometry, InsertAttribute } from '../model/types';
+import { withDimvarOverride } from '../annotation/dstyle';
 import {
+  DIMVAR_DEFAULTS,
+  DIMVAR_ROWS,
   MAX_TRANSPARENCY,
   parseColorValue,
   parseLineweightValue,
@@ -275,6 +278,9 @@ export function applyPropertyEdit(
 
   const attribute = /^attribute:(.+)$/.exec(edit.key);
   if (attribute) return { ...attributeEdit(b, editable, attribute[1]!, edit.value), refused };
+  if (DIMENSION_KEYS.test(edit.key)) {
+    return { ...dimensionEdit(b, model, editable, edit), refused };
+  }
 
   const n = numeric(edit.value, ANGLE_KEYS.has(edit.key) ? 'angle' : 'number');
   const flag = yesNo(edit.value);
@@ -325,4 +331,61 @@ function attributeEdit(
     return { changed: 1 };
   }
   return { changed: 0, invalid: INVALID };
+}
+
+const DIMENSION_KEYS = /^(dimStyle|textOverride|dimvar:.+)$/;
+
+const isDimension = (e: Entity): boolean =>
+  e.geom.kind === 'DIMENSION' ||
+  e.geom.kind === 'ARC_DIMENSION' ||
+  e.geom.kind === 'LARGE_RADIAL_DIMENSION';
+
+/**
+ * A dimension's Dim style, Text override or DIMVAR row (M2-30 part 2). The bus regenerates the
+ * dimensions it changes once the edit ends (`regenerateRestyled`), as AutoCAD redraws them.
+ */
+function dimensionEdit(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  entities: readonly Entity[],
+  edit: PropertyEdit,
+): Omit<PropertyEditReport, 'refused'> {
+  const dims = entities.filter(isDimension);
+  const v = edit.value;
+  type Dim = Extract<EntityGeometry, { kind: 'DIMENSION' }>;
+  const geom = (e: Entity) => e.geom as Dim;
+  let patchOf: (e: Entity) => EntityPatch | 'invalid';
+  if (edit.key === 'dimStyle') {
+    if (typeof v !== 'string' || !model.tables.dimStyles.has(v)) {
+      return { changed: 0, invalid: INVALID };
+    }
+    patchOf = (e) => ({ geom: { ...geom(e), style: v } as EntityGeometry });
+  } else if (edit.key === 'textOverride') {
+    if (typeof v !== 'string') return { changed: 0, invalid: INVALID };
+    patchOf = (e) => ({ geom: { ...geom(e), text: v } as EntityGeometry });
+  } else {
+    const d = DIMVAR_ROWS.find((r) => `dimvar:${r.name}` === edit.key);
+    const n = numeric(v, 'number');
+    if (!d || n === undefined || !d.takes(n)) return { changed: 0, invalid: INVALID };
+    patchOf = (e) => {
+      const fallback = DIMVAR_DEFAULTS[d.name];
+      const xdata = withDimvarOverride(e, geom(e).style, model, d.name, n, fallback);
+      if (xdata === 'no-acad') return 'invalid';
+      return { xdata } as EntityPatch;
+    };
+  }
+  const patches: [Entity, EntityPatch][] = [];
+  for (const e of dims) {
+    const patch = patchOf(e);
+    if (patch === 'invalid') return { changed: 0, invalid: INVALID };
+    patches.push([e, patch]);
+  }
+  let changed = 0;
+  for (const [e, patch] of patches) {
+    const differs = Object.entries(patch).some(([k, x]) => !same(e[k as keyof Entity], x));
+    if (!differs) continue;
+    b.updateEntity(e.id, patch);
+    changed++;
+  }
+  return { changed };
 }
