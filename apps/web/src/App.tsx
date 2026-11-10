@@ -77,6 +77,12 @@ import { browserLocalData, clearLocalData, type ClearReport } from './local-data
 import { coordinateText } from './coordinates';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
+import {
+  LINETYPE_FILES,
+  PLOT_STYLE_FILES,
+  SupportFileStore,
+  opfsSupportFiles,
+} from './support-files';
 import { undoButtons, undoStates } from './undo';
 import { UndoToast } from './UndoToast';
 import { PdfPages, fileKey } from './underlay/pages';
@@ -404,6 +410,28 @@ const images = new RasterImages((bytes) => decodeRaster(bytes));
 const pdfDefinitionsOf = (opened: OpenDocument['opened']): PdfDefinition[] =>
   (opened.init.objects ?? []).filter((o): o is PdfDefinition => o.type === 'PDFDEFINITION');
 
+/**
+ * The user's plot style tables and linetype files (M2-20 part 2), kept on this device for the
+ * Plot dialog (M2-17 part 3) and the linetype loader (M5-08).
+ */
+const plotStyles = new SupportFileStore(PLOT_STYLE_FILES, opfsSupportFiles(PLOT_STYLE_FILES));
+void plotStyles.load();
+const linetypes = new SupportFileStore(LINETYPE_FILES, opfsSupportFiles(LINETYPE_FILES));
+void linetypes.load();
+const supportStores = [plotStyles, linetypes] as const;
+
+/** Files for the support stores; true when one of them takes `f`. */
+function addSupportFile(f: File): boolean {
+  const store = supportStores.find((s) => s.kind.accepts(f.name));
+  if (!store) return false;
+  void f.arrayBuffer().then((b) => store.add(f.name, new Uint8Array(b)));
+  return true;
+}
+
+function addSupportFiles(files: Iterable<File>): void {
+  for (const f of files) addSupportFile(f);
+}
+
 function addFonts(files: Iterable<File>): void {
   for (const f of files) {
     void f.arrayBuffer().then((b) => fonts.add(f.name, new Uint8Array(b)));
@@ -442,7 +470,8 @@ void referenceFiles.load();
 type Supplied = FileSource & { readonly handle?: ReferenceHandle };
 
 /**
- * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf/.ttc the fonts, a .pdf the files
+ * A dropped file: a .pat joins the hatch patterns, a .shx/.ttf/.otf/.ttc the fonts, a .ctb/.stb
+ * the plot style tables and a .lin the linetype files (M2-20 part 2), a .pdf the files
  * PDF underlays show, an image file (.png, .jpg, .bmp, .tif, .gif) the files IMAGEs show, a
  * drawing an xref of an open drawing is waiting for loads as that xref (M1-21), anything else
  * opens as a drawing. A dropped folder's files answer references only.
@@ -454,7 +483,7 @@ function dropped(files: Iterable<File>, folders: readonly Supplied[] = []): void
   for (const f of files) {
     if (isPatFile(f.name)) pats.push(f);
     else if (isFontFile(f.name)) fontFiles.push(f);
-    else rest.push(fromFile(f));
+    else if (!addSupportFile(f)) rest.push(fromFile(f));
   }
   addPatterns(pats);
   addFonts(fontFiles);
@@ -776,6 +805,31 @@ interface LaunchParams {
   }[];
 }
 
+/** The outcome of dropping plot style tables or linetype files, while Settings is closed. */
+function SupportBanners() {
+  const states = [
+    useSyncExternalStore(plotStyles.subscribe, plotStyles.getSnapshot),
+    useSyncExternalStore(linetypes.subscribe, linetypes.getSnapshot),
+  ];
+  return supportStores.map((store, i) => {
+    const { error, notice } = states[i]!;
+    const text = error ?? notice;
+    if (!text) return null;
+    return (
+      <div
+        key={store.kind.folder}
+        className={error ? 'banner error' : 'banner'}
+        role={error ? 'alert' : 'status'}
+      >
+        <span>{text}</span>
+        <button type="button" aria-label="Dismiss" onClick={() => store.dismiss()}>
+          ×
+        </button>
+      </div>
+    );
+  });
+}
+
 export function App() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const recentFiles = useSyncExternalStore(recent.subscribe, recent.getSnapshot);
@@ -977,11 +1031,14 @@ export function App() {
         onClearAll={clearAllLocalData}
         patterns={patterns}
         fonts={fonts}
+        plotStyles={plotStyles}
+        linetypes={linetypes}
         deviceFonts={deviceFonts}
         open={settings}
         onClose={() => setSettings(false)}
         onAdd={addPatterns}
         onAddFonts={addFonts}
+        onAddFiles={addSupportFiles}
       />
 
       <UpdateBanner pwa={pwa} />
@@ -1026,6 +1083,7 @@ export function App() {
           </button>
         </div>
       )}
+      {!settings && <SupportBanners />}
       <UndoToast states={undoStates} active={state.active} />
       {state.notice && (
         <div className="banner" role="status">

@@ -2,8 +2,10 @@
 // origin-private file system empty: a pattern file, a font file, the settings themselves and an
 // autosave snapshot are all gone after it, and the page starts afresh with nothing to recover.
 // The theme, canvas colours, coordinate display, object snap settings and Dynamic Input are
-// kept on the device between sessions.
-import { writeFileSync } from 'node:fs';
+// kept on the device between sessions. Part 2: plot style tables and linetype files are added,
+// listed, refused when unusable, removed and kept; the crosshairs take their colour; the
+// in-canvas tooltip and ruler follow the dark theme.
+import { copyFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { activeCanvas, colourAt, expectShown, openWithDrop, openWithPicker } from '../app/page';
@@ -22,6 +24,11 @@ test.afterAll(async () => {
 });
 
 const DXF32 = path.join(CORPUS, 'ezdxf/examples_dxf/hatches_1.dxf');
+const MONOCHROME_CTB = path.join(
+  import.meta.dirname,
+  '../../../assets/plotstyles/triya-monochrome.ctb',
+);
+const LIN = '*FENCE2,Fence ----0----\nA,.25,-.1,["O",STANDARD,S=.1,R=0,X=-.03,Y=-.05],-.1\n';
 const NAME = path.basename(DXF32);
 const prompt = (page: Page) => page.getByTestId('command-prompt');
 const settingsDialog = (page: Page) => page.getByRole('dialog', { name: 'Settings' });
@@ -82,6 +89,18 @@ test('Clear all local data leaves IndexedDB and the private file system empty', 
   await expect(
     page.locator('.banner', { hasText: 'Added TrueType font Arial.TTF.' }),
   ).toBeVisible();
+  // M2-20 part 2: a plot style table and a linetype file dropped on the window are kept too.
+  const ctb = test.info().outputPath('office.ctb');
+  copyFileSync(MONOCHROME_CTB, ctb);
+  const lin = test.info().outputPath('fences.lin');
+  writeFileSync(lin, LIN);
+  await openWithDrop(page, [ctb, lin]);
+  await expect(
+    page.locator('.banner', { hasText: 'Added color-dependent plot style table office.ctb.' }),
+  ).toBeVisible();
+  await expect(
+    page.locator('.banner', { hasText: 'Added 1 linetype from fences.lin: FENCE2.' }),
+  ).toBeVisible();
   const settings = await openSettings(page);
   await settings.getByLabel('Color theme').selectOption('dark');
   await page.keyboard.press('Escape');
@@ -106,7 +125,11 @@ test('Clear all local data leaves IndexedDB and the private file system empty', 
   const before = await localData(page);
   expect(before.records.join(' ')).toMatch(/triya-patterns\/files\//);
   expect(before.records.join(' ')).toMatch(/triya-settings\/settings\/preferences/);
-  expect(before.files).toEqual(['fonts/Arial.TTF']);
+  expect([...before.files].sort()).toEqual([
+    'fonts/Arial.TTF',
+    'linetypes/fences.lin',
+    'plotstyles/office.ctb',
+  ]);
 
   await openSettings(page);
   await settingsDialog(page).getByRole('button', { name: 'Clear all local data…' }).click();
@@ -126,6 +149,8 @@ test('Clear all local data leaves IndexedDB and the private file system empty', 
   const fresh = await openSettings(page);
   await expect(fresh.getByText('No pattern files added.')).toBeVisible();
   await expect(fresh.getByText('No font files added.')).toBeVisible();
+  await expect(fresh.getByText('No plot style tables added.')).toBeVisible();
+  await expect(fresh.getByText('No linetype files added.')).toBeVisible();
   await expect(fresh.getByLabel('Color theme')).toHaveValue('system');
 });
 
@@ -170,4 +195,84 @@ test('settings are kept between sessions and apply to the canvas and status bar'
   await expect
     .poll(async () => (await colourAt(page, { x: 3, y: box.height - 3 })).slice(0, 3))
     .toEqual([0x21, 0x28, 0x30]);
+});
+
+test('plot style tables and linetype files are added in Settings, listed, refused and kept', async ({
+  page,
+}) => {
+  const ctb = test.info().outputPath('Office.ctb');
+  copyFileSync(MONOCHROME_CTB, ctb);
+  const wrong = test.info().outputPath('wrong.stb');
+  copyFileSync(MONOCHROME_CTB, wrong);
+  const lin = test.info().outputPath('fences.lin');
+  writeFileSync(lin, LIN);
+  await page.goto(app.url);
+  const settings = await openSettings(page);
+  await page.getByTestId('plot-style-picker').setInputFiles([ctb]);
+  const tables = settings.getByRole('list', { name: 'Plot style tables' });
+  await expect(tables).toContainText('Office.ctb');
+  await expect(tables).toContainText('Color-dependent, 255 styles: Triya: plot every object black');
+  // A colour-dependent table named .stb cannot work, so it is refused with the reason.
+  await page.getByTestId('plot-style-picker').setInputFiles([wrong]);
+  await expect(settings.getByRole('alert')).toHaveText(
+    'wrong.stb holds a color-dependent plot style table, so its name must end in .ctb.',
+  );
+  await page.getByTestId('linetype-picker').setInputFiles([lin]);
+  await expect(settings.getByRole('list', { name: 'Linetype files' })).toContainText(
+    'fences.linFENCE2',
+  );
+  await settings.getByRole('heading', { name: 'Plot style tables' }).scrollIntoViewIfNeeded();
+  await page.screenshot({ path: test.info().outputPath('support-files.png') });
+
+  // Kept between visits; Remove takes one off the device.
+  await expect
+    .poll(async () => (await localData(page)).files.sort())
+    .toEqual(['linetypes/fences.lin', 'plotstyles/Office.ctb']);
+  await page.reload();
+  const again = await openSettings(page);
+  await expect(again.getByRole('list', { name: 'Plot style tables' })).toContainText('Office.ctb');
+  await expect(again.getByRole('list', { name: 'Linetype files' })).toContainText('fences.lin');
+  await again.getByRole('button', { name: 'Remove Office.ctb' }).click();
+  await expect(again.getByText('No plot style tables added.')).toBeVisible();
+  // The list changes at once; the private file system's deletion finishes a moment later.
+  await expect
+    .poll(async () => (await localData(page)).files.sort())
+    .toEqual(['linetypes/fences.lin']);
+  await page.reload();
+  await expect((await openSettings(page)).getByText('No plot style tables added.')).toBeVisible();
+});
+
+test('the crosshairs take their colour, and the tooltip and ruler follow the dark theme', async ({
+  page,
+}) => {
+  await page.goto(app.url);
+  await openWithPicker(page, DXF32);
+  await expectShown(page, NAME);
+  const cursor = () => activeCanvas(page).evaluate((c) => getComputedStyle(c).cursor);
+  // Automatic: white crosshairs on the dark model canvas.
+  await expect.poll(cursor).toContain('%23ffffff');
+  const settings = await openSettings(page);
+  await settings.getByLabel('Crosshairs: Automatic').uncheck();
+  await settings.getByLabel('Crosshairs', { exact: true }).fill('#ff0000');
+  await settings.getByLabel('Color theme').selectOption('dark');
+  await page.keyboard.press('Escape');
+  await expect.poll(cursor).toContain('%23ff0000');
+  // The same crosshairs at a point prompt.
+  await activeCanvas(page).hover();
+  await page.keyboard.type('LINE');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await expect.poll(cursor).toContain('%23ff0000');
+  await page.keyboard.press('Escape');
+  // The in-canvas tooltip and the MTEXT ruler draw in the dark chrome's colours.
+  const vars = await page.evaluate(() => {
+    const s = getComputedStyle(document.documentElement);
+    return [s.getPropertyValue('--tip-bg').trim(), s.getPropertyValue('--ruler-mark').trim()];
+  });
+  expect(vars).toEqual(['#3a3523', '#e6e8eb']);
+  // Kept between visits.
+  await page.reload();
+  const again = await openSettings(page);
+  await expect(again.getByLabel('Crosshairs: Automatic')).not.toBeChecked();
+  await expect(again.getByLabel('Crosshairs', { exact: true })).toHaveValue('#ff0000');
 });

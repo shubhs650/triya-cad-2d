@@ -20,10 +20,6 @@ export const ACQUIRE_MS = 400;
 const ACQUIRED_PX = 4;
 const DASH_PX = 4;
 
-/** The marker on the dark model canvas and on a layout's white paper. */
-export const MARKER_COLOR = { dark: '#ffd400', light: '#b06d00' } as const;
-export const TRACK_COLOR = { dark: '#7fd7ff', light: '#1060c0' } as const;
-
 const LABEL = new Map(OSNAP_MODES.map((m) => [m.mode, m.label]));
 
 /** The tooltip AutoSnap shows: the mode's name ("Endpoint"). */
@@ -229,9 +225,8 @@ export function markerPrimitives(
   mode: OsnapMode,
   p: Vec2,
   px: number,
-  dark: boolean,
+  color: string,
 ): RenderPrimitive[] {
-  const color = dark ? MARKER_COLOR.dark : MARKER_COLOR.light;
   // The second outline a pixel inside the first (a hair larger for the open shapes).
   const inner = markerPath(mode, p, px * (1 - 1 / MARKER_PX));
   return [
@@ -246,7 +241,7 @@ export function trackingPrimitives(
   angle: number,
   length: number,
   px: number,
-  dark: boolean,
+  color: string,
 ): RenderPrimitive[] {
   const step = DASH_PX * px;
   const n = Math.min(Math.ceil(length / (2 * step)), 2000);
@@ -258,14 +253,14 @@ export function trackingPrimitives(
     const b = a + step;
     path.push(PATH_M, base.x + ux * a, base.y + uy * a, PATH_L, base.x + ux * b, base.y + uy * b);
   }
-  return [{ kind: 'stroke', color: dark ? TRACK_COLOR.dark : TRACK_COLOR.light, path }];
+  return [{ kind: 'stroke', color, path }];
 }
 
 /** Acquired tracking points: AutoCAD's small cross at each (M2-04 part 2). */
 export function acquiredPrimitives(
   points: readonly Vec2[],
   px: number,
-  dark: boolean,
+  color: string,
 ): RenderPrimitive[] {
   if (points.length === 0) return [];
   const s = ACQUIRED_PX * px;
@@ -286,5 +281,5 @@ export function acquiredPrimitives(
       p.y + s,
     );
   }
-  return [{ kind: 'stroke', color: dark ? TRACK_COLOR.dark : TRACK_COLOR.light, path }];
+  return [{ kind: 'stroke', color, path }];
 }

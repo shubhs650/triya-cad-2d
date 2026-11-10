@@ -27,3 +27,56 @@ export function isDarkColor(hex: string): boolean {
 /** What ACI 7 draws in on `background`. */
 export const foregroundOn = (background: string): string =>
   isDarkColor(background) ? '#ffffff' : '#000000';
+
+/** The AutoSnap marker and the tracking paths on a dark and on a light background. */
+export const MARKER_COLOR = { dark: '#ffd400', light: '#b06d00' } as const;
+export const TRACK_COLOR = { dark: '#7fd7ff', light: '#1060c0' } as const;
+
+/** The drafting aids' colours as drawn (M2-20 part 2). */
+export interface InterfaceColours {
+  /** The crosshairs, the rubber band and the ZOOM window. */
+  readonly crosshair: string;
+  /** The AutoSnap marker. */
+  readonly autosnap: string;
+  /** Polar and object snap tracking paths and acquired points (AutoCAD's AutoTrack vector). */
+  readonly autotrack: string;
+}
+
+/**
+ * AutoCAD's OPTIONS > Display > Colors keeps Crosshairs, Autosnap marker and Autotrack vector
+ * per context; Triya keeps one each, Automatic (undefined) following the canvas behind them.
+ */
+export function interfaceColours(c: {
+  readonly background: string;
+  readonly crosshair?: string | undefined;
+  readonly autosnap?: string | undefined;
+  readonly autotrack?: string | undefined;
+}): InterfaceColours {
+  const dark = isDarkColor(c.background);
+  return {
+    crosshair: c.crosshair ?? foregroundOn(c.background),
+    autosnap: c.autosnap ?? (dark ? MARKER_COLOR.dark : MARKER_COLOR.light),
+    autotrack: c.autotrack ?? (dark ? TRACK_COLOR.dark : TRACK_COLOR.light),
+  };
+}
+
+/** Half the cursor image; 31 px keeps within the 32 px every browser takes for a cursor. */
+const HALF = 15;
+
+/**
+ * The crosshairs as a CSS cursor in `color`: a cross with a faint halo so it reads on anything.
+ * The system crosshair stands in where a browser refuses the image. One image for every prompt:
+ * AutoCAD adds a pickbox at `Command:`, but swapping cursor images as prompts change cost Chrome
+ * enough main-thread time to delay the next prompt behind typed keys (CI, PR #256).
+ */
+export function crosshairCursor(color: string): string {
+  const halo = isDarkColor(color) ? '#ffffff' : '#000000';
+  const n = 2 * HALF + 1;
+  const c = HALF + 0.5;
+  const cross = `M0 ${c}H${n}M${c} 0V${n}`;
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}">` +
+    `<g stroke="${halo}" stroke-opacity="0.45" stroke-width="3"><path d="${cross}"/></g>` +
+    `<g stroke="${color}" stroke-width="1"><path d="${cross}"/></g></svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${HALF} ${HALF}, crosshair`;
+}

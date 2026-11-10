@@ -30,6 +30,15 @@ export interface CanvasColours {
   readonly grid: string | undefined;
   /** The selection highlight and grips' outline. */
   readonly selection: string;
+  /**
+   * The crosshairs, rubber band and ZOOM window (M2-20 part 2); undefined follows the
+   * background as ACI 7 does.
+   */
+  readonly crosshair: string | undefined;
+  /** The AutoSnap marker; undefined is amber on a dark background, deep amber on a light one. */
+  readonly autosnap: string | undefined;
+  /** The tracking paths (AutoTrack vector); undefined is light or deep blue by background. */
+  readonly autotrack: string | undefined;
 }
 
 /** The drafting settings AutoCAD keeps per user. */
@@ -59,6 +68,9 @@ export const DEFAULT_CANVAS: CanvasColours = {
   surround: '#8a8f98',
   grid: undefined,
   selection: '#4da3ff',
+  crosshair: undefined,
+  autosnap: undefined,
+  autotrack: undefined,
 };
 
 export const DEFAULT_PREFERENCES: Preferences = {
@@ -108,6 +120,9 @@ export function normalizePreferences(raw: unknown): Preferences {
       surround: hex(c['surround']) ?? d.canvas.surround,
       grid: hex(c['grid']),
       selection: hex(c['selection']) ?? d.canvas.selection,
+      crosshair: hex(c['crosshair']),
+      autosnap: hex(c['autosnap']),
+      autotrack: hex(c['autotrack']),
     },
     coordinates: coordinates === 'decimal' ? 'decimal' : 'drawing',
     dynMode: bool(raw['dynMode'], d.dynMode),
