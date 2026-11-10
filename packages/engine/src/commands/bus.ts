@@ -46,6 +46,7 @@ import {
   type PointPrompt,
   type Prompt,
   type PromptAnswer,
+  type SelectionTake,
   type SelectionWindow,
 } from './prompt';
 import { NO_VIEW, type ViewHost } from './view/host';
@@ -187,6 +188,14 @@ const INVALID: { readonly [K in Prompt['kind']]: string } = {
   dialog: 'Invalid input.',
 };
 
+/** The pre-selection's steps, for the objects a command may take of it (unlocked ones). */
+const kept = (takes: readonly SelectionTake[], ids: readonly EntityId[]): SelectionTake[] => {
+  const keep = new Set(ids);
+  return takes
+    .map((t) => ({ ...t, ids: t.ids.filter((id) => keep.has(id)) }))
+    .filter((t) => t.ids.length > 0);
+};
+
 const takesPoints = (p: Prompt): boolean =>
   p.kind === 'point' || p.kind === 'distance' || p.kind === 'angle';
 
@@ -219,6 +228,7 @@ export class PromptBus {
   #pickfirstWindow: SelectionWindow | undefined;
   /** Where the pre-selection's last pick was made (EATTEDIT's attribute, M2-27). */
   #pickfirstPick: Vec2 | undefined;
+  #pickfirstTakes: readonly SelectionTake[] = [];
   /** The hot grip while grip editing runs (M2-06). */
   #hot: Vec2 | undefined;
   /** The grips last shown, as a key, so only a change is sent. */
@@ -639,6 +649,7 @@ export class PromptBus {
         (selects || def.transparent) && this.#idle.ids.length > 0 ? [...this.#idle.ids] : undefined;
       this.#pickfirstWindow = this.#pickfirst ? this.#idle.window : undefined;
       this.#pickfirstPick = this.#pickfirst ? this.#idle.pick : undefined;
+      this.#pickfirstTakes = this.#pickfirst ? this.#idle.takes : [];
       if (!def.transparent && !def.keepsSelection) this.#idle.clear();
       this.#showSelection();
     }
@@ -712,7 +723,9 @@ export class PromptBus {
       frame.transparent || (prompt.single && !prompt.pickfirst) ? undefined : this.#pickfirst;
     const preWindow = this.#pickfirstWindow;
     const prePick = this.#pickfirstPick;
+    const preTakes = this.#pickfirstTakes;
     this.#pickfirst = this.#pickfirstWindow = this.#pickfirstPick = undefined;
+    this.#pickfirstTakes = [];
     if (pre) {
       this.#idle.clear();
       let ids = pre;
@@ -731,6 +744,7 @@ export class PromptBus {
         ids,
         ...(preWindow && { window: preWindow }),
         ...(prePick && { pick: prePick }),
+        ...(preTakes.length > 0 && { takes: kept(preTakes, ids) }),
       });
     }
     frame.select = this.#selectionLoop({
@@ -808,8 +822,15 @@ export class PromptBus {
     this.#showSelection();
     const window = loop.window;
     const pick = loop.pick;
+    const takes = loop.takes;
     return this.#deliver(
-      { kind: 'selection', ids, ...(window && { window }), ...(pick && { pick }) },
+      {
+        kind: 'selection',
+        ids,
+        ...(window && { window }),
+        ...(pick && { pick }),
+        ...(takes.length > 0 && { takes }),
+      },
       '',
       false,
     );

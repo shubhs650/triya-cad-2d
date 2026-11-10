@@ -16,7 +16,12 @@ import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import { matchKeyword, type Prompt, type SelectionWindow } from '../commands/prompt';
+import {
+  matchKeyword,
+  type Prompt,
+  type SelectionTake,
+  type SelectionWindow,
+} from '../commands/prompt';
 import type { ViewReply, ViewRequest } from '../commands/view/host';
 import { inSpace, onLockedLayers, selectAll, selectLast } from './rules';
 
@@ -86,6 +91,9 @@ export class SelectionLoop {
   /** The last window that added objects (STRETCH's window, M2-06). */
   #window: SelectionWindow | undefined;
   #pick: Vec2 | undefined;
+  /** The steps that took objects, how each took them (M2-27); with `#undo`'s sets. */
+  #takes: SelectionTake[] = [];
+  readonly #undoTakes: SelectionTake[][] = [];
 
   constructor(host: SelectionLoopHost, o: SelectionLoopOptions) {
     this.#host = host;
@@ -105,6 +113,11 @@ export class SelectionLoop {
 
   get window(): SelectionWindow | undefined {
     return this.#window;
+  }
+
+  /** How the objects in the set were taken, step by step (-ATTEDIT's attributes, M2-27). */
+  get takes(): readonly SelectionTake[] {
+    return this.#takes;
   }
 
   /** A corner is asked for: the next point completes a window rather than picking. */
@@ -142,12 +155,14 @@ export class SelectionLoop {
   set(ids: readonly EntityId[], pick?: Vec2): void {
     this.#ids = [...new Set(ids)];
     this.#pick = pick;
+    this.#takes = pick && this.#ids.length > 0 ? [{ ids: this.#ids, pick }] : [];
   }
 
   /** Esc at `Command:`: the window and the pre-selection go. */
   clear(): void {
     this.#ids = [];
-    this.#undo.length = 0;
+    this.#undo.length = this.#undoTakes.length = 0;
+    this.#takes = [];
     this.#window = this.#pick = undefined;
     this.cancelWindow();
   }
@@ -162,6 +177,7 @@ export class SelectionLoop {
     const kept = this.#ids.filter((id) => !gone.has(id));
     if (kept.length === this.#ids.length) return false;
     this.#ids = kept;
+    this.#takes = without(this.#takes, gone);
     return true;
   }
 
@@ -183,8 +199,9 @@ export class SelectionLoop {
       this.#corner = undefined;
       const crossing = c.kind === 'auto' ? p.x < c.from.x : c.kind === 'crossing';
       const r = await this.#host.request({ op: 'select', a: c.from, b: p, crossing });
-      if (!c.remove && r.ok) this.#window = { a: c.from, b: p };
-      return this.#take(r, c.remove, 'Specify opposite corner:');
+      const window = { a: c.from, b: p };
+      if (!c.remove && r.ok) this.#window = window;
+      return this.#take(r, c.remove, 'Specify opposite corner:', { window, crossing });
     }
     if (o.release) return 'more';
     const remove = this.#remove || !!o.shift;
@@ -196,7 +213,7 @@ export class SelectionLoop {
       return 'more';
     }
     if (!remove) this.#pick = p;
-    return this.#apply([hit], remove, this.#label());
+    return this.#apply([hit], remove, this.#label(), { pick: p });
   }
 
   /** A mode typed at the prompt; undefined when the text names none. */
@@ -232,8 +249,11 @@ export class SelectionLoop {
       case 'Undo': {
         this.#say(label);
         const before = this.#undo.pop();
-        if (before) this.#ids = before;
-        else this.#say('All selection steps have been undone.');
+        const takes = this.#undoTakes.pop();
+        if (before) {
+          this.#ids = before;
+          this.#takes = takes ?? [];
+        } else this.#say('All selection steps have been undone.');
         return 'more';
       }
       case 'AUto':
@@ -264,7 +284,7 @@ export class SelectionLoop {
     return this.#remove ? 'Remove objects:' : `${this.#o.message}:`;
   }
 
-  #take(r: ViewReply, remove: boolean, label: string): StepResult {
+  #take(r: ViewReply, remove: boolean, label: string, how: Omit<SelectionTake, 'ids'>): StepResult {
     if (!r.ok) {
       this.#say(`${label} ${r.message}`);
       return 'more';
@@ -273,25 +293,34 @@ export class SelectionLoop {
       (r.ids ?? []).filter((id) => this.#host.model.entity(id)),
       remove,
       label,
+      how,
     );
   }
 
   /** Adds or removes `found`, saying what happened as AutoCAD does. */
-  #apply(found: readonly EntityId[], remove: boolean, label: string): StepResult {
+  #apply(
+    found: readonly EntityId[],
+    remove: boolean,
+    label: string,
+    how: Omit<SelectionTake, 'ids'> = {},
+  ): StepResult {
     const model = this.#host.model;
     const unique = [...new Set(found)];
     const locked = this.#o.editable ? onLockedLayers(model, unique) : new Set<EntityId>();
     const taken = unique.filter((id) => !locked.has(id));
     const before = this.#ids;
     const had = new Set(before);
+    this.#undoTakes.push(this.#takes);
     let line: string;
     if (remove) {
       const out = new Set(taken.filter((id) => had.has(id)));
       this.#ids = before.filter((id) => !out.has(id));
+      this.#takes = without(this.#takes, out);
       line = `${out.size} removed, ${this.#ids.length} total`;
     } else {
       const dup = taken.filter((id) => had.has(id)).length;
       this.#ids = [...before, ...taken.filter((id) => !had.has(id))];
+      if (taken.length > 0) this.#takes = [...this.#takes, { ids: taken, ...how }];
       line =
         before.length === 0 && dup === 0
           ? `${unique.length} found`
@@ -304,4 +333,11 @@ export class SelectionLoop {
     }
     return this.#single && !remove && taken.length > 0 ? 'done' : 'more';
   }
+}
+
+/** `takes` without the objects `gone` (removed from the set, or erased). */
+function without(takes: readonly SelectionTake[], gone: ReadonlySet<EntityId>): SelectionTake[] {
+  return takes
+    .map((t) => ({ ...t, ids: t.ids.filter((id) => !gone.has(id)) }))
+    .filter((t) => t.ids.length > 0);
 }

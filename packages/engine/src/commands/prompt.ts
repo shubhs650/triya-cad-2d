@@ -13,6 +13,20 @@ export interface SelectionWindow {
   readonly b: Vec2;
 }
 
+/**
+ * One step of a selection that took objects (M2-27: -ATTEDIT's "Select Attributes" takes the
+ * attribute picked, or the attributes a window holds or crosses, not the whole reference): the
+ * objects it took, and the pick or window that took them. A step with neither (ALL, Last,
+ * Previous, a pre-selection made with Ctrl+A) took them whole.
+ */
+export interface SelectionTake {
+  readonly ids: readonly EntityId[];
+  readonly pick?: Vec2;
+  readonly window?: SelectionWindow;
+  /** The window was a crossing window. */
+  readonly crossing?: boolean;
+}
+
 interface PromptBase {
   /** The prompt without options or default, as AutoCAD words it: "Specify next point". */
   readonly message: string;
@@ -347,6 +361,8 @@ export type PromptAnswer =
       readonly window?: SelectionWindow;
       /** Where the last pick that took an object was made, when one did (M2-11). */
       readonly pick?: Vec2;
+      /** How the objects were taken, step by step, when picks or windows took any (M2-27). */
+      readonly takes?: readonly SelectionTake[];
     }
   | {
       readonly kind: 'dialog';

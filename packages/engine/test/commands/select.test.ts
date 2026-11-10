@@ -11,7 +11,9 @@ import {
   PromptBus,
   builtinCommands,
   type BusEvent,
+  type CommandDef,
   type DocumentInit,
+  type PromptAnswer,
   type EntityId,
   type ViewReply,
   type ViewRequest,
@@ -58,8 +60,20 @@ const DRAWN: Record<string, Box> = {
   '32': { minX: 20, minY: 10, maxX: 30, maxY: 10 },
 };
 
+/** A command that keeps what its "Select objects" was answered with (M2-27's selection steps). */
+const answers: PromptAnswer[] = [];
+const GRAB: CommandDef = {
+  name: 'GRAB',
+  usesSelection: 'during',
+  async *run(ctx) {
+    answers.push(yield ctx.prompt.selection({ message: 'Select objects' }));
+  },
+};
+
 function setup(o: { pickfirst?: boolean } = {}) {
   const model = DocumentModel.create(init());
+  const registry = builtinCommands();
+  registry.register(GRAB);
   const asked: ViewRequest[] = [];
   const id = (h: string) => model.ids.idOf(h)!;
   const handles = (ids: readonly EntityId[]) => ids.map((i) => model.ids.handleOf(i));
@@ -91,7 +105,7 @@ function setup(o: { pickfirst?: boolean } = {}) {
   };
   const bus = new PromptBus({
     model,
-    registry: builtinCommands(),
+    registry,
     view: { request: (r) => Promise.resolve(answer(r)) },
     ...(o.pickfirst === false && { pickfirst: false }),
   });
@@ -282,6 +296,65 @@ describe('SELECT', () => {
     const fresh = setup();
     await fresh.bus.script(['SELECT', 'P']);
     expect(fresh.results()).toEqual(['Select objects: P 0 found']);
+  });
+});
+
+describe('the steps a selection was made with (M2-27)', () => {
+  const last = () => answers.at(-1) as Extract<PromptAnswer, { kind: 'selection' }>;
+
+  it('lists each pick and window that took objects, with what it took', async () => {
+    const s = setup();
+    await s.bus.submit('GRAB');
+    await s.bus.pick({ x: 10, y: 0 });
+    await s.bus.pick({ x: 10, y: 0 });
+    // A crossing window, right to left, over 21 and 23.
+    await s.bus.pick({ x: 8, y: 8 });
+    await s.bus.pick({ x: -1, y: 4 });
+    // A pick that finds nothing and a window that takes nothing add no step.
+    await s.bus.pick({ x: 50, y: 50 });
+    await s.bus.pick({ x: 51, y: 51 });
+    await s.bus.submit('');
+    const a = last();
+    expect(s.handles(a.ids)).toEqual(['20', '21', '23']);
+    expect(a.takes?.map((t) => [s.handles(t.ids), t.pick, t.window, t.crossing])).toEqual([
+      [['20'], { x: 10, y: 0 }, undefined, undefined],
+      [['20'], { x: 10, y: 0 }, undefined, undefined],
+      [['21', '23'], undefined, { a: { x: 8, y: 8 }, b: { x: -1, y: 4 } }, true],
+    ]);
+  });
+
+  it('ALL is a step that takes objects whole; removing and Undo drop and restore steps', async () => {
+    const s = setup();
+    await s.bus.script(['GRAB', 'ALL']);
+    await s.bus.pick({ x: 0, y: 10 });
+    await s.bus.pick({ x: 10, y: 0 }, { shift: true });
+    await s.bus.submit('U');
+    await s.bus.submit('');
+    const a = last();
+    expect(s.handles(a.ids)).toEqual(['20', '21', '23', '30']);
+    expect(a.takes?.map((t) => [s.handles(t.ids), t.pick])).toEqual([
+      [['20', '21', '23', '30'], undefined],
+      [['23'], { x: 0, y: 10 }],
+    ]);
+    await s.bus.script(['GRAB', 'ALL']);
+    await s.bus.pick({ x: 0, y: 10 });
+    await s.bus.pick({ x: 0, y: 10 }, { shift: true });
+    await s.bus.submit('');
+    expect(last().takes?.map((t) => s.handles(t.ids))).toEqual([['20', '21', '30']]);
+  });
+
+  it('the pre-selection carries its steps into the command; Ctrl+A takes objects whole', async () => {
+    const s = setup();
+    await s.bus.pick({ x: 10, y: 0 });
+    await s.bus.submit('GRAB');
+    expect(last().takes?.map((t) => [s.handles(t.ids), t.pick])).toEqual([
+      [['20'], { x: 10, y: 0 }],
+    ]);
+    await s.bus.selectAll();
+    await s.bus.submit('GRAB');
+    expect(last().takes?.map((t) => [s.handles(t.ids), t.pick, t.window])).toEqual([
+      [['20', '21', '23', '30'], undefined, undefined],
+    ]);
   });
 });
 

@@ -35,7 +35,14 @@ import type {
 } from '../../model/types';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { TextOutline } from '../view/host';
-import type { AttributeEntry, AttributePatch, NamedRecord, Prompt, PromptAnswer } from '../prompt';
+import type {
+  AttributeEntry,
+  AttributePatch,
+  NamedRecord,
+  Prompt,
+  PromptAnswer,
+  SelectionWindow,
+} from '../prompt';
 import { mtextEditorRequest } from '../draw/text';
 
 /** DXF 70 bit 1: invisible; bit 2: constant (a constant attribute is never an ATTRIB to edit). */
@@ -230,21 +237,79 @@ export async function attributeAt(
   id: EntityId,
   point: Vec2,
 ): Promise<Handle | undefined> {
+  const drawn = await drawnAttributes(ctx, id);
+  return drawn && pickedOf(drawn, point);
+}
+
+/** The editable attributes of a reference as the canvas draws them (`textOutlines`). */
+interface DrawnAttributes {
+  readonly attributes: readonly InsertAttribute[];
+  /** One per attribute; null where no loaded font draws it. */
+  readonly outlines: readonly (TextOutline | null)[];
+  /** The pickbox's half size in world units. */
+  readonly pickbox: number;
+}
+
+/** Undefined when the reference shows no editable attribute, or nothing on the canvas draws it. */
+async function drawnAttributes(
+  ctx: CommandContext,
+  id: EntityId,
+): Promise<DrawnAttributes | undefined> {
   const g = ctx.model.entity(id)?.geom;
   if (g?.kind !== 'INSERT') return undefined;
-  const candidates = g.attributes.filter((a) => (a.flags & CONSTANT) === 0 && shown(ctx, a));
-  if (candidates.length === 0) return undefined;
-  const r = await ctx.view.request({ op: 'textOutlines', texts: candidates.map(drawnText) });
-  if (!r.ok || !r.outlines) return undefined;
-  const pickbox = r.pickbox ?? 0;
+  const attributes = g.attributes.filter((a) => (a.flags & CONSTANT) === 0 && shown(ctx, a));
+  if (attributes.length === 0) return undefined;
+  const r = await ctx.view.request({ op: 'textOutlines', texts: attributes.map(drawnText) });
+  if (!r.ok || !r.outlines || r.outlines.every((o) => !o)) return undefined;
+  return { attributes, outlines: r.outlines, pickbox: r.pickbox ?? 0 };
+}
+
+/** The attribute whose drawn text is nearest `point`, within the pickbox. */
+function pickedOf(d: DrawnAttributes, point: Vec2): Handle | undefined {
   let best: { handle: Handle; d: number } | undefined;
-  candidates.forEach((a, i) => {
-    const o = r.outlines![i];
+  d.attributes.forEach((a, i) => {
+    const o = d.outlines[i];
     if (!o) return;
-    const d = outside(point, o.corners);
-    if (d <= pickbox && (!best || d < best.d)) best = { handle: a.handle, d };
+    const away = outside(point, o.corners);
+    if (away <= d.pickbox && (!best || away < best.d)) best = { handle: a.handle, d: away };
   });
   return best?.handle;
+}
+
+/**
+ * The attributes a window takes, as AutoCAD's object selection takes objects: drawn wholly
+ * inside it, or, a crossing window, inside or crossing it. An attribute no font draws counts
+ * by its insertion point.
+ */
+function windowedOf(d: DrawnAttributes, w: SelectionWindow, crossing: boolean): Handle[] {
+  const lo = { x: Math.min(w.a.x, w.b.x), y: Math.min(w.a.y, w.b.y) };
+  const hi = { x: Math.max(w.a.x, w.b.x), y: Math.max(w.a.y, w.b.y) };
+  const inRect = (p: Vec2) => p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
+  return d.attributes
+    .filter((a, i) => {
+      const corners = d.outlines[i]?.corners ?? [a.mtext?.position ?? insertionPoint(a)];
+      if (corners.every(inRect)) return true;
+      return crossing && crossesRect(corners, lo, hi);
+    })
+    .map((a) => a.handle);
+}
+
+/** Whether the polygon `corners` and the rectangle `lo`–`hi` overlap at all. */
+function crossesRect(corners: readonly Vec2[], lo: Vec2, hi: Vec2): boolean {
+  const rect = [lo, { x: hi.x, y: lo.y }, hi, { x: lo.x, y: hi.y }];
+  const inRect = (p: Vec2) => p.x >= lo.x && p.x <= hi.x && p.y >= lo.y && p.y <= hi.y;
+  if (corners.some(inRect)) return true;
+  if (corners.length >= 3 && rect.some((p) => outside(p, corners) === 0)) return true;
+  const cross = (o: Vec2, a: Vec2, b: Vec2) =>
+    (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  const meets = (p: Vec2, q: Vec2, r: Vec2, s: Vec2) =>
+    cross(p, q, r) * cross(p, q, s) <= 0 && cross(r, s, p) * cross(r, s, q) <= 0;
+  for (let i = 0; i < corners.length; i++) {
+    const p = corners[i]!;
+    const q = corners[(i + 1) % corners.length]!;
+    for (let j = 0; j < 4; j++) if (meets(p, q, rect[j]!, rect[(j + 1) % 4]!)) return true;
+  }
+  return false;
 }
 
 /** What a patch may change on the ATTRIB itself, and on a multiline one's MTEXT too. */
@@ -612,6 +677,69 @@ function matching(ctx: CommandContext, refs: readonly EntityId[], specs: Specs):
   return out;
 }
 
+/**
+ * The attributes "Select Attributes" took, in the specs (M2-27; "-ATTEDIT (Command)", AutoCAD
+ * 2024 Help: "Select only attributes parallel to the current UCS"): the attribute a pick was
+ * made on, and the attributes a window holds (or a crossing window crosses), not every attribute
+ * of the references they belong to. A pick on a reference's other objects takes none of its
+ * attributes, as AutoCAD's attribute selection finds none there. A reference taken whole (ALL,
+ * Last, Previous, a Ctrl+A pre-selection), or one the canvas cannot measure (no font loaded),
+ * gives all its attributes, as M2-12 did.
+ */
+async function selectedAttributes(
+  ctx: CommandContext,
+  sel: Answer<'selection'>,
+  specs: Specs,
+): Promise<Found[]> {
+  const out: Found[] = [];
+  for (const id of sel.ids) {
+    const all = matching(ctx, [id], specs);
+    if (all.length === 0) continue;
+    const takes = (sel.takes ?? []).filter((t) => t.ids.includes(id));
+    const whole = takes.length === 0 || takes.some((t) => !t.pick && !t.window);
+    const drawn = whole ? undefined : await drawnAttributes(ctx, id);
+    if (!drawn) {
+      out.push(...all);
+      continue;
+    }
+    const took = new Set<Handle>();
+    for (const t of takes) {
+      if (t.pick) {
+        const h = pickedOf(drawn, t.pick);
+        if (h !== undefined) took.add(h);
+      } else if (t.window) {
+        for (const h of windowedOf(drawn, t.window, t.crossing === true)) took.add(h);
+      }
+    }
+    // In the order taken; the specs still filter what was picked.
+    const wanted = new Set(all.map((f) => f.handle));
+    for (const handle of took) if (wanted.has(handle)) out.push({ id, handle });
+  }
+  return out;
+}
+
+/**
+ * The X AutoCAD marks the attribute being edited with, at its insertion point: twice the
+ * pickbox across (as big on screen at any zoom), or half the text height without a canvas.
+ */
+async function markAttribute(ctx: CommandContext, a: InsertAttribute): Promise<void> {
+  const r = await ctx.view.request({ op: 'textOutlines', texts: [drawnText(a)] });
+  const size = r.ok && r.pickbox ? r.pickbox * 2 : a.height / 2;
+  const at = a.mtext ? a.mtext.position : insertionPoint(a);
+  ctx.preview([
+    {
+      kind: 'LINE',
+      start: { x: at.x - size, y: at.y - size },
+      end: { x: at.x + size, y: at.y + size },
+    },
+    {
+      kind: 'LINE',
+      start: { x: at.x - size, y: at.y + size },
+      end: { x: at.x + size, y: at.y - size },
+    },
+  ]);
+}
+
 const attributeOf = (ctx: CommandContext, f: Found): InsertAttribute =>
   (ctx.model.entity(f.id)!.geom as InsertGeometry).attributes.find((a) => a.handle === f.handle)!;
 
@@ -635,11 +763,12 @@ async function* dashAttedit(ctx: CommandContext): CommandGenerator {
   if (keywordOf(one) === 'No') return yield* globalEdit(ctx);
   const specs = yield* askSpecs(ctx);
   const sel = yield ctx.prompt.selection({ message: 'Select Attributes', editable: true });
-  const found = matching(ctx, (sel as Answer<'selection'>).ids, specs);
+  const found = await selectedAttributes(ctx, sel as Answer<'selection'>, specs);
   ctx.message(`${found.length} attributes selected.`);
   for (const f of found) {
     for (;;) {
       const a = attributeOf(ctx, f);
+      await markAttribute(ctx, a);
       const o = yield ctx.prompt.keyword({
         message: 'Enter an option',
         options: ['Value', 'Position', 'Height', 'Angle', 'Style', 'Layer', 'Color', 'Next'],
@@ -744,19 +873,75 @@ async function* option(
     }
     default: {
       // Color.
+      const current = colorText(a.color);
       const c = yield ctx.prompt.string({
         message: 'Enter new color',
-        options: ['Truecolor'],
-        default: { kind: 'string', value: colorText(a.color) },
+        options: ['Truecolor', 'COlorbook'],
+        default: { kind: 'string', value: current },
       });
+      if (c.kind === 'keyword' && c.keyword === 'COlorbook') {
+        const color = yield* colorFromBook(ctx);
+        return color ? patched({ color }) : a;
+      }
+      const typed = textOf(c);
+      // Enter keeps the colour shown, a colour-book one too.
+      if (c.kind === 'string' && typed === current) return a;
       const color =
         c.kind === 'keyword'
           ? parseTrueColor(textOf(yield ctx.prompt.string({ message: 'Red, Green, Blue' })))
-          : parseColor(textOf(c));
+          : (parseColor(typed) ?? bookColors(ctx.model).get(typed.trim().toUpperCase()));
       if (!color) ctx.message('Invalid color.');
       return color ? patched({ color }) : a;
     }
   }
+}
+
+/**
+ * The COlorbook option ("-COLOR (Command)", AutoCAD 2024 Help): a colour book's name, then one
+ * of its colours. Triya ships no colour books (AutoCAD's .acb files are Autodesk's, CLAUDE.md),
+ * so the books are those the drawing already uses, with the colours of them it uses; the save
+ * writes such a colour with the drawing's own DBCOLOR object (M2-27).
+ */
+async function* colorFromBook(
+  ctx: CommandContext,
+): AsyncGenerator<Prompt, Color | undefined, PromptAnswer> {
+  const books = bookColors(ctx.model);
+  const book = textOf(
+    yield ctx.prompt.string({ message: 'Enter Color Book name', spaces: true }),
+  ).trim();
+  const known = [...books.values()].find(
+    (c) => c.kind === 'rgb' && c.bookName?.toUpperCase() === book.toUpperCase(),
+  );
+  if (!known || known.kind !== 'rgb') {
+    ctx.message(`Cannot find color book "${book}".`);
+    return undefined;
+  }
+  const name = textOf(
+    yield ctx.prompt.string({ message: 'Enter color name', spaces: true }),
+  ).trim();
+  const color = books.get(`${known.bookName}$${name}`.toUpperCase());
+  if (!color) ctx.message(`Cannot find color "${name}" in color book "${known.bookName}".`);
+  return color;
+}
+
+/**
+ * The colour-book colours the drawing uses (on layers, objects and attributes), by
+ * `BOOK$COLOR` in capitals, as AutoCAD names a DBCOLOR.
+ */
+export function bookColors(model: DocumentModel): Map<string, Color> {
+  const out = new Map<string, Color>();
+  const add = (c: Color) => {
+    if (c.kind === 'rgb' && c.bookName !== undefined && c.colorName) {
+      const key = `${c.bookName}$${c.colorName}`.toUpperCase();
+      if (!out.has(key)) out.set(key, c);
+    }
+  };
+  for (const l of model.tables.layers.values()) add(l.color);
+  for (const e of model.entities()) {
+    add(e.color);
+    if (e.geom.kind === 'INSERT') for (const a of e.geom.attributes) add(a.color);
+  }
+  return out;
 }
 
 /** AutoCAD's names for ACI 1–7, as the Color option takes and shows them. */
@@ -771,7 +956,9 @@ export function colorText(c: Color): string {
     case 'aci':
       return c.index >= 1 && c.index <= 7 ? COLOR_NAMES[c.index - 1]! : String(c.index);
     case 'rgb':
-      return `${c.r},${c.g},${c.b}`;
+      return c.bookName !== undefined && c.colorName
+        ? `${c.bookName}$${c.colorName}`
+        : `${c.r},${c.g},${c.b}`;
   }
 }
 
@@ -810,17 +997,17 @@ async function* globalEdit(ctx: CommandContext): CommandGenerator {
     default: { kind: 'keyword', keyword: 'Yes' },
   });
   const specs = yield* askSpecs(ctx);
-  let refs: readonly EntityId[];
+  let found: Found[];
   if (keywordOf(vis) === 'Yes') {
     const sel = yield ctx.prompt.selection({ message: 'Select Attributes', editable: true });
-    refs = (sel as Answer<'selection'>).ids;
+    found = await selectedAttributes(ctx, sel as Answer<'selection'>, specs);
   } else {
     ctx.message('Drawing must be regenerated afterwards.');
-    refs = [...ctx.model.entities()]
+    const refs = [...ctx.model.entities()]
       .filter((e) => e.geom.kind === 'INSERT' && !ctx.model.tables.layers.get(e.layer)?.locked)
       .map((e) => e.id);
+    found = matching(ctx, refs, specs);
   }
-  const found = matching(ctx, refs, specs);
   ctx.message(`${found.length} attributes selected.`);
   if (found.length === 0) return;
   const from = yield ctx.prompt.string({ message: 'Enter string to change', spaces: true });
