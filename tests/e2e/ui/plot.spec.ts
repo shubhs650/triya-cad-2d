@@ -160,9 +160,9 @@ test('Window< hides the dialog, takes two corners and plots that window', async 
   await page.keyboard.press('Control+p');
   const d = dialog(page);
   await expect(d).toBeVisible();
-  // The partial preview: Display fitted and centred on A4 landscape, on the paper.
+  // The partial preview: Display fitted on the page setup's ANSI A landscape (part 4).
   const preview = d.getByRole('img', { name: /^Plot area / });
-  await expect(preview).toHaveAttribute('aria-label', /on paper 297 × 210 mm$/);
+  await expect(preview).toHaveAttribute('aria-label', /on paper 279\.4 × 215\.9 mm$/);
   await d.getByLabel('Paper size').selectOption('ISO A3');
   await expect(preview).toHaveAttribute('aria-label', /on paper 420 × 297 mm$/);
   // Window with none picked yet goes straight to the corners, as in AutoCAD.
@@ -281,6 +281,77 @@ test('a layout opens on its page setup’s plot style table and options; your ow
   const pdf = await readPdf(download);
   expect(pdf.labels).toEqual(['Layout1']);
   expect(pdf.paths).toBeGreaterThan(0);
+});
+
+// Part 4: the dialog opens on the whole page setup, and Apply to Layout writes it back.
+test('model space opens on its page setup, and Apply to Layout saves the settings into it (part 4)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  // The sample's Model page setup: ANSI A in inches, landscape, Display, fitted, not centred.
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d.getByRole('heading')).toHaveText('Plot - Model');
+  await expect(d.getByLabel('Paper size')).toHaveValue('ANSI A');
+  await expect(d.getByRole('radio', { name: 'Landscape' })).toBeChecked();
+  await expect(d.getByLabel('What to plot')).toHaveValue('display');
+  await expect(d.getByLabel('Fit to paper')).toBeChecked();
+  await expect(d.getByLabel('Center the plot')).not.toBeChecked();
+  await expect(d.getByLabel('inches =')).toBeDisabled();
+
+  // A3 portrait, the extents at 1:2 (1 inch = 2 units in the page setup's inches), centred.
+  await d.getByLabel('Paper size').selectOption('ISO A3');
+  await d.getByRole('radio', { name: 'Portrait' }).check();
+  await d.getByLabel('What to plot').selectOption('extents');
+  await d.getByLabel('Fit to paper').uncheck();
+  await d.getByLabel('Scale', { exact: true }).selectOption('1:2');
+  await d.getByLabel('Center the plot').check();
+  await d.getByLabel('Plot style table').selectOption('triya-monochrome.ctb');
+  await d.getByRole('button', { name: 'Apply to Layout' }).click();
+  await expect(d.getByRole('status')).toHaveText('Applied to the Model page setup.');
+  // The drawing has a change to save.
+  await expect(page.locator('.doc-tab[data-active="true"]')).toHaveAttribute('data-dirty', 'true');
+  type Dev = { triyaDev: { layouts(): { name: string; plot?: Record<string, unknown> }[] } };
+  const model = await page.evaluate(
+    () => (window as unknown as Dev).triyaDev.layouts().find((l) => l.name === 'Model')!.plot!,
+  );
+  expect(model).toMatchObject({
+    paperSize: 'ISO_full_bleed_A3_(297.00_x_420.00_MM)',
+    paperWidth: 297,
+    paperHeight: 420,
+    rotation: 0,
+    plotType: 1,
+    scale: { numerator: 1, denominator: 2 },
+    styleSheet: 'triya-monochrome.ctb',
+  });
+  expect((model.flags as number) & (16 | 4)).toBe(4);
+  await d.getByRole('button', { name: 'Cancel' }).click();
+  await expect(d).toBeHidden();
+
+  // PLOT again opens on the page setup as applied.
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  await expect(d.getByLabel('Paper size')).toHaveValue('ISO A3');
+  await expect(d.getByRole('radio', { name: 'Portrait' })).toBeChecked();
+  await expect(d.getByLabel('What to plot')).toHaveValue('extents');
+  await expect(d.getByLabel('Fit to paper')).not.toBeChecked();
+  await expect(d.getByLabel('Scale', { exact: true })).toHaveValue('1:2');
+  await expect(d.getByLabel('Center the plot')).toBeChecked();
+  await expect(d.getByLabel('Plot style table')).toHaveValue('triya-monochrome.ctb');
+  await d.getByRole('button', { name: 'Cancel' }).click();
+
+  // U undoes it, as one step.
+  const input = page.getByLabel('Command', { exact: true });
+  await input.fill('U');
+  await input.press('Enter');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  await expect(d.getByLabel('Paper size')).toHaveValue('ANSI A');
+  await expect(d.getByLabel('Fit to paper')).toBeChecked();
 });
 
 test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) => {

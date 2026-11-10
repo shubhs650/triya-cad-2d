@@ -59,6 +59,7 @@ describe('mapLayouts', () => {
           rotation: 1,
           origin: { x: 2, y: 3 },
           scale: { numerator: 1, denominator: 2 },
+          standardScaleType: l.scaledFit as number,
           plotType: 5,
           flags: l.flags as number,
         },
@@ -71,6 +72,22 @@ describe('mapLayouts', () => {
     expect(mapLayouts(doc)[1]!.plot).not.toHaveProperty('styleSheet');
     l.styleSheet = 'monochrome.ctb';
     expect(mapLayouts(doc)[1]!.plot!.styleSheet).toBe('monochrome.ctb');
+  });
+
+  it('reads the standard scale (DXF 75) and the Window plot area (48, 49, 140, 141)', () => {
+    const { doc, sheet: l } = read();
+    // No window stored (AutoCAD writes four zeros): none mapped.
+    expect(mapLayouts(doc)[1]!.plot).not.toHaveProperty('window');
+    l.scaledFit = 16 as never; // 1:1
+    l.plotType = 4 as never;
+    l.windowLowerLeftX = -5;
+    l.windowLowerLeftY = 10;
+    l.windowUpperLeftX = 120;
+    l.windowUpperLeftY = 80.5;
+    const p = mapLayouts(doc)[1]!.plot!;
+    expect(p.standardScaleType).toBe(16);
+    expect(p.plotType).toBe(4);
+    expect(p.window).toEqual({ min: { x: -5, y: 10 }, max: { x: 120, y: 80.5 } });
   });
 
   it('reads inch paper and keeps an unknown rotation or unit to the defaults', () => {

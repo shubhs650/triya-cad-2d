@@ -1250,6 +1250,7 @@ export function App() {
         doc={active}
         underlayFile={(f) => pdfPages.bytes(f)}
         userTables={userPlotStyleTables}
+        edited={(id) => store.edited(id)}
       />
       <PublishDialog
         doc={active}

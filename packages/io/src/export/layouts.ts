@@ -519,18 +519,35 @@ function plotProblems(
     const s = a.scale;
     if (!(finite(s?.numerator, s?.denominator) && s.numerator > 0 && s.denominator > 0))
       out.push('scale: each value is a number more than 0');
-    else if (Number.isInteger(a.flags) && (a.flags & STANDARD_SCALE) !== 0)
+    // Fit to paper (16 with DXF 75 = 0) keeps the scale it fitted in 142 / 143, as AutoCAD does.
+    else if (
+      Number.isInteger(a.flags) &&
+      (a.flags & STANDARD_SCALE) !== 0 &&
+      a.standardScaleType !== 0
+    )
       out.push(
         'scale: the layout plots at a standard scale (flag 16), which DXF 75 names; clear the flag for a custom scale',
       );
   }
-  if (changed('plotType')) {
+  if (changed('standardScaleType')) {
+    const t = a.standardScaleType;
+    if (t !== undefined && !(Number.isInteger(t) && t >= 0 && t <= 32))
+      out.push(`standardScaleType: ${JSON.stringify(t)} is not a whole number from 0 to 32`);
+  }
+  if (changed('window') && a.window !== undefined) {
+    const w = a.window;
+    if (!finite(w.min?.x, w.min?.y, w.max?.x, w.max?.y)) out.push('window: each value is a number');
+    else if (!(w.max.x > w.min.x || w.max.y > w.min.y))
+      out.push('window: the upper right corner is not above or right of the lower left');
+  }
+  if (changed('plotType') || (a.plotType === 4 && changed('window'))) {
     // DXF 74: 0 last screen display, 1 extents, 2 limits, 3 view, 4 window, 5 layout.
     const t = a.plotType;
     if (!(Number.isInteger(t) && t >= 0 && t <= 5))
       out.push(`plotType: ${JSON.stringify(t)} is not a whole number from 0 to 5`);
     else if (t === 3) out.push('plotType: 3 (View) needs the view name, which Triya does not map');
-    else if (t === 4) out.push('plotType: 4 (Window) needs the window, which Triya does not map');
+    else if (t === 4 && !a.window)
+      out.push('plotType: 4 (Window) needs the window (DXF 48, 49, 140, 141)');
     else if (t === 5 && space === 'model')
       out.push('plotType: the Model layout has no layout to plot (5)');
   }
@@ -543,9 +560,13 @@ function plotProblems(
       out.push(`flags: ${f} has bits AutoCAD does not define (${f & ~PLOT_FLAGS})`);
     else if ((f & MODEL_TYPE) !== (was & MODEL_TYPE))
       out.push("flags: ModelType (1024) marks the Model layout's page setup and cannot change");
-    else if ((f & STANDARD_SCALE) !== 0 && (was & STANDARD_SCALE) === 0)
+    else if (
+      (f & STANDARD_SCALE) !== 0 &&
+      (was & STANDARD_SCALE) === 0 &&
+      a.standardScaleType === undefined
+    )
       out.push(
-        'flags: a standard scale (16) is chosen by DXF 75, which Triya does not map; a custom scale leaves 16 off',
+        'flags: a standard scale (16) is the one DXF 75 names (standardScaleType); a custom scale leaves 16 off',
       );
   }
   return out;
@@ -670,7 +691,17 @@ function writePlot(acad: AcadLayout, b: LayoutPlot | undefined, a: LayoutPlot): 
     acad.numeratorScale = a.scale.numerator;
     acad.denominatorScale = a.scale.denominator;
   }
+  if (changed('standardScaleType') && a.standardScaleType !== undefined)
+    acad.scaledFit = a.standardScaleType as never;
   if (changed('plotType')) acad.plotType = a.plotType as never;
+  if (changed('window')) {
+    // acad-ts calls the upper right corner (DXF 140 / 141) `windowUpperLeft`.
+    const w = a.window ?? { min: { x: 0, y: 0 }, max: { x: 0, y: 0 } };
+    acad.windowLowerLeftX = w.min.x;
+    acad.windowLowerLeftY = w.min.y;
+    acad.windowUpperLeftX = w.max.x;
+    acad.windowUpperLeftY = w.max.y;
+  }
   if (changed('flags')) acad.flags = a.flags as never;
   if (changed('styleSheet')) acad.styleSheet = a.styleSheet ?? '';
 }

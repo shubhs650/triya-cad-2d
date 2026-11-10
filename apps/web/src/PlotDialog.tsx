@@ -17,20 +17,28 @@
 // space's page setup's plot style table and plot options, and lists the drafter's own tables
 // (Settings); a table the page setup names that this device lacks is shown by name, with a note,
 // and plots as None.
+//
+// Part 4: the dialog opens on the rest of the page setup too (paper, orientation, plot area and
+// window, scale or fit, centring, offset; model space's from the Model layout), and Apply to
+// Layout (AutoCAD: "Saves the current settings in the Plot dialog box to the current layout")
+// writes the settings into it, one undo step of its own, saved with the drawing.
 import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { CanvasController } from './canvas/controller';
-import { controllerOf } from './canvas/registry';
+import { controllerOf, controllersOf } from './canvas/registry';
+import { engines } from './engine/registry';
 import { rasterSize, type PlotStyleTable } from '@triya/render';
 import { lastPlotSettings, previewMode, plotRequest, previewOf } from './plot-preview';
 import {
   LAYOUT_PAPER,
+  appliedPageSetup,
   PLOT_DEVICES,
   PLOT_SCALES,
   PNG_RESOLUTIONS,
   defaultPlotSettings,
   missingPlotStyleTable,
+  ownPaper,
   paperMm,
   plotAreas,
   plotPreview,
@@ -129,12 +137,15 @@ export function PlotDialog({
   doc,
   underlayFile,
   userTables,
+  edited,
 }: {
   doc: { readonly id: number; readonly block: string; readonly name: string } | undefined;
   /** The PDF file a PDF underlay names, as supplied this session (M2-16 part 5). */
   underlayFile?: (fileName: string) => Uint8Array | undefined;
   /** The plot style tables added in Settings (part 3). */
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
+  /** Apply to Layout changed the drawing (part 4): it has unsaved changes. */
+  edited?: (doc: number) => void;
 }) {
   const open = useSyncExternalStore(plotDialog.subscribe, plotDialog.get);
   if (!doc || open !== doc.id) return null;
@@ -149,6 +160,7 @@ export function PlotDialog({
       controller={controller}
       {...(underlayFile && { underlayFile })}
       {...(userTables && { userTables })}
+      {...(edited && { edited })}
     />
   );
 }
@@ -160,6 +172,7 @@ function PlotBody({
   controller,
   underlayFile,
   userTables,
+  edited,
 }: {
   doc: number;
   block: string;
@@ -167,8 +180,10 @@ function PlotBody({
   controller: CanvasController;
   underlayFile?: (fileName: string) => Uint8Array | undefined;
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
+  edited?: (doc: number) => void;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const [applied, setApplied] = useState<string>();
   const [space, setSpace] = useState<PlotSpace>();
   const [s, setSettings] = useState<PlotSettings>();
   const [busy, setBusy] = useState(false);
@@ -190,7 +205,45 @@ function PlotBody({
     };
   }, [controller, doc, block, userTables]);
 
-  const set = (patch: Partial<PlotSettings>) => s && setSettings({ ...s, ...patch });
+  const set = (patch: Partial<PlotSettings>) => {
+    if (!s) return;
+    setApplied(undefined);
+    setSettings({ ...s, ...patch });
+  };
+
+  // Apply to Layout (part 4): the settings into the space's page setup, then the dialog reads the
+  // space again (a layout's sheet follows its page setup) and opens on what it now says.
+  const apply = async () => {
+    const layout = space?.pageSetup?.layout;
+    if (!s || !space || !layout || busy) return;
+    setError(undefined);
+    let plot;
+    try {
+      plot = appliedPageSetup(s, space);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+      return;
+    }
+    setBusy(true);
+    try {
+      const result = await engines.edit(doc, { kind: 'layout', layout, plot });
+      if (!result.ok) throw new Error(result.message);
+      if (Object.keys(result.change).length > 0) {
+        await Promise.all(controllersOf(doc).map((c) => c.flush()));
+        edited?.(doc);
+      }
+      const sp = { ...(await controller.plotSpace()), userTables: userTables?.() };
+      setSpace(sp);
+      // The plotter is the dialog's, not the page setup's (Triya does not map DXF 2).
+      const { device, dpi, background } = s;
+      setSettings({ ...defaultPlotSettings(sp), device, dpi, background });
+      setApplied(`Applied to the ${sp.name} page setup.`);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const ok = async () => {
     if (!s || !space || busy) return;
@@ -284,6 +337,11 @@ function PlotBody({
           {error}
         </p>
       )}
+      {applied && (
+        <p className="plot-note" role="status">
+          {applied}
+        </p>
+      )}
       <div className="cad-dialog-buttons">
         <button
           type="button"
@@ -292,6 +350,13 @@ function PlotBody({
           onClick={() => void preview()}
         >
           Preview…
+        </button>
+        <button
+          type="button"
+          disabled={!s || busy || !space?.pageSetup?.layout}
+          onClick={() => void apply()}
+        >
+          Apply to Layout
         </button>
         <button type="button" disabled={!s || busy} onClick={() => void ok()}>
           {busy ? 'Plotting…' : 'OK'}
@@ -435,9 +500,16 @@ function PlotForm({
   const scaleKey = PLOT_SCALES.find(
     ([, mm, units]) => Math.abs(mm / units - s.scale.mm / k / s.scale.units) < 1e-9,
   );
-  const layoutPaper = space.sheet
-    ? `Layout paper (${Math.round(paper.width * 10) / 10} × ${Math.round(paper.height * 10) / 10} mm)`
-    : undefined;
+  // The page setup's own paper: a layout's, or one model space's page setup states that the
+  // list lacks (part 4).
+  const own = ownPaper(space);
+  const size = (p: { width: number; height: number }) =>
+    `${Math.round(p.width * 10) / 10} × ${Math.round(p.height * 10) / 10} mm`;
+  const layoutPaper =
+    own &&
+    (space.sheet
+      ? `Layout paper (${size(own)})`
+      : `Page setup paper (${space.pageSetup?.plot?.paperSize ?? ''}, ${size(own)})`);
   return (
     <div className="plot-form">
       <Group label="Printer/plotter">

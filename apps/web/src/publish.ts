@@ -56,7 +56,7 @@ export function sheetSpace(s: {
   return {
     name: s.name,
     sheet: sheet && { paper: sheet.paper, unitsPerMm: sheet.unitsPerMm },
-    inches: !s.model && s.layout?.plot?.paperUnits === 'inches',
+    inches: s.layout?.plot?.paperUnits === 'inches',
     extents: s.extents,
     namedPlotStyles: s.namedPlotStyles ?? false,
     pageSetup: pageSetupOf(s.layout),
