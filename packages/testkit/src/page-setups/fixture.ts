@@ -100,6 +100,9 @@ export const FRAME = { width: 400, height: 280 };
 export function pageSetupsDxf(): Uint8Array {
   const doc = new CadDocument(ACadVersion.AC1032);
   doc.updateCollections(true, true);
+  // Colour-dependent plot styles (CTB), as AutoCAD starts a drawing ($PSTYLEMODE 1; acad-ts's
+  // new document says 0, named).
+  doc.header!.plotStyleMode = 1 as never;
   const frame = new LwPolyline();
   for (const [x, y] of [
     [0, 0],

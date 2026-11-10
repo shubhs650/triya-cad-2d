@@ -542,6 +542,9 @@ test('the Plot dialog lists the named page setups of the space’s kind and open
   await expect(d.getByLabel('Center the plot')).toBeChecked();
   // acad.ctb opens on the bundled table of that meaning.
   await expect(d.getByLabel('Plot style table')).toHaveValue('triya-default.ctb');
+  await expect(d.getByLabel('Plot style table').locator('option:checked')).not.toContainText(
+    'not found',
+  );
 
   await name.selectOption('Model ANSI B 1:2');
   await expect(d.getByLabel('Paper size')).toHaveValue('ANSI B');

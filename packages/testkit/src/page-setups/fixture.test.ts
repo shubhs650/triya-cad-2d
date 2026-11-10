@@ -38,6 +38,7 @@ describe('page-setups fixture (M2-17 part 6)', () => {
 
   it("opens with Model, Layout1 and three named page setups, two of them model space's", () => {
     const init = committed();
+    expect(new Map(init.header).get('$PSTYLEMODE')).toBe(1);
     expect((init.layouts ?? []).map((l) => [l.name, l.plot?.paperWidth])).toEqual([
       ['Model', 297],
       ['Layout1', 297],
