@@ -1,7 +1,8 @@
 // M2-13 acceptance: Save after a markup session on every readable public corpus file. The session
-// runs as the app runs it: commands on the PromptBus (LINE, TEXT, REVCLOUD, WIPEOUT, MLEADER) and
-// a MOVE and an ERASE of objects the drawing came with, each change set logged as the engine
-// worker posts it (a structured clone). The save is the app's: `saveSession` replays that log
+// runs as the app runs it: commands on the PromptBus (LINE, TEXT, REVCLOUD, WIPEOUT, MLEADER,
+// -VIEW Save) and a MOVE and an ERASE of objects the drawing came with, each change set logged as
+// the engine worker posts it (a structured clone), then the view the Model tab shows written into
+// the `*Active` VPORT as the app's save adds it (M2-29). The save is the app's: `saveSession` replays that log
 // onto a fresh read of the file and writes an AC1032 DXF (DEC-047), however old the source.
 //
 // The save must change nothing the session did not touch: against the drawing saved unedited
@@ -20,8 +21,10 @@ import {
   eraseObjects,
   moveBy,
   transformObjects,
+  activeViewsChange,
   type ChangeSet,
   type EntityId,
+  type ViewHost,
 } from '@triya/engine';
 import { documentInit, readCadDocument, saveDxf, saveSession } from '@triya/io';
 import { describe, expect, it } from 'vitest';
@@ -35,8 +38,6 @@ const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url))
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 const PER_FILE_BUDGET_MS = 30_000;
-/** The save's refusal of a new style named as an entry it keeps as read (mleader-styles.ts). */
-const TAKEN = /the dictionary has an entry named STANDARD that Triya keeps as read/;
 
 /** The lists of a container's members, which change when the session adds or removes one. */
 const MEMBERSHIP = /^(entities\._entries|ownedObjectHandles|_?entries\[|_entryNames\[)/;
@@ -58,8 +59,19 @@ function selectable(model: DocumentModel, space: string): EntityId[] {
 const modelSpace = (model: DocumentModel): string | undefined =>
   [...model.blocks.values()].find((b) => b.name.toUpperCase() === '*MODEL_SPACE')?.handle;
 
+/** The view the Model tab shows while the session runs. */
+const SHOWN = { center: { x: 60, y: 30 }, height: 50, width: 100, paper: false };
+
+/** A canvas that tells the view it shows (VIEW Save) and refuses the rest. */
+const canvas: ViewHost = {
+  request: (r) =>
+    Promise.resolve(
+      r.op === 'get' ? { ok: true, view: SHOWN } : { ok: false, message: 'no canvas' },
+    ),
+};
+
 /** The session, applied to `model`; returns the change log as the app keeps it. */
-async function markup(model: DocumentModel, mleader = true): Promise<ChangeSet[]> {
+async function markup(model: DocumentModel): Promise<ChangeSet[]> {
   const log: ChangeSet[] = [];
   const apply = (cs: ChangeSet) => {
     model.apply(cs);
@@ -67,7 +79,13 @@ async function markup(model: DocumentModel, mleader = true): Promise<ChangeSet[]
   };
   const space = modelSpace(model)!;
   const existing = selectable(model, space);
-  const bus = new PromptBus({ model, registry: builtinCommands(), apply, space: () => space });
+  const bus = new PromptBus({
+    model,
+    registry: builtinCommands(),
+    apply,
+    space: () => space,
+    view: canvas,
+  });
   await bus.script(['LINE', '0,0', '100,100', '']);
 
   await bus.script(['REVCLOUD', 'A', '5', '5', '0,0', '100,50']);
@@ -78,8 +96,9 @@ async function markup(model: DocumentModel, mleader = true): Promise<ChangeSet[]
     // A style with a fixed height does not ask it.
     if (bus.promptText.startsWith('Specify height')) await bus.submit('2.5');
     await bus.script(['0', 'Checked', '']);
-    if (mleader) await bus.script(['MLEADER', '0,0', '100,50', 'See note', '']);
+    await bus.script(['MLEADER', '0,0', '100,50', 'See note', '']);
   }
+  await bus.script(['-VIEW', 'S', 'Markup']);
   expect(bus.command, bus.history.slice(-6).join(' | ')).toBeUndefined();
   // MOVE the first object the drawing came with, ERASE the second, as their commands edit.
   const edit = (f: (b: ChangeSetBuilder) => void) => {
@@ -90,6 +109,10 @@ async function markup(model: DocumentModel, mleader = true): Promise<ChangeSet[]
   if (existing[0] !== undefined)
     edit((b) => transformObjects(b, model, [existing[0]!], moveBy({ x: 10, y: 5 })));
   if (existing[1] !== undefined) edit((b) => eraseObjects(b, model, [existing[1]!]));
+  // The save writes the view shown into the drawing's first `*Active` VPORT, if it has one.
+  const active = [...model.tables.vports.values()].find((v) => v.name.toUpperCase() === '*ACTIVE');
+  const view = active && activeViewsChange([{ vport: active, view: SHOWN }]);
+  if (view && Object.keys(view).length > 0) apply(view);
   return log;
 }
 
@@ -145,7 +168,6 @@ function withOwned(handles: Set<number>, ...docs: CadDocument[]): Set<number> {
 
 describe('Save after a markup session on the public corpus (M2-13)', () => {
   let saved = 0;
-  const refused: string[] = [];
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves as AC1032 DXF, changing only what the session touched',
@@ -153,22 +175,11 @@ describe('Save after a markup session on the public corpus (M2-13)', () => {
       const bytes = new Uint8Array(readFileSync(`${corpusDir}${f.path}`));
       const open = () =>
         withPinnedClock(() => DocumentModel.create(documentInit(readCadDocument(bytes))));
-      let model = open();
+      const model = open();
       expect(modelSpace(model), f.path).toBeDefined();
       const seed = Number.parseInt(model.handSeed, 16);
-      let log = await markup(model);
-      let out: Uint8Array;
-      try {
-        out = withPinnedClock(() => saveSession(bytes, log));
-      } catch (e) {
-        // MLEADER adds a Standard style where an R13 drawing keeps an R2007 one as a proxy
-        // object; the save refuses rather than replace it. The rest of the session saves.
-        expect(String(e), f.path).toMatch(TAKEN);
-        refused.push(f.path);
-        model = open();
-        log = await markup(model, false);
-        out = withPinnedClock(() => saveSession(bytes, log));
-      }
+      const log = await markup(model);
+      const out = withPinnedClock(() => saveSession(bytes, log));
       writeAuditSave(f.path, 'session', () => out);
       const unedited = withPinnedClock(() => {
         const doc = readCadDocument(bytes);
@@ -183,6 +194,24 @@ describe('Save after a markup session on the public corpus (M2-13)', () => {
       for (const e of model.entities()) {
         if (!model.blockEntities(e.owner).includes(e.id)) continue;
         expect(back.entityByHandle(e.handle)?.type, `${f.path} ${e.handle}`).toBe(e.type);
+      }
+
+      // The named view and the view shown are in the save (M2-29).
+      const views = [...back.tables.views.values()].filter((v) => v.name === 'Markup');
+      expect(
+        views.map((v) => [v.flags ?? 0, v.center, v.height, v.width]),
+        f.path,
+      ).toEqual([[0, SHOWN.center, SHOWN.height, SHOWN.width]]);
+      const active = [...model.tables.vports.values()].find(
+        (v) => v.name.toUpperCase() === '*ACTIVE',
+      );
+      if (active) {
+        const v = back.tables.vports.get(active.handle)!;
+        expect([v.center, v.height, v.aspectRatio], f.path).toEqual([
+          active.center,
+          SHOWN.height,
+          SHOWN.width / SHOWN.height,
+        ]);
       }
 
       const ignore = withOwned(touched(log), before, after);
@@ -214,9 +243,5 @@ describe('Save after a markup session on the public corpus (M2-13)', () => {
 
   it('saved every readable file', () => {
     expect(saved).toBe(readable.length);
-    expect(refused).toEqual([
-      'public/third-party/ezdxf/integration_tests/bin_dxf_r13.dxf',
-      'public/third-party/ezdxf/integration_tests/bin_dxf_r14.dxf',
-    ]);
   });
 });

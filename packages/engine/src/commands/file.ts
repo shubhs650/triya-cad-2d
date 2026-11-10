@@ -3,7 +3,9 @@
 // its answer. AutoCAD 2024 Help: QSAVE saves the drawing under its file name, or opens Save
 // Drawing As when it has none (here also when its file is a DWG or an older DXF, which Triya never
 // overwrites: DEC-047); SAVE and SAVEAS open Save Drawing As; CLOSE closes the drawing and asks
-// "Save changes to <file>?" first when it has unsaved changes. None of them is an undo step.
+// "Save changes to <file>?" first when it has unsaved changes. CLOSEALL (M2-29) closes every open
+// drawing the same way, one after another, and Cancel at a prompt stops it there (AutoCAD 2024
+// Help, "CLOSEALL": "Closes all currently open drawings"). None of them is an undo step.
 //
 // DRAWINGRECOVERY (M2-14 part 2): AutoCAD 2024 Help, "DRAWINGRECOVERY": "Displays a list of
 // drawing files that can be recovered after a program or system failure" (the Drawing Recovery
@@ -97,6 +99,7 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => fileCommand('SAVE', 'saveas'),
   () => fileCommand('SAVEAS', 'saveas'),
   () => fileCommand('CLOSE', 'close'),
+  () => fileCommand('CLOSEALL', 'closeall'),
   () => fileCommand('DRAWINGRECOVERY', 'recover'),
   () => plotCommand('PLOT'),
   () => plotCommand('PRINT'),

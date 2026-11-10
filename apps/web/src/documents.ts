@@ -2,15 +2,7 @@
 // useSyncExternalStore: only the chrome (tabs, start screen, banners) subscribes.
 import type { ChangeSet, DocumentInit, Layout } from '@triya/engine';
 import type { OpenResult } from '@triya/io';
-import type { ViewTransform } from '@triya/render';
 import type { DrawingFile } from './save';
-
-/** A view saved with VIEW (New) in this session, in the space it was saved in. */
-export interface SavedView {
-  readonly name: string;
-  readonly block: string;
-  readonly view: ViewTransform;
-}
 
 export interface OpenDocument {
   readonly id: number;
@@ -18,11 +10,6 @@ export interface OpenDocument {
   readonly opened: OpenResult;
   /** The space shown: model space or a layout's paper-space block record. */
   readonly block: string;
-  /**
-   * Views saved this session. They are written into the drawing's VIEW table when saving
-   * arrives (M2-13); until then they last as long as the tab.
-   */
-  readonly savedViews: readonly SavedView[];
   /** Edits applied by the drawing's engine so far (M1-67): chrome that mirrors it re-reads. */
   readonly revision: number;
   /**
@@ -108,7 +95,6 @@ export class DocumentStore {
       name,
       opened,
       block,
-      savedViews: [],
       revision: 0,
       ...(file && { file }),
       edits,
@@ -188,17 +174,6 @@ export class DocumentStore {
   /** Shows the Model tab or a layout tab of a document. */
   showSpace(id: number, block: string): void {
     this.#update(id, (d) => ({ ...d, block }));
-  }
-
-  /** VIEW New: saves `view` of the space shown under `name`, replacing a view of that name. */
-  saveView(id: number, name: string, view: ViewTransform): void {
-    this.#update(id, (d) => ({
-      ...d,
-      savedViews: [
-        ...d.savedViews.filter((v) => v.name.toUpperCase() !== name.toUpperCase()),
-        { name, block: d.block, view },
-      ],
-    }));
   }
 
   dismissError(): void {

@@ -320,6 +320,22 @@ async function* askContents(
 }
 
 /**
+ * `base`, or `base` followed by the first number that makes it free (Standard1, Standard2, …),
+ * when the drawing keeps an entry of that name it does not map (`keptEntryNames`, M2-29) or has
+ * a style of that name. Names are compared without regard to case, as AutoCAD's.
+ */
+function freeStyleName(model: DocumentModel, base: string): string {
+  const taken = new Set(
+    [
+      ...(model.meta.keptEntryNames?.mleaderStyles ?? []),
+      ...[...model.tables.mleaderStyles.values()].map((s) => s.name),
+    ].map((n) => n.toUpperCase()),
+  );
+  if (!taken.has(base.toUpperCase())) return base;
+  for (let i = 1; ; i++) if (!taken.has(`${base}${i}`.toUpperCase())) return `${base}${i}`;
+}
+
+/**
  * MLEADER for one document. Content first places the content before the leader: the text in a
  * box dragged as MTEXT's (its width wraps the text), or the block at a point; the arrowhead then
  * says which side of it the landing goes.
@@ -349,6 +365,7 @@ export function mleaderCommand(): CommandDef {
           text?.handle,
           standardLinetype(model),
         ),
+        name: freeStyleName(model, 'Standard'),
       };
       if (!settings || settingsFor !== style.handle) {
         settings = settingsOf(style);

@@ -6,7 +6,7 @@
 // in place over an AC1032 DXF, Save As a `.dxf` for a DWG, a download without File System Access.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DWG, activeCanvas, expectShown, serve, withFileInput } from '../app/page';
+import { DWG, activeCanvas, expectShown, serve, withFileInput, worldAt } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -255,4 +255,130 @@ test('without File System Access, Save downloads the .dxf', async ({ page }) => 
   expect(dxfFacts(readFileSync(file, 'latin1')).version).toBe('AC1032');
   await expectShown(page, dxf);
   await expect(tab(page, dxf)).toHaveAttribute('data-dirty', 'false');
+});
+
+/** The names (group 2) of the DXF's `type` records, read as group code / value pairs. */
+function dxfRecordNames(text: string, type: string): string[] {
+  const lines = text.split(/\r?\n/);
+  const names: string[] = [];
+  let inRecord = false;
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    const code = lines[i]!.trim();
+    const value = lines[i + 1]!.trim();
+    if (code === '0') inRecord = value === type;
+    else if (inRecord && code === '2') names.push(value);
+  }
+  return names;
+}
+
+/**
+ * Types each step at the command line and presses Enter, waiting for the prompt it leads to
+ * before the next: typed ahead of its prompt, a space would end a name and Enter take a default.
+ */
+async function typed(page: Page, ...steps: [string, string | RegExp][]): Promise<void> {
+  await activeCanvas(page).hover();
+  for (const [text, next] of steps) {
+    if (text) await page.keyboard.type(text);
+    await page.keyboard.press('Enter');
+    await expect(prompt(page)).toHaveText(next);
+  }
+}
+
+/**
+ * The world point at the canvas centre, the world units across 100 pixels, and the world height
+ * the canvas shows, which a saved view keeps when the window's size changes (VIEWSIZE).
+ */
+async function shown(page: Page): Promise<{ x: number; y: number; unit: number; height: number }> {
+  const box = (await activeCanvas(page).boundingBox())!;
+  const cx = Math.round(box.width / 2);
+  const cy = Math.round(box.height / 2);
+  const c = await worldAt(page, cx, cy);
+  const r = await worldAt(page, cx + 100, cy);
+  const unit = (r.x - c.x) / 100;
+  return { ...c, unit, height: Math.abs(unit) * box.height };
+}
+
+/** `a` and `b` show the same view: the centre to two pixels, the height to 1 %. */
+function sameView(a: Awaited<ReturnType<typeof shown>>, b: typeof a): void {
+  const px = 2 * Math.max(Math.abs(a.unit), Math.abs(b.unit));
+  expect(Math.abs(a.x - b.x)).toBeLessThanOrEqual(px);
+  expect(Math.abs(a.y - b.y)).toBeLessThanOrEqual(px);
+  expect(Math.abs(a.height - b.height)).toBeLessThanOrEqual(a.height / 100);
+}
+
+test('the save keeps the named views VIEW saves and reopens in the view it was saved in (M2-29)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await fakePickers(page);
+  await page.goto(app.url);
+  await openFile(page, DXF32);
+  const name = path.basename(DXF32);
+  const opening = await shown(page);
+  // A named view of a zoomed-in corner, then a different view left on screen.
+  const zoom: [string, RegExp] = ['ZOOM', /^Specify corner of window/];
+  await typed(page, zoom, ['3x', 'Command:']);
+  await typed(
+    page,
+    ['-PAN', /^Specify base point/],
+    ['0,0', /^Specify second point/],
+    ['@20,10', 'Command:'],
+  );
+  const detail = await shown(page);
+  await typed(
+    page,
+    ['-VIEW', /^Enter an option/],
+    ['S', 'Enter view name to save:'],
+    ['Markup detail', 'Command:'],
+  );
+  await typed(page, zoom, ['0.5x', 'Command:']);
+  const left = await shown(page);
+  expect(Math.abs(left.unit - opening.unit)).toBeGreaterThan(Math.abs(opening.unit) / 10);
+  await page.screenshot({ path: test.info().outputPath('1-view-saved-then-zoomed.png') });
+  // The named view is an edit (the dirty dot), and one VIEW undo step.
+  await expect(tab(page, name)).toHaveAttribute('data-dirty', 'true');
+  await page.keyboard.press('Control+s');
+  await expect(tab(page, name)).toHaveAttribute('data-dirty', 'false');
+  const dxf = (await fs(page)).written[name]![0]!;
+  expect(dxfRecordNames(dxf, 'VIEW')).toContain('Markup detail');
+
+  // Opened again, the drawing shows what was left on screen, and the view restores.
+  await page.evaluate((text) => {
+    (window as unknown as FsWindow).__fs.next = {
+      name: 'reopened.dxf',
+      bytes: new TextEncoder().encode(text).buffer as ArrayBuffer,
+    };
+  }, dxf);
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
+  await expectShown(page, 'reopened.dxf');
+  sameView(await shown(page), left);
+  await page.getByRole('button', { name: 'Views' }).click();
+  const views = page.getByRole('group', { name: 'Named views' });
+  await page.screenshot({ path: test.info().outputPath('2-reopened-views.png') });
+  await views.getByRole('button', { name: 'Markup detail' }).click();
+  sameView(await shown(page), detail);
+  await page.screenshot({ path: test.info().outputPath('3-named-view-restored.png') });
+});
+
+test('CLOSEALL closes every drawing, asking to save changes; Cancel stops it (M2-29)', async ({
+  page,
+}) => {
+  await fakePickers(page);
+  await page.goto(app.url);
+  await openFile(page, DXF32);
+  await openFile(page, DWG);
+  const dialog = page.getByRole('dialog', { name: 'Triya CAD 2D' });
+  await drawLine(page);
+  await typed(page, ['CLOSEALL', 'Command:']);
+  // The unchanged drawing closes; the changed one asks.
+  await expect(dialog).toContainText(`Save changes to ${path.basename(DWG)}?`);
+  await expect(tab(page, path.basename(DXF32))).toHaveCount(0);
+  await page.screenshot({ path: test.info().outputPath('4-closeall-asks.png') });
+  await page.keyboard.press('Escape');
+  await expect(dialog).toBeHidden();
+  await expect(tab(page, path.basename(DWG))).toHaveCount(1);
+  await typed(page, ['CLOSEALL', 'Command:']);
+  await dialog.getByRole('button', { name: 'No' }).click();
+  await expect(page.locator('.doc-tab')).toHaveCount(0);
+  await expect(page.getByTestId('start')).toBeVisible();
 });

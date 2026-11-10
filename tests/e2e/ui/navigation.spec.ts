@@ -165,7 +165,7 @@ test.describe('navigation bar and layout tabs', () => {
     await expect(nav(page, 'Pan')).toHaveAttribute('aria-pressed', 'false');
   });
 
-  test('restores the drawing’s saved view and a view saved in the session', async ({ page }) => {
+  test('restores the drawing’s saved view and a view saved with Save view', async ({ page }) => {
     const { cx, cy } = await opened(page);
     await nav(page, 'Views').click();
     const views = page.getByRole('group', { name: 'Named views' });

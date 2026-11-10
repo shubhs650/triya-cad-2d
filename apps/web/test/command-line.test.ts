@@ -74,6 +74,7 @@ describe('completions', () => {
     expect(completions(registry, 'REC')).toEqual([]);
     expect(completions(registry, 'C')).toEqual([
       { name: 'CLOSE' },
+      { name: 'CLOSEALL' },
       { name: 'COPY' },
       { name: 'COPYBASE' },
       { name: 'COPYCLIP' },

@@ -18,6 +18,7 @@ describe('palette search', () => {
       'AIMLEADEREDITREMOVE',
       'ATTEDIT',
       'CLOSE',
+      'CLOSEALL',
       'COPY',
       'COPYBASE',
       'COPYCLIP',
