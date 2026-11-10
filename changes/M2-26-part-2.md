@@ -1,0 +1,1 @@
+- M2-26 part 2 (#266): grips for MTEXT set in columns. Selecting a columned MTEXT shows triangle grips for the column width, the gutter and the column height (one under each column when the heights are set by hand). Dragging one reshapes the columns, and dynamic columns gain or lose columns as the text needs, in one undo step. The edited columns save to DXF and read back.

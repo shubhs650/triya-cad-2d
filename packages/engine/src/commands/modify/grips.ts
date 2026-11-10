@@ -17,6 +17,7 @@ import type { TransformOptions } from '../../edit/transform';
 import type { Prompt, PromptAnswer } from '../prompt';
 import type { CommandContext, CommandDef } from '../command';
 import { regenerateDimensions } from './dimensions';
+import { recountColumns } from './mtext-columns';
 
 export const GRIP_MODES = ['STRETCH', 'MOVE', 'ROTATE', 'SCALE', 'MIRROR'] as const;
 export type GripMode = (typeof GRIP_MODES)[number];
@@ -184,6 +185,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
               ctx,
               copies.filter((id) => 'dimType' in ctx.model.entity(id)!.geom),
             );
+            await recountColumns(ctx, copies);
           } else {
             let r: ReturnType<typeof gripObjects> | undefined;
             ctx.edit((b) => {
@@ -192,6 +194,8 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
             say(refusalMessages(r!.refused, 'stretched'));
             // A dimension's grip reshapes it: the dimension engine draws it afresh (M2-11).
             await regenerateDimensions(ctx, r!.regenerate ?? []);
+            // A column grip: dynamic columns take what the text needs (M2-26 part 2).
+            await recountColumns(ctx, r!.ids);
             ended = true;
           }
         } else if (name === 'MOVE' && a.kind === 'point') {

@@ -605,6 +605,11 @@ export class CanvasController {
     return this.#host.textWidths(texts);
   }
 
+  /** How many dynamic columns MTEXTs take (M2-26 part 2: a column grip recounts them). */
+  columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
+    return this.#host.columnCounts(texts);
+  }
+
   /** The box an MTEXT's glyphs fill in the fonts loaded (M2-09, MLEADEREDIT). */
   textBox(text: MTextGeometry): Promise<Box | undefined> {
     return this.#host.textBox(text);
