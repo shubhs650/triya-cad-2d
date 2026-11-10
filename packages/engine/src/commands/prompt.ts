@@ -105,7 +105,15 @@ export interface TextEditorColumns {
   readonly count: number;
   readonly width: number;
   readonly gutter: number;
+  /** The column height (DXF 46); with manual heights, the tallest. */
   readonly height: number;
+  /**
+   * Dynamic columns of manual height (DXF 73 0, M2-26): each column's own height, dragged in
+   * the editor; absent for auto height (and static columns), where all take `height`.
+   */
+  readonly heights?: readonly number[];
+  /** DXF 74: the columns set right to left (kept from the drawing; M2-26). */
+  readonly flowReversed?: boolean;
 }
 
 export interface TextEditorRequest {
