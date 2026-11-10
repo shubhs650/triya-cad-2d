@@ -27,3 +27,15 @@ export {
   type PlotProperties,
 } from './resolver';
 export { BUNDLED_PLOT_STYLE_TABLES, bundledPlotStyleTable } from './bundled';
+export {
+  pathPolygons,
+  plotObject,
+  plotParts,
+  type PlotInfinitePart,
+  type PlotPart,
+  type PlotPathPart,
+  type PlotPointPart,
+  type PlotRgb,
+  type PlotSource,
+} from './job';
+export { POINTS_PER_MM, plotSetup, type PlotSetup, type PlotSetupOptions } from './setup';

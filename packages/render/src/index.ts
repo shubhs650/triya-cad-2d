@@ -58,6 +58,7 @@ export {
   type BlockSource,
   type InsertClip,
   type InsertContextFunction,
+  type PrimitiveOwner,
 } from './blocks';
 export {
   Canvas2DRenderer,

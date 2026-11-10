@@ -308,6 +308,18 @@ export interface BlockExpansion {
   readonly period: number;
   /** Every block definition it draws from, for invalidation. */
   readonly blocks: ReadonlySet<Handle>;
+  /**
+   * With `owners` asked for (the plot job, M2-17): the object each primitive was painted as,
+   * index for index, and the context of the reference holding it, so a plot style table can
+   * resolve ByBlock and layer-0 parts.
+   */
+  readonly owners?: readonly PrimitiveOwner[];
+}
+
+/** The object a block part was painted as and the context it was painted in. */
+export interface PrimitiveOwner {
+  readonly entity: Entity;
+  readonly context: BlockContext | undefined;
 }
 
 /** Deepest nesting drawn. AutoCAD drawings rarely nest past a handful of levels. */
@@ -328,9 +340,12 @@ export function expandInsert(
      * PSLTSCALE layout viewport (M1-18). `period` stays at the unmultiplied scale.
      */
     readonly linetypeScale?: number;
+    /** Report each primitive's `owners` entry. */
+    readonly owners?: boolean;
   },
 ): BlockExpansion {
   const prims: RenderPrimitive[] = [];
+  const owners: PrimitiveOwner[] | undefined = options.owners ? [] : undefined;
   const blocks = new Set<Handle>();
   let period = 0;
   const ltMul = options.linetypeScale ?? 1;
@@ -392,6 +407,10 @@ export function expandInsert(
       if (tag.length > 0) q.layers = tag;
       if (clip) q.clip = clip;
       prims.push(q as RenderPrimitive);
+    }
+    if (owners) {
+      const owner = { entity: e, context: ctx };
+      while (owners.length < prims.length) owners.push(owner);
     }
   };
   const walk = (
@@ -463,5 +482,5 @@ export function expandInsert(
     }
   };
   walk(insert, IDENTITY, undefined, 0, [], undefined);
-  return { prims, period, blocks };
+  return { prims, period, blocks, ...(owners ? { owners } : {}) };
 }

@@ -47,7 +47,6 @@ import {
   VIEWPORT_NON_RECT_CLIP,
   viewportLayers,
   viewportTransform,
-  type LayerRecord,
   type ViewportLayers,
   type Box,
   type ChangeSet,
@@ -68,7 +67,6 @@ import {
   type SortEntsTable,
   type SpatialIndex,
   type ViewportGeometry,
-  type WipeoutVariables,
 } from '@triya/engine';
 import { expandInsert, expands, insertClips, type BlockSource, type InsertClip } from './blocks';
 import { defaultPaint, type PaintFunction } from './paint';
@@ -77,6 +75,13 @@ import { aciRgb, rgbHex } from './style/aci';
 import { gridLines } from './grid';
 import { mixColors, parseHex, tintColor } from './style/mix';
 import { adjustPixels, imageLabel, type ImageFrames } from './image';
+import {
+  attributeMode,
+  fillMode,
+  imageFrames,
+  isFrameSetting,
+  withLayers,
+} from './document-settings';
 import {
   adjustUnderlayPixels,
   mergeNeeds,
@@ -88,7 +93,7 @@ import {
 import { annotationLinetypeScale, patternLength } from './style/pattern';
 import { lineweightPixels } from './style/resolve';
 import { primCrosses, primInside } from './select';
-import { patternLibrary, tessellate } from './tessellate';
+import { patternLibrary, tessellate, type TessellateContext } from './tessellate';
 import type { TextContext } from './text';
 import type { PatternLibrary } from '@triya/hatch';
 import type { TextFonts } from '@triya/text';
@@ -337,37 +342,10 @@ const LAYLOCKFADE_MAX = 90;
 /** Header variables that change how every entity is painted. */
 const PAINT_HEADER = new Set(['$LTSCALE', '$FILLMODE', '$ATTMODE', '$XCLIPFRAME']);
 
-/** FILLMODE (M1-46): off, as 0 or false, outlines wide polylines; on when the header has none. */
-function fillMode(model: DocumentModel): boolean {
-  const v = model.header.get('$FILLMODE');
-  return !(v === 0 || v === false);
-}
-
-/** ATTMODE (M1-14 part 2): which attributes references show; AutoCAD's 1 when absent. */
-function attributeMode(model: DocumentModel): number | undefined {
-  const v = model.header.get('$ATTMODE');
-  return typeof v === 'number' ? v : undefined;
-}
-
 const isSortEnts = (o: NonGraphicalObject): o is SortEntsTable => o.type === 'SORTENTSTABLE';
 
 const WHITE = [255, 255, 255] as const;
 const BLACK = [0, 0, 0] as const;
-
-const isFrameSetting = (o: NonGraphicalObject): o is RasterVariables | WipeoutVariables =>
-  o.type === 'RASTERVARIABLES' || o.type === 'WIPEOUTVARIABLES';
-
-/** IMAGEFRAME and WIPEOUTFRAME from the drawing's objects; on when the drawing has none. */
-function imageFrames(model: DocumentModel): ImageFrames {
-  let image = true;
-  let wipeout = true;
-  for (const o of model.objects.values()) {
-    if (!isFrameSetting(o)) continue;
-    if (o.type === 'RASTERVARIABLES') image = o.frame;
-    else wipeout = o.frame;
-  }
-  return { image, wipeout };
-}
 
 /** IMAGEQUALITY from the drawing's RASTERVARIABLES; high when the drawing has none. */
 function imageQuality(model: DocumentModel): 'draft' | 'high' {
@@ -770,6 +748,14 @@ export class Canvas2DRenderer implements Renderer {
       if (prims[all]((p) => test(p, query.box))) out.push(id);
     }
     return out.sort((a, b) => a - b);
+  }
+
+  /**
+   * What entities are tessellated with now (fonts, image frames, patterns, FILLMODE, ATTMODE):
+   * the plot job (M2-17) tessellates with the same, so a plot shows what the screen does.
+   */
+  get tessellateContext(): TessellateContext {
+    return this.#tessellate;
   }
 
   /** Redraws the scene on the next frame: something it draws from changed (a bitmap, M1-19). */
@@ -2399,19 +2385,4 @@ function distanceTo(prim: RenderPrimitive, p: { x: number; y: number }): number 
     }
   }
   return prim.kind === 'fill' && crossings % 2 === 1 ? 0 : best;
-}
-
-/**
- * `model` with `layers` in place of its LAYER table (a viewport's overridden layers, M1-62), for
- * the paint functions, which read tables and the header. Everything else is the model's own.
- */
-function withLayers(model: DocumentModel, layers: ReadonlyMap<Handle, LayerRecord>): DocumentModel {
-  const tables = { ...model.tables, layers };
-  return new Proxy(model, {
-    get(target, key) {
-      if (key === 'tables') return tables;
-      const v: unknown = Reflect.get(target, key, target);
-      return typeof v === 'function' ? v.bind(target) : v;
-    },
-  });
 }
