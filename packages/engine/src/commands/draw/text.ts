@@ -617,24 +617,30 @@ function typedCount(c: TextEditorColumns, contents: string): TextEditorColumns {
   return { ...c, count: Math.max(c.count, breaks + 1) };
 }
 
-/** An MTEXT with the editor's columns: its width is the column width, DXF 46 their height. */
+/**
+ * An MTEXT with the editor's columns: its width is the column width, DXF 46 their height.
+ * Manual heights (M2-26) give one height per column: a column the text added takes the last
+ * one's (our reading: AutoCAD's editor starts a new column as tall as the one before it).
+ */
 function withColumns(g: MTextGeometry, c: TextEditorColumns | null): MTextGeometry {
   const { columns: old, ...rest } = g;
   if (!c) return rest;
+  const manual = c.type === 2 && c.heights !== undefined && c.heights.length > 0;
+  const heights = manual
+    ? Array.from({ length: c.count }, (_, i) => c.heights![Math.min(i, c.heights!.length - 1)]!)
+    : [];
   return {
     ...rest,
     width: c.width,
-    definedHeight: c.height,
+    definedHeight: manual ? Math.max(...heights) : c.height,
     columns: {
       type: c.type,
       count: c.count,
-      flowReversed: old?.flowReversed ?? false,
-      // Dynamic columns of one height (auto height); per-column heights stay while the
-      // editor leaves the columns as they were (`editorColumns`).
-      autoHeight: c.type === 2,
+      flowReversed: c.flowReversed ?? old?.flowReversed ?? false,
+      autoHeight: c.type === 2 && !manual,
       width: c.width,
       gutter: c.gutter,
-      heights: [],
+      heights,
     },
   };
 }
@@ -643,17 +649,29 @@ function withColumns(g: MTextGeometry, c: TextEditorColumns | null): MTextGeomet
 function editorColumns(g: MTextGeometry): TextEditorColumns | undefined {
   const c = g.columns;
   if (!c || (c.type !== 1 && c.type !== 2) || c.count < 1) return undefined;
+  const manual = c.type === 2 && !c.autoHeight && c.heights.length > 0;
   return {
     type: c.type,
     count: c.count,
     width: c.width,
     gutter: c.gutter,
     height: g.definedHeight ?? (c.heights.length > 0 ? Math.max(...c.heights) : 0),
+    ...(manual && { heights: [...c.heights] }),
+    ...(c.flowReversed && { flowReversed: true }),
   };
 }
 
 const sameColumns = (a: TextEditorColumns | undefined, b: TextEditorColumns | null): boolean =>
-  JSON.stringify(a ?? null) === JSON.stringify(b);
+  (!a && !b) ||
+  (!!a &&
+    !!b &&
+    a.type === b.type &&
+    a.count === b.count &&
+    a.width === b.width &&
+    a.gutter === b.gutter &&
+    a.height === b.height &&
+    (a.flowReversed ?? false) === (b.flowReversed ?? false) &&
+    JSON.stringify(a.heights ?? []) === JSON.stringify(b.heights ?? []));
 
 /**
  * The MTEXT editor opened on an MTEXT (TEXTEDIT, M2-07 part 2) or on a multiline attribute's

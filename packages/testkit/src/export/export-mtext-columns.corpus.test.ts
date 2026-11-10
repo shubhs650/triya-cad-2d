@@ -1,9 +1,10 @@
 // MTEXT columns and the editor's ruler save and read back (M2-07 part 3). On every readable
 // public corpus file the MTEXT command places static columns and dynamic columns (the Columns
 // option, as the command line and the editor drive it), with contents holding a column break,
-// ruler values (indents and tab stops, `withRuler`) and a double-byte character. Each drawing
-// saves as AC1032 DXF (DEC-047) and reopens with the columns, their height and the contents as
-// written.
+// ruler values (indents and tab stops, `withRuler`) and a double-byte character. A third MTEXT's
+// dynamic columns come back from the editor with manual heights, one per column, and set right
+// to left (M2-26). Each drawing saves as AC1032 DXF (DEC-047) and reopens with the columns,
+// their heights and flow and the contents as written.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -39,14 +40,18 @@ const SPANS: readonly MTextSpan[] = [
   { type: 'mbcs', codepage: 932, code: 0x8140, format: {} },
 ];
 
+/** The third MTEXT's columns as the editor answers them: dragged heights, reversed flow. */
+const MANUAL = { heights: [30, 12.5, 20], flowReversed: true } as const;
+
 /** Columns of each type, placed with MTEXT's Columns option. */
 async function place(model: DocumentModel): Promise<void> {
   const bus = new PromptBus({ model, registry: builtinCommands() });
   const scripts = [
     ['MTEXT', '1000000,1000100', 'C', 'S', '90', '3', '6', '40'],
     ['MTEXT', '1000000,1000300', 'C', 'D', '25', '5', '30'],
+    ['MTEXT', '1000000,1000500', 'C', 'D', '25', '5', '30'],
   ];
-  for (const s of scripts) {
+  for (const [i, s] of scripts.entries()) {
     await bus.script(s);
     // A style with a fixed height asks the same; the editor request names the style.
     const editor = (bus.prompt as StringPrompt).editor!;
@@ -55,7 +60,8 @@ async function place(model: DocumentModel): Promise<void> {
       kind: 'string',
       value: writeMText(SPANS, font, withRuler([], RULER)),
       editor: true,
-      ...(editor.columns!.type === 2 && { columns: { ...editor.columns!, count: 4 } }),
+      ...(i === 1 && { columns: { ...editor.columns!, count: 4 } }),
+      ...(i === 2 && { columns: { ...editor.columns!, count: 3, ...MANUAL } }),
     });
   }
   expect(bus.command).toBeUndefined();
@@ -79,10 +85,15 @@ describe('MTEXT columns and ruler values save as DXF and read back', () => {
       const before = new Set([...model.entities()].map((e) => e.handle));
       await place(model);
       const made = [...model.entities()].filter((e) => !before.has(e.handle));
-      expect(made.map((e) => e.type)).toEqual(['MTEXT', 'MTEXT']);
-      const [st, dyn] = made.map((e) => e.geom as MTextGeometry);
+      expect(made.map((e) => e.type)).toEqual(['MTEXT', 'MTEXT', 'MTEXT']);
+      const [st, dyn, manual] = made.map((e) => e.geom as MTextGeometry);
       expect(st).toMatchObject({ width: 26, definedHeight: 40, columns: { type: 1, count: 3 } });
       expect(dyn).toMatchObject({ width: 25, definedHeight: 30, columns: { type: 2, count: 4 } });
+      expect(manual).toMatchObject({
+        width: 25,
+        definedHeight: 30,
+        columns: { type: 2, count: 3, autoHeight: false, ...MANUAL },
+      });
       placed++;
 
       const back = reopen(bytes, model);

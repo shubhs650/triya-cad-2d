@@ -1656,6 +1656,58 @@ button {
   white-space: pre;
 }
 
+/* M2-26: columns set right to left (DXF 74); each paragraph still reads left to right. */
+.mtext-content.reversed {
+  direction: rtl;
+}
+
+.mtext-content.reversed > .mtext-para {
+  direction: ltr;
+}
+
+/* The forced column break where a manual-height column ends; no text of its own. */
+.mtext-fit {
+  display: block;
+  break-before: column;
+}
+
+.mtext-dialog-sub {
+  display: flex;
+  gap: 10px;
+  padding-left: 18px;
+}
+
+/* M2-26: each column's frame, and the handle on its bottom edge that sets its height. */
+.mtext-frames {
+  position: absolute;
+  width: 0;
+  height: 0;
+  pointer-events: none;
+}
+
+.mtext-frame {
+  position: absolute;
+  top: 0;
+  border-bottom: 1px dashed var(--accent);
+}
+
+.mtext-frame-handle {
+  position: absolute;
+  left: 50%;
+  bottom: -5px;
+  width: 9px;
+  height: 9px;
+  margin-left: -5px;
+  pointer-events: auto;
+  cursor: ns-resize;
+  background: var(--accent);
+  border: 1px solid #fff;
+}
+
+.mtext-frame-handle:focus-visible {
+  outline: 2px solid #fff;
+}
+
 .mtext-stack {
   display: inline-flex;
   flex-direction: column;

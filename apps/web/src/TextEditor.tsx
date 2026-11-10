@@ -22,6 +22,14 @@
 // to add a tab stop, drag a tab stop off to remove it. They are written as the paragraph's `\p`
 // values (`withRuler`) and the editor indents its paragraphs by them.
 //
+// Manual heights and reversed flow (M2-26): Column Settings' Dynamic Columns take Auto Height
+// (one height) or Manual Height (each column its own, AutoCAD's "Column Settings Dialog Box").
+// Each column shows its frame with a handle on its bottom edge, dragged (or moved with the
+// arrow keys) to set that column's height, or with one height the columns' height. CSS columns
+// are all one height, so a column shorter than the tallest ends at a forced column break the
+// editor puts before the first line past its height (`fitColumns`, a `data-fit` element the
+// spans never hold). A drawing's columns set right to left (DXF 74) show right to left.
+//
 // The editor's DOM is the record of what was typed: one <div> per paragraph, plain runs as
 // <span data-fmt>, paragraph breaks as <br> ending their paragraph, stacks, fields and
 // double-byte characters as uneditable atoms. Typing, pasting, Enter and the
@@ -372,6 +380,8 @@ const isAtom = (n: Node): boolean =>
     n.dataset['mbcs'] !== undefined);
 const isFiller = (n: Node): boolean =>
   n instanceof HTMLElement && n.dataset['filler'] !== undefined;
+/** A forced column break where a manual-height column ends (`fitColumns`); not text. */
+const isFit = (n: Node): boolean => n instanceof HTMLElement && n.dataset['fit'] !== undefined;
 
 /** The spans the editor's DOM holds (it may hold what the browser typed itself, e.g. IME). */
 function read(root: HTMLElement): MTextSpan[] {
@@ -390,7 +400,7 @@ function read(root: HTMLElement): MTextSpan[] {
           if (i > 0) out.push(browserBreak());
           out.push({ type: 'text', text, format });
         });
-      } else if (!(child instanceof HTMLElement) || isFiller(child)) {
+      } else if (!(child instanceof HTMLElement) || isFiller(child) || isFit(child)) {
         continue;
       } else if (child.tagName === 'BR') {
         const para = child.dataset['para'];
@@ -441,7 +451,7 @@ function offsetOf(root: HTMLElement, container: Node, offset: number): number {
       count += node.length;
       return false;
     }
-    if (isFiller(node)) return false;
+    if (isFiller(node) || isFit(node)) return false;
     if (isAtom(node) || (node instanceof HTMLElement && node.tagName === 'BR')) {
       if (node.contains(container)) return true;
       count += 1;
@@ -467,6 +477,8 @@ function pointOf(root: HTMLElement, unit: number): [Node, number] {
           return;
         }
         count += k.length;
+      } else if (isFit(k)) {
+        continue;
       } else if (isFiller(k)) {
         // The empty last paragraph.
         if (unit === count) found = [node, [...node.childNodes].indexOf(k)];
@@ -514,6 +526,145 @@ function select(root: HTMLElement, a: number, b: number): void {
   r.setEnd(n2, o2);
   sel.removeAllRanges();
   sel.addRange(r);
+}
+
+/** How the editor laid out the columns: the content box in the editor's box, CSS px. */
+interface Fitted {
+  /** The content's top-left inside the editor's border and padding. */
+  readonly left: number;
+  readonly top: number;
+  /** The content box's width (the box's columns; dynamic columns run on past it). */
+  readonly width: number;
+  /** How many columns the text reaches (at least a static MTEXT's count). */
+  readonly count: number;
+}
+
+const sameFitted = (a: Fitted | undefined, b: Fitted): boolean =>
+  !!a && a.left === b.left && a.top === b.top && a.width === b.width && a.count === b.count;
+
+/** The tallest column, which the editor's CSS columns all take. */
+const tallest = (c: TextEditorColumns): number =>
+  c.type === 2 && c.heights && c.heights.length > 0 ? Math.max(...c.heights) : c.height;
+
+/** A column's height: its own with manual heights (past the list, the last one's), else all one. */
+const columnHeight = (c: TextEditorColumns, i: number): number =>
+  c.type === 2 && c.heights && c.heights.length > 0
+    ? c.heights[Math.min(i, c.heights.length - 1)]!
+    : c.height;
+
+/** Where column `i` starts from the content's left edge, px: right to left when reversed. */
+const columnLeft = (c: TextEditorColumns, f: Fitted, i: number, scale: number): number =>
+  c.flowReversed
+    ? f.width - (i + 1) * c.width * scale - i * c.gutter * scale
+    : i * (c.width + c.gutter) * scale;
+
+/** One unit of the text in reading order: a character of a text node, or an atom. */
+type Unit = { readonly text: Text; readonly at: number } | { readonly atom: HTMLElement };
+
+function* unitsOf(node: Node): Generator<Unit> {
+  for (const k of node.childNodes) {
+    if (k instanceof Text) for (let at = 0; at < k.length; at++) yield { text: k, at };
+    else if (isAtom(k)) yield { atom: k as HTMLElement };
+    else if (k instanceof HTMLElement && !isFit(k) && !isFiller(k)) yield* unitsOf(k);
+  }
+}
+
+/**
+ * Lays the text into manual column heights (M2-26). The editor's CSS columns are all as tall
+ * as the tallest column, so each shorter column gets a forced column break before the first
+ * line that ends past its height, as the renderer's layout moves that line on (a column keeps
+ * at least one line, as a line taller than its column cannot move anywhere better). Measured
+ * with the box unturned, column by column, as each break moves the text after it. The caret
+ * is kept by unit offsets.
+ */
+function fitColumns(root: HTMLElement, c: TextEditorColumns | null, scale: number): Fitted {
+  const sel = document.activeElement === root ? selectionIn(root) : undefined;
+  for (const el of [...root.querySelectorAll('[data-fit]')]) {
+    const parent = el.parentNode;
+    el.remove();
+    parent?.normalize();
+  }
+  const cs = getComputedStyle(root);
+  const padLeft = parseFloat(cs.paddingLeft) || 0;
+  const padTop = parseFloat(cs.paddingTop) || 0;
+  const fitted = {
+    left: root.offsetLeft + root.clientLeft + padLeft,
+    top: root.offsetTop + root.clientTop + padTop,
+    width: root.clientWidth - padLeft - (parseFloat(cs.paddingRight) || 0),
+  };
+  if (!c || scale <= 0) return { ...fitted, count: c ? c.count : 0 };
+  const box = root.parentElement!;
+  const turned = box.style.transform;
+  box.style.transform = 'none';
+  let count = 1;
+  try {
+    const r = root.getBoundingClientRect();
+    const x0 = r.left + root.clientLeft + padLeft;
+    const y0 = r.top + root.clientTop + padTop;
+    const pitch = (c.width + c.gutter) * scale;
+    const columnOf = (x: number): number =>
+      Math.max(0, Math.floor((c.flowReversed ? x0 + fitted.width - x : x - x0) / pitch));
+    const manual = c.type === 2 && !!c.heights && c.heights.length > 0;
+    const sizes = new Map<Element, number>();
+    const range = document.createRange();
+    /** A unit's column and the bottom of its line box (line-height is 1.4 em). */
+    const place = (u: Unit): { column: number; bottom: number } => {
+      let rect: DOMRect;
+      let parent: Element;
+      if ('atom' in u) {
+        rect = u.atom.getBoundingClientRect();
+        parent = u.atom;
+      } else {
+        range.setStart(u.text, u.at);
+        range.setEnd(u.text, u.at + 1);
+        rect = range.getBoundingClientRect();
+        parent = u.text.parentElement!;
+      }
+      let size = sizes.get(parent);
+      if (size === undefined) {
+        size = parseFloat(getComputedStyle(parent).fontSize) || 0;
+        sizes.set(parent, size);
+      }
+      return {
+        column: columnOf((rect.left + rect.right) / 2),
+        bottom: (rect.top + rect.bottom) / 2 + 0.7 * size - y0,
+      };
+    };
+    const tall = tallest(c) * scale;
+    for (let i = 0; manual && i < 1000; i++) {
+      const limit = columnHeight(c, i) * scale;
+      let seen = false;
+      let breakAt: Unit | undefined;
+      let later = false;
+      for (const u of unitsOf(root)) {
+        const p = place(u);
+        if (p.column < i) continue;
+        if (p.column > i) {
+          later = true;
+          break;
+        }
+        if (limit < tall - 0.5 && seen && p.bottom > limit + 0.5) {
+          breakAt = u;
+          break;
+        }
+        seen = true;
+      }
+      if (breakAt) {
+        const fit = document.createElement('span');
+        fit.dataset['fit'] = '';
+        fit.contentEditable = 'false';
+        fit.className = 'mtext-fit';
+        if ('atom' in breakAt) breakAt.atom.before(fit);
+        else if (breakAt.at === 0) breakAt.text.before(fit);
+        else breakAt.text.splitText(breakAt.at).before(fit);
+      } else if (!later) break;
+    }
+    for (const u of unitsOf(root)) count = Math.max(count, place(u).column + 1);
+  } finally {
+    box.style.transform = turned;
+  }
+  if (sel) select(root, sel[0], sel[1]);
+  return { ...fitted, count: c.type === 1 ? Math.max(c.count, count) : count };
 }
 
 type Toggle = 'bold' | 'italic' | 'underline' | 'overline' | 'strike';
@@ -568,6 +719,14 @@ function MTextBox({
     setColumnsState(c);
   };
   const [ruler, setRulerShown] = useState<MTextRuler>(rulerOf(first.current));
+  /** The columns as laid out, for their frames and height handles (M2-26). */
+  const [fitted, setFitted] = useState<Fitted | undefined>(undefined);
+  const scaleNow = useRef(placement.scale);
+  scaleNow.current = placement.scale;
+  const refit = () => {
+    const f = fitColumns(root.current!, columnsNow.current, scaleNow.current);
+    setFitted((was) => (sameFitted(was, f) ? was : f));
+  };
   const [menu, setMenu] = useState<'columns' | 'settings' | undefined>(undefined);
   /** The format typing takes next, when a toolbar change was made with nothing selected. */
   const pending = useRef<MTextFormat | undefined>(undefined);
@@ -598,6 +757,7 @@ function MTextBox({
   };
   const commit = (next: MTextSpan[], a: number, b = a) => {
     paint(root.current!, next, request.height, first.current);
+    refit();
     root.current!.focus();
     select(root.current!, a, b);
     lastSel.current = [a, b];
@@ -615,7 +775,9 @@ function MTextBox({
         ? request.value
         : writeMText(now, font, first.current);
     const c = columnsNow.current;
-    // Dynamic columns: as many as the text takes, laid out with the renderers' fonts.
+    // Dynamic columns: as many as the text takes, laid out with the renderers' fonts. Columns
+    // past manual heights take the last one's (the engine fills the list the same way).
+    const counted = c?.heights?.length ? { ...c, height: c.heights.at(-1)! } : c;
     const answered =
       c?.type === 2
         ? {
@@ -629,7 +791,7 @@ function MTextBox({
                 attachment: request.attachment,
                 lineSpacingStyle: request.lineSpacingStyle ?? 1,
                 lineSpacing: request.lineSpacing ?? 1,
-                columns: c,
+                columns: counted!,
               },
             ),
           }
@@ -753,15 +915,22 @@ function MTextBox({
     const onOutside = (e: PointerEvent) => {
       if (frame.current && e.target instanceof Node && !frame.current.contains(e.target)) finish();
     };
+    // What the browser typed itself (IME, word deletes) moves the text past the columns' ends.
+    const onInput = () => refit();
     document.addEventListener('selectionchange', onSelection);
     el.addEventListener('beforeinput', onBeforeInput);
+    el.addEventListener('input', onInput);
     document.addEventListener('pointerdown', onOutside, true);
     return () => {
       document.removeEventListener('selectionchange', onSelection);
       el.removeEventListener('beforeinput', onBeforeInput);
+      el.removeEventListener('input', onInput);
       document.removeEventListener('pointerdown', onOutside, true);
     };
   }, []);
+
+  // New columns or a new zoom lay the text out again.
+  useEffect(refit, [columns, placement.scale]);
 
   const change = (patch: FormatPatch) => {
     const [a, b] = selection();
@@ -962,13 +1131,23 @@ function MTextBox({
         <Ruler
           ruler={ruler}
           unit={request.height * placement.scale}
-          width={boxWidth(request, columns) * placement.scale}
+          // Over the first column when the columns run right to left.
+          offset={
+            columns?.flowReversed
+              ? (boxWidth(request, columns) - columns.width) * placement.scale
+              : 0
+          }
+          width={
+            (columns?.flowReversed ? columns.width : boxWidth(request, columns)) * placement.scale
+          }
           onChange={setRuler}
         />
         <div
           ref={root}
           // Width 0 is MTEXT's "no wrapping" (a multileader's text, M2-09): lines run on.
-          className={boxWidth(request, columns) > 0 ? 'mtext-content' : 'mtext-content no-wrap'}
+          className={`mtext-content${boxWidth(request, columns) > 0 ? '' : ' no-wrap'}${
+            columns?.flowReversed ? ' reversed' : ''
+          }`}
           role="textbox"
           aria-multiline="true"
           aria-label="Multiline text"
@@ -977,6 +1156,16 @@ function MTextBox({
           spellCheck={false}
           style={columnStyle(request, columns, placement.scale)}
         />
+        {columns && fitted && (
+          <ColumnFrames
+            columns={columns}
+            fitted={fitted}
+            scale={placement.scale}
+            textHeight={request.height}
+            rotation={request.rotation}
+            onChange={setColumns}
+          />
+        )}
       </div>
     </div>
   );
@@ -986,10 +1175,14 @@ function MTextBox({
 
 type ColumnsPick = 'none' | 'dynamic' | 2 | 3 | 4 | 5 | 6 | 'break' | 'settings';
 
-/** The box's width in drawing units: all the static columns, one dynamic column, else DXF 41. */
+/**
+ * The box's width in drawing units: all the static columns, one dynamic column, else DXF 41.
+ * Dynamic columns set right to left span all their columns, so the first is at the right, where
+ * the renderer draws it, and the text added runs on to the left.
+ */
 function boxWidth(request: TextEditorRequest, c: TextEditorColumns | null): number {
   if (!c) return request.width;
-  return c.type === 1 ? c.count * c.width + (c.count - 1) * c.gutter : c.width;
+  return c.type === 1 || c.flowReversed ? c.count * c.width + (c.count - 1) * c.gutter : c.width;
 }
 
 /**
@@ -1008,7 +1201,7 @@ function columnStyle(
       // The box's border and padding stay outside the columns: with the app's border-box
       // sizing two columns and their gutter would not fit and the browser would make one.
       boxSizing: 'content-box',
-      height: `${c.height * scale}px`,
+      height: `${tallest(c) * scale}px`,
       columnGap: `${c.gutter * scale}px`,
       columnFill: 'auto',
       ...(c.type === 1 ? { columnCount: c.count } : { columnWidth: `${c.width * scale}px` }),
@@ -1029,18 +1222,20 @@ function columnsFor(
   root: { readonly current: HTMLElement | null },
 ): TextEditorColumns | null {
   if (pick === 'none') return null;
+  if (pick === 'dynamic' && now?.type === 2) return now;
   const h = request.height;
+  const flow = now?.flowReversed ? { flowReversed: true } : {};
   const gutter = now?.gutter ?? 5 * h;
   const scale = (root.current?.getBoundingClientRect().width ?? 0) / (boxWidth(request, now) || 1);
   const typed = scale > 0 ? (root.current?.scrollHeight ?? 0) / scale : 25 * h;
   const height = now?.height ?? Math.max(5 * h, Math.round(typed * 1000) / 1000);
   if (pick === 'dynamic') {
     const width = now?.width ?? (request.width > 0 ? request.width : 6 * h);
-    return { type: 2, count: now?.count ?? 1, width, gutter, height };
+    return { type: 2, count: now?.count ?? 1, width, gutter, height, ...flow };
   }
   const total = now ? boxWidth(request, now) : request.width > 0 ? request.width : 0;
   const width = (total - (pick - 1) * gutter) / pick;
-  return { type: 1, count: pick, width: width > 0 ? width : 6 * h, gutter, height };
+  return { type: 1, count: pick, width: width > 0 ? width : 6 * h, gutter, height, ...flow };
 }
 
 function ColumnsMenu({
@@ -1074,7 +1269,12 @@ function ColumnsMenu({
   );
 }
 
-/** AutoCAD's Column Settings dialog: type, number, height, column and gutter widths. */
+/**
+ * AutoCAD's Column Settings dialog: type (Dynamic Columns with Auto Height or Manual Height,
+ * M2-26), number, height, column and gutter widths. Manual heights are each column's own,
+ * dragged in the editor, so Height is off for them; choosing Manual Height gives each column
+ * the height there was, and Auto Height gives all the tallest.
+ */
 function ColumnSettings({
   columns,
   none,
@@ -1091,18 +1291,28 @@ function ColumnSettings({
   const [type, setType] = useState<0 | 1 | 2>(none ? 0 : columns.type);
   const [count, setCount] = useState(columns.type === 1 ? columns.count : 2);
   const [colHeight, setColHeight] = useState(columns.height);
+  const [manual, setManual] = useState(!!columns.heights?.length);
   const [width, setWidth] = useState(columns.width);
   const [gutter, setGutter] = useState(columns.gutter);
   const total = type === 1 ? count * width + (count - 1) * gutter : width;
   const ok = () => {
     if (type === 0) return onClose(null);
     if (!(width > 0 && gutter >= 0 && colHeight > 0 && count >= 1)) return;
+    const n = type === 1 ? Math.round(count) : columns.count;
+    const heights =
+      type === 2 && manual
+        ? columns.heights?.length
+          ? columns.heights
+          : Array.from({ length: Math.max(1, n) }, () => colHeight)
+        : undefined;
     onClose({
       type,
-      count: type === 1 ? Math.round(count) : columns.count,
+      count: n,
       width,
       gutter,
-      height: colHeight,
+      height: heights ? Math.max(...heights) : colHeight,
+      ...(heights && { heights }),
+      ...(columns.flowReversed && { flowReversed: true }),
     });
   };
   const num = (label: string, value: number, set: (v: number) => void, disabled = false) => (
@@ -1153,6 +1363,25 @@ function ColumnSettings({
             {label}
           </label>
         ))}
+        <div className="mtext-dialog-sub" role="radiogroup" aria-label="Dynamic Columns">
+          {(
+            [
+              [false, 'Auto Height'],
+              [true, 'Manual Height'],
+            ] as const
+          ).map(([v, label]) => (
+            <label key={label}>
+              <input
+                type="radio"
+                name="mtext-column-height"
+                checked={manual === v}
+                disabled={type !== 2}
+                onChange={() => setManual(v)}
+              />
+              {label}
+            </label>
+          ))}
+        </div>
       </fieldset>
       <fieldset disabled={type === 0}>
         <legend>Column Number</legend>
@@ -1160,7 +1389,7 @@ function ColumnSettings({
       </fieldset>
       <fieldset disabled={type === 0}>
         <legend>Height</legend>
-        {num('Height', colHeight, setColHeight)}
+        {num('Height', colHeight, setColHeight, type === 2 && manual)}
       </fieldset>
       <fieldset disabled={type === 0}>
         <legend>Width</legend>
@@ -1183,6 +1412,94 @@ function ColumnSettings({
   );
 }
 
+/**
+ * Each column's frame, with a handle on its bottom edge (M2-26): with Manual Height one per
+ * column, setting that column's height (a column the text added takes the last one's until
+ * dragged); else one on the first column, setting the height of all. Dragged, or moved a text
+ * height with the arrow keys; at least one text height. The drag is read along the text's own
+ * y axis, so it works on turned text.
+ */
+function ColumnFrames({
+  columns: c,
+  fitted,
+  scale,
+  textHeight,
+  rotation,
+  onChange,
+}: {
+  columns: TextEditorColumns;
+  fitted: Fitted;
+  scale: number;
+  textHeight: number;
+  rotation: number;
+  onChange: (c: TextEditorColumns) => void;
+}) {
+  const manual = c.type === 2 && !!c.heights?.length;
+  const count = Math.max(1, fitted.count);
+  const drag = useRef<{ x: number; y: number; h: number } | undefined>(undefined);
+  const set = (i: number, h: number) => {
+    const v = Math.max(textHeight, Math.round(h * 1000) / 1000);
+    if (!manual) return onChange({ ...c, height: v });
+    const heights = Array.from({ length: Math.max(count, i + 1) }, (_, k) => columnHeight(c, k));
+    heights[i] = v;
+    onChange({ ...c, heights, height: Math.max(...heights) });
+  };
+  return (
+    <div className="mtext-frames" style={{ left: `${fitted.left}px`, top: `${fitted.top}px` }}>
+      {Array.from({ length: count }, (_, i) => {
+        const h = columnHeight(c, i);
+        const handle = manual || i === 0;
+        return (
+          <div
+            key={i}
+            className="mtext-frame"
+            style={{
+              left: `${columnLeft(c, fitted, i, scale)}px`,
+              width: `${c.width * scale}px`,
+              height: `${h * scale}px`,
+            }}
+          >
+            {handle && (
+              <span
+                className="mtext-frame-handle"
+                role="slider"
+                tabIndex={0}
+                aria-label={manual ? `Column ${i + 1} height` : 'Column height'}
+                aria-orientation="vertical"
+                aria-valuemin={textHeight}
+                aria-valuenow={h}
+                title={manual ? `Column ${i + 1} height` : 'Column height'}
+                onMouseDown={(e) => e.preventDefault()}
+                onPointerDown={(e) => {
+                  if (e.button !== 0) return;
+                  drag.current = { x: e.clientX, y: e.clientY, h };
+                  e.currentTarget.setPointerCapture(e.pointerId);
+                }}
+                onPointerMove={(e) => {
+                  const d = drag.current;
+                  if (!d) return;
+                  // The box is turned by −rotation: its y axis (down) is (sin r, cos r) on screen.
+                  const down =
+                    (e.clientX - d.x) * Math.sin(rotation) + (e.clientY - d.y) * Math.cos(rotation);
+                  set(i, d.h + down / scale);
+                }}
+                onPointerUp={() => {
+                  drag.current = undefined;
+                }}
+                onKeyDown={(e) => {
+                  if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return;
+                  e.preventDefault();
+                  set(i, h + (e.key === 'ArrowUp' ? -textHeight : textHeight));
+                }}
+              />
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 /** Where a pointer is along the ruler, in text heights from the box's left edge. */
 const along = (e: React.PointerEvent, unit: number): number =>
   Math.round((e.nativeEvent.offsetX / unit) * 10) / 10;
@@ -1201,11 +1518,14 @@ type Drag =
 function Ruler({
   ruler,
   unit,
+  offset,
   width,
   onChange,
 }: {
   ruler: MTextRuler;
   unit: number;
+  /** From the box's left edge, px: the first column's (M2-26). */
+  offset: number;
   width: number;
   onChange: (r: MTextRuler) => void;
 }) {
@@ -1237,7 +1557,11 @@ function Ruler({
       aria-valuetext={`First line ${shown.indentFirst}, left ${shown.indentLeft}, tabs ${
         shown.tabs.map((t) => t.at).join(' ') || 'none'
       }`}
-      style={{ width: `${Math.max(width, 6 * unit)}px`, backgroundSize: `${unit}px 100%` }}
+      style={{
+        left: `${offset}px`,
+        width: `${Math.max(width, 6 * unit)}px`,
+        backgroundSize: `${unit}px 100%`,
+      }}
       onMouseDown={(e) => e.preventDefault()}
       onPointerDown={(e) => {
         if (e.button !== 0) return;
