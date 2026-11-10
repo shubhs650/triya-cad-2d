@@ -44,7 +44,9 @@ export interface MTextCharStyle {
 
 export interface MTextTabStop {
   readonly at: number;
-  readonly kind: 'left' | 'center' | 'right';
+  readonly kind: 'left' | 'center' | 'right' | 'decimal';
+  /** A decimal stop's symbol, which it lines up: `.`, `,` or a space (M2-26 part 3). */
+  readonly decimal?: string;
 }
 
 export type MTextAlign = 'left' | 'right' | 'center' | 'justified' | 'distributed';
@@ -195,12 +197,30 @@ function parseFont(value: string, upper: boolean): MTextFont {
   };
 }
 
-/** A tab stop: n (left), cn (centre) or rn (right). */
+/**
+ * A tab stop: n (left), cn (centre), rn (right) or D<symbol>n (decimal, lining up the symbol at
+ * n; ODA's "MTEXT format codes": `\\pxtD.25`). AutoCAD's decimal styles are period, comma and
+ * space; `_` (ODA's example) is read as the space, which a `\\p` value cannot hold safely.
+ */
 function tabStop(tok: string): MTextTabStop | undefined {
+  const d = /^D(.)(.+)$/s.exec(tok);
+  if (d) {
+    const at = num(d[2]!);
+    if (at === undefined) return undefined;
+    return { at, kind: 'decimal', decimal: d[1] === '_' ? ' ' : d[1]! };
+  }
   const m = /^([cr]?)(.+)$/.exec(tok);
   const at = m ? num(m[2]!) : undefined;
   if (!m || at === undefined) return undefined;
   return { at, kind: m[1] === 'c' ? 'center' : m[1] === 'r' ? 'right' : 'left' };
+}
+
+/**
+ * A `\\p` value's comma-separated keys, the leading x (extended form) dropped. A comma right
+ * after a decimal stop's `D` is its symbol, not a separator.
+ */
+export function paragraphKeys(value: string): string[] {
+  return value.replace(/^x/, '').split(/(?<!D),/);
 }
 
 /**
@@ -216,11 +236,11 @@ function parseParagraph(value: string, current: MTextParagraphStyle): MTextParag
   const out: {
     -readonly [K in keyof MTextParagraphStyle]: MTextParagraphStyle[K];
   } = { ...current };
-  const tokens = value.replace(/^x/, '').split(',');
+  const tokens = paragraphKeys(value);
   let inTabs = false;
   let tabs: MTextTabStop[] | undefined;
   for (const tok of tokens) {
-    // Tab stops follow t until a token that is not one: n, cn (centre) or rn (right).
+    // Tab stops follow t until a token that is not one: n, cn, rn or D<symbol>n.
     if (inTabs) {
       const stop = tabStop(tok);
       if (stop) {
