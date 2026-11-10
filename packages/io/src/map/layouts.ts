@@ -31,7 +31,8 @@ function plotOf(l: AcadLayout): LayoutPlot {
     // M2-17 part 4: the rest of the page setup the Plot dialog opens on and Apply to Layout
     // writes. acad-ts names DXF 75 `scaledFit` (147, the factor, is its `standardScale`) and
     // DXF 140 / 141, the window's upper right corner, `windowUpperLeft`.
-    standardScaleType: l.scaledFit as number,
+    // DXF 75 means something only while flag 16 (UseStandardScale) is on.
+    ...(((l.flags as number) & 16) !== 0 && { standardScaleType: l.scaledFit as number }),
     plotType: l.plotType as number,
     ...(window && { window }),
     flags: l.flags as number,

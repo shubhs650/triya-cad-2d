@@ -387,12 +387,13 @@ export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): Layo
   const now = s.scale.mm / s.scale.units;
   let flags = base.flags;
   let scale = base.scale;
-  let standardScaleType = base.standardScaleType;
+  let standardScaleType: number | undefined = base.standardScaleType;
   if (s.fit) {
     flags |= USE_STANDARD_SCALE;
     standardScaleType = 0;
   } else if (wasFit || Math.abs(now - was) > 1e-12 * Math.max(now, was)) {
     flags &= ~USE_STANDARD_SCALE;
+    standardScaleType = undefined;
     scale = { numerator: s.scale.mm / k, denominator: s.scale.units };
   }
   flags = setFlag(flags, PLOT_CENTERED, s.center);

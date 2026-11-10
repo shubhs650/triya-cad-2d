@@ -1545,7 +1545,7 @@ export interface LayoutPlot {
   readonly scale: { readonly numerator: number; readonly denominator: number };
   /**
    * DXF 75: the standard scale chosen while flag 16 (UseStandardScale) is on; 0 is "Scaled to
-   * Fit", 16 is 1:1 (M2-17 part 4). Absent in a page setup made without one.
+   * Fit", 16 is 1:1 (M2-17 part 4). Absent while flag 16 is off, when 142 / 143 are the scale.
    */
   readonly standardScaleType?: number;
   /** DXF 74: what is plotted: 0 display, 1 extents, 2 limits, 3 view, 4 window, 5 the layout. */

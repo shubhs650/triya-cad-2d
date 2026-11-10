@@ -662,8 +662,9 @@ describe('the rest of the page setup (part 4)', () => {
         lineweights: false,
         plotStyles: false,
       };
+      const { standardScaleType: _, ...custom } = ansi;
       expect(appliedPageSetup(s, space)).toEqual({
-        ...ansi,
+        ...custom,
         // Triya’s plotters print to the paper’s edge.
         paperSize: 'ISO_full_bleed_A3_(297.00_x_420.00_MM)',
         paperWidth: 297,
@@ -673,7 +674,7 @@ describe('the rest of the page setup (part 4)', () => {
         rotation: 2,
         plotType: 4,
         window: { min: { x: 0, y: 5 }, max: { x: 200, y: 105 } },
-        // 1 inch = 20 units, in the page setup’s inches; a custom scale clears 16.
+        // 1 inch = 20 units, in the page setup’s inches; a custom scale clears 16 (and DXF 75).
         scale: { numerator: 1, denominator: 20 },
         origin: { x: 10, y: 12.5 },
         flags: (11952 | 4) & ~(16 | 4 | 32 | 128),

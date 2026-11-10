@@ -59,7 +59,7 @@ describe('mapLayouts', () => {
           rotation: 1,
           origin: { x: 2, y: 3 },
           scale: { numerator: 1, denominator: 2 },
-          standardScaleType: l.scaledFit as number,
+          ...(((l.flags as number) & 16) !== 0 && { standardScaleType: l.scaledFit as number }),
           plotType: 5,
           flags: l.flags as number,
         },
@@ -88,6 +88,9 @@ describe('mapLayouts', () => {
     expect(p.standardScaleType).toBe(16);
     expect(p.plotType).toBe(4);
     expect(p.window).toEqual({ min: { x: -5, y: 10 }, max: { x: 120, y: 80.5 } });
+    // A custom scale (flag 16 off): DXF 75 means nothing.
+    l.flags = ((l.flags as number) & ~16) as never;
+    expect(mapLayouts(doc)[1]!.plot).not.toHaveProperty('standardScaleType');
   });
 
   it('reads inch paper and keeps an unknown rotation or unit to the defaults', () => {

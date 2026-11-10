@@ -30,7 +30,7 @@ const PER_FILE_BUDGET_MS = 15_000;
 
 const comparable = ({ raw: _raw, ...rest }: Layout) => rest;
 
-/** An A3 sheet at a custom scale: DXF 75, which names a standard scale, is not mapped. */
+/** An A3 sheet at a custom scale (flag 16 off, so no DXF 75). */
 const A3: LayoutPlot = {
   paperSize: 'ISO_A3_(420.00_x_297.00_MM)',
   paperWidth: 420,

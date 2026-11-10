@@ -396,9 +396,10 @@ describe('LAYOUT objects', () => {
     const bytes = drawing();
     const model = open(bytes);
     edit(model, (b) => {
-      const l = layout(model, 'Layout1');
-      b.updateLayout(l.handle, {
-        plot: { ...l.plot!, flags: 688 & ~16, scale: { numerator: 1, denominator: 20 } },
+      // A custom scale clears flag 16, and with it the standard scale DXF 75 named.
+      const { standardScaleType: _, ...plot } = plotOf(model, 'Layout1');
+      b.updateLayout(layout(model, 'Layout1').handle, {
+        plot: { ...plot, flags: 688 & ~16, scale: { numerator: 1, denominator: 20 } },
       });
     });
     const back = documentInit(saved(bytes, model, 'dwg')).layouts!;
@@ -437,7 +438,11 @@ describe('LAYOUT objects', () => {
 });
 
 /** Layout1's A3 page setup at a custom scale: DXF 75, which names a standard one, is not mapped. */
-const sheetPlot = (m: DocumentModel): LayoutPlot => ({ ...plotOf(m, 'Layout1'), flags: 672 });
+/** Layout1's page setup at a custom scale: flag 16 off, so no DXF 75 (M2-17 part 4). */
+const sheetPlot = (m: DocumentModel): LayoutPlot => {
+  const { standardScaleType: _, ...plot } = plotOf(m, 'Layout1');
+  return { ...plot, flags: 672 };
+};
 
 describe('LAYOUT New and Delete', () => {
   /**
