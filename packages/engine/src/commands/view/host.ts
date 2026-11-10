@@ -82,7 +82,12 @@ export type ViewRequest =
    * save it under a name the drafter picks, CLOSE closes it (asking to save changes first). The
    * app holds the file, so the host does it; the reply's `file` is the name saved under.
    */
-  | { readonly op: 'file'; readonly action: FileAction }
+  | {
+      readonly op: 'file';
+      readonly action: FileAction;
+      /** PLOT's window (M2-17 part 2): the corners picked after the dialog's Window< button. */
+      readonly window?: { readonly a: Vec2; readonly b: Vec2 };
+    }
   /** The objects' extents (COPYCLIP's base point, M2-14 part 2), which the renderer answers. */
   | { readonly op: 'bounds'; readonly ids: readonly EntityId[] }
   /**
@@ -98,9 +103,10 @@ export type PaletteName = 'properties';
 
 /**
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows
- * the drawings it can recover again; `plot` (PLOT, PRINT; M2-17) opens the Plot dialog.
+ * the drawings it can recover again; `plot` (PLOT, PRINT; M2-17) opens the Plot dialog and
+ * `publish` (PUBLISH, M2-17 part 2) the Publish dialog.
  */
-export type FileAction = 'qsave' | 'saveas' | 'close' | 'recover' | 'plot';
+export type FileAction = 'qsave' | 'saveas' | 'close' | 'recover' | 'plot' | 'publish';
 
 export type ViewReply =
   | {
@@ -116,6 +122,11 @@ export type ViewReply =
       readonly widths?: readonly (number | null)[];
       /** The file a `file` request saved the drawing as. */
       readonly file?: string;
+      /**
+       * The Plot dialog closed on its Window< button (M2-17 part 2): PLOT asks for the window's
+       * corners and opens the dialog again with them.
+       */
+      readonly pickWindow?: boolean;
       /** What a `clipboard` read found; absent when the Clipboard is empty. */
       readonly clipboard?: Clipboard;
       /** The Clipboard's objects were copied from this drawing (PASTEORIG refuses them). */

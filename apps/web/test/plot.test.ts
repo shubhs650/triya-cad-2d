@@ -12,7 +12,9 @@ import {
   plotPage,
   plotPdf,
   plotStyleTables,
+  plotPreview,
   plotTable,
+  windowBox,
   type PlotSpace,
 } from '../src/plot';
 
@@ -44,7 +46,7 @@ describe('defaultPlotSettings', () => {
       plotStyles: true,
       paperspaceLast: false,
     });
-    expect(plotAreas(model)).toEqual(['extents', 'display', 'limits']);
+    expect(plotAreas(model)).toEqual(['extents', 'display', 'limits', 'window']);
   });
 
   it('plots a layout’s sheet on its own paper at its page setup’s scale', () => {
@@ -61,7 +63,7 @@ describe('defaultPlotSettings', () => {
     expect([page.width, page.height]).toEqual([420, 297]);
     // The sheet's corner at the page's.
     expect(page.toPaper.e).toBeCloseTo(5 * POINTS_PER_MM, 9);
-    expect(plotAreas(layout)).toEqual(['layout', 'extents']);
+    expect(plotAreas(layout)).toEqual(['layout', 'extents', 'window']);
   });
 
   it('turns an inch page setup into millimetres of paper', () => {
@@ -231,5 +233,61 @@ describe('plotPdf', () => {
   it('names the file after the drawing and the space', () => {
     expect(plotFileName('plan.dxf', layout)).toBe('plan-Layout1.pdf');
     expect(plotFileName('a/b.dwg', { name: 'X:1' })).toBe('a_b-X_1.pdf');
+  });
+});
+
+describe('the Window plot area (part 2)', () => {
+  it('plots the window picked, whichever corners came first', () => {
+    const window = windowBox({ x: 300, y: 20 }, { x: 100, y: 120 });
+    expect(window).toEqual({ minX: 100, minY: 20, maxX: 300, maxY: 120 });
+    const s = { ...defaultPlotSettings(model), area: 'window' as const, window };
+    const page = plotPage(s, model);
+    // 200 × 100 fitted to A4 landscape (297 × 210): 297 / 200 mm per unit.
+    expect(page.scale).toBeCloseTo(297 / 200, 9);
+  });
+
+  it('has nothing to plot before a window is picked', () => {
+    const s = { ...defaultPlotSettings(model), area: 'window' as const };
+    expect(() => plotPage(s, model)).toThrow(/nothing to plot/);
+  });
+});
+
+describe('plotPreview (the partial preview, part 2)', () => {
+  it('places the plot area on the paper as it is turned', () => {
+    const s = {
+      ...defaultPlotSettings(model),
+      area: 'extents' as const,
+      fit: false,
+      center: false,
+      offset: { x: 10, y: 5 },
+      scale: { mm: 1, units: 2 },
+    };
+    const p = plotPreview(s, model)!;
+    expect([p.width, p.height]).toEqual([297, 210]);
+    // 400 × 200 units at 1:2 is 200 × 100 mm, 10 mm right and 5 mm up from the corner.
+    expect(p.area.x).toBeCloseTo(10, 9);
+    expect(p.area.y).toBeCloseTo(5, 9);
+    expect(p.area.width).toBeCloseTo(200, 9);
+    expect(p.area.height).toBeCloseTo(100, 9);
+    expect(p.offPaper).toBe(false);
+    const portrait = plotPreview({ ...s, orientation: 'portrait' }, model)!;
+    expect([portrait.width, portrait.height]).toEqual([210, 297]);
+  });
+
+  it('says when the plot runs off the paper, as AutoCAD’s red edge does', () => {
+    const s = {
+      ...defaultPlotSettings(model),
+      area: 'extents' as const,
+      fit: false,
+      center: true,
+      scale: { mm: 1, units: 1 },
+    };
+    const p = plotPreview(s, model)!;
+    expect(p.offPaper).toBe(true);
+    expect(p.area.width).toBeCloseTo(400, 9);
+  });
+
+  it('has no preview when the settings cannot plot', () => {
+    expect(plotPreview(defaultPlotSettings({ name: 'Model' }), { name: 'Model' })).toBeUndefined();
   });
 });

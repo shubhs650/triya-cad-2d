@@ -34,6 +34,8 @@ import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
 import { AttributeDialogs } from './AttributeDialogs';
 import { PlotDialog, plotDialog } from './PlotDialog';
+import { PublishDialog, publishDialog } from './PublishDialog';
+import { windowBox } from './plot';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
@@ -234,7 +236,7 @@ function viewContext(id: number): ViewContext {
     all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
     views: () => (doc && target ? namedViewsOf(doc, target.size) : []),
     save: (name, view) => doc && store.saveView(doc.id, name, view),
-    file: (action) => fileCommand(id, action),
+    file: (action, window) => fileCommand(id, action, window),
     clipboard: (content) => clipboardRequest(id, content),
     // PROPERTIES and PROPERTIESCLOSE (M2-21).
     palette: (name, open) => {
@@ -312,7 +314,11 @@ async function closeDoc(id: number): Promise<boolean> {
  * QSAVE, SAVE/SAVEAS and CLOSE typed at the command line (M2-13), DRAWINGRECOVERY (M2-14) and
  * PLOT/PRINT (M2-17).
  */
-async function fileCommand(id: number, action: FileAction): Promise<ViewReply> {
+async function fileCommand(
+  id: number,
+  action: FileAction,
+  window?: { readonly a: Vec2; readonly b: Vec2 },
+): Promise<ViewReply> {
   if (action === 'recover') {
     // DRAWINGRECOVERY (M2-14 part 2): the recovery banner lists them again.
     await recoveryOffers.load();
@@ -321,8 +327,14 @@ async function fileCommand(id: number, action: FileAction): Promise<ViewReply> {
       : { ok: false, message: 'There are no drawings to recover.' };
   }
   if (action === 'plot') {
-    // PLOT and PRINT (M2-17): the Plot dialog plots the space shown.
-    plotDialog.open(id);
+    // PLOT and PRINT (M2-17): the Plot dialog plots the space shown; PLOT waits for it, and
+    // asks for a window's corners when it closes on Window< (part 2).
+    const pickWindow = await plotDialog.show(id, window && windowBox(window.a, window.b));
+    return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
+  }
+  if (action === 'publish') {
+    // PUBLISH (M2-17 part 2): the Publish dialog lists the drawing's sheets.
+    publishDialog.open(id);
     return { ok: true };
   }
   if (action === 'close') {
@@ -816,11 +828,11 @@ export function App() {
         const { active } = store.getSnapshot();
         if (active !== undefined) void saveDoc(active, e.shiftKey ? 'saveas' : 'qsave');
       }
-      // Ctrl+P opens the Plot dialog (PLOT, M2-17), as in AutoCAD.
+      // Ctrl+P runs PLOT (M2-17), as in AutoCAD: the command owns the dialog (its Window<).
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === 'p') {
         e.preventDefault();
         const { active } = store.getSnapshot();
-        if (active !== undefined) plotDialog.open(active);
+        if (active !== undefined) engines.command(active, { kind: 'invoke', name: 'PLOT' });
       }
       // Ctrl+1 opens or closes the Properties palette (PROPERTIES, M2-21), as in AutoCAD.
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === '1') {
@@ -930,7 +942,7 @@ export function App() {
           className="plot-button"
           disabled={!active}
           aria-keyshortcuts="Control+P"
-          onClick={() => active && plotDialog.open(active.id)}
+          onClick={() => active && engines.command(active.id, { kind: 'invoke', name: 'PLOT' })}
         >
           Plot…
         </button>
@@ -1130,6 +1142,7 @@ export function App() {
       />
       <AttributeDialogs doc={active} />
       <PlotDialog doc={active} underlayFile={(f) => pdfPages.bytes(f)} />
+      <PublishDialog doc={active} underlayFile={(f) => pdfPages.bytes(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
       <CommandLine

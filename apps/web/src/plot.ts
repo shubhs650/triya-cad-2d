@@ -8,11 +8,17 @@
 // last" and "Scale lineweights" off (the last two apply to layouts only). "Plot with plot
 // styles" off plots objects with their own properties, as the table None does. The printer is
 // Triya's PDF writer, which prints to the paper's edge.
+//
+// Part 2: the Window plot area ("Window<" picks two corners in the space shown; AutoCAD lists
+// Window in "What to plot" always) and the partial preview ("Shows an accurate representation of
+// the effective plot area relative to the paper size and printable area"; a red line marks a plot
+// area that runs off the paper).
 
 import type { Box, Vec2 } from '@triya/engine';
 import { PAPER_SIZES, PdfDocument, mmToPoints, plotItems, type PlotItem } from '@triya/pdf';
 import {
   BUNDLED_PLOT_STYLE_TABLES,
+  POINTS_PER_MM,
   bundledPlotStyleTable,
   plotSetup,
   type PlotPart,
@@ -36,7 +42,7 @@ export interface PlotSpace {
   readonly namedPlotStyles?: boolean;
 }
 
-export type PlotArea = 'layout' | 'extents' | 'display' | 'limits';
+export type PlotArea = 'layout' | 'extents' | 'display' | 'limits' | 'window';
 
 /** The layout's own paper (its page setup), offered first for a layout. */
 export const LAYOUT_PAPER = 'layout';
@@ -47,6 +53,8 @@ export interface PlotSettings {
   readonly orientation: 'portrait' | 'landscape';
   readonly upsideDown: boolean;
   readonly area: PlotArea;
+  /** The Window plot area, in the space's units, once one is picked. */
+  readonly window?: Box | undefined;
   readonly fit: boolean;
   /** `mm` millimetres = `units` drawing units. */
   readonly scale: { readonly mm: number; readonly units: number };
@@ -139,6 +147,7 @@ export function plotAreas(space: PlotSpace): PlotArea[] {
   if (space.extents) out.push('extents');
   if (space.display) out.push('display');
   if (space.limits && !space.sheet) out.push('limits');
+  out.push('window');
   return out;
 }
 
@@ -166,7 +175,62 @@ export function plotAreaBox(settings: PlotSettings, space: PlotSpace): Box | und
       return space.display;
     case 'limits':
       return space.limits;
+    case 'window':
+      return settings.window;
   }
+}
+
+/** The window between two picked corners. */
+export function windowBox(a: Vec2, b: Vec2): Box {
+  return {
+    minX: Math.min(a.x, b.x),
+    minY: Math.min(a.y, b.y),
+    maxX: Math.max(a.x, b.x),
+    maxY: Math.max(a.y, b.y),
+  };
+}
+
+/** The partial preview: the paper as turned and the plot area on it, millimetres from its corner. */
+export interface PlotPreview {
+  readonly width: number;
+  readonly height: number;
+  readonly area: {
+    readonly x: number;
+    readonly y: number;
+    readonly width: number;
+    readonly height: number;
+  };
+  /** Part of the plot area lies off the paper (and is not plotted). */
+  readonly offPaper: boolean;
+}
+
+/** What the dialog's partial preview shows, or undefined while the settings cannot plot. */
+export function plotPreview(settings: PlotSettings, space: PlotSpace): PlotPreview | undefined {
+  let page: PlotSetup;
+  try {
+    page = plotPage(settings, space);
+  } catch {
+    return undefined;
+  }
+  const box = plotAreaBox(settings, space)!;
+  const m = page.toPaper;
+  const k = 1 / POINTS_PER_MM;
+  const xs = [m.a * box.minX + m.e, m.a * box.maxX + m.e].map((v) => v * k);
+  const ys = [m.d * box.minY + m.f, m.d * box.maxY + m.f].map((v) => v * k);
+  const area = {
+    x: Math.min(...xs),
+    y: Math.min(...ys),
+    width: Math.abs(xs[1]! - xs[0]!),
+    height: Math.abs(ys[1]! - ys[0]!),
+  };
+  // A hair of tolerance: a fitted plot touches the paper's edges exactly.
+  const eps = 1e-6 * Math.max(page.width, page.height);
+  const offPaper =
+    area.x < -eps ||
+    area.y < -eps ||
+    area.x + area.width > page.width + eps ||
+    area.y + area.height > page.height + eps;
+  return { width: page.width, height: page.height, area, offPaper };
 }
 
 /** Where the plot goes on the page; throws a message the dialog shows. */
@@ -202,9 +266,27 @@ export function plotPdf(
   underlayFile?: (fileName: string) => Uint8Array | undefined,
 ): Uint8Array {
   const doc = new PdfDocument({ title, creator: 'Triya CAD 2D' });
+  addPlotPage(doc, parts, page, settings, space, space.name, underlayFile);
+  return doc.bytes();
+}
+
+/**
+ * Plots one space as the next page of a PDF, labelled with the space's name and bookmarked with
+ * `bookmark` (PUBLISH's sheet name).
+ */
+export function addPlotPage(
+  doc: PdfDocument,
+  parts: readonly PlotPart[],
+  page: PlotSetup,
+  settings: PlotSettings,
+  space: PlotSpace,
+  bookmark: string,
+  /** The PDF file a PDF underlay names; an underlay without one plots its boundary only. */
+  underlayFile?: (fileName: string) => Uint8Array | undefined,
+): void {
   const pdfPage = doc.addPage(mmToPoints(page.width), mmToPoints(page.height), {
     label: space.name,
-    bookmark: space.name,
+    bookmark,
   });
   const table = plotTable(settings);
   // "Scale lineweights" (layouts): lineweights grow with the plot scale against the page setup's.
@@ -218,7 +300,6 @@ export function plotPdf(
     area: page.clip,
     ...(underlayFile && { underlays: (u) => underlayFile(u.fileName) }),
   });
-  return doc.bytes();
 }
 
 /** The PDF's file name: the drawing's name and the space plotted. */

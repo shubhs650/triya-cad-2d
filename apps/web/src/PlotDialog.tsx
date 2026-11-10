@@ -3,6 +3,12 @@
 // style table, Plot options and Drawing orientation; OK plots the space shown to a PDF that
 // downloads, Cancel (and Esc) closes. Enter is OK. The settings are the dialog's own: a layout
 // opens with its page setup, model space with its display fitted to A4 landscape (plot.ts).
+//
+// Part 2: the partial preview (the paper and the plot area on it, a red edge where the plot runs
+// off the paper) and the Window plot area. Window< (or choosing Window before one is picked) hides
+// the dialog and hands back to PLOT, which asks for the corners at the command line and opens the
+// dialog again with the window and the rest of the settings as they were, as AutoCAD does.
+import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import type { CanvasController } from './canvas/controller';
@@ -13,6 +19,7 @@ import {
   defaultPlotSettings,
   paperMm,
   plotAreas,
+  plotPreview,
   plotFileName,
   plotPage,
   plotPdf,
@@ -23,13 +30,24 @@ import {
   type PlotSpace,
 } from './plot';
 
-/** Which drawing the dialog is open for, if any. */
+/**
+ * Which drawing the dialog is open for, if any. PLOT opens it (`show`) and waits until it closes:
+ * true when it closed on Window<, whose settings are kept for the space it was open on until PLOT
+ * shows the dialog again with the window picked.
+ */
 export const plotDialog = (() => {
   let open: number | undefined;
+  let kept: { doc: number; block: string; settings: PlotSettings } | undefined;
+  let done: ((pickWindow: boolean) => void) | undefined;
   const listeners = new Set<() => void>();
   const set = (v: number | undefined) => {
     open = v;
     for (const l of listeners) l();
+  };
+  const finish = (pickWindow: boolean) => {
+    const d = done;
+    done = undefined;
+    d?.(pickWindow);
   };
   return {
     get: () => open,
@@ -37,8 +55,29 @@ export const plotDialog = (() => {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    open: (doc: number) => set(doc),
-    close: () => set(undefined),
+    /** Opens the dialog for a drawing; `window` is the one PLOT just had picked. */
+    show(doc: number, window?: Box): Promise<boolean> {
+      finish(false);
+      if (window && kept?.doc === doc) {
+        kept = { ...kept, settings: { ...kept.settings, area: 'window', window } };
+      } else kept = undefined;
+      set(doc);
+      return new Promise((resolve) => (done = resolve));
+    },
+    /** The settings to reopen a space's dialog with, after a window was picked in it. */
+    resume: (doc: number, block: string): PlotSettings | undefined =>
+      kept?.doc === doc && kept.block === block ? kept.settings : undefined,
+    /** Window<: hides the dialog, keeping its settings, for PLOT to ask for the corners. */
+    pickWindow(doc: number, block: string, settings: PlotSettings) {
+      kept = { doc, block, settings };
+      set(undefined);
+      finish(true);
+    },
+    close() {
+      kept = undefined;
+      set(undefined);
+      finish(false);
+    },
   };
 })();
 
@@ -47,10 +86,11 @@ const AREA_LABELS: Record<PlotArea, string> = {
   extents: 'Extents',
   display: 'Display',
   limits: 'Limits',
+  window: 'Window',
 };
 
 /** Downloads the plot (a PDF printer's "Plot to file"). */
-function download(name: string, bytes: Uint8Array): void {
+export function downloadPdf(name: string, bytes: Uint8Array): void {
   const url = URL.createObjectURL(
     new Blob([bytes as Uint8Array<ArrayBuffer>], { type: 'application/pdf' }),
   );
@@ -76,6 +116,8 @@ export function PlotDialog({
   return (
     <PlotBody
       key={`${doc.id}:${doc.block}`}
+      doc={doc.id}
+      block={doc.block}
       name={doc.name}
       controller={controller}
       {...(underlayFile && { underlayFile })}
@@ -84,10 +126,14 @@ export function PlotDialog({
 }
 
 function PlotBody({
+  doc,
+  block,
   name,
   controller,
   underlayFile,
 }: {
+  doc: number;
+  block: string;
   name: string;
   controller: CanvasController;
   underlayFile?: (fileName: string) => Uint8Array | undefined;
@@ -105,13 +151,13 @@ function PlotBody({
     void controller.plotSpace().then((sp) => {
       if (!live) return;
       setSpace(sp);
-      setSettings(defaultPlotSettings(sp));
+      setSettings(plotDialog.resume(doc, block) ?? defaultPlotSettings(sp));
     });
     return () => {
       live = false;
       d?.close();
     };
-  }, [controller]);
+  }, [controller, doc, block]);
 
   const set = (patch: Partial<PlotSettings>) => s && setSettings({ ...s, ...patch });
 
@@ -133,7 +179,7 @@ function PlotBody({
         ...(s.paperspaceLast && space.sheet && { paperspaceLast: true }),
       });
       const bytes = plotPdf(parts, page, s, space, `${name} - ${space.name}`, underlayFile);
-      download(plotFileName(name, space), bytes);
+      downloadPdf(plotFileName(name, space), bytes);
       plotDialog.close();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -162,7 +208,12 @@ function PlotBody({
     >
       <h2 className="cad-dialog-title">{title}</h2>
       {s && space ? (
-        <PlotForm s={s} space={space} set={set} />
+        <PlotForm
+          s={s}
+          space={space}
+          set={set}
+          pickWindow={() => plotDialog.pickWindow(doc, block, { ...s, area: 'window' })}
+        />
       ) : (
         <p className="plot-loading">Reading the drawing…</p>
       )}
@@ -250,14 +301,60 @@ function NumberField({
   );
 }
 
+/**
+ * The partial preview: the paper (white), the plot area on it (blue), and a red edge where the
+ * plot area runs off the paper, as AutoCAD draws it.
+ */
+function PartialPreview({ s, space }: { s: PlotSettings; space: PlotSpace }) {
+  const p = plotPreview(s, space);
+  if (!p) return <p className="plot-preview-none">No plot area</p>;
+  const mm = (v: number) => Math.round(v * 10) / 10;
+  const label =
+    `Plot area ${mm(p.area.width)} × ${mm(p.area.height)} mm on paper ` +
+    `${mm(p.width)} × ${mm(p.height)} mm` +
+    (p.offPaper ? '; the plot area runs off the paper' : '');
+  // The page with a margin around it, y up as on paper; the plot area cut to that margin.
+  const pad = 0.06 * Math.max(p.width, p.height);
+  const x0 = Math.max(-pad, p.area.x);
+  const y0 = Math.max(-pad, p.area.y);
+  const x1 = Math.min(p.width + pad, p.area.x + p.area.width);
+  const y1 = Math.min(p.height + pad, p.area.y + p.area.height);
+  return (
+    <svg
+      className="plot-preview"
+      role="img"
+      aria-label={label}
+      data-off-paper={p.offPaper}
+      viewBox={`${-pad} ${-pad} ${p.width + 2 * pad} ${p.height + 2 * pad}`}
+      preserveAspectRatio="xMidYMid meet"
+    >
+      <title>{label}</title>
+      <g transform={`matrix(1 0 0 -1 0 ${p.height})`}>
+        <rect className="plot-preview-paper" x={0} y={0} width={p.width} height={p.height} />
+        {x1 > x0 && y1 > y0 && (
+          <rect
+            className={p.offPaper ? 'plot-preview-area off-paper' : 'plot-preview-area'}
+            x={x0}
+            y={y0}
+            width={x1 - x0}
+            height={y1 - y0}
+          />
+        )}
+      </g>
+    </svg>
+  );
+}
+
 function PlotForm({
   s,
   space,
   set,
+  pickWindow,
 }: {
   s: PlotSettings;
   space: PlotSpace;
   set: (patch: Partial<PlotSettings>) => void;
+  pickWindow: () => void;
 }) {
   const layout = space.sheet !== undefined;
   const paper = paperMm(s, space);
@@ -298,7 +395,12 @@ function PlotForm({
           <select
             aria-label="What to plot"
             value={s.area}
-            onChange={(e) => set({ area: e.currentTarget.value as PlotArea })}
+            onChange={(e) => {
+              const area = e.currentTarget.value as PlotArea;
+              // Window before one is picked goes straight to picking it, as in AutoCAD.
+              if (area === 'window' && !s.window) pickWindow();
+              else set({ area });
+            }}
           >
             {plotAreas(space).map((a) => (
               <option key={a} value={a}>
@@ -307,6 +409,14 @@ function PlotForm({
             ))}
           </select>
         </label>
+        {s.area === 'window' && (
+          <button type="button" className="plot-window-button" onClick={pickWindow}>
+            Window&lt;
+          </button>
+        )}
+      </Group>
+      <Group label="Preview">
+        <PartialPreview s={s} space={space} />
       </Group>
       <Group label="Plot offset (origin set to the paper's corner)">
         <NumberField
