@@ -242,21 +242,19 @@ test('the crosshairs take their colour, and the tooltip and ruler follow the dar
   await openWithPicker(page, DXF32);
   await expectShown(page, NAME);
   const cursor = () => activeCanvas(page).evaluate((c) => getComputedStyle(c).cursor);
-  // Automatic: white crosshairs on the dark model canvas, with the pickbox at Command:.
+  // Automatic: white crosshairs on the dark model canvas.
   await expect.poll(cursor).toContain('%23ffffff');
-  await expect.poll(cursor).toContain('%3Crect');
   const settings = await openSettings(page);
   await settings.getByLabel('Crosshairs: Automatic').uncheck();
   await settings.getByLabel('Crosshairs', { exact: true }).fill('#ff0000');
   await settings.getByLabel('Color theme').selectOption('dark');
   await page.keyboard.press('Escape');
   await expect.poll(cursor).toContain('%23ff0000');
-  // At a point prompt the crosshairs lose the pickbox.
+  // The same crosshairs at a point prompt.
   await activeCanvas(page).hover();
   await page.keyboard.type('LINE');
   await page.keyboard.press('Enter');
   await expect(prompt(page)).toHaveText('Specify first point:');
-  await expect.poll(cursor).not.toContain('%3Crect');
   await expect.poll(cursor).toContain('%23ff0000');
   await page.keyboard.press('Escape');
   // The in-canvas tooltip and the MTEXT ruler draw in the dark chrome's colours.

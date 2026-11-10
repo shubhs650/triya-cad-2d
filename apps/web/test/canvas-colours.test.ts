@@ -59,8 +59,6 @@ describe('crosshairs, AutoSnap and AutoTrack colours', () => {
     const svg = decodeURIComponent(/data:image\/svg\+xml,(.*)"\)/.exec(css)![1]!);
     expect(svg).toContain('width="31" height="31"');
     expect(svg).toContain('stroke="#ff0000"');
-    // A pickbox square at the centre, as AutoCAD's crosshairs carry at Command:.
-    expect(svg).toContain('<rect');
-    expect(crosshairCursor('#ff0000', false)).not.toContain('%3Crect');
+    expect(svg).toContain('M0 15.5H31M15.5 0V31');
   });
 });

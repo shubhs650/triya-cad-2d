@@ -357,7 +357,7 @@ button {
   width: 100%;
   height: 100%;
   /* M2-20 part 2: the crosshairs in their Settings colour, drawn by the canvas controller. */
-  cursor: var(--crosshair-box, crosshair);
+  cursor: var(--crosshair, crosshair);
   touch-action: none;
 }
 
@@ -1046,7 +1046,7 @@ button {
   pointer-events: none;
 }
 
-/* A command waits for a point (M2-02): AutoCAD's crosshairs, without the pickbox (M2-20). */
+/* A command waits for a point (M2-02): AutoCAD's crosshairs (in their colour, M2-20). */
 .drawing-canvas[data-picking='true'][data-mode='none'],
 .drawing-canvas[data-picking='true']:not([data-mode]) {
   cursor: var(--crosshair, crosshair);

@@ -58,7 +58,21 @@ export function DynamicInput({
    * to a tooltip about to close (CI lost the 3 of a 350,-15 typed so).
    */
   const overNow = useRef(false);
-  const [state, setState] = useState<DynState | undefined>(prompt && dynFor(prompt));
+  /**
+   * The fields as last set and the prompt they were set for. Keys read this rather than the
+   * rendered state: two keys, or a new prompt's fields and a key, can come before React renders,
+   * and a key handled on the rendered state would undo the first (CI saw a Distance typed ahead
+   * of its prompt land in the previous prompt's X field).
+   */
+  const latest = useRef<{ prompt: Prompt | undefined; state: DynState | undefined }>({
+    prompt,
+    state: prompt && dynFor(prompt),
+  });
+  const [state, setState] = useState<DynState | undefined>(latest.current.state);
+  const put = (p: Prompt | undefined, next: DynState | undefined) => {
+    latest.current = { prompt: p, state: next };
+    setState(next);
+  };
   const box = useRef<HTMLDivElement>(null);
   const live = useRef<(HTMLSpanElement | null)[]>([]);
   const at = useRef({ x: 0, y: 0 });
@@ -67,7 +81,7 @@ export function DynamicInput({
   /** Keys typed since the last Enter: replayed on a prompt that arrives after them. */
   const typed = useRef<string[]>([]);
   // A new prompt starts with empty fields, or with what was typed ahead of it.
-  useEffect(() => setState(prompt && dynReplay(prompt, typed.current)), [prompt]);
+  useEffect(() => put(prompt, prompt && dynReplay(prompt, typed.current)), [prompt]);
 
   const props = useRef({ prompt, state, shown, cursor, onSubmit, onKeyword });
   props.current = { prompt, state, shown, cursor, onSubmit, onKeyword };
@@ -101,7 +115,10 @@ export function DynamicInput({
   // Keys typed outside a text field, before the command line's own listener sees them.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      const { prompt: p, state: s, shown: visible } = props.current;
+      const { prompt: p, shown: visible } = props.current;
+      // Fields set for an earlier prompt are this prompt's as soon as it has arrived.
+      const s =
+        latest.current.prompt === p ? latest.current.state : p && dynReplay(p, typed.current);
       if (!visible || !overNow.current || !p || !s || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const take = (next: DynState, key?: string) => {
@@ -110,13 +127,13 @@ export function DynamicInput({
         // Enter starts afresh; the ↓ menu (key '') leaves what was typed alone.
         if (key === undefined) typed.current = [];
         else if (key !== '') typed.current.push(key);
-        setState(next);
+        put(p, next);
       };
       const spaces = p.kind === 'string' && p.spaces && s.raw;
       if (e.key === 'Escape') {
         // The command line's listener cancels the command.
         typed.current = [];
-        setState(dynFor(p));
+        put(p, dynFor(p));
         return;
       }
       if (e.key === 'Enter' || (e.key === ' ' && !spaces)) {
@@ -201,7 +218,7 @@ export function DynamicInput({
               onPointerDown={(e) => {
                 e.preventDefault();
                 typed.current = [];
-                setState(dynFor(prompt));
+                put(prompt, dynFor(prompt));
                 onKeyword(o);
               }}
             >

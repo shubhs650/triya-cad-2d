@@ -64,19 +64,19 @@ export function interfaceColours(c: {
 const HALF = 15;
 
 /**
- * The crosshairs as a CSS cursor in `color`: a cross with a one-pixel dark halo so it reads on
- * anything, and at `Command:` (`pickbox`) the pickbox square AutoCAD's crosshairs carry. The
- * system crosshair stands in where a browser refuses the image.
+ * The crosshairs as a CSS cursor in `color`: a cross with a faint halo so it reads on anything.
+ * The system crosshair stands in where a browser refuses the image. One image for every prompt:
+ * AutoCAD adds a pickbox at `Command:`, but swapping cursor images as prompts change cost Chrome
+ * enough main-thread time to delay the next prompt behind typed keys (CI, PR #256).
  */
-export function crosshairCursor(color: string, pickbox = true): string {
+export function crosshairCursor(color: string): string {
   const halo = isDarkColor(color) ? '#ffffff' : '#000000';
   const n = 2 * HALF + 1;
   const c = HALF + 0.5;
   const cross = `M0 ${c}H${n}M${c} 0V${n}`;
-  const box = pickbox ? `<rect x="${c - 3}" y="${c - 3}" width="6" height="6" fill="none"/>` : '';
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}">` +
-    `<g stroke="${halo}" stroke-opacity="0.45" stroke-width="3"><path d="${cross}"/>${box}</g>` +
-    `<g stroke="${color}" stroke-width="1"><path d="${cross}"/>${box}</g></svg>`;
+    `<g stroke="${halo}" stroke-opacity="0.45" stroke-width="3"><path d="${cross}"/></g>` +
+    `<g stroke="${color}" stroke-width="1"><path d="${cross}"/></g></svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${HALF} ${HALF}, crosshair`;
 }

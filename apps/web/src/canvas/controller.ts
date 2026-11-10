@@ -794,14 +794,9 @@ export class CanvasController {
     return interfaceColours({ ...c, background: this.#layout ? c.paper : c.model });
   }
 
-  /**
-   * The crosshairs as the canvas's cursor: with the pickbox at `Command:`, without it while a
-   * prompt takes points (the stylesheet picks by `data-picking`).
-   */
+  /** The crosshairs in their colour as the canvas's cursor (styles.css reads `--crosshair`). */
   #paintCursor(): void {
-    const { crosshair } = this.#ui();
-    this.#canvas.style.setProperty('--crosshair-box', crosshairCursor(crosshair));
-    this.#canvas.style.setProperty('--crosshair', crosshairCursor(crosshair, false));
+    this.#canvas.style.setProperty('--crosshair', crosshairCursor(this.#ui().crosshair));
   }
 
   #style(): RenderStyle {
