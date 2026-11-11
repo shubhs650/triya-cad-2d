@@ -2002,6 +2002,11 @@ button {
   color: inherit;
 }
 
+.cad-dialog-tabs [role='tab']:disabled {
+  color: var(--chrome-text-muted);
+  opacity: 0.6;
+}
+
 .cad-dialog-tabs [role='tab'][aria-selected='true'] {
   border-color: var(--chrome-border);
   background: var(--chrome-bg);
