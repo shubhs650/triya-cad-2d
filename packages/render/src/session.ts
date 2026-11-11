@@ -46,6 +46,7 @@ import { plotParts, type PlotPart } from './plot/job';
 import type { PlotStyleTable } from './plot/plot-style-table';
 import { PlotResolver } from './plot/resolver';
 import type { RasterPixels, RenderStyle, UnderlayRaster, UnderlayRequest } from './types';
+import { underlayKeyDefinition } from './underlay';
 
 /** What to plot (M2-17): a space of the drawing through a plot style table. */
 export interface PlotRequest {
@@ -150,8 +151,13 @@ export class RenderSession {
   fontWarnings: readonly string[] = [];
   /** Decoded bitmaps by IMAGEDEF handle, as the app sends them (M1-19). */
   readonly #images = new Map<Handle, RasterPixels>();
-  /** PDF underlay pages by PDFDEFINITION handle, as the app draws them (M1-20). */
-  readonly #underlays = new Map<Handle, UnderlayRaster>();
+  /**
+   * PDF underlay pages as the app draws them (M1-20), by `underlayKey`: the PDFDEFINITION's
+   * handle, with the layers turned off when any are (M2-38).
+   */
+  readonly #underlays = new Map<string, UnderlayRaster>();
+  /** Each PDFDEFINITION's page size, from any raster of it: what extents need. */
+  readonly #underlayPages = new Map<Handle, UnderlayRaster['page']>();
   /** PDF underlay pages' vector geometry by PDFDEFINITION handle, for osnap (M2-22). */
   readonly #underlaySnaps = new Map<Handle, UnderlaySnapPage>();
   readonly #surface: Surface;
@@ -182,7 +188,7 @@ export class RenderSession {
       measureText: textMeasure(this.#text),
       dimensionParts,
       // An unclipped underlay shows its whole page, whose size only its PDF gives (M1-20).
-      underlayPage: (h) => this.#underlays.get(h)?.page,
+      underlayPage: (h) => this.#underlayPages.get(h),
     });
     this.renderer = new Canvas2DRenderer({
       model: this.model,
@@ -324,14 +330,22 @@ export class RenderSession {
 
   /**
    * A PDFDEFINITION's page as the app drew it for a request, or undefined to forget it (file
-   * gone or detached): underlays showing it redraw on the next frame (M1-20).
+   * gone or detached): underlays showing it redraw on the next frame (M1-20). `page` is the
+   * request's `underlayKey`.
    */
-  setUnderlay(definition: Handle, raster: UnderlayRaster | undefined): void {
-    const before = this.#underlays.get(definition)?.page;
-    if (raster) this.#underlays.set(definition, raster);
-    else this.#underlays.delete(definition);
+  setUnderlay(page: string, raster: UnderlayRaster | undefined): void {
+    // Keyed by `underlayKey`: a page with layers turned off has rasters of its own (M2-38).
+    const definition = underlayKeyDefinition(page);
+    const before = this.#underlayPages.get(definition);
+    if (raster) this.#underlays.set(page, raster);
+    else this.#underlays.delete(page);
     // Every raster of a page states its size; only a new size moves the extents.
-    const after = raster?.page;
+    let after = raster?.page;
+    if (!after)
+      for (const [k, r] of this.#underlays)
+        if (underlayKeyDefinition(k) === definition) after = r.page;
+    if (after) this.#underlayPages.set(definition, after);
+    else this.#underlayPages.delete(definition);
     if (before?.width !== after?.width || before?.height !== after?.height)
       this.index.reboundUnderlays();
     this.renderer.invalidate();

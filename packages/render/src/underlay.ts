@@ -37,6 +37,22 @@ const STEP = Math.SQRT2;
 const PAD = 0.25;
 const GRID_PX = 64;
 
+/**
+ * The key a page's rasters are asked for, delivered and kept under (`setUnderlay`): the
+ * PDFDEFINITION's handle, followed by the layers turned off, one per line, when there are any
+ * (M2-38 part 2). Handles never hold a line break, so the definition is the first line.
+ */
+export function underlayKey(definition: string, layersOff?: readonly string[]): string {
+  return layersOff && layersOff.length > 0 ? [definition, ...layersOff].join('\n') : definition;
+}
+
+/** The PDFDEFINITION handle of a key from `underlayKey`. */
+export const underlayKeyDefinition = (key: string): string => key.split('\n', 1)[0]!;
+
+/** Layer names sorted and once each, so two underlays turning the same layers off share a key. */
+const layerSet = (names: readonly string[] | undefined): string[] =>
+  [...new Set(names ?? [])].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+
 /** Underlay space → world. */
 export function underlayFrame(g: UnderlayGeometry): PrimitiveFrame {
   const cos = Math.cos(g.rotation);
@@ -101,6 +117,7 @@ export function underlayPrimitives(g: UnderlayGeometry, paint: Paint): RenderPri
   const lineweight = paint.lineweight === undefined ? {} : { lineweight: paint.lineweight };
   if (!g.definition)
     return clip ? [{ kind: 'stroke', path, color: paint.color, ...lineweight }] : [];
+  const layersOff = layerSet(g.layersOff);
   return [
     {
       kind: 'fill',
@@ -115,6 +132,7 @@ export function underlayPrimitives(g: UnderlayGeometry, paint: Paint): RenderPri
         fade: g.fade,
         monochrome: (g.flags & UNDERLAY_MONOCHROME) !== 0,
         adjustColors: (g.flags & UNDERLAY_ADJUST_COLORS) !== 0,
+        ...(layersOff.length > 0 ? { layersOff } : {}),
       },
     },
   ];
@@ -221,6 +239,7 @@ export function underlayRequest(
   definition: string,
   need: { readonly scale: number; readonly region: Box },
   page?: UnderlayRaster['page'],
+  layersOff?: readonly string[],
 ): UnderlayRequest {
   const scale = STEP ** Math.ceil(Math.log(need.scale) / Math.log(STEP) - 1e-9);
   const { region: r } = need;
@@ -239,7 +258,7 @@ export function underlayRequest(
     region.maxX = Math.min(region.maxX, page.width);
     region.maxY = Math.min(region.maxY, page.height);
   }
-  return { definition, scale, region };
+  return { definition, scale, region, ...(layersOff?.length ? { layersOff } : {}) };
 }
 
 /** Whether `raster` shows `need` at least at the screen's resolution. */

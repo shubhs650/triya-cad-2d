@@ -90,6 +90,7 @@ import {
   mergeNeeds,
   pagePath,
   rasterCovers,
+  underlayKey,
   underlayNeed,
   underlayRequest,
 } from './underlay';
@@ -225,9 +226,10 @@ export interface Canvas2DRendererOptions {
   readonly images?: (definition: Handle) => RasterPixels | undefined;
   /**
    * A PDFDEFINITION's page as the app last drew it (M1-20), or undefined while it has none:
-   * a clipped underlay then shows its boundary, an unclipped one nothing.
+   * a clipped underlay then shows its boundary, an unclipped one nothing. Asked by
+   * `underlayKey`: the definition's handle, with the layers turned off when any are.
    */
-  readonly underlays?: (definition: Handle) => UnderlayRaster | undefined;
+  readonly underlays?: (page: string) => UnderlayRaster | undefined;
   /**
    * Asks the app to draw a page (M1-20): called after a scene is drawn, for each page whose
    * raster does not show what is on screen at the screen's resolution, once per distinct
@@ -482,12 +484,18 @@ export class Canvas2DRenderer implements Renderer {
   } = {};
   readonly #createLayer: () => Surface;
   readonly #images: ((definition: Handle) => RasterPixels | undefined) | undefined;
-  readonly #underlays: ((definition: Handle) => UnderlayRaster | undefined) | undefined;
+  readonly #underlays: ((page: string) => UnderlayRaster | undefined) | undefined;
   readonly #onUnderlayRequest: ((request: UnderlayRequest) => void) | undefined;
-  /** What the scene being drawn needs of each page, merged over every underlay showing it. */
-  #underlayNeeds = new Map<Handle, { readonly scale: number; readonly region: Box }>();
+  /**
+   * What the scene being drawn needs of each page (`underlayKey`), merged over every underlay
+   * showing it, with one of those underlays for its definition and layers.
+   */
+  #underlayNeeds = new Map<
+    string,
+    { readonly u: UnderlayFill; readonly need: { readonly scale: number; readonly region: Box } }
+  >();
   /** The last request sent per page, as a key, so an unanswerable one is not sent again. */
-  #underlayAsked = new Map<Handle, string>();
+  #underlayAsked = new Map<string, string>();
   /** Page raster → its adjusted layers, by setting and background. */
   #pages = new WeakMap<RasterPixels, Map<string, Surface>>();
   /** IMAGEQUALITY from RASTERVARIABLES; AutoCAD's initial value is high. */
@@ -1519,13 +1527,13 @@ export class Canvas2DRenderer implements Renderer {
     this.#underlayNeeds = new Map();
     const send = this.#onUnderlayRequest;
     if (!send) return;
-    for (const [definition, need] of needs) {
-      const raster = this.#underlays?.(definition);
+    for (const [page, { u, need }] of needs) {
+      const raster = this.#underlays?.(page);
       if (raster && rasterCovers(raster, need)) continue;
-      const request = underlayRequest(definition, need, raster?.page);
+      const request = underlayRequest(u.definition, need, raster?.page, u.layersOff);
       const key = JSON.stringify(request);
-      if (this.#underlayAsked.get(definition) === key) continue;
-      this.#underlayAsked.set(definition, key);
+      if (this.#underlayAsked.get(page) === key) continue;
+      this.#underlayAsked.set(page, key);
       send(request);
     }
   }
@@ -1997,11 +2005,13 @@ export class Canvas2DRenderer implements Renderer {
     frame: DrawFrame,
   ): void {
     const { ox, oy, m } = frame;
-    const raster = this.#underlays?.(u.definition);
+    // A page with layers turned off is a raster of its own (M2-38 part 2).
+    const page = underlayKey(u.definition, u.layersOff);
+    const raster = this.#underlays?.(page);
     const need = underlayNeed(u, clipPath, frame.box, frame.scale * this.#dpr, raster?.page);
     if (need) {
-      const had = this.#underlayNeeds.get(u.definition);
-      this.#underlayNeeds.set(u.definition, had ? mergeNeeds(had, need) : need);
+      const had = this.#underlayNeeds.get(page)?.need;
+      this.#underlayNeeds.set(page, { u, need: had ? mergeNeeds(had, need) : need });
     }
     const path = u.clipped ? clipPath : raster ? pagePath(u.frame, raster.page) : undefined;
     if (!path) return;

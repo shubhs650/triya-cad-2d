@@ -1071,6 +1071,32 @@ function imageGeometry(im: CadWipeoutBase): ImageGeometry | UnmappedEntity['reas
   };
 }
 
+/** The xdata application under which ULAYERS keeps the layers an underlay turns off. */
+const UNDERLAY_LAYERS_APP = 'ADESKUNDERLAYLAYEROVERRIDEDATA';
+/** The first string of a DGN underlay's list, before the layer names. */
+const DGN_PLACEHOLDER = '???DGN_Placeholder???';
+
+/**
+ * The PDF layers an underlay turns off (ULAYERS, M2-38 part 2): every non-empty 1000 string of
+ * its `AdeskUnderlayLayerOverrideData` xdata, once each, in file order. AutoCAD registers the
+ * application in every drawing it writes (the acadsharp samples' APPID tables) and documents
+ * neither the layout nor ULAYERS' file format; the strings as layer names is how
+ * OpenCADStudio reads AutoCAD's files, and the only reading that needs no other group.
+ */
+function underlayLayersOff(u: PdfUnderlay): string[] {
+  const out: string[] = [];
+  for (const [app, data] of u.extendedData) {
+    if (app.name.toUpperCase() !== UNDERLAY_LAYERS_APP) continue;
+    for (const r of data.records) {
+      const v = r.rawValue;
+      if ((r.code as number) !== 1000 || typeof v !== 'string') continue;
+      if (v === '' || v === DGN_PLACEHOLDER || out.includes(v)) continue;
+      out.push(v);
+    }
+  }
+  return out;
+}
+
 /**
  * PDFUNDERLAY: the insertion point is WCS and the rotation is about the normal, so a −Z
  * underlay's X axis lies at π − θ and its Y axis (normal × X) is reversed.
@@ -1080,6 +1106,7 @@ function underlayGeometry(u: PdfUnderlay): UnderlayGeometry | UnmappedEntity['re
   if (pl === 'tilted') return 'tilted plane';
   const definition = ref(u.definition);
   const z = u.insertPoint.z;
+  const layersOff = underlayLayersOff(u);
   return {
     kind: 'PDFUNDERLAY',
     ...(definition ? { definition } : {}),
@@ -1091,6 +1118,7 @@ function underlayGeometry(u: PdfUnderlay): UnderlayGeometry | UnmappedEntity['re
     contrast: u.contrast,
     fade: u.fade,
     clip: u.clipBoundaryVertices.map(xy),
+    ...(layersOff.length > 0 ? { layersOff } : {}),
     ...(z !== 0 ? { elevation: z } : {}),
     ...(pl !== 'up' ? { normal: { x: u.normal.x, y: u.normal.y, z: u.normal.z } } : {}),
   };

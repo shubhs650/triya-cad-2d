@@ -18,15 +18,16 @@ const def = (handle: string, fileName: string, page = '1'): PdfDefinition => ({
 /** A fake two-page PDF: page 1 is 8.5 × 11 in, page 2 is 11 × 8.5 in. */
 function fakePdf() {
   const opened: Uint8Array[] = [];
-  const drawn: { page: number; width: number; height: number }[] = [];
+  const drawn: { page: number; width: number; height: number; layersOff?: readonly string[] }[] =
+    [];
   const open = (bytes: Uint8Array): Promise<PdfFile> => {
     opened.push(bytes);
     return Promise.resolve({
       pageCount: 2,
       pageSize: (n) =>
         Promise.resolve(n === 1 ? { width: 8.5, height: 11 } : { width: 11, height: 8.5 }),
-      render: (page, _region, width, height) => {
-        drawn.push({ page, width, height });
+      render: (page, _region, width, height, layersOff) => {
+        drawn.push({ page, width, height, ...(layersOff ? { layersOff } : {}) });
         return Promise.resolve({ width, height, data: new Uint8ClampedArray(width * height * 4) });
       },
       snapGeometry: (page) =>
@@ -80,6 +81,31 @@ describe('PdfPages', () => {
       page: { width: 11, height: 8.5 },
       region: { minX: 0, minY: 0, maxX: 4, maxY: 3 },
     });
+  });
+
+  it('draws a page with layers turned off apart, and delivers it under its key (M2-38)', async () => {
+    const pdf = fakePdf();
+    const pages = new PdfPages(pdf.open);
+    pages.add('plan.pdf', new Uint8Array([1]));
+    const got: [string, UnderlayRaster | undefined][] = [];
+    const c = pages.client([def('9A', 'plan.pdf')], (d, r) => got.push([d, r]));
+    c.request(req('9A', 10));
+    c.request({ ...req('9A', 10), layersOff: ['Walls'] });
+    await settle();
+    // Both are drawn: the second is not a later request for the first's page.
+    expect(pdf.drawn).toEqual([
+      { page: 1, width: 20, height: 10 },
+      { page: 1, width: 20, height: 10, layersOff: ['Walls'] },
+    ]);
+    expect(got.map(([d]) => d)).toEqual(['9A', '9A\nWalls']);
+    expect(got[1]![1]).not.toBe(got[0]![1]);
+    // Each is served from its own cache entry after.
+    c.request(req('9A', 10));
+    c.request({ ...req('9A', 10), layersOff: ['Walls'] });
+    await settle();
+    expect(pages.renders).toBe(2);
+    expect(got[2]![1]).toBe(got[0]![1]);
+    expect(got[3]![1]).toBe(got[1]![1]);
   });
 
   it('reads the definitions as the drawing has them now, a pasted one too (M2-32)', async () => {
