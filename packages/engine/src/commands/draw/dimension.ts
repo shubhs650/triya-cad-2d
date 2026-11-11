@@ -9,6 +9,11 @@
 // <specify vertex>:"; DIMCONTINUE and DIMBASELINE: "Specify a second extension line origin or
 // [Undo/Select] <Select>:", from the last dimension made, or the one selected.
 //
+// M2-31 added DIMLINEAR and DIMALIGNED on a selected circle, DIMANGULAR's Quadrant, DIMCONTINUE
+// and DIMBASELINE from an ordinate ("Specify feature location or [Undo/Select] <Select>:") or a
+// two-line angular dimension, and the header's DIMVARs that differ from the current style as a
+// new dimension's `DSTYLE` overrides (`headerDimensionXdata`).
+//
 // A dimension is made when its location is given, with the current dimension style (DIMSTYLE)
 // on the current layer, and drawn by the dimension engine (`ctx.dimensions`) into a `*D` block
 // of its own, as AutoCAD writes it. It is not associative (DIMASSOC 1): its definition points
@@ -29,14 +34,19 @@ import {
 } from '../../geom/vec';
 import type { EntityId } from '../../model/entity-ids';
 import type { Handle } from '../../model/handle';
-import type { DimensionGeometry, Entity, EntityGeometry } from '../../model/types';
+import type { DimensionGeometry, Entity, EntityGeometry, Xdata } from '../../model/types';
+import { dstyleOverrides } from '../../annotation/leader';
+import { withDimvarOverride } from '../../annotation/dstyle';
 import {
+  angularAsThreePoint,
   baselineSpacing,
   currentDimStyle,
   dimensionDirection,
+  headerDimensionXdata,
   newDimension,
   placeDimension,
   type DimPlacement,
+  type NewDimension,
 } from '../../edit/dimension';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
@@ -47,6 +57,7 @@ import { dimensionOverride, dimensionTextEditor } from './text';
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 type Linear = Extract<DimensionGeometry, { dimType: 'linear' | 'aligned' }>;
 type Angular3 = Extract<DimensionGeometry, { dimType: 'angular3pt' }>;
+type Ordinate = Extract<DimensionGeometry, { dimType: 'ordinate' }>;
 
 /** The dimension DIMCONTINUE and DIMBASELINE start from: the last one made, per drawing. */
 interface DimensionState {
@@ -58,18 +69,55 @@ const unitOf = (v: Vec2): Vec2 | undefined => {
   return l > 0 ? scale(v, 1 / l) : undefined;
 };
 
-/** The current dimension style's handle; undefined (and said) in a drawing without one. */
-function styleHandle(ctx: CommandContext): Handle | undefined {
+/** The style a new dimension is made in, and the overrides it is made with. */
+interface NewStyle {
+  readonly handle: Handle;
+  readonly xdata?: Xdata;
+}
+
+/**
+ * The current dimension style, with the header's DIMVARs that differ from it as overrides;
+ * undefined (and said) in a drawing without one.
+ */
+function currentStyle(ctx: CommandContext): NewStyle | undefined {
   const style = currentDimStyle(ctx.model);
-  if (!style) ctx.message('The drawing has no dimension style.');
-  return style?.handle;
+  if (!style) {
+    ctx.message('The drawing has no dimension style.');
+    return undefined;
+  }
+  const xdata = headerDimensionXdata(ctx.model, style);
+  return { handle: style.handle, ...(xdata && { xdata }) };
+}
+
+/**
+ * The style a dimension going on from `base` is made in: the base's, with its overrides, as
+ * AutoCAD's default DIMCONTINUEMODE 1 has it ("the dimension style of the selected base
+ * dimension is used"; AutoCAD 2024 Help, DIMCONTINUEMODE).
+ */
+function styleOf(ctx: CommandContext, base: Entity): NewStyle {
+  const g = base.geom as DimensionGeometry;
+  let e: { readonly xdata?: Xdata } = {};
+  for (const [name, value] of Object.entries(dstyleOverrides(base.xdata, ctx.model))) {
+    const x = withDimvarOverride(e, g.style, ctx.model, name, value);
+    if (x === 'no-acad') break;
+    e = x === undefined ? {} : { xdata: x };
+  }
+  return { handle: g.style, ...(e.xdata && { xdata: e.xdata }) };
 }
 
 /** What a dimension measures, formatted, as the dimension engine shows it. */
-function measurementOf(ctx: CommandContext, geom: DimensionGeometry): string | undefined {
-  const probe = { geom } as Entity;
+function measurementOf(
+  ctx: CommandContext,
+  geom: DimensionGeometry,
+  xdata: Xdata | undefined,
+): string | undefined {
+  const probe = { geom, ...(xdata && { xdata }) } as Entity;
   return ctx.dimensions?.(probe, ctx.model, () => 0)?.measurement;
 }
+
+/** The point of a circle nearest `p`. */
+const onCircle = (c: Vec2, r: number, p: Vec2): Vec2 =>
+  add(c, scale(unitOf(sub(p, c)) ?? fromAngle(0), r));
 
 /** A location to measure the dimension at before the drafter gives one (the Text option). */
 function sampleLocation(p: DimPlacement): Vec2 {
@@ -99,6 +147,7 @@ function sampleLocation(p: DimPlacement): Vec2 {
 async function* askLocation(
   ctx: CommandContext,
   start: DimPlacement,
+  xdata: Xdata | undefined,
   message: string,
   options: readonly string[],
 ): Sub<DimensionGeometry | undefined> {
@@ -108,7 +157,7 @@ async function* askLocation(
     const a = yield ctx.prompt.point({
       message,
       options,
-      drag: { kind: 'dimension', place, layer },
+      drag: { kind: 'dimension', place, layer, ...(xdata && { xdata }) },
     });
     if (a.kind === 'point') {
       const g = placeDimension(place, a.point);
@@ -133,7 +182,7 @@ async function* askLocation(
         continue;
       }
       case 'Text': {
-        const measured = sample && measurementOf(ctx, sample);
+        const measured = sample && measurementOf(ctx, sample, xdata);
         const e = yield ctx.prompt.string({
           message: 'Enter dimension text',
           spaces: true,
@@ -166,6 +215,13 @@ async function* askLocation(
         place = { ...place, rotation };
         continue;
       }
+      case 'Quadrant': {
+        // The angle measured stays the one this point is in, wherever the location goes.
+        if (place.kind !== 'angular' && place.kind !== 'angular3pt') continue;
+        const e = yield ctx.prompt.point({ message: 'Specify quadrant' });
+        if (e.kind === 'point') place = { ...place, quadrant: e.point };
+        continue;
+      }
     }
   }
 }
@@ -175,19 +231,18 @@ async function makeDimension(
   ctx: CommandContext,
   state: DimensionState,
   geom: DimensionGeometry,
+  xdata: Xdata | undefined,
 ): Promise<EntityId> {
   const layer = currentLayer(ctx.model);
   let made: Entity | undefined;
   ctx.edit((b) => {
-    made = b.addEntity({ owner: ctx.space, layer, geom });
+    made = b.addEntity({ owner: ctx.space, layer, geom, ...(xdata && { xdata }) });
   });
   const id = made!.id;
   const drawn = await regenerateDimensions(ctx, [id]);
   const m = drawn.get(id)?.measurement;
   if (m !== undefined) ctx.message(`Dimension text = ${m}`);
-  if (geom.dimType === 'linear' || geom.dimType === 'aligned' || geom.dimType === 'angular3pt') {
-    state.last = made!.handle;
-  }
+  if (chainOf(made!, undefined, false)) state.last = made!.handle;
   return id;
 }
 
@@ -264,8 +319,18 @@ function distanceToSegment(p: Vec2, a: Vec2, b: Vec2): number {
   return distance(p, add(a, scale(ab, t)));
 }
 
-/** DIMLINEAR or DIMALIGNED's two extension line origins; undefined when the command ends. */
-async function* askOrigins(ctx: CommandContext): Sub<[Vec2, Vec2] | undefined> {
+/** A circle selected for DIMLINEAR or DIMALIGNED, and where it was picked. */
+interface PickedCircle {
+  readonly center: Vec2;
+  readonly radius: number;
+  readonly at: Vec2;
+}
+
+/**
+ * DIMLINEAR or DIMALIGNED's two extension line origins, or the circle selected whose diameter
+ * they measure; undefined when the command ends.
+ */
+async function* askOrigins(ctx: CommandContext): Sub<[Vec2, Vec2] | PickedCircle | undefined> {
   const a = yield ctx.prompt.point({
     message: 'Specify first extension line origin or',
     defaultLabel: 'select object',
@@ -285,33 +350,70 @@ async function* askOrigins(ctx: CommandContext): Sub<[Vec2, Vec2] | undefined> {
   for (;;) {
     const o = yield* pickObject(ctx, 'Select object to dimension');
     if (o === undefined || o === 'enter') return undefined;
-    const ends = endsOf(o.entity.geom, o.at);
+    const g = o.entity.geom;
+    if (g.kind === 'CIRCLE' && g.radius > 0) {
+      return {
+        center: g.center,
+        radius: g.radius,
+        at: onCircle(g.center, g.radius, o.at ?? g.center),
+      };
+    }
+    const ends = endsOf(g, o.at);
     if (ends && distance(ends[0], ends[1]) > 0) return ends;
-    ctx.message('Object selected is not a line, arc or polyline segment.');
+    ctx.message('Object selected is not a line, arc, circle or polyline segment.');
   }
 }
 
 const LINEAR_OPTIONS = ['Mtext', 'Text', 'Angle', 'Horizontal', 'Vertical', 'Rotated'];
 const TEXT_OPTIONS = ['Mtext', 'Text', 'Angle'];
+const ANGULAR_OPTIONS = ['Mtext', 'Text', 'Angle', 'Quadrant'];
+
+/**
+ * Where DIMLINEAR or DIMALIGNED measures a circle: DIMLINEAR the diameter across its dimension
+ * line, horizontal for a pick near the north or south quadrant and vertical near the east or
+ * west one until the location says otherwise (edit/dimension.ts); DIMALIGNED from the pick to
+ * the opposite end of the diameter ("the point used to select the circle defines the origin of
+ * the first extension line", AutoCAD Help, DIMALIGNED).
+ */
+function circlePlacement(
+  kind: 'linear' | 'aligned',
+  c: PickedCircle,
+  base: NewDimension,
+): DimPlacement {
+  const opposite = sub(scale(c.center, 2), c.at);
+  if (kind === 'aligned') return { kind, first: c.at, second: opposite, base };
+  const d = sub(c.at, c.center);
+  const vertical = Math.abs(d.x) > Math.abs(d.y);
+  return {
+    kind,
+    first: c.at,
+    second: opposite,
+    circle: { center: c.center, radius: c.radius, vertical },
+    base,
+  };
+}
 
 function linearCommand(state: DimensionState, kind: 'linear' | 'aligned'): CommandDef {
   return {
     name: kind === 'linear' ? 'DIMLINEAR' : 'DIMALIGNED',
     usesSelection: 'none',
     async *run(ctx): CommandGenerator {
-      const style = styleHandle(ctx);
+      const style = currentStyle(ctx);
       if (style === undefined) return;
       const ends = yield* askOrigins(ctx);
       if (!ends) return;
-      const [first, second] = ends;
-      const place: DimPlacement = { kind, first, second, base: newDimension(style) };
+      const base = newDimension(style.handle);
+      const place: DimPlacement = Array.isArray(ends)
+        ? { kind, first: ends[0], second: ends[1], base }
+        : circlePlacement(kind, ends, base);
       const g = yield* askLocation(
         ctx,
         place,
+        style.xdata,
         'Specify dimension line location or',
         kind === 'linear' ? LINEAR_OPTIONS : TEXT_OPTIONS,
       );
-      if (g) await makeDimension(ctx, state, g);
+      if (g) await makeDimension(ctx, state, g, style.xdata);
     },
   };
 }
@@ -321,7 +423,7 @@ function radialCommand(state: DimensionState, kind: 'radius' | 'diameter'): Comm
     name: kind === 'radius' ? 'DIMRADIUS' : 'DIMDIAMETER',
     usesSelection: 'none',
     async *run(ctx): CommandGenerator {
-      const style = styleHandle(ctx);
+      const style = currentStyle(ctx);
       if (style === undefined) return;
       let circle: { center: Vec2; radius: number } | undefined;
       while (!circle) {
@@ -335,26 +437,28 @@ function radialCommand(state: DimensionState, kind: 'radius' | 'diameter'): Comm
         kind,
         center: circle.center,
         radius: circle.radius,
-        base: newDimension(style),
+        base: newDimension(style.handle),
       };
-      const g = yield* askLocation(ctx, place, 'Specify dimension line location or', TEXT_OPTIONS);
-      if (g) await makeDimension(ctx, state, g);
+      const g = yield* askLocation(
+        ctx,
+        place,
+        style.xdata,
+        'Specify dimension line location or',
+        TEXT_OPTIONS,
+      );
+      if (g) await makeDimension(ctx, state, g, style.xdata);
     },
   };
 }
-
-/** The point of a circle nearest `p`. */
-const onCircle = (c: Vec2, r: number, p: Vec2): Vec2 =>
-  add(c, scale(unitOf(sub(p, c)) ?? fromAngle(0), r));
 
 function angularCommand(state: DimensionState): CommandDef {
   return {
     name: 'DIMANGULAR',
     usesSelection: 'none',
     async *run(ctx): CommandGenerator {
-      const style = styleHandle(ctx);
+      const style = currentStyle(ctx);
       if (style === undefined) return;
-      const base = newDimension(style);
+      const base = newDimension(style.handle);
       let place: DimPlacement | undefined;
       while (!place) {
         const o = yield* pickObject(ctx, 'Select arc, circle, line, or', 'specify vertex');
@@ -423,25 +527,43 @@ function angularCommand(state: DimensionState): CommandDef {
       const g = yield* askLocation(
         ctx,
         place,
+        style.xdata,
         'Specify dimension arc line location or',
-        TEXT_OPTIONS,
+        ANGULAR_OPTIONS,
       );
-      if (g) await makeDimension(ctx, state, g);
+      if (g) await makeDimension(ctx, state, g, style.xdata);
     },
   };
 }
 
-/** Where DIMCONTINUE or DIMBASELINE goes on from: a base dimension and its extension line. */
+/**
+ * Where DIMCONTINUE or DIMBASELINE goes on from: a base dimension (a two-line angular one as
+ * the three-point one measuring its angle) in its style, and its extension line.
+ */
 interface Chain {
-  readonly base: Linear | Angular3;
-  /** The extension line origin the next dimension starts from. */
+  readonly base: Linear | Angular3 | Ordinate;
+  readonly style: NewStyle;
+  /** The extension line origin the next dimension starts from (an ordinate's feature). */
   readonly from: Vec2;
 }
 
 /** The chain a dimension starts: from its second extension line, or the one nearest `at`. */
-function chainOf(e: Entity, at: Vec2 | undefined, baseline: boolean): Chain | undefined {
-  const g = e.geom;
+function chainOf(
+  e: Entity,
+  at: Vec2 | undefined,
+  baseline: boolean,
+  ctx?: CommandContext,
+): Chain | undefined {
+  const style = (): NewStyle =>
+    ctx ? styleOf(ctx, e) : { handle: (e.geom as DimensionGeometry).style };
+  let g = e.geom;
   if (g.kind !== 'DIMENSION') return undefined;
+  if (g.dimType === 'ordinate') return { base: g, style: style(), from: g.feature };
+  if (g.dimType === 'angular') {
+    const three = angularAsThreePoint(g);
+    if (!three) return undefined;
+    g = three;
+  }
   if (g.dimType !== 'linear' && g.dimType !== 'aligned' && g.dimType !== 'angular3pt') {
     return undefined;
   }
@@ -449,7 +571,7 @@ function chainOf(e: Entity, at: Vec2 | undefined, baseline: boolean): Chain | un
   // takes the one nearest it (AutoCAD 2024 Help, "DIMCONTINUE (Command)", Select).
   let from = baseline ? g.first : g.second;
   if (at) from = distance(at, g.first) <= distance(at, g.second) ? g.first : g.second;
-  return { base: g, from };
+  return { base: g, style: style(), from };
 }
 
 /** The next dimension of a chain, to `to`. */
@@ -460,7 +582,26 @@ function chained(
   baseline: boolean,
 ): DimensionGeometry | undefined {
   const g = c.base;
-  const base = newDimension(g.style);
+  const base = newDimension(c.style.handle);
+  if (g.dimType === 'ordinate') {
+    // The same origin and axis; the leader ends in line with the base's (AutoCAD lines up the
+    // texts of continued ordinate dimensions), DIMBASELINE as DIMCONTINUE.
+    const ucsX = fromAngle(-g.horizontalDirection);
+    const along = g.axis === 'x' ? perp(ucsX) : ucsX;
+    const leaderEnd = add(to, scale(along, dot(sub(g.leaderEnd, to), along)));
+    if (distance(leaderEnd, to) === 0) return undefined;
+    return {
+      kind: 'DIMENSION',
+      ...base,
+      dimType: 'ordinate',
+      axis: g.axis,
+      horizontalDirection: g.horizontalDirection,
+      definitionPoint: g.definitionPoint,
+      feature: to,
+      leaderEnd,
+      textPosition: leaderEnd,
+    };
+  }
   if (g.dimType === 'angular3pt') {
     const r = distance(g.vertex, g.definitionPoint);
     const radius = baseline ? r + baselineSpacing(ctx.model, g) : r;
@@ -497,19 +638,22 @@ function chainCommand(state: DimensionState, baseline: boolean): CommandDef {
         for (;;) {
           const o = yield* pickObject(ctx, `Select ${what} dimension`);
           if (o === undefined || o === 'enter') return undefined;
-          const c = chainOf(o.entity, o.at, baseline);
+          const c = chainOf(o.entity, o.at, baseline, ctx);
           if (c) return c;
-          ctx.message('Dimension must be linear or angular.');
+          ctx.message('Dimension must be linear, ordinate, or angular.');
         }
       };
       const last = state.last === undefined ? undefined : ctx.model.entityByHandle(state.last);
-      let chain = last ? chainOf(last, undefined, baseline) : undefined;
+      let chain: Chain | undefined = last ? chainOf(last, undefined, baseline, ctx) : undefined;
       if (!chain) chain = yield* select();
       if (!chain) return;
       const made: { id: EntityId; chain: Chain }[] = [];
       for (;;) {
-        const a = yield ctx.prompt.point({
-          message: 'Specify a second extension line origin or',
+        const a: PromptAnswer = yield ctx.prompt.point({
+          message:
+            chain.base.dimType === 'ordinate'
+              ? 'Specify feature location or'
+              : 'Specify a second extension line origin or',
           options: ['Undo', 'Select'],
           default: { kind: 'keyword', keyword: 'Select' },
         });
@@ -519,14 +663,13 @@ function chainCommand(state: DimensionState, baseline: boolean): CommandDef {
             ctx.message('Invalid point.');
             continue;
           }
-          const id = await makeDimension(ctx, state, g);
+          const id = await makeDimension(ctx, state, g, chain.style.xdata);
           made.push({ id, chain });
           const e = ctx.model.entity(id)!;
           // The next one goes on from this one: its second origin (DIMCONTINUE), or the same
           // first origin a spacing further out (DIMBASELINE).
-          chain = baseline
-            ? { base: e.geom as Linear | Angular3, from: chain.from }
-            : { base: e.geom as Linear | Angular3, from: a.point };
+          const next = e.geom as Linear | Angular3 | Ordinate;
+          chain = { ...chain, base: next, from: baseline ? chain.from : a.point };
           continue;
         }
         if (a.kind !== 'keyword') return;

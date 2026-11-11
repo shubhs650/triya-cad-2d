@@ -103,13 +103,13 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | SPELL | SP | 3 | | |
 | SCALETEXT / JUSTIFYTEXT / TEXTALIGN | — | 2 | | |
 | FIELD / UPDATEFIELD | — | 2 | | |
-| DIMLINEAR | DLI | 1 | Mtext, Text, Angle, Horizontal, Vertical, Rotated | x (#241: two origins or a selected line, arc or polyline segment (a circle: M2-31); horizontal or vertical by the location; dragged while placed; non-associative, DIMASSOC 1) |
-| DIMALIGNED | DAL | 1 | Mtext, Text, Angle | x (#241) |
+| DIMLINEAR | DLI | 1 | Mtext, Text, Angle, Horizontal, Vertical, Rotated | x (#241: two origins or a selected line, arc or polyline segment; horizontal or vertical by the location; dragged while placed; non-associative, DIMASSOC 1. #276: a selected circle's diameter, horizontal or vertical by the location, by the quadrant picked inside the circle's box; the header's DIMVARs that differ from the current style become each new dimension's DSTYLE overrides, for every DIM command) |
+| DIMALIGNED | DAL | 1 | Mtext, Text, Angle | x (#241; #276: a selected circle from the pick to the opposite end of its diameter) |
 | DIMRADIUS | DRA | 1 | Mtext, Text, Angle | x (#241: circle or arc; the text where the location is) |
 | DIMDIAMETER | DDI | 1 | Mtext, Text, Angle | x (#241) |
-| DIMANGULAR | DAN | 1 | Quadrant | ~ (#241: two lines, an arc, a circle and a second point, or three points; Mtext, Text, Angle; Quadrant: M2-31) |
-| DIMCONTINUE | DCO | 1 | Select, Undo | ~ (#241: from the last linear, aligned or three-point angular dimension made, or one selected (its extension line nearest the pick); ordinate and two-line angular bases: M2-31) |
-| DIMBASELINE | DBA | 1 | Select, Undo | ~ (#241: as DIMCONTINUE, each one DIMDLI further out) |
+| DIMANGULAR | DAN | 1 | Quadrant | x (#241: two lines, an arc, a circle and a second point, or three points; Mtext, Text, Angle. #276: Quadrant, the angle measured fixed whatever the location, the text kept at a location outside it with the arc carried on to it) |
+| DIMCONTINUE | DCO | 1 | Select, Undo | x (#241: from the last linear, aligned or three-point angular dimension made, or one selected (its extension line nearest the pick). #276: from an ordinate ("Specify feature location", same origin and axis, leaders ending in line) or a two-line angular dimension (round the lines' meeting point); in the base's style and overrides, as DIMCONTINUEMODE 1) |
+| DIMBASELINE | DBA | 1 | Select, Undo | x (#241: as DIMCONTINUE, each one DIMDLI further out; #276: ordinate and two-line angular bases too) |
 | DIMORDINATE | DOR | 2 | X/Y datum | |
 | DIMARC | DAR | 2 | Partial, Leader | |
 | DIMJOGGED | DJO, JOG | 2 | | |
