@@ -15,7 +15,7 @@ import type { EntityId } from '../../model/entity-ids';
 import type { NonGraphicalObject, WipeoutFrame, WipeoutVariables } from '../../model/types';
 import { distinctVertices, wipeoutGeometry } from '../../edit/revcloud';
 import type { CommandContext, CommandDef } from '../command';
-import { currentLayer } from './line';
+import { currentProps } from '../../properties/current';
 import type { Prompt, PromptAnswer } from '../prompt';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -76,7 +76,7 @@ function add(ctx: CommandContext, points: readonly Vec2[]): void {
   ctx.edit((b) =>
     b.addEntity({
       owner: ctx.space,
-      layer: currentLayer(ctx.model),
+      ...currentProps(ctx.model),
       geom: wipeoutGeometry(points),
     }),
   );

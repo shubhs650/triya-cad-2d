@@ -277,6 +277,25 @@ describe('DIMLINEAR', () => {
     expect(snapshot(s.model)).toEqual(before);
   });
 
+  it('takes the drawing’s current colour, linetype, lineweight and transparency (M2-35)', async () => {
+    const s = setup({
+      header: [
+        ['$CECOLOR', 3],
+        ['$CELWEIGHT', 35],
+        ['$CELTSCALE', 2],
+        ['CETRANSPARENCY', '20'],
+      ],
+    });
+    await s.bus.script(['DIMLINEAR', '0,0', '10,5', '12,2']);
+    const dim = s.added().find((e) => e.type === 'DIMENSION')!;
+    expect(dim).toMatchObject({
+      color: { kind: 'aci', index: 3 },
+      lineweight: 35,
+      ltScale: 2,
+      transparency: { alpha: 204 },
+    });
+  });
+
   it('takes Horizontal, Vertical and Rotated', async () => {
     const s = setup();
     await s.bus.script(['DIMLINEAR', '0,0', '10,5', 'H', '12,2']);

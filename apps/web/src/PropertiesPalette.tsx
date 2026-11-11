@@ -3,7 +3,8 @@
 // General comes first, then the type's sections; a value the objects do not share is *VARIES*.
 // A choice applies when picked, a typed value on Enter or when the field loses the focus (Esc
 // puts the shown value back), each as one undo step the drawing's engine makes (M2-05). A
-// reference to a dynamic block carries the FR-B3 badge "Dynamic — edit in AutoCAD".
+// reference to a dynamic block carries the FR-B3 badge "Dynamic — edit in AutoCAD". With nothing
+// selected it shows General with the drawing's current settings, which new objects take (M2-35).
 // Fully keyboard operable: every value is a native select or text field.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { EntityType, PropertyRow, PropertySheet, PropertyUnits } from '@triya/engine';
@@ -37,7 +38,7 @@ export function PropertiesPalette({ doc, onClose }: { doc: OpenDocument; onClose
           ×
         </button>
       </header>
-      {!sheet || sheet.count === 0 ? (
+      {!sheet || (sheet.count === 0 && !sheet.current) ? (
         <p className="empty">No selection</p>
       ) : (
         <PropertySections sheet={sheet} narrow={narrow} set={set} />

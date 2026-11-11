@@ -32,7 +32,7 @@ import {
   type TextEditorColumns,
   type TextEditorRequest,
 } from '../prompt';
-import { currentLayer } from './line';
+import { currentProps } from '../../properties/current';
 
 /** AutoCAD's single line spacing: 5/3 of the text height (DXF 44 = 1 for MTEXT). */
 const LINE_PITCH = 5 / 3;
@@ -242,7 +242,7 @@ export function textCommand(): CommandDef {
       // placed (as AutoCAD's TEXT does).
       const down = { x: Math.sin(angle), y: -Math.cos(angle) };
       const step = height * LINE_PITCH;
-      const layer = currentLayer(ctx.model);
+      const props = currentProps(ctx.model);
       let line: Vec2 = at;
       for (;;) {
         const a: PromptAnswer = yield ctx.prompt.string({
@@ -284,7 +284,7 @@ export function textCommand(): CommandDef {
           backward: (style.generation & 2) !== 0,
           upsideDown: (style.generation & 4) !== 0,
         };
-        ctx.edit((b) => b.addEntity({ owner: ctx.space, layer, geom }));
+        ctx.edit((b) => b.addEntity({ owner: ctx.space, ...props, geom }));
         last = {
           style: style.handle,
           justify,
@@ -511,7 +511,7 @@ export function mtextCommand(): CommandDef {
         lines.push(a.value);
       }
       if (contents === '') return;
-      const layer = currentLayer(ctx.model);
+      const props = currentProps(ctx.model);
       const s = style;
       const geom: MTextGeometry = {
         kind: 'MTEXT',
@@ -529,7 +529,7 @@ export function mtextCommand(): CommandDef {
       ctx.edit((b) => {
         b.addEntity({
           owner: ctx.space,
-          layer,
+          ...props,
           geom: columns ? withColumns(geom, typedCount(columns, contents)) : geom,
         });
         if (s.height <= 0 && height !== undefined) b.setHeader('$TEXTSIZE', height);

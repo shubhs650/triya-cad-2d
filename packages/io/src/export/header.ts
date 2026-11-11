@@ -46,6 +46,14 @@ const VOLATILE_HEADER = new Set([
 ]);
 
 /**
+ * Variables Triya keeps for the session where the drawing has nowhere to save them (M2-35):
+ * CETRANSPARENCY, the transparency new objects take, has no HEADER variable in DXF. A save
+ * writes it into the drawing's DICTIONARYVAR of that name when it has one, and otherwise leaves
+ * the file as it was rather than make a variable-dictionary entry AutoCAD may not read.
+ */
+const SESSION_ONLY = new Set(['CETRANSPARENCY']);
+
+/**
  * Variables a save sets itself: the version and code page follow the format written, the seed
  * covers every handle (export.ts), and the rest describe the program and session that saved.
  */
@@ -373,6 +381,7 @@ export function planHeader(
   for (const name of names) {
     const value = model.header.get(name);
     if (VOLATILE_HEADER.has(name) || same(before.get(name), value)) continue;
+    if (SESSION_ONLY.has(name) && !dictionary.has(name)) continue;
     const problem = headerProblem(
       doc,
       added,

@@ -54,7 +54,7 @@ import {
 } from '../../edit/mleader-blocks';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
-import { currentLayer } from './line';
+import { currentProps } from '../../properties/current';
 import { currentTextStyle } from './text';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -411,7 +411,7 @@ export function mleaderCommand(): CommandDef {
         if (contentFirst) made = yield* contentFirstLeader(ctx, style, o, scale, at);
         else made = yield* leaderFirst(ctx, style, o, scale, mode === 'landing', at);
         if (!made) return;
-        const layer = currentLayer(model);
+        const props = currentProps(model);
         const content = made;
         let authored: Handle | undefined;
         ctx.edit((b) => {
@@ -425,7 +425,7 @@ export function mleaderCommand(): CommandDef {
             settings: o,
             scale,
           });
-          b.addEntity({ owner: ctx.space, layer, geom });
+          b.addEntity({ owner: ctx.space, ...props, geom });
         });
         // The next multileader takes the block now in the drawing.
         if (authored !== undefined && o.builtinBlock !== undefined) {
