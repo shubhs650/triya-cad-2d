@@ -8,10 +8,15 @@ import type { PdfDefinition, UnderlayGeometry } from '@triya/engine';
 import { openDocument, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
 import {
+  LAYERS_DXF_NAME,
+  LAYERS_OFF_AT,
+  LAYERS_PDF_NAME,
   PAGE2_CLIP,
   UNDERLAY_DXF_NAME,
   UNDERLAY_PDF_NAME,
   underlayDxf,
+  underlayLayersDxf,
+  underlayLayersPdf,
   underlayPdf,
 } from './fixture';
 
@@ -21,6 +26,8 @@ if (process.env['TRIYA_UPDATE_FIXTURES'] === '1') {
   mkdirSync(DIR, { recursive: true });
   writeFileSync(DIR + UNDERLAY_PDF_NAME, underlayPdf());
   writeFileSync(DIR + UNDERLAY_DXF_NAME, underlayDxf());
+  writeFileSync(DIR + LAYERS_PDF_NAME, underlayLayersPdf());
+  writeFileSync(DIR + LAYERS_DXF_NAME, underlayLayersDxf());
 }
 
 describe('PDF underlay fixture', () => {
@@ -73,5 +80,24 @@ describe('PDF underlay fixture', () => {
       clip: PAGE2_CLIP,
     });
     expect(two.rotation).toBeCloseTo(Math.PI / 6, 12);
+  });
+});
+
+describe('PDF underlay layers fixture (M2-38 part 2)', () => {
+  it('commits the layered PDF the generator writes', () => {
+    expect(new Uint8Array(readFileSync(DIR + LAYERS_PDF_NAME))).toEqual(underlayLayersPdf());
+  });
+
+  it('commits a DXF attaching the page twice, the second turning Walls off', () => {
+    const doc = readCadDocument(new Uint8Array(readFileSync(DIR + LAYERS_DXF_NAME)));
+    expect(doc.header?.versionString).toBe('AC1032');
+    const { init } = openDocument(doc);
+    const underlays = (init.entities ?? [])
+      .map((e) => e.geom)
+      .filter((g): g is UnderlayGeometry => g.kind === 'PDFUNDERLAY');
+    expect(underlays.map((u) => [u.position, u.layersOff])).toEqual([
+      [{ x: 0, y: 0 }, undefined],
+      [LAYERS_OFF_AT, ['Walls']],
+    ]);
   });
 });

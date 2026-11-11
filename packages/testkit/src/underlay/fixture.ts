@@ -12,7 +12,10 @@
 // (12, 0), scale 0.5, turned 30°, clipped by a pentagon; both adjust colours for the background.
 import {
   ACadVersion,
+  AppId,
   CadDictionary,
+  ExtendedData,
+  ExtendedDataString,
   CadDocument,
   Line,
   PdfUnderlay,
@@ -111,5 +114,83 @@ export function underlayDxf(): Uint8Array {
 
   // A reference line along the X axis under both pages.
   doc.entities!.add(new Line(new XYZ(0, -1, 0), new XYZ(20, -1, 0)));
+  return writeCadDocument(doc, { format: 'dxf' });
+}
+
+// The PDF layers test drawing (M2-38 part 2, ULAYERS): a one-page PDF (4 × 3 in) with three
+// optional content groups, a red square (0.25, 1)–(1.25, 2) in "Walls", a blue one (1.5, 1)–
+// (2.5, 2) in "Notes" (its name UTF-16BE) and a green one (2.75, 1)–(3.75, 2) in "Draft", which
+// the document shows off by default; and an AC1032 DXF attaching the page twice at scale 1,
+// at the origin with every layer as the PDF shows it, and at (0, −4) with "Walls" turned off
+// by its `AdeskUnderlayLayerOverrideData` xdata, as ULAYERS keeps it.
+
+export const LAYERS_PDF_NAME = 'pdf-underlay-layers.pdf';
+export const LAYERS_DXF_NAME = 'pdf-underlay-layers.dxf';
+/** Where each square's centre is on the page, inches. */
+export const LAYER_SQUARES = {
+  Walls: { x: 0.75, y: 1.5 },
+  Notes: { x: 2, y: 1.5 },
+  Draft: { x: 3.25, y: 1.5 },
+} as const;
+/** The second underlay's insertion point. */
+export const LAYERS_OFF_AT = { x: 0, y: -4 } as const;
+
+const LAYERED_PAGE = [
+  '/OC /W BDC 1 0 0 rg 18 72 72 72 re f EMC',
+  '/OC /N BDC 0 0 1 rg 108 72 72 72 re f EMC',
+  '/OC /D BDC 0 1 0 rg 198 72 72 72 re f EMC',
+].join('\n');
+
+/** The layered page, deterministic to the byte. */
+export function underlayLayersPdf(): Uint8Array {
+  const objects = [
+    '<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R 7 0 R] /D << /Order [5 0 R 6 0 R 7 0 R] /OFF [7 0 R] >> >> >>',
+    '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+    '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 288 216] /Resources << /Properties << /W 5 0 R /N 6 0 R /D 7 0 R >> >> /Contents 4 0 R >>',
+    `<< /Length ${LAYERED_PAGE.length} >>\nstream\n${LAYERED_PAGE}\nendstream`,
+    '<< /Type /OCG /Name (Walls) >>',
+    '<< /Type /OCG /Name <FEFF004E006F007400650073> >>',
+    '<< /Type /OCG /Name (Draft) >>',
+  ];
+  let out = '%PDF-1.5\n';
+  const offsets: number[] = [];
+  objects.forEach((body, i) => {
+    offsets.push(out.length);
+    out += `${i + 1} 0 obj\n${body}\nendobj\n`;
+  });
+  const xref = out.length;
+  out += `xref\n0 ${objects.length + 1}\n0000000000 65535 f \n`;
+  for (const o of offsets) out += `${String(o).padStart(10, '0')} 00000 n \n`;
+  out += `trailer\n<< /Size ${objects.length + 1} /Root 1 0 R >>\nstartxref\n${xref}\n%%EOF\n`;
+  return new TextEncoder().encode(out);
+}
+
+/** The AC1032 DXF attaching the layered page twice, the second with "Walls" turned off. */
+export function underlayLayersDxf(): Uint8Array {
+  const doc = new CadDocument(ACadVersion.AC1032);
+  const root = doc.rootDictionary!;
+  let defs = root.getEntry<CadDictionary>(CadDictionary.acadPdfDefinitions);
+  if (!defs) {
+    defs = new CadDictionary(CadDictionary.acadPdfDefinitions);
+    root.add(defs);
+  }
+  const def = new PdfUnderlayDefinition('pdf-underlay-layers - 1');
+  def.file = `.\\${LAYERS_PDF_NAME}`;
+  def.page = '1';
+  defs.add(def);
+  const place = (x: number, y: number): PdfUnderlay => {
+    const u = new PdfUnderlay(def);
+    doc.entities!.add(u);
+    u.insertPoint = new XYZ(x, y, 0);
+    u.flags = 2 as never;
+    u.contrast = 100;
+    u.fade = 0;
+    return u;
+  };
+  place(0, 0);
+  const off = place(LAYERS_OFF_AT.x, LAYERS_OFF_AT.y);
+  const app = new AppId('AdeskUnderlayLayerOverrideData');
+  doc.appIds!.add(app);
+  off.extendedData.set(app, new ExtendedData([new ExtendedDataString('Walls')]));
   return writeCadDocument(doc, { format: 'dxf' });
 }

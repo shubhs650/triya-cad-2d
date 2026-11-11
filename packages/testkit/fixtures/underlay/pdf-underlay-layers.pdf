@@ -1,0 +1,42 @@
+%PDF-1.5
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R 7 0 R] /D << /Order [5 0 R 6 0 R 7 0 R] /OFF [7 0 R] >> >> >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [3 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 288 216] /Resources << /Properties << /W 5 0 R /N 6 0 R /D 7 0 R >> >> /Contents 4 0 R >>
+endobj
+4 0 obj
+<< /Length 124 >>
+stream
+/OC /W BDC 1 0 0 rg 18 72 72 72 re f EMC
+/OC /N BDC 0 0 1 rg 108 72 72 72 re f EMC
+/OC /D BDC 0 1 0 rg 198 72 72 72 re f EMC
+endstream
+endobj
+5 0 obj
+<< /Type /OCG /Name (Walls) >>
+endobj
+6 0 obj
+<< /Type /OCG /Name <FEFF004E006F007400650073> >>
+endobj
+7 0 obj
+<< /Type /OCG /Name (Draft) >>
+endobj
+xref
+0 8
+0000000000 65535 f 
+0000000009 00000 n 
+0000000153 00000 n 
+0000000210 00000 n 
+0000000359 00000 n 
+0000000534 00000 n 
+0000000580 00000 n 
+0000000645 00000 n 
+trailer
+<< /Size 8 /Root 1 0 R >>
+startxref
+691
+%%EOF
