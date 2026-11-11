@@ -11,6 +11,10 @@
 // - PASTEORIG: pastes at the objects' own coordinates, only objects copied from another drawing
 //   (AutoCAD greys the command out otherwise; here it says why it does nothing).
 // None of the copying commands changes the drawing, so none is an undo step; a paste is one.
+//
+// The app also puts the objects on the system clipboard, with a picture of them for other apps,
+// and a paste reads it (M2-32 part 5): another Triya window's objects come as a Clipboard, and
+// another app's text as `text`, which PASTECLIP pastes as multiline text.
 import type { Box } from '../../geom/bounds';
 import type { Vec2 } from '../../geom/types';
 import {
@@ -24,7 +28,9 @@ import { point, scaleAbout } from '../../edit/similarity';
 import { transformGeometry } from '../../edit/transform';
 import { eraseObjects, refusalMessages } from '../../edit/edit';
 import type { EntityId } from '../../model/entity-ids';
-import type { EntityGeometry } from '../../model/types';
+import type { EntityGeometry, MTextGeometry } from '../../model/types';
+import { mtextLiteral } from '../../edit/clipboard-data';
+import { currentTextStyle, textSize } from '../draw/text';
 import type { CommandContext, CommandDef } from '../command';
 import { currentProps } from '../../properties/current';
 import type { Prompt, PromptAnswer } from '../prompt';
@@ -72,20 +78,76 @@ async function toClipboard(
   return ids.filter((id) => copied.has(ctx.model.entity(id)?.handle ?? ''));
 }
 
-/** The Clipboard's content, or undefined (said why) when there is nothing to paste. */
-async function fromClipboard(
-  ctx: CommandContext,
-): Promise<{ clipboard: Clipboard; sameDrawing: boolean } | undefined> {
+type Found =
+  | { readonly kind: 'objects'; readonly clipboard: Clipboard; readonly sameDrawing: boolean }
+  | { readonly kind: 'text'; readonly contents: string };
+
+const NOTHING = 'The Clipboard holds no objects to paste.';
+
+/**
+ * The Clipboard's content: objects, or another app's text from the system clipboard as MTEXT
+ * contents (M2-32 part 5); undefined (said why) when there is nothing to paste.
+ */
+async function readClipboard(ctx: CommandContext): Promise<Found | undefined> {
   const reply = await ctx.view.request({ op: 'clipboard' });
   if (!reply.ok) {
     ctx.message(reply.message);
     return undefined;
   }
-  if (!reply.clipboard || reply.clipboard.entities.length === 0) {
-    ctx.message('The Clipboard holds no objects to paste.');
+  if (reply.text !== undefined) {
+    const contents = mtextLiteral(reply.text);
+    if (contents.trim() !== '') return { kind: 'text', contents };
+  } else if (reply.clipboard && reply.clipboard.entities.length > 0) {
+    return { kind: 'objects', clipboard: reply.clipboard, sameDrawing: reply.sameDrawing === true };
+  }
+  ctx.message(NOTHING);
+  return undefined;
+}
+
+/** The Clipboard's objects, or undefined (said why): PASTEBLOCK and PASTEORIG paste no text. */
+async function fromClipboard(
+  ctx: CommandContext,
+): Promise<{ clipboard: Clipboard; sameDrawing: boolean } | undefined> {
+  const found = await readClipboard(ctx);
+  if (found?.kind === 'text') {
+    ctx.message('The Clipboard holds text, which PASTECLIP pastes as multiline text.');
     return undefined;
   }
-  return { clipboard: reply.clipboard, sameDrawing: reply.sameDrawing === true };
+  return found;
+}
+
+/**
+ * Another app's text pasted (AutoCAD 2024 Help, "PASTECLIP": text "is inserted as a multiline
+ * text (mtext) object using the MTEXT defaults"): the current text style and TEXTSIZE (or the
+ * style's own height), attached at its top left to the point given, unwrapped, on the current
+ * layer with the current properties. AutoCAD pastes a spreadsheet's cells as a table; tables are
+ * M4-05/M4-06, so a spreadsheet's rows paste as lines with tabs.
+ */
+async function* pasteText(ctx: CommandContext, contents: string): Sub<void> {
+  const style = currentTextStyle(ctx.model);
+  if (!style) {
+    ctx.message('The drawing has no text style.');
+    return;
+  }
+  const a = yield ctx.prompt.point({ message: 'Specify insertion point' });
+  if (a.kind !== 'point') return;
+  const geom: MTextGeometry = {
+    kind: 'MTEXT',
+    contents,
+    style: style.handle,
+    position: a.point,
+    height: style.height > 0 ? style.height : textSize(ctx.model),
+    width: 0,
+    rotation: 0,
+    attachment: 1,
+    direction: 1,
+    lineSpacingStyle: 1,
+    lineSpacing: 1,
+  };
+  const props = currentProps(ctx.model);
+  ctx.edit((b) => {
+    b.addEntity({ owner: ctx.space, ...props, geom });
+  });
 }
 
 /**
@@ -174,8 +236,12 @@ export function pasteClipCommand(): CommandDef {
     name: 'PASTECLIP',
     usesSelection: 'none',
     async *run(ctx) {
-      const found = await fromClipboard(ctx);
+      const found = await readClipboard(ctx);
       if (!found) return;
+      if (found.kind === 'text') {
+        yield* pasteText(ctx, found.contents);
+        return;
+      }
       const at = yield* insertionPoint(ctx, found.clipboard);
       if (!at) return;
       ctx.edit((b) => pasteObjects(b, ctx.model, found.clipboard, ctx.space, at));
