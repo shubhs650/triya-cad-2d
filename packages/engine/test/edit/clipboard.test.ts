@@ -1076,13 +1076,7 @@ describe('dynamic blocks pasted into another drawing (M2-32 part 4)', () => {
           { code: 70, value: 1 },
           { code: 340, value: 'A0' },
         ]),
-        coded(
-          'D2',
-          'D1',
-          'DICTIONARY',
-          [{ code: 360, value: 'D3' }],
-          'AcDbBlockRepresentation',
-        ),
+        coded('D2', 'D1', 'DICTIONARY', [{ code: 360, value: 'D3' }], 'AcDbBlockRepresentation'),
         coded('D3', 'D2', 'ACDB_BLOCKREPRESENTATION_DATA', [
           { code: 340, value: 'A0' },
           { code: 331, value: 'A3' },

@@ -174,9 +174,8 @@ const withoutDictionary = (b: BlockTableRecord): BlockTableRecord => {
 /** The values of a record's xdata of application `app` (any case), or undefined. */
 function xdataOf(model: DocumentModel, record: BlockTableRecord | undefined, app: string) {
   const upper = app.toUpperCase();
-  return record?.xdata?.find(
-    (x) => model.tables.appIds.get(x.appId)?.name.toUpperCase() === upper,
-  )?.values;
+  return record?.xdata?.find((x) => model.tables.appIds.get(x.appId)?.name.toUpperCase() === upper)
+    ?.values;
 }
 
 /**

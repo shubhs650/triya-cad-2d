@@ -11,9 +11,9 @@
 // (DEC-047). A tree is mapped only when every object it owns was written: one the writer leaves
 // out would leave a hole a paste cannot fill, so its block pastes static, as before.
 
+import type { BlockRecord } from '@node-projects/acad-ts';
 import {
   ACadVersion,
-  BlockRecord,
   CadObjectHolder,
   DxfObjectsSectionWriter,
   DxfStreamWriterBase,
@@ -23,12 +23,7 @@ import {
   type CadDocument,
   type CadObject,
 } from '@node-projects/acad-ts';
-import {
-  isHandleCode,
-  type CodedObject,
-  type DxfClassRecord,
-  type DxfGroup,
-} from '@triya/engine';
+import { isHandleCode, type CodedObject, type DxfClassRecord, type DxfGroup } from '@triya/engine';
 import { hex } from './common';
 
 /** The extension dictionary entries of a dynamic block's record, by upper-case key. */
@@ -158,6 +153,8 @@ export function mapCodedObjects(doc: CadDocument): CodedObject[] {
   const writer = new DxfObjectsSectionWriter(recorder, doc, holder, config);
   const header = doc.header;
   const version = header?.version;
+  // Setting the version sets the maintenance version too.
+  const maintenance = header?.maintenanceVersion;
   // Written as every save writes them (DEC-047); the header is put back below.
   if (header) header.version = ACadVersion.AC1032;
   const out: CodedObject[] = [];
@@ -189,7 +186,10 @@ export function mapCodedObjects(doc: CadDocument): CodedObject[] {
       }
     }
   } finally {
-    if (header && version !== undefined) header.version = version;
+    if (header && version !== undefined) {
+      header.version = version;
+      if (maintenance !== undefined) header.maintenanceVersion = maintenance;
+    }
     holder.objects.length = 0;
   }
   return out;

@@ -412,11 +412,7 @@ function dynamicOfBlock(
 const XDATA_APP = 1001;
 
 /** What a coded tree names: its handles, and the applications of its xdata by record handle. */
-function codedReferences(
-  model: DocumentModel,
-  tree: readonly CodedObject[],
-  out: Handle[],
-): void {
+function codedReferences(model: DocumentModel, tree: readonly CodedObject[], out: Handle[]): void {
   const apps = new Map(
     [...model.tables.appIds.values()].map((a) => [a.name.toUpperCase(), a.handle]),
   );

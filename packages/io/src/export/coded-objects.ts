@@ -123,22 +123,28 @@ export function planCodedObjects(
       continue;
     }
     let d = dictionaries.get(o.owner);
-    if (!d) dictionaries.set(o.owner, (d = { holder: holder.handle, handle: o.owner, objects: [] }));
+    if (!d)
+      dictionaries.set(o.owner, (d = { holder: holder.handle, handle: o.owner, objects: [] }));
     for (const x of tree(o, children)) {
       d.objects.push(x);
       placed.add(x.handle);
     }
   }
   for (const o of added) {
-    if (!placed.has(o.handle)) problems.push(`${where(o)}: its owner ${o.owner} is not a new coded object`);
+    if (!placed.has(o.handle))
+      problems.push(`${where(o)}: its owner ${o.owner} is not a new coded object`);
   }
   if (format === 'dwg') {
-    problems.push(...added.slice(0, 1).map((o) => `${where(o)}: a coded object is written to DXF only`));
+    problems.push(
+      ...added.slice(0, 1).map((o) => `${where(o)}: a coded object is written to DXF only`),
+    );
   }
   const version = r.version;
   if (version !== undefined && version !== ACadVersion.AC1032) {
     problems.push(
-      ...added.slice(0, 1).map((o) => `${where(o)}: its codes are AC1032's, not ${ACadVersion[version]}'s`),
+      ...added
+        .slice(0, 1)
+        .map((o) => `${where(o)}: its codes are AC1032's, not ${ACadVersion[version]}'s`),
     );
   }
   for (const d of dictionaries.values()) {
