@@ -1,6 +1,6 @@
 // The in-place MTEXT editor's edits on its spans (M2-07): offsets count UTF-16 units of text
 // and one unit for each paragraph break, stack and field, as the editor's DOM does.
-import type { MTextSpan } from '@triya/text';
+import { writeMText, type MTextSpan } from '@triya/text';
 import { describe, expect, it } from 'vitest';
 import {
   autoStack,
@@ -9,7 +9,10 @@ import {
   formatRange,
   hasFormat,
   insertSpans,
+  MEASUREMENT,
   mapParagraphs,
+  measurementsWritten,
+  withMeasurements,
   paragraphCodes,
   paragraphIndex,
   removeRange,
@@ -164,5 +167,32 @@ describe('paragraphs for the ruler (M2-07 part 3)', () => {
     ]);
     expect(mapParagraphs(spans, ['l1'], 0, 0, () => []).first).toEqual([]);
     expect(mapParagraphs(spans, [], 1, 1, () => []).spans[1]).toEqual({ type: 'break' });
+  });
+});
+
+describe("a dimension's measurement in the editor (M2-31 part 2)", () => {
+  const m = (format = {}): MTextSpan => ({ type: 'field', code: MEASUREMENT, format });
+
+  it('makes each <> an atom of one unit, keeping the text around it', () => {
+    const bold = { bold: true };
+    expect(withMeasurements([t('2X <> TYP', bold), br, t('<>')])).toEqual([
+      t('2X ', bold),
+      m(bold),
+      t(' TYP', bold),
+      br,
+      m(),
+    ]);
+    expect(unitsOf(withMeasurements([t('<> TYP')]))).toBe(5);
+    expect(withMeasurements([t('no measurement')])).toEqual([t('no measurement')]);
+  });
+
+  it('writes an atom back as <>', () => {
+    const spans = withMeasurements([t('2X <> TYP')]);
+    expect(
+      measurementsWritten(
+        writeMText(spans, { name: 'txt', kind: 'shx', bold: false, italic: false }),
+      ),
+    ).toBe('2X <> TYP');
+    expect(measurementsWritten('%<\\AcVar Date>%')).toBe('%<\\AcVar Date>%');
   });
 });

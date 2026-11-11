@@ -19,6 +19,7 @@ import type { Vec2 } from '../geom/types';
 import type {
   AnnotativeData,
   DimensionGeometry,
+  Entity,
   EntityGeometry,
   HatchEdge,
   HatchGeometry,
@@ -35,6 +36,8 @@ import { normalizeAngle } from '../geom/angle';
 import { arcSweep, ellipseSweep } from '../geom/eval';
 import { add, fromAngle, scale } from '../geom/vec';
 import { angle, direction, point, upright, vector, type Similarity } from './similarity';
+import type { AnnotationTables } from '../annotation/multileader';
+import { radialArc, withRadialArc } from '../annotation/radial-extension';
 
 export interface TransformOptions {
   /** MIRRTEXT: 1 mirrors TEXT, ATTDEF and ATTRIB; 0 (the default) keeps them readable. */
@@ -84,6 +87,27 @@ function arcAngles(t: Similarity, start: number, end: number): [number, number] 
   });
   const s = angle(t, start + sweep);
   return [s, normalizeAngle(s + sweep)];
+}
+
+/**
+ * The arc a radius or diameter dimension was made on (its `ACAD_DSTYLE_DIMRADIAL_EXTENSION`
+ * xdata, M2-31 part 2) carried with it, so its arc extension line still follows the arc after a
+ * ROTATE or MIRROR; undefined for any other entity, or one without the arc.
+ */
+export function carriedRadialArc(
+  e: Pick<Entity, 'geom' | 'xdata'>,
+  t: Similarity,
+  model: AnnotationTables,
+): Pick<Entity, 'xdata'> | undefined {
+  const g = e.geom;
+  if (g.kind !== 'DIMENSION' || (g.dimType !== 'radius' && g.dimType !== 'diameter')) {
+    return undefined;
+  }
+  const arc = radialArc(e.xdata, model);
+  const app = arc && e.xdata?.find((a) => radialArc([a], model));
+  if (!arc || !app) return undefined;
+  const [startAngle, endAngle] = arcAngles(t, arc.startAngle, arc.endAngle);
+  return { xdata: withRadialArc(e.xdata, app.appId, { startAngle, endAngle }) };
 }
 
 /**

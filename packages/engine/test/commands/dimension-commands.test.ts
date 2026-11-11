@@ -328,7 +328,13 @@ describe('DIMLINEAR', () => {
   it('Mtext opens the MTEXT editor on <>, the measurement', async () => {
     const s = setup();
     await s.bus.script(['DIMLINEAR', '0,0', '10,0', 'M']);
-    expect(s.editors.at(-1)).toMatchObject({ kind: 'mtext', value: '<>', height: 0.18 });
+    // The editor shows the measurement itself in place of `<>` (M2-31 part 2).
+    expect(s.editors.at(-1)).toMatchObject({
+      kind: 'mtext',
+      value: '<>',
+      height: 0.18,
+      measurement: '10',
+    });
     await s.bus.answer({ kind: 'string', value: '2X <>', editor: true });
     await s.bus.submit('5,3');
     expect(s.dim<'linear'>().text).toBe('2X <>');
@@ -426,6 +432,85 @@ describe('DIMRADIUS and DIMDIAMETER', () => {
     expect(g.chordPoint.x).toBeCloseTo(50, 12);
     expect(g.chordPoint.y).toBeCloseTo(-10, 12);
     expect(g.definitionPoint.y).toBeCloseTo(10, 12);
+  });
+
+  describe('on an arc: the arc kept for its arc extension line (M2-31 part 2)', () => {
+    /** The dimension's ACAD_DSTYLE_DIMRADIAL_EXTENSION start and end angles, and its APPID. */
+    const radialXdata = (s: ReturnType<typeof setup>, e: Entity = s.dims().at(-1)!) => {
+      const app = [...s.model.tables.appIds.values()].find(
+        (r) => r.name === 'ACAD_DSTYLE_DIMRADIAL_EXTENSION',
+      );
+      const x = e.xdata?.find((a) => a.appId === app?.handle);
+      return x && x.values.map((v) => v.value);
+    };
+
+    it("DIMRADIUS files the arc's start and end angles as AutoCAD lays the xdata out", async () => {
+      const s = setup();
+      const before = snapshot(s.model);
+      await s.bus.script(['DIMRADIUS']);
+      // The arc about (50, 0), radius 10, from 0° to 60°.
+      await s.bus.pick({ x: 60, y: 0 });
+      // The drag shows the dimension with it.
+      expect(s.bus.prompt).toMatchObject({
+        drag: { kind: 'dimension', xdata: [{ values: expect.any(Array) }] },
+      });
+      await s.bus.submit('50,-20');
+      expect(radialXdata(s)).toEqual([387, 1, 388, 0, 390, Math.PI / 3]);
+      expect(s.dim<'radius'>().chordPoint).toEqual({ x: 50, y: -10 });
+      // The APPID it needed came with the dimension, in the same undo step.
+      await s.bus.script(['U']);
+      expect(snapshot(s.model)).toEqual(before);
+    });
+
+    it('keeps the style overrides beside it and registers the APPID once', async () => {
+      const s = setup({ styles: [standard({ DIMASZ: 0.18 })], header: [['$DIMASZ', 0.5]] });
+      await s.bus.script(['DIMRADIUS']);
+      await s.bus.pick({ x: 60, y: 0 });
+      await s.bus.submit('50,-20');
+      await s.bus.script(['DIMDIAMETER']);
+      await s.bus.pick({ x: 60, y: 0 });
+      await s.bus.submit('30,0');
+      const apps = [...s.model.tables.appIds.values()].map((r) => r.name);
+      expect(apps.filter((n) => n === 'ACAD_DSTYLE_DIMRADIAL_EXTENSION')).toHaveLength(1);
+      for (const e of s.dims()) {
+        expect(radialXdata(s, e)).toEqual([387, 1, 388, 0, 390, Math.PI / 3]);
+        expect(e.xdata!.map((a) => a.appId)).toContain(ACAD);
+      }
+    });
+
+    it('a circle has no arc to keep', async () => {
+      const s = setup({
+        entities: [entityInit('2A', { kind: 'CIRCLE', center: { x: 0, y: -50 }, radius: 5 })],
+      });
+      await s.bus.script(['DIMRADIUS']);
+      await s.bus.pick({ x: 5, y: -50 });
+      await s.bus.submit('20,-50');
+      expect(s.dims()).toHaveLength(1);
+      expect(radialXdata(s)).toBeUndefined();
+      expect([...s.model.tables.appIds.values()].map((r) => r.name)).toEqual(['ACAD']);
+    });
+
+    it('ROTATE turns the arc with the dimension, MIRROR reflects it, COPY keeps it', async () => {
+      const s = setup();
+      await s.bus.script(['DIMRADIUS']);
+      await s.bus.pick({ x: 60, y: 0 });
+      await s.bus.submit('50,-20');
+      await s.bus.script(['ROTATE', 'ALL', '', '50,0', '90']);
+      const [, , , start, , end] = radialXdata(s) as number[];
+      expect(start).toBeCloseTo(Math.PI / 2, 12);
+      expect(end).toBeCloseTo((5 * Math.PI) / 6, 12);
+      // Mirrored in the vertical through the centre: 90°–150° becomes 30°–90°.
+      await s.bus.script(['MIRROR', 'ALL', '', '50,0', '50,10', 'Y']);
+      const [, , , s2, , e2] = radialXdata(s) as number[];
+      expect(s2).toBeCloseTo(Math.PI / 6, 12);
+      expect(e2).toBeCloseTo(Math.PI / 2, 12);
+      const n = s.dims().length;
+      await s.bus.script(['COPY', 'ALL', '', '0,0', '100,0', '']);
+      expect(s.dims()).toHaveLength(2 * n);
+      const [, , , s3, , e3] = radialXdata(s) as number[];
+      expect(s3).toBeCloseTo(Math.PI / 6, 12);
+      expect(e3).toBeCloseTo(Math.PI / 2, 12);
+    });
   });
 
   it('refuses a line', async () => {
@@ -708,7 +793,7 @@ describe('TEXTEDIT on a dimension', () => {
     const [inside] = s.model.blockEntities(block);
     await s.bus.script(['TEXTEDIT']);
     await s.bus.pick({ x: 10, y: 6 });
-    expect(s.editors.at(-1)).toMatchObject({ kind: 'mtext', value: '<>' });
+    expect(s.editors.at(-1)).toMatchObject({ kind: 'mtext', value: '<>', measurement: '10' });
     await s.bus.answer({ kind: 'string', value: '<> TYP', editor: true });
     expect(s.dim<'linear'>().text).toBe('<> TYP');
     expect(s.model.blockEntities(block)).not.toContain(inside);

@@ -69,12 +69,15 @@ import {
   formatRange,
   hasFormat,
   insertSpans,
+  MEASUREMENT,
   mapParagraphs,
+  measurementsWritten,
   paragraphAt,
   paragraphCodes,
   paragraphIndex,
   removeRange,
   toggleStack,
+  withMeasurements,
   type FormatPatch,
 } from './text-editor';
 
@@ -361,6 +364,7 @@ function paint(
   spans: readonly MTextSpan[],
   height: number,
   first: readonly string[],
+  measurement: string | undefined,
 ): void {
   const paragraphs: HTMLElement[] = [paragraphBox(first, false)];
   for (const s of spans) {
@@ -397,7 +401,9 @@ function paint(
       el.dataset['field'] = JSON.stringify(s);
       el.contentEditable = 'false';
       el.className = 'mtext-field';
-      el.textContent = '----';
+      // A dimension's measurement shows as itself (M2-31 part 2); a field as AutoCAD shows one
+      // it has not evaluated.
+      el.textContent = s.code === MEASUREMENT ? (measurement ?? '<>') : '----';
     }
     box.append(el);
   }
@@ -813,7 +819,9 @@ function MTextBox({
   /** TEXTEDIT: the contents being edited, as spans. */
   const initial = useRef<MTextContent | undefined>(undefined);
   if (request.value !== undefined && !initial.current) {
-    initial.current = contentOf(parseMText(request.value, base), base);
+    const c = contentOf(parseMText(request.value, base), base);
+    initial.current =
+      request.measurement === undefined ? c : { ...c, spans: withMeasurements(c.spans) };
   }
   /** The first paragraph's `\p` values (none for new text); the ruler changes them. */
   const first = useRef<readonly string[]>(initial.current?.paragraph ?? []);
@@ -870,7 +878,7 @@ function MTextBox({
     setAlignShown(alignOf(codes));
   };
   const commit = (next: MTextSpan[], a: number, b = a) => {
-    paint(root.current!, next, request.height, first.current);
+    paint(root.current!, next, request.height, first.current, request.measurement);
     refit();
     root.current!.focus();
     select(root.current!, a, b);
@@ -887,7 +895,7 @@ function MTextBox({
       request.value !== undefined &&
       sameContent(old, { paragraph: first.current, spans: now }, font)
         ? request.value
-        : writeMText(now, font, first.current);
+        : measurementsWritten(writeMText(now, font, first.current));
     const c = columnsNow.current;
     // Dynamic columns: as many as the text takes, laid out with the renderers' fonts. Columns
     // past manual heights take the last one's (the engine fills the list the same way).
@@ -974,7 +982,7 @@ function MTextBox({
   useEffect(() => {
     const el = root.current!;
     el.dataset['para'] = JSON.stringify(first.current);
-    paint(el, initial.current?.spans ?? [], request.height, first.current);
+    paint(el, initial.current?.spans ?? [], request.height, first.current, request.measurement);
     if (initial.current) {
       el.focus();
       const end = initial.current.spans.reduce(

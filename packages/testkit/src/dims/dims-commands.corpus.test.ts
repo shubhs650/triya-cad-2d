@@ -5,7 +5,8 @@
 // and a grip drag of the first dimension's text; M2-31's DIMLINEAR on that circle, DIMANGULAR's
 // Quadrant with the text outside the angle, DIMCONTINUE from it and from an ordinate dimension,
 // and the header's DIMVARs that differ from the current style as each new dimension's DSTYLE
-// overrides, kept by the save. The drawing is saved as AC1032 DXF (DEC-047),
+// overrides, kept by the save; M2-31 part 2's DIMRADIUS on an arc placed past its end, its arc
+// kept in ACAD_DSTYLE_DIMRADIAL_EXTENSION xdata and its arc extension line drawn. The drawing is saved as AC1032 DXF (DEC-047),
 // read back by acad-ts and mapped: each dimension comes back where it was made, with its `*D`
 // block, and the health check (stored block against what the engine draws, M2-10) passes on it.
 // With TRIYA_DXF_AUDIT_DIR set the save goes to the ezdxf audit as the file's `dimension` save.
@@ -28,6 +29,7 @@ import {
   type ViewReply,
   currentDimStyle,
   dstyleOverrides,
+  radialArc,
 } from '@triya/engine';
 import { aciOfTrueColor, documentInit, readCadDocument } from '@triya/io';
 import { textMeasure } from '@triya/render';
@@ -44,6 +46,8 @@ const PER_FILE_BUDGET_MS = 30_000;
 const CIRCLE = { center: { x: 500, y: 0 }, radius: 20 };
 /** The ordinate dimension DIMCONTINUE goes on from (M2-31), picked by its leader end. */
 const ORDINATE_END = { x: 50, y: -450 };
+/** The arc DIMRADIUS dimensions past its end (M2-31 part 2): a quarter from 0° to 90°. */
+const ARC = { center: { x: 700, y: 0 }, radius: 20, startAngle: 0, endAngle: Math.PI / 2 };
 
 /** As the health gate: a DXF DIMSTYLE's ACI stands for its block's true colour. */
 const colors = (g: Color, s: Color): boolean =>
@@ -103,6 +107,11 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         layer: currentLayer(model),
         geom: { kind: 'CIRCLE', ...CIRCLE },
       });
+      const arc = b.addEntity({
+        owner: space,
+        layer: currentLayer(model),
+        geom: { kind: 'ARC', ...ARC },
+      });
       const ordinate = b.addEntity({
         owner: space,
         layer: currentLayer(model),
@@ -138,6 +147,8 @@ describe('dimension commands on the public corpus (M2-11)', () => {
             const ids = Math.abs(d - CIRCLE.radius) < 1 ? [circle.id] : [];
             const o = Math.hypot(r.point.x - ORDINATE_END.x, r.point.y - ORDINATE_END.y);
             if (o < 1e-6) ids.push(ordinate.id);
+            const a = Math.hypot(r.point.x - ARC.center.x, r.point.y - ARC.center.y);
+            if (Math.abs(a - ARC.radius) < 1e-6) ids.push(arc.id);
             // A dimension's text, for its grips.
             for (const e of model.entities()) {
               if (before.has(e.id) || !('dimType' in e.geom)) continue;
@@ -175,6 +186,10 @@ describe('dimension commands on the public corpus (M2-11)', () => {
       await bus.script(['DIMCONTINUE', 'S']);
       await bus.pick(ORDINATE_END);
       await bus.script(['120,-410', '', '']);
+      // Picked at its 90° end, placed at 180°: the arc extension line runs from 90° to there.
+      await bus.script(['DIMRADIUS']);
+      await bus.pick({ x: 700, y: 20 });
+      await bus.submit('650,0');
       expect(bus.command).toBeUndefined();
       const added = () =>
         [...model.entities()].filter((e) => !before.has(e.id) && e.owner === space);
@@ -192,7 +207,16 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         'angular3pt',
         'angular3pt',
         'ordinate',
+        'radius',
       ]);
+      const radial = added()[13]!;
+      expect(radialArc(radial.xdata, model)).toEqual({ startAngle: 0, endAngle: Math.PI / 2 });
+      const block = (radial.geom as DimensionGeometry).block!;
+      const extension = model
+        .blockEntities(block)
+        .map((id) => model.entity(id)!.geom)
+        .filter((g) => g.kind === 'ARC');
+      expect(extension).toHaveLength(1);
       const quadrant = added()[10]!.geom as DimensionGeometry;
       expect(quadrant.textUserPositioned).toBe(true);
       // The first dimension's text dragged by its grip: it stays where it is put.
@@ -225,6 +249,9 @@ describe('dimension commands on the public corpus (M2-11)', () => {
           rounded(overrides),
         );
         if (Object.keys(overrides).length > 0) overridden.add(f.path);
+        expect(radialArc(r!.xdata, back), `${f.path} ${e.handle}`).toEqual(
+          radialArc(e.xdata, model),
+        );
         const health = dimensionHealth(r!, back, again, colors);
         expect(health?.problems ?? ['no health'], `${f.path} ${e.handle}`).toEqual([]);
       }
@@ -237,7 +264,7 @@ describe('dimension commands on the public corpus (M2-11)', () => {
   it('made dimensions on every readable file with a dimension style', () => {
     expect(saved + styleless.length).toBe(readable.length);
     expect(saved).toBeGreaterThan(readable.length / 2);
-    expect(made).toBe(saved * 13);
+    expect(made).toBe(saved * 14);
     // Drawings whose header DIMVARs differ from their current style (ezdxf's minimal one).
     expect(overridden.size).toBeGreaterThan(0);
   });

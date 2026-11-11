@@ -1,7 +1,13 @@
 // A dimension's parts by its type (M2-10: DIMENSION of every type, LARGE_RADIAL_DIMENSION and
 // ARC_DIMENSION).
 
-import type { AnnotationTables, Entity, EntityGeometry, TextMeasure } from '@triya/engine';
+import {
+  radialArc,
+  type AnnotationTables,
+  type Entity,
+  type EntityGeometry,
+  type TextMeasure,
+} from '@triya/engine';
 import { angularParts } from './angular';
 import { arcLengthParts } from './arclength';
 import type { DimPart } from './geometry';
@@ -42,7 +48,7 @@ export function dimensionParts(
       return linearParts(g, s, model, measure, keepText);
     case 'radius':
     case 'diameter':
-      return radialParts(g, s, model, measure, keepText);
+      return radialParts(g, s, model, measure, keepText, radialArc(e.xdata, model));
     case 'angular':
     case 'angular3pt':
       return angularParts(g, s, model, measure, keepText);
