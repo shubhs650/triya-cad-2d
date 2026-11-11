@@ -35,6 +35,15 @@
 // of the same tag (AutoCAD's Help does not say which; the tag is what the attribute is to a
 // drafter); a value whose tag the target's block lacks has nothing to belong to and goes.
 //
+// A dynamic block stays dynamic (M2-32 part 4), as AutoCAD's deep clone takes an object's
+// extension dictionary with it: the definition brings its evaluation graph and the objects below
+// it, each anonymous `*U` state its link to the definition (AcDbBlockRepBTag xdata) and data, and
+// each reference its `AcDbBlockRepresentation` (the definition it shows, its parameter values),
+// all `CodedObject`s (types.ts) renumbered into the target. A definition the target has already
+// under that name is the target's, graph and all; a reference's representation then comes only
+// where everything it names came too (an anonymous state always does), otherwise the reference
+// keeps its state's geometry and link without it.
+//
 // What the target cannot take yet is left out when copying, with a reason: viewports (a
 // layout's), external references (their content lives in another file: attaching one is
 // XATTACH's, M5-04), an image whose definition is missing and what COPY refuses.
@@ -45,22 +54,27 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import { isHandle, type Handle } from '../model/handle';
-import type {
-  BlockDefinition,
-  DimStyleRecord,
-  Entity,
-  EntityInit,
-  HatchGeometry,
-  ImageDefinition,
-  LayerRecord,
-  NonGraphicalObject,
-  ObjectCommon,
-  PdfDefinition,
-  SymbolTableRecord,
-  TableName,
-  TableRecords,
-  TableStyleRecord,
-  Xdata,
+import {
+  isCodedObject,
+  isHandleCode,
+  type BlockDefinition,
+  type BlockTableRecord,
+  type CodedObject,
+  type DimStyleRecord,
+  type DxfGroup,
+  type Entity,
+  type EntityInit,
+  type HatchGeometry,
+  type ImageDefinition,
+  type LayerRecord,
+  type NonGraphicalObject,
+  type ObjectCommon,
+  type PdfDefinition,
+  type SymbolTableRecord,
+  type TableName,
+  type TableRecords,
+  type TableStyleRecord,
+  type Xdata,
 } from '../model/types';
 import { insUnitsScale } from '../model/units';
 import { HANDLE_KEYS, isXrefRecord, renumber } from '../model/xref';
@@ -89,6 +103,11 @@ export interface Clipboard {
   readonly insUnits?: number;
   /** The IMAGEDEFs and PDFDEFINITIONs the images and underlays show (M2-32 part 2). */
   readonly objects?: readonly (ImageDefinition | PdfDefinition)[];
+  /**
+   * What makes the blocks dynamic (M2-32 part 4): the coded objects in the extension
+   * dictionaries (`extDict`) of the block records and references that carry one.
+   */
+  readonly coded?: readonly CodedObject[];
 }
 
 export interface ClipboardCopy {
@@ -275,10 +294,22 @@ function clipEntity(model: DocumentModel, e: Entity): EntityInit {
 /**
  * A record as the Clipboard holds it, with its xdata. What Triya reads of a record's xdata into
  * its fields (a layer's transparency and description, a text style's TrueType bits) agrees with
- * the xdata, which the save rewrites from them.
+ * the xdata, which the save rewrites from them. A block record that stays `dynamic` keeps the
+ * xdata naming it as one and its extension dictionary.
  */
-function clipRecord(model: DocumentModel, table: TableName, r: ObjectCommon): ObjectCommon {
-  const out = common(model, r, table === 'blockRecords' ? DYNAMIC_APPS : ANNOTATIVE_APPS);
+function clipRecord(
+  model: DocumentModel,
+  table: TableName,
+  r: ObjectCommon,
+  dynamic: Dynamic | undefined,
+): ObjectCommon {
+  const out = common(
+    model,
+    r,
+    table === 'blockRecords' && !dynamic ? DYNAMIC_APPS : ANNOTATIVE_APPS,
+  );
+  // Its extension dictionary, for what makes the block dynamic (the dictionary is a new one).
+  if (dynamic && dynamic.tree.length > 0) return { ...out, extDict: r.extDict! };
   if (table === 'layers') {
     // A layer's viewport overrides name viewports of the source's layouts.
     const { viewportOverrides: _v, ...layer } = out as LayerRecord;
@@ -305,20 +336,100 @@ function clipRecord(model: DocumentModel, table: TableName, r: ObjectCommon): Ob
   return out;
 }
 
-/** A block definition as the Clipboard holds it: its own entities and record, nothing more. */
-function clipBlock(model: DocumentModel, d: BlockDefinition): BlockDefinition {
+/**
+ * A block definition as the Clipboard holds it: its own entities and record, nothing more. It
+ * stays a dynamic block, or a state of one, when `dynamic` says so.
+ */
+function clipBlock(
+  model: DocumentModel,
+  d: BlockDefinition,
+  dynamic: Dynamic | undefined,
+): BlockDefinition {
   const {
     beginHandle: _b,
     endHandle: _e,
-    // A dynamic block's graph is in its extension dictionary, which a copy does not keep.
-    dynamic: _dynamic,
-    dynamicOf: _dynamicOf,
+    dynamic: kind,
+    dynamicOf,
     xrefLoaded: _loaded,
     // The BLOCK's own xdata, which the reader does not map (its BLOCK_RECORD's is the record's).
     xdata: _xdata,
     ...rest
   } = common(model, d);
-  return rest;
+  if (!dynamic) return rest;
+  return {
+    ...rest,
+    ...(kind ? { dynamic: kind } : {}),
+    ...(dynamicOf !== undefined ? { dynamicOf } : {}),
+  };
+}
+
+/** A block that stays dynamic on the Clipboard: the coded objects that make it so. */
+interface Dynamic {
+  readonly tree: readonly CodedObject[];
+}
+
+/** The coded objects of `model`, by owner. */
+function codedByOwner(model: DocumentModel): Map<Handle, CodedObject[]> {
+  const out = new Map<Handle, CodedObject[]>();
+  for (const o of model.objects.values()) {
+    if (!isCodedObject(o)) continue;
+    let list = out.get(o.owner);
+    if (!list) out.set(o.owner, (list = []));
+    list.push(o);
+  }
+  return out;
+}
+
+/** The coded objects in the extension dictionary `xdict` and below them, parents first. */
+function codedTree(byOwner: ReadonlyMap<Handle, CodedObject[]>, xdict: Handle | undefined) {
+  const out: CodedObject[] = [];
+  if (xdict === undefined) return out;
+  for (const o of byOwner.get(xdict) ?? []) if (o.key !== undefined) out.push(o);
+  for (let i = 0; i < out.length; i++) out.push(...(byOwner.get(out[i]!.handle) ?? []));
+  return out;
+}
+
+const GRAPH_KEY = 'ACAD_ENHANCEDBLOCK';
+
+/**
+ * Whether block `h` stays dynamic on the Clipboard, with what: a definition with its evaluation
+ * graph, or a state of one (its link is its record's AcDbBlockRepBTag xdata).
+ */
+function dynamicOfBlock(
+  model: DocumentModel,
+  byOwner: ReadonlyMap<Handle, CodedObject[]>,
+  h: Handle,
+): Dynamic | undefined {
+  const d = model.blocks.get(h);
+  const tree = codedTree(byOwner, model.tables.blockRecords.get(h)?.extDict);
+  if (d?.dynamic) {
+    return tree.some((o) => o.key?.toUpperCase() === GRAPH_KEY) ? { tree } : undefined;
+  }
+  return d?.dynamicOf !== undefined ? { tree } : undefined;
+}
+
+/** DXF 1001: the application name xdata starts with. */
+const XDATA_APP = 1001;
+
+/** What a coded tree names: its handles, and the applications of its xdata by record handle. */
+function codedReferences(
+  model: DocumentModel,
+  tree: readonly CodedObject[],
+  out: Handle[],
+): void {
+  const apps = new Map(
+    [...model.tables.appIds.values()].map((a) => [a.name.toUpperCase(), a.handle]),
+  );
+  for (const o of tree) {
+    for (const { code, value } of o.codes) {
+      if (typeof value !== 'string') continue;
+      if (isHandleCode(code) && isHandle(value)) out.push(value);
+      else if (code === XDATA_APP) {
+        const app = apps.get(value.toUpperCase());
+        if (app !== undefined) out.push(app);
+      }
+    }
+  }
 }
 
 function count(map: Map<string, number>, reason: string): void {
@@ -358,7 +469,13 @@ export function copyToClipboard(
   const records = new Map<TableName, Map<Handle, ObjectCommon>>();
   const blocks = new Map<Handle, BlockDefinition>();
   const objects = new Map<Handle, Definition>();
+  const coded: CodedObject[] = [];
+  const byOwner = codedByOwner(model);
   const pending: Handle[] = [];
+  const carry = (tree: readonly CodedObject[]): void => {
+    coded.push(...tree);
+    codedReferences(model, tree, pending);
+  };
   const take = (e: Entity, into: EntityInit[]): void => {
     const problem = clipboardProblem(model, e);
     if (problem) {
@@ -366,7 +483,13 @@ export function copyToClipboard(
       return;
     }
     if (e.annotative) unannotated++;
-    const c = clipEntity(model, e);
+    let c = clipEntity(model, e);
+    // A dynamic block reference's representation (M2-32 part 4).
+    const tree = e.geom.kind === 'INSERT' ? codedTree(byOwner, e.extDict) : [];
+    if (tree.length > 0) {
+      c = { ...c, extDict: e.extDict! };
+      carry(tree);
+    }
     into.push(c);
     references(c, pending, layers);
   };
@@ -384,12 +507,14 @@ export function copyToClipboard(
     let list = records.get(table);
     if (!list) records.set(table, (list = new Map()));
     if (list.has(h)) continue;
-    const r = clipRecord(model, table, model.tables[table].get(h)!);
+    const dynamic = table === 'blockRecords' ? dynamicOfBlock(model, byOwner, h) : undefined;
+    const r = clipRecord(model, table, model.tables[table].get(h)!, dynamic);
     list.set(h, r);
     references(r, pending, layers);
+    if (dynamic) carry(dynamic.tree);
     const def = table === 'blockRecords' ? model.blocks.get(h) : undefined;
     if (def) {
-      const d = clipBlock(model, def);
+      const d = clipBlock(model, def, dynamic);
       blocks.set(h, d);
       references(d, pending, layers);
       for (const id of model.blockEntities(h)) take(model.entity(id)!, blockEntities);
@@ -407,11 +532,15 @@ export function copyToClipboard(
       ...(extents ? { extents } : {}),
       insUnits: model.meta.insUnits,
       ...(objects.size > 0 ? { objects: [...objects.values()] } : {}),
+      ...(coded.length > 0 ? { coded: coded.map((o) => common(model, o)) } : {}),
     },
     refused,
     unannotated,
   };
 }
+
+/** BLOCK DXF 70 bit 1: an anonymous block. */
+const ANONYMOUS = 1;
 
 /** `*D12` → `D`: the letter AutoCAD names an anonymous block's kind by. */
 const anonymousPrefix = (name: string): string => /^\*([A-Z]+)/i.exec(name)?.[1] ?? 'U';
@@ -481,7 +610,11 @@ function pasteInto(
   ][]) {
     for (const r of list) {
       const name = (r as SymbolTableRecord).name;
-      const anonymous = t === 'blockRecords' && name.startsWith('*');
+      // An anonymous block, by name or by flag (DXF 70 bit 1: an R2000 DWG keeps a dynamic block
+      // under its true name with that bit, where its DXF names it `*U`).
+      const anonymous =
+        t === 'blockRecords' &&
+        (name.startsWith('*') || (((r as BlockTableRecord).flags ?? 0) & ANONYMOUS) !== 0);
       const existing = anonymous ? undefined : byName(model, t, name);
       if (existing !== undefined) {
         map.set(r.handle, existing);
@@ -540,6 +673,8 @@ function pasteInto(
     });
     return out.length > 0 ? out : undefined;
   };
+  // What makes the blocks dynamic: a new record's tree, and a reference's where all it names came.
+  const coded = pasteCoded(b, clip, map, kept);
   const copy = <T>(value: T): T => renumber(value, map, xdata);
 
   for (const [t, r] of added) {
@@ -564,6 +699,8 @@ function pasteInto(
     const name = blockNames.get(d.handle);
     b.adoptBlock({ ...copy(d), ...(name !== undefined ? { name } : {}) });
   }
+
+  for (const o of coded) b.adoptObject(o);
 
   const pasted: Entity[] = [];
   for (const e of contents) pasted.push(b.adoptEntity(copyEntity(e, copy)));
@@ -595,6 +732,84 @@ function pasteInto(
   const ids = top.map((e) => e.id);
   if (t) transformObjects(b, model, ids, t);
   return { ids, refused: new Map(), unannotated: 0 };
+}
+
+/**
+ * The Clipboard's coded objects as pasted, in the target's handles (`map` gains theirs and their
+ * extension dictionaries'). A tree comes with its record when the record is pasted as a new one
+ * (`kept`: those the target has already), and with its reference when every handle it names
+ * comes too: a reference to a block the target has already would otherwise name the source's
+ * graph. A handle a reactor list names that does not come is left out of the list; elsewhere it
+ * is 0, as AutoCAD writes a null reference.
+ */
+function pasteCoded(
+  b: ChangeSetBuilder,
+  clip: Clipboard,
+  map: Map<Handle, Handle>,
+  kept: ReadonlySet<Handle>,
+): CodedObject[] {
+  const all = clip.coded ?? [];
+  if (all.length === 0) return [];
+  const byOwner = new Map<Handle, CodedObject[]>();
+  for (const o of all) {
+    let list = byOwner.get(o.owner);
+    if (!list) byOwner.set(o.owner, (list = []));
+    list.push(o);
+  }
+  const trees: { xdict: Handle; tree: CodedObject[] }[] = [];
+  const records = (clip.tables.blockRecords ?? []) as readonly ObjectCommon[];
+  for (const r of records) {
+    if (r.extDict !== undefined && !kept.has(r.handle)) {
+      trees.push({ xdict: r.extDict, tree: codedTree(byOwner, r.extDict) });
+    }
+  }
+  const references: { xdict: Handle; tree: CodedObject[] }[] = [];
+  // A kept block's contents are the target's; the objects pasted are all new.
+  const entities = [...clip.blockEntities.filter((e) => !kept.has(e.owner)), ...clip.entities];
+  for (const e of entities) {
+    if (e.extDict !== undefined) {
+      references.push({ xdict: e.extDict, tree: codedTree(byOwner, e.extDict) });
+    }
+  }
+  const allocate = ({ xdict, tree }: { xdict: Handle; tree: CodedObject[] }): void => {
+    map.set(xdict, b.allocateHandle());
+    for (const o of tree) map.set(o.handle, b.allocateHandle());
+  };
+  trees.forEach(allocate);
+  for (const t of references) {
+    const own = new Set([t.xdict, ...t.tree.map((o) => o.handle)]);
+    const named = t.tree.every((o) =>
+      o.codes.every(
+        ({ code, value }) =>
+          !isHandleCode(code) ||
+          typeof value !== 'string' ||
+          value === '0' ||
+          own.has(value) ||
+          map.has(value),
+      ),
+    );
+    if (named) {
+      trees.push(t);
+      allocate(t);
+    }
+  }
+  return trees.flatMap(({ tree }) =>
+    tree.map((o) => {
+      const codes: DxfGroup[] = [];
+      let inGroup = false;
+      for (const g of o.codes) {
+        if (g.code === 102) inGroup = String(g.value).startsWith('{');
+        if (!isHandleCode(g.code) || typeof g.value !== 'string' || g.value === '0') {
+          codes.push(g);
+          continue;
+        }
+        const to = map.get(g.value);
+        if (to !== undefined) codes.push({ code: g.code, value: to });
+        else if (!inGroup) codes.push({ code: g.code, value: '0' });
+      }
+      return { ...o, handle: map.get(o.handle)!, owner: map.get(o.owner)!, codes };
+    }),
+  );
 }
 
 /**

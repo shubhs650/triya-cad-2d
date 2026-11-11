@@ -50,6 +50,7 @@ import {
   type Move,
 } from './entity-order';
 import { planBlocks, writeBlocks } from './blocks';
+import { newCodedDictionaries, planCodedObjects, writeCodedObjects } from './coded-objects';
 import { planDimStyles, writeDimStyles } from './dim-styles';
 import { planHeader, writeHeader } from './header';
 import { IMAGE_OBJECT_TYPES, planImageObjects, writeImageObjects } from './image-objects';
@@ -178,13 +179,15 @@ function nonEntityProblems(base: DocumentInit, model: DocumentModel): string[] {
       ),
     );
   }
-  // Draw order tables, the image objects, groups, DIMASSOCs and XCLIP filters have writers
-  // (draw-order.ts, image-objects.ts, groups.ts, dim-assocs.ts, xclips.ts).
+  // Draw order tables, the image objects, groups, DIMASSOCs, XCLIP filters and coded objects have
+  // writers (draw-order.ts, image-objects.ts, groups.ts, dim-assocs.ts, xclips.ts,
+  // coded-objects.ts).
   const unwritten = <T extends { type: string }>(o: T): boolean =>
     o.type !== 'SORTENTSTABLE' &&
     o.type !== 'GROUP' &&
     o.type !== 'DIMASSOC' &&
     o.type !== 'SPATIAL_FILTER' &&
+    o.type !== 'CODED_OBJECT' &&
     !IMAGE_OBJECT_TYPES.has(o.type);
   out.push(
     ...keyedProblems(
@@ -451,7 +454,19 @@ export function triyaToAcad(
   // Before the entities, which a new block holds and INSERTs, dimensions and tables name, and
   // before the styles: a dimension style's arrows, a multileader style's content and a table
   // style's cells may name a block the same save adds (PASTECLIP, M2-14 part 2).
-  const blocks = planBlocks(original, base, model, r, format, drawOrder, layouts.plan.swapping);
+  // Before the blocks and entities: a new dynamic block's record and reference hold their new
+  // extension dictionaries for what makes them dynamic (PASTECLIP, M2-32 part 4).
+  const coded = planCodedObjects(original, base, model, r, format);
+  const blocks = planBlocks(
+    original,
+    base,
+    model,
+    r,
+    format,
+    drawOrder,
+    layouts.plan.swapping,
+    coded.plan,
+  );
   const dimStyles = planDimStyles(original, base, model, r, format);
   const layers = planLayers(original, base, model, r);
   // After the text styles and linetypes they may name.
@@ -495,6 +510,7 @@ export function triyaToAcad(
     new Map([
       ...newDimAssocDictionaries(dimAssocs.plan),
       ...newSpatialFilterDictionaries(xclips.plan),
+      ...newCodedDictionaries(coded.plan),
     ]),
   );
   // After the entities: a record the save removes may lose its last referrer in the same save.
@@ -517,6 +533,7 @@ export function triyaToAcad(
     ...groups.problems,
     ...dimAssocs.problems,
     ...xclips.problems,
+    ...coded.problems,
     ...purge.problems,
   );
   problems.push(...drawOrder.problems);
@@ -590,6 +607,7 @@ export function triyaToAcad(
   writeGroupMembers(r, groups.plan);
   writeDimAssocs(r, dimAssocs.plan);
   writeSpatialFilters(r, xclips.plan);
+  writeCodedObjects(r, coded.plan);
   writeDrawOrder(original, drawOrder.plan, new Set(p.removed));
   writeHeader(original, header.changes);
   // Last: nothing written above may still refer to what goes.

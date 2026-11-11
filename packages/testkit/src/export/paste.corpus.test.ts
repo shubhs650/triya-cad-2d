@@ -21,6 +21,12 @@
 // multileaders whose content block holds attribute definitions paste naming the pasted (or the
 // target's) ATTDEFs. Read back, each added record has the xdata it was pasted with, and each
 // such multileader names its ATTDEFs, which are there.
+//
+// M2-32 part 4: a dynamic block reference stays dynamic. The definition comes with its graph and
+// the anonymous states with their link to it (CodedObjects in its records' and references'
+// extension dictionaries). Read back, each pasted reference to a dynamic block still names a
+// dynamic block of the same name, and every pasted coded object is there under its handle,
+// owner and key with the codes it was pasted with.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -28,6 +34,8 @@ import {
   DocumentModel,
   compareHandles,
   copyToClipboard,
+  dynamicBlockOf,
+  isCodedObject,
   pasteObjects,
   pasteScale,
   type ChangeSet,
@@ -69,6 +77,8 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
   const definitions = { IMAGEDEF: 0, PDFDEFINITION: 0 };
   let recordXdata = 0;
   let attributed = 0;
+  let dynamicReferences = 0;
+  let codedObjects = 0;
 
   it.each(readable.map((f) => [f.path] as const))(
     '%s pastes into an AC1032 drawing that saves with everything pasted',
@@ -133,6 +143,33 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
           expect(back.entityByHandle(a.definition)?.type, `${path} ${a.definition}`).toBe('ATTDEF');
         }
       }
+      // The source's dynamic references, by handle, and the names of their dynamic blocks.
+      const dynamicSource = new Map<string, string>();
+      for (const id of ids) {
+        const e = source.entity(id)!;
+        if (e.geom.kind !== 'INSERT') continue;
+        const d = dynamicBlockOf(source.blocks, e.geom.block);
+        if (d) dynamicSource.set(e.handle, d.name);
+      }
+      const pastedFrom = new Map(report.ids.map((id, i) => [id, clip.entities[i]!.handle]));
+      for (const id of report.ids) {
+        const name = dynamicSource.get(pastedFrom.get(id)!);
+        if (name === undefined) continue;
+        dynamicReferences++;
+        const e = target.entity(id)!;
+        const g = back.entityByHandle(e.handle)!.geom;
+        expect(g.kind, `${path} ${e.handle}`).toBe('INSERT');
+        const d = g.kind === 'INSERT' ? dynamicBlockOf(back.blocks, g.block) : undefined;
+        expect(d?.name, `${path} ${e.handle} stays dynamic`).toBe(name);
+      }
+      for (const o of cs.objects?.added ?? []) {
+        if (!isCodedObject(o)) continue;
+        codedObjects++;
+        const read = back.objects.get(o.handle);
+        expect(isCodedObject(read), `${path} ${o.dxfName} ${o.handle}`).toBe(true);
+        const { raw: _r, ...got } = read!;
+        expect(got, `${path} ${o.dxfName} ${o.handle}`).toEqual(o);
+      }
       for (const [table, c] of Object.entries(cs.tables ?? {})) {
         for (const r of (c?.added ?? []) as SymbolTableRecord[]) {
           expect(compareHandles(r.handle, seed), `${path} ${r.handle}`).toBeGreaterThanOrEqual(0);
@@ -161,5 +198,8 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
     // block's applications) and the corpus multileaders with block attributes came over.
     expect(recordXdata).toBeGreaterThan(100);
     expect(attributed).toBeGreaterThan(0);
+    // The corpus dynamic block references stayed dynamic, their graphs with them.
+    expect(dynamicReferences).toBeGreaterThan(10);
+    expect(codedObjects).toBeGreaterThan(100);
   });
 });
