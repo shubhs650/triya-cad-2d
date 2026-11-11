@@ -288,6 +288,9 @@ export class CanvasController {
   readonly #pages = new Map<Handle, string>();
   /** Settles once the renderer first answered (or failed to): the opening view waits on it. */
   #firstMeasure: Promise<void> = Promise.resolve();
+  /** Settles when the canvas first shows a view (`whenViewed`). */
+  #viewed!: () => void;
+  #firstView = new Promise<void>((resolve) => (this.#viewed = resolve));
   /** OSNAP, ORTHO, POLAR and SNAP as the status bar has them (M2-04). */
   #drafting: DraftingState = INITIAL_DRAFTING;
   /** The canvas colours from Settings (M2-20). */
@@ -492,6 +495,15 @@ export class CanvasController {
 
   get view(): ViewTransform | undefined {
     return this.#view;
+  }
+
+  /** True once the canvas shows a view; false if none comes within `ms` (a hidden tab). */
+  whenViewed(ms = 5000): Promise<boolean> {
+    if (this.#view) return Promise.resolve(true);
+    return Promise.race([
+      this.#firstView.then(() => true),
+      new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms)),
+    ]);
   }
 
   get size(): ViewportSize {
@@ -912,6 +924,7 @@ export class CanvasController {
 
   #setView(view: ViewTransform): void {
     this.#view = view;
+    this.#viewed();
     this.#requestFrame();
   }
 

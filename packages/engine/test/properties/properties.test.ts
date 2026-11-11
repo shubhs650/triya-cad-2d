@@ -211,7 +211,9 @@ describe('the Properties sheet', () => {
     const sheet = propertySheet(s.model, s.ids('61'));
     expect(titles(sheet)).toEqual(['General', 'Text', 'Geometry', 'Misc']);
     expect(rowOf(sheet, 'Contents').value).toBe('NOTE');
-    expect(rowOf(sheet, 'Style').value).toBe('Standard');
+    // M2-35 part 2: Style is a choice by handle, labelled with the style's name.
+    const style = rowOf(sheet, 'Style');
+    expect(style.options?.find((o) => o.value === style.value)?.label).toBe('Standard');
     expect(rowOf(sheet, 'Justify').value).toBe('Middle center');
     // A justified text is placed by its alignment point.
     expect(rowOf(sheet, 'Position X').value).toBe(4);

@@ -69,6 +69,14 @@ class Target implements ViewTarget {
       ),
     )
   );
+  /** The first view, which a just-opened canvas shows once the renderer has measured it. */
+  firstView: ViewTransform | undefined;
+  whenViewed = () => {
+    this.calls.push('when viewed');
+    if (this.view) return Promise.resolve(true);
+    if (this.firstView) this.view = this.firstView;
+    return Promise.resolve(this.view !== undefined);
+  };
   boundsOf = (ids: readonly number[]) => (
     this.calls.push(`bounds ${ids.join(',')}`),
     Promise.resolve(this.objectsKnown ? { minX: 1, minY: 2, maxX: 3, maxY: 4 } : undefined)
@@ -303,6 +311,29 @@ describe('answerView', () => {
     const t = new Target();
     t.size = { width: 0, height: 0 };
     expect(now(answerView({ op: 'get' }, context(t).ctx)).ok).toBe(false);
+  });
+
+  it('waits for a just-opened canvas to show its first view (M2-35 part 2)', async () => {
+    // ZOOM typed as the drawing opens reached the canvas before its first view, sized but not
+    // yet measured, and failed "There is no view to change." (text-columns.spec.ts in CI).
+    const t = new Target();
+    t.view = undefined;
+    t.firstView = { center: { x: 1, y: 2 }, scale: 4 };
+    const r = answerView(
+      { op: 'window', a: { x: 0, y: 0 }, b: { x: 160, y: 100 } },
+      context(t).ctx,
+    );
+    expect(r).toBeInstanceOf(Promise);
+    expect(await r).toMatchObject({ ok: true });
+    expect(t.calls).toEqual(['when viewed', 'window 0,0 160,100']);
+    // A canvas that never shows a view still refuses.
+    const blank = new Target();
+    blank.view = undefined;
+    expect(await answerView({ op: 'extents' }, context(blank).ctx)).toEqual({
+      ok: false,
+      message: NO_CANVAS,
+    });
+    expect(blank.calls).toEqual(['when viewed']);
   });
 
   it('calls the canvas as the navigation bar does', () => {

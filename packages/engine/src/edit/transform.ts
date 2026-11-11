@@ -25,6 +25,7 @@ import type {
   HatchGeometry,
   ImageGeometry,
   InsertAttribute,
+  InsertGeometry,
   MTextGeometry,
   MultiLeaderGeometry,
   PlanarProps,
@@ -35,7 +36,16 @@ import type {
 import { normalizeAngle } from '../geom/angle';
 import { arcSweep, ellipseSweep } from '../geom/eval';
 import { add, fromAngle, scale } from '../geom/vec';
-import { angle, direction, point, upright, vector, type Similarity } from './similarity';
+import {
+  angle,
+  direction,
+  mirrorIn,
+  point,
+  turnAbout,
+  upright,
+  vector,
+  type Similarity,
+} from './similarity';
 import type { AnnotationTables } from '../annotation/multileader';
 import { radialArc, withRadialArc } from '../annotation/radial-extension';
 
@@ -289,6 +299,109 @@ function reference(
   return u.flip === 'x'
     ? { rotation: u.rotation, sx: -len(t, sx), sy: len(t, sy) }
     : { rotation: u.rotation, sx: len(t, sx), sy: -len(t, sy) };
+}
+
+/**
+ * A reference given another X/Y/Z scale (the Properties palette's Scale rows, M2-35 part 2): its
+ * attributes follow, as AutoCAD's do. A scale that changes sign mirrors the block in its own
+ * axes, which MIRROR's rules carry the attributes through (MIRRTEXT, `o`); what is left is a
+ * stretch along the block's axes, which moves each attribute's points and gives its text the
+ * height and width factor the stretch gives its frame. A stretch across a turned text's baseline
+ * would also slant it, which a TEXT cannot show: its obliquing angle stays as it was.
+ */
+export function rescaledReference(
+  g: InsertGeometry,
+  next: { readonly x: number; readonly y: number; readonly z: number },
+  o: TransformOptions = {},
+): InsertGeometry {
+  const rx = next.x / g.scale.x;
+  const ry = next.y / g.scale.y;
+  let attributes = g.attributes;
+  if (rx < 0 || ry < 0) {
+    const t =
+      rx < 0 && ry < 0
+        ? turnAbout(g.position, Math.PI)
+        : mirrorIn(g.position, add(g.position, fromAngle(g.rotation + (rx < 0 ? Math.PI / 2 : 0))));
+    attributes = attributes.map((a) => attribute(t, a, o));
+  }
+  const kx = Math.abs(rx);
+  const ky = Math.abs(ry);
+  if (kx !== 1 || ky !== 1) {
+    attributes = attributes.map((a) => stretchedAttribute(a, g.position, g.rotation, kx, ky));
+  }
+  return { ...g, scale: { x: next.x, y: next.y, z: next.z }, attributes };
+}
+
+/** `a` stretched by `kx`, `ky` (> 0) along the axes at `theta` through `base`. */
+function stretchedAttribute(
+  a: InsertAttribute,
+  base: Vec2,
+  theta: number,
+  kx: number,
+  ky: number,
+): InsertAttribute {
+  const c = Math.cos(theta);
+  const sn = Math.sin(theta);
+  const vec = (v: Vec2): Vec2 => {
+    const x = (v.x * c + v.y * sn) * kx;
+    const y = (-v.x * sn + v.y * c) * ky;
+    return { x: x * c - y * sn, y: x * sn + y * c };
+  };
+  const pt = (p: Vec2): Vec2 => add(base, vec({ x: p.x - base.x, y: p.y - base.y }));
+  /** A text frame at `rotation`: its new rotation, and how much longer and taller it is. */
+  const frame = (rotation: number) => {
+    const d = vec(fromAngle(rotation));
+    const along = Math.hypot(d.x, d.y);
+    return { rotation: normalizeAngle(Math.atan2(d.y, d.x)), along, across: (kx * ky) / along };
+  };
+  const f = frame(a.rotation);
+  const out: InsertAttribute = {
+    ...a,
+    position: pt(a.position),
+    ...(a.alignmentPoint ? { alignmentPoint: pt(a.alignmentPoint) } : {}),
+    rotation: f.rotation,
+    height: a.height * f.across,
+    widthFactor: (a.widthFactor * f.along) / f.across,
+  };
+  const m = a.mtext;
+  const mf = m && frame(m.rotation);
+  return {
+    ...out,
+    ...(m && mf
+      ? {
+          mtext: {
+            ...m,
+            position: pt(m.position),
+            rotation: mf.rotation,
+            height: m.height * mf.across,
+            width: m.width * mf.along,
+            ...(m.definedHeight !== undefined
+              ? { definedHeight: m.definedHeight * mf.across }
+              : {}),
+          },
+        }
+      : {}),
+    ...(a.annotative
+      ? {
+          annotative: {
+            ...a.annotative,
+            representations: a.annotative.representations.map((r) =>
+              r.text
+                ? {
+                    ...r,
+                    text: {
+                      ...r.text,
+                      position: pt(r.text.position),
+                      alignmentPoint: pt(r.text.alignmentPoint),
+                      rotation: frame(r.text.rotation).rotation,
+                    },
+                  }
+                : r,
+            ),
+          },
+        }
+      : {}),
+  };
 }
 
 // ── Annotations ─────────────────────────────────────────────────────────────────────────────

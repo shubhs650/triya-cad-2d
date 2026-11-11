@@ -12,7 +12,6 @@ import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import { dynamicBlockOf } from '../model/dynamic-block';
 import type { EntityId } from '../model/entity-ids';
-import type { Handle } from '../model/handle';
 import type {
   Color,
   Entity,
@@ -25,6 +24,7 @@ import type {
 import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
 import { dimVars } from '../annotation/leader';
+import { JUSTIFICATIONS } from '../commands/modify/attributes';
 
 /** How a row's value is shown and typed. */
 export type PropertyKind =
@@ -309,6 +309,29 @@ const MTEXT_JUSTIFY = [
   'Bottom right',
 ];
 
+/** A TEXT's Justify choices (M2-35 part 2), by AutoCAD's names: `textJustify` gives the value. */
+const TEXT_JUSTIFY_OPTIONS: readonly PropertyOption[] = JUSTIFICATIONS.map((j) => ({
+  value: j.name,
+  label: j.name,
+}));
+
+/** An MTEXT's Justify choices: attachments 1–9, by name. */
+const MTEXT_JUSTIFY_OPTIONS: readonly PropertyOption[] = MTEXT_JUSTIFY.slice(1).map((n) => ({
+  value: n,
+  label: n,
+}));
+
+/** The width every segment of a polyline has (`constantWidth`, DXF 43), or undefined. */
+export function polylineGlobalWidth(g: {
+  readonly constantWidth?: number;
+  readonly vertices: readonly { readonly startWidth?: number; readonly endWidth?: number }[];
+}): number | undefined {
+  const widths = g.vertices.flatMap((v) => [v.startWidth, v.endWidth]);
+  if (widths.every((w) => w === undefined)) return g.constantWidth ?? 0;
+  const first = widths[0] ?? 0;
+  return widths.every((w) => (w ?? 0) === first) ? first : undefined;
+}
+
 const arcSweep = (start: number, end: number): number => {
   const tau = 2 * Math.PI;
   const s = (((end - start) % tau) + tau) % tau;
@@ -415,14 +438,32 @@ export const DIMVAR_DEFAULTS: Readonly<Record<string, number>> = {
   DIMDEC: 4,
 };
 
+/**
+ * A polyline's Global width (M2-35 part 2): `*VARIES*` where the polylines differ, or where one
+ * polyline's segments do (AutoCAD shows those by segment, which vertex navigation will list).
+ */
+function globalWidthRow(widths: readonly (number | undefined)[]): PropertyRow {
+  const first = widths[0];
+  const one = first !== undefined && widths.every((w) => w !== undefined && close(w, first));
+  return {
+    key: 'globalWidth',
+    label: 'Global width',
+    kind: 'distance',
+    ...(one ? { value: first } : { varies: true as const }),
+  };
+}
+
 /** The sections a selection of one type shows after General. */
 function typeSections(model: DocumentModel, type: EntityType, es: readonly Entity[]) {
   const sections: PropertySection[] = [];
   const add = (title: string, rows: PropertyRow[]) => {
     if (rows.length > 0) sections.push({ title, rows });
   };
-  const name = (table: 'textStyles' | 'dimStyles', h: Handle) =>
-    model.tables[table].get(h)?.name ?? h;
+  // M2-35 part 2: a text's Style is a choice of the drawing's text styles, by handle.
+  const textStyles: readonly PropertyOption[] = [...model.tables.textStyles.values()].map((r) => ({
+    value: r.handle as string,
+    label: r.name,
+  }));
   switch (type) {
     case 'LINE': {
       const g = (e: Entity) => geomOf<'LINE'>(e);
@@ -607,6 +648,8 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
     case 'LWPOLYLINE': {
       const g = (e: Entity) => geomOf<'LWPOLYLINE'>(e);
       add('Geometry', [
+        // AutoCAD lists Global width before Elevation.
+        globalWidthRow(es.map((e) => polylineGlobalWidth(g(e)))),
         row(es, {
           key: 'elevation',
           label: 'Elevation',
@@ -646,15 +689,15 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
         row(es, {
           key: 'style',
           label: 'Style',
-          kind: 'text',
-          readOnly: true,
-          get: (e) => name('textStyles', g(e).style),
+          kind: 'choice',
+          options: textStyles,
+          get: (e) => g(e).style,
         }),
         row(es, {
           key: 'justify',
           label: 'Justify',
-          kind: 'text',
-          readOnly: true,
+          kind: 'choice',
+          options: TEXT_JUSTIFY_OPTIONS,
           get: (e) => textJustify(g(e).halign, g(e).valign),
         }),
         row(es, { key: 'height', label: 'Height', kind: 'distance', get: (e) => g(e).height }),
@@ -712,15 +755,15 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
         row(es, {
           key: 'style',
           label: 'Style',
-          kind: 'text',
-          readOnly: true,
-          get: (e) => name('textStyles', g(e).style),
+          kind: 'choice',
+          options: textStyles,
+          get: (e) => g(e).style,
         }),
         row(es, {
           key: 'justify',
           label: 'Justify',
-          kind: 'text',
-          readOnly: true,
+          kind: 'choice',
+          options: MTEXT_JUSTIFY_OPTIONS,
           get: (e) => MTEXT_JUSTIFY[g(e).attachment] ?? 'Top left',
         }),
         row(es, { key: 'height', label: 'Text height', kind: 'distance', get: (e) => g(e).height }),
@@ -773,21 +816,18 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
           key: 'scaleX',
           label: 'Scale X',
           kind: 'number',
-          readOnly: true,
           get: (e) => g(e).scale.x,
         }),
         row(es, {
           key: 'scaleY',
           label: 'Scale Y',
           kind: 'number',
-          readOnly: true,
           get: (e) => g(e).scale.y,
         }),
         row(es, {
           key: 'scaleZ',
           label: 'Scale Z',
           kind: 'number',
-          readOnly: true,
           get: (e) => g(e).scale.z,
         }),
       ]);
