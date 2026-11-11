@@ -6,9 +6,20 @@
 //
 // M2-32 part 2: images and PDF underlays pasted into another drawing bring their definitions
 // and show the files the user supplied, as they do in the drawing they came from.
+//
+// M2-32 part 4: a pasted dynamic block reference stays dynamic (the Properties badge).
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
-import { DWG, DXF, colourAt, expectShown, openWithDrop, openWithPicker, viewOf } from '../app/page';
+import {
+  DWG,
+  DXF,
+  activeCanvas,
+  colourAt,
+  expectShown,
+  openWithDrop,
+  openWithPicker,
+  viewOf,
+} from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -158,5 +169,38 @@ test('images and PDF underlays pasted into another drawing bring their definitio
   v = await viewOf(page);
   await poll(v.at(101, 3), isRed);
   await poll(v.at(101, 1), isBlue);
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+// M2-32 part 4: a dynamic block reference pasted into another drawing stays dynamic, so the
+// Properties palette shows the FR-B3 badge on the pasted reference as on the one copied.
+test('a dynamic block reference pasted into another drawing stays dynamic', async ({ page }) => {
+  test.setTimeout(120_000);
+  const dynamic = path.resolve(
+    'corpus/public/third-party/acadsharp/dynamic-blocks/BLOCKVISIBILITYPARAMETER.dxf',
+  );
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await openWithPicker(page, dynamic);
+  await expectShown(page, path.basename(dynamic));
+  await copyAll(page);
+
+  await docTabs(page).first().click();
+  await expectShown(page, path.basename(DXF));
+  await pasteAt100(page);
+  await expect.poll(() => added(page)).toContain('INSERT');
+  await page
+    .getByRole('navigation', { name: 'Palettes' })
+    .getByRole('button', { name: 'Properties' })
+    .click();
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/Block Reference/);
+  const types = await objects.locator('option').allTextContents();
+  await objects.selectOption({ label: types.find((t) => t.startsWith('Block Reference'))! });
+  await expect(palette.getByRole('note')).toContainText('Dynamic — edit in AutoCAD');
   await expect(page.getByRole('alert')).toHaveCount(0);
 });

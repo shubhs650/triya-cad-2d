@@ -1779,6 +1779,62 @@ export interface SpatialFilter extends NonGraphicalObject {
   readonly boundaryTransform: Matrix3x4;
 }
 
+/**
+ * One DXF group code of a `CodedObject`, as the save writes it. A handle code's value (DXF 5,
+ * 105, 320–369, 390–399, 480, 481 and 1005: `isHandleCode`) is the handle.
+ */
+export interface DxfGroup {
+  readonly code: number;
+  readonly value: string | number | boolean | Uint8Array;
+}
+
+/** The CLASSES entry an object's type has in DXF (its DXF name is the object's `dxfName`). */
+export interface DxfClassRecord {
+  /** DXF 2: the C++ class name, e.g. `AcDbEvalGraph`. */
+  readonly cppClassName: string;
+  /** DXF 3: the application that defines it. */
+  readonly applicationName: string;
+  /** DXF 90: the proxy capability flags. */
+  readonly proxyFlags: number;
+  /** DXF 280: the class was not loaded when the file was saved. */
+  readonly wasZombie: boolean;
+}
+
+/**
+ * An object Triya keeps as the DXF group codes a save writes for it, without mapping what they
+ * say (M2-32 part 4): what makes a block dynamic, which AutoCAD keeps in extension dictionaries
+ * (a definition's `ACAD_ENHANCEDBLOCK` evaluation graph with its parameters, actions and grips,
+ * a state's data, a reference's `AcDbBlockRepresentation`). Triya does not evaluate dynamic
+ * blocks (PRD non-goal 2); it holds them as codes so that a paste can carry them into another
+ * drawing, where the save writes them as they were. An object at the top of such a tree is an
+ * entry of an extension dictionary (`owner`, which the holder's `extDict` names) under `key`;
+ * the objects below are owned by the coded object they hang from.
+ */
+export interface CodedObject extends NonGraphicalObject {
+  readonly type: 'CODED_OBJECT';
+  /** DXF 0: the object's type, e.g. `ACAD_EVALUATION_GRAPH`. */
+  readonly dxfName: string;
+  /** Its name in the extension dictionary that owns it; absent below the top. */
+  readonly key?: string;
+  /** Every group code after DXF 0, its handle (5) and owner (330) among them, in order. */
+  readonly codes: readonly DxfGroup[];
+  /** Its type's CLASSES entry, for a type that has one. */
+  readonly dxfClass?: DxfClassRecord;
+}
+
+/** DXF group codes whose value is a handle (DXF reference, "Group Code Value Types"). */
+export const isHandleCode = (code: number): boolean =>
+  code === 5 ||
+  code === 105 ||
+  (code >= 320 && code <= 369) ||
+  (code >= 390 && code <= 399) ||
+  code === 480 ||
+  code === 481 ||
+  code === 1005;
+
+export const isCodedObject = (o: NonGraphicalObject | undefined): o is CodedObject =>
+  o?.type === 'CODED_OBJECT';
+
 /** A header variable value as read: string, number, point, or handle (as a string). */
 export type HeaderValue = string | number | boolean | Vec2 | Vec3;
 
