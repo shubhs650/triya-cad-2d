@@ -24,8 +24,14 @@ class Target implements ViewTarget {
   mode: CanvasMode = 'none';
   previous = true;
   constructor(readonly isLayout = false) {}
-  zoomExtents = () => void this.calls.push('extents');
-  zoomAll = () => void this.calls.push('all');
+  /** The view ZOOM Extents lands on once the renderer has measured (undefined: unchanged). */
+  measured: ViewTransform | undefined;
+  zoomExtents = async () => {
+    this.calls.push('extents');
+    await Promise.resolve();
+    if (this.measured) this.view = this.measured;
+  };
+  zoomAll = async () => void this.calls.push('all');
   zoomPrevious = () => (this.calls.push('previous'), this.previous);
   zoomScale = (f: number) => void this.calls.push(`scale ${f}`);
   zoomLimits = (f: number) => void this.calls.push(`limits ${f}`);
@@ -336,7 +342,20 @@ describe('answerView', () => {
     expect(blank.calls).toEqual(['when viewed']);
   });
 
-  it('calls the canvas as the navigation bar does', () => {
+  it("answers ZOOM Extents with the view it lands on after the renderer's measure (M2-37)", async () => {
+    // Before the renderer first measured the drawing the canvas waits for it, so the reply
+    // carries the view the zoom ended on, not the one it started from.
+    const t = new Target();
+    t.measured = { center: { x: 5, y: -7 }, scale: 2 };
+    const r = answerView({ op: 'extents' }, context(t).ctx);
+    expect(r).toBeInstanceOf(Promise);
+    expect(await r).toEqual({
+      ok: true,
+      view: { center: { x: 5, y: -7 }, height: 200, width: 400, paper: false },
+    });
+  });
+
+  it('calls the canvas as the navigation bar does', async () => {
     const t = new Target(true);
     const { ctx } = context(t);
     const requests: ViewRequest[] = [
@@ -353,7 +372,7 @@ describe('answerView', () => {
       { op: 'realtime', mode: 'none' },
       { op: 'restore', name: 'front' },
     ];
-    for (const r of requests) expect(now(answerView(r, ctx)).ok).toBe(true);
+    for (const r of requests) expect((await answerView(r, ctx)).ok).toBe(true);
     expect(t.calls).toEqual([
       'extents',
       'all',

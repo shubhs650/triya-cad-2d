@@ -77,6 +77,21 @@ test.describe('navigation bar and layout tabs', () => {
     expect(Math.abs(c.y + 227.47)).toBeLessThan(2 * u + 1);
   });
 
+  // M2-37: the renderer measures text by its glyphs a moment after the drawing first shows; a
+  // Zoom Extents clicked before then waits for that measure rather than framing the extents the
+  // drawing opened with (text guessed without fonts: here 50 units too high). The status bar
+  // follows the view under a cursor that has not moved, so polling it sees the zoom land.
+  test('Zoom Extents straight after opening frames the text as drawn', async ({ page }) => {
+    const { cx, cy } = await opened(page);
+    await nav(page, 'Zoom Extents').click();
+    await expect
+      .poll(async () => {
+        const c = await worldAt(page, cx, cy);
+        return [Math.round(c.x), Math.round(c.y)];
+      })
+      .toEqual([927, -227]);
+  });
+
   test('lists Model and the layouts in tab order and shows a layout on its paper', async ({
     page,
   }) => {

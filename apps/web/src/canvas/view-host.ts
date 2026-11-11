@@ -30,8 +30,9 @@ export interface ViewTarget {
   readonly size: ViewportSize;
   readonly isLayout: boolean;
   readonly mode: CanvasMode;
-  zoomExtents(): void;
-  zoomAll(): void;
+  /** Settle once the view is changed: they may wait for the renderer's first measure. */
+  zoomExtents(): Promise<void>;
+  zoomAll(): Promise<void>;
   zoomPrevious(): boolean;
   zoomScale(factor: number): void;
   zoomLimits(factor: number): void;
@@ -149,11 +150,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
     case 'get':
       return done();
     case 'extents':
-      t.zoomExtents();
-      return done();
+      return t.zoomExtents().then(done);
     case 'all':
-      t.zoomAll();
-      return done();
+      return t.zoomAll().then(done);
     case 'previous':
       return t.zoomPrevious() ? done() : { ok: false, message: 'No previous view saved.' };
     case 'scale':
