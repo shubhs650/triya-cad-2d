@@ -102,6 +102,8 @@ describe('ci.yml gates', () => {
     );
     expect(install).toBeGreaterThan(-1);
     expect(check).toBeGreaterThan(install);
+    // When apt cannot reach the Ubuntu archive (2026-11-11), qpdf's own release build is used.
+    expect(steps[install]!.run).toContain('gh release download --repo qpdf/qpdf');
     expect(readFileSync(path.join(root, 'ATTRIBUTION.md'), 'utf8')).toMatch(/\| qpdf \(/);
   });
 
