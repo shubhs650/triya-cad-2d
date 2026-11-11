@@ -13,6 +13,7 @@ import type {
   MTextGeometry,
   NamedViewInfo,
   PaletteName,
+  PatternPlacement,
   TextGeometry,
   TextOutline,
   Vec2,
@@ -97,6 +98,8 @@ export interface ViewContext {
   readonly palette?: (name: PaletteName, open: boolean) => ViewReply;
   /** -PLOT (M2-17 part 5): a space's plot settings, and a plot made without the dialog. */
   readonly plot?: (r: PlotScriptRequest) => Promise<ViewReply>;
+  /** Properties' Pattern name (M2-35 part 3): a pattern from the app's library, placed. */
+  readonly hatchPattern?: (name: string, placements: readonly PatternPlacement[]) => ViewReply;
 }
 
 /** What -PLOT asks of the app. */
@@ -106,6 +109,7 @@ export const NO_CANVAS = 'There is no view to change.';
 export const NO_FILE = 'There is no drawing to save.';
 export const NO_CLIPBOARD = 'There is no Clipboard here.';
 export const NO_PALETTE = 'There are no palettes here.';
+export const NO_PATTERNS = 'There is no pattern library here.';
 
 export function stateOf(t: ViewTarget): ViewState | undefined {
   const v = t.view;
@@ -128,6 +132,11 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'palette') {
     return ctx.palette ? ctx.palette(r.palette, r.open) : { ok: false, message: NO_PALETTE };
+  }
+  if (r.op === 'hatchPattern') {
+    return ctx.hatchPattern
+      ? ctx.hatchPattern(r.name, r.placements)
+      : { ok: false, message: NO_PATTERNS };
   }
   if (r.op === 'clipboard') {
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };

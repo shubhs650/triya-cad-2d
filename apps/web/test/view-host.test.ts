@@ -8,6 +8,7 @@ import { realtimeZoomFactor } from '../src/canvas/navigate';
 import {
   NO_CANVAS,
   NO_CLIPBOARD,
+  NO_PATTERNS,
   answerView,
   NO_FILE,
   stateOf,
@@ -120,6 +121,23 @@ describe('answerView', () => {
       file: 'a.dxf',
     });
     expect(asked).toEqual(['saveas']);
+  });
+
+  it('hands a hatch pattern to the app’s library, with or without a canvas (M2-35)', () => {
+    const { ctx } = context(undefined);
+    const placements = [{ angle: 0, scale: 1, origin: { x: 0, y: 0 } }];
+    const r: ViewRequest = { op: 'hatchPattern', name: 'GRID', placements };
+    expect(now(answerView(r, ctx))).toEqual({ ok: false, message: NO_PATTERNS });
+    const asked: unknown[] = [];
+    const hatchPattern = (name: string, at: unknown): ViewReply => {
+      asked.push([name, at]);
+      return { ok: true, pattern: { name: 'GRID', custom: false, lines: [[]] } };
+    };
+    expect(now(answerView(r, { ...ctx, hatchPattern }))).toMatchObject({
+      ok: true,
+      pattern: { name: 'GRID' },
+    });
+    expect(asked).toEqual([['GRID', placements]]);
   });
 
   it('hands the Clipboard to the app, with or without a canvas (M2-14 part 2)', () => {

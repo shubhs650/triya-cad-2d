@@ -5,6 +5,8 @@
 // puts the shown value back), each as one undo step the drawing's engine makes (M2-05). A
 // reference to a dynamic block carries the FR-B3 badge "Dynamic — edit in AutoCAD". With nothing
 // selected it shows General with the drawing's current settings, which new objects take (M2-35).
+// A hatch's Pattern name offers the library's patterns as it is typed (M2-35 part 3), where
+// AutoCAD's "..." opens its Hatch Pattern Palette.
 // Fully keyboard operable: every value is a native select or text field.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import type { EntityType, PropertyRow, PropertySheet, PropertyUnits } from '@triya/engine';
@@ -12,7 +14,16 @@ import type { OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { VARIES, editText, propertySheets, typeOptions, valueText } from './properties';
 
-export function PropertiesPalette({ doc, onClose }: { doc: OpenDocument; onClose: () => void }) {
+export function PropertiesPalette({
+  doc,
+  onClose,
+  patternNames = [],
+}: {
+  doc: OpenDocument;
+  onClose: () => void;
+  /** The hatch patterns Pattern name offers: SOLID and the app's pattern library. */
+  patternNames?: readonly string[];
+}) {
   const sheet = useSyncExternalStore(propertySheets.subscribe, () => propertySheets.get(doc.id));
 
   useEffect(() => {
@@ -41,7 +52,7 @@ export function PropertiesPalette({ doc, onClose }: { doc: OpenDocument; onClose
       {!sheet || (sheet.count === 0 && !sheet.current) ? (
         <p className="empty">No selection</p>
       ) : (
-        <PropertySections sheet={sheet} narrow={narrow} set={set} />
+        <PropertySections sheet={sheet} narrow={narrow} set={set} patternNames={patternNames} />
       )}
     </aside>
   );
@@ -51,10 +62,12 @@ function PropertySections({
   sheet,
   narrow,
   set,
+  patternNames,
 }: {
   sheet: PropertySheet;
   narrow: (type: string) => void;
   set: (key: string, value: string) => void;
+  patternNames: readonly string[];
 }) {
   const types = typeOptions(sheet);
   return (
@@ -88,7 +101,12 @@ function PropertySections({
                   <tr key={r.key} data-key={r.key}>
                     <th scope="row">{r.label}</th>
                     <td>
-                      <PropertyField row={r} units={sheet.units} set={set} />
+                      <PropertyField
+                        row={r}
+                        units={sheet.units}
+                        set={set}
+                        suggestions={r.key === 'patternName' ? patternNames : undefined}
+                      />
                     </td>
                   </tr>
                 ))}
@@ -105,10 +123,13 @@ function PropertyField({
   row,
   units,
   set,
+  suggestions,
 }: {
   row: PropertyRow;
   units: PropertyUnits;
   set: (key: string, value: string) => void;
+  /** Values a typed field offers as it is typed (a datalist). */
+  suggestions?: readonly string[] | undefined;
 }) {
   if (row.readOnly) {
     return (
@@ -140,7 +161,7 @@ function PropertyField({
       </select>
     );
   }
-  return <TypedField row={row} units={units} set={set} />;
+  return <TypedField row={row} units={units} set={set} suggestions={suggestions} />;
 }
 
 /** A typed value: applied on Enter or blur when it changed; Esc puts the shown value back. */
@@ -148,16 +169,20 @@ function TypedField({
   row,
   units,
   set,
+  suggestions,
 }: {
   row: PropertyRow;
   units: PropertyUnits;
   set: (key: string, value: string) => void;
+  suggestions?: readonly string[] | undefined;
 }) {
   const shown = editText(row, units);
   const [text, setText] = useState(shown);
   // A new sheet (another selection, an edit applied) shows its value.
   useEffect(() => setText(shown), [shown]);
-  const list = row.kind === 'transparency' ? `${row.key}-choices` : undefined;
+  const choices =
+    row.kind === 'transparency' ? (row.options ?? []).map((o) => o.value) : suggestions;
+  const list = choices && choices.length > 0 ? `${row.key}-choices` : undefined;
   const commit = () => {
     if (text.trim() === '' || text === shown) return setText(shown);
     set(row.key, text);
@@ -183,10 +208,10 @@ function TypedField({
           }
         }}
       />
-      {list && row.options && (
+      {list && choices && (
         <datalist id={list}>
-          {row.options.map((o) => (
-            <option key={o.value} value={o.value} />
+          {choices.map((c) => (
+            <option key={c} value={c} />
           ))}
         </datalist>
       )}

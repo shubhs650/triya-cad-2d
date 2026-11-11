@@ -175,7 +175,10 @@ describe('ci.yml caching and artifacts', () => {
       // System libraries are not cacheable; browsers are only downloaded on a miss.
       const install = (job.steps ?? []).find((s) => s.run?.includes('playwright install '));
       expect(install?.if).toContain("cache-hit != 'true'");
-      expect((job.steps ?? []).some((s) => s.run?.includes('playwright install-deps'))).toBe(true);
+      const deps = (job.steps ?? []).find((s) => s.run?.includes('playwright install-deps'));
+      expect(deps).toBeDefined();
+      // Without apt (2026-11-11) the job still fails when Chromium misses a library.
+      expect(deps!.run).toContain("grep 'not found'");
     }
   });
 

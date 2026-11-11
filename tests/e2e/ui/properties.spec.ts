@@ -293,3 +293,70 @@ test('scales a block reference from the palette, its attributes following', asyn
   await expect(scaleX).toHaveValue(/^0\.80*$/);
   await page.screenshot({ path: test.info().outputPath('4-block-scaled.png') });
 });
+
+test('gives a hatch another pattern, angle and scale from the palette', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  await activeCanvas(page).hover();
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, 'E', 'Command:');
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  // The drawing's model space holds one object, a solid hatch.
+  await expect(objects).toHaveText('Hatch (1)');
+  // A field with suggestions (a datalist) is a combobox.
+  const name = palette.getByRole('combobox', { name: 'Pattern name' });
+  await expect(name).toHaveValue('SOLID');
+  // The library's patterns are offered as the name is typed.
+  const offered = await page
+    .locator('datalist#patternName-choices option')
+    .evaluateAll((os) => os.map((o) => (o as HTMLOptionElement).value));
+  expect(offered).toEqual(expect.arrayContaining(['SOLID', 'TRIYA_CROSS45', 'TRIYA_LINES45']));
+  await page.mouse.move(300, 640);
+  await page.screenshot({ path: test.info().outputPath('5-hatches-solid.png') });
+
+  const hatches = () =>
+    page.evaluate(() => {
+      const out = new Map<string, unknown>();
+      for (const cs of (window as unknown as Dev).triyaDev.changes())
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'HATCH') {
+            const g = u.after.geom;
+            out.set(u.after.handle, {
+              pattern: g.pattern,
+              solid: g.solid,
+              angle: Math.round((g.patternAngle * 180) / Math.PI),
+              scale: g.patternScale,
+              families: g.patternLines.length,
+              gap:
+                Math.round(
+                  Math.hypot(g.patternLines[0]?.offset.x ?? 0, g.patternLines[0]?.offset.y ?? 0) *
+                    1000,
+                ) / 1000,
+            });
+          }
+      return [...out.values()];
+    });
+  await name.fill('triya_cross45');
+  await name.press('Enter');
+  const crossed = { pattern: 'TRIYA_CROSS45', solid: false, families: 2 };
+  // The fill keeps the angle its file states (45°), as AutoCAD keeps a hatch's angle.
+  await expect.poll(hatches).toEqual([{ ...crossed, angle: 45, scale: 1, gap: 3 }]);
+  await expect(name).toHaveValue('TRIYA_CROSS45');
+  await expect(palette.getByText('Custom')).toHaveCount(0);
+
+  const angle = palette.getByRole('textbox', { name: 'Angle', exact: true });
+  await angle.fill('15');
+  await angle.press('Enter');
+  const scale = palette.getByRole('textbox', { name: 'Scale', exact: true });
+  await scale.fill('2');
+  await scale.press('Enter');
+  await expect.poll(hatches).toEqual([{ ...crossed, angle: 15, scale: 2, gap: 6 }]);
+  await page.mouse.move(300, 640);
+  await page.screenshot({ path: test.info().outputPath('6-hatches-cross45.png') });
+});
