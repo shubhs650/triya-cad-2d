@@ -3,6 +3,10 @@ export * from './sheet';
 export {
   applyCurrentEdit,
   applyPropertyEdit,
+  hatchesToPattern,
+  patternPlacement,
+  placedPatterns,
+  type HatchPatterns,
   type PropertyEdit,
   type PropertyEditReport,
 } from './edit';

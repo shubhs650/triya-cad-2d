@@ -288,6 +288,17 @@ const YES_NO: readonly PropertyOption[] = [
 ];
 const yesNo = (b: boolean): string => (b ? 'yes' : 'no');
 
+/** DXF 75, a hatch's island detection, by AutoCAD's names. */
+const ISLAND_STYLES: readonly PropertyOption[] = [
+  { value: '0', label: 'Normal' },
+  { value: '1', label: 'Outer' },
+  { value: '2', label: 'Ignore' },
+];
+
+/** A hatch of pattern lines: neither a solid fill nor a gradient. */
+export const isPatterned = (g: { readonly solid: boolean; readonly gradient?: unknown }): boolean =>
+  !g.solid && g.gradient === undefined;
+
 /** DXF 72/73 as AutoCAD's justification names (TEXT's Justify). */
 export function textJustify(h: number, v: number): string {
   if (v === 0) return ['Left', 'Center', 'Right', 'Aligned', 'Middle', 'Fit'][h] ?? 'Left';
@@ -914,6 +925,31 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
     }
     case 'HATCH': {
       const g = (e: Entity) => geomOf<'HATCH'>(e);
+      // M2-35 part 3: AutoCAD 2024's Pattern rows. A gradient's own rows (gradient name,
+      // colours, centred) are not edited yet, so its rows stay read only; a solid fill has no
+      // lines to turn or scale, so its Angle and Scale are greyed as AutoCAD greys them. Each
+      // row edits the hatches it applies to: Scale the predefined and custom patterns, Spacing
+      // and Double the user-defined ones (DXF 76 = 0, whose DXF 41 is the spacing).
+      const gradient = es.some((e) => g(e).gradient);
+      const patterned = es.filter((e) => isPatterned(g(e)));
+      const scaled = patterned.filter((e) => g(e).patternType !== 0);
+      const user = patterned.filter((e) => g(e).patternType === 0);
+      const angleRow = (objects: readonly Entity[], readOnly: boolean) =>
+        row(objects, {
+          key: 'patternAngle',
+          label: 'Angle',
+          kind: 'angle',
+          ...(readOnly && { readOnly }),
+          get: (e) => g(e).patternAngle,
+        });
+      const scaleRow = (objects: readonly Entity[], readOnly: boolean) =>
+        row(objects, {
+          key: 'patternScale',
+          label: 'Scale',
+          kind: 'number',
+          ...(readOnly && { readOnly }),
+          get: (e) => g(e).patternScale,
+        });
       add('Pattern', [
         row(es, {
           key: 'patternType',
@@ -929,23 +965,32 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
           key: 'patternName',
           label: 'Pattern name',
           kind: 'text',
-          readOnly: true,
+          ...(gradient && { readOnly: true }),
           get: (e) => g(e).gradient?.name ?? g(e).pattern,
         }),
-        row(es, {
-          key: 'patternAngle',
-          label: 'Angle',
-          kind: 'angle',
-          readOnly: true,
-          get: (e) => g(e).patternAngle,
-        }),
-        row(es, {
-          key: 'patternScale',
-          label: 'Scale',
-          kind: 'number',
-          readOnly: true,
-          get: (e) => g(e).patternScale,
-        }),
+        patterned.length > 0 ? angleRow(patterned, false) : angleRow(es, true),
+        ...(scaled.length > 0
+          ? [scaleRow(scaled, false)]
+          : user.length === 0
+            ? [scaleRow(es, true)]
+            : []),
+        ...(user.length > 0
+          ? [
+              row(user, {
+                key: 'patternSpacing',
+                label: 'Spacing',
+                kind: 'distance',
+                get: (e) => g(e).patternScale,
+              }),
+              row(user, {
+                key: 'double',
+                label: 'Double',
+                kind: 'choice',
+                options: YES_NO,
+                get: (e) => yesNo(g(e).double),
+              }),
+            ]
+          : []),
         row(es, {
           key: 'associative',
           label: 'Associative',
@@ -953,6 +998,13 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
           readOnly: true,
           options: YES_NO,
           get: (e) => yesNo(g(e).associative),
+        }),
+        row(es, {
+          key: 'islandStyle',
+          label: 'Island detection style',
+          kind: 'choice',
+          options: ISLAND_STYLES,
+          get: (e) => String(g(e).style),
         }),
       ]);
       break;

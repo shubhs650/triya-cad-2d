@@ -62,6 +62,7 @@ import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
 import { LayersPalette } from './LayersPalette';
 import { PropertiesPalette } from './PropertiesPalette';
+import { hatchPatternNames, hatchPatternReply } from './hatch-patterns';
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
 import { openDrawing, openError } from './open';
@@ -322,6 +323,8 @@ function viewContext(id: number): ViewContext {
     views: () => (doc && target ? namedViewsOf(doc, engines.changesOf(doc.id), target.size) : []),
     file: (action, window, resume) => fileCommand(id, action, window, resume),
     plot: (r) => plotScript(id, r),
+    // Properties' Pattern name (M2-35 part 3), from the library the canvases draw with.
+    hatchPattern: (name, placements) => hatchPatternReply(patterns.sources(), name, placements),
     clipboard: (content) => clipboardRequest(id, content),
     // PROPERTIES and PROPERTIESCLOSE (M2-21).
     palette: (name, open) => {
@@ -1080,6 +1083,8 @@ export function App() {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot);
   const recentFiles = useSyncExternalStore(recent.subscribe, recent.getSnapshot);
   const patternState = useSyncExternalStore(patterns.subscribe, patterns.getSnapshot);
+  // Properties' Pattern name offers the library the canvases draw with (M2-35 part 3).
+  const patternNames = useMemo(() => hatchPatternNames(patterns.sources()), [patternState]);
   const fontState = useSyncExternalStore(fonts.subscribe, fonts.getSnapshot);
   const [settings, setSettings] = useState(false);
   // One palette docks at a time until the palette stack (M7-03); PROPERTIES opens one too.
@@ -1372,7 +1377,11 @@ export function App() {
           )}
         </main>
         {active && palette === 'properties' && (
-          <PropertiesPalette doc={active} onClose={() => setPalette(undefined)} />
+          <PropertiesPalette
+            doc={active}
+            onClose={() => setPalette(undefined)}
+            patternNames={patternNames}
+          />
         )}
         {active && palette === 'layers' && (
           <LayersPalette doc={active} store={store} onClose={() => setPalette(undefined)} />

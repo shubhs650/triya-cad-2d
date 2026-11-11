@@ -6,7 +6,7 @@
 import type { Vec2 } from '../../geom/types';
 import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
-import type { MTextGeometry, TextGeometry } from '../../model/types';
+import type { HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 
 /** The view of the current viewport, in world units. */
@@ -116,7 +116,33 @@ export type ViewRequest =
    */
   | { readonly op: 'plotSetup'; readonly layout?: string; readonly pageSetup?: string }
   /** -PLOT: plots a space with the settings given at the command line, without the dialog. */
-  | { readonly op: 'plotScript'; readonly script: PlotScript };
+  | { readonly op: 'plotScript'; readonly script: PlotScript }
+  /**
+   * A hatch given another pattern by name (Properties' Pattern name, M2-35 part 3): the app's
+   * pattern library (the bundled patterns and the user's .pat files, M1-50) places it once per
+   * hatch, as AutoCAD's HATCH stores it (DXF 53–49).
+   */
+  | {
+      readonly op: 'hatchPattern';
+      readonly name: string;
+      readonly placements: readonly PatternPlacement[];
+    };
+
+/** Where a hatch's pattern lies: its angle, its scale and the point its lines start from. */
+export interface PatternPlacement {
+  readonly angle: number;
+  readonly scale: number;
+  readonly origin: Vec2;
+}
+
+/** What `hatchPattern` found: the pattern's name as its file spells it, and its lines. */
+export interface PlacedPattern {
+  readonly name: string;
+  /** From the user's own .pat files (DXF 76 = 2, Custom), not the bundled set (1, Predefined). */
+  readonly custom: boolean;
+  /** One set of lines per placement, in order. */
+  readonly lines: readonly (readonly HatchPatternLine[])[];
+}
 
 /**
  * A text as drawn (`textOutlines`): the four corners of its box in drawing coordinates (a
@@ -254,6 +280,8 @@ export type ViewReply =
       readonly text?: string;
       /** What `plotSetup` found (-PLOT, M2-17 part 5). */
       readonly plotSetup?: PlotScriptSetup;
+      /** What `hatchPattern` placed (M2-35 part 3). */
+      readonly pattern?: PlacedPattern;
     }
   | { readonly ok: false; readonly message: string };
 
