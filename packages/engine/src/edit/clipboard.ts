@@ -10,6 +10,11 @@
 // $HANDSEED (handles are never reused or renumbered, ARCHITECTURE.md §4.1). An anonymous block (a
 // dimension's `*D`, a table's `*T`) always comes in under a new anonymous name.
 //
+// The Clipboard is in the source's units (its $INSUNITS): pasted into a drawing in other units,
+// the objects are scaled about the base point to keep their size, as INSERT scales a drawing
+// in other units (M2-32; `insUnitsScale`, nothing scaled where either drawing is unitless).
+// PASTEBLOCK's block keeps the source's units and its reference takes the scale.
+//
 // A pasted object is a copy (edit.ts): no reactors, extension dictionary or annotation scales, so
 // no associativity or group membership, except that a hatch pasted with its whole boundary stays
 // associative with the boundary's copies. Materials and plot style names are kept by name only
@@ -39,9 +44,10 @@ import type {
   TableStyleRecord,
   Xdata,
 } from '../model/types';
+import { insUnitsScale } from '../model/units';
 import { HANDLE_KEYS, isXrefRecord, renumber } from '../model/xref';
 import { AnonymousNames, copyProblem, transformObjects, type EditReport } from './edit';
-import { moveBy } from './similarity';
+import { followedBy, moveBy, scaleAbout, type Similarity } from './similarity';
 
 /** The definitions the Clipboard carries, by table, as the source holds them. */
 export type ClipboardTables = { readonly [K in TableName]?: readonly TableRecords[K][] };
@@ -61,6 +67,8 @@ export interface Clipboard {
   readonly blocks: readonly BlockDefinition[];
   /** The objects' extents, when known: what PASTECLIP drags. */
   readonly extents?: Box;
+  /** The source's `$INSUNITS`, which a paste scales from; absent, unitless. */
+  readonly insUnits?: number;
 }
 
 export interface ClipboardCopy {
@@ -348,6 +356,7 @@ export function copyToClipboard(
       tables: tables as ClipboardTables,
       blocks: [...blocks.values()],
       ...(extents ? { extents } : {}),
+      insUnits: model.meta.insUnits,
     },
     refused,
     unannotated,
@@ -366,9 +375,31 @@ function byName(model: DocumentModel, table: TableName, name: string): Handle | 
   return undefined;
 }
 
+/** What a paste scales the Clipboard's objects by to keep their size in `model`'s units. */
+export function pasteScale(model: DocumentModel, clip: Clipboard): number {
+  return insUnitsScale(clip.insUnits ?? 0, model.meta.insUnits);
+}
+
+/**
+ * Where a paste carries the Clipboard's objects: scaled by `pasteScale` about the base point,
+ * which goes to `at`; undefined when they stay as they are.
+ */
+export function pastePlacement(
+  model: DocumentModel,
+  clip: Clipboard,
+  at: Vec2,
+): Similarity | undefined {
+  const d = sub(at, clip.base);
+  const k = pasteScale(model, clip);
+  const move = d.x !== 0 || d.y !== 0 ? moveBy(d) : undefined;
+  if (k === 1) return move;
+  const scale = scaleAbout(clip.base, k);
+  return move ? followedBy(scale, move) : scale;
+}
+
 /**
  * PASTECLIP: the Clipboard's objects pasted into `owner` with its base point at `at` (PASTEORIG:
- * `at` is the base point itself). Returns the objects pasted.
+ * `at` is the base point itself), scaled into `model`'s units. Returns the objects pasted.
  */
 export function pasteObjects(
   b: ChangeSetBuilder,
@@ -376,6 +407,17 @@ export function pasteObjects(
   clip: Clipboard,
   owner: Handle,
   at: Vec2,
+): EditReport {
+  return pasteInto(b, model, clip, owner, pastePlacement(model, clip, at));
+}
+
+/** The Clipboard's objects pasted into `owner`, carried by `t` (left where they are without). */
+function pasteInto(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  clip: Clipboard,
+  owner: Handle,
+  t?: Similarity,
 ): EditReport {
   const map = new Map<Handle, Handle>();
   const added: [TableName, ObjectCommon][] = [];
@@ -490,8 +532,7 @@ export function pasteObjects(
   }
 
   const ids = top.map((e) => e.id);
-  const d = sub(at, clip.base);
-  if (d.x !== 0 || d.y !== 0) transformObjects(b, model, ids, moveBy(d));
+  if (t) transformObjects(b, model, ids, t);
   return { ids, refused: new Map(), unannotated: 0 };
 }
 
@@ -514,8 +555,11 @@ export function pasteAsBlock(
   do {
     name = `A$C${(n++ % 0x100000000).toString(16).toUpperCase().padStart(8, '0')}`;
   } while (taken.has(name));
-  const def = b.addBlock({ name, basePoint: clip.base });
-  pasteObjects(b, model, clip, def.handle, clip.base);
+  // The block is in the Clipboard's units; its reference takes the scale into the drawing's.
+  const units = clip.insUnits ?? 0;
+  const def = b.addBlock({ name, basePoint: clip.base, ...(units !== 0 ? { units } : {}) });
+  pasteInto(b, model, clip, def.handle);
+  const k = pasteScale(model, clip);
   const ref = b.addEntity({
     owner,
     layer,
@@ -523,7 +567,7 @@ export function pasteAsBlock(
       kind: 'INSERT',
       block: def.handle,
       position: at,
-      scale: { x: 1, y: 1, z: 1 },
+      scale: { x: k, y: k, z: k },
       rotation: 0,
       attributes: [],
     },

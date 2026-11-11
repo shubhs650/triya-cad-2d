@@ -478,3 +478,81 @@ describe('pasteAsBlock', () => {
     ]);
   });
 });
+
+// M2-32: AutoCAD 2024 Help, "PASTECLIP": objects pasted into a drawing whose units differ are
+// scaled, as INSERT scales a drawing whose INSUNITS differ from the target's (the Clipboard is
+// such a drawing, in the source's units). Where either drawing is unitless (INSUNITS 0),
+// nothing is scaled: INSUNITSDEFSOURCE/INSUNITSDEFTARGET, which once stood in for a unitless
+// drawing, are obsolete, and a drafter pasting between unitless drawings expects no scale.
+describe('pasted between drawings of other units', () => {
+  const withUnits = (insUnits: number): DocumentInit => {
+    const init = targetInit();
+    return { ...init, meta: { ...init.meta, insUnits } };
+  };
+
+  it("keeps the source's INSUNITS on the Clipboard", () => {
+    expect(copied().clip.insUnits).toBe(4);
+  });
+
+  it('scales the objects about the base point by the ratio of the units', () => {
+    // Millimetres into metres.
+    const target = DocumentModel.create(withUnits(6));
+    const { pasted } = paste(target, copied({ x: 5, y: 5 }).clip, { x: 15, y: 25 });
+    const line = of(pasted, 'LINE')[0]!.geom as { start: Vec; end: Vec };
+    expect(round(line.start)).toEqual({ x: 14.995, y: 24.995 });
+    expect(round(line.end)).toEqual({ x: 15.005, y: 24.995 });
+    expect(of(pasted, 'TEXT')[0]!.geom).toMatchObject({ height: 2.5 * 0.001 });
+    const ref = of(pasted, 'INSERT')[0]!.geom as { scale: { x: number; y: number } };
+    expect(ref.scale.x).toBeCloseTo(0.001, 12);
+    expect(ref.scale.y).toBeCloseTo(0.001, 12);
+  });
+
+  it('scales millimetres into inches by 1/25.4', () => {
+    const target = DocumentModel.create(withUnits(1));
+    const { pasted } = paste(target, copied().clip, { x: 0, y: 0 });
+    const line = of(pasted, 'LINE')[0]!.geom as { start: Vec; end: Vec };
+    expect(line.end.x - line.start.x).toBeCloseTo(10 / 25.4, 12);
+  });
+
+  it('scales nothing when either drawing is unitless', () => {
+    const target = DocumentModel.create(withUnits(0));
+    const { pasted } = paste(target, copied().clip, { x: 0, y: 0 });
+    expect(of(pasted, 'LINE')[0]!.geom).toMatchObject({ end: { x: 10, y: 0 } });
+    const unitless = { ...copied().clip, insUnits: 0 };
+    const inches = DocumentModel.create(withUnits(1));
+    const again = paste(inches, unitless, { x: 0, y: 0 });
+    expect(of(again.pasted, 'LINE')[0]!.geom).toMatchObject({ end: { x: 10, y: 0 } });
+  });
+
+  it('PASTEBLOCK scales the reference and keeps the block in the source units', () => {
+    const target = DocumentModel.create(withUnits(6));
+    const b = new ChangeSetBuilder(target);
+    const report = pasteAsBlock(b, target, copied({ x: 5, y: 5 }).clip, MODEL_SPACE, '11', {
+      x: 50,
+      y: 60,
+    });
+    target.apply(b.build());
+    const g = target.entity(report.ids[0]!)!.geom as {
+      block: string;
+      position: Vec;
+      scale: { x: number; y: number; z: number };
+    };
+    expect(g.position).toEqual({ x: 50, y: 60 });
+    expect(g.scale.x).toBeCloseTo(0.001, 12);
+    expect(g.scale.y).toBeCloseTo(0.001, 12);
+    expect(g.scale.z).toBeCloseTo(0.001, 12);
+    expect(target.tables.blockRecords.get(g.block)?.units).toBe(4);
+    // The block's own objects are as copied.
+    const line = target
+      .blockEntities(g.block)
+      .map((id) => target.entity(id)!)
+      .find((e) => e.type === 'LINE')!.geom;
+    expect(line).toMatchObject({ start: { x: 0, y: 0 }, end: { x: 10, y: 0 } });
+  });
+});
+
+type Vec = { x: number; y: number };
+const round = (p: Vec): Vec => ({
+  x: Math.round(p.x * 1e9) / 1e9 + 0,
+  y: Math.round(p.y * 1e9) / 1e9 + 0,
+});

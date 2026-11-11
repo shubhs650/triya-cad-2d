@@ -5,6 +5,10 @@
 // through its handle, so Save still writes in place. A file opened without a handle (the file
 // input, a drop without File System Access) cannot be opened again by the app, so it is not
 // listed.
+//
+// Each drawing keeps a picture of itself for the start screen (M2-32, UI_SPEC §10: "thumbnails
+// from last autosave"): a PNG of its canvas taken when it is autosaved, saved, or closed with
+// nothing unsaved, so it shows the drawing as last kept (App.tsx `pictureForRecent`).
 import { closeOnDelete } from './local-data';
 
 /** The parts of a File System Access file handle the list uses. */
@@ -23,6 +27,8 @@ export interface RecentEntry {
   readonly handle: RecentHandle;
   /** When it was last opened or saved (ms since 1970). */
   readonly openedAt: number;
+  /** A PNG of the drawing as last autosaved, saved or closed, for the start screen. */
+  readonly thumbnail?: Blob;
 }
 
 /** Where the list is kept (IndexedDB in the app). */
@@ -82,8 +88,16 @@ export class RecentFiles {
       name: handle.name,
       handle,
       openedAt: this.#now(),
+      ...(same?.thumbnail ? { thumbnail: same.thumbnail } : {}),
     };
     this.#set([entry, ...this.#list.filter((e) => e !== same)].slice(0, RECENT_MAX));
+  }
+
+  /** The drawing opened through `handle` now looks like `thumbnail`; one not listed is left. */
+  async setThumbnail(handle: RecentHandle, thumbnail: Blob): Promise<void> {
+    const entry = await this.#find(this.#list, handle);
+    if (!entry) return;
+    this.#set(this.#list.map((e) => (e === entry ? { ...e, thumbnail } : e)));
   }
 
   /**
