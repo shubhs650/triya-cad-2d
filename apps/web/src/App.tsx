@@ -149,25 +149,59 @@ void recoveryOffers.load();
 const recent = new RecentFiles(indexedDbRecent());
 void recent.load();
 
-/** How long closing a drawing waits for its picture before it closes anyway. */
-const PICTURE_ON_CLOSE_MS = 2_000;
+/**
+ * Canvases whose picture is being copied (M2-32): the copy comes from the render worker, so a
+ * canvas closed meanwhile is disposed once the copy is in, or after PICTURE_WAIT_MS at most,
+ * and closing a drawing never waits for its picture.
+ */
+const picturing = new Map<CanvasController, Promise<unknown>>();
+const PICTURE_WAIT_MS = 10_000;
+
+/** Disposes `c` now, or once the picture being copied from it is in. */
+function disposeCanvas(c: CanvasController): void {
+  const busy = picturing.get(c);
+  if (busy) void busy.finally(() => c.dispose());
+  else c.dispose();
+}
 
 /**
- * Takes the start screen's picture of drawing `id` (M2-32, UI_SPEC §10): its canvas as last
- * drawn, kept with its recent entry. A drawing with no file handle is not listed, so it has none.
+ * A copy of drawing `id`'s canvas as last drawn and the file handle it is listed by, for the
+ * start screen (M2-32, UI_SPEC §10); undefined for a drawing with no file handle (not listed).
  */
-async function pictureForRecent(id: number): Promise<void> {
+async function takePicture(
+  id: number,
+): Promise<{ handle: RecentHandle; bitmap: ImageBitmap } | undefined> {
   const doc = store.getSnapshot().docs.find((d) => d.id === id);
   const handle = doc?.file?.handle;
   const controller = doc && controllerOf(doc.id, doc.block);
-  if (!handle || !controller) return;
+  if (!handle || !controller) return undefined;
+  // Asked for before this returns its promise, so a drawing closing right after is copied too.
+  const copy = controller.thumbnail(RECENT_THUMBNAIL).catch(() => undefined);
+  const settled = Promise.race([
+    copy,
+    new Promise<undefined>((resolve) => setTimeout(resolve, PICTURE_WAIT_MS)),
+  ]);
+  picturing.set(controller, settled);
+  const bitmap = await settled;
+  if (picturing.get(controller) === settled) picturing.delete(controller);
+  return bitmap ? { handle: handle as RecentHandle, bitmap } : undefined;
+}
+
+/** Keeps a picture taken by `takePicture` with its recent entry. */
+async function keepPicture(
+  picture: { handle: RecentHandle; bitmap: ImageBitmap } | undefined,
+): Promise<void> {
+  if (!picture) return;
   try {
-    const bitmap = await controller.thumbnail(RECENT_THUMBNAIL);
-    if (!bitmap) return;
-    await recent.setThumbnail(handle as RecentHandle, await pngOf(bitmap));
+    await recent.setThumbnail(picture.handle, await pngOf(picture.bitmap));
   } catch {
     // A picture is a nicety: the list works without one.
   }
+}
+
+/** Takes and keeps the start screen's picture of drawing `id` (autosave, save). */
+async function pictureForRecent(id: number): Promise<void> {
+  await keepPicture(await takePicture(id));
 }
 
 /**
@@ -380,12 +414,7 @@ async function closeDoc(id: number): Promise<boolean> {
   // Closed with nothing unsaved, the start screen pictures it as it is now; closed with its
   // changes thrown away, it keeps the picture of its last autosave or save (M2-32).
   const now = store.getSnapshot().docs.find((d) => d.id === id);
-  if (now && !isDirty(now)) {
-    await Promise.race([
-      pictureForRecent(id),
-      new Promise((resolve) => setTimeout(resolve, PICTURE_ON_CLOSE_MS)),
-    ]);
-  }
+  if (now && !isDirty(now)) void takePicture(id).then(keepPicture);
   if (previewMode.get()?.doc === id) previewMode.close();
   lastPlotSettings.forget(id);
   store.close(id);
@@ -1678,7 +1707,7 @@ function ViewportCanvas({
     showCurrent(id, block, visibleRef.current);
     return () => {
       unregister();
-      c.dispose();
+      disposeCanvas(c);
     };
   }, [id, name, opened, block, onMode, index, tile, count]);
   const r = tile?.rect;

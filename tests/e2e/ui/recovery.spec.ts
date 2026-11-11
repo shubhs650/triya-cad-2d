@@ -313,6 +313,7 @@ test('drawings opened through a file handle are listed as recent and reopen from
 
     // The Ctrl+K palette lists it too (UI_SPEC §5).
     await page.getByRole('button', { name: `Close ${NAME}` }).click();
+    await expect(tab(page)).toHaveCount(0);
     await page.keyboard.press('Control+k');
     const palette = page.getByRole('dialog', { name: 'Command palette' });
     await page.keyboard.type('recent');
@@ -366,9 +367,9 @@ test('the start screen pictures each recent drawing as last autosaved or closed 
     await page.getByRole('button', { name: `Close ${NAME}` }).click();
     await expect(tab(page)).toHaveCount(0);
     await expect(page.getByRole('dialog')).toHaveCount(0);
-    const closed = (await recentPictures(page))[0]!.digest;
-    expect(closed).toBeDefined();
-    expect(closed).not.toBe(autosaved);
+    // The copy is taken before the drawing closes; it is kept just after.
+    await expect.poll(async () => (await recentPictures(page))[0]?.digest).not.toBe(autosaved);
+    expect((await recentPictures(page))[0]!.digest).toBeDefined();
     await expect(card.locator('.recent-thumbnail')).toHaveAttribute('data-drawn', 'true');
   } finally {
     await p.close();
