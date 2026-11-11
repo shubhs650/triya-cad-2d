@@ -38,6 +38,7 @@
 // What the target cannot take yet is left out when copying, with a reason: viewports (a
 // layout's), external references (their content lives in another file: attaching one is
 // XATTACH's, M5-04), an image whose definition is missing and what COPY refuses.
+import type { GeneralProps } from '../properties/sheet';
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { sub } from '../geom/vec';
@@ -643,15 +644,15 @@ function pasteDefinition(
 
 /**
  * PASTEBLOCK: the Clipboard's objects as a new block (named as AutoCAD names one, `A$C` and
- * eight hex digits), based at the Clipboard's base point, and one reference to it at `at` on
- * `layer`. Returns the reference.
+ * eight hex digits), based at the Clipboard's base point, and one reference to it at `at` with
+ * `props` (the drawing's current settings, M2-35), or on the layer `props`. Returns the reference.
  */
 export function pasteAsBlock(
   b: ChangeSetBuilder,
   model: DocumentModel,
   clip: Clipboard,
   owner: Handle,
-  layer: Handle,
+  props: Handle | GeneralProps,
   at: Vec2,
 ): EditReport {
   const taken = new Set([...model.tables.blockRecords.values()].map((r) => r.name.toUpperCase()));
@@ -667,7 +668,7 @@ export function pasteAsBlock(
   const k = pasteScale(model, clip);
   const ref = b.addEntity({
     owner,
-    layer,
+    ...(typeof props === 'string' ? { layer: props } : props),
     geom: {
       kind: 'INSERT',
       block: def.handle,

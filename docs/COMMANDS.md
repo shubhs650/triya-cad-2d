@@ -167,7 +167,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | LTSCALE / CELTSCALE / PSLTSCALE / MSLTSCALE | LTS | 2 | sysvars | |
 | LWEIGHT | LW | 2 | dialog | |
 | COLOR | COL | 2 | dialog + -COLOR | |
-| CETRANSPARENCY | — | 2 | | |
+| CETRANSPARENCY | — | 2 | Properties palette with nothing selected (M2-35); kept for the session unless the drawing has a DICTIONARYVAR for it | ~ |
 | PURGE | PU | 2 | dialog + -PURGE | |
 | AUDIT / RECOVER | — | 2 | Health report implementation | |
 | UNITS | UN | 2 | dialog + -UNITS | |

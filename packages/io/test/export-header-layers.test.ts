@@ -172,6 +172,32 @@ describe('header variables', () => {
     }
   });
 
+  it('keeps CETRANSPARENCY for the session unless the drawing has a DICTIONARYVAR for it (M2-35)', () => {
+    // DXF has no HEADER variable for CETRANSPARENCY: a save writes it only into an existing
+    // AcDbVariableDictionary entry, and leaves a drawing without one as it was.
+    const bytes = drawing();
+    const { model } = open(bytes);
+    edit(model, (b) => {
+      b.setHeader('CETRANSPARENCY', '40');
+      b.setHeader('$CECOLOR', 5);
+    });
+    const back = new Map(saved(bytes, model, 'dxf').header);
+    expect(back.has('CETRANSPARENCY')).toBe(false);
+    expect(back.get('$CECOLOR')).toBe(5);
+
+    const doc = readCadDocument(bytes);
+    const vars = doc.rootDictionary!.getEntry<CadDictionary>(CadDictionary.variableDictionary)!;
+    const v = new DictionaryVariable();
+    v.name = 'CETRANSPARENCY';
+    v.value = 'ByLayer';
+    vars.add(v);
+    const withVar = writeCadDocument(doc, { format: 'dxf' });
+    const second = open(withVar).model;
+    expect(second.header.get('CETRANSPARENCY')).toBe('ByLayer');
+    edit(second, (b) => b.setHeader('CETRANSPARENCY', '40'));
+    expect(new Map(saved(withVar, second, 'dxf').header).get('CETRANSPARENCY')).toBe('40');
+  });
+
   it('writes the DWG dimension linetypes and the DXF text fill colour (M1-87)', () => {
     const bytes = drawing();
     const { model } = open(bytes);

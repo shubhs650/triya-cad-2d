@@ -3,6 +3,7 @@
 // and its edits on the PromptBus, each one undo step that U takes back.
 import { describe, expect, it } from 'vitest';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   EngineSession,
   PromptBus,
@@ -249,9 +250,14 @@ describe('the Properties sheet', () => {
     expect(rowOf(sheet, 'SHEET')).toMatchObject({ key: 'attribute:64', value: 'A-101' });
   });
 
-  it('shows nothing for no selection', () => {
+  it('shows the current settings for no selection, and nothing for objects gone', () => {
     const s = setup();
-    expect(propertySheet(s.model, [])).toMatchObject({ count: 0, types: [], sections: [] });
+    expect(propertySheet(s.model, [])).toMatchObject({ count: 0, types: [], current: true });
+    const gone = s.ids('20');
+    const b = new ChangeSetBuilder(s.model);
+    b.removeEntity(gone[0]!);
+    s.model.apply(b.build());
+    expect(propertySheet(s.model, gone)).toMatchObject({ count: 0, types: [], sections: [] });
   });
 });
 
@@ -467,10 +473,8 @@ describe('Properties edits', () => {
     expect(s.log.at(-1)).toBe('1 object was not changed: on a locked layer.');
   });
 
-  it('does nothing with nothing selected, and cancels a running command first', async () => {
+  it('cancels a running command first', async () => {
     const s = setup();
-    await s.bus.setProperty({ key: 'color', value: 'aci:1' });
-    expect(s.bus.undo.state.undoable).toBe(0);
     await s.bus.selectAll();
     await s.bus.submit('ZOOM');
     expect(s.bus.command).toBe('ZOOM');

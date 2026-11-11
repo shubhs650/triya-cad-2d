@@ -43,7 +43,7 @@ import {
 } from '../../edit/revcloud';
 import { formatNumber, type Prompt, type PromptAnswer } from '../prompt';
 import type { CommandContext, CommandDef } from '../command';
-import { currentLayer } from './line';
+import { currentProps } from '../../properties/current';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -153,7 +153,7 @@ export function revcloudCommand(): CommandDef {
         b.removeEntity(replaces.id);
         id = b.addEntity({ owner: replaces.owner, ...propsOf(replaces), geom, xdata }).id;
       } else {
-        id = b.addEntity({ owner: ctx.space, layer: currentLayer(ctx.model), geom, xdata }).id;
+        id = b.addEntity({ owner: ctx.space, ...currentProps(ctx.model), geom, xdata }).id;
       }
     });
     return id;

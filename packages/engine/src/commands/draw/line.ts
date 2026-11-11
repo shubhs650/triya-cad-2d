@@ -7,24 +7,10 @@
 // (AutoCAD 2024 Help, "LINE (Command)").
 import type { Vec2 } from '../../geom/types';
 import type { EntityId } from '../../model/entity-ids';
-import type { Handle } from '../../model/handle';
-import type { DocumentModel } from '../../model/document';
 import type { CommandDef } from '../command';
+import { currentProps } from '../../properties/current';
 
-/**
- * The layer new objects go on: `$CLAYER`, else layer 0 (a drawing whose CLAYER names no layer
- * is damaged; AutoCAD's AUDIT sets it back to 0).
- */
-export function currentLayer(model: DocumentModel): Handle {
-  const name = model.header.get('$CLAYER');
-  let zero: Handle | undefined;
-  for (const l of model.tables.layers.values()) {
-    if (typeof name === 'string' && l.name.toUpperCase() === name.toUpperCase()) return l.handle;
-    if (l.name === '0') zero = l.handle;
-  }
-  if (zero === undefined) throw new Error('the drawing has no layer 0');
-  return zero;
-}
+export { currentLayer } from '../../properties/current';
 
 /**
  * LINE for one document. The definition remembers where its last segment ended, which Enter at
@@ -67,12 +53,12 @@ export function lineCommand(): CommandDef {
         const close = a.kind === 'keyword' && a.keyword === 'Close';
         const to = close ? points[0]! : a.kind === 'point' ? a.point : undefined;
         if (!to) return;
-        const layer = currentLayer(ctx.model);
+        const props = currentProps(ctx.model);
         ctx.edit((b) => {
           ids.push(
             b.addEntity({
               owner: ctx.space,
-              layer,
+              ...props,
               geom: { kind: 'LINE', start: from, end: to },
             }).id,
           );

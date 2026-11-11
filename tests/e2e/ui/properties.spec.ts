@@ -67,14 +67,14 @@ test('shows and edits the selected objects’ properties', async ({ page }) => {
     .toEqual([{ color: { kind: 'byLayer' }, ends: [70, 50, 90, 50] }]);
 
   const palette = page.getByRole('complementary', { name: 'Properties' });
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
   await page.keyboard.press('Control+1');
   await expect(palette).toBeVisible();
-  await expect(palette.getByText('No selection')).toBeVisible();
+  await expect(objects).toHaveText('No selection');
 
   // Pick the line at the canvas centre, (80, 50): the docked palette narrowed the canvas.
   const docked = (await canvas.boundingBox())!;
   await page.mouse.click(docked.x + docked.width / 2, docked.y + docked.height / 2);
-  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
   await expect(objects).toHaveText('Line (1)');
   await expect(palette.getByRole('table', { name: 'Geometry' })).toBeVisible();
   await expect(palette.getByRole('textbox', { name: 'Start X' })).toHaveValue(/^1000070\.0+$/);
@@ -98,7 +98,7 @@ test('shows and edits the selected objects’ properties', async ({ page }) => {
   // keeps the focus (and its keys) until the drafter leaves the palette.
   await palette.getByRole('heading', { name: 'Properties' }).click();
   await page.keyboard.press('Escape');
-  await expect(palette.getByText('No selection')).toBeVisible();
+  await expect(objects).toHaveText('No selection');
   await page.mouse.move(docked.x + docked.width / 2, docked.y + docked.height / 2);
   await page.keyboard.press('Control+a');
   await expect(objects).toContainText(/^All \(\d+\)/);
@@ -109,12 +109,60 @@ test('shows and edits the selected objects’ properties', async ({ page }) => {
   await expect(palette.getByRole('textbox', { name: 'End X' })).toHaveValue(/^1000100\.0+$/);
 
   await page.keyboard.press('Escape');
-  await expect(palette.getByText('No selection')).toBeVisible();
+  await expect(objects).toHaveText('No selection');
   await canvas.hover();
   await type(page, 'PROPERTIESCLOSE', 'Command:');
   await expect(palette).toBeHidden();
   await type(page, 'PR', 'Command:');
   await expect(palette).toBeVisible();
+});
+
+// M2-35: with nothing selected the palette shows the drawing's current settings (AutoCAD's "No
+// selection" General), a change sets them, and the next object drawn takes them.
+test('sets the current colour, layer and lineweight with nothing selected', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toHaveText('No selection');
+  await expect(objects).toBeDisabled();
+  const general = palette.getByRole('table', { name: 'General' });
+  await expect(palette.getByRole('table')).toHaveCount(1);
+  const color = general.getByRole('combobox', { name: 'Color' });
+  const layer = general.getByRole('combobox', { name: 'Layer' });
+  await expect(color).toHaveValue('ByLayer');
+  // The drawing's layers are 0 (current) and Defpoints.
+  await expect(layer.locator('option:checked')).toHaveText('0');
+  const other = 'Defpoints';
+
+  await color.selectOption({ label: 'Blue' });
+  await expect(color).toHaveValue('aci:5');
+  await layer.selectOption({ label: other });
+  await expect(layer.locator('option:checked')).toHaveText(other);
+  await general.getByRole('combobox', { name: 'Lineweight' }).selectOption({ label: '0.50 mm' });
+
+  await activeCanvas(page).hover();
+  await type(page, 'L', 'Specify first point:');
+  await type(page, '1000070,1000050', 'Specify next point or [Undo]:');
+  await type(page, '1000090,1000050', 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+  const line = await page.evaluate(() => {
+    const changes = (window as unknown as Dev).triyaDev.changes();
+    for (const cs of [...changes].reverse())
+      for (const a of cs.entities?.added ?? []) if (a.entity.geom.kind === 'LINE') return a.entity;
+    return undefined;
+  });
+  expect(line).toMatchObject({ color: { kind: 'aci', index: 5 }, lineweight: 50 });
+  const layerValue = await layer.inputValue();
+  expect(line!.layer).toBe(layerValue);
+  // U takes the drawing back to the settings it had, one palette change at a time.
+  await type(page, 'U', 'Command:');
+  await type(page, 'U', 'Command:');
+  await expect(general.getByRole('combobox', { name: 'Lineweight' })).toHaveValue('ByLayer');
 });
 
 test('shows the dynamic block badge on dynamic block references', async ({ page }) => {

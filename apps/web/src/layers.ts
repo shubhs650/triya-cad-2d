@@ -56,7 +56,10 @@ export function layerRows(
   changes: readonly ChangeSet[],
   block?: Handle,
 ): LayerRow[] {
-  const current = new Map(init.header ?? []).get('$CLAYER');
+  // The current layer as the changes left it: the Properties palette sets it (M2-35).
+  let current = new Map(init.header ?? []).get('$CLAYER');
+  for (const cs of changes)
+    for (const h of cs.header ?? []) if (h.name === '$CLAYER') current = h.after;
   const currentName = typeof current === 'string' ? current.toUpperCase() : undefined;
   const linetypes = new Map((init.tables?.linetypes ?? []).map((l) => [l.handle, l.name]));
   const viewports =

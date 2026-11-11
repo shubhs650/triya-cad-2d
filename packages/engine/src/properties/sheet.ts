@@ -22,6 +22,7 @@ import type {
   LinetypeRef,
   Transparency,
 } from '../model/types';
+import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
 import { dimVars } from '../annotation/leader';
 
@@ -90,6 +91,11 @@ export interface PropertySheet {
    * dynamic block (not its anonymous `*U` state).
    */
   readonly dynamic?: string;
+  /**
+   * Nothing is selected: the rows are the drawing's current settings, which new objects take
+   * (CECOLOR, CLAYER, CELTYPE, CELTSCALE, CELWEIGHT, CETRANSPARENCY), and an edit sets them.
+   */
+  readonly current?: true;
   /** How the front-end formats distances and angles: the drawing's units. */
   readonly units: PropertyUnits;
 }
@@ -958,25 +964,14 @@ export function filtered(
   return out;
 }
 
-/**
- * The Properties palette's sheet for the objects `ids`, narrowed to `filter` (a type among
- * them; any other shows all). No objects: General with the drawing's current settings is
- * AutoCAD's; Triya shows "No selection" and no rows (M2-21 leftover).
- */
-export function propertySheet(
-  model: DocumentModel,
-  ids: readonly EntityId[],
-  filter?: EntityType,
-): PropertySheet {
-  const all = filtered(model, ids, undefined);
-  const counts = new Map<EntityType, number>();
-  for (const e of all) counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
-  const types = [...counts].map(([type, count]) => ({ type, label: typeLabel(type), count }));
-  const narrowed = filter !== undefined && counts.has(filter) ? filter : undefined;
-  const es = narrowed ? all.filter((e) => e.type === narrowed) : all;
-  const units = propertyUnits(model);
-  if (es.length === 0) return { count: 0, types: [], sections: [], units };
+/** The properties every object has, and the drawing's current settings for new objects. */
+export type GeneralProps = Pick<
+  Entity,
+  'color' | 'layer' | 'linetype' | 'ltScale' | 'lineweight' | 'transparency'
+>;
 
+/** General's rows (Color, Layer, Linetype, Linetype scale, Lineweight, Transparency). */
+function generalRows(model: DocumentModel, es: readonly GeneralProps[]): PropertyRow[] {
   const layers = [...model.tables.layers.values()]
     .map((l) => ({ value: l.handle as string, label: l.name }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -1001,7 +996,7 @@ export function propertySheet(
   ];
   const linetypeValue = (l: LinetypeRef): string => l;
 
-  const general: PropertyRow[] = [
+  return [
     row(es, {
       key: 'color',
       label: 'Color',
@@ -1036,6 +1031,32 @@ export function propertySheet(
       get: (e) => transparencyValue(e.transparency),
     }),
   ];
+}
+
+/**
+ * The Properties palette's sheet for the objects `ids`, narrowed to `filter` (a type among
+ * them; any other shows all). With nothing selected, AutoCAD's "No selection": General with the
+ * drawing's current settings for new objects (`current`, M2-35).
+ */
+export function propertySheet(
+  model: DocumentModel,
+  ids: readonly EntityId[],
+  filter?: EntityType,
+): PropertySheet {
+  const all = filtered(model, ids, undefined);
+  const counts = new Map<EntityType, number>();
+  for (const e of all) counts.set(e.type, (counts.get(e.type) ?? 0) + 1);
+  const types = [...counts].map(([type, count]) => ({ type, label: typeLabel(type), count }));
+  const narrowed = filter !== undefined && counts.has(filter) ? filter : undefined;
+  const es = narrowed ? all.filter((e) => e.type === narrowed) : all;
+  const units = propertyUnits(model);
+  if (ids.length === 0) {
+    const sections = [{ title: 'General', rows: generalRows(model, [currentProps(model)]) }];
+    return { count: 0, types: [], sections, current: true, units };
+  }
+  if (es.length === 0) return { count: 0, types: [], sections: [], units };
+
+  const general = generalRows(model, es);
   const oneType = narrowed ?? (counts.size === 1 ? es[0]!.type : undefined);
   const sections: PropertySection[] = [
     { title: 'General', rows: general },

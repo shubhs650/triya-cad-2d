@@ -134,6 +134,12 @@ describe('layerRows', () => {
     expect(row).toMatchObject({ on: false, locked: true });
   });
 
+  it('marks the layer a later change made current (M2-35)', () => {
+    const cs: ChangeSet = { header: [{ name: '$CLAYER', before: 'Walls', after: 'DOORS' }] };
+    const rows = layerRows(init, [cs]);
+    expect(rows.filter((r) => r.current).map((r) => r.name)).toEqual(['doors']);
+  });
+
   it('counts the viewports of the layout shown that freeze each layer', () => {
     const rows = layerRows(init, [], '1B');
     // The layout's own paper-space viewport (id 1) is not one of its viewports.

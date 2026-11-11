@@ -57,7 +57,7 @@ import { revcloudOf } from '../edit/revcloud';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
 import { UndoStack, type UndoAction, type UndoState } from './undo';
-import { applyPropertyEdit, type PropertyEdit } from '../properties/edit';
+import { applyCurrentEdit, applyPropertyEdit, type PropertyEdit } from '../properties/edit';
 import { filtered } from '../properties/sheet';
 import type { EntityType } from '../model/types';
 import { refusalMessages } from '../edit/edit';
@@ -463,7 +463,8 @@ export class PromptBus {
 
   /**
    * A Properties palette edit (M2-21): `edit` set on the objects selected at `Command:` (of the
-   * type `filter`, when the palette shows one type). One undo step, which the command line does
+   * type `filter`, when the palette shows one type); with nothing selected, the drawing's
+   * current setting new objects take (M2-35, `applyCurrentEdit`). One undo step, which the command line does
    * not echo, as AutoCAD's palette edits; the objects stay selected. A command running is
    * cancelled first, as a palette or ribbon button does (^C^C); grip editing keeps its
    * selection, so the edit applies to it.
@@ -472,7 +473,6 @@ export class PromptBus {
     return this.#enqueue(async () => {
       if (this.#stack.length > 0) await this.#cancel();
       const ids = [...this.#idle.ids];
-      if (ids.length === 0) return;
       const model = this.#model;
       const def: CommandDef = {
         name: 'PROPERTIES',
@@ -482,7 +482,10 @@ export class PromptBus {
         async *run(ctx) {
           let report: ReturnType<typeof applyPropertyEdit> | undefined;
           ctx.edit((b) => {
-            report = applyPropertyEdit(b, model, filtered(model, ids, filter), edit);
+            report =
+              ids.length === 0
+                ? applyCurrentEdit(b, model, edit)
+                : applyPropertyEdit(b, model, filtered(model, ids, filter), edit);
           });
           if (report!.invalid) ctx.message(`${report!.invalid}.`);
           for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
