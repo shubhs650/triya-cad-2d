@@ -14,6 +14,7 @@ import {
   RenderSession,
   RendererHost,
   serveRenderer,
+  underlayKey,
   type FontSources,
   type HostCanvas,
   type HostMessage,
@@ -140,6 +141,40 @@ describe('the render session measures its space (M1-35 part 2)', () => {
     });
     expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 37, maxY: 22 });
     s.setUnderlay('9A', undefined);
+    expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
+  });
+
+  it('takes the page size from a raster of the page with layers turned off too (M2-38)', () => {
+    const s = new RenderSession({
+      document: {
+        init: drawingInit([
+          entity('20', line(0, 0, 10, 0)),
+          entity('22', {
+            kind: 'PDFUNDERLAY',
+            definition: '9A',
+            position: { x: 20, y: 0 },
+            scale: { x: 2, y: 2, z: 1 },
+            rotation: 0,
+            flags: 2,
+            contrast: 100,
+            fade: 0,
+            clip: [],
+            layersOff: ['Walls'],
+          }),
+        ]),
+        block: MODEL,
+        tol: toleranceForSize(1000),
+      },
+      surface: surface('visible'),
+      createLayer: () => surface('layer'),
+      requestIdle: () => {},
+    });
+    const pixels = { width: 1, height: 1, data: new Uint8ClampedArray(4) };
+    const region = { minX: 0, minY: 0, maxX: 1, maxY: 1 };
+    const key = underlayKey('9A', ['Walls']);
+    s.setUnderlay(key, { page: { width: 8.5, height: 11 }, region, pixels });
+    expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 37, maxY: 22 });
+    s.setUnderlay(key, undefined);
     expect(s.extents()).toEqual({ minX: 0, minY: 0, maxX: 10, maxY: 0 });
   });
 

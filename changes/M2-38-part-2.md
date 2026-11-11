@@ -1,0 +1,1 @@
+- M2-38 part 2 (#291): PDF layers an underlay turns off (ULAYERS, its AdeskUnderlayLayerOverrideData xdata) are hidden on screen and in the plot, and a plotted PDF page keeps its own layers' default visibility; closes M2-38 (annotations, the Plot dialog note and the ULAYERS dialog moved to M2-56).

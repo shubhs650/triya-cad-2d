@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { PdfDocument } from '../src/document';
-import { pageView, underlayPageIndex } from '../src/import';
+import { pageView, pdfText, underlayPageIndex } from '../src/import';
 import type { Affine } from '../src/path';
 import { plotItems, type PlotPaint, type PlotPathItem, type PlotUnderlay } from '../src/plot';
 import type { PdfStream } from '../src/reader';
-import { PdfName, PdfSource, type PdfDict } from '../src/reader';
-import { TWO_PAGES, buildPdf, textOf } from './build';
+import { PdfName, PdfSource, type PdfDict, type PdfRef, type PdfString } from '../src/reader';
+import { LAYERED, TWO_PAGES, buildPdf, textOf } from './build';
 
 const at = (m: Affine, x: number, y: number) => [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
 
@@ -183,5 +183,81 @@ describe('plotting a PDF underlay', () => {
     const refused = plot([item(underlay())], encrypted);
     expect(refused.content).not.toContain('Do');
     expect(refused.xobjects.size).toBe(0);
+  });
+});
+
+/** The plot's PDF layers: each OCG's name, and whether the plot shows it (`/D`). */
+function plotLayers(src: PdfSource): { name: string; on: boolean; num: number }[] {
+  const catalog = src.resolve(src.trailer.get('Root')) as PdfDict;
+  const oc = src.resolve(catalog.get('OCProperties')) as PdfDict | null | undefined;
+  if (!oc) return [];
+  const d = src.resolve(oc.get('D')) as PdfDict;
+  const off = new Set(((d.get('OFF') ?? []) as PdfRef[]).map((r) => r.num));
+  expect(d.get('BaseState') ?? new PdfName('ON')).toEqual(new PdfName('ON'));
+  return (oc.get('OCGs') as PdfRef[]).map((r) => {
+    const g = src.resolve(r) as PdfDict;
+    expect(g.get('Type')).toEqual(new PdfName('OCG'));
+    return { name: pdfText((g.get('Name') as PdfString).bytes), on: !off.has(r.num), num: r.num };
+  });
+}
+
+describe('plotting a PDF underlay with layers (M2-38 part 2)', () => {
+  it('lists the copied layers as the source shows them, its default-off layer off', () => {
+    const { src } = plot([item(underlay())], buildPdf(LAYERED));
+    expect(plotLayers(src).map(({ name, on }) => [name, on])).toEqual([
+      ['Walls', true],
+      ['Notes', true],
+      ['Draft', false],
+    ]);
+  });
+
+  it('turns off the layers the underlay turns off (ULAYERS), by name', () => {
+    const { src } = plot([item(underlay({ layersOff: ['Notes', 'Walls'] }))], buildPdf(LAYERED));
+    expect(plotLayers(src).map(({ name, on }) => [name, on])).toEqual([
+      ['Walls', false],
+      ['Notes', false],
+      ['Draft', false],
+    ]);
+  });
+
+  it('gives two underlays of one page their own copy of its layers when they differ', () => {
+    const { src, content, form } = plot(
+      [item(underlay()), item(underlay({ layersOff: ['Walls'], frame: { ...MM, e: 100 } }))],
+      buildPdf(LAYERED),
+    );
+    expect(content).toContain('/Fm1 Do');
+    expect(content).toContain('/Fm2 Do');
+    // Each form names its own layers: the second's Walls is another object, and off.
+    const walls = (name: string) =>
+      (
+        ((form(name).dict.get('Resources') as PdfDict).get('Properties') as PdfDict).get(
+          'W',
+        ) as PdfRef
+      ).num;
+    expect(walls('Fm1')).not.toBe(walls('Fm2'));
+    const layers = plotLayers(src);
+    expect(layers.map(({ name, on }) => [name, on])).toEqual([
+      ['Walls', true],
+      ['Notes', true],
+      ['Draft', false],
+      ['Walls', false],
+      ['Notes', true],
+      ['Draft', false],
+    ]);
+    expect(layers.find((l) => l.num === walls('Fm2'))?.on).toBe(false);
+    expect(layers.find((l) => l.num === walls('Fm1'))?.on).toBe(true);
+  });
+
+  it('writes no optional content for a page without layers', () => {
+    const { src } = plot([item(underlay({ layersOff: ['Walls'] }))]);
+    const catalog = src.resolve(src.trailer.get('Root')) as PdfDict;
+    expect(catalog.has('OCProperties')).toBe(false);
+  });
+
+  it('reads a text string in PDFDocEncoding, UTF-16BE or UTF-8', () => {
+    const b = (...x: number[]) => Uint8Array.from(x);
+    expect(pdfText(b(0x57, 0x80, 0xe9, 0x18))).toBe('W•é˘');
+    expect(pdfText(b(0xfe, 0xff, 0x00, 0x4e, 0xd8, 0x3d, 0xde, 0x00))).toBe('N😀');
+    expect(pdfText(b(0xef, 0xbb, 0xbf, 0xc3, 0xa9))).toBe('é');
   });
 });

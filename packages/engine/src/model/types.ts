@@ -689,6 +689,12 @@ export interface UnderlayGeometry extends PlanarProps {
   readonly fade: number;
   /** DXF 11: clip boundary vertices in the underlay's own coordinates. */
   readonly clip: readonly Vec2[];
+  /**
+   * The PDF layers (optional content group names) this underlay turns off, AutoCAD's ULAYERS
+   * (M2-38 part 2): read from its `AdeskUnderlayLayerOverrideData` xdata, which stays the
+   * record a save writes (passthrough); absent when it turns none off.
+   */
+  readonly layersOff?: readonly string[];
 }
 
 /** One vertex of an MLINE (DXF 11–13 and its element parameters). Points are WCS. */

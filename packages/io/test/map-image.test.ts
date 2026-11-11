@@ -3,7 +3,11 @@
 // The corpus comparison is in packages/testkit/src/mapping/entities.corpus.test.ts.
 import {
   ACadVersion,
+  AppId,
   CadDocument,
+  ExtendedData,
+  ExtendedDataInteger16,
+  ExtendedDataString,
   ClipType,
   ImageDefinition,
   PdfUnderlay,
@@ -152,6 +156,36 @@ describe('PDFUNDERLAY', () => {
         { x: 4, y: 3 },
       ],
     });
+  });
+
+  it('reads the PDF layers an underlay turns off from its AdeskUnderlayLayerOverrideData xdata (M2-38)', () => {
+    // ULAYERS keeps the layers turned off as the strings of that application's xdata (the
+    // name AutoCAD registers in every drawing's APPID table, e.g. sample_AC1027_ascii.dxf); a
+    // DGN underlay's list starts with a placeholder string, which names no layer.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const app = new AppId('ADESKUNDERLAYLAYEROVERRIDEDATA');
+    doc.appIds!.add(app);
+    const u = new PdfUnderlay();
+    u.extendedData.set(
+      app,
+      new ExtendedData([
+        new ExtendedDataString('???DGN_Placeholder???'),
+        new ExtendedDataString('Walls'),
+        new ExtendedDataInteger16(1),
+        new ExtendedDataString('Notes ünd Maße'),
+        new ExtendedDataString('Walls'),
+        new ExtendedDataString(''),
+      ]),
+    );
+    const g = mapIn(doc, u);
+    if (g.kind !== 'PDFUNDERLAY') throw new Error(g.kind);
+    expect(g.layersOff).toEqual(['Walls', 'Notes ünd Maße']);
+  });
+
+  it('leaves layersOff out when the underlay turns no layer off', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const g = mapIn(doc, new PdfUnderlay());
+    expect(g).not.toHaveProperty('layersOff');
   });
 
   it('turns a −Z underlay’s rotation into its WCS angle and marks it mirrored', () => {

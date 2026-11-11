@@ -332,6 +332,15 @@ describe('plotParts with a PDF underlay (M2-16 part 5)', () => {
     });
   });
 
+  it('names the PDF layers the underlay turns off, sorted, once each (M2-38 part 2)', () => {
+    const { model } = drawing([entity('70', geom({ layersOff: ['Walls', 'Notes', 'Walls'] }))], {
+      objects: [pdfDef],
+    });
+    const p = plotParts(model, MODEL, { resolver })[0]!;
+    if (p.kind !== 'fill') throw new Error('fill expected');
+    expect(p.underlay?.layersOff).toEqual(['Notes', 'Walls']);
+  });
+
   it("keeps a clipped underlay's boundary as its path and leaves out one on a non-plotting layer", () => {
     const { model } = blockDrawingWith([
       entity(

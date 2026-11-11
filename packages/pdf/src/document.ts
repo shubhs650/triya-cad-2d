@@ -87,8 +87,13 @@ export class PdfPage {
    * the displayed page's points, named for the page's resources; undefined when the file cannot
    * be read (not a PDF, needs a password) or its page's content cannot be decoded.
    */
-  underlay(bytes: Uint8Array, page: string, look: UnderlayLook): ImportedForm | undefined {
-    const f = this.documentImports.form(bytes, page, look);
+  underlay(
+    bytes: Uint8Array,
+    page: string,
+    look: UnderlayLook,
+    layersOff: readonly string[] = [],
+  ): ImportedForm | undefined {
+    const f = this.documentImports.form(bytes, page, look, layersOff);
     if (f) this.forms.add(f);
     return f;
   }
@@ -338,9 +343,16 @@ export class PdfDocument {
       );
       labels = ` /PageLabels << /Nums [${nums.join(' ')}] >>`;
     }
+    // PDF layers of the underlays' pages (M2-38 part 2): every copied group, off as plotted.
+    const oc = this.imports.optionalContent();
+    const layers = oc
+      ? ` /OCProperties << /OCGs [${oc.groups.map(ref).join(' ')}] /D << /BaseState /ON /OFF [${oc.off
+          .map(ref)
+          .join(' ')}] >> >>`
+      : '';
     bodies[catalog - 1] = `<< /Type /Catalog /Pages ${ref(pagesId)}${labels}${
       outlines ? ` /Outlines ${ref(outlines)} /PageMode /UseOutlines` : ''
-    } >>`;
+    }${layers} >>`;
 
     const info = [
       ['Title', o.title],

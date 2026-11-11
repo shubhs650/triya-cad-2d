@@ -6,6 +6,7 @@ import type { EntityGeometry, UnderlayGeometry } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   Canvas2DRenderer,
+  underlayKey,
   type RenderStyle,
   type UnderlayRaster,
   type UnderlayRequest,
@@ -189,5 +190,26 @@ describe('underlays', () => {
     redraw();
     expect(asked).toHaveLength(1);
     expect(asked[0]!.scale).toBeCloseTo(45.2548, 3);
+  });
+
+  it('asks for a page with layers turned off apart from the plain page, and draws each its own raster (M2-38)', () => {
+    // Two underlays of one page, the second turning PDF layers off (ULAYERS): each needs a
+    // raster of its own, keyed by the definition and the layers off, sorted.
+    const { redraw, asked, rasters } = setup([
+      { handle: '20', geom: underlay() },
+      { handle: '21', geom: underlay({ layersOff: ['Walls', 'Notes'] }) },
+    ]);
+    redraw();
+    expect(asked.map((q) => [q.definition, q.layersOff])).toEqual([
+      ['9A', undefined],
+      ['9A', ['Notes', 'Walls']],
+    ]);
+    expect(underlayKey('9A', ['Notes', 'Walls'])).toBe('9A\nNotes\nWalls');
+    expect(underlayKey('9A', [])).toBe('9A');
+    rasters['9A'] = PAGE;
+    const c = redraw();
+    expect(c.named('drawImage')).toHaveLength(1);
+    rasters[underlayKey('9A', ['Notes', 'Walls'])] = { ...PAGE, pixels: { ...PAGE.pixels } };
+    expect(redraw().named('drawImage')).toHaveLength(2);
   });
 });
