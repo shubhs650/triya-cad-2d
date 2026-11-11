@@ -106,6 +106,71 @@ test('Dynamic Input: X,Y then Distance Tab Angle draw the line', async ({ page }
   await page.keyboard.press('Escape');
 });
 
+/** Each LINE's ends as the drawing's change sets left them, by handle, to 4 places. */
+async function lineEnds(page: Page): Promise<Record<string, number[]>> {
+  const changes = await page.evaluate(() =>
+    (window as unknown as { triyaDev: DevHooks }).triyaDev.changes(),
+  );
+  const out: Record<string, number[]> = {};
+  const put = ({ handle, geom }: { handle: string; geom: { kind: string } }) => {
+    if (geom.kind !== 'LINE') return;
+    const { start, end } = geom as unknown as Record<'start' | 'end', { x: number; y: number }>;
+    out[handle] = [start.x, start.y, end.x, end.y].map((v) => Math.round(v * 1e4) / 1e4 + 0);
+  };
+  for (const cs of changes) {
+    for (const { entity } of cs.entities?.added ?? []) put(entity);
+    for (const { after } of cs.entities?.updated ?? []) put(after);
+  }
+  return out;
+}
+
+// M2-34: CI once saw ROTATE turn by 179.999° instead of the 90 typed: the keys reached Dynamic
+// Input as the angle prompt arrived, and went into the X field still set for the base point, so
+// Enter sent `90,<cursor Y>`. Here the keys are typed the moment the prompt shows, before React
+// has run anything after showing it, with the cursor moving over the drawing meanwhile.
+test('Dynamic Input: an angle typed as its prompt arrives, the cursor moving, is the angle typed', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await open(page);
+  await hover(page);
+  const before = Object.keys(await lineEnds(page));
+  for (const t of ['L', '1000000,1000000', '1000010,1000000', '']) await command(page, t);
+  await expect(prompt(page)).toHaveText('Command:');
+  // The line just drawn (handles are hex strings, so a record keeps no order of them).
+  const drawn = async () => Object.keys(await lineEnds(page)).filter((h) => !before.includes(h));
+  await expect.poll(drawn).toHaveLength(1);
+  const [handle] = await drawn();
+  for (const t of ['RO', 'L', '']) await command(page, t);
+  await expect(prompt(page)).toHaveText('Specify base point:');
+  // Types 9, 0 and Enter, to whatever has the focus as a real key would, in the same task that
+  // shows the rotation angle prompt.
+  await page.evaluate(() => {
+    const label = document.querySelector('[data-testid="command-prompt"]')!;
+    const observer = new MutationObserver(() => {
+      if (!label.textContent?.startsWith('Specify rotation angle')) return;
+      observer.disconnect();
+      for (const key of ['9', '0', 'Enter']) {
+        const target = document.activeElement ?? document.body;
+        target.dispatchEvent(
+          new KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }),
+        );
+      }
+    });
+    observer.observe(label, { childList: true, characterData: true, subtree: true });
+  });
+  await page.keyboard.type('1000005,1000000');
+  await page.keyboard.press('Enter');
+  for (let i = 0; i < 10; i++) await hover(page, 0.3 + i * 0.04, 0.5 + (i % 3) * 0.05);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(history(page)).toContainText(
+    /Specify rotation angle or \[Copy\/Reference\] <0[.0]*>: 90(?!,)/,
+  );
+  await expect
+    .poll(async () => (await lineEnds(page))[handle!])
+    .toEqual([1000005, 999995, 1000005, 1000005]);
+});
+
 test('Ctrl+K finds a command by name or alias and runs it', async ({ page }) => {
   test.setTimeout(60_000);
   await open(page);
