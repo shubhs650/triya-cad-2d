@@ -271,3 +271,73 @@ describe('EngineHost restoring a drawing (M2-14)', () => {
     }
   });
 });
+
+describe('EngineHost blocklessDimensionBlocks (M2-30 part 2)', () => {
+  /** The drawing with a DIMSTYLE and a linear dimension whose block is missing. */
+  const withDimension: DocumentInit = {
+    ...init,
+    tables: {
+      ...init.tables,
+      dimStyles: [{ handle: '27', name: 'Standard', vars: {} }],
+    },
+    entities: [
+      {
+        handle: '30',
+        owner: '1F',
+        type: 'DIMENSION',
+        layer: '10',
+        color: { kind: 'byLayer' },
+        linetype: 'ByLayer',
+        lineweight: 'ByLayer',
+        ltScale: 1,
+        visible: true,
+        transparency: 'ByLayer',
+        geom: {
+          kind: 'DIMENSION',
+          dimType: 'linear',
+          style: '27',
+          first: { x: 0, y: 0 },
+          second: { x: 10, y: 0 },
+          definitionPoint: { x: 10, y: 5 },
+          textPosition: { x: 5, y: 5 },
+          textUserPositioned: false,
+          text: '',
+          textRotation: 0,
+          horizontalDirection: 0,
+          attachment: 5,
+          lineSpacingStyle: 1,
+          lineSpacing: 1,
+          rotation: 0,
+        },
+      } as never,
+    ],
+  };
+
+  it('draws the blocks with the canvas’s widths, in the worker or on the main thread', async () => {
+    for (const host of [
+      new EngineHost(withDimension, inProcessWorker),
+      new EngineHost(withDimension),
+    ]) {
+      // The canvas measures each character 0.1 wide.
+      host.onCommand((o) => {
+        if (o.type !== 'view' || o.request.op !== 'textWidths') return;
+        const widths = o.request.texts.map((t) => t.contents.length * 0.1);
+        host.command({ kind: 'view', id: o.id, reply: { ok: true, widths } });
+      });
+      const change = await host.blocklessDimensionBlocks();
+      expect(change?.blocks?.added?.map((b) => b.name)).toEqual(['*D1']);
+      const dim = change?.entities?.updated?.[0]?.after;
+      expect(dim?.handle).toBe('30');
+      expect(change?.entities?.added?.some((p) => p.entity.geom.kind === 'MTEXT')).toBe(true);
+      // The drawing itself keeps the dimension without a block: a second save draws it again.
+      expect((await host.blocklessDimensionBlocks())?.blocks?.added).toHaveLength(1);
+      host.dispose();
+    }
+  });
+
+  it('is undefined for a drawing whose dimensions all have blocks', async () => {
+    const host = new EngineHost(init, inProcessWorker);
+    expect(await host.blocklessDimensionBlocks()).toBeUndefined();
+    host.dispose();
+  });
+});

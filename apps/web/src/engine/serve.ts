@@ -22,6 +22,23 @@ export function serveEngine(port: Endpoint<EngineRequest, EngineReply>): void {
         });
         return;
       }
+      if (data.type === 'save-blocks') {
+        // Asynchronous: the texts are measured by the canvas, through command output.
+        const id = data.id;
+        session.blocklessDimensionBlocks().then(
+          (change) =>
+            port.postMessage(
+              change ? { type: 'save-blocks', id, change } : { type: 'save-blocks', id },
+            ),
+          (e: unknown) =>
+            port.postMessage({
+              type: 'error',
+              message: e instanceof Error ? e.message : String(e),
+              id,
+            }),
+        );
+        return;
+      }
       port.postMessage({ type: 'result', id: data.id, result: session.edit(data.edit) });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
