@@ -8,7 +8,7 @@ import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, sub } from '../geom/vec';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { EntityGeometry } from '../model/types';
+import type { EntityGeometry, Xdata } from '../model/types';
 import { placeDimension, type DimPlacement } from '../edit/dimension';
 
 export type DragPreview =
@@ -58,9 +58,15 @@ export type DragPreview =
     }
   /**
    * A dimension being placed (DIMLINEAR and the others, M2-11): drawn, on `layer`, as
-   * `placeDimension` makes it with its dimension line at the cursor.
+   * `placeDimension` makes it with its dimension line at the cursor, with the `DSTYLE`
+   * overrides `xdata` it will be made with (M2-31).
    */
-  | { readonly kind: 'dimension'; readonly place: DimPlacement; readonly layer: Handle };
+  | {
+      readonly kind: 'dimension';
+      readonly place: DimPlacement;
+      readonly layer: Handle;
+      readonly xdata?: Xdata;
+    };
 
 /** What the renderer draws for a cursor position: `ids` through `m`, `shape` stretched by `d`. */
 export interface DragMotion {
@@ -78,7 +84,11 @@ export interface DragMotion {
     readonly to: Vec2;
   };
   /** An object not in the drawing yet, drawn as it would be on `layer` (a dimension placed). */
-  readonly adding?: { readonly layer: Handle; readonly geom: EntityGeometry };
+  readonly adding?: {
+    readonly layer: Handle;
+    readonly geom: EntityGeometry;
+    readonly xdata?: Xdata;
+  };
 }
 
 /** The motion a drag makes with the cursor at `cursor`; undefined where it makes none. */
@@ -118,7 +128,13 @@ export function dragMotion(drag: DragPreview, cursor: Vec2): DragMotion | undefi
     }
     case 'dimension': {
       const geom = placeDimension(drag.place, cursor);
-      return geom && { ids: [], m: IDENTITY, adding: { layer: drag.layer, geom } };
+      return (
+        geom && {
+          ids: [],
+          m: IDENTITY,
+          adding: { layer: drag.layer, geom, ...(drag.xdata && { xdata: drag.xdata }) },
+        }
+      );
     }
   }
 }
