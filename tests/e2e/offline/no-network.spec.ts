@@ -4,7 +4,7 @@
 // (or be a blob:/data: URL); anything else is blocked here and fails the test. The service
 // worker's update check goes to the app's own origin too (M2-19, offline/pwa.spec.ts, which
 // runs the production build with the worker); the user-confirmed error report, the only other
-// allowed exception, does not exist yet (M10).
+// allowed exception, does not exist yet (M10-07).
 import { expect, test } from '@playwright/test';
 import { DWG, DXF, activeCanvas, expectShown, openWithDrop, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
