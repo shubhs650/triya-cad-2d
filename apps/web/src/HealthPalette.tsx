@@ -6,9 +6,15 @@
 // Fonts (M1-38 part 3): the report asks a book of the fonts the renderers get, bundled, the
 // user's files and installed faces, so it follows them as they change, and it lists the font
 // files the app could not read or parse and the installed faces the drawing draws with.
-import { useMemo, useSyncExternalStore, type ReactNode } from 'react';
+// Dimensions (M2-30 part 3, DEC-011): each dimension's stored block against what the dimension
+// engine draws for it, asked of the render side (it has the drawing as edited and the fonts),
+// again after every edit while the palette is open. One that differs is listed with what
+// differs and, in the space on screen, a button that zooms to it.
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react';
+import type { DimensionMismatch, DrawingDimensionHealth } from '@triya/dims';
 import { healthReport, type HealthReport } from '@triya/io/health';
 import { patternLibrary } from '@triya/render';
+import { controllerOf, controllersOf } from './canvas/registry';
 import type { OpenDocument } from './documents';
 import { appFontErrors, appFonts } from './fonts';
 import type { DeviceFonts } from './local-fonts';
@@ -56,6 +62,7 @@ export function HealthPalette({
     });
   }, [facts, patternSources, fontSources, own, device]);
   const { version, units, fonts, references, patterns, unknownObjects, unmappedEntities } = report;
+  const dims = useDimensionHealth(doc, fontSources);
 
   return (
     <aside className="palette health-palette" aria-labelledby="health-title">
@@ -161,6 +168,8 @@ export function HealthPalette({
           </Card>
         )}
 
+        <DimensionsCard doc={doc} health={dims} />
+
         <Card id="references" title="References" count={references.length}>
           {references.length === 0 ? (
             <p className="empty">None: the drawing attaches no other files.</p>
@@ -233,6 +242,141 @@ export function HealthPalette({
     </aside>
   );
 }
+
+/** How many differences a row shows before "and n more". */
+const SHOWN_PROBLEMS = 2;
+
+/**
+ * The drawing's dimension health, from the render side of the drawing on screen: asked again
+ * when the drawing is edited or its fonts change; undefined until the first answer.
+ */
+function useDimensionHealth(doc: OpenDocument, fonts: unknown): DrawingDimensionHealth | undefined {
+  const [health, setHealth] = useState<{ doc: number; health: DrawingDimensionHealth }>();
+  useEffect(() => {
+    let live = true;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const ask = (tries: number) => {
+      const c = controllerOf(doc.id, doc.block) ?? controllersOf(doc.id)[0];
+      if (!c) {
+        // The canvas registers as it mounts: wait for it a little.
+        if (tries > 0) timer = setTimeout(() => ask(tries - 1), 100);
+        return;
+      }
+      c.dimensionHealth().then(
+        (h) => {
+          if (live && h) setHealth({ doc: doc.id, health: h });
+        },
+        () => {},
+      );
+    };
+    ask(50);
+    return () => {
+      live = false;
+      clearTimeout(timer);
+    };
+  }, [doc.id, doc.block, doc.revision, fonts]);
+  return health?.doc === doc.id ? health.health : undefined;
+}
+
+function DimensionsCard({
+  doc,
+  health,
+}: {
+  doc: OpenDocument;
+  health: DrawingDimensionHealth | undefined;
+}) {
+  if (!health) {
+    return (
+      <Card id="dimensions" title="Dimensions">
+        <p className="empty">Checking…</p>
+      </Card>
+    );
+  }
+  const { checked, mismatched, blockless, unchecked } = health;
+  const none = checked + blockless + unchecked === 0;
+  return (
+    <Card id="dimensions" title="Dimensions" count={mismatched.length}>
+      {none ? (
+        <p className="empty">None: the drawing has no dimensions.</p>
+      ) : (
+        <>
+          {checked > 0 && (
+            <p className="hint">
+              {mismatched.length === 0
+                ? `${plural(checked, 'dimension')} checked: every stored block matches what Triya draws.`
+                : `${plural(checked, 'dimension')} checked: ${mismatched.length} stored ${
+                    mismatched.length === 1 ? 'block differs' : 'blocks differ'
+                  } from what Triya draws.`}
+            </p>
+          )}
+          {blockless > 0 && (
+            <p className="hint">
+              {plural(blockless, 'dimension')} without a stored block: Triya draws{' '}
+              {blockless === 1 ? 'it' : 'them'}, and saving gives {blockless === 1 ? 'it' : 'them'}{' '}
+              one.
+            </p>
+          )}
+          {unchecked > 0 && (
+            <p className="hint">
+              {plural(unchecked, 'dimension')} not checked: no loaded font measures{' '}
+              {unchecked === 1 ? 'its' : 'their'} text.
+            </p>
+          )}
+          {mismatched.length > 0 && (
+            <table aria-label="Dimensions that differ" className="health-dimensions">
+              <thead>
+                <tr>
+                  <th scope="col">Dimension</th>
+                  <th scope="col">Differences</th>
+                  <th scope="col" aria-label="Zoom" />
+                </tr>
+              </thead>
+              <tbody>
+                {mismatched.map((d) => (
+                  <DimensionRow key={d.handle} doc={doc} dim={d} />
+                ))}
+              </tbody>
+            </table>
+          )}
+        </>
+      )}
+    </Card>
+  );
+}
+
+function DimensionRow({ doc, dim }: { doc: OpenDocument; dim: DimensionMismatch }) {
+  const shown = dim.problems.slice(0, SHOWN_PROBLEMS);
+  const more = dim.problems.length - shown.length;
+  const where = dim.space.kind === 'layout' ? dim.space.name : `Block ${dim.space.name}`;
+  return (
+    <tr>
+      <th scope="row">
+        {dim.handle}{' '}
+        <span className="dim-where">
+          {dim.type}, {where}
+        </span>
+      </th>
+      <td>
+        {shown.join('; ')}
+        {more > 0 && `; and ${more} more`}
+      </td>
+      <td>
+        {dim.owner === doc.block && (
+          <button
+            type="button"
+            aria-label={`Zoom to dimension ${dim.handle}`}
+            title="Zoom to it"
+            onClick={() => void controllerOf(doc.id, doc.block)?.zoomObjects([dim.id])}
+          >
+            Zoom
+          </button>
+        )}
+      </td>
+    </tr>
+  );
+}
+
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
 function Card({
   id,

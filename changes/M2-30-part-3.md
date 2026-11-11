@@ -1,0 +1,1 @@
+- M2-30 part 3 (#275): the Health palette lists the drawing's dimensions whose stored block differs from what Triya draws for them, with what differs and a Zoom button, and counts the dimensions without a block (a save gives them one) and those no loaded font can check; it follows edits while open. Closes M2-30.

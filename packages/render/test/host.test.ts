@@ -381,6 +381,30 @@ describe('RendererHost', () => {
     expect(await off.snap(query)).toEqual(fromMain);
   });
 
+  it("checks the drawing's dimensions from either side alike (M2-30 part 3)", async () => {
+    const blockless: EntityGeometry = {
+      kind: 'DIMENSION',
+      dimType: 'linear',
+      style: '0',
+      definitionPoint: { x: 10, y: 2 },
+      textPosition: { x: 5, y: 2 },
+      textUserPositioned: false,
+      text: '',
+      textRotation: 0,
+      horizontalDirection: 0,
+      attachment: 5,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+      first: { x: 0, y: 0 },
+      second: { x: 10, y: 0 },
+      rotation: 0,
+    };
+    const { main, off } = hosts([entity('20', line(0, 0, 10, 0)), entity('21', blockless)]);
+    const fromMain = await main.dimensionHealth();
+    expect(fromMain).toEqual({ checked: 0, mismatched: [], blockless: 1, unchecked: 0 });
+    expect(await off.dimensionHealth()).toEqual(fromMain);
+  });
+
   it('names the entities in a screen rectangle from either side alike (M1-106)', async () => {
     const { main, off } = hosts([entity('20', line(0, 0, 10, 0)), entity('21', line(0, 1, 10, 1))]);
     for (const h of [main, off]) {

@@ -36,7 +36,7 @@ import {
   parseTtfCollection,
   type TriyaStrokeFont,
 } from '@triya/text';
-import { dimensionParts } from '@triya/dims';
+import { dimensionParts, drawingDimensionHealth, type DrawingDimensionHealth } from '@triya/dims';
 import { Canvas2DRenderer, type Surface } from './canvas2d';
 import type { Paint } from './tessellate';
 import { columnCounter, textMeasure, type TextContext } from './text';
@@ -266,6 +266,14 @@ export class RenderSession {
   columnCounts(texts: readonly MTextGeometry[]): (number | null)[] {
     const count = columnCounter(this.#text);
     return texts.map((t) => count(t) ?? null);
+  }
+
+  /**
+   * Every dimension of the drawing against its stored block (M2-30 part 3, DEC-011's health
+   * check), texts measured in the fonts loaded now, as the screen draws them.
+   */
+  dimensionHealth(): DrawingDimensionHealth {
+    return drawingDimensionHealth(this.model, textMeasure(this.#text));
   }
 
   /** Where texts lie as drawn in the fonts loaded now (`textOutline`, M2-27). */

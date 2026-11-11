@@ -6,6 +6,7 @@
 // paths draw with the same code, so they render identically; the Playwright pixel test checks
 // that. Calls are fire-and-forget either way; those that need an answer return promises.
 
+import type { DrawingDimensionHealth } from '@triya/dims';
 import type {
   Box,
   ChangeSet,
@@ -286,6 +287,17 @@ export class RendererHost {
     if (this.#session) return Promise.resolve(this.#session.columnCounts(texts));
     return this.#request((id) => ({ type: 'columnCounts', id, texts })).then((m) =>
       m.type === 'counts' ? [...m.counts] : texts.map(() => null),
+    );
+  }
+
+  /**
+   * The drawing's dimensions against their stored blocks, texts measured in the fonts loaded
+   * now (M2-30 part 3: the Health palette's Dimensions card).
+   */
+  dimensionHealth(): Promise<DrawingDimensionHealth | undefined> {
+    if (this.#session) return Promise.resolve(this.#session.dimensionHealth());
+    return this.#request((id) => ({ type: 'dimensionHealth', id })).then((m) =>
+      m.type === 'dimensionHealth' ? m.health : undefined,
     );
   }
 

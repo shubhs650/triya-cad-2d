@@ -98,6 +98,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'columnCounts':
         port.postMessage({ type: 'counts', id: m.id, counts: session.columnCounts(m.texts) });
         break;
+      case 'dimensionHealth':
+        port.postMessage({ type: 'dimensionHealth', id: m.id, health: session.dimensionHealth() });
+        break;
       case 'textOutlines':
         port.postMessage({ type: 'outlines', id: m.id, outlines: session.textOutlines(m.texts) });
         break;
