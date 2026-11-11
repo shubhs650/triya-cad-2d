@@ -1,0 +1,1 @@
+- CI (#288): the qpdf install falls back to the runner's archive mirror when security.ubuntu.com does not resolve (red on main and every PR from 2026-11-11 13:50 UTC); the `qpdf --check` step is unchanged.
