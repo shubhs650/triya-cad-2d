@@ -31,6 +31,18 @@ export interface UndoState {
   readonly redoable: number;
   readonly nextUndo?: string;
   readonly nextRedo?: string;
+  /**
+   * The Quick Access Undo list (M2-36): the steps U and UNDO n would undo, newest first, the
+   * newest `UNDO_LIST_MAX` of them; an open BEgin group with changes is first, as GROUP,
+   * since UNDO ends it before undoing. Picking entry i runs `UNDO i+1`.
+   */
+  readonly undoList: readonly string[];
+  /**
+   * The Redo list: the actions MREDO n would redo, the next one first (the oldest undone of the
+   * last U or UNDO, then the U or UNDO before it), at most `UNDO_LIST_MAX` of them. Picking
+   * entry i runs `MREDO i+1`.
+   */
+  readonly redoList: readonly string[];
   /** An UNDO BEgin group is open. */
   readonly grouping: boolean;
   readonly control: UndoControl;
@@ -65,6 +77,13 @@ export interface UndoStackOptions {
   /** A line for the command line (the memory bound's warning). */
   readonly onMessage?: (line: string) => void;
 }
+
+/**
+ * How many steps the Undo and Redo lists carry. The history itself is unbounded by count; the
+ * lists go to the front-ends with every state change, so they stop at what a drop-down can
+ * show usefully. UNDO n and MREDO n still reach every step.
+ */
+export const UNDO_LIST_MAX = 100;
 
 /** ARCHITECTURE.md §4.2: unlimited by count, bounded by memory, 256 MB by default. */
 export const DEFAULT_UNDO_LIMIT_BYTES = 256 * 1024 * 1024;
@@ -108,6 +127,8 @@ export class UndoStack {
       redoable: this.#redo.length,
       ...(last?.kind === 'record' ? { nextUndo: last.record.label } : {}),
       ...(nextRedo?.kind === 'record' ? { nextRedo: nextRedo.record.label } : {}),
+      undoList: this.#undoList(),
+      redoList: this.#redoList(),
       grouping: this.#group !== undefined,
       control: this.#control,
     };
@@ -241,6 +262,36 @@ export class UndoStack {
     return labels;
   }
 
+  /**
+   * MREDO n (M2-36): redoes `actions` steps, the next one first, splitting a U or UNDO's group
+   * where n ends inside it (REDO then reverses what is left of it). A mark goes back with the
+   * step undone after it, as it would with the whole group. The labels redone, oldest first.
+   */
+  redoSteps(actions: number): UndoResult {
+    const labels: string[] = [];
+    let left = actions;
+    while (left > 0 && this.#redo.length > 0) {
+      const group = this.#redo.at(-1)!;
+      const e = group.pop()!;
+      if (e.kind === 'record') {
+        try {
+          for (const c of e.record.changes) this.#apply(c);
+        } catch (err) {
+          this.#fail(err);
+        }
+        labels.push(e.record.label);
+        left -= 1;
+      }
+      this.#undo.push(e);
+      if (e.kind === 'record') {
+        while (group.at(-1)?.kind === 'mark') this.#undo.push(group.pop()!);
+      }
+      if (group.length === 0) this.#redo.pop();
+    }
+    this.#changed(labels.length > 0 ? { kind: 'redo', labels } : undefined);
+    return { labels, exhausted: left > 0, mark: false };
+  }
+
   /** UNDO Control. None drops the history and turns undo off; One keeps the last step. */
   setControl(control: UndoControl): void {
     this.#control = control;
@@ -266,6 +317,27 @@ export class UndoStack {
     this.#redo = [];
     this.#bytes = this.#group?.bytes ?? 0;
     this.#changed();
+  }
+
+  #undoList(): string[] {
+    const out: string[] = this.#group && this.#group.changes.length > 0 ? ['GROUP'] : [];
+    for (let i = this.#undo.length - 1; i >= 0 && out.length < UNDO_LIST_MAX; i -= 1) {
+      const e = this.#undo[i]!;
+      if (e.kind === 'record') out.push(e.record.label);
+    }
+    return out;
+  }
+
+  #redoList(): string[] {
+    const out: string[] = [];
+    for (let g = this.#redo.length - 1; g >= 0 && out.length < UNDO_LIST_MAX; g -= 1) {
+      const group = this.#redo[g]!;
+      for (let i = group.length - 1; i >= 0 && out.length < UNDO_LIST_MAX; i -= 1) {
+        const e = group[i]!;
+        if (e.kind === 'record') out.push(e.record.label);
+      }
+    }
+    return out;
   }
 
   #undoRecord(record: UndoRecord): void {

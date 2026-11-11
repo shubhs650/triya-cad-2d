@@ -1,4 +1,4 @@
-// UNDO, U, REDO and OOPS (M2-05, COMMANDS.md "Modify"), on the bus's undo history. Prompts and
+// UNDO, U, REDO, MREDO and OOPS (M2-05, MREDO M2-36, COMMANDS.md "Modify"), on the bus's undo history. Prompts and
 // messages are AutoCAD 2024's; where its help is silent the choice is in DEC-049.
 import type { CommandContext, CommandDef, CommandGenerator } from './command';
 import type { UndoResult } from './undo';
@@ -120,6 +120,42 @@ export const REDO: CommandDef = {
 };
 
 /**
+ * MREDO (M2-36): redoes a number of actions, the next one first, across several U and UNDO
+ * commands; the Quick Access Redo list runs it. AutoCAD's help gives "Enter number of actions or
+ * [All/Last]" and says Last "reverses only the last action"; it does not say which action is
+ * last, so Last is the most recently undone one, the one REDO would redo first (MREDO 1).
+ */
+export const MREDO: CommandDef = {
+  name: 'MREDO',
+  async *run(ctx) {
+    const u = ctx.undo;
+    if (u.state.redoable === 0) return ctx.message('Previous command did not undo things');
+    for (;;) {
+      const a = yield ctx.prompt.integer({
+        message: 'Enter number of actions or',
+        options: ['All', 'Last'],
+      });
+      let n: number;
+      if (a.kind === 'number') {
+        if (a.value < 1) {
+          ctx.message('Value must be positive and nonzero.');
+          continue;
+        }
+        n = a.value;
+      } else if (a.kind === 'keyword') {
+        n = a.keyword === 'All' ? Number.POSITIVE_INFINITY : 1;
+      } else {
+        return;
+      }
+      const r = u.redoSteps(n);
+      if (r.labels.length > 0) ctx.message(r.labels.join(' '));
+      if (r.exhausted && Number.isFinite(n)) ctx.message('Everything has been redone');
+      return;
+    }
+  },
+};
+
+/**
  * OOPS: puts back what the last erasing command removed (ERASE, BLOCK, WBLOCK), whatever ran
  * since, as one new step; what is already back (after U, or a second OOPS) is skipped.
  */
@@ -136,4 +172,4 @@ export const OOPS: CommandDef = {
 };
 
 /** The undo commands, for a document's `CommandRegistry`. */
-export const UNDO_COMMANDS: readonly CommandDef[] = [UNDO, U, REDO, OOPS];
+export const UNDO_COMMANDS: readonly CommandDef[] = [UNDO, U, REDO, MREDO, OOPS];
