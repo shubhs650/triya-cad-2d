@@ -4,6 +4,7 @@ import { prompts, type Prompt } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   dynBackspace,
+  dynCurrent,
   dynFor,
   dynLive,
   dynReplay,
@@ -125,5 +126,34 @@ describe('Dynamic Input fields', () => {
       ['4', false],
     ]);
     expect(dynReplay(first, [])).toEqual(dynFor(first));
+  });
+});
+
+describe('a key typed as a new prompt arrives (M2-34)', () => {
+  const base = prompts.point({ message: 'Specify base point' });
+  const angle = prompts.angle({
+    message: 'Specify rotation angle or',
+    options: ['Copy', 'Reference'],
+    base: { x: 80, y: 30 },
+  });
+
+  it('goes to the new prompt, not the fields last set for the one before', () => {
+    // The base point's fields, emptied by its Enter; then the angle prompt arrives and 9, 0
+    // and Enter are typed before the fields are set for it. ROTATE once got `90,<cursor Y>`,
+    // the 90 typed into the base point's X field (CI, #245).
+    const latest = { prompt: base, state: dynFor(base) };
+    let s = dynCurrent(latest, angle, [])!;
+    expect(s.fields.map((f) => f.label)).toEqual(['Angle']);
+    s = dynType(dynType(s, '9'), '0');
+    expect(dynText(s, angle, cursor)).toBe('90');
+  });
+
+  it('keeps the fields already set for the prompt, and replays keys typed ahead of it', () => {
+    const typed = dynType(dynFor(angle), '4');
+    expect(dynCurrent({ prompt: angle, state: typed }, angle, ['4'])).toBe(typed);
+    expect(
+      dynText(dynCurrent({ prompt: base, state: dynFor(base) }, angle, ['4', '5'])!, angle, cursor),
+    ).toBe('45');
+    expect(dynCurrent({ prompt: base, state: dynFor(base) }, undefined, [])).toBeUndefined();
   });
 });

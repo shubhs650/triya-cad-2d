@@ -129,6 +129,21 @@ export function dynReplay(prompt: Prompt, keys: readonly string[]): DynState {
   return s;
 }
 
+/**
+ * The fields a key typed now goes to: those last set, if they were set for `prompt`, else the
+ * prompt's own with what was typed ahead of it replayed. A key can come as a new prompt shows,
+ * before its fields are set (M2-34: a ROTATE angle typed so went into the base point's X field,
+ * and Enter sent `90,<cursor Y>`).
+ */
+export function dynCurrent(
+  latest: { readonly prompt: Prompt | undefined; readonly state: DynState | undefined },
+  prompt: Prompt | undefined,
+  typed: readonly string[],
+): DynState | undefined {
+  if (latest.prompt === prompt) return latest.state;
+  return prompt && dynReplay(prompt, typed);
+}
+
 /** Whether anything was typed. */
 export const dynTyped = (s: DynState): boolean => s.fields.some((f) => f.text !== '');
 

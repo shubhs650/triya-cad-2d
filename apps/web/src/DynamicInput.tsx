@@ -9,6 +9,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { cycleSnap } from './canvas/registry';
 import {
   dynBackspace,
+  dynCurrent,
   dynFor,
   dynLive,
   dynMode,
@@ -117,8 +118,7 @@ export function DynamicInput({
     const onKey = (e: KeyboardEvent) => {
       const { prompt: p, shown: visible } = props.current;
       // Fields set for an earlier prompt are this prompt's as soon as it has arrived.
-      const s =
-        latest.current.prompt === p ? latest.current.state : p && dynReplay(p, typed.current);
+      const s = dynCurrent(latest.current, p, typed.current);
       if (!visible || !overNow.current || !p || !s || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const take = (next: DynState, key?: string) => {
