@@ -216,6 +216,21 @@ describe('ROTATE', () => {
     expect(s.bus.promptText).toBe('Specify rotation angle or [Copy/Reference] <90>:');
   });
 
+  it('takes a typed angle, wherever the cursor moved meanwhile (M2-34)', async () => {
+    const s = setup();
+    await s.bus.script(['ROTATE', 'ALL', '', '0,0']);
+    // The command line sends the cursor with what was typed; the drag follows it, the typed
+    // value wins.
+    for (const p of [
+      { x: 5, y: 0 },
+      { x: -3, y: 0.001 },
+      { x: 0, y: -7 },
+    ])
+      s.bus.pointer(p);
+    await s.bus.submit('90');
+    expect(s.ends(s.byHandle('20'))).toEqual([0, 0, 0, 10]);
+  });
+
   it('rotates by the angle to a picked point', async () => {
     const s = setup();
     await s.bus.script(['ROTATE', 'ALL', '', '0,0']);
