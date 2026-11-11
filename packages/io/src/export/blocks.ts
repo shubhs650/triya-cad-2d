@@ -8,7 +8,8 @@
 // vertices are (the engine does not know them). The record checks every table shares are in
 // records.ts; what a save cannot keep yet is refused before anything changes: removing a block
 // (PURGE), xref and layout blocks (M1-21), except the sheet block of a layout the same save adds
-// (LAYOUT New, layouts.ts), and changes to a dynamic block's links. The two sheet blocks that
+// (LAYOUT New, layouts.ts), and changes to a dynamic block's links. A new block may be dynamic,
+// or a state of a dynamic block, when the file will say so (M2-32 part 4: PASTECLIP). The two sheet blocks that
 // swap names when another layout is made current are renamed by layouts.ts, which checks the swap.
 
 import {
@@ -28,6 +29,7 @@ import type {
   Vec2,
 } from '@triya/engine';
 import type { CadFormat } from '../read';
+import { newCodedDictionaries, newGraphs, type CodedObjectsPlan } from './coded-objects';
 import { onlyNewDictionary, type DrawOrderChanges } from './draw-order';
 import { resolve, same, type Resolver } from './entities';
 import { changes, planRecords, type RecordPlan } from './records';
@@ -80,18 +82,26 @@ export function planBlocks(
   format: CadFormat | undefined,
   drawOrder: DrawOrderChanges,
   swapping: ReadonlySet<Handle> = new Set(),
+  coded: CodedObjectsPlan = { dictionaries: [] },
 ): { plan: BlockPlan; problems: string[] } {
   const version = doc.header?.version;
   const baseRecords = base.tables?.blockRecords ?? [];
   const was = new Map(baseRecords.map((b) => [b.handle, b]));
   // A record that only gains the extension dictionary a new draw order table needs is the draw
   // order writer's (draw-order.ts).
+  // A new record's extension dictionary for what makes it dynamic is coded-objects.ts's.
+  const codedDictionaries = newCodedDictionaries(coded);
   const after = new Map(
     [...model.tables.blockRecords].map(([h, b]) => [
       h,
-      onlyNewDictionary(drawOrder, was.get(h), b) ? was.get(h)! : b,
+      onlyNewDictionary(drawOrder, was.get(h), b)
+        ? was.get(h)!
+        : !was.has(h) && b.extDict !== undefined && codedDictionaries.get(h) === b.extDict
+          ? withoutDictionary(b)
+          : b,
     ]),
   );
+  const graphs = newGraphs(coded);
   const defs = new Map(model.blocks);
   // The sheet blocks of the layouts the same save adds (LAYOUT New): layouts.ts checks the pair.
   const baseLayouts = new Set((base.layouts ?? []).map((l) => l.handle));
@@ -127,8 +137,9 @@ export function planBlocks(
     const record = after.get(h);
     const out: string[] = [];
     if (!record || record.name !== a.name) out.push(`its name differs from its BLOCK_RECORD's`);
-    if (!same(b?.dynamic, a.dynamic) || !same(b?.dynamicOf, a.dynamicOf))
+    if (b && (!same(b.dynamic, a.dynamic) || !same(b.dynamicOf, a.dynamicOf)))
       out.push('dynamic block links change (Triya does not evaluate dynamic blocks)');
+    if (!b) out.push(...newDynamicProblems(model, a, model.tables.blockRecords.get(h), graphs));
     const rest = (d: BlockDefinition | undefined) =>
       Object.fromEntries(
         Object.entries(d ?? {}).filter(([k]) => !WRITTEN.has(k) && !k.startsWith('dynamic')),
@@ -153,6 +164,47 @@ export function planBlocks(
   }
   // A definition removed goes with its record, whose removal records.ts refuses.
   return { plan, problems };
+}
+
+const withoutDictionary = (b: BlockTableRecord): BlockTableRecord => {
+  const { extDict: _x, ...rest } = b;
+  return rest;
+};
+
+/** The values of a record's xdata of application `app` (any case), or undefined. */
+function xdataOf(model: DocumentModel, record: BlockTableRecord | undefined, app: string) {
+  const upper = app.toUpperCase();
+  return record?.xdata?.find((x) => model.tables.appIds.get(x.appId)?.name.toUpperCase() === upper)
+    ?.values;
+}
+
+/**
+ * Why a new block (PASTECLIP brings dynamic ones, M2-32 part 4) cannot be dynamic, or the state
+ * of one, as the file would say it: a dynamic block has its evaluation graph in the dictionary
+ * the save makes (coded-objects.ts) and is named by its AcDbDynamicBlockTrueName xdata or its
+ * own name; a state's record names its dynamic block in AcDbBlockRepBTag xdata (map/blocks.ts).
+ */
+function newDynamicProblems(
+  model: DocumentModel,
+  a: BlockDefinition,
+  record: BlockTableRecord | undefined,
+  graphs: ReadonlySet<Handle>,
+): string[] {
+  const out: string[] = [];
+  if (a.dynamic) {
+    const trueName = xdataOf(model, record, 'AcDbDynamicBlockTrueName')?.find(
+      (v) => v.code === 1000,
+    )?.value;
+    if (!graphs.has(a.handle)) out.push('a new dynamic block comes with its evaluation graph');
+    else if (a.dynamic.name !== (typeof trueName === 'string' ? trueName : a.name))
+      out.push("a dynamic block's name is its AcDbDynamicBlockTrueName xdata or its own");
+  }
+  if (a.dynamicOf !== undefined) {
+    const tag = xdataOf(model, record, 'AcDbBlockRepBTag')?.find((v) => v.code === 1005)?.value;
+    if (tag !== a.dynamicOf)
+      out.push("a dynamic block's state names it in its AcDbBlockRepBTag xdata");
+  }
+  return out;
 }
 
 function recordProblems(

@@ -11,6 +11,7 @@ import {
   compareHandles,
   invertChangeSet,
   copyToClipboard,
+  dynamicBlockOf,
   pasteAsBlock,
   pasteObjects,
   type Clipboard,
@@ -970,5 +971,262 @@ describe('records, blocks and multileader attributes pasted into another drawing
     // The target's TAG has no REV: that value has no definition to belong to, so it goes.
     expect(g.block.attributes).toEqual([{ definition: '28', index: 0, width: 0, value: '7' }]);
     expect(target.blockEntities('27')).toHaveLength(1);
+  });
+});
+
+describe('dynamic blocks pasted into another drawing (M2-32 part 4)', () => {
+  const coded = (
+    handle: string,
+    owner: string,
+    dxfName: string,
+    body: { code: number; value: string | number | boolean }[],
+    key?: string,
+  ) => ({
+    handle,
+    type: 'CODED_OBJECT' as const,
+    owner,
+    dxfName,
+    ...(key !== undefined ? { key } : {}),
+    codes: [
+      { code: 5, value: handle },
+      { code: 102, value: '{ACAD_REACTORS' },
+      { code: 330, value: owner },
+      { code: 102, value: '}' },
+      { code: 330, value: owner },
+      ...body,
+    ],
+  });
+  const REP_TAG = 'A9';
+  /**
+   * DOOR (A0) is a dynamic block: its extension dictionary A1 holds the evaluation graph A2 with
+   * a visibility parameter A3 naming DOOR's line A5. *U2 (B0) is a state of it; C0 references
+   * the state and D0 DOOR itself, each with a representation (C2/C3, D2/D3) in its dictionary;
+   * D3 names the parameter A3.
+   */
+  function dynamicSource(): DocumentInit {
+    const init = sourceInit();
+    const t = init.tables!;
+    return {
+      ...init,
+      tables: {
+        ...t,
+        appIds: [
+          ...t.appIds!,
+          record('A8', 'AcDbDynamicBlockGUID'),
+          record(REP_TAG, 'AcDbBlockRepBTag'),
+          record('AA', 'ACAUTHENVIRON'),
+        ],
+        blockRecords: [
+          ...t.blockRecords!,
+          {
+            ...blockRecord('A0', 'DOOR'),
+            extDict: 'A1',
+            xdata: [{ appId: 'A8', values: [{ code: 1000, value: '{GUID}' }] }],
+          },
+          {
+            ...blockRecord('B0', '*U2'),
+            flags: 1,
+            xdata: [
+              {
+                appId: REP_TAG,
+                values: [
+                  { code: 1070, value: 1 },
+                  { code: 1005, value: 'A0' },
+                ],
+              },
+            ],
+          },
+        ],
+      },
+      blocks: [
+        ...init.blocks!,
+        { handle: 'A0', name: 'DOOR', basePoint: { x: 0, y: 0 }, dynamic: { name: 'DOOR' } },
+        { handle: 'B0', name: '*U2', basePoint: { x: 0, y: 0 }, flags: 1, dynamicOf: 'A0' },
+      ],
+      objects: [
+        ...init.objects!,
+        coded(
+          'A2',
+          'A1',
+          'ACAD_EVALUATION_GRAPH',
+          [
+            { code: 100, value: 'AcDbEvalGraph' },
+            { code: 360, value: 'A3' },
+          ],
+          'ACAD_ENHANCEDBLOCK',
+        ),
+        coded('A3', 'A2', 'BLOCKVISIBILITYPARAMETER', [
+          { code: 100, value: 'AcDbBlockVisibilityParameter' },
+          { code: 331, value: 'A5' },
+          { code: 1001, value: 'ACAUTHENVIRON' },
+          { code: 1000, value: 'x' },
+        ]),
+        coded(
+          'C2',
+          'C1',
+          'DICTIONARY',
+          [
+            { code: 100, value: 'AcDbDictionary' },
+            { code: 3, value: 'AcDbRepData' },
+            { code: 360, value: 'C3' },
+          ],
+          'AcDbBlockRepresentation',
+        ),
+        coded('C3', 'C2', 'ACDB_BLOCKREPRESENTATION_DATA', [
+          { code: 70, value: 1 },
+          { code: 340, value: 'A0' },
+        ]),
+        coded('D2', 'D1', 'DICTIONARY', [{ code: 360, value: 'D3' }], 'AcDbBlockRepresentation'),
+        coded('D3', 'D2', 'ACDB_BLOCKREPRESENTATION_DATA', [
+          { code: 340, value: 'A0' },
+          { code: 331, value: 'A3' },
+        ]),
+      ],
+      entities: [
+        ...init.entities!,
+        entityInit('A5', lineGeom(0, 0, 0, 9), { owner: 'A0' }),
+        entityInit('B5', lineGeom(0, 0, 0, 7), { owner: 'B0' }),
+        entityInit('C0', insert('B0', 50, 0), { extDict: 'C1' }),
+        entityInit('D0', insert('A0', 70, 0), { extDict: 'D1' }),
+      ],
+    };
+  }
+
+  const copyDynamic = () => {
+    const source = DocumentModel.create(dynamicSource());
+    const ids = ['C0', 'D0'].map((h) => source.entityByHandle(h)!.id);
+    const copy = copyToClipboard(source, ids, { x: 0, y: 0 });
+    return { copy, clip: structuredClone(copy.clipboard) as Clipboard };
+  };
+
+  const codedOf = (m: DocumentModel) =>
+    [...m.objects.values()].filter((o) => o.type === 'CODED_OBJECT') as unknown as {
+      handle: string;
+      owner: string;
+      dxfName: string;
+      key?: string;
+      codes: { code: number; value: unknown }[];
+    }[];
+
+  it('carries the graph, the state and the representations with the records and references', () => {
+    const { clip } = copyDynamic();
+    expect(clip.coded?.map((o) => o.handle).sort()).toEqual(['A2', 'A3', 'C2', 'C3', 'D2', 'D3']);
+    const door = clip.tables.blockRecords!.find((r) => r.name === 'DOOR')!;
+    expect(door.extDict).toBe('A1');
+    expect(door.xdata).toEqual([{ appId: 'A8', values: [{ code: 1000, value: '{GUID}' }] }]);
+    expect(clip.blocks.find((d) => d.name === 'DOOR')!.dynamic).toEqual({ name: 'DOOR' });
+    expect(clip.blocks.find((d) => d.name === '*U2')!.dynamicOf).toBe('A0');
+    expect(clip.entities.map((e) => e.extDict)).toEqual(['C1', 'D1']);
+    // The application of the graph's xdata comes too.
+    expect(clip.tables.appIds!.map((a) => a.name)).toContain('ACAUTHENVIRON');
+  });
+
+  it('pastes a reference that stays dynamic, graph and all, in new handles', () => {
+    const target = DocumentModel.create(targetInit());
+    const { pasted } = paste(target, copyDynamic().clip);
+    const [c0, d0] = pasted;
+    const state = (c0!.geom as { block: string }).block;
+    const door = byName(target.tables.blockRecords, 'DOOR')!;
+    expect(dynamicBlockOf(target.blocks, state)).toEqual({ handle: door.handle, name: 'DOOR' });
+    expect(dynamicBlockOf(target.blocks, (d0!.geom as { block: string }).block)?.name).toBe('DOOR');
+    const tag = byName(target.tables.appIds, 'AcDbBlockRepBTag')!.handle;
+    expect(target.tables.blockRecords.get(state)!.xdata).toEqual([
+      {
+        appId: tag,
+        values: [
+          { code: 1070, value: 1 },
+          { code: 1005, value: door.handle },
+        ],
+      },
+    ]);
+
+    const objects = codedOf(target);
+    expect(objects).toHaveLength(6);
+    for (const o of objects) expect(compareHandles(o.handle, '200')).toBeGreaterThan(0);
+    const graph = objects.find((o) => o.key === 'ACAD_ENHANCEDBLOCK')!;
+    expect(door.extDict).toBe(graph.owner);
+    expect(compareHandles(door.extDict!, '200')).toBeGreaterThan(0);
+    const parameter = objects.find((o) => o.dxfName === 'BLOCKVISIBILITYPARAMETER')!;
+    const line = target.blockEntities(door.handle).map((id) => target.entity(id)!)[0]!;
+    expect(parameter.owner).toBe(graph.handle);
+    expect(parameter.codes).toEqual([
+      { code: 5, value: parameter.handle },
+      { code: 102, value: '{ACAD_REACTORS' },
+      { code: 330, value: graph.handle },
+      { code: 102, value: '}' },
+      { code: 330, value: graph.handle },
+      { code: 100, value: 'AcDbBlockVisibilityParameter' },
+      { code: 331, value: line.handle },
+      { code: 1001, value: 'ACAUTHENVIRON' },
+      { code: 1000, value: 'x' },
+    ]);
+    expect(graph.codes).toContainEqual({ code: 360, value: parameter.handle });
+    // Each reference's representation is in its own new dictionary.
+    for (const r of [c0!, d0!]) {
+      const rep = objects.find((o) => o.owner === r.extDict)!;
+      expect(rep.key).toBe('AcDbBlockRepresentation');
+      const data = objects.find((o) => o.owner === rep.handle)!;
+      expect(data.codes).toContainEqual({ code: 340, value: door.handle });
+    }
+  });
+
+  it("uses the target's block of the same name, and leaves a representation naming its graph", () => {
+    const init = targetInit();
+    const target = DocumentModel.create({
+      ...init,
+      tables: {
+        ...init.tables,
+        blockRecords: [...init.tables!.blockRecords!, blockRecord('27', 'door')],
+      },
+      blocks: [...init.blocks!, { handle: '27', name: 'door', basePoint: { x: 0, y: 0 } }],
+    });
+    const { pasted } = paste(target, copyDynamic().clip);
+    const [c0, d0] = pasted;
+    // The state is new and names the target's DOOR; its representation names nothing else.
+    const state = (c0!.geom as { block: string }).block;
+    expect(target.blocks.get(state)!.dynamicOf).toBe('27');
+    expect(c0!.extDict).toBeDefined();
+    // D0's representation names the source's graph, which stays behind with its DOOR.
+    expect((d0!.geom as { block: string }).block).toBe('27');
+    expect(d0!.extDict).toBeUndefined();
+    const objects = codedOf(target);
+    expect(objects.map((o) => o.dxfName).sort()).toEqual([
+      'ACDB_BLOCKREPRESENTATION_DATA',
+      'DICTIONARY',
+    ]);
+    expect(objects.find((o) => o.dxfName !== 'DICTIONARY')!.codes).toContainEqual({
+      code: 340,
+      value: '27',
+    });
+  });
+
+  it('pastes a dynamic block whose graph Triya does not hold as a static one, as before', () => {
+    const init = dynamicSource();
+    const source = DocumentModel.create({
+      ...init,
+      objects: init.objects!.filter((o) => o.type !== 'CODED_OBJECT'),
+    });
+    const ids = ['D0'].map((h) => source.entityByHandle(h)!.id);
+    const clip = structuredClone(copyToClipboard(source, ids, { x: 0, y: 0 }).clipboard);
+    expect(clip.coded).toBeUndefined();
+    const target = DocumentModel.create(targetInit());
+    const { pasted } = paste(target, clip as Clipboard);
+    const door = byName(target.tables.blockRecords, 'DOOR')!;
+    expect(dynamicBlockOf(target.blocks, (pasted[0]!.geom as { block: string }).block)).toBe(
+      undefined,
+    );
+    expect(door.xdata).toBeUndefined();
+    expect(door.extDict).toBeUndefined();
+  });
+
+  it('is undone by its inverse, graph and all', () => {
+    const target = DocumentModel.create(targetInit());
+    const before = snapshot(target);
+    const b = new ChangeSetBuilder(target);
+    pasteObjects(b, target, copyDynamic().clip, MODEL_SPACE, { x: 0, y: 0 });
+    const cs = b.build();
+    target.apply(cs);
+    target.apply(invertChangeSet(cs));
+    expect(snapshot(target)).toEqual(before);
   });
 });
