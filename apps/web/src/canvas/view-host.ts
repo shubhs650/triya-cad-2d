@@ -41,6 +41,12 @@ export interface ViewTarget {
   show(view: ViewTransform): void;
   setMode(mode: CanvasMode): void;
   regen(): void;
+  /**
+   * Resolves true once the canvas shows a view (at once if it does), false if none comes soon:
+   * a just-opened drawing without a saved view shows its extents only after the renderer has
+   * measured it.
+   */
+  whenViewed(): Promise<boolean>;
   pick(point: Vec2): Promise<EntityId[]>;
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]>;
   zoomObjects(ids: readonly EntityId[]): Promise<boolean>;
@@ -127,6 +133,13 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };
   }
   const t = ctx.target;
+  if (t && !t.view && t.size.width > 0 && t.size.height > 0) {
+    // A view command typed as the drawing opens (ZOOM straight after it shows) reaches a sized
+    // canvas still waiting for its first view: it waits for it rather than finding no view.
+    return t
+      .whenViewed()
+      .then((ok) => (ok ? answerView(r, ctx) : { ok: false, message: NO_CANVAS }));
+  }
   if (!t || !stateOf(t)) return { ok: false, message: NO_CANVAS };
   const done = (): ViewReply => {
     const view = stateOf(t);
