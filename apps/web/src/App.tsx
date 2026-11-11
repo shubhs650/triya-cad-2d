@@ -1337,22 +1337,27 @@ export function App() {
       )}
       {!settings && <SupportBanners />}
       <UndoToast states={undoStates} active={state.active} />
-      {state.notice && (
-        <div className="banner" role="status">
-          <span>{state.notice}</span>
-          <button type="button" aria-label="Dismiss" onClick={() => store.dismissNotice()}>
-            ×
-          </button>
-        </div>
-      )}
-      {state.opening.length > 0 && (
-        <div className="banner" role="status">
-          Opening {state.opening.join(', ')}…
-        </div>
-      )}
 
       <div className="workspace">
         <main className="canvas-area">
+          {/* Notices that go by themselves float over the drawing: a banner in the page's flow
+              made the canvas shorter while it showed, so a view set then showed more of the
+              drawing once it went (M2-57). */}
+          <div className="notice-region">
+            {state.notice && (
+              <div className="notice" role="status">
+                <span>{state.notice}</span>
+                <button type="button" aria-label="Dismiss" onClick={() => store.dismissNotice()}>
+                  ×
+                </button>
+              </div>
+            )}
+            {state.opening.length > 0 && (
+              <div className="notice" role="status">
+                Opening {state.opening.join(', ')}…
+              </div>
+            )}
+          </div>
           {state.docs.map((d) => (
             <DocumentCanvas key={d.id} doc={d} active={d.id === state.active} onMode={setMode} />
           ))}

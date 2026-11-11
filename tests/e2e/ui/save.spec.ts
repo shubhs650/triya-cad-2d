@@ -356,8 +356,63 @@ test('the save keeps the named views VIEW saves and reopens in the view it was s
   const views = page.getByRole('group', { name: 'Named views' });
   await page.screenshot({ path: test.info().outputPath('2-reopened-views.png') });
   await views.getByRole('button', { name: 'Markup detail' }).click();
+  // The save's notice going away (4 s on) leaves the restored view as it is (M2-57).
+  await expect(page.getByText(`Saved ${name}.`)).toBeHidden();
   sameView(await shown(page), detail);
   await page.screenshot({ path: test.info().outputPath('3-named-view-restored.png') });
+});
+
+test('notices that go by themselves float over the drawing and never resize it (M2-57)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await fakePickers(page);
+  await page.goto(app.url);
+  await openFile(page, DXF32);
+  const name = path.basename(DXF32);
+  // Every size the drawing area takes from here on.
+  await page.evaluate(() => {
+    const area = document.querySelector('.canvas-area')!;
+    const sizes: string[] = [];
+    (window as unknown as { __sizes: string[] }).__sizes = sizes;
+    new ResizeObserver(([e]) =>
+      sizes.push(`${e!.contentRect.width}x${e!.contentRect.height}`),
+    ).observe(area);
+  });
+  const before = (await activeCanvas(page).boundingBox())!;
+  const view = await shown(page);
+  await drawLine(page);
+  await page.keyboard.press('Control+s');
+  const notice = page.getByText(`Saved ${name}.`);
+  await expect(notice).toBeVisible();
+  await expect(page.locator('.notice')).toHaveCSS('opacity', '1');
+  await page.screenshot({ path: test.info().outputPath('1-save-notice-over-the-drawing.png') });
+  // The notice sits over the drawing, under the title bar, and the dismiss button still works.
+  const box = (await notice.boundingBox())!;
+  const area = (await page.locator('.canvas-area').boundingBox())!;
+  expect(box.y).toBeGreaterThanOrEqual(area.y - 1);
+  await expect(notice).toBeHidden({ timeout: 6000 });
+  // Another drawing opening ("Opening …") leaves the area as it is too.
+  await openFile(page, DXF32.replace('hatches_1', 'hatches_2'));
+  await expectShown(page, 'hatches_2.dxf');
+  await page.getByRole('tab', { name, exact: true }).click();
+  const after = (await activeCanvas(page).boundingBox())!;
+  expect(after.height).toBe(before.height);
+  expect(after.width).toBe(before.width);
+  sameView(await shown(page), view);
+  const sizes = await page.evaluate(() => (window as unknown as { __sizes: string[] }).__sizes);
+  expect(new Set(sizes).size).toBe(1);
+
+  // A save's notice can still be dismissed before it goes.
+  await drawLine(page);
+  await page.keyboard.press('Control+s');
+  await expect(notice).toBeVisible();
+  await page
+    .getByRole('status')
+    .filter({ hasText: `Saved ${name}.` })
+    .getByRole('button', { name: 'Dismiss' })
+    .click();
+  await expect(notice).toBeHidden();
 });
 
 test('CLOSEALL closes every drawing, asking to save changes; Cancel stops it (M2-29)', async ({
