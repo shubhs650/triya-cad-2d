@@ -7,6 +7,10 @@
 // read back, each pasted entity is there under its handle with its type, owner and layer name,
 // and every record the paste added is there under its handle and name. Nothing the source holds
 // leaks in under the source's handles, and every new handle is above the target's $HANDSEED.
+//
+// M2-32: the target is taken in other units than each source with units of its own (inches,
+// or millimetres for an inch drawing), so every such paste is scaled (`pasteScale`) and the
+// save takes the scaled objects too.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -15,6 +19,7 @@ import {
   compareHandles,
   copyToClipboard,
   pasteObjects,
+  pasteScale,
   type ChangeSet,
   type Clipboard,
   type SymbolTableRecord,
@@ -34,13 +39,23 @@ const PER_FILE_BUDGET_MS = 30_000;
 const modelSpace = (model: DocumentModel): string | undefined =>
   [...model.blocks.values()].find((b) => b.name.toUpperCase() === '*MODEL_SPACE')?.handle;
 
-const open = (bytes: Uint8Array) =>
-  withPinnedClock(() => DocumentModel.create(documentInit(readCadDocument(bytes))));
+const open = (bytes: Uint8Array, insUnits?: number) =>
+  withPinnedClock(() => {
+    const init = documentInit(readCadDocument(bytes));
+    return DocumentModel.create(
+      insUnits === undefined ? init : { ...init, meta: { ...init.meta, insUnits } },
+    );
+  });
+
+/** INSUNITS 1 is inches, 4 millimetres. */
+const otherUnits = (insUnits: number): number | undefined =>
+  insUnits === 0 ? undefined : insUnits === 1 ? 4 : 1;
 
 describe('Paste from every public corpus file into another drawing (M2-14 part 2)', () => {
   const targetBytes = new Uint8Array(readFileSync(`${corpusDir}${TARGET}`));
   let pastedTotal = 0;
   let refusedTotal = 0;
+  let scaledFiles = 0;
 
   it.each(readable.map((f) => [f.path] as const))(
     '%s pastes into an AC1032 drawing that saves with everything pasted',
@@ -53,7 +68,9 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
       const clip = structuredClone(copy.clipboard) as Clipboard;
       refusedTotal += [...copy.refused.values()].reduce((a, b) => a + b, 0);
 
-      const target = open(targetBytes);
+      const target = open(targetBytes, otherUnits(source.meta.insUnits));
+      const k = pasteScale(target, clip);
+      if (k !== 1) scaledFiles++;
       const seed = target.handSeed;
       const b = new ChangeSetBuilder(target);
       const report = pasteObjects(b, target, clip, modelSpace(target)!, { x: 1000, y: 1000 });
@@ -94,5 +111,7 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
     // A floor, so that a paste that quietly takes nothing fails here.
     expect(pastedTotal).toBeGreaterThan(2000);
     expect(refusedTotal).toBeGreaterThanOrEqual(0);
+    // Most corpus drawings state their units, so most pastes are scaled.
+    expect(scaledFiles).toBeGreaterThan(20);
   });
 });

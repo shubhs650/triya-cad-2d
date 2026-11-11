@@ -19,7 +19,7 @@ import type {
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
-import { pictureOf, type PictureSize } from './canvas/picture';
+import { pictureOf, pngOf, type PictureSize } from './canvas/picture';
 import {
   allControllers,
   controllerOf,
@@ -68,6 +68,7 @@ import { PatternStore, indexedDbPatterns, isPatFile } from './patterns';
 import { Pwa, type ContainerLike, type InstallPromptLike } from './pwa';
 import { InstallButton, OfflineStatus, UpdateBanner } from './PwaChrome';
 import { RecentFiles, indexedDbRecent, type RecentHandle } from './recent';
+import { RECENT_THUMBNAIL, RecentDrawings } from './RecentDrawings';
 import { Autosaver, RecoveryOffers } from './recovery';
 import { indexedDbRecovery, webLocks } from './recovery-browser';
 import { RecoveryBanner } from './RecoveryBanner';
@@ -138,6 +139,7 @@ const autosaver = new Autosaver({
   session,
   changesOf: (doc) => engines.changesOf(doc),
   onError: (message) => store.fail(message),
+  onWritten: (doc) => void pictureForRecent(doc.id),
 });
 store.subscribe(() => autosaver.update(store.getSnapshot().docs));
 const recoveryOffers = new RecoveryOffers(recoveryStore, sessionLocks, session);
@@ -146,6 +148,61 @@ void recoveryOffers.load();
 /** Recent drawings (M2-14, recent.ts): the start screen and the Ctrl+K palette list them. */
 const recent = new RecentFiles(indexedDbRecent());
 void recent.load();
+
+/**
+ * Canvases whose picture is being copied (M2-32): the copy comes from the render worker, so a
+ * canvas closed meanwhile is disposed once the copy is in, or after PICTURE_WAIT_MS at most,
+ * and closing a drawing never waits for its picture.
+ */
+const picturing = new Map<CanvasController, Promise<unknown>>();
+const PICTURE_WAIT_MS = 10_000;
+
+/** Disposes `c` now, or once the picture being copied from it is in. */
+function disposeCanvas(c: CanvasController): void {
+  const busy = picturing.get(c);
+  if (busy) void busy.finally(() => c.dispose());
+  else c.dispose();
+}
+
+/**
+ * A copy of drawing `id`'s canvas as last drawn and the file handle it is listed by, for the
+ * start screen (M2-32, UI_SPEC §10); undefined for a drawing with no file handle (not listed).
+ */
+async function takePicture(
+  id: number,
+): Promise<{ handle: RecentHandle; bitmap: ImageBitmap } | undefined> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  const handle = doc?.file?.handle;
+  const controller = doc && controllerOf(doc.id, doc.block);
+  if (!handle || !controller) return undefined;
+  // Asked for before this returns its promise, so a drawing closing right after is copied too.
+  const copy = controller.thumbnail(RECENT_THUMBNAIL).catch(() => undefined);
+  const settled = Promise.race([
+    copy,
+    new Promise<undefined>((resolve) => setTimeout(resolve, PICTURE_WAIT_MS)),
+  ]);
+  picturing.set(controller, settled);
+  const bitmap = await settled;
+  if (picturing.get(controller) === settled) picturing.delete(controller);
+  return bitmap ? { handle: handle as RecentHandle, bitmap } : undefined;
+}
+
+/** Keeps a picture taken by `takePicture` with its recent entry. */
+async function keepPicture(
+  picture: { handle: RecentHandle; bitmap: ImageBitmap } | undefined,
+): Promise<void> {
+  if (!picture) return;
+  try {
+    await recent.setThumbnail(picture.handle, await pngOf(picture.bitmap));
+  } catch {
+    // A picture is a nicety: the list works without one.
+  }
+}
+
+/** Takes and keeps the start screen's picture of drawing `id` (autosave, save). */
+async function pictureForRecent(id: number): Promise<void> {
+  await keepPicture(await takePicture(id));
+}
 
 /**
  * The service worker (M2-19, pwa.ts): offline caching and "Ready offline", the update prompt and
@@ -341,7 +398,8 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
     const r = await saveDrawing(doc.name, doc.file, changes, mode, saveEnv);
     if (r.ok) {
       store.saved(id, r.name, r.file, edits);
-      if (r.file.handle) void recent.add(r.file.handle as RecentHandle);
+      const handle = r.file.handle;
+      if (handle) void recent.add(handle as RecentHandle).then(() => pictureForRecent(id));
     } else if (!r.cancelled) store.fail(r.message);
     return r.ok;
   } finally {
@@ -361,6 +419,10 @@ async function closeDoc(id: number): Promise<boolean> {
     if (answer === 'cancel') return false;
     if (answer === 'yes' && !(await saveDoc(id, 'qsave'))) return false;
   }
+  // Closed with nothing unsaved, the start screen pictures it as it is now; closed with its
+  // changes thrown away, it keeps the picture of its last autosave or save (M2-32).
+  const now = store.getSnapshot().docs.find((d) => d.id === id);
+  if (now && !isDirty(now)) void takePicture(id).then(keepPicture);
   if (previewMode.get()?.doc === id) previewMode.close();
   lastPlotSettings.forget(id);
   store.close(id);
@@ -1295,24 +1357,7 @@ export function App() {
               <button type="button" onClick={pick}>
                 Open drawing…
               </button>
-              {recentFiles.length > 0 && (
-                <section className="recent" aria-label="Recent drawings">
-                  <h2>Recent drawings</h2>
-                  <ul>
-                    {recentFiles.map((r) => (
-                      <li key={r.key}>
-                        <button
-                          type="button"
-                          title={`Opened ${new Date(r.openedAt).toLocaleString()}`}
-                          onClick={() => void openRecent(r.key)}
-                        >
-                          {r.name}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              )}
+              <RecentDrawings entries={recentFiles} onOpen={(key) => void openRecent(key)} />
               <p className="privacy">Drawings never leave this device.</p>
             </div>
           )}
@@ -1670,7 +1715,7 @@ function ViewportCanvas({
     showCurrent(id, block, visibleRef.current);
     return () => {
       unregister();
-      c.dispose();
+      disposeCanvas(c);
     };
   }, [id, name, opened, block, onMode, index, tile, count]);
   const r = tile?.rect;
