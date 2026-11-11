@@ -26,9 +26,18 @@
 // where it is: the app finds an image or PDF by its name without the folder (M1-21), so a file
 // the user supplied shows in both drawings.
 //
+// Records and blocks keep their xdata (M2-32 part 3), as AutoCAD's deep clone copies an object's
+// xdata with it: its applications come along as they do for an object's, and a 1005 handle names
+// the pasted copy of what it named. A dynamic block's applications (its GUID, true name and the
+// representation tags of its anonymous copies) describe the graph a paste does not bring, so
+// they stay behind with it. A multileader whose content block holds attribute definitions names
+// the pasted block's ATTDEFs, or, where the target has the block already, the target's ATTDEF
+// of the same tag (AutoCAD's Help does not say which; the tag is what the attribute is to a
+// drafter); a value whose tag the target's block lacks has nothing to belong to and goes.
+//
 // What the target cannot take yet is left out when copying, with a reason: viewports (a
-// layout's), external references (their content lives in another file), an image whose
-// definition is missing and what COPY refuses.
+// layout's), external references (their content lives in another file: attaching one is
+// XATTACH's, M5-04), an image whose definition is missing and what COPY refuses.
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { sub } from '../geom/vec';
@@ -199,30 +208,41 @@ function clipboardProblem(model: DocumentModel, e: Entity): string | undefined {
     }
   }
   if (g.kind === 'VIEWPORT') return 'a viewport cannot be pasted';
-  if (g.kind === 'MULTILEADER' && g.block?.attributes?.some((a) => a.definition !== undefined)) {
-    // Its attribute values name the content block's ATTDEFs, which the save can only find in
-    // the drawing it read (export entities.ts), not among the ones the paste adds.
-    return 'a multileader with block attributes cannot be pasted into another drawing yet';
-  }
   if (g.kind === 'INSERT' && isXrefRecord(model.tables.blockRecords.get(g.block))) {
     return 'an external reference cannot be pasted yet';
   }
   return copyProblem(e, moveBy({ x: 0, y: 0 }));
 }
 
-/** The xdata a copy keeps: all but the annotative property's, as COPY's (edit.ts). */
-function keptXdata(model: DocumentModel, xdata: Xdata | undefined): Xdata | undefined {
+/** The applications a copy leaves behind: the annotative property's, as COPY's (edit.ts). */
+const ANNOTATIVE_APPS: ReadonlySet<string> = new Set(['ACADANNOTATIVE']);
+
+/** The applications of a dynamic block's graph, which a paste leaves behind (`clipBlock`). */
+const DYNAMIC_APPS: ReadonlySet<string> = new Set([
+  ...ANNOTATIVE_APPS,
+  'ACDBDYNAMICBLOCKGUID',
+  'ACDBDYNAMICBLOCKTRUENAME',
+  'ACDBBLOCKREPBTAG',
+  'ACDBBLOCKREPETAG',
+]);
+
+/** The xdata a copy keeps: all but the applications `dropped` names. */
+function keptXdata(
+  model: DocumentModel,
+  xdata: Xdata | undefined,
+  dropped = ANNOTATIVE_APPS,
+): Xdata | undefined {
   if (!xdata) return undefined;
   const kept = xdata.filter(
-    (x) => model.tables.appIds.get(x.appId)?.name.toUpperCase() !== 'ACADANNOTATIVE',
+    (x) => !dropped.has(model.tables.appIds.get(x.appId)?.name.toUpperCase() ?? ''),
   );
   return kept.length > 0 ? kept : undefined;
 }
 
 /** What a copied object or record keeps of its common fields. */
-function common<T extends ObjectCommon>(model: DocumentModel, o: T): T {
+function common<T extends ObjectCommon>(model: DocumentModel, o: T, dropped = ANNOTATIVE_APPS): T {
   const { raw: _raw, reactors: _reactors, extDict: _extDict, xdata, ...rest } = o;
-  const kept = keptXdata(model, xdata);
+  const kept = keptXdata(model, xdata, dropped);
   return { ...rest, ...(kept ? { xdata: kept } : {}) } as T;
 }
 
@@ -253,12 +273,12 @@ function clipEntity(model: DocumentModel, e: Entity): EntityInit {
 }
 
 /**
- * A record as the Clipboard holds it. Its xdata stays behind: what Triya reads of a record's
- * xdata is in its fields (a text style's TrueType bits, a layer's description), which the save
- * writes for a new record, and the save takes no other xdata on one.
+ * A record as the Clipboard holds it, with its xdata. What Triya reads of a record's xdata into
+ * its fields (a layer's transparency and description, a text style's TrueType bits) agrees with
+ * the xdata, which the save rewrites from them.
  */
 function clipRecord(model: DocumentModel, table: TableName, r: ObjectCommon): ObjectCommon {
-  const { xdata: _xdata, ...out } = common(model, r);
+  const out = common(model, r, table === 'blockRecords' ? DYNAMIC_APPS : ANNOTATIVE_APPS);
   if (table === 'layers') {
     // A layer's viewport overrides name viewports of the source's layouts.
     const { viewportOverrides: _v, ...layer } = out as LayerRecord;
@@ -294,7 +314,7 @@ function clipBlock(model: DocumentModel, d: BlockDefinition): BlockDefinition {
     dynamic: _dynamic,
     dynamicOf: _dynamicOf,
     xrefLoaded: _loaded,
-    // As a record's (clipRecord).
+    // The BLOCK's own xdata, which the reader does not map (its BLOCK_RECORD's is the record's).
     xdata: _xdata,
     ...rest
   } = common(model, d);
@@ -476,6 +496,16 @@ function pasteInto(
   }
   for (const o of clip.objects ?? []) pasteDefinition(b, model, o, map);
   const contents = clip.blockEntities.filter((e) => !kept.has(e.owner));
+  // A kept block's ATTDEFs are the target's of the same tag (a multileader's values name them).
+  for (const e of clip.blockEntities) {
+    if (!kept.has(e.owner) || e.geom.kind !== 'ATTDEF') continue;
+    const tag = e.geom.tag.toUpperCase();
+    const own = model
+      .blockEntities(map.get(e.owner)!)
+      .map((id) => model.entity(id)!)
+      .find((d) => d.geom.kind === 'ATTDEF' && d.geom.tag.toUpperCase() === tag);
+    if (own) map.set(e.handle, own.handle);
+  }
   // Each object's own handle and those of what it carries (an INSERT's ATTRIBs), these first, as
   // COPY allocates them.
   for (const e of [...contents, ...clip.entities]) {
@@ -536,10 +566,10 @@ function pasteInto(
   }
 
   const pasted: Entity[] = [];
-  for (const e of contents) pasted.push(b.adoptEntity(copy(e)));
+  for (const e of contents) pasted.push(b.adoptEntity(copyEntity(e, copy)));
   const top: Entity[] = [];
   for (const e of clip.entities) {
-    const entity = b.adoptEntity({ ...copy(e), owner });
+    const entity = b.adoptEntity({ ...copyEntity(e, copy), owner });
     pasted.push(entity);
     top.push(entity);
   }
@@ -565,6 +595,21 @@ function pasteInto(
   const ids = top.map((e) => e.id);
   if (t) transformObjects(b, model, ids, t);
   return { ids, refused: new Map(), unannotated: 0 };
+}
+
+/**
+ * `e` in the target's handles. A multileader's attribute value whose ATTDEF has no counterpart
+ * in the target (its block is the target's, without that tag) goes.
+ */
+function copyEntity(e: EntityInit, copy: <T>(value: T) => T): EntityInit {
+  const out = copy(e);
+  const g = out.geom;
+  if (g.kind !== 'MULTILEADER' || !g.block?.attributes || e.geom.kind !== 'MULTILEADER') return out;
+  const was = e.geom.block!.attributes!;
+  const attributes = g.block.attributes.filter(
+    (a, i) => was[i]!.definition === undefined || a.definition !== undefined,
+  );
+  return { ...out, geom: { ...g, block: { ...g.block, attributes } } };
 }
 
 /**

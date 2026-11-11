@@ -153,8 +153,21 @@ function writeTextStyle(s: TextStyle, b: TextStyleRecord | undefined, a: TextSty
   if (changed('obliqueAngle')) s.obliqueAngle = a.obliqueAngle;
   if (changed('lastHeight')) s.lastHeight = a.lastHeight;
   if (changed('generation')) s.mirrorFlag = a.generation as never;
-  if (changed('trueTypeFlags')) s.trueType = a.trueTypeFlags as never;
-  if (b && changed('font', 'trueTypeFlags')) writeFontXdata(s, b, a);
+  // A new style that brings its `ACAD` face pair (PASTECLIP, M2-32 part 3) keeps it: acad-ts
+  // rewrites a bold or italic style's pair from the file name ("ariblk" for "Arial Black"),
+  // dropping the charset, pitch and family bits, unless it read the pair itself. So the pair
+  // states bold and italic, and acad-ts's TrueType flags, which a DXF stores only there, stay 0.
+  const ownPair = !b && hasFacePair(s);
+  if (changed('trueTypeFlags') && !ownPair) s.trueType = a.trueTypeFlags as never;
+  if (ownPair) writeFontXdata(s, a, a);
+  else if (b && changed('font', 'trueTypeFlags')) writeFontXdata(s, b, a);
+}
+
+/** Whether `s` has the `ACAD` face name and flags pair AutoCAD writes for a TrueType font. */
+function hasFacePair(s: TextStyle): boolean {
+  const entry = [...s.extendedData].find(([app]) => app.name.toUpperCase() === AppId.defaultName);
+  const [face, bits] = entry?.[1].records ?? [];
+  return face instanceof ExtendedDataString && bits instanceof ExtendedDataInteger32;
 }
 
 /** Writes the planned text style changes onto `doc`; new styles join its STYLE table first. */

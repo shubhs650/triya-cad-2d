@@ -1,0 +1,1 @@
+- M2-32 part 3 (#280): PASTECLIP keeps the xdata of the layers, styles, linetypes, applications and blocks it brings, and the save writes the xdata of every record it adds (a new TrueType style keeps its face name); multileaders whose block holds attribute definitions paste into another drawing, naming the pasted ATTDEFs or the target's of the same tag.

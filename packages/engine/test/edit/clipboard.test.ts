@@ -787,3 +787,188 @@ describe('images and PDF underlays pasted into another drawing (M2-32 part 2)', 
     expect(snapshot(target)).toEqual(was);
   });
 });
+
+describe('records, blocks and multileader attributes pasted into another drawing (M2-32 part 3)', () => {
+  const ANNOTATIVE = '19';
+  const GUID = '1A';
+  const TAG = '44';
+  /** A multileader with a TAG block holding the ATTDEFs NO and REV, and MYAPP xdata on records. */
+  function sourceWithMore(): DocumentInit {
+    const init = sourceInit();
+    const t = init.tables!;
+    const mine = (value: string) => ({ appId: '16', values: [{ code: 1000, value }] });
+    const attdef = (handle: string, tag: string, y: number): EntityInit =>
+      entityInit(
+        handle,
+        { ...text(0, y, '30', ''), kind: 'ATTDEF', tag, flags: 0, prompt: tag } as EntityGeometry,
+        { owner: TAG },
+      );
+    return {
+      ...init,
+      tables: {
+        ...t,
+        appIds: [
+          ...t.appIds!,
+          record(ANNOTATIVE, 'AcadAnnotative'),
+          record(GUID, 'AcDbDynamicBlockGUID'),
+        ],
+        layers: t.layers!.map((l) =>
+          l.name === 'DASHED_L'
+            ? {
+                ...l,
+                xdata: [mine('dash'), { appId: ANNOTATIVE, values: [{ code: 1070, value: 1 }] }],
+              }
+            : l,
+        ),
+        dimStyles: t.dimStyles!.map((s) => ({
+          ...s,
+          xdata: [{ appId: '16', values: [{ code: 1005, value: '15' }] }],
+        })),
+        blockRecords: [
+          ...t.blockRecords!.map((r) =>
+            r.name === 'ARROW'
+              ? {
+                  ...r,
+                  xdata: [mine('arrow'), { appId: GUID, values: [{ code: 1000, value: 'g' }] }],
+                }
+              : r,
+          ),
+          blockRecord(TAG, 'TAG'),
+        ],
+      },
+      blocks: [
+        ...init.blocks!.map((d) => (d.name === 'ARROW' ? { ...d, xdata: [mine('block')] } : d)),
+        { handle: TAG, name: 'TAG', basePoint: { x: 0, y: 0 } },
+      ],
+      entities: [
+        ...init.entities!,
+        attdef('56', 'NO', 0),
+        attdef('57', 'REV', -3),
+        entityInit('69', {
+          kind: 'MULTILEADER',
+          overrideFlags: 0,
+          pathType: 1,
+          lineColor: { kind: 'byBlock' },
+          lineweight: 'ByBlock',
+          landing: true,
+          dogleg: true,
+          doglegLength: 2.5,
+          arrowheadSize: 3,
+          contentType: 1,
+          scale: 1,
+          annotative: false,
+          textLeftAttachment: 1,
+          textRightAttachment: 1,
+          textTopAttachment: 9,
+          textBottomAttachment: 9,
+          textAttachmentDirection: 0,
+          textAngleType: 1,
+          textAlignment: 0,
+          textFrame: false,
+          contentBase: { x: 12.5, y: 10 },
+          landingGap: 0.5,
+          block: {
+            block: TAG,
+            position: { x: 13, y: 10 },
+            scale: { x: 1, y: 1, z: 1 },
+            rotation: 0,
+            color: { kind: 'byBlock' },
+            attributes: [
+              { definition: '56', index: 0, width: 0, value: '7' },
+              { definition: '57', index: 1, width: 0, value: 'B' },
+            ],
+          },
+          branches: [],
+        } as EntityGeometry),
+      ],
+    };
+  }
+
+  const copyMore = () => {
+    const source = DocumentModel.create(sourceWithMore());
+    const ids = [...COPIED, '69'].map((h) => source.entityByHandle(h)!.id);
+    const copy = copyToClipboard(source, ids, { x: 0, y: 0 });
+    return { copy, clip: structuredClone(copy.clipboard) as Clipboard };
+  };
+
+  it('keeps the xdata of the records it brings, under the target application handles', () => {
+    const target = DocumentModel.create(targetInit());
+    paste(target, copyMore().clip);
+    const myapp = byName(target.tables.appIds, 'MYAPP')!.handle;
+    // The annotative property is not pasted (M2-43), so its xdata stays behind as on objects.
+    expect(byName(target.tables.layers, 'DASHED_L')!.xdata).toEqual([
+      { appId: myapp, values: [{ code: 1000, value: 'dash' }] },
+    ]);
+    const dashed = byName(target.tables.linetypes, 'DASHED')!.handle;
+    expect(byName(target.tables.dimStyles, 'MECH')!.xdata).toEqual([
+      { appId: myapp, values: [{ code: 1005, value: dashed }] },
+    ]);
+  });
+
+  it("keeps a block record's xdata, but not a dynamic block's", () => {
+    const target = DocumentModel.create(targetInit());
+    paste(target, copyMore().clip);
+    const myapp = byName(target.tables.appIds, 'MYAPP')!.handle;
+    const arrow = byName(target.tables.blockRecords, 'ARROW')!;
+    // A dynamic block's applications describe the graph a paste does not bring (M2-32 part 4).
+    expect(arrow.xdata).toEqual([{ appId: myapp, values: [{ code: 1000, value: 'arrow' }] }]);
+    expect(byName(target.tables.appIds, 'AcDbDynamicBlockGUID')).toBeUndefined();
+    // The BLOCK's own xdata is not read from a file (map blocks.ts), so none is pasted.
+    expect(target.blocks.get(arrow.handle)!.xdata).toBeUndefined();
+  });
+
+  it('pastes a multileader whose block holds attribute definitions, naming the pasted ATTDEFs', () => {
+    const { copy, clip } = copyMore();
+    expect(copy.refused.size).toBe(0);
+    const target = DocumentModel.create(targetInit());
+    const { pasted } = paste(target, clip);
+    const [ml] = of(pasted, 'MULTILEADER');
+    const g = ml!.geom as unknown as {
+      block: { block: string; attributes: { definition: string }[] };
+    };
+    const tag = byName(target.tables.blockRecords, 'TAG')!.handle;
+    expect(g.block.block).toBe(tag);
+    const defs = target.blockEntities(tag).map((id) => target.entity(id)!);
+    const handleOf = (t: string) => defs.find((d) => (d.geom as { tag: string }).tag === t)!.handle;
+    expect(g.block.attributes).toMatchObject([
+      { definition: handleOf('NO'), value: '7' },
+      { definition: handleOf('REV'), value: 'B' },
+    ]);
+    for (const a of g.block.attributes)
+      expect(compareHandles(a.definition, '200')).toBeGreaterThan(0);
+  });
+
+  it("names the target's own ATTDEFs, by tag, where it has the block already", () => {
+    const init = targetInit();
+    const target = DocumentModel.create({
+      ...init,
+      tables: {
+        ...init.tables,
+        blockRecords: [...init.tables!.blockRecords!, blockRecord('27', 'tag')],
+      },
+      blocks: [...init.blocks!, { handle: '27', name: 'tag', basePoint: { x: 0, y: 0 } }],
+      entities: [
+        ...init.entities!,
+        entityInit(
+          '28',
+          {
+            ...text(0, 0, '30', ''),
+            kind: 'ATTDEF',
+            tag: 'no',
+            flags: 0,
+            prompt: 'No.',
+          } as EntityGeometry,
+          { owner: '27' },
+        ),
+      ],
+    });
+    const { pasted } = paste(target, copyMore().clip);
+    const g = of(pasted, 'MULTILEADER')[0]!.geom as unknown as {
+      block: { block: string; attributes: { definition?: string; value: string }[] };
+    };
+    expect(g.block.block).toBe('27');
+    // The target's TAG has no REV: that value has no definition to belong to, so it goes.
+    expect(g.block.attributes).toEqual([{ definition: '28', index: 0, width: 0, value: '7' }]);
+    expect(target.blockEntities('27')).toHaveLength(1);
+  });
+});
