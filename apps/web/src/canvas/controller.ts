@@ -386,7 +386,6 @@ export class CanvasController {
     return this.#host.thumbnail({ width: max.width * dpr, height: max.height * dpr });
   }
 
-  /** ZOOM Extents. A layout without entities shows its sheet. */
   /** The entities drawn in a rectangle of the canvas, CSS pixels (M1-106 fidelity triage). */
   entitiesIn(rect: ScreenRect): Promise<DrawnEntity[]> {
     return this.#host.entitiesIn(rect);
@@ -440,13 +439,33 @@ export class CanvasController {
     return this.#host.plot({ block: this.block, ...request });
   }
 
+  /**
+   * ZOOM Extents. A layout without entities shows its sheet. Until the renderer first measured
+   * the space, which it answers a moment after the drawing first shows (its text bounded by its
+   * glyphs), this zooms to the extents the drawing opened with, which guess text without fonts,
+   * and zooms again to the measured extents once they come, unless the view has moved since
+   * (M2-37).
+   */
   zoomExtents(): void {
-    this.#go(extentsView(this.#extents() ?? this.#paper(), this.#size));
+    const view = () => extentsView(this.#extents() ?? this.#paper(), this.#size);
+    this.#go(view());
+    this.#againOnceMeasured(view);
   }
 
   /** ZOOM All: the limits or the extents, whichever reaches further. */
   zoomAll(): void {
-    this.#go(allView(this.#limits(), this.#extents(), this.#size));
+    const view = () => allView(this.#limits(), this.#extents(), this.#size);
+    this.#go(view());
+    this.#againOnceMeasured(view);
+  }
+
+  /** Shows `view()` again once the renderer first measured, if the view shown is still as is. */
+  #againOnceMeasured(view: () => ViewTransform): void {
+    if (this.#measured.done) return;
+    const shown = this.#view;
+    void this.#firstMeasure.then(() => {
+      if (shown && this.#view === shown && this.#size.width > 0) this.#setView(view());
+    });
   }
 
   /** ZOOM Scale nX, about the view's centre. */
@@ -908,9 +927,6 @@ export class CanvasController {
     void this.#firstMeasure.then(() => {
       if (!this.#view && this.#size.width > 0) {
         this.#setView(extentsView(this.#opening(), this.#size));
-        // A cursor that came onto the canvas before there was a view showed no coordinates;
-        // show them now rather than after it next moves.
-        if (this.#pointer) this.#hooks.onCursor(this.#world(this.#pointer));
       }
     });
   }
@@ -926,6 +942,13 @@ export class CanvasController {
     this.#view = view;
     this.#viewed();
     this.#requestFrame();
+    // The point under a cursor that has not moved is another one now: the status bar (and a
+    // prompt's rubber band) follow it, as the cursor that came onto the canvas before there was
+    // a view (a layout's first, M2-37) showed no coordinates until it next moved.
+    if (this.#pointer && !this.#drag && this.#canvas.matches(':hover')) {
+      if (this.#prompt && this.#mode === 'none') this.#track();
+      else this.#hooks.onCursor(this.#world(this.#pointer));
+    }
   }
 
   #requestFrame(): void {

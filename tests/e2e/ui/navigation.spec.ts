@@ -43,6 +43,13 @@ async function unit(page: Page, cx: number, cy: number): Promise<number> {
   return (b.x - a.x) / 100;
 }
 
+/** The view is centred on the model extents' centre, about (926, -227), to two pixels. */
+async function extentsCentred(page: Page, cx: number, cy: number): Promise<boolean> {
+  const u = await unit(page, cx, cy);
+  const c = await worldAt(page, cx, cy);
+  return Math.abs(c.x - 926.09) < 2 * u + 1 && Math.abs(c.y + 227.47) < 2 * u + 1;
+}
+
 const nav = (page: Page, name: string) =>
   page.getByRole('toolbar', { name: 'Navigation' }).getByRole('button', { name, exact: true });
 
@@ -68,13 +75,21 @@ test.describe('navigation bar and layout tabs', () => {
     expect(Math.abs(c.y - 4)).toBeLessThan(2 * u);
     expect(u * box.height).toBeCloseTo(8.99, 0);
 
-    // Zoom Extents still frames the drawing: here the extents' centre, about (926, -227).
+    // Zoom Extents still frames the drawing: here the extents' centre, about (926, -227). The
+    // text's glyph-measured extents may land a moment after the click (M2-37), so poll.
     await tabs.first().click();
     await nav(page, 'Zoom Extents').click();
-    u = await unit(page, cx, cy);
-    c = await worldAt(page, cx, cy);
-    expect(Math.abs(c.x - 926.09)).toBeLessThan(2 * u + 1);
-    expect(Math.abs(c.y + 227.47)).toBeLessThan(2 * u + 1);
+    await expect.poll(() => extentsCentred(page, cx, cy)).toBe(true);
+  });
+
+  // M2-37: the renderer measures text by its glyphs a moment after the drawing first shows; a
+  // Zoom Extents clicked before then frames the extents the drawing opened with (text guessed
+  // without fonts: here 50 units too high), and zooms again to the measured ones when they come.
+  // The status bar follows the view under a cursor that has not moved, so polling it sees that.
+  test('Zoom Extents straight after opening frames the text as drawn', async ({ page }) => {
+    const { cx, cy } = await opened(page);
+    await nav(page, 'Zoom Extents').click();
+    await expect.poll(() => extentsCentred(page, cx, cy)).toBe(true);
   });
 
   test('lists Model and the layouts in tab order and shows a layout on its paper', async ({
