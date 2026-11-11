@@ -247,3 +247,26 @@ export function mapParagraphs(
   });
   return { spans: out, first: head };
 }
+
+/**
+ * The field code the editor keeps a dimension's measurement under (M2-31 part 2): `<>` in a
+ * dimension's text shows as the measurement itself, highlighted, one unit long like a field, as
+ * AutoCAD's In-Place Text Editor shows it. No field AutoCAD writes has this code.
+ */
+export const MEASUREMENT = '\u0000<>';
+
+/** The spans with each `<>` in their text made a measurement atom. */
+export function withMeasurements(spans: Spans): MTextSpan[] {
+  return spans.flatMap((s): MTextSpan[] => {
+    if (s.type !== 'text' || !s.text.includes('<>')) return [s];
+    const parts = s.text.split('<>');
+    return parts.flatMap((text, i): MTextSpan[] => [
+      ...(i > 0 ? [{ type: 'field' as const, code: MEASUREMENT, format: s.format }] : []),
+      ...(text !== '' ? [{ ...s, text }] : []),
+    ]);
+  });
+}
+
+/** MTEXT contents written from the editor's spans, each measurement atom back as `<>`. */
+export const measurementsWritten = (contents: string): string =>
+  contents.split(`%<${MEASUREMENT}>%`).join('<>');

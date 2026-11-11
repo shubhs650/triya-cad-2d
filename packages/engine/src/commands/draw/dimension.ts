@@ -12,7 +12,9 @@
 // M2-31 added DIMLINEAR and DIMALIGNED on a selected circle, DIMANGULAR's Quadrant, DIMCONTINUE
 // and DIMBASELINE from an ordinate ("Specify feature location or [Undo/Select] <Select>:") or a
 // two-line angular dimension, and the header's DIMVARs that differ from the current style as a
-// new dimension's `DSTYLE` overrides (`headerDimensionXdata`).
+// new dimension's `DSTYLE` overrides (`headerDimensionXdata`); part 2 DIMRADIUS and DIMDIAMETER
+// on an arc keeping the arc's extent for the arc extension line (annotation/radial-extension.ts)
+// and the Mtext option's editor showing the measurement itself in place of `<>`.
 //
 // A dimension is made when its location is given, with the current dimension style (DIMSTYLE)
 // on the current layer, and drawn by the dimension engine (`ctx.dimensions`) into a `*D` block
@@ -37,6 +39,11 @@ import type { Handle } from '../../model/handle';
 import type { DimensionGeometry, Entity, EntityGeometry, Xdata } from '../../model/types';
 import { dstyleOverrides } from '../../annotation/leader';
 import { withDimvarOverride } from '../../annotation/dstyle';
+import {
+  RADIAL_EXTENSION_APP,
+  radialExtensionAppId,
+  withRadialArc,
+} from '../../annotation/radial-extension';
 import {
   angularAsThreePoint,
   baselineSpacing,
@@ -171,10 +178,18 @@ async function* askLocation(
     switch (a.keyword) {
       case 'Mtext': {
         const at = sample?.textPosition ?? sampleLocation(place);
+        const measured = sample && measurementOf(ctx, sample, xdata);
         const e = yield ctx.prompt.string({
           message: 'Enter dimension text',
           spaces: true,
-          editor: dimensionTextEditor(ctx.model, base, at, base.text === '' ? '<>' : base.text),
+          editor: dimensionTextEditor(
+            ctx.model,
+            base,
+            at,
+            base.text === '' ? '<>' : base.text,
+            xdata,
+            measured,
+          ),
         });
         if (e.kind === 'string') {
           place = { ...place, base: { ...base, text: dimensionOverride(e.value) } };
@@ -418,6 +433,17 @@ function linearCommand(state: DimensionState, kind: 'linear' | 'aligned'): Comma
   };
 }
 
+/** The drawing's `ACAD_DSTYLE_DIMRADIAL_EXTENSION` APPID, registered when it has none. */
+function radialAppId(ctx: CommandContext): Handle {
+  let appId = radialExtensionAppId(ctx.model);
+  if (appId === undefined) {
+    ctx.edit((b) => {
+      appId = b.addTableRecord('appIds', { name: RADIAL_EXTENSION_APP, flags: 0 }).handle;
+    });
+  }
+  return appId!;
+}
+
 function radialCommand(state: DimensionState, kind: 'radius' | 'diameter'): CommandDef {
   return {
     name: kind === 'radius' ? 'DIMRADIUS' : 'DIMDIAMETER',
@@ -426,12 +452,19 @@ function radialCommand(state: DimensionState, kind: 'radius' | 'diameter'): Comm
       const style = currentStyle(ctx);
       if (style === undefined) return;
       let circle: { center: Vec2; radius: number } | undefined;
+      let xdata = style.xdata;
       while (!circle) {
         const o = yield* pickObject(ctx, 'Select arc or circle');
         if (o === undefined || o === 'enter') return;
         const g = o.entity.geom;
         if (g.kind === 'CIRCLE' || g.kind === 'ARC') circle = g;
         else ctx.message('Object selected is not a circle or arc.');
+        // The arc's extent, for the arc extension line drawn when the dimension line is put
+        // past its ends (annotation/radial-extension.ts); the drag shows it too.
+        if (g.kind === 'ARC') {
+          const arc = { startAngle: g.startAngle, endAngle: g.endAngle };
+          xdata = withRadialArc(style.xdata, radialAppId(ctx), arc);
+        }
       }
       const place: DimPlacement = {
         kind,
@@ -442,11 +475,11 @@ function radialCommand(state: DimensionState, kind: 'radius' | 'diameter'): Comm
       const g = yield* askLocation(
         ctx,
         place,
-        style.xdata,
+        xdata,
         'Specify dimension line location or',
         TEXT_OPTIONS,
       );
-      if (g) await makeDimension(ctx, state, g, style.xdata);
+      if (g) await makeDimension(ctx, state, g, xdata);
     },
   };
 }

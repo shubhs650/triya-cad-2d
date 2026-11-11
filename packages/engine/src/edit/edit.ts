@@ -39,6 +39,7 @@ import { revcloudOf } from './revcloud';
 import { sub } from '../geom/vec';
 import {
   annotativeData,
+  carriedRadialArc,
   transformGeometry,
   transformProblem,
   type TransformOptions,
@@ -281,7 +282,7 @@ export function transformObjects(
   const blocksDone = new Set<Handle>();
   for (const e of moving) {
     const cur = b.entity(e.id)!;
-    b.updateEntity(e.id, carried(cur, t, o));
+    b.updateEntity(e.id, { ...carried(cur, t, o), ...carriedRadialArc(cur, t, model) });
     carryBlock(b, cur.geom, t, blocksDone);
   }
   for (const a of keptAssocs) {
@@ -514,7 +515,13 @@ export function copyObjects(
       continue;
     }
     if (e.annotative) unannotated++;
-    copies.set(e.handle, copyEntity(b, e, e.owner, t, o, names));
+    const copy = copyEntity(b, e, e.owner, t, o, names);
+    const radial = carriedRadialArc(
+      { geom: e.geom, ...(copy.xdata && { xdata: copy.xdata }) },
+      t,
+      model,
+    );
+    copies.set(e.handle, radial ? b.updateEntity(copy.id, radial) : copy);
   }
   // A hatch copied with its whole boundary stays associative with the boundary's copies.
   for (const copy of copies.values()) {
