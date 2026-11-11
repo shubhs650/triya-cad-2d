@@ -242,6 +242,8 @@ export class CanvasController {
   readonly #header: Map<string, HeaderValue>;
   readonly #hooks: CanvasHooks;
   readonly #observer: ResizeObserver;
+  /** The view shown is still the saved one the space opened in (`#resize` fits it again). */
+  #openedSaved = false;
   readonly #history = new ViewHistory();
   #canvas: HTMLCanvasElement;
   #host: RendererHost;
@@ -913,12 +915,18 @@ export class CanvasController {
     this.#size = { width, height };
     this.#host.resize(width, height, devicePixelRatio);
     if (this.#view) {
-      this.#setView(this.#view);
+      // Until something else moves it, the view a space opened in is its saved one, a height
+      // (VIEWSIZE) fitted to the canvas as it settles: a notice bar that comes or goes while
+      // the drawing opens must not change how much of it shows (M2-55).
+      const saved = this.#openedSaved;
+      this.#setView((saved && this.#savedView()) || this.#view);
+      this.#openedSaved = saved;
       return;
     }
     const saved = this.#savedView();
     if (saved) {
       this.#setView(saved);
+      this.#openedSaved = true;
       return;
     }
     // Without a saved view the space opens at its extents, text included, so the first view
@@ -939,6 +947,7 @@ export class CanvasController {
   }
 
   #setView(view: ViewTransform): void {
+    this.#openedSaved = false;
     this.#view = view;
     this.#viewed();
     this.#requestFrame();
