@@ -11,9 +11,8 @@
 // frame and boundary, WIPEOUTFRAME is 2, and every layout draws in the order the session left.
 // The saved file is then opened again and its rectangular cloud modified with REVCLOUD Modify
 // (M2-24): saved once more, the cloud keeps its handle and xdata and has the new stretch. With
-// TRIYA_DXF_AUDIT_DIR set the first save goes to the ezdxf audit as the file's `markup` save
-// (the second is not audited: a Triya-saved file saved again loses dynamic block dictionary
-// entries on the acadsharp AC1015/AC1018 samples, ROADMAP M2-40).
+// TRIYA_DXF_AUDIT_DIR set that second save goes to the ezdxf audit as the file's `markup` save
+// (M2-40: a Triya-saved file saved again keeps what the first save wrote).
 //
 // A drawing older than R14 (AC1014), which had no wipeouts or draw order (and before R11 no
 // xdata), saves them too: the save checks what it adds against AC1032, the version it writes
@@ -101,7 +100,6 @@ describe('the markup commands on the public corpus', () => {
       const orders = layoutOrders(model);
 
       const saved = withPinnedClock(() => saveAc1032Dxf(readCadDocument(bytes), model));
-      writeAuditSave(f.path, 'markup', () => saved);
       const back = DocumentModel.create(documentInit(readCadDocument(saved)));
       clouds++;
 
@@ -159,6 +157,7 @@ describe('the markup commands on the public corpus', () => {
       // 60 arcs of 5 round the 300 perimeter, (55,0)…(75,0) erased, 17 vertices added.
       expect(modified.vertices).toHaveLength(60 - 5 + 17);
       const resaved = withPinnedClock(() => saveAc1032Dxf(readCadDocument(saved), back));
+      writeAuditSave(f.path, 'markup', () => resaved);
       const third = DocumentModel.create(documentInit(readCadDocument(resaved)));
       const r = third.entityByHandle(rect.handle)!;
       const g = r.geom as LwPolylineGeometry;

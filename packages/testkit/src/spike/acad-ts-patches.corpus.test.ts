@@ -3260,4 +3260,109 @@ describe('acad-ts local patches (corpus-backed)', () => {
       );
     },
   );
+
+  /** The group codes of the object with `handle` in an ASCII DXF, as `code value` pairs. */
+  function objectGroups(dxf: Uint8Array, handle: number): string[] {
+    const lines = new TextDecoder().decode(dxf).split(/\r?\n/);
+    const out: string[] = [];
+    let inside = false;
+    for (let i = 0; i + 1 < lines.length; i += 2) {
+      const code = lines[i]!.trim();
+      const value = lines[i + 1]!.trim();
+      if (code === '0') {
+        if (inside) break;
+        const next = lines[i + 3]?.trim();
+        inside = lines[i + 2]?.trim() === '5' && next === handle.toString(16).toUpperCase();
+      }
+      if (inside) out.push(`${code} ${value}`.trimEnd());
+    }
+    return out;
+  }
+
+  it('0178 a TABLECONTENT kept from an R2000/R2004 DXF is written with R2007 values', () => {
+    const config = new DxfWriterConfiguration();
+    config.writeDynamicBlockData = true;
+    // A TABLECONTENT is written from the codes it was read with (the writer has no fields for
+    // it), so one read from an R2004 DXF kept that version's values (90 type and data, no 304
+    // ACVALUE_END) in an AC1032 save, and reading the save ran on from TABLECONTENT 747 to the
+    // next ACVALUE_END: TABLEGEOMETRY 748, DICTIONARY 75A and the dynamic blocks' ACAD_ENHANCEDBLOCK
+    // data (ABD to ACF) were gone after a second save (M2-40).
+    for (const path of ['sample_AC1015_ascii.dxf', 'sample_AC1018_ascii.dxf']) {
+      const doc = readDxfRaw(corpusBytes(`third-party/acadsharp/${path}`));
+      doc.header!.version = ACadVersion.AC1032;
+      const saved = writeDxf(doc, false, config);
+      const groups = objectGroups(saved, 0x747);
+      // As AutoCAD's own AC1032 save of the drawing (sample_AC1032_ascii.dxf) states them.
+      const at = (marker: string): string[] => {
+        const i = groups.indexOf(marker);
+        return groups.slice(i + 1, groups.indexOf('304 ACVALUE_END', i) + 1);
+      };
+      expect(at('301 DATAMAP_VALUE'), path).toEqual([
+        '93 2',
+        '90 2',
+        '140 7783',
+        '94 0',
+        '300',
+        '302',
+        '304 ACVALUE_END',
+      ]);
+      expect(at('300 VALUE'), path).toEqual([
+        '93 2',
+        '90 4',
+        '1 Table sample',
+        '94 0',
+        '300',
+        '302',
+        '304 ACVALUE_END',
+      ]);
+      // An unknown (empty) cell value is flagged empty and has no data.
+      expect(groups.join('\n'), path).toContain(
+        '300 VALUE\n93 3\n90 0\n94 0\n300\n302\n304 ACVALUE_END',
+      );
+      const values = groups.filter((g) => g === '300 VALUE' || g === '301 DATAMAP_VALUE').length;
+      expect(
+        groups.filter((g) => g === '304 ACVALUE_END'),
+        path,
+      ).toHaveLength(values);
+      const back = readDxfRaw(saved);
+      for (const h of [0x747, 0x748, 0x75a, 0x760, 0xabd, 0xabe, 0xabf, 0xac0, 0xace, 0xacf]) {
+        expect(back.getCadObject(h), `${path} ${h.toString(16)}`).toBeTruthy();
+      }
+    }
+    // A pre-R2007 date is the seconds since 1970 (UTC) in 8 bytes; from R2007 a SYSTEMTIME.
+    // 0x673680F0 = 2024-11-14 23:00:00 UTC, a Thursday (AutoCAD's save, in UTC+1: the 15th).
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1018_ascii.dxf'));
+    doc.header!.version = ACadVersion.AC1032;
+    const text = objectGroups(writeDxf(doc, false, config), 0x13ef).join('\n');
+    expect(text).toContain('90 8\n92 16\n310 E8070B0004000E001700000000000000\n94 0');
+  });
+
+  it('0179 an R2007+ DXF value without its 93 flags ends on its data', () => {
+    // Triya's AC1032 saves of an R2000/R2004 drawing before 0178 hold TABLECONTENT values
+    // without the R2007 frame. Read as R2007 values they ran on to the next ACVALUE_END and lost
+    // the objects in between; a value whose type (90) comes without 93 flags first is one of
+    // those and ends on its data, as before R2007.
+    const config = new DxfWriterConfiguration();
+    config.writeDynamicBlockData = true;
+    const doc = readDxfRaw(corpusBytes('third-party/acadsharp/sample_AC1018_ascii.dxf'));
+    doc.header!.version = ACadVersion.AC1032;
+    const framed = new TextDecoder().decode(writeDxf(doc, false, config));
+    // Back to the codes the save wrote before 0178: drop the 93 before each value's 90 and the
+    // 94/300/302/304 after its data, in the TABLECONTENT objects only.
+    const unframed = framed
+      .split('\n  0\n')
+      .map((record) =>
+        record.startsWith('TABLECONTENT\n')
+          ? record
+              .replace(/\n 93\n\d+\n( 90\n)/g, '\n$1')
+              .replace(/\n 94\n0\n300\n\n302\n\n304\nACVALUE_END(?=\n)/g, '')
+          : record,
+      )
+      .join('\n  0\n');
+    expect(unframed).not.toBe(framed);
+    const back = readDxfRaw(new TextEncoder().encode(unframed));
+    for (const h of [0x747, 0x748, 0x75a, 0x760, 0xabd, 0xabe, 0xabf, 0xac0, 0xace, 0xacf]) {
+      expect(back.getCadObject(h), h.toString(16)).toBeTruthy();
+    }
+  });
 });

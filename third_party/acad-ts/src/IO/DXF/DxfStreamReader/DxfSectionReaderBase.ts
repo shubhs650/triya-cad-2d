@@ -854,6 +854,7 @@ export abstract class DxfSectionReaderBase {
     let chunks: string | null = null;
     let seenText = false;
     let type: CadValueType | null = null;
+    let flagged = false;
     const binary = { size: 0, read: 0 };
     let dateBytes: number[] = [];
 
@@ -901,6 +902,7 @@ export abstract class DxfSectionReaderBase {
           break;
         case 93:
           value.flags = this._reader.valueAsInt;
+          flagged = true;
           break;
         case 140:
           value.setValue(this._reader.valueAsDouble);
@@ -926,7 +928,7 @@ export abstract class DxfSectionReaderBase {
           }
           break;
       }
-      if (this.endsPreR2007Value(type, binary)) {
+      if (this.endsPreR2007Value(type, binary, flagged)) {
         break;
       }
       this._reader.readNext();
@@ -951,10 +953,12 @@ export abstract class DxfSectionReaderBase {
   /**
    * Whether the current code is the last one of a value written before R2007. Those values have
    * no 304 ACVALUE_END: they are a 90 type and that type's data, so they end on the type's last
-   * data code. (R2007 added the 93 flags before and 94, 300, 302 and 304 after.)
+   * data code. (R2007 added the 93 flags before and 94, 300, 302 and 304 after.) A value is told
+   * by its first code, not by the file's version: an R2007+ file can hold one copied unchanged
+   * from an older file (`flagged`: the value started with its 93 flags).
    */
-  protected endsPreR2007Value(type: CadValueType | null, binary: { size: number; read: number }): boolean {
-    if (type === null || this._builder.version >= ACadVersion.AC1021) {
+  protected endsPreR2007Value(type: CadValueType | null, binary: { size: number; read: number }, flagged: boolean): boolean {
+    if (type === null || flagged) {
       return false;
     }
 
