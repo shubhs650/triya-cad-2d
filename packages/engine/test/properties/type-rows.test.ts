@@ -105,7 +105,11 @@ const rowOf = (sheet: PropertySheet, label: string): PropertyRow => {
 };
 
 const attribute = (over: Partial<Text> = {}) => {
-  const { kind: _kind, ...fields } = textGeom({ value: 'M12', position: { x: 1, y: 0 }, ...over });
+  const { kind: _kind, ...fields } = textGeom({
+    value: 'M12',
+    position: { x: 11, y: 10 },
+    ...over,
+  });
   return {
     ...fields,
     tag: 'SIZE',
@@ -260,9 +264,7 @@ describe('the type rows the palette edits (M2-35 part 2)', () => {
 
   it('scales a turned reference along its own axes', async () => {
     const turned = attribute({ position: { x: 10, y: 11 }, rotation: Math.PI / 2 });
-    const s = setup(
-      init([entityInit('65', insertGeom([turned], { rotation: Math.PI / 2 }))]),
-    );
+    const s = setup(init([entityInit('65', insertGeom([turned], { rotation: Math.PI / 2 }))]));
     const g = () => s.byHandle('65').geom as Insert;
     await s.bus.selectAll();
     await s.bus.setProperty({ key: 'scaleX', value: '2' }, 'INSERT');

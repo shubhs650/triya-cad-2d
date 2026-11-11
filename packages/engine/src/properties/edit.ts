@@ -9,6 +9,10 @@
 import { parseAngleValue, parseNumber } from '../commands/parse';
 import { moveBy, turnAbout } from '../edit/similarity';
 import { transformObjects } from '../edit/edit';
+import { rescaledReference } from '../edit/transform';
+import { JUSTIFICATIONS, rejustified } from '../commands/modify/attributes';
+import type { TextOutline } from '../commands/view/host';
+import type { EntityId } from '../model/entity-ids';
 import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
@@ -27,6 +31,9 @@ import {
   transparencyOf,
   type PropertyValue,
 } from './sheet';
+
+/** A Justify row's TEXT objects as the canvas draws them now, by id (null: no font draws it). */
+export type TextOutlines = ReadonlyMap<EntityId, TextOutline | null>;
 
 /** What the palette sends: the row's key and the value chosen or typed. */
 export interface PropertyEdit {
@@ -72,7 +79,87 @@ type Change =
   | { readonly patch: EntityPatch }
   | { readonly move: Vec2 }
   | { readonly turn: { readonly about: Vec2; readonly by: number } }
+  | { readonly refuse: string }
   | { readonly skip: true };
+
+const UNMEASURED = 'its text cannot be measured';
+const ANNOTATIVE = 'annotative (each scale keeps its own placement)';
+
+/** MTEXT attachments 1–9 by AutoCAD's names, as the sheet's Justify choices give them. */
+const ATTACHMENTS = [
+  'Top left',
+  'Top center',
+  'Top right',
+  'Middle left',
+  'Middle center',
+  'Middle right',
+  'Bottom left',
+  'Bottom center',
+  'Bottom right',
+];
+
+/** MIRRTEXT, 0 unless the drawing says 1 (AutoCAD's default). */
+const mirrorText = (model: DocumentModel): boolean => {
+  const v = model.header.get('$MIRRTEXT');
+  return v === 1 || v === true;
+};
+
+/**
+ * The rows M2-35 part 2 made editable that need the drawing or the canvas: a text's Style (a
+ * fixed-height style gives the text its height, as TEXT does when placing one; AutoCAD's help
+ * does not say whether the palette does, and a drafter picking a 3.5 style expects 3.5 text)
+ * and Justify (the insertion point kept and the text moving about it, as AutoCAD's palette does;
+ * `rejustified` with the canvas's `outlines`), a reference's Scale X/Y/Z (`rescaledReference`)
+ * and a polyline's Global width (every segment that width: DXF 43, the vertices' own widths
+ * gone). Undefined for another key.
+ */
+function typeRowChange(
+  model: DocumentModel,
+  e: Entity,
+  key: string,
+  v: PropertyValue,
+  outlines: TextOutlines | undefined,
+): Change | undefined | 'invalid' {
+  const g = e.geom;
+  if (key === 'style' && (g.kind === 'TEXT' || g.kind === 'MTEXT')) {
+    const style = typeof v === 'string' ? model.tables.textStyles.get(v) : undefined;
+    if (!style) return 'invalid';
+    return geomPatch({
+      ...g,
+      style: style.handle,
+      ...(style.height > 0 && { height: style.height }),
+    });
+  }
+  if (key === 'justify' && g.kind === 'MTEXT') {
+    const attachment = ATTACHMENTS.indexOf(String(v)) + 1;
+    return attachment > 0 ? geomPatch({ ...g, attachment }) : 'invalid';
+  }
+  if (key === 'justify' && g.kind === 'TEXT') {
+    const j = JUSTIFICATIONS.find((x) => x.name === v);
+    if (!j) return 'invalid';
+    if (j.halign === g.halign && j.valign === g.valign) return { skip: true };
+    if (e.annotative) return { refuse: ANNOTATIVE };
+    const placed = rejustified(g, j.halign, j.valign, outlines?.get(e.id) ?? undefined);
+    if (!placed) return { refuse: UNMEASURED };
+    const { alignmentPoint: _old, ...rest } = g;
+    return geomPatch({ ...rest, ...placed });
+  }
+  if (g.kind === 'INSERT' && /^scale[XYZ]$/.test(key)) {
+    const n = numeric(v, 'number');
+    // AutoCAD refuses a zero scale ("Value must be nonzero").
+    if (n === undefined || n === 0) return 'invalid';
+    const axis = key === 'scaleX' ? 'x' : key === 'scaleY' ? 'y' : 'z';
+    const scale = { ...g.scale, [axis]: n };
+    return geomPatch(rescaledReference(g, scale, { mirrorText: mirrorText(model) }));
+  }
+  if (key === 'globalWidth' && g.kind === 'LWPOLYLINE') {
+    const n = numeric(v, 'number');
+    if (n === undefined || n < 0) return 'invalid';
+    const vertices = g.vertices.map(({ startWidth: _s, endWidth: _e, ...rest }) => rest);
+    return geomPatch({ ...g, vertices, constantWidth: n });
+  }
+  return undefined;
+}
 
 const geomPatch = (geom: EntityGeometry): Change => ({ patch: { geom } });
 
@@ -280,6 +367,7 @@ export function applyPropertyEdit(
   model: DocumentModel,
   entities: readonly Entity[],
   edit: PropertyEdit,
+  outlines?: TextOutlines,
 ): PropertyEditReport {
   const refused = new Map<string, number>();
   const editable = entities.filter((e) => {
@@ -313,9 +401,12 @@ export function applyPropertyEdit(
   // Work out every object's change first: a value one of them cannot take changes none.
   const changes: [Entity, Change][] = [];
   for (const e of editable) {
-    const c = geometryChange(e, edit.key, n, flag, text);
+    const c =
+      typeRowChange(model, e, edit.key, edit.value, outlines) ??
+      geometryChange(e, edit.key, n, flag, text);
     if (c === 'invalid') return { changed: 0, refused, invalid: INVALID };
-    if (c) changes.push([e, c]);
+    if (c && 'refuse' in c) refused.set(c.refuse, (refused.get(c.refuse) ?? 0) + 1);
+    else if (c) changes.push([e, c]);
   }
   let changed = 0;
   for (const [e, c] of changes) {
@@ -332,6 +423,22 @@ export function applyPropertyEdit(
     }
   }
   return { changed, refused };
+}
+
+/**
+ * The objects a Justify edit gives a new justification that the canvas must measure first (a
+ * single-line TEXT's DXF 10 is the baseline start its font draws from).
+ */
+export function textsToMeasure(entities: readonly Entity[], edit: PropertyEdit): Entity[] {
+  if (edit.key !== 'justify') return [];
+  const j = JUSTIFICATIONS.find((x) => x.name === edit.value);
+  if (!j) return [];
+  return entities.filter(
+    (e) =>
+      e.geom.kind === 'TEXT' &&
+      !e.annotative &&
+      (e.geom.halign !== j.halign || e.geom.valign !== j.valign),
+  );
 }
 
 /** One reference's attribute value (the Attributes section, a single reference shown). */

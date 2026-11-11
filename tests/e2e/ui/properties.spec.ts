@@ -5,7 +5,7 @@
 // with dynamic block references shows the FR-B3 badge. The sheet and the edits are unit-tested
 // in packages/engine/test/properties; this checks the app carries them end to end.
 import { expect, test, type Page } from '@playwright/test';
-import type { ChangeSet, Entity } from '@triya/engine';
+import type { ChangeSet, Entity, InsertGeometry } from '@triya/engine';
 import { DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
@@ -186,4 +186,110 @@ test('shows the dynamic block badge on dynamic block references', async ({ page 
   if (types.length > 1) await objects.selectOption({ label: block });
   await expect(palette.getByRole('note')).toContainText('Dynamic — edit in AutoCAD');
   await expect(palette.getByLabel('Name', { exact: true })).not.toHaveText(/^\*U/);
+});
+
+// M2-35 part 2: a text's Justify and a block reference's Scale X are a choice and a typed value in
+// the palette. A new justification keeps the text's insertion point and moves the text about it,
+// measured where the canvas draws it; a new scale stretches the reference, its attributes too.
+test('justifies a text from the palette about its insertion point', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '1000070,1000050', /^Specify height/);
+  await type(page, '5', /^Specify rotation angle of text/);
+  await type(page, '', 'Enter text:');
+  await page.getByRole('textbox', { name: 'Text' }).pressSequentially('SECTION A');
+  await page.keyboard.press('Enter');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/Text \(1\)/);
+  await objects.selectOption({ label: 'Text (1)' });
+  const justify = palette.getByRole('combobox', { name: 'Justify' });
+  await expect(justify).toHaveValue('Left');
+  await expect(palette.getByRole('combobox', { name: 'Style' })).toHaveValue(/.+/);
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('1-text-left.png') });
+  await justify.selectOption({ label: 'Middle center' });
+  await expect(justify).toHaveValue('Middle center');
+  const text = await page.evaluate(() => {
+    for (const cs of [...(window as unknown as Dev).triyaDev.changes()].reverse())
+      for (const u of cs.entities?.updated ?? [])
+        if (u.after.geom.kind === 'TEXT') return u.after.geom;
+    return undefined;
+  });
+  // The insertion point stays at the picked point; DXF 10 is the baseline start half the
+  // text's measured width to the left and half its height down.
+  expect(text).toMatchObject({ halign: 1, valign: 2, alignmentPoint: { x: 1000070, y: 1000050 } });
+  const start = (text as { position: { x: number; y: number } }).position;
+  expect(start.x).toBeLessThan(1000070 - 5);
+  expect(start.y).toBeCloseTo(1000050 - 2.5, 6);
+  await page.screenshot({ path: test.info().outputPath('2-text-middle-center.png') });
+});
+
+test('scales a block reference from the palette, its attributes following', async ({ page }) => {
+  test.setTimeout(120_000);
+  const file = path.resolve('packages/testkit/fixtures/attributes/title-block.dxf');
+  await page.goto(app.url);
+  await openWithPicker(page, file);
+  await expectShown(page, path.basename(file));
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  // The whole sheet in the canvas the docked palette narrowed.
+  await activeCanvas(page).hover();
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, 'E', 'Command:');
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/Block Reference \(1\)/);
+  await objects.selectOption({ label: 'Block Reference (1)' });
+  const scaleX = palette.getByRole('textbox', { name: 'Scale X' });
+  await expect(scaleX).toHaveValue(/^1(\.0+)?$/);
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('3-block-before.png') });
+  await scaleX.fill('0.8');
+  await scaleX.press('Enter');
+  const insert = () =>
+    page.evaluate(() => {
+      for (const cs of [...(window as unknown as Dev).triyaDev.changes()].reverse())
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'INSERT') {
+            const before = u.before.geom as InsertGeometry;
+            const after = u.after.geom as InsertGeometry;
+            return {
+              scale: after.scale,
+              // Each attribute's distance from the insertion point along X (where it has
+              // one), after over before, and its width factor, after over before.
+              ratios: after.attributes
+                .map((a, i) => ({
+                  now: a.position.x - after.position.x,
+                  was: before.attributes[i]!.position.x - before.position.x,
+                }))
+                .filter((d) => Math.abs(d.was) > 1)
+                .map((d) => d.now / d.was),
+              widths: after.attributes.map(
+                (a, i) => a.widthFactor / before.attributes[i]!.widthFactor,
+              ),
+            };
+          }
+      return undefined;
+    });
+  await expect.poll(async () => (await insert())?.scale).toEqual({ x: 0.8, y: 1, z: 1 });
+  const r = (await insert())!;
+  for (const k of r.ratios) expect(k).toBeCloseTo(0.8, 6);
+  expect(r.ratios.length).toBeGreaterThan(0);
+  for (const w of r.widths) expect(w).toBeCloseTo(0.8, 6);
+  await expect(scaleX).toHaveValue(/^0\.80*$/);
+  await page.screenshot({ path: test.info().outputPath('4-block-scaled.png') });
 });

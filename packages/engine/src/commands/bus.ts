@@ -57,7 +57,13 @@ import { revcloudOf } from '../edit/revcloud';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
 import { UndoStack, type UndoAction, type UndoState } from './undo';
-import { applyCurrentEdit, applyPropertyEdit, type PropertyEdit } from '../properties/edit';
+import {
+  applyCurrentEdit,
+  applyPropertyEdit,
+  textsToMeasure,
+  type PropertyEdit,
+  type TextOutlines,
+} from '../properties/edit';
 import { filtered } from '../properties/sheet';
 import type { EntityType } from '../model/types';
 import { refusalMessages } from '../edit/edit';
@@ -481,11 +487,20 @@ export class PromptBus {
         // eslint-disable-next-line require-yield -- the palette gave the value
         async *run(ctx) {
           let report: ReturnType<typeof applyPropertyEdit> | undefined;
+          const entities = filtered(model, ids, filter);
+          // A text given another justification is measured where the canvas draws it first.
+          const measure = textsToMeasure(entities, edit);
+          let outlines: TextOutlines | undefined;
+          if (measure.length > 0) {
+            const texts = measure.map((e) => e.geom as Extract<EntityGeometry, { kind: 'TEXT' }>);
+            const r = await ctx.view.request({ op: 'textOutlines', texts });
+            outlines = new Map(measure.map((e, i) => [e.id, (r.ok && r.outlines?.[i]) || null]));
+          }
           ctx.edit((b) => {
             report =
               ids.length === 0
                 ? applyCurrentEdit(b, model, edit)
-                : applyPropertyEdit(b, model, filtered(model, ids, filter), edit);
+                : applyPropertyEdit(b, model, entities, edit, outlines);
           });
           if (report!.invalid) ctx.message(`${report!.invalid}.`);
           for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
