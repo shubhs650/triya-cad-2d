@@ -41,8 +41,25 @@ export const openPdf: OpenPdf = async (bytes) => {
       const v = (await page(n)).getViewport({ scale: 1 });
       return { width: v.width / POINTS, height: v.height / POINTS };
     },
-    async render(n: number, region: Box, width: number, height: number): Promise<RasterPixels> {
+    async render(
+      n: number,
+      region: Box,
+      width: number,
+      height: number,
+      layersOff?: readonly string[],
+    ): Promise<RasterPixels> {
       const p = await page(n);
+      // Layers turned off (ULAYERS, M2-38): the document's own default visibility with the
+      // groups of those names hidden; each call gets a configuration of its own.
+      let optionalContent: ReturnType<typeof doc.getOptionalContentConfig> | undefined;
+      if (layersOff?.length) {
+        const off = new Set(layersOff);
+        optionalContent = doc.getOptionalContentConfig().then((config) => {
+          for (const [id, group] of config)
+            if (group.name !== null && off.has(group.name)) config.setVisibility(id, false, false);
+          return config;
+        });
+      }
       const viewport = p.getViewport({ scale: 1 });
       const canvas = document.createElement('canvas');
       canvas.width = width;
@@ -62,6 +79,7 @@ export const openPdf: OpenPdf = async (bytes) => {
         viewport,
         transform: [sx, 0, 0, sy, -region.minX * POINTS * sx, -top * sy],
         background: 'rgba(0, 0, 0, 0)',
+        ...(optionalContent && { optionalContentConfigPromise: optionalContent }),
       }).promise;
       const data = ctx.getImageData(0, 0, width, height).data;
       return { width, height, data };

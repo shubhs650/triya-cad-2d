@@ -13,11 +13,21 @@
 // definition the first time it asks for that definition's page, and again when the file is
 // replaced.
 //
+// An underlay that turns PDF layers off (ULAYERS, M2-38 part 2) asks for its page with those
+// layers named (`UnderlayRequest.layersOff`): pdf.js draws it with their optional content
+// hidden, and the raster is cached and delivered apart from the plain page's, under the
+// request's `underlayKey`.
+//
 // Files are matched to PDFDEFINITIONs by file name without its folder, ignoring case, as the
 // definition's path is the attaching computer's (`..\plans\plan.pdf`). Finding files on the
 // user's disk and the Missing References panel are M1-21.
 import type { Box, PdfDefinition, UnderlaySnapPage } from '@triya/engine';
-import type { RasterPixels, UnderlayRaster, UnderlayRequest } from '@triya/render';
+import {
+  underlayKey,
+  type RasterPixels,
+  type UnderlayRaster,
+  type UnderlayRequest,
+} from '@triya/render';
 
 /** An opened PDF, as pdf.js serves it (pdfjs.ts). */
 export interface PdfFile {
@@ -26,9 +36,16 @@ export interface PdfFile {
   pageSize(page: number): Promise<{ readonly width: number; readonly height: number }>;
   /**
    * `region` of a page (inches from its lower-left corner, y up) as `width` × `height`
-   * pixels, straight RGBA with the paper clear.
+   * pixels, straight RGBA with the paper clear; the optional content groups named in
+   * `layersOff` hidden (M2-38).
    */
-  render(page: number, region: Box, width: number, height: number): Promise<RasterPixels>;
+  render(
+    page: number,
+    region: Box,
+    width: number,
+    height: number,
+    layersOff?: readonly string[],
+  ): Promise<RasterPixels>;
   /** A page's painted paths in page inches, for running object snaps (M2-22). */
   snapGeometry?(page: number): Promise<UnderlaySnapPage>;
 }
@@ -48,14 +65,15 @@ export interface UnderlayClient {
   dispose(): void;
 }
 
-type Deliver = (definition: string, raster: UnderlayRaster | undefined) => void;
+/** A page drawn, under its request's `underlayKey` (the definition, with any layers off). */
+type Deliver = (page: string, raster: UnderlayRaster | undefined) => void;
 type DeliverSnap = (definition: string, page: UnderlaySnapPage | undefined) => void;
 
 interface Client {
   /** The drawing's PDFDEFINITION of this handle as it is now. */
   readonly definition: (handle: string) => PdfDefinition | undefined;
   readonly deliver: Deliver;
-  /** The latest request per definition. */
+  /** The latest request per page (`underlayKey`). */
   readonly latest: Map<string, UnderlayRequest>;
   readonly deliverSnap: DeliverSnap | undefined;
   /** The definitions whose page geometry was sent (or is on its way). */
@@ -175,7 +193,7 @@ export class PdfPages {
     this.#clients.add(client);
     return {
       request: (r) => {
-        client.latest.set(r.definition, r);
+        client.latest.set(underlayKey(r.definition, r.layersOff), r);
         this.#serve(client, r);
       },
       dispose: () => this.#clients.delete(client),
@@ -194,12 +212,13 @@ export class PdfPages {
           client.deliverSnap?.(r.definition, page);
       });
     }
+    const key = underlayKey(r.definition, r.layersOff);
     this.#queue = this.#queue.then(async () => {
-      if (!this.#clients.has(client) || client.latest.get(r.definition) !== r) return;
+      if (!this.#clients.has(client) || client.latest.get(key) !== r) return;
       try {
         const raster = await this.#raster(fileKey(def.fileName), file, def.page, r);
-        if (raster && this.#clients.has(client) && client.latest.get(r.definition) === r)
-          client.deliver(r.definition, raster);
+        if (raster && this.#clients.has(client) && client.latest.get(key) === r)
+          client.deliver(key, raster);
       } catch {
         // A file pdf.js cannot read shows as a missing page: the boundary only.
       }
@@ -240,7 +259,9 @@ export class PdfPages {
     file.opened ??= this.#open(file.bytes);
     const pdf = await file.opened;
     const n = pageNumber(pageName, pdf.pageCount);
-    const pageKey = `${key}#${n}`;
+    // The page with layers turned off is another picture of it (`add` drops both by `key#`).
+    const layers = r.layersOff?.length ? `\n${r.layersOff.join('\n')}` : '';
+    const pageKey = `${key}#${n}${layers}`;
     const request = keyOf(r);
     const hit = this.#lookup(pageKey, request, r);
     if (hit) return hit;
@@ -257,7 +278,9 @@ export class PdfPages {
     const fit = Math.min(1, Math.sqrt(this.#maxPixels / (w * r.scale * h * r.scale)));
     const width = Math.max(1, Math.round(w * r.scale * fit));
     const height = Math.max(1, Math.round(h * r.scale * fit));
-    const pixels = await pdf.render(n, region, width, height);
+    const pixels = r.layersOff?.length
+      ? await pdf.render(n, region, width, height, r.layersOff)
+      : await pdf.render(n, region, width, height);
     this.renders++;
     const raster: UnderlayRaster = { page, region, pixels };
     this.#remember(`${pageKey}@${request}`, {

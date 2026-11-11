@@ -16,6 +16,12 @@
 // screen fades its raster, and the monochrome blend (/Saturation with a grey: the luminance of
 // what is beneath, §11.3.5.3) reaches only the page. "Adjust colours for background" never
 // applies on white paper. No DOM here.
+//
+// PDF layers (M2-38 part 2): a page's optional content groups are copied with it, and the plot
+// lists every copy in its /OCProperties, off where the source document shows the group off by
+// default (its /D) or the underlay turns the layer off by name (ULAYERS); a page without
+// groups adds nothing. An underlay that turns layers off gets copies of the file's objects of
+// its own, so another underlay of the same file keeps its layers on.
 
 import { zlibSync } from 'fflate';
 import type { Affine } from './path';
@@ -23,8 +29,10 @@ import type { PdfRef } from './reader';
 import {
   PdfName,
   PdfReadError,
+  PdfRef as Ref,
   PdfSource,
   PdfStream,
+  PdfString,
   pdfReal,
   writeValue,
   type PdfDict,
@@ -125,19 +133,125 @@ export interface UnderlayLook {
 
 const real = pdfReal;
 
+/** PDFDocEncoding's characters that are not Latin-1's (PDF 32000-1:2008, Annex D.2). */
+const PDF_DOC: Readonly<Record<number, number>> = {
+  0x18: 0x02d8,
+  0x19: 0x02c7,
+  0x1a: 0x02c6,
+  0x1b: 0x02d9,
+  0x1c: 0x02dd,
+  0x1d: 0x02db,
+  0x1e: 0x02da,
+  0x1f: 0x02dc,
+  0x80: 0x2022,
+  0x81: 0x2020,
+  0x82: 0x2021,
+  0x83: 0x2026,
+  0x84: 0x2014,
+  0x85: 0x2013,
+  0x86: 0x0192,
+  0x87: 0x2044,
+  0x88: 0x2039,
+  0x89: 0x203a,
+  0x8a: 0x2212,
+  0x8b: 0x2030,
+  0x8c: 0x201e,
+  0x8d: 0x201c,
+  0x8e: 0x201d,
+  0x8f: 0x2018,
+  0x90: 0x2019,
+  0x91: 0x201a,
+  0x92: 0x2122,
+  0x93: 0xfb01,
+  0x94: 0xfb02,
+  0x95: 0x0141,
+  0x96: 0x0152,
+  0x97: 0x0160,
+  0x98: 0x0178,
+  0x99: 0x017d,
+  0x9a: 0x0131,
+  0x9b: 0x0142,
+  0x9c: 0x0153,
+  0x9d: 0x0161,
+  0x9e: 0x017e,
+  0xa0: 0x20ac,
+};
+
+/** A PDF text string (§7.9.2.2): UTF-16BE or UTF-8 after their byte order marks, else PDFDocEncoding. */
+export function pdfText(b: Uint8Array): string {
+  if (b[0] === 0xfe && b[1] === 0xff) {
+    const units: number[] = [];
+    for (let i = 2; i + 1 < b.length; i += 2) units.push((b[i]! << 8) | b[i + 1]!);
+    return String.fromCharCode(...units);
+  }
+  if (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) {
+    // UTF-8 without TextDecoder, which this package's (DOM-free) types do not have.
+    try {
+      return decodeURIComponent(
+        Array.from(b.subarray(3), (c) => `%${c.toString(16).padStart(2, '0')}`).join(''),
+      );
+    } catch {
+      // Not UTF-8 after all: read on as PDFDocEncoding.
+    }
+  }
+  let s = '';
+  for (const c of b) s += String.fromCharCode(PDF_DOC[c] ?? c);
+  return s;
+}
+
+/** The groups a document shows off by default: its /OCProperties /D (§8.11.4.3). */
+function defaultOff(source: PdfSource): (num: number) => boolean {
+  const catalog = source.resolve(source.trailer.get('Root'));
+  const oc = catalog instanceof Map ? source.resolve(catalog.get('OCProperties')) : null;
+  const d = oc instanceof Map ? source.resolve(oc.get('D')) : null;
+  if (!(d instanceof Map)) return () => false;
+  const nums = (v: PdfValue | undefined) => {
+    const a = source.resolve(v);
+    return new Set(Array.isArray(a) ? a.flatMap((r) => (r instanceof Ref ? [r.num] : [])) : []);
+  };
+  const base = source.resolve(d.get('BaseState'));
+  const on = nums(d.get('ON'));
+  const off = nums(d.get('OFF'));
+  if (base instanceof PdfName && base.name === 'OFF') return (n) => !on.has(n);
+  return (n) => off.has(n);
+}
+
 const latin1 = (s: string): Uint8Array => {
   const out = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
   return out;
 };
 
-/** One source file's objects as copied into the document. */
+/** One source file's objects as copied into the document, with the layers they turn off. */
 class SourceCopy {
   readonly ids = new Map<number, number>();
   readonly pageIds = new Map<number, number>();
   readonly #queue: [PdfRef, number][] = [];
 
-  constructor(readonly source: PdfSource) {}
+  constructor(
+    readonly source: PdfSource,
+    /** The PDF layers (optional content group names) the underlays of this copy turn off. */
+    readonly layersOff: ReadonlySet<string> = new Set(),
+  ) {}
+
+  /**
+   * The copied optional content groups, by the copy's object number, each with whether the plot
+   * shows it: off where the source shows it off by default or its name is turned off.
+   */
+  layers(): { readonly id: number; readonly on: boolean }[] {
+    const off = defaultOff(this.source);
+    const out: { id: number; on: boolean }[] = [];
+    for (const [num, id] of this.ids) {
+      const g = this.source.get(new Ref(num, 0));
+      if (!(g instanceof Map)) continue;
+      const type = g.get('Type');
+      if (!(type instanceof PdfName && type.name === 'OCG')) continue;
+      const name = this.source.resolve(g.get('Name'));
+      const named = name instanceof PdfString && this.layersOff.has(pdfText(name.bytes));
+      out.push({ id, on: !off(num) && !named });
+    }
+    return out;
+  }
 
   /** A reference to the copy of `r`; null for what is not copied (missing, page tree). */
   ref(r: PdfRef, w: ObjectWriter): string {
@@ -211,15 +325,38 @@ function pageContent(
 /** The document's imported pages, shared by its plot pages. */
 export class PdfImports {
   readonly #sources = new WeakMap<Uint8Array, PdfSource | null>();
-  readonly #copies = new Map<PdfSource, SourceCopy>();
+  /** By source and the layers turned off. */
+  readonly #copies = new Map<string, SourceCopy>();
   readonly #forms = new Map<string, ImportedForm>();
   readonly #keys = new WeakMap<PdfSource, number>();
+  #sourceCount = 0;
 
   /**
-   * The form showing `page` (DXF 2) of the PDF file `bytes` with `look`; undefined when the
-   * file cannot be read (not a PDF, needs a password, no pages) or its content cannot be decoded.
+   * The plot's PDF layers once every form is written: each copied optional content group and
+   * those the plot shows off, for the catalog's /OCProperties; undefined when no page copied
+   * a group.
    */
-  form(bytes: Uint8Array, page: string, look: UnderlayLook): ImportedForm | undefined {
+  optionalContent():
+    { readonly groups: readonly number[]; readonly off: readonly number[] } | undefined {
+    const layers = [...this.#copies.values()].flatMap((c) => c.layers());
+    if (layers.length === 0) return undefined;
+    return {
+      groups: layers.map((l) => l.id),
+      off: layers.filter((l) => !l.on).map((l) => l.id),
+    };
+  }
+
+  /**
+   * The form showing `page` (DXF 2) of the PDF file `bytes` with `look` and the PDF layers
+   * named in `layersOff` turned off; undefined when the file cannot be read (not a PDF, needs a
+   * password, no pages) or its content cannot be decoded.
+   */
+  form(
+    bytes: Uint8Array,
+    page: string,
+    look: UnderlayLook,
+    layersOff: readonly string[] = [],
+  ): ImportedForm | undefined {
     let source = this.#sources.get(bytes);
     if (source === undefined) {
       try {
@@ -233,13 +370,15 @@ export class PdfImports {
     }
     if (!source) return undefined;
     let n = this.#keys.get(source);
-    if (n === undefined) this.#keys.set(source, (n = this.#copies.size + 1));
-    let copy = this.#copies.get(source);
-    if (!copy) this.#copies.set(source, (copy = new SourceCopy(source)));
+    if (n === undefined) this.#keys.set(source, (n = ++this.#sourceCount));
+    const off = [...new Set(layersOff)].sort();
+    const copyKey = [n, ...off].join('\n');
+    let copy = this.#copies.get(copyKey);
+    if (!copy) this.#copies.set(copyKey, (copy = new SourceCopy(source, new Set(off))));
     const index = underlayPageIndex(page, source.pages.length);
     const contrast = Math.min(100, Math.max(0, look.contrast));
     const adjusted = contrast < 100 || look.monochrome;
-    const key = `${n}|${index}|${adjusted ? `${contrast}|${look.monochrome}` : ''}`;
+    const key = `${copyKey}|${index}|${adjusted ? `${contrast}|${look.monochrome}` : ''}`;
     let form = this.#forms.get(key);
     if (form) return form;
     const entry = source.pages[index]!;

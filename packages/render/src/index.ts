@@ -16,6 +16,8 @@ export {
   pagePath,
   rasterCovers,
   underlayFrame,
+  underlayKey,
+  underlayKeyDefinition,
   underlayNeed,
   underlayPrimitives,
   underlayRequest,

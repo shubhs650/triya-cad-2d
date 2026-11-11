@@ -176,3 +176,30 @@ export const TWO_PAGES: Readonly<Record<number, Body>> = {
   7: { dict: '<< /Filter /ASCIIHexDecode >>', data: '3020302031207267>' },
   8: { dict: '<< /Filter /FlateDecode >>', data: zlibSync(bytesOf('20 20 100 40 re f')) },
 };
+
+/**
+ * One page with PDF layers (optional content groups, M2-38 part 2): a red square in "Walls", a
+ * blue one in "Notes" (its name written UTF-16BE), a green one in "Draft", which the document
+ * shows off by default, and a form XObject in "Walls" by its own /OC.
+ */
+export const LAYERED: Readonly<Record<number, Body>> = {
+  1: '<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [5 0 R 6 0 R 7 0 R] /D << /Order [5 0 R 6 0 R 7 0 R] /OFF [7 0 R] >> >> >>',
+  2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+  3: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Resources << /Properties << /W 5 0 R /N 6 0 R /D 7 0 R >> /XObject << /X 8 0 R >> >> /Contents 4 0 R >>',
+  4: {
+    dict: '<< >>',
+    data: [
+      '/OC /W BDC 1 0 0 rg 10 10 30 30 re f EMC',
+      '/OC /N BDC 0 0 1 rg 50 10 30 30 re f EMC',
+      '/OC /D BDC 0 1 0 rg 90 10 30 30 re f EMC',
+      '/X Do',
+    ].join('\n'),
+  },
+  5: '<< /Type /OCG /Name (Walls) >>',
+  6: '<< /Type /OCG /Name <FEFF004E006F007400650073> >>',
+  7: '<< /Type /OCG /Name (Draft) >>',
+  8: {
+    dict: '<< /Type /XObject /Subtype /Form /BBox [0 0 200 100] /OC 5 0 R >>',
+    data: '1 0 0 rg 130 10 30 30 re f',
+  },
+};

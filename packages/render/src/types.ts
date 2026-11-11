@@ -190,6 +190,12 @@ export interface UnderlayFill {
   readonly monochrome: boolean;
   /** DXF 280 bit 8: colours adjusted for the background. */
   readonly adjustColors: boolean;
+  /**
+   * The PDF layers (optional content group names) the underlay turns off (ULAYERS, M2-38
+   * part 2), sorted, once each; absent when none. Its page is drawn without them, so its
+   * raster is asked for and kept apart from the plain page's (`underlayKey`).
+   */
+  readonly layersOff?: readonly string[];
 }
 
 /**
@@ -214,6 +220,8 @@ export interface UnderlayRequest {
   readonly definition: string;
   readonly scale: number;
   readonly region: Box;
+  /** The PDF layers drawn turned off (`UnderlayFill.layersOff`); absent when none. */
+  readonly layersOff?: readonly string[];
 }
 
 /**

@@ -60,6 +60,7 @@ export type HostMessage =
   /** A PDFDEFINITION's page as the app drew it, copied; null forgets it (M1-20). */
   | {
       readonly type: 'underlay';
+      /** The request's `underlayKey`: the definition, with any layers turned off (M2-38). */
       readonly definition: string;
       readonly raster: UnderlayRaster | null;
     }

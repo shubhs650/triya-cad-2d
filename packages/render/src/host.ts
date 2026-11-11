@@ -205,7 +205,8 @@ export class RendererHost {
 
   /**
    * A PDFDEFINITION's page as the app drew it for an `UnderlayRequest`, or undefined to forget
-   * it. The worker gets a copy (the app keeps its pages cached), so `raster` stays usable.
+   * it, under the request's `underlayKey` (the definition, with any layers turned off). The
+   * worker gets a copy (the app keeps its pages cached), so `raster` stays usable.
    */
   setUnderlay(definition: string, raster: UnderlayRaster | undefined): void {
     if (this.#session) this.#session.setUnderlay(definition, raster);
