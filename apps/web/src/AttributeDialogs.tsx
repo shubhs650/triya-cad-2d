@@ -60,7 +60,7 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
  * A modal dialog: Esc (the dialog's own cancel) is Cancel, Enter outside a text area or a
  * button is OK. Keys stay in it: the command line and Dynamic Input do not see them.
  */
-function Modal({
+export function Modal({
   label,
   className,
   onOk,

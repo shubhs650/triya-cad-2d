@@ -7,9 +7,18 @@
 // selected it shows General with the drawing's current settings, which new objects take (M2-35).
 // A hatch's Pattern name offers the library's patterns as it is typed (M2-35 part 3), where
 // AutoCAD's "..." opens its Hatch Pattern Palette.
+// Color's last choice, "Select Color...", opens AutoCAD's Select Color dialog (M2-35 part 4).
 // Fully keyboard operable: every value is a native select or text field.
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { EntityType, PropertyRow, PropertySheet, PropertyUnits } from '@triya/engine';
+import {
+  colorValue,
+  parseColorValue,
+  type EntityType,
+  type PropertyRow,
+  type PropertySheet,
+  type PropertyUnits,
+} from '@triya/engine';
+import { SelectColorDialog } from './SelectColorDialog';
 import type { OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { VARIES, editText, propertySheets, typeOptions, valueText } from './properties';
@@ -70,8 +79,22 @@ function PropertySections({
   patternNames: readonly string[];
 }) {
   const types = typeOptions(sheet);
+  // The Color row whose "Select Color..." was picked: the dialog shows while it is set.
+  const [picking, setPicking] = useState<PropertyRow | undefined>();
   return (
     <>
+      {picking && (
+        <SelectColorDialog
+          initial={picking.varies ? undefined : parseColorValue(String(picking.value))}
+          books={sheet.colorBooks ?? []}
+          trueColors={!sheet.current}
+          onOk={(c) => {
+            setPicking(undefined);
+            set(picking.key, colorValue(c));
+          }}
+          onCancel={() => setPicking(undefined)}
+        />
+      )}
       <select
         className="properties-objects"
         aria-label="Objects selected"
@@ -106,6 +129,7 @@ function PropertySections({
                         units={sheet.units}
                         set={set}
                         suggestions={r.key === 'patternName' ? patternNames : undefined}
+                        selectColor={r.key === 'color' ? () => setPicking(r) : undefined}
                       />
                     </td>
                   </tr>
@@ -119,17 +143,23 @@ function PropertySections({
   );
 }
 
+/** The Color list's last entry, as AutoCAD's: not a colour, it opens the dialog. */
+const SELECT_COLOR = 'select-color';
+
 function PropertyField({
   row,
   units,
   set,
   suggestions,
+  selectColor,
 }: {
   row: PropertyRow;
   units: PropertyUnits;
   set: (key: string, value: string) => void;
   /** Values a typed field offers as it is typed (a datalist). */
   suggestions?: readonly string[] | undefined;
+  /** Color's "Select Color..." choice, which opens the Select Color dialog. */
+  selectColor?: (() => void) | undefined;
 }) {
   if (row.readOnly) {
     return (
@@ -145,7 +175,9 @@ function PropertyField({
         aria-label={row.label}
         value={value}
         onChange={(e) => {
-          if (e.currentTarget.value !== VARIES) set(row.key, e.currentTarget.value);
+          const v = e.currentTarget.value;
+          if (v === SELECT_COLOR) selectColor?.();
+          else if (v !== VARIES) set(row.key, v);
         }}
       >
         {value === VARIES && (
@@ -158,6 +190,7 @@ function PropertyField({
             {o.label}
           </option>
         ))}
+        {selectColor && <option value={SELECT_COLOR}>Select Color...</option>}
       </select>
     );
   }
