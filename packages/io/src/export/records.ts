@@ -2,6 +2,11 @@
 // beside them (MLEADERSTYLE, part 11): the planning every table writer shares. Each record the model changes or adds is matched to its acad-ts original by handle
 // (or made under the engine's handle), its name is checked as AutoCAD checks it, and the
 // table's own rules add their problems. Nothing is changed until every table has planned.
+//
+// A new record may carry xdata (M2-32 part 3: PASTECLIP brings records with theirs), written as
+// an entity's is (xdata.ts) before the table's own writer, which rewrites the applications it
+// keeps in fields (a layer's transparency and description, a text style's TrueType bits). A
+// record the file has keeps its xdata as read: editing it is not written yet.
 
 import {
   ACadVersion,
@@ -11,11 +16,12 @@ import {
 } from '@node-projects/acad-ts';
 import type { Handle, SymbolTableRecord } from '@triya/engine';
 import { resolve, same, type Resolver } from './entities';
+import { writeXdata, xdataProblems } from './xdata';
 
 /** DXF 70 bits that mark a record as an xref's: the xref owns them, not the drawing. */
 export const XREF_BITS = 16 | 32;
 
-/** Record fields no table writer handles yet. */
+/** Record fields no table writer handles yet (xdata: on a record the file has). */
 const UNSUPPORTED = ['xdata', 'reactors', 'extDict'] as const;
 
 export interface RecordPlan<A extends CadObject & { name: string }, R extends SymbolTableRecord> {
@@ -102,7 +108,8 @@ export function planRecords<A extends CadObject & { name: string }, R extends Sy
         out.push(`${JSON.stringify(a.name)} is not a valid ${rules.what} name`);
     }
     for (const k of UNSUPPORTED) {
-      if (b ? !same(b[k], a[k]) : a[k] !== undefined) out.push(`${k} changes`);
+      if (!b && k === 'xdata') out.push(...xdataProblems(r, undefined, a.xdata));
+      else if (b ? !same(b[k], a[k]) : a[k] !== undefined) out.push(`${k} changes`);
     }
     out.push(...rules.problems(b, a, acad));
     if (out.length > 0) {
@@ -113,6 +120,8 @@ export function planRecords<A extends CadObject & { name: string }, R extends Sy
       acad = rules.make(a);
       // acad-ts keeps a non-zero handle it has not seen, so the record keeps Triya's handle.
       acad.handle = Number.parseInt(h, 16);
+      // Onto a record no table holds yet: nothing changes until the table writer adds it.
+      if (a.xdata) writeXdata(r, acad, undefined, a.xdata);
       plan.added.push({ acad, after: a });
       r.created.set(h, acad);
     }

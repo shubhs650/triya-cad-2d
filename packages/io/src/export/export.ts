@@ -438,6 +438,9 @@ export function triyaToAcad(
   } satisfies Resolver;
   // Records first: entities and the header may name one the same save adds, a linetype's text
   // a text style, a dimension style a text style or linetype, a layer a linetype or plot style.
+  // Applications before every other record: a new record's xdata may name one the same save
+  // adds (PASTECLIP, M2-32 part 3).
+  const appIds = planAppIds(original, base, model, r);
   const plotStyleNamePlan = planPlotStyles(original, base, model, r, plotStyles.refusal);
   for (const { after } of plotStyleNamePlan.plan.added) plotStyles.names?.add(after.handle);
   const materials = planMaterials(original, base, model, r);
@@ -456,7 +459,7 @@ export function triyaToAcad(
   const tableStyles = planTableStyles(original, base, model, r, format);
   const mlineStyles = planMLineStyles(original, base, model, r, format);
   const views = {
-    appIds: planAppIds(original, base, model, r),
+    appIds,
     ucs: planUcs(original, base, model, r),
     views: planViews(original, base, model, r),
     vports: planVports(original, base, model, r),

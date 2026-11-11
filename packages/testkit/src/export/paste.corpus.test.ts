@@ -16,6 +16,11 @@
 // save files in the target's ACAD_IMAGE_DICT and ACAD_PDFDEFINITIONS (made on the first one).
 // Read back, each pasted definition is there under its handle, name and file, and each pasted
 // image or underlay shows it.
+//
+// M2-32 part 3: records keep their xdata, which the save writes on each record it adds, and
+// multileaders whose content block holds attribute definitions paste naming the pasted (or the
+// target's) ATTDEFs. Read back, each added record has the xdata it was pasted with, and each
+// such multileader names its ATTDEFs, which are there.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -62,6 +67,8 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
   let refusedTotal = 0;
   let scaledFiles = 0;
   const definitions = { IMAGEDEF: 0, PDFDEFINITION: 0 };
+  let recordXdata = 0;
+  let attributed = 0;
 
   it.each(readable.map((f) => [f.path] as const))(
     '%s pastes into an AC1032 drawing that saves with everything pasted',
@@ -115,6 +122,17 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
         expect(read.definition, `${path} ${p.entity.handle}`).toBe(g.definition);
         expect(back.objects.has(g.definition), `${path} ${g.definition}`).toBe(true);
       }
+      for (const p of cs.entities?.added ?? []) {
+        const g = p.entity.geom;
+        if (g.kind !== 'MULTILEADER' || !g.block?.attributes?.some((a) => a.definition)) continue;
+        attributed++;
+        const read = back.entityByHandle(p.entity.handle)!.geom as typeof g;
+        expect(read.block?.attributes, `${path} ${p.entity.handle}`).toEqual(g.block.attributes);
+        for (const a of g.block.attributes) {
+          if (a.definition === undefined) continue;
+          expect(back.entityByHandle(a.definition)?.type, `${path} ${a.definition}`).toBe('ATTDEF');
+        }
+      }
       for (const [table, c] of Object.entries(cs.tables ?? {})) {
         for (const r of (c?.added ?? []) as SymbolTableRecord[]) {
           expect(compareHandles(r.handle, seed), `${path} ${r.handle}`).toBeGreaterThanOrEqual(0);
@@ -122,6 +140,8 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
             table
           ]?.get(r.handle);
           expect(read?.name, `${path} ${table} ${r.name}`).toBe(r.name);
+          if (r.xdata) recordXdata++;
+          expect(read?.xdata, `${path} ${table} ${r.name} xdata`).toEqual(r.xdata);
         }
       }
     },
@@ -137,5 +157,9 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
     // The corpus images and underlays brought their definitions.
     expect(definitions.IMAGEDEF).toBeGreaterThan(10);
     expect(definitions.PDFDEFINITION).toBeGreaterThan(0);
+    // Records with xdata (layer descriptions and transparency, dimension style DIMVAR xdata, a
+    // block's applications) and the corpus multileaders with block attributes came over.
+    expect(recordXdata).toBeGreaterThan(100);
+    expect(attributed).toBeGreaterThan(0);
   });
 });

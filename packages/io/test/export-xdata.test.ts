@@ -408,3 +408,117 @@ describe('triyaToAcad entity xdata', () => {
     }
   });
 });
+
+// M2-32 part 3: PASTECLIP brings layers, styles, linetypes, applications and blocks with their
+// xdata, so a save writes the xdata of a record it adds. A record the file has keeps its xdata as
+// read (records.ts still refuses an edit to it).
+describe('triyaToAcad xdata on new records (M2-32 part 3)', () => {
+  type Named = { handle: string; name: string; xdata?: Xdata };
+  const named = <T extends Named>(m: ReadonlyMap<string, T>, name: string): T =>
+    [...m.values()].find((r) => r.name.toUpperCase() === name.toUpperCase())!;
+
+  /** Adds NEW_APP and, with xdata, a layer, linetype, text style, dimension style and block. */
+  function addRecords(model: DocumentModel, appOf?: string): Record<string, Xdata> {
+    const line = find(model, 'LINE').handle;
+    const xdata: Record<string, Xdata> = {};
+    edit(model, (b) => {
+      const newApp = appOf ?? b.addTableRecord('appIds', { name: 'NEW_APP' }).handle;
+      const mine = app(model, 'MY_APP');
+      const t = model.tables;
+      xdata.layers = [
+        {
+          appId: newApp,
+          values: [
+            { code: 1000, value: 'layer' },
+            { code: 1005, value: line },
+          ],
+        },
+      ];
+      xdata.linetypes = [{ appId: mine, values: [{ code: 1040, value: 0.5 }] }];
+      xdata.textStyles = [{ appId: mine, values: [{ code: 1071, value: 7 }] }];
+      xdata.dimStyles = [
+        {
+          appId: mine,
+          values: [
+            { code: 1070, value: 380 },
+            { code: 1005, value: line },
+          ],
+        },
+        { appId: newApp, values: [{ code: 1000, value: 'dim' }] },
+      ];
+      xdata.blockRecords = [{ appId: newApp, values: [{ code: 1000, value: 'block' }] }];
+      const copyOf = (table: 'layers' | 'linetypes' | 'textStyles' | 'dimStyles', from: string) =>
+        b.adoptTableRecord(table, {
+          ...named(t[table] as ReadonlyMap<string, Named>, from),
+          handle: b.allocateHandle(),
+          name: `NEW_${table.toUpperCase()}`,
+          ...(table === 'textStyles' ? { font: 'txt' } : {}),
+          xdata: xdata[table],
+        } as never);
+      copyOf('layers', 'WALLS');
+      copyOf('linetypes', 'Continuous');
+      copyOf('textStyles', 'Standard');
+      copyOf('dimStyles', 'Standard');
+      const block = b.addBlock({ name: 'NEW_BLOCK', basePoint: { x: 0, y: 0 } });
+      b.updateTableRecord('blockRecords', block.handle, { xdata: xdata.blockRecords });
+    });
+    return xdata;
+  }
+
+  it('writes the xdata of every record the save adds, naming an application it adds too', () => {
+    for (const options of FORMATS.filter((f) => f.format === 'dxf')) {
+      const model = open();
+      const xdata = addRecords(model);
+      const back = DocumentModel.create(documentInit(readCadDocument(save(model, options))));
+      const newApp = named(back.tables.appIds, 'NEW_APP').handle;
+      expect(newApp).toBe(named(model.tables.appIds, 'NEW_APP').handle);
+      for (const [table, want] of Object.entries(xdata)) {
+        const name = table === 'blockRecords' ? 'NEW_BLOCK' : `NEW_${table.toUpperCase()}`;
+        const tables = back.tables as unknown as Record<string, ReadonlyMap<string, Named>>;
+        expect(named(tables[table]!, name).xdata, `${table} ${JSON.stringify(options)}`).toEqual(
+          want,
+        );
+      }
+    }
+  });
+
+  it("keeps a new TrueType style's face name and charset bits, with its bold and italic", () => {
+    const model = open();
+    let handle = '';
+    edit(model, (b) => {
+      const acad = app(model, 'ACAD');
+      handle = b.adoptTableRecord('textStyles', {
+        ...named(model.tables.textStyles, 'Standard'),
+        handle: b.allocateHandle(),
+        name: 'HEAVY',
+        font: 'ariblk.ttf',
+        // Bold, which the pair below does not state yet (0x22: charset and pitch bits only).
+        trueTypeFlags: 2,
+        xdata: [
+          {
+            appId: acad,
+            values: [
+              { code: 1000, value: 'Arial Black' },
+              { code: 1071, value: 0x22 },
+            ],
+          },
+        ],
+      } as never).handle;
+    });
+    const back = DocumentModel.create(documentInit(readCadDocument(save(model))));
+    const style = back.tables.textStyles.get(handle)!;
+    expect(style.trueTypeFlags).toBe(2);
+    expect(style.xdata?.[0]?.values).toEqual([
+      { code: 1000, value: 'Arial Black' },
+      { code: 1071, value: 0x02000022 },
+    ]);
+  });
+
+  it("refuses a new record's xdata naming an application the drawing does not register", () => {
+    const model = open();
+    addRecords(model, 'FFFF0');
+    expect(() => save(model)).toThrow(
+      /layer NEW_LAYERS \(\w+\): application FFFF0 is not a registered application/,
+    );
+  });
+});
