@@ -2347,3 +2347,81 @@ button {
 .plot-preview-button {
   margin-right: auto;
 }
+
+/* M2-36: the Undo and Redo drop-down lists beside their Quick Access buttons. */
+.undo-button,
+.redo-button {
+  border-radius: 4px 0 0 4px;
+}
+
+.undo-list {
+  position: relative;
+  display: inline-flex;
+  margin-left: -8px;
+}
+
+.undo-list-button {
+  padding: 3px 4px;
+  border: 1px solid var(--chrome-border);
+  border-left: 0;
+  border-radius: 0 4px 4px 0;
+  background: var(--chrome-bg);
+  font-size: 0.8em;
+  transition: background var(--motion);
+}
+
+.undo-list-button:hover:enabled {
+  background: var(--chrome-border);
+}
+
+.undo-list-button:disabled {
+  color: var(--chrome-text-muted);
+}
+
+.undo-list-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  background: var(--chrome-bg-raised);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
+}
+
+.undo-list-items {
+  display: flex;
+  flex-direction: column;
+  max-height: 320px;
+  overflow-y: auto;
+  padding: 4px 0;
+}
+
+.undo-list-item {
+  padding: 3px 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.undo-list-item[data-included='true'] {
+  background: color-mix(in srgb, var(--accent) 18%, transparent);
+}
+
+.undo-list-item:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: -1px;
+}
+
+.undo-list-count {
+  padding: 4px 12px;
+  border-top: 1px solid var(--chrome-border);
+  color: var(--chrome-text-muted);
+  font-size: 0.9em;
+}

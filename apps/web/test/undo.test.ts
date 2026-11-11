@@ -3,11 +3,20 @@
 // redo shows a toast with what it did and how many steps are left.
 import { describe, expect, it } from 'vitest';
 import type { UndoState } from '@triya/engine';
-import { UndoStates, undoButtons, undoKeyCommand, undoToast } from '../src/undo';
+import {
+  UndoStates,
+  undoButtons,
+  undoKeyCommand,
+  undoList,
+  undoListPick,
+  undoToast,
+} from '../src/undo';
 
 const state = (o: Partial<UndoState> = {}): UndoState => ({
   undoable: 0,
   redoable: 0,
+  undoList: [],
+  redoList: [],
   grouping: false,
   control: 'all',
   ...o,
@@ -57,6 +66,28 @@ describe('undoButtons', () => {
     expect(undoButtons(undefined).undo.enabled).toBe(false);
     // UNDO Control None turns undo off.
     expect(undoButtons(state({ control: 'none' })).undo.title).toBe('Undo is turned off');
+  });
+});
+
+describe('undoList (M2-36)', () => {
+  it('gives each list its steps, enabled while there are any', () => {
+    const s = state({
+      undoable: 3,
+      redoable: 1,
+      undoList: ['MOVE', 'LINE', 'LINE'],
+      redoList: ['ERASE'],
+    });
+    expect(undoList(s, 'undo')).toEqual({ enabled: true, items: ['MOVE', 'LINE', 'LINE'] });
+    expect(undoList(s, 'redo')).toEqual({ enabled: true, items: ['ERASE'] });
+    expect(undoList(state(), 'undo')).toEqual({ enabled: false, items: [] });
+    expect(undoList(undefined, 'redo')).toEqual({ enabled: false, items: [] });
+    // UNDO Control None turns undo off, list and all.
+    expect(undoList(state({ control: 'none', undoList: ['LINE'] }), 'undo').enabled).toBe(false);
+  });
+
+  it('picks down to an entry as UNDO n or MREDO n, and says how many steps that is', () => {
+    expect(undoListPick('undo', 2)).toEqual({ command: 'UNDO', count: 3, text: 'Undo 3 steps' });
+    expect(undoListPick('redo', 0)).toEqual({ command: 'MREDO', count: 1, text: 'Redo 1 step' });
   });
 });
 

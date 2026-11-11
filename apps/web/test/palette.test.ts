@@ -40,6 +40,7 @@ describe('palette search', () => {
       'MLEADER',
       'MLEADEREDIT',
       'MOVE',
+      'MREDO',
       'MTEXT',
       'OOPS',
       'PAN',
