@@ -441,24 +441,31 @@ export class CanvasController {
 
   /**
    * ZOOM Extents. A layout without entities shows its sheet. Until the renderer first measured
-   * the space, which it answers a moment after the drawing first shows (its text bounded by
-   * glyphs), this waits for it: the extents the drawing opened with guess text without fonts
+   * the space, which it answers a moment after the drawing first shows (its text bounded by its
+   * glyphs), this zooms to the extents the drawing opened with, which guess text without fonts,
+   * and zooms again to the measured extents once they come, unless the view has moved since
    * (M2-37).
    */
-  async zoomExtents(): Promise<void> {
-    await this.#measuredOnce();
-    this.#go(extentsView(this.#extents() ?? this.#paper(), this.#size));
+  zoomExtents(): void {
+    const view = () => extentsView(this.#extents() ?? this.#paper(), this.#size);
+    this.#go(view());
+    this.#againOnceMeasured(view);
   }
 
   /** ZOOM All: the limits or the extents, whichever reaches further. */
-  async zoomAll(): Promise<void> {
-    await this.#measuredOnce();
-    this.#go(allView(this.#limits(), this.#extents(), this.#size));
+  zoomAll(): void {
+    const view = () => allView(this.#limits(), this.#extents(), this.#size);
+    this.#go(view());
+    this.#againOnceMeasured(view);
   }
 
-  /** Settles once the renderer has answered a measure (at once when it has). */
-  #measuredOnce(): Promise<void> {
-    return this.#measured.done ? Promise.resolve() : this.#firstMeasure;
+  /** Shows `view()` again once the renderer first measured, if the view shown is still as is. */
+  #againOnceMeasured(view: () => ViewTransform): void {
+    if (this.#measured.done) return;
+    const shown = this.#view;
+    void this.#firstMeasure.then(() => {
+      if (shown && this.#view === shown && this.#size.width > 0) this.#setView(view());
+    });
   }
 
   /** ZOOM Scale nX, about the view's centre. */
@@ -938,7 +945,7 @@ export class CanvasController {
     // The point under a cursor that has not moved is another one now: the status bar (and a
     // prompt's rubber band) follow it, as the cursor that came onto the canvas before there was
     // a view (a layout's first, M2-37) showed no coordinates until it next moved.
-    if (this.#pointer && !this.#drag) {
+    if (this.#pointer && !this.#drag && this.#canvas.matches(':hover')) {
       if (this.#prompt && this.#mode === 'none') this.#track();
       else this.#hooks.onCursor(this.#world(this.#pointer));
     }
@@ -1153,7 +1160,7 @@ export class CanvasController {
           ) {
             this.#lastMiddle = undefined;
             this.#drag = undefined;
-            void this.zoomExtents();
+            this.zoomExtents();
             return;
           }
           this.#lastMiddle = { t: e.timeStamp, x: e.offsetX, y: e.offsetY };

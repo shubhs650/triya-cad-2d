@@ -70,7 +70,7 @@ export function NavBar({
       <button type="button" aria-pressed={mode === 'pan'} onClick={() => toggle('pan')}>
         Pan
       </button>
-      <button type="button" onClick={() => void c()?.zoomExtents()}>
+      <button type="button" onClick={() => c()?.zoomExtents()}>
         Zoom Extents
       </button>
       <button type="button" aria-pressed={mode === 'window'} onClick={() => toggle('window')}>
@@ -79,7 +79,7 @@ export function NavBar({
       <button type="button" onClick={() => c()?.zoomPrevious()}>
         Zoom Previous
       </button>
-      <button type="button" onClick={() => void c()?.zoomAll()}>
+      <button type="button" onClick={() => c()?.zoomAll()}>
         Zoom All
       </button>
       <button type="button" onClick={() => c()?.zoomScale(2)}>
