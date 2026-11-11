@@ -2002,6 +2002,11 @@ button {
   color: inherit;
 }
 
+.cad-dialog-tabs [role='tab']:disabled {
+  color: var(--chrome-text-muted);
+  opacity: 0.6;
+}
+
 .cad-dialog-tabs [role='tab'][aria-selected='true'] {
   border-color: var(--chrome-border);
   background: var(--chrome-bg);
@@ -2424,4 +2429,141 @@ button {
   border-top: 1px solid var(--chrome-border);
   color: var(--chrome-text-muted);
   font-size: 0.9em;
+}
+
+/* M2-35 part 4: the Select Color dialog (AutoCAD's Index Color, True Color and Color Books tabs). */
+.cad-dialog.select-color {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.select-color-caption {
+  margin: 0 0 4px;
+}
+
+.aci-grid {
+  display: flex;
+  flex-direction: column;
+  margin-bottom: 6px;
+}
+
+.aci-grid [role='row'] {
+  display: flex;
+}
+
+.aci-grid [role='gridcell'] {
+  flex: 1 1 0;
+  min-width: 0;
+  max-width: 20px;
+  height: 14px;
+  padding: 0;
+  border: 1px solid rgb(0 0 0 / 25%);
+  border-radius: 0;
+}
+
+.aci-grid [role='gridcell'][aria-selected='true'] {
+  outline: 2px solid var(--chrome-text);
+  outline-offset: -1px;
+  position: relative;
+}
+
+.aci-grid [role='gridcell']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+  position: relative;
+}
+
+.select-color-info {
+  min-height: 1.4em;
+  margin: 4px 0;
+}
+
+.select-color-info span {
+  margin-left: 16px;
+}
+
+.select-color-by {
+  display: flex;
+  gap: 6px;
+}
+
+.select-color-by [aria-pressed='true'],
+.select-color-book-list [aria-pressed='true'] {
+  background: var(--accent);
+  color: #fff;
+}
+
+.select-color-channel {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  margin-top: 6px;
+}
+
+.select-color-true > .cad-dialog-field,
+.select-color-books > .cad-dialog-field {
+  margin-bottom: 6px;
+}
+
+.select-color-book-list {
+  max-height: 180px;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--chrome-border);
+}
+
+.select-color-book-list button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 3px 6px;
+  border: none;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+
+.select-color-book-list .swatch {
+  width: 28px;
+  height: 14px;
+  border: 1px solid rgb(0 0 0 / 25%);
+}
+
+.select-color-rgb {
+  margin-left: auto;
+  opacity: 0.75;
+}
+
+.select-color-foot {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.select-color-foot .cad-dialog-field {
+  flex: 1 1 auto;
+}
+
+.select-color-foot .cad-dialog-field > span {
+  min-width: 0;
+}
+
+.select-color-preview {
+  display: flex;
+  border: 1px solid var(--chrome-border);
+}
+
+.select-color-preview span {
+  width: 36px;
+  height: 22px;
+}
+
+.select-color-invalid {
+  min-height: 1.2em;
+  margin: 4px 0 0;
+  color: var(--danger-text);
 }

@@ -1,0 +1,1 @@
+- M2-35 part 4 (#292): the Properties palette's Color list ends in "Select Color...", which opens AutoCAD's Select Color dialog: Index Color (the ACI palette, standard colours, greys, ByLayer, ByBlock), True Color (HSL or RGB) and Color Books (the books the drawing uses), with a Color field that takes a name, an index, `r,g,b` or `BOOK$COLOR`.
