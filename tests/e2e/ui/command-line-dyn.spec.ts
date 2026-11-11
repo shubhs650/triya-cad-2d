@@ -134,9 +134,13 @@ test('Dynamic Input: an angle typed as its prompt arrives, the cursor moving, is
   test.setTimeout(60_000);
   await open(page);
   await hover(page);
+  const before = Object.keys(await lineEnds(page));
   for (const t of ['L', '1000000,1000000', '1000010,1000000', '']) await command(page, t);
   await expect(prompt(page)).toHaveText('Command:');
-  const handle = Object.keys(await lineEnds(page)).at(-1)!;
+  // The line just drawn (handles are hex strings, so a record keeps no order of them).
+  const drawn = async () => Object.keys(await lineEnds(page)).filter((h) => !before.includes(h));
+  await expect.poll(drawn).toHaveLength(1);
+  const [handle] = await drawn();
   for (const t of ['RO', 'L', '']) await command(page, t);
   await expect(prompt(page)).toHaveText('Specify base point:');
   // Types 9, 0 and Enter, to whatever has the focus as a real key would, in the same task that
@@ -162,7 +166,9 @@ test('Dynamic Input: an angle typed as its prompt arrives, the cursor moving, is
   await expect(history(page)).toContainText(
     /Specify rotation angle or \[Copy\/Reference\] <0[.0]*>: 90(?!,)/,
   );
-  expect((await lineEnds(page))[handle]).toEqual([1000005, 999995, 1000005, 1000005]);
+  await expect
+    .poll(async () => (await lineEnds(page))[handle!])
+    .toEqual([1000005, 999995, 1000005, 1000005]);
 });
 
 test('Ctrl+K finds a command by name or alias and runs it', async ({ page }) => {
