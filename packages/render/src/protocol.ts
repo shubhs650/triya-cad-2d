@@ -2,6 +2,7 @@
 // postMessage, as ARCHITECTURE.md §3 draws it: the stream is one-way except for the requests
 // that need an answer (hit test, entities in a rectangle, flush, thumbnail, extents), which carry an id.
 
+import type { DrawingDimensionHealth } from '@triya/dims';
 import type {
   Box,
   ChangeSet,
@@ -90,6 +91,8 @@ export type HostMessage =
   | { readonly type: 'textWidths'; readonly id: number; readonly texts: readonly MTextGeometry[] }
   /** The dynamic column counts of MTEXTs (M2-26 part 2); the answer is a `counts`. */
   | { readonly type: 'columnCounts'; readonly id: number; readonly texts: readonly MTextGeometry[] }
+  /** The drawing's dimensions against their stored blocks (M2-30 part 3); answered by `dimensionHealth`. */
+  | { readonly type: 'dimensionHealth'; readonly id: number }
   /** Where texts lie as drawn (M2-27); the answer is an `outlines`. */
   | {
       readonly type: 'textOutlines';
@@ -126,6 +129,11 @@ export type WorkerMessage =
   | { readonly type: 'widths'; readonly id: number; readonly widths: readonly (number | null)[] }
   /** The column counts asked for, null for a text no loaded font draws. */
   | { readonly type: 'counts'; readonly id: number; readonly counts: readonly (number | null)[] }
+  | {
+      readonly type: 'dimensionHealth';
+      readonly id: number;
+      readonly health: DrawingDimensionHealth;
+    }
   /** The outlines asked for, null for a text no loaded font draws. */
   | {
       readonly type: 'outlines';

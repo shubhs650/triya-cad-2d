@@ -1032,6 +1032,21 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* Dimensions that differ (M2-30 part 3): the handle with its kind and space under it. */
+.health-dimensions th[scope='row'] {
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+.health-dimensions .dim-where {
+  display: block;
+  color: var(--chrome-text-muted);
+}
+
+.health-dimensions button {
+  white-space: nowrap;
+}
+
 /* References palette (M1-21): xrefs, images and PDF underlays with their status. */
 .references-actions {
   display: flex;

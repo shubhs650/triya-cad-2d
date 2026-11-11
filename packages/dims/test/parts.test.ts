@@ -7,6 +7,8 @@ import {
   placeDimension,
   type DimStyleRecord,
   type DimensionGeometry,
+  type DocumentInit,
+  type EntityInit,
   type EntityGeometry,
   type HeaderValue,
   type TextMeasure,
@@ -14,6 +16,8 @@ import {
 import {
   compareParts,
   dimensionParts,
+  dimstyleAci,
+  drawingDimensionHealth,
   measuredText,
   regenerateDimension,
   type DimPart,
@@ -42,7 +46,11 @@ const ISO: DimStyleRecord['vars'] = {
 };
 
 function model(vars: DimStyleRecord['vars'] = ISO): DocumentModel {
-  return DocumentModel.create({
+  return DocumentModel.create(initOf(vars));
+}
+
+function initOf(vars: DimStyleRecord['vars'] = ISO): DocumentInit {
+  return {
     meta: { sourceVersion: 'AC1032', codePage: 'ANSI_1252', insUnits: 4, measurement: 'metric' },
     handSeed: '100',
     header: new Map<string, HeaderValue>(),
@@ -84,7 +92,7 @@ function model(vars: DimStyleRecord['vars'] = ISO): DocumentModel {
     ],
     layouts: [{ handle: '22', name: 'Model', tabOrder: 0, blockRecord: MODEL_SPACE }],
     entities: [],
-  });
+  };
 }
 
 /** Each visible character one text height wide. */
@@ -830,5 +838,123 @@ describe('dimension engine leftovers (M2-30)', () => {
     expect(lines).toHaveLength(1);
     // An X ordinate measures up the drawing.
     expect(textOf(parts({ ...geom, axis: 'x', leaderEnd: { x: -40, y: 5 } }))).toBe('5');
+  });
+});
+
+describe("the drawing's dimension health, for the Health palette (M2-30 part 3)", () => {
+  const PAPER = '2A';
+  const DETAIL = 'B0';
+  const props = {
+    layer: '10',
+    color: { kind: 'byBlock' },
+    linetype: 'ByBlock',
+    lineweight: 'ByBlock',
+    transparency: 'ByLayer',
+    ltScale: 1,
+    visible: true,
+  } as const;
+
+  /**
+   * Linear dimensions in model space and on a layout: `60`'s block holds what the engine draws,
+   * `61`'s a dimension line moved 1 up (on a layout, in the block DETAIL and in model space),
+   * one names no
+   * block, and `63`'s text no font measures.
+   */
+  function drawing(r12 = false) {
+    const geom = linear();
+    const drawn = dimensionParts({ geom }, model(), measure)!;
+    const entities: EntityInit[] = [];
+    let n = 0x80;
+    const put = (owner: string, g: EntityGeometry, extra: Partial<EntityInit> = {}) =>
+      entities.push({
+        ...props,
+        ...extra,
+        handle: (n++).toString(16).toUpperCase(),
+        type: g.kind,
+        owner,
+        geom: g,
+      });
+    const block = (owner: string, ps: readonly DimPart[]) => {
+      for (const p of ps) put(owner, p.geom, p.color ? { color: p.color } : {});
+    };
+    block('60', drawn);
+    block(
+      '61',
+      drawn.map((p) =>
+        p.geom.kind === 'LINE' && p.geom.start.y === 20 && p.geom.end.y === 20
+          ? {
+              ...p,
+              geom: { ...p.geom, start: { ...p.geom.start, y: 21 }, end: { ...p.geom.end, y: 21 } },
+            }
+          : p,
+      ),
+    );
+    block('63', drawn);
+    put(MODEL_SPACE, linear({ block: '60' }));
+    put(PAPER, linear({ block: '61' }));
+    put(MODEL_SPACE, linear());
+    put(MODEL_SPACE, linear({ block: '63', text: 'unmeasured' }));
+    put(DETAIL, linear({ block: '61' }));
+    put(MODEL_SPACE, linear({ block: '61' }));
+    const base = initOf();
+    const record = (handle: string, name: string) => ({
+      handle,
+      name,
+      units: 0,
+      explodable: true,
+      scalable: true,
+    });
+    const names: [string, string][] = [
+      [MODEL_SPACE, '*Model_Space'],
+      [PAPER, '*Paper_Space'],
+      [DETAIL, 'DETAIL'],
+      ['60', '*D1'],
+      ['61', '*D2'],
+      ['63', '*D3'],
+    ];
+    return DocumentModel.create({
+      ...base,
+      tables: { ...base.tables, blockRecords: names.map(([h, name]) => record(h, name)) },
+      blocks: names.map(([handle, name]) => ({ handle, name, basePoint: { x: 0, y: 0 } })),
+      // An R12 file has no Model layout; acad-ts makes up Layout1.
+      layouts: r12
+        ? [{ handle: '23', name: 'Layout1', tabOrder: 1, blockRecord: PAPER }]
+        : [
+            { handle: '22', name: 'Model', tabOrder: 0, blockRecord: MODEL_SPACE },
+            { handle: '23', name: 'Sheet A', tabOrder: 1, blockRecord: PAPER },
+          ],
+      entities,
+    });
+  }
+  /** Measures every text but the one that says it is not measured. */
+  const fonts: TextMeasure = (t) => (t.contents.includes('unmeasured') ? undefined : measure(t));
+
+  it('counts matching blocks, lists the ones that differ with where they are, and counts the rest', () => {
+    const m = drawing();
+    const health = drawingDimensionHealth(m, fonts);
+    expect(health).toMatchObject({ checked: 4, blockless: 1, unchecked: 1 });
+    expect(health.mismatched).toHaveLength(3);
+    const [bad, inBlock, inModel] = health.mismatched;
+    expect(inBlock).toMatchObject({ owner: DETAIL, space: { kind: 'block', name: 'DETAIL' } });
+    expect(inModel?.space).toEqual({ kind: 'layout', name: 'Model' });
+    expect(bad).toMatchObject({
+      type: 'Linear',
+      owner: PAPER,
+      space: { kind: 'layout', name: 'Sheet A' },
+    });
+    expect(m.entity(bad!.id)?.handle).toBe(bad!.handle);
+    // Without a Model layout (R12), model space is still Model.
+    expect(drawingDimensionHealth(drawing(true), fonts).mismatched.map((d) => d.space)).toEqual([
+      { kind: 'layout', name: 'Layout1' },
+      { kind: 'block', name: 'DETAIL' },
+      { kind: 'layout', name: 'Model' },
+    ]);
+    expect(bad!.problems.length).toBeGreaterThan(0);
+  });
+
+  it('lets a DIMSTYLE ACI stand for the true colour its block holds', () => {
+    expect(dimstyleAci({ kind: 'aci', index: 1 }, { kind: 'rgb', r: 255, g: 0, b: 0 })).toBe(true);
+    expect(dimstyleAci({ kind: 'aci', index: 2 }, { kind: 'rgb', r: 255, g: 0, b: 0 })).toBe(false);
+    expect(dimstyleAci({ kind: 'aci', index: 1 }, { kind: 'aci', index: 1 })).toBe(false);
   });
 });

@@ -40,6 +40,7 @@
 // through the snap points under the aperture; a typed override (`END`) snaps the next point
 // with its own modes, and a click it finds nothing at is sent as missed; Shift+right-click
 // opens the object snap menu (`onSnapMenu`). GRID, LWT and TPY are the renderer's style.
+import type { DrawingDimensionHealth } from '@triya/dims';
 import RenderWorker from '@triya/render/worker?worker';
 import {
   MAX_ACQUIRED,
@@ -611,6 +612,11 @@ export class CanvasController {
   /** How many dynamic columns MTEXTs take (M2-26 part 2: a column grip recounts them). */
   columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]> {
     return this.#host.columnCounts(texts);
+  }
+
+  /** The drawing's dimensions against their stored blocks (M2-30 part 3: the Health palette). */
+  dimensionHealth(): Promise<DrawingDimensionHealth | undefined> {
+    return this.#host.dimensionHealth();
   }
 
   /** Where texts lie as drawn (M2-27: EATTEDIT's attribute under a pick). */
