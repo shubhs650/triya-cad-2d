@@ -11,6 +11,11 @@
 // M2-32: the target is taken in other units than each source with units of its own (inches,
 // or millimetres for an inch drawing), so every such paste is scaled (`pasteScale`) and the
 // save takes the scaled objects too.
+//
+// M2-32 part 2: images and PDF underlays come with their IMAGEDEFs and PDFDEFINITIONs, which the
+// save files in the target's ACAD_IMAGE_DICT and ACAD_PDFDEFINITIONS (made on the first one).
+// Read back, each pasted definition is there under its handle, name and file, and each pasted
+// image or underlay shows it.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -56,6 +61,7 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
   let pastedTotal = 0;
   let refusedTotal = 0;
   let scaledFiles = 0;
+  const definitions = { IMAGEDEF: 0, PDFDEFINITION: 0 };
 
   it.each(readable.map((f) => [f.path] as const))(
     '%s pastes into an AC1032 drawing that saves with everything pasted',
@@ -94,6 +100,21 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
           layerName(target, e.layer),
         );
       }
+      for (const o of cs.objects?.added ?? []) {
+        if (o.type !== 'IMAGEDEF' && o.type !== 'PDFDEFINITION') continue;
+        definitions[o.type]++;
+        const { reactors: _a, raw: _r, ...read } = back.objects.get(o.handle) ?? {};
+        const { reactors: _b, ...want } = o;
+        expect(read, `${path} ${o.type} ${o.handle}`).toEqual(want);
+      }
+      for (const p of cs.entities?.added ?? []) {
+        const g = p.entity.geom;
+        if ((g.kind !== 'IMAGE' && g.kind !== 'PDFUNDERLAY') || g.definition === undefined)
+          continue;
+        const read = back.entityByHandle(p.entity.handle)!.geom as { definition?: string };
+        expect(read.definition, `${path} ${p.entity.handle}`).toBe(g.definition);
+        expect(back.objects.has(g.definition), `${path} ${g.definition}`).toBe(true);
+      }
       for (const [table, c] of Object.entries(cs.tables ?? {})) {
         for (const r of (c?.added ?? []) as SymbolTableRecord[]) {
           expect(compareHandles(r.handle, seed), `${path} ${r.handle}`).toBeGreaterThanOrEqual(0);
@@ -113,5 +134,8 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
     expect(refusedTotal).toBeGreaterThanOrEqual(0);
     // Most corpus drawings state their units, so most pastes are scaled.
     expect(scaledFiles).toBeGreaterThan(20);
+    // The corpus images and underlays brought their definitions.
+    expect(definitions.IMAGEDEF).toBeGreaterThan(10);
+    expect(definitions.PDFDEFINITION).toBeGreaterThan(0);
   });
 });

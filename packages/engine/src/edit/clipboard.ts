@@ -20,9 +20,15 @@
 // associative with the boundary's copies. Materials and plot style names are kept by name only
 // in Triya (types.ts `TableRecords`), so a pasted object keeps one only where the target has it.
 //
-// What the target cannot take yet is left out when copying, with a reason: images and PDF
-// underlays (their definitions are dictionary objects of the source), viewports (a layout's),
-// external references (their content lives in another file) and what COPY refuses.
+// An image or PDF underlay brings its definition, the IMAGEDEF or PDFDEFINITION naming its file
+// (M2-32 part 2), filed in the target's ACAD_IMAGE_DICT or ACAD_PDFDEFINITIONS; as with records,
+// a definition the target already has under that name is the target's. The file itself stays
+// where it is: the app finds an image or PDF by its name without the folder (M1-21), so a file
+// the user supplied shows in both drawings.
+//
+// What the target cannot take yet is left out when copying, with a reason: viewports (a
+// layout's), external references (their content lives in another file), an image whose
+// definition is missing and what COPY refuses.
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { sub } from '../geom/vec';
@@ -36,8 +42,11 @@ import type {
   Entity,
   EntityInit,
   HatchGeometry,
+  ImageDefinition,
   LayerRecord,
+  NonGraphicalObject,
   ObjectCommon,
+  PdfDefinition,
   SymbolTableRecord,
   TableName,
   TableRecords,
@@ -69,6 +78,8 @@ export interface Clipboard {
   readonly extents?: Box;
   /** The source's `$INSUNITS`, which a paste scales from; absent, unitless. */
   readonly insUnits?: number;
+  /** The IMAGEDEFs and PDFDEFINITIONs the images and underlays show (M2-32 part 2). */
+  readonly objects?: readonly (ImageDefinition | PdfDefinition)[];
 }
 
 export interface ClipboardCopy {
@@ -169,13 +180,24 @@ function references(
   }
 }
 
+/** The definition objects a paste brings, and the dictionary meta field naming where each is filed. */
+const DEFINITIONS = { IMAGEDEF: 'imageDictionary', PDFDEFINITION: 'pdfDictionary' } as const;
+type Definition = ImageDefinition | PdfDefinition;
+
+const isDefinition = (o: NonGraphicalObject | undefined): o is Definition =>
+  o !== undefined && Object.hasOwn(DEFINITIONS, o.type);
+
 /** Why `e` cannot go on the Clipboard, or undefined. */
 function clipboardProblem(model: DocumentModel, e: Entity): string | undefined {
   const g = e.geom;
-  if (g.kind === 'IMAGE' && g.definition !== undefined) {
-    return 'an image cannot be pasted into another drawing yet';
+  if ((g.kind === 'IMAGE' || g.kind === 'PDFUNDERLAY') && g.definition !== undefined) {
+    // The save writes no image without the IMAGEDEF naming its file (export entities.ts).
+    if (!isDefinition(model.objects.get(g.definition))) {
+      return g.kind === 'IMAGE'
+        ? 'an image whose definition is missing cannot be pasted'
+        : 'an underlay whose definition is missing cannot be pasted';
+    }
   }
-  if (g.kind === 'PDFUNDERLAY') return 'an underlay cannot be pasted into another drawing yet';
   if (g.kind === 'VIEWPORT') return 'a viewport cannot be pasted';
   if (g.kind === 'MULTILEADER' && g.block?.attributes?.some((a) => a.definition !== undefined)) {
     // Its attribute values name the content block's ATTDEFs, which the save can only find in
@@ -315,6 +337,7 @@ export function copyToClipboard(
   const blockEntities: EntityInit[] = [];
   const records = new Map<TableName, Map<Handle, ObjectCommon>>();
   const blocks = new Map<Handle, BlockDefinition>();
+  const objects = new Map<Handle, Definition>();
   const pending: Handle[] = [];
   const take = (e: Entity, into: EntityInit[]): void => {
     const problem = clipboardProblem(model, e);
@@ -330,6 +353,12 @@ export function copyToClipboard(
   for (const e of sorted) take(e, entities);
   while (pending.length > 0) {
     const h = pending.pop()!;
+    const o = model.objects.get(h);
+    if (isDefinition(o)) {
+      // Its owner is the source's dictionary, its reactors the source's images.
+      if (!objects.has(h)) objects.set(h, common(model, o));
+      continue;
+    }
     const table = tableOf.get(h);
     if (!table) continue;
     let list = records.get(table);
@@ -357,6 +386,7 @@ export function copyToClipboard(
       blocks: [...blocks.values()],
       ...(extents ? { extents } : {}),
       insUnits: model.meta.insUnits,
+      ...(objects.size > 0 ? { objects: [...objects.values()] } : {}),
     },
     refused,
     unannotated,
@@ -444,6 +474,7 @@ function pasteInto(
       added.push([t, r]);
     }
   }
+  for (const o of clip.objects ?? []) pasteDefinition(b, model, o, map);
   const contents = clip.blockEntities.filter((e) => !kept.has(e.owner));
   // Each object's own handle and those of what it carries (an INSERT's ATTRIBs), these first, as
   // COPY allocates them.
@@ -534,6 +565,35 @@ function pasteInto(
   const ids = top.map((e) => e.id);
   if (t) transformObjects(b, model, ids, t);
   return { ids, refused: new Map(), unannotated: 0 };
+}
+
+/**
+ * The target's definition of `o`'s type and name (case aside), or `o` filed as a new one in the
+ * target's dictionary for its type: the one `meta` names, the one the target's definitions of
+ * that type are filed in, or a new dictionary the save creates under a new handle (export
+ * image-objects.ts). Maps `o`'s handle to the one the pasted objects show.
+ */
+function pasteDefinition(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  o: Definition,
+  map: Map<Handle, Handle>,
+): void {
+  const name = o.name.toUpperCase();
+  let owner: Handle | undefined = model.meta[DEFINITIONS[o.type]];
+  // As the change leaves them: a definition an earlier paste of the same change filed counts.
+  for (const d of b.objects()) {
+    if (d.type !== o.type) continue;
+    if ((d as Definition).name.toUpperCase() === name) {
+      map.set(o.handle, d.handle);
+      return;
+    }
+    owner ??= d.owner;
+  }
+  owner ??= b.allocateHandle();
+  const handle = b.allocateHandle();
+  map.set(o.handle, handle);
+  b.adoptObject({ ...o, handle, owner });
 }
 
 /**
