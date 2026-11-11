@@ -250,11 +250,15 @@ function hatchChange(
       if (g.gradient) return { refuse: GRADIENT };
       if (name.toUpperCase() === g.pattern.toUpperCase()) return { skip: true };
       if (name.toUpperCase() === 'SOLID') {
+        // DXF states a hatch's angle and scale (52, 41) for pattern fills only, so a solid fill
+        // has the reader's 0 and 0 (the OCS angle 0 is π in the WCS on a −Z plane).
         return geomPatch({
           ...g,
           pattern: 'SOLID',
           solid: true,
           patternType: 1,
+          patternAngle: (g.normal?.z ?? 1) < 0 ? Math.PI : 0,
+          patternScale: 0,
           double: false,
           patternLines: [],
         });
