@@ -18,6 +18,9 @@
 // hidden, and the raster is cached and delivered apart from the plain page's, under the
 // request's `underlayKey`.
 //
+// A plot to SVG or PNG (M2-39) asks for a page through `plotPage`: any part of it drawn at the
+// plot's resolution, in turn with the screen's pages and not cached.
+//
 // Files are matched to PDFDEFINITIONs by file name without its folder, ignoring case, as the
 // definition's path is the attaching computer's (`..\plans\plan.pdf`). Finding files on the
 // user's disk and the Missing References panel are M1-21.

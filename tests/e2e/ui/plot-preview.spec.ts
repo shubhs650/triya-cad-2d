@@ -3,16 +3,17 @@
 // AutoCAD's preview toolbar and shortcut menu; Esc or Enter leaves it. The roadmap's acceptance:
 // the preview pixel-matches the PDF rasterised. Each test reads the sheet the preview drew (its
 // canvas is the page's own) and draws the PDF its Plot button writes with pdf.js over the same
-// paper millimetres at the same pixel size, as a PDF viewer would, then compares the two.
-import { readFileSync } from 'node:fs';
+// paper millimetres at the same pixel size, as a PDF viewer would (`rasterisePdf`), then compares
+// the two.
 import path from 'node:path';
-import { expect, test, type BrowserContext, type Download, type Page } from '@playwright/test';
+import { expect, test, type Page } from '@playwright/test';
 import {
   compareImages,
   decodePng,
   type Raster,
 } from '../../../packages/testkit/src/fidelity/compare';
 import { DWG, activeCanvas, expectShown, ink, openWithDrop, openWithPicker } from '../app/page';
+import { rasterisePdf } from '../app/pdf-raster';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -23,9 +24,7 @@ test.afterAll(async () => {
   await app.close();
 });
 
-const ROOT = path.join(import.meta.dirname, '../../..');
-const PDFJS = path.join(ROOT, 'apps/web/node_modules/pdfjs-dist/build');
-const UNDERLAY = path.join(ROOT, 'packages/testkit/fixtures/underlay');
+const UNDERLAY = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
 /** Pixel for pixel: the preview is pdf.js drawing the same PDF, composited on the white sheet. */
 const TOLERANCE = { pixelMismatch: 0.05, ssim: 0.995 };
 
@@ -62,75 +61,6 @@ function onSheet(r: Raster): Raster {
   for (let row = 0; row < height; row++)
     data.set(r.data.subarray(row * r.width * 4, (row * r.width + width) * 4), row * width * 4);
   return { width, height, data };
-}
-
-const HARNESS = `<!doctype html><meta charset="utf-8"><title>pdf</title>
-<script type="module">
-  import * as lib from 'http://pdf.test/pdf.min.mjs';
-  lib.GlobalWorkerOptions.workerSrc = 'http://pdf.test/pdf.worker.min.mjs';
-  // The paper millimetres [x, y, w, h] from the page's top-left corner as width × height pixels.
-  window.rasterise = async (data, region, width, height) => {
-    const doc = await lib.getDocument({ data: new Uint8Array(data), useWasm: false }).promise;
-    const page = await doc.getPage(1);
-    const viewport = page.getViewport({ scale: 1 });
-    const pt = 72 / 25.4;
-    const [x, y, w, h] = region;
-    const canvas = document.createElement('canvas');
-    canvas.width = width;
-    canvas.height = height;
-    const ctx = canvas.getContext('2d');
-    ctx.fillStyle = '#fff';
-    ctx.fillRect(0, 0, width, height);
-    const sx = width / (w * pt);
-    const sy = height / (h * pt);
-    await page.render({
-      canvas: null,
-      canvasContext: ctx,
-      viewport,
-      transform: [sx, 0, 0, sy, -x * pt * sx, -y * pt * sy],
-      background: '#fff',
-    }).promise;
-    return canvas.toDataURL('image/png');
-  };
-  document.title = 'ready';
-</script>`;
-
-/** The downloaded PDF drawn by pdf.js over `region` at the preview's pixel size. */
-async function rasterisePdf(
-  context: BrowserContext,
-  d: Download,
-  region: number[],
-  size: { width: number; height: number },
-): Promise<Raster> {
-  const bytes = readFileSync((await d.path())!);
-  expect(bytes.subarray(0, 8).toString()).toBe('%PDF-1.7');
-  const page = await context.newPage();
-  await page.route('http://pdf.test/**', (route) => {
-    const name = new URL(route.request().url()).pathname.slice(1);
-    if (name === 'index.html') return route.fulfill({ contentType: 'text/html', body: HARNESS });
-    return route.fulfill({
-      contentType: 'text/javascript',
-      body: readFileSync(path.join(PDFJS, name)),
-    });
-  });
-  await page.goto('http://pdf.test/index.html');
-  await expect(page).toHaveTitle('ready');
-  const png = await page.evaluate(
-    ([data, r, w, h]) =>
-      (
-        window as unknown as {
-          rasterise(
-            d: readonly number[],
-            r: readonly number[],
-            w: number,
-            h: number,
-          ): Promise<string>;
-        }
-      ).rasterise(data, r, w, h),
-    [[...bytes], region, size.width, size.height] as const,
-  );
-  await page.close();
-  return decodePng(Buffer.from(png.split(',')[1]!, 'base64'));
 }
 
 test('Preview… shows the plot as its PDF rasterises, and its Plot button plots', async ({
@@ -258,7 +188,7 @@ test('PREVIEW shows a PDF underlay’s page as plotted; zoom, pan, the menu, Esc
   await expect(menu).toBeHidden();
   await expect(sheet(page)).toHaveAttribute('data-region', first.region.join(' '));
   const again = await previewed(page);
-  // The underlay's own page content, as the PDF plots it (an SVG plot draws only its boundary).
+  // The underlay's own page content, as the PDF plots it.
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     preview(page).getByRole('button', { name: 'Plot', exact: true }).click(),

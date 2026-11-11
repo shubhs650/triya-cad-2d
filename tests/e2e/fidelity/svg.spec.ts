@@ -2,8 +2,9 @@
 // (packages/testkit/src/pdf/sheet.ts `sheetSvgs`, kept equal to the committed files by
 // sheet.test.ts) drawn by Chromium at 96 dpi must match the reviewed golden image of the same
 // page of the PDF (pdf.spec.ts), at the new-file tolerance: the two writers plot the same items
-// the same way. Page 8's PDF underlays plot their pages' content in a PDF only (an SVG plot draws
-// their clip boundary, a leftover on the roadmap), so it is compared with its own golden image.
+// the same way. Page 8's SVG is written in Node, where no pdf.js draws its PDF underlays' pages
+// (the app's SVG plot draws them, M2-39: tests/e2e/ui/plot.spec.ts), so it plots their clip
+// boundaries and is compared with its own golden image.
 // Each SVG is also checked for Inkscape layers named after the drawing's layers.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
