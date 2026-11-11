@@ -2,7 +2,10 @@
 // engine (`regenerateDimension`) and the renderer's text measuring over the bundled fonts, as
 // the app runs them: DIMLINEAR (horizontal, then vertical), DIMALIGNED, DIMCONTINUE twice,
 // DIMBASELINE, DIMRADIUS and DIMDIAMETER on a circle drawn for them, DIMANGULAR by three points,
-// and a grip drag of the first dimension's text. The drawing is saved as AC1032 DXF (DEC-047),
+// and a grip drag of the first dimension's text; M2-31's DIMLINEAR on that circle, DIMANGULAR's
+// Quadrant with the text outside the angle, DIMCONTINUE from it and from an ordinate dimension,
+// and the header's DIMVARs that differ from the current style as each new dimension's DSTYLE
+// overrides, kept by the save. The drawing is saved as AC1032 DXF (DEC-047),
 // read back by acad-ts and mapped: each dimension comes back where it was made, with its `*D`
 // block, and the health check (stored block against what the engine draws, M2-10) passes on it.
 // With TRIYA_DXF_AUDIT_DIR set the save goes to the ezdxf audit as the file's `dimension` save.
@@ -23,6 +26,8 @@ import {
   type Entity,
   type ViewHost,
   type ViewReply,
+  currentDimStyle,
+  dstyleOverrides,
 } from '@triya/engine';
 import { aciOfTrueColor, documentInit, readCadDocument } from '@triya/io';
 import { textMeasure } from '@triya/render';
@@ -37,6 +42,8 @@ const manifest = loadManifest(`${corpusDir}corpus.json`);
 const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
 const PER_FILE_BUDGET_MS = 30_000;
 const CIRCLE = { center: { x: 500, y: 0 }, radius: 20 };
+/** The ordinate dimension DIMCONTINUE goes on from (M2-31), picked by its leader end. */
+const ORDINATE_END = { x: 50, y: -450 };
 
 /** As the health gate: a DXF DIMSTYLE's ACI stands for its block's true colour. */
 const colors = (g: Color, s: Color): boolean =>
@@ -65,6 +72,7 @@ describe('dimension commands on the public corpus (M2-11)', () => {
   let saved = 0;
   const styleless: string[] = [];
   let made = 0;
+  const overridden = new Set<string>();
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves the dimensions the commands make, which read back healthy',
@@ -88,12 +96,33 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         styleless.push(f.path);
         return;
       }
-      // The circle DIMRADIUS and DIMDIAMETER pick.
+      // The circle DIMRADIUS, DIMDIAMETER and DIMLINEAR pick, and an ordinate dimension.
       const b = new ChangeSetBuilder(model);
       const circle = b.addEntity({
         owner: space,
         layer: currentLayer(model),
         geom: { kind: 'CIRCLE', ...CIRCLE },
+      });
+      const ordinate = b.addEntity({
+        owner: space,
+        layer: currentLayer(model),
+        geom: {
+          kind: 'DIMENSION',
+          dimType: 'ordinate',
+          style: currentDimStyle(model)!.handle,
+          axis: 'x',
+          definitionPoint: { x: 0, y: -400 },
+          feature: { x: 50, y: -400 },
+          leaderEnd: ORDINATE_END,
+          textPosition: { x: 50, y: -455 },
+          textUserPositioned: false,
+          text: '',
+          textRotation: 0,
+          horizontalDirection: 0,
+          attachment: 5,
+          lineSpacingStyle: 1,
+          lineSpacing: 1,
+        },
       });
       model.apply(b.build());
       const before = new Set([...model.entities()].map((e) => e.id));
@@ -107,6 +136,8 @@ describe('dimension commands on the public corpus (M2-11)', () => {
           if (r.op === 'pick') {
             const d = Math.hypot(r.point.x - CIRCLE.center.x, r.point.y - CIRCLE.center.y);
             const ids = Math.abs(d - CIRCLE.radius) < 1 ? [circle.id] : [];
+            const o = Math.hypot(r.point.x - ORDINATE_END.x, r.point.y - ORDINATE_END.y);
+            if (o < 1e-6) ids.push(ordinate.id);
             // A dimension's text, for its grips.
             for (const e of model.entities()) {
               if (before.has(e.id) || !('dimType' in e.geom)) continue;
@@ -125,6 +156,9 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         space: () => space,
         dimensions: regenerateDimension,
       });
+      // The ordinate dimension drawn into a block of its own, as a save gives it one.
+      const blocks = await bus.blocklessDimensionBlocks();
+      if (blocks) model.apply(blocks);
       await bus.script(['DIMLINEAR', '0,0', '100,40', '50,80']);
       await bus.script(['DIMLINEAR', '0,0', '100,40', '150,20']);
       await bus.script(['DIMALIGNED', '0,0', '100,40', '-10,30']);
@@ -133,6 +167,14 @@ describe('dimension commands on the public corpus (M2-11)', () => {
       await bus.script(['DIMRADIUS', '520,0', '540,30']);
       await bus.script(['DIMDIAMETER', '500,20', '500,-60']);
       await bus.script(['DIMANGULAR', '', '0,-200', '100,-200', '0,-100', '30,-170']);
+      await bus.script(['DIMLINEAR', '']);
+      await bus.pick({ x: 500, y: 20 });
+      await bus.submit('500,60');
+      await bus.script(['DIMANGULAR', '', '0,-300', '100,-300', '0,-200', 'Q', '30,-270']);
+      await bus.script(['-40,-330', 'DIMCONTINUE', '-100,-300', '', '']);
+      await bus.script(['DIMCONTINUE', 'S']);
+      await bus.pick(ORDINATE_END);
+      await bus.script(['120,-410', '', '']);
       expect(bus.command).toBeUndefined();
       const added = () =>
         [...model.entities()].filter((e) => !before.has(e.id) && e.owner === space);
@@ -146,7 +188,13 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         'radius',
         'diameter',
         'angular3pt',
+        'linear',
+        'angular3pt',
+        'angular3pt',
+        'ordinate',
       ]);
+      const quadrant = added()[10]!.geom as DimensionGeometry;
+      expect(quadrant.textUserPositioned).toBe(true);
       // The first dimension's text dragged by its grip: it stays where it is put.
       const first = added()[0]!;
       const text = (first.geom as DimensionGeometry).textPosition;
@@ -172,6 +220,11 @@ describe('dimension commands on the public corpus (M2-11)', () => {
         const r = back.entityByHandle(e.handle);
         expect(r, `${f.path} ${e.handle}`).toBeDefined();
         expect(kept(r!), `${f.path} ${e.handle}`).toEqual(kept(e));
+        const overrides = dstyleOverrides(e.xdata, model);
+        expect(rounded(dstyleOverrides(r!.xdata, back)), `${f.path} ${e.handle}`).toEqual(
+          rounded(overrides),
+        );
+        if (Object.keys(overrides).length > 0) overridden.add(f.path);
         const health = dimensionHealth(r!, back, again, colors);
         expect(health?.problems ?? ['no health'], `${f.path} ${e.handle}`).toEqual([]);
       }
@@ -184,6 +237,8 @@ describe('dimension commands on the public corpus (M2-11)', () => {
   it('made dimensions on every readable file with a dimension style', () => {
     expect(saved + styleless.length).toBe(readable.length);
     expect(saved).toBeGreaterThan(readable.length / 2);
-    expect(made).toBe(saved * 9);
+    expect(made).toBe(saved * 13);
+    // Drawings whose header DIMVARs differ from their current style (ezdxf's minimal one).
+    expect(overridden.size).toBeGreaterThan(0);
   });
 });
