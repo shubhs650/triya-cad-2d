@@ -44,7 +44,17 @@ jobs:
       - run: pnpm changelog:check
       # The PDF writer's test plot passes qpdf's structural check (M2-16; sheet.test.ts keeps the
       # committed file equal to what the writer writes).
-      - run: sudo apt-get update && sudo apt-get install -y --no-install-recommends qpdf
+      # From 2026-11-11 the runners could not resolve security.ubuntu.com, where the image takes
+      # qpdf from; the archive mirror the runner already uses carries the same -security pocket,
+      # so a failed install retries from it. The check below still runs on the qpdf installed.
+      - run: |
+          sudo apt-get update || true
+          if ! sudo apt-get install -y --no-install-recommends qpdf; then
+            sudo sed -i -E 's#https?://security\.ubuntu\.com#http://azure.archive.ubuntu.com#g' \
+              /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+            sudo apt-get update
+            sudo apt-get install -y --no-install-recommends qpdf
+          fi
       - run: qpdf --check packages/testkit/fixtures/pdf/plot-sheet.pdf
       - uses: actions/setup-python@v5
         with: { python-version: '3.13' }
