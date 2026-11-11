@@ -958,3 +958,64 @@ describe("the drawing's dimension health, for the Health palette (M2-30 part 3)"
     expect(dimstyleAci({ kind: 'aci', index: 1 }, { kind: 'aci', index: 1 })).toBe(false);
   });
 });
+
+describe('dimension command leftovers (M2-31)', () => {
+  const arcs = (ps: DimPart[]) => of(ps, 'ARC') as Extract<EntityGeometry, { kind: 'ARC' }>[];
+  const angle3 = (extra: Partial<Extract<DimensionGeometry, { dimType: 'angular3pt' }>>) =>
+    ({
+      ...common,
+      dimType: 'angular3pt',
+      vertex: { x: 0, y: 0 },
+      first: { x: 10, y: 0 },
+      second: { x: 0, y: 10 },
+      definitionPoint: { x: 14.142135623730951, y: 14.142135623730951 },
+      textPosition: { x: 25, y: 25 },
+      ...extra,
+    }) as DimensionGeometry;
+
+  it('extends the dimension arc past its nearer end to text the user put outside the angle', () => {
+    // DIMANGULAR Quadrant: "the dimension line is extended past the extension line when the
+    // dimension text is positioned outside of the angular dimension".
+    const at = { x: -19.4, y: 5 };
+    const ps = parts(angle3({ textPosition: at, textUserPositioned: true }));
+    const extension = arcs(ps).find((a) => Math.abs(a.startAngle - Math.PI / 2) < 1e-9);
+    expect(extension).toBeDefined();
+    close(extension!.radius, 20);
+    // On towards the text, stopping at its box.
+    expect(extension!.endAngle).toBeGreaterThan(Math.PI / 2 + 0.5);
+    expect(extension!.endAngle).toBeLessThan(Math.atan2(at.y, at.x));
+    // Before the start when that is nearer.
+    const below = parts(angle3({ textPosition: { x: 17, y: -10.6 }, textUserPositioned: true }));
+    const back = arcs(below).find(
+      (a) => Math.abs(a.endAngle - 2 * Math.PI) < 1e-9 || Math.abs(a.endAngle) < 1e-9,
+    );
+    expect(back).toBeDefined();
+  });
+
+  it('draws no extension for text inside the angle, or placed by the engine', () => {
+    const within = (ps: DimPart[]) =>
+      arcs(ps).every((a) => a.startAngle >= -1e-9 && a.endAngle <= Math.PI / 2 + 1e-9);
+    expect(
+      within(parts(angle3({ textPosition: { x: 14, y: 14 }, textUserPositioned: true }))),
+    ).toBe(true);
+    expect(within(parts(angle3({ textPosition: { x: -19.4, y: 5 } })))).toBe(true);
+  });
+
+  it('reads a DIMDSEP override as the character code AutoCAD writes', () => {
+    const geom = linear({ second: { x: 12.5, y: 0 }, definitionPoint: { x: 12.5, y: 20 } });
+    const xdata = [
+      {
+        appId: '12',
+        values: [
+          { code: 1000, value: 'DSTYLE' },
+          { code: 1002, value: '{' },
+          { code: 1070, value: 278 },
+          { code: 1070, value: 44 },
+          { code: 1002, value: '}' },
+        ],
+      },
+    ];
+    const ps = dimensionParts({ geom, xdata }, model(), measure)!;
+    expect((of(ps, 'MTEXT')[0] as { contents: string }).contents).toContain('12,5');
+  });
+});

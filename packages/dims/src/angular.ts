@@ -13,6 +13,10 @@
 // - The text's middle is DXF 11 (the arc's middle, outwards by DIMTAD, when the engine places
 //   it); aligned text runs along the arc's tangent there, upright. The
 //   arc stays out of the text's box widened by DIMGAP.
+// - Text the user put outside the angle (DXF 70 bit 128, as DIMANGULAR's Quadrant leaves it)
+//   has the arc carried on to it past its nearer end: "the dimension line is extended past
+//   the extension line when the dimension text is positioned outside of the angular
+//   dimension" (AutoCAD 2024 Help, "DIMANGULAR (Command)", Quadrant; M2-31).
 
 import type { AnnotationTables, DimensionGeometry, Handle, TextMeasure, Vec2 } from '@triya/engine';
 import { angularText, textAlign } from './format';
@@ -217,6 +221,8 @@ export function angularParts(
   const label = angularText(g.text, sweep, s.vars);
   const centred = s.tad === 0 && s.tvp === 0;
   let text: ReturnType<typeof textGeometry> | undefined;
+  /** Where user-placed text outside the angle is, as a sweep from the start. */
+  let outside: number | undefined;
   let width = 0;
   const ticks = s.tsz > 0;
   let placement = { textInside: true, arrowsInside: true };
@@ -239,6 +245,7 @@ export function angularParts(
         );
     const ta = normAngle(angleOf(sub(at, c)) - a0);
     const inside = ta <= sweep;
+    if (keepText && !inside) outside = ta;
     const horizontal = inside ? s.tih : s.toh;
     const rotation =
       g.textRotation !== 0
@@ -253,6 +260,14 @@ export function angularParts(
   // Arrowheads and the arc.
   const [blkStart, blkEnd] = f.ends[0].first ? [s.blk1, s.blk2] : [s.blk2, s.blk1];
   out.push(...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [blkStart, blkEnd], s, model));
+  if (outside !== undefined) {
+    // On from the end counter-clockwise, or back from the start, whichever is nearer.
+    const [from, to] =
+      outside - sweep <= 2 * Math.PI - outside
+        ? [a0 + sweep, a0 + outside]
+        : [a0 + outside, a0 + 2 * Math.PI];
+    for (const [p, q] of clipArc(c, r, from, to, box)) out.push(arcPart(c, r, p, q, s.dimLine));
+  }
   if (text) out.push({ ...s.text, geom: text, textPosition: text.position });
   if (g.dimType === 'angular') {
     out.push(

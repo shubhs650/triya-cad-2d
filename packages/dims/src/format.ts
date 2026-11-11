@@ -38,6 +38,13 @@ import { num, on, str } from './style';
 type Vars = Readonly<Record<string, DimVarValue>>;
 
 /** Leading and trailing decimal zeros dropped as asked. */
+/**
+ * DIMDSEP: a DIMSTYLE holds the character (DXF 278 is a string in acad-ts's map), a DSTYLE
+ * override and the header its character code (1070), as AutoCAD writes them.
+ */
+const separator = (v: DimVarValue | undefined): string =>
+  (typeof v === 'number' && v > 0 ? String.fromCharCode(v) : str(v)) || '.';
+
 function suppressZeros(text: string, leading: boolean, trailing: boolean): string {
   let t = text;
   if (trailing && t.includes('.')) t = t.replace(/0+$/, '').replace(/\.$/, '');
@@ -82,7 +89,7 @@ function inchesAndFraction(inches: number, vars: Vars): { whole: number; frac: s
 function feetInches(value: number, vars: Vars, architectural: boolean): string {
   const zin = num(vars.DIMZIN);
   const mode = zin & 3;
-  const sep = str(vars.DIMDSEP) || '.';
+  const sep = separator(vars.DIMDSEP);
   const negative = value < 0;
   const v = Math.abs(value);
   let feet = Math.floor(v / 12);
@@ -125,7 +132,7 @@ export function formatLinear(measurement: number, vars: Vars): string {
   if (rnd > 0) v = Math.round(v / rnd) * rnd;
   const zin = num(vars.DIMZIN);
   const places = num(vars.DIMDEC, 4);
-  const sep = str(vars.DIMDSEP) || '.';
+  const sep = separator(vars.DIMDSEP);
   switch (num(vars.DIMLUNIT, 2)) {
     case 1: {
       const [mant, exp] = v.toExponential(Math.min(8, Math.max(0, places))).split('e');
@@ -156,7 +163,7 @@ export function formatAngle(radians: number, vars: Vars): string {
   const azin = num(vars.DIMAZIN);
   const leading = (azin & 1) !== 0;
   const trailing = (azin & 2) !== 0;
-  const sep = str(vars.DIMDSEP) || '.';
+  const sep = separator(vars.DIMDSEP);
   const deg = (radians * 180) / Math.PI;
   switch (num(vars.DIMAUNIT)) {
     case 1: {

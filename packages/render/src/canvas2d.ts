@@ -761,6 +761,7 @@ export class Canvas2DRenderer implements Renderer {
         ltScale: 1,
         visible: true,
         geom: unblocked(a.geom),
+        ...(a.xdata && { xdata: a.xdata }),
       };
       const entry = this.#entryOf(e, ADDING, this.#model, this.#blockSource);
       if (entry) stretched.push(entry);

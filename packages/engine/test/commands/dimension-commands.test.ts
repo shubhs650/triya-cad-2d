@@ -19,13 +19,24 @@ import {
   type DimensionRegenerator,
   type Entity,
   type EntityGeometry,
+  type EntityInit,
+  type HeaderValue,
   type StringPrompt,
+  type TextStyleRecord,
   type ViewReply,
   type ViewRequest,
 } from '../../src/index';
-import { LAYER_WALLS, MODEL_SPACE, entityInit, sampleInit, snapshot } from '../model/fixtures';
+import {
+  LAYER_WALLS,
+  MODEL_SPACE,
+  entityInit,
+  record,
+  sampleInit,
+  snapshot,
+} from '../model/fixtures';
 
 const STYLE = '27';
+const ACAD = '12';
 const ARC = '25';
 
 const standard = (vars: DimStyleRecord['vars'] = {}): DimStyleRecord => ({
@@ -68,6 +79,11 @@ function measured(g: DimensionGeometry): string {
         g.definitionPoint.x - g.line2Start.x,
       );
       return `${Math.abs(deg(b - a))}°`;
+    }
+    case 'ordinate': {
+      const d =
+        g.axis === 'x' ? g.feature.x - g.definitionPoint.x : g.feature.y - g.definitionPoint.y;
+      return String(Math.abs(d));
     }
     default:
       return '?';
@@ -116,14 +132,28 @@ function toSegment(
 }
 
 /** A test canvas: picks find model-space objects within 0.5; every character is 1 wide. */
-function setup(o: { styles?: DimStyleRecord[]; dimensions?: boolean } = {}) {
+function setup(
+  o: {
+    styles?: DimStyleRecord[];
+    dimensions?: boolean;
+    header?: [string, HeaderValue][];
+    entities?: EntityInit[];
+    textStyles?: TextStyleRecord[];
+  } = {},
+) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
-    header: new Map([...init.header!, ['$DIMSTYLE', 'Standard']]),
-    tables: { ...init.tables, dimStyles: o.styles ?? [standard()] },
+    header: new Map([...init.header!, ['$DIMSTYLE', 'Standard'], ...(o.header ?? [])]),
+    tables: {
+      ...init.tables,
+      appIds: [record(ACAD, 'ACAD')],
+      dimStyles: o.styles ?? [standard()],
+      ...(o.textStyles && { textStyles: o.textStyles }),
+    },
     entities: [
       ...(init.entities ?? []),
+      ...(o.entities ?? []),
       entityInit(ARC, {
         kind: 'ARC',
         center: { x: 50, y: 0 },
@@ -272,10 +302,10 @@ describe('DIMLINEAR', () => {
     await s.bus.submit('55,-5');
     expect(s.dim<'linear'>().first).toEqual({ x: 60, y: 0 });
     expect(s.dim<'linear'>().second.x).toBeCloseTo(55, 12);
-    // A circle is not taken by DIMLINEAR.
+    // A dimension is not taken by DIMLINEAR.
     await s.bus.script(['DIMLINEAR', '']);
-    await s.bus.pick({ x: 7, y: 5 });
-    expect(said(s.bus)).toMatch(/Object selected is not a line, arc or polyline segment\./);
+    await s.bus.pick({ x: 10, y: 25 });
+    expect(said(s.bus)).toMatch(/Object selected is not a line, arc, circle or polyline segment\./);
   });
 
   it('refuses two origins at one point', async () => {
@@ -415,7 +445,9 @@ describe('DIMANGULAR', () => {
     await s.bus.pick({ x: 5, y: 0 });
     expect(s.bus.promptText).toBe('Select second line:');
     await s.bus.pick({ x: 0, y: 5 });
-    expect(s.bus.promptText).toBe('Specify dimension arc line location or [Mtext/Text/Angle]:');
+    expect(s.bus.promptText).toBe(
+      'Specify dimension arc line location or [Mtext/Text/Angle/Quadrant]:',
+    );
     await s.bus.submit('3,3');
     expect(s.dim<'angular'>()).toMatchObject({
       dimType: 'angular',
@@ -559,7 +591,7 @@ describe('DIMCONTINUE and DIMBASELINE', () => {
     await s.bus.script(['DIMLINEAR', '0,0', '10,0', '5,5', 'ERASE', 'L', '', 'DIMCONTINUE']);
     expect(s.bus.promptText).toBe('Select continued dimension:');
     await s.bus.pick({ x: 5, y: 0 });
-    expect(s.bus.history).toContain('Dimension must be linear or angular.');
+    expect(s.bus.history).toContain('Dimension must be linear, ordinate, or angular.');
   });
 
   it('an angular chain goes round the vertex', async () => {
@@ -800,7 +832,7 @@ describe('dimension commands: other answers', () => {
     await s.bus.submit('DIMCONTINUE');
     expect(s.bus.promptText).toBe('Select continued dimension:');
     await s.bus.pick({ x: 10, y: 5 });
-    expect(s.bus.history).toContain('Dimension must be linear or angular.');
+    expect(s.bus.history).toContain('Dimension must be linear, ordinate, or angular.');
     await s.bus.cancel();
     await s.bus.script(['DIMLINEAR', '0,0', '10,0', '5,5', 'DIMCONTINUE', 'S']);
     // Picked by its text, nearer its second extension line: a point there measures nothing.
@@ -818,5 +850,293 @@ describe('dimension commands: other answers', () => {
     await s.bus.script(['0,-10', '', '']);
     const g = s.dim<'angular3pt'>();
     expect(g).toMatchObject({ first: { x: 0, y: 10 }, second: { x: 0, y: -10 } });
+  });
+});
+
+// M2-31: the options and inputs M2-11 left.
+describe('DIMLINEAR on a circle (M2-31)', () => {
+  // The fixture's circle: centre 5,5, radius 2.
+  it('measures its diameter, horizontal above or below it and vertical beside it', async () => {
+    const s = setup();
+    await s.bus.script(['DIMLINEAR', '']);
+    await s.bus.pick({ x: 5, y: 7 });
+    expect(s.bus.promptText).toBe(
+      'Specify dimension line location or [Mtext/Text/Angle/Horizontal/Vertical/Rotated]:',
+    );
+    await s.bus.submit('5,10');
+    expect(s.dim<'linear'>()).toMatchObject({
+      first: { x: 3, y: 5 },
+      second: { x: 7, y: 5 },
+      rotation: 0,
+      definitionPoint: { x: 7, y: 10 },
+    });
+    expect(s.bus.history).toContain('Dimension text = 4');
+    await s.bus.script(['DIMLINEAR', '']);
+    await s.bus.pick({ x: 5, y: 7 });
+    await s.bus.submit('10,4');
+    expect(s.dim<'linear'>()).toMatchObject({
+      first: { x: 5, y: 3 },
+      second: { x: 5, y: 7 },
+      rotation: Math.PI / 2,
+      definitionPoint: { x: 10, y: 7 },
+    });
+  });
+
+  it('inside its box, the quadrant picked says which: north or south horizontal, east or west vertical', async () => {
+    const s = setup();
+    await s.bus.script(['DIMLINEAR', '']);
+    await s.bus.pick({ x: 5, y: 3 });
+    await s.bus.submit('5.5,5');
+    expect(s.dim<'linear'>().rotation).toBe(0);
+    await s.bus.script(['DIMLINEAR', '']);
+    await s.bus.pick({ x: 3, y: 5 });
+    await s.bus.submit('5.5,5');
+    expect(s.dim<'linear'>().rotation).toBe(Math.PI / 2);
+  });
+
+  it('Rotated: the diameter across the dimension line, the drag the same', async () => {
+    const s = setup();
+    await s.bus.script(['DIMLINEAR', '']);
+    await s.bus.pick({ x: 7, y: 5 });
+    await s.bus.script(['R', '90']);
+    const m = dragMotion(s.bus.prompt!.drag!, { x: 12, y: 0 })!;
+    expect(m.adding?.geom).toMatchObject({ first: { x: 5, y: 3 }, second: { x: 5, y: 7 } });
+    await s.bus.submit('12,0');
+    const g = s.dim<'linear'>();
+    expect(g.first.x).toBeCloseTo(5, 12);
+    expect(g.first.y).toBeCloseTo(3, 12);
+    expect(g.second.y).toBeCloseTo(7, 12);
+  });
+});
+
+describe('DIMANGULAR Quadrant (M2-31)', () => {
+  it('two lines: the quadrant picked is measured; a location outside it holds the text only', async () => {
+    const s = setup();
+    await s.bus.script(['DIMANGULAR']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick({ x: 0, y: 5 });
+    expect(s.bus.promptText).toBe(
+      'Specify dimension arc line location or [Mtext/Text/Angle/Quadrant]:',
+    );
+    await s.bus.submit('Q');
+    expect(s.bus.promptText).toBe('Specify quadrant:');
+    await s.bus.submit('3,3');
+    expect(s.bus.promptText).toBe(
+      'Specify dimension arc line location or [Mtext/Text/Angle/Quadrant]:',
+    );
+    // Dragged outside the quadrant, the dimension keeps measuring it.
+    const m = dragMotion(s.bus.prompt!.drag!, { x: -4, y: 4 })!;
+    expect((m.adding!.geom as DimensionGeometry & { dimType: 'angular' }).arcPoint.x).toBeCloseTo(
+      4,
+      12,
+    );
+    await s.bus.submit('-4,4');
+    const g = s.dim<'angular'>();
+    expect(g.arcPoint.x).toBeCloseTo(4, 12);
+    expect(g.arcPoint.y).toBeCloseTo(4, 12);
+    expect(g).toMatchObject({ textPosition: { x: -4, y: 4 }, textUserPositioned: true });
+    expect(s.bus.history).toContain('Dimension text = 90°');
+  });
+
+  it('a location inside the quadrant places the dimension as without it', async () => {
+    const s = setup();
+    await s.bus.script(['DIMANGULAR']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick({ x: 0, y: 5 });
+    await s.bus.script(['Q', '3,3', '2,1']);
+    expect(s.dim<'angular'>()).toMatchObject({
+      arcPoint: { x: 2, y: 1 },
+      textUserPositioned: false,
+    });
+  });
+
+  it('three points: the side of the angle the quadrant is on', async () => {
+    const s = setup();
+    await s.bus.script(['DIMANGULAR', '', '0,0', '10,0', '0,10', 'Q', '-5,-5', '3,3']);
+    const g = s.dim<'angular3pt'>();
+    expect(g.definitionPoint.x).toBeCloseTo(-3, 12);
+    expect(g.definitionPoint.y).toBeCloseTo(-3, 12);
+    expect(g).toMatchObject({ textPosition: { x: 3, y: 3 }, textUserPositioned: true });
+  });
+
+  it('is offered for angular dimensions only', async () => {
+    const s = setup();
+    await s.bus.script(['DIMRADIUS']);
+    await s.bus.pick({ x: 7, y: 5 });
+    expect(s.bus.promptText).toBe('Specify dimension line location or [Mtext/Text/Angle]:');
+  });
+});
+
+describe('DIMCONTINUE and DIMBASELINE from a two-line angular dimension (M2-31)', () => {
+  it('go round the lines’ meeting point from the second line, or the first', async () => {
+    const s = setup({ styles: [standard({ DIMDLI: 1 })] });
+    await s.bus.script(['DIMANGULAR']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick({ x: 0, y: 5 });
+    await s.bus.script(['3,3', 'DIMCONTINUE', '-10,0', '', '']);
+    const c = s.dim<'angular3pt'>();
+    expect(c).toMatchObject({
+      vertex: { x: 0, y: 0 },
+      first: { x: 0, y: 10 },
+      second: { x: -10, y: 0 },
+    });
+    expect(c.definitionPoint.x).toBeCloseTo(-3, 12);
+    expect(c.definitionPoint.y).toBeCloseTo(3, 12);
+    // Picked by its arc point, as near its first line as its second: from the first.
+    await s.bus.script(['DIMBASELINE', 'S']);
+    await s.bus.pick({ x: 3, y: 3 });
+    await s.bus.script(['-10,10', '', '']);
+    const b = s.dim<'angular3pt'>();
+    expect(b).toMatchObject({
+      vertex: { x: 0, y: 0 },
+      first: { x: 10, y: 0 },
+      second: { x: -10, y: 10 },
+    });
+    expect(Math.hypot(b.definitionPoint.x, b.definitionPoint.y)).toBeCloseTo(
+      Math.hypot(3, 3) + 1,
+      12,
+    );
+  });
+
+  it('a two-line angular dimension made last is gone on from', async () => {
+    const s = setup();
+    await s.bus.script(['DIMANGULAR']);
+    await s.bus.pick({ x: 5, y: 0 });
+    await s.bus.pick({ x: 0, y: 5 });
+    await s.bus.script(['3,3', 'DIMCONTINUE']);
+    expect(s.bus.promptText).toBe(
+      'Specify a second extension line origin or [Undo/Select] <Select>:',
+    );
+  });
+});
+
+describe('DIMCONTINUE and DIMBASELINE from an ordinate dimension (M2-31)', () => {
+  const ordinate = (): EntityInit =>
+    entityInit('29', {
+      kind: 'DIMENSION',
+      dimType: 'ordinate',
+      style: STYLE,
+      axis: 'x',
+      definitionPoint: { x: 0, y: 0 },
+      feature: { x: 30, y: 0 },
+      leaderEnd: { x: 30, y: -8 },
+      textPosition: { x: 30, y: -9 },
+      textUserPositioned: false,
+      text: '',
+      textRotation: 0,
+      horizontalDirection: 0,
+      attachment: 5,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    });
+
+  it('DIMCONTINUE asks for features, each measured from the same origin, leaders ending in line', async () => {
+    const s = setup({ entities: [ordinate()] });
+    await s.bus.script(['DIMCONTINUE']);
+    await s.bus.pick({ x: 30, y: -8 });
+    expect(s.bus.promptText).toBe('Specify feature location or [Undo/Select] <Select>:');
+    await s.bus.submit('45,3');
+    expect(s.dim<'ordinate'>()).toMatchObject({
+      dimType: 'ordinate',
+      style: STYLE,
+      axis: 'x',
+      definitionPoint: { x: 0, y: 0 },
+      feature: { x: 45, y: 3 },
+      leaderEnd: { x: 45, y: -8 },
+      horizontalDirection: 0,
+    });
+    expect(s.bus.history).toContain('Dimension text = 45');
+    await s.bus.script(['60,1', 'U', 'U']);
+    expect(s.dims()).toHaveLength(0);
+    await s.bus.script(['52,0', '', '']);
+    expect(s.dims()).toHaveLength(1);
+    // Made last, it is gone on from without asking.
+    await s.bus.script(['DIMBASELINE']);
+    expect(s.bus.promptText).toBe('Specify feature location or [Undo/Select] <Select>:');
+    await s.bus.script(['70,2', '', '']);
+    expect(s.dim<'ordinate'>()).toMatchObject({
+      feature: { x: 70, y: 2 },
+      leaderEnd: { x: 70, y: -8 },
+    });
+  });
+
+  it('a Y ordinate keeps its leaders ending in line across', async () => {
+    const s = setup({
+      entities: [
+        entityInit('29', {
+          ...(ordinate().geom as DimensionGeometry & { dimType: 'ordinate' }),
+          axis: 'y',
+          feature: { x: 0, y: 30 },
+          leaderEnd: { x: -8, y: 30 },
+        }),
+      ],
+    });
+    await s.bus.script(['DIMBASELINE']);
+    await s.bus.pick({ x: -8, y: 30 });
+    await s.bus.script(['2,50', '', '']);
+    expect(s.dim<'ordinate'>()).toMatchObject({
+      axis: 'y',
+      feature: { x: 2, y: 50 },
+      leaderEnd: { x: -8, y: 50 },
+    });
+  });
+});
+
+describe('header DIMVARs as overrides of new dimensions (M2-31)', () => {
+  const dstyle = (e: Entity) => e.xdata?.find((a) => a.appId === ACAD)?.values.map((v) => v.value);
+
+  it('a DIMVAR the header sets other than the current style is the new dimension’s DSTYLE override', async () => {
+    const s = setup({
+      styles: [standard({ DIMSCALE: 1, DIMTXT: 0.18, DIMDSEP: '.', DIMFIT: 3, DIMTIH: true })],
+      header: [
+        ['$DIMSCALE', 2],
+        ['$DIMTXT', 0.18],
+        // The same separator as a character code; DIMFIT is obsolete and not compared.
+        ['$DIMDSEP', 46],
+        ['$DIMFIT', 0],
+        ['$DIMTIH', false],
+      ],
+    });
+    await s.bus.script(['DIMLINEAR', '0,0', '10,5']);
+    const m = dragMotion(s.bus.prompt!.drag!, { x: 5, y: 8 })!;
+    expect(m.adding?.xdata).toBeDefined();
+    await s.bus.submit('5,8');
+    expect(dstyle(s.dims()[0]!)).toEqual(['DSTYLE', '{', 40, 2, 73, 0, '}']);
+  });
+
+  it('none when the header names another style, or matches the current one', async () => {
+    const other = setup({
+      header: [
+        ['$DIMSTYLE', 'ISO-25'],
+        ['$DIMSCALE', 2],
+      ],
+    });
+    await other.bus.script(['DIMLINEAR', '0,0', '10,5', '5,8']);
+    expect(other.dims()[0]!.xdata).toBeUndefined();
+    const same = setup({ styles: [standard({ DIMSCALE: 2 })], header: [['$DIMSCALE', 2]] });
+    await same.bus.script(['DIMLINEAR', '0,0', '10,5', '5,8']);
+    expect(same.dims()[0]!.xdata).toBeUndefined();
+  });
+
+  it('compares a style’s text style by name', async () => {
+    const s = setup({
+      styles: [standard({ DIMTXSTY: '30' })],
+      header: [['$DIMTXSTY', 'standard']],
+      textStyles: [
+        {
+          handle: '30',
+          name: 'Standard',
+          font: 'txt',
+          height: 0,
+          widthFactor: 1,
+          obliqueAngle: 0,
+          lastHeight: 0.2,
+          generation: 0,
+          trueTypeFlags: 0,
+        },
+      ],
+    });
+    await s.bus.script(['DIMLINEAR', '0,0', '10,5', '5,8']);
+    expect(s.dims()[0]!.xdata).toBeUndefined();
   });
 });
