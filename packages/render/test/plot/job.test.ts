@@ -129,6 +129,21 @@ describe('plotParts in model space', () => {
     expect(paths(parts)).toEqual([[PATH_M, 100, 1, PATH_L, 101, 1]]);
   });
 
+  it('plots only the objects named, as the picture of copied objects does (M2-32 part 5)', () => {
+    const model = blockDrawing([
+      entity('50', line(0, 0, 1, 0), { owner: BLOCK }),
+      entity('52', line(5, 5, 6, 6)),
+      entity('53', line(7, 7, 8, 8)),
+      insert('60'),
+    ]);
+    const parts = plotParts(model, MODEL, { resolver, only: new Set(['53', '60']) });
+    // The block's own objects plot with the reference.
+    expect(paths(parts)).toEqual([
+      [PATH_M, 7, 7, PATH_L, 8, 8],
+      [PATH_M, 100, 0, PATH_L, 101, 0],
+    ]);
+  });
+
   it('resolves the plot style name an object plots by, its own or its layer’s', () => {
     const model = blockDrawing([
       entity('50', line(0, 0, 1, 0)),

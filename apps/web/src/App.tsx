@@ -52,6 +52,7 @@ import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
 import { drafting } from './drafting';
 import { snapMenu } from './snap-menu';
+import { AppClipboard, browserClipboardEnv, clipboardPicture } from './system-clipboard';
 import { SnapMenu } from './SnapMenu';
 import { DraftingToggles } from './DraftingToggles';
 import { DocumentStore, isDirty, layoutsOf, spacesOf, type OpenDocument } from './documents';
@@ -334,17 +335,28 @@ function viewContext(id: number): ViewContext {
 /**
  * The app's Clipboard (M2-14 part 2): what COPYCLIP, CUTCLIP or COPYBASE last put there, and the
  * drawing it came from (PASTEORIG pastes only another drawing's). Every open drawing shares it;
- * it lives as long as the page, as AutoCAD's lasts the session.
+ * it lives as long as the page, as AutoCAD's lasts the session. It goes on the system clipboard
+ * too, with a picture of the objects (M2-32 part 5), and a paste reads that first: another Triya
+ * window's objects or another app's text.
  */
-let clipboard: { readonly doc: number; readonly content: Clipboard } | undefined;
+const appClipboard = new AppClipboard(
+  browserClipboardEnv(),
+  globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+);
 
-function clipboardRequest(id: number, content: Clipboard | undefined): ViewReply {
-  if (content) {
-    clipboard = { doc: id, content };
-    return { ok: true };
-  }
-  if (!clipboard) return { ok: true };
-  return { ok: true, clipboard: clipboard.content, sameDrawing: clipboard.doc === id };
+function clipboardRequest(
+  id: number,
+  content: Clipboard | undefined,
+): ViewReply | Promise<ViewReply> {
+  if (!content) return appClipboard.paste(id);
+  void appClipboard.copy(id, content, () => {
+    const doc = store.getSnapshot().docs.find((d) => d.id === id);
+    const controller = doc && controllerOf(doc.id, doc.block);
+    return controller
+      ? clipboardPicture(content, (r) => controller.plot(r))
+      : Promise.resolve(undefined);
+  });
+  return { ok: true };
 }
 
 /** The browser's save (save-browser.ts), made when first used. */

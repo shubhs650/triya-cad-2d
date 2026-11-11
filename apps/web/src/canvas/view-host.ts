@@ -90,9 +90,9 @@ export interface ViewContext {
   ) => Promise<ViewReply>;
   /**
    * The app's Clipboard (M2-14 part 2), which every drawing shares: `content` puts objects on
-   * it, none reads it.
+   * it, none reads it (and the system clipboard first, M2-32 part 5).
    */
-  readonly clipboard?: (content: Clipboard | undefined) => ViewReply;
+  readonly clipboard?: (content: Clipboard | undefined) => ViewReply | Promise<ViewReply>;
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes the palette. */
   readonly palette?: (name: PaletteName, open: boolean) => ViewReply;
   /** -PLOT (M2-17 part 5): a space's plot settings, and a plot made without the dialog. */

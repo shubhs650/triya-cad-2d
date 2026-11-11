@@ -46,7 +46,7 @@ export function currentTextStyle(model: DocumentModel): TextStyleRecord | undefi
 }
 
 /** TEXTSIZE, else the default of AutoCAD's templates: 2.5 metric (acadiso), 0.2 imperial. */
-function textSize(model: DocumentModel): number {
+export function textSize(model: DocumentModel): number {
   const v = model.header.get('$TEXTSIZE');
   if (typeof v === 'number' && v > 0) return v;
   return model.meta.measurement === 'imperial' ? 0.2 : 2.5;

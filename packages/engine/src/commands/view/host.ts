@@ -247,6 +247,11 @@ export type ViewReply =
       readonly clipboard?: Clipboard;
       /** The Clipboard's objects were copied from this drawing (PASTEORIG refuses them). */
       readonly sameDrawing?: boolean;
+      /**
+       * Text another app put on the system clipboard (M2-32 part 5), newer than any objects
+       * copied: PASTECLIP pastes it as multiline text.
+       */
+      readonly text?: string;
       /** What `plotSetup` found (-PLOT, M2-17 part 5). */
       readonly plotSetup?: PlotScriptSetup;
     }

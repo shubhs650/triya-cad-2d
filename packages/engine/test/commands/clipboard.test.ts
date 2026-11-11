@@ -12,7 +12,10 @@ import {
   type DocumentInit,
   type Entity,
   type EntityGeometry,
+  type HeaderValue,
+  type MTextGeometry,
   type Prompt,
+  type TextStyleRecord,
   type ViewReply,
   type ViewRequest,
 } from '../../src/index';
@@ -222,5 +225,95 @@ describe('PASTEORIG', () => {
     expect(one.bus.history.at(-1)).toBe(
       'PASTEORIG pastes objects copied from another drawing only.',
     );
+  });
+});
+
+describe('the system clipboard (M2-32 part 5)', () => {
+  const STANDARD = '30';
+  /** A drawing whose app found `text` from another app on the system clipboard. */
+  function withText(text: string, header: [string, HeaderValue][] = []) {
+    const init = sampleInit();
+    const model = DocumentModel.create({
+      ...init,
+      header: new Map([...init.header!, ...header]),
+      tables: {
+        ...init.tables,
+        textStyles: [
+          {
+            handle: STANDARD,
+            name: 'Standard',
+            font: 'arial.ttf',
+            height: 0,
+            widthFactor: 1,
+            obliqueAngle: 0,
+            lastHeight: 2.5,
+            generation: 0,
+            trueTypeFlags: 0,
+          } satisfies TextStyleRecord,
+        ],
+      },
+    });
+    const before = new Set([...model.entities()].map((e) => e.id));
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) =>
+          Promise.resolve<ViewReply>(
+            r.op === 'clipboard' ? { ok: true, text } : { ok: false, message: 'none' },
+          ),
+      },
+    });
+    const added = () => [...model.entities()].filter((e) => !before.has(e.id));
+    return { model, bus, added };
+  }
+
+  it("pastes another app's text as multiline text at the insertion point, as AutoCAD does", async () => {
+    const { model, bus, added } = withText('Note 1: {see} C:\\temp\r\nsecond\tline\r\n', [
+      ['$TEXTSIZE', 3.5],
+    ]);
+    await bus.script(['PASTECLIP']);
+    expect(bus.promptText).toBe('Specify insertion point:');
+    await bus.script(['20,30']);
+    expect(bus.command).toBeUndefined();
+    const [e] = added();
+    expect(e?.type).toBe('MTEXT');
+    expect(e!.owner).toBe(MODEL_SPACE);
+    // The MTEXT defaults: the current style and TEXTSIZE, top left at the point, no wrapping.
+    expect(e!.geom).toMatchObject({
+      kind: 'MTEXT',
+      contents: 'Note 1: \\{see\\} C:\\\\temp\\Psecond^Iline',
+      style: STANDARD,
+      position: { x: 20, y: 30 },
+      height: 3.5,
+      width: 0,
+      rotation: 0,
+      attachment: 1,
+    } satisfies Partial<MTextGeometry>);
+    // On the current layer, as anything drawn.
+    expect(model.tables.layers.get(e!.layer)?.name).toBe('WALLS');
+    await bus.script(['U']);
+    expect(added()).toHaveLength(0);
+  });
+
+  it('pastes text with PASTECLIP only', async () => {
+    const { bus, added } = withText('words');
+    await bus.script(['PASTEBLOCK']);
+    expect(added()).toHaveLength(0);
+    expect(bus.history.at(-1)).toBe(
+      'The Clipboard holds text, which PASTECLIP pastes as multiline text.',
+    );
+    await bus.script(['PASTEORIG']);
+    expect(bus.history.at(-1)).toBe(
+      'The Clipboard holds text, which PASTECLIP pastes as multiline text.',
+    );
+  });
+
+  it('pastes nothing for text that is only line breaks', async () => {
+    const { bus, added } = withText('\r\n');
+    await bus.script(['PASTECLIP']);
+    expect(bus.command).toBeUndefined();
+    expect(added()).toHaveLength(0);
+    expect(bus.history.at(-1)).toBe('The Clipboard holds no objects to paste.');
   });
 });

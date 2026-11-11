@@ -55,6 +55,8 @@ export interface PlotRequest {
   readonly table?: PlotStyleTable;
   /** "Plot paperspace last" (a layout only). */
   readonly paperspaceLast?: boolean;
+  /** The objects to plot, by handle (M2-32 part 5's picture); all of the space's when absent. */
+  readonly handles?: readonly Handle[];
 }
 
 /** What the render side needs to build its replica: the engine's init and the block shown. */
@@ -355,6 +357,7 @@ export class RenderSession {
       tessellate: this.renderer.tessellateContext,
       images: (h) => this.#images.get(h),
       ...(request.paperspaceLast && { paperspaceLast: true }),
+      ...(request.handles && { only: new Set(request.handles) }),
     });
     const fonts = new Map<object, { readonly bytes?: Uint8Array }>();
     const slim = (font: { readonly bytes?: Uint8Array }) => {

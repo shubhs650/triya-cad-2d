@@ -25,6 +25,7 @@ export { gripsOf, moveGrip, sameGrip, type Grip, type GripKind } from './grips';
 export { hasDynamicColumns, withColumnCount } from './mtext-grips';
 export * from './revcloud';
 export * from './clipboard';
+export * from './clipboard-data';
 export * from './draw-order';
 export * from './mleader';
 export * from './mleader-blocks';

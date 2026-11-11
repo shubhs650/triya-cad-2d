@@ -1,0 +1,1 @@
+- M2-32 part 5 (#286): copied objects go on the system clipboard, in Triya's own format beside a picture of them that other apps paste, and a paste reads it first: objects copied in another Triya window paste here, and text copied in another app pastes as multiline text. Closes M2-32.
