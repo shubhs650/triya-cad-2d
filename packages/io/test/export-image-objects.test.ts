@@ -7,6 +7,8 @@ import {
   CadDocument,
   ImageDefinition as AcadImageDefinition,
   ImageDisplayQuality,
+  PdfUnderlay,
+  PdfUnderlayDefinition,
   RasterImage,
   RasterVariables as AcadRasterVariables,
   WipeoutVariables as AcadWipeoutVariables,
@@ -19,6 +21,7 @@ import {
   type EntityGeometry,
   type ImageDefinition,
   type NonGraphicalObject,
+  type PdfDefinition,
   type RasterVariables,
   type WipeoutVariables,
 } from '@triya/engine';
@@ -435,6 +438,144 @@ describe('IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES objects', () => {
     );
     expect(refusal(() => triyaToAcad(readCadDocument(r13), m3, 'dxf')).join()).toMatch(
       /AC1012 has no raster images \(R14 introduced them\)/,
+    );
+  });
+});
+
+// M2-32 part 2: a pasted PDF underlay brings its PDFDEFINITION, a named entry of the drawing's
+// ACAD_PDFDEFINITIONS (created under the engine's handle when the drawing has none, as AutoCAD
+// creates it with the first underlay). The External References palette's path and rename edits
+// are written the same way.
+describe('PDFDEFINITION objects', () => {
+  /** Definitions `plan - 1` and `plan - 2` in ACAD_PDFDEFINITIONS, an underlay showing the first. */
+  function pdfDrawing(version = ACadVersion.AC1032, format: CadFormat = 'dxf', bare = false) {
+    const doc = new CadDocument(version);
+    if (!bare) {
+      const pdfs = new CadDictionary(CadDictionary.acadPdfDefinitions);
+      doc.rootDictionary!.add(pdfs);
+      const defs = ['1', '2'].map((page) => {
+        const d = new PdfUnderlayDefinition();
+        d.name = `plan - ${page}`;
+        d.file = '..\\sheets\\plan.pdf';
+        d.page = page;
+        pdfs.add(d);
+        return d;
+      });
+      const u = new PdfUnderlay(defs[0]!);
+      u.insertPoint = new XYZ(1, 2, 0);
+      doc.entities!.add(u);
+    }
+    return writeCadDocument(doc, { format });
+  }
+
+  const pdf = (model: DocumentModel, name: string) =>
+    objects<PdfDefinition>(model, 'PDFDEFINITION').find((d) => d.name === name)!;
+  const newPdf = (owner: string, name: string, page = '3'): Omit<PdfDefinition, 'handle'> => ({
+    type: 'PDFDEFINITION',
+    owner,
+    name,
+    fileName: 'C:\\pasted\\detail.pdf',
+    page,
+  });
+
+  it.each(formats)('writes a new definition an underlay shows, and edited ones (%s)', (format) => {
+    const bytes = pdfDrawing(ACadVersion.AC1032, format);
+    const model = open(bytes);
+    const first = pdf(model, 'plan - 1');
+    const second = pdf(model, 'plan - 2');
+    const underlay = [...model.entities()].find((e) => e.type === 'PDFUNDERLAY')!;
+    let added = '';
+    let shown = '';
+    edit(model, (b) => {
+      b.updateObject(first.handle, patch({ fileName: 'D:\\moved\\plan.pdf' }));
+      b.updateObject(second.handle, patch({ name: 'plan - B', page: 'B' }));
+      added = b.addObject(newPdf(first.owner, 'detail - 3')).handle;
+      shown = b.addEntity({
+        owner: underlay.owner,
+        layer: underlay.layer,
+        geom: { ...underlay.geom, definition: added } as EntityGeometry,
+      }).handle;
+    });
+    const back = saved(bytes, model, format);
+    const get = (h: string) => back.objects!.find((o) => o.handle === h);
+    for (const h of [first.handle, second.handle, added])
+      expect(comparable(get(h))).toEqual(comparable(model.objects.get(h)));
+    const shownBack = back.entities!.find((e) => e.handle === shown)!;
+    expect(shownBack.geom.kind === 'PDFUNDERLAY' && shownBack.geom.definition).toBe(added);
+    const reread = readCadDocument(exportDocument(readCadDocument(bytes), model, { format }));
+    const dict = reread.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadPdfDefinitions)!;
+    expect(dict.getEntry('detail - 3')!.handle.toString(16).toUpperCase()).toBe(added);
+    expect(dict.getEntry('plan - B')!.handle.toString(16).toUpperCase()).toBe(second.handle);
+  });
+
+  it('adds ACAD_PDFDEFINITIONS under the engine handle to a drawing without it', () => {
+    const bytes = pdfDrawing(ACadVersion.AC1032, 'dxf', true);
+    const model = open(bytes);
+    expect(model.meta.pdfDictionary).toBeUndefined();
+    const pdfs = model.handles.allocate();
+    const added: string[] = [];
+    edit(model, (b) => {
+      added.push(b.addObject(newPdf(pdfs, 'detail - 3')).handle);
+      added.push(b.addObject(newPdf(pdfs, 'detail - 4', '4')).handle);
+    });
+    const back = saved(bytes, model, 'dxf');
+    for (const h of added)
+      expect(comparable(back.objects!.find((o) => o.handle === h))).toEqual(
+        comparable(model.objects.get(h)),
+      );
+    expect(back.meta.pdfDictionary).toBe(pdfs);
+    const reread = readCadDocument(
+      exportDocument(readCadDocument(bytes), model, { format: 'dxf' }),
+    );
+    expect(reread.header!.handleSeed).toBeGreaterThan(Number.parseInt(pdfs, 16));
+  });
+
+  it('maps the dictionaries new definitions are filed in, even empty', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const pdfs = new CadDictionary(CadDictionary.acadPdfDefinitions);
+    doc.rootDictionary!.add(pdfs);
+    const bytes = writeCadDocument(doc, { format: 'dxf' });
+    const meta = open(bytes).meta;
+    expect(meta.pdfDictionary).toBe(dictionary(bytes, CadDictionary.acadPdfDefinitions));
+    expect(meta.imageDictionary).toBe(dictionary(bytes, CadDictionary.acadImageDict));
+  });
+
+  it('refuses what it cannot write and leaves the original as it was', () => {
+    const bytes = pdfDrawing();
+    const root = dictionary(bytes);
+    const pdfDict = dictionary(bytes, CadDictionary.acadPdfDefinitions);
+    const first = (m: DocumentModel) => pdf(m, 'plan - 1');
+    const update = (change: Record<string, unknown>) => (b: ChangeSetBuilder, m: DocumentModel) =>
+      b.updateObject(first(m).handle, change as Partial<NonGraphicalObject>);
+    const add = (change: Record<string, unknown>) => (b: ChangeSetBuilder) =>
+      b.addObject({ ...newPdf(pdfDict, 'detail - 3'), ...change } as never);
+    const cases: [(b: ChangeSetBuilder, m: DocumentModel) => void, RegExp][] = [
+      [(b, m) => b.removeObject(first(m).handle), /removing a PDFDEFINITION/],
+      [update({ name: 'PLAN - 2' }), /another PDF underlay is named PLAN - 2/],
+      [update({ name: '' }), /a PDF underlay needs a name/],
+      [update({ fileName: '' }), /fileName: a PDF underlay needs its file/],
+      [update({ page: 2 }), /page: 2 is not text/],
+      [update({ owner: root }), /owner changes/],
+      [add({ name: 'Plan - 1' }), /another PDF underlay is named Plan - 1/],
+      [add({ owner: root }), /a new PDF definition belongs in ACAD_PDFDEFINITIONS/],
+      [add({ xdata: [{ appId: '12', values: [] }] }), /xdata changes/],
+    ];
+    for (const [change, message] of cases) {
+      const model = open(bytes);
+      edit(model, (b) => change(b, model));
+      const original = readCadDocument(bytes);
+      const before = documentInit(original);
+      const problems = refusal(() => triyaToAcad(original, model, 'dxf'));
+      expect(problems.join('\n'), String(message)).toMatch(message);
+      expect(documentInit(original)).toEqual(before);
+    }
+
+    // AutoCAD 2010 (AC1024) introduced PDF underlays.
+    const r2007 = pdfDrawing(ACadVersion.AC1021, 'dxf', true);
+    const m = open(r2007);
+    edit(m, (b) => b.addObject(newPdf(m.handles.allocate(), 'detail - 3')));
+    expect(refusal(() => triyaToAcad(readCadDocument(r2007), m, 'dxf')).join()).toMatch(
+      /AC1021 has no PDF underlays \(AutoCAD 2010 introduced them\)/,
     );
   });
 });

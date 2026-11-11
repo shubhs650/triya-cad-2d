@@ -154,6 +154,15 @@ class KeyedDraft<T extends ObjectCommon> {
     this.#added.set(record.handle, record);
   }
 
+  /** Every record as it stands now, the source's first and then those added. */
+  *values(): IterableIterator<T> {
+    for (const h of this.source.keys()) {
+      const r = this.get(h);
+      if (r !== undefined) yield r;
+    }
+    for (const r of this.#added.values()) if (!this.source.has(r.handle)) yield r;
+  }
+
   update(handle: Handle, patch: RecordPatch<T>): T {
     const cur = this.#require(handle);
     const next = updateRecord(cur, patch);
@@ -237,6 +246,11 @@ export class ChangeSetBuilder {
 
   object(handle: Handle): NonGraphicalObject | undefined {
     return this.#objects.get(handle);
+  }
+
+  /** The drawing's objects as this change leaves them so far. */
+  objects(): IterableIterator<NonGraphicalObject> {
+    return this.#objects.values();
   }
 
   layout(handle: Handle): Layout | undefined {
@@ -386,6 +400,18 @@ export class ChangeSetBuilder {
   addObject(init: Omit<NonGraphicalObject, 'handle'>): NonGraphicalObject {
     this.#open();
     const record = createRecord({ ...init, handle: this.#model.handles.allocate() });
+    this.#objects.add(record);
+    return record;
+  }
+
+  /**
+   * Adds a whole object under a handle `allocateHandle` gave out (see `adoptEntity`): a pasted
+   * image's IMAGEDEF, which the pasted IMAGE already names (M2-32).
+   */
+  adoptObject(o: NonGraphicalObject): NonGraphicalObject {
+    this.#open();
+    this.#requireAllocated(o.handle);
+    const record = createRecord(o);
     this.#objects.add(record);
     return record;
   }

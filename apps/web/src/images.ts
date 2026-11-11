@@ -8,7 +8,7 @@
 //
 // A definition saved unloaded (DXF 280 = 0, AutoCAD's Unload in the External References
 // palette) is not served: AutoCAD shows only an unloaded image's frame.
-import type { ChangeSet, DocumentInit, ImageDefinition } from '@triya/engine';
+import type { ChangeSet, DocumentInit, ImageDefinition, NonGraphicalObject } from '@triya/engine';
 import type { RasterPixels } from '@triya/render';
 import { fileKey } from './underlay/pages';
 
@@ -27,15 +27,27 @@ export function imageDefinitionsOf(
   init: DocumentInit,
   changes: readonly ChangeSet[],
 ): ImageDefinition[] {
-  const isDef = (o: { readonly type: string }): o is ImageDefinition => o.type === 'IMAGEDEF';
-  const now = new Map((init.objects ?? []).filter(isDef).map((d) => [d.handle, d]));
+  return objectsOf<ImageDefinition>(init, changes, 'IMAGEDEF');
+}
+
+/**
+ * The drawing's objects of `type` as they are now: as opened, then every change its engine
+ * applied (a loaded xref's definitions, a pasted image's or underlay's, M2-32).
+ */
+export function objectsOf<T extends NonGraphicalObject>(
+  init: DocumentInit,
+  changes: readonly ChangeSet[],
+  type: T['type'],
+): T[] {
+  const isOf = (o: { readonly type: string }): o is T => o.type === type;
+  const now = new Map((init.objects ?? []).filter(isOf).map((d) => [d.handle, d]));
   for (const { objects: c } of changes) {
     for (const o of c?.removed ?? []) now.delete(o.handle);
     for (const { after } of c?.updated ?? []) {
-      if (isDef(after)) now.set(after.handle, after);
+      if (isOf(after)) now.set(after.handle, after);
       else now.delete(after.handle);
     }
-    for (const o of c?.added ?? []) if (isDef(o)) now.set(o.handle, o);
+    for (const o of c?.added ?? []) if (isOf(o)) now.set(o.handle, o);
   }
   return [...now.values()];
 }

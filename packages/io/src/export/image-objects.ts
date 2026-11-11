@@ -9,6 +9,9 @@
 // References palette's rename) keeps its entry where it stands under the new name (M1-95); the
 // IMAGEs showing it point at it by handle.
 //
+// PDFDEFINITION (M2-32 part 2) is written the same way, an entry of ACAD_PDFDEFINITIONS: a
+// pasted underlay brings its definition, and the palette's path, page and rename edits keep it.
+//
 // Refused, before anything changes: removing one (IMAGE Detach also erases the images showing
 // it, which the IMAGEDEF_REACTORs tie to it; not written yet), a new one before R14, which
 // introduced raster images, values AutoCAD does not store, and xdata, reactor and extension
@@ -20,6 +23,7 @@ import {
   ImageDefinition as AcadImageDefinition,
   ImageDisplayQuality,
   INamedCadObjectExtensions,
+  PdfUnderlayDefinition as AcadPdfDefinition,
   RasterVariables as AcadRasterVariables,
   WipeoutVariables as AcadWipeoutVariables,
   XY,
@@ -32,6 +36,7 @@ import type {
   Handle,
   ImageDefinition,
   NonGraphicalObject,
+  PdfDefinition,
   RasterVariables,
   WipeoutVariables,
 } from '@triya/engine';
@@ -39,14 +44,17 @@ import { resolve, same, type Resolver } from './entities';
 import { entryRenameProblems, renameEntries } from './dictionary-entries';
 import { changes } from './records';
 
-type ImageObject = ImageDefinition | RasterVariables | WipeoutVariables;
+type ImageObject = ImageDefinition | PdfDefinition | RasterVariables | WipeoutVariables;
+type Definition = ImageDefinition | PdfDefinition;
 /** An image object's fields by name, as `changes` compares them. */
 type Fields = Record<string, unknown>;
-type AcadImageObject = AcadImageDefinition | AcadRasterVariables | AcadWipeoutVariables;
+type AcadImageObject =
+  AcadImageDefinition | AcadPdfDefinition | AcadRasterVariables | AcadWipeoutVariables;
 
 /** The object types this writer handles. */
 export const IMAGE_OBJECT_TYPES: ReadonlySet<string> = new Set([
   'IMAGEDEF',
+  'PDFDEFINITION',
   'RASTERVARIABLES',
   'WIPEOUTVARIABLES',
 ]);
@@ -54,8 +62,33 @@ export const IMAGE_OBJECT_TYPES: ReadonlySet<string> = new Set([
 const isImageObject = (o: NonGraphicalObject | undefined): o is ImageObject =>
   o !== undefined && IMAGE_OBJECT_TYPES.has(o.type);
 
+const isDefinition = (o: ImageObject): o is Definition =>
+  o.type === 'IMAGEDEF' || o.type === 'PDFDEFINITION';
+
+/**
+ * Per definition type: the root dictionary entry holding the definitions, what the messages
+ * call one, and the release that introduced it (R14 raster images, AutoCAD 2010 PDF underlays).
+ */
+const DEFINITION = {
+  IMAGEDEF: {
+    dictionary: CadDictionary.acadImageDict,
+    noun: 'image',
+    since: ACadVersion.AC1014,
+    introduced: 'R14 introduced them',
+    kind: 'raster images',
+  },
+  PDFDEFINITION: {
+    dictionary: CadDictionary.acadPdfDefinitions,
+    noun: 'PDF underlay',
+    since: ACadVersion.AC1024,
+    introduced: 'AutoCAD 2010 introduced them',
+    kind: 'PDF underlays',
+  },
+} as const;
+
 const ACAD_TYPE = {
   IMAGEDEF: AcadImageDefinition,
+  PDFDEFINITION: AcadPdfDefinition,
   RASTERVARIABLES: AcadRasterVariables,
   WIPEOUTVARIABLES: AcadWipeoutVariables,
 } as const;
@@ -85,7 +118,7 @@ export interface ImageObjectsPlan {
   }[];
   /**
    * New objects, already holding their handle; a new definition's `dictionary` is the drawing's
-   * ACAD_IMAGE_DICT, or the handle of the one the save creates.
+   * ACAD_IMAGE_DICT or ACAD_PDFDEFINITIONS, or the handle of the one the save creates.
    */
   readonly added: {
     readonly acad: AcadImageObject;
@@ -100,7 +133,12 @@ const known = (v: ACadVersion | undefined): v is ACadVersion =>
 const hex = (n: number): Handle => n.toString(16).toUpperCase();
 
 const label = (o: ImageObject): string =>
-  o.type === 'IMAGEDEF' ? `IMAGEDEF ${String(o.name)}` : o.type;
+  isDefinition(o) ? `${o.type} ${String(o.name)}` : o.type;
+
+const article = (noun: string): string => (/^[aeiou]/i.test(noun) ? 'an' : 'a');
+
+/** A definition's name as names compare: by type, without regard to case. */
+const nameKey = (type: string, name: unknown): string => `${type}:${String(name).toUpperCase()}`;
 
 /** The model's image object changes against the original's mapping, and why any cannot be written. */
 export function planImageObjects(
@@ -113,7 +151,6 @@ export function planImageObjects(
   const problems: string[] = [];
   const version = doc.header?.version;
   const root = doc.rootDictionary;
-  const imageDict = root?.get(CadDictionary.acadImageDict);
   const baseObjects = new Map((base.objects ?? []).map((o) => [o.handle, o]));
   const before = new Map(
     [...baseObjects].filter((e): e is [Handle, ImageObject] => isImageObject(e[1])),
@@ -122,18 +159,20 @@ export function planImageObjects(
   for (const [h, b] of before) {
     const a = model.objects.get(h);
     const article = b.type === 'IMAGEDEF' ? 'an' : 'a';
+    // (a PDFDEFINITION's removal, as an IMAGEDEF's, would leave the underlays showing it.)
     if (!a) problems.push(`${label(b)} (${h}): removing ${article} ${b.type}`);
     else if (a.type !== b.type) problems.push(`${label(b)} (${h}): type changes`);
   }
 
-  // Image names are unique without regard to case, among the definitions the drawing ends with.
+  // Definition names are unique without regard to case, among the definitions of their type
+  // the drawing ends with.
   const names = new Map<string, number>();
   for (const o of model.objects.values()) {
-    if (o.type !== 'IMAGEDEF') continue;
-    const key = String((o as ImageDefinition).name).toUpperCase();
+    if (o.type !== 'IMAGEDEF' && o.type !== 'PDFDEFINITION') continue;
+    const key = nameKey(o.type, (o as Definition).name);
     names.set(key, (names.get(key) ?? 0) + 1);
   }
-  const newDictionaries = new Set<Handle>();
+  const newDictionaries = { IMAGEDEF: new Set<Handle>(), PDFDEFINITION: new Set<Handle>() };
   // A drawing has one RASTERVARIABLES and one WIPEOUTVARIABLES.
   const added = new Map<string, number>();
   for (const o of model.objects.values())
@@ -152,40 +191,35 @@ export function planImageObjects(
       acad = resolve(r, h, ACAD_TYPE[a.type] as abstract new (...args: never[]) => AcadImageObject);
       if (!acad) out.push(`the original is not a ${a.type}`);
       if (b.owner !== a.owner) out.push('owner changes');
-      if (acad && b.type === 'IMAGEDEF' && b.name !== (a as ImageDefinition).name)
-        out.push(...imageRenameProblems(acad, (a as ImageDefinition).name, names, model, version));
+      if (acad && isDefinition(b) && isDefinition(a) && b.name !== a.name)
+        out.push(...renameProblems(acad, a, names, model, version));
       for (const k of UNSUPPORTED) if (!same(b[k], a[k])) out.push(`${k} changes`);
     } else {
       if (doc.getCadObject(Number.parseInt(h, 16))) out.push('the handle is already used');
-      if (known(version) && version < ACadVersion.AC1014)
-        out.push(`${ACadVersion[version]} has no raster images (R14 introduced them)`);
+      const since = isDefinition(a) ? DEFINITION[a.type] : DEFINITION.IMAGEDEF;
+      if (known(version) && version < since.since)
+        out.push(`${ACadVersion[version]} has no ${since.kind} (${since.introduced})`);
       // The save links a new object to the dictionary holding it, and makes nothing else.
       if (a.xdata !== undefined) out.push('xdata changes');
       if (a.extDict !== undefined) out.push('extDict changes');
       if (a.reactors !== undefined && !same(a.reactors, [a.owner])) out.push('reactors changes');
-      if (a.type === 'IMAGEDEF') {
-        if (imageDict instanceof CadDictionary) {
-          if (a.owner !== hex(imageDict.handle))
-            out.push(
-              `a new image definition belongs in ACAD_IMAGE_DICT (${hex(imageDict.handle)})`,
-            );
+      if (isDefinition(a)) {
+        const { dictionary: entry, noun } = DEFINITION[a.type];
+        const dict = root?.get(entry);
+        const which = a.type === 'IMAGEDEF' ? 'image' : 'PDF';
+        if (dict instanceof CadDictionary) {
+          if (a.owner !== hex(dict.handle))
+            out.push(`a new ${which} definition belongs in ${entry} (${hex(dict.handle)})`);
         } else if (
           doc.getCadObject(Number.parseInt(a.owner, 16)) ||
           model.objects.has(a.owner) ||
           model.entityByHandle(a.owner)
         ) {
-          out.push(
-            'a new image definition belongs in ACAD_IMAGE_DICT (a new one: an unused handle)',
-          );
+          out.push(`a new ${which} definition belongs in ${entry} (a new one: an unused handle)`);
         } else {
-          newDictionaries.add(a.owner);
+          newDictionaries[a.type].add(a.owner);
         }
-        const name = (a as ImageDefinition).name;
-        if (typeof name !== 'string' || name === '') out.push('an image needs a name');
-        else if ((names.get(name.toUpperCase()) ?? 0) > 1)
-          out.push(`another image is named ${name}`);
-        else if (!INamedCadObjectExtensions.isValidDxfName({ name } as never, version))
-          out.push(`${JSON.stringify(name)} is not a valid image name`);
+        out.push(...nameProblems(a, noun, names, version));
       } else {
         const entry = ENTRY[a.type];
         if (!root || a.owner !== hex(root.handle))
@@ -203,37 +237,52 @@ export function planImageObjects(
       acad = make(a);
       // acad-ts keeps a non-zero handle it has not seen, so the object keeps Triya's handle.
       acad.handle = Number.parseInt(h, 16);
-      const dictionary =
-        a.type !== 'IMAGEDEF'
-          ? undefined
-          : imageDict instanceof CadDictionary
-            ? imageDict
-            : Number.parseInt(a.owner, 16);
+      const dict = isDefinition(a) ? root?.get(DEFINITION[a.type].dictionary) : undefined;
+      const dictionary = !isDefinition(a)
+        ? undefined
+        : dict instanceof CadDictionary
+          ? dict
+          : Number.parseInt(a.owner, 16);
       plan.added.push({ acad, after: a, ...(dictionary !== undefined ? { dictionary } : {}) });
       r.created.set(h, acad);
     }
   }
-  if (newDictionaries.size > 1)
+  if (newDictionaries.IMAGEDEF.size > 1)
     problems.push('new image definitions name more than one new ACAD_IMAGE_DICT');
+  if (newDictionaries.PDFDEFINITION.size > 1)
+    problems.push('new PDF definitions name more than one new ACAD_PDFDEFINITIONS');
   return { plan, problems };
 }
 
-/** Why an image definition cannot be renamed `name` (the External References palette's rename). */
-function imageRenameProblems(
+/** Why a definition cannot take its name. */
+function nameProblems(
+  a: Definition,
+  noun: string,
+  names: ReadonlyMap<string, number>,
+  version: ACadVersion | undefined,
+): string[] {
+  const name = a.name;
+  if (typeof name !== 'string' || name === '') return [`${article(noun)} ${noun} needs a name`];
+  if ((names.get(nameKey(a.type, name)) ?? 0) > 1) return [`another ${noun} is named ${name}`];
+  if (!INamedCadObjectExtensions.isValidDxfName({ name } as never, version))
+    return [`${JSON.stringify(name)} is not a valid ${noun} name`];
+  return [];
+}
+
+/** Why a definition cannot be renamed (the External References palette's rename). */
+function renameProblems(
   acad: AcadImageObject,
-  name: string,
+  a: Definition,
   names: ReadonlyMap<string, number>,
   model: DocumentModel,
   version: ACadVersion | undefined,
 ): string[] {
-  if (typeof name !== 'string' || name === '') return ['an image needs a name'];
-  if ((names.get(name.toUpperCase()) ?? 0) > 1) return [`another image is named ${name}`];
-  if (!INamedCadObjectExtensions.isValidDxfName({ name } as never, version))
-    return [`${JSON.stringify(name)} is not a valid image name`];
+  const problems = nameProblems(a, DEFINITION[a.type].noun, names, version);
+  if (problems.length > 0) return problems;
   return entryRenameProblems(
     acad,
-    name,
-    (o) => model.objects.get(hex(o.handle))?.type === 'IMAGEDEF',
+    a.name,
+    (o) => model.objects.get(hex(o.handle))?.type === a.type,
   );
 }
 
@@ -245,12 +294,18 @@ function valueProblems(b: ImageObject | undefined, a: ImageObject): string[] {
     if (changed(k) && typeof v !== 'boolean')
       out.push(`${k}: ${JSON.stringify(v)} is not true or false`);
   };
-  if (a.type === 'IMAGEDEF') {
-    if (changed('fileName')) {
-      if (typeof a.fileName !== 'string')
-        out.push(`fileName: ${JSON.stringify(a.fileName)} is not text`);
-      else if (a.fileName === '') out.push('fileName: an image needs its file');
+  if (isDefinition(a) && changed('fileName')) {
+    if (typeof a.fileName !== 'string')
+      out.push(`fileName: ${JSON.stringify(a.fileName)} is not text`);
+    else if (a.fileName === '') {
+      const noun = DEFINITION[a.type].noun;
+      out.push(`fileName: ${article(noun)} ${noun} needs its file`);
     }
+  }
+  if (a.type === 'PDFDEFINITION') {
+    if (changed('page') && typeof a.page !== 'string')
+      out.push(`page: ${JSON.stringify(a.page)} is not text`);
+  } else if (a.type === 'IMAGEDEF') {
     for (const k of ['size', 'pixelSize'] as const) {
       const v = a[k];
       if (
@@ -279,6 +334,11 @@ function valueProblems(b: ImageObject | undefined, a: ImageObject): string[] {
 
 function make(a: ImageObject): AcadImageObject {
   if (a.type === 'IMAGEDEF') return new AcadImageDefinition(a.name);
+  if (a.type === 'PDFDEFINITION') {
+    const d = new AcadPdfDefinition();
+    d.name = a.name;
+    return d;
+  }
   if (a.type === 'RASTERVARIABLES') return new AcadRasterVariables(ENTRY.RASTERVARIABLES);
   return new AcadWipeoutVariables(ENTRY.WIPEOUTVARIABLES);
 }
@@ -292,6 +352,9 @@ function writeImageObject(o: AcadImageObject, b: ImageObject | undefined, a: Ima
     if (changed('pixelSize')) o.defaultSize = new XY(a.pixelSize.x, a.pixelSize.y);
     if (changed('loaded')) o.isLoaded = a.loaded;
     if (changed('units')) o.units = a.units;
+  } else if (a.type === 'PDFDEFINITION' && o instanceof AcadPdfDefinition) {
+    if (changed('fileName')) o.file = a.fileName;
+    if (changed('page')) o.page = a.page;
   } else if (a.type === 'RASTERVARIABLES' && o instanceof AcadRasterVariables) {
     if (changed('frame')) o.isDisplayFrameShown = a.frame;
     if (changed('quality'))
@@ -314,18 +377,18 @@ export function writeImageObjects(doc: CadDocument, plan: ImageObjectsPlan): voi
   renameEntries(
     plan.updated
       .filter(
-        ({ before, after }) =>
-          before.type === 'IMAGEDEF' && before.name !== (after as ImageDefinition).name,
+        ({ before, after }) => isDefinition(before) && before.name !== (after as Definition).name,
       )
-      .map(({ acad, after }) => ({ acad, name: (after as ImageDefinition).name })),
+      .map(({ acad, after }) => ({ acad, name: (after as Definition).name })),
   );
   for (const { acad, after, dictionary } of plan.added) {
     let dict: CadDictionary = root;
     if (typeof dictionary === 'number') {
-      const made = root.get(CadDictionary.acadImageDict);
+      const entry = DEFINITION[(after as Definition).type].dictionary;
+      const made = root.get(entry);
       if (made instanceof CadDictionary) dict = made;
       else {
-        dict = new CadDictionary(CadDictionary.acadImageDict);
+        dict = new CadDictionary(entry);
         dict.handle = dictionary;
         root.add(dict);
       }

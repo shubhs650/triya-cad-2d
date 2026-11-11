@@ -126,6 +126,63 @@ const insert = (block: string, x: number, y: number, attributes: unknown[] = [])
     attributes,
   }) as EntityGeometry;
 
+/** An IMAGE of `definition`, 100 × 50 pixels of 0.1 units with its lower left at (x, y). */
+const image = (definition: string | undefined, x = 0, y = 0): EntityGeometry => ({
+  kind: 'IMAGE',
+  ...(definition !== undefined ? { definition } : {}),
+  position: { x, y },
+  u: { x: 0.1, y: 0 },
+  v: { x: 0, y: 0.1 },
+  size: { x: 100, y: 50 },
+  displayFlags: 7,
+  clipping: false,
+  brightness: 50,
+  contrast: 50,
+  fade: 0,
+  clip: {
+    type: 'rectangle',
+    vertices: [
+      { x: -0.5, y: -0.5 },
+      { x: 99.5, y: 49.5 },
+    ],
+    inverted: false,
+  },
+});
+
+/** A PDFUNDERLAY of `definition` at (x, y). */
+const underlay = (definition: string | undefined, x = 0, y = 0): EntityGeometry => ({
+  kind: 'PDFUNDERLAY',
+  ...(definition !== undefined ? { definition } : {}),
+  position: { x, y },
+  scale: { x: 1, y: 1, z: 1 },
+  rotation: 0,
+  flags: 2,
+  contrast: 100,
+  fade: 0,
+  clip: [],
+});
+
+const imageDef = (handle: string, owner: string, name: string, fileName: string) => ({
+  handle,
+  type: 'IMAGEDEF' as const,
+  owner,
+  name,
+  fileName,
+  size: { x: 100, y: 50 },
+  pixelSize: { x: 1, y: 1 },
+  loaded: true,
+  units: 0,
+});
+
+const pdfDef = (handle: string, owner: string, name: string, fileName: string, page = '1') => ({
+  handle,
+  type: 'PDFDEFINITION' as const,
+  owner,
+  name,
+  fileName,
+  page,
+});
+
 /**
  * The drawing copied from: a LINE on WALLS with MYAPP xdata naming the CHAIR block (1005), a
  * TEXT in NOTES, a CHAIR reference (CHAIR holds a LEG reference; LEG a circle on DASHED_L), a
@@ -175,7 +232,7 @@ function sourceInit(): DocumentInit {
     ],
     objects: [
       { handle: 'C', type: 'DICTIONARY', owner: '0' },
-      { handle: '70', type: 'IMAGEDEF', owner: 'C' } as never,
+      imageDef('70', 'C', 'site', '.\\photos\\site.png'),
     ],
     entities: [
       e('53', lineGeom(0, 0, -1, 0.3), { owner: '40' }),
@@ -218,13 +275,7 @@ function sourceInit(): DocumentInit {
       e('64', dimension('32', '43')),
       e('65', square, { reactors: ['66'] }),
       e('66', hatch(['65'])),
-      e('67', {
-        kind: 'IMAGE',
-        definition: '70',
-        position: { x: 0, y: 0 },
-        uVector: { x: 1, y: 0 },
-        vVector: { x: 0, y: 1 },
-      } as never),
+      e('67', image('70')),
       e('68', lineGeom(0, 0, 1, 1), { layer: '13' }),
     ],
   };
@@ -281,8 +332,8 @@ const of = (pasted: Entity[], kind: string) => pasted.filter((e) => e.type === k
 describe('copyToClipboard', () => {
   it('holds the objects in drawing order with only the definitions they use', () => {
     const { copy, clip } = copied();
-    expect(clip.entities.map((e) => e.handle)).toEqual(['60', '61', '62', '64', '65', '66']);
-    expect([...copy.refused]).toEqual([['an image cannot be pasted into another drawing yet', 1]]);
+    expect(clip.entities.map((e) => e.handle)).toEqual(['60', '61', '62', '64', '65', '66', '67']);
+    expect([...copy.refused]).toEqual([]);
     const names = (t: keyof Clipboard['tables']) =>
       (clip.tables[t] ?? []).map((r) => (r as SymbolTableRecord).name).sort();
     expect(names('layers')).toEqual(['0', 'DASHED_L', 'WALLS']);
@@ -324,6 +375,7 @@ describe('pasteObjects', () => {
       'DIMENSION',
       'LWPOLYLINE',
       'HATCH',
+      'IMAGE',
     ]);
     const fresh = [...target.entities()].filter((e) => !before.has(e.handle));
     for (const e of fresh) expect(compareHandles(e.handle, '200')).toBeGreaterThanOrEqual(0);
@@ -437,7 +489,7 @@ describe('pasteObjects', () => {
     const { pasted } = paste(target, clip, { x: 2000, y: 0 });
     // The second dimension draws a block of its own; everything else is there already.
     expect(sizes()).toEqual({ ...first, blockRecords: first.blockRecords! + 1 });
-    expect(pasted).toHaveLength(6);
+    expect(pasted).toHaveLength(7);
   });
 
   it('is undone by its inverse', () => {
@@ -475,6 +527,7 @@ describe('pasteAsBlock', () => {
       'DIMENSION',
       'LWPOLYLINE',
       'HATCH',
+      'IMAGE',
     ]);
   });
 });
@@ -555,4 +608,182 @@ type Vec = { x: number; y: number };
 const round = (p: Vec): Vec => ({
   x: Math.round(p.x * 1e9) / 1e9 + 0,
   y: Math.round(p.y * 1e9) / 1e9 + 0,
+});
+
+// M2-32 part 2: an image or PDF underlay pasted into another drawing brings its definition (the
+// IMAGEDEF or PDFDEFINITION naming its file), as AutoCAD's COPYCLIP carries what an object needs.
+// A definition is a named entry of the target's ACAD_IMAGE_DICT or ACAD_PDFDEFINITIONS, and as
+// with blocks and layers "duplicate definitions are ignored": one the target already has under
+// that name (case aside) is the target's, whatever file it names.
+describe('images and PDF underlays pasted into another drawing (M2-32 part 2)', () => {
+  /** Images of `site` and `logo` (`logo` in block STAMP), an underlay of `plan - 1`. */
+  function imageSource(): DocumentInit {
+    const base = sourceInit();
+    return {
+      ...base,
+      meta: { ...base.meta, imageDictionary: 'C', pdfDictionary: 'D' },
+      tables: {
+        ...base.tables,
+        blockRecords: [...(base.tables?.blockRecords ?? []), blockRecord('44', 'STAMP')],
+      },
+      blocks: [...(base.blocks ?? []), { handle: '44', name: 'STAMP', basePoint: { x: 0, y: 0 } }],
+      objects: [
+        { handle: 'C', type: 'DICTIONARY', owner: '0' },
+        { handle: 'D', type: 'DICTIONARY', owner: '0' },
+        imageDef('70', 'C', 'site', '.\\photos\\site.png'),
+        imageDef('72', 'C', 'logo', 'logo.png'),
+        imageDef('73', 'C', 'unused', 'unused.png'),
+        pdfDef('71', 'D', 'plan - 1', '..\\sheets\\plan.pdf'),
+      ],
+      entities: [
+        ...(base.entities ?? []),
+        entityInit('80', image('72'), { owner: '44' }),
+        entityInit('81', underlay('71', 5, 5)),
+        entityInit('82', insert('44', 20, 20)),
+        entityInit('83', image('74')),
+      ],
+    };
+  }
+
+  const copyOf = (handles: string[]) => {
+    const source = DocumentModel.create(imageSource());
+    const ids = handles.map((h) => source.entityByHandle(h)!.id);
+    const copy = copyToClipboard(source, ids, { x: 0, y: 0 });
+    return { copy, clip: structuredClone(copy.clipboard) as Clipboard };
+  };
+
+  const definitions = (m: DocumentModel, type: string) =>
+    [...m.objects.values()].filter((o) => o.type === type) as unknown as {
+      handle: string;
+      owner: string;
+      name: string;
+      fileName: string;
+    }[];
+
+  const withDictionaries = (): DocumentInit => {
+    const init = targetInit();
+    return {
+      ...init,
+      meta: { ...init.meta, imageDictionary: 'E', pdfDictionary: 'F' },
+      objects: [
+        ...(init.objects ?? []),
+        { handle: 'E', type: 'DICTIONARY', owner: 'C' },
+        { handle: 'F', type: 'DICTIONARY', owner: 'C' },
+      ],
+    };
+  };
+
+  it('carries the definitions the copied objects and their blocks show, and no others', () => {
+    const { copy, clip } = copyOf(['67', '81', '82']);
+    expect([...copy.refused]).toEqual([]);
+    expect((clip.objects ?? []).map((o) => o.handle).sort()).toEqual(['70', '71', '72']);
+    for (const o of clip.objects ?? []) {
+      expect(o).not.toHaveProperty('reactors');
+      expect(o).not.toHaveProperty('raw');
+    }
+  });
+
+  it('refuses an image whose definition is missing', () => {
+    const { copy, clip } = copyOf(['67', '83']);
+    expect([...copy.refused]).toEqual([
+      ['an image whose definition is missing cannot be pasted', 1],
+    ]);
+    expect(clip.entities.map((e) => e.handle)).toEqual(['67']);
+  });
+
+  it("files new definitions in the target's dictionaries, with handles above $HANDSEED", () => {
+    const target = DocumentModel.create(withDictionaries());
+    const { pasted } = paste(target, copyOf(['67', '81', '82']).clip);
+    const images = definitions(target, 'IMAGEDEF');
+    const pdfs = definitions(target, 'PDFDEFINITION');
+    expect(images.map((d) => [d.name, d.owner, d.fileName]).sort()).toEqual([
+      ['logo', 'E', 'logo.png'],
+      ['site', 'E', '.\\photos\\site.png'],
+    ]);
+    expect(pdfs.map((d) => [d.name, d.owner, d.fileName])).toEqual([
+      ['plan - 1', 'F', '..\\sheets\\plan.pdf'],
+    ]);
+    for (const d of [...images, ...pdfs]) {
+      expect(compareHandles(d.handle, '200'), d.name).toBeGreaterThanOrEqual(0);
+    }
+    const site = images.find((d) => d.name === 'site')!;
+    expect(of(pasted, 'IMAGE')[0]!.geom).toMatchObject({ definition: site.handle });
+    expect(of(pasted, 'PDFUNDERLAY')[0]!.geom).toMatchObject({ definition: pdfs[0]!.handle });
+    // The image in the pasted STAMP block shows the pasted logo.
+    const stamp = byName(target.tables.blockRecords, 'STAMP')!;
+    const logo = images.find((d) => d.name === 'logo')!;
+    const [inner] = target.blockEntities(stamp.handle).map((id) => target.entity(id)!);
+    expect(inner!.geom).toMatchObject({ kind: 'IMAGE', definition: logo.handle });
+  });
+
+  it('files them under one new dictionary handle each when the target has none', () => {
+    const target = DocumentModel.create(targetInit());
+    paste(target, copyOf(['67', '81', '82']).clip);
+    const images = definitions(target, 'IMAGEDEF');
+    const [pdf] = definitions(target, 'PDFDEFINITION');
+    expect(images).toHaveLength(2);
+    expect(images[0]!.owner).toBe(images[1]!.owner);
+    expect(compareHandles(images[0]!.owner, '200')).toBeGreaterThanOrEqual(0);
+    expect(compareHandles(pdf!.owner, '200')).toBeGreaterThanOrEqual(0);
+    expect(pdf!.owner).not.toBe(images[0]!.owner);
+    for (const o of [images[0]!.owner, pdf!.owner]) {
+      expect(target.objects.has(o)).toBe(false);
+      expect(target.entityByHandle(o)).toBeUndefined();
+    }
+    // Pasted again, the definitions the first paste filed are used, and their dictionary.
+    paste(target, copyOf(['67']).clip);
+    expect(definitions(target, 'IMAGEDEF')).toHaveLength(2);
+  });
+
+  it("uses the target's definition of the same name, whatever file it names", () => {
+    const init = withDictionaries();
+    const target = DocumentModel.create({
+      ...init,
+      objects: [...(init.objects ?? []), imageDef('90', 'E', 'SITE', 'C:\\other\\site.jpg')],
+    });
+    const { pasted } = paste(target, copyOf(['67']).clip);
+    expect(definitions(target, 'IMAGEDEF').map((d) => d.handle)).toEqual(['90']);
+    expect(of(pasted, 'IMAGE')[0]!.geom).toMatchObject({ definition: '90' });
+  });
+
+  it('pastes an underlay without a definition as it is', () => {
+    const source = DocumentModel.create({
+      ...imageSource(),
+      entities: [entityInit('81', underlay(undefined, 5, 5))],
+    });
+    const clip = copyToClipboard(source, [source.entityByHandle('81')!.id], { x: 0, y: 0 });
+    expect([...clip.refused]).toEqual([]);
+    const target = DocumentModel.create(withDictionaries());
+    const { pasted } = paste(target, clip.clipboard);
+    expect(pasted[0]!.geom).not.toHaveProperty('definition');
+    expect(definitions(target, 'PDFDEFINITION')).toEqual([]);
+  });
+
+  it('PASTEBLOCK brings the definitions its block shows', () => {
+    const target = DocumentModel.create(withDictionaries());
+    const b = new ChangeSetBuilder(target);
+    const report = pasteAsBlock(b, target, copyOf(['67', '81']).clip, MODEL_SPACE, '11', {
+      x: 0,
+      y: 0,
+    });
+    target.apply(b.build());
+    const block = (target.entity(report.ids[0]!)!.geom as { block: string }).block;
+    const shown = target
+      .blockEntities(block)
+      .map((id) => (target.entity(id)!.geom as { definition?: string }).definition);
+    const defs = [...definitions(target, 'IMAGEDEF'), ...definitions(target, 'PDFDEFINITION')];
+    expect(shown.sort()).toEqual(defs.map((d) => d.handle).sort());
+  });
+
+  it('is undone by its inverse, definitions and all', () => {
+    const target = DocumentModel.create(withDictionaries());
+    const was = snapshot(target);
+    const b = new ChangeSetBuilder(target);
+    pasteObjects(b, target, copyOf(['67', '81', '82']).clip, MODEL_SPACE, { x: 0, y: 0 });
+    const cs = b.build();
+    target.apply(cs);
+    expect(definitions(target, 'IMAGEDEF')).toHaveLength(2);
+    target.apply(invertChangeSet(cs));
+    expect(snapshot(target)).toEqual(was);
+  });
 });

@@ -82,6 +82,26 @@ describe('PdfPages', () => {
     });
   });
 
+  it('reads the definitions as the drawing has them now, a pasted one too (M2-32)', async () => {
+    const pdf = fakePdf();
+    const pages = new PdfPages(pdf.open);
+    pages.add('plan.pdf', new Uint8Array([1]));
+    const defs: PdfDefinition[] = [];
+    const got: string[] = [];
+    const c = pages.client(
+      () => defs,
+      (d) => got.push(d),
+    );
+    c.request(req('9C', 10));
+    await settle();
+    expect(got).toEqual([]);
+    // Pasted in after the canvas opened.
+    defs.push(def('9C', 'C:\\elsewhere\\plan.pdf'));
+    c.request(req('9C', 10));
+    await settle();
+    expect(got).toEqual(['9C']);
+  });
+
   it('opens a file once and serves a page it drew again, or a sharper one, from the cache', async () => {
     const pdf = fakePdf();
     const pages = new PdfPages(pdf.open);

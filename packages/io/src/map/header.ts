@@ -89,8 +89,25 @@ export function mapHeader(doc: CadDocument): MappedHeader {
       insUnits: h.insUnits as number,
       measurement: (h.measurementUnits as number) === 0 ? 'imperial' : 'metric',
       ...(doc.rootDictionary && { rootDictionary: hex(doc.rootDictionary.handle) }),
+      ...definitionDictionaries(doc),
       ...keptEntryNames(doc),
     },
+  };
+}
+
+/**
+ * The dictionaries a new IMAGEDEF or PDFDEFINITION is filed in (a paste's, M2-32 part 2), when
+ * the drawing has them, empty or not.
+ */
+function definitionDictionaries(doc: CadDocument): {
+  imageDictionary?: string;
+  pdfDictionary?: string;
+} {
+  const images = namedDictionary(doc, CadDictionary.acadImageDict);
+  const pdfs = namedDictionary(doc, CadDictionary.acadPdfDefinitions);
+  return {
+    ...(images && { imageDictionary: hex(images.handle) }),
+    ...(pdfs && { pdfDictionary: hex(pdfs.handle) }),
   };
 }
 
