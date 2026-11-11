@@ -22,6 +22,7 @@
 // definition's path is the attaching computer's (`..\plans\plan.pdf`). Finding files on the
 // user's disk and the Missing References panel are M1-21.
 import type { Box, PdfDefinition, UnderlaySnapPage } from '@triya/engine';
+import type { PlotPdfPage } from '../plot';
 import {
   underlayKey,
   type RasterPixels,
@@ -158,6 +159,40 @@ export class PdfPages {
   /** The bytes of the file of this name, as supplied (a plot copies its pages, M2-16 part 5). */
   bytes(fileName: string): Uint8Array | undefined {
     return this.#files.get(fileKey(fileName))?.bytes;
+  }
+
+  /**
+   * A supplied file's page for a plot (M2-39, `UnderlayPageSource`): its displayed size and any
+   * part of it drawn, in turn with the screen's pages, and not kept; undefined without the file
+   * or when pdf.js cannot read it.
+   */
+  async plotPage(fileName: string, pageName: string): Promise<PlotPdfPage | undefined> {
+    const file = this.#files.get(fileKey(fileName));
+    if (!file) return undefined;
+    try {
+      file.opened ??= this.#open(file.bytes);
+      const pdf = await file.opened;
+      const n = pageNumber(pageName, pdf.pageCount);
+      const size = await pdf.pageSize(n);
+      return {
+        size,
+        render: (region, width, height, layersOff) => {
+          const drawn = this.#queue.then(() =>
+            layersOff?.length
+              ? pdf.render(n, region, width, height, layersOff)
+              : pdf.render(n, region, width, height),
+          );
+          // The queue goes on whether this drawing works or not.
+          this.#queue = drawn.then(
+            () => undefined,
+            () => undefined,
+          );
+          return drawn;
+        },
+      };
+    } catch {
+      return undefined;
+    }
   }
 
   /** Whether a file of this name was supplied. */

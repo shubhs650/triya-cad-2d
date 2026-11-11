@@ -217,6 +217,27 @@ describe('PdfPages', () => {
     expect(pages.renders).toBe(4);
   });
 
+  it('serves a plot any part of a supplied page, uncached, and nothing for a file not supplied (M2-39)', async () => {
+    const f = fakePdf();
+    const pages = new PdfPages(f.open);
+    pages.add('Plan.pdf', new Uint8Array([1]));
+    expect(await pages.plotPage('C:\\x\\other.pdf', '1')).toBeUndefined();
+    const page = (await pages.plotPage('..\\plans\\PLAN.PDF', '2'))!;
+    expect(page.size).toEqual({ width: 11, height: 8.5 });
+    const region = { minX: 1, minY: 1, maxX: 3, maxY: 2 };
+    const px = await page.render(region, 20, 10, ['Notes']);
+    expect([px.width, px.height]).toEqual([20, 10]);
+    await page.render(region, 20, 10);
+    expect(f.drawn).toEqual([
+      { page: 2, width: 20, height: 10, layersOff: ['Notes'] },
+      { page: 2, width: 20, height: 10 },
+    ]);
+    // The file opened once, shared with the screen's pages.
+    expect(f.opened).toHaveLength(1);
+    // A page label rather than a number plots the first page, as the screen shows it.
+    expect((await pages.plotPage('plan.pdf', 'Cover'))!.size).toEqual({ width: 8.5, height: 11 });
+  });
+
   it('shows the first page for a page it cannot read as a number', async () => {
     const pdf = fakePdf();
     const pages = new PdfPages(pdf.open);

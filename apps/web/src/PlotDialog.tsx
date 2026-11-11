@@ -55,6 +55,7 @@ import {
   type PlotArea,
   type PlotSettings,
   type PlotSpace,
+  type UnderlayPageSource,
   withPageSetup,
 } from './plot';
 
@@ -147,12 +148,15 @@ export function downloadPdf(name: string, bytes: Uint8Array): void {
 export function PlotDialog({
   doc,
   underlayFile,
+  underlayPage,
   userTables,
   edited,
 }: {
   doc: { readonly id: number; readonly block: string; readonly name: string } | undefined;
   /** The PDF file a PDF underlay names, as supplied this session (M2-16 part 5). */
   underlayFile?: (fileName: string) => Uint8Array | undefined;
+  /** Its page drawn, for an SVG or PNG plot (M2-39). */
+  underlayPage?: UnderlayPageSource;
   /** The plot style tables added in Settings (part 3). */
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
   /** Apply to Layout changed the drawing (part 4): it has unsaved changes. */
@@ -170,6 +174,7 @@ export function PlotDialog({
       name={doc.name}
       controller={controller}
       {...(underlayFile && { underlayFile })}
+      {...(underlayPage && { underlayPage })}
       {...(userTables && { userTables })}
       {...(edited && { edited })}
     />
@@ -182,6 +187,7 @@ function PlotBody({
   name,
   controller,
   underlayFile,
+  underlayPage,
   userTables,
   edited,
 }: {
@@ -190,6 +196,7 @@ function PlotBody({
   name: string;
   controller: CanvasController;
   underlayFile?: (fileName: string) => Uint8Array | undefined;
+  underlayPage?: UnderlayPageSource;
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
   edited?: (doc: number) => void;
 }) {
@@ -306,7 +313,15 @@ function PlotBody({
     setBusy(true);
     try {
       const parts = await controller.plot(plotRequest(s, space));
-      const file = await plotFile(parts, page, s, space, `${name} - ${space.name}`, underlayFile);
+      const file = await plotFile(
+        parts,
+        page,
+        s,
+        space,
+        `${name} - ${space.name}`,
+        underlayFile,
+        underlayPage,
+      );
       download(plotFileName(name, space, s.device), file.bytes, file.type);
       lastPlotSettings.set(doc, block, s);
       plotDialog.close();
@@ -340,7 +355,7 @@ function PlotBody({
       pdf: p.pdf,
       paper: p.paper,
       plot: async () => {
-        const file = await plotFile(parts, page, s, space, plotTitle, underlayFile);
+        const file = await plotFile(parts, page, s, space, plotTitle, underlayFile, underlayPage);
         download(plotFileName(name, space, s.device), file.bytes, file.type);
         plotDialog.close();
       },
