@@ -1,0 +1,1 @@
+- M2-35 part 1 (#283): with nothing selected the Properties palette shows "No selection" and the drawing's current colour, layer, linetype, linetype scale, lineweight and transparency; changing one sets it for new objects, which LINE, TEXT, MTEXT, dimensions, multileaders, revision clouds, wipeouts and PASTEBLOCK now take, as AutoCAD's do.
