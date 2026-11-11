@@ -168,3 +168,57 @@ test('a layer freeze is undone by U', async ({ page }) => {
   await page.keyboard.press('Control+y');
   await expect(freeze).toHaveAttribute('aria-pressed', 'true');
 });
+
+// M2-36: the Quick Access Undo and Redo drop-down lists. Each lists the steps by name, newest
+// (or next) first; picking one undoes or redoes down to it in one go, as UNDO n and MREDO n do.
+test('the Undo list undoes three steps with one pick; the Redo list redoes two', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await open(page);
+  const undoList = page.getByRole('button', { name: 'Undo list' });
+  const redoList = page.getByRole('button', { name: 'Redo list' });
+  await expect(undoList).toBeDisabled();
+  await expect(redoList).toBeDisabled();
+
+  for (let i = 0; i < 4; i += 1) await line(page, `0,${10 * i}`, '@100<0');
+  const four = await linesAdded(page);
+  expect(four).toHaveLength(4);
+
+  await undoList.click();
+  await expect(undoList).toHaveAttribute('aria-expanded', 'true');
+  const menu = page.getByRole('menu', { name: 'Undo list' });
+  const items = menu.getByRole('menuitem');
+  await expect(items).toHaveText(['LINE', 'LINE', 'LINE', 'LINE']);
+  // Pointing at the third marks the three it would undo, as AutoCAD's list does.
+  await items.nth(2).hover();
+  await expect(menu.getByTestId('undo-list-count')).toHaveText('Undo 3 steps');
+  await expect(menu.locator('[data-included="true"]')).toHaveCount(3);
+  await items.nth(2).click();
+  await expect(menu).toBeHidden();
+  await expect.poll(() => linesAdded(page)).toEqual(four.slice(0, 1));
+  await expect(toast(page)).toHaveText('Undone: 3 steps · 1 more to undo');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // The Redo list, from the keyboard: the second entry redoes two of the three. (The pointer
+  // goes out of the way first: a list opening under it marks the entry it is over.)
+  await page.mouse.move(600, 400);
+  await redoList.focus();
+  await page.keyboard.press('Enter');
+  const redoMenu = page.getByRole('menu', { name: 'Redo list' });
+  await expect(redoMenu.getByRole('menuitem')).toHaveText(['LINE', 'LINE', 'LINE']);
+  await expect(redoMenu.getByRole('menuitem').first()).toBeFocused();
+  await page.keyboard.press('ArrowDown');
+  await expect(redoMenu.getByTestId('undo-list-count')).toHaveText('Redo 2 steps');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => linesAdded(page)).toEqual(four.slice(0, 3));
+  await expect(toast(page)).toHaveText('Redone: 2 steps · 1 more to redo');
+  await expect(redoList).toBeFocused();
+
+  // Esc closes a list without undoing anything.
+  await undoList.click();
+  await expect(menu).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(menu).toBeHidden();
+  expect(await linesAdded(page)).toHaveLength(3);
+});

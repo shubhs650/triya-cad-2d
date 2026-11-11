@@ -99,7 +99,8 @@ import {
   SupportFileStore,
   opfsSupportFiles,
 } from './support-files';
-import { undoButtons, undoStates } from './undo';
+import { undoStates } from './undo';
+import { UndoButtons } from './UndoButtons';
 import { UndoToast } from './UndoToast';
 import { PdfPages, fileKey } from './underlay/pages';
 import { openPdf } from './underlay/pdfjs';
@@ -1851,41 +1852,5 @@ function StatusBar({
         </>
       )}
     </footer>
-  );
-}
-
-/**
- * The Quick Access toolbar's Undo and Redo (M2-23): U and REDO on the drawing shown, as their
- * keys run them, named by the step each would undo or redo.
- */
-function UndoButtons({ doc }: { readonly doc: number | undefined }) {
-  useSyncExternalStore(undoStates.subscribe, undoStates.version);
-  const { undo, redo } = undoButtons(undoStates.get(doc));
-  const run = (name: string) => {
-    if (doc !== undefined) engines.command(doc, { kind: 'invoke', name });
-  };
-  return (
-    <>
-      <button
-        type="button"
-        className="undo-button"
-        disabled={!undo.enabled}
-        title={undo.title}
-        aria-keyshortcuts="Control+Z"
-        onClick={() => run('U')}
-      >
-        Undo
-      </button>
-      <button
-        type="button"
-        className="redo-button"
-        disabled={!redo.enabled}
-        title={redo.title}
-        aria-keyshortcuts="Control+Y"
-        onClick={() => run('REDO')}
-      >
-        Redo
-      </button>
-    </>
   );
 }

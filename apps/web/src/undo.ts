@@ -1,6 +1,7 @@
 // Undo in the app (M2-23): each drawing's undo history lives in its command engine (M2-05); the
 // app hears its state as `undo` outputs. From them the Quick Access Undo and Redo buttons take
 // their state and tooltips, and an undo or a redo shows UI_SPEC's undo toast with a count.
+// Their drop-down lists (M2-36) undo or redo several steps with one pick.
 import type { UndoAction, UndoState } from '@triya/engine';
 
 interface KeyPress {
@@ -44,6 +45,36 @@ export function undoButtons(s: UndoState | undefined): {
       ? { enabled: true, title: `Redo ${s.nextRedo ? `${s.nextRedo} ` : ''}(Ctrl+Y)` }
       : { enabled: false, title: 'Nothing to redo' };
   return { undo, redo };
+}
+
+export interface UndoList {
+  readonly enabled: boolean;
+  /** The steps, newest (Undo) or next (Redo) first. */
+  readonly items: readonly string[];
+}
+
+/**
+ * The Quick Access Undo or Redo drop-down list (M2-36): the steps by name, as the engine lists
+ * them (UndoState `undoList`/`redoList`), the one the button would undo or redo first.
+ */
+export function undoList(s: UndoState | undefined, kind: 'undo' | 'redo'): UndoList {
+  const items = s ? (kind === 'undo' ? s.undoList : s.redoList) : [];
+  const enabled = items.length > 0 && !(kind === 'undo' && s?.control === 'none');
+  return { enabled, items: enabled ? items : [] };
+}
+
+/**
+ * Picking entry `index` of a list undoes or redoes every step down to it in one go, as AutoCAD's
+ * lists do: UNDO n or MREDO n with n = index + 1. `text` is the list's foot while that entry
+ * is pointed at.
+ */
+export function undoListPick(
+  kind: 'undo' | 'redo',
+  index: number,
+): { readonly command: 'UNDO' | 'MREDO'; readonly count: number; readonly text: string } {
+  const count = index + 1;
+  const text = `${kind === 'undo' ? 'Undo' : 'Redo'} ${count} ${count === 1 ? 'step' : 'steps'}`;
+  return { command: kind === 'undo' ? 'UNDO' : 'MREDO', count, text };
 }
 
 /**

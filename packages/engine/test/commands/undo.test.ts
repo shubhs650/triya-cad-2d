@@ -10,6 +10,7 @@ import {
   PromptBus,
   UNDO_COMMANDS,
   UndoStack,
+  UNDO_LIST_MAX,
   estimateBytes,
   invertChangeSet,
   type BusEvent,
@@ -241,6 +242,8 @@ describe('U and REDO', () => {
       redoable: 1,
       nextUndo: 'ADD',
       nextRedo: 'NUDGE',
+      undoList: ['ADD'],
+      redoList: ['NUDGE'],
       grouping: false,
       control: 'all',
     });
@@ -251,6 +254,113 @@ describe('U and REDO', () => {
     const t = setup();
     await t.run('SEGS', "'U");
     expect(t.log.at(-1)).toBe('** That command may not be invoked transparently **');
+  });
+});
+
+describe('Undo and Redo lists and MREDO (M2-36)', () => {
+  it('lists the steps to undo newest first, and to redo next first, across U and UNDO n', async () => {
+    const t = setup();
+    await t.run('ADD', 'NUDGE', 'SETV', '3', 'POP');
+    expect(t.bus.undo.state.undoList).toEqual(['POP', 'SETV', 'NUDGE', 'ADD']);
+    expect(t.bus.undo.state.redoList).toEqual([]);
+    await t.run('U', 'UNDO', '2');
+    expect(t.bus.undo.state.undoList).toEqual(['ADD']);
+    // REDO would reverse the UNDO 2 first (NUDGE, then SETV), then the U (POP).
+    expect(t.bus.undo.state.redoList).toEqual(['NUDGE', 'SETV', 'POP']);
+    expect(t.states.at(-1)?.redoList).toEqual(['NUDGE', 'SETV', 'POP']);
+  });
+
+  it('puts an open BEgin group at the top of the Undo list, as U would undo it first', async () => {
+    const t = setup();
+    const before = t.shot();
+    await t.run('ADD', 'UNDO', 'BE', 'NUDGE');
+    expect(t.bus.undo.state.undoList).toEqual(['GROUP', 'ADD']);
+    // Picking the second entry runs UNDO 2, which ends the group and undoes both.
+    await t.run('UNDO', '2');
+    expect(t.shot()).toEqual(before);
+    expect(t.bus.undo.state.redoList).toEqual(['ADD', 'GROUP']);
+  });
+
+  it(`keeps the lists to the newest ${UNDO_LIST_MAX} steps`, async () => {
+    const t = setup();
+    await t.run(...Array.from({ length: UNDO_LIST_MAX + 5 }, () => 'ADD'));
+    expect(t.bus.undo.state.undoList).toHaveLength(UNDO_LIST_MAX);
+    expect(t.bus.undo.state.undoable).toBe(UNDO_LIST_MAX + 5);
+    await t.run('UNDO', String(UNDO_LIST_MAX + 5));
+    expect(t.bus.undo.state.redoList).toHaveLength(UNDO_LIST_MAX);
+  });
+
+  it('MREDO n redoes n actions down the Redo list, even inside one UNDO n', async () => {
+    const t = setup();
+    await t.run('ADD');
+    const s1 = t.shot();
+    await t.run('NUDGE');
+    const s2 = t.shot();
+    await t.run('SETV', '3');
+    const s3 = t.shot();
+    await t.run('UNDO', '3');
+    await t.run('MREDO');
+    expect(t.bus.promptText).toBe('Enter number of actions or [All/Last]:');
+    await t.run('2');
+    expect(t.shot()).toEqual(s2);
+    expect(t.log.at(-1)).toBe('ADD NUDGE');
+    expect(t.bus.undo.state.redoList).toEqual(['SETV']);
+    expect(t.bus.undo.state.undoList).toEqual(['NUDGE', 'ADD']);
+    // REDO then reverses what is left of that UNDO.
+    await t.run('REDO');
+    expect(t.shot()).toEqual(s3);
+    await t.run('U', 'U');
+    expect(t.shot()).toEqual(s1);
+  });
+
+  it('MREDO reaches across U and UNDO n, and reports the redo to front-ends', async () => {
+    const t = setup();
+    await t.run('ADD', 'NUDGE', 'SETV', '3', 'POP');
+    const after = t.shot();
+    await t.run('U', 'UNDO', '2');
+    await t.run('MREDO', '3');
+    expect(t.shot()).toEqual(after);
+    expect(t.log.at(-1)).toBe('NUDGE SETV POP');
+    expect(t.bus.undo.state.redoable).toBe(0);
+  });
+
+  it('MREDO All redoes everything; Last redoes the next action only', async () => {
+    const t = setup();
+    await t.run('ADD', 'NUDGE');
+    const s1 = t.shot();
+    await t.run('SETV', '3');
+    const after = t.shot();
+    await t.run('U', 'U');
+    await t.run('MREDO', 'L');
+    expect(t.shot()).toEqual(s1);
+    await t.run('U', 'MREDO', 'A');
+    expect(t.shot()).toEqual(after);
+  });
+
+  it('MREDO asked for more than there is redoes everything and says so', async () => {
+    const t = setup();
+    await t.run('ADD', 'ADD');
+    const after = t.shot();
+    await t.run('U', 'U', 'MREDO', '5');
+    expect(t.shot()).toEqual(after);
+    expect(t.log.slice(-2)).toEqual(['ADD ADD', 'Everything has been redone']);
+  });
+
+  it('MREDO with nothing undone, or a number below one, says so', async () => {
+    const t = setup();
+    await t.run('ADD', 'MREDO');
+    expect(t.log.at(-1)).toBe('Previous command did not undo things');
+    await t.run('U', 'MREDO', '0');
+    expect(t.log.at(-1)).toBe('Value must be positive and nonzero.');
+    expect(t.bus.promptText).toBe('Enter number of actions or [All/Last]:');
+  });
+
+  it('MREDO brings marks back with the actions undone after them', async () => {
+    const t = setup();
+    await t.run('ADD', 'UNDO', 'M', 'ADD', 'U', 'U');
+    await t.run('MREDO', '1', 'ADD', 'UNDO', 'B');
+    // The mark came back with the first ADD, so Back stops after it.
+    expect(t.count()).toBe(4);
   });
 });
 
@@ -509,7 +619,8 @@ describe('UndoStack on its own', () => {
 });
 
 describe('1000-step undo/redo property (M2-05 acceptance)', () => {
-  type Op = 'ADD' | 'NUDGE' | 'POP' | 'SETV' | 'SEGS' | 'U' | 'REDO' | 'UNDO2' | 'MARK' | 'BACK';
+  type Op =
+    'ADD' | 'NUDGE' | 'POP' | 'SETV' | 'SEGS' | 'U' | 'REDO' | 'UNDO2' | 'MREDO2' | 'MARK' | 'BACK';
   const edits: Op[] = ['ADD', 'NUDGE', 'POP', 'SETV', 'SEGS'];
 
   async function runEdit(t: ReturnType<typeof setup>, op: Op, k: number): Promise<void> {
@@ -546,9 +657,9 @@ describe('1000-step undo/redo property (M2-05 acceptance)', () => {
     );
   }, 120_000);
 
-  it('matches a model of the history under random edits, U, REDO, UNDO n, Mark and Back', async () => {
+  it('matches a model of the history under random edits, U, REDO, UNDO n, MREDO n, Mark and Back', async () => {
     const ops = fc.array(
-      fc.constantFrom<Op>(...edits, 'U', 'U', 'REDO', 'REDO', 'UNDO2', 'MARK', 'BACK'),
+      fc.constantFrom<Op>(...edits, 'U', 'U', 'REDO', 'REDO', 'UNDO2', 'MREDO2', 'MARK', 'BACK'),
       { minLength: 1000, maxLength: 1000 },
     );
     await fc.assert(
@@ -586,6 +697,21 @@ describe('1000-step undo/redo property (M2-05 acceptance)', () => {
             const g = redo.pop();
             await t.run('REDO');
             if (g) undo.push(...[...g].reverse());
+          } else if (op === 'MREDO2') {
+            // MREDO counts actions: the oldest undone of the last group first, each with the
+            // marks made after it, into the groups before once one is used up.
+            let left = 2;
+            while (left > 0 && redo.length > 0) {
+              const g = redo.at(-1)!;
+              const e = g.pop()!;
+              undo.push(e);
+              if (e.kind === 'shot') {
+                left -= 1;
+                while (g.at(-1)?.kind === 'mark') undo.push(g.pop()!);
+              }
+              if (g.length === 0) redo.pop();
+            }
+            await t.run('MREDO', '2');
           } else if (op === 'MARK') {
             await t.run('UNDO', 'M');
             undo.push({ kind: 'mark' });
