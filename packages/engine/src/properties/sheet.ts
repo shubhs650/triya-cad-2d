@@ -24,7 +24,7 @@ import type {
 import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
 import { dimVars } from '../annotation/leader';
-import { JUSTIFICATIONS } from '../commands/modify/attributes';
+import { JUSTIFICATIONS, bookColors } from '../commands/modify/attributes';
 
 /** How a row's value is shown and typed. */
 export type PropertyKind =
@@ -96,8 +96,30 @@ export interface PropertySheet {
    * (CECOLOR, CLAYER, CELTYPE, CELTSCALE, CELWEIGHT, CETRANSPARENCY), and an edit sets them.
    */
   readonly current?: true;
+  /**
+   * The Select Color dialog's Color Books tab (M2-35 part 4): the colour books the drawing uses,
+   * with the colours of each it uses, by name. Triya ships no colour books (AutoCAD's .acb files
+   * are Autodesk's), and a colour-book colour saves only with the drawing's own DBCOLOR, so these
+   * are all a choice can name. Left out when the drawing uses none, and with nothing selected
+   * (CECOLOR holds no true colour, `applyCurrentEdit`).
+   */
+  readonly colorBooks?: readonly ColorBook[];
   /** How the front-end formats distances and angles: the drawing's units. */
   readonly units: PropertyUnits;
+}
+
+export interface ColorBook {
+  /** The book's name, as the drawing spells it: "RAL CLASSIC". */
+  readonly name: string;
+  readonly colors: readonly ColorBookColor[];
+}
+
+export interface ColorBookColor {
+  /** The colour's name in its book: "RAL 3020". */
+  readonly name: string;
+  /** The Color row's value that sets it (`colorValue`). */
+  readonly value: string;
+  readonly rgb: readonly [number, number, number];
 }
 
 export interface PropertyUnits {
@@ -175,6 +197,34 @@ export function colorLabel(c: Color): string {
     case 'rgb':
       return c.bookName ? `${c.bookName}$${c.colorName ?? ''}` : `${c.r},${c.g},${c.b}`;
   }
+}
+
+/** `colorBooks` by drawing, kept while its version stands: a sheet follows every pick. */
+const booksSeen = new WeakMap<DocumentModel, { version: number; books: ColorBook[] }>();
+
+/** The colour books the drawing uses, by name, each with its colours by name (`ColorBook`). */
+export function colorBooks(model: DocumentModel): ColorBook[] {
+  const seen = booksSeen.get(model);
+  if (seen?.version === model.version) return seen.books;
+  const books = readColorBooks(model);
+  booksSeen.set(model, { version: model.version, books });
+  return books;
+}
+
+function readColorBooks(model: DocumentModel): ColorBook[] {
+  const books = new Map<string, { name: string; colors: ColorBookColor[] }>();
+  for (const c of bookColors(model).values()) {
+    if (c.kind !== 'rgb' || c.bookName === undefined || !c.colorName) continue;
+    const key = c.bookName.toUpperCase();
+    const book = books.get(key) ?? { name: c.bookName, colors: [] };
+    books.set(key, book);
+    book.colors.push({ name: c.colorName, value: colorValue(c), rgb: [c.r, c.g, c.b] });
+  }
+  const byName = (a: { name: string }, b: { name: string }) =>
+    a.name.localeCompare(b.name, undefined, { numeric: true });
+  return [...books.values()]
+    .map((b) => ({ name: b.name, colors: b.colors.sort(byName) }))
+    .sort(byName);
 }
 
 /** The colour a choice value names, or undefined. */
@@ -1159,12 +1209,14 @@ export function propertySheet(
       ? shared(es.map((e) => dynamicBlockOf(model.blocks, geomOf<'INSERT'>(e).block)?.name ?? ''))
           .value || undefined
       : undefined;
+  const books = colorBooks(model);
   return {
     count: all.length,
     types,
     ...(narrowed && { filter: narrowed }),
     sections,
     ...(dynamic && { dynamic }),
+    ...(books.length > 0 && { colorBooks: books }),
     units,
   };
 }

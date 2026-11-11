@@ -980,7 +980,8 @@ export function parseColor(text: string): Color | undefined {
   return undefined;
 }
 
-function parseTrueColor(text: string): Color | undefined {
+/** A true colour typed as AutoCAD types one: `r,g,b`, each 0–255. */
+export function parseTrueColor(text: string): Color | undefined {
   const parts = text.split(',').map((s) => s.trim());
   if (parts.length !== 3 || !parts.every((s) => /^\d+$/.test(s))) return undefined;
   const [r, g, b] = parts.map(Number) as [number, number, number];
