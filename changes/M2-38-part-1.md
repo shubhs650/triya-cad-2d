@@ -1,0 +1,1 @@
+- M2-38 part 1 (#290): an encrypted PDF underlay that opens without a password (RC4 40/128-bit, AES-128, AES-256) plots its page instead of its boundary; the PDF reader decrypts the Standard security handler with the empty user password.

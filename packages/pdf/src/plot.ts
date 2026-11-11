@@ -24,7 +24,7 @@
 //   text), clipped to its boundary while clipping is on, with its fade, contrast and monochrome
 //   as the screen shows them on white paper. Plot style tables do not touch it: it keeps the
 //   PDF's colours, as a raster image does (ours: AutoCAD's help is silent). A page the plot
-//   cannot read (no file supplied, encrypted, damaged past reading) plots as the screen shows an
+//   cannot read (no file supplied, encrypted with a password, damaged past reading) plots as the screen shows an
 //   underlay without its page: the clip boundary while clipping is on, else nothing.
 
 import { pdfNumber, type ContentStream, type LineCap, type LineJoin, type Rgb } from './content';

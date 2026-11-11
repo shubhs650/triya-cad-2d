@@ -217,7 +217,7 @@ export class PdfImports {
 
   /**
    * The form showing `page` (DXF 2) of the PDF file `bytes` with `look`; undefined when the
-   * file cannot be read (not a PDF, encrypted, no pages) or its content cannot be decoded.
+   * file cannot be read (not a PDF, needs a password, no pages) or its content cannot be decoded.
    */
   form(bytes: Uint8Array, page: string, look: UnderlayLook): ImportedForm | undefined {
     let source = this.#sources.get(bytes);

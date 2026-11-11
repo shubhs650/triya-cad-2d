@@ -85,7 +85,7 @@ export class PdfPage {
   /**
    * Page `page` (DXF 2: its number from 1) of the PDF file `bytes` as a form XObject drawn into
    * the displayed page's points, named for the page's resources; undefined when the file cannot
-   * be read (not a PDF, encrypted) or its page's content cannot be decoded.
+   * be read (not a PDF, needs a password) or its page's content cannot be decoded.
    */
   underlay(bytes: Uint8Array, page: string, look: UnderlayLook): ImportedForm | undefined {
     const f = this.documentImports.form(bytes, page, look);
