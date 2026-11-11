@@ -27,17 +27,23 @@
 // extension dictionaries). Read back, each pasted reference to a dynamic block still names a
 // dynamic block of the same name, and every pasted coded object is there under its handle,
 // owner and key with the codes it was pasted with.
+//
+// M2-32 part 5: the Clipboard goes from the source to the target as the system clipboard's text
+// (`clipboardData`), as it does between two Triya windows, and reads back equal to the structured
+// clone one window's drawings share.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
   ChangeSetBuilder,
   DocumentModel,
+  clipboardData,
   compareHandles,
   copyToClipboard,
   dynamicBlockOf,
   isCodedObject,
   pasteObjects,
   pasteScale,
+  readClipboardData,
   type ChangeSet,
   type Clipboard,
   type SymbolTableRecord,
@@ -88,7 +94,12 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
       expect(space, path).toBeDefined();
       const ids = source.blockEntities(space!);
       const copy = copyToClipboard(source, ids, { x: 0, y: 0 });
-      const clip = structuredClone(copy.clipboard) as Clipboard;
+      // M2-32 part 5: through the system clipboard, as another window reads it, which must
+      // hold all the structured clone between two drawings of one window does.
+      const read = readClipboardData(clipboardData(copy.clipboard, 'source-window'));
+      expect(read?.source, path).toBe('source-window');
+      const clip = read!.clipboard;
+      expect(clip, path).toStrictEqual(structuredClone(copy.clipboard) as Clipboard);
       refusedTotal += [...copy.refused.values()].reduce((a, b) => a + b, 0);
 
       const target = open(targetBytes, otherUnits(source.meta.insUnits));

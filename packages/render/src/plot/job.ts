@@ -170,6 +170,11 @@ export interface PlotSource {
   readonly lwDefault?: number;
   /** "Plot paperspace last" (a layout only); off when absent. */
   readonly paperspaceLast?: boolean;
+  /**
+   * The space's objects to plot, by handle (the picture of the objects COPYCLIP puts on the
+   * system clipboard, M2-32 part 5); every object when absent.
+   */
+  readonly only?: ReadonlySet<Handle>;
 }
 
 /** What an INSERT hands down for plotting: the display context and the colour it resolved. */
@@ -628,7 +633,7 @@ export function plotParts(model: DocumentModel, block: Handle, src: PlotSource):
   const paper: PlotPart[] = [];
   for (const id of plotter.order(block)) {
     const e = model.entity(id);
-    if (!e) continue;
+    if (!e || (src.only && !src.only.has(e.handle))) continue;
     if (layout && msp !== undefined && e.geom.kind === 'VIEWPORT' && viewportShowsModel(e.geom))
       viewports.push(e);
     plotter.entityParts(e, model, layout ? paper : out);
