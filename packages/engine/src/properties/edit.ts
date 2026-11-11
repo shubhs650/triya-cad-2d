@@ -15,6 +15,8 @@ import type { DocumentModel } from '../model/document';
 import type { EntityPatch } from '../model/update';
 import type { Entity, EntityGeometry, InsertAttribute } from '../model/types';
 import { withDimvarOverride } from '../annotation/dstyle';
+import { currentHeader } from './current';
+import type { GeneralProps } from './sheet';
 import {
   DIMVAR_DEFAULTS,
   DIMVAR_ROWS,
@@ -245,6 +247,29 @@ function generalPatch(model: DocumentModel, key: string, v: PropertyValue) {
 }
 
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b);
+
+/**
+ * Sets `edit`, a General row, as the drawing's current setting (nothing selected, M2-35): the
+ * header variable new objects take it from. `changed` counts the variables set.
+ */
+export function applyCurrentEdit(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  edit: PropertyEdit,
+): PropertyEditReport {
+  const refused = new Map<string, number>();
+  const general = generalPatch(model, edit.key, edit.value);
+  if (!general || general === 'invalid') return { changed: 0, refused, invalid: INVALID };
+  const header = currentHeader(model, general as Partial<GeneralProps>);
+  if (typeof header === 'string') return { changed: 0, refused, invalid: header };
+  let changed = 0;
+  for (const [name, value] of header) {
+    if (same(model.header.get(name), value)) continue;
+    b.setHeader(name, value);
+    changed++;
+  }
+  return { changed, refused };
+}
 
 /**
  * Sets `edit` on `entities` (the selected objects of the type the palette shows) through `b`.

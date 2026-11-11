@@ -70,6 +70,10 @@ describe('the object list', () => {
       { value: '', label: 'Line (1)' },
     ]);
     expect(typeOptions(sheet([]))).toEqual([]);
+    // M2-35: nothing selected shows the current settings under "No selection".
+    expect(typeOptions({ ...sheet([]), current: true })).toEqual([
+      { value: '', label: 'No selection' },
+    ]);
   });
 
   it('keeps each drawing’s last sheet and tells listeners', () => {

@@ -26,7 +26,7 @@ import { eraseObjects, refusalMessages } from '../../edit/edit';
 import type { EntityId } from '../../model/entity-ids';
 import type { EntityGeometry } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
-import { currentLayer } from '../draw/line';
+import { currentProps } from '../../properties/current';
 import type { Prompt, PromptAnswer } from '../prompt';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -192,8 +192,8 @@ export function pasteBlockCommand(): CommandDef {
       if (!found) return;
       const at = yield* insertionPoint(ctx, found.clipboard);
       if (!at) return;
-      const layer = currentLayer(ctx.model);
-      ctx.edit((b) => pasteAsBlock(b, ctx.model, found.clipboard, ctx.space, layer, at));
+      const props = currentProps(ctx.model);
+      ctx.edit((b) => pasteAsBlock(b, ctx.model, found.clipboard, ctx.space, props, at));
     },
   };
 }

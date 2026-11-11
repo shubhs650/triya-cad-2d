@@ -59,6 +59,7 @@ import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { regenerateDimensions } from '../modify/dimensions';
 import { currentLayer } from './line';
+import { currentProps } from '../../properties/current';
 import { dimensionOverride, dimensionTextEditor } from './text';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -248,10 +249,10 @@ async function makeDimension(
   geom: DimensionGeometry,
   xdata: Xdata | undefined,
 ): Promise<EntityId> {
-  const layer = currentLayer(ctx.model);
+  const props = currentProps(ctx.model);
   let made: Entity | undefined;
   ctx.edit((b) => {
-    made = b.addEntity({ owner: ctx.space, layer, geom, ...(xdata && { xdata }) });
+    made = b.addEntity({ owner: ctx.space, ...props, geom, ...(xdata && { xdata }) });
   });
   const id = made!.id;
   const drawn = await regenerateDimensions(ctx, [id]);

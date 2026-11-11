@@ -64,6 +64,8 @@ export function editText(row: PropertyRow, u: PropertyUnits): string {
 
 /** "All (3)" or "Line (2)": the palette's object list. */
 export function typeOptions(sheet: PropertySheet): { value: string; label: string }[] {
+  // Nothing selected: AutoCAD's "No selection", over the drawing's current settings (M2-35).
+  if (sheet.current) return [{ value: '', label: 'No selection' }];
   const all = { value: '', label: `All (${sheet.count})` };
   if (sheet.types.length <= 1) {
     const only = sheet.types[0];
