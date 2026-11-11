@@ -1019,3 +1019,85 @@ describe('dimension command leftovers (M2-31)', () => {
     expect((of(ps, 'MTEXT')[0] as { contents: string }).contents).toContain('12,5');
   });
 });
+
+describe('arc extension lines of radial dimensions (M2-31 part 2)', () => {
+  const RADIAL_APP = '13';
+  const withApp = (vars: DimStyleRecord['vars'] = ISO) => {
+    const init = initOf(vars);
+    return DocumentModel.create({
+      ...init,
+      tables: {
+        ...init.tables,
+        appIds: [
+          ...init.tables!.appIds!,
+          { handle: RADIAL_APP, name: 'ACAD_DSTYLE_DIMRADIAL_EXTENSION' },
+        ],
+      },
+    });
+  };
+  /** AutoCAD's layout: 387 then 1, 388 and 390 each with an angle. */
+  const arcXdata = (start: number, end: number) => [
+    {
+      appId: RADIAL_APP,
+      values: [
+        { code: 1070, value: 387 },
+        { code: 1070, value: 1 },
+        { code: 1070, value: 388 },
+        { code: 1040, value: start },
+        { code: 1070, value: 390 },
+        { code: 1040, value: end },
+      ],
+    },
+  ];
+  /** A radius of 10 about the origin, its chord point at `angle`, the text out beyond it. */
+  const radius = (angle: number, dimType: 'radius' | 'diameter' = 'radius'): DimensionGeometry => {
+    const at = (r: number) => ({ x: r * Math.cos(angle), y: r * Math.sin(angle) });
+    return {
+      ...common,
+      dimType,
+      definitionPoint: dimType === 'radius' ? { x: 0, y: 0 } : at(-10),
+      chordPoint: at(10),
+      leaderLength: 0,
+      textPosition: at(20),
+      textUserPositioned: true,
+    };
+  };
+  const arcsOf = (geom: DimensionGeometry, xdata: unknown, m = withApp()) =>
+    of(dimensionParts({ geom, xdata: xdata as never }, m, measure)!, 'ARC') as Extract<
+      EntityGeometry,
+      { kind: 'ARC' }
+    >[];
+  // The arc from 0° to 60°; DIMEXO 0.625 and DIMEXE 1.25 on radius 10.
+  const arc = arcXdata(0, Math.PI / 3);
+
+  it('follows the arc from its nearer end, a DIMEXO gap off it, DIMEXE past the line', () => {
+    const [ext] = arcsOf(radius(Math.PI / 2), arc);
+    expect(ext).toBeDefined();
+    close(ext!.radius, 10);
+    expect(ext!.center).toEqual({ x: 0, y: 0 });
+    close(ext!.startAngle, Math.PI / 3 + 0.0625);
+    close(ext!.endAngle, Math.PI / 2 + 0.125);
+    // Before the start it runs clockwise from there: drawn from past the line to the gap.
+    const [back] = arcsOf(radius(-Math.PI / 6), arc);
+    close(back!.startAngle, 2 * Math.PI - Math.PI / 6 - 0.125);
+    close(back!.endAngle, 2 * Math.PI - 0.0625);
+  });
+
+  it('draws none on the arc, with DIMSE1, without the xdata or with both angles 0', () => {
+    expect(arcsOf(radius(Math.PI / 6), arc)).toEqual([]);
+    expect(arcsOf(radius(Math.PI / 2), arc, withApp({ ...ISO, DIMSE1: true }))).toEqual([]);
+    expect(arcsOf(radius(Math.PI / 2), undefined)).toEqual([]);
+    // As every acadsharp sample writes it.
+    expect(arcsOf(radius(Math.PI / 2), arcXdata(0, 0))).toEqual([]);
+  });
+
+  it("extends a diameter's far end where its arrowhead is drawn", () => {
+    // The arc from 0° to 90°; the diameter from 240° to 60°: the chord point on the arc, the
+    // far end 120° before its start (150° past its end).
+    const quarter = arcXdata(0, Math.PI / 2);
+    const exts = arcsOf(radius(Math.PI / 3, 'diameter'), quarter);
+    expect(exts).toHaveLength(1);
+    close(exts[0]!.startAngle, (4 * Math.PI) / 3 - 0.125);
+    close(exts[0]!.endAngle, 2 * Math.PI - 0.0625);
+  });
+});

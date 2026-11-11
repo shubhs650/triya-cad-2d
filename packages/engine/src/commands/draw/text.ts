@@ -867,6 +867,7 @@ export function dimensionTextEditor(
   at: Vec2,
   contents: string,
   xdata?: Entity['xdata'],
+  measurement?: string,
 ): TextEditorRequest {
   const vars = model.tables.dimStyles.get(dim.style)?.vars ?? {};
   const own = typeof vars.DIMTXSTY === 'string' ? vars.DIMTXSTY : undefined;
@@ -874,7 +875,7 @@ export function dimensionTextEditor(
     own !== undefined && model.tables.textStyles.has(own)
       ? own
       : (currentTextStyle(model)?.handle ?? '');
-  return mtextEditorRequest(model, {
+  const request = mtextEditorRequest(model, {
     kind: 'MTEXT',
     contents,
     style,
@@ -887,6 +888,7 @@ export function dimensionTextEditor(
     lineSpacingStyle: dim.lineSpacingStyle,
     lineSpacing: dim.lineSpacing,
   });
+  return measurement === undefined ? request : { ...request, measurement };
 }
 
 /**
@@ -917,6 +919,7 @@ async function* editDimension(
       g.textPosition,
       g.text === '' ? '<>' : g.text,
       entity.xdata,
+      ctx.dimensions?.(entity, ctx.model, () => 0)?.measurement,
     ),
   });
   if (a.kind === 'enter') return false;

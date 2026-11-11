@@ -16,11 +16,19 @@
 //   gap and half a text height above it. Text the engine places (no stored graphics, not moved
 //   by the user) goes outside: two DIMASZ beyond the chord point along the radius, or, kept
 //   horizontal, a landing on from there.
+// - Made on an arc (M2-31 part 2) and placed past its ends, an arc extension line follows the
+//   arc's circle from the nearer end to the dimension line: "If a dimension is positioned past
+//   the end of an arc, either an extension line will be drawn that follows the path of the arc
+//   being dimensioned or no extension line will be drawn"; DIMSE1 suppresses it and DIMEXO is
+//   its gap from the arc (AutoCAD Help, "About Creating Radial Dimensions"). It runs DIMEXE past
+//   the dimension line as a linear dimension's extension line does (the help is silent there).
+//   Where the arc comes from: annotation/radial-extension.ts in @triya/engine.
 
 import type {
   AnnotationTables,
   DimensionGeometry,
   MTextGeometry,
+  RadialArc,
   TextMeasure,
   Vec2,
 } from '@triya/engine';
@@ -28,6 +36,7 @@ import { linearText, textAlign } from './format';
 import {
   add,
   angleOf,
+  arcPart,
   arrowParts,
   clipSegment,
   defpoint,
@@ -36,6 +45,7 @@ import {
   fromAngle,
   lerp,
   linePart,
+  normAngle,
   perp,
   sub,
   textBox,
@@ -65,12 +75,32 @@ function centreMark(c: Vec2, r: number, s: DimStyle): DimPart[] {
   return out;
 }
 
+/**
+ * The arc extension line from `arc`'s nearer end to the point at angle `at` on its circle,
+ * none while `at` is on the arc: a gap of DIMEXO at the arc's end, DIMEXE past `at`.
+ */
+function arcExtension(c: Vec2, r: number, at: number, arc: RadialArc, s: DimStyle): DimPart[] {
+  const sweep = normAngle(arc.endAngle - arc.startAngle) || 2 * Math.PI;
+  if (normAngle(at - arc.startAngle) <= sweep + 1e-12 || !(r > 0)) return [];
+  const gap = s.exo / r;
+  const over = s.exe / r;
+  // Past the end, counter-clockwise; or before the start, clockwise.
+  const afterEnd = normAngle(at - arc.endAngle);
+  const beforeStart = normAngle(arc.startAngle - at);
+  const [from, to] =
+    afterEnd <= beforeStart
+      ? [arc.endAngle + gap, arc.endAngle + afterEnd + over]
+      : [arc.startAngle - beforeStart - over, arc.startAngle - gap];
+  return to > from ? [arcPart(c, r, from, to, s.ext1)] : [];
+}
+
 export function radialParts(
   g: Radial,
   s: DimStyle,
   model: AnnotationTables,
   measure: TextMeasure,
   keepText: boolean,
+  arc?: RadialArc,
 ): DimPart[] | undefined {
   const diameter = g.dimType === 'diameter';
   const p = g.chordPoint;
@@ -133,6 +163,12 @@ export function radialParts(
     // The far end's arrowhead, from inside the circle.
     const far = g.definitionPoint;
     out.push(...arrowParts(far, add(far, v, s.asz), s.blk2, s, model, v));
+  }
+  if (arc && !s.se1) {
+    out.push(...arcExtension(c, r, angleOf(v), arc, s));
+    // A diameter's far end too, where its arrowhead is drawn.
+    if (diameter && !inside && s.tofl)
+      out.push(...arcExtension(c, r, angleOf(v) + Math.PI, arc, s));
   }
   if (text) out.push({ ...s.text, geom: text, textPosition: t });
   out.push(defpoint(g.definitionPoint), defpoint(p));

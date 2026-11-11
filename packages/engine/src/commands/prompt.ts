@@ -158,6 +158,12 @@ export interface TextEditorRequest {
   /** MTEXT's line spacing style (1 at least, 2 exactly) and factor, for laying out columns. */
   readonly lineSpacingStyle?: number;
   readonly lineSpacing?: number;
+  /**
+   * A dimension's measurement, formatted (M2-31 part 2): the editor shows it, highlighted, in
+   * place of each `<>` in `value`, as AutoCAD's In-Place Text Editor shows a dimension's text,
+   * and answers `<>` for it.
+   */
+  readonly measurement?: string;
 }
 
 /** Free text; without `spaces` a space ends the input (the front-end's job, as Space is Enter). */
