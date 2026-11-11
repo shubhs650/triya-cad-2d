@@ -1838,8 +1838,12 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
 
     let end = false;
     let type: CadValueType | null = null;
+    let flagged = false;
     const binary = { size: 0, read: 0 };
     while (this._reader.dxfCode !== DxfCode.Start) {
+      if (this._reader.code === 93 && type === null) {
+        flagged = true;
+      }
       if (this._reader.code === 90) {
         type = this._reader.valueAsInt as CadValueType;
       }
@@ -1862,7 +1866,7 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
           break;
       }
 
-      if (end || this.endsPreR2007Value(type, binary)) {
+      if (end || this.endsPreR2007Value(type, binary, flagged)) {
         break;
       }
 

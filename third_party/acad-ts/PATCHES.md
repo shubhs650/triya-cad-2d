@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) 0170–0171 (M1-105), 0172 (M1-107), 0173–0174 (M1-111), 0175 (M2-06), 0176 (M2-24 part 2) and 0177 (M2-30) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) 0170–0171 (M1-105), 0172 (M1-107), 0173–0174 (M1-111), 0175 (M2-06), 0176 (M2-24 part 2), 0177 (M2-30) and 0178–0179 (M2-40) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -3248,5 +3248,39 @@ This change makes the property the stored number (default 0, the same as `false`
 **Title:** Read and write a DXF DIMENSION's text rotation and horizontal direction in degrees
 
 `Dimension.TextRotation` (53) and `Dimension.HorizontalDirection` (51) are radians in the object model: the DWG reader stores the BDs unchanged and `DimensionOrdinate` uses `Math.Sin(HorizontalDirection)`. In DXF both are degrees (DXF reference, DIMENSION; ezdxf reads them as degrees), but their `DxfCodeValue` attributes lack `DxfReferenceType.IsAngle`, so the DXF reader stored the degrees as radians and the writer wrote radians as degrees. This adds `IsAngle` to both. A test writes a linear dimension with a text rotation of π/6 and a horizontal direction of −π/4 to ASCII and binary DXF, checks 53 = 30 and 51 = −45, and reads both back exactly.
+
+</details>
+
+### 0178 — a TABLECONTENT read from an R2000/R2004 DXF keeps that version's values in an R2007+ save
+
+- **File:** `third_party/acad-ts-patches/0178-dxf-table-content-r2007-values.patch`
+- **Touches:** `src/IO/DXF/DxfStreamWriter/DxfValueFrame.ts` (new), `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
+- **Symptom:** the DXF writer has no field writer for TABLECONTENT, so it writes the group codes the reader kept. Read from an R2000 or R2004 DXF, those hold that version's values: a `90` type and its data, with no `93` flags before and no `94`, `300`, `302` and `304 ACVALUE_END` after (0098). Written into an AC1032 file they made the R2007+ reader run on from the value to the next `ACVALUE_END`, past the end of the TABLECONTENT, so a save of acadsharp `sample_AC1015_ascii.dxf` or `sample_AC1018_ascii.dxf` (and their binary twins) reopened without TABLEGEOMETRY 748, the ACDBDATATABLEs, DICTIONARY 75A/760 and the dynamic blocks' ACAD_ENHANCEDBLOCK data (ABD to ACF): 64 objects, gone for good at the next save, and ezdxf's audit of that save removed the dangling dictionary entries (recover 202). Found by M2-40.
+- **Fix:** writing R2007 or later, a TABLECONTENT's kept codes go through `framePreR2007Values`: a value after a `300 VALUE` or `301 DATAMAP_VALUE` marker that starts with its `90` type (one written before R2007; an R2007 value starts with `93`) ends where the reader ends it (0098) and gets the R2007 frame AutoCAD writes for a value in the general format with no formatted value cached: `93 2`, the type and data, `94 0`, `300` and `302` empty, `304 ACVALUE_END`. An unknown-type value is empty (`93 3`, no data, as AutoCAD writes an empty cell). A date's 8 bytes of seconds since 1970 (UTC) become the 16-byte SYSTEMTIME R2007 stores, in UTC; other data is kept as read.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0178 a TABLECONTENT kept from an R2000/R2004 DXF is written with R2007 values"; the twice-saved corpus gate (`packages/testkit/src/dxf-audit/saves.corpus.test.ts`, M2-40) reads every handle of the first save back from the second.
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Write R2007 values when a kept pre-R2007 TABLECONTENT is saved as R2007 or later
+
+TABLECONTENT has no DXF field writer, so the writer emits the group codes the reader kept. A TABLECONTENT read from an R2004 or older DXF holds values as a 90 type and its data, with none of the 93 flags, 94 units, 300 format, 302 formatted value and 304 ACVALUE_END that R2007 added. Saved as R2007 or later, those values made the reader run past the end of the object, so the objects after it were lost on reopening. When writing R2007 or later, this frames each such value (found after its `300 VALUE` or `301 DATAMAP_VALUE` marker, starting with 90) as AutoCAD writes a value in the general format: flags 2 (3 and no data for an empty, unknown-type value), units 0, empty format and formatted value, ACVALUE_END. A date's pre-R2007 time_t becomes the R2007 SYSTEMTIME (UTC).
+
+</details>
+
+### 0179 — an R2007+ DXF value without its 93 flags runs past the end of its object
+
+- **File:** `third_party/acad-ts-patches/0179-dxf-value-told-by-first-code.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** whether a value ends on its data (before R2007) or on `304 ACVALUE_END` was decided by the file's version (0098). Triya's AC1032 saves of an R2000/R2004 drawing written before 0178 hold TABLECONTENT values in the older form, so reopening one ran each value on to the next `ACVALUE_END` and lost the objects in between (the 64 of 0178), and saving it again dropped them.
+- **Fix:** a value is told by its first code: one that starts with its `93` flags (every R2007+ value) ends on `304`; one whose `90` type comes first ends on its data, whatever the file's version. Files from AutoCAD read as before.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0179 an R2007+ DXF value without its 93 flags ends on its data" (an AC1032 save with the TABLECONTENT values unframed, as before 0178, reads back every object).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Tell a pre-R2007 DXF value by its first group code, not the file version
+
+R2007 and later write a table, data-map or field value starting with its 93 flags and ending with 304 ACVALUE_END; before R2007 a value is its 90 type and that type's data. Choosing the ending by the file version made the reader run past the end of the object on an R2007+ file holding a value copied unchanged from an older file (as writers that keep unmapped objects as raw group codes produce). A value that starts with 93 now ends on ACVALUE_END and one that starts with 90 ends on its data, in any version.
 
 </details>

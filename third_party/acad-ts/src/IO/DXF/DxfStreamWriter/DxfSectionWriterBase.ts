@@ -103,7 +103,7 @@ import { NotificationEventHandler, NotificationEventArgs, NotificationType } fro
 import { DxfMap } from '../../../DxfMap.js';
 import { BoundaryPathFlags } from '../../../Entities/BoundaryPathFlags.js';
 import { UnknownEntity } from '../../../Entities/UnknownEntity.js';
-import type { IRawCadObject } from '../../../Objects/RawObjectData.js';
+import type { DxfRawCode, IRawCadObject } from '../../../Objects/RawObjectData.js';
 import { MathHelper } from '../../../Math/MathHelper.js';
 import { XYZ } from '../../../Math/XYZ.js';
 import { XY } from '../../../Math/XY.js';
@@ -531,14 +531,15 @@ export abstract class DxfSectionWriterBase {
 
   /**
    * Write an object the reader could not map from the group codes it kept, so that a save does
-   * not drop it. The handle and owner come from the object; everything else is written as read.
+   * not drop it. The handle and owner come from the object; everything else is written as read
+   * (`codes`, the kept codes unless the caller adapted them to the version written).
    */
-  protected writeRawObject(cadObject: CadObject & IRawCadObject): void {
+  protected writeRawObject(cadObject: CadObject & IRawCadObject, codes: readonly DxfRawCode[] = cadObject.rawDxfCodes!): void {
     this._writer.write(DxfCode.Start, cadObject.objectName);
 
     let inGroup = false;
     let beforeSubclass = true;
-    for (const { code, value } of cadObject.rawDxfCodes!) {
+    for (const { code, value } of codes) {
       let output = value;
       if (code === 100) {
         beforeSubclass = false;
