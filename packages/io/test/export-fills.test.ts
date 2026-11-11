@@ -37,6 +37,7 @@ import {
 import {
   ChangeSetBuilder,
   DocumentModel,
+  applyPropertyEdit,
   type Entity,
   type EntityGeometry,
   type EntityInit,
@@ -491,6 +492,54 @@ describe('triyaToAcad fills, images, underlays and multilines', () => {
     edit(model, (b) => b.updateEntity(e.id, { geom: next }));
 
     expectGeometry(reopened(save(model), e.handle)?.geom, next);
+  });
+
+  it('saves the hatch edits the Properties palette makes (M2-35 part 3)', () => {
+    const model = open();
+    const e = find(model, 'HATCH');
+    const set = (key: string, value: string, patterns?: Parameters<typeof applyPropertyEdit>[5]) =>
+      edit(model, (b) => {
+        const report = applyPropertyEdit(
+          b,
+          model,
+          [model.entity(e.id)!],
+          { key, value },
+          undefined,
+          patterns,
+        );
+        expect(report.invalid).toBeUndefined();
+        expect(report.changed).toBe(1);
+      });
+    const check = () =>
+      expectGeometry(reopened(save(model), e.handle)?.geom, model.entity(e.id)!.geom);
+
+    // Another pattern from the app's library (a user's file: Custom), laid out about its origin.
+    set(
+      'patternName',
+      'MY_GRID',
+      new Map([
+        [
+          e.id,
+          {
+            name: 'MY_GRID',
+            custom: true,
+            lines: [
+              { angle: 0, base: P(1, 2), offset: P(0, 4), dashes: [2, -1] },
+              { angle: Math.PI / 2, base: P(1, 2), offset: P(-4, 0), dashes: [] },
+            ],
+          },
+        ],
+      ]),
+    );
+    expect(model.entity(e.id)!.geom).toMatchObject({ pattern: 'MY_GRID', patternType: 2 });
+    check();
+    set('patternAngle', '30');
+    set('patternScale', '2.5');
+    set('islandStyle', '2');
+    check();
+    set('patternName', 'SOLID');
+    expect(model.entity(e.id)!.geom).toMatchObject({ solid: true, patternLines: [] });
+    check();
   });
 
   it('keeps an associative loop’s boundary objects and the other loops as read', () => {

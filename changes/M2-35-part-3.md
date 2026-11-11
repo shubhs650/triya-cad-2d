@@ -1,0 +1,1 @@
+- M2-35 part 3 (#288): the Properties palette edits a hatch's Pattern name (SOLID or a pattern from the bundled set and the user's .pat files, offered as it is typed), Angle, Scale, Spacing and Double (user-defined hatches) and Island detection style, laying the pattern out again about its origin.

@@ -11,13 +11,19 @@ import { moveBy, turnAbout } from '../edit/similarity';
 import { transformObjects } from '../edit/edit';
 import { rescaledReference } from '../edit/transform';
 import { JUSTIFICATIONS, rejustified } from '../commands/modify/attributes';
-import type { TextOutline } from '../commands/view/host';
+import type { PatternPlacement, PlacedPattern, TextOutline } from '../commands/view/host';
 import type { EntityId } from '../model/entity-ids';
 import type { Vec2 } from '../geom/types';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityPatch } from '../model/update';
-import type { Entity, EntityGeometry, InsertAttribute } from '../model/types';
+import type {
+  Entity,
+  EntityGeometry,
+  HatchGeometry,
+  HatchPatternLine,
+  InsertAttribute,
+} from '../model/types';
 import { withDimvarOverride } from '../annotation/dstyle';
 import { currentHeader } from './current';
 import type { GeneralProps } from './sheet';
@@ -25,6 +31,7 @@ import {
   DIMVAR_DEFAULTS,
   DIMVAR_ROWS,
   MAX_TRANSPARENCY,
+  isPatterned,
   parseColorValue,
   parseLineweightValue,
   textPositionOf,
@@ -34,6 +41,15 @@ import {
 
 /** A Justify row's TEXT objects as the canvas draws them now, by id (null: no font draws it). */
 export type TextOutlines = ReadonlyMap<EntityId, TextOutline | null>;
+
+/**
+ * A Pattern name edit's hatches as the app's pattern library placed the new pattern for each,
+ * by id (`hatchPattern`, M2-35 part 3).
+ */
+export type HatchPatterns = ReadonlyMap<
+  EntityId,
+  { readonly name: string; readonly custom: boolean; readonly lines: readonly HatchPatternLine[] }
+>;
 
 /** What the palette sends: the row's key and the value chosen or typed. */
 export interface PropertyEdit {
@@ -119,8 +135,10 @@ function typeRowChange(
   key: string,
   v: PropertyValue,
   outlines: TextOutlines | undefined,
+  patterns: HatchPatterns | undefined,
 ): Change | undefined | 'invalid' {
   const g = e.geom;
+  if (g.kind === 'HATCH') return hatchChange(e.id, g, key, v, patterns);
   if (key === 'style' && (g.kind === 'TEXT' || g.kind === 'MTEXT')) {
     const style = typeof v === 'string' ? model.tables.textStyles.get(v) : undefined;
     if (!style) return 'invalid';
@@ -162,6 +180,182 @@ function typeRowChange(
 }
 
 const geomPatch = (geom: EntityGeometry): Change => ({ patch: { geom } });
+
+const GRADIENT = 'a gradient fill';
+const USER_DEFINED = 'user defined (its Spacing sets it)';
+const NOT_USER_DEFINED = 'not user defined (its Scale sets it)';
+
+/**
+ * The point a hatch's pattern lines start from: the first line's base point (AutoCAD keeps the
+ * hatch origin, HPORIGIN, only in the lines it stores: DXF 43/44 are the origin turned and
+ * scaled from the pattern file's first line, which in the ANSI, ISO and Triya patterns, and in
+ * every user-defined hatch, starts at 0,0), else the drawing's origin.
+ */
+function patternOrigin(g: HatchGeometry): Vec2 {
+  return (isPatterned(g) && g.patternLines[0]?.base) || { x: 0, y: 0 };
+}
+
+/**
+ * Where a hatch given another pattern places it: at its angle and scale, about its origin. A
+ * user-defined hatch's DXF 41 is a spacing, not a scale, and a solid fill has none: both 1.
+ */
+export function patternPlacement(g: HatchGeometry): PatternPlacement {
+  const scaled = isPatterned(g) && g.patternType !== 0 && g.patternScale > 0;
+  return { angle: g.patternAngle, scale: scaled ? g.patternScale : 1, origin: patternOrigin(g) };
+}
+
+/**
+ * Pattern lines turned by `by` and scaled by `k` about `o`, as AutoCAD lays a pattern out again
+ * at a new angle or scale about the same origin (each line's base point, its offset and dashes).
+ */
+function relaidLines(
+  lines: readonly HatchPatternLine[],
+  o: Vec2,
+  by: number,
+  k: number,
+): HatchPatternLine[] {
+  const c = Math.cos(by);
+  const s = Math.sin(by);
+  const t = (v: Vec2): Vec2 => ({ x: k * (v.x * c - v.y * s), y: k * (v.x * s + v.y * c) });
+  return lines.map((l) => {
+    const d = t({ x: l.base.x - o.x, y: l.base.y - o.y });
+    return {
+      angle: l.angle + by,
+      base: { x: o.x + d.x, y: o.y + d.y },
+      offset: t(l.offset),
+      dashes: l.dashes.map((x) => x * k),
+    };
+  });
+}
+
+/**
+ * A hatch's Pattern rows (M2-35 part 3, AutoCAD 2024's Properties): Pattern name (SOLID, or a
+ * pattern `patterns` holds from the app's library), Angle and Scale (the stored lines laid out
+ * again about the hatch's origin), Spacing and Double for a user-defined hatch (a second family
+ * at 90° to the first, as HATCH's Double makes it), Island detection style (DXF 75). A gradient
+ * keeps its pattern; a solid fill has no lines to turn or scale.
+ */
+function hatchChange(
+  id: EntityId,
+  g: HatchGeometry,
+  key: string,
+  v: PropertyValue,
+  patterns: HatchPatterns | undefined,
+): Change | undefined | 'invalid' {
+  const patterned = isPatterned(g);
+  switch (key) {
+    case 'patternName': {
+      const name = typeof v === 'string' ? v.trim() : '';
+      if (name === '') return 'invalid';
+      if (g.gradient) return { refuse: GRADIENT };
+      if (name.toUpperCase() === g.pattern.toUpperCase()) return { skip: true };
+      if (name.toUpperCase() === 'SOLID') {
+        // DXF states a hatch's angle and scale (52, 41) for pattern fills only, so a solid fill
+        // has the reader's 0 and 0 (the OCS angle 0 is π in the WCS on a −Z plane).
+        return geomPatch({
+          ...g,
+          pattern: 'SOLID',
+          solid: true,
+          patternType: 1,
+          patternAngle: (g.normal?.z ?? 1) < 0 ? Math.PI : 0,
+          patternScale: 0,
+          double: false,
+          patternLines: [],
+        });
+      }
+      const p = patterns?.get(id);
+      if (!p) return 'invalid';
+      return geomPatch({
+        ...g,
+        pattern: p.name,
+        solid: false,
+        patternType: p.custom ? 2 : 1,
+        double: false,
+        patternScale: patternPlacement(g).scale,
+        patternLines: [...p.lines],
+      });
+    }
+    case 'patternAngle': {
+      const n = numeric(v, 'angle');
+      if (n === undefined) return 'invalid';
+      if (!patterned) return { skip: true };
+      const by = n - g.patternAngle;
+      return geomPatch({
+        ...g,
+        patternAngle: normalizeAngle(n),
+        patternLines: relaidLines(g.patternLines, patternOrigin(g), by, 1),
+      });
+    }
+    case 'patternScale':
+    case 'patternSpacing': {
+      const n = numeric(v, 'number');
+      if (n === undefined || !(n > 0)) return 'invalid';
+      if (!patterned) return { skip: true };
+      const user = g.patternType === 0;
+      if (user !== (key === 'patternSpacing')) {
+        return { refuse: user ? USER_DEFINED : NOT_USER_DEFINED };
+      }
+      // A stored scale of 0 (a file's) lays the lines out as they are, at scale 1.
+      const k = n / (g.patternScale > 0 ? g.patternScale : 1);
+      return geomPatch({
+        ...g,
+        patternScale: n,
+        patternLines: relaidLines(g.patternLines, patternOrigin(g), 0, k),
+      });
+    }
+    case 'double': {
+      const b = yesNo(v);
+      if (b === undefined) return 'invalid';
+      if (!patterned) return { skip: true };
+      if (g.patternType !== 0) return { refuse: NOT_USER_DEFINED };
+      const first = g.patternLines[0];
+      const patternLines =
+        b && first
+          ? [first, ...relaidLines([first], first.base, Math.PI / 2, 1)]
+          : g.patternLines.slice(0, 1);
+      return geomPatch({ ...g, double: b, patternLines });
+    }
+    case 'islandStyle': {
+      const style = ['0', '1', '2'].indexOf(String(v));
+      return style < 0 ? 'invalid' : geomPatch({ ...g, style });
+    }
+    default:
+      return undefined;
+  }
+}
+
+/**
+ * The hatches a Pattern name edit gives a pattern the app's library must place first (not SOLID,
+ * not a gradient, not one already of that name), each with where it places it.
+ */
+export function hatchesToPattern(
+  entities: readonly Entity[],
+  edit: PropertyEdit,
+): { readonly entity: Entity; readonly placement: PatternPlacement }[] {
+  if (edit.key !== 'patternName' || typeof edit.value !== 'string') return [];
+  const name = edit.value.trim().toUpperCase();
+  if (name === '' || name === 'SOLID') return [];
+  const out: { entity: Entity; placement: PatternPlacement }[] = [];
+  for (const e of entities) {
+    const g = e.geom;
+    if (g.kind !== 'HATCH' || g.gradient || g.pattern.toUpperCase() === name) continue;
+    out.push({ entity: e, placement: patternPlacement(g) });
+  }
+  return out;
+}
+
+/** `hatchPattern`'s reply as each hatch's new pattern. */
+export function placedPatterns(
+  hatches: readonly { readonly entity: Entity }[],
+  placed: PlacedPattern,
+): HatchPatterns {
+  return new Map(
+    hatches.map((h, i) => [
+      h.entity.id,
+      { name: placed.name, custom: placed.custom, lines: placed.lines[i] ?? [] },
+    ]),
+  );
+}
 
 const delta = (from: number, to: number, axis: 'x' | 'y'): Vec2 =>
   axis === 'x' ? { x: to - from, y: 0 } : { x: 0, y: to - from };
@@ -368,6 +562,7 @@ export function applyPropertyEdit(
   entities: readonly Entity[],
   edit: PropertyEdit,
   outlines?: TextOutlines,
+  patterns?: HatchPatterns,
 ): PropertyEditReport {
   const refused = new Map<string, number>();
   const editable = entities.filter((e) => {
@@ -402,7 +597,7 @@ export function applyPropertyEdit(
   const changes: [Entity, Change][] = [];
   for (const e of editable) {
     const c =
-      typeRowChange(model, e, edit.key, edit.value, outlines) ??
+      typeRowChange(model, e, edit.key, edit.value, outlines, patterns) ??
       geometryChange(e, edit.key, n, flag, text);
     if (c === 'invalid') return { changed: 0, refused, invalid: INVALID };
     if (c && 'refuse' in c) refused.set(c.refuse, (refused.get(c.refuse) ?? 0) + 1);

@@ -118,9 +118,17 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
-      - if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
+        run: pnpm exec playwright install chromium
+      # Chromium's system libraries come from apt. When the Ubuntu archive does not resolve (as
+      # from 2026-11-11, when only Playwright's extra fonts were missing from the image), the
+      # browser still runs if no library it links is missing; a missing one fails the job.
+      - name: Install browser system dependencies
+        run: |
+          if pnpm exec playwright install-deps chromium; then exit 0; fi
+          echo "::warning::playwright install-deps failed; checking Chromium's libraries instead"
+          missing="$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
+            -exec ldd {} \; | grep 'not found' || true)"
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
       - run: pnpm build
       - run: pnpm test:fidelity
       # Later suites still run after a fidelity failure so one red PR shows every broken gate.
@@ -167,9 +175,17 @@ jobs:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
       - if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install --with-deps chromium
-      - if: steps.pw-cache.outputs.cache-hit == 'true'
-        run: pnpm exec playwright install-deps chromium
+        run: pnpm exec playwright install chromium
+      # Chromium's system libraries come from apt. When the Ubuntu archive does not resolve (as
+      # from 2026-11-11, when only Playwright's extra fonts were missing from the image), the
+      # browser still runs if no library it links is missing; a missing one fails the job.
+      - name: Install browser system dependencies
+        run: |
+          if pnpm exec playwright install-deps chromium; then exit 0; fi
+          echo "::warning::playwright install-deps failed; checking Chromium's libraries instead"
+          missing="$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
+            -exec ldd {} \; | grep 'not found' || true)"
+          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
       - run: pnpm build
       - run: pnpm test:perf
       - uses: actions/upload-artifact@v4

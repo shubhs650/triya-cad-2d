@@ -60,7 +60,10 @@ import { UndoStack, type UndoAction, type UndoState } from './undo';
 import {
   applyCurrentEdit,
   applyPropertyEdit,
+  hatchesToPattern,
+  placedPatterns,
   textsToMeasure,
+  type HatchPatterns,
   type PropertyEdit,
   type TextOutlines,
 } from '../properties/edit';
@@ -496,11 +499,26 @@ export class PromptBus {
             const r = await ctx.view.request({ op: 'textOutlines', texts });
             outlines = new Map(measure.map((e, i) => [e.id, (r.ok && r.outlines?.[i]) || null]));
           }
+          // A hatch given another pattern is placed by the app's pattern library first.
+          const toPlace = hatchesToPattern(entities, edit);
+          let patterns: HatchPatterns | undefined;
+          if (toPlace.length > 0) {
+            const r = await ctx.view.request({
+              op: 'hatchPattern',
+              name: String(edit.value).trim(),
+              placements: toPlace.map((h) => h.placement),
+            });
+            if (!r.ok || !r.pattern) {
+              ctx.message(r.ok ? 'Invalid input.' : r.message);
+              return;
+            }
+            patterns = placedPatterns(toPlace, r.pattern);
+          }
           ctx.edit((b) => {
             report =
               ids.length === 0
                 ? applyCurrentEdit(b, model, edit)
-                : applyPropertyEdit(b, model, entities, edit, outlines);
+                : applyPropertyEdit(b, model, entities, edit, outlines, patterns);
           });
           if (report!.invalid) ctx.message(`${report!.invalid}.`);
           for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
