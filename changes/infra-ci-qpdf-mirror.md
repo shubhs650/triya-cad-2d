@@ -1,1 +1,1 @@
-- CI (#288): the qpdf install falls back to the runner's archive mirror when security.ubuntu.com does not resolve (red on main and every PR from 2026-11-11 13:50 UTC); the `qpdf --check` step is unchanged.
+- CI (#288): when apt cannot install qpdf (the runners could not resolve the Ubuntu archive hosts from 2026-11-11 13:50 UTC, red on main and every PR), the job installs qpdf's own Linux build from its GitHub release; the `qpdf --check` step is unchanged.
