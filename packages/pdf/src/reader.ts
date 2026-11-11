@@ -4,10 +4,13 @@
 // page tree with its inherited attributes (§7.7.3.4). A file whose cross-reference data is
 // damaged is read by scanning for its objects, as viewers do. Streams keep their encoded bytes;
 // only cross-reference streams, object streams and content streams are decoded (Flate with PNG
-// or TIFF predictors, LZW, ASCIIHex, ASCII85, RunLength). Encrypted files are refused
-// (`PdfReadError`): the plot cannot copy what it cannot decrypt. No DOM here.
+// or TIFF predictors, LZW, ASCIIHex, ASCII85, RunLength). An encrypted file (M2-38) is read
+// with the empty user password through the Standard security handler (security.ts): every
+// object's strings and streams come back decrypted, so what the plot copies is plain. One that
+// needs a password, or uses another handler, is refused (`PdfReadError`). No DOM here.
 
 import { inflateSync, unzlibSync } from 'fflate';
+import { StandardDecryption } from './security';
 
 export class PdfName {
   constructor(readonly name: string) {}
@@ -258,12 +261,18 @@ export class PdfSource {
   >();
   #trailer: PdfDict = new Map();
   #pages: PdfPageEntry[] | undefined;
+  #crypt: StandardDecryption | undefined;
+  /** The Encrypt dictionary's object, never decrypted itself (§7.6.1). */
+  #encryptNum: number | undefined;
 
   private constructor(bytes: Uint8Array) {
     this.#b = bytes;
   }
 
-  /** Reads `bytes`; throws `PdfReadError` for a file that is not a PDF or is encrypted. */
+  /**
+   * Reads `bytes`; throws `PdfReadError` for a file that is not a PDF, or is encrypted with a
+   * password or a security handler it cannot open.
+   */
   static open(bytes: Uint8Array): PdfSource {
     const s = new PdfSource(bytes);
     let ok = false;
@@ -272,8 +281,8 @@ export class PdfSource {
     } catch (e) {
       if (!(e instanceof PdfReadError)) throw e;
     }
-    if (!ok) s.#reconstruct();
-    if (s.#trailer.has('Encrypt')) throw new PdfReadError('the PDF is encrypted');
+    if (ok) s.#secure();
+    else s.#reconstruct();
     if (!(s.resolve(s.#trailer.get('Root')) instanceof Map)) {
       // A table that reads but points nowhere useful: scan instead.
       if (ok) s.#reconstruct();
@@ -295,8 +304,10 @@ export class PdfSource {
     let v: PdfValue = null;
     const e = this.#xref.get(ref.num);
     try {
-      if (e?.kind === 'file') v = this.#objectAt(e.offset, ref.num);
-      else if (e?.kind === 'packed') v = this.#packedObject(e.stream, e.index, ref.num);
+      if (e?.kind === 'file') {
+        v = this.#objectAt(e.offset, ref.num);
+        if (this.#crypt && ref.num !== this.#encryptNum) v = this.#decrypt(v, ref.num, e.gen);
+      } else if (e?.kind === 'packed') v = this.#packedObject(e.stream, e.index, ref.num);
     } catch (err) {
       if (!(err instanceof PdfReadError)) throw err;
       v = null;
@@ -362,6 +373,101 @@ export class PdfSource {
       );
     });
     return data;
+  }
+
+  /** Sets up decryption when the trailer names an Encrypt dictionary (§7.6.1). */
+  #secure(): void {
+    this.#crypt = undefined;
+    const raw = this.#trailer.get('Encrypt');
+    if (raw === undefined || raw === null) return;
+    this.#encryptNum = raw instanceof PdfRef ? raw.num : undefined;
+    const d = this.resolve(raw);
+    if (!(d instanceof Map)) throw new PdfReadError('the PDF has a damaged Encrypt dictionary');
+    const num = (k: string) => {
+      const v = this.resolve(d.get(k));
+      return typeof v === 'number' ? v : undefined;
+    };
+    const str = (v: PdfValue | undefined) => {
+      const x = this.resolve(v);
+      return x instanceof PdfString ? x.bytes : undefined;
+    };
+    const cryptFilters = new Map<string, { cfm: string; length?: number }>();
+    const cf = this.resolve(d.get('CF'));
+    if (cf instanceof Map)
+      for (const [k, f] of cf) {
+        const fd = this.resolve(f);
+        if (!(fd instanceof Map)) continue;
+        const length = this.resolve(fd.get('Length'));
+        cryptFilters.set(k, {
+          cfm: name(this.resolve(fd.get('CFM'))) ?? 'None',
+          ...(typeof length === 'number' ? { length } : {}),
+        });
+      }
+    const id = this.resolve(this.#trailer.get('ID'));
+    const crypt = StandardDecryption.open({
+      filter: name(this.resolve(d.get('Filter'))) ?? '',
+      v: num('V') ?? 0,
+      r: num('R') ?? 0,
+      length: num('Length'),
+      o: str(d.get('O')) ?? new Uint8Array(0),
+      u: str(d.get('U')) ?? new Uint8Array(0),
+      oe: str(d.get('OE')),
+      ue: str(d.get('UE')),
+      p: num('P') ?? 0,
+      encryptMetadata: this.resolve(d.get('EncryptMetadata')) !== false,
+      cryptFilters,
+      stmF: name(this.resolve(d.get('StmF'))) ?? 'Identity',
+      strF: name(this.resolve(d.get('StrF'))) ?? 'Identity',
+      id: (Array.isArray(id) ? str(id[0]) : undefined) ?? new Uint8Array(0),
+    });
+    if (typeof crypt === 'string') throw new PdfReadError(crypt);
+    this.#crypt = crypt;
+    // What was read before (the Encrypt dictionary, a /Length) was read undecrypted.
+    const keep = this.#encryptNum === undefined ? undefined : this.#cache.get(this.#encryptNum);
+    this.#cache.clear();
+    this.#packed.clear();
+    if (this.#encryptNum !== undefined && keep !== undefined)
+      this.#cache.set(this.#encryptNum, keep);
+  }
+
+  /** Object `num`'s strings and stream data decrypted (§7.6.2). */
+  #decrypt(v: PdfValue, num: number, gen: number): PdfValue {
+    const crypt = this.#crypt!;
+    const walk = (x: PdfValue): PdfValue => {
+      if (x instanceof PdfString) return new PdfString(crypt.string(num, gen, x.bytes));
+      if (Array.isArray(x)) return x.map(walk);
+      if (x instanceof Map) {
+        const out: PdfDict = new Map();
+        for (const [k, y] of x) out.set(k, walk(y));
+        return out;
+      }
+      return x;
+    };
+    if (!(v instanceof PdfStream)) return walk(v);
+    const type = name(v.dict.get('Type'));
+    // A cross-reference stream is never encrypted; the XMP may be left plain (/EncryptMetadata).
+    if (type === 'XRef') return v;
+    const dict = walk(v.dict) as PdfDict;
+    if (type === 'Metadata' && !crypt.encryptMetadata) return new PdfStream(dict, v.data);
+    // A stream's own /Crypt filter (§7.4.10) comes first in its list and names its method.
+    const filters = this.resolve(dict.get('Filter'));
+    const list = Array.isArray(filters) ? filters : filters === null ? [] : [filters];
+    if (list.length > 0 && name(this.resolve(list[0])) === 'Crypt') {
+      const parms = this.resolve(dict.get('DecodeParms'));
+      const first = this.resolve(Array.isArray(parms) ? parms[0] : parms);
+      const filter = first instanceof Map ? name(this.resolve(first.get('Name'))) : undefined;
+      const data = crypt.stream(num, gen, v.data, filter ?? 'Identity');
+      // The rest of the filters as one would write them unencrypted.
+      const rest = list.slice(1);
+      const restParms = Array.isArray(parms) ? parms.slice(1) : [];
+      dict.delete('Filter');
+      dict.delete('DecodeParms');
+      if (rest.length > 0) dict.set('Filter', rest.length === 1 ? rest[0]! : rest);
+      if (restParms.some((p) => p !== null))
+        dict.set('DecodeParms', rest.length === 1 ? restParms[0]! : restParms);
+      return new PdfStream(dict, data);
+    }
+    return new PdfStream(dict, crypt.stream(num, gen, v.data));
   }
 
   #readXref(): boolean {
@@ -549,6 +655,7 @@ export class PdfSource {
     let m: RegExpExecArray | null;
     const streams: number[] = [];
     let catalog: number | undefined;
+    let xrefStream: number | undefined;
     while ((m = re.exec(text))) {
       const offset = m.index + m[0].indexOf(m[1]!);
       const num = Number(m[1]);
@@ -556,7 +663,30 @@ export class PdfSource {
       const head = text.slice(offset, offset + 200);
       if (/\/Type\s*\/ObjStm/.test(head)) streams.push(num);
       if (/\/Type\s*\/Catalog/.test(head)) catalog = num;
+      if (/\/Type\s*\/XRef/.test(head)) xrefStream = offset;
     }
+    this.#trailer = new Map();
+    const t = text.lastIndexOf('trailer');
+    if (t >= 0) {
+      try {
+        const lx = new Lexer(b, t + 7);
+        const v = lx.value();
+        if (v instanceof Map) this.#trailer = v;
+      } catch (e) {
+        if (!(e instanceof PdfReadError)) throw e;
+      }
+    }
+    // A file whose cross-reference is a stream keeps its trailer entries in the stream's dictionary.
+    if (t < 0 && xrefStream !== undefined) {
+      try {
+        const v = this.#objectAt(xrefStream, undefined);
+        if (v instanceof PdfStream) this.#trailer = new Map(v.dict);
+      } catch (e) {
+        if (!(e instanceof PdfReadError)) throw e;
+      }
+    }
+    // Before the object streams, which are encrypted as a whole.
+    this.#secure();
     for (const s of streams) {
       try {
         const v = this.get(new PdfRef(s, 0));
@@ -570,17 +700,6 @@ export class PdfSource {
           if (typeof k !== 'number') break;
           if (!this.#xref.has(k)) this.#xref.set(k, { kind: 'packed', stream: s, index: i });
         }
-      } catch (e) {
-        if (!(e instanceof PdfReadError)) throw e;
-      }
-    }
-    this.#trailer = new Map();
-    const t = text.lastIndexOf('trailer');
-    if (t >= 0) {
-      try {
-        const lx = new Lexer(b, t + 7);
-        const v = lx.value();
-        if (v instanceof Map) this.#trailer = v;
       } catch (e) {
         if (!(e instanceof PdfReadError)) throw e;
       }

@@ -114,15 +114,28 @@ describe('PdfSource', () => {
     expect(decodedText(src, src.get(b!))).toBe('1 w');
   });
 
-  it('refuses an encrypted file and what is not a PDF', () => {
+  it('refuses an encrypted file it cannot open, and what is not a PDF', () => {
+    // M2-38 reads the Standard handler with the empty user password (testkit's
+    // encrypted.test.ts); this one's user entry matches no key, so it needs a password.
     expect(() =>
       PdfSource.open(
         buildPdf(
-          { ...TWO_PAGES, 9: '<< /Filter /Standard /V 1 /R 2 >>' },
+          { ...TWO_PAGES, 9: '<< /Filter /Standard /V 1 /R 2 /O <00> /U <00> /P -4 >>' },
           { trailer: '/Encrypt 9 0 R' },
         ),
       ),
-    ).toThrow(PdfReadError);
+    ).toThrow(/needs a password/);
+    expect(() =>
+      PdfSource.open(
+        buildPdf(
+          { ...TWO_PAGES, 9: '<< /Filter /Standard /V 3 /R 3 >>' },
+          { trailer: '/Encrypt 9 0 R' },
+        ),
+      ),
+    ).toThrow(/revision 3 \(V 3\)/);
+    expect(() => PdfSource.open(buildPdf(TWO_PAGES, { trailer: '/Encrypt 42 0 R' }))).toThrow(
+      /damaged Encrypt/,
+    );
     expect(() => PdfSource.open(bytesOf('hello'))).toThrow(PdfReadError);
   });
 
