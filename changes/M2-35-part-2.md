@@ -1,0 +1,1 @@
+- M2-35 part 2 (#285): the Properties palette changes a text's style and justification (the text moves about its insertion point, as AutoCAD's does), a block reference's X, Y and Z scale with its attributes following, and a polyline's global width.
