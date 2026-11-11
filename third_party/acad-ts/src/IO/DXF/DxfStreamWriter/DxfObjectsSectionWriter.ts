@@ -9,6 +9,7 @@ import { DxfSubclassMarker } from '../../../DxfSubclassMarker.js';
 import { DxfClassMap } from '../../../DxfClassMap.js';
 import { DxfMap } from '../../../DxfMap.js';
 import { ACadVersion } from '../../../ACadVersion.js';
+import { framePreR2007Values } from './DxfValueFrame.js';
 import { CadObject } from '../../../CadObject.js';
 import { NonGraphicalObject } from '../../../Objects/NonGraphicalObject.js';
 import { CellStyleMap } from '../../../Objects/CellStyleMap.js';
@@ -431,7 +432,9 @@ export class DxfObjectsSectionWriter extends DxfSectionWriterBase {
     // No field writer exists for these (dynamic-block graph nodes: one that writes only what
     // their maps hold, which drops visibility states); write the group codes the reader kept.
     if ((co instanceof Material || co instanceof VisualStyle || co instanceof ProxyObject || co instanceof TableContent || co instanceof EvaluationExpression) && co.rawDxfCodes != null) {
-      this.writeRawObject(co);
+      // A TABLECONTENT read from a DXF before R2007 holds that version's values.
+      const r2007Values = co instanceof TableContent && this.version >= ACadVersion.AC1021;
+      this.writeRawObject(co, r2007Values ? framePreR2007Values(co.rawDxfCodes) : co.rawDxfCodes);
       return;
     }
 
