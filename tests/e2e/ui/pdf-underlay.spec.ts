@@ -14,6 +14,9 @@ import { startApp } from '../app/server';
 const FIXTURES = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
 const DXF = path.join(FIXTURES, 'pdf-underlay.dxf');
 const PDF = path.join(FIXTURES, 'pdf-underlay.pdf');
+// M2-38 part 2: one page with three PDF layers, attached twice (fixture.ts `underlayLayersDxf`).
+const LAYERS_DXF = path.join(FIXTURES, 'pdf-underlay-layers.dxf');
+const LAYERS_PDF = path.join(FIXTURES, 'pdf-underlay-layers.pdf');
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -185,4 +188,31 @@ test('snaps to the PDF page’s grid corners inside the clip, and nothing outsid
   const [line] = await linesAdded(page);
   expect(Math.abs(line![0]! - inside.x)).toBeLessThan(1e-6);
   expect(Math.abs(line![1]! - inside.y)).toBeLessThan(1e-6);
+});
+
+test('draws an underlay without the PDF layers it turns off (ULAYERS), the other with them (M2-38)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, LAYERS_DXF);
+  await expectShown(page, 'pdf-underlay-layers.dxf');
+  await openWithDrop(page, LAYERS_PDF);
+  await expectShown(page, 'pdf-underlay-layers.dxf');
+  // Both pages are 4 × 3 in, at (0, 0) and (0, −4): extents once pdf.js has read the page.
+  await expect.poll(() => pdfRenders(page), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  await nav(page, 'Zoom Extents').click();
+  const v = await viewOf(page);
+  const colour = (x: number, y: number) => colourAt(page, v.at(x, y));
+  const red = (c: number[]) => c[0]! > 200 && c[1]! < 60 && c[2]! < 60;
+  const blue = (c: number[]) => c[2]! > 200 && c[0]! < 60 && c[1]! < 60;
+  const green = (c: number[]) => c[1]! > 100 && c[0]! < 60 && c[2]! < 60;
+  // The plain underlay: Walls red, Notes blue; Draft is off by the PDF's own default.
+  await expect.poll(async () => red(await colour(0.75, 1.5)), { timeout: 30_000 }).toBe(true);
+  await expect.poll(async () => blue(await colour(2, 1.5)), { timeout: 30_000 }).toBe(true);
+  expect(green(await colour(3.25, 1.5))).toBe(false);
+  // The underlay turning Walls off: its page has Notes alone.
+  await expect.poll(async () => blue(await colour(2, -2.5)), { timeout: 30_000 }).toBe(true);
+  expect(red(await colour(0.75, -2.5))).toBe(false);
+  expect(green(await colour(3.25, -2.5))).toBe(false);
 });
