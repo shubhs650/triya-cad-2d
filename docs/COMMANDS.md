@@ -64,7 +64,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | OVERKILL | — | 2 | tolerance, ignore props, combine | |
 | CHANGE / CHPROP | -CH / CH→PROPERTIES | 2 | | |
 | MATCHPROP | MA | 1 | Settings dialog | |
-| PROPERTIES | PR, CH, MO, Ctrl+1 | 1 | palette | ~ (#247: palette v1, General + per-type sections, undoable edits; #273: a dimension's Dim style, Text override and eight DIMVAR rows, redrawn at once; leftovers M2-35) |
+| PROPERTIES | PR, CH, MO, Ctrl+1 | 1 | palette | ~ (#247: palette v1, General + per-type sections, undoable edits; #273: a dimension's Dim style, Text override and eight DIMVAR rows, redrawn at once; #283: current settings with nothing selected; #285: text Style/Justify, block Scale X/Y/Z, polyline Global width; leftovers M2-35) |
 | PROPERTIESCLOSE | — | 2 | closes the palette | x (#247) |
 | UNDO / U | U, Ctrl+Z | 1 | Auto, Control, BEgin/End, Mark, Back, number | x (#223; Ctrl+Z, the Quick Access Undo button and the undo toast #252; the Undo drop-down list runs UNDO n #287; a Layers palette toggle and a layout's rename, move or page setup are steps of their own, LAYER and LAYOUT; Auto/Combine/Layer kept as settings until macros, undoable views and the Layer Properties Manager exist) |
 | REDO | Ctrl+Y | 1 | | x (#223; Ctrl+Y, Cmd+Shift+Z on a Mac and the Quick Access Redo button #252; the Redo drop-down list runs MREDO n #287) |
