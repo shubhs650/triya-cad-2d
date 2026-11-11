@@ -58,7 +58,7 @@ import { DocumentStore, isDirty, layoutsOf, spacesOf, type OpenDocument } from '
 import { engines } from './engine/registry';
 import { shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
-import { RasterImages, imageDefinitionsOf, isRasterFile } from './images';
+import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
 import { LayersPalette } from './LayersPalette';
 import { PropertiesPalette } from './PropertiesPalette';
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
@@ -641,9 +641,6 @@ const isPdfFile = (name: string) => /\.pdf$/i.test(name);
  * matched to the drawings' IMAGEDEFs by file name and decoded once each.
  */
 const images = new RasterImages((bytes) => decodeRaster(bytes));
-
-const pdfDefinitionsOf = (opened: OpenDocument['opened']): PdfDefinition[] =>
-  (opened.init.objects ?? []).filter((o): o is PdfDefinition => o.type === 'PDFDEFINITION');
 
 /**
  * The user's plot style tables and linetype files (M2-20 part 2), kept on this device for the
@@ -1578,6 +1575,28 @@ function SpaceCanvas({
 }
 
 /**
+ * The drawing's PDFDEFINITIONs as they are now (a pasted underlay's too, M2-32), read again only
+ * when its engine has applied another change.
+ */
+function pdfDefinitions(
+  id: number,
+  opened: OpenDocument['opened'],
+): () => readonly PdfDefinition[] {
+  let seen: readonly unknown[] | undefined;
+  let count = -1;
+  let defs: readonly PdfDefinition[] = [];
+  return () => {
+    const changes = engines.changesOf(id);
+    if (changes !== seen || changes.length !== count) {
+      defs = objectsOf<PdfDefinition>(opened.init, changes, 'PDFDEFINITION');
+      seen = changes;
+      count = changes.length;
+    }
+    return defs;
+  };
+}
+
+/**
  * What every canvas of a drawing draws with: the user's patterns and fonts, the edits made
  * since it opened, and the PDF and image files supplied.
  */
@@ -1590,7 +1609,7 @@ function drawingHooks(
     fonts: () => fonts.sources(),
     changes: () => engines.changesOf(id),
     underlays: (deliver, deliverSnap) =>
-      pdfPages.client(pdfDefinitionsOf(opened), deliver, deliverSnap),
+      pdfPages.client(pdfDefinitions(id, opened), deliver, deliverSnap),
     images: (deliver) =>
       images.client(() => imageDefinitionsOf(opened.init, engines.changesOf(id)), deliver),
   };

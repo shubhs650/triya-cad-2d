@@ -52,7 +52,8 @@ type Deliver = (definition: string, raster: UnderlayRaster | undefined) => void;
 type DeliverSnap = (definition: string, page: UnderlaySnapPage | undefined) => void;
 
 interface Client {
-  readonly definitions: ReadonlyMap<string, PdfDefinition>;
+  /** The drawing's PDFDEFINITION of this handle as it is now. */
+  readonly definition: (handle: string) => PdfDefinition | undefined;
   readonly deliver: Deliver;
   /** The latest request per definition. */
   readonly latest: Map<string, UnderlayRequest>;
@@ -127,7 +128,7 @@ export class PdfPages {
     }
     for (const client of this.#clients) {
       for (const r of client.latest.values()) {
-        const def = client.definitions.get(r.definition);
+        const def = client.definition(r.definition);
         if (def && fileKey(def.fileName) === key) {
           client.snapped.delete(r.definition);
           this.#serve(client, r);
@@ -148,15 +149,24 @@ export class PdfPages {
 
   /**
    * A canvas of a drawing with these PDFDEFINITIONs: pages are delivered as asked, and with
-   * `deliverSnap` each definition's page geometry once (M2-22).
+   * `deliverSnap` each definition's page geometry once (M2-22). Given as a function, they are
+   * read as the drawing has them when a page is asked for, so a definition pasted in or
+   * brought by an xref is served (M2-32).
    */
   client(
-    definitions: readonly PdfDefinition[],
+    definitions: readonly PdfDefinition[] | (() => readonly PdfDefinition[]),
     deliver: Deliver,
     deliverSnap?: DeliverSnap,
   ): UnderlayClient {
+    const fixed =
+      typeof definitions === 'function'
+        ? undefined
+        : new Map(definitions.map((d) => [d.handle, d]));
     const client: Client = {
-      definitions: new Map(definitions.map((d) => [d.handle, d])),
+      definition: (h) =>
+        fixed
+          ? fixed.get(h)
+          : (definitions as () => readonly PdfDefinition[])().find((d) => d.handle === h),
       deliver,
       latest: new Map(),
       deliverSnap,
@@ -173,7 +183,7 @@ export class PdfPages {
   }
 
   #serve(client: Client, r: UnderlayRequest): void {
-    const def = client.definitions.get(r.definition);
+    const def = client.definition(r.definition);
     if (!def) return;
     const file = this.#files.get(fileKey(def.fileName));
     if (!file) return;

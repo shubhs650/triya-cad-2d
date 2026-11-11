@@ -1,7 +1,7 @@
 // IMAGEDEF, RASTERVARIABLES and WIPEOUTVARIABLES to Triya (M1-19): an IMAGE's file and pixel
 // size, and the IMAGEFRAME / IMAGEQUALITY / WIPEOUTFRAME settings the renderer draws with; and
-// PDFDEFINITION (M1-20), the file and page a PDF underlay shows. None has a writer: the save
-// refuses an edited one (export.ts `unwritten`) and keeps the original untouched.
+// PDFDEFINITION (M1-20), the file and page a PDF underlay shows. Their writer is
+// export/image-objects.ts (M1-75 part 13; PDFDEFINITION since M2-32 part 2).
 
 import {
   ImageDefinition as AcadImageDefinition,
