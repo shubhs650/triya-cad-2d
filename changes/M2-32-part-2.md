@@ -1,0 +1,1 @@
+- M2-32 part 2 (#277): images and PDF underlays pasted into another drawing bring their image and PDF definitions and show their files there too; the save writes new and edited PDF underlay definitions.
