@@ -4,7 +4,7 @@
 // long toggle → canvas took (acceptance: under 16 ms).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DWG, DXF, expectShown, ink, inkWeight, openWithPicker } from '../app/page';
+import { DWG, DXF, expectDrawn, expectShown, ink, inkWeight, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -25,6 +25,9 @@ async function openLayers(page: Page, file: string) {
     .click();
   const palette = page.getByRole('complementary', { name: 'Layers' });
   await expect(palette).toBeVisible();
+  // The palette docks beside the canvas, which redraws at its narrower size; the specs measure
+  // the canvas as shown against what a toggle leaves (M2-50).
+  await expectDrawn(page);
   return palette;
 }
 

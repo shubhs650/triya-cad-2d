@@ -114,7 +114,27 @@ export async function expectShown(page: Page, name: string): Promise<void> {
   await expect(tab).toHaveAttribute('aria-selected', 'true', {
     timeout: 30_000,
   });
+  // Ink alone cannot tell: the navigation bar over an empty canvas is already ink (M2-50).
+  await expectDrawn(page, { timeout: 15_000 });
   await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(200);
+}
+
+/**
+ * Waits until the visible canvas has drawn a frame at the size it has now (M2-50): the drawing
+ * once its render worker has built it, and again after a palette or window resize cleared it.
+ * Until then a screenshot shows a blank or stale canvas.
+ */
+export async function expectDrawn(page: Page, o: { timeout?: number } = {}): Promise<void> {
+  const canvas = activeCanvas(page);
+  await expect
+    .poll(
+      () =>
+        canvas.evaluate(
+          (c: HTMLCanvasElement) => c.dataset['drawn'] === `${c.clientWidth}x${c.clientHeight}`,
+        ),
+      o,
+    )
+    .toBe(true);
 }
 
 /** The world point the status bar shows for the cursor at canvas point (x, y). */
