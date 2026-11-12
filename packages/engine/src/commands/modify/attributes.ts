@@ -22,6 +22,7 @@
 // Commands edit only through `ctx.edit`; a dialog is a prompt (`DialogPrompt`) the front-end
 // answers with what changed (`AttributePatch`es), so tests answer it as the app does.
 import type { Vec2 } from '../../geom/types';
+import { bookColors } from '../../model/book-colors';
 import { dynamicBlockOf } from '../../model/dynamic-block';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
@@ -1002,26 +1003,6 @@ async function* colorFromBook(
   const color = books.get(`${known.bookName}$${name}`.toUpperCase());
   if (!color) ctx.message(`Cannot find color "${name}" in color book "${known.bookName}".`);
   return color;
-}
-
-/**
- * The colour-book colours the drawing uses (on layers, objects and attributes), by
- * `BOOK$COLOR` in capitals, as AutoCAD names a DBCOLOR.
- */
-export function bookColors(model: DocumentModel): Map<string, Color> {
-  const out = new Map<string, Color>();
-  const add = (c: Color) => {
-    if (c.kind === 'rgb' && c.bookName !== undefined && c.colorName) {
-      const key = `${c.bookName}$${c.colorName}`.toUpperCase();
-      if (!out.has(key)) out.set(key, c);
-    }
-  };
-  for (const l of model.tables.layers.values()) add(l.color);
-  for (const e of model.entities()) {
-    add(e.color);
-    if (e.geom.kind === 'INSERT') for (const a of e.geom.attributes) add(a.color);
-  }
-  return out;
 }
 
 /** AutoCAD's names for ACI 1–7, as the Color option takes and shows them. */

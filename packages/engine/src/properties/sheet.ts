@@ -31,7 +31,8 @@ import {
   type DimvarRow,
   type DimvarSection,
 } from './dimension';
-import { JUSTIFICATIONS, bookColors } from '../commands/modify/attributes';
+import { JUSTIFICATIONS } from '../commands/modify/attributes';
+import { bookColors } from '../model/book-colors';
 import {
   hasThickness,
   hyperlinkOf,

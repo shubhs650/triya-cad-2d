@@ -26,7 +26,6 @@ export {
   atteditCommand,
   attributeEntries,
   blockNameOf,
-  bookColors,
   colorText,
   parseColor,
   parseTrueColor,
