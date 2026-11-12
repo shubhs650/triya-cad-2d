@@ -136,7 +136,12 @@ export type CommandInput =
    * The Properties palette's Vertex spinner (M2-35 part 8): the polyline vertex its sheet shows,
    * from 0, until the selection changes (another selection starts at the first vertex).
    */
-  | { readonly kind: 'property-vertex'; readonly vertex: number };
+  | { readonly kind: 'property-vertex'; readonly vertex: number }
+  /**
+   * A row's `...` button (`PropertyRow.editor`, M2-35 part 9): an MTEXT's Contents opens the
+   * In-Place Text Editor on the one MTEXT the palette shows.
+   */
+  | { readonly kind: 'property-editor'; readonly key: 'contents' };
 
 /**
  * What the command engine tells the front-ends: the bus's events, with every edit a command
@@ -292,6 +297,8 @@ export class EngineSession {
         return Promise.resolve();
       case 'property':
         return this.#bus.setProperty(input.edit, this.#filter);
+      case 'property-editor':
+        return this.#bus.editContents(this.#filter);
       case 'property-vertex':
         this.#vertex = Math.max(0, Math.trunc(input.vertex));
         if (this.#properties) this.#sendSheet();
