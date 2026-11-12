@@ -51,6 +51,10 @@ export abstract class SfntFont {
   readonly fixedPitch: boolean;
   /** name ID 6, else the full name without spaces; may be empty. */
   readonly postScriptName: string;
+  /** name ID 16 (typographic family), else ID 1; may be empty. */
+  readonly familyName: string;
+  /** OS/2 usWeightClass (400 regular, 700 bold); 400 without an OS/2 table. */
+  readonly weightClass: number;
   /** OS/2 fsType says the font may be embedded with its outlines. */
   readonly embeddable: boolean;
   /** OS/2 fsType forbids subsetting: the whole font is embedded. */
@@ -86,6 +90,7 @@ export abstract class SfntFont {
     const os2 = tables.get('OS/2');
     const o = os2 && os2.length >= 10 ? view(os2) : undefined;
     const fsType = o ? o.getUint16(8) : 0;
+    this.weightClass = (o && os2!.length >= 6 && o.getUint16(4)) || 400;
     this.embeddable = (fsType & 0x000f) !== FS_RESTRICTED && (fsType & FS_BITMAP_ONLY) === 0;
     this.noSubsetting = (fsType & FS_NO_SUBSETTING) !== 0;
     this.capHeight =
@@ -100,6 +105,12 @@ export abstract class SfntFont {
 
     const names = tables.get('name');
     this.postScriptName = names ? (nameRecord(names, 6) ?? nameRecord(names, 4) ?? '') : '';
+    this.familyName = names ? (nameRecord(names, 16) ?? nameRecord(names, 1) ?? '') : '';
+  }
+
+  /** The font file's table `tag`, as read. */
+  table(tag: string): Uint8Array | undefined {
+    return this.tables.get(tag);
   }
 
   /** Advance width of a glyph, font units. */
@@ -193,4 +204,52 @@ export function writeSfnt(
   if (headAt >= 0 && tables.get('head')!.length >= 12)
     v.setUint32(headAt + 8, (0xb1b0afba - checksum(out)) >>> 0);
   return out;
+}
+
+/**
+ * A cmap table (OpenType 'cmap') of one Windows Unicode BMP subtable (platform 3, encoding 1,
+ * format 4) mapping each code point of `map` to its glyph: consecutive code points showing
+ * consecutive glyphs share a segment (idDelta, no glyph array), then the closing 0xFFFF
+ * segment the format requires. Code points above 0xFFFE are left out.
+ */
+export function cmapTable(map: ReadonlyMap<number, number>): Uint8Array {
+  const codes = [...map.keys()].filter((c) => c >= 0 && c < 0xffff).sort((a, b) => a - b);
+  const segments: { start: number; end: number; delta: number }[] = [];
+  for (const c of codes) {
+    const g = map.get(c)!;
+    const last = segments[segments.length - 1];
+    if (last && last.end === c - 1 && (last.delta + c) % 0x10000 === g) last.end = c;
+    else segments.push({ start: c, end: c, delta: (g - c + 0x10000) % 0x10000 });
+  }
+  segments.push({ start: 0xffff, end: 0xffff, delta: 1 });
+  const n = segments.length;
+  const length = 16 + 8 * n;
+  const out = new Uint8Array(12 + length);
+  const v = view(out);
+  v.setUint16(2, 1); // version 0, one subtable
+  v.setUint16(4, 3);
+  v.setUint16(6, 1);
+  v.setUint32(8, 12);
+  const pow = 2 ** Math.floor(Math.log2(n));
+  v.setUint16(12, 4);
+  v.setUint16(14, length);
+  v.setUint16(18, 2 * n);
+  v.setUint16(20, 2 * pow);
+  v.setUint16(22, Math.log2(pow));
+  v.setUint16(24, 2 * n - 2 * pow);
+  segments.forEach((s, i) => {
+    v.setUint16(26 + 2 * i, s.end);
+    v.setUint16(28 + 2 * n + 2 * i, s.start);
+    v.setUint16(28 + 4 * n + 2 * i, s.delta);
+    // idRangeOffset stays 0.
+  });
+  return out;
+}
+
+/** A 'post' table of format 3 (no glyph names) keeping `post`'s italic angle and metrics. */
+export function postFormat3(post: Uint8Array | undefined): Uint8Array {
+  const p = new Uint8Array(32);
+  if (post && post.length >= 32) p.set(post.subarray(0, 32));
+  view(p).setUint32(0, 0x00030000);
+  return p;
 }

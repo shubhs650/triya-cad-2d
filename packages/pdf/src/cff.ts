@@ -11,7 +11,7 @@
 // offsets are. Format: Adobe Technical Note #5176 (CFF) and #5177 (Type 2 charstrings).
 // No DOM here: this package runs in Node and in workers.
 
-import { SFNT_CFF, SfntFont, readSfnt } from './sfnt';
+import { SFNT_CFF, SfntFont, cmapTable, postFormat3, readSfnt, writeSfnt } from './sfnt';
 
 /** DICT operators (two-byte ones as 1200 + second byte). */
 const OP_CHARSET = 15;
@@ -197,6 +197,26 @@ export class CffFont extends SfntFont {
     const out = concat(pieces);
     if (out.length !== off) throw new Error('CFF layout mismatch');
     return out;
+  }
+
+  /**
+   * A CFF-flavoured OpenType font file showing `gids` (`subset`'s program, or `program` with
+   * `noSubsetting`), its glyphs keeping their numbers, with `cmap` (character → glyph) as its
+   * cmap: what an SVG's text selects glyphs by. It keeps the tables a browser's font sanitiser
+   * requires (head, hhea, hmtx, maxp, OS/2, name, post as format 3) and none for layout, so
+   * the browser shows each character's glyph as the plot placed it.
+   */
+  openType(gids: Iterable<number>, cmap: ReadonlyMap<number, number>): Uint8Array {
+    const tables = new Map<string, Uint8Array>([
+      ['CFF ', this.noSubsetting ? this.program : this.subset(gids)],
+      ['cmap', cmapTable(cmap)],
+      ['post', postFormat3(this.tables.get('post'))],
+    ]);
+    for (const tag of ['head', 'hhea', 'hmtx', 'maxp', 'OS/2', 'name']) {
+      const t = this.tables.get(tag);
+      if (t) tables.set(tag, t);
+    }
+    return writeSfnt(tables, SFNT_CFF);
   }
 }
 
