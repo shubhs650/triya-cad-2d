@@ -517,8 +517,8 @@ test('steps through a polyline’s vertices and moves one from the palette', asy
     x: box.x + box.width / 2 + (x - 80) * scale,
     y: box.y + box.height / 2 - (y - 50) * scale,
   });
-  const a = screen(15, 8);
-  const b = screen(145, 92);
+  const a = screen(30, 20);
+  const b = screen(130, 80);
   await page.mouse.click(a.x, a.y);
   await page.mouse.click(b.x, b.y);
   const palette = page.getByRole('complementary', { name: 'Properties' });
