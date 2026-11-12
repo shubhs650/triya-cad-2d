@@ -3,7 +3,7 @@
 // compare a shot with a golden image, and name the entities drawn where they differ.
 import { writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, type Page, type TestInfo } from '@playwright/test';
+import { expect, test as base, type Page, type TestInfo } from '@playwright/test';
 import {
   compareImages,
   decodePng,
@@ -17,6 +17,25 @@ import {
   type SpaceTriage,
 } from '../../../packages/testkit/src/fidelity/triage';
 import { activeCanvas, openWithPicker } from '../app/page';
+import { startApp } from '../app/server';
+
+/**
+ * `test` with the app's dev server as a worker fixture: one server per worker, started on first
+ * use. Not a `beforeAll` hook: Playwright keeps a file's parallel tests that share such a hook in
+ * as many groups as there are workers, so `--shard` could only hand out golden.spec.ts in two
+ * halves and CI's fidelity shards got all or none of it (DEC-053).
+ */
+export const test = base.extend<object, { app: { url: string } }>({
+  app: [
+    // eslint-disable-next-line no-empty-pattern -- Playwright reads the fixtures a function uses from this pattern.
+    async ({}, use) => {
+      const app = await startApp();
+      await use(app);
+      await app.close();
+    },
+    { scope: 'worker' },
+  ],
+});
 
 /**
  * The size every render is taken at. The canvas area is pinned to it rather than left to fill
