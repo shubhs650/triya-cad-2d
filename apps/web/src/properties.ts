@@ -47,15 +47,12 @@ export function valueText(row: PropertyRow, u: PropertyUnits): string {
 }
 
 /**
- * What a typed field starts with: the shown value, except that a distance in units the engine's
- * number parser does not read (feet and inches, fractions, scientific) starts as a plain
- * decimal; a value that varies starts empty.
+ * What a typed field starts with: the shown value, which the engine reads back in the drawing's
+ * units (feet and inches and fractions too, M2-35 part 7), except a surveyor's angle, which
+ * starts in decimal degrees; a value that varies starts empty.
  */
 export function editText(row: PropertyRow, u: PropertyUnits): string {
   if (row.varies || row.value === undefined) return '';
-  if (row.kind === 'distance' && typeof row.value === 'number' && u.lunits !== 2) {
-    return String(Number(row.value.toPrecision(12)));
-  }
   if (row.kind === 'angle' && typeof row.value === 'number' && u.aunits === 4) {
     return String(Number(((row.value * 180) / Math.PI).toPrecision(12)));
   }

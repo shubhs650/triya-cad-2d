@@ -1,0 +1,1 @@
+- M2-35 part 7 (#305): lengths can be typed in feet and inches (`5'-6 1/2"`) and fractions (`6-1/2`) in architectural, engineering and fractional drawings, at the command line, in Dynamic Input and in the Properties palette, which now starts its fields with the value as shown.
