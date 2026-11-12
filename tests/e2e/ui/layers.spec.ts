@@ -25,9 +25,10 @@ async function openLayers(page: Page, file: string) {
     .click();
   const palette = page.getByRole('complementary', { name: 'Layers' });
   await expect(palette).toBeVisible();
-  // The palette docks beside the canvas, which redraws at its narrower size; the specs measure
-  // the canvas as shown against what a toggle leaves (M2-50).
-  await expectDrawn(page);
+  // The specs measure the canvas as shown against what a toggle leaves, so the drawing must be
+  // on it: drawn once its render worker has built it (seconds after the tab shows), and again
+  // at the narrower size the docked palette leaves it (M2-50).
+  await expectDrawn(page, { timeout: 15_000 });
   return palette;
 }
 
