@@ -6,7 +6,9 @@ import {
   parseMText,
   alignOf,
   rulerOf,
+  spacingOf,
   withAlignment,
+  withSpacing,
   withRuler,
   writeMText,
   type MTextBase,
@@ -143,5 +145,56 @@ describe('right indent, alignment and decimal stops (M2-26 part 3)', () => {
     expect(rulerOf(doc.paragraphs[0]!.codes ?? []).tabs).toEqual([
       { at: 4, kind: 'decimal', decimal: ',' },
     ]);
+  });
+});
+
+describe('paragraph and line spacing (M2-46)', () => {
+  it('reads the spacing through the chain', () => {
+    expect(spacingOf([])).toEqual({ before: 0, after: 0 });
+    expect(spacingOf(['xb1', 'i2', 'xa0.5,se3'])).toEqual({
+      before: 1,
+      after: 0.5,
+      line: { kind: 'exactly', value: 3 },
+    });
+  });
+
+  it('writes before, after and line spacing as one extended value after the others', () => {
+    const codes = withSpacing(['qc'], {
+      before: 1,
+      after: 0.5,
+      line: { kind: 'atLeast', value: 2 },
+    });
+    expect(codes).toEqual(['qc', 'xb1,a0.5,sa2']);
+    expect(spacingOf(codes)).toEqual({
+      before: 1,
+      after: 0.5,
+      line: { kind: 'atLeast', value: 2 },
+    });
+    expect(withSpacing(codes, spacingOf(codes))).toBe(codes);
+  });
+
+  it('takes the old spacing keys out rather than piling values up, and can unset them', () => {
+    const codes = ['xi1,b2,t4,8,sm1.5', 'xa1'];
+    const next = withSpacing(codes, { before: 0, after: 0, line: { kind: 'multiple', value: 2 } });
+    expect(next).toEqual(['xi1,t4,8', 'xsm2']);
+    expect(rulerOf(next)).toEqual({
+      ...none,
+      indentFirst: 1,
+      tabs: [
+        { at: 4, kind: 'left' },
+        { at: 8, kind: 'left' },
+      ],
+    });
+    // No line spacing of its own: the entity's again.
+    expect(withSpacing(next, { before: 0, after: 0 })).toEqual(['xi1,t4,8']);
+  });
+
+  it('round-trips through writeMText and the parser', () => {
+    const first = withSpacing([], { before: 0.5, after: 0, line: { kind: 'exactly', value: 2 } });
+    const contents = writeMText([{ type: 'text', text: 'a', format: {} }], base.font, first);
+    expect(contents).toBe('\\pxb0.5,se2;a');
+    const style = parseMText(contents, base).paragraphs[0]!.style;
+    expect(style.spaceBefore).toBe(0.5);
+    expect(style.lineSpacing).toEqual({ kind: 'exactly', value: 2 });
   });
 });

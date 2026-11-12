@@ -11,7 +11,16 @@
 // M2-26 part 3: the right indent (`r`, only in the extended `\px` form, so a value holding it
 // starts with `x`, and written before `t`, after which `r` is a right tab stop), decimal tab
 // stops (`D<symbol>n`) and the paragraph alignment the Paragraph dialog sets (`withAlignment`).
-import { paragraphKeys, paragraphStyleOf, type MTextAlign, type MTextTabStop } from './parse';
+//
+// M2-46: paragraph spacing (Before `b`, After `a`) and line spacing (`sm`, `se`, `sa`), the
+// Paragraph dialog's last two groups (`spacingOf`, `withSpacing`).
+import {
+  paragraphKeys,
+  paragraphStyleOf,
+  type MTextAlign,
+  type MTextLineSpacing,
+  type MTextTabStop,
+} from './parse';
 
 export interface MTextRuler {
   /** First-line indent, relative to the left indent. */
@@ -122,4 +131,54 @@ export function withAlignment(
   const head = last !== undefined && /^x?q.$/.test(last) ? codes.slice(0, -1) : codes;
   if (alignOf(head) === align) return head;
   return [...head, `q${align ? ALIGN_LETTER[align] : '*'}`];
+}
+
+/** A paragraph's spacing, in text heights; no `line`: the entity's line spacing. */
+export interface MTextSpacing {
+  readonly before: number;
+  readonly after: number;
+  readonly line?: MTextLineSpacing;
+}
+
+/** The spacing of a paragraph whose `\\p` values are `codes`. */
+export function spacingOf(codes: readonly string[]): MTextSpacing {
+  const s = paragraphStyleOf(codes);
+  return {
+    before: s.spaceBefore ?? 0,
+    after: s.spaceAfter ?? 0,
+    ...(s.lineSpacing && { line: s.lineSpacing }),
+  };
+}
+
+const sameSpacing = (a: MTextSpacing, b: MTextSpacing): boolean =>
+  a.before === b.before &&
+  a.after === b.after &&
+  a.line?.kind === b.line?.kind &&
+  a.line?.value === b.line?.value;
+
+/** A spacing key: `b`, `a`, `sm`, `se` or `sa` and a number. No tab stop starts with these. */
+const SPACING_KEY = /^(b|a|s[mea])[-+.\d]/;
+
+const LINE_KEY = { multiple: 'sm', exactly: 'se', atLeast: 'sa' } as const;
+
+/**
+ * The `\\p` values with the paragraph spaced as `spacing` says. The chain's spacing keys are
+ * taken out (a value left with none dropped) and one extended value appended with the keys that
+ * are not the defaults, so values do not pile up and line spacing can go back to the entity's,
+ * which no key states.
+ */
+export function withSpacing(codes: readonly string[], spacing: MTextSpacing): readonly string[] {
+  if (sameSpacing(spacingOf(codes), spacing)) return codes;
+  const head: string[] = [];
+  for (const value of codes) {
+    const keys = paragraphKeys(value);
+    const kept = keys.filter((k) => !SPACING_KEY.test(k));
+    if (kept.length === keys.length) head.push(value);
+    else if (kept.length > 0) head.push(`${value.startsWith('x') ? 'x' : ''}${kept.join(',')}`);
+  }
+  const keys: string[] = [];
+  if (spacing.before !== 0) keys.push(`b${num(spacing.before)}`);
+  if (spacing.after !== 0) keys.push(`a${num(spacing.after)}`);
+  if (spacing.line) keys.push(`${LINE_KEY[spacing.line.kind]}${num(spacing.line.value)}`);
+  return keys.length === 0 ? head : [...head, `x${keys.join(',')}`];
 }
