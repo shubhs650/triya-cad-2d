@@ -15,7 +15,7 @@ Upstream test suite at the pinned commit, run in the upstream checkout: 717 pass
 ## Rules
 
 - This directory is a filtered snapshot, not a git subtree (DEC-033). Never hand-edit a file here without a patch in `third_party/acad-ts-patches/` that `sync-acad-ts.sh` re-applies.
-- Each patch is minimal, has a unit test that fails on the unpatched code, and carries the upstream PR text below. Tests that can build their drawing in memory live in `packages/io/test/acad-ts-patches.test.ts`; tests that need a real drawing (paper-space layouts, a full named-object dictionary) live in `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts`, because `@triya/io` has no Node file APIs.
+- Each patch is minimal, has a unit test that fails on the unpatched code, and carries the upstream PR text below. Tests that can build their drawing in memory live in `packages/io/test/acad-ts-patches.test.ts`; tests that need a real drawing (paper-space layouts, a full named-object dictionary) live in `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` and `acad-ts-patches-2.corpus.test.ts` (one file until DEC-053 split it for CI's shards; their helpers are in `acad-ts-patches.corpus-shared.ts`; add new tests to part 2), because `@triya/io` has no Node file APIs.
 - Patches apply in number order and a later one may change lines an earlier one touched (0020 edits the header flag word that 0004 decodes). `tests/third-party/acad-ts-vendoring.test.ts` checks each patch against the tree as it was right after it, by undoing the patches newest first on a copy.
 - Line endings are kept exactly as upstream ships them (mixed CRLF/LF); `.gitattributes` marks this tree `-text` and formatters ignore it.
 
@@ -123,7 +123,7 @@ DWG R2004+ encodes a true colour as the bit-long `0xC2RRGGBB` (ODA spec, CMC col
 - **Touches:** `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** The LAYOUT object writer wrote `minLimits` where `maxLimits` belongs, so every paper-space layout's `LIMMAX` was lost on save.
 - **Fix:** Write `layout.maxLimits` in the second slot.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0006 DWG writer stores a layout's maximum limits, not its minimum twice".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0006 DWG writer stores a layout's maximum limits, not its minimum twice".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -191,7 +191,7 @@ In `DwgObjectWriter.writeLayout` the limits block writes `write2RawDouble(layout
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** `AcDbLayout` group 70 (PSLTSCALE, LIMCHECK flags), 76, 331, 345 and 346 were not written, so paper-space layouts lost limits checking, linetype scaling and their last-active viewport (81 corpus files).
 - **Fix:** Write 70 after the layout name, 76, and the 331/345/346 handles.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0010 DXF writer writes AcDbLayout flags, UCS orthographic type and last viewport".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0010 DXF writer writes AcDbLayout flags, UCS orthographic type and last viewport".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -208,7 +208,7 @@ In `DwgObjectWriter.writeLayout` the limits block writes `write2RawDouble(layout
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** Empty dictionaries and the root `ACAD_MATERIAL` entry were skipped. AutoCAD and acad-ts recreated them on reopen under new handles, so handle-based references broke and a passthrough export could not match the original.
 - **Fix:** Remove both skips: every dictionary is written under its own handle.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0011 DXF writer keeps empty dictionaries and ACAD_MATERIAL under their handles".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0011 DXF writer keeps empty dictionaries and ACAD_MATERIAL under their handles".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -259,7 +259,7 @@ Group codes 60–79, 170–179, 270–289, 370–389, 400–409 and 1060–1070 
 - **Touches:** `src/Objects/RawObjectData.ts` (new), `src/Objects/UnknownNonGraphicalObject.ts`, `src/Entities/UnknownEntity.ts`, `src/IO/CadReaderConfiguration.ts`, `src/IO/CadDocumentBuilder.ts`, `src/IO/DXF/DxfStreamReader/{IDxfStreamReader,DxfStreamReaderBase,DxfObjectsSectionReader,DxfSectionReaderBase}.ts`, `src/IO/DXF/DxfStreamWriter/{IDxfStreamWriter,DxfStreamWriterBase,DxfSectionWriterBase,DxfObjectsSectionWriter}.ts`
 - **Symptom:** About 12% of the objects in the public corpus (view styles, SUN, AEC objects, solid history, render settings, proxies) are not mapped by acad-ts. The readers created `UnknownEntity`/`UnknownNonGraphicalObject` only when `keepUnknown*` was set (the objects reader tested `keepUnknownEntities` instead of `keepUnknownNonGraphicalObjects`), kept no payload, and both writers skipped them, so every save dropped them. Objects they own (extension dictionaries, XRECORDs) were never registered and were dropped too.
 - **Fix:** With `keepUnknownEntities`/`keepUnknownNonGraphicalObjects`, the DXF reader records every group code of an unknown object (`IDxfStreamReader.recorder`) into `rawDxfCodes`, and the DXF writer emits them with a new `writeRaw` (no escaping), substituting only the handle (5) and owner (330) before the first subclass marker. `CadDocumentBuilder` attaches objects whose owner is an unknown object to it (`rawOwnedObjects`), so they join the document and get written. `IRawCadObject` also carries the DWG record (filled by 0016). An object read from DWG has no DXF codes and is skipped with a notification when written to DXF.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0014 DXF keeps unknown objects raw and writes them back" (ASCII, binary, and an unknown entity in `uncommon.dxf`).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0014 DXF keeps unknown objects raw and writes them back" (ASCII, binary, and an unknown entity in `uncommon.dxf`).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -276,7 +276,7 @@ With `keepUnknownEntities`/`keepUnknownNonGraphicalObjects` set, the DXF reader 
 - **Touches:** `src/Classes/DxfClassCollection.ts`, `src/IO/DWG/DwgStreamReaders/DwgClassesReader.ts`
 - **Symptom:** `AecObjects.dwg` has two `AEC_LIST_DEF` classes (808 and 809); `DxfClassCollection` is keyed by DXF name, so the reader dropped 809 and its 133 objects lost their class. `resetClassNumbers` renumbered every class from 500 on each save, so a raw object record (0016), which names its class by number, would point at the wrong class.
 - **Fix:** Keep a class whose name is taken in a second list (`addSameName`), included in `count`, iteration and `getByClassNumber`. `resetClassNumbers` keeps every unique number of 500 or more and gives the next free number only to classes without one.
-- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0015 class numbers a drawing was read with survive resetClassNumbers"; `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0015 DWG reader keeps classes that share a DXF name, under their own numbers" (also needs 0016).
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0015 class numbers a drawing was read with survive resetClassNumbers"; `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0015 DWG reader keeps classes that share a DXF name, under their own numbers" (also needs 0016).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -293,7 +293,7 @@ Some AutoCAD Architecture drawings define two classes with the same DXF name and
 - **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** Unknown DWG objects and entities were created without their data and the writer skipped them (`_skipEntry`, `_isEntitySupported`), so a DWG save lost them, plus every object only they referenced (the reader never queued those handles).
 - **Fix:** With the keep flags set, the reader stores the object record (`rawDwgData`: the bytes after the size MS and, R2010+, the handle-stream MC, plus version, type code and handle) and queues every handle left in its handle stream. The writer re-emits the record with a recomputed CRC when the file version, handle and class number still match (`_canWriteRaw`), and queues its extension dictionary and owned objects; otherwise it notifies and skips as before.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0016 DWG keeps unknown objects raw and writes their records back byte for byte".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0016 DWG keeps unknown objects raw and writes their records back byte for byte".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -310,7 +310,7 @@ With `keepUnknownEntities`/`keepUnknownNonGraphicalObjects` set, `DwgObjectReade
 - **Touches:** `src/Tables/VPort.ts`, `src/Entities/Viewport.ts`, `src/Entities/Solid3D.ts`, `src/IO/Templates/{CadVPortTemplate,CadViewportTemplate,CadSolid3DTemplate}.ts`, `src/IO/DXF/DxfStreamReader/{DxfTablesSectionReader,DxfSectionReaderBase}.ts`, `src/IO/DXF/DxfStreamWriter/{DxfTablesSectionWriter,DxfSectionWriterBase}.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** A VPORT's and a viewport's SUN (DXF 361, hard owner) and a 3DSOLID's history object (DXF 350, R2007+) were read as handles and thrown away; the writers wrote 0/null, so both objects vanished on save even when kept raw (0014/0016). The DWG reader also never queued the history handle.
 - **Fix:** Add `VPort.sun`, `Viewport.sun` and `Solid3D.history`, resolved by the templates, registered with the document, and written (and queued) by both writers. `clone()` drops `sun`.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0017 SUN objects of VPORTs and viewports survive a DXF save", "0017 3DSOLID history objects survive DWG and DXF saves".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0017 SUN objects of VPORTs and viewports survive a DXF save", "0017 3DSOLID history objects survive DWG and DXF saves".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -327,7 +327,7 @@ With `keepUnknownEntities`/`keepUnknownNonGraphicalObjects` set, `DwgObjectReade
 - **Touches:** `src/IO/CadDocumentBuilder.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** An XRECORD can own objects through 350–369 entries (an R2004 table's `DATATABLE`, for example). The DWG reader did not queue those handles, so the objects were never read; when read (DXF), nothing registered or wrote them.
 - **Fix:** The DWG reader queues XRECORD handle entries; the builder registers objects owned through 350–369 entries once their XRECORD is in the document; both writers queue 350–369 entry objects. The DXF writer now skips `TableContent` (not implemented by its DXF writer) with a notification instead of throwing, because 0018 makes those objects reachable.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0018 objects owned only through an XRECORD entry are read and written".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0018 objects owned only through an XRECORD entry are read and written".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -344,7 +344,7 @@ XRECORD entries with group codes 350–369 are soft/hard owner references. Objec
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** `AcDbPlotSettings` and `AcDbLayout` both use group 70. `_readLayout` tried the layout map first, so the plot flags went into `layoutFlags` (and were then overwritten by the real layout flags), and `PlotSettings.flags` kept its default 688. Model in `sample_AC1032_ascii.dxf` has 11952.
 - **Fix:** In `_readLayout`, read codes inside the `AcDbPlotSettings` subclass with the plot-settings map.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0019 DXF reader keeps a layout's plot flags apart from its layout flags".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0019 DXF reader keeps a layout's plot flags apart from its layout flags".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -361,7 +361,7 @@ A LAYOUT object has an `AcDbPlotSettings` subclass followed by `AcDbLayout`, and
 - **Touches:** `src/IO/DWG/DwgStreamReaders/DwgHeaderReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgHeaderWriter.ts`
 - **Symptom:** The low 5 bits of the R2000+ header flag word are a lineweight index (as on entities). The reader stored the index as the value (ByLayer came back as 29) and the writer wrote the value masked to 5 bits (W50 became 18).
 - **Fix:** Convert with `CadUtils.toValue` on read and `CadUtils.toIndex` on write.
-- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0020 DWG header stores $CELWEIGHT as a lineweight index and reads it back as a value"; `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0020 DWG reader returns $CELWEIGHT as a lineweight, matching the DXF of the drawing".
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0020 DWG header stores $CELWEIGHT as a lineweight index and reads it back as a value"; `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0020 DWG reader returns $CELWEIGHT as a lineweight, matching the DXF of the drawing".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -378,7 +378,7 @@ In the R2000+ DWG header, `CELWEIGHT` is stored as a lineweight index in the low
 - **Touches:** `src/IO/CadReaderConfiguration.ts`, `src/Objects/Material.ts`, `src/Objects/VisualStyle.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** `DxfObjectsSectionWriter` has no writer for `Material` or `VisualStyle` and skips them ("Object not implemented"). Their extension dictionaries, XRECORDs and named-object-dictionary entries went with them: 1,838 objects in 83 public files, 3,636 declared handles counting their dictionaries and XRECORDs. The DXF reader also assigns no `VisualStyle` field (`_readVisualStyle` consumes every code), so a field writer alone would write defaults.
 - **Fix:** New reader option `keepRawDxfPassthroughObjects`. When it is set, `readObjectCodes` records the group codes of these two types with the M1-30 recorder (0014), and the writer emits them through `writeRawObject`, which rewrites only the handle and owner. Without recorded codes, the writer still skips the object with a notification. DEC-040.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0021 DXF writer writes MATERIAL and VISUALSTYLE back as read" (R2018 ASCII and binary, R2000 ASCII: every style keeps its handle, codes and extension dictionary, and `ACAD_MATERIAL`/`ACAD_VISUALSTYLE` list the same entries).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0021 DXF writer writes MATERIAL and VISUALSTYLE back as read" (R2018 ASCII and binary, R2000 ASCII: every style keeps its handle, codes and extension dictionary, and `ACAD_MATERIAL`/`ACAD_VISUALSTYLE` list the same entries).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -412,7 +412,7 @@ The DXF writer has no MATERIAL or VISUALSTYLE writer, so every DXF save drops th
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** `_writeRasterVariables` wrote `displayQuality` for both 71 and 72, so every DXF save replaced the image units (72) with the display quality: inches (5) came back as 1. Spike root R10, 30 files.
 - **Fix:** Write `units` for 72.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0023 DXF writer writes RASTERVARIABLES units (72), not the display quality twice" (`images.dxf`, units 5).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0023 DXF writer writes RASTERVARIABLES units (72), not the display quality twice" (`images.dxf`, units 5).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -446,7 +446,7 @@ The DXF writer has no MATERIAL or VISUALSTYLE writer, so every DXF save drops th
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
 - **Symptom:** In `AcDbBlockTableRecord`, group 70 is the insertion units, but the reader passed it to the common table-entry flags, so `units` stayed 0. Each 310 preview chunk replaced the previous one on read, and the writer wrote no 310 at all. A DXF save lost both. Spike root R8, 33 and 27 files; also the `BLOCK_RECORD 70` entry of the M1-32 oracle list.
 - **Fix:** Read 70 into `units` and append every 310 chunk to `preview`; write `preview` back in chunks of at most 127 bytes after 340, where AutoCAD writes it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0025 DXF BLOCK_RECORD keeps its insert units (70) and its whole preview (310)" (`BLOCKALIGNMENTPARAMETER.dxf`, handle 250, against the group codes in the file).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0025 DXF BLOCK_RECORD keeps its insert units (70) and its whole preview (310)" (`BLOCKALIGNMENTPARAMETER.dxf`, handle 250, against the group codes in the file).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -497,7 +497,7 @@ The DXF tables reader treats group 70 of a BLOCK_RECORD as the table-entry flags
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/IO/Templates/CadTableStyleTemplate.ts`
 - **Symptom:** A DXF TABLESTYLE lists its data, title and header cell styles without ids, so `CadTableStyleTemplate` (which assigns them by id) left `dataCellStyle`/`titleCellStyle`/`headerCellStyle` at their defaults and the writer wrote those defaults. The reader also took the 284–289 border visibility flags (1 = visible) as `isInvisible`, and the writer wrote 62 and 91 from other fields (`contentColor`, `valueDataType`) than the reader fills (`color`, `styleClass`). In CELLSTYLEMAP the writer wrote no MARGIN or GRIDFORMAT blocks, and the reader read each GRIDFORMAT into a border object it then dropped, along with its 90/91/40. Spike root R5: 2,790 differences in 62 files. It is also the `TABLESTYLE` 284–289 entry of the M1-32 oracle list.
 - **Fix:** Assign id-less cell styles by position (data, title, header). Read 284–289 as visibility. Write 62 from `color` and 91 from `styleClass`. Keep each GRIDFORMAT border on its style by edge flag, reading 90/91/40 too. Write the MARGIN block and the six GRIDFORMAT blocks in the order AutoCAD writes them.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0028 DXF TABLESTYLE and CELLSTYLEMAP keep their cell styles through a save" (`BLOCKALIGNMENTPARAMETER.dxf`: values checked against the file, then compared after ASCII and binary saves).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0028 DXF TABLESTYLE and CELLSTYLEMAP keep their cell styles through a save" (`BLOCKALIGNMENTPARAMETER.dxf`: values checked against the file, then compared after ASCII and binary saves).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -548,7 +548,7 @@ Several DXF table-style defects compound so that a save resets every table style
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
 - **Symptom:** `_writeViewport` wrote the viewport id as 68 (the status field), the twist angle as 50 (snap angle), the circle zoom as 51 (twist), the UCS-icon flag as 72 (circle zoom), and the UCS origin and axes as single groups holding an `XYZ`. It wrote no 69, 71, 74, 79, 146, 170, 61, 348, 292, 282, 141, 142, 63, 340 or 1. Reading the saved file back gave every paper-space viewport the wrong id, angles, zoom, UCS and plot style, and no clipping boundary or visual style. The reader also put the raw 63/421 numbers in `ambientLightColor`. Spike report: about 20 differences per VIEWPORT field across the AC1015–AC1032 samples.
 - **Fix:** Write AcDbViewport in the order of the DXF reference, gating the R2000, R2004 and R2007 groups by version as AutoCAD does, and read 63/421 into a `Color`.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0031 DXF writer writes VIEWPORT entities with their own group codes" (AC1015, AC1018 and AC1032 samples, ASCII and binary saves: every viewport field matches after a read-write-read).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0031 DXF writer writes VIEWPORT entities with their own group codes" (AC1015, AC1018 and AC1032 samples, ASCII and binary saves: every viewport field matches after a read-write-read).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -565,7 +565,7 @@ Several DXF table-style defects compound so that a save resets every table style
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
 - **Symptom:** The reader treated every 280 in AcDbAttribute(Definition) as the lock flag, so the version (280 before the tag, R2010+) was lost, and it read the AcDbText 71 (mirror flags) and 72 as the multiline flag and alignment. The writer wrote the tag before the prompt, wrote 280 for every version, and never wrote the R2018 multiline block (71, 72, 11, 101 "Embedded Object" and the MTEXT groups), so multiline attributes came back as single-line text. Corpus: ATTDEF `attributeType` 19, `version` 12, `mText` 3 differences.
 - **Fix:** Route AcDbText groups to the text reader; read 280 as the version before the tag and as the lock position after it; skip AutoCAD's literal 72 0. Write prompt then tag, the version from AC1024, the lock position from AC1021, and the multiline block from AC1032 (earlier versions keep multiline text in an XRECORD under the extension dictionary, which passes through).
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0032 DXF ATTDEF and ATTRIB keep version, lock position and multiline text through a save" (AC1015, AC1021, AC1024 and AC1032 samples, ASCII and binary).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0032 DXF ATTDEF and ATTRIB keep version, lock position and multiline text through a save" (AC1015, AC1021, AC1024 and AC1032 samples, ASCII and binary).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -582,7 +582,7 @@ AcDbAttribute and AcDbAttributeDefinition use group 280 twice: before the tag it
 - **Touches:** `src/Math/MathHelper.ts`, `src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
 - **Symptom:** DXF stores angles in degrees and the reader converts them with `degToRad`. The writer converted back with `radToDeg`, which can land one ulp away from the degree value read, so `TEXT` rotation, `ARC` angles and `HATCH` pattern-line and edge angles moved on every save (42 pattern lines, 14 text rotations, 11 arc angles in the corpus). `_writeHatchBoundaryAngles` wrapped edge angles into [0, 360), so an ellipse edge from 348.7° to 472.9° came back ending at 112.9°. And `_writeHatch` skipped 52/41/77/78 and the pattern lines whenever the hatch was flagged solid, although AutoCAD writes them for SOLID too, so the pattern angle, scale and lines were lost.
 - **Fix:** Add `MathHelper.radToDegRoundTrip`, which picks the neighbouring double of `radToDeg(r)` that `degToRad` maps back to `r`, and use it for every angle the DXF writer converts through the map, for pattern lines and for edge angles. Write edge angles as read, turning only -0 into 0. Write the pattern block whenever the pattern has lines.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0033 DXF writer keeps HATCH patterns and every angle exact through a save" (acadsharp AC1015/AC1018 samples and ezdxf `clockwise_arcs_hatch`, `hatches_2`, `text_fonts`; ASCII and binary saves: every hatch pattern, pattern-line and edge angle, arc angle and text rotation is unchanged).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0033 DXF writer keeps HATCH patterns and every angle exact through a save" (acadsharp AC1015/AC1018 samples and ezdxf `clockwise_arcs_hatch`, `hatches_2`, `text_fonts`; ASCII and binary saves: every hatch pattern, pattern-line and edge angle, arc angle and text rotation is unchanged).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -599,7 +599,7 @@ Readers turn DXF degrees into radians with `degToRad`, but `radToDeg` is not its
 - **Touches:** `src/Objects/SortEntitiesTable.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** `SortEntitiesTable` yields its entries sorted by sort handle, and both writers iterated it. So a save reordered every table whose entries were not stored in sort-handle order, and AutoCAD stores them in the order its draw-order commands left them. The draw order itself survived, because it comes from the sort handles, but the object did not round-trip. Corpus: 874 differences (`_sorters[].entity` and `.sortHandle`) in the acadsharp DWG and DXF samples.
 - **Fix:** Add a read-only `entries` getter that returns the stored order, and use it in both writers. Iteration keeps its sorted order for callers that want draw order.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0034 DXF and DWG writers keep SORTENTSTABLE entries in the order read" (AC1015 DXF, ASCII and binary saves; AC1015, AC1018 and AC1032 DWG).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0034 DXF and DWG writers keep SORTENTSTABLE entries in the order read" (AC1015 DXF, ASCII and binary saves; AC1015, AC1018 and AC1032 DWG).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -621,7 +621,7 @@ Readers turn DXF degrees into radians with `degToRad`, but `radToDeg` is not its
   - The 46 heights.
   
   The reader now keeps 42/43 in `horizontalWidth`/`verticalHeight`, which the writer writes back.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0035 DXF writer writes the R2018 MTEXT column data". It runs on acadsharp `sample_AC1032_ascii` and ezdxf `columns_R2018` and `mtext_columns_R2018`, with ASCII and binary saves. It checks the column data and extents of every MTEXT, and the manual heights 20/30/0 of the ezdxf example.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0035 DXF writer writes the R2018 MTEXT column data". It runs on acadsharp `sample_AC1032_ascii` and ezdxf `columns_R2018` and `mtext_columns_R2018`, with ASCII and binary saves. It checks the column data and extents of every MTEXT, and the manual heights 20/30/0 of the ezdxf example.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -638,7 +638,7 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
 - **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
 - **Symptom:** The R2018 MTEXT reader read the column count into a local and never stored it. The writer therefore wrote a count of 0, and the next read dropped the column heights that followed. Corpus: 8 differences (`_columnData.heights.length`) in `sample_AC1032.dwg` and `sample_base.dwg`.
 - **Fix:** Store the count in `columnData.columnCount`.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0036 DWG reader keeps the R2018 MTEXT column count" (`sample_AC1032.dwg`: MTEXT 3EC has one column, and every column count and height survives a DWG save).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0036 DWG reader keeps the R2018 MTEXT column count" (`sample_AC1032.dwg`: MTEXT 3EC has one column, and every column count and height survives a DWG save).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -665,7 +665,7 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
   - Write colours as AcCmColor values. The ones the reader keeps as raw integers are written back unchanged.
   - Read the context text colour as an AcCmColor.
   - Read the branch groups 290, 291, 10, 11, 90, 40 and 271.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0037 DXF writer writes MULTILEADER entities with their own group codes".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0037 DXF writer writes MULTILEADER entities with their own group codes".
   - Files: acadsharp AC1015–AC1032 and ezdxf `uncommon.dxf`, with ASCII and binary saves.
   - Every main, context and branch field, plus the leader points, must survive the round trip.
   - The first sample multileader is checked for its label, style, ByLayer text colour and branch connection point.
@@ -688,7 +688,7 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
   - The colour, linetype, lineweight, linetype scale and visibility of every ENDBLK came back as their defaults. AutoCAD gives ENDBLK the same entity data as its BLOCK.
   - Corpus: 87 differences (`ENDBLK color._color`) in the acadsharp sample DXFs, ENDBLKs of colour 193.
 - **Fix:** write the common entity data with `writeCommonEntityData`, as `_writeBlock` does for BLOCK.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0038 DXF writer writes the common entity data of ENDBLK".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0038 DXF writer writes the common entity data of ENDBLK".
   - Files: acadsharp AC1015–AC1032 ASCII DXFs, with ASCII and binary saves.
   - The layer, linetype, colour, lineweight, linetype scale and visibility of every ENDBLK must survive.
   - ENDBLK 9D3 of the R2000 sample is checked for colour 193.
@@ -711,7 +711,7 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
   - The writer then escaped the caret again, so each save turned `^J` into `^ J` and the frame gained literal text.
   - Corpus: 24 differences (`TOLERANCE text`) in the acadsharp sample DXFs. The entity oracle listed the gap under M1-32.
 - **Fix:** read 1 with `valueAsString`, which decodes the caret codes, as the other text entities do.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0039 DXF reader decodes the caret codes of TOLERANCE text".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0039 DXF reader decodes the caret codes of TOLERANCE text".
   - TOLERANCE 823 of the R2000 sample must read as `99\na` from both the DWG and the DXF.
   - Every TOLERANCE text of the acadsharp AC1015–AC1032 DXFs must survive ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -733,7 +733,7 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
   - A save turned every version 2 mesh into version 0 and lost its blend crease and level.
   - Corpus: 25 differences (`MESH version`) in the acadsharp sample DXFs.
 - **Fix:** write 71 version, 72 blend crease and 91 subdivision level, the codes the reader and the class map use and AutoCAD writes (`71 2`, `72 0`, `91 0` in the samples).
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0040 DXF writer writes MESH version, blend crease and subdivision level on their codes".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0040 DXF writer writes MESH version, blend crease and subdivision level on their codes".
   - The version, blend crease and level of every MESH of the acadsharp AC1015–AC1032 DXFs must survive ASCII and binary saves.
   - MESH 343 of the R2000 sample is checked for version 2.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -757,7 +757,7 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
 - **Fix:**
   - Keep the flag word as `TableEntityCell.overrideFlags`.
   - Write the flag word, the virtual edge flag and each flagged field in the order the reader reads them. Colours are written as the table style writes them.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0041 DWG writer writes the cell overrides of R2004 and R2007 tables".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0041 DWG writer writes the cell overrides of R2004 and R2007 tables".
   - Every cell override of acadsharp `sample_AC1018.dwg` and `sample_AC1021.dwg` must survive a DWG save.
   - Cell 4,0 of table 528 is checked: alignment 5, background 165, content colour 7, text height 4, and top and left borders of colour 63, 0.40 mm, hidden.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -779,7 +779,7 @@ The DXF reader parses the R2018 MTEXT "Embedded Object" (group 101) into `MText.
   - A cell with a stated geometry and no content geometry lost its flags and size on a save.
   - Corpus: 72 differences (`ACAD_TABLE _content.rows[].cells[].geometry*`) in the acadsharp R2010–R2018 DWGs and `sample_base.dwg`.
 - **Fix:** write the geometry block when the cell has any geometry flag, size or reference, not only when it lists content geometry.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0042 DWG writer keeps the geometry of R2010+ table cells that list no content geometry".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0042 DWG writer keeps the geometry of R2010+ table cells that list no content geometry".
   - Every cell geometry of acadsharp `sample_AC1024.dwg`, `sample_AC1027.dwg` and `sample_AC1032.dwg` must survive a DWG save.
   - Cell 0,1 of table 528 is checked: flags 3 and size 0.0684.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -801,7 +801,7 @@ The R2010+ table content writer writes the "has geometry" flag only when the cel
   - `_writeTableCell` took the handle from the cell content, which such cells do not have, and wrote a null handle.
   - Corpus: 4 differences (`ACAD_TABLE _content.rows[].cells[].value`) in the acadsharp R2004 and R2007 DWGs.
 - **Fix:** fall back to `cell.value` when a block cell has no content block record.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0043 DWG writer keeps the block record of R2004 and R2007 block cells".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0043 DWG writer keeps the block record of R2004 and R2007 block cells".
   - Every cell value handle of acadsharp `sample_AC1018.dwg` and `sample_AC1021.dwg` must survive a DWG save.
   - Cell 1,3 of table A35 must point at block record A0B.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -824,7 +824,7 @@ For a pre-R2010 block cell, the reader stores the block record handle in `cell.v
   - So a DXF save wrote a paper image origin of 0,0, and a DXF-read layout written to DWG lost its origin too.
   - Corpus: 19 differences (`LAYOUT paperImageOriginX/Y`) in the ezdxf example DXFs.
 - **Fix:** make `paperImageOriginX`/`Y` accessors over `paperImageOrigin`. The class map's names keep working and there is one value.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0044 DXF reader and writers keep one paper image origin for a layout".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0044 DXF reader and writers keep one paper image origin for a layout".
   - The Model layout of ezdxf `viewports.dxf` must read as origin 114.98, 300.29.
   - The origin of every layout must survive ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -846,7 +846,7 @@ For a pre-R2010 block cell, the reader stores the block record handle in `cell.v
   - The writer wrote the custom print scale (142 / 143) there, so a save changed 0.069 into 0.0688….
   - Corpus: 19 differences (`LAYOUT standardScale`) in the ezdxf example DXFs.
 - **Fix:** write `standardScale` as 147.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0045 DXF writer writes the standard scale of a layout as 147".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0045 DXF writer writes the standard scale of a layout as 147".
   - The Model layout of ezdxf `viewports.dxf` must read as 0.069.
   - The standard scale of every layout must survive ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -871,7 +871,7 @@ For a pre-R2010 block cell, the reader stores the block record handle in `cell.v
 - **Fix:**
   - Read 72 as a character code.
   - Write the alignment's character code, with 65 when it is empty.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0046 DXF LTYPE alignment (72) is read and written as a character code".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0046 DXF LTYPE alignment (72) is read and written as a character code".
   - Every linetype of ezdxf `ASCII_R12.dxf` and acadsharp `sample_AC1015_ascii.dxf` must read as "A".
   - The alignments must survive ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -895,7 +895,7 @@ Group 72 of a linetype is the ASCII code of its alignment, which is always 65 ("
 - **Fix:**
   - Dispatch `DimensionArc` to `_writeDimension`.
   - Write 16 and 17 unconditionally.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0047 DXF writer writes ARC_DIMENSION entities".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0047 DXF writer writes ARC_DIMENSION entities".
   - ARC_DIMENSION 3F6 of ezdxf `uncommon.dxf` is checked for block `*D19`, angles 6.2225/1.4547 and attachment point 5.
   - Its block, style, points, angles and flags must survive ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -917,7 +917,7 @@ Group 72 of a linetype is the ASCII code of its alignment, which is always 65 ("
   - A save therefore froze every frozen layer in new viewports and cleared the flag on every other layer.
   - Corpus: 2 differences (`LAYER flags`) in each acadsharp R2000–R2018 DWG and `sample_base.dwg`.
 - **Fix:** take bit 4 from `LayerFlags.FrozenNewViewports`, as the reader does.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0048 DWG writer keeps the frozen-in-new-viewports flag of R2000+ layers".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0048 DWG writer keeps the frozen-in-new-viewports flag of R2000+ layers".
   - Every layer's flags, visibility and plot flag in the acadsharp R2000–R2018 DWGs must survive a save.
   - Layers 279 (65) and 283 (66) of the R2000 sample are checked.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -939,7 +939,7 @@ Group 72 of a linetype is the ASCII code of its alignment, which is always 65 ("
   - The writer always wrote 0, so every element came back with the first linetype of the table.
   - Corpus: 2 differences (`MLINESTYLE _elements[]._lineType`) in each acadsharp R2000–R2013 DWG.
 - **Fix:** write the index the template reads.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0049 DWG writer writes the linetype index of pre-R2018 MLINESTYLE elements".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0049 DWG writer writes the linetype index of pre-R2018 MLINESTYLE elements".
   - The element linetypes of every MLINESTYLE in the acadsharp R2000–R2018 DWGs must survive a save.
   - The Standard style of the R2000 sample is checked for ByLayer, ByLayer.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -964,7 +964,7 @@ Before R2018, an MLINESTYLE element's linetype is a BS index: 0x7FFF for ByLayer
 - **Fix:**
   - Collect INSERTs from every block record.
   - Write the list as read, in its order, then any insert not yet in it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0050 DWG writer keeps the insert list of every block record".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0050 DWG writer keeps the insert list of every block record".
   - Every block record's insert list in the acadsharp R2000–R2018 DWGs must survive a save.
   - `my_block` of the R2000 sample is checked for 10 entries.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -988,7 +988,7 @@ The R2000+ block header lists the INSERTs of its block. `_writeBlockHeader` rebu
 - **Fix:**
   - Write the block record that the header names. A name is looked up both as DXF writes it (`BoxBlank`) and as the block record is named (`_BoxBlank`).
   - `$DIMLDRBLK` has no header field in acad-ts, so it is still written as null. The DWG reader also lets it overwrite `dimensionBlockName` when set; no corpus file sets it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0051 DWG writer writes the R2000+ header arrow blocks".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0051 DWG writer writes the R2000+ header arrow blocks".
   - `$DIMBLK`/`$DIMBLK1`/`$DIMBLK2` of the acadsharp R2000–R2018 DWGs must survive a save.
   - The R2000 sample is checked for `_BoxBlank`.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -1010,7 +1010,7 @@ The R2000+ header stores `DIMBLK`, `DIMBLK1` and `DIMBLK2` as block record handl
   - On a save, every leader came off the MTEXT, tolerance or block reference it was attached to.
   - Corpus: 1 difference (`LEADER associatedAnnotation`) in each acadsharp R14–R2018 DWG and `sample_base.dwg`.
 - **Fix:** write `associatedAnnotation`.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0052 DWG writer writes the annotation a LEADER is attached to".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0052 DWG writer writes the annotation a LEADER is attached to".
   - The annotation of every LEADER in the acadsharp R14–R2018 DWGs must survive a save.
   - LEADER 512 of the R2000 sample is checked for MTEXT 513.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -1032,7 +1032,7 @@ The R2000+ header stores `DIMBLK`, `DIMBLK1` and `DIMBLK2` as block record handl
   - The writer always wrote 0, so every colour came back as ByBlock.
   - Corpus: 1 difference (`DBCOLOR color._color`) in acadsharp `sample_AC1014.dwg` and `sample_AC1015.dwg`.
 - **Fix:** write the index (the nearest index for a true colour) before R2004. Keep 0 from R2004, where the true colour follows.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0053 DWG writer writes the colour index of pre-R2004 DBCOLOR objects".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0053 DWG writer writes the colour index of pre-R2004 DBCOLOR objects".
   - Every DBCOLOR of the acadsharp R14 and R2000 DWGs must survive a save.
   - DBCOLOR 996 of the R2000 sample is checked for index 42.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -1054,7 +1054,7 @@ The R2000+ header stores `DIMBLK`, `DIMBLK1` and `DIMBLK2` as block record handl
   - With `writeAllHeaderVariables` the writer put `''` out under group 280, which reads back as `"0"`.
   - Corpus: 4 differences in each of 19 files (76).
 - **Fix:** skip a header variable whose value is the empty string when none of its group codes holds a string, so a flag the drawing never had stays out of the file.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0054 DXF writer leaves out R2007+ header flags the drawing never set".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0054 DXF writer leaves out R2007+ header flags the drawing never set".
   - The R2000 and minimal R2007 files must keep `''`. The R2018 file, which sets the flags, must keep its values. Both ASCII and binary.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1075,7 +1075,7 @@ With `writeAllHeaderVariables`, char-typed header variables that the drawing nev
   - The DXF reader stored the digits (`"46"`, `"1"`), so the same drawing read differently from DXF and DWG. A DXF-to-DWG save then wrote the code of the first digit (`"4"`).
   - Corpus: 1 difference (`HEADER _dimensionStyleOverrides.decimalSeparator`, read `"."` and written back as `"0"`) in each of 9 R14-era files.
 - **Fix:** add a `char` value kind and mark these five variables with it. Reading turns a code into its character, and writing turns the character back into its code (an empty value writes nothing).
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0055 DXF reader and writer keep single-character header variables as characters".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0055 DXF reader and writer keep single-character header variables as characters".
   - The R2004 and R2018 acadsharp samples must read the same five values from DXF as from DWG, and keep them through ASCII and binary saves.
   - The R2018 DXF is checked for `.`, `\u0001`, `\u0001`, `\u0002`, `\u0000`.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -1096,7 +1096,7 @@ With `writeAllHeaderVariables`, char-typed header variables that the drawing nev
   - IMAGEDEF 11/21 is the size of one pixel in drawing units. The reader reads it, and the writer left it out, so saved image definitions came back with the 1 × 1 default.
   - Corpus: 2 differences (`IMAGEDEF defaultSize.x/y`) in each of 17 files (34).
 - **Fix:** write 11/21 after the image size, in AutoCAD's group order.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0056 DXF writer writes the default pixel size of IMAGEDEF objects".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0056 DXF writer writes the default pixel size of IMAGEDEF objects".
   - Every IMAGEDEF of the acadsharp R2000 sample and ezdxf `images.dxf` must survive ASCII and binary saves. IMAGEDEF 8C4 is checked for 0.2645833333333333.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1116,7 +1116,7 @@ With `writeAllHeaderVariables`, char-typed header variables that the drawing nev
   - A named view keeps its visual style handle in 348. The reader reads it, and the writer left it out.
   - Corpus: 1 difference (`VIEW visualStyle`) in each of 8 R2007+ acadsharp sample DXFs.
 - **Fix:** write 348 after the render mode (281), when the view has a visual style.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0057 DXF writer writes the visual style of VIEW table entries".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0057 DXF writer writes the visual style of VIEW table entries".
   - Every view of the acadsharp R2007 and R2018 sample DXFs keeps its visual style through ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1136,7 +1136,7 @@ With `writeAllHeaderVariables`, char-typed header variables that the drawing nev
   - The reader reads 298 into `unknownFlag298` (the DWG writer writes it), and the DXF writer wrote a constant `false`.
   - Corpus: 1 difference in each of 3 ezdxf files.
 - **Fix:** write `unknownFlag298`.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0058 DXF writer writes the 298 flag of MLEADERSTYLE objects as read".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0058 DXF writer writes the 298 flag of MLEADERSTYLE objects as read".
   - Every MLEADERSTYLE of ezdxf `text.dxf` keeps the flag through ASCII and binary saves. Style 2D8 is checked for `true`.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1157,7 +1157,7 @@ The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discardin
   - The writer skipped such entries, so the record came back shorter.
   - Corpus: 4 differences (`XRECORD _entries.length`) in acadsharp `sample_AC1014.dwg`.
 - **Fix:** write the entry with handle 0, as AutoCAD does.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0059 DWG writer keeps the null object references of XRECORD entries".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0059 DWG writer keeps the null object references of XRECORD entries".
   - Every XRECORD of the R14 sample must keep its entry codes through a save. XRECORD 118C is checked for its single 340 entry.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1178,7 +1178,7 @@ The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discardin
   - The handle then pointed at nothing, and the default read back as null.
   - Corpus: 1 difference (`ACDBDICTIONARYWDFLT defaultEntry`) in acadsharp `sample_AC1014.dwg`.
 - **Fix:** queue the default entry for writing. The queue skips objects that are already written.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0060 DWG writer writes the default entry of a dictionary with default".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0060 DWG writer writes the default entry of a dictionary with default".
   - Every dictionary with default of the R14 and R2000–R2018 samples keeps its default entry through a save. Dictionary E of the R14 sample is checked for default F.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1199,7 +1199,7 @@ The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discardin
   - Every DIMASSOC was dropped on a DXF save. Its dictionary entry and the reactors that dimensions and their geometry hold went with it.
   - Corpus: 47 save-stage handles in 15 files. Round-trip differences: `DIMASSOC <missing>`, `DIMENSION`/`LINE`/`CIRCLE` `_reactors` and the `ACAD_DIMASSOC` dictionary entries (0061 and 0062 together remove 401).
 - **Fix:** take `DimensionAssociation` off the list.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0061 DXF writer writes DIMASSOC objects".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0061 DXF writer writes DIMASSOC objects".
   - Every DIMASSOC of the acadsharp R2000 sample and ezdxf `uncommon.dxf` must keep its handle, dimension and flags through ASCII and binary saves. The round-trip suite then shows no DIMASSOC difference on any corpus file.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1220,7 +1220,7 @@ The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discardin
   - The reactor was dropped, so the image (`definitionReactor`) and its definition (`_reactors`) lost the link.
   - Corpus: 77 save-stage handles in 14 files (`IMAGEDEF_REACTOR <missing>`, `IMAGE definitionReactor`, `IMAGEDEF _reactors`).
 - **Fix:** queue `image.definitionReactor` when the image is written.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0062 DXF writer writes the IMAGEDEF_REACTOR of every image".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0062 DXF writer writes the IMAGEDEF_REACTOR of every image".
   - Every IMAGE of the acadsharp R2000 sample and ezdxf `images.dxf` keeps its reactor through ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1244,7 +1244,7 @@ The DXF writer wrote a constant `false` for group 298 of MLEADERSTYLE, discardin
   - With `keepRawDxfPassthroughObjects`, the reader keeps their group codes as read, and the writer writes those codes back, rewriting only the handle and owner.
   - `ProxyObject` gains the `IRawCadObject` fields for this.
   - Proxy objects with no recorded codes are still skipped with the notification, as before.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0063 DXF proxy objects are kept as read and written back raw (DEC-040)".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0063 DXF proxy objects are kept as read and written back raw (DEC-040)".
   - Every proxy object of `bin_dxf_r13.dxf` and `bin_dxf_r14.dxf` keeps its handle, owner and proxy data through a binary DXF save, and its group codes come back unchanged.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1266,7 +1266,7 @@ The DXF writer has no writer for `ProxyObject` and skips it, so every proxy obje
   - Their BLOCK and ENDBLK handles were lost: a reopened file made new ones.
   - Corpus: 12 save-stage handles in 5 R12 files. The reread space blocks also changed owner and handle in the round trip.
 - **Fix:** write both blocks for R12 under their R12 names. Their entities still go to the ENTITIES section, as before.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0064 R12 DXF saves write the $MODEL_SPACE and $PAPER_SPACE blocks".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0064 R12 DXF saves write the $MODEL_SPACE and $PAPER_SPACE blocks".
   - The acadsharp R12 sample and ezdxf `ASCII_R12.dxf` and `bin_dxf_r12.dxf` keep both ENDBLK handles through ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1289,7 +1289,7 @@ AutoCAD writes the model and paper space blocks to R12 DXF files as empty `$MODE
 - **Fix:** write the DIMSTYLE handle on 105 with `writeRaw`.
   - This follows ezdxf's R12 files. AutoCAD's own R12 export writes no handles on table entries at all, so its documented behaviour does not settle this.
   - Every other R12 table entry already gets a handle on 5 from this writer.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0065 R12 DXF saves keep the DIMSTYLE handle".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0065 R12 DXF saves keep the DIMSTYLE handle".
   - The `Standard` style of `r12_blocks_with_no_names.dxf` keeps handle 2B through ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1313,7 +1313,7 @@ R12 DIMSTYLE entries carry their handle in group 105, which the reader reads, bu
 - **Fix:**
   - The table-wide overrides are kept as read in `tableOverrideDxfCodes` (DEC-043), because acad-ts models none of them.
   - Override flags, block scale and alignment are read into their fields, and chunked cell text is joined in either order.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0066 DXF ACAD_TABLE reader keeps cell override flags and the table-wide overrides".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0066 DXF ACAD_TABLE reader keeps cell override flags and the table-wide overrides".
   - Table 0x528 of the R2000 and R2018 samples keeps its override codes and X scale 1. Cell (4, 0) keeps its flags, alignment 5 and background colour 165.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1334,7 +1334,7 @@ The DXF table reader reads the table-wide override groups (93–96 and the value
   - From R2007 the writer left out the units (94), format (300) and formatted value (302).
   - The reader lost string chunks (2) that come before the last chunk (1).
 - **Fix:** an empty or unknown value writes no payload; R2007+ writes 94, 300 and 302; chunked strings are joined in either order.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0067 DXF values keep their unit, format and formatted value; empty ones stay empty".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0067 DXF values keep their unit, format and formatted value; empty ones stay empty".
   - Every cell value of the R2018 sample keeps its flags, type, value, units, format and formatted value through ASCII and binary saves, and FIELD 0x5F8 of `uncommon.dxf` survives a save.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1358,7 +1358,7 @@ The DXF table reader reads the table-wide override groups (93–96 and the value
   - The block reference, then the table header (version, style, block, direction, flags, size).
   - The table-wide overrides as read (0066), the row heights and column widths.
   - Every cell: type, flags, merges, overrides behind their flag word, borders, and its text (before R2007) or CELL_VALUE (R2007+).
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0068 DXF writer writes ACAD_TABLE entities".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-1.corpus.test.ts` → "0068 DXF writer writes ACAD_TABLE entities".
   - Every table of the six ASCII acadsharp samples (R2000 to R2018) keeps its block, style, insertion point, overrides, rows, columns and cells through ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1379,7 +1379,7 @@ The DXF writer has no branch for `TableEntity`, so a table is written as an INSE
   - A handle entry that resolved to no object on read stays a number, and the writer skipped it. The table round-trip XRECORDs point at objects acad-ts never reads.
   - Corpus: XRECORDs 0x14FD and 0x148C in the acadsharp R2000 sample, among others.
 - **Fix:** decode strings on read, as the writer escapes them; write an unresolved handle as read.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0069 DXF XRECORDs keep caret-escaped strings and unresolved handles".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0069 DXF XRECORDs keep caret-escaped strings and unresolved handles".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1398,7 +1398,7 @@ XRECORD string entries are stored with their caret escapes and escaped again on 
   - The DXF writer has no field writer for `TableContent` and skips it. Its DXF read is lossy as well.
   - The TABLECONTENT under each table's `ACAD_ROUNDTRIP_2008_TABLE_ENTITY` XRECORD was lost on every DXF save (20 handles in the acadsharp samples).
 - **Fix:** under DEC-040, TABLECONTENT joins MATERIAL, VISUALSTYLE and ACAD_PROXY_OBJECT: kept as read and written back raw with `keepRawDxfPassthroughObjects`.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0070 DXF TABLECONTENT objects are kept as read and written back raw (DEC-040)".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0070 DXF TABLECONTENT objects are kept as read and written back raw (DEC-040)".
   - TABLECONTENT 0x747 and 0x12D7 of the R2018 sample keep their group codes through ASCII and binary saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1420,7 +1420,7 @@ The DXF writer skips `TableContent`, so the table content under a table's round-
   - The round trip could not see it, because the writer made the same mistake in reverse and the bytes came back unchanged.
   - Corpus: 9 R2007+ ASCII DXFs have non-ASCII text, all of it valid UTF-8 (the acadsharp R2007–R2018 samples, and ezdxf `mtext_complex_inline_codes.dxf`, `text_in_viewports.dxf`, `text_oblique_rotate.dxf`, `uncommon.dxf` and `dxf_unicode.dxf`).
 - **Fix:** from AC1021 the reader and writer use UTF-8 whatever `$DWGCODEPAGE` says. The header value itself is kept and written as read.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0071 R2007+ DXF text is read and written as UTF-8".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0071 R2007+ DXF text is read and written as UTF-8".
   - `text_oblique_rotate.dxf` reads "OBLIQUE 15°", an ASCII save is valid UTF-8 with that text, and both saves read it back.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1444,7 +1444,7 @@ From R2007, DXF files are UTF-8; `$DWGCODEPAGE` still holds the drawing's code p
   - Every DXF string value is decoded on read. ASCII is never escaped, so `\U+0000`–`\U+007F` stays as written (`\U+005C` would otherwise start an MTEXT code), and `\\` stays an escaped backslash.
   - DXF writers escape characters the code page cannot hold, and write UTF-8 from R2007 (0071).
   - DWG strings are unchanged.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0072 DXF \U+ escapes are decoded on read and written back where the code page lacks the character".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0072 DXF \U+ escapes are decoded on read and written back where the code page lacks the character".
   - Layer 2F of `dxf_unicode.dxf` reads as "Tschüss mit ü" and survives ASCII and binary saves.
   - The `ASCII_R12.dxf` Greek layer keeps its entities through both saves, and the R12 ANSI_1252 output writes `\U+039B\U+0391`.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -1465,7 +1465,7 @@ DXF files before R2007 store text in the drawing's code page and escape other ch
   - `AEC_CLEANUP_GROUP_DEF`, `AEC_WALL_STYLE` and `BINRECORD` kept everything to the end of the object as raw data, and `AEC_WALL` kept everything to the handle reader's position. Both include the handle stream (and the R2007+ string stream), which the writer then writes again after the raw bytes.
   - Each save grew the raw data by 6–20 bytes: 4 differences in acadsharp `AecObjects.dwg`.
 - **Fix:** the raw data ends where the object's data stream ends: at the R2007+ string stream when there is one, at its flag bit when there is not, and at the handle stream before R2007. The last byte is padded with the following bits, so no data bit is dropped.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0073 DWG AEC objects keep their raw data, and only it, through a save".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0073 DWG AEC objects keep their raw data, and only it, through a save".
   - The four objects of `AecObjects.dwg` keep their raw bytes unchanged through two DWG saves.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
@@ -1522,7 +1522,7 @@ AutoCAD writes a DIMSTYLE record with only the DIMVARs that differ from their de
   - The reader records the range of handles it made up (`CadDocument.madeUpHandles`), and which of them belong to objects that have no template, that is defaults it added.
   - An R12 save writes no handle for a made-up one, leaves the added defaults out of the tables and leaves an added space or empty block out of BLOCKS. It writes `$HANDSEED` as read, unless an object was added after reading, in which case it writes the current seed.
   - Reopening then makes up the same handles for the same objects. An added object keeps its handle, and the made-up ones then move above it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0076 R12 DXF saves keep the handles acad-ts made up for what R12 does not store".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0076 R12 DXF saves keep the handles acad-ts made up for what R12 does not store".
   - Four R12 files (acadsharp `sample_AC1009_ascii.dxf`, ezdxf `ASCII_R12.dxf`, `r12_blocks_with_no_names.dxf`, `AC1003_LINE_Example.dxf`), saved as ASCII and binary DXF, reopen with the same objects under the same handles.
   - A LINE added after reading keeps its handle, and no handle is used twice.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
@@ -1541,7 +1541,7 @@ R12 DXF files have no BLOCK_RECORD table and often no handles, so `DxfReader` ma
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfDocumentBuilder.ts`
 - **Symptom:** a 1003 xdata record is read as a link to the named layer's handle. R12 layers state no handle, so the link was to handle 0, and a save left the 1003 out (acadsharp `sample_AC1009` TEXT 91B, `LAYER_APP`).
 - **Fix:** a record read while its layer has no handle is linked again once `createMissingHandles` has given the layer one.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0077 an R12 DXF 1003 xdata layer keeps its layer when the layer has no handle in the file".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0077 an R12 DXF 1003 xdata layer keeps its layer when the layer has no handle in the file".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1558,7 +1558,7 @@ DXF 1003 xdata stores a layer name, which the reader turns into the layer's hand
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
 - **Symptom:** the entity writer wrote an entity's xdata after the entity-specific data, which for a POLYLINE, and for an INSERT with attributes, includes its VERTEX/ATTRIB records and SEQEND. The reader then gave the xdata to the SEQEND (`sample_AC1009` POLYLINEs, 5 differences in each file).
 - **Fix:** a POLYLINE, and an INSERT with attributes, writes its xdata before its children, and the general writer does not write it again.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0078 DXF POLYLINE and INSERT xdata is written with them, not after their SEQEND".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0078 DXF POLYLINE and INSERT xdata is written with them, not after their SEQEND".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1575,7 +1575,7 @@ An entity's xdata ends its own record, but the DXF writer appended it after `_wr
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfHeaderSectionWriter.ts`
 - **Symptom:** the R12 header vocabulary did not list `$DWGCODEPAGE`, which R12 has. The text was still written in the drawing's code page, so a saved drawing in any code page but ANSI_1252 was read back wrongly; ezdxf `bin_dxf_r12.dxf` lost its `ansi_1252` spelling.
 - **Fix:** `$DWGCODEPAGE` is in the R12 vocabulary.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0079 R12 DXF saves write $DWGCODEPAGE, so the text is read back in its code page".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0079 R12 DXF saves write $DWGCODEPAGE, so the text is read back in its code page".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1592,7 +1592,7 @@ R12 DXF files carry `$DWGCODEPAGE` and the writer encodes text in that code page
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts`
 - **Symptom:** the BLOCK writer wrote no xdata, so a block's xdata was lost on save (ezdxf tags the `$MODEL_SPACE` BLOCK of `r12_blocks_with_no_names.dxf`).
 - **Fix:** the BLOCK writer writes the block's xdata.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0080 DXF BLOCK xdata is written with the block".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0080 DXF BLOCK xdata is written with the block".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1609,7 +1609,7 @@ BLOCK is an entity and can carry xdata, which the reader keeps, but `_writeBlock
 - **Touches:** `src/IO/DXF/DxfReader.ts`, `src/IO/DXF/DxfDocumentBuilder.ts`
 - **Symptom:** with no `$ACADVER` (the minimal R12 file is an ENTITIES section and EOF) the document kept the header's R2018 default and was saved as R2018, with a layout, dictionaries and a BLOCK_RECORD table the file never had. With no `$HANDSEED`, an entity's made-up handle could also collide with a table's, and the document renumbered the entity while its block record kept the old handle (ezdxf `Minimal_DXF_AC1009.dxf`, `R12_with_trash_beyond_EOF.dxf`).
 - **Fix:** a DXF with no `$ACADVER` and no CLASSES or OBJECTS section is read as R12, as AutoCAD and ezdxf read it. After the build, a block record's owned handles are taken from its entities if any of them no longer names one of its entities.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0081 a DXF with no version and no R13 sections reads as R12 and saves as R12".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0081 a DXF with no version and no R13 sections reads as R12 and saves as R12".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1626,7 +1626,7 @@ AutoCAD and ezdxf treat a DXF without `$ACADVER` and without R13+ sections as R1
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** a GEODATA coordinate system definition longer than one group is written as 303 chunks and a last 301. The 303s were appended, then the map assigned the 301, which replaced them and kept its caret codes (`^J`) as text (acadsharp `geoloc.dxf` XML, `geoloc_AC1021.dxf` WKT).
 - **Fix:** 301 is appended like the 303s.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0082 GEODATA coordinate system XML is read with its line breaks and kept through a save".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0082 GEODATA coordinate system XML is read with its line breaks and kept through a save".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1643,7 +1643,7 @@ AutoCAD and ezdxf treat a DXF without `$ACADVER` and without R13+ sections as R1
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** the field code is written as 3 chunks and a last 2, the format string as 9 chunks and a last 301. Each went through the map, so every chunk replaced the one before (ezdxf `mtext_complex_inline_codes.dxf` FIELD A9, whose format string is 1,995 characters).
 - **Fix:** 2 and 3 append to `fieldCode`, 9 and 301 to `formatString`.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0083 a DXF FIELD keeps its whole field code and format string".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0083 a DXF FIELD keeps its whole field code and format string".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1660,7 +1660,7 @@ FIELD splits the field code (3…, 2) and the format string (9…, 301) into 255
 - **Touches:** `src/IO/TextStyleExtendedData.ts`
 - **Symptom:** on save the `ACAD` 1000/1071 pair of a TrueType style was rebuilt from the font file name, so "Arial Black" became "ariblk" and the charset, pitch and family bits of 1071 were lost (ezdxf `text_fonts.dxf` STYLE 6A8).
 - **Fix:** the reader remembers each style's font file; while it is unchanged the writer keeps the face name and the non-style bits as read and refreshes only bold and italic. A changed font file still rebuilds the pair.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0084 a TrueType STYLE keeps its ACAD font xdata as read through a DXF save".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0084 a TrueType STYLE keeps its ACAD font xdata as read through a DXF save".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1677,7 +1677,7 @@ The face name and the charset/pitch/family bits cannot be derived from the font 
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** `writeBookColor` always wrote 420, so an index colour went out as true colour 0 and read back as true-colour black (acadsharp `sample_AC1015` ASCII and binary, DBCOLOR 996).
 - **Fix:** 420 is written only when the colour is a true colour.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0085 a DBCOLOR with no true colour is not written with one".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0085 a DBCOLOR with no true colour is not written with one".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1694,7 +1694,7 @@ An index colour has no 24-bit value; writing 420 = 0 turns it into true-colour b
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
 - **Symptom:** R2010+ IMAGE 290 (clip mode, inverted clip) was read but not written, so an inverted clip came back normal (ezdxf `viewports.dxf` IMAGE 7E9).
 - **Fix:** 290 is written after the clip boundary from R2010.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0086 an R2010+ DXF IMAGE keeps its clip mode (290)".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0086 an R2010+ DXF IMAGE keeps its clip mode (290)".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1711,7 +1711,7 @@ The reader keeps `clipMode`; the writer did not write it.
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`
 - **Symptom:** a DEFPOINTS layer with no 290 kept the plottable default, which the getter hides; the writer writes AutoCAD's 290 = 0, so the reopened layer stored a different flag (ezdxf `duplicate_handles.dxf` LAYER 29).
 - **Fix:** a layer named Defpoints is read as not plotted, as AutoCAD treats it and as the writer writes it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0087 a DXF Defpoints layer reads as not plotted, as it is written".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0087 a DXF Defpoints layer reads as not plotted, as it is written".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1728,7 +1728,7 @@ AutoCAD never plots Defpoints, and the writer writes 290 = 0 for it. Store the s
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** each element's 62 went through the map to `fillColor`, so the fill read as the last element's colour and every element kept ByLayer (ezdxf `text_negative_extrusion.dxf` MLINESTYLE 18: fill 256, elements 0).
 - **Fix:** 62 before the first 49 is the fill colour; after it, it is the colour of the element the last 49 started.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0088 a DXF MLINESTYLE keeps its fill colour apart from its element colours".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0088 a DXF MLINESTYLE keeps its fill colour apart from its element colours".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1745,7 +1745,7 @@ MLINESTYLE uses 62 for the fill colour and again for each element after its 49. 
 - **Touches:** `src/Entities/Viewport.ts`
 - **Symptom:** `Viewport.id` treats 0 as unset and numbers the viewport by its position, so a file's 69 = 0 (an off viewport in ezdxf `text_negative_extrusion.dxf`, VIEWPORT 46A) was written as 2.
 - **Fix:** an ID set through `id` is returned as set, 0 included; only a viewport whose ID was never set is numbered by position.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0089 a DXF VIEWPORT keeps a stated id of 0".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0089 a DXF VIEWPORT keeps a stated id of 0".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1762,7 +1762,7 @@ AutoCAD writes 69 = 0 for some viewports. The getter's position numbering is for
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** version 1 GEODATA states the reference point in 40/41/42 and then writes 11/21/31 = 0. The map took 11 as the version 2+ reference point, so every R2009 DXF GEODATA read with its reference point at 0,0,0 (acadsharp `geoloc_AC1021.dxf` GEODATA 241). Both reads of a round trip agreed, so the structural diff could not see it.
 - **Fix:** 11/21/31 are skipped for version 1; later versions still read them through the map.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0090 an R2009 DXF GEODATA keeps its reference point from 40/41/42".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0090 an R2009 DXF GEODATA keeps its reference point from 40/41/42".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1779,7 +1779,7 @@ Version 1 has the reference point in 40/41/42; 11/21/31 are a zero vector after 
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** the DXF reader and the DWG reader and writer take version 1's 46 as the horizontal unit scale; the DXF writer wrote the user scale factor there, so 0.0254 came back as 1 (acadsharp `geoloc_AC1021.dxf`).
 - **Fix:** 46 is written from `horizontalUnitScale`; the user scale factor stays in the Civil 3D block's 141.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0091 an R2009 DXF GEODATA writes its horizontal unit scale as 46".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0091 an R2009 DXF GEODATA writes its horizontal unit scale as 46".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1796,7 +1796,7 @@ Match the DXF reader and the DWG reader/writer.
 - **Touches:** `src/IO/CadDocumentBuilder.ts`
 - **Symptom:** an evaluation graph's parameters, grips, actions and grip-location components are owned by the graph and reached only through its nodes. The builder linked them to the nodes but never registered them, so the document did not hold them (`getCadObject` returned nothing, new handles could reuse theirs) and the M1-27 handle gate counted 437 of them as never loaded, in DWG and DXF alike (acadsharp `dynamic-blocks/*`, every `sample_AC10xx`).
 - **Fix:** an object owned by an evaluation graph and named by one of its nodes is registered with the graph, as an object owned through an XRECORD entry is.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0092 dynamic-block graph nodes join the document with their graph".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0092 dynamic-block graph nodes join the document with their graph".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1813,7 +1813,7 @@ Graph node expressions are owned by their `ACAD_EVALUATION_GRAPH` but no collect
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** the AcDbBlockAction 330s (the entities the action acts on) went through the common codes, which take every 330 as the owner. The action's owner became its last entity, so it was not linked to its graph, and its `entities` stayed empty (acadsharp `BLOCKLINEARPARAMETER.dxf` BLOCKSCALEACTION 26C on CIRCLE 258); the DWG reader reads both.
 - **Fix:** AcDbBlockAction 330s are read as the selection set, into a `CadBlockActionTemplate` (now also used for actions read through the generic path), as the DWG reader does.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0093 a DXF block action keeps its graph owner and reads its selection set".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0093 a DXF block action keeps its graph owner and reads its selection set".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1830,7 +1830,7 @@ The 330s of AcDbBlockAction are the action's entities. They were read as owner h
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/Objects/Evaluations/EvaluationExpression.ts`
 - **Symptom:** the DXF writer writes these objects from their DXF maps, which hold only part of them; every visibility state of a BLOCKVISIBILITYPARAMETER was dropped (acadsharp `BLOCKVISIBILITYPARAMETER.dxf` 33B and the `sample_AC10xx` DXFs: 52 differences once 0092 made the nodes visible).
 - **Fix:** with `keepRawDxfPassthroughObjects`, the reader keeps the group codes of every evaluation expression and the DXF writer writes them back as read, as for MATERIAL and VISUALSTYLE. Nodes read from DWG still go through the field writer.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0094 DXF saves write dynamic-block graph nodes as read".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0094 DXF saves write dynamic-block graph nodes as read".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1847,7 +1847,7 @@ The map-driven DXF writer for dynamic-block objects loses data (visibility state
 - **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
 - **Symptom:** the reader read the direction (3BD) before the flip id (BL); the record and the writer have the id first. The grip read as direction 1, -11159.6, 3.5e-162 and id 2 (the DXF twin: 0, 7.6, 0 and 3), and a saved grip did not read back, which was the last round-trip difference of `BLOCKFLIPPARAMETER.dwg`.
 - **Fix:** the id is read first, then the direction.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0095 a DWG BLOCKFLIPGRIP reads its flip id before its direction, as written".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0095 a DWG BLOCKFLIPGRIP reads its flip id before its direction, as written".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1864,7 +1864,7 @@ The writer writes BL 93 then 3BD 140–142, which matches the file; the reader h
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
 - **Symptom:** the common codes took every 330 as the owner, so any 330 an object's reader did not consume (the selection set of an unknown BLOCKFLIPACTION, references inside TABLEGEOMETRY) replaced the owner stated before the first subclass marker. Such objects were attached to an entity and never joined the document (acadsharp `BLOCKFLIPPARAMETER.dxf` 26D; 16 TABLEGEOMETRY objects in the `sample_AC10xx` DXFs).
 - **Fix:** a 330 after the first subclass marker sets the owner only when none was stated.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0096 a DXF 330 after the first subclass marker does not replace the stated owner".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0096 a DXF 330 after the first subclass marker does not replace the stated owner".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1881,7 +1881,7 @@ DXF states an object's owner as the 330 in its common data, before the first 100
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** AcDbEvalExpr holds `1`, then `70` (the value's type), then the value in that type's group. The reader required 140 after the 70 and threw on a short value (70 = 70, 70 = 0), which dropped the object (acadsharp `BLOCKFLIPPARAMETER.dxf` BLOCKGRIPLOCATIONCOMPONENT 263).
 - **Fix:** the value group is read whatever its code.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0097 a DXF evaluation expression reads a value of any type".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0097 a DXF evaluation expression reads a value of any type".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1898,7 +1898,7 @@ The value after the 70 type group can be any type's group code; requiring 140 th
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** before R2007 a table, data-map or field value has no `304 ACVALUE_END`: it is a `90` type and that type's data (`301 DATAMAP_VALUE`, `90 = 2`, `140 = 7783`, `309 DATAMAP_END`). `readCadValue` and `_readDataMapValue` waited for a 304, so they read the enclosing `DATAMAP_END`, `CELLCONTENT_END` and so on as value codes, then the next objects. In acadsharp `sample_AC1015_ascii.dxf` and `sample_AC1018_ascii.dxf` (and their binary twins) each TABLECONTENT swallowed its TABLEGEOMETRY, the ACDBDATATABLE and the dictionaries after it, which were never loaded. With 0099 the corpus handle-coverage gate goes from 318 to 52 lost handles.
 - **Fix:** before R2007, a value ends on its type's last data code (91 for unknown and long, 140 double, 1 string, 21 2D point, 31 3D point, 330 handle; date and buffer after the 92 byte count of 310s; result buffer and general on the 90 itself). R2007 and later still end on 304.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0098 an R2000/R2004 DXF table value ends on its data, so the objects after it are read". The TABLECONTENT itself is read only with 0099 too, because its empty cells are unknown-type values with a 91.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0098 an R2000/R2004 DXF table value ends on its data, so the objects after it are read". The TABLECONTENT itself is read only with 0099 too, because its empty cells are unknown-type values with a 91.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1915,7 +1915,7 @@ R2004 and earlier DXF files write a value as its 90 type and the type's data, wi
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
 - **Symptom:** an empty table cell is a value of type 0 (unknown) that still carries `91 = 0` (every pre-R2007 one, and ezdxf `acad_table_simple.dxf`, R2013: `301 CELL_VALUE`, `93 = 3`, `90 = 0`, `91 = 0`). `readCadValue` passed the 91 to `CadValue.setValue`, which throws for the unknown type, so the ACAD_TABLE or TABLECONTENT was dropped with the objects the failed read had passed. This was the M1-04 mapping gap "acad-ts drops ACAD_TABLE entities of ezdxf-written files from their block" (M1-32).
 - **Fix:** the 91 of an unknown-type value is skipped.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0099 a DXF table value of unknown type with a 91 is read, not thrown away".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0099 a DXF table value of unknown type with a 91 is read, not thrown away".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1932,7 +1932,7 @@ Empty cells are written as unknown-type values with a 91. Setting it threw "Inva
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
 - **Symptom:** an R2007+ date value (field, table cell) is `90 = 8`, `92 = 16`, `310` = a SYSTEMTIME. `readCadValue` skipped the 92 and 310, so the value stayed empty, and the writer wrote `91 = 0` for a date. ezdxf `uncommon.dxf` FIELD 5F9 (an AcVar Date child field, 2020-04-21 16:45:39) and the acadsharp R2007+ `ACAD_TABLE` date cell lost their dates on every save. The structural diff could not see it: both reads had an empty value.
 - **Fix:** the reader decodes the 16 bytes as the DWG reader does (year, month, day of week, day, hour, minute, second, millisecond, little-endian shorts). The writer writes `92 = 16` and the SYSTEMTIME for a date from R2007 on. Pre-R2007 8-byte dates are unchanged.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0100 a DXF date value keeps its date through a save".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0100 a DXF date value keeps its date through a save".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1949,7 +1949,7 @@ R2007+ DXF stores a date value as a byte count (92) and a SYSTEMTIME (310). The 
 - **Touches:** `src/IO/CadDocumentBuilder.ts`
 - **Symptom:** before R2007 a 3DSOLID has no history handle (350 came with R2007). Its `ACSH_HISTORY_CLASS` is owned by the solid (its owner handle) but referenced only from the `ACAD_XREC_ROUNDTRIP` XRECORD in the solid's extension dictionary (a 360 entry). The DWG reader read it from that entry, but nothing registered it, so the history and the evaluation graph and `ACSH_*` nodes it owns (kept raw since M1-30) were not in the document. acadsharp `sample_AC1014/1015/1018.dwg`: solid D65 → history D66 → graph D67 → box D68, and solid D6A → D6B → D6C → D6D (18 handles).
 - **Fix:** when an object's owner holds it through an owner entry (350–369) of an XRECORD in the owner's extension dictionary, the builder registers it with that owner, as it already does for an object owned through an XRECORD's entries.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0101 a pre-R2007 3DSOLID keeps its history, and the history its graph".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0101 a pre-R2007 3DSOLID keeps its history, and the history its graph".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1966,7 +1966,7 @@ Before R2007 a solid's ACSH_HISTORY_CLASS is referenced from an XRECORD in the s
 - **Touches:** `src/IO/CadDocumentBuilder.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** acadsharp `sample_AC1014.dwg`'s `ACAD_PLOTSTYLENAME` (E) has no entries; its default (340) is `ACDBPLACEHOLDER` F. Only the dictionary held the placeholder, so it was not in the document, and a DXF save wrote the 340 but never the object (the DWG writer already wrote it).
 - **Fix:** the builder registers a default entry owned by its dictionary-with-default, and the DXF writer writes the default entry with the dictionary's entries (it skips one already written).
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0102 a dictionary-with-default keeps a default entry that is not one of its entries".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0102 a dictionary-with-default keeps a default entry that is not one of its entries".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -1983,7 +1983,7 @@ A dictionary-with-default can name a default that is not one of its entries. The
 - **Touches:** `src/IO/CadReaderConfiguration.ts`, `src/CadDocument.ts`, `src/IO/CadDocumentBuilder.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** the DWG reader reads only the objects it reaches from the header, the tables and the references it decodes. An object in the object map whose owner is not in the map is never reached, so a save drops it. acadsharp `AecObjects.dwg`: `BLOCK`/`ENDBLK` 2ADC/2ADE and 2AE0/2AE3 (their block records 2ADB and 2ADF are listed by the block table but are not in the map), `DICTIONARY` 2C9C with `XRECORD` 2C9D, and `XRECORD`s 3DEB, 3DEE, 3DEF, 3DF2, 3DF5, 3DF6 (owners 3DEA, 3DED, 3DF1, 3DF4 not in the map). `sample_base.dwg`: `XRECORD`s E1A, E1D, E1E (owners E19, E1C not in the map). AutoCAD keeps such objects in the database.
 - **Fix:** a new reader setting, `keepUnreachableObjects` (off by default). With it, once the references are exhausted, every object left in the map is kept as its raw record in an `UnknownNonGraphicalObject` (whatever its type), registered with the document and listed in `CadDocument.unreachableObjects`. The DWG writer writes them raw, as it writes unknown objects (same version only).
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0103 a DWG object no reference reaches is kept raw and written back".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0103 a DWG object no reference reaches is kept raw and written back".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2000,7 +2000,7 @@ DWG files can hold objects whose owner is not in the file. The reader never reac
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfBlockSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfBlocksSectionWriter.ts`
 - **Symptom:** a `BLOCK` with no name (no 2 or 3) and no block record in the file made the reader create a record with an empty name, which a table cannot hold, so the block and its `ENDBLK` were dropped with an error. ezdxf `r12_blocks_with_no_names.dxf` (BLOCK 2E/ENDBLK 2F, BLOCK 33/ENDBLK 34) and `r2000_blocks_with_no_name_and_no_block_record.dxf` (BLOCK 30/ENDBLK 31 owned by 2F, BLOCK 33/ENDBLK 34 owned by 32; neither record is in the file).
 - **Fix:** with `keepUnreachableObjects` (0103), the block's header, entities and `ENDBLK` are kept as raw `UnknownEntity`s in `CadDocument.unreachableObjects`, and the DXF writer writes them at the end of the BLOCKS section as read. No INSERT can name such a block, so it stays unreachable.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0104 a DXF block with no name and no block record is kept raw and written back".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0104 a DXF block with no name and no block record is kept raw and written back".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2034,7 +2034,7 @@ A BLOCK with no name and no BLOCK_RECORD failed with an empty table entry name a
 - **Touches:** `src/Entities/Insert.ts`, `src/Entities/Polyline.ts`, `src/Entities/PolyfaceMesh.ts`, `src/IO/CadDocumentBuilder.ts`
 - **Symptom:** an INSERT's attributes and `SEQEND`, a polyline's vertices and `SEQEND` and a polyface mesh's faces are held inside their owner, not registered with the document, so `assignDocument` never ran on them. A child whose record had no 8/6/7 kept a detached `Layer.default`/`LineType.byLayer`/`TextStyle.default` instead of the document's `0`/`ByLayer`/`STANDARD`, and its `document` stayed null. From R13 on the DXF writer omits code 8 for layer `0`, so after a save such a child read back with no layer at all. ezdxf `small_r13.dxf` VERTEX 78, acadsharp `sample_AC1009.dxf` ATTRIB 705 (style), `sample_AC1015.dxf` VERTEX 423 / SEQEND 42A after a DXF save; 388 differences across 19 corpus files once the structural diff compares held children.
 - **Fix:** `Insert` and `Polyline` gain `assignHeldChildren(doc)`, called from `assignDocument` and, at the end of a build, by the builder for every insert and polyline (the readers push the children after the owner joined the document). `PolyfaceMesh` extends it to its faces. `unassignDocument` releases the children too. A child already in a document is left alone.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0106 attributes, vertices and SEQENDs take their layer, linetype and style from the document".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0106 attributes, vertices and SEQENDs take their layer, linetype and style from the document".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2051,7 +2051,7 @@ Entities held inside an INSERT or a POLYLINE never had `assignDocument` called, 
 - **Touches:** new `src/Entities/DimensionRadialLarge.ts`; `src/index.ts`, `src/DxfFileToken.ts`, `src/DxfSubclassMarker.ts`, `src/Classes/DxfClassDefinitionRegistry.ts`, `src/Metadata/LookupTables/Entities.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** acad-ts had no class for the jogged radius dimension, so a `LARGE_RADIAL_DIMENSION` read as an `UnknownEntity`. It was kept through saves, but its block, style and points could not be mapped or drawn. ezdxf `uncommon.dxf` has two (37C and 414).
 - **Fix:** a `DimensionRadialLarge` entity (subclass `AcDbRadialDimensionLarge`): 15 the chord point, 13 the displaced centre, 14 the jog point, 40 the leader length; 10 stays the centre (the definition point), so the measurement is 10→15. The DXF reader reads it like `ARC_DIMENSION`, and the DXF writer writes it with its subclass. The class definition matches AutoCAD's (`uncommon.dxf` CLASS: proxy flags 1025, entity). Type 70 keeps what the file says (AutoCAD writes 9 | 32 | 128 = 169); a new one starts at 9 | 32. The DWG layout is not implemented: a DWG file's jogged dimension still reads as an `UnknownEntity` and is written back raw, and one read from DXF is left out of a DWG save, as it was before.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0107 DXF reads LARGE_RADIAL_DIMENSION as a jogged radius dimension and writes it back". The 0014 case for `uncommon.dxf` now uses `ACDBASSOCPERSSUBENTMANAGER` as its unknown object.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0107 DXF reads LARGE_RADIAL_DIMENSION as a jogged radius dimension and writes it back". The 0014 case for `uncommon.dxf` now uses `ACDBASSOCPERSSUBENTMANAGER` as its unknown object.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2106,7 +2106,7 @@ The DXF hatch reader skipped the hatch style (75); `_readPattern` consumed the g
   3. A DWG R2010+ cell style states its own property override flags, and then its content format, which has flags of its own. The content format's flags overwrote the cell style's in `propertyOverrideFlags`, so whatever a cell, row, column or table cell style overrode (alignment, background, margins, text height) was lost. In `sample_AC1024.dwg`, cell (4,0) overrides 0x63E10 (alignment, background 165, margins), and acad-ts read 0.
   4. The DXF reader dropped a cell's text style override (7). The flag (0x10) was read, but the style was not, although the DXF writer writes it.
 - **Fix:** swap the two `CellEdgeFlags` values. The reader and writer both use the enum, so files round-trip as before, with the edges now named right. `CellStyle.cellPropertyOverrideFlags` (null unless read from DWG) keeps the cell style's own flags, and the writer writes it back in their place. The R2004 reader and writer treat the visibility short as "hidden" (1 = hidden). The DXF reader keeps a cell's 7, and the cell template resolves it by name when the cell is built, as for a handle.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0110 DWG table cells keep their border edges, R2004 visibility and R2010 cell-style flags" (1–3, with DWG round trips); `packages/io/test/acad-ts-patches.test.ts` → "0110 a DXF table cell keeps the text style override it names (7)" (4). The M1-36 corpus test "maps the tables of a DWG like those of the same drawing saved as DXF" now compares cell formats, and it fails without 1–3.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0110 DWG table cells keep their border edges, R2004 visibility and R2010 cell-style flags" (1–3, with DWG round trips); `packages/io/test/acad-ts-patches.test.ts` → "0110 a DXF table cell keeps the text style override it names (7)" (4). The M1-36 corpus test "maps the tables of a DWG like those of the same drawing saved as DXF" now compares cell formats, and it fails without 1–3.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file). Visibility (2) is inferred from the drawing, because no corpus file has an edge that is really hidden. AutoCAD's DXF for the same cells writes no 289/285/286/288, and acad-ts reads none.
 
 <details><summary>Upstream PR text</summary>
@@ -2143,7 +2143,7 @@ Thirty header variables AutoCAD writes (`$ATTDIA`, `$ATTREQ`, `$SURFTAB1`, `$SUR
 - **Touches:** `src/IO/Templates/CadLayerTemplate.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** both readers keep a layer's material handle (DXF 347, DWG R2007+), and `CadLayerTemplate` looks the material up but never assigns it, so `Layer.material` was always null. The DXF writer wrote no 347 and the DWG writer wrote a null handle, so a save detached every layer from its material. Found by the M1-03 tables oracle (`tables.corpus.test.ts`, `LAYER 347`, roadmap M1-32): every layer of the R2007+ acadsharp and dynamic-block samples points at the Global material.
 - **Fix:** the template assigns the material when the handle names one; the DXF writer writes 347 for R2007+ (AutoCAD writes it after 390) and the DWG writer writes the material handle.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0112 a layer keeps its material (DXF 347, DWG R2007+) through read and save"; `tables.corpus.test.ts` no longer lists `LAYER 347` in `ACAD_TS_GAPS`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0112 a layer keeps its material (DXF 347, DWG R2007+) through read and save"; `tables.corpus.test.ts` no longer lists `LAYER 347` in `ACAD_TS_GAPS`.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2160,7 +2160,7 @@ Thirty header variables AutoCAD writes (`$ATTDIA`, `$ATTREQ`, `$SURFTAB1`, `$SUR
 - **Touches:** `src/Tables/Collections/Table.ts`, `src/Tables/TableEntry.ts`, `src/Tables/TextStyle.ts`
 - **Symptom:** AutoCAD stores the STYLE record of a shape file (loaded for complex linetypes or SHAPE entities, flag 1) with an empty name, and a drawing can hold several. `Table.add` renamed every nameless entry `unnamed0`, `unnamed1`, …, so the name read back was not the file's, an R12 record (no handle) could not be told apart, and a DXF writer that dropped the rename would have hit the "name is invalid" check, which skips the record. A DWG style control can list an entry twice; a named entry lands on the same key, so that was harmless while the rename gave a nameless one a name. Found by the M1-03 tables oracle (`STYLE 2`, roadmap M1-32) on `sample_AC1009/AC1015/AC1018_ascii.dxf`.
 - **Fix:** `TableEntry.keepsEmptyName` (true for a shape-file `TextStyle`) keeps the empty name: the table stores such an entry under a key no name can have (so lookups by name never find it, as AutoCAD's do not), adds it once, and re-keys it if it is renamed; `validate` accepts its empty name.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0113 a nameless shape-file text style keeps its empty name" (R12 and R2000 DXF, R2004 DWG, with saves); `tables.corpus.test.ts` matches R12 nameless records in file order and no longer lists `STYLE 2`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0113 a nameless shape-file text style keeps its empty name" (R12 and R2000 DXF, R2004 DWG, with saves); `tables.corpus.test.ts` matches R12 nameless records in file order and no longer lists `STYLE 2`.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2177,7 +2177,7 @@ AutoCAD writes the STYLE table record of a shape file with an empty name (flag 1
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfTablesSectionReader.ts`, `src/IO/Templates/CadDimensionStyleTemplate.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
 - **Symptom:** an R12 DIMSTYLE names its arrow blocks in 5, 6 and 7 (DIMBLK, DIMBLK1, DIMBLK2). 5 is a handle code, so the reader parsed the name as hex (`BOXBLANK` became `11`, an empty name `0`) and the arrow block never resolved. AutoCAD also writes a built-in arrowhead there without the underscore of its block (`BOXBLANK` for `_BOXBLANK`, as the DIMBLK system variable takes it), which a lookup by name misses. The R12 writer wrote none of 5/6/7. Found by the M1-03 tables oracle (`DIMSTYLE 5`, roadmap M1-32) on `sample_AC1009_ascii.dxf`.
 - **Fix:** the reader takes 5 from the line as written; the template resolves a built-in arrowhead name (AutoCAD's DIMBLK list) to its underscored block when no block has the name as written; the R12 writer writes 5/6/7 as names, a built-in arrowhead without its underscore.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0114 an R12 DIMBLK names its arrow block, a built-in arrowhead without its underscore" (ASCII and binary R12, saved both ways, and the text AutoCAD writes); `tables.corpus.test.ts` no longer lists `DIMSTYLE 5`.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0114 an R12 DIMBLK names its arrow block, a built-in arrowhead without its underscore" (ASCII and binary R12, saved both ways, and the text AutoCAD writes); `tables.corpus.test.ts` no longer lists `DIMSTYLE 5`.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2194,7 +2194,7 @@ In R12 DXF the DIMSTYLE record names its arrow blocks in groups 5, 6 and 7. Grou
 - **Touches:** `src/IO/Templates/CadEntityTemplate.ts`
 - **Symptom:** R12 files have no BYBLOCK or BYLAYER LTYPE records, yet an entity names them in 6. The linetype lookup by name failed, so the entity kept its default ByLayer and drew in its layer's linetype instead of its block's. Found by the M1-04 entity oracle (`entity 6`, roadmap M1-32) on 69 entities of `sample_AC1009_ascii.dxf`.
 - **Fix:** when no table entry has the name and it is `BYBLOCK` (any case), the entity gets `LineType.byBlock`; the document adds the entry as it already did for ByLayer.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0115 an R12 entity drawn ByBlock keeps its linetype though the file has no BYBLOCK record"; `entities.corpus.test.ts` no longer lists the gap.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0115 an R12 entity drawn ByBlock keeps its linetype though the file has no BYBLOCK record"; `entities.corpus.test.ts` no longer lists the gap.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2211,7 +2211,7 @@ R12 DXF files have no BYBLOCK linetype record, but entities still set group 6 to
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfStreamReaderBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts`
 - **Symptom:** DXF writes a control character as `^` and the character 64 above it (`^@` is 0, `^A` 1, …, `^_` 31) and a caret as `^ `. The reader decoded only `^J`, `^M` and `^I`, so `^A` and the rest came back as text, and the writer encoded only line feed, return and tab, so any other control character would be written raw. Decoding in sequence also read `^^J` as a caret and a line feed. Found by the M1-04 entity oracle (`MTEXT 1`, roadmap M1-32) on ezdxf's `caret_encoding.dxf`.
 - **Fix:** decode `^@`–`^_` and `^ ` in one left-to-right pass; encode every character below 32 the same way after escaping carets.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0116 DXF caret codes ^@ to ^_ decode to the control characters 0 to 31 and encode back"; `entities.corpus.test.ts` no longer lists the gap.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0116 DXF caret codes ^@ to ^_ decode to the control characters 0 to 31 and encode back"; `entities.corpus.test.ts` no longer lists the gap.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2228,7 +2228,7 @@ DXF stores control characters 0–31 in caret notation (`^@` … `^_`) and a car
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
 - **Symptom:** AutoCAD leaves out 50 when a rotated (linear) dimension is at 0°, so its `AcDbRotatedDimension` subclass marker is empty and is all that tells it from an aligned one. The reader made a `DimensionLinear` only on 50, so these read as `DimensionAligned`. Found by the M1-04 entity oracle (`DIMENSION 70`, roadmap M1-32) on 16 dimensions of the acadsharp samples, `dimension_in_nested_blocks.dxf` and `uncommon.dxf`.
 - **Fix:** the `AcDbRotatedDimension` marker turns the dimension into a `DimensionLinear` (rotation 0) unless it already is one.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0117 a rotated DXF dimension whose AcDbRotatedDimension subclass is empty stays rotated"; `entities.corpus.test.ts` no longer lists the gap.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0117 a rotated DXF dimension whose AcDbRotatedDimension subclass is empty stays rotated"; `entities.corpus.test.ts` no longer lists the gap.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2245,7 +2245,7 @@ A rotated dimension at 0° is written without group 50, leaving the AcDbRotatedD
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
 - **Symptom:** the VIEWPORT reader returned on 68 without reading it, so every viewport read as on and active (1) and a save wrote that, and it never read 340, so a non-rectangular viewport lost its clip entity on a DXF read (DWG reads both). Found by the M1-04 entity oracle (`VIEWPORT 68`, `VIEWPORT 340`, roadmap M1-32) on 56 and 4 viewports.
 - **Fix:** 68 sets `activeStatus`, 340 sets the template's boundary handle, which the template already resolves.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0118 a DXF viewport keeps its status (68) and clip boundary (340)"; `entities.corpus.test.ts` no longer lists the gap.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0118 a DXF viewport keeps its status (68) and clip boundary (340)"; `entities.corpus.test.ts` no longer lists the gap.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2262,7 +2262,7 @@ The DXF VIEWPORT reader skipped group 68 (off, or on with its stacking order) an
 - **Touches:** `src/IO/Templates/CadViewportTemplate.ts`
 - **Symptom:** R12 states a viewport's frame as groups (10, 40, 41, 68, 69) and its view, snap and grid in the ACAD xdata after `MVIEW` (DXF R12 reference, VIEWPORT). acad-ts never read that xdata into the viewport, so view centre, height, lens and the rest read as 0. Found by the M1-04 entity oracle (`VIEWPORT MVIEW 12/42/45`, roadmap M1-32) on `sample_AC1009_ascii.dxf`.
 - **Fix:** for documents before R13, the template reads the MVIEW xdata into view target, direction, twist, height, centre, lens, front and back clip, snap angle, base and spacing, grid spacing, circle zoom and the status bits (view mode, UCS icon, fast zoom, snap, grid, isometric snap, isopair, hidden in plot), and sets the ViewportOff flag when 68 is 0, since R12 has no 90 flags to say so. The xdata itself is kept as read.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0119 an R12 viewport reads its view from the MVIEW xdata"; `entities.corpus.test.ts` no longer lists the gap.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0119 an R12 viewport reads its view from the MVIEW xdata"; `entities.corpus.test.ts` no longer lists the gap.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2313,7 +2313,7 @@ TRACE has the same data as SOLID, and both readers read it into a `Solid`, which
 - **Touches:** `src/Color.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`, `src/IO/DXF/DxfStreamWriter/DxfStreamWriterBase.ts`
 - **Symptom:** DXF states these colours as one 32-bit AcCmEntityColor value each (MULTILEADER 91/92/93, its context's 91/93, MLEADERSTYLE 91/93/94; high byte 0xC0 ByLayer, 0xC1 ByBlock, 0xC2 RGB, 0xC3 ACI, 0xC8 None). The reader assigned the raw integer to the `Color` property, so a DXF→DWG save could not write it, and the MLEADERSTYLE writer, given a number, wrote ByBlock. The context text colour (90) was decoded, but 0xC3 (ACI) read as RGB. Both writers wrote an ACI colour as 0xC1 + index and ByLayer as ByBlock. Every corpus value is 0xC0, 0xC1 or 0xC2 (`sample_AC1015_ascii.dxf` and `sample_AC1018_ascii.dxf` have an RGB 200,200,200 text background). Listed by M1-32, fixed in M1-79.
 - **Fix:** `Color.fromCmValue` / `Color.toCmValue` decode and encode the value (0xC1 and the methods that carry no colour keep the low byte as an index, as `DwgStreamReaderAC18.readCmColor` does); the readers decode those groups and both writers encode with it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0122 DXF MULTILEADER and MLEADERSTYLE colours read as colours and save back".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0122 DXF MULTILEADER and MLEADERSTYLE colours read as colours and save back".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2330,7 +2330,7 @@ These DXF groups hold a 32-bit AcCmEntityColor (high byte 0xC0 ByLayer, 0xC1 ByB
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
 - **Symptom:** the reader skipped group 71 (1 rectangular, 2 polygonal), so every DXF image and wipeout read as rectangular, and a save wrote 71 = 1 with the polygon's vertices. Corpus: `wipeout_door.dxf` (2), `images.dxf` (1), `viewports.dxf` (2) and the acadsharp R2000/R2004 wipeouts. Listed by M1-32, fixed in M1-79.
 - **Fix:** 71 sets `clipType`. The DWG reader already read it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0123 a DXF IMAGE or WIPEOUT keeps its clip boundary type (71)".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0123 a DXF IMAGE or WIPEOUT keeps its clip boundary type (71)".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2347,7 +2347,7 @@ The DXF reader skipped group 71 of IMAGE and WIPEOUT, so a polygonal clip read a
 - **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`
 - **Symptom:** the DWG reader read `ACAD_TABLE` only from R2004 on and left an R14 or R2000 one as an unknown entity, so the two tables of `sample_AC1014.dwg` and `sample_AC1015.dwg` were not mapped. AutoCAD saves them there as a custom class object with the R2004 layout. Listed by M1-32, fixed in M1-79.
 - **Fix:** read `ACAD_TABLE` in every version. The R14 and R2000 tables map exactly like the same drawing's R2000 DXF save, and the writer already wrote that layout.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0124 R14 and R2000 DWGs read their ACAD_TABLEs and save them back"; `entities.corpus.test.ts` → "maps the tables of a DWG like those of the same drawing saved as DXF" now includes AC1014 and AC1015.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0124 R14 and R2000 DWGs read their ACAD_TABLEs and save them back"; `entities.corpus.test.ts` → "maps the tables of a DWG like those of the same drawing saved as DXF" now includes AC1014 and AC1015.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2364,7 +2364,7 @@ Tables in R14 and R2000 DWG files are custom class objects with the R2004 layout
 - **Touches:** `src/IO/DWG/DwgStreamReaders/DwgStreamReaderBase.ts`, `src/IO/DWG/DwgStreamWriters/DwgStreamWriterBase.ts`
 - **Symptom:** before R2007, DWG strings are in the drawing's code page and AutoCAD writes a character outside it as `\U+XXXX`, as in DXF. 0072 decodes them in DXF; the DWG reader kept them as text (`sample_AC1014/1015/1018.dwg` MTEXT `\U+220545,6` and `94\U+00B0`, which their DXF save reads as `∅45,6` and `94°`), and the writer turned a character outside the code page into "?". Listed by M1-32, fixed in M1-79.
 - **Fix:** `readVariableText` decodes with `decodeDxfUnicode` and `writeVariableText` escapes with `escapeDxfUnicode`; R2007+ (`DwgStreamReaderAC21`, `DwgStreamWriterAC21`) reads and writes UTF-16 through its own overrides.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0125 a DWG before R2007 decodes its \U+ escapes and writes them back".
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0125 a DWG before R2007 decodes its \U+ escapes and writes them back".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2379,7 +2379,7 @@ Before R2007 a DWG string is in the drawing's code page and AutoCAD stores a cha
 - **Touches:** `src/Entities/TableEntity.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/Templates/CadTableEntityTemplate.ts`, `src/index.ts`
 - **Symptom:** a table can override its table style for the whole table: title suppression, flow direction, the horizontal and vertical cell margins, and per row type (title, header, data) the content colour, fill, alignment, text style and text height (flag word 93 and the values after it). The R2004/R2007 DWG reader read every one of them and threw them away, and the DXF reader kept them only as raw codes for the writer (0066, DEC-043), so no caller could see them, and the DWG writer wrote "no overrides", so a DWG save dropped them. Sample table 528 (acadsharp `sample_AC10xx`) overrides both margins and the three text heights.
 - **Fix:** a `TableStyleOverrides` model (`flags`, `suppressTitle`, `suppressHeader`, `flowDirection`, the two margins, and a `TableRowTypeOverrides` per row type) on `TableEntity.tableOverrides`, null when the table states none. The DWG reader fills it as it reads; the DXF reader fills it from the kept codes when they end, and still writes them back as read. DXF writes the values with the codes the ODA specification gives (280, 281, 70, 40, 41, then per row type 64, 283, 63, 170, 7, 140) and repeats a per-row-type code in AcDb::RowType order (data, title, header), where DWG and the flag bits go title, header, data: the DWG and DXF saves of table 528 state its title height (0.1425) first and second. Text styles resolve on build (DWG handle, DXF name). The R2004/R2007 DWG writer writes the model back as the reader reads it, so a DWG save keeps them (a DXF-read table saved to DWG too). The border overrides (94–96) are still read and dropped: no corpus file states one, so their DXF layout cannot be checked (Triya task M1-81).
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0126 DXF and DWG up to R2007 keep the table-wide overrides through a DWG save" (table 528 in the six DXF and the R2004/R2007 DWG saves, through DXF and DWG saves, and every 93 property in an edited DXF, read and through a DWG save); the corpus round trip of `sample_AC1018.dwg` and `sample_AC1021.dwg` stays clean only with the writer change.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0126 DXF and DWG up to R2007 keep the table-wide overrides through a DWG save" (table 528 in the six DXF and the R2004/R2007 DWG saves, through DXF and DWG saves, and every 93 property in an edited DXF, read and through a DWG save); the corpus round trip of `sample_AC1018.dwg` and `sample_AC1021.dwg` stays clean only with the writer change.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file). Only the margins and text heights have a corpus sample; the other properties follow the ODA specification.
 
 <details><summary>Upstream PR text</summary>
@@ -2496,7 +2496,7 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 - **Touches:** `src/IO/DWG/DwgVisualStyle.ts`, `src/IO/DXF/DxfStreamWriter/DxfVisualStyle.ts` (new), `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
 - **Symptom:** the DXF writer wrote a VISUALSTYLE only as the group codes it read from DXF (0021) and skipped any other with "Object not implemented", so a DWG saved as DXF lost all 24 visual styles, their `ACAD_VISUALSTYLE` entries and extension dictionaries, and since 0131 every viewport naming one lost its 348. Found by Triya M1-85, fixed in M1-88.
 - **Fix:** `writeDxfVisualStyle` writes the AcDbVisualStyle subclass from the fields the DWG reader fills, in the layout AutoCAD writes for the version: one code per value up to R2007 (R2000/R2004 DXF too), each value followed by its operation (176) in R2010, and in R2013+ a counted list of all 58 values under their type's code (90, 40, 290, 62/420, 1), each with its operation. True colours follow their ACI at code + 358 in R2007/R2010 (421–425), 420 in R2013+. AutoCAD writes two values the DWG record does not hold: 62 = 5 before the R2007-layout mono colour, and 177 = 2 (R2010) or 3 (R2013+); both are written as constants. A style read from DXF is still written back as read. The viewport writer writes 348 for any visual style.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0133 DXF writer writes a DWG's VISUALSTYLEs as AutoCAD's DXF save of the drawing" (the R2007, R2010, R2013 and R2018 sample DWGs saved as ASCII and binary DXF write every code of all 24 styles as AutoCAD's DXF save of the same drawing does, except 360 handles and Realistic's R2007 face lighting quality, which AutoCAD stored as 2 in the DWG and wrote as 3 in the DXF; dictionary entries and viewport 348 kept); `packages/io/test/acad-ts-patches.test.ts` → "0133 the DXF writer writes a VISUALSTYLE from its fields in the layout of each version" (edge true colours 422–425).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0133 DXF writer writes a DWG's VISUALSTYLEs as AutoCAD's DXF save of the drawing" (the R2007, R2010, R2013 and R2018 sample DWGs saved as ASCII and binary DXF write every code of all 24 styles as AutoCAD's DXF save of the same drawing does, except 360 handles and Realistic's R2007 face lighting quality, which AutoCAD stored as 2 in the DWG and wrote as 3 in the DXF; dictionary entries and viewport 348 kept); `packages/io/test/acad-ts-patches.test.ts` → "0133 the DXF writer writes a VISUALSTYLE from its fields in the layout of each version" (edge true colours 422–425).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2513,7 +2513,7 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 - **Touches:** `src/IO/Templates/CadEntityTemplate.ts`, `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamReader/DxfEntitiesSectionReader.ts`, `src/IO/DXF/DxfDocumentBuilder.ts`, `src/IO/DXF/DxfReader.ts`
 - **Symptom:** the DXF reader skipped group 67 and put every entity that states no owner (330) into `*Model_Space`. R12 states no owners, so an R12 drawing's paper-space entities (the R12 sample's two viewports) read into model space, which has no layout there, and the writer, which writes 67 from the owner's layout, wrote them back without it: an R12 save moved paper space into model space. The round-trip diff compares acad-ts with itself and could not see it. Found by Triya M1-86, fixed in M1-89.
 - **Fix:** the reader keeps 67 = 1 on the entity template (`isPaperSpace`), and an entity with no owner that states it goes to `*Paper_Space` (a record is made up, like the model space one, when the file has no `$PAPER_SPACE` block). An R12 read then gives `*Paper_Space` the Layout1 AutoCAD opens it as (tab 1, limits, extents, insertion base and elevation from `$PLIM*`, `$PEXT*`, `$PINSBASE`, `$PELEVATION`, PSLTSCALE and LIMCHECK flags from `$PSLTSCALE`/`$PLIMCHECK`), made up like the other R12 defaults, so an R12 save leaves it out; the writer then writes 67 = 1 for the record's BLOCK, ENDBLK and entities as it does for any paper-space layout.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0134 an R12 DXF keeps its paper space (67 = 1) through a save" (the ASCII and binary R12 samples read both viewports into `*Paper_Space` with Layout1; an ASCII R12 save states 67 = 1 on the same BLOCK, ENDBLK and two VIEWPORTs as the original); `packages/io/test/acad-ts-patches.test.ts` → "0134 an R12 entity that states 67 = 1 reads into paper space, which saves back" (a file with no BLOCKS section).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0134 an R12 DXF keeps its paper space (67 = 1) through a save" (the ASCII and binary R12 samples read both viewports into `*Paper_Space` with Layout1; an ASCII R12 save states 67 = 1 on the same BLOCK, ENDBLK and two VIEWPORTs as the original); `packages/io/test/acad-ts-patches.test.ts` → "0134 an R12 entity that states 67 = 1 reads into paper space, which saves back" (a file with no BLOCKS section).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2530,7 +2530,7 @@ Group 75 is the curve and smooth surface type of any POLYLINE, not only of polyg
 - **Touches:** `src/IO/Templates/CadViewportTemplate.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
 - **Symptom:** R12 names a viewport's frozen layers as 1003 strings in the group nested at the end of its ACAD MVIEW xdata (DXF R12 reference, VIEWPORT); it has no 331 handles. Patch 0119 read the view from that xdata but stopped at the nested group, so every R12 viewport read with no frozen layers. The R12 DXF writer wrote `frozenLayers` as 331 handles, which R12 does not have, naming handles made up on read that an R12 save leaves out. Found by Triya M1-86, fixed in M1-90.
 - **Fix:** `_readR12View` adds the layer of each 1003 record in the nested group (the reader has already resolved the name to its layer's handle) to the template's frozen-layer handles, which `build` resolves with the 331s; the DXF writer writes 331 only after R12. The xdata is still written back as read.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0135 an R12 viewport reads its frozen layers from the MVIEW xdata and saves them there" (two layers named in viewport 267 of the R12 sample read into `frozenLayers`; ASCII and binary R12 saves keep the names and write no 331, and read back the same).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0135 an R12 viewport reads its frozen layers from the MVIEW xdata and saves them there" (two layers named in viewport 267 of the R12 sample read into `frozenLayers`; ASCII and binary R12 saves keep the names and write no 331, and read back the same).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2547,7 +2547,7 @@ An R12 VIEWPORT has no 331 groups: its frozen layers are the 1003 layer names in
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfVisualStyle.ts` (exports the R2007/R2010 code table), `src/Objects/VisualStyle.ts` (doc comment)
 - **Symptom:** `_readVisualStyle` returned true for every code and assigned nothing, so a VISUALSTYLE read from DXF kept only its group codes (0021, for a DXF save) and every field stayed at the class default. The DWG writer writes the fields, so a DXF saved as DWG wrote all 24 visual styles with the defaults (no lighting, no edges, no colours), and the style's extended data was swallowed. Found by Triya M1-88, fixed in M1-91.
 - **Fix:** the reader reads the AcDbVisualStyle subclass into the fields the DWG reader fills, as the inverse of 0133's writer: 2 the description, the first 70 the type, 291 the internal flag; in the R2007 layout (also R2000/R2004 DXF) each value by its code, 174 the edge style apply flag and 45 the value DWG R2007 stores after the internal flag, skipping the constant 62 = 5; in R2010 the same codes, each followed by its operation (176); in R2013+ (177, 291, then 70 = 58) the 28 values and 30 extended properties by position under their types' codes (90, 40, 290, 62, 1), each with its operation. A true colour (421–425 in R2007/R2010, 420 in R2013+) replaces the index colour before it. Extended data (1001) goes to the common reader. The codes are still kept for a DXF save (0021).
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0136 DXF reader reads VISUALSTYLEs into the fields the same drawing's DWG holds" (every field, operation, extended property and extended data of all 24 styles in the R2007, R2010, R2013 and R2018 acadsharp ASCII and binary DXFs equal the same drawing's DWG read, except Realistic's R2007 face lighting quality, 3 in the DXF and 2 in the DWG, see 0133), "0136 DXF reader reads an R2000/R2004 DXF VISUALSTYLE (R2007 layout) as the R2007 DWG holds it" (R2000 DXF has no true colours: there a colour reads as the index AutoCAD wrote for the DWG's true colour), and "0136 a DXF saved as DWG keeps its VISUALSTYLEs" (an R2007, R2010 and R2018 DXF saved as DWG read back with the same fields); `packages/io/test/acad-ts-patches.test.ts` → "0136 the DXF reader reads a VISUALSTYLE into its fields in the layout of each version" (every field off its default, all five colours as true colours, operations and extended properties).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0136 DXF reader reads VISUALSTYLEs into the fields the same drawing's DWG holds" (every field, operation, extended property and extended data of all 24 styles in the R2007, R2010, R2013 and R2018 acadsharp ASCII and binary DXFs equal the same drawing's DWG read, except Realistic's R2007 face lighting quality, 3 in the DXF and 2 in the DWG, see 0133), "0136 DXF reader reads an R2000/R2004 DXF VISUALSTYLE (R2007 layout) as the R2007 DWG holds it" (R2000 DXF has no true colours: there a colour reads as the index AutoCAD wrote for the DWG's true colour), and "0136 a DXF saved as DWG keeps its VISUALSTYLEs" (an R2007, R2010 and R2018 DXF saved as DWG read back with the same fields); `packages/io/test/acad-ts-patches.test.ts` → "0136 the DXF reader reads a VISUALSTYLE into its fields in the layout of each version" (every field off its default, all five colours as true colours, operations and extended properties).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2649,7 +2649,7 @@ From R2000 the DIMSTYLE object stores DIMATFIT (BS, DXF 289) after DIMUPT (ODA s
 - **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** a TABLESTYLE's three row styles (data, title, header; DXF and DWG before R2010) came apart between the formats. The DWG reader and writer kept a row style's text colour in `CellStyle.textColor`, where DXF (62) and the R2010 content format keep it in `color`, so a DWG style read with ByBlock text whatever it held, and a DXF style saved as DWG lost its text colour. The DXF reader and writer kept 90 and 91, the cell data type and unit type (AutoCAD DXF reference, TABLESTYLE), in `cellStyleType` and `styleClass`, the R2010 cell style's type and class, where the DWG row style keeps them in `valueDataType`/`valueUnitType`, so the same drawing read 512/0 from DXF and 0/1 from DWG, and an edited data type did not reach a DWG. Found by Triya M1-75 part 12 (TABLESTYLE writer).
 - **Fix:** the DWG row style reads and writes its text colour as `color`; DXF 90/91 are read into and written from `valueDataType`/`valueUnitType`.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0142 TABLESTYLE row styles keep their text colour (DWG) and data and unit types (DXF)" (the acadsharp R2007 sample's Standard style reads alike from its DXF and DWG, and a text colour, data type and unit type edit survives a DXF and a DWG save); `packages/io/test/export-table-styles.test.ts` (every field through DXF and DWG saves R2000–R2007).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0142 TABLESTYLE row styles keep their text colour (DWG) and data and unit types (DXF)" (the acadsharp R2007 sample's Standard style reads alike from its DXF and DWG, and a text colour, data type and unit type edit survives a DXF and a DWG save); `packages/io/test/export-table-styles.test.ts` (every field through DXF and DWG saves R2000–R2007).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2819,7 +2819,7 @@ In a CELLSTYLEMAP (and the TABLEFORMAT records of table cell styles), the conten
 - **Touches:** `src/IO/Templates/CadEntityTemplate.ts`, `src/IO/CadDocumentBuilder.ts`, `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
 - **Symptom:** both readers keep an entity's material handle (DXF 347; DWG R2007+ after the material flags 11), but `CadEntityTemplate` never assigned it, the DWG reader skipped the flags 01 that state ByBlock, and neither writer wrote a material (the DWG writer always wrote the flags 00, ByLayer). So every entity read without its material, and Triya's material edits (the Properties palette's Material row) were lost on save. Every ACadSharp R2007+ sample gives a POINT the ByBlock material and four CIRCLEs materials of their own (Aluminum Cast, Beech, Bamboo, Asphalt - Wet), and a multiline attribute's embedded MTEXT points at the ByLayer material. Found by Triya M1-75 part 21.
 - **Fix:** the template assigns the material the handle names, or for the DWG flags 01 the drawing's ByBlock material (`CadDocumentBuilder.findCadObject`, which finds a read object by a test and remembers it); the DXF writer writes 347 for R2007+ when the entity has a material, and the DWG writer writes the flags 01 for ByBlock and 11 with a hard pointer for any other material, 00 for none.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0152 an entity keeps its material (DXF 347, DWG R2007+) through read and save" (the R2007+ DXF and DWG samples agree, and keep it through ASCII, binary and DWG saves).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0152 an entity keeps its material (DXF 347, DWG R2007+) through read and save" (the R2007+ DXF and DWG samples agree, and keep it through ASCII, binary and DWG saves).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2836,7 +2836,7 @@ The DXF reader stores an entity's 347 and the DWG reader the R2007+ material han
 - **Touches:** `src/IO/Templates/CadLayerTemplate.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** the DWG reader read a layer's R2000+ plot style name handle into `CadLayerTemplate.plotStyleHandle`, which nothing used, and the DWG writer wrote 0 for it, so every DWG layer read with no plot style and every DWG save detached each layer from its plot style name (Normal in every corpus sample, as their DXF saves state in 390). Patch 0009 fixed the same loss for DXF. Found by Triya M1-75 part 21.
 - **Fix:** the template sets `Layer.plotStyleName` from the handle, and the writer writes it.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0153 a DWG layer keeps its plot style name (R2000+) through read and save" (AC1015–AC1032 DWG samples agree with their DXF saves before and after a DWG save).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0153 a DWG layer keeps its plot style name (R2000+) through read and save" (AC1015–AC1032 DWG samples agree with their DXF saves before and after a DWG save).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2870,7 +2870,7 @@ An entity in a named-plot-style drawing points at its plot style name (an ACDBPL
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`, `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`
 - **Symptom:** A TABLEFORMAT (the cell style record of a CELLSTYLEMAP, and of a table's cell, row and column overrides) states 90 the cell style type, 170 the data flag, 91 the cell style's own property override flags, 92 the merge flags, 62 the background colour and 93 the content layout flags, the fields the DWG cell style holds in the same order; each GRIDFORMAT states 90 the border's override flags and 91 its type (every corpus DXF: 170 = 1, 93 = 1, GRIDFORMAT 90 = 0 and 91 = 1, as the DWG saves of the same drawings read). acad-ts read 170 as the cell alignment and 91 as the class, skipped 93, and read GRIDFORMAT 90 and 91 swapped; its CELLSTYLEMAP writer wrote the alignment at 170, the class at 91 (which the CELLSTYLE_BEGIN 91 then overwrote on read), no 93, 90 and 91 swapped, the borders in another order than their edge flags and no 340 for a border without a linetype. Found by Triya M1-96 part 2 and fixed in M1-98.
 - **Fix:** The TABLEFORMAT reader takes 170 as `hasData`, 91 as `cellPropertyOverrideFlags` and 93 as `contentLayoutFlags`, and GRIDFORMAT 90 as `propertyOverrideFlags` and 91 as `type`; the CELLSTYLEMAP writer writes them back there, the borders in edge flag order (top, inside horizontal, bottom, left, inside vertical, right) and 340 = 0 when a border has no linetype, as AutoCAD does.
-- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0155 the DXF TABLEFORMAT states 170, 91 and 93, and GRIDFORMAT 90 and 91, where AutoCAD does" (ASCII and binary DXF); `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0155 a DXF save of every corpus CELLSTYLEMAP states the groups the file did".
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0155 the DXF TABLEFORMAT states 170, 91 and 93, and GRIDFORMAT 90 and 91, where AutoCAD does" (ASCII and binary DXF); `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0155 a DXF save of every corpus CELLSTYLEMAP states the groups the file did".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -2887,7 +2887,7 @@ A table cell style's TABLEFORMAT in DXF holds the fields of the DWG cell style i
 - **Touches:** `src/IO/DWG/DwgStreamReaders/DwgObjectReader.ts`, `src/IO/DWG/DwgStreamWriters/DwgObjectWriter.ts`
 - **Symptom:** AutoCAD 2008 and later save a table style's named cell styles (the CELLSTYLEMAP in its extension dictionary) in a DWG before R2010 as well as in DXF. The DWG reader had no CELLSTYLEMAP branch, so it kept the object as an unknown one, which could only be written back as read: a table style edit could not reach it, and a CELLSTYLEMAP read from DXF could not be saved to DWG at all ("Object not implemented"). The cell style writer also wrote its colours with `writeCmColor`, which before R2004 is an index, where the reader reads full CMC colours from the merged stream. Found by Triya M1-96 part 2 and fixed in M1-98.
 - **Fix:** A CELLSTYLEMAP reader and writer: a count, then each cell style as the R2010 TABLESTYLE cell style record is read and written, followed by its id, class and name (ODA Open Design Specification for .dwg, CELLSTYLEMAP). The cell style, content format and border colours go through `_writeTableStyleColor`, which writes the merged CMC colour before R2004 as the row style writer already did. The acadsharp R14–R2007 sample DWGs read with no notification, field for field as their DXF saves (0155), and write back unchanged.
-- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0156 the DWG writer and reader keep a CELLSTYLEMAP" (R14, R2000, R2004, R2007); `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0156 the CELLSTYLEMAP of sample_%s.dwg reads like its DXF save and survives a DWG save".
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0156 the DWG writer and reader keep a CELLSTYLEMAP" (R14, R2000, R2004, R2007); `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0156 the CELLSTYLEMAP of sample_%s.dwg reads like its DXF save and survives a DWG save".
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -3257,7 +3257,7 @@ This change makes the property the stored number (default 0, the same as `false`
 - **Touches:** `src/IO/DXF/DxfStreamWriter/DxfValueFrame.ts` (new), `src/IO/DXF/DxfStreamWriter/DxfObjectsSectionWriter.ts`, `src/IO/DXF/DxfStreamWriter/DxfSectionWriterBase.ts`
 - **Symptom:** the DXF writer has no field writer for TABLECONTENT, so it writes the group codes the reader kept. Read from an R2000 or R2004 DXF, those hold that version's values: a `90` type and its data, with no `93` flags before and no `94`, `300`, `302` and `304 ACVALUE_END` after (0098). Written into an AC1032 file they made the R2007+ reader run on from the value to the next `ACVALUE_END`, past the end of the TABLECONTENT, so a save of acadsharp `sample_AC1015_ascii.dxf` or `sample_AC1018_ascii.dxf` (and their binary twins) reopened without TABLEGEOMETRY 748, the ACDBDATATABLEs, DICTIONARY 75A/760 and the dynamic blocks' ACAD_ENHANCEDBLOCK data (ABD to ACF): 64 objects, gone for good at the next save, and ezdxf's audit of that save removed the dangling dictionary entries (recover 202). Found by M2-40.
 - **Fix:** writing R2007 or later, a TABLECONTENT's kept codes go through `framePreR2007Values`: a value after a `300 VALUE` or `301 DATAMAP_VALUE` marker that starts with its `90` type (one written before R2007; an R2007 value starts with `93`) ends where the reader ends it (0098) and gets the R2007 frame AutoCAD writes for a value in the general format with no formatted value cached: `93 2`, the type and data, `94 0`, `300` and `302` empty, `304 ACVALUE_END`. An unknown-type value is empty (`93 3`, no data, as AutoCAD writes an empty cell). A date's 8 bytes of seconds since 1970 (UTC) become the 16-byte SYSTEMTIME R2007 stores, in UTC; other data is kept as read.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0178 a TABLECONTENT kept from an R2000/R2004 DXF is written with R2007 values"; the twice-saved corpus gate (`packages/testkit/src/dxf-audit/saves.corpus.test.ts`, M2-40) reads every handle of the first save back from the second.
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0178 a TABLECONTENT kept from an R2000/R2004 DXF is written with R2007 values"; the twice-saved corpus gate (`packages/testkit/src/dxf-audit/saves.corpus.test.ts`, M2-40) reads every handle of the first save back from the second.
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>
@@ -3274,7 +3274,7 @@ TABLECONTENT has no DXF field writer, so the writer emits the group codes the re
 - **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`, `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
 - **Symptom:** whether a value ends on its data (before R2007) or on `304 ACVALUE_END` was decided by the file's version (0098). Triya's AC1032 saves of an R2000/R2004 drawing written before 0178 hold TABLECONTENT values in the older form, so reopening one ran each value on to the next `ACVALUE_END` and lost the objects in between (the 64 of 0178), and saving it again dropped them.
 - **Fix:** a value is told by its first code: one that starts with its `93` flags (every R2007+ value) ends on `304`; one whose `90` type comes first ends on its data, whatever the file's version. Files from AutoCAD read as before.
-- **Test:** `packages/testkit/src/spike/acad-ts-patches.corpus.test.ts` → "0179 an R2007+ DXF value without its 93 flags ends on its data" (an AC1032 save with the TABLECONTENT values unframed, as before 0178, reads back every object).
+- **Test:** `packages/testkit/src/spike/acad-ts-patches-2.corpus.test.ts` → "0179 an R2007+ DXF value without its 93 flags ends on its data" (an AC1032 save with the TABLECONTENT values unframed, as before 0178, reads back every object).
 - **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
 
 <details><summary>Upstream PR text</summary>

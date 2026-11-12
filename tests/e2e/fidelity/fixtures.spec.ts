@@ -7,10 +7,9 @@
 // fixture; `TRIYA_UPDATE_GOLDEN=1 pnpm test:fidelity` writes the missing and differing ones.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { spaceSlug } from '../../../packages/testkit/src/fidelity/compare';
 import { openWithDrop } from '../app/page';
-import { startApp } from '../app/server';
 import {
   VIEWPORT,
   attachPng,
@@ -19,6 +18,7 @@ import {
   openDrawing,
   shootSpace,
   spaceTabs,
+  test,
 } from './harness';
 import { isPrivateRun } from './corpus';
 
@@ -41,19 +41,11 @@ const SETS: { readonly drawing: string; readonly files: readonly string[] }[] = 
   },
 ];
 
-let app: { url: string; close(): Promise<void> };
-test.beforeAll(async () => {
-  app = await startApp();
-});
-test.afterAll(async () => {
-  await app?.close();
-});
-
 test.describe.configure({ mode: 'parallel', timeout: 180_000 });
 test.use({ viewport: VIEWPORT });
 
 for (const set of SETS) {
-  test(set.drawing, async ({ page }, info) => {
+  test(set.drawing, async ({ page, app }, info) => {
     // The owner's private corpus run (`pnpm test:private`) is about their drawings only.
     test.skip(isPrivateRun(), 'fixtures are public');
     const errors: string[] = [];

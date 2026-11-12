@@ -18,12 +18,11 @@
 // gitignored with the drawings.
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test } from '@playwright/test';
+import { expect } from '@playwright/test';
 import { loadManifest } from '../../../packages/testkit/src/corpus/manifest';
 import { goldenPath } from '../../../packages/testkit/src/fidelity/compare';
 import type { FileTriage, SpaceTriage } from '../../../packages/testkit/src/fidelity/triage';
 import { activeCanvas } from '../app/page';
-import { startApp } from '../app/server';
 import {
   CANVAS,
   VIEWPORT,
@@ -33,6 +32,7 @@ import {
   openDrawing,
   shootSpace,
   spaceTabs,
+  test,
 } from './harness';
 import { corpusDir, manifestPath } from './corpus';
 
@@ -49,19 +49,11 @@ const UNREADABLE: Record<string, string> = {
     'a damaged DXF for ezdxf recover mode; acad-ts cannot read it (round-trip read-error)',
 };
 
-let app: { url: string; close(): Promise<void> };
-test.beforeAll(async () => {
-  app = await startApp();
-});
-test.afterAll(async () => {
-  await app?.close();
-});
-
 test.describe.configure({ mode: 'parallel', timeout: 180_000 });
 test.use({ viewport: VIEWPORT });
 
 for (const file of manifest.files) {
-  test(file.path, async ({ page }, info) => {
+  test(file.path, async ({ page, app }, info) => {
     const errors: string[] = [];
     page.on('pageerror', (e) => errors.push(e.message));
     await loadApp(page, app.url);

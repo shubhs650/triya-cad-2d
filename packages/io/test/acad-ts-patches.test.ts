@@ -227,7 +227,7 @@ describe('acad-ts local patches', () => {
   );
 
   // 0006 needs a drawing with paper-space layouts, which acad-ts cannot author in memory;
-  // its test reads a corpus file: packages/testkit/src/spike/acad-ts-patches.corpus.test.ts.
+  // its test reads a corpus file: packages/testkit/src/spike/acad-ts-patches-*.corpus.test.ts.
 
   it('0007 DWG writer keeps block-record preview images', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
@@ -278,7 +278,7 @@ describe('acad-ts local patches', () => {
   });
 
   // 0010 (LAYOUT flags) and 0011 (empty dictionaries) need real paper-space layouts and a full
-  // named-object dictionary: packages/testkit/src/spike/acad-ts-patches.corpus.test.ts.
+  // named-object dictionary: packages/testkit/src/spike/acad-ts-patches-*.corpus.test.ts.
 
   it('0012 DXF reader reads 16-bit group codes as signed (ByBlock lineweights)', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
