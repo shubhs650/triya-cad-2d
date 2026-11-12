@@ -2,7 +2,8 @@
 // acadsharp AC1032 sample's plan, DIMLINEAR dimensions a line; the palette then gives the
 // dimension a red dimension line through Select Color (Index Color only: DSTYLE overrides keep
 // ACIs), a prefix, a symmetrical tolerance and a lower text position, each redrawing its block
-// at once; U takes the last (the tolerance's value) back. The rows and the DSTYLE xdata they write are unit-tested in
+// at once; U takes the last (the tolerance's value) back. M2-35 part 10: an angular
+// dimension shows its Measurement and its angle units (Precision, Angle format), each redrawing it. The rows and the DSTYLE xdata they write are unit-tested in
 // packages/engine/test/properties/dimension-rows.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Color, DimensionGeometry, Entity } from '@triya/engine';
@@ -140,4 +141,59 @@ test('a dimension’s colour, prefix and tolerance rows redraw it at once', asyn
   await type(page, 'U', 'Command:');
   // The tolerance's value went back; its display stays Symmetrical.
   await expect.poll(async () => (await dimension(page))?.text).toMatch(/^L=8[.0]*%%p0[.0]*$/);
+});
+
+test('an angular dimension’s Measurement and Angle format rows (M2-35 part 10)', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-4, -8), 'Specify opposite corner:');
+  await type(page, p(12, 6), 'Command:');
+  await page.keyboard.press('F3');
+  await type(page, 'DIMANGULAR', 'Select arc, circle, line, or <specify vertex>:');
+  await type(page, '', 'Specify angle vertex:');
+  await type(page, p(0, 0), 'Specify first angle endpoint:');
+  await type(page, p(8, 0), 'Specify second angle endpoint:');
+  await type(page, p(8, 5), /^Specify dimension arc line location/);
+  await type(page, p(4, 1), 'Command:');
+  await expect.poll(() => dimension(page)).toMatchObject({ text: '32%%d' });
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  const docked = (await canvas.boundingBox())!;
+  const k = Math.min(docked.width / 16, docked.height / 14);
+  // On the dimension arc (radius |(4, 1)|), at 8°.
+  const r = Math.hypot(4, 1);
+  const at = { x: r * Math.cos(Math.PI / 22.5), y: r * Math.sin(Math.PI / 22.5) };
+  await page.mouse.click(
+    docked.x + docked.width / 2 + (at.x - 4) * k,
+    docked.y + docked.height / 2 - (at.y + 1) * k,
+  );
+  await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toHaveText(
+    'Dimension (1)',
+  );
+  await expect(palette.getByLabel('Measurement', { exact: true })).toHaveText(/^32/);
+  await expect(palette.getByRole('table', { name: 'Alternate Units' })).toHaveCount(0);
+  const format = palette.getByRole('combobox', { name: 'Angle format' });
+  await expect(format).toHaveValue('0');
+  await expect(palette.getByRole('combobox', { name: 'Dim units' })).toHaveCount(0);
+
+  await palette.getByRole('combobox', { name: 'Precision', exact: true }).selectOption('0.00');
+  await expect.poll(async () => (await dimension(page))?.text).toBe('32.01%%d');
+  await palette.getByRole('heading', { name: 'Properties' }).hover();
+  await palette.getByLabel('Measurement', { exact: true }).scrollIntoViewIfNeeded();
+  await shot('3-measurement.png');
+  await palette.getByRole('table', { name: 'Tolerances' }).scrollIntoViewIfNeeded();
+  await format.selectOption({ label: 'Degrees Minutes Seconds' });
+  await expect.poll(async () => (await dimension(page))?.text).toBe("32%%d0'");
+  await shot('4-angle-format-dms.png');
 });
