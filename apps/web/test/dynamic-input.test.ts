@@ -34,6 +34,15 @@ const typing = (p: Prompt, keys: string, s: DynState = dynFor(p)): DynState => {
 const sent = (p: Prompt, keys: string) => dynText(typing(p, keys), p, cursor);
 
 describe('Dynamic Input fields', () => {
+  it('keeps feet, inches and fractions in their fields (M2-35 part 7)', () => {
+    expect(sent(first, `5'6",1'-6 1/2"`.replace(' ', '-'))).toBe(`5'6",1'-6-1/2"`);
+    expect(typing(first, `5'6"`).raw).toBe(false);
+    expect(sent(next, `1'6"<90`)).toBe(`@1'6"<90`);
+    expect(sent(next, `3/4"`)).toBe(`3/4"`);
+    // A quote first is a transparent command, typed as it is.
+    expect(typing(first, `'Z`).raw).toBe(true);
+  });
+
   it('shows X and Y at a first point, Distance and Angle with a rubber band', () => {
     expect(dynFor(first).fields.map((f) => f.label)).toEqual(['X', 'Y']);
     expect(dynFor(next).fields.map((f) => f.label)).toEqual(['Distance', 'Angle']);

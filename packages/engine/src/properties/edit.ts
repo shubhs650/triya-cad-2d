@@ -6,7 +6,7 @@
 //
 // Objects on locked layers are not changed ("on a locked layer"); a value the property cannot
 // take changes nothing and says why, as AutoCAD's palette refuses it ("Invalid input").
-import { parseAngleValue, parseNumber } from '../commands/parse';
+import { parseAngleValue, parseDistance, parseNumber } from '../commands/parse';
 import { moveBy, turnAbout } from '../edit/similarity';
 import { transformObjects } from '../edit/edit';
 import { rescaledReference } from '../edit/transform';
@@ -34,6 +34,7 @@ import {
   isPatterned,
   parseColorValue,
   parseLineweightValue,
+  propertySheet,
   textPositionOf,
   transparencyOf,
   type PropertyValue,
@@ -78,6 +79,27 @@ function numeric(v: PropertyValue, kind: Kind): number | undefined {
   if (typeof v !== 'string') return undefined;
   if (kind === 'angle') return parseAngleValue(v);
   return parseNumber(v.trim());
+}
+
+/**
+ * `edit` with a distance row's typed value read in the drawing's LUNITS, as AutoCAD's palette
+ * takes the feet and inches (`1'-6 1/2"`) or fraction it shows (M2-35 part 7); other rows, and
+ * values already numbers, as they came. Which rows are distances is the sheet's to say.
+ */
+function readDistance(
+  model: DocumentModel,
+  entities: readonly Entity[],
+  edit: PropertyEdit,
+): PropertyEdit | undefined {
+  if (typeof edit.value !== 'string') return edit;
+  const sheet = propertySheet(
+    model,
+    entities.map((e) => e.id),
+  );
+  const row = sheet.sections.flatMap((s) => s.rows).find((r) => r.key === edit.key);
+  if (row?.kind !== 'distance') return edit;
+  const n = parseDistance(edit.value, sheet.units.lunits);
+  return n === undefined ? undefined : { ...edit, value: n };
 }
 
 function yesNo(v: PropertyValue): boolean | undefined {
@@ -581,6 +603,9 @@ export function applyPropertyEdit(
   patterns?: HatchPatterns,
 ): PropertyEditReport {
   const refused = new Map<string, number>();
+  const read = readDistance(model, entities, edit);
+  if (!read) return { changed: 0, refused, invalid: INVALID };
+  edit = read;
   const editable = entities.filter((e) => {
     const locked = model.tables.layers.get(e.layer)?.locked === true;
     if (locked) refused.set(LOCKED, (refused.get(LOCKED) ?? 0) + 1);

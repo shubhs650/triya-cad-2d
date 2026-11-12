@@ -56,6 +56,54 @@ export function parseNumber(text: string): number | undefined {
   return value !== undefined && i === tokens.length && Number.isFinite(value) ? value : undefined;
 }
 
+// A number as lengths are typed in feet and inches or fractions: a whole number and a fraction
+// (`2-3/8`, or `2 3/8` as the Properties palette shows one), a fraction, or a decimal.
+const LENGTH = String.raw`(?:\d+(?:-|\s+)\d+/\d+|\d+/\d+|\d+(?:\.\d*)?|\.\d+)`;
+const FEET_INCHES = new RegExp(
+  String.raw`^([+-]?)\s*(?:(${LENGTH})\s*')?(?:\s*(-)?\s*(${LENGTH})\s*("?))?$`,
+);
+
+/** One `LENGTH`: undefined for a fraction over zero. */
+function lengthValue(text: string): number | undefined {
+  const mixed = /^(\d+)(?:-|\s+)(\d+)\/(\d+)$/.exec(text) ?? /^()(\d+)\/(\d+)$/.exec(text);
+  if (!mixed) return Number(text);
+  const den = Number(mixed[3]);
+  return den === 0 ? undefined : Number(mixed[1] || 0) + Number(mixed[2]) / den;
+}
+
+/**
+ * A typed length in drawing units, as AutoCAD reads one in the drawing's LUNITS (Help, "UNITS
+ * (Command)"): in Engineering (3) and Architectural (4), whose drawing unit is the inch, feet and
+ * inches (`5'6-1/2"`, `5'-6 1/2"`, `5.5'`, `6"`; a number without a mark is inches); in
+ * Architectural and Fractional (5) a whole number and a fraction (`6-1/2`). Otherwise, and in
+ * Decimal (2) and Scientific (1) always, a number as `parseNumber` reads it, so `1-1/2` there is
+ * the sum it spells. AutoCAD types a fraction's hyphen at the command line, where a space ends the
+ * input; the palette shows the space (M2-35 part 7).
+ */
+export function parseDistance(text: string, lunits: number): number | undefined {
+  const t = text.trim();
+  const feetAndInches = lunits === 3 || lunits === 4;
+  const fractions = feetAndInches || lunits === 5;
+  const m = fractions ? FEET_INCHES.exec(t) : null;
+  if (m) {
+    const [, sign, feet, dash, inches, mark] = m;
+    // The hyphen parts feet from inches (`5'-6"`); feet and the inch mark are LUNITS 3 and 4's.
+    const ok =
+      (feet !== undefined || inches !== undefined) &&
+      (dash === undefined || feet !== undefined) &&
+      (feetAndInches || (feet === undefined && mark === ''));
+    if (ok) {
+      const f = feet === undefined ? 0 : lengthValue(feet);
+      const i = inches === undefined ? 0 : lengthValue(inches);
+      if (f === undefined || i === undefined) return undefined;
+      const v = f * 12 + i;
+      return sign === '-' ? -v : v;
+    }
+    return undefined;
+  }
+  return parseNumber(t);
+}
+
 /** How the drawing measures typed angles: ANGBASE (radians, the 0 direction) and ANGDIR. */
 export interface AngleConvention {
   readonly base: number;
@@ -106,6 +154,8 @@ export interface CoordinateContext {
   /** LASTPOINT: what `@` is relative to; the origin when no point has been given yet. */
   readonly lastPoint?: Vec2 | undefined;
   readonly angles?: AngleConvention;
+  /** LUNITS: how a coordinate's lengths read (`parseDistance`); Decimal when not given. */
+  readonly lunits?: number;
 }
 
 /**
@@ -118,28 +168,30 @@ export function parseCoordinate(
   text: string,
   ctx: CoordinateContext = {},
 ): Vec2 | 'invalid' | undefined {
-  let t = text.trim().replace(/\s+/g, '');
+  // Spaces may stand around the values (`3, 4`), and inside a palette-style `2'-6 1/2"`.
+  let t = text.trim();
   let relative = false;
   if (t.startsWith('@')) {
     relative = true;
-    t = t.slice(1);
+    t = t.slice(1).trim();
   } else if (t.startsWith('#') || t.startsWith('*')) {
-    t = t.slice(1);
+    t = t.slice(1).trim();
   }
+  const lunits = ctx.lunits ?? 2;
   const from = ctx.lastPoint ?? { x: 0, y: 0 };
   if (relative && t === '') return from;
   let p: Vec2;
   if (t.includes('<')) {
     const [d, a, ...rest] = t.split('<');
     if (rest.length > 0) return 'invalid';
-    const dist = parseNumber(d!);
-    const ang = parseAngle(a!, ctx.angles);
+    const dist = parseDistance(d!, lunits);
+    const ang = parseAngle(a!.replace(/\s+/g, ''), ctx.angles);
     if (dist === undefined || ang === undefined) return 'invalid';
     p = { x: dist * Math.cos(ang), y: dist * Math.sin(ang) };
   } else if (t.includes(',')) {
     const parts = t.split(',');
     if (parts.length > 3) return 'invalid';
-    const values = parts.map(parseNumber);
+    const values = parts.map((v) => parseDistance(v, lunits));
     if (values.some((v) => v === undefined)) return 'invalid';
     p = { x: values[0]!, y: values[1]! };
   } else {

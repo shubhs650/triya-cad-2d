@@ -119,6 +119,58 @@ test('shows and edits the selected objects’ properties', async ({ page }) => {
   await expect(palette).toBeVisible();
 });
 
+// M2-35 part 7: in an architectural drawing (LUNITS 4) lengths are typed in feet and inches, at
+// the command line as AutoCAD types them (`@1'8",0`, a fraction's hyphen: `6-1/2"`) and in the
+// palette as it shows them (`83340'-6 1/2"`, the space included). The parser is unit-tested in
+// packages/engine/test/commands/parse.test.ts.
+test('takes feet and inches at the command line and in the palette', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  await type(page, 'LUNITS', /^Enter new value for LUNITS/);
+  await type(page, '4', 'Command:');
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, '1000070,1000050', 'Specify next point or [Undo]:');
+  await type(page, `@1'8",0`, 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+  await expect
+    .poll(() => drawn(page))
+    .toEqual([{ color: { kind: 'byLayer' }, ends: [70, 50, 90, 50] }]);
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  const docked = (await canvas.boundingBox())!;
+  await page.mouse.click(docked.x + docked.width / 2, docked.y + docked.height / 2);
+  await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toHaveText('Line (1)');
+  // 1,000,070 inches; the field starts as shown, and the engine reads it back.
+  const startX = palette.getByRole('textbox', { name: 'Start X' });
+  await expect(startX).toHaveValue(`83339'-2"`);
+  await expect(palette.getByLabel('Length', { exact: true })).toHaveText(`1'-8"`);
+  const endX = palette.getByRole('textbox', { name: 'End X' });
+  await endX.fill(`83340'-6 1/2"`);
+  await endX.press('Enter');
+  await expect(palette.getByLabel('Length', { exact: true })).toHaveText(`1'-4 1/2"`);
+  await expect(endX).toHaveValue(`83340'-6 1/2"`);
+  const ends = () =>
+    page.evaluate(() => {
+      let end: number | undefined;
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const u of cs.entities?.updated ?? []) {
+          if (u.after.geom.kind === 'LINE') end = u.after.geom.end.x - 1e6;
+        }
+      }
+      return end;
+    });
+  await expect.poll(ends).toBe(86.5);
+  await page.screenshot({ path: test.info().outputPath('feet-and-inches.png') });
+});
+
 // M2-35: with nothing selected the palette shows the drawing's current settings (AutoCAD's "No
 // selection" General), a change sets them, and the next object drawn takes them.
 test('sets the current colour, layer and lineweight with nothing selected', async ({ page }) => {

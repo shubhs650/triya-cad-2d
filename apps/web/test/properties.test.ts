@@ -42,7 +42,11 @@ describe('Properties values', () => {
 
   it('starts a typed field with what the engine reads back', () => {
     expect(editText(row({ value: 10 }), decimal)).toBe('10.0000');
-    expect(editText(row({ value: 30.5 }), arch)).toBe('30.5');
+    // M2-35 part 7: the engine reads feet and inches and fractions, so the field starts as shown.
+    expect(editText(row({ value: 30.5 }), arch)).toBe(`2'-6 1/2"`);
+    expect(editText(row({ value: 30.5 }), { ...arch, lunits: 3 })).toBe(`2'-6.5000"`);
+    expect(editText(row({ value: 30.5 }), { ...arch, lunits: 5 })).toBe('30 1/2');
+    expect(editText(row({ value: 30.5 }), { ...arch, lunits: 1 })).toBe('3.0500E+01');
     expect(editText(row({ varies: true }), decimal)).toBe('');
     expect(editText(row({ kind: 'angle', value: Math.PI / 2 }), { ...decimal, aunits: 4 })).toBe(
       '90',
