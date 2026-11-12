@@ -72,6 +72,10 @@ test('lists the version, units, missing fonts, references and unknown objects', 
 });
 
 test('follows the drawing on screen and is keyboard operable', async ({ page }) => {
+  // Two drawings opened (the 2004 DWG and the 2013 DXF) take ~22–28 s of the default 30 s, on main
+  // too, so a busy CI runner timed it out at its last step (#306). As the plot specs that open two
+  // drawings do, it gets more time; what it checks is unchanged.
+  test.setTimeout(60_000);
   await open(page, DWG);
   await openWithPicker(page, DXF);
   await expectShown(page, path.basename(DXF));
