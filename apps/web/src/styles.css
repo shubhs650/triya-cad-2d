@@ -1614,6 +1614,20 @@ button {
   overflow-wrap: anywhere;
 }
 
+/* M2-44: the text's background mask under the box and its frame around it, in drawing units. */
+.mtext-mask,
+.mtext-text-frame {
+  position: absolute;
+  z-index: -1;
+  pointer-events: none;
+}
+
+/* The frame in the editor's text colour, with a dark edge so it reads on a pale mask too. */
+.mtext-text-frame {
+  border: 1px solid #f0f0f0;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 50%);
+}
+
 /* M2-07 part 3: the ruler sits on the box's top edge, turned with it; markers in text heights. */
 .mtext-ruler {
   position: absolute;

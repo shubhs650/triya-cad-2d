@@ -90,6 +90,7 @@ import type {
   LinetypeRef,
   MTextGeometry,
   MultiLeaderAttribute,
+  MultiLeaderMask,
   MultiLeaderGeometry,
   MultiLeaderLineOverrides,
   ObjectCommon,
@@ -606,6 +607,7 @@ function multiLeaderGeometry(
             attachment: c.textAttachmentPoint,
             flow: c.flowDirection,
             color: mapEntityColor(c.textColor),
+            ...multiLeaderMask(c),
           },
         }
       : {}),
@@ -636,6 +638,26 @@ function multiLeaderGeometry(
     })),
     ...(z !== 0 ? { elevation: z } : {}),
     ...(pl !== 'up' ? { normal: { x: n.x, y: n.y, z: n.z } } : {}),
+  };
+}
+
+/**
+ * A MULTILEADER's background mask (M2-44), as ezdxf reads the context data: 292 turns it on
+ * (acad-ts calls it `backgroundMaskFillOn`), 291 fills it with the drawing window colour
+ * (acad-ts's `backgroundFillEnabled`), as does a 91 stating the window colour (0xC8, which
+ * acad-ts reads as index 257); otherwise 91 is its colour. 141 is the border scale, 92 the
+ * transparency. A mask turned off maps to nothing, whatever the other values store.
+ */
+function multiLeaderMask(c: MultiLeader['contextData']): { mask?: MultiLeaderMask } {
+  if (!c.backgroundMaskFillOn) return {};
+  const window = c.backgroundFillEnabled || c.backgroundFillColor.index === 257;
+  const transparency = c.backgroundTransparency;
+  return {
+    mask: {
+      ...(!window && { color: mapEntityColor(c.backgroundFillColor) }),
+      scale: c.backgroundScaleFactor,
+      ...(transparency !== 0 && { transparency }),
+    },
   };
 }
 

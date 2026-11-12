@@ -690,6 +690,14 @@ export class CanvasController {
     return PICKBOX * this.#px();
   }
 
+  /**
+   * The colour behind the drawing: model space's canvas or a layout's paper, which a background
+   * mask in the drawing window colour fills with (M2-44, the MTEXT editor).
+   */
+  get background(): string {
+    return this.#style().background;
+  }
+
   /** The box an MTEXT's glyphs fill in the fonts loaded (M2-09, MLEADEREDIT). */
   textBox(text: MTextGeometry): Promise<Box | undefined> {
     return this.#host.textBox(text);

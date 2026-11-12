@@ -164,6 +164,18 @@ export interface TextEditorRequest {
    * and answers `<>` for it.
    */
   readonly measurement?: string;
+  /**
+   * The text's background mask and frame, which the editor shows as the text draws them
+   * (M2-44): each `pad` drawing units beyond the text box on every side; a mask without a
+   * colour is in the drawing window colour. Absent when the text has neither.
+   */
+  readonly background?: TextEditorBackground;
+}
+
+/** What `TextEditorRequest.background` shows. */
+export interface TextEditorBackground {
+  readonly mask?: { readonly color?: Color; readonly pad: number };
+  readonly frame?: { readonly pad: number };
 }
 
 /** Free text; without `spaces` a space ends the input (the front-end's job, as Space is Enter). */

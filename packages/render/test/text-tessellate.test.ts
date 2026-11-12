@@ -368,6 +368,31 @@ describe('MTEXT background and frame (M1-41 part 2)', () => {
     expect(bg(0).map((p) => p.kind)).toEqual(['stroke']);
   });
 
+  // M2-44: a multileader's frame sits a landing gap out while its mask takes its own scale.
+  it('frames by its own scale where it has one, the fill keeping the fill’s', () => {
+    const prims = tessellate(
+      mtext('AA', {
+        background: {
+          flags: 17,
+          color: { kind: 'rgb', r: 0, g: 128, b: 255 },
+          scale: 1.5,
+          frameScale: 1.2,
+        },
+      }),
+      paint,
+      { text: ctx() },
+    );
+    expect(prims.map((p) => p.kind)).toEqual(['fill', 'stroke', 'stroke']);
+    expect(points((prims[0] as PathPrim).path)).toEqual(box);
+    // Scale 1.2 pads the box by 2.
+    expect(points((prims[2] as PathPrim).path)).toEqual([
+      [-2, -2],
+      [6, -2],
+      [6, 12],
+      [-2, 12],
+    ]);
+  });
+
   it('fills each column on its own', () => {
     const prims = bg(1, {
       contents: 'A\\NA',

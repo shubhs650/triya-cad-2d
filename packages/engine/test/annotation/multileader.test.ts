@@ -13,6 +13,7 @@ import {
   type HeaderValue,
   type InsertGeometry,
   type LwPolylineGeometry,
+  type MTextGeometry,
   type MultiLeaderGeometry,
   type SolidGeometry,
 } from '../../src/index';
@@ -206,6 +207,28 @@ describe('multiLeaderParts', () => {
     expect(kinds(multiLeaderParts(mleader({ pathType: 0 }), model()))).toEqual(['MTEXT']);
     const framed = multiLeaderParts(mleader({ textFrame: true }), model());
     expect(framed[3]!.geom).toMatchObject({ background: { flags: 16, scale: 1.2 } });
+  });
+
+  // M2-44: the background mask (context data 292) as MTEXT's: its colour (bit 1) or the
+  // drawing window colour (bits 1 and 2), by its own scale; a frame then keeps the landing gap.
+  it('masks the text in its colour or the window colour, the frame keeping the landing gap', () => {
+    const t = mleader().text!;
+    const red = { kind: 'aci', index: 1 } as const;
+    const masked = (g: Partial<MultiLeaderGeometry>, mask: NonNullable<typeof t.mask>) =>
+      (multiLeaderParts(mleader({ ...g, text: { ...t, mask } }), model())[3]!.geom as MTextGeometry)
+        .background;
+    expect(masked({}, { color: red, scale: 1.5, transparency: 30 })).toEqual({
+      flags: 1,
+      color: red,
+      scale: 1.5,
+      transparency: 30,
+    });
+    expect(masked({}, { scale: 2 })).toEqual({ flags: 3, scale: 2 });
+    expect(masked({ textFrame: true }, { scale: 2 })).toEqual({
+      flags: 19,
+      scale: 2,
+      frameScale: 1.2,
+    });
   });
 
   it('inserts block content at its location, scale and rotation in its colour', () => {
