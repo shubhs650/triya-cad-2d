@@ -212,3 +212,48 @@ test('the Paragraph dialog sets tab stops, indents and the alignment', async ({ 
   const [g] = await mtexts(page);
   expect(g!.contents).toBe('\\pxi-2,l3,r2,tD,10,r24;\\pqj;Qty^I1,25\\PBolt^I12,5');
 });
+
+// M2-46: Paragraph Spacing and Paragraph Line Spacing, written as `\px` b, a and sm/se/sa
+// (ODA's MTEXT format codes).
+test('the Paragraph dialog sets paragraph and line spacing', async ({ page }) => {
+  test.setTimeout(90_000);
+  await startMText(page);
+  await page.keyboard.type('One');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('Two');
+  await page.keyboard.press('Control+A');
+  await toolbar(page).getByRole('button', { name: 'Paragraph' }).click();
+  const dialog = page.getByRole('dialog', { name: 'Paragraph' });
+  // Off until their checkboxes turn them on.
+  await expect(dialog.getByRole('spinbutton', { name: 'Before' })).toBeDisabled();
+  await expect(dialog.getByRole('combobox', { name: 'Line Spacing' })).toBeDisabled();
+  await dialog.getByRole('checkbox', { name: 'Paragraph Spacing' }).check();
+  await dialog.getByRole('spinbutton', { name: 'Before' }).fill('0.5');
+  await dialog.getByRole('spinbutton', { name: 'After' }).fill('1');
+  await dialog.getByRole('checkbox', { name: 'Paragraph Line Spacing' }).check();
+  await expect(dialog.getByRole('spinbutton', { name: 'At', exact: true })).toHaveValue('1');
+  await dialog.getByRole('combobox', { name: 'Line Spacing' }).selectOption('Exactly');
+  await dialog.getByRole('spinbutton', { name: 'At', exact: true }).fill('2.5');
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toHaveCount(0);
+  await expect(editor(page)).toBeFocused();
+
+  // The editor spaces both paragraphs.
+  const second = editor(page).locator('.mtext-para').nth(1);
+  await expect(second).toHaveCSS('padding-top', /^[1-9]/);
+  await expect(second).toHaveCSS('padding-bottom', /^[1-9]/);
+
+  // The dialog opens again on what it set.
+  await toolbar(page).getByRole('button', { name: 'Paragraph' }).click();
+  await expect(dialog.getByRole('spinbutton', { name: 'Before' })).toHaveValue('0.5');
+  await expect(dialog.getByRole('spinbutton', { name: 'After' })).toHaveValue('1');
+  await expect(dialog.getByRole('combobox', { name: 'Line Spacing' })).toHaveValue('exactly');
+  await expect(dialog.getByRole('spinbutton', { name: 'At', exact: true })).toHaveValue('2.5');
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toHaveCount(0);
+
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  const [g] = await mtexts(page);
+  expect(g!.contents).toBe('\\pxb0.5,a1,se2.5;One\\PTwo');
+});
