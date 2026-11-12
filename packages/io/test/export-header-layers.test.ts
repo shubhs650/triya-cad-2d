@@ -7,6 +7,7 @@ import {
   AppId,
   CadDictionary,
   CadDocument,
+  CadHeader,
   Color,
   DictionaryVariable,
   ExtendedData,
@@ -18,7 +19,14 @@ import {
   TextStyle,
   XYZ,
 } from '@node-projects/acad-ts';
-import { ChangeSetBuilder, DocumentModel, type HeaderValue, type LayerRecord } from '@triya/engine';
+import {
+  ChangeSetBuilder,
+  DocumentModel,
+  INTEGER_HEADER_VARIABLES,
+  REVCLOUDGRIPS,
+  type HeaderValue,
+  type LayerRecord,
+} from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   documentInit,
@@ -196,6 +204,29 @@ describe('header variables', () => {
     expect(second.header.get('CETRANSPARENCY')).toBe('ByLayer');
     edit(second, (b) => b.setHeader('CETRANSPARENCY', '40'));
     expect(new Map(saved(withVar, second, 'dxf').header).get('CETRANSPARENCY')).toBe('40');
+  });
+
+  it('never saves REVCLOUDGRIPS, a per-user setting the app keeps in the header (M2-42)', () => {
+    const bytes = drawing();
+    const { model } = open(bytes);
+    edit(model, (b) => {
+      b.setHeader(REVCLOUDGRIPS, 0);
+      b.setHeader('$MIRRTEXT', true);
+    });
+    const back = new Map(saved(bytes, model, 'dxf').header);
+    expect(back.has(REVCLOUDGRIPS)).toBe(false);
+    expect(back.get('$MIRRTEXT')).toBe(true);
+  });
+
+  it('knows each header variable SETVAR takes as an integer as acad-ts writes it (M2-42)', () => {
+    // DXF integer group codes: 62 (colour), 70, 280, 370 (lineweight), 380 (plot style type).
+    const integers = [...CadHeader.getHeaderMap()]
+      .filter(
+        ([, v]) => v.dxfCodes.length === 1 && [62, 70, 280, 370, 380].includes(v.dxfCodes[0]!),
+      )
+      .map(([name]) => name.slice(1))
+      .sort();
+    expect([...INTEGER_HEADER_VARIABLES].sort()).toEqual(integers);
   });
 
   it('writes the DWG dimension linetypes and the DXF text fill colour (M1-87)', () => {

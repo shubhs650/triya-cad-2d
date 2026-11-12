@@ -7,8 +7,11 @@
 // 23 (0,0)-(0,10).
 import { describe, expect, it } from 'vitest';
 import {
+  ChangeSetBuilder,
   DocumentModel,
+  EngineSession,
   PromptBus,
+  REVCLOUDGRIPS,
   REVCLOUD_BULGE,
   builtinCommands,
   chordLengths,
@@ -750,6 +753,43 @@ describe('REVCLOUD Modify', () => {
     expect(g.vertices).toHaveLength(16 + 6 + 1 + 11);
     expect(g.vertices.every((v) => v.bulge === REVCLOUD_BULGE)).toBe(true);
     expect(s.model.entity(s.cloud.id)!.xdata).toEqual(s.cloud.xdata);
+  });
+
+  it('shows a grip at every arc\u2019s end with REVCLOUDGRIPS 0, as before AutoCAD 2021', async () => {
+    // AutoCAD 2024 Help, "REVCLOUDGRIPS (System Variable)": 0 "Displays grips at each arc
+    // vertex"; 1 (initial) "Displays a reduced number of grips".
+    const s = await clouded();
+    const corners = gripsOf(s.geom(), revcloudOf(s.model, s.cloud));
+    expect(corners).toHaveLength(cloudCorners(s.geom()).length);
+    expect(corners.every((c) => c.kind === 'cloud')).toBe(true);
+    const session = new EngineSession(sampleInit());
+    session.edit({ kind: 'sysvar', name: REVCLOUDGRIPS, value: 0 });
+    // The same setting on this drawing, as the app sets it on each drawing it opens.
+    const b = new ChangeSetBuilder(s.model);
+    b.setHeader(REVCLOUDGRIPS, session.model.header.get(REVCLOUDGRIPS));
+    s.model.apply(b.build());
+    expect(revcloudOf(s.model, s.model.entity(s.cloud.id)!)).toBeUndefined();
+    const grips = gripsOf(s.geom(), revcloudOf(s.model, s.model.entity(s.cloud.id)!));
+    expect(grips.filter((g) => g.kind === 'stretch')).toHaveLength(30);
+    await s.bus.selectAll();
+    // An arc's end is a grip now: dragging it moves that vertex only, the cloud's arcs kept.
+    await s.bus.pick({ x: 2, y: 5 }, { grip: 0.2 });
+    expect(s.bus.command).toBe('GRIP');
+    await s.bus.submit('2,6');
+    const g = s.geom();
+    expect(g.vertices).toHaveLength(30);
+    expect(s.has(2, 6)).toBe(true);
+    expect(s.has(2, 5)).toBe(false);
+    expect(g.vertices.every((v) => v.bulge === REVCLOUD_BULGE)).toBe(true);
+    // Back to 1: corners again.
+    const on = new ChangeSetBuilder(s.model);
+    on.setHeader(REVCLOUDGRIPS, undefined);
+    s.model.apply(on.build());
+    expect(
+      gripsOf(s.geom(), revcloudOf(s.model, s.model.entity(s.cloud.id)!)).every(
+        (c) => c.kind === 'cloud',
+      ),
+    ).toBe(true);
   });
 
   it('ends on Enter at the side, and refuses a stretch of too many arcs', async () => {
