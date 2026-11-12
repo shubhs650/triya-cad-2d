@@ -77,6 +77,11 @@ export interface PropertyRow {
   readonly colorDialog?: 'index';
   /** An empty typed value is a value, not a slip to undo: Hyperlink's takes the link off. */
   readonly clearable?: true;
+  /**
+   * A navigation row (a polyline's Vertex, M2-35 part 8): a spinner from `min` to `max` that
+   * changes which vertex the sheet shows (the session's `property-vertex`), not the drawing.
+   */
+  readonly spin?: { readonly min: number; readonly max: number };
 }
 
 export interface PropertySection {
@@ -353,6 +358,12 @@ const YES_NO: readonly PropertyOption[] = [
 ];
 const yesNo = (b: boolean): string => (b ? 'yes' : 'no');
 
+/** A polyline's Linetype generation (PLINEGEN), as AutoCAD's palette names its values. */
+const ENABLED_DISABLED: readonly PropertyOption[] = [
+  { value: 'yes', label: 'Enabled' },
+  { value: 'no', label: 'Disabled' },
+];
+
 /** DXF 75, a hatch's island detection, by AutoCAD's names. */
 const ISLAND_STYLES: readonly PropertyOption[] = [
   { value: '0', label: 'Normal' },
@@ -442,8 +453,47 @@ function globalWidthRow(widths: readonly (number | undefined)[]): PropertyRow {
   };
 }
 
+/**
+ * A polyline's vertex rows (M2-35 part 8), as AutoCAD 2024's palette shows them for one polyline:
+ * Vertex, a spinner from 1 to the vertex count, then the vertex's X and Y and the start and end
+ * width of the segment leaving it (a constant-width polyline's segments all show DXF 43). The
+ * keys name the vertex (`vertex:<index>:x`), so an edit reaches the vertex the sheet showed.
+ * AutoCAD's help does not say what Vertex shows for several polylines; one number naming a
+ * different point on each is no use to a drafter, so several polylines show none of these rows.
+ */
+function vertexRows(g: G<'LWPOLYLINE'>, at: number): PropertyRow[] {
+  const n = g.vertices.length;
+  if (n === 0) return [];
+  const i = Math.min(Math.max(Math.trunc(at), 0), n - 1);
+  const v = g.vertices[i]!;
+  const width = (w: number | undefined) => w ?? g.constantWidth ?? 0;
+  const key = (part: string) => `vertex:${i}:${part}`;
+  return [
+    { key: 'vertex', label: 'Vertex', kind: 'number', value: i + 1, spin: { min: 1, max: n } },
+    { key: key('x'), label: 'Vertex X', kind: 'distance', value: v.x },
+    { key: key('y'), label: 'Vertex Y', kind: 'distance', value: v.y },
+    {
+      key: key('startWidth'),
+      label: 'Start segment width',
+      kind: 'distance',
+      value: width(v.startWidth),
+    },
+    {
+      key: key('endWidth'),
+      label: 'End segment width',
+      kind: 'distance',
+      value: width(v.endWidth),
+    },
+  ];
+}
+
 /** The sections a selection of one type shows after General. */
-function typeSections(model: DocumentModel, type: EntityType, es: readonly Entity[]) {
+function typeSections(
+  model: DocumentModel,
+  type: EntityType,
+  es: readonly Entity[],
+  vertex: number,
+) {
   const sections: PropertySection[] = [];
   const add = (title: string, rows: PropertyRow[]) => {
     if (rows.length > 0) sections.push({ title, rows });
@@ -637,6 +687,7 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
     case 'LWPOLYLINE': {
       const g = (e: Entity) => geomOf<'LWPOLYLINE'>(e);
       add('Geometry', [
+        ...(es.length === 1 ? vertexRows(g(es[0]!), vertex) : []),
         // AutoCAD lists Global width before Elevation.
         globalWidthRow(es.map((e) => polylineGlobalWidth(g(e)))),
         row(es, {
@@ -667,6 +718,13 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
           kind: 'choice',
           options: YES_NO,
           get: (e) => yesNo(g(e).closed),
+        }),
+        row(es, {
+          key: 'plinegen',
+          label: 'Linetype generation',
+          kind: 'choice',
+          options: ENABLED_DISABLED,
+          get: (e) => yesNo(g(e).plinegen ?? false),
         }),
       ]);
       break;
@@ -1182,6 +1240,8 @@ export function propertySheet(
   model: DocumentModel,
   ids: readonly EntityId[],
   filter?: EntityType,
+  /** The polyline vertex shown, from 0 (M2-35 part 8); kept within the polyline. */
+  vertex = 0,
 ): PropertySheet {
   const all = filtered(model, ids, undefined);
   const counts = new Map<EntityType, number>();
@@ -1202,7 +1262,7 @@ export function propertySheet(
   const sections: PropertySection[] = [
     { title: 'General', rows: general },
     ...(visualization.length > 0 ? [{ title: '3D Visualization', rows: visualization }] : []),
-    ...(oneType ? typeSections(model, oneType, es) : []),
+    ...(oneType ? typeSections(model, oneType, es, vertex) : []),
   ];
   const dynamic =
     oneType === 'INSERT'

@@ -6,7 +6,7 @@
 // in packages/engine/test/properties; this checks the app carries them end to end.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, InsertGeometry } from '@triya/engine';
-import { DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { DXF, activeCanvas, expectShown, ink, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -490,4 +490,93 @@ test('sets a line’s hyperlink, thickness and material from the palette', async
   await hyperlink.press('Enter');
   await expect.poll(line).toMatchObject({ xdata: [] });
   await expect(hyperlink).toHaveValue('');
+});
+
+// M2-35 part 8: one polyline shows its vertices one at a time, as AutoCAD's palette does: the
+// Vertex spinner steps through them, the vertex shown is marked on the canvas while its rows have
+// the focus, and Vertex X/Y and the segment widths edit that vertex. The sheet and the edits are
+// unit-tested in packages/engine/test/properties/polyline-vertex.test.ts.
+test('steps through a polyline’s vertices and moves one from the palette', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  // A rectangular revision cloud: a closed polyline of arcs.
+  await type(page, 'REVCLOUD', /^Specify first corner point or/);
+  await type(page, '1000040,1000030', 'Specify opposite corner:');
+  await type(page, '1000120,1000070', 'Command:');
+
+  // Select it with a window round it, before the palette narrows the canvas.
+  const box = (await canvas.boundingBox())!;
+  const scale = Math.min(box.width / 160, box.height / 100);
+  const screen = (x: number, y: number) => ({
+    x: box.x + box.width / 2 + (x - 80) * scale,
+    y: box.y + box.height / 2 - (y - 50) * scale,
+  });
+  const a = screen(30, 20);
+  const b = screen(130, 80);
+  await page.mouse.click(a.x, a.y);
+  await page.mouse.click(b.x, b.y);
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await page.keyboard.press('Control+1');
+  await expect(objects).toHaveText('Polyline (1)');
+
+  const geometry = palette.getByRole('table', { name: 'Geometry' });
+  await expect(geometry.getByRole('rowheader')).toHaveText([
+    'Vertex',
+    'Vertex X',
+    'Vertex Y',
+    'Start segment width',
+    'End segment width',
+    'Global width',
+    'Elevation',
+    'Length',
+    'Area',
+  ]);
+  const vertex = palette.getByRole('spinbutton', { name: 'Vertex' });
+  const vertexX = palette.getByRole('textbox', { name: 'Vertex X' });
+  const vertexY = palette.getByRole('textbox', { name: 'Vertex Y' });
+  await expect(vertex).toHaveValue('1');
+  await expect(vertexX).toHaveValue(/^1000040\.0+$/);
+  await expect(vertexY).toHaveValue(/^1000030\.0+$/);
+
+  // The vertex shown is marked while the spinner has the focus.
+  const heading = palette.getByRole('heading', { name: 'Properties' });
+  const unmarked = await ink(page);
+  await vertex.focus();
+  await expect.poll(() => ink(page)).toBeGreaterThan(unmarked);
+  await vertex.press('ArrowUp');
+  await expect(vertex).toHaveValue('2');
+  await expect(vertexY).toHaveValue(/^1000030\.0+$/);
+  await expect(vertexX).not.toHaveValue(/^1000040\.0+$/);
+  await page.mouse.move(box.x + 40, box.y + 40);
+  await page.screenshot({ path: test.info().outputPath('1-vertex-marked.png') });
+  await heading.click();
+  await expect.poll(() => ink(page)).toBe(unmarked);
+
+  /** The cloud as the last change set left it: its second vertex and PLINEGEN. */
+  const cloud = () =>
+    page.evaluate(() => {
+      for (const cs of [...(window as unknown as Dev).triyaDev.changes()].reverse())
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'LWPOLYLINE') {
+            const v = u.after.geom.vertices[1]!;
+            return { y: Math.round(v.y - 1e6), plinegen: u.after.geom.plinegen ?? false };
+          }
+      return undefined;
+    });
+  await vertexY.fill('1000020');
+  await vertexY.press('Enter');
+  await expect.poll(cloud).toEqual({ y: 20, plinegen: false });
+  await expect(vertex).toHaveValue('2');
+  await expect(vertexY).toHaveValue(/^1000020\.0+$/);
+  await palette.getByRole('combobox', { name: 'Linetype generation' }).selectOption('Enabled');
+  await expect.poll(cloud).toEqual({ y: 20, plinegen: true });
+  await page.mouse.move(box.x + 40, box.y + 40);
+  await page.screenshot({ path: test.info().outputPath('2-vertex-moved.png') });
 });
