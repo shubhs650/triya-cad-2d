@@ -3,7 +3,8 @@
 // the app to offer the drawings it can recover again. PLOT and PRINT (M2-17) open the app's Plot
 // dialog; its Window< button hands back to PLOT, which asks for the window's corners at the command
 // line and opens the dialog again with them (part 2), or as it was on Esc there (part 3). PUBLISH
-// opens the app's Publish dialog.
+// opens the app's Publish dialog. EXPORT (EXP) and EXPORTPDF (M2-39 part 2) open the app's Export
+// Data and Save As PDF dialogs, and ask for a window's corners when the dialog's Export is Window.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
@@ -42,6 +43,9 @@ describe('the file commands', () => {
     ['PRINT', 'plot'],
     ['PUBLISH', 'publish'],
     ['PREVIEW', 'preview'],
+    ['EXPORT', 'export'],
+    ['EXP', 'export'],
+    ['EXPORTPDF', 'exportpdf'],
   ] as const)('%s asks the app to %s', async (name, action) => {
     const { bus, asked, model } = setup();
     const version = model.version;
@@ -121,5 +125,43 @@ describe('the file commands', () => {
     await bus.cancel();
     expect(bus.command).toBeUndefined();
     expect(asked).toHaveLength(2);
+  });
+
+  it('EXPORTPDF asks for a window at the command line and opens Save As PDF again with it', async () => {
+    let n = 0;
+    const { bus, asked } = setup((r) =>
+      r.op === 'file' && n++ === 0 ? { ok: true, pickWindow: true } : { ok: true },
+    );
+    await bus.submit('EXPORTPDF');
+    expect(bus.command).toBe('EXPORTPDF');
+    // AutoCAD's EXPORTPDF asks for the corners only; "for printing" is PLOT's.
+    expect(bus.history).not.toContain('Specify window for printing');
+    expect(bus.prompt?.message).toBe('Specify first corner');
+    await bus.submit('0,0');
+    await bus.submit('50,40');
+    expect(asked).toEqual([
+      { op: 'file', action: 'exportpdf' },
+      {
+        op: 'file',
+        action: 'exportpdf',
+        resume: true,
+        window: { a: { x: 0, y: 0 }, b: { x: 50, y: 40 } },
+      },
+    ]);
+    expect(bus.command).toBeUndefined();
+  });
+
+  it('EXPORT opens Export Data again as it was on Esc at the corners', async () => {
+    let n = 0;
+    const { bus, asked } = setup((r) =>
+      r.op === 'file' && n++ === 0 ? { ok: true, pickWindow: true } : { ok: true },
+    );
+    await bus.submit('EXPORT');
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+    expect(asked).toEqual([
+      { op: 'file', action: 'export' },
+      { op: 'file', action: 'export', resume: true },
+    ]);
   });
 });

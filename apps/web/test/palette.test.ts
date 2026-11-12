@@ -34,6 +34,8 @@ describe('palette search', () => {
       'DRAWORDER',
       'EATTEDIT',
       'ERASE',
+      'EXPORT',
+      'EXPORTPDF',
       'HATCHTOBACK',
       'LINE',
       'MIRROR',

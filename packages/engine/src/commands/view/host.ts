@@ -239,10 +239,20 @@ export type PaletteName = 'properties';
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows
  * the drawings it can recover again; `plot` (PLOT, PRINT; M2-17) opens the Plot dialog and
  * `publish` (PUBLISH, M2-17 part 2) the Publish dialog; `preview` (PREVIEW, M2-18 part 2) shows
- * the plot preview and answers when it closes.
+ * the plot preview and answers when it closes; `export` (EXPORT) and `exportpdf` (EXPORTPDF; M2-39
+ * part 2) open the Export Data and Save As PDF dialogs, which may ask for a window as `plot` does.
  */
 export type FileAction =
-  'qsave' | 'saveas' | 'close' | 'closeall' | 'recover' | 'plot' | 'publish' | 'preview';
+  | 'qsave'
+  | 'saveas'
+  | 'close'
+  | 'closeall'
+  | 'recover'
+  | 'plot'
+  | 'publish'
+  | 'preview'
+  | 'export'
+  | 'exportpdf';
 
 export type ViewReply =
   | {
