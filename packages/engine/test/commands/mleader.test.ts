@@ -6,6 +6,7 @@
 // the content base point is the landing's end.
 import { describe, expect, it } from 'vitest';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   MLEADER_OVERRIDES,
   PromptBus,
@@ -17,6 +18,7 @@ import {
   newMultiLeader,
   settingsOf,
   standardMLeaderStyle,
+  type AttdefGeometry,
   type BusEvent,
   type DialogPrompt,
   type DocumentInit,
@@ -24,6 +26,7 @@ import {
   type EntityId,
   type HeaderValue,
   type MLeaderStyleRecord,
+  type MultiLeaderAttribute,
   type MultiLeaderGeometry,
   type TextStyleRecord,
   type Vec2,
@@ -983,6 +986,12 @@ describe('TEXTEDIT on a multileader', () => {
   it('keeps the text unchanged when it comes back the same or empty', async () => {
     const { bus, id, geom, log } = await withLeader();
     const before = geom();
+    // Enter at the editor's prompt (the command line, not the editor) keeps it as it was.
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    await bus.answer({ kind: 'enter' });
+    expect(geom()).toEqual(before);
+    await bus.cancel();
     await bus.script(['TEXTEDIT', 'M', 'S']);
     await bus.answer({ kind: 'selection', ids: [id] });
     await bus.answer({ kind: 'string', value: 'NOTE', editor: true });
@@ -1134,6 +1143,107 @@ describe('TEXTEDIT on a block multileader', () => {
     const { dialog } = bus.prompt as DialogPrompt;
     const shown = dialog.type === 'attedit' ? dialog.attributes : [];
     expect(shown.map((a) => a.tag)).toEqual(['NO', 'NAME']);
+  });
+});
+
+describe('TEXTEDIT on a block multileader: what the dialog lists', () => {
+  async function withValues(
+    attributes: (added: string[]) => MultiLeaderAttribute[],
+    attdefs: Partial<AttdefGeometry>[] = [],
+  ) {
+    const s = setup({ styles: [{ ...standard, contentType: 1, block: TAG }] });
+    await s.bus.script(['MLEADER', '0,0', '10,5', '7', 'Pump']);
+    const e = s.added()[0]!;
+    const g = e.geom as MultiLeaderGeometry;
+    const b = new ChangeSetBuilder(s.model);
+    const added = attdefs.map(
+      (a) =>
+        b.addEntity({ owner: TAG, layer: LAYER_0, geom: { ...attdef('X', 'X', ''), ...a } }).handle,
+    );
+    b.updateEntity(e.id, { geom: { ...g, block: { ...g.block!, attributes: attributes(added) } } });
+    s.model.apply(b.build());
+    await s.bus.submit('TEXTEDIT');
+    await s.bus.answer({ kind: 'selection', ids: [e.id] });
+    const geom = () => s.model.entity(e.id)!.geom as MultiLeaderGeometry;
+    return { ...s, geom, id: e.id };
+  }
+
+  it('keeps values without a definition, and takes OK without values or with other changes', async () => {
+    const { bus, geom, id } = await withValues(() => [
+      { definition: ATTDEF, index: 0, width: 1, value: '7' },
+      { index: 1, width: 1, value: 'orphan' },
+    ]);
+    const before = geom();
+    // The Edit Attributes dialog edits values only: a patch without one changes nothing.
+    await bus.answer({ kind: 'dialog', action: 'ok', attributes: [{ handle: ATTDEF, height: 2 }] });
+    expect(geom()).toEqual(before);
+    await bus.answer({ kind: 'selection', ids: [id] });
+    await bus.answer({ kind: 'dialog', action: 'ok' });
+    expect(geom()).toEqual(before);
+    await bus.answer({ kind: 'selection', ids: [id] });
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      attributes: [{ handle: ATTDEF, value: '8' }],
+    });
+    expect(geom().block!.attributes!.map((a) => a.value)).toEqual(['8', 'orphan']);
+  });
+
+  it('ends on Enter in the dialog and on OK without a list, changing nothing', async () => {
+    const { bus, geom } = await withValues(() => [
+      { definition: ATTDEF, index: 0, width: 1, value: '7' },
+    ]);
+    const before = geom();
+    await bus.answer({ kind: 'enter' });
+    expect(bus.command).toBeUndefined();
+    expect(geom()).toEqual(before);
+  });
+
+  it('says so when no value is the drafter’s to edit', async () => {
+    const { bus, log } = await withValues(() => [
+      { definition: '3B', index: 0, width: 1, value: 'K' },
+    ]);
+    expect(log).toContain('The multileader has no attributes to edit.');
+    expect(bus.promptText).toBe('Select an annotation object or [Undo/Mode]:');
+  });
+
+  it('lists a definition stated twice once, and writes the value to both', async () => {
+    const { bus, geom } = await withValues(() => [
+      { definition: ATTDEF, index: 0, width: 1, value: '7' },
+      { definition: ATTDEF, index: 1, width: 1, value: '7' },
+    ]);
+    const { dialog } = bus.prompt as DialogPrompt;
+    expect(dialog.type === 'attedit' && dialog.attributes.map((a) => a.handle)).toEqual([ATTDEF]);
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      attributes: [{ handle: ATTDEF, value: '9' }],
+    });
+    expect(geom().block!.attributes!.map((a) => a.value)).toEqual(['9', '9']);
+  });
+
+  it('shows a multiline definition as multiline, with its attachment', async () => {
+    const mtext = {
+      kind: 'MTEXT' as const,
+      contents: '',
+      style: STANDARD_TEXT,
+      position: { x: 0, y: 0 },
+      height: 0.5,
+      width: 0,
+      rotation: 0,
+      attachment: 5,
+      direction: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    };
+    const { bus } = await withValues(
+      ([h]) => [{ definition: h!, index: 0, width: 1, value: 'a\\Pb' }],
+      [{ tag: 'NOTES', prompt: '', mtext }],
+    );
+    const { dialog } = bus.prompt as DialogPrompt;
+    expect(dialog.type === 'attedit' && dialog.attributes).toMatchObject([
+      { tag: 'NOTES', prompt: 'NOTES', multiline: true, attachment: 5, value: 'a\\Pb' },
+    ]);
   });
 });
 
