@@ -28,7 +28,16 @@
 // plotted", asking "Press ESC or ENTER to exit, or right-click to display shortcut menu." The
 // preview is the app's (it plots the space shown and draws that plot), so the command says how to
 // leave it and waits until the app closes it.
-import type { CommandDef, CommandGenerator } from './command';
+//
+// EXPORT (EXP) and EXPORTPDF (M2-39 part 2): AutoCAD 2024 Help, "EXPORT": "Saves the objects in a
+// drawing to a different file format" through the Export Data dialog box, whose "Files of type"
+// picks the format (here PDF, SVG, PNG and DXF: the formats Triya writes); "EXPORTPDF": "Exports
+// drawing to PDF" through the Save As PDF dialog box, whose Export list is Display, Extents or
+// Window in model space and Current layout or All layouts in a layout. The dialogs are the app's
+// (they plot or save and hand the file over). Window in their Export list hides the dialog and
+// asks "Specify first corner:" and "Specify opposite corner:" as PLOT's Window< does, then shows
+// it again with that window; Esc at the corners shows it again as it was.
+import type { CommandContext, CommandDef, CommandGenerator } from './command';
 import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
 import { dashPlot } from './plot-script';
@@ -57,6 +66,50 @@ function previewCommand(): CommandDef {
 }
 
 /**
+ * A dialog of the app's that may ask for a window (PLOT's Window<, EXPORTPDF's Export Window): the
+ * dialog, then the window's corners whenever it asks, then the dialog again.
+ */
+async function* windowDialog(
+  ctx: CommandContext,
+  action: 'plot' | 'export' | 'exportpdf',
+): CommandGenerator {
+  let window: { a: Vec2; b: Vec2 } | undefined;
+  let resume = false;
+  for (;;) {
+    const reply = await viewRequest(ctx, {
+      op: 'file',
+      action,
+      ...(resume && { resume }),
+      ...(window && { window }),
+    });
+    if (!reply.ok || !reply.pickWindow) return;
+    resume = true;
+    window = undefined;
+    if (action === 'plot') ctx.message('Specify window for printing');
+    const first = yield ctx.prompt.point({ message: 'Specify first corner', escape: true });
+    if (first.kind !== 'point') continue;
+    const a = first.point;
+    const second = yield ctx.prompt.point({
+      message: 'Specify opposite corner',
+      rubberBand: { from: a, box: true },
+      escape: true,
+    });
+    if (second.kind !== 'point') continue;
+    window = { a, b: second.point };
+  }
+}
+
+/** EXPORT and EXPORTPDF: the Export Data or Save As PDF dialog. */
+function exportCommand(name: string, action: 'export' | 'exportpdf'): CommandDef {
+  return {
+    name,
+    async *run(ctx): CommandGenerator {
+      return yield* windowDialog(ctx, action);
+    },
+  };
+}
+
+/**
  * PLOT and PRINT: the dialog, then a window's corners whenever its Window< button asks; -PLOT
  * asks for everything at the command line (part 5).
  */
@@ -66,30 +119,7 @@ function plotCommand(name: string): CommandDef {
     ...(name === 'PLOT' && { dashVariant: true }),
     async *run(ctx): CommandGenerator {
       if (ctx.dash) return yield* dashPlot(ctx);
-      let window: { a: Vec2; b: Vec2 } | undefined;
-      let resume = false;
-      for (;;) {
-        const reply = await viewRequest(ctx, {
-          op: 'file',
-          action: 'plot',
-          ...(resume && { resume }),
-          ...(window && { window }),
-        });
-        if (!reply.ok || !reply.pickWindow) return;
-        resume = true;
-        window = undefined;
-        ctx.message('Specify window for printing');
-        const first = yield ctx.prompt.point({ message: 'Specify first corner', escape: true });
-        if (first.kind !== 'point') continue;
-        const a = first.point;
-        const second = yield ctx.prompt.point({
-          message: 'Specify opposite corner',
-          rubberBand: { from: a, box: true },
-          escape: true,
-        });
-        if (second.kind !== 'point') continue;
-        window = { a, b: second.point };
-      }
+      return yield* windowDialog(ctx, 'plot');
     },
   };
 }
@@ -105,4 +135,6 @@ export const FILE_COMMANDS: readonly (() => CommandDef)[] = [
   () => plotCommand('PRINT'),
   () => fileCommand('PUBLISH', 'publish'),
   previewCommand,
+  () => exportCommand('EXPORT', 'export'),
+  () => exportCommand('EXPORTPDF', 'exportpdf'),
 ];
