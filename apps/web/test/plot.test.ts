@@ -908,6 +908,18 @@ describe('the rest of the page setup (part 4)', () => {
       expect(appliedPageSetup({ ...s, table: '' }, space)).not.toHaveProperty('styleSheet');
     });
 
+    // M2-45: the layout's DXF 1 names the page setup applied: the Name the dialog shows.
+    it('writes the page setup name shown, and none for <None>', () => {
+      const plot: LayoutPlot = { ...ansi, pageSetupName: 'ANSI B' };
+      const space = withSetup(model, plot, true);
+      const s = defaultPlotSettings(space);
+      expect(appliedPageSetup(s, { ...space, pageSetupName: 'A3 Monochrome' })).toEqual({
+        ...plot,
+        pageSetupName: 'A3 Monochrome',
+      });
+      expect(appliedPageSetup(s, space)).not.toHaveProperty('pageSetupName');
+    });
+
     it('moves a layout’s sheet by the offset its Layout plot area is given', () => {
       const plot: LayoutPlot = { ...ansi, plotType: 5, flags: 688, origin: { x: 1, y: 2 } };
       const space: PlotSpace = { ...layout, pageSetup: pageSetupOf({ plot } as Layout) };

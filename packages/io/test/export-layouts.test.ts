@@ -162,6 +162,8 @@ describe('LAYOUT objects', () => {
             plotType: 1,
             flags: 672 | 1 | 64, // + PlotViewportBorders, ScaleLineweights
             styleSheet: 'monochrome.ctb',
+            // M2-45: a named page setup applied (DXF 1).
+            pageSetupName: 'A3 Monochrome',
           },
         });
       });
@@ -301,6 +303,9 @@ describe('LAYOUT objects', () => {
     expect(plot('Layout1', { paperSize: 3 as never })).toEqual([
       expect.stringMatching(/paperSize: 3 is not text/),
     ]);
+    expect(plot('Layout1', { pageSetupName: 7 as never })).toEqual([
+      expect.stringMatching(/pageSetupName: 7 is not text/),
+    ]);
     expect(plot('Layout1', { styleSheet: 7 as never })).toEqual([
       expect.stringMatching(/styleSheet: 7 is not text/),
     ]);
@@ -405,6 +410,38 @@ describe('LAYOUT objects', () => {
     const back = documentInit(saved(bytes, model, 'dwg')).layouts!;
     expect(back.map(comparable)).toEqual(model.layouts.map(comparable));
   });
+
+  // M2-45: Apply to Layout of a named page setup writes its name (DXF 1); applying the dialog's
+  // "<None>" clears it, written as AutoCAD writes none: ''.
+  it.each(['dxf', 'dwg'] as const)(
+    'writes and clears the applied page setup name (%s)',
+    (format) => {
+      const bytes = drawing();
+      const model = open(bytes);
+      edit(model, (b) => {
+        b.updateLayout(layout(model, 'Layout1').handle, {
+          plot: { ...plotOf(model, 'Layout1'), pageSetupName: 'A3 Monochrome' },
+        });
+      });
+      const named = saved(bytes, model, format);
+      expect(named.layouts!.get('Layout1')!.pageName).toBe('A3 Monochrome');
+      expect(named.layouts!.get('Layout2')!.pageName).toBe(
+        readCadDocument(bytes).layouts!.get('Layout2')!.pageName,
+      );
+      const again = writeCadDocument(named, { format });
+      const model2 = open(again);
+      expect(plotOf(model2, 'Layout1').pageSetupName).toBe('A3 Monochrome');
+      edit(model2, (b) => {
+        const { pageSetupName: _, ...plot } = plotOf(model2, 'Layout1');
+        b.updateLayout(layout(model2, 'Layout1').handle, { plot });
+      });
+      const cleared = saved(again, model2, format);
+      expect(cleared.layouts!.get('Layout1')!.pageName).toBe('');
+      expect(
+        documentInit(cleared).layouts!.find((l) => l.name === 'Layout1')!.plot,
+      ).not.toHaveProperty('pageSetupName');
+    },
+  );
 
   it('refuses layout changes in drawings before R2000, which introduced layouts', () => {
     const problems = refused(

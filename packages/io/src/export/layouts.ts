@@ -497,6 +497,12 @@ function plotProblems(
     out.push(`paperSize: ${JSON.stringify(a.paperSize)} is not text`);
   if (changed('styleSheet') && a.styleSheet !== undefined && typeof a.styleSheet !== 'string')
     out.push(`styleSheet: ${JSON.stringify(a.styleSheet)} is not text`);
+  if (
+    changed('pageSetupName') &&
+    a.pageSetupName !== undefined &&
+    typeof a.pageSetupName !== 'string'
+  )
+    out.push(`pageSetupName: ${JSON.stringify(a.pageSetupName)} is not text`);
   for (const k of ['paperWidth', 'paperHeight'] as const) {
     if (changed(k) && !(finite(a[k]) && a[k] > 0))
       out.push(`${k}: ${JSON.stringify(a[k])} is not a number more than 0`);
@@ -704,4 +710,6 @@ function writePlot(acad: AcadLayout, b: LayoutPlot | undefined, a: LayoutPlot): 
   }
   if (changed('flags')) acad.flags = a.flags as never;
   if (changed('styleSheet')) acad.styleSheet = a.styleSheet ?? '';
+  // M2-45: '' for none, as AutoCAD writes it (a new LAYOUT's acad-ts default is 'none_device').
+  if (changed('pageSetupName')) acad.pageName = a.pageSetupName ?? '';
 }

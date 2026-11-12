@@ -571,7 +571,8 @@ async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> 
   const pageSetup = r.op === 'plotSetup' ? r.pageSetup : r.script.pageSetup;
   const spaceOf = async () => {
     const own = await plotSpaceOf(doc, target.block, target.name, tables);
-    return own && withPageSetup(own, pageSetup);
+    // Without one, the space's own page setup, under the name its layout has applied (M2-45).
+    return own && (pageSetup === undefined ? own : withPageSetup(own, pageSetup));
   };
   let space;
   try {

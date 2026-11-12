@@ -10,7 +10,7 @@
 | Not vendored | `reference/` (Autodesk DXF reference PDF, ODA spec), `samples/` (`.shx`/`.shp`/`.pat` files and sample drawings), `tests/`, `docs/`, `tools/`, `.github/`, lockfile |
 | Re-sync | `third_party/sync-acad-ts.sh <sha>` then update this table |
 
-Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) 0170–0171 (M1-105), 0172 (M1-107), 0173–0174 (M1-111), 0175 (M2-06), 0176 (M2-24 part 2), 0177 (M2-30) and 0178–0179 (M2-40) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
+Upstream test suite at the pinned commit, run in the upstream checkout: 717 passed, 16 skipped (61 files). With patch 0001 applied: same. Patches 0002–0013 (M0-06), 0014–0020 (M1-30), 0021–0030 (M1-28), 0031–0060 (M1-29) and 0061–0072 (M1-31), 0073 (M1-48), 0074 (M1-52), 0075 (M1-53), 0076 (M1-49) 0077–0081 (M1-56), 0082–0091 (M1-58), 0092–0097 (M1-33), 0098–0099 (M1-33 part 2) and 0100 (M1-33 part 3), 0105 (M1-45), 0106 (M1-68), 0107 (M1-34), 0108 (M1-32), 0109 (M1-43), 0110 (M1-36), 0111 (M1-32 part 2) 0112–0114 (M1-32 part 3), 0115–0119 (M1-32 part 4) 0120 (M1-76), 0121–0125 (M1-79), 0126 (M1-77), 0127 (M1-80), 0128 (M1-82), 0129 (M1-83), 0130 (M1-84), 0131 (M1-85), 0132 (M1-87), 0133 (M1-88), 0134 (M1-89), 0135 (M1-90), 0136 (M1-91), 0137–0141 (M1-92), 0142 (M1-75 part 12) 0143–0145 (M1-93), 0146 (M1-94), 0147 (M1-95), 0148–0150 (M1-75 part 19), 0151 (M1-96 part 2), 0152–0154 (M1-75 part 21) 0155–0156 (M1-98), 0157–0159 (M1-75 part 22), 0160 (M1-75 part 23), 0161 (M1-75 part 24), 0162 (M1-75 part 29), 0163 (M1-75 part 30) 0164–0165 (M1-75 part 32), 0166–0167 (M1-75 part 35), 0168 (M1-75 part 37) 0170–0171 (M1-105), 0172 (M1-107), 0173–0174 (M1-111), 0175 (M2-06), 0176 (M2-24 part 2), 0177 (M2-30), 0178–0179 (M2-40) and 0180 (M2-45) were not run against the upstream suite: neither thread could install upstream's dev dependencies. They are covered by our own tests and the corpus round trip; run the upstream suite before submitting them.
 
 ## Rules
 
@@ -3282,5 +3282,22 @@ TABLECONTENT has no DXF field writer, so the writer emits the group codes the re
 **Title:** Tell a pre-R2007 DXF value by its first group code, not the file version
 
 R2007 and later write a table, data-map or field value starting with its 93 flags and ending with 304 ACVALUE_END; before R2007 a value is its 90 type and that type's data. Choosing the ending by the file version made the reader run past the end of the object on an R2007+ file holding a value copied unchanged from an older file (as writers that keep unmapped objects as raw group codes produce). A value that starts with 93 now ends on ACVALUE_END and one that starts with 90 ends on its data, in any version.
+
+</details>
+
+### 0180 — a DXF LAYOUT's page setup name comes back as the layout's name
+
+- **File:** `third_party/acad-ts-patches/0180-dxf-layout-page-setup-name.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts`
+- **Symptom:** a LAYOUT object has group 1 twice: AcDbPlotSettings 1, the page setup name (the named page setup applied to the layout, AutoCAD's "current page setup", '' for none), and AcDbLayout 1, the layout's name. The AcDbLayout map has no group 1, so `_readLayout` handed the layout's name to the PlotSettings map, which overwrote `pageName` with it. Every DXF read lost the page setup name, and every DXF save then wrote the layout's name as the page setup's.
+- **Fix:** `_readLayout` reads group 1 in the AcDbLayout subclass as the layout's name, and leaves the AcDbPlotSettings one to the PlotSettings map.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0180 a DXF LAYOUT keeps its page setup name (AcDbPlotSettings 1) apart from its name" (ASCII and binary DXF, a name and '').
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Keep a DXF LAYOUT's page setup name apart from its layout name
+
+A LAYOUT object carries group 1 in two subclasses: AcDbPlotSettings 1 is the page setup name and AcDbLayout 1 is the layout name. The AcDbLayout property map has no group 1, so `_readLayout` passed the layout's group 1 to the PlotSettings map, and `PlotSettings.pageName` ended up holding the layout's name. A layout with a named page setup applied lost it on read, and the writer then saved the layout name as the page setup name. This reads group 1 in the AcDbLayout subclass as `Layout.name`. A test writes a layout with a page setup name (and with none) to ASCII and binary DXF and reads both names back.
 
 </details>
