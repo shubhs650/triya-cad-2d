@@ -1,0 +1,1 @@
+- M2-39 part 5 (#303): Save As PDF and Export Data can override the page setup (Page Setup Override: paper, orientation, scale, plot style table) and export a PNG at a chosen resolution; PUBLISH to PNG has a Resolution too; -EXPORT exports a PDF, SVG, PNG or DXF at the command line. Closes M2-39; Save As PDF's Options move to M2-59.

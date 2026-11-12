@@ -60,6 +60,7 @@ export function scriptSetup(
     paper: space.sheet !== undefined,
     canSave: space.pageSetup?.layout !== undefined && space.pageSetup.plot !== undefined,
     file: plotFileName(drawing, space, s.device),
+    drawing,
     settings,
     pageSetups: (space.pageSetups ?? []).map((p) => p.name),
     ...(space.pageSetupName !== undefined && { pageSetup: space.pageSetupName }),

@@ -6,6 +6,13 @@
 // the whole drawing (DEC-047), which leaves the drawing's own file and its unsaved changes as
 // they were, unlike Save As. All layouts makes one multi-page PDF, as PUBLISH does; for an SVG
 // or a PNG (part 4) it makes a file a layout, as PUBLISH to SVG or PNG does, in one ZIP.
+//
+// Part 5: "Page setup: Override" and its Page Setup Override dialog box (AutoCAD 2024 Help, "Save
+// As PDF Dialog Box": "Page Setup Override: Opens the Page Setup Override dialog box", which holds
+// Paper size, Drawing orientation, Plot scale and Plot style table (pen assignments)) replace those
+// four of the page setup for the export, every layout's for All layouts, leaving the page setup
+// itself as it was. A PNG has a Resolution, as the Plot dialog's PNG plotter does (Triya's own:
+// AutoCAD's PNG export is a screen capture).
 import { dxfName } from './save';
 import { defaultPlotSettings, type PlotSettings, type PlotSpace } from './plot';
 import type { Box } from '@triya/engine';
@@ -96,17 +103,43 @@ export function withExportType(fileName: string, type: ExportType, area?: Export
   return EXTENSION.test(name) ? name.replace(EXTENSION, `.${ext}`) : `${name}.${ext}`;
 }
 
+/** What Page Setup Override replaces of the page setup (part 5). */
+export interface PageSetupOverride {
+  /** A `PAPER_SIZES` name, or `LAYOUT_PAPER` for the page setup's own paper. */
+  readonly paper: string;
+  readonly orientation: 'portrait' | 'landscape';
+  readonly fit: boolean;
+  /** `mm` millimetres = `units` drawing units. */
+  readonly scale: { readonly mm: number; readonly units: number };
+  /** A plot style table's file name, or '' for None. */
+  readonly table: string;
+}
+
+/** The Page Setup Override dialog's first values: the space's current page setup's. */
+export function pageSetupOverride(space: PlotSpace): PageSetupOverride {
+  const { paper, orientation, fit, scale, table } = defaultPlotSettings(space);
+  return { paper, orientation, fit, scale, table };
+}
+
 /**
- * The plot settings an export makes: the space's page setup (Page setup: Current), plotted to the
- * type's plotter, with model space's area as chosen. A layout plots as its page setup says.
+ * The plot settings an export makes: the space's page setup (Page setup: Current), or that page
+ * setup with an override's paper, orientation, scale and table (Override, part 5), plotted to the
+ * type's plotter (a PNG at `dpi`), with model space's area as chosen. A layout plots its layout.
  */
 export function exportSettings(
   space: PlotSpace,
   type: Exclude<ExportType, 'dxf'>,
   area: ExportArea,
   window?: Box,
+  override?: PageSetupOverride,
+  dpi?: number,
 ): PlotSettings {
-  const settings: PlotSettings = { ...defaultPlotSettings(space), device: type };
+  const settings: PlotSettings = {
+    ...defaultPlotSettings(space),
+    ...override,
+    device: type,
+    ...(dpi !== undefined && { dpi }),
+  };
   if (area === 'current' || area === 'all') return settings;
   if (area === 'window') {
     if (!window) throw new Error('Specify a window to export.');

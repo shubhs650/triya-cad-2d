@@ -142,11 +142,7 @@ export interface PublishFailure {
  * plotted.
  */
 export function publishPdf(
-  sheets: readonly {
-    readonly sheet: string;
-    readonly space: PlotSpace;
-    readonly parts: readonly PlotPart[];
-  }[],
+  sheets: readonly PlottedSheet[],
   title: string,
   /** The PDF file a PDF underlay names (M2-16 part 5), as the Plot dialog plots it. */
   underlayFile?: (fileName: string) => Uint8Array | undefined,
@@ -154,8 +150,8 @@ export function publishPdf(
   const doc = new PdfDocument({ title, creator: 'Triya CAD 2D' });
   const failed: PublishFailure[] = [];
   let pages = 0;
-  for (const { sheet, space, parts } of sheets) {
-    const settings = defaultPlotSettings(space);
+  for (const { sheet, space, parts, settings: own } of sheets) {
+    const settings = own ?? defaultPlotSettings(space);
     try {
       addPlotPage(doc, parts, plotPage(settings, space), settings, space, sheet, underlayFile);
       pages++;
@@ -171,6 +167,11 @@ export interface PlottedSheet {
   readonly sheet: string;
   readonly space: PlotSpace;
   readonly parts: readonly PlotPart[];
+  /**
+   * The settings the parts were plotted with, when not the page setup's (Save As PDF's Page
+   * Setup Override, M2-39 part 5); the plotter is the publish's.
+   */
+  readonly settings?: PlotSettings | undefined;
 }
 
 /** Writes a sheet's file in its plotter's format (the app's `plotFile`). */
@@ -190,11 +191,17 @@ export async function publishSheetFiles(
   sheets: readonly PlottedSheet[],
   device: Exclude<PublishDevice, 'pdf'>,
   write: SheetWriter,
+  /** The PNG plotter's resolution (M2-39 part 5); the Plot dialog's 150 dpi when absent. */
+  options: { readonly dpi?: number } = {},
 ): Promise<{ files: ArchiveFile[]; failed: PublishFailure[] }> {
   const files: ArchiveFile[] = [];
   const failed: PublishFailure[] = [];
-  for (const { sheet, space, parts } of sheets) {
-    const settings: PlotSettings = { ...defaultPlotSettings(space), device };
+  for (const { sheet, space, parts, settings: own } of sheets) {
+    const settings: PlotSettings = {
+      ...(own ?? defaultPlotSettings(space)),
+      device,
+      ...(options.dpi !== undefined && { dpi: options.dpi }),
+    };
     try {
       const file = await write(parts, plotPage(settings, space), settings, space, sheet);
       files.push({ name: safe(`${sheet}.${device}`), bytes: file.bytes });

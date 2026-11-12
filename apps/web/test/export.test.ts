@@ -8,9 +8,10 @@ import {
   exportExtension,
   exportFileName,
   exportSettings,
+  pageSetupOverride,
   withExportType,
 } from '../src/export';
-import { defaultPlotSettings, type PlotSpace } from '../src/plot';
+import { LAYOUT_PAPER, defaultPlotSettings, type PlotSpace } from '../src/plot';
 
 const model: PlotSpace = {
   name: 'Model',
@@ -124,5 +125,54 @@ describe('exportSettings', () => {
 
   it('refuses a window that was not picked', () => {
     expect(() => exportSettings(model, 'pdf', 'window')).toThrow(/window/i);
+  });
+});
+
+describe('Page Setup Override (part 5)', () => {
+  it('opens on the current page setup’s paper, orientation, scale and plot style table', () => {
+    const base = defaultPlotSettings(layout);
+    expect(pageSetupOverride(layout)).toEqual({
+      paper: LAYOUT_PAPER,
+      orientation: base.orientation,
+      fit: base.fit,
+      scale: base.scale,
+      table: base.table,
+    });
+    const m = defaultPlotSettings(model);
+    expect(pageSetupOverride(model)).toMatchObject({ paper: m.paper, fit: m.fit, table: '' });
+  });
+
+  it('replaces the page setup’s paper, orientation, scale and table, keeping the rest', () => {
+    const override = {
+      paper: 'ISO A3',
+      orientation: 'portrait' as const,
+      fit: false,
+      scale: { mm: 1, units: 50 },
+      table: 'monochrome.ctb',
+    };
+    const base = defaultPlotSettings(model);
+    expect(exportSettings(model, 'pdf', 'extents', undefined, override)).toEqual({
+      ...base,
+      ...override,
+      area: 'extents',
+    });
+    const window = { minX: 0, minY: 0, maxX: 10, maxY: 5 };
+    expect(exportSettings(model, 'svg', 'window', window, override)).toEqual({
+      ...base,
+      ...override,
+      device: 'svg',
+      area: 'window',
+      window,
+    });
+    // A layout keeps its plot area (Layout) and its plot options, its paper and scale replaced.
+    expect(exportSettings(layout, 'pdf', 'all', undefined, override)).toEqual({
+      ...defaultPlotSettings(layout),
+      ...override,
+    });
+  });
+
+  it('plots a PNG at the resolution chosen', () => {
+    expect(exportSettings(model, 'png', 'extents', undefined, undefined, 300).dpi).toBe(300);
+    expect(exportSettings(model, 'png', 'extents').dpi).toBe(150);
   });
 });
