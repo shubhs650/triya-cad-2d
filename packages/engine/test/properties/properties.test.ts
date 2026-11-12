@@ -354,6 +354,36 @@ describe('Properties edits', () => {
     expect(s.log.at(-1)).toBe('Invalid input.');
   });
 
+  it('reads a distance row in the drawing’s units: feet and inches, fractions (M2-35 part 7)', async () => {
+    const s = setup({ ...init(), header: [...(init().header ?? []), ['$LUNITS', 4]] });
+    await s.bus.selectAll();
+    const radius = () => (s.byHandle('21').geom as { radius: number }).radius;
+    // AutoCAD's palette shows an architectural length as 1'-6 1/2", and takes it back as typed.
+    await s.bus.setProperty({ key: 'radius', value: `1'-6 1/2"` }, 'CIRCLE');
+    expect(radius()).toBe(18.5);
+    await s.bus.setProperty({ key: 'radius', value: `2'6-1/4"` }, 'CIRCLE');
+    expect(radius()).toBe(30.25);
+    await s.bus.setProperty({ key: 'centerX', value: `-1'` }, 'CIRCLE');
+    expect((s.byHandle('21').geom as { center: { x: number } }).center.x).toBe(-12);
+    await s.bus.setProperty({ key: 'endX', value: `3/4"` }, 'LINE');
+    expect((s.byHandle('20').geom as { end: { x: number } }).end.x).toBe(0.75);
+    // A plain number is not a length: a scale takes no feet.
+    await s.bus.setProperty({ key: 'ltScale', value: `1'` });
+    await s.bus.setProperty({ key: 'radius', value: `1'6'` }, 'CIRCLE');
+    expect(s.log.filter((l) => l === 'Invalid input.')).toHaveLength(2);
+    expect(radius()).toBe(30.25);
+    expect(s.byHandle('21').ltScale).toBe(1);
+  });
+
+  it('reads 1-1/2 as the sum it spells in decimal units', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'radius', value: '1-1/2' }, 'CIRCLE');
+    expect((s.byHandle('21').geom as { radius: number }).radius).toBe(0.5);
+    await s.bus.setProperty({ key: 'radius', value: `1'` }, 'CIRCLE');
+    expect(s.log.at(-1)).toBe('Invalid input.');
+  });
+
   it('moves a circle by its centre and an arc keeps its angles in 0–2π', async () => {
     const arc: EntityGeometry = {
       kind: 'ARC',

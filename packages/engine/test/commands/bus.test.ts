@@ -378,6 +378,39 @@ describe('PromptBus', () => {
     ]);
   });
 
+  it('reads feet and inches in architectural units (M2-35 part 7)', async () => {
+    const { bus, lines } = setup([['$LUNITS', 4]]);
+    await bus.script(['CIRCLE', '5,5', `1'-6"`]);
+    await bus.script(['CIRCLE', '5,5', '2-1/2']);
+    await bus.script(['CIRCLE', '5,5', '1-1/2"']);
+    await bus.script(['CIRCLE', '5,5', `5'6'`]);
+    expect(bus.history.at(-1)).toBe('Requires numeric distance or two points.');
+    await bus.cancel();
+    expect(got).toEqual([
+      { kind: 'distance', value: 18 },
+      { kind: 'distance', value: 2.5 },
+      { kind: 'distance', value: 1.5 },
+    ]);
+    const before = lines().length;
+    await bus.script(['LINE', `1',2'`]);
+    bus.pointer({ x: 12, y: 100 });
+    await bus.submit(`1'`);
+    await bus.submit(`@6",0`);
+    await bus.submit('');
+    near(lines().slice(before)[0]!.start, { x: 12, y: 24 });
+    near(lines().slice(before)[0]!.end, { x: 12, y: 36 });
+    near(lines().slice(before)[1]!.end, { x: 18, y: 36 });
+  });
+
+  it('reads 1-1/2 as arithmetic in decimal units', async () => {
+    const { bus } = setup();
+    await bus.script(['CIRCLE', '5,5', '1-1/2']);
+    await bus.script(['CIRCLE', '5,5', `1'`]);
+    expect(bus.history.at(-1)).toBe('Requires numeric distance or two points.');
+    await bus.cancel();
+    expect(got).toEqual([{ kind: 'distance', value: 0.5 }]);
+  });
+
   it('reads angles in ANGBASE and ANGDIR, typed or from points', async () => {
     const { bus } = setup([
       ['$ANGBASE', Math.PI / 2],

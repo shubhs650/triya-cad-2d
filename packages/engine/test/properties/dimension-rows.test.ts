@@ -92,8 +92,13 @@ function init(vars: DimStyleRecord['vars'] = {}): DocumentInit {
   };
 }
 
-function setup(vars: DimStyleRecord['vars'] = {}) {
-  const model = DocumentModel.create(init(vars));
+function setup(vars: DimStyleRecord['vars'] = {}, lunits?: number) {
+  const i = init(vars);
+  const header = [
+    ...(i.header ?? []),
+    ...(lunits === undefined ? [] : [['$LUNITS', lunits] as const]),
+  ];
+  const model = DocumentModel.create({ ...i, header });
   const bus = new PromptBus({ model, registry: builtinCommands() });
   const log: string[] = [];
   bus.on((e) => {
@@ -270,6 +275,17 @@ describe('a dimension’s rows write DSTYLE overrides (M2-35 part 5)', () => {
     expect(s.rowOf('Text color').options).toContainEqual({ value: 'aci:142', label: 'Color 142' });
     await s.set('DIMCLRT', 'rgb:1,2,3');
     expect(s.log).toEqual(['Invalid input.']);
+  });
+
+  it('reads distance rows in feet and inches in an architectural drawing (M2-35 part 7)', async () => {
+    const s = setup({}, 4);
+    await s.set('DIMASZ', '3/16"');
+    await s.set('DIMEXO', `0'-0 1/8"`);
+    expect(s.vars()).toMatchObject({ DIMASZ: 0.1875, DIMEXO: 0.125 });
+    await s.set('DIMSCALE', `1'`);
+    expect(s.log).toEqual(['Invalid input.']);
+    await s.set('DIMSCALE', '48');
+    expect(s.vars().DIMSCALE).toBe(48);
   });
 
   it('turns parts off by their suppress variables', async () => {
