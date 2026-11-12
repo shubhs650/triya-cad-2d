@@ -1,0 +1,1 @@
+- M2-45 part 1 (#306): a layout's applied page setup (LAYOUT DXF 1) is read and saved: the Plot dialog's Name opens on it, Apply to Layout writes the Name shown, and -PLOT's page setup name defaults to it. acad-ts patch 0180: the DXF reader no longer overwrites the page setup name with the layout's name.

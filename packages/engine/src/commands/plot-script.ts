@@ -375,15 +375,19 @@ export async function* dashPlot(ctx: CommandContext): CommandGenerator {
 
   let pageSetup: string | undefined;
   if (!full) {
+    // M2-45: the named page setup the layout has applied is the default; taking it plots the
+    // layout's page setup as it is (as changed since it was applied), not the named one's own.
+    const applied = setup.pageSetup;
     for (;;) {
       const a = yield ctx.prompt.string({
         message: 'Enter a page setup name',
-        default: text(''),
+        default: text(applied ?? ''),
         spaces: true,
       });
       if (a.kind !== 'string') return;
       const typed = a.value.trim();
       if (typed === '') break;
+      if (applied !== undefined && typed === applied) break;
       pageSetup = setup.pageSetups.find((n) => n.toUpperCase() === typed.toUpperCase());
       if (pageSetup !== undefined) break;
       ctx.message(`Page setup "${typed}" not found.`);

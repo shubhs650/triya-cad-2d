@@ -2725,4 +2725,24 @@ describe('acad-ts local patches', () => {
       expect(read.horizontalDirection, `binary ${binary}`).toBe(-Math.PI / 4);
     }
   });
+
+  it('0180 a DXF LAYOUT keeps its page setup name (AcDbPlotSettings 1) apart from its name', () => {
+    // DXF reference, LAYOUT: AcDbPlotSettings 1 is the page setup name (the named page setup
+    // applied, '' for none) and AcDbLayout 1 the layout's name. Unpatched, the AcDbLayout 1
+    // went to the PlotSettings map too and overwrote `pageName` with the layout's name.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    doc.updateCollections(true, true);
+    const sheet = new Layout('Sheet');
+    doc.layouts!.add(sheet);
+    sheet.associatedBlock = doc.paperSpace!;
+    for (const pageName of ['A3 Monochrome', '']) {
+      sheet.pageName = pageName;
+      for (const binary of [false, true]) {
+        const back = readCadDocument(writeCadDocument(doc, { format: 'dxf', binary }));
+        const read = back.layouts!.get('Sheet')!;
+        expect(read.name, `binary ${binary}`).toBe('Sheet');
+        expect(read.pageName, `binary ${binary}`).toBe(pageName);
+      }
+    }
+  });
 });

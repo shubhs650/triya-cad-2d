@@ -196,6 +196,55 @@ describe('-PLOT', () => {
     ]);
   });
 
+  // M2-45: a layout with a named page setup applied (its DXF 1) offers that name; Enter takes the
+  // layout's page setup as it is, still under that name, and another name still loads its own.
+  it('offers the page setup the layout has applied, Enter keeping its own settings', async () => {
+    const applied: PlotScriptSetup = {
+      ...LAYOUT,
+      pageSetups: ['A3 Monochrome'],
+      pageSetup: 'A3 Monochrome',
+    };
+    const named: PlotScriptSetup = {
+      ...LAYOUT,
+      pageSetup: 'A3 Monochrome',
+      settings: { ...LAYOUT.settings, table: 'monochrome.ctb' },
+    };
+    const { bus, asked } = setup((r) =>
+      r.op === 'plotSetup' && r.layout === 'Layout1'
+        ? { ok: true, plotSetup: r.pageSetup === undefined ? applied : named }
+        : undefined,
+    );
+    await answer(bus, '-PLOT', '', 'Layout1');
+    expect(bus.promptText).toBe('Enter a page setup name <A3 Monochrome>:');
+    await answer(bus, '');
+    expect(asked.filter((r) => r.op === 'plotSetup')).toEqual([
+      { op: 'plotSetup' },
+      { op: 'plotSetup', layout: 'Layout1' },
+    ]);
+    await answer(bus, '', '', 'Y', '');
+    expect(scripts(asked)).toEqual([
+      {
+        layout: 'Layout1',
+        settings: applied.settings,
+        file: LAYOUT.file,
+        save: true,
+        plot: true,
+      },
+    ]);
+
+    // Typed again (in any case), the named page setup's own settings.
+    const again = setup((r) =>
+      r.op === 'plotSetup' && r.layout === 'Layout1'
+        ? { ok: true, plotSetup: r.pageSetup === undefined ? applied : named }
+        : undefined,
+    );
+    await answer(again.bus, '-PLOT', '', 'Layout1', 'a3 monochrome', '', '', 'N', '');
+    expect(scripts(again.asked)[0]).toMatchObject({
+      pageSetup: 'A3 Monochrome',
+      settings: named.settings,
+    });
+  });
+
   it('plots nothing when the drafter does not proceed and keeps nothing', async () => {
     const { bus, asked } = setup();
     await answer(bus, '-PLOT', '', '', '', '', '', 'N', 'N');

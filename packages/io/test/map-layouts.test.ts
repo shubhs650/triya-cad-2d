@@ -105,6 +105,27 @@ describe('mapLayouts', () => {
     expect(mapLayouts(doc)[1]!.plot).not.toHaveProperty('standardScaleType');
   });
 
+  // M2-45: DXF 1, the named page setup the layout has applied ("current page setup"). AutoCAD
+  // writes '' for none; acad-ts reads a LAYOUT without the group as 'none_device'.
+  it('reads the page setup name the layout has applied (DXF 1), left out for none', () => {
+    const { doc, sheet: l } = read();
+    for (const none of ['', 'none_device']) {
+      l.pageName = none;
+      expect(mapLayouts(doc)[1]!.plot).not.toHaveProperty('pageSetupName');
+    }
+    l.pageName = 'A3 Monochrome';
+    expect(mapLayouts(doc)[1]!.plot!.pageSetupName).toBe('A3 Monochrome');
+    // Triya's DXF saves before acad-ts patch 0180 wrote the layout's own name there: no page
+    // setup, unless the drawing has a named page setup of that name.
+    l.pageName = l.name.toUpperCase();
+    expect(mapLayouts(doc)[1]!.plot).not.toHaveProperty('pageSetupName');
+    const dict = doc.rootDictionary!.get(CadDictionary.acadPlotSettings) as CadDictionary;
+    const same = new PlotSettings(l.name);
+    same.pageName = l.name;
+    dict.add(same);
+    expect(mapLayouts(doc)[1]!.plot!.pageSetupName).toBe(l.name.toUpperCase());
+  });
+
   it('reads inch paper and keeps an unknown rotation or unit to the defaults', () => {
     const { doc, sheet: l } = read();
     l.paperUnits = 0;
