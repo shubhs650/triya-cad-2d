@@ -2615,3 +2615,29 @@ button {
   margin: 4px 0 0;
   color: var(--danger-text);
 }
+
+/* M2-39 part 2: Export Data and Save As PDF. */
+.cad-dialog.export-dialog {
+  width: min(480px, calc(100vw - 32px));
+  max-width: min(480px, calc(100vw - 32px));
+}
+
+.export-form {
+  display: grid;
+  gap: 6px;
+}
+
+.export-form .cad-dialog-field > span {
+  min-width: 96px;
+}
+
+.export-area {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.export-note {
+  margin: 0;
+  color: var(--chrome-text-muted);
+}
