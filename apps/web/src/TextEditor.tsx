@@ -35,7 +35,13 @@
 // double-byte characters as uneditable atoms. Typing, pasting, Enter and the
 // toolbar are applied to the spans (text-editor.ts) and the DOM repainted from them, so the
 // DOM never takes a shape the spans cannot hold.
-import type { StringPrompt, TextEditorColumns, TextEditorRequest } from '@triya/engine';
+import type {
+  Color,
+  StringPrompt,
+  TextEditorBackground,
+  TextEditorColumns,
+  TextEditorRequest,
+} from '@triya/engine';
 import { aciRgb, worldToScreen, type FontSources } from '@triya/render';
 import {
   contentOf,
@@ -1323,6 +1329,13 @@ function MTextBox({
           spellCheck={false}
           style={columnStyle(request, columns, placement.scale)}
         />
+        {request.background && (
+          <TextBackground
+            background={request.background}
+            scale={placement.scale}
+            window={controller.background}
+          />
+        )}
         {columns && fitted && (
           <ColumnFrames
             columns={columns}
@@ -1335,6 +1348,58 @@ function MTextBox({
         )}
       </div>
     </div>
+  );
+}
+
+// ---- Background mask and frame (M2-44) ----
+
+/** An engine colour as CSS; ByLayer and ByBlock, which a mask cannot resolve here, as none. */
+function cssColor(c: Color): string | undefined {
+  if (c.kind === 'aci') return `rgb(${aciRgb(c.index).join(',')})`;
+  if (c.kind === 'rgb') return `rgb(${c.r},${c.g},${c.b})`;
+  return undefined;
+}
+
+/**
+ * The text's background mask and frame around the box, as the text draws them: the mask in its
+ * colour (or the canvas's, the drawing window colour) under the text, the frame on its edge,
+ * each `pad` drawing units beyond the box (`TextEditorRequest.background`). They turn and
+ * scale with the box they sit in.
+ */
+function TextBackground({
+  background,
+  scale,
+  window,
+}: {
+  background: TextEditorBackground;
+  scale: number;
+  window: string;
+}) {
+  const around = (pad: number): CSSProperties => {
+    const px = `${-pad * scale}px`;
+    return { left: px, top: px, right: px, bottom: px };
+  };
+  const { mask, frame } = background;
+  return (
+    <>
+      {mask && (
+        <div
+          className="mtext-mask"
+          data-testid="mtext-mask"
+          style={{
+            ...around(mask.pad),
+            background: (mask.color && cssColor(mask.color)) ?? window,
+          }}
+        />
+      )}
+      {frame && (
+        <div
+          className="mtext-text-frame"
+          data-testid="mtext-text-frame"
+          style={around(frame.pad)}
+        />
+      )}
+    </>
   );
 }
 
