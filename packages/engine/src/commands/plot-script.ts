@@ -31,10 +31,11 @@ import type {
   PlotScriptSetup,
 } from './view/host';
 import { viewRequest } from './view/zoom';
+import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 
 /** A part of -PLOT that asks its own prompts and returns what they gave. */
-type Step<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
+export type Step<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
 const AREA_KEYWORDS: Readonly<Record<PlotScriptArea, string>> = {
   display: 'Display',
@@ -63,7 +64,7 @@ const keyword = (k: string): PromptAnswer => ({ kind: 'keyword', keyword: k });
 const text = (value: string): PromptAnswer => ({ kind: 'string', value });
 
 /** A Yes/No question; its answer, or undefined when the command ends. */
-async function* yesNo(
+export async function* yesNo(
   ctx: CommandContext,
   message: string,
   otherwise: boolean,
@@ -136,7 +137,7 @@ export function parsePlotOffset(typed: string): Vec2 | undefined {
   return m ? { x: Number(m[1]), y: Number(m[2]) } : undefined;
 }
 
-async function setupOf(
+export async function setupOf(
   ctx: CommandContext,
   layout?: string,
   pageSetup?: string,
@@ -154,11 +155,61 @@ async function setupOf(
   return r.plotSetup;
 }
 
-/** The settings the detailed configuration asks for; undefined when the command ends. */
-async function* detailed(
+/** -PLOT's plot area, and a window's corners; undefined when the command ends. */
+async function* plotArea(
+  ctx: CommandContext,
+  setup: PlotScriptSetup,
+  settings: PlotScriptSettings,
+): Step<PlotScriptSettings | undefined> {
+  let s = settings;
+  const areas = AREA_ORDER.filter((a) => setup.areas.includes(a));
+  const area = yield ctx.prompt.keyword({
+    message: 'Enter plot area',
+    options: areas.map((a) => AREA_KEYWORDS[a]),
+    default: keyword(AREA_KEYWORDS[areas.includes(s.area) ? s.area : areas[0]!]),
+  });
+  if (area.kind !== 'keyword') return undefined;
+  const chosen = areas.find((a) => AREA_KEYWORDS[a] === area.keyword)!;
+  s = { ...s, area: chosen };
+  if (chosen === 'window') {
+    const w = s.window;
+    const lower = yield ctx.prompt.point({
+      message: 'Enter lower left corner of window',
+      default: { kind: 'point', point: w ? { x: w.minX, y: w.minY } : { x: 0, y: 0 } },
+    });
+    if (lower.kind !== 'point') return undefined;
+    const upper = yield ctx.prompt.point({
+      message: 'Enter upper right corner of window',
+      default: { kind: 'point', point: w ? { x: w.maxX, y: w.maxY } : { x: 0, y: 0 } },
+      rubberBand: { from: lower.point, box: true },
+    });
+    if (upper.kind !== 'point') return undefined;
+    const [a, b] = [lower.point, upper.point];
+    const window = {
+      minX: Math.min(a.x, b.x),
+      minY: Math.min(a.y, b.y),
+      maxX: Math.max(a.x, b.x),
+      maxY: Math.max(a.y, b.y),
+    };
+    if (!(window.maxX > window.minX && window.maxY > window.minY)) {
+      ctx.message('The window has no area.');
+      return undefined;
+    }
+    s = { ...s, window };
+  }
+
+  return s;
+}
+
+/**
+ * The settings the detailed configuration asks for; undefined when the command ends. With `area`
+ * (-EXPORT, M2-39 part 5, which asked for it first) the plot area is not asked again.
+ */
+export async function* detailed(
   ctx: CommandContext,
   setup: PlotScriptSetup,
   device: string,
+  area?: { readonly area: PlotScriptArea; readonly window?: Box | undefined },
 ): Step<PlotScriptSettings | undefined> {
   let s: PlotScriptSettings = { ...setup.settings, device };
 
@@ -198,40 +249,11 @@ async function* detailed(
   if (upsideDown === undefined) return undefined;
   s = { ...s, upsideDown };
 
-  const areas = AREA_ORDER.filter((a) => setup.areas.includes(a));
-  const area = yield ctx.prompt.keyword({
-    message: 'Enter plot area',
-    options: areas.map((a) => AREA_KEYWORDS[a]),
-    default: keyword(AREA_KEYWORDS[areas.includes(s.area) ? s.area : areas[0]!]),
-  });
-  if (area.kind !== 'keyword') return undefined;
-  const chosen = areas.find((a) => AREA_KEYWORDS[a] === area.keyword)!;
-  s = { ...s, area: chosen };
-  if (chosen === 'window') {
-    const w = s.window;
-    const lower = yield ctx.prompt.point({
-      message: 'Enter lower left corner of window',
-      default: { kind: 'point', point: w ? { x: w.minX, y: w.minY } : { x: 0, y: 0 } },
-    });
-    if (lower.kind !== 'point') return undefined;
-    const upper = yield ctx.prompt.point({
-      message: 'Enter upper right corner of window',
-      default: { kind: 'point', point: w ? { x: w.maxX, y: w.maxY } : { x: 0, y: 0 } },
-      rubberBand: { from: lower.point, box: true },
-    });
-    if (upper.kind !== 'point') return undefined;
-    const [a, b] = [lower.point, upper.point];
-    const window = {
-      minX: Math.min(a.x, b.x),
-      minY: Math.min(a.y, b.y),
-      maxX: Math.max(a.x, b.x),
-      maxY: Math.max(a.y, b.y),
-    };
-    if (!(window.maxX > window.minX && window.maxY > window.minY)) {
-      ctx.message('The window has no area.');
-      return undefined;
-    }
-    s = { ...s, window };
+  if (area) s = { ...s, area: area.area, window: area.window };
+  else {
+    const picked = yield* plotArea(ctx, setup, s);
+    if (!picked) return undefined;
+    s = picked;
   }
 
   // The scale, in the paper units just chosen.

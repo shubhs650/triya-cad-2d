@@ -117,6 +117,8 @@ export type ViewRequest =
   | { readonly op: 'plotSetup'; readonly layout?: string; readonly pageSetup?: string }
   /** -PLOT: plots a space with the settings given at the command line, without the dialog. */
   | { readonly op: 'plotScript'; readonly script: PlotScript }
+  /** -EXPORT (M2-39 part 5): writes the export the command line's answers make. */
+  | { readonly op: 'exportScript'; readonly script: ExportScript }
   /**
    * A hatch given another pattern by name (Properties' Pattern name, M2-35 part 3): the app's
    * pattern library (the bundled patterns and the user's .pat files, M1-50) places it once per
@@ -222,6 +224,24 @@ export interface PlotScriptSetup {
   readonly pageSetups: readonly string[];
   /** The named page setup these settings are from; absent for the space's own. */
   readonly pageSetup?: string;
+  /** The drawing's file name, which -EXPORT names its files after (M2-39 part 5). */
+  readonly drawing?: string;
+}
+
+/**
+ * What -EXPORT writes (M2-39 part 5), as the Export Data dialog's Save writes it: a plot of the
+ * space shown (`area`, with its page setup unless `settings` were asked for) or of every layout,
+ * or the whole drawing as a DXF.
+ */
+export interface ExportScript {
+  readonly type: 'pdf' | 'svg' | 'png' | 'dxf';
+  /** Model space's Display, Extents or Window, or a layout's Current layout or All layouts. */
+  readonly area?: 'display' | 'extents' | 'window' | 'current' | 'all';
+  readonly window?: Box;
+  /** "Detailed plot configuration?" Yes: every setting, as -PLOT asks them. */
+  readonly settings?: PlotScriptSettings;
+  /** The file to write, by name. */
+  readonly file: string;
 }
 
 /** What -PLOT plots. */
