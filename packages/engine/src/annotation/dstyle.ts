@@ -26,6 +26,8 @@ function valueCode(code: number): number {
   return 1070;
 }
 
+const noHandle = (v: DimVarValue | undefined): boolean => v === undefined || v === '' || v === '0';
+
 /** The ACAD application's APPID handle, undefined when the drawing has none. */
 export function acadAppId(model: AnnotationTables): Handle | undefined {
   for (const r of model.tables.appIds.values()) {
@@ -64,7 +66,13 @@ export function withDimvarOverride(
   const acad = acadAppId(model);
   if (acad === undefined) return 'no-acad';
   const styled = dimVars(style, undefined, model)[name] ?? fallback;
-  const same = styled === value || (typeof styled === 'boolean' && Number(styled) === value);
+  const same =
+    styled === value ||
+    (typeof styled === 'boolean' && Number(styled) === value) ||
+    // DIMDSEP: a DIMSTYLE keeps the character, an override its code.
+    (typeof styled === 'string' && typeof value === 'number' && styled.charCodeAt(0) === value) ||
+    // A handle DIMVAR naming nothing: absent, empty or 0 alike.
+    (valueCode(code) === 1005 && noHandle(styled) && noHandle(value));
   const pair: [number, XdataValue] = [
     code,
     { code: valueCode(code), value: typeof value === 'boolean' ? Number(value) : value },

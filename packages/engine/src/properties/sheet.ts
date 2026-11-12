@@ -23,7 +23,7 @@ import type {
 } from '../model/types';
 import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
-import { dimVars } from '../annotation/leader';
+import { DIMVAR_ROWS, rowVars, type DimvarRow, type DimvarSection } from './dimension';
 import { JUSTIFICATIONS, bookColors } from '../commands/modify/attributes';
 
 /** How a row's value is shown and typed. */
@@ -62,6 +62,11 @@ export interface PropertyRow {
   readonly varies?: true;
   readonly readOnly?: true;
   readonly options?: readonly PropertyOption[];
+  /**
+   * A colour row other than Color whose last choice opens the Select Color dialog on its Index
+   * Color tab only: a dimension's DIMVAR colours, which `DSTYLE` overrides keep as ACIs.
+   */
+  readonly colorDialog?: 'index';
 }
 
 export interface PropertySection {
@@ -411,93 +416,6 @@ const angleOf = (v: Vec2): number => {
 
 type G<K extends EntityType> = Extract<EntityGeometry, { kind: K }>;
 const geomOf = <K extends EntityType>(e: Entity): G<K> => e.geom as G<K>;
-
-/**
- * A dimension's DIMVAR rows (M2-30 part 2), each set as a `DSTYLE` override, under AutoCAD
- * 2024's Properties groups and labels for a dimension. Shown and typed as the dimension draws
- * them: its style's value, or its override.
- */
-export interface DimvarRow {
-  readonly name: string;
-  readonly label: string;
-  readonly section: 'Lines & Arrows' | 'Text' | 'Fit' | 'Primary Units';
-  readonly kind: 'distance' | 'number' | 'choice';
-  readonly options?: readonly PropertyOption[];
-  /** Whether a typed value is one the DIMVAR takes. */
-  readonly takes: (n: number) => boolean;
-}
-
-const PRECISIONS: readonly PropertyOption[] = Array.from({ length: 9 }, (_, i) => ({
-  value: String(i),
-  label: i === 0 ? '0' : `0.${'0'.repeat(i)}`,
-}));
-
-const nonNegative = (n: number) => n >= 0;
-const positive = (n: number) => n > 0;
-
-export const DIMVAR_ROWS: readonly DimvarRow[] = [
-  {
-    name: 'DIMASZ',
-    label: 'Arrow size',
-    section: 'Lines & Arrows',
-    kind: 'distance',
-    takes: nonNegative,
-  },
-  {
-    name: 'DIMEXE',
-    label: 'Ext line ext',
-    section: 'Lines & Arrows',
-    kind: 'distance',
-    takes: nonNegative,
-  },
-  {
-    name: 'DIMEXO',
-    label: 'Ext line offset',
-    section: 'Lines & Arrows',
-    kind: 'distance',
-    takes: nonNegative,
-  },
-  { name: 'DIMTXT', label: 'Text height', section: 'Text', kind: 'distance', takes: positive },
-  // A negative DIMGAP frames the text (AutoCAD's "basic dimension"), so any value is taken.
-  { name: 'DIMGAP', label: 'Text offset', section: 'Text', kind: 'distance', takes: () => true },
-  {
-    name: 'DIMSCALE',
-    label: 'Dim scale overall',
-    section: 'Fit',
-    kind: 'number',
-    takes: nonNegative,
-  },
-  {
-    name: 'DIMLFAC',
-    label: 'Dim scale linear',
-    section: 'Primary Units',
-    kind: 'number',
-    takes: (n) => n !== 0,
-  },
-  {
-    name: 'DIMDEC',
-    label: 'Precision',
-    section: 'Primary Units',
-    kind: 'choice',
-    options: PRECISIONS,
-    takes: (n) => Number.isInteger(n) && n >= 0 && n <= 8,
-  },
-];
-
-/**
- * AutoCAD's imperial defaults (acad.dwt's STANDARD) for the DIMVAR rows, for a style that does
- * not state one; the same values `@triya/dims` draws with (its style.ts DEFAULTS).
- */
-export const DIMVAR_DEFAULTS: Readonly<Record<string, number>> = {
-  DIMASZ: 0.18,
-  DIMEXE: 0.18,
-  DIMEXO: 0.0625,
-  DIMTXT: 0.18,
-  DIMGAP: 0.09,
-  DIMSCALE: 1,
-  DIMLFAC: 1,
-  DIMDEC: 4,
-};
 
 /**
  * A polyline's Global width (M2-35 part 2): `*VARIES*` where the polylines differ, or where one
@@ -931,18 +849,22 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
         .map((r) => ({ value: r.handle as string, label: r.name }))
         .sort((a, b) => a.label.localeCompare(b.label));
       // A DIMVAR row shows what the dimension is drawn with: its style's value, or its override.
-      const dimvar = (d: DimvarRow) =>
-        row(es, {
-          key: `dimvar:${d.name}`,
-          label: d.label,
-          kind: d.kind,
-          ...(d.options && { options: d.options }),
-          get: (e) => {
-            const v = dimVars(g(e).style, e.xdata, model)[d.name] ?? DIMVAR_DEFAULTS[d.name]!;
-            return d.kind === 'choice' ? String(v) : v;
-          },
-        });
-      const group = (title: string) => DIMVAR_ROWS.filter((d) => d.section === title).map(dimvar);
+      const vars = es.map((e) => rowVars(g(e).style, e.xdata, model));
+      const dimvar = (d: DimvarRow): PropertyRow => {
+        const options = typeof d.options === 'function' ? d.options(model, vars[0]!) : d.options;
+        return {
+          ...row(vars, {
+            key: `dimvar:${d.name}`,
+            label: d.label,
+            kind: d.kind,
+            ...(options && { options }),
+            get: (v) => d.get(v, model),
+          }),
+          ...(d.color && { colorDialog: 'index' as const }),
+        };
+      };
+      const group = (title: DimvarSection) =>
+        DIMVAR_ROWS.filter((d) => d.section === title).map(dimvar);
       add('Misc', [
         row(es, {
           key: 'dimStyle',
@@ -971,6 +893,8 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
       ]);
       add('Fit', group('Fit'));
       add('Primary Units', group('Primary Units'));
+      add('Alternate Units', group('Alternate Units'));
+      add('Tolerances', group('Tolerances'));
       break;
     }
     case 'HATCH': {

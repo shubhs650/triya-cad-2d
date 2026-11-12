@@ -27,9 +27,8 @@ import type {
 import { withDimvarOverride } from '../annotation/dstyle';
 import { currentHeader } from './current';
 import type { GeneralProps } from './sheet';
+import { DIMVAR_DEFAULTS, DIMVAR_ROWS, rowVars } from './dimension';
 import {
-  DIMVAR_DEFAULTS,
-  DIMVAR_ROWS,
   MAX_TRANSPARENCY,
   isPatterned,
   parseColorValue,
@@ -692,12 +691,23 @@ function dimensionEdit(
     patchOf = (e) => ({ geom: { ...geom(e), text: v } as EntityGeometry });
   } else {
     const d = DIMVAR_ROWS.find((r) => `dimvar:${r.name}` === edit.key);
-    const n = numeric(v, 'number');
-    if (!d || n === undefined || !d.takes(n)) return { changed: 0, invalid: INVALID };
+    if (!d) return { changed: 0, invalid: INVALID };
     patchOf = (e) => {
-      const fallback = DIMVAR_DEFAULTS[d.name];
-      const xdata = withDimvarOverride(e, geom(e).style, model, d.name, n, fallback);
-      if (xdata === 'no-acad') return 'invalid';
+      const set = d.set(v, rowVars(geom(e).style, e.xdata, model), model);
+      if (set === undefined) return 'invalid';
+      let xdata: Entity['xdata'] = e.xdata;
+      for (const [name, value] of Object.entries(set)) {
+        const next = withDimvarOverride(
+          xdata ? { xdata } : {},
+          geom(e).style,
+          model,
+          name,
+          value,
+          DIMVAR_DEFAULTS[name],
+        );
+        if (next === 'no-acad') return 'invalid';
+        xdata = next;
+      }
       return { xdata } as EntityPatch;
     };
   }

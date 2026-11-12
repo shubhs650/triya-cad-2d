@@ -79,15 +79,19 @@ function PropertySections({
   patternNames: readonly string[];
 }) {
   const types = typeOptions(sheet);
-  // The Color row whose "Select Color..." was picked: the dialog shows while it is set.
+  // The colour row whose "Select Color..." was picked: the dialog shows while it is set. A
+  // dimension's colour rows (`colorDialog: 'index'`) offer the Index Color tab only.
   const [picking, setPicking] = useState<PropertyRow | undefined>();
   return (
     <>
       {picking && (
         <SelectColorDialog
           initial={picking.varies ? undefined : parseColorValue(String(picking.value))}
-          books={sheet.colorBooks ?? []}
-          trueColors={!sheet.current}
+          books={picking.colorDialog === 'index' ? [] : (sheet.colorBooks ?? [])}
+          trueColors={!sheet.current && picking.colorDialog !== 'index'}
+          {...(picking.colorDialog === 'index' && {
+            indexOnly: 'A dimension’s colors take an index color only.',
+          })}
           onOk={(c) => {
             setPicking(undefined);
             set(picking.key, colorValue(c));
@@ -129,7 +133,9 @@ function PropertySections({
                         units={sheet.units}
                         set={set}
                         suggestions={r.key === 'patternName' ? patternNames : undefined}
-                        selectColor={r.key === 'color' ? () => setPicking(r) : undefined}
+                        selectColor={
+                          r.key === 'color' || r.colorDialog ? () => setPicking(r) : undefined
+                        }
                       />
                     </td>
                   </tr>
