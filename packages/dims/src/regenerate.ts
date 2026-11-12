@@ -8,7 +8,18 @@
 import type { AnnotationTables, DimensionGeometry, Entity, TextMeasure } from '@triya/engine';
 import { angularSweep } from './angular';
 import { dimensionText, formatAngle, formatLinear } from './format';
-import { dist, dot, fromAngle, lerp, sub, unit, type DimPart } from './geometry';
+import {
+  angleOf,
+  dist,
+  dot,
+  fromAngle,
+  lerp,
+  normAngle,
+  perp,
+  sub,
+  unit,
+  type DimPart,
+} from './geometry';
 import { linearDefinitionPoint } from './linear';
 import { dimensionParts, generates } from './parts';
 import { dimStyle } from './style';
@@ -26,6 +37,44 @@ export interface RegeneratedDimension {
 }
 
 /**
+ * What a dimension measures, unformatted (AutoCAD's AcDbDimension measurement, the Properties
+ * palette's Measurement row, M2-35 part 10): a length in drawing units before DIMLFAC, an
+ * angle in radians; undefined for a degenerate dimension or another object.
+ */
+export function measuredValue(e: Pick<Entity, 'geom'>): number | undefined {
+  const g = e.geom;
+  if (!('dimType' in g)) return undefined;
+  switch (g.dimType) {
+    case 'linear':
+    case 'aligned': {
+      const u =
+        g.dimType === 'aligned'
+          ? (unit(sub(g.second, g.first)) ?? fromAngle(0))
+          : fromAngle(g.rotation ?? 0);
+      return Math.abs(dot(sub(g.second, g.first), u));
+    }
+    case 'radius':
+    case 'jogged':
+      return dist(g.definitionPoint, g.chordPoint);
+    case 'diameter':
+      return 2 * dist(lerp(g.definitionPoint, g.chordPoint, 0.5), g.chordPoint);
+    case 'angular':
+    case 'angular3pt':
+      return angularSweep(g);
+    case 'ordinate': {
+      // The feature's distance from the origin (DXF 10) along the measured UCS axis.
+      const x = fromAngle(-g.horizontalDirection);
+      return Math.abs(dot(sub(g.feature, g.definitionPoint), g.axis === 'x' ? x : perp(x)));
+    }
+    case 'arc': {
+      // Along the arc from DXF 13 to 14, counter-clockwise about 15 (arclength.ts).
+      const span = normAngle(angleOf(sub(g.second, g.center)) - angleOf(sub(g.first, g.center)));
+      return dist(g.center, g.first) * (span || 2 * Math.PI);
+    }
+  }
+}
+
+/**
  * The measurement a dimension shows, formatted (DIMDEC, DIMZIN, DIMPOST…, angles by DIMAUNIT,
  * the degree sign as `°`); undefined for the kinds the dimension commands do not make.
  */
@@ -34,31 +83,14 @@ export function measuredText(
   model: AnnotationTables,
 ): string | undefined {
   const g = e.geom;
-  if (g.kind !== 'DIMENSION') return undefined;
+  if (g.kind !== 'DIMENSION' || g.dimType === 'ordinate') return undefined;
+  const m = measuredValue(e);
+  if (m === undefined) return undefined;
   const vars = dimStyle(g.style, e.xdata, model).vars;
-  const linear = (m: number) => dimensionText('', formatLinear(m, vars), vars);
-  switch (g.dimType) {
-    case 'linear':
-    case 'aligned': {
-      const u =
-        g.dimType === 'aligned'
-          ? (unit(sub(g.second, g.first)) ?? fromAngle(0))
-          : fromAngle(g.rotation ?? 0);
-      return linear(Math.abs(dot(sub(g.second, g.first), u)));
-    }
-    case 'radius':
-      return linear(dist(g.definitionPoint, g.chordPoint));
-    case 'diameter':
-      return linear(2 * dist(lerp(g.definitionPoint, g.chordPoint, 0.5), g.chordPoint));
-    case 'angular':
-    case 'angular3pt': {
-      const sweep = angularSweep(g);
-      if (sweep === undefined) return undefined;
-      return dimensionText('', formatAngle(sweep, vars), vars)?.replace(/%%d/gi, '°');
-    }
-    default:
-      return undefined;
+  if (g.dimType === 'angular' || g.dimType === 'angular3pt') {
+    return dimensionText('', formatAngle(m, vars), vars)?.replace(/%%d/gi, '°');
   }
+  return dimensionText('', formatLinear(m, vars), vars);
 }
 
 /**

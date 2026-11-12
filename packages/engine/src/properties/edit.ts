@@ -28,7 +28,7 @@ import { withDimvarOverride } from '../annotation/dstyle';
 import { currentHeader } from './current';
 import { hasThickness, materialOf, namedPlotStyles, setHyperlink } from './general';
 import type { GeneralProps } from './sheet';
-import { DIMVAR_DEFAULTS, DIMVAR_ROWS, rowVars } from './dimension';
+import { DIMVAR_DEFAULTS, DIMVAR_ROWS, dimensionUnits, rowVars } from './dimension';
 import {
   MAX_TRANSPARENCY,
   isPatterned,
@@ -787,6 +787,8 @@ function dimensionEdit(
     const d = DIMVAR_ROWS.find((r) => `dimvar:${r.name}` === edit.key);
     if (!d) return { changed: 0, invalid: INVALID };
     patchOf = (e) => {
+      // A row for the other kind of dimension (an angular one's Angle format on a linear one).
+      if (d.for !== undefined && d.for !== dimensionUnits(geom(e))) return 'invalid';
       const set = d.set(v, rowVars(geom(e).style, e.xdata, model), model);
       if (set === undefined) return 'invalid';
       let xdata: Entity['xdata'] = e.xdata;

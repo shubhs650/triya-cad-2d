@@ -11,6 +11,7 @@ import {
   propertySheet,
   type DimStyleRecord,
   type DimensionGeometry,
+  type DimensionMeasure,
   type DocumentInit,
   type PropertyRow,
   type TextStyleRecord,
@@ -59,7 +60,10 @@ const dimension: DimensionGeometry = {
   rotation: 0,
 } as DimensionGeometry;
 
-function init(vars: DimStyleRecord['vars'] = {}): DocumentInit {
+function init(
+  vars: DimStyleRecord['vars'] = {},
+  dims: readonly DimensionGeometry[] = [dimension],
+): DocumentInit {
   const base = sampleInit();
   const blocks: [string, string][] = [
     [DOT, '_DOT'],
@@ -88,12 +92,17 @@ function init(vars: DimStyleRecord['vars'] = {}): DocumentInit {
       ...(base.blocks ?? []),
       ...blocks.map(([handle, name]) => ({ handle, name, basePoint: { x: 0, y: 0 } })),
     ],
-    entities: [entityInit(DIM, dimension)],
+    entities: dims.map((g, n) => entityInit(String(Number(DIM) + 20 * n), g)),
   };
 }
 
-function setup(vars: DimStyleRecord['vars'] = {}, lunits?: number) {
-  const i = init(vars);
+function setup(
+  vars: DimStyleRecord['vars'] = {},
+  lunits?: number,
+  dims: readonly DimensionGeometry[] = [dimension],
+  measure?: DimensionMeasure,
+) {
+  const i = init(vars, dims);
   const header = [
     ...(i.header ?? []),
     ...(lunits === undefined ? [] : [['$LUNITS', lunits] as const]),
@@ -109,7 +118,8 @@ function setup(vars: DimStyleRecord['vars'] = {}, lunits?: number) {
     await bus.selectAll();
     await bus.setProperty({ key: `dimvar:${key}`, value });
   };
-  const sheet = () => propertySheet(model, [entity().id]);
+  const ids = () => dims.map((_, n) => model.entityByHandle(String(Number(DIM) + 20 * n))!.id);
+  const sheet = () => propertySheet(model, ids(), undefined, 0, measure);
   const rowOf = (label: string): PropertyRow => {
     for (const s of sheet().sections) {
       const r = s.rows.find((x) => x.label === label);
@@ -469,5 +479,108 @@ describe('a dimension’s rows write DSTYLE overrides (M2-35 part 5)', () => {
     expect(s.bus.undo.state.undoable).toBe(1);
     await s.bus.submit('U');
     expect(s.entity().xdata).toBeUndefined();
+  });
+});
+
+/** A three-point angular dimension: 90° about the origin. */
+const angular: DimensionGeometry = {
+  ...dimension,
+  dimType: 'angular3pt',
+  vertex: { x: 0, y: 0 },
+  first: { x: 10, y: 0 },
+  second: { x: 0, y: 10 },
+  definitionPoint: { x: 6, y: 6 },
+} as DimensionGeometry;
+
+const section = (
+  sheet: { sections: readonly { title: string; rows: readonly PropertyRow[] }[] },
+  title: string,
+) => sheet.sections.find((x) => x.title === title)?.rows.map((r) => r.label);
+
+describe('an angular dimension’s units and the Measurement row (M2-35 part 10)', () => {
+  it('shows the angle format rows for an angular dimension, and no alternate units', () => {
+    const s = setup({}, undefined, [angular]);
+    expect(section(s.sheet(), 'Primary Units')).toEqual([
+      'Decimal separator',
+      'Dim prefix',
+      'Dim suffix',
+      'Angle format',
+      'Suppress leading zeros',
+      'Suppress trailing zeros',
+      'Precision',
+    ]);
+    expect(section(s.sheet(), 'Alternate Units')).toBeUndefined();
+    expect(section(s.sheet(), 'Tolerances')).toEqual([
+      'Tolerance display',
+      'Tolerance limit lower',
+      'Tolerance limit upper',
+      'Tolerance pos vert',
+      'Tolerance precision',
+      'Tolerance suppress leading zeros',
+      'Tolerance suppress trailing zeros',
+      'Tolerance text height',
+    ]);
+    expect(s.rowOf('Angle format')).toMatchObject({ kind: 'choice', value: '0' });
+    expect(s.rowOf('Angle format').options?.map((o) => o.label)).toEqual([
+      'Decimal Degrees',
+      'Degrees Minutes Seconds',
+      'Gradians',
+      'Radians',
+    ]);
+    expect(s.rowOf('Precision').value).toBe('0');
+    expect(s.rowOf('Suppress leading zeros').value).toBe('no');
+  });
+
+  it('shows only the rows both kinds share for linear and angular dimensions together', () => {
+    const s = setup({}, undefined, [dimension, angular]);
+    expect(section(s.sheet(), 'Primary Units')).toEqual([
+      'Decimal separator',
+      'Dim prefix',
+      'Dim suffix',
+    ]);
+    expect(section(s.sheet(), 'Alternate Units')).toBeUndefined();
+  });
+
+  it('writes DIMAUNIT, DIMADEC and DIMAZIN', async () => {
+    const s = setup({ DIMAZIN: 2 }, undefined, [angular]);
+    await s.set('DIMAUNIT', '1');
+    await s.set('DIMADEC', '3');
+    await s.set('DIMAZIN.leading', 'yes');
+    expect(s.vars()).toMatchObject({ DIMAUNIT: 1, DIMADEC: 3, DIMAZIN: 3 });
+    await s.set('DIMAZIN.trailing', 'no');
+    expect(s.vars().DIMAZIN).toBe(1);
+    expect(s.rowOf('Suppress trailing zeros').value).toBe('no');
+    await s.set('DIMAUNIT', '4');
+    // A linear dimension's units are not an angular one's.
+    await s.set('DIMLUNIT', '4');
+    expect(s.log).toEqual(['Invalid input.', 'Invalid input.']);
+    const linear = setup();
+    await linear.set('DIMAUNIT', '1');
+    expect(linear.log).toEqual(['Invalid input.']);
+  });
+
+  it('reads a DIMADEC of -1 as the linear precision, DIMDEC', () => {
+    const s = setup({ DIMADEC: -1, DIMDEC: 2 }, undefined, [angular]);
+    expect(s.rowOf('Precision').value).toBe('2');
+  });
+
+  it('shows the measurement read only, a distance or an angle', () => {
+    const measure: DimensionMeasure = (e) =>
+      (e.geom as DimensionGeometry).dimType === 'angular3pt' ? Math.PI / 2 : 10;
+    const linear = setup({}, undefined, [dimension], measure);
+    const texts = section(linear.sheet(), 'Text');
+    expect(texts?.slice(-3)).toEqual(['Text rotation', 'Measurement', 'Text override']);
+    expect(linear.rowOf('Measurement')).toMatchObject({
+      key: 'measurement',
+      kind: 'distance',
+      value: 10,
+      readOnly: true,
+    });
+    const angle = setup({}, undefined, [angular], measure);
+    expect(angle.rowOf('Measurement')).toMatchObject({ kind: 'angle', value: Math.PI / 2 });
+    const both = setup({}, undefined, [dimension, angular], measure);
+    expect(both.rowOf('Measurement')).toMatchObject({ varies: true, readOnly: true });
+    // Without a dimension engine to measure with there is no row.
+    expect(section(setup().sheet(), 'Text')).not.toContain('Measurement');
   });
 });
