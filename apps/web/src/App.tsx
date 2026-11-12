@@ -48,6 +48,7 @@ import {
 } from './plot';
 import { scriptSettings, scriptSetup } from './plot-script';
 import { plotSpaceOf } from './plot-spaces';
+import { ExportDialog, exportDialog } from './ExportDialog';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
@@ -425,6 +426,18 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
 }
 
 /**
+ * EXPORT's DXF (M2-39 part 2): the drawing with its changes as Save writes it, handed over as a
+ * file of its own; the drawing keeps its file and its unsaved changes.
+ */
+async function exportDxf(id: number): Promise<Uint8Array> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  if (!doc?.file) throw new Error('There is nothing to export.');
+  saveEnv ??= browserSave();
+  const blocks = await engines.blocklessDimensionBlocks(id).catch(() => undefined);
+  return saveEnv.write(doc.file.bytes, savedChanges(doc, blocks));
+}
+
+/**
  * Closes a drawing (the tab's ×, CLOSE): one with unsaved changes asks "Save changes to …?"
  * first, as AutoCAD does; Yes closes it only once it is saved. Resolves true when it closed.
  */
@@ -461,7 +474,7 @@ async function closeAll(): Promise<void> {
 
 /**
  * QSAVE, SAVE/SAVEAS and CLOSE typed at the command line (M2-13), DRAWINGRECOVERY (M2-14) and
- * PLOT/PRINT (M2-17).
+ * PLOT/PRINT (M2-17), EXPORT/EXPORTPDF (M2-39 part 2).
  */
 async function fileCommand(
   id: number,
@@ -487,6 +500,15 @@ async function fileCommand(
     return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
   }
   if (action === 'preview') return previewSpace(id);
+  if (action === 'export' || action === 'exportpdf') {
+    // EXPORT and EXPORTPDF (M2-39 part 2): Export Data or Save As PDF, waited for as PLOT waits
+    // for its dialog, with a window's corners asked for when its Export is Window.
+    const pickWindow = await exportDialog.show(id, action, {
+      window: window && windowBox(window.a, window.b),
+      resume: resume === true,
+    });
+    return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
+  }
   if (action === 'publish') {
     // PUBLISH (M2-17 part 2): the Publish dialog lists the drawing's sheets.
     publishDialog.open(id);
@@ -1467,6 +1489,13 @@ export function App() {
         docs={state.docs}
         underlayFile={(f) => pdfPages.bytes(f)}
         userTables={userPlotStyleTables}
+      />
+      <ExportDialog
+        doc={active}
+        underlayFile={(f) => pdfPages.bytes(f)}
+        underlayPage={underlayPage}
+        userTables={userPlotStyleTables}
+        exportDxf={exportDxf}
       />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />

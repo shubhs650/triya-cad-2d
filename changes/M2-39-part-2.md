@@ -1,0 +1,1 @@
+- M2-39 part 2 (#297): EXPORTPDF opens Save As PDF and EXPORT (EXP) opens Export Data: export the Display, Extents or a Window of model space, or the current layout or all layouts (one PDF), each with its current page setup, as a PDF, SVG or PNG, or the whole drawing as an AutoCAD 2018 DXF with its unsaved changes, leaving the drawing's own file as it was.
