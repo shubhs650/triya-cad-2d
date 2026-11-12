@@ -96,7 +96,10 @@ export interface ViewContext {
   readonly clipboard?: (content: Clipboard | undefined) => ViewReply | Promise<ViewReply>;
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes the palette. */
   readonly palette?: (name: PaletteName, open: boolean) => ViewReply;
-  /** -PLOT (M2-17 part 5): a space's plot settings, and a plot made without the dialog. */
+  /**
+   * -PLOT (M2-17 part 5): a space's plot settings, and a plot made without the dialog; -EXPORT's
+   * export (M2-39 part 5).
+   */
   readonly plot?: (r: PlotScriptRequest) => Promise<ViewReply>;
   /** Properties' Pattern name (M2-35 part 3): a pattern from the app's library, placed. */
   readonly hatchPattern?: (name: string, placements: readonly PatternPlacement[]) => ViewReply;
@@ -107,8 +110,11 @@ export interface ViewContext {
   readonly sysvar?: (name: string, value?: number) => ViewReply;
 }
 
-/** What -PLOT asks of the app. */
-export type PlotScriptRequest = Extract<ViewRequest, { op: 'plotSetup' | 'plotScript' }>;
+/** What -PLOT and -EXPORT (M2-39 part 5) ask of the app. */
+export type PlotScriptRequest = Extract<
+  ViewRequest,
+  { op: 'plotSetup' | 'plotScript' | 'exportScript' }
+>;
 
 export const NO_CANVAS = 'There is no view to change.';
 export const NO_FILE = 'There is no drawing to save.';
@@ -133,7 +139,7 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   if (r.op === 'file') {
     return ctx.file ? ctx.file(r.action, r.window, r.resume) : { ok: false, message: NO_FILE };
   }
-  if (r.op === 'plotSetup' || r.op === 'plotScript') {
+  if (r.op === 'plotSetup' || r.op === 'plotScript' || r.op === 'exportScript') {
     return ctx.plot ? ctx.plot(r) : { ok: false, message: NO_FILE };
   }
   if (r.op === 'palette') {

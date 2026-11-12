@@ -15,6 +15,7 @@
 //
 // M2-39 part 4: Publish to PDF, SVG or PNG; an SVG or PNG publish writes a file a sheet,
 // downloaded as itself when one sheet published and as one ZIP when more did (publish.ts).
+// Part 5: Publish to PNG has a Resolution, as the Plot dialog's PNG plotter does.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { download, downloadPdf } from './PlotDialog';
 import { controllerOf } from './canvas/registry';
@@ -22,6 +23,7 @@ import { spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import type { PlotStyleTable } from '@triya/render';
 import {
+  PNG_RESOLUTIONS,
   defaultPlotSettings,
   pageSetupsOf,
   plotFile,
@@ -125,6 +127,7 @@ function PublishBody({
   const [error, setError] = useState<string>();
   const [log, setLog] = useState(false);
   const [device, setDevice] = useState<PublishDevice>('pdf');
+  const [dpi, setDpi] = useState(150);
 
   useEffect(() => {
     const d = ref.current;
@@ -233,6 +236,7 @@ function PublishBody({
       device,
       (parts, page, settings, space, title) =>
         plotFile(parts, page, settings, space, title, underlayFile, underlayPage),
+      { dpi },
     );
     const file = publishedDownload(files, publishFileName(doc.name, 'zip'));
     if (file) download(file.name, file.bytes, file.type);
@@ -266,6 +270,23 @@ function PublishBody({
           ))}
         </select>
       </label>
+      {device === 'png' && (
+        <label className="cad-dialog-field">
+          <span>Resolution:</span>
+          <select
+            aria-label="Resolution"
+            value={dpi}
+            disabled={busy}
+            onChange={(e) => setDpi(Number(e.currentTarget.value))}
+          >
+            {PNG_RESOLUTIONS.map((r) => (
+              <option key={r} value={r}>
+                {`${r} dpi`}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
       <div className="publish-tools" role="toolbar" aria-label="Sheet list">
         <button type="button" onClick={loadAll} disabled={busy}>
           Load All Open Drawings

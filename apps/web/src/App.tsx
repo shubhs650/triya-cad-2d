@@ -9,6 +9,7 @@ import type {
   EditResult,
   EngineEdit,
   EntityId,
+  ExportScript,
   FileAction,
   Layout,
   PdfDefinition,
@@ -50,6 +51,7 @@ import {
 import { scriptSettings, scriptSetup } from './plot-script';
 import { plotSpaceOf } from './plot-spaces';
 import { ExportDialog, exportDialog } from './ExportDialog';
+import { exportFile } from './export-file';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
@@ -555,6 +557,7 @@ async function fileCommand(
  * plot is then what the page setup says (the plotter as answered).
  */
 async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> {
+  if (r.op === 'exportScript') return exportScript(id, r.script);
   const doc = store.getSnapshot().docs.find((d) => d.id === id);
   const active = doc && controllerOf(doc.id, doc.block);
   if (!doc || !active) return { ok: false, message: 'There is nothing to plot.' };
@@ -609,6 +612,36 @@ async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> 
     download(r.script.file, file.bytes, file.type);
     lastPlotSettings.set(id, target.block, settings);
     return { ok: true, file: r.script.file };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/**
+ * -EXPORT (M2-39 part 5): the export the command line's answers make, written as the Export
+ * Data dialog's Save writes it (export-file.ts), of the space shown.
+ */
+async function exportScript(id: number, script: ExportScript): Promise<ViewReply> {
+  const doc = store.getSnapshot().docs.find((d) => d.id === id);
+  const controller = doc && controllerOf(doc.id, doc.block);
+  if (!doc || !controller) return { ok: false, message: 'There is nothing to export.' };
+  try {
+    const userTables = userPlotStyleTables();
+    const space = { ...(await controller.plotSpace()), userTables };
+    const { type, file, area, window, settings } = script;
+    await exportFile(
+      doc,
+      space,
+      {
+        type,
+        file,
+        area,
+        window,
+        ...(settings && type !== 'dxf' && { settings: scriptSettings(space, settings) }),
+      },
+      { underlayFile: (f) => pdfPages.bytes(f), underlayPage, userTables, exportDxf },
+    );
+    return { ok: true, file };
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }

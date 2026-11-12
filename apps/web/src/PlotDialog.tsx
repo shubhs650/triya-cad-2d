@@ -454,7 +454,23 @@ function PlotBody({
   );
 }
 
-function Group({ label, children }: { label: string; children: ReactNode }) {
+/**
+ * How the paper lists name the page setup's own paper (part 4): a layout's, or one model space's
+ * page setup states that the list lacks; undefined when there is none.
+ */
+export function ownPaperLabel(space: PlotSpace): string | undefined {
+  const own = ownPaper(space);
+  const size = (p: { width: number; height: number }) =>
+    `${Math.round(p.width * 10) / 10} × ${Math.round(p.height * 10) / 10} mm`;
+  return (
+    own &&
+    (space.sheet
+      ? `Layout paper (${size(own)})`
+      : `Page setup paper (${space.pageSetup?.plot?.paperSize ?? ''}, ${size(own)})`)
+  );
+}
+
+export function Group({ label, children }: { label: string; children: ReactNode }) {
   return (
     <fieldset className="plot-group">
       <legend>{label}</legend>
@@ -463,7 +479,7 @@ function Group({ label, children }: { label: string; children: ReactNode }) {
   );
 }
 
-function Check({
+export function Check({
   label,
   checked,
   disabled,
@@ -488,7 +504,7 @@ function Check({
 }
 
 /** A number field that keeps what is typed until it parses. */
-function NumberField({
+export function NumberField({
   label,
   value,
   disabled,
@@ -587,14 +603,7 @@ function PlotForm({
   );
   // The page setup's own paper: a layout's, or one model space's page setup states that the
   // list lacks (part 4).
-  const own = ownPaper(space);
-  const size = (p: { width: number; height: number }) =>
-    `${Math.round(p.width * 10) / 10} × ${Math.round(p.height * 10) / 10} mm`;
-  const layoutPaper =
-    own &&
-    (space.sheet
-      ? `Layout paper (${size(own)})`
-      : `Page setup paper (${space.pageSetup?.plot?.paperSize ?? ''}, ${size(own)})`);
+  const layoutPaper = ownPaperLabel(space);
   return (
     <div className="plot-form">
       <Group label="Printer/plotter">

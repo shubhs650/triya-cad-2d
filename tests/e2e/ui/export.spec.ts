@@ -4,9 +4,12 @@
 // corners, as PLOT's Window< does. The DXF holds the drawing's unsaved changes and leaves the
 // drawing's own file as it was.
 // M2-39 part 4: All layouts as SVG or PNG is a file a layout, saved in one ZIP.
+// M2-39 part 5: Page setup Override (the Page Setup Override dialog), a PNG's Resolution, and
+// -EXPORT at the command line.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
+import { decodePng } from '../../../packages/testkit/src/fidelity/compare';
 import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
 import { DWG, activeCanvas, expectShown, openWithPicker, paperPixels } from '../app/page';
 import { startApp } from '../app/server';
@@ -207,4 +210,119 @@ test('EXP exports an SVG plot, and a DXF with the unsaved changes, by file type'
   expect(dxf).toMatch(/\n\s*11\r?\n12345\.678/);
   await expectShown(page, path.basename(DWG));
   await expect(page.locator('.doc-tab[data-active="true"]')).toHaveAttribute('data-dirty', 'true');
+});
+
+// Part 5: Override replaces the page setup's paper, orientation, scale and plot style table for
+// the export; the page setup itself stays (Current plots with it again).
+test('Save As PDF’s Page Setup Override exports on the paper and orientation chosen (part 5)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  await command(page, 'EXPORTPDF');
+  const d = page.getByRole('dialog', { name: 'Save As PDF' });
+  const setup = d.getByLabel('Page setup');
+  await expect(setup).toHaveValue('current');
+  await expect(d.getByText('Page setup: Current (Model)')).toBeVisible();
+  // Choosing Override opens the Page Setup Override dialog on the page setup's own values.
+  await setup.selectOption('override');
+  const o = page.getByRole('dialog', { name: 'Page Setup Override' });
+  await expect(o).toBeVisible();
+  for (const group of [
+    'Paper size',
+    'Drawing orientation',
+    'Plot scale',
+    'Plot style table (pen assignments)',
+  ])
+    await expect(o.getByRole('group', { name: group })).toBeVisible();
+  await expect(o.getByRole('radio', { name: 'Landscape' })).toBeChecked();
+  await o.getByLabel('Paper size').selectOption('ISO A3');
+  await o.getByRole('radio', { name: 'Portrait' }).check();
+  await o.getByLabel('Plot style table').selectOption('triya-monochrome.ctb');
+  await o.getByRole('button', { name: 'OK' }).click();
+  await expect(o).toBeHidden();
+  await expect(setup).toHaveValue('override');
+  await expect(d.getByText(/Page setup: Override \(Model/)).toBeVisible();
+  // Page Setup Override... opens it again on what was chosen; Cancel keeps it.
+  await d.getByRole('button', { name: 'Page Setup Override...' }).click();
+  await expect(o.getByLabel('Paper size')).toHaveValue('ISO A3');
+  await expect(o.getByRole('radio', { name: 'Portrait' })).toBeChecked();
+  await o.getByRole('button', { name: 'Cancel' }).click();
+  await expect(o).toBeHidden();
+  await expect(d).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'Save' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  const pdf = await readPdf(download);
+  expect(pdf.width).toBeCloseTo(297, 0);
+  expect(pdf.height).toBeCloseTo(420, 0);
+  expect(pdf.paths).toBeGreaterThan(0);
+  // The page setup was not changed: Current exports on its ANSI A landscape again.
+  await command(page, 'EXPORTPDF');
+  await expect(d.getByLabel('Page setup')).toHaveValue('current');
+  const [again] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'Save' }).click(),
+  ]);
+  const current = await readPdf(again);
+  expect(current.width).toBeCloseTo(279.4, 1);
+  expect(current.height).toBeCloseTo(215.9, 1);
+});
+
+test('Export Data writes a PNG at the Resolution chosen (part 5)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  await command(page, 'EXPORT');
+  const d = page.getByRole('dialog', { name: 'Export Data' });
+  await expect(d.getByLabel('Resolution')).toHaveCount(0);
+  await d.getByLabel('Files of type').selectOption('png');
+  const resolution = d.getByLabel('Resolution');
+  await expect(resolution).toHaveValue('150');
+  await resolution.selectOption('72');
+  await d.getByLabel('Export').selectOption('extents');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'Save' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  const png = decodePng(new Uint8Array(readFileSync((await download.path())!)));
+  // ANSI A landscape (11 × 8.5 inches) at 72 dpi.
+  expect([png.width, png.height]).toEqual([792, 612]);
+});
+
+test('-EXPORT writes a PNG of model space’s extents, and a DXF, at the command line (part 5)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  await command(page, '-EXPORT');
+  await expect(prompt(page)).toHaveText('Enter file format [Pdf/Svg/pNg/Dxf] <Pdf>:');
+  await command(page, 'N');
+  await expect(prompt(page)).toHaveText('Enter plot area [Display/Extents/Window] <Display>:');
+  await command(page, 'E');
+  await expect(prompt(page)).toHaveText('Detailed plot configuration? [Yes/No] <No>:');
+  await command(page, 'N');
+  await expect(prompt(page)).toHaveText('Enter file name <sample_AC1018-Model.png>:');
+  const [download] = await Promise.all([page.waitForEvent('download'), command(page, 'extents')]);
+  expect(download.suggestedFilename()).toBe('extents.png');
+  const png = decodePng(new Uint8Array(readFileSync((await download.path())!)));
+  // The Model page setup's ANSI A landscape at the PNG plotter's 150 dpi.
+  expect([png.width, png.height]).toEqual([1650, 1275]);
+  await expect(prompt(page)).toHaveText('Command:');
+  // A DXF is the whole drawing: only its name is asked.
+  await command(page, '-EXPORT');
+  await command(page, 'D');
+  await expect(prompt(page)).toHaveText('Enter file name <sample_AC1018.dxf>:');
+  const [dxf] = await Promise.all([page.waitForEvent('download'), command(page, '')]);
+  expect(dxf.suggestedFilename()).toBe('sample_AC1018.dxf');
+  const text = readFileSync((await dxf.path())!, 'latin1');
+  expect(text).toContain('AC1032');
 });
