@@ -312,6 +312,8 @@ export class CanvasController {
   #snapAgain = false;
   /** AutoSnap markers and the polar tracking path, drawn over the rubber band. */
   #overlay: readonly RenderPrimitive[] = [];
+  /** The Properties palette's current polyline vertex, while marked (`markVertex`). */
+  #vertexMark: Vec2 | undefined;
   /** The AutoSnap and polar tracking tooltip. */
   readonly #tip: HTMLDivElement;
 
@@ -588,6 +590,32 @@ export class CanvasController {
     this.#host.setStyle(this.#style());
     this.#requestFrame();
     if (this.#prompt && this.#mode === 'none') this.#track();
+  }
+
+  /**
+   * The polyline vertex the Properties palette shows, marked on the canvas while one of its
+   * vertex rows has the focus (M2-35 part 8; AutoCAD marks the current vertex the same way), or
+   * undefined for none.
+   */
+  markVertex(point: Vec2 | undefined): void {
+    const same =
+      point === this.#vertexMark ||
+      (point &&
+        this.#vertexMark &&
+        point.x === this.#vertexMark.x &&
+        point.y === this.#vertexMark.y);
+    if (same) return;
+    this.#vertexMark = point;
+    this.#rubberBand(
+      this.#pointer && this.#mode === 'none' ? this.#world(this.#pointer) : undefined,
+    );
+  }
+
+  /** The current vertex's marker, AutoSnap's size (AUTOSNAPSIZE) whatever the zoom. */
+  #vertexMarker(): RenderPrimitive[] {
+    if (!this.#vertexMark || !this.#view) return [];
+    const marker = (this.#px() * this.#drafting.markerSize) / MARKER_PX;
+    return markerPrimitives('INT', this.#vertexMark, marker, this.#ui().autosnap);
   }
 
   /** The objects to show grips on, and the hot grip (M2-06 part 2). */
@@ -954,9 +982,12 @@ export class CanvasController {
     // The point under a cursor that has not moved is another one now: the status bar (and a
     // prompt's rubber band) follow it, as the cursor that came onto the canvas before there was
     // a view (a layout's first, M2-37) showed no coordinates until it next moved.
-    if (this.#pointer && !this.#drag && this.#canvas.matches(':hover')) {
-      if (this.#prompt && this.#mode === 'none') this.#track();
-      else this.#hooks.onCursor(this.#world(this.#pointer));
+    const hovered = this.#pointer && !this.#drag && this.#canvas.matches(':hover');
+    if (hovered && this.#prompt && this.#mode === 'none') this.#track();
+    else {
+      if (hovered) this.#hooks.onCursor(this.#world(this.#pointer!));
+      // The current vertex's marker keeps its size in pixels (M2-35 part 8).
+      if (this.#vertexMark) this.#rubberBand(undefined);
     }
   }
 
@@ -1045,7 +1076,11 @@ export class CanvasController {
     const selection = p?.kind === 'point' ? p.rubberBand?.selection : undefined;
     if (from && cursor && selection && this.#mode === 'none') {
       const crossing = selection === 'auto' ? cursor.x < from.x : selection === 'crossing';
-      this.#host.setTransient([...preview, ...this.#selectionBand(from, cursor, crossing)]);
+      this.#host.setTransient([
+        ...preview,
+        ...this.#selectionBand(from, cursor, crossing),
+        ...this.#vertexMarker(),
+      ]);
       this.#requestFrame();
       return;
     }
@@ -1075,7 +1110,7 @@ export class CanvasController {
             },
           ]
         : [];
-    this.#host.setTransient([...preview, ...band, ...this.#overlay]);
+    this.#host.setTransient([...preview, ...band, ...this.#overlay, ...this.#vertexMarker()]);
     this.#requestFrame();
   }
 
