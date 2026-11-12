@@ -34,6 +34,7 @@ import {
   DEFAULT_ANGLES,
   parseAngle,
   parseCoordinate,
+  parseDistance,
   parseNumber,
   parseOsnapOverride,
   parsePointModifier,
@@ -586,6 +587,12 @@ export class PromptBus {
     return typeof v === 'number' && v >= 0 && v <= 8 ? v : 0;
   }
 
+  /** LUNITS, which says how typed lengths read: feet and inches, fractions (`parseDistance`). */
+  #lunits(): number {
+    const v = this.#model.header.get('$LUNITS');
+    return typeof v === 'number' ? v : 2;
+  }
+
   /** ANGBASE (radians, as acad-ts carries the header) and ANGDIR, for typed angles. */
   #angles(): AngleConvention {
     const base = this.#model.header.get('$ANGBASE');
@@ -615,6 +622,7 @@ export class PromptBus {
         const p = parseCoordinate(text.trim(), {
           lastPoint: this.#lastPoint,
           angles: this.#angles(),
+          lunits: this.#lunits(),
         });
         if (p !== undefined && p !== 'invalid') {
           this.#log(`${this.promptText} ${text.trim()}`);
@@ -878,7 +886,11 @@ export class PromptBus {
       return this.#finishSelection(frame, loop);
     }
     const parsePoint = () => {
-      const p = parseCoordinate(t, { lastPoint: this.#lastPoint, angles: this.#angles() });
+      const p = parseCoordinate(t, {
+        lastPoint: this.#lastPoint,
+        angles: this.#angles(),
+        lunits: this.#lunits(),
+      });
       return p === 'invalid' ? undefined : p;
     };
     if (loop.wantsPoint) {
@@ -1038,20 +1050,21 @@ export class PromptBus {
         if (modifier) return this.#modifier(modifier, t);
         const override = parseOsnapOverride(t);
         if (override !== undefined) return this.#override(override, t);
-        const p = parseCoordinate(t, { lastPoint: this.#lastPoint, angles });
+        const lunits = this.#lunits();
+        const p = parseCoordinate(t, { lastPoint: this.#lastPoint, angles, lunits });
         if (p !== undefined && p !== 'invalid') return this.#pointFor(p, t);
         const arbitrary = prompt.kind !== 'angle' && prompt.arbitrary;
-        if (arbitrary && (prompt.kind === 'point' || parseNumber(t) === undefined)) {
+        if (arbitrary && (prompt.kind === 'point' || parseDistance(t, lunits) === undefined)) {
           return this.#deliver({ kind: 'string', value: t }, t);
         }
         if (prompt.kind === 'distance') {
-          const d = parseNumber(t);
+          const d = parseDistance(t, lunits);
           if (d !== undefined) return this.#deliver({ kind: 'distance', value: d }, t);
         } else if (prompt.kind === 'angle') {
           const a = parseAngle(t, angles);
           if (a !== undefined) return this.#deliver({ kind: 'angle', value: a }, t);
         } else {
-          const d = parseNumber(t);
+          const d = parseDistance(t, lunits);
           if (d !== undefined && prompt.rubberBand) return this.#directDistance(prompt, d, t);
           if (p === 'invalid' || d !== undefined) return this.#reject('Invalid point.');
         }
@@ -1141,7 +1154,7 @@ export class PromptBus {
     const override = parseOsnapOverride(t);
     if (override !== undefined) return this.#override(override, t);
     const lastPoint = c.relativeTo ?? this.#lastPoint;
-    const p = parseCoordinate(t, { lastPoint, angles: this.#angles() });
+    const p = parseCoordinate(t, { lastPoint, angles: this.#angles(), lunits: this.#lunits() });
     if (p === undefined || p === 'invalid') return this.#reject('Invalid point.');
     this.#log(`${this.promptText} ${t}`);
     return this.#feedPoint(p);

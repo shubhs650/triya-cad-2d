@@ -57,10 +57,14 @@ export function isRelative(prompt: Prompt): boolean {
   return prompt.kind === 'point' && prompt.rubberBand !== undefined;
 }
 
-/** A number being typed; the first pointer field may start with `@` or `#`. */
+/**
+ * A number being typed; the first pointer field may start with `@` or `#`. After a digit, the
+ * marks of feet and inches and fractions (`5'-6-1/2"`), which the bus reads in architectural and
+ * engineering units (M2-35 part 7); a quote first is a transparent command (`'Z`).
+ */
 function plain(s: DynState, index: number, text: string): boolean {
   const prefix = s.kind === 'pointer' && index === 0 ? '[@#]?' : '';
-  return new RegExp(`^${prefix}[-+]?\\d*\\.?\\d*$`).test(text);
+  return new RegExp(`^${prefix}[-+]?(?:\\d[\\d.'"/-]*|\\.\\d*)?$`).test(text);
 }
 
 const SEPARATOR: Record<DynKind, string> = { pointer: ',', dimension: '<', single: '' };
