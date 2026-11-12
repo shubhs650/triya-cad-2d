@@ -11,10 +11,11 @@
 // Part 5: -PLOT asks for the plot at the command line and plots it without the dialog.
 // Part 6: named page setups (page-setups.dxf, authored by packages/testkit/src/page-setups) in
 // the Plot dialog, -PLOT and PUBLISH, which publishes the sheets of every open drawing and its log.
+// M2-39: the SVG and PNG plotters draw a PDF underlay's page as the PDF plot does.
 import { copyFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
-import { decodePng } from '../../../packages/testkit/src/fidelity/compare';
+import { compareImages, decodePng } from '../../../packages/testkit/src/fidelity/compare';
 import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
 import {
   DWG,
@@ -25,6 +26,7 @@ import {
   openWithPicker,
   paperPixels,
 } from '../app/page';
+import { rasterisePdf } from '../app/pdf-raster';
 import { CORPUS, startApp } from '../app/server';
 
 const VIEWPORTS = path.join(CORPUS, 'ezdxf/examples_dxf/viewports.dxf');
@@ -153,6 +155,58 @@ test('a PDF underlay plots its page as vectors and text once its file is supplie
   // Both underlays' pages are forms; page 1's Helvetica text is still text.
   expect(pdf.forms).toBe(2);
   expect(pdf.text).toContain('TRIYA');
+});
+
+// M2-39: the PNG plot shows the underlays' pages as the PDF plot does (pdf.js draws the PDF over
+// the same sheet at the PNG's pixels), and the SVG carries each page as an image.
+test('SVG and PNG plots draw a PDF underlay’s page as the PDF plot does', async ({
+  page,
+  context,
+}, info) => {
+  test.setTimeout(120_000);
+  const fixtures = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
+  await page.goto(app.url);
+  await openWithPicker(page, path.join(fixtures, 'pdf-underlay.dxf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(50);
+  const bare = await ink(page);
+  await openWithDrop(page, path.join(fixtures, 'pdf-underlay.pdf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  // The pages drawn on screen, so the session knows their size (the extents take it in).
+  await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(bare + 1000);
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  const d = dialog(page);
+  const plot = async (device: 'pdf' | 'svg' | 'png') => {
+    await page.keyboard.press('Control+p');
+    await d.getByLabel('Name').selectOption(device);
+    await d.getByLabel('Paper size').selectOption('ISO A4');
+    await d.getByLabel('What to plot').selectOption('extents');
+    if (device === 'png') {
+      await d.getByLabel('Background').selectOption('white');
+      await d.getByLabel('Resolution').selectOption('96');
+    }
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      d.getByRole('button', { name: 'OK' }).click(),
+    ]);
+    await expect(d).toBeHidden();
+    return download;
+  };
+  const pdf = await plot('pdf');
+  const svg = readFileSync((await (await plot('svg')).path())!, 'utf8');
+  // Both underlays' pages, each a PNG image in the SVG.
+  expect(
+    svg.match(
+      /<image width="\d+" height="\d+" preserveAspectRatio="none" transform="matrix\([^)]*\)" xlink:href="data:image\/png;base64,/g,
+    ),
+  ).toHaveLength(2);
+  const png = decodePng(new Uint8Array(readFileSync((await (await plot('png')).path())!)));
+  expect([png.width, png.height]).toEqual([1123, 794]);
+  const shown = await rasterisePdf(context, pdf, [0, 0, 297, 210], png);
+  const c = compareImages(png, shown, { pixelMismatch: 2, ssim: 0.95 });
+  if (c.diffPng)
+    await info.attach('diff.png', { body: Buffer.from(c.diffPng), contentType: 'image/png' });
+  expect(c.reason ?? '', `mismatch ${c.mismatchPct} %, SSIM ${c.ssim}`).toBe('');
 });
 
 const prompt = (page: Page) => page.getByTestId('command-prompt');

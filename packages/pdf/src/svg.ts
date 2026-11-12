@@ -15,12 +15,19 @@
 //   the same unit frame; raster images are PNG `data:` URIs clipped to their boundary.
 // - TrueType text plots as its glyph outlines (SVG `<text>` would need the font installed
 //   wherever the file opens).
-// - A PDF underlay plots its clip boundary while clipping is on, as an underlay whose page the
-//   plot cannot read (its content in SVG is a leftover, roadmap M2-18).
+// - A PDF underlay plots its page as the app draws it (pdf.js, the screen's renderer) into
+//   pixels over the part of the page the plot shows (`underlayRasterPlan`: the clip boundary's
+//   extent and the plot area, at the plot's resolution), after its contrast and monochrome, an
+//   image in its frame clipped to its boundary, faded as the PDF plot fades it (opacity), then
+//   its frame stroked as PDFFRAME 1 plots it: the boundary while clipping is on, else the page's
+//   edge (M2-39). Pixels and not vectors: SVG has no form XObject to copy the page's content
+//   into, and turning a PDF's content (fonts, shadings, images) into SVG is a PDF renderer's
+//   work, which pdf.js no longer does (its SVG back end went in v4). A page the plot cannot read
+//   plots as the PDF plot plots it: the boundary while clipping is on, else nothing.
 // No DOM here.
 
 import type { Rgb } from './content';
-import { FILL_CELL, type FillStyle, type GradientStop } from './fills';
+import { FILL_CELL, type FillStyle, type GradientStop, type PlotPixels } from './fills';
 import { adaptDashes, POINTS_PER_MM } from './linetypes';
 import {
   compose,
@@ -32,8 +39,18 @@ import {
   type PlotItem,
   type PlotPageOptions,
   type PlotPathItem,
+  type PlotUnderlay,
 } from './plot';
-import { pathSegments, subpathLength, subpaths, type Affine, type Segment } from './path';
+import {
+  PATH_L,
+  PATH_M,
+  PATH_Z,
+  pathSegments,
+  subpathLength,
+  subpaths,
+  type Affine,
+  type Segment,
+} from './path';
 import { base64, encodePng } from './png';
 
 export interface SvgPlotOptions extends PlotPageOptions {
@@ -44,6 +61,98 @@ export interface SvgPlotOptions extends PlotPageOptions {
   readonly title?: string;
   /** A sheet of this colour under the plot; none (transparent) when absent. */
   readonly background?: Rgb;
+  /** A PDF underlay's page drawn for this plot; none plots its boundary only (see the header). */
+  readonly underlayRasters?: (underlay: PlotUnderlay) => SvgUnderlayRaster | undefined;
+}
+
+/** Part of a PDF underlay's page in underlay space: inches from its lower-left corner, y up. */
+export interface PageRegion {
+  readonly minX: number;
+  readonly minY: number;
+  readonly maxX: number;
+  readonly maxY: number;
+}
+
+/** A PDF underlay's page drawn as pixels for an SVG (or PNG) plot (M2-39). */
+export interface SvgUnderlayRaster {
+  /** Straight RGBA over `region`, rows top first, after the contrast and monochrome; not faded. */
+  readonly pixels: PlotPixels;
+  readonly region: PageRegion;
+  /** The displayed page's size, inches: an unclipped underlay's frame is its edge. */
+  readonly page: { readonly width: number; readonly height: number };
+}
+
+/** What of an underlay's page to draw for a plot, and at how many pixels. */
+export interface UnderlayRasterPlan {
+  readonly region: PageRegion;
+  readonly width: number;
+  readonly height: number;
+}
+
+/** The most pixels one underlay's page is drawn with for a plot, as the screen's budget. */
+export const UNDERLAY_MAX_PIXELS = 16 * 1024 * 1024;
+
+const inverse = (m: Affine): Affine => {
+  const det = m.a * m.d - m.b * m.c;
+  return {
+    a: m.d / det,
+    b: -m.b / det,
+    c: -m.c / det,
+    d: m.a / det,
+    e: (m.c * m.f - m.d * m.e) / det,
+    f: (m.b * m.e - m.a * m.f) / det,
+  };
+};
+
+/**
+ * The part of an underlay's page (`page` inches as displayed) a plot shows, at `dpi` on paper:
+ * the page cut to the clip boundary's extent while clipping is on and to the plot area, drawn
+ * at fewer pixels when it would take more than `maxPixels`. Undefined when none of it shows.
+ */
+export function underlayRasterPlan(
+  item: PlotPathItem,
+  o: PlotPageOptions,
+  page: { readonly width: number; readonly height: number },
+  dpi: number,
+  maxPixels = UNDERLAY_MAX_PIXELS,
+): UnderlayRasterPlan | undefined {
+  const u = item.underlay;
+  if (!u || !invertible(u.frame)) return undefined;
+  const m = compose(o.toPaper, u.frame);
+  if (!invertible(m)) return undefined;
+  let r: Box = { minX: 0, minY: 0, maxX: page.width, maxY: page.height };
+  const cut = (b: Box) => {
+    r = {
+      minX: Math.max(r.minX, b.minX),
+      minY: Math.max(r.minY, b.minY),
+      maxX: Math.min(r.maxX, b.maxX),
+      maxY: Math.min(r.maxY, b.maxY),
+    };
+  };
+  if (u.clipped) cut(segmentsBox(pathSegments(item.path, inverse(u.frame))));
+  if (o.area) {
+    const { x, y, width: w, height: h } = o.area;
+    cut(
+      segmentsBox(
+        pathSegments(
+          [PATH_M, x, y, PATH_L, x + w, y, PATH_L, x + w, y + h, PATH_L, x, y + h, PATH_Z],
+          inverse(m),
+        ),
+      ),
+    );
+  }
+  const w = r.maxX - r.minX;
+  const h = r.maxY - r.minY;
+  if (!(w > 0 && h > 0)) return undefined;
+  // Pixels per inch of page along each of its axes: its length on paper, in inches, times dpi.
+  const across = (Math.hypot(m.a, m.b) / 72) * dpi * w;
+  const down = (Math.hypot(m.c, m.d) / 72) * dpi * h;
+  const fit = Math.min(1, Math.sqrt(maxPixels / (across * down)));
+  return {
+    region: r,
+    width: Math.max(1, Math.round(across * fit)),
+    height: Math.max(1, Math.round(down * fit)),
+  };
 }
 
 /** Three decimals of a point (0.35 µm), no trailing zeros, no `-0`. */
@@ -270,15 +379,7 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
       };
     }
     const segments = pathSegments(item.path, m);
-    if (item.underlay) {
-      // The boundary while clipping is on; the page's content is a leftover (see the header).
-      if (!item.underlay.clipped || segments.length === 0) return undefined;
-      return {
-        markup: `<path d="${pathData(segments)}" ${stroke(item.paint)}${alpha}/>`,
-        box: segmentsBox(segments),
-        area: false,
-      };
-    }
+    if (item.underlay) return underlay(item, item.underlay, segments, alpha);
     if (segments.length === 0) return undefined;
     const box = segmentsBox(segments);
     const d = pathData(segments);
@@ -297,6 +398,55 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
       return { markup, box, area: false };
     }
     return { markup: `<path d="${d}" ${stroke(p, dashAttr(dashes))}${alpha}/>`, box, area: false };
+  };
+
+  const underlay = (
+    item: PlotPathItem,
+    u: PlotUnderlay,
+    segments: Segment[],
+    alpha: string,
+  ): Omit<Placed, 'layer' | 'clip'> | undefined => {
+    const raster = o.underlayRasters?.(u);
+    const um = compose(m, u.frame);
+    if (!raster || !invertible(um) || raster.pixels.width * raster.pixels.height === 0) {
+      // Without its page: the boundary while clipping is on, else nothing (see the header).
+      if (!u.clipped || segments.length === 0) return undefined;
+      return {
+        markup: `<path d="${pathData(segments)}" ${stroke(item.paint)}${alpha}/>`,
+        box: segmentsBox(segments),
+        area: false,
+      };
+    }
+    if (u.clipped && segments.length === 0) return undefined;
+    const { pixels: px, region: r } = raster;
+    // Bitmap pixels (y down from the region's top-left corner) → underlay inches → SVG.
+    const im = compose(um, {
+      a: (r.maxX - r.minX) / px.width,
+      b: 0,
+      c: 0,
+      d: -(r.maxY - r.minY) / px.height,
+      e: r.minX,
+      f: r.maxY,
+    });
+    const keep = (1 - Math.min(100, Math.max(0, u.fade)) / 100) * (item.opacity ?? 1);
+    const image = `<image width="${px.width}" height="${px.height}" preserveAspectRatio="none" transform="${matrix(im)}" xlink:href="data:image/png;base64,${base64(encodePng(px))}"/>`;
+    const faded = keep < 1 ? `<g opacity="${num6(keep)}">${image}</g>` : image;
+    const { width: pw, height: ph } = raster.page;
+    const frame = u.clipped
+      ? segments
+      : pathSegments([PATH_M, 0, 0, PATH_L, pw, 0, PATH_L, pw, ph, PATH_L, 0, ph, PATH_Z], um);
+    let shown = faded;
+    if (u.clipped) {
+      const d = pathData(segments);
+      const clip = def(`c${ids.size}`, (id) => `<clipPath id="${id}"><path d="${d}"/></clipPath>`);
+      shown = `<g clip-path="url(#${clip})">${faded}</g>`;
+    }
+    // The frame after the page, unfaded, as the PDF plot strokes it.
+    return {
+      markup: `${shown}\n<path d="${pathData(frame)}" ${stroke(item.paint)}/>`,
+      box: segmentsBox(frame),
+      area: true,
+    };
   };
 
   const fill = (item: PlotPathItem, d: string, rule: string, alpha: string): string => {

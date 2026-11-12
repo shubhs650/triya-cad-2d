@@ -15,6 +15,7 @@ import {
   paperMm,
   missingPlotStyleTable,
   plotAreas,
+  plotFile,
   plotFileName,
   plotPage,
   plotPdf,
@@ -23,7 +24,10 @@ import {
   plotPreview,
   plotSvgFile,
   plotTable,
+  SVG_UNDERLAY_DPI,
+  underlayRasters,
   windowBox,
+  type PlotPdfPage,
   type PlotSpace,
 } from '../src/plot';
 
@@ -517,6 +521,132 @@ describe('plotting to SVG and PNG', () => {
         };
       },
     );
+  });
+
+  // M2-39: a PDF underlay's page drawn by the app (pdf.js) into the SVG and PNG plots.
+  describe('a PDF underlay’s page', () => {
+    const underlayPart = (o: { contrast?: number; monochrome?: boolean; layersOff?: string[] }) =>
+      ({
+        ...part('Plans'),
+        kind: 'fill',
+        path: [0, 0, 0, 1, 400, 0, 1, 400, 200, 0, 0, 200, 4],
+        underlay: {
+          definition: '9A',
+          fileName: '..\\plans\\Plan.PDF',
+          page: '1',
+          frame: { a: 25.4, b: 0, c: 0, d: 25.4, e: 0, f: 0 },
+          clipped: true,
+          contrast: o.contrast ?? 100,
+          fade: 0,
+          monochrome: o.monochrome ?? false,
+          ...(o.layersOff && { layersOff: o.layersOff }),
+        },
+      }) as PlotPart;
+    /** A letter page of red pixels; the calls it was drawn with. */
+    const source = () => {
+      const calls: {
+        file: string;
+        page: string;
+        region: unknown;
+        w: number;
+        h: number;
+        off?: readonly string[];
+      }[] = [];
+      const open = async (file: string, page: string): Promise<PlotPdfPage | undefined> =>
+        file.endsWith('Plan.PDF')
+          ? {
+              size: { width: 8.5, height: 11 },
+              render: async (region, w, h, off) => {
+                calls.push({ file, page, region, w, h, ...(off && { off }) });
+                const data = new Uint8ClampedArray(w * h * 4);
+                for (let i = 0; i < data.length; i += 4) data.set([255, 0, 0, 255], i);
+                return { width: w, height: h, data };
+              },
+            }
+          : undefined;
+      return { calls, open };
+    };
+    const s = {
+      ...defaultPlotSettings(model),
+      device: 'svg' as const,
+      paper: 'ISO A3',
+      area: 'extents' as const,
+    };
+
+    it('draws the part of the page inside the boundary at the plot’s resolution, its layers off', async () => {
+      const { calls, open } = source();
+      const parts = [underlayPart({ layersOff: ['Notes'] })];
+      const page = plotPage(s, model);
+      const got = await underlayRasters(parts, page, s, model, open, 100);
+      // The boundary is 400 × 200 mm, 15.7 × 7.9 inches of page, cut to the letter page's width.
+      expect(calls).toHaveLength(1);
+      expect(calls[0]).toMatchObject({ file: '..\\plans\\Plan.PDF', page: '1', off: ['Notes'] });
+      const r = calls[0]!.region as { minX: number; minY: number; maxX: number; maxY: number };
+      expect([r.minX, r.minY, r.maxX, r.maxY].map((v) => Math.round(v * 1e9) / 1e9)).toEqual([
+        0,
+        0,
+        8.5,
+        Math.round((200 / 25.4) * 1e9) / 1e9,
+      ]);
+      // Its size on the A3 sheet (the plot fits 400 mm onto the paper's printable width) at 100 dpi.
+      const inches = (page.toPaper.a * 25.4 * 8.5) / 72;
+      expect(calls[0]!.w).toBe(Math.round(inches * 100));
+      const raster = got.get((parts[0] as { underlay: object }).underlay as never)!;
+      expect(raster.page).toEqual({ width: 8.5, height: 11 });
+      expect(Array.from(raster.pixels.data).slice(0, 4)).toEqual([255, 0, 0, 255]);
+    });
+
+    it('applies the underlay’s contrast and monochrome as the screen does', async () => {
+      const { open } = source();
+      const parts = [underlayPart({ contrast: 50, monochrome: true })];
+      const got = await underlayRasters(parts, plotPage(s, model), s, model, open, 10);
+      const raster = [...got.values()][0]!;
+      // Red's luma (76) halfway to mid grey: 102.
+      expect(Array.from(raster.pixels.data).slice(0, 4)).toEqual([102, 102, 102, 255]);
+    });
+
+    it('plots it into the SVG at 300 dpi and the PNG at its resolution; none without the file', async () => {
+      const { calls, open } = source();
+      const parts = [underlayPart({})];
+      const page = plotPage(s, model);
+      const svg = new TextDecoder().decode(
+        (await plotFile(parts, page, s, model, 't', undefined, open)).bytes,
+      );
+      expect(SVG_UNDERLAY_DPI).toBe(300);
+      expect(svg).toContain('<image width="');
+      expect(svg).toContain('xlink:href="data:image/png;base64,');
+      const svgWidth = calls[0]!.w;
+      const png = { ...s, device: 'png' as const, dpi: 100 };
+      let rasterised = '';
+      await plotPng(
+        parts,
+        page,
+        png,
+        model,
+        't',
+        async (text, o) => {
+          rasterised = text;
+          return {
+            width: o.width,
+            height: o.height,
+            data: new Uint8ClampedArray(o.width * o.height * 4),
+          };
+        },
+        open,
+      );
+      expect(rasterised).toContain('<image width="');
+      expect(calls[1]!.w).toBe(Math.round((svgWidth * 100) / 300));
+      // Without the file, or without a source: the boundary only, as before.
+      const missing = {
+        ...underlayPart({}),
+        underlay: { ...(underlayPart({}) as { underlay: object }).underlay, fileName: 'other.pdf' },
+      } as PlotPart;
+      for (const plotted of [
+        await plotFile([missing], page, s, model, 't', undefined, open),
+        await plotFile(parts, page, s, model, 't'),
+      ])
+        expect(new TextDecoder().decode(plotted.bytes)).not.toContain('<image');
+    });
   });
 
   it('names the file by the plotter', () => {

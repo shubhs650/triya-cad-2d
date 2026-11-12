@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { POINTS_PER_MM } from '../src/linetypes';
 import { PATH_L, PATH_M, PATH_Z } from '../src/path';
-import type { PlotItem, PlotPaint } from '../src/plot';
-import { plotSvg, type SvgPlotOptions } from '../src/svg';
+import type { PlotItem, PlotPaint, PlotPathItem, PlotUnderlay } from '../src/plot';
+import { plotSvg, underlayRasterPlan, type SvgPlotOptions } from '../src/svg';
 
 const paint: PlotPaint = {
   color: [255, 0, 0],
@@ -229,6 +229,111 @@ describe('plotSvg', () => {
     );
     expect(s).toContain('<path d="M0 25L100 25" fill="none"');
     expect(s).toContain('<path d="M0 50L10 50L10 40L0 40Z" fill="none" stroke="#ff0000"');
+  });
+
+  // M2-39: an underlay's page content, drawn by the app (pdf.js) as pixels over `region`.
+  const underlay: PlotUnderlay = {
+    definition: '1A',
+    fileName: 'plan.pdf',
+    page: '1',
+    frame: { a: 10, b: 0, c: 0, d: 10, e: 5, f: 0 },
+    clipped: false,
+    contrast: 100,
+    fade: 0,
+    monochrome: false,
+  };
+  const page = { width: 4, height: 2 };
+  const pixels = { width: 2, height: 1, data: [0, 0, 0, 255, 255, 0, 0, 128] };
+
+  it('plots an underlay’s page as its pixels in its frame, with the page edge as its frame', () => {
+    const s = svg(
+      [
+        {
+          kind: 'fill',
+          path: [],
+          paint,
+          underlay: { ...underlay, fade: 25 },
+          layer: 'U',
+          opacity: 0.8,
+        },
+      ],
+      {
+        underlayRasters: (u) =>
+          u.definition === '1A'
+            ? { pixels, region: { minX: 1, minY: 0, maxX: 3, maxY: 2 }, page }
+            : undefined,
+      },
+    );
+    // Two pixels across 2 inches and one down 2: (1, 2) in the page is the bitmap's corner, y
+    // flipped; then 10 drawing units an inch, 5 across, and paper y down from 50.
+    expect(s).toContain(
+      '<image width="2" height="1" preserveAspectRatio="none" transform="matrix(10 0 0 20 15 30)" xlink:href="data:image/png;base64,iVBORw0KGgo',
+    );
+    // Fade 25 % keeps three quarters, times the object's transparency, as the PDF plot does.
+    expect(s).toContain('<g opacity="0.6"><image ');
+    // Unclipped, the frame is the page's edge, as PDFFRAME 1 plots it.
+    expect(s).toContain('<path d="M5 50L45 50L45 30L5 30Z" fill="none" stroke="#ff0000"');
+  });
+
+  it('clips an underlay’s pixels to its boundary and frames the boundary', () => {
+    const s = svg(
+      [
+        {
+          kind: 'fill',
+          path: square(15, 0, 10),
+          paint,
+          underlay: { ...underlay, clipped: true },
+        },
+      ],
+      { underlayRasters: () => ({ pixels, region: { minX: 1, minY: 0, maxX: 3, maxY: 2 }, page }) },
+    );
+    expect(s).toContain('<clipPath id="d1"><path d="M15 50L25 50L25 40L15 40Z"/></clipPath>');
+    expect(s).toMatch(/<g clip-path="url\(#d1\)"><image width="2" height="1" /);
+    expect(s).toContain('<path d="M15 50L25 50L25 40L15 40Z" fill="none" stroke="#ff0000"');
+    expect(s).not.toContain('opacity');
+  });
+
+  it('plans the part of an underlay’s page a plot shows, at the plot’s resolution', () => {
+    const item: PlotPathItem = { kind: 'fill', path: [], paint, underlay };
+    const o = { toPaper: { a: 7.2, b: 0, c: 0, d: 7.2, e: 0, f: 0 } };
+    // An inch of page is 10 units, 72 points, an inch of paper: 100 dpi draws 100 pixels an inch.
+    expect(underlayRasterPlan(item, o, page, 100)).toEqual({
+      region: { minX: 0, minY: 0, maxX: 4, maxY: 2 },
+      width: 400,
+      height: 200,
+    });
+    // Clipped: the boundary's extent on the page (here 1–2 by 0.5–1.5 inches).
+    const clipped: PlotPathItem = {
+      ...item,
+      path: square(15, 5, 10),
+      underlay: { ...underlay, clipped: true },
+    };
+    expect(underlayRasterPlan(clipped, o, page, 100)).toEqual({
+      region: { minX: 1, minY: 0.5, maxX: 2, maxY: 1.5 },
+      width: 100,
+      height: 100,
+    });
+    // The plot area cuts it too (paper points 0–144 across: drawing x 0–20, page x up to 1.5).
+    const area = { ...o, area: { x: 0, y: 0, width: 144, height: 1000 } };
+    expect(underlayRasterPlan(item, area, page, 100)?.region).toEqual({
+      minX: 0,
+      minY: 0,
+      maxX: 1.5,
+      maxY: 2,
+    });
+    // Too many pixels: the resolution drops to fit, the region kept.
+    expect(underlayRasterPlan(item, o, page, 100, 20_000)).toEqual({
+      region: { minX: 0, minY: 0, maxX: 4, maxY: 2 },
+      width: 200,
+      height: 100,
+    });
+    // Nothing of the page on the plot, or a clipped underlay with no boundary: nothing to draw.
+    expect(
+      underlayRasterPlan(item, { ...o, area: { x: 500, y: 0, width: 10, height: 10 } }, page, 100),
+    ).toBeUndefined();
+    expect(
+      underlayRasterPlan({ ...item, underlay: { ...underlay, clipped: true } }, o, page, 100),
+    ).toBeUndefined();
   });
 
   it('lays a background sheet under the plot only when asked', () => {
