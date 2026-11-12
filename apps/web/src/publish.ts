@@ -10,12 +10,24 @@
 // kind; the list takes the sheets of every open drawing (AutoCAD's "Load All Open Drawings"),
 // sheets are removed and moved up or down, and the publish log (AutoCAD's .csv, one row a sheet
 // with its status) is saved beside the PDF when asked for.
+// M2-39 part 4: Publish to PDF, SVG or PNG. AutoCAD publishes to a PDF (one multi-sheet file) or
+// to the plotter a page setup names, which for a raster or SVG plotter writes a file a sheet;
+// Triya's SVG and PNG plotters write a file a sheet, named after it ("<drawing>-<layout>.svg"),
+// downloaded as itself when there is one and as one ZIP (`zipFiles`) when there are more.
 
 import { layoutSheet, type Box, type Layout, type NamedPageSetup } from '@triya/engine';
-import { PdfDocument } from '@triya/pdf';
+import { PdfDocument, zipFiles, type ArchiveFile } from '@triya/pdf';
 import type { PlotPart } from '@triya/render';
 import type { PlotStyleTable } from '@triya/render';
-import { addPlotPage, defaultPlotSettings, pageSetupOf, plotPage, type PlotSpace } from './plot';
+import {
+  addPlotPage,
+  defaultPlotSettings,
+  pageSetupOf,
+  plotPage,
+  type PlotSettings,
+  type PlotSpace,
+} from './plot';
+import type { PlotSetup } from '@triya/render';
 
 export interface PublishSheet {
   /** The open drawing the sheet is in (part 6). */
@@ -75,9 +87,20 @@ export function movedSheet<T>(sheets: readonly T[], i: number, by: -1 | 1): T[] 
   return out;
 }
 
-/** The published PDF's file name. */
-export function publishFileName(drawing: string): string {
-  return `${baseName(drawing)}.pdf`.replace(/[\\/:*?"<>|]/g, '_');
+/** Publish to: the formats a publish writes (part 4). */
+export type PublishDevice = 'pdf' | 'svg' | 'png';
+
+export const PUBLISH_TO: readonly { readonly id: PublishDevice; readonly name: string }[] = [
+  { id: 'pdf', name: 'PDF' },
+  { id: 'svg', name: 'SVG' },
+  { id: 'png', name: 'PNG' },
+];
+
+const safe = (name: string) => name.replace(/[\\/:*?"<>|]/g, '_');
+
+/** The published PDF's file name, or the ZIP's of several SVG or PNG sheets (`ext` "zip"). */
+export function publishFileName(drawing: string, ext = 'pdf'): string {
+  return safe(`${baseName(drawing)}.${ext}`);
 }
 
 /**
@@ -141,6 +164,72 @@ export function publishPdf(
     }
   }
   return { bytes: pages > 0 ? doc.bytes() : undefined, failed };
+}
+
+/** A sheet plotted for a publish: its parts and the space (with its page setup) they are of. */
+export interface PlottedSheet {
+  readonly sheet: string;
+  readonly space: PlotSpace;
+  readonly parts: readonly PlotPart[];
+}
+
+/** Writes a sheet's file in its plotter's format (the app's `plotFile`). */
+export type SheetWriter = (
+  parts: readonly PlotPart[],
+  page: PlotSetup,
+  settings: PlotSettings,
+  space: PlotSpace,
+  title: string,
+) => Promise<{ readonly bytes: Uint8Array }>;
+
+/**
+ * The sheets as SVG or PNG files (part 4), a file a sheet named after it, each plotted with its
+ * page setup to the plotter chosen; a sheet that cannot plot is left out and reported.
+ */
+export async function publishSheetFiles(
+  sheets: readonly PlottedSheet[],
+  device: Exclude<PublishDevice, 'pdf'>,
+  write: SheetWriter,
+): Promise<{ files: ArchiveFile[]; failed: PublishFailure[] }> {
+  const files: ArchiveFile[] = [];
+  const failed: PublishFailure[] = [];
+  for (const { sheet, space, parts } of sheets) {
+    const settings: PlotSettings = { ...defaultPlotSettings(space), device };
+    try {
+      const file = await write(parts, plotPage(settings, space), settings, space, sheet);
+      files.push({ name: safe(`${sheet}.${device}`), bytes: file.bytes });
+    } catch (e) {
+      failed.push({ sheet, message: e instanceof Error ? e.message : String(e) });
+    }
+  }
+  return { files, failed };
+}
+
+/** The media type of each file a publish downloads. */
+const MEDIA: Record<string, string> = {
+  pdf: 'application/pdf',
+  svg: 'image/svg+xml',
+  png: 'image/png',
+  zip: 'application/zip',
+};
+
+/**
+ * What a publish to SVG or PNG downloads: the one file as itself, or every file in one ZIP named
+ * `zipName` (always a ZIP when `zip` is "always", as Export's All layouts names one); nothing when
+ * no sheet plotted.
+ */
+export function publishedDownload(
+  files: readonly ArchiveFile[],
+  zipName: string,
+  zip: 'several' | 'always' = 'several',
+): { name: string; bytes: Uint8Array; type: string } | undefined {
+  const [first] = files;
+  if (!first) return undefined;
+  if (files.length === 1 && zip === 'several') {
+    const ext = first.name.slice(first.name.lastIndexOf('.') + 1).toLowerCase();
+    return { name: first.name, bytes: first.bytes, type: MEDIA[ext] ?? 'application/octet-stream' };
+  }
+  return { name: zipName, bytes: zipFiles(files), type: MEDIA.zip! };
 }
 
 /** A sheet's line in the publish log. */

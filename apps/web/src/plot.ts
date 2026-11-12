@@ -53,6 +53,7 @@ import {
 import {
   PAPER_SIZES,
   PdfDocument,
+  PngWriter,
   encodePng,
   mmToPoints,
   plotItems,
@@ -70,7 +71,9 @@ import {
   BUNDLED_PLOT_STYLE_TABLES,
   POINTS_PER_MM,
   bundledPlotStyleTable,
+  rasterBands,
   rasterSize,
+  rasterTooBig,
   rasterizeSvg,
   plotSetup,
   type PlotPart,
@@ -773,7 +776,11 @@ export function plotSvgFile(
   });
 }
 
-/** A plot of one space as a PNG file (Triya PNG): its SVG drawn at the resolution chosen. */
+/**
+ * A plot of one space as a PNG file (Triya PNG): its SVG drawn at the resolution chosen. One
+ * bigger than `MAX_RASTER_PIXELS` is drawn and written a band of rows at a time (M2-39 part 4),
+ * up to `MAX_RASTER_SIDE` pixels a side.
+ */
 export async function plotPng(
   parts: readonly PlotPart[],
   page: PlotSetup,
@@ -783,6 +790,9 @@ export async function plotPng(
   rasterize: typeof rasterizeSvg = rasterizeSvg,
   underlayPage?: UnderlayPageSource,
 ): Promise<Uint8Array> {
+  const size = rasterSize(page, settings.dpi);
+  const tooBig = rasterTooBig(size.width, size.height);
+  if (tooBig) throw new RangeError(tooBig);
   const underlays =
     underlayPage &&
     (await underlayRasters(parts, page, settings, space, underlayPage, settings.dpi));
@@ -797,12 +807,18 @@ export async function plotPng(
     underlays,
     true,
   );
-  const size = rasterSize(page, settings.dpi);
-  const pixels = await rasterize(svg, {
-    ...size,
-    ...(settings.background === 'white' && { background: '#ffffff' }),
-  });
-  return encodePng(pixels, { dpi: settings.dpi });
+  const background = settings.background === 'white' ? { background: '#ffffff' } : {};
+  const bands = rasterBands(size.width, size.height);
+  if (bands.length === 1) {
+    return encodePng(await rasterize(svg, { ...size, ...background }), { dpi: settings.dpi });
+  }
+  const png = new PngWriter(size.width, size.height, { dpi: settings.dpi });
+  let top = 0;
+  for (const rows of bands) {
+    png.rows(await rasterize(svg, { ...size, ...background, top, rows }));
+    top += rows;
+  }
+  return png.end();
 }
 
 /** A plot of one space in the plotter's format, with its media type. */

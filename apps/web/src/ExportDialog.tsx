@@ -1,7 +1,7 @@
 // The Export Data (EXPORT) and Save As PDF (EXPORTPDF) dialogs (M2-39 part 2), with AutoCAD's
 // labels (UI_SPEC.md §7): File name, Files of type (Export Data only: PDF, SVG, PNG and DXF, see
 // export.ts), and Export: Display, Extents or Window in model space, Current layout or All layouts
-// in a layout (All layouts for a PDF only). Each plot uses the space's current page setup, as
+// in a layout (All layouts as SVG or PNG since M2-39 part 4: a file a layout in one ZIP). Each plot uses the space's current page setup, as
 // AutoCAD's "Page setup: Current" does. Choosing Window hides the dialog and the command asks for
 // the corners at the command line, then shows the dialog again with them (Window< picks again).
 // Save writes the file, which downloads as a plot does; Cancel (and Esc) closes.
@@ -27,7 +27,7 @@ import {
 import { plotFile, plotPage, type PlotSpace, type UnderlayPageSource } from './plot';
 import { plotRequest } from './plot-preview';
 import { plotSpaceOf } from './plot-spaces';
-import { publishPdf } from './publish';
+import { publishPdf, publishSheetFiles, publishedDownload, type PlottedSheet } from './publish';
 
 /** EXPORT's Export Data or EXPORTPDF's Save As PDF. */
 export type ExportKind = 'export' | 'exportpdf';
@@ -183,7 +183,7 @@ function ExportBody({
     const fileName =
       s.fileName === suggested
         ? exportFileName(doc.name, space, type, area)
-        : withExportType(s.fileName, type);
+        : withExportType(s.fileName, type, area);
     const next = { ...s, type, area, fileName };
     if (area === 'window' && (s.area !== 'window' || !s.window)) {
       // Export Window: the corners at the command line, then the dialog again.
@@ -203,13 +203,13 @@ function ExportBody({
   const save = async () => {
     if (!s || !space || busy) return;
     setError(undefined);
-    const name = withExportType(s.fileName, s.type);
+    const name = withExportType(s.fileName, s.type, s.area);
     setBusy(true);
     try {
       if (s.type === 'dxf') {
         download(name, await exportDxf(doc.id), EXPORT_MEDIA.dxf);
       } else if (s.area === 'all') {
-        await exportLayouts(name);
+        await exportLayouts(name, s.type);
       } else {
         const controller = controllerOf(doc.id, block);
         if (!controller) throw new Error('There is nothing to export.');
@@ -240,8 +240,9 @@ function ExportBody({
     }
   };
 
-  // All layouts: one PDF, a page per layout in tab order with its page setup, as PUBLISH makes.
-  const exportLayouts = async (name: string) => {
+  // All layouts: one PDF, a page per layout in tab order with its page setup, as PUBLISH makes;
+  // as SVG or PNG (part 4), a file a layout in one ZIP, as PUBLISH to SVG or PNG writes them.
+  const exportLayouts = async (name: string, type: Exclude<ExportType, 'dxf'>) => {
     const active = controllerOf(doc.id, block);
     if (!active) throw new Error('There is nothing to export.');
     const tables = userTables?.();
@@ -249,7 +250,7 @@ function ExportBody({
       (l) => l.block !== doc.opened.modelSpace,
     );
     const base = doc.name.replace(/\.[^.]+$/, '');
-    const plotted = [];
+    const plotted: PlottedSheet[] = [];
     const failed: string[] = [];
     for (const l of layouts) {
       const sheet = `${base}-${l.name}`;
@@ -263,10 +264,20 @@ function ExportBody({
         failed.push(`${sheet}: ${e instanceof Error ? e.message : String(e)}`);
       }
     }
-    const result = publishPdf(plotted, base, underlayFile);
-    failed.push(...result.failed.map((f) => `${f.sheet}: ${f.message}`));
-    if (!result.bytes) throw new Error(failed[0] ?? 'The drawing has no layouts to export.');
-    download(name, result.bytes, EXPORT_MEDIA.pdf);
+    if (type === 'pdf') {
+      const result = publishPdf(plotted, base, underlayFile);
+      failed.push(...result.failed.map((f) => `${f.sheet}: ${f.message}`));
+      if (!result.bytes) throw new Error(failed[0] ?? 'The drawing has no layouts to export.');
+      download(name, result.bytes, EXPORT_MEDIA.pdf);
+    } else {
+      const result = await publishSheetFiles(plotted, type, (parts, page, settings, sp, title) =>
+        plotFile(parts, page, settings, sp, title, underlayFile, underlayPage),
+      );
+      failed.push(...result.failed.map((f) => `${f.sheet}: ${f.message}`));
+      const file = publishedDownload(result.files, name, 'always');
+      if (!file) throw new Error(failed[0] ?? 'The drawing has no layouts to export.');
+      download(file.name, file.bytes, file.type);
+    }
     if (failed.length > 0) throw new Error(`Not exported: ${failed.join('; ')}`);
   };
 
@@ -349,6 +360,7 @@ function ExportBody({
           {areas.length > 0 && (
             <p className="export-note">
               Page setup: Current ({space.name}){s.area === 'all' ? ', each layout its own' : ''}
+              {s.area === 'all' && s.type !== 'pdf' && '. A file a layout, saved in one ZIP.'}
             </p>
           )}
         </div>

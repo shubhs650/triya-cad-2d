@@ -3,12 +3,14 @@
 // picks a PDF, SVG or PNG plot or a DXF of the whole drawing. Window hides the dialog for the
 // corners, as PLOT's Window< does. The DXF holds the drawing's unsaved changes and leaves the
 // drawing's own file as it was.
+// M2-39 part 4: All layouts as SVG or PNG is a file a layout, saved in one ZIP.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
 import { DWG, activeCanvas, expectShown, openWithPicker, paperPixels } from '../app/page';
 import { startApp } from '../app/server';
+import { unzip } from '../app/zip';
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -104,6 +106,50 @@ test('EXPORTPDF on a layout exports all layouts into one PDF', async ({ page }) 
   const pdf = await readPdf(download);
   expect(pdf.pages).toBe(layouts.length);
   expect(pdf.labels).toEqual(layouts);
+});
+
+// Part 4: All layouts to SVG, a file a layout with its page setup, as PUBLISH to SVG writes them.
+test('EXPORT on a layout exports all layouts as SVG files in one ZIP (part 4)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
+  const layouts = (await tabs.allTextContents()).slice(1).map((t) => t.trim());
+  await tabs.nth(1).click();
+  await expect(page.getByTestId('space')).toHaveText('PAPER');
+  await expect.poll(() => paperPixels(page), { timeout: 15_000 }).toBeGreaterThan(50_000);
+  await command(page, 'EXPORT');
+  const d = page.getByRole('dialog', { name: 'Export Data' });
+  await d.getByLabel('Files of type').selectOption('svg');
+  const area = d.getByLabel('Export');
+  await expect(area.locator('option')).toHaveText(['Current layout', 'All layouts']);
+  await area.selectOption('all');
+  await expect(d.getByLabel('File name')).toHaveValue('sample_AC1018.zip');
+  await expect(d.getByText('A file a layout, saved in one ZIP.')).toBeVisible();
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'Save' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  expect(download.suggestedFilename()).toBe('sample_AC1018.zip');
+  const files = unzip(new Uint8Array(readFileSync((await download.path())!)));
+  expect(files.map((f) => f.name)).toEqual(layouts.map((l) => `sample_AC1018-${l}.svg`));
+  for (const [i, f] of files.entries()) {
+    const svg = new TextDecoder().decode(f.bytes);
+    expect(svg).toContain(`<title>sample_AC1018-${layouts[i]}</title>`);
+    expect(svg).toMatch(/inkscape:groupmode="layer"/);
+  }
+  // Back to a PDF, the name follows: one multi-page PDF.
+  await command(page, 'EXPORT');
+  await d.getByLabel('Export').selectOption('all');
+  await d.getByLabel('Files of type').selectOption('png');
+  await expect(d.getByLabel('File name')).toHaveValue('sample_AC1018.zip');
+  await d.getByLabel('Files of type').selectOption('pdf');
+  await expect(d.getByLabel('File name')).toHaveValue('sample_AC1018.pdf');
+  await d.getByRole('button', { name: 'Cancel' }).click();
 });
 
 test('EXP exports an SVG plot, and a DXF with the unsaved changes, by file type', async ({

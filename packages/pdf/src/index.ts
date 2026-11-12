@@ -89,7 +89,8 @@ export { TrueTypeFont } from './truetype';
 export { SFNT_CFF, SFNT_TRUETYPE, SfntFont, cmapTable, readSfnt, writeSfnt } from './sfnt';
 export { SvgFont, SvgFonts, svgText } from './svg-text';
 export { CffFont, cffDict, cffIndex, readDict, readIndex } from './cff';
-export { base64, crc32, encodePng, type PngOptions } from './png';
+export { base64, crc32, encodePng, PngWriter, type PngOptions } from './png';
+export { uniqueFileNames, zipFiles, type ArchiveFile } from './zip';
 export {
   plotSvg,
   underlayRasterPlan,
