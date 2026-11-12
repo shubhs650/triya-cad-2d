@@ -1,0 +1,1 @@
+- M2-39 part 3 (#299): TrueType text in an SVG plot or export is SVG text you can find, copy and edit, in a subset of its font embedded in the file (outlines still for a font whose licence forbids embedding, and in PNGs).

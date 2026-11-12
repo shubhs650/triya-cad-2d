@@ -86,7 +86,8 @@ export {
 export { PAPER_SIZES, mmToPoints, paperSize, type PaperSize } from './paper';
 export { EmbeddedFont, PdfFonts, type PlotFont } from './fonts';
 export { TrueTypeFont } from './truetype';
-export { SFNT_CFF, SFNT_TRUETYPE, SfntFont, readSfnt, writeSfnt } from './sfnt';
+export { SFNT_CFF, SFNT_TRUETYPE, SfntFont, cmapTable, readSfnt, writeSfnt } from './sfnt';
+export { SvgFont, SvgFonts, svgText } from './svg-text';
 export { CffFont, cffDict, cffIndex, readDict, readIndex } from './cff';
 export { base64, crc32, encodePng, type PngOptions } from './png';
 export {
