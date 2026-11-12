@@ -8,6 +8,7 @@ import {
   matchKeyword,
   parseAngle,
   parseCoordinate,
+  parseDistance,
   parseNumber,
   parseOsnapOverride,
   parsePointModifier,
@@ -42,6 +43,63 @@ describe('parseNumber', () => {
       expect(parseNumber(text)).toBeUndefined();
     },
   );
+});
+
+// M2-35 part 7: lengths as AutoCAD reads them in the drawing's units (Help, "UNITS (Command)",
+// "To Enter Architectural or Engineering Values"): feet and inches (`'` and `"`) in Engineering
+// (LUNITS 3) and Architectural (4), whose drawing unit is the inch; a whole number and a fraction
+// (`2-1/2`, or `2 1/2` as the Properties palette shows one) in Architectural and Fractional (5).
+// AutoCAD types the fraction's hyphen at the command line because a space ends the input there.
+describe('parseDistance', () => {
+  it.each([
+    [4, `5'6"`, 66],
+    [4, `5'-6"`, 66],
+    [4, `5'6`, 66],
+    [4, `5'`, 60],
+    [4, `6"`, 6],
+    [4, `6`, 6],
+    [4, `5'6-1/2"`, 66.5],
+    [4, `5'-6-1/2"`, 66.5],
+    [4, `5'-6 1/2"`, 66.5],
+    [4, `0'-0 1/2"`, 0.5],
+    [4, `1/2"`, 0.5],
+    [4, `6-1/2`, 6.5],
+    [4, `-2'-6 1/4"`, -30.25],
+    [4, `1-1/2'`, 18],
+    [4, `5.5'`, 66],
+    [4, `102'-10 9/16"`, 1234.5625],
+    [4, `12*2`, 24],
+    [4, `10-2`, 8],
+    [3, `5'-6.5000"`, 66.5],
+    [3, `5'6.5`, 66.5],
+    [3, `-2'-6.25"`, -30.25],
+    [5, `66 1/2`, 66.5],
+    [5, `66-1/2`, 66.5],
+    [5, `3/8`, 0.375],
+    [5, `-30 1/4`, -30.25],
+    [1, `6.6500E+01`, 66.5],
+    [2, `1-1/2`, 0.5],
+    [2, `66.5`, 66.5],
+  ])('LUNITS %d: %s is %d', (lunits, text, value) => {
+    expect(parseDistance(text, lunits)).toBeCloseTo(value, 12);
+  });
+
+  it.each([
+    [2, `5'6"`],
+    [1, `5'`],
+    [5, `5'6"`],
+    [5, `6"`],
+    [4, `5'6'`],
+    [4, `6"5'`],
+    [4, `1/0"`],
+    [4, `5'-`],
+    [4, `'`],
+    [4, `"`],
+    [4, ``],
+    [3, `abc`],
+  ])('LUNITS %d: %j is not a distance', (lunits, text) => {
+    expect(parseDistance(text, lunits)).toBeUndefined();
+  });
 });
 
 describe('parseAngle', () => {
@@ -106,6 +164,23 @@ describe('parseCoordinate', () => {
       expect(parseCoordinate(text, { lastPoint: last })).toBe('invalid');
     },
   );
+
+  it.each([
+    [`5',3'6"`, { x: 60, y: 42 }],
+    [`@1'-6",-2'`, { x: 28, y: -4 }],
+    [`10'<90`, { x: 0, y: 120 }],
+    [`@6-1/2<0`, { x: 16.5, y: 20 }],
+    [`2'-6 1/2", 1/2"`, { x: 30.5, y: 0.5 }],
+  ])('%s in architectural units (M2-35 part 7)', (text, point) => {
+    const p = parseCoordinate(text, { lastPoint: last, lunits: 4 });
+    expect(p).not.toBe('invalid');
+    expect((p as { x: number }).x).toBeCloseTo(point.x, 9);
+    expect((p as { y: number }).y).toBeCloseTo(point.y, 9);
+  });
+
+  it('reads feet only in engineering and architectural units', () => {
+    expect(parseCoordinate(`5',3'`, { lunits: 2 })).toBe('invalid');
+  });
 
   it.each(['10', 'Close', ''])('%j is not a coordinate', (text) => {
     expect(parseCoordinate(text)).toBeUndefined();
