@@ -20,7 +20,7 @@ import { SelectionLoop, type StepResult } from '../selection/loop';
 import { onLockedLayers } from '../selection/rules';
 import type { Entity, EntityGeometry } from '../model/types';
 import { hasEditableAttributes } from './modify/attributes';
-import { textEdited } from './draw/text';
+import { editContents, textEdited } from './draw/text';
 import {
   prompts,
   type CommandContext,
@@ -537,6 +537,31 @@ export class PromptBus {
           });
           if (report!.invalid) ctx.message(`${report!.invalid}.`);
           for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
+        },
+      };
+      await this.#start(def, false, false);
+    });
+  }
+
+  /**
+   * The Properties palette's `...` on an MTEXT's Contents (M2-35 part 9, AutoCAD 2024's
+   * "Properties Palette — Text"): the In-Place Text Editor on the one MTEXT the palette shows (of
+   * the type `filter`), as TEXTEDIT opens it. Like the palette's other edits it is one undo step
+   * the command line does not echo, and the MTEXT stays selected; a running command is cancelled
+   * first. With anything but one MTEXT shown it does nothing (the row offers no button then).
+   */
+  editContents(filter?: EntityType): Promise<void> {
+    return this.#enqueue(async () => {
+      const shown = filtered(this.#model, this.#idle.ids, filter);
+      const entity = shown.length === 1 && shown[0]!.geom.kind === 'MTEXT' ? shown[0] : undefined;
+      if (!entity) return;
+      if (this.#stack.length > 0) await this.#cancel();
+      const def: CommandDef = {
+        name: 'PROPERTIES',
+        usesSelection: 'none',
+        keepsSelection: true,
+        async *run(ctx) {
+          yield* editContents(ctx, entity);
         },
       };
       await this.#start(def, false, false);

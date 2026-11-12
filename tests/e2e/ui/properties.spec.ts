@@ -580,3 +580,60 @@ test('steps through a polyline’s vertices and moves one from the palette', asy
   await page.mouse.move(box.x + 40, box.y + 40);
   await page.screenshot({ path: test.info().outputPath('2-vertex-moved.png') });
 });
+
+test('edits an MTEXT’s contents in the In-Place Text Editor from the palette', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await type(page, '-MTEXT', 'Specify first corner:');
+  await type(page, '1000020,1000080', /^Specify opposite corner/);
+  await type(page, '1000140,1000040', 'Enter text:');
+  await type(page, 'GENERAL NOTES', 'Enter text:');
+  await type(page, '', 'Command:');
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/MText \(1\)/);
+  await objects.selectOption({ label: 'MText (1)' });
+  await expect(palette.getByLabel('Contents', { exact: true })).toHaveText('GENERAL NOTES');
+  const more = palette.getByRole('button', { name: 'Edit Contents in the text editor' });
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('1-contents-button.png') });
+  await more.click();
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveText('GENERAL NOTES');
+  await page.keyboard.press('Control+End');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('1. ALL DIMENSIONS IN MM');
+  await page.screenshot({ path: test.info().outputPath('2-editing.png') });
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  // The MTEXT stays selected and the palette shows its new contents.
+  await expect(palette.getByLabel('Contents', { exact: true })).toHaveText(
+    'GENERAL NOTES\\P1. ALL DIMENSIONS IN MM',
+  );
+  await expect(objects).toContainText(/MText \(1\)/);
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('3-edited.png') });
+  // One undo step takes it back.
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+z');
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        for (const cs of [...(window as unknown as Dev).triyaDev.changes()].reverse())
+          for (const u of cs.entities?.updated ?? [])
+            if (u.after.geom.kind === 'MTEXT') return u.after.geom.contents;
+        return undefined;
+      }),
+    )
+    .toBe('GENERAL NOTES');
+});

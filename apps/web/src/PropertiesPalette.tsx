@@ -10,7 +10,9 @@
 // Color's last choice, "Select Color...", opens AutoCAD's Select Color dialog (M2-35 part 4).
 // One polyline shows its vertices one at a time (M2-35 part 8): the Vertex spinner steps through
 // them, and the vertex shown is marked on the canvas while one of its rows has the focus.
-// Fully keyboard operable: every value is a native select or text field.
+// An MTEXT's Contents has AutoCAD's "..." button, which opens the In-Place Text Editor on it
+// (M2-35 part 9); the MTEXT stays selected and the palette shows what the editor wrote.
+// Fully keyboard operable: every value is a native select, text field or button.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   colorValue,
@@ -53,6 +55,7 @@ export function PropertiesPalette({
     });
   const set = (key: string, value: string) =>
     engines.command(doc.id, { kind: 'property', edit: { key, value } });
+  const openEditor = () => engines.command(doc.id, { kind: 'property-editor', key: 'contents' });
   const stepVertex = (vertex: number) =>
     engines.command(doc.id, { kind: 'property-vertex', vertex });
   const markVertex = (point: Vec2 | undefined) =>
@@ -78,6 +81,7 @@ export function PropertiesPalette({
           sheet={sheet}
           narrow={narrow}
           set={set}
+          openEditor={openEditor}
           stepVertex={stepVertex}
           markVertex={markVertex}
           patternNames={patternNames}
@@ -94,6 +98,7 @@ function PropertySections({
   sheet,
   narrow,
   set,
+  openEditor,
   stepVertex,
   markVertex,
   patternNames,
@@ -101,6 +106,7 @@ function PropertySections({
   sheet: PropertySheet;
   narrow: (type: string) => void;
   set: (key: string, value: string) => void;
+  openEditor: () => void;
   stepVertex: (vertex: number) => void;
   markVertex: (point: Vec2 | undefined) => void;
   patternNames: readonly string[];
@@ -173,6 +179,7 @@ function PropertySections({
                       <PropertyField
                         row={r}
                         stepVertex={stepVertex}
+                        openEditor={openEditor}
                         units={sheet.units}
                         set={set}
                         suggestions={r.key === 'patternName' ? patternNames : undefined}
@@ -198,6 +205,7 @@ const SELECT_COLOR = 'select-color';
 function PropertyField({
   row,
   stepVertex,
+  openEditor,
   units,
   set,
   suggestions,
@@ -205,6 +213,8 @@ function PropertyField({
 }: {
   row: PropertyRow;
   stepVertex: (vertex: number) => void;
+  /** A row's `...` button (`PropertyRow.editor`): the In-Place Text Editor on the object. */
+  openEditor: () => void;
   units: PropertyUnits;
   set: (key: string, value: string) => void;
   /** Values a typed field offers as it is typed (a datalist). */
@@ -213,9 +223,24 @@ function PropertyField({
   selectColor?: (() => void) | undefined;
 }) {
   if (row.readOnly) {
-    return (
+    const shown = (
       <span className="read-only" aria-label={row.label}>
         {valueText(row, units)}
+      </span>
+    );
+    if (!row.editor) return shown;
+    return (
+      <span className="with-editor">
+        {shown}
+        <button
+          type="button"
+          className="row-editor"
+          aria-label={`Edit ${row.label} in the text editor`}
+          title="Opens the In-Place Text Editor"
+          onClick={openEditor}
+        >
+          ...
+        </button>
       </span>
     );
   }

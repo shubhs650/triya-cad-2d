@@ -1,0 +1,1 @@
+- M2-35 part 9 (#309): an MTEXT's Contents row in the Properties palette has AutoCAD's `...` button, which opens the In-Place Text Editor on it; the MTEXT stays selected and the edit is one undo step.

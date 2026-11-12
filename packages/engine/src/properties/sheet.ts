@@ -82,6 +82,11 @@ export interface PropertyRow {
    * changes which vertex the sheet shows (the session's `property-vertex`), not the drawing.
    */
   readonly spin?: { readonly min: number; readonly max: number };
+  /**
+   * The row's `...` button opens the In-Place Text Editor on the one object shown (an MTEXT's
+   * Contents, M2-35 part 9): the session's `property-editor`, `PromptBus.editContents`.
+   */
+  readonly editor?: true;
 }
 
 export interface PropertySection {
@@ -791,14 +796,17 @@ function typeSections(
     }
     case 'MTEXT': {
       const g = (e: Entity) => geomOf<'MTEXT'>(e);
+      // AutoCAD 2024 edits an MTEXT's contents in the In-Place Text Editor, which the row's
+      // `...` button opens; the editor edits one object, so several show no button.
+      const contents = row(es, {
+        key: 'contents',
+        label: 'Contents',
+        kind: 'text',
+        readOnly: true,
+        get: (e) => g(e).contents,
+      });
       add('Text', [
-        row(es, {
-          key: 'contents',
-          label: 'Contents',
-          kind: 'text',
-          readOnly: true,
-          get: (e) => g(e).contents,
-        }),
+        es.length === 1 ? { ...contents, editor: true as const } : contents,
         row(es, {
           key: 'style',
           label: 'Style',
