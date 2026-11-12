@@ -562,6 +562,39 @@ describe('plotting to SVG and PNG', () => {
     expect(drawn).toMatch(/<path d="M[^"]+" fill="#ff0000"/);
   });
 
+  // M2-39 part 4: a PNG over 64 Mpx is drawn and written a band of rows at a time.
+  it('draws a PNG over 64 million pixels in bands of rows and writes every row', async () => {
+    // ISO A1 at 300 dpi: 9933 × 7016 pixels, 69.7 million.
+    const s = { ...defaultPlotSettings(model), device: 'png' as const, paper: 'ISO A1', dpi: 300 };
+    const bands: { top?: number; rows?: number; width: number; height: number }[] = [];
+    const png = await plotPng([part('0')], plotPage(s, model), s, model, 't', async (_svg, o) => {
+      bands.push(o);
+      const rows = o.rows ?? o.height;
+      return { width: o.width, height: rows, data: new Uint8ClampedArray(o.width * rows * 4) };
+    });
+    expect(bands.length).toBeGreaterThan(4);
+    let top = 0;
+    for (const b of bands) {
+      expect(b).toMatchObject({ width: 9933, height: 7016, top });
+      expect(b.width * b.rows!).toBeLessThanOrEqual(16_000_000);
+      top += b.rows!;
+    }
+    expect(top).toBe(7016);
+    const view = new DataView(png.buffer, png.byteOffset);
+    expect([view.getUint32(16), view.getUint32(20)]).toEqual([9933, 7016]);
+    expect(view.getUint32(41)).toBe(11811);
+    // More than 32,767 pixels on a side is refused before anything is drawn.
+    const huge = { ...s, dpi: 1200, paper: 'ISO A0' };
+    let drawn = 0;
+    await expect(
+      plotPng([part('0')], plotPage(huge, model), huge, model, 't', async () => {
+        drawn++;
+        throw new Error('not reached');
+      }),
+    ).rejects.toThrow(/more than 32,767 on a side/);
+    expect(drawn).toBe(0);
+  });
+
   // M2-39: a PDF underlay's page drawn by the app (pdf.js) into the SVG and PNG plots.
   describe('a PDF underlay’s page', () => {
     const underlayPart = (o: { contrast?: number; monochrome?: boolean; layersOff?: string[] }) =>

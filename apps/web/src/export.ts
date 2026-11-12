@@ -4,8 +4,8 @@
 // with its current page setup (Page setup: Current). Triya's formats are the ones it writes: a
 // PDF, SVG or PNG plot (the Plot dialog's Triya PDF, SVG and PNG plotters) and an AC1032 DXF of
 // the whole drawing (DEC-047), which leaves the drawing's own file and its unsaved changes as
-// they were, unlike Save As. All layouts makes one multi-page PDF, as PUBLISH does; an SVG or a
-// PNG is one sheet (PUBLISH to SVG/PNG is still M2-39's).
+// they were, unlike Save As. All layouts makes one multi-page PDF, as PUBLISH does; for an SVG
+// or a PNG (part 4) it makes a file a layout, as PUBLISH to SVG or PNG does, in one ZIP.
 import { dxfName } from './save';
 import { defaultPlotSettings, type PlotSettings, type PlotSpace } from './plot';
 import type { Box } from '@triya/engine';
@@ -29,6 +29,9 @@ export const EXPORT_MEDIA: Record<ExportType, string> = {
   dxf: 'application/dxf',
 };
 
+/** A ZIP's media type: All layouts as SVG or PNG files (part 4). */
+export const ZIP_MEDIA = 'application/zip';
+
 /** Save As PDF's Export list: model space's areas, or a layout's. */
 export type ExportArea = 'display' | 'extents' | 'window' | 'current' | 'all';
 
@@ -43,7 +46,7 @@ export const EXPORT_AREA_LABELS: Record<ExportArea, string> = {
 /** What the Export list offers for a space and a file type; nothing for the whole-drawing DXF. */
 export function exportAreas(space: PlotSpace, type: ExportType): ExportArea[] {
   if (type === 'dxf') return [];
-  if (space.sheet) return type === 'pdf' ? ['current', 'all'] : ['current'];
+  if (space.sheet) return ['current', 'all'];
   const out: ExportArea[] = [];
   if (space.display) out.push('display');
   if (space.extents) out.push('extents');
@@ -60,6 +63,11 @@ export function defaultExportArea(space: PlotSpace): ExportArea {
 const safe = (name: string) => name.replace(/[\\/:*?"<>|]/g, '_');
 const baseName = (drawing: string) => drawing.replace(/\.[^.]+$/, '');
 
+/** The extension an export's file has: a ZIP for All layouts as SVG or PNG files (part 4). */
+export function exportExtension(type: ExportType, area?: ExportArea): string {
+  return area === 'all' && (type === 'svg' || type === 'png') ? 'zip' : type;
+}
+
 /**
  * The file name the dialog suggests: "<drawing>-<space>" for one sheet, as AutoCAD's Save As PDF
  * names it, the drawing's own name for All layouts and for a DXF.
@@ -71,17 +79,21 @@ export function exportFileName(
   area: ExportArea | undefined,
 ): string {
   if (type === 'dxf') return safe(dxfName(drawing));
-  if (area === 'all') return safe(`${baseName(drawing)}.pdf`);
+  if (area === 'all') return safe(`${baseName(drawing)}.${exportExtension(type, area)}`);
   return safe(`${baseName(drawing)}-${space.name}.${type}`);
 }
 
-const EXTENSION = /\.(pdf|svg|png|dxf)$/i;
+const EXTENSION = /\.(pdf|svg|png|dxf|zip)$/i;
 
-/** The file name with the extension of the type chosen, as a file dialog changes it. */
-export function withExportType(fileName: string, type: ExportType): string {
+/**
+ * The file name with the extension of the type chosen (a ZIP for All layouts as SVG or PNG), as
+ * a file dialog changes it.
+ */
+export function withExportType(fileName: string, type: ExportType, area?: ExportArea): string {
+  const ext = exportExtension(type, area);
   const name = fileName.trim();
-  if (name === '') return `Drawing1.${type}`;
-  return EXTENSION.test(name) ? name.replace(EXTENSION, `.${type}`) : `${name}.${type}`;
+  if (name === '') return `Drawing1.${ext}`;
+  return EXTENSION.test(name) ? name.replace(EXTENSION, `.${ext}`) : `${name}.${ext}`;
 }
 
 /**

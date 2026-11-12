@@ -5,6 +5,7 @@ import {
   EXPORT_TYPES,
   defaultExportArea,
   exportAreas,
+  exportExtension,
   exportFileName,
   exportSettings,
   withExportType,
@@ -43,10 +44,10 @@ describe('exportAreas', () => {
     expect(exportAreas({ ...model, display: undefined }, 'svg')).toEqual(['extents', 'window']);
   });
 
-  it('offers Current layout in a layout, and All layouts for a PDF only', () => {
+  it('offers Current layout and All layouts in a layout, for every plot type (part 4)', () => {
     expect(exportAreas(layout, 'pdf')).toEqual(['current', 'all']);
-    expect(exportAreas(layout, 'svg')).toEqual(['current']);
-    expect(exportAreas(layout, 'png')).toEqual(['current']);
+    expect(exportAreas(layout, 'svg')).toEqual(['current', 'all']);
+    expect(exportAreas(layout, 'png')).toEqual(['current', 'all']);
   });
 
   it('offers nothing for a DXF, which is the whole drawing', () => {
@@ -72,6 +73,11 @@ describe('exportFileName', () => {
     expect(exportFileName('plan.dxf', layout, 'pdf', 'all')).toBe('plan.pdf');
     expect(exportFileName('plan.dwg', model, 'dxf', undefined)).toBe('plan.dxf');
   });
+
+  it('names all layouts as SVG or PNG files a ZIP after the drawing (part 4)', () => {
+    expect(exportFileName('plan.dxf', layout, 'svg', 'all')).toBe('plan.zip');
+    expect(exportFileName('plan.dxf', layout, 'png', 'all')).toBe('plan.zip');
+  });
 });
 
 describe('withExportType', () => {
@@ -81,6 +87,15 @@ describe('withExportType', () => {
     expect(withExportType('plan-Model', 'dxf')).toBe('plan-Model.dxf');
     expect(withExportType('plan.v2', 'pdf')).toBe('plan.v2.pdf');
     expect(withExportType('  ', 'pdf')).toBe('Drawing1.pdf');
+  });
+
+  it('makes All layouts as SVG or PNG a ZIP, and back (part 4)', () => {
+    expect(withExportType('plan.pdf', 'svg', 'all')).toBe('plan.zip');
+    expect(withExportType('plan', 'png', 'all')).toBe('plan.zip');
+    expect(withExportType('plan.zip', 'pdf', 'all')).toBe('plan.pdf');
+    expect(withExportType('plan.zip', 'svg', 'current')).toBe('plan.svg');
+    expect(exportExtension('svg', 'all')).toBe('zip');
+    expect(exportExtension('pdf', 'all')).toBe('pdf');
   });
 });
 

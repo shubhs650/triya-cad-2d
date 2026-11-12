@@ -1,6 +1,6 @@
 // The Publish dialog (M2-17 part 2; PUBLISH), with AutoCAD's labels (UI_SPEC.md §7): the drawing's
 // sheets (model space, then each layout in tab order) with their page setups and a check to
-// include each; "Publish to: PDF"; Publish plots the included sheets into one PDF that downloads,
+// include each; "Publish to: PDF" (PDF, SVG or PNG since M2-39 part 4); Publish plots the included sheets into one PDF that downloads,
 // each page labelled with its layout and bookmarked with its sheet's name. Cancel (and Esc)
 // closes. A sheet that cannot plot is reported in its Status and the others still publish, as
 // AutoCAD's publish log does.
@@ -12,24 +12,39 @@
 // its kind in its drawing; Load All Open Drawings adds the sheets of the other open drawings (a
 // sheet plots from its own drawing's canvas); Remove Sheets, Move Sheet Up and Move Sheet Down act
 // on the selected sheet (its row clicked or tabbed into); "Save publish log" downloads the log beside the PDF.
+//
+// M2-39 part 4: Publish to PDF, SVG or PNG; an SVG or PNG publish writes a file a sheet,
+// downloaded as itself when one sheet published and as one ZIP when more did (publish.ts).
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { download, downloadPdf } from './PlotDialog';
 import { controllerOf } from './canvas/registry';
 import { spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import type { PlotStyleTable } from '@triya/render';
-import { defaultPlotSettings, pageSetupsOf, withPageSetup } from './plot';
+import {
+  defaultPlotSettings,
+  pageSetupsOf,
+  plotFile,
+  withPageSetup,
+  type UnderlayPageSource,
+} from './plot';
 import { plotSpaceOf } from './plot-spaces';
 import { plotRequest } from './plot-preview';
 import {
   DEFAULT_PAGE_SETUP,
+  PUBLISH_TO,
   movedSheet,
   publishFileName,
   publishLog,
   publishLogName,
   publishPdf,
+  publishSheetFiles,
   publishSheets,
+  publishedDownload,
   withOpenDrawings,
+  type PlottedSheet,
+  type PublishDevice,
+  type PublishFailure,
   type PublishSheet,
 } from './publish';
 
@@ -61,12 +76,15 @@ export function PublishDialog({
   doc,
   docs,
   underlayFile,
+  underlayPage,
   userTables,
 }: {
   doc: OpenDocument | undefined;
   /** Every open drawing, in tab order (part 6: Load All Open Drawings). */
   docs?: readonly OpenDocument[];
   underlayFile?: UnderlayFile;
+  /** PDF underlays' pages for an SVG or PNG publish (M2-39 part 4). */
+  underlayPage?: UnderlayPageSource;
   /** The plot style tables added in Settings (part 3). */
   userTables?: UserTables;
 }) {
@@ -78,6 +96,7 @@ export function PublishDialog({
       doc={doc}
       docs={docs ?? [doc]}
       {...(underlayFile && { underlayFile })}
+      {...(underlayPage && { underlayPage })}
       {...(userTables && { userTables })}
     />
   );
@@ -87,11 +106,13 @@ function PublishBody({
   doc,
   docs,
   underlayFile,
+  underlayPage,
   userTables,
 }: {
   doc: OpenDocument;
   docs: readonly OpenDocument[];
   underlayFile?: UnderlayFile;
+  underlayPage?: UnderlayPageSource;
   userTables?: UserTables;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
@@ -103,6 +124,7 @@ function PublishBody({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [log, setLog] = useState(false);
+  const [device, setDevice] = useState<PublishDevice>('pdf');
 
   useEffect(() => {
     const d = ref.current;
@@ -151,7 +173,7 @@ function PublishBody({
     setError(undefined);
     try {
       const tables = userTables?.();
-      const plotted = [];
+      const plotted: PlottedSheet[] = [];
       const failed = new Map<string, string>();
       for (const s of included) {
         try {
@@ -169,13 +191,12 @@ function PublishBody({
           failed.set(key(s), e instanceof Error ? e.message : String(e));
         }
       }
-      const result = publishPdf(plotted, doc.name.replace(/\.[^.]+$/, ''), underlayFile);
-      const bySheet = new Map(result.failed.map((f) => [f.sheet, f.message]));
+      const written = await write(plotted);
+      const bySheet = new Map(written.failed.map((f) => [f.sheet, f.message]));
       for (const s of included) {
         const m = bySheet.get(s.sheet);
         if (m !== undefined && !failed.has(key(s))) failed.set(key(s), m);
       }
-      if (result.bytes) downloadPdf(publishFileName(doc.name), result.bytes);
       if (log) {
         const rows = included.map((s) => ({ sheet: s, status: failed.get(key(s)) ?? 'Published' }));
         const text = publishLog(rows, new Date());
@@ -187,7 +208,7 @@ function PublishBody({
       }
       setStatus(new Map(included.map((s) => [key(s), failed.get(key(s)) ?? 'Published'])));
       setError(
-        result.bytes
+        written.published
           ? `Published ${included.length - failed.size} of ${included.length} sheets.`
           : 'No sheet could be published.',
       );
@@ -196,6 +217,26 @@ function PublishBody({
     } finally {
       setBusy(false);
     }
+  };
+
+  /** The plotted sheets written and downloaded as Publish to says; true when any published. */
+  const write = async (
+    plotted: readonly PlottedSheet[],
+  ): Promise<{ published: boolean; failed: readonly PublishFailure[] }> => {
+    if (device === 'pdf') {
+      const result = publishPdf(plotted, doc.name.replace(/\.[^.]+$/, ''), underlayFile);
+      if (result.bytes) downloadPdf(publishFileName(doc.name), result.bytes);
+      return { published: result.bytes !== undefined, failed: result.failed };
+    }
+    const { files, failed } = await publishSheetFiles(
+      plotted,
+      device,
+      (parts, page, settings, space, title) =>
+        plotFile(parts, page, settings, space, title, underlayFile, underlayPage),
+    );
+    const file = publishedDownload(files, publishFileName(doc.name, 'zip'));
+    if (file) download(file.name, file.bytes, file.type);
+    return { published: file !== undefined, failed };
   };
 
   return (
@@ -212,7 +253,18 @@ function PublishBody({
       <h2 className="cad-dialog-title">Publish</h2>
       <label className="cad-dialog-field">
         <span>Publish to:</span>
-        <input type="text" value="PDF" readOnly aria-label="Publish to" />
+        <select
+          aria-label="Publish to"
+          value={device}
+          disabled={busy}
+          onChange={(e) => setDevice(e.currentTarget.value as PublishDevice)}
+        >
+          {PUBLISH_TO.map((d) => (
+            <option key={d.id} value={d.id}>
+              {d.name}
+            </option>
+          ))}
+        </select>
       </label>
       <div className="publish-tools" role="toolbar" aria-label="Sheet list">
         <button type="button" onClick={loadAll} disabled={busy}>

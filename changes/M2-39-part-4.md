@@ -1,0 +1,1 @@
+- M2-39 part 4 (#301): PUBLISH writes to PDF, SVG or PNG, and Export's All layouts works for SVG and PNG too: a file a sheet, several downloaded as one ZIP. PNG plots over 64 million pixels now work, drawn in bands, up to 32,767 pixels a side.
