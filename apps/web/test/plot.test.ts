@@ -4,6 +4,8 @@ import { describe, expect, it } from 'vitest';
 import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, bundledPlotStyleTable, type PlotPart } from '@triya/render';
 import type { Layout, LayoutPlot } from '@triya/engine';
+import { parseTtf } from '@triya/text';
+import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
 import {
   LAYOUT_PAPER,
   PAGE_SETUP_FLAGS,
@@ -521,6 +523,43 @@ describe('plotting to SVG and PNG', () => {
         };
       },
     );
+  });
+
+  // M2-39 part 3: TrueType text is SVG text in an SVG plot, outlines in the SVG a PNG draws.
+  it('writes TrueType text as SVG text, and as outlines in a PNG', async () => {
+    const font = parseTtf(fontBytes(testFont()));
+    const a = font.glyph(65);
+    const text: PlotPart = {
+      ...part('Notes'),
+      kind: 'fill',
+      path: [0, 0, 0, 1, 10, 0, 1, 5, 10, 4],
+      glyphs: [
+        { font, index: a.index, codePoint: 65, m: { a: 0.01, b: 0, c: 0, d: 0.01, e: 0, f: 0 } },
+      ],
+    };
+    const s = { ...defaultPlotSettings(model), device: 'svg' as const, paper: 'ISO A4' };
+    const svg = plotSvgFile([text], plotPage(s, model), s, model, 't');
+    expect(svg).toMatch(/<text [^>]*font-family="'triya-1', 'Triya Test Sans'"[^>]*>A<\/text>/);
+    expect(svg).toContain("format('opentype')");
+    let drawn = '';
+    await plotPng(
+      [text],
+      plotPage(s, model),
+      { ...s, device: 'png' },
+      model,
+      't',
+      async (svg, o) => {
+        drawn = svg;
+        return {
+          width: o.width,
+          height: o.height,
+          data: new Uint8ClampedArray(o.width * o.height * 4),
+        };
+      },
+    );
+    expect(drawn).not.toContain('<text');
+    expect(drawn).not.toContain('@font-face');
+    expect(drawn).toMatch(/<path d="M[^"]+" fill="#ff0000"/);
   });
 
   // M2-39: a PDF underlay's page drawn by the app (pdf.js) into the SVG and PNG plots.

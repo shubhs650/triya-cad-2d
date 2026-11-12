@@ -759,9 +759,12 @@ export function plotSvgFile(
   title: string,
   /** PDF underlays' pages drawn for the plot (`underlayRasters`); boundaries only without. */
   underlays?: ReadonlyMap<PlotUnderlay, SvgUnderlayRaster>,
+  /** TrueType text as outlines rather than SVG text in its embedded font (a PNG's SVG). */
+  textAsGeometry = false,
 ): string {
   return plotSvg(parts as readonly PlotItem[], {
     ...pageOptions(page, settings, space),
+    ...(textAsGeometry && { textAsGeometry }),
     width: mmToPoints(page.width),
     height: mmToPoints(page.height),
     title,
@@ -783,7 +786,8 @@ export async function plotPng(
   const underlays =
     underlayPage &&
     (await underlayRasters(parts, page, settings, space, underlayPage, settings.dpi));
-  // The sheet is the canvas's own fill, so the SVG carries none.
+  // The sheet is the canvas's own fill, so the SVG carries none. Text as outlines: the browser
+  // need not have loaded the fonts an SVG image embeds when it draws it, and pixels need no text.
   const svg = plotSvgFile(
     parts,
     page,
@@ -791,6 +795,7 @@ export async function plotPng(
     space,
     title,
     underlays,
+    true,
   );
   const size = rasterSize(page, settings.dpi);
   const pixels = await rasterize(svg, {

@@ -197,6 +197,8 @@ export async function clipboardPicture(
     width,
     height,
     title: 'Triya objects',
+    // A picture: text as outlines, which the browser draws without loading fonts.
+    textAsGeometry: true,
   });
   const pixels = await rasterize(svg, { width, height, background: '#ffffff' });
   return new Blob([encodePng(pixels) as Uint8Array<ArrayBuffer>], { type: 'image/png' });

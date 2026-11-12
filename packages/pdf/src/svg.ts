@@ -13,8 +13,9 @@
 // - Plot style fill styles are SVG patterns of the PDF writer's 6 pt cells (`fills.ts`), laid on
 //   the paper from its lower-left corner as the PDF lays them; gradients are SVG gradients over
 //   the same unit frame; raster images are PNG `data:` URIs clipped to their boundary.
-// - TrueType text plots as its glyph outlines (SVG `<text>` would need the font installed
-//   wherever the file opens).
+// - TrueType text plots as SVG text in its font, a subset embedded in the file (`svg-text.ts`),
+//   or as its glyph outlines where the PDF plot would draw outlines too (a font that may not be
+//   embedded, "Convert all text to geometry") or a glyph cannot be selected by its character.
 // - A PDF underlay plots its page as the app draws it (pdf.js, the screen's renderer) into
 //   pixels over the part of the page the plot shows (`underlayRasterPlan`: the clip boundary's
 //   extent and the plot area, at the plot's resolution), after its contrast and monochrome, an
@@ -52,6 +53,7 @@ import {
   type Segment,
 } from './path';
 import { base64, encodePng } from './png';
+import { SvgFonts, svgText } from './svg-text';
 
 export interface SvgPlotOptions extends PlotPageOptions {
   /** The paper, points (as `PdfDocument.addPage` takes it). */
@@ -326,6 +328,7 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
     return id;
   };
   const images = new Map<PlotItem, string>();
+  const fonts = new SvgFonts();
 
   const stroke = (p: PlotItem['paint'], extra = ''): string => {
     const mm = plottedWeight(p, o);
@@ -478,19 +481,26 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
       );
       return `<g clip-path="url(#${clip})"${alpha}><image width="${num(img.width)}" height="${num(img.height)}" preserveAspectRatio="none" image-rendering="optimizeSpeed" style="image-rendering:pixelated" transform="${matrix(im)}" xlink:href="${href}"/></g>`;
     }
-    const p = item.paint;
-    const color = hex(p.color);
-    if (p.fillStyle && p.fillStyle !== 'solid') {
-      const style = p.fillStyle;
-      // The PDF's pattern space is the page's, origin at its lower-left corner, y up.
-      const id = def(
-        `fs:${style}:${color}`,
-        (id) =>
-          `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${FILL_CELL}" height="${FILL_CELL}" patternTransform="matrix(1 0 0 -1 0 ${num(H)})">${cellSvg(style, color)}</pattern>`,
-      );
-      return `<path d="${d}" fill="url(#${id})"${rule}${alpha}/>`;
+    const paint = paintFill(item.paint);
+    if (item.glyphs && item.glyphs.length > 0 && !o.textAsGeometry) {
+      const text = svgText(item.glyphs, m, fonts, paint, alpha);
+      if (text !== undefined) return text;
     }
-    return `<path d="${d}" fill="${color}"${rule}${alpha}/>`;
+    return `<path d="${d}" ${paint}${rule}${alpha}/>`;
+  };
+
+  /** A solid or plot style fill style paint as a `fill` attribute. */
+  const paintFill = (p: PlotItem['paint']): string => {
+    const color = hex(p.color);
+    if (!p.fillStyle || p.fillStyle === 'solid') return `fill="${color}"`;
+    const style = p.fillStyle;
+    // The PDF's pattern space is the page's, origin at its lower-left corner, y up.
+    const id = def(
+      `fs:${style}:${color}`,
+      (id) =>
+        `<pattern id="${id}" patternUnits="userSpaceOnUse" width="${FILL_CELL}" height="${FILL_CELL}" patternTransform="matrix(1 0 0 -1 0 ${num(H)})">${cellSvg(style, color)}</pattern>`,
+    );
+    return `fill="url(#${id})"`;
   };
 
   // Items placed, then gathered into layer groups keeping the plot's order where it shows.
@@ -577,7 +587,9 @@ export function plotSvg(items: readonly PlotItem[], o: SvgPlotOptions): string {
     '<?xml version="1.0" encoding="UTF-8" standalone="no"?>',
     `<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape" version="1.1" width="${mmW}mm" height="${mmH}mm" viewBox="0 0 ${num(W)} ${num(H)}">`,
     ...(o.title !== undefined ? [`<title>${xmlEscape(o.title)}</title>`] : []),
-    ...(defs.length > 0 ? ['<defs>', ...defs, '</defs>'] : []),
+    ...(defs.length > 0 || fonts.embedded.length > 0
+      ? ['<defs>', ...(fonts.embedded.length > 0 ? [fonts.style()] : []), ...defs, '</defs>']
+      : []),
     ...(o.background
       ? [`<rect width="${num(W)}" height="${num(H)}" fill="${hex(o.background)}"/>`]
       : []),
