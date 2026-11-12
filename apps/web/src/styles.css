@@ -1018,6 +1018,31 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* A read-only value with AutoCAD's "..." button at its right (an MTEXT's Contents). */
+.properties-section .with-editor {
+  display: flex;
+  align-items: center;
+}
+
+.properties-section .with-editor .read-only {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.properties-section .row-editor {
+  flex: none;
+  padding: 0 5px;
+  font: inherit;
+  line-height: 1.2;
+  color: inherit;
+  border: 1px solid var(--chrome-border);
+  border-radius: 2px;
+  background: var(--chrome-bg);
+  cursor: pointer;
+}
+
 /* Health palette (M1-70): the drawing health report as folding cards. */
 .health-cards {
   flex: 1;

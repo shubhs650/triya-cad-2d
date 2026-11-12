@@ -8,7 +8,11 @@
 // A hatch's Pattern name offers the library's patterns as it is typed (M2-35 part 3), where
 // AutoCAD's "..." opens its Hatch Pattern Palette.
 // Color's last choice, "Select Color...", opens AutoCAD's Select Color dialog (M2-35 part 4).
-// Fully keyboard operable: every value is a native select or text field.
+// One polyline shows its vertices one at a time (M2-35 part 8): the Vertex spinner steps through
+// them, and the vertex shown is marked on the canvas while one of its rows has the focus.
+// An MTEXT's Contents has AutoCAD's "..." button, which opens the In-Place Text Editor on it
+// (M2-35 part 9); the MTEXT stays selected and the palette shows what the editor wrote.
+// Fully keyboard operable: every value is a native select, text field or button.
 import { useEffect, useState, useSyncExternalStore } from 'react';
 import {
   colorValue,
@@ -17,7 +21,9 @@ import {
   type PropertyRow,
   type PropertySheet,
   type PropertyUnits,
+  type Vec2,
 } from '@triya/engine';
+import { controllerOf } from './canvas/registry';
 import { SelectColorDialog } from './SelectColorDialog';
 import type { OpenDocument } from './documents';
 import { engines } from './engine/registry';
@@ -49,6 +55,16 @@ export function PropertiesPalette({
     });
   const set = (key: string, value: string) =>
     engines.command(doc.id, { kind: 'property', edit: { key, value } });
+  const openEditor = () => engines.command(doc.id, { kind: 'property-editor', key: 'contents' });
+  const stepVertex = (vertex: number) =>
+    engines.command(doc.id, { kind: 'property-vertex', vertex });
+  const markVertex = (point: Vec2 | undefined) =>
+    controllerOf(doc.id, doc.block)?.markVertex(point);
+  // The marker goes with the palette, and stays on the drawing it was put on.
+  useEffect(
+    () => () => controllerOf(doc.id, doc.block)?.markVertex(undefined),
+    [doc.id, doc.block],
+  );
 
   return (
     <aside className="palette properties-palette" aria-labelledby="properties-title">
@@ -61,24 +77,49 @@ export function PropertiesPalette({
       {!sheet || (sheet.count === 0 && !sheet.current) ? (
         <p className="empty">No selection</p>
       ) : (
-        <PropertySections sheet={sheet} narrow={narrow} set={set} patternNames={patternNames} />
+        <PropertySections
+          sheet={sheet}
+          narrow={narrow}
+          set={set}
+          openEditor={openEditor}
+          stepVertex={stepVertex}
+          markVertex={markVertex}
+          patternNames={patternNames}
+        />
       )}
     </aside>
   );
 }
 
+/** A polyline vertex row (M2-35 part 8): the Vertex spinner or one of the vertex's own rows. */
+const isVertexRow = (key: string) => key === 'vertex' || key.startsWith('vertex:');
+
 function PropertySections({
   sheet,
   narrow,
   set,
+  openEditor,
+  stepVertex,
+  markVertex,
   patternNames,
 }: {
   sheet: PropertySheet;
   narrow: (type: string) => void;
   set: (key: string, value: string) => void;
+  openEditor: () => void;
+  stepVertex: (vertex: number) => void;
+  markVertex: (point: Vec2 | undefined) => void;
   patternNames: readonly string[];
 }) {
   const types = typeOptions(sheet);
+  // The vertex shown is marked on the canvas while one of its rows has the focus.
+  const [vertexFocus, setVertexFocus] = useState(false);
+  const rows = sheet.sections.flatMap((s) => s.rows);
+  const vx = rows.find((r) => /^vertex:\d+:x$/.test(r.key))?.value;
+  const vy = rows.find((r) => /^vertex:\d+:y$/.test(r.key))?.value;
+  const at =
+    vertexFocus && typeof vx === 'number' && typeof vy === 'number' ? { x: vx, y: vy } : undefined;
+  useEffect(() => markVertex(at), [at?.x, at?.y]);
   // The colour row whose "Select Color..." was picked: the dialog shows while it is set. A
   // dimension's colour rows (`colorDialog: 'index'`) offer the Index Color tab only.
   const [picking, setPicking] = useState<PropertyRow | undefined>();
@@ -125,11 +166,20 @@ function PropertySections({
             <table aria-label={s.title}>
               <tbody>
                 {s.rows.map((r) => (
-                  <tr key={r.key} data-key={r.key}>
+                  <tr
+                    key={r.key}
+                    data-key={r.key}
+                    {...(isVertexRow(r.key) && {
+                      onFocus: () => setVertexFocus(true),
+                      onBlur: () => setVertexFocus(false),
+                    })}
+                  >
                     <th scope="row">{r.label}</th>
                     <td>
                       <PropertyField
                         row={r}
+                        stepVertex={stepVertex}
+                        openEditor={openEditor}
                         units={sheet.units}
                         set={set}
                         suggestions={r.key === 'patternName' ? patternNames : undefined}
@@ -154,12 +204,17 @@ const SELECT_COLOR = 'select-color';
 
 function PropertyField({
   row,
+  stepVertex,
+  openEditor,
   units,
   set,
   suggestions,
   selectColor,
 }: {
   row: PropertyRow;
+  stepVertex: (vertex: number) => void;
+  /** A row's `...` button (`PropertyRow.editor`): the In-Place Text Editor on the object. */
+  openEditor: () => void;
   units: PropertyUnits;
   set: (key: string, value: string) => void;
   /** Values a typed field offers as it is typed (a datalist). */
@@ -168,12 +223,28 @@ function PropertyField({
   selectColor?: (() => void) | undefined;
 }) {
   if (row.readOnly) {
-    return (
+    const shown = (
       <span className="read-only" aria-label={row.label}>
         {valueText(row, units)}
       </span>
     );
+    if (!row.editor) return shown;
+    return (
+      <span className="with-editor">
+        {shown}
+        <button
+          type="button"
+          className="row-editor"
+          aria-label={`Edit ${row.label} in the text editor`}
+          title="Opens the In-Place Text Editor"
+          onClick={openEditor}
+        >
+          ...
+        </button>
+      </span>
+    );
   }
+  if (row.spin) return <SpinField row={row} spin={row.spin} step={stepVertex} />;
   if (row.kind === 'choice' && row.options) {
     const value = row.varies || row.value === undefined ? VARIES : String(row.value);
     return (
@@ -201,6 +272,41 @@ function PropertyField({
     );
   }
   return <TypedField row={row} units={units} set={set} suggestions={suggestions} />;
+}
+
+/**
+ * A navigation spinner (a polyline's Vertex, M2-35 part 8): the arrows, the arrow keys or a typed
+ * number within `spin` show another vertex; it changes what the sheet shows, not the drawing.
+ */
+function SpinField({
+  row,
+  spin,
+  step,
+}: {
+  row: PropertyRow;
+  spin: { readonly min: number; readonly max: number };
+  step: (index: number) => void;
+}) {
+  const shown = String(row.value ?? '');
+  const [text, setText] = useState(shown);
+  useEffect(() => setText(shown), [shown]);
+  return (
+    <input
+      type="number"
+      aria-label={row.label}
+      min={spin.min}
+      max={spin.max}
+      step={1}
+      value={text}
+      onChange={(e) => {
+        const t = e.currentTarget.value;
+        setText(t);
+        const n = Number(t);
+        if (t !== '' && Number.isInteger(n) && n >= spin.min && n <= spin.max) step(n - spin.min);
+      }}
+      onBlur={() => setText(shown)}
+    />
+  );
 }
 
 /** A typed value: applied on Enter or blur when it changed; Esc puts the shown value back. */

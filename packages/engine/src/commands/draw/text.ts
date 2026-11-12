@@ -1029,6 +1029,17 @@ async function* editAttdef(
  * Opens the editor on one TEXT or MTEXT and applies what comes back. Returns the edit, false
  * when the text came back unchanged, undefined when the command was ended.
  */
+/**
+ * The Properties palette's `...` on an MTEXT's Contents (M2-35 part 9): the In-Place Text Editor
+ * on `entity`, as TEXTEDIT opens it; whether the contents changed.
+ */
+export async function* editContents(
+  ctx: CommandContext,
+  entity: Entity,
+): AsyncGenerator<Prompt, boolean, PromptAnswer> {
+  return Boolean(yield* editText(ctx, entity));
+}
+
 async function* editText(
   ctx: CommandContext,
   entity: Entity,

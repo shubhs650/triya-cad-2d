@@ -131,7 +131,17 @@ export type CommandInput =
    */
   | { readonly kind: 'properties'; readonly open: boolean; readonly filter?: EntityType | null }
   /** A Properties palette edit on the selected objects of the type it shows (one undo step). */
-  | { readonly kind: 'property'; readonly edit: PropertyEdit };
+  | { readonly kind: 'property'; readonly edit: PropertyEdit }
+  /**
+   * The Properties palette's Vertex spinner (M2-35 part 8): the polyline vertex its sheet shows,
+   * from 0, until the selection changes (another selection starts at the first vertex).
+   */
+  | { readonly kind: 'property-vertex'; readonly vertex: number }
+  /**
+   * A row's `...` button (`PropertyRow.editor`, M2-35 part 9): an MTEXT's Contents opens the
+   * In-Place Text Editor on the one MTEXT the palette shows.
+   */
+  | { readonly kind: 'property-editor'; readonly key: 'contents' };
 
 /**
  * What the command engine tells the front-ends: the bus's events, with every edit a command
@@ -167,6 +177,8 @@ export class EngineSession {
   /** The Properties palette is open: sheets are sent (M2-21). */
   #properties = false;
   #filter: EntityType | undefined;
+  /** The polyline vertex the Properties sheet shows (M2-35 part 8). */
+  #vertex = 0;
   /** The selection the last sheet showed, so a new selection shows all types again. */
   #sheetIds: readonly EntityId[] = [];
   #sheetQueued = false;
@@ -227,9 +239,12 @@ export class EngineSession {
     // A different selection shows every type again, as AutoCAD's palette does.
     const same =
       ids.length === this.#sheetIds.length && ids.every((id, i) => id === this.#sheetIds[i]);
-    if (!same) this.#filter = undefined;
+    if (!same) {
+      this.#filter = undefined;
+      this.#vertex = 0;
+    }
     this.#sheetIds = [...ids];
-    const sheet = propertySheet(this.model, ids, this.#filter);
+    const sheet = propertySheet(this.model, ids, this.#filter, this.#vertex);
     this.#emit({ type: 'properties', sheet });
   }
 
@@ -282,6 +297,12 @@ export class EngineSession {
         return Promise.resolve();
       case 'property':
         return this.#bus.setProperty(input.edit, this.#filter);
+      case 'property-editor':
+        return this.#bus.editContents(this.#filter);
+      case 'property-vertex':
+        this.#vertex = Math.max(0, Math.trunc(input.vertex));
+        if (this.#properties) this.#sendSheet();
+        return Promise.resolve();
       case 'view': {
         // Not queued on the bus: the command awaiting it holds the bus's queue.
         const resolve = this.#viewReplies.get(input.id);
