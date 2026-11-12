@@ -12,6 +12,8 @@
 // Part 6: named page setups (page-setups.dxf, authored by packages/testkit/src/page-setups) in
 // the Plot dialog, -PLOT and PUBLISH, which publishes the sheets of every open drawing and its log.
 // M2-39: the SVG and PNG plotters draw a PDF underlay's page as the PDF plot does.
+// M2-41: while the dialog is up, the prompt line and Dynamic Input show no prompt (the click that
+// focuses the canvas starts a selection window whose corner prompt Ctrl+P leaves behind).
 import { copyFileSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
@@ -212,6 +214,12 @@ test('SVG and PNG plots draw a PDF underlay’s page as the PDF plot does', asyn
 
 const prompt = (page: Page) => page.getByTestId('command-prompt');
 
+/** No prompt shows while the dialog is up (M2-41): neither the prompt line nor Dynamic Input. */
+async function expectNoPrompt(page: Page) {
+  await expect(prompt(page)).toHaveText('');
+  await expect(page.getByTestId('dyn')).toBeHidden();
+}
+
 test('Window< hides the dialog, takes two corners and plots that window', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto(app.url);
@@ -219,9 +227,12 @@ test('Window< hides the dialog, takes two corners and plots that window', async 
   await expectShown(page, path.basename(DWG));
   const canvas = activeCanvas(page);
   await canvas.click({ position: { x: 5, y: 5 } });
+  // The click on nothing started a selection window (M2-41's stale prompt came from it).
+  await expect(prompt(page)).toHaveText('Specify opposite corner:');
   await page.keyboard.press('Control+p');
   const d = dialog(page);
   await expect(d).toBeVisible();
+  await expectNoPrompt(page);
   // The partial preview: Display fitted on the page setup's ANSI A landscape (part 4).
   const preview = d.getByRole('img', { name: /^Plot area / });
   await expect(preview).toHaveAttribute('aria-label', /on paper 279\.4 × 215\.9 mm$/);
@@ -239,6 +250,7 @@ test('Window< hides the dialog, takes two corners and plots that window', async 
   await expect(prompt(page)).toHaveText('Specify opposite corner:');
   await page.mouse.click(box.x + box.width * 0.6, box.y + box.height * 0.7);
   await expect(d).toBeVisible();
+  await expectNoPrompt(page);
   // Back with the window and the paper chosen before.
   await expect(d.getByLabel('What to plot')).toHaveValue('window');
   await expect(d.getByLabel('Paper size')).toHaveValue('ISO A3');
@@ -279,6 +291,7 @@ test('Esc at the window’s corners brings the dialog back as it was (part 3)', 
   await canvas.press('Escape');
   // Back with the plot area it had (no window was picked) and the paper chosen.
   await expect(d).toBeVisible();
+  await expectNoPrompt(page);
   await expect(d.getByLabel('What to plot')).toHaveValue('display');
   await expect(d.getByLabel('Paper size')).toHaveValue('ISO A3');
   await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText(
@@ -292,6 +305,8 @@ test('Esc at the window’s corners brings the dialog back as it was (part 3)', 
   await expect(prompt(page)).toHaveText('Specify opposite corner:');
   await canvas.press('Escape');
   await expect(d).toBeVisible();
+  // Not the "Specify opposite corner:" the Esc answered (M2-41).
+  await expectNoPrompt(page);
   await expect(d.getByLabel('What to plot')).toHaveValue('display');
   await d.getByRole('button', { name: 'Cancel' }).click();
   await expect(d).toBeHidden();

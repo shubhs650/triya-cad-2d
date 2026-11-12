@@ -50,7 +50,7 @@ import {
   type SelectionTake,
   type SelectionWindow,
 } from './prompt';
-import { NO_VIEW, type ViewHost } from './view/host';
+import { NO_VIEW, waitsOnApp, type ViewHost, type ViewReply, type ViewRequest } from './view/host';
 import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
 import { gripsOf } from '../edit/grips';
 import { revcloudOf } from '../edit/revcloud';
@@ -112,6 +112,12 @@ export type BusEvent =
   | { readonly type: 'prompt'; readonly prompt: Prompt; readonly text: string }
   /** No command runs: the `Command:` prompt. */
   | { readonly type: 'idle' }
+  /**
+   * The running command waits on the app (M2-41): a dialog it opened, such as PLOT's, or the
+   * preview. No prompt shows until it asks for one again or ends, as AutoCAD's command line
+   * shows none while its dialog is up; the prompt it last asked was answered.
+   */
+  | { readonly type: 'waiting'; readonly command: string }
   /** A finished line of command history. */
   | { readonly type: 'log'; readonly line: string }
   | { readonly type: 'preview'; readonly geometry: readonly EntityGeometry[] }
@@ -164,6 +170,8 @@ interface Frame {
   readonly gen: CommandGenerator;
   readonly transparent: boolean;
   prompt: Prompt | undefined;
+  /** It waits on the app (`waitsOnApp`): no prompt shows (M2-41). */
+  waiting?: boolean;
   /** The selection its "Select objects" prompt is building (M2-03). */
   select?: SelectionLoop | undefined;
   /** The point the command it runs inside was collecting (`'ZOOM` typed at FROM's base point). */
@@ -285,6 +293,7 @@ export class PromptBus {
 
   /** The prompt the bus waits at, or undefined at `Command:`. */
   get prompt(): Prompt | undefined {
+    if (this.#stack.at(-1)?.waiting) return undefined;
     const c = this.#collectors.at(-1);
     if (c) {
       return prompts.point({
@@ -300,6 +309,8 @@ export class PromptBus {
 
   /** The command line's prompt text. */
   get promptText(): string {
+    // Empty while a dialog is up (M2-41): neither a prompt nor `Command:`.
+    if (this.#stack.at(-1)?.waiting) return '';
     const c = this.#collectors.at(-1);
     if (c) return this.#nested(c.text);
     const prompt = this.prompt;
@@ -745,9 +756,27 @@ export class PromptBus {
         this.#emit({ type: 'preview', geometry });
       },
       message: (text) => this.#log(text),
-      view: this.#view,
+      view: { request: (r) => this.#hostRequest(r) },
       dimensions: this.#dimensions,
     };
+  }
+
+  /**
+   * A command's request of the host. One the app answers through the drafter (a dialog, the
+   * preview: `waitsOnApp`) hides the prompt the command last asked until it asks again (M2-41);
+   * the requests the canvas answers at once (ZOOM, a text's outline) leave it, so the prompt line
+   * does not flicker. Only the innermost command runs, so it is the one asking.
+   */
+  async #hostRequest(r: ViewRequest): Promise<ViewReply> {
+    const frame = this.#stack.at(-1);
+    if (!frame || !waitsOnApp(r)) return this.#view.request(r);
+    frame.waiting = true;
+    this.#emit({ type: 'waiting', command: frame.def.name });
+    try {
+      return await this.#view.request(r);
+    } finally {
+      frame.waiting = false;
+    }
   }
 
   /** Resumes the innermost command with an answer (undefined to start it). */

@@ -5,11 +5,14 @@
 // line and opens the dialog again with them (part 2), or as it was on Esc there (part 3). PUBLISH
 // opens the app's Publish dialog. EXPORT (EXP) and EXPORTPDF (M2-39 part 2) open the app's Export
 // Data and Save As PDF dialogs, and ask for a window's corners when the dialog's Export is Window.
+// While a command waits on one of the app's dialogs no prompt shows (M2-41), as AutoCAD's command
+// line shows none while its dialog is up.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   PromptBus,
   builtinCommands,
+  type BusEvent,
   type ViewReply,
   type ViewRequest,
 } from '../../src/index';
@@ -163,5 +166,97 @@ describe('the file commands', () => {
       { op: 'file', action: 'export' },
       { op: 'file', action: 'export', resume: true },
     ]);
+  });
+});
+
+/** A host whose `file` requests stay open (the dialog up) until `close` answers the oldest. */
+function dialogHost(replies: ViewReply[]) {
+  const open: ((r: ViewReply) => void)[] = [];
+  const events: BusEvent[] = [];
+  const model = DocumentModel.create(sampleInit());
+  const bus = new PromptBus({
+    model,
+    registry: builtinCommands(),
+    view: {
+      request: (r) =>
+        r.op === 'file'
+          ? new Promise<ViewReply>((resolve) => open.push(resolve))
+          : Promise.resolve<ViewReply>({ ok: true, ids: [] }),
+    },
+  });
+  bus.on((e) => events.push(e));
+  // The bus's queue and the command's generator resolve over a few microtasks (engine tests have
+  // no timers: `types: []`).
+  const settle = async () => {
+    for (let i = 0; i < 50; i++) await Promise.resolve();
+  };
+  return {
+    bus,
+    events,
+    settle,
+    /** The prompt events since the last call: the prompt the front-ends were last told of. */
+    shown: () =>
+      events.filter((e) => e.type === 'prompt' || e.type === 'idle' || e.type === 'waiting').at(-1),
+    async close() {
+      open.shift()!(replies.shift() ?? { ok: true });
+      await settle();
+    },
+  };
+}
+
+describe('while a command waits on a dialog (M2-41)', () => {
+  it('PLOT shows no prompt while the Plot dialog is open', async () => {
+    const h = dialogHost([{ ok: true }]);
+    void h.bus.submit('PLOT');
+    await h.settle();
+    expect(h.bus.command).toBe('PLOT');
+    expect(h.shown()).toEqual({ type: 'waiting', command: 'PLOT' });
+    expect(h.bus.prompt).toBeUndefined();
+    expect(h.bus.promptText).toBe('');
+    await h.close();
+    expect(h.bus.command).toBeUndefined();
+    expect(h.shown()).toEqual({ type: 'idle' });
+    expect(h.bus.promptText).toBe('Command:');
+  });
+
+  it('shows no corner prompt once Esc at the window corners opens the dialog again', async () => {
+    const h = dialogHost([{ ok: true, pickWindow: true }, { ok: true }]);
+    void h.bus.submit('PLOT');
+    await h.settle();
+    await h.close();
+    expect(h.bus.prompt?.message).toBe('Specify first corner');
+    void h.bus.submit('10,20');
+    await h.settle();
+    expect(h.bus.prompt?.message).toBe('Specify opposite corner');
+    void h.bus.cancel();
+    await h.settle();
+    expect(h.bus.command).toBe('PLOT');
+    expect(h.shown()).toEqual({ type: 'waiting', command: 'PLOT' });
+    expect(h.bus.prompt).toBeUndefined();
+    expect(h.bus.promptText).toBe('');
+    await h.close();
+    expect(h.shown()).toEqual({ type: 'idle' });
+  });
+
+  it('drops the corner prompt of a window started at Command: when Ctrl+P opens the dialog', async () => {
+    const h = dialogHost([{ ok: true }]);
+    // A click on nothing at `Command:` starts a selection window.
+    void h.bus.pick({ x: 1000, y: 1000 });
+    await h.settle();
+    expect(h.bus.promptText).toBe('Specify opposite corner:');
+    void h.bus.invoke('PLOT');
+    await h.settle();
+    expect(h.bus.command).toBe('PLOT');
+    expect(h.shown()).toEqual({ type: 'waiting', command: 'PLOT' });
+    expect(h.bus.promptText).toBe('');
+    await h.close();
+    expect(h.bus.promptText).toBe('Command:');
+  });
+
+  it('a request the canvas answers (ZOOM Extents) is no dialog and hides no prompt', async () => {
+    const h = dialogHost([]);
+    await h.bus.submit('ZOOM');
+    await h.bus.submit('E');
+    expect(h.events.some((e) => e.type === 'waiting')).toBe(false);
   });
 });
