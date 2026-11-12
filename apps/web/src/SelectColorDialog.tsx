@@ -42,6 +42,7 @@ export function SelectColorDialog({
   initial,
   books,
   trueColors,
+  indexOnly = 'The current color takes an index color only.',
   onOk,
   onCancel,
 }: {
@@ -50,6 +51,8 @@ export function SelectColorDialog({
   books: readonly ColorBook[];
   /** False for the current colour (CECOLOR): index colours only. */
   trueColors: boolean;
+  /** Why a true colour is refused when `trueColors` is false. */
+  indexOnly?: string;
   onOk: (c: Color) => void;
   onCancel: () => void;
 }) {
@@ -68,7 +71,7 @@ export function SelectColorDialog({
   const read = (text: string): Color | string => {
     const c = parseColorField(text, books);
     if (!c) return 'Invalid color.';
-    if (c.kind === 'rgb' && !trueColors) return 'The current color takes an index color only.';
+    if (c.kind === 'rgb' && !trueColors) return indexOnly;
     return c;
   };
 

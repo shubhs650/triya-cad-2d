@@ -218,6 +218,18 @@ export function textAlign(centred: boolean, vars: Vars): string {
   return centred ? '\\A1;' : '';
 }
 
+/**
+ * DIMALTU as DIMLUNIT and DIMFRAC: DIMALTU numbers its formats on their own (1 scientific,
+ * 2 decimal, 3 engineering, 4 architectural stacked, 5 fractional stacked, 6 architectural,
+ * 7 fractional, 8 Windows desktop; AutoCAD's DIMALTU reference), where DIMLUNIT's 4 and 5 stack
+ * by DIMFRAC and 6 is Windows desktop.
+ */
+function altUnits(altu: number): Vars {
+  if (altu === 6 || altu === 7) return { DIMLUNIT: altu - 2, DIMFRAC: 2 };
+  if (altu === 8) return { DIMLUNIT: 6 };
+  return { DIMLUNIT: altu };
+}
+
 /** A signed deviation as AutoCAD writes it: + or − before it, none on zero. */
 function deviation(value: number, vars: Vars): string {
   const text = formatLinear(Math.abs(value), vars);
@@ -276,7 +288,7 @@ export function linearText(
     const factor = num(vars.DIMALTF, 25.4);
     const altVars: Vars = {
       ...vars,
-      DIMLUNIT: num(vars.DIMALTU, 2),
+      ...altUnits(num(vars.DIMALTU, 2)),
       DIMDEC: num(vars.DIMALTD, 2),
       DIMZIN: num(vars.DIMALTZ),
       DIMRND: num(vars.DIMALTRND),

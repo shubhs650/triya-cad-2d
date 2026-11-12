@@ -131,6 +131,19 @@ describe('tolerances, limits and alternate units (M2-10 part 2)', () => {
     ).toBe('1.00%%p0.10 [25.4%%p2.5]');
   });
 
+  it('DIMALTU numbers its formats on its own: 6 and 7 unstacked, 8 Windows desktop (M2-35)', () => {
+    const alt = { DIMDEC: 2, DIMALT: 1, DIMALTF: 1, DIMALTD: 3 };
+    const primary = (vars: Record<string, number>) => linearText('', 1.5, { DIMDEC: 3, ...vars })!;
+    const altText = (altu: number) =>
+      /\[(.*)\]/.exec(linearText('', 1.5, { ...alt, DIMALTU: altu })!)![1];
+    expect(altText(4)).toBe(primary({ DIMLUNIT: 4 }));
+    expect(altText(5)).toBe(primary({ DIMLUNIT: 5 }));
+    expect(altText(6)).toBe(primary({ DIMLUNIT: 4, DIMFRAC: 2 }));
+    expect(altText(7)).toBe(primary({ DIMLUNIT: 5, DIMFRAC: 2 }));
+    expect(altText(8)).toBe(primary({ DIMLUNIT: 6 }));
+    expect(altText(6)).not.toBe(altText(4));
+  });
+
   it('a text override: <> is the primary text and [] the alternate one, else <> stands for both', () => {
     const alt = { DIMDEC: 2, DIMALT: 1, DIMALTF: 25.4, DIMALTD: 1, DIMALTU: 2 };
     expect(linearText('<> TYP', 1, alt)).toBe('1.00 [25.4] TYP');
