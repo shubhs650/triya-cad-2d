@@ -335,6 +335,25 @@ describe('triyaToAcad multileaders and viewports', () => {
       }),
     ],
     [
+      // M2-44: context data 292 (mask on), 91 (its colour), 141 (border scale), 92.
+      'a text MULTILEADER’s background mask in its own colour',
+      'MULTILEADER',
+      0,
+      (g) => ({
+        text: {
+          ...ml(g).text!,
+          mask: { color: { kind: 'rgb', r: 255, g: 255, b: 200 }, scale: 1.25, transparency: 40 },
+        },
+      }),
+    ],
+    [
+      // 291 on: the drawing window colour, which the mask's missing colour states.
+      'a text MULTILEADER’s background mask in the drawing window colour, and its text frame',
+      'MULTILEADER',
+      0,
+      (g) => ({ textFrame: true, text: { ...ml(g).text!, mask: { scale: 1.5 } } }),
+    ],
+    [
       'a MULTILEADER mirrored onto −Z',
       'MULTILEADER',
       0,
