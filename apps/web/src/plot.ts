@@ -33,6 +33,12 @@
 // its settings, and Apply to Layout writes them into the layout's own page setup. A layout plots
 // on a named page setup's paper (`withPageSetup`), as AutoCAD's does, without the layout changing
 // until it is applied.
+//
+// M2-39: an SVG or PNG plot draws a PDF underlay's page, as the PDF plot copies it: pdf.js draws
+// the part of the page the plot shows (`underlayRasterPlan`) at the plot's resolution (the PNG's,
+// or `SVG_UNDERLAY_DPI` for an SVG) with the layers it turns off hidden, and the screen's
+// contrast and monochrome (`adjustUnderlayPixels` on white paper) are applied before the SVG
+// writer places it; fade is the writer's, as opacity, as the PDF plot fades a page.
 
 import {
   plotSheet,
@@ -51,10 +57,16 @@ import {
   mmToPoints,
   plotItems,
   plotSvg,
+  underlayRasterPlan,
+  type PageRegion,
   type PlotItem,
   type PlotPageOptions,
+  type PlotPathItem,
+  type PlotUnderlay,
+  type SvgUnderlayRaster,
 } from '@triya/pdf';
 import {
+  adjustUnderlayPixels,
   BUNDLED_PLOT_STYLE_TABLES,
   POINTS_PER_MM,
   bundledPlotStyleTable,
@@ -64,6 +76,7 @@ import {
   type PlotPart,
   type PlotSetup,
   type PlotStyleTable,
+  type RasterPixels,
 } from '@triya/render';
 
 /** What the Plot dialog plots from: the space shown and what it knows of it. */
@@ -665,6 +678,78 @@ export function addPlotPage(
   });
 }
 
+/** A supplied PDF's page as a plot draws it (M2-39; `PdfPages.plotPage`). */
+export interface PlotPdfPage {
+  /** The displayed page, inches. */
+  readonly size: { readonly width: number; readonly height: number };
+  /** `region` of the page as `width` × `height` straight RGBA pixels, the paper clear. */
+  render(
+    region: PageRegion,
+    width: number,
+    height: number,
+    layersOff?: readonly string[],
+  ): Promise<RasterPixels>;
+}
+
+/** The page of the PDF a PDF underlay names; undefined without the file or when unreadable. */
+export type UnderlayPageSource = (
+  fileName: string,
+  page: string,
+) => Promise<PlotPdfPage | undefined>;
+
+/** The resolution an SVG plot draws a PDF underlay's page at: print quality. */
+export const SVG_UNDERLAY_DPI = 300;
+
+/** White paper: what an underlay's colours are adjusted against in a plot. */
+const PAPER: readonly [number, number, number] = [255, 255, 255];
+
+/**
+ * The PDF underlays among the parts, each drawn as the plot shows it at `dpi` (see the header);
+ * one the source cannot serve, or with nothing of its page on the plot, is left out.
+ */
+export async function underlayRasters(
+  parts: readonly PlotPart[],
+  page: PlotSetup,
+  settings: PlotSettings,
+  space: PlotSpace,
+  source: UnderlayPageSource,
+  dpi: number,
+): Promise<Map<PlotUnderlay, SvgUnderlayRaster>> {
+  const options = pageOptions(page, settings, space);
+  const out = new Map<PlotUnderlay, SvgUnderlayRaster>();
+  for (const part of parts as readonly PlotItem[]) {
+    if (part.kind !== 'fill' || !part.underlay || out.has(part.underlay)) continue;
+    const u = part.underlay;
+    try {
+      const pdf = await source(u.fileName, u.page);
+      if (!pdf) continue;
+      const plan = underlayRasterPlan(part as PlotPathItem, options, pdf.size, dpi);
+      if (!plan) continue;
+      const drawn = u.layersOff?.length
+        ? await pdf.render(plan.region, plan.width, plan.height, u.layersOff)
+        : await pdf.render(plan.region, plan.width, plan.height);
+      const adjust = u.contrast < 100 || u.monochrome;
+      const data = adjust
+        ? adjustUnderlayPixels(drawn, {
+            contrast: u.contrast,
+            monochrome: u.monochrome,
+            fade: 0,
+            adjustColors: false,
+            background: PAPER,
+          })
+        : drawn.data;
+      out.set(u, {
+        pixels: { width: drawn.width, height: drawn.height, data },
+        region: plan.region,
+        page: pdf.size,
+      });
+    } catch {
+      // A page pdf.js cannot draw plots as one without its file: the boundary only.
+    }
+  }
+  return out;
+}
+
 /** A plot of one space as an SVG file (Triya SVG). */
 export function plotSvgFile(
   parts: readonly PlotPart[],
@@ -672,6 +757,8 @@ export function plotSvgFile(
   settings: PlotSettings,
   space: PlotSpace,
   title: string,
+  /** PDF underlays' pages drawn for the plot (`underlayRasters`); boundaries only without. */
+  underlays?: ReadonlyMap<PlotUnderlay, SvgUnderlayRaster>,
 ): string {
   return plotSvg(parts as readonly PlotItem[], {
     ...pageOptions(page, settings, space),
@@ -679,6 +766,7 @@ export function plotSvgFile(
     height: mmToPoints(page.height),
     title,
     ...(settings.background === 'white' && { background: [255, 255, 255] as const }),
+    ...(underlays && { underlayRasters: (u: PlotUnderlay) => underlays.get(u) }),
   });
 }
 
@@ -690,9 +778,20 @@ export async function plotPng(
   space: PlotSpace,
   title: string,
   rasterize: typeof rasterizeSvg = rasterizeSvg,
+  underlayPage?: UnderlayPageSource,
 ): Promise<Uint8Array> {
+  const underlays =
+    underlayPage &&
+    (await underlayRasters(parts, page, settings, space, underlayPage, settings.dpi));
   // The sheet is the canvas's own fill, so the SVG carries none.
-  const svg = plotSvgFile(parts, page, { ...settings, background: 'none' }, space, title);
+  const svg = plotSvgFile(
+    parts,
+    page,
+    { ...settings, background: 'none' },
+    space,
+    title,
+    underlays,
+  );
   const size = rasterSize(page, settings.dpi);
   const pixels = await rasterize(svg, {
     ...size,
@@ -709,15 +808,26 @@ export async function plotFile(
   space: PlotSpace,
   title: string,
   underlayFile?: (fileName: string) => Uint8Array | undefined,
+  /** An SVG or PNG plot draws PDF underlays' pages from here (M2-39). */
+  underlayPage?: UnderlayPageSource,
 ): Promise<{ readonly bytes: Uint8Array; readonly type: string }> {
   switch (settings.device) {
-    case 'svg':
+    case 'svg': {
+      const underlays =
+        underlayPage &&
+        (await underlayRasters(parts, page, settings, space, underlayPage, SVG_UNDERLAY_DPI));
       return {
-        bytes: new TextEncoder().encode(plotSvgFile(parts, page, settings, space, title)),
+        bytes: new TextEncoder().encode(
+          plotSvgFile(parts, page, settings, space, title, underlays),
+        ),
         type: 'image/svg+xml',
       };
+    }
     case 'png':
-      return { bytes: await plotPng(parts, page, settings, space, title), type: 'image/png' };
+      return {
+        bytes: await plotPng(parts, page, settings, space, title, rasterizeSvg, underlayPage),
+        type: 'image/png',
+      };
     case 'pdf':
       return {
         bytes: plotPdf(parts, page, settings, space, title, underlayFile),

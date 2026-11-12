@@ -44,6 +44,7 @@ import {
   plotFileName,
   plotPage,
   windowBox,
+  type UnderlayPageSource,
 } from './plot';
 import { scriptSettings, scriptSetup } from './plot-script';
 import { plotSpaceOf } from './plot-spaces';
@@ -564,7 +565,7 @@ async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> 
     const parts = await active.plot({ block: target.block, ...plotRequest(settings, space) });
     const title = `${doc.name} - ${space.name}`;
     const underlayFile = (f: string) => pdfPages.bytes(f);
-    const file = await plotFile(parts, page, settings, space, title, underlayFile);
+    const file = await plotFile(parts, page, settings, space, title, underlayFile, underlayPage);
     download(r.script.file, file.bytes, file.type);
     lastPlotSettings.set(id, target.block, settings);
     return { ok: true, file: r.script.file };
@@ -572,6 +573,9 @@ async function plotScript(id: number, r: PlotScriptRequest): Promise<ViewReply> 
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
 }
+
+/** A supplied PDF's page, for an SVG or PNG plot to draw (M2-39). */
+const underlayPage: UnderlayPageSource = (f, page) => pdfPages.plotPage(f, page);
 
 /**
  * PREVIEW (M2-18 part 2): the space shown as it would plot with the settings it last plotted or
@@ -599,7 +603,7 @@ async function previewSpace(id: number): Promise<ViewReply> {
     pdf: p.pdf,
     paper: p.paper,
     plot: async () => {
-      const file = await plotFile(parts, page, settings, space, title, underlayFile);
+      const file = await plotFile(parts, page, settings, space, title, underlayFile, underlayPage);
       download(plotFileName(doc.name, space, settings.device), file.bytes, file.type);
     },
   });
@@ -1454,6 +1458,7 @@ export function App() {
       <PlotDialog
         doc={active}
         underlayFile={(f) => pdfPages.bytes(f)}
+        underlayPage={underlayPage}
         userTables={userPlotStyleTables}
         edited={(id) => store.edited(id)}
       />
