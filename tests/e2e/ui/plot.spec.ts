@@ -30,6 +30,7 @@ import {
 } from '../app/page';
 import { rasterisePdf } from '../app/pdf-raster';
 import { CORPUS, startApp } from '../app/server';
+import { unzip } from '../app/zip';
 
 const VIEWPORTS = path.join(CORPUS, 'ezdxf/examples_dxf/viewports.dxf');
 const PAGE_SETUPS = path.join(
@@ -520,6 +521,126 @@ test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) 
   const pdf = await readPdf(download);
   expect(pdf.pages).toBe(spaces.length);
   expect(pdf.labels).toEqual(spaces.map((s) => s.trim()));
+});
+
+// M2-39 part 4: Publish to PNG writes a file a sheet, downloaded as one ZIP.
+test('PUBLISH to PNG writes a PNG a sheet into one ZIP (M2-39 part 4)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
+  const spaces = (await tabs.allTextContents()).map((s) => s.trim());
+  const input = page.getByLabel('Command', { exact: true });
+  await input.fill('PUBLISH');
+  await input.press('Enter');
+  const d = page.getByRole('dialog', { name: 'Publish' });
+  const to = d.getByLabel('Publish to');
+  await expect(to).toHaveValue('pdf');
+  await expect(to.locator('option')).toHaveText(['PDF', 'SVG', 'PNG']);
+  await to.selectOption('png');
+  const [download] = await Promise.all([
+    page.waitForEvent('download'),
+    d.getByRole('button', { name: 'Publish' }).click(),
+  ]);
+  await expect(d).toBeHidden();
+  expect(download.suggestedFilename()).toBe('sample_AC1018.zip');
+  const files = unzip(new Uint8Array(readFileSync((await download.path())!)));
+  expect(files.map((f) => f.name)).toEqual(spaces.map((s) => `sample_AC1018-${s}.png`));
+  for (const f of files) {
+    const png = decodePng(f.bytes);
+    expect(png.width * png.height).toBeGreaterThan(100_000);
+    let inked = 0;
+    for (let i = 0; i < png.data.length; i += 4) {
+      if (png.data[i]! < 128 && png.data[i + 3] === 255) inked++;
+    }
+    expect(inked, f.name).toBeGreaterThan(500);
+  }
+});
+
+// M2-39 part 4: a PNG over 64 million pixels is drawn and written in bands of rows. A3 at
+// 600 dpi (69.6 Mpx, five bands) inks the same places as A3 at 150 dpi, a quarter of it: every
+// band in its place, none blank, no seam.
+test('a PNG over 64 million pixels plots in bands, inking where the plot at 150 dpi does (M2-39 part 4)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DWG);
+  await expectShown(page, path.basename(DWG));
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  const plotPng = async (dpi: string, size: string) => {
+    await page.keyboard.press('Control+p');
+    const d = dialog(page);
+    await d.getByLabel('Paper size').selectOption('ISO A3');
+    await d.getByLabel('What to plot').selectOption('extents');
+    await d.getByLabel('Center the plot').check();
+    await d.getByLabel('Name').selectOption('png');
+    await d.getByLabel('Resolution').selectOption(dpi);
+    await expect(d.getByLabel('Image size')).toHaveText(size);
+    const [download] = await Promise.all([
+      page.waitForEvent('download', { timeout: 60_000 }),
+      d.getByRole('button', { name: 'OK' }).click(),
+    ]);
+    await expect(d).toBeHidden({ timeout: 60_000 });
+    return decodePng(new Uint8Array(readFileSync((await download.path())!)));
+  };
+  const big = await plotPng('600', '9921 × 7016 pixels');
+  expect([big.width, big.height]).toEqual([9921, 7016]);
+  const small = await plotPng('150', '2480 × 1754 pixels');
+  // Ink in each 4 × 4 block of the big plot against ink in the small plot's pixel, give or
+  // take a pixel (thin lines antialias differently at the two resolutions).
+  const inked = (r: { data: Uint8Array }, i: number) =>
+    r.data[i * 4 + 3]! > 0 && r.data[i * 4]! + r.data[i * 4 + 1]! + r.data[i * 4 + 2]! < 600;
+  const w = small.width;
+  const h = small.height;
+  const blocks = new Uint8Array(w * h);
+  for (let y = 0; y < big.height; y++) {
+    for (let x = 0; x < big.width; x++) {
+      if (inked(big, y * big.width + x))
+        blocks[Math.min(h - 1, y >> 2) * w + Math.min(w - 1, x >> 2)] = 1;
+    }
+  }
+  const near = (m: (i: number) => boolean, x: number, y: number) => {
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        const xx = x + dx;
+        const yy = y + dy;
+        if (xx >= 0 && yy >= 0 && xx < w && yy < h && m(yy * w + xx)) return true;
+      }
+    }
+    return false;
+  };
+  let bigInk = 0;
+  let bigMissed = 0;
+  let smallInk = 0;
+  let smallMissed = 0;
+  // Ink per band of the big plot's rows (16 million pixels a band: 1612 rows), and the bands the
+  // small plot's ink falls in.
+  const bandOf = (y: number) => Math.floor((y * 4) / Math.floor(16_000_000 / big.width));
+  const bandInk = new Map<number, number>();
+  const smallBands = new Set<number>();
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      if (blocks[y * w + x]) {
+        bigInk++;
+        bandInk.set(bandOf(y), (bandInk.get(bandOf(y)) ?? 0) + 1);
+        if (!near((i) => inked(small, i), x, y)) bigMissed++;
+      }
+      if (inked(small, y * w + x)) {
+        smallInk++;
+        smallBands.add(bandOf(y));
+        if (!near((i) => blocks[i] === 1, x, y)) smallMissed++;
+      }
+    }
+  }
+  expect(bigInk).toBeGreaterThan(5_000);
+  expect(smallInk).toBeGreaterThan(5_000);
+  expect(bigMissed / bigInk).toBeLessThan(0.02);
+  expect(smallMissed / smallInk).toBeLessThan(0.02);
+  // Ink in every band the drawing crosses, which is more than one.
+  expect([...bandInk.keys()].sort()).toEqual([...smallBands].sort());
+  expect(smallBands.size).toBeGreaterThanOrEqual(3);
 });
 
 // M2-18: the Triya SVG and Triya PNG plotters plot the same parts as the PDF one.

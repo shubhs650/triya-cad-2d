@@ -5,14 +5,17 @@ import { describe, expect, it } from 'vitest';
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { POINTS_PER_MM, type PlotPart } from '@triya/render';
 import type { Layout, NamedPageSetup } from '@triya/engine';
-import { defaultPlotSettings, pageSetupsOf, withPageSetup } from '../src/plot';
+import { defaultPlotSettings, pageSetupsOf, plotFile, withPageSetup } from '../src/plot';
 import {
   movedSheet,
   publishFileName,
   publishLog,
   publishLogName,
   publishPdf,
+  publishSheetFiles,
   publishSheets,
+  publishedDownload,
+  PUBLISH_TO,
   sheetSpace,
   withOpenDrawings,
 } from '../src/publish';
@@ -146,6 +149,64 @@ describe('publishPdf', () => {
     );
     expect(bytes).toBeUndefined();
     expect(failed).toHaveLength(1);
+  });
+});
+
+// M2-39 part 4: Publish to SVG or PNG writes a file a sheet, several as one ZIP.
+describe('publishing to SVG and PNG (M2-39 part 4)', () => {
+  const model = sheetSpace({ name: 'Model', extents: { minX: 0, minY: 0, maxX: 100, maxY: 50 } });
+  const layout = sheetSpace({ name: 'Layout1', layout: a3('Layout1', '58', 1) });
+  const sheets = [
+    { sheet: 'plan-Model', space: model, parts: [stroke] },
+    { sheet: 'plan-Layout1', space: layout, parts: [stroke] },
+    { sheet: 'plan-Empty', space: { name: 'Empty' }, parts: [] },
+  ];
+
+  it('offers PDF, SVG and PNG', () => {
+    expect(PUBLISH_TO.map((d) => d.name)).toEqual(['PDF', 'SVG', 'PNG']);
+  });
+
+  it('writes a file a sheet with its page setup and the plotter chosen, reporting the rest', async () => {
+    const seen: { device: string; paper: number; title: string }[] = [];
+    const { files, failed } = await publishSheetFiles(
+      sheets,
+      'svg',
+      async (parts, page, settings, space, title) => {
+        if (parts.length === 0) throw new Error('There is nothing to plot in this plot area.');
+        seen.push({ device: settings.device, paper: Math.round(page.width), title });
+        return plotFile(parts, page, settings, space, title);
+      },
+    );
+    expect(files.map((f) => f.name)).toEqual(['plan-Model.svg', 'plan-Layout1.svg']);
+    expect(seen).toEqual([
+      { device: 'svg', paper: 297, title: 'plan-Model' },
+      { device: 'svg', paper: 420, title: 'plan-Layout1' },
+    ]);
+    expect(failed).toEqual([
+      { sheet: 'plan-Empty', message: 'There is nothing to plot in this plot area.' },
+    ]);
+    const svg = new TextDecoder().decode(files[1]!.bytes);
+    expect(svg).toContain('<title>plan-Layout1</title>');
+    expect(svg).toContain('width="420mm" height="297mm"');
+  });
+
+  it('downloads one file as itself and several as one ZIP', () => {
+    const svg = { name: 'plan-Model.svg', bytes: new TextEncoder().encode('<svg/>') };
+    const png = { name: 'plan-Layout1.png', bytes: Uint8Array.from([137, 80, 78, 71]) };
+    expect(publishedDownload([svg], publishFileName('plan.dxf', 'zip'))).toEqual({
+      name: 'plan-Model.svg',
+      bytes: svg.bytes,
+      type: 'image/svg+xml',
+    });
+    const zip = publishedDownload([svg, png], publishFileName('plan.dxf', 'zip'))!;
+    expect([zip.name, zip.type]).toEqual(['plan.zip', 'application/zip']);
+    expect([...zip.bytes.subarray(0, 4)]).toEqual([0x50, 0x4b, 3, 4]);
+    const names = new TextDecoder().decode(zip.bytes);
+    expect(names).toContain('plan-Model.svg');
+    expect(names).toContain('plan-Layout1.png');
+    // Export's All layouts names a ZIP, so even one layout is one.
+    expect(publishedDownload([png], 'plan.zip', 'always')!.name).toBe('plan.zip');
+    expect(publishedDownload([], 'plan.zip')).toBeUndefined();
   });
 });
 
