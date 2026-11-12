@@ -223,7 +223,7 @@ function TypedField({
     row.kind === 'transparency' ? (row.options ?? []).map((o) => o.value) : suggestions;
   const list = choices && choices.length > 0 ? `${row.key}-choices` : undefined;
   const commit = () => {
-    if (text.trim() === '' || text === shown) return setText(shown);
+    if ((text.trim() === '' && !row.clearable) || text === shown) return setText(shown);
     set(row.key, text);
   };
   return (

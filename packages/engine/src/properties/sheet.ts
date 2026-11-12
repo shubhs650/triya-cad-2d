@@ -25,6 +25,14 @@ import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
 import { DIMVAR_ROWS, rowVars, type DimvarRow, type DimvarSection } from './dimension';
 import { JUSTIFICATIONS, bookColors } from '../commands/modify/attributes';
+import {
+  hasThickness,
+  hyperlinkOf,
+  materialValue,
+  namedPlotStyles,
+  plotStyleValue,
+  thicknessOf,
+} from './general';
 
 /** How a row's value is shown and typed. */
 export type PropertyKind =
@@ -67,6 +75,8 @@ export interface PropertyRow {
    * Color tab only: a dimension's DIMVAR colours, which `DSTYLE` overrides keep as ACIs.
    */
   readonly colorDialog?: 'index';
+  /** An empty typed value is a value, not a slip to undo: Hyperlink's takes the link off. */
+  readonly clearable?: true;
 }
 
 export interface PropertySection {
@@ -1036,8 +1046,16 @@ export type GeneralProps = Pick<
   'color' | 'layer' | 'linetype' | 'ltScale' | 'lineweight' | 'transparency'
 >;
 
-/** General's rows (Color, Layer, Linetype, Linetype scale, Lineweight, Transparency). */
-function generalRows(model: DocumentModel, es: readonly GeneralProps[]): PropertyRow[] {
+/**
+ * General's rows: Color, Layer, Linetype, Linetype scale, Lineweight and Transparency, and for
+ * selected objects (`entities`) Plot style, Hyperlink and Thickness in AutoCAD's places (M2-35
+ * part 6, `general.ts`).
+ */
+function generalRows(
+  model: DocumentModel,
+  es: readonly GeneralProps[],
+  entities?: readonly Entity[],
+): PropertyRow[] {
   const layers = [...model.tables.layers.values()]
     .map((l) => ({ value: l.handle as string, label: l.name }))
     .sort((a, b) => a.label.localeCompare(b.label));
@@ -1062,7 +1080,7 @@ function generalRows(model: DocumentModel, es: readonly GeneralProps[]): Propert
   ];
   const linetypeValue = (l: LinetypeRef): string => l;
 
-  return [
+  const rows = [
     row(es, {
       key: 'color',
       label: 'Color',
@@ -1097,6 +1115,62 @@ function generalRows(model: DocumentModel, es: readonly GeneralProps[]): Propert
       get: (e) => transparencyValue(e.transparency),
     }),
   ];
+  if (!entities) return rows;
+  const named = namedPlotStyles(model);
+  const plotStyle = row(entities, {
+    key: 'plotStyle',
+    label: 'Plot style',
+    kind: named ? 'choice' : 'text',
+    readOnly: !named,
+    ...(named && {
+      options: [
+        { value: 'ByLayer', label: 'ByLayer' },
+        ...[...model.tables.plotStyles.values()].map((r) => ({
+          value: r.handle as string,
+          label: r.name,
+        })),
+      ],
+    }),
+    get: (e) => plotStyleValue(model, e),
+  });
+  const hyperlink: PropertyRow = {
+    ...row(entities, {
+      key: 'hyperlink',
+      label: 'Hyperlink',
+      kind: 'text',
+      get: (e) => hyperlinkOf(model, e),
+    }),
+    clearable: true,
+  };
+  const thickness = entities.every(hasThickness)
+    ? [row(entities, { key: 'thickness', label: 'Thickness', kind: 'distance', get: thicknessOf })]
+    : [];
+  // AutoCAD's order: Plot style after Linetype scale, Hyperlink and Thickness last.
+  return [...rows.slice(0, 4), plotStyle, ...rows.slice(4), hyperlink, ...thickness];
+}
+
+/**
+ * The 3D Visualization group's Material (M2-35 part 6): ByLayer and the drawing's materials, in
+ * ACAD_MATERIAL's order. None for a drawing without materials (before R2007).
+ */
+function visualizationRows(model: DocumentModel, es: readonly Entity[]): PropertyRow[] {
+  const materials = [...model.tables.materials.values()];
+  if (materials.length === 0) return [];
+  const options: PropertyOption[] = [
+    { value: 'ByLayer', label: 'ByLayer' },
+    ...materials
+      .filter((m) => m.name.toUpperCase() !== 'BYLAYER')
+      .map((m) => ({ value: m.handle as string, label: m.name })),
+  ];
+  return [
+    row(es, {
+      key: 'material',
+      label: 'Material',
+      kind: 'choice',
+      options,
+      get: (e) => materialValue(model, e),
+    }),
+  ];
 }
 
 /**
@@ -1122,10 +1196,12 @@ export function propertySheet(
   }
   if (es.length === 0) return { count: 0, types: [], sections: [], units };
 
-  const general = generalRows(model, es);
+  const general = generalRows(model, es, es);
+  const visualization = visualizationRows(model, es);
   const oneType = narrowed ?? (counts.size === 1 ? es[0]!.type : undefined);
   const sections: PropertySection[] = [
     { title: 'General', rows: general },
+    ...(visualization.length > 0 ? [{ title: '3D Visualization', rows: visualization }] : []),
     ...(oneType ? typeSections(model, oneType, es) : []),
   ];
   const dynamic =

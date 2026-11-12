@@ -326,7 +326,7 @@ describe('Properties edits', () => {
     expect(line.linetype).toBe('14');
     expect(line.lineweight).toBe(35);
     expect(line.transparency).toEqual({ alpha: 153 });
-    expect(propertySheet(s.model, [line.id]).sections[0]!.rows[5]!.value).toBe(40);
+    expect(rowOf(propertySheet(s.model, [line.id]), 'Transparency').value).toBe(40);
     await s.bus.setProperty({ key: 'transparency', value: '95' });
     await s.bus.setProperty({ key: 'lineweight', value: '36' });
     await s.bus.setProperty({ key: 'ltScale', value: '-1' });

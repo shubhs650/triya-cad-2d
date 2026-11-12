@@ -1,0 +1,1 @@
+- M2-35 part 6 (#296): the Properties palette's General group now lists Plot style (ByColor in a colour-dependent drawing, the drawing's plot style names in a named one), Hyperlink (an object's link URL, typed or cleared) and Thickness, and a 3D Visualization group gives the Material; each saves to DXF and reads back.
