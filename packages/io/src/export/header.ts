@@ -21,7 +21,12 @@ import {
   type CadDocument,
   type CadSystemVariable,
 } from '@node-projects/acad-ts';
-import type { DocumentInit, DocumentModel, HeaderValue } from '@triya/engine';
+import {
+  REVCLOUDGRIPS,
+  type DocumentInit,
+  type DocumentModel,
+  type HeaderValue,
+} from '@triya/engine';
 import {
   annotationScaleValue,
   headerVariableValue,
@@ -52,6 +57,12 @@ const VOLATILE_HEADER = new Set([
  * the file as it was rather than make a variable-dictionary entry AutoCAD may not read.
  */
 const SESSION_ONLY = new Set(['CETRANSPARENCY']);
+
+/**
+ * Per-user settings the app puts in each drawing's header for the session (M2-42): REVCLOUDGRIPS,
+ * which AutoCAD keeps in the registry. A save never writes them.
+ */
+const NEVER_SAVED = new Set([REVCLOUDGRIPS]);
 
 /**
  * Variables a save sets itself: the version and code page follow the format written, the seed
@@ -380,7 +391,8 @@ export function planHeader(
   const problems: string[] = [];
   for (const name of names) {
     const value = model.header.get(name);
-    if (VOLATILE_HEADER.has(name) || same(before.get(name), value)) continue;
+    if (VOLATILE_HEADER.has(name) || NEVER_SAVED.has(name) || same(before.get(name), value))
+      continue;
     if (SESSION_ONLY.has(name) && !dictionary.has(name)) continue;
     const problem = headerProblem(
       doc,

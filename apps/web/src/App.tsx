@@ -16,6 +16,7 @@ import type {
   ViewReply,
   ViewState,
 } from '@triya/engine';
+import { REVCLOUDGRIPS } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
@@ -53,6 +54,7 @@ import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
 import { drafting } from './drafting';
+import { systemVariableReply } from './system-variables';
 import { snapMenu } from './snap-menu';
 import { AppClipboard, browserClipboardEnv, clipboardPicture } from './system-clipboard';
 import { SnapMenu } from './SnapMenu';
@@ -270,6 +272,20 @@ drafting.subscribe(() => {
 });
 
 /**
+ * REVCLOUDGRIPS (M2-42), a per-user setting: each drawing's engine works out grips, so each is
+ * told it when the drawing opens and whenever SETVAR or the stored settings change it.
+ */
+let revcloudGrips = drafting.get().revcloudGrips;
+function tellRevcloudGrips(doc: number): void {
+  void engines.edit(doc, { kind: 'sysvar', name: REVCLOUDGRIPS, value: revcloudGrips ? 1 : 0 });
+}
+drafting.subscribe(() => {
+  if (drafting.get().revcloudGrips === revcloudGrips) return;
+  revcloudGrips = drafting.get().revcloudGrips;
+  for (const d of store.getSnapshot().docs) tellRevcloudGrips(d.id);
+});
+
+/**
  * The user's settings (M2-20, preferences.ts), kept on this device: Dynamic Input and the
  * object snap settings follow them, the chrome takes the theme and every canvas its colours.
  */
@@ -328,6 +344,8 @@ function viewContext(id: number): ViewContext {
     plot: (r) => plotScript(id, r),
     // Properties' Pattern name (M2-35 part 3), from the library the canvases draw with.
     hatchPattern: (name, placements) => hatchPatternReply(patterns.sources(), name, placements),
+    // SETVAR's variables the app keeps (M2-42).
+    sysvar: (name, value) => systemVariableReply(drafting, name, value),
     clipboard: (content) => clipboardRequest(id, content),
     // PROPERTIES and PROPERTIESCLOSE (M2-21).
     palette: (name, open) => {
@@ -951,6 +969,7 @@ async function open(
     const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits);
     // The drawing's authoritative document goes to its engine worker (M1-67).
     engines.start(id, opened.init, recovered?.changes);
+    tellRevcloudGrips(id);
     // The Properties palette, docked, showed the drawing before its engine started (M2-21).
     if (dockedPalette.get() === 'properties' && store.getSnapshot().active === id)
       engines.command(id, { kind: 'properties', open: true });
