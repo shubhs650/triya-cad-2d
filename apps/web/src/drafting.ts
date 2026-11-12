@@ -35,6 +35,12 @@ export interface DraftingState {
    * per user, initially on.
    */
   readonly pdfOsnap: boolean;
+  /**
+   * REVCLOUDGRIPS (M2-42): a revision cloud shows its corners as grips (AutoCAD 2021+'s initial
+   * 1), or a grip at every arc's end (0). AutoCAD keeps it per user; each drawing's engine is
+   * told it (a header entry never saved), as its grips are worked out there.
+   */
+  readonly revcloudGrips: boolean;
 }
 
 export type DraftingToggle =
@@ -75,6 +81,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   markerSize: 5,
   aperture: 10,
   pdfOsnap: true,
+  revcloudGrips: true,
 };
 
 /**

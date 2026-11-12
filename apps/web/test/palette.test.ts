@@ -65,6 +65,7 @@ describe('palette search', () => {
       'SAVEAS',
       'SCALE',
       'SELECT',
+      'SETVAR',
       'STRETCH',
       'TEXT',
       'TEXTEDIT',

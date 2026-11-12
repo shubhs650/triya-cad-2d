@@ -27,6 +27,7 @@ import {
   type CommandDef,
   type CommandGenerator,
   type CommandRegistry,
+  type ResolvedCommand,
 } from './command';
 import { blocklessDimensionBlocks, regenerateRestyled } from './modify/dimensions';
 import {
@@ -53,6 +54,8 @@ import {
 import { NO_VIEW, waitsOnApp, type ViewHost, type ViewReply, type ViewRequest } from './view/host';
 import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
 import { gripsOf } from '../edit/grips';
+import { variableCommand } from './setvar';
+import { systemVariable } from './sysvars';
 import { revcloudOf } from '../edit/revcloud';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
@@ -675,15 +678,24 @@ export class PromptBus {
     }
     this.#log(`Command: ${t}`);
     this.#recent.push(t);
-    const found = this.#registry.resolve(t);
+    const found = this.#registry.resolve(t) ?? this.#variable(t);
     if (!found) return this.#reject(`Unknown command "${t.toUpperCase()}".  Press F1 for help.`);
     return this.#start(found.def, found.dash, false);
+  }
+
+  /**
+   * A system variable's name where a command's was expected (M2-42): its value, as SETVAR asks
+   * it, as AutoCAD takes a variable's name at `Command:`. Commands come first (DIMSTYLE).
+   */
+  #variable(name: string): ResolvedCommand | undefined {
+    const v = systemVariable(this.#model, name);
+    return v && { def: variableCommand(v), dash: false };
   }
 
   async #transparent(text: string): Promise<void> {
     const name = text.slice(1);
     this.#log(`${this.promptText} ${text}`);
-    const found = this.#registry.resolve(name);
+    const found = this.#registry.resolve(name) ?? this.#variable(name);
     if (!found) return this.#reject(`Unknown command "${name.toUpperCase()}".  Press F1 for help.`);
     if (!found.def.transparent) {
       return this.#reject('** That command may not be invoked transparently **');

@@ -27,7 +27,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | BOUNDARY | BO | 2 | Island detection, object type (polyline/region) | |
 | REGION | REG | 3 | 2D only | |
 | WIPEOUT | — | 1 | Frames, Polyline | x (#231; Frames ON/OFF and "Display but not plot", shown on screen and left off plots, #260) |
-| REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | x (#231; Modify and corner grips #258) |
+| REVCLOUD | — | 1 | Arc length, Object, Rectangular, Polygonal, Freehand, Style (Normal/Calligraphy), Modify | x (#231; Modify and corner grips #258; REVCLOUDGRIPS 0, a grip at every arc's end, #302) |
 | DIVIDE | DIV | 2 | Block | |
 | MEASURE | ME | 2 | Block | |
 | MLINE | ML | 3 | read/render required; creation Should | |
@@ -171,7 +171,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | PURGE | PU | 2 | dialog + -PURGE | |
 | AUDIT / RECOVER | — | 2 | Health report implementation | |
 | UNITS | UN | 2 | dialog + -UNITS | |
-| SETVAR | SET | 2 | any registered sysvar | |
+| SETVAR ᵀ | SET | 2 | any registered sysvar | x (#302; every header variable the drawing holds, AutoCAD's types and ranges, read-only ones shown; WIPEOUTFRAME; the drafting aids ORTHOMODE, SNAPMODE, GRIDMODE, OSMODE, POLARANG, LWDISPLAY, TRANSPARENCYDISPLAY and the per-user APERTURE, PDFOSNAP, REVCLOUDGRIPS; `?` lists by wild card; a variable's name typed at `Command:` or transparently. DICTIONARYVAR variables other than CETRANSPARENCY are read-only, M2-59) |
 
 ## View and navigation
 

@@ -77,7 +77,7 @@ import {
   type TableStyleRecord,
   type Xdata,
 } from '../model/types';
-import { insUnitsScale } from '../model/units';
+import { insUnitsOf, insUnitsScale } from '../model/units';
 import { HANDLE_KEYS, isXrefRecord, renumber } from '../model/xref';
 import { AnonymousNames, copyProblem, transformObjects, type EditReport } from './edit';
 import { followedBy, moveBy, scaleAbout, type Similarity } from './similarity';
@@ -527,7 +527,7 @@ export function copyToClipboard(
       tables: tables as ClipboardTables,
       blocks: [...blocks.values()],
       ...(extents ? { extents } : {}),
-      insUnits: model.meta.insUnits,
+      insUnits: insUnitsOf(model),
       ...(objects.size > 0 ? { objects: [...objects.values()] } : {}),
       ...(coded.length > 0 ? { coded: coded.map((o) => common(model, o)) } : {}),
     },
@@ -553,7 +553,7 @@ function byName(model: DocumentModel, table: TableName, name: string): Handle | 
 
 /** What a paste scales the Clipboard's objects by to keep their size in `model`'s units. */
 export function pasteScale(model: DocumentModel, clip: Clipboard): number {
-  return insUnitsScale(clip.insUnits ?? 0, model.meta.insUnits);
+  return insUnitsScale(clip.insUnits ?? 0, insUnitsOf(model));
 }
 
 /**
