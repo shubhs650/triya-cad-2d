@@ -293,6 +293,54 @@ button {
   color: var(--danger-text);
 }
 
+/*
+ * M2-57: notices that go by themselves ("Saved <name>.", "Opening …") float at the top of the
+ * drawing area instead of pushing it down, so the canvas keeps its size while they come and go.
+ * Only the Dismiss button takes the pointer; the crosshair goes on under the rest.
+ */
+.notice-region {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 16px);
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.notice {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  max-width: 100%;
+  padding: 4px 6px 4px 12px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 6px;
+  background: var(--chrome-bg);
+  color: var(--chrome-text);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 20%);
+  font-size: 13px;
+  animation: undo-toast-in var(--motion) ease-out;
+}
+
+.notice:not(:has(button)) {
+  padding-right: 12px;
+}
+
+.notice button {
+  padding: 1px 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg);
+  color: inherit;
+  pointer-events: auto;
+  transition: background var(--motion);
+}
+
 /* M2-14: one row per unsaved drawing offered for recovery. */
 .banner.recovery {
   flex-direction: column;
