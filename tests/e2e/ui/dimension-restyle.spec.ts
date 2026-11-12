@@ -109,7 +109,7 @@ test('the Properties palette restyles a dimension, which is redrawn at once', as
     .toEqual({ text: '', drawn: [{ contents: expect.stringMatching(/^8/), height: 2.5 }] });
   await shot('2-iso-25.png');
 
-  const height = palette.getByRole('textbox', { name: 'Text height' });
+  const height = palette.getByRole('textbox', { name: 'Text height', exact: true });
   await height.fill('0.5');
   await height.press('Enter');
   await expect
