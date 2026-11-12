@@ -143,6 +143,7 @@ import type {
   MultiLeaderBlock,
   MultiLeaderGeometry,
   MultiLeaderLineOverrides,
+  MultiLeaderMask,
   MultiLeaderText,
   ObjectCommon,
   PointGeometry,
@@ -2042,6 +2043,21 @@ function writeMultiLeaderText(
     c.textColor = acadColor(t.color);
     m.textColor = c.textColor;
   }
+  if (d('mask')) writeMultiLeaderMask(c, t.mask);
+}
+
+/**
+ * The background mask into the context data (M2-44; read as `multiLeaderMask` reads it): 292
+ * on or off, 291 on for the drawing window colour, else 91 its colour, 141 and 92. A mask
+ * turned off keeps the values stored with it, as AutoCAD keeps them.
+ */
+function writeMultiLeaderMask(c: MultiLeader['contextData'], mask: MultiLeaderMask | undefined) {
+  c.backgroundMaskFillOn = mask !== undefined;
+  if (!mask) return;
+  c.backgroundFillEnabled = mask.color === undefined;
+  if (mask.color) c.backgroundFillColor = acadColor(mask.color);
+  c.backgroundScaleFactor = mask.scale;
+  c.backgroundTransparency = mask.transparency ?? 0;
 }
 
 function writeMultiLeaderBlock(

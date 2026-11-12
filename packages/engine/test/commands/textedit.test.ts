@@ -376,3 +376,39 @@ describe('TEXTEDIT and manual-height, reversed MTEXT columns (M2-26)', () => {
     });
   });
 });
+
+// M2-44: the MTEXT editor shows the text's background mask and frame as the text draws them
+// (DXF 90: 1 its colour, 2 the drawing window colour, 16 a frame; 45 the border scale).
+describe('TEXTEDIT shows an MTEXT background mask and frame', () => {
+  async function editWith(background: MTextGeometry['background']) {
+    const { bus, model, added } = setup();
+    await placeBoth(bus);
+    const e = added()[1]!;
+    const g = { ...(e.geom as MTextGeometry), height: 2, ...(background && { background }) };
+    model.apply({ entities: { updated: [{ before: e, after: { ...e, geom: g } }] } });
+    await bus.script(['TEXTEDIT']);
+    await bus.pick({ x: 50, y: 0 });
+    return (bus.prompt as StringPrompt).editor!.background;
+  }
+
+  it('passes the fill colour and the border, (scale − 1) × height out', async () => {
+    const red = { kind: 'aci', index: 1 } as const;
+    expect(await editWith({ flags: 1, color: red, scale: 1.5 })).toEqual({
+      mask: { color: red, pad: 1 },
+    });
+  });
+
+  it('passes the drawing window colour as no colour, and the frame on the fill’s edge', async () => {
+    const red = { kind: 'aci', index: 1 } as const;
+    expect(await editWith({ flags: 3 | 16, color: red, scale: 2 })).toEqual({
+      mask: { pad: 2 },
+      frame: { pad: 2 },
+    });
+    expect(await editWith({ flags: 16, scale: 1 })).toEqual({ frame: { pad: 0 } });
+  });
+
+  it('passes nothing without a mask or frame', async () => {
+    expect(await editWith(undefined)).toBeUndefined();
+    expect(await editWith({ flags: 0, scale: 1.5 })).toBeUndefined();
+  });
+});

@@ -162,6 +162,31 @@ describe('MULTILEADER', () => {
     });
   });
 
+  // M2-44, as ezdxf reads MLEADER context data: 292 turns the mask on, 291 fills it with the
+  // drawing window colour instead of 91 (as does a 91 stating the window colour, 0xC8).
+  it('maps the background mask, and nothing for a mask turned off', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const m = textLeader(doc);
+    const c = m.contextData;
+    c.backgroundFillColor = Color.fromTrueColor(0xffffc8);
+    c.backgroundScaleFactor = 1.5;
+    c.backgroundTransparency = 20;
+    // 291 alone (AutoCAD's default with no mask) masks nothing.
+    c.backgroundFillEnabled = true;
+    expect(mapOne(doc, m).text!.mask).toBeUndefined();
+    c.backgroundMaskFillOn = true;
+    expect(mapOne(doc, m).text!.mask).toEqual({ scale: 1.5, transparency: 20 });
+    c.backgroundFillEnabled = false;
+    expect(mapOne(doc, m).text!.mask).toEqual({
+      color: { kind: 'rgb', r: 255, g: 255, b: 200 },
+      scale: 1.5,
+      transparency: 20,
+    });
+    c.backgroundFillColor = Color.fromCmValue(0xc8000000 | 0);
+    c.backgroundTransparency = 0;
+    expect(mapOne(doc, m).text!.mask).toEqual({ scale: 1.5 });
+  });
+
   it('maps block content and the multileader style', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     const block = new BlockRecord('TAG');

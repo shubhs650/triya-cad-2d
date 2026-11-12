@@ -58,6 +58,7 @@ import type {
   MultiLeaderBlock,
   MultiLeaderGeometry,
   MultiLeaderLine,
+  MultiLeaderText,
 } from '../model/types';
 import type { TextMeasure } from './tolerance';
 
@@ -145,7 +146,31 @@ export function arrowheadParts(
   };
 }
 
-/** The MULTILEADER's MTEXT content as an MTEXT, its frame as the MTEXT's background frame. */
+/**
+ * A multileader's text frame and background mask as an MTEXT background (M2-44): the mask fills
+ * in its colour (DXF 90 bit 1) or, without one, the drawing window colour (bits 1 and 2, as
+ * ezdxf's renderer turns a MULTILEADER into MTEXT), by its border scale; the frame sits a
+ * landing gap outside the text. MTEXT's border is (scale − 1) × height out, so the frame's
+ * scale is 1 + gap / height, its own `frameScale` where a mask takes the scale.
+ */
+export function multiLeaderBackground(
+  g: Pick<MultiLeaderGeometry, 'textFrame' | 'landingGap'>,
+  t: Pick<MultiLeaderText, 'height' | 'mask'>,
+): MTextGeometry['background'] {
+  const frameScale = 1 + Math.max(0, g.landingGap) / t.height;
+  const frame = g.textFrame && t.height > 0;
+  const m = t.mask;
+  if (!m) return frame ? { flags: 16, scale: frameScale } : undefined;
+  return {
+    flags: (m.color ? 1 : 3) | (frame ? 16 : 0),
+    ...(m.color && { color: m.color }),
+    scale: m.scale,
+    ...(m.transparency !== undefined && { transparency: m.transparency }),
+    ...(frame && { frameScale }),
+  };
+}
+
+/** The MULTILEADER's MTEXT content as an MTEXT, its frame and mask as the MTEXT's background. */
 function textPart(g: MultiLeaderGeometry): AnnotationPart | undefined {
   const t = g.text;
   if (!t || g.contentType !== 2) return undefined;
@@ -162,12 +187,9 @@ function textPart(g: MultiLeaderGeometry): AnnotationPart | undefined {
     direction: t.flow,
     lineSpacingStyle: t.lineSpacingStyle,
     lineSpacing: t.lineSpacing,
-    // The frame sits a landing gap outside the text: MTEXT's frame is (scale − 1) × height out.
-    ...(g.textFrame && t.height > 0
-      ? { background: { flags: 16, scale: 1 + Math.max(0, g.landingGap) / t.height } }
-      : {}),
   };
-  return { geom, color: t.color };
+  const background = multiLeaderBackground(g, t);
+  return { geom: background ? { ...geom, background } : geom, color: t.color };
 }
 
 /**
