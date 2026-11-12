@@ -1507,6 +1507,7 @@ export function App() {
         doc={active}
         docs={state.docs}
         underlayFile={(f) => pdfPages.bytes(f)}
+        underlayPage={underlayPage}
         userTables={userPlotStyleTables}
       />
       <ExportDialog
