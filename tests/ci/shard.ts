@@ -2,7 +2,7 @@
 //
 // CI splits `pnpm test` over several runners with `vitest run --shard=i/n`. Vitest's own sharding
 // orders files by a hash of their path and cuts the list into equal counts, which put 1 691 s of
-// the 3 212 s suite on one of three shards (one corpus file alone takes 450 s). This sequencer
+// the 3 212 s suite on one of three shards (one corpus file alone took 450 s). This sequencer
 // cuts by recorded duration instead: longest first, each file to the least loaded shard. Every
 // shard computes the same split from the same file list, so each file runs on exactly one shard;
 // the merged report (`pnpm test:merge`) then checks that all of them passed and applies the

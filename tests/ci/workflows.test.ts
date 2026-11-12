@@ -214,6 +214,27 @@ describe('ci.yml gates', () => {
     );
   });
 
+  // A beforeAll hook in a file of parallel tests makes Playwright keep them in one group per
+  // worker, which `--shard` cannot split; the fidelity specs share their app as a worker fixture.
+  it.each(['golden.spec.ts', 'fixtures.spec.ts'])(
+    'lets the fidelity shards split %s by test',
+    (file) => {
+      const spec = readFileSync(path.join(root, 'tests/e2e/fidelity', file), 'utf8');
+      expect(spec).not.toMatch(/test\.(beforeAll|afterAll)\(/);
+      expect(spec).toContain("mode: 'parallel'");
+    },
+  );
+
+  // A shard cannot split a test file, so the longest file sets every unit shard's floor.
+  it('keeps every Vitest file well under a CI shard', () => {
+    const timings = JSON.parse(
+      readFileSync(path.join(root, 'tests/ci/vitest-timings.json'), 'utf8'),
+    ) as Record<string, number>;
+    for (const [file, seconds] of Object.entries(timings)) {
+      expect(seconds, file).toBeLessThan(300);
+    }
+  });
+
   it('keeps the required check names stable', () => {
     const names = Object.values(ci.jobs).map((j) => j.name);
     for (const required of REQUIRED_CHECKS) expect(names).toContain(required);
