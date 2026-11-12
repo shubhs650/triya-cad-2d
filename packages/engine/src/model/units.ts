@@ -47,3 +47,15 @@ export function insUnitsScale(from: number, to: number): number {
   const b = metresPerUnit(to);
   return a === undefined || b === undefined ? 1 : a / b;
 }
+
+/**
+ * The drawing's INSUNITS: its header's, which SETVAR may have changed (M2-42), else what it
+ * opened with.
+ */
+export function insUnitsOf(model: {
+  readonly header: ReadonlyMap<string, unknown>;
+  readonly meta: { readonly insUnits: number };
+}): number {
+  const v = model.header.get('$INSUNITS');
+  return typeof v === 'number' && Number.isInteger(v) ? v : model.meta.insUnits;
+}

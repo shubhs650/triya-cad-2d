@@ -17,7 +17,8 @@
 //   stays where it is put (DXF 70 bit 128); the other kinds show each definition point.
 // - a revision cloud (M2-24, REVCLOUDGRIPS on, AutoCAD's default) shows its corners, not every
 //   arc's ends, and dragging one cuts the sides on either side into arcs afresh
-//   (`moveCloudCorner`). REVCLOUDGRIPS off (a grip per arc) waits for a SETVAR.
+//   (`moveCloudCorner`). With REVCLOUDGRIPS 0 (M2-42) it shows a polyline's grips, a grip at
+//   every arc's end, as before AutoCAD 2021 (`revcloudOf` gives no cloud).
 // - an MTEXT set in columns (M2-26 part 2) shows, besides its insertion point, a column width
 //   grip, a gutter grip and a column height grip (one under each column for dynamic columns of
 //   manual height): `mtext-grips.ts`.

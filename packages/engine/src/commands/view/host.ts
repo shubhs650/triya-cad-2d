@@ -128,7 +128,13 @@ export type ViewRequest =
       readonly op: 'hatchPattern';
       readonly name: string;
       readonly placements: readonly PatternPlacement[];
-    };
+    }
+  /**
+   * A system variable the app keeps (SETVAR, M2-42: the drafting aids and the per-user settings
+   * of `APP_VARIABLES`): set to `value` when one is given (already checked against the
+   * variable's range), and answered with the value it holds.
+   */
+  | { readonly op: 'sysvar'; readonly name: string; readonly value?: number };
 
 /** Where a hatch's pattern lies: its angle, its scale and the point its lines start from. */
 export interface PatternPlacement {
@@ -312,6 +318,8 @@ export type ViewReply =
       readonly plotSetup?: PlotScriptSetup;
       /** What `hatchPattern` placed (M2-35 part 3). */
       readonly pattern?: PlacedPattern;
+      /** What a `sysvar` variable holds (M2-42). */
+      readonly value?: number;
     }
   | { readonly ok: false; readonly message: string };
 

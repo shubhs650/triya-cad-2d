@@ -103,6 +103,11 @@ export interface ViewContext {
   readonly plot?: (r: PlotScriptRequest) => Promise<ViewReply>;
   /** Properties' Pattern name (M2-35 part 3): a pattern from the app's library, placed. */
   readonly hatchPattern?: (name: string, placements: readonly PatternPlacement[]) => ViewReply;
+  /**
+   * SETVAR (M2-42): a system variable the app keeps (the drafting aids, the per-user settings),
+   * set to `value` when given, answered with its value.
+   */
+  readonly sysvar?: (name: string, value?: number) => ViewReply;
 }
 
 /** What -PLOT and -EXPORT (M2-39 part 5) ask of the app. */
@@ -116,6 +121,7 @@ export const NO_FILE = 'There is no drawing to save.';
 export const NO_CLIPBOARD = 'There is no Clipboard here.';
 export const NO_PALETTE = 'There are no palettes here.';
 export const NO_PATTERNS = 'There is no pattern library here.';
+export const NO_SETTINGS = 'There are no settings here.';
 
 export function stateOf(t: ViewTarget): ViewState | undefined {
   const v = t.view;
@@ -143,6 +149,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
     return ctx.hatchPattern
       ? ctx.hatchPattern(r.name, r.placements)
       : { ok: false, message: NO_PATTERNS };
+  }
+  if (r.op === 'sysvar') {
+    return ctx.sysvar ? ctx.sysvar(r.name, r.value) : { ok: false, message: NO_SETTINGS };
   }
   if (r.op === 'clipboard') {
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };

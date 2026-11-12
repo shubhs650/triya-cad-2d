@@ -49,18 +49,27 @@ async function* frames(ctx: CommandContext): Sub<void> {
   const frame = MODES.findIndex(
     (m) => m.toUpperCase() === keyword(a).toUpperCase(),
   ) as WipeoutFrame;
+  setWipeoutFrame(ctx, frame);
+}
+
+/**
+ * Sets WIPEOUTFRAME (WIPEOUT Frames, SETVAR; M2-42): in the drawing's WIPEOUTVARIABLES, made
+ * when it has none and the mode is not AutoCAD's initial 1. False, with a message, when the
+ * drawing has nowhere to keep it.
+ */
+export function setWipeoutFrame(ctx: CommandContext, frame: WipeoutFrame): boolean {
   const vars = wipeoutVariables(ctx.model);
   if (vars) {
     if (vars.frame !== frame) {
       ctx.edit((b) => b.updateObject(vars.handle, { frame } as Partial<NonGraphicalObject>));
     }
-    return;
+    return true;
   }
-  if (frame === 1) return; // no object means frames on already
+  if (frame === 1) return true; // no object means frames on already
   const root = ctx.model.meta.rootDictionary;
   if (root === undefined) {
     ctx.message('The drawing has no named object dictionary to keep WIPEOUTFRAME in.');
-    return;
+    return false;
   }
   // AutoCAD files it in the root dictionary as ACAD_WIPEOUT_VARS (the save names the entry).
   ctx.edit((b) =>
@@ -70,6 +79,7 @@ async function* frames(ctx: CommandContext): Sub<void> {
       frame,
     } as Omit<WipeoutVariables, 'handle'>),
   );
+  return true;
 }
 
 function add(ctx: CommandContext, points: readonly Vec2[]): void {

@@ -296,9 +296,20 @@ function xdataArc(e: Entity, model: DocumentModel): number | undefined {
   return undefined;
 }
 
-/** A polyline AutoCAD 2021+ knows as a revision cloud (its RevcloudProps xdata), else none. */
+/**
+ * REVCLOUDGRIPS (M2-42), a per-user setting AutoCAD keeps in the registry: the app sets it on
+ * each drawing it opens as a header entry of this bare name that is never saved (io
+ * export/header.ts). 0 shows a cloud's grips as a polyline's, at every arc's end, as before
+ * AutoCAD 2021; 1, or none, its corners.
+ */
+export const REVCLOUDGRIPS = 'REVCLOUDGRIPS';
+
+/**
+ * A polyline AutoCAD 2021+ knows as a revision cloud (its RevcloudProps xdata) with its grips
+ * at its corners (REVCLOUDGRIPS 1), else none: what grips show and drag it by.
+ */
 export function revcloudOf(model: DocumentModel, e: Entity): CloudInfo | undefined {
-  if (!isCloudShaped(e.geom)) return undefined;
+  if (!isCloudShaped(e.geom) || model.header.get(REVCLOUDGRIPS) === 0) return undefined;
   const arc = xdataArc(e, model);
   return arc === undefined ? undefined : { arc };
 }

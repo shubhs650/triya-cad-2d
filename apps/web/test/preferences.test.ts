@@ -50,6 +50,7 @@ describe('preferences', () => {
       markerSize: 5,
       aperture: 10,
       pdfOsnap: true,
+      revcloudGrips: true,
     });
   });
 
@@ -74,6 +75,7 @@ describe('preferences', () => {
         aperture: 25,
         otrack: 'no',
         pdfOsnap: false,
+        revcloudGrips: false,
       },
       unknown: 1,
     });
@@ -94,6 +96,7 @@ describe('preferences', () => {
       markerSize: 20,
       aperture: 25,
       pdfOsnap: false,
+      revcloudGrips: false,
     });
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
     expect(normalizePreferences('junk')).toEqual(DEFAULT_PREFERENCES);
@@ -174,5 +177,8 @@ describe('preferences', () => {
     // PDFOSNAP is AutoCAD's per user too (M2-22).
     drafting.configure({ pdfOsnap: false });
     expect(m.saved.at(-1)?.drafting.pdfOsnap).toBe(false);
+    // REVCLOUDGRIPS too, a registry setting in AutoCAD (M2-42).
+    drafting.configure({ revcloudGrips: false });
+    expect(m.saved.at(-1)?.drafting.revcloudGrips).toBe(false);
   });
 });

@@ -9,6 +9,8 @@ export * from './view/host';
 export { parseZoomScale, panCommand, regenCommand, zoomCommand, type ZoomScale } from './view/zoom';
 export { viewCommand, viewNameMatches } from './view/named-view';
 export { selectCommand } from './select';
+export { setvarCommand, variableCommand, UNKNOWN_VARIABLE } from './setvar';
+export * from './sysvars';
 export * from '../selection/loop';
 export * from '../selection/rules';
 export * from './undo';
@@ -17,7 +19,7 @@ export * from './modify/edit';
 export * from './drag';
 export { GRIP_MODES, GRIP_OBJECT_LIMIT, gripCommand, type GripMode } from './modify/grips';
 export { revcloudCommand, revcloudAppId, revcloudXdata, type CloudType } from './draw/revcloud';
-export { wipeoutCommand, wipeoutFrame } from './draw/wipeout';
+export { setWipeoutFrame, wipeoutCommand, wipeoutFrame } from './draw/wipeout';
 export * from './modify/draw-order';
 export {
   ATTRIBUTE_COMMANDS,

@@ -22,6 +22,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { EntityType } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
 import { propertySheet, type PropertySheet } from '../properties/sheet';
+import { REVCLOUDGRIPS } from '../edit/revcloud';
 
 /** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
 export interface LayerStateEdit {
@@ -66,7 +67,19 @@ export interface NamedViewEdit {
   readonly view: ViewState;
 }
 
-export type EngineEdit = LayerStateEdit | LayoutEdit | XrefLoadEdit | NamedViewEdit;
+/**
+ * A per-user system variable the app keeps (M2-42) that the drawing's grips follow:
+ * REVCLOUDGRIPS. The app sets it on every drawing it opens and whenever SETVAR changes it. Not an
+ * undoable edit, and never saved: AutoCAD keeps it in the registry, not in the drawing.
+ */
+export interface SessionVariableEdit {
+  readonly kind: 'sysvar';
+  readonly name: typeof REVCLOUDGRIPS;
+  readonly value: 0 | 1;
+}
+
+export type EngineEdit =
+  LayerStateEdit | LayoutEdit | XrefLoadEdit | NamedViewEdit | SessionVariableEdit;
 
 /**
  * Characters AutoCAD refuses in a layout name (LAYOUT Rename: "Invalid layout name"), and its
@@ -295,6 +308,7 @@ export class EngineSession {
   edit(e: EngineEdit): EditResult {
     if (e.kind === 'xref-load') return this.#xrefLoad(e);
     if (e.kind === 'view') return this.#viewEdit(e);
+    if (e.kind === 'sysvar') return this.#sessionVariable(e);
     return e.kind === 'layout' ? this.#layoutEdit(e) : this.#layerEdit(e);
   }
 
@@ -306,6 +320,20 @@ export class EngineSession {
     const change = b.build();
     this.model.apply(change);
     this.#step('VIEW', change);
+    return { ok: true, change };
+  }
+
+  #sessionVariable(e: SessionVariableEdit): EditResult {
+    if (e.name !== REVCLOUDGRIPS || (e.value !== 0 && e.value !== 1)) {
+      return { ok: false, message: `Cannot set ${String(e.name)} here.` };
+    }
+    // 1 is AutoCAD's initial value, which no entry means.
+    const value = e.value === 1 ? undefined : 0;
+    if (this.model.header.get(REVCLOUDGRIPS) === value) return { ok: true, change: {} };
+    const b = new ChangeSetBuilder(this.model);
+    b.setHeader(REVCLOUDGRIPS, value);
+    const change = b.build();
+    this.model.apply(change);
     return { ok: true, change };
   }
 
