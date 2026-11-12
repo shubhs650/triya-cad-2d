@@ -102,7 +102,9 @@ test('shows and edits the selected objects’ properties', async ({ page }) => {
   await page.mouse.move(docked.x + docked.width / 2, docked.y + docked.height / 2);
   await page.keyboard.press('Control+a');
   await expect(objects).toContainText(/^All \(\d+\)/);
-  await expect(palette.getByRole('table')).toHaveCount(1);
+  // General, and 3D Visualization's Material, which every object has (M2-35 part 6).
+  await expect(palette.getByRole('table')).toHaveCount(2);
+  await expect(palette.getByRole('table', { name: '3D Visualization' })).toBeVisible();
   await expect(palette.getByRole('combobox', { name: 'Layer' })).toHaveValue('*VARIES*');
   await objects.selectOption({ label: 'Line (1)' });
   await expect(palette.getByRole('table', { name: 'Geometry' })).toBeVisible();
@@ -359,4 +361,81 @@ test('gives a hatch another pattern, angle and scale from the palette', async ({
   await expect.poll(hatches).toEqual([{ ...crossed, angle: 15, scale: 2, gap: 6 }]);
   await page.mouse.move(300, 640);
   await page.screenshot({ path: test.info().outputPath('6-hatches-cross45.png') });
+});
+
+// M2-35 part 6: General's Plot style (ByColor and read only in this colour-dependent drawing),
+// Hyperlink and Thickness, and 3D Visualization's Material, edited on a line drawn for the test.
+test('sets a line’s hyperlink, thickness and material from the palette', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, '1000070,1000050', 'Specify next point or [Undo]:');
+  await type(page, '1000090,1000050', 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await page.keyboard.press('Control+1');
+  await expect(objects).toHaveText('No selection');
+  const docked = (await activeCanvas(page).boundingBox())!;
+  await page.mouse.click(docked.x + docked.width / 2, docked.y + docked.height / 2);
+  await expect(objects).toHaveText('Line (1)');
+
+  const general = palette.getByRole('table', { name: 'General' });
+  await expect(general.getByRole('rowheader')).toHaveText([
+    'Color',
+    'Layer',
+    'Linetype',
+    'Linetype scale',
+    'Plot style',
+    'Lineweight',
+    'Transparency',
+    'Hyperlink',
+    'Thickness',
+  ]);
+  await expect(palette.getByLabel('Plot style', { exact: true })).toHaveText('ByColor');
+  const material = palette.getByRole('combobox', { name: 'Material' });
+  await expect(material).toHaveValue('ByLayer');
+  await expect(material.getByRole('option')).toContainText(['ByLayer', 'ByBlock', 'Global']);
+
+  /** The line as the last change set left it. */
+  const line = () =>
+    page.evaluate(() => {
+      for (const cs of [...(window as unknown as Dev).triyaDev.changes()].reverse())
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'LINE') {
+            const g = u.after.geom as { thickness?: number };
+            return {
+              thickness: g.thickness ?? 0,
+              material: u.after.material !== undefined,
+              xdata: (u.after.xdata ?? []).flatMap((a) => a.values.map((v) => v.value)),
+            };
+          }
+      return undefined;
+    });
+
+  const hyperlink = palette.getByRole('textbox', { name: 'Hyperlink' });
+  await hyperlink.fill('https://openengtools.com/triya');
+  await hyperlink.press('Enter');
+  await expect.poll(line).toMatchObject({ xdata: ['https://openengtools.com/triya'] });
+  const thickness = palette.getByRole('textbox', { name: 'Thickness' });
+  await thickness.fill('2.5');
+  await thickness.press('Enter');
+  await expect.poll(line).toMatchObject({ thickness: 2.5 });
+  await expect(thickness).toHaveValue(/^2\.50*$/);
+  await material.selectOption({ label: 'Global' });
+  await expect.poll(line).toMatchObject({ material: true });
+  await page.mouse.move(docked.x + 40, docked.y + docked.height - 40);
+  await page.screenshot({ path: test.info().outputPath('1-general-rows.png') });
+
+  // An empty Hyperlink takes the link off.
+  await hyperlink.fill('');
+  await hyperlink.press('Enter');
+  await expect.poll(line).toMatchObject({ xdata: [] });
+  await expect(hyperlink).toHaveValue('');
 });

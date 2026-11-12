@@ -8,7 +8,15 @@ import type { DocumentModel } from '@triya/engine';
 import { saveDxf } from '@triya/io';
 
 export type AuditSaveKind =
-  'unedited' | 'resaved' | 'edited' | 'markup' | 'mleader' | 'session' | 'paste' | 'dimension';
+  | 'unedited'
+  | 'resaved'
+  | 'edited'
+  | 'markup'
+  | 'mleader'
+  | 'session'
+  | 'paste'
+  | 'dimension'
+  | 'properties';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version
