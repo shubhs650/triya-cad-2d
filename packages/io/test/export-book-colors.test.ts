@@ -21,6 +21,8 @@ import {
 import {
   ChangeSetBuilder,
   DocumentModel,
+  copyObjects,
+  moveBy,
   type Color,
   type Entity,
   type EntityGeometry,
@@ -160,6 +162,27 @@ describe('triyaToAcad colour-book colours', () => {
       expect((error as UnsupportedChangeError).problems).toEqual([
         `LINE ${line.handle}: colour-book colours the drawing does not hold`,
       ]);
+    }
+  });
+
+  // M2-48: COPY, MIRROR and a paste into a drawing holding the colour keep its book's name; the
+  // save writes the new entity's DBCOLOR reference (DXF 430) to the drawing's own DBCOLOR.
+  it("names a new entity's colour by the drawing's DBCOLOR (a COPY of the circle)", () => {
+    for (const options of SAVES) {
+      const model = open();
+      const circle = find(model, 'CIRCLE');
+      const b = new ChangeSetBuilder(model);
+      const [id] = copyObjects(b, model, [circle.id], moveBy({ x: 10, y: 0 })).ids;
+      model.apply(b.build());
+      const copy = model.entity(id!)!;
+      expect(copy.color).toEqual(RAL_3020);
+      const saved = exportDocument(readCadDocument(FILE), model, options);
+      expect(reopened(saved).get(copy.handle)?.color).toEqual(RAL_3020);
+      const written = [...(readCadDocument(saved).entities ?? [])].find(
+        (e) => e.handle.toString(16).toUpperCase() === copy.handle,
+      );
+      expect(written?.bookColor?.name).toBe('RAL CLASSIC$RAL 3020');
+      expect(dbColors(saved)).toEqual(['RAL CLASSIC$RAL 3020']);
     }
   });
 });

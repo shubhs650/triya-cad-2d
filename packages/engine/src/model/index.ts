@@ -1,4 +1,5 @@
 export * from './aci';
+export * from './book-colors';
 export * from './builder';
 export * from './changeset';
 export * from './document';

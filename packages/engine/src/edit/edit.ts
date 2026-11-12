@@ -597,12 +597,9 @@ function copiedProps(b: ChangeSetBuilder, e: Entity | InsertAttribute, viewport 
   const xdata = copiedXdata(b, e, viewport);
   return {
     layer: e.layer,
-    // A new object does not take a colour book's name yet (M2-48: the save now writes one the
-    // drawing holds, M2-27): the copy keeps the colour's RGB value.
-    color:
-      e.color.kind === 'rgb' && (e.color.bookName !== undefined || e.color.colorName !== undefined)
-        ? { kind: 'rgb' as const, r: e.color.r, g: e.color.g, b: e.color.b }
-        : e.color,
+    // A colour-book colour stays named by its book, as AutoCAD's copy does (M2-48): the copy is
+    // in the drawing holding the original's DBCOLOR, which the save names it by (M2-27).
+    color: e.color,
     linetype: e.linetype,
     lineweight: e.lineweight,
     transparency: e.transparency,

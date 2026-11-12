@@ -1230,3 +1230,78 @@ describe('dynamic blocks pasted into another drawing (M2-32 part 4)', () => {
     expect(snapshot(target)).toEqual(before);
   });
 });
+
+describe('colour-book colours pasted (M2-48)', () => {
+  const RAL_3020 = {
+    kind: 'rgb',
+    r: 204,
+    g: 6,
+    b: 5,
+    bookName: 'RAL CLASSIC',
+    colorName: 'RAL 3020',
+  } as const;
+  const RGB = { kind: 'rgb', r: 204, g: 6, b: 5 } as const;
+
+  /** The source with its LINE (60) and the CHAIR reference's ATTRIB (63) in RAL 3020. */
+  function bookSource(): DocumentModel {
+    const init = sourceInit();
+    return DocumentModel.create({
+      ...init,
+      entities: init.entities!.map((e) => {
+        if (e.handle === '60') return { ...e, color: RAL_3020 };
+        if (e.geom.kind !== 'INSERT') return e;
+        const attributes = e.geom.attributes.map((a) => ({ ...a, color: RAL_3020 }));
+        return { ...e, geom: { ...e.geom, attributes } };
+      }),
+    });
+  }
+
+  /** The target, with a circle in `color` when given (the drawing then holds that colour). */
+  function bookTarget(color?: EntityInit['color']): DocumentModel {
+    const init = targetInit();
+    const held = color
+      ? [entityInit('27', { kind: 'CIRCLE', center: { x: 0, y: 0 }, radius: 1 }, { color })]
+      : [];
+    return DocumentModel.create({ ...init, entities: [...(init.entities ?? []), ...held] });
+  }
+
+  function pastedColors(target: DocumentModel) {
+    const source = bookSource();
+    const ids = ['60', '62'].map((h) => source.entityByHandle(h)!.id);
+    const clip = structuredClone(copyToClipboard(source, ids, { x: 0, y: 0 }).clipboard);
+    const { pasted } = paste(target, clip);
+    const insert = of(pasted, 'INSERT')[0]!.geom as Extract<EntityGeometry, { kind: 'INSERT' }>;
+    return { line: of(pasted, 'LINE')[0]!.color, attribute: insert.attributes[0]!.color };
+  }
+
+  it('keeps the name when the target holds the same BOOK$COLOR (pasted back where it came from)', () => {
+    expect(pastedColors(bookTarget(RAL_3020))).toEqual({ line: RAL_3020, attribute: RAL_3020 });
+    const source = bookSource();
+    const ids = ['60', '62'].map((h) => source.entityByHandle(h)!.id);
+    const clip = structuredClone(copyToClipboard(source, ids, { x: 0, y: 0 }).clipboard);
+    const { pasted } = paste(source, clip);
+    expect(of(pasted, 'LINE')[0]!.color).toEqual(RAL_3020);
+  });
+
+  it('matches the name as AutoCAD does, whatever its case', () => {
+    const upper = { ...RAL_3020, bookName: 'ral classic', colorName: 'ral 3020' };
+    // Spelt as the target spells it, its DBCOLOR's name.
+    expect(pastedColors(bookTarget(upper)).line).toEqual(upper);
+  });
+
+  it('pastes the RGB value into a drawing that does not hold the colour', () => {
+    expect(pastedColors(bookTarget())).toEqual({ line: RGB, attribute: RGB });
+    expect(pastedColors(bookTarget({ ...RAL_3020, colorName: 'RAL 9999' }))).toEqual({
+      line: RGB,
+      attribute: RGB,
+    });
+    // The same name for another true colour: the target's DBCOLOR is not this colour.
+    expect(pastedColors(bookTarget({ ...RAL_3020, r: 0 }))).toEqual({ line: RGB, attribute: RGB });
+  });
+
+  it('holds the name on the Clipboard', () => {
+    const source = bookSource();
+    const clip = copyToClipboard(source, [source.entityByHandle('60')!.id], { x: 0, y: 0 });
+    expect(clip.clipboard.entities[0]!.color).toEqual(RAL_3020);
+  });
+});

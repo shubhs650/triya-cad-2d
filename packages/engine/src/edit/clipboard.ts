@@ -51,6 +51,7 @@ import type { GeneralProps } from '../properties/sheet';
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import { sub } from '../geom/vec';
+import { bookColors, heldBookColor } from '../model/book-colors';
 import type { ChangeSetBuilder } from '../model/builder';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
@@ -282,14 +283,8 @@ function clipEntity(model: DocumentModel, e: Entity): EntityInit {
     const { annotation: _annotation, ...leader } = geom;
     geom = leader;
   }
-  // A new object does not take a colour book's name yet (M2-48; the drawing pasted into may not
-  // hold the book's DBCOLOR, which the save needs): the copy keeps the colour's RGB value.
-  const c = rest.color;
-  const color =
-    c.kind === 'rgb' && (c.bookName !== undefined || c.colorName !== undefined)
-      ? { kind: 'rgb' as const, r: c.r, g: c.g, b: c.b }
-      : c;
-  return { ...rest, color, geom };
+  // A colour-book colour stays named here: the paste decides what the target can hold (M2-48).
+  return { ...rest, geom };
 }
 
 /**
@@ -699,11 +694,20 @@ function pasteInto(
 
   for (const o of coded) b.adoptObject(o);
 
+  // Colour-book colours keep their names where the target holds them, else their RGB (M2-48).
+  const held = bookColors(model);
+  const colored = (e: EntityInit): EntityInit => {
+    const g = e.geom;
+    const color = heldBookColor(held, e.color);
+    if (g.kind !== 'INSERT') return { ...e, color };
+    const attributes = g.attributes.map((a) => ({ ...a, color: heldBookColor(held, a.color) }));
+    return { ...e, color, geom: { ...g, attributes } };
+  };
   const pasted: Entity[] = [];
-  for (const e of contents) pasted.push(b.adoptEntity(copyEntity(e, copy)));
+  for (const e of contents) pasted.push(b.adoptEntity(colored(copyEntity(e, copy))));
   const top: Entity[] = [];
   for (const e of clip.entities) {
-    const entity = b.adoptEntity({ ...copyEntity(e, copy), owner });
+    const entity = b.adoptEntity({ ...colored(copyEntity(e, copy)), owner });
     pasted.push(entity);
     top.push(entity);
   }

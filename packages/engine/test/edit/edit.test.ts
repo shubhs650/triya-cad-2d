@@ -8,6 +8,7 @@ import {
   DocumentModel,
   copyObjects,
   eraseObjects,
+  mirrorIn,
   moveBy,
   refusalMessages,
   transformObjects,
@@ -161,6 +162,36 @@ describe('COPY', () => {
     expect(parseInt(copy.handle, 16)).toBeGreaterThanOrEqual(0x40);
     expect(copy.reactors).toBeUndefined();
     expect(copy.geom).toMatchObject({ start: { x: 0, y: 1 }, end: { x: 10, y: 1 } });
+  });
+});
+
+describe('a colour-book colour (M2-48)', () => {
+  const RAL_3020 = {
+    kind: 'rgb',
+    r: 204,
+    g: 6,
+    b: 5,
+    bookName: 'RAL CLASSIC',
+    colorName: 'RAL 3020',
+  } as const;
+
+  // AutoCAD's COPY and MIRROR make objects of the same properties: a colour-book colour stays
+  // named by its book, and the drawing holds its DBCOLOR already (the save writes it, M2-27).
+  it('stays named by its book on a COPY and a MIRROR copy', () => {
+    const base = square();
+    const init: DocumentInit = {
+      ...base,
+      entities: base.entities!.map((e) => (e.handle === '30' ? { ...e, color: RAL_3020 } : e)),
+    };
+    const model = DocumentModel.create(init);
+    const copied = edit(model, (b) =>
+      copyObjects(b, model, ids(model, '30'), moveBy({ x: 0, y: 1 })),
+    );
+    expect(model.entity(copied.ids[0]!)!.color).toEqual(RAL_3020);
+    const mirrored = edit(model, (b) =>
+      copyObjects(b, model, ids(model, '30'), mirrorIn({ x: 0, y: 5 }, { x: 10, y: 5 })),
+    );
+    expect(model.entity(mirrored.ids[0]!)!.color).toEqual(RAL_3020);
   });
 });
 
