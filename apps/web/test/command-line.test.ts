@@ -32,6 +32,16 @@ describe('the command line state', () => {
     expect([idle.prompt, idle.promptText]).toEqual([undefined, 'Command:']);
   });
 
+  it('shows no prompt while a command waits on a dialog (M2-41)', () => {
+    const at: CommandOutput = {
+      type: 'prompt',
+      prompt: { kind: 'point', message: 'Specify opposite corner' },
+      text: 'Specify opposite corner:',
+    };
+    const s = follow(follow(IDLE, at), { type: 'waiting', command: 'PLOT' });
+    expect([s.prompt, s.promptText]).toEqual([undefined, '']);
+  });
+
   it('keeps typed input for recall, without blanks or repeats', () => {
     const s = ['L', 'L', '  ', '0,0'].reduce(typed, IDLE);
     expect(s.recent).toEqual(['L', '0,0']);

@@ -4,6 +4,8 @@
 // picture, or the window's own objects, which it keeps with the drawing they came from.
 import { clipboardData, type Clipboard } from '@triya/engine';
 import type { PlotPart } from '@triya/render';
+import { parseTtf } from '@triya/text';
+import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
 import { describe, expect, it } from 'vitest';
 import {
   AppClipboard,
@@ -178,6 +180,38 @@ describe('clipboardPicture', () => {
     // The long side is 1024 pixels inside an 8-pixel margin.
     expect(size).toEqual({ width: 1040, height: 528, background: '#ffffff' });
     expect(svg).toContain('<svg');
+  });
+
+  it('draws TrueType text as outlines (M2-39 part 3)', async () => {
+    const font = parseTtf(fontBytes(testFont()));
+    const text = {
+      kind: 'fill',
+      path: [0, 0, 0, 1, 10, 0, 1, 5, 10, 4],
+      paint: { color: [0, 0, 0], lineweight: 0.25, linetype: { kind: 'object' } },
+      glyphs: [
+        {
+          font,
+          index: font.glyph(65).index,
+          codePoint: 65,
+          m: { a: 0.01, b: 0, c: 0, d: 0.01, e: 0, f: 0 },
+        },
+      ],
+    } as unknown as PlotPart;
+    let svg = '';
+    await clipboardPicture(
+      sample(),
+      () => Promise.resolve([text]),
+      async (s, o) => {
+        svg = s;
+        return {
+          width: o.width,
+          height: o.height,
+          data: new Uint8ClampedArray(o.width * o.height * 4),
+        };
+      },
+    );
+    expect(svg).toMatch(/<path d="M[^"]+" fill="#000000"/);
+    expect(svg).not.toContain('<text');
   });
 
   it('makes none without the objects’ extents', async () => {

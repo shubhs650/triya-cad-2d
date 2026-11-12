@@ -5,7 +5,9 @@
 // the same way. Page 8's SVG is written in Node, where no pdf.js draws its PDF underlays' pages
 // (the app's SVG plot draws them, M2-39: tests/e2e/ui/plot.spec.ts), so it plots their clip
 // boundaries and is compared with its own golden image.
-// Each SVG is also checked for Inkscape layers named after the drawing's layers.
+// Each SVG is also checked for Inkscape layers named after the drawing's layers, and the text
+// pages (6 and 7) for TrueType text written as SVG text (M2-39 part 3): placed in the page, the
+// fonts it embeds load and each character stands where the file puts it.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -50,6 +52,26 @@ const PAGE = `<!doctype html><meta charset="utf-8"><title>svg</title>
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
     return { png: canvas.toDataURL('image/png'), layers, width: root.getAttribute('width') };
+  };
+  window.checkText = async (name) => {
+    const text = await (await fetch('${ORIGIN}/' + name)).text();
+    const doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    const svg = document.importNode(doc.documentElement, true);
+    document.body.append(svg);
+    const texts = [...svg.querySelectorAll('text')];
+    // Layout asks for the fonts; wait for them before measuring.
+    for (const t of texts) t.getBBox();
+    await document.fonts.ready;
+    const faces = [...document.fonts].map((f) => f.family.replace(/["']/g, '') + ' ' + f.status);
+    const out = texts.map((t) => {
+      const xs = t.getAttribute('x').split(' ').map(Number);
+      let worst = 0;
+      for (let i = 0; i < xs.length; i++)
+        worst = Math.max(worst, Math.abs(t.getStartPositionOfChar(i).x - xs[i]));
+      return { chars: t.textContent, worst };
+    });
+    svg.remove();
+    return { faces, texts: out };
   };
   document.title = 'ready';
 </script>`;
@@ -107,6 +129,28 @@ test('the plot sheet as SVG draws as the PDF does, with the drawing layers as In
     if (golden) await attachPng(info, `page-${n}-golden.png`, golden);
     if (check?.diffPng) await attachPng(info, `page-${n}-diff.png`, check.diffPng);
     failures.push(golden ? `page ${n}: ${check!.reason}` : `page ${n}: no golden ${abs}`);
+  }
+  for (const [n, fonts, shown] of [
+    [6, 1, 'TRUETYPE TEXT 1:100'],
+    [7, 4, 'CID: (1+2)/3 = 1'],
+  ] as const) {
+    const out = await page.evaluate(
+      (name) =>
+        (
+          window as unknown as {
+            checkText(n: string): Promise<{
+              faces: string[];
+              texts: { chars: string; worst: number }[];
+            }>;
+          }
+        ).checkText(name),
+      `page-${n}.svg`,
+    );
+    expect(out.faces, `page ${n} fonts`).toEqual(
+      Array.from({ length: fonts }, (_, i) => `triya-${i + 1} loaded`),
+    );
+    expect(out.texts.map((t) => t.chars)).toContain(shown);
+    for (const t of out.texts) expect(t.worst, `page ${n} "${t.chars}"`).toBeLessThan(0.01);
   }
   expect(failures).toEqual([]);
   expect(errors).toEqual([]);

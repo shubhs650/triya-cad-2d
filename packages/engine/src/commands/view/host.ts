@@ -299,6 +299,16 @@ export interface ViewHost {
   request(r: ViewRequest): Promise<ViewReply>;
 }
 
+/**
+ * The request is answered by the drafter in the app, not by the canvas at once (M2-41): the file
+ * commands' dialogs and pickers (Plot, Publish, Export, Save Drawing As, CLOSE's "Save changes"),
+ * and the preview, which waits until the drafter leaves it. While a command waits on one, no
+ * prompt shows: AutoCAD's command line shows none while its dialog is up.
+ */
+export function waitsOnApp(r: ViewRequest): boolean {
+  return r.op === 'file';
+}
+
 /** The host of a bus no canvas listens to (scripts, tests): every request is refused. */
 export const NO_VIEW: ViewHost = {
   request: () => Promise.resolve({ ok: false, message: 'There is no view to change.' }),

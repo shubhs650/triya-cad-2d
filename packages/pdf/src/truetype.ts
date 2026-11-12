@@ -5,7 +5,17 @@
 // CFF-flavoured OpenType ('OTTO') is `cff.ts`'s; the container and metrics are `sfnt.ts`'s.
 // No DOM here: this package runs in Node and in workers.
 
-import { SFNT_APPLE, SFNT_TRUETYPE, SfntFont, pad4, readSfnt, view, writeSfnt } from './sfnt';
+import {
+  SFNT_APPLE,
+  SFNT_TRUETYPE,
+  SfntFont,
+  cmapTable,
+  pad4,
+  postFormat3,
+  readSfnt,
+  view,
+  writeSfnt,
+} from './sfnt';
 
 /**
  * Tables a subset keeps: the ones §9.9 names for a CIDFontType2, the hinting programs, and OS/2
@@ -81,9 +91,14 @@ export class TrueTypeFont extends SfntFont {
   /**
    * The font file holding only `gids` (0, .notdef, first): glyph i of the subset is glyph
    * `order[i]` of this font, where `order` is `gids` with the components of composite glyphs
-   * appended. With `noSubsetting`, pass every glyph in order.
+   * appended. With `noSubsetting`, pass every glyph in order. `cmap` maps characters to glyphs
+   * of the subset (an SVG's text selects glyphs by character); without it the cmap is empty,
+   * as a PDF selects them by CID.
    */
-  subset(gids: readonly number[]): { readonly bytes: Uint8Array; readonly order: number[] } {
+  subset(
+    gids: readonly number[],
+    cmap?: ReadonlyMap<number, number>,
+  ): { readonly bytes: Uint8Array; readonly order: number[] } {
     const order = [...gids];
     const index = new Map(order.map((g, i) => [g, i]));
     for (let i = 0; i < order.length; i++) {
@@ -140,14 +155,10 @@ export class TrueTypeFont extends SfntFont {
       ['maxp', maxp],
     ]);
     const post = this.tables.get('post');
-    if (post && post.length >= 32) {
-      // Format 3: no glyph names, which would name the old numbering.
-      const p = post.slice(0, 32);
-      view(p).setUint32(0, 0x00030000);
-      tables.set('post', p);
-    }
+    // Format 3: no glyph names, which would name the old numbering.
+    if (post && post.length >= 32) tables.set('post', postFormat3(post));
     // OpenType requires a cmap; the PDF maps CIDs to glyphs itself, so it maps no character.
-    tables.set('cmap', EMPTY_CMAP);
+    tables.set('cmap', cmapTable(cmap ?? new Map()));
     for (const tag of KEPT) {
       const t = this.tables.get(tag);
       if (t && !tables.has(tag) && tag !== 'post') tables.set(tag, t);
@@ -155,46 +166,6 @@ export class TrueTypeFont extends SfntFont {
     return { bytes: writeSfnt(tables), order };
   }
 }
-
-/** A cmap of one Windows Unicode format 4 subtable holding only the closing 0xFFFF segment. */
-const EMPTY_CMAP = new Uint8Array([
-  0,
-  0,
-  0,
-  1,
-  0,
-  3,
-  0,
-  1,
-  0,
-  0,
-  0,
-  12, // version, one subtable at 12
-  0,
-  4,
-  0,
-  24,
-  0,
-  0,
-  0,
-  2,
-  0,
-  2,
-  0,
-  0,
-  0,
-  0, // format 4, length 24, one segment
-  0xff,
-  0xff,
-  0,
-  0,
-  0xff,
-  0xff,
-  0,
-  1,
-  0,
-  0, // end, pad, start, delta 1, range offset
-]);
 
 /** Calls `f` with each component's glyph-index offset and glyph index in a composite glyph. */
 function forEachComponent(glyph: Uint8Array, f: (at: number, index: number) => void): void {

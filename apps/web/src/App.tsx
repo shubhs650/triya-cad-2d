@@ -235,7 +235,7 @@ addEventListener('appinstalled', () => pwa.installed());
 engines.onCommand((doc, o) => {
   commandLines.follow(doc, o);
   if (o.type === 'change') store.edited(doc);
-  if (o.type === 'prompt' || o.type === 'idle') {
+  if (o.type === 'prompt' || o.type === 'idle' || o.type === 'waiting') {
     const prompt = commandLines.get(doc).prompt;
     for (const c of controllersOf(doc)) c.setPrompt(prompt);
   }
