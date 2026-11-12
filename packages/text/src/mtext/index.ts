@@ -10,6 +10,7 @@ export {
   type MTextDocument,
   type MTextFont,
   type MTextItem,
+  type MTextLineSpacing,
   type MTextParagraph,
   type MTextParagraphStyle,
   type MTextParseOptions,
@@ -39,4 +40,14 @@ export {
   type MTextFormat,
   type MTextSpan,
 } from './write';
-export { alignOf, rulerOf, sameRuler, withAlignment, withRuler, type MTextRuler } from './ruler';
+export {
+  alignOf,
+  rulerOf,
+  sameRuler,
+  spacingOf,
+  withAlignment,
+  withRuler,
+  withSpacing,
+  type MTextRuler,
+  type MTextSpacing,
+} from './ruler';
