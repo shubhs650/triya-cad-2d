@@ -14,6 +14,7 @@
 //   configuration is not asked for it.
 // - The file names are the dialog's: "<drawing>-<space>.<type>", "<drawing>.pdf" or
 //   "<drawing>.zip" for All layouts (a ZIP of a file a layout, part 4), "<drawing>.dxf".
+// Its own prompts take Esc as their answer (`escape`) and end there, as Esc ends any command.
 import type { CommandContext, CommandGenerator } from './command';
 import type { PromptAnswer } from './prompt';
 import { detailed, setupOf, yesNo } from './plot-script';
@@ -71,6 +72,7 @@ export async function* dashExport(ctx: CommandContext): CommandGenerator {
     message: 'Enter file format',
     options: FORMATS.map(([k]) => k),
     default: keyword('Pdf'),
+    escape: true,
   });
   if (format.kind !== 'keyword') return;
   const type = FORMATS.find(([k]) => k === format.keyword)![1];
@@ -93,16 +95,18 @@ export async function* dashExport(ctx: CommandContext): CommandGenerator {
       message: 'Enter plot area',
       options: areas.map((a) => AREAS[a]),
       default: keyword(AREAS[areas[0]!]),
+      escape: true,
     });
     if (picked.kind !== 'keyword') return;
     area = areas.find((a) => AREAS[a] === picked.keyword)!;
     if (area === 'window') {
-      const first = yield ctx.prompt.point({ message: 'Specify first corner' });
+      const first = yield ctx.prompt.point({ message: 'Specify first corner', escape: true });
       if (first.kind !== 'point') return;
       const a = first.point;
       const second = yield ctx.prompt.point({
         message: 'Specify opposite corner',
         rubberBand: { from: a, box: true },
+        escape: true,
       });
       if (second.kind !== 'point') return;
       const b = second.point;
@@ -138,6 +142,7 @@ export async function* dashExport(ctx: CommandContext): CommandGenerator {
     message: 'Enter file name',
     default: { kind: 'string', value: file },
     spaces: true,
+    escape: true,
   });
   if (answer.kind !== 'string') return;
   const script: ExportScript = {

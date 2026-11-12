@@ -54,6 +54,7 @@ const MODEL: PlotScriptSetup = {
 const LAYOUT: PlotScriptSetup = {
   ...MODEL,
   layout: 'Layout1',
+  papers: [{ id: 'layout', name: 'Layout paper (420 x 297 mm)' }, ...MODEL.papers],
   areas: ['layout', 'extents', 'window'],
   paper: true,
   file: 'plan-Layout1.pdf',
@@ -202,5 +203,129 @@ describe('-EXPORT', () => {
     await bus.cancel();
     expect(bus.command).toBeUndefined();
     expect(scripts(asked)).toEqual([]);
+  });
+
+  it('asks a layout’s detailed configuration with its page setup’s own area', async () => {
+    const { bus, asked } = setup(LAYOUT);
+    await answer(bus, '-EXPORT', '', '', 'Y');
+    expect(bus.promptText).toBe('Enter paper size or [?] <Layout paper (420 x 297 mm)>:');
+    // Paper, units, orientation, upside down, scale, offset, plot styles, table, lineweights,
+    // then a layout's three plot options.
+    await answer(bus, '', '', '', '', '', '', '', '', '', '', '', '');
+    expect(bus.promptText).toBe('Enter file name <plan-Layout1.pdf>:');
+    await bus.submit('sheet.PDF');
+    expect(scripts(asked)).toEqual([
+      {
+        type: 'pdf',
+        area: 'current',
+        file: 'sheet.PDF',
+        settings: { ...LAYOUT.settings, area: 'layout' },
+      },
+    ]);
+  });
+
+  it('names the files after the plot file when the app gives no drawing name', async () => {
+    const { drawing: _drawing, ...bare } = MODEL;
+    const { bus, asked } = setup(bare);
+    await answer(bus, '-EXPORT', 'D');
+    expect(bus.promptText).toBe('Enter file name <plan.dxf>:');
+    await bus.submit('');
+    expect(scripts(asked)).toEqual([{ type: 'dxf', file: 'plan.dxf' }]);
+  });
+
+  it('refuses a window without area', async () => {
+    const { bus, asked } = setup();
+    await answer(bus, '-EXPORT', '', 'W', '5,5', '5,9');
+    expect(bus.history).toContain('The window has no area.');
+    expect(bus.command).toBeUndefined();
+    expect(scripts(asked)).toEqual([]);
+  });
+
+  it('exports nothing when the drafter stops at any prompt', async () => {
+    for (const typed of [
+      ['-EXPORT'],
+      ['-EXPORT', ''],
+      ['-EXPORT', 'D'],
+      ['-EXPORT', '', ''],
+      ['-EXPORT', '', 'W'],
+      ['-EXPORT', '', 'W', '0,0'],
+      ['-EXPORT', '', 'E'],
+      ['-EXPORT', '', 'E', 'Y'],
+      ['-EXPORT', '', 'E', ''],
+    ]) {
+      const { bus, asked } = setup();
+      await answer(bus, ...typed);
+      await bus.cancel();
+      expect(bus.command, typed.join(' ')).toBeUndefined();
+      expect(scripts(asked)).toEqual([]);
+    }
+  });
+
+  it('ends when the app has nothing to export', async () => {
+    const { bus, asked } = setup(MODEL, (r) => (r.op === 'plotSetup' ? { ok: true } : undefined));
+    await answer(bus, '-EXPORT', '');
+    expect(bus.history).toContain('There is nothing to plot.');
+    expect(bus.command).toBeUndefined();
+    expect(scripts(asked)).toEqual([]);
+  });
+
+  it('takes every kind of answer in the detailed configuration, asking again after a bad one', async () => {
+    const portrait: PlotScriptSetup = {
+      ...MODEL,
+      settings: { ...MODEL.settings, orientation: 'portrait', fit: false, center: false },
+    };
+    const { bus, asked } = setup(portrait);
+    await answer(bus, '-EXPORT', 'S', 'E', 'Y');
+    const steps: [string, string][] = [
+      ['Enter paper size or [?] <ISO A4 (210 x 297 mm)>:', 'Nope'],
+      ['Enter paper size or [?] <ISO A4 (210 x 297 mm)>:', 'ISO A1 (594 x 841 mm)'],
+      ['Enter paper units [Inches/Millimeters] <Millimeters>:', 'I'],
+      ['Enter drawing orientation [Portrait/Landscape] <Portrait>:', ''],
+      ['Plot upside down? [Yes/No] <No>:', 'Y'],
+      ['Enter plot scale (Plotted Inches=Drawing Units) or [Fit] <0.03937=1>:', 'F'],
+      ['Enter plot offset (x,y) or [Center] <0.00,0.00>:', 'here'],
+      ['Enter plot offset (x,y) or [Center] <0.00,0.00>:', 'C'],
+      ['Plot with plot styles? [Yes/No] <Yes>:', 'N'],
+      ['Enter plot style table name (enter . for none) or [?] <monochrome.ctb>:', '?'],
+      ['Enter plot style table name (enter . for none) or [?] <monochrome.ctb>:', '.'],
+      ['Plot with lineweights? [Yes/No] <Yes>:', 'N'],
+      [
+        'Enter shade plot setting [As displayed/legacy Wireframe/legacy Hidden/Visual styles/Rendered] <As displayed>:',
+        '',
+      ],
+      ['Enter file name <plan-Model.svg>:', ''],
+    ];
+    for (const [prompt, typed] of steps) {
+      expect(bus.promptText).toBe(prompt);
+      await bus.submit(typed);
+    }
+    expect(bus.history).toContain('Paper size "Nope" not found.');
+    expect(bus.history).toContain('Requires an offset as x,y, or Center.');
+    expect(bus.history.slice(-8)).toContain('acad.ctb');
+    expect(scripts(asked)).toEqual([
+      {
+        type: 'svg',
+        area: 'extents',
+        file: 'plan-Model.svg',
+        settings: {
+          ...portrait.settings,
+          device: 'svg',
+          paper: 'ISO A1',
+          upsideDown: true,
+          area: 'extents',
+          fit: true,
+          center: true,
+          plotStyles: false,
+          table: '',
+          lineweights: false,
+        },
+      },
+    ]);
+  });
+
+  it('names a drawing without a name Drawing1', async () => {
+    const { bus } = setup({ ...MODEL, drawing: '.dxf' });
+    await answer(bus, '-EXPORT', 'D');
+    expect(bus.promptText).toBe('Enter file name <Drawing1.dxf>:');
   });
 });
