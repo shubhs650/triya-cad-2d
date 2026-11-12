@@ -524,7 +524,9 @@ test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) 
 });
 
 // M2-39 part 4: Publish to PNG writes a file a sheet, downloaded as one ZIP.
-test('PUBLISH to PNG writes a PNG a sheet into one ZIP (M2-39 part 4)', async ({ page }) => {
+test('PUBLISH to PNG writes a PNG a sheet into one ZIP at the resolution chosen (M2-39 parts 4, 5)', async ({
+  page,
+}) => {
   test.setTimeout(90_000);
   await page.goto(app.url);
   await openWithPicker(page, DWG);
@@ -538,7 +540,12 @@ test('PUBLISH to PNG writes a PNG a sheet into one ZIP (M2-39 part 4)', async ({
   const to = d.getByLabel('Publish to');
   await expect(to).toHaveValue('pdf');
   await expect(to.locator('option')).toHaveText(['PDF', 'SVG', 'PNG']);
+  await expect(d.getByLabel('Resolution')).toHaveCount(0);
   await to.selectOption('png');
+  // Part 5: a PNG's resolution, 150 dpi as the Plot dialog's PNG plotter, or another chosen.
+  const resolution = d.getByLabel('Resolution');
+  await expect(resolution).toHaveValue('150');
+  await resolution.selectOption('96');
   const [download] = await Promise.all([
     page.waitForEvent('download'),
     d.getByRole('button', { name: 'Publish' }).click(),
@@ -547,6 +554,9 @@ test('PUBLISH to PNG writes a PNG a sheet into one ZIP (M2-39 part 4)', async ({
   expect(download.suggestedFilename()).toBe('sample_AC1018.zip');
   const files = unzip(new Uint8Array(readFileSync((await download.path())!)));
   expect(files.map((f) => f.name)).toEqual(spaces.map((s) => `sample_AC1018-${s}.png`));
+  // Model space's page setup is ANSI A landscape (11 × 8.5 inches): at 96 dpi.
+  const model = decodePng(files[0]!.bytes);
+  expect([model.width, model.height]).toEqual([1056, 816]);
   for (const f of files) {
     const png = decodePng(f.bytes);
     expect(png.width * png.height).toBeGreaterThan(100_000);

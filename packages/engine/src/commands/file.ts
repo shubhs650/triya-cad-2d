@@ -37,10 +37,13 @@
 // (they plot or save and hand the file over). Window in their Export list hides the dialog and
 // asks "Specify first corner:" and "Specify opposite corner:" as PLOT's Window< does, then shows
 // it again with that window; Esc at the corners shows it again as it was.
+//
+// -EXPORT (M2-39 part 5) asks for the export at the command line instead: see export-script.ts.
 import type { CommandContext, CommandDef, CommandGenerator } from './command';
 import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
 import { dashPlot } from './plot-script';
+import { dashExport } from './export-script';
 import type { Vec2 } from '../geom/types';
 
 function fileCommand(name: string, action: FileAction): CommandDef {
@@ -99,11 +102,13 @@ async function* windowDialog(
   }
 }
 
-/** EXPORT and EXPORTPDF: the Export Data or Save As PDF dialog. */
+/** EXPORT and EXPORTPDF: the Export Data or Save As PDF dialog; -EXPORT asks at the command line. */
 function exportCommand(name: string, action: 'export' | 'exportpdf'): CommandDef {
   return {
     name,
+    ...(name === 'EXPORT' && { dashVariant: true }),
     async *run(ctx): CommandGenerator {
+      if (ctx.dash) return yield* dashExport(ctx);
       return yield* windowDialog(ctx, action);
     },
   };

@@ -190,6 +190,40 @@ describe('publishing to SVG and PNG (M2-39 part 4)', () => {
     expect(svg).toContain('width="420mm" height="297mm"');
   });
 
+  it('plots PNGs at the resolution chosen (part 5), 150 dpi otherwise', async () => {
+    const dpis: number[] = [];
+    const write = async (..._: unknown[]) => ({ bytes: new Uint8Array() });
+    await publishSheetFiles(sheets.slice(0, 1), 'png', async (_p, _pg, settings) => {
+      dpis.push(settings.dpi);
+      return write();
+    });
+    await publishSheetFiles(
+      sheets.slice(0, 1),
+      'png',
+      async (_p, _pg, settings) => {
+        dpis.push(settings.dpi);
+        return write();
+      },
+      { dpi: 300 },
+    );
+    expect(dpis).toEqual([150, 300]);
+  });
+
+  it('plots a sheet with the settings it was plotted with (Page Setup Override, part 5)', async () => {
+    const settings = { ...defaultPlotSettings(model), paper: 'ISO A3', area: 'extents' as const };
+    const seen: number[] = [];
+    await publishSheetFiles([{ ...sheets[0]!, settings }], 'svg', async (parts, page, s) => {
+      seen.push(Math.round(page.width));
+      expect(s.device).toBe('svg');
+      return { bytes: new Uint8Array(parts.length) };
+    });
+    expect(seen).toEqual([420]);
+    const { bytes } = publishPdf([{ ...sheets[0]!, settings }], 'plan');
+    const pdf = await getDocument({ data: bytes! }).promise;
+    const [, , w] = (await pdf.getPage(1)).view;
+    expect(Math.round(w! / POINTS_PER_MM)).toBe(420);
+  });
+
   it('downloads one file as itself and several as one ZIP', () => {
     const svg = { name: 'plan-Model.svg', bytes: new TextEncoder().encode('<svg/>') };
     const png = { name: 'plan-Layout1.png', bytes: Uint8Array.from([137, 80, 78, 71]) };

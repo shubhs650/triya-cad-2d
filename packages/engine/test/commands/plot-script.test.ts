@@ -268,6 +268,29 @@ describe('-PLOT', () => {
     ]);
   });
 
+  it('offers the page setup’s window as the corners’ defaults, and refuses one without area', async () => {
+    const window = { minX: 1, minY: 2, maxX: 30, maxY: 40 };
+    const shown: PlotScriptSetup = {
+      ...MODEL,
+      areas: ['extents', 'window'],
+      settings: { ...MODEL.settings, area: 'layout', window },
+    };
+    const { bus, asked } = setup((r) =>
+      r.op === 'plotSetup' ? { ok: true, plotSetup: shown } : undefined,
+    );
+    await answer(bus, '-PLOT', 'Y', '', '', '', '', '', '');
+    // The page setup's area is not offered here: the first one offered is the default.
+    expect(bus.promptText).toBe('Enter plot area [Extents/Window] <Extents>:');
+    await bus.submit('W');
+    expect(bus.promptText).toBe('Enter lower left corner of window <1.0000,2.0000>:');
+    await bus.submit('');
+    expect(bus.promptText).toBe('Enter upper right corner of window <30.0000,40.0000>:');
+    await bus.submit('1,9');
+    expect(bus.history).toContain('The window has no area.');
+    expect(bus.command).toBeUndefined();
+    expect(scripts(asked)).toEqual([]);
+  });
+
   it('asks a layout its own options, in the page setup units', async () => {
     const { bus, asked } = setup();
     await answer(bus, '-PLOT', 'Y', 'Layout1', '');

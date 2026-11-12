@@ -5,29 +5,31 @@
 // AutoCAD's "Page setup: Current" does. Choosing Window hides the dialog and the command asks for
 // the corners at the command line, then shows the dialog again with them (Window< picks again).
 // Save writes the file, which downloads as a plot does; Cancel (and Esc) closes.
+//
+// Part 5: "Page setup:" Current or Override; Override opens the Page Setup Override dialog
+// (PageSetupOverride.tsx), whose paper, orientation, scale and plot style table replace the page
+// setup's for this export ("Page Setup Override..." opens it again). A PNG has a Resolution. The
+// file is written by export-file.ts, which -EXPORT's also is.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Box } from '@triya/engine';
 import type { PlotStyleTable } from '@triya/render';
-import { download } from './PlotDialog';
+import { PageSetupOverrideDialog } from './PageSetupOverride';
 import { controllerOf } from './canvas/registry';
-import { spacesOf, type OpenDocument } from './documents';
-import { engines } from './engine/registry';
+import type { OpenDocument } from './documents';
 import {
   EXPORT_AREA_LABELS,
-  EXPORT_MEDIA,
   EXPORT_TYPES,
   defaultExportArea,
   exportAreas,
   exportFileName,
-  exportSettings,
+  pageSetupOverride,
   withExportType,
   type ExportArea,
   type ExportType,
+  type PageSetupOverride,
 } from './export';
-import { plotFile, plotPage, type PlotSpace, type UnderlayPageSource } from './plot';
-import { plotRequest } from './plot-preview';
-import { plotSpaceOf } from './plot-spaces';
-import { publishPdf, publishSheetFiles, publishedDownload, type PlottedSheet } from './publish';
+import { exportFile } from './export-file';
+import { PNG_RESOLUTIONS, type PlotSpace, type UnderlayPageSource } from './plot';
 
 /** EXPORT's Export Data or EXPORTPDF's Save As PDF. */
 export type ExportKind = 'export' | 'exportpdf';
@@ -38,6 +40,10 @@ interface ExportState {
   readonly area: ExportArea | undefined;
   readonly fileName: string;
   readonly window?: Box | undefined;
+  /** Page setup: Override's paper, orientation, scale and table (part 5); absent for Current. */
+  readonly override?: PageSetupOverride | undefined;
+  /** A PNG's resolution (part 5). */
+  readonly dpi: number;
 }
 
 /**
@@ -149,6 +155,7 @@ function ExportBody({
   const [s, setState] = useState<ExportState>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
+  const [overriding, setOverriding] = useState(false);
   const block = doc.block;
 
   useEffect(() => {
@@ -166,6 +173,7 @@ function ExportBody({
           type: 'pdf',
           area,
           fileName: exportFileName(doc.name, sp, 'pdf', area),
+          dpi: 150,
         },
       );
     });
@@ -203,82 +211,20 @@ function ExportBody({
   const save = async () => {
     if (!s || !space || busy) return;
     setError(undefined);
-    const name = withExportType(s.fileName, s.type, s.area);
+    const file = withExportType(s.fileName, s.type, s.area);
     setBusy(true);
     try {
-      if (s.type === 'dxf') {
-        download(name, await exportDxf(doc.id), EXPORT_MEDIA.dxf);
-      } else if (s.area === 'all') {
-        await exportLayouts(name, s.type);
-      } else {
-        const controller = controllerOf(doc.id, block);
-        if (!controller) throw new Error('There is nothing to export.');
-        const settings = exportSettings(
-          space,
-          s.type,
-          s.area ?? defaultExportArea(space),
-          s.window,
-        );
-        const page = plotPage(settings, space);
-        const parts = await controller.plot(plotRequest(settings, space));
-        const title = `${doc.name} - ${space.name}`;
-        const file = await plotFile(
-          parts,
-          page,
-          settings,
-          space,
-          title,
-          underlayFile,
-          underlayPage,
-        );
-        download(name, file.bytes, file.type);
-      }
+      await exportFile(
+        doc,
+        space,
+        { type: s.type, file, area: s.area, window: s.window, override: s.override, dpi: s.dpi },
+        { underlayFile, underlayPage, userTables: userTables?.(), exportDxf },
+      );
       exportDialog.close();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setBusy(false);
     }
-  };
-
-  // All layouts: one PDF, a page per layout in tab order with its page setup, as PUBLISH makes;
-  // as SVG or PNG (part 4), a file a layout in one ZIP, as PUBLISH to SVG or PNG writes them.
-  const exportLayouts = async (name: string, type: Exclude<ExportType, 'dxf'>) => {
-    const active = controllerOf(doc.id, block);
-    if (!active) throw new Error('There is nothing to export.');
-    const tables = userTables?.();
-    const layouts = spacesOf(doc, engines.changesOf(doc.id)).filter(
-      (l) => l.block !== doc.opened.modelSpace,
-    );
-    const base = doc.name.replace(/\.[^.]+$/, '');
-    const plotted: PlottedSheet[] = [];
-    const failed: string[] = [];
-    for (const l of layouts) {
-      const sheet = `${base}-${l.name}`;
-      try {
-        const sp = await plotSpaceOf(doc, l.block, l.name, tables);
-        if (!sp) throw new Error('There is nothing to plot.');
-        const settings = exportSettings(sp, 'pdf', 'all');
-        const parts = await active.plot({ block: l.block, ...plotRequest(settings, sp) });
-        plotted.push({ sheet, space: sp, parts });
-      } catch (e) {
-        failed.push(`${sheet}: ${e instanceof Error ? e.message : String(e)}`);
-      }
-    }
-    if (type === 'pdf') {
-      const result = publishPdf(plotted, base, underlayFile);
-      failed.push(...result.failed.map((f) => `${f.sheet}: ${f.message}`));
-      if (!result.bytes) throw new Error(failed[0] ?? 'The drawing has no layouts to export.');
-      download(name, result.bytes, EXPORT_MEDIA.pdf);
-    } else {
-      const result = await publishSheetFiles(plotted, type, (parts, page, settings, sp, title) =>
-        plotFile(parts, page, settings, sp, title, underlayFile, underlayPage),
-      );
-      failed.push(...result.failed.map((f) => `${f.sheet}: ${f.message}`));
-      const file = publishedDownload(result.files, name, 'always');
-      if (!file) throw new Error(failed[0] ?? 'The drawing has no layouts to export.');
-      download(file.name, file.bytes, file.type);
-    }
-    if (failed.length > 0) throw new Error(`Not exported: ${failed.join('; ')}`);
   };
 
   const title = kind === 'exportpdf' ? 'Save As PDF' : 'Export Data';
@@ -357,13 +303,66 @@ function ExportBody({
               )}
             </div>
           )}
+          {s.type === 'png' && (
+            <label className="cad-dialog-field">
+              <span>Resolution:</span>
+              <select
+                aria-label="Resolution"
+                value={s.dpi}
+                onChange={(e) => setState({ ...s, dpi: Number(e.currentTarget.value) })}
+              >
+                {PNG_RESOLUTIONS.map((dpi) => (
+                  <option key={dpi} value={dpi}>
+                    {`${dpi} dpi`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {areas.length > 0 && (
+            <div className="export-area">
+              <label className="cad-dialog-field">
+                <span>Page setup:</span>
+                <select
+                  aria-label="Page setup"
+                  value={s.override ? 'override' : 'current'}
+                  onChange={(e) => {
+                    if (e.currentTarget.value === 'current')
+                      setState({ ...s, override: undefined });
+                    // Override opens the Page Setup Override dialog, as AutoCAD's does.
+                    else setOverriding(true);
+                  }}
+                >
+                  <option value="current">Current</option>
+                  <option value="override">Override</option>
+                </select>
+              </label>
+              <button type="button" disabled={busy} onClick={() => setOverriding(true)}>
+                Page Setup Override...
+              </button>
+            </div>
+          )}
           {areas.length > 0 && (
             <p className="export-note">
-              Page setup: Current ({space.name}){s.area === 'all' ? ', each layout its own' : ''}
+              {s.override
+                ? `Page setup: Override (${space.name}'s, with the paper, orientation, scale and plot style table chosen)`
+                : `Page setup: Current (${space.name})`}
+              {s.area === 'all' ? (s.override ? ', every layout' : ', each layout its own') : ''}
               {s.area === 'all' && s.type !== 'pdf' && '. A file a layout, saved in one ZIP.'}
             </p>
           )}
         </div>
+      )}
+      {overriding && s && space && (
+        <PageSetupOverrideDialog
+          space={space}
+          value={s.override ?? pageSetupOverride(space)}
+          onOk={(override) => {
+            setState({ ...s, override });
+            setOverriding(false);
+          }}
+          onCancel={() => setOverriding(false)}
+        />
       )}
       {error && (
         <p className="publish-status" role="alert">
