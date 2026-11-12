@@ -295,6 +295,11 @@ export interface MTextGeometry extends PlanarProps {
     readonly color?: Color;
     readonly scale: number;
     readonly transparency?: number;
+    /**
+     * The frame's own border scale where it is not the fill's: a multileader's frame sits a
+     * landing gap outside its text, its mask by its own scale (M2-44). Never read from a file.
+     */
+    readonly frameScale?: number;
   };
   readonly columns?: {
     /** DXF 75: 1 static, 2 dynamic. */
@@ -546,6 +551,19 @@ export interface MultiLeaderText {
   readonly flow: number;
   /** DXF 90. */
   readonly color: Color;
+  /**
+   * The background mask (context data 292 on, M2-44): its fill colour (91), none for the
+   * drawing window colour (291 on, or 91 stating the window colour), its border scale (141) and
+   * transparency (92, when not 0). Absent when the mask is off, whatever else is stored.
+   */
+  readonly mask?: MultiLeaderMask;
+}
+
+/** A MULTILEADER's background mask, as MTEXT's (DXF 90 bits 1 and 2, 63, 45, 441). */
+export interface MultiLeaderMask {
+  readonly color?: Color;
+  readonly scale: number;
+  readonly transparency?: number;
 }
 
 /** The block content of a MULTILEADER (DXF context data). Points are WCS. */

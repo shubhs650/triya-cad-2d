@@ -18,6 +18,7 @@ import {
   settingsOf,
   standardMLeaderStyle,
   type BusEvent,
+  type DialogPrompt,
   type DocumentInit,
   type Entity,
   type EntityId,
@@ -973,9 +974,9 @@ describe('TEXTEDIT on a multileader', () => {
     expect(bus.command).toBe('TEXTEDIT');
     expect(bus.prompt).toMatchObject({ editor: { kind: 'mtext', value: 'NOTE' } });
     await bus.cancel();
-    // A block multileader's attributes are not edited in place yet (M2-25 leaves it).
-    const s = setup({ styles: [{ ...standard, contentType: 1, block: TAG }] });
-    await s.bus.script(['MLEADER', '0,0', '10,5', '', '']);
+    // A block multileader without attribute values to edit opens nothing (M2-44).
+    const s = setup({ styles: [{ ...standard, contentType: 1, block: PLAIN }] });
+    await s.bus.script(['MLEADER', '0,0', '10,5']);
     expect(doubleClickCommand(s.added()[0]!)).toBeUndefined();
   });
 
@@ -1028,5 +1029,149 @@ describe('TEXTEDIT on a multileader', () => {
     expect(log).toContain(
       'The object selected is not text, multiline text, a multileader or a dimension.',
     );
+  });
+});
+
+// M2-44: a block multileader's attribute values in AutoCAD's Edit Attributes dialog (AutoCAD
+// 2024: double-clicking a multileader with block content opens Edit Attributes), and the MTEXT
+// editor showing a multileader's text frame and background mask as the text draws them.
+describe('TEXTEDIT on a block multileader', () => {
+  async function withTag(o: Setup = {}) {
+    const s = setup({ styles: [{ ...standard, contentType: 1, block: TAG }], ...o });
+    // NO is asked first (default 1), then NAME by its tag; KIND is constant and asked nothing.
+    await s.bus.script(['MLEADER', '0,0', '10,5', '7', 'Pump']);
+    const id = s.added()[0]!.id;
+    const geom = () => s.model.entity(id)!.geom as MultiLeaderGeometry;
+    return { ...s, id, geom };
+  }
+
+  it('opens the Edit Attributes dialog on its values and writes them back', async () => {
+    const { bus, id, geom } = await withTag();
+    const before = geom();
+    expect(before.block!.attributes!.map((a) => a.value)).toEqual(['7', 'Pump']);
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    expect(bus.prompt).toMatchObject({
+      kind: 'dialog',
+      message: 'Edit Attributes',
+      dialog: {
+        type: 'attedit',
+        block: 'TAG',
+        attributes: [
+          { handle: ATTDEF, tag: 'NO', prompt: 'Tag number', value: '7', multiline: false },
+          // An ATTDEF without a prompt is shown by its tag, as ATTEDIT shows it.
+          { handle: '3C', tag: 'NAME', prompt: 'NAME', value: 'Pump', multiline: false },
+        ],
+      },
+    });
+    await bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      attributes: [{ handle: '3C', value: 'Fan' }],
+    });
+    expect(geom()).toEqual({
+      ...before,
+      block: {
+        ...before.block,
+        attributes: [
+          before.block!.attributes![0],
+          { ...before.block!.attributes![1], value: 'Fan' },
+        ],
+      },
+    });
+    // Multiple mode asks for the next object; Undo takes the edit back.
+    expect(bus.promptText).toBe('Select an annotation object or [Undo/Mode]:');
+    await bus.submit('U');
+    expect(geom()).toEqual(before);
+  });
+
+  it('runs on a double click, and Cancel changes nothing', async () => {
+    const picked: EntityId[] = [];
+    const { bus, model, id, geom } = await withTag({ view: host(undefined, () => picked) });
+    picked.push(id);
+    const before = geom();
+    expect(doubleClickCommand(model.entity(id))).toBe('TEXTEDIT');
+    await bus.doubleClick({ x: 10.5, y: 5 });
+    expect(bus.command).toBe('TEXTEDIT');
+    expect(bus.prompt).toMatchObject({ kind: 'dialog', dialog: { type: 'attedit' } });
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+    expect(geom()).toEqual(before);
+  });
+
+  it('keeps a value OK leaves unchanged, and an empty value', async () => {
+    const { bus, id, geom } = await withTag();
+    const before = geom();
+    await bus.script(['TEXTEDIT', 'M', 'S']);
+    await bus.answer({ kind: 'selection', ids: [id] });
+    await bus.answer({ kind: 'dialog', action: 'ok', attributes: [] });
+    expect(bus.command).toBeUndefined();
+    expect(geom()).toEqual(before);
+    // An attribute may be empty, as an ATTRIB's value may.
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    await bus.answer({ kind: 'dialog', action: 'ok', attributes: [{ handle: ATTDEF, value: '' }] });
+    expect(geom().block!.attributes!.map((a) => a.value)).toEqual(['', 'Pump']);
+  });
+
+  it('leaves out values whose attribute definition is gone or constant', async () => {
+    const { bus, id, model, geom } = await withTag();
+    const g = geom();
+    const attributes = [
+      ...g.block!.attributes!,
+      // A constant ATTDEF's value and one naming no ATTDEF are not the drafter's to edit.
+      { definition: '3B', index: 2, width: 1, value: 'K' },
+      { index: 3, width: 1, value: 'orphan' },
+    ];
+    const edited = { ...g, block: { ...g.block!, attributes } };
+    model.apply({
+      entities: {
+        updated: [{ before: model.entity(id)!, after: { ...model.entity(id)!, geom: edited } }],
+      },
+    });
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    const { dialog } = bus.prompt as DialogPrompt;
+    const shown = dialog.type === 'attedit' ? dialog.attributes : [];
+    expect(shown.map((a) => a.tag)).toEqual(['NO', 'NAME']);
+  });
+});
+
+describe('the MTEXT editor on a multileader shows its frame and mask', () => {
+  it('passes the text frame a landing gap out and the mask with its colour and border', async () => {
+    const { bus, id, model, geom } = await withLeader();
+    const g = geom();
+    const framed: MultiLeaderGeometry = {
+      ...g,
+      textFrame: true,
+      text: { ...g.text!, mask: { color: { kind: 'aci', index: 2 }, scale: 2 } },
+    };
+    const e = model.entity(id)!;
+    model.apply({ entities: { updated: [{ before: e, after: { ...e, geom: framed } }] } });
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    const editor = (bus.prompt as { editor: { background?: unknown } }).editor;
+    // The frame is the landing gap (0.09) out, the mask (2 − 1) × 0.18 out.
+    expect(editor.background).toEqual({
+      mask: { color: { kind: 'aci', index: 2 }, pad: 0.18 },
+      frame: { pad: 0.09 },
+    });
+  });
+
+  it('passes a mask in the drawing window colour without a colour, and nothing without either', async () => {
+    const { bus, id, model, geom } = await withLeader();
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    expect((bus.prompt as { editor: { background?: unknown } }).editor.background).toBeUndefined();
+    await bus.cancel();
+    const g = geom();
+    const masked: MultiLeaderGeometry = { ...g, text: { ...g.text!, mask: { scale: 1.5 } } };
+    const e = model.entity(id)!;
+    model.apply({ entities: { updated: [{ before: e, after: { ...e, geom: masked } }] } });
+    await bus.submit('TEXTEDIT');
+    await bus.answer({ kind: 'selection', ids: [id] });
+    expect((bus.prompt as { editor: { background?: unknown } }).editor.background).toEqual({
+      mask: { pad: 0.09 },
+    });
   });
 });
