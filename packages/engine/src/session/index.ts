@@ -21,7 +21,7 @@ import { xrefLoadChange, xrefLoadProblem } from '../model/xref';
 import type { EntityId } from '../model/entity-ids';
 import type { EntityType } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
-import { propertySheet, type PropertySheet } from '../properties/sheet';
+import { propertySheet, type DimensionMeasure, type PropertySheet } from '../properties/sheet';
 import { REVCLOUDGRIPS } from '../edit/revcloud';
 
 /** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
@@ -165,6 +165,8 @@ export type CommandOutput =
 /** What the app hands the engine from the packages above it. */
 export interface EngineServices {
   readonly dimensions?: DimensionRegenerator;
+  /** What a dimension measures, for the Properties palette's Measurement row (M2-35 part 10). */
+  readonly measureDimension?: DimensionMeasure;
 }
 
 export class EngineSession {
@@ -182,6 +184,7 @@ export class EngineSession {
   /** The selection the last sheet showed, so a new selection shows all types again. */
   #sheetIds: readonly EntityId[] = [];
   #sheetQueued = false;
+  readonly #services: EngineServices;
 
   /**
    * `services` are what the engine cannot be built with because they sit above it: the
@@ -195,6 +198,7 @@ export class EngineSession {
     services: EngineServices = {},
     changes: readonly ChangeSet[] = [],
   ) {
+    this.#services = services;
     this.model = DocumentModel.create(init);
     for (const cs of changes) applyToReplica(this.model, cs, 'recovered drawing');
     this.#bus = new PromptBus({
@@ -244,7 +248,13 @@ export class EngineSession {
       this.#vertex = 0;
     }
     this.#sheetIds = [...ids];
-    const sheet = propertySheet(this.model, ids, this.#filter, this.#vertex);
+    const sheet = propertySheet(
+      this.model,
+      ids,
+      this.#filter,
+      this.#vertex,
+      this.#services.measureDimension,
+    );
     this.#emit({ type: 'properties', sheet });
   }
 
