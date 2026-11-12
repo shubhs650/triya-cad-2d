@@ -26,6 +26,7 @@ import type {
 } from '../model/types';
 import { withDimvarOverride } from '../annotation/dstyle';
 import { currentHeader } from './current';
+import { hasThickness, materialOf, namedPlotStyles, setHyperlink } from './general';
 import type { GeneralProps } from './sheet';
 import { DIMVAR_DEFAULTS, DIMVAR_ROWS, rowVars } from './dimension';
 import {
@@ -369,6 +370,13 @@ function geometryChange(
 ): Change | undefined | 'invalid' {
   const g = e.geom;
   const pos = n !== undefined && n > 0;
+  if (key === 'thickness') {
+    if (!hasThickness(e)) return undefined;
+    if (n === undefined) return 'invalid';
+    // 0 is no thickness: the group is left out, as the file read without one has it.
+    const { thickness: _thickness, ...rest } = g as typeof g & { thickness?: number };
+    return geomPatch((n === 0 ? rest : { ...rest, thickness: n }) as EntityGeometry);
+  }
   switch (g.kind) {
     case 'LINE':
       if (n === undefined) return key.match(/^(start|end)[XY]$/) ? 'invalid' : undefined;
@@ -514,6 +522,15 @@ function generalPatch(model: DocumentModel, key: string, v: PropertyValue) {
       const w = typeof v === 'string' ? parseLineweightValue(v) : parseLineweightValue(String(v));
       return w !== undefined ? { lineweight: w } : 'invalid';
     }
+    case 'plotStyle':
+      // A colour-dependent drawing plots by colour: its row is read only (ByColor).
+      if (!namedPlotStyles(model) || typeof v !== 'string') return 'invalid';
+      if (v === 'ByLayer') return { plotStyle: undefined };
+      return model.tables.plotStyles.has(v) ? { plotStyle: v } : 'invalid';
+    case 'material': {
+      const material = typeof v === 'string' ? materialOf(model, v) : 'invalid';
+      return material === 'invalid' ? material : { material };
+    }
     case 'transparency': {
       if (v === 'ByLayer' || v === 'ByBlock') return { transparency: v };
       const n = numeric(v, 'number');
@@ -583,6 +600,11 @@ export function applyPropertyEdit(
     return { changed, refused };
   }
 
+  if (edit.key === 'hyperlink') {
+    if (typeof edit.value !== 'string') return { changed: 0, refused, invalid: INVALID };
+    const changed = setHyperlink(b, model, editable, edit.value);
+    return changed === 'invalid' ? { changed: 0, refused, invalid: INVALID } : { changed, refused };
+  }
   const attribute = /^attribute:(.+)$/.exec(edit.key);
   if (attribute) return { ...attributeEdit(b, editable, attribute[1]!, edit.value), refused };
   if (DIMENSION_KEYS.test(edit.key)) {

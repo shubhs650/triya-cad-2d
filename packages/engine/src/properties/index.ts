@@ -19,3 +19,4 @@ export {
 } from './edit';
 export { CETRANSPARENCY, currentHeader, currentProps } from './current';
 export { polylineArea, polylineLength } from './measure';
+export { HYPERLINK_APP, hasThickness, hyperlinkOf } from './general';
