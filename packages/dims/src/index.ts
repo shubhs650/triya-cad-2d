@@ -18,6 +18,11 @@ export {
   textAlign,
 } from './format';
 export { dimensionParts, generates } from './parts';
-export { measuredText, regenerateDimension, type RegeneratedDimension } from './regenerate';
+export {
+  measuredText,
+  measuredValue,
+  regenerateDimension,
+  type RegeneratedDimension,
+} from './regenerate';
 export * from './health';
 export * from './drawing-health';

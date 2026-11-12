@@ -23,7 +23,14 @@ import type {
 } from '../model/types';
 import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
-import { DIMVAR_ROWS, rowVars, type DimvarRow, type DimvarSection } from './dimension';
+import {
+  DIMVAR_ROWS,
+  dimensionUnits,
+  rowVars,
+  type DimensionUnits,
+  type DimvarRow,
+  type DimvarSection,
+} from './dimension';
 import { JUSTIFICATIONS, bookColors } from '../commands/modify/attributes';
 import {
   hasThickness,
@@ -101,6 +108,12 @@ export interface PropertyTypeCount {
   readonly label: string;
   readonly count: number;
 }
+
+/**
+ * What a dimension measures, unformatted (a length, or an angle in radians), as the dimension
+ * engine (`@triya/dims` `measuredValue`) works it out; undefined when it cannot.
+ */
+export type DimensionMeasure = (e: Entity) => number | undefined;
 
 export interface PropertySheet {
   /** How many objects are selected (all types). */
@@ -498,6 +511,7 @@ function typeSections(
   type: EntityType,
   es: readonly Entity[],
   vertex: number,
+  measure: DimensionMeasure | undefined,
 ) {
   const sections: PropertySection[] = [];
   const add = (title: string, rows: PropertyRow[]) => {
@@ -926,6 +940,10 @@ function typeSections(
         .sort((a, b) => a.label.localeCompare(b.label));
       // A DIMVAR row shows what the dimension is drawn with: its style's value, or its override.
       const vars = es.map((e) => rowVars(g(e).style, e.xdata, model));
+      // An angular dimension's units are angular ones (M2-35 part 10); a selection of both
+      // kinds shows the rows both have, as AutoCAD's palette shows what the objects share.
+      const kinds = new Set<DimensionUnits>(es.map((e) => dimensionUnits(g(e))));
+      const shows = (d: DimvarRow) => d.for === undefined || (kinds.size === 1 && kinds.has(d.for));
       const dimvar = (d: DimvarRow): PropertyRow => {
         const options = typeof d.options === 'function' ? d.options(model, vars[0]!) : d.options;
         return {
@@ -940,7 +958,32 @@ function typeSections(
         };
       };
       const group = (title: DimvarSection) =>
-        DIMVAR_ROWS.filter((d) => d.section === title).map(dimvar);
+        DIMVAR_ROWS.filter((d) => d.section === title && shows(d)).map(dimvar);
+      // Measurement: AutoCAD's read-only row of what the dimension measures, a length in the
+      // drawing's units or an angle in its angular ones.
+      const measured = measure ? es.map((e) => measure(e)) : [];
+      const measurement: PropertyRow[] =
+        measured.length === 0 || measured.some((m) => m === undefined)
+          ? []
+          : kinds.size === 1
+            ? [
+                row(measured as number[], {
+                  key: 'measurement',
+                  label: 'Measurement',
+                  kind: kinds.has('angular') ? 'angle' : 'distance',
+                  readOnly: true,
+                  get: (m) => m,
+                }),
+              ]
+            : [
+                {
+                  key: 'measurement',
+                  label: 'Measurement',
+                  kind: 'text',
+                  varies: true,
+                  readOnly: true,
+                },
+              ];
       add('Misc', [
         row(es, {
           key: 'dimStyle',
@@ -960,6 +1003,7 @@ function typeSections(
           readOnly: true,
           get: (e) => g(e).textRotation,
         }),
+        ...measurement,
         row(es, {
           key: 'textOverride',
           label: 'Text override',
@@ -1250,6 +1294,8 @@ export function propertySheet(
   filter?: EntityType,
   /** The polyline vertex shown, from 0 (M2-35 part 8); kept within the polyline. */
   vertex = 0,
+  /** What a dimension measures, from the dimension engine (M2-35 part 10); none without. */
+  measure?: DimensionMeasure,
 ): PropertySheet {
   const all = filtered(model, ids, undefined);
   const counts = new Map<EntityType, number>();
@@ -1270,7 +1316,7 @@ export function propertySheet(
   const sections: PropertySection[] = [
     { title: 'General', rows: general },
     ...(visualization.length > 0 ? [{ title: '3D Visualization', rows: visualization }] : []),
-    ...(oneType ? typeSections(model, oneType, es, vertex) : []),
+    ...(oneType ? typeSections(model, oneType, es, vertex, measure) : []),
   ];
   const dynamic =
     oneType === 'INSERT'
