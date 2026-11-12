@@ -1583,6 +1583,12 @@ export interface LayoutPlot {
   readonly flags: number;
   /** DXF 7: the plot style table's file name (M2-17 part 3); absent when it names none. */
   readonly styleSheet?: string;
+  /**
+   * DXF 1 of a LAYOUT (M2-45): the named page setup applied to it, AutoCAD's "current page
+   * setup", which the Plot dialog's Name opens on and -PLOT offers; absent when none was (AutoCAD
+   * writes ''). A named page setup's own DXF 1 is its name, kept as `NamedPageSetup.name`.
+   */
+  readonly pageSetupName?: string;
 }
 
 /**

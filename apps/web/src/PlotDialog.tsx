@@ -28,6 +28,10 @@
 // choosing one opens the dialog on its settings (a layout on its paper), the plotter kept. Apply
 // to Layout writes a named page setup's settings, as changed, into the layout's own. Add… (new
 // named page setups) is PAGESETUP's, M6-01.
+//
+// M2-45: Name opens on the named page setup the layout has applied (its LAYOUT's DXF 1), with the
+// layout's own settings; Apply to Layout writes the Name shown as the one applied ("<None>" none).
+// A name the drawing has no page setup of (deleted since) is listed too: it is what is applied.
 import type { Box } from '@triya/engine';
 import { PAPER_SIZES } from '@triya/pdf';
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
@@ -220,6 +224,8 @@ function PlotBody({
       const sp = { ...measured, userTables: userTables?.() };
       setOwn(sp);
       setSpace(sp);
+      // M2-45: Name opens on the page setup the layout has applied, if any.
+      setSetupName(sp.pageSetupName ?? NONE);
       setSettings(plotDialog.resume(doc, block) ?? defaultPlotSettings(sp));
     });
     return () => {
@@ -238,13 +244,19 @@ function PlotBody({
       const last = lastPlotSettings.get(doc, block);
       if (!last) return;
       setSetupName(name);
-      setSpace(own);
+      setSpace({ ...own, pageSetupName: undefined });
       setSettings(last);
       return;
     }
     let sp;
     try {
-      sp = withPageSetup(own, name === NONE ? undefined : name);
+      // The name the layout has applied, when the drawing lacks a page setup of that name: the
+      // layout's own settings, as it opened.
+      const named = own.pageSetups?.some((p) => p.name === name);
+      sp =
+        !named && name === own.pageSetupName
+          ? own
+          : withPageSetup(own, name === NONE ? undefined : name);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       return;
@@ -284,6 +296,7 @@ function PlotBody({
       const sp = { ...(await controller.plotSpace()), userTables: userTables?.() };
       setOwn(sp);
       setSpace(sp);
+      setSetupName(sp.pageSetupName ?? NONE);
       // The plotter is the dialog's, not the page setup's (Triya does not map DXF 2).
       const { device, dpi, background } = s;
       setSettings({ ...defaultPlotSettings(sp), device, dpi, background });
@@ -403,6 +416,10 @@ function PlotBody({
                   {p.name}
                 </option>
               ))}
+              {own.pageSetupName !== undefined &&
+                !(own.pageSetups ?? []).some((p) => p.name === own.pageSetupName) && (
+                  <option value={own.pageSetupName}>{own.pageSetupName}</option>
+                )}
             </select>
           </label>
         </Group>

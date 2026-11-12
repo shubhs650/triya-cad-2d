@@ -68,9 +68,11 @@ function spaceOf(l: AcadLayout): LayoutSpace {
  */
 export function mapLayouts(doc: CadDocument): Layout[] {
   const out: Layout[] = [];
+  const named = new Set(mapPageSetups(doc).map((p) => p.name.toUpperCase()));
   for (const l of doc.layouts ?? []) {
     const blockRecord = ref(l.associatedBlock);
     if (!blockRecord || l.handle === 0) continue;
+    const pageSetupName = appliedPageSetup(l, named);
     out.push({
       ...common(l),
       name: l.name,
@@ -78,11 +80,29 @@ export function mapLayouts(doc: CadDocument): Layout[] {
       blockRecord,
       flags: l.layoutFlags as number,
       limits: { min: vec2(l.minLimits), max: vec2(l.maxLimits) },
-      plot: plotOf(l),
+      plot: { ...plotOf(l), ...(pageSetupName !== undefined && { pageSetupName }) },
       space: spaceOf(l),
     });
   }
   return out.sort((a, b) => a.tabOrder - b.tabOrder || a.name.localeCompare(b.name));
+}
+
+/** acad-ts's `pageName` when DXF 1 is absent, a default it borrowed from DXF 2's device name. */
+const NO_PAGE_SETUP = 'none_device';
+
+/**
+ * DXF 1 of AcDbPlotSettings (M2-45): the named page setup the layout has applied; undefined for
+ * none ('', as AutoCAD writes it, or acad-ts's 'none_device' for a LAYOUT without the group).
+ * Until acad-ts patch 0180 its DXF reader put the layout's own name there, so Triya's DXF saves
+ * from before it wrote that name: the layout's own name is no page setup unless the drawing has a
+ * named page setup of that name.
+ */
+function appliedPageSetup(l: AcadLayout, named: ReadonlySet<string>): string | undefined {
+  const name = l.pageName;
+  if (!name || name === NO_PAGE_SETUP) return undefined;
+  if (name.toUpperCase() === l.name.toUpperCase() && !named.has(name.toUpperCase()))
+    return undefined;
+  return name;
 }
 
 /** DXF 70 flag 1024 (ModelType): a page setup for model space. */

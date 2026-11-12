@@ -222,7 +222,10 @@ export interface PlotScriptSetup {
    * as "Enter a page setup name" takes them.
    */
   readonly pageSetups: readonly string[];
-  /** The named page setup these settings are from; absent for the space's own. */
+  /**
+   * The named page setup these settings are from: the one asked for, or for the space's own the
+   * one its layout has applied (M2-45, "Enter a page setup name"'s default); absent for none.
+   */
   readonly pageSetup?: string;
   /** The drawing's file name, which -EXPORT names its files after (M2-39 part 5). */
   readonly drawing?: string;

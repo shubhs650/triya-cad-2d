@@ -102,7 +102,11 @@ export interface PlotSpace {
   readonly userTables?: ReadonlyMap<string, PlotStyleTable> | undefined;
   /** The drawing's named page setups of the space's kind, by name (part 6). */
   readonly pageSetups?: readonly NamedPageSetup[] | undefined;
-  /** The named page setup `pageSetup` is, when one was chosen (part 6). */
+  /**
+   * The named page setup `pageSetup` is, when one was chosen (part 6); for the space's own, the
+   * one its layout has applied (M2-45: DXF 1, AutoCAD's "current page setup"), which the dialog's
+   * Name opens on and Apply to Layout writes.
+   */
   readonly pageSetupName?: string | undefined;
 }
 
@@ -131,6 +135,11 @@ export const PAGE_SETUP_FLAGS = {
 const PLOT_CENTERED = 4;
 const USE_STANDARD_SCALE = 16;
 
+/** The named page setup a LAYOUT has applied (M2-45), as `PlotSpace.pageSetupName`. */
+export function appliedPageSetupName(layout: Layout | undefined): string | undefined {
+  return layout?.plot?.pageSetupName;
+}
+
 /** A LAYOUT's page setup, as the dialog reads it. */
 export function pageSetupOf(layout: Layout | undefined): PageSetup | undefined {
   const plot = layout?.plot;
@@ -155,7 +164,8 @@ export function pageSetupsOf(
 /**
  * The space as a named page setup plots it (part 6): its settings in place of the space's own
  * page setup (whose layout Apply to Layout still writes), and a layout's sheet on its paper.
- * Undefined `name` (AutoCAD's "<None>") is the space's own. Throws for a name it lacks.
+ * Undefined `name` (AutoCAD's "<None>") is the space's own settings under no name, even when its
+ * layout has one applied (M2-45). Throws for a name it lacks.
  */
 export function withPageSetup(space: PlotSpace, name: string | undefined): PlotSpace {
   if (name === undefined) return { ...space, pageSetupName: undefined };
@@ -494,7 +504,10 @@ export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): Layo
   const styleSheet =
     tableNamed(base.styleSheet ?? '', space) === s.table ? base.styleSheet : s.table;
 
-  const { window: _w, styleSheet: _t, standardScaleType: _s, ...rest } = base;
+  // M2-45: the Name the dialog shows is the page setup the layout then has applied (DXF 1).
+  const pageSetupName = space.pageSetupName;
+
+  const { window: _w, styleSheet: _t, standardScaleType: _s, pageSetupName: _n, ...rest } = base;
   return {
     ...rest,
     ...paper,
@@ -506,6 +519,7 @@ export function appliedPageSetup(settings: PlotSettings, space: PlotSpace): Layo
     ...(window && { window }),
     flags,
     ...(styleSheet && { styleSheet }),
+    ...(pageSetupName !== undefined && { pageSetupName }),
   };
 }
 

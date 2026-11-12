@@ -1,0 +1,19 @@
+diff --git a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+index 7717121..5bdff2e 100644
+--- a/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
++++ b/src/IO/DXF/DxfStreamReader/DxfObjectsSectionReader.ts
+@@ -665,6 +665,14 @@ export class DxfObjectsSectionReader extends DxfSectionReaderBase {
+       case 331:
+         tmp.lasActiveViewportHandle = this._reader.valueAsHandle;
+         return true;
++      case 1:
++        // AcDbPlotSettings 1 is the page setup name, AcDbLayout 1 the layout's name: the layout map
++        // has no group 1, so its name would otherwise overwrite the page setup name.
++        if (this.currentSubclass === DxfSubclassMarker.layout) {
++          tmp.cadObject.name = this._reader.valueAsString;
++          return true;
++        }
++        return this._readPlotSettings(template, map);
+       default:
+         // AcDbPlotSettings and AcDbLayout both use group 70 (plot flags, layout flags). Read each in
+         // its own subclass, or the layout map takes the plot flags and the layout flags overwrite them.

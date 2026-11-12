@@ -804,6 +804,95 @@ test('the Plot dialog lists the named page setups of the space’s kind and open
   await d.getByRole('button', { name: 'Cancel' }).click();
 });
 
+test('a layout with a named page setup applied opens the Plot dialog and -PLOT on its name, kept through a save (M2-45)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, PAGE_SETUPS);
+  await expectShown(page, path.basename(PAGE_SETUPS));
+  const tabs = page.getByRole('tablist', { name: 'Model and layouts' });
+  await tabs.getByRole('tab').nth(1).click();
+  await expect(page.getByTestId('space')).toHaveText('PAPER');
+  const d = dialog(page);
+  const name = d.getByLabel('Page setup', { exact: true });
+  const plotLayout1 = async () => {
+    await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press('Control+p');
+    await expect(d.getByRole('heading')).toHaveText('Plot - Layout1');
+  };
+  await plotLayout1();
+  await expect(name).toHaveValue('<None>');
+  await name.selectOption('A3 Monochrome');
+  await d.getByRole('button', { name: 'Apply to Layout' }).click();
+  await expect(d.getByRole('status')).toHaveText(
+    'Applied "A3 Monochrome" to the Layout1 page setup.',
+  );
+  // The dialog reads the layout again: it now has A3 Monochrome applied.
+  await expect(name).toHaveValue('A3 Monochrome');
+  type Dev = { triyaDev: { layouts(): { name: string; plot?: Record<string, unknown> }[] } };
+  const layout1 = () =>
+    page.evaluate(
+      () => (window as unknown as Dev).triyaDev.layouts().find((l) => l.name === 'Layout1')!.plot!,
+    );
+  expect(await layout1()).toMatchObject({ pageSetupName: 'A3 Monochrome', paperWidth: 420 });
+  await d.getByRole('button', { name: 'Cancel' }).click();
+  await expect(d).toBeHidden();
+
+  // Opened again, Name shows it, with the layout's own settings.
+  await plotLayout1();
+  await expect(name).toHaveValue('A3 Monochrome');
+  await expect(d.getByLabel('Paper size').locator('option:checked')).toHaveText(
+    'Layout paper (420 × 297 mm)',
+  );
+  await page.screenshot({ path: test.info().outputPath('m2-45-plot-dialog-applied.png') });
+  // "<None>" and Apply: the layout keeps the settings under no name.
+  await name.selectOption('<None>');
+  await d.getByRole('button', { name: 'Apply to Layout' }).click();
+  await expect(d.getByRole('status')).toHaveText('Applied to the Layout1 page setup.');
+  expect(await layout1()).not.toHaveProperty('pageSetupName');
+  await name.selectOption('A3 Monochrome');
+  await d.getByRole('button', { name: 'Apply to Layout' }).click();
+  await expect(d.getByRole('status')).toHaveText(
+    'Applied "A3 Monochrome" to the Layout1 page setup.',
+  );
+  await d.getByRole('button', { name: 'Cancel' }).click();
+
+  // -PLOT offers it as the page setup name.
+  const input = page.getByLabel('Command', { exact: true });
+  const prompt = page.getByTestId('command-prompt');
+  const type = async (text: string) => {
+    await input.fill(text);
+    await input.press('Enter');
+  };
+  await type('-PLOT');
+  await type('');
+  await type('');
+  await expect(prompt).toHaveText('Enter a page setup name <A3 Monochrome>:');
+  await page.screenshot({ path: test.info().outputPath('m2-45-dash-plot-default.png') });
+  await input.press('Escape');
+
+  // Saved and opened again: Layout1 still has it applied.
+  await page.evaluate(() => {
+    delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+  const download = page.waitForEvent('download');
+  await page.keyboard.press('Control+s');
+  const saved = test.info().outputPath('page-setups-saved.dxf');
+  await (await download).saveAs(saved);
+  expect(readFileSync(saved, 'latin1')).toMatch(
+    /AcDbPlotSettings\r?\n {2}1\r?\nA3 Monochrome\r?\n/,
+  );
+  await openWithPicker(page, saved);
+  await expectShown(page, path.basename(saved));
+  await tabs.getByRole('tab').nth(1).click();
+  await expect(page.getByTestId('space')).toHaveText('PAPER');
+  await plotLayout1();
+  await expect(name).toHaveValue('A3 Monochrome');
+  await expect(d.getByLabel('Plot style table')).toHaveValue('triya-monochrome.ctb');
+  await d.getByRole('button', { name: 'Cancel' }).click();
+});
+
 test('-PLOT plots with a named page setup (part 6)', async ({ page }) => {
   test.setTimeout(90_000);
   await page.goto(app.url);

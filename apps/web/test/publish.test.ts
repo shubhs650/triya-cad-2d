@@ -315,6 +315,20 @@ describe('several drawings and named page setups (part 6)', () => {
     expect(() => withPageSetup(own, 'Model fit')).toThrow('Page setup "Model fit" not found.');
   });
 
+  // M2-45: the page setup a layout has applied (its DXF 1) is the Name it opens on.
+  it('opens a sheet on the name of the page setup its layout has applied', () => {
+    const layout = a3('Layout1', '58', 1);
+    const applied = { ...layout, plot: { ...layout.plot!, pageSetupName: 'A3 Monochrome' } };
+    const own = sheetSpace({ name: 'Layout1', layout: applied });
+    expect(own.pageSetupName).toBe('A3 Monochrome');
+    expect(own.pageSetup?.plot).toBe(applied.plot);
+    // "<None>": the same settings, no name.
+    const none = withPageSetup(own, undefined);
+    expect(none.pageSetupName).toBeUndefined();
+    expect(none.pageSetup).toBe(own.pageSetup);
+    expect(sheetSpace({ name: 'Layout1', layout }).pageSetupName).toBeUndefined();
+  });
+
   it('writes the log a row a sheet with its page setup and status', () => {
     const [model, layout] = publishSheets('plan, rev "A".dxf', plan, 1);
     const log = publishLog(

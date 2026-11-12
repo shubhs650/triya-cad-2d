@@ -21,6 +21,7 @@ import type { PlotPart } from '@triya/render';
 import type { PlotStyleTable } from '@triya/render';
 import {
   addPlotPage,
+  appliedPageSetupName,
   defaultPlotSettings,
   pageSetupOf,
   plotPage,
@@ -129,6 +130,7 @@ export function sheetSpace(s: {
     pageSetup: pageSetupOf(s.layout),
     userTables: s.userTables,
     pageSetups: s.pageSetups,
+    pageSetupName: appliedPageSetupName(s.layout),
   };
 }
 
