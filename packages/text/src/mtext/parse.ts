@@ -51,6 +51,15 @@ export interface MTextTabStop {
 
 export type MTextAlign = 'left' | 'right' | 'center' | 'justified' | 'distributed';
 
+/**
+ * A paragraph's own line spacing (M2-46; `\\pxsm`, `se`, `sa`), in place of the entity's:
+ * Multiple is a factor, as the entity's (DXF 44) is; Exactly and At least a pitch in text heights.
+ */
+export interface MTextLineSpacing {
+  readonly kind: 'multiple' | 'exactly' | 'atLeast';
+  readonly value: number;
+}
+
 /** `\p` paragraph properties, in the units the file states them (resolved by layout). */
 export interface MTextParagraphStyle {
   /** First-line indent, relative to `indentLeft`. */
@@ -60,8 +69,12 @@ export interface MTextParagraphStyle {
   /** Undefined: aligned by the entity's attachment point. */
   readonly align?: MTextAlign;
   readonly tabs: readonly MTextTabStop[];
+  /** `b`: space above the paragraph, in text heights. */
   readonly spaceBefore?: number;
+  /** `a`: space below the paragraph, in text heights. */
   readonly spaceAfter?: number;
+  /** Undefined: the entity's line spacing. */
+  readonly lineSpacing?: MTextLineSpacing;
 }
 
 export type MTextItem =
@@ -148,6 +161,12 @@ const ALIGN: Readonly<Record<string, MTextAlign>> = {
   j: 'justified',
   d: 'distributed',
 };
+
+const LINE_SPACING_KIND = {
+  sm: 'multiple',
+  se: 'exactly',
+  sa: 'atLeast',
+} as const satisfies Readonly<Record<string, MTextLineSpacing['kind']>>;
 
 const DEFAULT_PARAGRAPH: MTextParagraphStyle = {
   indentFirst: 0,
@@ -249,7 +268,7 @@ function parseParagraph(value: string, current: MTextParagraphStyle): MTextParag
       }
       inTabs = false;
     }
-    const key = tok.startsWith('sa') || tok.startsWith('sb') ? tok.slice(0, 2) : tok[0];
+    const key = tok.startsWith('s') ? tok.slice(0, 2) : tok[0];
     const rest = tok.slice(key?.length ?? 0);
     switch (key) {
       case 'i':
@@ -277,16 +296,27 @@ function parseParagraph(value: string, current: MTextParagraphStyle): MTextParag
         inTabs = true;
         break;
       }
-      case 'sa':
-      case 'sb': {
+      // M2-46, from ODA's MTEXT format codes (`\\pxb1.5;` Before, `\\pxa1.5;` After,
+      // `\\pxsm1.5;` Multiply, `\\pxse0.75;` Exactly, `\\pxsa0.5;` At least). M1-11 read
+      // `sb`/`sa` as before/after, a spelling neither the corpus nor any document uses.
+      case 'b':
+      case 'a': {
         const v = num(rest);
         if (v === undefined) break;
-        if (key === 'sa') out.spaceAfter = v;
-        else out.spaceBefore = v;
+        if (key === 'b') out.spaceBefore = v;
+        else out.spaceAfter = v;
+        break;
+      }
+      case 'sm':
+      case 'se':
+      case 'sa': {
+        const v = num(rest);
+        if (v === undefined) break;
+        out.lineSpacing = { kind: LINE_SPACING_KIND[key], value: v };
         break;
       }
       default:
-        // Bullets, numbering and line-spacing keys are not drawn by v1 layout; skipped.
+        // Bullets and numbering are not drawn by v1 layout; skipped.
         break;
     }
   }

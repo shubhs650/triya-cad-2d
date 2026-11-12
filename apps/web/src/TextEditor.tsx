@@ -35,7 +35,13 @@
 // double-byte characters as uneditable atoms. Typing, pasting, Enter and the
 // toolbar are applied to the spans (text-editor.ts) and the DOM repainted from them, so the
 // DOM never takes a shape the spans cannot hold.
-import type { StringPrompt, TextEditorColumns, TextEditorRequest } from '@triya/engine';
+import type {
+  Color,
+  StringPrompt,
+  TextEditorBackground,
+  TextEditorColumns,
+  TextEditorRequest,
+} from '@triya/engine';
 import { aciRgb, worldToScreen, type FontSources } from '@triya/render';
 import {
   contentOf,
@@ -47,13 +53,16 @@ import {
   rulerOf,
   sameContent,
   SHX_EQUIVALENTS,
+  spacingOf,
   withAlignment,
   withRuler,
+  withSpacing,
   writeMText,
   type MTextAlign,
   type MTextContent,
   type MTextFormat,
   type MTextRuler,
+  type MTextSpacing,
   type MTextSpan,
   type MTextTabStop,
 } from '@triya/text';
@@ -338,6 +347,15 @@ function paragraphBox(codes: readonly string[], columnBreak: boolean): HTMLEleme
   if (align) div.style.textAlign = TEXT_ALIGN[align];
   // Distributed spreads the last line too.
   if (align === 'distributed') div.style.textAlignLast = 'justify';
+  // M2-46: paragraph spacing as padding (margins between paragraphs would collapse into one)
+  // and the paragraph's own line spacing; the content's single line is 1.4 em.
+  const spacing = spacingOf(codes);
+  if (spacing.before !== 0) div.style.paddingTop = `${spacing.before * CAP_HEIGHT}em`;
+  if (spacing.after !== 0) div.style.paddingBottom = `${spacing.after * CAP_HEIGHT}em`;
+  const line = spacing.line;
+  if (line?.kind === 'multiple') div.style.lineHeight = String(1.4 * line.value);
+  else if (line?.kind === 'exactly') div.style.lineHeight = `${line.value * CAP_HEIGHT}em`;
+  else if (line) div.style.lineHeight = `max(${line.value * CAP_HEIGHT}em, 1.4em)`;
   if (r.tabs.length > 0) div.dataset['tabs'] = JSON.stringify(r.tabs);
   if (columnBreak) div.style.breakBefore = 'column';
   return div;
@@ -848,6 +866,8 @@ function MTextBox({
   const [decimal, setDecimal] = useState('.');
   /** The paragraph alignment at the caret, for the Paragraph dialog. */
   const [align, setAlignShown] = useState<MTextAlign | undefined>(alignOf(first.current));
+  /** The paragraph and line spacing at the caret, for the Paragraph dialog (M2-46). */
+  const [spacing, setSpacingShown] = useState<MTextSpacing>(spacingOf(first.current));
   /** The format typing takes next, when a toolbar change was made with nothing selected. */
   const pending = useRef<MTextFormat | undefined>(undefined);
   /** The last selection in the editor, for the toolbar's fields, which take the focus. */
@@ -876,6 +896,7 @@ function MTextBox({
     const codes = paragraphCodes(s, first.current)[paragraphIndex(s, a)] ?? [];
     setRulerShown(rulerOf(codes));
     setAlignShown(alignOf(codes));
+    setSpacingShown(spacingOf(codes));
   };
   const commit = (next: MTextSpan[], a: number, b = a) => {
     paint(root.current!, next, request.height, first.current, request.measurement);
@@ -975,7 +996,9 @@ function MTextBox({
     setDecimal(p.decimal);
     setParagraphs((c) => {
       const ruled = withRuler(c, p.ruler);
-      return p.align === align ? ruled : withAlignment(ruled, p.align);
+      const aligned = p.align === align ? ruled : withAlignment(ruled, p.align);
+      // As the alignment: only when the dialog changed it, so each paragraph keeps its own.
+      return sameSpacing(p.spacing, spacing) ? aligned : withSpacing(aligned, p.spacing);
     });
   };
 
@@ -1281,7 +1304,7 @@ function MTextBox({
       )}
       {menu === 'paragraph' && (
         <ParagraphDialog
-          settings={{ ruler, align, decimal }}
+          settings={{ ruler, align, decimal, spacing }}
           onClose={(p) => {
             setMenu(undefined);
             // To the paragraphs the selection held before the dialog took the focus (focusing
@@ -1323,6 +1346,13 @@ function MTextBox({
           spellCheck={false}
           style={columnStyle(request, columns, placement.scale)}
         />
+        {request.background && (
+          <TextBackground
+            background={request.background}
+            scale={placement.scale}
+            window={controller.background}
+          />
+        )}
         {columns && fitted && (
           <ColumnFrames
             columns={columns}
@@ -1335,6 +1365,58 @@ function MTextBox({
         )}
       </div>
     </div>
+  );
+}
+
+// ---- Background mask and frame (M2-44) ----
+
+/** An engine colour as CSS; ByLayer and ByBlock, which a mask cannot resolve here, as none. */
+function cssColor(c: Color): string | undefined {
+  if (c.kind === 'aci') return `rgb(${aciRgb(c.index).join(',')})`;
+  if (c.kind === 'rgb') return `rgb(${c.r},${c.g},${c.b})`;
+  return undefined;
+}
+
+/**
+ * The text's background mask and frame around the box, as the text draws them: the mask in its
+ * colour (or the canvas's, the drawing window colour) under the text, the frame on its edge,
+ * each `pad` drawing units beyond the box (`TextEditorRequest.background`). They turn and
+ * scale with the box they sit in.
+ */
+function TextBackground({
+  background,
+  scale,
+  window,
+}: {
+  background: TextEditorBackground;
+  scale: number;
+  window: string;
+}) {
+  const around = (pad: number): CSSProperties => {
+    const px = `${-pad * scale}px`;
+    return { left: px, top: px, right: px, bottom: px };
+  };
+  const { mask, frame } = background;
+  return (
+    <>
+      {mask && (
+        <div
+          className="mtext-mask"
+          data-testid="mtext-mask"
+          style={{
+            ...around(mask.pad),
+            background: (mask.color && cssColor(mask.color)) ?? window,
+          }}
+        />
+      )}
+      {frame && (
+        <div
+          className="mtext-text-frame"
+          data-testid="mtext-text-frame"
+          style={around(frame.pad)}
+        />
+      )}
+    </>
   );
 }
 
@@ -1601,7 +1683,25 @@ export interface ParagraphSettings {
   readonly align: MTextAlign | undefined;
   /** The decimal style its decimal stops line up. */
   readonly decimal: string;
+  /** Paragraph Spacing and Paragraph Line Spacing (M2-46). */
+  readonly spacing: MTextSpacing;
 }
+
+const sameSpacing = (a: MTextSpacing, b: MTextSpacing): boolean =>
+  a.before === b.before &&
+  a.after === b.after &&
+  a.line?.kind === b.line?.kind &&
+  a.line?.value === b.line?.value;
+
+const LINE_SPACINGS: readonly { kind: NonNullable<MTextSpacing['line']>['kind']; label: string }[] =
+  [
+    { kind: 'multiple', label: 'Multiple' },
+    { kind: 'exactly', label: 'Exactly' },
+    { kind: 'atLeast', label: 'At least' },
+  ];
+
+/** What At shows when a kind is picked: single spacing (Multiple 1, else 5/3 text heights). */
+const SINGLE_LINE = { multiple: 1, exactly: 5 / 3, atLeast: 5 / 3 } as const;
 
 /**
  * AutoCAD's Paragraph dialog (M2-26 part 3; "Paragraph Dialog Box"): Tab (the stop's kind,
@@ -1609,8 +1709,12 @@ export interface ParagraphSettings {
  * Hanging), Right Indent (Right) and Paragraph Alignment, for the paragraphs the selection
  * touches; values in text heights, as the ruler's. AutoCAD's help does not say what First line
  * and Hanging measure; they are read as where the ruler's two markers are, from the box's left
- * edge (First line the first line's start, Hanging the other lines'). Paragraph Spacing and
- * Line Spacing are left out (M2-46).
+ * edge (First line the first line's start, Hanging the other lines').
+ *
+ * M2-46: Paragraph Spacing (Before, After) and Paragraph Line Spacing (Line Spacing: Multiple,
+ * Exactly or At least; At), each turned on by its checkbox as Paragraph Alignment is. Off,
+ * Paragraph Spacing is none and line spacing the MTEXT's own. Multiple's At is a factor;
+ * the other values are in text heights.
  */
 function ParagraphDialog({
   settings,
@@ -1633,6 +1737,13 @@ function ParagraphDialog({
   const [right, setRight] = useState(r.indentRight);
   const [aligned, setAligned] = useState(settings.align !== undefined);
   const [align, setAlign] = useState<MTextAlign>(settings.align ?? 'left');
+  const sp = settings.spacing;
+  const [spaced, setSpaced] = useState(sp.before !== 0 || sp.after !== 0);
+  const [before, setBefore] = useState(sp.before);
+  const [after, setAfter] = useState(sp.after);
+  const [lined, setLined] = useState(sp.line !== undefined);
+  const [lineKind, setLineKind] = useState(sp.line?.kind ?? 'multiple');
+  const [lineAt, setLineAt] = useState(sp.line?.value ?? 1);
   const stopHere = (): MTextTabStop => ({
     at: position,
     kind,
@@ -1651,6 +1762,8 @@ function ParagraphDialog({
   };
   const ok = () => {
     if (![position, first, hanging, right].every(Number.isFinite) || right < 0) return;
+    if (spaced && !(before >= 0 && after >= 0)) return;
+    if (lined && !(lineAt > 0 && Number.isFinite(lineAt))) return;
     onClose({
       ruler: {
         indentFirst: first - hanging,
@@ -1661,14 +1774,26 @@ function ParagraphDialog({
       },
       align: aligned ? align : undefined,
       decimal,
+      spacing: {
+        before: spaced ? before : 0,
+        after: spaced ? after : 0,
+        ...(lined && { line: { kind: lineKind, value: lineAt } }),
+      },
     });
   };
-  const num = (label: string, value: number, set: (v: number) => void, min?: number) => (
+  const num = (
+    label: string,
+    value: number,
+    set: (v: number) => void,
+    min?: number,
+    disabled?: boolean,
+  ) => (
     <label>
       {label}
       <input
         type="number"
         min={min}
+        disabled={disabled}
         step="any"
         value={Number(value.toPrecision(10))}
         onChange={(e) => set(Number(e.target.value))}
@@ -1826,6 +1951,44 @@ function ParagraphDialog({
             </label>
           ))}
         </div>
+      </fieldset>
+      <fieldset>
+        <legend>
+          <label>
+            <input type="checkbox" checked={spaced} onChange={(e) => setSpaced(e.target.checked)} />
+            Paragraph Spacing
+          </label>
+        </legend>
+        {num('Before', before, setBefore, 0, !spaced)}
+        {num('After', after, setAfter, 0, !spaced)}
+      </fieldset>
+      <fieldset>
+        <legend>
+          <label>
+            <input type="checkbox" checked={lined} onChange={(e) => setLined(e.target.checked)} />
+            Paragraph Line Spacing
+          </label>
+        </legend>
+        <label>
+          Line Spacing
+          <select
+            aria-label="Line Spacing"
+            value={lineKind}
+            disabled={!lined}
+            onChange={(e) => {
+              const kind = e.target.value as typeof lineKind;
+              setLineKind(kind);
+              setLineAt(SINGLE_LINE[kind]);
+            }}
+          >
+            {LINE_SPACINGS.map((l) => (
+              <option key={l.kind} value={l.kind}>
+                {l.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        {num('At', lineAt, setLineAt, 0, !lined)}
       </fieldset>
       <div className="mtext-dialog-buttons">
         <button type="button" onClick={ok}>

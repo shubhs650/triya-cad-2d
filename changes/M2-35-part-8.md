@@ -1,0 +1,1 @@
+- M2-35 part 8 (#307): the Properties palette steps through one polyline's vertices (Vertex spinner, Vertex X/Y, Start and End segment width, the vertex marked on the canvas) and edits them, and shows Linetype generation under Misc.

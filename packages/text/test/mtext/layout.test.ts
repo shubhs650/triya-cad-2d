@@ -172,9 +172,28 @@ describe('paragraph indents and spacing', () => {
     expect(lineTexts(lay('\\pr2;aa bb', { width: 6 }))).toEqual(['aa ', 'bb']);
   });
 
-  it('adds space before and after paragraphs', () => {
-    const l = lay('\\psa1;a\\Pb');
-    expect(l.lines[1]!.baseline).toBeCloseTo(-1 - SPACING - 1, 12);
+  it('adds space before and after paragraphs (b and a, M2-46)', () => {
+    const after = lay('\\pxa1;a\\Pb');
+    expect(after.lines[1]!.baseline).toBeCloseTo(-1 - SPACING - 1, 12);
+    const before = lay('a\\P\\pxb2;b\\Pc');
+    expect(before.lines[1]!.baseline).toBeCloseTo(-1 - SPACING - 2, 12);
+    // Before is the paragraph's: its next paragraph (same values) gets it again.
+    expect(before.lines[2]!.baseline).toBeCloseTo(-1 - 2 * (SPACING + 2), 12);
+    // Not above the first line, and not inside a paragraph between its wrapped lines.
+    const wrapped = lay('\\pxb2,a3;aa bb', { width: 3 });
+    expect(wrapped.lines[0]!.baseline).toBe(-1);
+    expect(wrapped.lines[1]!.baseline).toBeCloseTo(-1 - SPACING, 12);
+  });
+
+  it('spaces in multiples of the MTEXT height', () => {
+    const l = layoutMText(parseMText('\\pxa1;a\\Pb', { ...base, height: 2 }), mono, {
+      height: 2,
+      width: 0,
+      attachment: 1,
+      lineSpacingStyle: 1,
+      lineSpacing: 1,
+    });
+    expect(l.lines[1]!.baseline).toBeCloseTo(-2 - 2 * SPACING - 2, 12);
   });
 });
 
@@ -224,6 +243,30 @@ describe('heights and line spacing', () => {
     expect(atLeast.lines[1]!.baseline).toBeCloseTo(-1 - (2 / 3 + 2), 12);
     const exactly = lay('a\\P{\\H2;b}', { lineSpacingStyle: 2 });
     expect(exactly.lines[1]!.baseline).toBeCloseTo(-1 - SPACING, 12);
+  });
+
+  // M2-46: a paragraph's own line spacing (`sm`, `se`, `sa`) takes the place of the entity's
+  // for the lines of that paragraph, the gap above its first line included. ODA gives the
+  // values in text heights; Exactly and At least are read as the baseline-to-baseline pitch
+  // (AutoCAD's help names the setting, not its geometry), Multiple as the entity's factor.
+  it('takes a paragraph’s own Multiple line spacing in place of the entity’s', () => {
+    const l = lay('a\\P\\pxsm2;b\\Pc', { lineSpacing: 3 });
+    expect(l.lines[1]!.baseline).toBeCloseTo(-1 - 2 * SPACING, 12);
+    expect(l.lines[2]!.baseline).toBeCloseTo(-1 - 4 * SPACING, 12);
+    // Multiple makes room for taller characters, as the entity's “at least” does.
+    const tall = lay('\\pxsm1;a\\P{\\H2;b}', { lineSpacingStyle: 2 });
+    expect(tall.lines[1]!.baseline).toBeCloseTo(-1 - (2 / 3 + 2), 12);
+  });
+
+  it('spaces Exactly lines at the pitch given, whatever their height', () => {
+    const l = lay('\\pxse3;a\\P{\\H2;b}');
+    expect(l.lines[1]!.baseline).toBeCloseTo(-1 - 3, 12);
+  });
+
+  it('spaces At least lines at the pitch given or the single pitch, whichever is more', () => {
+    expect(lay('\\pxsa3;a\\Pb').lines[1]!.baseline).toBeCloseTo(-1 - 3, 12);
+    expect(lay('\\pxsa1;a\\Pb').lines[1]!.baseline).toBeCloseTo(-1 - SPACING, 12);
+    expect(lay('\\pxsa1;a\\P{\\H2;b}').lines[1]!.baseline).toBeCloseTo(-1 - (2 / 3 + 2), 12);
   });
 
   it('places small runs at the bottom, middle or top of the line (\\A)', () => {

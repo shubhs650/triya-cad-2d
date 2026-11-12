@@ -4,7 +4,7 @@
 // long toggle → canvas took (acceptance: under 16 ms).
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DWG, DXF, expectShown, ink, inkWeight, openWithPicker } from '../app/page';
+import { DWG, DXF, expectDrawn, expectShown, ink, inkWeight, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -25,11 +25,20 @@ async function openLayers(page: Page, file: string) {
     .click();
   const palette = page.getByRole('complementary', { name: 'Layers' });
   await expect(palette).toBeVisible();
+  // The specs measure the canvas as shown against what a toggle leaves, so the drawing must be
+  // on it: drawn once its render worker has built it (seconds after the tab shows), and again
+  // at the narrower size the docked palette leaves it (M2-50).
+  await expectDrawn(page, { timeout: 15_000 });
   return palette;
 }
 
-const toggleMs = async (page: Page) =>
-  Number(await page.locator('.layers-palette').getAttribute('data-last-toggle-ms'));
+const toggleMs = async (page: Page) => {
+  const palette = page.locator('.layers-palette');
+  return {
+    click: Number(await palette.getAttribute('data-last-toggle-ms')),
+    frame: Number(await palette.getAttribute('data-last-toggle-frame-ms')),
+  };
+};
 
 test('turning a layer off and freezing it hide its objects, in under 16 ms', async ({ page }) => {
   const palette = await openLayers(page, DXF);
@@ -48,16 +57,22 @@ test('turning a layer off and freezing it hide its objects, in under 16 ms', asy
 
   // Toggle → canvas drawn, over several toggles: the median is the budget (T3 input latency
   // ≤ 16 ms). Most of it is message delivery between the threads, which varies run to run.
-  const samples: number[] = [];
+  // Chromium holds the engine's answer until it has drawn the frame after the click, 10–12 ms
+  // after a Playwright click, so the app's 16 ms count from that frame and the click → canvas
+  // total must stay within two frames (DEC-054, M2-50).
+  const samples: { click: number; frame: number }[] = [];
   for (let i = 0; i < 5; i++) {
     const before = await on.getAttribute('aria-pressed');
     await on.click();
     await expect(on).not.toHaveAttribute('aria-pressed', before!);
     samples.push(await toggleMs(page));
   }
-  console.log(`M1-23 toggle → canvas: ${samples.map((s) => s.toFixed(1)).join(', ')} ms`);
-  const median = [...samples].sort((a, b) => a - b)[2]!;
-  expect(median).toBeLessThan(16);
+  const median = (k: 'click' | 'frame') => samples.map((s) => s[k]).sort((a, b) => a - b)[2]!;
+  const list = (k: 'click' | 'frame') => samples.map((s) => s[k].toFixed(1)).join(', ');
+  console.log(`M1-23 toggle → canvas: ${list('frame')} ms from the first frame`);
+  console.log(`M1-23 click → canvas: ${list('click')} ms`);
+  expect(median('frame')).toBeLessThan(16);
+  expect(median('click')).toBeLessThan(33);
 
   // Freeze from the keyboard: every toggle is a button. (HATCH is off after an odd count.)
   await on.click();

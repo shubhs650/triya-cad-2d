@@ -21,11 +21,24 @@ type Vars = Readonly<Record<string, DimVarValue>>;
 export type DimvarSection =
   'Lines & Arrows' | 'Text' | 'Fit' | 'Primary Units' | 'Alternate Units' | 'Tolerances';
 
+/** How a dimension's measurement is formatted: as a length, or as an angle. */
+export type DimensionUnits = 'linear' | 'angular';
+
+/** An angular dimension's measurement is an angle; every other's a length. */
+export const dimensionUnits = (g: { readonly dimType: string }): DimensionUnits =>
+  g.dimType === 'angular' || g.dimType === 'angular3pt' ? 'angular' : 'linear';
+
 export interface DimvarRow {
   /** The row's key after `dimvar:`: the DIMVAR it shows, or `NAME.part` for a part of one. */
   readonly name: string;
   readonly label: string;
   readonly section: DimvarSection;
+  /**
+   * The dimensions the row is for (M2-35 part 10): an angular dimension's units are DIMAUNIT,
+   * DIMADEC and DIMAZIN, where the others' are DIMLUNIT, DIMDEC, DIMZIN and the alternate
+   * units. Undefined for every dimension.
+   */
+  readonly for?: DimensionUnits;
   readonly kind: 'distance' | 'number' | 'choice' | 'text';
   /** A choice's options; a function where they are the drawing's (linetypes, styles). */
   readonly options?:
@@ -99,6 +112,9 @@ export const DIMVAR_DEFAULTS: Readonly<Record<string, DimVarValue>> = {
   DIMTFAC: 1,
   DIMALTTD: 2,
   DIMALTTZ: 0,
+  DIMAUNIT: 0,
+  DIMADEC: 0,
+  DIMAZIN: 0,
 };
 
 /** A dimension's DIMVARs as its rows read them: style, overrides, then the defaults. */
@@ -596,7 +612,54 @@ const gapRow: DimvarRow = {
   },
 };
 
-/** Every DIMVAR row, in AutoCAD 2024's order within each group. */
+// --- Angular units (M2-35 part 10) ----------------------------------------------------------
+
+/**
+ * Angle format: DIMAUNIT, named as the Dimension Style Manager's Angular Dimensions Units
+ * format names them (surveyor's units, 4, are not offered for dimensions).
+ */
+const ANGLE_FORMATS = opts([
+  [0, 'Decimal Degrees'],
+  [1, 'Degrees Minutes Seconds'],
+  [2, 'Gradians'],
+  [3, 'Radians'],
+]);
+
+/** An angular dimension's Precision: DIMADEC, whose −1 takes DIMDEC (the linear precision). */
+const anglePrecisionRow: DimvarRow = {
+  ...choiceRow('DIMADEC', 'Precision', 'Primary Units', PRECISIONS),
+  for: 'angular',
+  get: (v) => String(asNumber(v.DIMADEC) < 0 ? asNumber(v.DIMDEC) : asNumber(v.DIMADEC)),
+};
+
+/** DIMAZIN: 1 drops leading zeros, 2 trailing ones. */
+function angleSuppressRow(part: 'leading' | 'trailing'): DimvarRow {
+  const bit = part === 'leading' ? 1 : 2;
+  return {
+    name: `DIMAZIN.${part}`,
+    label: `Suppress ${part} zeros`,
+    section: 'Primary Units',
+    for: 'angular',
+    kind: 'choice',
+    options: YES_NO,
+    get: (v) => ((asNumber(v.DIMAZIN) & bit) !== 0 ? 'yes' : 'no'),
+    set: (value, v) => {
+      if (value !== 'yes' && value !== 'no') return undefined;
+      const z = asNumber(v.DIMAZIN) & ~bit;
+      return { DIMAZIN: value === 'yes' ? z | bit : z };
+    },
+  };
+}
+
+/** The row for the linear dimensions only. */
+const linearOnly = (r: DimvarRow): DimvarRow => ({ ...r, for: 'linear' });
+
+/**
+ * Every DIMVAR row, in AutoCAD 2024's order within each group. AutoCAD's help does not list an
+ * angular dimension's rows; they are its ActiveX AcadDimAngular properties (AngleFormat,
+ * TextPrecision as DIMADEC, SuppressLeadingZeros and SuppressTrailingZeros as DIMAZIN, no
+ * alternate units, no linear units or scale), in the places of the linear ones they replace.
+ */
 export const DIMVAR_ROWS: readonly DimvarRow[] = [
   arrowRow(1),
   arrowRow(2),
@@ -689,20 +752,28 @@ export const DIMVAR_ROWS: readonly DimvarRow[] = [
   separatorRow,
   postRow('DIMPOST', 'prefix'),
   postRow('DIMPOST', 'suffix'),
-  numberRow('DIMRND', 'Dim roundoff', 'Primary Units', 'distance', nonNegative),
-  numberRow('DIMLFAC', 'Dim scale linear', 'Primary Units', 'number', (n) => n !== 0),
-  choiceRow('DIMLUNIT', 'Dim units', 'Primary Units', LINEAR_UNITS),
-  ...suppressRows('DIMZIN', '', 'Primary Units'),
-  choiceRow('DIMDEC', 'Precision', 'Primary Units', PRECISIONS),
+  ...[
+    numberRow('DIMRND', 'Dim roundoff', 'Primary Units', 'distance', nonNegative),
+    numberRow('DIMLFAC', 'Dim scale linear', 'Primary Units', 'number', (n) => n !== 0),
+    choiceRow('DIMLUNIT', 'Dim units', 'Primary Units', LINEAR_UNITS),
+    ...suppressRows('DIMZIN', '', 'Primary Units'),
+    choiceRow('DIMDEC', 'Precision', 'Primary Units', PRECISIONS),
+  ].map(linearOnly),
+  { ...choiceRow('DIMAUNIT', 'Angle format', 'Primary Units', ANGLE_FORMATS), for: 'angular' },
+  angleSuppressRow('leading'),
+  angleSuppressRow('trailing'),
+  anglePrecisionRow,
 
-  onOffRow('DIMALT', 'Alt enabled', 'Alternate Units'),
-  choiceRow('DIMALTU', 'Alt format', 'Alternate Units', ALT_UNITS),
-  choiceRow('DIMALTD', 'Alt precision', 'Alternate Units', PRECISIONS),
-  numberRow('DIMALTF', 'Alt multiplier', 'Alternate Units', 'number', positive),
-  postRow('DIMAPOST', 'prefix'),
-  postRow('DIMAPOST', 'suffix'),
-  numberRow('DIMALTRND', 'Alt round', 'Alternate Units', 'distance', nonNegative),
-  ...suppressRows('DIMALTZ', 'Alt', 'Alternate Units'),
+  ...[
+    onOffRow('DIMALT', 'Alt enabled', 'Alternate Units'),
+    choiceRow('DIMALTU', 'Alt format', 'Alternate Units', ALT_UNITS),
+    choiceRow('DIMALTD', 'Alt precision', 'Alternate Units', PRECISIONS),
+    numberRow('DIMALTF', 'Alt multiplier', 'Alternate Units', 'number', positive),
+    postRow('DIMAPOST', 'prefix'),
+    postRow('DIMAPOST', 'suffix'),
+    numberRow('DIMALTRND', 'Alt round', 'Alternate Units', 'distance', nonNegative),
+    ...suppressRows('DIMALTZ', 'Alt', 'Alternate Units'),
+  ].map(linearOnly),
 
   toleranceRow,
   numberRow('DIMTM', 'Tolerance limit lower', 'Tolerances', 'distance', any),
@@ -718,8 +789,12 @@ export const DIMVAR_ROWS: readonly DimvarRow[] = [
     ]),
   ),
   choiceRow('DIMTDEC', 'Tolerance precision', 'Tolerances', PRECISIONS),
-  ...suppressRows('DIMTZIN', 'Tolerance', 'Tolerances'),
+  // An angle's tolerance drops zeros by DIMTZIN's leading and trailing bits only (feet and
+  // inches are lengths), and has no alternate units.
+  ...suppressRows('DIMTZIN', 'Tolerance', 'Tolerances').map((r, i) => (i < 2 ? r : linearOnly(r))),
   numberRow('DIMTFAC', 'Tolerance text height', 'Tolerances', 'number', positive),
-  choiceRow('DIMALTTD', 'Alt tolerance precision', 'Tolerances', PRECISIONS),
-  ...suppressRows('DIMALTTZ', 'Alt tolerance', 'Tolerances'),
+  ...[
+    choiceRow('DIMALTTD', 'Alt tolerance precision', 'Tolerances', PRECISIONS),
+    ...suppressRows('DIMALTTZ', 'Alt tolerance', 'Tolerances'),
+  ].map(linearOnly),
 ];

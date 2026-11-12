@@ -28,7 +28,7 @@ import { withDimvarOverride } from '../annotation/dstyle';
 import { currentHeader } from './current';
 import { hasThickness, materialOf, namedPlotStyles, setHyperlink } from './general';
 import type { GeneralProps } from './sheet';
-import { DIMVAR_DEFAULTS, DIMVAR_ROWS, rowVars } from './dimension';
+import { DIMVAR_DEFAULTS, DIMVAR_ROWS, dimensionUnits, rowVars } from './dimension';
 import {
   MAX_TRANSPARENCY,
   isPatterned,
@@ -92,9 +92,13 @@ function readDistance(
   edit: PropertyEdit,
 ): PropertyEdit | undefined {
   if (typeof edit.value !== 'string') return edit;
+  // A polyline vertex row's key names the vertex the sheet showed (M2-35 part 8).
+  const vertex = VERTEX_KEY.exec(edit.key);
   const sheet = propertySheet(
     model,
     entities.map((e) => e.id),
+    undefined,
+    vertex ? Number(vertex[1]) : 0,
   );
   const row = sheet.sections.flatMap((s) => s.rows).find((r) => r.key === edit.key);
   if (row?.kind !== 'distance') return edit;
@@ -192,6 +196,8 @@ function typeRowChange(
     const scale = { ...g.scale, [axis]: n };
     return geomPatch(rescaledReference(g, scale, { mirrorText: mirrorText(model) }));
   }
+  const vertex = VERTEX_KEY.exec(key);
+  if (vertex && g.kind === 'LWPOLYLINE') return vertexChange(g, Number(vertex[1]), vertex[2]!, v);
   if (key === 'globalWidth' && g.kind === 'LWPOLYLINE') {
     const n = numeric(v, 'number');
     if (n === undefined || n < 0) return 'invalid';
@@ -202,6 +208,43 @@ function typeRowChange(
 }
 
 const geomPatch = (geom: EntityGeometry): Change => ({ patch: { geom } });
+
+/** A polyline vertex row's key: `vertex:<index>:<x | y | startWidth | endWidth>`. */
+const VERTEX_KEY = /^vertex:(\d+):(x|y|startWidth|endWidth)$/;
+
+/**
+ * A polyline vertex row's edit (M2-35 part 8): the vertex moved (its bulge kept, so an arc
+ * segment keeps its included angle, as AutoCAD's palette keeps it), or the widths of the segment
+ * leaving it. A width makes a constant-width polyline's DXF 43 every vertex's own first, as
+ * AutoCAD does, so only that segment changes. A vertex the polyline no longer has is refused.
+ */
+function vertexChange(
+  g: Extract<EntityGeometry, { kind: 'LWPOLYLINE' }>,
+  index: number,
+  part: string,
+  v: PropertyValue,
+): Change | 'invalid' {
+  const n = numeric(v, 'number');
+  if (index >= g.vertices.length || n === undefined) return 'invalid';
+  if (part === 'x' || part === 'y') {
+    const vertices = g.vertices.map((x, i) => (i === index ? { ...x, [part]: n } : x));
+    return geomPatch({ ...g, vertices });
+  }
+  if (n < 0) return 'invalid';
+  const { constantWidth, ...rest } = g;
+  const vertices = g.vertices.map((x, i) => {
+    const own =
+      constantWidth === undefined
+        ? x
+        : {
+            ...x,
+            startWidth: x.startWidth ?? constantWidth,
+            endWidth: x.endWidth ?? constantWidth,
+          };
+    return i === index ? { ...own, [part]: n } : own;
+  });
+  return geomPatch({ ...rest, vertices });
+}
 
 const GRADIENT = 'a gradient fill';
 const USER_DEFINED = 'user defined (its Spacing sets it)';
@@ -500,6 +543,10 @@ function geometryChange(
         if (b === undefined) return 'invalid';
         return geomPatch({ ...g, closed: b });
       }
+      if (key === 'plinegen') {
+        if (b === undefined) return 'invalid';
+        return geomPatch({ ...g, plinegen: b });
+      }
       if (key === 'elevation') {
         if (n === undefined) return 'invalid';
         return geomPatch(n === 0 ? withoutElevation(g) : { ...g, elevation: n });
@@ -740,6 +787,8 @@ function dimensionEdit(
     const d = DIMVAR_ROWS.find((r) => `dimvar:${r.name}` === edit.key);
     if (!d) return { changed: 0, invalid: INVALID };
     patchOf = (e) => {
+      // A row for the other kind of dimension (an angular one's Angle format on a linear one).
+      if (d.for !== undefined && d.for !== dimensionUnits(geom(e))) return 'invalid';
       const set = d.set(v, rowVars(geom(e).style, e.xdata, model), model);
       if (set === undefined) return 'invalid';
       let xdata: Entity['xdata'] = e.xdata;

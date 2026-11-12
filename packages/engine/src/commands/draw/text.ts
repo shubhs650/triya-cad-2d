@@ -22,13 +22,16 @@ import type {
   TextStyleRecord,
 } from '../../model/types';
 import { dimensionTextHeight, type NewDimension } from '../../edit/dimension';
-import { MLEADER_MTEXT, multiLeaderMText } from '../../edit/mleader';
+import { MLEADER_BLOCK, MLEADER_MTEXT, multiLeaderMText } from '../../edit/mleader';
+import { multiLeaderBackground } from '../../annotation/multileader';
+import { editMultiLeaderAttributes } from '../modify/attributes';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import { regenerateDimensions } from '../modify/dimensions';
 import {
   formatNumber,
   type Prompt,
   type PromptAnswer,
+  type TextEditorBackground,
   type TextEditorColumns,
   type TextEditorRequest,
 } from '../prompt';
@@ -680,6 +683,7 @@ const sameColumns = (a: TextEditorColumns | undefined, b: TextEditorColumns | nu
 export function mtextEditorRequest(model: DocumentModel, g: MTextGeometry): TextEditorRequest {
   const style = model.tables.textStyles.get(g.style);
   const cols = editorColumns(g);
+  const background = editorBackground(g);
   return {
     kind: 'mtext',
     position: g.position,
@@ -696,6 +700,26 @@ export function mtextEditorRequest(model: DocumentModel, g: MTextGeometry): Text
     lineSpacingStyle: g.lineSpacingStyle,
     lineSpacing: g.lineSpacing,
     ...(cols && { columns: cols }),
+    ...(background && { background }),
+  };
+}
+
+/**
+ * The background mask and frame the MTEXT editor shows (M2-44), as the renderer draws them:
+ * DXF 90 bit 1 fills in the colour, bit 2 in the drawing window colour (no colour here), bit 16
+ * frames; each (scale − 1) × height beyond the text box, a scale under 1 taken as 1.
+ */
+function editorBackground(g: MTextGeometry): TextEditorBackground | undefined {
+  const bg = g.background;
+  if (!bg) return undefined;
+  const pad = (scale: number) => (Math.max(1, scale) - 1) * g.height;
+  const mask = (bg.flags & 3) !== 0;
+  const frame = (bg.flags & 16) !== 0;
+  if (!mask && !frame) return undefined;
+  const color = (bg.flags & 2) === 0 ? bg.color : undefined;
+  return {
+    ...(mask && { mask: { ...(color && { color }), pad: pad(bg.scale) } }),
+    ...(frame && { frame: { pad: pad(bg.frameScale ?? bg.scale) } }),
   };
 }
 
@@ -799,10 +823,17 @@ const TEXTEDIT_KINDS = new Set([
   'LARGE_RADIAL_DIMENSION',
 ]);
 
-/** Whether TEXTEDIT edits `e`: a multileader only when its content is text. */
+/**
+ * Whether TEXTEDIT edits `e`: a multileader when its content is text, or a block stating
+ * attribute values (M2-44: those open the Edit Attributes dialog).
+ */
 export function textEdited(e: Entity): boolean {
-  if (e.geom.kind === 'MULTILEADER')
-    return e.geom.contentType === MLEADER_MTEXT && e.geom.text !== undefined;
+  if (e.geom.kind === 'MULTILEADER') {
+    const g = e.geom;
+    if (g.contentType === MLEADER_BLOCK)
+      return g.block?.attributes?.some((a) => a.definition !== undefined) ?? false;
+    return g.contentType === MLEADER_MTEXT && g.text !== undefined;
+  }
   return TEXTEDIT_KINDS.has(e.geom.kind);
 }
 
@@ -822,11 +853,19 @@ async function* editMultiLeader(
   entity: Entity,
 ): AsyncGenerator<Prompt, TextEdit | false | undefined, PromptAnswer> {
   const g = entity.geom as MultiLeaderGeometry;
+  if (g.contentType === MLEADER_BLOCK) {
+    const before = yield* editMultiLeaderAttributes(ctx, entity);
+    return before ? { id: entity.id, before, erased: false } : before;
+  }
   const t = g.text!;
+  const background = multiLeaderBackground(g, t);
   const a = yield ctx.prompt.string({
     message: 'Enter text',
     spaces: true,
-    editor: mtextEditorRequest(ctx.model, multiLeaderMText(t)),
+    editor: mtextEditorRequest(ctx.model, {
+      ...multiLeaderMText(t),
+      ...(background && { background }),
+    }),
   });
   if (a.kind === 'enter') return false;
   if (a.kind !== 'string') return undefined;
@@ -990,6 +1029,17 @@ async function* editAttdef(
  * Opens the editor on one TEXT or MTEXT and applies what comes back. Returns the edit, false
  * when the text came back unchanged, undefined when the command was ended.
  */
+/**
+ * The Properties palette's `...` on an MTEXT's Contents (M2-35 part 9): the In-Place Text Editor
+ * on `entity`, as TEXTEDIT opens it; whether the contents changed.
+ */
+export async function* editContents(
+  ctx: CommandContext,
+  entity: Entity,
+): AsyncGenerator<Prompt, boolean, PromptAnswer> {
+  return Boolean(yield* editText(ctx, entity));
+}
+
 async function* editText(
   ctx: CommandContext,
   entity: Entity,

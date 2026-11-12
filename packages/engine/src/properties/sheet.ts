@@ -23,7 +23,14 @@ import type {
 } from '../model/types';
 import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
-import { DIMVAR_ROWS, rowVars, type DimvarRow, type DimvarSection } from './dimension';
+import {
+  DIMVAR_ROWS,
+  dimensionUnits,
+  rowVars,
+  type DimensionUnits,
+  type DimvarRow,
+  type DimvarSection,
+} from './dimension';
 import { JUSTIFICATIONS, bookColors } from '../commands/modify/attributes';
 import {
   hasThickness,
@@ -77,6 +84,16 @@ export interface PropertyRow {
   readonly colorDialog?: 'index';
   /** An empty typed value is a value, not a slip to undo: Hyperlink's takes the link off. */
   readonly clearable?: true;
+  /**
+   * A navigation row (a polyline's Vertex, M2-35 part 8): a spinner from `min` to `max` that
+   * changes which vertex the sheet shows (the session's `property-vertex`), not the drawing.
+   */
+  readonly spin?: { readonly min: number; readonly max: number };
+  /**
+   * The row's `...` button opens the In-Place Text Editor on the one object shown (an MTEXT's
+   * Contents, M2-35 part 9): the session's `property-editor`, `PromptBus.editContents`.
+   */
+  readonly editor?: true;
 }
 
 export interface PropertySection {
@@ -91,6 +108,12 @@ export interface PropertyTypeCount {
   readonly label: string;
   readonly count: number;
 }
+
+/**
+ * What a dimension measures, unformatted (a length, or an angle in radians), as the dimension
+ * engine (`@triya/dims` `measuredValue`) works it out; undefined when it cannot.
+ */
+export type DimensionMeasure = (e: Entity) => number | undefined;
 
 export interface PropertySheet {
   /** How many objects are selected (all types). */
@@ -353,6 +376,12 @@ const YES_NO: readonly PropertyOption[] = [
 ];
 const yesNo = (b: boolean): string => (b ? 'yes' : 'no');
 
+/** A polyline's Linetype generation (PLINEGEN), as AutoCAD's palette names its values. */
+const ENABLED_DISABLED: readonly PropertyOption[] = [
+  { value: 'yes', label: 'Enabled' },
+  { value: 'no', label: 'Disabled' },
+];
+
 /** DXF 75, a hatch's island detection, by AutoCAD's names. */
 const ISLAND_STYLES: readonly PropertyOption[] = [
   { value: '0', label: 'Normal' },
@@ -442,8 +471,48 @@ function globalWidthRow(widths: readonly (number | undefined)[]): PropertyRow {
   };
 }
 
+/**
+ * A polyline's vertex rows (M2-35 part 8), as AutoCAD 2024's palette shows them for one polyline:
+ * Vertex, a spinner from 1 to the vertex count, then the vertex's X and Y and the start and end
+ * width of the segment leaving it (a constant-width polyline's segments all show DXF 43). The
+ * keys name the vertex (`vertex:<index>:x`), so an edit reaches the vertex the sheet showed.
+ * AutoCAD's help does not say what Vertex shows for several polylines; one number naming a
+ * different point on each is no use to a drafter, so several polylines show none of these rows.
+ */
+function vertexRows(g: G<'LWPOLYLINE'>, at: number): PropertyRow[] {
+  const n = g.vertices.length;
+  if (n === 0) return [];
+  const i = Math.min(Math.max(Math.trunc(at), 0), n - 1);
+  const v = g.vertices[i]!;
+  const width = (w: number | undefined) => w ?? g.constantWidth ?? 0;
+  const key = (part: string) => `vertex:${i}:${part}`;
+  return [
+    { key: 'vertex', label: 'Vertex', kind: 'number', value: i + 1, spin: { min: 1, max: n } },
+    { key: key('x'), label: 'Vertex X', kind: 'distance', value: v.x },
+    { key: key('y'), label: 'Vertex Y', kind: 'distance', value: v.y },
+    {
+      key: key('startWidth'),
+      label: 'Start segment width',
+      kind: 'distance',
+      value: width(v.startWidth),
+    },
+    {
+      key: key('endWidth'),
+      label: 'End segment width',
+      kind: 'distance',
+      value: width(v.endWidth),
+    },
+  ];
+}
+
 /** The sections a selection of one type shows after General. */
-function typeSections(model: DocumentModel, type: EntityType, es: readonly Entity[]) {
+function typeSections(
+  model: DocumentModel,
+  type: EntityType,
+  es: readonly Entity[],
+  vertex: number,
+  measure: DimensionMeasure | undefined,
+) {
   const sections: PropertySection[] = [];
   const add = (title: string, rows: PropertyRow[]) => {
     if (rows.length > 0) sections.push({ title, rows });
@@ -637,6 +706,7 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
     case 'LWPOLYLINE': {
       const g = (e: Entity) => geomOf<'LWPOLYLINE'>(e);
       add('Geometry', [
+        ...(es.length === 1 ? vertexRows(g(es[0]!), vertex) : []),
         // AutoCAD lists Global width before Elevation.
         globalWidthRow(es.map((e) => polylineGlobalWidth(g(e)))),
         row(es, {
@@ -667,6 +737,13 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
           kind: 'choice',
           options: YES_NO,
           get: (e) => yesNo(g(e).closed),
+        }),
+        row(es, {
+          key: 'plinegen',
+          label: 'Linetype generation',
+          kind: 'choice',
+          options: ENABLED_DISABLED,
+          get: (e) => yesNo(g(e).plinegen ?? false),
         }),
       ]);
       break;
@@ -733,14 +810,17 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
     }
     case 'MTEXT': {
       const g = (e: Entity) => geomOf<'MTEXT'>(e);
+      // AutoCAD 2024 edits an MTEXT's contents in the In-Place Text Editor, which the row's
+      // `...` button opens; the editor edits one object, so several show no button.
+      const contents = row(es, {
+        key: 'contents',
+        label: 'Contents',
+        kind: 'text',
+        readOnly: true,
+        get: (e) => g(e).contents,
+      });
       add('Text', [
-        row(es, {
-          key: 'contents',
-          label: 'Contents',
-          kind: 'text',
-          readOnly: true,
-          get: (e) => g(e).contents,
-        }),
+        es.length === 1 ? { ...contents, editor: true as const } : contents,
         row(es, {
           key: 'style',
           label: 'Style',
@@ -860,6 +940,10 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
         .sort((a, b) => a.label.localeCompare(b.label));
       // A DIMVAR row shows what the dimension is drawn with: its style's value, or its override.
       const vars = es.map((e) => rowVars(g(e).style, e.xdata, model));
+      // An angular dimension's units are angular ones (M2-35 part 10); a selection of both
+      // kinds shows the rows both have, as AutoCAD's palette shows what the objects share.
+      const kinds = new Set<DimensionUnits>(es.map((e) => dimensionUnits(g(e))));
+      const shows = (d: DimvarRow) => d.for === undefined || (kinds.size === 1 && kinds.has(d.for));
       const dimvar = (d: DimvarRow): PropertyRow => {
         const options = typeof d.options === 'function' ? d.options(model, vars[0]!) : d.options;
         return {
@@ -874,7 +958,32 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
         };
       };
       const group = (title: DimvarSection) =>
-        DIMVAR_ROWS.filter((d) => d.section === title).map(dimvar);
+        DIMVAR_ROWS.filter((d) => d.section === title && shows(d)).map(dimvar);
+      // Measurement: AutoCAD's read-only row of what the dimension measures, a length in the
+      // drawing's units or an angle in its angular ones.
+      const measured = measure ? es.map((e) => measure(e)) : [];
+      const measurement: PropertyRow[] =
+        measured.length === 0 || measured.some((m) => m === undefined)
+          ? []
+          : kinds.size === 1
+            ? [
+                row(measured as number[], {
+                  key: 'measurement',
+                  label: 'Measurement',
+                  kind: kinds.has('angular') ? 'angle' : 'distance',
+                  readOnly: true,
+                  get: (m) => m,
+                }),
+              ]
+            : [
+                {
+                  key: 'measurement',
+                  label: 'Measurement',
+                  kind: 'text',
+                  varies: true,
+                  readOnly: true,
+                },
+              ];
       add('Misc', [
         row(es, {
           key: 'dimStyle',
@@ -894,6 +1003,7 @@ function typeSections(model: DocumentModel, type: EntityType, es: readonly Entit
           readOnly: true,
           get: (e) => g(e).textRotation,
         }),
+        ...measurement,
         row(es, {
           key: 'textOverride',
           label: 'Text override',
@@ -1182,6 +1292,10 @@ export function propertySheet(
   model: DocumentModel,
   ids: readonly EntityId[],
   filter?: EntityType,
+  /** The polyline vertex shown, from 0 (M2-35 part 8); kept within the polyline. */
+  vertex = 0,
+  /** What a dimension measures, from the dimension engine (M2-35 part 10); none without. */
+  measure?: DimensionMeasure,
 ): PropertySheet {
   const all = filtered(model, ids, undefined);
   const counts = new Map<EntityType, number>();
@@ -1202,7 +1316,7 @@ export function propertySheet(
   const sections: PropertySection[] = [
     { title: 'General', rows: general },
     ...(visualization.length > 0 ? [{ title: '3D Visualization', rows: visualization }] : []),
-    ...(oneType ? typeSections(model, oneType, es) : []),
+    ...(oneType ? typeSections(model, oneType, es, vertex, measure) : []),
   ];
   const dynamic =
     oneType === 'INSERT'

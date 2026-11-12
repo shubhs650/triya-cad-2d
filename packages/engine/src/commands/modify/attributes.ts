@@ -32,6 +32,7 @@ import type {
   InsertAttribute,
   InsertGeometry,
   MTextGeometry,
+  MultiLeaderGeometry,
   TextFields,
   TextGeometry,
 } from '../../model/types';
@@ -107,6 +108,83 @@ export function attributeEntries(model: DocumentModel, g: InsertGeometry): Attri
       plotStyle: a.plotStyle ?? null,
       annotative: a.annotative !== undefined,
     }));
+}
+
+/**
+ * A block multileader's attribute values as the Edit Attributes dialog shows them (M2-44): one
+ * entry per value whose ATTDEF is in the drawing and not constant, in the multileader's order,
+ * keyed by the ATTDEF's handle. The multileader states only the values (DXF 330/177/44/302),
+ * so the text properties shown are the ATTDEF's own; the dialog edits values only.
+ */
+export function multiLeaderAttributeEntries(
+  model: DocumentModel,
+  g: MultiLeaderGeometry,
+): AttributeEntry[] {
+  const out = new Map<Handle, AttributeEntry>();
+  for (const a of g.block?.attributes ?? []) {
+    const e = a.definition === undefined ? undefined : model.entityByHandle(a.definition);
+    if (e?.geom.kind !== 'ATTDEF' || (e.geom.flags & CONSTANT) !== 0 || out.has(e.handle)) continue;
+    const d = e.geom;
+    out.set(e.handle, {
+      handle: e.handle,
+      tag: d.tag,
+      prompt: d.prompt || d.tag,
+      value: a.value,
+      multiline: d.mtext !== undefined,
+      flags: d.flags,
+      style: d.style,
+      halign: d.halign,
+      valign: d.valign,
+      height: d.height,
+      rotation: d.rotation,
+      widthFactor: d.widthFactor,
+      oblique: d.oblique,
+      backward: d.backward,
+      upsideDown: d.upsideDown,
+      ...(d.mtext && { attachment: d.mtext.attachment }),
+      layer: e.layer,
+      color: e.color,
+      linetype: e.linetype,
+      lineweight: e.lineweight,
+      plotStyle: e.plotStyle ?? null,
+      annotative: e.annotative !== undefined,
+    });
+  }
+  return [...out.values()];
+}
+
+/**
+ * The Edit Attributes dialog on a block multileader's values (M2-44; AutoCAD 2024 opens it on
+ * a double click on a multileader with block content). OK writes the values changed, as one
+ * edit; Cancel (Esc) ends the command. Returns the multileader as it was when it changed, false
+ * when nothing changed and undefined when the command was ended.
+ */
+export async function* editMultiLeaderAttributes(
+  ctx: CommandContext,
+  entity: Entity,
+): AsyncGenerator<Prompt, Entity | false | undefined, PromptAnswer> {
+  const g = entity.geom as MultiLeaderGeometry;
+  const attributes = multiLeaderAttributeEntries(ctx.model, g);
+  const block = g.block?.block;
+  if (attributes.length === 0 || block === undefined) {
+    ctx.message('The multileader has no attributes to edit.');
+    return false;
+  }
+  const d = yield ctx.prompt.dialog({
+    message: 'Edit Attributes',
+    dialog: { type: 'attedit', block: blockNameOf(ctx.model, block), attributes },
+  });
+  if (d.kind !== 'dialog') return undefined;
+  const values = new Map<Handle, string>();
+  for (const p of d.attributes ?? []) if (p.value !== undefined) values.set(p.handle, p.value);
+  const next = g.block!.attributes!.map((a) => {
+    const v = a.definition === undefined ? undefined : values.get(a.definition);
+    return v === undefined || v === a.value ? a : { ...a, value: v };
+  });
+  if (next.every((a, i) => a === g.block!.attributes![i])) return false;
+  const geom: MultiLeaderGeometry = { ...g, block: { ...g.block!, attributes: next } };
+  ctx.edit((b) => b.updateEntity(entity.id, { geom }));
+  return entity;
 }
 
 /**

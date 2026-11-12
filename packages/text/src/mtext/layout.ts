@@ -18,6 +18,7 @@ import type {
   MTextCharStyle,
   MTextDocument,
   MTextItem,
+  MTextLineSpacing,
   MTextParagraph,
   MTextTabStop,
 } from './parse';
@@ -264,10 +265,20 @@ export function layoutMText(
   // 3. Vertical layout, column by column; positions relative to the box's top-left.
   const columnHeight = (i: number): number =>
     cols ? (cols.heights?.[i] ?? cols.height ?? Infinity) : Infinity;
-  const spacing = (prevH: number, nextH: number): number => {
-    const exact = options.lineSpacing * LINE_SPACING * h0;
-    if (options.lineSpacingStyle === 2) return exact;
-    return Math.max(exact, options.lineSpacing * ((LINE_SPACING - 1) * prevH + nextH));
+  /**
+   * Baseline to baseline, onto a line of a paragraph spaced `own` (M2-46: its `\\p` line
+   * spacing, else the entity's). Exactly and At least take a pitch in text heights; ODA's codes
+   * give the unit and AutoCAD's help only names the settings, so the pitch is read as the
+   * baseline-to-baseline distance, Multiple as the entity's factor (with "at least" behaviour).
+   */
+  const spacing = (prevH: number, nextH: number, own: MTextLineSpacing | undefined): number => {
+    const single = (LINE_SPACING - 1) * prevH + nextH;
+    if (own?.kind === 'exactly') return own.value * h0;
+    if (own?.kind === 'atLeast') return Math.max(own.value * h0, single);
+    const factor = own ? own.value : options.lineSpacing;
+    const exact = factor * LINE_SPACING * h0;
+    if (!own && options.lineSpacingStyle === 2) return exact;
+    return Math.max(exact, factor * single);
   };
   const out: { line: BuiltLine; column: number; baseline: number }[] = [];
   let column = 0;
@@ -277,7 +288,7 @@ export function layoutMText(
     for (const line of p.lines) {
       let baseline = prev
         ? prev.baseline -
-          spacing(prev.height, line.height) -
+          spacing(prev.height, line.height, p.para.style.lineSpacing) -
           gapBefore -
           (line.first ? (p.para.style.spaceBefore ?? 0) * h0 : 0)
         : -line.height;

@@ -276,7 +276,7 @@ describe('stacking (\\S)', () => {
 
 describe('paragraph properties (\\p)', () => {
   it('reads indents, alignment, tabs and spacing', () => {
-    const doc = parse('\\pxi-3,l3,r1,qc,t3,c6,r9,sa1.5,sb0.5;Item');
+    const doc = parse('\\pxi-3,l3,r1,qc,t3,c6,r9,b0.5,a1.5;Item');
     expect(doc.paragraphs[0]!.style).toEqual({
       indentFirst: -3,
       indentLeft: 3,
@@ -290,6 +290,32 @@ describe('paragraph properties (\\p)', () => {
       spaceBefore: 0.5,
       spaceAfter: 1.5,
     });
+  });
+
+  // M2-46: ODA's MTEXT format codes ("db_text_multi_codes": `\pxb1.5;` Before, `\pxa1.5;`
+  // After, `\pxsm1.5;` Multiply, `\pxse0.75;` Exactly, `\pxsa0.5;` At least). M1-11 read
+  // `sb`/`sa` as before/after, a spelling no file or document uses.
+  it('reads paragraph spacing as b (before) and a (after)', () => {
+    const s = parse('\\pxb1.5;a\\P\\pxa0.5;b').paragraphs.map((p) => p.style);
+    expect(s[0]).toMatchObject({ spaceBefore: 1.5 });
+    expect(s[0]!.spaceAfter).toBeUndefined();
+    expect(s[1]).toMatchObject({ spaceBefore: 1.5, spaceAfter: 0.5 });
+  });
+
+  it('reads line spacing as sm (multiple), se (exactly) and sa (at least)', () => {
+    const line = (v: string) => parse(`\\px${v};a`).paragraphs[0]!.style.lineSpacing;
+    expect(line('sm1.5')).toEqual({ kind: 'multiple', value: 1.5 });
+    expect(line('se0.75')).toEqual({ kind: 'exactly', value: 0.75 });
+    expect(line('sa0.5')).toEqual({ kind: 'atLeast', value: 0.5 });
+    // `sa` is line spacing, not space after; `sb` is no key at all.
+    const style = parse('\\pxsa2,sb1;a').paragraphs[0]!.style;
+    expect(style.spaceAfter).toBeUndefined();
+    expect(style.spaceBefore).toBeUndefined();
+    expect(style.lineSpacing).toEqual({ kind: 'atLeast', value: 2 });
+    // The keys end a tab list, and the last one given wins.
+    const tabbed = parse('\\pxt4,8,se3,sm2;a').paragraphs[0]!.style;
+    expect(tabbed.tabs.map((t) => t.at)).toEqual([4, 8]);
+    expect(tabbed.lineSpacing).toEqual({ kind: 'multiple', value: 2 });
   });
 
   it('reads decimal tab stops with their symbol, a comma one too (M2-26 part 3)', () => {

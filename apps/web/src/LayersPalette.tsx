@@ -31,7 +31,7 @@ export function LayersPalette({
 }) {
   const [search, setSearch] = useState('');
   const [message, setMessage] = useState<string | undefined>();
-  const [lastMs, setLastMs] = useState<number | undefined>();
+  const [last, setLast] = useState<{ click: number; frame: number } | undefined>();
   const inLayout = doc.block !== doc.opened.modelSpace;
   const rows = useMemo(
     () => layerRows(doc.opened.init, engines.changesOf(doc.id), inLayout ? doc.block : undefined),
@@ -43,6 +43,12 @@ export function LayersPalette({
 
   const toggle = async (row: LayerRow, key: Toggle) => {
     const start = performance.now();
+    // After a click Chromium runs nothing else on the page, the engine's answer included, until
+    // it has drawn its next frame: the toggle's own latency counts from that frame (DEC-054).
+    let frame: number | undefined;
+    requestAnimationFrame(() => {
+      frame ??= performance.now();
+    });
     const edit: EngineEdit = { kind: 'layer', layer: row.handle, [key]: !row[key] };
     const result = await engines.edit(doc.id, edit);
     if (!result.ok) {
@@ -52,9 +58,9 @@ export function LayersPalette({
     // Toggle → canvas: until the space on screen has drawn the change (acceptance < 16 ms).
     // The palette's own re-render comes after, so it is not counted.
     await controllerOf(doc.id, doc.block)?.flush();
-    const ms = performance.now() - start;
+    const end = performance.now();
     setMessage(undefined);
-    setLastMs(ms);
+    setLast({ click: end - start, frame: end - (frame ?? start) });
     store.edited(doc.id);
   };
 
@@ -62,7 +68,8 @@ export function LayersPalette({
     <aside
       className="palette layers-palette"
       aria-labelledby="layers-title"
-      data-last-toggle-ms={lastMs === undefined ? undefined : lastMs.toFixed(1)}
+      data-last-toggle-ms={last?.click.toFixed(1)}
+      data-last-toggle-frame-ms={last?.frame.toFixed(1)}
     >
       <header>
         <h2 id="layers-title">Layers</h2>

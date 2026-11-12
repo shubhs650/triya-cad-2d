@@ -9,6 +9,12 @@ import type { ChangeSet, Entity, MultiLeaderGeometry } from '@triya/engine';
 import { DXF, activeCanvas, expectShown, ink, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+/** Two multileaders to edit (M2-44): a framed, masked text one and a block one (TAG, NO = 7). */
+const MLEADER_EDIT = fileURLToPath(
+  new URL('../../../packages/testkit/fixtures/mleader/mleader-edit.dxf', import.meta.url),
+);
 
 let app: { url: string; close(): Promise<void> };
 test.beforeAll(async () => {
@@ -181,4 +187,84 @@ test('MLEADER authors _TagCircle; a double click edits a multileader’s text', 
   await type(page, '', 'Command:');
   await expect.poll(tags).toEqual(['CIRCLE', 'ATTDEF', 'MULTILEADER 12', 'MULTILEADER SEE NOTE 4']);
   await page.screenshot({ path: test.info().outputPath('4-after.png') });
+});
+
+// M2-44: a double click on a block multileader opens Edit Attributes on its values (AutoCAD
+// 2024), and one on a framed, masked text multileader opens the MTEXT editor showing the frame
+// and the mask. The drawing (packages/testkit/src/mleader/fixture.ts) opens zoomed to them:
+// view centre (60, 30), 60 units high.
+test('a double click edits a block multileader’s attributes; the editor shows frame and mask', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, MLEADER_EDIT);
+  await expectShown(page, path.basename(MLEADER_EDIT));
+  const box = (await activeCanvas(page).boundingBox())!;
+  const k = box.height / 60;
+  const at = (x: number, y: number) => ({
+    x: box.x + box.width / 2 + (x - 60) * k,
+    y: box.y + box.height / 2 - (y - 30) * k,
+  });
+  // Drawn once the first view's text is measured and the view settles (M2-37).
+  let last = -1;
+  await expect
+    .poll(async () => {
+      const now = await ink(page);
+      const settled = now > 0 && now === last;
+      last = now;
+      return settled;
+    })
+    .toBe(true);
+  await page.screenshot({ path: test.info().outputPath('1-before.png') });
+
+  const tagValue = () =>
+    page.evaluate(() => {
+      for (const cs of [...(window as unknown as Dev).triyaDev.changes()].reverse()) {
+        for (const u of cs.entities?.updated ?? []) {
+          const g = u.after.geom as MultiLeaderGeometry;
+          if (g.kind === 'MULTILEADER' && g.block) return g.block.attributes?.[0]?.value;
+        }
+      }
+      return undefined;
+    });
+
+  // The tag's circle, on its right edge (the block sits at (100, 40), radius 6).
+  const circle = at(106, 40);
+  await page.mouse.dblclick(circle.x, circle.y);
+  const dialog = page.getByRole('dialog', { name: 'Edit Attributes' });
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toContainText('Block name: TAG');
+  const value = dialog.getByRole('textbox', { name: 'Tag number' });
+  await expect(value).toHaveValue('7');
+  await value.fill('12');
+  await page.screenshot({ path: test.info().outputPath('2-edit-attributes.png') });
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(prompt(page)).toHaveText('Select an annotation object or [Undo/Mode]:');
+  await type(page, '', 'Command:');
+  await expect.poll(tagValue).toBe('12');
+  await page.screenshot({ path: test.info().outputPath('3-tag-edited.png') });
+
+  // The note's text starts at (40, 42), 4 high: a double click on it opens the MTEXT editor
+  // with the light yellow mask under the text and the frame a gap (2) outside it.
+  const word = at(44, 40);
+  await page.mouse.dblclick(word.x, word.y);
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await expect(editor).toHaveText('FRAMED NOTE');
+  const mask = page.getByTestId('mtext-mask');
+  await expect(mask).toHaveCSS('background-color', 'rgb(255, 255, 200)');
+  const frame = page.getByTestId('mtext-text-frame');
+  await expect(frame).toBeVisible();
+  // The mask reaches (1.5 − 1) × 4 = 2 units past the text box, the frame the gap, 2.
+  const text = (await editor.boundingBox())!;
+  const masked = (await mask.boundingBox())!;
+  const framed = (await frame.boundingBox())!;
+  expect(Math.abs(masked.width - text.width - 4 * k)).toBeLessThan(2);
+  expect(Math.abs(framed.width - text.width - 4 * k)).toBeLessThan(2);
+  await page.screenshot({ path: test.info().outputPath('4-editor-frame-and-mask.png') });
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.screenshot({ path: test.info().outputPath('5-after.png') });
 });

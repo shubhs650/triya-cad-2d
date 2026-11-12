@@ -733,7 +733,15 @@ function background(out: Collector, g: MTextGeometry, layout: MTextLayout, frame
     const color: PrimitiveColor = bg.flags & 2 || !bg.color ? 'background' : colorValue(bg.color);
     for (const p of paths) out.mask(p, color);
   }
-  if (bg.flags & 16) for (const p of paths) out.frame(p);
+  if ((bg.flags & 16) === 0) return;
+  // A multileader's frame keeps its landing gap where its mask has a scale of its own (M2-44).
+  if (bg.frameScale === undefined || bg.frameScale === bg.scale || boxes.length !== 1) {
+    for (const p of paths) out.frame(p);
+    return;
+  }
+  const b = layout.bounds;
+  const k = (bg.frameScale - 1) * g.height;
+  out.frame(transformPath(rect(b.minX - k, b.minY - k, b.maxX + k, b.maxY + k), frame));
 }
 
 /**
