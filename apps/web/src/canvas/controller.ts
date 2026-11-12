@@ -720,6 +720,8 @@ export class CanvasController {
     const canvas = document.createElement('canvas');
     canvas.className = this.canvas.className;
     for (const [k, v] of Object.entries(this.canvas.dataset)) canvas.dataset[k] = v;
+    // The new canvas has drawn nothing yet.
+    delete canvas.dataset['drawn'];
     canvas.setAttribute('aria-label', this.canvas.getAttribute('aria-label') ?? '');
     // A canvas handed to the render worker cannot be handed over again, so swap in a new one.
     this.#listeners.abort();
@@ -1016,9 +1018,14 @@ export class CanvasController {
       this.#host.frame();
       this.#drawing = true;
       const canvas = this.#canvas;
+      const size = `${this.#size.width}x${this.#size.height}`;
       this.#host.flush().then(
         () => {
           this.#drawing = false;
+          // The size of the last frame on screen (M2-50): a canvas whose CSS size differs has
+          // been cleared by a resize, or not drawn at all yet, and will show the drawing at its
+          // next frame. The UI specs wait for it before they measure the canvas.
+          if (canvas.dataset['drawn'] !== size) canvas.dataset['drawn'] = size;
           // Nothing in the app listens; the T3 spec counts the frames that were drawn.
           canvas.dispatchEvent(new Event('framedrawn'));
           if (this.#again) {
