@@ -8,7 +8,10 @@ export interface CommandLineState {
   readonly lines: readonly string[];
   /** The prompt the command engine waits at, or undefined at `Command:`. */
   readonly prompt: Prompt | undefined;
-  /** The prompt line as AutoCAD words it: `Specify next point or [Undo]:`, `Command:`. */
+  /**
+   * The prompt line as AutoCAD words it: `Specify next point or [Undo]:`, `Command:`; empty while
+   * a command waits on a dialog (M2-41).
+   */
   readonly promptText: string;
   /** Typed input, oldest first, for Up/Down. */
   readonly recent: readonly string[];
@@ -34,6 +37,9 @@ export function follow(state: CommandLineState, o: CommandOutput): CommandLineSt
       return { ...state, prompt: o.prompt, promptText: o.text };
     case 'idle':
       return { ...state, prompt: undefined, promptText: 'Command:' };
+    // A command waits on a dialog of the app's (M2-41): the prompt line is empty, as AutoCAD's.
+    case 'waiting':
+      return { ...state, prompt: undefined, promptText: '' };
     default:
       return state;
   }
