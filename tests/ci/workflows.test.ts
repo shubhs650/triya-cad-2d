@@ -3,6 +3,8 @@
 // uploaded, a failing suite cannot hide the others, and nothing merges before CI is green.
 // DEC-053 (M2-58): gates run as parallel pieces; each required check is the job that gathers its
 // pieces and fails unless every one of them succeeded.
+// DEC-055 (M2-64): sized for three task threads at once: at most 8 runners per PR run, and a push
+// to main whose tree already passed every gate on its PR runs only the perf budgets.
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
@@ -25,6 +27,7 @@ interface Job {
   strategy?: { 'fail-fast'?: boolean; matrix?: Record<string, unknown> };
   steps?: Step[];
   outputs?: Record<string, string>;
+  permissions?: Record<string, string>;
 }
 interface Workflow {
   name: string;
@@ -67,6 +70,21 @@ const shardCount = (job: Job) => (job.strategy?.matrix?.['shard'] as unknown[] |
 
 /** Names branch protection must list as required (docs/SETUP.md Part 1 step 4). */
 const REQUIRED_CHECKS = ['lint · typecheck · unit · round-trip', 'fidelity · offline · ui'];
+/** Every script a required check stands for: the pieces that skip on an already-passed tree. */
+const GATED_SCRIPTS = [
+  'lint',
+  'typecheck',
+  'corpus:validate',
+  'changelog:check',
+  'test:shard',
+  'test:merge',
+  'build',
+  'test:fidelity',
+  'test:ui',
+  'test:offline',
+  'test:io',
+];
+const SKIP_IF_PASSED = "needs.changes.outputs.tested != 'true'";
 
 describe('ci.yml triggers', () => {
   it('runs on every pull request and on pushes to main', () => {
@@ -85,9 +103,11 @@ describe('ci.yml triggers', () => {
 describe('ci.yml gates', () => {
   // A required check that is skipped counts as passed, and one that only `needs` its pieces is
   // skipped when a piece fails; so each runs unless the run was cancelled and checks every piece.
+  // On main, a tree that already passed on its PR skips its pieces, and so its gathering job.
   it.each(REQUIRED_CHECKS)('"%s" fails unless every piece it gathers succeeded', (name) => {
     const [, job] = jobNamed(name);
-    expect(job.if).toBe('${{ !cancelled() }}');
+    expect(job.if).toBe(`\${{ !cancelled() && ${SKIP_IF_PASSED} }}`);
+    expect(needsOf(job)).toContain('changes');
     expect(needsOf(job).length).toBeGreaterThan(0);
     const check = job.steps?.[0]?.run ?? '';
     for (const id of needsOf(job)) {
@@ -271,6 +291,83 @@ describe('ci.yml gates', () => {
   });
 });
 
+// DEC-055 (M2-64): three task threads share the account's 20 concurrent jobs. Every merge starts a
+// run on main and an update-branch run on each other open PR at once, so each PR run asks for at
+// most 8 runners, and main does not run again the suites its tree already passed on its PR (with
+// main requiring PRs to be up to date, the squash commit's tree is the PR's tested merge tree).
+describe('ci.yml for three threads at once', () => {
+  const expanded = (job: Job) => shardCount(job) ?? 1;
+
+  it('asks for at most 8 runners at once on a PR', () => {
+    const together = Object.entries(ci.jobs).filter(
+      ([id, job]) =>
+        id !== 'changes' && id !== 'perf' && needsOf(job).every((n) => n === 'changes'),
+    );
+    const runners = together.reduce((sum, [, job]) => sum + expanded(job), 0);
+    expect(runners).toBeLessThanOrEqual(8);
+  });
+
+  it('runs the fidelity and UI suites in the same three shards', () => {
+    const [fidelityId, job] = jobRunning('test:fidelity')!;
+    expect(jobRunning('test:ui')?.[0]).toBe(fidelityId);
+    expect(shardCount(job)).toBe(3);
+    const steps = job.steps ?? [];
+    expect(steps.indexOf(stepRunning(job, 'test:ui')!)).toBeGreaterThan(
+      steps.indexOf(stepRunning(job, 'test:fidelity')!),
+    );
+    const uiUpload = steps.find(
+      (s) =>
+        s.uses?.startsWith('actions/upload-artifact@') &&
+        /ui-results-/.test(String(s.with?.['name'])),
+    );
+    expect(uiUpload?.if).toBe('failure()');
+  });
+
+  it('records the merge tree of a PR run whose required checks both passed', () => {
+    const [id, job] = Object.entries(ci.jobs).find(([, j]) =>
+      (j.steps ?? []).some((s) => String(s.with?.['name']).startsWith('ci-passed-')),
+    )!;
+    const needs = needsOf(job);
+    for (const name of REQUIRED_CHECKS) expect(needs).toContain(jobNamed(name)[0]);
+    expect(needs).toContain('changes');
+    // A job's `if` without a status function only runs when every job it needs succeeded.
+    expect(job.if).toBe("${{ github.event_name == 'pull_request' }}");
+    const upload = (job.steps ?? []).find((s) => s.uses?.startsWith('actions/upload-artifact@'))!;
+    expect(upload.with?.['name']).toBe('ci-passed-${{ needs.changes.outputs.tree }}');
+    expect(id).not.toBe('changes');
+  });
+
+  it('finds out on a push to main whether its tree already passed every gate', () => {
+    const changes = ci.jobs['changes']!;
+    expect(changes.outputs?.['tree']).toBeDefined();
+    expect(changes.outputs?.['tested']).toBeDefined();
+    expect(changes.permissions).toEqual({ contents: 'read', actions: 'read' });
+    const script = (changes.steps ?? []).map((s) => s.run ?? '').join('\n');
+    expect(script).toContain("git rev-parse 'HEAD^{tree}'");
+    expect(script).toContain('actions/artifacts?name=ci-passed-');
+    // Only this repository's own runs count, and only on a push: a PR always runs every gate.
+    expect(script).toContain('.workflow_run.head_repository_id == .workflow_run.repository_id');
+    expect(script).toMatch(/if \[ "\$EVENT" = push \]/);
+    expect(script).toContain('tested=false');
+  });
+
+  it.each(GATED_SCRIPTS)('skips `pnpm %s` only when the tree already passed', (script) => {
+    const [id, job] = jobRunning(script)!;
+    expect(needsOf(job)).toContain('changes');
+    if (REQUIRED_CHECKS.includes(job.name ?? '')) {
+      expect(job.if).toContain(SKIP_IF_PASSED);
+    } else {
+      expect(job.if, id).toBe(`\${{ ${SKIP_IF_PASSED} }}`);
+    }
+  });
+
+  it('still runs the perf budgets on every push to main', () => {
+    const perf = ci.jobs['perf']!;
+    expect(perf.if).not.toContain('tested');
+    expect(perf.if).toContain("github.ref == 'refs/heads/main'");
+  });
+});
+
 describe('ci.yml caching and artifacts', () => {
   it('caches the pnpm store in every job that installs', () => {
     for (const job of Object.values(ci.jobs)) {
@@ -299,13 +396,19 @@ describe('ci.yml caching and artifacts', () => {
     }
   });
 
+  // Each Playwright run empties test-results/, so the fidelity diffs are kept before the UI suite
+  // runs in the same job.
   it('uploads fidelity diff images when a fidelity shard fails', () => {
     const [, browser] = jobRunning('test:fidelity')!;
-    const upload = (browser.steps ?? []).find((s) =>
-      s.uses?.startsWith('actions/upload-artifact@'),
-    );
-    expect(upload?.if).toBe('failure()');
-    expect(String(upload?.with?.['path'])).toContain('test-results/');
+    const steps = browser.steps ?? [];
+    const fidelity = steps.indexOf(stepRunning(browser, 'test:fidelity')!);
+    const upload = steps.findIndex((s) => s.uses?.startsWith('actions/upload-artifact@'));
+    expect(upload).toBeGreaterThan(fidelity);
+    const ui = stepRunning(browser, 'test:ui');
+    if (ui) expect(upload).toBeLessThan(steps.indexOf(ui));
+    expect(steps[upload]?.if).toBe('failure()');
+    expect(String(steps[upload]?.with?.['name'])).toContain('fidelity-diffs-');
+    expect(String(steps[upload]?.with?.['path'])).toContain('test-results/');
   });
 });
 
