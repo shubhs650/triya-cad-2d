@@ -3318,3 +3318,20 @@ A LAYOUT object carries group 1 in two subclasses: AcDbPlotSettings 1 is the pag
 A layer whose colour comes from a colour book carries the colour's name in group 430 (`BOOK$COLOR`) after its 420 true colour, and AutoCAD writes no DBCOLOR object for it. The DXF reader stored 430 in `CadLayerTemplate.trueColorName` and dropped it when building the layer, and the writer never wrote 430, so reading and saving a drawing turned every colour-book layer colour into a plain true colour. This adds `Layer.trueColorName`, set from the template, and writes it after 420 when the layer's colour is a true colour. A test writes a layer with a colour-book colour to ASCII and binary DXF and reads the name back.
 
 </details>
+
+### 0182 — a DXF ELLIPSE whose minor-to-major ratio is above 1 loses its minor axis
+
+- **File:** `third_party/acad-ts-patches/0182-dxf-ellipse-ratio-above-one.patch`
+- **Touches:** `src/IO/DXF/DxfStreamReader/DxfSectionReaderBase.ts`
+- **Symptom:** ELLIPSE 40, the minor-to-major ratio, is at most 1, and the `Ellipse.radiusRatio` setter throws on more. A malformed file stating more (ezdxf's `duplicate_handles.dxf`: 1.009533 on eight ellipses) had the throw caught by the failsafe reader, which kept the default 1, so the ellipse lost its minor axis's length (1 % there).
+- **Fix:** the ELLIPSE reader keeps a ratio above 1 aside and, once the entity is read, states the same curve with its axes swapped: the major axis along normal × the old major axis, `ratio` times as long, the ratio inverted, and each parameter t made t − π/2 (in 0 to 2π; a full ellipse stays 0 to 2π). Ratios of 1 or less read as before.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0182 a DXF ELLIPSE whose minor-to-major ratio is above 1 swaps its axes" (normal +Z and −Z: the file's start, middle and end points kept; a full ellipse; a ratio of 0.5 unchanged).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read a DXF ELLIPSE with a minor-to-major ratio above 1 as the same curve with its axes swapped
+
+`Ellipse.radiusRatio` refuses a ratio above 1, so a DXF ELLIPSE whose group 40 is larger (written by tools that do not normalise their axes) was read with the default ratio 1 under the failsafe configuration, and lost the length of its minor axis. Such an ellipse is the same curve with the axes swapped: the major axis becomes normal × major × ratio, the ratio becomes 1 / ratio, and a parameter t becomes t − π/2. The reader now keeps a ratio above 1 aside and applies that once the entity's other groups are read. A test reads ellipses with ratio 1.5 under both normals and checks the curve's points.
+
+</details>

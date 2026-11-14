@@ -2780,7 +2780,7 @@ describe('acad-ts local patches', () => {
     // ellipse lost its minor axis's length. The same curve with the axes swapped has the major
     // axis along normal × old major, the ratio inverted, and its parameters a quarter turn less.
     const dxf = (normal: number, ratio: number, start: number, end: number): Uint8Array =>
-      new TextEncoder().encode(
+      Uint8Array.from(
         [
           ...['0', 'SECTION', '2', 'ENTITIES', '0', 'ELLIPSE', '5', '2A', '8', '0'],
           ...['100', 'AcDbEntity', '100', 'AcDbEllipse'],
@@ -2789,6 +2789,7 @@ describe('acad-ts local patches', () => {
           ...['40', String(ratio), '41', String(start), '42', String(end)],
           ...['0', 'ENDSEC', '0', 'EOF', ''],
         ].join('\n'),
+        (c) => c.charCodeAt(0),
       );
     const read = (bytes: Uint8Array): Ellipse => {
       const e = [...readCadDocument(bytes).entities!].find((x) => x instanceof Ellipse);

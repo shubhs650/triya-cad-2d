@@ -206,6 +206,9 @@ describe('mapPageSetups', () => {
 describe('layouts whose block link is broken (M2-69)', () => {
   type Pair = [code: string, value: string];
 
+  /** An ASCII DXF's text (these tests run without DOM or Node types). */
+  const text = (b: Uint8Array): string => Array.from(b, (c) => String.fromCharCode(c)).join('');
+
   /** A DXF with Model, Layout1 and Layout2 tabs, as its group code pairs. */
   function authored(): Pair[] {
     const doc = new CadDocument(ACadVersion.AC1032);
@@ -223,14 +226,14 @@ describe('layouts whose block link is broken (M2-69)', () => {
     sheet.tabOrder = 2;
     doc.layouts!.add(sheet);
     sheet.associatedBlock = second;
-    const lines = new TextDecoder().decode(writeCadDocument(doc, { format: 'dxf' })).split(/\r?\n/);
+    const lines = text(writeCadDocument(doc, { format: 'dxf' })).split(/\r?\n/);
     const out: Pair[] = [];
     for (let i = 0; i + 1 < lines.length; i += 2) out.push([lines[i]!.trim(), lines[i + 1]!]);
     return out;
   }
 
   const bytes = (pairs: readonly Pair[]): Uint8Array =>
-    new TextEncoder().encode(`${pairs.map(([c, v]) => `${c}\n${v}`).join('\n')}\n`);
+    Uint8Array.from(`${pairs.map(([c, v]) => `${c}\n${v}`).join('\n')}\n`, (c) => c.charCodeAt(0));
 
   /** The [start, end) ranges of each object of a type, from its 0 to the next 0. */
   function objects(pairs: readonly Pair[], type: string): [number, number][] {
@@ -300,9 +303,9 @@ describe('layouts whose block link is broken (M2-69)', () => {
   it('saves the links it repaired', () => {
     const pairs = authored();
     breakLayoutLinks(pairs);
-    const saved = new TextDecoder()
-      .decode(writeCadDocument(readCadDocument(bytes(pairs)), { format: 'dxf' }))
-      .split(/\r?\n/);
+    const saved = text(writeCadDocument(readCadDocument(bytes(pairs)), { format: 'dxf' })).split(
+      /\r?\n/,
+    );
     const back: Pair[] = [];
     for (let i = 0; i + 1 < saved.length; i += 2) back.push([saved[i]!.trim(), saved[i + 1]!]);
     const group = ([s, e]: [number, number], code: string, after = s) =>
