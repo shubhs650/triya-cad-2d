@@ -15,6 +15,8 @@ import {
   UnderlaySnapBuilder,
   underlayMatrix,
   underlaySnapCurves,
+  underlaySnapShown,
+  type UnderlayContent,
   type UnderlaySnapPage,
 } from '../../src/input/underlay-snap';
 import { applyPoint } from '../../src/geom/transform';
@@ -261,5 +263,128 @@ describe('osnap on PDF underlays (PDFOSNAP)', () => {
     const p = { x: 12 + 0.5 * 3, y: -0.5 * 4 };
     const [hit] = osnap(src, query(p, OSNAP.INT));
     expect(Math.hypot(hit!.point.x - p.x, hit!.point.y - p.y)).toBeLessThan(1e-6);
+  });
+});
+
+// M2-56 part 3: a path inside optional content (a PDF layer) is snapped to only while that
+// content shows, as the page is drawn: the PDF's own default visibility with the layers the
+// underlay names in `layersOff` (ULAYERS) turned off, under pdf.js's rules for an OCMD's
+// policy and visibility expression.
+describe('PDF layers in snap geometry (M2-56)', () => {
+  const GROUPS = [
+    { id: '5R', name: 'Walls', on: true },
+    { id: '6R', name: 'Notes', on: true },
+    { id: '7R', name: 'Draft', on: false },
+  ];
+
+  /** Three unit squares' bottom edges, each in its own content. */
+  function layeredPage(): UnderlaySnapPage {
+    const b = new UnderlaySnapBuilder();
+    b.groups(GROUPS);
+    b.line(0, 0, 1, 0);
+    b.within([{ type: 'OCG', id: '5R' }]);
+    b.line(2, 0, 3, 0);
+    b.within([{ type: 'OCG', id: '7R' }]);
+    b.cubic(4, 0, 4, 0.5, 5, 0.5, 5, 0);
+    b.within([]);
+    b.line(6, 0, 7, 0);
+    return b.build();
+  }
+
+  it('records each item’s content and keeps a page without any as before', () => {
+    const page = layeredPage();
+    expect(page.layers?.groups).toEqual(GROUPS);
+    expect(page.layers?.conditions).toEqual([
+      [],
+      [{ type: 'OCG', id: '5R' }],
+      [{ type: 'OCG', id: '7R' }],
+    ]);
+    expect(Array.from(page.layers!.lines)).toEqual([0, 1, 0]);
+    expect(Array.from(page.layers!.beziers)).toEqual([2]);
+    expect(fixturePage().layers).toBeUndefined();
+  });
+
+  it('shows content by the PDF default with the layers named off', () => {
+    const page = layeredPage();
+    expect(Array.from(underlaySnapShown(page, undefined)!)).toEqual([1, 1, 0]);
+    expect(Array.from(underlaySnapShown(page, ['Walls'])!)).toEqual([1, 0, 0]);
+    expect(underlaySnapShown(fixturePage(), ['Walls'])).toBeUndefined();
+  });
+
+  it('leaves out the curves of content that does not show', () => {
+    const page = layeredPage();
+    const all = { minX: -1, minY: -1, maxX: 8, maxY: 1 };
+    const starts = (shown: Uint8Array | undefined) =>
+      underlaySnapCurves(page, all, shown).map((c) =>
+        c.kind === 'LINE' ? c.start.x : c.kind === 'SPLINE' ? c.controlPoints[0]!.x : -1,
+      );
+    expect(starts(undefined)).toEqual([0, 2, 6, 4]);
+    expect(starts(underlaySnapShown(page, undefined))).toEqual([0, 2, 6]);
+    expect(starts(underlaySnapShown(page, ['Walls']))).toEqual([0, 6]);
+  });
+
+  it('nests content: every level must show', () => {
+    const b = new UnderlaySnapBuilder();
+    b.groups(GROUPS);
+    b.within([
+      { type: 'OCG', id: '5R' },
+      { type: 'OCG', id: '6R' },
+    ]);
+    b.line(0, 0, 1, 0);
+    const page = b.build();
+    expect(Array.from(underlaySnapShown(page, [])!)).toEqual([1, 1]);
+    expect(Array.from(underlaySnapShown(page, ['Notes'])!)).toEqual([1, 0]);
+  });
+
+  it('follows an OCMD policy and visibility expression as pdf.js does', () => {
+    const b = new UnderlaySnapBuilder();
+    b.groups(GROUPS);
+    const conds: UnderlayContent[] = [
+      { type: 'OCMD', ids: ['5R', '6R'], policy: null }, // AnyOn
+      { type: 'OCMD', ids: ['5R', '6R'], policy: 'AllOn' },
+      { type: 'OCMD', ids: ['5R', '7R'], policy: 'AnyOff' },
+      { type: 'OCMD', ids: ['5R', '7R'], policy: 'AllOff' },
+      { type: 'OCMD', id: '7R' },
+      { type: 'OCMD', expression: ['Not', '7R'] },
+      { type: 'OCMD', expression: ['And', '5R', ['Or', '7R', '6R']] },
+      { type: 'OCMD', ids: ['5R'], policy: 'Odd' },
+      { type: 'OCG', id: '99R' },
+    ];
+    for (const c of conds) {
+      b.within([c]);
+      b.line(0, 0, 1, 0);
+    }
+    const page = b.build();
+    expect(Array.from(underlaySnapShown(page, [])!).slice(1)).toEqual([1, 1, 1, 0, 0, 1, 1, 1, 1]);
+    expect(Array.from(underlaySnapShown(page, ['Walls', 'Notes'])!).slice(1)).toEqual([
+      0, 0, 1, 1, 0, 1, 0, 1, 1,
+    ]);
+  });
+
+  it('shows everything when the page names no groups, as pdf.js does', () => {
+    const b = new UnderlaySnapBuilder();
+    b.within([{ type: 'OCG', id: '5R' }]);
+    b.line(0, 0, 1, 0);
+    expect(Array.from(underlaySnapShown(b.build(), ['Walls'])!)).toEqual([1, 1]);
+  });
+
+  it('osnap skips the geometry of layers the underlay turns off', () => {
+    const b = new UnderlaySnapBuilder();
+    b.groups(GROUPS);
+    b.within([{ type: 'OCG', id: '5R' }]);
+    b.line(2, 2, 9, 2);
+    b.within([{ type: 'OCG', id: '7R' }]);
+    b.line(2, 4, 9, 4);
+    b.within([{ type: 'OCG', id: '6R' }]);
+    b.line(2, 6, 9, 6);
+    const page = b.build();
+    const plain = { flags: 10 };
+    const at = (y: number, layersOff?: string[]) =>
+      osnap(
+        source([underlay({ ...plain, ...(layersOff && { layersOff }) })], page),
+        query(world(2.01, y), OSNAP.END),
+      ).length;
+    expect([at(2), at(4), at(6)]).toEqual([1, 0, 1]);
+    expect([at(2, ['Walls']), at(4, ['Walls']), at(6, ['Walls'])]).toEqual([0, 0, 1]);
   });
 });

@@ -288,7 +288,13 @@ export function CommandLine({
   const parts = promptParts(state?.promptText ?? 'Command:', prompt?.options);
   const shown = state?.lines.slice(-SHOWN_LINES) ?? [];
   return (
-    <section className="command-line" aria-label="Command line">
+    <section
+      className="command-line"
+      aria-label="Command line"
+      // While the engine has not read every input sent, the prompt shown is the one before them
+      // (M2-47 part 3); tests wait for this to clear before a key that acts on the new prompt.
+      data-reading={state && reading(state) ? 'true' : undefined}
+    >
       {doc !== undefined && (
         <DynamicInput
           prompt={prompt}

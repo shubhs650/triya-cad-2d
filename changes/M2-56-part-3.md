@@ -1,0 +1,1 @@
+- M2-56 part 3 (#340): object snaps on a PDF underlay (PDFOSNAP) skip the geometry of PDF layers the underlay hides, whether the PDF turns them off by default or ULAYERS turns them off for that underlay. Closes M2-56.

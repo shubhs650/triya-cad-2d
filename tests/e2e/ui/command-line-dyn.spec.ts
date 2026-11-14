@@ -38,6 +38,7 @@ async function linesAdded(page: Page): Promise<number[][]> {
 const prompt = (page: Page) => page.getByTestId('command-prompt');
 const history = (page: Page) => page.getByRole('log', { name: 'Recent command lines' });
 const dyn = (page: Page) => page.getByTestId('dyn');
+const commandLine = (page: Page) => page.getByRole('region', { name: 'Command line' });
 
 async function open(page: Page): Promise<void> {
   await page.goto(app.url);
@@ -78,6 +79,9 @@ test('Dynamic Input: X,Y then Distance Tab Angle draw the line', async ({ page }
   await expect(dyn(page).getByLabel('Angle')).toHaveText('45');
   await page.keyboard.press('Enter');
   await expect(history(page)).toContainText('Specify next point or [Undo]: @100<45');
+  // The next prompt reads the same, so wait until the engine has read the point and that prompt
+  // is the one shown: a ↓ before it opens the menu of the prompt being left (CI, #340).
+  await expect(commandLine(page)).not.toHaveAttribute('data-reading', 'true');
   // ↓ shows the options; Enter picks the highlighted one (Undo).
   await page.keyboard.press('ArrowDown');
   await expect(dyn(page).getByRole('option', { name: /Undo/ })).toHaveAttribute(
