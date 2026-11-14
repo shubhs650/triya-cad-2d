@@ -72,6 +72,8 @@ describe('palette search', () => {
       'TEXTTOFRONT',
       // M2-23: the undo commands run in every drawing.
       'U',
+      // M2-56 part 1: the Underlay Layers dialog.
+      'ULAYERS',
       'UNDO',
       'VIEW',
       'WIPEOUT',
