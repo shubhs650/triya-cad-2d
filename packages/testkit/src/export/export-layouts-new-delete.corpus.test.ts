@@ -6,7 +6,12 @@
 // A file before R2000, which introduced layouts, refuses both.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ACadVersion, CadDictionary, type CadDocument, type CadObject } from '@node-projects/acad-ts';
+import {
+  ACadVersion,
+  CadDictionary,
+  type CadDocument,
+  type CadObject,
+} from '@node-projects/acad-ts';
 import { ChangeSetBuilder, DocumentModel, type Layout, type LayoutPlot } from '@triya/engine';
 import {
   documentInit,

@@ -317,13 +317,16 @@ describe('TriyaToAcad PURGE', () => {
       doc.layouts!.add(layout);
       layout.associatedBlock = block;
     }
-    const text = new TextDecoder().decode(writeCadDocument(doc, { format: 'dxf' }));
+    const text = Array.from(writeCadDocument(doc, { format: 'dxf' }), (c) =>
+      String.fromCharCode(c),
+    ).join('');
     const broken = text.replace(
       /(\n *0\r?\nLAYOUT\r?\n[\s\S]*?\nAcDbLayout\r?\n[\s\S]*?\n *330\r?\n)[0-9A-F]+/g,
       '$1FFFA',
     );
-    const bytes = new TextEncoder().encode(broken);
-    expect(open(new TextEncoder().encode(text)).layouts).toHaveLength(2);
+    const encode = (t: string) => Uint8Array.from(t, (c) => c.charCodeAt(0));
+    const bytes = encode(broken);
+    expect(open(encode(text)).layouts).toHaveLength(2);
     expect(open(bytes).layouts).toEqual([]);
     for (const name of ['*Model_Space', '*Paper_Space'])
       expect(

@@ -462,7 +462,7 @@ const ACAD_TS_GAPS: Record<string, string> = {};
  */
 const MALFORMED_REPAIRS: Record<string, Record<string, string>> = {
   'public/third-party/ezdxf/integration_tests/duplicate_handles.dxf': {
-    $LUPREC: 'a precision of 10 is past AutoCAD\'s 0 to 8; acad-ts keeps its default 4',
+    $LUPREC: "a precision of 10 is past AutoCAD's 0 to 8; acad-ts keeps its default 4",
     $TDCREATE: 'a date of 0 is no date; the reader dates the drawing when it opens it',
     $TDUPDATE: 'a date of 0 is no date; the reader dates the drawing when it opens it',
   },
@@ -741,7 +741,9 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
     );
     for (const [path, kinds] of Object.entries(MALFORMED_REPAIRS))
       expect(
-        Object.keys(kinds).filter((k) => !mismatches.some((m) => m.kind === k && repaired(path, m))),
+        Object.keys(kinds).filter(
+          (k) => !mismatches.some((m) => m.kind === k && repaired(path, m)),
+        ),
         `${path}: repairs that no longer happen`,
       ).toEqual([]);
   }, 300_000);

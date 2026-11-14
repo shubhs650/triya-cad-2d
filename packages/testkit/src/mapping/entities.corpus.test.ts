@@ -1843,7 +1843,9 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
     );
     for (const [path, kinds] of Object.entries(MALFORMED_REPAIRS))
       expect(
-        Object.keys(kinds).filter((k) => !mismatches.some((m) => m.kind === k && repaired(path, m))),
+        Object.keys(kinds).filter(
+          (k) => !mismatches.some((m) => m.kind === k && repaired(path, m)),
+        ),
         `${path}: repairs that no longer happen`,
       ).toEqual([]);
   }, 300_000);
