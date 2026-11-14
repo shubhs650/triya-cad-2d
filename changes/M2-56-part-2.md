@@ -1,0 +1,1 @@
+- M2-56 part 2 (#337): a PDF underlay's printable annotations (stamps, markups, filled-in form fields) now plot over its page, as a PDF printer prints them, in their PDF layers; the Plot dialog names the PDF underlays whose PDF is not found, which plot without their page.
