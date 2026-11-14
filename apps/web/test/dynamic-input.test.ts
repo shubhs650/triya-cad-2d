@@ -1,6 +1,6 @@
 // M2-02 part 2: Dynamic Input's fields turn what is typed at the cursor into the text the command
 // line would send (AutoCAD 2024, DYNMODE 3, DYNPICOORDS 0).
-import { prompts, type Prompt } from '@triya/engine';
+import { DECIMAL_UNITS, parseAngle, parseCoordinate, prompts, type Prompt } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   dynBackspace,
@@ -115,17 +115,91 @@ describe('Dynamic Input fields', () => {
     expect(dynTab(typing(next, 'C')).active).toBe(0);
   });
 
+  // AutoCAD's defaults (LUNITS 2 at LUPREC 4, AUNITS 0 at AUPREC 0) when no units are given.
   it("shows the cursor's coordinates, distance and angle while nothing is typed", () => {
     expect(dynLive(dynFor(first), first, cursor)).toEqual(['13.0000', '14.0000']);
     expect(dynLive(dynFor(corner), corner, cursor)).toEqual(['3.0000', '4.0000']);
-    expect(dynLive(dynFor(next), next, cursor)).toEqual(['5.0000', '53.1301']);
-    expect(dynLive(dynFor(next), next, { x: 10, y: 5 })).toEqual(['5.0000', '270.0000']);
+    expect(dynLive(dynFor(next), next, cursor)).toEqual(['5.0000', '53']);
+    expect(dynLive(dynFor(next), next, { x: 10, y: 5 })).toEqual(['5.0000', '270']);
     const radius = prompts.distance({ message: 'Specify radius', base: { x: 0, y: 0 } });
     expect(dynLive(dynFor(radius), radius, { x: 3, y: 4 })).toEqual(['5.0000']);
     const angle = prompts.angle({ message: 'Specify angle', base: { x: 0, y: 0 } });
-    expect(dynLive(dynFor(angle), angle, { x: 0, y: 4 })).toEqual(['90.0000']);
+    expect(dynLive(dynFor(angle), angle, { x: 0, y: 4 })).toEqual(['90']);
     expect(dynLive(dynFor(angle), prompts.angle({ message: 'a' }), cursor)).toEqual(['']);
     expect(dynLive(dynFor(first), first, undefined)).toEqual(['', '']);
+  });
+
+  // M2-35 part 20: the fields show what the status bar and the command line show, in the
+  // drawing's units (AutoCAD 2024 Help, "About Dynamic Input": its tooltips follow UNITS).
+  it("shows the cursor's values in the drawing's units", () => {
+    const arch = { units: { ...DECIMAL_UNITS, lunits: 4, luprec: 4, aunits: 1, auprec: 2 } };
+    const at = { x: 30.25, y: 6.5 };
+    expect(dynLive(dynFor(first), first, at, arch)).toEqual([`2'-6 1/4"`, `0'-6 1/2"`]);
+    // Relative to the last point: below and left of it the coordinates are negative.
+    expect(dynLive(dynFor(corner), corner, { x: 4, y: 10 }, arch)).toEqual([`-0'-6"`, `0'-0"`]);
+    expect(dynLive(dynFor(next), next, { x: 22, y: 22 }, arch)).toEqual([`1'-5"`, `45d0'`]);
+    const radius = prompts.distance({ message: 'Specify radius', base: { x: 0, y: 0 } });
+    expect(dynLive(dynFor(radius), radius, { x: 18, y: 0 }, arch)).toEqual([`1'-6"`]);
+    // A scale factor is a plain number, not a length.
+    const factor = prompts.distance({
+      message: 'Specify scale factor or',
+      base: { x: 0, y: 0 },
+      drag: { kind: 'scale', ids: [], base: { x: 0, y: 0 }, reference: 1 },
+    });
+    expect(dynLive(dynFor(factor), factor, { x: 18, y: 0 }, arch)).toEqual(['18.0000']);
+    const units = (u: Partial<typeof DECIMAL_UNITS>) => ({ units: { ...DECIMAL_UNITS, ...u } });
+    const live = (u: Partial<typeof DECIMAL_UNITS>) =>
+      dynLive(dynFor(next), next, { x: 10, y: 22 }, units(u));
+    expect(live({ lunits: 1, luprec: 2, aunits: 2, auprec: 1 })).toEqual(['1.20E+01', '100.0g']);
+    expect(live({ lunits: 3, luprec: 1, aunits: 3, auprec: 4 })).toEqual([`1'-0.0"`, '1.5708r']);
+    expect(live({ lunits: 5, luprec: 2, aunits: 4 })).toEqual(['12', 'N']);
+    expect(dynLive(dynFor(next), next, { x: 22, y: 22 }, units({ aunits: 4, auprec: 2 }))).toEqual([
+      '16.9706',
+      "N 45d0' E",
+    ]);
+  });
+
+  // The angle shown is the one that, typed, goes where the cursor is: ANGBASE and ANGDIR turn
+  // typed angles (`parseAngle`), so they turn the shown one back. A bearing names a direction
+  // from north whatever they say (M2-35 part 18), so it shows the world direction.
+  it('shows angles as they would be typed under ANGBASE and ANGDIR', () => {
+    const north = { units: DECIMAL_UNITS, angles: { base: Math.PI / 2, clockwise: true } };
+    // From (10,10) to (22,22) is world 45°: 45° clockwise from north.
+    expect(dynLive(dynFor(next), next, { x: 22, y: 22 }, north)[1]).toBe('45');
+    expect(dynLive(dynFor(next), next, { x: -2, y: 22 }, north)[1]).toBe('315');
+    const angle = prompts.angle({ message: 'Specify angle', base: { x: 0, y: 0 } });
+    expect(dynLive(dynFor(angle), angle, { x: 4, y: 0 }, north)).toEqual(['90']);
+    const bearings = { ...north, units: { ...DECIMAL_UNITS, aunits: 4 } };
+    expect(dynLive(dynFor(next), next, { x: 22, y: 22 }, bearings)[1]).toBe('N 45d E');
+  });
+
+  // An untyped field beside a typed one sends its value as the field shows it, which the
+  // command engine reads back in every LUNITS (`parseDistance`).
+  it('sends an untyped field as it shows it, in the drawing units', () => {
+    const arch = { units: { ...DECIMAL_UNITS, lunits: 4, luprec: 4 } };
+    const s = typing(first, '24');
+    expect(dynText(s, first, { x: 30, y: 6.5 }, arch)).toBe(`24,0'-6 1/2"`);
+    const angled = typing(next, '\t30');
+    expect(dynText(angled, next, { x: 22, y: 10 }, arch)).toBe(`@1'-0"<30`);
+  });
+
+  it('sends values the command engine reads back in every LUNITS and AUNITS', () => {
+    const at = { x: -7.25, y: 3.5 };
+    for (const lunits of [1, 2, 3, 4, 5]) {
+      for (const aunits of [0, 1, 2, 3, 4]) {
+        const u = { units: { ...DECIMAL_UNITS, lunits, luprec: 4, aunits, auprec: 4 } };
+        // X typed, Y the cursor's as shown.
+        const p = parseCoordinate(dynText(typing(first, '1'), first, at, u), { lunits });
+        expect(p).toEqual({ x: 1, y: 3.5 });
+        // The cursor's own coordinates read back from the fields as shown.
+        const [x, y] = dynLive(dynFor(first), first, at, u);
+        expect(parseCoordinate(`${x},${y}`, { lunits })).toEqual(at);
+        // An angle shown reads back as the direction (a bearing to the minute, 4 decimals else).
+        const shown = dynLive(dynFor(next), next, { x: 13, y: 14 }, u)[1]!;
+        const radians = parseAngle(shown.replace(/\s+/g, ''))!;
+        expect(Math.abs(radians - Math.atan2(4, 3))).toBeLessThan(aunits === 4 ? 3e-4 : 1e-4);
+      }
+    }
   });
 
   it('carries keys typed ahead of a prompt over to it', () => {

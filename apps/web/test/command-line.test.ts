@@ -1,6 +1,12 @@
 // M2-02: the command line's mirror of a drawing's command engine (history, prompt, recall),
 // completion as AutoCAD's AUTOCOMPLETE offers it, and the prompt split around its options.
-import { builtinCommands, type CommandOutput, type Prompt } from '@triya/engine';
+import {
+  builtinCommands,
+  DECIMAL_UNITS,
+  DEFAULT_ANGLES,
+  type CommandOutput,
+  type Prompt,
+} from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   CommandLines,
@@ -23,6 +29,8 @@ describe('the command line state', () => {
         type: 'prompt',
         prompt: { kind: 'point', message: 'Specify first point' },
         text: 'Specify first point:',
+        units: { ...DECIMAL_UNITS, lunits: 4 },
+        angles: DEFAULT_ANGLES,
       },
       { type: 'change', change: {} },
     ];
@@ -30,6 +38,8 @@ describe('the command line state', () => {
     expect(s.lines).toEqual(['Command: L']);
     expect(s.promptText).toBe('Specify first point:');
     expect(s.prompt?.kind).toBe('point');
+    // Dynamic Input shows the cursor's values in the units the prompt came with (M2-35 part 20).
+    expect(s.units).toEqual({ units: { ...DECIMAL_UNITS, lunits: 4 }, angles: DEFAULT_ANGLES });
     const idle = follow(s, { type: 'idle' });
     expect([idle.prompt, idle.promptText]).toEqual([undefined, 'Command:']);
   });
@@ -39,6 +49,8 @@ describe('the command line state', () => {
       type: 'prompt',
       prompt: { kind: 'point', message: 'Specify opposite corner' },
       text: 'Specify opposite corner:',
+      units: DECIMAL_UNITS,
+      angles: DEFAULT_ANGLES,
     };
     const s = follow(follow(IDLE, at), { type: 'waiting', command: 'PLOT' });
     expect([s.prompt, s.promptText]).toEqual([undefined, '']);
