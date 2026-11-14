@@ -48,6 +48,11 @@ export interface PublishSheet {
   readonly pageSetup?: string;
   /** The page setup its layout has applied (LAYOUT DXF 1, M2-45), which "<Default: …>" names. */
   readonly applied?: string;
+  /**
+   * Why a sheet a loaded sheet list names cannot publish (M2-45 part 3): its drawing is not open
+   * ("Drawing file not found") or lacks its layout; its `doc` is 0 and its `block` empty.
+   */
+  readonly missing?: string;
 }
 
 /** A drawing's space as the Publish dialog lists it. */
