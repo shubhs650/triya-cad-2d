@@ -179,7 +179,9 @@ test("Save As writes a pasted picture's PNG beside the DXF; the References palet
       .getByRole('button', { name: 'References' })
       .click();
     const palette = page.getByRole('complementary', { name: 'References' });
-    await palette.getByRole('button', { name: `Save file ${picture}` }).click();
+    await palette
+      .getByRole('button', { name: `Save file ${picture!.replace(/\.png$/, '')}` })
+      .click();
     await expect(page.getByRole('status').filter({ hasText: 'screenshot.png' })).toHaveText(
       'Saved screenshot.png.×',
     );

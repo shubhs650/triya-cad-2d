@@ -327,6 +327,16 @@ button {
   animation: undo-toast-in var(--motion) ease-out;
 }
 
+/* M2-72: a save's offer to write its pasted pictures beside the drawing. */
+.picture-offer {
+  max-width: min(720px, 100%);
+}
+
+.picture-offer button {
+  flex: none;
+  white-space: nowrap;
+}
+
 .notice:not(:has(button)) {
   padding-right: 12px;
 }
