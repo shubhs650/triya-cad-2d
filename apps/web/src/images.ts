@@ -119,6 +119,11 @@ export class RasterImages {
     return this.#files.has(fileKey(fileName));
   }
 
+  /** The bytes of the file of this name that was supplied or kept (M2-72); undefined if none. */
+  bytes(fileName: string): Uint8Array | undefined {
+    return this.#files.get(fileKey(fileName))?.bytes;
+  }
+
   /** A canvas of a drawing whose IMAGEDEFs `definitions` gives; served at once with what is here. */
   client(definitions: () => readonly ImageDefinition[], deliver: Deliver): ImageClient {
     const client: Client = { definitions, deliver };

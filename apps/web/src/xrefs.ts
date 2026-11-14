@@ -118,7 +118,15 @@ export function referencesOf(
     for (const x of cs.objects?.added ?? []) objects.set(x.handle, x);
     // An xref load: what it brought in is listed under the xref.
     const load = cs.blocks?.updated?.find((u) => u.after.xrefLoaded && !u.before.xrefLoaded);
-    if (!load) continue;
+    if (!load) {
+      // The drawing's own, made since it opened: a pasted picture's (M2-54, M2-72) or a pasted
+      // image's or underlay's (M2-32).
+      for (const o of cs.objects?.added ?? []) {
+        const kind = fileObject(o.type);
+        if (kind && !top.some((n) => n.handle === o.handle)) top.push({ kind, handle: o.handle });
+      }
+      continue;
+    }
     const children: Node[] = [];
     const seen = new Set<string>();
     for (const { entity } of cs.entities?.added ?? []) {
