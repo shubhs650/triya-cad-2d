@@ -647,6 +647,27 @@ test('edits an MTEXT’s contents in the In-Place Text Editor from the palette',
       }),
     )
     .toBe('GENERAL NOTES');
+
+  // M2-35 part 27: Direction follows Justify and sets DXF 72.
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  await objects.selectOption({ label: 'MText (1)' });
+  const text = palette.getByRole('table', { name: 'Text' });
+  await expect(text.getByRole('rowheader').nth(3)).toHaveText('Direction');
+  await expect(text.getByRole('rowheader').nth(2)).toHaveText('Justify');
+  const direction = palette.getByRole('combobox', { name: 'Direction' });
+  await expect(direction).toHaveValue('1');
+  await direction.selectOption({ label: 'Top to bottom' });
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        for (const cs of [...(window as unknown as Dev).triyaDev.changes()].reverse())
+          for (const u of cs.entities?.updated ?? [])
+            if (u.after.geom.kind === 'MTEXT') return u.after.geom.direction;
+        return undefined;
+      }),
+    )
+    .toBe(3);
 });
 
 // M2-35 part 11: a multileader's Text rows. Its text stays on its landing: right-justified, its
@@ -870,6 +891,7 @@ test('turns, spaces, masks and frames a multileader’s text from the palette', 
     'Contents',
     'Text style',
     'Justify',
+    'Direction',
     'Text height',
     'Text rotation',
     'Line space factor',
@@ -902,6 +924,11 @@ test('turns, spaces, masks and frames a multileader’s text from the palette', 
   await expect.poll(async () => (await leader())?.text?.mask).toEqual({ scale: 1.5 });
   await frame.selectOption({ label: 'Yes' });
   await expect.poll(async () => (await leader())?.textFrame).toBe(true);
+  // M2-35 part 27: the text's flow (DXF 172); a Hershey font draws it left to right still.
+  const direction = palette.getByRole('combobox', { name: 'Direction' });
+  await expect(direction).toHaveValue('1');
+  await direction.selectOption({ label: 'Top to bottom' });
+  await expect.poll(async () => (await leader())?.text?.flow).toBe(3);
   // Twice the factor, twice the distance between lines.
   const distance = palette.getByRole('textbox', { name: 'Line space distance', exact: true });
   await expect

@@ -29,6 +29,7 @@ import { withDimvarOverride } from '../annotation/dstyle';
 import { currentHeader } from './current';
 import { hasThickness, materialOf, namedPlotStyles, setHyperlink } from './general';
 import {
+  directionOf,
   multiLeaderTextChange,
   multiLeaderTextRowChange,
   multiLeadersToMeasure,
@@ -194,6 +195,11 @@ function typeRowChange(
       style: style.handle,
       ...(style.height > 0 && { height: style.height }),
     });
+  }
+  if (key === 'direction' && g.kind === 'MTEXT') {
+    // M2-35 part 27: the entity's own DXF 72; an annotative MTEXT's scales do not keep it.
+    const direction = directionOf(v);
+    return direction === undefined ? 'invalid' : geomPatch({ ...g, direction });
   }
   if (key === 'justify' && g.kind === 'MTEXT') {
     const attachment = ATTACHMENTS.indexOf(String(v)) + 1;
