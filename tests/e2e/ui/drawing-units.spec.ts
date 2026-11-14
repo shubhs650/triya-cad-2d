@@ -64,3 +64,33 @@ test('TEXT reports and asks in feet and inches once LUNITS is architectural', as
   await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
   await type(page, '10,10', `Specify height <1'-6">:`);
 });
+
+// M2-35 part 18: in surveyor's units the rotation's default is a bearing, a bearing typed at the
+// prompt reads (with no spaces, as a space ends the input), and it is the next default.
+test('TEXT takes and offers its rotation as a bearing once AUNITS is surveyor', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await expect(prompt(page)).toHaveText('Command:');
+
+  await type(page, 'AUNITS', /^Enter new value for AUNITS <\d>:$/);
+  await type(page, '4', 'Command:');
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '10,10', /^Specify height <[^>]+>:$/);
+  await type(page, '', 'Specify rotation angle of text <E>:');
+  await type(page, 'N30dW', 'Enter text:');
+  await type(page, 'Bearing', 'Enter text:');
+  await shot(page, '3-after-bearing-text');
+  await type(page, '', 'Command:');
+
+  await type(page, 'DT', 'Specify start point of text or [Justify/Style]:');
+  await type(page, '20,20', /^Specify height <[^>]+>:$/);
+  // The drawing's AUPREC may show minutes (`N 30d0' W`).
+  await type(page, '', /^Specify rotation angle of text <N 30d[0-9'"]* W>:$/);
+  await shot(page, '4-after-bearing-default');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+});

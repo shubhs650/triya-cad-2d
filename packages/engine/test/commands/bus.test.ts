@@ -448,6 +448,23 @@ describe('PromptBus', () => {
     expect(values[3]).toBe(1);
   });
 
+  it('reads surveyor bearings as directions from north (M2-35 part 18)', async () => {
+    const { bus } = setup([
+      ['$ANGBASE', Math.PI / 2],
+      ['$ANGDIR', 1],
+      ['$AUNITS', 4],
+    ]);
+    await bus.script(['ROTATE', 'N45dE', 'w']);
+    expect(bus.history.at(-1)).toBe('Specify second angle: w');
+    // A polar point's bearing, measured from ROTATE's base point.
+    await bus.script(['ROTATE', '2<S30dW']);
+    await bus.cancel();
+    const values = got.map((a) => (a.kind === 'angle' ? a.value : NaN));
+    expect(values[0]).toBeCloseTo(Math.PI / 4, 12);
+    expect(values[1]).toBeCloseTo(Math.PI, 12);
+    expect(values[2]).toBeCloseTo((-120 * Math.PI) / 180, 12);
+  });
+
   it('checks integer and real input', async () => {
     const { bus } = setup();
     await bus.script(['POLYGON', '2.5']);

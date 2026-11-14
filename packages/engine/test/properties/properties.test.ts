@@ -432,6 +432,23 @@ describe('Properties edits', () => {
     expect(g().oblique).toBeCloseTo(Math.PI / 12, 12);
   });
 
+  it('reads a surveyor bearing typed into an angle row (M2-35 part 18)', async () => {
+    const s = setup(
+      init([
+        entityInit(
+          '61',
+          textGeom({ halign: 2, position: { x: 0, y: 4 }, alignmentPoint: { x: 4, y: 4 } }),
+        ),
+      ]),
+    );
+    await s.bus.selectAll();
+    const g = () => s.byHandle('61').geom as Extract<EntityGeometry, { kind: 'TEXT' }>;
+    await s.bus.setProperty({ key: 'rotation', value: 'N 30d W' }, 'TEXT');
+    expect(g().rotation).toBeCloseTo((120 * Math.PI) / 180, 12);
+    await s.bus.setProperty({ key: 'rotation', value: 'S' }, 'TEXT');
+    expect(g().rotation).toBeCloseTo((270 * Math.PI) / 180, 12);
+  });
+
   it('moves and turns a reference with its attributes, and edits an attribute value', async () => {
     const attribute = {
       ...(textGeom({ value: 'A-101', position: { x: 1, y: 0 } }) as object),
