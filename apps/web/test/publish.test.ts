@@ -151,7 +151,7 @@ describe('publishPdf', () => {
       [{ sheet: 'plan-Model', space: model, parts: [{ ...stroke, layer: 'A-WALL' }] }],
       'plan',
       undefined,
-      { layers: true, bookmarks: false, textAsGeometry: false },
+      { layers: true, bookmarks: false, hyperlinks: false, textAsGeometry: false },
     );
     const pdf = await getDocument({ data: bytes! }).promise;
     expect(await pdf.getOutline()).toBeNull();

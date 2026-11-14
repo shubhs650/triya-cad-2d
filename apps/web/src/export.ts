@@ -15,13 +15,13 @@
 // AutoCAD's PNG export is a screen capture).
 //
 // M2-60: a PDF's Options (AutoCAD 2024 Help, "PDF Options Dialog Box"): Data's "Include layer
-// information" and "Create bookmarks" and Font Handling's "Convert all text to geometry", which
-// start as AutoCAD's General Documentation preset has them (layers and bookmarks in, text kept
-// as text). The rest of AutoCAD's dialog changes nothing Triya writes, so it is not offered:
+// information", "Include hyperlinks" (M2-74) and "Create bookmarks" and Font Handling's "Convert
+// all text to geometry", which start as AutoCAD's General Documentation preset has them (layers,
+// hyperlinks and bookmarks in, text kept as text). The rest of AutoCAD's dialog changes nothing Triya writes, so it is not offered:
 // vector and raster quality and the presets that mostly set them (Triya's PDF keeps vectors at
 // full precision and images at their own pixels, whatever the resolution), merge control (lines
 // plot in draw order, each over the last), "Capture fonts used in the drawing" (TrueType text is
-// always embedded as a subset unless it is converted to geometry) and hyperlinks (not written).
+// always embedded as a subset unless it is converted to geometry).
 import { dxfName } from './save';
 import { defaultPlotSettings, type PdfOptions, type PlotSettings, type PlotSpace } from './plot';
 import type { Box } from '@triya/engine';
@@ -161,12 +161,13 @@ export function exportSettings(
 export const EXPORT_PDF_OPTIONS: PdfOptions = {
   layers: true,
   bookmarks: true,
+  hyperlinks: true,
   textAsGeometry: false,
 };
 
 /** The PDF options in a line, as Save As PDF shows them beside its Options... button. */
 export function pdfOptionsNote(o: PdfOptions): string {
-  return `${o.layers ? 'Layers' : 'No layers'}, ${o.bookmarks ? 'bookmarks' : 'no bookmarks'}; text as ${
-    o.textAsGeometry ? 'geometry' : 'text'
-  }`;
+  return `${o.layers ? 'Layers' : 'No layers'}, ${o.bookmarks ? 'bookmarks' : 'no bookmarks'}, ${
+    o.hyperlinks ? 'hyperlinks' : 'no hyperlinks'
+  }; text as ${o.textAsGeometry ? 'geometry' : 'text'}`;
 }

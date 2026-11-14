@@ -10,6 +10,7 @@ import { zlibSync } from 'fflate';
 import { ContentStream, pdfNumber } from './content';
 import { PdfFonts, type EmbeddedFont, type PlotFont } from './fonts';
 import { PdfImports, type ImportedForm, type UnderlayLook } from './import';
+import type { PlotLink } from './plot';
 import {
   encodeImage,
   FILL_CELL,
@@ -42,6 +43,13 @@ export interface PdfPageOptions {
   readonly bookmark?: string;
 }
 
+/** A link on a page: where it is and what it opens. */
+export interface PdfLink {
+  /** [x0, y0, x1, y1], points. */
+  readonly rect: readonly [number, number, number, number];
+  readonly target: PlotLink;
+}
+
 export class PdfPage {
   readonly content = new ContentStream();
   /** Opacities in use, by ExtGState name. */
@@ -60,6 +68,8 @@ export class PdfPage {
   readonly forms = new Set<ImportedForm>();
   /** Drawing layers the page marks as optional content (M2-60), in the order first marked. */
   readonly layers = new Set<string>();
+  /** Links over the page's hyperlinked objects (M2-74), in the order added. */
+  readonly links: PdfLink[] = [];
 
   constructor(
     /** Points. */
@@ -99,6 +109,14 @@ export class PdfPage {
     }
     this.layers.add(name);
     return resource;
+  }
+
+  /**
+   * A link annotation over `rect` ([x0, y0, x1, y1], points) to `target` (M2-74, Save As PDF's
+   * "Include hyperlinks"): its URL, or the page plotting the layout its location names.
+   */
+  link(rect: readonly [number, number, number, number], target: PlotLink): void {
+    this.links.push({ rect, target });
   }
 
   /**
@@ -178,6 +196,19 @@ export function pdfString(s: string): string {
   return `<${hex.toUpperCase()}>`;
 }
 
+/**
+ * A URI as §12.6.4.7 has one, 7-bit ASCII: anything else, controls and spaces percent-encoded as
+ * UTF-8 (RFC 3986 §2.1), the rest as written.
+ */
+export function asciiUri(s: string): string {
+  let out = '';
+  for (const ch of s) {
+    const c = ch.codePointAt(0)!;
+    out += c > 0x20 && c < 0x7f ? ch : encodeURIComponent(ch);
+  }
+  return out;
+}
+
 /** A date as §7.9.4 writes one, in UTC. */
 export function pdfDate(d: Date): string {
   const p = (v: number, w = 2) => String(v).padStart(w, '0');
@@ -222,6 +253,24 @@ export class PdfDocument {
     return this.pages.length;
   }
 
+  /**
+   * What a link does (M2-74): a URL (with `#location` after it) opens as a URI action; a named
+   * location alone (or a URL that is only `#location`) jumps to the page whose label is the
+   * layout it names, the part before a comma (AutoCAD's "View of This Drawing" names the layout
+   * and then a view), in any case, the page fitted to the window. Undefined when no page plots
+   * that layout: the link goes nowhere, so it is left out.
+   */
+  #linkAction(target: PlotLink, pageIds: readonly number[]): string | undefined {
+    const local = target.url.startsWith('#') ? target.url.slice(1) : '';
+    if (target.url !== '' && local === '') {
+      const uri = target.location !== '' ? `${target.url}#${target.location}` : target.url;
+      return `/A << /S /URI /URI ${pdfString(asciiUri(uri))} >>`;
+    }
+    const layout = (local || target.location).split(',')[0]!.trim().toUpperCase();
+    const at = this.pages.findIndex((p) => p.options.label?.toUpperCase() === layout);
+    return at < 0 ? undefined : `/Dest [${pageIds[at]} 0 R /Fit]`;
+  }
+
   /** The file. */
   bytes(): Uint8Array {
     if (this.pages.length === 0) throw new Error('a PDF needs at least one page');
@@ -237,6 +286,7 @@ export class PdfDocument {
     const catalog = add('');
     const pagesId = add('');
     const pageIds: number[] = [];
+    const pageBodies: { id: number; body: string }[] = [];
     // Each font's Type 0 dictionary, numbered when a page first names it, written at the end.
     const fontIds = new Map<EmbeddedFont, number>();
     // Each imported page's form, numbered when a page first shows it, written at the end.
@@ -324,14 +374,28 @@ export class PdfDocument {
         properties.length > 0 ? `/Properties << ${properties.join(' ')} >>` : '',
       ].filter(Boolean);
       const resources = entries.length > 0 ? `<< ${entries.join(' ')} >>` : '<< >>';
-      pageIds.push(
-        add(
-          `<< /Type /Page /Parent ${ref(pagesId)} /MediaBox [0 0 ${pdfNumber(page.width)} ${pdfNumber(
-            page.height,
-          )}] /Resources ${resources} /Contents ${ref(contents)} >>`,
-        ),
-      );
+      // Links are written once every page has its number, since a jump names its page.
+      const pageId = add('');
+      pageIds.push(pageId);
+      pageBodies.push({
+        id: pageId,
+        body: `<< /Type /Page /Parent ${ref(pagesId)} /MediaBox [0 0 ${pdfNumber(page.width)} ${pdfNumber(
+          page.height,
+        )}] /Resources ${resources} /Contents ${ref(contents)}`,
+      });
     }
+    this.pages.forEach((page, i) => {
+      const annots = page.links.flatMap(({ rect, target }) => {
+        const action = this.#linkAction(target, pageIds);
+        if (!action) return [];
+        const r = rect.map(pdfNumber).join(' ');
+        return [
+          ref(add(`<< /Type /Annot /Subtype /Link /Rect [${r}] /Border [0 0 0] ${action} >>`)),
+        ];
+      });
+      const { id, body } = pageBodies[i]!;
+      bodies[id - 1] = `${body}${annots.length > 0 ? ` /Annots [${annots.join(' ')}]` : ''} >>`;
+    });
     for (const [font, id] of fontIds) {
       font.write(
         id,

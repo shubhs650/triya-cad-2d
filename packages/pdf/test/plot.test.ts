@@ -2,7 +2,14 @@ import { describe, expect, it } from 'vitest';
 import { PdfDocument } from '../src/document';
 import { POINTS_PER_MM } from '../src/linetypes';
 import { PATH_L, PATH_M, PATH_Z } from '../src/path';
-import { paperTransform, plotItems, type PlotItem, type PlotPaint } from '../src/plot';
+import {
+  LINK_MARGIN,
+  POINT_MIN_MM,
+  paperTransform,
+  plotItems,
+  type PlotItem,
+  type PlotPaint,
+} from '../src/plot';
 
 const paint: PlotPaint = {
   color: [0, 0, 0],
@@ -160,6 +167,66 @@ describe('plotItems', () => {
     expect([...page.layers]).toEqual(['Walls', 'Doors']);
     // Without the option nothing is marked, whatever layers the items name.
     expect(ops(items).lines.some((l) => l.endsWith('BDC') || l === 'EMC')).toBe(false);
+  });
+
+  // M2-74: Save As PDF's "Include hyperlinks": one link over each linked object's plotted
+  // bounds (its items share one `link`), widened by half the pen and LINK_MARGIN so a hairline
+  // can be clicked, and kept within the clip and the printable area.
+  it('links each hyperlinked object’s plotted bounds when hyperlinks are asked for', () => {
+    const spec = { url: 'https://example.com/spec', location: '' };
+    const detail = { url: '', location: 'Layout2' };
+    const half = (0.5 * POINTS_PER_MM) / 2;
+    const m = LINK_MARGIN + half;
+    const items: PlotItem[] = [
+      { kind: 'stroke', path: line(10, 10, 30, 10), paint, link: spec },
+      { kind: 'stroke', path: line(10, 10, 10, 40), paint },
+      { kind: 'stroke', path: line(30, 10, 30, 20), paint, link: spec },
+      {
+        kind: 'fill',
+        path: [...line(50, 50, 60, 50), PATH_L, 60, 60, PATH_Z],
+        paint,
+        link: detail,
+      },
+      { kind: 'point', x: 70, y: 20, paint, link: detail },
+      // Another object with the same link: a link of its own, clipped at x 85.
+      {
+        kind: 'stroke',
+        path: line(80, 80, 120, 80),
+        paint,
+        link: { ...spec },
+        clip: [[0, 0, 85, 0, 85, 100, 0, 100]],
+      },
+      // An XLINE has no bounds to link.
+      {
+        kind: 'infinite',
+        base: { x: 0, y: 0 },
+        direction: { x: 1, y: 0 },
+        both: true,
+        paint,
+        link: { url: 'https://example.com/xline', location: '' },
+      },
+    ];
+    const { page } = ops(items, { hyperlinks: true, area: { x: 0, y: 0, width: 100, height: 95 } });
+    const r = (rect: readonly number[]) => rect.map((v) => Math.round(v * 1000) / 1000);
+    const point = (Math.max(0.5, POINT_MIN_MM) * POINTS_PER_MM) / 2 + LINK_MARGIN;
+    expect(page.links.map((l) => ({ target: l.target, rect: r(l.rect) }))).toEqual([
+      { target: spec, rect: r([10 - m, 10 - m, 30 + m, 20 + m]) },
+      {
+        target: detail,
+        rect: r([50 - LINK_MARGIN, 20 - point, 70 + point, 60 + LINK_MARGIN]),
+      },
+      { target: spec, rect: r([80 - m, 80 - m, 85, 80 + m]) },
+    ]);
+    // Without the option no links, whatever the items carry.
+    expect(ops(items).page.links).toEqual([]);
+  });
+
+  it('links nothing an object plots wholly outside the printable area', () => {
+    const spec = { url: 'https://example.com/spec', location: '' };
+    const { page } = ops([{ kind: 'stroke', path: line(200, 200, 300, 200), paint, link: spec }], {
+      hyperlinks: true,
+    });
+    expect(page.links).toEqual([]);
   });
 
   it('clips to the printable area and skips empty paths', () => {

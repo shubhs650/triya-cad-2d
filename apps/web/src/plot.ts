@@ -687,14 +687,23 @@ export interface PdfOptions {
   readonly layers: boolean;
   /** "Create bookmarks": a bookmark to each page, named after its space or sheet. */
   readonly bookmarks: boolean;
+  /**
+   * "Include hyperlinks" (M2-74): a link over each object with a hyperlink, to its URL or to
+   * the page plotting the layout its named location gives.
+   */
+  readonly hyperlinks: boolean;
   /** "Convert all text to geometry": TrueType text as filled outlines, no fonts embedded. */
   readonly textAsGeometry: boolean;
 }
 
-/** What a plot's PDF holds (the Plot dialog, PUBLISH, -PLOT): bookmarks, no PDF layers. */
+/**
+ * What a plot's PDF holds (the Plot dialog, PUBLISH, -PLOT): bookmarks, no PDF layers and no
+ * links, as before Save As PDF had options; those are its PDF Options' choices.
+ */
 export const PLOT_PDF_OPTIONS: PdfOptions = {
   layers: false,
   bookmarks: true,
+  hyperlinks: false,
   textAsGeometry: false,
 };
 
@@ -736,6 +745,7 @@ export function addPlotPage(
   plotItems(pdfPage, parts as readonly PlotItem[], {
     ...pageOptions(page, settings, space),
     ...(pdf.layers && { layers: true }),
+    ...(pdf.hyperlinks && { hyperlinks: true }),
     ...(pdf.textAsGeometry && { textAsGeometry: true }),
     ...(underlayFile && { underlays: (u) => underlayFile(u.fileName) }),
   });

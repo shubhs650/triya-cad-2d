@@ -94,6 +94,32 @@ export function hyperlinkOf(model: DocumentModel, e: Entity): string {
   return typeof first === 'string' ? first : '';
 }
 
+/** An object's whole hyperlink (M2-74: a saved PDF links the object to it). */
+export interface HyperlinkDetails {
+  /** The address; '' for a link to a named location of this drawing alone. */
+  readonly url: string;
+  readonly description: string;
+  /** The named location: a place in the URL's file, or a layout (and view) of this drawing. */
+  readonly location: string;
+}
+
+/**
+ * The object's hyperlink: its PE_URL xdata's first three 1000 strings, the URL, description and
+ * named location, as ezdxf's `get_hyperlink` reads them (AutoCAD keeps the last two in a `{ }`
+ * group after the URL). Undefined when it has no URL and no location.
+ */
+export function hyperlinkDetails(model: DocumentModel, e: Entity): HyperlinkDetails | undefined {
+  if (!e.xdata) return undefined;
+  const app = hyperlinkAppId(model);
+  if (app === undefined) return undefined;
+  const values = e.xdata.find((a) => a.appId === app)?.values ?? [];
+  const strings = values.flatMap((v) =>
+    v.code === 1000 && typeof v.value === 'string' ? [v.value] : [],
+  );
+  const [url = '', description = '', location = ''] = strings;
+  return url === '' && location === '' ? undefined : { url, description, location };
+}
+
 /**
  * Sets the hyperlink URL of `entities` (an empty one takes the hyperlink off), registering
  * `PE_URL` when the drawing has none. Returns how many changed, or 'invalid' for a URL xdata
