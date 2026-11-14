@@ -33,6 +33,30 @@ export function validViewName(name: string): boolean {
   return name.trim() !== '' && name.length <= NAME_MAX && !NAME_INVALID.test(name);
 }
 
+/** What AutoCAD's View Manager shows, and writes, for a view without a category (M2-70). */
+export const NO_VIEW_CATEGORY = '<None>';
+
+/** AutoCAD's limit on a symbol table name, which a category is held to as well. */
+const CATEGORY_MAX = 255;
+
+/**
+ * A typed view category as the view keeps it: trimmed, and undefined for none (nothing typed, or
+ * `<None>` in any case). AutoCAD 2024 Help ("View Manager Dialog Box", "New View / Shot
+ * Properties Dialog Box") states no rule for a category's text, so any text a VIEW name may be as
+ * long as is taken.
+ */
+export function viewCategory(text: string): string | undefined {
+  const t = text.trim();
+  return t === '' || t.toUpperCase() === NO_VIEW_CATEGORY.toUpperCase() ? undefined : t;
+}
+
+/** Why `category` cannot be a view's, or undefined when it can. */
+export function viewCategoryProblem(category: string | undefined): string | undefined {
+  return category !== undefined && category.length > CATEGORY_MAX
+    ? `A view category is at most ${CATEGORY_MAX} characters.`
+    : undefined;
+}
+
 /** The view `extent` as a VIEW record looking straight down at it (AutoCAD's defaults). */
 function viewFields(extent: ViewExtent, paper: boolean): Omit<ViewRecord, 'handle' | 'name'> {
   return {
@@ -56,18 +80,27 @@ function viewFields(extent: ViewExtent, paper: boolean): Omit<ViewRecord, 'handl
 /**
  * Saves `extent` as the named view `name`: a new VIEW record, or the one of that name (names are
  * compared without regard to case, as AutoCAD's) given the new view, keeping its handle and
- * spelling. Its UCS goes: Triya draws in the WCS.
+ * spelling. Its UCS goes: Triya draws in the WCS. A `category`
+ * given replaces the view's (M2-70).
  */
 export function saveNamedView(
   b: ChangeSetBuilder,
   model: DocumentModel,
   name: string,
   extent: ViewExtent & { readonly paper: boolean },
+  /** New View's View category (M2-70): kept as it was when not given; '' or `<None>` for none. */
+  category?: string,
 ): ViewRecord {
   const key = name.toUpperCase();
   const existing = [...model.tables.views.values()].find((v) => v.name.toUpperCase() === key);
-  const fields = viewFields(extent, extent.paper);
-  if (!existing) return b.addTableRecord('views', { name, ...fields });
+  const fields = {
+    ...viewFields(extent, extent.paper),
+    ...(category !== undefined && { category: viewCategory(category) }),
+  };
+  if (!existing) {
+    const { category: c, ...rest } = fields;
+    return b.addTableRecord('views', { name, ...rest, ...(c !== undefined && { category: c }) });
+  }
   // Keep the xref-dependent and other flags AutoCAD sets; only the paper-space bit is the view's.
   const flags = ((existing.flags ?? 0) & ~PAPER_VIEW) | (fields.flags ?? 0);
   return b.updateTableRecord('views', existing.handle, {

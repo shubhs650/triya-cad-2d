@@ -8,6 +8,7 @@ import {
   currentRows,
   pickedWindow,
   viewManager,
+  viewCategories,
   viewRows,
   viewTree,
   type ManagerState,
@@ -39,11 +40,25 @@ describe('viewTree', () => {
   });
 });
 
+describe('viewCategories', () => {
+  it('offers <None> and the drawing’s categories, each once whatever its case, sorted', () => {
+    expect(
+      viewCategories([
+        view('a', { category: 'Sections' }),
+        view('b'),
+        view('c', { category: 'Elevations' }),
+        view('d', { category: 'sections' }),
+      ]),
+    ).toEqual(['<None>', 'Elevations', 'Sections']);
+  });
+});
+
 describe('viewRows', () => {
   it('shows General and View rows, the centre in world coordinates', () => {
     const rows = viewRows(view('Front', { target: { x: 1, y: 2, z: 0 }, twist: Math.PI / 2 }));
     expect(rows).toEqual([
       { group: 'General', label: 'Name', value: 'Front' },
+      { group: 'General', label: 'Category', value: '<None>' },
       { group: 'View', label: 'Center X', value: '11.0000' },
       { group: 'View', label: 'Center Y', value: '7.0000' },
       { group: 'View', label: 'Height', value: '20.0000' },
@@ -51,6 +66,15 @@ describe('viewRows', () => {
       { group: 'View', label: 'Roll angle', value: '90' },
       { group: 'View', label: 'Perspective', value: 'Off' },
     ]);
+  });
+
+  // M2-70: the Category row, <None> for a view without one.
+  it('shows a view’s category', () => {
+    expect(viewRows(view('Front', { category: 'Elevations' }))[1]).toEqual({
+      group: 'General',
+      label: 'Category',
+      value: 'Elevations',
+    });
   });
 
   it('says when a view is not a plan view', () => {
@@ -97,7 +121,7 @@ describe('viewManager', () => {
   const state: ManagerState = {
     selected: 'model:Front',
     current: undefined,
-    creating: { name: 'Detail', boundary: 'window' },
+    creating: { name: 'Detail', category: '<None>', boundary: 'window' },
   };
 
   it('opens, and resolves when closed', async () => {

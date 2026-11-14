@@ -306,7 +306,7 @@ describe('TriyaToAcad PURGE', () => {
   // M2-49 (ezdxf's layout_broken_links.dxf): a LAYOUT whose block link names no block record
   // maps no layout, though the block records still name it. Its sheet block's layout is not
   // "gone" in the save: only a layout the drawing had and the model lost takes its block along.
-  it('refuses a sheet block whose layout the drawing never mapped', () => {
+  it("refuses a layout's block, also when the layout's link to it was broken", () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     doc.updateCollections(true, false);
     for (const [name, block] of [
@@ -326,8 +326,10 @@ describe('TriyaToAcad PURGE', () => {
     );
     const encode = (t: string) => Uint8Array.from(t, (c) => c.charCodeAt(0));
     const bytes = encode(broken);
-    expect(open(encode(text)).layouts).toHaveLength(2);
-    expect(open(bytes).layouts).toEqual([]);
+    // Reading links them again (M2-69, `repairLayoutLinks`): each record's 340 names its layout.
+    const links = (b: Uint8Array) => open(b).layouts.map((l) => `${l.name} ${l.blockRecord}`);
+    expect(links(encode(text))).toHaveLength(2);
+    expect(links(bytes)).toEqual(links(encode(text)));
     for (const name of ['*Model_Space', '*Paper_Space'])
       expect(
         refused((b, model) => purge(b, model, 'blockRecords', name), bytes),

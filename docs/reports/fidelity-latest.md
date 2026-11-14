@@ -2,7 +2,7 @@
 
 Written by the fidelity reporter after a golden-image run (M1-106, TESTING.md §4).
 
-123 files (1 unreadable), 321 spaces, 0 failing.
+123 files (1 unreadable), 326 spaces, 0 failing.
 
 ## Entity types
 

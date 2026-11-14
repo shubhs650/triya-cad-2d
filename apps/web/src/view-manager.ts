@@ -5,7 +5,7 @@
 // Current, New..., Update Layers, Edit Boundaries... and Delete. "New View / Shot Properties
 // Dialog Box": View name and Boundary (Current display, or Define window, which hides the dialogs
 // for two corners at the command line).
-import type { Vec2, ViewRecord, ViewState } from '@triya/engine';
+import { NO_VIEW_CATEGORY, type Vec2, type ViewRecord, type ViewState } from '@triya/engine';
 
 /** VIEW table flag 1: a paper-space view. */
 const PAPER_VIEW = 1;
@@ -26,6 +26,24 @@ export function viewTree(views: readonly ViewRecord[]): {
 
 export function isPaperView(v: ViewRecord): boolean {
   return ((v.flags ?? 0) & PAPER_VIEW) !== 0;
+}
+
+/**
+ * The categories the Category row and New View's View category offer (M2-70): `<None>`, then the
+ * drawing's, each once (the first spelling met; case ignored, as AutoCAD compares names), sorted.
+ * A new one is typed.
+ */
+export function viewCategories(views: readonly ViewRecord[]): string[] {
+  const byKey = new Map<string, string>();
+  for (const v of views) {
+    if (v.category !== undefined && !byKey.has(v.category.toUpperCase())) {
+      byKey.set(v.category.toUpperCase(), v.category);
+    }
+  }
+  const sorted = [...byKey.values()].sort((a, b) =>
+    a.localeCompare(b, undefined, { sensitivity: 'base' }),
+  );
+  return [NO_VIEW_CATEGORY, ...sorted];
 }
 
 /** One row of the properties the dialog shows for the selected view. */
@@ -54,7 +72,7 @@ const isPlan = (v: ViewRecord): boolean => {
 };
 
 /**
- * A named view's rows: its Name (which the dialog lets the drafter change) and the window it
+ * A named view's rows: its Name and Category (which the dialog lets the drafter change) and the window it
  * shows. The centre is in world coordinates (a VIEW's DXF 10 is in display coordinates, so its
  * target is added), which is what a 2D drafter reads; AutoCAD's camera and target rows are 3D.
  */
@@ -62,6 +80,7 @@ export function viewRows(v: ViewRecord): ViewRow[] {
   const center = { x: v.center.x + v.target.x, y: v.center.y + v.target.y };
   const rows: ViewRow[] = [
     { group: 'General', label: 'Name', value: v.name },
+    { group: 'General', label: 'Category', value: v.category ?? NO_VIEW_CATEGORY },
     ...extentRows(center, v.height, v.width),
     {
       group: 'View',
@@ -115,6 +134,8 @@ export function pickedWindow(
 /** The New View dialog, while it is open. */
 export interface NewViewState {
   readonly name: string;
+  /** View category (M2-70), as typed: `<None>` for none. */
+  readonly category: string;
   readonly boundary: 'display' | 'window';
   /** The corners Define window picked. */
   readonly window?: { readonly a: Vec2; readonly b: Vec2 };

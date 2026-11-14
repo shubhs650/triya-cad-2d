@@ -311,8 +311,22 @@ export abstract class DxfSectionReaderBase {
       }
       case DxfFileToken.entity3DFace:
         return this.readEntityCodes(new CadEntityTemplate(new Face3D()), this._readEntitySubclassMap.bind(this), Face3D);
-      case DxfFileToken.entityEllipse:
-        return this.readEntityCodes(new CadEntityTemplate(new Ellipse()), this._readEntitySubclassMap.bind(this), Ellipse);
+      case DxfFileToken.entityEllipse: {
+        // A minor-to-major ratio above 1 (40), which the Ellipse setter refuses, is kept aside
+        // and applied once the entity is read, when its axis and parameters are known.
+        let ratio = 0;
+        const template = this.readEntityCodes(new CadEntityTemplate(new Ellipse()), (t, m) => {
+          if ((this._reader.code as number) === 40 && this._reader.valueAsDouble > 1) {
+            ratio = this._reader.valueAsDouble;
+            return true;
+          }
+          return this._readEntitySubclassMap(t, m);
+        }, Ellipse);
+        if (ratio > 1) {
+          DxfSectionReaderBase._swapEllipseAxes(template.cadObject as Ellipse, ratio);
+        }
+        return template;
+      }
       case DxfFileToken.entityLeader: {
         // DXF 71 (arrowhead flag) is optional and defaults to 1: AutoCAD and ezdxf omit it
         // when the arrowhead is on, and the DWG twins of such files have it on.
@@ -2298,6 +2312,31 @@ export abstract class DxfSectionReaderBase {
         return true;
       default:
         return this.tryAssignCurrentValue(template.cadObject, map.subClasses.get(DxfSubclassMarker.viewport)!);
+    }
+  }
+
+  /**
+   * An ellipse stated with a minor axis longer than its major one (ratio > 1) is the same curve
+   * with its axes swapped: the major axis runs along the old minor one (normal x major, `ratio`
+   * times as long), the ratio is inverted, and parameter t becomes t - pi/2.
+   */
+  private static _swapEllipseAxes(ellipse: Ellipse, ratio: number): void {
+    const minor = ellipse.normal.normalize().cross(ellipse.majorAxisEndPoint);
+    if (minor.getLength() === 0) {
+      return;
+    }
+    const tau = Math.PI * 2;
+    const start = ellipse.startParameter;
+    const end = ellipse.endParameter;
+    const turn = (t: number): number => (((t - Math.PI / 2) % tau) + tau) % tau;
+    ellipse.majorAxisEndPoint = new XYZ(minor.x * ratio, minor.y * ratio, minor.z * ratio);
+    ellipse.radiusRatio = 1 / ratio;
+    if (Math.abs(Math.abs(end - start) - tau) <= 1e-9 * tau) {
+      ellipse.startParameter = 0;
+      ellipse.endParameter = tau;
+    } else {
+      ellipse.startParameter = turn(start);
+      ellipse.endParameter = turn(end);
     }
   }
 

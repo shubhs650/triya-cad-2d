@@ -18,7 +18,8 @@ export type AuditSaveKind =
   | 'dimension'
   | 'properties'
   | 'views'
-  | 'hatch';
+  | 'hatch'
+  | 'categories';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version
@@ -60,4 +61,20 @@ export function writeAuditSave(
   } catch (err) {
     writeFileSync(`${dir}/${name}.error.txt`, `${String(err)}\n`);
   }
+}
+
+/**
+ * Beside a save, what ezdxf must read back from it (`<save>.<what>.json`), for the audit's
+ * read-back checks (audit.py `READ_BACK`): M2-70's view categories, by view name.
+ */
+export function writeAuditExpectation(
+  corpusPath: string,
+  kind: AuditSaveKind,
+  what: string,
+  expected: unknown,
+  dir = auditDir(),
+): void {
+  if (dir === undefined) return;
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(`${dir}/${auditSaveName(corpusPath, kind)}.${what}.json`, JSON.stringify(expected));
 }

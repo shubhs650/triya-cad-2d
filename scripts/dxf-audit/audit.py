@@ -38,6 +38,7 @@ KINDS = (
     "properties",
     "views",
     "hatch",
+    "categories",
 )
 # corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
 # exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.
@@ -128,6 +129,49 @@ def ezdxf_limitation(save: Path, finding: Finding, _docs: dict = {}) -> str | No
     return None
 
 
+# AutoCAD keeps a view's View Manager category in DXF 300 of this XRECORD in the VIEW's extension
+# dictionary, "<None>" for none (M2-70; sample_AC1032_ascii.dxf's view_custom).
+VIEW_INFO = "ADSK_XREC_VTRVIEWINFO"
+NO_CATEGORY = "<None>"
+
+
+def view_categories(save: Path) -> dict[str, str | None]:
+    """Each VIEW's category in ``save`` as ezdxf reads it, None for none."""
+    import ezdxf
+    from ezdxf.entities import XRecord
+
+    out: dict[str, str | None] = {}
+    for view in ezdxf.readfile(str(save)).views:
+        category = None
+        if view.has_extension_dict:
+            info = view.get_extension_dict().dictionary.get(VIEW_INFO)
+            if isinstance(info, XRecord):
+                category = next((t.value for t in info.tags if t.code == 300), None)
+        out[view.dxf.name] = None if category in (None, "", NO_CATEGORY) else category
+    return out
+
+
+# What ezdxf must read back from a save, where its corpus suite wrote `<save>.<what>.json` beside it.
+READ_BACK = {"categories": view_categories}
+
+
+def read_back_failures(name: str, save: Path, read_back: dict) -> list[str]:
+    """Where ezdxf reads ``save`` differently from what its corpus suite says it saved."""
+    out: list[str] = []
+    for what, read in read_back.items():
+        expected_path = save.parent / f"{name}.{what}.json"
+        if not expected_path.exists():
+            continue
+        expected = json.loads(expected_path.read_text())
+        got = read(save)
+        for key, want in expected.items():
+            have = got.get(key, "missing")
+            if have != want:
+                shown = have if have == "missing" else repr(have)
+                out.append(f"{name}: ezdxf reads {what} {key} as {shown}, the save meant {want!r}")
+    return out
+
+
 @dataclass
 class Report:
     failures: list[str] = field(default_factory=list)
@@ -142,8 +186,10 @@ def judge(
     exceptions: dict[str, list[dict]],
     audit=audit_file,
     limitation=ezdxf_limitation,
+    read_back=READ_BACK,
 ) -> Report:
-    """Audit the saves of ``files``; ``audit`` and ``limitation`` are injectable for the tests."""
+    """Audit the saves of ``files``; ``audit``, ``limitation`` and ``read_back`` are injectable
+    for the tests."""
     report = Report()
     known = {f["path"] for f in files}
     for path in sorted(set(exceptions) - known):
@@ -183,6 +229,7 @@ def judge(
                     report.allowed.append(f"{name}: {x.stage} {x.code} {x.message} ({why})")
                 else:
                     report.failures.append(f"{name}: {x.stage} {x.code} {x.message}")
+            report.failures.extend(read_back_failures(name, save, read_back))
         for code in sorted(set(allowed) - seen):
             report.failures.append(f"{path}: exception {code} is stale, no save reports it")
     return report
