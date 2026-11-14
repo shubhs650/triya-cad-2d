@@ -6,13 +6,15 @@
 //   Enter variable(s) to list <*>:               (?: wild-card names, as WCMATCH takes them)
 // Which variables there are and where each is kept is `sysvars.ts`'s.
 import type { Vec2 } from '../geom/types';
-import type { WipeoutFrame } from '../model/types';
+import type { HeaderValue, WipeoutFrame } from '../model/types';
 import type { CommandContext, CommandDef } from './command';
 import { setWipeoutFrame, wipeoutFrame } from './draw/wipeout';
 import { wcmatch } from './modify/attributes';
 import type { Prompt, PromptAnswer } from './prompt';
 import {
+  annotationScaleValue,
   calendarDate,
+  dictionaryTwin,
   formatValue,
   headerEntry,
   headerValue,
@@ -95,7 +97,21 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
       const key = v.key!;
       const was = ctx.model.header.get(key);
       const next = headerEntry(v, value, was);
-      if (JSON.stringify(next) !== JSON.stringify(was)) ctx.edit((b) => b.setHeader(key, next));
+      const entries: [string, HeaderValue][] = [];
+      if (JSON.stringify(next) !== JSON.stringify(was)) entries.push([key, next]);
+      // The DICTIONARYVAR beside a HEADER variable follows it (M2-59 part 4).
+      const twin = dictionaryTwin(ctx.model, v);
+      if (twin) {
+        const before = ctx.model.header.get(twin.key!);
+        const after = headerEntry(twin, value, before);
+        if (after !== before) entries.push([twin.key!, after]);
+      }
+      // CANNOSCALEVALUE is the CANNOSCALE scale's value ("Returns the value of the current
+      // annotation scale"): it follows in the same undo step.
+      const ratio =
+        key === 'CANNOSCALE' ? annotationScaleValue(ctx.model, String(next)) : undefined;
+      if (ratio !== undefined && entries.length > 0) entries.push(['CANNOSCALEVALUE', ratio]);
+      if (entries.length > 0) ctx.edit((b) => entries.forEach(([k, e]) => b.setHeader(k, e)));
       return;
     }
     case 'wipeout':

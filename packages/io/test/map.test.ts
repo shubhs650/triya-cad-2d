@@ -479,6 +479,26 @@ describe('mapHeader', () => {
     expect(header.has('$MSLTSCALE')).toBe(false);
   });
 
+  // M2-59 part 4: SETVAR's CANNOSCALE names one of these, CANNOSCALEVALUE following.
+  it('lists the drawing’s annotation scales with their values, those with no ratio left out', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const scales = doc.rootDictionary!.get(CadDictionary.acadScaleList) as CadDictionary;
+    for (const [key, name, paper, drawing] of [
+      ['A0', '1:1', 1, 1],
+      ['A1', '1:50', 1, 50],
+      ['A2', 'broken', 1, 0],
+    ] as const) {
+      const s = new Scale(name);
+      s.paperUnits = paper;
+      s.drawingUnits = drawing;
+      scales.addByKey(key, s);
+    }
+    expect(mapHeader(doc).meta.annotationScales).toEqual([
+      { name: '1:1', value: 1 },
+      { name: '1:50', value: 0.02 },
+    ]);
+  });
+
   it('leaves CANNOSCALEVALUE out when CANNOSCALE names no scale of the list', () => {
     const doc = new CadDocument(ACadVersion.AC1032);
     const vars = doc.rootDictionary!.get(CadDictionary.variableDictionary) as CadDictionary;

@@ -1896,4 +1896,17 @@ export interface DocumentMeta {
    * would refuse (it never replaces an entry it keeps as read).
    */
   readonly keptEntryNames?: { readonly mleaderStyles?: readonly string[] };
+  /**
+   * The drawing's annotation scales (the `ACAD_SCALELIST` dictionary's SCALEs, M2-59 part 4):
+   * each one's name and value, paper units per drawing unit (0.02 for 1:50), which CANNOSCALE
+   * names and CANNOSCALEVALUE is. Scales with no valid ratio are left out.
+   */
+  readonly annotationScales?: readonly AnnotationScale[];
+}
+
+/** An annotation scale of the drawing's scale list. */
+export interface AnnotationScale {
+  readonly name: string;
+  /** Paper units per drawing unit (`CANNOSCALEVALUE`). */
+  readonly value: number;
 }
