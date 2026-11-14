@@ -160,7 +160,8 @@ describe('a multileader’s Text rows (M2-35 part 11)', () => {
     const s = setup([entityInit('60', textLeader()), entityInit('61', textLeader())]);
     const one = propertySheet(s.model, s.ids('60'));
     const text = one.sections.find((x) => x.title === 'Text');
-    expect(text?.rows.map((r) => r.label)).toEqual([
+    // Part 14 adds the rows after Text height.
+    expect(text?.rows.map((r) => r.label).slice(0, 4)).toEqual([
       'Contents',
       'Text style',
       'Justify',
@@ -338,6 +339,151 @@ describe('a multileader’s Text rows (M2-35 part 11)', () => {
     const before = s.leader('60');
     await s.bus.setProperty({ key: 'style', value: 'FF' }, 'MULTILEADER');
     expect(s.leader('60')).toEqual(before);
+  });
+});
+
+describe('a multileader’s other Text rows (M2-35 part 14)', () => {
+  it('shows rotation, line spacing, background mask and frame after Text height', () => {
+    const s = setup([entityInit('60', textLeader())]);
+    const sheet = propertySheet(s.model, s.ids('60'));
+    const text = sheet.sections.find((x) => x.title === 'Text');
+    expect(text?.rows.map((r) => r.label)).toEqual([
+      'Contents',
+      'Text style',
+      'Justify',
+      'Text height',
+      'Text rotation',
+      'Line space factor',
+      'Line space distance',
+      'Line space style',
+      'Background mask',
+      'Text frame',
+    ]);
+    expect(rowOf(sheet, 'Text rotation')).toMatchObject({ kind: 'angle', value: 0 });
+    expect(rowOf(sheet, 'Line space factor')).toMatchObject({ kind: 'number', value: 1 });
+    // AutoCAD's single spacing is 5/3 of the text height.
+    expect(rowOf(sheet, 'Line space distance')?.kind).toBe('distance');
+    expect(rowOf(sheet, 'Line space distance')?.value).toBeCloseTo(20 / 3, 12);
+    expect(rowOf(sheet, 'Line space style')).toMatchObject({ kind: 'choice', value: '1' });
+    expect(rowOf(sheet, 'Line space style')?.options?.map((o) => o.label)).toEqual([
+      'At least',
+      'Exactly',
+    ]);
+    expect(rowOf(sheet, 'Background mask')).toMatchObject({ kind: 'choice', value: 'no' });
+    expect(rowOf(sheet, 'Text frame')).toMatchObject({ kind: 'choice', value: 'no' });
+  });
+
+  it('shows *VARIES* where the multileaders’ rows differ', () => {
+    const s = setup([
+      entityInit('60', textLeader()),
+      entityInit('61', { ...textLeader({ height: 8, mask: { scale: 1.5 } }), textFrame: true }),
+    ]);
+    const sheet = propertySheet(s.model, s.ids('60', '61'));
+    for (const label of ['Line space distance', 'Background mask', 'Text frame'])
+      expect(rowOf(sheet, label)?.varies, label).toBe(true);
+    expect(rowOf(sheet, 'Line space factor')?.value).toBe(1);
+  });
+
+  it('turns the text about its insertion point, one undo step', async () => {
+    const s = setup([entityInit('60', textLeader())]);
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'textRotation', value: '30' }, 'MULTILEADER');
+    const t = s.leader('60').text!;
+    expect(t.rotation).toBeCloseTo(Math.PI / 6, 12);
+    expect(t.position).toEqual({ x: 20, y: 12 });
+    await s.bus.setProperty({ key: 'textRotation', value: '1.5r' }, 'MULTILEADER');
+    expect(s.leader('60').text!.rotation).toBeCloseTo(1.5, 12);
+    await s.bus.submit('U');
+    expect(s.leader('60').text!.rotation).toBeCloseTo(Math.PI / 6, 12);
+    await s.bus.selectAll();
+    const before = s.leader('60');
+    await s.bus.setProperty({ key: 'textRotation', value: 'east' }, 'MULTILEADER');
+    expect(s.leader('60')).toEqual(before);
+    expect(s.log.at(-1)).toBe('Invalid input.');
+  });
+
+  it('sets the line space factor within AutoCAD’s 0.25 to 4', async () => {
+    const s = setup([entityInit('60', textLeader())]);
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'lineSpacing', value: '2.5' }, 'MULTILEADER');
+    expect(s.leader('60').text?.lineSpacing).toBe(2.5);
+    for (const v of ['0.2', '4.5', 'x']) {
+      await s.bus.setProperty({ key: 'lineSpacing', value: v }, 'MULTILEADER');
+      expect(s.leader('60').text?.lineSpacing, v).toBe(2.5);
+    }
+  });
+
+  it('sets each multileader’s factor from a line space distance', async () => {
+    const s = setup([entityInit('60', textLeader()), entityInit('61', textLeader({ height: 8 }))]);
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'lineSpaceDistance', value: '10' }, 'MULTILEADER');
+    // 10 is 1.5 single spacings of 4-high text and 0.75 of 8-high text.
+    expect(s.leader('60').text?.lineSpacing).toBeCloseTo(1.5, 12);
+    expect(s.leader('61').text?.lineSpacing).toBeCloseTo(0.75, 12);
+    // A distance one of them cannot take (a factor over 4 at height 4) changes neither.
+    await s.bus.setProperty({ key: 'lineSpaceDistance', value: '30' }, 'MULTILEADER');
+    expect(s.leader('60').text?.lineSpacing).toBeCloseTo(1.5, 12);
+    expect(s.leader('61').text?.lineSpacing).toBeCloseTo(0.75, 12);
+    expect(s.log.at(-1)).toBe('Invalid input.');
+  });
+
+  it('sets the line space style', async () => {
+    const s = setup([entityInit('60', textLeader())]);
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'lineSpacingStyle', value: '2' }, 'MULTILEADER');
+    expect(s.leader('60').text?.lineSpacingStyle).toBe(2);
+    await s.bus.setProperty({ key: 'lineSpacingStyle', value: '3' }, 'MULTILEADER');
+    expect(s.leader('60').text?.lineSpacingStyle).toBe(2);
+  });
+
+  it('turns the background mask on in the drawing window colour, and off', async () => {
+    const red = { kind: 'aci', index: 1 } as const;
+    const s = setup([
+      entityInit('60', textLeader()),
+      entityInit('61', textLeader({ mask: { color: red, scale: 1.2 } })),
+    ]);
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'backgroundMask', value: 'yes' }, 'MULTILEADER');
+    // AutoCAD's Background Mask defaults: the window colour, a border of 1.5.
+    expect(s.leader('60').text?.mask).toEqual({ scale: 1.5 });
+    // A mask already on keeps its colour and border.
+    expect(s.leader('61').text?.mask).toEqual({ color: red, scale: 1.2 });
+    await s.bus.setProperty({ key: 'backgroundMask', value: 'no' }, 'MULTILEADER');
+    expect(s.leader('60').text?.mask).toBeUndefined();
+    expect(s.leader('61').text?.mask).toBeUndefined();
+  });
+
+  it('frames the text, flagged as overriding the multileader style', async () => {
+    const s = setup([entityInit('60', textLeader())]);
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'textFrame', value: 'yes' }, 'MULTILEADER');
+    // ENABLE_FRAME_TEXT, the ODA specification's bit 17.
+    expect(s.leader('60')).toMatchObject({ textFrame: true });
+    expect(s.leader('60').overrideFlags & (1 << 17)).toBeTruthy();
+    await s.bus.setProperty({ key: 'textFrame', value: 'no' }, 'MULTILEADER');
+    expect(s.leader('60').textFrame).toBe(false);
+    await s.bus.setProperty({ key: 'textFrame', value: 'maybe' }, 'MULTILEADER');
+    expect(s.log.at(-1)).toBe('Invalid input.');
+  });
+
+  it('refuses what an annotative multileader keeps per scale, and frames it', async () => {
+    const a = setup([entityInit('60', { ...textLeader(), annotative: true })]);
+    await a.bus.selectAll();
+    for (const [key, value] of [
+      ['textRotation', '30'],
+      ['lineSpacing', '2'],
+      ['lineSpaceDistance', '10'],
+      ['lineSpacingStyle', '2'],
+      ['backgroundMask', 'yes'],
+    ] as const) {
+      await a.bus.setProperty({ key, value }, 'MULTILEADER');
+      expect(a.log.at(-1), key).toMatch(/annotative/);
+    }
+    expect(a.leader('60').text).toMatchObject({ rotation: 0, lineSpacing: 1, lineSpacingStyle: 1 });
+    expect(a.leader('60').text?.mask).toBeUndefined();
+    // The frame is the entity's, not its scales'.
+    await a.bus.setProperty({ key: 'textFrame', value: 'yes' }, 'MULTILEADER');
+    expect(a.leader('60').textFrame).toBe(true);
   });
 });
 

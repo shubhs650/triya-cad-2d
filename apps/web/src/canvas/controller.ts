@@ -64,6 +64,7 @@ import {
   type OsnapHit,
   type Prompt,
   type UnderlaySnapPage,
+  type UndoView,
   type Vec2,
   type VportRecord,
 } from '@triya/engine';
@@ -180,6 +181,12 @@ export interface CanvasHooks {
   readonly onSnapMenu?: (at: { readonly x: number; readonly y: number }) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
+  /**
+   * The drafter changed the view (M2-47 part 4): a ZOOM or PAN (a command's, the navigation
+   * bar's, the wheel's at the start of a roll, a drag's at its first move) or a named view
+   * restored (VIEW). `before` is the view left, for the drawing's undo history.
+   */
+  readonly onViewStep?: (label: 'ZOOM' | 'PAN' | 'VIEW', before: UndoView) => void;
   /** The user's .pat files when a renderer is made (M1-50); later changes come by `setPatterns`. */
   readonly patterns?: () => readonly string[];
   /**
@@ -266,7 +273,9 @@ export class CanvasController {
   #preview: readonly RenderPrimitive[] = [];
   /** The renderer is drawing objects dragged with the cursor (M2-06 part 2). */
   #dragging = false;
-  #drag: { readonly pointer: number; readonly zoom: boolean; x: number; y: number } | undefined;
+  #drag:
+    | { readonly pointer: number; readonly zoom: boolean; x: number; y: number; moved: boolean }
+    | undefined;
   #lastMiddle: { readonly t: number; readonly x: number; readonly y: number } | undefined;
   #lastWheel = -Infinity;
   #corner: { readonly world: Point; readonly screen: Point; dragged: boolean } | undefined;
@@ -481,7 +490,10 @@ export class CanvasController {
   /** ZOOM Previous: back to the view before the last zoom or pan; false with none left. */
   zoomPrevious(): boolean {
     const v = this.#history.previous();
-    if (v) this.#setView(v);
+    if (v) {
+      this.#step('ZOOM');
+      this.#setView(v);
+    }
     return v !== undefined;
   }
 
@@ -509,12 +521,26 @@ export class CanvasController {
   /** -PAN: moves the drawing by `by` world units. */
   panWorld(by: Vec2): void {
     const v = this.#view;
-    if (v) this.#go({ scale: v.scale, center: { x: v.center.x - by.x, y: v.center.y - by.y } });
+    if (v) {
+      this.#go({ scale: v.scale, center: { x: v.center.x - by.x, y: v.center.y - by.y } }, 'PAN');
+    }
   }
 
   /** Shows `view`, recording the current one for ZOOM Previous (VIEW restore). */
   show(view: ViewTransform): void {
-    this.#go(view);
+    this.#go(view, 'VIEW');
+  }
+
+  /**
+   * A view step undone or redone (M2-47 part 4): shows `view` without a ZOOM Previous entry or
+   * another step, and answers with the view it replaced.
+   */
+  swapView(view: UndoView): UndoView | undefined {
+    const old = this.#view;
+    const { height } = this.#size;
+    if (!old || !(height > 0) || !(view.height > 0)) return undefined;
+    this.#setView({ center: view.center, scale: height / view.height });
+    return { center: old.center, height: height / old.scale };
   }
 
   get view(): ViewTransform | undefined {
@@ -978,11 +1004,24 @@ export class CanvasController {
     });
   }
 
-  /** A discrete view change (a ZOOM option, VIEW restore): recorded for ZOOM Previous. */
-  #go(view: ViewTransform): void {
+  /**
+   * A discrete view change (a ZOOM option, -PAN, VIEW restore): recorded for ZOOM Previous, and
+   * an undo step when it changes the view.
+   */
+  #go(view: ViewTransform, label: 'ZOOM' | 'PAN' | 'VIEW' = 'ZOOM'): void {
     if (this.#size.width === 0) return;
-    if (this.#view) this.#history.push(this.#view);
+    const old = this.#view;
+    if (old) this.#history.push(old);
+    if (!old || !sameTransform(old, view)) this.#step(label);
     this.#setView(view);
+  }
+
+  /** Tells the drawing's undo history the view shown is about to change (M2-47 part 4). */
+  #step(label: 'ZOOM' | 'PAN' | 'VIEW'): void {
+    const v = this.#view;
+    const { height } = this.#size;
+    if (v && height > 0)
+      this.#hooks.onViewStep?.(label, { center: v.center, height: height / v.scale });
   }
 
   #setView(view: ViewTransform): void {
@@ -1195,7 +1234,12 @@ export class CanvasController {
         // The wheel zooms the viewport under the cursor, which becomes current (as a press
         // would), so the navigation bar then acts on the viewport just zoomed.
         this.#activate();
-        if (e.timeStamp - this.#lastWheel > WHEEL_GESTURE_MS) this.#history.push(this.#view);
+        // One roll is one ZOOM Previous view and one undo step, which UNDO Control Combine
+        // joins to the zooms and pans next to it (M2-47 part 4).
+        if (e.timeStamp - this.#lastWheel > WHEEL_GESTURE_MS) {
+          this.#history.push(this.#view);
+          this.#step('ZOOM');
+        }
         this.#lastWheel = e.timeStamp;
         const factor = wheelFactor(e.deltaY, e.deltaMode);
         this.#setView(zoomAt(this.#view, this.#size, { x: e.offsetX, y: e.offsetY }, factor));
@@ -1260,6 +1304,11 @@ export class CanvasController {
       (e) => {
         const drag = this.#drag;
         if (drag && drag.pointer === e.pointerId && this.#view) {
+          // A press that never moves the view is no undo step.
+          if (!drag.moved && (e.clientX !== drag.x || e.clientY !== drag.y)) {
+            drag.moved = true;
+            this.#step(drag.zoom ? 'ZOOM' : 'PAN');
+          }
           const factor = realtimeZoomFactor(e.clientY - drag.y, this.#size.height);
           // Real-time ZOOM is about the window's centre, as AutoCAD's.
           this.#setView(
@@ -1615,9 +1664,13 @@ export class CanvasController {
       zoom: e.button === 0 && this.#mode === 'zoom',
       x: e.clientX,
       y: e.clientY,
+      moved: false,
     };
     this.canvas.setPointerCapture(e.pointerId);
   }
 }
 
 const sameAt = (a: Vec2, b: Vec2): boolean => a.x === b.x && a.y === b.y;
+
+const sameTransform = (a: ViewTransform, b: ViewTransform): boolean =>
+  a.scale === b.scale && sameAt(a.center, b.center);

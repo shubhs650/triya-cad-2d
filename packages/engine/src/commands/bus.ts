@@ -283,6 +283,14 @@ export class PromptBus {
       onChange: (state, action) =>
         this.#emit(action ? { type: 'undo', state, action } : { type: 'undo', state }),
       onMessage: (line) => this.#log(line),
+      // A view step undone or redone (M2-47 part 4): the canvas shows the view kept and answers
+      // with the one it replaced. Not waited on: U is done once the drawing is.
+      swapView: async (viewport, view) => {
+        const reply = await this.#view.request({ op: 'swap', viewport, view });
+        return reply.ok && reply.view
+          ? { center: reply.view.center, height: reply.view.height }
+          : undefined;
+      },
     });
   }
 

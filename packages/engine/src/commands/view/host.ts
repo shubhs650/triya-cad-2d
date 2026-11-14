@@ -8,6 +8,7 @@ import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
 import type { HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
+import type { UndoView } from '../undo';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -54,6 +55,12 @@ export type ViewRequest =
   | { readonly op: 'regen'; readonly all: boolean }
   | { readonly op: 'views' }
   | { readonly op: 'restore'; readonly name: string }
+  /**
+   * A view step undone or redone (M2-47 part 4): `viewport`, the front-end's name for one canvas
+   * as its `view-step` input gave it, shows `view` again, recorded for no ZOOM Previous or undo
+   * step. The reply's `view` is the view it replaced, which the step keeps for the swap back.
+   */
+  | { readonly op: 'swap'; readonly viewport: string; readonly view: UndoView }
   /**
    * Selection (M2-03): the objects of the space shown within the pickbox of `point`, nearest
    * first. What a pick takes depends on what is drawn, so the canvas answers it.

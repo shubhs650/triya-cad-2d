@@ -1,0 +1,1 @@
+- M2-47 part 3 (#323): keys typed ahead of a prompt are read by the prompt they reach, so `-VIEW` `S` `Two words` typed without waiting saves the view `Two words`.

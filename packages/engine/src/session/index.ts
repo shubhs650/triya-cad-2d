@@ -6,7 +6,7 @@
 import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
-import type { UndoState } from '../commands/undo';
+import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
 import { paperViewsChange, saveNamedView, validViewName, type PaperView } from '../edit/named-view';
@@ -105,8 +105,16 @@ export type EditResult =
  * document's command engine: the `PromptBus` calls as plain messages, plus the space shown.
  */
 export type CommandInput =
-  /** Typed input ended by Enter; `cursor` is where the cursor is, for direct distance entry. */
-  | { readonly kind: 'submit'; readonly text: string; readonly cursor?: Vec2 }
+  /**
+   * Typed input ended by Enter; `cursor` is where the cursor is, for direct distance entry. A
+   * `seq` asks for a `read` output with it once the input has been handled (M2-47 part 3).
+   */
+  | {
+      readonly kind: 'submit';
+      readonly text: string;
+      readonly cursor?: Vec2;
+      readonly seq?: number;
+    }
   | { readonly kind: 'answer'; readonly answer: PromptAnswer }
   | { readonly kind: 'cancel' }
   | { readonly kind: 'invoke'; readonly name: string }
@@ -130,6 +138,12 @@ export type CommandInput =
   | { readonly kind: 'double-click'; readonly point: Vec2 }
   /** The space the drafter works in now: model space or a layout's paper space. */
   | { readonly kind: 'space'; readonly block: Handle }
+  /**
+   * The drafter changed a canvas's view (M2-47 part 4): a ZOOM or PAN (the command's, the
+   * navigation bar's, the wheel's, a real-time drag's) or a named view restored. `view` is the
+   * view `viewport` showed before; the step is the undo history's (`UndoStack.pushView`).
+   */
+  | ({ readonly kind: 'view-step' } & ViewStep)
   /** The app's reply to the view request `id` (M2-02 part 2). */
   | { readonly kind: 'view'; readonly id: number; readonly reply: ViewReply }
   /**
@@ -161,6 +175,12 @@ export type CommandOutput =
   | Exclude<BusEvent, { readonly type: 'commit' }>
   | { readonly type: 'commit'; readonly command: string }
   | { readonly type: 'change'; readonly change: ChangeSet }
+  /**
+   * The submit numbered `seq` has been handled: the prompt it led to, `Command:` or a dialog's
+   * wait has been said already (M2-47 part 3). Until then the command line cannot tell whether
+   * a space typed is text or Enter, so it holds the keys typed ahead for that prompt.
+   */
+  | { readonly type: 'read'; readonly seq: number }
   /**
    * A view command asks the canvas of the space shown (ZOOM, PAN, REGEN, VIEW): the app answers
    * with a `view` input carrying the same id. The command waits for it, so the app must answer
@@ -275,9 +295,13 @@ export class EngineSession {
   /** Hands a front-end's input to the command engine; resolves once it has been handled. */
   command(input: CommandInput): Promise<void> {
     switch (input.kind) {
-      case 'submit':
+      case 'submit': {
         if (input.cursor) this.#bus.pointer(input.cursor);
-        return this.#bus.submit(input.text);
+        const done = this.#bus.submit(input.text);
+        const seq = input.seq;
+        if (seq === undefined) return done;
+        return done.finally(() => this.#emit({ type: 'read', seq }));
+      }
       case 'answer':
         if (input.answer.kind === 'point') this.#bus.pointer(input.answer.point);
         return this.#bus.answer(input.answer);
@@ -320,6 +344,9 @@ export class EngineSession {
       case 'property-vertex':
         this.#vertex = Math.max(0, Math.trunc(input.vertex));
         if (this.#properties) this.#sendSheet();
+        return Promise.resolve();
+      case 'view-step':
+        this.#bus.undo.pushView({ label: input.label, viewport: input.viewport, view: input.view });
         return Promise.resolve();
       case 'view': {
         // Not queued on the bus: the command awaiting it holds the bus's queue.
