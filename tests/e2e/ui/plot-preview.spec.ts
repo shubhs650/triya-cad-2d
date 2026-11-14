@@ -12,7 +12,15 @@ import {
   decodePng,
   type Raster,
 } from '../../../packages/testkit/src/fidelity/compare';
-import { DWG, activeCanvas, expectShown, ink, openWithDrop, openWithPicker } from '../app/page';
+import {
+  DWG,
+  activeCanvas,
+  expectShown,
+  ink,
+  openWithDrop,
+  openWithPicker,
+  enterCommand,
+} from '../app/page';
 import { rasterisePdf } from '../app/pdf-raster';
 import { startApp } from '../app/server';
 
@@ -142,9 +150,7 @@ test('PREVIEW shows a PDF underlay’s page as plotted; zoom, pan, the menu, Esc
   await openWithDrop(page, path.join(UNDERLAY, 'pdf-underlay.pdf'));
   await expectShown(page, 'pdf-underlay.dxf');
 
-  const input = page.getByLabel('Command', { exact: true });
-  await input.fill('PRE');
-  await input.press('Enter');
+  await enterCommand(page, 'PRE');
   await expect(preview(page)).toBeVisible();
   await expect(
     page.getByText('Press ESC or ENTER to exit, or right-click to display shortcut menu.').first(),
