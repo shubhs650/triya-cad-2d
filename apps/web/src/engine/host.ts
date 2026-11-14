@@ -11,6 +11,7 @@ import {
   type EngineEdit,
   type PaperView,
 } from '@triya/engine';
+import type { ChangeLink } from '@triya/render';
 import type { Endpoint, EngineReply, EngineRequest } from './protocol';
 import { ENGINE_SERVICES } from './services';
 
@@ -34,6 +35,7 @@ export class EngineHost {
   readonly #blocks = new Map<number, PendingBlocks>();
   readonly #commandListeners = new Set<(o: CommandOutput) => void>();
   #nextId = 1;
+  #nextLink = 1;
   #disposed = false;
 
   /** `changes`: a recovered drawing's change log, replayed onto `init` first (M2-14). */
@@ -66,6 +68,26 @@ export class EngineHost {
           line: `; error: ${e instanceof Error ? e.message : String(e)}`,
         }),
       );
+  }
+
+  /**
+   * Links a render worker to this engine (M2-62): the engine worker posts each change set it
+   * applies on the returned port, numbered by its place in the change log, before it tells the
+   * main thread. Hand the port to the render worker and `close` the link when that renderer is
+   * gone. Undefined when the engine runs on the main thread (nothing to skip) or is disposed.
+   */
+  connect(): ChangeLink | undefined {
+    const worker = this.#worker;
+    if (this.#disposed || !worker) return undefined;
+    const { port1, port2 } = new MessageChannel();
+    const id = this.#nextLink++;
+    worker.postMessage({ type: 'renderer', id, port: port1 }, [port1]);
+    return {
+      port: port2,
+      close: () => {
+        if (!this.#disposed) worker.postMessage({ type: 'renderer-closed', id });
+      },
+    };
   }
 
   /** Listens to the command engine's output; returns the unsubscribe. */

@@ -1857,11 +1857,12 @@ function pdfDefinitions(
 function drawingHooks(
   id: number,
   opened: OpenDocument['opened'],
-): Pick<CanvasHooks, 'patterns' | 'fonts' | 'changes' | 'underlays' | 'images'> {
+): Pick<CanvasHooks, 'patterns' | 'fonts' | 'changes' | 'connect' | 'underlays' | 'images'> {
   return {
     patterns: () => patterns.sources(),
     fonts: () => fonts.sources(),
     changes: () => engines.changesOf(id),
+    connect: () => engines.connect(id),
     underlays: (deliver, deliverSnap) =>
       pdfPages.client(pdfDefinitions(id, opened), deliver, deliverSnap),
     images: (deliver) =>

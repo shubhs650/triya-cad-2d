@@ -4,6 +4,8 @@
 // layout tab shown for the first time, REGEN) starts from the drawing as opened, so it replays
 // the drawing's change log first. A command's edits (M2-02) take the same way: each ChangeSet the
 // command engine reports joins the change log and goes to every renderer of the drawing.
+// Each change goes with its place in the log (1 for the first), which is also how the engine
+// worker numbers the copy it posts straight to the drawing's render workers (M2-62).
 import type {
   ChangeSet,
   CommandInput,
@@ -13,10 +15,12 @@ import type {
   EngineEdit,
   PaperView,
 } from '@triya/engine';
+import type { ChangeLink } from '@triya/render';
 import type { EngineHost } from './host';
 
 export interface ChangeTarget {
-  apply(change: ChangeSet): void;
+  /** `seq`: the change's place in the drawing's change log, 1 for the first. */
+  apply(change: ChangeSet, seq: number): void;
 }
 
 export class Engines {
@@ -88,6 +92,14 @@ export class Engines {
     return () => this.#listeners.delete(listener);
   }
 
+  /**
+   * Links a render worker of the drawing to its engine (M2-62): see `EngineHost.connect`.
+   * Undefined when the drawing is not open or its engine runs on the main thread.
+   */
+  connect(doc: number): ChangeLink | undefined {
+    return this.#engines.get(doc)?.connect();
+  }
+
   stop(doc: number): void {
     this.#engines.get(doc)?.dispose();
     this.#engines.delete(doc);
@@ -134,7 +146,7 @@ export class Engines {
   #applied(doc: number, change: ChangeSet): void {
     const log = this.#logs.get(doc);
     if (!log || Object.keys(change).length === 0) return;
-    log.push(change);
-    for (const t of this.#targets(doc)) t.apply(change);
+    const seq = log.push(change);
+    for (const t of this.#targets(doc)) t.apply(change, seq);
   }
 }
