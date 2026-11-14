@@ -53,6 +53,7 @@ import {
   HatchPatternLine,
   HatchStyleType,
   Insert,
+  Ellipse,
   Layer,
   LayerFlags,
   Layout,
@@ -2771,5 +2772,61 @@ describe('acad-ts local patches', () => {
     booked.color = new Color(3);
     const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
     expect(text).not.toContain('DIC 7');
+  });
+
+  it('0182 a DXF ELLIPSE whose minor-to-major ratio is above 1 swaps its axes', () => {
+    // DXF reference, ELLIPSE: 40 is the minor-to-major ratio, at most 1. ezdxf's
+    // duplicate_handles.dxf states 1.009533; unpatched, acad-ts refused it and kept 1, so the
+    // ellipse lost its minor axis's length. The same curve with the axes swapped has the major
+    // axis along normal × old major, the ratio inverted, and its parameters a quarter turn less.
+    const dxf = (normal: number, ratio: number, start: number, end: number): Uint8Array =>
+      new TextEncoder().encode(
+        [
+          ...['0', 'SECTION', '2', 'ENTITIES', '0', 'ELLIPSE', '5', '2A', '8', '0'],
+          ...['100', 'AcDbEntity', '100', 'AcDbEllipse'],
+          ...['10', '1', '20', '2', '30', '0', '11', '2', '21', '0', '31', '0'],
+          ...['210', '0', '220', '0', '230', String(normal)],
+          ...['40', String(ratio), '41', String(start), '42', String(end)],
+          ...['0', 'ENDSEC', '0', 'EOF', ''],
+        ].join('\n'),
+      );
+    const read = (bytes: Uint8Array): Ellipse => {
+      const e = [...readCadDocument(bytes).entities!].find((x) => x instanceof Ellipse);
+      if (!(e instanceof Ellipse)) throw new Error('no ellipse read');
+      return e;
+    };
+    // A point at parameter t, from the file's values (minor axis = ratio × normal × major).
+    const at = (n: number, M: [number, number], r: number, t: number) => [
+      1 + Math.cos(t) * M[0] + Math.sin(t) * r * -n * M[1],
+      2 + Math.cos(t) * M[1] + Math.sin(t) * r * n * M[0],
+    ];
+    const pointOf = (e: Ellipse, t: number) =>
+      at(e.normal.z, [e.majorAxisEndPoint.x, e.majorAxisEndPoint.y], e.radiusRatio, t);
+    const TAU = 2 * Math.PI;
+    for (const normal of [1, -1]) {
+      const e = read(dxf(normal, 1.5, 0.25, 2));
+      expect(e.radiusRatio, `normal ${normal}`).toBeCloseTo(1 / 1.5, 12);
+      expect(e.majorAxisEndPoint.x).toBeCloseTo(0, 12);
+      expect(e.majorAxisEndPoint.y).toBeCloseTo(3 * normal, 12);
+      expect(e.startParameter).toBeCloseTo(0.25 - Math.PI / 2 + TAU, 12);
+      expect(e.endParameter).toBeCloseTo(2 - Math.PI / 2, 12);
+      // The same curve: the file's start, middle and end points.
+      for (const t of [0.25, 1.125, 2]) {
+        const want = at(normal, [2, 0], 1.5, t);
+        const got = pointOf(e, t - Math.PI / 2);
+        expect(got[0]).toBeCloseTo(want[0]!, 12);
+        expect(got[1]).toBeCloseTo(want[1]!, 12);
+      }
+    }
+    // A full ellipse stays full.
+    const full = read(dxf(1, 1.5, 0, TAU));
+    expect(full.radiusRatio).toBeCloseTo(1 / 1.5, 12);
+    expect(full.majorAxisEndPoint.y).toBeCloseTo(3, 12);
+    expect([full.startParameter, full.endParameter]).toEqual([0, TAU]);
+    // A ratio of 1 or less is read as it is.
+    const plain = read(dxf(1, 0.5, 0.25, 2));
+    expect([plain.radiusRatio, plain.majorAxisEndPoint.x, plain.startParameter]).toEqual([
+      0.5, 2, 0.25,
+    ]);
   });
 });

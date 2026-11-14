@@ -110,8 +110,6 @@ const MALFORMED_REPAIRS: Record<string, Record<string, string>> = {
     'TEXT 50': 'two TEXTs share each handle; the reader gives the second a new one',
     'DIMENSION 2': 'its *D0/*D1 block is missing; the dimension is drawn by the engine (M2-30)',
     'DIMENSION 3': 'its style DIMSTYLE1 is missing from the DIMSTYLE table; it reads as STANDARD',
-    'ELLIPSE 41':
-      'a minor-to-major ratio of 1.0095 (more than 1) is refused by acad-ts, which keeps 1',
   },
 };
 
