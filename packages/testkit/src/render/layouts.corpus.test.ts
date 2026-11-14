@@ -75,9 +75,15 @@ const LIMITS_DIFFER: Record<string, string> = {
   'public/third-party/ezdxf/integration_tests/MODEL.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/integration_tests/bin_dxf_r2000.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/integration_tests/dxf_unicode.dxf | Layout1': EZDXF,
+  // M2-69: the layouts whose block link was broken, linked again on reading.
+  'public/third-party/ezdxf/integration_tests/layout_broken_links.dxf | Layout1': EZDXF,
+  'public/third-party/ezdxf/integration_tests/layout_broken_links.dxf | Layout2': EZDXF,
+  'public/third-party/ezdxf/integration_tests/layout_broken_links_2.dxf | Layout1': EZDXF,
+  'public/third-party/ezdxf/integration_tests/layout_broken_links_2.dxf | Layout2': EZDXF,
   'public/third-party/ezdxf/integration_tests/layout_missing_block_definition.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/integration_tests/layout_missing_block_definition.dxf | Layout2': EZDXF,
   'public/third-party/ezdxf/integration_tests/layout_missing_block_record.dxf | Layout1': EZDXF,
+  'public/third-party/ezdxf/integration_tests/layout_missing_block_record.dxf | Layout2': EZDXF,
   'public/third-party/ezdxf/integration_tests/mtext_framed_columns.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/integration_tests/mtext_text_frame.dxf | Layout1': EZDXF,
   'public/third-party/ezdxf/integration_tests/r2000_blocks_with_no_name_and_no_block_record.dxf | Layout1':

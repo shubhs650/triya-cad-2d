@@ -532,8 +532,8 @@ function blockProblems(
   removedEntities: readonly AcadEntity[],
 ): string[] {
   // A layout's block goes with its layout (LAYOUT Delete), which layouts.ts checks. Only a layout
-  // the drawing mapped can be deleted: one whose own block link is broken (ezdxf's
-  // layout_broken_links.dxf) maps no layout, yet the block still names it (M2-49).
+  // the drawing mapped can be deleted: one whose block link reading could not repair (M2-69)
+  // maps no layout, yet the block may still name it (M2-49).
   const layoutGoes =
     typeof b.layout === 'string' &&
     (base.layouts ?? []).some((l) => l.handle === b.layout) &&
