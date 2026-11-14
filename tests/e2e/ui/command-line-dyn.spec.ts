@@ -196,31 +196,42 @@ test('ZOOM, PAN, REGEN and VIEW typed at the command line change the view', asyn
   test.setTimeout(90_000);
   await open(page);
   const coords = page.getByTestId('coords');
-  const at = async () => {
+  // The status bar's coordinates of a still cursor over the canvas: they follow every view
+  // change (M2-37), so a test waits on them, as a drafter watches the view. `Command:` is no
+  // sign a view command ran: keys typed ahead reach the engine later, and until it reads them
+  // the prompt shown is still the `Command:` from before (M2-52; the ZOOM ran ~400 ms after
+  // the second Enter in the runs that failed).
+  const hoverStill = async () => {
     await hover(page, 0.25, 0.25);
     await hover(page, 0.25, 0.26);
-    return coords.textContent();
   };
-  const start = await at();
+  const viewOtherThan = async (before: string) => {
+    await hoverStill();
+    await expect(coords).not.toHaveText(before);
+    return (await coords.textContent())!;
+  };
+  await hoverStill();
+  await expect(coords).not.toHaveText('');
+  const start = (await coords.textContent())!;
   await page.getByLabel('Command', { exact: true }).click();
   await command(page, 'Z');
   await command(page, '2x');
+  const zoomed = await viewOtherThan(start);
   await expect(prompt(page)).toHaveText('Command:');
-  const zoomed = await at();
-  expect(zoomed).not.toBe(start);
   // Saved here, then zoomed away and restored.
   await page.getByLabel('Command', { exact: true }).click();
   for (const t of ['-VIEW', 'S', 'Here']) await command(page, t);
   await command(page, 'Z');
   await command(page, 'E');
-  expect(await at()).not.toBe(zoomed);
+  await viewOtherThan(zoomed);
   await page.getByLabel('Command', { exact: true }).click();
   for (const t of ['-V', 'R', 'here']) await command(page, t);
-  expect(await at()).toBe(zoomed);
+  await hoverStill();
+  await expect(coords).toHaveText(zoomed);
   await page.getByLabel('Command', { exact: true }).click();
   await command(page, 'Z');
   await command(page, 'P');
-  expect(await at()).not.toBe(zoomed);
+  await viewOtherThan(zoomed);
   // ZOOM transparently inside LINE, then LINE carries on.
   await page.getByLabel('Command', { exact: true }).click();
   for (const t of ['LINE', '0,0', "'Z", 'A']) await command(page, t);
