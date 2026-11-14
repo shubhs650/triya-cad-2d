@@ -646,6 +646,11 @@ export interface MultiLeaderGeometry extends PlanarProps {
   readonly contentBase: Vec2;
   /** DXF 145. */
   readonly landingGap: number;
+  /**
+   * DXF 176: how block content meets its landings, 0 by the centre of its extents, 1 by its
+   * insertion point (M2-35 part 25). Absent: its style's.
+   */
+  readonly blockConnection?: number;
   readonly text?: MultiLeaderText;
   readonly block?: MultiLeaderBlock;
   readonly branches: readonly MultiLeaderBranch[];

@@ -62,6 +62,7 @@ export const MLEADER_OVERRIDES = {
   blockColor: 1 << 20,
   blockScale: 1 << 21,
   blockRotation: 1 << 22,
+  blockConnection: 1 << 23,
   scale: 1 << 24,
 } as const;
 
@@ -475,6 +476,7 @@ export function newMultiLeader(n: NewMultiLeader): MultiLeaderGeometry {
     textFrame: style.textFrame,
     contentBase: n.landing.end,
     landingGap: s.gap,
+    blockConnection: style.blockConnection,
     ...(text && { text }),
     ...(block && { block }),
     branches: [branch],

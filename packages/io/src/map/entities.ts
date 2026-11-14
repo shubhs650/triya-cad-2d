@@ -591,6 +591,8 @@ function multiLeaderGeometry(
     textFrame: m.textFrame,
     contentBase: xy(c.contentBasePoint),
     landingGap: c.landingGap,
+    // DXF 176 (M2-35 part 25): 0 by the block's extents, 1 by its insertion point.
+    blockConnection: m.blockContentConnection,
     ...(c.hasTextContents
       ? {
           text: {

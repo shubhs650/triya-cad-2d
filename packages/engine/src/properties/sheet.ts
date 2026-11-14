@@ -36,7 +36,13 @@ import {
 import { JUSTIFICATIONS } from '../commands/modify/attributes';
 import { colorBooks, colorValue, type ColorBook } from './color-books';
 import { multiLeaderTextRows } from './multileader';
-import { blockOf, blockScaleValue, isContentBlock } from './multileader-block';
+import {
+  BLOCK_CONNECTIONS,
+  blockConnectionOf,
+  blockOf,
+  blockScaleValue,
+  isContentBlock,
+} from './multileader-block';
 import {
   hasThickness,
   hyperlinkOf,
@@ -921,6 +927,8 @@ function typeSections(
       add('Text', multiLeaderTextRows(es, textStyles));
       // M2-35 part 15: in Text's place, the block of multileaders that all hold a block.
       add('Block', multiLeaderBlockRows(model, es));
+      // M2-35 part 25 (multileader-misc.ts): last, as for a block reference.
+      add('Misc', multiLeaderMiscRows(model, es));
       break;
     case 'INSERT': {
       const g = (e: Entity) => geomOf<'INSERT'>(e);
@@ -1398,6 +1406,45 @@ function multiLeaderBlockRows(model: DocumentModel, es: readonly Entity[]): Prop
       label: 'Block rotation',
       kind: 'angle',
       get: (e) => b(e).rotation,
+    }),
+    row(es, {
+      key: 'blockConnection',
+      label: 'Attachment',
+      kind: 'choice',
+      options: BLOCK_CONNECTIONS,
+      get: (e) => BLOCK_CONNECTIONS[blockConnectionOf(model, g(e)) === 1 ? 1 : 0].value,
+    }),
+  ];
+}
+
+/** A multileader's Misc rows (M2-35 part 25, `multileader-misc.ts`). */
+function multiLeaderMiscRows(model: DocumentModel, es: readonly Entity[]): PropertyRow[] {
+  const g = (e: Entity) => geomOf<'MULTILEADER'>(e);
+  const styles = [...model.tables.mleaderStyles.values()]
+    .map((r) => ({ value: r.handle as string, label: r.name }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  return [
+    row(es, {
+      key: 'mleaderStyle',
+      label: 'Multileader style',
+      kind: 'choice',
+      readOnly: true,
+      options: styles,
+      get: (e) => g(e).style ?? '',
+    }),
+    row(es, {
+      key: 'annotative',
+      label: 'Annotative',
+      kind: 'choice',
+      readOnly: true,
+      options: YES_NO,
+      get: (e) => yesNo(e.annotative !== undefined || g(e).annotative),
+    }),
+    row(es, {
+      key: 'overallScale',
+      label: 'Overall scale',
+      kind: 'number',
+      get: (e) => g(e).scale,
     }),
   ];
 }

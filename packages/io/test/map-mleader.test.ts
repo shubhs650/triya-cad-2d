@@ -127,6 +127,7 @@ describe('MULTILEADER', () => {
       textFrame: true,
       contentBase: { x: 9, y: 4 },
       landingGap: 0.09,
+      blockConnection: 0,
       text: {
         content: 'NOTE\\PSEE DETAIL',
         style: H(doc.textStyles!.tryGetValue('Standard')!),
@@ -214,6 +215,14 @@ describe('MULTILEADER', () => {
       color: { kind: 'aci', index: 5 },
     });
     expect(g.style).toBe(style ? H(style) : undefined);
+  });
+
+  it('maps the block connection the multileader states (DXF 176, M2-35 part 25)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const m = textLeader(doc);
+    expect(mapOne(doc, m).blockConnection).toBe(0);
+    m.blockContentConnection = 1;
+    expect(mapOne(doc, m).blockConnection).toBe(1);
   });
 
   it('maps block content attribute values (M1-111)', () => {
