@@ -37,6 +37,7 @@ const toggleMs = async (page: Page) => {
   return {
     click: Number(await palette.getAttribute('data-last-toggle-ms')),
     frame: Number(await palette.getAttribute('data-last-toggle-frame-ms')),
+    drawn: Number(await palette.getAttribute('data-last-toggle-drawn-ms')),
   };
 };
 
@@ -59,20 +60,26 @@ test('turning a layer off and freezing it hide its objects, in under 16 ms', asy
   // ≤ 16 ms). Most of it is message delivery between the threads, which varies run to run.
   // Chromium holds the engine's answer until it has drawn the frame after the click, 10–12 ms
   // after a Playwright click, so the app's 16 ms count from that frame and the click → canvas
-  // total must stay within two frames (DEC-054, M2-50).
-  const samples: { click: number; frame: number }[] = [];
+  // total must stay within two frames (DEC-054, M2-50). The engine's change set also goes
+  // straight to the render worker, which draws it without waiting on the main thread: click →
+  // drawn there, measured by the render worker's clock, is the user's latency (M2-62).
+  const samples: { click: number; frame: number; drawn: number }[] = [];
   for (let i = 0; i < 5; i++) {
     const before = await on.getAttribute('aria-pressed');
     await on.click();
     await expect(on).not.toHaveAttribute('aria-pressed', before!);
     samples.push(await toggleMs(page));
   }
-  const median = (k: 'click' | 'frame') => samples.map((s) => s[k]).sort((a, b) => a - b)[2]!;
-  const list = (k: 'click' | 'frame') => samples.map((s) => s[k].toFixed(1)).join(', ');
+  type Key = 'click' | 'frame' | 'drawn';
+  const median = (k: Key) => samples.map((s) => s[k]).sort((a, b) => a - b)[2]!;
+  const list = (k: Key) => samples.map((s) => s[k].toFixed(1)).join(', ');
   console.log(`M1-23 toggle → canvas: ${list('frame')} ms from the first frame`);
   console.log(`M1-23 click → canvas: ${list('click')} ms`);
+  console.log(`M2-62 click → drawn by the render worker: ${list('drawn')} ms`);
   expect(median('frame')).toBeLessThan(16);
   expect(median('click')).toBeLessThan(33);
+  for (const s of samples) expect(s.drawn).toBeGreaterThan(0);
+  expect(median('drawn')).toBeLessThan(8);
 
   // Freeze from the keyboard: every toggle is a button. (HATCH is off after an odd count.)
   await on.click();

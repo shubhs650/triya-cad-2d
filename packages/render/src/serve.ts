@@ -1,9 +1,17 @@
 // The render worker's message loop, kept apart from the worker entry so tests can drive it
 // with an in-process endpoint. Messages are handled in order, so a hit test, flush, thumbnail or
 // extents request answers after every change, view and frame posted before it.
+//
+// The drawing's engine also posts each change set it applies straight to the worker, on the
+// change port it was handed at init (M2-62): after a click Chromium holds the main thread's
+// tasks until its next frame, so the change drawn from there reaches the screen up to a frame
+// earlier than the main thread's copy would. Both copies carry the change's number in the
+// drawing's change log; one from the port is applied only when it is the next number, so a
+// renderer that was linked after the engine applied a change (or replays the log on creation)
+// waits for the main thread's copies, which always come, and none is applied twice.
 
 import type { Surface } from './canvas2d';
-import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
+import type { ChangeMessage, Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession } from './session';
 import type { BitmapFactory } from './thumbnail';
 
@@ -19,6 +27,27 @@ export interface ServeOptions {
 
 export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: ServeOptions): void {
   let session: RenderSession | undefined;
+  /** Whether the canvas has a size and a view: what a change from the engine needs to draw. */
+  let sized = false;
+  let viewed = false;
+
+  const fail = (e: unknown, id?: number): void => {
+    const message = e instanceof Error ? e.message : String(e);
+    port.postMessage(
+      id === undefined ? { type: 'error', message } : { type: 'error', message, id },
+    );
+  };
+
+  /** A change set from the drawing's engine (M2-62): applied and drawn when it is next. */
+  const fromEngine = (m: ChangeMessage): void => {
+    try {
+      if (!session || m.seq !== session.applied + 1) return;
+      session.apply(m.change, m.seq);
+      if (sized && viewed) session.frame();
+    } catch (e) {
+      fail(e);
+    }
+  };
 
   const handle = (m: HostMessage): void => {
     if (m.type === 'init') {
@@ -33,6 +62,12 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         ...(o.requestIdle && { requestIdle: o.requestIdle }),
         onUnderlayRequest: (request) => port.postMessage({ type: 'underlayRequest', request }),
       });
+      if (m.changes) {
+        const changes = m.changes as Endpoint<ChangeMessage, never> & { start?(): void };
+        changes.addEventListener('message', ({ data }) => fromEngine(data));
+        // A MessagePort listened to with addEventListener delivers only once started.
+        changes.start?.();
+      }
       return;
     }
     if (!session) throw new Error(`render worker got '${m.type}' before 'init'`);
@@ -40,12 +75,14 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
     switch (m.type) {
       case 'resize':
         r.resize(m.width, m.height, m.dpr);
+        sized = m.width > 0 && m.height > 0;
         break;
       case 'view':
         r.setView(m.view);
+        viewed = true;
         break;
       case 'apply':
-        session.apply(m.change);
+        session.apply(m.change, m.seq);
         break;
       case 'transient':
         r.setTransient(m.primitives);
@@ -60,7 +97,7 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
         session.setFonts(m.fonts);
         break;
       case 'frame':
-        r.frame();
+        session.frame();
         break;
       case 'image':
         session.setImage(m.definition, m.pixels ?? undefined);
@@ -113,6 +150,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'flush':
         port.postMessage({ type: 'reply', id: m.id });
         break;
+      case 'drawnAt':
+        port.postMessage({ type: 'drawnAt', id: m.id, at: session.drawnAt(m.seq) ?? null });
+        break;
       case 'plot':
         port.postMessage({ type: 'plot', id: m.id, parts: session.plot(m.request) });
         break;
@@ -143,11 +183,7 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
     try {
       handle(data);
     } catch (e) {
-      const message = e instanceof Error ? e.message : String(e);
-      const id = 'id' in data ? data.id : undefined;
-      port.postMessage(
-        id === undefined ? { type: 'error', message } : { type: 'error', message, id },
-      );
+      fail(e, 'id' in data ? data.id : undefined);
     }
   });
 }

@@ -89,7 +89,7 @@ export {
 export { GRID_MIN_PX, gridLines, type GridLines, type GridSpec } from './grid';
 export { serveRenderer, type ServeOptions } from './serve';
 export { thumbnailOf, thumbnailSize, type BitmapFactory, type ThumbnailSize } from './thumbnail';
-export type { Endpoint, HostMessage, WorkerMessage } from './protocol';
+export type { ChangeLink, ChangeMessage, Endpoint, HostMessage, WorkerMessage } from './protocol';
 export * from './style/index';
 export * from './plot';
 export * from './underlay-snap';

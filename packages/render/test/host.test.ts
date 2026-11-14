@@ -61,9 +61,14 @@ function inProcessWorker(
     terminated: false,
     postMessage(m: HostMessage) {
       // The transferred canvas moves as is; everything else is structured-cloned.
+      // The engine's change port (M2-62) is transferred too.
       const data: HostMessage =
         m.type === 'init'
-          ? { ...structuredClone({ ...m, canvas: undefined }), canvas: m.canvas }
+          ? {
+              ...structuredClone({ ...m, canvas: undefined, changes: undefined }),
+              canvas: m.canvas,
+              ...(m.changes !== undefined && { changes: m.changes }),
+            }
           : structuredClone(m);
       queueMicrotask(() => toWorker.forEach((l) => l({ data })));
     },
@@ -440,6 +445,131 @@ describe('RendererHost', () => {
     off.dispose();
     await expect(pending).rejects.toThrow('disposed');
     expect(worker.terminated).toBe(true);
+  });
+});
+
+/** Lets the ports and the in-process worker deliver what they were sent. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+
+describe('change sets straight from the engine (M2-62)', () => {
+  /**
+   * A worker-side host linked to a drawing's engine by a MessageChannel, as the app links each
+   * render worker to its engine worker: `engine` posts numbered change sets on `port`.
+   */
+  function linked() {
+    const entities = [entity('20', line(0, 0, 10, 0))];
+    const engine = drawing(entities);
+    const document = { init: drawingInit(entities), block: MODEL, tol: toleranceForSize(1000) };
+    const surfaces: Recorded[] = [];
+    const visible = record(surfaces, 'visible');
+    const channel = new MessageChannel();
+    const link = { closed: false };
+    const errors: Error[] = [];
+    const host = new RendererHost({
+      canvas: canvas(visible, true),
+      document,
+      createWorker: () => inProcessWorker(surfaces),
+      style: STYLE,
+      onError: (e) => errors.push(e),
+      connect: () => ({
+        port: channel.port2,
+        close: () => {
+          link.closed = true;
+        },
+      }),
+    });
+    const post = (seq: number, change: ChangeSet) => channel.port1.postMessage({ seq, change });
+    const drawn = () => visible.ctx.calls.length;
+    return { engine, host, post, drawn, link, errors, end: () => channel.port1.close() };
+  }
+
+  it('draws a change the engine posts without the main thread, and skips the copy that follows', async () => {
+    const { engine, host, post, drawn, errors, end } = linked();
+    host.resize(100, 50, 1);
+    host.setView({ center: { x: 5, y: 0 }, scale: 10 });
+    host.frame();
+    await host.flush();
+    const shown = drawn();
+    const circle = change(engine, (b) =>
+      b.addEntity(entity('21', { kind: 'CIRCLE', center: { x: 5, y: 1 }, radius: 2 })),
+    );
+    post(1, circle);
+    await settle();
+    // Applied and drawn on arrival: nothing from the main thread asked for this frame.
+    expect(drawn()).toBeGreaterThan(shown);
+    expect(await host.drawnAt(1)).toEqual(expect.any(Number));
+    // The main thread's copy of change 1 comes after: adding entity 21 again would put the
+    // replica out of step, so it must be skipped.
+    host.apply(circle, 1);
+    host.frame();
+    await host.flush();
+    expect(errors).toEqual([]);
+    end();
+  });
+
+  it("ignores a change posted out of turn; the main thread's copies fill the gap", async () => {
+    const { engine, host, post, errors, end } = linked();
+    host.resize(100, 50, 1);
+    host.setView({ center: { x: 5, y: 0 }, scale: 10 });
+    host.frame();
+    const a = change(engine, (b) => b.addEntity(entity('21', line(0, 0, 1, 1))));
+    const b2 = change(engine, (b) => b.addEntity(entity('22', line(0, 0, 2, 2))));
+    const c = change(engine, (b) => b.addEntity(entity('23', line(0, 0, 3, 3))));
+    // The renderer was linked after change 1 was applied: the port's first is change 2.
+    post(2, b2);
+    await settle();
+    expect(await host.drawnAt(2)).toBeUndefined();
+    host.apply(a, 1);
+    host.apply(b2, 2);
+    host.frame();
+    await host.flush();
+    expect(await host.drawnAt(2)).toEqual(expect.any(Number));
+    // From here on the port is first again.
+    post(3, c);
+    await settle();
+    expect(await host.drawnAt(3)).toEqual(expect.any(Number));
+    host.apply(c, 3);
+    await host.flush();
+    expect(errors).toEqual([]);
+    end();
+  });
+
+  it('applies but does not draw a change before the canvas has a size and a view', async () => {
+    const { engine, host, post, drawn, errors, end } = linked();
+    const a = change(engine, (b) => b.addEntity(entity('21', line(0, 0, 1, 1))));
+    post(1, a);
+    await settle();
+    expect(drawn()).toBe(0);
+    expect(await host.drawnAt(1)).toBeUndefined();
+    host.apply(a, 1);
+    host.resize(100, 50, 1);
+    host.setView({ center: { x: 5, y: 0 }, scale: 10 });
+    host.frame();
+    expect(await host.drawnAt(1)).toEqual(expect.any(Number));
+    expect(errors).toEqual([]);
+    end();
+  });
+
+  it('closes its link to the engine when disposed', () => {
+    const { host, link, end } = linked();
+    expect(link.closed).toBe(false);
+    host.dispose();
+    expect(link.closed).toBe(true);
+    end();
+  });
+
+  it('numbers changes on the main thread too, applying each number once', async () => {
+    const { engine, main } = hosts();
+    const a = change(engine, (b) => b.addEntity(entity('21', line(0, 0, 1, 1))));
+    main.apply(a, 1);
+    main.apply(a, 1);
+    expect(await main.drawnAt(1)).toBeUndefined();
+    main.resize(100, 50, 1);
+    main.setView({ center: { x: 5, y: 0 }, scale: 10 });
+    main.frame();
+    const at = await main.drawnAt(1);
+    expect(at).toBeGreaterThan(performance.timeOrigin);
+    expect(await main.drawnAt(2)).toBeUndefined();
   });
 });
 

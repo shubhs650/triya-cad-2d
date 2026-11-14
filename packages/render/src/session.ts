@@ -128,7 +128,15 @@ export interface RenderSessionOptions {
   readonly requestIdle?: (cb: () => void) => void;
   /** A PDF underlay's page the view needs drawn (M1-20); the app answers with `setUnderlay`. */
   readonly onUnderlayRequest?: (request: UnderlayRequest) => void;
+  /**
+   * Milliseconds since the epoch, comparable across threads: when a frame was drawn
+   * (`drawnAt`, M2-62). `performance.timeOrigin + performance.now()` by default.
+   */
+  readonly clock?: () => number;
 }
+
+/** How many recent numbered changes `drawnAt` remembers (M2-62). */
+const DRAWN_KEPT = 64;
 
 const isPoint = (v: HeaderValue | undefined): v is { x: number; y: number } =>
   typeof v === 'object' && v !== null;
@@ -164,9 +172,21 @@ export class RenderSession {
   /** The block record drawn: model space or a layout's paper space. */
   readonly #block: Handle;
   readonly #tol: Tolerance;
+  /**
+   * The last numbered change applied (M2-62). The engine posts each change on the render
+   * worker's change port and the main thread forwards it too, both numbered by its place in the
+   * drawing's change log; the first copy to arrive is applied and the other skipped.
+   */
+  #applied = 0;
+  /** Numbered changes applied since the last frame. */
+  #undrawn: number[] = [];
+  /** When the first frame after each recent numbered change was drawn (`clock` time). */
+  readonly #drawn = new Map<number, number>();
+  readonly #clock: () => number;
 
   constructor(o: RenderSessionOptions) {
     this.#surface = o.surface;
+    this.#clock = o.clock ?? (() => performance.timeOrigin + performance.now());
     const { init, block } = o.document;
     this.#block = block;
     this.model = DocumentModel.create(init);
@@ -386,10 +406,46 @@ export class RenderSession {
     );
   }
 
-  /** Applies a ChangeSet the engine already applied (`applyToReplica`). */
-  apply(cs: ChangeSet): void {
+  /** The number of the last numbered change applied; 0 before any (M2-62). */
+  get applied(): number {
+    return this.#applied;
+  }
+
+  /**
+   * Applies a ChangeSet the engine already applied (`applyToReplica`). A numbered change
+   * (`seq`, its place in the drawing's change log, M2-62) already applied is skipped: false.
+   */
+  apply(cs: ChangeSet, seq?: number): boolean {
+    if (seq !== undefined) {
+      if (seq <= this.#applied) return false;
+      // Counted before applying, so a change that fails is never tried again.
+      this.#applied = seq;
+      this.#undrawn.push(seq);
+    }
     const local = applyToReplica(this.model, cs, 'render replica');
     this.index.apply(local);
     this.renderer.apply(local);
+    return true;
+  }
+
+  /** Draws a frame, noting when it drew the numbered changes applied since the last one. */
+  frame(): void {
+    this.renderer.frame();
+    if (this.#undrawn.length === 0) return;
+    const at = this.#clock();
+    for (const seq of this.#undrawn) this.#drawn.set(seq, at);
+    this.#undrawn = [];
+    for (const seq of this.#drawn.keys()) {
+      if (this.#drawn.size <= DRAWN_KEPT) break;
+      this.#drawn.delete(seq);
+    }
+  }
+
+  /**
+   * When the first frame holding numbered change `seq` was drawn (`clock` time, M2-62);
+   * undefined while no frame has, or once it is too old to remember.
+   */
+  drawnAt(seq: number): number | undefined {
+    return this.#drawn.get(seq);
   }
 }

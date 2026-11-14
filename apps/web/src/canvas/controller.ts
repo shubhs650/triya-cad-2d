@@ -79,6 +79,7 @@ import {
   tessellate,
   transformPrimitive,
   worldToScreen,
+  type ChangeLink,
   type DrawnEntity,
   type FontSources,
   type PlotPart,
@@ -219,6 +220,11 @@ export interface CanvasHooks {
    */
   readonly changes?: () => readonly ChangeSet[];
   /**
+   * Links a new render worker to the drawing's engine (M2-62), so the engine's change sets
+   * reach it without waiting on the main thread; see `RendererHostOptions.connect`.
+   */
+  readonly connect?: () => ChangeLink | undefined;
+  /**
    * PDF underlay pages (M1-20): the canvas's link to the PDF files supplied, which draws the
    * pages its renderer asks for and hands them back through `deliver`.
    */
@@ -278,6 +284,8 @@ export class CanvasController {
   #listeners = new AbortController();
   #size: ViewportSize = { width: 0, height: 0 };
   #view: ViewTransform | undefined;
+  /** The view last given to the renderer; a new renderer has none (M2-62). */
+  #sentView: ViewTransform | undefined;
   #pending = 0;
   /** A frame was sent to the renderer and is not drawn yet. */
   #drawing = false;
@@ -801,9 +809,13 @@ export class CanvasController {
     this.#resize();
   }
 
-  /** A change the drawing's engine applied (M1-67): the renderer applies it and redraws. */
-  apply(change: ChangeSet): void {
-    this.#host.apply(change);
+  /**
+   * A change the drawing's engine applied (M1-67): the renderer applies it and redraws. `seq`
+   * is its place in the drawing's change log: a render worker that already took it from the
+   * engine (M2-62) skips it and only redraws, which finds the scene already drawn.
+   */
+  apply(change: ChangeSet, seq?: number): void {
+    this.#host.apply(change, seq);
     // An IMAGEDEF brought in or changed (a loaded xref's images, a new path): its bitmap.
     const o = change.objects;
     if (
@@ -824,9 +836,13 @@ export class CanvasController {
     }
     this.#followHeader(change);
     // Drawn now rather than on the next animation frame, so `flush` resolves once the change
-    // is on screen (the palette measures toggle → canvas, M1-23).
+    // is on screen (the palette measures toggle → canvas, M1-23). The view is sent only when it
+    // is not the one the renderer has: setting a view redraws the whole scene, and a render
+    // worker that took the change from the engine (M2-62) has drawn it already, so this frame
+    // only shows what it drew.
     if (this.#view && this.#size.width > 0) {
-      this.#host.setView(this.#view);
+      if (this.#view !== this.#sentView) this.#host.setView(this.#view);
+      this.#sentView = this.#view;
       this.#host.frame();
     }
   }
@@ -834,6 +850,14 @@ export class CanvasController {
   /** Resolves once the renderer has handled everything sent to it so far. */
   flush(): Promise<void> {
     return this.#host.flush();
+  }
+
+  /**
+   * When the renderer first drew the drawing's change number `seq` (M2-62), in milliseconds
+   * since the epoch; undefined while it has not. What the Layers palette measures a toggle by.
+   */
+  drawnAt(seq: number): Promise<number | undefined> {
+    return this.#host.drawnAt(seq);
   }
 
   /** The user's .pat files changed (M1-50): hatches stored without lines redraw from them. */
@@ -863,6 +887,7 @@ export class CanvasController {
   }
 
   #createHost(): RendererHost {
+    this.#sentView = undefined;
     const patterns = this.#hooks.patterns?.() ?? [];
     const host = new RendererHost({
       canvas: this.canvas,
@@ -873,8 +898,10 @@ export class CanvasController {
       fonts: this.#hooks.fonts?.() ?? BUNDLED_FONTS,
       ...(patterns.length > 0 && { patterns }),
       ...(this.#underlays && { onUnderlayRequest: (r) => this.#underlays?.request(r) }),
+      ...(this.#hooks.connect && { connect: this.#hooks.connect }),
     });
-    for (const change of this.#hooks.changes?.() ?? []) host.apply(change);
+    // Numbered as the change log: the engine's copies of later changes follow on from these.
+    (this.#hooks.changes?.() ?? []).forEach((change, i) => host.apply(change, i + 1));
     this.canvas.dataset['renderer'] = host.mode;
     return host;
   }
@@ -1091,6 +1118,7 @@ export class CanvasController {
         return;
       }
       this.#host.setView(this.#view);
+      this.#sentView = this.#view;
       this.#host.frame();
       this.#drawing = true;
       const canvas = this.#canvas;
