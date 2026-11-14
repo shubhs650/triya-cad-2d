@@ -237,9 +237,8 @@ test('drops fonts and a CTB, edits, saves and plots a PDF with no connection', a
   expect(pdf.paths).toBeGreaterThan(0);
   // The MTEXT ("TEXT", eight times) is text set in the dropped font (M2-16 part 3 embeds
   // TrueType text), not the stand-in's strokes, which have no text. The test font has no T, E or
-  // X, so every letter shows its .notdef glyph, which copies as the first letter it was shown
-  // for (one CID per glyph; M2-51).
-  expect(pdf.text).toMatch(/^(\S{4} ){7}\S{4}$/);
+  // X, so every letter shows its .notdef glyph, and each still copies as typed (M2-51).
+  expect(pdf.text).toBe(Array(8).fill('TEXT').join(' '));
 
   expect([...new Set(foreign)]).toEqual([]);
 });
