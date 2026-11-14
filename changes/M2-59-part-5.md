@@ -1,0 +1,1 @@
+- M2-59 part 5 (#346): SETVAR CTAB shows the layout named and TILEMODE switches between the Model tab (1) and the layout tab shown last (0), with no edit or undo step; the command line's autocomplete lists the drawing's system variables after the commands, as AutoCAD's AUTOCOMPLETEMODE does. M2-59 is complete; the UCS variables move to M3-06 with the UCS command.

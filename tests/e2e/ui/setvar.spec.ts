@@ -172,8 +172,9 @@ test('the drawing’s computed variables, read only', async ({ page }) => {
   await type(page, '0', 'Command:');
   await type(page, 'DBMOD', 'Command:');
   await expect(log).toContainText('DBMOD = 1 (read only)');
-  await type(page, 'CTAB', 'Command:');
-  await expect(log).toContainText('CTAB = "Model" (read only)');
+  // CTAB names the tab shown (set, it shows another: part 5's test below); Enter keeps it.
+  await type(page, 'CTAB', 'Enter new value for CTAB <"Model">:');
+  await type(page, '', 'Command:');
   await type(page, 'VIEWSIZE', 'Command:');
   await expect(log).toContainText(/VIEWSIZE = \d+\.\d+ \(read only\)/);
   // Read only: no prompt for a new value.
@@ -190,6 +191,54 @@ test('the drawing’s computed variables, read only', async ({ page }) => {
   await page.screenshot({ path: test.info().outputPath('computed-variables.png') });
   await page.keyboard.press('F2');
   await expect(history).toBeHidden();
+});
+
+// M2-59 part 5: CTAB and TILEMODE switch the layout tabs (AutoCAD 2024 Help: TILEMODE 1 "Makes
+// the Model tab active", 0 "Makes the last active layout tab active"), and the command line's
+// autocomplete lists system variables after the commands, as AutoCAD's AUTOCOMPLETEMODE does.
+test('CTAB and TILEMODE switch tabs; autocomplete lists variables', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await expect(prompt(page)).toHaveText('Command:');
+  await expectDrawn(page, { timeout: 15_000 });
+  const tab = (name: string) => page.getByRole('tab', { name, exact: true });
+  await expect(tab('Model')).toHaveAttribute('aria-selected', 'true');
+
+  // Variables are offered after the commands, marked as variables.
+  await page.keyboard.type('TILEM');
+  const list = page.getByRole('listbox', { name: 'Matching commands and system variables' });
+  await expect(list.getByRole('option')).toHaveText([
+    'TILEMODE system variable',
+    'TILEMODELIGHTSYNCH system variable',
+  ]);
+  await page.screenshot({ path: test.info().outputPath('autocomplete-variables.png') });
+  await page.keyboard.press('Escape');
+  await expect(page.locator('#command-input')).toHaveValue('');
+  await expect(list).toBeHidden();
+
+  await page.keyboard.type('CTAB');
+  await expect(list.getByRole('option').first()).toHaveText('CTAB system variable');
+  await type(page, '', 'Enter new value for CTAB <"Model">:');
+  await type(page, 'nosuch', 'Enter new value for CTAB <"Model">:');
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  await expect(log).toContainText('No layout named "nosuch".');
+  await type(page, 'layout1', 'Command:');
+  await expect(tab('Layout1')).toHaveAttribute('aria-selected', 'true');
+  await expectDrawn(page, { timeout: 15_000 });
+  await page.screenshot({ path: test.info().outputPath('ctab-layout1.png') });
+
+  await type(page, 'TILEMODE', 'Enter new value for TILEMODE <0>:');
+  await type(page, '1', 'Command:');
+  await expect(tab('Model')).toHaveAttribute('aria-selected', 'true');
+  // 0: the layout tab shown last.
+  await type(page, 'TILEMODE', 'Enter new value for TILEMODE <1>:');
+  await type(page, '0', 'Command:');
+  await expect(tab('Layout1')).toHaveAttribute('aria-selected', 'true');
+  // A tab switch is no edit: nothing to save, nothing to undo.
+  await type(page, 'DBMOD', 'Command:');
+  await expect(log).toContainText('DBMOD = 0 (read only)');
 });
 
 // M2-59 part 2: AutoCAD's per-user settings at the command line. AUTOSNAP's bits are AutoSnap's

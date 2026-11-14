@@ -3,7 +3,7 @@
 import type { ChangeSet, Layout } from '@triya/engine';
 import type { OpenResult } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { DocumentStore, layoutsOf, spacesOf, type OpenDocument } from '../src/documents';
+import { DocumentStore, layoutsOf, spacesOf, tabBlock, type OpenDocument } from '../src/documents';
 
 const opened = {} as OpenResult;
 
@@ -173,5 +173,51 @@ describe('DocumentStore drawings opened in the background', () => {
     expect(s.getSnapshot().background).toEqual([]);
     expect(names(s)).toEqual(['a.dwg']);
     expect(s.getSnapshot().active).toBe(shown);
+  });
+});
+
+// M2-59 part 5: SETVAR CTAB and TILEMODE show a tab: the one named, or for TILEMODE 0 the layout
+// tab last shown (AutoCAD 2024 Help, "TILEMODE": "Makes the last active layout tab active"),
+// which before any is the drawing's current layout, the one *Paper_Space holds.
+describe('tabBlock (M2-59 part 5)', () => {
+  const layouts = [
+    { handle: 'A', name: 'Model', tabOrder: 0, blockRecord: '1F' },
+    { handle: 'B', name: 'Layout1', tabOrder: 1, blockRecord: '50' },
+    { handle: 'C', name: 'Layout2', tabOrder: 2, blockRecord: '1B' },
+  ];
+  const opened = {
+    modelSpace: '1F',
+    init: {
+      layouts,
+      tables: {
+        blockRecords: [
+          { handle: '1F', name: '*Model_Space' },
+          { handle: '50', name: '*Paper_Space0' },
+          { handle: '1B', name: '*PAPER_SPACE' },
+        ],
+      },
+    },
+  } as unknown as OpenResult;
+
+  it('finds the tab a name names, as the drawing spells it', () => {
+    const doc = { opened } as OpenDocument;
+    expect(tabBlock(doc, [], 'Layout1')).toBe('50');
+    expect(tabBlock(doc, [], 'Model')).toBe('1F');
+    expect(tabBlock(doc, [], 'Sheet9')).toBeUndefined();
+  });
+
+  it('without a name, the layout tab shown last, else the current layout', () => {
+    const s = new DocumentStore();
+    s.startOpening('a.dxf');
+    const id = s.opened('a.dxf', opened, '1F');
+    const doc = () => s.getSnapshot().docs.find((d) => d.id === id)!;
+    expect(tabBlock(doc(), [], undefined)).toBe('1B');
+    s.showSpace(id, '50');
+    s.showSpace(id, '1F');
+    expect(doc().lastLayout).toBe('50');
+    expect(tabBlock(doc(), [], undefined)).toBe('50');
+    // A layout deleted since is not shown again.
+    const removed: ChangeSet = { layouts: { removed: [layouts[1]!] } };
+    expect(tabBlock(doc(), [removed], undefined)).toBe('1B');
   });
 });
