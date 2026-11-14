@@ -292,6 +292,7 @@ export function CommandLine({
       {doc !== undefined && (
         <DynamicInput
           prompt={prompt}
+          units={state?.units}
           message={prompt?.message ?? ''}
           cursor={cursor}
           onSubmit={send}
