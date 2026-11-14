@@ -6,7 +6,8 @@
 // - pointer input at a point prompt: X and Y fields; a comma moves to Y; the first point is
 //   absolute, the next ones relative to the last (`@`) unless typed with `#`;
 // - dimension input at a point prompt with a rubber band: Distance and Angle fields; `<` moves
-//   to the angle; a distance alone is a direct distance towards the cursor;
+//   to the angle; a distance alone is a direct distance towards the cursor; a comma switches to
+//   pointer input, relative to the last point (M2-71);
 // - Tab locks the field typed in and moves to the next; Backspace unlocks it once emptied;
 // - anything that is not a number (an option, `@100<45`, FROM, `'Z`) is taken as typed;
 // - the fields show the cursor's values in the drawing's units (M2-35 part 20), as the status
@@ -106,6 +107,24 @@ export function dynType(s: DynState, ch: string): DynState {
   if (ch === SEPARATOR[s.kind] && s.active === 0 && f.text !== '' && plain(s, 0, f.text)) {
     return { ...s, active: 1 };
   }
+  // A comma after a number in the Distance field switches dimension input to pointer input:
+  // the point is X,Y relative to the last (AutoCAD 2024 Help, "About Dynamic Input": for the
+  // second and next points pointer input's coordinates are relative, DYNPICOORDS 0), so
+  // `10,0` typed at LINE's next point goes 10 to the right, as `@10,0` at the command line.
+  if (
+    ch === ',' &&
+    s.kind === 'dimension' &&
+    s.active === 0 &&
+    f.text !== '' &&
+    plain(s, 0, f.text)
+  ) {
+    return {
+      ...s,
+      kind: 'pointer',
+      active: 1,
+      fields: [{ ...field('X'), text: f.text }, field('Y')],
+    };
+  }
   if (plain(s, s.active, next)) return withField(s, s.active, { text: next });
   return {
     ...s,
@@ -134,15 +153,55 @@ export function dynBackspace(s: DynState, prompt: Prompt): DynState {
   return withField(s, s.active, { text, locked: text !== '' && f.locked });
 }
 
+/** Whether `key` ends the input at `prompt` with fields `s`: Enter, or a space a name does not take. */
+export function dynEnds(s: DynState, prompt: Prompt, key: string): boolean {
+  const spaces = prompt.kind === 'string' && prompt.spaces === true && s.raw;
+  return key === 'Enter' || (key === ' ' && !spaces);
+}
+
+/** A key that types into the fields: a character, Tab or Backspace. */
+function dynKey(s: DynState, prompt: Prompt, key: string): DynState {
+  if (key === 'Tab') return dynTab(s);
+  if (key === 'Backspace') return dynBackspace(s, prompt);
+  return dynType(s, key);
+}
+
+/**
+ * Keys held ahead of `prompt` (M2-71, command-line.ts `holdsKey`) replayed into its fields `s`:
+ * the fields after them and the keys that typed into them (`typed`), or, when a key ends the
+ * input, the fields it ends (`ends`) and the keys after it, which wait for the prompt that input
+ * leads to (`rest`). An Esc stops the replay: it is left first in `rest`, for the command line
+ * to cancel with.
+ */
+export function dynAhead(
+  s: DynState,
+  prompt: Prompt,
+  keys: readonly string[],
+): {
+  readonly state: DynState;
+  readonly typed: readonly string[];
+  readonly ends: boolean;
+  readonly rest: readonly string[];
+} {
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!;
+    if (key === 'Escape')
+      return { state: s, typed: keys.slice(0, i), ends: false, rest: keys.slice(i) };
+    if (dynEnds(s, prompt, key)) {
+      return { state: s, typed: keys.slice(0, i), ends: true, rest: keys.slice(i + 1) };
+    }
+    s = dynKey(s, prompt, key);
+  }
+  return { state: s, typed: keys, ends: false, rest: [] };
+}
+
 /**
  * The fields of a prompt after `keys` (characters, `Tab`, `Backspace`): what was typed ahead
  * of a prompt that had not arrived yet carries over to it rather than being lost.
  */
 export function dynReplay(prompt: Prompt, keys: readonly string[]): DynState {
   let s = dynFor(prompt);
-  for (const k of keys) {
-    s = k === 'Tab' ? dynTab(s) : k === 'Backspace' ? dynBackspace(s, prompt) : dynType(s, k);
-  }
+  for (const k of keys) s = dynKey(s, prompt, k);
   return s;
 }
 
@@ -232,6 +291,17 @@ export function dynText(
   const prefix = a.startsWith('#') ? '#' : a.startsWith('@') || isRelative(prompt) ? '@' : '';
   const x = a.replace(/^[@#]/, '');
   return `${prefix}${x === '' ? live[0] : x},${b === '' ? live[1] : b}`;
+}
+
+/**
+ * What a relative point Enter sends (`text`, starting `@`) counts from: the base of the prompt's
+ * rubber band, which the X, Y, Distance and Angle fields measure from. The command line's `@`
+ * counts from the last point given, which COPY's second points leave behind each copy while
+ * their rubber band stays on the base point (M2-71); undefined where there is no rubber band.
+ */
+export function dynRelativeTo(text: string, prompt: Prompt): Vec2 | undefined {
+  if (!text.startsWith('@') || prompt.kind !== 'point') return undefined;
+  return prompt.rubberBand?.from;
 }
 
 /** DYNMODE: Dynamic Input on (AutoCAD's default) or off; F12 and the status bar toggle it. */

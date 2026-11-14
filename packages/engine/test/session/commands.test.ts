@@ -51,6 +51,19 @@ describe('EngineSession commands', () => {
     expect(out.some((o) => o.type === 'read')).toBe(false);
   });
 
+  it('says it has read a numbered Esc once the command it cancels has ended (M2-71)', async () => {
+    const { s, out } = setup();
+    await s.command({ kind: 'submit', text: 'L', seq: 1 });
+    await s.command({ kind: 'cancel', seq: 2 });
+    expect(out.slice(-2).map((o) => o.type)).toEqual(['idle', 'read']);
+    expect(out.at(-1)).toEqual({ type: 'read', seq: 2 });
+    // Unnumbered, as the dialogs' Cancel sends it, it is not reported.
+    await s.command({ kind: 'submit', text: 'L' });
+    out.length = 0;
+    await s.command({ kind: 'cancel' });
+    expect(out.some((o) => o.type === 'read')).toBe(false);
+  });
+
   it('keeps a replica in step through the change outputs', async () => {
     const { s, out } = setup();
     const replica = DocumentModel.create(sampleInit());
