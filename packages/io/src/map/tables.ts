@@ -149,6 +149,19 @@ function viewportOverrides(l: Layer): LayerViewportOverride[] | undefined {
     : undefined;
 }
 
+/**
+ * A layer's colour, a colour-book colour with its book and name: AutoCAD names it by the layer's
+ * own 430, `BOOK$COLOR`, with no DBCOLOR (acadsharp's Layer_color_book; M2-35 part 19). A name
+ * without a `$` names no book, so the colour is its RGB.
+ */
+function layerColor(l: Layer): Color {
+  const c = mapColor(l.color);
+  const name = l.trueColorName;
+  const at = name?.indexOf('$') ?? -1;
+  if (c.kind !== 'rgb' || !name || at < 0) return c;
+  return { ...c, bookName: name.slice(0, at), colorName: name.slice(at + 1) };
+}
+
 function layer(l: Layer): LayerRecord {
   const flags = l.flags as number;
   const plotStyle = l.plotStyleName ? hex(l.plotStyleName) : undefined;
@@ -157,7 +170,7 @@ function layer(l: Layer): LayerRecord {
   const overrides = viewportOverrides(l);
   return {
     ...base(l),
-    color: mapColor(l.color),
+    color: layerColor(l),
     linetype: hex(l.lineType.handle),
     lineweight: mapLineweight(l.lineWeight),
     transparency: layerTransparency(l),

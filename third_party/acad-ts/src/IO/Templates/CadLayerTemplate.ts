@@ -29,6 +29,9 @@ export class CadLayerTemplate extends CadTableEntryTemplate<Layer> {
 		// upstream read the handle and dropped it.
 		if (this.plotStyleHandle) this.cadObject.plotStyleName = this.plotStyleHandle;
 
+		// The colour's name (DXF 430), a colour-book colour's `BOOK$COLOR`: upstream read it and dropped it.
+		if (this.trueColorName) this.cadObject.trueColorName = this.trueColorName;
+
 		// The layer's material (DXF 347, DWG R2007+): upstream looked it up and dropped it.
 		const material = builder.tryGetCadObject<Material>(this.materialHandle);
 		if (material instanceof Material) {

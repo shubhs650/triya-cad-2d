@@ -265,9 +265,13 @@ export interface Resolver {
   readonly plotStyles?: PlotStyleNames;
   /**
    * The drawing's colour-book colours (its ACAD_COLOR dictionary's DBCOLOR objects), by
-   * `BOOK$COLOR`, any case: an entity given one names it (M2-27).
+   * `BOOK$COLOR`, any case: an entity given one names it (M2-27). A colour only a layer holds
+   * comes as a DBCOLOR not yet in the drawing, which `keepBookColor` adds once an entity takes it
+   * (M2-35 part 19).
    */
   readonly bookColor?: (name: string) => BookColor | undefined;
+  /** Adds `book` to the drawing's ACAD_COLOR when the save made it (`bookColor`). */
+  readonly keepBookColor?: (book: BookColor) => void;
 }
 
 /** The plot style names entities may name in a drawing (`plotStyleNames` in export.ts). */
@@ -320,7 +324,7 @@ const hasBook = (c: Color): boolean => c.kind === 'rgb' && c.bookName !== undefi
 /**
  * The drawing's DBCOLOR for a colour-book colour, when it has one of that name and true colour.
  * Triya ships no colour books (AutoCAD's .acb files are Autodesk's), so an entity may take only
- * a colour the drawing already holds (M2-27).
+ * a colour the drawing already holds (M2-27), on an object or a layer (M2-35 part 19).
  */
 function drawingBookColor(r: Resolver, c: Color): BookColor | undefined {
   if (c.kind !== 'rgb' || c.bookName === undefined) return undefined;
@@ -458,6 +462,7 @@ function writeProps(r: Resolver, e: AcadEntity, before: Props | undefined, after
   if (changed('color')) {
     e.color = acadColor(after.color);
     const book = drawingBookColor(r, after.color);
+    if (book) r.keepBookColor?.(book);
     if (book) e.bookColor = book;
     else if (e.bookColor) e.bookColor = null;
   }

@@ -14,6 +14,7 @@ import {
   Circle,
   Color as AcadColor,
   Insert,
+  Layer,
   Line,
   Seqend,
   XYZ,
@@ -37,6 +38,16 @@ import {
   writeCadDocument,
 } from '../src/index';
 
+/** A layer's colour-book colour: AutoCAD names it by LAYER 430 alone, with no DBCOLOR. */
+const DIC_7: Color = {
+  kind: 'rgb',
+  r: 252,
+  g: 193,
+  b: 135,
+  bookName: 'DIC COLOR GUIDE(R)',
+  colorName: 'DIC 7',
+};
+
 const RAL_3020: Color = {
   kind: 'rgb',
   r: 204,
@@ -48,7 +59,9 @@ const RAL_3020: Color = {
 
 /**
  * An AC1032 DXF holding the colour-book colour RAL CLASSIC$RAL 3020, which a CIRCLE uses, and in
- * model space a LINE and an INSERT of TAG with one ATTRIB.
+ * model space a LINE and an INSERT of TAG with one ATTRIB; its layer TINTED is DIC COLOR
+ * GUIDE(R)$DIC 7, a colour no object uses, so no DBCOLOR names it (acadsharp's
+ * Layer_color_book, M2-35 part 19).
  */
 function drawing(): Uint8Array {
   const doc = new CadDocument(ACadVersion.AC1032);
@@ -57,6 +70,10 @@ function drawing(): Uint8Array {
   book.name = 'RAL CLASSIC$RAL 3020';
   book.color = new AcadColor(204, 6, 5);
   doc.colors!.add(book);
+  const tinted = new Layer('TINTED');
+  tinted.color = AcadColor.fromTrueColor(0xfcc187);
+  tinted.trueColorName = 'DIC COLOR GUIDE(R)$DIC 7';
+  doc.layers!.add(tinted);
   const line = new Line(new XYZ(0, 0, 0), new XYZ(10, 0, 0));
   const circle = new Circle(new XYZ(5, 5, 0), 2);
   const tag = new BlockRecord('TAG');
@@ -184,5 +201,69 @@ describe('triyaToAcad colour-book colours', () => {
       expect(written?.bookColor?.name).toBe('RAL CLASSIC$RAL 3020');
       expect(dbColors(saved)).toEqual(['RAL CLASSIC$RAL 3020']);
     }
+  });
+
+  // M2-35 part 19: a layer's colour-book colour (DXF 430 of the LAYER, acad-ts patch 0181).
+  const layerNamed = (model: DocumentModel, name: string) =>
+    [...model.tables.layers.values()].find((l) => l.name === name)!;
+  const reopenedLayers = (bytes: Uint8Array) =>
+    new Map(documentInit(readCadDocument(bytes)).tables?.layers?.map((l) => [l.name, l]));
+
+  it("reads a layer's colour-book colour and keeps it through a save", () => {
+    const model = open();
+    expect(layerNamed(model, 'TINTED').color).toEqual(DIC_7);
+    for (const options of SAVES) {
+      const saved = exportDocument(readCadDocument(FILE), model, options);
+      expect(reopenedLayers(saved).get('TINTED')?.color).toEqual(DIC_7);
+      // A layer's colour needs no DBCOLOR.
+      expect(dbColors(saved)).toEqual(['RAL CLASSIC$RAL 3020']);
+    }
+  });
+
+  it("writes a layer's colour-book colour, changed or new, and takes it off for a plain one", () => {
+    for (const options of SAVES) {
+      const model = open();
+      const zero = layerNamed(model, '0');
+      const tinted = layerNamed(model, 'TINTED');
+      let added = '';
+      edit(model, (b) => {
+        b.updateTableRecord('layers', zero.handle, { color: RAL_3020 });
+        b.updateTableRecord('layers', tinted.handle, {
+          color: { kind: 'rgb', r: 252, g: 193, b: 135 },
+        });
+        added = b.addTableRecord('layers', { ...tinted, name: 'PASTED', color: DIC_7 }).handle;
+      });
+      const saved = exportDocument(readCadDocument(FILE), model, options);
+      const back = reopenedLayers(saved);
+      expect(back.get('0')?.color).toEqual(RAL_3020);
+      expect(back.get('TINTED')?.color).toEqual({ kind: 'rgb', r: 252, g: 193, b: 135 });
+      expect(back.get('PASTED')?.color).toEqual(DIC_7);
+      expect(back.get('PASTED')?.handle).toBe(added);
+    }
+  });
+
+  it("gives an entity a colour-book colour only a layer holds, adding the colour's DBCOLOR", () => {
+    for (const options of SAVES) {
+      const model = open();
+      const line = find(model, 'LINE');
+      edit(model, (b) => b.updateEntity(line.id, { color: DIC_7 }));
+      const saved = exportDocument(readCadDocument(FILE), model, options);
+      expect(reopened(saved).get(line.handle)?.color).toEqual(DIC_7);
+      const doc = readCadDocument(saved);
+      const dbcolor = doc.colors?.tryGet('DIC COLOR GUIDE(R)$DIC 7');
+      expect(dbcolor?.color.trueColor).toBe(0xfcc187);
+      // New objects are numbered above every handle the drawing and the engine gave out.
+      expect(Number(dbcolor?.handle)).toBeGreaterThanOrEqual(Number.parseInt(model.handSeed, 16));
+      expect(dbColors(saved).sort()).toEqual(['DIC COLOR GUIDE(R)$DIC 7', 'RAL CLASSIC$RAL 3020']);
+    }
+  });
+
+  it('refuses a colour-book colour a layer holds with another true colour', () => {
+    const model = open();
+    const line = find(model, 'LINE');
+    edit(model, (b) => b.updateEntity(line.id, { color: { ...DIC_7, r: 0 } }));
+    expect(() => exportDocument(readCadDocument(FILE), model, { format: 'dxf' })).toThrow(
+      UnsupportedChangeError,
+    );
   });
 });

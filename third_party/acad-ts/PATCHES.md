@@ -3301,3 +3301,20 @@ R2007 and later write a table, data-map or field value starting with its 93 flag
 A LAYOUT object carries group 1 in two subclasses: AcDbPlotSettings 1 is the page setup name and AcDbLayout 1 is the layout name. The AcDbLayout property map has no group 1, so `_readLayout` passed the layout's group 1 to the PlotSettings map, and `PlotSettings.pageName` ended up holding the layout's name. A layout with a named page setup applied lost it on read, and the writer then saved the layout name as the page setup name. This reads group 1 in the AcDbLayout subclass as `Layout.name`. A test writes a layout with a page setup name (and with none) to ASCII and binary DXF and reads both names back.
 
 </details>
+
+### 0181 — a DXF LAYER loses its colour-book colour name (430)
+
+- **File:** `third_party/acad-ts-patches/0181-dxf-layer-color-book-name.patch`
+- **Touches:** `src/Tables/Layer.ts`, `src/IO/Templates/CadLayerTemplate.ts`, `src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts`
+- **Symptom:** a LAYER's 430 is its true colour's name, `BOOK$COLOR` for a colour-book colour, which AutoCAD keeps on the layer alone with no DBCOLOR (ACadSharp's own samples, R2004–R2018: Layer_color_book, `DIC COLOR GUIDE(R)$DIC 7`). The reader put it in `CadLayerTemplate.trueColorName` and never used it, and the writer never wrote 430, so every DXF save lost the name and the colour came back as a plain true colour.
+- **Fix:** `Layer.trueColorName` holds it; the template sets it on build, and the DXF writer writes 430 after the 420 true colour when the layer has one.
+- **Test:** `packages/io/test/acad-ts-patches.test.ts` → "0181 a DXF LAYER keeps its colour-book colour name (430)" (ASCII and binary DXF; a layer without one reads none, and an index colour writes none).
+- **Upstream status:** PR text drafted below, not yet submitted (owner submits). Upstream suite not rerun with this patch (see top of file).
+
+<details><summary>Upstream PR text</summary>
+
+**Title:** Read and write a DXF LAYER's colour name (430)
+
+A layer whose colour comes from a colour book carries the colour's name in group 430 (`BOOK$COLOR`) after its 420 true colour, and AutoCAD writes no DBCOLOR object for it. The DXF reader stored 430 in `CadLayerTemplate.trueColorName` and dropped it when building the layer, and the writer never wrote 430, so reading and saving a drawing turned every colour-book layer colour into a plain true colour. This adds `Layer.trueColorName`, set from the template, and writes it after 420 when the layer's colour is a true colour. A test writes a layer with a colour-book colour to ASCII and binary DXF and reads the name back.
+
+</details>
