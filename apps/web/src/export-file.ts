@@ -10,6 +10,7 @@ import { spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import {
   EXPORT_MEDIA,
+  EXPORT_PDF_OPTIONS,
   defaultExportArea,
   exportSettings,
   type ExportArea,
@@ -19,6 +20,7 @@ import {
 import {
   plotFile,
   plotPage,
+  type PdfOptions,
   type PlotSettings,
   type PlotSpace,
   type UnderlayPageSource,
@@ -40,6 +42,8 @@ export interface ExportJob {
   readonly dpi?: number | undefined;
   /** Every setting, from -EXPORT's detailed plot configuration (part 5); one space only. */
   readonly settings?: PlotSettings | undefined;
+  /** A PDF's layers, bookmarks and text (M2-60); Save As PDF's defaults when absent. */
+  readonly pdf?: PdfOptions | undefined;
 }
 
 /** What an export needs of the app. */
@@ -94,6 +98,7 @@ export async function exportFile(
     title,
     env.underlayFile,
     env.underlayPage,
+    job.pdf ?? EXPORT_PDF_OPTIONS,
   );
   download(job.file, file.bytes, file.type);
 }
@@ -131,7 +136,7 @@ async function exportLayouts(
     }
   }
   if (type === 'pdf') {
-    const result = publishPdf(plotted, base, env.underlayFile);
+    const result = publishPdf(plotted, base, env.underlayFile, job.pdf ?? EXPORT_PDF_OPTIONS);
     failed.push(...result.failed.map((f) => `${f.sheet}: ${f.message}`));
     if (!result.bytes) throw new Error(failed[0] ?? 'The drawing has no layouts to export.');
     download(name, result.bytes, EXPORT_MEDIA.pdf);

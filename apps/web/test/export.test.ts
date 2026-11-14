@@ -2,6 +2,7 @@
 // space, the file names they suggest and the plot settings each choice exports with.
 import { describe, expect, it } from 'vitest';
 import {
+  EXPORT_PDF_OPTIONS,
   EXPORT_TYPES,
   defaultExportArea,
   exportAreas,
@@ -9,6 +10,7 @@ import {
   exportFileName,
   exportSettings,
   pageSetupOverride,
+  pdfOptionsNote,
   withExportType,
 } from '../src/export';
 import { LAYOUT_PAPER, defaultPlotSettings, type PlotSpace } from '../src/plot';
@@ -174,5 +176,22 @@ describe('Page Setup Override (part 5)', () => {
   it('plots a PNG at the resolution chosen', () => {
     expect(exportSettings(model, 'png', 'extents', undefined, undefined, 300).dpi).toBe(300);
     expect(exportSettings(model, 'png', 'extents').dpi).toBe(150);
+  });
+});
+
+// M2-60: the PDF Options dialog's choices, as AutoCAD's General Documentation preset starts.
+describe('PDF Options', () => {
+  it('starts with layers and bookmarks in and text as text', () => {
+    expect(EXPORT_PDF_OPTIONS).toEqual({ layers: true, bookmarks: true, textAsGeometry: false });
+  });
+
+  it('sums the choices up for the Save As PDF dialog', () => {
+    expect(pdfOptionsNote(EXPORT_PDF_OPTIONS)).toBe('Layers, bookmarks; text as text');
+    expect(pdfOptionsNote({ layers: false, bookmarks: false, textAsGeometry: true })).toBe(
+      'No layers, no bookmarks; text as geometry',
+    );
+    expect(pdfOptionsNote({ layers: true, bookmarks: false, textAsGeometry: false })).toBe(
+      'Layers, no bookmarks; text as text',
+    );
   });
 });

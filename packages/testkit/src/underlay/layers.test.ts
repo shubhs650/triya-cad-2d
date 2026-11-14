@@ -41,4 +41,47 @@ describe('plotting the PDF underlay layers drawing (M2-38 part 2)', () => {
     ]);
     await pdf.cleanup();
   });
+
+  // M2-60: Save As PDF's "Include layer information": the drawing's layers come first, on, and
+  // the underlays' own PDF layers keep their place and visibility after them.
+  it('lists the drawing’s layers before the underlays’ when layer information is included', async () => {
+    const { model } = corpusDrawing(
+      readCadDocument(new Uint8Array(readFileSync(DIR + LAYERS_DXF_NAME))),
+    );
+    const space = [...model.blocks.values()].find((b) => b.name.toUpperCase() === '*MODEL_SPACE')!;
+    const items = plotParts(model, space.handle, { resolver: new PlotResolver(undefined) });
+    const named = [...new Set(items.map((i) => i.layer))].filter((l) => l !== undefined);
+    expect(named.length).toBeGreaterThan(0);
+    const source = new Uint8Array(readFileSync(DIR + LAYERS_PDF_NAME));
+    const doc = new PdfDocument();
+    plotItems(doc.addPage(595, 842), items, {
+      toPaper: paperTransform(1, { x: 0, y: 0 }, { x: -100, y: -200 }),
+      underlays: (u) => (u.fileName.endsWith(LAYERS_PDF_NAME) ? source : undefined),
+      layers: true,
+    });
+    const pdf = await getDocument({ data: doc.bytes(), useWasm: false }).promise;
+    const config = await pdf.getOptionalContentConfig();
+    const groups = [...config].map(([, g]) => [g.name, g.visible]);
+    const sorted = [...named].sort((a, b) =>
+      a.toUpperCase() === b.toUpperCase()
+        ? a < b
+          ? -1
+          : 1
+        : a.toUpperCase() < b.toUpperCase()
+          ? -1
+          : 1,
+    );
+    expect(groups).toEqual([
+      ...sorted.map((n) => [n, true]),
+      ['Walls', true],
+      ['Notes', true],
+      ['Draft', false],
+      ['Walls', false],
+      ['Notes', true],
+      ['Draft', false],
+    ]);
+    // The viewer's layer list follows the written order.
+    expect(config.getOrder()).toHaveLength(groups.length);
+    await pdf.cleanup();
+  });
 });

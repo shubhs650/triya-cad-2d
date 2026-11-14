@@ -41,7 +41,9 @@ export function PageSetupOverrideDialog({
       className="cad-dialog page-setup-override"
       aria-label="Page Setup Override"
       onCancel={(e) => {
+        // Esc closes this dialog only: React hands the event on to the export dialog round it.
         e.preventDefault();
+        e.stopPropagation();
         onCancel();
       }}
       onKeyDown={(e) => {
