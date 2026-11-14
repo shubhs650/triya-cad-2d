@@ -85,6 +85,22 @@ export function currentRows(v: ViewState): ViewRow[] {
   return extentRows(v.center, v.height, v.width);
 }
 
+/** Two corners of a window, in the space's world coordinates. */
+export interface Corners {
+  readonly a: Vec2;
+  readonly b: Vec2;
+}
+
+/** A named view's window in world coordinates (its DXF 10 centre is less its target). */
+export function boundaryOf(v: ViewRecord): Corners {
+  const x = v.center.x + v.target.x;
+  const y = v.center.y + v.target.y;
+  return {
+    a: { x: x - v.width / 2, y: y - v.height / 2 },
+    b: { x: x + v.width / 2, y: y + v.height / 2 },
+  };
+}
+
 /** The view two picked corners frame, in the space shown; undefined when it has no area. */
 export function pickedWindow(
   w: { readonly a: Vec2; readonly b: Vec2 },
@@ -111,6 +127,16 @@ export interface ManagerState {
   /** The view Set Current chose, restored on OK or Apply. */
   readonly current: string | undefined;
   readonly creating: NewViewState | undefined;
+  /**
+   * Edit Boundaries... (part 5): the view whose boundary VIEW asks for at the command line, by
+   * its tree key, and the window picked for it once the dialog shows again.
+   */
+  readonly editing?: { readonly key: string; readonly window?: Corners };
+}
+
+/** Why the dialog closed for VIEW: a window to pick, with the boundary to edit if any. */
+export interface PickRequest {
+  readonly boundary?: Corners;
 }
 
 /**
@@ -121,16 +147,16 @@ export interface ManagerState {
 export const viewManager = (() => {
   let open: number | undefined;
   let kept: { doc: number; block: string; state: ManagerState } | undefined;
-  let done: ((pickWindow: boolean) => void) | undefined;
+  let done: ((pick: PickRequest | false) => void) | undefined;
   const listeners = new Set<() => void>();
   const set = (v: number | undefined) => {
     open = v;
     for (const l of listeners) l();
   };
-  const finish = (pickWindow: boolean) => {
+  const finish = (pick: PickRequest | false) => {
     const d = done;
     done = undefined;
-    d?.(pickWindow);
+    d?.(pick);
   };
   return {
     get: () => open,
@@ -140,13 +166,15 @@ export const viewManager = (() => {
     },
     show(
       doc: number,
-      again: { window?: { a: Vec2; b: Vec2 } | undefined; resume?: boolean } = {},
-    ): Promise<boolean> {
+      again: { window?: Corners | undefined; resume?: boolean } = {},
+    ): Promise<PickRequest | false> {
       finish(false);
       const { window, resume } = again;
       if (resume && kept?.doc === doc) {
-        const creating = kept.state.creating;
-        if (window && creating) {
+        const { creating, editing } = kept.state;
+        if (window && editing) {
+          kept = { ...kept, state: { ...kept.state, editing: { ...editing, window } } };
+        } else if (window && creating) {
           kept = { ...kept, state: { ...kept.state, creating: { ...creating, window } } };
         }
       } else kept = undefined;
@@ -156,11 +184,14 @@ export const viewManager = (() => {
     /** The state to show a space's dialog with again, after Define window. */
     resume: (doc: number, block: string): ManagerState | undefined =>
       kept?.doc === doc && kept.block === block ? kept.state : undefined,
-    /** Define window: hides the dialogs, keeping their state, for VIEW to ask for the corners. */
-    pickWindow(doc: number, block: string, state: ManagerState) {
+    /**
+     * Define window, or Edit Boundaries... with the view's `boundary`: hides the dialogs, keeping
+     * their state, for VIEW to ask for the corners.
+     */
+    pickWindow(doc: number, block: string, state: ManagerState, boundary?: Corners) {
       kept = { doc, block, state };
       set(undefined);
-      finish(true);
+      finish(boundary ? { boundary } : {});
     },
     close() {
       kept = undefined;

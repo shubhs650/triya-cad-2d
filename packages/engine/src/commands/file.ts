@@ -40,11 +40,13 @@
 //
 // -EXPORT (M2-39 part 5) asks for the export at the command line instead: see export-script.ts.
 import type { CommandContext, CommandDef, CommandGenerator } from './command';
+import type { Prompt, PromptAnswer } from './prompt';
 import type { FileAction } from './view/host';
 import { viewRequest } from './view/zoom';
 import { dashPlot } from './plot-script';
 import { dashExport } from './export-script';
 import type { Vec2 } from '../geom/types';
+import type { EntityGeometry } from '../model/types';
 
 function fileCommand(name: string, action: FileAction): CommandDef {
   return {
@@ -89,6 +91,10 @@ export async function* windowDialog(
     if (!reply.ok || !reply.pickWindow) return;
     resume = true;
     window = undefined;
+    if (reply.boundary) {
+      window = yield* editBoundary(ctx, reply.boundary);
+      continue;
+    }
     if (action === 'plot') ctx.message('Specify window for printing');
     const first = yield ctx.prompt.point({ message: 'Specify first corner', escape: true });
     if (first.kind !== 'point') continue;
@@ -101,6 +107,84 @@ export async function* windowDialog(
     if (second.kind !== 'point') continue;
     window = { a, b: second.point };
   }
+}
+
+type Corners = { readonly a: Vec2; readonly b: Vec2 };
+
+/** A window's outline, as the preview draws it. */
+const outline = ({ a, b }: Corners): EntityGeometry => ({
+  kind: 'LWPOLYLINE',
+  closed: true,
+  vertices: [
+    { x: a.x, y: a.y, bulge: 0 },
+    { x: b.x, y: a.y, bulge: 0 },
+    { x: b.x, y: b.y, bulge: 0 },
+    { x: a.x, y: b.y, bulge: 0 },
+  ],
+});
+
+/** How much of a view's size Edit Boundaries shows around it on each side. */
+const BOUNDARY_MARGIN = 0.25;
+
+/**
+ * The View Manager's Edit Boundaries... (M2-47 part 5). AutoCAD 2024 Help, "View Manager Dialog
+ * Box": it "displays the selected view, with the rest of the drawing area displayed in a lighter
+ * color to show the boundaries of the named view", and the drafter picks two corners of a new
+ * boundary as often as wanted until Enter accepts the last. Here the display shows the view with a
+ * quarter of its size around it and its boundary drawn as a preview (the canvas has no lighter
+ * colour for the rest), and the display it was asked from comes back with the dialogs; neither
+ * change is a ZOOM Previous or undo step, as looking at a view while editing it is no zoom. The help
+ * does not word the prompts: "Specify first corner (or press ENTER to accept)" is the most common
+ * drafter reading of it. Esc goes back to the dialog with the boundary unchanged, as Esc at PLOT's
+ * window corners does; so does Enter before any window was picked.
+ */
+async function* editBoundary(
+  ctx: CommandContext,
+  boundary: Corners,
+): AsyncGenerator<Prompt, Corners | undefined, PromptAnswer> {
+  // Quietly: without a canvas to ask, the display is left as it is.
+  const was = await ctx.view.request({ op: 'get' });
+  const shown = was.ok ? was.view : undefined;
+  if (shown && shown.height > 0 && shown.width > 0) {
+    const scale = 1 + 2 * BOUNDARY_MARGIN;
+    const w = Math.abs(boundary.b.x - boundary.a.x) * scale;
+    const h = Math.abs(boundary.b.y - boundary.a.y) * scale;
+    await ctx.view.request({
+      op: 'glance',
+      view: {
+        center: { x: (boundary.a.x + boundary.b.x) / 2, y: (boundary.a.y + boundary.b.y) / 2 },
+        // The window fitted into the canvas's proportions.
+        height: Math.max(h, (w * shown.height) / shown.width),
+      },
+    });
+  }
+  let picked: Corners | undefined;
+  for (;;) {
+    ctx.preview([outline(picked ?? boundary)]);
+    const first = yield ctx.prompt.point({
+      message: 'Specify first corner (or press ENTER to accept)',
+      escape: true,
+    });
+    if (first.kind === 'point') {
+      const a = first.point;
+      const second = yield ctx.prompt.point({
+        message: 'Specify opposite corner',
+        rubberBand: { from: a, box: true },
+        escape: true,
+      });
+      if (second.kind === 'point') {
+        picked = { a, b: second.point };
+        continue;
+      }
+      picked = undefined;
+    } else if (first.kind !== 'enter') picked = undefined;
+    break;
+  }
+  ctx.preview([]);
+  if (shown) {
+    await ctx.view.request({ op: 'glance', view: { center: shown.center, height: shown.height } });
+  }
+  return picked;
 }
 
 /** EXPORT and EXPORTPDF: the Export Data or Save As PDF dialog; -EXPORT asks at the command line. */

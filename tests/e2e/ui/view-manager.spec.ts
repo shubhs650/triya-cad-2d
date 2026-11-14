@@ -1,7 +1,8 @@
 // M2-47 part 2: the View Manager, VIEW's dialog (AutoCAD 2024's View Manager and New View / Shot
 // Properties), on clockwise_arcs_hatch.dxf. New... saves the view shown and a window picked at the
 // command line (Define window), Set Current and OK restore a view, the Name row renames one and
-// Delete removes one; each is a VIEW undo step. Esc cancels, Enter is OK.
+// Delete removes one; each is a VIEW undo step. Esc cancels, Enter is OK. Part 5: Edit
+// Boundaries... shows the view and takes its new boundary at the command line.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
 import { DXF, activeCanvas, expectShown, openWithPicker, worldAt } from '../app/page';
@@ -168,4 +169,79 @@ test('the View Manager saves, restores, renames and deletes named views', async 
   await command(page, 'U', 'Command:');
   await command(page, 'U', 'Command:');
   expect((await viewNames(page)).sort()).toEqual(['Corner', 'Detail A']);
+});
+
+test('Edit Boundaries gives a view the window picked at the command line', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const before = await shown(page);
+
+  // A view of the left of the plate: the window -290,540 to -240,600.
+  await command(page, 'VIEW', '');
+  await expect(manager(page).getByRole('button', { name: 'Edit Boundaries...' })).toBeDisabled();
+  await manager(page).getByRole('button', { name: 'New...' }).click();
+  await newView(page).getByLabel('View name').fill('Plate');
+  await newView(page).getByRole('radio', { name: 'Define window' }).click();
+  await expect(prompt(page)).toHaveText('Specify first corner:');
+  await page.keyboard.type('-290,540');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('-240,600');
+  await page.keyboard.press('Enter');
+  await newView(page).getByRole('button', { name: 'OK' }).click();
+  await expect(newView(page)).toBeHidden();
+  const props = manager(page).getByRole('table', { name: 'View properties' });
+  await expect(props.getByRole('row', { name: /Center X/ })).toContainText('-265.0000');
+  await page.screenshot({ path: test.info().outputPath('edit-boundaries-1-before.png') });
+
+  // Edit Boundaries: the dialog goes, the canvas shows the view with room around it, and VIEW
+  // takes windows until Enter.
+  await manager(page).getByRole('button', { name: 'Edit Boundaries...' }).click();
+  await expect(manager(page)).toBeHidden();
+  await expect(prompt(page)).toHaveText('Specify first corner (or press ENTER to accept):');
+  const editing = await shown(page);
+  expect(Math.abs(editing.x - -265)).toBeLessThanOrEqual(2 * Math.abs(editing.unit));
+  expect(Math.abs(editing.y - 570)).toBeLessThanOrEqual(2 * Math.abs(editing.unit));
+  expect(editing.height).toBeGreaterThanOrEqual(90 - 90 / 100);
+  // At the command line, where a second point is absolute (Dynamic Input's would be relative).
+  await page.getByLabel('Command', { exact: true }).click();
+  await page.keyboard.type('-280,560');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Specify opposite corner:');
+  await page.keyboard.type('-250,595');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Specify first corner (or press ENTER to accept):');
+  await page.screenshot({ path: test.info().outputPath('edit-boundaries-2-picked.png') });
+  await page.keyboard.press('Enter');
+
+  // The dialog again, the view given the window, the display as it was.
+  await expect(manager(page)).toBeVisible();
+  await expect(tree(page).getByRole('treeitem', { name: 'Plate' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await expect(props.getByRole('row', { name: /Center X/ })).toContainText('-265.0000');
+  await expect(props.getByRole('row', { name: /Center Y/ })).toContainText('577.5000');
+  await expect(props.getByRole('row', { name: /Width/ })).toContainText('30.0000');
+  await expect(props.getByRole('row', { name: /Height/ })).toContainText('35.0000');
+  await page.screenshot({ path: test.info().outputPath('edit-boundaries-3-after.png') });
+
+  // Esc at the corners changes nothing.
+  await manager(page).getByRole('button', { name: 'Edit Boundaries...' }).click();
+  await expect(prompt(page)).toHaveText('Specify first corner (or press ENTER to accept):');
+  await page.keyboard.press('Escape');
+  await expect(manager(page)).toBeVisible();
+  await expect(props.getByRole('row', { name: /Width/ })).toContainText('30.0000');
+  await page.keyboard.press('Escape');
+  await expect(manager(page)).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+  sameView(await shown(page), before);
+
+  // The edit was a VIEW undo step.
+  await command(page, 'U', 'Command:');
+  await command(page, 'V', '');
+  await tree(page).getByRole('treeitem', { name: 'Plate' }).click();
+  await expect(props.getByRole('row', { name: /Center Y/ })).toContainText('570.0000');
+  await expect(props.getByRole('row', { name: /Width/ })).toContainText('50.0000');
 });

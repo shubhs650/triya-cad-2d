@@ -11,8 +11,13 @@
 // New... opens New View / Shot Properties: View name and Boundary, Current display or Define
 // window. Define window hides both dialogs and VIEW asks for the corners at the command line, then
 // shows them again with that window (as PLOT's Window< does). A name the drawing has asks whether
-// to replace that view first. Update Layers and Edit Boundaries... wait (layer snapshots are
-// layer states, M5-07); Preset Views are 3D.
+// to replace that view first.
+//
+// Edit Boundaries... (part 5) hides the dialog in the same way and VIEW shows the selected view
+// and asks for its new boundary at the command line (`editBoundary` in the engine's file.ts); the
+// window accepted with Enter becomes the view's, a VIEW undo step at once as New... is. Only a
+// view Set Current could restore can be edited: one of the space shown, looking straight down.
+// Update Layers waits (layer snapshots are layer states, M5-07); Preset Views are 3D.
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
 import { validViewName, type ChangeSet, type ViewRecord, type ViewState } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
@@ -23,6 +28,7 @@ import type { OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { drawingViews } from './saved-views';
 import {
+  boundaryOf,
   currentRows,
   isPaperView,
   pickedWindow,
@@ -65,8 +71,9 @@ function ManagerBody({
   const [state, setState] = useState<ManagerState>(
     () =>
       // Esc at Define window's corners with no window picked before goes back to Current display.
+      // Edit Boundaries' window is taken by the effect below, once.
       (kept && {
-        ...kept,
+        ...withoutEditing(kept),
         creating: kept.creating && {
           ...kept.creating,
           boundary: kept.creating.window ? kept.creating.boundary : 'display',
@@ -86,6 +93,8 @@ function ManagerBody({
     setFocusKey(undefined);
   }, [focusKey]);
   const set = (p: Partial<ManagerState>) => setState((s) => ({ ...s, ...p }));
+  // Shown again after Edit Boundaries: the window accepted becomes the view's boundary.
+  const [boundaryEdit] = useState(() => kept?.editing);
 
   const ctl = controllerOf(doc.id, doc.block);
   const inLayout = doc.block !== doc.opened.modelSpace;
@@ -146,6 +155,23 @@ function ManagerBody({
         current: state.current === state.selected ? key : state.current,
       });
     }
+  };
+
+  useEffect(() => {
+    const v = boundaryEdit?.window && byKey.get(boundaryEdit.key);
+    const view = v && boundaryEdit.window && pickedWindow(boundaryEdit.window, isPaperView(v));
+    if (v && view) void run({ kind: 'view', name: v.name, view });
+    // Once, as the dialog shows again.
+  }, []);
+
+  const editBoundaries = () => {
+    if (!selected) return;
+    viewManager.pickWindow(
+      doc.id,
+      doc.block,
+      { ...state, editing: { key: state.selected } },
+      boundaryOf(selected),
+    );
   };
 
   const ok = () => {
@@ -270,6 +296,14 @@ function ManagerBody({
           >
             New...
           </button>
+          <button
+            type="button"
+            disabled={why !== undefined}
+            title={selected ? why : undefined}
+            onClick={editBoundaries}
+          >
+            Edit Boundaries...
+          </button>
           <button type="button" disabled={!selected} onClick={() => void remove()}>
             Delete
           </button>
@@ -314,6 +348,8 @@ function ManagerBody({
     </Modal>
   );
 }
+
+const withoutEditing = ({ editing: _, ...rest }: ManagerState): ManagerState => rest;
 
 const treeId = (key: string) =>
   `view-manager-${key.replace(/[^A-Za-z0-9_-]/g, (c) => `_${c.charCodeAt(0)}`)}`;
