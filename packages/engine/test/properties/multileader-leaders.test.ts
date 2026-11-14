@@ -171,12 +171,18 @@ describe('a multileader’s Leaders rows (M2-35 part 12)', () => {
     ]);
     expect(rowOf(one, 'Leader lineweight')).toMatchObject({ kind: 'choice', value: 'ByBlock' });
     expect(rowOf(one, 'Arrowhead')).toMatchObject({ kind: 'choice', value: '' });
-    // Closed filled, then the drawing's arrowhead blocks by AutoCAD's names; not other blocks.
-    expect(rowOf(one, 'Arrowhead')?.options).toEqual([
+    // Closed filled, then AutoCAD's arrowheads: the drawing's blocks by handle, the ones it
+    // lacks by block name; not other blocks.
+    const arrows = rowOf(one, 'Arrowhead')?.options;
+    expect(arrows?.slice(0, 4)).toEqual([
       { value: '', label: 'Closed filled' },
+      { value: '_CLOSEDBLANK', label: 'Closed blank' },
+      { value: '_CLOSED', label: 'Closed' },
       { value: DOT, label: 'Dot' },
-      { value: OPEN30, label: 'Open 30' },
     ]);
+    expect(arrows?.find((o) => o.label === 'Open 30')?.value).toBe(OPEN30);
+    expect(arrows).toHaveLength(20);
+    expect(arrows?.some((o) => o.label === 'TITLE')).toBe(false);
     expect(rowOf(one, 'Arrowhead size')).toMatchObject({ kind: 'distance', value: 4 });
     expect(rowOf(one, 'Horz landing')).toMatchObject({ kind: 'choice', value: 'yes' });
     expect(rowOf(one, 'Landing distance')).toMatchObject({ kind: 'distance', value: 8 });
@@ -263,6 +269,26 @@ describe('a multileader’s Leaders rows (M2-35 part 12)', () => {
     expect(s.log.at(-1)).toBe('Invalid input.');
     await s.set('arrowhead', 'FFFF');
     expect(s.log.at(-1)).toBe('Invalid input.');
+  });
+
+  it('authors an arrowhead block the drawing lacks when it is chosen (M2-35 part 22)', async () => {
+    const s = setup([entityInit('60', textLeader())]);
+    await s.bus.selectAll();
+    await s.set('arrowhead', '_BOXFILLED');
+    const block = [...s.model.blocks.values()].find((b) => b.name === '_BOXFILLED')!;
+    expect(s.leader('60').arrowhead).toBe(block.handle);
+    expect(bit(s.leader('60'), 8)).toBe(true);
+    const kinds = s.model.blockEntities(block.handle).map((id) => s.model.entity(id)!.geom.kind);
+    expect(kinds).toEqual(['SOLID', 'LINE']);
+    expect(s.log).toEqual([]);
+    await s.bus.submit('U');
+    expect(s.leader('60').arrowhead).toBeUndefined();
+    expect(s.model.blocks.has(block.handle)).toBe(false);
+    // A drawing's block matched without case: the drawing's `_Open30`, not a new `_OPEN30`.
+    await s.bus.selectAll();
+    await s.set('arrowhead', '_OPEN30');
+    expect(s.leader('60').arrowhead).toBe(OPEN30);
+    expect([...s.model.blocks.values()].filter((b) => /^_open30$/i.test(b.name))).toHaveLength(1);
   });
 
   it('refuses closed filled where the style’s arrowhead would draw instead', async () => {
