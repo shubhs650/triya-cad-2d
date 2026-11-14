@@ -166,7 +166,7 @@ Load app → go offline (Playwright route abort) → run a scripted session cove
 
 Each command has a test file that drives it through the `PromptBus` with typed answers and asserts the `ChangeSet` (entity types, geometry within tolerance, properties, handles allocated). Tests encode AutoCAD behaviour; when behaviour is ambiguous, the test documents the chosen interpretation with a comment linking the AutoCAD reference.
 
-A Playwright test that types a command waits on what the drafter sees change (the drawing, the status bar's coordinates, a history line), never on the prompt alone: keys typed ahead reach the engine worker later, and until it reads them the command line still shows the prompt from before them, so `Command:` is visible before the command even started (M2-52).
+A Playwright test that types a command waits on what the drafter sees change (the drawing, the status bar's coordinates, a history line), never on the prompt alone: keys typed ahead reach the engine worker later, and until it reads them the command line still shows the prompt from before them, so `Command:` is visible before the command even started (M2-52). Where the prompt after an input reads the same as the one before it, wait until the command line's `data-reading` attribute clears: the engine has then read every input sent and shows the prompt they lead to.
 
 ### 7.1 Geometry kernel tests
 

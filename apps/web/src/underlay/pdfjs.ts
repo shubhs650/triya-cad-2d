@@ -5,7 +5,9 @@
 // stay off.
 //
 // Snap geometry (M2-22): pdf.js parses the page into its operator list in its worker, and the
-// painted paths are read from that list (render's `underlaySnapFromOperatorList`).
+// painted paths are read from that list (render's `underlaySnapFromOperatorList`), each with
+// the optional content it is drawn in, so osnap leaves out the layers an underlay hides
+// (M2-56 part 3).
 import type { Box } from '@triya/engine';
 import { underlaySnapFromOperatorList, type RasterPixels } from '@triya/render';
 import type { OpenPdf, PdfFile } from './pages';
@@ -99,8 +101,11 @@ export const openPdf: OpenPdf = async (bytes) => {
     },
     async snapGeometry(n) {
       const p = await page(n);
-      const list = await p.getOperatorList();
-      return underlaySnapFromOperatorList(list, lib.OPS, p.getViewport({ scale: 1 }));
+      const [list, config] = await Promise.all([
+        p.getOperatorList(),
+        doc.getOptionalContentConfig(),
+      ]);
+      return underlaySnapFromOperatorList(list, lib.OPS, p.getViewport({ scale: 1 }), config);
     },
   };
   return file;

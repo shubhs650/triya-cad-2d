@@ -6,9 +6,21 @@
 // nothing and offer nothing; text, images, shadings and annotations' appearances are skipped,
 // as AutoCAD snaps to a PDF's geometry, not its raster content.
 //
+// Each path keeps the optional content it is drawn in (M2-56 part 3): pdf.js brackets content
+// under /OC (a `BDC` in the content stream, a form XObject's or image's /OC entry) with
+// `beginMarkedContentProps('OC', properties)` … `endMarkedContent`, other marked content with
+// `beginMarkedContent(Props)` too, so a stack of those gives every path its levels, judged
+// against the document's groups (its `OptionalContentConfig`) when osnap runs.
+//
 // pdf.js itself is the app's (apps/web/src/underlay/pdfjs.ts), so this takes its `OPS` codes
 // and runs in Node tests against the same operator lists.
-import { UnderlaySnapBuilder, type UnderlaySnapPage } from '@triya/engine';
+import {
+  UnderlaySnapBuilder,
+  type UnderlayContent,
+  type UnderlaySnapGroup,
+  type UnderlaySnapPage,
+  type UnderlayVisibility,
+} from '@triya/engine';
 
 /** The pdf.js `OPS` codes this reads (pdfjs-dist 6.4 `OPS`). */
 export interface PdfOperatorCodes {
@@ -21,7 +33,18 @@ export interface PdfOperatorCodes {
   readonly paintFormXObjectEnd: number;
   readonly beginAnnotation: number;
   readonly endAnnotation: number;
+  readonly beginMarkedContent: number;
+  readonly beginMarkedContentProps: number;
+  readonly endMarkedContent: number;
 }
+
+/**
+ * The document's optional content groups as pdf.js's `OptionalContentConfig` iterates them
+ * (`getOptionalContentConfig()`): id, then the group with its name and default visibility.
+ */
+export type PdfOptionalContent = Iterable<
+  readonly [string, { readonly name: unknown; readonly visible: boolean }]
+>;
 
 /** What `getOperatorList` resolves to. */
 export interface PdfOperatorList {
@@ -66,13 +89,64 @@ const matrix = (v: unknown): M | undefined => {
   return a.every(Number.isFinite) ? (a as unknown as M) : undefined;
 };
 
-/** A page's painted paths as snap geometry, in page inches from its displayed lower-left. */
+/**
+ * pdf.js's marked-content properties for `OC` as engine content, or undefined for none or
+ * properties it could not read (which pdf.js shows).
+ */
+function content(v: unknown): UnderlayContent | undefined {
+  if (!v || typeof v !== 'object') return undefined;
+  const o = v as Record<string, unknown>;
+  const str = (x: unknown) => (typeof x === 'string' ? x : undefined);
+  if (o['type'] === 'OCG') {
+    const id = str(o['id']);
+    return id === undefined ? undefined : { type: 'OCG', id };
+  }
+  if (o['type'] !== 'OCMD') return undefined;
+  const id = str(o['id']);
+  const ids = Array.isArray(o['ids']) ? o['ids'].filter((x) => typeof x === 'string') : undefined;
+  const expression = Array.isArray(o['expression']) ? visibility(o['expression']) : undefined;
+  const policy = str(o['policy']);
+  return {
+    type: 'OCMD',
+    ...(id !== undefined && { id }),
+    ...(ids && { ids }),
+    ...(policy !== undefined && { policy }),
+    ...(expression && { expression }),
+  };
+}
+
+function visibility(e: readonly unknown[]): UnderlayVisibility {
+  const out: (string | UnderlayVisibility)[] = [];
+  for (const x of e) {
+    if (typeof x === 'string') out.push(x);
+    else if (Array.isArray(x)) out.push(visibility(x as unknown[]));
+  }
+  return out;
+}
+
+/** The document's groups as engine groups. */
+function groupsOf(config: PdfOptionalContent): UnderlaySnapGroup[] {
+  const out: UnderlaySnapGroup[] = [];
+  for (const [id, g] of config)
+    out.push({ id, name: typeof g.name === 'string' ? g.name : null, on: g.visible !== false });
+  return out;
+}
+
+/**
+ * A page's painted paths as snap geometry, in page inches from its displayed lower-left; with
+ * the document's optional content, each path keeps the layers it is drawn in.
+ */
 export function underlaySnapFromOperatorList(
   list: PdfOperatorList,
   ops: PdfOperatorCodes,
   viewport: PdfPageViewport,
+  optionalContent?: PdfOptionalContent,
 ): UnderlaySnapPage {
   const b = new UnderlaySnapBuilder();
+  if (optionalContent) b.groups(groupsOf(optionalContent));
+  // Marked content open around the current operator: the `OC` levels, undefined for others.
+  const marked: (UnderlayContent | undefined)[] = [];
+  const within = () => b.within(marked.filter((c): c is UnderlayContent => c !== undefined));
   const view = matrix(viewport.transform) ?? IDENTITY;
   // Viewport points (y down from the top) → page inches (y up from the bottom).
   const inches: M = [1 / POINTS, 0, 0, -1 / POINTS, 0, viewport.height / POINTS];
@@ -91,7 +165,14 @@ export function underlaySnapFromOperatorList(
     const args = list.argsArray[i] as readonly unknown[] | null;
     if (fn === ops.beginAnnotation) annotation++;
     else if (fn === ops.endAnnotation) annotation = Math.max(0, annotation - 1);
-    else if (fn === ops.save) stack.push(ctm);
+    else if (fn === ops.beginMarkedContent) marked.push(undefined);
+    else if (fn === ops.beginMarkedContentProps) {
+      marked.push(args?.[0] === 'OC' ? content(args[1]) : undefined);
+      within();
+    } else if (fn === ops.endMarkedContent) {
+      marked.pop();
+      within();
+    } else if (fn === ops.save) stack.push(ctm);
     else if (fn === ops.restore) set(stack.pop() ?? IDENTITY);
     else if (fn === ops.transform) {
       const m = matrix(args);
