@@ -116,6 +116,29 @@ describe('layerRows', () => {
     });
   });
 
+  it("names a colour-book colour by its colour's name, as the manager's Color column does", () => {
+    // M2-35 part 19: io reads a layer's DXF 430 (acadsharp's Layer_color_book).
+    const booked: DocumentInit = {
+      ...init,
+      tables: {
+        ...init.tables,
+        layers: [
+          layer('13', 'Layer_color_book', {
+            color: {
+              kind: 'rgb',
+              r: 252,
+              g: 193,
+              b: 135,
+              bookName: 'DIC COLOR GUIDE(R)',
+              colorName: 'DIC 7',
+            },
+          }),
+        ],
+      },
+    };
+    expect(layerRows(booked, [])[0]).toMatchObject({ color: { label: 'DIC 7', css: '#fcc187' } });
+  });
+
   it('applies the changes the engine made since the drawing opened', () => {
     const before = init.tables!.layers![1]!;
     const off: ChangeSet = {

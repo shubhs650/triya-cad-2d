@@ -11,7 +11,9 @@ import type { CadDocument, CadObject } from '@node-projects/acad-ts';
 import {
   ACadVersion,
   BlockRecord,
+  BookColor,
   CadDictionary,
+  Color as AcadColor,
   CadDictionaryWithDefault,
   Entity as AcadEntity,
   LineType,
@@ -384,6 +386,42 @@ function plotStyleNames(
   return { names };
 }
 
+/**
+ * The colour-book colours only the drawing's layers hold. AutoCAD names a layer's by the layer's
+ * own 430, with no DBCOLOR, and an object's by a DBCOLOR in ACAD_COLOR, which it adds when an
+ * object takes the colour; so does the save, numbered above every handle given out (M2-35 part
+ * 19). `get` makes the DBCOLOR without adding it, as the checks ask before anything is written.
+ */
+function layerBookColors(original: CadDocument, model: DocumentModel, allocate: () => number) {
+  const held = new Map<string, BookColor>();
+  const kept = new Set<BookColor>();
+  return {
+    get(name: string): BookColor | undefined {
+      const key = name.toUpperCase();
+      const made = held.get(key);
+      if (made || !original.colors) return made;
+      for (const l of model.tables.layers.values()) {
+        const c = l.color;
+        if (c.kind !== 'rgb' || c.bookName === undefined || !c.colorName) continue;
+        const full = `${c.bookName}$${c.colorName}`;
+        if (full.toUpperCase() !== key) continue;
+        const book = new BookColor();
+        book.name = full;
+        book.color = new AcadColor(c.r, c.g, c.b);
+        held.set(key, book);
+        return book;
+      }
+      return undefined;
+    },
+    keep(book: BookColor): void {
+      if (kept.has(book) || ![...held.values()].includes(book)) return;
+      kept.add(book);
+      book.handle = allocate();
+      original.colors!.add(book);
+    },
+  };
+}
+
 export interface TriyaToAcadOptions {
   /**
    * The version the save writes, when not the one `original` was read in (M2-13: Save As
@@ -427,6 +465,7 @@ export function triyaToAcad(
   const inBase = new Set((base.entities ?? []).map((e) => e.handle));
   const adding = new Map<Handle, string>();
   for (const e of model.entities()) if (!inBase.has(e.handle)) adding.set(e.handle, e.type);
+  const layerBooks = layerBookColors(original, model, () => next++);
   const r = {
     store,
     adding,
@@ -437,7 +476,8 @@ export function triyaToAcad(
     version: docHeader?.version,
     format,
     plotStyles,
-    bookColor: (name) => original.colors?.tryGet(name) ?? undefined,
+    bookColor: (name) => original.colors?.tryGet(name) ?? layerBooks.get(name),
+    keepBookColor: (book) => layerBooks.keep(book),
   } satisfies Resolver;
   // Records first: entities and the header may name one the same save adds, a linetype's text
   // a text style, a dimension style a text style or linetype, a layer a linetype or plot style.

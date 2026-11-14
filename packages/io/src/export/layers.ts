@@ -118,8 +118,6 @@ function layerProblems(
   if (changed('viewportOverrides')) out.push('viewport layer overrides change');
   if (changed('color') && (a.color.kind === 'byLayer' || a.color.kind === 'byBlock'))
     out.push(`a layer colour cannot be ${a.color.kind}`);
-  if (changed('color') && a.color.kind === 'rgb' && a.color.bookName !== undefined)
-    out.push('colour-book colours');
   if (changed('linetype') && !resolve(r, a.linetype, LineType))
     out.push(`linetype ${a.linetype} does not exist`);
   if (changed('lineweight') && (a.lineweight === 'ByLayer' || a.lineweight === 'ByBlock'))
@@ -216,7 +214,13 @@ function writeLayer(
     const others = (a.flags ?? 0) & ~(FROZEN | LOCKED);
     l.flags = (others | (a.frozen ? FROZEN : 0) | (a.locked ? LOCKED : 0)) as never;
   }
-  if (changed('color')) l.color = acadColor(a.color);
+  if (changed('color')) {
+    l.color = acadColor(a.color);
+    // A colour-book colour is named by the layer's own 430, with no DBCOLOR (M2-35 part 19).
+    const c = a.color;
+    l.trueColorName =
+      c.kind === 'rgb' && c.bookName !== undefined ? `${c.bookName}$${c.colorName ?? ''}` : null;
+  }
   if (changed('on')) l.isOn = a.on;
   if (changed('linetype')) l.lineType = resolve(r, a.linetype, LineType)!;
   if (changed('lineweight')) l.lineWeight = acadLineweight(a.lineweight);
