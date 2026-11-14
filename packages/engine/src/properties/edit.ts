@@ -32,6 +32,7 @@ import {
   multiLeadersToMeasure,
   type MultiLeaderWidths,
 } from './multileader';
+import { multiLeaderLeaderChange } from './multileader-leaders';
 import type { GeneralProps } from './sheet';
 import { DIMVAR_DEFAULTS, DIMVAR_ROWS, dimensionUnits, rowVars } from './dimension';
 import {
@@ -172,7 +173,8 @@ function typeRowChange(
   const g = e.geom;
   if (g.kind === 'HATCH') return hatchChange(e.id, g, key, v, patterns);
   if (g.kind === 'MULTILEADER') {
-    const c = multiLeaderTextChange(model, e, key, v, widths);
+    const c =
+      multiLeaderLeaderChange(model, e, key, v) ?? multiLeaderTextChange(model, e, key, v, widths);
     return c === undefined || c === 'invalid' || 'refuse' in c ? c : geomPatch(c);
   }
   if (key === 'style' && (g.kind === 'TEXT' || g.kind === 'MTEXT')) {

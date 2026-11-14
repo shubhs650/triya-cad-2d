@@ -8,7 +8,10 @@
 // (`_TagCircle`, and `_DetailCallout` content first), and TEXTEDIT edits the first one's text.
 // M2-35 part 11 sets the first one's Text rows as the Properties palette does (Justify Right, a
 // text height, the drawing's last text style; `applyPropertyEdit` with the widths the canvas
-// measures), and the read-back text keeps its style, height, attachment and alignment. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
+// measures), and the read-back text keeps its style, height, attachment and alignment. M2-35
+// part 12 sets its Leaders rows (colour, lineweight, arrowhead size, landing distance, and a
+// linetype and arrowhead block where the drawing has one) and makes the next, a spline without a
+// landing, straight with one; the values and their override flags read back. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
 // each multileader draws the same parts (`multiLeaderParts`: lines, landings, arrowheads, text,
 // block) as before the save. With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit
 // as the file's `mleader` save.
@@ -33,6 +36,7 @@ import {
   builtinCommands,
   multiLeaderParts,
   multiLeaderTextsToMeasure,
+  propertySheet,
   type Entity,
   type MTextGeometry,
   type MultiLeaderGeometry,
@@ -187,11 +191,36 @@ describe('MLEADER on the public corpus', () => {
       palette({ key: 'height', value: 7 });
       if (lastStyle !== (model.entity(firstLeader.id)!.geom as MultiLeaderGeometry).text!.style)
         palette({ key: 'style', value: lastStyle });
+      // M2-35 part 12: its Leaders rows, on both of its branches.
+      const leaderRows = propertySheet(model, [firstLeader.id]).sections.find(
+        (x) => x.title === 'Leaders',
+      )!.rows;
+      const optionsOf = (key: string) => leaderRows.find((r) => r.key === key)!.options!;
+      const dashed = optionsOf('leaderLinetype').find((o) => !/^By(Layer|Block)$/.test(o.label));
+      const arrow = optionsOf('arrowhead').find((o) => o.value !== '');
+      palette({ key: 'leaderColor', value: 'aci:1' });
+      palette({ key: 'leaderLineweight', value: '35' });
+      palette({ key: 'arrowheadSize', value: 3.5 });
+      palette({ key: 'landingDistance', value: 5 });
+      if (dashed) palette({ key: 'leaderLinetype', value: dashed.value });
+      if (arrow) palette({ key: 'arrowhead', value: arrow.value });
       const edited = model.entity(firstLeader.id)!.geom as MultiLeaderGeometry;
       expect(edited.text).toMatchObject({ attachment: 3, height: 7, style: lastStyle });
+      expect(edited).toMatchObject({ lineweight: 35, arrowheadSize: 3.5, doglegLength: 5 });
       const added = [...model.entities()].filter(
         (e) => !before.has(e.id) && e.geom.kind === 'MULTILEADER',
       );
+      // The next one, a spline without a landing (MLEADER's options), becomes straight with one.
+      const second = added[1]!;
+      expect(second.geom).toMatchObject({ pathType: 2, dogleg: false });
+      const leaders = (edit: PropertyEdit) => {
+        const b = new ChangeSetBuilder(model);
+        const report = applyPropertyEdit(b, model, [model.entity(second.id)!], edit);
+        expect(report, `${f.path} ${edit.key}`).toMatchObject({ changed: 1, refused: new Map() });
+        model.apply(b.build());
+      };
+      leaders({ key: 'leaderType', value: '1' });
+      leaders({ key: 'horzLanding', value: 'yes' });
       // The built-in blocks: definitions with their parts, the multileaders' attribute values.
       const builtins = ['_TagCircle', '_DetailCallout'].map((n) =>
         [...model.blocks.values()].find((b) => b.name === n)!,
@@ -225,13 +254,27 @@ describe('MLEADER on the public corpus', () => {
         const r = back.entityByHandle(e.handle) as Entity;
         expect(r, `MULTILEADER ${e.handle}`).toBeDefined();
         expect(r.type).toBe('MULTILEADER');
-        expect(partsOf(back, r), `MULTILEADER ${e.handle}`).toEqual(partsOf(model, e));
+        // As drawn now: the palette edited the second one after `added` was listed.
+        expect(partsOf(back, r), `MULTILEADER ${e.handle}`).toEqual(
+          partsOf(model, model.entity(e.id)!),
+        );
         expect((r.geom as MultiLeaderGeometry).style).toBe((e.geom as MultiLeaderGeometry).style);
       }
       const firstBack = back.entityByHandle(firstLeader.handle)!.geom as MultiLeaderGeometry;
       expect(firstBack.text).toMatchObject({ attachment: 3, height: 7, style: lastStyle });
       expect(firstBack.textAlignment).toBe(2);
       expect(firstBack.overrideFlags).toBe(edited.overrideFlags);
+      expect(firstBack).toMatchObject({
+        lineColor: { kind: 'aci', index: 1 },
+        lineweight: 35,
+        arrowheadSize: 3.5,
+        doglegLength: 5,
+        ...(dashed && { linetype: dashed.value }),
+        ...(arrow && { arrowhead: arrow.value }),
+      });
+      expect(firstBack.branches.map((b) => b.doglegLength)).toEqual([5, 5]);
+      const secondBack = back.entityByHandle(second.handle)!.geom as MultiLeaderGeometry;
+      expect(secondBack).toMatchObject({ pathType: 1, dogleg: true, landing: true });
       // The built-in blocks come back with what they draw and their attribute definitions.
       for (const b of builtins) {
         const kinds = (m: DocumentModel, h: string) =>
