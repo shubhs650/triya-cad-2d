@@ -9,7 +9,14 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
 import { fontBytes, testFont } from '../../../packages/text/test/ttf/fonts';
-import { activeCanvas, expectShown, inkWeight, openWithDrop, openWithPicker } from '../app/page';
+import {
+  activeCanvas,
+  expectShown,
+  inkWeight,
+  openWithDrop,
+  openWithPicker,
+  enterCommand,
+} from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -40,15 +47,6 @@ async function settledWeight(page: Page): Promise<number> {
   return now;
 }
 
-async function command(page: Page, text: string): Promise<void> {
-  const input = page.getByLabel('Command', { exact: true });
-  // A fill made while the engine still reads the input before replaces that input's text,
-  // whose Enter type-ahead holds (M2-71): -PLOT lost a `Y` in CI (#349). Wait for it.
-  await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
-  await input.fill(text);
-  await input.press('Enter');
-}
-
 async function readPdf(d: Download) {
   return pdfSummary(new Uint8Array(readFileSync((await d.path())!)));
 }
@@ -76,7 +74,7 @@ test('Save As PDF’s Options choose the PDF’s layers, bookmarks and text', as
   await expect.poll(() => inkWeight(page), { timeout: 15_000 }).toBeGreaterThan(standIn + FILLED);
 
   await activeCanvas(page).click({ position: { x: 5, y: 5 } });
-  await command(page, 'EXPORTPDF');
+  await enterCommand(page, 'EXPORTPDF');
   const d = page.getByRole('dialog', { name: 'Save As PDF' });
   await expect(d).toBeVisible();
   // AutoCAD's General Documentation preset: layers and bookmarks in, text as text.
@@ -88,7 +86,7 @@ test('Save As PDF’s Options choose the PDF’s layers, bookmarks and text', as
   expect(first.text).toBe(Array(8).fill('TEXT').join(' '));
   expect(first.fonts).toBe(true);
 
-  await command(page, 'EXPORTPDF');
+  await enterCommand(page, 'EXPORTPDF');
   await expect(d).toBeVisible();
   await d.getByRole('button', { name: 'Options...' }).click();
   const options = page.getByRole('dialog', { name: 'PDF Options' });
@@ -128,7 +126,7 @@ test('Save As PDF’s Options choose the PDF’s layers, bookmarks and text', as
   expect(second.paths).toBeGreaterThan(first.paths);
 
   // The choices stay for the session.
-  await command(page, 'EXPORTPDF');
+  await enterCommand(page, 'EXPORTPDF');
   await expect(d.getByTestId('pdf-options-note')).toHaveText(
     'No layers, no bookmarks; text as geometry',
   );

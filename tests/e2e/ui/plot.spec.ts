@@ -22,6 +22,7 @@ import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
 import {
   DWG,
   activeCanvas,
+  enterCommand,
   expectDrawn,
   expectShown,
   ink,
@@ -104,9 +105,7 @@ test('PLOT on a layout plots its sheet on the paper of its page setup', async ({
   await tabs.nth(1).click();
   await expect(page.getByTestId('space')).toHaveText('PAPER');
   await expect.poll(() => paperPixels(page), { timeout: 15_000 }).toBeGreaterThan(50_000);
-  const input = page.getByLabel('Command', { exact: true });
-  await input.fill('PLOT');
-  await input.press('Enter');
+  await enterCommand(page, 'PLOT');
   const d = dialog(page);
   await expect(d.getByRole('heading')).toHaveText('Plot - Layout1');
   await expect(d.getByLabel('What to plot')).toHaveValue('layout');
@@ -120,8 +119,7 @@ test('PLOT on a layout plots its sheet on the paper of its page setup', async ({
   // Cancel closes without plotting; Esc too.
   await d.getByRole('button', { name: 'Cancel' }).click();
   await expect(d).toBeHidden();
-  await input.fill('PRINT');
-  await input.press('Enter');
+  await enterCommand(page, 'PRINT');
   await expect(d).toBeVisible();
   const [download] = await Promise.all([
     page.waitForEvent('download'),
@@ -511,9 +509,7 @@ test('model space opens on its page setup, and Apply to Layout saves the setting
   await d.getByRole('button', { name: 'Cancel' }).click();
 
   // U undoes it, as one step.
-  const input = page.getByLabel('Command', { exact: true });
-  await input.fill('U');
-  await input.press('Enter');
+  await enterCommand(page, 'U');
   await activeCanvas(page).click({ position: { x: 5, y: 5 } });
   await page.keyboard.press('Control+p');
   await expect(d.getByLabel('Paper size')).toHaveValue('ANSI A');
@@ -525,15 +521,8 @@ test('-PLOT plots at the command line without the dialog (part 5)', async ({ pag
   await page.goto(app.url);
   await openWithPicker(page, DWG);
   await expectShown(page, path.basename(DWG));
-  const input = page.getByLabel('Command', { exact: true });
   const prompt = page.getByTestId('command-prompt');
-  const type = async (text: string) => {
-    // A fill made while the engine still reads the input before replaces that input's text,
-    // whose Enter type-ahead holds (M2-71): -PLOT lost a `Y` in CI (#349). Wait for it.
-    await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
-    await input.fill(text);
-    await input.press('Enter');
-  };
+  const type = (text: string) => enterCommand(page, text);
 
   // Every default: the space shown, its page setup, the PDF plotter, the file named after it.
   await type('-PLOT');
@@ -601,9 +590,7 @@ test('PUBLISH writes every sheet of the drawing into one PDF', async ({ page }) 
   await expectShown(page, path.basename(DWG));
   const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
   const spaces = await tabs.allTextContents();
-  const input = page.getByLabel('Command', { exact: true });
-  await input.fill('PUBLISH');
-  await input.press('Enter');
+  await enterCommand(page, 'PUBLISH');
   const d = page.getByRole('dialog', { name: 'Publish' });
   await expect(d).toBeVisible();
   const rows = d.getByRole('table', { name: 'Sheets to publish' }).getByRole('checkbox');
@@ -630,9 +617,7 @@ test('PUBLISH to PNG writes a PNG a sheet into one ZIP at the resolution chosen 
   await expectShown(page, path.basename(DWG));
   const tabs = page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab');
   const spaces = (await tabs.allTextContents()).map((s) => s.trim());
-  const input = page.getByLabel('Command', { exact: true });
-  await input.fill('PUBLISH');
-  await input.press('Enter');
+  await enterCommand(page, 'PUBLISH');
   const d = page.getByRole('dialog', { name: 'Publish' });
   const to = d.getByLabel('Publish to');
   await expect(to).toHaveValue('pdf');
@@ -958,13 +943,7 @@ test('a layout with a named page setup applied opens the Plot dialog and -PLOT o
   // -PLOT offers it as the page setup name.
   const input = page.getByLabel('Command', { exact: true });
   const prompt = page.getByTestId('command-prompt');
-  const type = async (text: string) => {
-    // A fill made while the engine still reads the input before replaces that input's text,
-    // whose Enter type-ahead holds (M2-71): -PLOT lost a `Y` in CI (#349). Wait for it.
-    await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
-    await input.fill(text);
-    await input.press('Enter');
-  };
+  const type = (text: string) => enterCommand(page, text);
   await type('-PLOT');
   await type('');
   await type('');
@@ -998,15 +977,8 @@ test('-PLOT plots with a named page setup (part 6)', async ({ page }) => {
   await page.goto(app.url);
   await openWithPicker(page, PAGE_SETUPS);
   await expectShown(page, path.basename(PAGE_SETUPS));
-  const input = page.getByLabel('Command', { exact: true });
   const prompt = page.getByTestId('command-prompt');
-  const type = async (text: string) => {
-    // A fill made while the engine still reads the input before replaces that input's text,
-    // whose Enter type-ahead holds (M2-71): -PLOT lost a `Y` in CI (#349). Wait for it.
-    await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
-    await input.fill(text);
-    await input.press('Enter');
-  };
+  const type = (text: string) => enterCommand(page, text);
   await type('-PLOT');
   await type('');
   await type('');
@@ -1041,9 +1013,7 @@ test('PUBLISH takes the sheets of every open drawing, a named page setup each, a
     .allTextContents();
   await openWithPicker(page, PAGE_SETUPS);
   await expectShown(page, path.basename(PAGE_SETUPS));
-  const input = page.getByLabel('Command', { exact: true });
-  await input.fill('PUBLISH');
-  await input.press('Enter');
+  await enterCommand(page, 'PUBLISH');
   const d = page.getByRole('dialog', { name: 'Publish' });
   const table = d.getByRole('table', { name: 'Sheets to publish' });
   const names = table.getByRole('checkbox');
@@ -1128,9 +1098,7 @@ test('Add Sheets publishes a drawing that is not open, and <Default: …> names 
   await plot.getByRole('button', { name: 'Cancel' }).click();
   await expect(plot).toBeHidden();
 
-  const input = page.getByLabel('Command', { exact: true });
-  await input.fill('PUBLISH');
-  await input.press('Enter');
+  await enterCommand(page, 'PUBLISH');
   const d = page.getByRole('dialog', { name: 'Publish' });
   const table = d.getByRole('table', { name: 'Sheets to publish' });
   const names = table.getByRole('checkbox');
