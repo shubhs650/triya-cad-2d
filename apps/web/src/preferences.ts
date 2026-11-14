@@ -5,7 +5,7 @@
 // ORTHO, SNAP, GRID, LWT and TPY are each drawing's own in AutoCAD (ORTHOMODE, SNAPMODE,
 // GRIDMODE, LWDISPLAY, TRANSPARENCYDISPLAY) and stay per session, as M2-04 built them.
 import { OSMODE_DEFAULT, OSNAP_OFF } from '@triya/engine';
-import type { Drafting, DraftingState } from './drafting';
+import { AUTOSNAP_KEPT, type Drafting, type DraftingState } from './drafting';
 import type { DynMode } from './dynamic-input';
 import { closeOnDelete } from './local-data';
 
@@ -54,6 +54,8 @@ export type DraftingPreferences = Pick<
   | 'revcloudGrips'
   | 'qpmode'
   | 'qpLocation'
+  | 'autosnap'
+  | 'pickfirst'
 >;
 
 export interface Preferences {
@@ -98,6 +100,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     revcloudGrips: true,
     qpmode: -1,
     qpLocation: 0,
+    autosnap: AUTOSNAP_KEPT,
+    pickfirst: true,
   },
 };
 
@@ -162,6 +166,12 @@ export function normalizePreferences(raw: unknown): Preferences {
       revcloudGrips: bool(k['revcloudGrips'], d.drafting.revcloudGrips),
       qpmode: within(k['qpmode'], { min: -2, max: 2 }, d.drafting.qpmode),
       qpLocation: within(k['qpLocation'], { min: 0, max: 1 }, d.drafting.qpLocation) as 0 | 1,
+      // AUTOSNAP's bits but POLAR's and OTRACK's, which are kept as their toggles (M2-59).
+      autosnap:
+        typeof k['autosnap'] === 'number' && Number.isInteger(k['autosnap']) && k['autosnap'] >= 0
+          ? k['autosnap'] & AUTOSNAP_KEPT
+          : d.drafting.autosnap,
+      pickfirst: bool(k['pickfirst'], d.drafting.pickfirst),
     },
   };
 }
@@ -231,6 +241,8 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     revcloudGrips: s.revcloudGrips,
     qpmode: s.qpmode,
     qpLocation: s.qpLocation,
+    autosnap: s.autosnap,
+    pickfirst: s.pickfirst,
   };
 }
 
