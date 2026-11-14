@@ -27,6 +27,19 @@ describe('Properties values', () => {
     expect(valueText(row({ kind: 'angle', value: (45.5 * Math.PI) / 180 }), arch)).toBe(`45d30'0"`);
   });
 
+  // M2-35 part 18: AUNITS 4 shows a surveyor's bearing, as the command line does (ANGTOS).
+  it('shows surveyor angles as bearings', () => {
+    const surveyor = { ...decimal, aunits: 4 };
+    expect(valueText(row({ kind: 'angle', value: Math.PI / 4 }), surveyor)).toBe('N 45d E');
+    expect(valueText(row({ kind: 'angle', value: 0 }), surveyor)).toBe('E');
+    expect(valueText(row({ kind: 'angle', value: (200 * Math.PI) / 180 }), surveyor)).toBe(
+      'S 70d W',
+    );
+    expect(
+      valueText(row({ kind: 'angle', value: (120.5 * Math.PI) / 180 }), { ...surveyor, auprec: 2 }),
+    ).toBe(`N 30d30' W`);
+  });
+
   it('shows choices by their labels, *VARIES*, numbers and transparency', () => {
     const options = [
       { value: 'ByLayer', label: 'ByLayer' },
@@ -48,9 +61,17 @@ describe('Properties values', () => {
     expect(editText(row({ value: 30.5 }), { ...arch, lunits: 5 })).toBe('30 1/2');
     expect(editText(row({ value: 30.5 }), { ...arch, lunits: 1 })).toBe('3.0500E+01');
     expect(editText(row({ varies: true }), decimal)).toBe('');
+    // M2-35 part 18: the engine reads bearings, so a surveyor's angle starts as shown too.
     expect(editText(row({ kind: 'angle', value: Math.PI / 2 }), { ...decimal, aunits: 4 })).toBe(
-      '90',
+      'N',
     );
+    expect(
+      editText(row({ kind: 'angle', value: (120.5 * Math.PI) / 180 }), {
+        ...decimal,
+        aunits: 4,
+        auprec: 2,
+      }),
+    ).toBe(`N 30d30' W`);
   });
 });
 

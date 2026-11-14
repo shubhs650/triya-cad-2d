@@ -125,9 +125,65 @@ describe('parseAngle', () => {
   it.each(['', 'north', '45dd', 'r'])('%j is not an angle', (text) => {
     expect(parseAngle(text)).toBeUndefined();
   });
+
+  // M2-35 part 18: a surveyor's bearing (AutoCAD 2024 Help, "UNITS (Command)", Surveyor's
+  // Units): N or S, the angle from that axis (degrees, minutes, seconds, or decimal degrees),
+  // E or W; or a cardinal direction alone. Letters in either case, spaces between the parts.
+  it.each([
+    ['N 45d E', 45],
+    ['N45dE', 45],
+    ["n 30d30' w", 120.5],
+    ['S 70d W', 200],
+    ['S70dE', 340],
+    ['S 70 E', 340],
+    ['N 12.5 E', 77.5],
+    ['N 0d E', 90],
+    ['N 90d W', 180],
+    ['N', 90],
+    ['s', 270],
+    ['E', 0],
+    ['W', 180],
+    ['N 10d0\'36" E', 79.99],
+  ])('bearing %s is %d°', (text, degrees) => {
+    expect(parseAngle(text)).toBeCloseTo(deg(degrees), 12);
+  });
+
+  it('a bearing is a direction from north, whatever ANGBASE and ANGDIR say', () => {
+    expect(parseAngle('N 45d E', { base: deg(90), clockwise: true })).toBeCloseTo(deg(45), 12);
+    expect(parseAngle('W', { base: deg(30), clockwise: false })).toBeCloseTo(deg(180), 12);
+  });
+
+  it.each([
+    'N 91d E',
+    'N -10d E',
+    'N 45d',
+    '45d E',
+    'NE',
+    'N 45d N',
+    'E 45d N',
+    'N 1r E',
+    'N 50g E',
+  ])('%j is not a bearing', (text) => {
+    expect(parseAngle(text)).toBeUndefined();
+  });
 });
 
 describe('parseCoordinate', () => {
+  // M2-35 part 18: a polar coordinate's angle may be a bearing (`@100<N45d30'E`).
+  it('reads a bearing as a polar angle, spaces and all', () => {
+    const p = parseCoordinate('@10<N 30d E', { lastPoint: { x: 1, y: 1 } });
+    expect(p).not.toBe('invalid');
+    const q = p as { x: number; y: number };
+    expect(q.x).toBeCloseTo(1 + 10 * Math.cos(deg(60)), 12);
+    expect(q.y).toBeCloseTo(1 + 10 * Math.sin(deg(60)), 12);
+    const r = parseCoordinate('10<S', { angles: { base: deg(90), clockwise: true } }) as {
+      x: number;
+      y: number;
+    };
+    expect(r.x).toBeCloseTo(0, 12);
+    expect(r.y).toBeCloseTo(-10, 12);
+  });
+
   const last = { x: 10, y: 20 };
   it.each([
     ['3,4', { x: 3, y: 4 }],
