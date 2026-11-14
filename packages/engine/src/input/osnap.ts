@@ -28,7 +28,9 @@
 //   query's `underlays`, on unless false) and the app has read the page (the source's
 //   `underlays`, underlay-snap.ts): its lines, arcs and curves placed by the underlay's
 //   insertion, scale and rotation, and while clipping is on only points inside the clip
-//   boundary, so nothing outside it is snapped to, as nothing outside it shows.
+//   boundary, so nothing outside it is snapped to, as nothing outside it shows. Geometry on a
+//   PDF layer the underlay hides (off in the PDF, or turned off by ULAYERS) offers nothing
+//   either (M2-56).
 //
 // Geometry comes from the document model and candidates from the spatial index, so the cost is
 // the objects under the aperture, not the drawing (PRD §12 T3: < 50 ms at 100k entities).
@@ -63,6 +65,7 @@ import {
   underlayMatrix,
   underlayShown,
   underlaySnapCurves,
+  underlaySnapShown,
   type UnderlaySnapPage,
 } from './underlay-snap';
 
@@ -760,7 +763,9 @@ function underlayParts(
     const eps = (src.tol.linear * 16) / k;
     inside = (p) => insideRing(ring, applyPoint(toPage, p), eps);
   }
-  for (const c of underlaySnapCurves(page, box)) {
+  // What of the page this underlay shows: its PDF layers on, less those it turns off (M2-56).
+  const shown = underlaySnapShown(page, g.layersOff);
+  for (const c of underlaySnapCurves(page, box, shown)) {
     try {
       const curve = transformCurve(c, toShown, src.tol);
       parts.curves.push({ id, groups, curve, ends: true, ...(inside && { inside }) });
