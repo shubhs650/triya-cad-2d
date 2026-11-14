@@ -3,7 +3,9 @@
 // dimension a red dimension line through Select Color (Index Color only: DSTYLE overrides keep
 // ACIs), a prefix, a symmetrical tolerance and a lower text position, each redrawing its block
 // at once; U takes the last (the tolerance's value) back. M2-35 part 10: an angular
-// dimension shows its Measurement and its angle units (Precision, Angle format), each redrawing it. The rows and the DSTYLE xdata they write are unit-tested in
+// dimension shows its Measurement and its angle units (Precision, Angle format), each redrawing it.
+// M2-35 part 26: Text view direction Right-to-Left turns the dimension's text half a turn. The
+// rows and the DSTYLE xdata they write are unit-tested in
 // packages/engine/test/properties/dimension-rows.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Color, DimensionGeometry, Entity } from '@triya/engine';
@@ -27,12 +29,16 @@ type Dev = { triyaDev: { changes(): readonly ChangeSet[] } };
 const dimension = (page: Page) =>
   page.evaluate(() => {
     let dim: DimensionGeometry | undefined;
-    const parts = new Map<string, { owner: string; text?: string; color: Color }>();
+    const parts = new Map<
+      string,
+      { owner: string; text?: string; rotation?: number; color: Color }
+    >();
     for (const cs of (window as unknown as Dev).triyaDev.changes()) {
       const put = (e: Entity) => {
         if (e.geom.kind === 'DIMENSION') dim = e.geom;
         if (e.geom.kind === 'MTEXT') {
-          parts.set(e.handle, { owner: e.owner, text: e.geom.contents, color: e.color });
+          const { contents: text, rotation } = e.geom;
+          parts.set(e.handle, { owner: e.owner, text, rotation, color: e.color });
         }
         if (e.geom.kind === 'LINE') parts.set(e.handle, { owner: e.owner, color: e.color });
       };
@@ -43,8 +49,10 @@ const dimension = (page: Page) =>
     if (!dim) return undefined;
     const drawn = [...parts.values()].filter((t) => t.owner === dim!.block);
     const colors = (c: Color) => (c.kind === 'aci' ? `aci:${c.index}` : c.kind);
+    const label = drawn.find((t) => t.text !== undefined);
     return {
-      text: drawn.find((t) => t.text !== undefined)?.text?.replace(/^\\A1;/, ''),
+      text: label?.text?.replace(/^\\A1;/, ''),
+      rotation: label?.rotation,
       lines: [...new Set(drawn.filter((t) => t.text === undefined).map((t) => colors(t.color)))],
     };
   });
@@ -204,4 +212,53 @@ test('an angular dimension’s Measurement and Angle format rows (M2-35 part 10)
   await format.selectOption({ label: 'Degrees Minutes Seconds' });
   await expect.poll(async () => (await dimension(page))?.text).toBe("32%%d0'");
   await shot('4-angle-format-dms.png');
+});
+
+test('a dimension’s Text view direction turns its text to read from the other side (M2-35 part 26)', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto(app.url);
+  await openWithPicker(page, FILE);
+  await expectShown(page, path.basename(FILE));
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await page.mouse.move(box.x + 20, box.y + box.height + 60);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, p(-4, -8), 'Specify opposite corner:');
+  await type(page, p(12, 6), 'Command:');
+  await page.keyboard.press('F3');
+  await type(page, 'DIMLINEAR', 'Specify first extension line origin or <select object>:');
+  await type(page, p(0, 0), 'Specify second extension line origin:');
+  await type(page, p(8, 0), /^Specify dimension line location/);
+  await type(page, p(4, -1.5), 'Command:');
+  await expect.poll(() => dimension(page)).toMatchObject({ text: expect.stringMatching(/^8/) });
+  expect((await dimension(page))!.rotation).toBeCloseTo(0);
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  // The click below is worked out from the canvas beside the docked palette: wait for the canvas
+  // to take that size and draw at it.
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(box.width);
+  await expectDrawn(page, { timeout: 15_000 });
+  const docked = (await canvas.boundingBox())!;
+  const k = Math.min(docked.width / 16, docked.height / 14);
+  await page.mouse.click(
+    docked.x + docked.width / 2 + (2 - 4) * k,
+    docked.y + docked.height / 2 - (-1.5 + 1) * k,
+  );
+  await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toHaveText(
+    'Dimension (1)',
+  );
+  const view = palette.getByRole('combobox', { name: 'Text view direction' });
+  await expect(view).toHaveValue('0');
+  await view.scrollIntoViewIfNeeded();
+  await shot('5-left-to-right.png');
+  await view.selectOption({ label: 'Right-to-Left' });
+  await expect.poll(async () => (await dimension(page))?.rotation).toBeCloseTo(Math.PI);
+  await expect(view).toHaveValue('1');
+  await expectDrawn(page);
+  await shot('6-right-to-left.png');
 });

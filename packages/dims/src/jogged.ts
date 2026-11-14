@@ -28,6 +28,7 @@ import {
   sub,
   textBox,
   textGeometry,
+  viewed,
   unit,
   upright,
   type DimPart,
@@ -88,7 +89,7 @@ export function joggedParts(
     const rotation = g.textRotation !== 0 ? g.textRotation : horizontal ? 0 : upright(angleOf(v));
     const up = perp(fromAngle(rotation));
     const position = keepText || horizontal ? at : add(at, textOffset(s, up, up));
-    text = { ...probe, position, rotation };
+    text = { ...probe, position, rotation: viewed(rotation, s) };
     dxf11 = at;
   }
   const base = add(p, v, inside ? -s.asz : s.asz);

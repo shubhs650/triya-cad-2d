@@ -50,6 +50,7 @@ import {
   sub,
   textBox,
   textGeometry,
+  viewed,
   unit,
   upright,
   type DimPart,
@@ -136,13 +137,13 @@ export function radialParts(
       const landEnd = add(t, { x: 1, y: 0 }, -toward * (width / 2 + s.gap));
       const landStart = add(landEnd, { x: 1, y: 0 }, -toward * s.asz);
       lines.push([landEnd, landStart], [landStart, base]);
-      text = { ...probe, position: t };
+      text = { ...probe, position: t, rotation: viewed(0, s) };
     } else {
       const rotation = g.textRotation !== 0 ? g.textRotation : upright(angleOf(v));
       const up = perp(fromAngle(rotation));
       const lifted = !centred && (g.textUserPositioned || !keepText);
       const middle = lifted ? add(t, up, s.gap + s.textHeight / 2) : t;
-      text = { ...probe, position: middle, rotation };
+      text = { ...probe, position: middle, rotation: viewed(rotation, s) };
       // Along the radius from the text's far end to the arrow's back.
       const k = dot(sub(t, c), v) + (inside ? -1 : 1) * (width / 2);
       lines.push([add(c, v, k), base]);

@@ -36,6 +36,7 @@ import {
   sub,
   textBox,
   textGeometry,
+  viewed,
   unit,
   upright,
   type DimPart,
@@ -253,7 +254,7 @@ export function angularParts(
         : horizontal
           ? 0
           : upright(angleOf(sub(at, c)) + Math.PI / 2);
-    text = { ...probe, position: at, rotation };
+    text = { ...probe, position: at, rotation: viewed(rotation, s) };
   }
   const box = text ? textBox(text, width, s) : undefined;
 
