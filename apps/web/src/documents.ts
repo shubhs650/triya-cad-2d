@@ -10,6 +10,8 @@ export interface OpenDocument {
   readonly opened: OpenResult;
   /** The space shown: model space or a layout's paper-space block record. */
   readonly block: string;
+  /** The layout tab shown last (TILEMODE 0 shows it again, M2-59 part 5), if any has been. */
+  readonly lastLayout?: string;
   /** Edits applied by the drawing's engine so far (M1-67): chrome that mirrors it re-reads. */
   readonly revision: number;
   /**
@@ -25,6 +27,33 @@ export interface OpenDocument {
   readonly edits: number;
   readonly savedEdits: number;
 }
+
+/**
+ * The block of the tab SETVAR's CTAB or TILEMODE shows (M2-59 part 5): the space `name` names
+ * (Model or a layout, as the drawing spells it), or without one the layout tab shown last, else
+ * the drawing's current layout (the one `*Paper_Space` holds, AutoCAD's "last active layout"
+ * as the file was saved), else the first layout. Undefined when there is no such tab.
+ */
+export function tabBlock(
+  doc: Pick<OpenDocument, 'opened' | 'lastLayout'>,
+  changes: readonly ChangeSet[],
+  name: string | undefined,
+): string | undefined {
+  const spaces = spacesOf(doc, changes);
+  // AutoCAD's layout names are unique whatever their case.
+  if (name !== undefined)
+    return spaces.find((s) => s.name.toUpperCase() === name.toUpperCase())?.block;
+  const layouts = spaces.slice(1);
+  if (layouts.some((s) => s.block === doc.lastLayout)) return doc.lastLayout;
+  const paper = doc.opened.init.tables?.blockRecords?.find(
+    (r) => r.name.toUpperCase() === '*PAPER_SPACE',
+  );
+  return (layouts.find((s) => s.block === paper?.handle) ?? layouts[0])?.block;
+}
+
+/** `block` as the layout tab shown last, when it is a layout's. */
+const layoutShown = (opened: OpenResult, block: string) =>
+  block !== opened.modelSpace ? { lastLayout: block } : {};
 
 /** The drawing has changes no save holds (M2-13). */
 export const isDirty = (d: OpenDocument): boolean => d.edits !== d.savedEdits;
@@ -107,6 +136,7 @@ export class DocumentStore {
       name,
       opened,
       block,
+      ...layoutShown(opened, block),
       revision: 0,
       ...(file && { file }),
       edits,
@@ -204,7 +234,7 @@ export class DocumentStore {
 
   /** Shows the Model tab or a layout tab of a document. */
   showSpace(id: number, block: string): void {
-    this.#update(id, (d) => ({ ...d, block }));
+    this.#update(id, (d) => ({ ...d, block, ...layoutShown(d.opened, block) }));
   }
 
   dismissError(): void {

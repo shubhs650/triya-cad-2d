@@ -16,6 +16,7 @@ import {
   NO_CANVAS,
   NO_CLIPBOARD,
   NO_PATTERNS,
+  NO_TABS,
   answerView,
   NO_FILE,
   stateOf,
@@ -184,6 +185,22 @@ describe('answerView', () => {
       pattern: { name: 'GRID' },
     });
     expect(asked).toEqual([['GRID', placements]]);
+  });
+
+  it('hands a tab to show to the app, with or without a canvas (M2-59 part 5)', () => {
+    const { ctx } = context(undefined);
+    expect(now(answerView({ op: 'tab', name: 'Layout1' }, ctx))).toEqual({
+      ok: false,
+      message: NO_TABS,
+    });
+    const asked: (string | undefined)[] = [];
+    const tab = (name: string | undefined): ViewReply => {
+      asked.push(name);
+      return { ok: true };
+    };
+    expect(now(answerView({ op: 'tab', name: 'Layout1' }, { ...ctx, tab }))).toEqual({ ok: true });
+    expect(now(answerView({ op: 'tab' }, { ...ctx, tab }))).toEqual({ ok: true });
+    expect(asked).toEqual(['Layout1', undefined]);
   });
 
   it('hands the Clipboard to the app, with or without a canvas (M2-14 part 2)', () => {

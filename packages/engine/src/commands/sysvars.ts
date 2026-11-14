@@ -12,9 +12,9 @@
 //   command asks the app for them through the view host (`sysvar` requests): commands never
 //   read UI state themselves.
 //
-// AutoCAD also works some variables out, read only (M2-59): the date (DATE, CDATE, from the
-// bus's clock), the tab shown (CTAB) and its view (VIEWSIZE, VIEWCTR, asked of the canvas) are
-// `COMPUTED_VARIABLES`; the drawing's file (DWGNAME, DWGPREFIX, DWGTITLED) and whether it has
+// AutoCAD also works some variables out (M2-59): the date (DATE, CDATE, from the bus's clock)
+// and the view shown (VIEWSIZE, VIEWCTR, asked of the canvas), read only, and the tab shown
+// (CTAB, TILEMODE; set, the app shows another tab), are `COMPUTED_VARIABLES`; the drawing's file (DWGNAME, DWGPREFIX, DWGTITLED) and whether it has
 // unsaved changes (DBMOD) are the app's to tell, `DRAWING_VARIABLES`.
 //
 // AutoCAD's refusals are not all documented word for word: "Unknown variable name.  Type SETVAR
@@ -60,7 +60,9 @@ export type NameTable =
   | 'mleaderStyles'
   | 'tableStyles'
   /** Not a table: the drawing's scale list (`meta.annotationScales`). */
-  | 'annotationScales';
+  | 'annotationScales'
+  /** Not a table: the drawing's layouts, Model among them (CTAB). */
+  | 'layouts';
 
 export interface SystemVariable {
   /** AutoCAD's name, upper case, without the header's `$`. */
@@ -148,14 +150,17 @@ export const DRAWING_VARIABLES: readonly SystemVariable[] = [
 /**
  * The variables the engine works out when read (setvar.ts): DATE and CDATE from the bus's clock,
  * shown to the hundredth of a second as AutoCAD shows them; CTAB the tab of the space commands
- * draw in; VIEWSIZE and VIEWCTR the view the canvas shows (its height in drawing units, and its
- * centre); SCREENSIZE the canvas's size in (CSS) pixels.
+ * draw in and TILEMODE whether it is the Model tab (1) or a layout's (0), which set show another
+ * tab (M2-59 part 5); VIEWSIZE and VIEWCTR the view the canvas shows (its height in drawing
+ * units, and its centre); SCREENSIZE the canvas's size in (CSS) pixels.
  */
 export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
   { name: 'CDATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
-  { name: 'CTAB', store: 'computed', kind: 'text', readOnly: true },
+  { name: 'CTAB', store: 'computed', kind: 'name', table: 'layouts' },
   { name: 'DATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
   { name: 'SCREENSIZE', store: 'computed', kind: 'point', readOnly: true },
+  // The file's own $TILEMODE stays as it was read: Triya's tabs never write it.
+  { name: 'TILEMODE', store: 'computed', kind: 'switch' },
   { name: 'VIEWCTR', store: 'computed', kind: 'point', readOnly: true },
   { name: 'VIEWSIZE', store: 'computed', kind: 'real', readOnly: true },
 ];
@@ -234,15 +239,15 @@ export const INTEGER_HEADER_VARIABLES: ReadonlySet<string> = new Set([
 /**
  * Header variables SETVAR shows but does not set: those AutoCAD keeps read-only (the dates,
  * the extents, ACADVER, DWGCODEPAGE), those a save sets itself, HANDSEED (handles are never
- * renumbered), the UCS (UCS commands own it; renaming its record is not a variable's job),
- * TILEMODE (the layout tabs switch spaces) and the handle-valued ones.
+ * renumbered), the UCS (UCS commands own it, M3-06; renaming its record is not a variable's
+ * job) and the handle-valued ones. TILEMODE is the tab shown (`COMPUTED_VARIABLES`).
  */
 // prettier-ignore
 const READ_ONLY_HEADER = new Set([
   'ACADVER', 'ACADMAINTVER', 'DWGCODEPAGE', 'HANDSEED', 'HANDLING', 'LASTSAVEDBY',
   'REQUIREDVERSIONS', 'TDCREATE', 'TDUCREATE', 'TDUPDATE', 'TDUUPDATE', 'TDINDWG', 'TDUSRTIMER',
-  'VERSIONGUID', 'FINGERPRINTGUID', 'EXTMIN', 'EXTMAX', 'PEXTMIN', 'PEXTMAX', 'TILEMODE',
-  'CMATERIAL', 'INTERFEREOBJVS', 'INTERFEREVPVS', 'CANNOSCALEVALUE',
+  'VERSIONGUID', 'FINGERPRINTGUID', 'EXTMIN', 'EXTMAX', 'PEXTMIN', 'PEXTMAX', 'CMATERIAL',
+  'INTERFEREOBJVS', 'INTERFEREVPVS', 'CANNOSCALEVALUE',
 ]);
 const READ_ONLY_PATTERN =
   /^P?UCS(NAME|BASE|ORTHOREF|ORG|ORGBACK|ORGBOTTOM|ORGFRONT|ORGLEFT|ORGRIGHT|ORGTOP|XDIR|YDIR|ORTHOVIEW)$/;
@@ -397,8 +402,16 @@ export function dictionaryTwin(
   return twin.readOnly ? undefined : twin;
 }
 
+/**
+ * What finding a variable needs of a drawing: its header. The app passes the header its change
+ * sets left (the command line's autocomplete, M2-59 part 5), the engine its model.
+ */
+export interface VariableSource {
+  readonly header: ReadonlyMap<string, HeaderValue>;
+}
+
 /** The header entry a variable's name is kept under, if the drawing has one. */
-function headerKey(model: DocumentModel, name: string): string | undefined {
+function headerKey(model: VariableSource, name: string): string | undefined {
   if (model.header.has(`$${name}`)) return `$${name}`;
   // A bare name is an AcDbVariableDictionary entry; `$` names are not variables of their own.
   return !name.startsWith('$') && model.header.has(name) ? name : undefined;
@@ -408,7 +421,7 @@ function headerKey(model: DocumentModel, name: string): string | undefined {
  * The system variable `name` names (any case), or undefined when Triya keeps none of that name:
  * the app's first, then WIPEOUTFRAME, then the drawing's header.
  */
-export function systemVariable(model: DocumentModel, name: string): SystemVariable | undefined {
+export function systemVariable(model: VariableSource, name: string): SystemVariable | undefined {
   const n = name.trim().toUpperCase();
   if (!/^[A-Z_][A-Z0-9_]*$/.test(n)) return undefined;
   const app = APP_VARIABLES.find((v) => v.name === n);
@@ -423,7 +436,7 @@ export function systemVariable(model: DocumentModel, name: string): SystemVariab
 }
 
 /** Every variable Triya keeps for this drawing, by name. */
-export function systemVariables(model: DocumentModel): SystemVariable[] {
+export function systemVariables(model: VariableSource): SystemVariable[] {
   const out = new Map<string, SystemVariable>();
   for (const key of model.header.keys()) {
     const v = systemVariable(model, key.replace(/^\$/, ''));
@@ -508,7 +521,9 @@ function recordName(model: DocumentModel, table: NameTable, typed: string): stri
   const records =
     table === 'annotationScales'
       ? (model.meta.annotationScales ?? [])
-      : model.tables[table].values();
+      : table === 'layouts'
+        ? model.layouts
+        : model.tables[table].values();
   for (const r of records) {
     if (r.name.toUpperCase() === key) return r.name;
   }
@@ -525,6 +540,7 @@ const TABLE_WORDS: Readonly<Record<NameTable, string>> = {
   mleaderStyles: 'multileader style',
   tableStyles: 'table style',
   annotationScales: 'annotation scale',
+  layouts: 'layout',
 };
 
 /** CANNOSCALEVALUE for a CANNOSCALE of `name`: the scale's value, when the drawing has it. */

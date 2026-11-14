@@ -120,6 +120,11 @@ export interface ViewContext {
    * set to `value` when given, answered with its value.
    */
   readonly sysvar?: (name: string, value?: number) => ViewReply;
+  /**
+   * SETVAR CTAB and TILEMODE (M2-59 part 5): the app shows the tab `name` names, or the layout
+   * tab shown last.
+   */
+  readonly tab?: (name: string | undefined) => ViewReply;
   /** ULAYERS (M2-56 part 1): the Underlay Layers dialog, answered when it closes. */
   readonly underlayLayers?: (
     r: Extract<ViewRequest, { op: 'underlayLayers' }>,
@@ -139,6 +144,7 @@ export const NO_PALETTE = 'There are no palettes here.';
 export const NO_PATTERNS = 'There is no pattern library here.';
 export const NO_SETTINGS = 'There are no settings here.';
 export const NO_DIALOGS = 'There are no dialogs here.';
+export const NO_TABS = 'There are no tabs here.';
 
 export function stateOf(t: ViewTarget): ViewState | undefined {
   const v = t.view;
@@ -169,6 +175,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'sysvar') {
     return ctx.sysvar ? ctx.sysvar(r.name, r.value) : { ok: false, message: NO_SETTINGS };
+  }
+  if (r.op === 'tab') {
+    return ctx.tab ? ctx.tab(r.name) : { ok: false, message: NO_TABS };
   }
   if (r.op === 'underlayLayers') {
     return ctx.underlayLayers ? ctx.underlayLayers(r) : { ok: false, message: NO_DIALOGS };

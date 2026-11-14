@@ -159,7 +159,13 @@ export type ViewRequest =
    * of `APP_VARIABLES`): set to `value` when one is given (already checked against the
    * variable's range), and answered with the value it holds.
    */
-  | { readonly op: 'sysvar'; readonly name: string; readonly value?: number };
+  | { readonly op: 'sysvar'; readonly name: string; readonly value?: number }
+  /**
+   * CTAB and TILEMODE set (M2-59 part 5): the app shows the tab of the layout `name` names
+   * (Model or a layout, as the drawing spells it), or without one the layout tab last shown
+   * (TILEMODE 0, AutoCAD's "last active layout tab"). No edit: a tab shown is no undo step.
+   */
+  | { readonly op: 'tab'; readonly name?: string };
 
 /** Where a hatch's pattern lies: its angle, its scale and the point its lines start from. */
 export interface PatternPlacement {

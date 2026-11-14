@@ -563,10 +563,10 @@ describe('computed variables', () => {
   it('names the tab shown', async () => {
     const model = setup(sampleInit());
     await model.bus.script(['CTAB']);
-    expect(model.log.at(-1)).toBe('CTAB = "Model" (read only)');
+    expect(model.bus.promptText).toBe('Enter new value for CTAB <"Model">:');
     const paper = setup(sampleInit(), undefined, { space: () => PAPER_SPACE });
     await paper.bus.script(['CTAB']);
-    expect(paper.log.at(-1)).toBe('CTAB = "Layout1" (read only)');
+    expect(paper.bus.promptText).toBe('Enter new value for CTAB <"Layout1">:');
   });
 
   it('measures the view shown, and says when no canvas shows one', async () => {
@@ -630,15 +630,104 @@ describe('computed variables', () => {
     expect(listed).toEqual([
       'CDATE             20261114.14373312 (read only)',
       'CLAYER            "WALLS"',
-      'CTAB              "Model"           (read only)',
+      'CTAB              "Model"',
       'DATE              2461359.60941111  (read only)',
       // A value too long for its column still has a space before the note.
       'VIEWCTR           5.0000,2.5000,0.0000 (read only)',
       'VIEWSIZE          20.0000           (read only)',
     ]);
     const model = DocumentModel.create(sampleInit());
-    expect(systemVariable(model, 'ctab')).toMatchObject({ store: 'computed', readOnly: true });
+    expect(systemVariable(model, 'ctab')).toMatchObject({ store: 'computed', kind: 'name' });
+    expect(systemVariable(model, 'ctab')?.readOnly).toBeUndefined();
     expect(systemVariable(model, 'DWGNAME')).toMatchObject({ store: 'app', readOnly: true });
+  });
+});
+
+// M2-59 part 5: CTAB and TILEMODE switch tabs (AutoCAD 2024 Help, "CTAB": "Returns the name of
+// the current layout in the drawing. Provides a means for the user to determine which tab is
+// active"; "TILEMODE": 0 "Makes the last active layout tab active", 1 "Makes the Model tab
+// active"). The tabs are the app's: a `tab` request shows one, and no undo step is made, as a
+// tab clicked makes none. AutoCAD's own TILEMODE is kept in the header; Triya's tabs never wrote
+// it, so it is read from the tab shown, as CTAB is.
+describe('CTAB and TILEMODE', () => {
+  /** The app's layout tabs: `tab` requests show the one named, or the last layout shown. */
+  function tabsHost(reply: ViewReply = { ok: true }) {
+    const asked: { name?: string }[] = [];
+    const view: ViewHost = {
+      request: (r): Promise<ViewReply> => {
+        if (r.op !== 'tab') return Promise.resolve({ ok: false, message: 'no' });
+        asked.push(r.name === undefined ? {} : { name: r.name });
+        return Promise.resolve(reply);
+      },
+    };
+    return { view, asked };
+  }
+
+  it('CTAB shows the layout named, in any case, and asks again for one the drawing lacks', async () => {
+    const tabs = tabsHost();
+    const s = setup(sampleInit(), tabs.view);
+    await s.bus.script(['CTAB', 'sheet9']);
+    expect(s.log.at(-1)).toBe('No layout named "sheet9".');
+    expect(s.bus.promptText).toBe('Enter new value for CTAB <"Model">:');
+    await s.bus.script(['layout1']);
+    expect(s.bus.command).toBeUndefined();
+    // As the drawing spells it; a tab switch is no edit and no undo step.
+    expect(tabs.asked).toEqual([{ name: 'Layout1' }]);
+    expect(s.bus.undo.state.undoable).toBe(0);
+    const paper = setup(sampleInit(), tabs.view, { space: () => PAPER_SPACE });
+    await paper.bus.script(['SETVAR', 'ctab', 'MODEL']);
+    expect(tabs.asked.at(-1)).toEqual({ name: 'Model' });
+    // The tab shown already: nothing to switch.
+    await paper.bus.script(['CTAB', 'Layout1']);
+    expect(tabs.asked).toHaveLength(2);
+  });
+
+  it('TILEMODE is 1 on the Model tab and 0 on a layout, and switches between them', async () => {
+    const tabs = tabsHost();
+    const model = setup(withHeader([['$TILEMODE', 0]]), tabs.view);
+    await model.bus.script(['TILEMODE']);
+    expect(model.bus.promptText).toBe('Enter new value for TILEMODE <1>:');
+    await model.bus.script(['2']);
+    expect(model.log.at(-1)).toBe('Value must be between 0 and 1.');
+    // 0: the last layout shown, which the app knows.
+    await model.bus.script(['0']);
+    expect(tabs.asked).toEqual([{}]);
+    await model.bus.script(['TILEMODE', '1']);
+    expect(tabs.asked).toHaveLength(1);
+    const paper = setup(sampleInit(), tabs.view, { space: () => PAPER_SPACE });
+    await paper.bus.script(['TILEMODE']);
+    expect(paper.bus.promptText).toBe('Enter new value for TILEMODE <0>:');
+    await paper.bus.script(['1']);
+    expect(tabs.asked.at(-1)).toEqual({ name: 'Model' });
+    // The header's TILEMODE is the file's, never changed by a tab.
+    expect(model.model.header.get('$TILEMODE')).toBe(0);
+    expect(model.bus.undo.state.undoable).toBe(0);
+    expect(systemVariable(model.model, 'TILEMODE')).toMatchObject({
+      store: 'computed',
+      kind: 'switch',
+    });
+  });
+
+  it('switch no tab inside another command, and tell why the app cannot', async () => {
+    const tabs = tabsHost();
+    const s = setup(sampleInit(), tabs.view);
+    // The command running draws in the space it started in: shown, not set.
+    await s.bus.script(['LINE', "'TILEMODE"]);
+    expect(s.log.slice(-2)).toEqual([
+      'TILEMODE = 1 (read only while a command runs)',
+      'Resuming LINE command.',
+    ]);
+    expect(tabs.asked).toEqual([]);
+    expect(s.bus.command).toBe('LINE');
+    const refused = setup(
+      sampleInit(),
+      tabsHost({ ok: false, message: 'No layout is open.' }).view,
+    );
+    await refused.bus.script(['CTAB', 'Layout1']);
+    expect(refused.log.at(-1)).toBe('No layout is open.');
+    const bare = setup();
+    await bare.bus.script(['TILEMODE', '0']);
+    expect(bare.log.at(-1)).toBe('There is no view to change.');
   });
 });
 
