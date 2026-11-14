@@ -12,7 +12,10 @@
 // part 12 sets its Leaders rows (colour, lineweight, arrowhead size, landing distance, and a
 // linetype and arrowhead block where the drawing has one) and makes the next, a spline without a
 // landing, straight with one; the values and their override flags read back. M2-35 part 14 turns
-// the first one's text, sets its line spacing and turns its background mask and frame on. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
+// the first one's text, sets its line spacing and turns its background mask and frame on. M2-35
+// part 15 gives the _TagCircle one another colour, scale and rotation and then the callout block
+// (its attributes at their definitions' values); their override bits (19 to 22, M2-66) read
+// back. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
 // each multileader draws the same parts (`multiLeaderParts`: lines, landings, arrowheads, text,
 // block) as before the save. With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit
 // as the file's `mleader` save.
@@ -243,6 +246,25 @@ describe('MLEADER on the public corpus', () => {
       const tags = added.slice(-2).map((e) => (e.geom as MultiLeaderGeometry).block!);
       expect(tags.map((b) => b.block)).toEqual(builtins.map((b) => b.handle));
       expect(tags.map((b) => b.attributes!.map((a) => a.value))).toEqual([['7'], ['3', 'A-501']]);
+      // M2-35 part 15: the _TagCircle one's Block rows, the callout block in its place last.
+      const tag = added.at(-2)!;
+      const blockRow = (edit: PropertyEdit) => {
+        const b = new ChangeSetBuilder(model);
+        const report = applyPropertyEdit(b, model, [model.entity(tag.id)!], edit);
+        expect(report, `${f.path} ${edit.key}`).toMatchObject({ changed: 1, refused: new Map() });
+        model.apply(b.build());
+      };
+      blockRow({ key: 'blockColor', value: 'aci:3' });
+      blockRow({ key: 'blockScale', value: '2' });
+      blockRow({ key: 'blockRotation', value: Math.PI / 6 });
+      blockRow({ key: 'sourceBlock', value: builtins[1]!.handle });
+      const tagEdited = model.entity(tag.id)!.geom as MultiLeaderGeometry;
+      expect(tagEdited.block).toMatchObject({
+        block: builtins[1]!.handle,
+        color: { kind: 'aci', index: 3 },
+        rotation: Math.PI / 6,
+      });
+      expect(tagEdited.block!.scale.x).toBeCloseTo(2 * tagEdited.scale, 12);
       expect((added[0]!.geom as MultiLeaderGeometry).text!.content).toBe(
         'Check {\\Ldetail} B\\Psheet 2',
       );
@@ -295,6 +317,16 @@ describe('MLEADER on the public corpus', () => {
         ...(arrow && { arrowhead: arrow.value }),
       });
       expect(firstBack.branches.map((b) => b.doglegLength)).toEqual([5, 5]);
+      // The block rows' override bits (BLOCK_CONTENT_ID 19 to _ROTATION 22, M2-66), and the
+      // callout's attribute values its definitions give.
+      const tagBack = back.entityByHandle(tag.handle)!.geom as MultiLeaderGeometry;
+      expect(tagBack.overrideFlags).toBe(tagEdited.overrideFlags);
+      expect(tagBack.overrideFlags & (0xf << 19)).toBe(0xf << 19);
+      expect(rounded(tagBack.block)).toEqual(rounded(tagEdited.block));
+      expect(tagBack.block!.attributes!.map((a) => a.value)).toEqual(['VIEWNUMBER', 'SHEETNUMBER']);
+      // MLEADER's block content is bit 19, not the text frame's 17.
+      const calloutBack = back.entityByHandle(added.at(-1)!.handle)!.geom as MultiLeaderGeometry;
+      expect(calloutBack.overrideFlags & ((1 << 17) | (1 << 19))).toBe(1 << 19);
       const secondBack = back.entityByHandle(second.handle)!.geom as MultiLeaderGeometry;
       expect(secondBack).toMatchObject({ pathType: 1, dogleg: true, landing: true });
       // The built-in blocks come back with what they draw and their attribute definitions.

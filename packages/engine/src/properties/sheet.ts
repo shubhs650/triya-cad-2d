@@ -36,6 +36,7 @@ import {
 import { JUSTIFICATIONS } from '../commands/modify/attributes';
 import { bookColors } from '../model/book-colors';
 import { multiLeaderTextRows } from './multileader';
+import { blockOf, blockScaleValue, isContentBlock } from './multileader-block';
 import {
   hasThickness,
   hyperlinkOf,
@@ -969,6 +970,8 @@ function typeSections(
       add('Leaders', multiLeaderLeaderRows(model, es));
       // M2-35 part 11: the text of multileaders that all hold text.
       add('Text', multiLeaderTextRows(es, textStyles));
+      // M2-35 part 15: in Text's place, the block of multileaders that all hold a block.
+      add('Block', multiLeaderBlockRows(model, es));
       break;
     case 'INSERT': {
       const g = (e: Entity) => geomOf<'INSERT'>(e);
@@ -1376,6 +1379,61 @@ function multiLeaderLeaderRows(model: DocumentModel, es: readonly Entity[]): Pro
       label: 'Landing distance',
       kind: 'distance',
       get: (e) => g(e).doglegLength,
+    }),
+  ];
+}
+
+/**
+ * A block multileader's Block rows (M2-35 part 15; see `multileader-block.ts`): Source block (the
+ * drawing's named blocks and the ones shown now), Block color, Block scale (its own, over the
+ * overall scale) and Block rotation. None when one of the multileaders holds text or nothing.
+ */
+function multiLeaderBlockRows(model: DocumentModel, es: readonly Entity[]): PropertyRow[] {
+  const g = (e: Entity) => geomOf<'MULTILEADER'>(e);
+  const blocks = es.map((e) => blockOf(g(e)));
+  if (blocks.length === 0 || blocks.some((b) => b === undefined)) return [];
+  const b = (e: Entity) => blockOf(g(e))!;
+  const shown = new Set(blocks.map((x) => x!.block));
+  const sources: PropertyOption[] = [...model.blocks.values()]
+    .filter((d) => isContentBlock(d) || shown.has(d.handle))
+    .map((d) => ({ value: d.handle as string, label: d.name }))
+    .sort((x, y) => x.label.localeCompare(y.label));
+  const colors = new Map<string, string>(
+    STANDARD_COLORS.map((c) => [colorValue(c), colorLabel(c)]),
+  );
+  for (const e of es) {
+    const c = b(e).color;
+    if (!colors.has(colorValue(c))) colors.set(colorValue(c), colorLabel(c));
+  }
+  return [
+    row(es, {
+      key: 'sourceBlock',
+      label: 'Source block',
+      kind: 'choice',
+      options: sources,
+      get: (e) => b(e).block ?? '',
+    }),
+    {
+      ...row(es, {
+        key: 'blockColor',
+        label: 'Block color',
+        kind: 'choice',
+        options: [...colors].map(([value, label]) => ({ value, label })),
+        get: (e) => colorValue(b(e).color),
+      }),
+      colorDialog: 'true',
+    },
+    row(es, {
+      key: 'blockScale',
+      label: 'Block scale',
+      kind: 'number',
+      get: (e) => blockScaleValue(g(e), b(e)),
+    }),
+    row(es, {
+      key: 'blockRotation',
+      label: 'Block rotation',
+      kind: 'angle',
+      get: (e) => b(e).rotation,
     }),
   ];
 }
