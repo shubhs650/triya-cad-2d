@@ -75,6 +75,12 @@ export type HostMessage =
       readonly definition: string;
       readonly raster: UnderlayRaster | null;
     }
+  /** A PDFDEFINITION's page size as read from its PDF; null forgets it (M2-68). */
+  | {
+      readonly type: 'underlayPage';
+      readonly definition: string;
+      readonly page: { readonly width: number; readonly height: number } | null;
+    }
   /** A PDFDEFINITION's page geometry for osnap, copied; null forgets it (M2-22). */
   | {
       readonly type: 'underlaySnap';

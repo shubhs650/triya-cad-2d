@@ -242,6 +242,18 @@ export class RendererHost {
   }
 
   /**
+   * A PDFDEFINITION's page size as read from its PDF (inches), or undefined to forget it
+   * (M2-68): the extents take in an unclipped underlay's page before any of it is drawn.
+   */
+  setUnderlayPage(
+    definition: string,
+    page: { readonly width: number; readonly height: number } | undefined,
+  ): void {
+    if (this.#session) this.#session.setUnderlayPage(definition, page);
+    else this.#post({ type: 'underlayPage', definition, page: page ?? null });
+  }
+
+  /**
    * A PDFDEFINITION's page geometry for running object snaps (M2-22), or undefined to forget
    * it. The worker gets a copy (the app keeps its pages cached).
    */
