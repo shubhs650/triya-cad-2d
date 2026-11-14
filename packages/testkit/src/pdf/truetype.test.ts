@@ -254,6 +254,66 @@ describe('TrueType text in a PDF plot (M2-16 part 3)', () => {
     const { latin } = plot([textItem(ttf, 'A°')]);
     expect(latin).toContain('2 beginbfchar\n<0001> <0041>\n<0002> <00B0>\nendbfchar');
   });
+
+  // M2-51: characters the font lacks all show .notdef, and a font may draw two characters
+  // with one glyph (Greek Alpha with the Latin A, no-break space with the space); each must
+  // still copy as typed.
+  it('copies characters that share a glyph as the characters typed', async () => {
+    const { glyphs, path } = line(ttf, 'AB text \u0391\u00a0B', 20, 100, 10);
+    const a = ttf.glyph(0x41).index;
+    const space = ttf.glyph(0x20).index;
+    // As a font mapping U+0391 to its A and U+00A0 to its space hands them (Triya Pixel maps
+    // neither, so it would show .notdef).
+    const shared = glyphs.map((g) =>
+      g.codePoint === 0x391
+        ? { ...g, index: a }
+        : g.codePoint === 0xa0
+          ? { ...g, index: space }
+          : g,
+    );
+    const { bytes, latin } = plot([{ kind: 'fill', path, paint: PAINT, glyphs: shared }]);
+    // Each further character a glyph shows gets its own code through an embedded CMap: e and
+    // x on .notdef after the first t, U+0391 on A, U+00A0 on space.
+    expect(latin).toMatch(/\/Encoding \d+ 0 R/);
+    expect(latin).not.toContain('/Identity-H');
+    expect(latin).toMatch(/\/Type \/CMap \/CMapName \/Triya-[A-Z]{6}-H /);
+    // The subset's CIDs 0-3 are themselves; codes from the font's glyph count go to them.
+    const free = TrueTypeFont.parse(testTrueType())!.numGlyphs;
+    const hex = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
+    expect(latin).toContain('1 begincidrange\n<0000> <' + hex(free - 1) + '> 0\nendcidrange');
+    expect(latin).toContain(
+      `4 begincidchar\n<${hex(free)}> 0\n<${hex(free + 1)}> 0\n<${hex(free + 2)}> 1\n<${hex(free + 3)}> 3\nendcidchar`,
+    );
+    expect(latin).toContain(`<${hex(free + 3)}> <00A0>`);
+    // The font file is the same subset: .notdef, A, B and space.
+    expect(TrueTypeFont.parse(fontFile(latin, bytes))!.numGlyphs).toBe(4);
+    const task = getDocument({ data: bytes.slice(), fontExtraProperties: true });
+    const doc = await task.promise;
+    try {
+      const page = await doc.getPage(1);
+      const content = await page.getTextContent();
+      const text = content.items.map((i) => ('str' in i ? i.str : '')).join('');
+      // pdf.js reads U+00A0 as a space (its normalizeUnicode); the CMap above keeps it.
+      expect(text).toBe('AB text \u0391 B');
+      // The page still draws the glyphs: every code reaches a glyph of the embedded font.
+      const ops = await page.getOperatorList();
+      const shown = ops.argsArray[ops.fnArray.indexOf(OPS.showText)]![0] as (
+        { unicode: string } | number
+      )[];
+      const chars = shown.filter((g) => typeof g === 'object');
+      expect(chars.map((g) => g.unicode).join('')).toBe('AB text \u0391\u00a0B');
+    } finally {
+      await task.destroy();
+    }
+  });
+
+  it('keeps Identity-H and one code per glyph when no glyph shows two characters', () => {
+    const { latin } = plot([textItem(ttf, 'AB AB')]);
+    expect(latin).toContain('/Encoding /Identity-H');
+    expect(latin).toContain(
+      '3 beginbfchar\n<0001> <0041>\n<0002> <0042>\n<0003> <0020>\nendbfchar',
+    );
+  });
 });
 
 describe('TrueType glyphs from the renderer (M2-16 part 3)', () => {

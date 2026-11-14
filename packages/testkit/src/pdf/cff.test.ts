@@ -242,6 +242,26 @@ describe('CFF text in a PDF plot (M2-16 part 4)', () => {
     expect(read.font.missingFile).toBe(false);
   });
 
+  // M2-51: a CFF font's CIDs are its own (glyph numbers or the charset's CIDs), so a second
+  // character on one glyph takes a code above every CID the font has, read through the
+  // embedded CMap as that glyph's CID.
+  it('copies characters that share a glyph as typed, plain and CID-keyed', async () => {
+    for (const font of [ttf, cidTtf]) {
+      const item = textItem(font, 'HE text \u0397E');
+      const h = font.glyph(0x48).index;
+      // As a font mapping Greek Eta to its Latin H hands it (Triya Pixel maps no U+0397).
+      const glyphs = (item.kind === 'fill' ? item.glyphs! : []).map((g) =>
+        g.codePoint === 0x397 ? { ...g, index: h } : g,
+      );
+      const { bytes, latin } = plot([{ ...item, glyphs } as PlotItem]);
+      expect(latin).toMatch(/\/Encoding \d+ 0 R/);
+      expect(latin).toMatch(/begincidrange/);
+      const read = await readBack(bytes);
+      expect(read.text).toBe('HE text \u0397E');
+      expect(read.font.missingFile).toBe(false);
+    }
+  });
+
   it('embeds a CFF that forbids subsetting whole and without a subset tag', () => {
     const whole = parseTtf(testTrueType({ outlines: 'cff', fsType: 0x0100 }));
     const { bytes, latin } = plot([textItem(whole, 'H')]);

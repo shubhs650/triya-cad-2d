@@ -416,7 +416,7 @@ function plotText(page: PdfPage, glyphs: readonly PlotGlyph[], o: PlotPageOption
     // One em of the font (size 1 text space) → paper.
     const m = compose(o.toPaper, compose(g.m, { a: upm, b: 0, c: 0, d: upm, e: 0, f: 0 }));
     if (!invertible(m)) return;
-    const code = f.cid(g.index, g.codePoint);
+    const code = f.code(g.index, g.codePoint);
     const width = f.width(code) / 1000;
     if (run && font === f.name && sameLinear(run.m, m)) {
       // Where this glyph's origin lies in the run's text space.
