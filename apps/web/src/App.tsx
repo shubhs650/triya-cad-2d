@@ -338,6 +338,9 @@ const selections = new Map<number, readonly EntityId[]>();
 const grips = new Map<number, { readonly ids: readonly EntityId[]; readonly hot?: Vec2 }>();
 
 /** The view commands' link to a drawing's canvas: the current viewport of the space shown. */
+/** A canvas's name in the drawing's view undo steps (M2-47 part 4): its space and tile. */
+const viewportKey = (block: string, tile: number) => `${block}:${tile}`;
+
 function viewContext(id: number): ViewContext {
   const doc = store.getSnapshot().docs.find((d) => d.id === id);
   const target = doc && controllerOf(doc.id, doc.block);
@@ -345,6 +348,11 @@ function viewContext(id: number): ViewContext {
     target,
     all: () => (doc ? tilesOf(doc.id, doc.block).map(([, c]) => c) : []),
     views: () => (doc && target ? namedViewsOf(doc, engines.changesOf(doc.id), target.size) : []),
+    viewport: (key) => {
+      const at = key.lastIndexOf(':');
+      const tile = Number(key.slice(at + 1));
+      return tilesOf(id, key.slice(0, at)).find(([i]) => i === tile)?.[1];
+    },
     file: (action, window, resume) => fileCommand(id, action, window, resume),
     plot: (r) => plotScript(id, r),
     // Properties' Pattern name (M2-35 part 3), from the library the canvases draw with.
@@ -1873,6 +1881,15 @@ function ViewportCanvas({
         );
       },
       onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
+      // A view changed is an undo step of the drawing's (M2-47 part 4); U finds this canvas
+      // again by the name given here (`viewContext`'s `viewport`).
+      onViewStep: (label, view) =>
+        engines.command(id, {
+          kind: 'view-step',
+          label,
+          viewport: viewportKey(block, index),
+          view,
+        }),
       onSnapMenu: (at) => snapMenu.open(id, at),
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);

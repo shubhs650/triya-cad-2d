@@ -16,6 +16,7 @@ import type {
   PatternPlacement,
   TextGeometry,
   TextOutline,
+  UndoView,
   Vec2,
   ViewReply,
   ViewRequest,
@@ -59,6 +60,12 @@ export interface ViewTarget {
   columnCounts(texts: readonly MTextGeometry[]): Promise<(number | null)[]>;
   /** Where texts lie as drawn (M2-27), null for one no loaded font draws. */
   textOutlines(texts: readonly (TextGeometry | MTextGeometry)[]): Promise<(TextOutline | null)[]>;
+  /**
+   * A view step undone or redone (M2-47 part 4): shows `view`, recorded for neither ZOOM
+   * Previous nor the undo history, and answers with the view it replaced (none before the
+   * canvas first showed one).
+   */
+  swapView(view: UndoView): UndoView | undefined;
   /** The pickbox's half size in world units (M2-27: an attribute picked by its text). */
   readonly pickbox: number;
   /** The objects' extents as drawn (M2-14 part 2: COPYCLIP's base point), or undefined. */
@@ -79,6 +86,11 @@ export interface ViewContext {
   readonly all: () => readonly ViewTarget[];
   /** The space's named views, as `target` would show them. */
   readonly views: () => readonly NamedView[];
+  /**
+   * The canvas a view step names (M2-47 part 4), shown or not, by the name its `view-step`
+   * input gave it; undefined once it is gone.
+   */
+  readonly viewport?: (key: string) => ViewTarget | undefined;
   /**
    * QSAVE, SAVEAS and CLOSE (M2-13): the app saves or closes the drawing; PLOT's `window` is the
    * plot window just picked (M2-17 part 2).
@@ -155,6 +167,21 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'clipboard') {
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };
+  }
+  if (r.op === 'swap') {
+    // Not the space shown: the viewport the step was made in, which U may reach from another.
+    const v = ctx.viewport?.(r.viewport);
+    const replaced = v?.swapView(r.view);
+    if (!v || !replaced) return { ok: false, message: NO_CANVAS };
+    const { width, height } = v.size;
+    return {
+      ok: true,
+      view: {
+        ...replaced,
+        width: height > 0 ? (replaced.height * width) / height : replaced.height,
+        paper: v.isLayout,
+      },
+    };
   }
   const t = ctx.target;
   if (t && !t.view && t.size.width > 0 && t.size.height > 0) {

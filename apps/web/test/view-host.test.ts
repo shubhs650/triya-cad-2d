@@ -1,6 +1,13 @@
 // M2-02 part 2: the app's answers to the view commands, against a recording canvas, and the view
 // maths they add (ZOOM n relative to the limits, real-time ZOOM's drag factor).
-import type { MTextGeometry, TextGeometry, Vec2, ViewReply, ViewRequest } from '@triya/engine';
+import type {
+  MTextGeometry,
+  TextGeometry,
+  UndoView,
+  Vec2,
+  ViewReply,
+  ViewRequest,
+} from '@triya/engine';
 import type { ViewTransform } from '@triya/render';
 import { describe, expect, it } from 'vitest';
 import type { CanvasMode } from '../src/canvas/controller';
@@ -78,6 +85,13 @@ class Target implements ViewTarget {
     if (this.firstView) this.view = this.firstView;
     return Promise.resolve(this.view !== undefined);
   };
+  /** A view step undone (M2-47 part 4): shows `v`, answers with the view it replaced. */
+  swapView = (v: UndoView): UndoView | undefined => {
+    this.calls.push(`swap ${v.center.x},${v.center.y} ${v.height}`);
+    const old = this.view;
+    this.view = { center: v.center, scale: this.size.height / v.height };
+    return old && { center: old.center, height: this.size.height / old.scale };
+  };
   boundsOf = (ids: readonly number[]) => (
     this.calls.push(`bounds ${ids.join(',')}`),
     Promise.resolve(this.objectsKnown ? { minX: 1, minY: 2, maxX: 3, maxY: 4 } : undefined)
@@ -105,6 +119,29 @@ function context(target: Target | undefined, others: Target[] = []) {
 }
 
 describe('answerView', () => {
+  it('swaps a view step’s view into the viewport it names, not the one shown (M2-47 part 4)', () => {
+    const shown = new Target();
+    const other = new Target(true);
+    const { ctx } = context(shown);
+    const viewports = { ...ctx, viewport: (key: string) => (key === '1E:0' ? other : undefined) };
+    const r: ViewRequest = {
+      op: 'swap',
+      viewport: '1E:0',
+      view: { center: { x: 1, y: 2 }, height: 50 },
+    };
+    expect(now(answerView(r, viewports))).toEqual({
+      ok: true,
+      view: { center: { x: 10, y: 20 }, height: 100, width: 200, paper: true },
+    });
+    expect(other.calls).toEqual(['swap 1,2 50']);
+    expect(shown.calls).toEqual([]);
+    expect(now(answerView({ ...r, viewport: '1F:0' }, viewports))).toEqual({
+      ok: false,
+      message: NO_CANVAS,
+    });
+    expect(now(answerView(r, ctx))).toEqual({ ok: false, message: NO_CANVAS });
+  });
+
   it('hands the file commands to the app, with or without a canvas (M2-13)', async () => {
     const { ctx } = context(undefined);
     expect(await answerView({ op: 'file', action: 'qsave' }, ctx)).toEqual({
