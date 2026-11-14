@@ -187,7 +187,14 @@ export function CommandLine({
       const r = replayAhead(textRef.current, held.current, now.prompt);
       rest = r.keys;
       if (r.submit !== undefined) send(r.submit);
-      else setText(r.text);
+      else {
+        setText(r.text);
+        // The field shows it at once: the next key, no longer held, is typed into the field
+        // before React renders the text, and would otherwise replace it (CI lost `REVCLOUDG`
+        // of a REVCLOUDGRIPS typed across the engine's answer).
+        textRef.current = r.text;
+        if (input.current) input.current.value = r.text;
+      }
     }
     held.current = [...rest];
     // An Esc the replay reached with no input sent before it cancels now; the keys after it
@@ -295,7 +302,9 @@ export function CommandLine({
       e.preventDefault();
     } else if (e.key === 'Enter' || (e.key === ' ' && !spaces)) {
       e.preventDefault();
-      send(text);
+      // What the field shows, which may be ahead of `text`: keys typed ahead and replayed into
+      // it (M2-71) are there before React renders them.
+      send(e.currentTarget.value);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       if (historyOpen) setHistoryOpen(false);
