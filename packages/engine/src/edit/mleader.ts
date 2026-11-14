@@ -41,7 +41,12 @@ import type {
   MultiLeaderText,
 } from '../model/types';
 
-/** DXF 90 bits: the multileader properties that override its style (DXF reference, MLEADER). */
+/**
+ * DXF 90 bits: the multileader properties that override its style (the ODA specification's
+ * MLEADER override flags, as ezdxf's `mleader.OverrideFlags` and acad-ts's
+ * `MultiLeaderPropertyOverrideFlags` name them; M2-66 moved the block content and scale bits
+ * from 17 and 22, the text frame's and the block rotation's).
+ */
 export const MLEADER_OVERRIDES = {
   pathType: 1 << 0,
   lineColor: 1 << 1,
@@ -53,8 +58,11 @@ export const MLEADER_OVERRIDES = {
   arrowhead: 1 << 8,
   arrowheadSize: 1 << 9,
   contentType: 1 << 10,
-  blockContent: 1 << 17,
-  scale: 1 << 22,
+  blockContent: 1 << 19,
+  blockColor: 1 << 20,
+  blockScale: 1 << 21,
+  blockRotation: 1 << 22,
+  scale: 1 << 24,
 } as const;
 
 /** DXF 170/172 content types. */
