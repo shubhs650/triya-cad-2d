@@ -17,14 +17,14 @@ import {
 } from '@triya/engine';
 import { documentInit, exportDocument, readCadDocument, type CadFormat } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 /** Generous for the largest corpus files read twice and written once under full-suite load. */
 const PER_FILE_BUDGET_MS = 10_000;

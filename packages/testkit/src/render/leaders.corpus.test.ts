@@ -18,7 +18,7 @@ import {
 } from '@triya/render';
 import { FontBook, GDT_FONT, GDT_SYMBOLS, loadStrokeFont, parseShx } from '@triya/text';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { bundledFontBook, bundledFontFiles } from './bundled-fonts.ts';
 import { corpusDrawing } from './document.ts';
 import { squareFont } from './square-font.ts';
@@ -27,7 +27,7 @@ const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url))
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 
 describe('leaders on the public corpus (M1-52)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('draws every MULTILEADER, LEADER and TOLERANCE and bounds it by what it draws', () => {
     const fonts = new FontBook({ alternate: 'square' });

@@ -265,6 +265,27 @@ describe('ChangeSetBuilder', () => {
     expect(m.tables.blockRecords.get(m.layouts[3]!.blockRecord)?.name).toBe('*Paper_Space2');
   });
 
+  // M2-49 (ezdxf's layout_missing_block_definition.dxf numbers its tabs 1 and 3): the tabs left
+  // are numbered 1 to N again, as AutoCAD keeps them, not just moved up one past the removed one.
+  it('numbers the tabs left 1 to N when the drawing had a gap in them', () => {
+    const m = sampleModel();
+    const b = new ChangeSetBuilder(m);
+    const two = b.addLayout({ name: 'Sheet 2' });
+    const three = b.addLayout({ name: 'Sheet 3' });
+    m.apply(b.build());
+    const gap = new ChangeSetBuilder(m);
+    gap.updateLayout(three.handle, { tabOrder: 5 });
+    m.apply(gap.build());
+    const b2 = new ChangeSetBuilder(m);
+    b2.removeLayout(two.handle);
+    m.apply(b2.build());
+    expect(m.layouts.map((l) => `${l.tabOrder}:${l.name}`)).toEqual([
+      '0:Model',
+      '1:Layout1',
+      '2:Sheet 3',
+    ]);
+  });
+
   it('makes another layout current, swapping the sheet blocks and the header, and undoes it', () => {
     const m = sampleModel();
     const space = (z: number) => ({

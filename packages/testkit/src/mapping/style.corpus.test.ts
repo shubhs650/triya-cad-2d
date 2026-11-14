@@ -9,7 +9,7 @@ import { Color } from '@node-projects/acad-ts';
 import { mapEntities, mapSortEnts, mapTables, readCadDocument } from '@triya/io';
 import { aciRgb, dashPath, drawOrder, parseLin, patternLength, patternOf } from '@triya/render';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 
 const hex = (n: number) => n.toString(16).toUpperCase();
 
@@ -18,7 +18,7 @@ const corpusDir = `${repo}corpus/`;
 const manifest = loadManifest(`${corpusDir}corpus.json`);
 
 describe('linetype patterns on the public corpus (M1-13)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('turns every LTYPE record into a pattern of its own length that fits a line', () => {
     const wrong: string[] = [];
@@ -76,7 +76,7 @@ describe('linetype patterns on the public corpus (M1-13)', () => {
 });
 
 describe('draw order on the public corpus (M1-13 part 2)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('maps every SORTENTSTABLE onto entities of its own block', () => {
     const wrong: string[] = [];

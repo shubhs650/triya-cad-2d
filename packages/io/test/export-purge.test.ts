@@ -19,6 +19,7 @@ import {
   ExtendedDataString,
   Insert,
   Layer,
+  Layout,
   Line,
   LineType,
   Material,
@@ -300,6 +301,38 @@ describe('TriyaToAcad PURGE', () => {
     expect(
       refused((b, model) => purge(b, model, 'blockRecords', '*Paper_Space'), bytes),
     ).toContainEqual(expect.stringMatching(/a layout's block goes with its layout/));
+  });
+
+  // M2-49 (ezdxf's layout_broken_links.dxf): a LAYOUT whose block link names no block record
+  // maps no layout, though the block records still name it. Its sheet block's layout is not
+  // "gone" in the save: only a layout the drawing had and the model lost takes its block along.
+  it('refuses a sheet block whose layout the drawing never mapped', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    doc.updateCollections(true, false);
+    for (const [name, block] of [
+      ['Model', doc.modelSpace!],
+      ['Sheet', doc.paperSpace!],
+    ] as const) {
+      const layout = new Layout(name);
+      doc.layouts!.add(layout);
+      layout.associatedBlock = block;
+    }
+    const text = Array.from(writeCadDocument(doc, { format: 'dxf' }), (c) =>
+      String.fromCharCode(c),
+    ).join('');
+    const broken = text.replace(
+      /(\n *0\r?\nLAYOUT\r?\n[\s\S]*?\nAcDbLayout\r?\n[\s\S]*?\n *330\r?\n)[0-9A-F]+/g,
+      '$1FFFA',
+    );
+    const encode = (t: string) => Uint8Array.from(t, (c) => c.charCodeAt(0));
+    const bytes = encode(broken);
+    expect(open(encode(text)).layouts).toHaveLength(2);
+    expect(open(bytes).layouts).toEqual([]);
+    for (const name of ['*Model_Space', '*Paper_Space'])
+      expect(
+        refused((b, model) => purge(b, model, 'blockRecords', name), bytes),
+        name,
+      ).toContainEqual(expect.stringMatching(/a layout's block goes with its layout/));
   });
 });
 
