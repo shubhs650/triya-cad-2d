@@ -71,6 +71,7 @@ import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
 import { LayersPalette } from './LayersPalette';
 import { PropertiesPalette } from './PropertiesPalette';
+import { QuickProperties } from './QuickProperties';
 import { hatchPatternNames, hatchPatternReply } from './hatch-patterns';
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
@@ -1057,6 +1058,9 @@ async function open(
     // The Properties palette, docked, showed the drawing before its engine started (M2-21).
     if (dockedPalette.get() === 'properties' && store.getSnapshot().active === id)
       engines.command(id, { kind: 'properties', open: true });
+    // Quick Properties too (M2-35 part 16), in the Properties palette's place.
+    else if (drafting.isOn('qp') && store.getSnapshot().active === id)
+      engines.command(id, { kind: 'properties', open: true, quick: true });
     if (recovered) autosaver.recovered(id, recovered.from);
     if (handle) void recent.add(handle as RecentHandle);
     void deviceFonts.need(trueTypeFontsOf(opened.init));
@@ -1219,6 +1223,7 @@ export function App() {
   const [settings, setSettings] = useState(false);
   // One palette docks at a time until the palette stack (M7-03); PROPERTIES opens one too.
   const palette = useSyncExternalStore(dockedPalette.subscribe, dockedPalette.get);
+  const quickOn = useSyncExternalStore(drafting.subscribe, () => drafting.isOn('qp'));
   const setPalette = (p: PaletteName | undefined) => dockedPalette.set(p);
   const togglePalette = (p: PaletteName) => dockedPalette.toggle(p);
   const suppliedVersion = useSyncExternalStore(supplied.subscribe, () => supplied.version);
@@ -1268,6 +1273,11 @@ export function App() {
         e.preventDefault();
         const { active } = store.getSnapshot();
         if (active !== undefined) engines.command(active, { kind: 'invoke', name: 'PLOT' });
+      }
+      // Ctrl+Shift+P turns Quick Properties on or off (QPMODE, M2-35 part 16), as in AutoCAD.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.shiftKey && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        drafting.toggle('qp');
       }
       // Ctrl+1 opens or closes the Properties palette (PROPERTIES, M2-21), as in AutoCAD.
       if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key === '1') {
@@ -1499,6 +1509,14 @@ export function App() {
               changes={engines.changesOf(active.id)}
               mode={mode}
               onSaveView={(name, view) => void saveView(active.id, name, view)}
+            />
+          )}
+          {active && palette !== 'properties' && quickOn && (
+            <QuickProperties
+              key={active.id}
+              doc={active}
+              selected={() => selections.get(active.id) ?? []}
+              patternNames={patternNames}
             />
           )}
           <PlotPreview active={state.active} />

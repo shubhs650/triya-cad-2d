@@ -50,6 +50,29 @@ describe('system variables the app keeps', () => {
     expect(d.get().revcloudGrips).toBe(false);
   });
 
+  it('keep QPMODE and QPLOCATION, the status bar\u2019s Quick Properties button turning QPMODE\u2019s sign', () => {
+    // AutoCAD 2024 Help, "QPMODE": −1 initially; 0 off, 1 all objects, 2 only objects with
+    // Quick Properties; a negative value is off and keeps what it turns back on to.
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'QPMODE')).toEqual({ ok: true, value: -1 });
+    expect(d.isOn('qp')).toBe(false);
+    d.toggle('qp');
+    expect(systemVariableReply(d, 'QPMODE')).toEqual({ ok: true, value: 1 });
+    systemVariableReply(d, 'QPMODE', 2);
+    d.toggle('qp');
+    expect(d.get().qpmode).toBe(-2);
+    d.toggle('qp');
+    expect(d.get().qpmode).toBe(2);
+    // 0 is off with nothing to keep: the button turns it on for all objects.
+    systemVariableReply(d, 'QPMODE', 0);
+    expect(d.isOn('qp')).toBe(false);
+    d.toggle('qp');
+    expect(d.get().qpmode).toBe(1);
+    expect(systemVariableReply(d, 'QPLOCATION')).toEqual({ ok: true, value: 0 });
+    systemVariableReply(d, 'QPLOCATION', 1);
+    expect(d.get().qpLocation).toBe(1);
+  });
+
   it('are answered by the view host, refused where the app keeps none', () => {
     const d = new Drafting();
     const ctx = { target: undefined, all: () => [], views: () => [] };
