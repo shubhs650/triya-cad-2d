@@ -1,0 +1,1 @@
+- M2-59 part 3 (#341): SETVAR and GRIPSIZE at `Command:` set AutoCAD's per-user grip size (1–255, initially 5); grips are drawn at it and a click takes one within its reach; Settings adds Grip size.

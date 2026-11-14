@@ -111,6 +111,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'AUTOSNAPSIZE', store: 'app', kind: 'integer', min: 1, max: 20 },
   { name: 'DYNMODE', store: 'app', kind: 'integer', min: -3, max: 3 },
   { name: PICKFIRST, store: 'app', kind: 'switch' },
+  // GRIPSIZE (M2-59 part 3): the grip box's size in pixels, 1 to 255, initially 5 (AutoCAD 2024
+  // Help); Settings' grip size, which the canvas draws and picks grips at.
+  { name: 'GRIPSIZE', store: 'app', kind: 'integer', min: 1, max: 255 },
 ];
 
 /**

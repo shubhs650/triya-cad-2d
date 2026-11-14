@@ -58,6 +58,8 @@ describe('preferences', () => {
       // tooltips, all on (AutoCAD's initial 63); PICKFIRST 1 (M2-59).
       autosnap: 39,
       pickfirst: true,
+      // GRIPSIZE 5 (M2-59 part 3).
+      gripSize: 5,
     });
   });
 
@@ -80,6 +82,7 @@ describe('preferences', () => {
         polarAngle: 33,
         markerSize: 40,
         aperture: 25,
+        gripSize: 300,
         otrack: 'no',
         pdfOsnap: false,
         revcloudGrips: false,
@@ -100,12 +103,13 @@ describe('preferences', () => {
     });
     expect(p.coordinates).toBe('drawing');
     expect(p.dynMode).toBe(false);
-    // POLARANG only from AutoCAD's list; AUTOSNAPSIZE 1–20 and APERTURE 1–50.
+    // POLARANG only from AutoCAD's list; AUTOSNAPSIZE 1–20, APERTURE 1–50 and GRIPSIZE 1–255.
     expect(p.drafting).toEqual({
       ...DEFAULT_PREFERENCES.drafting,
       osmode: OSNAP.MID,
       markerSize: 20,
       aperture: 25,
+      gripSize: 255,
       pdfOsnap: false,
       revcloudGrips: false,
       // QPMODE −2 to 2 only; QPLOCATION 0 or 1.

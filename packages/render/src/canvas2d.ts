@@ -109,6 +109,7 @@ import {
   PATH_M,
   PATH_Q,
   PATH_Z,
+  gripHalfSize,
   screenToWorld,
   visibleBox,
   type DrawnEntity,
@@ -403,10 +404,9 @@ function touchesSortEnts(c: KeyedChanges<NonGraphicalObject> | undefined): boole
 }
 
 /**
- * Grips (M2-06 part 2): GRIPSIZE's half size in CSS pixels, GRIPCOLOR (ACI 150), GRIPHOT (ACI 12)
- * and a dark edge.
+ * Grips (M2-06 part 2): GRIPCOLOR (ACI 150), GRIPHOT (ACI 12) and a dark edge; their size is the
+ * style's GRIPSIZE (`gripHalfSize`, M2-59 part 3).
  */
-const GRIP_SIZE = 4;
 const GRIP_COLOR = rgbHex(aciRgb(150));
 const GRIP_HOT = rgbHex(aciRgb(12));
 const GRIP_EDGE = '#1a1a1a';
@@ -781,7 +781,7 @@ export class Canvas2DRenderer implements Renderer {
 
   /**
    * The objects to show grips on, the hot one red (M2-06 part 2); undefined or none hides them.
-   * Grips are drawn GRIPSIZE pixels square in GRIPCOLOR (ACI 150) and GRIPHOT (ACI 12), over
+   * Grips are drawn at the style's GRIPSIZE in GRIPCOLOR (ACI 150) and GRIPHOT (ACI 12), over
    * everything, AutoCAD's defaults.
    */
   setGrips(ids: readonly EntityId[], hot?: Vec2): void {
@@ -1311,7 +1311,7 @@ export class Canvas2DRenderer implements Renderer {
   #drawGrips(ctx: Canvas2D): void {
     const grips = this.#grips!;
     const { ox, oy, m } = this.#viewFrame();
-    const half = Math.round(GRIP_SIZE * this.#dpr);
+    const half = Math.max(1, Math.round(gripHalfSize(this.#style.gripSize) * this.#dpr));
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.globalAlpha = 1;
     const seen = new Set<string>();

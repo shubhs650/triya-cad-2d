@@ -1,7 +1,8 @@
 // M2-42: a system variable's name typed at `Command:`, as AutoCAD takes it, and SETVAR, from the
 // app's command line: a header variable (MIRRTEXT, an undoable edit of the drawing), a drafting
 // aid the status bar shows (ORTHOMODE is the ORTHO button), and REVCLOUDGRIPS 0, which gives a
-// revision cloud a grip at every arc's end instead of its corners. The prompts and refusals are
+// revision cloud a grip at every arc's end instead of its corners. M2-59 part 3: GRIPSIZE sizes
+// the grips drawn and how near a click must be to take one. The prompts and refusals are
 // unit-tested in packages/engine/test/commands/setvar.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
@@ -287,5 +288,77 @@ test('AUTOSNAP, DYNMODE, PICKFIRST and SCREENSIZE', async ({ page }) => {
   await page.keyboard.press('Escape');
   await expect(settings).toBeHidden();
   await type(page, 'AUTOSNAP', 'Enter new value for AUTOSNAP <47>:');
+  await type(page, '', 'Command:');
+});
+
+test('GRIPSIZE draws and picks grips at its size, and Settings shows it', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await expect(prompt(page)).toHaveText('Command:');
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+
+  // A line in an empty part of the drawing, zoomed so 160 × 100 units fill the canvas.
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  const k = Math.min(box.width / 160, box.height / 100);
+  const at = (x: number, y: number) => ({
+    x: box.x + box.width / 2 + (x - 80) * k,
+    y: box.y + box.height / 2 - (y - 50) * k,
+  });
+  const O = 1_000_000;
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${O},${O}`, 'Specify opposite corner:');
+  await type(page, `${O + 160},${O + 100}`, 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `${O + 70},${O + 50}`, /^Specify next point/);
+  await type(page, `${O + 90},${O + 50}`, /^Specify next point/);
+  await type(page, '', 'Command:');
+  // Running object snaps would pull the clicks onto the line's own points; off.
+  await page.keyboard.press('F3');
+  const pick = at(75, 50);
+  const end = at(90, 50);
+  // 9 px above the line's end: outside a grip at GRIPSIZE 5 (a 4 px half size, picked within
+  // 5 px), inside one at 15 (12 px, picked within 13).
+  const nearEnd = { x: end.x, y: end.y - 9 };
+
+  // GRIPSIZE 5, AutoCAD's initial value: small grips, and the click near the end misses.
+  await page.mouse.click(pick.x, pick.y);
+  await expect.poll(() => blue(page, end, 14)).toBeGreaterThan(20);
+  expect(await blue(page, end, 14)).toBeLessThan(150);
+  await shot('0-gripsize-5.png');
+  await page.mouse.click(nearEnd.x, nearEnd.y);
+  await page.waitForTimeout(300);
+  await expect(prompt(page)).not.toHaveText(/^Specify stretch point/);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(() => blue(page, end, 14)).toBe(0);
+
+  // GRIPSIZE 15: three times the size, and the same click takes the grip.
+  await type(page, 'GRIPSIZE', 'Enter new value for GRIPSIZE <5>:');
+  await type(page, '256', 'Enter new value for GRIPSIZE <5>:');
+  await type(page, '15', 'Command:');
+  await page.mouse.click(pick.x, pick.y);
+  await expect.poll(() => blue(page, end, 14)).toBeGreaterThan(400);
+  await shot('1-gripsize-15.png');
+  await page.mouse.click(nearEnd.x, nearEnd.y);
+  await expect(prompt(page)).toHaveText(/^Specify stretch point/);
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // Settings' Grip size is GRIPSIZE: it shows 15, and set there SETVAR reads it back.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  const grip = settings.getByLabel('Grip size');
+  await expect(grip).toHaveValue('15');
+  await grip.scrollIntoViewIfNeeded();
+  await shot('2-settings-grip-size.png');
+  await grip.fill('8');
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+  await type(page, 'GRIPSIZE', 'Enter new value for GRIPSIZE <8>:');
   await type(page, '', 'Command:');
 });
