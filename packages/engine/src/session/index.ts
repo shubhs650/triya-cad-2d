@@ -6,6 +6,7 @@
 import { builtinCommands } from '../commands/builtin';
 import { PromptBus, modelSpaceOf, type BusEvent } from '../commands/bus';
 import type { PromptAnswer } from '../commands/prompt';
+import { PICKFIRST } from '../commands/sysvars';
 import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
@@ -77,13 +78,14 @@ export type ViewTableEdit =
   | { readonly kind: 'view-rename'; readonly name: string; readonly newName: string };
 
 /**
- * A per-user system variable the app keeps (M2-42) that the drawing's grips follow:
- * REVCLOUDGRIPS. The app sets it on every drawing it opens and whenever SETVAR changes it. Not an
- * undoable edit, and never saved: AutoCAD keeps it in the registry, not in the drawing.
+ * A per-user system variable the app keeps that the drawing's engine follows: REVCLOUDGRIPS
+ * (M2-42), which its grips follow, and PICKFIRST (M2-59), which its command line follows. The app
+ * sets them on every drawing it opens and whenever SETVAR changes them. Not undoable edits, and
+ * never saved: AutoCAD keeps them in the registry, not in the drawing.
  */
 export interface SessionVariableEdit {
   readonly kind: 'sysvar';
-  readonly name: typeof REVCLOUDGRIPS;
+  readonly name: typeof REVCLOUDGRIPS | typeof PICKFIRST;
   readonly value: 0 | 1;
 }
 
@@ -441,8 +443,13 @@ export class EngineSession {
   }
 
   #sessionVariable(e: SessionVariableEdit): EditResult {
-    if (e.name !== REVCLOUDGRIPS || (e.value !== 0 && e.value !== 1)) {
+    const known = e.name === REVCLOUDGRIPS || e.name === PICKFIRST;
+    if (!known || (e.value !== 0 && e.value !== 1)) {
       return { ok: false, message: `Cannot set ${String(e.name)} here.` };
+    }
+    if (e.name === PICKFIRST) {
+      void this.#bus.setPickfirst(e.value === 1);
+      return { ok: true, change: {} };
     }
     // 1 is AutoCAD's initial value, which no entry means.
     const value = e.value === 1 ? undefined : 0;
@@ -501,6 +508,11 @@ export class EngineSession {
    */
   #step(label: string, change: ChangeSet): void {
     this.#bus.undo.push({ command: label, changes: [change] });
+  }
+
+  /** PICKFIRST as the app last set it (M2-59): picks at `Command:` select. */
+  get pickfirst(): boolean {
+    return this.#bus.pickfirst;
   }
 
   /** The drawing's undo history as the undo/redo buttons show it (M2-05, M2-23). */

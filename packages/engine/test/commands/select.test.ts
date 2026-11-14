@@ -431,6 +431,26 @@ describe('noun-verb pre-selection (PICKFIRST)', () => {
     expect(s.bus.promptText).toBe('Select objects:');
   });
 
+  it('follows PICKFIRST set while the drawing is open (M2-59): off deselects, on picks again', async () => {
+    const s = setup();
+    expect(s.bus.pickfirst).toBe(true);
+    await s.bus.pick({ x: 10, y: 0 });
+    expect(s.selections()).toEqual(['20']);
+    await s.bus.setPickfirst(false);
+    expect(s.bus.pickfirst).toBe(false);
+    // AutoCAD drops the pre-selection a command could no longer take.
+    expect(s.selections()).toEqual([]);
+    await s.bus.pick({ x: 10, y: 0 });
+    await s.bus.selectAll();
+    expect(s.selections()).toEqual([]);
+    await s.bus.setPickfirst(true);
+    await s.bus.pick({ x: 10, y: 0 });
+    expect(s.selections()).toEqual(['20']);
+    // Setting what it holds keeps the selection.
+    await s.bus.setPickfirst(true);
+    expect(s.selections()).toEqual(['20']);
+  });
+
   it('a command that selects nothing (LINE) clears it; a view command (ZOOM) keeps it', async () => {
     const s = setup();
     await s.bus.pick({ x: 10, y: 0 });

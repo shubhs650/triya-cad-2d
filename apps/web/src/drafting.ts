@@ -49,7 +49,31 @@ export interface DraftingState {
   readonly qpmode: number;
   /** QPLOCATION: Quick Properties by the cursor (0) or where it was dragged (1). */
   readonly qpLocation: 0 | 1;
+  /**
+   * AUTOSNAP's bits other than POLAR (8) and OTRACK (16), M2-59: `AUTOSNAP_MARKER`,
+   * `AUTOSNAP_TIP`, `AUTOSNAP_MAGNET` and `AUTOSNAP_TRACK_TIP`, all on in AutoCAD's initial 63.
+   */
+  readonly autosnap: number;
+  /**
+   * PICKFIRST (M2-59): objects picked at `Command:` are what the next command takes. AutoCAD
+   * keeps it per user, initially on; each drawing's command line is told it.
+   */
+  readonly pickfirst: boolean;
 }
+
+/** AUTOSNAP 1: AutoSnap's marker is drawn at the snap point. */
+export const AUTOSNAP_MARKER = 1;
+/** AUTOSNAP 2: the SnapTip names the object snap. */
+export const AUTOSNAP_TIP = 2;
+/** AUTOSNAP 4: the magnet locks the cursor (rubber band and coordinates) onto the snap point. */
+export const AUTOSNAP_MAGNET = 4;
+/** AUTOSNAP 8 and 16: POLAR and OTRACK, kept as the status bar's toggles. */
+export const AUTOSNAP_POLAR = 8;
+export const AUTOSNAP_OTRACK = 16;
+/** AUTOSNAP 32: polar tracking's and object snap tracking's tooltips. */
+export const AUTOSNAP_TRACK_TIP = 32;
+/** The bits `DraftingState.autosnap` keeps. */
+export const AUTOSNAP_KEPT = AUTOSNAP_MARKER | AUTOSNAP_TIP | AUTOSNAP_MAGNET | AUTOSNAP_TRACK_TIP;
 
 export type DraftingToggle =
   'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp';
@@ -93,6 +117,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   revcloudGrips: true,
   qpmode: -1,
   qpLocation: 0,
+  autosnap: AUTOSNAP_KEPT,
+  pickfirst: true,
 };
 
 /**

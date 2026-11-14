@@ -315,6 +315,8 @@ export type ViewReply =
       readonly ok: true;
       /** The view after the request (every request but `views` answers it). */
       readonly view?: ViewState;
+      /** The canvas's size in CSS pixels, which `get` answers (SCREENSIZE, M2-59). */
+      readonly screen?: { readonly width: number; readonly height: number };
       readonly views?: readonly NamedViewInfo[];
       /** What a `pick` or `select` took. */
       readonly ids?: readonly EntityId[];
