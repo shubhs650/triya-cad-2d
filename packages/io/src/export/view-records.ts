@@ -12,9 +12,12 @@
 import {
   ACadVersion,
   AppId,
+  CadDictionary,
+  DictionaryCloningFlags,
   UCS,
   View,
   VPort,
+  XRecord,
   XY,
   XYZ,
   type CadDocument,
@@ -34,6 +37,7 @@ import type {
   ViewRecord,
   VportRecord,
 } from '@triya/engine';
+import { VIEW_CATEGORY_CODE, VIEW_INFO } from '../map/tables';
 import type { Resolver } from './entities';
 import { changes, planRecords, XREF_BITS, type RecordPlan } from './records';
 
@@ -70,7 +74,11 @@ const NOT_STORED: {
   readonly vports: readonly [ACadVersion, readonly (keyof VportRecord)[]][];
 } = {
   ucs: [[ACadVersion.AC1015, ['elevation', 'orthographic']]],
-  views: [[ACadVersion.AC1015, ['ucs', 'renderMode']]],
+  views: [
+    // A table record has an extension dictionary from R13 (M2-70's category is kept in one).
+    [ACadVersion.AC1012, ['category']],
+    [ACadVersion.AC1015, ['ucs', 'renderMode']],
+  ],
   vports: [
     [ACadVersion.AC1015, ['ucs', 'renderMode']],
     [ACadVersion.AC1021, ['gridFlags', 'gridMajor']],
@@ -258,7 +266,54 @@ function writeViewParams(
   if (changed('renderMode')) v.renderMode = a.renderMode as never;
 }
 
-function writeView(v: View, b: ViewRecord | undefined, a: ViewRecord): void {
+/** What AutoCAD writes as a category when a view has none. */
+const NO_CATEGORY = '<None>';
+
+/**
+ * Writes a view's category (M2-70) into DXF 300 of the `ADSK_XREC_VTRVIEWINFO` XRECORD in its
+ * extension dictionary, the record AutoCAD keeps it in, rewriting only that group where the
+ * view has the record (its layer snapshot, 302, and the rest stay as read). A view without one
+ * is given one holding the category alone, and its extension dictionary if it has none, numbered
+ * above every handle the engine gave out: AutoCAD 2024's DXF reference does not document the
+ * record, and the other groups AutoCAD writes there (302 layer snapshot name, 330, 294) belong to
+ * features Triya does not have. A view taken back to no category keeps its record, saying
+ * `<None>` as AutoCAD's does; a view with neither stays without.
+ */
+function writeCategory(v: View, category: string | undefined, allocate: () => number): void {
+  const xdict = v.xDictionary;
+  const info = xdict?.getEntry(VIEW_INFO);
+  if (info instanceof XRecord) {
+    const value = category ?? NO_CATEGORY;
+    const entry = info.entries.find((e) => e.code === VIEW_CATEGORY_CODE);
+    if (entry) entry.value = value;
+    else info.createEntry(VIEW_CATEGORY_CODE, value);
+    return;
+  }
+  if (category === undefined) return;
+  let dict = xdict;
+  if (!dict) {
+    // As AutoCAD makes a record's extension dictionary: hard owner (280 = 1), keep existing (281 = 1).
+    dict = new CadDictionary();
+    dict.handle = allocate();
+    dict.hardOwnerFlag = true;
+    dict.clonningFlags = DictionaryCloningFlags.KeepExisting;
+  }
+  const x = new XRecord();
+  x.handle = allocate();
+  x.cloningFlags = DictionaryCloningFlags.KeepExisting;
+  x.createEntry(VIEW_CATEGORY_CODE, category);
+  dict.addByKey(VIEW_INFO, x);
+  x.addReactor(dict);
+  // Joining the view last registers the dictionary and what it holds with the drawing.
+  if (!xdict) v.xDictionary = dict;
+}
+
+function writeView(
+  v: View,
+  b: ViewRecord | undefined,
+  a: ViewRecord,
+  allocate: () => number,
+): void {
   const changed = changes(b, a);
   if (b && changed('name')) v.name = a.name;
   if (changed('flags')) v.flags = (a.flags ?? 0) as never;
@@ -278,6 +333,7 @@ function writeView(v: View, b: ViewRecord | undefined, a: ViewRecord): void {
       v.ucsOrthographicType = a.ucs.orthographic as never;
     }
   }
+  if (changed('category')) writeCategory(v, a.category, allocate);
 }
 
 // ── VPORT ─────────────────────────────────────────────────────────────────────────────────────
@@ -393,10 +449,17 @@ function apply<A extends TableEntry, R>(
   for (const { acad, before, after } of plan.updated) write(acad, before, after);
 }
 
-/** Writes the planned APPID, UCS, VIEW and VPORT changes onto `doc`. */
-export function writeViewRecords(doc: CadDocument, plans: ViewRecordPlans): void {
+/**
+ * Writes the planned APPID, UCS, VIEW and VPORT changes onto `doc`; `allocate` numbers the objects
+ * a view's category needs (M2-70).
+ */
+export function writeViewRecords(
+  doc: CadDocument,
+  plans: ViewRecordPlans,
+  allocate: () => number,
+): void {
   apply(doc.appIds, plans.appIds, writeAppId);
   apply(doc.uCSs, plans.ucs, writeUcs);
-  apply(doc.views, plans.views, writeView);
+  apply(doc.views, plans.views, (v, b, a) => writeView(v, b, a, allocate));
   apply(doc.vPorts, plans.vports, writeVport);
 }
