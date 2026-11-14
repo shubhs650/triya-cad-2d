@@ -6,7 +6,7 @@
 // DSTYLE xdata written are unit-tested in packages/engine/test/commands/restyle.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, DimensionGeometry, Entity } from '@triya/engine';
-import { activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { activeCanvas, expectDrawn, expectShown, openWithPicker } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 import path from 'node:path';
 
@@ -87,9 +87,14 @@ test('the Properties palette restyles a dimension, which is redrawn at once', as
     .toEqual({ text: '', drawn: [{ contents: expect.stringMatching(/^8/), height: 0.18 }] });
 
   const palette = page.getByRole('complementary', { name: 'Properties' });
+  const undocked = (await canvas.boundingBox())!.width;
   await page.keyboard.press('Control+1');
   await expect(palette).toBeVisible();
   // The palette narrowed the canvas: pick the dimension line at (2, -1.5) where it is now.
+  // The click below is worked out from the canvas beside the docked palette: wait for the canvas
+  // to take that size and draw at it (CI once clicked the undocked canvas's spot and missed).
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(undocked);
+  await expectDrawn(page, { timeout: 15_000 });
   const docked = (await canvas.boundingBox())!;
   const k = Math.min(docked.width / 16, docked.height / 14);
   await page.mouse.click(

@@ -69,11 +69,16 @@ test('shows and edits the selected objects’ properties', async ({ page }) => {
 
   const palette = page.getByRole('complementary', { name: 'Properties' });
   const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  const undocked = (await canvas.boundingBox())!.width;
   await page.keyboard.press('Control+1');
   await expect(palette).toBeVisible();
   await expect(objects).toHaveText('No selection');
 
   // Pick the line at the canvas centre, (80, 50): the docked palette narrowed the canvas.
+  // The click below is worked out from the canvas beside the docked palette: wait for the canvas
+  // to take that size and draw at it (CI once clicked the undocked canvas's spot and missed).
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(undocked);
+  await expectDrawn(page, { timeout: 15_000 });
   const docked = (await canvas.boundingBox())!;
   await page.mouse.click(docked.x + docked.width / 2, docked.y + docked.height / 2);
   await expect(objects).toHaveText('Line (1)');
@@ -144,8 +149,13 @@ test('takes feet and inches at the command line and in the palette', async ({ pa
     .toEqual([{ color: { kind: 'byLayer' }, ends: [70, 50, 90, 50] }]);
 
   const palette = page.getByRole('complementary', { name: 'Properties' });
+  const undocked = (await canvas.boundingBox())!.width;
   await page.keyboard.press('Control+1');
   await expect(palette).toBeVisible();
+  // The click below is worked out from the canvas beside the docked palette: wait for the canvas
+  // to take that size and draw at it (CI once clicked the undocked canvas's spot and missed).
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(undocked);
+  await expectDrawn(page, { timeout: 15_000 });
   const docked = (await canvas.boundingBox())!;
   await page.mouse.click(docked.x + docked.width / 2, docked.y + docked.height / 2);
   await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toHaveText('Line (1)');

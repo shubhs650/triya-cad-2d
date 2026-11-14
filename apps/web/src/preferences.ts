@@ -52,6 +52,8 @@ export type DraftingPreferences = Pick<
   | 'aperture'
   | 'pdfOsnap'
   | 'revcloudGrips'
+  | 'qpmode'
+  | 'qpLocation'
 >;
 
 export interface Preferences {
@@ -94,6 +96,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     aperture: 10,
     pdfOsnap: true,
     revcloudGrips: true,
+    qpmode: -1,
+    qpLocation: 0,
   },
 };
 
@@ -104,6 +108,13 @@ const hex = (v: unknown): string | undefined =>
   typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : undefined;
 
 const bool = (v: unknown, fallback: boolean): boolean => (typeof v === 'boolean' ? v : fallback);
+
+/** A whole number in `range`, else the fallback: a value out of range means another setting. */
+function within(v: unknown, range: { min: number; max: number }, fallback: number): number {
+  return typeof v === 'number' && Number.isInteger(v) && v >= range.min && v <= range.max
+    ? v
+    : fallback;
+}
 
 function int(v: unknown, range: { min: number; max: number }, fallback: number): number {
   if (typeof v !== 'number' || !Number.isFinite(v)) return fallback;
@@ -149,6 +160,8 @@ export function normalizePreferences(raw: unknown): Preferences {
       aperture: int(k['aperture'], APERTURES, d.drafting.aperture),
       pdfOsnap: bool(k['pdfOsnap'], d.drafting.pdfOsnap),
       revcloudGrips: bool(k['revcloudGrips'], d.drafting.revcloudGrips),
+      qpmode: within(k['qpmode'], { min: -2, max: 2 }, d.drafting.qpmode),
+      qpLocation: within(k['qpLocation'], { min: 0, max: 1 }, d.drafting.qpLocation) as 0 | 1,
     },
   };
 }
@@ -216,6 +229,8 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     aperture: s.aperture,
     pdfOsnap: s.pdfOsnap,
     revcloudGrips: s.revcloudGrips,
+    qpmode: s.qpmode,
+    qpLocation: s.qpLocation,
   };
 }
 
