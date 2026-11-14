@@ -264,6 +264,8 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
 
     if (layer.color.isTrueColor) {
       this._writer.write(420, layer.color.trueColor, map);
+      // The colour's name (a colour-book colour's BOOK$COLOR), which upstream never wrote.
+      if (layer.trueColorName) this._writer.write(430, layer.trueColorName, map);
     }
 
     this._writer.write(6, layer.lineType?.name ?? 'Continuous', map);

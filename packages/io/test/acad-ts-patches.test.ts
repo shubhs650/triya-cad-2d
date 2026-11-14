@@ -2745,4 +2745,31 @@ describe('acad-ts local patches', () => {
       }
     }
   });
+
+  it('0181 a DXF LAYER keeps its colour-book colour name (430)', () => {
+    // DXF reference, LAYER: 420 is the layer's true colour and 430 its colour name, BOOK$COLOR
+    // for a colour-book colour (acadsharp's sample: Layer_color_book, 430 `DIC COLOR GUIDE(R)$DIC
+    // 7`, with no DBCOLOR). Unpatched, the reader dropped 430 and the writer never wrote it.
+    const doc = new CadDocument(ACadVersion.AC1032);
+    doc.updateCollections(true, true);
+    const booked = new Layer('Booked');
+    booked.color = Color.fromTrueColor(0xfcc187);
+    booked.trueColorName = 'DIC COLOR GUIDE(R)$DIC 7';
+    doc.layers!.add(booked);
+    const plain = new Layer('Plain');
+    plain.color = Color.fromTrueColor(0x102030);
+    doc.layers!.add(plain);
+    for (const binary of [false, true]) {
+      const bytes = writeCadDocument(doc, { format: 'dxf', binary });
+      const back = readCadDocument(bytes);
+      const read = back.layers!.tryGetValue('Booked')!;
+      expect(read.color.trueColor, `binary ${binary}`).toBe(0xfcc187);
+      expect(read.trueColorName, `binary ${binary}`).toBe('DIC COLOR GUIDE(R)$DIC 7');
+      expect(back.layers!.tryGetValue('Plain')!.trueColorName, `binary ${binary}`).toBeNull();
+    }
+    // An index colour has no name to write, whatever the layer was given.
+    booked.color = new Color(3);
+    const text = String.fromCharCode(...writeCadDocument(doc, { format: 'dxf' }));
+    expect(text).not.toContain('DIC 7');
+  });
 });

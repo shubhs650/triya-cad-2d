@@ -27,7 +27,9 @@ export interface LayerRow {
 const ACI_NAMES = ['', 'red', 'yellow', 'green', 'cyan', 'blue', 'magenta', 'white'];
 
 function colorCell(c: Color): LayerRow['color'] {
-  if (c.kind === 'rgb') return { label: `${c.r},${c.g},${c.b}`, css: rgbHex([c.r, c.g, c.b]) };
+  // A colour-book colour shows its name (DIC 7), a true colour its RGB, as AutoCAD's manager does.
+  if (c.kind === 'rgb')
+    return { label: c.colorName || `${c.r},${c.g},${c.b}`, css: rgbHex([c.r, c.g, c.b]) };
   if (c.kind === 'aci' && c.index >= 1 && c.index <= 255)
     return { label: ACI_NAMES[c.index] ?? String(c.index), css: rgbHex(aciRgb(c.index)) };
   // A layer's colour is never ByLayer or ByBlock; show what a damaged file holds plainly.

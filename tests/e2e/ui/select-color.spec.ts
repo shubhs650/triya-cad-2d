@@ -53,9 +53,13 @@ test('gives the selected circles a colour from each tab of Select Color', async 
   await expect(field).toHaveValue('');
   await tab('Color Books').click();
   const book = dialog.getByRole('combobox', { name: 'Color book:' });
-  // Its layer Layer_color_book's DIC COLOR GUIDE(R)$DIC 7 is read as its RGB only (io maps the
-  // book names of objects' colours, not layers'), so RAL CLASSIC is the one book.
-  await expect(book.locator('option')).toHaveText(['RAL CLASSIC']);
+  // A circle's RAL CLASSIC$RAL 1006 and its layer Layer_color_book's DIC COLOR GUIDE(R)$DIC 7
+  // (LAYER 430, read since M2-35 part 19), the books in name order.
+  await expect(book.locator('option')).toHaveText(['DIC COLOR GUIDE(R)', 'RAL CLASSIC']);
+  await expect(dialog.getByRole('list', { name: 'Colors' }).getByRole('button')).toHaveText([
+    /^DIC 7RGB 252,193,135$/,
+  ]);
+  await book.selectOption('RAL CLASSIC');
   await dialog.getByRole('button', { name: /RAL 1006/ }).click();
   await expect(field).toHaveValue('RAL CLASSIC$RAL 1006');
   await page.screenshot({ path: test.info().outputPath('1-color-books.png') });
