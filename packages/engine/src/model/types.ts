@@ -1242,6 +1242,11 @@ export interface ViewRecord extends SymbolTableRecord, ViewParams {
   readonly width: number;
   /** The UCS saved with the view (DXF 72 = 1). */
   readonly ucs?: UcsFrame;
+  /**
+   * The View Manager's Category (M2-70): DXF 300 of the `ADSK_XREC_VTRVIEWINFO` XRECORD in the
+   * view's extension dictionary. Absent for `<None>`, which AutoCAD writes when it has none.
+   */
+  readonly category?: string;
 }
 
 export interface VportRecord extends SymbolTableRecord, ViewParams {

@@ -257,6 +257,20 @@ function ucs(u: UCS): UcsRecord {
   return { ...base(u), ...ucsFrame(u) };
 }
 
+/** Where AutoCAD keeps a view's View Manager details: its extension dictionary's XRECORD. */
+export const VIEW_INFO = 'ADSK_XREC_VTRVIEWINFO';
+/** That XRECORD's group for the view's category, `<None>` when it has none. */
+export const VIEW_CATEGORY_CODE = 300;
+const NO_CATEGORY = '<None>';
+
+/** The View Manager's Category (M2-70; sample_AC1032_ascii.dxf's `view_custom`). */
+function viewCategory(v: View): string | undefined {
+  const x = v.xDictionary?.getEntry(VIEW_INFO);
+  if (!(x instanceof XRecord)) return undefined;
+  const value = x.entries.find((e) => e.code === VIEW_CATEGORY_CODE)?.value;
+  return typeof value === 'string' && value !== '' && value !== NO_CATEGORY ? value : undefined;
+}
+
 function view(v: View): ViewRecord {
   const params: ViewParams = {
     center: vec2(v.center),
@@ -279,7 +293,14 @@ function view(v: View): ViewRecord {
         orthographicType: v.ucsOrthographicType,
       })
     : undefined;
-  return { ...base(v), ...params, width: v.width, ...(frame ? { ucs: frame } : {}) };
+  const category = viewCategory(v);
+  return {
+    ...base(v),
+    ...params,
+    width: v.width,
+    ...(frame ? { ucs: frame } : {}),
+    ...(category !== undefined && { category }),
+  };
 }
 
 function vport(p: VPort): VportRecord {

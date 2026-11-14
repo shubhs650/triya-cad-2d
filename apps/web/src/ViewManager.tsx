@@ -18,8 +18,19 @@
 // window accepted with Enter becomes the view's, a VIEW undo step at once as New... is. Only a
 // view Set Current could restore can be edited: one of the space shown, looking straight down.
 // Update Layers waits (layer snapshots are layer states, M5-07); Preset Views are 3D.
+//
+// Category (M2-70) is a General row, as Name is: a field offering `<None>` and the drawing's
+// categories, which takes a new one typed, changed on Enter or when it loses focus (a VIEW undo
+// step at once, as Name). New View's View category is the same field, `<None>` to start with.
+// AutoCAD's categories also come from a sheet set, which Triya does not have (PRD non-goal).
 import { useEffect, useState, useSyncExternalStore, type KeyboardEvent } from 'react';
-import { validViewName, type ChangeSet, type ViewRecord, type ViewState } from '@triya/engine';
+import {
+  NO_VIEW_CATEGORY,
+  validViewName,
+  type ChangeSet,
+  type ViewRecord,
+  type ViewState,
+} from '@triya/engine';
 import { Modal } from './AttributeDialogs';
 import { controllerOf } from './canvas/registry';
 import { stateOf } from './canvas/view-host';
@@ -32,6 +43,7 @@ import {
   currentRows,
   isPaperView,
   pickedWindow,
+  viewCategories,
   viewManager,
   viewRows,
   viewTree,
@@ -103,6 +115,7 @@ function ManagerBody({
   const byKey = new Map(views.map((v) => [keyOf(v), v]));
   const selected = byKey.get(state.selected);
   const order = [CURRENT, ...tree.model.map(keyOf), ...tree.layout.map(keyOf)];
+  const categories = viewCategories(views);
 
   /** Why the selected view cannot be set current, or undefined when it can. */
   const notCurrent = (v: ViewRecord | undefined): string | undefined => {
@@ -155,6 +168,11 @@ function ManagerBody({
         current: state.current === state.selected ? key : state.current,
       });
     }
+  };
+
+  const recategorize = async (to: string) => {
+    if (!selected || to === (selected.category ?? NO_VIEW_CATEGORY)) return;
+    await run({ kind: 'view-category', name: selected.name, category: to });
   };
 
   useEffect(() => {
@@ -273,6 +291,14 @@ function ManagerBody({
                       name={selected.name}
                       onRename={rename}
                     />
+                  ) : r.label === 'Category' && selected ? (
+                    <NameField
+                      key={`${selected.handle}:${selected.category ?? ''}`}
+                      name={selected.category ?? NO_VIEW_CATEGORY}
+                      label="Category"
+                      options={categories}
+                      onRename={recategorize}
+                    />
                   ) : (
                     r.value
                   )}
@@ -292,7 +318,9 @@ function ManagerBody({
           </button>
           <button
             type="button"
-            onClick={() => set({ creating: { name: '', boundary: 'display' } })}
+            onClick={() =>
+              set({ creating: { name: '', category: NO_VIEW_CATEGORY, boundary: 'display' } })
+            }
           >
             New...
           </button>
@@ -330,13 +358,14 @@ function ManagerBody({
           value={state.creating}
           paper={inLayout}
           existing={views}
+          categories={categories}
           shown={shown}
           onChange={(creating) => set({ creating })}
           onDefineWindow={(creating) =>
             viewManager.pickWindow(doc.id, doc.block, { ...state, creating })
           }
-          onSave={async (name, view) => {
-            if (!(await run({ kind: 'view', name, view }))) return;
+          onSave={async (name, view, category) => {
+            if (!(await run({ kind: 'view', name, view, category }))) return;
             set({
               creating: undefined,
               selected: `${view.paper ? 'layout' : 'model'}:${name.toUpperCase()}`,
@@ -354,27 +383,56 @@ const withoutEditing = ({ editing: _, ...rest }: ManagerState): ManagerState => 
 const treeId = (key: string) =>
   `view-manager-${key.replace(/[^A-Za-z0-9_-]/g, (c) => `_${c.charCodeAt(0)}`)}`;
 
-/** The Name row: changed on Enter or when it loses focus; Esc puts the name back. */
-function NameField({ name, onRename }: { name: string; onRename: (to: string) => void }) {
+/**
+ * The Name and Category rows: changed on Enter or when it loses focus; Esc puts the value back.
+ * Category offers the drawing's categories as the field's list (a combo box: one may be typed).
+ */
+function NameField({
+  name,
+  label = 'Name',
+  options,
+  onRename,
+}: {
+  name: string;
+  label?: string;
+  options?: readonly string[];
+  onRename: (to: string) => void;
+}) {
   const [text, setText] = useState(name);
+  const listId = options && `view-manager-${label.toLowerCase()}-options`;
   return (
-    <input
-      aria-label="Name"
-      value={text}
-      onChange={(e) => setText(e.currentTarget.value)}
-      onBlur={() => onRename(text)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          e.stopPropagation();
-          onRename(text);
-        } else if (e.key === 'Escape') {
-          e.preventDefault();
-          e.stopPropagation();
-          setText(name);
-        }
-      }}
-    />
+    <>
+      <input
+        aria-label={label}
+        list={listId}
+        value={text}
+        onChange={(e) => setText(e.currentTarget.value)}
+        onBlur={() => onRename(text)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            onRename(text);
+          } else if (e.key === 'Escape') {
+            e.preventDefault();
+            e.stopPropagation();
+            setText(name);
+          }
+        }}
+      />
+      {options && <CategoryOptions id={listId!} options={options} />}
+    </>
+  );
+}
+
+/** The categories a category field offers. */
+function CategoryOptions({ id, options }: { id: string; options: readonly string[] }) {
+  return (
+    <datalist id={id}>
+      {options.map((c) => (
+        <option key={c} value={c} />
+      ))}
+    </datalist>
   );
 }
 
@@ -382,6 +440,7 @@ function NewView({
   value,
   paper,
   existing,
+  categories,
   shown,
   onChange,
   onDefineWindow,
@@ -392,10 +451,12 @@ function NewView({
   /** A layout is shown: the view is a layout view. */
   paper: boolean;
   existing: readonly ViewRecord[];
+  /** The categories View category offers (M2-70). */
+  categories: readonly string[];
   shown: ViewState | undefined;
   onChange: (v: NewViewState) => void;
   onDefineWindow: (v: NewViewState) => void;
-  onSave: (name: string, view: ViewState) => void;
+  onSave: (name: string, view: ViewState, category: string) => void;
   onCancel: () => void;
 }) {
   const [problem, setProblem] = useState<string | undefined>();
@@ -412,7 +473,7 @@ function NewView({
     if (!v) return setProblem('There is no view to save.');
     const same = existing.find((e) => e.name.toUpperCase() === name.toUpperCase());
     if (same && replacing === undefined) return setReplacing(same.name);
-    onSave(name, v);
+    onSave(name, v, value.category);
   };
   const w = value.window && pickedWindow(value.window, paper);
   return (
@@ -429,6 +490,16 @@ function NewView({
             set({ name: e.currentTarget.value });
           }}
         />
+      </label>
+      <label className="cad-dialog-field">
+        <span>View category:</span>
+        <input
+          aria-label="View category"
+          list="new-view-category-options"
+          value={value.category}
+          onChange={(e) => set({ category: e.currentTarget.value })}
+        />
+        <CategoryOptions id="new-view-category-options" options={categories} />
       </label>
       <fieldset className="new-view-boundary">
         <legend>Boundary</legend>
@@ -483,7 +554,7 @@ function NewView({
             autoFocus
             onClick={() => {
               const v = view();
-              if (v) onSave(value.name.trim(), v);
+              if (v) onSave(value.name.trim(), v, value.category);
             }}
           >
             Yes
