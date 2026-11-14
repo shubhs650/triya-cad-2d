@@ -14,6 +14,9 @@
 // to the plotter a page setup names, which for a raster or SVG plotter writes a file a sheet;
 // Triya's SVG and PNG plotters write a file a sheet, named after it ("<drawing>-<layout>.svg"),
 // downloaded as itself when there is one and as one ZIP (`zipFiles`) when there are more.
+// M2-45 part 2: Add Sheets lists the sheets of a drawing that is not open (the dialog opens it for
+// the publish and closes it after, as AutoCAD loads it), and Page Setup's own entry names the
+// page setup the sheet's layout has applied, "<Default: A3 Monochrome>", as AutoCAD's does.
 
 import { layoutSheet, type Box, type Layout, type NamedPageSetup } from '@triya/engine';
 import { PdfDocument, zipFiles, type ArchiveFile } from '@triya/pdf';
@@ -41,23 +44,61 @@ export interface PublishSheet {
   readonly name: string;
   readonly block: string;
   readonly include: boolean;
-  /** The named page setup it plots with; absent for "<Default: None>", its own (part 6). */
+  /** The named page setup it plots with; absent for "<Default: …>", its own (part 6). */
   readonly pageSetup?: string;
+  /** The page setup its layout has applied (LAYOUT DXF 1, M2-45), which "<Default: …>" names. */
+  readonly applied?: string;
+}
+
+/** A drawing's space as the Publish dialog lists it. */
+export interface PublishSpace {
+  readonly name: string;
+  readonly block: string;
+  /** The page setup the space's layout has applied, if any (M2-45 part 2). */
+  readonly applied?: string | undefined;
 }
 
 /** Page Setup's own entry: the sheet's own page setup. */
 export const DEFAULT_PAGE_SETUP = '<Default: None>';
+
+/**
+ * How Page Setup's own entry reads (M2-45 part 2): AutoCAD 2024 Help, "Publish Dialog Box",
+ * "<Default: page setup name>": the page setup the layout has applied, or None.
+ */
+export function defaultPageSetup(applied: string | undefined): string {
+  return applied === undefined ? DEFAULT_PAGE_SETUP : `<Default: ${applied}>`;
+}
+
+/**
+ * The drawing listed under a picked file's name (Add Sheets, M2-45 part 2), any case, as the
+ * browser hands files by name: a drawing open or added already is not read again.
+ */
+export function drawingNamed(
+  name: string,
+  drawings: readonly { readonly doc: number; readonly drawing: string }[],
+): number | undefined {
+  const n = name.toLowerCase();
+  return drawings.find((d) => d.drawing.toLowerCase() === n)?.doc;
+}
 
 const baseName = (drawing: string) => drawing.replace(/\.[^.]+$/, '');
 
 /** The drawing's sheets as the Publish dialog lists them, every one included. */
 export function publishSheets(
   drawing: string,
-  spaces: readonly { readonly name: string; readonly block: string }[],
+  spaces: readonly PublishSpace[],
   doc = 0,
 ): PublishSheet[] {
   const base = baseName(drawing);
-  return spaces.map((s) => ({ doc, drawing, sheet: `${base}-${s.name}`, ...s, include: true }));
+  return spaces.map(({ name, block, applied }) => ({
+    doc,
+    drawing,
+    sheet: `${base}-${name}`,
+    name,
+    block,
+    include: true,
+    ...(applied !== undefined && { applied }),
+  }));
 }
 
 /**
@@ -69,7 +110,7 @@ export function withOpenDrawings(
   drawings: readonly {
     readonly doc: number;
     readonly drawing: string;
-    readonly spaces: readonly { readonly name: string; readonly block: string }[];
+    readonly spaces: readonly PublishSpace[];
   }[],
 ): PublishSheet[] {
   const listed = new Set(sheets.map((s) => `${s.doc}:${s.block}`));
@@ -260,7 +301,9 @@ export function publishLog(rows: readonly PublishLogRow[], when: Date): string {
     `Publish log,${csv(when.toISOString())}`,
     'Drawing,Sheet Name,Layout,Page Setup,Status',
     ...rows.map(({ sheet: s, status }) =>
-      [s.drawing, s.sheet, s.name, s.pageSetup ?? DEFAULT_PAGE_SETUP, status].map(csv).join(','),
+      [s.drawing, s.sheet, s.name, s.pageSetup ?? defaultPageSetup(s.applied), status]
+        .map(csv)
+        .join(','),
     ),
   ];
   return `${lines.join('\r\n')}\r\n`;

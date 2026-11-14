@@ -19,9 +19,10 @@ export interface PdfSummary {
 
 const PT_PER_MM = 72 / 25.4;
 
-export async function pdfSummary(bytes: Uint8Array): Promise<PdfSummary> {
+/** `at`: the page summarised, from 1 (the first page by default). */
+export async function pdfSummary(bytes: Uint8Array, at = 1): Promise<PdfSummary> {
   const pdf = await getDocument({ data: bytes, useWasm: false }).promise;
-  const page = await pdf.getPage(1);
+  const page = await pdf.getPage(at);
   const [x0, y0, x1, y1] = page.view as number[];
   const ops = await page.getOperatorList();
   return {

@@ -8,12 +8,19 @@ const controllers = new Map<string, Map<number, CanvasController>>();
 /** The current tile of each tiled space; AutoCAD's current viewport is the first saved. */
 const current = new Map<string, number>();
 const key = (doc: number, block: string) => `${doc}:${block}`;
+/** Who waits for a space's first controller (`whenRegistered`), by space. */
+const waiting = new Map<string, Set<(c: CanvasController) => void>>();
 
 export function register(doc: number, block: string, c: CanvasController, tile = 0): () => void {
   const k = key(doc, block);
   let tiles = controllers.get(k);
   if (!tiles) controllers.set(k, (tiles = new Map()));
   tiles.set(tile, c);
+  const waiters = waiting.get(k);
+  if (waiters && tile === currentTile(doc, block)) {
+    waiting.delete(k);
+    for (const w of waiters) w(c);
+  }
   return () => {
     if (tiles.get(tile) !== c) return;
     tiles.delete(tile);
@@ -27,6 +34,32 @@ export function register(doc: number, block: string, c: CanvasController, tile =
 /** The controller of a space's current viewport: what the navigation bar and Esc act on. */
 export function controllerOf(doc: number, block: string): CanvasController | undefined {
   return controllers.get(key(doc, block))?.get(currentTile(doc, block));
+}
+
+/**
+ * The space's controller once its canvas exists (M2-45 part 2: a drawing PUBLISH opens in the
+ * background plots once React made its canvas); undefined when none is made within `ms`.
+ */
+export function whenRegistered(
+  doc: number,
+  block: string,
+  ms = 10_000,
+): Promise<CanvasController | undefined> {
+  const now = controllerOf(doc, block);
+  if (now) return Promise.resolve(now);
+  const k = key(doc, block);
+  return new Promise((resolve) => {
+    let waiters = waiting.get(k);
+    if (!waiters) waiting.set(k, (waiters = new Set()));
+    const done = (c: CanvasController | undefined) => {
+      clearTimeout(timer);
+      waiters.delete(done);
+      if (waiters.size === 0 && waiting.get(k) === waiters) waiting.delete(k);
+      resolve(c);
+    };
+    const timer = setTimeout(() => done(undefined), ms);
+    waiters.add(done);
+  });
 }
 
 export function currentTile(doc: number, block: string): number {

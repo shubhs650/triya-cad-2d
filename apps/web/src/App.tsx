@@ -30,6 +30,7 @@ import {
   register,
   setCurrentTile,
   tilesOf,
+  whenRegistered,
 } from './canvas/registry';
 import { answerView, type PlotScriptRequest, type ViewContext } from './canvas/view-host';
 import { modelTiles, type ModelTile } from './canvas/views';
@@ -37,7 +38,7 @@ import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
 import { AttributeDialogs } from './AttributeDialogs';
 import { PlotDialog, download, plotDialog } from './PlotDialog';
-import { PublishDialog, publishDialog } from './PublishDialog';
+import { PublishDialog, publishDialog, type BackgroundDrawings } from './PublishDialog';
 import {
   appliedPageSetup,
   withPageSetup,
@@ -481,6 +482,33 @@ async function closeDoc(id: number): Promise<boolean> {
   undoStates.forget(id);
   return true;
 }
+
+/**
+ * Drawings PUBLISH's Add Sheets lists that are not open (M2-45 part 2): read by the I/O worker as
+ * opening one is, then opened for the publish with no tab (their engine and a hidden canvas to plot
+ * from) and closed after, as AutoCAD loads the drawings it publishes and closes them. Nothing is
+ * saved or remembered of them: they never show, so they have no recent entry, picture or recovery.
+ */
+const publishDrawings: BackgroundDrawings = {
+  read: async (file) => openDrawing(new Uint8Array(await file.arrayBuffer())),
+  async open(name, opened) {
+    if (!opened.modelSpace) return undefined;
+    const id = store.openedInBackground(name, opened, opened.modelSpace);
+    engines.start(id, opened.init);
+    void deviceFonts.need(trueTypeFontsOf(opened.init));
+    if (!(await whenRegistered(id, opened.modelSpace))) {
+      publishDrawings.close(id);
+      return undefined;
+    }
+    return store.getSnapshot().background.find((d) => d.id === id);
+  },
+  close(id) {
+    store.close(id);
+    engines.stop(id);
+    commandLines.forget(id);
+    undoStates.forget(id);
+  },
+};
 
 /**
  * CLOSEALL (M2-29): closes every open drawing in tab order, each asking to save its changes as
@@ -1440,6 +1468,9 @@ export function App() {
           {state.docs.map((d) => (
             <DocumentCanvas key={d.id} doc={d} active={d.id === state.active} onMode={setMode} />
           ))}
+          {state.background.map((d) => (
+            <DocumentCanvas key={d.id} doc={d} active={false} onMode={setMode} />
+          ))}
           {active && (
             <NavBar
               doc={active}
@@ -1543,6 +1574,7 @@ export function App() {
         underlayFile={(f) => pdfPages.bytes(f)}
         underlayPage={underlayPage}
         userTables={userPlotStyleTables}
+        background={publishDrawings}
       />
       <ExportDialog
         doc={active}
