@@ -16,7 +16,8 @@ export type AuditSaveKind =
   | 'session'
   | 'paste'
   | 'dimension'
-  | 'properties';
+  | 'properties'
+  | 'views';
 
 /**
  * Triya's save of `model` as an AC1032 ASCII DXF (DEC-047 item 2), whatever format and version
