@@ -181,7 +181,8 @@ describe('a multileader’s Leaders rows (M2-35 part 12)', () => {
     expect(rowOf(one, 'Horz landing')).toMatchObject({ kind: 'choice', value: 'yes' });
     expect(rowOf(one, 'Landing distance')).toMatchObject({ kind: 'distance', value: 8 });
     const block = propertySheet(s.model, s.ids('62'));
-    expect(block.sections.map((x) => x.title)).toEqual(['General', 'Leaders']);
+    // M2-35 part 15: a block's own rows in Text's place.
+    expect(block.sections.map((x) => x.title)).toEqual(['General', 'Leaders', 'Block']);
   });
 
   it('shows *VARIES* where multileaders differ', () => {
