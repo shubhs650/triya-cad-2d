@@ -37,6 +37,7 @@ import {
   sub,
   textBox,
   textGeometry,
+  viewed,
   unit,
   upright,
   type DimPart,
@@ -115,7 +116,7 @@ export function arcLengthParts(
         : horizontal
           ? 0
           : upright(angleOf(sub(at, c)) + Math.PI / 2);
-    text = { ...probe, position: at, rotation };
+    text = { ...probe, position: at, rotation: viewed(rotation, s) };
   }
   const box = text ? textBox(text, width, s) : undefined;
   out.push(...arcLine(c, r, a0, sweep, placement.arrowsInside, box, [s.blk1, s.blk2], s, model));

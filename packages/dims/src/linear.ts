@@ -44,6 +44,7 @@ import {
   sub,
   textBox,
   textGeometry,
+  viewed,
   unit,
   upright,
   type DimPart,
@@ -212,7 +213,7 @@ export function linearParts(
       const at = keepText
         ? g.textPosition
         : add(add(overExt.at, outward, s.gap + width / 2), textOffset(s, up, up));
-      text = { ...probe, position: at, rotation };
+      text = { ...probe, position: at, rotation: viewed(rotation, s) };
       dxf11 = at;
     }
     placement = fit(room, overExt ? 0 : width, overExt ? false : centred, s, ticks);
@@ -249,7 +250,7 @@ export function linearParts(
         leader = [m, landStart, landEnd];
         middle = add(at, textDir, side * (width / 2));
       }
-      text = { ...probe, position: middle, rotation };
+      text = { ...probe, position: middle, rotation: viewed(rotation, s) };
       dxf11 = at;
       placement = { textInside: !outside, arrowsInside: placement.arrowsInside };
     }

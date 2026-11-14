@@ -52,6 +52,17 @@ export function upright(a: number): number {
   return t > Math.PI ? t - TWO_PI : t;
 }
 
+/**
+ * The text's angle as drawn under DIMTXTDIRECTION. AutoCAD 2024 Help gives 0 as "Left-to-Right
+ * reading style" and 1 as "Right-to-Left" and shows no picture; drafters meet Right-to-Left as
+ * text turned half a turn about its middle, to read from the other side of the dimension line
+ * (upside down on a horizontal dimension), which is the reading taken here. The text stays where
+ * the rules put it, so the generators turn it after placing it.
+ */
+export function viewed(rotation: number, s: DimStyle): number {
+  return s.rtl ? normAngle(rotation + Math.PI) : rotation;
+}
+
 export function linePart(a: Vec2, b: Vec2, props: PartProps): DimPart {
   return { ...props, geom: { kind: 'LINE', start: a, end: b } };
 }

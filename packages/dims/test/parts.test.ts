@@ -1101,3 +1101,63 @@ describe('arc extension lines of radial dimensions (M2-31 part 2)', () => {
     close(exts[0]!.endAngle, 2 * Math.PI - 0.0625);
   });
 });
+
+describe('the text view direction, DIMTXTDIRECTION (M2-35 part 26)', () => {
+  // AutoCAD 2024 Help, DIMTXTDIRECTION: 0 "Left-to-Right reading style", 1 "Right-to-Left".
+  // The Help shows no picture of it. Drafters meet Right-to-Left as text turned to read from
+  // the other side of the dimension line (upside down on a horizontal dimension), kept where
+  // it was: the common reading, taken here (CADTutor topic 40964 sets it with the text moved
+  // below the line so a rotated viewport reads it upright).
+  const text = (ps: DimPart[]) => of(ps, 'MTEXT')[0] as Extract<EntityGeometry, { kind: 'MTEXT' }>;
+
+  it('turns a linear dimension’s text half a turn about its middle, the lines unchanged', () => {
+    const ltr = parts(linear());
+    const rtl = parts(linear(), model({ ...ISO, DIMTXTDIRECTION: 1 }));
+    close(text(rtl).rotation, Math.PI);
+    expect(text(rtl).position).toEqual(text(ltr).position);
+    expect(text(rtl).contents).toBe(text(ltr).contents);
+    expect(of(rtl, 'LINE')).toEqual(of(ltr, 'LINE'));
+  });
+
+  it('turns aligned, radial and user-rotated text too', () => {
+    const rtl = model({ ...ISO, DIMTXTDIRECTION: 1 });
+    const aligned: DimensionGeometry = {
+      ...common,
+      dimType: 'aligned',
+      first: { x: 30, y: 40 },
+      second: { x: 0, y: 0 },
+      definitionPoint: { x: -8, y: 6 },
+      textPosition: { x: 7, y: 26 },
+    };
+    close(text(parts(aligned, rtl)).rotation, Math.atan2(4, 3) + Math.PI);
+    const radius: DimensionGeometry = {
+      ...common,
+      dimType: 'radius',
+      definitionPoint: { x: 0, y: 0 },
+      chordPoint: { x: 10, y: 0 },
+      leaderLength: 0,
+      textPosition: { x: 20, y: 0 },
+      textUserPositioned: true,
+    };
+    close(text(parts(radius, rtl)).rotation, Math.PI);
+    const turned = linear({ textRotation: Math.PI / 6 });
+    close(text(parts(turned, rtl)).rotation, Math.PI / 6 + Math.PI);
+  });
+
+  it('reads a DSTYLE override of 294', () => {
+    const xdata = [
+      {
+        appId: '12',
+        values: [
+          { code: 1000, value: 'DSTYLE' },
+          { code: 1002, value: '{' },
+          { code: 1070, value: 294 },
+          { code: 1070, value: 1 },
+          { code: 1002, value: '}' },
+        ],
+      },
+    ];
+    const ps = dimensionParts({ geom: linear(), xdata } as never, model(), measure)!;
+    close(text(ps).rotation, Math.PI);
+  });
+});

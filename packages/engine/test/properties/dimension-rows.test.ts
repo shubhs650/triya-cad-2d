@@ -183,6 +183,7 @@ describe('a dimension’s Properties groups (M2-35 part 5)', () => {
           'Text style',
           'Text inside align',
           'Text rotation',
+          'Text view direction',
           'Text override',
         ],
       ],
@@ -266,6 +267,27 @@ describe('a dimension’s Properties groups (M2-35 part 5)', () => {
     expect(s.rowOf('Alt multiplier').value).toBe(25.4);
     expect(s.rowOf('Tolerance display').value).toBe('none');
     expect(s.rowOf('Tolerance pos vert').value).toBe('1');
+  });
+
+  it('sets the text view direction, Left-to-Right or Right-to-Left (M2-35 part 26)', async () => {
+    const s = setup();
+    expect(s.rowOf('Text view direction')).toMatchObject({
+      kind: 'choice',
+      value: '0',
+      options: [
+        { value: '0', label: 'Left-to-Right' },
+        { value: '1', label: 'Right-to-Left' },
+      ],
+    });
+    await s.set('DIMTXTDIRECTION', '1');
+    expect(s.vars().DIMTXTDIRECTION).toBe(1);
+    expect(s.overrides()).toEqual([[294, { code: 1070, value: 1 }]]);
+    expect(s.rowOf('Text view direction').value).toBe('1');
+    await s.set('DIMTXTDIRECTION', '2');
+    expect(s.log).toEqual(['Invalid input.']);
+    // Back to the style's: the override goes.
+    await s.set('DIMTXTDIRECTION', '0');
+    expect(s.overrides()).toEqual([]);
   });
 
   it('every row has a DIMVAR default or reads a handle', () => {
@@ -649,7 +671,12 @@ describe('an angular dimension’s units and the Measurement row (M2-35 part 10)
       (e.geom as DimensionGeometry).dimType === 'angular3pt' ? Math.PI / 2 : 10;
     const linear = setup({}, undefined, [dimension], measure);
     const texts = section(linear.sheet(), 'Text');
-    expect(texts?.slice(-3)).toEqual(['Text rotation', 'Measurement', 'Text override']);
+    expect(texts?.slice(-4)).toEqual([
+      'Text rotation',
+      'Text view direction',
+      'Measurement',
+      'Text override',
+    ]);
     expect(linear.rowOf('Measurement')).toMatchObject({
       key: 'measurement',
       kind: 'distance',
