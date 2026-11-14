@@ -397,6 +397,105 @@ describe('VIEW', () => {
     ]);
   });
 
+  // Part 5: the View Manager's Edit Boundaries... hands VIEW the selected view's window.
+  const BOUNDARY = { a: { x: 0, y: 0 }, b: { x: 40, y: 20 } };
+  const editing = () => {
+    let n = 0;
+    const previews: (readonly unknown[])[] = [];
+    const s = setup((r) =>
+      r.op === 'file'
+        ? n++ === 0
+          ? { ok: true, pickWindow: true, boundary: BOUNDARY }
+          : { ok: true }
+        : { ok: true, view: VIEW },
+    );
+    s.bus.on((e) => (e.type === 'preview' ? previews.push(e.geometry) : undefined));
+    return { ...s, previews };
+  };
+  const box = (a: { x: number; y: number }, b: { x: number; y: number }) => [
+    {
+      kind: 'LWPOLYLINE',
+      closed: true,
+      vertices: [
+        { x: a.x, y: a.y, bulge: 0 },
+        { x: b.x, y: a.y, bulge: 0 },
+        { x: b.x, y: b.y, bulge: 0 },
+        { x: a.x, y: b.y, bulge: 0 },
+      ],
+    },
+  ];
+
+  it('Edit Boundaries shows the view, takes windows until Enter and hands the last back', async () => {
+    const { bus, asked, previews } = editing();
+    await bus.submit('VIEW');
+    // The view and a quarter of its size around it, fitted to the canvas (twice as wide as high),
+    // its boundary drawn.
+    expect(asked.slice(1, 3)).toEqual([
+      { op: 'get' },
+      { op: 'glance', view: { center: { x: 20, y: 10 }, height: 30 } },
+    ]);
+    expect(previews.at(-1)).toEqual(box({ x: 0, y: 0 }, { x: 40, y: 20 }));
+    expect(bus.promptText).toBe('Specify first corner (or press ENTER to accept):');
+    await bus.submit('5,5');
+    expect(bus.prompt).toMatchObject({
+      message: 'Specify opposite corner',
+      rubberBand: { from: { x: 5, y: 5 }, box: true },
+    });
+    await bus.submit('30,15');
+    // The new boundary is drawn and another may be picked.
+    expect(previews.at(-1)).toEqual(box({ x: 5, y: 5 }, { x: 30, y: 15 }));
+    expect(bus.promptText).toBe('Specify first corner (or press ENTER to accept):');
+    await bus.submit('2,2');
+    await bus.submit('35,18');
+    await bus.submit('');
+    expect(previews.at(-1)).toEqual([]);
+    expect(asked.slice(3)).toEqual([
+      // The display it was asked from comes back before the dialogs do.
+      { op: 'glance', view: { center: VIEW.center, height: VIEW.height } },
+      {
+        op: 'file',
+        action: 'views',
+        resume: true,
+        window: { a: { x: 2, y: 2 }, b: { x: 35, y: 18 } },
+      },
+    ]);
+    expect(bus.command).toBeUndefined();
+  });
+
+  it('Edit Boundaries goes back to the dialog unchanged on Esc or an Enter before a window', async () => {
+    for (const keys of [['ESC'], ['5,5', 'ESC'], ['']]) {
+      const { bus, asked } = editing();
+      await bus.submit('VIEW');
+      for (const k of keys) await (k === 'ESC' ? bus.cancel() : bus.submit(k));
+      expect(asked.slice(3)).toEqual([
+        { op: 'glance', view: { center: VIEW.center, height: VIEW.height } },
+        { op: 'file', action: 'views', resume: true },
+      ]);
+      expect(bus.command).toBeUndefined();
+    }
+  });
+
+  it('Edit Boundaries keeps the display when the canvas cannot say what it shows', async () => {
+    let n = 0;
+    const { bus, asked } = setup((r) =>
+      r.op === 'file'
+        ? n++ === 0
+          ? { ok: true, pickWindow: true, boundary: BOUNDARY }
+          : { ok: true }
+        : r.op === 'get'
+          ? { ok: false, message: 'no canvas' }
+          : { ok: true },
+    );
+    await bus.submit('VIEW');
+    await bus.submit('');
+    expect(asked).toEqual([
+      { op: 'file', action: 'views' },
+      { op: 'get' },
+      { op: 'file', action: 'views', resume: true },
+    ]);
+    expect(bus.history).not.toContain('no canvas');
+  });
+
   it('matches ? patterns with * and ?, case ignored, comma separated', () => {
     expect(viewNameMatches('Front', 'FR*')).toBe(true);
     expect(viewNameMatches('Front', 'fr?nt')).toBe(true);

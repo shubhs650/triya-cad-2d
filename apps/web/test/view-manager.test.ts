@@ -4,6 +4,7 @@
 import type { ViewRecord } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
+  boundaryOf,
   currentRows,
   pickedWindow,
   viewManager,
@@ -71,6 +72,15 @@ describe('viewRows', () => {
   });
 });
 
+describe('boundaryOf', () => {
+  it("is a view's window in world coordinates", () => {
+    expect(boundaryOf(view('Front', { target: { x: 1, y: 2, z: 0 } }))).toEqual({
+      a: { x: -9, y: -3 },
+      b: { x: 31, y: 17 },
+    });
+  });
+});
+
 describe('pickedWindow', () => {
   it('is the view two corners frame, in the space shown', () => {
     expect(pickedWindow({ a: { x: 10, y: 20 }, b: { x: 0, y: 0 } }, true)).toEqual({
@@ -102,7 +112,7 @@ describe('viewManager', () => {
     const shown = viewManager.show(3);
     viewManager.pickWindow(3, 'B1', state);
     expect(viewManager.get()).toBeUndefined();
-    await expect(shown).resolves.toBe(true);
+    await expect(shown).resolves.toEqual({});
 
     const window = { a: { x: 0, y: 0 }, b: { x: 4, y: 2 } };
     const again = viewManager.show(3, { resume: true, window });
@@ -116,6 +126,32 @@ describe('viewManager', () => {
     // Opened afresh (VIEW again), it starts over.
     void viewManager.show(3);
     expect(viewManager.resume(3, 'B1')).toBeUndefined();
+    viewManager.close();
+  });
+
+  it('hands VIEW the boundary to edit, and keeps the window picked for it (part 5)', async () => {
+    const editing: ManagerState = {
+      selected: 'model:FRONT',
+      current: undefined,
+      creating: undefined,
+      editing: { key: 'model:FRONT' },
+    };
+    const boundary = { a: { x: 0, y: 0 }, b: { x: 40, y: 20 } };
+    const shown = viewManager.show(5);
+    viewManager.pickWindow(5, 'B1', editing, boundary);
+    await expect(shown).resolves.toEqual({ boundary });
+    const window = { a: { x: 1, y: 1 }, b: { x: 3, y: 2 } };
+    void viewManager.show(5, { resume: true, window });
+    expect(viewManager.resume(5, 'B1')).toEqual({
+      ...editing,
+      editing: { key: 'model:FRONT', window },
+    });
+    viewManager.close();
+    // Esc at the corners: the dialog again with no window, so nothing to change.
+    void viewManager.show(5);
+    viewManager.pickWindow(5, 'B1', editing, boundary);
+    void viewManager.show(5, { resume: true });
+    expect(viewManager.resume(5, 'B1')).toEqual(editing);
     viewManager.close();
   });
 

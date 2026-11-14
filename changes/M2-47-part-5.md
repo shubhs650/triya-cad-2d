@@ -1,0 +1,1 @@
+- M2-47 part 5 (#327): the View Manager's Edit Boundaries... shows the selected view and takes its new boundary at the command line (first and opposite corners, as often as wanted, Enter accepts); the change is a VIEW undo step and the display comes back as it was. M2-47 is closed; view categories and Dynamic Input type-ahead moved to M2-70 and M2-71.
