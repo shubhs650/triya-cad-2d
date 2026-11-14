@@ -29,6 +29,7 @@ import { currentHeader } from './current';
 import { hasThickness, materialOf, namedPlotStyles, setHyperlink } from './general';
 import {
   multiLeaderTextChange,
+  multiLeaderTextRowChange,
   multiLeadersToMeasure,
   type MultiLeaderWidths,
 } from './multileader';
@@ -177,7 +178,9 @@ function typeRowChange(
   if (g.kind === 'HATCH') return hatchChange(e.id, g, key, v, patterns);
   if (g.kind === 'MULTILEADER') {
     const c =
-      multiLeaderLeaderChange(model, e, key, v) ?? multiLeaderTextChange(model, e, key, v, widths);
+      multiLeaderLeaderChange(model, e, key, v) ??
+      multiLeaderTextRowChange(e, key, v) ??
+      multiLeaderTextChange(model, e, key, v, widths);
     return c === undefined || c === 'invalid' || 'refuse' in c ? c : geomPatch(c);
   }
   if (key === 'style' && (g.kind === 'TEXT' || g.kind === 'MTEXT')) {
