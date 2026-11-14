@@ -24,22 +24,13 @@ import {
   systemVariable,
   systemVariables,
   type SystemVariable,
-  type ValueFormat,
   type VariableValue,
 } from './sysvars';
+import { drawingUnits } from './units';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
 export const UNKNOWN_VARIABLE = 'Unknown variable name.  Type SETVAR ? for a list of variables.';
-
-/** LUPREC and AUPREC, as the drawing has them (AutoCAD's initial 4 and 0 otherwise). */
-function valueFormat(ctx: CommandContext): ValueFormat {
-  const n = (key: string, fallback: number): number => {
-    const v = ctx.model.header.get(key);
-    return typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 8 ? v : fallback;
-  };
-  return { precision: n('$LUPREC', 4), anglePrecision: n('$AUPREC', 0) };
-}
 
 /** What a variable holds now, or the reason it cannot be read (no app to ask). */
 async function read(
@@ -160,7 +151,7 @@ async function* setValue(ctx: CommandContext, v: SystemVariable): Sub<void> {
     ctx.message(current.problem);
     return;
   }
-  const shown = formatValue(v, current.value, valueFormat(ctx));
+  const shown = formatValue(v, current.value, drawingUnits(ctx.model.header));
   if (v.readOnly) {
     ctx.message(`${v.name} = ${shown} (read only)`);
     return;
@@ -204,7 +195,7 @@ async function* list(ctx: CommandContext): Sub<void> {
     default: { kind: 'string', value: '*' },
   });
   const patterns = a.kind === 'string' && a.value.trim() !== '' ? a.value.trim() : '*';
-  const f = valueFormat(ctx);
+  const f = drawingUnits(ctx.model.header);
   for (const v of systemVariables(ctx.model)) {
     if (!wcmatch(v.name, patterns)) continue;
     const r = await read(ctx, v);

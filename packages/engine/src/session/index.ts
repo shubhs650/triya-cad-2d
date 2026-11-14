@@ -10,7 +10,14 @@ import { PICKFIRST } from '../commands/sysvars';
 import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
-import { paperViewsChange, saveNamedView, validViewName, type PaperView } from '../edit/named-view';
+import {
+  paperViewsChange,
+  saveNamedView,
+  validViewName,
+  viewCategory,
+  viewCategoryProblem,
+  type PaperView,
+} from '../edit/named-view';
 import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
@@ -67,6 +74,8 @@ export interface NamedViewEdit {
   readonly kind: 'view';
   readonly name: string;
   readonly view: ViewState;
+  /** New View's View category (M2-70); '' or `<None>` for none, kept as it was when absent. */
+  readonly category?: string;
 }
 
 /**
@@ -75,7 +84,9 @@ export interface NamedViewEdit {
  */
 export type ViewTableEdit =
   | { readonly kind: 'view-delete'; readonly name: string }
-  | { readonly kind: 'view-rename'; readonly name: string; readonly newName: string };
+  | { readonly kind: 'view-rename'; readonly name: string; readonly newName: string }
+  /** The Category row (M2-70): '' or `<None>` takes the category off. */
+  | { readonly kind: 'view-category'; readonly name: string; readonly category: string };
 
 /**
  * A per-user system variable the app keeps that the drawing's engine follows: REVCLOUDGRIPS
@@ -422,7 +433,8 @@ export class EngineSession {
   edit(e: EngineEdit): EditResult {
     if (e.kind === 'xref-load') return this.#xrefLoad(e);
     if (e.kind === 'view') return this.#viewEdit(e);
-    if (e.kind === 'view-delete' || e.kind === 'view-rename') return this.#viewTableEdit(e);
+    if (e.kind === 'view-delete' || e.kind === 'view-rename' || e.kind === 'view-category')
+      return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     return e.kind === 'layout' ? this.#layoutEdit(e) : this.#layerEdit(e);
   }
@@ -430,8 +442,10 @@ export class EngineSession {
   #viewEdit(e: NamedViewEdit): EditResult {
     const name = e.name.trim();
     if (!validViewName(name)) return { ok: false, message: 'Invalid view name.' };
+    const problem = viewCategoryProblem(e.category && viewCategory(e.category));
+    if (problem) return { ok: false, message: problem };
     const b = new ChangeSetBuilder(this.model);
-    saveNamedView(b, this.model, name, e.view);
+    saveNamedView(b, this.model, name, e.view, e.category);
     const change = b.build();
     this.model.apply(change);
     this.#step('VIEW', change);
@@ -445,7 +459,13 @@ export class EngineSession {
     if (!view) return { ok: false, message: `Cannot find view "${e.name.trim()}".` };
     const b = new ChangeSetBuilder(this.model);
     if (e.kind === 'view-delete') b.removeTableRecord('views', view.handle);
-    else {
+    else if (e.kind === 'view-category') {
+      const category = viewCategory(e.category);
+      const problem = viewCategoryProblem(category);
+      if (problem) return { ok: false, message: problem };
+      if (category === view.category) return { ok: true, change: {} };
+      b.updateTableRecord('views', view.handle, { category });
+    } else {
       const name = e.newName.trim();
       if (!validViewName(name)) return { ok: false, message: 'Invalid view name.' };
       const other = named(name);

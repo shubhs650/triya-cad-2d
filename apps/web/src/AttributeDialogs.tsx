@@ -5,7 +5,8 @@
 //   Prompt, Value list and the Value field, with `...` opening the MTEXT editor on a multiline
 //   attribute), Text Options (Text Style, Justification, Height, Rotation, Annotative,
 //   Backwards, Upside down, Width Factor, Oblique Angle) and Properties (Layer, Linetype, Color,
-//   Plot style, Lineweight); Apply, OK, Cancel. Justification keeps the insertion point (M2-27);
+//   Plot style, Lineweight; Color's "Select Color..." opens AutoCAD's Select Color dialog over
+//   it, with the drawing's colour books, M2-35 part 23); Apply, OK, Cancel. Justification keeps the insertion point (M2-27);
 //   a multiline attribute's lists the nine MTEXT attachments. Annotative is shown only
 //   (DEC-013), and the Plot style is ByColor, greyed, in a colour-dependent drawing.
 // - Edit Attributes (ATTEDIT): the block name, each attribute's prompt and value, eight to a
@@ -30,6 +31,7 @@ import {
 import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { commandLines } from './command-line';
 import { engines } from './engine/registry';
+import { SelectColorDialog } from './SelectColorDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -144,10 +146,15 @@ const COLORS: readonly [string, Color][] = [
 
 const colorKey = (c: Color) => JSON.stringify(c);
 
+/** The Color list's last choice, which opens the Select Color dialog (M2-35 part 23). */
+const SELECT_COLOR = 'select-color';
+
 function colorLabel(c: Color): string {
   const named = COLORS.find(([, v]) => colorKey(v) === colorKey(c));
   if (named) return named[0];
-  return c.kind === 'aci' ? `Color ${c.index}` : c.kind === 'rgb' ? `${c.r},${c.g},${c.b}` : '';
+  if (c.kind === 'aci') return `Color ${c.index}`;
+  // A colour-book colour by its name in the book (RAL 3020), as AutoCAD lists it.
+  return c.kind === 'rgb' ? c.colorName || `${c.r},${c.g},${c.b}` : '';
 }
 
 /** AutoCAD's lineweights, hundredths of a millimetre. */
@@ -195,6 +202,8 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
   const [rows, setRows] = useState<readonly AttributeEntry[]>(request.attributes);
   const [selected, setSelected] = useState(request.selected ?? request.attributes[0]?.handle);
   const [tab, setTab] = useState<Tab>('attribute');
+  // The Select Color dialog over this one, opened by the Color list's "Select Color...".
+  const [pickingColor, setPickingColor] = useState(false);
   const row = rows.find((r) => r.handle === selected) ?? rows[0];
   const patches = () =>
     rows
@@ -467,7 +476,10 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
               <span>Color:</span>
               <select
                 value={colorKey(row.color)}
-                onChange={(e) => set({ color: JSON.parse(e.target.value) as Color })}
+                onChange={(e) => {
+                  if (e.target.value === SELECT_COLOR) setPickingColor(true);
+                  else set({ color: JSON.parse(e.target.value) as Color });
+                }}
               >
                 {!COLORS.some(([, c]) => colorKey(c) === colorKey(row.color)) && (
                   <option value={colorKey(row.color)}>{colorLabel(row.color)}</option>
@@ -477,6 +489,7 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
                     {label}
                   </option>
                 ))}
+                <option value={SELECT_COLOR}>Select Color...</option>
               </select>
             </label>
             <label className="cad-dialog-field">
@@ -521,6 +534,19 @@ function EnhancedAttributeEditor({ doc, request }: { doc: number; request: Eatte
           </div>
         )}
       </div>
+      {pickingColor && row && (
+        // AutoCAD's Select Color over the editor: its three tabs, the drawing's colour books.
+        <SelectColorDialog
+          initial={row.color}
+          books={request.colorBooks ?? []}
+          trueColors
+          onOk={(c) => {
+            setPickingColor(false);
+            set({ color: c });
+          }}
+          onCancel={() => setPickingColor(false)}
+        />
+      )}
       <div className="cad-dialog-buttons">
         <button type="button" disabled={!dirty} onClick={() => send('apply')}>
           Apply

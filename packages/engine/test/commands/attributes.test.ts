@@ -836,6 +836,33 @@ describe('EATTEDIT: Plot style and Annotative', () => {
     expect(d.type === 'eattedit' && d.plotStyles).toBeUndefined();
   });
 
+  it('offers the colour books the drawing uses to the Properties tab’s Select Color (M2-35 part 23)', async () => {
+    const books = setup({ books: true });
+    await books.bus.submit('EATTEDIT');
+    await books.bus.pick({ x: 300, y: 0 });
+    const d = dialog(books.bus);
+    if (d.type !== 'eattedit') throw new Error('no dialog');
+    expect(d.colorBooks).toEqual([
+      {
+        name: 'RAL CLASSIC',
+        colors: [{ name: 'RAL 3020', value: 'rgb:204,6,5;RAL CLASSIC;RAL 3020', rgb: [204, 6, 5] }],
+      },
+    ]);
+    // A colour of the book, chosen in Select Color, is the attribute's.
+    await books.bus.answer({
+      kind: 'dialog',
+      action: 'ok',
+      attributes: [{ handle: '71', color: RAL_3020 }],
+    });
+    expect(books.attr('70', '71').color).toEqual(RAL_3020);
+    // A drawing that uses none offers none.
+    const none = setup();
+    await none.bus.submit('EATTEDIT');
+    await none.bus.pick({ x: 300, y: 0 });
+    const n = dialog(none.bus);
+    expect(n.type === 'eattedit' && n.colorBooks).toBeUndefined();
+  });
+
   it('shows whether an attribute is annotative, whose justification stays', () => {
     const annotative: InsertAttribute = {
       ...attrib('99', 'NOTE', 'x', { x: 0, y: 0 }),

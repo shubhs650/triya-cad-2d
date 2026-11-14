@@ -583,4 +583,51 @@ describe('EngineSession view requests', () => {
     await session.command({ kind: 'submit', text: 'U' });
     expect(names()).toEqual(['Back', 'ELEVATION']);
   });
+
+  // M2-70: the View Manager's Category row and the New View dialog's View category.
+  it('gives a named view a category, and takes it off with <None>, each a VIEW undo step', async () => {
+    const session = new EngineSession(sampleInit());
+    const category = (name: string) =>
+      [...session.model.tables.views.values()].find((v) => v.name === name)?.category;
+    // New View's View category is saved with the view; none given is <None>.
+    expect(
+      session.edit({ kind: 'view', name: 'Front', view: VIEW, category: ' Elevations ' }).ok,
+    ).toBe(true);
+    expect(category('Front')).toBe('Elevations');
+    session.edit({ kind: 'view', name: 'Plan', view: VIEW });
+    expect(category('Plan')).toBeUndefined();
+    // Saving over a view keeps its category unless New View names one.
+    session.edit({ kind: 'view', name: 'front', view: { ...VIEW, height: 20 } });
+    expect(category('Front')).toBe('Elevations');
+
+    const set = session.edit({ kind: 'view-category', name: 'PLAN', category: 'Sections' });
+    expect(set.ok && set.change.tables?.views?.updated?.map((u) => u.after.category)).toEqual([
+      'Sections',
+    ]);
+    expect(category('Plan')).toBe('Sections');
+    expect(session.undoState.nextUndo).toBe('VIEW');
+    // The same category changes nothing and adds no undo step.
+    expect(session.edit({ kind: 'view-category', name: 'Plan', category: 'Sections' })).toEqual({
+      ok: true,
+      change: {},
+    });
+    // <None>, in any case, or nothing at all takes the category off.
+    expect(session.edit({ kind: 'view-category', name: 'Plan', category: '<none>' }).ok).toBe(true);
+    expect(category('Plan')).toBeUndefined();
+    session.edit({ kind: 'view-category', name: 'Front', category: '  ' });
+    expect(category('Front')).toBeUndefined();
+    expect(session.edit({ kind: 'view-category', name: 'Side', category: 'A' })).toEqual({
+      ok: false,
+      message: 'Cannot find view "Side".',
+    });
+    expect(
+      session.edit({ kind: 'view-category', name: 'Plan', category: 'x'.repeat(256) }),
+    ).toEqual({ ok: false, message: 'A view category is at most 255 characters.' });
+    expect(
+      session.edit({ kind: 'view', name: 'Top', view: VIEW, category: 'x'.repeat(256) }),
+    ).toEqual({ ok: false, message: 'A view category is at most 255 characters.' });
+
+    await session.command({ kind: 'submit', text: 'U' });
+    expect(category('Front')).toBe('Elevations');
+  });
 });

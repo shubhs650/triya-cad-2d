@@ -595,12 +595,16 @@ export function triyaToAcad(
   writeMLeaderStyles(original, r, mleaderStyles.plan);
   writeTableStyles(original, r, tableStyles.plan);
   writeMLineStyles(original, r, mlineStyles.plan);
-  writeViewRecords(original, {
-    appIds: views.appIds.plan,
-    ucs: views.ucs.plan,
-    views: views.views.plan,
-    vports: views.vports.plan,
-  });
+  writeViewRecords(
+    original,
+    {
+      appIds: views.appIds.plan,
+      ucs: views.ucs.plan,
+      views: views.views.plan,
+      vports: views.vports.plan,
+    },
+    r.allocate,
+  );
   writeImageObjects(original, imageObjects.plan);
   // After the blocks: a new layout's block record is in its table.
   writeLayouts(original, r, layouts.plan);

@@ -47,9 +47,32 @@ class JudgeTest(unittest.TestCase):
     def tearDown(self) -> None:
         self.tmp.cleanup()
 
-    def run_judge(self, results, exceptions=None, limitation=lambda _save, _x: None) -> gate.Report:
+    def run_judge(
+        self, results, exceptions=None, limitation=lambda _save, _x: None, read_back=None
+    ) -> gate.Report:
         return gate.judge(
-            FILES, self.saves, Path("/corpus"), exceptions or {}, fake_audit(results), limitation
+            FILES,
+            self.saves,
+            Path("/corpus"),
+            exceptions or {},
+            fake_audit(results),
+            limitation,
+            read_back or {},
+        )
+
+    def test_what_ezdxf_reads_back_must_be_what_the_suite_saved(self) -> None:
+        # M2-70: the corpus suite writes <save>.categories.json beside its save.
+        name = gate.save_name(DXF, "categories")
+        (self.saves / f"{name}.categories.json").write_text('{"Front": "Elevations", "Top": null}')
+        read = {"categories": lambda _save: {"Front": "Elevations", "Top": None, "Other": "x"}}
+        self.assertEqual(self.run_judge({}, read_back=read).failures, [])
+        wrong = {"categories": lambda _save: {"Front": "<None>"}}
+        self.assertEqual(
+            self.run_judge({}, read_back=wrong).failures,
+            [
+                f"{name}: ezdxf reads categories Front as '<None>', the save meant 'Elevations'",
+                f"{name}: ezdxf reads categories Top as missing, the save meant None",
+            ],
         )
 
     def test_clean_saves_pass(self) -> None:
@@ -60,8 +83,9 @@ class JudgeTest(unittest.TestCase):
         # after a paste from another drawing (M2-14), after the dimension commands (M2-11) and
         # after the Properties palette's General rows and Material (M2-35 part 6), with every
         # layout's view in its paper-space viewport (M2-47 part 1) and after the palette's hatch
-        # gradient, origin and associative rows (M2-35 part 13).
-        self.assertEqual(report.checked, 22)
+        # gradient, origin and associative rows (M2-35 part 13), and with view categories set
+        # (M2-70).
+        self.assertEqual(report.checked, 24)
 
     def test_any_recover_or_audit_finding_fails(self) -> None:
         name = gate.save_name(DXF, "edited")
@@ -182,6 +206,25 @@ class EzdxfLimitationTest(unittest.TestCase):
             findings = gate.audit_file(path)
             self.assertIn(gate.INVALID_OWNER_HANDLE, [x.code for x in findings])
             self.assertTrue(all(gate.ezdxf_limitation(path, x) is None for x in findings))
+
+
+@unittest.skipUnless(importlib.util.find_spec("ezdxf"), "ezdxf not installed")
+class ViewCategoriesTest(unittest.TestCase):
+    def test_reads_a_views_category_from_its_xrecord(self) -> None:
+        import ezdxf
+
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = ezdxf.new("R2018")
+            for name, category in (("Front", "Elevations"), ("Top", "<None>")):
+                view = doc.views.new(name)
+                info = view.new_extension_dict().add_xrecord(gate.VIEW_INFO)
+                info.reset([(300, category), (302, "")])
+            doc.views.new("Plain")
+            path = Path(tmp) / "views.dxf"
+            doc.saveas(path)
+            self.assertEqual(
+                gate.view_categories(path), {"Front": "Elevations", "Top": None, "Plain": None}
+            )
 
 
 if __name__ == "__main__":
