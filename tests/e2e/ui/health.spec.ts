@@ -72,10 +72,13 @@ test('lists the version, units, missing fonts, references and unknown objects', 
 });
 
 test('follows the drawing on screen and is keyboard operable', async ({ page }) => {
-  // Two drawings opened (the 2004 DWG and the 2013 DXF) take ~22–28 s of the default 30 s, on main
-  // too, so a busy CI runner timed it out at its last step (#306). As the plot specs that open two
-  // drawings do, it gets more time; what it checks is unchanged.
-  test.setTimeout(60_000);
+  await page.addInitScript(() => {
+    const w = window as { longTasks?: number[] };
+    w.longTasks = [];
+    new PerformanceObserver((list) => {
+      for (const e of list.getEntries()) w.longTasks!.push(Math.round(e.duration));
+    }).observe({ type: 'longtask' });
+  });
   await open(page, DWG);
   await openWithPicker(page, DXF);
   await expectShown(page, path.basename(DXF));
@@ -85,8 +88,18 @@ test('follows the drawing on screen and is keyboard operable', async ({ page }) 
   await expect(palette.getByRole('group', { name: 'Drawing' })).toContainText(
     'AutoCAD 2013 (AC1027)',
   );
+  // M2-63: the switch updates the palette without freezing the page. It took one 7–8 s task
+  // when the chrome's props held the file's bytes (React's dev prop logging walked each byte).
+  await page.evaluate(() => void ((window as { longTasks?: number[] }).longTasks = []));
   await page.getByRole('tab', { name: path.basename(DWG) }).click();
   await expect(palette.getByRole('group', { name: 'Drawing' })).toContainText('AC1018');
+  const longTasks = await page.evaluate(
+    () =>
+      new Promise<number[]>((done) =>
+        setTimeout(() => done((window as { longTasks?: number[] }).longTasks!), 500),
+      ),
+  );
+  expect(Math.max(0, ...longTasks)).toBeLessThan(200);
 
   // Each section folds from the keyboard.
   const summary = palette.getByRole('group', { name: /^Unknown objects/ }).locator('summary');
