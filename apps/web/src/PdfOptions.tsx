@@ -1,7 +1,7 @@
 // The PDF Options dialog (M2-60), opened from Save As PDF's and Export Data's "Options..." for a
 // PDF, with AutoCAD 2024's groups and labels (UI_SPEC.md §7; AutoCAD 2024 Help, "PDF Options
-// Dialog Box"): Data (Include layer information, Create bookmarks) and Font Handling (Convert all
-// text to geometry). AutoCAD's Quality group, its presets and its other Data and Font Handling
+// Dialog Box"): Data (Include layer information, Include hyperlinks, Create bookmarks) and Font
+// Handling (Convert all text to geometry). AutoCAD's Quality group, its presets and its other Data and Font Handling
 // choices change nothing Triya writes, so the dialog says why they are absent (export.ts). OK
 // hands the choices back for the export; Cancel (and Esc) keeps what was there.
 import { useEffect, useRef, useState } from 'react';
@@ -47,6 +47,11 @@ export function PdfOptionsDialog({
             onChange={(layers) => set({ layers })}
           />
           <Check
+            label="Include hyperlinks"
+            checked={s.hyperlinks}
+            onChange={(hyperlinks) => set({ hyperlinks })}
+          />
+          <Check
             label="Create bookmarks"
             checked={s.bookmarks}
             onChange={(bookmarks) => set({ bookmarks })}
@@ -63,7 +68,7 @@ export function PdfOptionsDialog({
           Vector and raster quality, merge control and the presets that set them are not offered:
           Triya&rsquo;s PDF keeps vectors at full precision and images at their own pixels, and
           lines plot in draw order. TrueType text is embedded as a subset unless it is converted to
-          geometry. Hyperlinks are not written.
+          geometry.
         </p>
       </div>
       <div className="cad-dialog-buttons">

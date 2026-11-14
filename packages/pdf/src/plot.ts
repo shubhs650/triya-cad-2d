@@ -26,6 +26,9 @@
 //   PDF's colours, as a raster image does (ours: AutoCAD's help is silent). A page the plot
 //   cannot read (no file supplied, encrypted with a password, damaged past reading) plots as the screen shows an
 //   underlay without its page: the clip boundary while clipping is on, else nothing.
+// - "Include hyperlinks" (M2-74, AutoCAD's PDF Options): a link annotation over each hyperlinked
+//   object's plotted bounds, its URL (with `#location`) as a URI action, or a named location
+//   alone as a jump to the page plotting that layout (`document.ts`).
 
 import { pdfNumber, type ContentStream, type LineCap, type LineJoin, type Rgb } from './content';
 import type { PdfPage } from './document';
@@ -38,6 +41,7 @@ import {
   PATH_L,
   PATH_M,
   PATH_Z,
+  IDENTITY,
   pathSegments,
   subpathLength,
   subpaths,
@@ -95,6 +99,19 @@ interface PlotItemBase {
    * items sharing the same array are clipped once.
    */
   readonly clip?: readonly (readonly number[])[];
+  /**
+   * The object's hyperlink (M2-74): the items of one object share one `PlotLink`, and a PDF
+   * saved with "Include hyperlinks" links their plotted bounds once.
+   */
+  readonly link?: PlotLink;
+}
+
+/** A hyperlink as a saved PDF follows it (an object's PE_URL xdata, `hyperlinkDetails`). */
+export interface PlotLink {
+  /** The address; '' for a named location of the drawing alone. */
+  readonly url: string;
+  /** A place in the URL's file (`#location`), or a layout of the drawing when there is no URL. */
+  readonly location: string;
 }
 
 export interface PlotPathItem extends PlotItemBase {
@@ -185,6 +202,11 @@ export interface PlotPageOptions {
    * layer, an optional content group a viewer turns on and off. Off when absent.
    */
   readonly layers?: boolean;
+  /**
+   * "Include hyperlinks" (M2-74): a link annotation over each hyperlinked object's plotted
+   * bounds (`PlotItem.link`). Off when absent.
+   */
+  readonly hyperlinks?: boolean;
   /** The PDF file an underlay shows, as supplied this session; none plots its boundary only. */
   readonly underlays?: (underlay: PlotUnderlay) => Uint8Array | undefined;
   /** Paper area the plot may draw on, points (the printable area); the whole page when absent. */
@@ -204,9 +226,17 @@ const JOINS: Record<PlotPaint['joinStyle'], LineJoin> = {
   diamond: 0,
 };
 
+/**
+ * Points a link reaches past an object's plotted ink on every side (M2-74), so a hairline can be
+ * clicked: Triya's choice, AutoCAD documents none.
+ */
+export const LINK_MARGIN = 2;
+
 /** Draws `items` in order on `page`. */
 export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPageOptions): void {
   const cs = page.content;
+  // Each linked object's bounds on paper, in the order first plotted.
+  const links = o.hyperlinks ? new Map<PlotLink, Bounds>() : undefined;
   cs.save();
   if (o.area) cs.rect(o.area.x, o.area.y, o.area.width, o.area.height).clip();
   let clip: PlotItem['clip'];
@@ -239,6 +269,7 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
         marked = layer;
       }
     }
+    if (links && item.link) linkBounds(links, item, o);
     cs.graphicsState(page.alpha(item.opacity ?? 1));
     if (item.kind === 'point') {
       plotPoint(cs, item, o);
@@ -279,6 +310,90 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
   unmark();
   if (clip) cs.restore();
   cs.restore();
+  for (const [target, b] of links ?? []) {
+    const sheet = o.area
+      ? { x0: o.area.x, y0: o.area.y, x1: o.area.x + o.area.width, y1: o.area.y + o.area.height }
+      : { x0: 0, y0: 0, x1: page.width, y1: page.height };
+    const r = intersect(b, sheet);
+    if (r) page.link([r.x0, r.y0, r.x1, r.y1], target);
+  }
+}
+
+interface Bounds {
+  readonly x0: number;
+  readonly y0: number;
+  readonly x1: number;
+  readonly y1: number;
+}
+
+const intersect = (a: Bounds, b: Bounds): Bounds | undefined => {
+  const r = {
+    x0: Math.max(a.x0, b.x0),
+    y0: Math.max(a.y0, b.y0),
+    x1: Math.min(a.x1, b.x1),
+    y1: Math.min(a.y1, b.y1),
+  };
+  return r.x0 < r.x1 && r.y0 < r.y1 ? r : undefined;
+};
+
+/** The bounds of flat x, y pairs carried by `m`. */
+function pairBounds(xy: readonly number[], m: Affine): Bounds | undefined {
+  let x0 = Infinity;
+  let y0 = Infinity;
+  let x1 = -Infinity;
+  let y1 = -Infinity;
+  for (let i = 0; i + 1 < xy.length; i += 2) {
+    const x = m.a * xy[i]! + m.c * xy[i + 1]! + m.e;
+    const y = m.b * xy[i]! + m.d * xy[i + 1]! + m.f;
+    x0 = Math.min(x0, x);
+    y0 = Math.min(y0, y);
+    x1 = Math.max(x1, x);
+    y1 = Math.max(y1, y);
+  }
+  return x0 <= x1 ? { x0, y0, x1, y1 } : undefined;
+}
+
+/**
+ * Adds an item's plotted bounds to its link's: its path's (control points included, which only
+ * widens a curve's box a little), widened by half its pen and `LINK_MARGIN`, within its clip. An
+ * XLINE or RAY has no bounds and links nothing.
+ */
+function linkBounds(links: Map<PlotLink, Bounds>, item: PlotItem, o: PlotPageOptions): void {
+  let b: Bounds | undefined;
+  let pen = 0;
+  if (item.kind === 'point') {
+    b = pairBounds([item.x, item.y], o.toPaper);
+    pen = (Math.max(plottedWeight(item.paint, o), POINT_MIN_MM) * POINTS_PER_MM) / 2;
+  } else if (item.kind !== 'infinite') {
+    const xy: number[] = [];
+    for (const s of pathSegments(item.path, o.toPaper)) {
+      if (s.op === 'Z') continue;
+      if (s.op === 'C') xy.push(s.x1, s.y1, s.x2, s.y2);
+      xy.push(s.x, s.y);
+    }
+    b = pairBounds(xy, IDENTITY);
+    if (item.kind === 'stroke') pen = (plottedWeight(item.paint, o) * POINTS_PER_MM) / 2;
+  }
+  if (!b) return;
+  const w = pen + LINK_MARGIN;
+  let r: Bounds | undefined = { x0: b.x0 - w, y0: b.y0 - w, x1: b.x1 + w, y1: b.y1 + w };
+  for (const polygon of item.clip ?? []) {
+    const c = pairBounds(polygon, o.toPaper);
+    r = c && intersect(r, c);
+    if (!r) return;
+  }
+  const old = links.get(item.link!);
+  links.set(
+    item.link!,
+    old
+      ? {
+          x0: Math.min(old.x0, r.x0),
+          y0: Math.min(old.y0, r.y0),
+          x1: Math.max(old.x1, r.x1),
+          y1: Math.max(old.y1, r.y1),
+        }
+      : r,
+  );
 }
 
 /** Millimetres a stroke plots at. */
