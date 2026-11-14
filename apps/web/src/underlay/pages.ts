@@ -52,6 +52,17 @@ export interface PdfFile {
   ): Promise<RasterPixels>;
   /** A page's painted paths in page inches, for running object snaps (M2-22). */
   snapGeometry?(page: number): Promise<UnderlaySnapPage>;
+  /**
+   * The PDF's layers (its optional content groups by name, once each, in the document's order)
+   * and whether the PDF shows each by default, for ULAYERS (M2-56 part 1).
+   */
+  layers?(): Promise<readonly PdfLayer[]>;
+}
+
+/** A PDF layer: an optional content group's name, and whether the PDF shows it by default. */
+export interface PdfLayer {
+  readonly name: string;
+  readonly on: boolean;
 }
 
 export type OpenPdf = (bytes: Uint8Array) => Promise<PdfFile>;
@@ -193,6 +204,22 @@ export class PdfPages {
           return drawn;
         },
       };
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The layers of the supplied file of this name (ULAYERS' dialog, M2-56 part 1); undefined
+   * without the file or when pdf.js cannot read it.
+   */
+  async layers(fileName: string): Promise<readonly PdfLayer[] | undefined> {
+    const file = this.#files.get(fileKey(fileName));
+    if (!file) return undefined;
+    try {
+      file.opened ??= this.#open(file.bytes);
+      const pdf = await file.opened;
+      return pdf.layers ? await pdf.layers() : [];
     } catch {
       return undefined;
     }

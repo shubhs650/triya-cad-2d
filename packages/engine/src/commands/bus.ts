@@ -827,6 +827,9 @@ export class PromptBus {
       get lastPoint() {
         return bus.#lastPoint;
       },
+      get preselected() {
+        return transparent ? [] : (bus.#pickfirst ?? []);
+      },
       get space() {
         return bus.#space();
       },
