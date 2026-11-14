@@ -460,6 +460,79 @@ describe('distance variables (M2-35 part 23)', () => {
   });
 });
 
+describe('angle variables (M2-35 part 24)', () => {
+  // AutoCAD shows and reads an angle-valued variable in the drawing's angular units, as its
+  // other prompts' defaults (ANGTOS, `formatAngle`; typed as any angle, `parseAngleValue`):
+  // ANGBASE, CHAMFERD, SNAPANG and DIMJOGANG, which the drawing keeps in radians.
+  const SURVEYOR: [string, HeaderValue][] = [
+    ...HEADER,
+    ['$AUNITS', 4],
+    ['$AUPREC', 2],
+    ['$ANGBASE', Math.PI / 2],
+    ['$CHAMFERD', 0],
+    ['$DIMJOGANG', Math.PI / 4],
+  ];
+
+  it('shows an angle in the drawing’s units and takes one typed in any of them', async () => {
+    const s = setup(withHeader(SURVEYOR));
+    await s.bus.script(['ANGBASE']);
+    expect(s.bus.promptText).toBe('Enter new value for ANGBASE <N>:');
+    await s.bus.script(["N 45d30' W"]);
+    expect(s.model.header.get('$ANGBASE')).toBeCloseTo((135.5 * Math.PI) / 180, 12);
+    await s.bus.script(['DIMJOGANG']);
+    expect(s.bus.promptText).toBe("Enter new value for DIMJOGANG <N 45d0' E>:");
+    await s.bus.script(['50g']);
+    expect(s.model.header.get('$DIMJOGANG')).toBeCloseTo(Math.PI / 4, 12);
+    await s.bus.script(['SETVAR', 'CHAMFERD', '0.5r']);
+    expect(s.model.header.get('$CHAMFERD')).toBeCloseTo(0.5, 12);
+    // A plain number is decimal degrees whatever AUNITS says, as at any angle prompt.
+    await s.bus.script(['CHAMFERD', '30']);
+    expect(s.model.header.get('$CHAMFERD')).toBeCloseTo(Math.PI / 6, 12);
+    await s.bus.script(['SETVAR', '?', 'ANGBASE,CHAMFERD']);
+    expect(s.log.slice(-2)).toEqual([
+      "ANGBASE           N 45d30' W",
+      "CHAMFERD          N 60d0' E",
+    ]);
+  });
+
+  it('shows degrees, grads and radians with AUPREC, a negative angle as its turn', async () => {
+    const units = (aunits: number, auprec: number): [string, HeaderValue][] => [
+      ...HEADER,
+      ['$AUNITS', aunits],
+      ['$AUPREC', auprec],
+      ['$ANGBASE', -Math.PI / 2],
+      ['$DIMJOGANG', Math.PI / 4],
+    ];
+    const deg = setup(withHeader(units(0, 1)));
+    await deg.bus.script(['ANGBASE']);
+    expect(deg.bus.promptText).toBe('Enter new value for ANGBASE <270.0>:');
+    const dms = setup(withHeader(units(1, 4)));
+    await dms.bus.script(['DIMJOGANG']);
+    expect(dms.bus.promptText).toBe('Enter new value for DIMJOGANG <45d0\'0">:');
+    await dms.bus.script(["22d30'"]);
+    expect(dms.model.header.get('$DIMJOGANG')).toBeCloseTo((22.5 * Math.PI) / 180, 12);
+    const grads = setup(withHeader(units(2, 2)));
+    await grads.bus.script(['DIMJOGANG']);
+    expect(grads.bus.promptText).toBe('Enter new value for DIMJOGANG <50.00g>:');
+    const radians = setup(withHeader(units(3, 3)));
+    await radians.bus.script(['DIMJOGANG']);
+    expect(radians.bus.promptText).toBe('Enter new value for DIMJOGANG <0.785r>:');
+  });
+
+  it('refuses what is no angle, and DIMJOGANG outside 5 to 90 degrees, and asks again', async () => {
+    const s = setup(withHeader(SURVEYOR));
+    await s.bus.script(['ANGBASE', 'abc']);
+    expect(s.log.at(-1)).toBe('Requires valid numeric angle.');
+    expect(s.bus.promptText).toBe('Enter new value for ANGBASE <N>:');
+    await s.bus.script(['', 'DIMJOGANG', '4']);
+    expect(s.log.at(-1)).toBe('Value must be between 5 and 90.');
+    await s.bus.script(['120g']);
+    expect(s.log.at(-1)).toBe('Value must be between 5 and 90.');
+    await s.bus.script(['90']);
+    expect(s.model.header.get('$DIMJOGANG')).toBeCloseTo(Math.PI / 2, 12);
+  });
+});
+
 describe('AcDbVariableDictionary variables (M2-59 part 4)', () => {
   const tableStyle = (handle: string, name: string): TableStyleRecord => ({
     handle,
