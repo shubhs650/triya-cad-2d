@@ -8,10 +8,11 @@
 // VPORT read with a 3D or twisted view is opened in a plan view (savedModelView in the app) and
 // left as read on save, since writing the plan view over it would lose the 3D one.
 import type { Vec2 } from '../geom/types';
-import type { ChangeSetBuilder } from '../model/builder';
-import type { ChangeSet, Replacement } from '../model/changeset';
+import { ChangeSetBuilder } from '../model/builder';
+import { isEmptyChangeSet, type ChangeSet, type Replacement } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
-import type { ViewRecord, VportRecord } from '../model/types';
+import type { Handle } from '../model/handle';
+import type { ViewRecord, ViewportGeometry, VportRecord } from '../model/types';
 
 /** A window on the drawing: its centre and size in world units. */
 export interface ViewExtent {
@@ -122,4 +123,98 @@ export function activeViewsChange(
     updated.push({ before: vport, after: { ...vport, center: c, height, aspectRatio } });
   }
   return updated.length > 0 ? { tables: { vports: { updated } } } : {};
+}
+
+/**
+ * DXF 90 of a paper-space viewport the save makes: ezdxf's for a layout's main viewport (fast
+ * zoom 32, UCS icon visibility 32768, current lineweight display 524288). AutoCAD's own carry
+ * 262144 too (sample_AC1015 and later: 819232); none of these bits changes what is drawn.
+ */
+export const PAPER_VIEWPORT_FLAGS = 557_088;
+
+/** What a layout's canvas shows: the layout by its block record, and the window on its sheet. */
+export interface PaperView {
+  readonly block: Handle;
+  readonly view: ViewExtent;
+}
+
+const isCurrentPaper = (name: string | undefined): boolean =>
+  name?.toUpperCase() === '*PAPER_SPACE';
+
+/**
+ * The change that writes the view each layout shows into its paper-space viewport (DXF 69 id 1):
+ * its frame (DXF 10, 40, 41) and its view (12, 45) are the same window in AutoCAD's own files,
+ * and the canvas opens a layout on them (`paperSpaceView` in the app). A layout without one gets
+ * one, as AutoCAD makes it the first time a layout is shown, unless it holds floating viewports
+ * already (another program's, with no id 1: which of them would be the sheet is unclear).
+ * Built on the drawing but not applied to it, so its handles are the drawing's from now on and
+ * a second save takes others; not an undo step, the app adds it to what it saves only.
+ */
+export function paperViewsChange(model: DocumentModel, layouts: readonly PaperView[]): ChangeSet {
+  const b = new ChangeSetBuilder(model);
+  for (const { block, view } of layouts) {
+    const { center, height, width } = view;
+    if (
+      !(height > 0) ||
+      !(width > 0) ||
+      ![center.x, center.y, height, width].every(Number.isFinite)
+    )
+      continue;
+    if (!model.layouts.some((l) => l.blockRecord === block)) continue;
+    const name = model.blocks.get(block)?.name;
+    if (name === undefined || name.toUpperCase() === '*MODEL_SPACE') continue;
+    const c = { x: center.x, y: center.y };
+    const viewports = model
+      .blockEntities(block)
+      .map((id) => model.entity(id)!)
+      .filter((e) => e.geom.kind === 'VIEWPORT');
+    const sheet = viewports.find((e) => (e.geom as ViewportGeometry).id === 1);
+    if (sheet) {
+      const g = sheet.geom as ViewportGeometry;
+      if (
+        near(g.center.x, c.x) &&
+        near(g.center.y, c.y) &&
+        near(g.viewCenter.x, c.x) &&
+        near(g.viewCenter.y, c.y) &&
+        near(g.width, width) &&
+        near(g.height, height) &&
+        near(g.viewHeight, height)
+      )
+        continue;
+      b.updateEntity(sheet.id, {
+        geom: { ...g, center: c, width, height, viewCenter: c, viewHeight: height },
+      });
+      continue;
+    }
+    if (viewports.length > 0) continue;
+    const zero = [...model.tables.layers.values()].find((l) => l.name === '0');
+    if (!zero) continue;
+    b.addEntity({
+      owner: block,
+      layer: zero.handle,
+      geom: {
+        kind: 'VIEWPORT',
+        center: c,
+        width,
+        height,
+        id: 1,
+        // DXF 68: on and first in a current layout, 0 in one that is not (DXF reference).
+        status: isCurrentPaper(name) ? 1 : 0,
+        flags: PAPER_VIEWPORT_FLAGS,
+        viewCenter: c,
+        viewHeight: height,
+        viewDirection: { x: 0, y: 0, z: 1 },
+        viewTarget: { x: 0, y: 0, z: 0 },
+        twist: 0,
+        lensLength: 50,
+        frontClip: 0,
+        backClip: 0,
+        frozenLayers: [],
+        plotStyleSheet: '',
+        renderMode: 0,
+      },
+    });
+  }
+  const change = b.build();
+  return isEmptyChangeSet(change) ? {} : change;
 }

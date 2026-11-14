@@ -9,6 +9,7 @@ import {
   type DocumentInit,
   type EditResult,
   type EngineEdit,
+  type PaperView,
 } from '@triya/engine';
 import type { Endpoint, EngineReply, EngineRequest } from './protocol';
 import { ENGINE_SERVICES } from './services';
@@ -98,6 +99,17 @@ export class EngineHost {
     });
   }
 
+  /** The view each layout shown is saved in (M2-47 part 1), for the saved file only. */
+  paperViews(layouts: readonly PaperView[]): Promise<ChangeSet | undefined> {
+    if (this.#disposed) return Promise.reject(new Error('engine host disposed'));
+    if (this.#session) return Promise.resolve(this.#session.paperViews(layouts));
+    const id = this.#nextId++;
+    return new Promise((resolve, reject) => {
+      this.#blocks.set(id, { resolve, reject });
+      this.#worker!.postMessage({ type: 'save-views', id, layouts });
+    });
+  }
+
   dispose(): void {
     this.#disposed = true;
     this.#worker?.terminate();
@@ -118,11 +130,11 @@ export class EngineHost {
     const blocks = m.id === undefined ? undefined : this.#blocks.get(m.id);
     if (blocks) {
       this.#blocks.delete(m.id!);
-      if (m.type === 'save-blocks') blocks.resolve(m.change);
+      if (m.type === 'save-blocks' || m.type === 'save-views') blocks.resolve(m.change);
       else blocks.reject(new Error(`engine worker: ${m.type === 'error' ? m.message : m.type}`));
       return;
     }
-    if (m.type === 'save-blocks') return;
+    if (m.type === 'save-blocks' || m.type === 'save-views') return;
     const p = m.id === undefined ? undefined : this.#pending.get(m.id);
     if (m.id !== undefined) this.#pending.delete(m.id);
     if (m.type === 'result') p?.resolve(m.result);

@@ -64,7 +64,7 @@ import { SnapMenu } from './SnapMenu';
 import { DraftingToggles } from './DraftingToggles';
 import { DocumentStore, isDirty, layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
-import { shownViewsChange } from './saved-views';
+import { shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
 import { LayersPalette } from './LayersPalette';
@@ -393,21 +393,30 @@ const saving = new Set<number>();
 
 /**
  * What a save writes: the drawing's change log, then the view each Model tile shows written into
- * its `*Active` VPORT (M2-29), so the drawing reopens where it was left. The views are the save's
- * only: looking around is not an edit.
+ * its `*Active` VPORT (M2-29) and the view each layout shown shows into its paper-space viewport
+ * (M2-47 part 1), so the drawing and each layout reopen where they were left. The views are the
+ * save's only: looking around is not an edit.
  */
-function savedChanges(doc: OpenDocument, blocks?: ChangeSet): readonly ChangeSet[] {
+async function savedChanges(doc: OpenDocument): Promise<readonly ChangeSet[]> {
   // The blocks of dimensions that have none (M2-30 part 2) are the saved file's only, as the
-  // views: the drawing keeps drawing them from the dimension engine.
+  // views: the drawing keeps drawing them from the dimension engine. Without them the
+  // dimensions are saved without a block, as they were opened.
+  const blocks = await engines.blocklessDimensionBlocks(doc.id).catch(() => undefined);
+  const papers = await engines
+    .paperViews(doc.id, shownPaperViews(controllersOf(doc.id)))
+    .catch(() => undefined);
   const log = engines.changesOf(doc.id);
-  const changes = blocks ? [...log, blocks] : log;
+  const changes = [...log, ...(blocks ? [blocks] : [])];
   const model = doc.opened.modelSpace;
-  if (model === undefined) return changes;
-  const shown = new Map(
-    tilesOf(doc.id, model).map(([i, c]) => [i, { view: c.view, size: c.size }]),
-  );
-  const views = shownViewsChange(doc.opened.init, changes, shown);
-  return Object.keys(views).length > 0 ? [...changes, views] : changes;
+  if (model !== undefined) {
+    const shown = new Map(
+      tilesOf(doc.id, model).map(([i, c]) => [i, { view: c.view, size: c.size }]),
+    );
+    const views = shownViewsChange(doc.opened.init, changes, shown);
+    if (Object.keys(views).length > 0) changes.push(views);
+  }
+  if (papers) changes.push(papers);
+  return changes;
 }
 
 /** The navigation bar's Save view (M2-29): the view kept in the drawing, a VIEW undo step. */
@@ -429,12 +438,7 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
     // Edits made while the save runs are not in it.
     const edits = doc.edits;
     saveEnv ??= browserSave();
-    const changes = async () => {
-      // Without them the dimensions are saved without a block, as they were opened.
-      const blocks = await engines.blocklessDimensionBlocks(id).catch(() => undefined);
-      return savedChanges(doc, blocks);
-    };
-    const r = await saveDrawing(doc.name, doc.file, changes, mode, saveEnv);
+    const r = await saveDrawing(doc.name, doc.file, () => savedChanges(doc), mode, saveEnv);
     if (r.ok) {
       store.saved(id, r.name, r.file, edits);
       const handle = r.file.handle;
@@ -454,8 +458,7 @@ async function exportDxf(id: number): Promise<Uint8Array> {
   const doc = store.getSnapshot().docs.find((d) => d.id === id);
   if (!doc?.file) throw new Error('There is nothing to export.');
   saveEnv ??= browserSave();
-  const blocks = await engines.blocklessDimensionBlocks(id).catch(() => undefined);
-  return saveEnv.write(doc.file.bytes, savedChanges(doc, blocks));
+  return saveEnv.write(doc.file.bytes, await savedChanges(doc));
 }
 
 /**

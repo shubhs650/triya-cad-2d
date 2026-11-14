@@ -714,3 +714,101 @@ test('justifies and sizes a multileader’s text from the palette, on its landin
   await page.mouse.move(5, 500);
   await page.screenshot({ path: test.info().outputPath('3-taller.png') });
 });
+
+// M2-35 part 12: a multileader's Leaders rows. The landing distance keeps the text where it is
+// and the landing's end a gap from it, so the leader line's corner (the connection) moves.
+test('sets a multileader’s leader colour, arrowhead size and landing from the palette', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await type(page, 'MLD', /^Specify leader arrowhead location/);
+  await type(page, '1000040,1000030', 'Specify leader landing location:');
+  await type(page, '1000060,1000060', 'Enter text:');
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('GATE VALVE');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  const leader = () =>
+    page.evaluate(() => {
+      let g: MultiLeaderGeometry | undefined;
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const a of cs.entities?.added ?? [])
+          if (a.entity.geom.kind === 'MULTILEADER') g = a.entity.geom;
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'MULTILEADER') g = u.after.geom;
+      }
+      return g;
+    });
+  await expect.poll(async () => (await leader())?.branches.length).toBe(1);
+  const placed = (await leader())!;
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/MultiLeader \(1\)/);
+  await objects.selectOption({ label: 'MultiLeader (1)' });
+  const leaders = palette.getByRole('table', { name: 'Leaders' });
+  await expect(leaders.getByRole('rowheader')).toHaveText([
+    'Leader type',
+    'Leader color',
+    'Leader linetype',
+    'Leader lineweight',
+    'Arrowhead',
+    'Arrowhead size',
+    'Horz landing',
+    'Landing distance',
+  ]);
+  const type_ = palette.getByRole('combobox', { name: 'Leader type' });
+  await expect(type_).toHaveValue('1');
+  await expect(palette.getByRole('combobox', { name: 'Arrowhead', exact: true })).toHaveValue('');
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('1-multileader-leaders-rows.png') });
+
+  // Red is index 1; Leader color's Select Color... opens the dialog.
+  const color = palette.getByRole('combobox', { name: 'Leader color' });
+  await color.selectOption({ label: 'Red' });
+  await expect.poll(async () => (await leader())?.lineColor).toEqual({ kind: 'aci', index: 1 });
+  await color.selectOption({ label: 'Select Color...' });
+  const dialog = page.getByRole('dialog', { name: 'Select Color' });
+  await expect(dialog).toBeVisible();
+  // A leader takes a true colour (a dimension's colour rows do not).
+  await expect(dialog.getByRole('tab', { name: 'True Color' })).toBeEnabled();
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+  await expect(dialog).toBeHidden();
+
+  const size = palette.getByRole('textbox', { name: 'Arrowhead size', exact: true });
+  await size.fill(String(placed.arrowheadSize * 2));
+  await size.press('Enter');
+  await expect
+    .poll(async () => (await leader())?.arrowheadSize)
+    .toBeCloseTo(placed.arrowheadSize * 2, 9);
+
+  const landing = palette.getByRole('textbox', { name: 'Landing distance', exact: true });
+  const b0 = placed.branches[0]!;
+  await landing.fill(String(b0.doglegLength * 2));
+  await landing.press('Enter');
+  await expect
+    .poll(async () => (await leader())?.branches[0]!.doglegLength)
+    .toBeCloseTo(b0.doglegLength * 2, 9);
+  const longer = (await leader())!;
+  // The text stays; the connection moves back along the landing by the old length.
+  expect(longer.text!.position).toEqual(placed.text!.position);
+  const along = (longer.branches[0]!.connection.x - b0.connection.x) * b0.direction.x;
+  expect(along).toBeCloseTo(-b0.doglegLength, 6);
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('2-red-bigger-arrow-longer-landing.png') });
+
+  await type_.selectOption({ label: 'Spline' });
+  await expect.poll(async () => (await leader())?.pathType).toBe(2);
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('3-spline.png') });
+});

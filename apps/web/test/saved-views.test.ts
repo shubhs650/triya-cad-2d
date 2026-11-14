@@ -2,7 +2,7 @@
 // the view each Model tile shows written into its `*Active` VPORT when the drawing is saved.
 import type { ChangeSet, DocumentInit, ViewRecord, VportRecord } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { drawingViews, shownViewsChange } from '../src/saved-views';
+import { drawingViews, shownPaperViews, shownViewsChange } from '../src/saved-views';
 
 const view = (handle: string, name: string, flags?: number): ViewRecord =>
   ({
@@ -115,5 +115,30 @@ describe('shownViewsChange', () => {
         ]),
       ),
     ).toEqual({});
+  });
+});
+
+describe('shownPaperViews (M2-47 part 1)', () => {
+  const size = { width: 800, height: 400 };
+  const view = { center: { x: 200, y: 150 }, scale: 4 };
+
+  it('takes the window each layout canvas shows, in paper units', () => {
+    expect(
+      shownPaperViews([
+        { block: '1B', isLayout: true, view, size },
+        // Model space is saved into its *Active VPORT instead.
+        { block: '1F', isLayout: false, view, size },
+      ]),
+    ).toEqual([{ block: '1B', view: { center: { x: 200, y: 150 }, width: 200, height: 100 } }]);
+  });
+
+  it('leaves out a layout not yet drawn, or on a canvas with no size', () => {
+    expect(
+      shownPaperViews([
+        { block: '1B', isLayout: true, view: undefined, size },
+        { block: '1C', isLayout: true, view, size: { width: 0, height: 400 } },
+        { block: '1D', isLayout: true, view: { ...view, scale: 0 }, size },
+      ]),
+    ).toEqual([]);
   });
 });

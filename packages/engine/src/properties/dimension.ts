@@ -331,6 +331,26 @@ const ARROWHEADS: Readonly<Record<string, string>> = {
   _NONE: 'None',
 };
 
+/**
+ * Arrowhead choices: closed filled (no block, value ''), then the drawing's arrowhead blocks by
+ * AutoCAD's names and the blocks the objects use now (`current`), by label. AutoCAD makes a
+ * missing arrowhead block when one is chosen; Triya offers the ones the drawing holds (authoring
+ * the rest is left on the roadmap). A dimension's Arrow 1/2 and a multileader's Arrowhead.
+ */
+export function arrowheadOptions(
+  model: Pick<AnnotationTables, 'blocks'>,
+  current: readonly (string | undefined)[],
+): PropertyOption[] {
+  const out: PropertyOption[] = [{ value: '', label: 'Closed filled' }];
+  for (const b of model.blocks.values()) {
+    const known = ARROWHEADS[b.name.toUpperCase()];
+    if (known || current.includes(b.handle)) out.push({ value: b.handle, label: known ?? b.name });
+  }
+  return out.sort((a, b) =>
+    a.value === '' ? -1 : b.value === '' ? 1 : a.label.localeCompare(b.label),
+  );
+}
+
 /** Arrow 1 and Arrow 2: each end's block (DIMBLK, or DIMBLK1/DIMBLK2 when DIMSAH is on). */
 function arrowRow(end: 1 | 2): DimvarRow {
   const name = `DIMBLK${end}`;
@@ -342,20 +362,7 @@ function arrowRow(end: 1 | 2): DimvarRow {
     section: 'Lines & Arrows',
     kind: 'choice',
     // Closed filled (no block), the drawing's arrowhead blocks, and the end's own block.
-    // AutoCAD makes a missing arrowhead block when one is chosen; Triya offers the ones the
-    // drawing holds (authoring the rest is left on the roadmap).
-    options: (model, v) => {
-      const out: PropertyOption[] = [{ value: '', label: 'Closed filled' }];
-      const current = [of(v, 'DIMBLK1'), of(v, 'DIMBLK2')];
-      for (const b of model.blocks.values()) {
-        const known = ARROWHEADS[b.name.toUpperCase()];
-        if (known || current.includes(b.handle))
-          out.push({ value: b.handle, label: known ?? b.name });
-      }
-      return out.sort((a, b) =>
-        a.value === '' ? -1 : b.value === '' ? 1 : a.label.localeCompare(b.label),
-      );
-    },
+    options: (model, v) => arrowheadOptions(model, [of(v, 'DIMBLK1'), of(v, 'DIMBLK2')]),
     get: (v) => of(v, name),
     // AutoCAD's Arrow 1 sets DIMBLK1 and turns DIMSAH on, the other end keeping its block.
     // Closed filled is written as handle 0, which every reader takes as no block.
