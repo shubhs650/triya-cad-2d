@@ -202,6 +202,7 @@ test('CTAB and TILEMODE switch tabs; autocomplete lists variables', async ({ pag
   await openWithPicker(page, DXF);
   await expectShown(page, path.basename(DXF));
   await expect(prompt(page)).toHaveText('Command:');
+  await expectDrawn(page, { timeout: 15_000 });
   const tab = (name: string) => page.getByRole('tab', { name, exact: true });
   await expect(tab('Model')).toHaveAttribute('aria-selected', 'true');
 
