@@ -51,6 +51,9 @@ describe('preferences', () => {
       aperture: 10,
       pdfOsnap: true,
       revcloudGrips: true,
+      // QPMODE −1 (off, all objects once on) and QPLOCATION 0 (by the cursor): AutoCAD's initial.
+      qpmode: -1,
+      qpLocation: 0,
     });
   });
 
@@ -76,6 +79,8 @@ describe('preferences', () => {
         otrack: 'no',
         pdfOsnap: false,
         revcloudGrips: false,
+        qpmode: 7,
+        qpLocation: 1,
       },
       unknown: 1,
     });
@@ -97,7 +102,10 @@ describe('preferences', () => {
       aperture: 25,
       pdfOsnap: false,
       revcloudGrips: false,
+      // QPMODE −2 to 2 only; QPLOCATION 0 or 1.
+      qpLocation: 1,
     });
+    expect(normalizePreferences({ drafting: { qpmode: 2 } }).drafting.qpmode).toBe(2);
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
     expect(normalizePreferences('junk')).toEqual(DEFAULT_PREFERENCES);
   });
@@ -180,5 +188,10 @@ describe('preferences', () => {
     // REVCLOUDGRIPS too, a registry setting in AutoCAD (M2-42).
     drafting.configure({ revcloudGrips: false });
     expect(m.saved.at(-1)?.drafting.revcloudGrips).toBe(false);
+    // QPMODE and QPLOCATION are kept in the registry in AutoCAD (M2-35 part 16).
+    drafting.toggle('qp');
+    expect(m.saved.at(-1)?.drafting.qpmode).toBe(1);
+    drafting.configure({ qpLocation: 1 });
+    expect(m.saved.at(-1)?.drafting.qpLocation).toBe(1);
   });
 });

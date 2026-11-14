@@ -94,7 +94,7 @@ export function PropertiesPalette({
 /** A polyline vertex row (M2-35 part 8): the Vertex spinner or one of the vertex's own rows. */
 const isVertexRow = (key: string) => key === 'vertex' || key.startsWith('vertex:');
 
-function PropertySections({
+export function PropertySections({
   sheet,
   narrow,
   set,
@@ -102,8 +102,14 @@ function PropertySections({
   stepVertex,
   markVertex,
   patternNames,
+  quick = false,
 }: {
   sheet: PropertySheet;
+  /**
+   * Quick Properties (M2-35 part 16): the sheet's one section as a table without a heading, as
+   * AutoCAD's Quick Properties lists its rows uncategorised.
+   */
+  quick?: boolean;
   narrow: (type: string) => void;
   set: (key: string, value: string) => void;
   openEditor: () => void;
@@ -161,9 +167,8 @@ function PropertySections({
         </p>
       )}
       <div className="properties-wrap">
-        {sheet.sections.map((s) => (
-          <details key={s.title} open className="properties-section">
-            <summary>{s.title}</summary>
+        {sheet.sections.map((s) => {
+          const table = (
             <table aria-label={s.title}>
               <tbody>
                 {s.rows.map((r) => (
@@ -193,8 +198,18 @@ function PropertySections({
                 ))}
               </tbody>
             </table>
-          </details>
-        ))}
+          );
+          return quick ? (
+            <div key={s.title} className="properties-section">
+              {table}
+            </div>
+          ) : (
+            <details key={s.title} open className="properties-section">
+              <summary>{s.title}</summary>
+              {table}
+            </details>
+          );
+        })}
       </div>
     </>
   );

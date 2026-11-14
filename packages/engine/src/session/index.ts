@@ -22,6 +22,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { EntityType } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
 import { propertySheet, type DimensionMeasure, type PropertySheet } from '../properties/sheet';
+import { quickPropertySheet } from '../properties/quick';
 import { REVCLOUDGRIPS } from '../edit/revcloud';
 
 /** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
@@ -149,9 +150,15 @@ export type CommandInput =
   /**
    * The Properties palette (M2-21) opened or closed, or narrowed to one type of the selected
    * objects (`filter`, null for all). While it is open the engine sends a `properties` sheet
-   * whenever the selection or the selected objects change.
+   * whenever the selection or the selected objects change. `quick` asks for Quick Properties'
+   * sheets instead (M2-35 part 16, `quickPropertySheet`): the app shows one or the other.
    */
-  | { readonly kind: 'properties'; readonly open: boolean; readonly filter?: EntityType | null }
+  | {
+      readonly kind: 'properties';
+      readonly open: boolean;
+      readonly filter?: EntityType | null;
+      readonly quick?: boolean;
+    }
   /** A Properties palette edit on the selected objects of the type it shows (one undo step). */
   | { readonly kind: 'property'; readonly edit: PropertyEdit }
   /**
@@ -206,6 +213,8 @@ export class EngineSession {
   #nextView = 1;
   /** The Properties palette is open: sheets are sent (M2-21). */
   #properties = false;
+  /** Quick Properties asked for the sheets: they are cut to its rows (M2-35 part 16). */
+  #quick = false;
   #filter: EntityType | undefined;
   /** The polyline vertex the Properties sheet shows (M2-35 part 8). */
   #vertex = 0;
@@ -283,7 +292,15 @@ export class EngineSession {
       this.#vertex,
       this.#services.measureDimension,
     );
-    this.#emit({ type: 'properties', sheet });
+    if (!this.#quick) return this.#emit({ type: 'properties', sheet });
+    // Nothing selected shows no Quick Properties: an empty sheet says so.
+    const quick = quickPropertySheet(sheet) ?? {
+      count: 0,
+      types: [],
+      sections: [],
+      units: sheet.units,
+    };
+    this.#emit({ type: 'properties', sheet: quick });
   }
 
   /** Listens to the command engine; returns the unsubscribe. */
@@ -329,6 +346,7 @@ export class EngineSession {
         return this.#bus.clearSelection();
       case 'properties':
         this.#properties = input.open;
+        this.#quick = input.quick === true;
         if (input.filter !== undefined) this.#filter = input.filter ?? undefined;
         if (input.open) {
           // Narrowing keeps the selection the sheet showed; opening starts from it.

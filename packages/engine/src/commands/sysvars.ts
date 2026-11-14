@@ -87,6 +87,11 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'PDFOSNAP', store: 'app', kind: 'switch' },
   // 1 (AutoCAD 2021+): a revision cloud shows its corners; 0: a grip at every arc's end.
   { name: 'REVCLOUDGRIPS', store: 'app', kind: 'switch' },
+  // Quick Properties (M2-35 part 16): QPMODE 0 off, 1 for all objects, 2 only for objects with
+  // quick properties of their own, a negative value off keeping what it turns back on to;
+  // QPLOCATION 0 by the cursor, 1 static.
+  { name: 'QPMODE', store: 'app', kind: 'integer', min: -2, max: 2 },
+  { name: 'QPLOCATION', store: 'app', kind: 'integer', min: 0, max: 1 },
 ];
 
 const WIPEOUTFRAME: SystemVariable = {

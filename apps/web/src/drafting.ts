@@ -41,10 +41,18 @@ export interface DraftingState {
    * told it (a header entry never saved), as its grips are worked out there.
    */
   readonly revcloudGrips: boolean;
+  /**
+   * QPMODE (M2-35 part 16): Quick Properties shows for a selection while it is above 0, for all
+   * objects (1) or only those with quick properties of their own (2). AutoCAD keeps it per user,
+   * initially −1: a negative value is off and keeps the mode the QP button turns back on.
+   */
+  readonly qpmode: number;
+  /** QPLOCATION: Quick Properties by the cursor (0) or where it was dragged (1). */
+  readonly qpLocation: 0 | 1;
 }
 
 export type DraftingToggle =
-  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy';
+  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp';
 
 /** The function keys AutoCAD gives the toggles. */
 export const DRAFTING_KEYS: Readonly<Record<string, DraftingToggle>> = {
@@ -66,6 +74,7 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:otrack', label: 'Object Snap Tracking on/off', keys: 'F11' },
   { id: 'drafting:lwt', label: 'Show/Hide Lineweight', keys: '' },
   { id: 'drafting:tpy', label: 'Show/Hide Transparency', keys: '' },
+  { id: 'drafting:qp', label: 'Quick Properties on/off', keys: 'Ctrl+Shift+P' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -82,6 +91,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   aperture: 10,
   pdfOsnap: true,
   revcloudGrips: true,
+  qpmode: -1,
+  qpLocation: 0,
 };
 
 /**
@@ -91,6 +102,7 @@ export const INITIAL_DRAFTING: DraftingState = {
 export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): boolean {
   if (t === 'osnap') return (s.osmode & OSNAP_OFF) === 0 && s.osmode !== 0;
   if (t === 'lwt') return s.lwt ?? lwdisplay;
+  if (t === 'qp') return s.qpmode > 0;
   return s[t];
 }
 
@@ -143,6 +155,9 @@ export class Drafting {
         return this.#set({ ...s, polar: !s.polar, ortho: s.polar ? s.ortho : false });
       case 'lwt':
         return this.#set({ ...s, lwt: !(s.lwt ?? lwdisplay) });
+      // QPMODE's sign: on keeps its mode (1 or 2) for when it is turned on again; 0 turns on 1.
+      case 'qp':
+        return this.#set({ ...s, qpmode: s.qpmode === 0 ? 1 : -s.qpmode });
       case 'snap':
       case 'otrack':
       case 'grid':
