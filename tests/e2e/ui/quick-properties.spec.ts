@@ -8,7 +8,7 @@
 // sheet are unit-tested in packages/engine/test/properties/quick.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity } from '@triya/engine';
-import { DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { DXF, activeCanvas, expectDrawn, expectShown, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -107,9 +107,14 @@ test('shows the picked objects’ quick properties by the cursor', async ({ page
   await expect(quick).toBeHidden();
 
   // The Properties palette open: no Quick Properties.
+  const undocked = (await canvas.boundingBox())!.width;
   await page.keyboard.press('Control+1');
   const palette = page.getByRole('complementary', { name: 'Properties' });
   await expect(palette).toBeVisible();
+  // The click below is worked out from the canvas beside the docked palette: wait for the canvas
+  // to take that size and draw at it (CI once clicked the undocked canvas's spot and missed).
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(undocked);
+  await expectDrawn(page, { timeout: 15_000 });
   const docked = (await canvas.boundingBox())!;
   await page.mouse.click(docked.x + docked.width / 2, docked.y + docked.height / 2);
   await expect(palette.getByRole('combobox', { name: 'Objects selected' })).toHaveText('Line (1)');
