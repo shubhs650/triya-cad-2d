@@ -111,6 +111,8 @@ export function QuickProperties({
     const area = el?.parentElement;
     if (state.qpLocation !== 1 || !el || !area || !placed || e.button !== 0) return;
     if (e.target instanceof Element && e.target.closest('button')) return;
+    // A drag moves the palette; it selects none of its title.
+    e.preventDefault();
     const from = { x: e.clientX, y: e.clientY, at: placed.at };
     const move = (m: PointerEvent) => {
       const at = quickPlacement({
