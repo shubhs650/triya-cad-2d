@@ -1031,7 +1031,8 @@ function typeSections(
     case 'HATCH': {
       const g = (e: Entity) => geomOf<'HATCH'>(e);
       // M2-35 part 3: AutoCAD 2024's Pattern rows. A gradient's own rows (gradient name,
-      // colours, centred) are not edited yet, so its rows stay read only; a solid fill has no
+      // colours, centred) are not edited yet, so its rows stay read only (M2-35 part 13 makes
+      // them, Origin X/Y and Associative editable); a solid fill has no
       // lines to turn or scale, so its Angle and Scale are greyed as AutoCAD greys them. Each
       // row edits the hatches it applies to: Scale the predefined and custom patterns, Spacing
       // and Double the user-defined ones (DXF 76 = 0, whose DXF 41 is the spacing).
