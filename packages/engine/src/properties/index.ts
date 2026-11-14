@@ -10,6 +10,7 @@ export {
 export {
   applyCurrentEdit,
   applyPropertyEdit,
+  arrowheadByName,
   hatchesToPattern,
   multiLeaderTextsToMeasure,
   patternPlacement,

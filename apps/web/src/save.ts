@@ -38,6 +38,25 @@ export interface DrawingFile {
 /** The version every save writes (DEC-047), as the I/O worker's summary names versions. */
 export const SAVE_VERSION = 'AC1032';
 
+/**
+ * A `DrawingFile` whose bytes are not enumerable (M2-63). The open document is a prop of most
+ * of the chrome, and in development React 19.2 logs each re-rendered component's changed props
+ * to the Performance panel, walking objects three levels down with for...in: bytes in an
+ * enumerable field were a row per byte (a 1 MB DWG froze the page 0.5 s per component, 5–8 s
+ * per tab switch or open). Production builds do not log props; this keeps development usable.
+ */
+class KeptFile implements DrawingFile {
+  declare readonly bytes: Uint8Array;
+  readonly handle?: SaveHandle;
+  readonly inPlace: boolean;
+
+  constructor(bytes: Uint8Array, handle: SaveHandle | undefined, inPlace: boolean) {
+    Object.defineProperty(this, 'bytes', { value: bytes, enumerable: false });
+    if (handle) this.handle = handle;
+    this.inPlace = inPlace;
+  }
+}
+
 /** The drawing as opened: a DXF already in the version saves write can be saved over. */
 export function drawingFile(
   bytes: Uint8Array,
@@ -45,7 +64,7 @@ export function drawingFile(
   handle: SaveHandle | undefined,
 ): DrawingFile {
   const inPlace = summary.format === 'dxf' && summary.version === SAVE_VERSION;
-  return { bytes, ...(handle && { handle }), inPlace: inPlace && handle !== undefined };
+  return new KeptFile(bytes, handle, inPlace && handle !== undefined);
 }
 
 /** The name Save As suggests: the drawing's, as a `.dxf`. */
@@ -113,7 +132,7 @@ export async function saveDrawing(
   if (!target) {
     const saved = dxfName(name);
     env.download(saved, out);
-    return { ok: true, name: saved, file: { bytes: file.bytes, inPlace: false } };
+    return { ok: true, name: saved, file: new KeptFile(file.bytes, undefined, false) };
   }
   try {
     const w = await target.createWritable!();
@@ -125,7 +144,7 @@ export async function saveDrawing(
   return {
     ok: true,
     name: target.name,
-    file: { bytes: file.bytes, handle: target, inPlace: true },
+    file: new KeptFile(file.bytes, target, true),
   };
 }
 

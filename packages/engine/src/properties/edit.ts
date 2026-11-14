@@ -10,6 +10,7 @@ import { parseAngleValue, parseDistance, parseNumber } from '../commands/parse';
 import { moveBy, turnAbout } from '../edit/similarity';
 import { dissociateHatch, transformObjects } from '../edit/edit';
 import { rescaledReference } from '../edit/transform';
+import { arrowheadBlockName } from '../edit/arrowhead-blocks';
 import { JUSTIFICATIONS, rejustified } from '../commands/modify/attributes';
 import type { PatternPlacement, PlacedPattern, TextOutline } from '../commands/view/host';
 import type { EntityId } from '../model/entity-ids';
@@ -803,6 +804,33 @@ export function applyPropertyEdit(
     }
   }
   return { changed, refused };
+}
+
+/** The rows that choose an arrowhead block: a dimension's Arrow 1 and 2, a multileader's. */
+const ARROWHEAD_KEYS: Readonly<Record<string, (e: Entity) => boolean>> = {
+  'dimvar:DIMBLK1': (e) => isDimension(e),
+  'dimvar:DIMBLK2': (e) => isDimension(e),
+  arrowhead: (e) => e.geom.kind === 'MULTILEADER',
+};
+
+/**
+ * AutoCAD's name for the arrowhead `edit` chooses by name (an option for an arrowhead the
+ * drawing lacked when the sheet was made) where some object the edit is for can take it (M2-35
+ * part 22): the bus adds the block first when the drawing still lacks it
+ * (`addArrowheadBlock`), as AutoCAD adds `_DOT` when Dot is first chosen, and the edit then names
+ * the block's handle. Undefined otherwise.
+ */
+export function arrowheadByName(
+  model: DocumentModel,
+  entities: readonly Entity[],
+  edit: PropertyEdit,
+): string | undefined {
+  const takes = ARROWHEAD_KEYS[edit.key];
+  if (!takes || typeof edit.value !== 'string') return undefined;
+  const name = arrowheadBlockName(edit.value);
+  if (!name || edit.value !== name) return undefined;
+  const editable = (e: Entity) => model.tables.layers.get(e.layer)?.locked !== true && takes(e);
+  return entities.some(editable) ? name : undefined;
 }
 
 /**

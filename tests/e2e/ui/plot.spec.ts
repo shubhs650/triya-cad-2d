@@ -528,6 +528,9 @@ test('-PLOT plots at the command line without the dialog (part 5)', async ({ pag
   const input = page.getByLabel('Command', { exact: true });
   const prompt = page.getByTestId('command-prompt');
   const type = async (text: string) => {
+    // A fill made while the engine still reads the input before replaces that input's text,
+    // whose Enter type-ahead holds (M2-71): -PLOT lost a `Y` in CI (#349). Wait for it.
+    await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
     await input.fill(text);
     await input.press('Enter');
   };
@@ -956,6 +959,9 @@ test('a layout with a named page setup applied opens the Plot dialog and -PLOT o
   const input = page.getByLabel('Command', { exact: true });
   const prompt = page.getByTestId('command-prompt');
   const type = async (text: string) => {
+    // A fill made while the engine still reads the input before replaces that input's text,
+    // whose Enter type-ahead holds (M2-71): -PLOT lost a `Y` in CI (#349). Wait for it.
+    await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
     await input.fill(text);
     await input.press('Enter');
   };
@@ -995,6 +1001,9 @@ test('-PLOT plots with a named page setup (part 6)', async ({ page }) => {
   const input = page.getByLabel('Command', { exact: true });
   const prompt = page.getByTestId('command-prompt');
   const type = async (text: string) => {
+    // A fill made while the engine still reads the input before replaces that input's text,
+    // whose Enter type-ahead holds (M2-71): -PLOT lost a `Y` in CI (#349). Wait for it.
+    await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
     await input.fill(text);
     await input.press('Enter');
   };

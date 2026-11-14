@@ -82,8 +82,10 @@ export function multiLeaderLeaderChange(
         const { arrowhead: _old, ...rest } = g;
         return { ...rest, overrideFlags: g.overrideFlags | MLEADER_OVERRIDES.arrowhead };
       }
+      // An arrowhead the drawing lacks (an option valued by its block name) is authored before
+      // the edit (`addArrowheadBlock`, M2-35 part 22), which then names the block's handle.
       const offered = arrowheadOptions(model, [g.arrowhead]).some((o) => o.value === v);
-      return offered && typeof v === 'string'
+      return offered && typeof v === 'string' && model.blocks.has(v)
         ? flag(MLEADER_OVERRIDES.arrowhead, { arrowhead: v })
         : 'invalid';
     }

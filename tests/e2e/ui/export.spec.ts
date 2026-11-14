@@ -33,6 +33,9 @@ async function readPdf(d: Download) {
 
 async function command(page: Page, text: string): Promise<void> {
   const input = page.getByLabel('Command', { exact: true });
+  // A fill made while the engine still reads the input before replaces that input's text,
+  // whose Enter type-ahead holds (M2-71): -PLOT lost a `Y` in CI (#349). Wait for it.
+  await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
   await input.fill(text);
   await input.press('Enter');
 }
