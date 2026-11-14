@@ -176,7 +176,9 @@ describe('a hatch’s Pattern rows (M2-35 part 3)', () => {
     const island = rowOf(one, 'Island detection style')!;
     expect(island).toMatchObject({ kind: 'choice', value: '0' });
     expect(island.options?.map((o) => o.label)).toEqual(['Normal', 'Outer', 'Ignore']);
-    expect(rowOf(one, 'Associative')!.readOnly).toBe(true);
+    // M2-35 part 13: Associative is a choice (Yes lets go of the boundary only one way).
+    expect(rowOf(one, 'Associative')).toMatchObject({ kind: 'choice', value: 'no' });
+    expect(rowOf(one, 'Associative')!.readOnly).toBeUndefined();
 
     const user = propertySheet(s.model, s.ids('71'));
     expect(rowOf(user, 'Type')!.value).toBe('User defined');
@@ -190,10 +192,11 @@ describe('a hatch’s Pattern rows (M2-35 part 3)', () => {
     expect(rowOf(solid, 'Scale')!.readOnly).toBe(true);
     expect(rowOf(solid, 'Pattern name')!.readOnly).toBeUndefined();
 
-    // A gradient's rows are its own (left for later): read only.
+    // A gradient has its own rows (M2-35 part 13), not a pattern's.
     const gradient = propertySheet(s.model, s.ids('73'));
-    expect(rowOf(gradient, 'Pattern name')).toMatchObject({ value: 'LINEAR', readOnly: true });
-    expect(rowOf(gradient, 'Angle')!.readOnly).toBe(true);
+    expect(rowOf(gradient, 'Pattern name')).toBeUndefined();
+    expect(rowOf(gradient, 'Angle')).toBeUndefined();
+    expect(rowOf(gradient, 'Gradient name')).toMatchObject({ kind: 'choice', value: 'LINEAR' });
 
     // Mixed: the rows edit the hatches they apply to.
     const all = propertySheet(s.model, s.ids('70', '71', '72'));
@@ -366,6 +369,191 @@ describe('a hatch’s Pattern rows (M2-35 part 3)', () => {
     await s.bus.setProperty({ key: 'patternName', value: 'SOLID' }, 'HATCH');
     expect(s.log.at(-1)).toBe('1 object was not changed: a gradient fill.');
     await s.bus.setProperty({ key: 'patternName', value: '  ' }, 'HATCH');
+    expect(s.log.at(-1)).toBe('Invalid input.');
+  });
+});
+
+// M2-35 part 13: a gradient's own rows (ActiveX AcadHatch's GradientName, GradientColor1 and 2,
+// GradientAngle and GradientCentered; a one-colour gradient's tint, GFCLRLUM), a pattern's
+// Origin X and Y (AcadHatch.Origin) and Associative (HATCHEDIT's Associative off).
+describe('a hatch’s gradient, origin and associative rows (M2-35 part 13)', () => {
+  const oneColour = (): Hatch => {
+    const g = gradientGeom();
+    return { ...g, gradient: { ...g.gradient!, singleColor: true, tint: 0.25 } };
+  };
+
+  it('lists a gradient’s rows, and a pattern’s origin', () => {
+    const s = setup(
+      init([
+        entityInit('70', hatchGeom()),
+        entityInit('73', gradientGeom()),
+        entityInit('74', oneColour()),
+      ]),
+    );
+    const two = propertySheet(s.model, s.ids('73'));
+    expect(rowOf(two, 'Type')!.value).toBe('Gradient');
+    const name = rowOf(two, 'Gradient name')!;
+    expect(name.options?.map((o) => o.value)).toEqual([
+      'LINEAR',
+      'CYLINDER',
+      'INVCYLINDER',
+      'SPHERICAL',
+      'INVSPHERICAL',
+      'HEMISPHERICAL',
+      'INVHEMISPHERICAL',
+      'CURVED',
+      'INVCURVED',
+    ]);
+    const c1 = rowOf(two, 'Color 1')!;
+    expect(c1).toMatchObject({ kind: 'choice', value: 'aci:1', colorDialog: 'true' });
+    // A gradient's colours are index or true colours: no ByLayer or ByBlock.
+    expect(c1.options?.map((o) => o.value)).not.toContain('ByLayer');
+    expect(rowOf(two, 'Color 2')).toMatchObject({ value: 'aci:5', colorDialog: 'true' });
+    expect(rowOf(two, 'Gradient tint')).toBeUndefined();
+    expect(rowOf(two, 'Gradient angle')).toMatchObject({ kind: 'angle', value: 0 });
+    expect(rowOf(two, 'Centered')).toMatchObject({ kind: 'choice', value: 'yes' });
+    expect(rowOf(two, 'Origin X')).toBeUndefined();
+
+    const one = propertySheet(s.model, s.ids('74'));
+    expect(rowOf(one, 'Color 2')).toBeUndefined();
+    expect(rowOf(one, 'Gradient tint')).toMatchObject({ kind: 'number', value: 0.25 });
+
+    const pattern = propertySheet(s.model, s.ids('70'));
+    expect(rowOf(pattern, 'Origin X')).toMatchObject({ kind: 'distance', value: 10 });
+    expect(rowOf(pattern, 'Origin Y')).toMatchObject({ kind: 'distance', value: 0 });
+    expect(rowOf(pattern, 'Gradient name')).toBeUndefined();
+
+    // Mixed: each row shows for the hatches it edits.
+    const all = propertySheet(s.model, s.ids('70', '73', '74'));
+    expect(rowOf(all, 'Pattern name')).toMatchObject({ value: 'ANSI31' });
+    expect(rowOf(all, 'Pattern name')!.readOnly).toBeUndefined();
+    expect(rowOf(all, 'Gradient name')).toMatchObject({ value: 'LINEAR' });
+    expect(rowOf(all, 'Color 2')).toMatchObject({ value: 'aci:5' });
+    expect(rowOf(all, 'Gradient tint')).toMatchObject({ value: 0.25 });
+    expect(rowOf(all, 'Origin X')).toMatchObject({ value: 10 });
+  });
+
+  it('edits a gradient’s name, colours, angle and centring, each one undo step', async () => {
+    const s = setup(init([entityInit('70', hatchGeom()), entityInit('73', gradientGeom())]));
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'gradientName', value: 'INVSPHERICAL' }, 'HATCH');
+    expect(s.g('73').gradient!.name).toBe('INVSPHERICAL');
+    // The pattern hatch has no gradient to change.
+    expect(s.g('70')).toEqual(hatchGeom());
+    await s.bus.setProperty({ key: 'gradientColor1', value: 'rgb:10,20,30' }, 'HATCH');
+    expect(s.g('73').gradient!.colors[0]).toEqual({
+      value: 0,
+      color: { kind: 'rgb', r: 10, g: 20, b: 30 },
+    });
+    await s.bus.setProperty({ key: 'gradientColor2', value: 'aci:3' }, 'HATCH');
+    expect(s.g('73').gradient!.colors[1]).toEqual({ value: 1, color: { kind: 'aci', index: 3 } });
+    await s.bus.setProperty({ key: 'gradientAngle', value: '45' }, 'HATCH');
+    close(s.g('73').gradient!.angle, Q);
+    await s.bus.setProperty({ key: 'gradientCentered', value: 'no' }, 'HATCH');
+    expect(s.g('73').gradient!.shift).toBe(1);
+    expect(s.bus.undo.state.undoable).toBe(5);
+    await s.bus.setProperty({ key: 'gradientCentered', value: 'yes' }, 'HATCH');
+    expect(s.g('73').gradient!.shift).toBe(0);
+    for (let i = 0; i < 6; i++) await s.bus.submit('U');
+    expect(s.g('73')).toEqual(gradientGeom());
+  });
+
+  it('refuses colours and values a gradient cannot take', async () => {
+    const s = setup(init([entityInit('73', gradientGeom()), entityInit('74', oneColour())]));
+    await s.bus.selectAll();
+    for (const [key, value] of [
+      ['gradientName', 'RADIAL'],
+      ['gradientColor1', 'ByLayer'],
+      ['gradientColor1', 'ByBlock'],
+      // The save writes no colour-book name for a gradient's colours (DXF 421 only).
+      ['gradientColor1', 'rgb:1,2,3;RAL CLASSIC;RAL 1000'],
+      ['gradientColor2', 'nonsense'],
+      ['gradientTint', '1.5'],
+      ['gradientTint', '-0.1'],
+      ['gradientCentered', 'maybe'],
+    ] as const) {
+      await s.bus.setProperty({ key, value }, 'HATCH');
+      expect(s.log.at(-1), `${key} ${value}`).toBe('Invalid input.');
+    }
+    expect(s.bus.undo.state.undoable).toBe(0);
+    // Colour 2 is a two-colour gradient's; a one-colour gradient's is its tint of colour 1.
+    await s.bus.setProperty({ key: 'gradientColor2', value: 'aci:2' }, 'HATCH');
+    expect(s.log.at(-1)).toBe(
+      '1 object was not changed: a one-colour gradient (its Gradient tint sets colour 2).',
+    );
+    expect(s.g('73').gradient!.colors[1]!.color).toEqual({ kind: 'aci', index: 2 });
+    await s.bus.setProperty({ key: 'gradientTint', value: '0.75' }, 'HATCH');
+    expect(s.log.at(-1)).toBe('1 object was not changed: a two-colour gradient.');
+    expect(s.g('74').gradient!.tint).toBe(0.75);
+  });
+
+  it('moves a pattern’s origin, every family with it', async () => {
+    const user = userGeom();
+    const doubled: Hatch = {
+      ...user,
+      double: true,
+      patternLines: [user.patternLines[0]!, { ...user.patternLines[0]!, angle: 2 }],
+    };
+    const s = setup(
+      init([
+        entityInit('70', hatchGeom()),
+        entityInit('71', doubled),
+        entityInit('72', solidGeom()),
+      ]),
+    );
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'patternOriginX', value: '4' }, 'HATCH');
+    expectLine(s.g('70').patternLines[0], { ...ansi31, base: { x: 4, y: 0 } });
+    // Each hatch keeps its own origin's other coordinate; its families move together.
+    expect(s.g('71').patternLines.map((l) => l.base)).toEqual([
+      { x: 4, y: 1 },
+      { x: 4, y: 1 },
+    ]);
+    expect(s.g('72')).toEqual(solidGeom());
+    await s.bus.setProperty({ key: 'patternOriginY', value: '-2.5' }, 'HATCH');
+    expect(s.g('70').patternLines[0]!.base).toEqual({ x: 4, y: -2.5 });
+    expect(rowOf(propertySheet(s.model, s.ids('70')), 'Origin X')!.value).toBe(4);
+    await s.bus.setProperty({ key: 'patternOriginY', value: 'east' }, 'HATCH');
+    expect(s.log.at(-1)).toBe('Invalid input.');
+    expect(s.bus.undo.state.undoable).toBe(2);
+  });
+
+  it('lets an associative hatch go of its boundary, and refuses to make one associative', async () => {
+    const square = (h: string) =>
+      entityInit(
+        h,
+        {
+          kind: 'LWPOLYLINE',
+          closed: true,
+          constantWidth: 0,
+          elevation: 0,
+          vertices: SQUARE.polyline.vertices,
+        } as unknown as EntityGeometry,
+        { reactors: ['70'] },
+      );
+    const s = setup(
+      init([
+        square('80'),
+        entityInit('70', hatchGeom({ associative: true, loops: [{ ...SQUARE, sources: ['80'] }] })),
+        entityInit('71', hatchGeom()),
+      ]),
+    );
+    expect(rowOf(propertySheet(s.model, s.ids('70')), 'Associative')!.value).toBe('yes');
+    await s.bus.selectAll();
+    await s.bus.setProperty({ key: 'associative', value: 'yes' }, 'HATCH');
+    expect(s.log.at(-1)).toBe(
+      '1 object was not changed: not associative (its boundary objects are not known).',
+    );
+    expect(s.bus.undo.state.undoable).toBe(0);
+    await s.bus.setProperty({ key: 'associative', value: 'no' }, 'HATCH');
+    expect(s.g('70').associative).toBe(false);
+    expect(s.g('70').loops[0]!.sources).toBeUndefined();
+    expect(s.byHandle('80').reactors).toBeUndefined();
+    expect(s.bus.undo.state.undoable).toBe(1);
+    await s.bus.submit('U');
+    expect(s.g('70').associative).toBe(true);
+    expect(s.byHandle('80').reactors).toEqual(['70']);
+    await s.bus.setProperty({ key: 'associative', value: 'perhaps' }, 'HATCH');
     expect(s.log.at(-1)).toBe('Invalid input.');
   });
 });
