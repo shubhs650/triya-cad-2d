@@ -142,6 +142,15 @@ describe('answerView', () => {
     expect(now(answerView(r, ctx))).toEqual({ ok: false, message: NO_CANVAS });
   });
 
+  it('shows a glance at a view in the space shown, as a swap does (M2-47 part 5)', () => {
+    const shown = new Target();
+    const { ctx } = context(shown);
+    const r: ViewRequest = { op: 'glance', view: { center: { x: 1, y: 2 }, height: 50 } };
+    expect(now(answerView(r, ctx))).toMatchObject({ ok: true });
+    expect(shown.calls).toEqual(['swap 1,2 50']);
+    expect(now(answerView(r, context(undefined).ctx))).toEqual({ ok: false, message: NO_CANVAS });
+  });
+
   it('hands the file commands to the app, with or without a canvas (M2-13)', async () => {
     const { ctx } = context(undefined);
     expect(await answerView({ op: 'file', action: 'qsave' }, ctx)).toEqual({
