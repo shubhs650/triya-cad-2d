@@ -1,1 +1,1 @@
-- M2-47 part 3 (#323): input typed ahead of a prompt waits for it, so `-VIEW` `S` `Two words` typed at once saves `Two words`; ZOOM and PAN are undo steps.
+- M2-47 part 3 (#323): keys typed ahead of a prompt are read by the prompt they reach, so `-VIEW` `S` `Two words` typed without waiting saves the view `Two words`.
