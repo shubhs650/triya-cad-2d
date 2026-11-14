@@ -5,7 +5,7 @@
 // the app loads, as in save.spec.ts: Chromium's File System Access pickers cannot be driven.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { expectShown, serve } from '../app/page';
+import { enterCommand, expectShown, serve } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -68,9 +68,7 @@ const item = (page: Page, name: string) =>
 /** Opens VIEW's dialog from the command line. */
 async function openManager(page: Page): Promise<void> {
   await expect(prompt(page)).toHaveText('Command:');
-  await page.getByLabel('Command', { exact: true }).click();
-  await page.keyboard.type('VIEW');
-  await page.keyboard.press('Enter');
+  await enterCommand(page, 'VIEW');
   await expect(manager(page)).toBeVisible();
 }
 
