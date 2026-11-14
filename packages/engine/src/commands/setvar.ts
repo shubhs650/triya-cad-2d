@@ -73,9 +73,14 @@ async function computed(
       return { value: layout?.name ?? 'Model' };
     }
     default: {
-      // VIEWSIZE and VIEWCTR: the view the canvas shows.
+      // VIEWSIZE and VIEWCTR: the view the canvas shows; SCREENSIZE: its size in pixels, X and Y.
       const r = await ctx.view.request({ op: 'get' });
       if (!r.ok) return { problem: r.message };
+      if (name === 'SCREENSIZE') {
+        return r.screen
+          ? { value: { x: r.screen.width, y: r.screen.height } }
+          : { problem: 'No view is shown.' };
+      }
       if (!r.view) return { problem: 'No view is shown.' };
       const { center, height } = r.view;
       return { value: name === 'VIEWSIZE' ? height : { x: center.x, y: center.y, z: 0 } };

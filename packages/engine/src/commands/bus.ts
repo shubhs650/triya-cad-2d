@@ -251,7 +251,7 @@ export class PromptBus {
   #queue: Promise<void> = Promise.resolve();
   readonly #history: string[] = [];
   readonly #recent: string[] = [];
-  readonly #pickfirstOn: boolean;
+  #pickfirstOn: boolean;
   /** The pre-selection made at `Command:` (PICKFIRST). */
   readonly #idle: SelectionLoop;
   /** The pre-selection the running command takes at its first "Select objects" prompt. */
@@ -489,6 +489,21 @@ export class PromptBus {
       await this.#idle.keyword('ALL');
       this.#step(undefined, 'more');
     });
+  }
+
+  /** PICKFIRST: picks at `Command:` select, and a command that selects takes them. */
+  get pickfirst(): boolean {
+    return this.#pickfirstOn;
+  }
+
+  /**
+   * PICKFIRST set while the drawing is open (SETVAR, M2-59): it holds from the next pick, and
+   * turned off it deselects what was picked at `Command:`, which no command could take now.
+   */
+  setPickfirst(on: boolean): Promise<void> {
+    if (on === this.#pickfirstOn) return Promise.resolve();
+    this.#pickfirstOn = on;
+    return on ? Promise.resolve() : this.clearSelection();
   }
 
   /** Deselects what was picked at `Command:` (another space shown, M2-03). */

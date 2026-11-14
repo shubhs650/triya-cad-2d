@@ -7,6 +7,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   EngineSession,
+  PICKFIRST,
   PromptBus,
   REVCLOUDGRIPS,
   UNKNOWN_VARIABLE,
@@ -251,6 +252,38 @@ describe('SETVAR', () => {
     expect(bare.log.at(-1)).toBe('There is no view to change.');
   });
 
+  it('asks the app for the per-user settings AutoCAD keeps in the registry (M2-59)', async () => {
+    // AutoCAD 2024 Help: AUTOSNAP 0–63 (bits 1 marker, 2 tooltip, 4 magnet, 8 polar tracking,
+    // 16 object snap tracking, 32 their tooltips); AUTOSNAPSIZE 1–20; DYNMODE −3–3 (a negative
+    // value is off, keeping what F12 turns back on); PICKFIRST 0 or 1.
+    const app = appHost({ AUTOSNAP: 63, AUTOSNAPSIZE: 5, DYNMODE: 3, PICKFIRST: 1 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['AUTOSNAP']);
+    expect(s.bus.promptText).toBe('Enter new value for AUTOSNAP <63>:');
+    await s.bus.script(['64']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 63.');
+    await s.bus.script(['39']);
+    expect(app.values['AUTOSNAP']).toBe(39);
+    await s.bus.script(['AUTOSNAPSIZE', '21']);
+    expect(s.log.at(-1)).toBe('Value must be between 1 and 20.');
+    await s.bus.script(['10']);
+    expect(app.values['AUTOSNAPSIZE']).toBe(10);
+    await s.bus.script(['DYNMODE', '-4']);
+    expect(s.log.at(-1)).toBe('Value must be between -3 and 3.');
+    await s.bus.script(['-3']);
+    expect(app.values['DYNMODE']).toBe(-3);
+    await s.bus.script(['PICKFIRST', '2']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 1.');
+    await s.bus.script(['0']);
+    expect(app.values['PICKFIRST']).toBe(0);
+    // Not edits of the drawing.
+    expect(s.bus.undo.state.undoable).toBe(0);
+    const model = DocumentModel.create(sampleInit());
+    for (const name of ['AUTOSNAP', 'AUTOSNAPSIZE', 'DYNMODE', 'PICKFIRST']) {
+      expect(systemVariable(model, name.toLowerCase()), name).toMatchObject({ store: 'app' });
+    }
+  });
+
   it('lists variables matching wild cards with ?', async () => {
     const s = setup(withHeader(HEADER), appHost({ ORTHOMODE: 1 }).view);
     await s.bus.script(['SETVAR', '?']);
@@ -337,6 +370,32 @@ describe('computed variables', () => {
     expect(bare.log.at(-1)).toBe('There is no view to change.');
   });
 
+  it('measures the canvas in pixels (SCREENSIZE), and says when no canvas shows one', async () => {
+    // AutoCAD 2024 Help, "SCREENSIZE": the current viewport's size in pixels, X and Y.
+    const sized: ViewHost = {
+      request: (r): Promise<ViewReply> =>
+        Promise.resolve(
+          r.op === 'get'
+            ? {
+                ok: true,
+                view: { center: { x: 5, y: 2.5 }, height: 20, width: 40, paper: false },
+                screen: { width: 1180, height: 590 },
+              }
+            : { ok: false, message: 'no' },
+        ),
+    };
+    const s = setup(sampleInit(), sized);
+    await s.bus.script(['SCREENSIZE']);
+    expect(s.log.at(-1)).toBe('SCREENSIZE = 1180.0000,590.0000 (read only)');
+    // A host that measures no pixels.
+    const unsized = setup(sampleInit(), canvas);
+    await unsized.bus.script(['SCREENSIZE']);
+    expect(unsized.log.at(-1)).toBe('No view is shown.');
+    const bare = setup();
+    await bare.bus.script(['SCREENSIZE']);
+    expect(bare.log.at(-1)).toBe('There is no view to change.');
+  });
+
   it('asks the app for the drawing’s file name and whether it has unsaved changes', async () => {
     const app = appHost({ DWGNAME: 'plan.dxf', DWGPREFIX: '', DWGTITLED: 1, DBMOD: 1 });
     const s = setup(sampleInit(), app.view);
@@ -370,6 +429,21 @@ describe('computed variables', () => {
     const model = DocumentModel.create(sampleInit());
     expect(systemVariable(model, 'ctab')).toMatchObject({ store: 'computed', readOnly: true });
     expect(systemVariable(model, 'DWGNAME')).toMatchObject({ store: 'app', readOnly: true });
+  });
+});
+
+describe('PICKFIRST', () => {
+  it('is a session setting of each drawing’s command line, never an edit or undo step', () => {
+    const session = new EngineSession(sampleInit());
+    expect(session.edit({ kind: 'sysvar', name: PICKFIRST, value: 0 })).toEqual({
+      ok: true,
+      change: {},
+    });
+    expect(session.pickfirst).toBe(false);
+    expect(session.undoState.undoable).toBe(0);
+    expect(session.model.header.has(PICKFIRST)).toBe(false);
+    session.edit({ kind: 'sysvar', name: PICKFIRST, value: 1 });
+    expect(session.pickfirst).toBe(true);
   });
 });
 
