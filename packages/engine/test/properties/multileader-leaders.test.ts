@@ -138,7 +138,7 @@ describe('a multileader’s Leaders rows (M2-35 part 12)', () => {
   it('shows the Leaders section before Text, for text and block content alike', () => {
     const s = setup([entityInit('60', textLeader()), entityInit('62', blockLeader())]);
     const one = propertySheet(s.model, s.ids('60'));
-    expect(one.sections.map((x) => x.title)).toEqual(['General', 'Leaders', 'Text']);
+    expect(one.sections.map((x) => x.title)).toEqual(['General', 'Leaders', 'Text', 'Misc']);
     const leaders = one.sections.find((x) => x.title === 'Leaders')!;
     expect(leaders.rows.map((r) => r.label)).toEqual([
       'Leader type',
@@ -188,7 +188,7 @@ describe('a multileader’s Leaders rows (M2-35 part 12)', () => {
     expect(rowOf(one, 'Landing distance')).toMatchObject({ kind: 'distance', value: 8 });
     const block = propertySheet(s.model, s.ids('62'));
     // M2-35 part 15: a block's own rows in Text's place.
-    expect(block.sections.map((x) => x.title)).toEqual(['General', 'Leaders', 'Block']);
+    expect(block.sections.map((x) => x.title)).toEqual(['General', 'Leaders', 'Block', 'Misc']);
   });
 
   it('shows *VARIES* where multileaders differ', () => {

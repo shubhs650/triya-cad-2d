@@ -1955,6 +1955,11 @@ const multiLeaderWriter: Writer<MultiLeaderGeometry> = {
     if (d('textFrame')) m.textFrame = g.textFrame;
     if (d('contentBase') || elevation) c.contentBasePoint = at(g.contentBase, c.contentBasePoint);
     if (d('landingGap')) c.landingGap = g.landingGap;
+    // DXF 176, the entity's: absent in the model only for a multileader the engine made before
+    // part 25, whose style's value it took.
+    if (d('blockConnection') && g.blockConnection !== undefined) {
+      m.blockContentConnection = g.blockConnection;
+    }
     // A new entity, or one moved to another plane, writes all of its content.
     const was = d('normal') ? undefined : before;
     if (d('text') || elevation) writeMultiLeaderText(r, m, was?.text, g, elevation);

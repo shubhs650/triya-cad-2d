@@ -509,6 +509,18 @@ describe('triyaToAcad multileaders and viewports', () => {
     expect((saved as MultiLeader).contextData.leaderRoots[0]!.landingDistance).toBe(2);
   });
 
+  it('writes the block connection the Properties palette sets (DXF 176, M2-35 part 25)', () => {
+    const model = open();
+    const e = find(model, 'MULTILEADER');
+    const g = ml(e.geom);
+    expect(g.blockConnection).toBe(0);
+    edit(model, (b) => b.updateEntity(e.id, { geom: changed(g, { blockConnection: 1 }) }));
+    const bytes = save(model);
+    const saved = readCadDocument(bytes).getCadObject(Number.parseInt(e.handle, 16));
+    expect((saved as MultiLeader).blockContentConnection).toBe(1);
+    expect(ml(reopened(bytes, e.handle)!.geom).blockConnection).toBe(1);
+  });
+
   it('adds new multileaders and viewports under the engine handles', () => {
     const model = open();
     const text = find(model, 'MULTILEADER');

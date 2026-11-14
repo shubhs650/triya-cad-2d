@@ -17,6 +17,13 @@
 // block takes its attribute definitions' values, as MLEADER offers them; the old block's values
 // belong to its own definitions. Content and placement are kept per annotation scale in the
 // context data, so an annotative multileader refuses these edits (M2-43), as its Text rows do.
+//
+// M2-35 part 25: Attachment, the MLEADERSTYLE dialog's "Center Extents" or "Insertion Point"
+// (ActiveX BlockConnectionType), is the multileader's own DXF 176, flagged by bit 23
+// (BLOCK_CONNECTION). The point that met the landing stays where it was: by extents that is the
+// facing side's middle, by insertion point the block's base point, so the block moves by the
+// difference (as a block placed by MLEADER with the other choice would sit). Without known
+// extents it stays put.
 import type { Box } from '../geom/bounds';
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
@@ -33,7 +40,26 @@ import { parseAngleValue, parseNumber } from '../commands/parse';
 import { parseColorValue, type PropertyValue } from './sheet';
 
 /** The keys of the Block rows. */
-export const BLOCK_KEYS = new Set(['sourceBlock', 'blockColor', 'blockScale', 'blockRotation']);
+export const BLOCK_KEYS = new Set([
+  'sourceBlock',
+  'blockColor',
+  'blockScale',
+  'blockRotation',
+  'blockConnection',
+]);
+
+/** Attachment's choices (DXF 176: 0 extents, 1 insertion point), as MLEADERSTYLE names them. */
+export const BLOCK_CONNECTIONS = [
+  { value: 'extents', label: 'Center extents' },
+  { value: 'insertion', label: 'Insertion point' },
+] as const;
+
+/** How the multileader's block meets its landings: its own DXF 176, else its style's. */
+export function blockConnectionOf(model: DocumentModel, g: MultiLeaderGeometry): number {
+  if (g.blockConnection !== undefined) return g.blockConnection;
+  const style = g.style === undefined ? undefined : model.tables.mleaderStyles.get(g.style);
+  return style?.blockConnection ?? 0;
+}
 
 const ANNOTATIVE = 'annotative (each scale keeps its own placement)';
 
@@ -103,6 +129,19 @@ export function multiLeaderBlockChange(
       bit = MLEADER_OVERRIDES.blockScale;
       break;
     }
+    case 'blockConnection': {
+      const connection = BLOCK_CONNECTIONS.findIndex((c) => c.value === v);
+      if (connection < 0) return 'invalid';
+      if (e.annotative || g.annotative) return { refuse: ANNOTATIVE };
+      const was = blockConnectionOf(model, g);
+      const position = connection === was ? b.position : reconnected(model, g, b, connection === 1);
+      return {
+        ...g,
+        blockConnection: connection,
+        block: { ...b, position },
+        overrideFlags: g.overrideFlags | MLEADER_OVERRIDES.blockConnection,
+      };
+    }
     default: {
       const n = typeof v === 'number' ? v : typeof v === 'string' ? parseAngleValue(v) : NaN;
       if (n === undefined || !Number.isFinite(n)) return 'invalid';
@@ -138,14 +177,31 @@ function keptOnLanding(
   before: MultiLeaderBlock,
   next: MultiLeaderBlock,
 ): Vec2 {
-  const style = g.style === undefined ? undefined : model.tables.mleaderStyles.get(g.style);
-  if (style?.blockConnection === 1) return before.position;
+  if (blockConnectionOf(model, g) === 1) return before.position;
   const was = blockContentBox(model, before);
   const now = blockContentBox(model, { ...next, position: before.position });
   if (!was || !now) return before.position;
   const a = facingPoint(was, g);
   const c = facingPoint(now, g);
   return { x: before.position.x + a.x - c.x, y: before.position.y + a.y - c.y };
+}
+
+/**
+ * Where block `b` goes when its attachment changes (part 25): by its insertion point, onto the
+ * point of its box that faced the landing; by its extents, so that that point is where its
+ * insertion point was. Where it is when its extents are unknown.
+ */
+function reconnected(
+  model: DocumentModel,
+  g: MultiLeaderGeometry,
+  b: MultiLeaderBlock,
+  byInsertion: boolean,
+): Vec2 {
+  const box = blockContentBox(model, b);
+  if (!box) return b.position;
+  const f = facingPoint(box, g);
+  if (byInsertion) return f;
+  return { x: 2 * b.position.x - f.x, y: 2 * b.position.y - f.y };
 }
 
 /**

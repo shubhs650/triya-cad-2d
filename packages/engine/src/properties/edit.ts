@@ -37,6 +37,7 @@ import {
 } from './multileader';
 import { multiLeaderLeaderChange } from './multileader-leaders';
 import { multiLeaderBlockChange } from './multileader-block';
+import { multiLeaderMiscChange } from './multileader-misc';
 import type { GeneralProps } from './sheet';
 import { DIMVAR_DEFAULTS, DIMVAR_ROWS, dimensionUnits, rowVars } from './dimension';
 import {
@@ -183,6 +184,7 @@ function typeRowChange(
     const c =
       multiLeaderLeaderChange(model, e, key, v) ??
       multiLeaderBlockChange(model, e, key, v) ??
+      multiLeaderMiscChange(e, key, v) ??
       multiLeaderTextRowChange(e, key, v) ??
       multiLeaderTextChange(model, e, key, v, widths);
     return c === undefined || c === 'invalid' || 'refuse' in c ? c : geomPatch(c);
