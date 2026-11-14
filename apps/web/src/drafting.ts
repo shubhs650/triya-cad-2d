@@ -59,6 +59,11 @@ export interface DraftingState {
    * keeps it per user, initially on; each drawing's command line is told it.
    */
   readonly pickfirst: boolean;
+  /**
+   * GRIPSIZE (M2-59 part 3): the grip box's size in AutoCAD's pixels, 1 to 255, initially 5.
+   * AutoCAD keeps it per user; the canvas draws grips at it and picks them within it.
+   */
+  readonly gripSize: number;
 }
 
 /** AUTOSNAP 1: AutoSnap's marker is drawn at the snap point. */
@@ -119,6 +124,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   qpLocation: 0,
   autosnap: AUTOSNAP_KEPT,
   pickfirst: true,
+  gripSize: 5,
 };
 
 /**

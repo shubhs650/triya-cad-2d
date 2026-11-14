@@ -469,6 +469,12 @@ function AutoColour(props: {
 }
 
 /**
+ * The Grip size slider's range (M2-59 part 3): AutoCAD's Options slider covers small sizes only;
+ * a larger GRIPSIZE set at the command line (up to 255) widens it to show where it is.
+ */
+const GRIP_SLIDER = { min: 1, max: 20 } as const;
+
+/**
  * OPTIONS > Drafting's AutoSnap and AutoTrack settings, AUTOSNAP's bits but POLAR's and OTRACK's
  * (the status bar's buttons), labelled as AutoCAD 2024's Options dialog labels them (M2-59).
  */
@@ -481,7 +487,7 @@ const AUTOSNAP_CHECKS = [
 
 /**
  * DRAFTINGSETTINGS' object snap modes and polar increment, OPTIONS > Drafting's AutoSnap
- * settings and marker and aperture sizes, OPTIONS > Selection's Noun/verb selection, and
+ * settings and marker and aperture sizes, OPTIONS > Selection's grip size and Noun/verb selection, and
  * Dynamic Input. They act on the status bar's drafting aids,
  * which keep them between sessions (preferences.ts).
  */
@@ -547,6 +553,20 @@ function DraftingSettings() {
             onChange={(e) => drafting.configure({ aperture: Number(e.currentTarget.value) })}
           />
           <span className="range-value">{d.aperture}</span>
+        </span>
+      </div>
+      <div className="setting-row">
+        <label htmlFor={`${id}-grip`}>Grip size</label>
+        <span>
+          <input
+            id={`${id}-grip`}
+            type="range"
+            min={GRIP_SLIDER.min}
+            max={Math.max(GRIP_SLIDER.max, d.gripSize)}
+            value={d.gripSize}
+            onChange={(e) => drafting.configure({ gripSize: Number(e.currentTarget.value) })}
+          />
+          <span className="range-value">{d.gripSize}</span>
         </span>
       </div>
       {AUTOSNAP_CHECKS.map(({ bit, label }) => (
