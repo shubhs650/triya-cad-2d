@@ -402,6 +402,27 @@ describe('PromptBus', () => {
     near(lines().slice(before)[1]!.end, { x: 18, y: 36 });
   });
 
+  it('shows defaults and echoes picks in the drawing units (M2-35 part 17)', async () => {
+    const { bus } = setup([
+      ['$LUNITS', 4],
+      ['$LUPREC', 4],
+      ['$AUNITS', 1],
+      ['$AUPREC', 2],
+    ]);
+    await bus.script(['CIRCLE', '5,5']);
+    expect(bus.promptText).toBe(`Specify radius of circle or [Diameter] <0'-10">:`);
+    await bus.answer({ kind: 'distance', value: 18.25 });
+    expect(bus.history.at(-1)).toBe(`Specify radius of circle or [Diameter] <0'-10">: 1'-6 1/4"`);
+    await bus.script(['ROTATE']);
+    await bus.answer({ kind: 'angle', value: Math.PI / 4 });
+    expect(bus.history.at(-1)).toBe(`Specify rotation angle: 45d0'`);
+    await bus.cancel();
+    await bus.script(['LINE']);
+    await bus.answer({ kind: 'point', point: { x: 30, y: 6.5 } });
+    expect(bus.history.at(-1)).toBe(`Specify first point: 2'-6",0'-6 1/2"`);
+    await bus.cancel();
+  });
+
   it('reads 1-1/2 as arithmetic in decimal units', async () => {
     const { bus } = setup();
     await bus.script(['CIRCLE', '5,5', '1-1/2']);

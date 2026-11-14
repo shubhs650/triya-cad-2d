@@ -53,6 +53,7 @@ import {
   type SelectionWindow,
 } from './prompt';
 import { NO_VIEW, waitsOnApp, type ViewHost, type ViewReply, type ViewRequest } from './view/host';
+import { drawingUnits, type DrawingUnits } from './units';
 import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
 import { gripsOf } from '../edit/grips';
 import { variableCommand } from './setvar';
@@ -328,9 +329,7 @@ export class PromptBus {
     const c = this.#collectors.at(-1);
     if (c) return this.#nested(c.text);
     const prompt = this.prompt;
-    return prompt
-      ? this.#nested(formatPrompt(prompt, this.#precision(), this.#anglePrecision()))
-      : 'Command:';
+    return prompt ? this.#nested(formatPrompt(prompt, this.#units())) : 'Command:';
   }
 
   /** The objects shown selected: the set being built at "Select objects", or the pre-selection. */
@@ -642,15 +641,9 @@ export class PromptBus {
     return this.#stack.length > 1 ? `>>${text}` : text;
   }
 
-  #precision(): number {
-    const v = this.#model.header.get('$LUPREC');
-    return typeof v === 'number' && v >= 0 && v <= 8 ? v : 4;
-  }
-
-  /** AUPREC: decimal places of angles shown in degrees (AutoCAD's default 0). */
-  #anglePrecision(): number {
-    const v = this.#model.header.get('$AUPREC');
-    return typeof v === 'number' && v >= 0 && v <= 8 ? v : 0;
+  /** LUNITS, LUPREC, AUNITS, AUPREC and UNITMODE: how prompts show lengths and angles. */
+  #units(): DrawingUnits {
+    return drawingUnits(this.#model.header);
   }
 
   /** LUNITS, which says how typed lengths read: feet and inches, fractions (`parseDistance`). */
@@ -718,7 +711,7 @@ export class PromptBus {
       if (answer.kind === 'enter') await this.#commandLine('');
       return;
     }
-    const echo = formatAnswer(answer, this.#precision(), this.#anglePrecision());
+    const echo = formatAnswer(answer, this.#units());
     const loop = frame.select;
     if (loop && this.#collectors.length === 0 && answer.kind !== 'selection') {
       if (answer.kind === 'point') {
