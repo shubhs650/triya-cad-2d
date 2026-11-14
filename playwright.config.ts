@@ -13,6 +13,8 @@ const suite = (name: string) => ({
 });
 
 export default defineConfig({
+  // Pre-bundles the dev servers' dependencies before any worker starts one (M2-67).
+  globalSetup: './tests/e2e/global-setup.ts',
   forbidOnly: !!process.env['CI'],
   retries: 0,
   // The fidelity reporter writes the entity-level report after a golden-image run (M1-106).

@@ -6,7 +6,8 @@
 // 50 pixels away: the Drafting Settings tab's Quadrant and Distance in Pixels, whose values
 // Help does not state, so Triya takes the dialog's (top right, 50). Static (QPLOCATION 1) it
 // stays where the drafter dragged it, top left of the drawing area at first. Either way it is
-// kept inside the drawing area.
+// kept inside the drawing area. QUICKPROPERTIES (M2-35 part 21) shows it for the objects it
+// leaves selected whatever QPMODE says, until the selection changes.
 import { hasQuickProperties, type PropertySheet } from '@triya/engine';
 
 /** Distance in Pixels: how far from the cursor. */
@@ -50,8 +51,57 @@ export function quickPlacement(o: {
   };
 }
 
-/** Whether Quick Properties shows a sheet at QPMODE `qpmode`. */
-export function quickShown(sheet: PropertySheet | undefined, qpmode: number): boolean {
-  if (!sheet || sheet.count === 0 || sheet.current || qpmode <= 0) return false;
+/**
+ * Whether Quick Properties shows a sheet at QPMODE `qpmode`; `asked` when QUICKPROPERTIES asked
+ * for the objects selected (M2-35 part 21), which shows them whatever QPMODE says.
+ */
+export function quickShown(
+  sheet: PropertySheet | undefined,
+  qpmode: number,
+  asked = false,
+): boolean {
+  if (!sheet || sheet.count === 0 || sheet.current) return false;
+  if (asked) return true;
+  if (qpmode <= 0) return false;
   return qpmode !== 2 || sheet.types.some((t) => hasQuickProperties(t.type));
 }
+
+/** A QUICKPROPERTIES request: the selection it showed (`selectionKey`), counted. */
+export interface QuickRequest {
+  readonly key: string;
+  readonly n: number;
+}
+
+/** The selection's key Quick Properties compares requests with: its ids, in order. */
+export const selectionKey = (ids: readonly unknown[]): string => ids.join(',');
+
+/**
+ * QUICKPROPERTIES (M2-35 part 21): each drawing's request to show Quick Properties for the
+ * objects the command left selected, kept until the selection changes.
+ */
+export class QuickRequests {
+  readonly #requests = new Map<number, QuickRequest>();
+  readonly #listeners = new Set<() => void>();
+
+  subscribe = (l: () => void): (() => void) => {
+    this.#listeners.add(l);
+    return () => this.#listeners.delete(l);
+  };
+
+  get = (doc: number): QuickRequest | undefined => this.#requests.get(doc);
+
+  request(doc: number, key: string): void {
+    this.#requests.set(doc, { key, n: (this.#requests.get(doc)?.n ?? 0) + 1 });
+    this.#emit();
+  }
+
+  clear(doc: number): void {
+    if (this.#requests.delete(doc)) this.#emit();
+  }
+
+  #emit(): void {
+    for (const l of this.#listeners) l();
+  }
+}
+
+export const quickRequests = new QuickRequests();

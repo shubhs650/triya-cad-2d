@@ -64,6 +64,11 @@ export interface DraftingState {
    * AutoCAD keeps it per user; the canvas draws grips at it and picks them within it.
    */
   readonly gripSize: number;
+  /**
+   * ROLLOVERTIPS (M2-35 part 21): the object under a resting cursor shows a tooltip with its
+   * properties. AutoCAD keeps it per user, initially on.
+   */
+  readonly rolloverTips: boolean;
 }
 
 /** AUTOSNAP 1: AutoSnap's marker is drawn at the snap point. */
@@ -125,6 +130,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   autosnap: AUTOSNAP_KEPT,
   pickfirst: true,
   gripSize: 5,
+  rolloverTips: true,
 };
 
 /**

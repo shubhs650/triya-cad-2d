@@ -118,6 +118,8 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // QPLOCATION 0 by the cursor, 1 static.
   { name: 'QPMODE', store: 'app', kind: 'integer', min: -2, max: 2 },
   { name: 'QPLOCATION', store: 'app', kind: 'integer', min: 0, max: 1 },
+  // ROLLOVERTIPS (M2-35 part 21; AutoCAD 2024 Help): rollover tooltips on (1, initially) or off.
+  { name: 'ROLLOVERTIPS', store: 'app', kind: 'integer', min: 0, max: 1 },
   // M2-59 (AutoCAD 2024 Help, each variable's page): AUTOSNAP's bits are 1 the marker, 2 the
   // SnapTip, 4 the magnet, 8 polar tracking (POLAR), 16 object snap tracking (OTRACK) and 32
   // their tooltips; AUTOSNAPSIZE the marker's size in pixels; DYNMODE −3 to 3, a negative value
