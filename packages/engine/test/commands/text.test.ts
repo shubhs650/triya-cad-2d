@@ -213,6 +213,30 @@ describe('TEXT', () => {
   });
 });
 
+describe('TEXT and MTEXT in the drawing units (M2-35 part 17)', () => {
+  it('report the text height and show defaults in feet and inches', async () => {
+    const { bus } = setup([
+      ['$LUNITS', 4],
+      ['$LUPREC', 4],
+      ['$AUNITS', 1],
+    ]);
+    await bus.submit('DT');
+    expect(bus.history.at(-1)).toBe(
+      `Current text style:  "Standard"  Text height:  0'-2 1/2"  Annotative:  No  Justify:  Left`,
+    );
+    await bus.submit('10,20');
+    expect(bus.promptText).toBe(`Specify height <0'-2 1/2">:`);
+    await bus.submit(`3/16"`);
+    expect(bus.promptText).toBe('Specify rotation angle of text <0d>:');
+    await bus.cancel();
+    await bus.submit('MT');
+    expect(bus.history.at(-1)).toBe(
+      `Current text style:  "Standard"  Text height:  0'-2 1/2"  Annotative:  No`,
+    );
+    await bus.cancel();
+  });
+});
+
 describe('MTEXT', () => {
   const contentsPrompt = (bus: PromptBus) => bus.prompt as StringPrompt;
 

@@ -16,7 +16,7 @@
 // ? for a list of variables." and "Requires an integer value." are AutoCAD's own; the range
 // messages ("Value must be between 0 and 1.") follow its wording for the variables it bounds,
 // and a name that names no record ("No layer named …") is Triya's.
-import { formatNumber } from './prompt';
+import { formatNumber } from './units';
 import type { DocumentModel } from '../model/document';
 import type { HeaderValue } from '../model/types';
 import { OSNAP_OFF } from '../input/osnap';
