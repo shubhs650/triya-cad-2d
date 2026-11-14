@@ -1,0 +1,1 @@
+- M2-59 part 1 (#335): SETVAR and a variable's name at `Command:` show the variables AutoCAD works out, read only: DATE and CDATE (the local date and time), CTAB (the tab shown), VIEWSIZE and VIEWCTR (the view shown), DWGNAME, DWGPREFIX and DWGTITLED (the drawing's file) and DBMOD (unsaved changes); `SETVAR ?` lists them.

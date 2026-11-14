@@ -12,9 +12,11 @@ import { setWipeoutFrame, wipeoutFrame } from './draw/wipeout';
 import { wcmatch } from './modify/attributes';
 import type { Prompt, PromptAnswer } from './prompt';
 import {
+  calendarDate,
   formatValue,
   headerEntry,
   headerValue,
+  julianDate,
   parseValue,
   systemVariable,
   systemVariables,
@@ -50,6 +52,33 @@ async function read(
       const r = await ctx.view.request({ op: 'sysvar', name: v.name });
       if (!r.ok) return { problem: r.message };
       return r.value === undefined ? { problem: `${v.name} has no value.` } : { value: r.value };
+    }
+    case 'computed':
+      return computed(ctx, v.name);
+  }
+}
+
+/** A variable the engine works out (`COMPUTED_VARIABLES`). */
+async function computed(
+  ctx: CommandContext,
+  name: string,
+): Promise<{ value: VariableValue } | { problem: string }> {
+  switch (name) {
+    case 'DATE':
+      return { value: julianDate(ctx.clock.now()) };
+    case 'CDATE':
+      return { value: calendarDate(ctx.clock.now()) };
+    case 'CTAB': {
+      const layout = ctx.model.layouts.find((l) => l.blockRecord === ctx.space);
+      return { value: layout?.name ?? 'Model' };
+    }
+    default: {
+      // VIEWSIZE and VIEWCTR: the view the canvas shows.
+      const r = await ctx.view.request({ op: 'get' });
+      if (!r.ok) return { problem: r.message };
+      if (!r.view) return { problem: 'No view is shown.' };
+      const { center, height } = r.view;
+      return { value: name === 'VIEWSIZE' ? height : { x: center.x, y: center.y, z: 0 } };
     }
   }
 }
@@ -126,7 +155,7 @@ async function* list(ctx: CommandContext): Sub<void> {
     // A variable the app keeps is left out where no app answers (scripts, tests).
     if ('problem' in r) continue;
     const line = `${v.name.padEnd(18)}${formatValue(v, r.value, f)}`;
-    ctx.message(v.readOnly ? `${line.padEnd(36)}(read only)` : line);
+    ctx.message(v.readOnly ? `${line.padEnd(35)} (read only)` : line);
   }
 }
 

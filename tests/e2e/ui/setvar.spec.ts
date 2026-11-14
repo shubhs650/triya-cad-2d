@@ -143,3 +143,42 @@ test('variables typed at Command:, SETVAR, and REVCLOUDGRIPS 0', async ({ page }
   await type(page, '1', 'Command:');
   expect(await headerNow(page, 'REVCLOUDGRIPS')).toBe(undefined);
 });
+
+// M2-59: the variables AutoCAD works out, read only. DWGNAME and DBMOD come from the app (the
+// drawing's tab), CTAB and VIEWSIZE from the space and view shown.
+test('the drawing’s computed variables, read only', async ({ page }) => {
+  test.setTimeout(90_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await expect(prompt(page)).toHaveText('Command:');
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+
+  await type(page, 'DWGNAME', 'Command:');
+  await expect(log).toContainText(`DWGNAME = "${path.basename(DXF)}" (read only)`);
+  await type(page, 'DBMOD', 'Command:');
+  await expect(log).toContainText('DBMOD = 0 (read only)');
+  // An edit leaves changes no save holds.
+  await type(page, 'MIRRTEXT', 'Enter new value for MIRRTEXT <1>:');
+  await type(page, '0', 'Command:');
+  await type(page, 'DBMOD', 'Command:');
+  await expect(log).toContainText('DBMOD = 1 (read only)');
+  await type(page, 'CTAB', 'Command:');
+  await expect(log).toContainText('CTAB = "Model" (read only)');
+  await type(page, 'VIEWSIZE', 'Command:');
+  await expect(log).toContainText(/VIEWSIZE = \d+\.\d+ \(read only\)/);
+  // Read only: no prompt for a new value.
+  await type(page, 'SETVAR', 'Enter variable name or [?]:');
+  await type(page, 'DATE', 'Command:');
+  await expect(log).toContainText(/DATE = 24\d{5}\.\d{8} \(read only\)/);
+  await type(page, 'SETVAR', 'Enter variable name or [?] <DATE>:');
+  await type(page, '?', 'Enter variable(s) to list <*>:');
+  await type(page, 'CTAB,DBMOD,DWG*,VIEW*', 'Command:');
+  await expect(log).toContainText(/VIEWSIZE\s+\d+\.\d+\s+\(read only\)/);
+  await page.keyboard.press('F2');
+  const history = page.getByRole('dialog', { name: 'Command history' });
+  await expect(history).toContainText(`DWGNAME = "${path.basename(DXF)}" (read only)`);
+  await page.screenshot({ path: test.info().outputPath('computed-variables.png') });
+  await page.keyboard.press('F2');
+  await expect(history).toBeHidden();
+});

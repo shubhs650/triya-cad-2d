@@ -12,6 +12,11 @@
 //   command asks the app for them through the view host (`sysvar` requests): commands never
 //   read UI state themselves.
 //
+// AutoCAD also works some variables out, read only (M2-59): the date (DATE, CDATE, from the
+// bus's clock), the tab shown (CTAB) and its view (VIEWSIZE, VIEWCTR, asked of the canvas) are
+// `COMPUTED_VARIABLES`; the drawing's file (DWGNAME, DWGPREFIX, DWGTITLED) and whether it has
+// unsaved changes (DBMOD) are the app's to tell, `DRAWING_VARIABLES`.
+//
 // AutoCAD's refusals are not all documented word for word: "Unknown variable name.  Type SETVAR
 // ? for a list of variables." and "Requires an integer value." are AutoCAD's own; the range
 // messages ("Value must be between 0 and 1.") follow its wording for the variables it bounds,
@@ -51,7 +56,7 @@ export type NameTable =
 export interface SystemVariable {
   /** AutoCAD's name, upper case, without the header's `$`. */
   readonly name: string;
-  readonly store: 'header' | 'wipeout' | 'app';
+  readonly store: 'header' | 'wipeout' | 'app' | 'computed';
   /** The header entry (`$LTSCALE`, `CETRANSPARENCY`) of a header variable. */
   readonly key?: string;
   readonly kind: VariableKind;
@@ -67,6 +72,8 @@ export interface SystemVariable {
   readonly table?: NameTable;
   /** A name variable may name nothing (DIMBLK: the closed filled arrowhead). */
   readonly empty?: boolean;
+  /** Decimal places a real always shows, whatever LUPREC is (DATE's day fraction). */
+  readonly places?: number;
 }
 
 /**
@@ -93,6 +100,69 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'QPMODE', store: 'app', kind: 'integer', min: -2, max: 2 },
   { name: 'QPLOCATION', store: 'app', kind: 'integer', min: 0, max: 1 },
 ];
+
+/**
+ * The variables of the drawing the app tells (AutoCAD 2024 Help, "System Variables"), read only:
+ * DWGNAME the drawing's file name, DWGPREFIX its folder (a browser never reveals one: always
+ * empty), DWGTITLED 1 once it has a name, DBMOD nonzero while it has changes no save holds.
+ * Asked of the app through `sysvar` requests (apps/web `system-variables.ts`).
+ */
+export const DRAWING_VARIABLES: readonly SystemVariable[] = [
+  { name: 'DBMOD', store: 'app', kind: 'integer', readOnly: true },
+  { name: 'DWGNAME', store: 'app', kind: 'text', readOnly: true },
+  { name: 'DWGPREFIX', store: 'app', kind: 'text', readOnly: true },
+  { name: 'DWGTITLED', store: 'app', kind: 'integer', readOnly: true },
+];
+
+/**
+ * The variables the engine works out when read (setvar.ts): DATE and CDATE from the bus's clock,
+ * shown to the hundredth of a second as AutoCAD shows them; CTAB the tab of the space commands
+ * draw in; VIEWSIZE and VIEWCTR the view the canvas shows (its height in drawing units, and its
+ * centre).
+ */
+export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
+  { name: 'CDATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
+  { name: 'CTAB', store: 'computed', kind: 'text', readOnly: true },
+  { name: 'DATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
+  { name: 'VIEWCTR', store: 'computed', kind: 'point', readOnly: true },
+  { name: 'VIEWSIZE', store: 'computed', kind: 'real', readOnly: true },
+];
+
+/**
+ * AutoCAD's Julian date of a local date and time: the Julian day number of the date (1 January
+ * 2020 is 2458850) and the fraction of the day since midnight (AutoCAD 2024 Help, "DATE"; the
+ * same reckoning acad-ts gives TDUPDATE, CadUtils.toJulianCalendar).
+ */
+export function julianDate(d: Date): number {
+  let year = d.getFullYear();
+  let month = d.getMonth() + 1;
+  if (month < 3) {
+    year -= 1;
+    month += 12;
+  }
+  const century = Math.floor(year / 100);
+  const gregorian = 2 - century + Math.floor(century / 4);
+  const days =
+    gregorian +
+    Math.floor(365.25 * year) +
+    Math.floor(30.6001 * (month + 1)) +
+    1720995 +
+    d.getDate();
+  const seconds =
+    d.getHours() * 3600 + d.getMinutes() * 60 + d.getSeconds() + d.getMilliseconds() / 1000;
+  return days + seconds / 86400;
+}
+
+/**
+ * CDATE: a local date and time as the real YYYYMMDD.HHMMSS and hundredths of a second (AutoCAD
+ * 2024 Help, "CDATE"); a real holds no more places beside an eight-digit date.
+ */
+export function calendarDate(d: Date): number {
+  const date = d.getFullYear() * 10000 + (d.getMonth() + 1) * 100 + d.getDate();
+  const centiseconds = Math.floor(d.getMilliseconds() / 10);
+  const time = d.getHours() * 1e6 + d.getMinutes() * 1e4 + d.getSeconds() * 100 + centiseconds;
+  return date + time / 1e8;
+}
 
 const WIPEOUTFRAME: SystemVariable = {
   name: 'WIPEOUTFRAME',
@@ -268,6 +338,10 @@ export function systemVariable(model: DocumentModel, name: string): SystemVariab
   const app = APP_VARIABLES.find((v) => v.name === n);
   if (app) return app;
   if (n === WIPEOUTFRAME.name) return WIPEOUTFRAME;
+  const known = COMPUTED_VARIABLES.find((v) => v.name === n);
+  if (known) return known;
+  const drawing = DRAWING_VARIABLES.find((v) => v.name === n);
+  if (drawing) return drawing;
   const key = headerKey(model, n);
   return key === undefined ? undefined : headerVariable(key, model.header.get(key)!);
 }
@@ -280,7 +354,9 @@ export function systemVariables(model: DocumentModel): SystemVariable[] {
     if (v) out.set(v.name, v);
   }
   out.set(WIPEOUTFRAME.name, WIPEOUTFRAME);
-  for (const v of APP_VARIABLES) out.set(v.name, v);
+  for (const v of [...APP_VARIABLES, ...COMPUTED_VARIABLES, ...DRAWING_VARIABLES]) {
+    out.set(v.name, v);
+  }
   return [...out.values()].sort((a, b) => (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
 }
 
@@ -331,7 +407,7 @@ export function formatValue(v: SystemVariable, value: VariableValue, f: ValueFor
     case 'angle':
       return formatNumber(value, f.anglePrecision);
     case 'real':
-      return formatNumber(value, f.precision);
+      return formatNumber(value, v.places ?? f.precision);
     default:
       return formatNumber(value, 0);
   }
