@@ -59,8 +59,9 @@ function inProcessWorker(): EngineWorker & { terminated: boolean } {
   });
   const w = {
     terminated: false,
-    postMessage(m: EngineRequest) {
-      const data = structuredClone(m);
+    postMessage(m: EngineRequest, transfer: Transferable[] = []) {
+      // A renderer's change port (M2-62) is transferred, as the browser does.
+      const data = structuredClone(m, { transfer });
       queueMicrotask(() => toWorker.forEach((l) => l({ data })));
     },
     addEventListener(_type: 'message', l: (e: { data: EngineReply }) => void) {
@@ -381,5 +382,82 @@ describe('EngineHost paperViews (M2-47 part 1)', () => {
     const host = new EngineHost(withLayout, inProcessWorker);
     expect(await host.paperViews([])).toBeUndefined();
     host.dispose();
+  });
+});
+
+describe('change sets straight to the render workers (M2-62)', () => {
+  type Numbered = { seq: number; change: unknown };
+  /** What a linked renderer hears on its port. */
+  function listen(port: unknown) {
+    const heard: Numbered[] = [];
+    const p = port as MessagePort;
+    p.addEventListener('message', (e) => heard.push((e as MessageEvent<Numbered>).data));
+    p.start();
+    return { heard, close: () => p.close() };
+  }
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 20));
+  /** A drawing's change log after turning layer 10 off: what a recovered drawing starts from. */
+  const recoveredLog = async () => {
+    const live = new Engines(
+      (i, changes) => new EngineHost(i, undefined, changes),
+      () => [],
+    );
+    live.start(1, init);
+    await live.edit(1, { kind: 'layer', layer: '10', on: false });
+    return structuredClone([...live.changesOf(1)]);
+  };
+
+  it("posts every change it applies on each linked renderer's port, numbered as the change log", async () => {
+    const recovered = await recoveredLog();
+
+    const host = new EngineHost(init, inProcessWorker, recovered);
+    const link = host.connect()!;
+    const port = listen(link.port);
+    // An edit, a refusal (no change) and a no-op edit (an empty change), then a command's line.
+    const on = await host.edit({ kind: 'layer', layer: '10', on: true });
+    await host.edit({ kind: 'layer', layer: '11', frozen: true });
+    await host.edit({ kind: 'layer', layer: '10', on: true });
+    const o = outputs(host, 6);
+    for (const text of ['L', '0,0', '10,0']) host.command({ kind: 'submit', text });
+    const said = await o.done;
+    await settle();
+    if (!on.ok) throw new Error(on.message);
+    const line = said.find((x) => x.type === 'change');
+    if (line?.type !== 'change') throw new Error('no change');
+    // Numbered after the recovered log the engine replayed: as the app's change log numbers them.
+    expect(port.heard).toEqual([
+      { seq: 2, change: on.change },
+      { seq: 3, change: line.change },
+    ]);
+
+    link.close();
+    await settle();
+    await host.edit({ kind: 'layer', layer: '10', on: false });
+    await settle();
+    expect(port.heard).toHaveLength(2);
+    port.close();
+    host.dispose();
+  });
+
+  it('links nothing when the engine runs on the main thread', () => {
+    expect(new EngineHost(init).connect()).toBeUndefined();
+  });
+
+  it("numbers each change for the drawing's canvases by its place in the change log", async () => {
+    const applied: { change: unknown; seq: number }[] = [];
+    const engines = new Engines(
+      (i, changes) => new EngineHost(i, inProcessWorker, changes),
+      () => [{ apply: (change, seq) => applied.push({ change, seq }) }],
+    );
+    engines.start(4, init, await recoveredLog());
+    const link = engines.connect(4)!;
+    const port = listen(link.port);
+    await engines.edit(4, { kind: 'layer', layer: '10', on: true });
+    await settle();
+    expect(applied.map((a) => a.seq)).toEqual([2]);
+    expect(port.heard).toEqual([{ seq: 2, change: applied[0]!.change }]);
+    expect(engines.connect(9)).toBeUndefined();
+    port.close();
+    engines.stop(4);
   });
 });
