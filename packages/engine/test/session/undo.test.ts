@@ -142,4 +142,22 @@ describe('undo in the engine session', () => {
     t.s.edit({ kind: 'layer', layer: LAYER_0, locked: true });
     expect(t.s.undoState.redoable).toBe(0);
   });
+
+  it('makes a view the canvas changed one undo step, which U asks the canvas to swap back (M2-47 part 4)', async () => {
+    const t = setup();
+    const before = { center: { x: 1, y: 2 }, height: 30 };
+    await t.s.command({ kind: 'view-step', label: 'ZOOM', viewport: '1F:0', view: before });
+    expect(t.s.undoState).toMatchObject({ undoable: 1, nextUndo: 'ZOOM' });
+    await t.run('U');
+    const ask = t.out.findLast((o) => o.type === 'view');
+    expect(ask).toMatchObject({ request: { op: 'swap', viewport: '1F:0', view: before } });
+    // The canvas answers with the view it replaced, which REDO swaps back in.
+    const after = { center: { x: 5, y: 6 }, height: 3, width: 4, paper: false };
+    if (ask?.type !== 'view') throw new Error('no view request');
+    await t.s.command({ kind: 'view', id: ask.id, reply: { ok: true, view: after } });
+    await t.run('REDO');
+    expect(t.out.findLast((o) => o.type === 'view')).toMatchObject({
+      request: { op: 'swap', viewport: '1F:0', view: { center: after.center, height: 3 } },
+    });
+  });
 });

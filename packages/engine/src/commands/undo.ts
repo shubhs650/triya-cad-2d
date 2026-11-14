@@ -7,9 +7,16 @@
 // bus's `apply`, so the renderers follow, but never into a command record: U is not itself a
 // step. REDO reverses one whole U or UNDO (AutoCAD: "REDO reverses the effects of a single U
 // or UNDO command"), so the redo side is a stack of the groups each one undid.
+//
+// Views are steps too (M2-47 part 4): a ZOOM or PAN, from the command, the navigation bar or the
+// wheel, and a named view restored. The canvas holds the view, not the drawing, so such a step
+// keeps the view its viewport left, and undoing it asks the canvas to show that view again
+// (`UndoStackOptions.swapView`); the view the canvas replaced is kept in its place, which is what
+// a redo swaps back in.
 import type { ChangeSet, PositionedEntity } from '../model/changeset';
 import { invertChangeSet, isEmptyChangeSet } from '../model/changeset';
 import type { Entity } from '../model/types';
+import type { Vec2 } from '../geom/types';
 import type { CommandRecord } from './bus';
 
 /** What UNDO Control sets: All (unlimited, bounded by memory), One (one step) or None. */
@@ -57,15 +64,51 @@ export interface UndoAction {
   readonly labels: readonly string[];
 }
 
+/** A viewport's view as a view step keeps it (M2-47 part 4): its centre and VIEWSIZE height. */
+export interface UndoView {
+  readonly center: Vec2;
+  readonly height: number;
+}
+
+/**
+ * A view the drafter changed (M2-47 part 4): `view` is the one `viewport` showed before, the
+ * front-end's own name for one canvas (a layout's, or one of model space's tiles). ZOOM and PAN
+ * steps in a row are one step under UNDO Control Combine; a named view restored (VIEW) never
+ * combines, as AutoCAD's help names only zoom and pan.
+ */
+export interface ViewStep {
+  readonly label: 'ZOOM' | 'PAN' | 'VIEW';
+  readonly viewport: string;
+  readonly view: UndoView;
+}
+
+/** A viewport's view a step swaps in when undone or redone; the view swapped out replaces it. */
+interface ViewSlot {
+  readonly viewport: string;
+  view: UndoView;
+}
+
 /** One undo step: a command, or a BEgin/End group of commands (labelled GROUP). */
 export interface UndoRecord {
   readonly label: string;
   readonly changes: readonly ChangeSet[];
   /** Estimated memory the step holds, for the history's bound. */
   readonly bytes: number;
+  /** The views the step changed (M2-47 part 4), one per viewport, swapped back when undone. */
+  readonly views?: readonly ViewSlot[];
 }
 
-type Entry = { readonly kind: 'record'; readonly record: UndoRecord } | { readonly kind: 'mark' };
+type Entry =
+  | {
+      readonly kind: 'record';
+      record: UndoRecord;
+      /**
+       * A ZOOM or PAN step the next one may join (UNDO Control Combine): only while it is the
+       * newest entry since it was made, so a step undone and redone starts a run of its own.
+       */
+      combines?: boolean;
+    }
+  | { readonly kind: 'mark' };
 
 export interface UndoStackOptions {
   /** Applies a change set to the drawing (and in the engine worker, to the renderers). */
@@ -76,7 +119,18 @@ export interface UndoStackOptions {
   readonly onChange?: (state: UndoState, action?: UndoAction) => void;
   /** A line for the command line (the memory bound's warning). */
   readonly onMessage?: (line: string) => void;
+  /**
+   * Shows `view` in `viewport` again (M2-47 part 4) and resolves with the view it replaced, or
+   * undefined when the viewport is gone. Without it a view step's undo changes no view.
+   */
+  readonly swapView?: (viewport: string, view: UndoView) => Promise<UndoView | undefined>;
 }
+
+/** What a view step is counted as against the memory bound: a few numbers and a name. */
+const VIEW_BYTES = 96;
+
+/** The steps UNDO Control Combine makes one of when they come one after another. */
+const COMBINED: ReadonlySet<string> = new Set(['ZOOM', 'PAN']);
 
 /**
  * How many steps the Undo and Redo lists carry. The history itself is unbounded by count; the
@@ -102,9 +156,10 @@ export class UndoStack {
   readonly #maxBytes: number;
   readonly #onChange: ((state: UndoState, action?: UndoAction) => void) | undefined;
   readonly #onMessage: ((line: string) => void) | undefined;
+  readonly #swapView: UndoStackOptions['swapView'];
   #undo: Entry[] = [];
   #redo: Entry[][] = [];
-  #group: { changes: ChangeSet[]; bytes: number } | undefined;
+  #group: { changes: ChangeSet[]; views: ViewSlot[]; bytes: number } | undefined;
   #bytes = 0;
   #warned = false;
   #control: UndoControl = 'all';
@@ -116,6 +171,7 @@ export class UndoStack {
     this.#maxBytes = options.maxBytes ?? DEFAULT_UNDO_LIMIT_BYTES;
     this.#onChange = options.onChange;
     this.#onMessage = options.onMessage;
+    this.#swapView = options.swapView;
   }
 
   get state(): UndoState {
@@ -174,6 +230,49 @@ export class UndoStack {
     this.#changed();
   }
 
+  /**
+   * A view the drafter changed (M2-47 part 4) becomes a step, or joins the ZOOM/PAN step just
+   * before it under UNDO Control Combine (nothing else between: no command, U or mark), keeping
+   * the view each viewport showed first. Like any step it forgets what U undid: AutoCAD's users
+   * know a wheel roll after U loses the REDO.
+   */
+  pushView(step: ViewStep): void {
+    if (this.#control === 'none') return;
+    const slot = (): ViewSlot => ({ viewport: step.viewport, view: step.view });
+    this.#dropRedo();
+    const g = this.#group;
+    const last = this.#undo.at(-1);
+    if (g) {
+      if (!g.views.some((v) => v.viewport === step.viewport)) {
+        g.views.push(slot());
+        g.bytes += VIEW_BYTES;
+        this.#bytes += VIEW_BYTES;
+      }
+    } else if (
+      this.#settings.combineZoomPan &&
+      COMBINED.has(step.label) &&
+      last?.kind === 'record' &&
+      last.combines === true
+    ) {
+      const views = last.record.views ?? [];
+      const has = views.some((v) => v.viewport === step.viewport);
+      last.record = {
+        ...last.record,
+        label: step.label,
+        views: has ? views : [...views, slot()],
+        bytes: last.record.bytes + (has ? 0 : VIEW_BYTES),
+      };
+      if (!has) this.#bytes += VIEW_BYTES;
+    } else {
+      this.#pushRecord(
+        { label: step.label, changes: [], views: [slot()], bytes: VIEW_BYTES },
+        COMBINED.has(step.label),
+      );
+    }
+    this.#trim();
+    this.#changed();
+  }
+
   /** UNDO Mark. */
   mark(): void {
     this.#endGroup();
@@ -184,7 +283,7 @@ export class UndoStack {
   /** UNDO BEgin: ends a group already open and opens another. */
   begin(): void {
     this.#endGroup();
-    this.#group = { changes: [], bytes: 0 };
+    this.#group = { changes: [], views: [], bytes: 0 };
     this.#changed();
   }
 
@@ -248,13 +347,7 @@ export class UndoStack {
     if (!group) return undefined;
     for (let i = group.length - 1; i >= 0; i -= 1) {
       const e = group[i]!;
-      if (e.kind === 'record') {
-        try {
-          for (const c of e.record.changes) this.#apply(c);
-        } catch (err) {
-          this.#fail(err);
-        }
-      }
+      if (e.kind === 'record') this.#redoRecord(e);
       this.#undo.push(e);
     }
     const labels = labelsOf(group).reverse();
@@ -274,11 +367,7 @@ export class UndoStack {
       const group = this.#redo.at(-1)!;
       const e = group.pop()!;
       if (e.kind === 'record') {
-        try {
-          for (const c of e.record.changes) this.#apply(c);
-        } catch (err) {
-          this.#fail(err);
-        }
+        this.#redoRecord(e);
         labels.push(e.record.label);
         left -= 1;
       }
@@ -320,7 +409,7 @@ export class UndoStack {
   }
 
   #undoList(): string[] {
-    const out: string[] = this.#group && this.#group.changes.length > 0 ? ['GROUP'] : [];
+    const out: string[] = this.#group && !emptyGroup(this.#group) ? ['GROUP'] : [];
     for (let i = this.#undo.length - 1; i >= 0 && out.length < UNDO_LIST_MAX; i -= 1) {
       const e = this.#undo[i]!;
       if (e.kind === 'record') out.push(e.record.label);
@@ -348,6 +437,35 @@ export class UndoStack {
     } catch (err) {
       this.#fail(err);
     }
+    this.#swapViews([...(record.views ?? [])].reverse());
+  }
+
+  #redoRecord(e: Extract<Entry, { kind: 'record' }>): void {
+    try {
+      for (const c of e.record.changes) this.#apply(c);
+    } catch (err) {
+      this.#fail(err);
+    }
+    this.#swapViews(e.record.views ?? []);
+    // A step redone is no longer the one the drafter's last zoom made: the next starts anew.
+    e.combines = false;
+  }
+
+  /**
+   * Asks each viewport to show its slot's view again; the view it replaced takes the slot's place
+   * once it answers, for the swap back. A viewport that is gone keeps the slot as it is.
+   */
+  #swapViews(slots: readonly ViewSlot[]): void {
+    const swap = this.#swapView;
+    if (!swap) return;
+    for (const slot of slots) {
+      void swap(slot.viewport, slot.view).then(
+        (replaced) => {
+          if (replaced) slot.view = replaced;
+        },
+        () => undefined,
+      );
+    }
   }
 
   /**
@@ -362,8 +480,8 @@ export class UndoStack {
     throw new Error(`${why}; the undo history was cleared`);
   }
 
-  #pushRecord(record: UndoRecord): void {
-    this.#undo.push({ kind: 'record', record });
+  #pushRecord(record: UndoRecord, combines = false): void {
+    this.#undo.push(combines ? { kind: 'record', record, combines } : { kind: 'record', record });
     this.#bytes += record.bytes;
   }
 
@@ -372,9 +490,14 @@ export class UndoStack {
     if (!g) return;
     this.#group = undefined;
     this.#bytes -= g.bytes;
-    if (g.changes.length > 0) {
+    if (!emptyGroup(g)) {
       this.#dropRedo();
-      this.#pushRecord({ label: 'GROUP', changes: g.changes, bytes: g.bytes });
+      this.#pushRecord({
+        label: 'GROUP',
+        changes: g.changes,
+        bytes: g.bytes,
+        ...(g.views.length > 0 && { views: g.views }),
+      });
       this.#trim();
     }
   }
@@ -412,6 +535,9 @@ export class UndoStack {
     else this.#onChange?.(this.state);
   }
 }
+
+const emptyGroup = (g: { readonly changes: unknown[]; readonly views: unknown[] }): boolean =>
+  g.changes.length === 0 && g.views.length === 0;
 
 function labelsOf(entries: readonly Entry[]): string[] {
   const out: string[] = [];
