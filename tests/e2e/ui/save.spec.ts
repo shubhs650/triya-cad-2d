@@ -6,7 +6,15 @@
 // in place over an AC1032 DXF, Save As a `.dxf` for a DWG, a download without File System Access.
 import path from 'node:path';
 import { expect, test, type Page } from '@playwright/test';
-import { DWG, activeCanvas, expectShown, serve, withFileInput, worldAt } from '../app/page';
+import {
+  DWG,
+  activeCanvas,
+  expectDrawn,
+  expectShown,
+  serve,
+  withFileInput,
+  worldAt,
+} from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -360,6 +368,89 @@ test('the save keeps the named views VIEW saves and reopens in the view it was s
   await expect(page.getByText(`Saved ${name}.`)).toBeHidden();
   sameView(await shown(page), detail);
   await page.screenshot({ path: test.info().outputPath('3-named-view-restored.png') });
+});
+
+/** The DXF's VIEWPORTs with their id (69), owner (330), view centre (12/22) and height (45). */
+function dxfViewports(
+  text: string,
+): { id: number; owner: string; x: number; y: number; height: number }[] {
+  const lines = text.split(/\r?\n/);
+  const out: { id: number; owner: string; x: number; y: number; height: number }[] = [];
+  let vp: Record<string, string> | undefined;
+  const flush = () => {
+    if (vp) {
+      out.push({
+        id: Number(vp['69']),
+        owner: vp['330'] ?? '',
+        x: Number(vp['12']),
+        y: Number(vp['22']),
+        height: Number(vp['45']),
+      });
+    }
+  };
+  for (let i = 0; i + 1 < lines.length; i += 2) {
+    const code = lines[i]!.trim();
+    const value = lines[i + 1]!.trim();
+    if (code === '0') {
+      flush();
+      vp = value === 'VIEWPORT' ? {} : undefined;
+    } else if (vp && !(code in vp)) vp[code] = value;
+  }
+  flush();
+  return out;
+}
+
+test('a layout zoomed, saved and reopened opens in that view (M2-47 part 1)', async ({ page }) => {
+  test.setTimeout(90_000);
+  await fakePickers(page);
+  await page.goto(app.url);
+  // Its layouts were never shown: neither has a paper-space viewport yet.
+  await openFile(page, DXF32);
+  const name = path.basename(DXF32);
+  const layout = (n: string) =>
+    page.getByRole('tablist', { name: 'Model and layouts' }).getByRole('tab', { name: n });
+  await layout('Layout1').click();
+  await expectDrawn(page);
+  const sheet = await shown(page);
+  await typed(page, ['ZOOM', /^Specify corner of window/], ['3x', 'Command:']);
+  await typed(
+    page,
+    ['-PAN', /^Specify base point/],
+    ['0,0', /^Specify second point/],
+    ['@15,10', 'Command:'],
+  );
+  await expectDrawn(page);
+  const left = await shown(page);
+  expect(Math.abs(left.height - sheet.height)).toBeGreaterThan(sheet.height / 2);
+  await page.screenshot({ path: test.info().outputPath('1-layout-zoomed.png') });
+  // Back on Model: the layout's view is saved all the same, as AutoCAD saves every layout's.
+  await layout('Model').click();
+  await drawLine(page);
+  await page.keyboard.press('Control+s');
+  await expect(tab(page, name)).toHaveAttribute('data-dirty', 'false');
+  const dxf = (await fs(page)).written[name]![0]!;
+  // One paper-space viewport, the one the save gave Layout1; Layout2 was never shown.
+  const viewports = dxfViewports(dxf);
+  expect(viewports.map((v) => v.id)).toEqual([1]);
+  expect(viewports[0]!.height).toBeCloseTo(left.height, 0);
+
+  await page.evaluate((text) => {
+    (window as unknown as FsWindow).__fs.next = {
+      name: 'reopened.dxf',
+      bytes: new TextEncoder().encode(text).buffer as ArrayBuffer,
+    };
+  }, dxf);
+  await page.getByRole('button', { name: 'Open', exact: true }).click();
+  await expectShown(page, 'reopened.dxf');
+  await layout('Layout1').click();
+  await expectDrawn(page);
+  await expect(page.getByText(`Saved ${name}.`)).toBeHidden();
+  sameView(await shown(page), left);
+  await page.screenshot({ path: test.info().outputPath('2-reopened-layout.png') });
+  // A layout never shown still opens with its whole sheet in view.
+  await layout('Layout2').click();
+  await expectDrawn(page);
+  expect((await shown(page)).height).toBeGreaterThan(left.height * 2);
 });
 
 test('notices that go by themselves float over the drawing and never resize it (M2-57)', async ({

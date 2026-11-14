@@ -10,6 +10,7 @@ import type {
   DocumentInit,
   EditResult,
   EngineEdit,
+  PaperView,
 } from '@triya/engine';
 
 export type EngineRequest =
@@ -18,12 +19,15 @@ export type EngineRequest =
   | { readonly type: 'edit'; readonly id: number; readonly edit: EngineEdit }
   | { readonly type: 'command'; readonly input: CommandInput }
   /** The blocks a save gives dimensions without one (M2-30 part 2). */
-  | { readonly type: 'save-blocks'; readonly id: number };
+  | { readonly type: 'save-blocks'; readonly id: number }
+  /** The view each layout shown is saved in (M2-47 part 1). */
+  | { readonly type: 'save-views'; readonly id: number; readonly layouts: readonly PaperView[] };
 
 export type EngineReply =
   | { readonly type: 'result'; readonly id: number; readonly result: EditResult }
   | { readonly type: 'command'; readonly output: CommandOutput }
   | { readonly type: 'save-blocks'; readonly id: number; readonly change?: ChangeSet }
+  | { readonly type: 'save-views'; readonly id: number; readonly change?: ChangeSet }
   | { readonly type: 'error'; readonly message: string; readonly id?: number };
 
 /** One end of the channel, typed by shape: a Worker, a worker's `self` or a test double. */

@@ -341,3 +341,45 @@ describe('EngineHost blocklessDimensionBlocks (M2-30 part 2)', () => {
     host.dispose();
   });
 });
+
+describe('EngineHost paperViews (M2-47 part 1)', () => {
+  /** The drawing with a layout never shown, so without a paper-space viewport. */
+  const withLayout: DocumentInit = {
+    ...init,
+    tables: {
+      ...init.tables,
+      blockRecords: [
+        ...(init.tables?.blockRecords ?? []),
+        { handle: '1B', name: '*Paper_Space', units: 0, explodable: true, scalable: true },
+      ],
+    },
+    blocks: [
+      ...(init.blocks ?? []),
+      { handle: '1B', name: '*Paper_Space', basePoint: { x: 0, y: 0 } },
+    ],
+    layouts: [
+      { handle: '22', name: 'Model', tabOrder: 0, blockRecord: '1F' },
+      { handle: '1E', name: 'Layout1', tabOrder: 1, blockRecord: '1B' },
+    ],
+  };
+  const view = { center: { x: 100, y: 80 }, height: 50, width: 75 };
+
+  it('gives the layout its viewport for the saved file only, in the worker or on the main thread', async () => {
+    for (const host of [new EngineHost(withLayout, inProcessWorker), new EngineHost(withLayout)]) {
+      const change = await host.paperViews([{ block: '1B', view }]);
+      const added = change?.entities?.added?.map((p) => p.entity);
+      expect(added?.map((e) => [e.owner, e.geom.kind])).toEqual([['1B', 'VIEWPORT']]);
+      expect(added?.[0]?.geom).toMatchObject({ id: 1, viewCenter: view.center, viewHeight: 50 });
+      // Not applied to the drawing: a second save makes it again, under a handle of its own.
+      const again = await host.paperViews([{ block: '1B', view }]);
+      expect(again?.entities?.added?.[0]?.entity.handle).not.toBe(added?.[0]?.handle);
+      host.dispose();
+    }
+  });
+
+  it('is undefined with no layout shown', async () => {
+    const host = new EngineHost(withLayout, inProcessWorker);
+    expect(await host.paperViews([])).toBeUndefined();
+    host.dispose();
+  });
+});
