@@ -11,6 +11,7 @@ import type { CommandContext, CommandDef } from './command';
 import { setWipeoutFrame, wipeoutFrame } from './draw/wipeout';
 import { wcmatch } from './modify/attributes';
 import type { Prompt, PromptAnswer } from './prompt';
+import { modelSpaceOf } from './bus';
 import {
   annotationScaleValue,
   calendarDate,
@@ -70,10 +71,10 @@ async function computed(
       return { value: julianDate(ctx.clock.now()) };
     case 'CDATE':
       return { value: calendarDate(ctx.clock.now()) };
-    case 'CTAB': {
-      const layout = ctx.model.layouts.find((l) => l.blockRecord === ctx.space);
-      return { value: layout?.name ?? 'Model' };
-    }
+    case 'CTAB':
+      return { value: shownLayout(ctx)?.name ?? 'Model' };
+    case 'TILEMODE':
+      return { value: ctx.space === modelSpaceOf(ctx.model) ? 1 : 0 };
     default: {
       // VIEWSIZE and VIEWCTR: the view the canvas shows; SCREENSIZE: its size in pixels, X and Y.
       const r = await ctx.view.request({ op: 'get' });
@@ -88,6 +89,31 @@ async function computed(
       return { value: name === 'VIEWSIZE' ? height : { x: center.x, y: center.y, z: 0 } };
     }
   }
+}
+
+/** The layout of the space commands draw in: the tab shown. */
+function shownLayout(ctx: CommandContext) {
+  return ctx.model.layouts.find((l) => l.blockRecord === ctx.space);
+}
+
+/**
+ * CTAB or TILEMODE set (M2-59 part 5): the app shows the tab, unless it shows it already. The
+ * Model tab is the layout of model space; TILEMODE 0 is the layout tab the app showed last.
+ */
+async function showTab(ctx: CommandContext, name: string, value: VariableValue): Promise<void> {
+  const model = ctx.model.layouts.find((l) => l.blockRecord === modelSpaceOf(ctx.model));
+  const shown = shownLayout(ctx)?.name ?? model?.name;
+  let request: { name?: string };
+  if (name === 'CTAB') {
+    if (value === shown) return;
+    request = { name: String(value) };
+  } else {
+    const onModel = ctx.space === modelSpaceOf(ctx.model);
+    if ((value === 1) === onModel) return;
+    request = value === 1 ? { name: model?.name ?? 'Model' } : {};
+  }
+  const r = await ctx.view.request({ op: 'tab', ...request });
+  if (!r.ok) ctx.message(r.message);
 }
 
 /** Sets a variable to a value `parseValue` took. */
@@ -122,6 +148,8 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
       if (!r.ok) ctx.message(r.message);
       return;
     }
+    case 'computed':
+      return showTab(ctx, v.name, value);
   }
 }
 
@@ -135,6 +163,13 @@ async function* setValue(ctx: CommandContext, v: SystemVariable): Sub<void> {
   const shown = formatValue(v, current.value, valueFormat(ctx));
   if (v.readOnly) {
     ctx.message(`${v.name} = ${shown} (read only)`);
+    return;
+  }
+  // The tab shown is the space the command running draws in, so it stays while one runs.
+  // AutoCAD's documentation does not say whether 'CTAB may switch tabs inside a command; Triya
+  // keeps the space a command started in, as its prompts and osnaps assume it.
+  if (v.store === 'computed' && ctx.transparent) {
+    ctx.message(`${v.name} = ${shown} (read only while a command runs)`);
     return;
   }
   const message = `Enter new value for ${v.name}`;

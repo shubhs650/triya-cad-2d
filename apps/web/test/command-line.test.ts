@@ -18,6 +18,7 @@ import {
   promptParts,
   replayAhead,
   typed,
+  variableNames,
 } from '../src/command-line';
 
 describe('the command line state', () => {
@@ -158,6 +159,51 @@ describe('completions', () => {
       { name: 'COPYCLIP' },
       { name: 'CUTCLIP' },
     ]);
+  });
+});
+
+// M2-59 part 5: AutoCAD's AUTOCOMPLETEMODE lists system variables too, after the commands.
+describe('completions of system variables', () => {
+  const registry = builtinCommands();
+  const variables = variableNames(
+    new Map<string, unknown>([
+      ['$LTSCALE', 1],
+      ['$LUNITS', 2],
+      ['$CLAYER', '0'],
+      ['CETRANSPARENCY', 'ByLayer'],
+    ]),
+  );
+
+  it('offers the variables the drawing has and those the app keeps', () => {
+    expect(variables).toContain('LTSCALE');
+    expect(variables).toContain('ORTHOMODE');
+    expect(variables).toContain('CTAB');
+    expect(variables).not.toContain('DIMSCALE');
+    expect(completions(registry, 'lts', variables)).toEqual([{ name: 'LTSCALE', variable: true }]);
+    expect(completions(registry, "'ortho", variables)).toEqual([
+      { name: 'ORTHOMODE', variable: true },
+    ]);
+  });
+
+  it('lists them after the commands', () => {
+    const c = completions(registry, 'C', variables);
+    const first = c.findIndex((s) => s.variable);
+    expect(c.slice(0, first).map((s) => s.name)).toEqual([
+      'CLOSE',
+      'CLOSEALL',
+      'COPY',
+      'COPYBASE',
+      'COPYCLIP',
+      'CUTCLIP',
+    ]);
+    expect(c.slice(first).map((s) => s.name)).toEqual([
+      'CDATE',
+      'CETRANSPARENCY',
+      'CLAYER',
+      'CTAB',
+    ]);
+    // Without variables (a drawing not open), commands only.
+    expect(completions(registry, 'lts')).toEqual([]);
   });
 });
 

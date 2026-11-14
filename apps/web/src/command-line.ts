@@ -1,7 +1,13 @@
 // The command line's state per open drawing (M2-02): the main thread's mirror of what the
 // drawing's command engine said (history lines, the prompt it waits at), plus what the drafter
 // typed at `Command:` for Up/Down recall. The command engine itself runs in the engine worker.
-import type { CommandOutput, CommandRegistry, Prompt } from '@triya/engine';
+import {
+  systemVariables,
+  type CommandOutput,
+  type CommandRegistry,
+  type HeaderValue,
+  type Prompt,
+} from '@triya/engine';
 import { DYN_DEFAULT_UNITS, type DynUnits } from './dynamic-input';
 
 export interface CommandLineState {
@@ -115,22 +121,39 @@ export function replayAhead(
 
 /**
  * The commands `text` may be the start of (AutoCAD's AUTOCOMPLETE): the command an alias names
- * exactly, then the commands whose names begin with it, as `{ name, alias }`.
+ * exactly, then the commands whose names begin with it, as `{ name, alias }`; then the system
+ * variables of `variables` that begin with it, as `{ name, variable: true }` (AUTOCOMPLETEMODE
+ * lists system variables too, M2-59 part 5).
  */
 export function completions(
   registry: CommandRegistry,
   text: string,
-): { readonly name: string; readonly alias?: string }[] {
+  variables: readonly string[] = [],
+): { readonly name: string; readonly alias?: string; readonly variable?: true }[] {
   const t = text.trim().toUpperCase();
   if (t === '' || /[^A-Z0-9_\-']/.test(t)) return [];
   const bare = t.replace(/^'/, '');
-  const out: { name: string; alias?: string }[] = [];
+  const out: { name: string; alias?: string; variable?: true }[] = [];
   const aliased = registry.alias(bare);
   if (aliased && registry.get(aliased)) out.push({ name: aliased, alias: bare });
   for (const name of registry.names()) {
     if (name.startsWith(bare) && !out.some((o) => o.name === name)) out.push({ name });
   }
+  for (const name of variables) {
+    // A command of the same name is what the name runs.
+    if (name.startsWith(bare) && !out.some((o) => o.name === name)) {
+      out.push({ name, variable: true });
+    }
+  }
   return out;
+}
+
+/**
+ * The system variables a drawing's header gives it, with those the app keeps and works out, in
+ * name order: what SETVAR ? lists, for the command line's autocomplete.
+ */
+export function variableNames(header: ReadonlyMap<string, unknown>): string[] {
+  return systemVariables({ header: header as ReadonlyMap<string, HeaderValue> }).map((v) => v.name);
 }
 
 /** The prompt line split around its options, so they show as chips: `before [A/B] after`. */

@@ -58,7 +58,7 @@ import { viewManager } from './view-manager';
 import { underlayLayersDialog } from './underlay-layers';
 import { UnderlayLayers } from './UnderlayLayers';
 import { exportFile } from './export-file';
-import { commandLines } from './command-line';
+import { commandLines, variableNames } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
 import { drafting } from './drafting';
@@ -67,7 +67,14 @@ import { snapMenu } from './snap-menu';
 import { AppClipboard, browserClipboardEnv, clipboardPicture } from './system-clipboard';
 import { SnapMenu } from './SnapMenu';
 import { DraftingToggles } from './DraftingToggles';
-import { DocumentStore, isDirty, layoutsOf, spacesOf, type OpenDocument } from './documents';
+import {
+  DocumentStore,
+  isDirty,
+  layoutsOf,
+  spacesOf,
+  tabBlock,
+  type OpenDocument,
+} from './documents';
 import { engines } from './engine/registry';
 import { shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
@@ -373,6 +380,18 @@ function viewContext(id: number): ViewContext {
     // SETVAR's variables the app keeps (M2-42), and those of the drawing it tells (M2-59).
     sysvar: (name, value) =>
       (doc && drawingVariableReply(doc, name)) ?? systemVariableReply(drafting, name, value),
+    // SETVAR CTAB and TILEMODE (M2-59 part 5): a tab shown, as when clicked.
+    tab: (name) => {
+      const block = doc && tabBlock(doc, engines.changesOf(doc.id), name);
+      if (!doc || block === undefined) {
+        return {
+          ok: false,
+          message: name === undefined ? 'The drawing has no layout.' : `No layout named "${name}".`,
+        };
+      }
+      store.showSpace(doc.id, block);
+      return { ok: true };
+    },
     clipboard: (content) => clipboardRequest(id, content),
     // ULAYERS (M2-56 part 1): the Underlay Layers dialog, waited for as VIEW waits for its own.
     underlayLayers: (r) =>
@@ -1361,6 +1380,14 @@ export function App() {
     [active, active?.revision, suppliedVersion],
   );
   const missingReferences = references.filter((r) => r.status === 'not-found').length;
+  // The system variables the command line completes (M2-59 part 5): the header as edited.
+  const variables = useMemo(
+    () =>
+      active
+        ? variableNames(editedHeader(active.opened.init.header, engines.changesOf(active.id)))
+        : [],
+    [active, active?.revision],
+  );
 
   return (
     <div
@@ -1666,6 +1693,7 @@ export function App() {
       <SnapMenu />
       <CommandLine
         doc={active?.id}
+        variables={variables}
         lines={commandLines}
         cursor={() => lastCursor}
         onSettings={() => setSettings(true)}
