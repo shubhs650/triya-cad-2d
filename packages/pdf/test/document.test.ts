@@ -133,6 +133,43 @@ describe('PdfDocument', () => {
     expect(stream(doc.bytes(), content)).toBe('/OC /L1 BDC\nEMC\n');
   });
 
+  // M2-74: Save As PDF's "Include hyperlinks": a link annotation over each linked object.
+  it('writes each page’s links as link annotations: a URI, or a jump to a labelled page', () => {
+    const doc = new PdfDocument({ compress: false });
+    const a = doc.addPage(100, 50, { label: 'Model' });
+    const b = doc.addPage(100, 50, { label: 'Layout2' });
+    a.link([10, 20, 30.5, 25], { url: 'https://example.com/spec.pdf', location: 'page=3' });
+    // Not ASCII and a space: percent-encoded as UTF-8, as a URI must be (§12.6.4.7).
+    a.link([0, 0, 5, 5], { url: 'https://example.com/Ø plan(1).pdf', location: '' });
+    // A named location alone jumps to the page plotting that layout, by name in any case
+    // (AutoCAD's "View of This Drawing": the layout, then a view after a comma).
+    a.link([1, 1, 2, 2], { url: '', location: 'layout2,Detail' });
+    b.link([3, 3, 4, 4], { url: '#MODEL', location: '' });
+    // A location no page plots links nowhere, so it is left out.
+    b.link([5, 5, 6, 6], { url: '', location: 'Layout9' });
+    const objs = objects(doc.bytes());
+    const pages = [...objs].filter(([, o]) => o.includes('/Type /Page '));
+    const annots = (page: string) =>
+      [...(/\/Annots \[([^\]]*)\]/.exec(page)?.[1] ?? '').matchAll(/(\d+) 0 R/g)].map((m) =>
+        objs.get(Number(m[1]))!,
+      );
+    const [[aId, aBody], [bId, bBody]] = pages as [[number, string], [number, string]];
+    expect(annots(aBody)).toEqual([
+      '<< /Type /Annot /Subtype /Link /Rect [10 20 30.5 25] /Border [0 0 0] /A << /S /URI /URI (https://example.com/spec.pdf#page=3) >> >>',
+      '<< /Type /Annot /Subtype /Link /Rect [0 0 5 5] /Border [0 0 0] /A << /S /URI /URI (https://example.com/%C3%98%20plan\\(1\\).pdf) >> >>',
+      `<< /Type /Annot /Subtype /Link /Rect [1 1 2 2] /Border [0 0 0] /Dest [${bId} 0 R /Fit] >>`,
+    ]);
+    expect(annots(bBody)).toEqual([
+      `<< /Type /Annot /Subtype /Link /Rect [3 3 4 4] /Border [0 0 0] /Dest [${aId} 0 R /Fit] >>`,
+    ]);
+  });
+
+  it('writes no annotations on a page without links', () => {
+    const doc = new PdfDocument({ compress: false });
+    doc.addPage(10, 10).link([0, 0, 1, 1], { url: '', location: 'Nowhere' });
+    expect(text(doc.bytes())).not.toContain('/Annots');
+  });
+
   it('refuses a page whose marked content is left open', () => {
     const doc = new PdfDocument();
     doc.addPage(10, 10).content.beginMarked(doc.addPage(10, 10).layer('A'));

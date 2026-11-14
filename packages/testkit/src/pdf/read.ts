@@ -1,6 +1,7 @@
 // A plotted PDF as a reader sees it (M2-17's Plot dialog test): pdf.js reads the bytes in Node and
 // reports the first page's size in millimetres, the page labels, how many paths and forms it
-// draws, and its text; M2-60 adds the PDF layers, the bookmarks and whether fonts are embedded.
+// draws, and its text; M2-60 adds the PDF layers, the bookmarks and whether fonts are embedded;
+// M2-74 the page's links.
 import { OPS, getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 
 export interface PdfSummary {
@@ -21,6 +22,17 @@ export interface PdfSummary {
   readonly bookmarks: readonly string[];
   /** Whether the file embeds a font program (none when all text is geometry). */
   readonly fonts: boolean;
+  /** The page's link annotations: a URI's address, or the page (from 1) a jump goes to. */
+  readonly links: readonly PdfLinkSummary[];
+}
+
+export interface PdfLinkSummary {
+  /** The URI as pdf.js reads it (`url`, or `unsafeUrl` for a relative or unusual one). */
+  readonly url?: string;
+  /** The page a GoTo link shows, from 1. */
+  readonly page?: number;
+  /** [x0, y0, x1, y1], points. */
+  readonly rect: readonly number[];
 }
 
 const PT_PER_MM = 72 / 25.4;
@@ -47,5 +59,27 @@ export async function pdfSummary(bytes: Uint8Array, at = 1): Promise<PdfSummary>
     })),
     bookmarks: ((await pdf.getOutline()) ?? []).map((o) => o.title),
     fonts,
+    links: await linksOf(pdf, page),
   };
+}
+
+type Loaded = Awaited<ReturnType<typeof getDocument>['promise']>;
+
+async function linksOf(
+  pdf: Loaded,
+  page: Awaited<ReturnType<Loaded['getPage']>>,
+): Promise<PdfLinkSummary[]> {
+  const out: PdfLinkSummary[] = [];
+  for (const a of await page.getAnnotations()) {
+    if (a.subtype !== 'Link') continue;
+    const url = (a.url ?? a.unsafeUrl) as string | undefined;
+    const dest = a.dest as unknown[] | undefined;
+    const target = Array.isArray(dest) ? (dest[0] as { num: number; gen: number }) : undefined;
+    out.push({
+      ...(url !== undefined && { url }),
+      ...(target && { page: (await pdf.getPageIndex(target)) + 1 }),
+      rect: a.rect as number[],
+    });
+  }
+  return out;
 }

@@ -33,6 +33,7 @@ export {
   plotParts,
   type PlotGlyphPart,
   type PlotInfinitePart,
+  type PlotLinkPart,
   type PlotPart,
   type PlotPathPart,
   type PlotUnderlayPart,
