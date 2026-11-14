@@ -1,0 +1,1 @@
+- M2-45 part 2 (#313): the Publish dialog's Add Sheets… adds the sheets of drawings that are not open; Publish opens each with no tab to plot its sheets and closes it after. A sheet's default page setup names the one its layout has applied ("<Default: A3 Monochrome>"), in the list and the publish log.
