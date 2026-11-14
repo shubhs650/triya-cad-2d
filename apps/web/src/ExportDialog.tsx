@@ -10,26 +10,33 @@
 // (PageSetupOverride.tsx), whose paper, orientation, scale and plot style table replace the page
 // setup's for this export ("Page Setup Override..." opens it again). A PNG has a Resolution. The
 // file is written by export-file.ts, which -EXPORT's also is.
+//
+// M2-60: a PDF has "Options..." (the PDF Options dialog, PdfOptions.tsx): layers, bookmarks and
+// text as geometry. The choices are kept for the rest of the session, for every drawing, and
+// -EXPORT's PDFs follow them too.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import type { Box } from '@triya/engine';
 import type { PlotStyleTable } from '@triya/render';
 import { PageSetupOverrideDialog } from './PageSetupOverride';
+import { PdfOptionsDialog } from './PdfOptions';
 import { controllerOf } from './canvas/registry';
 import type { OpenDocument } from './documents';
 import {
   EXPORT_AREA_LABELS,
+  EXPORT_PDF_OPTIONS,
   EXPORT_TYPES,
   defaultExportArea,
   exportAreas,
   exportFileName,
   pageSetupOverride,
+  pdfOptionsNote,
   withExportType,
   type ExportArea,
   type ExportType,
   type PageSetupOverride,
 } from './export';
 import { exportFile } from './export-file';
-import { PNG_RESOLUTIONS, type PlotSpace, type UnderlayPageSource } from './plot';
+import { PNG_RESOLUTIONS, type PdfOptions, type PlotSpace, type UnderlayPageSource } from './plot';
 
 /** EXPORT's Export Data or EXPORTPDF's Save As PDF. */
 export type ExportKind = 'export' | 'exportpdf';
@@ -44,6 +51,8 @@ interface ExportState {
   readonly override?: PageSetupOverride | undefined;
   /** A PNG's resolution (part 5). */
   readonly dpi: number;
+  /** A PDF's options (M2-60). */
+  readonly pdf: PdfOptions;
 }
 
 /**
@@ -55,6 +64,8 @@ export const exportDialog = (() => {
   let open: { doc: number; kind: ExportKind } | undefined;
   let kept: { doc: number; block: string; kind: ExportKind; state: ExportState } | undefined;
   let done: ((pickWindow: boolean) => void) | undefined;
+  // The PDF Options chosen last this session (M2-60), for every drawing and for -EXPORT.
+  let pdf = EXPORT_PDF_OPTIONS;
   const listeners = new Set<() => void>();
   const set = (v: typeof open) => {
     open = v;
@@ -67,6 +78,10 @@ export const exportDialog = (() => {
   };
   return {
     get: () => open,
+    pdfOptions: () => pdf,
+    setPdfOptions(o: PdfOptions) {
+      pdf = o;
+    },
     subscribe(l: () => void) {
       listeners.add(l);
       return () => listeners.delete(l);
@@ -156,6 +171,7 @@ function ExportBody({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string>();
   const [overriding, setOverriding] = useState(false);
+  const [pdfOptions, setPdfOptions] = useState(false);
   const block = doc.block;
 
   useEffect(() => {
@@ -174,6 +190,7 @@ function ExportBody({
           area,
           fileName: exportFileName(doc.name, sp, 'pdf', area),
           dpi: 150,
+          pdf: exportDialog.pdfOptions(),
         },
       );
     });
@@ -217,7 +234,15 @@ function ExportBody({
       await exportFile(
         doc,
         space,
-        { type: s.type, file, area: s.area, window: s.window, override: s.override, dpi: s.dpi },
+        {
+          type: s.type,
+          file,
+          area: s.area,
+          window: s.window,
+          override: s.override,
+          dpi: s.dpi,
+          pdf: s.pdf,
+        },
         { underlayFile, underlayPage, userTables: userTables?.(), exportDxf },
       );
       exportDialog.close();
@@ -303,6 +328,17 @@ function ExportBody({
               )}
             </div>
           )}
+          {s.type === 'pdf' && (
+            <div className="export-area">
+              <span className="export-label">PDF options:</span>
+              <span className="export-pdf-note" data-testid="pdf-options-note">
+                {pdfOptionsNote(s.pdf)}
+              </span>
+              <button type="button" disabled={busy} onClick={() => setPdfOptions(true)}>
+                Options...
+              </button>
+            </div>
+          )}
           {s.type === 'png' && (
             <label className="cad-dialog-field">
               <span>Resolution:</span>
@@ -362,6 +398,17 @@ function ExportBody({
             setOverriding(false);
           }}
           onCancel={() => setOverriding(false)}
+        />
+      )}
+      {pdfOptions && s && (
+        <PdfOptionsDialog
+          value={s.pdf}
+          onOk={(pdf) => {
+            exportDialog.setPdfOptions(pdf);
+            setState({ ...s, pdf });
+            setPdfOptions(false);
+          }}
+          onCancel={() => setPdfOptions(false)}
         />
       )}
       {error && (

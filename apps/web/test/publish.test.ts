@@ -144,6 +144,21 @@ describe('publishPdf', () => {
     expect([w2! / POINTS_PER_MM, h2! / POINTS_PER_MM].map(Math.round)).toEqual([420, 297]);
   });
 
+  // M2-60: All layouts from Save As PDF with its options: no outline when bookmarks are off.
+  it('leaves the bookmarks out and adds layers as the PDF options say', async () => {
+    const model = sheetSpace({ name: 'Model', extents: { minX: 0, minY: 0, maxX: 100, maxY: 50 } });
+    const { bytes } = publishPdf(
+      [{ sheet: 'plan-Model', space: model, parts: [{ ...stroke, layer: 'A-WALL' }] }],
+      'plan',
+      undefined,
+      { layers: true, bookmarks: false, textAsGeometry: false },
+    );
+    const pdf = await getDocument({ data: bytes! }).promise;
+    expect(await pdf.getOutline()).toBeNull();
+    expect(await pdf.getPageLabels()).toEqual(['Model']);
+    expect([...(await pdf.getOptionalContentConfig())].map(([, g]) => g.name)).toEqual(['A-WALL']);
+  });
+
   it('writes no file when no sheet plots', () => {
     const { bytes, failed } = publishPdf(
       [{ sheet: 'x-Model', space: { name: 'Model' }, parts: [] }],

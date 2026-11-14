@@ -86,6 +86,31 @@ export class ContentStream {
     return this.stack.length;
   }
 
+  #marked = 0;
+
+  /**
+   * `/OC /<name> BDC`: begins content belonging to the optional content group `name` of the
+   * page's /Properties (§8.11.3.2), a PDF layer a viewer turns on and off.
+   */
+  beginMarked(name: string): this {
+    this.ops.push(`/OC /${name} BDC`);
+    this.#marked++;
+    return this;
+  }
+
+  /** `EMC`: ends the innermost `beginMarked`. */
+  endMarked(): this {
+    if (this.#marked === 0) throw new Error('end of marked content without a beginning');
+    this.ops.push('EMC');
+    this.#marked--;
+    return this;
+  }
+
+  /** Marked content sequences still open, which must be none when the page is written. */
+  get markedDepth(): number {
+    return this.#marked;
+  }
+
   lineWidth(w: number): this {
     if (this.state.lineWidth !== w) {
       this.ops.push(`${n(w)} w`);

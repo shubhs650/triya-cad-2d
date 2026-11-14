@@ -125,6 +125,43 @@ describe('plotItems', () => {
     expect(lines.indexOf('0 2 m') > lines.indexOf('Q')).toBe(true);
   });
 
+  // M2-60: Save As PDF's "Include layer information".
+  it('marks each run of a layer’s items as its optional content group when layers are asked for', () => {
+    const clip = [[0, 0, 5, 0, 5, 5, 0, 5]];
+    const items: PlotItem[] = [
+      { kind: 'stroke', path: line(0, 0, 1, 0), paint, layer: 'Walls' },
+      { kind: 'stroke', path: line(0, 1, 1, 1), paint, layer: 'Walls' },
+      { kind: 'stroke', path: line(0, 2, 1, 2), paint, layer: 'Doors' },
+      { kind: 'stroke', path: line(0, 3, 1, 3), paint },
+      { kind: 'stroke', path: line(0, 4, 1, 4), paint, layer: 'Walls', clip },
+    ];
+    const { lines, page } = ops(items, { layers: true });
+    const marks = lines.filter((l) => /BDC$|^EMC$|^[qQ]$|W n$/.test(l) || / m$/.test(l));
+    expect(marks).toEqual([
+      'q',
+      '/OC /L1 BDC',
+      '0 0 m',
+      '0 1 m',
+      'EMC',
+      '/OC /L2 BDC',
+      '0 2 m',
+      'EMC',
+      '0 3 m',
+      // A clip opens outside the layer's marked content and closes after it.
+      'q',
+      '0 0 m',
+      'W n',
+      '/OC /L1 BDC',
+      '0 4 m',
+      'EMC',
+      'Q',
+      'Q',
+    ]);
+    expect([...page.layers]).toEqual(['Walls', 'Doors']);
+    // Without the option nothing is marked, whatever layers the items name.
+    expect(ops(items).lines.some((l) => l.endsWith('BDC') || l === 'EMC')).toBe(false);
+  });
+
   it('clips to the printable area and skips empty paths', () => {
     const { lines } = ops([{ kind: 'stroke', path: [], paint }], {
       area: { x: 10, y: 10, width: 80, height: 80 },

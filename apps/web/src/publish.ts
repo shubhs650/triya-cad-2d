@@ -27,7 +27,9 @@ import {
   appliedPageSetupName,
   defaultPlotSettings,
   pageSetupOf,
+  PLOT_PDF_OPTIONS,
   plotPage,
+  type PdfOptions,
   type PlotSettings,
   type PlotSpace,
 } from './plot';
@@ -194,6 +196,8 @@ export function publishPdf(
   title: string,
   /** The PDF file a PDF underlay names (M2-16 part 5), as the Plot dialog plots it. */
   underlayFile?: (fileName: string) => Uint8Array | undefined,
+  /** Save As PDF's options for All layouts (M2-60); a publish's own when absent. */
+  pdf: PdfOptions = PLOT_PDF_OPTIONS,
 ): { bytes: Uint8Array | undefined; failed: PublishFailure[] } {
   const doc = new PdfDocument({ title, creator: 'Triya CAD 2D' });
   const failed: PublishFailure[] = [];
@@ -201,7 +205,7 @@ export function publishPdf(
   for (const { sheet, space, parts, settings: own } of sheets) {
     const settings = own ?? defaultPlotSettings(space);
     try {
-      addPlotPage(doc, parts, plotPage(settings, space), settings, space, sheet, underlayFile);
+      addPlotPage(doc, parts, plotPage(settings, space), settings, space, sheet, underlayFile, pdf);
       pages++;
     } catch (e) {
       failed.push({ sheet, message: e instanceof Error ? e.message : String(e) });

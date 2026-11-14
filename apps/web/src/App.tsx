@@ -754,6 +754,8 @@ async function exportScript(id: number, script: ExportScript): Promise<ViewReply
         area,
         window,
         ...(settings && type !== 'dxf' && { settings: scriptSettings(space, settings) }),
+        // The PDF Options chosen in Save As PDF this session (M2-60).
+        pdf: exportDialog.pdfOptions(),
       },
       { underlayFile: (f) => pdfPages.bytes(f), underlayPage, userTables, exportDxf },
     );
