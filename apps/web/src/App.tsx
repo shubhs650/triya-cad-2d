@@ -574,8 +574,11 @@ async function fileCommand(
   if (action === 'views') {
     // VIEW (M2-47 part 2): the View Manager, waited for as PLOT waits for its dialog, with the
     // corners asked for when the New View dialog's Define window wants them.
-    const pickWindow = await viewManager.show(id, { window, resume: resume === true });
-    return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
+    // Its Edit Boundaries... (part 5) hands VIEW the selected view's window to show meanwhile.
+    const pick = await viewManager.show(id, { window, resume: resume === true });
+    return pick
+      ? { ok: true, pickWindow: true, ...(pick.boundary && { boundary: pick.boundary }) }
+      : { ok: true };
   }
   if (action === 'publish') {
     // PUBLISH (M2-17 part 2): the Publish dialog lists the drawing's sheets.

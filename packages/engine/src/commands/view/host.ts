@@ -62,6 +62,12 @@ export type ViewRequest =
    */
   | { readonly op: 'swap'; readonly viewport: string; readonly view: UndoView }
   /**
+   * The space shown shows `view` for a while, recorded for no ZOOM Previous or undo step: the
+   * View Manager's Edit Boundaries (M2-47 part 5) shows the view it edits, then the display it
+   * was asked from again. The reply's `view` is the view shown after.
+   */
+  | { readonly op: 'glance'; readonly view: UndoView }
+  /**
    * Selection (M2-03): the objects of the space shown within the pickbox of `point`, nearest
    * first. What a pick takes depends on what is drawn, so the canvas answers it.
    */
@@ -317,6 +323,11 @@ export type ViewReply =
        * corners and opens the dialog again with them.
        */
       readonly pickWindow?: boolean;
+      /**
+       * With `pickWindow`, the View Manager closed on Edit Boundaries... (M2-47 part 5): the
+       * selected view's window, which VIEW shows while it asks for a new one.
+       */
+      readonly boundary?: { readonly a: Vec2; readonly b: Vec2 };
       /** What a `clipboard` read found; absent when the Clipboard is empty. */
       readonly clipboard?: Clipboard;
       /** The Clipboard's objects were copied from this drawing (PASTEORIG refuses them). */

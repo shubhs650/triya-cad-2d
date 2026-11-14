@@ -223,6 +223,10 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
     case 'center':
       t.zoomCenter(r.center, r.height);
       return done();
+    case 'glance':
+      // Edit Boundaries' look at a view (M2-47 part 5): no ZOOM Previous or undo step.
+      t.swapView(r.view);
+      return done();
     case 'pan':
       t.panWorld(r.by);
       return done();
