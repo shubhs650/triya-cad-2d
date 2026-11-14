@@ -6,8 +6,9 @@
 // in packages/engine/test/properties; this checks the app carries them end to end.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Entity, InsertGeometry, MultiLeaderGeometry } from '@triya/engine';
-import { DXF, activeCanvas, expectShown, ink, openWithPicker } from '../app/page';
-import { startApp } from '../app/server';
+import { DXF, activeCanvas, expectDrawn, expectShown, ink, openWithPicker } from '../app/page';
+import { CORPUS, startApp } from '../app/server';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 
 let app: { url: string; close(): Promise<void> };
@@ -811,4 +812,98 @@ test('sets a multileader’s leader colour, arrowhead size and landing from the 
   await expect.poll(async () => (await leader())?.pathType).toBe(2);
   await page.mouse.move(5, 500);
   await page.screenshot({ path: test.info().outputPath('3-spline.png') });
+});
+
+// M2-35 part 13: a gradient's own rows, edited on ezdxf's two associative solid hatches made
+// gradients: the file keeps their gradient settings with the gradient turned off (DXF 450 = 0),
+// so the test turns it on (450 = 1), as AutoCAD writes a gradient fill.
+test('edits two gradient hatches’ name, colour, angle and centring, and lets them go of their boundaries', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const source = readFileSync(path.join(CORPUS, 'ezdxf/examples_dxf/hatches_2.dxf'), 'utf8');
+  const file = test.info().outputPath('gradients.dxf');
+  const on = source.replace(/^450\n( *)0$/gm, (_m, pad: string) => `450\n${pad}1`);
+  expect(on).not.toBe(source);
+  mkdirSync(path.dirname(file), { recursive: true });
+  writeFileSync(file, on);
+  await page.goto(app.url);
+  await openWithPicker(page, file);
+  await expectShown(page, path.basename(file));
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await expect(palette).toBeVisible();
+  await activeCanvas(page).hover();
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, 'E', 'Command:');
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/Hatch \(2\)/);
+  await objects.selectOption({ label: 'Hatch (2)' });
+  const pattern = palette.getByRole('table', { name: 'Pattern' });
+  await expect(pattern.getByRole('rowheader')).toHaveText([
+    'Type',
+    'Gradient name',
+    'Color 1',
+    'Color 2',
+    'Gradient angle',
+    'Centered',
+    'Associative',
+    'Island detection style',
+  ]);
+  const name = palette.getByRole('combobox', { name: 'Gradient name' });
+  await expect(name).toHaveValue('LINEAR');
+  await expectDrawn(page, { timeout: 15_000 });
+  await page.mouse.move(300, 640);
+  await page.screenshot({ path: test.info().outputPath('1-gradient-rows.png') });
+
+  const hatches = () =>
+    page.evaluate(() => {
+      const out = new Map<string, unknown>();
+      for (const cs of (window as unknown as Dev).triyaDev.changes())
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'HATCH') {
+            const g = u.after.geom;
+            out.set(u.after.handle, {
+              name: g.gradient?.name,
+              color1: g.gradient?.colors[0]?.color,
+              angle: Math.round(((g.gradient?.angle ?? 0) * 180) / Math.PI),
+              shift: g.gradient?.shift,
+              associative: g.associative,
+            });
+          }
+      return [...out.values()];
+    });
+  await name.selectOption('SPHERICAL');
+  const color1 = palette.getByRole('combobox', { name: 'Color 1' });
+  await color1.selectOption({ label: 'Select Color...' });
+  const dialog = page.getByRole('dialog', { name: 'Select Color' });
+  await expect(dialog).toBeVisible();
+  // A gradient's colours are index or true colours (the save writes no book name for one).
+  await expect(dialog.getByRole('tab', { name: 'True Color' })).toBeEnabled();
+  const field = dialog.getByRole('textbox', { name: 'Color' });
+  await field.fill('255,128,0');
+  await field.press('Enter');
+  await expect(dialog).toBeHidden();
+  const angle = palette.getByRole('textbox', { name: 'Gradient angle', exact: true });
+  await angle.fill('45');
+  await angle.press('Enter');
+  await palette.getByRole('combobox', { name: 'Centered' }).selectOption({ label: 'No' });
+  const was = {
+    name: 'SPHERICAL',
+    color1: { kind: 'rgb', r: 255, g: 128, b: 0 },
+    angle: 45,
+    shift: 1,
+  };
+  await expect.poll(hatches).toEqual([
+    { ...was, associative: true },
+    { ...was, associative: true },
+  ]);
+  await palette.getByRole('combobox', { name: 'Associative' }).selectOption({ label: 'No' });
+  await expect.poll(hatches).toEqual([
+    { ...was, associative: false },
+    { ...was, associative: false },
+  ]);
+  await page.mouse.move(300, 640);
+  await page.screenshot({ path: test.info().outputPath('2-spherical-orange-45.png') });
 });

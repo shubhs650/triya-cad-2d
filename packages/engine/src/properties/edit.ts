@@ -8,7 +8,7 @@
 // take changes nothing and says why, as AutoCAD's palette refuses it ("Invalid input").
 import { parseAngleValue, parseDistance, parseNumber } from '../commands/parse';
 import { moveBy, turnAbout } from '../edit/similarity';
-import { transformObjects } from '../edit/edit';
+import { dissociateHatch, transformObjects } from '../edit/edit';
 import { rescaledReference } from '../edit/transform';
 import { JUSTIFICATIONS, rejustified } from '../commands/modify/attributes';
 import type { PatternPlacement, PlacedPattern, TextOutline } from '../commands/view/host';
@@ -36,9 +36,11 @@ import { multiLeaderLeaderChange } from './multileader-leaders';
 import type { GeneralProps } from './sheet';
 import { DIMVAR_DEFAULTS, DIMVAR_ROWS, dimensionUnits, rowVars } from './dimension';
 import {
+  GRADIENT_NAMES,
   MAX_TRANSPARENCY,
   isPatterned,
   parseColorValue,
+  patternOrigin,
   parseLineweightValue,
   propertySheet,
   textPositionOf,
@@ -128,6 +130,7 @@ type Change =
   | { readonly move: Vec2 }
   | { readonly turn: { readonly about: Vec2; readonly by: number } }
   | { readonly refuse: string }
+  | { readonly dissociate: true }
   | { readonly skip: true };
 
 const UNMEASURED = 'its text cannot be measured';
@@ -261,16 +264,9 @@ function vertexChange(
 const GRADIENT = 'a gradient fill';
 const USER_DEFINED = 'user defined (its Spacing sets it)';
 const NOT_USER_DEFINED = 'not user defined (its Scale sets it)';
-
-/**
- * The point a hatch's pattern lines start from: the first line's base point (AutoCAD keeps the
- * hatch origin, HPORIGIN, only in the lines it stores: DXF 43/44 are the origin turned and
- * scaled from the pattern file's first line, which in the ANSI, ISO and Triya patterns, and in
- * every user-defined hatch, starts at 0,0), else the drawing's origin.
- */
-function patternOrigin(g: HatchGeometry): Vec2 {
-  return (isPatterned(g) && g.patternLines[0]?.base) || { x: 0, y: 0 };
-}
+const NOT_ASSOCIATIVE = 'not associative (its boundary objects are not known)';
+const ONE_COLOUR = 'a one-colour gradient (its Gradient tint sets colour 2)';
+const TWO_COLOUR = 'a two-colour gradient';
 
 /**
  * Where a hatch given another pattern places it: at its angle and scale, about its origin. A
@@ -395,6 +391,81 @@ function hatchChange(
     case 'islandStyle': {
       const style = ['0', '1', '2'].indexOf(String(v));
       return style < 0 ? 'invalid' : geomPatch({ ...g, style });
+    }
+    case 'patternOriginX':
+    case 'patternOriginY': {
+      // AcadHatch.Origin: the lines move with the origin, keeping their angle and spacing.
+      const n = numeric(v, 'number');
+      if (n === undefined) return 'invalid';
+      if (!patterned) return { skip: true };
+      const o = patternOrigin(g);
+      const d = key === 'patternOriginX' ? { x: n - o.x, y: 0 } : { x: 0, y: n - o.y };
+      const patternLines = g.patternLines.map((l) => ({
+        ...l,
+        base: { x: l.base.x + d.x, y: l.base.y + d.y },
+      }));
+      return geomPatch({ ...g, patternLines });
+    }
+    case 'associative': {
+      const b = yesNo(v);
+      if (b === undefined) return 'invalid';
+      if (b === g.associative) return { skip: true };
+      // HATCHEDIT turns Associative off; on, it would need the objects the boundary came from,
+      // which a hatch that is not associative no longer names (AutoCAD's help does not say what
+      // the palette's Yes does to one; HATCHGENERATEBOUNDARY makes new objects instead).
+      return b ? { refuse: NOT_ASSOCIATIVE } : { dissociate: true };
+    }
+    default:
+      return gradientChange(g, key, v);
+  }
+}
+
+/**
+ * A gradient's rows (M2-35 part 13): its name (DXF 470), colours (index or true colours,
+ * DXF 63/421: no ByLayer, ByBlock or colour-book name, which the save cannot write for a
+ * gradient), angle (460), Centered (461: 0 centred, 1 shifted, as GFSHIFT) and a one-colour
+ * gradient's tint (462, 0 to 1). A pattern or solid hatch has no gradient to change.
+ */
+function gradientChange(
+  g: HatchGeometry,
+  key: string,
+  v: PropertyValue,
+): Change | undefined | 'invalid' {
+  const set = (
+    over: Partial<NonNullable<HatchGeometry['gradient']>>,
+  ): Change | { readonly skip: true } =>
+    g.gradient ? geomPatch({ ...g, gradient: { ...g.gradient, ...over } }) : { skip: true };
+  switch (key) {
+    case 'gradientName': {
+      const name = String(v).trim().toUpperCase();
+      return GRADIENT_NAMES.includes(name) ? set({ name }) : 'invalid';
+    }
+    case 'gradientColor1':
+    case 'gradientColor2': {
+      const color = typeof v === 'string' ? parseColorValue(v) : undefined;
+      if (!color || (color.kind !== 'aci' && color.kind !== 'rgb')) return 'invalid';
+      if (color.kind === 'rgb' && color.bookName !== undefined) return 'invalid';
+      if (!g.gradient) return { skip: true };
+      const i = key === 'gradientColor1' ? 0 : 1;
+      if (i === 1 && g.gradient.singleColor) return { refuse: ONE_COLOUR };
+      const colors = [...g.gradient.colors];
+      while (colors.length <= i) colors.push({ value: colors.length, color });
+      colors[i] = { ...colors[i]!, color };
+      return set({ colors });
+    }
+    case 'gradientTint': {
+      const n = numeric(v, 'number');
+      if (n === undefined || n < 0 || n > 1) return 'invalid';
+      if (g.gradient && !g.gradient.singleColor) return { refuse: TWO_COLOUR };
+      return set({ tint: n });
+    }
+    case 'gradientAngle': {
+      const n = numeric(v, 'angle');
+      return n === undefined ? 'invalid' : set({ angle: normalizeAngle(n) });
+    }
+    case 'gradientCentered': {
+      const b = yesNo(v);
+      return b === undefined ? 'invalid' : set({ shift: b ? 0 : 1 });
     }
     default:
       return undefined;
@@ -721,6 +792,9 @@ export function applyPropertyEdit(
     } else if ('turn' in c) {
       if (Math.abs(c.turn.by) < 1e-15) continue;
       changed += transformObjects(b, model, [e.id], turnAbout(c.turn.about, c.turn.by)).ids.length;
+    } else if ('dissociate' in c) {
+      dissociateHatch(b, model, e);
+      changed++;
     }
   }
   return { changed, refused };
