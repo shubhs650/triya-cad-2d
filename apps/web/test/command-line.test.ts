@@ -98,22 +98,29 @@ describe('type-ahead (M2-47 part 3)', () => {
     expect(lines.get(1).read).toBe(2);
   });
 
-  it('holds a space typed before the engine read the last input, and every key after it', () => {
+  it('holds every key typed before the engine read the last input, and every key after it', () => {
     const reading = { ...IDLE, sent: 2, read: 1 };
     const caughtUp = { ...IDLE, sent: 2, read: 2 };
-    // Only the prompt the space reaches knows whether it is Enter.
-    expect(holdsKey(reading, [], ' ')).toBe(true);
-    expect(holdsKey(caughtUp, [], ' ')).toBe(false);
-    // Letters and Enter mean the same at any prompt, until a key is held.
-    expect(holdsKey(reading, [], 'w')).toBe(false);
-    expect(holdsKey(reading, [], 'Enter')).toBe(false);
-    for (const key of ['w', ' ', 'Enter', 'Backspace']) {
+    // Only the prompt a key reaches knows whether a space is Enter, and whether Dynamic Input
+    // reads a point as relative (M2-71), so letters and Enter wait for it too.
+    for (const key of [' ', 'w', '5', 'Enter', 'Backspace']) {
+      expect(holdsKey(reading, [], key)).toBe(true);
+      expect(holdsKey(caughtUp, [], key)).toBe(false);
+    }
+    // Once a key is held, the keys after it are too, Tab (Dynamic Input's next field) with them.
+    for (const key of ['w', ' ', 'Enter', 'Backspace', 'Tab']) {
       expect(holdsKey(caughtUp, [' '], key)).toBe(true);
     }
-    // Keys that type nothing are not held.
-    for (const key of ['Shift', 'ArrowUp', 'Tab', 'F2', 'Escape']) {
+    // Keys that type nothing are not held; Tab alone still steps AutoSnap or completes.
+    for (const key of ['Shift', 'ArrowUp', 'F2']) {
       expect(holdsKey(reading, [' '], key)).toBe(false);
     }
+    expect(holdsKey(reading, [], 'Tab')).toBe(false);
+    // Esc waits behind the keys typed before it, and cancels at once with nothing held, or when
+    // pressed again.
+    expect(holdsKey(reading, ['1'], 'Escape')).toBe(true);
+    expect(holdsKey(reading, [], 'Escape')).toBe(false);
+    expect(holdsKey(reading, ['1', 'Escape'], 'Escape')).toBe(false);
   });
 
   it('replays held keys on the prompt they reach: a space in a name is typed', () => {
@@ -133,6 +140,17 @@ describe('type-ahead (M2-47 part 3)', () => {
 
   it('replays Backspace', () => {
     expect(replayAhead('Tw', ['x', 'Backspace', 'o'], name)).toEqual({ text: 'Two', keys: [] });
+  });
+
+  it('stops at Esc, dropping the text typed before it', () => {
+    expect(replayAhead('1', [',', '1', 'Escape', 'L'], name)).toEqual({
+      text: '',
+      keys: ['Escape', 'L'],
+    });
+  });
+
+  it('skips Tab, which only moves between Dynamic Input fields', () => {
+    expect(replayAhead('', ['1', 'Tab', '2'], name)).toEqual({ text: '12', keys: [] });
   });
 });
 

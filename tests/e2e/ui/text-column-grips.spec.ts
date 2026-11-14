@@ -145,8 +145,9 @@ test('a columned MTEXT shows its column grips; the height grip makes taller colu
   const to = at(35, 60);
   await page.mouse.move(to.x, to.y, { steps: 5 });
   await page.screenshot({ path: 'test-results/text-column-grips/2-height-dragged.png' });
-  // The point typed, so the height is exact.
-  await type(page, '35,60', 'Command:');
+  // The point typed, so the height is exact; `#`, as Dynamic Input reads a stretch point typed
+  // at the cursor relative to the grip (M2-71).
+  await type(page, '#35,60', 'Command:');
   await expect.poll(async () => (await edited(page))?.columns?.count).toBe(2);
   const after = (await edited(page))!;
   expect(after.definedHeight).toBeCloseTo(20, 6);

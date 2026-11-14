@@ -118,7 +118,8 @@ test('COPY, MOVE, ROTATE, SCALE, MIRROR and ERASE from the command line', async 
   await expect(log).toContainText('3 found');
   await type(page, '', 'Specify first point of mirror line:');
   await type(page, '1000100,1000000', 'Specify second point of mirror line:');
-  await type(page, '1000100,1000100', 'Erase source objects? [Yes/No] <No>:');
+  // `#`: Dynamic Input reads a second point typed at the cursor relative to the first (M2-71).
+  await type(page, '#1000100,1000100', 'Erase source objects? [Yes/No] <No>:');
   await page.screenshot({ path: test.info().outputPath('mirror-prompt.png') });
   await type(page, '', 'Command:');
   const edited = [

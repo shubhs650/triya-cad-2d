@@ -7,6 +7,9 @@ import {
   dynCurrent,
   dynFor,
   dynLive,
+  dynAhead,
+  dynEnds,
+  dynRelativeTo,
   dynReplay,
   dynTab,
   dynText,
@@ -86,6 +89,21 @@ describe('Dynamic Input fields', () => {
     expect(tabbed.fields[0]).toMatchObject({ text: '100', locked: true });
     expect(dynText(tabbed, next, cursor)).toBe('@100<45');
     expect(sent(next, '\t90')).toBe('@5.0000<90');
+  });
+
+  it('dimension input: a comma switches to pointer input, relative to the last point (M2-71)', () => {
+    const s = typing(next, '10,0');
+    expect(s).toMatchObject({ kind: 'pointer', active: 1, raw: false });
+    expect(s.fields.map((f) => [f.label, f.text])).toEqual([
+      ['X', '10'],
+      ['Y', '0'],
+    ]);
+    expect(dynText(s, next, cursor)).toBe('@10,0');
+    expect(sent(next, '10,')).toBe('@10,4.0000');
+    expect(sent(next, '#10,0')).toBe('#10,0');
+    // Backspace past Y goes back to X; a comma with nothing before it is no number.
+    expect(typing(next, '10,\b').active).toBe(0);
+    expect(typing(next, ',').raw).toBe(true);
   });
 
   it('takes anything that is not a number as typed', () => {
@@ -209,6 +227,56 @@ describe('Dynamic Input fields', () => {
       ['4', false],
     ]);
     expect(dynReplay(first, [])).toEqual(dynFor(first));
+  });
+});
+
+describe('what a relative point counts from (M2-71)', () => {
+  it("is the rubber band's base, which the fields measure from", () => {
+    expect(dynRelativeTo('@10,0', next)).toEqual({ x: 10, y: 10 });
+    expect(dynRelativeTo('@3<45', corner)).toEqual({ x: 10, y: 10 });
+    // Absolute, typed as is, or with no rubber band: the bus decides.
+    expect(dynRelativeTo('#10,0', next)).toBeUndefined();
+    expect(dynRelativeTo('10', next)).toBeUndefined();
+    expect(dynRelativeTo('@10,0', first)).toBeUndefined();
+    const radius = prompts.distance({ message: 'Specify radius', base: { x: 0, y: 0 } });
+    expect(dynRelativeTo('@1,1', radius)).toBeUndefined();
+  });
+});
+
+describe('keys typed ahead of their prompt (M2-71)', () => {
+  const option = prompts.keyword({ message: 'Enter an option', options: ['Save'] });
+  const name = prompts.string({ message: 'Enter view name to save', spaces: true });
+
+  it('end the input at Enter, or at a space unless a name is being typed', () => {
+    expect(dynEnds(dynFor(first), first, 'Enter')).toBe(true);
+    expect(dynEnds(dynFor(first), first, ' ')).toBe(true);
+    expect(dynEnds(typing(option, 'S'), option, ' ')).toBe(true);
+    expect(dynEnds(typing(name, 'Two'), name, ' ')).toBe(false);
+    expect(dynEnds(typing(name, 'Two'), name, 'Enter')).toBe(true);
+    expect(dynEnds(dynFor(first), first, '5')).toBe(false);
+  });
+
+  it('go into the fields of the prompt they reach, a second point relative', () => {
+    const r = dynAhead(dynFor(next), next, ['1', '0', ',', '0', 'Enter', '7', 'Enter']);
+    expect(r).toMatchObject({ ends: true, typed: ['1', '0', ',', '0'], rest: ['7', 'Enter'] });
+    expect(dynText(r.state, next, cursor)).toBe('@10,0');
+    // The same keys at the first point are absolute.
+    const f = dynAhead(dynFor(first), first, ['5', ',', '5', 'Enter']);
+    expect(dynText(f.state, first, cursor)).toBe('5,5');
+  });
+
+  it("keep a name's spaces and leave the rest typed when nothing ends the input", () => {
+    const r = dynAhead(typing(name, 'Two'), name, [' ', 'w', 'o', 'r', 'd', 's', 'Enter']);
+    expect(r.ends).toBe(true);
+    expect(dynText(r.state, name, cursor)).toBe('Two words');
+    const open = dynAhead(dynFor(next), next, ['1', '0', 'Tab', '4', '5']);
+    expect(open).toMatchObject({ ends: false, typed: ['1', '0', 'Tab', '4', '5'], rest: [] });
+    expect(dynText(open.state, next, cursor)).toBe('@10<45');
+  });
+
+  it('stop at Esc, which the command line cancels with', () => {
+    const r = dynAhead(dynFor(next), next, ['1', 'Escape', '2', 'Enter']);
+    expect(r).toMatchObject({ ends: false, typed: ['1'], rest: ['Escape', '2', 'Enter'] });
   });
 });
 
