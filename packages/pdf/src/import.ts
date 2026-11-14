@@ -22,6 +22,12 @@
 // default (its /D) or the underlay turns the layer off by name (ULAYERS); a page without
 // groups adds nothing. An underlay that turns layers off gets copies of the file's objects of
 // its own, so another underlay of the same file keeps its layers on.
+//
+// Annotations (M2-56 part 2): pdf.js draws a page's annotations on screen; a plot draws the
+// printable ones, as a PDF printer does (AutoCAD's help is silent): /F Print set and Hidden clear
+// (§12.5.3), each its normal appearance (/AP /N, the /AS state's when it has states) fitted to its
+// /Rect (§12.5.5), in its /OC layer. The page form then shows the page's own form and the
+// appearances over it; a page without printable annotations is written as before.
 
 import { zlibSync } from 'fflate';
 import type { Affine } from './path';
@@ -108,6 +114,96 @@ export function pageView(page: Pick<PdfPageEntry, 'mediaBox' | 'cropBox' | 'rota
           : { a: 1, b: 0, c: 0, d: 1, e: -x0, f: -y0 };
   const turned = rotate === 90 || rotate === 270;
   return { box, width: turned ? h : w, height: turned ? w : h, matrix };
+}
+
+/** Annotation flags (§12.5.3, Table 165). */
+const ANNOT_HIDDEN = 2;
+const ANNOT_PRINT = 4;
+
+const IDENTITY: Affine = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+
+function matrixOf(v: PdfValue): Affine {
+  if (!Array.isArray(v) || v.length !== 6 || !v.every((x) => typeof x === 'number'))
+    return IDENTITY;
+  const [a, b, c, d, e, f] = v as number[];
+  return { a: a!, b: b!, c: c!, d: d!, e: e!, f: f! };
+}
+
+/**
+ * §12.5.5's matrix A: an appearance's /BBox as its /Matrix turns it, bounded, fitted to the
+ * annotation's /Rect by scaling and moving; painting the form (whose /Matrix `Do` applies) with
+ * it draws the appearance where the page shows it. Undefined for a box with no area.
+ */
+export function appearanceMatrix(
+  bbox: readonly [number, number, number, number],
+  matrix: Affine,
+  rect: readonly [number, number, number, number],
+): Affine | undefined {
+  const [x0, y0, x1, y1] = bbox;
+  const xs: number[] = [];
+  const ys: number[] = [];
+  for (const [x, y] of [
+    [x0, y0],
+    [x1, y0],
+    [x1, y1],
+    [x0, y1],
+  ] as const) {
+    xs.push(matrix.a * x + matrix.c * y + matrix.e);
+    ys.push(matrix.b * x + matrix.d * y + matrix.f);
+  }
+  const bx = Math.min(...xs);
+  const by = Math.min(...ys);
+  const bw = Math.max(...xs) - bx;
+  const bh = Math.max(...ys) - by;
+  if (!(bw > 0 && bh > 0)) return undefined;
+  const sx = (rect[2] - rect[0]) / bw;
+  const sy = (rect[3] - rect[1]) / bh;
+  return { a: sx, b: 0, c: 0, d: sy, e: rect[0] - bx * sx, f: rect[1] - by * sy };
+}
+
+/** A printable annotation's appearance as the plot draws it. */
+interface Appearance {
+  /** The appearance stream (a form XObject) and the reference it was read by. */
+  readonly ref: PdfRef;
+  readonly stream: PdfStream;
+  /** Its matrix A (`appearanceMatrix`). */
+  readonly at: Affine;
+  /** The annotation's /OC (an OCG or OCMD), as written. */
+  readonly oc?: PdfValue;
+}
+
+/** The page's printable annotations' normal appearances, in /Annots order (painting order). */
+function printableAppearances(source: PdfSource, page: PdfPageEntry): Appearance[] {
+  const annots = source.resolve(page.dict.get('Annots'));
+  if (!Array.isArray(annots)) return [];
+  const out: Appearance[] = [];
+  for (const entry of annots) {
+    const a = source.resolve(entry);
+    if (!(a instanceof Map)) continue;
+    const flags = source.resolve(a.get('F'));
+    const f = typeof flags === 'number' ? flags : 0;
+    if (!(f & ANNOT_PRINT) || f & ANNOT_HIDDEN) continue;
+    const rect = rectOf(source.resolve(a.get('Rect')));
+    const ap = source.resolve(a.get('AP'));
+    if (!rect || !(ap instanceof Map)) continue;
+    let n = ap.get('N');
+    const states = source.resolve(n);
+    if (states instanceof Map) {
+      // An appearance per state: the one /AS names, none without it.
+      const as = source.resolve(a.get('AS'));
+      n = as instanceof PdfName ? states.get(as.name) : undefined;
+    }
+    if (!(n instanceof Ref)) continue;
+    const stream = source.resolve(n);
+    if (!(stream instanceof PdfStream)) continue;
+    const bbox = rectOf(source.resolve(stream.dict.get('BBox')));
+    const at =
+      bbox && appearanceMatrix(bbox, matrixOf(source.resolve(stream.dict.get('Matrix'))), rect);
+    if (!at) continue;
+    const oc = a.get('OC');
+    out.push({ ref: n, stream, at, ...(oc !== undefined && oc !== null && { oc }) });
+  }
+  return out;
 }
 
 /** DXF 2 is the page number from 1; anything else (a page label) shows the first page. */
@@ -392,35 +488,63 @@ export class PdfImports {
     const view = pageView(entry);
     const name = `Fm${this.#forms.size + 1}`;
     const c = copy;
+    const annotations = printableAppearances(source, entry);
     const writePage = (id: number, w: ObjectWriter) => {
       c.pageIds.set(index, id);
-      const dict: PdfDict = new Map<string, PdfValue>([
-        ['Type', new PdfName('XObject')],
-        ['Subtype', new PdfName('Form')],
-        ['FormType', 1],
-        ['BBox', [...view.box]],
-        [
-          'Matrix',
-          [
-            view.matrix.a,
-            view.matrix.b,
-            view.matrix.c,
-            view.matrix.d,
-            view.matrix.e,
-            view.matrix.f,
-          ],
-        ],
-        ['Resources', entry.resources ?? new Map()],
-      ]);
+      const m = view.matrix;
+      const matrix = [m.a, m.b, m.c, m.d, m.e, m.f];
       const group: PdfDict = new Map<string, PdfValue>([
         ['S', new PdfName('Transparency')],
         ['I', true],
       ]);
       const pageGroup = source.resolve(entry.dict.get('Group'));
       if (pageGroup instanceof Map && pageGroup.has('CS')) group.set('CS', pageGroup.get('CS')!);
-      dict.set('Group', group);
+      // With printable annotations the page's own content is a form of its own, in its user
+      // space, which the form shown paints before them.
+      const own = annotations.length > 0 ? w.reserve() : id;
+      const dict: PdfDict = new Map<string, PdfValue>([
+        ['Type', new PdfName('XObject')],
+        ['Subtype', new PdfName('Form')],
+        ['FormType', 1],
+        ['BBox', [...view.box]],
+        ['Matrix', own === id ? matrix : [1, 0, 0, 1, 0, 0]],
+        ['Resources', entry.resources ?? new Map()],
+      ]);
+      if (own === id) dict.set('Group', group);
       for (const [k, v] of content.filter) dict.set(k, v);
-      w.set(id, c.streamBody(dict, content.data, w));
+      w.set(own, c.streamBody(dict, content.data, w));
+      if (own !== id) {
+        // Each appearance stream copied once, marked a form XObject (some writers leave out
+        // /Subtype, which `Do` needs).
+        const copied = new Map<number, number>();
+        const xobjects = [`/P ${own} 0 R`];
+        const properties: string[] = [];
+        const ops = ['/P Do'];
+        annotations.forEach((a, i) => {
+          let apId = copied.get(a.ref.num);
+          if (apId === undefined) {
+            copied.set(a.ref.num, (apId = w.reserve()));
+            const d = new Map(a.stream.dict);
+            d.set('Type', new PdfName('XObject'));
+            d.set('Subtype', new PdfName('Form'));
+            w.set(apId, c.streamBody(d, a.stream.data, w));
+          }
+          xobjects.push(`/A${i + 1} ${apId} 0 R`);
+          const t = a.at;
+          const draw = `q ${[t.a, t.b, t.c, t.d, t.e, t.f].map(real).join(' ')} cm /A${i + 1} Do Q`;
+          if (a.oc === undefined) ops.push(draw);
+          else {
+            properties.push(`/O${i + 1} ${c.value(a.oc, w)}`);
+            ops.push(`/OC /O${i + 1} BDC ${draw} EMC`);
+          }
+        });
+        const data = zlibSync(latin1(`${ops.join('\n')}\n`), { level: 6 });
+        const props = properties.length > 0 ? ` /Properties << ${properties.join(' ')} >>` : '';
+        w.set(id, {
+          dict: `<< /Type /XObject /Subtype /Form /FormType 1 /BBox ${c.value([...view.box], w)} /Matrix ${c.value(matrix, w)} /Group ${c.value(group, w)} /Resources << /XObject << ${xobjects.join(' ')} >>${props} >> /Filter /FlateDecode /Length ${data.length} >>`,
+          data,
+        });
+      }
       c.drain(w);
     };
     const pageId = (w: ObjectWriter) => {

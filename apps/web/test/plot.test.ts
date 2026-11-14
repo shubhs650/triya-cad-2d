@@ -16,6 +16,7 @@ import {
   pageSetupOf,
   paperMm,
   missingPlotStyleTable,
+  missingUnderlaysNote,
   plotAreas,
   plotFile,
   plotFileName,
@@ -32,6 +33,7 @@ import {
   type PlotPdfPage,
   type PlotSpace,
 } from '../src/plot';
+import type { ReferenceKind, ReferenceRow, ReferenceStatus } from '../src/xrefs';
 
 const model: PlotSpace = {
   name: 'Model',
@@ -926,5 +928,38 @@ describe('the rest of the page setup (part 4)', () => {
       const s = { ...defaultPlotSettings(space), offset: { x: 3, y: -1 } };
       expect(appliedPageSetup(s, space).origin).toEqual({ x: 4, y: 1 });
     });
+  });
+});
+
+describe('the Plot dialog names the PDF underlays whose file is not found (M2-56 part 2)', () => {
+  const row = (
+    name: string,
+    path: string,
+    status: ReferenceStatus,
+    kind: ReferenceKind = 'pdf',
+  ): ReferenceRow => ({ handle: name, kind, name, path, status, depth: 0 });
+
+  it('names each, with its file, once', () => {
+    expect(
+      missingUnderlaysNote([
+        row('plan - 1', '.\\plans\\plan.pdf', 'not-found'),
+        row('plan - 2', '.\\plans\\plan.pdf', 'not-found'),
+        row('site', 'site.pdf', 'loaded'),
+        row('photo', 'photo.png', 'not-found', 'image'),
+        row('plan - 1', '.\\plans\\plan.pdf', 'not-found'),
+      ]),
+    ).toBe(
+      'These PDF underlays plot without their page, as their PDF is not found: plan - 1 (plan.pdf), ' +
+        'plan - 2 (plan.pdf). Drop the PDF on the window to plot its page.',
+    );
+    expect(missingUnderlaysNote([row('site', 'site.pdf', 'not-found')])).toBe(
+      'This PDF underlay plots without its page, as its PDF is not found: site (site.pdf). ' +
+        'Drop the PDF on the window to plot its page.',
+    );
+  });
+
+  it('says nothing when every PDF is found', () => {
+    expect(missingUnderlaysNote([row('site', 'site.pdf', 'loaded')])).toBeUndefined();
+    expect(missingUnderlaysNote([])).toBeUndefined();
   });
 });
