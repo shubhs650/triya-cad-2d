@@ -2,6 +2,7 @@
 // drawing's command engine said (history lines, the prompt it waits at), plus what the drafter
 // typed at `Command:` for Up/Down recall. The command engine itself runs in the engine worker.
 import type { CommandOutput, CommandRegistry, Prompt } from '@triya/engine';
+import { DYN_DEFAULT_UNITS, type DynUnits } from './dynamic-input';
 
 export interface CommandLineState {
   /** The command history, as the text window (F2) shows it. */
@@ -13,6 +14,8 @@ export interface CommandLineState {
    * a command waits on a dialog (M2-41).
    */
   readonly promptText: string;
+  /** The drawing's units and angle convention as of the last prompt, for Dynamic Input. */
+  readonly units: DynUnits;
   /** Typed input, oldest first, for Up/Down. */
   readonly recent: readonly string[];
   /** The number of the last input sent to the engine (M2-47 part 3). */
@@ -25,6 +28,7 @@ export const IDLE: CommandLineState = {
   lines: [],
   prompt: undefined,
   promptText: 'Command:',
+  units: DYN_DEFAULT_UNITS,
   recent: [],
   sent: 0,
   read: 0,
@@ -40,7 +44,12 @@ export function follow(state: CommandLineState, o: CommandOutput): CommandLineSt
     case 'log':
       return { ...state, lines: [...state.lines, o.line].slice(-MAX_LINES) };
     case 'prompt':
-      return { ...state, prompt: o.prompt, promptText: o.text };
+      return {
+        ...state,
+        prompt: o.prompt,
+        promptText: o.text,
+        units: { units: o.units, angles: o.angles },
+      };
     case 'idle':
       return { ...state, prompt: undefined, promptText: 'Command:' };
     // A command waits on a dialog of the app's (M2-41): the prompt line is empty, as AutoCAD's.

@@ -8,8 +8,21 @@
 // - dimension input at a point prompt with a rubber band: Distance and Angle fields; `<` moves
 //   to the angle; a distance alone is a direct distance towards the cursor;
 // - Tab locks the field typed in and moves to the next; Backspace unlocks it once emptied;
-// - anything that is not a number (an option, `@100<45`, FROM, `'Z`) is taken as typed.
-import type { Prompt, Vec2 } from '@triya/engine';
+// - anything that is not a number (an option, `@100<45`, FROM, `'Z`) is taken as typed;
+// - the fields show the cursor's values in the drawing's units (M2-35 part 20), as the status
+//   bar and the command line show them: coordinates and distances by LUNITS/LUPREC, angles by
+//   AUNITS/AUPREC, as RTOS and ANGTOS write them (the engine's `formatDistance`/`formatAngle`).
+import {
+  DECIMAL_UNITS,
+  DEFAULT_ANGLES,
+  formatAngle,
+  formatDistance,
+  formatNumber,
+  type AngleConvention,
+  type DrawingUnits,
+  type Prompt,
+  type Vec2,
+} from '@triya/engine';
 
 export type DynKind = 'pointer' | 'dimension' | 'single';
 
@@ -151,42 +164,66 @@ export function dynCurrent(
 /** Whether anything was typed. */
 export const dynTyped = (s: DynState): boolean => s.fields.some((f) => f.text !== '');
 
-const fmt = (v: number) => {
-  const s = v.toFixed(4);
-  return s === '-0.0000' ? '0.0000' : s;
-};
+/** How the fields show values: the drawing's units and how its typed angles turn (ANGBASE, ANGDIR). */
+export interface DynUnits {
+  readonly units: DrawingUnits;
+  readonly angles?: AngleConvention;
+}
 
-/** Degrees counter-clockwise from +X, 0 to 360. */
-function degrees(from: Vec2, to: Vec2): number {
-  const a = (Math.atan2(to.y - from.y, to.x - from.x) * 180) / Math.PI;
-  return a < 0 ? a + 360 : a;
+/** AutoCAD's defaults: four decimal places, whole degrees counter-clockwise from east. */
+export const DYN_DEFAULT_UNITS: DynUnits = { units: DECIMAL_UNITS, angles: DEFAULT_ANGLES };
+
+/**
+ * The direction from `from` to `to` as it would be typed: ANGBASE and ANGDIR turn a typed angle
+ * into the world (`parseAngle`), so the shown one is turned back, and typing it goes where the
+ * cursor is. A bearing names a world direction whatever they say (M2-35 part 18).
+ */
+function typedAngle(from: Vec2, to: Vec2, u: DynUnits): string {
+  const world = Math.atan2(to.y - from.y, to.x - from.x);
+  const { base, clockwise } = u.angles ?? DEFAULT_ANGLES;
+  const typed = u.units.aunits === 4 ? world : clockwise ? base - world : world - base;
+  return formatAngle(typed, u.units);
 }
 
 /** What each field shows while nothing is typed in it: the cursor's coordinates or distance and angle. */
-export function dynLive(s: DynState, prompt: Prompt, cursor: Vec2 | undefined): readonly string[] {
+export function dynLive(
+  s: DynState,
+  prompt: Prompt,
+  cursor: Vec2 | undefined,
+  u: DynUnits = DYN_DEFAULT_UNITS,
+): readonly string[] {
   if (!cursor) return s.fields.map(() => '');
+  const length = (v: number) => formatDistance(v, u.units);
   const base =
     prompt.kind === 'point' ? prompt.rubberBand?.from : 'base' in prompt ? prompt.base : undefined;
   if (s.kind === 'pointer') {
     const rel =
       base && isRelative(prompt) && !s.fields[0]!.text.startsWith('#') ? base : { x: 0, y: 0 };
-    return [fmt(cursor.x - rel.x), fmt(cursor.y - rel.y)];
+    return [length(cursor.x - rel.x), length(cursor.y - rel.y)];
   }
   if (!base) return s.fields.map(() => '');
   const d = Math.hypot(cursor.x - base.x, cursor.y - base.y);
-  if (s.kind === 'dimension') return [fmt(d), fmt(degrees(base, cursor))];
-  return [prompt.kind === 'angle' ? fmt(degrees(base, cursor)) : fmt(d)];
+  if (s.kind === 'dimension') return [length(d), typedAngle(base, cursor, u)];
+  if (prompt.kind === 'angle') return [typedAngle(base, cursor, u)];
+  // SCALE's factor is a plain number, as the command line shows a real (`<1.0000>`).
+  return [s.fields[0]!.label === 'Scale' ? formatNumber(d, u.units.luprec) : length(d)];
 }
 
 /**
  * The text Enter sends to the command engine: '' (Enter) with nothing typed; a value left
- * untyped beside a typed one is the cursor's, as the field shows it.
+ * untyped beside a typed one is the cursor's, as the field shows it (in the drawing's units,
+ * which the engine reads back whatever LUNITS says).
  */
-export function dynText(s: DynState, prompt: Prompt, cursor: Vec2 | undefined): string {
+export function dynText(
+  s: DynState,
+  prompt: Prompt,
+  cursor: Vec2 | undefined,
+  u: DynUnits = DYN_DEFAULT_UNITS,
+): string {
   const [a = '', b = ''] = s.fields.map((f) => f.text);
   if (s.raw || s.kind === 'single') return a;
   if (a === '' && b === '') return '';
-  const live = dynLive(s, prompt, cursor);
+  const live = dynLive(s, prompt, cursor, u);
   if (s.kind === 'dimension') {
     // A distance alone is a direct distance: the bus measures it towards the cursor.
     if (b === '') return a;
