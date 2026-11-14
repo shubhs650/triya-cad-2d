@@ -11,6 +11,12 @@
 //
 // The geometry is three flat arrays, so it costs one structured clone to reach the render
 // worker that runs osnap, and a query scans them for the boxes under the aperture.
+//
+// PDF layers (M2-56 part 3): AutoCAD snaps only to the geometry of an underlay's layers that
+// show. A path drawn inside optional content (`/OC … BDC`, or a form XObject or image with an
+// /OC entry) records that content, so osnap can leave it out for an underlay whose page hides
+// it: the PDF's own default visibility, with the layers the underlay's ULAYERS xdata names
+// (`layersOff`) turned off, which is how the app's pdf.js draws that underlay's page.
 import type { Arc, Curve, Spline } from '../geom/curves';
 import type { Box } from '../geom/bounds';
 import type { Matrix2D } from '../geom/transform';
@@ -25,6 +31,50 @@ export interface UnderlaySnapPage {
   readonly arcs: Float64Array;
   /** The four control points (x y each) of every other cubic Bézier. */
   readonly beziers: Float64Array;
+  /** The optional content each item is drawn in; absent when the page draws none. */
+  readonly layers?: UnderlaySnapLayers;
+}
+
+/**
+ * A PDF visibility expression (PDF 32000-1 §8.11.2.2 /VE) as pdf.js reads it: an operator
+ * (`And`, `Or`, `Not`) then group ids and nested expressions.
+ */
+export type UnderlayVisibility = readonly (string | UnderlayVisibility)[];
+
+/** One level of a path's optional content: pdf.js's marked-content properties for `OC`. */
+export type UnderlayContent =
+  | { readonly type: 'OCG'; readonly id: string }
+  | {
+      readonly type: 'OCMD';
+      readonly id?: string;
+      readonly ids?: readonly string[];
+      /** /P: AnyOn (the default), AllOn, AnyOff or AllOff. */
+      readonly policy?: string | null;
+      readonly expression?: UnderlayVisibility | null;
+    };
+
+/** One optional content group of the page's document. */
+export interface UnderlaySnapGroup {
+  /** pdf.js's id for it (its object reference, `5R`). */
+  readonly id: string;
+  /** Its /Name, the name ULAYERS keeps; null when it has none. */
+  readonly name: string | null;
+  /** Whether the document shows it by default. */
+  readonly on: boolean;
+}
+
+/** Which optional content each item of a page is drawn in. */
+export interface UnderlaySnapLayers {
+  readonly groups: readonly UnderlaySnapGroup[];
+  /**
+   * The nestings of optional content the page draws in, each every level a path is inside
+   * (all must show for it to show); the first is the empty one, content that always shows.
+   */
+  readonly conditions: readonly (readonly UnderlayContent[])[];
+  /** The condition of each segment, arc and Bézier, by index into `conditions`. */
+  readonly lines: Uint32Array;
+  readonly arcs: Uint32Array;
+  readonly beziers: Uint32Array;
 }
 
 /** DXF 280 bits, as the renderer reads them (render/underlay.ts). */
@@ -68,7 +118,31 @@ export class UnderlaySnapBuilder {
   readonly #lines = new Growable();
   readonly #arcs = new Growable();
   readonly #beziers = new Growable();
+  readonly #lineIn: number[] = [];
+  readonly #arcIn: number[] = [];
+  readonly #bezierIn: number[] = [];
+  #groups: readonly UnderlaySnapGroup[] = [];
+  readonly #conditions: (readonly UnderlayContent[])[] = [[]];
+  readonly #conditionKeys = new Map<string, number>([['[]', 0]]);
+  #condition = 0;
   #count = 0;
+
+  /** The document's optional content groups, by which `within` content is judged. */
+  groups(groups: readonly UnderlaySnapGroup[]): void {
+    this.#groups = groups.map((g) => ({ id: g.id, name: g.name, on: g.on }));
+  }
+
+  /** The optional content the paths that follow are drawn in, outermost first. */
+  within(content: readonly UnderlayContent[]): void {
+    const key = JSON.stringify(content);
+    let n = this.#conditionKeys.get(key);
+    if (n === undefined) {
+      n = this.#conditions.length;
+      this.#conditions.push(content);
+      this.#conditionKeys.set(key, n);
+    }
+    this.#condition = n;
+  }
 
   /** Whether the page has reached `UNDERLAY_SNAP_LIMIT` and takes no more. */
   get full(): boolean {
@@ -79,6 +153,7 @@ export class UnderlaySnapBuilder {
     if (this.full || (x0 === x1 && y0 === y1)) return;
     if (![x0, y0, x1, y1].every(Number.isFinite)) return;
     this.#lines.push(x0, y0, x1, y1);
+    this.#lineIn.push(this.#condition);
     this.#count++;
   }
 
@@ -114,13 +189,34 @@ export class UnderlaySnapBuilder {
       return;
     }
     const arc = arcOf(v);
-    if (arc) this.#arcs.push(...arc);
-    else this.#beziers.push(...v);
+    if (arc) {
+      this.#arcs.push(...arc);
+      this.#arcIn.push(this.#condition);
+    } else {
+      this.#beziers.push(...v);
+      this.#bezierIn.push(this.#condition);
+    }
     this.#count++;
   }
 
   build(): UnderlaySnapPage {
-    return { lines: this.#lines.build(), arcs: this.#arcs.build(), beziers: this.#beziers.build() };
+    const page = {
+      lines: this.#lines.build(),
+      arcs: this.#arcs.build(),
+      beziers: this.#beziers.build(),
+    };
+    const used = [this.#lineIn, this.#arcIn, this.#bezierIn].some((c) => c.some((n) => n > 0));
+    if (!used) return page;
+    return {
+      ...page,
+      layers: {
+        groups: this.#groups,
+        conditions: this.#conditions,
+        lines: Uint32Array.from(this.#lineIn),
+        arcs: Uint32Array.from(this.#arcIn),
+        beziers: Uint32Array.from(this.#bezierIn),
+      },
+    };
   }
 }
 
@@ -211,11 +307,78 @@ function arcOf(v: readonly number[]): number[] | undefined {
 const overlaps = (b: Box, minX: number, minY: number, maxX: number, maxY: number): boolean =>
   minX <= b.maxX && maxX >= b.minX && minY <= b.maxY && maxY >= b.minY;
 
-/** The page's curves whose boxes meet `box` (page inches), as engine curves in page inches. */
-export function underlaySnapCurves(page: UnderlaySnapPage, box: Box): Curve[] {
+/**
+ * Whether each of the page's content conditions shows (1) or not (0) for an underlay with the
+ * layers `layersOff` turned off, or undefined when the page draws no optional content. A group
+ * shows when the document shows it by default and its name is not off; the rest follows
+ * pdf.js's `OptionalContentConfig.isVisible`, which draws the page: a document without groups,
+ * a group it does not list and a policy it does not know all show.
+ */
+export function underlaySnapShown(
+  page: UnderlaySnapPage,
+  layersOff: readonly string[] | undefined,
+): Uint8Array | undefined {
+  const layers = page.layers;
+  if (!layers) return undefined;
+  const off = new Set(layersOff);
+  const groups = new Map(
+    layers.groups.map((g) => [g.id, g.on && !(g.name !== null && off.has(g.name))]),
+  );
+  const shown = (c: UnderlayContent): boolean => {
+    if (groups.size === 0) return true;
+    if (c.type === 'OCG') return groups.get(c.id) ?? true;
+    if (c.expression) return expression(c.expression, groups);
+    // pdf.js keeps an OCMD's single group reference as `id`, its array as `ids`.
+    const ids = c.ids ?? (c.id !== undefined ? [c.id] : []);
+    if (ids.some((id) => !groups.has(id))) return true;
+    const on = ids.map((id) => groups.get(id)!);
+    switch (c.policy ?? 'AnyOn') {
+      case 'AnyOn':
+        return on.some(Boolean);
+      case 'AllOn':
+        return on.every(Boolean);
+      case 'AnyOff':
+        return on.some((v) => !v);
+      case 'AllOff':
+        return on.every((v) => !v);
+      default:
+        return true;
+    }
+  };
+  return Uint8Array.from(layers.conditions, (levels) => (levels.every(shown) ? 1 : 0));
+}
+
+/** A visibility expression's value, as pdf.js evaluates it (a group it lacks shows all). */
+function expression(e: UnderlayVisibility, groups: ReadonlyMap<string, boolean>): boolean {
+  if (e.length < 2) return true;
+  const op = e[0];
+  for (let i = 1; i < e.length; i++) {
+    const el = e[i]!;
+    let state: boolean;
+    if (typeof el !== 'string') state = expression(el, groups);
+    else if (groups.has(el)) state = groups.get(el)!;
+    else return true;
+    if (op === 'And') {
+      if (!state) return false;
+    } else if (op === 'Or') {
+      if (state) return true;
+    } else if (op === 'Not') return !state;
+    else return true;
+  }
+  return op === 'And';
+}
+
+/**
+ * The page's curves whose boxes meet `box` (page inches), as engine curves in page inches;
+ * with `shown` (`underlaySnapShown`), only those of content that shows.
+ */
+export function underlaySnapCurves(page: UnderlaySnapPage, box: Box, shown?: Uint8Array): Curve[] {
   const out: Curve[] = [];
+  const layers = shown && page.layers;
+  const hidden = (of: Uint32Array, i: number): boolean => shown![of[i]!] === 0;
   const l = page.lines;
   for (let i = 0; i + 3 < l.length; i += 4) {
+    if (layers && hidden(layers.lines, i / 4)) continue;
     const x0 = l[i]!;
     const y0 = l[i + 1]!;
     const x1 = l[i + 2]!;
@@ -225,6 +388,7 @@ export function underlaySnapCurves(page: UnderlaySnapPage, box: Box): Curve[] {
   }
   const a = page.arcs;
   for (let i = 0; i + 4 < a.length; i += 5) {
+    if (layers && hidden(layers.arcs, i / 5)) continue;
     const cx = a[i]!;
     const cy = a[i + 1]!;
     const r = a[i + 2]!;
@@ -240,6 +404,7 @@ export function underlaySnapCurves(page: UnderlaySnapPage, box: Box): Curve[] {
   }
   const z = page.beziers;
   for (let i = 0; i + 7 < z.length; i += 8) {
+    if (layers && hidden(layers.beziers, i / 8)) continue;
     let minX = Infinity;
     let minY = Infinity;
     let maxX = -Infinity;
