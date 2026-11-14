@@ -32,6 +32,11 @@
 // - A wipeout (and a text background mask in the background colour) plots in the paper's white,
 //   not through the table: on a monochrome plot it was a black box (M2-24 part 2).
 //
+// - Every part of a hyperlinked object carries its link (M2-74), one object shared by the parts,
+//   so a saved PDF links the object's plotted bounds once. Inside a block reference the
+//   reference's link is the link: AutoCAD's hyperlink belongs to the object selected, and a part
+//   of the block has no selection of its own (its own link, if any, is not followed).
+//
 // Not plotted: an image whose bitmap the app has not loaded, which plots its frame only.
 
 import {
@@ -46,6 +51,7 @@ import {
   type Entity,
   type EntityId,
   type Handle,
+  hyperlinkDetails,
   type NonGraphicalObject,
   type PdfDefinition,
   type SortEntsTable,
@@ -96,6 +102,14 @@ interface PlotPartBase {
   readonly opacity?: number;
   /** Closed polygons (flat x, y pairs) the part shows within: XCLIPs and viewport frames. */
   readonly clip?: readonly (readonly number[])[];
+  /** The object's hyperlink (`@triya/pdf` `PlotLink`), the same object on all its parts. */
+  readonly link?: PlotLinkPart;
+}
+
+/** A hyperlink as a saved PDF follows it: an address, or a named location of the drawing. */
+export interface PlotLinkPart {
+  readonly url: string;
+  readonly location: string;
 }
 
 /** A stroked or filled renderer path (`PlotPathItem`). */
@@ -340,6 +354,11 @@ class Plotter {
       const owner = { entity: e, context: undefined };
       owners = prims.map(() => owner);
     }
+    const details = hyperlinkDetails(model, e);
+    const link: PlotLinkPart | undefined = details && {
+      url: details.url,
+      location: details.location,
+    };
     let last: { entity: Entity; context: BlockContext | undefined } | undefined;
     let props: PlotProperties | undefined;
     let object: PlotObject | undefined;
@@ -369,7 +388,8 @@ class Plotter {
       const part = this.part(prim, object!, props!, shown);
       if (!part) continue;
       const tagged = layer === undefined ? part : { ...part, layer };
-      out.push(clip ? { ...tagged, clip } : tagged);
+      const linked = link ? { ...tagged, link } : tagged;
+      out.push(clip ? { ...linked, clip } : linked);
     }
   }
 

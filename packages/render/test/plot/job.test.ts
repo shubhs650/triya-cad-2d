@@ -104,6 +104,50 @@ describe('plotParts in model space', () => {
     expect(parts.map((p) => p.layer)).toEqual(['0', 'RED', 'RED']);
   });
 
+  // M2-74: a saved PDF links each hyperlinked object; the parts of one object share its link.
+  it('carries the hyperlink of the object each part plots from, one link per object', () => {
+    const PE_URL = '90';
+    const url = (value: string, location?: string) => ({
+      xdata: [
+        {
+          appId: PE_URL,
+          values: [
+            { code: 1000, value },
+            ...(location !== undefined
+              ? [
+                  { code: 1002, value: '{' },
+                  { code: 1000, value: 'description' },
+                  { code: 1000, value: location },
+                  { code: 1002, value: '}' },
+                ]
+              : []),
+          ],
+        },
+      ],
+    });
+    const model = blockDrawing([
+      // A part of the block with a link of its own: the reference's link is what plots.
+      entity('50', line(0, 0, 1, 0), { owner: BLOCK, ...url('https://example.com/nested') }),
+      entity('51', line(0, 1, 1, 1), { owner: BLOCK }),
+      entity('52', line(5, 5, 6, 6), url('', 'Layout1')),
+      entity('53', line(7, 7, 8, 8)),
+      insert('60', url('https://example.com/block')),
+      insert('61'),
+    ]);
+    const appIds = model.tables.appIds as Map<string, { handle: string; name: string }>;
+    appIds.set(PE_URL, { handle: PE_URL, name: 'PE_URL' });
+    const parts = plotParts(model, MODEL, { resolver });
+    expect(parts.map((p) => p.link)).toEqual([
+      { url: '', location: 'Layout1' },
+      undefined,
+      { url: 'https://example.com/block', location: '' },
+      { url: 'https://example.com/block', location: '' },
+      undefined,
+      undefined,
+    ]);
+    expect(parts[2]!.link).toBe(parts[3]!.link);
+  });
+
   it('carries ByBlock through nested references', () => {
     const model = blockDrawing([
       entity('50', line(0, 0, 1, 0), { owner: BLOCK, color: { kind: 'byBlock' } }),

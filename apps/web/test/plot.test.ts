@@ -602,6 +602,7 @@ describe('plotting to SVG and PNG', () => {
         plotPdf(parts, plotPage(s, model), s, model, 't', undefined, {
           layers: true,
           bookmarks: false,
+          hyperlinks: false,
           textAsGeometry: true,
         }),
       ),
@@ -615,7 +616,7 @@ describe('plotting to SVG and PNG', () => {
       't',
       undefined,
       undefined,
-      { layers: true, bookmarks: true, textAsGeometry: false },
+      { layers: true, bookmarks: true, hyperlinks: false, textAsGeometry: false },
     );
     expect(await read(file.bytes)).toEqual({
       layers: ['Doors', 'Notes', 'walls'],
@@ -623,6 +624,25 @@ describe('plotting to SVG and PNG', () => {
       text: 'A',
       fonts: true,
     });
+  });
+
+  // M2-74: Save As PDF's "Include hyperlinks": a link over each hyperlinked object.
+  it('links hyperlinked objects when the PDF options include hyperlinks', async () => {
+    const linked: PlotPart = {
+      ...part('walls'),
+      link: { url: 'https://example.com', location: '' },
+    };
+    const s = { ...defaultPlotSettings(model), paper: 'ISO A4', area: 'extents' as const };
+    const links = async (bytes: Uint8Array) => {
+      const pdf = await getDocument({ data: bytes }).promise;
+      return (await (await pdf.getPage(1)).getAnnotations()).map((a) => a.url as string);
+    };
+    const options = { layers: false, bookmarks: true, hyperlinks: true, textAsGeometry: false };
+    expect(
+      await links(plotPdf([linked], plotPage(s, model), s, model, 't', undefined, options)),
+    ).toEqual(['https://example.com/']);
+    // A plot's own PDF (the Plot dialog, PUBLISH) writes none, as before.
+    expect(await links(plotPdf([linked], plotPage(s, model), s, model, 't'))).toEqual([]);
   });
 
   // M2-39 part 4: a PNG over 64 Mpx is drawn and written a band of rows at a time. It deflates

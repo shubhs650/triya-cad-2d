@@ -22,7 +22,13 @@ export {
 export { CETRANSPARENCY, currentHeader, currentProps } from './current';
 export { polylineArea, polylineLength } from './measure';
 export { MLEADER_TEXT_OVERRIDES, type MultiLeaderWidths } from './multileader';
-export { HYPERLINK_APP, hasThickness, hyperlinkOf } from './general';
+export {
+  HYPERLINK_APP,
+  hasThickness,
+  hyperlinkDetails,
+  hyperlinkOf,
+  type HyperlinkDetails,
+} from './general';
 export {
   QUICK_GENERAL,
   QUICK_PROPERTIES,

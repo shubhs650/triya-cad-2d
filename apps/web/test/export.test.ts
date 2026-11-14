@@ -181,17 +181,22 @@ describe('Page Setup Override (part 5)', () => {
 
 // M2-60: the PDF Options dialog's choices, as AutoCAD's General Documentation preset starts.
 describe('PDF Options', () => {
-  it('starts with layers and bookmarks in and text as text', () => {
-    expect(EXPORT_PDF_OPTIONS).toEqual({ layers: true, bookmarks: true, textAsGeometry: false });
+  it('starts with layers, bookmarks and hyperlinks in and text as text', () => {
+    expect(EXPORT_PDF_OPTIONS).toEqual({
+      layers: true,
+      bookmarks: true,
+      hyperlinks: true,
+      textAsGeometry: false,
+    });
   });
 
   it('sums the choices up for the Save As PDF dialog', () => {
-    expect(pdfOptionsNote(EXPORT_PDF_OPTIONS)).toBe('Layers, bookmarks; text as text');
-    expect(pdfOptionsNote({ layers: false, bookmarks: false, textAsGeometry: true })).toBe(
-      'No layers, no bookmarks; text as geometry',
-    );
-    expect(pdfOptionsNote({ layers: true, bookmarks: false, textAsGeometry: false })).toBe(
-      'Layers, no bookmarks; text as text',
-    );
+    expect(pdfOptionsNote(EXPORT_PDF_OPTIONS)).toBe('Layers, bookmarks, hyperlinks; text as text');
+    expect(
+      pdfOptionsNote({ layers: false, bookmarks: false, hyperlinks: false, textAsGeometry: true }),
+    ).toBe('No layers, no bookmarks, no hyperlinks; text as geometry');
+    expect(
+      pdfOptionsNote({ layers: true, bookmarks: false, hyperlinks: true, textAsGeometry: false }),
+    ).toBe('Layers, no bookmarks, hyperlinks; text as text');
   });
 });
