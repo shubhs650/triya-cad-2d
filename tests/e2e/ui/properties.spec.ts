@@ -903,6 +903,113 @@ test('turns, spaces, masks and frames a multileader’s text from the palette', 
   await page.screenshot({ path: test.info().outputPath('2-turned-spaced-masked-framed.png') });
 });
 
+// M2-35 part 15: a block multileader's Block rows. MLEADER makes one with AutoCAD's built-in
+// _TagCircle and one with its detail callout, which it authors; the palette colours, scales and
+// turns both and gives the tag the callout block, the side facing the landing staying on it.
+test('colours, scales, turns and swaps a multileader’s block from the palette', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  // The detail callout first, content first, so the drawing has it to choose later.
+  await type(page, 'MLEADER', /^Specify leader arrowhead location/);
+  await type(page, 'O', /^Enter an option/);
+  await type(page, 'C', /^Select a content type/);
+  await type(page, 'B', /^Enter block name/);
+  await type(page, '_DetailCallout', /^Enter an option/);
+  await type(page, 'X', /^Specify leader arrowhead location/);
+  await type(page, 'C', /^Specify location of block/i);
+  await type(page, '1000130,1000020', /view number/i);
+  await type(page, '3', /sheet number/i);
+  await type(page, 'A-501', /^Specify leader arrowhead location/);
+  await type(page, '1000100,1000040', 'Command:');
+  // MLEADER keeps content first for the next one.
+  await type(page, 'MLEADER', /^Specify location of block/);
+  await type(page, 'O', /^Enter an option/);
+  await type(page, 'C', /^Select a content type/);
+  await type(page, 'B', /^Enter block name/);
+  await type(page, '_TagCircle', /^Enter an option/);
+  await type(page, 'X', /^Specify location of block/);
+  await type(page, '1000070,1000060', /tag number/i);
+  await type(page, '7', /^Specify leader arrowhead location/);
+  await type(page, '1000030,1000030', 'Command:');
+  type Blocky = { readonly handle: string; readonly geom: MultiLeaderGeometry };
+  const leaders = () =>
+    page.evaluate(() => {
+      const out = new Map<string, MultiLeaderGeometry>();
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const a of cs.entities?.added ?? [])
+          if (a.entity.geom.kind === 'MULTILEADER') out.set(a.entity.handle, a.entity.geom);
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'MULTILEADER') out.set(u.after.handle, u.after.geom);
+      }
+      return [...out].map(([handle, geom]) => ({ handle, geom }));
+    });
+  await expect.poll(async () => (await leaders()).length).toBe(2);
+  const [callout, tag] = (await leaders()) as [Blocky, Blocky];
+  const leader = async () => (await leaders()).find((l) => l.handle === tag.handle)!.geom;
+  const placed = tag.geom;
+  // MLEADER flags the block content as BLOCK_CONTENT_ID, bit 19 (M2-66).
+  expect(placed.overrideFlags & (1 << 19)).toBeTruthy();
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/MultiLeader \(2\)/);
+  await objects.selectOption({ label: 'MultiLeader (2)' });
+  const block = palette.getByRole('table', { name: 'Block' });
+  await expect(block.getByRole('rowheader')).toHaveText([
+    'Source block',
+    'Block color',
+    'Block scale',
+    'Block rotation',
+  ]);
+  // Both are edited; their blocks differ.
+  const source = palette.getByRole('combobox', { name: 'Source block' });
+  await expect(source).toHaveValue('*VARIES*');
+  await expect(source.locator('option', { hasText: '_TagCircle' })).toHaveCount(1);
+  await expect(palette.getByRole('textbox', { name: 'Block scale', exact: true })).toHaveValue(
+    /^1(\.0+)?$/,
+  );
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('1-multileader-block-rows.png') });
+
+  await palette.getByRole('combobox', { name: 'Block color' }).selectOption({ label: 'Red' });
+  await expect.poll(async () => (await leader()).block?.color).toEqual({ kind: 'aci', index: 1 });
+  const scale = palette.getByRole('textbox', { name: 'Block scale', exact: true });
+  await scale.fill('2');
+  await scale.press('Enter');
+  await expect.poll(async () => (await leader()).block?.scale.x).toBeCloseTo(2 * placed.scale, 9);
+  const rotation = palette.getByRole('textbox', { name: 'Block rotation', exact: true });
+  await rotation.fill('45');
+  await rotation.press('Enter');
+  await expect.poll(async () => (await leader()).block?.rotation).toBeCloseTo(Math.PI / 4, 9);
+  // Twice the size, the circle's left edge on the landing: its middle moves right.
+  const bigger = await leader();
+  expect(bigger.block!.position.x).toBeGreaterThan(placed.block!.position.x);
+  expect(bigger.block!.position.y).toBeCloseTo(placed.block!.position.y, 6);
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('2-red-bigger-turned.png') });
+
+  // The tag takes the callout block; the callout is one already.
+  await source.selectOption({ label: '_DetailCallout' });
+  await expect.poll(async () => (await leader()).block?.block).toBe(callout.geom.block!.block);
+  expect((await leader()).block!.attributes!.map((a) => a.value)).toEqual([
+    'VIEWNUMBER',
+    'SHEETNUMBER',
+  ]);
+  expect((await leader()).overrideFlags & (0xf << 19)).toBe(0xf << 19);
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('3-callout-block.png') });
+});
+
 // M2-35 part 13: a gradient's own rows, edited on ezdxf's two associative solid hatches made
 // gradients: the file keeps their gradient settings with the gradient turned off (DXF 450 = 0),
 // so the test turns it on (450 = 1), as AutoCAD writes a gradient fill.
