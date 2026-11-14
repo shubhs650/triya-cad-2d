@@ -46,6 +46,7 @@ import {
   plotFile,
   plotFileName,
   plotPage,
+  missingUnderlaysNote,
   windowBox,
   type UnderlayPageSource,
 } from './plot';
@@ -1634,6 +1635,7 @@ export function App() {
       <AttributeDialogs doc={active} />
       <PlotDialog
         doc={active}
+        missingUnderlays={missingUnderlaysNote(references)}
         underlayFile={(f) => pdfPages.bytes(f)}
         underlayPage={underlayPage}
         userTables={userPlotStyleTables}

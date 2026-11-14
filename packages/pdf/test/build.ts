@@ -203,3 +203,30 @@ export const LAYERED: Readonly<Record<number, Body>> = {
     data: '1 0 0 rg 130 10 30 30 re f',
   },
 };
+
+/**
+ * One page with annotations (M2-56 part 2), each with a normal appearance unless said: a
+ * printable square (/F 4, an appearance stream without /Subtype, drawn twice its size); a note
+ * that does not print (/F 0); a printable one hidden (/F 6); a printable check box whose
+ * appearance is its /AS state's, turned by its /Matrix; a printable one in the layer "Marks" by
+ * its /OC; a printable popup with no appearance.
+ */
+export const ANNOTATED: Readonly<Record<number, Body>> = {
+  1: '<< /Type /Catalog /Pages 2 0 R /OCProperties << /OCGs [12 0 R] /D << /Order [12 0 R] >> >> >>',
+  2: '<< /Type /Pages /Kids [3 0 R] /Count 1 >>',
+  3: '<< /Type /Page /Parent 2 0 R /MediaBox [0 0 200 100] /Contents 4 0 R /Annots [5 0 R 6 0 R 7 0 R 8 0 R 9 0 R 13 0 R] >>',
+  4: { dict: '<< >>', data: '0 0 1 rg 10 10 20 20 re f' },
+  5: '<< /Type /Annot /Subtype /Square /Rect [140 70 100 50] /F 4 /AP << /N 10 0 R >> >>',
+  6: '<< /Type /Annot /Subtype /Text /Rect [0 0 20 10] /AP << /N 10 0 R >> >>',
+  7: '<< /Type /Annot /Subtype /Square /Rect [0 0 20 10] /F 6 /AP << /N 10 0 R >> >>',
+  8: '<< /Type /Annot /Subtype /Widget /FT /Btn /Rect [20 60 30 70] /F 4 /AS /On /AP << /N << /On 11 0 R /Off 10 0 R >> >> >>',
+  9: '<< /Type /Annot /Subtype /Square /Rect [150 10 170 30] /F 4 /OC 12 0 R /AP << /N 10 0 R >> >>',
+  10: { dict: '<< /BBox [0 0 20 10] >>', data: '1 0 0 RG 0 0 20 10 re S' },
+  11: {
+    dict: '<< /Type /XObject /Subtype /Form /BBox [0 0 10 10] /Matrix [0 1 -1 0 10 0] /Resources << /Font << /F1 14 0 R >> >> >>',
+    data: 'BT /F1 8 Tf 1 1 Td (4) Tj ET',
+  },
+  12: '<< /Type /OCG /Name (Marks) >>',
+  13: '<< /Type /Annot /Subtype /Popup /Rect [0 0 50 50] /F 4 >>',
+  14: '<< /Type /Font /Subtype /Type1 /BaseFont /ZapfDingbats >>',
+};
