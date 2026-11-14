@@ -170,6 +170,9 @@ describe('RasterImages with kept pictures (M2-54)', () => {
     await settle();
     expect(got.sort()).toEqual(['1A:9', '1B:9']);
     expect(images.has('pasted-0a1b2c3d.png')).toBe(true);
+    // Its bytes, for writing the picture beside a saved drawing (M2-72).
+    expect(images.bytes('PASTED-0A1B2C3D.png')?.[0]).toBeDefined();
+    expect(images.bytes('pasted-ffffffff.png')).toBeUndefined();
     expect(found).toBe(1);
     // Only pasted pictures' names, each asked once: a REGEN does not ask again.
     c.resend();

@@ -1151,6 +1151,26 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* M2-72: Save file… beside a pasted picture this device keeps. */
+.references-table .file button {
+  padding: 0 6px;
+  font: inherit;
+  white-space: nowrap;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  background: var(--chrome-bg);
+  color: inherit;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* AutoCAD's status-bar balloon: some references could not be found. */
 .status-bar .references-alert {
   padding: 0 8px;

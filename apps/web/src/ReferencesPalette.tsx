@@ -2,8 +2,9 @@
 // images and PDF underlays as AutoCAD's External References palette lists them, a tree with
 // each reference's status, type and saved path. Files are found by name: dropped on the window
 // (files or the folder that holds them), picked here, or kept from an earlier drop and read
-// again without asking (reference-files.ts). Attach, detach, reload, unload and bind are the
-// XREF manager's (M5-04).
+// again without asking (reference-files.ts). A picture pasted from another app, whose file only
+// this device keeps, can be saved as a file from here, to go with the drawing (M2-72). Attach,
+// detach, reload, unload and bind are the XREF manager's (M5-04).
 import { useRef } from 'react';
 import type { ReferenceKind, ReferenceRow, ReferenceStatus } from './xrefs';
 
@@ -25,9 +26,15 @@ export function ReferencesPalette({
   waiting,
   onFiles,
   onReconnect,
+  savable = () => false,
+  onSaveFile,
   onClose,
 }: {
   rows: readonly ReferenceRow[];
+  /** A reference whose file this device keeps and can save (a pasted picture). */
+  savable?: (row: ReferenceRow) => boolean;
+  /** Save file…: the kept file of `row`. */
+  onSaveFile?: (row: ReferenceRow) => void;
   /** Kept folders and files the browser asks about before they are read again. */
   waiting: number;
   /** Files picked here: they answer references only, none opens as a drawing. */
@@ -97,6 +104,9 @@ export function ReferencesPalette({
                   <th scope="col">Status</th>
                   <th scope="col">Type</th>
                   <th scope="col">Saved path</th>
+                  <th scope="col">
+                    <span className="visually-hidden">File</span>
+                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -108,6 +118,18 @@ export function ReferencesPalette({
                     <td className="status">{STATUS[r.status]}</td>
                     <td>{KIND[r.kind]}</td>
                     <td className="path">{r.path || '—'}</td>
+                    <td className="file">
+                      {savable(r) && (
+                        <button
+                          type="button"
+                          aria-label={`Save file ${r.name}`}
+                          title="Save the file this device keeps, to send with the drawing"
+                          onClick={() => onSaveFile?.(r)}
+                        >
+                          Save file…
+                        </button>
+                      )}
+                    </td>
                   </tr>
                 ))}
               </tbody>
