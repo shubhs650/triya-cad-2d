@@ -155,3 +155,23 @@ describe('spacesOf (M1-97)', () => {
     ]);
   });
 });
+
+// M2-45 part 2: PUBLISH's Add Sheets opens a drawing that is not open for the publish only: it
+// gets no tab, the drawing shown stays shown, and closing it leaves the tabs as they were.
+describe('DocumentStore drawings opened in the background', () => {
+  it('opens one without a tab and closes it again', () => {
+    const s = storeWith('a.dwg');
+    const shown = s.getSnapshot().active;
+    const id = s.openedInBackground('b.dxf', opened, '1F');
+    expect(names(s)).toEqual(['a.dwg']);
+    expect(s.getSnapshot().active).toBe(shown);
+    expect(s.getSnapshot().background.map((d) => [d.id, d.name])).toEqual([[id, 'b.dxf']]);
+    // Its engine's edits reach it, as an open drawing's do.
+    s.edited(id);
+    expect(s.getSnapshot().background[0]!.revision).toBe(1);
+    s.close(id);
+    expect(s.getSnapshot().background).toEqual([]);
+    expect(names(s)).toEqual(['a.dwg']);
+    expect(s.getSnapshot().active).toBe(shown);
+  });
+});

@@ -16,14 +16,22 @@
 // M2-39 part 4: Publish to PDF, SVG or PNG; an SVG or PNG publish writes a file a sheet,
 // downloaded as itself when one sheet published and as one ZIP when more did (publish.ts).
 // Part 5: Publish to PNG has a Resolution, as the Plot dialog's PNG plotter does.
+//
+// M2-45 part 2: Add Sheets adds the sheets of drawings picked from the device (AutoCAD's Select
+// Drawings): one open already, or added already, adds its own sheets; one not open is read to list
+// its sheets and, when its sheets publish, opened with no tab (its engine and a hidden canvas to
+// plot from) and closed after, as AutoCAD loads it. Page Setup's own entry names the page setup the
+// layout has applied, "<Default: A3 Monochrome>".
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { download, downloadPdf } from './PlotDialog';
 import { controllerOf } from './canvas/registry';
-import { spacesOf, type OpenDocument } from './documents';
+import type { OpenResult } from '@triya/io';
+import { layoutsOf, spacesOf, type OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import type { PlotStyleTable } from '@triya/render';
 import {
   PNG_RESOLUTIONS,
+  appliedPageSetupName,
   defaultPlotSettings,
   pageSetupsOf,
   plotFile,
@@ -35,6 +43,8 @@ import { plotRequest } from './plot-preview';
 import {
   DEFAULT_PAGE_SETUP,
   PUBLISH_TO,
+  defaultPageSetup,
+  drawingNamed,
   movedSheet,
   publishFileName,
   publishLog,
@@ -48,6 +58,7 @@ import {
   type PublishDevice,
   type PublishFailure,
   type PublishSheet,
+  type PublishSpace,
 } from './publish';
 
 /** Which drawing the dialog is open for, if any. */
@@ -74,12 +85,42 @@ type UnderlayFile = (fileName: string) => Uint8Array | undefined;
 
 type UserTables = () => ReadonlyMap<string, PlotStyleTable>;
 
+/** Drawings that are not open, read and opened for a publish (M2-45 part 2, Add Sheets). */
+export interface BackgroundDrawings {
+  /** Reads a picked drawing as opening one does, without opening it. */
+  read(file: File): Promise<OpenResult>;
+  /** Opens a drawing read with no tab, once its canvas exists; undefined when it has none. */
+  open(name: string, opened: OpenResult): Promise<OpenDocument | undefined>;
+  /** Closes a drawing `open` opened. */
+  close(id: number): void;
+}
+
+/** A drawing Add Sheets read: its sheets' `doc` is its `key`, below zero. */
+interface AddedDrawing {
+  readonly key: number;
+  readonly name: string;
+  readonly opened: OpenResult;
+}
+
+/** A drawing's spaces as the dialog lists them, each with the page setup its layout has applied. */
+function publishSpaces(
+  d: Pick<OpenDocument, 'opened'>,
+  changes: Parameters<typeof spacesOf>[1],
+): PublishSpace[] {
+  const layouts = layoutsOf(d.opened.init, changes);
+  return spacesOf(d, changes).map((s) => ({
+    ...s,
+    applied: appliedPageSetupName(layouts.find((l) => l.blockRecord === s.block)),
+  }));
+}
+
 export function PublishDialog({
   doc,
   docs,
   underlayFile,
   underlayPage,
   userTables,
+  background,
 }: {
   doc: OpenDocument | undefined;
   /** Every open drawing, in tab order (part 6: Load All Open Drawings). */
@@ -89,6 +130,8 @@ export function PublishDialog({
   underlayPage?: UnderlayPageSource;
   /** The plot style tables added in Settings (part 3). */
   userTables?: UserTables;
+  /** Drawings that are not open (Add Sheets, M2-45 part 2). */
+  background?: BackgroundDrawings;
 }) {
   const open = useSyncExternalStore(publishDialog.subscribe, publishDialog.get);
   if (!doc || open !== doc.id) return null;
@@ -100,6 +143,7 @@ export function PublishDialog({
       {...(underlayFile && { underlayFile })}
       {...(underlayPage && { underlayPage })}
       {...(userTables && { userTables })}
+      {...(background && { background })}
     />
   );
 }
@@ -110,17 +154,22 @@ function PublishBody({
   underlayFile,
   underlayPage,
   userTables,
+  background,
 }: {
   doc: OpenDocument;
   docs: readonly OpenDocument[];
   underlayFile?: UnderlayFile;
   underlayPage?: UnderlayPageSource;
   userTables?: UserTables;
+  background?: BackgroundDrawings;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
+  const picker = useRef<HTMLInputElement>(null);
   const [sheets, setSheets] = useState<PublishSheet[]>(() =>
-    publishSheets(doc.name, spacesOf(doc, engines.changesOf(doc.id)), doc.id),
+    publishSheets(doc.name, publishSpaces(doc, engines.changesOf(doc.id)), doc.id),
   );
+  const [added, setAdded] = useState<readonly AddedDrawing[]>([]);
+  const nextKey = useRef(-1);
   const [selected, setSelected] = useState<number>();
   const [status, setStatus] = useState<ReadonlyMap<string, string>>(new Map());
   const [busy, setBusy] = useState(false);
@@ -138,10 +187,58 @@ function PublishBody({
   const included = sheets.filter((s) => s.include);
   const key = (s: PublishSheet) => `${s.doc}:${s.block}`;
   const drawingOf = (s: PublishSheet) => docs.find((d) => d.id === s.doc);
+  const openedOf = (s: PublishSheet) =>
+    drawingOf(s)?.opened ?? added.find((a) => a.key === s.doc)?.opened;
   /** The named page setups a sheet may plot with: its drawing's, of its kind. */
   const setupsOf = (s: PublishSheet) => {
-    const d = drawingOf(s);
-    return d ? pageSetupsOf(d.opened.init.objects, s.block === d.opened.modelSpace) : [];
+    const o = openedOf(s);
+    return o ? pageSetupsOf(o.init.objects, s.block === o.modelSpace) : [];
+  };
+
+  /** Add Sheets: the picked drawings' sheets added after those listed. */
+  const addSheets = async (files: readonly File[]) => {
+    if (!background || busy || files.length === 0) return;
+    setBusy(true);
+    setError(undefined);
+    let list = sheets;
+    const more = [...added];
+    const unread: string[] = [];
+    for (const f of files) {
+      const known = drawingNamed(f.name, [
+        ...docs.map((d) => ({ doc: d.id, drawing: d.name })),
+        ...more.map((a) => ({ doc: a.key, drawing: a.name })),
+      ]);
+      const open = docs.find((d) => d.id === known);
+      let drawing: { doc: number; drawing: string; spaces: PublishSpace[] };
+      if (open) {
+        drawing = {
+          doc: open.id,
+          drawing: open.name,
+          spaces: publishSpaces(open, engines.changesOf(open.id)),
+        };
+      } else {
+        let a = more.find((x) => x.key === known);
+        if (!a) {
+          try {
+            const opened = await background.read(f);
+            if (!opened.modelSpace) throw new Error('the drawing has no model space');
+            a = { key: nextKey.current--, name: f.name, opened };
+            more.push(a);
+          } catch (e) {
+            unread.push(
+              `${f.name} could not be read: ${e instanceof Error ? e.message : String(e)}`,
+            );
+            continue;
+          }
+        }
+        drawing = { doc: a.key, drawing: a.name, spaces: publishSpaces(a, []) };
+      }
+      list = withOpenDrawings(list, [drawing]);
+    }
+    setAdded(more);
+    setSheets(list);
+    if (unread.length) setError(unread.join(' '));
+    setBusy(false);
   };
 
   const loadAll = () => {
@@ -151,7 +248,7 @@ function PublishBody({
         docs.map((d) => ({
           doc: d.id,
           drawing: d.name,
-          spaces: spacesOf(d, engines.changesOf(d.id)),
+          spaces: publishSpaces(d, engines.changesOf(d.id)),
         })),
       ),
     );
@@ -174,13 +271,24 @@ function PublishBody({
     if (busy || included.length === 0) return;
     setBusy(true);
     setError(undefined);
+    // Drawings Add Sheets read, opened for the publish (with no tab) and closed after it.
+    const opening = new Map<number, Promise<OpenDocument | undefined>>();
+    const sheetDrawing = (s: PublishSheet): Promise<OpenDocument | undefined> => {
+      const open = drawingOf(s);
+      if (open) return Promise.resolve(open);
+      const a = added.find((x) => x.key === s.doc);
+      if (!a || !background) return Promise.resolve(undefined);
+      let p = opening.get(a.key);
+      if (!p) opening.set(a.key, (p = background.open(a.name, a.opened)));
+      return p;
+    };
     try {
       const tables = userTables?.();
       const plotted: PlottedSheet[] = [];
       const failed = new Map<string, string>();
       for (const s of included) {
         try {
-          const d = drawingOf(s);
+          const d = await sheetDrawing(s);
           // A sheet plots from its own drawing's canvas, shown or not (`plotSpaceOf`).
           const active = d && controllerOf(d.id, d.block);
           const own = d && (await plotSpaceOf(d, s.block, s.name, tables));
@@ -218,6 +326,10 @@ function PublishBody({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      for (const p of opening.values()) {
+        const d = await p.catch(() => undefined);
+        if (d) background?.close(d.id);
+      }
       setBusy(false);
     }
   };
@@ -288,6 +400,26 @@ function PublishBody({
         </label>
       )}
       <div className="publish-tools" role="toolbar" aria-label="Sheet list">
+        {background && (
+          <>
+            <button type="button" onClick={() => picker.current?.click()} disabled={busy}>
+              Add Sheets…
+            </button>
+            <input
+              ref={picker}
+              type="file"
+              accept=".dwg,.dxf"
+              multiple
+              hidden
+              aria-label="Drawings to add"
+              onChange={(e) => {
+                const files = [...(e.currentTarget.files ?? [])];
+                e.currentTarget.value = '';
+                void addSheets(files);
+              }}
+            />
+          </>
+        )}
         <button type="button" onClick={loadAll} disabled={busy}>
           Load All Open Drawings
         </button>
@@ -340,7 +472,7 @@ function PublishBody({
                 </td>
                 <td>
                   {setups.length === 0 ? (
-                    DEFAULT_PAGE_SETUP
+                    defaultPageSetup(s.applied)
                   ) : (
                     <select
                       aria-label={`Page setup of ${s.sheet}`}
@@ -356,7 +488,7 @@ function PublishBody({
                         );
                       }}
                     >
-                      <option value={DEFAULT_PAGE_SETUP}>{DEFAULT_PAGE_SETUP}</option>
+                      <option value={DEFAULT_PAGE_SETUP}>{defaultPageSetup(s.applied)}</option>
                       {setups.map((p) => (
                         <option key={p.handle} value={p.name}>
                           {p.name}

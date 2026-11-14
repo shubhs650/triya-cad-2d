@@ -27,6 +27,11 @@ import type {
 import { withDimvarOverride } from '../annotation/dstyle';
 import { currentHeader } from './current';
 import { hasThickness, materialOf, namedPlotStyles, setHyperlink } from './general';
+import {
+  multiLeaderTextChange,
+  multiLeadersToMeasure,
+  type MultiLeaderWidths,
+} from './multileader';
 import type { GeneralProps } from './sheet';
 import { DIMVAR_DEFAULTS, DIMVAR_ROWS, dimensionUnits, rowVars } from './dimension';
 import {
@@ -162,9 +167,14 @@ function typeRowChange(
   v: PropertyValue,
   outlines: TextOutlines | undefined,
   patterns: HatchPatterns | undefined,
+  widths: MultiLeaderWidths | undefined,
 ): Change | undefined | 'invalid' {
   const g = e.geom;
   if (g.kind === 'HATCH') return hatchChange(e.id, g, key, v, patterns);
+  if (g.kind === 'MULTILEADER') {
+    const c = multiLeaderTextChange(model, e, key, v, widths);
+    return c === undefined || c === 'invalid' || 'refuse' in c ? c : geomPatch(c);
+  }
   if (key === 'style' && (g.kind === 'TEXT' || g.kind === 'MTEXT')) {
     const style = typeof v === 'string' ? model.tables.textStyles.get(v) : undefined;
     if (!style) return 'invalid';
@@ -648,6 +658,7 @@ export function applyPropertyEdit(
   edit: PropertyEdit,
   outlines?: TextOutlines,
   patterns?: HatchPatterns,
+  widths?: MultiLeaderWidths,
 ): PropertyEditReport {
   const refused = new Map<string, number>();
   const read = readDistance(model, entities, edit);
@@ -690,7 +701,7 @@ export function applyPropertyEdit(
   const changes: [Entity, Change][] = [];
   for (const e of editable) {
     const c =
-      typeRowChange(model, e, edit.key, edit.value, outlines, patterns) ??
+      typeRowChange(model, e, edit.key, edit.value, outlines, patterns, widths) ??
       geometryChange(e, edit.key, n, flag, text);
     if (c === 'invalid') return { changed: 0, refused, invalid: INVALID };
     if (c && 'refuse' in c) refused.set(c.refuse, (refused.get(c.refuse) ?? 0) + 1);
@@ -727,6 +738,19 @@ export function textsToMeasure(entities: readonly Entity[], edit: PropertyEdit):
       !e.annotative &&
       (e.geom.halign !== j.halign || e.geom.valign !== j.valign),
   );
+}
+
+/**
+ * The multileader texts the canvas must measure before `edit` places them again (M2-35 part 11,
+ * `multiLeadersToMeasure`), the edit's value read as the palette's other edits read it.
+ */
+export function multiLeaderTextsToMeasure(
+  model: DocumentModel,
+  entities: readonly Entity[],
+  edit: PropertyEdit,
+): ReturnType<typeof multiLeadersToMeasure> {
+  const read = readDistance(model, entities, edit);
+  return read ? multiLeadersToMeasure(model, entities, read.key, read.value) : [];
 }
 
 /** One reference's attribute value (the Attributes section, a single reference shown). */

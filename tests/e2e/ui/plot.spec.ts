@@ -52,11 +52,11 @@ test.afterAll(async () => {
 
 const dialog = (page: Page) => page.getByRole('dialog', { name: /^Plot - / });
 
-/** The downloaded PDF, as pdf.js reads it. */
-async function readPdf(d: Download) {
+/** The downloaded PDF, as pdf.js reads it; `at` is the page summarised, from 1. */
+async function readPdf(d: Download, at = 1) {
   const bytes = new Uint8Array(readFileSync((await d.path())!));
   expect(new TextDecoder().decode(bytes.subarray(0, 8))).toBe('%PDF-1.7');
-  return pdfSummary(bytes);
+  return pdfSummary(bytes, at);
 }
 
 test('Ctrl+P plots model space on A1 through a CTB in under 2 s', async ({ page }) => {
@@ -998,4 +998,89 @@ test('PUBLISH takes the sheets of every open drawing, a named page setup each, a
       return `${drawing},${s},${layout},${setup},Published`;
     }),
   );
+});
+
+// M2-45 part 2: Add Sheets lists a drawing that is not open; Publish opens it with no tab to plot
+// its sheets and closes it after. Page Setup's own entry names the page setup a layout applied.
+test('Add Sheets publishes a drawing that is not open, and <Default: …> names the applied page setup (M2-45 part 2)', async ({
+  page,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto(app.url);
+  await openWithPicker(page, PAGE_SETUPS);
+  await expectShown(page, path.basename(PAGE_SETUPS));
+  // Layout1 given the named page setup A3 Monochrome, as the Plot dialog applies it.
+  const tabs = page.getByRole('tablist', { name: 'Model and layouts' });
+  await tabs.getByRole('tab').nth(1).click();
+  await expect(page.getByTestId('space')).toHaveText('PAPER');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const plot = dialog(page);
+  await expect(plot.getByRole('heading')).toHaveText('Plot - Layout1');
+  await plot.getByLabel('Page setup', { exact: true }).selectOption('A3 Monochrome');
+  await plot.getByRole('button', { name: 'Apply to Layout' }).click();
+  await expect(plot.getByRole('status')).toHaveText(
+    'Applied "A3 Monochrome" to the Layout1 page setup.',
+  );
+  await plot.getByRole('button', { name: 'Cancel' }).click();
+  await expect(plot).toBeHidden();
+
+  const input = page.getByLabel('Command', { exact: true });
+  await input.fill('PUBLISH');
+  await input.press('Enter');
+  const d = page.getByRole('dialog', { name: 'Publish' });
+  const table = d.getByRole('table', { name: 'Sheets to publish' });
+  const names = table.getByRole('checkbox');
+  await expect(names).toHaveCount(2);
+  const setupOf = (sheet: string) =>
+    d.getByLabel(`Page setup of ${sheet}`).locator('option:checked');
+  await expect(setupOf('page-setups-Layout1')).toHaveText('<Default: A3 Monochrome>');
+  await expect(setupOf('page-setups-Model')).toHaveText('<Default: None>');
+
+  // Add Sheets: the DWG, which is not open.
+  const chooser = page.waitForEvent('filechooser');
+  await d.getByRole('button', { name: 'Add Sheets…' }).click();
+  await (await chooser).setFiles(DWG);
+  await expect(names.nth(2)).toHaveAccessibleName('sample_AC1018-Model');
+  const sheetNames = await names.evaluateAll((els) =>
+    els.map((e) => e.parentElement!.textContent!.trim()),
+  );
+  const theirs = sheetNames.slice(2);
+  expect(theirs.length).toBeGreaterThan(1);
+  expect(theirs.every((s) => s.startsWith('sample_AC1018-'))).toBe(true);
+  // Added again, it adds nothing.
+  const again = page.waitForEvent('filechooser');
+  await d.getByRole('button', { name: 'Add Sheets…' }).click();
+  await (await again).setFiles(DWG);
+  await expect(d.getByRole('button', { name: 'Add Sheets…' })).toBeEnabled();
+  await expect(names).toHaveCount(sheetNames.length);
+  // Still one drawing open.
+  await expect(page.locator('.doc-tab')).toHaveCount(1);
+  await page.screenshot({ path: test.info().outputPath('m2-45-add-sheets.png') });
+
+  await d.getByLabel('Save publish log').check();
+  const downloads: Download[] = [];
+  page.on('download', (x) => downloads.push(x));
+  await d.getByRole('button', { name: 'Publish' }).click();
+  await expect(d).toBeHidden({ timeout: 90_000 });
+  await expect.poll(() => downloads.length).toBe(2);
+  const published = downloads.find((x) => x.suggestedFilename() === 'page-setups.pdf')!;
+  const pdf = await readPdf(published);
+  expect(pdf.pages).toBe(sheetNames.length);
+  expect(pdf.labels).toEqual(sheetNames.map((s) => s.replace(/^(page-setups|sample_AC1018)-/, '')));
+  // The drawing that was not open drew its model space, as it does published while open.
+  expect((await readPdf(published, 3)).paths).toBeGreaterThan(10);
+  const log = downloads.find((x) => x.suggestedFilename() === 'page-setups.csv')!;
+  const rows = readFileSync((await log.path())!, 'utf8')
+    .trim()
+    .split('\r\n');
+  expect(rows[3]).toBe(
+    'page-setups.dxf,page-setups-Layout1,Layout1,<Default: A3 Monochrome>,Published',
+  );
+  expect(
+    rows.slice(4).every((r) => r.startsWith('sample_AC1018.dwg,') && r.endsWith(',Published')),
+  ).toBe(true);
+  // The added drawing was closed again: one tab, one drawing's canvases.
+  await expect(page.locator('.doc-tab')).toHaveCount(1);
+  await expect(page.locator('.doc-canvas')).toHaveCount(1);
 });

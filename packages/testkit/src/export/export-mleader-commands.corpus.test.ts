@@ -5,7 +5,10 @@
 // a spline one without a landing, a text-first one in a box, one without content, a block one
 // where the drawing has a block, then MLEADEREDIT adds a leader on each side of the first and
 // removes one. M2-25 adds two with AutoCAD's built-in content blocks, which MLEADER authors
-// (`_TagCircle`, and `_DetailCallout` content first), and TEXTEDIT edits the first one's text. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
+// (`_TagCircle`, and `_DetailCallout` content first), and TEXTEDIT edits the first one's text.
+// M2-35 part 11 sets the first one's Text rows as the Properties palette does (Justify Right, a
+// text height, the drawing's last text style; `applyPropertyEdit` with the widths the canvas
+// measures), and the read-back text keeps its style, height, attachment and alignment. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
 // each multileader draws the same parts (`multiLeaderParts`: lines, landings, arrowheads, text,
 // block) as before the save. With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit
 // as the file's `mleader` save.
@@ -23,12 +26,17 @@
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
+  ChangeSetBuilder,
   DocumentModel,
   PromptBus,
+  applyPropertyEdit,
   builtinCommands,
   multiLeaderParts,
+  multiLeaderTextsToMeasure,
   type Entity,
+  type MTextGeometry,
   type MultiLeaderGeometry,
+  type PropertyEdit,
   type ViewHost,
   type ViewReply,
 } from '@triya/engine';
@@ -52,12 +60,15 @@ const PROXY_STYLE = [
 const unedited = (bytes: Uint8Array) =>
   withPinnedClock(() => DocumentModel.create(documentInit(readCadDocument(bytes))));
 
+/** An MTEXT's width as the fake canvas measures it: one line, 0.6 of its height per character. */
+const widthOf = (t: MTextGeometry): number => t.contents.length * t.height * 0.6;
+
 /** A canvas that measures an MTEXT as one line, 0.6 of its height per character. */
 const canvas: ViewHost = {
   request: (r): Promise<ViewReply> => {
     if (r.op !== 'textBox') return Promise.resolve({ ok: false, message: 'no view' });
     const t = r.text;
-    const w = t.contents.length * t.height * 0.6;
+    const w = widthOf(t);
     const col = (t.attachment - 1) % 3;
     const row = Math.floor((t.attachment - 1) / 3);
     const minX = t.position.x - (col === 0 ? 0 : col === 1 ? w / 2 : w);
@@ -153,6 +164,31 @@ describe('MLEADER on the public corpus', () => {
       await bus.answer({ kind: 'string', value: 'Check {\\Ldetail} B\\Psheet 2', editor: true });
       await bus.submit('');
       expect(bus.command).toBeUndefined();
+      // The Properties palette's Text rows on the first one, one change set each.
+      const palette = (edit: PropertyEdit) => {
+        const now = [model.entity(firstLeader.id)!];
+        const widths = new Map(
+          multiLeaderTextsToMeasure(model, now, edit).map((m) => [
+            m.id,
+            {
+              ...(m.before && { before: widthOf(m.before) }),
+              ...(m.after && { after: widthOf(m.after) }),
+            },
+          ]),
+        );
+        const b = new ChangeSetBuilder(model);
+        const report = applyPropertyEdit(b, model, now, edit, undefined, undefined, widths);
+        expect(report, `${f.path} ${edit.key}`).toMatchObject({ changed: 1, refused: new Map() });
+        model.apply(b.build());
+      };
+      // A named one: a shape file's style has no name.
+      const lastStyle = [...model.tables.textStyles.values()].filter((t) => t.name).at(-1)!.handle;
+      palette({ key: 'justify', value: 'Right' });
+      palette({ key: 'height', value: 7 });
+      if (lastStyle !== (model.entity(firstLeader.id)!.geom as MultiLeaderGeometry).text!.style)
+        palette({ key: 'style', value: lastStyle });
+      const edited = model.entity(firstLeader.id)!.geom as MultiLeaderGeometry;
+      expect(edited.text).toMatchObject({ attachment: 3, height: 7, style: lastStyle });
       const added = [...model.entities()].filter(
         (e) => !before.has(e.id) && e.geom.kind === 'MULTILEADER',
       );
@@ -192,6 +228,10 @@ describe('MLEADER on the public corpus', () => {
         expect(partsOf(back, r), `MULTILEADER ${e.handle}`).toEqual(partsOf(model, e));
         expect((r.geom as MultiLeaderGeometry).style).toBe((e.geom as MultiLeaderGeometry).style);
       }
+      const firstBack = back.entityByHandle(firstLeader.handle)!.geom as MultiLeaderGeometry;
+      expect(firstBack.text).toMatchObject({ attachment: 3, height: 7, style: lastStyle });
+      expect(firstBack.textAlignment).toBe(2);
+      expect(firstBack.overrideFlags).toBe(edited.overrideFlags);
       // The built-in blocks come back with what they draw and their attribute definitions.
       for (const b of builtins) {
         const kinds = (m: DocumentModel, h: string) =>

@@ -7,6 +7,8 @@ import { POINTS_PER_MM, type PlotPart } from '@triya/render';
 import type { Layout, NamedPageSetup } from '@triya/engine';
 import { defaultPlotSettings, pageSetupsOf, plotFile, withPageSetup } from '../src/plot';
 import {
+  defaultPageSetup,
+  drawingNamed,
   movedSheet,
   publishFileName,
   publishLog,
@@ -346,5 +348,46 @@ describe('several drawings and named page setups (part 6)', () => {
       '',
     ]);
     expect(publishLogName('plan.dxf')).toBe('plan.csv');
+  });
+});
+
+// M2-45 part 2: Add Sheets lists a drawing that is not open, and Page Setup's own entry names the
+// page setup the sheet's layout has applied, as AutoCAD's "<Default: …>" does.
+describe('drawings not open and the applied page setup (M2-45 part 2)', () => {
+  const plan = [
+    { name: 'Model', block: '1F' },
+    { name: 'Layout1', block: '58', applied: 'A3 Monochrome' },
+  ];
+
+  it('names the applied page setup in the default entry, None without one', () => {
+    expect(defaultPageSetup(undefined)).toBe('<Default: None>');
+    expect(defaultPageSetup('A3 Monochrome')).toBe('<Default: A3 Monochrome>');
+    const sheets = publishSheets('plan.dxf', plan, 1);
+    expect(sheets.map((s) => s.applied)).toEqual([undefined, 'A3 Monochrome']);
+  });
+
+  it('logs a default page setup by the name its layout has applied', () => {
+    const [model, layout] = publishSheets('plan.dxf', plan, 1);
+    const log = publishLog(
+      [
+        { sheet: model!, status: 'Published' },
+        { sheet: layout!, status: 'Published' },
+      ],
+      new Date(Date.UTC(2026, 10, 14, 9, 0, 0)),
+    );
+    expect(log.split('\r\n').slice(2, 4)).toEqual([
+      'plan.dxf,plan-Model,Model,<Default: None>,Published',
+      'plan.dxf,plan-Layout1,Layout1,<Default: A3 Monochrome>,Published',
+    ]);
+  });
+
+  it('finds a picked drawing among those listed by its file name, any case', () => {
+    const listed = [
+      { doc: 1, drawing: 'plan.dxf' },
+      { doc: -1, drawing: 'Site.DWG' },
+    ];
+    expect(drawingNamed('PLAN.dxf', listed)).toBe(1);
+    expect(drawingNamed('site.dwg', listed)).toBe(-1);
+    expect(drawingNamed('other.dxf', listed)).toBeUndefined();
   });
 });
