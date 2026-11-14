@@ -34,7 +34,7 @@ import {
   type DimvarSection,
 } from './dimension';
 import { JUSTIFICATIONS } from '../commands/modify/attributes';
-import { bookColors } from '../model/book-colors';
+import { colorBooks, colorValue, type ColorBook } from './color-books';
 import { multiLeaderTextRows } from './multileader';
 import { blockOf, blockScaleValue, isContentBlock } from './multileader-block';
 import {
@@ -153,20 +153,6 @@ export interface PropertySheet {
   readonly units: PropertyUnits;
 }
 
-export interface ColorBook {
-  /** The book's name, as the drawing spells it: "RAL CLASSIC". */
-  readonly name: string;
-  readonly colors: readonly ColorBookColor[];
-}
-
-export interface ColorBookColor {
-  /** The colour's name in its book: "RAL 3020". */
-  readonly name: string;
-  /** The Color row's value that sets it (`colorValue`). */
-  readonly value: string;
-  readonly rgb: readonly [number, number, number];
-}
-
 export interface PropertyUnits {
   readonly lunits: number;
   readonly luprec: number;
@@ -216,21 +202,6 @@ export const typeLabel = (t: EntityType): string => TYPE_LABELS[t] ?? t;
 /** ACI 1–7 by AutoCAD's names; other indices show as "Color n". */
 const ACI_NAMES = ['', 'Red', 'Yellow', 'Green', 'Cyan', 'Blue', 'Magenta', 'White'];
 
-/** An entity colour as a choice value: `ByLayer`, `ByBlock`, `aci:n`, `rgb:r,g,b`. */
-export function colorValue(c: Color): string {
-  switch (c.kind) {
-    case 'byLayer':
-      return 'ByLayer';
-    case 'byBlock':
-      return 'ByBlock';
-    case 'aci':
-      return `aci:${c.index}`;
-    case 'rgb':
-      // A colour-book colour keeps its book and name in the value, so it is one choice.
-      return `rgb:${c.r},${c.g},${c.b}${c.bookName ? `;${c.bookName};${c.colorName ?? ''}` : ''}`;
-  }
-}
-
 export function colorLabel(c: Color): string {
   switch (c.kind) {
     case 'byLayer':
@@ -242,34 +213,6 @@ export function colorLabel(c: Color): string {
     case 'rgb':
       return c.bookName ? `${c.bookName}$${c.colorName ?? ''}` : `${c.r},${c.g},${c.b}`;
   }
-}
-
-/** `colorBooks` by drawing, kept while its version stands: a sheet follows every pick. */
-const booksSeen = new WeakMap<DocumentModel, { version: number; books: ColorBook[] }>();
-
-/** The colour books the drawing uses, by name, each with its colours by name (`ColorBook`). */
-export function colorBooks(model: DocumentModel): ColorBook[] {
-  const seen = booksSeen.get(model);
-  if (seen?.version === model.version) return seen.books;
-  const books = readColorBooks(model);
-  booksSeen.set(model, { version: model.version, books });
-  return books;
-}
-
-function readColorBooks(model: DocumentModel): ColorBook[] {
-  const books = new Map<string, { name: string; colors: ColorBookColor[] }>();
-  for (const c of bookColors(model).values()) {
-    if (c.kind !== 'rgb' || c.bookName === undefined || !c.colorName) continue;
-    const key = c.bookName.toUpperCase();
-    const book = books.get(key) ?? { name: c.bookName, colors: [] };
-    books.set(key, book);
-    book.colors.push({ name: c.colorName, value: colorValue(c), rgb: [c.r, c.g, c.b] });
-  }
-  const byName = (a: { name: string }, b: { name: string }) =>
-    a.name.localeCompare(b.name, undefined, { numeric: true });
-  return [...books.values()]
-    .map((b) => ({ name: b.name, colors: b.colors.sort(byName) }))
-    .sort(byName);
 }
 
 /** The colour a choice value names, or undefined. */

@@ -351,7 +351,7 @@ describe('SETVAR', () => {
 
   it('knows which header variables hold integers', () => {
     const model = DocumentModel.create(withHeader(HEADER));
-    expect(systemVariable(model, 'textsize')).toMatchObject({ kind: 'real', positive: true });
+    expect(systemVariable(model, 'textsize')).toMatchObject({ kind: 'distance', positive: true });
     expect(systemVariable(model, 'MIRRTEXT')).toMatchObject({ kind: 'integer', min: 0, max: 1 });
     expect(systemVariable(model, 'DIMBLK')).toMatchObject({ kind: 'name', empty: true });
     expect(systemVariable(model, '$TEXTSIZE')).toBeUndefined();
@@ -365,6 +365,101 @@ describe('SETVAR', () => {
 // M2-59 part 4: the AcDbVariableDictionary's DICTIONARYVARs AutoCAD saves outside the HEADER
 // section. Each holds text; SETVAR shows and takes the numeric ones as numbers, and the ones
 // naming a style or scale take a name the drawing has, as the save checks.
+describe('distance variables (M2-35 part 23)', () => {
+  // AutoCAD shows and reads a length-valued variable in the drawing's units, as its other
+  // prompts' defaults (RTOS, `formatDistance`; typed with `parseDistance`): TEXTSIZE under
+  // Architectural units reads `<0'-0 3/16">` and takes `1/4` or `1'6"`.
+  const ARCHITECTURAL: [string, HeaderValue][] = [
+    ...HEADER,
+    ['$LUNITS', 4],
+    ['$TEXTSIZE', 0.1875],
+    ['$FILLETRAD', 0],
+    ['$DIMTXT', 0.125],
+    ['$DIMCEN', -0.09],
+    ['$LTSCALE', 1],
+    ['$LIMMAX', { x: 144, y: 96 }],
+  ];
+
+  it('shows a length in the drawing’s units and takes one typed in them', async () => {
+    const s = setup(withHeader(ARCHITECTURAL));
+    await s.bus.script(['TEXTSIZE']);
+    expect(s.bus.promptText).toBe('Enter new value for TEXTSIZE <0\'-0 3/16">:');
+    await s.bus.script(['1/4']);
+    expect(s.model.header.get('$TEXTSIZE')).toBe(0.25);
+    await s.bus.script(['SETVAR', 'FILLETRAD']);
+    expect(s.bus.promptText).toBe('Enter new value for FILLETRAD <0\'-0">:');
+    await s.bus.script(['1\'6-1/2"']);
+    expect(s.model.header.get('$FILLETRAD')).toBe(18.5);
+    // A dimension variable: DIMCEN's negative value (centre lines) keeps its sign.
+    await s.bus.script(['DIMCEN']);
+    expect(s.bus.promptText).toBe('Enter new value for DIMCEN <-0\'-0 1/16">:');
+    await s.bus.script(['', 'DIMTXT', '3/32']);
+    expect(s.model.header.get('$DIMTXT')).toBe(0.09375);
+    // A factor stays a plain number.
+    await s.bus.script(['LTSCALE']);
+    expect(s.bus.promptText).toBe('Enter new value for LTSCALE <1.0000>:');
+  });
+
+  it('refuses what is no length, and a length out of range, and asks again', async () => {
+    const s = setup(withHeader(ARCHITECTURAL));
+    await s.bus.script(['TEXTSIZE', 'abc']);
+    expect(s.log.at(-1)).toBe('Requires numeric distance.');
+    await s.bus.script(['0\'0"']);
+    expect(s.log.at(-1)).toBe('Value must be positive and nonzero.');
+    expect(s.bus.promptText).toBe('Enter new value for TEXTSIZE <0\'-0 3/16">:');
+    await s.bus.script(['2"']);
+    expect(s.model.header.get('$TEXTSIZE')).toBe(2);
+    await s.bus.script(['DIMTXT', '-1']);
+    expect(s.log.at(-1)).toBe('Value must be positive and nonzero.');
+  });
+
+  it('shows points in the drawing’s units, SCREENSIZE in pixels', async () => {
+    const s = setup(withHeader(ARCHITECTURAL));
+    await s.bus.script(['LIMMAX']);
+    expect(s.bus.promptText).toBe('Enter new value for LIMMAX <12\'-0",8\'-0">:');
+    await s.bus.script(['', 'SETVAR', '?', 'TEXTSIZE,INSBASE']);
+    expect(s.log.slice(-2)).toEqual([
+      'INSBASE           0\'-0",0\'-0",0\'-0"',
+      'TEXTSIZE          0\'-0 3/16"',
+    ]);
+    const sized: ViewHost = {
+      request: (r): Promise<ViewReply> =>
+        Promise.resolve(
+          r.op === 'get'
+            ? {
+                ok: true,
+                view: { center: { x: 30, y: 6 }, height: 24, width: 48, paper: false },
+                screen: { width: 1180, height: 590 },
+              }
+            : { ok: false, message: 'no' },
+        ),
+    };
+    const v = setup(withHeader(ARCHITECTURAL), sized);
+    await v.bus.script(['SCREENSIZE']);
+    expect(v.log.at(-1)).toBe('SCREENSIZE = 1180.0000,590.0000 (read only)');
+    await v.bus.script(['VIEWSIZE']);
+    expect(v.log.at(-1)).toBe('VIEWSIZE = 2\'-0" (read only)');
+    await v.bus.script(['VIEWCTR']);
+    expect(v.log.at(-1)).toBe('VIEWCTR = 2\'-6",0\'-6",0\'-0" (read only)');
+  });
+
+  it('keeps a DICTIONARYVAR length as the text AutoCAD writes', async () => {
+    const s = setup(withHeader([...ARCHITECTURAL, ['CENTEREXE', '0.120000']]));
+    await s.bus.script(['CENTEREXE']);
+    expect(s.bus.promptText).toBe('Enter new value for CENTEREXE <0\'-0 1/8">:');
+    await s.bus.script(['1/4"']);
+    expect(s.model.header.get('CENTEREXE')).toBe('0.250000');
+  });
+
+  it('reads a decimal drawing’s lengths as numbers, sums among them', async () => {
+    const s = setup(withHeader([...HEADER, ['$FILLETRAD', 0]]));
+    await s.bus.script(['FILLETRAD']);
+    expect(s.bus.promptText).toBe('Enter new value for FILLETRAD <0.0000>:');
+    await s.bus.script(['2.5*2']);
+    expect(s.model.header.get('$FILLETRAD')).toBe(5);
+  });
+});
+
 describe('AcDbVariableDictionary variables (M2-59 part 4)', () => {
   const tableStyle = (handle: string, name: string): TableStyleRecord => ({
     handle,

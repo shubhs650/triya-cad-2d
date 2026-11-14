@@ -79,7 +79,11 @@ import { engines } from './engine/registry';
 import { shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
-import { keepPicture as keepPastedPicture, opfsPictures } from './pasted-pictures';
+import {
+  isPastedPictureName,
+  keepPicture as keepPastedPicture,
+  opfsPictures,
+} from './pasted-pictures';
 import { LayersPalette } from './LayersPalette';
 import { PropertiesPalette } from './PropertiesPalette';
 import { QuickProperties } from './QuickProperties';
@@ -107,7 +111,9 @@ import {
 } from './reference-files';
 import { ReferencesPalette } from './ReferencesPalette';
 import { drawingFile, saveDrawing, type SaveEnv, type SaveHandle, type SaveMode } from './save';
-import { browserSave } from './save-browser';
+import { browserPictureFiles, browserSave } from './save-browser';
+import { PictureFiles, pastedPicturesOf } from './picture-files';
+import { PictureOfferNotice } from './PictureOffer';
 import { saveChanges } from './save-changes';
 import { SaveChanges } from './SaveChanges';
 import { Settings } from './Settings';
@@ -137,6 +143,7 @@ import {
   previewSettings,
 } from './plot-preview';
 import {
+  fileNameOf,
   loadXrefFiles,
   missingFileNames,
   pendingXrefs,
@@ -518,6 +525,11 @@ async function saveDoc(id: number, mode: SaveMode): Promise<boolean> {
       store.saved(id, r.name, r.file, edits);
       const handle = r.file.handle;
       if (handle) void recent.add(handle as RecentHandle).then(() => pictureForRecent(id));
+      // The pictures pasted from other apps go beside it, or are offered to (M2-72).
+      const rows = referencesOf(doc.opened.init, engines.changesOf(id), suppliedFiles);
+      void pictureFiles
+        .saved(id, r.name, handle, pastedPicturesOf(rows))
+        .then((note) => note && store.notify(note));
     } else if (!r.cancelled) store.fail(r.message);
     return r.ok;
   } finally {
@@ -554,6 +566,7 @@ async function closeDoc(id: number): Promise<boolean> {
   if (now && !isDirty(now)) void takePicture(id).then(keepPicture);
   if (previewMode.get()?.doc === id) previewMode.close();
   lastPlotSettings.forget(id);
+  pictureFiles.forget(id);
   store.close(id);
   engines.stop(id);
   commandLines.forget(id);
@@ -856,6 +869,16 @@ const images = new RasterImages((bytes) => decodeRaster(bytes), {
   kept: (name) => pastedPictures.get(name),
   found: () => supplied.changed(),
 });
+
+/**
+ * The pasted pictures' files written beside a saved drawing, or offered to be (M2-72): the bytes
+ * the images were served, else the ones kept on this device.
+ */
+const pictureFiles = new PictureFiles(
+  async (name) => images.bytes(name) ?? (await pastedPictures.get(name)),
+  () => (pictureFilesEnv ??= browserPictureFiles()),
+);
+let pictureFilesEnv: ReturnType<typeof browserPictureFiles> | undefined;
 
 /**
  * The user's plot style tables and linetype files (M2-20 part 2), kept on this device for the
@@ -1573,6 +1596,7 @@ export function App() {
                 </button>
               </div>
             )}
+            <PictureOfferNotice pictures={pictureFiles} onNote={(m) => store.notify(m)} />
             {state.opening.length > 0 && (
               <div className="notice" role="status">
                 Opening {state.opening.join(', ')}…
@@ -1637,6 +1661,14 @@ export function App() {
         {active && palette === 'references' && (
           <ReferencesPalette
             rows={references}
+            savable={(r) =>
+              r.kind === 'image' && r.status === 'loaded' && isPastedPictureName(r.path)
+            }
+            onSaveFile={(r) =>
+              void pictureFiles
+                .saveOne(fileNameOf(r.path), active.file?.handle)
+                .then((note) => note && store.notify(note))
+            }
             waiting={waitingHandles}
             onFiles={(files) => supply(files.map(fromFile), 'references')}
             onReconnect={() => void resolveKept(true)}

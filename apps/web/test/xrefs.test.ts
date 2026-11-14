@@ -170,6 +170,32 @@ describe('referencesOf (M1-21)', () => {
     ]);
     expect(missingFileNames(rows)).toEqual(['grid.dxf', 'plan.DXF']);
   });
+
+  it('lists an image the drawing gained since it opened, as its own, until it is removed', () => {
+    const pasted = imageDef('60', 'pasted-0a1b2c3d.png');
+    const paste: ChangeSet = { objects: { added: [pasted] } };
+    const rows = referencesOf(withImages, [paste], {
+      image: (f) => f.startsWith('pasted-'),
+      pdf: () => false,
+    });
+    expect(rows.at(-1)).toEqual({
+      handle: '60',
+      kind: 'image',
+      name: 'pasted-0a1b2c3d',
+      path: 'pasted-0a1b2c3d.png',
+      status: 'loaded',
+      depth: 0,
+    });
+    // Added again by a redo: listed once.
+    const twice = referencesOf(
+      withImages,
+      [paste, { objects: { removed: [pasted] } }, paste],
+      none,
+    );
+    expect(twice.filter((r) => r.handle === '60')).toHaveLength(1);
+    const erased = referencesOf(withImages, [paste, { objects: { removed: [pasted] } }], none);
+    expect(erased.some((r) => r.handle === '60')).toBe(false);
+  });
 });
 
 describe('loadXrefFiles (M1-21)', () => {

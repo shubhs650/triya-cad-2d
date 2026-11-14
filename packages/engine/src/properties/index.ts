@@ -37,3 +37,4 @@ export {
   quickPropertySheet,
   rolloverSheet,
 } from './quick';
+export * from './color-books';

@@ -48,6 +48,7 @@ import type {
   SelectionWindow,
 } from '../prompt';
 import { mtextEditorRequest } from '../draw/text';
+import { colorBooks } from '../../properties/color-books';
 
 /** DXF 70 bit 1: invisible; bit 2: constant (a constant attribute is never an ATTRIB to edit). */
 const INVISIBLE = 1;
@@ -596,6 +597,7 @@ export function eatteditCommand(): CommandDef {
         let selected = picked.pick && (await attributeAt(ctx, id, picked.pick));
         const plotStyles = plotStyleChoices(ctx);
         for (;;) {
+          const books = colorBooks(ctx.model);
           const g = ctx.model.entity(id)!.geom as InsertGeometry;
           const d = yield ctx.prompt.dialog({
             message: 'Enhanced Attribute Editor',
@@ -608,6 +610,7 @@ export function eatteditCommand(): CommandDef {
               layers: records(ctx.model.tables.layers.values()),
               linetypes: records(ctx.model.tables.linetypes.values()),
               ...(plotStyles && { plotStyles }),
+              ...(books.length > 0 && { colorBooks: books }),
             },
           });
           if (d.kind !== 'dialog') return;
