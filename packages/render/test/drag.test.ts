@@ -3,7 +3,7 @@
 // mirror), and stretched objects tessellated from their stretched geometry.
 import { rotation, translation, type EntityId, type MTextGeometry } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { Canvas2DRenderer } from '../src/index';
+import { Canvas2DRenderer, gripHalfSize } from '../src/index';
 import { drawing, entity, LAYER_0, line, MODEL, surface, type Call } from './fixtures';
 
 /** Static columns 3 wide, gutter 1, 2 high, inserted top left at (0, 4) (M2-26 part 2). */
@@ -178,6 +178,33 @@ describe('Canvas2DRenderer grips', () => {
     expect(a![0]).toBe(b![0]);
     expect(c![0]).not.toBe(a![0]);
     expect(a![3]).toBe(8);
+  });
+
+  it("draws grips at GRIPSIZE, AutoCAD's 5 a 4 px half size (M2-59 part 3)", () => {
+    expect(gripHalfSize(undefined)).toBe(4);
+    expect(gripHalfSize(5)).toBe(4);
+    expect(gripHalfSize(10)).toBe(8);
+    const { r, id, transient } = setup();
+    r.setStyle({
+      background: '#000000',
+      foreground: '#ffffff',
+      showLineweights: false,
+      gripSize: 10,
+    });
+    r.setGrips([id('20')]);
+    transient().clear();
+    r.frame();
+    expect(squares(transient().calls).map(([, , , w]) => w)).toEqual([16, 16, 16]);
+    // Never under a device pixel, however small.
+    r.setStyle({
+      background: '#000000',
+      foreground: '#ffffff',
+      showLineweights: false,
+      gripSize: 1,
+    });
+    transient().clear();
+    r.frame();
+    expect(squares(transient().calls).map(([, , , w]) => w)).toEqual([2, 2, 2]);
   });
 
   it('draws a grip dragged in the STRETCH grip mode from the stretched object', () => {

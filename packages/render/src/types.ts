@@ -44,6 +44,23 @@ export interface RenderStyle {
   readonly selection?: string;
   /** GRID on (M2-04 part 2): the grid drawn under the drawing; absent draws none. */
   readonly grid?: GridSpec;
+  /**
+   * GRIPSIZE (M2-59 part 3): the grip box's size, AutoCAD's pixels, 1 to 255; absent is
+   * AutoCAD's initial 5. `gripHalfSize` turns it into the half size grips are drawn at.
+   */
+  readonly gripSize?: number;
+}
+
+/** GRIPSIZE's initial value (AutoCAD 2024 Help). */
+export const GRIPSIZE_DEFAULT = 5;
+
+/**
+ * Half a grip box's side in CSS pixels for a GRIPSIZE (M2-59 part 3): AutoCAD's initial 5 is
+ * the 4 px half size Triya has drawn grips at since M2-06, and the size scales from there, as
+ * AUTOSNAPSIZE scales the AutoSnap marker. The canvas picks a grip within this and a pixel.
+ */
+export function gripHalfSize(gripSize: number | undefined): number {
+  return ((gripSize ?? GRIPSIZE_DEFAULT) * 4) / GRIPSIZE_DEFAULT;
 }
 
 /**

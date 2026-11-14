@@ -94,6 +94,14 @@ describe('system variables the app keeps', () => {
     expect(d.isOn('polar')).toBe(true);
   });
 
+  it('keep GRIPSIZE, the grip box size in Settings (M2-59 part 3)', () => {
+    const d = new Drafting();
+    // AutoCAD's initial 5.
+    expect(systemVariableReply(d, 'GRIPSIZE')).toEqual({ ok: true, value: 5 });
+    expect(systemVariableReply(d, 'GRIPSIZE', 9)).toEqual({ ok: true, value: 9 });
+    expect(d.get().gripSize).toBe(9);
+  });
+
   it('keep AUTOSNAPSIZE, DYNMODE and PICKFIRST (M2-59)', () => {
     const d = new Drafting();
     const dyn = new DynMode();

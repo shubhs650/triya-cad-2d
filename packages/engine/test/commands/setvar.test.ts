@@ -284,6 +284,24 @@ describe('SETVAR', () => {
     }
   });
 
+  it('asks the app for GRIPSIZE, the grip box size AutoCAD keeps per user (M2-59 part 3)', async () => {
+    // AutoCAD 2024 Help, GRIPSIZE: "Sets the size of the grip box in pixels", 1 to 255,
+    // initially 5, saved in the registry.
+    const app = appHost({ GRIPSIZE: 5 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['GRIPSIZE']);
+    expect(s.bus.promptText).toBe('Enter new value for GRIPSIZE <5>:');
+    await s.bus.script(['0']);
+    expect(s.log.at(-1)).toBe('Value must be between 1 and 255.');
+    await s.bus.script(['256']);
+    expect(s.log.at(-1)).toBe('Value must be between 1 and 255.');
+    await s.bus.script(['12']);
+    expect(app.values['GRIPSIZE']).toBe(12);
+    expect(s.bus.undo.state.undoable).toBe(0);
+    const model = DocumentModel.create(sampleInit());
+    expect(systemVariable(model, 'gripsize')).toMatchObject({ store: 'app', kind: 'integer' });
+  });
+
   it('lists variables matching wild cards with ?', async () => {
     const s = setup(withHeader(HEADER), appHost({ ORTHOMODE: 1 }).view);
     await s.bus.script(['SETVAR', '?']);
