@@ -2,6 +2,11 @@
 // "PROPERTIES (Command)": "Controls properties of existing objects" by opening the Properties
 // palette (aliases PR, CH, MO; Ctrl+1); "PROPERTIESCLOSE": closes it. The palette is the app's,
 // so each asks the host. Neither deselects: the palette shows the objects selected.
+// QUICKPROPERTIES (M2-35 part 21; AutoCAD 2024 Help, "QUICKPROPERTIES (Command)": "Displays
+// quick properties data for selected objects") shows the Quick Properties palette for the
+// objects selected, or those picked at "Select objects" when none are, whatever QPMODE says
+// (QPMODE decides only whether a pick at `Command:` shows it). The objects stay selected, as the
+// palette shows a selection. Help is silent on an empty pick: nothing is shown.
 import type { CommandDef } from './command';
 import type { PaletteName } from './view/host';
 import { viewRequest } from './view/zoom';
@@ -18,7 +23,24 @@ function paletteCommand(name: string, palette: PaletteName, open: boolean): Comm
   };
 }
 
+function quickPropertiesCommand(): CommandDef {
+  return {
+    name: 'QUICKPROPERTIES',
+    // Takes the objects selected as its "Select objects" answer, and leaves them selected.
+    usesSelection: 'during',
+    keepsSelection: true,
+    async *run(ctx) {
+      const a = yield ctx.prompt.selection({ message: 'Select objects' });
+      const ids = a.kind === 'selection' ? a.ids : [];
+      if (ids.length === 0) return;
+      ctx.select(ids);
+      await viewRequest(ctx, { op: 'palette', palette: 'quick', open: true });
+    },
+  };
+}
+
 export const PALETTE_COMMANDS: readonly (() => CommandDef)[] = [
   () => paletteCommand('PROPERTIES', 'properties', true),
   () => paletteCommand('PROPERTIESCLOSE', 'properties', false),
+  quickPropertiesCommand,
 ];

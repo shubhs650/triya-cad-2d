@@ -302,6 +302,22 @@ describe('SETVAR', () => {
     expect(systemVariable(model, 'gripsize')).toMatchObject({ store: 'app', kind: 'integer' });
   });
 
+  it('asks the app for ROLLOVERTIPS, the rollover tooltips AutoCAD keeps per user (M2-35 part 21)', async () => {
+    // AutoCAD 2024 Help, ROLLOVERTIPS: "Controls the display of rollover tooltips in the
+    // application", 0 off, 1 on, initially 1, saved in the registry.
+    const app = appHost({ ROLLOVERTIPS: 1 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['ROLLOVERTIPS']);
+    expect(s.bus.promptText).toBe('Enter new value for ROLLOVERTIPS <1>:');
+    await s.bus.script(['2']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 1.');
+    await s.bus.script(['0']);
+    expect(app.values['ROLLOVERTIPS']).toBe(0);
+    expect(s.bus.undo.state.undoable).toBe(0);
+    const model = DocumentModel.create(sampleInit());
+    expect(systemVariable(model, 'rollovertips')).toMatchObject({ store: 'app', kind: 'integer' });
+  });
+
   it('lists variables matching wild cards with ?', async () => {
     const s = setup(withHeader(HEADER), appHost({ ORTHOMODE: 1 }).view);
     await s.bus.script(['SETVAR', '?']);

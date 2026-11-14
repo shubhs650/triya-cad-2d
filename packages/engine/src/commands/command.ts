@@ -71,6 +71,12 @@ export interface CommandContext {
    */
   readonly preselected: readonly EntityId[];
   /**
+   * Leaves `ids` selected at `Command:`, as a pick there would (QUICKPROPERTIES, M2-35 part 21:
+   * the objects it shows Quick Properties for stay selected and gripped). Only a command that
+   * keeps the selection (`keepsSelection`) should: another's next start clears it.
+   */
+  select(ids: readonly EntityId[]): void;
+  /**
    * Builds a change set, applies it to the drawing at once (so later prompts, osnaps and the
    * screen see it) and adds it to this command's undo record, which closes when the command
    * ends, cancelled or not: Esc after three LINE segments keeps them, as in AutoCAD.

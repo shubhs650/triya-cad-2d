@@ -4,7 +4,7 @@
 // quick properties of their own).
 import { describe, expect, it } from 'vitest';
 import type { PropertySheet } from '@triya/engine';
-import { QP_DISTANCE, quickPlacement, quickShown } from '../src/quick-properties';
+import { QP_DISTANCE, QuickRequests, quickPlacement, quickShown } from '../src/quick-properties';
 
 const area = { width: 1000, height: 600 };
 const size = { width: 240, height: 120 };
@@ -76,5 +76,37 @@ describe('quickShown', () => {
     expect(quickShown(sheet([xline]), 1)).toBe(true);
     expect(quickShown(sheet([xline]), 2)).toBe(false);
     expect(quickShown(sheet([xline, line]), 2)).toBe(true);
+  });
+});
+
+// M2-35 part 21: QUICKPROPERTIES shows the palette for the objects it leaves selected, whatever
+// QPMODE says, until the selection changes.
+describe('QUICKPROPERTIES', () => {
+  const line = { type: 'LINE' as const, label: 'Line', count: 1 };
+  const xline = { type: 'XLINE' as const, label: 'Construction Line', count: 1 };
+
+  it('shows a selection whatever QPMODE says when the command asked for it', () => {
+    expect(quickShown(sheet([line]), -1, true)).toBe(true);
+    expect(quickShown(sheet([line]), 0, true)).toBe(true);
+    expect(quickShown(sheet([xline]), 2, true)).toBe(true);
+    expect(quickShown(sheet([]), 1, true)).toBe(false);
+    expect(quickShown(sheet([line], { current: true }), 1, true)).toBe(false);
+  });
+
+  it('remembers the selection each drawing asked for, until it is let go', () => {
+    const r = new QuickRequests();
+    let heard = 0;
+    r.subscribe(() => heard++);
+    expect(r.get(1)).toBeUndefined();
+    r.request(1, '4,5');
+    expect(r.get(1)).toEqual({ key: '4,5', n: 1 });
+    // Asked again for the same objects (after its × hid it): a new request shows it again.
+    r.request(1, '4,5');
+    expect(r.get(1)).toEqual({ key: '4,5', n: 2 });
+    expect(r.get(2)).toBeUndefined();
+    r.clear(1);
+    expect(r.get(1)).toBeUndefined();
+    r.clear(1);
+    expect(heard).toBe(3);
   });
 });

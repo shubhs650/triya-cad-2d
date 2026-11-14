@@ -6,8 +6,10 @@
 // entry has them, then the few rows a drafter checks a type by, its size before its place.
 // Several types selected show General's three, as the Properties palette shows General only;
 // the object list narrows the sheet to one type and its own rows.
+import type { DocumentModel } from '../model/document';
+import type { EntityId } from '../model/entity-ids';
 import type { EntityType } from '../model/types';
-import type { PropertySheet } from './sheet';
+import { propertySheet, type PropertySheet } from './sheet';
 
 /** The rows every object shows. */
 export const QUICK_GENERAL: readonly string[] = ['color', 'layer', 'linetype'];
@@ -62,4 +64,37 @@ export function quickPropertySheet(sheet: PropertySheet): PropertySheet | undefi
   const rows = sheet.sections.flatMap((s) => s.rows);
   const quick = keys.flatMap((k) => rows.filter((r) => r.key === k));
   return { ...sheet, sections: [{ title: 'Quick Properties', rows: quick }] };
+}
+
+/**
+ * Rollover tooltips (M2-35 part 21; AutoCAD 2024 Help, "ROLLOVERTIPS (System Variable)"): the
+ * rows the object under a resting cursor shows in a tooltip. AutoCAD lists them in the CUI's
+ * Rollover Tooltips, whose General entry is Color, Layer and Linetype, the rows every object
+ * has; Triya ships no CUI (acad.cuix is Autodesk's), so every type shows those three.
+ */
+export const ROLLOVER_PROPERTIES: readonly string[] = QUICK_GENERAL;
+
+/**
+ * One object's rollover tooltip: a section titled with its type's name ("Circle") holding
+ * `ROLLOVER_PROPERTIES`. A tooltip offers no choices, so a choice row keeps only the option
+ * that names its value (a layer's name for its handle) and the sheet goes without its colour
+ * books. Undefined for an object the drawing no longer has.
+ */
+export function rolloverSheet(model: DocumentModel, id: EntityId): PropertySheet | undefined {
+  if (!model.entity(id)) return undefined;
+  const sheet = propertySheet(model, [id]);
+  const type = sheet.types[0];
+  if (!type) return undefined;
+  const rows = sheet.sections.flatMap((s) => s.rows);
+  const tip = ROLLOVER_PROPERTIES.flatMap((k) => rows.filter((r) => r.key === k)).map((r) => {
+    if (!r.options) return r;
+    const shown = r.options.filter((o) => o.value === String(r.value));
+    return { ...r, options: shown };
+  });
+  return {
+    count: 1,
+    types: sheet.types,
+    sections: [{ title: type.label, rows: tip }],
+    units: sheet.units,
+  };
 }

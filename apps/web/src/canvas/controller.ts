@@ -91,6 +91,8 @@ import {
   type ViewTransform,
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
+import { ROLLOVER_DELAY_MS, type RestAt } from '../rollover';
+import { RestWatch } from './rest';
 import { layoutsOf } from '../documents';
 import { appliedPageSetupName, pageSetupOf, pageSetupsOf, type PlotSpace } from '../plot';
 import type { ImageClient } from '../images';
@@ -192,6 +194,12 @@ export interface CanvasHooks {
   readonly onSnapMenu?: (at: { readonly x: number; readonly y: number }) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
   readonly onMode?: (mode: CanvasMode) => void;
+  /**
+   * The cursor rests on the canvas (M2-35 part 21, rollover tooltips): no button held and no
+   * window, PAN or ZOOM under way, still for `ROLLOVER_DELAY_MS`. Undefined when the rest ends:
+   * the cursor moves on, a button is pressed, the wheel rolls or the cursor leaves.
+   */
+  readonly onRest?: (at: RestAt | undefined) => void;
   /**
    * The drafter changed the view (M2-47 part 4): a ZOOM or PAN (a command's, the navigation
    * bar's, the wheel's at the start of a roll, a drag's at its first move) or a named view
@@ -296,6 +304,16 @@ export class CanvasController {
     | undefined;
   /** Where the pointer is over the canvas (offset), or undefined when it is not. */
   #pointer: { readonly offsetX: number; readonly offsetY: number } | undefined;
+  /** Where the cursor rests, for rollover tooltips (M2-35 part 21). */
+  readonly #rest = new RestWatch<{
+    readonly x: number;
+    readonly y: number;
+    readonly offsetX: number;
+    readonly offsetY: number;
+  }>(ROLLOVER_DELAY_MS, (p) => {
+    const world = p && this.#world(p);
+    this.#hooks.onRest?.(p && world ? { world, clientX: p.x, clientY: p.y } : undefined);
+  });
   /**
    * The space's extents as its renderer last measured them (M1-35 part 2): text by its glyphs
    * once the fonts load, and edits followed, which the extents the drawing opened with (from
@@ -833,6 +851,7 @@ export class CanvasController {
 
   dispose(): void {
     clearTimeout(this.#acquireTimer);
+    this.#rest.cancel();
     this.#listeners.abort();
     this.#observer.disconnect();
     cancelAnimationFrame(this.#pending);
@@ -1247,6 +1266,7 @@ export class CanvasController {
       'wheel',
       (e) => {
         e.preventDefault();
+        this.#rest.cancel();
         if (!this.#view) return;
         // The wheel zooms the viewport under the cursor, which becomes current (as a press
         // would), so the navigation bar then acts on the viewport just zoomed.
@@ -1267,6 +1287,7 @@ export class CanvasController {
     c.addEventListener(
       'pointerdown',
       (e) => {
+        this.#rest.cancel();
         // A press in a viewport that is not current makes it current; AutoCAD takes the
         // left-button click that does so for nothing else.
         if (this.#activate() && e.button === 0) return;
@@ -1341,6 +1362,10 @@ export class CanvasController {
           drag.y = e.clientY;
         }
         this.#pointer = { offsetX: e.offsetX, offsetY: e.offsetY };
+        // A rest is the cursor alone: not while a button is held, a window, PAN or ZOOM goes on.
+        if (e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none') {
+          this.#rest.move({ x: e.clientX, y: e.clientY, offsetX: e.offsetX, offsetY: e.offsetY });
+        } else this.#rest.cancel();
         const press = this.#press;
         if (
           press?.pointer === e.pointerId &&
@@ -1383,6 +1408,7 @@ export class CanvasController {
     c.addEventListener(
       'pointerleave',
       () => {
+        this.#rest.cancel();
         this.#pointer = undefined;
         this.#hit = undefined;
         this.#hits = [];

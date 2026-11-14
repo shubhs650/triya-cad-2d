@@ -57,6 +57,7 @@ export type DraftingPreferences = Pick<
   | 'autosnap'
   | 'pickfirst'
   | 'gripSize'
+  | 'rolloverTips'
 >;
 
 export interface Preferences {
@@ -106,6 +107,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     autosnap: AUTOSNAP_KEPT,
     pickfirst: true,
     gripSize: 5,
+    rolloverTips: true,
   },
 };
 
@@ -177,6 +179,7 @@ export function normalizePreferences(raw: unknown): Preferences {
           ? k['autosnap'] & AUTOSNAP_KEPT
           : d.drafting.autosnap,
       pickfirst: bool(k['pickfirst'], d.drafting.pickfirst),
+      rolloverTips: bool(k['rolloverTips'], d.drafting.rolloverTips),
     },
   };
 }
@@ -249,6 +252,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     autosnap: s.autosnap,
     pickfirst: s.pickfirst,
     gripSize: s.gripSize,
+    rolloverTips: s.rolloverTips,
   };
 }
 

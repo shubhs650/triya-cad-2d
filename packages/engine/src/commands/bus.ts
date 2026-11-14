@@ -860,6 +860,11 @@ export class PromptBus {
       get space() {
         return bus.#space();
       },
+      select: (ids) => {
+        this.#idle.clear();
+        this.#idle.set(ids);
+        this.#showSelection();
+      },
       edit: (build) => {
         const b = new ChangeSetBuilder(this.#model);
         build(b);
