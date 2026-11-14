@@ -21,7 +21,8 @@
 // ? for a list of variables." and "Requires an integer value." are AutoCAD's own; the range
 // messages ("Value must be between 0 and 1.") follow its wording for the variables it bounds,
 // and a name that names no record ("No layer named …") is Triya's.
-import { formatNumber } from './units';
+import { drawingUnits, formatDistance, formatNumber, type DrawingUnits } from './units';
+import { parseDistance } from './parse';
 import type { DocumentModel } from '../model/document';
 import type { HeaderValue } from '../model/types';
 import { OSNAP_OFF } from '../input/osnap';
@@ -32,6 +33,8 @@ export type VariableKind =
   | 'integer'
   /** A number. */
   | 'real'
+  /** A length, shown and typed in the drawing's units (LUNITS, LUPREC; M2-35 part 23). */
+  | 'distance'
   /** An angle the header holds in radians, shown and typed in degrees. */
   | 'angle'
   /** 0 or 1, which the header may hold as false or true. */
@@ -90,6 +93,8 @@ export interface SystemVariable {
    * number and written back as AutoCAD writes it.
    */
   readonly text?: true;
+  /** A point in pixels, not drawing units (SCREENSIZE): shown as plain numbers. */
+  readonly pixels?: true;
 }
 
 /**
@@ -158,11 +163,11 @@ export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
   { name: 'CDATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
   { name: 'CTAB', store: 'computed', kind: 'name', table: 'layouts' },
   { name: 'DATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
-  { name: 'SCREENSIZE', store: 'computed', kind: 'point', readOnly: true },
+  { name: 'SCREENSIZE', store: 'computed', kind: 'point', readOnly: true, pixels: true },
   // The file's own $TILEMODE stays as it was read: Triya's tabs never write it.
   { name: 'TILEMODE', store: 'computed', kind: 'switch' },
   { name: 'VIEWCTR', store: 'computed', kind: 'point', readOnly: true },
-  { name: 'VIEWSIZE', store: 'computed', kind: 'real', readOnly: true },
+  { name: 'VIEWSIZE', store: 'computed', kind: 'distance', readOnly: true },
 ];
 
 /**
@@ -294,7 +299,7 @@ const DICTIONARY_VARIABLES: Readonly<
   XCLIPFRAME: { kind: 'integer', min: 0, max: 2 },
   INDEXCTL: { kind: 'integer', min: 0, max: 3 },
   SORTENTS: { kind: 'integer', min: 0, max: 127 },
-  CENTEREXE: { kind: 'real', nonNegative: true },
+  CENTEREXE: { kind: 'distance', nonNegative: true },
 };
 
 /** Bounds AutoCAD 2024's system variable reference gives (those a wrong value would break). */
@@ -343,6 +348,20 @@ const NON_NEGATIVE = new Set(['DIMSCALE', 'DIMASZ', 'DIMEXO', 'DIMEXE', 'DIMDLI'
 
 const LINEWEIGHT_VARIABLES = new Set(['CELWEIGHT', 'DIMLWD', 'DIMLWE']);
 
+/**
+ * The header's lengths (AutoCAD 2024 Help, each variable's page: a "Real" that is a distance in
+ * drawing units), which SETVAR shows and reads in the drawing's units as AutoCAD's prompts for
+ * them do (M2-35 part 23). Factors (LTSCALE, DIMSCALE, DIMLFAC, CMLSCALE), PDSIZE (negative is a
+ * percentage of the screen) and the alternate units' DIMALTRND (in alternate units) stay plain
+ * reals. DIMCEN and DIMGAP keep their sign (negative: centre lines, a box around the text).
+ */
+// prettier-ignore
+const DISTANCE_VARIABLES = new Set([
+  'TEXTSIZE', 'TRACEWID', 'PLINEWID', 'FILLETRAD', 'CHAMFERA', 'CHAMFERB', 'CHAMFERC',
+  'ELEVATION', 'PELEVATION', 'THICKNESS', 'SKETCHINC', 'DIMTXT', 'DIMASZ', 'DIMEXO', 'DIMEXE',
+  'DIMDLI', 'DIMDLE', 'DIMTSZ', 'DIMCEN', 'DIMGAP', 'DIMRND', 'DIMTP', 'DIMTM', 'DIMFXL',
+]);
+
 /** AutoCAD's lineweights, hundredths of a millimetre. */
 export const LINEWEIGHT_VALUES: readonly number[] = [
   0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200,
@@ -360,7 +379,11 @@ function headerVariable(key: string, value: HeaderValue): SystemVariable {
     // AcDbVariableDictionary entries hold text; Triya sets those it understands.
     const known = DICTIONARY_VARIABLES[name];
     if (!known) return { ...base, kind: 'text', readOnly: true };
-    const numeric = known.kind === 'integer' || known.kind === 'switch' || known.kind === 'real';
+    const numeric =
+      known.kind === 'integer' ||
+      known.kind === 'switch' ||
+      known.kind === 'real' ||
+      known.kind === 'distance';
     return { ...base, ...known, ...(numeric && { text: true as const }) };
   }
   const named = NAME_VARIABLES[name];
@@ -385,7 +408,8 @@ function kindOf(name: string, value: HeaderValue): VariableKind {
   if (typeof value === 'boolean') return 'switch';
   if (typeof value === 'string') return 'text';
   if (typeof value === 'object') return 'point';
-  return INTEGER_HEADER_VARIABLES.has(name) ? 'integer' : 'real';
+  if (INTEGER_HEADER_VARIABLES.has(name)) return 'integer';
+  return DISTANCE_VARIABLES.has(name) ? 'distance' : 'real';
 }
 
 /**
@@ -471,7 +495,7 @@ export function headerEntry(
   if (typeof was === 'boolean') return value === 1;
   // AutoCAD writes a DICTIONARYVAR's real with six places (CENTEREXE "3.500000").
   if (v.text && typeof value === 'number') {
-    return v.kind === 'real' ? value.toFixed(6) : String(value);
+    return v.kind === 'real' || v.kind === 'distance' ? value.toFixed(6) : String(value);
   }
   if (v.kind === 'angle' && typeof value === 'number') return (value * Math.PI) / 180;
   if (typeof value === 'object' && was && typeof was === 'object' && 'z' in was) {
@@ -481,28 +505,28 @@ export function headerEntry(
   return value;
 }
 
-/** Formatting of shown values: LUPREC places for reals and points, AUPREC for angles. */
-export interface ValueFormat {
-  readonly precision: number;
-  readonly anglePrecision: number;
-}
-
 const COLOR_NAMES = ['RED', 'YELLOW', 'GREEN', 'CYAN', 'BLUE', 'MAGENTA', 'WHITE'];
 
-/** A value as the command line shows it: `0`, `1.0000`, `"Standard"`, `0.0000,0.0000`. */
-export function formatValue(v: SystemVariable, value: VariableValue, f: ValueFormat): string {
+/**
+ * A value as the command line shows it: `0`, `1.0000`, `"Standard"`, a length and a point's
+ * coordinates in the drawing's units (`0.0000,0.0000`, `0'-0 3/16"`); a real with LUPREC places,
+ * an angle with AUPREC.
+ */
+export function formatValue(v: SystemVariable, value: VariableValue, u: DrawingUnits): string {
   if (typeof value === 'object') {
     const xs = [value.x, value.y, ...(value.z === undefined ? [] : [value.z])];
-    return xs.map((x) => formatNumber(x, f.precision)).join(',');
+    return xs.map((x) => (v.pixels ? formatNumber(x, u.luprec) : formatDistance(x, u))).join(',');
   }
   if (typeof value === 'string') return `"${value}"`;
   switch (v.kind) {
     case 'color':
       return `"${value === 256 ? 'BYLAYER' : value === 0 ? 'BYBLOCK' : value}"`;
     case 'angle':
-      return formatNumber(value, f.anglePrecision);
+      return formatNumber(value, u.auprec);
     case 'real':
-      return formatNumber(value, v.places ?? f.precision);
+      return formatNumber(value, v.places ?? u.luprec);
+    case 'distance':
+      return formatDistance(value, u);
     default:
       return formatNumber(value, 0);
   }
@@ -585,6 +609,14 @@ export function parseValue(model: DocumentModel, v: SystemVariable, text: string
       if (NUMBER.test(t) && Number.isInteger(n) && n >= 0 && n <= 90) return { value: String(n) };
       return { problem: 'Value must be ByLayer, ByBlock or between 0 and 90.' };
     }
+    case 'distance': {
+      // Typed as any length prompt takes one (`parseDistance`): feet and inches, fractions or
+      // a sum. AutoCAD's own refusal at a distance prompt adds "or two points"; SETVAR takes
+      // no picked points here.
+      const n = parseDistance(t, drawingUnits(model.header).lunits);
+      if (n === undefined) return { problem: 'Requires numeric distance.' };
+      return bounded(v, n);
+    }
     default:
       break;
   }
@@ -616,6 +648,11 @@ export function parseValue(model: DocumentModel, v: SystemVariable, text: string
     default:
       break;
   }
+  return bounded(v, n);
+}
+
+/** A number `v` takes, or why not: its choices, range and sign. */
+function bounded(v: SystemVariable, n: number): ParsedValue {
   if (v.choices && !v.choices.includes(n)) {
     return { problem: `Value must be one of ${v.choices.join(', ')}.` };
   }

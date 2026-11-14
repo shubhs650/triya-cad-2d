@@ -351,7 +351,7 @@ describe('SETVAR', () => {
 
   it('knows which header variables hold integers', () => {
     const model = DocumentModel.create(withHeader(HEADER));
-    expect(systemVariable(model, 'textsize')).toMatchObject({ kind: 'real', positive: true });
+    expect(systemVariable(model, 'textsize')).toMatchObject({ kind: 'distance', positive: true });
     expect(systemVariable(model, 'MIRRTEXT')).toMatchObject({ kind: 'integer', min: 0, max: 1 });
     expect(systemVariable(model, 'DIMBLK')).toMatchObject({ kind: 'name', empty: true });
     expect(systemVariable(model, '$TEXTSIZE')).toBeUndefined();
