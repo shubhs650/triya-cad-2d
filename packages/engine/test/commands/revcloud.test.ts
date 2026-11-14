@@ -107,6 +107,19 @@ describe('REVCLOUD', () => {
     );
   });
 
+  it('says its arc lengths in the drawing units (M2-35 part 17)', async () => {
+    const s = setup(
+      withHeader([
+        ['$LUNITS', 4],
+        ['$LUPREC', 4],
+      ]),
+    );
+    await s.bus.script(['REVCLOUD']);
+    expect(s.log).toContain(
+      `Minimum arc length: 0'-0 1/2"   Maximum arc length: 0'-0 1/2"   Style: Normal   Type: Rectangular`,
+    );
+  });
+
   it('draws a rectangular cloud: a closed LWPOLYLINE of equal arcs bulging out, with RevcloudProps xdata', async () => {
     const s = setup();
     await s.bus.script(['REVCLOUD', 'A', '1', '1', '0,0', '10,5']);

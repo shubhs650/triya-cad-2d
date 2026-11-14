@@ -3,6 +3,7 @@
 // "Offset From Temporary Reference Points", "Prompts with Options").
 import { describe, expect, it } from 'vitest';
 import {
+  DECIMAL_UNITS,
   formatPrompt,
   keywordShortcut,
   matchKeyword,
@@ -311,7 +312,10 @@ describe('formatPrompt', () => {
       ),
     ).toBe('Enter an option [Yes/No] <No>:');
     expect(
-      formatPrompt(prompts.real({ message: 'Scale', default: { kind: 'number', value: 0.5 } }), 2),
+      formatPrompt(prompts.real({ message: 'Scale', default: { kind: 'number', value: 0.5 } }), {
+        ...DECIMAL_UNITS,
+        luprec: 2,
+      }),
     ).toBe('Scale <0.50>:');
   });
 });

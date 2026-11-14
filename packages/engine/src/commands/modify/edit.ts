@@ -21,7 +21,8 @@ import {
 } from '../../edit/edit';
 import { mirrorIn, moveBy, scaleAbout, turnAbout, type Similarity } from '../../edit/similarity';
 import type { TransformOptions } from '../../edit/transform';
-import { formatNumber, type Prompt, type PromptAnswer, type SelectionWindow } from '../prompt';
+import type { Prompt, PromptAnswer, SelectionWindow } from '../prompt';
+import { formatNumber } from '../units';
 import type { Box } from '../../geom/bounds';
 import type { CommandContext, CommandDef } from '../command';
 import { regenerateDimensions } from './dimensions';

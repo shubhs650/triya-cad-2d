@@ -28,7 +28,6 @@ import { editMultiLeaderAttributes } from '../modify/attributes';
 import type { CommandContext, CommandDef, CommandGenerator } from '../command';
 import { regenerateDimensions } from '../modify/dimensions';
 import {
-  formatNumber,
   type Prompt,
   type PromptAnswer,
   type TextEditorBackground,
@@ -36,6 +35,7 @@ import {
   type TextEditorRequest,
 } from '../prompt';
 import { currentProps } from '../../properties/current';
+import { drawingUnits, formatDistance } from '../units';
 
 /** AutoCAD's single line spacing: 5/3 of the text height (DXF 44 = 1 for MTEXT). */
 const LINE_PITCH = 5 / 3;
@@ -53,11 +53,6 @@ export function textSize(model: DocumentModel): number {
   const v = model.header.get('$TEXTSIZE');
   if (typeof v === 'number' && v > 0) return v;
   return model.meta.measurement === 'imperial' ? 0.2 : 2.5;
-}
-
-function precision(model: DocumentModel): number {
-  const v = model.header.get('$LUPREC');
-  return typeof v === 'number' && v >= 0 && v <= 8 ? v : 4;
 }
 
 /**
@@ -153,11 +148,11 @@ export function textCommand(): CommandDef {
         return;
       }
       let style: TextStyleRecord = initial;
-      const prec = precision(ctx.model);
+      const units = drawingUnits(ctx.model.header);
       ctx.message(
-        `Current text style:  "${style.name}"  Text height:  ${formatNumber(
+        `Current text style:  "${style.name}"  Text height:  ${formatDistance(
           style.height > 0 ? style.height : textSize(ctx.model),
-          prec,
+          units,
         )}  Annotative:  No  Justify:  ${justify}`,
       );
 
@@ -342,14 +337,11 @@ export function mtextCommand(): CommandDef {
         return;
       }
       let style: TextStyleRecord = initial;
-      const prec = precision(ctx.model);
+      const units = drawingUnits(ctx.model.header);
       const shownHeight = () =>
         style!.height > 0 ? style!.height : (height ?? textSize(ctx.model));
       ctx.message(
-        `Current text style:  "${style.name}"  Text height:  ${formatNumber(
-          shownHeight(),
-          prec,
-        )}  Annotative:  No`,
+        `Current text style:  "${style.name}"  Text height:  ${formatDistance(shownHeight(), units)}  Annotative:  No`,
       );
       const a0 = yield ctx.prompt.point({ message: 'Specify first corner' });
       if (a0.kind !== 'point') return;

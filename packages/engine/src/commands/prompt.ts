@@ -6,6 +6,13 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Color, LinetypeRef, Lineweight } from '../model/types';
 import type { DragPreview } from './drag';
+import {
+  DECIMAL_UNITS,
+  formatAngle,
+  formatDistance,
+  formatNumber,
+  type DrawingUnits,
+} from './units';
 
 /** A selection window's corners as the drafter gave them. */
 export interface SelectionWindow {
@@ -457,29 +464,24 @@ export function matchKeyword(input: string, options: readonly string[]): string 
   return undefined;
 }
 
-/** Number formatting for prompts: `precision` decimals (LUPREC, 4 unless the drawing says). */
-export function formatNumber(value: number, precision = 4): string {
-  const s = value.toFixed(precision);
-  return s === `-${(0).toFixed(precision)}` ? s.slice(1) : s;
-}
-
 /**
- * An answer as the command line echoes it, and as a prompt shows it as its default. Angles show
- * in degrees to `anglePrecision` places (AUPREC in the bus; AutoCAD's ROTATE shows `<0>`).
+ * An answer as the command line echoes it, and as a prompt shows it as its default, in the
+ * drawing's units (M2-35 part 17, `units.ts`): points and distances by LUNITS and LUPREC, angles
+ * by AUNITS and AUPREC (AutoCAD's ROTATE shows `<0>`), plain numbers with LUPREC decimals. A
+ * whole number in decimal units shows as it was typed, without places.
  */
-export function formatAnswer(
-  answer: PromptAnswer,
-  precision = 4,
-  anglePrecision = Math.min(precision, 4),
-): string {
+export function formatAnswer(answer: PromptAnswer, units: DrawingUnits = DECIMAL_UNITS): string {
   switch (answer.kind) {
     case 'point':
-      return `${formatNumber(answer.point.x, precision)},${formatNumber(answer.point.y, precision)}`;
+      return `${formatDistance(answer.point.x, units)},${formatDistance(answer.point.y, units)}`;
     case 'distance':
+      return units.lunits === 2 && Number.isInteger(answer.value)
+        ? formatNumber(answer.value, 0)
+        : formatDistance(answer.value, units);
     case 'number':
-      return formatNumber(answer.value, Number.isInteger(answer.value) ? 0 : precision);
+      return formatNumber(answer.value, Number.isInteger(answer.value) ? 0 : units.luprec);
     case 'angle':
-      return formatNumber((answer.value * 180) / Math.PI, anglePrecision);
+      return formatAngle(answer.value, units);
     case 'keyword':
       return answer.keyword;
     case 'string':
@@ -494,18 +496,16 @@ export function formatAnswer(
 }
 
 /** The prompt line: `Specify next point or [Undo/Close] <10.0000>:` (AutoCAD's layout). */
-export function formatPrompt(
-  prompt: Prompt,
-  precision = 4,
-  anglePrecision = Math.min(precision, 4),
-): string {
+export function formatPrompt(prompt: Prompt, units: DrawingUnits = DECIMAL_UNITS): string {
   let text = prompt.message;
   if (prompt.options && prompt.options.length > 0) text += ` [${prompt.options.join('/')}]`;
   if (prompt.default) {
-    const value =
-      prompt.default.kind === 'distance' || prompt.default.kind === 'number'
-        ? formatNumber(prompt.default.value, prompt.kind === 'integer' ? 0 : precision)
-        : formatAnswer(prompt.default, precision, anglePrecision);
+    const d = prompt.default;
+    let value: string;
+    if (d.kind !== 'distance' && d.kind !== 'number') value = formatAnswer(d, units);
+    else if (prompt.kind === 'integer') value = formatNumber(d.value, 0);
+    else if (prompt.kind === 'real') value = formatNumber(d.value, units.luprec);
+    else value = formatDistance(d.value, units);
     text += ` <${value}>`;
   } else if (prompt.defaultLabel) text += ` <${prompt.defaultLabel}>`;
   return `${text}:`;

@@ -41,7 +41,8 @@ import {
   rectangleCorners,
   type CloudStyle,
 } from '../../edit/revcloud';
-import { formatNumber, type Prompt, type PromptAnswer } from '../prompt';
+import type { Prompt, PromptAnswer } from '../prompt';
+import { drawingUnits, formatDistance } from '../units';
 import type { CommandContext, CommandDef } from '../command';
 import { currentProps } from '../../properties/current';
 
@@ -69,12 +70,6 @@ const MAX_OVER_MIN = 3;
 function twoFigures(v: number): number {
   const p = 10 ** (Math.floor(Math.log10(v)) - 1);
   return Math.round(v / p) * p;
-}
-
-/** Precision of numbers on the command line: LUPREC, 4 unless the drawing says. */
-function precision(model: DocumentModel): number {
-  const v = model.header.get('$LUPREC');
-  return typeof v === 'number' && v >= 0 && v <= 8 ? v : 4;
 }
 
 /** The `RevcloudProps` APPID, added to the drawing when it has none. */
@@ -128,7 +123,7 @@ export function revcloudCommand(): CommandDef {
   }
 
   function status(ctx: CommandContext, s: CloudStyle): void {
-    const n = (v: number) => formatNumber(v, precision(ctx.model));
+    const n = (v: number) => formatDistance(v, drawingUnits(ctx.model.header));
     ctx.message(
       `Minimum arc length: ${n(s.minArc)}   Maximum arc length: ${n(s.maxArc)}   ` +
         `Style: ${s.calligraphy ? 'Calligraphy' : 'Normal'}   Type: ${type}`,
