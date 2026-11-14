@@ -6,7 +6,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
-import { DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { DXF, activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -181,4 +181,111 @@ test('the drawing’s computed variables, read only', async ({ page }) => {
   await page.screenshot({ path: test.info().outputPath('computed-variables.png') });
   await page.keyboard.press('F2');
   await expect(history).toBeHidden();
+});
+
+// M2-59 part 2: AutoCAD's per-user settings at the command line. AUTOSNAP's bits are AutoSnap's
+// marker, tooltip and magnet and the AutoTrack tooltip (Settings' checkboxes), and POLAR and
+// OTRACK (the status bar's buttons); DYNMODE is the DYN button; PICKFIRST 0 ignores picks at
+// `Command:`; SCREENSIZE is the canvas's size in pixels.
+test('AUTOSNAP, DYNMODE, PICKFIRST and SCREENSIZE', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await expect(prompt(page)).toHaveText('Command:');
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  const status = (name: string) =>
+    page.getByRole('contentinfo').getByRole('button', { name, exact: true });
+  const tip = page.getByTestId('autosnap-tip');
+
+  // SCREENSIZE: the canvas, in CSS pixels.
+  const canvas = activeCanvas(page);
+  const box = (await canvas.boundingBox())!;
+  await type(page, 'SCREENSIZE', 'Command:');
+  await expect(log).toContainText(/SCREENSIZE = \d+\.0000,\d+\.0000 \(read only\)/);
+  const [w, h] = (await log.textContent())!
+    .match(/SCREENSIZE = (\d+)\.0000,(\d+)\.0000/)!
+    .slice(1)
+    .map(Number) as [number, number];
+  expect(Math.abs(w - box.width)).toBeLessThanOrEqual(1);
+  expect(Math.abs(h - box.height)).toBeLessThanOrEqual(1);
+
+  // DYNMODE: −3 while F12 has Dynamic Input off, 3 while on.
+  await expect(status('DYN')).toHaveAttribute('aria-pressed', 'true');
+  await type(page, 'DYNMODE', 'Enter new value for DYNMODE <3>:');
+  await type(page, '0', 'Command:');
+  await expect(status('DYN')).toHaveAttribute('aria-pressed', 'false');
+  await type(page, 'DYNMODE', 'Enter new value for DYNMODE <-3>:');
+  await type(page, '3', 'Command:');
+  await expect(status('DYN')).toHaveAttribute('aria-pressed', 'true');
+
+  // AUTOSNAP 39: POLAR and OTRACK off, as their buttons show.
+  await type(page, 'AUTOSNAP', 'Enter new value for AUTOSNAP <63>:');
+  await type(page, '39', 'Command:');
+  await expect(status('POLAR')).toHaveAttribute('aria-pressed', 'false');
+  await expect(status('OTRACK')).toHaveAttribute('aria-pressed', 'false');
+  await page.keyboard.press('F10');
+  await type(page, 'AUTOSNAP', 'Enter new value for AUTOSNAP <47>:');
+  await type(page, '', 'Command:');
+
+  // A line in an empty part of the drawing; the cursor a few pixels off its end at LINE's first
+  // point shows the Endpoint tooltip until AUTOSNAP drops its bit 2.
+  const O = 1_000_000;
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${O},${O - 50}`, 'Specify opposite corner:');
+  await type(page, `${O + 160},${O + 50}`, 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `${O},${O}`, 'Specify next point or [Undo]:');
+  await type(page, `${O + 100},${O}`, 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+  const view = await viewOf(page);
+  const near = (dy: number) => {
+    const p = view.at(O + 100, O);
+    return page.mouse.move(view.box.x + p.x - 4, view.box.y + p.y + dy);
+  };
+  await type(page, 'L', 'Specify first point:');
+  await near(3);
+  await expect(tip).toHaveText('Endpoint');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  await type(page, 'AUTOSNAP', 'Enter new value for AUTOSNAP <47>:');
+  await type(page, String(47 & ~2), 'Command:');
+  await type(page, 'L', 'Specify first point:');
+  await near(3);
+  await near(2);
+  await expect(tip).toBeHidden();
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+
+  // PICKFIRST 0: a pick at Command: selects nothing; 1 again: it does.
+  const onLine = view.at(O + 50, O);
+  await type(page, 'PICKFIRST', 'Enter new value for PICKFIRST <1>:');
+  await type(page, '0', 'Command:');
+  await page.mouse.click(view.box.x + onLine.x, view.box.y + onLine.y);
+  const lineEnd = { x: view.box.x + view.at(O, O).x, y: view.box.y + view.at(O, O).y };
+  await page.waitForTimeout(300);
+  expect(await blue(page, lineEnd)).toBe(0);
+  await type(page, 'PICKFIRST', 'Enter new value for PICKFIRST <0>:');
+  await type(page, '1', 'Command:');
+  await page.mouse.click(view.box.x + onLine.x, view.box.y + onLine.y);
+  await expect.poll(() => blue(page, lineEnd)).toBeGreaterThan(20);
+  await page.keyboard.press('Escape');
+  await shot('1-setvar-values.png');
+
+  // Settings shows what SETVAR set: AutoSnap tooltip off, the rest of AUTOSNAP's bits on.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await expect(settings.getByLabel('Display AutoSnap tooltip')).not.toBeChecked();
+  await expect(settings.getByLabel('Marker', { exact: true })).toBeChecked();
+  await expect(settings.getByLabel('Magnet')).toBeChecked();
+  await expect(settings.getByLabel('Display AutoTrack tooltip')).toBeChecked();
+  await expect(settings.getByLabel('Noun/verb selection (PICKFIRST)')).toBeChecked();
+  await settings.getByLabel('Display AutoSnap tooltip').scrollIntoViewIfNeeded();
+  await shot('2-settings-autosnap.png');
+  await settings.getByLabel('Display AutoSnap tooltip').check();
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+  await type(page, 'AUTOSNAP', 'Enter new value for AUTOSNAP <47>:');
+  await type(page, '', 'Command:');
 });
