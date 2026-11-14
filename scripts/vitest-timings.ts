@@ -7,24 +7,64 @@
 //   pnpm test:timings
 //
 // Usage: node --experimental-strip-types scripts/vitest-timings.ts [results.json]
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
-interface JsonReport {
+export interface JsonReport {
   testResults: { name: string; startTime: number; endTime: number }[];
 }
 
-const root = path.resolve(import.meta.dirname, '..');
-const input = path.resolve(process.argv[2] ?? path.join(root, 'test-reports/vitest/results.json'));
-const output = path.join(root, 'tests/ci/vitest-timings.json');
-
-const report = JSON.parse(readFileSync(input, 'utf8')) as JsonReport;
-const timings: Record<string, number> = {};
-for (const r of report.testResults) {
-  const file = path.relative(root, r.name).split(path.sep).join('/');
-  timings[file] = Math.round((r.endTime - r.startTime) / 100) / 10;
+/** The directory every name sits in (`/`-separated, no trailing `/`). */
+function commonDir(names: readonly string[]): string {
+  const parts = names.map((n) => n.split('/').slice(0, -1));
+  const first = parts[0] ?? [];
+  let n = first.length;
+  for (const p of parts) {
+    let i = 0;
+    while (i < n && p[i] === first[i]) i++;
+    n = i;
+  }
+  return first.slice(0, n).join('/');
 }
-const sorted = Object.fromEntries(Object.entries(timings).sort(([a], [b]) => (a < b ? -1 : 1)));
-writeFileSync(output, `${JSON.stringify(sorted, null, 2)}\n`);
-const total = Object.values(sorted).reduce((s, t) => s + t, 0);
-console.log(`${Object.keys(sorted).length} files, ${Math.round(total)} s in all → ${output}`);
+
+/**
+ * Seconds per test file, keyed by repo-relative path in path order. A report written in this
+ * checkout is read relative to `root`; one written elsewhere (CI's report names files by their
+ * absolute path in the runner's checkout, M2-64) relative to the directory all its files share,
+ * which is that checkout's root since the suite spans `apps/`, `packages/` and `tests/`.
+ */
+export function reportTimings(report: JsonReport, root: string): Record<string, number> {
+  const names = report.testResults.map((r) => r.name.split(path.sep).join('/'));
+  const local = root.split(path.sep).join('/');
+  const base = names.every((n) => n.startsWith(`${local}/`)) ? local : commonDir(names);
+  const timings: Record<string, number> = {};
+  report.testResults.forEach((r, i) => {
+    timings[path.posix.relative(base, names[i]!)] =
+      Math.round((r.endTime - r.startTime) / 100) / 10;
+  });
+  return Object.fromEntries(Object.entries(timings).sort(([a], [b]) => (a < b ? -1 : 1)));
+}
+
+function main(argv: string[]): number {
+  const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const input = path.resolve(argv[0] ?? path.join(root, 'test-reports/vitest/results.json'));
+  const output = path.join(root, 'tests/ci/vitest-timings.json');
+  const timings = reportTimings(JSON.parse(readFileSync(input, 'utf8')) as JsonReport, root);
+  // A name that is no file here means the report came from another tree: keep the old timings.
+  const missing = Object.keys(timings).filter((f) => !existsSync(path.join(root, f)));
+  if (missing.length > 0) {
+    console.error(
+      `${missing.length} files of the report are not in this checkout, e.g. ${missing[0]}`,
+    );
+    return 1;
+  }
+  writeFileSync(output, `${JSON.stringify(timings, null, 2)}\n`);
+  const total = Object.values(timings).reduce((s, t) => s + t, 0);
+  console.log(`${Object.keys(timings).length} files, ${Math.round(total)} s in all → ${output}`);
+  return 0;
+}
+
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  process.exitCode = main(process.argv.slice(2));
+}
