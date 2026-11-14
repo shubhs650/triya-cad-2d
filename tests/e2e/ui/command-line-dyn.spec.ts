@@ -110,6 +110,45 @@ test('Dynamic Input: X,Y then Distance Tab Angle draw the line', async ({ page }
   await page.keyboard.press('Escape');
 });
 
+// M2-35 part 20: the fields show the cursor's values in the drawing's units, here set by name
+// at `Command:` (SETVAR, M2-42): feet and inches (LUNITS 4) and degrees/minutes (AUNITS 1).
+test("Dynamic Input: the cursor's values show in the drawing's units", async ({ page }) => {
+  test.setTimeout(60_000);
+  await open(page);
+  await hover(page, 0.4, 0.6);
+  await command(page, 'L');
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await hover(page, 0.45, 0.55);
+  await expect(dyn(page).getByLabel('X')).toHaveText(/^-?\d+\.\d{4}$/);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  for (const [name, value] of [
+    ['LUNITS', '4'],
+    ['AUNITS', '1'],
+    ['AUPREC', '2'],
+  ]) {
+    await command(page, name!);
+    await expect(prompt(page)).toContainText(`Enter new value for ${name}`);
+    await command(page, value!);
+    await expect(history(page)).toContainText(new RegExp(`${name} <\\d+>: ${value}`));
+    await expect(prompt(page)).toHaveText('Command:');
+  }
+  await command(page, 'L');
+  await expect(prompt(page)).toHaveText('Specify first point:');
+  await hover(page, 0.45, 0.55);
+  const feetAndInches = /^-?\d+'-\d+( \d+\/\d+)?"$/;
+  await expect(dyn(page).getByLabel('X')).toHaveText(feetAndInches);
+  await expect(dyn(page).getByLabel('Y')).toHaveText(feetAndInches);
+  await page.keyboard.type('0,0');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
+  await hover(page, 0.6, 0.4);
+  await expect(dyn(page).getByLabel('Distance')).toHaveText(feetAndInches);
+  await expect(dyn(page).getByLabel('Angle')).toHaveText(/^\d+d\d+'$/);
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+});
+
 /** Each LINE's ends as the drawing's change sets left them, by handle, to 4 places. */
 async function lineEnds(page: Page): Promise<Record<string, number[]>> {
   const changes = await page.evaluate(() =>

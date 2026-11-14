@@ -423,6 +423,38 @@ describe('PromptBus', () => {
     await bus.cancel();
   });
 
+  it("tells front-ends the drawing's units and angle convention with each prompt (M2-35 part 20)", async () => {
+    const { bus, events, model } = setup([
+      ['$LUNITS', 4],
+      ['$LUPREC', 3],
+      ['$AUNITS', 1],
+      ['$AUPREC', 2],
+      ['$ANGBASE', Math.PI / 2],
+      ['$ANGDIR', 1],
+    ]);
+    await bus.script(['LINE']);
+    expect(events.at(-1)).toMatchObject({
+      type: 'prompt',
+      units: { lunits: 4, luprec: 3, aunits: 1, auprec: 2, unitmode: 0 },
+      angles: { base: Math.PI / 2, clockwise: true },
+    });
+    await bus.cancel();
+    // A prompt after the units change (UNITS, SETVAR) carries the new ones.
+    model.apply({
+      header: [
+        { name: '$LUNITS', before: 4, after: 2 },
+        { name: '$ANGDIR', before: 1, after: 0 },
+      ],
+    });
+    await bus.script(['LINE']);
+    expect(events.at(-1)).toMatchObject({
+      type: 'prompt',
+      units: { lunits: 2 },
+      angles: { base: Math.PI / 2, clockwise: false },
+    });
+    await bus.cancel();
+  });
+
   it('reads 1-1/2 as arithmetic in decimal units', async () => {
     const { bus } = setup();
     await bus.script(['CIRCLE', '5,5', '1-1/2']);

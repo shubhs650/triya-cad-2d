@@ -116,8 +116,18 @@ export interface CommandRecord {
 }
 
 export type BusEvent =
-  /** The bus waits at this prompt; `text` is the line the command line shows (`>>` when nested). */
-  | { readonly type: 'prompt'; readonly prompt: Prompt; readonly text: string }
+  /**
+   * The bus waits at this prompt; `text` is the line the command line shows (`>>` when nested).
+   * `units` and `angles` are the drawing's as the prompt is asked (M2-35 part 20): Dynamic Input
+   * shows the cursor's values in them, as the command line words its defaults.
+   */
+  | {
+      readonly type: 'prompt';
+      readonly prompt: Prompt;
+      readonly text: string;
+      readonly units: DrawingUnits;
+      readonly angles: AngleConvention;
+    }
   /** No command runs: the `Command:` prompt. */
   | { readonly type: 'idle' }
   /**
@@ -687,8 +697,10 @@ export class PromptBus {
 
   #showPrompt(): void {
     const prompt = this.prompt;
-    if (prompt) this.#emit({ type: 'prompt', prompt, text: this.promptText });
-    else this.#emit({ type: 'idle' });
+    if (prompt) {
+      const units = this.#units();
+      this.#emit({ type: 'prompt', prompt, text: this.promptText, units, angles: this.#angles() });
+    } else this.#emit({ type: 'idle' });
   }
 
   #reject(message: string): void {

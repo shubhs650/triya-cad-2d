@@ -18,6 +18,7 @@ import {
   dynText,
   dynType,
   type DynState,
+  type DynUnits,
 } from './dynamic-input';
 
 /** The tooltip sits this far right of and below the cursor, clear of the crosshairs. */
@@ -38,6 +39,7 @@ const takesText = (t: EventTarget | null) =>
 
 export function DynamicInput({
   prompt,
+  units,
   message,
   cursor,
   onSubmit,
@@ -46,6 +48,8 @@ export function DynamicInput({
 }: {
   /** The prompt the command waits at; undefined at `Command:`, where Dynamic Input shows nothing. */
   prompt: Prompt | undefined;
+  /** The drawing's units and angle convention, which the fields show the cursor's values in. */
+  units?: DynUnits | undefined;
   /** The prompt as the tooltip words it (without its options). */
   message: string;
   cursor: () => Vec2 | undefined;
@@ -90,8 +94,8 @@ export function DynamicInput({
   // A new prompt starts with empty fields, or with what was typed ahead of it.
   useEffect(() => put(prompt, prompt && dynReplay(prompt, typed.current)), [prompt]);
 
-  const props = useRef({ prompt, state, shown, cursor, onSubmit, onKeyword, holding });
-  props.current = { prompt, state, shown, cursor, onSubmit, onKeyword, holding };
+  const props = useRef({ prompt, units, state, shown, cursor, onSubmit, onKeyword, holding });
+  props.current = { prompt, units, state, shown, cursor, onSubmit, onKeyword, holding };
 
   const place = () => {
     const el = box.current;
@@ -100,7 +104,7 @@ export function DynamicInput({
     }
     const { prompt: p, state: s } = props.current;
     if (!p || !s) return;
-    const values = dynLive(s, p, props.current.cursor());
+    const values = dynLive(s, p, props.current.cursor(), props.current.units);
     values.forEach((v, i) => {
       const span = live.current[i];
       if (span) span.textContent = v;
@@ -151,7 +155,7 @@ export function DynamicInput({
           return;
         }
         take(dynFor(p));
-        props.current.onSubmit(dynText(s, p, props.current.cursor()));
+        props.current.onSubmit(dynText(s, p, props.current.cursor(), props.current.units));
         return;
       }
       // Tab steps through the snap points under the cursor until something is typed (M2-04).
