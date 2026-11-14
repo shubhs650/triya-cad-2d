@@ -137,7 +137,8 @@ test('grips, grip editing, STRETCH and dragging', async ({ page }) => {
   await click(80, 65);
   await expect(prompt(page)).toHaveText('Specify stretch point or [Base point/Copy/Undo/eXit]:');
   await type(page, '', 'Specify move point or [Base point/Copy/Undo/eXit]:');
-  await type(page, '1000080,1000045', 'Command:');
+  // `#`: Dynamic Input reads the move point relative to the grip (DYNPICOORDS 0, M2-71).
+  await type(page, '#1000080,1000045', 'Command:');
   await expect.poll(() => lines(page)).toEqual([[70, 30, 90, 60]]);
   await page.keyboard.press('Escape');
 

@@ -5,7 +5,7 @@
 // is a front-end of the drawing's command engine, which runs in the engine worker. Dynamic
 // Input (F12) and the Ctrl+K palette (part 2) are two more front-ends, kept here beside it: they
 // send what the command line would.
-import { builtinCommands, keywordShortcut } from '@triya/engine';
+import { builtinCommands, keywordShortcut, type Vec2 } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from './CommandPalette';
 import {
@@ -90,11 +90,18 @@ export function CommandLine({
   const textRef = useRef(text);
   textRef.current = text;
 
-  const send = (value: string) => {
+  /** Sends typed input; `relativeTo`: what its `@` counts from, for Dynamic Input (M2-71). */
+  const send = (value: string, relativeTo?: Vec2) => {
     if (doc === undefined) return;
     const c = cursor();
     const seq = lines.send(doc);
-    engines.command(doc, { kind: 'submit', text: value, seq, ...(c && { cursor: c }) });
+    engines.command(doc, {
+      kind: 'submit',
+      text: value,
+      seq,
+      ...(c && { cursor: c }),
+      ...(relativeTo && { relativeTo }),
+    });
     lines.typed(doc, value);
     setText('');
     setRecall(undefined);

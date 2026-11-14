@@ -15,6 +15,7 @@ import {
   dynFor,
   dynLive,
   dynMode,
+  dynRelativeTo,
   dynReplay,
   dynTab,
   dynText,
@@ -56,7 +57,8 @@ export function DynamicInput({
   /** The prompt as the tooltip words it (without its options). */
   message: string;
   cursor: () => Vec2 | undefined;
-  onSubmit: (text: string) => void;
+  /** Sends the fields' text; `relativeTo`: what its `@` counts from (`dynRelativeTo`). */
+  onSubmit: (text: string, relativeTo?: Vec2) => void;
   onKeyword: (keyword: string) => void;
   /**
    * Holds `key` for the prompt it reaches when it is typed ahead of it (M2-47 part 3, M2-71,
@@ -167,7 +169,8 @@ export function DynamicInput({
           return;
         }
         take(dynFor(p));
-        props.current.onSubmit(dynText(s, p, props.current.cursor(), props.current.units));
+        const text = dynText(s, p, props.current.cursor(), props.current.units);
+        props.current.onSubmit(text, dynRelativeTo(text, p));
         return;
       }
       // Tab steps through the snap points under the cursor until something is typed (M2-04).
@@ -220,7 +223,8 @@ export function DynamicInput({
       typed.current = [];
       put(p, dynFor(p));
       const { cursor: at, units: u } = props.current;
-      props.current.onSubmit(dynText(r.state, p, at(), u));
+      const text = dynText(r.state, p, at(), u);
+      props.current.onSubmit(text, dynRelativeTo(text, p));
       return r.rest;
     };
     return () => {

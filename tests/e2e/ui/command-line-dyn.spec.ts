@@ -178,7 +178,8 @@ test('Dynamic Input: an angle typed as its prompt arrives, the cursor moving, is
   await open(page);
   await hover(page);
   const before = Object.keys(await lineEnds(page));
-  for (const t of ['L', '1000000,1000000', '1000010,1000000', '']) await command(page, t);
+  // Dynamic Input reads the second point relative to the first (M2-71).
+  for (const t of ['L', '1000000,1000000', '10,0', '']) await command(page, t);
   await expect(prompt(page)).toHaveText('Command:');
   // The line just drawn (handles are hex strings, so a record keeps no order of them).
   const drawn = async () => Object.keys(await lineEnds(page)).filter((h) => !before.includes(h));

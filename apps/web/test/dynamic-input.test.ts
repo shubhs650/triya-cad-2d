@@ -9,6 +9,7 @@ import {
   dynLive,
   dynAhead,
   dynEnds,
+  dynRelativeTo,
   dynReplay,
   dynTab,
   dynText,
@@ -226,6 +227,19 @@ describe('Dynamic Input fields', () => {
       ['4', false],
     ]);
     expect(dynReplay(first, [])).toEqual(dynFor(first));
+  });
+});
+
+describe('what a relative point counts from (M2-71)', () => {
+  it("is the rubber band's base, which the fields measure from", () => {
+    expect(dynRelativeTo('@10,0', next)).toEqual({ x: 10, y: 10 });
+    expect(dynRelativeTo('@3<45', corner)).toEqual({ x: 10, y: 10 });
+    // Absolute, typed as is, or with no rubber band: the bus decides.
+    expect(dynRelativeTo('#10,0', next)).toBeUndefined();
+    expect(dynRelativeTo('10', next)).toBeUndefined();
+    expect(dynRelativeTo('@10,0', first)).toBeUndefined();
+    const radius = prompts.distance({ message: 'Specify radius', base: { x: 0, y: 0 } });
+    expect(dynRelativeTo('@1,1', radius)).toBeUndefined();
   });
 });
 

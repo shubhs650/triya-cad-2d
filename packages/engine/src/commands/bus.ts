@@ -256,6 +256,8 @@ export class PromptBus {
   /** The outermost command running, whose record `#close` makes. */
   #current: CommandDef | undefined;
   #lastPoint: Vec2 | undefined;
+  /** What `@` is relative to in the input being read, when the front-end said (`submit`). */
+  #relativeTo: Vec2 | undefined;
   #cursor: Vec2 | undefined;
   #previewing = false;
   #queue: Promise<void> = Promise.resolve();
@@ -383,9 +385,26 @@ export class PromptBus {
     this.#cursor = p;
   }
 
-  /** Typed input, ended by Enter: a command at `Command:`, an answer otherwise. */
-  submit(text: string): Promise<void> {
-    return this.#enqueue(() => this.#input(text));
+  /**
+   * Typed input, ended by Enter: a command at `Command:`, an answer otherwise. `relativeTo` is
+   * what a relative point (`@`) in it counts from, where not the last point: Dynamic Input's X
+   * and Y at a rubber band are measured from its base (M2-71), which COPY's second points share
+   * while the last point moves on with each copy.
+   */
+  submit(text: string, o: { readonly relativeTo?: Vec2 | undefined } = {}): Promise<void> {
+    return this.#enqueue(async () => {
+      this.#relativeTo = o.relativeTo;
+      try {
+        await this.#input(text);
+      } finally {
+        this.#relativeTo = undefined;
+      }
+    });
+  }
+
+  /** What `@` counts from: the base the input came with, else LASTPOINT. */
+  #relativeBase(): Vec2 | undefined {
+    return this.#relativeTo ?? this.#lastPoint;
   }
 
   /** A direct answer from a front-end: a picked point, a Dynamic Input value, a selection. */
@@ -714,7 +733,7 @@ export class PromptBus {
       // A point typed while a window opened at `Command:` waits for its corner ends it.
       if (this.#idle.wantsPoint) {
         const p = parseCoordinate(text.trim(), {
-          lastPoint: this.#lastPoint,
+          lastPoint: this.#relativeBase(),
           angles: this.#angles(),
           lunits: this.#lunits(),
         });
@@ -985,7 +1004,7 @@ export class PromptBus {
     }
     const parsePoint = () => {
       const p = parseCoordinate(t, {
-        lastPoint: this.#lastPoint,
+        lastPoint: this.#relativeBase(),
         angles: this.#angles(),
         lunits: this.#lunits(),
       });
@@ -1149,7 +1168,7 @@ export class PromptBus {
         const override = parseOsnapOverride(t);
         if (override !== undefined) return this.#override(override, t);
         const lunits = this.#lunits();
-        const p = parseCoordinate(t, { lastPoint: this.#lastPoint, angles, lunits });
+        const p = parseCoordinate(t, { lastPoint: this.#relativeBase(), angles, lunits });
         if (p !== undefined && p !== 'invalid') return this.#pointFor(p, t);
         const arbitrary = prompt.kind !== 'angle' && prompt.arbitrary;
         if (arbitrary && (prompt.kind === 'point' || parseDistance(t, lunits) === undefined)) {
@@ -1251,7 +1270,7 @@ export class PromptBus {
     if (modifier) return this.#modifier(modifier, t);
     const override = parseOsnapOverride(t);
     if (override !== undefined) return this.#override(override, t);
-    const lastPoint = c.relativeTo ?? this.#lastPoint;
+    const lastPoint = c.relativeTo ?? this.#relativeBase();
     const p = parseCoordinate(t, { lastPoint, angles: this.#angles(), lunits: this.#lunits() });
     if (p === undefined || p === 'invalid') return this.#reject('Invalid point.');
     this.#log(`${this.promptText} ${t}`);

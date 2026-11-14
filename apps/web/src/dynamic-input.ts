@@ -293,6 +293,17 @@ export function dynText(
   return `${prefix}${x === '' ? live[0] : x},${b === '' ? live[1] : b}`;
 }
 
+/**
+ * What a relative point Enter sends (`text`, starting `@`) counts from: the base of the prompt's
+ * rubber band, which the X, Y, Distance and Angle fields measure from. The command line's `@`
+ * counts from the last point given, which COPY's second points leave behind each copy while
+ * their rubber band stays on the base point (M2-71); undefined where there is no rubber band.
+ */
+export function dynRelativeTo(text: string, prompt: Prompt): Vec2 | undefined {
+  if (!text.startsWith('@') || prompt.kind !== 'point') return undefined;
+  return prompt.rubberBand?.from;
+}
+
 /** DYNMODE: Dynamic Input on (AutoCAD's default) or off; F12 and the status bar toggle it. */
 export class DynMode {
   #on = true;
