@@ -121,14 +121,15 @@ function PropertySections({
     vertexFocus && typeof vx === 'number' && typeof vy === 'number' ? { x: vx, y: vy } : undefined;
   useEffect(() => markVertex(at), [at?.x, at?.y]);
   // The colour row whose "Select Color..." was picked: the dialog shows while it is set. A
-  // dimension's colour rows (`colorDialog: 'index'`) offer the Index Color tab only.
+  // dimension's colour rows (`colorDialog: 'index'`) offer the Index Color tab only, and a
+  // multileader's Leader color (`'true'`) no colour books.
   const [picking, setPicking] = useState<PropertyRow | undefined>();
   return (
     <>
       {picking && (
         <SelectColorDialog
           initial={picking.varies ? undefined : parseColorValue(String(picking.value))}
-          books={picking.colorDialog === 'index' ? [] : (sheet.colorBooks ?? [])}
+          books={picking.colorDialog ? [] : (sheet.colorBooks ?? [])}
           trueColors={!sheet.current && picking.colorDialog !== 'index'}
           {...(picking.colorDialog === 'index' && {
             indexOnly: 'A dimension’s colors take an index color only.',

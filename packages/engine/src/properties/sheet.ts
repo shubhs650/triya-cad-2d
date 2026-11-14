@@ -25,6 +25,7 @@ import { currentProps } from './current';
 import { polylineArea, polylineLength } from './measure';
 import {
   DIMVAR_ROWS,
+  arrowheadOptions,
   dimensionUnits,
   rowVars,
   type DimensionUnits,
@@ -81,9 +82,11 @@ export interface PropertyRow {
   readonly options?: readonly PropertyOption[];
   /**
    * A colour row other than Color whose last choice opens the Select Color dialog on its Index
-   * Color tab only: a dimension's DIMVAR colours, which `DSTYLE` overrides keep as ACIs.
+   * Color tab only: a dimension's DIMVAR colours, which `DSTYLE` overrides keep as ACIs. With
+   * `true` it offers the Index and True Color tabs (a multileader's Leader color, M2-35 part 12):
+   * a colour-book name is saved only for an object's own colour (its DBCOLOR).
    */
-  readonly colorDialog?: 'index';
+  readonly colorDialog?: 'index' | 'true';
   /** An empty typed value is a value, not a slip to undo: Hyperlink's takes the link off. */
   readonly clearable?: true;
   /**
@@ -869,6 +872,8 @@ function typeSections(
       break;
     }
     case 'MULTILEADER':
+      // M2-35 part 12: AutoCAD lists Leaders before Text.
+      add('Leaders', multiLeaderLeaderRows(model, es));
       // M2-35 part 11: the text of multileaders that all hold text.
       add('Text', multiLeaderTextRows(es, textStyles));
       break;
@@ -1156,6 +1161,117 @@ export function filtered(
   return out;
 }
 
+/** A multileader's Leader type (DXF 170), by AutoCAD's names. */
+const LEADER_TYPES: readonly PropertyOption[] = [
+  { value: '1', label: 'Straight' },
+  { value: '2', label: 'Spline' },
+  { value: '0', label: 'None' },
+];
+
+/** The lineweight choices: ByLayer, ByBlock, Default, then AutoCAD's lineweights. */
+const WEIGHT_OPTIONS: readonly PropertyOption[] = [
+  ...(['ByLayer', 'ByBlock', 'Default'] as const).map((w) => ({ value: w, label: w })),
+  ...LINEWEIGHTS.map((w) => ({ value: String(w), label: lineweightLabel(w) })),
+];
+
+/**
+ * A multileader's Leaders rows (M2-35 part 12, AutoCAD 2024's palette): Leader type, Leader
+ * color, Leader linetype, Leader lineweight, Arrowhead, Arrowhead size, Horz landing and Landing
+ * distance, each the value the MULTILEADER draws with (`multiLeaderParts`); the edits are in
+ * `multileader-leaders.ts`. Its linetype is a record of the drawing (ByLayer and ByBlock are
+ * records too, by name), none drawing as ByBlock; the arrowhead is the style's where the
+ * multileader names none; the landing distance is DXF 41, which a palette edit gives every
+ * branch.
+ */
+function multiLeaderLeaderRows(model: DocumentModel, es: readonly Entity[]): PropertyRow[] {
+  const g = (e: Entity) => geomOf<'MULTILEADER'>(e);
+  const records = [...model.tables.linetypes.values()];
+  const byName = (n: string) => records.find((r) => r.name.toUpperCase() === n)?.handle;
+  const special = (r: { name: string }) => /^(BYLAYER|BYBLOCK)$/i.test(r.name);
+  const linetypes: PropertyOption[] = [
+    ...['BYLAYER', 'BYBLOCK'].flatMap((n) => {
+      const h = byName(n);
+      return h === undefined
+        ? []
+        : [{ value: h as string, label: n === 'BYLAYER' ? 'ByLayer' : 'ByBlock' }];
+    }),
+    ...records
+      .filter((r) => !special(r))
+      .map((r) => ({ value: r.handle as string, label: r.name }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+  ];
+  const colors = new Map<string, string>(
+    STANDARD_COLORS.map((c) => [colorValue(c), colorLabel(c)]),
+  );
+  for (const e of es) {
+    const c = g(e).lineColor;
+    if (!colors.has(colorValue(c))) colors.set(colorValue(c), colorLabel(c));
+  }
+  const arrowheadOf = (e: Entity): string => {
+    const m = g(e);
+    return m.arrowhead ?? (m.style ? model.tables.mleaderStyles.get(m.style)?.arrowhead : '') ?? '';
+  };
+  return [
+    row(es, {
+      key: 'leaderType',
+      label: 'Leader type',
+      kind: 'choice',
+      options: LEADER_TYPES,
+      get: (e) => String(g(e).pathType),
+    }),
+    {
+      ...row(es, {
+        key: 'leaderColor',
+        label: 'Leader color',
+        kind: 'choice',
+        options: [...colors].map(([value, label]) => ({ value, label })),
+        get: (e) => colorValue(g(e).lineColor),
+      }),
+      colorDialog: 'true',
+    },
+    row(es, {
+      key: 'leaderLinetype',
+      label: 'Leader linetype',
+      kind: 'choice',
+      options: linetypes,
+      get: (e) => g(e).linetype ?? byName('BYBLOCK') ?? '',
+    }),
+    row(es, {
+      key: 'leaderLineweight',
+      label: 'Leader lineweight',
+      kind: 'choice',
+      options: WEIGHT_OPTIONS,
+      get: (e) => lineweightValue(g(e).lineweight),
+    }),
+    row(es, {
+      key: 'arrowhead',
+      label: 'Arrowhead',
+      kind: 'choice',
+      options: arrowheadOptions(model, es.map(arrowheadOf)),
+      get: arrowheadOf,
+    }),
+    row(es, {
+      key: 'arrowheadSize',
+      label: 'Arrowhead size',
+      kind: 'distance',
+      get: (e) => g(e).arrowheadSize,
+    }),
+    row(es, {
+      key: 'horzLanding',
+      label: 'Horz landing',
+      kind: 'choice',
+      options: YES_NO,
+      get: (e) => yesNo(g(e).dogleg),
+    }),
+    row(es, {
+      key: 'landingDistance',
+      label: 'Landing distance',
+      kind: 'distance',
+      get: (e) => g(e).doglegLength,
+    }),
+  ];
+}
+
 /** The properties every object has, and the drawing's current settings for new objects. */
 export type GeneralProps = Pick<
   Entity,
@@ -1190,10 +1306,6 @@ function generalRows(
     const v = colorValue(e.color);
     if (!colors.has(v)) colors.set(v, colorLabel(e.color));
   }
-  const weights: PropertyOption[] = [
-    ...(['ByLayer', 'ByBlock', 'Default'] as const).map((w) => ({ value: w, label: w })),
-    ...LINEWEIGHTS.map((w) => ({ value: String(w), label: lineweightLabel(w) })),
-  ];
   const linetypeValue = (l: LinetypeRef): string => l;
 
   const rows = [
@@ -1217,7 +1329,7 @@ function generalRows(
       key: 'lineweight',
       label: 'Lineweight',
       kind: 'choice',
-      options: weights,
+      options: WEIGHT_OPTIONS,
       get: (e) => lineweightValue(e.lineweight),
     }),
     row(es, {

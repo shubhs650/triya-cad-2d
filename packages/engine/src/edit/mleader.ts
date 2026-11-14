@@ -44,8 +44,14 @@ import type {
 /** DXF 90 bits: the multileader properties that override its style (DXF reference, MLEADER). */
 export const MLEADER_OVERRIDES = {
   pathType: 1 << 0,
+  lineColor: 1 << 1,
+  linetype: 1 << 2,
+  lineweight: 1 << 3,
   landing: 1 << 4,
   dogleg: 1 << 6,
+  doglegLength: 1 << 7,
+  arrowhead: 1 << 8,
+  arrowheadSize: 1 << 9,
   contentType: 1 << 10,
   blockContent: 1 << 17,
   scale: 1 << 22,
