@@ -6,6 +6,8 @@
 //   gh run download <run id> -n vitest-results -D test-reports/vitest
 //   pnpm test:timings
 //
+// Each file's committed seconds are averaged with the measured ones (`blendTimings`).
+//
 // Usage: node --experimental-strip-types scripts/vitest-timings.ts [results.json]
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -46,6 +48,24 @@ export function reportTimings(report: JsonReport, root: string): Record<string, 
   return Object.fromEntries(Object.entries(timings).sort(([a], [b]) => (a < b ? -1 : 1)));
 }
 
+/**
+ * The timings to commit: each file the committed timings list gets the mean of its committed and
+ * measured seconds, a new file its measured ones, and a file the report lacks is dropped. A file's
+ * duration depends on what shares its shard (M2-64), so averaging damps the swing a refresh would
+ * otherwise cause, the split chasing numbers its own previous split produced.
+ */
+export function blendTimings(
+  committed: Readonly<Record<string, number>>,
+  measured: Readonly<Record<string, number>>,
+): Record<string, number> {
+  return Object.fromEntries(
+    Object.entries(measured).map(([file, seconds]) => {
+      const old = committed[file];
+      return [file, old === undefined ? seconds : Math.round((old + seconds) * 5) / 10];
+    }),
+  );
+}
+
 function main(argv: string[]): number {
   const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   const input = path.resolve(argv[0] ?? path.join(root, 'test-reports/vitest/results.json'));
@@ -59,9 +79,13 @@ function main(argv: string[]): number {
     );
     return 1;
   }
-  writeFileSync(output, `${JSON.stringify(timings, null, 2)}\n`);
-  const total = Object.values(timings).reduce((s, t) => s + t, 0);
-  console.log(`${Object.keys(timings).length} files, ${Math.round(total)} s in all → ${output}`);
+  const committed = existsSync(output)
+    ? (JSON.parse(readFileSync(output, 'utf8')) as Record<string, number>)
+    : {};
+  const blended = blendTimings(committed, timings);
+  writeFileSync(output, `${JSON.stringify(blended, null, 2)}\n`);
+  const total = Object.values(blended).reduce((s, t) => s + t, 0);
+  console.log(`${Object.keys(blended).length} files, ${Math.round(total)} s in all → ${output}`);
   return 0;
 }
 

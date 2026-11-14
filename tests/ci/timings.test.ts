@@ -3,7 +3,7 @@
 // any other machine must still give repo-relative names, or every file would look new to the
 // sequencer and the shards would split by guesses.
 import { describe, expect, it } from 'vitest';
-import { reportTimings } from '../../scripts/vitest-timings.ts';
+import { blendTimings, reportTimings } from '../../scripts/vitest-timings.ts';
 
 const result = (name: string, seconds: number) => ({ name, startTime: 0, endTime: seconds * 1000 });
 
@@ -43,5 +43,19 @@ describe('reportTimings', () => {
       root,
     );
     expect(Object.keys(timings)).toEqual(['a/y.test.ts', 'b/x.test.ts']);
+  });
+});
+
+// A file's duration depends on what shares its shard: moved to a lighter shard it runs faster
+// (M2-64 measured the third shard at 922 s against the 1 422 s planned). Taking each run's
+// numbers as they are would swing the split back and forth, so a refresh averages them with the
+// committed ones.
+describe('blendTimings', () => {
+  it('averages a listed file, takes a new one as measured and drops a removed one', () => {
+    expect(blendTimings({ a: 100, b: 3, gone: 9 }, { a: 60, b: 4, fresh: 7 })).toEqual({
+      a: 80,
+      b: 3.5,
+      fresh: 7,
+    });
   });
 });
