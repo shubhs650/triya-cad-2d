@@ -11,12 +11,12 @@ import { DocumentModel, type Color } from '@triya/engine';
 import { aciOfTrueColor, documentInit, readCadDocument } from '@triya/io';
 import { textMeasure } from '@triya/render';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { bundledFontBook } from '../render/bundled-fonts.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 /**
  * DXF DIMSTYLE records keep a true DIMCLRx colour only as AutoCAD's ACI for it, while the

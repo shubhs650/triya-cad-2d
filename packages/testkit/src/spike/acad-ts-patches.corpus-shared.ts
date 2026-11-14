@@ -22,7 +22,7 @@ import {
   type CadObject,
   type Layout,
 } from '@node-projects/acad-ts';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 export const corpusBytes = (path: string): Uint8Array =>
   new Uint8Array(
     readFileSync(fileURLToPath(new URL(`../../../../corpus/public/${path}`, import.meta.url))),
@@ -247,10 +247,10 @@ export function cellStyleMapGroups(text: string): Map<string, string[]> {
 }
 
 // One test per file, as the corpus open test does, so the files share no time budget.
-export const styleMapFiles = loadManifest(
-  fileURLToPath(new URL('../../../../corpus/corpus.json', import.meta.url)),
+export const styleMapFiles = readableFiles(
+  loadManifest(fileURLToPath(new URL('../../../../corpus/corpus.json', import.meta.url))),
 )
-  .files.filter((f) => f.format === 'dxf-ascii' && !f.knownIssues.some((k) => /read/i.test(k)))
+  .filter((f) => f.format === 'dxf-ascii')
   .map((f) => f.path.replace(/^public\//, ''))
   .filter((path) => cellStyleMapGroups(Buffer.from(corpusBytes(path)).toString('latin1')).size > 0);
 

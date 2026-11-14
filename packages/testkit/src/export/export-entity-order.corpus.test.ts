@@ -11,14 +11,14 @@ import { fileURLToPath } from 'node:url';
 import { ChangeSetBuilder, DocumentModel, type Entity, type Handle } from '@triya/engine';
 import { documentInit, exportDocument, readCadDocument, type CadFormat } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 /** Generous for the largest corpus files read twice and written once under full-suite load. */
 const PER_FILE_BUDGET_MS = 10_000;
@@ -59,7 +59,9 @@ describe('TriyaToAcad entity moves and order on the public corpus', () => {
           ? inMs.find((e) => PLAIN.has(e.type) && !e.reactors?.length && !e.extDict)
           : undefined;
         const last = inMs.find((e) => e !== moved && e.type !== 'VIEWPORT');
-        if (!moved && !last) return;
+        // Nothing changes where no sheet takes an entity and the one to reorder is already last
+        // (a model space of one entity, as ezdxf's R12_with_trash_beyond_EOF.dxf, M2-49).
+        if (!moved && (!last || inMs.at(-1) === last)) return;
         const b = new ChangeSetBuilder(model);
         if (moved) b.moveEntity(moved.id, ps!);
         if (last) b.moveEntity(last.id, ms);

@@ -39,9 +39,9 @@ KINDS = (
     "views",
     "hatch",
 )
-# corpus.json marks files acad-ts cannot read with a known issue mentioning "read"; the corpus
-# suites skip them (packages/testkit/src/export/export.corpus.test.ts), so there is no save.
-UNREADABLE = re.compile("read", re.IGNORECASE)
+# corpus.json tags the files acad-ts cannot read "unreadable" (M2-49); the corpus suites skip
+# exactly those (readableFiles in packages/testkit/src/corpus/manifest.ts), so there is no save.
+UNREADABLE_TAG = "unreadable"
 DANGLING_OWNER = "DEAD0"
 # ezdxf.audit.AuditError.INVALID_OWNER_HANDLE
 INVALID_OWNER_HANDLE = 202
@@ -83,7 +83,7 @@ def save_name(corpus_path: str, kind: str) -> str:
 
 def readable_files(manifest: dict) -> list[dict]:
     return [
-        f for f in manifest["files"] if not any(UNREADABLE.search(k) for k in f.get("knownIssues", []))
+        f for f in manifest["files"] if UNREADABLE_TAG not in f.get("tags", [])
     ]
 
 

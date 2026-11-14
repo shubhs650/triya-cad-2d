@@ -87,6 +87,7 @@ The public manifest is `corpus/corpus.json`; the private one is `corpus/private/
 
 - `version` is the `$ACADVER` code and must match the file's own header (DWG magic or DXF `$ACADVER`). A DXF without a HEADER section is declared `AC1009` (what readers assume) and tagged `no-header`.
 - `format` is `dwg`, `dxf-ascii` or `dxf-binary`, checked against the file content.
+- A file acad-ts cannot read is tagged `unreadable` and carries a known issue saying why ("acad-ts cannot read it: …"). Corpus suites and the ezdxf audit leave out exactly these files (`readableFiles`, M2-49), and the round-trip suite checks the tag names exactly its `read-error` files. Never filter on known-issue wording: "a reader may repair it" is a readable file.
 - `license` (per file and per source) must be MIT, BSD-2/3-Clause, Apache-2.0, ISC, CC0-1.0 or Unlicense.
 - `sha256` pins the exact bytes; `.gitattributes` keeps git from rewriting corpus line endings.
 - `upstreamPath` (optional) is the file's path in the third-party repository named by `sources.<key>.commit`.

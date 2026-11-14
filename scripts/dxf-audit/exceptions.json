@@ -18,6 +18,12 @@
         "code": 12,
         "reason": "the source (an R2000 binary DXF saved down from a newer AutoCAD) holds 48 ACAD_PROXY_OBJECTs in the visual style, scale list, detail/section view style and multileader style dictionaries; Triya keeps unknown objects as read (passthrough invariant)"
       }
+    ],
+    "public/third-party/ezdxf/integration_tests/duplicate_handles.dxf": [
+      {
+        "code": 103,
+        "reason": "the source's seven DIMENSIONs name *D0 and *D1 blocks it lacks (ezdxf's recover test); a save keeps them as read (passthrough invariant) unless the app's save gives each a block, as the paste and dimension saves do (M2-30 part 2, M2-49)"
+      }
     ]
   }
 }

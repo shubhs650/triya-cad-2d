@@ -8,11 +8,11 @@ import { fileURLToPath } from 'node:url';
 import type { DimAssoc, NonGraphicalObject } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 const assocsOf = (objects: readonly NonGraphicalObject[] | undefined): DimAssoc[] =>
   (objects ?? []).filter((o): o is DimAssoc => o.type === 'DIMASSOC');

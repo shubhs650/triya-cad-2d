@@ -41,7 +41,7 @@
           "license": { "$ref": "#/$defs/license" },
           "upstreamPath": { "type": "string" },
           "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
-          "tags": { "type": "array", "items": { "type": "string" } },
+          "tags": { "type": "array", "items": { "type": "string" }, "description": "Topic tags. `unreadable` marks a file acad-ts cannot read (with a known issue saying why); corpus suites skip exactly those (M2-49)." },
           "references": {
             "type": "array",
             "items": {

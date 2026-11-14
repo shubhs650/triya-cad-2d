@@ -8,11 +8,11 @@ import { fileURLToPath } from 'node:url';
 import { DocumentModel } from '@triya/engine';
 import { ioApi, mapEntities, readCadDocument, summarizeDocument, detectFormat } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 // M1-73: one test per file, each with its own budget, instead of one walk over the whole
 // corpus under the global 30 s `testTimeout` (it took 30.7 s in a full local `pnpm test`).

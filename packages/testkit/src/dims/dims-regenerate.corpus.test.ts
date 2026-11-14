@@ -22,18 +22,15 @@ import {
 import { aciOfTrueColor, documentInit, exportDocument, readCadDocument } from '@triya/io';
 import { textMeasure } from '@triya/render';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { bundledFontBook } from '../render/bundled-fonts.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const files = manifest.files.filter(
-  (f) =>
-    f.version === 'AC1032' &&
-    f.format === 'dxf-ascii' &&
-    !f.knownIssues.some((k) => /read/i.test(k)),
+const files = readableFiles(manifest).filter(
+  (f) => f.version === 'AC1032' && f.format === 'dxf-ascii',
 );
 const D = { x: 7, y: 0 };
 const PER_FILE_BUDGET_MS = 20_000;

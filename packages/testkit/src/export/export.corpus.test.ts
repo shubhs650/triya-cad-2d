@@ -65,7 +65,7 @@ import {
   type CadFormat,
 } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
@@ -74,7 +74,7 @@ import { saveAc1032Dxf, writeAuditSave } from '../dxf-audit/saves.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 const writable = new Set<string>(WRITABLE_TYPES);
 /** The entity types the per-file edit below changed on some corpus file (M1-75's acceptance). */
 const editedTypes = new Set<string>();
@@ -1261,10 +1261,12 @@ describe('TriyaToAcad edits on the public corpus', () => {
         const acad = appNamed('ACAD');
         const kept = (e: Entity, a: XdataApp): boolean =>
           a.appId === annotative || (r12 && e.type === 'VIEWPORT' && a.appId === acad);
-        const b = new ChangeSetBuilder(model);
         // R12 tables have no handles: acad-ts makes them up on read, above $HANDSEED, so a new
         // APPID would move them all; an R12 file is marked under its ACAD application instead,
-        // where the entity has none of its own.
+        // where the entity has none of its own. An R12 file of ENTITIES only (no TABLES, as
+        // ezdxf's R12_with_trash_beyond_EOF.dxf, M2-49) has no application to mark under.
+        if (r12 && acad === undefined) return;
+        const b = new ChangeSetBuilder(model);
         const markup = r12 ? acad! : b.addTableRecord('appIds', { name: 'TRIYA_MARKUP' }).handle;
         const marked = (xdata: Xdata | undefined, layer: Handle, handle: Handle): XdataApp[] =>
           (xdata ?? []).some((a) => a.appId === markup) ? [] : [mark(layer, handle)];

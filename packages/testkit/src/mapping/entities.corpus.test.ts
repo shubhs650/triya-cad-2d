@@ -24,7 +24,7 @@ import type {
 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { mapEntities, mapTables, readCadDocument, type MappedTables } from '@triya/io';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { all, first, readDxfOracle, type DxfEntity, type Group } from './dxf-oracle.ts';
 
 const hex = (h: number): string => h.toString(16).toUpperCase();
@@ -92,6 +92,31 @@ const COMMON = new Set(['8', '6', '62', '420', '370', '48', '60', '440']);
  * since M1-32 part 4 (acad-ts patches 0115–0119); keep it for the next gap a new corpus file shows.
  */
 const ACAD_TS_GAPS: Record<string, string> = {};
+
+/**
+ * What a reader repairs in the intentionally malformed ezdxf recover inputs, so the file's own
+ * value is no value to keep (M2-49 brought them into this suite; DEC-047). Keyed by file, then
+ * mismatch kind; a listed repair that no longer happens fails the test, as ACAD_TS_GAPS does.
+ */
+const MALFORMED_REPAIRS: Record<string, Record<string, string>> = {
+  'public/third-party/ezdxf/examples_dxf/circle_radius_le_0.dxf': {
+    'CIRCLE 40': 'a radius of -1 is no circle; acad-ts keeps the smallest positive one',
+  },
+  'public/third-party/ezdxf/integration_tests/duplicate_handles.dxf': {
+    'LINE mapped':
+      'each LINE repeats a table, record or section handle; the reader gives it a new one',
+    'TEXT 1': 'two TEXTs share each handle; the reader gives the second a new one',
+    'TEXT 10': 'two TEXTs share each handle; the reader gives the second a new one',
+    'TEXT 50': 'two TEXTs share each handle; the reader gives the second a new one',
+    'DIMENSION 2': 'its *D0/*D1 block is missing; the dimension is drawn by the engine (M2-30)',
+    'DIMENSION 3': 'its style DIMSTYLE1 is missing from the DIMSTYLE table; it reads as STANDARD',
+    'ELLIPSE 41':
+      'a minor-to-major ratio of 1.0095 (more than 1) is refused by acad-ts, which keeps 1',
+  },
+};
+
+const repaired = (path: string, m: Mismatch): boolean =>
+  m.text.startsWith(`${path} `) && m.kind in (MALFORMED_REPAIRS[path] ?? {});
 
 /** Types this part maps; the others must be reported as not mapped yet. */
 const MAPPED = new Set([
@@ -1758,7 +1783,7 @@ function load(path: string): Uint8Array {
 }
 
 describe('AcadToTriya entities on the public corpus (M1-04)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('maps every entity an ASCII DXF states, in plan view, unchanged', () => {
     const mismatches: Mismatch[] = [];
@@ -1808,10 +1833,21 @@ describe('AcadToTriya entities on the public corpus (M1-04)', () => {
       }
     }
     expect(compared).toBeGreaterThan(5000);
-    expect(mismatches.filter((m) => !(m.kind in ACAD_TS_GAPS)).map((m) => m.text)).toEqual([]);
-    expect([...new Set(mismatches.map((m) => m.kind))].sort()).toEqual(
+    const repairs = Object.keys(MALFORMED_REPAIRS);
+    const isRepair = (m: Mismatch) => repairs.some((path) => repaired(path, m));
+    expect(
+      mismatches.filter((m) => !(m.kind in ACAD_TS_GAPS) && !isRepair(m)).map((m) => m.text),
+    ).toEqual([]);
+    expect([...new Set(mismatches.filter((m) => !isRepair(m)).map((m) => m.kind))].sort()).toEqual(
       Object.keys(ACAD_TS_GAPS).sort(),
     );
+    for (const [path, kinds] of Object.entries(MALFORMED_REPAIRS))
+      expect(
+        Object.keys(kinds).filter(
+          (k) => !mismatches.some((m) => m.kind === k && repaired(path, m)),
+        ),
+        `${path}: repairs that no longer happen`,
+      ).toEqual([]);
   }, 300_000);
 
   // The oracle reads DXF only. DWG states table merges as ranges, not per cell, and a block
