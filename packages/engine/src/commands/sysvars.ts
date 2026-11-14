@@ -81,6 +81,9 @@ export interface SystemVariable {
  * status bar's drafting aids and the per-user settings. The app answers `sysvar` requests for
  * each of them by name (apps/web `system-variables.ts`).
  */
+/** PICKFIRST: objects picked at `Command:` are what the next command takes (noun-verb). */
+export const PICKFIRST = 'PICKFIRST';
+
 export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'ORTHOMODE', store: 'app', kind: 'switch' },
   { name: 'SNAPMODE', store: 'app', kind: 'switch' },
@@ -99,6 +102,15 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // QPLOCATION 0 by the cursor, 1 static.
   { name: 'QPMODE', store: 'app', kind: 'integer', min: -2, max: 2 },
   { name: 'QPLOCATION', store: 'app', kind: 'integer', min: 0, max: 1 },
+  // M2-59 (AutoCAD 2024 Help, each variable's page): AUTOSNAP's bits are 1 the marker, 2 the
+  // SnapTip, 4 the magnet, 8 polar tracking (POLAR), 16 object snap tracking (OTRACK) and 32
+  // their tooltips; AUTOSNAPSIZE the marker's size in pixels; DYNMODE −3 to 3, a negative value
+  // off keeping what F12 turns back on; PICKFIRST noun-verb selection, which each drawing's
+  // command line is told (the session's `sysvar` edit).
+  { name: 'AUTOSNAP', store: 'app', kind: 'integer', min: 0, max: 63 },
+  { name: 'AUTOSNAPSIZE', store: 'app', kind: 'integer', min: 1, max: 20 },
+  { name: 'DYNMODE', store: 'app', kind: 'integer', min: -3, max: 3 },
+  { name: PICKFIRST, store: 'app', kind: 'switch' },
 ];
 
 /**
@@ -118,12 +130,13 @@ export const DRAWING_VARIABLES: readonly SystemVariable[] = [
  * The variables the engine works out when read (setvar.ts): DATE and CDATE from the bus's clock,
  * shown to the hundredth of a second as AutoCAD shows them; CTAB the tab of the space commands
  * draw in; VIEWSIZE and VIEWCTR the view the canvas shows (its height in drawing units, and its
- * centre).
+ * centre); SCREENSIZE the canvas's size in (CSS) pixels.
  */
 export const COMPUTED_VARIABLES: readonly SystemVariable[] = [
   { name: 'CDATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
   { name: 'CTAB', store: 'computed', kind: 'text', readOnly: true },
   { name: 'DATE', store: 'computed', kind: 'real', readOnly: true, places: 8 },
+  { name: 'SCREENSIZE', store: 'computed', kind: 'point', readOnly: true },
   { name: 'VIEWCTR', store: 'computed', kind: 'point', readOnly: true },
   { name: 'VIEWSIZE', store: 'computed', kind: 'real', readOnly: true },
 ];

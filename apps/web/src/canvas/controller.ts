@@ -95,7 +95,14 @@ import { appliedPageSetupName, pageSetupOf, pageSetupsOf, type PlotSpace } from 
 import type { ImageClient } from '../images';
 import type { UnderlayClient } from '../underlay/pages';
 import { BUNDLED_FONTS } from '../fonts';
-import { INITIAL_DRAFTING, type DraftingState } from '../drafting';
+import {
+  AUTOSNAP_MAGNET,
+  AUTOSNAP_MARKER,
+  AUTOSNAP_TIP,
+  AUTOSNAP_TRACK_TIP,
+  INITIAL_DRAFTING,
+  type DraftingState,
+} from '../drafting';
 import { DEFAULT_CANVAS, type CanvasColours } from '../preferences';
 import { crosshairCursor, foregroundOn, interfaceColours, type InterfaceColours } from './colours';
 import {
@@ -1607,17 +1614,26 @@ export class CanvasController {
       px,
       ui.autotrack,
     );
+    // AUTOSNAP's bits (M2-59): the marker, its SnapTip, the magnet, the tracking tooltips.
+    const bits = this.#drafting.autosnap;
+    const trackTip = (bits & AUTOSNAP_TRACK_TIP) !== 0;
     if (hit) {
-      point = hit.point;
-      this.#overlay = [...acquired, ...markerPrimitives(hit.mode, hit.point, marker, ui.autosnap)];
-      tip = snapLabel(hit.mode);
+      // Without the magnet the rubber band stays at the cursor; a click still takes the snap.
+      if (bits & AUTOSNAP_MAGNET) point = hit.point;
+      this.#overlay = [
+        ...acquired,
+        ...(bits & AUTOSNAP_MARKER
+          ? markerPrimitives(hit.mode, hit.point, marker, ui.autosnap)
+          : []),
+      ];
+      if (bits & AUTOSNAP_TIP) tip = snapLabel(hit.mode);
     } else if (c.polar) {
       const base = this.#base()!;
       this.#overlay = [
         ...acquired,
         ...trackingPrimitives(base, c.polar.angle, reach + c.polar.distance, px, ui.autotrack),
       ];
-      tip = polarLabel(c.polar, this.#precision());
+      if (trackTip) tip = polarLabel(c.polar, this.#precision());
     } else if (c.track) {
       // Each path from where it starts to past the cursor, and a cross where it ends.
       this.#overlay = [
@@ -1628,7 +1644,7 @@ export class CanvasController {
         }),
         ...markerPrimitives('INT', c.point, marker * 0.6, ui.autosnap),
       ];
-      tip = trackLabel(c.track, this.#precision());
+      if (trackTip) tip = trackLabel(c.track, this.#precision());
     } else this.#overlay = acquired;
     this.#rubberBand(point);
     this.#tip.hidden = tip === '';

@@ -206,7 +206,12 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   };
   switch (r.op) {
     case 'get':
-      return done();
+      // With the canvas's size in CSS pixels, SCREENSIZE (M2-59).
+      return {
+        ok: true,
+        view: stateOf(t)!,
+        screen: { width: t.size.width, height: t.size.height },
+      };
     case 'extents':
       t.zoomExtents();
       return done();

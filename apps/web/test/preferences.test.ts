@@ -54,6 +54,10 @@ describe('preferences', () => {
       // QPMODE −1 (off, all objects once on) and QPLOCATION 0 (by the cursor): AutoCAD's initial.
       qpmode: -1,
       qpLocation: 0,
+      // AUTOSNAP's bits other than POLAR and OTRACK: marker, SnapTip, magnet and the tracking
+      // tooltips, all on (AutoCAD's initial 63); PICKFIRST 1 (M2-59).
+      autosnap: 39,
+      pickfirst: true,
     });
   });
 
@@ -81,6 +85,8 @@ describe('preferences', () => {
         revcloudGrips: false,
         qpmode: 7,
         qpLocation: 1,
+        autosnap: 255,
+        pickfirst: false,
       },
       unknown: 1,
     });
@@ -104,7 +110,11 @@ describe('preferences', () => {
       revcloudGrips: false,
       // QPMODE −2 to 2 only; QPLOCATION 0 or 1.
       qpLocation: 1,
+      pickfirst: false,
     });
+    // AUTOSNAP keeps its bits 1, 2, 4 and 32 only (8 and 16 are POLAR and OTRACK).
+    expect(normalizePreferences({ drafting: { autosnap: 63 } }).drafting.autosnap).toBe(39);
+    expect(normalizePreferences({ drafting: { autosnap: 5 } }).drafting.autosnap).toBe(5);
     expect(normalizePreferences({ drafting: { qpmode: 2 } }).drafting.qpmode).toBe(2);
     expect(normalizePreferences(undefined)).toEqual(DEFAULT_PREFERENCES);
     expect(normalizePreferences('junk')).toEqual(DEFAULT_PREFERENCES);
@@ -193,5 +203,10 @@ describe('preferences', () => {
     expect(m.saved.at(-1)?.drafting.qpmode).toBe(1);
     drafting.configure({ qpLocation: 1 });
     expect(m.saved.at(-1)?.drafting.qpLocation).toBe(1);
+    // AUTOSNAP and PICKFIRST are AutoCAD's registry settings too (M2-59).
+    drafting.configure({ autosnap: 1 });
+    expect(m.saved.at(-1)?.drafting.autosnap).toBe(1);
+    drafting.configure({ pickfirst: false });
+    expect(m.saved.at(-1)?.drafting.pickfirst).toBe(false);
   });
 });
