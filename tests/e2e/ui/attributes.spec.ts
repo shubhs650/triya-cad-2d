@@ -133,6 +133,47 @@ test('a double click opens the Enhanced Attribute Editor; OK writes the revision
   await page.screenshot({ path: test.info().outputPath('5-revised.png') });
 });
 
+test('the Properties tab’s Select Color... gives an attribute a true colour (M2-35 part 23)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  const at = await open(page);
+  const frame = at(FRAME.x, FRAME.y);
+  await page.mouse.dblclick(frame.x, frame.y);
+  const editor = page.getByRole('dialog', { name: 'Enhanced Attribute Editor' });
+  await expect(editor).toBeVisible();
+  await editor
+    .getByRole('listbox', { name: 'Attributes' })
+    .getByRole('option')
+    .filter({ hasText: 'REV2_DESC' })
+    .click();
+  await editor.getByRole('tab', { name: 'Properties' }).click();
+  const color = editor.getByRole('combobox', { name: 'Color:' });
+  const select = page.getByRole('dialog', { name: 'Select Color' });
+
+  // Esc closes Select Color only: the editor stays, its colour as it was.
+  await color.selectOption({ label: 'Select Color...' });
+  await expect(select).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(select).toBeHidden();
+  await expect(editor).toBeVisible();
+  await expect(color.locator('option:checked')).toHaveText('ByLayer');
+
+  // True Color: typed in the Color field, OK; the list shows it.
+  await color.selectOption({ label: 'Select Color...' });
+  await expect(select.getByRole('tab', { name: 'Index Color', selected: true })).toBeVisible();
+  await select.getByRole('textbox', { name: 'Color' }).fill('10,120,200');
+  await page.screenshot({ path: test.info().outputPath('1-select-color-over-editor.png') });
+  await select.getByRole('button', { name: 'OK' }).click();
+  await expect(select).toBeHidden();
+  await expect(color.locator('option:checked')).toHaveText('10,120,200');
+  await page.screenshot({ path: test.info().outputPath('2-true-color-chosen.png') });
+  await editor.getByRole('button', { name: 'OK' }).click();
+  await expect(editor).toBeHidden();
+  await expect(prompt(page)).toHaveText('Command:');
+  expect((await edited(page))['REV2_DESC']?.[2]).toBe('{"kind":"rgb","r":10,"g":120,"b":200}');
+});
+
 test("a multiline value's ... opens the MTEXT editor; the dialog comes back with it", async ({
   page,
 }) => {

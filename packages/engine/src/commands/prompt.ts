@@ -5,6 +5,7 @@ import type { Vec2 } from '../geom/types';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Color, LinetypeRef, Lineweight } from '../model/types';
+import type { ColorBook } from '../properties/color-books';
 import type { DragPreview } from './drag';
 import {
   DECIMAL_UNITS,
@@ -320,6 +321,11 @@ export type DialogRequest =
        * colour-dependent drawing ($PSTYLEMODE 1), where the Plot style shows ByColor (M2-27).
        */
       readonly plotStyles?: readonly NamedRecord[];
+      /**
+       * The colour books the drawing uses, which the Properties tab's Select Color dialog
+       * offers (M2-35 part 23); absent when it uses none.
+       */
+      readonly colorBooks?: readonly ColorBook[];
     }
   | {
       readonly type: 'attedit';
