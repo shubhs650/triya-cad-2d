@@ -1,0 +1,1 @@
+- M2-56 part 1 (#333): ULAYERS opens the Underlay Layers dialog (Reference Name, Search for layer, each PDF layer on or off per underlay); OK writes the layers off as the underlay's AdeskUnderlayLayerOverrideData xdata in one undo step, and Properties shows Layer display override.

@@ -6,6 +6,7 @@ import type { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
 import type { Handle } from '../model/handle';
+import type { EntityId } from '../model/entity-ids';
 import type { EntityGeometry } from '../model/types';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { ALIASES } from './aliases';
@@ -63,6 +64,12 @@ export interface CommandContext {
   readonly undo: UndoStack;
   /** LASTPOINT: the last point given at any prompt. */
   readonly lastPoint: Vec2 | undefined;
+  /**
+   * The objects selected at `Command:` that a command using the selection `before` took as it
+   * started (PICKFIRST), for one that opens on them without a "Select objects" prompt (ULAYERS'
+   * dialog, M2-56 part 1); empty when there were none or a selection prompt has taken them.
+   */
+  readonly preselected: readonly EntityId[];
   /**
    * Builds a change set, applies it to the drawing at once (so later prompts, osnaps and the
    * screen see it) and adds it to this command's undo record, which closes when the command

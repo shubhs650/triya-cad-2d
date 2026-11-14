@@ -37,3 +37,4 @@ export {
 } from './dimension-block';
 export * from './dimension';
 export * from './named-view';
+export * from './underlay-layers';
