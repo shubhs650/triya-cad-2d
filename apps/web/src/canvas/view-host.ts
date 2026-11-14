@@ -120,6 +120,10 @@ export interface ViewContext {
    * set to `value` when given, answered with its value.
    */
   readonly sysvar?: (name: string, value?: number) => ViewReply;
+  /** ULAYERS (M2-56 part 1): the Underlay Layers dialog, answered when it closes. */
+  readonly underlayLayers?: (
+    r: Extract<ViewRequest, { op: 'underlayLayers' }>,
+  ) => ViewReply | Promise<ViewReply>;
 }
 
 /** What -PLOT and -EXPORT (M2-39 part 5) ask of the app. */
@@ -134,6 +138,7 @@ export const NO_CLIPBOARD = 'There is no Clipboard here.';
 export const NO_PALETTE = 'There are no palettes here.';
 export const NO_PATTERNS = 'There is no pattern library here.';
 export const NO_SETTINGS = 'There are no settings here.';
+export const NO_DIALOGS = 'There are no dialogs here.';
 
 export function stateOf(t: ViewTarget): ViewState | undefined {
   const v = t.view;
@@ -164,6 +169,9 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
   }
   if (r.op === 'sysvar') {
     return ctx.sysvar ? ctx.sysvar(r.name, r.value) : { ok: false, message: NO_SETTINGS };
+  }
+  if (r.op === 'underlayLayers') {
+    return ctx.underlayLayers ? ctx.underlayLayers(r) : { ok: false, message: NO_DIALOGS };
   }
   if (r.op === 'clipboard') {
     return ctx.clipboard ? ctx.clipboard(r.content) : { ok: false, message: NO_CLIPBOARD };

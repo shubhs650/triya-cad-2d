@@ -383,6 +383,12 @@ const YES_NO: readonly PropertyOption[] = [
 ];
 const yesNo = (b: boolean): string => (b ? 'yes' : 'no');
 
+/** An underlay's Layer display override (M2-56 part 1). */
+const LAYER_OVERRIDE: readonly PropertyOption[] = [
+  { value: 'applied', label: 'Applied' },
+  { value: 'none', label: 'None' },
+];
+
 /** A polyline's Linetype generation (PLINEGEN), as AutoCAD's palette names its values. */
 const ENABLED_DISABLED: readonly PropertyOption[] = [
   { value: 'yes', label: 'Enabled' },
@@ -1221,6 +1227,21 @@ function typeSections(
           kind: 'choice',
           options: ISLAND_STYLES,
           get: (e) => String(g(e).style),
+        }),
+      ]);
+      break;
+    }
+    case 'PDFUNDERLAY': {
+      // AutoCAD 2024's palette for a PDF underlay, Misc: Layer display override reads Applied
+      // when ULAYERS turned any of its layers off (M2-56 part 1), None otherwise; ULAYERS edits it.
+      add('Misc', [
+        row(es, {
+          key: 'underlayLayers',
+          label: 'Layer display override',
+          kind: 'choice',
+          readOnly: true,
+          options: LAYER_OVERRIDE,
+          get: (e) => ((geomOf<'PDFUNDERLAY'>(e).layersOff?.length ?? 0) > 0 ? 'applied' : 'none'),
         }),
       ]);
       break;

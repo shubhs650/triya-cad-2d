@@ -54,6 +54,8 @@ import { plotSpaceOf } from './plot-spaces';
 import { ExportDialog, exportDialog } from './ExportDialog';
 import { ViewManager } from './ViewManager';
 import { viewManager } from './view-manager';
+import { underlayLayersDialog } from './underlay-layers';
+import { UnderlayLayers } from './UnderlayLayers';
 import { exportFile } from './export-file';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
@@ -362,6 +364,12 @@ function viewContext(id: number): ViewContext {
     // SETVAR's variables the app keeps (M2-42).
     sysvar: (name, value) => systemVariableReply(drafting, name, value),
     clipboard: (content) => clipboardRequest(id, content),
+    // ULAYERS (M2-56 part 1): the Underlay Layers dialog, waited for as VIEW waits for its own.
+    underlayLayers: (r) =>
+      underlayLayersDialog.show(id, {
+        underlays: r.underlays,
+        ...(r.current !== undefined && { current: r.current }),
+      }),
     // PROPERTIES and PROPERTIESCLOSE (M2-21).
     palette: (name, open) => {
       if (open) dockedPalette.set(name);
@@ -1642,6 +1650,7 @@ export function App() {
         changes={active ? engines.changesOf(active.id) : []}
         edited={(id) => store.edited(id)}
       />
+      <UnderlayLayers doc={active?.id} pdfLayers={(f) => pdfPages.layers(f)} />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />
       <CommandLine

@@ -2772,6 +2772,42 @@ button {
   gap: 6px;
 }
 
+/* ULAYERS' Underlay Layers dialog (M2-56 part 1). */
+.underlay-layers .cad-dialog-field {
+  margin-bottom: 6px;
+}
+
+.underlay-layers-list {
+  display: block;
+  width: 100%;
+  max-height: 260px;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  border-collapse: collapse;
+}
+
+.underlay-layers-list th,
+.underlay-layers-list td {
+  padding: 2px 8px;
+  border-bottom: 1px solid var(--chrome-border);
+  text-align: left;
+  font-weight: normal;
+}
+
+.underlay-layers-list th {
+  background: var(--chrome-bg);
+  font-weight: 600;
+}
+
+.underlay-layers-list td:last-child {
+  width: 100%;
+}
+
+.underlay-layers-note {
+  margin: 6px 0 0;
+  max-width: 420px;
+}
+
 .view-manager-message {
   margin: 6px 0 0;
   color: var(--danger-text);

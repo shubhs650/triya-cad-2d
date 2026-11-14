@@ -149,6 +149,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | XREF / XATTACH / XBIND / XCLIP / XOPEN | XR / XA / XB / XC | 2 | manager palette; bind/insert | |
 | IMAGEATTACH / IMAGECLIP / IMAGEADJUST / IMAGEFRAME / IMAGEQUALITY | IAT / ICL / IAD | 2 | | |
 | PDFATTACH / PDFCLIP / PDFADJUST / PDFLAYERS(read) | — | 2 | | |
+| ULAYERS | — | 2 | Underlay Layers dialog | ~ (#333, M2-56 part 1): opens the Underlay Layers dialog on the PDF underlay selected first, or the drawing's first: Reference Name (each underlay of model space and the layouts, a definition attached twice numbered `[n]`), Search for layer (part of the name, or `*` and `?`), and each of the PDF's layers on or off for that underlay; a layer the PDF hides by default shows off and cannot be turned on, and without the PDF only the layers turned off are listed. OK writes the layers off as the underlay's `AdeskUnderlayLayerOverrideData` xdata (one ULAYERS undo step, saved with the drawing); Properties shows Layer display override Applied or None. DWF and DGN underlays wait (no reader) |
 | EXTERNALREFERENCES | ER | 2 | palette | |
 | ADCENTER | ADC, Ctrl+2 | 3 | Design-Center-lite | |
 | BASE | — | 2 | | |
