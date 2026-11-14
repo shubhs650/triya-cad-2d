@@ -7,7 +7,7 @@
 // packages/engine/test/properties/dimension-rows.test.ts.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet, Color, DimensionGeometry, Entity } from '@triya/engine';
-import { activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { activeCanvas, expectDrawn, expectShown, openWithPicker } from '../app/page';
 import { CORPUS, startApp } from '../app/server';
 import path from 'node:path';
 
@@ -88,6 +88,10 @@ test('a dimension’s colour, prefix and tolerance rows redraw it at once', asyn
   const palette = page.getByRole('complementary', { name: 'Properties' });
   await page.keyboard.press('Control+1');
   await expect(palette).toBeVisible();
+  // The click below is worked out from the canvas beside the docked palette: wait for the canvas
+  // to take that size and draw at it (CI once clicked the undocked canvas's spot and missed).
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(box.width);
+  await expectDrawn(page, { timeout: 15_000 });
   const docked = (await canvas.boundingBox())!;
   const k = Math.min(docked.width / 16, docked.height / 14);
   await page.mouse.click(
@@ -169,6 +173,10 @@ test('an angular dimension’s Measurement and Angle format rows (M2-35 part 10)
   const palette = page.getByRole('complementary', { name: 'Properties' });
   await page.keyboard.press('Control+1');
   await expect(palette).toBeVisible();
+  // The click below is worked out from the canvas beside the docked palette: wait for the canvas
+  // to take that size and draw at it (CI once clicked the undocked canvas's spot and missed).
+  await expect.poll(async () => (await canvas.boundingBox())!.width).toBeLessThan(box.width);
+  await expectDrawn(page, { timeout: 15_000 });
   const docked = (await canvas.boundingBox())!;
   const k = Math.min(docked.width / 16, docked.height / 14);
   // On the dimension arc (radius |(4, 1)|), at 8°.
