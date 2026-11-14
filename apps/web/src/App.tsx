@@ -83,6 +83,9 @@ import { keepPicture as keepPastedPicture, opfsPictures } from './pasted-picture
 import { LayersPalette } from './LayersPalette';
 import { PropertiesPalette } from './PropertiesPalette';
 import { QuickProperties } from './QuickProperties';
+import { quickRequests, selectionKey } from './quick-properties';
+import { RolloverTooltip } from './RolloverTooltip';
+import { hoverRollover, rollovers } from './rollover';
 import { hatchPatternNames, hatchPatternReply } from './hatch-patterns';
 import { dockedPalette, propertySheets, type PaletteName } from './properties';
 import { NavBar, namedViewsOf } from './NavBar';
@@ -246,6 +249,12 @@ addEventListener('offline', () => pwa.setOnline(false));
 addEventListener('beforeinstallprompt', (e) => pwa.offerInstall(e as unknown as InstallPromptLike));
 addEventListener('appinstalled', () => pwa.installed());
 
+/** The drawing waits at `Command:`: no command runs and no prompt or dialog is up. */
+function atCommand(doc: number): boolean {
+  const line = commandLines.get(doc);
+  return line.prompt === undefined && line.promptText === 'Command:';
+}
+
 /**
  * What each drawing's command engine says (M2-02): its command line follows it, its edits are
  * already on its canvases (Engines), the palettes re-read after an edit, and its canvases learn
@@ -260,6 +269,9 @@ engines.onCommand((doc, o) => {
   }
   if (o.type === 'preview') for (const c of controllersOf(doc)) c.setPreview(o.geometry);
   if (o.type === 'properties') propertySheets.set(doc, o.sheet);
+  // A rollover tooltip's answer shows; a command starting takes it away (M2-35 part 21).
+  if (o.type === 'rollover') rollovers.answer(doc, o.id, o.sheet);
+  if (o.type === 'start') rollovers.clear(doc);
   // The Quick Access Undo and Redo buttons and the undo toast follow the history (M2-23).
   if (o.type === 'undo') undoStates.set(doc, o.state, o.action);
   if (o.type === 'selection') {
@@ -399,8 +411,13 @@ function viewContext(id: number): ViewContext {
         underlays: r.underlays,
         ...(r.current !== undefined && { current: r.current }),
       }),
-    // PROPERTIES and PROPERTIESCLOSE (M2-21).
+    // PROPERTIES and PROPERTIESCLOSE (M2-21); QUICKPROPERTIES (M2-35 part 21) shows Quick
+    // Properties for the objects it left selected, whatever QPMODE says.
     palette: (name, open) => {
+      if (name === 'quick') {
+        if (open) quickRequests.request(id, selectionKey(selections.get(id) ?? []));
+        return { ok: true };
+      }
       if (open) dockedPalette.set(name);
       else if (dockedPalette.get() === name) dockedPalette.set(undefined);
       return { ok: true };
@@ -1277,6 +1294,10 @@ export function App() {
   // One palette docks at a time until the palette stack (M7-03); PROPERTIES opens one too.
   const palette = useSyncExternalStore(dockedPalette.subscribe, dockedPalette.get);
   const quickOn = useSyncExternalStore(drafting.subscribe, () => drafting.isOn('qp'));
+  // QUICKPROPERTIES shows Quick Properties with QPMODE off too (M2-35 part 21).
+  const quickAsked = useSyncExternalStore(quickRequests.subscribe, () =>
+    state.active === undefined ? false : quickRequests.get(state.active) !== undefined,
+  );
   const setPalette = (p: PaletteName | undefined) => dockedPalette.set(p);
   const togglePalette = (p: PaletteName) => dockedPalette.toggle(p);
   const suppliedVersion = useSyncExternalStore(supplied.subscribe, () => supplied.version);
@@ -1572,7 +1593,7 @@ export function App() {
               onSaveView={(name, view) => void saveView(active.id, name, view)}
             />
           )}
-          {active && palette !== 'properties' && quickOn && (
+          {active && palette !== 'properties' && (quickOn || quickAsked) && (
             <QuickProperties
               key={active.id}
               doc={active}
@@ -1580,6 +1601,7 @@ export function App() {
               patternNames={patternNames}
             />
           )}
+          {active && <RolloverTooltip key={active.id} doc={active.id} />}
           <PlotPreview active={state.active} />
           {state.docs.length === 0 && (
             <div className="start" data-testid="start">
@@ -1977,6 +1999,14 @@ function ViewportCanvas({
           view,
         }),
       onSnapMenu: (at) => snapMenu.open(id, at),
+      // Rollover tooltips (M2-35 part 21): the object under a resting cursor at `Command:`.
+      onRest: (at) =>
+        void hoverRollover(rollovers, id, at, {
+          enabled: () => drafting.get().rolloverTips,
+          idle: () => atCommand(id),
+          pick: (world) => c.pick(world),
+          ask: (entity) => engines.command(id, { kind: 'rollover', id: entity }),
+        }),
       onMode: (m) => {
         if (visibleRef.current && currentTile(id, block) === index) onMode(m);
       },

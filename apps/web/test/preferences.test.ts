@@ -60,6 +60,8 @@ describe('preferences', () => {
       pickfirst: true,
       // GRIPSIZE 5 (M2-59 part 3).
       gripSize: 5,
+      // ROLLOVERTIPS 1 (M2-35 part 21).
+      rolloverTips: true,
     });
   });
 
@@ -90,6 +92,7 @@ describe('preferences', () => {
         qpLocation: 1,
         autosnap: 255,
         pickfirst: false,
+        rolloverTips: 0,
       },
       unknown: 1,
     });
@@ -115,7 +118,11 @@ describe('preferences', () => {
       // QPMODE −2 to 2 only; QPLOCATION 0 or 1.
       qpLocation: 1,
       pickfirst: false,
+      // ROLLOVERTIPS is a yes or no: anything else keeps the default.
     });
+    expect(normalizePreferences({ drafting: { rolloverTips: false } }).drafting.rolloverTips).toBe(
+      false,
+    );
     // AUTOSNAP keeps its bits 1, 2, 4 and 32 only (8 and 16 are POLAR and OTRACK).
     expect(normalizePreferences({ drafting: { autosnap: 63 } }).drafting.autosnap).toBe(39);
     expect(normalizePreferences({ drafting: { autosnap: 5 } }).drafting.autosnap).toBe(5);
@@ -212,5 +219,8 @@ describe('preferences', () => {
     expect(m.saved.at(-1)?.drafting.autosnap).toBe(1);
     drafting.configure({ pickfirst: false });
     expect(m.saved.at(-1)?.drafting.pickfirst).toBe(false);
+    // ROLLOVERTIPS is a registry setting too (M2-35 part 21).
+    drafting.configure({ rolloverTips: false });
+    expect(m.saved.at(-1)?.drafting.rolloverTips).toBe(false);
   });
 });

@@ -7,7 +7,7 @@
 // are one setting. The engine has checked a value against the variable's range already.
 // M2-59 adds the rest of AutoCAD's registry settings Triya has: AUTOSNAP (its POLAR and OTRACK
 // bits are the status bar's buttons), AUTOSNAPSIZE (Settings' marker size), DYNMODE (F12),
-// PICKFIRST and GRIPSIZE (Settings' grip size, part 3).
+// PICKFIRST and GRIPSIZE (Settings' grip size, part 3). M2-35 part 21 adds ROLLOVERTIPS.
 // The app also tells the read-only variables of the drawing (M2-59, the engine's
 // `DRAWING_VARIABLES`): its file name and whether it has unsaved changes.
 import type { ViewReply } from '@triya/engine';
@@ -55,6 +55,7 @@ const VALUES: Readonly<
   AUTOSNAPSIZE: { get: (s) => s.markerSize, set: (markerSize) => ({ markerSize }) },
   PICKFIRST: { get: (s) => bit(s.pickfirst), set: (v) => ({ pickfirst: v === 1 }) },
   GRIPSIZE: { get: (s) => s.gripSize, set: (gripSize) => ({ gripSize }) },
+  ROLLOVERTIPS: { get: (s) => bit(s.rolloverTips), set: (v) => ({ rolloverTips: v === 1 }) },
 };
 
 /**

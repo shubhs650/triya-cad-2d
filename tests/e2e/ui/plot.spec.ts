@@ -494,9 +494,14 @@ test('-PLOT plots at the command line without the dialog (part 5)', async ({ pag
   const svgText = readFileSync((await svg.path())!, 'utf8');
   expect(svgText).toContain('<svg');
 
-  // The detailed configuration of a layout not shown, saved into its page setup.
+  // The detailed configuration of a layout not shown, saved into its page setup. Each answer
+  // waits for its prompt: `fill` writes the command line's field at once, so text filled while
+  // the engine still reads the input before it (the plot just written) can replace the text the
+  // command line holds for the next prompt (seen once in CI after M2-71's type-ahead, #345).
   await type('-PLOT');
+  await expect(prompt).toHaveText('Detailed plot configuration? [Yes/No] <No>:');
   await type('Y');
+  await expect(prompt).toHaveText('Enter a layout name or [?] <Model>:');
   await type('?');
   await expect(page.getByRole('log', { name: 'Recent command lines' })).toContainText('MyLayout');
   await type('Layout1');

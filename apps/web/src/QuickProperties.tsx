@@ -4,7 +4,8 @@
 // until the pointer or the focus is in it. Its object list narrows it to one type, and an edit is
 // the Properties palette's (one undo step). It does not show while a command runs or while the
 // Properties palette is open; its close button hides it until the selection changes. Static
-// (QPLOCATION 1), its title bar drags it to where it then stays.
+// (QPLOCATION 1), its title bar drags it to where it then stays. QUICKPROPERTIES (M2-35 part 21)
+// shows it for the objects it left selected whatever QPMODE says, until the selection changes.
 import {
   useEffect,
   useLayoutEffect,
@@ -20,12 +21,33 @@ import type { OpenDocument } from './documents';
 import { engines } from './engine/registry';
 import { PropertySections } from './PropertiesPalette';
 import { propertySheets } from './properties';
-import { quickPlacement, quickShown, type Placement } from './quick-properties';
+import {
+  quickPlacement,
+  quickRequests,
+  quickShown,
+  selectionKey,
+  type Placement,
+} from './quick-properties';
 
 /** Where the last pick on a drawing was made, from the drawing area's top left. */
 let lastPick: { x: number; y: number } | undefined;
 /** Where the drafter dragged the static palette this session. */
 let dragged: Placement | undefined;
+
+/**
+ * The pick's place: the end of a click or of a selection window, over a drawing. Followed from
+ * the start, as QUICKPROPERTIES (M2-35 part 21) shows the palette after picks it was not up for.
+ */
+function followPicks(e: PointerEvent): void {
+  const el = document.querySelector('.canvas-area');
+  if (!el || !(e.target instanceof Element) || !e.target.closest('canvas')) return;
+  const r = el.getBoundingClientRect();
+  lastPick = { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+if (typeof window !== 'undefined') {
+  window.addEventListener('pointerdown', followPicks, { capture: true, passive: true });
+  window.addEventListener('pointerup', followPicks, { capture: true, passive: true });
+}
 
 export function QuickProperties({
   doc,
@@ -43,6 +65,7 @@ export function QuickProperties({
     const line = commandLines.get(doc.id);
     return line.prompt === undefined && line.promptText === 'Command:';
   });
+  const request = useSyncExternalStore(quickRequests.subscribe, () => quickRequests.get(doc.id));
   const ref = useRef<HTMLDivElement>(null);
   const [placed, setPlaced] = useState<{ key: string; at: Placement } | undefined>();
   const [closed, setClosed] = useState<string | undefined>();
@@ -53,25 +76,19 @@ export function QuickProperties({
     return () => engines.command(doc.id, { kind: 'properties', open: false });
   }, [doc.id]);
 
-  useEffect(() => {
-    // The pick's place: the end of a click or of a selection window, over a drawing.
-    const area = () => ref.current?.parentElement ?? document.querySelector('.canvas-area');
-    const onPointer = (e: PointerEvent) => {
-      const el = area();
-      if (!el || !(e.target instanceof Element) || !e.target.closest('canvas')) return;
-      const r = el.getBoundingClientRect();
-      lastPick = { x: e.clientX - r.left, y: e.clientY - r.top };
-    };
-    window.addEventListener('pointerdown', onPointer, { capture: true, passive: true });
-    window.addEventListener('pointerup', onPointer, { capture: true, passive: true });
-    return () => {
-      window.removeEventListener('pointerdown', onPointer, { capture: true });
-      window.removeEventListener('pointerup', onPointer, { capture: true });
-    };
-  }, []);
+  const key = selectionKey(selected());
+  const asked = request !== undefined && request.key === key;
+  const shown = idle && closed !== key && quickShown(sheet, state.qpmode, asked);
 
-  const key = selected().join(',');
-  const shown = idle && closed !== key && quickShown(sheet, state.qpmode);
+  useEffect(() => {
+    // QUICKPROPERTIES asked again: shown even where its close button hid it.
+    if (request) setClosed(undefined);
+  }, [request?.n]);
+
+  useEffect(() => {
+    // A QUICKPROPERTIES request lasts as long as the selection it showed.
+    if (request && request.key !== key) quickRequests.clear(doc.id);
+  }, [request, key, doc.id]);
 
   useEffect(() => {
     // Nothing selected: the next selection shows it again, placed anew, even the same objects.
