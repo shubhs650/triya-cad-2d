@@ -27,6 +27,7 @@ import {
   sub,
   textBox,
   textGeometry,
+  viewed,
   upright,
   type DimPart,
 } from './geometry';
@@ -80,7 +81,7 @@ export function ordinateParts(
     const at = keepText
       ? g.textPosition
       : add(add(g.leaderEnd, dir, s.gap + width / 2), textOffset(s, up, up));
-    text = { ...probe, position: at, rotation };
+    text = { ...probe, position: at, rotation: viewed(rotation, s) };
     if (!centred) {
       // On under the text to its far end.
       const far = dot(sub(at, g.leaderEnd), dir) + width / 2;

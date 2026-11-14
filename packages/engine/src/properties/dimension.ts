@@ -83,6 +83,7 @@ export const DIMVAR_DEFAULTS: Readonly<Record<string, DimVarValue>> = {
   DIMTOH: 1,
   DIMJUST: 0,
   DIMTAD: 0,
+  DIMTXTDIRECTION: 0,
   DIMSCALE: 1,
   DIMATFIT: 3,
   DIMTIX: 0,
@@ -711,6 +712,16 @@ export const DIMVAR_ROWS: readonly DimvarRow[] = [
   ),
   textStyleRow,
   onOffRow('DIMTIH', 'Text inside align', 'Text'),
+  // AutoCAD's palette lists it after Text rotation, where the sheet puts it.
+  choiceRow(
+    'DIMTXTDIRECTION',
+    'Text view direction',
+    'Text',
+    opts([
+      [0, 'Left-to-Right'],
+      [1, 'Right-to-Left'],
+    ]),
+  ),
 
   onOffRow('DIMTOFL', 'Dim line forced', 'Fit'),
   onOffRow('DIMSOXD', 'Dim line inside', 'Fit'),

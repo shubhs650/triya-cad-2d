@@ -1050,8 +1050,11 @@ function typeSections(
         }),
       ]);
       add('Lines & Arrows', group('Lines & Arrows'));
+      // AutoCAD 2024 lists Text view direction (DIMTXTDIRECTION) after Text rotation.
+      const text = group('Text');
+      const isView = (r: PropertyRow) => r.key === 'dimvar:DIMTXTDIRECTION';
       add('Text', [
-        ...group('Text'),
+        ...text.filter((r) => !isView(r)),
         row(es, {
           key: 'textRotation',
           label: 'Text rotation',
@@ -1059,6 +1062,7 @@ function typeSections(
           readOnly: true,
           get: (e) => g(e).textRotation,
         }),
+        ...text.filter(isView),
         ...measurement,
         row(es, {
           key: 'textOverride',

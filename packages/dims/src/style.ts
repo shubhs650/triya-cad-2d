@@ -58,6 +58,8 @@ export interface DimStyle {
   readonly sd1: boolean;
   readonly sd2: boolean;
   readonly fxlon: boolean;
+  /** DIMTXTDIRECTION 1: the text reads right to left (`viewed` in geometry.ts). */
+  readonly rtl: boolean;
   /** The arrowhead block of each end; undefined is closed filled. */
   readonly blk1: Handle | undefined;
   readonly blk2: Handle | undefined;
@@ -201,6 +203,7 @@ export function dimStyle(style: Handle, xdata: Entity['xdata'], model: Annotatio
     sd1: on(vars.DIMSD1),
     sd2: on(vars.DIMSD2),
     fxlon: on(vars.DIMFXLON),
+    rtl: on(vars.DIMTXTDIRECTION),
     blk1: sah ? ref(vars.DIMBLK1) : blk,
     blk2: sah ? ref(vars.DIMBLK2) : blk,
     dimLine: props(colorOf('DIMCLRD'), lt('DIMLTYPE'), dimLw),
