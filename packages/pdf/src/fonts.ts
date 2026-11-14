@@ -3,6 +3,11 @@
 // font: a Type 0 font with the Identity-H encoding (two-byte codes, code = CID) over a
 // descendant CIDFont, its widths in /W, and a ToUnicode CMap (§9.10.3) so the text stays
 // searchable and copies as the characters typed.
+// ToUnicode maps codes, not glyphs, so a glyph shown for two characters (every character the
+// font lacks draws .notdef; a font may draw no-break space with its space glyph) needs a code
+// per character (M2-51): the first character keeps code = CID, each further one takes a code
+// above every CID the font has, and the encoding becomes an embedded CMap (§9.7.5.3) sending
+// those codes to the glyph's CID. Without such a character the encoding stays Identity-H.
 // - TrueType ('glyf') fonts: a CIDFontType2 whose CIDs are the subset's glyph numbers
 //   (CIDToGIDMap Identity), handed out as glyphs are first shown, so a page's content can be
 //   written before the subset is known; the file is a FontFile2.
@@ -30,8 +35,14 @@ export class EmbeddedFont {
    * in the order first shown (the CID is `font.cid` of the glyph).
    */
   readonly glyphs: number[] = [0];
-  /** CID → the character it was first shown for. */
+  /** Code → the character it shows (the code of a glyph's first character is its CID). */
   readonly unicode = new Map<number, number>();
+  /** A further character's code → the CID it shows; empty while Identity-H will do. */
+  readonly #extra = new Map<number, number>();
+  /** CID → character → its code, for the characters past a glyph's first. */
+  readonly #extraCodes = new Map<number, Map<number, number>>();
+  /** The first code above every CID of the font, found on first need. */
+  #free: number | undefined;
   /** Glyph of the font → CID, and back. */
   readonly #cids = new Map<number, number>([[0, 0]]);
   readonly #gids = new Map<number, number>([[0, 0]]);
@@ -53,8 +64,11 @@ export class EmbeddedFont {
     this.#gids.set(cid, gid);
   }
 
-  /** The CID showing glyph `gid` of the font, for the character `codePoint`. */
-  cid(gid: number, codePoint: number): number {
+  /**
+   * The code showing glyph `gid` of the font for the character `codePoint`: the glyph's CID
+   * for the first character it is shown for, a code of its own for each further one.
+   */
+  code(gid: number, codePoint: number): number {
     const f = this.font;
     const g = gid >= 0 && gid < f.numGlyphs ? gid : 0;
     let cid = this.#cids.get(g);
@@ -62,12 +76,41 @@ export class EmbeddedFont {
       cid = f instanceof CffFont ? f.cid(g) : this.glyphs.length;
       this.#add(g, cid);
     }
-    if (!this.unicode.has(cid) && codePoint > 0) this.unicode.set(cid, codePoint);
-    return cid;
+    if (codePoint <= 0) return cid;
+    const first = this.unicode.get(cid);
+    if (first === undefined) this.unicode.set(cid, codePoint);
+    if (first === undefined || first === codePoint) return cid;
+    let codes = this.#extraCodes.get(cid);
+    if (!codes) this.#extraCodes.set(cid, (codes = new Map()));
+    let code = codes.get(codePoint);
+    if (code === undefined) {
+      this.#free ??= this.#firstFree();
+      code = this.#free + this.#extra.size;
+      // Two-byte codes run out only for a font with CIDs up to 0xFFFF: the character then
+      // copies as the glyph's first, as before M2-51.
+      if (code > 0xffff) return cid;
+      codes.set(codePoint, code);
+      this.#extra.set(code, cid);
+      this.unicode.set(code, codePoint);
+    }
+    return code;
   }
 
-  /** A CID's advance in thousandths of an em, as /W writes it. */
-  width(cid: number): number {
+  /**
+   * The lowest code no CID of the font can take: a TrueType subset's CIDs count the glyphs
+   * shown (a whole font's are its glyph numbers), a CFF's are glyph numbers or the charset's.
+   */
+  #firstFree(): number {
+    const f = this.font;
+    let free = f.numGlyphs;
+    if (f instanceof CffFont)
+      for (let g = 0; g < f.numGlyphs; g++) free = Math.max(free, f.cid(g) + 1);
+    return free;
+  }
+
+  /** A code's advance in thousandths of an em, as /W writes it for the code's CID. */
+  width(code: number): number {
+    const cid = this.#extra.get(code) ?? code;
     return Number(
       pdfNumber((this.font.advance(this.#gids.get(cid) ?? 0) * 1000) / this.font.unitsPerEm),
     );
@@ -117,10 +160,53 @@ export class EmbeddedFont {
             .join(' ')}]] /CIDToGIDMap /Identity >>`,
         );
     const toUnicode = stream('', latin1(this.cmap()));
+    let encoding = '/Identity-H';
+    if (this.#extra.size > 0) {
+      const name = `Triya-${subsetTag(this.glyphs, f.postScriptName)}-H`;
+      const system = cff
+        ? `<< /Registry (${pdfName(f.registry)}) /Ordering (${pdfName(f.ordering)}) /Supplement ${f.supplement} >>`
+        : '<< /Registry (Adobe) /Ordering (Identity) /Supplement 0 >>';
+      const dict = `/Type /CMap /CMapName /${name} /CIDSystemInfo ${system}`;
+      encoding = `${stream(dict, latin1(this.encoding(name, system)))} 0 R`;
+    }
     set(
       type0,
-      `<< /Type /Font /Subtype /Type0 /BaseFont /${base} /Encoding /Identity-H /DescendantFonts [${cidFont} 0 R] /ToUnicode ${toUnicode} 0 R >>`,
+      `<< /Type /Font /Subtype /Type0 /BaseFont /${base} /Encoding ${encoding} /DescendantFonts [${cidFont} 0 R] /ToUnicode ${toUnicode} 0 R >>`,
     );
+  }
+
+  /**
+   * The embedded encoding CMap (§9.7.5.3, Adobe Technical Note #5014) once a glyph shows more
+   * than one character: codes below the first free one are their own CIDs, as Identity-H
+   * has them (one range per high byte, as Adobe's Identity-H is written), and each further
+   * character's code names its glyph's CID.
+   */
+  encoding(name: string, system: string): string {
+    const free = this.#free ?? this.#firstFree();
+    const ranges: string[] = [];
+    for (let lo = 0; lo < free; lo += 256) {
+      const hi = Math.min(lo + 255, free - 1);
+      ranges.push(`<${hex4(lo)}> <${hex4(hi)}> ${lo}`);
+    }
+    const chars = [...this.#extra].map(([code, cid]) => `<${hex4(code)}> ${cid}`);
+    return [
+      '%!PS-Adobe-3.0 Resource-CMap',
+      '/CIDInit /ProcSet findresource begin',
+      '12 dict begin',
+      'begincmap',
+      `/CIDSystemInfo ${system} def`,
+      `/CMapName /${name} def`,
+      '/CMapType 1 def',
+      '/WMode 0 def',
+      '1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange',
+      ...blocks(ranges, 'cidrange'),
+      ...blocks(chars, 'cidchar'),
+      'endcmap',
+      'CMapName currentdict /CMap defineresource pop',
+      'end',
+      'end',
+      '',
+    ].join('\n');
   }
 
   /** /W for the CIDs shown, in order, consecutive CIDs sharing one array: `c [w w …] …`. */
@@ -137,17 +223,10 @@ export class EmbeddedFont {
     return runs.join(' ');
   }
 
-  /** The ToUnicode CMap: each CID shown to the character it was shown for. */
+  /** The ToUnicode CMap: each code shown to the character it was shown for. */
   cmap(): string {
     const entries = [...this.unicode].sort((a, b) => a[0] - b[0]);
-    const blocks: string[] = [];
-    // At most 100 mappings per bfchar block (§9.10.3, as CMaps are written).
-    for (let i = 0; i < entries.length; i += 100) {
-      const part = entries.slice(i, i + 100);
-      blocks.push(
-        `${part.length} beginbfchar\n${part.map(([cid, cp]) => `<${hex4(cid)}> <${utf16(cp)}>`).join('\n')}\nendbfchar`,
-      );
-    }
+    const mappings = entries.map(([code, cp]) => `<${hex4(code)}> <${utf16(cp)}>`);
     return [
       '/CIDInit /ProcSet findresource begin',
       '12 dict begin',
@@ -156,7 +235,7 @@ export class EmbeddedFont {
       '/CMapName /Adobe-Identity-UCS def',
       '/CMapType 2 def',
       '1 begincodespacerange\n<0000> <FFFF>\nendcodespacerange',
-      ...blocks,
+      ...blocks(mappings, 'bfchar'),
       'endcmap',
       'CMapName currentdict /CMap defineresource pop',
       'end',
@@ -184,6 +263,16 @@ export class PdfFonts {
     }
     return e ?? undefined;
   }
+}
+
+/** CMap mapping lines in blocks of at most 100 (§9.10.3, as CMaps are written). */
+function blocks(lines: readonly string[], kind: string): string[] {
+  const out: string[] = [];
+  for (let i = 0; i < lines.length; i += 100) {
+    const part = lines.slice(i, i + 100);
+    out.push(`${part.length} begin${kind}\n${part.join('\n')}\nend${kind}`);
+  }
+  return out;
 }
 
 const hex4 = (v: number) => v.toString(16).toUpperCase().padStart(4, '0');
