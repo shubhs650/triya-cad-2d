@@ -51,7 +51,16 @@ export type VariableKind =
 
 /** The records a name variable can name. */
 export type NameTable =
-  'layers' | 'linetypes' | 'textStyles' | 'dimStyles' | 'blockRecords' | 'mlineStyles';
+  | 'layers'
+  | 'linetypes'
+  | 'textStyles'
+  | 'dimStyles'
+  | 'blockRecords'
+  | 'mlineStyles'
+  | 'mleaderStyles'
+  | 'tableStyles'
+  /** Not a table: the drawing's scale list (`meta.annotationScales`). */
+  | 'annotationScales';
 
 export interface SystemVariable {
   /** AutoCAD's name, upper case, without the header's `$`. */
@@ -74,6 +83,11 @@ export interface SystemVariable {
   readonly empty?: boolean;
   /** Decimal places a real always shows, whatever LUPREC is (DATE's day fraction). */
   readonly places?: number;
+  /**
+   * A number the drawing keeps as text: a DICTIONARYVAR (MSLTSCALE's "1"), shown and typed as a
+   * number and written back as AutoCAD writes it.
+   */
+  readonly text?: true;
 }
 
 /**
@@ -248,6 +262,34 @@ const NAME_VARIABLES: Readonly<Record<string, { table: NameTable; empty?: true }
   DIMLTEX2: { table: 'linetypes', empty: true },
 };
 
+/**
+ * The AcDbVariableDictionary variables SETVAR sets (M2-59 part 4), by AutoCAD 2024's system
+ * variable reference. Each DICTIONARYVAR holds text: those naming a style or scale take a name
+ * the drawing has, which the save checks again; the numeric ones are kept as AutoCAD writes them
+ * ("1", "3.500000"). CETRANSPARENCY and HPTRANSPARENCY are ByLayer, ByBlock or a percentage.
+ * Others (CVIEWDETAILSTYLE, CVIEWSECTIONSTYLE, HPCOLOR, CENTERLTYPEFILE, …) name what Triya does
+ * not keep, so they stay read only.
+ */
+const DICTIONARY_VARIABLES: Readonly<
+  Record<string, Pick<SystemVariable, 'kind' | 'table' | 'min' | 'max' | 'nonNegative'>>
+> = {
+  CMLEADERSTYLE: { kind: 'name', table: 'mleaderStyles' },
+  CTABLESTYLE: { kind: 'name', table: 'tableStyles' },
+  CANNOSCALE: { kind: 'name', table: 'annotationScales' },
+  [CETRANSPARENCY]: { kind: 'transparency' },
+  HPTRANSPARENCY: { kind: 'transparency' },
+  MSLTSCALE: { kind: 'switch' },
+  HIDETEXT: { kind: 'switch' },
+  DIMASSOC: { kind: 'integer', min: 0, max: 2 },
+  LAYEREVAL: { kind: 'integer', min: 0, max: 2 },
+  LAYERNOTIFY: { kind: 'integer', min: 0, max: 15 },
+  LIGHTINGUNITS: { kind: 'integer', min: 0, max: 2 },
+  XCLIPFRAME: { kind: 'integer', min: 0, max: 2 },
+  INDEXCTL: { kind: 'integer', min: 0, max: 3 },
+  SORTENTS: { kind: 'integer', min: 0, max: 127 },
+  CENTEREXE: { kind: 'real', nonNegative: true },
+};
+
 /** Bounds AutoCAD 2024's system variable reference gives (those a wrong value would break). */
 const RANGES: Readonly<Record<string, readonly [number, number]>> = {
   LUNITS: [1, 5],
@@ -308,9 +350,11 @@ function headerVariable(key: string, value: HeaderValue): SystemVariable {
     return { ...base, kind: kindOf(name, value), readOnly: true };
   }
   if (!key.startsWith('$')) {
-    // AcDbVariableDictionary entries hold text; Triya sets only the one it understands.
-    if (key === CETRANSPARENCY) return { ...base, kind: 'transparency' };
-    return { ...base, kind: 'text', readOnly: true };
+    // AcDbVariableDictionary entries hold text; Triya sets those it understands.
+    const known = DICTIONARY_VARIABLES[name];
+    if (!known) return { ...base, kind: 'text', readOnly: true };
+    const numeric = known.kind === 'integer' || known.kind === 'switch' || known.kind === 'real';
+    return { ...base, ...known, ...(numeric && { text: true as const }) };
   }
   const named = NAME_VARIABLES[name];
   if (named) {
@@ -335,6 +379,20 @@ function kindOf(name: string, value: HeaderValue): VariableKind {
   if (typeof value === 'string') return 'text';
   if (typeof value === 'object') return 'point';
   return INTEGER_HEADER_VARIABLES.has(name) ? 'integer' : 'real';
+}
+
+/**
+ * The DICTIONARYVAR a HEADER variable has beside it, which SETVAR sets with it (M2-59 part 4):
+ * AutoCAD's files state HIDETEXT, XCLIPFRAME, DIMASSOC, INDEXCTL and SORTENTS in both places.
+ */
+export function dictionaryTwin(
+  model: DocumentModel,
+  v: SystemVariable,
+): SystemVariable | undefined {
+  if (v.store !== 'header' || !v.key?.startsWith('$') || !model.header.has(v.name))
+    return undefined;
+  const twin = headerVariable(v.name, model.header.get(v.name)!);
+  return twin.readOnly ? undefined : twin;
 }
 
 /** The header entry a variable's name is kept under, if the drawing has one. */
@@ -383,6 +441,8 @@ export type VariableValue =
 /** The value a header variable holds, as SETVAR shows it (a switch as 0 or 1, an angle in degrees). */
 export function headerValue(v: SystemVariable, value: HeaderValue): VariableValue {
   if (typeof value === 'boolean') return value ? 1 : 0;
+  // A DICTIONARYVAR's number; text that is none is shown as it is.
+  if (v.text && typeof value === 'string' && NUMBER.test(value.trim())) return Number(value);
   if (v.kind === 'angle' && typeof value === 'number') return (value * 180) / Math.PI;
   return value;
 }
@@ -394,6 +454,10 @@ export function headerEntry(
   was: HeaderValue | undefined,
 ): HeaderValue {
   if (typeof was === 'boolean') return value === 1;
+  // AutoCAD writes a DICTIONARYVAR's real with six places (CENTEREXE "3.500000").
+  if (v.text && typeof value === 'number') {
+    return v.kind === 'real' ? value.toFixed(6) : String(value);
+  }
   if (v.kind === 'angle' && typeof value === 'number') return (value * Math.PI) / 180;
   if (typeof value === 'object' && was && typeof was === 'object' && 'z' in was) {
     return { x: value.x, y: value.y, z: value.z ?? 0 };
@@ -439,7 +503,11 @@ const between = (v: SystemVariable): string => `Value must be between ${v.min} a
 /** A record's name as its table spells it, or undefined when it has none of that name. */
 function recordName(model: DocumentModel, table: NameTable, typed: string): string | undefined {
   const key = typed.toUpperCase();
-  for (const r of model.tables[table].values()) {
+  const records =
+    table === 'annotationScales'
+      ? (model.meta.annotationScales ?? [])
+      : model.tables[table].values();
+  for (const r of records) {
     if (r.name.toUpperCase() === key) return r.name;
   }
   return undefined;
@@ -452,7 +520,15 @@ const TABLE_WORDS: Readonly<Record<NameTable, string>> = {
   dimStyles: 'dimension style',
   blockRecords: 'block',
   mlineStyles: 'multiline style',
+  mleaderStyles: 'multileader style',
+  tableStyles: 'table style',
+  annotationScales: 'annotation scale',
 };
+
+/** CANNOSCALEVALUE for a CANNOSCALE of `name`: the scale's value, when the drawing has it. */
+export function annotationScaleValue(model: DocumentModel, name: string): number | undefined {
+  return model.meta.annotationScales?.find((s) => s.name === name)?.value;
+}
 
 /** Typed text as a value of `v` (not a point: a point prompt parses those). */
 export function parseValue(model: DocumentModel, v: SystemVariable, text: string): ParsedValue {

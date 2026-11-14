@@ -91,6 +91,7 @@ export function mapHeader(doc: CadDocument): MappedHeader {
       ...(doc.rootDictionary && { rootDictionary: hex(doc.rootDictionary.handle) }),
       ...definitionDictionaries(doc),
       ...keptEntryNames(doc),
+      ...annotationScales(doc),
     },
   };
 }
@@ -139,6 +140,21 @@ export function annotationScaleValue(doc: CadDocument, scale: HeaderValue): numb
     return s.paperUnits > 0 && s.drawingUnits > 0 ? s.paperUnits / s.drawingUnits : undefined;
   }
   return undefined;
+}
+
+/**
+ * The ACAD_SCALELIST scales with a valid ratio (M2-59 part 4): what SETVAR's CANNOSCALE may name,
+ * with the CANNOSCALEVALUE each gives.
+ */
+function annotationScales(doc: CadDocument): Pick<DocumentMeta, 'annotationScales'> {
+  const out: { name: string; value: number }[] = [];
+  for (const s of namedDictionary(doc, CadDictionary.acadScaleList) ?? []) {
+    if (!(s instanceof Scale) || !s.name) continue;
+    const value = annotationScaleValue(doc, s.name);
+    if (value !== undefined && !out.some((o) => o.name === s.name))
+      out.push({ name: s.name, value });
+  }
+  return out.length > 0 ? { annotationScales: out } : {};
 }
 
 /**

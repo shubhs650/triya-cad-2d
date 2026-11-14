@@ -14,6 +14,7 @@ import {
   builtinCommands,
   insUnitsOf,
   pasteScale,
+  standardMLeaderStyle,
   systemVariable,
   wipeoutFrame,
   type BusEvent,
@@ -21,6 +22,7 @@ import {
   type DocumentInit,
   type HeaderValue,
   type PromptBusOptions,
+  type TableStyleRecord,
   type ViewHost,
   type ViewReply,
 } from '../../src/index';
@@ -82,6 +84,7 @@ const HEADER: [string, HeaderValue][] = [
   ['$DWGCODEPAGE', 'ANSI_1252'],
   ['CETRANSPARENCY', 'ByLayer'],
   ['MSLTSCALE', '1'],
+  ['CVIEWDETAILSTYLE', 'Metric50'],
 ];
 
 describe('SETVAR', () => {
@@ -159,9 +162,9 @@ describe('SETVAR', () => {
     expect(s.bus.command).toBeUndefined();
     await s.bus.script(['EXTMIN']);
     expect(s.log.at(-1)).toBe('EXTMIN = 0.0000,0.0000,0.0000 (read only)');
-    // An AcDbVariableDictionary entry Triya does not set yet.
-    await s.bus.script(['MSLTSCALE']);
-    expect(s.log.at(-1)).toBe('MSLTSCALE = "1" (read only)');
+    // An AcDbVariableDictionary entry naming what Triya does not keep (a detail view style).
+    await s.bus.script(['CVIEWDETAILSTYLE']);
+    expect(s.log.at(-1)).toBe('CVIEWDETAILSTYLE = "Metric50" (read only)');
   });
 
   it('keeps a variable the header holds as a flag a flag', async () => {
@@ -343,6 +346,179 @@ describe('SETVAR', () => {
 
 // M2-59: the variables AutoCAD works out and nobody sets (AutoCAD 2024 Help, "System Variables":
 // CTAB, DATE, CDATE, VIEWSIZE, VIEWCTR, DWGNAME, DWGPREFIX, DWGTITLED, DBMOD), each read only.
+// M2-59 part 4: the AcDbVariableDictionary's DICTIONARYVARs AutoCAD saves outside the HEADER
+// section. Each holds text; SETVAR shows and takes the numeric ones as numbers, and the ones
+// naming a style or scale take a name the drawing has, as the save checks.
+describe('AcDbVariableDictionary variables (M2-59 part 4)', () => {
+  const tableStyle = (handle: string, name: string): TableStyleRecord => ({
+    handle,
+    name,
+    description: '',
+    flowDirection: 0,
+    styleFlags: 0,
+    horizontalMargin: 0.06,
+    verticalMargin: 0.06,
+    suppressTitle: false,
+    suppressHeader: false,
+    cellStyles: [],
+  });
+  function dictionaryInit(): DocumentInit {
+    const init = withHeader([
+      ...HEADER,
+      ['CMLEADERSTYLE', 'Standard'],
+      ['CTABLESTYLE', 'STANDARD'],
+      ['CANNOSCALE', '1:1'],
+      ['CANNOSCALEVALUE', 1],
+      ['MSLTSCALE', '0'],
+      ['LAYEREVAL', '0'],
+      ['LAYERNOTIFY', '0'],
+      ['LIGHTINGUNITS', '2'],
+      ['HIDETEXT', '1'],
+      ['CENTEREXE', '3.500000'],
+      ['HPTRANSPARENCY', 'ByLayer'],
+      ['CENTERLTYPEFILE', 'acadiso.lin'],
+    ]);
+    return {
+      ...init,
+      meta: {
+        ...init.meta,
+        annotationScales: [
+          { name: '1:1', value: 1 },
+          { name: '1:50', value: 0.02 },
+          { name: '1/4" = 1\'-0"', value: 1 / 48 },
+        ],
+      },
+      tables: {
+        ...init.tables,
+        mleaderStyles: [
+          { handle: '35', ...standardMLeaderStyle(true, undefined) },
+          { handle: '36', ...standardMLeaderStyle(true, undefined), name: 'Callout' },
+        ],
+        tableStyles: [tableStyle('37', 'Standard'), tableStyle('38', 'Schedule')],
+      },
+    };
+  }
+
+  it('sets the current multileader and table styles to a style the drawing has', async () => {
+    const s = setup(dictionaryInit());
+    await s.bus.script(['CMLEADERSTYLE']);
+    expect(s.bus.promptText).toBe('Enter new value for CMLEADERSTYLE <"Standard">:');
+    await s.bus.script(['Detail']);
+    expect(s.log.at(-1)).toBe('No multileader style named "Detail".');
+    // Spelled as the style is, whatever the case typed.
+    await s.bus.script(['callout']);
+    expect(s.model.header.get('CMLEADERSTYLE')).toBe('Callout');
+    expect(s.bus.undo.state.nextUndo).toBe('CMLEADERSTYLE');
+    await s.bus.script(['SETVAR', 'ctablestyle']);
+    expect(s.bus.promptText).toBe('Enter new value for CTABLESTYLE <"STANDARD">:');
+    await s.bus.script(['.']);
+    expect(s.log.at(-1)).toBe('CTABLESTYLE cannot name nothing.');
+    await s.bus.script(['SCHEDULE']);
+    expect(s.model.header.get('CTABLESTYLE')).toBe('Schedule');
+    await s.bus.script(['U']);
+    expect(s.model.header.get('CTABLESTYLE')).toBe('STANDARD');
+  });
+
+  it('sets the annotation scale to one of the drawing’s scales, CANNOSCALEVALUE following', async () => {
+    const s = setup(dictionaryInit());
+    await s.bus.script(['CANNOSCALE']);
+    expect(s.bus.promptText).toBe('Enter new value for CANNOSCALE <"1:1">:');
+    await s.bus.script(['1:100']);
+    expect(s.log.at(-1)).toBe('No annotation scale named "1:100".');
+    await s.bus.script(['1:50']);
+    expect(s.model.header.get('CANNOSCALE')).toBe('1:50');
+    expect(s.model.header.get('CANNOSCALEVALUE')).toBe(0.02);
+    // Names may hold spaces and quotes.
+    await s.bus.script(['CANNOSCALE', '1/4" = 1\'-0"']);
+    expect(s.model.header.get('CANNOSCALE')).toBe('1/4" = 1\'-0"');
+    expect(s.model.header.get('CANNOSCALEVALUE')).toBeCloseTo(1 / 48, 12);
+    await s.bus.script(['CANNOSCALEVALUE']);
+    expect(s.log.at(-1)).toBe('CANNOSCALEVALUE = 0.0208 (read only)');
+    // One undo step puts both back.
+    await s.bus.script(['U']);
+    expect(s.model.header.get('CANNOSCALE')).toBe('1:50');
+    expect(s.model.header.get('CANNOSCALEVALUE')).toBe(0.02);
+  });
+
+  it('shows and takes the numeric ones as numbers, kept as the text AutoCAD writes', async () => {
+    const s = setup(dictionaryInit());
+    await s.bus.script(['MSLTSCALE']);
+    expect(s.bus.promptText).toBe('Enter new value for MSLTSCALE <0>:');
+    await s.bus.script(['2']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 1.');
+    await s.bus.script(['1']);
+    expect(s.model.header.get('MSLTSCALE')).toBe('1');
+    await s.bus.script(['LAYEREVAL', '3']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 2.');
+    await s.bus.script(['2']);
+    expect(s.model.header.get('LAYEREVAL')).toBe('2');
+    await s.bus.script(['LAYERNOTIFY', '16']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 15.');
+    await s.bus.script(['15']);
+    expect(s.model.header.get('LAYERNOTIFY')).toBe('15');
+    await s.bus.script(['HIDETEXT', '0']);
+    expect(s.model.header.get('HIDETEXT')).toBe('0');
+    await s.bus.script(['LIGHTINGUNITS', '1.5']);
+    expect(s.log.at(-1)).toBe('Requires an integer value.');
+    await s.bus.script(['0']);
+    expect(s.model.header.get('LIGHTINGUNITS')).toBe('0');
+    await s.bus.script(['CENTEREXE']);
+    expect(s.bus.promptText).toBe('Enter new value for CENTEREXE <3.5000>:');
+    await s.bus.script(['-1']);
+    expect(s.log.at(-1)).toBe('Value must be positive or zero.');
+    await s.bus.script(['0.12']);
+    expect(s.model.header.get('CENTEREXE')).toBe('0.120000');
+    await s.bus.script(['HPTRANSPARENCY', '50']);
+    expect(s.model.header.get('HPTRANSPARENCY')).toBe('50');
+    await s.bus.script(['HPTRANSPARENCY', 'byblock']);
+    expect(s.model.header.get('HPTRANSPARENCY')).toBe('ByBlock');
+    // Enter keeps a value without an edit.
+    const before = s.bus.undo.state.undoable;
+    await s.bus.script(['MSLTSCALE', '']);
+    expect(s.bus.undo.state.undoable).toBe(before);
+    // A file name Triya reads nothing from stays as the drawing has it.
+    await s.bus.script(['CENTERLTYPEFILE']);
+    expect(s.log.at(-1)).toBe('CENTERLTYPEFILE = "acadiso.lin" (read only)');
+  });
+
+  it('sets a HEADER variable’s DICTIONARYVAR twin with it', async () => {
+    // AutoCAD's files state HIDETEXT, XCLIPFRAME, DIMASSOC, … in both places; both must agree.
+    const s = setup(withHeader([...HEADER, ['$HIDETEXT', 1], ['HIDETEXT', '1']]));
+    await s.bus.script(['HIDETEXT']);
+    expect(s.bus.promptText).toBe('Enter new value for HIDETEXT <1>:');
+    await s.bus.script(['0']);
+    expect(s.model.header.get('$HIDETEXT')).toBe(0);
+    expect(s.model.header.get('HIDETEXT')).toBe('0');
+    await s.bus.script(['U']);
+    expect(s.model.header.get('$HIDETEXT')).toBe(1);
+    expect(s.model.header.get('HIDETEXT')).toBe('1');
+  });
+
+  it('shows a DICTIONARYVAR whose text is no number as the text', async () => {
+    const s = setup(withHeader([...HEADER, ['LAYEREVAL', 'x'], ['CANNOSCALE', '1:1']]));
+    await s.bus.script(['LAYEREVAL']);
+    expect(s.bus.promptText).toBe('Enter new value for LAYEREVAL <"x">:');
+    await s.bus.script(['1']);
+    expect(s.model.header.get('LAYEREVAL')).toBe('1');
+    // A drawing without a scale list has no scale to name.
+    await s.bus.script(['CANNOSCALE', '1:1']);
+    expect(s.log.at(-1)).toBe('No annotation scale named "1:1".');
+  });
+
+  it('lists them with SETVAR ?', async () => {
+    const s = setup(dictionaryInit());
+    await s.bus.script(['SETVAR', '?', 'C*STYLE,MSLTSCALE,CANNO*']);
+    expect(s.log.filter((l) => /^(C[A-Z]*STYLE|MSLTSCALE|CANNO)/.test(l))).toEqual([
+      'CANNOSCALE        "1:1"',
+      'CANNOSCALEVALUE   1.0000            (read only)',
+      'CMLEADERSTYLE     "Standard"',
+      'CTABLESTYLE       "STANDARD"',
+      'CVIEWDETAILSTYLE  "Metric50"        (read only)',
+      'MSLTSCALE         0',
+    ]);
+  });
+});
+
 describe('computed variables', () => {
   /** 14 November 2026, 14:37:33.12 local time. */
   const clock = { now: () => new Date(2026, 10, 14, 14, 37, 33, 120) };
