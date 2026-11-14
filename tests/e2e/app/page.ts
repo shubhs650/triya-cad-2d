@@ -277,3 +277,18 @@ export async function typeAtOnce(page: Page, text: string): Promise<void> {
   const cdp = await page.context().newCDPSession(page);
   await Promise.all(keyEvents(text).map((e) => cdp.send('Input.dispatchKeyEvent', e)));
 }
+
+/**
+ * Enters `text` at the command line, ended by Enter, once the engine has read every input sent
+ * before (M2-75). A fill replaces the field's text at once, while the keys typed ahead of a
+ * prompt not shown yet are held and replayed in order (M2-71): a fill made while the engine still
+ * read the input before replaced that input's text, whose Enter was held, and export.spec.ts lost
+ * a point and repeated LINE in CI. Specs never fill the command line themselves
+ * (tests/lint/e2e-command-fill.test.ts); keys typed with `page.keyboard` need no wait.
+ */
+export async function enterCommand(page: Page, text: string): Promise<void> {
+  await expect(page.locator('[data-reading="true"]')).toHaveCount(0);
+  const input = page.getByLabel('Command', { exact: true });
+  await input.fill(text);
+  await input.press('Enter');
+}

@@ -6,7 +6,7 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test, type Download, type Page } from '@playwright/test';
 import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
-import { DWG, expectShown, openWithPicker } from '../app/page';
+import { DWG, expectShown, openWithPicker, enterCommand } from '../app/page';
 import { startApp } from '../app/server';
 
 const PAGE_SETUPS = path.join(
@@ -23,9 +23,7 @@ test.afterAll(async () => {
 });
 
 async function openPublish(page: Page) {
-  const input = page.getByLabel('Command', { exact: true });
-  await input.fill('PUBLISH');
-  await input.press('Enter');
+  await enterCommand(page, 'PUBLISH');
   const d = page.getByRole('dialog', { name: 'Publish' });
   await expect(d).toBeVisible();
   return d;
