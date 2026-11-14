@@ -71,6 +71,12 @@ export class Layer extends TableEntry {
 
 	public plotStyleName: number = 0;
 
+	/**
+	 * The name of the layer's true colour (DXF 430): `BOOK$COLOR` for a colour-book colour, which
+	 * AutoCAD keeps on the layer alone, with no DBCOLOR. Written only with a true colour.
+	 */
+	public trueColorName: string | null = null;
+
 	public override get subclassMarker(): string {
 		return DxfSubclassMarker.layer;
 	}

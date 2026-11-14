@@ -1,0 +1,44 @@
+diff --git a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+index b19a494..79056a0 100644
+--- a/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
++++ b/src/IO/DXF/DxfStreamWriter/DxfTablesSectionWriter.ts
+@@ -264,6 +264,8 @@ export class DxfTablesSectionWriter extends DxfSectionWriterBase {
+ 
+     if (layer.color.isTrueColor) {
+       this._writer.write(420, layer.color.trueColor, map);
++      // The colour's name (a colour-book colour's BOOK$COLOR), which upstream never wrote.
++      if (layer.trueColorName) this._writer.write(430, layer.trueColorName, map);
+     }
+ 
+     this._writer.write(6, layer.lineType?.name ?? 'Continuous', map);
+diff --git a/src/IO/Templates/CadLayerTemplate.ts b/src/IO/Templates/CadLayerTemplate.ts
+index 146b744..e27cf1f 100644
+--- a/src/IO/Templates/CadLayerTemplate.ts
++++ b/src/IO/Templates/CadLayerTemplate.ts
+@@ -29,6 +29,9 @@ export class CadLayerTemplate extends CadTableEntryTemplate<Layer> {
+ 		// upstream read the handle and dropped it.
+ 		if (this.plotStyleHandle) this.cadObject.plotStyleName = this.plotStyleHandle;
+ 
++		// The colour's name (DXF 430), a colour-book colour's `BOOK$COLOR`: upstream read it and dropped it.
++		if (this.trueColorName) this.cadObject.trueColorName = this.trueColorName;
++
+ 		// The layer's material (DXF 347, DWG R2007+): upstream looked it up and dropped it.
+ 		const material = builder.tryGetCadObject<Material>(this.materialHandle);
+ 		if (material instanceof Material) {
+diff --git a/src/Tables/Layer.ts b/src/Tables/Layer.ts
+index 96ff21d..45560c6 100644
+--- a/src/Tables/Layer.ts
++++ b/src/Tables/Layer.ts
+@@ -71,6 +71,12 @@ export class Layer extends TableEntry {
+ 
+ 	public plotStyleName: number = 0;
+ 
++	/**
++	 * The name of the layer's true colour (DXF 430): `BOOK$COLOR` for a colour-book colour, which
++	 * AutoCAD keeps on the layer alone, with no DBCOLOR. Written only with a true colour.
++	 */
++	public trueColorName: string | null = null;
++
+ 	public override get subclassMarker(): string {
+ 		return DxfSubclassMarker.layer;
+ 	}
