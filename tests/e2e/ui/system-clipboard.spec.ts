@@ -1,12 +1,13 @@
 // M2-32 part 5: the system clipboard. COPYCLIP's objects reach another Triya window (two pages
 // of one browser, as two windows of the installed app) and other apps get a picture of them;
-// another app's text pastes as multiline text and its picture is refused with a reason. The
+// another app's text pastes as multiline text, and its picture as a raster image that the saved
+// drawing reopens with (M2-54: the PNG is kept on this device). The
 // format, the paste's order of preference and the picture's plot are unit-tested in
 // apps/web/test/system-clipboard.test.ts and packages/engine/test; this checks the browser's
 // clipboard carries them.
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
-import { DWG, DXF, expectShown, openWithPicker } from '../app/page';
+import { DWG, DXF, colourAt, expectShown, openWithPicker, viewOf } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
 
@@ -116,7 +117,7 @@ test('objects copied in one Triya window paste in another, and other apps get a 
   await expect(other.getByRole('alert')).toHaveCount(0);
 });
 
-test("another app's text pastes as multiline text, its picture is refused", async ({ page }) => {
+test("another app's text pastes as multiline text", async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto(app.url);
   await openWithPicker(page, DXF);
@@ -137,16 +138,89 @@ test("another app's text pastes as multiline text, its picture is refused", asyn
     attachment: 1,
   });
 
+  await expect(page.getByRole('alert')).toHaveCount(0);
+});
+
+type Rgb = readonly number[];
+const isRed = ([r, g, b]: Rgb) => r! > 200 && g! < 60 && b! < 60;
+const isBlue = ([r, g, b]: Rgb) => b! > 200 && r! < 60 && g! < 60;
+
+/** Zooms to the window between the image's corners, with a margin, at the command line. */
+async function zoomTo(page: Page, image: { x: number; y: number; w: number; h: number }) {
+  const m = image.w / 4;
+  await type(page, 'ZOOM', /Specify corner of window/);
+  await type(page, `${image.x - m},${image.y - m}`, /Specify opposite corner/);
+  await type(page, `${image.x + image.w + m},${image.y + image.h + m}`, 'Command:');
+}
+
+/** Polls the canvas until (x, y) in world units is `ok`. */
+async function expectColour(page: Page, x: number, y: number, ok: (c: Rgb) => boolean) {
+  await expect
+    .poll(async () => ok(await colourAt(page, (await viewOf(page)).at(x, y))), { timeout: 30_000 })
+    .toBe(true);
+}
+
+test("another app's picture pastes as an image, and the saved drawing reopens with it", async ({
+  page,
+  context,
+}) => {
+  test.setTimeout(150_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+
+  // A screenshot-like PNG from another app: 96 × 48 pixels, its left half red, its right blue.
   await page.evaluate(async () => {
-    const canvas = new OffscreenCanvas(4, 4);
-    canvas.getContext('2d')!.fillRect(0, 0, 4, 4);
+    const canvas = new OffscreenCanvas(96, 48);
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#ff0000';
+    ctx.fillRect(0, 0, 48, 48);
+    ctx.fillStyle = '#0000ff';
+    ctx.fillRect(48, 0, 48, 48);
     const png = await canvas.convertToBlob({ type: 'image/png' });
     await navigator.clipboard.write([new ClipboardItem({ 'image/png': png })]);
   });
-  await type(page, 'PASTECLIP', 'Command:');
-  await expect(log(page)).toContainText(
-    'The Clipboard holds a picture, which Triya does not paste.',
-  );
-  expect(await added(page)).toHaveLength(1);
+  await page.keyboard.press('Control+v');
+  await expect(prompt(page)).toHaveText('Specify insertion point:');
+  await type(page, '1000,1000', 'Command:');
+  await expect.poll(async () => (await added(page)).map((e) => e.type)).toEqual(['IMAGE']);
+  const [pasted] = await added(page);
+  const g = pasted!.geom as {
+    position: { x: number; y: number };
+    u: { x: number };
+    v: { y: number };
+    size: { x: number; y: number };
+  };
+  expect(g.position).toEqual({ x: 1000, y: 1000 });
+  expect(g.size).toEqual({ x: 96, y: 48 });
+  // 96 pixels an inch (the PNG states no resolution): one inch wide, in the drawing's units.
+  const image = { x: 1000, y: 1000, w: g.u.x * 96, h: g.v.y * 48 };
+  expect(image.w).toBeCloseTo(image.h * 2, 9);
+
+  await zoomTo(page, image);
+  await expectColour(page, image.x + image.w / 4, image.y + image.h / 2, isRed);
+  await expectColour(page, image.x + (3 * image.w) / 4, image.y + image.h / 2, isBlue);
+  await page.screenshot({ path: test.info().outputPath('1-picture-pasted.png') });
   await expect(page.getByRole('alert')).toHaveCount(0);
+
+  // Saved (a download: no File System Access), then opened in another window of the app, as on
+  // a later visit: the drawing names the picture's file, which this device keeps.
+  await page.evaluate(() => {
+    delete (window as { showSaveFilePicker?: unknown }).showSaveFilePicker;
+  });
+  const download = page.waitForEvent('download');
+  await page.keyboard.press('Control+s');
+  const d = await download;
+  const saved = test.info().outputPath(d.suggestedFilename());
+  await d.saveAs(saved);
+
+  const later = await context.newPage();
+  await later.goto(app.url);
+  await openWithPicker(later, saved);
+  await expectShown(later, path.basename(saved));
+  await zoomTo(later, image);
+  await expectColour(later, image.x + image.w / 4, image.y + image.h / 2, isRed);
+  await expectColour(later, image.x + (3 * image.w) / 4, image.y + image.h / 2, isBlue);
+  await later.screenshot({ path: test.info().outputPath('2-saved-drawing-reopened.png') });
+  await expect(later.getByRole('alert')).toHaveCount(0);
 });

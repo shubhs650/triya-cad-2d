@@ -141,3 +141,58 @@ describe('RasterImages', () => {
     expect(decoded).toHaveLength(2);
   });
 });
+
+describe('RasterImages with kept pictures (M2-54)', () => {
+  it('looks a missing file up among the pictures kept on this device, once', async () => {
+    const { decode } = fakeDecode();
+    const asked: string[] = [];
+    let found = 0;
+    const images = new RasterImages(decode, {
+      kept: (name) => {
+        asked.push(name);
+        return Promise.resolve(name === 'pasted-0a1b2c3d.png' ? new Uint8Array([9]) : undefined);
+      },
+      found: () => found++,
+    });
+    const got: string[] = [];
+    const defs = [
+      def('1A', 'pasted-0a1b2c3d.png'),
+      def('1B', '.\\pasted-0A1B2C3D.png'),
+      def('1C', 'pasted-ffffffff.png'),
+      def('1D', 'photo.png'),
+      def('1E', 'pasted-11111111.png', false),
+    ];
+    const c = images.client(
+      () => defs,
+      (d, p) => got.push(`${d}:${p?.data[0]}`),
+    );
+    await settle();
+    await settle();
+    expect(got.sort()).toEqual(['1A:9', '1B:9']);
+    expect(images.has('pasted-0a1b2c3d.png')).toBe(true);
+    expect(found).toBe(1);
+    // Only pasted pictures' names, each asked once: a REGEN does not ask again.
+    c.resend();
+    await settle();
+    expect(asked.sort()).toEqual(['pasted-0a1b2c3d.png', 'pasted-ffffffff.png']);
+  });
+
+  it('keeps a file supplied meanwhile over the kept one', async () => {
+    const { decode } = fakeDecode();
+    let release: (b: Uint8Array) => void = () => {};
+    const images = new RasterImages(decode, {
+      kept: () => new Promise((r) => (release = r)),
+      found: () => {},
+    });
+    const got: number[] = [];
+    images.client(
+      () => [def('1A', 'pasted-0a1b2c3d.png')],
+      (_d, p) => got.push(p!.data[0]!),
+    );
+    images.add('pasted-0a1b2c3d.png', new Uint8Array([5]));
+    release(new Uint8Array([9]));
+    await settle();
+    await settle();
+    expect(got).toEqual([5]);
+  });
+});

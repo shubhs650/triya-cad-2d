@@ -26,6 +26,7 @@ export { hasDynamicColumns, withColumnCount } from './mtext-grips';
 export * from './revcloud';
 export * from './clipboard';
 export * from './clipboard-data';
+export * from './picture';
 export * from './draw-order';
 export * from './mleader';
 export * from './mleader-blocks';
