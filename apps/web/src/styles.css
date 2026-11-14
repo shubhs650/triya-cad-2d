@@ -2823,3 +2823,48 @@ button {
     transition: background-color 120ms;
   }
 }
+
+/* Quick Properties (M2-35 part 16): a small floating palette over the drawing, by the cursor or
+   where it was dragged, collapsed to three rows until the pointer or the focus is in it. */
+.quick-properties {
+  position: absolute;
+  z-index: 4;
+  width: 260px;
+  background: var(--chrome-bg-raised);
+  color: var(--chrome-text);
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 25%);
+  font-size: 12px;
+}
+
+.quick-properties header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 4px 2px 8px;
+  border-bottom: 1px solid var(--chrome-border);
+}
+
+.quick-properties[data-location='static'] header {
+  cursor: move;
+}
+
+.quick-properties h2 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.quick-properties header button {
+  border: 0;
+  background: none;
+}
+
+.quick-properties .properties-objects {
+  margin: 4px;
+  width: calc(100% - 8px);
+}
+
+.quick-properties:not(:hover, :focus-within) tbody tr:nth-child(n + 4) {
+  display: none;
+}
