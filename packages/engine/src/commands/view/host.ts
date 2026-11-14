@@ -292,8 +292,11 @@ export interface PlotScript {
   readonly plot: boolean;
 }
 
-/** The palettes a command opens or closes (M2-21). */
-export type PaletteName = 'properties';
+/**
+ * The palettes a command opens or closes (M2-21): the Properties palette, and Quick Properties
+ * (QUICKPROPERTIES, M2-35 part 21), shown for the objects selected whatever QPMODE says.
+ */
+export type PaletteName = 'properties' | 'quick';
 
 /**
  * What a file command asks of the app (M2-13): `recover` (DRAWINGRECOVERY, M2-14 part 2) shows

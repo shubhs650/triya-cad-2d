@@ -594,6 +594,14 @@ function DraftingSettings() {
       <label className="setting-check">
         <input
           type="checkbox"
+          checked={d.rolloverTips}
+          onChange={(e) => drafting.configure({ rolloverTips: e.currentTarget.checked })}
+        />
+        Show rollover tooltips (ROLLOVERTIPS)
+      </label>
+      <label className="setting-check">
+        <input
+          type="checkbox"
           checked={d.pdfOsnap}
           onChange={(e) => drafting.configure({ pdfOsnap: e.currentTarget.checked })}
         />

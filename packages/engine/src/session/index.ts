@@ -23,7 +23,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { EntityType } from '../model/types';
 import type { PropertyEdit } from '../properties/edit';
 import { propertySheet, type DimensionMeasure, type PropertySheet } from '../properties/sheet';
-import { quickPropertySheet } from '../properties/quick';
+import { quickPropertySheet, rolloverSheet } from '../properties/quick';
 import { REVCLOUDGRIPS } from '../edit/revcloud';
 
 /** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
@@ -175,7 +175,12 @@ export type CommandInput =
    * A row's `...` button (`PropertyRow.editor`, M2-35 part 9): an MTEXT's Contents opens the
    * In-Place Text Editor on the one MTEXT the palette shows.
    */
-  | { readonly kind: 'property-editor'; readonly key: 'contents' };
+  | { readonly kind: 'property-editor'; readonly key: 'contents' }
+  /**
+   * The cursor rests on object `id` (M2-35 part 21, ROLLOVERTIPS): the engine answers with its
+   * rollover tooltip (`rolloverSheet`), whether or not it is selected; the selection stays.
+   */
+  | { readonly kind: 'rollover'; readonly id: EntityId };
 
 /**
  * What the command engine tells the front-ends: the bus's events, with every edit a command
@@ -200,7 +205,9 @@ export type CommandOutput =
    */
   | { readonly type: 'view'; readonly id: number; readonly request: ViewRequest }
   /** The Properties palette's sheet for the objects selected now (M2-21), while it is open. */
-  | { readonly type: 'properties'; readonly sheet: PropertySheet };
+  | { readonly type: 'properties'; readonly sheet: PropertySheet }
+  /** The rollover tooltip of object `id` (M2-35 part 21); no sheet when the object is gone. */
+  | { readonly type: 'rollover'; readonly id: EntityId; readonly sheet?: PropertySheet };
 
 /** What the app hands the engine from the packages above it. */
 export interface EngineServices {
@@ -372,6 +379,11 @@ export class EngineSession {
         this.#vertex = Math.max(0, Math.trunc(input.vertex));
         if (this.#properties) this.#sendSheet();
         return Promise.resolve();
+      case 'rollover': {
+        const sheet = rolloverSheet(this.model, input.id);
+        this.#emit({ type: 'rollover', id: input.id, ...(sheet && { sheet }) });
+        return Promise.resolve();
+      }
       case 'view-step':
         this.#bus.undo.pushView({ label: input.label, viewport: input.viewport, view: input.view });
         return Promise.resolve();

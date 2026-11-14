@@ -4,15 +4,22 @@
 // Help does not reproduce, so Triya's are its own choice (`QUICK_PROPERTIES`).
 import { describe, expect, it } from 'vitest';
 import {
+  DocumentModel,
   EngineSession,
+  PromptBus,
   QUICK_PROPERTIES,
+  ROLLOVER_PROPERTIES,
+  builtinCommands,
   hasQuickProperties,
   propertySheet,
   quickPropertySheet,
+  rolloverSheet,
   type CommandOutput,
+  type EntityId,
   type PropertySheet,
+  type ViewRequest,
 } from '../../src/index';
-import { entityInit, sampleInit, sampleModel } from '../model/fixtures';
+import { LAYER_WALLS, entityInit, sampleInit, sampleModel } from '../model/fixtures';
 
 const labels = (sheet: PropertySheet | undefined) =>
   sheet?.sections.flatMap((s) => s.rows.map((r) => r.label));
@@ -102,5 +109,102 @@ describe('EngineSession quick properties', () => {
     const whole = sheets().at(-1)!.sheet;
     expect(whole.sections[0]!.title).toBe('General');
     expect(labels(whole)).toContain('Linetype scale');
+  });
+});
+
+// M2-35 part 21: rollover tooltips (AutoCAD 2024 Help, "ROLLOVERTIPS (System Variable)": the
+// properties an object under the cursor shows in a tooltip; the CUI's Rollover Tooltips list
+// them, its General entry Color, Layer and Linetype).
+describe('rolloverSheet', () => {
+  const model = sampleModel();
+
+  it('shows one object’s Color, Layer and Linetype under its type’s name', () => {
+    const circle = model.entityByHandle('21')!;
+    const tip = rolloverSheet(model, circle.id);
+    expect(tip?.count).toBe(1);
+    expect(tip?.sections).toHaveLength(1);
+    expect(tip?.sections[0]!.title).toBe('Circle');
+    expect(labels(tip)).toEqual(['Color', 'Layer', 'Linetype']);
+    expect(tip?.sections[0]!.rows.find((r) => r.key === 'layer')?.value).toBe(LAYER_WALLS);
+    expect(ROLLOVER_PROPERTIES).toEqual(['color', 'layer', 'linetype']);
+    // A tooltip offers no choices: a choice keeps only the option naming its value.
+    const layer = tip?.sections[0]!.rows.find((r) => r.key === 'layer');
+    expect(layer?.options?.map((o) => o.value)).toEqual([String(LAYER_WALLS)]);
+    expect(layer?.options?.[0]?.label).toBe('WALLS');
+    expect(tip?.colorBooks).toBeUndefined();
+  });
+
+  it('shows nothing for an object that is gone', () => {
+    expect(rolloverSheet(model, 99999 as EntityId)).toBeUndefined();
+  });
+});
+
+describe('EngineSession rollover', () => {
+  it('answers the object under the cursor with its tooltip, leaving the selection alone', async () => {
+    const se = new EngineSession(sampleInit());
+    const out: CommandOutput[] = [];
+    se.onCommand((o) => out.push(o));
+    const line = se.model.entityByHandle('20')!.id;
+    await se.command({ kind: 'rollover', id: line });
+    const tip = out.find(
+      (o): o is Extract<CommandOutput, { type: 'rollover' }> => o.type === 'rollover',
+    );
+    expect(tip?.id).toBe(line);
+    expect(tip?.sheet?.sections[0]!.title).toBe('Line');
+    expect(out.some((o) => o.type === 'selection' || o.type === 'properties')).toBe(false);
+    await se.command({ kind: 'rollover', id: 99999 as EntityId });
+    expect(out.at(-1)).toEqual({ type: 'rollover', id: 99999 });
+  });
+});
+
+// AutoCAD 2024 Help, "QUICKPROPERTIES (Command)": "Displays quick properties data for selected
+// objects", whatever QPMODE says: the objects selected, or those picked at "Select objects".
+describe('QUICKPROPERTIES', () => {
+  function setup() {
+    const model = DocumentModel.create(sampleInit());
+    const requests: ViewRequest[] = [];
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) => {
+          requests.push(r);
+          return Promise.resolve({ ok: true });
+        },
+      },
+    });
+    return { model, bus, requests };
+  }
+
+  it('shows Quick Properties for the objects selected, keeping them selected', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    const selected = s.bus.selection;
+    expect(selected.length).toBeGreaterThan(0);
+    await s.bus.submit('QUICKPROPERTIES');
+    expect(s.requests).toEqual([{ op: 'palette', palette: 'quick', open: true }]);
+    expect(s.bus.selection).toEqual(selected);
+    expect(s.bus.promptText).toBe('Command:');
+  });
+
+  it('asks for objects when none are selected, and leaves those picked selected', async () => {
+    const s = setup();
+    await s.bus.submit('QUICKPROPERTIES');
+    expect(s.bus.promptText).toBe('Select objects:');
+    await s.bus.submit('ALL');
+    await s.bus.submit('');
+    expect(s.requests).toEqual([{ op: 'palette', palette: 'quick', open: true }]);
+    const all = setup();
+    await all.bus.selectAll();
+    expect(s.bus.selection).toEqual(all.bus.selection);
+    expect(s.bus.selection.length).toBeGreaterThan(0);
+  });
+
+  it('shows nothing when no object is picked', async () => {
+    const s = setup();
+    await s.bus.submit('QUICKPROPERTIES');
+    await s.bus.submit('');
+    expect(s.requests).toEqual([]);
+    expect(s.bus.selection).toEqual([]);
   });
 });
