@@ -2681,6 +2681,25 @@ button {
   color: var(--chrome-text-muted);
 }
 
+/* M2-60: Save As PDF's PDF options line and the PDF Options dialog. */
+.export-label {
+  min-width: 96px;
+}
+
+.export-pdf-note {
+  flex: 1;
+  color: var(--chrome-text-muted);
+}
+
+.cad-dialog.pdf-options {
+  width: min(400px, calc(100vw - 32px));
+  max-width: min(400px, calc(100vw - 32px));
+}
+
+.cad-dialog.pdf-options .export-note {
+  grid-column: 1 / -1;
+}
+
 /* The View Manager (M2-47 part 2): the Views tree, the properties and the buttons side by side. */
 .cad-dialog.view-manager {
   max-width: min(720px, calc(100vw - 32px));

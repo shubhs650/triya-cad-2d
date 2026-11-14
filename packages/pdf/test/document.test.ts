@@ -102,6 +102,43 @@ describe('PdfDocument', () => {
     expect(catalog).toBe('<< /Type /Catalog /Pages 2 0 R >>');
   });
 
+  // M2-60: each drawing layer an optional content group, listed and ordered by name.
+  it('writes the layers pages mark as optional content groups, on, in name order', () => {
+    const doc = new PdfDocument({ compress: false });
+    const a = doc.addPage(10, 10);
+    expect(a.layer('Walls')).toBe('L1');
+    expect(a.layer('0')).toBe('L2');
+    expect(a.layer('Walls')).toBe('L1');
+    const b = doc.addPage(10, 10);
+    expect(b.layer('Dimensions (A)')).toBe('L3');
+    expect(b.layer('Walls')).toBe('L1');
+    a.content.beginMarked('L1').endMarked();
+    const objs = objects(doc.bytes());
+    const groups = new Map(
+      [...objs].filter(([, b]) => b.includes('/Type /OCG')).map(([id, b]) => [b, id]),
+    );
+    const id = (name: string) => groups.get(`<< /Type /OCG /Name ${pdfString(name)} >>`)!;
+    expect([...groups.keys()]).toHaveLength(3);
+    const catalog = [...objs.values()].find((o) => o.includes('/Type /Catalog'))!;
+    const order = ['0', 'Dimensions (A)', 'Walls'].map((n) => `${id(n)} 0 R`).join(' ');
+    expect(catalog).toContain(
+      `/OCProperties << /OCGs [${order}] /D << /Order [${order}] /BaseState /ON /OFF [] >> >>`,
+    );
+    const pages = [...objs.values()].filter((o) => o.includes('/Type /Page '));
+    expect(pages[0]).toContain(`/Properties << /L1 ${id('Walls')} 0 R /L2 ${id('0')} 0 R >>`);
+    expect(pages[1]).toContain(
+      `/Properties << /L3 ${id('Dimensions (A)')} 0 R /L1 ${id('Walls')} 0 R >>`,
+    );
+    const content = [...objs.values()].find((o) => o.includes('/OC /L1 BDC'))!;
+    expect(stream(doc.bytes(), content)).toBe('/OC /L1 BDC\nEMC\n');
+  });
+
+  it('refuses a page whose marked content is left open', () => {
+    const doc = new PdfDocument();
+    doc.addPage(10, 10).content.beginMarked(doc.addPage(10, 10).layer('A'));
+    expect(() => doc.bytes()).toThrow('unbalanced');
+  });
+
   it('writes the information dictionary, with a creation date only when given one', () => {
     const doc = new PdfDocument({
       title: 'A (1)',

@@ -58,6 +58,8 @@ export class PdfPage {
   readonly fonts = new Set<EmbeddedFont>();
   /** Pages of other PDFs shown on the page (M2-16 part 5, PDF underlays). */
   readonly forms = new Set<ImportedForm>();
+  /** Drawing layers the page marks as optional content (M2-60), in the order first marked. */
+  readonly layers = new Set<string>();
 
   constructor(
     /** Points. */
@@ -68,6 +70,8 @@ export class PdfPage {
     private readonly documentFonts: PdfFonts = new PdfFonts(),
     /** The document's imported pages, shared by its pages. */
     private readonly documentImports: PdfImports = new PdfImports(),
+    /** The document's drawing layers, by name: each one's resource name, the same on every page. */
+    private readonly documentLayers: Map<string, string> = new Map(),
   ) {
     if (!(width > 0 && height > 0)) throw new RangeError(`page size ${width} × ${height}`);
   }
@@ -80,6 +84,21 @@ export class PdfPage {
     const e = this.documentFonts.embed(font);
     if (e) this.fonts.add(e);
     return e;
+  }
+
+  /**
+   * The optional content group of the drawing layer `name` (M2-60, Save As PDF's "Include layer
+   * information"), named for the page's /Properties; content between `beginMarked(name)` and
+   * `endMarked()` shows only while a viewer has the layer on.
+   */
+  layer(name: string): string {
+    let resource = this.documentLayers.get(name);
+    if (resource === undefined) {
+      resource = `L${this.documentLayers.size + 1}`;
+      this.documentLayers.set(name, resource);
+    }
+    this.layers.add(name);
+    return resource;
   }
 
   /**
@@ -167,6 +186,17 @@ export function pdfDate(d: Date): string {
   )}${p(d.getUTCMinutes())}${p(d.getUTCSeconds())}Z)`;
 }
 
+/**
+ * Layer names in the order a viewer lists them: case folded first, then as written, by code
+ * unit, so the order is the same in every browser (no locale collation).
+ */
+const byName = (a: string, b: string): number => {
+  const fa = a.toUpperCase();
+  const fb = b.toUpperCase();
+  if (fa !== fb) return fa < fb ? -1 : 1;
+  return a < b ? -1 : a > b ? 1 : 0;
+};
+
 const latin1 = (s: string): Uint8Array => {
   const out = new Uint8Array(s.length);
   for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i) & 0xff;
@@ -177,12 +207,13 @@ export class PdfDocument {
   private readonly pages: PdfPage[] = [];
   private readonly fonts = new PdfFonts();
   private readonly imports = new PdfImports();
+  private readonly layers = new Map<string, string>();
 
   constructor(readonly options: PdfDocumentOptions = {}) {}
 
   /** A new page at the end, `width` × `height` points. */
   addPage(width: number, height: number, options: PdfPageOptions = {}): PdfPage {
-    const page = new PdfPage(width, height, options, this.fonts, this.imports);
+    const page = new PdfPage(width, height, options, this.fonts, this.imports, this.layers);
     this.pages.push(page);
     return page;
   }
@@ -210,8 +241,12 @@ export class PdfDocument {
     const fontIds = new Map<EmbeddedFont, number>();
     // Each imported page's form, numbered when a page first shows it, written at the end.
     const formIds = new Map<ImportedForm, number>();
+    // Each drawing layer's optional content group, numbered when a page first marks it.
+    const layerIds = new Map<string, number>();
     for (const page of this.pages) {
       if (page.content.depth !== 0) throw new Error('a page ends with an unbalanced save');
+      if (page.content.markedDepth !== 0)
+        throw new Error('a page ends with unbalanced marked content');
       const text = page.content.toString();
       const raw = latin1(text);
       const data = compress ? zlibSync(raw, { level: 6 }) : raw;
@@ -273,6 +308,12 @@ export class PdfDocument {
         if (id === undefined) fontIds.set(f, (id = add('')));
         return `/${f.name} ${ref(id)}`;
       });
+      const properties = [...page.layers].map((name) => {
+        let id = layerIds.get(name);
+        if (id === undefined)
+          layerIds.set(name, (id = add(`<< /Type /OCG /Name ${pdfString(name)} >>`)));
+        return `/${page.layer(name)} ${ref(id)}`;
+      });
       const entries = [
         gs ? `/ExtGState << ${gs} >>` : '',
         fonts.length > 0 ? `/Font << ${fonts.join(' ')} >>` : '',
@@ -280,6 +321,7 @@ export class PdfDocument {
         patterns.length > 0 ? `/Pattern << ${patterns.join(' ')} >>` : '',
         shadings.length > 0 ? `/Shading << ${shadings.join(' ')} >>` : '',
         xobjects.length > 0 ? `/XObject << ${xobjects.join(' ')} >>` : '',
+        properties.length > 0 ? `/Properties << ${properties.join(' ')} >>` : '',
       ].filter(Boolean);
       const resources = entries.length > 0 ? `<< ${entries.join(' ')} >>` : '<< >>';
       pageIds.push(
@@ -344,12 +386,20 @@ export class PdfDocument {
       labels = ` /PageLabels << /Nums [${nums.join(' ')}] >>`;
     }
     // PDF layers of the underlays' pages (M2-38 part 2): every copied group, off as plotted.
+    // The drawing's own layers (M2-60) come first, on, in name order (as the Layer Properties
+    // Manager sorts them), and then the order is written out so a viewer lists both.
     const oc = this.imports.optionalContent();
-    const layers = oc
-      ? ` /OCProperties << /OCGs [${oc.groups.map(ref).join(' ')}] /D << /BaseState /ON /OFF [${oc.off
-          .map(ref)
-          .join(' ')}] >> >>`
-      : '';
+    const drawing = [...layerIds].sort(([a], [b]) => byName(a, b)).map(([, id]) => id);
+    const groups = [...drawing, ...(oc?.groups ?? [])];
+    const order = drawing.length > 0 ? ` /Order [${groups.map(ref).join(' ')}]` : '';
+    const layers =
+      groups.length > 0
+        ? ` /OCProperties << /OCGs [${groups.map(ref).join(' ')}] /D <<${order} /BaseState /ON /OFF [${(
+            oc?.off ?? []
+          )
+            .map(ref)
+            .join(' ')}] >> >>`
+        : '';
     bodies[catalog - 1] = `<< /Type /Catalog /Pages ${ref(pagesId)}${labels}${
       outlines ? ` /Outlines ${ref(outlines)} /PageMode /UseOutlines` : ''
     }${layers} >>`;

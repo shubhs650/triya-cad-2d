@@ -564,6 +564,67 @@ describe('plotting to SVG and PNG', () => {
     expect(drawn).toMatch(/<path d="M[^"]+" fill="#ff0000"/);
   });
 
+  // M2-60: Save As PDF's Options: layers, bookmarks and text the way the drafter chose.
+  it('writes layers, bookmarks and text as the PDF options say', async () => {
+    const font = parseTtf(fontBytes(testFont()));
+    const a = font.glyph(65);
+    const text: PlotPart = {
+      ...part('Notes'),
+      kind: 'fill',
+      path: [0, 0, 0, 1, 10, 0, 1, 5, 10, 4],
+      glyphs: [
+        { font, index: a.index, codePoint: 65, m: { a: 0.01, b: 0, c: 0, d: 0.01, e: 0, f: 0 } },
+      ],
+    };
+    const parts = [part('walls'), text, part('Doors')];
+    const s = { ...defaultPlotSettings(model), paper: 'ISO A4', area: 'extents' as const };
+    const read = async (bytes: Uint8Array) => {
+      // Read before pdf.js takes the buffer.
+      const fonts = new TextDecoder('latin1').decode(bytes).includes('/FontFile');
+      const pdf = await getDocument({ data: bytes }).promise;
+      const page = await pdf.getPage(1);
+      return {
+        layers: [...(await pdf.getOptionalContentConfig())].map(([, g]) => g.name),
+        outline: ((await pdf.getOutline()) ?? []).map((o) => o.title),
+        text: (await page.getTextContent()).items.map((i) => ('str' in i ? i.str : '')).join(''),
+        fonts,
+      };
+    };
+    // A plot's own PDF (the Plot dialog's, PUBLISH's): no layers, bookmarked, text as text.
+    expect(await read(plotPdf(parts, plotPage(s, model), s, model, 't'))).toEqual({
+      layers: [],
+      outline: ['Model'],
+      text: 'A',
+      fonts: true,
+    });
+    expect(
+      await read(
+        plotPdf(parts, plotPage(s, model), s, model, 't', undefined, {
+          layers: true,
+          bookmarks: false,
+          textAsGeometry: true,
+        }),
+      ),
+    ).toEqual({ layers: ['Doors', 'Notes', 'walls'], outline: [], text: '', fonts: false });
+    // plotFile hands the options on for a PDF.
+    const file = await plotFile(
+      parts,
+      plotPage(s, model),
+      { ...s, device: 'pdf' },
+      model,
+      't',
+      undefined,
+      undefined,
+      { layers: true, bookmarks: true, textAsGeometry: false },
+    );
+    expect(await read(file.bytes)).toEqual({
+      layers: ['Doors', 'Notes', 'walls'],
+      outline: ['Model'],
+      text: 'A',
+      fonts: true,
+    });
+  });
+
   // M2-39 part 4: a PNG over 64 Mpx is drawn and written a band of rows at a time. It deflates
   // 280 MB of pixels: 2.4 s alone, but 31 s in a CI unit shard under coverage beside the other
   // test files (PR #303's run 43165376800), past the 30 s default, so it has its own timeout.

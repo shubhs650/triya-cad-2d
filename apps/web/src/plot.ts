@@ -678,6 +678,26 @@ function pageOptions(page: PlotSetup, settings: PlotSettings, space: PlotSpace):
   };
 }
 
+/**
+ * The PDF Options of Save As PDF and Export Data's PDF (M2-60; AutoCAD 2024's PDF Options
+ * dialog): the Data and Font Handling choices that change what Triya writes.
+ */
+export interface PdfOptions {
+  /** "Include layer information": each drawing layer a PDF layer (optional content group). */
+  readonly layers: boolean;
+  /** "Create bookmarks": a bookmark to each page, named after its space or sheet. */
+  readonly bookmarks: boolean;
+  /** "Convert all text to geometry": TrueType text as filled outlines, no fonts embedded. */
+  readonly textAsGeometry: boolean;
+}
+
+/** What a plot's PDF holds (the Plot dialog, PUBLISH, -PLOT): bookmarks, no PDF layers. */
+export const PLOT_PDF_OPTIONS: PdfOptions = {
+  layers: false,
+  bookmarks: true,
+  textAsGeometry: false,
+};
+
 /** A plot of one space as a one-page PDF. */
 export function plotPdf(
   parts: readonly PlotPart[],
@@ -687,15 +707,16 @@ export function plotPdf(
   title: string,
   /** The PDF file a PDF underlay names; an underlay without one plots its boundary only. */
   underlayFile?: (fileName: string) => Uint8Array | undefined,
+  pdf: PdfOptions = PLOT_PDF_OPTIONS,
 ): Uint8Array {
   const doc = new PdfDocument({ title, creator: 'Triya CAD 2D' });
-  addPlotPage(doc, parts, page, settings, space, space.name, underlayFile);
+  addPlotPage(doc, parts, page, settings, space, space.name, underlayFile, pdf);
   return doc.bytes();
 }
 
 /**
  * Plots one space as the next page of a PDF, labelled with the space's name and bookmarked with
- * `bookmark` (PUBLISH's sheet name).
+ * `bookmark` (PUBLISH's sheet name) unless the PDF options leave bookmarks out.
  */
 export function addPlotPage(
   doc: PdfDocument,
@@ -706,13 +727,16 @@ export function addPlotPage(
   bookmark: string,
   /** The PDF file a PDF underlay names; an underlay without one plots its boundary only. */
   underlayFile?: (fileName: string) => Uint8Array | undefined,
+  pdf: PdfOptions = PLOT_PDF_OPTIONS,
 ): void {
   const pdfPage = doc.addPage(mmToPoints(page.width), mmToPoints(page.height), {
     label: space.name,
-    bookmark,
+    ...(pdf.bookmarks && { bookmark }),
   });
   plotItems(pdfPage, parts as readonly PlotItem[], {
     ...pageOptions(page, settings, space),
+    ...(pdf.layers && { layers: true }),
+    ...(pdf.textAsGeometry && { textAsGeometry: true }),
     ...(underlayFile && { underlays: (u) => underlayFile(u.fileName) }),
   });
 }
@@ -867,6 +891,8 @@ export async function plotFile(
   underlayFile?: (fileName: string) => Uint8Array | undefined,
   /** An SVG or PNG plot draws PDF underlays' pages from here (M2-39). */
   underlayPage?: UnderlayPageSource,
+  /** A PDF's layers, bookmarks and text (M2-60); a plot's own when absent. */
+  pdf: PdfOptions = PLOT_PDF_OPTIONS,
 ): Promise<{ readonly bytes: Uint8Array; readonly type: string }> {
   switch (settings.device) {
     case 'svg': {
@@ -887,7 +913,7 @@ export async function plotFile(
       };
     case 'pdf':
       return {
-        bytes: plotPdf(parts, page, settings, space, title, underlayFile),
+        bytes: plotPdf(parts, page, settings, space, title, underlayFile, pdf),
         type: 'application/pdf',
       };
   }
