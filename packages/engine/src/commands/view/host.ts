@@ -8,6 +8,7 @@ import type { Box } from '../../geom/bounds';
 import type { EntityId } from '../../model/entity-ids';
 import type { HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
+import type { ClipboardPicture } from '../../edit/picture';
 import type { UndoView } from '../undo';
 
 /** The view of the current viewport, in world units. */
@@ -337,6 +338,11 @@ export type ViewReply =
        * copied: PASTECLIP pastes it as multiline text.
        */
       readonly text?: string;
+      /**
+       * A picture another app put on the system clipboard (M2-54), newer than any objects
+       * copied, which the app keeps as a file of this name: PASTECLIP pastes it as an image.
+       */
+      readonly picture?: ClipboardPicture;
       /** What `plotSetup` found (-PLOT, M2-17 part 5). */
       readonly plotSetup?: PlotScriptSetup;
       /** What `hatchPattern` placed (M2-35 part 3). */

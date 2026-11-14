@@ -13,6 +13,8 @@ import {
   type Entity,
   type EntityGeometry,
   type HeaderValue,
+  type ImageDefinition,
+  type ImageGeometry,
   type MTextGeometry,
   type Prompt,
   type TextStyleRecord,
@@ -315,5 +317,197 @@ describe('the system clipboard (M2-32 part 5)', () => {
     expect(bus.command).toBeUndefined();
     expect(added()).toHaveLength(0);
     expect(bus.history.at(-1)).toBe('The Clipboard holds no objects to paste.');
+  });
+});
+
+describe("another app's picture (M2-54)", () => {
+  const PICTURE = { fileName: 'pasted-0a1b2c3d.png', width: 192, height: 96 } as const;
+  /** A drawing whose app found `picture` on the system clipboard (and kept its file). */
+  function withPicture(
+    picture: NonNullable<Extract<ViewReply, { ok: true }>['picture']>,
+    header: [string, HeaderValue][] = [],
+    meta: Partial<DocumentInit['meta']> = {},
+  ) {
+    const init = sampleInit();
+    const model = DocumentModel.create({
+      ...init,
+      header: new Map([...init.header!, ...header]),
+      meta: { ...init.meta, ...meta } as DocumentInit['meta'],
+    });
+    const before = new Set([...model.entities()].map((e) => e.id));
+    let held = picture;
+    const bus = new PromptBus({
+      model,
+      registry: builtinCommands(),
+      view: {
+        request: (r) =>
+          Promise.resolve<ViewReply>(
+            r.op === 'clipboard' ? { ok: true, picture: held } : { ok: false, message: 'none' },
+          ),
+      },
+    });
+    const copy = (p: typeof picture) => {
+      held = p;
+    };
+    const previews: (readonly EntityGeometry[])[] = [];
+    bus.on((e: BusEvent) => {
+      if (e.type === 'preview') previews.push(e.geometry);
+    });
+    const added = () => [...model.entities()].filter((e) => !before.has(e.id));
+    const definitions = () =>
+      [...model.objects.values()].filter((o): o is ImageDefinition => o.type === 'IMAGEDEF');
+    return { model, bus, added, definitions, previews, copy };
+  }
+
+  it('pastes it as a raster image at the insertion point, its size at 96 pixels an inch', async () => {
+    // Millimetres: 192 × 96 pixels at 96 per inch are 2 × 1 inches, 50.8 × 25.4 mm.
+    const { model, bus, added, definitions, previews } = withPicture(PICTURE, [['$INSUNITS', 4]]);
+    await bus.script(['PASTECLIP']);
+    expect(bus.promptText).toBe('Specify insertion point:');
+    // The picture's frame is dragged by its lower-left corner.
+    const frame = previews.at(-1)?.[0] as unknown as {
+      kind: string;
+      vertices: { x: number; y: number }[];
+    };
+    expect(frame.kind).toBe('LWPOLYLINE');
+    expect(frame.vertices.map((p) => [r6(p.x), r6(p.y)])).toEqual([
+      [0, 0],
+      [50.8, 0],
+      [50.8, 25.4],
+      [0, 25.4],
+    ]);
+    await bus.script(['20,30']);
+    expect(bus.command).toBeUndefined();
+    expect(previews.at(-1)).toEqual([]);
+    const [image] = added();
+    expect(image?.type).toBe('IMAGE');
+    expect(image!.owner).toBe(MODEL_SPACE);
+    expect(model.tables.layers.get(image!.layer)?.name).toBe('WALLS');
+    const g = image!.geom as ImageGeometry;
+    expect(g.position).toEqual({ x: 20, y: 30 });
+    expect(r6(g.u.x)).toBe(r6(25.4 / 96));
+    expect(g.u.y).toBe(0);
+    expect(g.v.x).toBe(0);
+    expect(r6(g.v.y)).toBe(r6(25.4 / 96));
+    expect(g.size).toEqual({ x: 192, y: 96 });
+    // As AutoCAD attaches an image: shown, shown unaligned, clip flag; not clipped.
+    expect(g).toMatchObject({
+      displayFlags: 7,
+      clipping: false,
+      brightness: 50,
+      contrast: 50,
+      fade: 0,
+      clip: {
+        type: 'rectangle',
+        vertices: [
+          { x: -0.5, y: -0.5 },
+          { x: 191.5, y: 95.5 },
+        ],
+        inverted: false,
+      },
+    });
+    const [def] = definitions();
+    expect(g.definition).toBe(def!.handle);
+    expect(def).toMatchObject({
+      name: 'pasted-0a1b2c3d',
+      fileName: 'pasted-0a1b2c3d.png',
+      size: { x: 192, y: 96 },
+      loaded: true,
+      units: 5,
+    } satisfies Partial<ImageDefinition>);
+    expect(r6(def!.pixelSize.x)).toBe(r6(1 / 96));
+    // No image dictionary yet: the save makes one under a new handle.
+    expect(Number.parseInt(def!.owner!, 16)).toBeGreaterThanOrEqual(0x40);
+    // One paste, one undo step, which takes the definition too.
+    await bus.script(['U']);
+    expect(added()).toHaveLength(0);
+    expect(definitions()).toHaveLength(0);
+  });
+
+  it("takes the picture's own resolution, and inches or millimetres in a unitless drawing", async () => {
+    // 288 pixels an inch (a screenshot on a 3× screen): 192 pixels are 2/3 inch.
+    const imperial = withPicture({ ...PICTURE, ppi: { x: 288, y: 288 } }, [['$INSUNITS', 0]], {
+      insUnits: 0,
+      measurement: 'imperial',
+    });
+    await imperial.bus.script(['PASTECLIP', '0,0']);
+    const a = imperial.added()[0]!.geom as ImageGeometry;
+    expect(r6(a.u.x * 192)).toBe(r6(2 / 3));
+    expect(r6(imperial.definitions()[0]!.pixelSize.x)).toBe(r6(1 / 288));
+
+    const metric = withPicture(PICTURE, [['$INSUNITS', 0]], { insUnits: 0, measurement: 'metric' });
+    await metric.bus.script(['PASTECLIP', '0,0']);
+    expect(r6((metric.added()[0]!.geom as ImageGeometry).u.x * 192)).toBe(50.8);
+
+    // Feet: 2 inches are 1/6 foot.
+    const feet = withPicture(PICTURE, [['$INSUNITS', 2]]);
+    await feet.bus.script(['PASTECLIP', '0,0']);
+    expect(r6((feet.added()[0]!.geom as ImageGeometry).u.x * 192)).toBe(r6(1 / 6));
+
+    // A resolution that is no resolution counts as none; a file named only by its extension
+    // and a folder is still named.
+    const odd = withPicture(
+      { fileName: 'C:\\temp\\.png', width: 96, height: 96, ppi: { x: 0, y: 72 } },
+      [['$INSUNITS', 1]],
+    );
+    await odd.bus.script(['PASTECLIP', '0,0']);
+    expect(r6((odd.added()[0]!.geom as ImageGeometry).u.x * 96)).toBe(1);
+    expect(odd.definitions()[0]!.name).toBe('picture');
+  });
+
+  it('shows the same picture pasted twice from one definition, filed with the others', async () => {
+    const { model, bus, added, definitions } = withPicture(PICTURE, [], {
+      imageDictionary: '3F',
+    });
+    await bus.script(['PASTECLIP', '0,0']);
+    await bus.script(['PASTECLIP', '100,0']);
+    expect(added().map((e) => e.type)).toEqual(['IMAGE', 'IMAGE']);
+    expect(definitions()).toHaveLength(1);
+    expect(definitions()[0]!.owner).toBe('3F');
+    const shown = added().map((e) => (e.geom as ImageGeometry).definition);
+    expect(shown).toEqual([definitions()[0]!.handle, definitions()[0]!.handle]);
+    expect(model.meta.imageDictionary).toBe('3F');
+  });
+
+  it('gives another picture whose name the drawing has a name of its own', async () => {
+    const { bus, definitions, copy } = withPicture(PICTURE);
+    await bus.script(['PASTECLIP', '0,0']);
+    // Another file whose name, without its extension, is the first one's image name.
+    copy({ ...PICTURE, fileName: 'PASTED-0A1B2C3D.jpg' });
+    await bus.script(['PASTECLIP', '0,0']);
+    copy({ ...PICTURE, fileName: 'pasted-0a1b2c3d.gif' });
+    await bus.script(['PASTECLIP', '0,0']);
+    expect(definitions().map((d) => [d.name, d.fileName])).toEqual([
+      ['pasted-0a1b2c3d', 'pasted-0a1b2c3d.png'],
+      ['PASTED-0A1B2C3D-1', 'PASTED-0A1B2C3D.jpg'],
+      ['pasted-0a1b2c3d-2', 'pasted-0a1b2c3d.gif'],
+    ]);
+  });
+
+  it('pastes a picture with PASTECLIP only, and nothing for an empty one', async () => {
+    const { bus, added } = withPicture(PICTURE);
+    await bus.script(['PASTEBLOCK']);
+    expect(added()).toHaveLength(0);
+    expect(bus.history.at(-1)).toBe(
+      'The Clipboard holds a picture, which PASTECLIP pastes as an image.',
+    );
+    await bus.script(['PASTEORIG']);
+    expect(bus.history.at(-1)).toBe(
+      'The Clipboard holds a picture, which PASTECLIP pastes as an image.',
+    );
+    const empty = withPicture({ ...PICTURE, width: 0 });
+    await empty.bus.script(['PASTECLIP']);
+    expect(empty.added()).toHaveLength(0);
+    expect(empty.bus.history.at(-1)).toBe('The Clipboard holds no objects to paste.');
+  });
+
+  it('pastes nothing when the insertion point is cancelled', async () => {
+    const { bus, added, definitions, previews } = withPicture(PICTURE);
+    await bus.script(['PASTECLIP']);
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+    expect(added()).toHaveLength(0);
+    expect(definitions()).toHaveLength(0);
+    expect(previews.at(-1)).toEqual([]);
   });
 });

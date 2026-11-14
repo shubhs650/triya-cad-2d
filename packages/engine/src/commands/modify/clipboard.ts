@@ -14,7 +14,8 @@
 //
 // The app also puts the objects on the system clipboard, with a picture of them for other apps,
 // and a paste reads it (M2-32 part 5): another Triya window's objects come as a Clipboard, and
-// another app's text as `text`, which PASTECLIP pastes as multiline text.
+// another app's text as `text`, which PASTECLIP pastes as multiline text, and another app's
+// picture as `picture`, which PASTECLIP pastes as a raster image (M2-54, edit/picture.ts).
 import type { Box } from '../../geom/bounds';
 import type { Vec2 } from '../../geom/types';
 import {
@@ -30,6 +31,7 @@ import { eraseObjects, refusalMessages } from '../../edit/edit';
 import type { EntityId } from '../../model/entity-ids';
 import type { EntityGeometry, MTextGeometry } from '../../model/types';
 import { mtextLiteral } from '../../edit/clipboard-data';
+import { hasPixels, pastePicture, pictureFrame, type ClipboardPicture } from '../../edit/picture';
 import { currentTextStyle, textSize } from '../draw/text';
 import type { CommandContext, CommandDef } from '../command';
 import { currentProps } from '../../properties/current';
@@ -80,7 +82,8 @@ async function toClipboard(
 
 type Found =
   | { readonly kind: 'objects'; readonly clipboard: Clipboard; readonly sameDrawing: boolean }
-  | { readonly kind: 'text'; readonly contents: string };
+  | { readonly kind: 'text'; readonly contents: string }
+  | { readonly kind: 'picture'; readonly picture: ClipboardPicture };
 
 const NOTHING = 'The Clipboard holds no objects to paste.';
 
@@ -97,6 +100,8 @@ async function readClipboard(ctx: CommandContext): Promise<Found | undefined> {
   if (reply.text !== undefined) {
     const contents = mtextLiteral(reply.text);
     if (contents.trim() !== '') return { kind: 'text', contents };
+  } else if (reply.picture) {
+    if (hasPixels(reply.picture)) return { kind: 'picture', picture: reply.picture };
   } else if (reply.clipboard && reply.clipboard.entities.length > 0) {
     return { kind: 'objects', clipboard: reply.clipboard, sameDrawing: reply.sameDrawing === true };
   }
@@ -104,13 +109,20 @@ async function readClipboard(ctx: CommandContext): Promise<Found | undefined> {
   return undefined;
 }
 
-/** The Clipboard's objects, or undefined (said why): PASTEBLOCK and PASTEORIG paste no text. */
+/**
+ * The Clipboard's objects, or undefined (said why): PASTEBLOCK and PASTEORIG paste no text or
+ * picture.
+ */
 async function fromClipboard(
   ctx: CommandContext,
 ): Promise<{ clipboard: Clipboard; sameDrawing: boolean } | undefined> {
   const found = await readClipboard(ctx);
   if (found?.kind === 'text') {
     ctx.message('The Clipboard holds text, which PASTECLIP pastes as multiline text.');
+    return undefined;
+  }
+  if (found?.kind === 'picture') {
+    ctx.message('The Clipboard holds a picture, which PASTECLIP pastes as an image.');
     return undefined;
   }
   return found;
@@ -147,6 +159,32 @@ async function* pasteText(ctx: CommandContext, contents: string): Sub<void> {
   const props = currentProps(ctx.model);
   ctx.edit((b) => {
     b.addEntity({ owner: ctx.space, ...props, geom });
+  });
+}
+
+/**
+ * Another app's picture pasted as a raster image (M2-54, edit/picture.ts): its frame dragged by
+ * its lower-left corner, which goes to the point given, on the current layer with the current
+ * properties.
+ */
+async function* pasteImage(ctx: CommandContext, picture: ClipboardPicture): Sub<void> {
+  const origin = { x: 0, y: 0 };
+  ctx.preview([
+    {
+      kind: 'LWPOLYLINE',
+      closed: true,
+      vertices: pictureFrame(ctx.model, picture, origin).map((p) => ({ ...p, bulge: 0 })),
+    },
+  ]);
+  const a = yield ctx.prompt.point({
+    message: 'Specify insertion point',
+    drag: { kind: 'preview', from: origin },
+  });
+  ctx.preview([]);
+  if (a.kind !== 'point') return;
+  const props = currentProps(ctx.model);
+  ctx.edit((b) => {
+    pastePicture(b, ctx.model, picture, ctx.space, a.point, props);
   });
 }
 
@@ -240,6 +278,10 @@ export function pasteClipCommand(): CommandDef {
       if (!found) return;
       if (found.kind === 'text') {
         yield* pasteText(ctx, found.contents);
+        return;
+      }
+      if (found.kind === 'picture') {
+        yield* pasteImage(ctx, found.picture);
         return;
       }
       const at = yield* insertionPoint(ctx, found.clipboard);
