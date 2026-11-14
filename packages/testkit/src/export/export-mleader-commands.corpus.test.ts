@@ -15,7 +15,9 @@
 // the first one's text, sets its line spacing and turns its background mask and frame on. M2-35
 // part 15 gives the _TagCircle one another colour, scale and rotation and then the callout block
 // (its attributes at their definitions' values); their override bits (19 to 22, M2-66) read
-// back. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
+// back. M2-35 part 22 gives the first one AutoCAD's Closed blank arrowhead, authoring its
+// `_CLOSEDBLANK` block where the drawing lacks it, which reads back with its parts. The drawing
+// is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
 // each multileader draws the same parts (`multiLeaderParts`: lines, landings, arrowheads, text,
 // block) as before the save. With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit
 // as the file's `mleader` save.
@@ -36,6 +38,7 @@ import {
   ChangeSetBuilder,
   DocumentModel,
   PromptBus,
+  addArrowheadBlock,
   applyPropertyEdit,
   builtinCommands,
   multiLeaderParts,
@@ -201,7 +204,17 @@ describe('MLEADER on the public corpus', () => {
       )!.rows;
       const optionsOf = (key: string) => leaderRows.find((r) => r.key === key)!.options!;
       const dashed = optionsOf('leaderLinetype').find((o) => !/^By(Layer|Block)$/.test(o.label));
-      const arrow = optionsOf('arrowhead').find((o) => o.value !== '');
+      // M2-35 part 22: AutoCAD's first arrowhead after closed filled, Closed blank, its block
+      // authored first where the drawing lacks it, as the palette's edit does.
+      let arrow = optionsOf('arrowhead').find((o) => o.value !== '');
+      if (arrow && !model.blocks.has(arrow.value as string)) {
+        const b = new ChangeSetBuilder(model);
+        const handle = addArrowheadBlock(b, model, arrow.value as string)!;
+        model.apply(b.build());
+        arrow = { ...arrow, value: handle };
+      }
+      const arrowBlock = model.blocks.get(arrow?.value as string);
+      expect(arrowBlock?.name.toUpperCase(), f.path).toBe('_CLOSEDBLANK');
       palette({ key: 'leaderColor', value: 'aci:1' });
       palette({ key: 'leaderLineweight', value: '35' });
       palette({ key: 'arrowheadSize', value: 3.5 });
@@ -329,6 +342,14 @@ describe('MLEADER on the public corpus', () => {
       expect(calloutBack.overrideFlags & ((1 << 17) | (1 << 19))).toBe(1 << 19);
       const secondBack = back.entityByHandle(second.handle)!.geom as MultiLeaderGeometry;
       expect(secondBack).toMatchObject({ pathType: 1, dogleg: true, landing: true });
+      // The arrowhead block comes back with what it draws.
+      const arrowParts = (m: DocumentModel) =>
+        m.blockEntities(arrowBlock!.handle).map((id) => {
+          const e = m.entity(id)!;
+          return rounded({ geom: e.geom, color: e.color, linetype: e.linetype });
+        });
+      expect(back.blocks.get(arrowBlock!.handle)?.name).toBe(arrowBlock!.name);
+      expect(arrowParts(back)).toEqual(arrowParts(model));
       // The built-in blocks come back with what they draw and their attribute definitions.
       for (const b of builtins) {
         const kinds = (m: DocumentModel, h: string) =>

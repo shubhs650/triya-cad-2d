@@ -14,6 +14,7 @@ import { parseNumber } from '../commands/parse';
 import { dimVars } from '../annotation/leader';
 import type { AnnotationTables } from '../annotation/multileader';
 import type { DimVarValue } from '../model/types';
+import { ARROWHEAD_BLOCKS, arrowheadBlock, arrowheadBlockName } from '../edit/arrowhead-blocks';
 import type { PropertyOption, PropertyValue } from './sheet';
 
 type Vars = Readonly<Record<string, DimVarValue>>;
@@ -308,47 +309,27 @@ function linetypeRow(name: string, label: string): DimvarRow {
 
 // --- Arrowheads ------------------------------------------------------------------------------
 
-/** AutoCAD's arrowhead blocks by name, with the Properties palette's names for them. */
-const ARROWHEADS: Readonly<Record<string, string>> = {
-  _CLOSEDBLANK: 'Closed blank',
-  _CLOSED: 'Closed',
-  _DOT: 'Dot',
-  _ARCHTICK: 'Architectural tick',
-  _OBLIQUE: 'Oblique',
-  _OPEN: 'Open',
-  _ORIGIN: 'Origin indicator',
-  _ORIGIN2: 'Origin indicator 2',
-  _OPEN90: 'Right angle',
-  _OPEN30: 'Open 30',
-  _DOTSMALL: 'Dot small',
-  _DOTBLANK: 'Dot blank',
-  _SMALL: 'Dot small blank',
-  _BOXBLANK: 'Box',
-  _BOXFILLED: 'Box filled',
-  _DATUMBLANK: 'Datum triangle',
-  _DATUMFILLED: 'Datum triangle filled',
-  _INTEGRAL: 'Integral',
-  _NONE: 'None',
-};
-
 /**
- * Arrowhead choices: closed filled (no block, value ''), then the drawing's arrowhead blocks by
- * AutoCAD's names and the blocks the objects use now (`current`), by label. AutoCAD makes a
- * missing arrowhead block when one is chosen; Triya offers the ones the drawing holds (authoring
- * the rest is left on the roadmap). A dimension's Arrow 1/2 and a multileader's Arrowhead.
+ * Arrowhead choices in AutoCAD's order: closed filled (no block, value ''), then each of
+ * AutoCAD's arrowheads, by the drawing's block for it or, where the drawing lacks one, by its
+ * block name (`_DOT`), which the edit authors (M2-35 part 22, `addArrowheadBlock`), then the
+ * other blocks the objects use now (`current`, a user arrow), by name. A dimension's Arrow 1/2
+ * and a multileader's Arrowhead.
  */
 export function arrowheadOptions(
   model: Pick<AnnotationTables, 'blocks'>,
   current: readonly (string | undefined)[],
 ): PropertyOption[] {
   const out: PropertyOption[] = [{ value: '', label: 'Closed filled' }];
-  for (const b of model.blocks.values()) {
-    const known = ARROWHEADS[b.name.toUpperCase()];
-    if (known || current.includes(b.handle)) out.push({ value: b.handle, label: known ?? b.name });
+  for (const a of ARROWHEAD_BLOCKS) {
+    out.push({ value: arrowheadBlock(model.blocks, a.name)?.handle ?? a.name, label: a.label });
   }
-  return out.sort((a, b) =>
-    a.value === '' ? -1 : b.value === '' ? 1 : a.label.localeCompare(b.label),
-  );
+  const users: PropertyOption[] = [];
+  for (const h of new Set(current)) {
+    const b = h === undefined ? undefined : model.blocks.get(h);
+    if (b && !arrowheadBlockName(b.name)) users.push({ value: b.handle, label: b.name });
+  }
+  return [...out, ...users.sort((a, b) => a.label.localeCompare(b.label))];
 }
 
 /** Arrow 1 and Arrow 2: each end's block (DIMBLK, or DIMBLK1/DIMBLK2 when DIMSAH is on). */
@@ -367,6 +348,7 @@ function arrowRow(end: 1 | 2): DimvarRow {
     // AutoCAD's Arrow 1 sets DIMBLK1 and turns DIMSAH on, the other end keeping its block.
     // Closed filled is written as handle 0, which every reader takes as no block.
     set: (value, v, model) => {
+      // An arrowhead the drawing lacks is authored before the edit (`addArrowheadBlock`).
       if (typeof value !== 'string' || (value !== '' && !model.blocks.has(value))) return undefined;
       if (value === of(v, name)) return {};
       return { DIMSAH: 1, [name]: value || '0', [other]: of(v, other) || '0' };
