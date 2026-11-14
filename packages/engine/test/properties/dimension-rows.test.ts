@@ -3,6 +3,7 @@
 // the dimension's ACAD xdata. A row may set several DIMVARs at once, as AutoCAD's do.
 import { describe, expect, it } from 'vitest';
 import {
+  ChangeSetBuilder,
   DIMVAR_ROWS,
   DocumentModel,
   PromptBus,
@@ -330,11 +331,29 @@ describe('a dimension’s rows write DSTYLE overrides (M2-35 part 5)', () => {
   it('sets one arrowhead as AutoCAD does: DIMSAH on, the other end kept', async () => {
     const s = setup({ DIMBLK: TICK });
     expect(s.rowOf('Arrow 1').value).toBe(TICK);
-    // Closed filled, then the drawing's arrowhead blocks by AutoCAD's names.
+    // Closed filled, then AutoCAD's arrowheads in its order: the drawing's blocks by handle,
+    // the ones it lacks by their block names (authored when chosen).
     expect(s.rowOf('Arrow 1').options).toEqual([
       { value: '', label: 'Closed filled' },
-      { value: TICK, label: 'Architectural tick' },
+      { value: '_CLOSEDBLANK', label: 'Closed blank' },
+      { value: '_CLOSED', label: 'Closed' },
       { value: DOT, label: 'Dot' },
+      { value: TICK, label: 'Architectural tick' },
+      { value: '_OBLIQUE', label: 'Oblique' },
+      { value: '_OPEN', label: 'Open' },
+      { value: '_ORIGIN', label: 'Origin indicator' },
+      { value: '_ORIGIN2', label: 'Origin indicator 2' },
+      { value: '_OPEN90', label: 'Right angle' },
+      { value: '_OPEN30', label: 'Open 30' },
+      { value: '_DOTSMALL', label: 'Dot small' },
+      { value: '_DOTBLANK', label: 'Dot blank' },
+      { value: '_SMALL', label: 'Dot small blank' },
+      { value: '_BOXBLANK', label: 'Box' },
+      { value: '_BOXFILLED', label: 'Box filled' },
+      { value: '_DATUMBLANK', label: 'Datum triangle' },
+      { value: '_DATUMFILLED', label: 'Datum triangle filled' },
+      { value: '_INTEGRAL', label: 'Integral' },
+      { value: '_NONE', label: 'None' },
     ]);
     await s.set('DIMBLK1', DOT);
     expect(s.vars()).toMatchObject({ DIMSAH: 1, DIMBLK1: DOT, DIMBLK2: TICK });
@@ -353,6 +372,67 @@ describe('a dimension’s rows write DSTYLE overrides (M2-35 part 5)', () => {
     await s.set('DIMBLK2', '');
     expect(s.overrides()).toEqual([[344, { code: 1005, value: '0' }]]);
     expect(s.rowOf('Arrow 2').value).toBe('');
+  });
+
+  it('authors an arrowhead the drawing lacks when it is chosen, in one undo step', async () => {
+    const s = setup();
+    const before = s.model.handles.handSeed;
+    await s.set('DIMBLK1', '_OPEN30');
+    const block = [...s.model.blocks.values()].find((b) => b.name === '_OPEN30')!;
+    expect(block).toBeDefined();
+    // Above every handle the drawing had: handles are never renumbered.
+    expect(parseInt(block.handle, 16)).toBeGreaterThanOrEqual(parseInt(before, 16));
+    expect(s.model.tables.blockRecords.get(block.handle)?.name).toBe('_OPEN30');
+    const parts = s.model.blockEntities(block.handle).map((id) => s.model.entity(id)!);
+    expect(parts.map((e) => e.geom.kind)).toEqual(['LWPOLYLINE', 'LINE']);
+    for (const e of parts) {
+      expect(s.model.tables.layers.get(e.layer)?.name).toBe('0');
+      expect(e).toMatchObject({
+        color: { kind: 'byBlock' },
+        linetype: 'ByBlock',
+        lineweight: 'ByBlock',
+      });
+    }
+    expect(s.vars()).toMatchObject({ DIMSAH: 1, DIMBLK1: block.handle });
+    expect(s.rowOf('Arrow 1')).toMatchObject({ value: block.handle });
+    expect(s.rowOf('Arrow 1').options).toContainEqual({ value: block.handle, label: 'Open 30' });
+    // The other end, chosen the same, takes the block the first one made.
+    await s.set('DIMBLK2', '_OPEN30');
+    expect(s.vars().DIMBLK2).toBe(block.handle);
+    expect([...s.model.blocks.values()].filter((b) => b.name === '_OPEN30')).toHaveLength(1);
+    expect(s.log).toEqual([]);
+    // One U takes Arrow 2 back; the next takes Arrow 1 and the block it made away together.
+    await s.bus.submit('U');
+    expect(s.vars().DIMBLK2).toBeUndefined();
+    expect(s.model.blocks.has(block.handle)).toBe(true);
+    await s.bus.submit('U');
+    expect(s.entity().xdata).toBeUndefined();
+    expect(s.model.blocks.has(block.handle)).toBe(false);
+  });
+
+  it('authors no arrowhead where no dimension can take it', async () => {
+    const s = setup();
+    // ALL skips locked layers: the palette may show a dimension picked before its layer locked.
+    await s.bus.selectAll();
+    const layer = s.model.tables.layers.get(s.entity().layer)!;
+    const b = new ChangeSetBuilder(s.model);
+    b.updateTableRecord('layers', layer.handle, { locked: true });
+    s.model.apply(b.build());
+    await s.bus.setProperty({ key: 'dimvar:DIMBLK1', value: '_OPEN30' });
+    expect([...s.model.blocks.values()].some((x) => x.name === '_OPEN30')).toBe(false);
+    expect(s.log).toEqual(['1 object was not changed: on a locked layer.']);
+    // A name that is not one of AutoCAD's arrowheads is no choice.
+    const unlocked = new ChangeSetBuilder(s.model);
+    unlocked.updateTableRecord('layers', layer.handle, { locked: false });
+    s.model.apply(unlocked.build());
+    await s.set('DIMBLK1', 'DOOR');
+    expect(s.log.at(-1)).toBe('Invalid input.');
+  });
+
+  it("offers a user arrow the dimension uses after AutoCAD's arrowheads", () => {
+    const s = setup({ DIMBLK: OTHER_BLOCK });
+    expect(s.rowOf('Arrow 1').options!.at(-1)).toEqual({ value: OTHER_BLOCK, label: 'DOOR' });
+    expect(s.rowOf('Arrow 1').options).toHaveLength(21);
   });
 
   it('changes nothing when an arrowhead is set to the one it has', async () => {

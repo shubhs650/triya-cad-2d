@@ -66,6 +66,7 @@ import { UndoStack, type UndoAction, type UndoState } from './undo';
 import {
   applyCurrentEdit,
   applyPropertyEdit,
+  arrowheadByName,
   hatchesToPattern,
   multiLeaderTextsToMeasure,
   placedPatterns,
@@ -78,6 +79,7 @@ import { filtered } from '../properties/sheet';
 import { textOf, type MultiLeaderWidths } from '../properties/multileader';
 import type { EntityType } from '../model/types';
 import { refusalMessages } from '../edit/edit';
+import { addArrowheadBlock, arrowheadBlock } from '../edit/arrowhead-blocks';
 
 /**
  * What a double click on an object of each type runs (AutoCAD's DBLCLKEDIT; its CUI's
@@ -615,11 +617,24 @@ export class PromptBus {
               }),
             );
           }
+          // An arrowhead chosen by name names the drawing's block for it, which is added first
+          // where the drawing lacks it (M2-35 part 22), in the same undo step.
+          const named = ids.length === 0 ? undefined : arrowheadByName(model, entities, edit);
+          let chosen = edit;
+          if (named !== undefined) {
+            let block = arrowheadBlock(model.blocks, named)?.handle;
+            if (block === undefined) {
+              ctx.edit((b) => {
+                block = addArrowheadBlock(b, model, named);
+              });
+            }
+            chosen = { ...edit, value: block! };
+          }
           ctx.edit((b) => {
             report =
               ids.length === 0
                 ? applyCurrentEdit(b, model, edit)
-                : applyPropertyEdit(b, model, entities, edit, outlines, patterns, widths);
+                : applyPropertyEdit(b, model, entities, chosen, outlines, patterns, widths);
           });
           if (report!.invalid) ctx.message(`${report!.invalid}.`);
           for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
