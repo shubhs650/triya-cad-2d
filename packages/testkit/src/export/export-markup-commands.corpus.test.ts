@@ -2,7 +2,8 @@
 // corpus file: a markup session saves as AC1032 DXF (DEC-047) and reopens with AutoCAD's
 // structure. The commands run on the PromptBus as the command line drives them: a rectangular
 // and a calligraphy polygonal cloud and a wipeout in model space, WIPEOUTFRAME set to "Display
-// but not plot" (2, M2-24 part 2), text
+// but not plot" (2, M2-24 part 2), another app's picture pasted (M2-54: an IMAGE of a new
+// IMAGEDEF, which the save files in a new ACAD_IMAGE_DICT where the drawing has none), text
 // brought to the front and hatches sent to the back; then every other object of each layout is
 // brought to the front, as DRAWORDER does, over whatever SORTENTSTABLE the drawing has.
 //
@@ -32,8 +33,10 @@ import {
   wipeoutFrame,
   type Entity,
   type Handle,
+  type ImageDefinition,
   type ImageGeometry,
   type LwPolylineGeometry,
+  type ViewReply,
 } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
@@ -79,16 +82,28 @@ describe('the markup commands on the public corpus', () => {
         model,
         registry: builtinCommands(),
         ...(space && { space: () => space }),
+        view: {
+          request: (q) =>
+            Promise.resolve<ViewReply>(
+              q.op === 'clipboard'
+                ? {
+                    ok: true,
+                    picture: { fileName: 'pasted-0a1b2c3d.png', width: 640, height: 360 },
+                  }
+                : { ok: false, message: 'none' },
+            ),
+        },
       });
       await bus.script(['REVCLOUD', 'A', '5', '5', '0,0', '100,50']);
       await bus.script(['REVCLOUD', 'A', '3', '6', 'S', 'C', 'P', '200,0', '260,0', '230,40', '']);
       await bus.script(['WIPEOUT', '0,100', '40,100', '20,130', '']);
       await bus.script(['WIPEOUT', 'F', 'D']);
+      await bus.script(['PASTECLIP', '300,0']);
       await bus.script(['TEXTTOFRONT', '']);
       await bus.script(['HATCHTOBACK']);
       expect(bus.command).toBeUndefined();
       const added = [...model.entities()].filter((e) => !before.has(e.id));
-      expect(added.map((e) => e.type)).toEqual(['LWPOLYLINE', 'LWPOLYLINE', 'WIPEOUT']);
+      expect(added.map((e) => e.type)).toEqual(['LWPOLYLINE', 'LWPOLYLINE', 'WIPEOUT', 'IMAGE']);
       // DRAWORDER Front of every other object of each layout.
       const b = new ChangeSetBuilder(model);
       for (const l of model.layouts) {
@@ -131,6 +146,17 @@ describe('the markup commands on the public corpus', () => {
           const want = e.geom as typeof g;
           expect(near(g.position.x, want.position.x) && near(g.u.x, want.u.x)).toBe(true);
           expect(g.clip.vertices).toEqual(want.clip.vertices);
+          if (e.type === 'IMAGE') {
+            const def = back.objects.get(g.definition!) as ImageDefinition | undefined;
+            expect(def).toMatchObject({
+              type: 'IMAGEDEF',
+              name: 'pasted-0a1b2c3d',
+              fileName: 'pasted-0a1b2c3d.png',
+              size: { x: 640, y: 360 },
+              loaded: true,
+            });
+            expect(near(g.v.y, want.v.y) && near(g.u.x * 640, want.u.x * 640)).toBe(true);
+          }
         }
       }
       expect(wipeoutFrame(back)).toBe(2);

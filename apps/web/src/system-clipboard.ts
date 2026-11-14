@@ -8,8 +8,9 @@
 //   from this window: its own Clipboard, which knows the drawing they came from;
 // - text from another app: PASTECLIP pastes it as multiline text (AutoCAD 2024 Help,
 //   "PASTECLIP");
-// - a picture from another app: AutoCAD pastes it as an OLE object, which Triya has not (OLE is
-//   outside the PRD), so it says so;
+// - a picture from another app: AutoCAD pastes it as an OLE object; Triya pastes it as a raster
+//   image (M2-54, DEC-056), whose PNG the app keeps on this device (pasted-pictures.ts). The
+//   browser hands other apps' pictures over as PNG only; anything else is refused with a reason;
 // - nothing it can read, or no permission to read: the window's own Clipboard, as before.
 // Where the browser has no custom formats (Firefox, Safari) nothing is written, and the
 // window's Clipboard is all there is: an object's picture alone on the system clipboard would be
@@ -21,6 +22,7 @@ import {
   clipboardData,
   readClipboardData,
   type Clipboard,
+  type ClipboardPicture,
   type Handle,
   type ViewReply,
 } from '@triya/engine';
@@ -37,6 +39,10 @@ const PICTURE_MARGIN = 8;
 const PICTURE_TIMEOUT_MS = 5000;
 
 const PICTURE = 'The Clipboard holds a picture, which Triya does not paste.';
+const UNREADABLE_PICTURE = 'The Clipboard’s picture is not a PNG Triya can read.';
+
+/** Keeps another app's PNG for a paste (pasted-pictures.ts `keepPicture`); undefined: not a PNG. */
+export type KeepPicture = (bytes: Uint8Array) => Promise<ClipboardPicture | undefined>;
 const OTHER_VERSION =
   'The Clipboard holds objects from another version of Triya, which this one cannot paste.';
 
@@ -78,12 +84,14 @@ interface Held {
 export class AppClipboard {
   readonly #env: SystemClipboardEnv | undefined;
   readonly #window: string;
+  readonly #keep: KeepPicture | undefined;
   #copies = 0;
   #held: Held | undefined;
 
-  constructor(env: SystemClipboardEnv | undefined, window: string) {
+  constructor(env: SystemClipboardEnv | undefined, window: string, keep?: KeepPicture) {
     this.#env = env;
     this.#window = window;
+    this.#keep = keep;
   }
 
   /**
@@ -145,6 +153,11 @@ export class AppClipboard {
       }
       if (item.types.includes('text/plain')) {
         return { ok: true, text: await (await item.get('text/plain')).text() };
+      }
+      if (this.#keep && item.types.includes('image/png')) {
+        const bytes = new Uint8Array(await (await item.get('image/png')).arrayBuffer());
+        const picture = await this.#keep(bytes);
+        return picture ? { ok: true, picture } : { ok: false, message: UNREADABLE_PICTURE };
       }
       if (item.types.some((t) => t.startsWith('image/'))) return { ok: false, message: PICTURE };
     } catch {

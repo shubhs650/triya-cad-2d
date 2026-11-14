@@ -8,9 +8,13 @@
 //
 // A definition saved unloaded (DXF 280 = 0, AutoCAD's Unload in the External References
 // palette) is not served: AutoCAD shows only an unloaded image's frame.
+//
+// A picture pasted from another app (M2-54) is a file the app keeps on this device: a definition
+// naming one that was not supplied is looked up there (`kept`), once per name.
 import type { ChangeSet, DocumentInit, ImageDefinition, NonGraphicalObject } from '@triya/engine';
 import type { RasterPixels } from '@triya/render';
 import { fileKey } from './underlay/pages';
+import { isPastedPictureName } from './pasted-pictures';
 
 export type DecodeImage = (bytes: Uint8Array) => Promise<RasterPixels>;
 
@@ -76,13 +80,25 @@ interface ImageFile {
 
 const copy = (p: RasterPixels): RasterPixels => ({ ...p, data: p.data.slice() });
 
+/** The pasted pictures kept on this device (M2-54). */
+export interface KeptPictures {
+  /** A kept picture's bytes by its file name; undefined when none is kept. */
+  kept(fileName: string): Promise<Uint8Array | undefined>;
+  /** A kept picture was found and added: the References palette's state changed. */
+  found(): void;
+}
+
 export class RasterImages {
   readonly #decode: DecodeImage;
+  readonly #kept: KeptPictures | undefined;
   readonly #files = new Map<string, ImageFile>();
   readonly #clients = new Set<Client>();
+  /** The names already looked up among the kept pictures. */
+  readonly #asked = new Set<string>();
 
-  constructor(decode: DecodeImage) {
+  constructor(decode: DecodeImage, kept?: KeptPictures) {
     this.#decode = decode;
+    this.#kept = kept;
   }
 
   /**
@@ -120,7 +136,10 @@ export class RasterImages {
   #serve(client: Client, def: ImageDefinition): void {
     if (!def.loaded) return;
     const file = this.#files.get(fileKey(def.fileName));
-    if (!file) return;
+    if (!file) {
+      this.#lookUp(def.fileName);
+      return;
+    }
     file.decoded ??= this.#decode(file.bytes);
     file.decoded.then(
       (pixels) => {
@@ -131,5 +150,19 @@ export class RasterImages {
       // A file the decoder cannot read shows as a missing image: its frame only.
       () => {},
     );
+  }
+
+  /** Looks a pasted picture's file up among the kept ones, once; `add` serves it when found. */
+  #lookUp(fileName: string): void {
+    const key = fileKey(fileName);
+    if (!this.#kept || this.#asked.has(key) || !isPastedPictureName(fileName)) return;
+    this.#asked.add(key);
+    const kept = this.#kept;
+    void kept.kept(fileKey(fileName)).then((bytes) => {
+      // A file supplied meanwhile is the user's: it stays.
+      if (!bytes || this.#files.has(key)) return;
+      this.add(fileName, bytes);
+      kept.found();
+    });
   }
 }
