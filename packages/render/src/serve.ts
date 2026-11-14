@@ -105,6 +105,9 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'underlay':
         session.setUnderlay(m.definition, m.raster ?? undefined);
         break;
+      case 'underlayPage':
+        session.setUnderlayPage(m.definition, m.page ?? undefined);
+        break;
       case 'underlaySnap':
         session.setUnderlaySnap(m.definition, m.page ?? undefined);
         break;

@@ -334,6 +334,8 @@ export class CanvasController {
   #measuring = 0;
   /** The PDF page size last sent per PDFDEFINITION, so only a new size re-measures (M1-20). */
   readonly #pages = new Map<Handle, string>();
+  /** The PDF page sizes last read from the files for a plot, by PDFDEFINITION (M2-68). */
+  #pageSizes = new Map<Handle, { readonly width: number; readonly height: number }>();
   /** Settles once the renderer first answered (or failed to): the opening view waits on it. */
   #firstMeasure: Promise<void> = Promise.resolve();
   /** Settles when the canvas first shows a view (`whenViewed`). */
@@ -447,6 +449,7 @@ export class CanvasController {
    * 3), model space's from the Model layout.
    */
   async plotSpace(): Promise<PlotSpace> {
+    await this.#readPageSizes();
     await this.#measure();
     const layout = this.#layout;
     const sheet = layout ? layoutSheet(layout) : undefined;
@@ -922,6 +925,24 @@ export class CanvasController {
     return (
       (this.#measured.done ? this.#measured.box : undefined) ?? this.#opened.extents[this.block]
     );
+  }
+
+  /**
+   * Reads each PDF underlay's page size from its file and hands the renderer any that changed
+   * (M2-68), so a plot's extents hold the pages whether or not the screen has drawn them yet:
+   * the size a drawn page brings comes only once the canvas asked for it and pdf.js drew it.
+   */
+  async #readPageSizes(): Promise<void> {
+    if (!this.#underlays) return;
+    const sizes = await this.#underlays.pageSizes();
+    for (const [definition, size] of sizes) {
+      const was = this.#pageSizes.get(definition);
+      if (was?.width !== size.width || was?.height !== size.height)
+        this.#host.setUnderlayPage(definition, size);
+    }
+    for (const definition of this.#pageSizes.keys())
+      if (!sizes.has(definition)) this.#host.setUnderlayPage(definition, undefined);
+    this.#pageSizes = new Map(sizes);
   }
 
   /**

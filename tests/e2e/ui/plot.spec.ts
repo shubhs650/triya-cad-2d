@@ -205,7 +205,7 @@ test('SVG and PNG plots draw a PDF underlay’s page as the PDF plot does', asyn
   const bare = await ink(page);
   await openWithDrop(page, path.join(fixtures, 'pdf-underlay.pdf'));
   await expectShown(page, 'pdf-underlay.dxf');
-  // The pages drawn on screen, so the session knows their size (the extents take it in).
+  // The pages drawn on screen (the extents no longer wait on it: M2-68's test plots before).
   await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(bare + 1000);
   await activeCanvas(page).click({ position: { x: 5, y: 5 } });
   const d = dialog(page);
@@ -242,7 +242,64 @@ test('SVG and PNG plots draw a PDF underlay’s page as the PDF plot does', asyn
   expect(c.reason ?? '', `mismatch ${c.mismatchPct} %, SSIM ${c.ssim}`).toBe('');
 });
 
+// M2-68: the extents take an unclipped underlay's page size from the PDF itself, so a plot started
+// before the screen drew any page (none in view here, so none is ever asked for) holds the page
+// as one started after the pages are drawn.
+test('a plot of the extents holds the PDF underlays’ pages before the screen drew them', async ({
+  page,
+}, info) => {
+  test.setTimeout(120_000);
+  const fixtures = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
+  await page.goto(app.url);
+  await openWithPicker(page, path.join(fixtures, 'pdf-underlay.dxf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  await expectDrawn(page, { timeout: 15_000 });
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  // Far from the underlays: the canvas asks for none of their pages.
+  await typed(page, 'ZOOM', /^Specify corner of window/);
+  await typed(page, '500,500', 'Specify opposite corner:');
+  await typed(page, '510,510', 'Command:');
+  await expectDrawn(page);
+  const empty = await ink(page);
+  await openWithDrop(page, path.join(fixtures, 'pdf-underlay.pdf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  const d = dialog(page);
+  const plot = async () => {
+    await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+    await page.keyboard.press('Control+p');
+    await d.getByLabel('Name').selectOption('png');
+    await d.getByLabel('Paper size').selectOption('ISO A4');
+    await d.getByLabel('What to plot').selectOption('extents');
+    await d.getByLabel('Background').selectOption('white');
+    await d.getByLabel('Resolution').selectOption('96');
+    const [download] = await Promise.all([
+      page.waitForEvent('download'),
+      d.getByRole('button', { name: 'OK' }).click(),
+    ]);
+    await expect(d).toBeHidden();
+    return decodePng(new Uint8Array(readFileSync((await download.path())!)));
+  };
+  const early = await plot();
+  // Nothing of the underlays was drawn on screen meanwhile.
+  expect(await ink(page)).toBe(empty);
+  await typed(page, 'ZOOM', /^Specify corner of window/);
+  await typed(page, 'E', 'Command:');
+  await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(empty + 1000);
+  const late = await plot();
+  const c = compareImages(late, early, { pixelMismatch: 0.1, ssim: 0.99 });
+  if (c.diffPng)
+    await info.attach('diff.png', { body: Buffer.from(c.diffPng), contentType: 'image/png' });
+  expect(c.reason ?? '', `mismatch ${c.mismatchPct} %, SSIM ${c.ssim}`).toBe('');
+});
+
 const prompt = (page: Page) => page.getByTestId('command-prompt');
+
+/** Types a line at the command line, ended by Enter, and waits for the next prompt. */
+async function typed(page: Page, text: string, next: string | RegExp): Promise<void> {
+  await page.keyboard.type(text);
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText(next);
+}
 
 /** No prompt shows while the dialog is up (M2-41): neither the prompt line nor Dynamic Input. */
 async function expectNoPrompt(page: Page) {
