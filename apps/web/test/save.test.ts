@@ -57,7 +57,51 @@ describe('drawingFile', () => {
     expect(drawingFile(BYTES, { format: 'dxf', version: 'AC1027' }, h).inPlace).toBe(false);
     expect(drawingFile(BYTES, { format: 'dwg', version: 'AC1032' }, h).inPlace).toBe(false);
   });
+
+  // M2-63: in development React 19.2 logs each re-rendered component's changed props to the
+  // Performance panel, walking objects three levels down with for...in. Chrome components take
+  // the open document as a prop, so a file's bytes in an enumerable field were one row per byte
+  // (a 1 MB DWG: 1.1 million rows, ~0.5 s per component, 5–8 s per tab switch or open).
+  it('keeps the bytes where a for...in walk does not reach them', () => {
+    const { h } = handle('a.dxf');
+    const file = drawingFile(BYTES, { format: 'dxf', version: 'AC1032' }, h);
+    expect(file.bytes).toBe(BYTES);
+    expect(file.handle).toBe(h);
+    expect(enumeratedViews(file)).toEqual([]);
+  });
+
+  it('a save returns a file that keeps them so too', async () => {
+    const { h } = handle('a.dxf');
+    const inPlace = await saveDrawing('a.dxf', drawingFile(BYTES, AC1032, h), [], 'qsave', env());
+    const downloaded = await saveDrawing(
+      'a.dwg',
+      drawingFile(BYTES, DWG, undefined),
+      [],
+      'qsave',
+      env('none'),
+    );
+    for (const r of [inPlace, downloaded]) {
+      if (!r.ok) throw new Error(r.message);
+      expect(r.file.bytes).toBe(BYTES);
+      expect(enumeratedViews(r.file)).toEqual([]);
+    }
+  });
 });
+
+const AC1032 = { format: 'dxf', version: 'AC1032' };
+const DWG = { format: 'dwg', version: 'AC1018' };
+
+/** The typed arrays a for...in walk of `value` finds, as React's dev prop logging walks props. */
+function enumeratedViews(value: object, depth = 0): string[] {
+  const found: string[] = [];
+  for (const key in value) {
+    const v = (value as Record<string, unknown>)[key];
+    if (ArrayBuffer.isView(v)) found.push(key);
+    else if (typeof v === 'object' && v !== null && depth < 3)
+      found.push(...enumeratedViews(v, depth + 1).map((k) => `${key}.${k}`));
+  }
+  return found;
+}
 
 describe('dxfName', () => {
   it('suggests the drawing’s name as a .dxf', () => {
@@ -75,7 +119,7 @@ describe('saveDrawing', () => {
     const e = env();
     const file = drawingFile(BYTES, { format: 'dxf', version: 'AC1032' }, h);
     const r = await saveDrawing('a.dxf', file, CHANGES, 'qsave', e);
-    expect(r).toEqual({
+    expect(r).toMatchObject({
       ok: true,
       name: 'a.dxf',
       file: { bytes: BYTES, handle: h, inPlace: true },
@@ -96,7 +140,7 @@ describe('saveDrawing', () => {
     expect(dwg.h.createWritable).not.toHaveBeenCalled();
     expect(dxf.written).toHaveLength(1);
     // Save writes the new file in place from now on, still from the DWG's bytes and the log.
-    expect(r).toEqual({
+    expect(r).toMatchObject({
       ok: true,
       name: 'plant.dxf',
       file: { bytes: BYTES, handle: dxf.h, inPlace: true },
@@ -164,7 +208,11 @@ describe('saveDrawing', () => {
     const e = env('none');
     const r = await saveDrawing('plant.dwg', { bytes: BYTES, inPlace: false }, CHANGES, 'qsave', e);
     expect(e.downloads).toEqual([['plant.dxf', OUT]]);
-    expect(r).toEqual({ ok: true, name: 'plant.dxf', file: { bytes: BYTES, inPlace: false } });
+    expect(r).toMatchObject({
+      ok: true,
+      name: 'plant.dxf',
+      file: { bytes: BYTES, inPlace: false },
+    });
   });
 
   it('says why a save failed, and leaves the file as it was', async () => {
