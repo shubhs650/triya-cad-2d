@@ -24,11 +24,27 @@ const info = (n: number, layersOff: string[] = []): UnderlayLayersInfo => ({
 
 describe('layerRows', () => {
   it("lists the PDF's layers in order, then layers turned off that it lacks", () => {
-    expect(layerRows(['Walls', 'Notes', 'Draft'], ['Notes', 'Gone'])).toEqual([
+    const pdf = ['Walls', 'Notes', 'Draft'].map((name) => ({ name, on: true }));
+    expect(layerRows(pdf, ['Notes', 'Gone'])).toEqual([
       { name: 'Walls', on: true },
       { name: 'Notes', on: false },
       { name: 'Draft', on: true },
       { name: 'Gone', on: false },
+    ]);
+  });
+
+  it('shows a layer the PDF hides by default off, whatever the underlay keeps', () => {
+    const pdf = [
+      { name: 'Walls', on: true },
+      { name: 'Draft', on: false },
+    ];
+    expect(layerRows(pdf, [])).toEqual([
+      { name: 'Walls', on: true },
+      { name: 'Draft', on: false, pdfOff: true },
+    ]);
+    expect(layerRows(pdf, ['Draft'])).toEqual([
+      { name: 'Walls', on: true },
+      { name: 'Draft', on: false, pdfOff: true },
     ]);
   });
 

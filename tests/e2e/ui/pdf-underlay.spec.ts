@@ -216,3 +216,64 @@ test('draws an underlay without the PDF layers it turns off (ULAYERS), the other
   expect(red(await colour(0.75, -2.5))).toBe(false);
   expect(green(await colour(3.25, -2.5))).toBe(false);
 });
+
+test('ULAYERS turns each underlay’s PDF layers on and off in its dialog, one undo step (M2-56)', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const prompt = page.getByTestId('command-prompt');
+  await page.goto(app.url);
+  await openWithPicker(page, LAYERS_DXF);
+  await expectShown(page, 'pdf-underlay-layers.dxf');
+  await openWithDrop(page, LAYERS_PDF);
+  await expectShown(page, 'pdf-underlay-layers.dxf');
+  await expect.poll(() => pdfRenders(page), { timeout: 30_000 }).toBeGreaterThanOrEqual(2);
+  await nav(page, 'Zoom Extents').click();
+  const v = await viewOf(page);
+  const colour = (x: number, y: number) => colourAt(page, v.at(x, y));
+  const red = (c: number[]) => c[0]! > 200 && c[1]! < 60 && c[2]! < 60;
+  const blue = (c: number[]) => c[2]! > 200 && c[0]! < 60 && c[1]! < 60;
+  /** Walls (red) and Notes (blue) shown on the underlay at (0, y). */
+  const shows = async (y: number) => [red(await colour(0.75, y)), blue(await colour(2, y))];
+  await expect.poll(() => shows(1.5), { timeout: 30_000 }).toEqual([true, true]);
+  await expect.poll(() => shows(-2.5), { timeout: 30_000 }).toEqual([false, true]);
+
+  await page.keyboard.type('ULAYERS');
+  await page.keyboard.press('Enter');
+  const dialog = page.getByRole('dialog', { name: 'Underlay Layers' });
+  await expect(dialog).toBeVisible();
+  const reference = dialog.getByLabel('Reference Name:');
+  const layer = (name: string) => dialog.getByRole('checkbox', { name, exact: true });
+  // The first underlay: every layer on but Draft, which the PDF itself hides.
+  await expect(reference.locator('option:checked')).toHaveText('pdf-underlay-layers - 1 [1]');
+  await expect(layer('Walls')).toBeChecked();
+  await expect(layer('Notes')).toBeChecked();
+  await expect(layer('Draft')).not.toBeChecked();
+  await expect(layer('Draft')).toBeDisabled();
+  await layer('Walls').uncheck();
+  // The second turns Walls off: on again, and Notes off instead (Space on the focused box).
+  await reference.selectOption({ label: 'pdf-underlay-layers - 1 [2]' });
+  await expect(layer('Walls')).not.toBeChecked();
+  await layer('Walls').check();
+  await layer('Notes').focus();
+  await page.keyboard.press('Space');
+  await expect(layer('Notes')).not.toBeChecked();
+  // Search for layer narrows the list; the first underlay kept its choice meanwhile.
+  await dialog.getByLabel('Search for layer:').fill('wa');
+  await expect(dialog.getByRole('checkbox')).toHaveCount(1);
+  await dialog.getByLabel('Search for layer:').fill('');
+  await reference.selectOption({ label: 'pdf-underlay-layers - 1 [1]' });
+  await expect(layer('Walls')).not.toBeChecked();
+  await dialog.getByRole('button', { name: 'OK' }).click();
+  await expect(dialog).toBeHidden();
+  await expect(prompt).toHaveText('Command:');
+
+  await expect.poll(() => shows(1.5), { timeout: 30_000 }).toEqual([false, true]);
+  await expect.poll(() => shows(-2.5), { timeout: 30_000 }).toEqual([true, false]);
+
+  // One undo step brings both back.
+  await page.keyboard.type('U');
+  await page.keyboard.press('Enter');
+  await expect.poll(() => shows(1.5), { timeout: 30_000 }).toEqual([true, true]);
+  await expect.poll(() => shows(-2.5), { timeout: 30_000 }).toEqual([false, true]);
+});

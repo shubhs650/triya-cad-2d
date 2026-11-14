@@ -30,7 +30,11 @@ function fakePdf() {
         drawn.push({ page, width, height, ...(layersOff ? { layersOff } : {}) });
         return Promise.resolve({ width, height, data: new Uint8ClampedArray(width * height * 4) });
       },
-      layers: () => Promise.resolve(['Walls', 'Notes']),
+      layers: () =>
+        Promise.resolve([
+          { name: 'Walls', on: true },
+          { name: 'Notes', on: false },
+        ]),
       snapGeometry: (page) =>
         Promise.resolve({
           lines: new Float64Array([0, 0, page, page]),
@@ -64,8 +68,12 @@ describe('PdfPages', () => {
     const pages = new PdfPages(pdf.open);
     expect(await pages.layers('..\\plans\\plan.pdf')).toBeUndefined();
     pages.add('Plan.PDF', new Uint8Array([1]));
-    expect(await pages.layers('..\\plans\\plan.pdf')).toEqual(['Walls', 'Notes']);
-    expect(await pages.layers('plan.pdf')).toEqual(['Walls', 'Notes']);
+    const layers = [
+      { name: 'Walls', on: true },
+      { name: 'Notes', on: false },
+    ];
+    expect(await pages.layers('..\\plans\\plan.pdf')).toEqual(layers);
+    expect(await pages.layers('plan.pdf')).toEqual(layers);
     expect(pdf.opened).toHaveLength(1);
     // A reader without layers lists none; one pdf.js cannot read lists like a missing file.
     const plain = new PdfPages(() =>

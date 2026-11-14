@@ -85,15 +85,17 @@ export const openPdf: OpenPdf = async (bytes) => {
       return { width, height, data };
     },
     async layers() {
-      // Every optional content group, in the order the document lists them; a name twice (two
-      // groups of one name) is one layer, as ULAYERS keeps layers by name.
+      // Every optional content group, in the order the document lists them, with the PDF's own
+      // default visibility; two groups of one name are one layer, as ULAYERS keeps layers by name.
       const config = await doc.getOptionalContentConfig();
-      const names: string[] = [];
+      const layers: { name: string; on: boolean }[] = [];
       for (const [, group] of config) {
-        if (group.name !== null && group.name !== '' && !names.includes(group.name))
-          names.push(group.name);
+        const name: unknown = group.name;
+        if (typeof name !== 'string' || name === '' || layers.some((l) => l.name === name))
+          continue;
+        layers.push({ name, on: (group as { visible?: boolean }).visible !== false });
       }
-      return names;
+      return layers;
     },
     async snapGeometry(n) {
       const p = await page(n);

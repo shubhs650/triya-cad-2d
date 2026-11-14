@@ -5,11 +5,17 @@
 // a layer the underlay turns off that the PDF does not have (the file was changed) is listed
 // too, so it can be turned back on, and with no PDF supplied those are all the dialog can list.
 import type { EntityId, UnderlayLayersInfo, ViewReply } from '@triya/engine';
+import type { PdfLayer } from './underlay/pages';
 
 /** One row of the layer list. */
 export interface UnderlayLayerRow {
   readonly name: string;
   readonly on: boolean;
+  /**
+   * The PDF itself hides the layer by default: ULAYERS keeps only the layers an underlay turns
+   * off, so it shows off and cannot be turned on.
+   */
+  readonly pdfOff?: true;
 }
 
 /**
@@ -17,13 +23,15 @@ export interface UnderlayLayerRow {
  * supplied), then any layer turned off it does not have; `off` is what the dialog has now.
  */
 export function layerRows(
-  pdfLayers: readonly string[] | undefined,
+  pdfLayers: readonly PdfLayer[] | undefined,
   off: readonly string[],
 ): UnderlayLayerRow[] {
   const offSet = new Set(off);
-  const names = [...(pdfLayers ?? [])];
-  for (const n of off) if (!names.includes(n)) names.push(n);
-  return names.map((name) => ({ name, on: !offSet.has(name) }));
+  const rows: UnderlayLayerRow[] = (pdfLayers ?? []).map(({ name, on }) =>
+    on ? { name, on: !offSet.has(name) } : { name, on: false, pdfOff: true },
+  );
+  for (const name of off) if (!rows.some((r) => r.name === name)) rows.push({ name, on: false });
+  return rows;
 }
 
 /** Search for layer: a part of the name, case ignored, or `*` and `?` wildcards. */

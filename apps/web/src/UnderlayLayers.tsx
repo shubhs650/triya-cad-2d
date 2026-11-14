@@ -4,10 +4,12 @@
 // Each underlay keeps its own choices while the drafter moves between them in Reference Name;
 // OK hands ULAYERS every underlay it changed, which ULAYERS applies as one undo step, and Cancel
 // (and Esc) changes nothing. A layer is turned on or off with its check box, by mouse or with
-// Space, so the dialog is keyboard operable throughout.
+// Space, so the dialog is keyboard operable throughout. A layer the PDF itself hides by default
+// shows off and cannot be turned on: the drawing keeps only the layers an underlay turns off.
 import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import type { EntityId } from '@triya/engine';
 import { Modal } from './AttributeDialogs';
+import type { PdfLayer } from './underlay/pages';
 import {
   layerMatches,
   layerRows,
@@ -18,7 +20,7 @@ import {
 } from './underlay-layers';
 
 /** The PDF's layers by its file name: undefined when the file was not supplied. */
-export type PdfLayers = (fileName: string) => Promise<readonly string[] | undefined>;
+export type PdfLayers = (fileName: string) => Promise<readonly PdfLayer[] | undefined>;
 
 export function UnderlayLayers({
   doc,
@@ -38,7 +40,7 @@ function Body({ request, pdfLayers }: { request: UnderlayLayersRequest; pdfLayer
   const [edited, setEdited] = useState<ReadonlyMap<EntityId, readonly string[]>>(new Map());
   const [search, setSearch] = useState('');
   // The PDF's layers per file, read once each; null while reading.
-  const [files, setFiles] = useState<ReadonlyMap<string, readonly string[] | undefined | null>>(
+  const [files, setFiles] = useState<ReadonlyMap<string, readonly PdfLayer[] | undefined | null>>(
     new Map(),
   );
   const underlay = underlays.find((u) => u.id === selected) ?? underlays[0]!;
@@ -98,10 +100,11 @@ function Body({ request, pdfLayers }: { request: UnderlayLayersRequest; pdfLayer
                   type="checkbox"
                   checked={r.on}
                   aria-label={r.name}
+                  disabled={r.pdfOff}
                   onChange={(e) => set(r.name, e.target.checked)}
                 />
               </td>
-              <td>{r.name}</td>
+              <td>{r.pdfOff ? `${r.name} (off in the PDF)` : r.name}</td>
             </tr>
           ))}
         </tbody>
