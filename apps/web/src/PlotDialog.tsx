@@ -151,12 +151,15 @@ export function downloadPdf(name: string, bytes: Uint8Array): void {
 
 export function PlotDialog({
   doc,
+  missingUnderlays,
   underlayFile,
   underlayPage,
   userTables,
   edited,
 }: {
   doc: { readonly id: number; readonly block: string; readonly name: string } | undefined;
+  /** The note naming the drawing's PDF underlays whose file is not found (M2-56 part 2). */
+  missingUnderlays?: string | undefined;
   /** The PDF file a PDF underlay names, as supplied this session (M2-16 part 5). */
   underlayFile?: (fileName: string) => Uint8Array | undefined;
   /** Its page drawn, for an SVG or PNG plot (M2-39). */
@@ -177,6 +180,7 @@ export function PlotDialog({
       block={doc.block}
       name={doc.name}
       controller={controller}
+      {...(missingUnderlays && { missingUnderlays })}
       {...(underlayFile && { underlayFile })}
       {...(underlayPage && { underlayPage })}
       {...(userTables && { userTables })}
@@ -190,6 +194,7 @@ function PlotBody({
   block,
   name,
   controller,
+  missingUnderlays,
   underlayFile,
   underlayPage,
   userTables,
@@ -199,6 +204,7 @@ function PlotBody({
   block: string;
   name: string;
   controller: CanvasController;
+  missingUnderlays?: string;
   underlayFile?: (fileName: string) => Uint8Array | undefined;
   underlayPage?: UnderlayPageSource;
   userTables?: () => ReadonlyMap<string, PlotStyleTable>;
@@ -433,6 +439,11 @@ function PlotBody({
         />
       ) : (
         <p className="plot-loading">Reading the drawing…</p>
+      )}
+      {s && space && missingUnderlays && (
+        <p className="plot-note" role="note" aria-label="PDF underlays not found">
+          {missingUnderlays}
+        </p>
       )}
       {error && (
         <p className="plot-error" role="alert">
