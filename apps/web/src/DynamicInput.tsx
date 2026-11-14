@@ -42,6 +42,7 @@ export function DynamicInput({
   cursor,
   onSubmit,
   onKeyword,
+  holding = () => false,
 }: {
   /** The prompt the command waits at; undefined at `Command:`, where Dynamic Input shows nothing. */
   prompt: Prompt | undefined;
@@ -50,6 +51,11 @@ export function DynamicInput({
   cursor: () => Vec2 | undefined;
   onSubmit: (text: string) => void;
   onKeyword: (keyword: string) => void;
+  /**
+   * The command line holds keys typed ahead of their prompt (M2-47 part 3): the keys after them
+   * go there too, so they reach the engine in the order typed.
+   */
+  holding?: () => boolean;
 }) {
   const on = useSyncExternalStore(dynMode.subscribe, dynMode.get);
   const [over, setOver] = useState(false);
@@ -84,8 +90,8 @@ export function DynamicInput({
   // A new prompt starts with empty fields, or with what was typed ahead of it.
   useEffect(() => put(prompt, prompt && dynReplay(prompt, typed.current)), [prompt]);
 
-  const props = useRef({ prompt, state, shown, cursor, onSubmit, onKeyword });
-  props.current = { prompt, state, shown, cursor, onSubmit, onKeyword };
+  const props = useRef({ prompt, state, shown, cursor, onSubmit, onKeyword, holding });
+  props.current = { prompt, state, shown, cursor, onSubmit, onKeyword, holding };
 
   const place = () => {
     const el = box.current;
@@ -120,6 +126,7 @@ export function DynamicInput({
       // Fields set for an earlier prompt are this prompt's as soon as it has arrived.
       const s = dynCurrent(latest.current, p, typed.current);
       if (!visible || !overNow.current || !p || !s || takesText(e.target)) return;
+      if (props.current.holding()) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const take = (next: DynState, key?: string) => {
         e.preventDefault();

@@ -8,7 +8,15 @@
 import { builtinCommands, keywordShortcut } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from './CommandPalette';
-import { clipboardCommand, completions, promptParts, type CommandLines } from './command-line';
+import {
+  clipboardCommand,
+  completions,
+  holdsKey,
+  promptParts,
+  reading,
+  replayAhead,
+  type CommandLines,
+} from './command-line';
 import { undoKeyCommand } from './undo';
 import { DynamicInput } from './DynamicInput';
 import { dynMode } from './dynamic-input';
@@ -73,15 +81,22 @@ export function CommandLine({
   const prompt = state?.prompt;
   const suggestions = prompt === undefined ? completions(registry, text).slice(0, 8) : [];
 
+  /** Keys typed ahead of the prompt that reads them (M2-47 part 3, `holdsKey`). */
+  const held = useRef<string[]>([]);
+  const textRef = useRef(text);
+  textRef.current = text;
+
   const send = (value: string) => {
     if (doc === undefined) return;
     const c = cursor();
-    engines.command(doc, { kind: 'submit', text: value, ...(c && { cursor: c }) });
+    const seq = lines.send(doc);
+    engines.command(doc, { kind: 'submit', text: value, seq, ...(c && { cursor: c }) });
     lines.typed(doc, value);
     setText('');
     setRecall(undefined);
   };
   const cancel = () => {
+    held.current = [];
     setText('');
     setRecall(undefined);
     // Sent whatever the mirror shows: it may not have heard yet of a command typed just before
@@ -138,6 +153,30 @@ export function CommandLine({
   };
   const invokeRef = useRef(invoke);
   invokeRef.current = invoke;
+  /** Holds `key` when it waits for the prompt it reaches; true when it was held. */
+  const hold = (key: string): boolean => {
+    if (doc === undefined || !holdsKey(lines.get(doc), held.current, key)) return false;
+    held.current.push(key);
+    return true;
+  };
+  const holdRef = useRef(hold);
+  holdRef.current = hold;
+
+  // Keys held for a prompt not shown yet are replayed once the engine has read every input
+  // sent: on the prompt they reach, until one ends the input and the rest wait again.
+  useEffect(() => {
+    if (doc === undefined || held.current.length === 0) return;
+    const now = lines.get(doc);
+    if (reading(now)) return;
+    const r = replayAhead(textRef.current, held.current, now.prompt);
+    held.current = [...r.keys];
+    if (r.submit !== undefined) send(r.submit);
+    else setText(r.text);
+  });
+  // Another drawing shown starts with nothing held.
+  useEffect(() => {
+    held.current = [];
+  }, [doc]);
 
   // Keys typed outside any field go to the command line, as in AutoCAD.
   useEffect(() => {
@@ -195,8 +234,13 @@ export function CommandLine({
       if (e.target === input.current || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
       if (e.key === 'Escape') return cancelRef.current();
+      if ((e.key === 'Enter' || e.key === ' ') && pressable(e.target)) return;
+      if (holdRef.current(e.key)) {
+        e.preventDefault();
+        input.current?.focus();
+        return;
+      }
       if (e.key === 'Enter' || e.key === ' ') {
-        if (pressable(e.target)) return;
         e.preventDefault();
         return sendRef.current('');
       }
@@ -216,7 +260,9 @@ export function CommandLine({
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const spaces = prompt?.kind === 'string' && prompt.spaces;
-    if (e.key === 'Enter' || (e.key === ' ' && !spaces)) {
+    if (e.key !== 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && hold(e.key)) {
+      e.preventDefault();
+    } else if (e.key === 'Enter' || (e.key === ' ' && !spaces)) {
       e.preventDefault();
       send(text);
     } else if (e.key === 'Escape') {
@@ -250,6 +296,7 @@ export function CommandLine({
           cursor={cursor}
           onSubmit={send}
           onKeyword={answerKeyword}
+          holding={() => held.current.length > 0}
         />
       )}
       {paletteOpen && (
