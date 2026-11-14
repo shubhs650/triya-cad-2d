@@ -243,6 +243,14 @@ function withPartners(b: ChangeSetBuilder, links: Links, ids: readonly EntityId[
   return [...set.values()];
 }
 
+/**
+ * An associative hatch lets go of its boundary objects, each taking it off its reactors
+ * (HATCHEDIT's Associative off, and the Properties palette's Associative No, M2-35 part 13).
+ */
+export function dissociateHatch(b: ChangeSetBuilder, model: DocumentModel, hatch: Entity): void {
+  new Links(b, model).dissociateHatch(hatch);
+}
+
 /** MOVE, ROTATE, SCALE or MIRROR (without copying): `ids` carried by `t`. */
 export function transformObjects(
   b: ChangeSetBuilder,

@@ -36,6 +36,7 @@ KINDS = (
     "paste",
     "dimension",
     "properties",
+    "hatch",
 )
 # corpus.json marks files acad-ts cannot read with a known issue mentioning "read"; the corpus
 # suites skip them (packages/testkit/src/export/export.corpus.test.ts), so there is no save.

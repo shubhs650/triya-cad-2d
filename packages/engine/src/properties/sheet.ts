@@ -17,6 +17,7 @@ import type {
   Entity,
   EntityGeometry,
   EntityType,
+  HatchGeometry,
   Lineweight,
   LinetypeRef,
   Transparency,
@@ -397,6 +398,98 @@ const ISLAND_STYLES: readonly PropertyOption[] = [
 /** A hatch of pattern lines: neither a solid fill nor a gradient. */
 export const isPatterned = (g: { readonly solid: boolean; readonly gradient?: unknown }): boolean =>
   !g.solid && g.gradient === undefined;
+
+/**
+ * The point a hatch's pattern lines start from, its Origin X and Y: the first line's base point
+ * (AutoCAD keeps the hatch origin, HPORIGIN, only in the lines it stores: DXF 43/44 are the
+ * origin turned and scaled from the pattern file's first line, which in the ANSI, ISO and Triya
+ * patterns, and in every user-defined hatch, starts at 0,0), else the drawing's origin.
+ */
+export function patternOrigin(g: HatchGeometry): Vec2 {
+  return (isPatterned(g) && g.patternLines[0]?.base) || { x: 0, y: 0 };
+}
+
+/** DXF 470's names, as the Hatch and Gradient dialog lays its nine swatches out. */
+export const GRADIENT_NAMES: readonly string[] = [
+  'LINEAR',
+  'CYLINDER',
+  'INVCYLINDER',
+  'SPHERICAL',
+  'INVSPHERICAL',
+  'HEMISPHERICAL',
+  'INVHEMISPHERICAL',
+  'CURVED',
+  'INVCURVED',
+];
+
+/**
+ * A gradient fill's rows (M2-35 part 13), as ActiveX's AcadHatch has them (GradientName,
+ * GradientColor1 and 2, GradientAngle, GradientCentered; AutoCAD's help does not list the
+ * palette's): Color 2 for a two-colour gradient and, for a one-colour one, Gradient tint (DXF 462,
+ * 0 shade to 1 tint, as GFCLRLUM reads it), which makes its colour 2. A gradient's colours are
+ * index or true colours (DXF 63 and 421), so ByLayer and ByBlock are not offered.
+ */
+function gradientRows(es: readonly Entity[]): PropertyRow[] {
+  if (es.length === 0) return [];
+  const gr = (e: Entity) => geomOf<'HATCH'>(e).gradient!;
+  const two = es.filter((e) => !gr(e).singleColor);
+  const one = es.filter((e) => gr(e).singleColor);
+  const colorOf = (e: Entity, i: number): Color =>
+    gr(e).colors[i]?.color ?? { kind: 'aci', index: 7 };
+  const colorRow = (objects: readonly Entity[], i: number): PropertyRow => {
+    const options = new Map<string, string>(
+      STANDARD_COLORS.filter((c) => c.kind === 'aci').map((c) => [colorValue(c), colorLabel(c)]),
+    );
+    for (const e of objects) {
+      const c = colorOf(e, i);
+      if (!options.has(colorValue(c))) options.set(colorValue(c), colorLabel(c));
+    }
+    return {
+      ...row(objects, {
+        key: i === 0 ? 'gradientColor1' : 'gradientColor2',
+        label: i === 0 ? 'Color 1' : 'Color 2',
+        kind: 'choice',
+        options: [...options].map(([value, label]) => ({ value, label })),
+        get: (e) => colorValue(colorOf(e, i)),
+      }),
+      colorDialog: 'true',
+    };
+  };
+  return [
+    row(es, {
+      key: 'gradientName',
+      label: 'Gradient name',
+      kind: 'choice',
+      options: GRADIENT_NAMES.map((n) => ({ value: n, label: n })),
+      get: (e) => gr(e).name.toUpperCase(),
+    }),
+    colorRow(es, 0),
+    ...(two.length > 0 ? [colorRow(two, 1)] : []),
+    ...(one.length > 0
+      ? [
+          row(one, {
+            key: 'gradientTint',
+            label: 'Gradient tint',
+            kind: 'number',
+            get: (e) => gr(e).tint,
+          }),
+        ]
+      : []),
+    row(es, {
+      key: 'gradientAngle',
+      label: 'Gradient angle',
+      kind: 'angle',
+      get: (e) => gr(e).angle,
+    }),
+    row(es, {
+      key: 'gradientCentered',
+      label: 'Centered',
+      kind: 'choice',
+      options: YES_NO,
+      get: (e) => yesNo(gr(e).shift === 0),
+    }),
+  ];
+}
 
 /** DXF 72/73 as AutoCAD's justification names (TEXT's Justify). */
 export function textJustify(h: number, v: number): string {
@@ -1030,13 +1123,14 @@ function typeSections(
     }
     case 'HATCH': {
       const g = (e: Entity) => geomOf<'HATCH'>(e);
-      // M2-35 part 3: AutoCAD 2024's Pattern rows. A gradient's own rows (gradient name,
-      // colours, centred) are not edited yet, so its rows stay read only (M2-35 part 13 makes
-      // them, Origin X/Y and Associative editable); a solid fill has no
-      // lines to turn or scale, so its Angle and Scale are greyed as AutoCAD greys them. Each
-      // row edits the hatches it applies to: Scale the predefined and custom patterns, Spacing
-      // and Double the user-defined ones (DXF 76 = 0, whose DXF 41 is the spacing).
-      const gradient = es.some((e) => g(e).gradient);
+      // M2-35 part 3: AutoCAD 2024's Pattern rows. A solid fill has no lines to turn or scale,
+      // so its Angle and Scale are greyed as AutoCAD greys them. Each row edits the hatches it
+      // applies to: Scale the predefined and custom patterns, Spacing and Double the
+      // user-defined ones (DXF 76 = 0, whose DXF 41 is the spacing). M2-35 part 13: a gradient
+      // has its own rows instead of a pattern's (`gradientRows`), a pattern its Origin X and Y,
+      // and Associative is a choice.
+      const gradients = es.filter((e) => g(e).gradient);
+      const fills = es.filter((e) => !g(e).gradient);
       const patterned = es.filter((e) => isPatterned(g(e)));
       const scaled = patterned.filter((e) => g(e).patternType !== 0);
       const user = patterned.filter((e) => g(e).patternType === 0);
@@ -1067,19 +1161,33 @@ function typeSections(
               ? 'Gradient'
               : (['User defined', 'Predefined', 'Custom'][g(e).patternType] ?? 'Predefined'),
         }),
-        row(es, {
-          key: 'patternName',
-          label: 'Pattern name',
-          kind: 'text',
-          ...(gradient && { readOnly: true }),
-          get: (e) => g(e).gradient?.name ?? g(e).pattern,
-        }),
-        patterned.length > 0 ? angleRow(patterned, false) : angleRow(es, true),
-        ...(scaled.length > 0
-          ? [scaleRow(scaled, false)]
-          : user.length === 0
-            ? [scaleRow(es, true)]
-            : []),
+        ...(fills.length > 0
+          ? [
+              row(fills, {
+                key: 'patternName',
+                label: 'Pattern name',
+                kind: 'text',
+                get: (e) => g(e).pattern,
+              }),
+              patterned.length > 0 ? angleRow(patterned, false) : angleRow(fills, true),
+              ...(scaled.length > 0
+                ? [scaleRow(scaled, false)]
+                : user.length === 0
+                  ? [scaleRow(fills, true)]
+                  : []),
+            ]
+          : []),
+        ...gradientRows(gradients),
+        ...(patterned.length > 0
+          ? (['x', 'y'] as const).map((axis) =>
+              row(patterned, {
+                key: axis === 'x' ? 'patternOriginX' : 'patternOriginY',
+                label: axis === 'x' ? 'Origin X' : 'Origin Y',
+                kind: 'distance',
+                get: (e) => patternOrigin(g(e))[axis],
+              }),
+            )
+          : []),
         ...(user.length > 0
           ? [
               row(user, {
@@ -1101,7 +1209,6 @@ function typeSections(
           key: 'associative',
           label: 'Associative',
           kind: 'choice',
-          readOnly: true,
           options: YES_NO,
           get: (e) => yesNo(g(e).associative),
         }),
