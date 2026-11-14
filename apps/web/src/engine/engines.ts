@@ -11,6 +11,7 @@ import type {
   DocumentInit,
   EditResult,
   EngineEdit,
+  PaperView,
 } from '@triya/engine';
 import type { EngineHost } from './host';
 
@@ -109,6 +110,15 @@ export class Engines {
   async blocklessDimensionBlocks(doc: number): Promise<ChangeSet | undefined> {
     const engine = this.#engines.get(doc);
     return engine ? engine.blocklessDimensionBlocks() : undefined;
+  }
+
+  /**
+   * The view each layout shown is saved in (M2-47 part 1): its paper-space viewport, for the
+   * saved file only, as the Model tiles' `*Active` VPORTs are.
+   */
+  async paperViews(doc: number, layouts: readonly PaperView[]): Promise<ChangeSet | undefined> {
+    const engine = this.#engines.get(doc);
+    return engine && layouts.length > 0 ? engine.paperViews(layouts) : undefined;
   }
 
   /** Applies an edit to a drawing and shows it on every canvas of that drawing. */

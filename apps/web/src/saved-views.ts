@@ -9,6 +9,7 @@ import {
   type ChangeSet,
   type DocumentInit,
   type Handle,
+  type PaperView,
   type TableName,
   type TableRecords,
   type ViewRecord,
@@ -71,4 +72,32 @@ export function shownViewsChange(
     });
   }
   return activeViewsChange(out);
+}
+
+/** What a canvas shows, and which space. */
+export interface ShownSpace extends ShownView {
+  readonly block: Handle;
+  readonly isLayout: boolean;
+}
+
+/**
+ * The window each layout's canvas shows (M2-47 part 1), for the save to write into the layout's
+ * paper-space viewport (`paperViewsChange`, in the engine, which may give a layout one). A layout
+ * not yet drawn is left as it was read; Model goes into its `*Active` VPORT (`shownViewsChange`).
+ */
+export function shownPaperViews(canvases: readonly ShownSpace[]): PaperView[] {
+  const out: PaperView[] = [];
+  for (const { block, isLayout, view, size } of canvases) {
+    if (!isLayout || !view || !(view.scale > 0) || !(size.width > 0) || !(size.height > 0))
+      continue;
+    out.push({
+      block,
+      view: {
+        center: view.center,
+        width: size.width / view.scale,
+        height: size.height / view.scale,
+      },
+    });
+  }
+  return out;
 }

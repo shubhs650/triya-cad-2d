@@ -9,7 +9,7 @@ import type { PromptAnswer } from '../commands/prompt';
 import type { UndoState } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
-import { saveNamedView, validViewName } from '../edit/named-view';
+import { paperViewsChange, saveNamedView, validViewName, type PaperView } from '../edit/named-view';
 import type { Vec2 } from '../geom/types';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
@@ -329,6 +329,15 @@ export class EngineSession {
    */
   blocklessDimensionBlocks(): Promise<ChangeSet | undefined> {
     return this.#bus.blocklessDimensionBlocks();
+  }
+
+  /**
+   * The view each layout shown is saved in (M2-47 part 1, `paperViewsChange`): a change set for
+   * the saved file only, applied after the drawing's change log; undefined when nothing changes.
+   */
+  paperViews(layouts: readonly PaperView[]): ChangeSet | undefined {
+    const change = paperViewsChange(this.model, layouts);
+    return Object.keys(change).length > 0 ? change : undefined;
   }
 
   #emit(o: CommandOutput): void {
