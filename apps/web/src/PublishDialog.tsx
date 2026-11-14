@@ -22,6 +22,14 @@
 // its sheets and, when its sheets publish, opened with no tab (its engine and a hidden canvas to
 // plot from) and closed after, as AutoCAD loads it. Page Setup's own entry names the page setup the
 // layout has applied, "<Default: A3 Monochrome>".
+//
+// M2-45 part 3: Save Sheet List downloads the list as a DSD file and Load Sheet List reads one
+// (sheet-list.ts), asking to Replace or Append when sheets are listed already, as AutoCAD's
+// Publish does; a sheet whose drawing is not open is listed as "Drawing file not found" until Add
+// Sheets supplies it. "Open in viewer when done" opens the published PDF (or the one SVG or PNG)
+// in a new browser tab: the tab opens on the Publish click (a tab opened when the publish ends,
+// seconds later, is a pop-up the browser blocks) and shows the file when it is written, in the
+// browser's own PDF viewer (an <embed>) or as a picture, titled with the file's name.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { download, downloadPdf } from './PlotDialog';
 import { controllerOf } from './canvas/registry';
@@ -60,6 +68,16 @@ import {
   type PublishSheet,
   type PublishSpace,
 } from './publish';
+import {
+  appendedSheets,
+  listedSheets,
+  readSheetList,
+  sheetKey,
+  sheetListName,
+  withDrawingFound,
+  writeSheetList,
+  type ListedDrawing,
+} from './sheet-list';
 
 /** Which drawing the dialog is open for, if any. */
 export const publishDialog = (() => {
@@ -165,6 +183,8 @@ function PublishBody({
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   const picker = useRef<HTMLInputElement>(null);
+  const listPicker = useRef<HTMLInputElement>(null);
+  const ask = useRef<HTMLDialogElement>(null);
   const [sheets, setSheets] = useState<PublishSheet[]>(() =>
     publishSheets(doc.name, publishSpaces(doc, engines.changesOf(doc.id)), doc.id),
   );
@@ -177,6 +197,9 @@ function PublishBody({
   const [log, setLog] = useState(false);
   const [device, setDevice] = useState<PublishDevice>('pdf');
   const [dpi, setDpi] = useState(150);
+  const [viewFile, setViewFile] = useState(false);
+  /** A loaded list's sheets waiting on Replace or Append. */
+  const [loaded, setLoaded] = useState<readonly PublishSheet[]>();
 
   useEffect(() => {
     const d = ref.current;
@@ -185,15 +208,30 @@ function PublishBody({
   }, []);
 
   const included = sheets.filter((s) => s.include);
-  const key = (s: PublishSheet) => `${s.doc}:${s.block}`;
+  const key = sheetKey;
   const drawingOf = (s: PublishSheet) => docs.find((d) => d.id === s.doc);
   const openedOf = (s: PublishSheet) =>
     drawingOf(s)?.opened ?? added.find((a) => a.key === s.doc)?.opened;
   /** The named page setups a sheet may plot with: its drawing's, of its kind. */
   const setupsOf = (s: PublishSheet) => {
     const o = openedOf(s);
-    return o ? pageSetupsOf(o.init.objects, s.block === o.modelSpace) : [];
+    return o && s.missing === undefined
+      ? pageSetupsOf(o.init.objects, s.block === o.modelSpace)
+      : [];
   };
+  /** A drawing open or added, as a loaded sheet list finds its sheets in it (part 3). */
+  const listed = (
+    doc: number,
+    drawing: string,
+    o: Pick<OpenDocument, 'opened'>,
+    spaces: PublishSpace[],
+  ): ListedDrawing => ({
+    doc,
+    drawing,
+    spaces,
+    pageSetups: (block) =>
+      pageSetupsOf(o.opened.init.objects, block === o.opened.modelSpace).map((p) => p.name),
+  });
 
   /** Add Sheets: the picked drawings' sheets added after those listed. */
   const addSheets = async (files: readonly File[]) => {
@@ -209,13 +247,9 @@ function PublishBody({
         ...more.map((a) => ({ doc: a.key, drawing: a.name })),
       ]);
       const open = docs.find((d) => d.id === known);
-      let drawing: { doc: number; drawing: string; spaces: PublishSpace[] };
+      let drawing: ListedDrawing;
       if (open) {
-        drawing = {
-          doc: open.id,
-          drawing: open.name,
-          spaces: publishSpaces(open, engines.changesOf(open.id)),
-        };
+        drawing = listed(open.id, open.name, open, publishSpaces(open, engines.changesOf(open.id)));
       } else {
         let a = more.find((x) => x.key === known);
         if (!a) {
@@ -231,9 +265,10 @@ function PublishBody({
             continue;
           }
         }
-        drawing = { doc: a.key, drawing: a.name, spaces: publishSpaces(a, []) };
+        drawing = listed(a.key, a.name, a, publishSpaces(a, []));
       }
-      list = withOpenDrawings(list, [drawing]);
+      // A loaded list's sheets of this drawing are found in it (part 3), then the rest added.
+      list = withOpenDrawings(withDrawingFound(list, drawing), [drawing]);
     }
     setAdded(more);
     setSheets(list);
@@ -254,6 +289,49 @@ function PublishBody({
     );
   };
 
+  /** Save Sheet List (part 3): the list as a DSD file. */
+  const saveList = () => {
+    const text = writeSheetList(sheets, { device, dpi, viewFile, log });
+    download(sheetListName(doc.name), new TextEncoder().encode(text), 'text/plain');
+  };
+
+  /** Load Sheet List (part 3): replaces the list, or asks first when sheets are listed. */
+  const loadList = async (file: File) => {
+    setError(undefined);
+    try {
+      const { entries, options } = readSheetList(await file.text());
+      const drawings = [
+        ...docs.map((d) => listed(d.id, d.name, d, publishSpaces(d, engines.changesOf(d.id)))),
+        ...added.map((a) => listed(a.key, a.name, a, publishSpaces(a, []))),
+      ];
+      const list = listedSheets(entries, drawings);
+      if (options.device) setDevice(options.device);
+      if (options.dpi) setDpi(options.dpi);
+      if (options.viewFile !== undefined) setViewFile(options.viewFile);
+      if (options.log !== undefined) setLog(options.log);
+      setStatus(new Map());
+      if (sheets.length === 0) {
+        setSheets(list);
+        setSelected(undefined);
+      } else {
+        setLoaded(list);
+        ask.current?.showModal();
+      }
+    } catch (e) {
+      setError(`${file.name} could not be read: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  };
+
+  /** The Replace or Append answer to a loaded list; undefined is Cancel. */
+  const answer = (how?: 'replace' | 'append') => {
+    ask.current?.close();
+    if (loaded && how) {
+      setSheets(how === 'replace' ? [...loaded] : appendedSheets(sheets, loaded));
+      setSelected(undefined);
+    }
+    setLoaded(undefined);
+  };
+
   const move = (by: -1 | 1) => {
     if (selected === undefined) return;
     const j = selected + by;
@@ -271,6 +349,9 @@ function PublishBody({
     if (busy || included.length === 0) return;
     setBusy(true);
     setError(undefined);
+    // Open in viewer when done: a tab opened now, while the click lets the page open one.
+    const viewer = viewFile ? window.open('', '_blank') : null;
+    let viewed = false;
     // Drawings Add Sheets read, opened for the publish (with no tab) and closed after it.
     const opening = new Map<number, Promise<OpenDocument | undefined>>();
     const sheetDrawing = (s: PublishSheet): Promise<OpenDocument | undefined> => {
@@ -288,6 +369,7 @@ function PublishBody({
       const failed = new Map<string, string>();
       for (const s of included) {
         try {
+          if (s.missing !== undefined) throw new Error(`${s.missing}.`);
           const d = await sheetDrawing(s);
           // A sheet plots from its own drawing's canvas, shown or not (`plotSpaceOf`).
           const active = d && controllerOf(d.id, d.block);
@@ -303,6 +385,10 @@ function PublishBody({
         }
       }
       const written = await write(plotted);
+      if (viewer && written.view) {
+        showInViewer(viewer, written.view);
+        viewed = true;
+      }
       const bySheet = new Map(written.failed.map((f) => [f.sheet, f.message]));
       for (const s of included) {
         const m = bySheet.get(s.sheet);
@@ -326,6 +412,7 @@ function PublishBody({
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
+      if (viewer && !viewed) viewer.close();
       for (const p of opening.values()) {
         const d = await p.catch(() => undefined);
         if (d) background?.close(d.id);
@@ -334,14 +421,26 @@ function PublishBody({
     }
   };
 
-  /** The plotted sheets written and downloaded as Publish to says; true when any published. */
+  /**
+   * The plotted sheets written and downloaded as Publish to says; `published` when any did, and
+   * `view` the file a viewer shows (a PDF, or one SVG or PNG; a ZIP has none).
+   */
   const write = async (
     plotted: readonly PlottedSheet[],
-  ): Promise<{ published: boolean; failed: readonly PublishFailure[] }> => {
+  ): Promise<{
+    published: boolean;
+    failed: readonly PublishFailure[];
+    view?: ViewedFile;
+  }> => {
     if (device === 'pdf') {
       const result = publishPdf(plotted, doc.name.replace(/\.[^.]+$/, ''), underlayFile);
-      if (result.bytes) downloadPdf(publishFileName(doc.name), result.bytes);
-      return { published: result.bytes !== undefined, failed: result.failed };
+      if (!result.bytes) return { published: false, failed: result.failed };
+      downloadPdf(publishFileName(doc.name), result.bytes);
+      return {
+        published: true,
+        failed: result.failed,
+        view: { name: publishFileName(doc.name), bytes: result.bytes, type: 'application/pdf' },
+      };
     }
     const { files, failed } = await publishSheetFiles(
       plotted,
@@ -351,8 +450,13 @@ function PublishBody({
       { dpi },
     );
     const file = publishedDownload(files, publishFileName(doc.name, 'zip'));
-    if (file) download(file.name, file.bytes, file.type);
-    return { published: file !== undefined, failed };
+    if (!file) return { published: false, failed };
+    download(file.name, file.bytes, file.type);
+    return {
+      published: true,
+      failed,
+      ...(file.type !== 'application/zip' && { view: file }),
+    };
   };
 
   return (
@@ -423,6 +527,24 @@ function PublishBody({
         <button type="button" onClick={loadAll} disabled={busy}>
           Load All Open Drawings
         </button>
+        <button type="button" onClick={() => listPicker.current?.click()} disabled={busy}>
+          Load Sheet List…
+        </button>
+        <input
+          ref={listPicker}
+          type="file"
+          accept=".dsd"
+          hidden
+          aria-label="Sheet list to load"
+          onChange={(e) => {
+            const file = e.currentTarget.files?.[0];
+            e.currentTarget.value = '';
+            if (file) void loadList(file);
+          }}
+        />
+        <button type="button" onClick={saveList} disabled={busy || sheets.length === 0}>
+          Save Sheet List…
+        </button>
         <button type="button" onClick={remove} disabled={busy || selected === undefined}>
           Remove Sheets
         </button>
@@ -472,7 +594,7 @@ function PublishBody({
                 </td>
                 <td>
                   {setups.length === 0 ? (
-                    defaultPageSetup(s.applied)
+                    (s.pageSetup ?? defaultPageSetup(s.applied))
                   ) : (
                     <select
                       aria-label={`Page setup of ${s.sheet}`}
@@ -497,13 +619,14 @@ function PublishBody({
                     </select>
                   )}
                 </td>
-                <td>{status.get(key(s)) ?? (s.include ? '' : 'Not included')}</td>
+                <td>{status.get(key(s)) ?? s.missing ?? (s.include ? '' : 'Not included')}</td>
               </tr>
             );
           })}
         </tbody>
       </table>
       <Check label="Save publish log" checked={log} onChange={setLog} />
+      <Check label="Open in viewer when done" checked={viewFile} onChange={setViewFile} />
       {error && (
         <p className="publish-status" role="alert">
           {error}
@@ -521,8 +644,66 @@ function PublishBody({
           Cancel
         </button>
       </div>
+      <dialog
+        ref={ask}
+        className="cad-dialog"
+        aria-label="Replace or Append"
+        onCancel={(e) => {
+          // Esc answers Cancel here and leaves the Publish dialog up.
+          e.preventDefault();
+          e.stopPropagation();
+          answer();
+        }}
+      >
+        <h2 className="cad-dialog-title">Replace or Append</h2>
+        <p>Replace the sheets listed with the sheet list loaded, or append its sheets to them?</p>
+        <div className="cad-dialog-buttons">
+          <button type="button" onClick={() => answer('replace')}>
+            Replace
+          </button>
+          <button type="button" onClick={() => answer('append')}>
+            Append
+          </button>
+          <button type="button" onClick={() => answer()}>
+            Cancel
+          </button>
+        </div>
+      </dialog>
     </dialog>
   );
+}
+
+/** A published file "Open in viewer when done" shows. */
+interface ViewedFile {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+  readonly type: string;
+}
+
+/**
+ * Shows a published file in the tab opened for it (part 3): a PDF in the browser's PDF viewer
+ * (an <embed> filling the tab), an SVG or PNG as a picture. The tab is the app's own about:blank
+ * page, so it takes the app's blob: URL, which lives as long as the app's page; it is not revoked,
+ * as the PDF viewer reads it again to save or print.
+ */
+function showInViewer(viewer: Window, file: ViewedFile): void {
+  const url = URL.createObjectURL(
+    new Blob([file.bytes as Uint8Array<ArrayBuffer>], { type: file.type }),
+  );
+  const d = viewer.document;
+  d.title = file.name;
+  d.body.style.margin = '0';
+  const pdf = file.type === 'application/pdf';
+  const el = d.createElement(pdf ? 'embed' : 'img');
+  el.setAttribute('src', url);
+  if (pdf) {
+    el.setAttribute('type', file.type);
+    el.style.cssText = 'display:block;width:100vw;height:100vh;border:0';
+  } else {
+    el.setAttribute('alt', file.name);
+    el.style.cssText = 'display:block;max-width:100%;margin:auto';
+  }
+  d.body.replaceChildren(el);
 }
 
 function Check({

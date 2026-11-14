@@ -36,6 +36,7 @@ KINDS = (
     "paste",
     "dimension",
     "properties",
+    "views",
     "hatch",
 )
 # corpus.json marks files acad-ts cannot read with a known issue mentioning "read"; the corpus

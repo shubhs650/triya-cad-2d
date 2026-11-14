@@ -17,6 +17,7 @@ export type AuditSaveKind =
   | 'paste'
   | 'dimension'
   | 'properties'
+  | 'views'
   | 'hatch';
 
 /**

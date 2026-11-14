@@ -58,9 +58,10 @@ class JudgeTest(unittest.TestCase):
         # Two files, each saved unedited, that save saved again (M2-40), edited, after a markup
         # session (M2-08), after MLEADER (M2-09), by the app's Save after a session (M2-13),
         # after a paste from another drawing (M2-14), after the dimension commands (M2-11) and
-        # after the Properties palette's General rows and Material (M2-35 part 6) and after its
-        # hatch gradient, origin and associative rows (M2-35 part 13).
-        self.assertEqual(report.checked, 20)
+        # after the Properties palette's General rows and Material (M2-35 part 6), with every
+        # layout's view in its paper-space viewport (M2-47 part 1) and after the palette's hatch
+        # gradient, origin and associative rows (M2-35 part 13).
+        self.assertEqual(report.checked, 22)
 
     def test_any_recover_or_audit_finding_fails(self) -> None:
         name = gate.save_name(DXF, "edited")

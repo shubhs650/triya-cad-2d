@@ -1,0 +1,1 @@
+- M2-47 part 1 (#316): a layout reopens in the view it was saved in. The save writes the view each layout shows into its paper-space viewport, and gives a layout without one (never shown before, or made with LAYOUT New) a new one, as AutoCAD does the first time a layout is shown.

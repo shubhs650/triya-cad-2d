@@ -1,0 +1,1 @@
+- M2-45 part 3 (#318): the Publish dialog saves its sheet list as a DSD file and loads one back (Replace or Append; a sheet whose drawing is not open is listed as "Drawing file not found" until Add Sheets supplies it), and "Open in viewer when done" opens the published PDF, SVG or PNG in a new tab.

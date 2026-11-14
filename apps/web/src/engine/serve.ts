@@ -39,6 +39,15 @@ export function serveEngine(port: Endpoint<EngineRequest, EngineReply>): void {
         );
         return;
       }
+      if (data.type === 'save-views') {
+        const change = session.paperViews(data.layouts);
+        port.postMessage(
+          change
+            ? { type: 'save-views', id: data.id, change }
+            : { type: 'save-views', id: data.id },
+        );
+        return;
+      }
       port.postMessage({ type: 'result', id: data.id, result: session.edit(data.edit) });
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
