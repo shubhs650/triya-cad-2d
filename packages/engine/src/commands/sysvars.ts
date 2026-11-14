@@ -21,8 +21,14 @@
 // ? for a list of variables." and "Requires an integer value." are AutoCAD's own; the range
 // messages ("Value must be between 0 and 1.") follow its wording for the variables it bounds,
 // and a name that names no record ("No layer named …") is Triya's.
-import { drawingUnits, formatDistance, formatNumber, type DrawingUnits } from './units';
-import { parseDistance } from './parse';
+import {
+  drawingUnits,
+  formatAngle,
+  formatDistance,
+  formatNumber,
+  type DrawingUnits,
+} from './units';
+import { parseAngleValue, parseDistance } from './parse';
 import type { DocumentModel } from '../model/document';
 import type { HeaderValue } from '../model/types';
 import { OSNAP_OFF } from '../input/osnap';
@@ -309,6 +315,8 @@ const RANGES: Readonly<Record<string, readonly [number, number]>> = {
   AUNITS: [0, 4],
   AUPREC: [0, 8],
   ANGDIR: [0, 1],
+  // Degrees: the Modify Dimension Style dialog's Jog angle takes 5 to 90.
+  DIMJOGANG: [5, 90],
   ATTMODE: [0, 2],
   ATTREQ: [0, 1],
   ATTDIA: [0, 1],
@@ -362,6 +370,17 @@ const DISTANCE_VARIABLES = new Set([
   'DIMDLI', 'DIMDLE', 'DIMTSZ', 'DIMCEN', 'DIMGAP', 'DIMRND', 'DIMTP', 'DIMTM', 'DIMFXL',
 ]);
 
+/**
+ * The header's angles (M2-35 part 24), kept in radians as AutoCAD keeps them, which SETVAR shows
+ * and takes in the drawing's angular units (ANGTOS, `formatAngle`; typed as at any angle prompt,
+ * `parseAngleValue`): ANGBASE, the chamfer angle, the snap angle and the jogged radius
+ * dimension's jog angle. A typed angle is the variable's value, counter-clockwise from world +X:
+ * ANGBASE and ANGDIR turn angles typed at a command's prompts, not the variables' own values
+ * (AutoCAD 2024 Help is silent on SETVAR ANGBASE under ANGDIR 1; ANGBASE 90 meaning north
+ * whatever ANGDIR says is what the UNITS dialog's Direction shows).
+ */
+const ANGLE_VARIABLES = new Set(['ANGBASE', 'CHAMFERD', 'SNAPANG', 'DIMJOGANG']);
+
 /** AutoCAD's lineweights, hundredths of a millimetre. */
 export const LINEWEIGHT_VALUES: readonly number[] = [
   0, 5, 9, 13, 15, 18, 20, 25, 30, 35, 40, 50, 53, 60, 70, 80, 90, 100, 106, 120, 140, 158, 200,
@@ -404,7 +423,7 @@ function headerVariable(key: string, value: HeaderValue): SystemVariable {
 function kindOf(name: string, value: HeaderValue): VariableKind {
   if (name === 'CECOLOR') return 'color';
   if (LINEWEIGHT_VARIABLES.has(name)) return 'lineweight';
-  if (name === 'ANGBASE') return 'angle';
+  if (ANGLE_VARIABLES.has(name) && typeof value === 'number') return 'angle';
   if (typeof value === 'boolean') return 'switch';
   if (typeof value === 'string') return 'text';
   if (typeof value === 'object') return 'point';
@@ -522,7 +541,8 @@ export function formatValue(v: SystemVariable, value: VariableValue, u: DrawingU
     case 'color':
       return `"${value === 256 ? 'BYLAYER' : value === 0 ? 'BYBLOCK' : value}"`;
     case 'angle':
-      return formatNumber(value, u.auprec);
+      // Held in degrees here (`headerValue`); ANGTOS takes it into one turn (-90 shows 270).
+      return formatAngle((value * Math.PI) / 180, u);
     case 'real':
       return formatNumber(value, v.places ?? u.luprec);
     case 'distance':
@@ -616,6 +636,14 @@ export function parseValue(model: DocumentModel, v: SystemVariable, text: string
       const n = parseDistance(t, drawingUnits(model.header).lunits);
       if (n === undefined) return { problem: 'Requires numeric distance.' };
       return bounded(v, n);
+    }
+    case 'angle': {
+      // Typed as any angle prompt takes one: decimal degrees whatever AUNITS says, `45d30'`,
+      // `0.5r`, `50g` or a bearing. AutoCAD's refusal at an angle prompt adds "or second point";
+      // SETVAR takes no picked points here.
+      const a = parseAngleValue(t);
+      if (a === undefined) return { problem: 'Requires valid numeric angle.' };
+      return bounded(v, (a * 180) / Math.PI);
     }
     default:
       break;
