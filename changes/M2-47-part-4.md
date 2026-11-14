@@ -1,0 +1,1 @@
+- M2-47 part 4 (#325): zooms and pans are undo steps, as in AutoCAD. U and Ctrl+Z take back a ZOOM or PAN (typed, from the navigation bar, the wheel or a drag) or a named view restored, and REDO brings it back; zooms and pans made one after another are one step under UNDO Control Combine Yes, the default, and each their own under No.
