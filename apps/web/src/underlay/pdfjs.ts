@@ -84,6 +84,17 @@ export const openPdf: OpenPdf = async (bytes) => {
       const data = ctx.getImageData(0, 0, width, height).data;
       return { width, height, data };
     },
+    async layers() {
+      // Every optional content group, in the order the document lists them; a name twice (two
+      // groups of one name) is one layer, as ULAYERS keeps layers by name.
+      const config = await doc.getOptionalContentConfig();
+      const names: string[] = [];
+      for (const [, group] of config) {
+        if (group.name !== null && group.name !== '' && !names.includes(group.name))
+          names.push(group.name);
+      }
+      return names;
+    },
     async snapGeometry(n) {
       const p = await page(n);
       const list = await p.getOperatorList();

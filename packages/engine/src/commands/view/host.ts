@@ -9,6 +9,7 @@ import type { EntityId } from '../../model/entity-ids';
 import type { HatchPatternLine, MTextGeometry, TextGeometry } from '../../model/types';
 import type { Clipboard } from '../../edit/clipboard';
 import type { UndoView } from '../undo';
+import type { UnderlayLayersInfo } from '../../edit/underlay-layers';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -123,6 +124,16 @@ export type ViewRequest =
   | { readonly op: 'clipboard'; readonly content?: Clipboard }
   /** PROPERTIES and PROPERTIESCLOSE (M2-21): the app opens or closes a palette. */
   | { readonly op: 'palette'; readonly palette: PaletteName; readonly open: boolean }
+  /**
+   * ULAYERS (M2-56 part 1): the Underlay Layers dialog over the drawing's underlay references,
+   * opened on `current` (the one selected first) or the first. The app reads each PDF's layers;
+   * OK answers with `underlayLayers`, Cancel without.
+   */
+  | {
+      readonly op: 'underlayLayers';
+      readonly underlays: readonly UnderlayLayersInfo[];
+      readonly current?: EntityId;
+    }
   /**
    * -PLOT (M2-17 part 5): what the space named (the space shown without `layout`) would plot
    * with, as the Plot dialog opens on it, and what the app can plot it with.
@@ -343,6 +354,14 @@ export type ViewReply =
       readonly pattern?: PlacedPattern;
       /** What a `sysvar` variable holds (M2-42). */
       readonly value?: number;
+      /**
+       * The Underlay Layers dialog's OK (M2-56 part 1): the layers each underlay it changed turns
+       * off, all of them (the others on).
+       */
+      readonly underlayLayers?: readonly {
+        readonly id: EntityId;
+        readonly layersOff: readonly string[];
+      }[];
     }
   | { readonly ok: false; readonly message: string };
 
@@ -354,10 +373,11 @@ export interface ViewHost {
  * The request is answered by the drafter in the app, not by the canvas at once (M2-41): the file
  * commands' dialogs and pickers (Plot, Publish, Export, Save Drawing As, CLOSE's "Save changes"),
  * and the preview, which waits until the drafter leaves it. While a command waits on one, no
- * prompt shows: AutoCAD's command line shows none while its dialog is up.
+ * prompt shows: AutoCAD's command line shows none while its dialog is up. ULAYERS' Underlay
+ * Layers dialog (M2-56 part 1) too.
  */
 export function waitsOnApp(r: ViewRequest): boolean {
-  return r.op === 'file';
+  return r.op === 'file' || r.op === 'underlayLayers';
 }
 
 /** The host of a bus no canvas listens to (scripts, tests): every request is refused. */
