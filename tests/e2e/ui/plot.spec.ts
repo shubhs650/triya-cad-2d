@@ -22,6 +22,7 @@ import { pdfSummary } from '../../../packages/testkit/src/pdf/read';
 import {
   DWG,
   activeCanvas,
+  expectDrawn,
   expectShown,
   ink,
   openWithDrop,
@@ -171,7 +172,9 @@ test('SVG and PNG plots draw a PDF underlay’s page as the PDF plot does', asyn
   await page.goto(app.url);
   await openWithPicker(page, path.join(fixtures, 'pdf-underlay.dxf'));
   await expectShown(page, 'pdf-underlay.dxf');
-  await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(50);
+  // The baseline is the drawing's first frame (M2-65): read before it, it was the empty canvas,
+  // which the drawing alone then outinked, and the plots could start before the pages were drawn.
+  await expectDrawn(page, { timeout: 15_000 });
   const bare = await ink(page);
   await openWithDrop(page, path.join(fixtures, 'pdf-underlay.pdf'));
   await expectShown(page, 'pdf-underlay.dxf');
