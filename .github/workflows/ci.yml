@@ -11,6 +11,13 @@ name: CI
 # needs succeeded, so a failed, skipped or missing piece is a red required check (a required
 # check that was itself skipped would count as passed, hence `!cancelled()`, never a plain
 # `needs`). Nothing is skipped on a PR that ran before: the same suites, the same gates.
+#
+# DEC-055 (M2-64): three task threads share the account's 20 concurrent jobs, and every merge
+# starts a run on main and an update-branch run on each other open PR at once. So a PR run asks for
+# at most 8 runners (the fidelity and UI suites share three shards), and a push to main whose tree
+# already passed both required checks on its PR (main requires PRs to be up to date, so the
+# squash commit's tree is the merge tree the PR's run tested) skips the suites and runs only the
+# perf budgets. Every PR run still runs every gate.
 
 on:
   pull_request:
@@ -35,6 +42,8 @@ jobs:
     name: lint · typecheck
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tested != 'true' }}
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -78,6 +87,8 @@ jobs:
     name: unit · shard ${{ matrix.shard }}/3
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tested != 'true' }}
     strategy:
       fail-fast: false
       matrix:
@@ -109,12 +120,13 @@ jobs:
     name: lint · typecheck · unit · round-trip
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    needs: [static, unit]
-    if: ${{ !cancelled() }}
+    needs: [changes, static, unit]
+    if: ${{ !cancelled() && needs.changes.outputs.tested != 'true' }}
     steps:
       - name: Every piece passed
         run: |
-          echo "lint · typecheck: ${{ needs.static.result }}; unit shards: ${{ needs.unit.result }}"
+          echo "changes: ${{ needs.changes.result }}; lint · typecheck: ${{ needs.static.result }}; unit shards: ${{ needs.unit.result }}"
+          test "${{ needs.changes.result }}" = success
           test "${{ needs.static.result }}" = success
           test "${{ needs.unit.result }}" = success
       - uses: actions/checkout@v4
@@ -155,15 +167,43 @@ jobs:
 
   # Decides whether the perf budgets must run on this PR (TESTING.md §1: PRs touching
   # render/engine/io). On a PR, HEAD is the merge commit, so HEAD^1..HEAD is exactly the PR's diff.
+  # Also names the tree under test and, on a push to main, whether a PR run of this repository
+  # already passed both required checks on that same tree (the `passed` job below records it).
   changes:
     name: detect hot-path changes
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
     outputs:
       hot: ${{ steps.diff.outputs.hot }}
+      tree: ${{ steps.tree.outputs.tree }}
+      tested: ${{ steps.tree.outputs.tested }}
     steps:
       - uses: actions/checkout@v4
         with: { fetch-depth: 2 }
+      # A lookup that fails counts as not passed, so the run tests everything.
+      - id: tree
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EVENT: ${{ github.event_name }}
+        run: |
+          tree="$(git rev-parse 'HEAD^{tree}')"
+          echo "tree=$tree" >> "$GITHUB_OUTPUT"
+          tested=false
+          if [ "$EVENT" = push ]; then
+            runs="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts?name=ci-passed-$tree&per_page=100" \
+              --jq '.artifacts[] | select(.expired == false and .workflow_run.head_repository_id == .workflow_run.repository_id) | .workflow_run.id' \
+              || true)"
+            if [ -n "$runs" ]; then
+              tested=true
+              for run in $runs; do
+                echo "::notice::Tree $tree passed every gate in $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run; only the perf budgets run."
+              done
+            fi
+          fi
+          echo "tested=$tested" >> "$GITHUB_OUTPUT"
       - id: diff
         run: |
           if [ "${{ github.event_name }}" != "pull_request" ]; then
@@ -175,16 +215,19 @@ jobs:
             echo "hot=false" >> "$GITHUB_OUTPUT"
           fi
 
-  # The browser suites in four Playwright shards plus the production-build suites; the required
-  # check "fidelity · offline · ui" below gathers them. They no longer wait for the unit check.
-  fidelity:
-    name: fidelity · shard ${{ matrix.shard }}/2
+  # The fidelity and UI suites in three Playwright shards (each job runs its piece of both, so
+  # their uneven files even out) plus the production-build suites; the required check
+  # "fidelity · offline · ui" below gathers them. They do not wait for the unit check.
+  playwright:
+    name: fidelity · ui · shard ${{ matrix.shard }}/3
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tested != 'true' }}
     strategy:
       fail-fast: false
       matrix:
-        shard: [1, 2]
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -212,7 +255,8 @@ jobs:
           missing="$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
             -exec ldd {} \; | grep 'not found' || true)"
           if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
-      - run: pnpm test:fidelity --shard=${{ matrix.shard }}/2
+      - run: pnpm test:fidelity --shard=${{ matrix.shard }}/3
+      # Kept before the UI suite runs: every Playwright run empties test-results/.
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -222,43 +266,8 @@ jobs:
             playwright-report/
             test-reports/fidelity/
           retention-days: 14
-
-  ui:
-    name: ui · shard ${{ matrix.shard }}/2
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
-    steps:
-      - uses: actions/checkout@v4
-        with: { submodules: recursive }
-      - uses: pnpm/action-setup@v4
-        with: { version: 9 }
-      - uses: actions/setup-node@v4
-        with: { node-version: 22, cache: pnpm }
-      - run: pnpm install --frozen-lockfile
-      - id: pw
-        run: echo "version=$(pnpm exec playwright --version | awk '{print $2}')" >> "$GITHUB_OUTPUT"
-      - id: pw-cache
-        uses: actions/cache@v4
-        with:
-          path: ~/.cache/ms-playwright
-          key: playwright-${{ runner.os }}-${{ steps.pw.outputs.version }}
-      - if: steps.pw-cache.outputs.cache-hit != 'true'
-        run: pnpm exec playwright install chromium
-      # Chromium's system libraries come from apt. When the Ubuntu archive does not resolve (as
-      # from 2026-11-11, when only Playwright's extra fonts were missing from the image), the
-      # browser still runs if no library it links is missing; a missing one fails the job.
-      - name: Install browser system dependencies
-        run: |
-          if pnpm exec playwright install-deps chromium; then exit 0; fi
-          echo "::warning::playwright install-deps failed; checking Chromium's libraries instead"
-          missing="$(find ~/.cache/ms-playwright -type f \( -name chrome -o -name chrome-headless-shell \) \
-            -exec ldd {} \; | grep 'not found' || true)"
-          if [ -n "$missing" ]; then echo "$missing"; exit 1; fi
-      - run: pnpm test:ui --shard=${{ matrix.shard }}/2
+      - if: ${{ !cancelled() }}
+        run: pnpm test:ui --shard=${{ matrix.shard }}/3
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
@@ -274,6 +283,8 @@ jobs:
     name: build · offline · io
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    needs: [changes]
+    if: ${{ needs.changes.outputs.tested != 'true' }}
     steps:
       - uses: actions/checkout@v4
         with: { submodules: recursive }
@@ -320,15 +331,32 @@ jobs:
     name: fidelity · offline · ui
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [fidelity, ui, offline]
-    if: ${{ !cancelled() }}
+    needs: [changes, playwright, offline]
+    if: ${{ !cancelled() && needs.changes.outputs.tested != 'true' }}
     steps:
       - name: Every piece passed
         run: |
-          echo "fidelity: ${{ needs.fidelity.result }}; ui: ${{ needs.ui.result }}; build · offline · io: ${{ needs.offline.result }}"
-          test "${{ needs.fidelity.result }}" = success
-          test "${{ needs.ui.result }}" = success
+          echo "changes: ${{ needs.changes.result }}; fidelity · ui shards: ${{ needs.playwright.result }}; build · offline · io: ${{ needs.offline.result }}"
+          test "${{ needs.changes.result }}" = success
+          test "${{ needs.playwright.result }}" = success
           test "${{ needs.offline.result }}" = success
+
+  # Records that this PR run's merge tree passed both required checks, so the push to main that
+  # lands the same tree need not run the suites again (DEC-055). Runs only when every job it needs
+  # succeeded.
+  passed:
+    name: record the tree that passed
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    needs: [changes, checks, browser]
+    if: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - run: echo "$GITHUB_SHA passed in run $GITHUB_RUN_ID" > ci-passed.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ci-passed-${{ needs.changes.outputs.tree }}
+          path: ci-passed.txt
+          retention-days: 7
 
   perf:
     name: performance budgets
