@@ -103,7 +103,7 @@ import { SaveChanges } from './SaveChanges';
 import { Settings } from './Settings';
 import { PreferencesStore, bindPreferences, indexedDbPreferences, type Theme } from './preferences';
 import { browserLocalData, clearLocalData, type ClearReport } from './local-data';
-import { coordinateText } from './coordinates';
+import { coordinateText, editedHeader } from './coordinates';
 import { DeviceFonts, browserFontAccess, trueTypeFontsOf } from './local-fonts';
 import { FontStore, isFontFile, opfsFonts } from './user-fonts';
 import {
@@ -2024,7 +2024,17 @@ function StatusBar({
   onReferences: () => void;
 }) {
   const coords = useRef<HTMLSpanElement>(null);
-  const header = useMemo(() => new Map<string, unknown>(doc?.opened.init.header ?? []), [doc]);
+  // The cursor's last point over a canvas, shown again when the units change under it.
+  const cursor = useRef<{ x: number; y: number } | undefined>(undefined);
+  // The header as the drawing's edits left it (M2-73): units set by SETVAR or UNITS, or undone,
+  // show at once. `doc` is a new object, its `revision` one on, with every edit the log takes.
+  const header = useMemo(
+    () =>
+      doc
+        ? editedHeader(doc.opened.init.header, engines.changesOf(doc.id))
+        : new Map<string, unknown>(),
+    [doc],
+  );
   const lwdisplay = header.get('$LWDISPLAY');
   // The drawing's units or decimal, as Settings has it (M2-20, coordinates.ts).
   const display = useSyncExternalStore(preferences.subscribe, preferences.get).coordinates;
@@ -2034,9 +2044,11 @@ function StatusBar({
   }, [lwdisplay]);
   useEffect(() => {
     showCursor = (p) => {
+      cursor.current = p;
       if (!coords.current) return;
       coords.current.textContent = p ? coordinateText(p, header, display) : '';
     };
+    showCursor(cursor.current);
     return () => {
       showCursor = () => {};
     };

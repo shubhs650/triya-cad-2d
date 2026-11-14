@@ -1,7 +1,8 @@
 // M2-20: the status bar's coordinates in the drawing's units (LUNITS, LUPREC), as AutoCAD
 // shows them, or always decimal (the Settings "Coordinates" choice).
 import { describe, expect, it } from 'vitest';
-import { coordinateText } from '../src/coordinates';
+import type { ChangeSet } from '@triya/engine';
+import { coordinateText, editedHeader } from '../src/coordinates';
 
 const header = (lunits: number, luprec: number) =>
   new Map<string, unknown>([
@@ -37,5 +38,47 @@ describe('status bar coordinates', () => {
     expect(coordinateText({ x: 126.5, y: 36 }, header(4, 3), 'decimal')).toBe(
       '126.500, 36.000, 0.000',
     );
+  });
+});
+
+// M2-73: the status bar follows units changed while the drawing is open (SETVAR LUNITS, UNITS,
+// and their undo), so it reads the header as the drawing's change log leaves it.
+describe('the header as edited', () => {
+  const opened: [string, unknown][] = [
+    ['$LUNITS', 2],
+    ['$LUPREC', 4],
+    ['$LWDISPLAY', 0],
+  ];
+  const set = (name: string, before: unknown, after: unknown): ChangeSet =>
+    ({ header: [{ name, before, after }] }) as ChangeSet;
+
+  it('is the header as opened when nothing changed it', () => {
+    expect([...editedHeader(opened, [])]).toEqual(opened);
+    expect([...editedHeader(undefined, [])]).toEqual([]);
+  });
+
+  it('takes each change in order, the last one standing', () => {
+    const header = editedHeader(opened, [
+      { entities: {} } as ChangeSet,
+      set('$LUNITS', 2, 4),
+      set('$LUPREC', 4, 3),
+      set('$LUNITS', 4, 3),
+    ]);
+    expect(header.get('$LUNITS')).toBe(3);
+    expect(header.get('$LUPREC')).toBe(3);
+    expect(coordinateText({ x: 126.5, y: 0 }, header, 'drawing')).toBe(
+      `10'-6.500", 0'-0.000", 0'-0.000"`,
+    );
+  });
+
+  it('an undone change takes the value back, a removed entry is gone', () => {
+    const header = editedHeader(opened, [
+      set('$LUNITS', 2, 4),
+      set('$LUNITS', 4, 2),
+      set('$LWDISPLAY', 0, undefined),
+    ]);
+    expect(header.get('$LUNITS')).toBe(2);
+    expect(header.has('$LWDISPLAY')).toBe(false);
+    expect(coordinateText({ x: 1, y: 2 }, header, 'drawing')).toBe('1.0000, 2.0000, 0.0000');
   });
 });

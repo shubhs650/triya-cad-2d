@@ -145,6 +145,31 @@ test("Dynamic Input: the cursor's values show in the drawing's units", async ({ 
   await expect(prompt(page)).toHaveText('Command:');
 });
 
+// M2-73: the status bar's coordinates follow units changed while the drawing is open, as Dynamic
+// Input and the command line do: SETVAR LUNITS 4 at `Command:` shows feet and inches at once,
+// without reopening or moving the cursor, and U takes the drawing's decimal units back.
+test("the status bar's coordinates follow LUNITS set at the command line", async ({ page }) => {
+  test.setTimeout(60_000);
+  await open(page);
+  const coords = page.getByTestId('coords');
+  await hover(page, 0.4, 0.6);
+  await hover(page, 0.45, 0.55);
+  const decimal = /^-?\d+\.\d{4}, -?\d+\.\d{4}, 0\.0000$/;
+  await expect(coords).toHaveText(decimal);
+  const feetAndInches = `-?\\d+'-\\d+( \\d+/\\d+)?"`;
+  const architectural = new RegExp(`^${feetAndInches}, ${feetAndInches}, 0'-0"$`);
+  await command(page, 'LUNITS');
+  await expect(prompt(page)).toContainText('Enter new value for LUNITS');
+  await command(page, '4');
+  await expect(history(page)).toContainText(/LUNITS <\d+>: 4/);
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect(coords).toHaveText(architectural);
+  await hover(page, 0.5, 0.5);
+  await expect(coords).toHaveText(architectural);
+  await command(page, 'U');
+  await expect(coords).toHaveText(decimal);
+});
+
 /** Each LINE's ends as the drawing's change sets left them, by handle, to 4 places. */
 async function lineEnds(page: Page): Promise<Record<string, number[]>> {
   const changes = await page.evaluate(() =>
