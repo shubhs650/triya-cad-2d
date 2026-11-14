@@ -65,7 +65,7 @@ import {
   type CadFormat,
 } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { structuralDiff } from '../roundtrip/diff.ts';
@@ -74,7 +74,7 @@ import { saveAc1032Dxf, writeAuditSave } from '../dxf-audit/saves.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 const writable = new Set<string>(WRITABLE_TYPES);
 /** The entity types the per-file edit below changed on some corpus file (M1-75's acceptance). */
 const editedTypes = new Set<string>();

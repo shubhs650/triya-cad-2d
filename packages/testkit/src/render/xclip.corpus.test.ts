@@ -10,12 +10,12 @@ import type { InsertGeometry, SpatialFilter, Vec2 } from '@triya/engine';
 import { readCadDocument } from '@triya/io';
 import { defaultPaint, expandInsert, insertClips, type BlockSource } from '@triya/render';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { corpusDrawing } from './document.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 /** The stored boundary as the closed polygon it stands for (a rectangle for two points). */
 function stored(f: SpatialFilter): Vec2[] {

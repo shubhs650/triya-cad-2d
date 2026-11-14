@@ -23,7 +23,7 @@ import {
   type RenderPrimitive,
 } from '@triya/render';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { corpusDrawing } from './document.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
@@ -66,7 +66,7 @@ function* points(p: RenderPrimitive): Generator<{ x: number; y: number }> {
 }
 
 describe('block references on the public corpus (M1-14, M1-15, M1-17)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('draws every INSERT, stored dimension and stored table inside its spatial-index bounds', () => {
     const wrong: string[] = [];

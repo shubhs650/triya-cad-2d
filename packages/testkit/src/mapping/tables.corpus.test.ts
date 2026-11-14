@@ -9,7 +9,7 @@ import type { CadDocument } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
 import { mapHeader, mapTables, readCadDocument, type MappedTables } from '@triya/io';
 import { cellStyleMapProblems } from './cell-style-map.ts';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import {
   all,
   first,
@@ -684,7 +684,7 @@ function load(path: string): Uint8Array {
 }
 
 describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('maps every table record and header variable an ASCII DXF states, unchanged', () => {
     const mismatches: Mismatch[] = [];
@@ -828,7 +828,7 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
     const problems: string[] = [];
     let compared = 0;
     let dwgs = 0;
-    for (const f of manifest.files.filter((x) => !x.knownIssues.some((k) => /read/i.test(k)))) {
+    for (const f of readableFiles(manifest)) {
       let doc;
       try {
         doc = readCadDocument(load(f.path));

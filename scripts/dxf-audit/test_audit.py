@@ -116,7 +116,13 @@ class JudgeTest(unittest.TestCase):
         self.assertEqual(len(report.failures), 2)
 
     def test_unreadable_corpus_files_are_not_expected(self) -> None:
-        manifest = {"files": [{"path": DXF}, {"path": DWG, "knownIssues": ["acad-ts read error: x"]}]}
+        # M2-49: the unreadable tag decides, not known-issue wording ("a reader may repair it").
+        manifest = {
+            "files": [
+                {"path": DXF, "tags": ["malformed"], "knownIssues": ["a reader may repair it"]},
+                {"path": DWG, "tags": ["unreadable"], "knownIssues": ["acad-ts cannot read it: x"]},
+            ]
+        }
         self.assertEqual([f["path"] for f in gate.readable_files(manifest)], [DXF])
 
 

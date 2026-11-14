@@ -15,7 +15,7 @@ import {
   type CadFormat,
 } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { sniffCadFile } from '../corpus/sniff.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 
@@ -25,8 +25,7 @@ const manifest = loadManifest(`${corpusDir}corpus.json`);
 /** One readable file per format (DWG, ASCII and binary DXF) and version. */
 const samples = (() => {
   const seen = new Set<string>();
-  return manifest.files.filter((f) => {
-    if (f.knownIssues.some((k) => /read/i.test(k))) return false;
+  return readableFiles(manifest).filter((f) => {
     const key = `${f.format} ${f.version} ${f.path.includes('binary') ? 'binary' : ''}`;
     if (seen.has(key)) return false;
     seen.add(key);

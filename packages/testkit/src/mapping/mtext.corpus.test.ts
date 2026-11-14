@@ -14,7 +14,7 @@ import {
   type MTextMeasure,
 } from '@triya/text';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -105,7 +105,7 @@ function samples(e: EntityInit, where: string): Sample[] {
 const LEFTOVER = /\\[A-Za-z~]/;
 
 describe('MTEXT formatting engine on the public corpus (M1-11)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('parses and lays out every MTEXT-coded string with no code left as text', () => {
     const leftovers: string[] = [];

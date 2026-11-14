@@ -9,11 +9,11 @@ import { fileURLToPath } from 'node:url';
 import type { EntityInit, TextFields } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 const annotated = (es: readonly EntityInit[] | undefined): EntityInit[] =>
   (es ?? []).filter((e) => e.annotative !== undefined);

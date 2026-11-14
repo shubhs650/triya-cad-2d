@@ -22,13 +22,13 @@ import {
 } from '@triya/engine';
 import { documentInit, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { saveAc1032Dxf, writeAuditSave } from '../dxf-audit/saves.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 /** Objects edited per drawing, to keep the suite quick. */
 const PER_FILE = 8;

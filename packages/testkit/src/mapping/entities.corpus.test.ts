@@ -24,7 +24,7 @@ import type {
 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { mapEntities, mapTables, readCadDocument, type MappedTables } from '@triya/io';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { all, first, readDxfOracle, type DxfEntity, type Group } from './dxf-oracle.ts';
 
 const hex = (h: number): string => h.toString(16).toUpperCase();
@@ -1758,7 +1758,7 @@ function load(path: string): Uint8Array {
 }
 
 describe('AcadToTriya entities on the public corpus (M1-04)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('maps every entity an ASCII DXF states, in plan view, unchanged', () => {
     const mismatches: Mismatch[] = [];

@@ -73,6 +73,18 @@ const FORMATS: readonly string[] = ['dwg', 'dxf-ascii', 'dxf-binary'];
 const MAX_PIXEL_MISMATCH = 2;
 const DRAWING_EXT = /\.(dwg|dxf)$/i;
 
+/**
+ * Tag for a file acad-ts cannot read (its round-trip status is `read-error`; the round-trip suite
+ * checks the two agree). Corpus suites and the ezdxf audit leave exactly these files out (M2-49):
+ * filtering on known-issue wording also dropped readable files whose issue mentions a reader.
+ */
+export const UNREADABLE_TAG = 'unreadable';
+
+/** The files acad-ts reads: every file not tagged `unreadable`. */
+export function readableFiles(manifest: CorpusManifest): CorpusFile[] {
+  return manifest.files.filter((f) => !f.tags.includes(UNREADABLE_TAG));
+}
+
 export function loadManifest(file: string): CorpusManifest {
   const json: unknown = JSON.parse(readFileSync(file, 'utf8'));
   const errors = validateManifestShape(json);
@@ -155,6 +167,12 @@ export function validateManifestShape(json: unknown): string[] {
     if (!isStringArray(f['fonts'])) errors.push(`${at}: fonts must be an array of strings`);
     if (!isStringArray(f['knownIssues'])) {
       errors.push(`${at}: knownIssues must be an array of strings`);
+    } else if (
+      isStringArray(f['tags']) &&
+      f['tags'].includes(UNREADABLE_TAG) &&
+      !f['knownIssues'].some((k) => /cannot read/i.test(k))
+    ) {
+      errors.push(`${at}: a file tagged ${UNREADABLE_TAG} needs a known issue saying why acad-ts cannot read it`);
     }
     const tol = f['tolerance'];
     if (!isObject(tol)) {

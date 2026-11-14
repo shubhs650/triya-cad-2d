@@ -7,7 +7,7 @@ import { fileURLToPath } from 'node:url';
 import { gradientRamp, hatchPattern, loopSegments, patternLines } from '@triya/hatch';
 import { mapEntities, readCadDocument } from '@triya/io';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -61,7 +61,7 @@ const hatched = (style: number, k: number) =>
   style === 1 ? k === 1 : style === 2 ? k >= 1 : k % 2 === 1;
 
 describe('pattern hatches on the public corpus (M1-16)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('generates every pattern hatch, with every dash inside the hatched area', () => {
     const wrong: string[] = [];

@@ -30,13 +30,13 @@ import {
   type MTextSpan,
 } from '@triya/text';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { saveAc1032Dxf } from '../dxf-audit/saves.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 
 /** M2-26 part 3: a right indent and a decimal stop with the comma style too. */
 const RULER = {

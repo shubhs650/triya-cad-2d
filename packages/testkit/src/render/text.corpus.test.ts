@@ -26,7 +26,7 @@ import {
 } from '@triya/render';
 import { FontBook, parseShx, SHX_EQUIVALENTS, styleFont } from '@triya/text';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { corpusDrawing } from './document.ts';
 import { bundledFontBook } from './bundled-fonts.ts';
 import { squareFont } from './square-font.ts';
@@ -45,7 +45,7 @@ function* coordinates(path: readonly number[]): Generator<[number, number]> {
 }
 
 describe('text on the public corpus (M1-41, M1-35)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('draws every TEXT and MTEXT near its insertion point with the stand-in font', () => {
     const fonts = new FontBook({ alternate: 'square' });
