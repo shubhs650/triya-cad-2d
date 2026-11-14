@@ -4,7 +4,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
-import { DXF, activeCanvas, expectShown, openWithPicker } from '../app/page';
+import { DXF, activeCanvas, expectShown, openWithPicker, typeAtOnce } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -203,7 +203,8 @@ test('Dynamic Input: an angle typed as its prompt arrives, the cursor moving, is
   await open(page);
   await hover(page);
   const before = Object.keys(await lineEnds(page));
-  for (const t of ['L', '1000000,1000000', '1000010,1000000', '']) await command(page, t);
+  // Dynamic Input reads the second point relative to the first (M2-71).
+  for (const t of ['L', '1000000,1000000', '10,0', '']) await command(page, t);
   await expect(prompt(page)).toHaveText('Command:');
   // The line just drawn (handles are hex strings, so a record keeps no order of them).
   const drawn = async () => Object.keys(await lineEnds(page)).filter((h) => !before.includes(h));
@@ -237,6 +238,55 @@ test('Dynamic Input: an angle typed as its prompt arrives, the cursor moving, is
   await expect
     .poll(async () => (await lineEnds(page))[handle!])
     .toEqual([1000005, 999995, 1000005, 1000005]);
+});
+
+/**
+ * Puts the focus in the empty command line, as after a command typed there, and the cursor back
+ * over the drawing, where Dynamic Input takes what is typed at a prompt.
+ */
+async function focusCommandLineOverDrawing(page: Page): Promise<void> {
+  await page.getByLabel('Command', { exact: true }).click();
+  await hover(page);
+}
+
+// M2-71: keys typed while the engine has not read the last input wait for the prompt they
+// reach, and go into its Dynamic Input fields, as AutoCAD buffers type-ahead (M2-47 part 3 did
+// it for the command line).
+test('Dynamic Input: names typed ahead of their prompt keep their spaces (M2-71)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await open(page);
+  await expect(prompt(page)).toHaveText('Command:');
+  await focusCommandLineOverDrawing(page);
+  // -VIEW goes to the command line (Dynamic Input shows nothing at Command:); its option and the
+  // name go to the tooltip, which cannot know at the space's key press that a name reads it.
+  await typeAtOnce(page, '-VIEW\nS\nTwo words\n-VIEW S Three words\n');
+  await expect(history(page)).toContainText('Enter view name to save: Three words');
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.getByRole('button', { name: 'Views' }).click();
+  const views = page.getByRole('group', { name: 'Named views' });
+  await expect(views.getByRole('button', { name: 'Two words' })).toBeVisible();
+  await expect(views.getByRole('button', { name: 'Three words' })).toBeVisible();
+  await expect(views.getByRole('listitem')).toHaveCount(2);
+});
+
+test('Dynamic Input: a second point typed ahead of its prompt stays relative (M2-71)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await open(page);
+  await expect(prompt(page)).toHaveText('Command:');
+  await focusCommandLineOverDrawing(page);
+  await typeAtOnce(page, 'LINE\n5,5\n10,0\n');
+  // Dynamic Input reads the next point relative to the last (DYNPICOORDS 0).
+  await expect.poll(() => linesAdded(page)).toEqual([[5, 5, 15, 5]]);
+  await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
+  await expect(dyn(page)).toContainText('Specify next point');
+  await page.screenshot({ path: test.info().outputPath('dyn-typed-ahead-line.png') });
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
+  expect(await linesAdded(page)).toEqual([[5, 5, 15, 5]]);
 });
 
 test('Ctrl+K finds a command by name or alias and runs it', async ({ page }) => {

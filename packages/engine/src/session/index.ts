@@ -117,9 +117,12 @@ export type CommandInput =
       readonly text: string;
       readonly cursor?: Vec2;
       readonly seq?: number;
+      /** What a relative point (`@`) in it counts from, where not the last point (M2-71). */
+      readonly relativeTo?: Vec2;
     }
   | { readonly kind: 'answer'; readonly answer: PromptAnswer }
-  | { readonly kind: 'cancel' }
+  /** Esc; a `seq` asks for a `read` output once it has been handled, as for `submit` (M2-71). */
+  | { readonly kind: 'cancel'; readonly seq?: number }
   | { readonly kind: 'invoke'; readonly name: string }
   /**
    * A left click on the canvas (M2-03, `PromptBus.pick`): a pick or a selection window's corner
@@ -316,7 +319,7 @@ export class EngineSession {
     switch (input.kind) {
       case 'submit': {
         if (input.cursor) this.#bus.pointer(input.cursor);
-        const done = this.#bus.submit(input.text);
+        const done = this.#bus.submit(input.text, { relativeTo: input.relativeTo });
         const seq = input.seq;
         if (seq === undefined) return done;
         return done.finally(() => this.#emit({ type: 'read', seq }));
@@ -324,8 +327,12 @@ export class EngineSession {
       case 'answer':
         if (input.answer.kind === 'point') this.#bus.pointer(input.answer.point);
         return this.#bus.answer(input.answer);
-      case 'cancel':
-        return this.#bus.cancel();
+      case 'cancel': {
+        const done = this.#bus.cancel();
+        const seq = input.seq;
+        if (seq === undefined) return done;
+        return done.finally(() => this.#emit({ type: 'read', seq }));
+      }
       case 'invoke':
         return this.#bus.invoke(input.name);
       case 'pick':

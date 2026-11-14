@@ -5,7 +5,7 @@
 // is a front-end of the drawing's command engine, which runs in the engine worker. Dynamic
 // Input (F12) and the Ctrl+K palette (part 2) are two more front-ends, kept here beside it: they
 // send what the command line would.
-import { builtinCommands, keywordShortcut } from '@triya/engine';
+import { builtinCommands, keywordShortcut, type Vec2 } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from './CommandPalette';
 import {
@@ -85,27 +85,40 @@ export function CommandLine({
   const suggestions =
     prompt === undefined ? completions(registry, text, variables).slice(0, 8) : [];
 
-  /** Keys typed ahead of the prompt that reads them (M2-47 part 3, `holdsKey`). */
+  /** Keys typed ahead of the prompt that reads them (M2-47 part 3, M2-71, `holdsKey`). */
   const held = useRef<string[]>([]);
+  /** Dynamic Input's replay of held keys into its fields (M2-71). */
+  const dynAhead = useRef<((keys: readonly string[]) => readonly string[] | undefined) | undefined>(
+    undefined,
+  );
   const textRef = useRef(text);
   textRef.current = text;
 
-  const send = (value: string) => {
+  /** Sends typed input; `relativeTo`: what its `@` counts from, for Dynamic Input (M2-71). */
+  const send = (value: string, relativeTo?: Vec2) => {
     if (doc === undefined) return;
     const c = cursor();
     const seq = lines.send(doc);
-    engines.command(doc, { kind: 'submit', text: value, seq, ...(c && { cursor: c }) });
+    engines.command(doc, {
+      kind: 'submit',
+      text: value,
+      seq,
+      ...(c && { cursor: c }),
+      ...(relativeTo && { relativeTo }),
+    });
     lines.typed(doc, value);
     setText('');
     setRecall(undefined);
   };
-  const cancel = () => {
-    held.current = [];
+  /** Esc: drops the keys held, unless it was itself held behind them (`after`, M2-71). */
+  const cancel = (after: readonly string[] = []) => {
+    held.current = [...after];
     setText('');
     setRecall(undefined);
     // Sent whatever the mirror shows: it may not have heard yet of a command typed just before
-    // (AutoCAD also answers Esc at `Command:` with `*Cancel*`).
-    if (doc !== undefined) engines.command(doc, { kind: 'cancel' });
+    // (AutoCAD also answers Esc at `Command:` with `*Cancel*`). Numbered like typed input, so
+    // keys typed after it wait for the prompt it leads to.
+    if (doc !== undefined) engines.command(doc, { kind: 'cancel', seq: lines.send(doc) });
   };
   const answerKeyword = (keyword: string) => {
     if (doc !== undefined)
@@ -167,15 +180,30 @@ export function CommandLine({
   holdRef.current = hold;
 
   // Keys held for a prompt not shown yet are replayed once the engine has read every input
-  // sent: on the prompt they reach, until one ends the input and the rest wait again.
+  // sent: on the prompt they reach, until one ends the input and the rest wait again. Dynamic
+  // Input takes them into its fields when it shows that prompt (M2-71); the command line else.
   useEffect(() => {
     if (doc === undefined || held.current.length === 0) return;
     const now = lines.get(doc);
     if (reading(now)) return;
-    const r = replayAhead(textRef.current, held.current, now.prompt);
-    held.current = [...r.keys];
-    if (r.submit !== undefined) send(r.submit);
-    else setText(r.text);
+    let rest = dynAhead.current?.(held.current);
+    if (rest === undefined) {
+      const r = replayAhead(textRef.current, held.current, now.prompt);
+      rest = r.keys;
+      if (r.submit !== undefined) send(r.submit);
+      else {
+        setText(r.text);
+        // The field shows it at once: the next key, no longer held, is typed into the field
+        // before React renders the text, and would otherwise replace it (CI lost `REVCLOUDG`
+        // of a REVCLOUDGRIPS typed across the engine's answer).
+        textRef.current = r.text;
+        if (input.current) input.current.value = r.text;
+      }
+    }
+    held.current = [...rest];
+    // An Esc the replay reached with no input sent before it cancels now; the keys after it
+    // wait for the prompt the cancel leads to.
+    if (!reading(lines.get(doc)) && held.current[0] === 'Escape') cancel(held.current.slice(1));
   });
   // Another drawing shown starts with nothing held.
   useEffect(() => {
@@ -237,7 +265,11 @@ export function CommandLine({
       }
       if (e.target === input.current || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
-      if (e.key === 'Escape') return cancelRef.current();
+      if (e.key === 'Escape') {
+        if (holdRef.current(e.key)) e.preventDefault();
+        else cancelRef.current();
+        return;
+      }
       if ((e.key === 'Enter' || e.key === ' ') && pressable(e.target)) return;
       if (holdRef.current(e.key)) {
         e.preventDefault();
@@ -264,11 +296,19 @@ export function CommandLine({
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const spaces = prompt?.kind === 'string' && prompt.spaces;
-    if (e.key !== 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && hold(e.key)) {
+    if (
+      !(e.key === 'Escape' && historyOpen) &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      hold(e.key)
+    ) {
       e.preventDefault();
     } else if (e.key === 'Enter' || (e.key === ' ' && !spaces)) {
       e.preventDefault();
-      send(text);
+      // What the field shows, which may be ahead of `text`: keys typed ahead and replayed into
+      // it (M2-71) are there before React renders them.
+      send(e.currentTarget.value);
     } else if (e.key === 'Escape') {
       e.preventDefault();
       if (historyOpen) setHistoryOpen(false);
@@ -307,7 +347,8 @@ export function CommandLine({
           cursor={cursor}
           onSubmit={send}
           onKeyword={answerKeyword}
-          holding={() => held.current.length > 0}
+          hold={hold}
+          ahead={dynAhead}
         />
       )}
       {paletteOpen && (

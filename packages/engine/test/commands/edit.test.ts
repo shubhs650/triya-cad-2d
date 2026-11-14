@@ -140,6 +140,27 @@ describe('COPY', () => {
     expect(s.added().find((e) => e.type === 'CIRCLE')?.layer).toBe(s.byHandle('21').layer);
   });
 
+  it("reads Dynamic Input's relative points from the base point, as its fields show them (M2-71)", async () => {
+    const s = setup();
+    await s.bus.script(['CO', 'ALL', '', '0,0']);
+    // `@` at the command line is relative to the last point given (20,0 after the first copy);
+    // Dynamic Input's X and Y are measured from the rubber band's base, so it sends that base.
+    await s.bus.submit('@20,0', { relativeTo: { x: 0, y: 0 } });
+    await s.bus.submit('@40,0', { relativeTo: { x: 0, y: 0 } });
+    await s.bus.submit('');
+    const lines = s
+      .added()
+      .filter((e) => e.type === 'LINE')
+      .map(s.ends);
+    expect(lines).toEqual([
+      [20, 0, 30, 0],
+      [20, 0, 20, 10],
+      [40, 0, 50, 0],
+      [40, 0, 40, 10],
+    ]);
+    expect(s.log).toContain('Specify second point or [Array/Exit/Undo] <Exit>: @40,0');
+  });
+
   it('takes the last copy back with Undo', async () => {
     const s = setup();
     await s.bus.script(['COPY', 'ALL', '', '0,0', '20,0', '40,0', 'U']);

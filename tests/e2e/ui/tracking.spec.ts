@@ -128,7 +128,8 @@ test('typed and menu overrides, OTRACK from an acquired endpoint, Tab, GRID and 
   await expect(tip(page)).toHaveAttribute('data-mode', 'track');
   await click(X0 + 100, Y0 - 30, 4, 0);
   await expect(prompt(page)).toHaveText('Specify next point or [Undo]:');
-  await type(page, `${X0 + 100},${Y0}`, 'Specify next point or [Undo]:');
+  // `#`: Dynamic Input reads a next point typed at the cursor relative to the last (M2-71).
+  await type(page, `#${X0 + 100},${Y0}`, 'Specify next point or [Undo]:');
   await type(page, '', 'Command:');
   const tracked = (await linesAdded(page)).at(-1)!;
   expect(tracked[0]).toBe(X0 + 100);
