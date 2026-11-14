@@ -156,6 +156,31 @@ describe('PdfPages', () => {
     expect(got).toEqual(['9C']);
   });
 
+  it('reads every supplied definition’s page size from its file, nothing drawn (M2-68)', async () => {
+    const pdf = fakePdf();
+    const pages = new PdfPages(pdf.open);
+    const defs = [def('9A', 'plan.pdf'), def('9B', 'Plan.pdf', '2'), def('9C', 'missing.pdf')];
+    const c = pages.client(
+      () => defs,
+      () => {},
+    );
+    expect(await c.pageSizes()).toEqual(new Map());
+    pages.add('plan.pdf', new Uint8Array([1]));
+    expect(await c.pageSizes()).toEqual(
+      new Map([
+        ['9A', { width: 8.5, height: 11 }],
+        ['9B', { width: 11, height: 8.5 }],
+      ]),
+    );
+    // Sizes only: no page is drawn, and the file is opened once.
+    expect(pdf.drawn).toEqual([]);
+    expect(pdf.opened).toHaveLength(1);
+    // A file pdf.js cannot read gives no size, as a missing one.
+    const broken = new PdfPages(() => Promise.reject(new Error('not a PDF')));
+    broken.add('plan.pdf', new Uint8Array([1]));
+    expect(await broken.client([def('9A', 'plan.pdf')], () => {}).pageSizes()).toEqual(new Map());
+  });
+
   it('opens a file once and serves a page it drew again, or a sharper one, from the cache', async () => {
     const pdf = fakePdf();
     const pages = new PdfPages(pdf.open);
