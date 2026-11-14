@@ -56,6 +56,29 @@ function stated(bytes: Uint8Array): Map<string, HeaderValue> {
   return out;
 }
 
+/** The ACAD_SCALELIST's SCALEs a file states with a valid ratio: name and paper per drawing unit. */
+function statedScales(bytes: Uint8Array): { name: string; value: number }[] {
+  const objects = readDxfOracle(bytes).variableObjects;
+  const byHandle = new Map<string, DxfRecord>();
+  for (const r of objects) {
+    const h = first(r.groups, 5);
+    if (h !== undefined) byHandle.set(h.trim().toUpperCase(), r);
+  }
+  const root = objects.find((r) => r.type === 'DICTIONARY');
+  const h = root && entries(root.groups).find(([k]) => k === 'ACAD_SCALELIST')?.[1];
+  const list = h === undefined ? undefined : byHandle.get(h.toUpperCase());
+  const out: { name: string; value: number }[] = [];
+  for (const [, sh] of list ? entries(list.groups) : []) {
+    const s = byHandle.get(sh.toUpperCase());
+    const name = s?.type === 'SCALE' ? first(s.groups, 300) : undefined;
+    if (!name || out.some((o) => o.name === name)) continue;
+    const paper = Number(first(s!.groups, 140));
+    const drawing = Number(first(s!.groups, 141));
+    if (paper > 0 && drawing > 0) out.push({ name, value: paper / drawing });
+  }
+  return out;
+}
+
 /** The mapped variables that do not come from the HEADER section (no `$`). */
 const bareNames = (header: ReadonlyMap<string, HeaderValue>): Map<string, HeaderValue> =>
   new Map([...header].filter(([name]) => !name.startsWith('$')));
@@ -92,6 +115,35 @@ describe('MSLTSCALE and CANNOSCALE on the public corpus (M1-63)', () => {
     expect(problems).toEqual([]);
     // Both states occur in the corpus.
     expect([...msltscale].sort()).toEqual(['0', '1']);
+  }, 60_000);
+
+  // M2-59 part 4: the scales SETVAR's CANNOSCALE offers.
+  it('lists every annotation scale an ASCII DXF states, with its value', () => {
+    let files = 0;
+    let scales = 0;
+    const problems: string[] = [];
+    for (const f of readable) {
+      if (f.format !== 'dxf-ascii') continue;
+      const bytes = load(f.path);
+      let doc;
+      try {
+        doc = readCadDocument(bytes);
+      } catch {
+        continue; // read failures are the round-trip suite's concern
+      }
+      files++;
+      const want = statedScales(bytes);
+      const got = mapHeader(doc).meta.annotationScales ?? [];
+      scales += got.length;
+      const same =
+        want.length === got.length &&
+        want.every((w, i) => w.name === got[i]!.name && Math.abs(w.value - got[i]!.value) < 1e-12);
+      if (!same)
+        problems.push(`${f.path}: file ${JSON.stringify(want)}, mapped ${JSON.stringify(got)}`);
+    }
+    expect(files).toBeGreaterThan(50);
+    expect(scales).toBeGreaterThan(100);
+    expect(problems).toEqual([]);
   }, 60_000);
 
   it.each(readable.map((f) => [f.path] as const))(
