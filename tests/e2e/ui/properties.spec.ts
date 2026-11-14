@@ -980,7 +980,17 @@ test('colours, scales, turns and swaps a multileader’s block from the palette'
     'Block color',
     'Block scale',
     'Block rotation',
+    'Attachment',
   ]);
+  // M2-35 part 25: Misc last.
+  const misc = palette.getByRole('table', { name: 'Misc' });
+  await expect(misc.getByRole('rowheader')).toHaveText([
+    'Multileader style',
+    'Annotative',
+    'Overall scale',
+  ]);
+  await expect(misc.getByLabel('Annotative')).toHaveText('No');
+  await expect(palette.getByRole('combobox', { name: 'Attachment' })).toHaveValue('extents');
   // Both are edited; their blocks differ.
   const source = palette.getByRole('combobox', { name: 'Source block' });
   await expect(source).toHaveValue('*VARIES*');
@@ -1018,6 +1028,29 @@ test('colours, scales, turns and swaps a multileader’s block from the palette'
   expect((await leader()).overrideFlags & (0xf << 19)).toBe(0xf << 19);
   await page.mouse.move(5, 500);
   await page.screenshot({ path: test.info().outputPath('3-callout-block.png') });
+
+  // M2-35 part 25: by its insertion point, then twice the overall scale; the arrowheads stay.
+  const swapped = await leader();
+  await palette.getByRole('combobox', { name: 'Attachment' }).selectOption({
+    label: 'Insertion point',
+  });
+  await expect.poll(async () => (await leader()).blockConnection).toBe(1);
+  expect((await leader()).overrideFlags & (1 << 23)).toBeTruthy();
+  expect((await leader()).block!.position).not.toEqual(swapped.block!.position);
+  const overall = palette.getByRole('textbox', { name: 'Overall scale', exact: true });
+  await overall.fill(String(2 * placed.scale));
+  await overall.press('Enter');
+  await expect.poll(async () => (await leader()).scale).toBeCloseTo(2 * placed.scale, 9);
+  const grown = await leader();
+  expect(grown.block!.scale.x).toBeCloseTo(2 * swapped.block!.scale.x, 9);
+  expect(grown.branches.map((b) => b.lines)).toEqual(swapped.branches.map((b) => b.lines));
+  expect(grown.overrideFlags & (1 << 24)).toBeTruthy();
+  // The Block rows' scale is the block's own, over the overall scale: still 2.
+  await expect(palette.getByRole('textbox', { name: 'Block scale', exact: true })).toHaveValue(
+    /^2(\.0+)?$/,
+  );
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('4-insertion-point-overall-scale-2.png') });
 });
 
 // M2-35 part 13: a gradient's own rows, edited on ezdxf's two associative solid hatches made

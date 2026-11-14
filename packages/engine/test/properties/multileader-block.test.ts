@@ -209,13 +209,14 @@ describe('a block multileader’s Block rows (M2-35 part 15)', () => {
       entityInit('62', blockLeader()),
     ]);
     const one = propertySheet(s.model, s.ids('60'));
-    expect(one.sections.map((x) => x.title)).toEqual(['General', 'Leaders', 'Block']);
+    expect(one.sections.map((x) => x.title)).toEqual(['General', 'Leaders', 'Block', 'Misc']);
     const block = one.sections.find((x) => x.title === 'Block')!;
     expect(block.rows.map((r) => r.label)).toEqual([
       'Source block',
       'Block color',
       'Block scale',
       'Block rotation',
+      'Attachment',
     ]);
     // Named blocks only: not anonymous, not a layout's.
     expect(rowOf(one, 'Source block')).toMatchObject({
@@ -239,10 +240,12 @@ describe('a block multileader’s Block rows (M2-35 part 15)', () => {
       'General',
       'Leaders',
       'Text',
+      'Misc',
     ]);
     expect(propertySheet(s.model, s.ids('60', '61')).sections.map((x) => x.title)).toEqual([
       'General',
       'Leaders',
+      'Misc',
     ]);
     const both = propertySheet(s.model, s.ids('60', '62'));
     expect(rowOf(both, 'Block scale')?.varies).toBe(true);
@@ -323,7 +326,10 @@ describe('a block multileader’s Block rows (M2-35 part 15)', () => {
     });
     const based: MLeaderStyleRecord = { ...style, handle: '42', blockConnection: 1 };
     const s = setup(
-      [entityInit('60', left), entityInit('61', { ...blockLeader(), style: '42' })],
+      [
+        entityInit('60', left),
+        entityInit('61', { ...blockLeader({ blockConnection: 1 }), style: '42' }),
+      ],
       [style, based],
     );
     await s.bus.selectAll();
@@ -374,5 +380,176 @@ describe('a block multileader’s Block rows (M2-35 part 15)', () => {
     await s.bus.selectAll();
     await s.set('blockScale', '2');
     expect(s.leader('61')).toEqual(textLeader());
+  });
+});
+
+// M2-35 part 25: a block multileader's Attachment (the MLEADERSTYLE dialog's Content tab
+// "Attachment: Center Extents / Insertion Point"; ActiveX AcadMLeader.BlockConnectionType), the
+// multileader's own DXF 176, flagged by BLOCK_CONNECTION, bit 23 of DXF 90.
+describe('a block multileader’s Attachment (M2-35 part 25)', () => {
+  it('shows the multileader’s own connection, else its style’s', () => {
+    const based: MLeaderStyleRecord = { ...style, handle: '42', blockConnection: 1 };
+    const { blockConnection: _c, ...unstated } = blockLeader();
+    const s = setup(
+      [
+        entityInit('60', blockLeader()),
+        entityInit('61', blockLeader({ blockConnection: 1 })),
+        entityInit('62', { ...unstated, style: '42' }),
+      ],
+      [style, based],
+    );
+    expect(blockLeader().blockConnection).toBe(0);
+    expect(rowOf(propertySheet(s.model, s.ids('60')), 'Attachment')).toMatchObject({
+      kind: 'choice',
+      value: 'extents',
+      options: [
+        { value: 'extents', label: 'Center extents' },
+        { value: 'insertion', label: 'Insertion point' },
+      ],
+    });
+    expect(rowOf(propertySheet(s.model, s.ids('61')), 'Attachment')?.value).toBe('insertion');
+    expect(rowOf(propertySheet(s.model, s.ids('62')), 'Attachment')?.value).toBe('insertion');
+    expect(rowOf(propertySheet(s.model, s.ids('60', '61')), 'Attachment')?.varies).toBe(true);
+  });
+
+  it('puts the insertion point where the facing side met the landing, and back', async () => {
+    const s = setup([entityInit('60', blockLeader())]);
+    await s.bus.selectAll();
+    await s.set('blockConnection', 'insertion');
+    let g = s.leader('60');
+    expect(g.blockConnection).toBe(1);
+    expect(bit(g, 23)).toBe(true);
+    // The circle's left edge met the landing at (19, 10): its base point goes there.
+    expect(pt(g.block!.position)).toEqual([19, 10]);
+    await s.set('blockConnection', 'extents');
+    g = s.leader('60');
+    expect(g.blockConnection).toBe(0);
+    expect(pt(g.block!.position)).toEqual([20, 10]);
+    await s.bus.submit('U');
+    expect(pt(s.leader('60').block!.position)).toEqual([19, 10]);
+    await s.set('blockConnection', 'middle');
+    expect(s.log.at(-1)).toBe('Invalid input.');
+  });
+
+  it('keeps the block where it is when its extents are unknown, and refuses an annotative one', async () => {
+    const { block: _handle, ...unbound } = blockLeader().block!;
+    const s = setup([
+      entityInit('60', blockLeader({ block: unbound })),
+      entityInit('61', blockLeader({ annotative: true })),
+    ]);
+    await s.bus.selectAll();
+    await s.set('blockConnection', 'insertion');
+    expect(s.leader('60')).toMatchObject({
+      blockConnection: 1,
+      block: { position: { x: 20, y: 10 } },
+    });
+    expect(s.log.at(-1)).toMatch(/1 object was not changed: annotative/);
+    expect(s.leader('61')).toEqual(blockLeader({ annotative: true }));
+  });
+});
+
+// M2-35 part 25: a multileader's Misc rows. AutoCAD's help does not list the palette's rows for
+// a multileader; these follow ActiveX AcadMLeader's StyleName and ScaleFactor and the annotative
+// property every annotative object shows: Multileader style (shown, not set: another style's
+// values re-applied is left on M2-35), Annotative (shown; annotative multileaders are M2-43) and
+// Overall scale (DXF 45, flagged by bit 24).
+describe('a multileader’s Misc rows (M2-35 part 25)', () => {
+  it('shows Multileader style, Annotative and Overall scale', () => {
+    const other: MLeaderStyleRecord = { ...style, handle: '42', name: 'Callouts' };
+    const s = setup(
+      [
+        entityInit('60', blockLeader({ scale: 2 })),
+        entityInit('61', textLeader()),
+        entityInit('62', { ...blockLeader({ annotative: true }), style: '42' }),
+      ],
+      [style, other],
+    );
+    const misc = (...hs: string[]) =>
+      propertySheet(s.model, s.ids(...hs)).sections.find((x) => x.title === 'Misc')!;
+    expect(misc('60').rows).toEqual([
+      {
+        key: 'mleaderStyle',
+        label: 'Multileader style',
+        kind: 'choice',
+        value: STANDARD,
+        readOnly: true,
+        options: [
+          { value: '42', label: 'Callouts' },
+          { value: STANDARD, label: 'Standard' },
+        ],
+      },
+      {
+        key: 'annotative',
+        label: 'Annotative',
+        kind: 'choice',
+        value: 'no',
+        readOnly: true,
+        options: [
+          { value: 'yes', label: 'Yes' },
+          { value: 'no', label: 'No' },
+        ],
+      },
+      { key: 'overallScale', label: 'Overall scale', kind: 'number', value: 2 },
+    ]);
+    expect(misc('62').rows.map((r) => r.value)).toEqual(['42', 'yes', 1]);
+    const mixed = misc('60', '61', '62').rows;
+    expect(mixed.map((r) => r.varies)).toEqual([true, true, true]);
+    // Text and block multileaders together share Misc.
+    expect(misc('60', '61').rows.map((r) => r.value)).toEqual([STANDARD, 'no', undefined]);
+  });
+
+  it('scales a text multileader about its content’s anchor, the arrowheads kept', async () => {
+    const s = setup([entityInit('61', textLeader())]);
+    await s.bus.selectAll();
+    const was = s.leader('61');
+    await s.set('overallScale', '2');
+    const g = s.leader('61');
+    expect(g.scale).toBe(2);
+    expect(bit(g, 24)).toBe(true);
+    // What the context data states drawn: text, gap, arrowheads and landings twice the size.
+    expect(g.text).toMatchObject({ height: 8, width: 0 });
+    expect(g.landingGap).toBe(2 * was.landingGap);
+    expect(g.drawnArrowheadSize).toBe(2 * was.drawnArrowheadSize!);
+    expect(g.branches[0]!.doglegLength).toBe(16);
+    // The entity's own sizes are the style's, before the overall scale.
+    expect(g.arrowheadSize).toBe(was.arrowheadSize);
+    expect(g.doglegLength).toBe(was.doglegLength);
+    // The content's anchor (19, 10) stays: the text 1 to its right and 2 above goes 2 and 4.
+    expect(pt(g.contentBase)).toEqual([19, 10]);
+    expect(pt(g.text!.position)).toEqual([21, 14]);
+    // The landing ended 1 short of the anchor, (18, 10): now 2 short, 16 long, from (1, 10).
+    expect(pt(g.branches[0]!.connection)).toEqual([1, 10]);
+    expect(g.branches[0]!.lines).toEqual(was.branches[0]!.lines);
+    await s.bus.submit('U');
+    expect(s.leader('61')).toEqual(was);
+    for (const value of ['0', '-2', 'big']) {
+      await s.set('overallScale', value);
+      expect(s.log.at(-1), value).toBe('Invalid input.');
+    }
+  });
+
+  it('scales block content with it, wrapped text keeping its lines', async () => {
+    const wrapped = textLeader();
+    const s = setup([
+      entityInit('60', blockLeader()),
+      entityInit('61', { ...wrapped, text: { ...wrapped.text!, width: 30, boundaryHeight: 9 } }),
+    ]);
+    await s.bus.selectAll();
+    await s.set('overallScale', '0.5');
+    const b = s.leader('60');
+    expect(b.scale).toBe(0.5);
+    expect(b.block!.scale).toEqual({ x: 0.5, y: 0.5, z: 0.5 });
+    expect(pt(b.block!.position)).toEqual([19.5, 10]);
+    expect(s.leader('61').text).toMatchObject({ height: 2, width: 15, boundaryHeight: 4.5 });
+    // The Block rows' scale is the block's own, over the overall scale: still 1.
+    expect(rowOf(propertySheet(s.model, s.ids('60')), 'Block scale')?.value).toBe(1);
+  });
+
+  it('refuses an annotative multileader’s overall scale, which each scale keeps', async () => {
+    const s = setup([entityInit('60', blockLeader({ annotative: true }))]);
+    await s.bus.selectAll();
+    await s.set('overallScale', '2');
+    expect(s.log.at(-1)).toMatch(/1 object was not changed: annotative/);
+    expect(s.leader('60')).toEqual(blockLeader({ annotative: true }));
   });
 });

@@ -251,6 +251,8 @@ describe('MLEADER on the public corpus', () => {
       };
       leaders({ key: 'leaderType', value: '1' });
       leaders({ key: 'horzLanding', value: 'yes' });
+      // M2-35 part 25: its Misc row Overall scale.
+      leaders({ key: 'overallScale', value: '2' });
       // The built-in blocks: definitions with their parts, the multileaders' attribute values.
       const builtins = ['_TagCircle', '_DetailCallout'].map((n) =>
         [...model.blocks.values()].find((b) => b.name === n)!,
@@ -271,6 +273,8 @@ describe('MLEADER on the public corpus', () => {
       blockRow({ key: 'blockScale', value: '2' });
       blockRow({ key: 'blockRotation', value: Math.PI / 6 });
       blockRow({ key: 'sourceBlock', value: builtins[1]!.handle });
+      // M2-35 part 25: Attachment by insertion point (DXF 176, BLOCK_CONNECTION bit 23).
+      blockRow({ key: 'blockConnection', value: 'insertion' });
       const tagEdited = model.entity(tag.id)!.geom as MultiLeaderGeometry;
       expect(tagEdited.block).toMatchObject({
         block: builtins[1]!.handle,
@@ -334,7 +338,7 @@ describe('MLEADER on the public corpus', () => {
       // callout's attribute values its definitions give.
       const tagBack = back.entityByHandle(tag.handle)!.geom as MultiLeaderGeometry;
       expect(tagBack.overrideFlags).toBe(tagEdited.overrideFlags);
-      expect(tagBack.overrideFlags & (0xf << 19)).toBe(0xf << 19);
+      expect(tagBack.overrideFlags & (0x1f << 19)).toBe(0x1f << 19);
       expect(rounded(tagBack.block)).toEqual(rounded(tagEdited.block));
       expect(tagBack.block!.attributes!.map((a) => a.value)).toEqual(['VIEWNUMBER', 'SHEETNUMBER']);
       // MLEADER's block content is bit 19, not the text frame's 17.
@@ -342,6 +346,10 @@ describe('MLEADER on the public corpus', () => {
       expect(calloutBack.overrideFlags & ((1 << 17) | (1 << 19))).toBe(1 << 19);
       const secondBack = back.entityByHandle(second.handle)!.geom as MultiLeaderGeometry;
       expect(secondBack).toMatchObject({ pathType: 1, dogleg: true, landing: true });
+      expect(secondBack.scale).toBe(2);
+      expect(secondBack.overrideFlags & (1 << 24)).toBe(1 << 24);
+      expect(tagBack.blockConnection).toBe(1);
+      expect(tagBack.overrideFlags & (1 << 23)).toBe(1 << 23);
       // The arrowhead block comes back with what it draws.
       const arrowParts = (m: DocumentModel) =>
         m.blockEntities(arrowBlock!.handle).map((id) => {
