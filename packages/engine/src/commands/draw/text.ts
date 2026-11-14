@@ -1030,13 +1030,14 @@ async function* editAttdef(
  * when the text came back unchanged, undefined when the command was ended.
  */
 /**
- * The Properties palette's `...` on an MTEXT's Contents (M2-35 part 9): the In-Place Text Editor
- * on `entity`, as TEXTEDIT opens it; whether the contents changed.
+ * The Properties palette's `...` on an MTEXT's Contents (M2-35 part 9) or a multileader's (part
+ * 11): the In-Place Text Editor on `entity`, as TEXTEDIT opens it; whether the contents changed.
  */
 export async function* editContents(
   ctx: CommandContext,
   entity: Entity,
 ): AsyncGenerator<Prompt, boolean, PromptAnswer> {
+  if (entity.geom.kind === 'MULTILEADER') return Boolean(yield* editMultiLeader(ctx, entity));
   return Boolean(yield* editText(ctx, entity));
 }
 

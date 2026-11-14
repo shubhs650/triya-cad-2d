@@ -33,6 +33,7 @@ import {
 } from './dimension';
 import { JUSTIFICATIONS } from '../commands/modify/attributes';
 import { bookColors } from '../model/book-colors';
+import { multiLeaderTextRows } from './multileader';
 import {
   hasThickness,
   hyperlinkOf,
@@ -867,6 +868,10 @@ function typeSections(
       ]);
       break;
     }
+    case 'MULTILEADER':
+      // M2-35 part 11: the text of multileaders that all hold text.
+      add('Text', multiLeaderTextRows(es, textStyles));
+      break;
     case 'INSERT': {
       const g = (e: Entity) => geomOf<'INSERT'>(e);
       add('Geometry', [

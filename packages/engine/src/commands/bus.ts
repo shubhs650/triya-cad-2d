@@ -65,6 +65,7 @@ import {
   applyCurrentEdit,
   applyPropertyEdit,
   hatchesToPattern,
+  multiLeaderTextsToMeasure,
   placedPatterns,
   textsToMeasure,
   type HatchPatterns,
@@ -72,6 +73,7 @@ import {
   type TextOutlines,
 } from '../properties/edit';
 import { filtered } from '../properties/sheet';
+import { textOf, type MultiLeaderWidths } from '../properties/multileader';
 import type { EntityType } from '../model/types';
 import { refusalMessages } from '../edit/edit';
 
@@ -529,11 +531,36 @@ export class PromptBus {
             }
             patterns = placedPatterns(toPlace, r.pattern);
           }
+          // A multileader's text placed again on its landing is measured first (M2-35 part 11).
+          const leaders = multiLeaderTextsToMeasure(model, entities, edit);
+          let widths: MultiLeaderWidths | undefined;
+          if (leaders.length > 0) {
+            const texts = leaders.flatMap((l) =>
+              [l.before, l.after].filter((t) => t !== undefined),
+            );
+            const r = await ctx.view.request({ op: 'textWidths', texts });
+            const got = r.ok ? (r.widths ?? []) : [];
+            let i = 0;
+            const next = (t: unknown) => (t === undefined ? undefined : (got[i++] ?? undefined));
+            widths = new Map(
+              leaders.map((l) => {
+                const before = next(l.before);
+                const after = next(l.after);
+                return [
+                  l.id,
+                  {
+                    ...(before !== undefined && { before }),
+                    ...(after !== undefined && { after }),
+                  },
+                ];
+              }),
+            );
+          }
           ctx.edit((b) => {
             report =
               ids.length === 0
                 ? applyCurrentEdit(b, model, edit)
-                : applyPropertyEdit(b, model, entities, edit, outlines, patterns);
+                : applyPropertyEdit(b, model, entities, edit, outlines, patterns, widths);
           });
           if (report!.invalid) ctx.message(`${report!.invalid}.`);
           for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
@@ -545,15 +572,21 @@ export class PromptBus {
 
   /**
    * The Properties palette's `...` on an MTEXT's Contents (M2-35 part 9, AutoCAD 2024's
-   * "Properties Palette — Text"): the In-Place Text Editor on the one MTEXT the palette shows (of
-   * the type `filter`), as TEXTEDIT opens it. Like the palette's other edits it is one undo step
+   * "Properties Palette — Text") or a text multileader's (part 11): the In-Place Text Editor on
+   * the one object the palette shows (of the type `filter`), as TEXTEDIT opens it. Like the palette's other edits it is one undo step
    * the command line does not echo, and the MTEXT stays selected; a running command is cancelled
-   * first. With anything but one MTEXT shown it does nothing (the row offers no button then).
+   * first. With anything but one such object shown it does nothing (the row offers no button
+   * then).
    */
   editContents(filter?: EntityType): Promise<void> {
     return this.#enqueue(async () => {
       const shown = filtered(this.#model, this.#idle.ids, filter);
-      const entity = shown.length === 1 && shown[0]!.geom.kind === 'MTEXT' ? shown[0] : undefined;
+      const one = shown.length === 1 ? shown[0] : undefined;
+      // An MTEXT (part 9), or a multileader whose content is text (part 11).
+      const entity =
+        one?.geom.kind === 'MTEXT' || (one?.geom.kind === 'MULTILEADER' && textOf(one.geom))
+          ? one
+          : undefined;
       if (!entity) return;
       if (this.#stack.length > 0) await this.#cancel();
       const def: CommandDef = {
