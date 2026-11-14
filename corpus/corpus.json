@@ -3380,6 +3380,7 @@
         "polylines",
         "r2018",
         "text",
+        "unreadable",
         "viewports"
       ],
       "references": [],
@@ -3394,7 +3395,8 @@
         "txt"
       ],
       "knownIssues": [
-        "Intentionally malformed input from the ezdxf recover/robustness tests; a reader may repair it, so round-trip results need judging per file."
+        "Intentionally malformed input from the ezdxf recover/robustness tests; a reader may repair it, so round-trip results need judging per file.",
+        "acad-ts cannot read it: DxfException \"Unexpected token at the beginning of a table: BLOCK_RECORD, at line 1920\" (round-trip status read-error)."
       ]
     },
     {

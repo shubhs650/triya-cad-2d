@@ -6,7 +6,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, UNREADABLE_TAG } from '../corpus/manifest.ts';
 import {
   compareToHandleBaseline,
   toHandleBaseline,
@@ -84,6 +84,15 @@ describe('public corpus round-trip', () => {
       .filter(({ result }) => result.status !== 'clean' && result.status !== 'read-error')
       .map(({ file, result }) => `${file.path}: ${result.status} ${result.error ?? ''}`.trim());
     expect(unclean).toEqual([]);
+  });
+
+  // M2-49: every corpus suite filters on the `unreadable` tag (readableFiles), so the tag must
+  // name exactly the files acad-ts fails to read: no readable file left out, none let in.
+  it('tags exactly the files acad-ts cannot read as unreadable', () => {
+    expect(runs.length, 'the first test must run first').toBe(manifest.files.length);
+    const failed = runs.filter((r) => r.result.status === 'read-error').map((r) => r.file.path);
+    const tagged = manifest.files.filter((f) => f.tags.includes(UNREADABLE_TAG)).map((f) => f.path);
+    expect(tagged).toEqual(failed);
   });
 
   // M1-30: objects acad-ts cannot map are kept raw and written back unchanged. No ratchet: zero

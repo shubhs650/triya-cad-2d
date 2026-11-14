@@ -34,14 +34,14 @@ import {
 import { aciOfTrueColor, documentInit, readCadDocument } from '@triya/io';
 import { textMeasure } from '@triya/render';
 import { describe, expect, it } from 'vitest';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { bundledFontBook } from '../render/bundled-fonts.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { saveAc1032Dxf, writeAuditSave } from '../dxf-audit/saves.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
-const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+const readable = readableFiles(manifest);
 const PER_FILE_BUDGET_MS = 30_000;
 const CIRCLE = { center: { x: 500, y: 0 }, radius: 20 };
 /** The ordinate dimension DIMCONTINUE goes on from (M2-31), picked by its leader end. */

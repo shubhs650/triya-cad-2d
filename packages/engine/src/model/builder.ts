@@ -527,11 +527,16 @@ export class ChangeSetBuilder {
     if (this.tableRecord('blockRecords', block)?.name.toUpperCase() === MODEL_SPACE)
       throw new Error(`layout ${handle}: the Model layout cannot be removed`);
     draft.remove(handle);
-    // The tabs after it move up one, as AutoCAD keeps them numbered 1 to N.
-    for (const h of this.#layoutHandles()) {
-      const l = draft.get(h);
-      if (l && l.tabOrder > layout.tabOrder) draft.update(h, { tabOrder: l.tabOrder - 1 });
-    }
+    // The paper tabs left are numbered 1 to N after the Model tab (0), as AutoCAD keeps them:
+    // the ones after it move up one, and a drawing whose tabs had a gap (ezdxf's
+    // layout_missing_block_definition.dxf: 1 and 3) loses it, which the save requires.
+    const left = this.#layoutHandles()
+      .map((h) => draft.get(h))
+      .filter((l): l is Layout => l !== undefined && l.tabOrder > 0)
+      .sort((x, y) => x.tabOrder - y.tabOrder);
+    left.forEach((l, i) => {
+      if (l.tabOrder !== i + 1) draft.update(l.handle, { tabOrder: i + 1 });
+    });
     if (!this.#blocks.get(block)) return;
     for (const id of this.blockEntities(block)) this.removeEntity(id);
     this.removeBlock(block);

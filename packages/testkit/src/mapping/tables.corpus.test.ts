@@ -9,7 +9,7 @@ import type { CadDocument } from '@node-projects/acad-ts';
 import { describe, expect, it } from 'vitest';
 import { mapHeader, mapTables, readCadDocument, type MappedTables } from '@triya/io';
 import { cellStyleMapProblems } from './cell-style-map.ts';
-import { loadManifest } from '../corpus/manifest.ts';
+import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import {
   all,
   first,
@@ -456,12 +456,31 @@ function same(kind: Kind, dxf: string, triya: unknown): boolean {
 const ACAD_TS_GAPS: Record<string, string> = {};
 
 /**
+ * What a reader repairs in the intentionally malformed ezdxf recover inputs, so the file's own
+ * value is no value to keep (M2-49 brought them into this suite; DEC-047). Keyed by file, then
+ * mismatch kind; a listed repair that no longer happens fails the test, as ACAD_TS_GAPS does.
+ */
+const MALFORMED_REPAIRS: Record<string, Record<string, string>> = {
+  'public/third-party/ezdxf/integration_tests/duplicate_handles.dxf': {
+    $LUPREC: "a precision of 10 is past AutoCAD's 0 to 8; acad-ts keeps its default 4",
+    $TDCREATE: 'a date of 0 is no date; the reader dates the drawing when it opens it',
+    $TDUPDATE: 'a date of 0 is no date; the reader dates the drawing when it opens it',
+  },
+};
+
+const repaired = (path: string, m: Mismatch): boolean =>
+  m.text.startsWith(`${path} `) && m.kind in (MALFORMED_REPAIRS[path] ?? {});
+
+/**
  * Header names that are not AutoCAD variables, which AutoCAD skips on open, so no reader keeps
  * them. Only ezdxf's hand-written `Minimal_DXF_AC1006.dxf` ("DXF created by Eric Roger") has
  * `$LINMIN`/`$LINMAX`, with the values its `$EXTMIN`/`$EXTMAX` have: neither is in the AutoCAD
  * DXF references (R12 to 2024), so they are most likely `$LIMMIN`/`$LIMMAX` misspelt.
+ * ezdxf's `no_layouts.dxf` states `$GRIDMODE` and `$SNAPSTYLE`: GRIDMODE and SNAPSTYLE are
+ * system variables kept per viewport (VPORT 76 and 77), not header variables, and neither
+ * ezdxf's header table nor acad-ts knows them (M2-49).
  */
-const NOT_AUTOCAD_VARIABLES = new Set(['$LINMIN', '$LINMAX']);
+const NOT_AUTOCAD_VARIABLES = new Set(['$LINMIN', '$LINMAX', '$GRIDMODE', '$SNAPSTYLE']);
 
 interface Mismatch {
   /** `LAYER 62`, `$LTSCALE`, …: what ACAD_TS_GAPS is keyed on. */
@@ -684,7 +703,7 @@ function load(path: string): Uint8Array {
 }
 
 describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
-  const readable = manifest.files.filter((f) => !f.knownIssues.some((k) => /read/i.test(k)));
+  const readable = readableFiles(manifest);
 
   it('maps every table record and header variable an ASCII DXF states, unchanged', () => {
     const mismatches: Mismatch[] = [];
@@ -712,10 +731,21 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
           compareHeader(name, groups, header, mismatches, f.path);
     }
     expect(files).toBeGreaterThan(50);
-    expect(mismatches.filter((m) => !(m.kind in ACAD_TS_GAPS)).map((m) => m.text)).toEqual([]);
-    expect([...new Set(mismatches.map((m) => m.kind))].sort()).toEqual(
+    const repairs = Object.keys(MALFORMED_REPAIRS);
+    const isRepair = (m: Mismatch) => repairs.some((path) => repaired(path, m));
+    expect(
+      mismatches.filter((m) => !(m.kind in ACAD_TS_GAPS) && !isRepair(m)).map((m) => m.text),
+    ).toEqual([]);
+    expect([...new Set(mismatches.filter((m) => !isRepair(m)).map((m) => m.kind))].sort()).toEqual(
       Object.keys(ACAD_TS_GAPS).sort(),
     );
+    for (const [path, kinds] of Object.entries(MALFORMED_REPAIRS))
+      expect(
+        Object.keys(kinds).filter(
+          (k) => !mismatches.some((m) => m.kind === k && repaired(path, m)),
+        ),
+        `${path}: repairs that no longer happen`,
+      ).toEqual([]);
   }, 300_000);
 
   it('maps every acad-ts table entry of every readable file, with references that resolve', () => {
@@ -828,7 +858,7 @@ describe('AcadToTriya tables and header on the public corpus (M1-03)', () => {
     const problems: string[] = [];
     let compared = 0;
     let dwgs = 0;
-    for (const f of manifest.files.filter((x) => !x.knownIssues.some((k) => /read/i.test(k)))) {
+    for (const f of readableFiles(manifest)) {
       let doc;
       try {
         doc = readCadDocument(load(f.path));

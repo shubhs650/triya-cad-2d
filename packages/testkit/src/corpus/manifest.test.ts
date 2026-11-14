@@ -3,7 +3,13 @@ import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { validateCorpus, validateManifestShape, type CorpusManifest } from './manifest.ts';
+import {
+  readableFiles,
+  UNREADABLE_TAG,
+  validateCorpus,
+  validateManifestShape,
+  type CorpusManifest,
+} from './manifest.ts';
 
 const DXF_R2000 = '0\nSECTION\n2\nHEADER\n9\n$ACADVER\n1\nAC1015\n0\nENDSEC\n0\nEOF\n';
 const sha256 = (s: string | Uint8Array): string => createHash('sha256').update(s).digest('hex');
@@ -167,5 +173,30 @@ describe('validateCorpus', () => {
     const errors = validateCorpus(m, makeCorpusDir());
     expect(errors).toContainEqual(expect.stringContaining('a-Model.pdf'));
     expect(errors).toContainEqual(expect.stringContaining('a-Model.png'));
+  });
+});
+
+// M2-49: suites used to drop every file whose known issue matched /read/i, which also caught
+// "a reader may repair it" and "DXF readers default to R12" on files acad-ts reads fine.
+describe('readableFiles', () => {
+  it('keeps files whose known issues merely mention readers and drops the tagged ones', () => {
+    const m = goodManifest();
+    const base = m.files[0]!;
+    m.files = [
+      { ...base, path: 'public/a.dxf', knownIssues: ['DXF readers default to R12 (AC1009).'] },
+      { ...base, path: 'public/b.dxf', knownIssues: ['a reader may repair it'] },
+      { ...base, path: 'public/c.dxf', tags: ['malformed', UNREADABLE_TAG], knownIssues: ['acad-ts cannot read it: x'] },
+    ];
+    expect(readableFiles(m).map((f) => f.path)).toEqual(['public/a.dxf', 'public/b.dxf']);
+  });
+});
+
+describe('the unreadable tag', () => {
+  it('needs a known issue that says why the file cannot be read', () => {
+    const m = goodManifest();
+    m.files[0]!.tags = [UNREADABLE_TAG];
+    expect(validateManifestShape(m)).toContainEqual(expect.stringContaining(UNREADABLE_TAG));
+    m.files[0]!.knownIssues = ['acad-ts cannot read it: DxfException'];
+    expect(validateManifestShape(m)).toEqual([]);
   });
 });
