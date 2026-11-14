@@ -269,13 +269,13 @@ describe('VIEW', () => {
     ]);
     await bus.script(['-V', '?', 'f*']);
     expect(bus.history.slice(-2)).toEqual(['Saved views:', '  Front']);
-    await bus.script(['VIEW', '?', 'zz']);
+    await bus.script(['-VIEW', '?', 'zz']);
     expect(bus.history.at(-1)).toBe('No matching views found.');
   });
 
   it('restores by name, with spaces', async () => {
     const { bus, asked } = setup();
-    await bus.script(['V', 'R', 'Detail A']);
+    await bus.script(['-V', 'R', 'Detail A']);
     expect(asked).toEqual([{ op: 'restore', name: 'Detail A' }]);
   });
 
@@ -292,12 +292,12 @@ describe('VIEW', () => {
 
   it('saves the current view in the drawing as one undo step (M2-29)', async () => {
     const { bus, asked, model } = setup();
-    await bus.script(['V', 'S', 'Plan 2']);
+    await bus.script(['-V', 'S', 'Plan 2']);
     expect(asked).toEqual([{ op: 'get' }]);
     expect(viewsOf(model)).toEqual([['Plan 2', 0, 50, 25, 40, 80]]);
     expect([bus.undo.state.undoable, bus.undo.state.nextUndo]).toEqual([1, 'VIEW']);
     // Saved again under the name, it replaces the view.
-    await bus.script(['V', 'S', 'plan 2']);
+    await bus.script(['-V', 'S', 'plan 2']);
     expect(viewsOf(model)).toEqual([['Plan 2', 0, 50, 25, 40, 80]]);
     await bus.script(['U']);
     await bus.script(['U']);
@@ -306,37 +306,37 @@ describe('VIEW', () => {
 
   it('saves a paper-space view with its flag', async () => {
     const { bus, model } = setup(() => ({ ok: true, view: { ...VIEW, paper: true } }));
-    await bus.script(['V', 'S', 'Sheet']);
+    await bus.script(['-V', 'S', 'Sheet']);
     expect(viewsOf(model)).toEqual([['Sheet', 1, 50, 25, 40, 80]]);
   });
 
   it('says so when the canvas cannot tell the view', async () => {
     const { bus, model } = setup(() => ({ ok: false, message: 'There is no view to change.' }));
-    await bus.script(['V', 'S', 'Plan']);
+    await bus.script(['-V', 'S', 'Plan']);
     expect(bus.history.at(-1)).toBe('There is no view to change.');
     expect(viewsOf(model)).toEqual([]);
   });
 
   it('saves a window as a view, without asking the canvas', async () => {
     const { bus, asked, model } = setup();
-    await bus.script(['V', 'W', 'Corner', '0,0', '10,5']);
+    await bus.script(['-V', 'W', 'Corner', '0,0', '10,5']);
     expect(asked).toEqual([]);
     expect(viewsOf(model)).toEqual([['Corner', 0, 5, 2.5, 5, 10]]);
-    await bus.script(['V', 'W', 'Flat', '0,0', '10,0']);
+    await bus.script(['-V', 'W', 'Flat', '0,0', '10,0']);
     expect(bus.history.at(-1)).toBe('The window has no area.');
     expect(viewsOf(model)).toHaveLength(1);
   });
 
   it('deletes the views a pattern names', async () => {
     const { bus, model } = setup();
-    for (const n of ['Front', 'Back', 'Detail A']) await bus.script(['V', 'S', n]);
+    for (const n of ['Front', 'Back', 'Detail A']) await bus.script(['-V', 'S', n]);
     await bus.submit('-VIEW');
     await bus.submit('D');
     expect(bus.promptText).toBe('Enter view name(s) to delete:');
     await bus.submit('f*,DETAIL ?');
     expect(viewsOf(model).map((v) => v[0])).toEqual(['Back']);
     expect(bus.undo.state.nextUndo).toBe('VIEW');
-    await bus.script(['V', 'D', 'zz']);
+    await bus.script(['-V', 'D', 'zz']);
     expect(bus.history.at(-1)).toBe('No matching views found.');
     await bus.script(['U']);
     expect(
@@ -348,12 +348,53 @@ describe('VIEW', () => {
 
   it('refuses names AutoCAD refuses', async () => {
     const { bus, asked, model } = setup();
-    await bus.script(['V', 'S', 'a<b']);
+    await bus.script(['-V', 'S', 'a<b']);
     expect(bus.history.at(-1)).toBe('Invalid view name.');
     expect(bus.command).toBe('VIEW');
     await bus.cancel();
     expect(asked).toEqual([]);
     expect(model.tables.views.size).toBe(0);
+  });
+
+  // M2-47 part 2: VIEW without the dash opens the View Manager, as AutoCAD's does; its New View
+  // dialog's Define window hands back to VIEW for the corners, then shows the dialogs again.
+  it('VIEW and V open the View Manager and wait for it', async () => {
+    const { bus, asked } = setup(() => ({ ok: true }));
+    await bus.submit('VIEW');
+    await bus.submit('V');
+    expect(asked).toEqual([
+      { op: 'file', action: 'views' },
+      { op: 'file', action: 'views' },
+    ]);
+    expect(bus.command).toBeUndefined();
+  });
+
+  it("asks for the New View dialog's window at the command line and shows it again", async () => {
+    let n = 0;
+    // The dialog asks for a window twice (Esc at the second corner the second time), then closes.
+    const { bus, asked } = setup((r) =>
+      r.op === 'file' && n++ < 2 ? { ok: true, pickWindow: true } : { ok: true },
+    );
+    await bus.submit('VIEW');
+    expect(bus.command).toBe('VIEW');
+    expect(bus.prompt?.message).toBe('Specify first corner');
+    await bus.submit('0,0');
+    expect(bus.prompt?.message).toBe('Specify opposite corner');
+    await bus.submit('40,20');
+    expect(bus.prompt?.message).toBe('Specify first corner');
+    await bus.submit('1,1');
+    await bus.cancel();
+    expect(bus.command).toBeUndefined();
+    expect(asked).toEqual([
+      { op: 'file', action: 'views' },
+      {
+        op: 'file',
+        action: 'views',
+        resume: true,
+        window: { a: { x: 0, y: 0 }, b: { x: 40, y: 20 } },
+      },
+      { op: 'file', action: 'views', resume: true },
+    ]);
   });
 
   it('matches ? patterns with * and ?, case ignored, comma separated', () => {
@@ -398,5 +439,49 @@ describe('EngineSession view requests', () => {
       ok: false,
       message: 'Invalid view name.',
     });
+  });
+
+  // M2-47 part 2: the View Manager's Delete and its Name row.
+  it('deletes and renames a named view, each a VIEW undo step', async () => {
+    const session = new EngineSession(sampleInit());
+    session.edit({ kind: 'view', name: 'Front', view: VIEW });
+    session.edit({ kind: 'view', name: 'Back', view: { ...VIEW, paper: true } });
+    const names = () => [...session.model.tables.views.values()].map((v) => v.name).sort();
+
+    const renamed = session.edit({ kind: 'view-rename', name: 'front', newName: ' Elevation ' });
+    expect(renamed.ok).toBe(true);
+    expect(names()).toEqual(['Back', 'Elevation']);
+    expect(session.undoState.nextUndo).toBe('VIEW');
+    // Another case of its own name is a rename; another view's name and AutoCAD's bad
+    // characters are refused, as is a view that is not there.
+    expect(session.edit({ kind: 'view-rename', name: 'Elevation', newName: 'ELEVATION' }).ok).toBe(
+      true,
+    );
+    // Its own name as it is changes nothing and adds no undo step.
+    expect(session.edit({ kind: 'view-rename', name: 'elevation', newName: 'ELEVATION' })).toEqual({
+      ok: true,
+      change: {},
+    });
+    expect(session.edit({ kind: 'view-rename', name: 'ELEVATION', newName: 'back' })).toEqual({
+      ok: false,
+      message: 'A view named "Back" already exists.',
+    });
+    expect(session.edit({ kind: 'view-rename', name: 'ELEVATION', newName: 'a|b' })).toEqual({
+      ok: false,
+      message: 'Invalid view name.',
+    });
+    expect(session.edit({ kind: 'view-delete', name: 'Side' })).toEqual({
+      ok: false,
+      message: 'Cannot find view "Side".',
+    });
+
+    const deleted = session.edit({ kind: 'view-delete', name: 'BACK' });
+    expect(deleted.ok && deleted.change.tables?.views?.removed?.map((v) => v.name)).toEqual([
+      'Back',
+    ]);
+    expect(names()).toEqual(['ELEVATION']);
+    expect(session.undoState.nextUndo).toBe('VIEW');
+    await session.command({ kind: 'submit', text: 'U' });
+    expect(names()).toEqual(['Back', 'ELEVATION']);
   });
 });

@@ -86,6 +86,9 @@ export function Modal({
       aria-label={label}
       onCancel={(e) => {
         e.preventDefault();
+        // React passes a dialog's cancel to the dialogs it sits in: a dialog opened from another
+        // (New View over the View Manager) cancels itself only.
+        e.stopPropagation();
         onCancel();
       }}
       onKeyDown={(e) => {

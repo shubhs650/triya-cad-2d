@@ -281,7 +281,9 @@ export type FileAction =
   | 'publish'
   | 'preview'
   | 'export'
-  | 'exportpdf';
+  | 'exportpdf'
+  /** VIEW (M2-47 part 2): the View Manager dialog. */
+  | 'views';
 
 export type ViewReply =
   | {
