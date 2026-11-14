@@ -74,6 +74,7 @@ import {
   PATH_Z,
   RendererHost,
   fitView,
+  gripHalfSize,
   screenToWorld,
   tessellate,
   transformPrimitive,
@@ -152,8 +153,11 @@ const WINDOW_COLOR = '#4da3ff';
 const CROSSING_COLOR = '#5fd35f';
 const SELECTION_FILL_OPACITY = 0.18;
 const DASH_PX = 6;
-/** A click this near a grip (CSS pixels) is on it: the grip's half size and a pixel (M2-06). */
-const GRIP_PICK_PX = 5;
+/**
+ * A click this near a grip (CSS pixels) is on it: the grip's half size at GRIPSIZE and a pixel
+ * (M2-06; M2-59 part 3 sizes it).
+ */
+const gripPickPx = (gripSize: number): number => gripHalfSize(gripSize) + 1;
 
 /**
  * What the left button does: select (nothing yet), real-time PAN or ZOOM, or pick ZOOM Window
@@ -606,7 +610,12 @@ export class CanvasController {
     this.#drafting = state;
     this.#hit = undefined;
     if (!state.otrack) this.#acquired = this.#acquired.filter((a) => a.kind !== 'point');
-    if (before.grid !== state.grid || before.lwt !== state.lwt || before.tpy !== state.tpy) {
+    if (
+      before.grid !== state.grid ||
+      before.lwt !== state.lwt ||
+      before.tpy !== state.tpy ||
+      before.gripSize !== state.gripSize
+    ) {
       this.#host.setStyle(this.#style());
       this.#requestFrame();
     }
@@ -946,6 +955,7 @@ export class CanvasController {
       showLineweights,
       selection: c.selection,
       ...(!d.tpy && { showTransparency: false }),
+      gripSize: d.gripSize,
       ...(d.grid && { grid: { ...this.#grid(), ...(c.grid && { color: c.grid }) } }),
     };
     const background = this.#layout ? c.paper : c.model;
@@ -1286,7 +1296,11 @@ export class CanvasController {
           c.setPointerCapture(e.pointerId);
           const shift = e.shiftKey;
           if (!this.#precise()) {
-            this.#hooks.onPick?.(world, { shift, release: false, grip: GRIP_PICK_PX * this.#px() });
+            this.#hooks.onPick?.(world, {
+              shift,
+              release: false,
+              grip: gripPickPx(this.#drafting.gripSize) * this.#px(),
+            });
             return;
           }
           // At a point prompt the click gives the point the drafting aids make of it.

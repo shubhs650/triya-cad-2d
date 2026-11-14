@@ -56,6 +56,7 @@ export type DraftingPreferences = Pick<
   | 'qpLocation'
   | 'autosnap'
   | 'pickfirst'
+  | 'gripSize'
 >;
 
 export interface Preferences {
@@ -72,6 +73,8 @@ export const POLAR_ANGLES = [90, 45, 30, 22.5, 18, 15, 10, 5] as const;
 /** AUTOSNAPSIZE's and APERTURE's ranges, pixels (AutoCAD 2024 system variable reference). */
 export const MARKER_SIZES = { min: 1, max: 20 } as const;
 export const APERTURES = { min: 1, max: 50 } as const;
+/** GRIPSIZE's range, pixels (M2-59 part 3). */
+export const GRIP_SIZES = { min: 1, max: 255 } as const;
 
 export const DEFAULT_CANVAS: CanvasColours = {
   model: '#212830',
@@ -102,6 +105,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     qpLocation: 0,
     autosnap: AUTOSNAP_KEPT,
     pickfirst: true,
+    gripSize: 5,
   },
 };
 
@@ -162,6 +166,7 @@ export function normalizePreferences(raw: unknown): Preferences {
       otrack: bool(k['otrack'], d.drafting.otrack),
       markerSize: int(k['markerSize'], MARKER_SIZES, d.drafting.markerSize),
       aperture: int(k['aperture'], APERTURES, d.drafting.aperture),
+      gripSize: int(k['gripSize'], GRIP_SIZES, d.drafting.gripSize),
       pdfOsnap: bool(k['pdfOsnap'], d.drafting.pdfOsnap),
       revcloudGrips: bool(k['revcloudGrips'], d.drafting.revcloudGrips),
       qpmode: within(k['qpmode'], { min: -2, max: 2 }, d.drafting.qpmode),
@@ -243,6 +248,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     qpLocation: s.qpLocation,
     autosnap: s.autosnap,
     pickfirst: s.pickfirst,
+    gripSize: s.gripSize,
   };
 }
 
