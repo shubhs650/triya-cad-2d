@@ -347,8 +347,8 @@ export type ViewReply =
       readonly plotSetup?: PlotScriptSetup;
       /** What `hatchPattern` placed (M2-35 part 3). */
       readonly pattern?: PlacedPattern;
-      /** What a `sysvar` variable holds (M2-42). */
-      readonly value?: number;
+      /** What a `sysvar` variable holds (M2-42): a number, or text (DWGNAME, M2-59). */
+      readonly value?: number | string;
     }
   | { readonly ok: false; readonly message: string };
 

@@ -80,6 +80,13 @@ export interface CommandContext {
    * Without it (scripts, tests that do not give one) dimensions are only carried whole.
    */
   readonly dimensions?: DimensionRegenerator | undefined;
+  /** The time, for the variables that tell it (DATE, CDATE; M2-59). */
+  readonly clock: Clock;
+}
+
+/** Where the engine reads the local date and time: injected, so tests fix it. */
+export interface Clock {
+  now(): Date;
 }
 
 export interface CommandDef {
