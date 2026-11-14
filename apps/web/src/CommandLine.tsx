@@ -52,6 +52,7 @@ function pressable(t: EventTarget | null): boolean {
 
 export function CommandLine({
   doc,
+  variables = [],
   lines,
   cursor,
   onSettings,
@@ -60,6 +61,8 @@ export function CommandLine({
 }: {
   /** The drawing shown, or undefined with none open. */
   doc: number | undefined;
+  /** The drawing's system variables, which autocomplete lists after the commands (M2-59). */
+  variables?: readonly string[];
   lines: CommandLines;
   /** The world point under the cursor, for direct distance entry. */
   cursor: () => { readonly x: number; readonly y: number } | undefined;
@@ -79,7 +82,8 @@ export function CommandLine({
   const input = useRef<HTMLInputElement>(null);
   const full = useRef<HTMLDivElement>(null);
   const prompt = state?.prompt;
-  const suggestions = prompt === undefined ? completions(registry, text).slice(0, 8) : [];
+  const suggestions =
+    prompt === undefined ? completions(registry, text, variables).slice(0, 8) : [];
 
   /** Keys typed ahead of the prompt that reads them (M2-47 part 3, M2-71, `holdsKey`). */
   const held = useRef<string[]>([]);
@@ -417,7 +421,11 @@ export function CommandLine({
           onKeyDown={onKeyDown}
         />
         {suggestions.length > 0 && (
-          <ul className="command-suggestions" role="listbox" aria-label="Matching commands">
+          <ul
+            className="command-suggestions"
+            role="listbox"
+            aria-label="Matching commands and system variables"
+          >
             {suggestions.map((s) => (
               <li
                 key={s.name}
@@ -430,6 +438,7 @@ export function CommandLine({
               >
                 {s.name}
                 {s.alias && <span className="alias"> ({s.alias})</span>}
+                {s.variable && <span className="alias"> system variable</span>}
               </li>
             ))}
           </ul>
