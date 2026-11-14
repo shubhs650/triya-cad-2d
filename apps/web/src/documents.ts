@@ -48,7 +48,7 @@ export function layoutsOf(init: DocumentInit, changes: readonly ChangeSet[]): La
  * `changes` are the edits the drawing's engine applied since it opened.
  */
 export function spacesOf(
-  doc: OpenDocument,
+  doc: Pick<OpenDocument, 'opened'>,
   changes: readonly ChangeSet[],
 ): { readonly name: string; readonly block: string }[] {
   const model = doc.opened.modelSpace!;
@@ -61,6 +61,12 @@ export function spacesOf(
 
 export interface DocumentsState {
   readonly docs: readonly OpenDocument[];
+  /**
+   * Drawings open with no tab (M2-45 part 2: PUBLISH's Add Sheets opens a drawing that is not
+   * open for the publish and closes it after, as AutoCAD loads one): each has its engine and a
+   * hidden canvas to plot from, and none ever shows.
+   */
+  readonly background: readonly OpenDocument[];
   readonly active: number | undefined;
   /** Files being opened, by name. */
   readonly opening: readonly string[];
@@ -70,7 +76,13 @@ export interface DocumentsState {
 }
 
 export class DocumentStore {
-  #state: DocumentsState = { docs: [], active: undefined, opening: [], error: undefined };
+  #state: DocumentsState = {
+    docs: [],
+    background: [],
+    active: undefined,
+    opening: [],
+    error: undefined,
+  };
   readonly #listeners = new Set<() => void>();
   #nextId = 1;
 
@@ -108,6 +120,21 @@ export class DocumentStore {
     return doc.id;
   }
 
+  /** A drawing opened with no tab (PUBLISH's Add Sheets); the tab shown stays. Returns its id. */
+  openedInBackground(name: string, opened: OpenResult, block: string): number {
+    const doc: OpenDocument = {
+      id: this.#nextId++,
+      name,
+      opened,
+      block,
+      revision: 0,
+      edits: 0,
+      savedEdits: 0,
+    };
+    this.#set({ background: [...this.#state.background, doc] });
+    return doc.id;
+  }
+
   failed(name: string, message: string): void {
     this.#set({ opening: this.#withoutOne(name), error: message });
   }
@@ -118,6 +145,10 @@ export class DocumentStore {
 
   /** Closes a tab; the tab to its right shows next, else the one to its left. */
   close(id: number): void {
+    if (this.#state.background.some((d) => d.id === id)) {
+      this.#set({ background: this.#state.background.filter((d) => d.id !== id) });
+      return;
+    }
     const docs = this.#state.docs;
     const at = docs.findIndex((d) => d.id === id);
     if (at < 0) return;
@@ -181,7 +212,14 @@ export class DocumentStore {
   }
 
   #update(id: number, f: (d: OpenDocument) => OpenDocument): void {
-    this.#set({ docs: this.#state.docs.map((d) => (d.id === id ? f(d) : d)) });
+    const docs = this.#state.docs;
+    if (docs.some((d) => d.id === id)) {
+      this.#set({ docs: docs.map((d) => (d.id === id ? f(d) : d)) });
+      return;
+    }
+    const background = this.#state.background;
+    if (background.some((d) => d.id === id))
+      this.#set({ background: background.map((d) => (d.id === id ? f(d) : d)) });
   }
 
   #withoutOne(name: string): readonly string[] {
