@@ -4,6 +4,8 @@ import {
   DwgReaderConfiguration,
   DxfReader,
   DxfReaderConfiguration,
+  Layout,
+  type BlockRecord,
   type CadDocument,
 } from '@node-projects/acad-ts';
 
@@ -67,12 +69,55 @@ export function readCadDocument(
       bytes.byteOffset === 0 && bytes.byteLength === bytes.buffer.byteLength
         ? bytes.buffer
         : bytes.slice().buffer;
-    return DwgReader.readFromStreamWithConfig(
-      exact as ArrayBuffer,
-      fidelityDwgReaderConfiguration(),
+    return repairLayoutLinks(
+      DwgReader.readFromStreamWithConfig(exact as ArrayBuffer, fidelityDwgReaderConfiguration()),
     );
   }
-  return DxfReader.readFromStreamWithConfig(bytes, fidelityDxfReaderConfiguration());
+  return repairLayoutLinks(
+    DxfReader.readFromStreamWithConfig(bytes, fidelityDxfReaderConfiguration()),
+  );
+}
+
+/** A paper tab's block: `*Paper_Space`, then `*Paper_Space0`, `*Paper_Space1`, …. */
+const PAPER_BLOCK = /^\*Paper_Space(\d*)$/i;
+
+/**
+ * Links each layout whose block record link is broken (M2-69, malformed input; ezdxf's
+ * layout_broken_links*.dxf and layout_missing_block_record.dxf) to its block record, so its tab
+ * and sheet show and a save writes the link back. First the record whose 340 still names the
+ * layout; otherwise by name among the layout blocks no layout has: Model takes `*Model_Space`,
+ * and the paper tabs, in tab order, `*Paper_Space`, `*Paper_Space0`, `*Paper_Space1`, …, the
+ * order AutoCAD names them in (the current tab's is `*Paper_Space`, which a file that lost
+ * every link no longer says). A layout with no such record left stays unlinked: it has no
+ * space to show, and is kept as read.
+ */
+export function repairLayoutLinks(doc: CadDocument): CadDocument {
+  const broken = [...(doc.layouts ?? [])].filter((l) => !l.associatedBlock);
+  if (broken.length === 0) return doc;
+  const records = [...(doc.blockRecords ?? [])];
+  const unlinked: Layout[] = [];
+  for (const l of broken) {
+    const named = records.find((r) => r.layout === l);
+    if (named) l.associatedBlock = named;
+    else unlinked.push(l);
+  }
+  const layouts = new Set(doc.layouts ?? []);
+  const free = records.filter((r) => !r.layout || !layouts.has(r.layout));
+  const isModel = (l: Layout) => l.name.toUpperCase() === Layout.modelLayoutName.toUpperCase();
+  const model = free.find((r) => r.name.toUpperCase() === '*MODEL_SPACE');
+  const paper = free
+    .map((r) => ({ r, m: PAPER_BLOCK.exec(r.name) }))
+    .filter((x): x is { r: BlockRecord; m: RegExpExecArray } => x.m !== null)
+    .sort((a, b) => (a.m[1] === '' ? -1 : Number(a.m[1])) - (b.m[1] === '' ? -1 : Number(b.m[1])))
+    .map((x) => x.r);
+  const modelTab = unlinked.find(isModel);
+  if (modelTab && model) modelTab.associatedBlock = model;
+  const sheets = unlinked.filter((l) => !isModel(l)).sort((a, b) => a.tabOrder - b.tabOrder);
+  for (const [i, l] of sheets.entries()) {
+    const r = paper[i];
+    if (r) l.associatedBlock = r;
+  }
+  return doc;
 }
 
 export function summarizeDocument(doc: CadDocument, format: CadFormat): ReadSummary {
