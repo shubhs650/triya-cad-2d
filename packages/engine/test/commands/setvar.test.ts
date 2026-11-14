@@ -19,13 +19,14 @@ import {
   type Clipboard,
   type DocumentInit,
   type HeaderValue,
+  type PromptBusOptions,
   type ViewHost,
   type ViewReply,
 } from '../../src/index';
-import { LAYER_WALLS, layer, sampleInit } from '../model/fixtures';
+import { LAYER_WALLS, PAPER_SPACE, layer, sampleInit } from '../model/fixtures';
 
 /** The app's side: the variables it keeps, which `sysvar` requests read and set. */
-function appHost(values: Record<string, number> = { ORTHOMODE: 0, OSMODE: 4133 }) {
+function appHost(values: Record<string, number | string> = { ORTHOMODE: 0, OSMODE: 4133 }) {
   const asked: { name: string; value?: number }[] = [];
   const view: ViewHost = {
     request: (r): Promise<ViewReply> => {
@@ -45,9 +46,18 @@ function withHeader(entries: [string, HeaderValue][], base: DocumentInit = sampl
   return { ...base, header: new Map([...(base.header ?? []), ...entries]) };
 }
 
-function setup(init: DocumentInit = sampleInit(), view?: ViewHost) {
+function setup(
+  init: DocumentInit = sampleInit(),
+  view?: ViewHost,
+  options: Partial<PromptBusOptions> = {},
+) {
   const model = DocumentModel.create(init);
-  const bus = new PromptBus({ model, registry: builtinCommands(), ...(view && { view }) });
+  const bus = new PromptBus({
+    model,
+    registry: builtinCommands(),
+    ...(view && { view }),
+    ...options,
+  });
   const log: string[] = [];
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);
@@ -277,6 +287,89 @@ describe('SETVAR', () => {
     expect(systemVariable(model, '$TEXTSIZE')).toBeUndefined();
     expect(systemVariable(model, 'ORTHOMODE')).toMatchObject({ store: 'app' });
     expect(systemVariable(model, 'LINE')).toBeUndefined();
+  });
+});
+
+// M2-59: the variables AutoCAD works out and nobody sets (AutoCAD 2024 Help, "System Variables":
+// CTAB, DATE, CDATE, VIEWSIZE, VIEWCTR, DWGNAME, DWGPREFIX, DWGTITLED, DBMOD), each read only.
+describe('computed variables', () => {
+  /** 14 November 2026, 14:37:33.12 local time. */
+  const clock = { now: () => new Date(2026, 10, 14, 14, 37, 33, 120) };
+  /** A canvas showing 40 × 20 units around (5, 2.5). */
+  const canvas: ViewHost = {
+    request: (r): Promise<ViewReply> =>
+      Promise.resolve(
+        r.op === 'get'
+          ? { ok: true, view: { center: { x: 5, y: 2.5 }, height: 20, width: 40, paper: false } }
+          : { ok: false, message: 'no' },
+      ),
+  };
+
+  it('tells the date and time, as a Julian date and as a calendar date', async () => {
+    const s = setup(sampleInit(), undefined, { clock });
+    // AutoCAD's Julian dates count whole days at midnight: 1 January 2020 is day 2458850.
+    await s.bus.script(['DATE']);
+    expect(s.log.at(-1)).toBe('DATE = 2461359.60941111 (read only)');
+    expect(s.bus.command).toBeUndefined();
+    // CDATE: YYYYMMDD.HHMMSS and hundredths.
+    await s.bus.script(['SETVAR', 'cdate']);
+    expect(s.log.at(-1)).toBe('CDATE = 20261114.14373312 (read only)');
+    expect(s.bus.undo.state.undoable).toBe(0);
+  });
+
+  it('names the tab shown', async () => {
+    const model = setup(sampleInit());
+    await model.bus.script(['CTAB']);
+    expect(model.log.at(-1)).toBe('CTAB = "Model" (read only)');
+    const paper = setup(sampleInit(), undefined, { space: () => PAPER_SPACE });
+    await paper.bus.script(['CTAB']);
+    expect(paper.log.at(-1)).toBe('CTAB = "Layout1" (read only)');
+  });
+
+  it('measures the view shown, and says when no canvas shows one', async () => {
+    const s = setup(withHeader([['$LUPREC', 2]]), canvas);
+    await s.bus.script(['VIEWSIZE']);
+    expect(s.log.at(-1)).toBe('VIEWSIZE = 20.00 (read only)');
+    await s.bus.script(['VIEWCTR']);
+    expect(s.log.at(-1)).toBe('VIEWCTR = 5.00,2.50,0.00 (read only)');
+    const bare = setup();
+    await bare.bus.script(['VIEWSIZE']);
+    expect(bare.log.at(-1)).toBe('There is no view to change.');
+  });
+
+  it('asks the app for the drawing’s file name and whether it has unsaved changes', async () => {
+    const app = appHost({ DWGNAME: 'plan.dxf', DWGPREFIX: '', DWGTITLED: 1, DBMOD: 1 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['DWGNAME']);
+    expect(s.log.at(-1)).toBe('DWGNAME = "plan.dxf" (read only)');
+    await s.bus.script(['DWGPREFIX']);
+    expect(s.log.at(-1)).toBe('DWGPREFIX = "" (read only)');
+    await s.bus.script(['DWGTITLED']);
+    expect(s.log.at(-1)).toBe('DWGTITLED = 1 (read only)');
+    await s.bus.script(['DBMOD']);
+    expect(s.log.at(-1)).toBe('DBMOD = 1 (read only)');
+    // Read, never set.
+    expect(app.asked.every((a) => a.value === undefined)).toBe(true);
+  });
+
+  it('are listed by SETVAR ?, those no host answers left out', async () => {
+    const s = setup(sampleInit(), canvas, { clock });
+    await s.bus.script(['SETVAR', '?', 'C*,DATE,VIEW*,DWG*']);
+    const listed = s.log.slice(
+      s.log.indexOf('Enter variable(s) to list <*>: C*,DATE,VIEW*,DWG*') + 1,
+    );
+    expect(listed).toEqual([
+      'CDATE             20261114.14373312 (read only)',
+      'CLAYER            "WALLS"',
+      'CTAB              "Model"           (read only)',
+      'DATE              2461359.60941111  (read only)',
+      // A value too long for its column still has a space before the note.
+      'VIEWCTR           5.0000,2.5000,0.0000 (read only)',
+      'VIEWSIZE          20.0000           (read only)',
+    ]);
+    const model = DocumentModel.create(sampleInit());
+    expect(systemVariable(model, 'ctab')).toMatchObject({ store: 'computed', readOnly: true });
+    expect(systemVariable(model, 'DWGNAME')).toMatchObject({ store: 'app', readOnly: true });
   });
 });
 

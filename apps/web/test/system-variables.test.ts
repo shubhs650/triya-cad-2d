@@ -1,10 +1,10 @@
 // M2-42: the system variables the app keeps, as SETVAR reads and sets them through the view
 // host: the status bar's drafting aids and the per-user settings are the same settings.
 import { describe, expect, it } from 'vitest';
-import { APP_VARIABLES, OSNAP } from '@triya/engine';
+import { APP_VARIABLES, DRAWING_VARIABLES, OSNAP } from '@triya/engine';
 import { answerView } from '../src/canvas/view-host';
 import { Drafting } from '../src/drafting';
-import { systemVariableReply } from '../src/system-variables';
+import { drawingVariableReply, systemVariableReply } from '../src/system-variables';
 
 describe('system variables the app keeps', () => {
   it('reads and sets every one SETVAR asks the app for', () => {
@@ -86,5 +86,34 @@ describe('system variables the app keeps', () => {
     );
     expect(reply).toEqual({ ok: true, value: 1 });
     expect(d.isOn('snap')).toBe(true);
+  });
+});
+
+describe('variables of the drawing the app answers (M2-59)', () => {
+  // AutoCAD 2024 Help: DWGNAME the drawing's file name, DWGPREFIX its folder, DWGTITLED 1 once
+  // the drawing has a name, DBMOD nonzero while it has changes no save holds.
+  const doc = { name: 'plan.dxf', edits: 3, savedEdits: 3 };
+
+  it('tells the file name, the folder a browser never reveals, and unsaved changes', () => {
+    expect(drawingVariableReply(doc, 'DWGNAME')).toEqual({ ok: true, value: 'plan.dxf' });
+    expect(drawingVariableReply(doc, 'DWGPREFIX')).toEqual({ ok: true, value: '' });
+    expect(drawingVariableReply(doc, 'DWGTITLED')).toEqual({ ok: true, value: 1 });
+    expect(drawingVariableReply(doc, 'DBMOD')).toEqual({ ok: true, value: 0 });
+    expect(drawingVariableReply({ ...doc, edits: 4 }, 'DBMOD')).toEqual({ ok: true, value: 1 });
+    // A drawing never saved under a name of its own.
+    expect(drawingVariableReply({ ...doc, name: '' }, 'DWGNAME')).toEqual({
+      ok: true,
+      value: 'Drawing1.dxf',
+    });
+    expect(drawingVariableReply({ ...doc, name: '' }, 'DWGTITLED')).toEqual({ ok: true, value: 0 });
+    expect(drawingVariableReply(doc, 'ORTHOMODE')).toBeUndefined();
+  });
+
+  it('answers every one the engine asks the app for that the drafting state does not keep', () => {
+    const d = new Drafting();
+    for (const v of DRAWING_VARIABLES) {
+      expect(drawingVariableReply(doc, v.name), v.name).toMatchObject({ ok: true });
+      expect(systemVariableReply(d, v.name), v.name).toMatchObject({ ok: false });
+    }
   });
 });

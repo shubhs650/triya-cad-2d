@@ -61,7 +61,7 @@ import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
 import { dynMode } from './dynamic-input';
 import { drafting } from './drafting';
-import { systemVariableReply } from './system-variables';
+import { drawingVariableReply, systemVariableReply } from './system-variables';
 import { snapMenu } from './snap-menu';
 import { AppClipboard, browserClipboardEnv, clipboardPicture } from './system-clipboard';
 import { SnapMenu } from './SnapMenu';
@@ -361,8 +361,9 @@ function viewContext(id: number): ViewContext {
     plot: (r) => plotScript(id, r),
     // Properties' Pattern name (M2-35 part 3), from the library the canvases draw with.
     hatchPattern: (name, placements) => hatchPatternReply(patterns.sources(), name, placements),
-    // SETVAR's variables the app keeps (M2-42).
-    sysvar: (name, value) => systemVariableReply(drafting, name, value),
+    // SETVAR's variables the app keeps (M2-42), and those of the drawing it tells (M2-59).
+    sysvar: (name, value) =>
+      (doc && drawingVariableReply(doc, name)) ?? systemVariableReply(drafting, name, value),
     clipboard: (content) => clipboardRequest(id, content),
     // ULAYERS (M2-56 part 1): the Underlay Layers dialog, waited for as VIEW waits for its own.
     underlayLayers: (r) =>
