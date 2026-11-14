@@ -17,7 +17,7 @@ import type {
   ViewReply,
   ViewState,
 } from '@triya/engine';
-import { REVCLOUDGRIPS } from '@triya/engine';
+import { PICKFIRST, REVCLOUDGRIPS } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CanvasController, type CanvasHooks, type CanvasMode } from './canvas/controller';
@@ -281,17 +281,25 @@ drafting.subscribe(() => {
 });
 
 /**
- * REVCLOUDGRIPS (M2-42), a per-user setting: each drawing's engine works out grips, so each is
- * told it when the drawing opens and whenever SETVAR or the stored settings change it.
+ * REVCLOUDGRIPS (M2-42) and PICKFIRST (M2-59), per-user settings each drawing's engine follows
+ * (its grips, its command line's noun-verb selection): each is told them when the drawing opens
+ * and whenever SETVAR or the stored settings change them.
  */
-let revcloudGrips = drafting.get().revcloudGrips;
-function tellRevcloudGrips(doc: number): void {
+let sessionVariables = {
+  revcloudGrips: drafting.get().revcloudGrips,
+  pickfirst: drafting.get().pickfirst,
+};
+function tellSessionVariables(doc: number): void {
+  const { revcloudGrips, pickfirst } = sessionVariables;
   void engines.edit(doc, { kind: 'sysvar', name: REVCLOUDGRIPS, value: revcloudGrips ? 1 : 0 });
+  void engines.edit(doc, { kind: 'sysvar', name: PICKFIRST, value: pickfirst ? 1 : 0 });
 }
 drafting.subscribe(() => {
-  if (drafting.get().revcloudGrips === revcloudGrips) return;
-  revcloudGrips = drafting.get().revcloudGrips;
-  for (const d of store.getSnapshot().docs) tellRevcloudGrips(d.id);
+  const { revcloudGrips, pickfirst } = drafting.get();
+  if (revcloudGrips === sessionVariables.revcloudGrips && pickfirst === sessionVariables.pickfirst)
+    return;
+  sessionVariables = { revcloudGrips, pickfirst };
+  for (const d of store.getSnapshot().docs) tellSessionVariables(d.id);
 });
 
 /**
@@ -1077,7 +1085,7 @@ async function open(
     const id = store.opened(file.name, opened, opened.modelSpace, saved, recovered?.edits);
     // The drawing's authoritative document goes to its engine worker (M1-67).
     engines.start(id, opened.init, recovered?.changes);
-    tellRevcloudGrips(id);
+    tellSessionVariables(id);
     // The Properties palette, docked, showed the drawing before its engine started (M2-21).
     if (dockedPalette.get() === 'properties' && store.getSnapshot().active === id)
       engines.command(id, { kind: 'properties', open: true });

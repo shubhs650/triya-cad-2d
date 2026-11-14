@@ -5,7 +5,13 @@
 // data" (PRD FR-F11). One scrolling modal <dialog>, so focus stays inside it and Esc closes it.
 import { useEffect, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { OSNAP, OSNAP_MODES } from '@triya/engine';
-import { drafting } from './drafting';
+import {
+  AUTOSNAP_MAGNET,
+  AUTOSNAP_MARKER,
+  AUTOSNAP_TIP,
+  AUTOSNAP_TRACK_TIP,
+  drafting,
+} from './drafting';
 import { dynMode } from './dynamic-input';
 import type { ClearReport } from './local-data';
 import {
@@ -463,8 +469,20 @@ function AutoColour(props: {
 }
 
 /**
+ * OPTIONS > Drafting's AutoSnap and AutoTrack settings, AUTOSNAP's bits but POLAR's and OTRACK's
+ * (the status bar's buttons), labelled as AutoCAD 2024's Options dialog labels them (M2-59).
+ */
+const AUTOSNAP_CHECKS = [
+  { bit: AUTOSNAP_MARKER, label: 'Marker' },
+  { bit: AUTOSNAP_MAGNET, label: 'Magnet' },
+  { bit: AUTOSNAP_TIP, label: 'Display AutoSnap tooltip' },
+  { bit: AUTOSNAP_TRACK_TIP, label: 'Display AutoTrack tooltip' },
+] as const;
+
+/**
  * DRAFTINGSETTINGS' object snap modes and polar increment, OPTIONS > Drafting's AutoSnap
- * marker and aperture sizes, and Dynamic Input. They act on the status bar's drafting aids,
+ * settings and marker and aperture sizes, OPTIONS > Selection's Noun/verb selection, and
+ * Dynamic Input. They act on the status bar's drafting aids,
  * which keep them between sessions (preferences.ts).
  */
 function DraftingSettings() {
@@ -531,6 +549,28 @@ function DraftingSettings() {
           <span className="range-value">{d.aperture}</span>
         </span>
       </div>
+      {AUTOSNAP_CHECKS.map(({ bit, label }) => (
+        <label key={bit} className="setting-check">
+          <input
+            type="checkbox"
+            checked={(d.autosnap & bit) !== 0}
+            onChange={(e) =>
+              drafting.configure({
+                autosnap: e.currentTarget.checked ? d.autosnap | bit : d.autosnap & ~bit,
+              })
+            }
+          />
+          {label}
+        </label>
+      ))}
+      <label className="setting-check">
+        <input
+          type="checkbox"
+          checked={d.pickfirst}
+          onChange={(e) => drafting.configure({ pickfirst: e.currentTarget.checked })}
+        />
+        Noun/verb selection (PICKFIRST)
+      </label>
       <label className="setting-check">
         <input
           type="checkbox"

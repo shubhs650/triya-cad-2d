@@ -4,6 +4,7 @@ import { describe, expect, it } from 'vitest';
 import { APP_VARIABLES, DRAWING_VARIABLES, OSNAP } from '@triya/engine';
 import { answerView } from '../src/canvas/view-host';
 import { Drafting } from '../src/drafting';
+import { DynMode } from '../src/dynamic-input';
 import { drawingVariableReply, systemVariableReply } from '../src/system-variables';
 
 describe('system variables the app keeps', () => {
@@ -71,6 +72,47 @@ describe('system variables the app keeps', () => {
     expect(systemVariableReply(d, 'QPLOCATION')).toEqual({ ok: true, value: 0 });
     systemVariableReply(d, 'QPLOCATION', 1);
     expect(d.get().qpLocation).toBe(1);
+  });
+
+  it('keep AUTOSNAP’s bits, POLAR and OTRACK being the status bar’s buttons (M2-59)', () => {
+    // AutoCAD 2024 Help, "AUTOSNAP": 1 marker, 2 SnapTip, 4 magnet, 8 polar tracking, 16
+    // object snap tracking, 32 tooltips for polar and object snap tracking; initially 63.
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'AUTOSNAP')).toEqual({ ok: true, value: 63 });
+    expect(systemVariableReply(d, 'AUTOSNAP', 1 | 4 | 16)).toEqual({ ok: true, value: 21 });
+    expect(d.isOn('polar')).toBe(false);
+    expect(d.isOn('otrack')).toBe(true);
+    expect(d.get().autosnap).toBe(1 | 4);
+    // F10 turns bit 8 back on; ORTHO on turns it off as POLAR's button does.
+    d.toggle('polar');
+    expect(systemVariableReply(d, 'AUTOSNAP')).toEqual({ ok: true, value: 29 });
+    systemVariableReply(d, 'ORTHOMODE', 1);
+    expect(systemVariableReply(d, 'AUTOSNAP')).toEqual({ ok: true, value: 21 });
+    // Polar tracking set on turns ORTHO off, as F10 does.
+    systemVariableReply(d, 'AUTOSNAP', 63);
+    expect(d.isOn('ortho')).toBe(false);
+    expect(d.isOn('polar')).toBe(true);
+  });
+
+  it('keep AUTOSNAPSIZE, DYNMODE and PICKFIRST (M2-59)', () => {
+    const d = new Drafting();
+    const dyn = new DynMode();
+    expect(systemVariableReply(d, 'AUTOSNAPSIZE', undefined, dyn)).toEqual({ ok: true, value: 5 });
+    systemVariableReply(d, 'AUTOSNAPSIZE', 12, dyn);
+    expect(d.get().markerSize).toBe(12);
+    // DYNMODE: 3, pointer and dimensional input, while F12 has it on; −3 while off. Triya's
+    // tooltip is both at once, so 1 and 2 turn it on as 3 does, and 0 turns it off.
+    expect(systemVariableReply(d, 'DYNMODE', undefined, dyn)).toEqual({ ok: true, value: 3 });
+    expect(systemVariableReply(d, 'DYNMODE', -3, dyn)).toEqual({ ok: true, value: -3 });
+    expect(dyn.get()).toBe(false);
+    expect(systemVariableReply(d, 'DYNMODE', 1, dyn)).toEqual({ ok: true, value: 3 });
+    expect(dyn.get()).toBe(true);
+    expect(systemVariableReply(d, 'DYNMODE', 0, dyn)).toEqual({ ok: true, value: -3 });
+    expect(dyn.get()).toBe(false);
+    // PICKFIRST: AutoCAD's initial 1.
+    expect(systemVariableReply(d, 'PICKFIRST', undefined, dyn)).toEqual({ ok: true, value: 1 });
+    systemVariableReply(d, 'PICKFIRST', 0, dyn);
+    expect(d.get().pickfirst).toBe(false);
   });
 
   it('are answered by the view host, refused where the app keeps none', () => {

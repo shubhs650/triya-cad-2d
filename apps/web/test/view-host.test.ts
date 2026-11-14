@@ -359,12 +359,15 @@ describe('answerView', () => {
     expect(t.calls).toEqual(['outlines 1', 'outlines 1']);
   });
 
-  it('answers the view as VIEWSIZE and width, and whether paper space shows', () => {
+  it('answers the view as VIEWSIZE and width, whether paper space shows, and SCREENSIZE', () => {
     const t = new Target(true);
     expect(answerView({ op: 'get' }, context(t).ctx)).toEqual({
       ok: true,
       view: { center: { x: 10, y: 20 }, height: 100, width: 200, paper: true },
+      // The canvas in CSS pixels (M2-59): only `get` measures it.
+      screen: { width: 800, height: 400 },
     });
+    expect(answerView({ op: 'extents' }, context(t).ctx)).not.toHaveProperty('screen');
   });
 
   it('refuses everything without a sized canvas', () => {
@@ -476,7 +479,11 @@ describe('answerView', () => {
     });
     expect(now(answerView({ op: 'restore', name: 'ISO' }, ctx)).ok).toBe(false);
     expect(t.calls).toEqual([]);
-    expect(now(answerView({ op: 'get' }, ctx))).toEqual({ ok: true, view: stateOf(t) });
+    expect(now(answerView({ op: 'get' }, ctx))).toEqual({
+      ok: true,
+      view: stateOf(t),
+      screen: t.size,
+    });
   });
 });
 
