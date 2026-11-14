@@ -1,6 +1,9 @@
-// VIEW and -VIEW (M2-02 part 2): the command-line form of named views, for the space shown.
-// AutoCAD's VIEW opens the View Manager; until that dialog lands both run the -VIEW prompts.
-// Delete, Restore, Save and Window are the 2D ones (Orthographic and sEttings are 3D and UCS).
+// VIEW and -VIEW (M2-02 part 2): named views, for the space shown. VIEW (V) opens the View
+// Manager (M2-47 part 2), the app's dialog, and waits for it; its New View dialog's "Define
+// window" hides both and hands back to VIEW, which asks "Specify first corner:" and "Specify
+// opposite corner:" and shows them again with that window, as PLOT's Window< does (Esc at a
+// corner shows them again as they were). -VIEW runs the command-line prompts: Delete, Restore,
+// Save and Window are the 2D ones (Orthographic and sEttings are 3D and UCS).
 // Save and Window write the view into the drawing's VIEW table (M2-29), an undo step the save
 // keeps, as AutoCAD's do; Delete removes views from it.
 //   Enter an option [?/Delete/Restore/Save/Window]:
@@ -12,6 +15,7 @@ import type { Prompt, PromptAnswer } from '../prompt';
 import { saveNamedView, validViewName, type ViewExtent } from '../../edit/named-view';
 import { modelSpaceOf } from '../bus';
 import { viewRequest } from './zoom';
+import { windowDialog } from '../file';
 
 /** A `?` list pattern: `*` any run, `?` one character, case ignored; commas separate several. */
 export function viewNameMatches(name: string, patterns: string): boolean {
@@ -84,6 +88,7 @@ export function viewCommand(): CommandDef {
     name: 'VIEW',
     dashVariant: true,
     async *run(ctx) {
+      if (!ctx.dash) return yield* windowDialog(ctx, 'views');
       const a = yield ctx.prompt.keyword({
         message: 'Enter an option',
         options: ['?', 'Delete', 'Restore', 'Save', 'Window'],

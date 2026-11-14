@@ -69,12 +69,13 @@ function previewCommand(): CommandDef {
 }
 
 /**
- * A dialog of the app's that may ask for a window (PLOT's Window<, EXPORTPDF's Export Window): the
- * dialog, then the window's corners whenever it asks, then the dialog again.
+ * A dialog of the app's that may ask for a window (PLOT's Window<, EXPORTPDF's Export Window, the
+ * New View dialog's Define window): the dialog, then the window's corners whenever it asks, then
+ * the dialog again.
  */
-async function* windowDialog(
+export async function* windowDialog(
   ctx: CommandContext,
-  action: 'plot' | 'export' | 'exportpdf',
+  action: 'plot' | 'export' | 'exportpdf' | 'views',
 ): CommandGenerator {
   let window: { a: Vec2; b: Vec2 } | undefined;
   let resume = false;

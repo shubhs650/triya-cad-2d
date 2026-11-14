@@ -68,6 +68,14 @@ export interface NamedViewEdit {
 }
 
 /**
+ * The View Manager's Delete and its Name row (M2-47 part 2): the named view `name` (case ignored,
+ * as AutoCAD compares table names) removed, or renamed `newName`, one VIEW undo step each.
+ */
+export type ViewTableEdit =
+  | { readonly kind: 'view-delete'; readonly name: string }
+  | { readonly kind: 'view-rename'; readonly name: string; readonly newName: string };
+
+/**
  * A per-user system variable the app keeps (M2-42) that the drawing's grips follow:
  * REVCLOUDGRIPS. The app sets it on every drawing it opens and whenever SETVAR changes it. Not an
  * undoable edit, and never saved: AutoCAD keeps it in the registry, not in the drawing.
@@ -79,7 +87,7 @@ export interface SessionVariableEdit {
 }
 
 export type EngineEdit =
-  LayerStateEdit | LayoutEdit | XrefLoadEdit | NamedViewEdit | SessionVariableEdit;
+  LayerStateEdit | LayoutEdit | XrefLoadEdit | NamedViewEdit | ViewTableEdit | SessionVariableEdit;
 
 /**
  * Characters AutoCAD refuses in a layout name (LAYOUT Rename: "Invalid layout name"), and its
@@ -348,6 +356,7 @@ export class EngineSession {
   edit(e: EngineEdit): EditResult {
     if (e.kind === 'xref-load') return this.#xrefLoad(e);
     if (e.kind === 'view') return this.#viewEdit(e);
+    if (e.kind === 'view-delete' || e.kind === 'view-rename') return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
     return e.kind === 'layout' ? this.#layoutEdit(e) : this.#layerEdit(e);
   }
@@ -357,6 +366,29 @@ export class EngineSession {
     if (!validViewName(name)) return { ok: false, message: 'Invalid view name.' };
     const b = new ChangeSetBuilder(this.model);
     saveNamedView(b, this.model, name, e.view);
+    const change = b.build();
+    this.model.apply(change);
+    this.#step('VIEW', change);
+    return { ok: true, change };
+  }
+
+  #viewTableEdit(e: ViewTableEdit): EditResult {
+    const views = [...this.model.tables.views.values()];
+    const named = (n: string) => views.find((v) => v.name.toUpperCase() === n.trim().toUpperCase());
+    const view = named(e.name);
+    if (!view) return { ok: false, message: `Cannot find view "${e.name.trim()}".` };
+    const b = new ChangeSetBuilder(this.model);
+    if (e.kind === 'view-delete') b.removeTableRecord('views', view.handle);
+    else {
+      const name = e.newName.trim();
+      if (!validViewName(name)) return { ok: false, message: 'Invalid view name.' };
+      const other = named(name);
+      if (other && other.handle !== view.handle) {
+        return { ok: false, message: `A view named "${other.name}" already exists.` };
+      }
+      if (name === view.name) return { ok: true, change: {} };
+      b.updateTableRecord('views', view.handle, { name });
+    }
     const change = b.build();
     this.model.apply(change);
     this.#step('VIEW', change);
