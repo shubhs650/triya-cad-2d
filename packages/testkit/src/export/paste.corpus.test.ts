@@ -53,6 +53,7 @@ import { describe, expect, it } from 'vitest';
 import { loadManifest, readableFiles } from '../corpus/manifest.ts';
 import { withPinnedClock } from '../roundtrip/clock.ts';
 import { writeAuditSave } from '../dxf-audit/saves.ts';
+import { dimensionBlocksForSave } from '../dims/save-blocks.ts';
 
 const corpusDir = fileURLToPath(new URL('../../../../corpus/', import.meta.url));
 const manifest = loadManifest(`${corpusDir}corpus.json`);
@@ -88,7 +89,7 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
 
   it.each(readable.map((f) => [f.path] as const))(
     '%s pastes into an AC1032 drawing that saves with everything pasted',
-    (path) => {
+    async (path) => {
       const source = open(new Uint8Array(readFileSync(`${corpusDir}${path}`)));
       const space = modelSpace(source);
       expect(space, path).toBeDefined();
@@ -113,7 +114,11 @@ describe('Paste from every public corpus file into another drawing (M2-14 part 2
       pastedTotal += report.ids.length;
       expect(report.ids.length, path).toBe(clip.entities.length);
 
-      const out = withPinnedClock(() => saveSession(targetBytes, [structuredClone(cs)]));
+      // As the app's save: pasted dimensions without a block (ezdxf's duplicate_handles.dxf,
+      // M2-49) are given one in the saved file only.
+      const blocks = await dimensionBlocksForSave(target);
+      const log = blocks ? [structuredClone(cs), blocks] : [structuredClone(cs)];
+      const out = withPinnedClock(() => saveSession(targetBytes, log));
       writeAuditSave(path, 'paste', () => out);
       const back = DocumentModel.create(documentInit(readCadDocument(out)));
 

@@ -411,7 +411,7 @@ export function planPurge(
           `the file states no handle for this ${rules.what} (acad-ts numbers it on reading, and the records after it would be renumbered)`,
         );
       if (acad && table === 'blockRecords')
-        out.push(...blockProblems(acad as BlockRecord, b, model, removedEntities));
+        out.push(...blockProblems(acad as BlockRecord, b, base, model, removedEntities));
       if (out.length > 0) {
         problems.push(...out.map((p) => `${rules.what} ${b.name} (${b.handle}): ${p}`));
         continue;
@@ -527,12 +527,17 @@ export function planPurge(
 function blockProblems(
   acad: BlockRecord,
   b: { readonly name: string; readonly flags?: number; readonly layout?: unknown },
+  base: DocumentInit,
   model: DocumentModel,
   removedEntities: readonly AcadEntity[],
 ): string[] {
-  // A layout's block goes with its layout (LAYOUT Delete), which layouts.ts checks.
+  // A layout's block goes with its layout (LAYOUT Delete), which layouts.ts checks. Only a layout
+  // the drawing mapped can be deleted: one whose own block link is broken (ezdxf's
+  // layout_broken_links.dxf) maps no layout, yet the block still names it (M2-49).
   const layoutGoes =
-    typeof b.layout === 'string' && !model.layouts.some((l) => l.handle === b.layout);
+    typeof b.layout === 'string' &&
+    (base.layouts ?? []).some((l) => l.handle === b.layout) &&
+    !model.layouts.some((l) => l.handle === b.layout);
   if (!layoutGoes && (b.layout !== undefined || LAYOUT_BLOCK.test(b.name)))
     return ["a layout's block goes with its layout (LAYOUT Delete)"];
   if (((b.flags ?? 0) & XREF_BLOCK) !== 0) return ['an xref goes with XREF Detach (M1-21)'];

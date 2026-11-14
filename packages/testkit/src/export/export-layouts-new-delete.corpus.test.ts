@@ -6,7 +6,7 @@
 // A file before R2000, which introduced layouts, refuses both.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { ACadVersion, CadDictionary, type CadObject } from '@node-projects/acad-ts';
+import { ACadVersion, CadDictionary, type CadDocument, type CadObject } from '@node-projects/acad-ts';
 import { ChangeSetBuilder, DocumentModel, type Layout, type LayoutPlot } from '@triya/engine';
 import {
   documentInit,
@@ -98,9 +98,16 @@ describe('TriyaToAcad LAYOUT New and Delete on the public corpus', () => {
         expect(init.entities!.find((e) => e.handle === line.handle)?.geom, f.path).toEqual(
           line.geom,
         );
-        const dict = reopened.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadLayout)!;
-        expect([...dict.entryNames].sort(), f.path).toEqual(
-          model.layouts.map((l) => l.name).sort(),
+        // A LAYOUT whose block record is missing maps no layout (ezdxf's
+        // layout_missing_block_record.dxf, M2-49): kept as read, its entry stays.
+        const layoutsOf = (d: CadDocument) =>
+          d.rootDictionary!.getEntry<CadDictionary>(CadDictionary.acadLayout)!;
+        const entries = (d: CadDocument) => [...layoutsOf(d).entryNames];
+        const dict = layoutsOf(reopened);
+        const mapped = new Set(documentInit(original).layouts!.map((l) => l.name));
+        const unmapped = entries(original).filter((n) => !mapped.has(n));
+        expect(entries(reopened).sort(), f.path).toEqual(
+          [...model.layouts.map((l) => l.name), ...unmapped].sort(),
         );
         deletedLayouts += deleted.length;
         madeLayouts++;

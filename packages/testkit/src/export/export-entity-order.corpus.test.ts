@@ -59,7 +59,9 @@ describe('TriyaToAcad entity moves and order on the public corpus', () => {
           ? inMs.find((e) => PLAIN.has(e.type) && !e.reactors?.length && !e.extDict)
           : undefined;
         const last = inMs.find((e) => e !== moved && e.type !== 'VIEWPORT');
-        if (!moved && !last) return;
+        // Nothing changes where no sheet takes an entity and the one to reorder is already last
+        // (a model space of one entity, as ezdxf's R12_with_trash_beyond_EOF.dxf, M2-49).
+        if (!moved && (!last || inMs.at(-1) === last)) return;
         const b = new ChangeSetBuilder(model);
         if (moved) b.moveEntity(moved.id, ps!);
         if (last) b.moveEntity(last.id, ms);

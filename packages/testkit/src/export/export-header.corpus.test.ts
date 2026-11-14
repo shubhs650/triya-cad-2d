@@ -40,6 +40,8 @@ const EXPECTED_REFUSAL =
 /** Made up on every read when the file lacks them; a save never writes them (export/header.ts). */
 const VOLATILE = /^\$(TDCREATE|TDUCREATE|TDUPDATE|TDUUPDATE|VERSIONGUID|FINGERPRINTGUID)$/;
 
+const isReal = (code: number): boolean => code >= 40 && code < 60;
+
 /** A different value of the same kind for every variable the drawing states. */
 function changes(model: DocumentModel): Map<string, HeaderValue> {
   const out = new Map<string, HeaderValue>();
@@ -62,7 +64,10 @@ function changes(model: DocumentModel): Map<string, HeaderValue> {
     else if (variable.isName || name === '$CMLSTYLE') next = undefined;
     // AutoCAD takes 1 to 30 steps a second.
     else if (name === '$STEPSPERSEC') next = v === 1 ? 2 : 1;
-    else if (typeof v === 'number') next = Number.isInteger(v) ? (v === 0 ? 1 : 0) : v + 0.5;
+    // A real (DXF 40–59) moves by a half even when whole: 0 is no value of $DIMTXT and its kin
+    // (duplicate_handles.dxf states DIMTXT 1, M2-49). Integers toggle between 0 and 1.
+    else if (typeof v === 'number')
+      next = Number.isInteger(v) && !isReal(variable.dxfCodes[0]!) ? (v === 0 ? 1 : 0) : v + 0.5;
     else if (typeof v === 'boolean') next = !v;
     // A handle variable ($CMATERIAL) has to name an object of its kind; leave it.
     else if (typeof v === 'string')

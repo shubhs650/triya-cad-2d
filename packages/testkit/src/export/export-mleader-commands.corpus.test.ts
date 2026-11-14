@@ -291,9 +291,12 @@ describe('MLEADER on the public corpus', () => {
 
   it('saved multileaders on every readable file with a text style, block content on most', () => {
     expect(proxied).toEqual(PROXY_STYLE);
+    // Files with no STYLE table; the two without a HEADER joined with M2-49.
     expect(textless).toEqual([
       'public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1006.dxf',
+      'public/third-party/ezdxf/examples_dxf/Minimal_DXF_AC1009.dxf',
       'public/third-party/ezdxf/integration_tests/AC1003_LINE_Example.dxf',
+      'public/third-party/ezdxf/integration_tests/R12_with_trash_beyond_EOF.dxf',
     ]);
     expect(saved + textless.length).toBe(readable.length);
     expect(blocks).toBeGreaterThan(saved / 2);
