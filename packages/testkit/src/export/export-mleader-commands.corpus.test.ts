@@ -11,7 +11,8 @@
 // measures), and the read-back text keeps its style, height, attachment and alignment. M2-35
 // part 12 sets its Leaders rows (colour, lineweight, arrowhead size, landing distance, and a
 // linetype and arrowhead block where the drawing has one) and makes the next, a spline without a
-// landing, straight with one; the values and their override flags read back. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
+// landing, straight with one; the values and their override flags read back. M2-35 part 14 turns
+// the first one's text, sets its line spacing and turns its background mask and frame on. The drawing is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
 // each multileader draws the same parts (`multiLeaderParts`: lines, landings, arrowheads, text,
 // block) as before the save. With TRIYA_DXF_AUDIT_DIR set the save also goes to the ezdxf audit
 // as the file's `mleader` save.
@@ -204,8 +205,21 @@ describe('MLEADER on the public corpus', () => {
       palette({ key: 'landingDistance', value: 5 });
       if (dashed) palette({ key: 'leaderLinetype', value: dashed.value });
       if (arrow) palette({ key: 'arrowhead', value: arrow.value });
+      // M2-35 part 14: the rest of its Text rows.
+      palette({ key: 'textRotation', value: Math.PI / 12 });
+      palette({ key: 'lineSpacing', value: '1.5' });
+      palette({ key: 'lineSpacingStyle', value: '2' });
+      palette({ key: 'backgroundMask', value: 'yes' });
+      palette({ key: 'textFrame', value: 'yes' });
       const edited = model.entity(firstLeader.id)!.geom as MultiLeaderGeometry;
       expect(edited.text).toMatchObject({ attachment: 3, height: 7, style: lastStyle });
+      expect(edited.text).toMatchObject({
+        rotation: Math.PI / 12,
+        lineSpacing: 1.5,
+        lineSpacingStyle: 2,
+        mask: { scale: 1.5 },
+      });
+      expect(edited.textFrame).toBe(true);
       expect(edited).toMatchObject({ lineweight: 35, arrowheadSize: 3.5, doglegLength: 5 });
       const added = [...model.entities()].filter(
         (e) => !before.has(e.id) && e.geom.kind === 'MULTILEADER',
@@ -263,6 +277,14 @@ describe('MLEADER on the public corpus', () => {
       const firstBack = back.entityByHandle(firstLeader.handle)!.geom as MultiLeaderGeometry;
       expect(firstBack.text).toMatchObject({ attachment: 3, height: 7, style: lastStyle });
       expect(firstBack.textAlignment).toBe(2);
+      expect(firstBack.text?.rotation).toBeCloseTo(Math.PI / 12, 12);
+      expect(firstBack.text).toMatchObject({
+        lineSpacing: 1.5,
+        lineSpacingStyle: 2,
+        mask: { scale: 1.5 },
+      });
+      expect(firstBack.text?.mask?.color).toBeUndefined();
+      expect(firstBack.textFrame).toBe(true);
       expect(firstBack.overrideFlags).toBe(edited.overrideFlags);
       expect(firstBack).toMatchObject({
         lineColor: { kind: 'aci', index: 1 },
