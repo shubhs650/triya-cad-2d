@@ -99,9 +99,17 @@ describe('formatAngle', () => {
     expect(formatAngle(value, units({ aunits, auprec, unitmode }))).toBe(text);
   });
 
-  it.each([0, 1, 2, 3])('AUNITS %d reads back as it is shown', (aunits) => {
-    for (const d of [0, 12.5, 45, 90.25, 181, 300.75]) {
+  it.each([0, 1, 2, 3, 4])('AUNITS %d reads back as it is shown', (aunits) => {
+    for (const d of [0, 12.5, 45, 90, 90.25, 181, 270, 300.75]) {
       const text = formatAngle(deg(d), units({ aunits, auprec: 4 }));
+      expect(parseAngleValue(text)! * (180 / Math.PI)).toBeCloseTo(d, 1);
+    }
+  });
+
+  // M2-35 part 18: a bearing reads back with or without UNITMODE 1's spaces.
+  it('a bearing reads back under UNITMODE 1', () => {
+    for (const d of [30, 120.5, 200, 330]) {
+      const text = formatAngle(deg(d), units({ aunits: 4, auprec: 4, unitmode: 1 }));
       expect(parseAngleValue(text)! * (180 / Math.PI)).toBeCloseTo(d, 1);
     }
   });

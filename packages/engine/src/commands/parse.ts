@@ -114,18 +114,54 @@ export const DEFAULT_ANGLES: AngleConvention = { base: 0, clockwise: false };
 
 const DMS = /^([+-]?)(\d+(?:\.\d*)?)d(?:(\d+(?:\.\d*)?)')?(?:(\d+(?:\.\d*)?)")?$/i;
 
+/** Degrees typed as degrees/minutes/seconds (`45d30'15"`), or undefined. */
+function dmsDegrees(text: string): number | undefined {
+  const dms = DMS.exec(text);
+  if (!dms) return undefined;
+  const deg = Number(dms[2]) + Number(dms[3] ?? 0) / 60 + Number(dms[4] ?? 0) / 3600;
+  return dms[1] === '-' ? -deg : deg;
+}
+
+const BEARING = /^([ns])\s*(\d.*?)\s*([ew])$/i;
+const CARDINAL: Readonly<Record<string, number>> = { e: 0, n: 90, w: 180, s: 270 };
+
+/**
+ * A surveyor's bearing as a world direction (radians, counter-clockwise from +X), or undefined
+ * (M2-35 part 18; AutoCAD 2024 Help, "UNITS (Command)", Surveyor's Units): N or S, the angle
+ * from that axis, 0 to 90 degrees (`45d30'`, or decimal degrees `45.5`), then E or W
+ * (`N 45d30' E`, `N45d30'E`), or a cardinal direction alone (`N`, `E`, `S`, `W`), letters in
+ * either case. It is what `formatAngle` writes for AUNITS 4, so a default shown as a bearing
+ * reads back. A bearing names a direction from north, so ANGBASE and ANGDIR do not turn it:
+ * Help is silent on them for bearings, and N 45d E meaning north-east is what a drafter (and
+ * a surveyor's plat) expects. Like the other angle forms it is read whatever AUNITS says.
+ */
+export function parseBearing(text: string): number | undefined {
+  const t = text.trim();
+  const cardinal = CARDINAL[t.toLowerCase()];
+  if (cardinal !== undefined) return (cardinal * Math.PI) / 180;
+  const m = BEARING.exec(t);
+  if (!m) return undefined;
+  const a = m[2]!;
+  const deg = dmsDegrees(a) ?? (/^\d+(?:\.\d*)?$/.test(a) ? Number(a) : undefined);
+  if (deg === undefined || deg < 0 || deg > 90) return undefined;
+  const north = m[1]!.toLowerCase() === 'n';
+  const east = m[3]!.toLowerCase() === 'e';
+  const direction = north ? (east ? 90 - deg : 90 + deg) : east ? 270 + deg : 270 - deg;
+  return (direction * Math.PI) / 180;
+}
+
 /**
  * A typed angle as the drafter means it, in radians before ANGBASE and ANGDIR: decimal degrees
  * (an expression), degrees/minutes/seconds (`45d30'15"`), radians (`1.2r`) or grads (`50g`),
- * which AutoCAD accepts whatever AUNITS says.
+ * which AutoCAD accepts whatever AUNITS says; or a surveyor's bearing (`parseBearing`), which
+ * is already a direction.
  */
 export function parseAngleValue(text: string): number | undefined {
   const t = text.trim();
-  const dms = DMS.exec(t);
-  if (dms) {
-    const deg = Number(dms[2]) + Number(dms[3] ?? 0) / 60 + Number(dms[4] ?? 0) / 3600;
-    return ((dms[1] === '-' ? -deg : deg) * Math.PI) / 180;
-  }
+  const dms = dmsDegrees(t);
+  if (dms !== undefined) return (dms * Math.PI) / 180;
+  const bearing = parseBearing(t);
+  if (bearing !== undefined) return bearing;
   const unit = /^(.*\d\.?)([rg])$/i.exec(t);
   if (unit) {
     const v = parseNumber(unit[1]!);
@@ -141,11 +177,13 @@ export function worldAngle(typed: number, angles: AngleConvention): number {
   return angles.base + (angles.clockwise ? -typed : typed);
 }
 
-/** A typed angle in world radians, or undefined. */
+/** A typed angle in world radians, or undefined. A bearing is a world direction already. */
 export function parseAngle(
   text: string,
   angles: AngleConvention = DEFAULT_ANGLES,
 ): number | undefined {
+  const bearing = parseBearing(text);
+  if (bearing !== undefined) return bearing;
   const a = parseAngleValue(text);
   return a === undefined ? undefined : worldAngle(a, angles);
 }

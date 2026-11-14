@@ -5,6 +5,7 @@
 // whole as the status bar's coordinates), angles by AUNITS/AUPREC without a degree sign for
 // decimal degrees, areas and plain numbers with LUPREC decimal places.
 import { formatAngle, formatLinear } from '@triya/dims';
+import { formatAngle as angtos, DECIMAL_UNITS } from '@triya/engine';
 import type { PropertyRow, PropertySheet, PropertyUnits } from '@triya/engine';
 
 export const VARIES = '*VARIES*';
@@ -19,6 +20,8 @@ export function formatDistance(v: number, u: PropertyUnits): string {
 }
 
 export function formatAngleValue(v: number, u: PropertyUnits): string {
+  // Surveyor's units: a bearing, as the command line writes one (ANGTOS, M2-35 part 18).
+  if (u.aunits === 4) return angtos(v, { ...DECIMAL_UNITS, aunits: 4, auprec: places(u.auprec) });
   const text = formatAngle(v, { DIMAUNIT: u.aunits, DIMADEC: places(u.auprec) });
   // Decimal degrees show bare; degrees/minutes/seconds as AutoCAD types them (45d30'0").
   return u.aunits === 1 ? text.replace('%%d', 'd') : text.replace('%%d', '');
@@ -48,14 +51,11 @@ export function valueText(row: PropertyRow, u: PropertyUnits): string {
 
 /**
  * What a typed field starts with: the shown value, which the engine reads back in the drawing's
- * units (feet and inches and fractions too, M2-35 part 7), except a surveyor's angle, which
- * starts in decimal degrees; a value that varies starts empty.
+ * units (feet and inches and fractions, M2-35 part 7; bearings, part 18); a value that varies
+ * starts empty.
  */
 export function editText(row: PropertyRow, u: PropertyUnits): string {
   if (row.varies || row.value === undefined) return '';
-  if (row.kind === 'angle' && typeof row.value === 'number' && u.aunits === 4) {
-    return String(Number(((row.value * 180) / Math.PI).toPrecision(12)));
-  }
   return valueText(row, u);
 }
 
