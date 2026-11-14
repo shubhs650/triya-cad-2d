@@ -77,8 +77,16 @@ export interface PdfPagesOptions {
 /** One canvas's link to the pages: it asks with `request` and is answered through `deliver`. */
 export interface UnderlayClient {
   request(r: UnderlayRequest): void;
+  /**
+   * The page size (inches, as displayed) of each of the canvas's definitions whose file is
+   * supplied and readable, read from the file with nothing drawn (M2-68): a plot's extents take
+   * the pages in whatever the screen has drawn so far.
+   */
+  pageSizes(): Promise<ReadonlyMap<string, { readonly width: number; readonly height: number }>>;
   dispose(): void;
 }
+
+type PageSize = { readonly width: number; readonly height: number };
 
 /** A page drawn, under its request's `underlayKey` (the definition, with any layers off). */
 type Deliver = (page: string, raster: UnderlayRaster | undefined) => void;
@@ -245,11 +253,10 @@ export class PdfPages {
       typeof definitions === 'function'
         ? undefined
         : new Map(definitions.map((d) => [d.handle, d]));
+    const all = (): readonly PdfDefinition[] =>
+      typeof definitions === 'function' ? definitions() : definitions;
     const client: Client = {
-      definition: (h) =>
-        fixed
-          ? fixed.get(h)
-          : (definitions as () => readonly PdfDefinition[])().find((d) => d.handle === h),
+      definition: (h) => (fixed ? fixed.get(h) : all().find((d) => d.handle === h)),
       deliver,
       latest: new Map(),
       deliverSnap,
@@ -261,8 +268,27 @@ export class PdfPages {
         client.latest.set(underlayKey(r.definition, r.layersOff), r);
         this.#serve(client, r);
       },
+      pageSizes: async () => {
+        const sizes = await Promise.all(
+          all().map(async (d) => [d.handle, await this.#pageSize(d)] as const),
+        );
+        return new Map(sizes.filter((s): s is [string, PageSize] => s[1] !== undefined));
+      },
       dispose: () => this.#clients.delete(client),
     };
+  }
+
+  /** A definition's page size from its supplied file; undefined without it or unreadable. */
+  async #pageSize(d: PdfDefinition): Promise<PageSize | undefined> {
+    const file = this.#files.get(fileKey(d.fileName));
+    if (!file) return undefined;
+    try {
+      file.opened ??= this.#open(file.bytes);
+      const pdf = await file.opened;
+      return await pdf.pageSize(pageNumber(d.page, pdf.pageCount));
+    } catch {
+      return undefined;
+    }
   }
 
   #serve(client: Client, r: UnderlayRequest): void {

@@ -166,6 +166,11 @@ export class RenderSession {
   readonly #underlays = new Map<string, UnderlayRaster>();
   /** Each PDFDEFINITION's page size, from any raster of it: what extents need. */
   readonly #underlayPages = new Map<Handle, UnderlayRaster['page']>();
+  /**
+   * Each PDFDEFINITION's page size as the app read it from the PDF (M2-68), before or without
+   * any raster of it: a plot's extents must not wait on what the screen has drawn.
+   */
+  readonly #underlaySizes = new Map<Handle, UnderlayRaster['page']>();
   /** PDF underlay pages' vector geometry by PDFDEFINITION handle, for osnap (M2-22). */
   readonly #underlaySnaps = new Map<Handle, UnderlaySnapPage>();
   readonly #surface: Surface;
@@ -208,7 +213,7 @@ export class RenderSession {
       measureText: textMeasure(this.#text),
       dimensionParts,
       // An unclipped underlay shows its whole page, whose size only its PDF gives (M1-20).
-      underlayPage: (h) => this.#underlayPages.get(h),
+      underlayPage: (h) => this.#underlayPage(h),
     });
     this.renderer = new Canvas2DRenderer({
       model: this.model,
@@ -356,7 +361,7 @@ export class RenderSession {
   setUnderlay(page: string, raster: UnderlayRaster | undefined): void {
     // Keyed by `underlayKey`: a page with layers turned off has rasters of its own (M2-38).
     const definition = underlayKeyDefinition(page);
-    const before = this.#underlayPages.get(definition);
+    const before = this.#underlayPage(definition);
     if (raster) this.#underlays.set(page, raster);
     else this.#underlays.delete(page);
     // Every raster of a page states its size; only a new size moves the extents.
@@ -366,9 +371,33 @@ export class RenderSession {
         if (underlayKeyDefinition(k) === definition) after = r.page;
     if (after) this.#underlayPages.set(definition, after);
     else this.#underlayPages.delete(definition);
+    this.#reboundIfMoved(before, this.#underlayPage(definition));
+    this.renderer.invalidate();
+  }
+
+  /**
+   * A PDFDEFINITION's page size as the app read it from the PDF, or undefined to forget it (M2-68):
+   * the extents take in an unclipped underlay's page with no raster of it drawn.
+   */
+  setUnderlayPage(definition: Handle, page: UnderlayRaster['page'] | undefined): void {
+    const before = this.#underlayPage(definition);
+    if (page) this.#underlaySizes.set(definition, page);
+    else this.#underlaySizes.delete(definition);
+    this.#reboundIfMoved(before, this.#underlayPage(definition));
+  }
+
+  /** A definition's page size: from a raster of it, else as read from its PDF. */
+  #underlayPage(definition: Handle): UnderlayRaster['page'] | undefined {
+    return this.#underlayPages.get(definition) ?? this.#underlaySizes.get(definition);
+  }
+
+  /** Only a new page size moves the extents. */
+  #reboundIfMoved(
+    before: UnderlayRaster['page'] | undefined,
+    after: UnderlayRaster['page'] | undefined,
+  ): void {
     if (before?.width !== after?.width || before?.height !== after?.height)
       this.index.reboundUnderlays();
-    this.renderer.invalidate();
   }
 
   /**
