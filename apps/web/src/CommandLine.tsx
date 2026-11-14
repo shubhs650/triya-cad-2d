@@ -81,8 +81,12 @@ export function CommandLine({
   const prompt = state?.prompt;
   const suggestions = prompt === undefined ? completions(registry, text).slice(0, 8) : [];
 
-  /** Keys typed ahead of the prompt that reads them (M2-47 part 3, `holdsKey`). */
+  /** Keys typed ahead of the prompt that reads them (M2-47 part 3, M2-71, `holdsKey`). */
   const held = useRef<string[]>([]);
+  /** Dynamic Input's replay of held keys into its fields (M2-71). */
+  const dynAhead = useRef<((keys: readonly string[]) => readonly string[] | undefined) | undefined>(
+    undefined,
+  );
   const textRef = useRef(text);
   textRef.current = text;
 
@@ -95,13 +99,15 @@ export function CommandLine({
     setText('');
     setRecall(undefined);
   };
-  const cancel = () => {
-    held.current = [];
+  /** Esc: drops the keys held, unless it was itself held behind them (`after`, M2-71). */
+  const cancel = (after: readonly string[] = []) => {
+    held.current = [...after];
     setText('');
     setRecall(undefined);
     // Sent whatever the mirror shows: it may not have heard yet of a command typed just before
-    // (AutoCAD also answers Esc at `Command:` with `*Cancel*`).
-    if (doc !== undefined) engines.command(doc, { kind: 'cancel' });
+    // (AutoCAD also answers Esc at `Command:` with `*Cancel*`). Numbered like typed input, so
+    // keys typed after it wait for the prompt it leads to.
+    if (doc !== undefined) engines.command(doc, { kind: 'cancel', seq: lines.send(doc) });
   };
   const answerKeyword = (keyword: string) => {
     if (doc !== undefined)
@@ -163,15 +169,23 @@ export function CommandLine({
   holdRef.current = hold;
 
   // Keys held for a prompt not shown yet are replayed once the engine has read every input
-  // sent: on the prompt they reach, until one ends the input and the rest wait again.
+  // sent: on the prompt they reach, until one ends the input and the rest wait again. Dynamic
+  // Input takes them into its fields when it shows that prompt (M2-71); the command line else.
   useEffect(() => {
     if (doc === undefined || held.current.length === 0) return;
     const now = lines.get(doc);
     if (reading(now)) return;
-    const r = replayAhead(textRef.current, held.current, now.prompt);
-    held.current = [...r.keys];
-    if (r.submit !== undefined) send(r.submit);
-    else setText(r.text);
+    let rest = dynAhead.current?.(held.current);
+    if (rest === undefined) {
+      const r = replayAhead(textRef.current, held.current, now.prompt);
+      rest = r.keys;
+      if (r.submit !== undefined) send(r.submit);
+      else setText(r.text);
+    }
+    held.current = [...rest];
+    // An Esc the replay reached with no input sent before it cancels now; the keys after it
+    // wait for the prompt the cancel leads to.
+    if (!reading(lines.get(doc)) && held.current[0] === 'Escape') cancel(held.current.slice(1));
   });
   // Another drawing shown starts with nothing held.
   useEffect(() => {
@@ -233,7 +247,11 @@ export function CommandLine({
       }
       if (e.target === input.current || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey || e.defaultPrevented) return;
-      if (e.key === 'Escape') return cancelRef.current();
+      if (e.key === 'Escape') {
+        if (holdRef.current(e.key)) e.preventDefault();
+        else cancelRef.current();
+        return;
+      }
       if ((e.key === 'Enter' || e.key === ' ') && pressable(e.target)) return;
       if (holdRef.current(e.key)) {
         e.preventDefault();
@@ -260,7 +278,13 @@ export function CommandLine({
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
     const spaces = prompt?.kind === 'string' && prompt.spaces;
-    if (e.key !== 'Escape' && !e.ctrlKey && !e.metaKey && !e.altKey && hold(e.key)) {
+    if (
+      !(e.key === 'Escape' && historyOpen) &&
+      !e.ctrlKey &&
+      !e.metaKey &&
+      !e.altKey &&
+      hold(e.key)
+    ) {
       e.preventDefault();
     } else if (e.key === 'Enter' || (e.key === ' ' && !spaces)) {
       e.preventDefault();
@@ -303,7 +327,8 @@ export function CommandLine({
           cursor={cursor}
           onSubmit={send}
           onKeyword={answerKeyword}
-          holding={() => held.current.length > 0}
+          hold={hold}
+          ahead={dynAhead}
         />
       )}
       {paletteOpen && (

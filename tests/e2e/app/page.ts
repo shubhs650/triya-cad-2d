@@ -243,3 +243,37 @@ export async function lightPixels(
     { b64: png, x0, y0, w, h },
   );
 }
+
+/** A key event as the browser's input queue gets it from a keyboard (CDP `Input.dispatchKeyEvent`). */
+interface KeyEvent {
+  type: 'keyDown' | 'keyUp';
+  key: string;
+  code?: string;
+  windowsVirtualKeyCode: number;
+  text?: string;
+}
+
+/** Key events for `text`, `\n` for Enter. */
+function keyEvents(text: string): KeyEvent[] {
+  const out: KeyEvent[] = [];
+  for (const ch of text) {
+    const key =
+      ch === '\n'
+        ? { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }
+        : ch === ' '
+          ? { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' }
+          : { key: ch, text: ch, windowsVirtualKeyCode: ch.toUpperCase().charCodeAt(0) };
+    const { text: _typed, ...up } = key;
+    out.push({ type: 'keyDown', ...key }, { type: 'keyUp', ...up });
+  }
+  return out;
+}
+
+/**
+ * Types `text` (`\n` for Enter) with every key queued at once, as a fast typist's keys reach the
+ * page while the engine worker is still answering the one before (M2-47 part 3, M2-71).
+ */
+export async function typeAtOnce(page: Page, text: string): Promise<void> {
+  const cdp = await page.context().newCDPSession(page);
+  await Promise.all(keyEvents(text).map((e) => cdp.send('Input.dispatchKeyEvent', e)));
+}

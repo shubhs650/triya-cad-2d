@@ -70,12 +70,14 @@ export function typed(state: CommandLineState, text: string): CommandLineState {
 }
 
 /**
- * Type-ahead (M2-47 part 3). Whether a space ends the input (Enter) or is typed depends on the
- * prompt it reaches: a name may hold spaces, an option or a point may not. Keys typed while the
- * engine has not yet read the last input sent are typed ahead of a prompt not shown yet, so the
- * command line holds a space typed then, and every key after it, and replays them once the
- * engine has read that input and its prompt is shown: AutoCAD buffers type-ahead the same way.
- * Letters and Enter mean the same at any prompt, so they go on as typed until a key is held.
+ * Type-ahead (M2-47 part 3, M2-71). What a key means depends on the prompt it reaches: whether a
+ * space ends the input (Enter) or is typed (a name may hold spaces, an option or a point may
+ * not), and which fields Dynamic Input puts it in (a point after the first is relative to the
+ * last, DYNPICOORDS 0). Keys typed while the engine has not yet read the last input sent are
+ * typed ahead of a prompt not shown yet, so they are held, the command line's and Dynamic
+ * Input's alike, and replayed once the engine has read that input and its prompt is shown: into
+ * Dynamic Input's fields if it shows that prompt, at the command line otherwise. AutoCAD buffers
+ * type-ahead the same way.
  */
 const HELD_KEYS = new Set(['Enter', 'Backspace']);
 
@@ -85,16 +87,25 @@ const types = (key: string) => key.length === 1 || HELD_KEYS.has(key);
 /** The engine has not read every input sent: the prompt shown may not be the one keys reach. */
 export const reading = (state: CommandLineState): boolean => state.sent > state.read;
 
-/** The command line holds `key` for the prompt it reaches, after the keys held already. */
+/**
+ * Whether `key` is held for the prompt it reaches, after the keys held already: a key that types,
+ * while the engine reads; then every key that types, Tab (Dynamic Input's next field) and Esc
+ * until the held keys are replayed, so they reach the engine in the order typed: Esc cancels
+ * after the input typed before it. A second Esc in a row is not held, so Esc always cancels.
+ */
 export function holdsKey(state: CommandLineState, held: readonly string[], key: string): boolean {
-  if (held.length > 0) return types(key);
-  return key === ' ' && reading(state);
+  if (held.length > 0) {
+    return types(key) || key === 'Tab' || (key === 'Escape' && held.at(-1) !== 'Escape');
+  }
+  return types(key) && reading(state);
 }
 
 /**
- * Held keys replayed on `prompt`, the prompt they reach, after `text` was typed: the text the
- * command line then shows, the input it sends (`submit`) when a key ends it, and the keys after
- * that key, which wait for the prompt that input leads to.
+ * Held keys replayed at the command line on `prompt`, the prompt they reach, after `text` was
+ * typed: the text the command line then shows, the input it sends (`submit`) when a key ends it,
+ * and the keys after that key, which wait for the prompt that input leads to. An Esc is left
+ * first in the keys, for the command line to cancel with, and the text typed before it is
+ * dropped. Tab moves between Dynamic Input's fields, which the command line has not.
  */
 export function replayAhead(
   text: string,
@@ -108,6 +119,8 @@ export function replayAhead(
     if (key === 'Enter' || (key === ' ' && !spaces)) {
       return { text: '', keys: keys.slice(i + 1), submit: t };
     }
+    if (key === 'Escape') return { text: '', keys: keys.slice(i) };
+    if (key === 'Tab') continue;
     t = key === 'Backspace' ? t.slice(0, -1) : t + key;
   }
   return { text: t, keys: [] };

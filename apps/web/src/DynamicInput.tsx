@@ -8,8 +8,10 @@ import { keywordShortcut, type Prompt, type Vec2 } from '@triya/engine';
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { cycleSnap } from './canvas/registry';
 import {
+  dynAhead,
   dynBackspace,
   dynCurrent,
+  dynEnds,
   dynFor,
   dynLive,
   dynMode,
@@ -44,7 +46,8 @@ export function DynamicInput({
   cursor,
   onSubmit,
   onKeyword,
-  holding = () => false,
+  hold = () => false,
+  ahead,
 }: {
   /** The prompt the command waits at; undefined at `Command:`, where Dynamic Input shows nothing. */
   prompt: Prompt | undefined;
@@ -56,10 +59,16 @@ export function DynamicInput({
   onSubmit: (text: string) => void;
   onKeyword: (keyword: string) => void;
   /**
-   * The command line holds keys typed ahead of their prompt (M2-47 part 3): the keys after them
-   * go there too, so they reach the engine in the order typed.
+   * Holds `key` for the prompt it reaches when it is typed ahead of it (M2-47 part 3, M2-71,
+   * command-line.ts `holdsKey`); true when it was held. The command line keeps the held keys.
    */
-  holding?: () => boolean;
+  hold?: (key: string) => boolean;
+  /**
+   * Set to the function that replays held keys into the fields of the prompt they reach, which
+   * the command line calls once that prompt is shown: it returns the keys left for the prompt
+   * after the input they sent, or undefined when the tooltip does not take keys now.
+   */
+  ahead?: { current: ((keys: readonly string[]) => readonly string[] | undefined) | undefined };
 }) {
   const on = useSyncExternalStore(dynMode.subscribe, dynMode.get);
   const [over, setOver] = useState(false);
@@ -94,8 +103,8 @@ export function DynamicInput({
   // A new prompt starts with empty fields, or with what was typed ahead of it.
   useEffect(() => put(prompt, prompt && dynReplay(prompt, typed.current)), [prompt]);
 
-  const props = useRef({ prompt, units, state, shown, cursor, onSubmit, onKeyword, holding });
-  props.current = { prompt, units, state, shown, cursor, onSubmit, onKeyword, holding };
+  const props = useRef({ prompt, units, state, shown, cursor, onSubmit, onKeyword, hold });
+  props.current = { prompt, units, state, shown, cursor, onSubmit, onKeyword, hold };
 
   const place = () => {
     const el = box.current;
@@ -130,8 +139,12 @@ export function DynamicInput({
       // Fields set for an earlier prompt are this prompt's as soon as it has arrived.
       const s = dynCurrent(latest.current, p, typed.current);
       if (!visible || !overNow.current || !p || !s || takesText(e.target)) return;
-      if (props.current.holding()) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (props.current.hold(e.key)) {
+        e.preventDefault();
+        e.stopImmediatePropagation();
+        return;
+      }
       const take = (next: DynState, key?: string) => {
         e.preventDefault();
         e.stopImmediatePropagation();
@@ -140,14 +153,13 @@ export function DynamicInput({
         else if (key !== '') typed.current.push(key);
         put(p, next);
       };
-      const spaces = p.kind === 'string' && p.spaces && s.raw;
       if (e.key === 'Escape') {
         // The command line's listener cancels the command.
         typed.current = [];
         put(p, dynFor(p));
         return;
       }
-      if (e.key === 'Enter' || (e.key === ' ' && !spaces)) {
+      if (dynEnds(s, p, e.key)) {
         const options = p.options ?? [];
         if (s.menu !== undefined && options[s.menu]) {
           take(dynFor(p));
@@ -182,6 +194,39 @@ export function DynamicInput({
     window.addEventListener('keydown', onKey, { capture: true });
     return () => window.removeEventListener('keydown', onKey, { capture: true });
   }, []);
+
+  // Keys held ahead of the prompt shown (M2-71) go into its fields when the tooltip would take
+  // them typed now: on, over the drawing, at a prompt, with nothing typed at the command line.
+  useEffect(() => {
+    if (!ahead) return;
+    ahead.current = (keys) => {
+      const { prompt: p } = props.current;
+      const s = dynCurrent(latest.current, p, typed.current);
+      if (!dynMode.get() || !overNow.current || !p || !s || takesText(document.activeElement)) {
+        return undefined;
+      }
+      const r = dynAhead(s, p, keys);
+      // An Esc empties the fields, as typed (the command line cancels).
+      if (!r.ends && r.rest[0] === 'Escape') {
+        typed.current = [];
+        put(p, dynFor(p));
+        return r.rest;
+      }
+      if (!r.ends) {
+        typed.current = [...typed.current, ...r.typed];
+        put(p, r.state);
+        return r.rest;
+      }
+      typed.current = [];
+      put(p, dynFor(p));
+      const { cursor: at, units: u } = props.current;
+      props.current.onSubmit(dynText(r.state, p, at(), u));
+      return r.rest;
+    };
+    return () => {
+      ahead.current = undefined;
+    };
+  }, [ahead]);
 
   if (!shown) return null;
   const options = prompt.options ?? [];
