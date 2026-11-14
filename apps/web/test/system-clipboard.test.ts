@@ -101,11 +101,40 @@ describe('AppClipboard', () => {
     expect(await app.paste(1)).toEqual({ ok: true, text: 'Hello\nworld' });
   });
 
-  it('says it cannot paste another app’s picture', async () => {
+  it('hands another app’s picture to be kept, and pastes it (M2-54)', async () => {
     const env = fakeEnv();
-    const app = new AppClipboard(env, 'window-a');
+    const kept: Uint8Array[] = [];
+    const app = new AppClipboard(env, 'window-a', (bytes) => {
+      kept.push(bytes);
+      return Promise.resolve({ fileName: 'pasted-01020304.png', width: 4, height: 2 });
+    });
+    await app.copy(1, sample(), png);
+    // Newer than the objects copied.
     env.item = new Map([['image/png', await png()]]);
     expect(await app.paste(1)).toEqual({
+      ok: true,
+      picture: { fileName: 'pasted-01020304.png', width: 4, height: 2 },
+    });
+    expect([...kept[0]!]).toEqual([137, 80, 78, 71]);
+  });
+
+  it('says why it cannot paste a picture it cannot read or keep', async () => {
+    const env = fakeEnv();
+    env.item = new Map([['image/png', await png()]]);
+    const unreadable = new AppClipboard(env, 'window-a', () => Promise.resolve(undefined));
+    expect(await unreadable.paste(1)).toEqual({
+      ok: false,
+      message: 'The Clipboard’s picture is not a PNG Triya can read.',
+    });
+    // Without a place to keep pictures (or in another format than PNG): as before M2-54.
+    const none = new AppClipboard(env, 'window-a');
+    expect(await none.paste(1)).toEqual({
+      ok: false,
+      message: 'The Clipboard holds a picture, which Triya does not paste.',
+    });
+    env.item = new Map([['image/svg+xml', new Blob(['<svg/>'], { type: 'image/svg+xml' })]]);
+    const svg = new AppClipboard(env, 'window-a', () => Promise.reject(new Error('unused')));
+    expect(await svg.paste(1)).toEqual({
       ok: false,
       message: 'The Clipboard holds a picture, which Triya does not paste.',
     });

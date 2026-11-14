@@ -69,6 +69,7 @@ import { engines } from './engine/registry';
 import { shownPaperViews, shownViewsChange } from './saved-views';
 import { HealthPalette } from './HealthPalette';
 import { RasterImages, imageDefinitionsOf, isRasterFile, objectsOf } from './images';
+import { keepPicture as keepPastedPicture, opfsPictures } from './pasted-pictures';
 import { LayersPalette } from './LayersPalette';
 import { PropertiesPalette } from './PropertiesPalette';
 import { QuickProperties } from './QuickProperties';
@@ -375,11 +376,20 @@ function viewContext(id: number): ViewContext {
  * drawing it came from (PASTEORIG pastes only another drawing's). Every open drawing shares it;
  * it lives as long as the page, as AutoCAD's lasts the session. It goes on the system clipboard
  * too, with a picture of the objects (M2-32 part 5), and a paste reads that first: another Triya
- * window's objects or another app's text.
+ * window's objects, another app's text, or another app's picture, which is kept on this device
+ * and shown at once (M2-54).
  */
+/** Pictures pasted from other apps, kept in this origin's private file system (M2-54). */
+const pastedPictures = opfsPictures();
+
 const appClipboard = new AppClipboard(
   browserClipboardEnv(),
   globalThis.crypto?.randomUUID?.() ?? `${Date.now()}-${Math.random()}`,
+  (bytes) =>
+    keepPastedPicture(bytes, pastedPictures, (name, png) => {
+      images.add(name, png);
+      supplied.changed();
+    }),
 );
 
 function clipboardRequest(
@@ -783,9 +793,13 @@ const isPdfFile = (name: string) => /\.pdf$/i.test(name);
 
 /**
  * The image files raster IMAGEs show (M1-19 part 3): dropped on the window this session,
- * matched to the drawings' IMAGEDEFs by file name and decoded once each.
+ * matched to the drawings' IMAGEDEFs by file name and decoded once each, and the pictures pasted
+ * from other apps, kept on this device (M2-54).
  */
-const images = new RasterImages((bytes) => decodeRaster(bytes));
+const images = new RasterImages((bytes) => decodeRaster(bytes), {
+  kept: (name) => pastedPictures.get(name),
+  found: () => supplied.changed(),
+});
 
 /**
  * The user's plot style tables and linetype files (M2-20 part 2), kept on this device for the
