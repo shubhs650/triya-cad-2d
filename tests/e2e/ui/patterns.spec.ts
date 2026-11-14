@@ -4,7 +4,7 @@
 // removing it in Settings takes the lines away again.
 import { writeFileSync } from 'node:fs';
 import { expect, test, type Page } from '@playwright/test';
-import { expectShown, ink, openWithDrop, openWithPicker } from '../app/page';
+import { expectDrawn, expectShown, ink, openWithDrop, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -67,9 +67,14 @@ function files() {
   return { dxf, pat, bad };
 }
 
+/**
+ * Opens the drawing and returns its ink once its first frame is drawn (M2-61): read any
+ * earlier and the baseline is the empty canvas, without the drawing's line.
+ */
 async function openDrawing(page: Page, dxf: string): Promise<number> {
   await openWithPicker(page, dxf);
   await expectShown(page, 'custom-hatch.dxf');
+  await expectDrawn(page, { timeout: 15_000 });
   return ink(page);
 }
 
@@ -86,11 +91,15 @@ test('a dropped .pat draws a hatch saved without lines, and stays after a reload
   );
   await expect.poll(() => ink(page), { timeout: 15_000 }).toBeGreaterThan(bare + GRID_INK);
 
-  // Kept on the device: a new visit draws the grid as soon as the drawing opens.
+  // Kept on the device: a new visit draws the grid as soon as the drawing opens. Opened once
+  // (M2-61): this used to poll `openDrawing`, whose first read always came before the grid's
+  // frame, so every run opened a second copy (a third on a busy machine), and which copy the
+  // last check read, and when, varied.
   await page.reload();
-  await expect
-    .poll(() => openDrawing(page, dxf), { timeout: 30_000 })
-    .toBeGreaterThan(bare + GRID_INK);
+  await openWithPicker(page, dxf);
+  await expectShown(page, 'custom-hatch.dxf');
+  await expect.poll(() => ink(page), { timeout: 30_000 }).toBeGreaterThan(bare + GRID_INK);
+  await expect(page.getByRole('tab', { name: 'custom-hatch.dxf' })).toHaveCount(1);
 
   // Removing the file in Settings takes the lines away.
   await page.getByRole('button', { name: 'Settings' }).click();
