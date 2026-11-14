@@ -254,6 +254,8 @@ describe('unsaved changes (DocumentStore)', () => {
     expect(s.getSnapshot().notice).toBe('Saved b.dxf.');
     s.saved(id, 'b.dxf', { bytes: BYTES, inPlace: true }, 2);
     expect(isDirty(doc())).toBe(false);
+    s.notify('Saved b.dxf and 1 pasted picture beside it.');
+    expect(s.getSnapshot().notice).toBe('Saved b.dxf and 1 pasted picture beside it.');
     s.dismissNotice();
     expect(s.getSnapshot().notice).toBeUndefined();
     s.fail('b.dxf was not saved: x');

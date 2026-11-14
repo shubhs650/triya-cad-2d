@@ -228,6 +228,11 @@ export class DocumentStore {
     this.#set({ error: message, notice: undefined });
   }
 
+  /** Shows a passing note (M2-72: the pasted pictures a save wrote beside the drawing). */
+  notify(message: string): void {
+    this.#set({ notice: message });
+  }
+
   dismissNotice(): void {
     this.#set({ notice: undefined });
   }
