@@ -180,6 +180,11 @@ export interface PlotPageOptions {
   readonly nonIsoScale?: number;
   /** "Convert all text to geometry": TrueType text plots as filled outlines, not as text. */
   readonly textAsGeometry?: boolean;
+  /**
+   * "Include layer information" (M2-60): each item's drawing layer (`PlotItem.layer`) is a PDF
+   * layer, an optional content group a viewer turns on and off. Off when absent.
+   */
+  readonly layers?: boolean;
   /** The PDF file an underlay shows, as supplied this session; none plots its boundary only. */
   readonly underlays?: (underlay: PlotUnderlay) => Uint8Array | undefined;
   /** Paper area the plot may draw on, points (the printable area); the whole page when absent. */
@@ -205,8 +210,17 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
   cs.save();
   if (o.area) cs.rect(o.area.x, o.area.y, o.area.width, o.area.height).clip();
   let clip: PlotItem['clip'];
+  // The layer whose marked content is open: a run of items on one layer shares one sequence,
+  // closed before a clip is lifted so marked content and saves nest.
+  let marked: string | undefined;
+  const unmark = () => {
+    if (marked === undefined) return;
+    cs.endMarked();
+    marked = undefined;
+  };
   for (const item of items) {
     if (item.clip !== clip) {
+      unmark();
       if (clip) cs.restore();
       clip = item.clip;
       if (clip) {
@@ -215,6 +229,14 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
           emitPolygon(cs, polygon, o.toPaper);
           cs.clip();
         }
+      }
+    }
+    const layer = o.layers ? item.layer : undefined;
+    if (layer !== marked) {
+      unmark();
+      if (layer !== undefined) {
+        cs.beginMarked(page.layer(layer));
+        marked = layer;
       }
     }
     cs.graphicsState(page.alpha(item.opacity ?? 1));
@@ -254,6 +276,7 @@ export function plotItems(page: PdfPage, items: readonly PlotItem[], o: PlotPage
     emitSegments(cs, segments);
     cs.stroke();
   }
+  unmark();
   if (clip) cs.restore();
   cs.restore();
 }
