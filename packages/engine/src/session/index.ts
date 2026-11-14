@@ -105,8 +105,16 @@ export type EditResult =
  * document's command engine: the `PromptBus` calls as plain messages, plus the space shown.
  */
 export type CommandInput =
-  /** Typed input ended by Enter; `cursor` is where the cursor is, for direct distance entry. */
-  | { readonly kind: 'submit'; readonly text: string; readonly cursor?: Vec2 }
+  /**
+   * Typed input ended by Enter; `cursor` is where the cursor is, for direct distance entry. A
+   * `seq` asks for a `read` output with it once the input has been handled (M2-47 part 3).
+   */
+  | {
+      readonly kind: 'submit';
+      readonly text: string;
+      readonly cursor?: Vec2;
+      readonly seq?: number;
+    }
   | { readonly kind: 'answer'; readonly answer: PromptAnswer }
   | { readonly kind: 'cancel' }
   | { readonly kind: 'invoke'; readonly name: string }
@@ -161,6 +169,12 @@ export type CommandOutput =
   | Exclude<BusEvent, { readonly type: 'commit' }>
   | { readonly type: 'commit'; readonly command: string }
   | { readonly type: 'change'; readonly change: ChangeSet }
+  /**
+   * The submit numbered `seq` has been handled: the prompt it led to, `Command:` or a dialog's
+   * wait has been said already (M2-47 part 3). Until then the command line cannot tell whether
+   * a space typed is text or Enter, so it holds the keys typed ahead for that prompt.
+   */
+  | { readonly type: 'read'; readonly seq: number }
   /**
    * A view command asks the canvas of the space shown (ZOOM, PAN, REGEN, VIEW): the app answers
    * with a `view` input carrying the same id. The command waits for it, so the app must answer
@@ -275,9 +289,13 @@ export class EngineSession {
   /** Hands a front-end's input to the command engine; resolves once it has been handled. */
   command(input: CommandInput): Promise<void> {
     switch (input.kind) {
-      case 'submit':
+      case 'submit': {
         if (input.cursor) this.#bus.pointer(input.cursor);
-        return this.#bus.submit(input.text);
+        const done = this.#bus.submit(input.text);
+        const seq = input.seq;
+        if (seq === undefined) return done;
+        return done.finally(() => this.#emit({ type: 'read', seq }));
+      }
       case 'answer':
         if (input.answer.kind === 'point') this.#bus.pointer(input.answer.point);
         return this.#bus.answer(input.answer);

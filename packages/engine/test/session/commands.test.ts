@@ -37,6 +37,20 @@ describe('EngineSession commands', () => {
     expect(out.find((o) => o.type === 'commit')).toEqual({ type: 'commit', command: 'LINE' });
   });
 
+  it('says it has read numbered input once the prompt that input leads to is out (M2-47 part 3)', async () => {
+    const { s, out } = setup();
+    await s.command({ kind: 'submit', text: 'L', seq: 1 });
+    expect(out.slice(-2).map((o) => o.type)).toEqual(['prompt', 'read']);
+    expect(out.at(-1)).toEqual({ type: 'read', seq: 1 });
+    // An input the bus refuses is read too.
+    await s.command({ kind: 'submit', text: 'nonsense', seq: 2 });
+    expect(out.at(-1)).toEqual({ type: 'read', seq: 2 });
+    // Unnumbered input (a script, the snap menu) is not reported.
+    out.length = 0;
+    await s.command({ kind: 'submit', text: '0,0' });
+    expect(out.some((o) => o.type === 'read')).toBe(false);
+  });
+
   it('keeps a replica in step through the change outputs', async () => {
     const { s, out } = setup();
     const replica = DocumentModel.create(sampleInit());

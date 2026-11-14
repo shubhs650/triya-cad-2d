@@ -15,6 +15,10 @@ export interface CommandLineState {
   readonly promptText: string;
   /** Typed input, oldest first, for Up/Down. */
   readonly recent: readonly string[];
+  /** The number of the last input sent to the engine (M2-47 part 3). */
+  readonly sent: number;
+  /** The number of the last input the engine has read: `prompt` is that input's prompt. */
+  readonly read: number;
 }
 
 export const IDLE: CommandLineState = {
@@ -22,6 +26,8 @@ export const IDLE: CommandLineState = {
   prompt: undefined,
   promptText: 'Command:',
   recent: [],
+  sent: 0,
+  read: 0,
 };
 
 /** AutoCAD keeps the text window to the last lines it was set to hold; ours, the last 2000. */
@@ -40,6 +46,8 @@ export function follow(state: CommandLineState, o: CommandOutput): CommandLineSt
     // A command waits on a dialog of the app's (M2-41): the prompt line is empty, as AutoCAD's.
     case 'waiting':
       return { ...state, prompt: undefined, promptText: '' };
+    case 'read':
+      return o.seq > state.read ? { ...state, read: o.seq } : state;
     default:
       return state;
   }
@@ -50,6 +58,50 @@ export function typed(state: CommandLineState, text: string): CommandLineState {
   const t = text.trim();
   if (t === '' || state.recent.at(-1) === t) return state;
   return { ...state, recent: [...state.recent, t].slice(-MAX_RECENT) };
+}
+
+/**
+ * Type-ahead (M2-47 part 3). Whether a space ends the input (Enter) or is typed depends on the
+ * prompt it reaches: a name may hold spaces, an option or a point may not. Keys typed while the
+ * engine has not yet read the last input sent are typed ahead of a prompt not shown yet, so the
+ * command line holds a space typed then, and every key after it, and replays them once the
+ * engine has read that input and its prompt is shown: AutoCAD buffers type-ahead the same way.
+ * Letters and Enter mean the same at any prompt, so they go on as typed until a key is held.
+ */
+const HELD_KEYS = new Set(['Enter', 'Backspace']);
+
+/** Keys that type: a character, Enter or Backspace. */
+const types = (key: string) => key.length === 1 || HELD_KEYS.has(key);
+
+/** The engine has not read every input sent: the prompt shown may not be the one keys reach. */
+export const reading = (state: CommandLineState): boolean => state.sent > state.read;
+
+/** The command line holds `key` for the prompt it reaches, after the keys held already. */
+export function holdsKey(state: CommandLineState, held: readonly string[], key: string): boolean {
+  if (held.length > 0) return types(key);
+  return key === ' ' && reading(state);
+}
+
+/**
+ * Held keys replayed on `prompt`, the prompt they reach, after `text` was typed: the text the
+ * command line then shows, the input it sends (`submit`) when a key ends it, and the keys after
+ * that key, which wait for the prompt that input leads to.
+ */
+export function replayAhead(
+  text: string,
+  keys: readonly string[],
+  prompt: Prompt | undefined,
+): { readonly text: string; readonly keys: readonly string[]; readonly submit?: string } {
+  const spaces = prompt?.kind === 'string' && prompt.spaces === true;
+  let t = text;
+  for (let i = 0; i < keys.length; i++) {
+    const key = keys[i]!;
+    if (key === 'Enter' || (key === ' ' && !spaces)) {
+      return { text: '', keys: keys.slice(i + 1), submit: t };
+    }
+    t = key === 'Backspace' ? t.slice(0, -1) : t + key;
+  }
+  return { text: t, keys: [] };
 }
 
 /**
@@ -111,6 +163,13 @@ export class CommandLines {
 
   typed(doc: number, text: string): void {
     this.#set(doc, typed(this.get(doc), text));
+  }
+
+  /** Numbers the next input sent to `doc`'s engine; its `read` output says it was read. */
+  send(doc: number): number {
+    const state = this.get(doc);
+    this.#set(doc, { ...state, sent: state.sent + 1 });
+    return state.sent + 1;
   }
 
   forget(doc: number): void {

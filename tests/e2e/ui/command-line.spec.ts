@@ -128,3 +128,50 @@ test('Esc cancels and keeps the segments drawn; Up recalls; F2 shows the history
   await page.keyboard.press('F2');
   await expect(full).toBeHidden();
 });
+
+/** Key events for `text`, `\n` for Enter, as the browser's input queue gets them from a keyboard. */
+interface KeyEvent {
+  type: 'keyDown' | 'keyUp';
+  key: string;
+  code?: string;
+  windowsVirtualKeyCode: number;
+  text?: string;
+}
+
+function keyEvents(text: string): KeyEvent[] {
+  const out: KeyEvent[] = [];
+  for (const ch of text) {
+    const key =
+      ch === '\n'
+        ? { key: 'Enter', code: 'Enter', windowsVirtualKeyCode: 13, text: '\r' }
+        : ch === ' '
+          ? { key: ' ', code: 'Space', windowsVirtualKeyCode: 32, text: ' ' }
+          : { key: ch, text: ch, windowsVirtualKeyCode: ch.toUpperCase().charCodeAt(0) };
+    const { text: _typed, ...up } = key;
+    out.push({ type: 'keyDown', ...key }, { type: 'keyUp', ...up });
+  }
+  return out;
+}
+
+test('input typed ahead of a prompt is read by the prompt it reaches (M2-47 part 3)', async ({
+  page,
+}) => {
+  test.setTimeout(60_000);
+  await open(page);
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.getByLabel('Command', { exact: true }).click();
+  // Every key queued at once, as a fast typist's keys reach the page while the engine worker
+  // is still answering the one before: the command line cannot know at a space's key press
+  // whether the prompt it reaches takes spaces. A name's space is typed; -VIEW's ends it.
+  const cdp = await page.context().newCDPSession(page);
+  const typed = '-VIEW\nS\nTwo words\n-VIEW S Three words\n';
+  await Promise.all(keyEvents(typed).map((e) => cdp.send('Input.dispatchKeyEvent', e)));
+  await expect(history(page)).toContainText('Enter view name to save: Three words');
+  await expect(prompt(page)).toHaveText('Command:');
+  await page.getByRole('button', { name: 'Views' }).click();
+  const views = page.getByRole('group', { name: 'Named views' });
+  await expect(views.getByRole('button', { name: 'Two words' })).toBeVisible();
+  await expect(views.getByRole('button', { name: 'Three words' })).toBeVisible();
+  await expect(views.getByRole('listitem')).toHaveCount(2);
+  await page.screenshot({ path: test.info().outputPath('typed-ahead-views.png') });
+});

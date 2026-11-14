@@ -1,6 +1,6 @@
 // M2-02: the command line's mirror of a drawing's command engine (history, prompt, recall),
 // completion as AutoCAD's AUTOCOMPLETE offers it, and the prompt split around its options.
-import { builtinCommands, type CommandOutput } from '@triya/engine';
+import { builtinCommands, type CommandOutput, type Prompt } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import {
   CommandLines,
@@ -8,7 +8,9 @@ import {
   clipboardCommand,
   completions,
   follow,
+  holdsKey,
   promptParts,
+  replayAhead,
   typed,
 } from '../src/command-line';
 
@@ -64,6 +66,60 @@ describe('the command line state', () => {
     stop();
     lines.typed(1, 'X');
     expect(heard).toBe(3);
+  });
+});
+
+describe('type-ahead (M2-47 part 3)', () => {
+  const name: Prompt = { kind: 'string', message: 'Enter view name to save', spaces: true };
+  const option: Prompt = { kind: 'keyword', message: 'Enter an option', options: ['Save'] };
+
+  it('counts the input sent and the input the engine has read', () => {
+    const lines = new CommandLines();
+    expect([lines.send(1), lines.send(1), lines.send(2)]).toEqual([1, 2, 1]);
+    expect(lines.get(1)).toMatchObject({ sent: 2, read: 0 });
+    lines.follow(1, { type: 'read', seq: 1 });
+    expect(lines.get(1)).toMatchObject({ sent: 2, read: 1 });
+    // Reads come in order; an older one never moves it back.
+    lines.follow(1, { type: 'read', seq: 2 });
+    lines.follow(1, { type: 'read', seq: 1 });
+    expect(lines.get(1).read).toBe(2);
+  });
+
+  it('holds a space typed before the engine read the last input, and every key after it', () => {
+    const reading = { ...IDLE, sent: 2, read: 1 };
+    const caughtUp = { ...IDLE, sent: 2, read: 2 };
+    // Only the prompt the space reaches knows whether it is Enter.
+    expect(holdsKey(reading, [], ' ')).toBe(true);
+    expect(holdsKey(caughtUp, [], ' ')).toBe(false);
+    // Letters and Enter mean the same at any prompt, until a key is held.
+    expect(holdsKey(reading, [], 'w')).toBe(false);
+    expect(holdsKey(reading, [], 'Enter')).toBe(false);
+    for (const key of ['w', ' ', 'Enter', 'Backspace']) {
+      expect(holdsKey(caughtUp, [' '], key)).toBe(true);
+    }
+    // Keys that type nothing are not held.
+    for (const key of ['Shift', 'ArrowUp', 'Tab', 'F2', 'Escape']) {
+      expect(holdsKey(reading, [' '], key)).toBe(false);
+    }
+  });
+
+  it('replays held keys on the prompt they reach: a space in a name is typed', () => {
+    const keys = [' ', 'w', 'o', 'r', 'd', 's', 'Enter'];
+    expect(replayAhead('Two', keys, name)).toEqual({ text: '', keys: [], submit: 'Two words' });
+    expect(replayAhead('Two', keys.slice(0, -1), name)).toEqual({ text: 'Two words', keys: [] });
+  });
+
+  it('replays a space as Enter where it is one, and holds the rest for the next prompt', () => {
+    expect(replayAhead('S', [' ', 'T', 'w', 'o'], option)).toEqual({
+      text: '',
+      keys: ['T', 'w', 'o'],
+      submit: 'S',
+    });
+    expect(replayAhead('', [' ', 'x'], undefined)).toEqual({ text: '', keys: ['x'], submit: '' });
+  });
+
+  it('replays Backspace', () => {
+    expect(replayAhead('Tw', ['x', 'Backspace', 'o'], name)).toEqual({ text: 'Two', keys: [] });
   });
 });
 
