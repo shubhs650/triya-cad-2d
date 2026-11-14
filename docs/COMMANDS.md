@@ -171,7 +171,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | PURGE | PU | 2 | dialog + -PURGE | |
 | AUDIT / RECOVER | — | 2 | Health report implementation | |
 | UNITS | UN | 2 | dialog + -UNITS | |
-| SETVAR ᵀ | SET | 2 | any registered sysvar | x (#302; every header variable the drawing holds, AutoCAD's types and ranges, read-only ones shown; WIPEOUTFRAME; the drafting aids ORTHOMODE, SNAPMODE, GRIDMODE, OSMODE, POLARANG, LWDISPLAY, TRANSPARENCYDISPLAY and the per-user APERTURE, PDFOSNAP, REVCLOUDGRIPS, QPMODE and QPLOCATION (#328); `?` lists by wild card; a variable's name typed at `Command:` or transparently. DICTIONARYVAR variables other than CETRANSPARENCY are read-only, M2-59) |
+| SETVAR ᵀ | SET | 2 | any registered sysvar | x (#302; every header variable the drawing holds, AutoCAD's types and ranges, read-only ones shown; WIPEOUTFRAME; the drafting aids ORTHOMODE, SNAPMODE, GRIDMODE, OSMODE, POLARANG, LWDISPLAY, TRANSPARENCYDISPLAY and the per-user APERTURE, PDFOSNAP, REVCLOUDGRIPS, QPMODE and QPLOCATION (#328); `?` lists by wild card; a variable's name typed at `Command:` or transparently; the computed read-only DATE, CDATE, CTAB, VIEWSIZE, VIEWCTR, DWGNAME, DWGPREFIX (always empty: a browser never reveals a folder), DWGTITLED and DBMOD (1 while unsaved, not AutoCAD's kind bits) (#335). DICTIONARYVAR variables other than CETRANSPARENCY are read-only, M2-59) |
 
 ## View and navigation
 
