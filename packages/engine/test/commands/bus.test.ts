@@ -456,11 +456,13 @@ describe('PromptBus', () => {
     ]);
     await bus.script(['ROTATE', 'N45dE', 'w']);
     expect(bus.history.at(-1)).toBe('Specify second angle: w');
-    await bus.script(['ROTATE', '0,0', '@2<S30dW']);
+    // A polar point's bearing, measured from ROTATE's base point.
+    await bus.script(['ROTATE', '2<S30dW']);
+    await bus.cancel();
     const values = got.map((a) => (a.kind === 'angle' ? a.value : NaN));
     expect(values[0]).toBeCloseTo(Math.PI / 4, 12);
     expect(values[1]).toBeCloseTo(Math.PI, 12);
-    expect(values[2]).toBeCloseTo((240 * Math.PI) / 180, 12);
+    expect(values[2]).toBeCloseTo((-120 * Math.PI) / 180, 12);
   });
 
   it('checks integer and real input', async () => {

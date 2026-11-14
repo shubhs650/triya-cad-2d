@@ -16,8 +16,8 @@
 //   3 radians `0.7854r`, 4 surveyor's units: a bearing `N 45d E`, a cardinal direction alone
 //   (`W`), without the spaces under UNITMODE 1 (`N45dE`). ANGTOS first takes an angle into
 //   0 to 2π (`-0.785398` gives `315.0000` and `S 45d E`) and does not apply ANGBASE.
-// Every form here reads back where it is typed (`parseDistance`, `parseAngleValue`), except a
-// bearing, which the angle parser does not read yet.
+// Every form here reads back where it is typed (`parseDistance`, `parseAngleValue`, a bearing
+// by `parseBearing` since M2-35 part 18).
 
 /** The header variables that say how lengths and angles are shown. */
 export interface DrawingUnits {
