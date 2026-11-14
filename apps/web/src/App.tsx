@@ -52,6 +52,8 @@ import {
 import { scriptSettings, scriptSetup } from './plot-script';
 import { plotSpaceOf } from './plot-spaces';
 import { ExportDialog, exportDialog } from './ExportDialog';
+import { ViewManager } from './ViewManager';
+import { viewManager } from './view-manager';
 import { exportFile } from './export-file';
 import { commandLines } from './command-line';
 import { DocTabs } from './DocTabs';
@@ -558,6 +560,12 @@ async function fileCommand(
       window: window && windowBox(window.a, window.b),
       resume: resume === true,
     });
+    return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
+  }
+  if (action === 'views') {
+    // VIEW (M2-47 part 2): the View Manager, waited for as PLOT waits for its dialog, with the
+    // corners asked for when the New View dialog's Define window wants them.
+    const pickWindow = await viewManager.show(id, { window, resume: resume === true });
     return pickWindow ? { ok: true, pickWindow: true } : { ok: true };
   }
   if (action === 'publish') {
@@ -1585,6 +1593,11 @@ export function App() {
         underlayPage={underlayPage}
         userTables={userPlotStyleTables}
         exportDxf={exportDxf}
+      />
+      <ViewManager
+        doc={active}
+        changes={active ? engines.changesOf(active.id) : []}
+        edited={(id) => store.edited(id)}
       />
       <SaveChanges prompt={saveChanges} />
       <SnapMenu />

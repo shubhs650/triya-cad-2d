@@ -2680,3 +2680,146 @@ button {
   margin: 0;
   color: var(--chrome-text-muted);
 }
+
+/* The View Manager (M2-47 part 2): the Views tree, the properties and the buttons side by side. */
+.cad-dialog.view-manager {
+  max-width: min(720px, calc(100vw - 32px));
+}
+
+.view-manager-current {
+  margin: 0 0 6px;
+}
+
+.view-manager-body {
+  display: grid;
+  grid-template-columns: 180px 300px auto;
+  gap: 8px;
+  align-items: start;
+}
+
+.view-manager-tree {
+  height: 240px;
+  overflow: auto;
+  padding: 4px;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+}
+
+.view-manager-item {
+  padding: 2px 6px;
+  border-radius: 3px;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.view-manager-folder > div > .view-manager-item,
+.view-manager-folder .view-manager-empty {
+  padding-left: 20px;
+}
+
+.view-manager-folder > span {
+  display: block;
+  padding: 2px 6px;
+  font-weight: 600;
+}
+
+.view-manager-item[aria-selected='true'] {
+  background: var(--chrome-hover);
+  outline: 1px solid var(--chrome-border);
+}
+
+.view-manager-empty {
+  color: var(--chrome-text-muted);
+}
+
+.view-manager-props {
+  width: 100%;
+  border-collapse: collapse;
+  border: 1px solid var(--chrome-border);
+}
+
+.view-manager-props th,
+.view-manager-props td {
+  padding: 2px 6px;
+  border-bottom: 1px solid var(--chrome-border);
+  text-align: left;
+  font-weight: normal;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 180px;
+}
+
+.view-manager-props td input {
+  width: 100%;
+  font: inherit;
+}
+
+.view-manager-props .view-manager-group th {
+  padding-top: 4px;
+  background: var(--chrome-bg);
+  font-weight: 600;
+}
+
+.view-manager-props th[scope='row'] {
+  width: 40%;
+  padding-left: 14px;
+}
+
+.view-manager-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.view-manager-message {
+  margin: 6px 0 0;
+  color: var(--danger-text);
+}
+
+.new-view-boundary {
+  margin: 8px 0 0;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+.new-view-window {
+  margin: 4px 0 0;
+}
+
+.new-view-window-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+@media (width < 700px) {
+  .view-manager-body {
+    grid-template-columns: 1fr;
+  }
+
+  .view-manager-actions {
+    flex-direction: row;
+  }
+}
+
+.new-view-replace {
+  margin-top: 8px;
+  padding: 8px;
+  border: 1px solid var(--chrome-border);
+  border-radius: 4px;
+}
+
+.new-view-replace p {
+  margin: 0 0 6px;
+}
+
+.new-view-replace button + button {
+  margin-left: 6px;
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .view-manager-item {
+    transition: background-color 120ms;
+  }
+}
