@@ -7,7 +7,15 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
-import { DXF, activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
+import {
+  DWG,
+  DXF,
+  activeCanvas,
+  expectDrawn,
+  expectShown,
+  openWithPicker,
+  viewOf,
+} from '../app/page';
 import { startApp } from '../app/server';
 
 let app: { url: string; close(): Promise<void> };
@@ -361,4 +369,52 @@ test('GRIPSIZE draws and picks grips at its size, and Settings shows it', async 
   await expect(settings).toBeHidden();
   await type(page, 'GRIPSIZE', 'Enter new value for GRIPSIZE <8>:');
   await type(page, '', 'Command:');
+});
+
+// M2-59 part 4: the drawing's AcDbVariableDictionary variables at the command line. The
+// acadsharp sample has MSLTSCALE 1, so its dashed lines on the Model tab are scaled by the
+// annotation scale CANNOSCALE names: at 10:1 the ISO dash (15 units, longer than the 3.3-unit
+// lines, so they draw solid at 1:1) is a tenth as long and the lines show their dashes.
+test('CANNOSCALE, MSLTSCALE and CMLEADERSTYLE set at Command:', async ({ page }) => {
+  test.setTimeout(120_000);
+  const file = path.join(path.dirname(DWG), 'sample_AC1018_ascii.dxf');
+  await page.goto(app.url);
+  await openWithPicker(page, file);
+  await expectShown(page, path.basename(file));
+  await expect(prompt(page)).toHaveText('Command:');
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  const canvas = activeCanvas(page);
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  // The sample's linetype lines: x 3.6 to 6.9, y -14.6 to 6.2.
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '2,-16', 'Specify opposite corner:');
+  await type(page, '8.5,8', 'Command:');
+  await expectDrawn(page);
+  const before = await canvas.screenshot();
+  await shot('0-cannoscale-1-1.png');
+
+  await type(page, 'CANNOSCALE', 'Enter new value for CANNOSCALE <"1:1">:');
+  await type(page, '1:3', 'Enter new value for CANNOSCALE <"1:1">:');
+  await expect(log).toContainText('No annotation scale named "1:3".');
+  await type(page, '10:1', 'Command:');
+  expect(await headerNow(page, 'CANNOSCALE')).toBe('10:1');
+  expect(await headerNow(page, 'CANNOSCALEVALUE')).toBe(10);
+  await expect.poll(async () => (await canvas.screenshot()).equals(before)).toBe(false);
+  await expectDrawn(page);
+  const scaled = await canvas.screenshot();
+  await shot('1-cannoscale-10-1.png');
+
+  // MSLTSCALE 0: the annotation scale no longer scales the dashes.
+  await type(page, 'MSLTSCALE', 'Enter new value for MSLTSCALE <1>:');
+  await type(page, '0', 'Command:');
+  expect(await headerNow(page, 'MSLTSCALE')).toBe('0');
+  await expect.poll(async () => (await canvas.screenshot()).equals(scaled)).toBe(false);
+  await shot('2-msltscale-0.png');
+
+  await type(page, 'CMLEADERSTYLE', 'Enter new value for CMLEADERSTYLE <"STANDARD">:');
+  await type(page, 'nowhere', 'Enter new value for CMLEADERSTYLE <"STANDARD">:');
+  await expect(log).toContainText('No multileader style named "nowhere".');
+  await type(page, 'annotative', 'Command:');
+  // Spelled as the style is.
+  expect(await headerNow(page, 'CMLEADERSTYLE')).toBe('Annotative');
 });

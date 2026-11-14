@@ -1,0 +1,1 @@
+- M2-59 part 4 (#344): SETVAR and a name typed at `Command:` set the drawing's AcDbVariableDictionary variables: CMLEADERSTYLE and CTABLESTYLE to a style the drawing has, CANNOSCALE to one of its annotation scales (CANNOSCALEVALUE following, so MSLTSCALE 1 dashes follow it on the canvas), MSLTSCALE and the numeric ones, saved back into their DICTIONARYVARs.
