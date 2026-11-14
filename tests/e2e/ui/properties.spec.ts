@@ -5,7 +5,7 @@
 // with dynamic block references shows the FR-B3 badge. The sheet and the edits are unit-tested
 // in packages/engine/test/properties; this checks the app carries them end to end.
 import { expect, test, type Page } from '@playwright/test';
-import type { ChangeSet, Entity, InsertGeometry } from '@triya/engine';
+import type { ChangeSet, Entity, InsertGeometry, MultiLeaderGeometry } from '@triya/engine';
 import { DXF, activeCanvas, expectShown, ink, openWithPicker } from '../app/page';
 import { startApp } from '../app/server';
 import path from 'node:path';
@@ -636,4 +636,81 @@ test('edits an MTEXT’s contents in the In-Place Text Editor from the palette',
       }),
     )
     .toBe('GENERAL NOTES');
+});
+
+// M2-35 part 11: a multileader's Text rows. Its text stays on its landing: right-justified, its
+// left edge stays a landing gap from the landing's end and its insertion point moves to the
+// right edge, by the width the canvas measures.
+test('justifies and sizes a multileader’s text from the palette, on its landing', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await type(page, 'MLD', /^Specify leader arrowhead location/);
+  await type(page, '1000040,1000030', 'Specify leader landing location:');
+  await type(page, '1000060,1000060', 'Enter text:');
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('GATE VALVE');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  const leader = () =>
+    page.evaluate(() => {
+      let g: MultiLeaderGeometry | undefined;
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const a of cs.entities?.added ?? [])
+          if (a.entity.geom.kind === 'MULTILEADER') g = a.entity.geom;
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'MULTILEADER') g = u.after.geom;
+      }
+      return g && { text: g.text!, alignment: g.textAlignment };
+    });
+  await expect.poll(async () => (await leader())?.text.attachment).toBe(1);
+  const placed = (await leader())!.text;
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/MultiLeader \(1\)/);
+  await objects.selectOption({ label: 'MultiLeader (1)' });
+  await expect(palette.getByLabel('Contents', { exact: true })).toHaveText('GATE VALVE');
+  await expect(
+    palette.getByRole('button', { name: 'Edit Contents in the text editor' }),
+  ).toBeVisible();
+  await expect(palette.getByRole('combobox', { name: 'Text style' })).toHaveValue(/.+/);
+  const justify = palette.getByRole('combobox', { name: 'Justify' });
+  await expect(justify).toHaveValue('Left');
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('1-multileader-text-rows.png') });
+
+  await justify.selectOption({ label: 'Right' });
+  await expect(justify).toHaveValue('Right');
+  await expect.poll(async () => (await leader())?.text.attachment).toBe(3);
+  const right = (await leader())!;
+  expect(right.alignment).toBe(2);
+  // The insertion point is now the right edge: the text's measured width to the right.
+  expect(right.text.position.x).toBeGreaterThan(placed.position.x + placed.height);
+  expect(right.text.position.y).toBeCloseTo(placed.position.y, 9);
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('2-justified-right.png') });
+
+  const height = palette.getByRole('textbox', { name: 'Text height', exact: true });
+  await height.fill(String(placed.height * 2));
+  await height.press('Enter');
+  await expect.poll(async () => (await leader())?.text.height).toBeCloseTo(placed.height * 2, 9);
+  // Twice the height, twice the width: the right edge moves on by the old width.
+  const taller = (await leader())!.text;
+  expect(taller.position.x - placed.position.x).toBeCloseTo(
+    2 * (right.text.position.x - placed.position.x),
+    6,
+  );
+  await page.mouse.move(5, 500);
+  await page.screenshot({ path: test.info().outputPath('3-taller.png') });
 });

@@ -11,6 +11,7 @@ export {
   applyCurrentEdit,
   applyPropertyEdit,
   hatchesToPattern,
+  multiLeaderTextsToMeasure,
   patternPlacement,
   placedPatterns,
   type HatchPatterns,
@@ -19,4 +20,5 @@ export {
 } from './edit';
 export { CETRANSPARENCY, currentHeader, currentProps } from './current';
 export { polylineArea, polylineLength } from './measure';
+export { MLEADER_TEXT_OVERRIDES, type MultiLeaderWidths } from './multileader';
 export { HYPERLINK_APP, hasThickness, hyperlinkOf } from './general';
