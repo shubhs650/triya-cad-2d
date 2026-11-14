@@ -173,7 +173,7 @@ test('Open in viewer when done opens the published file in a new tab (M2-45 part
   await d.getByRole('button', { name: 'Publish' }).click();
   const viewer = await opening;
   await expect(d).toBeHidden({ timeout: 60_000 });
-  await expect.poll(() => viewer.url()).toMatch(/^blob:/);
+  await expect(viewer).toHaveTitle('page-setups-Layout1.png');
   await expect
     .poll(() => viewer.evaluate(() => document.querySelector('img')?.naturalWidth ?? 0))
     .toBeGreaterThan(100);
@@ -181,7 +181,7 @@ test('Open in viewer when done opens the published file in a new tab (M2-45 part
   expect(downloads[0]!.suggestedFilename()).toBe('page-setups-Layout1.png');
   await viewer.close();
 
-  // A PDF: the tab is given the PDF the publish wrote.
+  // A PDF: the tab shows the PDF the publish wrote.
   const again = await openPublish(page);
   await again.getByRole('checkbox', { name: 'page-setups-Model' }).uncheck();
   await again.getByLabel('Open in viewer when done').check();
@@ -191,7 +191,15 @@ test('Open in viewer when done opens the published file in a new tab (M2-45 part
   await expect(again).toBeHidden({ timeout: 60_000 });
   await expect.poll(() => downloads.length).toBe(2);
   const pdf = new Uint8Array(readFileSync((await downloads[1]!.path())!));
+  // pdf.js takes the bytes' buffer, so the length is read first.
+  const length = pdf.length;
   expect((await pdfSummary(pdf, 1)).labels).toEqual(['Layout1']);
-  // The tab navigates to the PDF's blob (a browser without a PDF viewer downloads it there).
-  await expect.poll(async () => tab.isClosed() || tab.url()).toMatch(/^blob:/);
+  // The tab shows that PDF in the browser's PDF viewer, titled with its name.
+  await expect(tab).toHaveTitle('page-setups.pdf');
+  const shown = await tab.evaluate(async () => {
+    const e = document.querySelector('embed')!;
+    const bytes = new Uint8Array(await (await fetch(e.src)).arrayBuffer());
+    return { type: e.type, length: bytes.length };
+  });
+  expect(shown).toEqual({ type: 'application/pdf', length });
 });

@@ -28,7 +28,8 @@
 // Publish does; a sheet whose drawing is not open is listed as "Drawing file not found" until Add
 // Sheets supplies it. "Open in viewer when done" opens the published PDF (or the one SVG or PNG)
 // in a new browser tab: the tab opens on the Publish click (a tab opened when the publish ends,
-// seconds later, is a pop-up the browser blocks) and is given the file when it is written.
+// seconds later, is a pop-up the browser blocks) and shows the file when it is written, in the
+// browser's own PDF viewer (an <embed>) or as a picture, titled with the file's name.
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { download, downloadPdf } from './PlotDialog';
 import { controllerOf } from './canvas/registry';
@@ -385,12 +386,8 @@ function PublishBody({
       }
       const written = await write(plotted);
       if (viewer && written.view) {
-        const url = URL.createObjectURL(
-          new Blob([written.view.bytes as Uint8Array<ArrayBuffer>], { type: written.view.type }),
-        );
-        viewer.location.href = url;
+        showInViewer(viewer, written.view);
         viewed = true;
-        setTimeout(() => URL.revokeObjectURL(url), 60_000);
       }
       const bySheet = new Map(written.failed.map((f) => [f.sheet, f.message]));
       for (const s of included) {
@@ -433,7 +430,7 @@ function PublishBody({
   ): Promise<{
     published: boolean;
     failed: readonly PublishFailure[];
-    view?: { bytes: Uint8Array; type: string };
+    view?: ViewedFile;
   }> => {
     if (device === 'pdf') {
       const result = publishPdf(plotted, doc.name.replace(/\.[^.]+$/, ''), underlayFile);
@@ -442,7 +439,7 @@ function PublishBody({
       return {
         published: true,
         failed: result.failed,
-        view: { bytes: result.bytes, type: 'application/pdf' },
+        view: { name: publishFileName(doc.name), bytes: result.bytes, type: 'application/pdf' },
       };
     }
     const { files, failed } = await publishSheetFiles(
@@ -458,7 +455,7 @@ function PublishBody({
     return {
       published: true,
       failed,
-      ...(file.type !== 'application/zip' && { view: { bytes: file.bytes, type: file.type } }),
+      ...(file.type !== 'application/zip' && { view: file }),
     };
   };
 
@@ -674,6 +671,39 @@ function PublishBody({
       </dialog>
     </dialog>
   );
+}
+
+/** A published file "Open in viewer when done" shows. */
+interface ViewedFile {
+  readonly name: string;
+  readonly bytes: Uint8Array;
+  readonly type: string;
+}
+
+/**
+ * Shows a published file in the tab opened for it (part 3): a PDF in the browser's PDF viewer
+ * (an <embed> filling the tab), an SVG or PNG as a picture. The tab is the app's own about:blank
+ * page, so it takes the app's blob: URL, which lives as long as the app's page; it is not revoked,
+ * as the PDF viewer reads it again to save or print.
+ */
+function showInViewer(viewer: Window, file: ViewedFile): void {
+  const url = URL.createObjectURL(
+    new Blob([file.bytes as Uint8Array<ArrayBuffer>], { type: file.type }),
+  );
+  const d = viewer.document;
+  d.title = file.name;
+  d.body.style.margin = '0';
+  const pdf = file.type === 'application/pdf';
+  const el = d.createElement(pdf ? 'embed' : 'img');
+  el.setAttribute('src', url);
+  if (pdf) {
+    el.setAttribute('type', file.type);
+    el.style.cssText = 'display:block;width:100vw;height:100vh;border:0';
+  } else {
+    el.setAttribute('alt', file.name);
+    el.style.cssText = 'display:block;max-width:100%;margin:auto';
+  }
+  d.body.replaceChildren(el);
 }
 
 function Check({
