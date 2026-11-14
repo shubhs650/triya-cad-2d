@@ -15,19 +15,60 @@
 // palette's choice is the column of the context data's attachment point (171) and the entity's
 // text alignment (175). ActiveX's AcadMLeader.TextJustify is an AcAttachmentPoint, whose row
 // a multileader's attachment overrides; the ambiguity is noted in the PR.
+//
+// M2-35 part 14 adds the rest of AutoCAD's MTEXT-like Text rows a multileader's text has (its
+// help does not list them; they follow ActiveX AcadMLeader's TextRotation, TextLineSpacingFactor,
+// TextLineSpacingDistance, TextLineSpacingStyle, TextBackgroundFill and TextFrameDisplay, and
+// MTEXT's palette for the labels): Text rotation turns the text about its insertion point, as an
+// MTEXT's Rotation row does; Line space distance is the factor times 5/3 of the text height
+// (AutoCAD's single spacing), each multileader taking the factor its height gives; Background
+// mask turned on uses the drawing window colour and a border of 1.5, the Background Mask
+// dialog's defaults, and keeps a mask already on as it is. These are kept per annotation scale in
+// the context data, so an annotative multileader refuses them; Text frame is the entity's (DXF
+// 292) and flags ENABLE_FRAME_TEXT (bit 17). Direction (DXF 172) is not shown: the text layout
+// does not draw a top-to-bottom flow yet.
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Entity, MTextGeometry, MultiLeaderGeometry, MultiLeaderText } from '../model/types';
 import { MLEADER_MTEXT, attachmentRow, multiLeaderMText } from '../edit/mleader';
+import { parseAngleValue, parseNumber } from '../commands/parse';
 import type { PropertyOption, PropertyRow, PropertyValue } from './sheet';
 
-/** DXF 90 bits for the text's style and alignment (ezdxf's `MLeader` override flags). */
-export const MLEADER_TEXT_OVERRIDES = { textStyle: 1 << 11, textAlignment: 1 << 14 } as const;
+/**
+ * DXF 90 bits for the text's style, alignment and frame (ezdxf's `MLeader` override flags,
+ * TEXT_STYLE_ID, TEXT_ALIGNMENT_TYPE and ENABLE_FRAME_TEXT).
+ */
+export const MLEADER_TEXT_OVERRIDES = {
+  textStyle: 1 << 11,
+  textAlignment: 1 << 14,
+  textFrame: 1 << 17,
+} as const;
 
 const JUSTIFY = ['Left', 'Center', 'Right'] as const;
 
 const JUSTIFY_OPTIONS: readonly PropertyOption[] = JUSTIFY.map((j) => ({ value: j, label: j }));
+
+/** DXF 170 in the context data, as MTEXT's 73: 1 at least, 2 exactly. */
+const LINE_SPACE_STYLE_OPTIONS: readonly PropertyOption[] = [
+  { value: '1', label: 'At least' },
+  { value: '2', label: 'Exactly' },
+];
+
+const YES_NO_OPTIONS: readonly PropertyOption[] = [
+  { value: 'yes', label: 'Yes' },
+  { value: 'no', label: 'No' },
+];
+
+/** AutoCAD's single line spacing, as a multiple of the text height. */
+const SINGLE_SPACING = 5 / 3;
+
+/** MTEXT's line spacing factor range, 0.25 to 4.00. */
+const MIN_SPACING = 0.25;
+const MAX_SPACING = 4;
+
+/** The Background Mask dialog's border offset factor, which turning the mask on uses. */
+const MASK_SCALE = 1.5;
 
 /** The multileader's text, when its content is text (MLEADER's "Mtext" content type). */
 export function textOf(g: MultiLeaderGeometry): MultiLeaderText | undefined {
@@ -79,7 +120,100 @@ export function multiLeaderTextRows(
       ts.map((t) => t.height),
       { key: 'height', label: 'Text height', kind: 'distance' },
     ),
+    // M2-35 part 14.
+    sharedRow(
+      ts.map((t) => t.rotation),
+      { key: 'textRotation', label: 'Text rotation', kind: 'angle' },
+    ),
+    sharedRow(
+      ts.map((t) => t.lineSpacing),
+      { key: 'lineSpacing', label: 'Line space factor', kind: 'number' },
+    ),
+    sharedRow(
+      ts.map((t) => t.lineSpacing * SINGLE_SPACING * t.height),
+      { key: 'lineSpaceDistance', label: 'Line space distance', kind: 'distance' },
+    ),
+    sharedRow(
+      ts.map((t) => String(t.lineSpacingStyle === 2 ? 2 : 1)),
+      {
+        key: 'lineSpacingStyle',
+        label: 'Line space style',
+        kind: 'choice',
+        options: LINE_SPACE_STYLE_OPTIONS,
+      },
+    ),
+    sharedRow(
+      ts.map((t) => (t.mask ? 'yes' : 'no')),
+      { key: 'backgroundMask', label: 'Background mask', kind: 'choice', options: YES_NO_OPTIONS },
+    ),
+    sharedRow(
+      es.map((e) => ((e.geom as MultiLeaderGeometry).textFrame ? 'yes' : 'no')),
+      { key: 'textFrame', label: 'Text frame', kind: 'choice', options: YES_NO_OPTIONS },
+    ),
   ];
+}
+
+/** The keys of the part 14 rows, which leave the text where it is. */
+const TEXT_KEYS = new Set([
+  'textRotation',
+  'lineSpacing',
+  'lineSpaceDistance',
+  'lineSpacingStyle',
+  'backgroundMask',
+  'textFrame',
+]);
+
+/** A number typed or given; undefined where it does not read. */
+function numberOf(v: PropertyValue, angle = false): number | undefined {
+  if (typeof v === 'number') return Number.isFinite(v) ? v : undefined;
+  if (typeof v !== 'string') return undefined;
+  return angle ? parseAngleValue(v) : parseNumber(v.trim());
+}
+
+/**
+ * The multileader with part 14's row `key` set to `v` on its text (see the file comment);
+ * undefined for another row or a multileader without text, `invalid` for a value the row cannot
+ * take, a refusal for what an annotative multileader keeps per scale.
+ */
+export function multiLeaderTextRowChange(
+  e: Entity,
+  key: string,
+  v: PropertyValue,
+): MultiLeaderGeometry | 'invalid' | { readonly refuse: string } | undefined {
+  const g = e.geom as MultiLeaderGeometry;
+  const t = textOf(g);
+  if (!t || !TEXT_KEYS.has(key)) return undefined;
+  if (key === 'textFrame') {
+    if (v !== 'yes' && v !== 'no') return 'invalid';
+    return {
+      ...g,
+      textFrame: v === 'yes',
+      overrideFlags: g.overrideFlags | MLEADER_TEXT_OVERRIDES.textFrame,
+    };
+  }
+  let next: MultiLeaderText;
+  if (key === 'backgroundMask') {
+    if (v !== 'yes' && v !== 'no') return 'invalid';
+    const { mask, ...rest } = t;
+    next = v === 'no' ? rest : { ...rest, mask: mask ?? { scale: MASK_SCALE } };
+  } else if (key === 'lineSpacingStyle') {
+    if (v !== '1' && v !== '2' && v !== 1 && v !== 2) return 'invalid';
+    next = { ...t, lineSpacingStyle: Number(v) };
+  } else if (key === 'textRotation') {
+    const n = numberOf(v, true);
+    if (n === undefined) return 'invalid';
+    next = { ...t, rotation: n };
+  } else {
+    const n = numberOf(v);
+    if (n === undefined) return 'invalid';
+    const factor = key === 'lineSpacing' ? n : n / (SINGLE_SPACING * t.height);
+    // A rounding error at the range's ends is the drafter's typed end, not out of it.
+    const eps = 1e-9;
+    if (!(factor >= MIN_SPACING - eps && factor <= MAX_SPACING + eps)) return 'invalid';
+    next = { ...t, lineSpacing: Math.min(MAX_SPACING, Math.max(MIN_SPACING, factor)) };
+  }
+  if (e.annotative || g.annotative) return { refuse: ANNOTATIVE };
+  return { ...g, text: next };
 }
 
 /** The widths of a multileader's text before and after an edit (undefined: not measured). */

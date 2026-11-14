@@ -814,6 +814,95 @@ test('sets a multileader’s leader colour, arrowhead size and landing from the 
   await page.screenshot({ path: test.info().outputPath('3-spline.png') });
 });
 
+// M2-35 part 14: a multileader's other Text rows. A turned, double-spaced, masked and framed
+// text stays at its insertion point.
+test('turns, spaces, masks and frames a multileader’s text from the palette', async ({ page }) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, '1000000,1000000', 'Specify opposite corner:');
+  await type(page, '1000160,1000100', 'Command:');
+  await type(page, 'MLD', /^Specify leader arrowhead location/);
+  await type(page, '1000040,1000030', 'Specify leader landing location:');
+  await type(page, '1000060,1000060', 'Enter text:');
+  const editor = page.getByRole('textbox', { name: 'Multiline text' });
+  await expect(editor).toBeFocused();
+  await page.keyboard.type('GATE VALVE');
+  await page.keyboard.press('Enter');
+  await page.keyboard.type('DN 50');
+  await page.keyboard.press('Control+Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  const leader = () =>
+    page.evaluate(() => {
+      let g: MultiLeaderGeometry | undefined;
+      for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+        for (const a of cs.entities?.added ?? [])
+          if (a.entity.geom.kind === 'MULTILEADER') g = a.entity.geom;
+        for (const u of cs.entities?.updated ?? [])
+          if (u.after.geom.kind === 'MULTILEADER') g = u.after.geom;
+      }
+      return g;
+    });
+  await expect.poll(async () => (await leader())?.text?.content).toMatch(/DN 50/);
+  const placed = (await leader())!;
+
+  const palette = page.getByRole('complementary', { name: 'Properties' });
+  await page.keyboard.press('Control+1');
+  await activeCanvas(page).hover();
+  await page.keyboard.press('Control+a');
+  const objects = palette.getByRole('combobox', { name: 'Objects selected' });
+  await expect(objects).toContainText(/MultiLeader \(1\)/);
+  await objects.selectOption({ label: 'MultiLeader (1)' });
+  const text = palette.getByRole('table', { name: 'Text' });
+  await expect(text.getByRole('rowheader')).toHaveText([
+    'Contents',
+    'Text style',
+    'Justify',
+    'Text height',
+    'Text rotation',
+    'Line space factor',
+    'Line space distance',
+    'Line space style',
+    'Background mask',
+    'Text frame',
+  ]);
+  const mask = palette.getByRole('combobox', { name: 'Background mask' });
+  const frame = palette.getByRole('combobox', { name: 'Text frame' });
+  await expect(mask).toHaveValue('no');
+  await expect(frame).toHaveValue('no');
+  await frame.scrollIntoViewIfNeeded();
+  await page.mouse.move(400, 700);
+  await page.screenshot({ path: test.info().outputPath('1-multileader-text-rows.png') });
+
+  const rotation = palette.getByRole('textbox', { name: 'Text rotation', exact: true });
+  await rotation.fill('15');
+  await rotation.press('Enter');
+  await expect.poll(async () => (await leader())?.text?.rotation).toBeCloseTo(Math.PI / 12, 9);
+  const factor = palette.getByRole('textbox', { name: 'Line space factor', exact: true });
+  await factor.fill('2');
+  await factor.press('Enter');
+  await expect.poll(async () => (await leader())?.text?.lineSpacing).toBe(2);
+  await palette.getByRole('combobox', { name: 'Line space style' }).selectOption({
+    label: 'Exactly',
+  });
+  await expect.poll(async () => (await leader())?.text?.lineSpacingStyle).toBe(2);
+  await mask.selectOption({ label: 'Yes' });
+  await expect.poll(async () => (await leader())?.text?.mask).toEqual({ scale: 1.5 });
+  await frame.selectOption({ label: 'Yes' });
+  await expect.poll(async () => (await leader())?.textFrame).toBe(true);
+  // Twice the factor, twice the distance between lines.
+  const distance = palette.getByRole('textbox', { name: 'Line space distance', exact: true });
+  await expect
+    .poll(async () => Number(await distance.inputValue()))
+    .toBeCloseTo(2 * (5 / 3) * placed.text!.height, 3);
+  expect((await leader())!.text!.position).toEqual(placed.text!.position);
+  await frame.scrollIntoViewIfNeeded();
+  await page.mouse.move(400, 700);
+  await page.screenshot({ path: test.info().outputPath('2-turned-spaced-masked-framed.png') });
+});
+
 // M2-35 part 13: a gradient's own rows, edited on ezdxf's two associative solid hatches made
 // gradients: the file keeps their gradient settings with the gradient turned off (DXF 450 = 0),
 // so the test turns it on (450 = 1), as AutoCAD writes a gradient fill.
