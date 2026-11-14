@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { PdfDocument } from '../src/document';
-import { pageView, pdfText, underlayPageIndex } from '../src/import';
+import { appearanceMatrix, pageView, pdfText, underlayPageIndex } from '../src/import';
 import type { Affine } from '../src/path';
 import { plotItems, type PlotPaint, type PlotPathItem, type PlotUnderlay } from '../src/plot';
 import type { PdfStream } from '../src/reader';
 import { PdfName, PdfSource, type PdfDict, type PdfRef, type PdfString } from '../src/reader';
-import { LAYERED, TWO_PAGES, buildPdf, textOf } from './build';
+import { ANNOTATED, LAYERED, TWO_PAGES, buildPdf, textOf } from './build';
 
 const at = (m: Affine, x: number, y: number) => [m.a * x + m.c * y + m.e, m.b * x + m.d * y + m.f];
 
@@ -259,5 +259,94 @@ describe('plotting a PDF underlay with layers (M2-38 part 2)', () => {
     expect(pdfText(b(0x57, 0x80, 0xe9, 0x18))).toBe('W•é˘');
     expect(pdfText(b(0xfe, 0xff, 0x00, 0x4e, 0xd8, 0x3d, 0xde, 0x00))).toBe('N😀');
     expect(pdfText(b(0xef, 0xbb, 0xbf, 0xc3, 0xa9))).toBe('é');
+  });
+});
+
+describe("plotting a PDF underlay's annotations (M2-56 part 2)", () => {
+  it("fits an appearance, as its /Matrix turns it, to the annotation's rectangle (PDF 32000-1 §12.5.5)", () => {
+    const I = { a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 };
+    expect(appearanceMatrix([0, 0, 20, 10], I, [100, 50, 140, 70])).toEqual({
+      a: 2,
+      b: 0,
+      c: 0,
+      d: 2,
+      e: 100,
+      f: 50,
+    });
+    // Turned a quarter: its box is 10 × 10 still, from the origin.
+    const turned = { a: 0, b: 1, c: -1, d: 0, e: 10, f: 0 };
+    expect(appearanceMatrix([0, 0, 10, 10], turned, [20, 60, 30, 70])).toEqual({
+      a: 1,
+      b: 0,
+      c: 0,
+      d: 1,
+      e: 20,
+      f: 60,
+    });
+    expect(appearanceMatrix([5, 5, 5, 10], I, [0, 0, 10, 10])).toBeUndefined();
+  });
+
+  it('draws the printable ones over the page, as a PDF printer does, and leaves the rest', () => {
+    const { content, form, src } = plot([item(underlay())], buildPdf(ANNOTATED));
+    expect(content.match(/\/Fm1 Do/g)).toHaveLength(1);
+    // The page shown: the page's own form, then each printable appearance at its rectangle.
+    const f = form('Fm1');
+    expect(f.dict.get('BBox')).toEqual([0, 0, 200, 100]);
+    expect(f.dict.get('Matrix')).toEqual([1, 0, 0, 1, 0, 0]);
+    expect((f.dict.get('Group') as PdfDict).get('I')).toBe(true);
+    expect(textOf(src.decode(f))).toBe(
+      [
+        '/P Do',
+        'q 2 0 0 2 100 50 cm /A1 Do Q',
+        'q 1 0 0 1 20 60 cm /A2 Do Q',
+        '/OC /O3 BDC q 1 0 0 2 150 10 cm /A3 Do Q EMC',
+        '',
+      ].join('\n'),
+    );
+    const res = f.dict.get('Resources') as PdfDict;
+    const xo = res.get('XObject') as PdfDict;
+    const page = src.resolve(xo.get('P')) as PdfStream;
+    expect(textOf(src.decode(page))).toBe('0 0 1 rg 10 10 20 20 re f');
+    expect(page.dict.get('Matrix')).toEqual([1, 0, 0, 1, 0, 0]);
+    // Each appearance a form XObject, though its stream did not say so; one copy of each.
+    const square = src.resolve(xo.get('A1')) as PdfStream;
+    expect(square.dict.get('Subtype')).toEqual(new PdfName('Form'));
+    expect(square.dict.get('BBox')).toEqual([0, 0, 20, 10]);
+    expect(textOf(src.decode(square))).toBe('1 0 0 RG 0 0 20 10 re S');
+    expect((xo.get('A3') as PdfRef).num).toBe((xo.get('A1') as PdfRef).num);
+    // The check box's On state, with its font.
+    const check = src.resolve(xo.get('A2')) as PdfStream;
+    expect(check.dict.get('Matrix')).toEqual([0, 1, -1, 0, 10, 0]);
+    const font = src.resolve(
+      ((check.dict.get('Resources') as PdfDict).get('Font') as PdfDict).get('F1'),
+    ) as PdfDict;
+    expect(font.get('BaseFont')).toEqual(new PdfName('ZapfDingbats'));
+    // The annotation's layer is the plot's, so a viewer turns it off with the page's layers.
+    const marks = (res.get('Properties') as PdfDict).get('O3') as PdfRef;
+    expect(plotLayers(src)).toEqual([{ name: 'Marks', on: true, num: marks.num }]);
+  });
+
+  it('plots an annotation in a layer the underlay turns off with that layer off', () => {
+    const { src } = plot([item(underlay({ layersOff: ['Marks'] }))], buildPdf(ANNOTATED));
+    expect(plotLayers(src).map(({ name, on }) => [name, on])).toEqual([['Marks', false]]);
+  });
+
+  it('adjusts the annotations with the page, contrast and monochrome', () => {
+    const { form, src } = plot([item(underlay({ monochrome: true }))], buildPdf(ANNOTATED));
+    const masked = form('Fm1');
+    const res = masked.dict.get('Resources') as PdfDict;
+    const adjusted = src.resolve((res.get('XObject') as PdfDict).get('A')) as PdfStream;
+    const ares = adjusted.dict.get('Resources') as PdfDict;
+    const shown = src.resolve((ares.get('XObject') as PdfDict).get('P')) as PdfStream;
+    expect(textOf(src.decode(shown))).toMatch(/^\/P Do\nq 2 0 0 2 100 50 cm \/A1 Do Q\n/);
+  });
+
+  it('keeps a page without printable annotations as it was', () => {
+    const none = {
+      ...ANNOTATED,
+      3: ANNOTATED[3]!.toString().replace(/\/Annots \[[^\]]*\]/, '/Annots [6 0 R 7 0 R 13 0 R]'),
+    };
+    const { form, src } = plot([item(underlay())], buildPdf(none));
+    expect(textOf(src.decode(form('Fm1')))).toBe('0 0 1 rg 10 10 20 20 re f');
   });
 });

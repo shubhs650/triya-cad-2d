@@ -81,6 +81,7 @@ import {
   type PlotStyleTable,
   type RasterPixels,
 } from '@triya/render';
+import { fileNameOf, type ReferenceRow } from './xrefs';
 
 /** What the Plot dialog plots from: the space shown and what it knows of it. */
 export interface PlotSpace {
@@ -274,6 +275,27 @@ function tableNamed(sheet: string, space: PlotSpace): string {
     (n) => BUNDLED_PLOT_STYLE_TABLES[n] === bundled,
   );
   return name ?? file;
+}
+
+/**
+ * The Plot dialog's note on the drawing's PDF underlays whose file is not found (M2-56 part 2),
+ * from the External References palette's rows, or undefined when every PDF is found: such an
+ * underlay plots its clip boundary only (unclipped, nothing), as `plotItems` draws it.
+ */
+export function missingUnderlaysNote(rows: readonly ReferenceRow[]): string | undefined {
+  const names = [
+    ...new Set(
+      rows
+        .filter((r) => r.kind === 'pdf' && r.status === 'not-found')
+        .map((r) => `${r.name} (${fileNameOf(r.path)})`),
+    ),
+  ];
+  if (names.length === 0) return undefined;
+  const which =
+    names.length === 1
+      ? 'This PDF underlay plots without its page, as its PDF is not found'
+      : 'These PDF underlays plot without their page, as their PDF is not found';
+  return `${which}: ${names.join(', ')}. Drop the PDF on the window to plot its page.`;
 }
 
 /** The table chosen is not one this device has for the drawing (a page setup named it). */

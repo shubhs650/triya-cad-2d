@@ -161,6 +161,35 @@ test('a PDF underlay plots its page as vectors and text once its file is supplie
   expect(pdf.text).toContain('TRIYA');
 });
 
+// M2-56 part 2: the Plot dialog says which PDF underlays plot without their page.
+test('the Plot dialog names the PDF underlays whose file is not found until it is dropped', async ({
+  page,
+}) => {
+  test.setTimeout(90_000);
+  const fixtures = path.join(import.meta.dirname, '../../../packages/testkit/fixtures/underlay');
+  await page.goto(app.url);
+  await openWithPicker(page, path.join(fixtures, 'pdf-underlay.dxf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  const d = dialog(page);
+  await expect(d.getByRole('heading')).toHaveText('Plot - Model');
+  const note = d.getByRole('note', { name: 'PDF underlays not found' });
+  await expect(note).toHaveText(
+    'These PDF underlays plot without their page, as their PDF is not found: ' +
+      'pdf-underlay - 1 (pdf-underlay.pdf), pdf-underlay - 2 (pdf-underlay.pdf). ' +
+      'Drop the PDF on the window to plot its page.',
+  );
+  await d.getByRole('button', { name: 'Cancel' }).click();
+  await openWithDrop(page, path.join(fixtures, 'pdf-underlay.pdf'));
+  await expectShown(page, 'pdf-underlay.dxf');
+  await activeCanvas(page).click({ position: { x: 5, y: 5 } });
+  await page.keyboard.press('Control+p');
+  await expect(d.getByRole('heading')).toHaveText('Plot - Model');
+  await expect(d.getByLabel('What to plot')).toBeVisible();
+  await expect(note).toHaveCount(0);
+});
+
 // M2-39: the PNG plot shows the underlays' pages as the PDF plot does (pdf.js draws the PDF over
 // the same sheet at the PNG's pixels), and the SVG carries each page as an image.
 test('SVG and PNG plots draw a PDF underlay’s page as the PDF plot does', async ({
