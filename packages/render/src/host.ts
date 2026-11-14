@@ -21,7 +21,7 @@ import type {
   UnderlaySnapPage,
 } from '@triya/engine';
 import type { Surface } from './canvas2d';
-import type { Endpoint, HostMessage, WorkerMessage } from './protocol';
+import type { ChangeLink, Endpoint, HostMessage, WorkerMessage } from './protocol';
 import { RenderSession, type FontSources, type PlotRequest, type RenderDocument } from './session';
 import type { PlotPart } from './plot/job';
 import { offscreenLayer, surfaceOf } from './surface';
@@ -77,6 +77,13 @@ export interface RendererHostOptions {
    * answers, when it can, with `setUnderlay`.
    */
   readonly onUnderlayRequest?: (request: UnderlayRequest) => void;
+  /**
+   * Links the render worker to the drawing's engine (M2-62): the engine posts each change set
+   * it applies on the port, numbered as `apply`'s `seq`, so the worker draws it without waiting
+   * on the main thread. Asked only when the renderer runs in a worker; the link is closed when
+   * the host is disposed. Undefined (or no link) leaves the main thread's copies only.
+   */
+  readonly connect?: () => ChangeLink | undefined;
 }
 
 interface Pending {
@@ -92,6 +99,7 @@ export class RendererHost {
   readonly #onError: (error: Error) => void;
   readonly #createBitmap: BitmapFactory | undefined;
   readonly #onUnderlayRequest: ((request: UnderlayRequest) => void) | undefined;
+  readonly #link: ChangeLink | undefined;
   #nextId = 1;
 
   /** Whether `auto` would pick the worker for this canvas. */
@@ -123,6 +131,8 @@ export class RendererHost {
       const w = o.createWorker();
       this.#worker = w;
       w.addEventListener('message', ({ data }) => this.#receive(data));
+      const link = o.connect?.();
+      this.#link = link;
       w.postMessage(
         {
           type: 'init',
@@ -131,10 +141,12 @@ export class RendererHost {
           ...(o.style && { style: o.style }),
           ...(o.patterns && { patterns: o.patterns }),
           ...(o.fonts && { fonts: o.fonts }),
+          ...(link && { changes: link.port }),
         },
-        [offscreen as Transferable],
+        [offscreen as Transferable, ...(link ? [link.port as Transferable] : [])],
       );
     } else {
+      this.#link = undefined;
       this.#session = new RenderSession({
         document: o.document,
         surface: surfaceOf(o.canvas),
@@ -157,10 +169,13 @@ export class RendererHost {
     else this.#post({ type: 'view', view });
   }
 
-  /** Forwards a ChangeSet the engine has applied. */
-  apply(change: ChangeSet): void {
-    if (this.#session) this.#session.apply(change);
-    else this.#post({ type: 'apply', change });
+  /**
+   * Forwards a ChangeSet the engine has applied; `seq` is its place in the drawing's change log
+   * (M2-62), so a change the worker already took from the engine is not applied again.
+   */
+  apply(change: ChangeSet, seq?: number): void {
+    if (this.#session) this.#session.apply(change, seq);
+    else this.#post(seq === undefined ? { type: 'apply', change } : { type: 'apply', change, seq });
   }
 
   setTransient(primitives: readonly RenderPrimitive[]): void {
@@ -186,8 +201,21 @@ export class RendererHost {
   }
 
   frame(): void {
-    if (this.#session) this.#session.renderer.frame();
+    if (this.#session) this.#session.frame();
     else this.#post({ type: 'frame' });
+  }
+
+  /**
+   * When the first frame holding numbered change `seq` was drawn, in milliseconds since the
+   * epoch (`performance.timeOrigin + performance.now()` where the renderer runs, so comparable
+   * with the main thread's clock); undefined while none has (M2-62). Asked after everything
+   * sent so far.
+   */
+  drawnAt(seq: number): Promise<number | undefined> {
+    if (this.#session) return Promise.resolve(this.#session.drawnAt(seq));
+    return this.#request((id) => ({ type: 'drawnAt', id, seq })).then((m) =>
+      m.type === 'drawnAt' && m.at !== null ? m.at : undefined,
+    );
   }
 
   /**
@@ -366,6 +394,7 @@ export class RendererHost {
   }
 
   dispose(): void {
+    this.#link?.close();
     this.#worker?.terminate();
     const gone = new Error('the renderer was disposed');
     for (const p of this.#pending.values()) p.reject(gone);

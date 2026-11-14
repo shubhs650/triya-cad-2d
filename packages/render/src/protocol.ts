@@ -41,6 +41,12 @@ export type HostMessage =
       readonly patterns?: readonly string[];
       /** Fonts for text (M1-72). */
       readonly fonts?: FontSources;
+      /**
+       * The drawing's engine's end of a MessageChannel (M2-62), transferred: the engine posts
+       * each change set it applies on it as a `ChangeMessage`, so the worker draws it without
+       * waiting on the main thread.
+       */
+      readonly changes?: unknown;
     }
   | {
       readonly type: 'resize';
@@ -49,7 +55,12 @@ export type HostMessage =
       readonly dpr: number;
     }
   | { readonly type: 'view'; readonly view: ViewTransform }
-  | { readonly type: 'apply'; readonly change: ChangeSet }
+  /**
+   * A change set the engine applied. `seq` is its place in the drawing's change log (M2-62):
+   * the engine posts the same change on the worker's change port, and whichever copy comes
+   * first is applied, the other skipped.
+   */
+  | { readonly type: 'apply'; readonly change: ChangeSet; readonly seq?: number }
   | { readonly type: 'transient'; readonly primitives: readonly RenderPrimitive[] }
   | { readonly type: 'style'; readonly style: RenderStyle }
   | { readonly type: 'patterns'; readonly sources: readonly string[] }
@@ -105,6 +116,8 @@ export type HostMessage =
   /** The entities drawn in a rectangle of the canvas (M1-106 fidelity triage). */
   | { readonly type: 'entitiesIn'; readonly id: number; readonly rect: ScreenRect }
   | { readonly type: 'flush'; readonly id: number }
+  /** When the first frame holding numbered change `seq` was drawn (M2-62); a `drawnAt`. */
+  | { readonly type: 'drawnAt'; readonly id: number; readonly seq: number }
   /** What plotting a space draws (M2-17); the answer is a `plot`. */
   | { readonly type: 'plot'; readonly id: number; readonly request: PlotRequest }
   /** ZOOM Extents of the space drawn, as measured after everything before (M1-35 part 2). */
@@ -143,6 +156,11 @@ export type WorkerMessage =
     }
   /** The plot parts asked for (M2-17). */
   | { readonly type: 'plot'; readonly id: number; readonly parts: readonly PlotPart[] }
+  /**
+   * The time, in milliseconds since the epoch (`performance.timeOrigin + performance.now()`),
+   * the frame asked for was drawn; null when no frame has drawn that change yet.
+   */
+  | { readonly type: 'drawnAt'; readonly id: number; readonly at: number | null }
   | { readonly type: 'error'; readonly message: string; readonly id?: number }
   /** A PDF underlay page the view needs drawn (M1-20); unasked, so it carries no id. */
   | { readonly type: 'underlayRequest'; readonly request: UnderlayRequest; readonly id?: never };
@@ -151,4 +169,23 @@ export type WorkerMessage =
 export interface Endpoint<In, Out> {
   postMessage(message: Out, transfer?: Transferable[]): void;
   addEventListener(type: 'message', listener: (e: { readonly data: In }) => void): void;
+}
+
+/**
+ * A change set on the change port between a drawing's engine worker and a render worker
+ * (M2-62), numbered by its place in the drawing's change log: 1 for the first change applied
+ * after the drawing opened.
+ */
+export interface ChangeMessage {
+  readonly seq: number;
+  readonly change: ChangeSet;
+}
+
+/**
+ * A render worker's link to its drawing's engine (M2-62): the port to hand the worker, and how
+ * to tell the engine to stop posting on it once the renderer is gone.
+ */
+export interface ChangeLink {
+  readonly port: unknown;
+  close(): void;
 }
