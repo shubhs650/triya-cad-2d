@@ -38,6 +38,7 @@ import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
 import { selectCommand } from './select';
 import { qselectCommand } from './qselect';
+import { GROUP_COMMANDS } from './modify/group';
 import { selectSimilarCommand } from './select-similar';
 import { setvarCommand } from './setvar';
 import { PALETTE_COMMANDS } from './palettes';
@@ -115,6 +116,7 @@ export function builtinCommands(): CommandRegistry {
     underlayLayersCommand(),
     ...INQUIRY_COMMANDS.map((make) => make()),
     ...ARRAY_COMMANDS.map((make) => make()),
+    ...GROUP_COMMANDS.map((make) => make()),
     // UNDO, U, REDO and OOPS (M2-05) keep no state of their own: the bus's history holds it.
     ...UNDO_COMMANDS,
   ]);

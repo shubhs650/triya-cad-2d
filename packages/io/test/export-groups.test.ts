@@ -13,6 +13,12 @@ import {
 import {
   ChangeSetBuilder,
   DocumentModel,
+  addToGroup,
+  changeGroup,
+  createGroup,
+  explodeGroup,
+  removeFromGroup,
+  reorderGroup,
   type Entity,
   type Group,
   type Handle,
@@ -108,6 +114,56 @@ const SAVES: readonly [ACadVersion, CadFormat][] = [
   [ACadVersion.AC1032, 'dxf'],
   [ACadVersion.AC1032, 'dwg'],
 ];
+
+describe('GROUP, UNGROUP and GROUPEDIT edits (M3-08)', () => {
+  it('maps the ACAD_GROUP dictionary new groups are filed in, even an empty one', () => {
+    const bytes = drawing();
+    const model = open(bytes);
+    const dict = readCadDocument(bytes).rootDictionary!.getEntry<CadDictionary>(
+      CadDictionary.acadGroup,
+    )!;
+    expect(model.meta.groupDictionary).toBe(dict.handle.toString(16).toUpperCase());
+    // acad-ts makes ACAD_GROUP on read for a drawing that has none.
+    const bare = new CadDocument(ACadVersion.AC1032);
+    bare.updateCollections(true, false);
+    bare.entities!.add(new Line());
+    expect(open(writeCadDocument(bare, { format: 'dxf' })).meta.groupDictionary).toBeDefined();
+  });
+
+  it.each(formats)('saves what the engine edits make of groups (%s)', (format) => {
+    const bytes = drawing(ACadVersion.AC1032, format);
+    const model = open(bytes);
+    const [l0, l1, l2, l3, l4] = lines(model);
+    let made: Group | undefined;
+    edit(model, (b) => {
+      made = createGroup(b, model, { name: 'Stairs', description: 'east', ids: [l3!.id, l4!.id] });
+      addToGroup(b, model, group(model, 'DOORS'), [l2!.id]);
+      removeFromGroup(b, model, group(model, 'DOORS'), [l0!.id]);
+      changeGroup(b, group(model, 'DOORS'), { name: 'Gates', selectable: false });
+      explodeGroup(b, model, group(model, '*A1'));
+    });
+    edit(model, (b) => {
+      createGroup(b, model, { ids: [l0!.id] });
+      reorderGroup(b, group(model, 'GATES'), 'reverse');
+    });
+    expect(made!.name).toBe('STAIRS');
+
+    const back = documentInit(save(bytes, model, format));
+    const saved = (back.objects ?? []).filter((o): o is Group => o.type === 'GROUP');
+    expect(saved.map((g) => [g.name, g.selectable, g.entities])).toEqual(
+      groups(model).map((g) => [g.name, g.selectable, g.entities]),
+    );
+    expect(
+      groups(model)
+        .map((g) => g.name)
+        .sort(),
+    ).toEqual(['*A1', 'GATES', 'STAIRS']);
+    expect(group(model, 'GATES').entities).toEqual([l2!.handle, l1!.handle]);
+    const reactorsOf = (h: Handle) => back.entities!.find((e) => e.handle === h)!.reactors ?? [];
+    expect(reactorsOf(l2!.handle)).toEqual([group(model, 'GATES').handle]);
+    expect(reactorsOf(l0!.handle)).toEqual([group(model, '*A1').handle]);
+  });
+});
 
 describe('GROUP objects', () => {
   it.each(formats)('maps a group with its members, which list it in their reactors (%s)', (f) => {

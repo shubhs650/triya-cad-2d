@@ -235,6 +235,13 @@ export function CommandLine({
         setPaletteOpen(true);
         return;
       }
+      // Ctrl+Shift+A turns group selection on or off (PICKSTYLE bit 1, M3-08), as in AutoCAD,
+      // wherever the focus is.
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && e.shiftKey && e.key.toLowerCase() === 'a') {
+        e.preventDefault();
+        drafting.toggle('groups');
+        return;
+      }
       if ((e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === 'a') {
         // Ctrl+A selects every object (M2-03, AutoCAD's SELECTALL), unless it would select
         // text typed in a field.

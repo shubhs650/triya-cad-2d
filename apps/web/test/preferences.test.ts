@@ -71,6 +71,8 @@ describe('preferences', () => {
       // SELECTSIMILARMODE 130 (Layer and Name) and SELECTIONCYCLING 0 (off), AutoCAD's.
       selectSimilarMode: 130,
       selectionCycling: 0,
+      // PICKSTYLE 1, group selection (M3-08).
+      pickStyle: 1,
       qpQuadrant: 'top-right',
       qpDistance: 50,
       qpCollapse: true,
@@ -85,6 +87,7 @@ describe('preferences', () => {
         polarAddAngles: '12.5;80',
         selectSimilarMode: 7,
         selectionCycling: -2,
+        pickStyle: 3,
         qpQuadrant: 'bottom-left',
         qpDistance: 120,
         qpCollapse: false,
@@ -94,6 +97,7 @@ describe('preferences', () => {
     expect(kept).toMatchObject({
       selectSimilarMode: 7,
       selectionCycling: -2,
+      pickStyle: 3,
       polarMode: 6,
       polarAddAngles: '12.5;80',
       qpQuadrant: 'bottom-left',
@@ -107,6 +111,7 @@ describe('preferences', () => {
         polarAddAngles: 'north',
         selectSimilarMode: 256,
         selectionCycling: 3,
+        pickStyle: 'groups',
         qpQuadrant: 'middle',
         qpDistance: 'far',
         qpCollapse: 'yes',
@@ -116,6 +121,7 @@ describe('preferences', () => {
     expect(bad).toMatchObject({
       selectSimilarMode: 130,
       selectionCycling: 0,
+      pickStyle: 1,
       polarMode: 0,
       polarAddAngles: '',
       qpQuadrant: 'top-right',

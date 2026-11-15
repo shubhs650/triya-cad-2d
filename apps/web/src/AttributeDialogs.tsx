@@ -36,6 +36,7 @@ import { MatchPropDialog } from './MatchPropDialog';
 import { PointStyleDialog } from './PointStyleDialog';
 import { OverkillDialog } from './OverkillDialog';
 import { SelectSimilarDialog } from './SelectSimilarDialog';
+import { ObjectGroupingDialog } from './ObjectGroupingDialog';
 import { QSelectDialog } from './QSelectDialog';
 import { DraftingSettingsDialog } from './DraftingSettingsDialog';
 
@@ -73,6 +74,8 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
       return <DraftingSettingsDialog key={key} doc={doc.id} request={d} />;
     case 'selectsimilar':
       return <SelectSimilarDialog key={key} doc={doc.id} request={d} />;
+    case 'objectgrouping':
+      return <ObjectGroupingDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

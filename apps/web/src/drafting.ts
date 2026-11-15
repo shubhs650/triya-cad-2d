@@ -99,6 +99,11 @@ export interface DraftingState {
    */
   readonly selectionCycling: number;
   /**
+   * PICKSTYLE (M3-08): bit 1 group selection, bit 2 associative hatch selection. AutoCAD keeps
+   * it per user, initially 1; Ctrl+Shift+A turns group selection on and off.
+   */
+  readonly pickStyle: number;
+  /**
    * The Drafting Settings dialog's Quick Properties tab (AutoCAD 2024 Help, "Quick Properties
    * Tab (Drafting Settings Dialog Box)"), kept per user: by the cursor, the quadrant and the
    * distance in pixels it goes at; whether it collapses, and to how many rows.
@@ -194,7 +199,7 @@ export const AUTOSNAP_TRACK_TIP = 32;
 export const AUTOSNAP_KEPT = AUTOSNAP_MARKER | AUTOSNAP_TIP | AUTOSNAP_MAGNET | AUTOSNAP_TRACK_TIP;
 
 export type DraftingToggle =
-  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp' | 'sc';
+  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp' | 'sc' | 'groups';
 
 /** The function keys AutoCAD gives the toggles. */
 export const DRAFTING_KEYS: Readonly<Record<string, DraftingToggle>> = {
@@ -218,6 +223,7 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:tpy', label: 'Show/Hide Transparency', keys: '' },
   { id: 'drafting:qp', label: 'Quick Properties on/off', keys: 'Ctrl+Shift+P' },
   { id: 'drafting:sc', label: 'Selection Cycling on/off', keys: 'Ctrl+W' },
+  { id: 'drafting:groups', label: 'Group Selection on/off', keys: 'Ctrl+Shift+A' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -245,6 +251,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   polarAddAngles: '',
   selectSimilarMode: 130,
   selectionCycling: 0,
+  pickStyle: 1,
   qpQuadrant: 'top-right',
   qpDistance: 50,
   qpCollapse: true,
@@ -260,6 +267,7 @@ export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): bo
   if (t === 'lwt') return s.lwt ?? lwdisplay;
   if (t === 'qp') return s.qpmode > 0;
   if (t === 'sc') return s.selectionCycling > 0;
+  if (t === 'groups') return (s.pickStyle & 1) !== 0;
   return s[t];
 }
 
@@ -322,6 +330,9 @@ export class Drafting {
           ...s,
           selectionCycling: s.selectionCycling === 0 ? 2 : -s.selectionCycling,
         });
+      // Group selection is PICKSTYLE's bit 1 (M3-08); associative hatch selection keeps its bit.
+      case 'groups':
+        return this.#set({ ...s, pickStyle: s.pickStyle ^ 1 });
       case 'snap':
       case 'otrack':
       case 'grid':

@@ -72,6 +72,7 @@ export type DraftingPreferences = Pick<
   | 'polarAddAngles'
   | 'selectSimilarMode'
   | 'selectionCycling'
+  | 'pickStyle'
   | 'qpQuadrant'
   | 'qpDistance'
   | 'qpCollapse'
@@ -131,6 +132,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     polarAddAngles: '',
     selectSimilarMode: 130,
     selectionCycling: 0,
+    pickStyle: 1,
     qpQuadrant: 'top-right',
     qpDistance: 50,
     qpCollapse: true,
@@ -221,6 +223,7 @@ export function normalizePreferences(raw: unknown): Preferences {
         { min: -2, max: 2 },
         d.drafting.selectionCycling,
       ),
+      pickStyle: within(k['pickStyle'], { min: 0, max: 3 }, d.drafting.pickStyle),
       polarAddAngles:
         typeof polarAddAngles === 'string' && additionalAngles(polarAddAngles)
           ? polarAddAngles
@@ -309,6 +312,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     polarAddAngles: s.polarAddAngles,
     selectSimilarMode: s.selectSimilarMode,
     selectionCycling: s.selectionCycling,
+    pickStyle: s.pickStyle,
     qpQuadrant: s.qpQuadrant,
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,

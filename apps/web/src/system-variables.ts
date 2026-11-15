@@ -68,6 +68,7 @@ const VALUES: Readonly<
     get: (s) => s.selectionCycling,
     set: (selectionCycling) => ({ selectionCycling }),
   },
+  PICKSTYLE: { get: (s) => s.pickStyle, set: (pickStyle) => ({ pickStyle }) },
   ARRAYASSOCIATIVITY: {
     get: (s) => bit(s.arrayAssociativity),
     set: (v) => ({ arrayAssociativity: v === 1 }),

@@ -158,6 +158,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // badge and the Selection list, a negative value off keeping what Ctrl+W turns back on.
   { name: 'SELECTSIMILARMODE', store: 'app', kind: 'integer', min: 0, max: 255 },
   { name: 'SELECTIONCYCLING', store: 'app', kind: 'integer', min: -2, max: 2 },
+  // M3-08 (AutoCAD 2024 Help): PICKSTYLE 0 neither, 1 group selection, 2 associative hatch
+  // selection, 3 both; kept per user (Saved in: Registry), initially 1, so the drawing's
+  // $PICKSTYLE stays as read. Ctrl+Shift+A turns group selection on and off.
+  { name: 'PICKSTYLE', store: 'app', kind: 'integer', min: 0, max: 3 },
 ];
 
 /**

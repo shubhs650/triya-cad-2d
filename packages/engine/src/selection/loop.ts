@@ -20,12 +20,18 @@
 //   - a pick over overlapping objects with selection cycling on (SELECTIONCYCLING 2) shows the
 //     Selection list of them and takes the one chosen (M3-04 part 3, "To Select Overlapping or
 //     Close Objects"); with it off the nearest is taken.
+//   - with group selection on (PICKSTYLE bit 1, M3-08; "About Groups": "selecting any member of
+//     a group selects all the objects in that group") a pick, window, path or Last that takes a
+//     member of a selectable group takes (or removes) the group's other members in the space as
+//     well, but not those on frozen or locked layers; "Selecting an object that belongs to
+//     multiple groups selects all groups to which that object belongs".
 // The same loop, without a prompt of its own, is the pre-selection made at `Command:` (PICKFIRST).
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
-import type { Group } from '../model/types';
+import type { Group, NonGraphicalObject } from '../model/types';
+import { selectableMembers } from '../edit/groups';
 import {
   matchKeyword,
   type Prompt,
@@ -42,6 +48,14 @@ import { inSpace, onLockedLayers, selectAll, selectLast } from './rules';
  */
 export const SELECTIONCYCLING = 'SELECTIONCYCLING';
 const CYCLING_LIST = 2;
+
+/**
+ * PICKSTYLE (AutoCAD 2024 Help): bit 1 group selection, bit 2 associative hatch selection;
+ * AutoCAD keeps it per user, initially 1. Ctrl+Shift+A turns group selection on and off.
+ */
+export const PICKSTYLE = 'PICKSTYLE';
+export const DEFAULT_PICKSTYLE = 1;
+const GROUP_SELECTION = 1;
 
 /** The modes typed at "Select objects", in AutoCAD's display form. */
 export const SELECTION_MODES = [
@@ -91,6 +105,11 @@ export interface SelectionLoopOptions {
   readonly atCommand?: boolean;
   /** Ends at the first step that takes objects, as SIngle does (M2-08). */
   readonly single?: boolean;
+  /**
+   * False: a member of a group is taken alone, whatever PICKSTYLE says (UNGROUP's and
+   * GROUPEDIT's objects, M3-08).
+   */
+  readonly groups?: false;
 }
 
 /**
@@ -271,7 +290,7 @@ export class SelectionLoop {
         kind: lasso.kind,
         points: lasso.points,
       });
-      return this.#take(r, c.remove, `${lassoPrompt(lasso.kind)}:`, {});
+      return await this.#take(r, c.remove, `${lassoPrompt(lasso.kind)}:`, {});
     }
     if (c) {
       this.#corner = undefined;
@@ -279,7 +298,7 @@ export class SelectionLoop {
       const r = await this.#host.request({ op: 'select', a: c.from, b: p, crossing });
       const window = { a: c.from, b: p };
       if (!c.remove && r.ok) this.#window = window;
-      return this.#take(r, c.remove, 'Specify opposite corner:', { window, crossing });
+      return await this.#take(r, c.remove, 'Specify opposite corner:', { window, crossing });
     }
     if (o.release) return 'more';
     const path = this.#path;
@@ -308,7 +327,8 @@ export class SelectionLoop {
     // The Selection list dismissed: nothing taken, and no window either.
     if (hit === undefined) return 'more';
     if (!remove) this.#pick = p;
-    return this.#apply([hit], remove, this.#label(), { pick: p });
+    const { ids, groups } = await this.#grouped([hit]);
+    return this.#apply(ids, remove, this.#label(), { pick: p }, groups);
   }
 
   /**
@@ -373,7 +393,8 @@ export class SelectionLoop {
         return this.#apply(selectAll(model, space), this.#remove, label);
       case 'Last': {
         const last = selectLast(model, space);
-        return this.#apply(last === undefined ? [] : [last], this.#remove, label);
+        const { ids, groups } = await this.#grouped(last === undefined ? [] : [last]);
+        return this.#apply(ids, this.#remove, label, {}, groups);
       }
       case 'Previous':
         return this.#apply(inSpace(model, space, this.#host.previous()), this.#remove, label);
@@ -460,7 +481,7 @@ export class SelectionLoop {
       kind: path.kind,
       points: path.points,
     });
-    return this.#take(r, path.remove, label, {});
+    return await this.#take(r, path.remove, label, {});
   }
 
   /** Multiple's picks: each takes the nearest object under it that no other pick took. */
@@ -476,7 +497,8 @@ export class SelectionLoop {
         : undefined;
       if (hit !== undefined) found.push(hit);
     }
-    return this.#apply(found, this.#remove, this.#label());
+    const { ids, groups } = await this.#grouped(found);
+    return this.#apply(ids, this.#remove, this.#label(), {}, groups);
   }
 
   /** Text that is no point and no mode: AutoCAD's refusal and its list of modes. */
@@ -495,17 +517,51 @@ export class SelectionLoop {
     return this.#remove ? 'Remove objects:' : `${this.#o.message}:`;
   }
 
-  #take(r: ViewReply, remove: boolean, label: string, how: Omit<SelectionTake, 'ids'>): StepResult {
+  async #take(
+    r: ViewReply,
+    remove: boolean,
+    label: string,
+    how: Omit<SelectionTake, 'ids'>,
+  ): Promise<StepResult> {
     if (!r.ok) {
       this.#say(`${label} ${r.message}`);
       return 'more';
     }
-    return this.#apply(
+    const { ids, groups } = await this.#grouped(
       (r.ids ?? []).filter((id) => this.#host.model.entity(id)),
-      remove,
-      label,
-      how,
     );
+    return this.#apply(ids, remove, label, how, groups);
+  }
+
+  /**
+   * `found` with the other members of the selectable groups it takes, while group selection is
+   * on (PICKSTYLE), and how many groups that is. PICKSTYLE is only asked for when `found` holds
+   * a member of one.
+   */
+  async #grouped(found: readonly EntityId[]): Promise<{ ids: EntityId[]; groups: number }> {
+    const ids = [...found];
+    const model = this.#host.model;
+    if (this.#o.groups === false || ids.length === 0) return { ids, groups: 0 };
+    const handles = new Set(ids.map((id) => model.ids.handleOf(id)));
+    const hit = [...model.objects.values()].filter(
+      (o: NonGraphicalObject): o is Group =>
+        o.type === 'GROUP' &&
+        (o as Group).selectable &&
+        (o as Group).entities.some((h) => handles.has(h)),
+    );
+    if (hit.length === 0) return { ids, groups: 0 };
+    const style = await this.#host.request({ op: 'sysvar', name: PICKSTYLE });
+    const mode = style.ok && typeof style.value === 'number' ? style.value : DEFAULT_PICKSTYLE;
+    if ((mode & GROUP_SELECTION) === 0) return { ids, groups: 0 };
+    const space = this.#host.space();
+    const seen = new Set(ids);
+    for (const g of hit) {
+      for (const id of selectableMembers(model, g, space)) {
+        if (!seen.has(id)) ids.push(id);
+        seen.add(id);
+      }
+    }
+    return { ids, groups: hit.length };
   }
 
   /** Adds or removes `found`, saying what happened as AutoCAD does. */
@@ -514,6 +570,7 @@ export class SelectionLoop {
     remove: boolean,
     label: string,
     how: Omit<SelectionTake, 'ids'> = {},
+    groups = 0,
   ): StepResult {
     const model = this.#host.model;
     const unique = [...new Set(found)];
@@ -523,6 +580,8 @@ export class SelectionLoop {
     const had = new Set(before);
     this.#undoTakes.push(this.#takes);
     let line: string;
+    // "3 found, 1 group": AutoCAD names the groups a step took after the objects it found.
+    const took = `${unique.length} found${groups > 0 ? `, ${groups} group${groups === 1 ? '' : 's'}` : ''}`;
     if (remove) {
       const out = new Set(taken.filter((id) => had.has(id)));
       this.#ids = before.filter((id) => !out.has(id));
@@ -534,8 +593,8 @@ export class SelectionLoop {
       if (taken.length > 0) this.#takes = [...this.#takes, { ids: taken, ...how }];
       line =
         before.length === 0 && dup === 0
-          ? `${unique.length} found`
-          : `${unique.length} found${dup > 0 ? ` (${dup} duplicate)` : ''}, ${this.#ids.length} total`;
+          ? took
+          : `${took}${dup > 0 ? ` (${dup} duplicate)` : ''}, ${this.#ids.length} total`;
     }
     this.#undo.push(before);
     this.#say(`${label} ${line}`);
