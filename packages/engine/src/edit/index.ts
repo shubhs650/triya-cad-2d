@@ -16,6 +16,8 @@ export {
   type StretchPlan,
   type StretchWindow,
   eraseObjects,
+  reshapeObject,
+  revertChanges,
   refusalMessages,
   transformObjects,
   type EditReport,
@@ -39,5 +41,16 @@ export {
 export * from './dimension';
 export * from './named-view';
 export { offsetCurveOf, offsetGeometry, offsetSide } from './offset';
+export {
+  cutParams,
+  edgeCurvesOf,
+  extendGeometry,
+  isClosedCurve,
+  pickParam,
+  subGeometry,
+  subSpline,
+  trimCurveOf,
+  trimGeometry,
+} from './trim';
 export * from './underlay-layers';
 export * from './array';
