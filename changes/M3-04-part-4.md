@@ -1,1 +1,1 @@
-- M3-04 part 4 (#PRNUM): FILTER with the Object Selection Filters dialog (filter lists with AND, OR, XOR and NOT, Add Selected Object, named filters, transparent 'FILTER), and the PICKADD, PICKAUTO and PICKBOX settings.
+- M3-04 part 4 (#396): FILTER with the Object Selection Filters dialog (filter lists with AND, OR, XOR and NOT, Add Selected Object, named filters, transparent 'FILTER), and the PICKADD, PICKAUTO and PICKBOX settings.
