@@ -17,7 +17,7 @@ import type {
   ViewReply,
   ViewState,
 } from '@triya/engine';
-import { PICKFIRST, REVCLOUDGRIPS } from '@triya/engine';
+import { GRIP_CYCLE, PICKFIRST, REVCLOUDGRIPS } from '@triya/engine';
 import { decodeRaster, type DrawnEntity, type ScreenRect } from '@triya/render';
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import {
@@ -2028,6 +2028,13 @@ function ViewportCanvas({
         );
       },
       onDoubleClick: (point) => engines.command(id, { kind: 'double-click', point }),
+      // Ctrl tapped at a hot multi-functional grip (M3-05): its next function. Every canvas of
+      // the drawing hears the key; the current one answers.
+      onCtrlCycle: () => {
+        if (visibleRef.current && currentTile(id, block) === index) {
+          engines.command(id, { kind: 'answer', answer: { kind: 'keyword', keyword: GRIP_CYCLE } });
+        }
+      },
       // A view changed is an undo step of the drawing's (M2-47 part 4); U finds this canvas
       // again by the name given here (`viewContext`'s `viewport`).
       onViewStep: (label, view) =>

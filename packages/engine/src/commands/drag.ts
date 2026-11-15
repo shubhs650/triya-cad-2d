@@ -10,6 +10,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { EntityGeometry, Xdata } from '../model/types';
 import { placeDimension, type DimPlacement } from '../edit/dimension';
+import type { GripFunction } from '../edit/grip-functions';
 import { sketchGeometry, type Sketch } from './draw/sketch';
 
 export type DragPreview =
@@ -56,6 +57,8 @@ export type DragPreview =
       readonly ids: readonly EntityId[];
       readonly grip: Vec2;
       readonly from: Vec2;
+      /** A multi-functional grip's function other than Stretch (M3-05): `moveGripBy`'s. */
+      readonly fn?: GripFunction;
     }
   /**
    * A dimension being placed (DIMLINEAR and the others, M2-11): drawn, on `layer`, as
@@ -83,11 +86,12 @@ export interface DragMotion {
     readonly window: Box;
     readonly d: Vec2;
   };
-  /** Each of `ids` with its grip at `from` dragged to `to` (`moveGrip`). */
+  /** Each of `ids` with its grip at `from` dragged to `to` (`moveGripBy`, with `fn`). */
   readonly grip?: {
     readonly ids: readonly EntityId[];
     readonly from: Vec2;
     readonly to: Vec2;
+    readonly fn?: GripFunction;
   };
   /** An object not in the drawing yet, drawn as it would be on `layer` (a dimension placed). */
   readonly adding?: {
@@ -137,7 +141,11 @@ export function dragMotion(
     }
     case 'grip': {
       const to = add(drag.grip, sub(cursor, drag.from));
-      return { ids: [], m: IDENTITY, grip: { ids: drag.ids, from: drag.grip, to } };
+      return {
+        ids: [],
+        m: IDENTITY,
+        grip: { ids: drag.ids, from: drag.grip, to, ...(drag.fn && { fn: drag.fn }) },
+      };
     }
     case 'dimension': {
       const geom = placeDimension(drag.place, cursor);

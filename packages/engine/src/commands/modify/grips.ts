@@ -5,6 +5,14 @@
 // many copies as wanted, until Enter or eXit), Undo (the last copy) and eXit; ROTATE and SCALE
 // take Reference. The edit is about the hot grip, or the base point given instead. MIRROR
 // without Copy leaves only the mirror image, as AutoCAD's does. The objects stay selected.
+// The mode names (ST, MO, RO, SC, MI) can be typed at any grip prompt to go to that mode.
+//
+// A multi-functional grip (M3-05 part 1, `edit/grip-functions.ts`): STRETCH is its first
+// function, and a tap of Ctrl goes on to the next that takes a point, as AutoCAD's Ctrl cycles
+// them ("** ADD VERTEX **", "** LENGTHEN **", …), round to STRETCH again. Each function can also
+// be typed by name (AutoCAD offers them in a menu at the grip, still to come); Remove Vertex and
+// Convert to Line take no point and act at once. A function edits only the first selected object
+// with that grip, in one undo step; Enter goes on to MOVE, as from STRETCH.
 import type { Vec2 } from '../../geom/types';
 import { add, sub } from '../../geom/vec';
 import type { EntityId } from '../../model/entity-ids';
@@ -18,6 +26,9 @@ import type { Prompt, PromptAnswer } from '../prompt';
 import type { CommandContext, CommandDef } from '../command';
 import { arrayGripAt, editArrayByGrip } from './array-grips';
 import { regenerateDimensions } from './dimensions';
+import { functionsAt, runGripFunction, FUNCTION_KEYWORDS, MODE_KEYWORDS } from './grip-functions';
+import { GRIP_CYCLE } from '../prompt';
+import type { GripFunction } from '../../edit/grip-functions';
 import { recountColumns } from './mtext-columns';
 
 export const GRIP_MODES = ['STRETCH', 'MOVE', 'ROTATE', 'SCALE', 'MIRROR'] as const;
@@ -74,6 +85,9 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
       // An associative array's sizing grip edits that array alone (M3-11 part 3).
       const array = arrayGripAt(ctx.model, ids, hot);
       if (array) return yield* editArrayByGrip(ctx, array.id, array.role, hot);
+      // The hot grip's functions, if it has more than one (M3-05).
+      const multi = functionsAt(ctx.model, ids, hot);
+      let fn: GripFunction | undefined;
       let mode = 0;
       let base = hot;
       let copying = false;
@@ -97,9 +111,49 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
         say(refusalMessages(r!.refused, verb));
         return true;
       };
+      /** The keyword names a grip mode (switched to) or a function (`fn` set): handled. */
+      const switched = (keyword: string): boolean => {
+        const m = MODE_KEYWORDS.indexOf(keyword as (typeof MODE_KEYWORDS)[number]);
+        if (m >= 0) {
+          mode = m;
+          fn = undefined;
+          return true;
+        }
+        const f = multi && FUNCTION_KEYWORDS.get(keyword);
+        if (!f || !multi.functions.includes(f)) return false;
+        fn = f === multi.functions[0] ? undefined : f;
+        mode = 0;
+        return true;
+      };
+      /** Ctrl: the next function that takes a point, after `fn`, round to STRETCH. */
+      const cycle = () => {
+        const takes: readonly GripFunction[] = multi!.functions.filter(
+          (f) => f !== 'Remove Vertex' && f !== 'Convert to Line',
+        );
+        const next = takes[(takes.indexOf(fn ?? takes[0]!) + 1) % takes.length]!;
+        fn = next === takes[0] ? undefined : next;
+        mode = 0;
+      };
+      const hidden = [...MODE_KEYWORDS, ...(multi?.keywords ?? [])];
       for (;;) {
+        if (fn && multi) {
+          const r = yield* runGripFunction(ctx, multi.id, hot, fn, hidden);
+          if (r.kind === 'done') return;
+          if (r.kind === 'cycle') cycle();
+          else if (r.kind !== 'keyword' || !switched(r.keyword)) {
+            // Enter goes on to MOVE; an immediate function refused goes back to STRETCH.
+            fn = undefined;
+            if (r.kind === 'enter') mode = 1;
+          }
+          continue;
+        }
         const name = GRIP_MODES[mode]!;
         ctx.message(`** ${name}${copying ? ' (multiple)' : ''} **`);
+        const stretching = name === 'STRETCH' && multi !== undefined;
+        const extra = {
+          hiddenOptions: stretching ? hidden : MODE_KEYWORDS,
+          ...(stretching && { ctrlCycles: true as const }),
+        };
         const options = ['Base point', 'Copy', 'Undo', 'eXit'];
         const withReference = ['Base point', 'Copy', 'Undo', 'Reference', 'eXit'];
         let a: PromptAnswer;
@@ -108,6 +162,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
             a = yield ctx.prompt.point({
               message: 'Specify stretch point or',
               options,
+              ...extra,
               rubberBand: { from: base },
               drag: { kind: 'grip', ids, grip: hot, from: base },
             });
@@ -116,6 +171,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
             a = yield ctx.prompt.point({
               message: 'Specify move point or',
               options,
+              ...extra,
               rubberBand: { from: base },
               drag: { kind: 'move', ids, from: base },
             });
@@ -124,6 +180,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
             a = yield ctx.prompt.angle({
               message: 'Specify rotation angle or',
               options: withReference,
+              ...extra,
               base,
               drag: { kind: 'rotate', ids, base, reference: 0 },
             });
@@ -132,6 +189,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
             a = yield ctx.prompt.distance({
               message: 'Specify scale factor or',
               options: withReference,
+              ...extra,
               base,
               drag: { kind: 'scale', ids, base, reference: 1 },
             });
@@ -140,6 +198,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
             a = yield ctx.prompt.point({
               message: 'Specify second point or',
               options,
+              ...extra,
               rubberBand: { from: base },
               drag: { kind: 'mirror', ids, from: base },
             });
@@ -152,6 +211,13 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
           continue;
         }
         if (a.kind === 'keyword') {
+          if (a.keyword === GRIP_CYCLE) {
+            if (stretching) cycle();
+            continue;
+          }
+          // A mode or function typed: the loop goes there (Remove Vertex and Convert to Line
+          // act at once).
+          if (switched(a.keyword)) continue;
           switch (a.keyword) {
             case 'eXit':
               return;

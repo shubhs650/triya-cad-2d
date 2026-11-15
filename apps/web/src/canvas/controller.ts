@@ -208,6 +208,11 @@ export interface CanvasHooks {
    * edit the object there (TEXTEDIT on a text, AutoCAD's DBLCLKEDIT).
    */
   readonly onDoubleClick?: (p: Vec2) => void;
+  /**
+   * A tap of Ctrl at a prompt that `ctrlCycles` (M3-05): the hot multi-functional grip's next
+   * function, as AutoCAD's Ctrl cycles them.
+   */
+  readonly onCtrlCycle?: () => void;
   /** Shift+right-click at a point prompt (M2-04 part 2): the object snap menu, at client px. */
   readonly onSnapMenu?: (at: { readonly x: number; readonly y: number }) => void;
   /** The left-button mode changed (a window was picked, or Esc ended it). */
@@ -338,6 +343,11 @@ export class CanvasController {
    * (`switchDirection`), the dragged arc goes the other way round, as AutoCAD's does.
    */
   #ctrl = false;
+  /**
+   * Ctrl went down and nothing else has been pressed since (M3-05): let go, it is a tap, which
+   * cycles a hot multi-functional grip's functions at a prompt that says so (`ctrlCycles`).
+   */
+  #ctrlTap = false;
   /** Where the cursor rests, for rollover tooltips (M2-35 part 21). */
   readonly #rest = new RestWatch<{
     readonly x: number;
@@ -1573,10 +1583,21 @@ export class CanvasController {
     const opts = { signal: this.#listeners.signal };
     // Ctrl pressed or let go with the cursor still (M3-01 part 6): the dragged arc switches.
     const ctrlKey = (e: KeyboardEvent) => {
-      if (e.key !== 'Control' || this.#ctrl === e.ctrlKey) return;
+      if (e.key !== 'Control') {
+        this.#ctrlTap = false;
+        return;
+      }
+      if (e.type === 'keydown' && !e.repeat) this.#ctrlTap = true;
+      if (e.type === 'keyup' && this.#ctrlTap) {
+        this.#ctrlTap = false;
+        if (this.#prompt?.ctrlCycles) this.#hooks.onCtrlCycle?.();
+      }
+      if (this.#ctrl === e.ctrlKey) return;
       this.#ctrl = e.ctrlKey;
       if (this.#prompt?.switchDirection && this.#pointer && this.#mode === 'none') this.#track();
     };
+    // A button pressed while Ctrl is down makes it no tap.
+    window.addEventListener('pointerdown', () => (this.#ctrlTap = false), opts);
     window.addEventListener('keydown', ctrlKey, opts);
     window.addEventListener('keyup', ctrlKey, opts);
     c.addEventListener(

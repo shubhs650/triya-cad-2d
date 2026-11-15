@@ -40,7 +40,7 @@ import {
   hasDynamicColumns,
   withColumnCount,
   gripInfoOf,
-  moveGrip,
+  moveGripBy,
   sameGrip,
   translation,
   paperUnitsPerMm,
@@ -770,7 +770,7 @@ export class Canvas2DRenderer implements Renderer {
       for (const id of g.ids) {
         const e = this.#model.entity(id);
         if (!e || !this.#cache[id]) continue;
-        const r = moveGrip(e.geom, g.from, g.to, gripInfoOf(this.#model, e));
+        const r = moveGripBy(e.geom, g.from, g.to, gripInfoOf(this.#model, e), g.fn);
         if (r.kind === 'move') gripMoved.push(this.#cache[id]);
         if (r.kind !== 'shape') continue;
         // A dimension's grip reshapes it and the engine regenerates it (M2-11): drawn afresh.
