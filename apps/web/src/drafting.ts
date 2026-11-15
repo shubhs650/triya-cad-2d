@@ -135,7 +135,40 @@ export interface DraftingState {
   readonly qpDistance: number;
   readonly qpCollapse: boolean;
   readonly qpRows: number;
+  /**
+   * The modify commands' options AutoCAD keeps per user (M3-12, `MODIFY_OPTIONS`): OFFSETERASE,
+   * OFFSETGAPTYPE, TRIMEXTENDMODE, EDGEMODE, PROJMODE, TRIMMODE and PEDITACCEPT, by name.
+   */
+  readonly modifyOptions: Readonly<Record<string, number>>;
+  /** OFFSETDIST and CHAMMODE, AutoCAD's unsaved variables: kept while the app runs, never stored. */
+  readonly sessionOptions: Readonly<Record<string, number>>;
 }
+
+/**
+ * M3-12 (AutoCAD 2024 Help for each): the modify commands' options AutoCAD keeps per user (Saved
+ * in: Registry), their initial values and highest values (each starts at 0). OFFSET, TRIM, EXTEND,
+ * FILLET, CHAMFER and PEDIT read them as they start and set them when their options change.
+ */
+export const MODIFY_OPTIONS: Readonly<Record<string, { initial: number; max: number }>> = {
+  OFFSETERASE: { initial: 0, max: 1 },
+  OFFSETGAPTYPE: { initial: 0, max: 2 },
+  TRIMEXTENDMODE: { initial: 1, max: 1 },
+  EDGEMODE: { initial: 0, max: 1 },
+  PROJMODE: { initial: 1, max: 2 },
+  TRIMMODE: { initial: 1, max: 1 },
+  PEDITACCEPT: { initial: 0, max: 1 },
+};
+
+/** The initial values of `MODIFY_OPTIONS`. */
+export const INITIAL_MODIFY_OPTIONS: Readonly<Record<string, number>> = Object.fromEntries(
+  Object.entries(MODIFY_OPTIONS).map(([name, o]) => [name, o.initial]),
+);
+
+/** OFFSETDIST −1 (Through) and CHAMMODE 0 (two distances), AutoCAD's initial values. */
+export const INITIAL_SESSION_OPTIONS: Readonly<Record<string, number>> = {
+  OFFSETDIST: -1,
+  CHAMMODE: 0,
+};
 
 /** Quick Properties' Quadrant, as the Drafting Settings dialog lists them. */
 export type QpQuadrant = 'top-right' | 'top-left' | 'bottom-left' | 'bottom-right';
@@ -250,29 +283,22 @@ export const AUTOSNAP_KEPT = AUTOSNAP_MARKER | AUTOSNAP_TIP | AUTOSNAP_MAGNET | 
 export type DraftingToggle =
   'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp' | 'sc' | 'groups';
 
-/** The function keys AutoCAD gives the toggles. */
-export const DRAFTING_KEYS: Readonly<Record<string, DraftingToggle>> = {
-  F3: 'osnap',
-  F7: 'grid',
-  F8: 'ortho',
-  F9: 'snap',
-  F10: 'polar',
-  F11: 'otrack',
-};
-
-/** The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). */
+/**
+ * The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). Their keys (F3, F7–F11,
+ * Ctrl+Shift+P, Ctrl+W, Ctrl+Shift+A, AutoCAD's) are the keyboard map's (keymap.ts, M3-10 part 2).
+ */
 export const DRAFTING_ITEMS = [
-  { id: 'drafting:osnap', label: 'Object Snap on/off', keys: 'F3' },
-  { id: 'drafting:grid', label: 'Grid Display on/off', keys: 'F7' },
-  { id: 'drafting:ortho', label: 'Ortho Mode on/off', keys: 'F8' },
-  { id: 'drafting:snap', label: 'Snap Mode on/off', keys: 'F9' },
-  { id: 'drafting:polar', label: 'Polar Tracking on/off', keys: 'F10' },
-  { id: 'drafting:otrack', label: 'Object Snap Tracking on/off', keys: 'F11' },
-  { id: 'drafting:lwt', label: 'Show/Hide Lineweight', keys: '' },
-  { id: 'drafting:tpy', label: 'Show/Hide Transparency', keys: '' },
-  { id: 'drafting:qp', label: 'Quick Properties on/off', keys: 'Ctrl+Shift+P' },
-  { id: 'drafting:sc', label: 'Selection Cycling on/off', keys: 'Ctrl+W' },
-  { id: 'drafting:groups', label: 'Group Selection on/off', keys: 'Ctrl+Shift+A' },
+  { id: 'drafting:osnap', label: 'Object Snap on/off' },
+  { id: 'drafting:grid', label: 'Grid Display on/off' },
+  { id: 'drafting:ortho', label: 'Ortho Mode on/off' },
+  { id: 'drafting:snap', label: 'Snap Mode on/off' },
+  { id: 'drafting:polar', label: 'Polar Tracking on/off' },
+  { id: 'drafting:otrack', label: 'Object Snap Tracking on/off' },
+  { id: 'drafting:lwt', label: 'Show/Hide Lineweight' },
+  { id: 'drafting:tpy', label: 'Show/Hide Transparency' },
+  { id: 'drafting:qp', label: 'Quick Properties on/off' },
+  { id: 'drafting:sc', label: 'Selection Cycling on/off' },
+  { id: 'drafting:groups', label: 'Group Selection on/off' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -312,6 +338,8 @@ export const INITIAL_DRAFTING: DraftingState = {
   qpDistance: 50,
   qpCollapse: true,
   qpRows: 3,
+  modifyOptions: INITIAL_MODIFY_OPTIONS,
+  sessionOptions: INITIAL_SESSION_OPTIONS,
 };
 
 /**

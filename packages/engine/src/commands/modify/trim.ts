@@ -13,8 +13,9 @@
 // crossing window. Both take Crossing (a window), Project, mOde, Undo (of the last trim, fence
 // or window) and, for TRIM, eRase; cuTting edges (Boundary edges) chooses the edges again.
 // Shift with a pick does the other command's work with the same edges: TRIM extends, EXTEND
-// trims. Mode, Edge and Project are shared by TRIM and EXTEND and kept while the drawing is open,
-// as AutoCAD keeps its variables.
+// trims. Mode, Edge and Project are TRIMEXTENDMODE, EDGEMODE and PROJMODE, shared by TRIM and
+// EXTEND, which the app keeps (M3-12, `option-variables.ts`): each starts from them and sets them
+// when its option changes.
 //
 // Picks go through the canvas's `pick` (what is under the pickbox); fences and windows are
 // worked out here, on the objects' curves. The geometry is `edit/trim.ts`'s.
@@ -24,9 +25,8 @@
 // takes is trimmed (extended) where it is nearest the window's first corner inside the window,
 // the most common drafter expectation.
 //
-// Left for later (roadmap M3-02): Quick mode's freehand fence (press and drag), the highlight of
-// what a pick would trim, TRIMEXTENDMODE/EDGEMODE/PROJMODE in SETVAR, and blocks, text, hatches,
-// regions, viewports and dimensions as edges. Projection has nothing to do in plan (DEC-039).
+// Left for later (roadmap M3-12): Quick mode's freehand fence (press and drag), the highlight of
+// what a pick would trim, and blocks, text, hatches, regions, viewports and dimensions as edges. Projection has nothing to do in plan (DEC-039).
 import type { Curve } from '../../geom/curves';
 import { domain, pointAt } from '../../geom/eval';
 import { intersect } from '../../geom/intersect';
@@ -49,6 +49,7 @@ import type { EntityId } from '../../model/entity-ids';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { toleranceFor } from './offset';
+import { optionVariable, setOptionVariable } from './option-variables';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 type Work = 'trim' | 'extend';
@@ -75,6 +76,23 @@ const keywordOf = (a: PromptAnswer): string | undefined =>
   a.kind === 'keyword' ? a.keyword : undefined;
 
 const PROJECTION_LABEL = { None: 'None', Ucs: 'UCS', View: 'View' } as const;
+
+/** PROJMODE's values: 0 None, 1 UCS, 2 View. */
+const PROJECTIONS: readonly TrimSettings['projection'][] = ['None', 'Ucs', 'View'];
+
+/** The settings from the app's variables, where it keeps them. */
+async function loadSettings(ctx: CommandContext, s: TrimSettings): Promise<void> {
+  s.quick = (await optionVariable(ctx, 'TRIMEXTENDMODE', s.quick ? 1 : 0)) === 1;
+  s.extendEdges = (await optionVariable(ctx, 'EDGEMODE', s.extendEdges ? 1 : 0)) === 1;
+  const p = await optionVariable(ctx, 'PROJMODE', PROJECTIONS.indexOf(s.projection));
+  s.projection = PROJECTIONS[p] ?? s.projection;
+}
+
+/** Mode chosen: TRIMEXTENDMODE. */
+async function setQuick(ctx: CommandContext, s: TrimSettings, quick: boolean): Promise<void> {
+  s.quick = quick;
+  await setOptionVariable(ctx, 'TRIMEXTENDMODE', quick ? 1 : 0);
+}
 
 /** Objects on layers that are off or frozen are not drawn, so they are no edges. */
 function shown(model: DocumentModel, id: EntityId): boolean {
@@ -134,6 +152,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
     name: w.name,
     usesSelection: 'during',
     async *run(ctx) {
+      await loadSettings(ctx, s);
       const settings = (): string =>
         `Current settings: Projection=${PROJECTION_LABEL[s.projection]}, Edge=${
           s.extendEdges ? 'Extend' : 'None'
@@ -157,7 +176,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
                 options: ['Quick', 'Standard'],
                 default: { kind: 'keyword', keyword: s.quick ? 'Quick' : 'Standard' },
               });
-              s.quick = keywordOf(m) === 'Quick';
+              await setQuick(ctx, s, keywordOf(m) === 'Quick');
               ctx.message(settings());
               // Standard mode asks for its edges, as starting in it does; Quick takes them all.
               edges = s.quick ? 'all' : yield* chooseEdges(ctx, false);
@@ -170,6 +189,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
                 default: { kind: 'keyword', keyword: s.projection },
               });
               s.projection = keywordOf(p) as TrimSettings['projection'];
+              await setOptionVariable(ctx, 'PROJMODE', PROJECTIONS.indexOf(s.projection));
               continue;
             }
             case 'Edge': {
@@ -179,6 +199,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
                 default: { kind: 'keyword', keyword: s.extendEdges ? 'Extend' : 'No extend' },
               });
               s.extendEdges = keywordOf(e) === 'Extend';
+              await setOptionVariable(ctx, 'EDGEMODE', s.extendEdges ? 1 : 0);
               continue;
             }
             case 'eRase': {
@@ -254,7 +275,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
           options: ['Quick', 'Standard'],
           default: { kind: 'keyword', keyword: s.quick ? 'Quick' : 'Standard' },
         });
-        s.quick = keywordOf(m) === 'Quick';
+        await setQuick(ctx, s, keywordOf(m) === 'Quick');
         if (s.quick) return 'all';
         continue;
       }

@@ -3,7 +3,8 @@
 // space is offset to both sides by a fiftieth of its size, as OFFSET makes the offsets
 // (`offsetGeometry`, with the source's properties), and the drawing saves as AC1032 DXF
 // (DEC-047) and reopens with each offset where OFFSET put it: polylines with their widths, an
-// ellipse's or spline's offset a SPLINE with its knots and control points.
+// ellipse's or spline's offset a SPLINE with its knots and control points. Polylines are offset
+// with each OFFSETGAPTYPE (M3-12): their outside corners extended, filleted and chamfered.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import {
@@ -90,8 +91,12 @@ describe('OFFSET on the public corpus', () => {
                   return t.linear >= u.linear ? t : u;
                 })()
               : toleranceForSize(reach);
-          for (const d of [size / 50, -size / 50]) {
-            for (const geom of offsetGeometry(e.geom, d, tol)) {
+          const polyline = e.geom.kind === 'LWPOLYLINE' || e.geom.kind === 'POLYLINE';
+          const gaps = polyline ? ([0, 1, 2] as const) : ([0] as const);
+          for (const [d, gap] of [size / 50, -size / 50].flatMap((d) =>
+            gaps.map((g) => [d, g] as const),
+          )) {
+            for (const geom of offsetGeometry(e.geom, d, tol, gap)) {
               made.push(
                 b.addEntity({
                   owner: space,

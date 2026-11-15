@@ -47,10 +47,17 @@ const textStyle = (handle: string, name: string, height: number) => ({
   trueTypeFlags: 0,
 });
 
-/** A canvas whose picks take the objects within 0.25 of the pick, nearest first. */
-export function host(model: () => DocumentModel): ViewHost {
+/**
+ * A canvas whose picks take the objects within 0.25 of the pick, nearest first; with
+ * `variables`, an app keeping those system variables (M3-12).
+ */
+export function host(model: () => DocumentModel, variables?: Map<string, number>): ViewHost {
   return {
     request: (r): Promise<ViewReply> => {
+      if (r.op === 'sysvar' && variables?.has(r.name)) {
+        if (typeof r.value === 'number') variables.set(r.name, r.value);
+        return Promise.resolve({ ok: true, value: variables.get(r.name)! });
+      }
       if (r.op === 'pick') {
         const hits: [number, EntityId][] = [];
         for (const e of model().entities()) {
@@ -103,6 +110,8 @@ export function setup(
     /** Objects beside the sample's, and drawing facts (M3-08's ACAD_GROUP dictionary). */
     objects?: NonGraphicalObject[];
     meta?: Partial<DocumentMeta>;
+    /** The system variables the app keeps, which commands read and set (M3-12). */
+    variables?: Map<string, number>;
   } = {},
 ) {
   const init = sampleInit();
@@ -135,7 +144,11 @@ export function setup(
       }),
     ],
   });
-  const bus = new PromptBus({ model, registry: builtinCommands(), view: host(() => model) });
+  const bus = new PromptBus({
+    model,
+    registry: builtinCommands(),
+    view: host(() => model, o.variables),
+  });
   const log: string[] = [];
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);

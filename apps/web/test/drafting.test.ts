@@ -1,7 +1,7 @@
 // M2-04: the status bar's drafting aids, as AutoCAD toggles them.
 import { describe, expect, it } from 'vitest';
 import { OSMODE_DEFAULT, OSNAP, OSNAP_OFF } from '@triya/engine';
-import { DRAFTING_KEYS, Drafting, INITIAL_DRAFTING } from '../src/drafting';
+import { Drafting, INITIAL_DRAFTING } from '../src/drafting';
 
 describe('drafting aids', () => {
   it("start as AutoCAD's: OSNAP (END, CEN, INT, EXT) and POLAR on, ORTHO and SNAP off", () => {
@@ -55,17 +55,6 @@ describe('drafting aids', () => {
     off();
     d.toggle('snap');
     expect(n).toBe(1);
-  });
-
-  it('has the F-keys AutoCAD gives them', () => {
-    expect(DRAFTING_KEYS).toEqual({
-      F3: 'osnap',
-      F7: 'grid',
-      F8: 'ortho',
-      F9: 'snap',
-      F10: 'polar',
-      F11: 'otrack',
-    });
   });
 
   it('starts OTRACK and TPY on and GRID off; LWT follows the drawing until toggled (part 2)', () => {

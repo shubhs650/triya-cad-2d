@@ -19,6 +19,24 @@ describe('system variables the app keeps', () => {
     });
   });
 
+  it('keeps the modify commands\u2019 options, OFFSETDIST and CHAMMODE only while the app runs (M3-12)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'OFFSETDIST')).toEqual({ ok: true, value: -1 });
+    expect(systemVariableReply(d, 'TRIMEXTENDMODE')).toEqual({ ok: true, value: 1 });
+    expect(systemVariableReply(d, 'PROJMODE')).toEqual({ ok: true, value: 1 });
+    expect(systemVariableReply(d, 'OFFSETDIST', 2.5)).toEqual({ ok: true, value: 2.5 });
+    expect(systemVariableReply(d, 'CHAMMODE', 1)).toEqual({ ok: true, value: 1 });
+    expect(systemVariableReply(d, 'OFFSETGAPTYPE', 2)).toEqual({ ok: true, value: 2 });
+    expect(d.get().modifyOptions.OFFSETGAPTYPE).toBe(2);
+    // The unsaved ones are not the per-user settings.
+    expect(d.get().modifyOptions).not.toHaveProperty('OFFSETDIST');
+    expect(d.get().sessionOptions).toEqual({ OFFSETDIST: 2.5, CHAMMODE: 1 });
+    // Setting what it holds changes nothing.
+    const before = d.get();
+    systemVariableReply(d, 'OFFSETGAPTYPE', 2);
+    expect(d.get()).toBe(before);
+  });
+
   it('turns the status bar toggles, ORTHOMODE turning POLAR off as F8 does', () => {
     const d = new Drafting();
     expect(d.isOn('polar')).toBe(true);

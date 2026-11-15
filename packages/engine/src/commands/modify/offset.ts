@@ -7,18 +7,18 @@
 //   Specify point on side to offset or [Exit/Multiple/Undo] <Exit>:
 //   (Through:) Specify through point or [Exit/Multiple/Undo] <Exit>:
 //
-// The distance (or Through) is remembered for the drawing's next OFFSET, as AutoCAD's OFFSETDIST
-// (−1 Through, its initial value) is; Erase and Layer are remembered likewise (OFFSETERASE and the
-// Layer option). Multiple offsets the object made last again at the same distance, one object
+// The distance (or Through) is OFFSETDIST (−1 Through, its initial value) and Erase is OFFSETERASE,
+// which the app keeps (M3-12, `option-variables.ts`): OFFSET starts from them and sets them; the
+// Layer option is remembered for the drawing. OFFSETGAPTYPE says how a polyline's segments offset
+// outward meet: extended to their intersection (0), filleted with an arc of the offset distance
+// round the corner (1) or chamfered (2). Multiple offsets the object made last again at the same distance, one object
 // further out each pick, until Enter goes back to "Select object to offset"; in Through mode each
 // point offsets the selected object through it. Undo takes back the last offset (and puts back a
 // source Erase took). The objects are made by `edit/offset.ts`: lines, arcs, circles, rays and
 // xlines as themselves, polylines as polylines with their loops cut out, ellipses and splines as
 // splines. They keep the source's properties and xdata (Layer Current: on the current layer).
 //
-// Left for later (roadmap M3-02): OFFSETGAPTYPE 1 and 2 (filleted and chamfered gaps; 0, the
-// default, extends the segments), the SETVAR variables OFFSETDIST, OFFSETERASE and OFFSETGAPTYPE,
-// and the preview of the offset that follows the cursor.
+// Left for later (roadmap M3-12): the preview of the offset that follows the cursor.
 import { boxOf } from '../../geom/bounds';
 import type { Curve } from '../../geom/curves';
 import { flatten } from '../../geom/flatten';
@@ -26,12 +26,14 @@ import { toleranceForSize, type Tolerance } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
 import { copiedProps, eraseObjects } from '../../edit/edit';
 import { offsetCurveOf, offsetGeometry, offsetSide } from '../../edit/offset';
+import type { GapType } from '../../geom/offset';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
 import type { Entity } from '../../model/types';
 import { currentLayer } from '../../properties/current';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
+import { optionVariable, setOptionVariable } from './option-variables';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -70,9 +72,11 @@ export function toleranceFor(model: DocumentModel, c: Curve): Tolerance {
 }
 
 export function offsetCommand(): CommandDef {
-  // OFFSETDIST (< 0 Through, AutoCAD's initial −1), OFFSETERASE and the Layer option.
+  // OFFSETDIST (< 0 Through, AutoCAD's initial −1), OFFSETERASE and OFFSETGAPTYPE where no app
+  // keeps them, and the Layer option.
   let dist = -1;
   let erase = false;
+  let gapType: GapType = 0;
   let currentLayerOption = false;
 
   /** "Specify offset distance or [Through/Erase/Layer]": false when the command ends. */
@@ -86,6 +90,7 @@ export function offsetCommand(): CommandDef {
       });
       if (a.kind === 'keyword' && a.keyword === 'Through') {
         dist = -1;
+        await setOptionVariable(ctx, 'OFFSETDIST', dist);
         return true;
       }
       if (a.kind === 'keyword' && a.keyword === 'Erase') {
@@ -96,6 +101,7 @@ export function offsetCommand(): CommandDef {
         });
         if (e.kind !== 'keyword') return false;
         erase = e.keyword === 'Yes';
+        await setOptionVariable(ctx, 'OFFSETERASE', erase ? 1 : 0);
         continue;
       }
       if (a.kind === 'keyword' && a.keyword === 'Layer') {
@@ -114,6 +120,7 @@ export function offsetCommand(): CommandDef {
         continue;
       }
       dist = a.value;
+      await setOptionVariable(ctx, 'OFFSETDIST', dist);
       return true;
     }
   }
@@ -137,7 +144,7 @@ export function offsetCommand(): CommandDef {
     const where = offsetSide(c, through, tol);
     if (where.side === 0) return undefined;
     const signed = (d ?? where.distance) * where.side;
-    const geoms = offsetGeometry(e.geom, signed, tol);
+    const geoms = offsetGeometry(e.geom, signed, tol, gapType);
     if (geoms.length === 0) {
       ctx.message('Cannot offset that object.');
       return undefined;
@@ -169,10 +176,13 @@ export function offsetCommand(): CommandDef {
     name: 'OFFSET',
     usesSelection: 'during',
     async *run(ctx) {
+      dist = await optionVariable(ctx, 'OFFSETDIST', dist);
+      erase = (await optionVariable(ctx, 'OFFSETERASE', erase ? 1 : 0)) === 1;
+      gapType = (await optionVariable(ctx, 'OFFSETGAPTYPE', gapType)) as GapType;
       ctx.message(
         `Current settings: Erase source=${erase ? 'Yes' : 'No'}  Layer=${
           currentLayerOption ? 'Current' : 'Source'
-        }  OFFSETGAPTYPE=0`,
+        }  OFFSETGAPTYPE=${gapType}`,
       );
       if (!(yield* distance(ctx))) return;
       const through = dist < 0;

@@ -14,14 +14,21 @@ export interface PaletteItem {
   readonly keys?: string;
 }
 
-/** The registered commands, each with the aliases that name it now. */
-export function commandItems(registry: CommandRegistry): PaletteItem[] {
-  return registry.names().map((name) => ({
-    id: name,
-    kind: 'command',
-    label: name,
-    aliases: registry.aliasesOf(name),
-  }));
+/** The registered commands, each with the aliases that name it now and its keys, if any. */
+export function commandItems(
+  registry: CommandRegistry,
+  keysOf: (name: string) => string = () => '',
+): PaletteItem[] {
+  return registry.names().map((name) => {
+    const keys = keysOf(name);
+    return {
+      id: name,
+      kind: 'command',
+      label: name,
+      aliases: registry.aliasesOf(name),
+      ...(keys !== '' && { keys }),
+    };
+  });
 }
 
 /**
