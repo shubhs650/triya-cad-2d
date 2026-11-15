@@ -60,6 +60,20 @@ async function stroke(page: Page): Promise<void> {
   await answer(page, '', 'Command:');
 }
 
+/** The INSERTs this test added (the array objects and their items), as the change sets left them. */
+const insertBlocks = (page: Page) =>
+  page.evaluate(() => {
+    const out = new Map<string, Entity>();
+    for (const cs of (window as unknown as Dev).triyaDev.changes()) {
+      for (const a of cs.entities?.added ?? []) out.set(a.entity.handle, a.entity);
+      for (const u of cs.entities?.updated ?? []) out.set(u.after.handle, u.after);
+      for (const r of cs.entities?.removed ?? []) out.delete(r.entity.handle);
+    }
+    return [...out.values()].flatMap((e) =>
+      e.geom.kind === 'INSERT' ? [{ owner: e.owner, block: e.geom.block }] : [],
+    );
+  });
+
 /** The INSERTs this test added (the array objects), as the change sets left them. */
 const inserts = (page: Page) =>
   page.evaluate(() => {
@@ -76,6 +90,8 @@ const EDIT_RECT =
   'Select grip to edit array or [ASsociative/Base point/COUnt/Spacing/COLumns/Rows/eXit] <eXit>:';
 const EDIT_POLAR =
   'Select grip to edit array or [ASsociative/Base point/Items/Angle between/Fill angle/ROWs/ROTate items/eXit] <eXit>:';
+const ARRAYEDIT_RECT =
+  'Enter an option [Source/REPlace/Base point/Rows/Columns/RESet/eXit] <eXit>:';
 const EDIT_PATH =
   'Select grip to edit array or [ASsociative/Method/Base point/Tangent direction/Items/Rows/Align items/eXit] <eXit>:';
 
@@ -181,14 +197,74 @@ test('ARRAYRECT makes one associative array object, which ARRAYEDIT changes (M3-
   await shot('5-associative.png');
 
   await answer(page, 'ARRAYEDIT', 'Select array:');
-  await answer(page, 'L', 'Enter an option [Rows/Columns/eXit] <eXit>:');
+  await answer(page, 'L', ARRAYEDIT_RECT);
   await answer(page, 'C', 'Enter number of columns <4>:');
   await answer(page, '5', /^Specify the distance between columns or \[Total\]/);
-  await answer(page, '', 'Enter an option [Rows/Columns/eXit] <eXit>:');
+  await answer(page, '', ARRAYEDIT_RECT);
   await answer(page, 'R', 'Enter the number of rows <3>:');
   await answer(page, '2', /^Specify the distance between rows or \[Total\]/);
-  await answer(page, '', 'Enter an option [Rows/Columns/eXit] <eXit>:');
+  await answer(page, '', ARRAYEDIT_RECT);
   await expect.poll(() => inserts(page).then((o) => o.filter((x) => x !== space).length)).toBe(10);
   await shot('6-arrayedit.png');
   await answer(page, '', 'Command:');
+});
+
+test('ARRAYEDIT edits an item’s source objects until ARRAYCLOSE, and REPlace swaps items (M3-11 part 2)', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  await expectDrawn(page);
+  await expect(prompt(page)).toHaveText('Command:');
+  const log = page.getByRole('log', { name: 'Recent command lines' });
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
+  await clearOfHatch(page);
+  await stroke(page);
+  await answer(page, 'ARRAYRECT', 'Select objects:');
+  await answer(page, 'L', 'Select objects:');
+  await answer(page, '', EDIT_RECT);
+  await answer(page, '', 'Command:');
+  await shot('7-array.png');
+
+  // Source: the item in column 3, row 2 (its stroke's centre is -209,584) opens for editing; a
+  // line drawn beside it joins every item.
+  await answer(page, 'ARRAYEDIT', 'Select array:');
+  await answer(page, 'L', ARRAYEDIT_RECT);
+  await answer(page, 'S', 'Select item in array:');
+  await answer(page, '-209,584', 'Command:');
+  await expect(log).toContainText(
+    'Edit the item, then save or discard the changes with ARRAYCLOSE.',
+  );
+  await answer(page, 'LINE', 'Specify first point:');
+  await answer(page, '-210,583', 'Specify next point or [Undo]:');
+  await answer(page, '-208,583', 'Specify next point or [Undo]:');
+  await answer(page, '', 'Command:');
+  await shot('8-source-editing.png');
+  await answer(page, 'ARRAYCLOSE', 'Save changes to array [Yes/No] <Yes>:');
+  await answer(page, '', 'Command:');
+  await shot('9-source-saved.png');
+
+  // REPlace: a short cross-stroke becomes the item in column 2, row 1 and in column 4, row 3.
+  await answer(page, 'LINE', 'Specify first point:');
+  await answer(page, '-196,571', 'Specify next point or [Undo]:');
+  await answer(page, '-194,569', 'Specify next point or [Undo]:');
+  await answer(page, '', 'Command:');
+  await answer(page, 'ARRAYEDIT', 'Select array:');
+  await answer(page, 'P', ARRAYEDIT_RECT);
+  await answer(page, 'REP', 'Select replacement objects:');
+  await answer(page, 'L', 'Select replacement objects:');
+  await answer(page, '', 'Select base point of replacement objects <centroid>:');
+  await answer(page, '', 'Select an item in array to replace or [Source objects]:');
+  await answer(page, '-212,581', 'Select an item in array to replace or [Source objects]:');
+  await answer(page, '-206,587', 'Select an item in array to replace or [Source objects]:');
+  await answer(page, '', ARRAYEDIT_RECT);
+  await answer(page, '', 'Command:');
+  // The array INSERT and its 12 items, 2 of them showing the replacement block.
+  const items = await insertBlocks(page);
+  const counts = new Map<string, number>();
+  for (const i of items) counts.set(i.block, (counts.get(i.block) ?? 0) + 1);
+  expect([...counts.values()].sort((a, b) => a - b)).toEqual([1, 2, 10]);
+  await shot('10-replaced.png');
 });
