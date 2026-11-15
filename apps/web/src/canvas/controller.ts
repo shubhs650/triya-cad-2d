@@ -1525,9 +1525,11 @@ export class CanvasController {
    * UCS, always on, as Triya keeps no layout VPORT.
    */
   #showUcsIcon(): void {
-    // The UCS or SNAPANG may have turned: the crosshairs follow them.
+    // The UCS or SNAPANG may have turned: the crosshairs follow them (once the canvas exists:
+    // the constructor replays the drawing's changes before it makes it).
+    const icon = this.#ucsIcon as HTMLDivElement | undefined;
+    if (!icon) return;
     this.#paintCursor();
-    const icon = this.#ucsIcon;
     const bits = this.#layout ? 1 : (this.#vport()?.ucsIcon ?? 1);
     const { width, height } = this.#size;
     if (!(bits & 1) || width === 0 || !this.#view) {

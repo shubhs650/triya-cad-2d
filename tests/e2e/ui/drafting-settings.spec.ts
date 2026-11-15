@@ -933,4 +933,10 @@ test('sets pointer and dimension input visibility, grip fields, tips and the too
   await type(page, 'Z', /^Specify rotation angle about Z axis/);
   await type(page, '30', 'Command:');
   await expect(canvas).toHaveAttribute('data-cursor', / 0\.523598/);
+  // A layout first shown after the UCS changed opens (its canvas replays the change first).
+  const errors: string[] = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  await page.getByRole('tab', { name: 'Layout1', exact: true }).click();
+  await expect(page.locator('canvas[aria-label="Layout Layout1"]')).toHaveCount(1);
+  expect(errors).toEqual([]);
 });
