@@ -162,6 +162,12 @@ export interface DraftingState {
   readonly selectionPreview: number;
   readonly previewFilter: number;
   /**
+   * SELECTIONPREVIEWLIMIT (M3-04 part 6; AutoCAD 2024 Help, "Saved in: Registry", initially
+   * 20000): a selection window or lasso being dragged that would take more objects than this
+   * previews none.
+   */
+  readonly selectionPreviewLimit: number;
+  /**
    * The Drafting Settings dialog's Quick Properties tab (AutoCAD 2024 Help, "Quick Properties
    * Tab (Drafting Settings Dialog Box)"), kept per user: by the cursor, the quadrant and the
    * distance in pixels it goes at; whether it collapses, and to how many rows.
@@ -415,6 +421,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   pickauto: 5,
   selectionPreview: 3,
   previewFilter: 3,
+  selectionPreviewLimit: 20000,
   qpQuadrant: 'top-right',
   qpDistance: 50,
   qpCollapse: true,

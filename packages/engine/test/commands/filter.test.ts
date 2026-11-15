@@ -474,4 +474,64 @@ describe('PICKAUTO', () => {
     await u.bus.pick({ x: 100, y: 100 });
     expect(u.bus.promptText).toBe('Select objects:');
   });
+
+  // M3-04 part 6 (AutoCAD 2024 Help, "PICKAUTO (System Variable)"): bit 2 "begins a window or
+  // crossing selection even if the cursor is directly over an object. This option applies only
+  // when you select objects before you start a command using the click, drag, and release
+  // method." The press picks as a click would; once dragged, that pick is taken back and the
+  // press is a window's first corner, a rectangle (a lasso starts only where nothing is).
+  it('bit 2: a press on an object at Command: dragged is a window from it, not a pick', async () => {
+    const t = drawing({ PICKAUTO: 7 });
+    // On 41's right-hand quadrant: picked as the button goes down.
+    await t.bus.pick({ x: 40, y: 50 });
+    expect(t.handles()).toEqual(['41']);
+    await t.bus.pick({ x: 40, y: 50 }, { dragged: true });
+    expect(t.handles()).toEqual([]);
+    expect(t.bus.promptText).toBe('Specify opposite corner:');
+    const p = t.bus.prompt;
+    expect(p?.kind === 'point' && p.rubberBand).toMatchObject({
+      from: { x: 40, y: 50 },
+      box: true,
+      selection: 'auto',
+      lasso: false,
+    });
+    // Released to the left: a crossing window, which crosses 40 and 41.
+    await t.bus.pick({ x: -5, y: 45 }, { release: true });
+    expect(t.handles()).toEqual(['40', '41']);
+    expect(t.bus.promptText).toBe('Command:');
+  });
+
+  it('bit 2 keeps what was selected before the press', async () => {
+    const t = drawing({ PICKAUTO: 7 });
+    await t.bus.pick({ x: 0, y: 70 });
+    expect(t.handles()).toEqual(['42']);
+    await t.bus.pick({ x: 40, y: 50 });
+    expect(t.handles()).toEqual(['41', '42']);
+    await t.bus.pick({ x: 40, y: 50 }, { dragged: true });
+    expect(t.handles()).toEqual(['42']);
+    // Left to right: a window, holding none of the circles wholly.
+    await t.bus.pick({ x: 45, y: 45 }, { release: true });
+    expect(t.handles()).toEqual(['42']);
+  });
+
+  it('without bit 2, or inside a command, a drag from an object is the pick alone', async () => {
+    const t = drawing({ PICKAUTO: 5 });
+    await t.bus.pick({ x: 40, y: 50 });
+    await t.bus.pick({ x: 40, y: 50 }, { dragged: true });
+    expect(t.handles()).toEqual(['41']);
+    expect(t.bus.promptText).toBe('Command:');
+    const u = drawing({ PICKAUTO: 7 });
+    await u.bus.submit('ERASE');
+    await u.bus.pick({ x: 40, y: 50 });
+    await u.bus.pick({ x: 40, y: 50 }, { dragged: true });
+    expect(u.bus.promptText).toBe('Select objects:');
+    await u.bus.submit('');
+    expect(u.model.entityByHandle('41')).toBeUndefined();
+    // A press that found nothing already started its window: the drag changes nothing.
+    const v = drawing({ PICKAUTO: 7 });
+    await v.bus.pick({ x: 100, y: 100 });
+    await v.bus.pick({ x: 100, y: 100 }, { dragged: true });
+    const q = v.bus.prompt;
+    expect(q?.kind === 'point' && q.rubberBand?.lasso).toBeUndefined();
+  });
 });

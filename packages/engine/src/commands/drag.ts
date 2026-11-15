@@ -39,13 +39,15 @@ export type DragPreview =
   | { readonly kind: 'mirror'; readonly ids: readonly EntityId[]; readonly from: Vec2 }
   /**
    * STRETCH and grip stretching: `ids` move whole by the cursor less `from`; `shape` have their
-   * points inside `window` moved (`stretchGeometry`).
+   * points inside `window` moved (`stretchGeometry`), inside `polygon` when STRETCH's selection
+   * was a crossing polygon or lasso (M3-04 part 6).
    */
   | {
       readonly kind: 'stretch';
       readonly ids: readonly EntityId[];
       readonly shape: readonly EntityId[];
       readonly window: Box;
+      readonly polygon?: readonly Vec2[];
       readonly from: Vec2;
     }
   /**
@@ -84,6 +86,8 @@ export interface DragMotion {
   readonly stretch?: {
     readonly ids: readonly EntityId[];
     readonly window: Box;
+    /** The crossing polygon or lasso STRETCH selected with (M3-04 part 6), `window` round it. */
+    readonly polygon?: readonly Vec2[];
     readonly d: Vec2;
   };
   /** Each of `ids` with its grip at `from` dragged to `to` (`moveGripBy`, with `fn`). */
@@ -136,7 +140,14 @@ export function dragMotion(
       return {
         ids: drag.ids,
         m: translation(d.x, d.y),
-        ...(drag.shape.length > 0 && { stretch: { ids: drag.shape, window: drag.window, d } }),
+        ...(drag.shape.length > 0 && {
+          stretch: {
+            ids: drag.shape,
+            window: drag.window,
+            ...(drag.polygon && { polygon: drag.polygon }),
+            d,
+          },
+        }),
       };
     }
     case 'grip': {

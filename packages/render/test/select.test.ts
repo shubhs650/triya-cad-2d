@@ -14,6 +14,7 @@ import {
   primCrosses,
   primInside,
   type RenderPrimitive,
+  type SelectQuery,
 } from '../src/index';
 import { change, drawing, entity, LAYER_RED, line, MODEL, surface, type Call } from './fixtures';
 
@@ -287,5 +288,62 @@ describe('Canvas2DRenderer.setSelectionPreview', () => {
     r.setSelectionPreview(at(50, 1, 0));
     r.frame();
     expect(strokes(transient().calls as Call[])).toHaveLength(2);
+  });
+
+  // M3-04 part 6 (AutoCAD 2024 Help, "SELECTIONPREVIEWLIMIT (System Variable)"): a window or
+  // lasso being dragged previews what it would take; "whenever the selection set exceeds the
+  // number in this setting, all preview highlighting is discontinued".
+  // The outline is one path, stroked twice: its moves count the objects previewed.
+  const objects = (calls: readonly Call[]) =>
+    strokes(calls).length === 0 ? 0 : calls.filter((c) => c[0] === 'moveTo').length;
+  const area = (query: SelectQuery, limit = 20000, filter = 3) => ({
+    area: query,
+    limit,
+    aperture: 3,
+    filter,
+    groups: true,
+  });
+
+  it('previews what a window, crossing window or polygon being dragged would take', () => {
+    const { r, transient } = setup(entities);
+    r.frame();
+    transient().clear();
+    r.setSelectionPreview(area({ kind: 'window', box: box(-1, -1, 11, 6) }));
+    r.frame();
+    expect(objects(transient().calls as Call[])).toBe(2);
+    transient().clear();
+    r.setSelectionPreview(area({ kind: 'window', box: box(-1, -1, 11, 1) }));
+    r.frame();
+    expect(objects(transient().calls as Call[])).toBe(1);
+    transient().clear();
+    // A crossing triangle whose box holds both lines but which touches only 20.
+    const polygon = [
+      { x: 4, y: -1 },
+      { x: 6, y: -1 },
+      { x: 12, y: 6 },
+    ];
+    r.setSelectionPreview(area({ kind: 'window', box: box(4, -1, 12, 6), polygon }));
+    r.frame();
+    expect(objects(transient().calls as Call[])).toBe(0);
+    transient().clear();
+    r.setSelectionPreview(area({ kind: 'crossing', box: box(4, -1, 12, 6), polygon }));
+    r.frame();
+    expect(objects(transient().calls as Call[])).toBe(1);
+  });
+
+  it('previews none once the window takes more than SELECTIONPREVIEWLIMIT, and filters', () => {
+    const { d, r, transient } = setup(entities);
+    r.setSelectionPreview(area({ kind: 'crossing', box: box(4, -1, 6, 6) }, 1));
+    r.frame();
+    expect(objects(transient().calls as Call[])).toBe(0);
+    r.setSelectionPreview(area({ kind: 'crossing', box: box(4, -1, 6, 6) }, 2));
+    r.frame();
+    expect(objects(transient().calls as Call[])).toBe(2);
+    // 23 on a locked layer: PREVIEWFILTER 1 leaves it out of the window's preview too.
+    r.apply(change(d, (b) => b.updateTableRecord('layers', LAYER_RED, { locked: true })));
+    transient().clear();
+    r.setSelectionPreview(area({ kind: 'crossing', box: box(4, -1, 6, 6) }, 2));
+    r.frame();
+    expect(objects(transient().calls as Call[])).toBe(1);
   });
 });

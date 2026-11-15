@@ -377,6 +377,11 @@ function blockMotion(
 /** Where STRETCH's window is, and what the canvas says lies in it. */
 export interface StretchWindow {
   readonly box: Box;
+  /**
+   * A crossing polygon or lasso (M3-04 part 6): the points inside it, not merely inside `box`
+   * (the box round it), are the ones that move.
+   */
+  readonly polygon?: readonly Vec2[];
   /** The objects wholly inside it (moved whatever their kind); unknown without a canvas. */
   readonly inside?: ReadonlySet<EntityId>;
   /**
@@ -399,6 +404,51 @@ export const inBox =
   (p: Vec2): boolean =>
     p.x >= box.minX && p.x <= box.maxX && p.y >= box.minY && p.y <= box.maxY;
 
+/**
+ * The points of a polygon, its edges included as a window's are (M3-04 part 6). Even-odd: a
+ * selection polygon never crosses itself (`polygonCrosses`); a lasso that does counts each
+ * loop's inside.
+ */
+export const inPolygon = (polygon: readonly Vec2[]) => {
+  const box = boxAround(polygon);
+  return (p: Vec2): boolean => {
+    if (!inBox(box)(p)) return false;
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const a = polygon[i]!;
+      const b = polygon[j]!;
+      if (onSegment(a, b, p)) return true;
+      if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) {
+        inside = !inside;
+      }
+    }
+    return inside;
+  };
+};
+
+const boxAround = (points: readonly Vec2[]): Box => ({
+  minX: Math.min(...points.map((p) => p.x)),
+  minY: Math.min(...points.map((p) => p.y)),
+  maxX: Math.max(...points.map((p) => p.x)),
+  maxY: Math.max(...points.map((p) => p.y)),
+});
+
+/** `p` on the segment from `a` to `b` (exactly: a point typed on a polygon's edge). */
+function onSegment(a: Vec2, b: Vec2, p: Vec2): boolean {
+  const cross = (b.x - a.x) * (p.y - a.y) - (b.y - a.y) * (p.x - a.x);
+  if (cross !== 0) return false;
+  return (
+    p.x >= Math.min(a.x, b.x) &&
+    p.x <= Math.max(a.x, b.x) &&
+    p.y >= Math.min(a.y, b.y) &&
+    p.y <= Math.max(a.y, b.y)
+  );
+}
+
+/** What of a STRETCH window holds a point: its polygon when it has one, else its box. */
+export const stretchInside = (w: { readonly box: Box; readonly polygon?: readonly Vec2[] }) =>
+  w.polygon && w.polygon.length >= 3 ? inPolygon(w.polygon) : inBox(w.box);
+
 /** What STRETCH by `d` does to each of `ids` (`stretch.ts` per object). */
 export function planStretch(
   model: DocumentModel,
@@ -410,7 +460,7 @@ export function planStretch(
   const move: EntityId[] = [];
   const shape = new Map<EntityId, EntityGeometry>();
   const refused = new Map<string, number>();
-  const inside = w ? inBox(w.box) : () => false;
+  const inside = w ? stretchInside(w) : () => false;
   for (const id of ids) {
     const e = model.entity(id);
     if (!e) continue;
