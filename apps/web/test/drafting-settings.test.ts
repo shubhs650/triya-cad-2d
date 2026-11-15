@@ -11,7 +11,18 @@ import {
   trackingSettings,
   type DraftingState,
 } from '../src/drafting';
-import { addAngle, draftOf, draftPatch, draftProblem } from '../src/drafting-settings';
+import {
+  DRAFTING_SETTINGS_TABS,
+  addAngle,
+  draftOf,
+  draftPatch,
+  draftProblem,
+  equalSpacing,
+  snapGridOf,
+  spacingOf,
+  spacingSettings,
+  typeSpacing,
+} from '../src/drafting-settings';
 
 const state = (patch: Partial<DraftingState> = {}): DraftingState => ({
   ...INITIAL_DRAFTING,
@@ -74,6 +85,8 @@ describe('the Drafting Settings dialog', () => {
       state({ polarMode: 6, polarAddAngles: '12.5;80', qpmode: -2, osmode: 5 | OSNAP_OFF }),
     );
     expect(d).toEqual({
+      snap: false,
+      grid: false,
       polar: true,
       polarAngle: 90,
       additional: true,
@@ -115,6 +128,8 @@ describe('the Drafting Settings dialog', () => {
       rows: '5',
     };
     expect(draftPatch(d, s)).toEqual({
+      snap: false,
+      grid: false,
       polar: false,
       polarAngle: 30,
       polarMode: 15,
@@ -156,6 +171,75 @@ describe('the Drafting Settings dialog', () => {
     expect(addAngle([1, 2, 3, 4, 5, 6, 7, 8, 9, 10], '11')).toEqual({
       problem: 'Up to 10 additional angles.',
     });
+  });
+});
+
+describe('the Snap and Grid tab', () => {
+  const drawing = { snapSpacing: { x: 0.5, y: 0.5 }, gridSpacing: { x: 0, y: 0 }, gridMajor: 5 };
+
+  it('comes first, as AutoCAD’s does, with SNAP, GRID and the drawing’s spacing', () => {
+    expect(DRAFTING_SETTINGS_TABS.map((t) => t.label)).toEqual([
+      'Snap and Grid',
+      'Polar Tracking',
+      'Object Snap',
+      'Quick Properties',
+    ]);
+    const d = draftOf(state({ snap: true, grid: true }), drawing);
+    expect(d).toMatchObject({
+      snap: true,
+      grid: true,
+      spacing: { snapX: '0.5', snapY: '0.5', gridX: '0', gridY: '0', equal: true, major: '5' },
+    });
+    expect(spacingOf({ ...drawing, snapSpacing: { x: 1, y: 2 } }).equal).toBe(false);
+    // A drawing without an *Active VPORT has no spacing to show, and OK sets none.
+    const none = draftOf(state());
+    expect(none.spacing).toBeUndefined();
+    expect(snapGridOf(none)).toBeUndefined();
+    expect(draftPatch({ ...none, snap: true, grid: true }, state())).toMatchObject({
+      snap: true,
+      grid: true,
+    });
+  });
+
+  it('gives OK the spacing typed, X and Y following each other with Equal X and Y spacing', () => {
+    const g = spacingOf(drawing);
+    const typed = typeSpacing(typeSpacing(g, 'snapX', '2'), 'gridY', '10');
+    expect(typed).toMatchObject({ snapX: '2', snapY: '2', gridX: '10', gridY: '10' });
+    const apart = typeSpacing(equalSpacing(typed, false), 'snapY', '3');
+    expect(apart).toMatchObject({ snapX: '2', snapY: '3', equal: false });
+    expect(equalSpacing({ ...apart, gridX: '4' }, true)).toMatchObject({
+      snapY: '2',
+      gridY: '4',
+      equal: true,
+    });
+    expect(spacingSettings({ ...apart, major: ' 10 ' })).toEqual({
+      snapSpacing: { x: 2, y: 3 },
+      gridSpacing: { x: 10, y: 10 },
+      gridMajor: 10,
+    });
+    const d = { ...draftOf(state(), drawing), spacing: { ...apart, snapX: '.25', gridY: '1e1' } };
+    expect(snapGridOf(d)).toEqual({
+      snapSpacing: { x: 0.25, y: 3 },
+      gridSpacing: { x: 10, y: 10 },
+      gridMajor: 5,
+    });
+  });
+
+  it('refuses spacing that is not a number, snap spacing of 0 and a major line out of range', () => {
+    const d = draftOf(state(), drawing);
+    const g = d.spacing!;
+    const problem = (patch: Partial<typeof g>) =>
+      draftProblem({ ...d, spacing: { ...g, ...patch } });
+    expect(draftProblem(d)).toBeUndefined();
+    expect(problem({ snapX: '0' })).toBe('Snap X spacing must be a number more than 0.');
+    expect(problem({ snapY: 'ten' })).toBe('Snap Y spacing must be a number more than 0.');
+    expect(problem({ gridX: '-1' })).toBe('Grid X spacing must be a number, 0 or more.');
+    expect(problem({ gridY: '' })).toBe('Grid Y spacing must be a number, 0 or more.');
+    expect(problem({ major: '0' })).toBe('Major line every must be a whole number from 1 to 100.');
+    expect(problem({ major: '101' })).toBeDefined();
+    expect(problem({ snapX: '1e999' })).toBeDefined();
+    expect(snapGridOf({ ...d, spacing: { ...g, major: 'x' } })).toBeUndefined();
+    expect(draftPatch({ ...d, spacing: { ...g, snapX: '' } }, state())).toEqual({});
   });
 });
 

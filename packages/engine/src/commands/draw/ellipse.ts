@@ -8,11 +8,8 @@
 //        Specify end angle or [Parameter/Included angle]:   Specify end parameter or [Angle/Included angle]:
 //        Included angle: Specify included angle for arc <180>:
 // The first axis may be the major or the minor one (`geom/shapes.ts`). Arc angles count CCW
-// from the first axis endpoint, typed ones too (`AnglePrompt.zero`). Isocircle (M3-06 part 2)
-// is offered only with isometric snap on (SNAPSTYL 1), as AutoCAD's is:
-//   Specify center of isocircle:  Specify radius of isocircle or [Diameter]:
-//   Diameter: Specify diameter of isocircle:
-// and draws the circle of the current isoplane (`isocircleAxes`). With PELLIPSE 1 (part 6) ELLIPSE
+// from the first axis endpoint, typed ones too (`AnglePrompt.zero`). Isocircle is offered only
+// with isometric snap, which Triya does not have yet (M3-06). With PELLIPSE 1 (part 6) ELLIPSE
 // makes a closed polyline of arcs instead (`ellipsePolyline`) and leaves Arc out of its first
 // prompt, as AutoCAD's does: a polyline ellipse cannot be an elliptical arc. AutoCAD's help
 // does not word its refusals; "*Invalid*" is what its command line gives for them (as ARC).
@@ -25,8 +22,6 @@ import {
   otherFromRotation,
   type EllipseAxes,
 } from '../../geom/ellipse-xline';
-import { currentIsoplane, currentVport } from '../../edit/snap-grid';
-import { isocircleAxes } from '../../input/isometric';
 import type { Vec2 } from '../../geom/types';
 import type { EntityGeometry } from '../../model/types';
 import { midpoint, sub } from '../../geom/vec';
@@ -60,12 +55,8 @@ export function ellipseCommand(): CommandDef {
 async function* ellipsePrompts(ctx: CommandContext, polyline: boolean): Sub<Ellipse | undefined> {
   const a = yield ctx.prompt.point({
     message: 'Specify axis endpoint of ellipse or',
-    options: [...(polyline ? ['Center'] : ['Arc', 'Center']), ...isoOption(ctx)],
+    options: polyline ? ['Center'] : ['Arc', 'Center'],
   });
-  if (a.kind === 'keyword' && a.keyword === 'Isocircle') {
-    const axes = yield* isocircle(ctx);
-    return axes && ellipseOf(axes, tolOf(axes));
-  }
   if (a.kind === 'keyword' && a.keyword === 'Arc') {
     const axes = yield* arcAxes(ctx);
     return axes && (yield* arcAngles(ctx, axes));
@@ -83,9 +74,8 @@ async function* ellipsePrompts(ctx: CommandContext, polyline: boolean): Sub<Elli
 async function* arcAxes(ctx: CommandContext): Sub<EllipseAxes | undefined> {
   const a = yield ctx.prompt.point({
     message: 'Specify axis endpoint of elliptical arc or',
-    options: ['Center', ...isoOption(ctx)],
+    options: ['Center'],
   });
-  if (a.kind === 'keyword' && a.keyword === 'Isocircle') return yield* isocircle(ctx);
   if (a.kind === 'keyword') return yield* fromCenter(ctx);
   if (a.kind !== 'point') return undefined;
   return yield* fromAxisEnd(ctx, a.point);
@@ -123,38 +113,6 @@ async function* fromCenter(ctx: CommandContext): Sub<EllipseAxes | undefined> {
       continue;
     }
     return yield* otherAxis(ctx, c.point, axis);
-  }
-}
-
-/** Isocircle is offered with isometric snap on. */
-const isoOption = (ctx: CommandContext): string[] =>
-  currentVport(ctx.model)?.isometricSnap ? ['Isocircle'] : [];
-
-/** An isocircle on the current isoplane: its centre, then its radius or diameter. */
-async function* isocircle(ctx: CommandContext): Sub<EllipseAxes | undefined> {
-  const c = yield ctx.prompt.point({ message: 'Specify center of isocircle' });
-  if (c.kind !== 'point') return undefined;
-  const center = c.point;
-  const plane = currentIsoplane(ctx.model);
-  let diameter = false;
-  for (;;) {
-    const a = yield withSketch(
-      ctx,
-      { shape: 'isocircle', center, plane, ...(diameter && { diameter }) },
-      ctx.prompt.distance({
-        message: diameter ? 'Specify diameter of isocircle' : 'Specify radius of isocircle or',
-        ...(!diameter && { options: ['Diameter'] }),
-        base: center,
-      }),
-    );
-    if (a.kind === 'keyword') {
-      diameter = true;
-      continue;
-    }
-    if (a.kind !== 'distance') return undefined;
-    const axes = isocircleAxes(center, diameter ? a.value / 2 : a.value, plane);
-    if (ellipseOf(axes, tolOf(axes))) return axes;
-    ctx.message(INVALID);
   }
 }
 

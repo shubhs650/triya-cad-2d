@@ -7,11 +7,9 @@
 // snap point wins over all three (applied by the front-end after these); typed coordinates
 // are never constrained.
 //
-// Isometric snap (M3-06 part 2, `isometric.ts`): SNAP rounds to the isometric snap points and
-// ORTHO keeps to the current isoplane's axes. Not in this version (M3-06): SNAPANG, PolarSnap
-// distances, polar angles relative to the last segment (POLARMODE bit 1), UCS.
+// Not in this version (M3-06): SNAPANG and isometric snap, PolarSnap distances, polar angles
+// relative to the last segment (POLARMODE bit 1), UCS.
 import type { Vec2 } from '../geom/types';
-import { isoOrthoPoint, isoSnap, type Isoplane } from './isometric';
 import { orthoTrack, trackCursor, type Acquired, type TrackLock } from './track';
 
 /** ORTHO: the horizontal or vertical from `base`, whichever the cursor is nearer to. */
@@ -102,8 +100,6 @@ export interface ConstrainOptions {
   /** SNAPUNIT when SNAP is on. */
   readonly snap?: Vec2;
   readonly snapBase?: Vec2;
-  /** Isometric snap (SNAPSTYL 1) on this isoplane: SNAP on its points, ORTHO along its axes. */
-  readonly isoplane?: Isoplane;
   readonly ortho?: boolean;
   /** Polar tracking settings when POLAR is on. */
   readonly polar?: PolarSettings;
@@ -129,17 +125,11 @@ export interface Constrained {
  * may say how far along; tracking otherwise takes it onto the nearest path, or two crossing.
  */
 export function constrainCursor(p: Vec2, o: ConstrainOptions): Constrained {
-  const iso = o.isoplane;
-  const snapped = !o.snap
-    ? p
-    : iso === undefined
-      ? snapToGrid(p, o.snap, o.snapBase)
-      : isoSnap(p, o.snap.y, o.snapBase);
+  const snapped = o.snap ? snapToGrid(p, o.snap, o.snapBase) : p;
   const acquired = o.acquired ?? [];
   const tolerance = o.tolerance ?? 0;
   if (o.base && o.ortho) {
-    const point =
-      iso === undefined ? orthoPoint(o.base, snapped) : isoOrthoPoint(o.base, snapped, iso);
+    const point = orthoPoint(o.base, snapped);
     const axis = Math.atan2(point.y - o.base.y, point.x - o.base.x);
     const lock =
       acquired.length > 0 && (point.x !== o.base.x || point.y !== o.base.y)

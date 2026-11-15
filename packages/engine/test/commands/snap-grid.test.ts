@@ -1,21 +1,17 @@
 // M3-06 part 2: the Drafting Settings dialog's Snap and Grid tab (AutoCAD 2024 Help, "Snap and
-// Grid Tab (Drafting Settings Dialog Box)"), ISOPLANE and F5 ("ISOPLANE (Command)") and ELLIPSE
-// Isocircle ("ELLIPSE (Command)"). SNAPUNIT, GRIDUNIT, GRIDMAJOR, SNAPSTYL and SNAPISOPAIR are
-// the drawing's, kept in the model-space `*Active` VPORT as AutoCAD keeps them in the current
-// viewport.
+// Grid Tab (Drafting Settings Dialog Box)") and the SNAP and GRID commands ("SNAP (Command)",
+// "GRID (Command)"). SNAPUNIT, GRIDUNIT and GRIDMAJOR are the drawing's, kept in the model-space
+// `*Active` VPORT as AutoCAD keeps them in the current viewport; SNAPMODE and GRIDMODE are the
+// app's status bar toggles, which the commands turn through the view host as SETVAR does.
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
-  EngineSession,
   PromptBus,
   builtinCommands,
-  dragMotion,
   type BusEvent,
-  type CommandOutput,
   type DocumentInit,
-  type Ellipse,
-  type Entity,
-  type HeaderValue,
+  type ViewHost,
+  type ViewReply,
   type VportRecord,
 } from '../../src/index';
 import { sampleInit } from '../model/fixtures';
@@ -62,38 +58,41 @@ function vport(o: Partial<VportRecord> = {}): VportRecord {
   } as VportRecord;
 }
 
-function init(o?: Partial<VportRecord> | null, header: [string, HeaderValue][] = []): DocumentInit {
+function init(o?: Partial<VportRecord> | null): DocumentInit {
   const base = sampleInit();
-  return {
-    ...base,
-    header: new Map([...(base.header ?? []), ...header]),
-    tables: { ...base.tables, ...(o !== null && { vports: [vport(o)] }) },
-  };
+  return { ...base, tables: { ...base.tables, ...(o !== null && { vports: [vport(o)] }) } };
 }
 
-function setup(o?: Partial<VportRecord> | null, header: [string, HeaderValue][] = []) {
-  const model = DocumentModel.create(init(o, header));
-  const before = new Set([...model.entities()].map((e) => e.id));
-  const bus = new PromptBus({ model, registry: builtinCommands() });
+/** A drawing, its bus, and the app's SNAPMODE and GRIDMODE as the view host keeps them. */
+function setup(o?: Partial<VportRecord> | null) {
+  const model = DocumentModel.create(init(o));
+  const app: Record<string, number> = { SNAPMODE: 0, GRIDMODE: 0 };
+  const view: ViewHost = {
+    request: (r): Promise<ViewReply> => {
+      if (r.op !== 'sysvar' || !(r.name in app))
+        return Promise.resolve({ ok: false, message: 'Not here.' });
+      if (r.value !== undefined) app[r.name] = r.value;
+      return Promise.resolve({ ok: true, value: app[r.name]! });
+    },
+  };
+  const bus = new PromptBus({ model, registry: builtinCommands(), view });
   const log: string[] = [];
   bus.on((e: BusEvent) => {
     if (e.type === 'log') log.push(e.line);
   });
-  const added = (): Entity[] => [...model.entities()].filter((e) => !before.has(e.id));
   const vp = () => model.tables.vports.get(VPORT)!;
-  return { model, bus, log, added, vp };
+  return { model, bus, log, vp, app };
 }
 
 const SETTINGS = {
   snapSpacing: { x: 0.5, y: 0.25 },
   gridSpacing: { x: 0, y: 2 },
   gridMajor: 4,
-  isometric: true,
 };
 
 describe('Drafting Settings: Snap and Grid', () => {
-  it('opens with the *Active VPORT’s spacing and snap type', async () => {
-    const { bus } = setup({ snapSpacing: { x: 2, y: 3 }, gridMajor: 8, isometricSnap: true });
+  it('opens with the *Active VPORT’s snap and grid spacing', async () => {
+    const { bus } = setup({ snapSpacing: { x: 2, y: 3 }, gridMajor: 8 });
     await bus.submit('DSETTINGS');
     expect(bus.prompt).toMatchObject({
       kind: 'dialog',
@@ -103,7 +102,6 @@ describe('Drafting Settings: Snap and Grid', () => {
           snapSpacing: { x: 2, y: 3 },
           gridSpacing: { x: 10, y: 10 },
           gridMajor: 8,
-          isometric: true,
         },
       },
     });
@@ -118,11 +116,10 @@ describe('Drafting Settings: Snap and Grid', () => {
       snapSpacing: { x: 0.5, y: 0.25 },
       gridSpacing: { x: 0, y: 2 },
       gridMajor: 4,
-      isometricSnap: true,
     });
     expect(bus.undo.state.undoable).toBe(1);
     await bus.submit('U');
-    expect(vp()).toMatchObject({ snapSpacing: { x: 10, y: 10 }, isometricSnap: false });
+    expect(vp()).toMatchObject({ snapSpacing: { x: 10, y: 10 }, gridMajor: 5 });
   });
 
   it('leaves the drawing alone when nothing changed, the settings are refused, or Cancel', async () => {
@@ -133,7 +130,7 @@ describe('Drafting Settings: Snap and Grid', () => {
     await bus.answer({
       kind: 'dialog',
       action: 'ok',
-      snapGrid: { ...same, gridMajor: 5, isometric: false },
+      snapGrid: { ...same, gridMajor: 5 },
     });
     for (const bad of [
       { ...SETTINGS, snapSpacing: { x: 0, y: 1 } },
@@ -163,142 +160,142 @@ describe('Drafting Settings: Snap and Grid', () => {
   });
 });
 
-describe('ISOPLANE', () => {
-  it('steps to the next plane on Enter and takes one by name', async () => {
-    const { bus, vp, log } = setup({ isometricPlane: 1 });
-    await bus.submit('ISOPLANE');
-    expect(log.at(-1)).toBe('Current isoplane:  Top');
-    expect(bus.promptText).toBe('Enter isometric plane setting [Left/Top/Right] <Right>:');
-    await bus.submit('');
-    expect(vp().isometricPlane).toBe(2);
-    expect(log.at(-1)).toBe('Current isoplane is: Right');
-    await bus.submit('ISOPLANE');
-    expect(bus.promptText).toContain('<Left>:');
-    await bus.submit('T');
-    expect(vp().isometricPlane).toBe(1);
-    // Each is an undo step.
-    expect(bus.undo.state.undoable).toBe(2);
+describe('SNAP', () => {
+  it('sets the snap spacing and turns SNAP on; ON and OFF turn it', async () => {
+    const { bus, vp, app, log } = setup({ snapSpacing: { x: 2.5, y: 4 } });
+    await bus.submit('SN');
+    expect(bus.promptText).toBe('Specify snap spacing or [ON/OFF/Aspect] <2.5000>:');
+    await bus.submit('0.5');
+    expect(vp().snapSpacing).toEqual({ x: 0.5, y: 0.5 });
+    expect(app['SNAPMODE']).toBe(1);
+    await bus.script(['SNAP', 'OFF']);
+    expect(app['SNAPMODE']).toBe(0);
+    await bus.script(['SNAP', 'ON']);
+    expect(app['SNAPMODE']).toBe(1);
+    // A spacing of 0 or less is refused and asked again.
+    await bus.script(['SNAP', '0']);
+    expect(log.at(-1)).toBe('Value must be positive and nonzero.');
+    expect(bus.promptText).toContain('Specify snap spacing');
+    await bus.cancel();
+    expect(vp().snapSpacing).toEqual({ x: 0.5, y: 0.5 });
+    // One SNAP undo step for the spacing; the toggles are not steps.
+    expect(bus.undo.state.undoable).toBe(1);
   });
 
-  it('runs transparently, and says so with no *Active VPORT to keep the plane', async () => {
+  it('takes different X and Y spacing after Aspect, without turning SNAP on', async () => {
+    const { bus, vp, app, log } = setup();
+    await bus.script(['SNAP', 'A']);
+    expect(bus.promptText).toBe('Specify horizontal spacing <10.0000>:');
+    await bus.submit('-1');
+    expect(log.at(-1)).toBe('Value must be positive and nonzero.');
+    await bus.submit('3');
+    expect(bus.promptText).toBe('Specify vertical spacing <10.0000>:');
+    await bus.submit('');
+    expect(vp().snapSpacing).toEqual({ x: 3, y: 10 });
+    expect(app['SNAPMODE']).toBe(0);
+    await bus.script(['SNAP', 'A', '1']);
+    await bus.cancel();
+    expect(vp().snapSpacing).toEqual({ x: 3, y: 10 });
+  });
+
+  it('runs transparently, and keeps ON and OFF without an *Active VPORT', async () => {
     const { bus, vp } = setup();
     await bus.submit('LINE');
-    await bus.submit("'ISOPLANE");
-    await bus.submit('R');
-    expect(vp().isometricPlane).toBe(2);
+    await bus.submit("'SNAP");
+    await bus.submit('5');
+    expect(vp().snapSpacing).toEqual({ x: 5, y: 5 });
     expect(bus.command).toBe('LINE');
     await bus.cancel();
-    await bus.cancel();
     const none = setup(null);
-    await none.bus.submit('ISOPLANE');
-    expect(none.log.at(-1)).toBe('The drawing has no current viewport to keep an isoplane in.');
-    expect(none.bus.command).toBeUndefined();
+    await none.bus.script(['SNAP', '5']);
+    expect(none.log.at(-1)).toBe('The drawing has no current viewport to keep the spacing in.');
+    expect(none.app['SNAPMODE']).toBe(0);
+    await none.bus.script(['SNAP', 'ON']);
+    expect(none.app['SNAPMODE']).toBe(1);
   });
 
-  it('is what F5 does through the session: the next plane, logged, not an undo step', async () => {
-    const session = new EngineSession(init({ isometricPlane: 2 }));
-    const lines: string[] = [];
-    session.onCommand((o: CommandOutput) => {
-      if (o.type === 'log') lines.push(o.line);
+  it('says why the app refused a toggle', async () => {
+    const model = DocumentModel.create(init());
+    const log: string[] = [];
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    bus.on((e: BusEvent) => {
+      if (e.type === 'log') log.push(e.line);
     });
-    const r = session.edit({ kind: 'isoplane' });
-    expect(r.ok).toBe(true);
-    expect(r.ok && r.change.tables?.vports?.updated?.[0]?.after.isometricPlane).toBe(0);
-    expect(session.model.tables.vports.get(VPORT)!.isometricPlane).toBe(0);
-    expect(lines).toEqual(['<Isoplane Left>']);
-    expect(session.undoState.undoable).toBe(0);
-    const none = new EngineSession(init(null));
-    expect(none.edit({ kind: 'isoplane' })).toEqual({
-      ok: false,
-      message: 'The drawing has no current viewport.',
-    });
+    await bus.script(['SNAP', 'ON']);
+    expect(bus.command).toBeUndefined();
+    expect(log.length).toBeGreaterThan(1);
   });
 });
 
-describe('ELLIPSE Isocircle', () => {
-  const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
-  const geom = (e: Entity) => {
-    const g = e.geom as Ellipse;
-    return [r6(g.center.x), r6(g.center.y), r6(g.majorAxis.x), r6(g.majorAxis.y), r6(g.ratio)];
-  };
-  const A = r6(5 * Math.sqrt(1.5));
-  const RATIO = r6(Math.sqrt(1 / 3));
-
-  it('is offered only with isometric snap on', async () => {
-    const off = setup();
-    await off.bus.submit('ELLIPSE');
-    expect(off.bus.promptText).toBe('Specify axis endpoint of ellipse or [Arc/Center]:');
-    const on = setup({ isometricSnap: true });
-    await on.bus.submit('ELLIPSE');
-    expect(on.bus.promptText).toBe('Specify axis endpoint of ellipse or [Arc/Center/Isocircle]:');
+describe('GRID', () => {
+  it('sets the grid spacing and turns GRID on; ON and OFF turn it', async () => {
+    const { bus, vp, app } = setup({ gridSpacing: { x: 0, y: 0 } });
+    await bus.submit('GRID');
+    expect(bus.promptText).toBe('Specify grid spacing(X) or [ON/OFF/Snap/Major/Aspect] <0.0000>:');
+    await bus.submit('20');
+    expect(vp().gridSpacing).toEqual({ x: 20, y: 20 });
+    expect(app['GRIDMODE']).toBe(1);
+    await bus.script(['GRID', 'OFF']);
+    expect(app['GRIDMODE']).toBe(0);
+    await bus.script(['GRID', 'ON']);
+    expect(app['GRIDMODE']).toBe(1);
   });
 
-  it('draws the circle of the current isoplane from its centre and radius', async () => {
-    const { bus, added } = setup({ isometricSnap: true, isometricPlane: 1 });
-    await bus.submit('ELLIPSE');
-    await bus.submit('I');
-    expect(bus.promptText).toBe('Specify center of isocircle:');
-    await bus.submit('1,2');
-    expect(bus.promptText).toBe('Specify radius of isocircle or [Diameter]:');
-    // Dragged: the cursor's distance is the radius.
-    const drag = bus.prompt!.drag!;
-    expect(geom({ geom: dragMotion(drag, { x: 1, y: 7 })!.adding!.geom } as Entity)).toEqual([
-      1,
-      2,
-      A,
-      0,
-      RATIO,
-    ]);
-    await bus.submit('5');
-    expect(added().map(geom)).toEqual([[1, 2, A, 0, RATIO]]);
-  });
-
-  it('takes a diameter, on the Left and Right planes', async () => {
-    const left = setup({ isometricSnap: true, isometricPlane: 0 });
-    await left.bus.script(['ELLIPSE', 'I', '0,0', 'D', '10']);
-    const [lx, ly] = geom(left.added()[0]!).slice(2);
-    expect(Math.round((Math.atan2(ly!, lx!) * 180) / Math.PI + 360) % 180).toBe(120);
-    expect(r6(Math.hypot(lx!, ly!))).toBe(A);
-    const right = setup({ isometricSnap: true, isometricPlane: 2 });
-    await right.bus.script(['ELLIPSE', 'I', '0,0', '5']);
-    const [rx, ry] = geom(right.added()[0]!).slice(2);
-    expect(Math.round((Math.atan2(ry!, rx!) * 180) / Math.PI + 360) % 180).toBe(60);
-  });
-
-  it('refuses a zero radius and asks again', async () => {
-    const { bus, log, added } = setup({ isometricSnap: true });
-    await bus.script(['ELLIPSE', 'I', '0,0', '0']);
-    expect(log.at(-1)).toBe('*Invalid*');
-    expect(bus.promptText).toBe('Specify radius of isocircle or [Diameter]:');
-    await bus.submit('2');
-    expect(added()).toHaveLength(1);
-  });
-
-  it('starts an elliptical arc too, and a polyline with PELLIPSE 1', async () => {
-    const arc = setup({ isometricSnap: true, isometricPlane: 1 });
-    await arc.bus.submit('ELLIPSE');
-    await arc.bus.submit('A');
-    expect(arc.bus.promptText).toBe(
-      'Specify axis endpoint of elliptical arc or [Center/Isocircle]:',
-    );
-    await arc.bus.script(['I', '0,0', '5', '0', '90']);
-    const g = arc.added()[0]!.geom as Ellipse;
-    expect(g.kind).toBe('ELLIPSE');
-    expect(r6(g.endParam - g.startParam)).toBe(r6(Math.PI / 2));
-    const pl = setup({ isometricSnap: true }, [['$PELLIPSE', 1]]);
-    await pl.bus.submit('ELLIPSE');
-    expect(pl.bus.promptText).toBe('Specify axis endpoint of ellipse or [Center/Isocircle]:');
-    await pl.bus.script(['I', '0,0', '5']);
-    expect(pl.added()[0]!.geom.kind).toBe('LWPOLYLINE');
-  });
-
-  it('ends on Esc at the centre or the radius', async () => {
-    const { bus, added } = setup({ isometricSnap: true });
-    await bus.script(['ELLIPSE', 'I']);
+  it('takes 0 or Snap to follow the snap spacing, and 2x for twice it', async () => {
+    const { bus, vp, log } = setup({ snapSpacing: { x: 2, y: 3 } });
+    await bus.script(['GRID', '2x']);
+    expect(vp().gridSpacing).toEqual({ x: 4, y: 6 });
+    await bus.script(['GRID', 'S']);
+    expect(vp().gridSpacing).toEqual({ x: 0, y: 0 });
+    await bus.script(['GRID', '.5X']);
+    expect(vp().gridSpacing).toEqual({ x: 1, y: 1.5 });
+    await bus.script(['GRID', '0']);
+    expect(vp().gridSpacing).toEqual({ x: 0, y: 0 });
+    for (const bad of ['-2', '0x']) {
+      await bus.script(['GRID', bad]);
+      expect(log.at(-1)).toBe('Value must be positive and nonzero.');
+      await bus.cancel();
+    }
+    await bus.script(['GRID', 'twice']);
+    expect(log.at(-1)).toBe('Requires a distance, a number followed by x, or an option keyword.');
     await bus.cancel();
-    await bus.script(['ELLIPSE', 'I', '0,0']);
+    expect(vp().gridSpacing).toEqual({ x: 0, y: 0 });
+  });
+
+  it('sets the lines per major line, 1 to 100', async () => {
+    const { bus, vp, log } = setup();
+    await bus.script(['GRID', 'M']);
+    expect(bus.promptText).toBe('Specify the number of grid lines per major grid line <5>:');
+    await bus.submit('10');
+    expect(vp().gridMajor).toBe(10);
+    await bus.script(['GRID', 'M', '101']);
+    expect(log.at(-1)).toBe('Requires an integer between 1 and 100.');
+    expect(vp().gridMajor).toBe(10);
+    await bus.script(['GRID', 'M']);
     await bus.cancel();
     expect(bus.command).toBeUndefined();
-    expect(added()).toHaveLength(0);
+  });
+
+  it('takes X and Y spacing after Aspect, 0 allowed', async () => {
+    const { bus, vp } = setup();
+    await bus.script(['GRID', 'A']);
+    expect(bus.promptText).toBe('Specify the horizontal spacing(X) <10.0000>:');
+    await bus.submit('0');
+    expect(bus.promptText).toBe('Specify the vertical spacing(Y) <10.0000>:');
+    await bus.submit('7');
+    expect(vp().gridSpacing).toEqual({ x: 0, y: 7 });
+  });
+
+  it('keeps ON and OFF without an *Active VPORT, and ends on Esc', async () => {
+    const none = setup(null);
+    await none.bus.script(['GRID', 'S']);
+    expect(none.log.at(-1)).toBe('The drawing has no current viewport to keep the spacing in.');
+    await none.bus.script(['GRID', 'M', '4']);
+    expect(none.app['GRIDMODE']).toBe(0);
+    await none.bus.script(['GRID', 'ON']);
+    expect(none.app['GRIDMODE']).toBe(1);
+    await none.bus.submit('GRID');
+    await none.bus.cancel();
+    expect(none.bus.command).toBeUndefined();
   });
 });

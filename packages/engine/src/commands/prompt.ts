@@ -424,7 +424,7 @@ export type DialogRequest =
       readonly type: 'dsettings';
       readonly tab?: DraftingSettingsTab;
       /**
-       * The Snap and Grid tab's spacing and snap type (M3-06 part 2): the drawing's, from its
+       * The Snap and Grid tab's spacing (M3-06 part 2): the drawing's, from its
        * `*Active` VPORT; none when it has no such viewport.
        */
       readonly snapGrid?: SnapGridSettings;
@@ -435,13 +435,12 @@ export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'qp';
 
 /**
  * What the Snap and Grid tab sets in the `*Active` VPORT (M3-06 part 2): SNAPUNIT, GRIDUNIT (0
- * follows the snap spacing), GRIDMAJOR and isometric snap (SNAPSTYL 1).
+ * follows the snap spacing) and GRIDMAJOR.
  */
 export interface SnapGridSettings {
   readonly snapSpacing: Vec2;
   readonly gridSpacing: Vec2;
   readonly gridMajor: number;
-  readonly isometric: boolean;
 }
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
