@@ -60,6 +60,14 @@ const VALUES: Readonly<
   GRIPSIZE: { get: (s) => s.gripSize, set: (gripSize) => ({ gripSize }) },
   ROLLOVERTIPS: { get: (s) => bit(s.rolloverTips), set: (v) => ({ rolloverTips: v === 1 }) },
   POLARMODE: { get: (s) => s.polarMode, set: (polarMode) => ({ polarMode }) },
+  SELECTSIMILARMODE: {
+    get: (s) => s.selectSimilarMode,
+    set: (selectSimilarMode) => ({ selectSimilarMode }),
+  },
+  SELECTIONCYCLING: {
+    get: (s) => s.selectionCycling,
+    set: (selectionCycling) => ({ selectionCycling }),
+  },
   ARRAYASSOCIATIVITY: {
     get: (s) => bit(s.arrayAssociativity),
     set: (v) => ({ arrayAssociativity: v === 1 }),

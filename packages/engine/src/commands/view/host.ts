@@ -75,6 +75,16 @@ export type ViewRequest =
    * first. What a pick takes depends on what is drawn, so the canvas answers it.
    */
   | { readonly op: 'pick'; readonly point: Vec2 }
+  /**
+   * Selection cycling (M3-04 part 3, SELECTIONCYCLING 2): a pick at `point` found the overlapping
+   * `candidates`, nearest first; the canvas shows AutoCAD's Selection list there and the reply's
+   * `ids` hold the one chosen, none when the list was dismissed.
+   */
+  | {
+      readonly op: 'cycle';
+      readonly point: Vec2;
+      readonly candidates: readonly { readonly id: EntityId; readonly label: string }[];
+    }
   /** The objects a window takes: wholly inside it, or, `crossing`, inside or crossing it. */
   | { readonly op: 'select'; readonly a: Vec2; readonly b: Vec2; readonly crossing: boolean }
   /**

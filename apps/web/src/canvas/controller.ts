@@ -932,6 +932,15 @@ export class CanvasController {
     return this.#host.hitTest(screen, PICKBOX);
   }
 
+  /** Where a world point is shown, in window pixels (M3-04 part 3: the Selection list). */
+  clientOf(point: Vec2): Vec2 | undefined {
+    const v = this.#view;
+    if (!v) return undefined;
+    const s = worldToScreen(v, this.#size.width, this.#size.height, point);
+    const r = this.#canvas.getBoundingClientRect();
+    return { x: r.left + s.x, y: r.top + s.y };
+  }
+
   /** The objects a selection window between two world points takes (M2-03). */
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]> {
     const box = {

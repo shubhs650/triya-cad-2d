@@ -70,6 +70,8 @@ export type DraftingPreferences = Pick<
   | 'arrayAssociativity'
   | 'polarMode'
   | 'polarAddAngles'
+  | 'selectSimilarMode'
+  | 'selectionCycling'
   | 'qpQuadrant'
   | 'qpDistance'
   | 'qpCollapse'
@@ -127,6 +129,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     arrayAssociativity: true,
     polarMode: 0,
     polarAddAngles: '',
+    selectSimilarMode: 130,
+    selectionCycling: 0,
     qpQuadrant: 'top-right',
     qpDistance: 50,
     qpCollapse: true,
@@ -207,6 +211,16 @@ export function normalizePreferences(raw: unknown): Preferences {
       rolloverTips: bool(k['rolloverTips'], d.drafting.rolloverTips),
       arrayAssociativity: bool(k['arrayAssociativity'], d.drafting.arrayAssociativity),
       polarMode: within(k['polarMode'], { min: 0, max: 15 }, d.drafting.polarMode),
+      selectSimilarMode: within(
+        k['selectSimilarMode'],
+        { min: 0, max: 255 },
+        d.drafting.selectSimilarMode,
+      ),
+      selectionCycling: within(
+        k['selectionCycling'],
+        { min: -2, max: 2 },
+        d.drafting.selectionCycling,
+      ),
       polarAddAngles:
         typeof polarAddAngles === 'string' && additionalAngles(polarAddAngles)
           ? polarAddAngles
@@ -293,6 +307,8 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     arrayAssociativity: s.arrayAssociativity,
     polarMode: s.polarMode,
     polarAddAngles: s.polarAddAngles,
+    selectSimilarMode: s.selectSimilarMode,
+    selectionCycling: s.selectionCycling,
     qpQuadrant: s.qpQuadrant,
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,

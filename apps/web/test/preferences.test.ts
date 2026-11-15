@@ -68,6 +68,9 @@ describe('preferences', () => {
       // Drafting Settings dialog's Quick Properties tab: top right, 50 pixels, collapsed to 3 rows.
       polarMode: 0,
       polarAddAngles: '',
+      // SELECTSIMILARMODE 130 (Layer and Name) and SELECTIONCYCLING 0 (off), AutoCAD's.
+      selectSimilarMode: 130,
+      selectionCycling: 0,
       qpQuadrant: 'top-right',
       qpDistance: 50,
       qpCollapse: true,
@@ -80,6 +83,8 @@ describe('preferences', () => {
       drafting: {
         polarMode: 6,
         polarAddAngles: '12.5;80',
+        selectSimilarMode: 7,
+        selectionCycling: -2,
         qpQuadrant: 'bottom-left',
         qpDistance: 120,
         qpCollapse: false,
@@ -87,6 +92,8 @@ describe('preferences', () => {
       },
     }).drafting;
     expect(kept).toMatchObject({
+      selectSimilarMode: 7,
+      selectionCycling: -2,
       polarMode: 6,
       polarAddAngles: '12.5;80',
       qpQuadrant: 'bottom-left',
@@ -98,6 +105,8 @@ describe('preferences', () => {
       drafting: {
         polarMode: 16,
         polarAddAngles: 'north',
+        selectSimilarMode: 256,
+        selectionCycling: 3,
         qpQuadrant: 'middle',
         qpDistance: 'far',
         qpCollapse: 'yes',
@@ -105,6 +114,8 @@ describe('preferences', () => {
       },
     }).drafting;
     expect(bad).toMatchObject({
+      selectSimilarMode: 130,
+      selectionCycling: 0,
       polarMode: 0,
       polarAddAngles: '',
       qpQuadrant: 'top-right',
