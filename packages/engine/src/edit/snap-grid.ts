@@ -4,6 +4,8 @@
 // the first one when tiles share the name (the DXF reference: the first is the current
 // viewport). The Snap and Grid tab, SNAP and GRID edit it; a drawing without one keeps the
 // canvas's 10 × 10 spacing. Isometric snap is not built (PRD non-goal 7, DEC-026, DEC-060).
+// Part 6 adds the Grid behavior, GRIDDISPLAY, which the VPORT keeps as its grid flags (DXF 60),
+// and SETVAR's SNAPUNIT, GRIDUNIT, GRIDMAJOR, GRIDDISPLAY and SNAPBASE, which set it too.
 import type { DocumentModel } from '../model/document';
 import type { VportRecord } from '../model/types';
 import type { SnapGridSettings } from '../commands/prompt';
@@ -16,9 +18,22 @@ export function currentVport(model: DocumentModel): VportRecord | undefined {
   return undefined;
 }
 
+/**
+ * GRIDDISPLAY's bits (AutoCAD 2024 Help, "GRIDDISPLAY"): the grid runs beyond the limits, is
+ * adaptive (fewer lines when zoomed out), subdivides below the grid spacing when zoomed in
+ * (adaptive only), and follows the dynamic UCS (Triya has none, so the bit is only kept).
+ */
+export const GRID_DISPLAY = { beyondLimits: 1, adaptive: 2, subdivide: 4, follow: 8 } as const;
+const GRID_DISPLAY_BITS = 15;
+
 /** The Snap and Grid tab's settings as `v` holds them. */
 export function snapGridOf(v: VportRecord): SnapGridSettings {
-  return { snapSpacing: v.snapSpacing, gridSpacing: v.gridSpacing, gridMajor: v.gridMajor };
+  return {
+    snapSpacing: v.snapSpacing,
+    gridSpacing: v.gridSpacing,
+    gridMajor: v.gridMajor,
+    gridDisplay: v.gridFlags,
+  };
 }
 
 /** GRIDMAJOR's range (AutoCAD 2024 Help, "GRIDMAJOR": 1 to 100). */
@@ -41,6 +56,9 @@ export function snapGridProblem(s: SnapGridSettings): string | undefined {
     s.gridMajor <= GRID_MAJOR.max
   ))
     return 'Major line every must be a whole number from 1 to 100.';
+  const d = s.gridDisplay;
+  if (d !== undefined && !(Number.isInteger(d) && d >= 0 && d <= GRID_DISPLAY_BITS))
+    return 'Grid behavior must be GRIDDISPLAY bits from 0 to 15.';
   return undefined;
 }
 
@@ -55,6 +73,8 @@ export function snapGridPatch(
     ...(!same(v.snapSpacing, s.snapSpacing) && { snapSpacing: { ...s.snapSpacing } }),
     ...(!same(v.gridSpacing, s.gridSpacing) && { gridSpacing: { ...s.gridSpacing } }),
     ...(v.gridMajor !== s.gridMajor && { gridMajor: s.gridMajor }),
+    ...(s.gridDisplay !== undefined &&
+      v.gridFlags !== s.gridDisplay && { gridFlags: s.gridDisplay }),
   };
   return Object.keys(patch).length > 0 ? patch : undefined;
 }
