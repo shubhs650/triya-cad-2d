@@ -163,7 +163,11 @@ describe('MATCHPROP', () => {
     } as never);
     await s.bus.script(['MATCHPROP']);
     await s.bus.pick({ x: 5, y: 5 });
-    await s.bus.script(['ALL', '']);
+    // ALL leaves out what is on a locked layer; a pick is refused.
+    await s.bus.script(['ALL']);
+    await s.bus.pick({ x: 5, y: 0 });
+    expect(s.log).toContain('1 object was not changed: on a locked layer.');
+    await s.bus.script(['']);
     expect(s.byHandle('30')!.color).toEqual({ kind: 'byLayer' });
     expect(s.byHandle('31')!.color).toEqual({ kind: 'aci', index: 5 });
   });
@@ -207,5 +211,30 @@ describe('matched properties', () => {
     expect(activeSettingsLine({ ...ALL_MATCH_SETTINGS, hatch: false, dimension: false })).toBe(
       'Current active settings:  Color Layer Ltype Ltscale Lineweight Transparency Thickness PlotStyle Text Polyline Material Multileader',
     );
+  });
+});
+
+describe('MATCHPROP leaves things as they were', () => {
+  it('keeps the settings when Property Settings is cancelled, and skips the source itself', async () => {
+    const { bus, byHandle, log } = setup([
+      [
+        lw([
+          [0, 5],
+          [10, 5],
+        ]),
+        { color: { kind: 'aci', index: 3 } },
+      ],
+    ]);
+    await bus.script(['MATCHPROP']);
+    await bus.pick({ x: 5, y: 5 });
+    await bus.script(['S']);
+    await bus.cancel();
+    expect(bus.promptText).toBe('Select destination object(s) or [Settings]:');
+    await bus.pick({ x: 5, y: 5 });
+    expect(byHandle('40')!.color).toEqual({ kind: 'aci', index: 3 });
+    await bus.pick({ x: 5, y: 0 });
+    await bus.script(['']);
+    expect(byHandle('30')!.color).toEqual({ kind: 'aci', index: 3 });
+    expect(log.filter((l) => l.startsWith('Current active settings:'))).toHaveLength(1);
   });
 });

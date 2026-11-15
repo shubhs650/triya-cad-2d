@@ -313,3 +313,169 @@ describe('PEDIT Multiple', () => {
     expect(fit.every((e) => (e.geom as PolylineGeometry).plinegen)).toBe(true);
   });
 });
+
+describe('PEDIT edge cases', () => {
+  const p3: PolylineGeometry = {
+    kind: 'POLYLINE',
+    is3d: true,
+    closed: false,
+    vertices: [
+      { x: 0, y: 30, bulge: 0 },
+      { x: 10, y: 40, bulge: 0 },
+      { x: 20, y: 30, bulge: 0 },
+      { x: 30, y: 40, bulge: 0 },
+    ],
+  };
+  const spline: EntityGeometry = {
+    kind: 'SPLINE',
+    degree: 3,
+    knots: [0, 0, 0, 0, 1, 2, 2, 2, 2],
+    controlPoints: [
+      { x: 0, y: 60 },
+      { x: 1, y: 62 },
+      { x: 3, y: 62 },
+      { x: 4, y: 60 },
+      { x: 6, y: 60 },
+    ],
+    closed: false,
+    periodic: false,
+  } as EntityGeometry;
+
+  it('offers a 3D polyline its own options and vertex options', async () => {
+    const { bus, byHandle } = setup([p3]);
+    await bus.script(['PEDIT', 'L']);
+    expect(bus.promptText).toBe(
+      'Enter an option [Close/Edit vertex/Spline curve/Decurve/Reverse/Undo]:',
+    );
+    await bus.script(['S']);
+    expect(byHandle('40')!.geom).toMatchObject({ fit: 'cubic', is3d: true });
+    await bus.script(['D', 'C']);
+    expect(bus.promptText).toBe(
+      'Enter an option [Open/Edit vertex/Spline curve/Decurve/Reverse/Undo]:',
+    );
+    await bus.script(['E']);
+    expect(bus.promptText).toBe(
+      'Enter a vertex editing option [Next/Previous/Break/Insert/Move/Regen/eXit] <N>:',
+    );
+    await bus.script(['R', 'X', 'O', '']);
+    expect(byHandle('40')!.geom).toMatchObject({ closed: false, is3d: true });
+  });
+
+  it('asks a spline’s precision again until it is 0 to 99', async () => {
+    const { bus, log, kinds } = setup([spline]);
+    await bus.script(['PEDIT', 'L', 'Y']);
+    expect(bus.promptText).toBe('Specify a precision <10>:');
+    await bus.script(['100']);
+    expect(log).toContain('Requires an integer between 0 and 99.');
+    await bus.script(['4', '']);
+    expect(kinds()).toContain('LWPOLYLINE');
+    expect(kinds()).not.toContain('SPLINE');
+  });
+
+  it('adds nothing to a closed polyline and keeps Ltype gen when unchanged', async () => {
+    const { bus, byHandle, log } = setup([
+      lw(
+        [
+          [0, 10],
+          [10, 10],
+          [10, 20],
+        ],
+        true,
+      ),
+    ]);
+    await bus.script(['PEDIT']);
+    await bus.pick({ x: 5, y: 10 });
+    await bus.script(['J']);
+    await bus.pick({ x: 5, y: 0 });
+    await bus.script(['']);
+    expect(log).toContain('0 segments added to polyline');
+    await bus.script(['L', '', 'L', 'OFF']);
+    expect((byHandle('40')!.geom as LwPolylineGeometry).plinegen).toBeUndefined();
+    await bus.script(['L', 'ON', 'L', 'OFF']);
+    expect((byHandle('40')!.geom as LwPolylineGeometry).plinegen).toBeUndefined();
+    await bus.script(['']);
+  });
+
+  it('walks Break and Straighten back, regenerates and ignores a spline’s tangent', async () => {
+    const { bus, byHandle, log, space } = setup([
+      lw([
+        [0, 10],
+        [10, 10],
+        [10, 20],
+        [20, 20],
+      ]),
+    ]);
+    await bus.script(['PEDIT']);
+    await bus.pick({ x: 5, y: 10 });
+    await bus.script(['E', 'B', 'N', 'P', 'X']);
+    expect(bus.promptText).toBe(
+      'Enter a vertex editing option [Next/Previous/Break/Insert/Move/Regen/Straighten/Tangent/Width/eXit] <N>:',
+    );
+    // A break between a vertex and itself is no break.
+    await bus.script(['B', 'G']);
+    expect(log).toContain('*Invalid*');
+    // Straighten between neighbours changes nothing.
+    await bus.script(['S', 'N', 'G', 'RE', 'X']);
+    expect(xy(byHandle('40')!.geom)).toHaveLength(4);
+    await bus.script(['S']);
+    const splined = space().find((e) => e.geom.kind === 'POLYLINE')!;
+    await bus.script(['E', 'T', '45', 'X', 'F', '']);
+    // Fit after Spline fits the frame again.
+    const fitted = space().find((e) => e.geom.kind === 'POLYLINE')!;
+    expect(fitted.geom).toMatchObject({ fit: 'curve' });
+    expect(splined.geom).toMatchObject({ fit: 'cubic' });
+  });
+
+  it('leaves out what is not converted, and Multiple asks a spline’s precision', async () => {
+    const a = setup();
+    await a.bus.script(['PEDIT', 'M', 'ALL', '', 'N']);
+    expect(a.bus.command).toBeUndefined();
+    const b = setup([spline, p3]);
+    await b.bus.script(['PEDIT', 'M', 'ALL', '', 'Y']);
+    expect(b.bus.promptText).toBe('Specify a precision for spline conversion <10>:');
+    await b.bus.script(['4']);
+    expect(b.kinds().filter((k) => k === 'LWPOLYLINE')).toHaveLength(2);
+    // Width and Ltype gen leave the 3D polyline alone.
+    await b.bus.script(['W', '1', 'L', 'ON']);
+    expect(b.byHandle('41')!.geom).toEqual(p3);
+    await b.bus.script(['L', '', 'O', 'J', 'J', 'B', 'J', '', '', '']);
+    expect(b.bus.command).toBeUndefined();
+  });
+});
+
+describe('PEDIT Undo and Ltype gen in Multiple', () => {
+  it('says when nothing is left to undo, keeps the join type on Enter and Ltype gen as it is', async () => {
+    const { bus, log, space } = setup([
+      lw([
+        [0, 10],
+        [10, 10],
+        [10, 20],
+      ]),
+    ]);
+    await bus.script(['PEDIT', 'M', 'ALL', '', 'Y', 'U', 'J', 'J', '', '0']);
+    expect(log).toContain('All PEDIT operations have been undone.');
+    expect(log).toContain('0 segments added to polyline');
+    // The second ON changes nothing, so Undo takes back nothing: line 30 (converted) and the
+    // polyline keep it.
+    await bus.script(['L', 'ON', 'L', 'ON', 'U', '']);
+    expect(space().filter((e) => (e.geom as LwPolylineGeometry).plinegen)).toHaveLength(2);
+  });
+
+  it('counts the segments of a polyline Join closes', async () => {
+    const { bus, log, byHandle } = setup([
+      lw([
+        [0, 10],
+        [10, 10],
+        [10, 20],
+      ]),
+      { kind: 'LINE', start: { x: 10, y: 20 }, end: { x: 0, y: 10 } },
+    ]);
+    await bus.script(['PEDIT']);
+    await bus.pick({ x: 5, y: 10 });
+    await bus.script(['J']);
+    await bus.pick({ x: 5, y: 15 });
+    await bus.script(['', '']);
+    expect(log).toContain('1 segments added to polyline');
+    expect(byHandle('40')!.geom).toMatchObject({ closed: true });
+  });
+});

@@ -25,6 +25,7 @@ import {
   layer,
   lineGeom,
   linetype,
+  record,
   sampleInit,
 } from '../model/fixtures';
 
@@ -90,14 +91,21 @@ export function host(model: () => DocumentModel): ViewHost {
 /**
  * A drawing of its own: line 30 (0,0)-(10,0), circle 31 at (50,0) r 5, and whatever `extra`
  * adds (handles from 40 on, on WALLS). Block "B" (record 50) holds a line (0,0)-(1,0) on layer 0
- * coloured ByBlock and a circle at (1,0) r 0.5.
+ * coloured ByBlock and a circle at (1,0) r 0.5. Material GLOBAL is record 70, plot styles
+ * NORMAL and HEAVY records 80 and 81, used when `namedPlotStyles`.
  */
-export function setup(extra: (EntityGeometry | [EntityGeometry, Partial<Entity>])[] = []) {
+export function setup(
+  extra: (EntityGeometry | [EntityGeometry, Partial<Entity>])[] = [],
+  o: { namedPlotStyles?: boolean } = {},
+) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
+    header: new Map([...(init.header ?? []), ['$PSTYLEMODE', o.namedPlotStyles ? 0 : 1]]),
     tables: {
       ...init.tables,
+      materials: [record('70', 'GLOBAL')],
+      plotStyles: [record('80', 'NORMAL'), record('81', 'HEAVY')],
       layers: [layer(LAYER_0, '0'), layer(LAYER_WALLS, 'WALLS')],
       linetypes: [...(init.tables?.linetypes ?? []), linetype('15', 'DASHED')],
       textStyles: [textStyle('16', 'Standard', 0), textStyle('17', 'NOTES', 3.5)],

@@ -151,7 +151,7 @@ async function* single(ctx: CommandContext, start: EntityId): Sub<void> {
   const change = (shapes: readonly EntityGeometry[]): void => {
     const before = id;
     const cs = ctx.edit((b) => {
-      id = reshapeObject(b, ctx.model, id, shapes)[0] ?? id;
+      id = reshapeObject(b, ctx.model, id, shapes)[0]!;
     });
     steps.push({ cs, ids: [before] });
   };
@@ -314,7 +314,7 @@ async function* editVertex(
   const change = (shapes: readonly EntityGeometry[]): void => {
     const before = current();
     const cs = ctx.edit((b) => {
-      setCurrent(reshapeObject(b, ctx.model, current(), shapes)[0] ?? current());
+      setCurrent(reshapeObject(b, ctx.model, current(), shapes)[0]!);
     });
     steps.push({ cs, ids: [before] });
   };
@@ -498,7 +498,7 @@ async function* multiple(ctx: CommandContext): Sub<void> {
         const g = ctx.model.entity(id)?.geom;
         if (!g || !isPolyline(g)) return id;
         const out = f(g, toleranceOf(ctx, g));
-        return out && out !== g ? (reshapeObject(b, ctx.model, id, [out])[0] ?? id) : id;
+        return out && out !== g ? reshapeObject(b, ctx.model, id, [out])[0]! : id;
       });
     });
     steps.push({ cs, ids: before });
@@ -558,7 +558,7 @@ async function* multiple(ctx: CommandContext): Sub<void> {
         const before = ids;
         const cs = ctx.edit((b) => {
           for (const j of joined) {
-            const keep = reshapeObject(b, ctx.model, j.keep, [j.geom])[0] ?? j.keep;
+            const keep = reshapeObject(b, ctx.model, j.keep, [j.geom])[0]!;
             const gone = j.parts.filter((x) => x !== j.keep);
             eraseObjects(b, ctx.model, gone);
             ids = ids.filter((x) => !gone.includes(x)).map((x) => (x === j.keep ? keep : x));

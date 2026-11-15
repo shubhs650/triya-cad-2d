@@ -366,7 +366,6 @@ async function* changeOne(ctx: CommandContext, e: Entity, at: Vec2 | undefined):
       // The end nearer the change point moves to it.
       const geom =
         distance(g.start, at) <= distance(g.end, at) ? { ...g, start: at } : { ...g, end: at };
-      if (distance(geom.start, geom.end) === 0) return true;
       ctx.edit((b) => b.updateEntity(e.id, { geom }));
       return true;
     }
