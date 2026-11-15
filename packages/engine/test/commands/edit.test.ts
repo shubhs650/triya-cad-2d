@@ -25,6 +25,17 @@ import { MODEL_SPACE, entityInit, lineGeom, sampleInit } from '../model/fixtures
 
 const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
 
+/** Whether `p` is inside the polygon through `poly` (even-odd; the test double's own rule). */
+function inPolygon(poly: readonly { x: number; y: number }[], p: { x: number; y: number }) {
+  let r = false;
+  for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+    const a = poly[i]!;
+    const b = poly[j]!;
+    if (a.y > p.y !== b.y > p.y && p.x < ((b.x - a.x) * (p.y - a.y)) / (b.y - a.y) + a.x) r = !r;
+  }
+  return r;
+}
+
 function setup(init: DocumentInit = sampleInit()) {
   const model = DocumentModel.create(init);
   const registry = builtinCommands();
@@ -555,6 +566,17 @@ function withCanvas(init: DocumentInit = sampleInit()) {
   const model = DocumentModel.create(init);
   const registry = builtinCommands();
   const answer = (r: ViewRequest): ViewReply => {
+    // A polygon or lasso (M3-04 part 6): an object is inside when all its points are, crossed
+    // when any is or a side of the polygon crosses it.
+    if (r.op === 'selectPath' && r.kind !== 'fence') {
+      const ids = [...model.blockEntities(MODEL_SPACE)].filter((id) => {
+        const g = model.entity(id)!.geom;
+        const pts = g.kind === 'LINE' ? [g.start, g.end] : g.kind === 'CIRCLE' ? [g.center] : [];
+        const ins = pts.filter((p) => inPolygon(r.points, p)).length;
+        return r.kind === 'crossing' ? ins > 0 : ins === pts.length && ins > 0;
+      });
+      return { ok: true, ids };
+    }
     if (r.op !== 'select') return { ok: true, ids: [] };
     const box = {
       minX: Math.min(r.a.x, r.b.x),
@@ -646,6 +668,68 @@ describe('STRETCH', () => {
         from: { x: 0, y: 0 },
       },
     });
+  });
+
+  // M3-04 part 6 (AutoCAD 2024 Help, "STRETCH (Command)": "Select objects to stretch by
+  // crossing-window or crossing-polygon"): a crossing polygon, or a crossing lasso, decides which
+  // points move by the polygon itself, not by the box around it.
+  const TRIANGLE = [
+    { x: 8, y: -1 },
+    { x: 12, y: -1 },
+    { x: 12, y: 3 },
+  ];
+  /** 20 (0,0)-(10,0) and 26 (9,2)-(11,0.5): 26's start is in the triangle's box, not in it. */
+  const withSlant = () =>
+    withCanvas({
+      ...sampleInit(),
+      entities: [...(sampleInit().entities ?? []), entityInit('26', lineGeom(9, 2, 11, 0.5))],
+    });
+
+  it('stretches by a crossing polygon: only the points inside the polygon move', async () => {
+    const s = withSlant();
+    await s.bus.script(['STRETCH', 'CP', '8,-1', '12,-1', '12,3', '', '', '0,0', '5,2']);
+    expect(s.ends('20')).toEqual([0, 0, 15, 2]);
+    expect(s.ends('26')).toEqual([9, 2, 16, 2.5]);
+    expect(s.ends('23')).toEqual([0, 0, 0, 10]);
+  });
+
+  it('drags the stretch with the polygon it was selected by', async () => {
+    const s = withSlant();
+    await s.bus.script(['STRETCH', 'CP', '8,-1', '12,-1', '12,3', '', '', '0,0']);
+    expect(s.bus.prompt).toMatchObject({
+      drag: {
+        kind: 'stretch',
+        shape: [s.id('20'), s.id('26')],
+        window: { minX: 8, minY: -1, maxX: 12, maxY: 3 },
+        polygon: TRIANGLE,
+      },
+    });
+    const p = s.bus.prompt;
+    const drag = p?.kind === 'point' ? p.drag : undefined;
+    expect(drag && dragMotion(drag, { x: 5, y: 2 })?.stretch).toMatchObject({
+      polygon: TRIANGLE,
+      d: { x: 5, y: 2 },
+    });
+  });
+
+  it('stretches by a crossing lasso dragged at "Select objects"', async () => {
+    const s = withSlant();
+    await s.bus.script(['STRETCH']);
+    await s.bus.pick({ x: 8, y: -1 });
+    await s.bus.pick(
+      { x: 12, y: 3 },
+      { release: true, lasso: { kind: 'crossing', points: TRIANGLE } },
+    );
+    await s.bus.script(['', '0,0', '5,2']);
+    expect(s.ends('20')).toEqual([0, 0, 15, 2]);
+    expect(s.ends('26')).toEqual([9, 2, 16, 2.5]);
+  });
+
+  it('a window polygon moves what it holds whole', async () => {
+    const s = withSlant();
+    await s.bus.script(['STRETCH', 'WP', '8,-1', '12,-1', '12,3', '8,3', '', '', '0,0', '1,0']);
+    expect(s.ends('26')).toEqual([10, 2, 12, 0.5]);
+    expect(s.ends('20')).toEqual([0, 0, 10, 0]);
   });
 
   it('takes the window of a pre-selection', async () => {

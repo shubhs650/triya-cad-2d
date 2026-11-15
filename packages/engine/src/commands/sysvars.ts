@@ -195,6 +195,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // objects in groups (32).
   { name: 'SELECTIONPREVIEW', store: 'app', kind: 'integer', min: 0, max: 3 },
   { name: 'PREVIEWFILTER', store: 'app', kind: 'integer', min: 0, max: 63 },
+  // M3-04 part 6 (AutoCAD 2024 Help, "Saved in: Registry", initially 20000): a selection window
+  // or lasso taking more objects than this previews none. An Integer variable is 16-bit.
+  { name: 'SELECTIONPREVIEWLIMIT', store: 'app', kind: 'integer', min: 0, max: 32767 },
   // M3-12 (AutoCAD 2024 Help): the modify commands' options. OFFSETDIST the offset distance, a
   // negative value Through (initially −1), and CHAMMODE CHAMFER's method, 0 two distances or 1
   // a length and an angle (initially 0), are AutoCAD's unsaved variables: the app keeps them

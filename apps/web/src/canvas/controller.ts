@@ -94,13 +94,14 @@ import {
   type RenderPrimitive,
   type RenderStyle,
   type ScreenRect,
+  type SelectQuery,
   type UnderlayRaster,
   type ViewTransform,
 } from '@triya/render';
 import type { OpenResult } from '@triya/io';
 import { ROLLOVER_DELAY_MS, type RestAt } from '../rollover';
 import { RestWatch } from './rest';
-import { previewsSelection } from '../selection-preview';
+import { areaPreviewed, pathArea, previewsSelection, windowArea } from '../selection-preview';
 import { layoutsOf } from '../documents';
 import { appliedPageSetupName, pageSetupOf, pageSetupsOf, type PlotSpace } from '../plot';
 import type { ImageClient } from '../images';
@@ -163,6 +164,8 @@ const WHEEL_GESTURE_MS = 400;
 const CLICK_PX = 4;
 /** PICKAUTO 4 (M3-04 part 4): a drag that starts on nothing draws a lasso, not a rectangle. */
 const PICKAUTO_LASSO = 4;
+/** PICKAUTO 2 (M3-04 part 6): a press on an object at `Command:`, dragged, starts a window. */
+const PICKAUTO_DRAG = 2;
 /** A selection window's colours, its fill's opacity and a crossing edge's dash (M2-03). */
 const WINDOW_COLOR = '#4da3ff';
 const CROSSING_COLOR = '#5fd35f';
@@ -212,6 +215,11 @@ export interface CanvasHooks {
       readonly ctrl?: boolean;
       /** With `release`: the lasso dragged from the window's first corner (M3-04 part 2). */
       readonly lasso?: Lasso;
+      /**
+       * The press at this point has just been dragged (M3-04 part 6): with PICKAUTO 2, one that
+       * picked an object at `Command:` starts a window there instead.
+       */
+      readonly dragged?: boolean;
     },
   ) => void;
   /**
@@ -396,6 +404,8 @@ export class CanvasController {
   #asked: Prompt | undefined;
   /** The renderer was last told a pickbox for the selection preview (M3-04 part 5). */
   #previewing = false;
+  /** A selection window or lasso being dragged previews what it takes (M3-04 part 6). */
+  #areaPreviewing = false;
   /** Where the cursor rests, for rollover tooltips (M2-35 part 21). */
   readonly #rest = new RestWatch<{
     readonly x: number;
@@ -728,6 +738,11 @@ export class CanvasController {
         prompt.kind === 'angle');
     this.#prompt = picking ? prompt : undefined;
     this.#asked = prompt;
+    // The window that previewed is gone or another; the next cursor move previews it afresh.
+    if (this.#areaPreviewing) {
+      this.#areaPreviewing = false;
+      this.#host.setSelectionPreview(undefined);
+    }
     this.#previewAgain();
     this.#quick = prompt?.kind === 'point' ? prompt.quick : undefined;
     if (!this.#quick) {
@@ -1003,6 +1018,8 @@ export class CanvasController {
    * undefined, nothing does. Only a change, or a pickbox shown, asks for a frame.
    */
   #hoverPreview(screen: { readonly x: number; readonly y: number } | undefined): void {
+    // A window being dragged previews what it takes instead (`#areaPreview`).
+    if (this.#areaPreviewing) return;
     const d = this.#drafting;
     const on =
       screen &&
@@ -1013,6 +1030,31 @@ export class CanvasController {
       on
         ? {
             screen,
+            aperture: d.pickbox,
+            filter: d.previewFilter,
+            groups: (d.pickStyle & 1) !== 0,
+          }
+        : undefined,
+    );
+    this.#requestFrame();
+  }
+
+  /**
+   * The selection window, polygon, fence or lasso being dragged (M3-04 part 6): what `area`
+   * would take lights up, when SELECTIONPREVIEW previews at the prompt it is dragged at, unless
+   * it takes more than SELECTIONPREVIEWLIMIT; undefined, the window is gone.
+   */
+  #areaPreview(area: SelectQuery | undefined): void {
+    const d = this.#drafting;
+    const on = area && areaPreviewed(d.selectionPreview, this.#prompt);
+    if (!on && !this.#areaPreviewing) return;
+    this.#areaPreviewing = !!on;
+    this.#previewing = false;
+    this.#host.setSelectionPreview(
+      on
+        ? {
+            area,
+            limit: d.selectionPreviewLimit,
             aperture: d.pickbox,
             filter: d.previewFilter,
             groups: (d.pickStyle & 1) !== 0,
@@ -1055,26 +1097,12 @@ export class CanvasController {
 
   /** The objects a selection window between two world points takes (M2-03). */
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]> {
-    const box = {
-      minX: Math.min(a.x, b.x),
-      minY: Math.min(a.y, b.y),
-      maxX: Math.max(a.x, b.x),
-      maxY: Math.max(a.y, b.y),
-    };
-    return this.#host.select({ kind: crossing ? 'crossing' : 'window', box });
+    return this.#host.select(windowArea(a, b, crossing));
   }
 
   /** What a selection polygon (WPolygon, CPolygon) or fence takes (M3-04). */
   selectPath(points: readonly Vec2[], kind: 'window' | 'crossing' | 'fence'): Promise<EntityId[]> {
-    const xs = points.map((p) => p.x);
-    const ys = points.map((p) => p.y);
-    const box = {
-      minX: Math.min(...xs),
-      minY: Math.min(...ys),
-      maxX: Math.max(...xs),
-      maxY: Math.max(...ys),
-    };
-    return this.#host.select({ kind, box, polygon: points });
+    return this.#host.select(pathArea(points, kind));
   }
 
   /** ZOOM Object: the objects' extents fill the window; false when none has a known extent. */
@@ -1609,6 +1637,12 @@ export class CanvasController {
           : p?.kind === 'point'
             ? p.rubberBand?.path
             : undefined;
+      const kind = lasso ? lasso.kind : path?.open ? 'fence' : crossing ? 'crossing' : 'window';
+      this.#areaPreview(
+        path && path.points.length > 0
+          ? pathArea([...path.points, cursor], kind)
+          : windowArea(from, cursor, crossing),
+      );
       this.#host.setTransient([
         ...preview,
         ...(path
@@ -1623,6 +1657,7 @@ export class CanvasController {
       this.#requestFrame();
       return;
     }
+    this.#areaPreview(undefined);
     // A band the prompt does not draw (RECTANG's: its drag is the rectangle, M3-01 part 3).
     const drawn = !(p?.kind === 'point' && p.rubberBand?.drawn === false);
     const band: RenderPrimitive[] =
@@ -1914,6 +1949,15 @@ export class CanvasController {
             // Without PICKAUTO's bit 4 the drag makes the rectangular window it began.
             if (this.#drafting.pickauto & PICKAUTO_LASSO)
               press.lasso = e.offsetX < press.x ? 'crossing' : 'window';
+            // With bit 2 a press that picked an object at `Command:` starts a window there; the
+            // engine knows whether it did (a press on a grip or on nothing is left alone).
+            if (this.#drafting.pickauto & PICKAUTO_DRAG && !this.#precise()) {
+              this.#hooks.onPick?.(press.path[0]!, {
+                shift: e.shiftKey,
+                release: false,
+                dragged: true,
+              });
+            }
           }
           // A point every few pixels is path enough, and keeps a long lasso's test quick.
           const last = press.path.at(-1);
@@ -2038,6 +2082,8 @@ export class CanvasController {
     const start = press.path[0]!;
     // The window this press started, not one a click began before it.
     if (!band?.box || band.selection !== 'auto' || band.from.x !== start.x) return undefined;
+    // A window PICKAUTO 2 started from over an object is a rectangle (M3-04 part 6).
+    if (band.lasso === false) return undefined;
     if (band.from.y !== start.y) return undefined;
     if (!press.shown) {
       press.shown = true;

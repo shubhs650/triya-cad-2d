@@ -339,6 +339,18 @@ describe('SETVAR', () => {
     expect(s.bus.undo.state.undoable).toBe(0);
   });
 
+  it('asks the app for SELECTIONPREVIEWLIMIT, an integer to 32767 (M3-04 part 6)', async () => {
+    // AutoCAD 2024 Help: "Saved in: Registry", initially 20000; an Integer variable is 16-bit.
+    const app = appHost({ SELECTIONPREVIEWLIMIT: 20000 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['SELECTIONPREVIEWLIMIT']);
+    expect(s.bus.promptText).toBe('Enter new value for SELECTIONPREVIEWLIMIT <20000>:');
+    await s.bus.script(['32768']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 32767.');
+    await s.bus.script(['500']);
+    expect(app.values['SELECTIONPREVIEWLIMIT']).toBe(500);
+  });
+
   it('lists variables matching wild cards with ?', async () => {
     const s = setup(withHeader(HEADER), appHost({ ORTHOMODE: 1 }).view);
     await s.bus.script(['SETVAR', '?']);
