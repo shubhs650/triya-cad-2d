@@ -3,7 +3,7 @@
 // mirror), and stretched objects tessellated from their stretched geometry.
 import { rotation, translation, type EntityId, type MTextGeometry } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { Canvas2DRenderer, gripHalfSize } from '../src/index';
+import { Canvas2DRenderer, COMMAND_PREVIEW_FADE, gripHalfSize } from '../src/index';
 import { aciRgb, rgbHex } from '../src/style/aci';
 import { drawing, entity, LAYER_0, line, MODEL, surface, type Call } from './fixtures';
 
@@ -150,6 +150,68 @@ describe('Canvas2DRenderer.setDrag', () => {
     r.setDrag(undefined);
     r.frame();
     expect(devicePoints(transient().calls)).toEqual([]);
+  });
+});
+
+describe('Canvas2DRenderer command preview (M3-12 part 6, COMMANDPREVIEW)', () => {
+  const props = {
+    layer: LAYER_0,
+    color: { kind: 'aci', index: 1 },
+    linetype: 'ByLayer',
+    lineweight: 'ByLayer',
+    transparency: 'ByLayer',
+    ltScale: 1,
+  } as const;
+
+  it('fades the objects a pick would change and draws the shapes they would take', () => {
+    const { r, id, transient, scene } = setup();
+    transient().clear();
+    scene().clear();
+    r.setDrag({
+      ids: [],
+      m: translation(0, 0),
+      preview: { faded: [id('20')], shapes: [{ geom: line(0, 0, 5, 0), props }] },
+    });
+    r.frame();
+    // The scene is drawn again without the faded line …
+    expect(scene().calls.some((c) => c[0] === 'fillRect')).toBe(true);
+    expect(devicePoints(scene().calls)).not.toContainEqual([100, 50]);
+    // … which the transient layer draws faded, under the shape in its own colour.
+    const t = transient().calls;
+    expect(devicePoints(t)).toEqual([
+      [0, 50],
+      [100, 50],
+      [0, 50],
+      [50, 50],
+    ]);
+    expect(t).toContainEqual(['globalAlpha', COMMAND_PREVIEW_FADE]);
+    expect(t.filter((c) => c[0] === 'stroke').at(-1)).toEqual(['stroke', aciHex(1), 1]);
+  });
+
+  it('shows the faded objects in the scene again once the preview goes', () => {
+    const { r, id, scene } = setup();
+    r.setDrag({ ids: [], m: translation(0, 0), preview: { faded: [id('20')], shapes: [] } });
+    r.frame();
+    scene().clear();
+    r.setDrag(undefined);
+    r.frame();
+    expect(devicePoints(scene().calls)).toContainEqual([100, 50]);
+  });
+
+  it('does not draw the scene again while the faded objects stay the same', () => {
+    const { r, id, scene } = setup();
+    const at = (x: number) =>
+      r.setDrag({
+        ids: [],
+        m: translation(0, 0),
+        preview: { faded: [id('20')], shapes: [{ geom: line(0, 0, x, 0), props }] },
+      });
+    at(5);
+    r.frame();
+    scene().clear();
+    at(6);
+    r.frame();
+    expect(scene().calls).toEqual([]);
   });
 });
 

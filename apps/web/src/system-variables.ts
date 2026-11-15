@@ -119,6 +119,10 @@ const VALUES: Readonly<
     get: (s) => s.selectionPreviewLimit,
     set: (selectionPreviewLimit) => ({ selectionPreviewLimit }),
   },
+  COMMANDPREVIEW: {
+    get: (s) => s.commandPreview,
+    set: (v) => ({ commandPreview: v === 1 ? 1 : 0 }),
+  },
   ARRAYASSOCIATIVITY: {
     get: (s) => bit(s.arrayAssociativity),
     set: (v) => ({ arrayAssociativity: v === 1 }),
