@@ -97,6 +97,14 @@ export function cycleSnap(): boolean {
   return allControllers().some((c) => c.cycleSnap());
 }
 
+/**
+ * Shift+Space where the cursor rests over objects at a prompt that selects (M3-04 part 7): the
+ * next of them lights up for the pick; false when it rests on no such canvas.
+ */
+export function cycleOverlap(): boolean {
+  return allControllers().some((c) => c.cycleOverlap());
+}
+
 /** Spacebar while a lasso is dragged (M3-04 part 2): its next kind; false when none is. */
 export function cycleLasso(): boolean {
   return allControllers().some((c) => c.cycleLasso());

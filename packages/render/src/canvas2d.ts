@@ -895,7 +895,14 @@ export class Canvas2DRenderer implements Renderer {
       for (const id of taken) for (const p of previewObjects(this.#model, id, o)) out.add(p);
       return [...out].sort((a, b) => a - b);
     }
-    const hit = preview.screen && this.hitTest(preview.screen, preview.aperture)[0];
+    const hits = preview.screen ? this.hitTest(preview.screen, preview.aperture) : [];
+    // Shift+Space (M3-04 part 7) steps through the overlapping objects; the one stepped to
+    // shows whatever PREVIEWFILTER says, as the drafter asked for it.
+    if (preview.cycle !== undefined && hits.length > 0) {
+      const hit = hits[preview.cycle % hits.length]!;
+      return previewObjects(this.#model, hit, { ...o, filter: 0 });
+    }
+    const hit = hits[0];
     return hit !== undefined ? previewObjects(this.#model, hit, o) : [];
   }
 

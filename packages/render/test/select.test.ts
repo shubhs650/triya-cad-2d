@@ -290,6 +290,45 @@ describe('Canvas2DRenderer.setSelectionPreview', () => {
     expect(strokes(transient().calls as Call[])).toHaveLength(2);
   });
 
+  // M3-04 part 7 (AutoCAD 2024 Help, "To Select Overlapping or Close Objects": Shift+Spacebar
+  // cycles through the objects under the cursor): `cycle` steps the preview through every object
+  // under the pickbox, nearest first, round again after the last; PREVIEWFILTER does not leave
+  // the one cycled to out, as the drafter asked for it.
+  it('cycles through the overlapping objects under the pickbox', () => {
+    const crossing = [
+      entity('20', line(0, 0, 10, 0)),
+      entity('23', line(5, -1, 5, 4), { layer: LAYER_RED }),
+    ];
+    const { d, r, transient } = setup(crossing);
+    r.apply(change(d, (b) => b.updateTableRecord('layers', LAYER_RED, { locked: true })));
+    const moves = () =>
+      (transient().calls as Call[]).filter((c) => c[0] === 'moveTo').map((c) => [c[1], c[2]]);
+    const drawn = (cycle: number | undefined) => {
+      r.setSelectionPreview(undefined);
+      r.frame();
+      transient().clear();
+      r.setSelectionPreview({ ...at(51, 49.5), ...(cycle !== undefined && { cycle }) });
+      r.frame();
+      return JSON.stringify(moves());
+    };
+    // Nearest first: the horizontal line, half a pixel away; then the vertical one, a pixel
+    // away on a locked layer, which PREVIEWFILTER's bit 1 would otherwise leave out.
+    const first = drawn(undefined);
+    expect(first).not.toBe('[]');
+    expect(drawn(0)).toBe(first);
+    const second = drawn(1);
+    expect(second).not.toBe('[]');
+    expect(second).not.toBe(first);
+    expect(drawn(2)).toBe(first);
+    // A single object under the pickbox: every step is that one.
+    r.setSelectionPreview(undefined);
+    r.frame();
+    transient().clear();
+    r.setSelectionPreview({ ...at(80, 50), cycle: 1 });
+    r.frame();
+    expect(moves().length).toBeGreaterThan(0);
+  });
+
   // M3-04 part 6 (AutoCAD 2024 Help, "SELECTIONPREVIEWLIMIT (System Variable)"): a window or
   // lasso being dragged previews what it would take; "whenever the selection set exceeds the
   // number in this setting, all preview highlighting is discontinued".
