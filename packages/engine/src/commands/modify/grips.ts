@@ -10,12 +10,13 @@ import { add, sub } from '../../geom/vec';
 import type { EntityId } from '../../model/entity-ids';
 import { copyObjects, gripObjects, refusalMessages, transformObjects } from '../../edit/edit';
 import { moveGrip } from '../../edit/grips';
-import { revcloudOf } from '../../edit/revcloud';
+import { gripInfoOf } from '../../edit/array-grips';
 import { mirrorIn, moveBy, scaleAbout, turnAbout, type Similarity } from '../../edit/similarity';
 import type { DocumentModel } from '../../model/document';
 import type { TransformOptions } from '../../edit/transform';
 import type { Prompt, PromptAnswer } from '../prompt';
 import type { CommandContext, CommandDef } from '../command';
+import { arrayGripAt, editArrayByGrip } from './array-grips';
 import { regenerateDimensions } from './dimensions';
 import { recountColumns } from './mtext-columns';
 
@@ -45,7 +46,7 @@ function copyStretched(
     for (const id of ids) {
       const e = b.entity(id);
       if (!e) continue;
-      const r = moveGrip(e.geom, grip, to, revcloudOf(ctx.model, e));
+      const r = moveGrip(e.geom, grip, to, gripInfoOf(ctx.model, e));
       if (r.kind === 'none' || r.kind === 'whole') continue;
       const t = r.kind === 'move' ? moveBy(sub(to, grip)) : moveBy({ x: 0, y: 0 });
       const [copy] = copyObjects(b, ctx.model, [id], t, mirrorOptions(ctx.model)).ids;
@@ -70,6 +71,9 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
     usesSelection: 'none',
     keepsSelection: true,
     async *run(ctx) {
+      // An associative array's sizing grip edits that array alone (M3-11 part 3).
+      const array = arrayGripAt(ctx.model, ids, hot);
+      if (array) return yield* editArrayByGrip(ctx, array.id, array.role, hot);
       let mode = 0;
       let base = hot;
       let copying = false;

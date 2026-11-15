@@ -63,7 +63,7 @@ import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
 import { gripsOf } from '../edit/grips';
 import { variableCommand } from './setvar';
 import { systemVariable } from './sysvars';
-import { revcloudOf } from '../edit/revcloud';
+import { gripInfoOf } from '../edit/array-grips';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
 import type { DragPreview } from './drag';
@@ -1396,7 +1396,7 @@ function nearestGrip(
   for (const id of ids) {
     const e = model.entity(id);
     if (!e) continue;
-    for (const g of gripsOf(e.geom, revcloudOf(model, e))) {
+    for (const g of gripsOf(e.geom, gripInfoOf(model, e))) {
       const d = distance(g.point, p);
       if (d <= bestD) {
         best = g.point;
