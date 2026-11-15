@@ -64,7 +64,10 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      // M3-01 part 3: PLINE, POLYGON and RECTANG.
+      'PLINE',
       'PLOT',
+      'POLYGON',
       'PREVIEW',
       'PRINT',
       'PROPERTIES',
@@ -72,6 +75,7 @@ describe('palette search', () => {
       'PUBLISH',
       'QSAVE',
       'QUICKPROPERTIES',
+      'RECTANG',
       'REDO',
       'REGEN',
       'REGENALL',

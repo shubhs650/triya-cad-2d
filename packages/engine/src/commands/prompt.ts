@@ -378,7 +378,15 @@ export type PromptAnswer =
       /** A click made with Shift held (TRIM's shift-select to extend, M3-02 part 2). */
       readonly shift?: true;
     }
-  | { readonly kind: 'distance'; readonly value: number }
+  | {
+      readonly kind: 'distance';
+      readonly value: number;
+      /**
+       * The second point when the distance was given by points (POLYGON, M3-01 part 3: a radius
+       * picked turns the polygon, a typed one does not).
+       */
+      readonly to?: Vec2;
+    }
   | { readonly kind: 'angle'; readonly value: number }
   | { readonly kind: 'keyword'; readonly keyword: string }
   | {
