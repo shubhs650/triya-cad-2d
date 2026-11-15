@@ -12,8 +12,8 @@
 // as far as the start of the command. Edit vertex marks a vertex with an X and walks it along
 // the polyline (the frame of a spline-fit one). The geometry is `edit/pedit.ts`'s.
 //
-// PEDITACCEPT (a registry variable, not saved in the drawing) is taken as 0: PEDIT always asks
-// before turning a line, arc or spline into a polyline. Tangents given with Edit vertex Tangent
+// PEDITACCEPT (M3-12; a variable the app keeps, as AutoCAD keeps it per user) 1 turns a line, arc
+// or spline picked into a polyline without asking (initially 0, asking). Tangents given with Edit vertex Tangent
 // are used by Fit while PEDIT runs; they are not saved (VERTEX DXF 50).
 import { reverseGeometry } from '../../edit/break';
 import { eraseObjects, reshapeObject, revertChanges } from '../../edit/edit';
@@ -49,6 +49,7 @@ import type { EntityGeometry, PolylineVertex } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { toleranceFor } from './offset';
+import { optionVariable } from './option-variables';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -86,6 +87,10 @@ async function* yesNo(ctx: CommandContext, message: string): Sub<boolean | undef
   return a.keyword === 'Yes';
 }
 
+/** PEDITACCEPT 1: what is picked is turned into a polyline without asking. */
+const peditAccept = async (ctx: CommandContext): Promise<boolean> =>
+  (await optionVariable(ctx, 'PEDITACCEPT', 0)) === 1;
+
 export async function* precision(ctx: CommandContext, message: string): Sub<number | undefined> {
   for (;;) {
     const a = yield ctx.prompt.integer({ message, default: { kind: 'number', value: 10 } });
@@ -116,9 +121,11 @@ export function peditCommand(): CommandDef {
         let id = a.ids[0]!;
         const g = ctx.model.entity(id)!.geom;
         if (!isPolyline(g)) {
-          ctx.message('Object selected is not a polyline');
-          if (!CONVERTIBLE.has(g.kind)) continue;
-          const yes = yield* yesNo(ctx, 'Do you want to turn it into one?');
+          const convertible = CONVERTIBLE.has(g.kind);
+          const accept = convertible && (await peditAccept(ctx));
+          if (!accept) ctx.message('Object selected is not a polyline');
+          if (!convertible) continue;
+          const yes = accept || (yield* yesNo(ctx, 'Do you want to turn it into one?'));
           if (yes === undefined) return;
           if (!yes) continue;
           let p = 10;
@@ -462,7 +469,9 @@ async function* multiple(ctx: CommandContext): Sub<void> {
   });
   const others = ids.filter((id) => !isPolyline(ctx.model.entity(id)!.geom));
   if (others.length > 0) {
-    const yes = yield* yesNo(ctx, 'Convert Lines, Arcs and Splines to polylines');
+    const yes =
+      (await peditAccept(ctx)) ||
+      (yield* yesNo(ctx, 'Convert Lines, Arcs and Splines to polylines'));
     if (yes === undefined) return;
     if (!yes) ids = ids.filter((id) => !others.includes(id));
     else {

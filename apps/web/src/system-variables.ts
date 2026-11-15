@@ -12,7 +12,9 @@
 // `DRAWING_VARIABLES`): its file name and whether it has unsaved changes.
 import type { ViewReply } from '@triya/engine';
 import {
+  INITIAL_SESSION_OPTIONS,
   MAX_ADDITIONAL_ANGLES,
+  MODIFY_OPTIONS,
   additionalAngles,
   angleText,
   AUTOSNAP_KEPT,
@@ -110,6 +112,19 @@ function polarAddAngReply(drafting: Drafting, value: string | undefined): ViewRe
   return { ok: true, value: drafting.get().polarAddAngles };
 }
 
+/**
+ * The modify commands' options (M3-12): those AutoCAD keeps per user in `modifyOptions`, which
+ * Settings stores, OFFSETDIST and CHAMMODE in `sessionOptions`, kept while the app runs.
+ */
+function optionReply(drafting: Drafting, name: string, value: number | undefined): ViewReply {
+  const key = name in MODIFY_OPTIONS ? 'modifyOptions' : 'sessionOptions';
+  const now = drafting.get()[key];
+  if (value !== undefined && now[name] !== value) {
+    drafting.configure({ [key]: { ...now, [name]: value } });
+  }
+  return { ok: true, value: drafting.get()[key][name]! };
+}
+
 /** Reads, or sets and then reads, a variable the app keeps. */
 export function systemVariableReply(
   drafting: Drafting,
@@ -121,6 +136,9 @@ export function systemVariableReply(
     return polarAddAngReply(drafting, value === undefined ? undefined : String(value));
   if (typeof value === 'string') return { ok: false, message: `${name} takes a number.` };
   if (name === 'DYNMODE') return dynModeReply(dyn, value);
+  if (name in MODIFY_OPTIONS || name in INITIAL_SESSION_OPTIONS) {
+    return optionReply(drafting, name, value);
+  }
   const toggle = TOGGLES[name];
   if (toggle) {
     // A toggle turned as F8 turns it: ORTHOMODE 1 turns POLAR off, as in AutoCAD.
