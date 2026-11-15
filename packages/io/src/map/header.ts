@@ -97,18 +97,22 @@ export function mapHeader(doc: CadDocument): MappedHeader {
 }
 
 /**
- * The dictionaries a new IMAGEDEF or PDFDEFINITION is filed in (a paste's, M2-32 part 2), when
- * the drawing has them, empty or not.
+ * The dictionaries a new IMAGEDEF or PDFDEFINITION is filed in (a paste's, M2-32 part 2), and a
+ * new GROUP (M3-08), when the drawing has them, empty or not.
  */
 function definitionDictionaries(doc: CadDocument): {
   imageDictionary?: string;
   pdfDictionary?: string;
+  groupDictionary?: string;
 } {
   const images = namedDictionary(doc, CadDictionary.acadImageDict);
   const pdfs = namedDictionary(doc, CadDictionary.acadPdfDefinitions);
+  // GROUP's new groups (M3-08); acad-ts makes ACAD_GROUP on read when a file has none.
+  const groups = namedDictionary(doc, CadDictionary.acadGroup);
   return {
     ...(images && { imageDictionary: hex(images.handle) }),
     ...(pdfs && { pdfDictionary: hex(pdfs.handle) }),
+    ...(groups && { groupDictionary: hex(groups.handle) }),
   };
 }
 

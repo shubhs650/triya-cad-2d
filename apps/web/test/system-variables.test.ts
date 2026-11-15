@@ -180,6 +180,14 @@ describe('system variables the app keeps', () => {
     expect(d.isOn('sc')).toBe(true);
   });
 
+  it('keep PICKSTYLE, whose bit 1 is group selection (M3-08)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'PICKSTYLE')).toEqual({ ok: true, value: 1 });
+    expect(d.isOn('groups')).toBe(true);
+    expect(systemVariableReply(d, 'PICKSTYLE', 2)).toEqual({ ok: true, value: 2 });
+    expect(d.isOn('groups')).toBe(false);
+  });
+
   it('keep PICKBOX, PICKADD and PICKAUTO (M3-04 part 4)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'PICKBOX')).toEqual({ ok: true, value: 3 });

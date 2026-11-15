@@ -71,6 +71,7 @@ const VALUES: Readonly<
     get: (s) => s.selectionCycling,
     set: (selectionCycling) => ({ selectionCycling }),
   },
+  PICKSTYLE: { get: (s) => s.pickStyle, set: (pickStyle) => ({ pickStyle }) },
   PICKBOX: { get: (s) => s.pickbox, set: (pickbox) => ({ pickbox }) },
   PICKADD: { get: (s) => s.pickadd, set: (pickadd) => ({ pickadd }) },
   PICKAUTO: { get: (s) => s.pickauto, set: (pickauto) => ({ pickauto }) },

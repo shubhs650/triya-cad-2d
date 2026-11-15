@@ -74,7 +74,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | DRAWORDER | DR | 1 | Above, Under, Front, Back | x (#231) |
 | TEXTTOFRONT | — | 1 | Text, Dims, Leaders, All | x (#231) |
 | HATCHTOBACK | — | 1 | | x (#231) |
-| GROUP / UNGROUP / GROUPEDIT / CLASSICGROUP | G / UNG | 2 | Ctrl+Shift+A toggle | |
+| GROUP / UNGROUP / GROUPEDIT / CLASSICGROUP | G / UNG | 2 | Ctrl+Shift+A toggle | x (#397, M3-08): GROUP (Name, Description; objects selected first grouped at once, unnamed `*A`n), -GROUP (?, Order with Reverse order, Add, Remove, Explode, REName, Selectable, Create), UNGROUP (a member picked, Name, a window or ALL; Accept/Next for an object in several groups), GROUPEDIT (Add objects, Remove objects, REName), CLASSICGROUP's Object Grouping dialog (Find Name, Highlight, Include Unnamed, New, Remove, Add, Rename, Re-Order with Order Group, Description, Explode, Selectable). Group selection: PICKSTYLE (per user, initially 1) bit 1 makes a pick, window, path or Last on a member of a selectable group take the group ("2 found, 1 group"), not members on frozen or locked layers; Ctrl+Shift+A or the palette's "Group Selection on/off" turns it. GROUPDISPLAYMODE, Group Bounding Box, copies of a group making a new group and PICKSTYLE 2 are M3-13 |
 
 ## Selection and inquiry
 

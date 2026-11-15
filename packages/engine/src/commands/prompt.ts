@@ -319,6 +319,11 @@ export interface SelectionPrompt extends PromptBase {
    * the pre-selection does not answer it either (QSELECT's Select objects, M3-04 part 2).
    */
   readonly pickfirst?: boolean;
+  /**
+   * A member of a group is taken alone, whatever PICKSTYLE says (M3-08: UNGROUP's and
+   * GROUPEDIT's objects name a group by one of its members).
+   */
+  readonly ungrouped?: boolean;
 }
 
 /**
@@ -503,7 +508,60 @@ export type DialogRequest =
       readonly type: 'units';
       readonly settings: UnitsSettings;
       readonly direction?: true;
-    };
+    }
+  | ObjectGroupingRequest;
+
+/** One row of the Object Grouping dialog's Group Name list (M3-08). */
+export interface GroupRow {
+  readonly name: string;
+  readonly description: string;
+  readonly selectable: boolean;
+  /** An unnamed group (`*A3`), listed only with Include Unnamed checked. */
+  readonly unnamed: boolean;
+  readonly members: number;
+}
+
+/**
+ * CLASSICGROUP's Object Grouping dialog (M3-08; AutoCAD 2024 Help, "Object Grouping Dialog
+ * Box"): the drawing's groups in alphabetical order, the one an action left selected, and what
+ * the last action had to say (a refusal, Find Name's Group Member List).
+ */
+export interface ObjectGroupingRequest {
+  readonly type: 'objectgrouping';
+  readonly groups: readonly GroupRow[];
+  readonly selected?: string;
+  readonly includeUnnamed: boolean;
+  /** Find Name: the groups the object picked belongs to (the Group Member List). */
+  readonly memberOf?: readonly string[];
+  /** Why the last action did nothing ("A group with this name already exists."). */
+  readonly note?: string;
+}
+
+/**
+ * What an Object Grouping dialog button asks of CLASSICGROUP: those that pick in the drawing
+ * (New, Add, Remove, Highlight, Find Name) close the dialog until the pick is made.
+ */
+export type GroupingAction =
+  | {
+      readonly op: 'new';
+      readonly name: string;
+      readonly description: string;
+      readonly selectable: boolean;
+      readonly unnamed: boolean;
+    }
+  | { readonly op: 'add' | 'remove' | 'highlight' | 'explode'; readonly group: string }
+  | { readonly op: 'find' }
+  | { readonly op: 'rename'; readonly group: string; readonly name: string }
+  | { readonly op: 'description'; readonly group: string; readonly description: string }
+  | { readonly op: 'selectable'; readonly group: string; readonly selectable: boolean }
+  | {
+      readonly op: 'reorder';
+      readonly group: string;
+      readonly from: number;
+      readonly to: number;
+      readonly count: number;
+    }
+  | { readonly op: 'reverse'; readonly group: string };
 
 /** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
 export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'qp';
@@ -622,6 +680,9 @@ export type PromptAnswer =
       readonly qselect?: QuickSelectCriteria;
       /** Select Similar Settings' checkboxes as OK closed it, SELECTSIMILARMODE's bits. */
       readonly selectSimilar?: number;
+      /** An Object Grouping button (CLASSICGROUP, M3-08), with Include Unnamed as it was. */
+      readonly grouping?: GroupingAction;
+      readonly includeUnnamed?: boolean;
       /**
        * Drawing Units' settings as OK (or Direction Control's Pick an angle, `select`) closed it.
        */

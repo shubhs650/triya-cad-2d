@@ -1980,6 +1980,11 @@ export interface DocumentMeta {
   readonly imageDictionary?: Handle;
   readonly pdfDictionary?: Handle;
   /**
+   * The `ACAD_GROUP` dictionary's handle, which GROUP files new groups in (M3-08): known even
+   * while it holds nothing. A drawing without one cannot hold groups.
+   */
+  readonly groupDictionary?: Handle;
+  /**
    * Names of style dictionary entries the I/O layer keeps without mapping (M2-29): an R13 or R14
    * DXF can list an R2007 STANDARD multileader style that acad-ts reads as a proxy object. The
    * engine does not see those styles, but a new one must not take their names, which the save

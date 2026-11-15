@@ -3312,6 +3312,39 @@ button {
   outline: none;
 }
 
+/* CLASSICGROUP's Object Grouping (M3-08): the group list, then AutoCAD's three groups of buttons. */
+.cad-dialog.grouping-dialog {
+  width: min(460px, calc(100vw - 32px));
+}
+
+.grouping-dialog fieldset {
+  margin: 0 0 8px;
+  border: 1px solid var(--chrome-border);
+}
+
+.grouping-list tbody {
+  display: block;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.grouping-list thead,
+.grouping-list tbody tr {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+
+.grouping-row {
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  align-items: center;
+}
+
+.grouping-note {
+  margin: 0 0 8px;
+}
+
 /* FILTER's Object Selection Filters (M3-04 part 4): the list on top, Select Filter and Named
    Filters side by side below it (stacked when narrow). */
 .filter-list {
