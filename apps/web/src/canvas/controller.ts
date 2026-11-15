@@ -1099,9 +1099,13 @@ export class CanvasController {
       this.#overlapStep = undefined;
     const cycle = this.#overlapStep?.step;
     this.#overlapBadge(selecting && d.selectionCycling > 0 ? screen : undefined);
+    // A command preview of the object under the pickbox (M3-12 part 6) shows what the pick does
+    // in place of the selection preview's highlight, which would hide the faded part.
+    const commandPreviews = this.#asked?.commandPreview?.hover === true && d.commandPreview === 1;
     const on =
       selecting &&
-      (cycle !== undefined || previewsSelection(d.selectionPreview, this.#asked, atCommand));
+      (cycle !== undefined ||
+        (!commandPreviews && previewsSelection(d.selectionPreview, this.#asked, atCommand)));
     if (!on && !this.#previewing) return;
     this.#previewing = !!on;
     this.#host.setSelectionPreview(
