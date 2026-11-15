@@ -271,6 +271,13 @@ describe('system variables the app keeps', () => {
     expect(d.get()).toMatchObject({ selectionPreview: 2, previewFilter: 16 });
   });
 
+  it('keep SELECTIONPREVIEWLIMIT (M3-04 part 6)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'SELECTIONPREVIEWLIMIT')).toEqual({ ok: true, value: 20000 });
+    systemVariableReply(d, 'SELECTIONPREVIEWLIMIT', 0);
+    expect(d.get()).toMatchObject({ selectionPreviewLimit: 0 });
+  });
+
   it('are answered by the view host, refused where the app keeps none', () => {
     const d = new Drafting();
     const ctx = { target: undefined, all: () => [], views: () => [] };

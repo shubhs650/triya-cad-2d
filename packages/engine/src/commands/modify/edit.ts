@@ -490,17 +490,28 @@ const boxOf = (w: SelectionWindow): Box => ({
 });
 
 /**
- * What the canvas says of STRETCH's window: what lies wholly inside it and what it crosses.
- * Without a canvas (scripts) neither is known and points decide alone.
+ * What the canvas says of STRETCH's window, or its crossing polygon or lasso (M3-04 part 6):
+ * what lies wholly inside it and what it crosses. Without a canvas (scripts) neither is known
+ * and points decide alone.
  */
 async function stretchWindow(ctx: CommandContext, w: SelectionWindow): Promise<StretchWindow> {
+  const polygon = w.polygon;
   const ask = async (crossing: boolean) => {
-    const r = await ctx.view.request({ op: 'select', a: w.a, b: w.b, crossing });
+    const r = await ctx.view.request(
+      polygon
+        ? { op: 'selectPath', kind: crossing ? 'crossing' : 'window', points: polygon }
+        : { op: 'select', a: w.a, b: w.b, crossing },
+    );
     return r.ok && r.ids ? new Set(r.ids) : undefined;
   };
   const inside = await ask(false);
   const crossing = inside && (await ask(true));
-  return { box: boxOf(w), ...(inside && { inside }), ...(crossing && { crossing }) };
+  return {
+    box: boxOf(w),
+    ...(polygon && { polygon }),
+    ...(inside && { inside }),
+    ...(crossing && { crossing }),
+  };
 }
 
 /**
@@ -540,6 +551,7 @@ export function stretchCommand(): CommandDef {
             ids: plan.move,
             shape: [...plan.shape.keys()],
             window: w?.box ?? { minX: 0, minY: 0, maxX: -1, maxY: -1 },
+            ...(w?.polygon && { polygon: w.polygon }),
             from: base,
           },
         });

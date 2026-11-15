@@ -2129,6 +2129,7 @@ function ViewportCanvas({
           ...(o.grip !== undefined && { grip: o.grip }),
           ...(o.ctrl && { ctrl: true }),
           ...(o.lasso && { lasso: o.lasso }),
+          ...(o.dragged && { dragged: true }),
         });
         engines.command(
           id,

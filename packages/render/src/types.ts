@@ -403,15 +403,28 @@ export interface Renderer {
   /**
    * The selection preview (M3-04 part 5, SELECTIONPREVIEW): the object under the pickbox at
    * `screen`, unless PREVIEWFILTER leaves it out, is highlighted on the transient layer, with
-   * its group when group selection is on; undefined, none is.
+   * its group when group selection is on; with `area` (M3-04 part 6), what that window,
+   * polygon, fence or lasso being dragged would take, none once it takes more than `limit`;
+   * undefined, none is.
    */
   setSelectionPreview(preview: SelectionPreview | undefined): void;
 }
 
 /** Where the pickbox is and what the selection preview leaves out (M3-04 part 5). */
 export interface SelectionPreview {
-  /** The cursor, in CSS pixels from the canvas's top left. */
-  readonly screen: { readonly x: number; readonly y: number };
+  /** The cursor, in CSS pixels from the canvas's top left (the pickbox's preview). */
+  readonly screen?: { readonly x: number; readonly y: number };
+  /**
+   * A selection window, polygon, fence or lasso being dragged, in world units (M3-04 part 6):
+   * what it would take previews instead of the object under the pickbox.
+   */
+  readonly area?: SelectQuery;
+  /**
+   * SELECTIONPREVIEWLIMIT: an `area` taking more objects than this previews none ("whenever the
+   * selection set exceeds the number in this setting, all preview highlighting is
+   * discontinued"); undefined, no limit.
+   */
+  readonly limit?: number;
   /** The pickbox's half size in CSS pixels (PICKBOX). */
   readonly aperture: number;
   /** PREVIEWFILTER's bits. */

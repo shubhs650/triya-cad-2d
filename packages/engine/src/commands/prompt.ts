@@ -23,10 +23,14 @@ import {
   type DrawingUnits,
 } from './units';
 
-/** A selection window's corners as the drafter gave them. */
+/**
+ * A selection window's corners as the drafter gave them; for a selection polygon or lasso
+ * (M3-04 part 6), the corners of the box round it and `polygon`, its points in order.
+ */
 export interface SelectionWindow {
   readonly a: Vec2;
   readonly b: Vec2;
+  readonly polygon?: readonly Vec2[];
 }
 
 /**
@@ -116,6 +120,16 @@ export interface PointPrompt extends PromptBase {
      */
     readonly drawn?: false;
     readonly selection?: 'auto' | 'window' | 'crossing';
+    /**
+     * A selection window started at `Command:` (M3-04 part 6): SELECTIONPREVIEW bit 1 previews
+     * what it would take, rather than bit 2.
+     */
+    readonly atCommand?: true;
+    /**
+     * False: dragging from `from` makes this rectangle, never a lasso (PICKAUTO 2 started it
+     * from over an object, M3-04 part 6; a lasso starts only where nothing is).
+     */
+    readonly lasso?: false;
     /**
      * A selection polygon or fence being drawn (M3-04: WPolygon, CPolygon, Fence): its points
      * so far, `from` the last; the front-end draws them on to the cursor, closed back to the

@@ -546,6 +546,8 @@ export class PromptBus {
    * 2), and does nothing when no window is open. `missed` says the
    * prompt's object snap override found nothing at the point, which refuses it (M2-04). `ctrl`:
    * Ctrl was held, which a prompt that switches an arc's direction takes (M3-01 part 6).
+   * `dragged`: the press made at `point` has been dragged (M3-04 part 6): with PICKAUTO 2, one
+   * that picked an object at `Command:` becomes a window's first corner.
    */
   pick(
     point: Vec2,
@@ -558,9 +560,16 @@ export class PromptBus {
       readonly deferred?: DeferredPick;
       readonly ctrl?: boolean;
       readonly gripFunction?: string;
+      readonly dragged?: boolean;
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
+      if (o.dragged) {
+        if (this.#stack.length === 0 && this.#pickfirstOn && this.#idle.dragged(point)) {
+          this.#step(undefined, 'more');
+        }
+        return;
+      }
       this.#cursor = point;
       // AutoCAD refuses a pick an override found no object at with "Invalid point." and asks
       // again; its help does not say what follows, so the override stays for the next pick.
