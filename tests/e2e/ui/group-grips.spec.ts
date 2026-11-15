@@ -92,6 +92,9 @@ test('a selected group’s centre grip and bounding box, and moving it by that g
     await page.mouse.click(p.x, p.y);
   };
   const near = (x: number, y: number) => pixels(page, at(x, y).x, at(x, y).y);
+  // Just above a point on a line: a grip there reaches it, the line (drawn in the selection's
+  // highlight) and the group's box do not.
+  const above = (x: number, y: number) => pixels(page, at(x, y).x, at(x, y).y - 3.5, 2);
   const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
 
   await type(
@@ -121,11 +124,11 @@ test('a selected group’s centre grip and bounding box, and moving it by that g
   await type(page, '', 'Command:');
 
   // One pick selects the group: one grip at its centre (80, 50) and its bounding box (its left
-  // side at x 60), none at a member's midpoint (80, 40), which the box's edge only crosses.
+  // side at x 60), none at a member's midpoint (80, 40).
   await click(70, 40);
   await expect.poll(async () => (await near(80, 50)).blue).toBeGreaterThan(40);
   await expect.poll(async () => (await near(60, 50)).blue).toBeGreaterThan(0);
-  expect((await near(80, 40)).blue).toBeLessThan(20);
+  expect((await above(80, 40)).blue).toBe(0);
   await shot('1-group-grip-and-box.png');
 
   // The Group Bounding Box toggle: the grip stays, the box goes.
@@ -138,7 +141,7 @@ test('a selected group’s centre grip and bounding box, and moving it by that g
   await expect(palette).toHaveCount(0);
   await expect.poll(async () => (await near(60, 50)).blue).toBe(0);
   expect((await near(80, 50)).blue).toBeGreaterThan(40);
-  expect((await near(80, 40)).blue).toBe(0);
+  expect((await above(80, 40)).blue).toBe(0);
   await shot('2-group-grip-without-box.png');
 
   // A click on the centre grip makes it hot; the next click moves the whole group.
