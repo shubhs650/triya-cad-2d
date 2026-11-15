@@ -10,6 +10,7 @@ import type { Color, EntityType, LinetypeRef, Lineweight } from '../model/types'
 import type { ColorBook } from '../properties/color-books';
 import type { OverkillSettings } from '../edit/overkill';
 import type { GripDimensions } from '../edit/grips';
+import type { ArrayCountField } from '../edit/array-grips';
 import type { QuickSelectCriteria, QuickSelectType } from '../selection/qselect';
 import type { FilterItem, FilterNameKey } from '../selection/filter';
 import type { PropertyUnits } from '../properties/sheet';
@@ -237,6 +238,11 @@ export interface PointPrompt extends PromptBase {
    * (DYNDIVIS, DYNDIGRIP), a resulting length and angle from `anchor`, a radius from `center`.
    */
   readonly gripDimensions?: GripDimensions;
+  /**
+   * An associative array's count grip (M3-05 part 7): what Dynamic Input's count field counts,
+   * the count the cursor gives (`arrayCountAt`) shown in it and a typed one taken.
+   */
+  readonly arrayCount?: ArrayCountField;
   /**
    * An object pick (TRIM's and EXTEND's "Select object to trim", M3-02 part 2): the click's own
    * point, with the pickbox rather than the crosshairs and no drafting aids, Shift held or not

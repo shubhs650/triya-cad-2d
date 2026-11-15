@@ -527,3 +527,98 @@ export function arrayGripPreview(
     return { block, m: shift ? compose(shift, m) : m };
   });
 }
+
+/**
+ * What Dynamic Input's count field at a count grip counts (M3-05 part 7), as plain data the app
+ * reads the count at the cursor from (`arrayCountAt`): the steps of `spacing` along `axis` from
+ * `origin`, the steps of the angle `step` round `center` from `baseDir` the way the array
+ * turns, or the steps of `spacing` along a path; `toLocal` takes the cursor into the array
+ * block's coordinates, where `arrayGripEdit` measures.
+ */
+export type ArrayCountField =
+  | {
+      readonly kind: 'along';
+      readonly toLocal: Matrix2D;
+      readonly origin: Vec2;
+      readonly axis: Vec2;
+      readonly spacing: number;
+    }
+  | {
+      readonly kind: 'around';
+      readonly toLocal: Matrix2D;
+      readonly center: Vec2;
+      readonly baseDir: number;
+      readonly step: number;
+      readonly turn: number;
+    }
+  | { readonly kind: 'path'; readonly path: ArrayPath; readonly spacing: number };
+
+/** The count field of the function `fn` of the grip `role`; none for one that counts nothing. */
+export function arrayCountField(
+  model: DocumentModel,
+  insert: Entity,
+  record: AssocArray,
+  role: ArrayGripRole,
+  fn: string,
+): ArrayCountField | undefined {
+  // The corner counts rows and columns at once: one field cannot show both.
+  if (functionValue(role, fn) !== 'count') return undefined;
+  const p = record.params;
+  let toLocal: Matrix2D;
+  try {
+    toLocal = p.kind === 'path' ? translation(0, 0) : invert(arrayMatrix(model, insert));
+  } catch {
+    return undefined;
+  }
+  const rows = role === 'rowCount';
+  if (p.kind === 'rectangular') {
+    return {
+      kind: 'along',
+      toLocal,
+      origin: { x: 0, y: 0 },
+      axis: rows ? { x: 0, y: 1 } : { x: 1, y: 0 },
+      spacing: rows ? p.rowSpacing : p.columnSpacing,
+    };
+  }
+  if (p.kind === 'polar') {
+    const f = polarFrame(p);
+    if (rows) {
+      return { kind: 'along', toLocal, origin: f.at(0, 0), axis: f.unit(0), spacing: p.rowSpacing };
+    }
+    return {
+      kind: 'around',
+      toLocal,
+      center: p.center,
+      baseDir: f.baseDir,
+      step: f.step,
+      turn: sign(p.fillAngle),
+    };
+  }
+  const path = pathOf(model, p);
+  if (!path) return undefined;
+  if (rows) {
+    const start = pathFrame(path, 0);
+    return {
+      kind: 'along',
+      toLocal,
+      origin: start.point,
+      axis: perp(start.direction),
+      spacing: p.rowSpacing,
+    };
+  }
+  return { kind: 'path', path, spacing: p.spacing };
+}
+
+/** The count a click at `cursor` gives the count field `f`: what `arrayGripEdit` measures. */
+export function arrayCountAt(f: ArrayCountField, cursor: Vec2): number {
+  let steps: number;
+  if (f.kind === 'path') steps = nearestStation(f.path, cursor) / f.spacing;
+  else {
+    const q = applyPoint(f.toLocal, cursor);
+    steps =
+      f.kind === 'along'
+        ? dot(sub(q, f.origin), f.axis) / f.spacing
+        : sweep(f.baseDir, angleOf(sub(q, f.center)), f.turn) / f.step;
+  }
+  return Math.max(1, Math.round(steps) + 1);
+}
