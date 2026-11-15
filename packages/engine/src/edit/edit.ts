@@ -601,7 +601,7 @@ function copiedXdata(
 }
 
 /** The properties a copy keeps: everything but identity, links and annotation scales. */
-function copiedProps(b: ChangeSetBuilder, e: Entity | InsertAttribute, viewport = false) {
+export function copiedProps(b: ChangeSetBuilder, e: Entity | InsertAttribute, viewport = false) {
   const xdata = copiedXdata(b, e, viewport);
   return {
     layer: e.layer,

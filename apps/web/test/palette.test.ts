@@ -52,6 +52,7 @@ describe('palette search', () => {
       'MOVE',
       'MREDO',
       'MTEXT',
+      'OFFSET',
       'OOPS',
       'PAN',
       'PASTEBLOCK',
