@@ -33,7 +33,7 @@ import { ccwSweep } from '../geom/angle';
 import type { Vec2 } from '../geom/types';
 import { add, angleOf, distance, fromAngle, midpoint, sub } from '../geom/vec';
 import type { DimensionGeometry, EntityGeometry, LwPolylineGeometry } from '../model/types';
-import { dimensionLineEnds } from './dimension';
+import { dimensionArcOf, dimensionLineEnds, isArcDimension, withArcRadius } from './dimension';
 import { columnGrips, moveColumnGrip } from './mtext-grips';
 import type { ArrayGripRole, GripInfo } from './array-grips';
 import { cloudCorners, isCloudShaped, moveCloudCorner, type CloudInfo } from './revcloud';
@@ -127,7 +127,11 @@ function dimensionGrips(dim: DimensionGeometry): Grip[] {
       g(dim.textPosition, 'stretch'),
     ].filter((x, i, all) => all.findIndex((y) => sameGrip(x.point, y.point)) === i);
   }
-  const out: Grip[] = [];
+  // An angular or arc length dimension's arc ends, where its arrowheads are (M3-05 part 7):
+  // dimension line grips, which move the arc in or out; first, so that a definition point on
+  // one is theirs.
+  const arc = isArcDimension(dim) ? dimensionArcOf(dim) : undefined;
+  const out: Grip[] = arc ? arc.ends.map((p) => g(p, 'dimline')) : [];
   for (const [k, v] of Object.entries(dim)) {
     if (!v || typeof v !== 'object' || !('x' in v) || !('y' in v) || 'z' in v) continue;
     const p = v as Vec2;
@@ -332,6 +336,12 @@ export function moveGrip(
       });
     case 'dimline': {
       if (!isDimension(geom)) return { kind: 'none' };
+      if (isArcDimension(geom)) {
+        // The dimension arc through the point, about its centre.
+        const arc = dimensionArcOf(geom);
+        const moved = arc && withArcRadius(geom, distance(arc.centre, to));
+        return moved ? { kind: 'shape', geom: moved } : { kind: 'none' };
+      }
       const definitionPoint = add(geom.definitionPoint, d);
       return { kind: 'shape', geom: { ...geom, definitionPoint } };
     }

@@ -7,8 +7,8 @@ import { ARRAY_GRIP_FUNCTIONS, gripInfoOf } from '../../edit/array-grips';
 import {
   COMMAND_FUNCTIONS,
   IMMEDIATE_FUNCTIONS,
+  chainOrigin,
   dimensionGripOverrides,
-  dimensionLineEnd,
   gripFunctionEdit,
   gripFunctionValue,
   gripFunctionsOf,
@@ -211,13 +211,9 @@ export async function* runGripFunction(
     const e = ctx.model.entity(id);
     if (!e) return { kind: 'done' };
     if (COMMAND_FUNCTIONS.has(fn)) {
-      const d = e.geom as Extract<DimensionGeometry, { dimType: 'linear' | 'aligned' }>;
-      const end = dimensionLineEnd(d, hot);
-      return {
-        kind: 'chain',
-        baseline: fn === 'Baseline Dimension',
-        from: end === 1 ? d.second : d.first,
-      };
+      const from = chainOrigin(e.geom as DimensionGeometry, hot);
+      if (!from) return { kind: 'refused' };
+      return { kind: 'chain', baseline: fn === 'Baseline Dimension', from };
     }
     let to: Vec2 = hot;
     let value: number | undefined;
