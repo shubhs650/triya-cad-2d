@@ -19,6 +19,7 @@ import { viewCommand } from './view/named-view';
 import { panCommand, regenCommand, zoomCommand } from './view/zoom';
 import { UNDO_COMMANDS } from './undo-commands';
 import { underlayLayersCommand } from './underlay-layers';
+import { INQUIRY_COMMANDS } from './inquiry/inquiry';
 
 export function builtinCommands(): CommandRegistry {
   return new CommandRegistry([
@@ -44,6 +45,7 @@ export function builtinCommands(): CommandRegistry {
     ...CLIPBOARD_COMMANDS.map((make) => make()),
     ...PALETTE_COMMANDS.map((make) => make()),
     underlayLayersCommand(),
+    ...INQUIRY_COMMANDS.map((make) => make()),
     // UNDO, U, REDO and OOPS (M2-05) keep no state of their own: the bus's history holds it.
     ...UNDO_COMMANDS,
   ]);
