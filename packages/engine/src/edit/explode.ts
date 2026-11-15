@@ -8,8 +8,17 @@
 //   properties, as AutoCAD's do ("the color, linetype and lineweight of any exploded object might
 //   change": what was on layer 0 or ByBlock shows as it is). The reference's attributes go and
 //   the block's attribute definitions show. External references, MINSERT arrays and blocks
-//   whose definition is not explodable are not exploded; nor, yet, are references scaled
-//   differently in X and Y (AutoCAD turns their circles into ellipses).
+//   whose definition is not explodable are not exploded.
+// - A block reference scaled differently in X and Y (M3-12 part 7) explodes as AutoCAD's help
+//   says ("Circle: If within a nonuniformly scaled block, explodes into ellipses", "Arc: …
+//   into elliptical arcs"): lines, rays, xlines, ellipses, splines, points, solids, traces,
+//   3D faces and polylines without arcs or widths are carried by the scale; text and attribute
+//   definitions whose baseline and height stay square under it take the stretch in their
+//   height and width factor, and nested references whose axes stay square stay references,
+//   scaled; the rest ("objects that cannot be exploded") go into an anonymous `*E` block
+//   referenced with the nonuniform scaling, and when nothing can be exploded the reference is
+//   left alone. The ObjectARX Developer's Guide's "Exploding Entities" table lists the same
+//   objects as exploding into themselves under a nonuniform scale.
 // - A dimension becomes the lines, text, solids and points of the block it was last drawn as.
 //   AutoCAD's help does not say which layer and colours the pieces take; they are given the
 //   dimension's wherever they were layer 0 or ByBlock, so that the drawing looks the same, the
@@ -37,7 +46,17 @@
 //   array into copies of the original objects"): the array's items are exploded with it.
 //
 // Everything else is left alone ("N objects could not be exploded").
-import { compose, rotation, scaling, translation } from '../geom/transform';
+import {
+  applyPoint,
+  applyVector,
+  compose,
+  determinant,
+  rotation,
+  scaling,
+  transformCurve,
+  translation,
+  type Matrix2D,
+} from '../geom/transform';
 import { explodePolyline } from '../geom/eval';
 import { fitSpline } from '../geom/fit';
 import type { ChangeSetBuilder } from '../model/builder';
@@ -146,6 +165,17 @@ export function explodeObjects(
         const problem = insertProblem(b, g);
         if (typeof problem === 'string') {
           count(refused, problem);
+          continue;
+        }
+        if ('affine' in problem) {
+          const r = explodeNonuniform(b, model, e, g, problem.affine, names);
+          if (typeof r === 'string') {
+            count(refused, r);
+            continue;
+          }
+          made.push(...r);
+          eraseObjects(b, model, [id]);
+          exploded++;
           continue;
         }
         const contents = b.blockEntities(g.block);
@@ -404,7 +434,7 @@ function hasWidth(g: Extract<EntityGeometry, { kind: 'LWPOLYLINE' | 'POLYLINE' }
 function insertProblem(
   b: ChangeSetBuilder,
   g: Extract<EntityGeometry, { kind: 'INSERT' }>,
-): Similarity | string {
+): Similarity | { readonly affine: Matrix2D } | string {
   const def = b.block(g.block);
   if (!def) return 'the block is missing';
   // DXF 70 bits 4 and 8: an external reference or an overlay.
@@ -421,16 +451,221 @@ function insertProblem(
   const sx = g.scale.x;
   const sy = g.scale.y;
   if (sx === 0 || sy === 0) return 'the block reference has a zero scale';
-  if (Math.abs(Math.abs(sx) - Math.abs(sy)) > 1e-12 * Math.max(Math.abs(sx), Math.abs(sy))) {
-    return 'nonuniformly scaled block references cannot be exploded yet';
-  }
   const m = compose(
     translation(-def.basePoint.x, -def.basePoint.y),
     scaling(sx, sy),
     rotation(g.rotation),
     translation(g.position.x, g.position.y),
   );
+  if (Math.abs(Math.abs(sx) - Math.abs(sy)) > UNIFORM * Math.max(Math.abs(sx), Math.abs(sy))) {
+    return { affine: m };
+  }
   return similarity(m);
+}
+
+/** How near two scales are taken as one (relative): the same test as before M3-12 part 7. */
+const UNIFORM = 1e-12;
+/** What `transformCurve` and the squareness tests take as equal directions. */
+const SQUARE = { linear: 0, angular: 1e-12 };
+
+/**
+ * A block reference `e` scaled differently in X and Y exploded (M3-12 part 7): what can be
+ * carried by `m` comes out as itself, the rest goes into a `*E` block referenced as `e` was.
+ * Returns the objects made, or why nothing was.
+ */
+function explodeNonuniform(
+  b: ChangeSetBuilder,
+  model: DocumentModel,
+  e: Entity,
+  g: Extract<EntityGeometry, { kind: 'INSERT' }>,
+  m: Matrix2D,
+  names: AnonymousNames,
+): EntityId[] | string {
+  const contents = b.blockEntities(g.block).map((c) => b.entity(c)!);
+  const carried: [Entity, EntityGeometry][] = [];
+  const kept: Entity[] = [];
+  for (const c of contents) {
+    const geom = carriedGeometry(b, c.geom, m);
+    if (geom) carried.push([c, geom]);
+    else kept.push(c);
+  }
+  if (carried.length === 0)
+    return 'nothing in a nonuniformly scaled block reference can be exploded';
+  const identity = similarity(translation(0, 0));
+  const stuck = kept.find((c) => copyProblem(c, identity));
+  if (stuck) return `the block holds ${article(stuck.type)} that cannot be exploded`;
+  const made = carried.map(
+    ([c, geom]) => b.addEntity({ ...copiedProps(b, c), owner: e.owner, geom }).id,
+  );
+  if (kept.length > 0) {
+    const def = b.block(g.block)!;
+    const block = b.addBlock({ name: names.take('E'), basePoint: def.basePoint, flags: 1 });
+    copyObjects(
+      b,
+      model,
+      kept.map((c) => c.id),
+      identity,
+      {},
+      block.handle,
+      names,
+    );
+    const { attributes: _attributes, ...rest } = g;
+    made.push(
+      b.addEntity({
+        ...copiedProps(b, e),
+        owner: e.owner,
+        geom: { ...rest, block: block.handle, attributes: [] },
+      }).id,
+    );
+  }
+  return made;
+}
+
+/** `g` carried by the nonuniform `m` as an object of its own kind, or undefined if it cannot be. */
+function carriedGeometry(
+  b: ChangeSetBuilder,
+  g: EntityGeometry,
+  m: Matrix2D,
+): EntityGeometry | undefined {
+  // Out of plan, an object's shape is not its plan view's image.
+  if ('normal' in g && g.normal && (g.normal.x !== 0 || g.normal.y !== 0 || g.normal.z <= 0)) {
+    return undefined;
+  }
+  const p = (v: { readonly x: number; readonly y: number }) => applyPoint(m, v);
+  const planar = {
+    ...('elevation' in g && g.elevation !== undefined && { elevation: g.elevation }),
+    ...('thickness' in g && g.thickness !== undefined && { thickness: g.thickness }),
+  };
+  switch (g.kind) {
+    case 'LINE':
+    case 'RAY':
+    case 'XLINE':
+    case 'ELLIPSE':
+      return { ...g, ...transformCurve(g, m, SQUARE) } as EntityGeometry;
+    case 'CIRCLE':
+    case 'ARC': {
+      // An ellipse has no thickness in the file (DXF ELLIPSE): only the elevation stays.
+      const c = transformCurve(g, m, SQUARE);
+      return {
+        ...c,
+        ...(g.elevation !== undefined && { elevation: g.elevation }),
+      } as EntityGeometry;
+    }
+    case 'SPLINE': {
+      const c = transformCurve(g, m, SQUARE) as typeof g;
+      return {
+        ...g,
+        controlPoints: c.controlPoints,
+        ...(g.fitPoints && { fitPoints: g.fitPoints.map(p) }),
+        ...(g.startTangent && { startTangent: applyVector(m, g.startTangent) }),
+        ...(g.endTangent && { endTangent: applyVector(m, g.endTangent) }),
+      };
+    }
+    case 'LWPOLYLINE':
+    case 'POLYLINE': {
+      // An arc is no polyline arc under the scale, and a width does not scale one way.
+      const wide =
+        (g.kind === 'LWPOLYLINE'
+          ? (g.constantWidth ?? 0)
+          : Math.max(g.startWidth ?? 0, g.endWidth ?? 0)) !== 0 ||
+        g.vertices.some(
+          (v) => v.bulge !== 0 || (v.startWidth ?? 0) !== 0 || (v.endWidth ?? 0) !== 0,
+        );
+      if (wide) return undefined;
+      return {
+        ...g,
+        vertices: g.vertices.map((v) => ({ ...v, ...p(v) })),
+        ...(g.kind === 'POLYLINE' && g.frame && { frame: g.frame.map(p) }),
+      } as EntityGeometry;
+    }
+    case 'POINT':
+      return { ...g, position: p(g.position) };
+    case 'SOLID':
+    case 'TRACE':
+    case '3DFACE':
+      return { ...g, corners: g.corners.map(p) as unknown as typeof g.corners } as EntityGeometry;
+    case 'TEXT':
+    case 'ATTDEF':
+      return carriedText(g, m, planar);
+    case 'INSERT':
+      return carriedInsert(b, g, m);
+    default:
+      return undefined;
+  }
+}
+
+/** The base vectors `u` (along) and `v` (up) carried by `m`, if they stay square to each other. */
+function squareFrame(m: Matrix2D, angle: number) {
+  const u = applyVector(m, { x: Math.cos(angle), y: Math.sin(angle) });
+  const v = applyVector(m, { x: -Math.sin(angle), y: Math.cos(angle) });
+  const lu = Math.hypot(u.x, u.y);
+  const lv = Math.hypot(v.x, v.y);
+  if (Math.abs(u.x * v.x + u.y * v.y) > SQUARE.angular * lu * lv) return undefined;
+  return { u, lu, lv, mirrored: determinant(m) < 0 };
+}
+
+/**
+ * A text or attribute definition under the scale: its baseline and up direction must stay
+ * square (an obliqued text must stay upright too), and the stretch goes into its height and
+ * width factor. A mirror, aligned text (whose height its points set) and a multiline
+ * definition are not carried.
+ */
+function carriedText(
+  g: Extract<EntityGeometry, { kind: 'TEXT' | 'ATTDEF' }>,
+  m: Matrix2D,
+  planar: object,
+): EntityGeometry | undefined {
+  if (g.halign === 3 || (g.kind === 'ATTDEF' && g.mtext)) return undefined;
+  const f = squareFrame(m, g.rotation);
+  if (!f || f.mirrored || (g.oblique !== 0 && f.lu !== f.lv)) return undefined;
+  return {
+    ...g,
+    ...planar,
+    position: applyPoint(m, g.position),
+    ...(g.alignmentPoint && { alignmentPoint: applyPoint(m, g.alignmentPoint) }),
+    rotation: normalizeAngle(Math.atan2(f.u.y, f.u.x)),
+    height: g.height * f.lv,
+    widthFactor: (g.widthFactor * f.lu) / f.lv,
+  };
+}
+
+/**
+ * A nested block reference under the scale stays a reference when its axes stay square (an
+ * INSERT's placement is a turn and a scale along its own axes), its attributes carried as text.
+ */
+function carriedInsert(
+  b: ChangeSetBuilder,
+  g: Extract<EntityGeometry, { kind: 'INSERT' }>,
+  m: Matrix2D,
+): EntityGeometry | undefined {
+  if (g.array && (g.array.columns > 1 || g.array.rows > 1)) return undefined;
+  const def = b.block(g.block);
+  if (!def) return undefined;
+  // The nested placement's own linear part, then the outer one.
+  const inner = compose(scaling(g.scale.x, g.scale.y), rotation(g.rotation));
+  const linear = compose(inner, { ...m, e: 0, f: 0 });
+  const x = applyVector(linear, { x: 1, y: 0 });
+  const y = applyVector(linear, { x: 0, y: 1 });
+  const lx = Math.hypot(x.x, x.y);
+  const ly = Math.hypot(y.x, y.y);
+  if (lx === 0 || ly === 0 || Math.abs(x.x * y.x + x.y * y.y) > SQUARE.angular * lx * ly) {
+    return undefined;
+  }
+  const attributes = [];
+  for (const a of g.attributes) {
+    const t = carriedText({ ...a, kind: 'ATTDEF', prompt: '' }, m, {});
+    if (!t || t.kind !== 'ATTDEF') return undefined;
+    const { kind: _kind, prompt: _prompt, ...fields } = t;
+    attributes.push({ ...a, ...fields });
+  }
+  const sign = determinant(linear) < 0 ? -1 : 1;
+  return {
+    ...g,
+    position: applyPoint(m, g.position),
+    rotation: normalizeAngle(Math.atan2(x.y, x.x)),
+    scale: { x: lx, y: sign * ly, z: g.scale.z },
+    attributes,
+  };
 }
 
 /** A piece of `dim`'s block, on its layer and in its colours where it was layer 0 or ByBlock. */
