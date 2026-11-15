@@ -65,9 +65,13 @@ export function KeyboardShortcuts({
   const problem =
     pending === undefined
       ? undefined
-      : !assignable(pending)
-        ? 'Shortcut keys need Ctrl or Alt, or a function key (F1–F12): keys typed alone go to the command line, where aliases name commands.'
-        : undefined;
+      : row?.hold
+        ? !assignable(pending, true)
+          ? 'A temporary override key is Shift alone, or Shift with one letter, digit or punctuation key, held while a point is picked.'
+          : undefined
+        : !assignable(pending)
+          ? 'Shortcut keys need Ctrl or Alt, or a function key (F1–F12): keys typed alone go to the command line, where aliases name commands.'
+          : undefined;
   const canAssign = row !== undefined && pending !== undefined && !problem && owner !== row.id;
   const select = (id: string) => {
     setSelected(id);
@@ -165,7 +169,12 @@ export function KeyboardShortcuts({
               value={pending ?? ''}
               placeholder="Press keys"
               onKeyDown={(e) => {
-                const chord = chordOf(e.nativeEvent);
+                // Shift alone is a temporary override's key (M3-06 part 5).
+                const chord =
+                  chordOf(e.nativeEvent) ??
+                  (row.hold && e.key === 'Shift' && !e.ctrlKey && !e.altKey && !e.metaKey
+                    ? 'Shift'
+                    : undefined);
                 // Tab moves on, Esc cancels the dialog; Enter assigns the key pressed.
                 if (chord === undefined || chord === 'Tab' || chord === 'Shift+Tab') return;
                 if (chord === 'Escape') return;

@@ -23,9 +23,14 @@ export type Chord = string;
 export interface KeyAction {
   readonly id: string;
   readonly label: string;
-  readonly group: 'File' | 'Edit' | 'View' | 'Drafting' | 'Command';
+  readonly group: 'File' | 'Edit' | 'View' | 'Drafting' | 'Temporary Override' | 'Command';
   /** AutoCAD's default keys for it (acad.cuix's Shortcut Keys), or Triya's where noted. */
   readonly keys: readonly Chord[];
+  /**
+   * A temporary override (M3-06 part 5, acad.cuix's Temporary Overrides): it acts while its key
+   * is held, which is Shift alone or Shift with a typing key (`temp-overrides.ts`).
+   */
+  readonly hold?: true;
 }
 
 /** The actions that come with keys, in the order the Keyboard Shortcuts dialog lists them. */
@@ -99,6 +104,26 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
   },
   // AutoCAD's Group Bounding Box button (Home > Groups) has no default key (M3-13).
   { id: 'drafting:groupBox', label: 'Group Bounding Box on/off', group: 'Drafting', keys: [] },
+  // AutoCAD's temporary override keys (M3-06 part 5): each has a left-hand and a right-hand key.
+  ...(
+    [
+      ['ortho', 'Ortho Toggle', ['Shift']],
+      ['polar', 'Polar Override', ['Shift+X', 'Shift+.']],
+      ['otrack', 'Object Snap Tracking Override', ['Shift+Q', 'Shift+]']],
+      ['osnap', 'Object Snap Toggle', ['Shift+A', "Shift+'"]],
+      ['disable', 'Disable All Snapping and Tracking', ['Shift+D', 'Shift+L']],
+      ['enforce', 'Object Snap Enforcement', ['Shift+S', 'Shift+;']],
+      ['END', 'Object Snap Override: Endpoint', ['Shift+E', 'Shift+P']],
+      ['MID', 'Object Snap Override: Midpoint', ['Shift+M', 'Shift+V']],
+      ['CEN', 'Object Snap Override: Center', ['Shift+C', 'Shift+,']],
+    ] as const
+  ).map(([id, label, keys]): KeyAction => ({
+    id: `override:${id}`,
+    label,
+    group: 'Temporary Override',
+    keys,
+    hold: true,
+  })),
 ];
 
 const ACTIONS = new Map(KEY_ACTIONS.map((a) => [a.id, a]));
@@ -146,11 +171,26 @@ const KEY_NAMES = new Set([
   'ArrowRight',
 ]);
 
+/** Punctuation keys by their physical key, so Shift+. is `.` rather than the `>` it types. */
+const PUNCTUATION: Readonly<Record<string, string>> = {
+  Period: '.',
+  Comma: ',',
+  Semicolon: ';',
+  Quote: "'",
+  BracketLeft: '[',
+  BracketRight: ']',
+  Slash: '/',
+  Backslash: '\\',
+  Backquote: '`',
+};
+
 /** A key's name in a chord: `A`, `1`, `F3`, `PageUp`, `[`; undefined for a modifier alone. */
 function keyName(key: string, code: string | undefined): string | undefined {
   // The physical letter or digit, so Shift+1 is 1 and Alt+P on a Mac (π) is still P.
   const physical = code && /^(?:Key([A-Z])|Digit([0-9]))$/.exec(code);
   if (physical) return physical[1] ?? physical[2];
+  const mark = code && PUNCTUATION[code];
+  if (mark) return mark;
   if (MODIFIER_KEYS.has(key) || key === 'Dead' || key === 'Unidentified' || key === '')
     return undefined;
   const k = NAMED[key] ?? key;
@@ -174,6 +214,8 @@ export function chordOf(e: KeyPress): Chord | undefined {
 
 /** A chord written by a person or kept with the settings, as `chordOf` writes it, or undefined. */
 export function normalizeChord(text: string): Chord | undefined {
+  // Shift alone: the ORTHO override's key (M3-06 part 5).
+  if (text.trim().toLowerCase() === 'shift') return 'Shift';
   const parts = text
     .split('+')
     .map((p) => p.trim())
@@ -206,9 +248,11 @@ export function normalizeChord(text: string): Chord | undefined {
 /**
  * Whether a chord can be a shortcut key: a function key (with any modifiers), or a key with Ctrl
  * or Alt. A key alone or with Shift types at the command line (that is what aliases are for);
- * Esc, Enter, Tab and the Spacebar keep their AutoCAD meanings.
+ * Esc, Enter, Tab and the Spacebar keep their AutoCAD meanings. A held override's (`hold`) is
+ * Shift alone or Shift with one typing key, as AutoCAD's CUI allows for them.
  */
-export function assignable(chord: Chord): boolean {
+export function assignable(chord: Chord, hold = false): boolean {
+  if (hold) return chord === 'Shift' || /^Shift\+.$/u.test(chord);
   const parts = chord.split('+');
   const key = parts[parts.length - 1]!;
   if (/^F([1-9]|1[0-9]|2[0-4])$/.test(key)) return true;
@@ -249,7 +293,7 @@ export function normalizeKeyOverrides(raw: unknown): KeyOverrides {
     if (!keyAction(id) || !Array.isArray(keys)) continue;
     const chords = keys
       .map((k) => (typeof k === 'string' ? normalizeChord(k) : undefined))
-      .filter((c): c is Chord => c !== undefined && assignable(c));
+      .filter((c): c is Chord => c !== undefined && assignable(c, keyAction(id)?.hold));
     out[id] = [...new Set(chords)];
   }
   return out;
