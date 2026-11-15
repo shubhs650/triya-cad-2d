@@ -1,1 +1,1 @@
-- M3-02 part 3: FILLET and CHAMFER (in progress).
+- M3-02 part 3 (#374): FILLET and CHAMFER, with Radius, Distance, Angle and mEthod, Trim/No trim, Multiple, Undo, the Polyline option and Shift for a sharp corner, on lines, rays, xlines, arcs, circles and 2D polylines (joined to a filleted line or arc).
