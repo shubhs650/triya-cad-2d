@@ -383,7 +383,9 @@ export class EngineSession {
         }
         return Promise.resolve();
       case 'property':
-        return this.#bus.setProperty(input.edit, this.#filter);
+        // The palette shows what the edit made, a running command's selection's too (M2-35
+        // part 30), which no commit announces.
+        return this.#bus.setProperty(input.edit, this.#filter).then(() => this.#queueSheet());
       case 'property-editor':
         return this.#bus.editContents(this.#filter);
       case 'property-vertex':
