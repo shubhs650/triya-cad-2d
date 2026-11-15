@@ -158,6 +158,10 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // badge and the Selection list, a negative value off keeping what Ctrl+W turns back on.
   { name: 'SELECTSIMILARMODE', store: 'app', kind: 'integer', min: 0, max: 255 },
   { name: 'SELECTIONCYCLING', store: 'app', kind: 'integer', min: -2, max: 2 },
+  // M3-08 (AutoCAD 2024 Help): PICKSTYLE 0 neither, 1 group selection, 2 associative hatch
+  // selection, 3 both; kept per user (Saved in: Registry), initially 1, so the drawing's
+  // $PICKSTYLE stays as read. Ctrl+Shift+A turns group selection on and off.
+  { name: 'PICKSTYLE', store: 'app', kind: 'integer', min: 0, max: 3 },
   // M3-04 part 4 (AutoCAD 2024 Help): PICKBOX the pickbox's half size in pixels (0 to 50,
   // initially 3); PICKADD 0 to 3 whether a step adds to the set or replaces it (initially 2);
   // PICKAUTO's bits 1 a window where a pick finds nothing, 2 a window dragged from an object at
