@@ -45,7 +45,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | SCALE | SC | 1 | Copy, Reference; works on tables (DEC-014) | ~ (#227, #229: Copy, Reference with Points, dragged with the cursor; a table's cell text heights do not rescale yet; scaled dimensions are regenerated, #239) |
 | STRETCH | S | 1 | crossing/polygon; dims/defpoints follow | ~ (#229: the last crossing window (CPolygon with M3-04), Displacement, dragged with the cursor; hatches, multilines, multileaders, regions and viewports move only when wholly inside; dimensions stretch their definition points inside and are regenerated, #239) |
 | MIRROR | MI | 1 | MIRRTEXT | x (#227, #229: MIRRTEXT and MIRRHATCH, Erase source; MTEXT always stays readable; dragged with the cursor) |
-| OFFSET | O | 2 | Through, Erase, Layer, Multiple, Undo; gap types | |
+| OFFSET | O | 2 | Through, Erase, Layer, Multiple, Undo; gap types | ~ (#370, M3-02 part 1: a distance or Through, Erase, Layer Current/Source, Multiple and Undo, the distance and options remembered for the drawing's next OFFSET; lines, arcs, circles, rays and xlines as themselves, LWPOLYLINEs and 2D POLYLINEs as polylines of their kind with OFFSETGAPTYPE 0's extended corners and their widths, the loops an inward offset crosses back into cut out (one polyline or several), ellipses and splines as SPLINEs within 1e-6 of their size; the source's properties and xdata. Not yet: OFFSETGAPTYPE 1 and 2, OFFSETDIST/OFFSETERASE/OFFSETGAPTYPE in SETVAR, the offset previewed at the cursor) |
 | TRIM | TR | 2 | Fence, Crossing, Project(2D), Edge, eRase, Undo; Shift→Extend; ↵↵ all | |
 | EXTEND | EX | 2 | same as TRIM; Shift→Trim | |
 | FILLET | F | 2 | Undo, Polyline, Radius, Trim, Multiple; Shift for R=0 | |

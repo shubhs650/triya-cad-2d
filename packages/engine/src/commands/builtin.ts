@@ -9,6 +9,7 @@ import { wipeoutCommand } from './draw/wipeout';
 import { DRAW_ORDER_COMMANDS } from './modify/draw-order';
 import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
+import { offsetCommand } from './modify/offset';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
 import { ATTRIBUTE_COMMANDS } from './modify/attributes';
@@ -35,6 +36,7 @@ export function builtinCommands(): CommandRegistry {
     selectCommand(),
     setvarCommand(),
     ...EDIT_COMMANDS.map((make) => make()),
+    offsetCommand(),
     revcloudCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),

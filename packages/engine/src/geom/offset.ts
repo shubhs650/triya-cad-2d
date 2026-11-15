@@ -8,11 +8,12 @@
 // and neighbours are extended or trimmed to the intersection of their offset carriers; where
 // the carriers do not meet, a straight segment closes the gap. Arc segments that collapse
 // (offset radius ≤ 0) are dropped. Removing the self-intersecting loops an inward offset of a
-// tight polyline can produce is left to the OFFSET command (M3), which owns that behaviour.
+// tight polyline can produce is the OFFSET command's (`edit/offset.ts`, M3-02), which takes the
+// traced offset (`offsetPolylineTraced`) to know which segment came from where.
 //
 // Ellipses and splines have no exact offset of their own kind; AutoCAD returns a spline. The
-// kernel returns a polyline through offset samples within the requested deviation; M3 OFFSET
-// fits a spline through them when it lands.
+// kernel returns a polyline through offset samples within the requested deviation; OFFSET
+// (M3-02) fits a spline through them.
 
 import { boxOf } from './bounds';
 import type { Arc, BoundedCurve, BulgeVertex, Curve, Polyline } from './curves';
@@ -109,11 +110,30 @@ function bulgeFor(seg: Seg, s: Vec2, e: Vec2): number {
   return Math.tan((end - start) / 4);
 }
 
-function offsetPolyline(p: Polyline, d: number, tol: Tolerance): Polyline | undefined {
+/**
+ * A polyline's offset with where each of its segments came from: `from[k]` is the index of the
+ * source segment segment k offsets, or −1 for a straight segment bridging a gap (OFFSET, M3-02:
+ * the widths a segment keeps and which segments may be measured against the source).
+ */
+export interface TracedOffset {
+  readonly polyline: Polyline;
+  readonly from: readonly number[];
+}
+
+/** `offset` of a polyline, with the source segment of each of its segments. */
+export function offsetPolylineTraced(
+  p: Polyline,
+  d: number,
+  tol: Tolerance,
+): TracedOffset | undefined {
   const segs: Seg[] = [];
+  const src: number[] = [];
   for (let i = 0; i < polylineSegmentCount(p); i++) {
     const s = offsetSeg(polylineSegment(p, i), d, tol);
-    if (s) segs.push(s);
+    if (s) {
+      segs.push(s);
+      src.push(i);
+    }
   }
   if (segs.length === 0) return undefined;
   const n = segs.length;
@@ -133,16 +153,21 @@ function offsetPolyline(p: Polyline, d: number, tol: Tolerance): Polyline | unde
     }
   }
   const vertices: BulgeVertex[] = [];
+  const from: number[] = [];
   for (let k = 0; k < n; k++) {
     const s = starts[k]!;
     vertices.push({ x: s.x, y: s.y, bulge: bulgeFor(segs[k]!, s, ends[k]!) });
-    if (gap[k]) vertices.push({ x: ends[k]!.x, y: ends[k]!.y, bulge: 0 });
+    from.push(src[k]!);
+    if (gap[k]) {
+      vertices.push({ x: ends[k]!.x, y: ends[k]!.y, bulge: 0 });
+      from.push(-1);
+    }
   }
   if (!p.closed) {
     const e = ends[n - 1]!;
     vertices.push({ x: e.x, y: e.y, bulge: 0 });
   }
-  return { kind: 'LWPOLYLINE', closed: p.closed, vertices };
+  return { polyline: { kind: 'LWPOLYLINE', closed: p.closed, vertices }, from };
 }
 
 /** Sampled offset of an ellipse or spline, as a polyline. */
@@ -204,7 +229,7 @@ export function offset(
       return a;
     }
     case 'LWPOLYLINE':
-      return offsetPolyline(c, distance, tol);
+      return offsetPolylineTraced(c, distance, tol)?.polyline;
     case 'ELLIPSE':
     case 'SPLINE': {
       const box = boxOf(flatten(c, Infinity).points);
