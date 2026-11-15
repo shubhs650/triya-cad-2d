@@ -143,6 +143,13 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // GRIPSIZE (M2-59 part 3): the grip box's size in pixels, 1 to 255, initially 5 (AutoCAD 2024
   // Help); Settings' grip size, which the canvas draws and picks grips at.
   { name: 'GRIPSIZE', store: 'app', kind: 'integer', min: 1, max: 255 },
+  // M3-05 part 5 (AutoCAD 2024 Help, each "Saved in: Registry"): the grips' colours, ACI 1 to 255:
+  // GRIPCOLOR unselected grips (initially 150), GRIPHOVER the grip the cursor pauses on (11),
+  // GRIPHOT selected grips (12) and GRIPCONTOUR their contour (251); Settings' Grip Colors.
+  { name: 'GRIPCOLOR', store: 'app', kind: 'integer', min: 1, max: 255 },
+  { name: 'GRIPHOVER', store: 'app', kind: 'integer', min: 1, max: 255 },
+  { name: 'GRIPHOT', store: 'app', kind: 'integer', min: 1, max: 255 },
+  { name: 'GRIPCONTOUR', store: 'app', kind: 'integer', min: 1, max: 255 },
   // ARRAYASSOCIATIVITY (M3-11; AutoCAD 2024 Help): new arrays are associative (1, initially) or
   // separate objects (0); ARRAY's ASsociative option sets it.
   { name: 'ARRAYASSOCIATIVITY', store: 'app', kind: 'switch' },

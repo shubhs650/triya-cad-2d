@@ -1,0 +1,1 @@
+- M3-05 part 5 (#417): a right-click with a grip hot lists AutoCAD's grip options (Enter, Move, Mirror, Rotate, Scale, Stretch, Base Point, Copy, Reference, Undo, Properties, Exit, and the grip's own functions); GRIPCOLOR, GRIPHOVER, GRIPHOT and GRIPCONTOUR are system variables, set in Settings' new Grip Colors dialog.

@@ -305,6 +305,31 @@ describe('SETVAR', () => {
     expect(systemVariable(model, 'gripsize')).toMatchObject({ store: 'app', kind: 'integer' });
   });
 
+  it('asks the app for the grip colours AutoCAD keeps per user (M3-05 part 5)', async () => {
+    // AutoCAD 2024 Help, GRIPCOLOR, GRIPHOVER, GRIPHOT and GRIPCONTOUR: the colour of unselected
+    // grips, of a grip the cursor pauses on, of selected grips and of the grip's contour, each an
+    // ACI 1 to 255 saved in the registry, initially 150, 11, 12 and 251.
+    const initial = { GRIPCOLOR: 150, GRIPHOVER: 11, GRIPHOT: 12, GRIPCONTOUR: 251 };
+    const app = appHost({ ...initial });
+    const s = setup(sampleInit(), app.view);
+    const model = DocumentModel.create(sampleInit());
+    for (const [name, value] of Object.entries(initial)) {
+      await s.bus.script([name]);
+      expect(s.bus.promptText).toBe(`Enter new value for ${name} <${value}>:`);
+      await s.bus.script(['0']);
+      expect(s.log.at(-1)).toBe('Value must be between 1 and 255.');
+      await s.bus.script(['256']);
+      expect(s.log.at(-1)).toBe('Value must be between 1 and 255.');
+      await s.bus.script(['3']);
+      expect(app.values[name], name).toBe(3);
+      expect(systemVariable(model, name.toLowerCase())).toMatchObject({
+        store: 'app',
+        kind: 'integer',
+      });
+    }
+    expect(s.bus.undo.state.undoable).toBe(0);
+  });
+
   it('asks the app for ROLLOVERTIPS, the rollover tooltips AutoCAD keeps per user (M2-35 part 21)', async () => {
     // AutoCAD 2024 Help, ROLLOVERTIPS: "Controls the display of rollover tooltips in the
     // application", 0 off, 1 on, initially 1, saved in the registry.

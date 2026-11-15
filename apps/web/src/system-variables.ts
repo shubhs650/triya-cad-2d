@@ -37,9 +37,22 @@ const TOGGLES: Readonly<Record<string, DraftingToggle>> = {
   TRANSPARENCYDISPLAY: 'tpy',
 };
 
+/** A grip colour variable (M3-05 part 5): one of the drafting state's grip colours. */
+function gripColor(key: keyof DraftingState['gripColors']) {
+  return {
+    get: (s: DraftingState) => s.gripColors[key],
+    set: (v: number, s: DraftingState): Partial<DraftingState> => ({
+      gripColors: { ...s.gripColors, [key]: v },
+    }),
+  };
+}
+
 /** The variables kept as one value of the drafting state. */
 const VALUES: Readonly<
-  Record<string, { get(s: DraftingState): number; set(v: number): Partial<DraftingState> }>
+  Record<
+    string,
+    { get(s: DraftingState): number; set(v: number, s: DraftingState): Partial<DraftingState> }
+  >
 > = {
   OSMODE: { get: (s) => s.osmode, set: (osmode) => ({ osmode }) },
   POLARANG: { get: (s) => s.polarAngle, set: (polarAngle) => ({ polarAngle }) },
@@ -60,6 +73,11 @@ const VALUES: Readonly<
   AUTOSNAPSIZE: { get: (s) => s.markerSize, set: (markerSize) => ({ markerSize }) },
   PICKFIRST: { get: (s) => bit(s.pickfirst), set: (v) => ({ pickfirst: v === 1 }) },
   GRIPSIZE: { get: (s) => s.gripSize, set: (gripSize) => ({ gripSize }) },
+  // M3-05 part 5: the grip colours, ACIs (the engine has checked 1–255).
+  GRIPCOLOR: gripColor('unselected'),
+  GRIPHOVER: gripColor('hover'),
+  GRIPHOT: gripColor('selected'),
+  GRIPCONTOUR: gripColor('contour'),
   ROLLOVERTIPS: { get: (s) => bit(s.rolloverTips), set: (v) => ({ rolloverTips: v === 1 }) },
   POLARMODE: { get: (s) => s.polarMode, set: (polarMode) => ({ polarMode }) },
   // M3-06 part 3: PolarSnap's switch and distance (the engine has checked 0–1 and 0 or more).
@@ -171,7 +189,8 @@ export function systemVariableReply(
   }
   const v = VALUES[name];
   if (!v) return { ok: false, message: `The app keeps no variable ${name}.` };
-  if (value !== undefined && v.get(drafting.get()) !== value) drafting.configure(v.set(value));
+  if (value !== undefined && v.get(drafting.get()) !== value)
+    drafting.configure(v.set(value, drafting.get()));
   return { ok: true, value: v.get(drafting.get()) };
 }
 
