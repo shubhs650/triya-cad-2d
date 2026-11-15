@@ -32,6 +32,7 @@ import { useEffect, useRef, useState, useSyncExternalStore, type ReactNode } fro
 import { commandLines } from './command-line';
 import { engines } from './engine/registry';
 import { SelectColorDialog } from './SelectColorDialog';
+import { MatchPropDialog } from './MatchPropDialog';
 
 const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
@@ -55,6 +56,8 @@ export function AttributeDialogs({ doc }: { doc: { id: number } | undefined }) {
       return <EditAttributes key={key} doc={doc.id} request={d} />;
     case 'attdef':
       return <EditAttributeDefinition key={key} doc={doc.id} request={d} />;
+    case 'matchprop':
+      return <MatchPropDialog key={key} doc={doc.id} request={d} />;
   }
 }
 

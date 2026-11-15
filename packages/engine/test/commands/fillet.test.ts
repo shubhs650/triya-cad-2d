@@ -132,6 +132,44 @@ describe('FILLET', () => {
     expect(bus.promptText).toBe('Specify fillet radius <2.0000>:');
   });
 
+  it('gives the arc the properties both lines share, else the current ones', async () => {
+    const { bus, byHandle, arcs, model } = setup([], { header: [['$FILLETRAD', 2]] });
+    const restyle = (h: string, props: Partial<Entity>) => {
+      const before = byHandle(h)!;
+      model.apply({ entities: { updated: [{ before, after: { ...before, ...props } }] } } as never);
+    };
+    const shared: Partial<Entity> = {
+      color: { kind: 'aci', index: 1 },
+      linetype: 'ByBlock',
+      lineweight: 50,
+      transparency: { alpha: 128 },
+      ltScale: 2,
+    };
+    restyle('30', shared);
+    restyle('31', shared);
+    await bus.script(['F']);
+    await bus.pick({ x: 6, y: 0 });
+    await bus.pick({ x: 0, y: 6 });
+    expect(arcs()[0]).toMatchObject(shared);
+    await bus.script(['U']);
+    // Line 31 differs in each: the arc takes the drawing's current properties.
+    restyle('31', {
+      color: { kind: 'aci', index: 2 },
+      linetype: 'ByLayer',
+      lineweight: 25,
+      transparency: { alpha: 0 },
+      ltScale: 1,
+    });
+    await bus.script(['F']);
+    await bus.pick({ x: 6, y: 0 });
+    await bus.pick({ x: 0, y: 6 });
+    const arc = arcs().at(-1)!;
+    expect(arc.color).toEqual({ kind: 'byLayer' });
+    expect(arc.linetype).toBe('ByLayer');
+    expect(arc.lineweight).toBe('ByLayer');
+    expect(arc.ltScale).toBe(1);
+  });
+
   it('extends lines short of the corner, and Shift makes a sharp corner whatever the radius', async () => {
     const { bus, byHandle, arcs } = setup();
     await bus.script(['FILLET', 'R', '1']);
