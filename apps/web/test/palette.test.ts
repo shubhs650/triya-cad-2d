@@ -41,9 +41,12 @@ describe('palette search', () => {
       'DIMLINEAR',
       'DIMRADIUS',
       'DIST',
+      // M3-01 part 4: DONUT, ELLIPSE, POINT, RAY and XLINE.
+      'DONUT',
       'DRAWINGRECOVERY',
       'DRAWORDER',
       'EATTEDIT',
+      'ELLIPSE',
       'ERASE',
       'EXPORT',
       'EXPORTPDF',
@@ -65,6 +68,7 @@ describe('palette search', () => {
       'PASTECLIP',
       'PASTEORIG',
       'PLOT',
+      'POINT',
       'PREVIEW',
       'PRINT',
       'PROPERTIES',
@@ -72,6 +76,7 @@ describe('palette search', () => {
       'PUBLISH',
       'QSAVE',
       'QUICKPROPERTIES',
+      'RAY',
       'REDO',
       'REGEN',
       'REGENALL',
@@ -94,6 +99,7 @@ describe('palette search', () => {
       'UNDO',
       'VIEW',
       'WIPEOUT',
+      'XLINE',
       'ZOOM',
     ]);
     const erase = commandItems(builtinCommands()).find((i) => i.id === 'ERASE');
