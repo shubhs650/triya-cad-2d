@@ -57,6 +57,13 @@ export {
   trimCurveOf,
   trimGeometry,
 } from './trim';
+export {
+  edgeTexts,
+  objectEdgeCurves,
+  type EdgeOptions,
+  type EdgeSource,
+  type EdgeText,
+} from './trim-edges';
 export * from './corner';
 export * from './break';
 export * from './join';

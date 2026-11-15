@@ -1,0 +1,1 @@
+- M3-12 part 4 (#415): TRIM and EXTEND cut and extend to block references (what their blocks draw, attributes included), dimensions, tables, leaders, multileaders, text (by the box it is drawn in), regions, floating viewports and, when chosen as edges, hatch boundaries.
