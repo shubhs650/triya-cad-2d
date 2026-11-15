@@ -173,7 +173,7 @@ describe('completions', () => {
     // An acad.pgp alias of a command not built yet (BO, BOUNDARY's) completes nothing; SPL,
     // SPLINE's since M3-01 part 5, completes SPLINE (then SPLINEDIT, M3-02 part 6); REC,
     // RECTANG's since M3-01 part 3, completes RECTANG; C, CIRCLE's since M3-01, completes CIRCLE
-    // first, then CHAMFER, CHANGE, CHPROP, CLOSE, COPY and the Clipboard commands.
+    // first, then CHAMFER, CHANGE, CHPROP, CLASSICGROUP, CLOSE, COPY and the Clipboard commands.
     expect(completions(registry, 'BO')).toEqual([]);
     expect(completions(registry, 'SPL')).toEqual([
       { name: 'SPLINE', alias: 'SPL' },
@@ -185,6 +185,8 @@ describe('completions', () => {
       { name: 'CHAMFER' },
       { name: 'CHANGE' },
       { name: 'CHPROP' },
+      // CLASSICGROUP, the Object Grouping dialog (M3-08).
+      { name: 'CLASSICGROUP' },
       { name: 'CLOSE' },
       { name: 'CLOSEALL' },
       { name: 'COPY' },
@@ -226,6 +228,7 @@ describe('completions of system variables', () => {
       'CHAMFER',
       'CHANGE',
       'CHPROP',
+      'CLASSICGROUP',
       'CLOSE',
       'CLOSEALL',
       'COPY',

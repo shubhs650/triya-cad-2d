@@ -90,6 +90,13 @@ export const KEY_ACTIONS: readonly KeyAction[] = [
     group: 'Drafting',
     keys: ['Ctrl+W'],
   },
+  // AutoCAD's Toggle Groups (Ctrl+Shift+A) and PICKSTYLE toggle (Ctrl+H): group selection, M3-08.
+  {
+    id: 'drafting:groups',
+    label: 'Group Selection on/off',
+    group: 'Drafting',
+    keys: ['Ctrl+Shift+A', 'Ctrl+H'],
+  },
 ];
 
 const ACTIONS = new Map(KEY_ACTIONS.map((a) => [a.id, a]));

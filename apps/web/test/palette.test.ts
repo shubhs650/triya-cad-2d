@@ -47,6 +47,8 @@ describe('palette search', () => {
       'CHANGE',
       'CHPROP',
       'CIRCLE',
+      // M3-08: the Object Grouping dialog, GROUP, GROUPEDIT and UNGROUP.
+      'CLASSICGROUP',
       'CLOSE',
       'CLOSEALL',
       'COPY',
@@ -82,6 +84,8 @@ describe('palette search', () => {
       'FILTER',
       // M3-06 part 2: GRID and SNAP.
       'GRID',
+      'GROUP',
+      'GROUPEDIT',
       'HATCHTOBACK',
       'ID',
       'JOIN',
@@ -149,6 +153,7 @@ describe('palette search', () => {
       // M2-56 part 1: the Underlay Layers dialog.
       'ULAYERS',
       'UNDO',
+      'UNGROUP',
       // M3-09: the Drawing Units dialog.
       'UNITS',
       'VIEW',

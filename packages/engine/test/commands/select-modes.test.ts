@@ -57,7 +57,9 @@ function init(): DocumentInit {
         owner: 'C',
         name: 'PAIR',
         description: '',
-        selectable: true,
+        // Not selectable, so a pick or path takes its members alone (group selection, M3-08,
+        // is group.test.ts's); the Group mode takes a group by name either way.
+        selectable: false,
         entities: ['30', '31', '24'],
       } as never,
       {

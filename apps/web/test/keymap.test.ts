@@ -127,6 +127,9 @@ describe('the default keyboard map', () => {
     ]);
     expect(map.actionFor('Ctrl+Shift+P')).toBe('drafting:qp');
     expect(map.actionFor('Ctrl+W')).toBe('drafting:sc');
+    // M3-08's group selection: AutoCAD's Toggle Groups and PICKSTYLE keys.
+    expect(map.actionFor('Ctrl+Shift+A')).toBe('drafting:groups');
+    expect(map.actionFor('Ctrl+H')).toBe('drafting:groups');
     expect(map.keysOf('drafting:osnap')).toEqual(['F3', 'Ctrl+F']);
   });
 

@@ -64,4 +64,5 @@ export * from './assoc-array';
 export * from './pedit';
 export * from './splinedit';
 export * from './overkill';
+export * from './groups';
 export * from './snap-grid';

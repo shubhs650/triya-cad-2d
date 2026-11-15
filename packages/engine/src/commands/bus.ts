@@ -1048,6 +1048,7 @@ export class PromptBus {
       ...(prompt.options && { options: prompt.options }),
       ...(prompt.editable && { editable: true }),
       ...(prompt.single && { single: true }),
+      ...(prompt.ungrouped && { groups: false as const }),
       ...(prompt.defaultLabel !== undefined && { defaultLabel: prompt.defaultLabel }),
     });
     this.#showSelection();

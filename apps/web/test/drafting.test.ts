@@ -93,4 +93,14 @@ describe('drafting aids', () => {
     d.toggle('sc');
     expect(d.get().selectionCycling).toBe(1);
   });
+
+  it('Ctrl+Shift+A turns group selection (PICKSTYLE bit 1) off and on, keeping bit 2 (M3-08)', () => {
+    const d = new Drafting();
+    expect([d.isOn('groups'), d.get().pickStyle]).toEqual([true, 1]);
+    d.toggle('groups');
+    expect([d.isOn('groups'), d.get().pickStyle]).toEqual([false, 0]);
+    d.configure({ pickStyle: 2 });
+    d.toggle('groups');
+    expect([d.isOn('groups'), d.get().pickStyle]).toEqual([true, 3]);
+  });
 });

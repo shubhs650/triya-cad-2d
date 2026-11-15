@@ -9,7 +9,9 @@ import {
   offsetCurveOf,
   toleranceForSize,
   type BusEvent,
+  type DocumentMeta,
   type Entity,
+  type NonGraphicalObject,
   type EntityGeometry,
   type EntityId,
   type ViewHost,
@@ -96,11 +98,18 @@ export function host(model: () => DocumentModel): ViewHost {
  */
 export function setup(
   extra: (EntityGeometry | [EntityGeometry, Partial<Entity>])[] = [],
-  o: { namedPlotStyles?: boolean } = {},
+  o: {
+    namedPlotStyles?: boolean;
+    /** Objects beside the sample's, and drawing facts (M3-08's ACAD_GROUP dictionary). */
+    objects?: NonGraphicalObject[];
+    meta?: Partial<DocumentMeta>;
+  } = {},
 ) {
   const init = sampleInit();
   const model = DocumentModel.create({
     ...init,
+    meta: { ...init.meta!, ...o.meta },
+    objects: [...(init.objects ?? []), ...(o.objects ?? [])],
     header: new Map([...(init.header ?? []), ['$PSTYLEMODE', o.namedPlotStyles ? 0 : 1]]),
     tables: {
       ...init.tables,

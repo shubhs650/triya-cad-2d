@@ -99,6 +99,11 @@ export interface DraftingState {
    */
   readonly selectionCycling: number;
   /**
+   * PICKSTYLE (M3-08): bit 1 group selection, bit 2 associative hatch selection. AutoCAD keeps
+   * it per user, initially 1; Ctrl+Shift+A turns group selection on and off.
+   */
+  readonly pickStyle: number;
+  /**
    * M3-04 part 4 (AutoCAD 2024 Help), kept per user: PICKBOX the pickbox's half size in pixels
    * (0 to 50, initially 3); PICKADD whether a selection step adds to the set (1, 2) or replaces
    * it (0, 3; initially 2); PICKAUTO's bits 1 implied windowing at "Select objects", 2 a window
@@ -203,11 +208,11 @@ export const AUTOSNAP_TRACK_TIP = 32;
 export const AUTOSNAP_KEPT = AUTOSNAP_MARKER | AUTOSNAP_TIP | AUTOSNAP_MAGNET | AUTOSNAP_TRACK_TIP;
 
 export type DraftingToggle =
-  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp' | 'sc';
+  'osnap' | 'ortho' | 'polar' | 'snap' | 'otrack' | 'grid' | 'lwt' | 'tpy' | 'qp' | 'sc' | 'groups';
 
 /**
  * The toggles in the Ctrl+K palette, as its actions (`drafting:<toggle>`). Their keys (F3, F7–F11,
- * Ctrl+Shift+P, Ctrl+W, AutoCAD's) are the keyboard map's (keymap.ts, M3-10 part 2).
+ * Ctrl+Shift+P, Ctrl+W, Ctrl+Shift+A, AutoCAD's) are the keyboard map's (keymap.ts, M3-10 part 2).
  */
 export const DRAFTING_ITEMS = [
   { id: 'drafting:osnap', label: 'Object Snap on/off' },
@@ -220,6 +225,7 @@ export const DRAFTING_ITEMS = [
   { id: 'drafting:tpy', label: 'Show/Hide Transparency' },
   { id: 'drafting:qp', label: 'Quick Properties on/off' },
   { id: 'drafting:sc', label: 'Selection Cycling on/off' },
+  { id: 'drafting:groups', label: 'Group Selection on/off' },
 ].map((i) => ({ ...i, kind: 'action' as const, aliases: [] as string[] }));
 
 export const INITIAL_DRAFTING: DraftingState = {
@@ -247,6 +253,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   polarAddAngles: '',
   selectSimilarMode: 130,
   selectionCycling: 0,
+  pickStyle: 1,
   pickbox: 3,
   pickadd: 2,
   pickauto: 5,
@@ -265,6 +272,7 @@ export function isOn(s: DraftingState, t: DraftingToggle, lwdisplay = false): bo
   if (t === 'lwt') return s.lwt ?? lwdisplay;
   if (t === 'qp') return s.qpmode > 0;
   if (t === 'sc') return s.selectionCycling > 0;
+  if (t === 'groups') return (s.pickStyle & 1) !== 0;
   return s[t];
 }
 
@@ -327,6 +335,9 @@ export class Drafting {
           ...s,
           selectionCycling: s.selectionCycling === 0 ? 2 : -s.selectionCycling,
         });
+      // Group selection is PICKSTYLE's bit 1 (M3-08); associative hatch selection keeps its bit.
+      case 'groups':
+        return this.#set({ ...s, pickStyle: s.pickStyle ^ 1 });
       case 'snap':
       case 'otrack':
       case 'grid':
