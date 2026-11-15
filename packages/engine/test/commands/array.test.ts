@@ -39,6 +39,15 @@ function drawing(header: [string, HeaderValue][] = []): DocumentInit {
         endAngle: Math.PI / 2,
       }),
       entityInit('33', lineGeom(2, 0, 3, 0)),
+      // A path of no length.
+      entityInit('34', {
+        kind: 'LWPOLYLINE',
+        closed: false,
+        vertices: [
+          { x: 5, y: -5, bulge: 0 },
+          { x: 5, y: -5, bulge: 0 },
+        ],
+      }),
     ],
   };
 }
@@ -289,6 +298,9 @@ describe('ARRAYPATH', () => {
     s.pick('30');
     await s.bus.script(['0,0']);
     expect(s.log.at(-1)).toBe('The object selected is not a valid path curve.');
+    s.pick('34');
+    await s.bus.script(['5,-5']);
+    expect(s.log.at(-1)).toBe('The object selected is not a valid path curve.');
     s.pick('31');
     await s.bus.script(['19,10']);
     expect(s.rings()).toEqual(grid([-18, -15, -12, -9, -6, -3, 0], [0]));
@@ -431,5 +443,157 @@ describe('-ARRAY', () => {
     // +90 is counterclockwise whatever the drawing measures angles from: the stick's centre
     // (2.5, 0), its default base point, goes a quarter turn round to (0, 2.5).
     expect(s.sticks()).toContainEqual([-0.5, 2.5, 0.5, 2.5]);
+  });
+});
+
+describe('ending an array part way', () => {
+  // Each line: the command, what is typed after its objects are selected, and whether the path
+  // line is picked first. Esc at the last prompt ends the command; the array made so far stays.
+  const cases: [string, string[], boolean?][] = [
+    ['ARRAYRECT', ['AS']],
+    ['ARRAYRECT', ['B']],
+    ['ARRAYRECT', ['COU']],
+    ['ARRAYRECT', ['COU', '2']],
+    ['ARRAYRECT', ['S']],
+    ['ARRAYRECT', ['S', '4']],
+    ['ARRAYRECT', ['S', 'U']],
+    ['ARRAYRECT', ['S', 'U', '0,0']],
+    ['ARRAYRECT', ['COL']],
+    ['ARRAYRECT', ['COL', '2']],
+    ['ARRAYRECT', ['COL', '2', 'T']],
+    ['ARRAYRECT', ['R']],
+    ['ARRAYRECT', ['R', '2']],
+    ['ARRAYPOLAR', []],
+    ['ARRAYPOLAR', ['B']],
+    ['ARRAYPOLAR', ['0,-5', 'AS']],
+    ['ARRAYPOLAR', ['0,-5', 'B']],
+    ['ARRAYPOLAR', ['0,-5', 'I']],
+    ['ARRAYPOLAR', ['0,-5', 'A']],
+    ['ARRAYPOLAR', ['0,-5', 'F']],
+    ['ARRAYPOLAR', ['0,-5', 'ROW']],
+    ['ARRAYPOLAR', ['0,-5', 'ROW', '2']],
+    ['ARRAYPOLAR', ['0,-5', 'ROT']],
+    ['ARRAYPATH', []],
+    ['ARRAYPATH', ['1,10', 'AS'], true],
+    ['ARRAYPATH', ['1,10', 'M'], true],
+    ['ARRAYPATH', ['1,10', 'B'], true],
+    ['ARRAYPATH', ['1,10', 'T'], true],
+    ['ARRAYPATH', ['1,10', 'T', '0,0'], true],
+    ['ARRAYPATH', ['1,10', 'I'], true],
+    ['ARRAYPATH', ['1,10', 'I', '4'], true],
+    ['ARRAYPATH', ['1,10', 'M', 'D', 'I'], true],
+    ['ARRAYPATH', ['1,10', 'R'], true],
+    ['ARRAYPATH', ['1,10', 'R', '2'], true],
+    ['ARRAYPATH', ['1,10', 'A'], true],
+    ['ARRAY', []],
+    ['-ARRAY', []],
+    ['-ARRAY', ['R']],
+    ['-ARRAY', ['R', '2']],
+    ['-ARRAY', ['R', '2', '2']],
+    ['-ARRAY', ['R', '2', '2', '0,0']],
+    ['-ARRAY', ['R', '2', '2', '4']],
+    ['-ARRAY', ['R', '1', '2']],
+    ['-ARRAY', ['P']],
+    ['-ARRAY', ['P', 'B']],
+    ['-ARRAY', ['P', '0,-5']],
+    ['-ARRAY', ['P', '0,-5', '3']],
+    ['-ARRAY', ['P', '0,-5', '3', '']],
+  ];
+  it.each(cases)('%s %j: Esc ends it', async (command, steps, path) => {
+    const s = setup();
+    await start(s, command);
+    if (path) s.pick('31');
+    await s.bus.script(steps);
+    expect(s.bus.command).toBeDefined();
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    expect(s.rings().length).toBeGreaterThanOrEqual(1);
+  });
+
+  it('ends when nothing is picked for the path', async () => {
+    const s = setup();
+    await start(s, 'ARRAYPATH');
+    await s.bus.script(['']);
+    expect(s.bus.command).toBeUndefined();
+    expect(s.rings()).toEqual([[0, 0]]);
+  });
+});
+
+describe('array limits', () => {
+  it('keeps every array under 100,000 items', async () => {
+    const s = setup();
+    await start(s, 'ARRAYRECT');
+    await s.bus.script(['COL', '100000']);
+    await s.bus.script(['R', '100000', 'X']);
+    await start(s, 'ARRAYPOLAR');
+    await s.bus.script(['0,-5', 'I', '200000', 'ROW', '100000', 'X']);
+    s.pick('30');
+    await s.bus.script(['ARRAYPATH', '0,0', '']);
+    s.pick('31');
+    await s.bus.script(['1,10', 'M', 'D', 'I', '200000', 'R', '100000', 'X']);
+    await start(s, '-ARRAY');
+    await s.bus.script(['R', '1000', '1000']);
+    expect(s.log.filter((l) => l === 'The array cannot have more than 100000 items.')).toHaveLength(
+      7,
+    );
+  });
+
+  it('refuses a tangent vector of no length, a zero item distance and zero Totals', async () => {
+    const s = setup();
+    await start(s, 'ARRAYPATH');
+    s.pick('31');
+    await s.bus.script(['1,10', 'T', '1,1', '1,1']);
+    expect(s.log.at(-1)).toBe('The tangent vector must have a length.');
+    await s.bus.script(['I', '0']);
+    expect(s.log.at(-1)).toBe('Value must be positive and nonzero.');
+    await s.bus.script(['R', '2', 'T', '0']);
+    expect(s.log.at(-1)).toBe('Value must be positive and nonzero.');
+    await s.bus.script(['5', 'X']);
+    expect(s.rings()).toHaveLength(14);
+  });
+
+  it('measures several objects together', async () => {
+    const s = setup();
+    s.pick('30');
+    await s.bus.script(['ARRAYRECT', '0,0']);
+    s.pick('33');
+    await s.bus.script(['2,0', '', 'COU', '2', '1', '']);
+    // Circle and stick span x −1 to 3: columns 6 apart.
+    expect(s.rings()).toEqual([
+      [0, 0],
+      [6, 0],
+    ]);
+  });
+});
+
+describe('array prompts answered with their defaults', () => {
+  it('keeps the angles on Enter and refuses a zero angle between items', async () => {
+    const s = setup({ header: [['$AUPREC', 1]] });
+    await start(s, 'ARRAYPOLAR');
+    await s.bus.script(['0,-5', 'F', '45', 'I', '3', 'A']);
+    expect(s.bus.promptText).toBe('Specify angle between items <22.5>:');
+    await s.bus.script(['', 'F', '', 'A', '0']);
+    expect(s.log.at(-1)).toBe('Value must be positive and nonzero.');
+    await s.bus.script(['X']);
+    expect(s.rings()).toHaveLength(3);
+  });
+
+  it('asks -ARRAY again for a distance it cannot read, and for a fill over a full turn', async () => {
+    const s = setup();
+    await start(s, '-ARRAY');
+    await s.bus.script(['R', '2', '1', 'abc']);
+    expect(s.log.at(-1)).toBe('Requires a distance or a point.');
+    await s.bus.script(['3']);
+    expect(s.rings()).toEqual([
+      [0, 0],
+      [0, 3],
+    ]);
+    await start(s, '-ARRAY');
+    await s.bus.script(['P', '0,-5', '200000']);
+    expect(s.log.at(-1)).toBe('The array cannot have more than 100000 items.');
+    await start(s, '-ARRAY');
+    await s.bus.script(['P', '0,-5', '2', '400']);
+    expect(s.log.at(-1)).toBe('The fill angle cannot exceed 360 degrees.');
+    await s.bus.cancel();
   });
 });

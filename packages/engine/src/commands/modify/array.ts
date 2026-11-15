@@ -71,7 +71,7 @@ async function* selectObjects(ctx: CommandContext): Sub<readonly EntityId[]> {
  */
 async function extentsOf(ctx: CommandContext, ids: readonly EntityId[]): Promise<Box> {
   const reply = await ctx.view.request({ op: 'bounds', ids });
-  if (reply.ok && 'box' in reply && reply.box) return reply.box as Box;
+  if (reply.ok && reply.box) return reply.box;
   let box: Box | undefined;
   const tol = toleranceForSize(1);
   for (const id of ids) {
@@ -127,7 +127,7 @@ class LiveArray {
   show(ctx: CommandContext, items: readonly Similarity[]): void {
     const o = mirrorOptions(ctx.model);
     ctx.edit((b) => {
-      for (const id of this.#copies) if (b.entity(id)) b.removeEntity(id);
+      for (const id of this.#copies) b.removeEntity(id);
       this.#copies = [];
       this.#first = [];
       const refused = new Map<string, number>();
@@ -152,7 +152,7 @@ class LiveArray {
     if (item0) {
       const first = new Set(this.#first);
       ctx.edit((b) => {
-        for (const id of first) if (b.entity(id)) b.removeEntity(id);
+        for (const id of first) b.removeEntity(id);
         transformObjects(b, ctx.model, this.ids, item0, mirrorOptions(ctx.model));
       });
       this.#copies = this.#copies.filter((id) => !first.has(id));
@@ -167,30 +167,42 @@ class LiveArray {
   }
 }
 
-/** The shared option: Triya makes separate objects; Yes says so and keeps them separate. */
-async function* associative(ctx: CommandContext): Sub<boolean> {
-  const a = yield ctx.prompt.keyword({
-    message: 'Create associative array',
-    options: ['Yes', 'No'],
-    default: { kind: 'keyword', keyword: 'No' },
-  });
-  if (a.kind === 'keyword' && a.keyword === 'Yes') {
-    ctx.message('Triya does not make associative arrays yet: the items are separate objects.');
-  }
-  return a.kind !== 'escape';
-}
+// Esc cancels a command without answering its prompt, so each prompt below is answered by its
+// kind or, where its default stands, by Enter: the helpers turn any other answer into the
+// default rather than ending the array.
 
-/** A count of at least 1; undefined when Esc or another answer ends the prompt. */
-async function* count(
+/** One of `options`, `current` by default. */
+async function* choose(
   ctx: CommandContext,
   message: string,
-  current: number,
-  min = 1,
-): Sub<number | undefined> {
+  options: readonly string[],
+  current: string,
+): Sub<string> {
+  const a = yield ctx.prompt.keyword({
+    message,
+    options,
+    default: { kind: 'keyword', keyword: current },
+  });
+  return a.kind === 'keyword' ? a.keyword : current;
+}
+
+async function* yesNo(ctx: CommandContext, message: string, current: boolean): Sub<boolean> {
+  return (yield* choose(ctx, message, ['Yes', 'No'], current ? 'Yes' : 'No')) === 'Yes';
+}
+
+/** The shared option: Triya makes separate objects; Yes says so and keeps them separate. */
+async function* associative(ctx: CommandContext): Sub<void> {
+  if (yield* yesNo(ctx, 'Create associative array', false)) {
+    ctx.message('Triya does not make associative arrays yet: the items are separate objects.');
+  }
+}
+
+/** A count of at least `min`, `current` by default. */
+async function* count(ctx: CommandContext, message: string, current: number, min = 1): Sub<number> {
   for (;;) {
     const a = yield ctx.prompt.integer({ message, default: { kind: 'number', value: current } });
-    if (a.kind !== 'number') return undefined;
-    if (a.value >= min) return a.value;
+    const value = a.kind === 'number' ? a.value : current;
+    if (value >= min) return value;
     ctx.message(min > 1 ? `Value must be an integer greater than ${min - 1}.` : NOT_POSITIVE);
   }
 }
@@ -202,7 +214,7 @@ async function* spacing(
   current: number,
   n: number,
   totalMessage?: string,
-): Sub<number | undefined> {
+): Sub<number> {
   for (;;) {
     const a = yield ctx.prompt.distance({
       message: totalMessage ? `${message} or` : message,
@@ -214,12 +226,12 @@ async function* spacing(
       ctx.message(NOT_POSITIVE);
       continue;
     }
-    if (a.kind !== 'keyword' || !totalMessage) return undefined;
+    if (!totalMessage) return current;
     const t = yield ctx.prompt.distance({
       message: totalMessage,
       default: { kind: 'distance', value: current * Math.max(n - 1, 1) },
     });
-    if (t.kind !== 'distance') return undefined;
+    if (t.kind !== 'distance') return current;
     if (t.value === 0) {
       ctx.message(NOT_POSITIVE);
       continue;
@@ -228,16 +240,23 @@ async function* spacing(
   }
 }
 
-/** "Specify base point <centroid>": a point, or Enter for the selection's centre. */
-async function* basePoint(
-  ctx: CommandContext,
-  fallback: Vec2,
-  label: string,
-): Sub<Vec2 | undefined> {
+/** "Specify base point <centroid>": a point, or Enter for `fallback`. */
+async function* basePoint(ctx: CommandContext, fallback: Vec2, label: string): Sub<Vec2> {
   const a = yield ctx.prompt.point({ message: 'Specify base point', defaultLabel: label });
-  if (a.kind === 'point') return a.point;
-  if (a.kind === 'enter') return fallback;
-  return undefined;
+  return a.kind === 'point' ? a.point : fallback;
+}
+
+/** Two points, the second rubber-banded from the first (a unit cell's corners, a vector). */
+async function* twoPoints(
+  ctx: CommandContext,
+  first: string,
+  second: string,
+  box: boolean,
+): Sub<[Vec2, Vec2] | undefined> {
+  const p = yield ctx.prompt.point({ message: first });
+  if (p.kind !== 'point') return undefined;
+  const q = yield ctx.prompt.point({ message: second, rubberBand: { from: p.point, box } });
+  return q.kind === 'point' ? [p.point, q.point] : undefined;
 }
 
 /** A turn the drafter typed or picked, as a signed sweep (+ counterclockwise), ANGBASE and ANGDIR aside. */
@@ -298,16 +317,13 @@ async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<
       'Rows',
     ]);
     if (option === undefined) break;
-    if (option === 'ASsociative') {
-      if (!(yield* associative(ctx))) break;
-    } else if (option === 'Base point') {
+    if (option === 'ASsociative') yield* associative(ctx);
+    else if (option === 'Base point') {
       // The base point is an associative array's grip; separate items have no use for it.
-      if (!(yield* basePoint(ctx, centreOf(box), 'centroid'))) break;
+      yield* basePoint(ctx, centreOf(box), 'centroid');
     } else if (option === 'COUnt') {
       const c = yield* count(ctx, 'Enter number of columns', s.columns);
-      if (c === undefined) break;
       const r = yield* count(ctx, 'Enter number of rows', s.rows);
-      if (r === undefined) break;
       if (!tooMany(ctx, c * r)) Object.assign(s, { columns: c, rows: r });
     } else if (option === 'Spacing') {
       const a = yield ctx.prompt.distance({
@@ -316,25 +332,23 @@ async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<
         default: { kind: 'distance', value: s.columnSpacing },
       });
       if (a.kind === 'keyword') {
-        const p = yield ctx.prompt.point({ message: 'Specify first corner of unit cell' });
-        if (p.kind !== 'point') break;
-        const q = yield ctx.prompt.point({
-          message: 'Specify other corner',
-          rubberBand: { from: p.point, box: true },
-        });
-        if (q.kind !== 'point') break;
-        const d = sub(q.point, p.point);
+        const cell = yield* twoPoints(
+          ctx,
+          'Specify first corner of unit cell',
+          'Specify other corner',
+          true,
+        );
+        const d = cell ? sub(cell[1], cell[0]) : { x: 0, y: 0 };
         if (d.x === 0 || d.y === 0) ctx.message(NOT_POSITIVE);
         else Object.assign(s, { columnSpacing: d.x, rowSpacing: d.y });
-      } else if (a.kind === 'distance') {
+      } else {
+        const c = a.kind === 'distance' ? a.value : s.columnSpacing;
         const r = yield* spacing(ctx, 'Specify the distance between rows', s.rowSpacing, s.rows);
-        if (r === undefined) break;
-        if (a.value === 0) ctx.message(NOT_POSITIVE);
-        else Object.assign(s, { columnSpacing: a.value, rowSpacing: r });
-      } else break;
+        if (c === 0) ctx.message(NOT_POSITIVE);
+        else Object.assign(s, { columnSpacing: c, rowSpacing: r });
+      }
     } else if (option === 'COLumns') {
       const c = yield* count(ctx, 'Enter number of columns', s.columns);
-      if (c === undefined) break;
       if (tooMany(ctx, c * s.rows)) continue;
       const d = yield* spacing(
         ctx,
@@ -343,11 +357,10 @@ async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<
         c,
         'Specify the total distance between first and last columns',
       );
-      if (d === undefined) break;
       Object.assign(s, { columns: c, columnSpacing: d });
-    } else if (option === 'Rows') {
+    } else {
+      // Rows
       const r = yield* count(ctx, 'Enter the number of rows', s.rows);
-      if (r === undefined) break;
       if (tooMany(ctx, r * s.columns)) continue;
       const d = yield* spacing(
         ctx,
@@ -356,7 +369,6 @@ async function* rectangular(ctx: CommandContext, ids: readonly EntityId[]): Sub<
         r,
         'Specify the total distance between start and end rows',
       );
-      if (d === undefined) break;
       Object.assign(s, { rows: r, rowSpacing: d });
     }
     show();
@@ -377,11 +389,8 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
       options: ['Base point'],
     });
     if (a.kind === 'point') center = a.point;
-    else if (a.kind === 'keyword') {
-      const p = yield* basePoint(ctx, centreOf(box), 'centroid');
-      if (!p) return;
-      base = p;
-    } else return;
+    else if (a.kind === 'keyword') base = yield* basePoint(ctx, centreOf(box), 'centroid');
+    else return;
   }
   const s = {
     center,
@@ -406,15 +415,10 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
       'ROTate items',
     ]);
     if (option === undefined) break;
-    if (option === 'ASsociative') {
-      if (!(yield* associative(ctx))) break;
-    } else if (option === 'Base point') {
-      const p = yield* basePoint(ctx, centreOf(box), 'centroid');
-      if (!p) break;
-      s.base = p;
-    } else if (option === 'Items') {
+    if (option === 'ASsociative') yield* associative(ctx);
+    else if (option === 'Base point') s.base = yield* basePoint(ctx, centreOf(box), 'centroid');
+    else if (option === 'Items') {
       const n = yield* count(ctx, 'Enter number of items in array', s.items);
-      if (n === undefined) break;
       if (!tooMany(ctx, n * s.rows)) s.items = n;
     } else if (option === 'Angle between') {
       const step = polarAngleBetween(s.items, s.fillAngle);
@@ -423,8 +427,7 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
         defaultLabel: sweepText(ctx, step),
         base: s.center,
       });
-      if (a.kind === 'enter') continue;
-      if (a.kind !== 'angle') break;
+      if (a.kind !== 'angle') continue;
       const between = sweepOf(ctx, a.value);
       // Items that close the circle exactly fill it; otherwise the last item ends the fill.
       const closes = Math.abs(Math.abs(between * s.items) - 2 * Math.PI) <= 1e-9;
@@ -439,8 +442,7 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
         defaultLabel: sweepText(ctx, s.fillAngle),
         base: s.center,
       });
-      if (a.kind === 'enter') continue;
-      if (a.kind !== 'angle') break;
+      if (a.kind !== 'angle') continue;
       const fill = sweepOf(ctx, a.value);
       if (fill === 0) ctx.message(NOT_POSITIVE);
       else if (Math.abs(fill) > 2 * Math.PI + 1e-9) {
@@ -448,7 +450,6 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
       } else s.fillAngle = fill;
     } else if (option === 'ROWs') {
       const r = yield* count(ctx, 'Enter number of rows', s.rows);
-      if (r === undefined) break;
       if (tooMany(ctx, r * s.items)) continue;
       const d = yield* spacing(
         ctx,
@@ -457,16 +458,10 @@ async function* polar(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
         r,
         'Specify the total distance between start and end rows',
       );
-      if (d === undefined) break;
       Object.assign(s, { rows: r, rowSpacing: d });
-    } else if (option === 'ROTate items') {
-      const a = yield ctx.prompt.keyword({
-        message: 'Rotate arrayed items?',
-        options: ['Yes', 'No'],
-        default: { kind: 'keyword', keyword: s.rotateItems ? 'Yes' : 'No' },
-      });
-      if (a.kind !== 'keyword') break;
-      s.rotateItems = a.keyword === 'Yes';
+    } else {
+      // ROTate items
+      s.rotateItems = yield* yesNo(ctx, 'Rotate arrayed items?', s.rotateItems);
     }
     show();
   }
@@ -481,8 +476,7 @@ async function* pickPath(
 ): Sub<ArrayPath | undefined> {
   for (;;) {
     const a = yield ctx.prompt.selection({ message: 'Select path curve', single: true });
-    if (a.kind !== 'selection') return undefined;
-    const id = a.ids[0];
+    const id = a.kind === 'selection' ? a.ids[0] : undefined;
     if (id === undefined) return undefined;
     const e = ctx.model.entity(id);
     const found = e && !ids.includes(id) ? pathCurveOf(e.geom) : undefined;
@@ -494,7 +488,10 @@ async function* pickPath(
     const from = startPoint(found.curve);
     const to = endPoint(found.curve);
     const reversed =
-      !found.closed && a.pick !== undefined && distance(a.pick, to) < distance(a.pick, from);
+      !found.closed &&
+      a.kind === 'selection' &&
+      a.pick !== undefined &&
+      distance(a.pick, to) < distance(a.pick, from);
     const path = arrayPath(found.curve, found.closed, reversed);
     if (pathLength(path) === 0) {
       ctx.message('The object selected is not a valid path curve.');
@@ -543,67 +540,59 @@ async function* along(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
       'Align items',
     ]);
     if (option === undefined) break;
-    if (option === 'ASsociative') {
-      if (!(yield* associative(ctx))) break;
-    } else if (option === 'Method') {
-      const a = yield ctx.prompt.keyword({
-        message: 'Enter path method',
-        options: ['Divide', 'Measure'],
-        default: { kind: 'keyword', keyword: s.method === 'divide' ? 'Divide' : 'Measure' },
-      });
-      if (a.kind !== 'keyword') break;
-      s.method = a.keyword === 'Divide' ? 'divide' : 'measure';
+    if (option === 'ASsociative') yield* associative(ctx);
+    else if (option === 'Method') {
+      const method = yield* choose(
+        ctx,
+        'Enter path method',
+        ['Divide', 'Measure'],
+        s.method === 'divide' ? 'Divide' : 'Measure',
+      );
+      s.method = method === 'Divide' ? 'divide' : 'measure';
       if (s.method === 'measure') s.items = Math.min(s.items, measureMaxItems(path, s.spacing));
     } else if (option === 'Base point') {
-      const p = yield* basePoint(ctx, pathStart(path), 'end of path curve');
-      if (!p) break;
-      s.base = p;
+      s.base = yield* basePoint(ctx, pathStart(path), 'end of path curve');
     } else if (option === 'Tangent direction') {
-      const p = yield ctx.prompt.point({ message: 'Specify first point of tangent vector' });
-      if (p.kind !== 'point') break;
-      const q = yield ctx.prompt.point({
-        message: 'Specify second point of tangent vector',
-        rubberBand: { from: p.point },
-      });
-      if (q.kind !== 'point') break;
-      const v = sub(q.point, p.point);
+      const vector = yield* twoPoints(
+        ctx,
+        'Specify first point of tangent vector',
+        'Specify second point of tangent vector',
+        false,
+      );
+      const v = vector ? sub(vector[1], vector[0]) : { x: 0, y: 0 };
       if (v.x === 0 && v.y === 0) ctx.message('The tangent vector must have a length.');
       else s.tangent = v;
     } else if (option === 'Items') {
       if (s.method === 'divide') {
         const n = yield* count(ctx, 'Enter number of items along path', s.items);
-        if (n === undefined) break;
         if (!tooMany(ctx, n * s.rows)) s.items = n;
       } else {
         const d = yield ctx.prompt.distance({
           message: 'Specify the distance between items along path',
           default: { kind: 'distance', value: s.spacing },
         });
-        if (d.kind !== 'distance') break;
-        if (!(d.value > 0)) {
+        const step = d.kind === 'distance' ? d.value : s.spacing;
+        if (!(step > 0)) {
           ctx.message(NOT_POSITIVE);
           continue;
         }
-        const max = measureMaxItems(path, d.value);
+        const max = measureMaxItems(path, step);
         ctx.message(`Maximum items = ${max}`);
         const n = yield ctx.prompt.integer({
           message: 'Specify number of items or',
           options: ['Fill entire path'],
           default: { kind: 'number', value: max },
         });
-        let items: number | undefined;
-        if (n.kind === 'keyword') items = max;
-        else if (n.kind === 'number') items = n.value;
-        else break;
+        // Fill entire path, or Enter: the most there is room for.
+        const items = n.kind === 'number' ? n.value : max;
         if (items < 1 || items > max) {
           ctx.message(`Value must be between 1 and ${max}.`);
           continue;
         }
-        if (!tooMany(ctx, items * s.rows)) Object.assign(s, { spacing: d.value, items });
+        if (!tooMany(ctx, items * s.rows)) Object.assign(s, { spacing: step, items });
       }
     } else if (option === 'Rows') {
       const r = yield* count(ctx, 'Enter number of rows', s.rows);
-      if (r === undefined) break;
       if (tooMany(ctx, r * s.items)) continue;
       const d = yield* spacing(
         ctx,
@@ -612,16 +601,10 @@ async function* along(ctx: CommandContext, ids: readonly EntityId[]): Sub<void> 
         r,
         'Specify the total distance between start and end rows',
       );
-      if (d === undefined) break;
       Object.assign(s, { rows: r, rowSpacing: d });
-    } else if (option === 'Align items') {
-      const a = yield ctx.prompt.keyword({
-        message: 'Align arrayed items to the path?',
-        options: ['Yes', 'No'],
-        default: { kind: 'keyword', keyword: s.align ? 'Yes' : 'No' },
-      });
-      if (a.kind !== 'keyword') break;
-      s.align = a.keyword === 'Yes';
+    } else {
+      // Align items
+      s.align = yield* yesNo(ctx, 'Align arrayed items to the path?', s.align);
     }
     show();
   }
@@ -654,13 +637,12 @@ export function arrayCommand(): CommandDef {
       if (ctx.dash) return yield* classic(ctx);
       const ids = yield* selectObjects(ctx);
       if (ids.length === 0) return;
-      const a = yield ctx.prompt.keyword({
-        message: 'Enter array type',
-        options: ['Rectangular', 'PAth', 'POlar'],
-        default: { kind: 'keyword', keyword: last },
-      });
-      if (a.kind !== 'keyword') return;
-      last = a.keyword as ArrayKind;
+      last = (yield* choose(
+        ctx,
+        'Enter array type',
+        ['Rectangular', 'PAth', 'POlar'],
+        last,
+      )) as ArrayKind;
       yield* make(last, ctx, ids);
     },
   };
@@ -687,19 +669,16 @@ function dashArray(): (ctx: CommandContext) => Sub<void> {
     {
       const ids = yield* selectObjects(ctx);
       if (ids.length === 0) return;
-      const a = yield ctx.prompt.keyword({
-        message: 'Enter the type of array',
-        options: ['Rectangular', 'Polar'],
-        default: { kind: 'keyword', keyword: last },
-      });
-      if (a.kind !== 'keyword') return;
-      last = a.keyword as typeof last;
+      last = (yield* choose(
+        ctx,
+        'Enter the type of array',
+        ['Rectangular', 'Polar'],
+        last,
+      )) as typeof last;
       const live = new LiveArray(ids);
       if (last === 'Rectangular') {
         const rows = yield* count(ctx, 'Enter the number of rows (---)', 1);
-        if (rows === undefined) return;
         const columns = yield* count(ctx, 'Enter the number of columns (|||)', 1);
-        if (columns === undefined) return;
         if (rows * columns === 1) {
           ctx.message('One-element array, nothing to do.');
           return;
@@ -766,7 +745,7 @@ function dashArray(): (ctx: CommandContext) => Sub<void> {
           } else return;
         }
         const n = yield* count(ctx, 'Enter the number of items in the array', 4, 2);
-        if (n === undefined || tooMany(ctx, n)) return;
+        if (tooMany(ctx, n)) return;
         let fill = 2 * Math.PI;
         for (;;) {
           const f = yield ctx.prompt.angle({
@@ -774,8 +753,7 @@ function dashArray(): (ctx: CommandContext) => Sub<void> {
             defaultLabel: '360',
             base: center,
           });
-          if (f.kind === 'enter') break;
-          if (f.kind !== 'angle') return;
+          if (f.kind !== 'angle') break;
           const sweep = sweepOf(ctx, f.value);
           if (sweep !== 0 && Math.abs(sweep) <= 2 * Math.PI + 1e-9) {
             fill = sweep;
@@ -783,12 +761,7 @@ function dashArray(): (ctx: CommandContext) => Sub<void> {
           }
           ctx.message(sweep === 0 ? NOT_POSITIVE : 'The fill angle cannot exceed 360 degrees.');
         }
-        const r = yield ctx.prompt.keyword({
-          message: 'Rotate arrayed objects?',
-          options: ['Yes', 'No'],
-          default: { kind: 'keyword', keyword: 'Yes' },
-        });
-        if (r.kind !== 'keyword') return;
+        const rotate = yield* yesNo(ctx, 'Rotate arrayed objects?', true);
         live.show(
           ctx,
           polarItems({
@@ -798,7 +771,7 @@ function dashArray(): (ctx: CommandContext) => Sub<void> {
             fillAngle: fill,
             rows: 1,
             rowSpacing: 0,
-            rotateItems: r.keyword === 'Yes',
+            rotateItems: rotate,
           }),
         );
       }
