@@ -37,9 +37,13 @@ function host(model: () => DocumentModel): ViewHost {
         const hits: [number, EntityId][] = [];
         for (const e of model().entities()) {
           if (e.owner !== MODEL_SPACE) continue;
-          const c = offsetCurveOf(e.geom);
-          if (!c) continue;
-          const d = closestPoint(c, r.point, toleranceForSize(100)).distance;
+          const g = e.geom;
+          const c = offsetCurveOf(g);
+          const d = c
+            ? closestPoint(c, r.point, toleranceForSize(100)).distance
+            : g.kind === 'POINT'
+              ? Math.hypot(g.position.x - r.point.x, g.position.y - r.point.y)
+              : Infinity;
           if (d < 0.25) hits.push([d, e.id]);
         }
         hits.sort((a, b) => a[0] - b[0]);
@@ -262,5 +266,96 @@ describe('TRIM', () => {
     await bus.submit('');
     await bus.script(['TRIM']);
     expect(log).toContain('Current settings: Projection=None, Edge=None, Mode=Quick');
+  });
+
+  it('chooses its edges with cuTting edges, and switches modes with mOde', async () => {
+    const { bus, log, byHandle } = setup();
+    await bus.script(['TRIM', 'T']);
+    expect(log.at(-1)).toBe('Select cutting edges ...');
+    expect(bus.promptText).toBe('Select objects or <select all>:');
+    // Only 32: a pick left of it takes the line from its start up to 32, as 31 cuts nothing.
+    await bus.pick({ x: 7, y: 3 });
+    await bus.submit('');
+    await bus.pick({ x: 1, y: 0 });
+    expect(byHandle('30')!.geom).toMatchObject({ start: { x: 7, y: 0 }, end: { x: 10, y: 0 } });
+    // Back to every object: Enter at the edge selection.
+    await bus.script(['T', '']);
+    // mOde Standard asks for edges; at its own mOde, Quick goes back to every object.
+    await bus.script(['O']);
+    expect(bus.promptText).toBe('Enter a trim mode option [Quick/Standard] <Quick>:');
+    await bus.submit('S');
+    expect(log.at(-1)).toBe('Select cutting edges ...');
+    await bus.submit('');
+    await bus.script(['O']);
+    expect(bus.promptText).toBe('Enter a trim mode option [Quick/Standard] <Standard>:');
+    await bus.submit('Q');
+    expect(log.at(-1)).toBe('Current settings: Projection=UCS, Edge=None, Mode=Quick');
+    await bus.submit('');
+    // Starting in Standard mode, mOde at the edge selection goes back to Quick.
+    await bus.script(['TRIM', 'O', 'S', '']);
+    await bus.submit('');
+    await bus.script(['TRIM']);
+    expect(bus.promptText).toBe('Select objects or [mOde] <select all>:');
+    await bus.submit('O');
+    expect(bus.promptText).toBe('Enter a trim mode option [Quick/Standard] <Standard>:');
+    await bus.submit('Q');
+    expect(bus.promptText).toBe(QUICK_TRIM);
+  });
+
+  it('takes Enter and Undo at fence points and window corners, and Edge back', async () => {
+    const { bus, lines } = setup();
+    await bus.script(['TRIM', 'O', 'S', '']);
+    // Fence: Enter at the first point does nothing; Undo takes back a point.
+    await bus.script(['F', '']);
+    await bus.script(['F', '1,-3', 'U']);
+    await bus.script(['F', '1,-3', '9,-3', 'U', '']);
+    // A zigzag fence crossing the line twice between 31 and 32: the first crossing takes that
+    // part away, so the second finds nothing left to trim.
+    await bus.script(['F', '5,-1', '5.5,1', '6,-1', '']);
+    expect(lines()).toContainEqual([0, 0, 3, 0]);
+    expect(lines()).toContainEqual([7, 0, 10, 0]);
+    await bus.submit('U');
+    // Crossing: Enter at either corner does nothing.
+    await bus.script(['C', '']);
+    await bus.script(['C', '4,-1', '']);
+    // Edge Extend and back to No extend.
+    await bus.script(['E', 'E']);
+    await bus.script(['E']);
+    expect(bus.promptText).toBe(
+      'Enter an implied edge extension mode [Extend/No extend] <Extend>:',
+    );
+    await bus.submit('N');
+    // eRase with nothing selected.
+    await bus.script(['R', '']);
+    expect(lines()).toContainEqual([0, 0, 10, 0]);
+    // A pick on nothing in Standard mode is a crossing window's first corner.
+    await bus.submit('5,-1');
+    expect(bus.promptText).toBe('Specify opposite corner:');
+    await bus.submit('');
+    expect(lines()).toContainEqual([0, 0, 10, 0]);
+    await bus.submit('5,-1');
+    await bus.submit('6,1');
+    expect(lines()).toContainEqual([0, 0, 3, 0]);
+    expect(lines()).toContainEqual([7, 0, 10, 0]);
+  });
+
+  it('trims a window takes where it first meets the window from its first corner', async () => {
+    // A diagonal (0,20)-(10,30) and an upright x = 8 across it; a window from (0,30) to (10,26):
+    // the diagonal's point nearest the corner, (5,25), is outside, so it is taken where it comes
+    // in at y = 26 and trimmed up to the upright; the upright, nearest at (8,30), then loses its
+    // part above the diagonal.
+    const { bus, lines } = setup([lineGeom(0, 20, 10, 30), lineGeom(8, 20, 8, 40)]);
+    await bus.script(['TRIM', 'C', '0,30', '10,26']);
+    expect(lines()).toContainEqual([8, 20, 8, 28]);
+    expect(lines()).toContainEqual([8, 28, 10, 30]);
+  });
+
+  it('says what it cannot trim or extend', async () => {
+    const { bus, log } = setup([{ kind: 'POINT', position: { x: 30, y: 30 } }]);
+    await bus.script(['TRIM']);
+    await bus.pick({ x: 30, y: 30 });
+    expect(log.at(-1)).toBe('Cannot trim that object.');
+    await bus.pick({ x: 30, y: 30 }, { shift: true });
+    expect(log.at(-1)).toBe('Cannot extend that object.');
   });
 });

@@ -70,6 +70,10 @@ export const trimSettings = (): TrimSettings => ({
 /** The edges: every object, or those chosen (Standard mode, cuTting edges). */
 type Edges = 'all' | ReadonlySet<EntityId>;
 
+/** The option a keyword prompt with a default answered: Enter gives the default. */
+const keywordOf = (a: PromptAnswer): string | undefined =>
+  a.kind === 'keyword' ? a.keyword : undefined;
+
 const PROJECTION_LABEL = { None: 'None', Ucs: 'UCS', View: 'View' } as const;
 
 /** Objects on layers that are off or frozen are not drawn, so they are no edges. */
@@ -136,11 +140,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
         }, Mode=${s.quick ? 'Quick' : 'Standard'}`;
       ctx.message(settings());
       let edges: Edges = 'all';
-      if (!s.quick) {
-        const chosen = yield* chooseEdges(ctx, true);
-        if (chosen === undefined) return;
-        edges = chosen;
-      }
+      if (!s.quick) edges = yield* chooseEdges(ctx, true);
       /** Each trim, fence, window or erase made, for Undo: its edits in order. */
       const history: ChangeSet[][] = [];
       const run = new Runner(ctx, s, () => edges);
@@ -148,28 +148,19 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
         const a = yield ctx.prompt.point({ message: w.select, options: options(), pickbox: true });
         if (a.kind === 'keyword') {
           switch (a.keyword) {
-            case w.edgeOption: {
-              const chosen = yield* chooseEdges(ctx, false);
-              if (chosen === undefined) return;
-              edges = chosen;
+            case w.edgeOption:
+              edges = yield* chooseEdges(ctx, false);
               continue;
-            }
             case 'mOde': {
               const m = yield ctx.prompt.keyword({
                 message: w.modeMessage,
                 options: ['Quick', 'Standard'],
                 default: { kind: 'keyword', keyword: s.quick ? 'Quick' : 'Standard' },
               });
-              if (m.kind !== 'keyword') return;
-              s.quick = m.keyword === 'Quick';
+              s.quick = keywordOf(m) === 'Quick';
               ctx.message(settings());
               // Standard mode asks for its edges, as starting in it does; Quick takes them all.
-              if (s.quick) edges = 'all';
-              else {
-                const chosen = yield* chooseEdges(ctx, false);
-                if (chosen === undefined) return;
-                edges = chosen;
-              }
+              edges = s.quick ? 'all' : yield* chooseEdges(ctx, false);
               continue;
             }
             case 'Project': {
@@ -178,8 +169,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
                 options: ['None', 'Ucs', 'View'],
                 default: { kind: 'keyword', keyword: s.projection },
               });
-              if (p.kind !== 'keyword') return;
-              s.projection = p.keyword as TrimSettings['projection'];
+              s.projection = keywordOf(p) as TrimSettings['projection'];
               continue;
             }
             case 'Edge': {
@@ -188,8 +178,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
                 options: ['Extend', 'No extend'],
                 default: { kind: 'keyword', keyword: s.extendEdges ? 'Extend' : 'No extend' },
               });
-              if (e.kind !== 'keyword') return;
-              s.extendEdges = e.keyword === 'Extend';
+              s.extendEdges = keywordOf(e) === 'Extend';
               continue;
             }
             case 'eRase': {
@@ -214,9 +203,7 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
             case 'Fence': {
               const first = yield ctx.prompt.point({ message: 'Specify first fence point' });
               if (first.kind !== 'point') continue;
-              const fence = yield* fencePoints(ctx, first.point, false);
-              if (fence === undefined) return;
-              const done = run.fence(fence, w.work);
+              const done = run.fence(yield* fencePoints(ctx, first.point, false), w.work);
               if (done.length > 0) history.push(done);
               continue;
             }
@@ -224,7 +211,6 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
               const first = yield ctx.prompt.point({ message: 'Specify first corner' });
               if (first.kind !== 'point') continue;
               const done = yield* crossing(ctx, run, first.point, w.work);
-              if (done === undefined) return;
               if (done.length > 0) history.push(done);
               continue;
             }
@@ -245,22 +231,16 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
           continue;
         }
         // A pick on nothing: Quick mode's fence of two points, Standard mode's crossing window.
-        if (s.quick) {
-          const fence = yield* fencePoints(ctx, a.point, true);
-          if (fence === undefined) return;
-          const done = run.fence(fence, work);
-          if (done.length > 0) history.push(done);
-          continue;
-        }
-        const done = yield* crossing(ctx, run, a.point, work, true);
-        if (done === undefined) return;
+        const done = s.quick
+          ? run.fence(yield* fencePoints(ctx, a.point, true), work)
+          : yield* crossing(ctx, run, a.point, work, true);
         if (done.length > 0) history.push(done);
       }
     },
   };
 
-  /** "Select cutting edges ...": the objects chosen, all of them on Enter; undefined to end. */
-  async function* chooseEdges(ctx: CommandContext, first: boolean): Sub<Edges | undefined> {
+  /** "Select cutting edges ...": the objects chosen, all of them on Enter. */
+  async function* chooseEdges(ctx: CommandContext, first: boolean): Sub<Edges> {
     ctx.message(w.edges);
     for (;;) {
       const a = yield ctx.prompt.selection({
@@ -274,27 +254,20 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
           options: ['Quick', 'Standard'],
           default: { kind: 'keyword', keyword: s.quick ? 'Quick' : 'Standard' },
         });
-        if (m.kind !== 'keyword') return undefined;
-        s.quick = m.keyword === 'Quick';
+        s.quick = keywordOf(m) === 'Quick';
         if (s.quick) return 'all';
         continue;
       }
-      if (a.kind === 'selection' && a.ids.length > 0) return new Set(a.ids);
-      if (a.kind === 'selection' || a.kind === 'enter') return 'all';
-      return undefined;
+      return a.kind === 'selection' && a.ids.length > 0 ? new Set(a.ids) : 'all';
     }
   }
 }
 
 /**
  * The rest of a fence after its first point: Quick mode's ends at the second point, Standard
- * mode's Fence at Enter. Undefined when the command is to end.
+ * mode's Fence at Enter; none when Undo or Enter leaves it a single point.
  */
-async function* fencePoints(
-  ctx: CommandContext,
-  first: Vec2,
-  quick: boolean,
-): Sub<Vec2[] | undefined> {
+async function* fencePoints(ctx: CommandContext, first: Vec2, quick: boolean): Sub<Vec2[]> {
   const points = [first];
   for (;;) {
     const a = yield ctx.prompt.point({
@@ -307,26 +280,25 @@ async function* fencePoints(
       else return [];
       continue;
     }
-    if (a.kind === 'enter') return points.length > 1 ? points : [];
-    if (a.kind !== 'point') return undefined;
+    if (a.kind !== 'point') return points.length > 1 ? points : [];
     points.push(a.point);
     if (quick) return points;
   }
 }
 
-/** A crossing window from `first`: what it trims (extends), or undefined to end the command. */
+/** A crossing window from `first`: what it trims (extends); nothing on Enter. */
 async function* crossing(
   ctx: CommandContext,
   run: Runner,
   first: Vec2,
   work: Work,
   implied = false,
-): Sub<ChangeSet[] | undefined> {
+): Sub<ChangeSet[]> {
   const a = yield ctx.prompt.point({
     message: 'Specify opposite corner',
     rubberBand: { from: first, box: true, selection: implied ? 'auto' : 'crossing' },
   });
-  if (a.kind !== 'point') return a.kind === 'enter' ? [] : undefined;
+  if (a.kind !== 'point') return [];
   return run.window(first, a.point, work);
 }
 
