@@ -100,7 +100,8 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
     await page.mouse.click(p.x, p.y);
   };
 
-  // An empty part of the plan with two lines across it, a above b.
+  // An empty part of the plan with two lines across it, a above b. Clicks keep to x ≤ 0.86:
+  // the navigation bar's flyout can sit over the canvas's right-hand edge.
   await type(page, 'Z', /^Specify corner of window/);
   await type(page, '1000000,1000000', 'Specify opposite corner:');
   await type(page, '1000160,1000100', 'Command:');
@@ -116,14 +117,14 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
   const [a, b] = (await added(page)) as [EntityId, EntityId];
   const onA = at(0.35, 0.3);
   const onB = at(0.35, 0.7);
-  await move(0.9, 0.5);
+  await move(0.86, 0.5);
   expect(await lit(page, onA)).toBe(0);
 
   // A window clicked at Command: (left to right) lights up a, which it holds wholly; b, which it
   // crosses, stays dark. Short of a's end, a goes dark again.
   await click(0.1, 0.2);
   await expect(prompt(page)).toHaveText('Specify opposite corner:');
-  await move(0.9, 0.5);
+  await move(0.86, 0.5);
   await expect.poll(() => lit(page, onA)).toBeGreaterThan(10);
   expect(await lit(page, onB)).toBe(0);
   await shot(page, '1-window-preview');
@@ -133,7 +134,7 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
   await expect(prompt(page)).toHaveText('Command:');
 
   // A crossing window (right to left) lights up both lines it crosses.
-  await click(0.9, 0.2);
+  await click(0.85, 0.2);
   // The band follows the cursor once the canvas has the corner prompt.
   await expect(prompt(page)).toHaveText('Specify opposite corner:');
   await move(0.5, 0.8);
@@ -145,7 +146,7 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
   // SELECTIONPREVIEWLIMIT 1: the crossing window takes two, so it previews none.
   await type(page, 'SELECTIONPREVIEWLIMIT', 'Enter new value for SELECTIONPREVIEWLIMIT <20000>:');
   await type(page, '1', 'Command:');
-  await click(0.9, 0.2);
+  await click(0.85, 0.2);
   // The band follows the cursor once the canvas has the corner prompt.
   await expect(prompt(page)).toHaveText('Specify opposite corner:');
   await move(0.5, 0.8);
@@ -187,10 +188,10 @@ test('window preview, PICKAUTO 2 and STRETCH by a crossing lasso', async ({ page
   const before = await ends(page, a);
   await type(page, 'STRETCH', 'Select objects:');
   const lasso: readonly (readonly [number, number])[] = [
-    [0.85, 0.22],
+    [0.84, 0.22],
     [0.72, 0.22],
     [0.72, 0.4],
-    [0.85, 0.4],
+    [0.84, 0.4],
   ];
   const first = at(...lasso[0]!);
   await page.mouse.move(first.x, first.y);
