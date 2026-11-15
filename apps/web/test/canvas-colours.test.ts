@@ -60,5 +60,13 @@ describe('crosshairs, AutoSnap and AutoTrack colours', () => {
     expect(svg).toContain('width="31" height="31"');
     expect(svg).toContain('stroke="#ff0000"');
     expect(svg).toContain('M0 15.5H31M15.5 0V31');
+    expect(svg).not.toContain('rotate(');
+  });
+
+  it('turns the crosshairs with the UCS and SNAPANG (M3-06 part 8), not by whole quarter turns', () => {
+    const svg = (angle: number) =>
+      decodeURIComponent(/data:image\/svg\+xml,(.*)"\)/.exec(crosshairCursor('#fff', angle))![1]!);
+    expect(svg(Math.PI / 6)).toContain('transform="rotate(-30 15.5 15.5)"');
+    expect(svg(Math.PI / 2)).not.toContain('rotate(');
   });
 });

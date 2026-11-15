@@ -69,14 +69,18 @@ const HALF = 15;
  * AutoCAD adds a pickbox at `Command:`, but swapping cursor images as prompts change cost Chrome
  * enough main-thread time to delay the next prompt behind typed keys (CI, PR #256).
  */
-export function crosshairCursor(color: string): string {
+export function crosshairCursor(color: string, angle = 0): string {
   const halo = isDarkColor(color) ? '#ffffff' : '#000000';
   const n = 2 * HALF + 1;
   const c = HALF + 0.5;
   const cross = `M0 ${c}H${n}M${c} 0V${n}`;
+  // Turned with the UCS and SNAPANG (M3-06 part 8): counter-clockwise on screen, whose Y runs
+  // down, so the other way in the SVG; the arms keep within the image, clipped at its edges.
+  const deg = Math.round(((-angle * 180) / Math.PI) * 1000) / 1000;
+  const turn = deg % 90 === 0 ? '' : ` transform="rotate(${deg} ${c} ${c})"`;
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}">` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${n}" height="${n}"><g${turn}>` +
     `<g stroke="${halo}" stroke-opacity="0.45" stroke-width="3"><path d="${cross}"/></g>` +
-    `<g stroke="${color}" stroke-width="1"><path d="${cross}"/></g></svg>`;
+    `<g stroke="${color}" stroke-width="1"><path d="${cross}"/></g></g></svg>`;
   return `url("data:image/svg+xml,${encodeURIComponent(svg)}") ${HALF} ${HALF}, crosshair`;
 }

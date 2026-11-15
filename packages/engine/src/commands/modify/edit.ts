@@ -27,6 +27,7 @@ import { formatNumber } from '../units';
 import type { Box } from '../../geom/bounds';
 import type { CommandContext, CommandDef } from '../command';
 import { regenerateDimensions } from './dimensions';
+import { currentUcs } from '../ucs';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
 
@@ -308,7 +309,8 @@ export function rotateCommand(): CommandDef {
           options: ['Copy', 'Reference'],
           default: { kind: 'angle', value: last },
           base,
-          drag: { kind: 'rotate', ids, base, reference: 0 },
+          // A picked rotation counts from the UCS's X axis (M3-06 part 8).
+          drag: { kind: 'rotate', ids, base, reference: currentUcs(ctx).angle },
         });
         if (a.kind === 'keyword' && a.keyword === 'Copy') {
           copying = !copying;

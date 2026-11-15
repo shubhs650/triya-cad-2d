@@ -7,8 +7,10 @@ import {
   DocumentModel,
   PromptBus,
   builtinCommands,
+  gripDimensionsOf,
   type BusEvent,
   type Entity,
+  type EntityGeometry,
 } from '../../src/index';
 import { MODEL_SPACE, sampleInit } from '../model/fixtures';
 
@@ -222,5 +224,72 @@ describe('grips', () => {
     await bus.selectAll();
     expect(bus.selection).toHaveLength(101);
     expect(grips.at(-1) ?? { ids: [] }).toMatchObject({ ids: [] });
+  });
+});
+
+describe('grip dimension input (M3-06 part 8, DYNDIGRIP)', () => {
+  it('says what Dynamic Input measures from while one object’s grip is stretched', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    await s.bus.pick({ x: 10.2, y: 0.1 }, { grip: 0.5 });
+    // A line's end: its length and angle from the other end.
+    expect(s.bus.prompt).toMatchObject({
+      gripDimensions: { grip: { x: 10, y: 0 }, anchor: { x: 0, y: 0 } },
+    });
+    await s.bus.cancel();
+  });
+
+  it('measures a circle’s quadrant from its centre, and nothing for shared grips', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    // 21: a circle at (5,5) r 2; its right quadrant (7,5).
+    await s.bus.pick({ x: 7.1, y: 5 }, { grip: 0.5 });
+    expect(s.bus.prompt).toMatchObject({
+      gripDimensions: { grip: { x: 7, y: 5 }, center: { x: 5, y: 5 } },
+    });
+    await s.bus.cancel();
+    // (0,0) is both lines' end: no one object to measure.
+    await s.bus.selectAll();
+    await s.bus.pick({ x: 0, y: 0 }, { grip: 0.5 });
+    expect(s.bus.prompt).not.toHaveProperty('gripDimensions');
+  });
+});
+
+describe('gripDimensionsOf', () => {
+  it('measures a polyline vertex from the one before, a first vertex from the next', () => {
+    const poly = {
+      kind: 'LWPOLYLINE',
+      closed: false,
+      vertices: [
+        { x: 0, y: 0, bulge: 0 },
+        { x: 5, y: 0, bulge: 0 },
+        { x: 5, y: 5, bulge: 0 },
+      ],
+    } as EntityGeometry;
+    expect(gripDimensionsOf(poly, { x: 5, y: 5 })).toEqual({
+      grip: { x: 5, y: 5 },
+      anchor: { x: 5, y: 0 },
+    });
+    expect(gripDimensionsOf(poly, { x: 0, y: 0 })?.anchor).toEqual({ x: 5, y: 0 });
+    // Closed: the first vertex counts from the last.
+    expect(
+      gripDimensionsOf({ ...poly, closed: true } as EntityGeometry, { x: 0, y: 0 })?.anchor,
+    ).toEqual({ x: 5, y: 5 });
+    // A segment's midpoint grip, a line's midpoint and a circle's centre measure nothing.
+    expect(gripDimensionsOf(poly, { x: 2.5, y: 0 })).toBeUndefined();
+    const line = { kind: 'LINE', start: { x: 0, y: 0 }, end: { x: 4, y: 0 } } as EntityGeometry;
+    expect(gripDimensionsOf(line, { x: 0, y: 0 })?.anchor).toEqual({ x: 4, y: 0 });
+    expect(gripDimensionsOf(line, { x: 2, y: 0 })).toBeUndefined();
+    const circle = { kind: 'CIRCLE', center: { x: 0, y: 0 }, radius: 1 } as EntityGeometry;
+    expect(gripDimensionsOf(circle, { x: 0, y: 0 })).toBeUndefined();
+    expect(gripDimensionsOf({ kind: 'POINT', position: { x: 0, y: 0 } }, { x: 0, y: 0 })).toBe(
+      undefined,
+    );
+    expect(
+      gripDimensionsOf({ ...poly, kind: 'POLYLINE', fit: true } as unknown as EntityGeometry, {
+        x: 5,
+        y: 5,
+      }),
+    ).toBeUndefined();
   });
 });

@@ -55,6 +55,7 @@ import {
   VIEWPORT_NON_RECT_CLIP,
   viewportLayers,
   viewportTransform,
+  ucsOf,
   type ViewportLayers,
   type Box,
   type ChangeSet,
@@ -461,6 +462,13 @@ function gripPalette(c: GripColors | undefined) {
     contour: hex(g.contour),
   };
 }
+
+/** DXF 90 bits 32 and 64 of a VIEWPORT: UCSICON on, and at the UCS origin (M3-06 part 8). */
+const VIEWPORT_UCS_ICON = 32;
+const VIEWPORT_UCS_ICON_AT_ORIGIN = 64;
+/** A viewport's UCS icon: its arms and its corner's distance from the frame, CSS pixels. */
+const UCS_ICON_ARM = 24;
+const UCS_ICON_MARGIN = 6;
 
 /**
  * A triangular grip centred on (x, y) pointing along the unit (ux, uy), in device pixels, its
@@ -1709,6 +1717,9 @@ export class Canvas2DRenderer implements Renderer {
     if (sheet) this.#drawSheet(ctx, sheet, view);
     this.#drawGrid(ctx, view);
     for (const vp of this.#viewportList()) this.#drawViewport(ctx, vp, view, reduced);
+    if (this.#style.viewportUcsIcons) {
+      for (const vp of this.#viewportList()) this.#drawViewportUcsIcon(ctx, vp, view);
+    }
     const entries = this.#visibleEntries(this.#block, view.box);
     this.#sceneEntries += entries.length;
     // MSLTSCALE 1 "scales linetypes displayed on the Model tab by the annotation scale". Read
@@ -1962,6 +1973,105 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   /** One viewport's view of model space, clipped to its frame. */
+  /**
+   * The UCS icon of a viewport (M3-06 part 8; AutoCAD 2024 Help, "UCSICON"): with its UCSICON bit
+   * (DXF 90 bit 32) on, model space's current UCS's X and Y arrows as the viewport turns them, at
+   * the UCS origin with bit 64 while it sits inside the frame with room, else in the frame's
+   * lower-left corner; a square at the corner while the UCS is the WCS.
+   */
+  #drawViewportUcsIcon(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame): void {
+    const flags = vp.geom.flags;
+    if ((flags & VIEWPORT_UCS_ICON) === 0) return;
+    const ucs = ucsOf(this.#model.header, false);
+    const t = vp.toPaper;
+    const k = view.m.a;
+    const device = (p: Vec2) => ({
+      x: view.m.e + k * (p.x - view.ox),
+      y: view.m.f - k * (p.y - view.oy),
+    });
+    // The axes' directions on the device (y down), from model space through the viewport.
+    const dir = (a: number) => {
+      const x = t.a * Math.cos(a) + t.c * Math.sin(a);
+      const y = t.b * Math.cos(a) + t.d * Math.sin(a);
+      const l = Math.hypot(x, y);
+      return l === 0 ? { x: 1, y: 0 } : { x: x / l, y: -y / l };
+    };
+    const ex = dir(ucs.angle);
+    const ey = dir(ucs.angle + Math.PI / 2);
+    const arm = UCS_ICON_ARM * this.#dpr;
+    const f = viewportFrame(vp.geom);
+    const lo = device({ x: f.minX, y: f.minY });
+    const hi = device({ x: f.maxX, y: f.maxY });
+    const room = arm + UCS_ICON_MARGIN * this.#dpr;
+    let corner = { x: lo.x + room, y: lo.y - room };
+    if (flags & VIEWPORT_UCS_ICON_AT_ORIGIN) {
+      const o = device({
+        x: t.a * ucs.origin.x + t.c * ucs.origin.y + t.e,
+        y: t.b * ucs.origin.x + t.d * ucs.origin.y + t.f,
+      });
+      if (o.x >= lo.x + room && o.x <= hi.x - room && o.y <= lo.y - room && o.y >= hi.y + room) {
+        corner = o;
+      }
+    }
+    const world = ucs.angle === 0 && ucs.origin.x === 0 && ucs.origin.y === 0;
+    const at = (e: Vec2, d: number) => ({ x: corner.x + e.x * d, y: corner.y + e.y * d });
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.beginPath();
+    ctx.rect(
+      Math.min(lo.x, hi.x),
+      Math.min(lo.y, hi.y),
+      Math.abs(hi.x - lo.x),
+      Math.abs(hi.y - lo.y),
+    );
+    ctx.clip();
+    ctx.strokeStyle = this.#style.foreground;
+    ctx.lineWidth = this.#dpr;
+    ctx.beginPath();
+    for (const [e, n] of [
+      [ex, ey],
+      [ey, ex],
+    ] as const) {
+      const tip = at(e, arm);
+      ctx.moveTo(corner.x, corner.y);
+      ctx.lineTo(tip.x, tip.y);
+      // The arrowhead: back from the tip and out to either side.
+      const head = 5 * this.#dpr;
+      for (const side of [1, -1]) {
+        ctx.moveTo(tip.x, tip.y);
+        ctx.lineTo(
+          tip.x - e.x * head + n.x * side * 3 * this.#dpr,
+          tip.y - e.y * head + n.y * side * 3 * this.#dpr,
+        );
+      }
+    }
+    if (world) {
+      const s = 6 * this.#dpr;
+      const a = at(ex, s);
+      const b = { x: a.x + ey.x * s, y: a.y + ey.y * s };
+      const c = at(ey, s);
+      ctx.moveTo(a.x, a.y);
+      ctx.lineTo(b.x, b.y);
+      ctx.lineTo(c.x, c.y);
+    }
+    // The letters as strokes, upright on the device, beyond each arrow (the context draws no
+    // text: the renderer's text is tessellated).
+    const h = 3.5 * this.#dpr;
+    const lx = at(ex, arm + 8 * this.#dpr);
+    const ly = at(ey, arm + 8 * this.#dpr);
+    ctx.moveTo(lx.x - h, lx.y - h);
+    ctx.lineTo(lx.x + h, lx.y + h);
+    ctx.moveTo(lx.x + h, lx.y - h);
+    ctx.lineTo(lx.x - h, lx.y + h);
+    ctx.moveTo(ly.x - h, ly.y - h);
+    ctx.lineTo(ly.x, ly.y);
+    ctx.lineTo(ly.x + h, ly.y - h);
+    ctx.moveTo(ly.x, ly.y);
+    ctx.lineTo(ly.x, ly.y + h);
+    ctx.stroke();
+    ctx.restore();
+  }
+
   #drawViewport(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame, reduced: boolean): void {
     const frame = viewportFrame(vp.geom);
     const shown = {

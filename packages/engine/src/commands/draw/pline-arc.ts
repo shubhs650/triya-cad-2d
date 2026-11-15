@@ -39,7 +39,7 @@ import { angleOf, fromAngle } from '../../geom/vec';
 import type { Handle } from '../../model/handle';
 import type { CommandContext } from '../command';
 import { CTRL_SWITCH, type Prompt, type PromptAnswer } from '../prompt';
-import { INVALID_ARC, switched } from './arc';
+import { INVALID_ARC, switched, turnOf } from './arc';
 import { chordEnd, sketchTolerance, type ArcSketch } from './sketch';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -299,7 +299,7 @@ async function* byCenter(
     if (a.kind !== 'keyword') return undefined;
     if (a.keyword === 'Angle') {
       return yield* last(
-        { shape: 'arcSC', by: 'angle', start, center },
+        { shape: 'arcSC', by: 'angle', start, center, ...turnOf(ctx) },
         ctx.prompt.angle({
           turn: true,
           message: `Specify included angle${CTRL_SWITCH}`,

@@ -5,7 +5,10 @@
 // fields show the cursor's values by their text alone, so moving the cursor renders nothing in
 // React (.claude/rules/ui.md). The Drafting Settings dialog's Dynamic Input tab (M3-06 part 4)
 // says which fields show and whether the prompt does (`DynSettings`); with neither, the tooltip
-// stays hidden and keys go to the command line.
+// stays hidden and keys go to the command line. Part 8: pointer input once typed in, at point
+// prompts or always (DYNPIVIS 2: the cursor's coordinates at `Command:` too), grip stretching's
+// dimension fields a window at a time (DYNDIVIS), the tips for Ctrl (DYNINFOTIPS), and the
+// Drafting Tooltip Appearance's colour, size and transparency.
 import { keywordShortcut, type Prompt, type Vec2 } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { cycleLasso, cycleOverlap, cycleSnap } from './canvas/registry';
@@ -26,9 +29,23 @@ import {
   dynTab,
   dynText,
   dynType,
+  dynTyped,
+  dynVisible,
   type DynState,
   type DynUnits,
 } from './dynamic-input';
+import { tooltipStyle } from './tooltip-appearance';
+
+/** What `Command:` shows with DYNPIVIS 2: the cursor's coordinates, as at a first point. */
+const IDLE_POINT: Prompt = { kind: 'point', message: '' };
+
+/** The tips for Ctrl a prompt of grip editing takes (DYNINFOTIPS; AutoCAD 2024 Help). */
+export function dynTips(prompt: Prompt): string[] {
+  const tips: string[] = [];
+  if (prompt.ctrlCycles) tips.push('Press Ctrl to cycle through the grip’s options');
+  if (prompt.ctrlCopies) tips.push('Hold Ctrl as you click to make copies');
+  return tips;
+}
 
 /** The tooltip sits this far right of and below the cursor, clear of the crosshairs. */
 const OFFSET = 18;
@@ -81,12 +98,25 @@ export function DynamicInput({
   const on = useSyncExternalStore(dynMode.subscribe, dynMode.get);
   const aids = useSyncExternalStore(drafting.subscribe, drafting.get);
   const { dynBits, dynPrompt, dynPiCoords, dynPiFormat } = aids;
+  const { dynPiVis, dynDiVis, dynDiGrip, dynInfoTips } = aids;
   // Rebuilt only when the tab's settings change, which starts the fields afresh.
   const o = useMemo(
-    () => dynSettings({ dynBits, dynPrompt, dynPiCoords, dynPiFormat }),
-    [dynBits, dynPrompt, dynPiCoords, dynPiFormat],
+    () =>
+      dynSettings({
+        dynBits,
+        dynPrompt,
+        dynPiCoords,
+        dynPiFormat,
+        dynPiVis,
+        dynDiVis,
+        dynDiGrip,
+        dynInfoTips,
+      }),
+    [dynBits, dynPrompt, dynPiCoords, dynPiFormat, dynPiVis, dynDiVis, dynDiGrip, dynInfoTips],
   );
   const [over, setOver] = useState(false);
+  /** Whether the cursor is over a layout's canvas, whose tooltip colour is its own. */
+  const [layout, setLayout] = useState(false);
   /**
    * Whether the cursor is over a drawing now. The keys read this rather than `over`: a key typed
    * right after the cursor leaves the drawing can come before React renders that, and would go
@@ -112,6 +142,8 @@ export function DynamicInput({
   const live = useRef<(HTMLSpanElement | null)[]>([]);
   const at = useRef({ x: 0, y: 0 });
   const shown = on && over && prompt !== undefined && state !== undefined && dynShows(state, o);
+  // DYNPIVIS 2: the cursor's coordinates at `Command:` as well.
+  const idle = on && over && prompt === undefined && o.pointer && o.pointerVisibility === 2;
 
   /** Keys typed since the last Enter: replayed on a prompt that arrives after them. */
   const typed = useRef<string[]>([]);
@@ -126,9 +158,11 @@ export function DynamicInput({
     if (el && props.current.state?.menu === undefined) {
       el.style.transform = `translate(${at.current.x + OFFSET}px, ${at.current.y + OFFSET}px)`;
     }
-    const { prompt: p, state: s } = props.current;
-    if (!p || !s) return;
-    const values = dynLive(s, p, props.current.cursor(), props.current.units);
+    const { prompt: p, state: s, o: settings } = props.current;
+    // At `Command:` (DYNPIVIS 2) the idle fields show the cursor's coordinates.
+    const [q, t] = p ? [p, s] : [IDLE_POINT, dynFor(IDLE_POINT, settings)];
+    if (!t) return;
+    const values = dynLive(t, q, props.current.cursor(), props.current.units);
     values.forEach((v, i) => {
       const span = live.current[i];
       if (span) span.textContent = v;
@@ -140,6 +174,9 @@ export function DynamicInput({
       at.current = { x: e.clientX, y: e.clientY };
       overNow.current = overCanvas(e.target);
       setOver(overNow.current);
+      if (overNow.current) {
+        setLayout((e.target as HTMLElement).dataset['space'] === 'layout');
+      }
       place();
     };
     window.addEventListener('pointermove', onMove);
@@ -260,10 +297,49 @@ export function DynamicInput({
     };
   }, [ahead]);
 
+  const style = tooltipStyle(aids.tooltip, layout);
+  if (idle) {
+    const fields = dynFor(IDLE_POINT, o).fields;
+    return (
+      <div
+        className="dyn-input"
+        ref={box}
+        role="status"
+        aria-label="Dynamic Input"
+        data-testid="dyn"
+        style={style}
+      >
+        <div className="dyn-fields">
+          {fields.map((f, i) => (
+            <span key={i} className="dyn-field" aria-label={f.label}>
+              <span
+                className="dyn-live"
+                ref={(el) => {
+                  live.current[i] = el;
+                }}
+              />
+            </span>
+          ))}
+        </div>
+      </div>
+    );
+  }
   if (!shown) return null;
+  // DYNPIVIS 0: pointer input's fields show once something is typed in them.
+  const fieldsHidden = state.kind === 'pointer' && o.pointerVisibility === 0 && !dynTyped(state);
+  if (fieldsHidden && !o.prompt) return null;
+  const visible = new Set(dynVisible(state));
+  const tips = o.infoTips ? dynTips(prompt) : [];
   const options = prompt.options ?? [];
   return (
-    <div className="dyn-input" ref={box} role="status" aria-label="Dynamic Input" data-testid="dyn">
+    <div
+      className="dyn-input"
+      ref={box}
+      role="status"
+      aria-label="Dynamic Input"
+      data-testid="dyn"
+      style={style}
+    >
       {o.prompt && (
         <div className="dyn-prompt">
           {message}
@@ -275,29 +351,36 @@ export function DynamicInput({
           )}
         </div>
       )}
-      <div className="dyn-fields">
-        {state.fields.map((f, i) => (
-          <span
-            key={`${state.kind}${i}`}
-            className="dyn-field"
-            data-active={i === state.active}
-            data-locked={f.locked}
-            aria-label={f.label || 'Value'}
-          >
-            {f.text !== '' ? (
-              <span className="dyn-typed">{f.text}</span>
-            ) : (
-              <span
-                className="dyn-live"
-                ref={(el) => {
-                  live.current[i] = el;
-                }}
-              />
-            )}
-            {f.locked && <span className="dyn-lock" aria-label="locked" />}
-          </span>
-        ))}
+      <div className="dyn-fields" hidden={fieldsHidden}>
+        {state.fields.map((f, i) =>
+          !visible.has(i) ? null : (
+            <span
+              key={`${state.kind}${i}`}
+              className="dyn-field"
+              data-active={i === state.active}
+              data-locked={f.locked}
+              aria-label={f.label || 'Value'}
+            >
+              {f.text !== '' ? (
+                <span className="dyn-typed">{f.text}</span>
+              ) : (
+                <span
+                  className="dyn-live"
+                  ref={(el) => {
+                    live.current[i] = el;
+                  }}
+                />
+              )}
+              {f.locked && <span className="dyn-lock" aria-label="locked" />}
+            </span>
+          ),
+        )}
       </div>
+      {tips.map((t) => (
+        <div key={t} className="dyn-tip">
+          {t}
+        </div>
+      ))}
       {state.menu !== undefined && (
         <ul className="dyn-menu" role="listbox" aria-label="Options">
           {options.map((option, i) => (

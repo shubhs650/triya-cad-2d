@@ -1397,6 +1397,19 @@ button {
   color: var(--accent);
 }
 
+/* DYNPIVIS 0 (M3-06 part 8): pointer input's fields wait for a key. */
+.dyn-fields[hidden] {
+  display: none;
+}
+
+/* DYNINFOTIPS (M3-06 part 8): the tips for Ctrl under the fields while grips are edited. */
+.dyn-tip {
+  margin-top: 2px;
+  font-family: system-ui, sans-serif;
+  font-size: 0.9em;
+  opacity: 0.8;
+}
+
 .dyn-menu {
   margin: 3px 0 0;
   padding: 0;
