@@ -105,14 +105,14 @@ export async function* arcSegment(
   };
   /** Asks until the answer makes an arc: the arc, or undefined at Esc. */
   const last = async function* (
-    sketch: ArcSketch | undefined,
+    sketch: ArcSketch,
     prompt: Prompt,
     make: (a: PromptAnswer) => BulgeArc | undefined,
   ): Sub<BulgeArc | undefined> {
     for (;;) {
       const a = yield ask(sketch, prompt);
       if (a.kind === 'enter') return undefined;
-      const arc = sketch ? switched(sketch, a, make(a)) : make(a);
+      const arc = switched(sketch, a, make(a));
       if (arc) return arc;
       ctx.message(INVALID_ARC);
     }
@@ -205,7 +205,7 @@ export async function* arcSegment(
 
 type Ask = (sketch: ArcSketch | undefined, prompt: Prompt) => Prompt;
 type Last = (
-  sketch: ArcSketch | undefined,
+  sketch: ArcSketch,
   prompt: Prompt,
   make: (a: PromptAnswer) => BulgeArc | undefined,
 ) => Sub<BulgeArc | undefined>;

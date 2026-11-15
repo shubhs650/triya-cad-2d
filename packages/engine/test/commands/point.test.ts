@@ -184,4 +184,11 @@ describe('DDPTYPE', () => {
     await bus.answer({ kind: 'dialog', action: 'ok', pointStyle: { mode: 98, size: 2 } });
     expect(model.header.get('$PDMODE')).toBe(98);
   });
+
+  it("opens on AutoCAD's initial values where the drawing has neither variable", async () => {
+    const { bus } = setup();
+    await bus.submit('DDPTYPE');
+    expect(bus.prompt).toMatchObject({ dialog: { type: 'pointstyle', mode: 0, size: 0 } });
+    await bus.cancel();
+  });
 });

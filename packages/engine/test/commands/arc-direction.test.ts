@@ -259,3 +259,20 @@ describe('DIST Arc with Ctrl held', () => {
     expect(bus.history.at(-1)).toBe(`Distance = ${(10 + 7.5 * Math.PI).toFixed(4)}`);
   });
 });
+
+describe('more Ctrl switches', () => {
+  it('PLINE Angle then CEnter, and a tangent arc already clockwise', async () => {
+    const { bus, vertices, ctrlPick } = setup();
+    await bus.script(['PL', '0,0', 'A', 'A', '90', 'CE']);
+    expect(bus.promptText).toBe(`Specify center point of arc${CTRL}:`);
+    // About 0,10, 90° clockwise from 0,0 ends at -10,10.
+    await ctrlPick(0, 10);
+    // Heading north at -10,10 (clockwise round 0,10), the end 0,20 is a clockwise quarter on
+    // to it; Ctrl: the other three quarters, counter-clockwise, leaving southwards.
+    await ctrlPick(0, 20);
+    await bus.submit('');
+    const v = vertices();
+    expect(v[0]).toEqual([0, 0, r6(-Math.tan(Math.PI / 8))]);
+    expect(v[1]).toEqual([-10, 10, r6(Math.tan((3 * Math.PI) / 8))]);
+  });
+});
