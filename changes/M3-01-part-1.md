@@ -1,0 +1,1 @@
+- M3-01 part 1 (#368): CIRCLE (Center with Radius or Diameter, 3P, 2P, Ttr) and ARC (3P, SCE, SCA, SCL, SEC, SEA, SED, SER, CSE, CSA, CSL and Continue), each dragged with the cursor while its last value is asked; LINE and ARC continue tangent from each other's last end.

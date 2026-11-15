@@ -1,7 +1,11 @@
 // The commands every document runs (M2-02 onwards): each document's engine session makes its
-// own registry, so a command's remembered state (LINE's last end point) is per drawing.
+// own registry, so a command's remembered state (LINE's last end point, CIRCLE's last radius) is
+// per drawing.
 import { CommandRegistry } from './command';
 import { dimensionCommands } from './draw/dimension';
+import { arcCommand } from './draw/arc';
+import { circleCommand } from './draw/circle';
+import { lastDrawn } from './draw/last-drawn';
 import { lineCommand } from './draw/line';
 import { MLEADER_COMMANDS } from './draw/mleader';
 import { revcloudCommand } from './draw/revcloud';
@@ -21,8 +25,12 @@ import { UNDO_COMMANDS } from './undo-commands';
 import { underlayLayersCommand } from './underlay-layers';
 
 export function builtinCommands(): CommandRegistry {
+  // LINE and ARC continue from the last line or arc either drew (M3-01).
+  const last = lastDrawn();
   return new CommandRegistry([
-    lineCommand(),
+    lineCommand(last),
+    arcCommand(last),
+    circleCommand(),
     textCommand(),
     mtextCommand(),
     textEditCommand(),
