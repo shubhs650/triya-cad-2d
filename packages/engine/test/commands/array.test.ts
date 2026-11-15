@@ -52,12 +52,20 @@ function drawing(header: [string, HeaderValue][] = []): DocumentInit {
   };
 }
 
-function setup(o: { header?: [string, HeaderValue][]; bounds?: boolean } = {}) {
+function setup(
+  o: { header?: [string, HeaderValue][]; bounds?: boolean; associativity?: number } = {},
+) {
   const model = DocumentModel.create(drawing(o.header));
   let picks: EntityId[] = [];
+  // ARRAYASSOCIATIVITY, which the app keeps: 0 (separate objects) unless a test asks for 1.
+  let associativity = o.associativity ?? 0;
   const view: ViewHost = {
     request: (r): Promise<ViewReply> => {
       if (r.op === 'pick') return Promise.resolve({ ok: true, ids: picks });
+      if (r.op === 'sysvar' && r.name === 'ARRAYASSOCIATIVITY') {
+        if (r.value !== undefined) associativity = r.value;
+        return Promise.resolve({ ok: true, value: associativity });
+      }
       if (r.op === 'bounds' && o.bounds) {
         return Promise.resolve({ ok: true, box: { minX: -1, minY: -1, maxX: 3, maxY: 1 } });
       }
@@ -94,7 +102,7 @@ function setup(o: { header?: [string, HeaderValue][]; bounds?: boolean } = {}) {
         return [g.start.x, g.start.y, g.end.x, g.end.y].map(r4);
       })
       .sort((a, b) => a[0]! - b[0]! || a[1]! - b[1]!);
-  return { model, bus, log, pick, rings, sticks };
+  return { model, bus, log, pick, rings, sticks, associativity: () => associativity };
 }
 
 /** Starts `command` with the source circle 30 selected. */
@@ -190,15 +198,14 @@ describe('ARRAYRECT', () => {
     expect(s.rings()).toEqual(grid([0, 4], [0, 3, 6]));
   });
 
-  it('says it makes separate objects when asked for an associative array, and Esc keeps the array', async () => {
+  it('keeps separate objects when ASsociative is No, and Esc keeps the array', async () => {
+    // Associative arrays: array-associative.test.ts (M3-11).
     const s = setup();
     await start(s, 'ARRAYRECT');
     await s.bus.script(['AS']);
     expect(s.bus.promptText).toBe('Create associative array [Yes/No] <No>:');
-    await s.bus.script(['Y']);
-    expect(s.log.at(-1)).toBe(
-      'Triya does not make associative arrays yet: the items are separate objects.',
-    );
+    await s.bus.script(['N']);
+    expect(s.associativity()).toBe(0);
     await s.bus.script(['B']);
     expect(s.bus.promptText).toBe('Specify base point <centroid>:');
     await s.bus.script(['']);

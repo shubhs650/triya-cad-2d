@@ -69,6 +69,11 @@ export interface DraftingState {
    * properties. AutoCAD keeps it per user, initially on.
    */
   readonly rolloverTips: boolean;
+  /**
+   * ARRAYASSOCIATIVITY (M3-11): ARRAY makes associative arrays. AutoCAD keeps it per user,
+   * initially on; ARRAY's ASsociative option sets it.
+   */
+  readonly arrayAssociativity: boolean;
 }
 
 /** AUTOSNAP 1: AutoSnap's marker is drawn at the snap point. */
@@ -131,6 +136,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   pickfirst: true,
   gripSize: 5,
   rolloverTips: true,
+  arrayAssociativity: true,
 };
 
 /**
