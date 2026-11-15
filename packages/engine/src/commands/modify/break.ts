@@ -34,6 +34,7 @@ import {
   type LengthenProblem,
 } from '../../edit/break';
 import { reshapeObject, revertChanges } from '../../edit/edit';
+import { isClosedCurve } from '../../edit/trim';
 import type { ChangeSet } from '../../model/changeset';
 import type { EntityId } from '../../model/entity-ids';
 import type { CommandContext, CommandDef } from '../command';
@@ -75,6 +76,7 @@ export function breakCommand(): CommandDef {
       const a = yield ctx.prompt.selection({
         message: 'Select object',
         single: true,
+        pickfirst: true,
         editable: true,
       });
       if (a.kind !== 'selection' || a.ids.length === 0) return;
@@ -119,6 +121,7 @@ export function breakAtPointCommand(): CommandDef {
       const a = yield ctx.prompt.selection({
         message: 'Select object',
         single: true,
+        pickfirst: true,
         editable: true,
       });
       if (a.kind !== 'selection' || a.ids.length === 0) return;
@@ -331,6 +334,10 @@ async function* changeObjects(ctx: CommandContext, s: LengthenSettings): Sub<voi
       continue;
     }
     const tol = toleranceFor(ctx.model, c);
+    if (isClosedCurve(c, tol)) {
+      ctx.message(LENGTHEN_PROBLEM.closed);
+      continue;
+    }
     const atEnd = movesEnd(c, closestPoint(c, a.point, tol).t);
     let target: number | LengthenProblem;
     if (s.mode === 'DYnamic') {

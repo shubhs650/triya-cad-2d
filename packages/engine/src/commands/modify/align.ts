@@ -71,7 +71,8 @@ export function alignCommand(): CommandDef {
           const k = yield ctx.prompt.keyword({
             message: 'Scale objects based on alignment points?',
             options: ['Yes', 'No'],
-            default: { kind: 'keyword', keyword: 'No' },
+            // Enter is No, which AutoCAD shows as <N>.
+            defaultLabel: 'N',
           });
           if (k.kind === 'keyword' && k.keyword === 'Yes') {
             t = followedBy(t, scaleAbout(p1!.d, distance(p1!.d, p2.d) / distance(p1!.s, p2.s)));

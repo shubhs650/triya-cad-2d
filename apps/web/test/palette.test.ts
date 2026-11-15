@@ -16,6 +16,8 @@ describe('palette search', () => {
     expect(commandItems(builtinCommands()).map((i) => i.id)).toEqual([
       'AIMLEADEREDITADD',
       'AIMLEADEREDITREMOVE',
+      // M3-02 part 4: BREAK, BREAKATPOINT, JOIN, EXPLODE, LENGTHEN, REVERSE and ALIGN.
+      'ALIGN',
       // M3-01: ARC and CIRCLE.
       'ARC',
       // M3-07: the inquiry commands.
@@ -26,6 +28,8 @@ describe('palette search', () => {
       'ARRAYPOLAR',
       'ARRAYRECT',
       'ATTEDIT',
+      'BREAK',
+      'BREAKATPOINT',
       // M3-02 part 3: CHAMFER and FILLET.
       'CHAMFER',
       'CIRCLE',
@@ -47,12 +51,15 @@ describe('palette search', () => {
       'DRAWORDER',
       'EATTEDIT',
       'ERASE',
+      'EXPLODE',
       'EXPORT',
       'EXPORTPDF',
       'EXTEND',
       'FILLET',
       'HATCHTOBACK',
       'ID',
+      'JOIN',
+      'LENGTHEN',
       'LINE',
       'MEASUREGEOM',
       'MIRROR',
@@ -79,6 +86,7 @@ describe('palette search', () => {
       'REGEN',
       'REGENALL',
       'REVCLOUD',
+      'REVERSE',
       'ROTATE',
       'SAVE',
       'SAVEAS',
