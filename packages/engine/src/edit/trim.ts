@@ -9,9 +9,11 @@
 //   spline) the stretch between the edges either side, going round. A circle is left as an arc,
 //   a closed ellipse as an elliptical arc, a closed polyline or spline as an open one, an xline
 //   as rays, a ray as a line and a ray.
-// - Objects that can be extended: lines, arcs, elliptical arcs and open 2D polylines (their end
-//   segment, straight or curved). The end nearer the pick goes on, along the line or round the
-//   circle or ellipse, to the nearest boundary edge it meets. An arc stops short of closing.
+// - Objects that can be extended: lines, arcs, elliptical arcs, open 2D polylines (their end
+//   segment, straight or curved), open splines and rays. The end nearer the pick goes on, along
+//   the line or round the circle or ellipse, to the nearest boundary edge it meets. An arc stops
+//   short of closing. A spline gains a straight piece tangent to its end, C1 at the join (AutoCAD
+//   Help, "About Modifying Splines"), and loses its fit data; a ray's base goes back to the edge.
 // - Cutting and boundary edges are the curves of lines, arcs, circles, ellipses, splines, rays,
 //   xlines and polylines (3D ones in plan). With EDGEMODE 1 (Edge Extend) an edge also cuts where
 //   it would if it went on: a line or ray as an xline, an arc as its circle, an elliptical arc as
@@ -33,10 +35,11 @@ import {
   polylineSegmentCount,
 } from '../geom/eval';
 import { intersect } from '../geom/intersect';
-import { findSpan } from '../geom/nurbs';
+import { arcLengthTable } from '../geom/arclength';
+import { findSpan, splineDerivative, splinePoint } from '../geom/nurbs';
 import type { Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
-import { distance, length, neg, normalize, sub } from '../geom/vec';
+import { add, distance, length, neg, normalize, scale, sub } from '../geom/vec';
 import type {
   ArcGeometry,
   CircleGeometry,
@@ -46,6 +49,7 @@ import type {
   LwPolylineGeometry,
   PolylineGeometry,
   PolylineVertex,
+  RayGeometry,
   SplineGeometry,
 } from '../model/types';
 import { cleanPolyline, offsetCurveOf, segmentWidths } from './offset';
@@ -251,19 +255,7 @@ export function subGeometry(
         t1 > t0
           ? subSpline(c, t0, t1)
           : joinSplines(subSpline(c, t0, d.end), subSpline(c, d.start, t1));
-      if (!s) return undefined;
-      const src = g as SplineGeometry;
-      const out: SplineGeometry = {
-        kind: 'SPLINE',
-        degree: s.degree,
-        knots: s.knots,
-        controlPoints: s.controlPoints,
-        ...(s.weights && { weights: s.weights }),
-        closed: false,
-        periodic: false,
-        ...(src.normal && { normal: src.normal }),
-      };
-      return out;
+      return s && openSpline(g as SplineGeometry, s);
     }
   }
 }
@@ -479,9 +471,88 @@ export function extendGeometry(
     }
     case 'LWPOLYLINE':
       return extendPolyline(g as LwPolylineGeometry | PolylineGeometry, c, edges, t, tol);
+    case 'RAY': {
+      // A ray has one end, its base: it goes back against its direction.
+      const to = reachAlong(c.base, neg(c.direction), edges, tol);
+      return to && { ...(g as RayGeometry), base: to };
+    }
+    case 'SPLINE': {
+      const s = clampedOf(c);
+      const atEnd = splineLengthTo(s, t) > arcLengthTable(s).length / 2;
+      const { point, direction } = splineEnd(s, atEnd);
+      const to = reachAlong(point, direction, edges, tol);
+      return to && openSpline(g as SplineGeometry, extendSpline(s, atEnd, distance(point, to)));
+    }
     default:
       return undefined;
   }
+}
+
+/** A spline's part as an open SPLINE object of `src`'s: control vertices only, no fit data. */
+export function openSpline(src: Pick<SplineGeometry, 'normal'>, s: Spline): SplineGeometry {
+  return {
+    kind: 'SPLINE',
+    degree: s.degree,
+    knots: s.knots,
+    controlPoints: s.controlPoints,
+    ...(s.weights && { weights: s.weights }),
+    closed: false,
+    periodic: false,
+    ...(src.normal && { normal: src.normal }),
+  };
+}
+
+/** `s` as a NURBS clamped at both ends (the same curve). */
+function clampedOf(s: Spline): Spline {
+  const d = domain(s);
+  return subSpline(s, d.start, d.end)!;
+}
+
+/** The length of the clamped spline `s` from its start to parameter `t`. */
+function splineLengthTo(s: Spline, t: number): number {
+  const part = subSpline(s, domain(s).start, t);
+  return part ? arcLengthTable(part).length : 0;
+}
+
+/**
+ * A spline's end (or start) point, the direction leaving the curve there and the speed
+ * (|C'|) it is traced at. Where the end control points coincide (C' = 0) the curve leaves along
+ * the first distinct control point's direction.
+ */
+export function splineEnd(
+  s: Spline,
+  atEnd: boolean,
+): { point: Vec2; direction: Vec2; speed: number } {
+  const d = domain(s);
+  const u = atEnd ? d.end : d.start;
+  const point = splinePoint(s, u);
+  const der = splineDerivative(s, u);
+  const speed = length(der);
+  const sign = atEnd ? 1 : -1;
+  if (speed > 0) return { point, direction: scale(der, sign / speed), speed };
+  const cps = atEnd ? [...s.controlPoints].reverse() : s.controlPoints;
+  const other = cps.find((q) => distance(q, point) > 0) ?? point;
+  const away = sub(point, other);
+  return { point, direction: scale(away, 1 / length(away)), speed: 1 };
+}
+
+/**
+ * The clamped spline `s` lengthened by `more` at its end (or start) with a straight piece along
+ * the tangent there, as one NURBS of its degree; the piece's knot span makes the join C1.
+ */
+export function extendSpline(s: Spline, atEnd: boolean, more: number): Spline {
+  const { point, direction, speed } = splineEnd(s, atEnd);
+  const far = add(point, scale(direction, more));
+  const [a, b] = atEnd ? [point, far] : [far, point];
+  const p = s.degree;
+  const span = more / speed;
+  const piece: Spline = {
+    kind: 'SPLINE',
+    degree: p,
+    knots: [...Array<number>(p + 1).fill(0), ...Array<number>(p + 1).fill(span)],
+    controlPoints: Array.from({ length: p + 1 }, (_, i) => add(a, scale(sub(b, a), i / p))),
+  };
+  return (atEnd ? joinSplines(s, piece) : joinSplines(piece, s))!;
 }
 
 /** The nearest point beyond `from`, going in direction `d`, where an edge is met. */

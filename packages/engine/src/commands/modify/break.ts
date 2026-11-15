@@ -181,7 +181,6 @@ const LENGTHEN_PROBLEM: Record<LengthenProblem, string> = {
   closed: 'Cannot lengthen a closed object.',
   invalid: 'The new length must be more than zero.',
   'too long': 'Arc cannot be full 360 degrees.',
-  spline: 'A spline can only be shortened.',
   'not an arc': 'Only an arc has an included angle.',
 };
 

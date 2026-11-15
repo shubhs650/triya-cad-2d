@@ -42,6 +42,8 @@ function joinedMessage(j: Joined, kinds: readonly string[]): string {
       return kinds[0] === 'LWPOLYLINE' || kinds[0] === 'POLYLINE'
         ? `${plural(n - 1, 'segment')} added to polyline`
         : `${n} objects converted to 1 polyline`;
+    case 'spline':
+      return `${n} objects converted to 1 spline`;
   }
 }
 

@@ -1,0 +1,1 @@
+- M3-12 part 2 (#407): EXTEND and LENGTHEN work on splines, adding a straight piece tangent to the spline's end as AutoCAD does, and EXTEND moves a ray's base back to a boundary; JOIN joins splines with the lines, arcs, elliptical arcs, polylines and splines that meet them into one spline, and SPLINEDIT Join takes elliptical arcs.

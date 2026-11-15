@@ -9,13 +9,20 @@
 //   circle to an arc (counterclockwise from it), elliptical arcs of its ellipse to an elliptical
 //   arc, and the chain through it to a polyline. Without one ("multiple objects to join at
 //   once") every group that can join does, and arcs leave out their largest gap.
-// - Closed objects, xlines, rays, splines, 3D polylines and everything else are not joined
+// - A source spline takes every line, arc, elliptical arc, open 2D polyline and open spline
+//   that meets it end to end (M3-12 part 2): the result is one spline, C0 at the joins, closed
+//   when the chain comes back to its start. Without a source, splines and elliptical arcs join
+//   whatever meets them the same way, into a spline.
+// - Closed objects, xlines, rays, 3D polylines, helixes and everything else are not joined
 //   ("discarded from the operation"); nor are objects off the plan or at another elevation from
-//   the chain they meet.
+//   the chain they meet (a spline is at elevation 0).
 //
-// The order of work, lines then arcs then elliptical arcs then chains, means collinear lines
-// that also meet other objects end to end are first made one line, which then chains.
+// The order of work, lines then arcs then elliptical arcs then chains then splines, means
+// collinear lines that also meet other objects end to end are first made one line, which then
+// chains, and a chain of lines and arcs meeting a spline is first a polyline, which the spline
+// then takes.
 import { ccwSweep, normalizeAngle, TAU } from '../geom/angle';
+import type { Spline } from '../geom/curves';
 import { ellipseSweep, polylineSegmentCount } from '../geom/eval';
 import type { Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
@@ -29,8 +36,11 @@ import type {
   LwPolylineGeometry,
   PolylineGeometry,
   PolylineVertex,
+  SplineGeometry,
 } from '../model/types';
 import { cleanPolyline, segmentWidths } from './offset';
+import { endsOf, joinableSpline, joinCurves, reversedSpline } from './splinedit';
+import { openSpline } from './trim';
 
 export interface JoinPart {
   readonly id: EntityId;
@@ -42,7 +52,7 @@ export interface Joined {
   readonly keep: EntityId;
   readonly parts: readonly EntityId[];
   readonly geom: EntityGeometry;
-  readonly made: 'line' | 'arc' | 'circle' | 'ellipse' | 'polyline';
+  readonly made: 'line' | 'arc' | 'circle' | 'ellipse' | 'polyline' | 'spline';
 }
 
 export interface JoinResult {
@@ -54,7 +64,7 @@ export interface JoinResult {
 const isPlan = (g: { normal?: { x: number; y: number; z: number } }): boolean =>
   !g.normal || (g.normal.x === 0 && g.normal.y === 0 && g.normal.z > 0);
 
-/** What JOIN can take: lines, arcs, elliptical arcs and open 2D polylines, in plan. */
+/** What JOIN can take: lines, arcs, elliptical arcs, open 2D polylines and open splines, in plan. */
 export function joinable(g: EntityGeometry): boolean {
   switch (g.kind) {
     case 'LINE':
@@ -67,6 +77,8 @@ export function joinable(g: EntityGeometry): boolean {
       return isPlan(g) && !g.closed && polylineSegmentCount(cleanPolyline(g).curve) > 0;
     case 'POLYLINE':
       return isPlan(g) && !g.is3d && !g.closed && polylineSegmentCount(cleanPolyline(g).curve) > 0;
+    case 'SPLINE':
+      return isPlan(g) && !g.closed;
     default:
       return false;
   }
@@ -107,6 +119,7 @@ export function joinObjects(
   if (!src || kind === 'ELLIPSE') items = joinEllipses(items, src, tol);
   // A line source takes only collinear lines, an arc source only arcs of its circle.
   if (!src || kind === 'LWPOLYLINE' || kind === 'POLYLINE') items = chain(items, src, tol);
+  if (!src || kind === 'SPLINE') items = splineChain(items, src, tol);
   const joined = items
     .filter((it) => it.parts.length > 1 && it.made)
     .filter((it) => !src || it.keep === src.keep)
@@ -466,4 +479,68 @@ function polylineOf(base: EntityGeometry, path: readonly V[], closed: boolean): 
     ...(planar.normal !== undefined && { normal: planar.normal }),
   };
   return out;
+}
+
+// ── Splines ─────────────────────────────────────────────────────────────────────────────────
+
+/** Elevation 0 in plan: what can be part of a spline (which has no elevation). */
+const onSplinePlane = (g: EntityGeometry): boolean =>
+  isPlan(g as { normal?: { x: number; y: number; z: number } }) &&
+  ((g as { elevation?: number }).elevation ?? 0) === 0;
+
+/**
+ * Each spline or elliptical arc (or only the source) with everything meeting it end to end
+ * joined on, chained in turn, as one spline. The first spline of the group in selection order
+ * keeps itself, else the first object.
+ */
+function splineChain(items: Item[], src: Item | undefined, tol: Tolerance): Item[] {
+  const near = (a: Vec2, b: Vec2) => distance(a, b) <= tol.linear;
+  const curves = new Map<Item, Spline>();
+  for (const it of items) {
+    const s = onSplinePlane(it.geom) ? joinableSpline(it.geom) : undefined;
+    // A spline whose ends meet is closed all the same.
+    if (s && !near(...endsOf(s))) curves.set(it, s);
+  }
+  const seeds = items.filter(
+    (it) =>
+      curves.has(it) &&
+      (src ? it === src : it.geom.kind === 'SPLINE' || it.geom.kind === 'ELLIPSE'),
+  );
+  const out: Item[] = [];
+  const taken = new Set<Item>();
+  for (const it of seeds) {
+    if (taken.has(it)) continue;
+    taken.add(it);
+    const group = [it];
+    let curve = curves.get(it)!;
+    for (let found = true; found;) {
+      found = false;
+      const [head, tail] = endsOf(curve);
+      if (group.length > 1 && near(head, tail)) break;
+      for (const [o, s] of curves) {
+        if (taken.has(o)) continue;
+        const [a, b] = endsOf(s);
+        if (near(a, tail)) curve = joinCurves(curve, s);
+        else if (near(b, tail)) curve = joinCurves(curve, reversedSpline(s));
+        else if (near(b, head)) curve = joinCurves(s, curve);
+        else if (near(a, head)) curve = joinCurves(reversedSpline(s), curve);
+        else continue;
+        taken.add(o);
+        group.push(o);
+        found = true;
+        break;
+      }
+    }
+    if (group.length < 2) {
+      taken.delete(it);
+      continue;
+    }
+    const order = [...group].sort(byFirst(items));
+    const keeper = order.find((o) => o.geom.kind === 'SPLINE') ?? order[0]!;
+    const [head, tail] = endsOf(curve);
+    const base = keeper.geom.kind === 'SPLINE' ? keeper.geom : {};
+    const geom: SplineGeometry = { ...openSpline(base, curve), closed: near(head, tail) };
+    out.push({ keep: keeper.keep, parts: order.flatMap((o) => o.parts), geom, made: 'spline' });
+  }
+  return [...out, ...items.filter((it) => !taken.has(it))].sort(byFirst(items));
 }
