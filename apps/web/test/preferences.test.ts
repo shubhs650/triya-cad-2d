@@ -100,6 +100,11 @@ describe('preferences', () => {
       qpDistance: 50,
       qpCollapse: true,
       qpRows: 3,
+      // The Selection Cycling tab's list place (M3-04 part 7).
+      scLocation: 0,
+      scQuadrant: 'top-right',
+      scDistance: 25,
+      scTitleBar: true,
       // M3-12: the modify commands' options AutoCAD keeps per user, at its initial values.
       modifyOptions: {
         OFFSETERASE: 0,
@@ -161,9 +166,17 @@ describe('preferences', () => {
         qpDistance: 120,
         qpCollapse: false,
         qpRows: 5,
+        scLocation: 1,
+        scQuadrant: 'bottom-right',
+        scDistance: 0,
+        scTitleBar: false,
       },
     }).drafting;
     expect(kept).toMatchObject({
+      scLocation: 1,
+      scQuadrant: 'bottom-right',
+      scDistance: 0,
+      scTitleBar: false,
       selectSimilarMode: 7,
       selectionCycling: -2,
       pickStyle: 3,
@@ -213,9 +226,17 @@ describe('preferences', () => {
         qpDistance: 'far',
         qpCollapse: 'yes',
         qpRows: 99,
+        scLocation: 2,
+        scQuadrant: 'left',
+        scDistance: 500,
+        scTitleBar: 'no',
       },
     }).drafting;
     expect(bad).toMatchObject({
+      scLocation: 0,
+      scQuadrant: 'top-right',
+      scDistance: 400,
+      scTitleBar: true,
       selectSimilarMode: 130,
       selectionCycling: 0,
       pickStyle: 1,

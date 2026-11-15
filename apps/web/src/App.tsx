@@ -55,6 +55,8 @@ import {
 } from './canvas/view-host';
 import { selectionList } from './selection-list';
 import { SelectionList } from './SelectionList';
+import { CyclingBadge } from './CyclingBadge';
+import { cyclingBadge } from './cycling-badge';
 import { modelTiles, type ModelTile } from './canvas/views';
 import { CommandLine } from './CommandLine';
 import { TextEditor } from './TextEditor';
@@ -1737,6 +1739,7 @@ export function App() {
               }}
             />
           )}
+          {active && <CyclingBadge doc={active.id} />}
           <PlotPreview active={state.active} />
           {state.docs.length === 0 && (
             <div className="start" data-testid="start">
@@ -2148,6 +2151,8 @@ function ViewportCanvas({
         }
       },
       onLasso: (kind) => commandLines.lasso(id, kind && lassoPrompt(kind)),
+      // Selection cycling's badge by the cursor over overlapping objects (M3-04 part 7).
+      onOverlap: (at) => cyclingBadge.set(id, at),
       // A view changed is an undo step of the drawing's (M2-47 part 4); U finds this canvas
       // again by the name given here (`viewContext`'s `viewport`).
       onViewStep: (label, view) =>

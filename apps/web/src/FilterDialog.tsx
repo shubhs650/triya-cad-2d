@@ -3,7 +3,10 @@
 // lines on top; Select Filter (an object type, a property or a logical operator, with its X, Y
 // and Z operators and values), Add to List, Substitute, Add Selected Object, Edit Item, Delete,
 // Clear List; Named Filters (Current, Save As, Delete Current Filter List); Apply and Cancel.
-// A name property's value offers the drawing's names (AutoCAD's Select… list) to type or pick.
+// A name property's value offers the drawing's names to type or pick, and Select… (M3-04 part 7)
+// opens AutoCAD's list of them to choose one or more from (a comma-separated value, which the
+// filter matches as a wildcard list), or the Select Color dialog for Color (index colours only:
+// the filter compares ACI numbers, 256 ByLayer, 0 ByBlock).
 import {
   NAME_KEYS,
   NUMBER_KEYS,
@@ -17,9 +20,11 @@ import {
   type FilterNameKey,
   type FilterOperator,
   type FilterTest,
+  type Color,
 } from '@triya/engine';
 import { useState } from 'react';
 import { Modal } from './AttributeDialogs';
+import { SelectColorDialog } from './SelectColorDialog';
 import { engines } from './engine/registry';
 import { UNNAMED, selectionFilters, validName } from './selection-filters';
 
@@ -83,6 +88,81 @@ export function entryOf(item: FilterItem): Entry {
   return { entry: item.key, op: '=', value: '', xyz: [t(p.x), t(p.y), t(p.z)] };
 }
 
+/** What Select… opens for a Select Filter entry: the drawing's names, Select Color, or none. */
+export function selectsFrom(entry: string): 'names' | 'color' | undefined {
+  if (entry === 'Color') return 'color';
+  if (has(NAME_KEYS, entry) && entry !== 'Text Value') return 'names';
+  return undefined;
+}
+
+/** The drawing's `names` a value lists (comma-separated, any case), for the list to open on. */
+export function listedNames(value: string, names: readonly string[]): string[] {
+  const listed = new Set(value.split(',').map((v) => v.trim().toUpperCase()));
+  return names.filter((n) => listed.has(n.toUpperCase()));
+}
+
+/** A colour as the filter compares it (DXF 62): its ACI number, 256 ByLayer, 0 ByBlock. */
+export function filterColor(c: Color): number | undefined {
+  if (c.kind === 'byLayer') return 256;
+  if (c.kind === 'byBlock') return 0;
+  return c.kind === 'aci' ? c.index : undefined;
+}
+
+/** A colour typed as the filter's value, for Select Color to open on. */
+function colorOfValue(value: string): Color | undefined {
+  const n = Number(value.trim());
+  if (value.trim() === '' || !Number.isInteger(n)) return undefined;
+  if (n === 256) return { kind: 'byLayer' };
+  if (n === 0) return { kind: 'byBlock' };
+  return n >= 1 && n <= 255 ? { kind: 'aci', index: n } : undefined;
+}
+
+/**
+ * Select…'s list for a name property (AutoCAD's "Select Layer(s)" and the like): the drawing's
+ * names, several chosen with Ctrl or Shift; OK gives them back.
+ */
+function NamesDialog({
+  title,
+  names,
+  initial,
+  onOk,
+  onCancel,
+}: {
+  title: string;
+  names: readonly string[];
+  initial: readonly string[];
+  onOk: (chosen: string[]) => void;
+  onCancel: () => void;
+}) {
+  const [chosen, setChosen] = useState<readonly string[]>(initial);
+  const ok = () => chosen.length > 0 && onOk([...chosen]);
+  return (
+    <Modal label={title} className="filter-names" onOk={ok} onCancel={onCancel}>
+      <select
+        multiple
+        aria-label={title}
+        size={Math.min(Math.max(names.length, 4), 12)}
+        value={[...chosen]}
+        onChange={(e) => setChosen([...e.currentTarget.selectedOptions].map((o) => o.value))}
+      >
+        {names.map((n) => (
+          <option key={n} value={n}>
+            {n}
+          </option>
+        ))}
+      </select>
+      <div className="cad-dialog-buttons">
+        <button type="button" disabled={chosen.length === 0} onClick={ok}>
+          OK
+        </button>
+        <button type="button" onClick={onCancel}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
+  );
+}
+
 export function FilterDialog({ doc, request }: { doc: number; request: Request }) {
   const [name, setName] = useState(request.name ?? selectionFilters.current);
   const [list, setList] = useState<readonly FilterItem[]>(
@@ -96,6 +176,7 @@ export function FilterDialog({ doc, request }: { doc: number; request: Request }
     xyz: FRESH_XYZ,
   });
   const [saveAs, setSaveAs] = useState('');
+  const [choosing, setChoosing] = useState<'names' | 'color' | undefined>();
   const [named, setNamed] = useState(selectionFilters.named);
   const item = itemOf(entry);
   const problem = filterProblem(list);
@@ -114,6 +195,7 @@ export function FilterDialog({ doc, request }: { doc: number; request: Request }
   const isType = entry.entry.startsWith('type:');
   const ops = isName || isType ? OPERATORS.slice(0, 2) : OPERATORS;
   const names = isName ? request.names[entry.entry as FilterNameKey] : [];
+  const selects = selectsFrom(entry.entry);
   return (
     <Modal
       label="Object Selection Filters"
@@ -164,6 +246,14 @@ export function FilterDialog({ doc, request }: { doc: number; request: Request }
               ))}
             </optgroup>
           </select>
+          <button
+            type="button"
+            className="filter-select"
+            disabled={!selects || (selects === 'names' && names.length === 0)}
+            onClick={() => setChoosing(selects)}
+          >
+            Select...
+          </button>
           {(['X', 'Y', 'Z'] as const).map((c, n) => {
             const shown = point || n === 0;
             const [op, value] = point ? entry.xyz[n]! : [entry.op, entry.value];
@@ -303,6 +393,32 @@ export function FilterDialog({ doc, request }: { doc: number; request: Request }
         </button>
       </div>
       {problem && <p className="dsettings-error">{problem}</p>}
+      {choosing === 'names' && (
+        <NamesDialog
+          title={`Select ${entry.entry}(s)`}
+          names={names}
+          initial={listedNames(entry.value, names)}
+          onOk={(chosen) => {
+            setChoosing(undefined);
+            setEntry({ ...entry, value: chosen.join(',') });
+          }}
+          onCancel={() => setChoosing(undefined)}
+        />
+      )}
+      {choosing === 'color' && (
+        <SelectColorDialog
+          initial={colorOfValue(entry.value)}
+          books={[]}
+          trueColors={false}
+          indexOnly="The filter compares index colors only."
+          onOk={(c) => {
+            setChoosing(undefined);
+            const value = filterColor(c);
+            if (value !== undefined) setEntry({ ...entry, value: String(value) });
+          }}
+          onCancel={() => setChoosing(undefined)}
+        />
+      )}
       <div className="cad-dialog-buttons">
         <button type="button" disabled={problem !== undefined} onClick={() => close('apply')}>
           Apply

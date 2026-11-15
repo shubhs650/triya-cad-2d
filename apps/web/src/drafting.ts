@@ -183,6 +183,16 @@ export interface DraftingState {
   readonly qpCollapse: boolean;
   readonly qpRows: number;
   /**
+   * The Drafting Settings dialog's Selection Cycling tab (M3-04 part 7; AutoCAD 2024 Help,
+   * "Selection Cycling Tab (Drafting Settings Dialog Box)"), kept per user: where the Selection
+   * list opens, by the cursor (0: its Quadrant, Distance in pixels away) or Static (1: where it
+   * was dragged), and whether it shows its title bar.
+   */
+  readonly scLocation: 0 | 1;
+  readonly scQuadrant: QpQuadrant;
+  readonly scDistance: number;
+  readonly scTitleBar: boolean;
+  /**
    * The modify commands' options AutoCAD keeps per user (M3-12, `MODIFY_OPTIONS`): OFFSETERASE,
    * OFFSETGAPTYPE, TRIMEXTENDMODE, EDGEMODE, PROJMODE, TRIMMODE and PEDITACCEPT, by name.
    */
@@ -433,6 +443,12 @@ export const INITIAL_DRAFTING: DraftingState = {
   qpDistance: 50,
   qpCollapse: true,
   qpRows: 3,
+  // Help states no initial place for the Selection list: Triya takes top right, 25 pixels,
+  // nearer than Quick Properties' 50 as the list is small and read at once.
+  scLocation: 0,
+  scQuadrant: 'top-right',
+  scDistance: 25,
+  scTitleBar: true,
   modifyOptions: INITIAL_MODIFY_OPTIONS,
   sessionOptions: INITIAL_SESSION_OPTIONS,
 };

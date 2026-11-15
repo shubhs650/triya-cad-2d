@@ -99,6 +99,10 @@ export type DraftingPreferences = Pick<
   | 'qpDistance'
   | 'qpCollapse'
   | 'qpRows'
+  | 'scLocation'
+  | 'scQuadrant'
+  | 'scDistance'
+  | 'scTitleBar'
   | 'modifyOptions'
 >;
 
@@ -182,6 +186,10 @@ export const DEFAULT_PREFERENCES: Preferences = {
     qpDistance: 50,
     qpCollapse: true,
     qpRows: 3,
+    scLocation: 0,
+    scQuadrant: 'top-right',
+    scDistance: 25,
+    scTitleBar: true,
     modifyOptions: INITIAL_MODIFY_OPTIONS,
   },
   filters: {},
@@ -245,6 +253,7 @@ export function normalizePreferences(raw: unknown): Preferences {
   const polarAngle = k['polarAngle'];
   const polarAddAngles = k['polarAddAngles'];
   const qpQuadrant = k['qpQuadrant'];
+  const scQuadrant = k['scQuadrant'];
   return {
     theme: theme === 'light' || theme === 'dark' || theme === 'system' ? theme : d.theme,
     canvas: {
@@ -344,6 +353,12 @@ export function normalizePreferences(raw: unknown): Preferences {
       qpDistance: int(k['qpDistance'], QP_DISTANCES, d.drafting.qpDistance),
       qpCollapse: bool(k['qpCollapse'], d.drafting.qpCollapse),
       qpRows: int(k['qpRows'], QP_ROW_COUNTS, d.drafting.qpRows),
+      scLocation: within(k['scLocation'], { min: 0, max: 1 }, d.drafting.scLocation) as 0 | 1,
+      scQuadrant: QP_QUADRANTS.some((q) => q.value === scQuadrant)
+        ? (scQuadrant as QpQuadrant)
+        : d.drafting.scQuadrant,
+      scDistance: int(k['scDistance'], QP_DISTANCES, d.drafting.scDistance),
+      scTitleBar: bool(k['scTitleBar'], d.drafting.scTitleBar),
       modifyOptions: modifyOptions(k['modifyOptions']),
     },
   };
@@ -444,6 +459,10 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     qpDistance: s.qpDistance,
     qpCollapse: s.qpCollapse,
     qpRows: s.qpRows,
+    scLocation: s.scLocation,
+    scQuadrant: s.scQuadrant,
+    scDistance: s.scDistance,
+    scTitleBar: s.scTitleBar,
     modifyOptions: s.modifyOptions,
   };
 }

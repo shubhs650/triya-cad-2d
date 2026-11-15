@@ -57,6 +57,8 @@ import {
   type Box,
   type ChangeSet,
   type EntityId,
+  PREVIEW_AT_COMMAND,
+  PREVIEW_SELECTING,
   type GroupGrip,
   type Handle,
   type HeaderValue,
@@ -256,6 +258,11 @@ export interface CanvasHooks {
    */
   readonly onRest?: (at: RestAt | undefined) => void;
   /**
+   * Selection cycling's badge (M3-04 part 7, SELECTIONCYCLING 1 or 2): the cursor, in window
+   * pixels, rests over overlapping objects it could select; undefined when it no longer does.
+   */
+  readonly onOverlap?: (at: { readonly x: number; readonly y: number } | undefined) => void;
+  /**
    * The drawing waits at `Command:` with no command running, where SELECTIONPREVIEW's bit 1
    * previews the object under the pickbox (M3-04 part 5).
    */
@@ -414,6 +421,17 @@ export class CanvasController {
   #previewing = false;
   /** A selection window or lasso being dragged previews what it takes (M3-04 part 6). */
   #areaPreviewing = false;
+  /**
+   * Shift+Space over overlapping objects (M3-04 part 7): where the cursor was when it was first
+   * pressed, CSS pixels on the canvas, and how many times; the next pick there takes the object
+   * that many steps on from the nearest.
+   */
+  #overlapStep:
+    { readonly at: { readonly x: number; readonly y: number }; step: number } | undefined;
+  /** The badge's latest hit test, so an older answer arriving late is dropped. */
+  #badgeAsked = 0;
+  /** The badge shows. */
+  #badgeShown = false;
   /** Where the cursor rests, for rollover tooltips (M2-35 part 21). */
   readonly #rest = new RestWatch<{
     readonly x: number;
@@ -1038,9 +1056,19 @@ export class CanvasController {
     // A window being dragged previews what it takes instead (`#areaPreview`).
     if (this.#areaPreviewing) return;
     const d = this.#drafting;
+    const atCommand = this.#hooks.atCommand?.() ?? false;
+    // Where a pick would select (either of SELECTIONPREVIEW's places), whatever previews.
+    const selecting =
+      screen && previewsSelection(PREVIEW_AT_COMMAND | PREVIEW_SELECTING, this.#asked, atCommand);
+    // Shift+Space's steps last while the cursor stays within the pickbox of where they began.
+    const step = this.#overlapStep;
+    if (step && (!selecting || Math.hypot(screen.x - step.at.x, screen.y - step.at.y) > d.pickbox))
+      this.#overlapStep = undefined;
+    const cycle = this.#overlapStep?.step;
+    this.#overlapBadge(selecting && d.selectionCycling > 0 ? screen : undefined);
     const on =
-      screen &&
-      previewsSelection(d.selectionPreview, this.#asked, this.#hooks.atCommand?.() ?? false);
+      selecting &&
+      (cycle !== undefined || previewsSelection(d.selectionPreview, this.#asked, atCommand));
     if (!on && !this.#previewing) return;
     this.#previewing = !!on;
     this.#host.setSelectionPreview(
@@ -1050,10 +1078,53 @@ export class CanvasController {
             aperture: d.pickbox,
             filter: d.previewFilter,
             groups: (d.pickStyle & 1) !== 0,
+            ...(cycle !== undefined && { cycle }),
           }
         : undefined,
     );
     this.#requestFrame();
+  }
+
+  /**
+   * Selection cycling's badge (M3-04 part 7; AutoCAD 2024 Help, "To Select Overlapping or Close
+   * Objects": "the selection cycling badge displays" where objects overlap): shown while more
+   * than one object lies under the pickbox at `screen`; undefined hides it.
+   */
+  #overlapBadge(screen: { readonly x: number; readonly y: number } | undefined): void {
+    const asked = ++this.#badgeAsked;
+    const hide = () => {
+      if (!this.#badgeShown) return;
+      this.#badgeShown = false;
+      this.#hooks.onOverlap?.(undefined);
+    };
+    if (!screen) return hide();
+    void this.#host.hitTest(screen, this.#drafting.pickbox).then((ids) => {
+      if (asked !== this.#badgeAsked) return;
+      if (ids.length < 2) return hide();
+      const r = this.#canvas.getBoundingClientRect();
+      this.#badgeShown = true;
+      this.#hooks.onOverlap?.({ x: r.left + screen.x, y: r.top + screen.y });
+    });
+  }
+
+  /**
+   * Shift+Space (M3-04 part 7; AutoCAD 2024 Help, "To Select Overlapping or Close Objects"):
+   * where the cursor rests at a prompt that selects, the next of the objects under the pickbox
+   * lights up, round again after the last, and a pick there takes it. False when the cursor
+   * rests on no such canvas, so the key does what it otherwise would.
+   */
+  cycleOverlap(): boolean {
+    const p = this.#pointer;
+    const resting = p && !this.#drag && !this.#corner && !this.#press && this.#mode === 'none';
+    if (!resting) return false;
+    const at = { x: p.offsetX, y: p.offsetY };
+    const atCommand = this.#hooks.atCommand?.() ?? false;
+    if (!previewsSelection(PREVIEW_AT_COMMAND | PREVIEW_SELECTING, this.#asked, atCommand))
+      return false;
+    const was = this.#overlapStep;
+    this.#overlapStep = { at: was?.at ?? at, step: (was?.step ?? 0) + 1 };
+    this.#hoverPreview(at);
+    return true;
   }
 
   /**
@@ -1100,7 +1171,20 @@ export class CanvasController {
     if (!v) return Promise.resolve([]);
     const screen = worldToScreen(v, this.#size.width, this.#size.height, point);
     // PICKBOX (M3-04 part 4): the pickbox's half size in CSS pixels, AutoCAD's initial 3.
-    return this.#host.hitTest(screen, this.#drafting.pickbox);
+    const pickbox = this.#drafting.pickbox;
+    // Shift+Space stepped through the objects here (M3-04 part 7): the pick takes the one lit
+    // up, alone, so no Selection list asks again. The steps end with the pick.
+    const step = this.#overlapStep;
+    if (step) {
+      this.#overlapStep = undefined;
+      this.#previewAgain();
+      if (Math.hypot(screen.x - step.at.x, screen.y - step.at.y) <= pickbox) {
+        return this.#host
+          .hitTest(step.at, pickbox)
+          .then((ids) => (ids.length > 1 ? [ids[step.step % ids.length]!] : ids));
+      }
+    }
+    return this.#host.hitTest(screen, pickbox);
   }
 
   /** Where a world point is shown, in window pixels (M3-04 part 3: the Selection list). */

@@ -609,7 +609,7 @@ export type GroupingAction =
   | { readonly op: 'reverse'; readonly group: string };
 
 /** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
-export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'dyn' | 'qp';
+export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'dyn' | 'qp' | 'sc';
 
 /**
  * What the Snap and Grid tab sets in the `*Active` VPORT (M3-06 part 2): SNAPUNIT, GRIDUNIT (0
