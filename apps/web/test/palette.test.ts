@@ -26,6 +26,8 @@ describe('palette search', () => {
       'ARRAYPOLAR',
       'ARRAYRECT',
       'ATTEDIT',
+      // M3-02 part 3: CHAMFER and FILLET.
+      'CHAMFER',
       'CIRCLE',
       'CLOSE',
       'CLOSEALL',
@@ -48,6 +50,7 @@ describe('palette search', () => {
       'EXPORT',
       'EXPORTPDF',
       'EXTEND',
+      'FILLET',
       'HATCHTOBACK',
       'ID',
       'LINE',
