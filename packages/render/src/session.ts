@@ -418,6 +418,7 @@ export class RenderSession {
     const parts = plotParts(this.model, request.block ?? this.#block, {
       resolver: new PlotResolver(request.table),
       tessellate: this.renderer.tessellateContext,
+      viewHeight: this.renderer.viewHeight,
       images: (h) => this.#images.get(h),
       ...(request.paperspaceLast && { paperspaceLast: true }),
       ...(request.handles && { only: new Set(request.handles) }),

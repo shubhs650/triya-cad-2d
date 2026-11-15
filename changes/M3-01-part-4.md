@@ -1,0 +1,1 @@
+- M3-01 part 4 (#376): ELLIPSE (axis, centre, rotation and elliptical arcs by angle, parameter or included angle), XLINE (Hor, Ver, Ang with Reference, Bisect, Offset), RAY, POINT and DONUT, each dragged with the cursor; POINT objects now show and plot by PDMODE and PDSIZE.

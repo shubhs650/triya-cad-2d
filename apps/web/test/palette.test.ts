@@ -52,9 +52,12 @@ describe('palette search', () => {
       'DIST',
       // M3-01 part 5: DIVIDE, MEASURE and SPLINE.
       'DIVIDE',
+      // M3-01 part 4: DONUT, ELLIPSE, POINT, RAY and XLINE.
+      'DONUT',
       'DRAWINGRECOVERY',
       'DRAWORDER',
       'EATTEDIT',
+      'ELLIPSE',
       'ERASE',
       'EXPLODE',
       'EXPORT',
@@ -89,6 +92,7 @@ describe('palette search', () => {
       // M3-01 part 3: PLINE, POLYGON and RECTANG.
       'PLINE',
       'PLOT',
+      'POINT',
       'POLYGON',
       'PREVIEW',
       'PRINT',
@@ -97,6 +101,7 @@ describe('palette search', () => {
       'PUBLISH',
       'QSAVE',
       'QUICKPROPERTIES',
+      'RAY',
       'RECTANG',
       'REDO',
       'REGEN',
@@ -123,6 +128,7 @@ describe('palette search', () => {
       'UNDO',
       'VIEW',
       'WIPEOUT',
+      'XLINE',
       'ZOOM',
     ]);
     const erase = commandItems(builtinCommands()).find((i) => i.id === 'ERASE');

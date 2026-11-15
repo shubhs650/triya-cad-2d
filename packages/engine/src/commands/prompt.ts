@@ -133,6 +133,12 @@ export interface DistancePrompt extends PromptBase {
 export interface AnglePrompt extends PromptBase {
   readonly kind: 'angle';
   readonly base?: Vec2;
+  /**
+   * The world direction (radians) a typed angle counts from, in place of ANGBASE: an elliptical
+   * arc's angles count from its first axis, XLINE Reference's from the line (M3-01 part 4).
+   * Picked points still answer their world angle.
+   */
+  readonly zero?: number;
 }
 
 /** One of the options only. */
