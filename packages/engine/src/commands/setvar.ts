@@ -27,6 +27,8 @@ import {
   type VariableValue,
 } from './sysvars';
 import { drawingUnits } from './units';
+import { currentVport, snapGridOf, snapGridPatch, snapGridProblem } from '../edit/snap-grid';
+import type { VportRecord } from '../model/types';
 import { inquiryResults } from './inquiry/inquiry';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -50,7 +52,65 @@ async function read(
     }
     case 'computed':
       return computed(ctx, v.name);
+    case 'vport': {
+      const vport = currentVport(ctx.model);
+      if (!vport) return { problem: noVport(v) };
+      return { value: vportValue(vport, v.name) };
+    }
   }
+}
+
+const noVport = (v: SystemVariable) => `The drawing has no current viewport to keep ${v.name} in.`;
+
+/** A `VPORT_VARIABLES` variable as the `*Active` VPORT holds it. */
+function vportValue(vport: VportRecord, name: string): VariableValue {
+  switch (name) {
+    case 'SNAPUNIT':
+      return { x: vport.snapSpacing.x, y: vport.snapSpacing.y };
+    case 'GRIDUNIT':
+      return { x: vport.gridSpacing.x, y: vport.gridSpacing.y };
+    case 'SNAPBASE':
+      return { x: vport.snapBase.x, y: vport.snapBase.y };
+    case 'GRIDMAJOR':
+      return vport.gridMajor;
+    default:
+      return vport.gridFlags;
+  }
+}
+
+/**
+ * Sets a `VPORT_VARIABLES` variable in the `*Active` VPORT, one undo step; the Snap and Grid
+ * tab's checks refuse what it would refuse (a typed point is not checked on the way here).
+ */
+function writeVport(ctx: CommandContext, v: SystemVariable, value: VariableValue): void {
+  const vport = currentVport(ctx.model);
+  if (!vport) {
+    ctx.message(noVport(v));
+    return;
+  }
+  if (v.name === 'SNAPBASE') {
+    const p = value as Vec2;
+    if (!(Number.isFinite(p.x) && Number.isFinite(p.y))) return;
+    if (p.x === vport.snapBase.x && p.y === vport.snapBase.y) return;
+    ctx.edit((b) => b.updateTableRecord('vports', vport.handle, { snapBase: { x: p.x, y: p.y } }));
+    return;
+  }
+  const now = snapGridOf(vport);
+  const point = (p: VariableValue) => ({ x: (p as Vec2).x, y: (p as Vec2).y });
+  const settings = {
+    ...now,
+    ...(v.name === 'SNAPUNIT' && { snapSpacing: point(value) }),
+    ...(v.name === 'GRIDUNIT' && { gridSpacing: point(value) }),
+    ...(v.name === 'GRIDMAJOR' && { gridMajor: value as number }),
+    ...(v.name === 'GRIDDISPLAY' && { gridDisplay: value as number }),
+  };
+  const problem = snapGridProblem(settings);
+  if (problem) {
+    ctx.message(problem);
+    return;
+  }
+  const patch = snapGridPatch(vport, settings);
+  if (patch) ctx.edit((b) => b.updateTableRecord('vports', vport.handle, patch));
 }
 
 /** A variable the engine works out (`COMPUTED_VARIABLES`). */
@@ -152,6 +212,8 @@ async function write(ctx: CommandContext, v: SystemVariable, value: VariableValu
     }
     case 'computed':
       return showTab(ctx, v.name, value);
+    case 'vport':
+      return writeVport(ctx, v, value);
   }
 }
 

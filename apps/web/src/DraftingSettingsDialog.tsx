@@ -3,8 +3,9 @@
 // and "Quick Properties Tab" pages; UI_SPEC.md §7). The Snap and Grid tab came with part 2, its
 // Polar spacing and Snap type (Grid snap or PolarSnap) and the Polar Tracking tab's Polar Angle
 // measurement with part 3; Isometric snap is PRD non-goal 7 (DEC-060), so Grid snap has no
-// Rectangular/Isometric choice, and Grid style and Grid behavior are left out (Triya's grid is
-// lines, adaptive and past the limits). The Dynamic Input tab came with part 4, its Pointer Input
+// Rectangular/Isometric choice. Grid style (GRIDSTYLE, per user; Block editor is kept but
+// disabled, as Triya has no block editor) and Grid behavior (GRIDDISPLAY, in the drawing's
+// `*Active` VPORT) came with part 6. The Dynamic Input tab came with part 4, its Pointer Input
 // Settings on the tab itself rather than in a dialog of their own, and no Dimension Input
 // Settings or Drafting Tooltip Appearance (grip stretching shows no dimension input; the tooltip
 // follows the app's theme). The Selection Cycling tab comes with M3-04; 3D Object Snap is out of
@@ -12,11 +13,24 @@
 // It opens on the tab shown last (OSNAP: Object Snap), edits a copy of the drafting aids and
 // sets them on OK; Cancel (or Esc) leaves them as they were. Options... is left out: Triya's
 // Settings panel is not a dialog to open over it.
-import { OSNAP, OSNAP_MODES, type DialogRequest, type PromptAnswer } from '@triya/engine';
+import {
+  GRID_DISPLAY,
+  OSNAP,
+  OSNAP_MODES,
+  type DialogRequest,
+  type PromptAnswer,
+} from '@triya/engine';
 import { useEffect, useId, useRef, useState } from 'react';
 import { Modal } from './AttributeDialogs';
 import { markerSvgPath } from './canvas/autosnap';
-import { QP_QUADRANTS, angleText, drafting, type QpQuadrant } from './drafting';
+import {
+  GRIDSTYLE_LAYOUT,
+  GRIDSTYLE_MODEL,
+  QP_QUADRANTS,
+  angleText,
+  drafting,
+  type QpQuadrant,
+} from './drafting';
 import {
   DRAFTING_SETTINGS_TABS,
   addAngle,
@@ -24,6 +38,7 @@ import {
   draftPatch,
   draftProblem,
   equalSpacing,
+  gridBehavior,
   snapGridOf,
   typeSpacing,
   type DraftingSettingsDraft,
@@ -176,10 +191,14 @@ function Spacing({
   );
 }
 
+/** GRIDSTYLE's bit 2: the block editor's grid, which Triya keeps but has no editor for. */
+const GRIDSTYLE_BLOCK = 2;
+
 /**
  * Snap and Grid: SNAP (F9) and GRID (F7) on and off, the drawing's snap and grid spacing with
- * Equal X and Y spacing and Major line every, Polar spacing and Snap type. As in AutoCAD,
- * PolarSnap disables the snap spacing and Grid snap the polar distance.
+ * Equal X and Y spacing and Major line every, Polar spacing and Snap type, Grid style and Grid
+ * behavior. As in AutoCAD, PolarSnap disables the snap spacing and Grid snap the polar distance,
+ * and Allow subdivision below grid spacing needs Adaptive grid.
  */
 function SnapGridTab({ d, set }: TabProps) {
   const id = useId();
@@ -189,6 +208,12 @@ function SnapGridTab({ d, set }: TabProps) {
   const setG = (next: SpacingDraft) => set({ spacing: next });
   const field = (f: 'snapX' | 'snapY' | 'gridX' | 'gridY') => (text: string) =>
     g && setG(typeSpacing(g, f, text));
+  const style = (bit: number) => (on: boolean) =>
+    set({ gridStyle: on ? d.gridStyle | bit : d.gridStyle & ~bit });
+  const behaviour = g && gridBehavior(g);
+  const noBehaviour = g?.gridDisplay === undefined;
+  const turn = (bit: number) => (on: boolean) =>
+    g && setG({ ...g, gridDisplay: on ? (g.gridDisplay ?? 0) | bit : (g.gridDisplay ?? 0) & ~bit });
   return (
     <div className="dsettings-tab dsettings-columns">
       <div>
@@ -241,6 +266,26 @@ function SnapGridTab({ d, set }: TabProps) {
           Grid On (F7)
         </Check>
         <fieldset>
+          <legend>Grid style</legend>
+          <p className="dsettings-note">Display dotted grid in:</p>
+          <Check checked={(d.gridStyle & GRIDSTYLE_MODEL) !== 0} onChange={style(GRIDSTYLE_MODEL)}>
+            2D model space
+          </Check>
+          <Check
+            checked={(d.gridStyle & GRIDSTYLE_BLOCK) !== 0}
+            disabled
+            onChange={style(GRIDSTYLE_BLOCK)}
+          >
+            Block editor
+          </Check>
+          <Check
+            checked={(d.gridStyle & GRIDSTYLE_LAYOUT) !== 0}
+            onChange={style(GRIDSTYLE_LAYOUT)}
+          >
+            Sheet/layout
+          </Check>
+        </fieldset>
+        <fieldset>
           <legend>Grid spacing</legend>
           <Spacing
             label="Grid X spacing:"
@@ -260,6 +305,37 @@ function SnapGridTab({ d, set }: TabProps) {
             disabled={none}
             onChange={(major) => g && setG({ ...g, major })}
           />
+        </fieldset>
+        <fieldset>
+          <legend>Grid behavior</legend>
+          <Check
+            checked={behaviour?.adaptive ?? false}
+            disabled={noBehaviour}
+            onChange={turn(GRID_DISPLAY.adaptive)}
+          >
+            Adaptive grid
+          </Check>
+          <Check
+            checked={behaviour?.subdivide ?? false}
+            disabled={noBehaviour || !behaviour?.adaptive}
+            onChange={turn(GRID_DISPLAY.subdivide)}
+          >
+            Allow subdivision below grid spacing
+          </Check>
+          <Check
+            checked={behaviour?.beyondLimits ?? false}
+            disabled={noBehaviour}
+            onChange={turn(GRID_DISPLAY.beyondLimits)}
+          >
+            Display grid beyond Limits
+          </Check>
+          <Check
+            checked={behaviour?.follow ?? false}
+            disabled={noBehaviour}
+            onChange={turn(GRID_DISPLAY.follow)}
+          >
+            Follow Dynamic UCS
+          </Check>
         </fieldset>
         {none && (
           <p className="dsettings-note">This drawing has no current viewport to keep spacing in.</p>

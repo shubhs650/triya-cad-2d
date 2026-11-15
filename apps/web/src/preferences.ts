@@ -77,6 +77,7 @@ export type DraftingPreferences = Pick<
   | 'polarAddAngles'
   | 'snapType'
   | 'polarDist'
+  | 'gridStyle'
   | 'tempOverrides'
   | 'dynBits'
   | 'dynPrompt'
@@ -157,6 +158,7 @@ export const DEFAULT_PREFERENCES: Preferences = {
     polarAddAngles: '',
     snapType: 0,
     polarDist: 0,
+    gridStyle: 0,
     tempOverrides: true,
     dynBits: 3,
     dynPrompt: true,
@@ -306,6 +308,7 @@ export function normalizePreferences(raw: unknown): Preferences {
         typeof k['polarDist'] === 'number' && Number.isFinite(k['polarDist']) && k['polarDist'] >= 0
           ? k['polarDist']
           : d.drafting.polarDist,
+      gridStyle: within(k['gridStyle'], { min: 0, max: 7 }, d.drafting.gridStyle),
       tempOverrides: bool(k['tempOverrides'], d.drafting.tempOverrides),
       dynBits: within(k['dynBits'], { min: 0, max: 3 }, d.drafting.dynBits),
       dynPrompt: bool(k['dynPrompt'], d.drafting.dynPrompt),
@@ -396,6 +399,7 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     polarAddAngles: s.polarAddAngles,
     snapType: s.snapType,
     polarDist: s.polarDist,
+    gridStyle: s.gridStyle,
     tempOverrides: s.tempOverrides,
     dynBits: s.dynBits,
     dynPrompt: s.dynPrompt,
