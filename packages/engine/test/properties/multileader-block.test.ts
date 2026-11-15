@@ -451,7 +451,7 @@ describe('a block multileader’s Attachment (M2-35 part 25)', () => {
 // M2-35 part 25: a multileader's Misc rows. AutoCAD's help does not list the palette's rows for
 // a multileader; these follow ActiveX AcadMLeader's StyleName and ScaleFactor and the annotative
 // property every annotative object shows: Multileader style (shown, not set: another style's
-// values re-applied is left on M2-35), Annotative (shown; annotative multileaders are M2-43) and
+// values re-applied is left on M2-35), Annotative (shown; annotative multileaders are not made, DEC-058) and
 // Overall scale (DXF 45, flagged by bit 24).
 describe('a multileader’s Misc rows (M2-35 part 25)', () => {
   it('shows Multileader style, Annotative and Overall scale', () => {

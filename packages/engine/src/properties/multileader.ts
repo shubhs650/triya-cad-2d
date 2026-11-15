@@ -294,7 +294,7 @@ function retexted(model: DocumentModel, e: Entity, key: string, v: PropertyValue
     if (!Number.isFinite(n) || n <= 0) return 'invalid';
     next = { ...t, height: n };
   }
-  // An annotative multileader keeps a placement per annotation scale (M2-43); Triya edits one.
+  // An annotative multileader keeps a placement per annotation scale; Triya edits one (DEC-013, DEC-058).
   if (e.annotative || g.annotative) return { refuse: ANNOTATIVE };
   return next;
 }

@@ -528,7 +528,13 @@ describe('MLEADER', () => {
       view: host({ minX: 0, minY: 0, maxX: 3, maxY: 1 }),
     });
     await bus.script(['MLEADER', '20,0', '10,5', 'Scaled', '']);
-    expect(log.some((l) => l.startsWith('Annotative multileaders are not made yet'))).toBe(true);
+    expect(
+      log.some((l) =>
+        l.startsWith(
+          'Triya does not make annotative multileaders: this one takes the style’s scale.',
+        ),
+      ),
+    ).toBe(true);
     const [g] = leaders();
     expect(g).toMatchObject({
       style: CALLOUT,

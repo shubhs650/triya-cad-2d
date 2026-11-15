@@ -2,7 +2,7 @@
 // list the palette's rows for a multileader; these follow ActiveX AcadMLeader's StyleName and
 // ScaleFactor and the Annotative row every annotative object shows: Multileader style and
 // Annotative are shown (another style is chosen in `multileader-style.ts`, M2-35 part 28;
-// annotative multileaders are M2-43), Overall scale is set.
+// annotative multileaders are not made, DEC-058), Overall scale is set.
 //
 // Overall scale (DXF 45) is what the style's sizes are drawn at. The context data states them
 // drawn (text height and wrap width, landing gap, arrowhead size, each landing's length, the
