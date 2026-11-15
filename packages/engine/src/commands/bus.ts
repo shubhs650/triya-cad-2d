@@ -1025,8 +1025,15 @@ export class PromptBus {
   /** Text at "Select objects": Enter ends it, then a command option, a mode or a point. */
   async #selectionInput(frame: Frame, loop: SelectionLoop, t: string): Promise<void> {
     if (t === '') {
+      const ended = await loop.enter();
+      if (ended) return this.#step(frame, ended);
       if (loop.wantsPoint) return this.#reject('Invalid window specification.');
       return this.#finishSelection(frame, loop);
+    }
+    if (loop.wantsName) return this.#step(frame, loop.name(t));
+    if (loop.drawingPath && matchKeyword(t, ['Undo'])) {
+      loop.undoPoint(t);
+      return this.#step(frame, 'more');
     }
     const parsePoint = () => {
       const p = parseCoordinate(t, {

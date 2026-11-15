@@ -91,6 +91,12 @@ export interface PointPrompt extends PromptBase {
      */
     readonly drawn?: false;
     readonly selection?: 'auto' | 'window' | 'crossing';
+    /**
+     * A selection polygon or fence being drawn (M3-04: WPolygon, CPolygon, Fence): its points
+     * so far, `from` the last; the front-end draws them on to the cursor, closed back to the
+     * first unless `open` (a fence), as `selection` says (a window or a crossing).
+     */
+    readonly path?: { readonly points: readonly Vec2[]; readonly open?: true };
   };
   /**
    * Text that is neither a point nor an option answers `{ kind: 'string' }` instead of being

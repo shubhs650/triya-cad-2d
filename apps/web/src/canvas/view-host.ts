@@ -52,6 +52,8 @@ export interface ViewTarget {
   whenViewed(): Promise<boolean>;
   pick(point: Vec2): Promise<EntityId[]>;
   selectWindow(a: Vec2, b: Vec2, crossing: boolean): Promise<EntityId[]>;
+  /** What a selection polygon (WPolygon, CPolygon) or fence takes (M3-04). */
+  selectPath(points: readonly Vec2[], kind: 'window' | 'crossing' | 'fence'): Promise<EntityId[]>;
   zoomObjects(ids: readonly EntityId[]): Promise<boolean>;
   /** The box an MTEXT's glyphs fill (M2-09), or undefined when no loaded font draws it. */
   textBox(text: MTextGeometry): Promise<Box | undefined>;
@@ -286,6 +288,8 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       return t.pick(r.point).then((ids) => ({ ok: true, ids }));
     case 'select':
       return t.selectWindow(r.a, r.b, r.crossing).then((ids) => ({ ok: true, ids }));
+    case 'selectPath':
+      return t.selectPath(r.points, r.kind).then((ids) => ({ ok: true, ids }));
     case 'objects':
       return t
         .zoomObjects(r.ids)

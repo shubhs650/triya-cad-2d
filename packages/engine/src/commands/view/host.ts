@@ -77,6 +77,16 @@ export type ViewRequest =
   | { readonly op: 'pick'; readonly point: Vec2 }
   /** The objects a window takes: wholly inside it, or, `crossing`, inside or crossing it. */
   | { readonly op: 'select'; readonly a: Vec2; readonly b: Vec2; readonly crossing: boolean }
+  /**
+   * The objects a selection polygon or fence takes (M3-04): `window` (WPolygon) those wholly
+   * inside the polygon, `crossing` (CPolygon) those inside or crossing it, `fence` those the
+   * run of lines through `points` crosses.
+   */
+  | {
+      readonly op: 'selectPath';
+      readonly kind: 'fence' | 'window' | 'crossing';
+      readonly points: readonly Vec2[];
+    }
   /** ZOOM Object: the view fitted around the objects' extents. */
   | { readonly op: 'objects'; readonly ids: readonly EntityId[] }
   /**
