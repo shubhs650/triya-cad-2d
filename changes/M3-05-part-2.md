@@ -1,0 +1,1 @@
+- M3-05 part 2 (#TBD): grip hover menu, GRIPHOVER, array grip Ctrl cycling and Ctrl-copy (in progress).
