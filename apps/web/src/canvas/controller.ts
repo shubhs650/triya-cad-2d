@@ -374,6 +374,10 @@ export class CanvasController {
    * cycles a hot multi-functional grip's functions at a prompt that says so (`ctrlCycles`).
    */
   #ctrlTap = false;
+  /** Grips show with none hot: the one under the cursor takes GRIPHOVER (M3-05 part 2). */
+  #gripsHoverable = false;
+  /** The renderer was last told a cursor for GRIPHOVER. */
+  #gripHovering = false;
   /** Where the cursor rests, for rollover tooltips (M2-35 part 21). */
   readonly #rest = new RestWatch<{
     readonly x: number;
@@ -933,6 +937,25 @@ export class CanvasController {
   /** The objects to show grips on, and the hot grip (M2-06 part 2). */
   setGrips(ids: readonly EntityId[], hot?: Vec2): void {
     this.#host.setGrips(ids, hot);
+    this.#gripsHoverable = ids.length > 0 && !hot;
+    if (!this.#gripsHoverable) this.#hoverGrip(undefined);
+    this.#requestFrame();
+  }
+
+  /** How near a grip, in drawing units, the cursor counts as on it at this zoom (M2-06). */
+  gripReach(): number {
+    return gripPickPx(this.#drafting.gripSize) * this.#px();
+  }
+
+  /**
+   * GRIPHOVER (M3-05 part 2): the grip under the cursor at `Command:` takes the hover colour,
+   * as AutoCAD's does the moment the cursor is on it; not while a grip is hot or a button held.
+   */
+  #hoverGrip(world: Point | undefined): void {
+    const at = this.#gripsHoverable ? world : undefined;
+    if (!at && !this.#gripHovering) return;
+    this.#gripHovering = at !== undefined;
+    this.#host.setGripHover(at, this.gripReach());
     this.#requestFrame();
   }
 
@@ -1730,7 +1753,7 @@ export class CanvasController {
             this.#hooks.onPick?.(world, {
               shift,
               release: false,
-              grip: gripPickPx(this.#drafting.gripSize) * this.#px(),
+              grip: this.gripReach(),
             });
             return;
           }
@@ -1784,6 +1807,8 @@ export class CanvasController {
         } else this.#rest.cancel();
         const press = this.#press;
         const world = this.#world(e);
+        const resting = e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none';
+        this.#hoverGrip(resting ? world : undefined);
         if (press?.pointer === e.pointerId) {
           if (Math.hypot(e.offsetX - press.x, e.offsetY - press.y) > CLICK_PX && !press.dragged) {
             press.dragged = true;
@@ -1847,6 +1872,7 @@ export class CanvasController {
       'pointerleave',
       () => {
         this.#rest.cancel();
+        this.#hoverGrip(undefined);
         this.#pointer = undefined;
         this.#hit = undefined;
         this.#hits = [];

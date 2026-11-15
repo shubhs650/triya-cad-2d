@@ -3,9 +3,12 @@
 // the pointer, so the canvas under it keeps its cursor, its rest and its picks.
 import { useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { rolloverLines, rolloverPlacement, rollovers } from './rollover';
+import { gripMenus } from './grip-menu';
 
 export function RolloverTooltip({ doc }: { doc: number }) {
   const tip = useSyncExternalStore(rollovers.subscribe, () => rollovers.get(doc));
+  // A grip's hover menu takes the cursor's place (M3-05 part 2): no tooltip beside it.
+  const menu = useSyncExternalStore(gripMenus.subscribe, gripMenus.get);
   const ref = useRef<HTMLDivElement>(null);
   const [at, setAt] = useState<{ left: number; top: number } | undefined>();
 
@@ -21,7 +24,7 @@ export function RolloverTooltip({ doc }: { doc: number }) {
     );
   }, [tip]);
 
-  if (!tip) return null;
+  if (!tip || menu?.doc === doc) return null;
   const { title, rows } = rolloverLines(tip.sheet);
   return (
     <div

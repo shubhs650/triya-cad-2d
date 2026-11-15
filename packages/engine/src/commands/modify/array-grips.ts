@@ -3,6 +3,8 @@
 // sets; AutoCAD's hover menu offers the grip's other functions, which the prompt offers as
 // options. A pick sets it as dragging the grip there would, and a typed number is the count,
 // distance or angle itself. The array is remade in one undo step and stays selected.
+// M3-05 part 2: the hover menu at the grip starts it in the function picked there, and a tap of
+// Ctrl goes on to the grip's next function, round again, as at a polyline's grips.
 import type { Vec2 } from '../../geom/types';
 import {
   applyArrayGripEdit,
@@ -18,7 +20,7 @@ import { sourceEditOf } from '../../edit/assoc-array';
 import type { EntityId } from '../../model/entity-ids';
 import type { DocumentModel } from '../../model/document';
 import type { CommandContext } from '../command';
-import type { Prompt, PromptAnswer } from '../prompt';
+import { GRIP_CYCLE, type Prompt, type PromptAnswer } from '../prompt';
 import { parseAngleValue, parseDistance, parseNumber } from '../parse';
 import { drawingUnits } from '../units';
 
@@ -82,15 +84,19 @@ function typedValue(
       : 'Invalid input.';
 }
 
-/** The array `id` edited by its grip `role` at `hot`, until a value is given, eXit or Esc. */
+/**
+ * The array `id` edited by its grip `role` at `hot`, until a value is given, eXit or Esc;
+ * `first` the function to start in (its first, unless the grip has that one).
+ */
 export async function* editArrayByGrip(
   ctx: CommandContext,
   id: EntityId,
   role: ArrayGripRole,
   hot: Vec2,
+  first?: string,
 ): AsyncGenerator<Prompt, void, PromptAnswer> {
   const functions = ARRAY_GRIP_FUNCTIONS[role];
-  let fn = functions[0]!;
+  let fn = functions.find((f) => f === first) ?? functions[0]!;
   for (;;) {
     const insert = ctx.model.entity(id);
     const record = insert && arrayGripsOf(ctx.model, insert)?.record;
@@ -106,10 +112,14 @@ export async function* editArrayByGrip(
       options,
       rubberBand: { from: hot },
       arbitrary: true,
+      ...(functions.length > 1 && { ctrlCycles: true as const }),
     });
     if (a.kind === 'keyword') {
       if (a.keyword === 'eXit') return;
-      fn = a.keyword;
+      fn =
+        a.keyword === GRIP_CYCLE
+          ? functions[(functions.indexOf(fn) + 1) % functions.length]!
+          : a.keyword;
       continue;
     }
     let input: ArrayGripInput;

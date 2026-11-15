@@ -60,6 +60,7 @@ import {
 import { NO_VIEW, waitsOnApp, type ViewHost, type ViewReply, type ViewRequest } from './view/host';
 import { drawingUnits, type DrawingUnits } from './units';
 import { GRIP_OBJECT_LIMIT, gripCommand } from './modify/grips';
+import { gripMenuAt } from './modify/grip-functions';
 import { gripsOf } from '../edit/grips';
 import { variableCommand } from './setvar';
 import { systemVariable } from './sysvars';
@@ -104,6 +105,12 @@ export function doubleClickCommand(e: Entity | undefined): string | undefined {
 }
 
 /** One command's edits, in order: what the undo stack (M2-05) keeps as one step. */
+/** A grip's hover menu (M3-05 part 2): the grip under the cursor and its functions, if many. */
+export interface GripMenu {
+  readonly grip: Vec2;
+  readonly items: readonly string[];
+}
+
 export interface CommandRecord {
   readonly command: string;
   readonly changes: readonly ChangeSet[];
@@ -459,6 +466,7 @@ export class PromptBus {
       readonly missed?: boolean;
       readonly deferred?: DeferredPick;
       readonly ctrl?: boolean;
+      readonly gripFunction?: string;
     } = {},
   ): Promise<void> {
     return this.#enqueue(async () => {
@@ -468,13 +476,14 @@ export class PromptBus {
       if (o.missed && this.#collectors.at(-1)?.osnap) return this.#reject('Invalid point.');
       const frame = this.#stack.at(-1);
       // A click on a grip of the selection at `Command:` starts grip editing (M2-06): `grip` is
-      // how near, in drawing units, the canvas counts as on a grip.
+      // how near, in drawing units, the canvas counts as on a grip. `gripFunction`: the function
+      // picked from the grip's hover menu (M3-05 part 2), the one the grip starts in.
       if (!frame && o.grip !== undefined && !o.shift && !o.release && !this.#idle.wantsPoint) {
         const ids = this.#gripIds();
         const hot = ids.length > 0 ? nearestGrip(this.#model, ids, point, o.grip) : undefined;
         if (hot) {
           this.#hot = hot;
-          return this.#start(gripCommand(ids, hot), false, false);
+          return this.#start(gripCommand(ids, hot, o.gripFunction), false, false);
         }
       }
       if (frame?.select && this.#collectors.length === 0) {
@@ -1102,6 +1111,21 @@ export class PromptBus {
     );
   }
 
+  /**
+   * The grip of the selection at `Command:` within `within` of `point` and the functions its
+   * hover menu offers (M3-05 part 2; AutoCAD's GRIPMULTIFUNCTIONAL 3): none for a grip with one
+   * function, which still takes the hover colour. Undefined with no grip there, or while a
+   * command runs.
+   */
+  gripMenu(point: Vec2, within: number): GripMenu | undefined {
+    if (this.#stack.length > 0 || this.#idle.wantsPoint) return undefined;
+    const ids = this.#gripIds();
+    const grip = ids.length > 0 ? nearestGrip(this.#model, ids, point, within) : undefined;
+    if (!grip) return undefined;
+    const items = gripMenuAt(this.#model, ids, grip);
+    return { grip: { x: grip.x, y: grip.y }, items: items.length > 1 ? [...items] : [] };
+  }
+
   /** The selection at `Command:` grips show on: none past GRIPOBJLIMIT. */
   #gripIds(): readonly EntityId[] {
     const ids = this.#idle.ids;
@@ -1389,8 +1413,9 @@ export class PromptBus {
       const { deferred: _, ...plain } = given;
       given = plain;
     }
-    // Ctrl reaches only a prompt that switches an arc's direction with it (M3-01 part 6).
-    if ('ctrl' in given && given.ctrl && !prompt.switchDirection) {
+    // Ctrl reaches only a prompt that switches an arc's direction with it (M3-01 part 6) or
+    // makes a copy with it (M3-05 part 2).
+    if ('ctrl' in given && given.ctrl && !prompt.switchDirection && !prompt.ctrlCopies) {
       const { ctrl: _, ...plain } = given;
       given = plain;
     }

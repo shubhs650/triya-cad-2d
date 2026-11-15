@@ -1581,6 +1581,10 @@ button {
   box-shadow: 0 4px 16px rgb(0 0 0 / 20%);
 }
 
+.grip-menu {
+  min-width: 140px;
+}
+
 .snap-menu-item {
   padding: 3px 12px;
   border: 0;
