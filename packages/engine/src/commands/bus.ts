@@ -1414,7 +1414,7 @@ export class PromptBus {
     this.#lastPoint = p;
     const measure = (a: Vec2, b: Vec2): PromptAnswer =>
       prompt.kind === 'distance'
-        ? { kind: 'distance', value: Math.hypot(b.x - a.x, b.y - a.y) }
+        ? { kind: 'distance', value: Math.hypot(b.x - a.x, b.y - a.y), to: b }
         : { kind: 'angle', value: Math.atan2(b.y - a.y, b.x - a.x) };
     if (prompt.base) return this.#deliver(measure(prompt.base, p), '', false);
     this.#collectors.push({

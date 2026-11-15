@@ -12,6 +12,7 @@ export * from './flatten';
 export * from './intersect';
 export * from './nurbs';
 export * from './offset';
+export * from './shapes';
 export * from './tangent';
 export * from './tolerance';
 export * from './transform';

@@ -7,6 +7,9 @@ import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
 import { lastDrawn } from './draw/last-drawn';
 import { lineCommand } from './draw/line';
+import { plineCommand } from './draw/pline';
+import { polygonCommand } from './draw/polygon';
+import { rectangCommand } from './draw/rectang';
 import { MLEADER_COMMANDS } from './draw/mleader';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
@@ -43,6 +46,9 @@ export function builtinCommands(): CommandRegistry {
     lineCommand(last),
     arcCommand(last),
     circleCommand(),
+    plineCommand(last),
+    rectangCommand(),
+    polygonCommand(),
     textCommand(),
     mtextCommand(),
     textEditCommand(),

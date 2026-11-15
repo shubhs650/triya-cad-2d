@@ -73,6 +73,11 @@ export interface PointPrompt extends PromptBase {
   readonly rubberBand?: {
     readonly from: Vec2;
     readonly box?: boolean;
+    /**
+     * False: nothing is drawn for it, the drag draws the shape (RECTANG's rounded or turned
+     * rectangle, M3-01 part 3); the cursor is still measured from `from`.
+     */
+    readonly drawn?: false;
     readonly selection?: 'auto' | 'window' | 'crossing';
   };
   /**
@@ -398,7 +403,15 @@ export type PromptAnswer =
        */
       readonly deferred?: DeferredPick;
     }
-  | { readonly kind: 'distance'; readonly value: number }
+  | {
+      readonly kind: 'distance';
+      readonly value: number;
+      /**
+       * The second point when the distance was given by points (POLYGON, M3-01 part 3: a radius
+       * picked turns the polygon, a typed one does not).
+       */
+      readonly to?: Vec2;
+    }
   | { readonly kind: 'angle'; readonly value: number }
   | { readonly kind: 'keyword'; readonly keyword: string }
   | {
