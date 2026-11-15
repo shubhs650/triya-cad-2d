@@ -32,7 +32,15 @@ import type { Prompt, PromptAnswer } from '../prompt';
 import type { CommandContext, CommandDef } from '../command';
 import { arrayGripAt, editArrayByGrip } from './array-grips';
 import { regenerateDimensions } from './dimensions';
-import { functionsAt, runGripFunction, FUNCTION_KEYWORDS, MODE_KEYWORDS } from './grip-functions';
+import {
+  functionsAt,
+  gripShortcutMenu,
+  runGripFunction,
+  FUNCTION_KEYWORDS,
+  MODE_KEYWORDS,
+  PROPERTIES_KEYWORD,
+} from './grip-functions';
+import { viewRequest } from '../view/zoom';
 import { GRIP_CYCLE } from '../prompt';
 import {
   COMMAND_FUNCTIONS,
@@ -160,11 +168,17 @@ export function gripCommand(
         fn = next === takes[0] ? undefined : next;
         mode = 0;
       };
-      const hidden = [...MODE_KEYWORDS, ...(multi?.keywords ?? [])];
+      const hidden = [...MODE_KEYWORDS, ...(multi?.keywords ?? []), PROPERTIES_KEYWORD];
+      /** Properties (M3-05 part 5): grip editing ends, the palette opens on the selection. */
+      const properties = async (): Promise<void> => {
+        await viewRequest(ctx, { op: 'palette', palette: 'properties', open: true });
+      };
       for (;;) {
         if (fn && multi) {
-          const r = yield* runGripFunction(ctx, multi.id, hot, fn, hidden);
+          const menu = gripShortcutMenu(['eXit', ...hidden], multi.functions);
+          const r = yield* runGripFunction(ctx, multi.id, hot, fn, hidden, menu);
           if (r.kind === 'done') return;
+          if (r.kind === 'keyword' && r.keyword === PROPERTIES_KEYWORD) return await properties();
           // Continue or Baseline Dimension: grip editing goes on as DIMCONTINUE or DIMBASELINE.
           if (r.kind === 'chain')
             return yield* continueDimension(ctx, multi.id, r.from, r.baseline);
@@ -179,13 +193,20 @@ export function gripCommand(
         const name = GRIP_MODES[mode]!;
         ctx.message(`** ${name}${copying ? ' (multiple)' : ''} **`);
         const stretching = name === 'STRETCH' && multi !== undefined;
-        const extra = {
-          hiddenOptions: stretching ? hidden : MODE_KEYWORDS,
-          ...(stretching && takes.length > 1 && { ctrlCycles: true as const }),
-          ctrlCopies: true as const,
-        };
+        const hiddenOptions = stretching ? hidden : [...MODE_KEYWORDS, PROPERTIES_KEYWORD];
         const options = ['Base point', 'Copy', 'Undo', 'eXit'];
         const withReference = ['Base point', 'Copy', 'Undo', 'Reference', 'eXit'];
+        const referenced = name === 'ROTATE' || name === 'SCALE';
+        const extra = {
+          hiddenOptions,
+          ...(stretching && takes.length > 1 && { ctrlCycles: true as const }),
+          ctrlCopies: true as const,
+          // The right-click menu (M3-05 part 5): what this prompt takes, the rest greyed.
+          shortcutMenu: gripShortcutMenu(
+            [...(referenced ? withReference : options), ...hiddenOptions],
+            multi?.functions,
+          ),
+        };
         let a: PromptAnswer;
         switch (name) {
           case 'STRETCH':
@@ -254,6 +275,8 @@ export function gripCommand(
           switch (a.keyword) {
             case 'eXit':
               return;
+            case PROPERTIES_KEYWORD:
+              return await properties();
             case 'Copy':
               copying = true;
               continue;

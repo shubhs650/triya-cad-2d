@@ -73,6 +73,13 @@ interface PromptBase {
    * "You can also make multiple copies by holding down Ctrl as you click the first point").
    */
   readonly ctrlCopies?: true;
+  /**
+   * The menu a right-click on the canvas shows while this prompt waits (M3-05 part 5: the grip
+   * modes' menu, AutoCAD 2024 Help, "To Use Grips to Stretch, Move, Rotate, Scale or Mirror
+   * Objects": "right-click to display a shortcut menu of grip options"). Each item answers as
+   * typed; the front-end draws the items in order, a separator before each `separatorBefore`.
+   */
+  readonly shortcutMenu?: readonly ShortcutMenuItem[];
   /** What Enter gives, shown as `<…>`; without one Enter answers `{ kind: 'enter' }`. */
   readonly default?: PromptAnswer;
   /**
@@ -99,6 +106,18 @@ interface PromptBase {
 
 /** The keyword a Ctrl tap answers at a prompt that `ctrlCycles`. */
 export const GRIP_CYCLE = 'Ctrl';
+
+/** An item of a prompt's right-click menu (`PromptBase.shortcutMenu`, M3-05 part 5). */
+export interface ShortcutMenuItem {
+  /** As the menu shows it: "Base Point". */
+  readonly label: string;
+  /** The keyword it answers with (one the prompt takes); absent, it answers Enter. */
+  readonly keyword?: string;
+  /** Shown greyed and not chosen: the prompt does not take it here (Reference in MOVE). */
+  readonly disabled?: true;
+  /** A separator line goes above it. */
+  readonly separatorBefore?: true;
+}
 
 /** What a prompt that takes Ctrl (`switchDirection`) puts after its message's first words. */
 export const CTRL_SWITCH = ' (hold Ctrl to switch direction)';
