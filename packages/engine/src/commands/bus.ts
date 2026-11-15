@@ -549,99 +549,148 @@ export class PromptBus {
   }
 
   /**
-   * A Properties palette edit (M2-21): `edit` set on the objects selected at `Command:` (of the
-   * type `filter`, when the palette shows one type); with nothing selected, the drawing's
-   * current setting new objects take (M2-35, `applyCurrentEdit`). One undo step, which the command line does
-   * not echo, as AutoCAD's palette edits; the objects stay selected. A command running is
-   * cancelled first, as a palette or ribbon button does (^C^C); grip editing keeps its
-   * selection, so the edit applies to it.
+   * A Properties palette edit (M2-21): `edit` set on the objects the palette shows (of the type
+   * `filter`, when the palette shows one type); with nothing selected, the drawing's current
+   * setting new objects take (M2-35, `applyCurrentEdit`). One undo step, which the command line
+   * does not echo, as AutoCAD's palette edits; the objects stay selected.
+   *
+   * At `Command:` the palette shows the pre-selection. While a command's "Select objects" prompt
+   * runs it shows what that prompt has selected so far (`selection`), and the edit changes those
+   * objects inside the command (M2-35 part 30): the command goes on prompting with its selection,
+   * and the edit is part of the command's undo step. Any other prompt is cancelled first, as a
+   * palette or ribbon button cancels it (^C^C); grip editing keeps its selection, so the edit
+   * applies to it.
    */
   setProperty(edit: PropertyEdit, filter?: EntityType): Promise<void> {
     return this.#enqueue(async () => {
+      const loop = this.#selecting();
+      if (loop) return this.#propertyInside([...loop.ids], edit, filter);
       if (this.#stack.length > 0) await this.#cancel();
       const ids = [...this.#idle.ids];
-      const model = this.#model;
+      // eslint-disable-next-line @typescript-eslint/no-this-alias -- the command's body runs on the bus
+      const bus = this;
       const def: CommandDef = {
         name: 'PROPERTIES',
         usesSelection: 'none',
         keepsSelection: true,
         // eslint-disable-next-line require-yield -- the palette gave the value
         async *run(ctx) {
-          let report: ReturnType<typeof applyPropertyEdit> | undefined;
-          const entities = filtered(model, ids, filter);
-          // A text given another justification is measured where the canvas draws it first.
-          const measure = textsToMeasure(entities, edit);
-          let outlines: TextOutlines | undefined;
-          if (measure.length > 0) {
-            const texts = measure.map((e) => e.geom as Extract<EntityGeometry, { kind: 'TEXT' }>);
-            const r = await ctx.view.request({ op: 'textOutlines', texts });
-            outlines = new Map(measure.map((e, i) => [e.id, (r.ok && r.outlines?.[i]) || null]));
-          }
-          // A hatch given another pattern is placed by the app's pattern library first.
-          const toPlace = hatchesToPattern(entities, edit);
-          let patterns: HatchPatterns | undefined;
-          if (toPlace.length > 0) {
-            const r = await ctx.view.request({
-              op: 'hatchPattern',
-              name: String(edit.value).trim(),
-              placements: toPlace.map((h) => h.placement),
-            });
-            if (!r.ok || !r.pattern) {
-              ctx.message(r.ok ? 'Invalid input.' : r.message);
-              return;
-            }
-            patterns = placedPatterns(toPlace, r.pattern);
-          }
-          // A multileader's text placed again on its landing is measured first (M2-35 part 11).
-          const leaders = multiLeaderTextsToMeasure(model, entities, edit);
-          let widths: MultiLeaderWidths | undefined;
-          if (leaders.length > 0) {
-            const texts = leaders.flatMap((l) =>
-              [l.before, l.after].filter((t) => t !== undefined),
-            );
-            const r = await ctx.view.request({ op: 'textWidths', texts });
-            const got = r.ok ? (r.widths ?? []) : [];
-            let i = 0;
-            const next = (t: unknown) => (t === undefined ? undefined : (got[i++] ?? undefined));
-            widths = new Map(
-              leaders.map((l) => {
-                const before = next(l.before);
-                const after = next(l.after);
-                return [
-                  l.id,
-                  {
-                    ...(before !== undefined && { before }),
-                    ...(after !== undefined && { after }),
-                  },
-                ];
-              }),
-            );
-          }
-          // An arrowhead chosen by name names the drawing's block for it, which is added first
-          // where the drawing lacks it (M2-35 part 22), in the same undo step.
-          const named = ids.length === 0 ? undefined : arrowheadByName(model, entities, edit);
-          let chosen = edit;
-          if (named !== undefined) {
-            let block = arrowheadBlock(model.blocks, named)?.handle;
-            if (block === undefined) {
-              ctx.edit((b) => {
-                block = addArrowheadBlock(b, model, named);
-              });
-            }
-            chosen = { ...edit, value: block! };
-          }
-          ctx.edit((b) => {
-            report =
-              ids.length === 0
-                ? applyCurrentEdit(b, model, edit)
-                : applyPropertyEdit(b, model, entities, chosen, outlines, patterns, widths);
-          });
-          if (report!.invalid) ctx.message(`${report!.invalid}.`);
-          for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
+          await bus.#applyProperty(ctx, ids, edit, filter);
         },
       };
       await this.#start(def, false, false);
     });
+  }
+
+  /** The selection a running command's "Select objects" prompt is building, if one is open. */
+  #selecting(): SelectionLoop | undefined {
+    for (let i = this.#stack.length - 1; i >= 0; i--) {
+      const loop = this.#stack[i]!.select;
+      if (loop) return loop;
+    }
+    return undefined;
+  }
+
+  /**
+   * A palette edit while a command selects (M2-35 part 30). It joins the undo step the command
+   * is building, as a transparent command's edits do (AutoCAD groups what is done while a
+   * command runs into its undo group), so U takes them back in the order they were made; a
+   * command cancelled afterwards keeps it, as it keeps its own edits. The command's prompt is
+   * shown again after any message the edit gave.
+   */
+  async #propertyInside(ids: EntityId[], edit: PropertyEdit, filter?: EntityType): Promise<void> {
+    const from = this.#changes.length;
+    const logged = this.#history.length;
+    try {
+      const ctx = this.#context(false, true);
+      await this.#applyProperty(ctx, ids, edit, filter);
+      // Restyled dimensions are redrawn now: a command cancelled later redraws nothing.
+      const made = this.#changes.slice(from);
+      if (made.length > 0) await regenerateRestyled(ctx, made);
+    } catch (err) {
+      this.#log(`; error: ${err instanceof Error ? err.message : String(err)}`);
+    }
+    this.#showSelection();
+    if (this.#history.length > logged) this.#showPrompt();
+  }
+
+  /** The body of a palette edit: measures what it must, then edits `ids` in one go. */
+  async #applyProperty(
+    ctx: CommandContext,
+    ids: readonly EntityId[],
+    edit: PropertyEdit,
+    filter: EntityType | undefined,
+  ): Promise<void> {
+    const model = this.#model;
+    let report: ReturnType<typeof applyPropertyEdit> | undefined;
+    const entities = filtered(model, ids, filter);
+    // A text given another justification is measured where the canvas draws it first.
+    const measure = textsToMeasure(entities, edit);
+    let outlines: TextOutlines | undefined;
+    if (measure.length > 0) {
+      const texts = measure.map((e) => e.geom as Extract<EntityGeometry, { kind: 'TEXT' }>);
+      const r = await ctx.view.request({ op: 'textOutlines', texts });
+      outlines = new Map(measure.map((e, i) => [e.id, (r.ok && r.outlines?.[i]) || null]));
+    }
+    // A hatch given another pattern is placed by the app's pattern library first.
+    const toPlace = hatchesToPattern(entities, edit);
+    let patterns: HatchPatterns | undefined;
+    if (toPlace.length > 0) {
+      const r = await ctx.view.request({
+        op: 'hatchPattern',
+        name: String(edit.value).trim(),
+        placements: toPlace.map((h) => h.placement),
+      });
+      if (!r.ok || !r.pattern) {
+        ctx.message(r.ok ? 'Invalid input.' : r.message);
+        return;
+      }
+      patterns = placedPatterns(toPlace, r.pattern);
+    }
+    // A multileader's text placed again on its landing is measured first (M2-35 part 11).
+    const leaders = multiLeaderTextsToMeasure(model, entities, edit);
+    let widths: MultiLeaderWidths | undefined;
+    if (leaders.length > 0) {
+      const texts = leaders.flatMap((l) => [l.before, l.after].filter((t) => t !== undefined));
+      const r = await ctx.view.request({ op: 'textWidths', texts });
+      const got = r.ok ? (r.widths ?? []) : [];
+      let i = 0;
+      const next = (t: unknown) => (t === undefined ? undefined : (got[i++] ?? undefined));
+      widths = new Map(
+        leaders.map((l) => {
+          const before = next(l.before);
+          const after = next(l.after);
+          return [
+            l.id,
+            {
+              ...(before !== undefined && { before }),
+              ...(after !== undefined && { after }),
+            },
+          ];
+        }),
+      );
+    }
+    // An arrowhead chosen by name names the drawing's block for it, which is added first
+    // where the drawing lacks it (M2-35 part 22), in the same undo step.
+    const named = ids.length === 0 ? undefined : arrowheadByName(model, entities, edit);
+    let chosen = edit;
+    if (named !== undefined) {
+      let block = arrowheadBlock(model.blocks, named)?.handle;
+      if (block === undefined) {
+        ctx.edit((b) => {
+          block = addArrowheadBlock(b, model, named);
+        });
+      }
+      chosen = { ...edit, value: block! };
+    }
+    ctx.edit((b) => {
+      report =
+        ids.length === 0
+          ? applyCurrentEdit(b, model, edit)
+          : applyPropertyEdit(b, model, entities, chosen, outlines, patterns, widths);
+    });
+    if (report!.invalid) ctx.message(`${report!.invalid}.`);
+    for (const line of refusalMessages(report!.refused, 'changed')) ctx.message(line);
   }
 
   /**
@@ -649,12 +698,13 @@ export class PromptBus {
    * "Properties Palette — Text") or a text multileader's (part 11): the In-Place Text Editor on
    * the one object the palette shows (of the type `filter`), as TEXTEDIT opens it. Like the palette's other edits it is one undo step
    * the command line does not echo, and the MTEXT stays selected; a running command is cancelled
-   * first. With anything but one such object shown it does nothing (the row offers no button
+   * first, the editor being a command of its own (one at "Select objects" too, M2-35 part 30). With anything but one such object shown it does nothing (the row offers no button
    * then).
    */
   editContents(filter?: EntityType): Promise<void> {
     return this.#enqueue(async () => {
-      const shown = filtered(this.#model, this.#idle.ids, filter);
+      // What the palette shows: a running command's selection so far, too (M2-35 part 30).
+      const shown = filtered(this.#model, this.selection, filter);
       const one = shown.length === 1 ? shown[0] : undefined;
       // An MTEXT (part 9), or a multileader whose content is text (part 11).
       const entity =
@@ -662,7 +712,13 @@ export class PromptBus {
           ? one
           : undefined;
       if (!entity) return;
+      const selected = this.#selecting() ? [...this.selection] : undefined;
       if (this.#stack.length > 0) await this.#cancel();
+      // The command's selection stays selected, as the palette showed it, while the editor runs.
+      if (selected) {
+        this.#idle.set(selected);
+        this.#showSelection();
+      }
       const def: CommandDef = {
         name: 'PROPERTIES',
         usesSelection: 'none',
