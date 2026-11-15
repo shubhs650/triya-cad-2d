@@ -1,0 +1,1 @@
+- M3-05 part 7 (#TBD): grip menus on radial, angular, ordinate and arc length dimensions; the array redrawn live while a triangle grip is dragged; Dynamic Input's count field at array count grips.
