@@ -1,6 +1,7 @@
 // engine/geom: the geometry kernel. Pure functions on plain values; every tolerance comes
 // from a `Tolerance` derived from the drawing's extents (tolerance.ts).
 export * from './angle';
+export * from './arclength';
 export * from './bounds';
 export * from './closest';
 export * from './construct';

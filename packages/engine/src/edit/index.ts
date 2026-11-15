@@ -53,3 +53,4 @@ export {
   trimGeometry,
 } from './trim';
 export * from './underlay-layers';
+export * from './array';
