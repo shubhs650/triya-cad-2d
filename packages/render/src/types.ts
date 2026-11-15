@@ -425,6 +425,12 @@ export interface SelectionPreview {
    * discontinued"); undefined, no limit.
    */
   readonly limit?: number;
+  /**
+   * Shift+Space pressed this many times over overlapping objects (M3-04 part 7): the object
+   * under the pickbox that many steps on from the nearest (round again after the farthest) is
+   * the one previewed, whatever PREVIEWFILTER says; undefined, the nearest, filtered.
+   */
+  readonly cycle?: number;
   /** The pickbox's half size in CSS pixels (PICKBOX). */
   readonly aperture: number;
   /** PREVIEWFILTER's bits. */

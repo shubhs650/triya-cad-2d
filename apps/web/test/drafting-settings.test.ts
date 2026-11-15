@@ -114,6 +114,12 @@ describe('the Drafting Settings dialog', () => {
       distance: '50',
       collapse: true,
       rows: '3',
+      sc: false,
+      scList: true,
+      scLocation: 0,
+      scQuadrant: 'top-right',
+      scDistance: '25',
+      scTitleBar: true,
     });
     // QPMODE 0 keeps no mode: turned on, it is for all objects. Object snap with no modes is off.
     expect(draftOf(state({ qpmode: 0, osmode: 0 }))).toMatchObject({ qpMode: 1, osnap: false });
@@ -161,6 +167,11 @@ describe('the Drafting Settings dialog', () => {
       qpDistance: 120,
       qpCollapse: false,
       qpRows: 5,
+      selectionCycling: 0,
+      scLocation: 0,
+      scQuadrant: 'top-right',
+      scDistance: 25,
+      scTitleBar: true,
     });
     const back = draftPatch(
       { ...d, additional: false, trackPolar: false, osnap: true, qp: false },
@@ -249,6 +260,7 @@ describe('the Snap and Grid tab', () => {
       'Object Snap',
       'Dynamic Input',
       'Quick Properties',
+      'Selection Cycling',
     ]);
     const d = draftOf(state({ snap: true, grid: true }), drawing);
     expect(d).toMatchObject({
@@ -342,6 +354,70 @@ describe('the Dynamic Input tab (M3-06 part 4)', () => {
       dynDimension: false,
       dynCartesian: true,
     });
+  });
+});
+
+// M3-04 part 7: the Selection Cycling tab (AutoCAD 2024 Help, "Selection Cycling Tab (Drafting
+// Settings Dialog Box)"): Allow selection cycling and Display selection cycling list box are
+// SELECTIONCYCLING (off keeps its mode negative, as Ctrl+W does); Display location (Cursor
+// dependent, its Quadrant and Distance in pixels, or Static) and Show title bar are per user.
+describe('the Selection Cycling tab (M3-04 part 7)', () => {
+  it('comes last, after Quick Properties, as AutoCAD’s does', () => {
+    expect(DRAFTING_SETTINGS_TABS.at(-1)).toEqual({ tab: 'sc', label: 'Selection Cycling' });
+  });
+
+  it('shows SELECTIONCYCLING and the list’s place, and OK sets them', () => {
+    const d = draftOf(state());
+    expect(d).toMatchObject({
+      sc: false,
+      // Off with no mode kept: allowing it shows the list, as Ctrl+W turns on 2.
+      scList: true,
+      scLocation: 0,
+      scQuadrant: 'top-right',
+      scDistance: '25',
+      scTitleBar: true,
+    });
+    expect(draftOf(state({ selectionCycling: 1 }))).toMatchObject({ sc: true, scList: false });
+    expect(draftOf(state({ selectionCycling: -1 }))).toMatchObject({ sc: false, scList: false });
+    expect(draftOf(state({ selectionCycling: 2 }))).toMatchObject({ sc: true, scList: true });
+    const on = draftPatch(
+      {
+        ...d,
+        sc: true,
+        scList: false,
+        scLocation: 1,
+        scQuadrant: 'bottom-left',
+        scDistance: '60',
+        scTitleBar: false,
+      },
+      state(),
+    );
+    expect(on).toMatchObject({
+      selectionCycling: 1,
+      scLocation: 1,
+      scQuadrant: 'bottom-left',
+      scDistance: 60,
+      scTitleBar: false,
+    });
+    // Off keeps the mode for Ctrl+W, or none as it was.
+    expect(draftPatch({ ...d, sc: false, scList: true }, state())).toMatchObject({
+      selectionCycling: 0,
+    });
+    const was = state({ selectionCycling: 2 });
+    expect(draftPatch({ ...draftOf(was), sc: false }, was)).toMatchObject({
+      selectionCycling: -2,
+    });
+    expect(draftPatch({ ...d, sc: false, scList: false }, state())).toMatchObject({
+      selectionCycling: -1,
+    });
+  });
+
+  it('refuses a distance out of range', () => {
+    const d = draftOf(state());
+    expect(draftProblem({ ...d, scDistance: '401' })).toBe(
+      'Distance in pixels must be a whole number from 0 to 400.',
+    );
+    expect(draftPatch({ ...d, scDistance: 'x' }, state())).toEqual({});
   });
 });
 

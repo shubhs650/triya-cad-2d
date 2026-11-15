@@ -1,11 +1,20 @@
 // Selection cycling's Selection list (M3-04 part 3, `selection-list.ts`): AutoCAD's small list
 // titled "Selection" that opens by a pick over overlapping objects, one row per object by its
 // type's name. Hovering a row (or moving to it with the arrow keys) highlights its object on the
-// canvas; a click or Enter selects it; Esc or a click elsewhere selects none.
-import { useEffect, useLayoutEffect, useRef, useState, useSyncExternalStore } from 'react';
+// canvas; a click or Enter selects it; Esc or a click elsewhere selects none. Where it opens and
+// whether it has its title bar are the Drafting Settings dialog's Selection Cycling tab's
+// (M3-04 part 7); static, its title bar drags it.
+import {
+  useEffect,
+  useLayoutEffect,
+  useRef,
+  useState,
+  useSyncExternalStore,
+  type PointerEvent as ReactPointerEvent,
+} from 'react';
 import type { EntityId } from '@triya/engine';
-import { rolloverPlacement } from './rollover';
-import { selectionList } from './selection-list';
+import { drafting } from './drafting';
+import { listPlacement, selectionList, staticList } from './selection-list';
 
 export function SelectionList({
   doc,
@@ -31,19 +40,51 @@ function Body({
   const [place, setPlace] = useState<{ left: number; top: number } | undefined>();
   const hover = useRef(onHover);
   hover.current = onHover;
+  const settings = useSyncExternalStore(drafting.subscribe, drafting.get);
+  const fixed = settings.scLocation === 1;
 
   useLayoutEffect(() => {
     const el = ref.current;
     if (!el) return;
-    // Beside the pick as a rollover tooltip goes beside the cursor, kept inside the window.
     setPlace(
-      rolloverPlacement(
-        request.at,
-        { width: el.offsetWidth, height: el.offsetHeight },
-        { width: window.innerWidth, height: window.innerHeight },
-      ),
+      listPlacement({
+        at: request.at,
+        size: { width: el.offsetWidth, height: el.offsetHeight },
+        view: { width: window.innerWidth, height: window.innerHeight },
+        location: settings.scLocation,
+        quadrant: settings.scQuadrant,
+        distance: settings.scDistance,
+        dragged: staticList.dragged,
+      }),
     );
-  }, [request]);
+  }, [request, settings.scLocation, settings.scQuadrant, settings.scDistance]);
+
+  /** Static, the title bar drags the list to where it then opens. */
+  const startDrag = (e: ReactPointerEvent<HTMLElement>) => {
+    const el = ref.current;
+    if (!fixed || !el || !place || e.button !== 0) return;
+    e.preventDefault();
+    const from = { x: e.clientX, y: e.clientY, at: place };
+    const move = (m: PointerEvent) => {
+      const at = listPlacement({
+        at: request.at,
+        size: { width: el.offsetWidth, height: el.offsetHeight },
+        view: { width: window.innerWidth, height: window.innerHeight },
+        location: 1,
+        quadrant: settings.scQuadrant,
+        distance: settings.scDistance,
+        dragged: { left: from.at.left + m.clientX - from.x, top: from.at.top + m.clientY - from.y },
+      });
+      staticList.dragged = at;
+      setPlace(at);
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
   // The first row takes the keys once the list shows (a hidden one cannot take focus).
   const shown = place !== undefined;
   useEffect(() => {
@@ -96,7 +137,14 @@ function Body({
       }}
       onPointerLeave={() => onHover(undefined)}
     >
-      <div className="selection-list-title">Selection</div>
+      {settings.scTitleBar && (
+        <div
+          className={fixed ? 'selection-list-title movable' : 'selection-list-title'}
+          onPointerDown={startDrag}
+        >
+          Selection
+        </div>
+      )}
       <ul>
         {request.candidates.map((c, i) => (
           <li key={c.id}>

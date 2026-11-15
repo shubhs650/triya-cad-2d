@@ -3302,6 +3302,22 @@ button {
   border-bottom: 1px solid var(--tip-border);
 }
 
+/* Selection cycling's badge (M3-04 part 7): two overlapping squares by the cursor. */
+.cycling-badge {
+  position: fixed;
+  z-index: 40;
+  pointer-events: none;
+  fill: var(--tip-bg, #ffffff);
+  stroke: var(--accent, #0f6cbd);
+  stroke-width: 1.5;
+}
+
+/* Static (M3-04 part 7): the title bar drags the list. */
+.selection-list-title.movable {
+  cursor: move;
+  user-select: none;
+}
+
 .selection-list ul {
   margin: 0;
   padding: 2px 0;
