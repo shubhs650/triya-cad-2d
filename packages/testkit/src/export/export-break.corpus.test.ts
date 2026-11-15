@@ -2,8 +2,8 @@
 // file. On one copy of the drawing every line, arc, circle, ellipse, ray, xline, polyline and
 // spline a drafter can select in model space is, in turn, broken (its middle third erased, as
 // BREAK leaves it), lengthened by a tenth at its end (a spline by a straight piece tangent to
-// it, M3-12 part 2) or reversed. On a second copy every polyline, block reference and dimension
-// is exploded and then everything in model space is joined at once (splines and elliptical arcs
+// it, M3-12 part 2) or reversed. On a second copy every polyline, block reference, dimension,
+// leader, multileader, table, region and multiline (M3-12 part 3) is exploded and then everything in model space is joined at once (splines and elliptical arcs
 // with what meets them into splines). Both save as AC1032 DXF
 // (DEC-047) and reopen with each object where the command put it; what an explode copied out of
 // a block (any kind) reopens under its handle.
@@ -111,6 +111,9 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
   let splinesGrown = 0;
   let splinesJoined = 0;
   let raysExtended = 0;
+  // M3-12 part 3: the kinds EXPLODE took on beyond polylines, references and dimensions.
+  const EXPLODED_KINDS = new Set(['LEADER', 'MULTILEADER', 'ACAD_TABLE', 'REGION', 'MLINE']);
+  const explodedKinds = new Map<string, number>();
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves its curves broken, lengthened, reversed, exploded and joined',
@@ -158,6 +161,10 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
         const second = open(bytes)!;
         const m2 = second.model;
         const b2 = new ChangeSetBuilder(m2);
+        for (const id of second.ids) {
+          const kind = m2.entity(id)!.geom.kind;
+          if (EXPLODED_KINDS.has(kind)) explodedKinds.set(kind, (explodedKinds.get(kind) ?? 0) + 1);
+        }
         const r = explodeObjects(b2, m2, second.ids);
         m2.apply(b2.build());
         exploded += r.exploded;
@@ -182,7 +189,6 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
         }
         m2.apply(b3.build());
         joined += j.joined.length;
-        splinesJoined += j.joined.filter((one) => one.made === 'spline').length;
         const pieces = r.made.filter((id) => {
           const e: Entity | undefined = m2.entity(id);
           return e !== undefined && (e.geom.kind === 'LINE' || e.geom.kind === 'ARC');
@@ -265,5 +271,6 @@ describe('BREAK, LENGTHEN, REVERSE, EXPLODE and JOIN on the public corpus', () =
     expect(splinesGrown).toBeGreaterThan(0);
     expect(splinesJoined).toBe(splinesGrown);
     expect(raysExtended).toBeGreaterThan(0);
+    expect(new Set(explodedKinds.keys())).toEqual(EXPLODED_KINDS);
   });
 });

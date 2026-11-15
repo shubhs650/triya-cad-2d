@@ -716,3 +716,26 @@ describe('path arrays follow their path (part 2)', () => {
     ]);
   });
 });
+
+describe('EXPLODE of an associative array (M3-12 part 3)', () => {
+  it('explodes the array into copies of its source objects, its record gone', async () => {
+    const s = setup();
+    await start(s, 'ARRAYRECT');
+    await s.bus.script(['']);
+    const [array] = s.arrays();
+    const extDict = array!.extDict;
+    s.pick(array!.handle);
+    await s.bus.script(['EXPLODE', '0,0', '']);
+    // "Explodes an associative array into copies of the original objects" (AutoCAD Help,
+    // "EXPLODE (Command)"): twelve circles where the items were, no references left.
+    expect(s.arrays()).toHaveLength(0);
+    const circles = s.live().filter((e) => e.geom.kind === 'CIRCLE' && e.geom.radius === 1);
+    expect(circles).toHaveLength(12);
+    expect(s.live().filter((e) => e.geom.kind === 'INSERT' && e.handle !== '38')).toHaveLength(0);
+    expect(s.rings()).toEqual(grid([0, 3, 6, 9], [0, 3, 6]));
+    // The circles keep the source's own properties (layer 0 of the sample), not the item's.
+    expect(circles[0]!.color).toEqual({ kind: 'byLayer' });
+    expect([...s.model.objects.values()].filter((o) => isAssocArray(o))).toHaveLength(0);
+    expect(extDict === undefined || s.model.objects.get(extDict) === undefined).toBe(true);
+  });
+});

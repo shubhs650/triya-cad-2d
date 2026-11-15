@@ -7,7 +7,7 @@ export {
   type GradientInput,
   type GradientRamp,
 } from './gradient';
-export { PatternLibrary, bundledPatterns, hatchLines } from './library';
+export { PatternLibrary, bundledPatterns, explodedHatchLines, hatchLines } from './library';
 export {
   parsePat,
   patternLines,

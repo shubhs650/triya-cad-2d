@@ -618,6 +618,27 @@ describe('triyaToAcad', () => {
     expectGeometry(reopened(bytes, added!.handle)?.geom, edited);
   });
 
+  // M3-12 part 3: an exploded multileader's MTEXT has a mask in the window colour (90 = 3) or
+  // only a frame (90 = 16), with no fill colour; DXF still states 63, which AutoCAD ignores
+  // then. acad-ts's ByBlock default is written, as for a new MTEXT (it threw on null).
+  it.each([[{ flags: 3, scale: 1.5 }], [{ flags: 16, scale: 1.2 }]] as const)(
+    'writes a new MTEXT with a background of no colour (%o)',
+    (background) => {
+      const { model } = open();
+      const e = byType(model, 'MTEXT');
+      let added: Entity | undefined;
+      edit(model, (b) => {
+        added = b.addEntity({
+          owner: e.owner,
+          layer: e.layer,
+          geom: { ...(e.geom as Extract<EntityGeometry, { kind: 'MTEXT' }>), background },
+        });
+      });
+      const back = reopened(save(model), added!.handle)?.geom;
+      expect(back).toMatchObject({ background: { ...background, color: { kind: 'byBlock' } } });
+    },
+  );
+
   it('keeps a polyline vertex that did not change exactly as it was', () => {
     const { model } = open();
     const e = byType(model, 'LWPOLYLINE');

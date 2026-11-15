@@ -752,7 +752,9 @@ const mtextWriter: Writer<MTextGeometry> = {
       const bg = g.background;
       m.backgroundFillFlags = bg?.flags ?? 0;
       if (bg) {
-        m.backgroundColor = bg.color ? acadColor(bg.color) : null;
+        // No colour (the window colour, or a frame only): DXF still states 63 behind 90 bits 1
+        // and 16, so the writer is left acad-ts's ByBlock rather than nothing (M3-12 part 3).
+        m.backgroundColor = bg.color ? acadColor(bg.color) : AcadColor.byBlock;
         m.backgroundScale = bg.scale;
         m.backgroundTransparency = bg.transparency ?? 0;
       }

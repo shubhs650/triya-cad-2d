@@ -1,9 +1,15 @@
 // Pattern hatches (M1-16): the families of parallel lines a HATCH stores (DXF 53/43–46/79/49,
 // already scaled and rotated), clipped to its boundary loops by the island style, and dashed
 // from each line's own origin.
-import type { HatchEdge, HatchLoop, HatchPatternLine, Vec2 } from '@triya/engine';
+import type { HatchEdge, HatchGeometry, HatchLoop, HatchPatternLine, Vec2 } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
-import { hatchPattern, loopSegments, type HatchInput } from '../src/index';
+import {
+  bundledPatterns,
+  explodedHatchLines,
+  hatchPattern,
+  loopSegments,
+  type HatchInput,
+} from '../src/index';
 
 const square = (x0: number, y0: number, x1: number, y1: number): HatchLoop => ({
   flags: 1,
@@ -246,5 +252,43 @@ describe('loopSegments', () => {
       if (y0 > 0 && x0 <= 2.5 && x1 >= 2.5) y = y0 + ((y1 - y0) * (2.5 - x0)) / (x1 - x0);
     }
     expect(y).toBeGreaterThan(2.5 + 0.1);
+  });
+});
+
+// M3-12 part 3: what EXPLODE turns a pattern hatch into.
+describe('explodedHatchLines', () => {
+  const hatch = (extra: Partial<HatchGeometry>): HatchGeometry => ({
+    kind: 'HATCH',
+    pattern: 'USER',
+    solid: false,
+    associative: false,
+    style: 0,
+    patternType: 1,
+    patternAngle: 0,
+    patternScale: 1,
+    double: false,
+    loops: [square(0, 0, 4, 4)],
+    patternLines: [horizontal([1, -1, 0, -1])],
+    seedPoints: [],
+    ...extra,
+  });
+
+  it('gives every dash and dot of every family, flat', () => {
+    const r = explodedHatchLines(bundledPatterns())(hatch({}))!;
+    // Lines through y = 0, 1, 2, …: a dash 0–1, a gap, a dot at 2 and a gap per period of 3,
+    // from each line's origin at x = 0.
+    expect(r.segments.length % 4).toBe(0);
+    expect(r.segments.length).toBeGreaterThan(0);
+    expect(r.dots.length).toBeGreaterThan(0);
+    expect(r.segments.slice(0, 4)).toEqual([0, 0, 1, 0]);
+    expect(r.dots.slice(0, 2)).toEqual([2, 0]);
+  });
+
+  it('gives nothing for an unknown pattern or one denser than HPMAXLINES', () => {
+    expect(
+      explodedHatchLines(bundledPatterns())(hatch({ patternLines: [], pattern: 'NOPE' })),
+    ).toBe(undefined);
+    const dense = explodedHatchLines(bundledPatterns(), { maxLines: 1 });
+    expect(dense(hatch({}))).toBe(undefined);
   });
 });

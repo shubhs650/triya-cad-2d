@@ -10,6 +10,7 @@ import { PICKFIRST } from '../commands/sysvars';
 import { GROUPDISPLAYMODE, PICKADD, PICKAUTO, PICKSTYLE } from '../selection/loop';
 import type { UndoState, ViewStep } from '../commands/undo';
 import type { DimensionRegenerator } from '../edit/dimension-block';
+import type { HatchLinesOf } from '../edit/explode';
 import type { ViewReply, ViewRequest, ViewState } from '../commands/view/host';
 import {
   paperViewsChange,
@@ -278,6 +279,8 @@ export interface EngineServices {
   readonly dimensions?: DimensionRegenerator;
   /** What a dimension measures, for the Properties palette's Measurement row (M2-35 part 10). */
   readonly measureDimension?: DimensionMeasure;
+  /** A pattern hatch's lines, which EXPLODE turns into lines (M3-12 part 3, `@triya/hatch`). */
+  readonly hatchLines?: HatchLinesOf;
 }
 
 export class EngineSession {
@@ -320,6 +323,7 @@ export class EngineSession {
       model: this.model,
       registry: this.#registry,
       dimensions: services.dimensions,
+      hatchLines: services.hatchLines,
       apply: (change) => {
         this.model.apply(change);
         this.#emit({ type: 'change', change });
