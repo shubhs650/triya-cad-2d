@@ -18,8 +18,10 @@ import {
   isAssocArray,
   type AssocArray,
   type BusEvent,
+  ChangeSetBuilder,
   type DocumentInit,
   type Entity,
+  type EntityGeometry,
   type EntityId,
   type Matrix2D,
   type ViewHost,
@@ -30,6 +32,8 @@ import {
   LAYER_0,
   LAYER_WALLS,
   MODEL_SPACE,
+  blockRecord,
+  circleGeom,
   entityInit,
   lineGeom,
   sampleInit,
@@ -46,7 +50,28 @@ function drawing(): DocumentInit {
       entityInit('30', { kind: 'CIRCLE', center: { x: 0, y: 0 }, radius: 1 }),
       entityInit('31', lineGeom(0, 10, 20, 10)),
       entityInit('33', lineGeom(2, 0, 3, 0)),
+      // A region, which cannot be copied, and an array AutoCAD made: an INSERT of an anonymous
+      // block that its association objects react to.
+      entityInit('35', { kind: 'REGION', loops: [] } as unknown as EntityGeometry),
+      entityInit('37', circleGeom(0, 0, 2), { owner: '36' }),
+      entityInit(
+        '38',
+        {
+          kind: 'INSERT',
+          block: '36',
+          position: { x: 50, y: 50 },
+          scale: { x: 1, y: 1, z: 1 },
+          rotation: 0,
+          attributes: [],
+        },
+        { reactors: ['39'] },
+      ),
     ],
+    tables: {
+      ...base.tables,
+      blockRecords: [...(base.tables?.blockRecords ?? []), blockRecord('36', '*U1')],
+    },
+    blocks: [...(base.blocks ?? []), { handle: '36', name: '*U1', basePoint: { x: 0, y: 0 } }],
   };
 }
 
@@ -165,7 +190,7 @@ describe('associative ARRAYRECT', () => {
     await s.bus.script(['']);
     expect(s.arrays()).toHaveLength(0);
     expect(s.rings()).toHaveLength(12);
-    expect(s.live().filter((e) => e.geom.kind === 'INSERT')).toHaveLength(0);
+    expect(s.arrays()).toHaveLength(0);
 
     const t = setup(0);
     await start(t, 'ARRAYRECT');
@@ -344,5 +369,46 @@ describe('ARRAYEDIT', () => {
     await s.bus.script(['ARRAYEDIT', '0,0', 'I']);
     expect(s.log.at(-1)).toBe("The array's path is gone: its items stay where they are.");
     expect(s.rings()).toEqual(grid([-1, 19], [10, 11]));
+  });
+
+  it('refuses an array made elsewhere, and a path array scaled out of shape', async () => {
+    const s = setup();
+    s.pick('38');
+    await s.bus.script(['ARRAYEDIT', '0,0']);
+    expect(s.log.at(-1)).toBe(
+      'Triya cannot edit this array: it was not made in Triya, and its parameters are not documented.',
+    );
+    s.pick();
+    await s.bus.script(['']);
+    s.pick('30');
+    await s.bus.script(['ARRAYPATH', '0,0', '']);
+    s.pick('31');
+    await s.bus.script(['1,10', '']);
+    const array = s.arrays()[0]!;
+    const b = new ChangeSetBuilder(s.model);
+    b.updateEntity(array.id, { geom: { ...array.geom, scale: { x: 2, y: 1, z: 1 } } as never });
+    s.model.apply(b.build());
+    s.pick(array.handle);
+    await s.bus.script(['ARRAYEDIT', '0,0', 'R', '2', '', '']);
+    expect(s.log).toContain('The array cannot be remade: it is not scaled uniformly.');
+    expect(s.bus.command).toBeUndefined();
+  });
+
+  it('ends on Esc, and leaves what cannot be copied out of a new array', async () => {
+    const s = setup();
+    s.pick('33');
+    await s.bus.script(['ARRAYPOLAR', '0,0', '', '0,0', '']);
+    s.pick(s.arrays()[0]!.handle);
+    await s.bus.script(['ARRAYEDIT', '0,0', 'R', '3']);
+    await s.bus.cancel();
+    expect(s.bus.command).toBeUndefined();
+    expect(s.record().params).toMatchObject({ rows: 1 });
+
+    const t = setup();
+    t.pick('35');
+    await t.bus.script(['ARRAYRECT', '0,0', '', '']);
+    expect(t.arrays()).toEqual([]);
+    expect(t.log).toContain('1 object was not arrayed: a region cannot be copied.');
+    expect(t.model.entityByHandle('35')).toBeDefined();
   });
 });
