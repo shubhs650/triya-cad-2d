@@ -17,9 +17,8 @@ type Bus = ReturnType<typeof setup>['bus'];
 
 /** The current prompt's preview at `q`; fails when the prompt has none. */
 async function previewAt(bus: Bus, q: PreviewQuery): Promise<CommandPreview | undefined> {
-  const src = bus.prompt?.commandPreview;
-  if (!src) throw new Error(`no preview at "${bus.promptText}"`);
-  return src.at(q);
+  if (!bus.prompt?.commandPreview) throw new Error(`no preview at "${bus.promptText}"`);
+  return bus.commandPreview(q);
 }
 
 /** A geometry's numbers rounded, for comparing shapes. */

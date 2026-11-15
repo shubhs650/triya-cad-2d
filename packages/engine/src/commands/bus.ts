@@ -86,6 +86,7 @@ import type { HatchLinesOf } from '../edit/explode';
 import { distance } from '../geom/vec';
 import { wholeGroups } from '../edit/groups';
 import type { DragPreview } from './drag';
+import type { CommandPreview, PreviewQuery } from './command-preview';
 import { UndoStack, type UndoAction, type UndoState } from './undo';
 import type { PropertyEdit } from '../properties/edit';
 import { filtered } from '../properties/sheet';
@@ -631,6 +632,22 @@ export class PromptBus {
       if (!this.#pickfirstOn) return;
       this.#step(undefined, await this.#idle.point(point, o));
     });
+  }
+
+  /**
+   * COMMANDPREVIEW (M3-12 part 6, `command-preview.ts`): what a pick (point) at `q` would do at
+   * the prompt the command waits at, when it shows a preview. It edits nothing and does not
+   * wait behind input still being worked on: a prompt gone meanwhile gives none.
+   */
+  async commandPreview(q: PreviewQuery): Promise<CommandPreview | undefined> {
+    const at = this.prompt?.commandPreview?.at;
+    if (!at) return undefined;
+    try {
+      return await at(q);
+    } catch {
+      // A preview is never worth an error: the pick itself says what is wrong.
+      return undefined;
+    }
   }
 
   /**

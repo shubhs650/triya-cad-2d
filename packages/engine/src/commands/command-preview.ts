@@ -38,11 +38,15 @@ export interface PreviewQuery {
   readonly shift?: boolean;
 }
 
-/** A prompt's preview (`PromptBase.commandPreview`). */
+/**
+ * A prompt's preview (`PromptBase.commandPreview`). The engine runs in a worker (M1-67): the
+ * prompt the app sees has no `at`, and the app asks the engine with `PromptBus.commandPreview`
+ * (the session's `command-preview` input), which asks the prompt the command is waiting at.
+ */
 export interface CommandPreviewSource {
   /** The preview is of the object under the pickbox: the front-end passes `hits`. */
   readonly hover?: true;
-  readonly at: (
+  readonly at?: (
     q: PreviewQuery,
   ) => CommandPreview | undefined | Promise<CommandPreview | undefined>;
 }
