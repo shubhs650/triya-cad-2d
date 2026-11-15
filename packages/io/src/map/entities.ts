@@ -106,6 +106,7 @@ import type {
   OleFrameGeometry,
   ProxyGraphicsGeometry,
   RegionGeometry,
+  UcsFrame,
   ViewportGeometry,
   PlanarProps,
   TextFields,
@@ -1243,7 +1244,37 @@ function viewportGeometry(v: Viewport): ViewportGeometry {
     plotStyleSheet: v.styleSheetName,
     renderMode: v.renderMode,
     ...(visualStyle ? { visualStyle } : {}),
+    ...(v.ucsPerViewport && { ucsPerViewport: true }),
+    ...viewportUcs(v),
   };
+}
+
+/**
+ * A viewport's own UCS (DXF 110/111/112, 146, 79; M3-15), left out while it is the WCS AutoCAD
+ * writes for a viewport that has none.
+ */
+function viewportUcs(v: Viewport): { ucs: UcsFrame } | Record<string, never> {
+  const p = (q: { x: number; y: number; z: number }) => ({ x: q.x, y: q.y, z: q.z });
+  const ucs = {
+    origin: p(v.ucsOrigin),
+    xAxis: p(v.ucsXAxis),
+    yAxis: p(v.ucsYAxis),
+    elevation: v.elevation,
+    orthographic: v.ucsOrthographicType,
+  };
+  const world =
+    ucs.origin.x === 0 &&
+    ucs.origin.y === 0 &&
+    ucs.origin.z === 0 &&
+    ucs.xAxis.x === 1 &&
+    ucs.xAxis.y === 0 &&
+    ucs.xAxis.z === 0 &&
+    ucs.yAxis.x === 0 &&
+    ucs.yAxis.y === 1 &&
+    ucs.yAxis.z === 0 &&
+    ucs.elevation === 0 &&
+    ucs.orthographic === 0;
+  return world ? {} : { ucs };
 }
 
 /** TOLERANCE's 10 and 11 are WCS, so it converts like MTEXT. */

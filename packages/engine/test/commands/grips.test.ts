@@ -256,6 +256,32 @@ describe('grip dimension input (M3-06 part 8, DYNDIGRIP)', () => {
 });
 
 describe('gripDimensionsOf', () => {
+  it('measures an arc’s end from its other end, keeping its chord height, and its middle through its ends (M3-15)', () => {
+    // A half circle about the origin, radius 5, from (5,0) to (−5,0) through (0,5).
+    const arc = {
+      kind: 'ARC',
+      center: { x: 0, y: 0 },
+      radius: 5,
+      startAngle: 0,
+      endAngle: Math.PI,
+    } as EntityGeometry;
+    const start = gripDimensionsOf(arc, { x: 5, y: 0 })!;
+    expect(start.grip).toEqual({ x: 5, y: 0 });
+    expect(start.anchor!.x).toBeCloseTo(-5, 12);
+    expect(start.anchor!.y).toBeCloseTo(0, 12);
+    // The chord height a stretched end keeps: the sagitta, 5.
+    expect(start.height).toBeCloseTo(5, 12);
+    const end = gripDimensionsOf(arc, { x: -5, y: 0 })!;
+    expect(end.anchor).toEqual({ x: 5, y: 0 });
+    // The middle grip: the arc through both ends and the stretch point.
+    const mid = gripDimensionsOf(arc, { x: 0, y: 5 })!;
+    expect(mid.anchor).toBeUndefined();
+    expect(mid.ends![0]).toEqual({ x: 5, y: 0 });
+    expect(mid.ends![1].x).toBeCloseTo(-5, 12);
+    // The centre moves the arc: nothing to measure.
+    expect(gripDimensionsOf(arc, { x: 0, y: 0 })).toBeUndefined();
+  });
+
   it('measures a polyline vertex from the one before, a first vertex from the next', () => {
     const poly = {
       kind: 'LWPOLYLINE',

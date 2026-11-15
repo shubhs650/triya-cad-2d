@@ -54,6 +54,7 @@ import {
   viewportLayers,
   viewportTransform,
   ucsOf,
+  viewportUcs,
   type ViewportLayers,
   type Box,
   type ChangeSet,
@@ -1984,14 +1985,16 @@ export class Canvas2DRenderer implements Renderer {
   /** One viewport's view of model space, clipped to its frame. */
   /**
    * The UCS icon of a viewport (M3-06 part 8; AutoCAD 2024 Help, "UCSICON"): with its UCSICON bit
-   * (DXF 90 bit 32) on, model space's current UCS's X and Y arrows as the viewport turns them, at
+   * (DXF 90 bit 32) on, the X and Y arrows of the UCS it shows (its own with UCSVP on, else model
+   * space's current one: `viewportUcs`, M3-15) as the viewport turns them, at
    * the UCS origin with bit 64 while it sits inside the frame with room, else in the frame's
    * lower-left corner; a square at the corner while the UCS is the WCS.
    */
   #drawViewportUcsIcon(ctx: Canvas2D, vp: ViewportEntry, view: DrawFrame): void {
     const flags = vp.geom.flags;
     if ((flags & VIEWPORT_UCS_ICON) === 0) return;
-    const ucs = ucsOf(this.#model.header, false);
+    // Its own UCS while its UCSVP is on (M3-15).
+    const ucs = viewportUcs(vp.geom, ucsOf(this.#model.header, false));
     const t = vp.toPaper;
     const k = view.m.a;
     const device = (p: Vec2) => ({

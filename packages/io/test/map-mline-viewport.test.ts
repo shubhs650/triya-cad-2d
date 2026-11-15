@@ -151,4 +151,33 @@ describe('VIEWPORT', () => {
       renderMode: 0,
     });
   });
+
+  it('maps the viewport’s own UCS and UCSVP (M3-15, DXF 71, 110–112, 146, 79)', () => {
+    const doc = new CadDocument(ACadVersion.AC1032);
+    const v = new Viewport();
+    v.width = 8;
+    v.height = 6;
+    v.id = 2;
+    v.ucsPerViewport = true;
+    v.ucsOrigin = new XYZ(1, 2, 0);
+    v.ucsXAxis = new XYZ(0, 1, 0);
+    v.ucsYAxis = new XYZ(-1, 0, 0);
+    v.elevation = 3;
+    expect(mapIn(doc, v)).toMatchObject({
+      ucsPerViewport: true,
+      ucs: {
+        origin: { x: 1, y: 2, z: 0 },
+        xAxis: { x: 0, y: 1, z: 0 },
+        yAxis: { x: -1, y: 0, z: 0 },
+        elevation: 3,
+        orthographic: 0,
+      },
+    });
+    // UCSVP 0 and the WCS, as AutoCAD writes a viewport by default: neither stated.
+    const w = new Viewport();
+    w.id = 3;
+    const g = mapIn(doc, w);
+    expect('ucsPerViewport' in g).toBe(false);
+    expect('ucs' in g).toBe(false);
+  });
 });

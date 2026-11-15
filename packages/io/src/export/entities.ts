@@ -2178,6 +2178,17 @@ const viewportWriter: Writer<ViewportGeometry> = {
     if (d('visualStyle')) {
       v.visualStyle = g.visualStyle ? resolve(r, g.visualStyle, VisualStyle)! : null;
     }
+    // The viewport's own UCS (M3-15): UCSVP (DXF 71) and the UCS (110/111/112, 146, 79), the
+    // WCS when the model states none.
+    if (d('ucsPerViewport')) v.ucsPerViewport = g.ucsPerViewport ?? false;
+    if (d('ucs')) {
+      const u = g.ucs;
+      v.ucsOrigin = u ? new XYZ(u.origin.x, u.origin.y, u.origin.z) : new XYZ(0, 0, 0);
+      v.ucsXAxis = u ? new XYZ(u.xAxis.x, u.xAxis.y, u.xAxis.z) : new XYZ(1, 0, 0);
+      v.ucsYAxis = u ? new XYZ(u.yAxis.x, u.yAxis.y, u.yAxis.z) : new XYZ(0, 1, 0);
+      v.elevation = u?.elevation ?? 0;
+      v.ucsOrthographicType = u?.orthographic ?? 0;
+    }
   },
 };
 
