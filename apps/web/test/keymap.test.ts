@@ -51,6 +51,14 @@ describe('chordOf', () => {
     expect(chordOf(press('π', { alt: true, ctrl: false, code: 'KeyP' }))).toBe('Alt+P');
   });
 
+  it('names the physical punctuation key, whatever Shift types (M3-06 part 5)', () => {
+    expect(chordOf(plain('>', { shift: true, code: 'Period' }))).toBe('Shift+.');
+    expect(chordOf(plain('<', { shift: true, code: 'Comma' }))).toBe('Shift+,');
+    expect(chordOf(plain(':', { shift: true, code: 'Semicolon' }))).toBe('Shift+;');
+    expect(chordOf(plain('"', { shift: true, code: 'Quote' }))).toBe("Shift+'");
+    expect(chordOf(plain('}', { shift: true, code: 'BracketRight' }))).toBe('Shift+]');
+  });
+
   it('has no chord for a modifier alone', () => {
     expect(chordOf(press('Control'))).toBeUndefined();
     expect(chordOf(plain('Shift', { shift: true }))).toBeUndefined();
@@ -85,6 +93,21 @@ describe('assignable', () => {
     expect(assignable('Ctrl+L')).toBe(true);
     expect(assignable('Alt+Shift+L')).toBe(true);
     expect(assignable('Ctrl+Enter')).toBe(true);
+  });
+
+  it('takes Shift alone or Shift with a typing key for a held override (M3-06 part 5)', () => {
+    expect(assignable('Shift', true)).toBe(true);
+    expect(assignable('Shift+E', true)).toBe(true);
+    expect(assignable('Shift+.', true)).toBe(true);
+    expect(assignable('E', true)).toBe(false);
+    expect(assignable('Ctrl+Shift+E', true)).toBe(false);
+    expect(assignable('Shift+F3', true)).toBe(false);
+    expect(assignable('Shift+Space', true)).toBe(false);
+    expect(assignable('Shift')).toBe(false);
+    expect(normalizeChord('shift')).toBe('Shift');
+    expect(normalizeKeyOverrides({ 'override:END': ['Shift+N', 'Ctrl+N'] })).toEqual({
+      'override:END': ['Shift+N'],
+    });
   });
 
   it('leaves typing keys and Esc, Enter, Tab and Space to the command line', () => {
@@ -184,8 +207,31 @@ describe('the default keyboard map', () => {
   it('gives each key one action and every key is assignable', () => {
     const keys = KEY_ACTIONS.flatMap((a) => a.keys);
     expect(new Set(keys).size).toBe(keys.length);
-    expect(keys.filter((k) => !assignable(k) || normalizeChord(k) !== k)).toEqual([]);
+    const bad = KEY_ACTIONS.flatMap((a) =>
+      a.keys.filter((k) => !assignable(k, a.hold) || normalizeChord(k) !== k),
+    );
+    expect(bad).toEqual([]);
     expect(new Set(KEY_ACTIONS.map((a) => a.id)).size).toBe(KEY_ACTIONS.length);
+  });
+
+  // M3-06 part 5: AutoCAD's temporary override keys (acad.cuix's Temporary Overrides), held.
+  it("has AutoCAD's temporary override keys, held", () => {
+    const map = new Keymap();
+    const held = KEY_ACTIONS.filter((a) => a.hold).map((a) => [a.id, map.keysOf(a.id)]);
+    expect(held).toEqual([
+      ['override:ortho', ['Shift']],
+      ['override:polar', ['Shift+X', 'Shift+.']],
+      ['override:otrack', ['Shift+Q', 'Shift+]']],
+      ['override:osnap', ['Shift+A', "Shift+'"]],
+      ['override:disable', ['Shift+D', 'Shift+L']],
+      ['override:enforce', ['Shift+S', 'Shift+;']],
+      ['override:END', ['Shift+E', 'Shift+P']],
+      ['override:MID', ['Shift+M', 'Shift+V']],
+      ['override:CEN', ['Shift+C', 'Shift+,']],
+    ]);
+    expect(KEY_ACTIONS.filter((a) => a.hold).every((a) => a.group === 'Temporary Override')).toBe(
+      true,
+    );
   });
 
   it('knows the keys a browser tab keeps', () => {

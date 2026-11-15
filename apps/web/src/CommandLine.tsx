@@ -29,9 +29,11 @@ import {
   keymap,
   keymapVersion,
   onShortcuts,
+  releaseShortcut,
   runShortcut,
   type ShortcutHandler,
 } from './shortcuts';
+import { heldOverrides, takesOverrides } from './temp-overrides';
 
 /** Lines of history the docked window shows above the prompt (AutoCAD's default is 3). */
 const SHOWN_LINES = 2;
@@ -108,6 +110,8 @@ export function CommandLine({
   );
   const textRef = useRef(text);
   textRef.current = text;
+  const promptRef = useRef(prompt);
+  promptRef.current = prompt;
 
   /** Sends typed input; `relativeTo`: what its `@` counts from, for Dynamic Input (M2-71). */
   const send = (value: string, relativeTo?: Vec2) => {
@@ -281,6 +285,13 @@ export function CommandLine({
         invokeRef.current(commandOf(id)!);
         return true;
       },
+      // The temporary override keys (M3-06 part 5, TEMPOVERRIDES) act at a prompt for a point
+      // with nothing typed; elsewhere Shift+E types an E.
+      'override:': (_, focus) =>
+        drafting.get().tempOverrides &&
+        takesOverrides(promptRef.current) &&
+        textRef.current === '' &&
+        (focus.kind === 'none' || (focus.kind === 'command' && focus.empty)),
     };
     for (const item of DRAFTING_ITEMS)
       own[item.id] = () => {
@@ -337,7 +348,16 @@ export function CommandLine({
       }
     };
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
+    // A temporary override lasts while its key is held (M3-06 part 5).
+    const onKeyUp = (e: KeyboardEvent) => releaseShortcut(e);
+    const onBlur = () => heldOverrides.clear();
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', onBlur);
+    };
   }, []);
 
   useEffect(() => {

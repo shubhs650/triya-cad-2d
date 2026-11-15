@@ -93,6 +93,11 @@ export interface DraftingState {
   /** POLARDIST: PolarSnap's distance, 0 for the snap X spacing. Per user, initially 0. */
   readonly polarDist: number;
   /**
+   * TEMPOVERRIDES (M3-06 part 5): the temporary override keys (Shift for ORTHO, Shift+E for
+   * Endpoint…, `temp-overrides.ts`) act. AutoCAD keeps it per user, initially on.
+   */
+  readonly tempOverrides: boolean;
+  /**
    * The Drafting Settings dialog's Dynamic Input tab (M3-06 part 4), kept per user as AutoCAD
    * keeps them: DYNMODE's bits (1 pointer input, 2 dimension input; initially 3), which F12
    * turns on and off as a whole (`DynMode`); DYNPROMPT, the prompt at the cursor (initially on);
@@ -361,6 +366,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   polarAddAngles: '',
   snapType: 0,
   polarDist: 0,
+  tempOverrides: true,
   dynBits: 3,
   dynPrompt: true,
   dynPiCoords: 0,

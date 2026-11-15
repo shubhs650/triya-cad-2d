@@ -10,6 +10,7 @@ import { keywordShortcut, type Prompt, type Vec2 } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { cycleLasso, cycleSnap } from './canvas/registry';
 import { drafting } from './drafting';
+import { overrideKey } from './shortcuts';
 import {
   dynAhead,
   dynBackspace,
@@ -160,6 +161,8 @@ export function DynamicInput({
       const s = dynCurrent(latest.current, p, typed.current, settings);
       if (!visible || !overNow.current || !p || !s || takesText(e.target)) return;
       if (e.ctrlKey || e.metaKey || e.altKey) return;
+      // A temporary override key with nothing typed (M3-06 part 5) is the command line's to hold.
+      if (typed.current.length === 0 && drafting.get().tempOverrides && overrideKey(e)) return;
       if (props.current.hold(e.key)) {
         e.preventDefault();
         e.stopImmediatePropagation();

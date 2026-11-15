@@ -203,7 +203,7 @@ describe('LENGTHEN', () => {
     ]);
   });
 
-  it('grows an elliptical arc round its ellipse by length, and only shortens splines', () => {
+  it('grows an elliptical arc round its ellipse by length, and splines along their end', () => {
     const e: EntityGeometry = {
       kind: 'ELLIPSE',
       center: { x: 0, y: 0 },
@@ -230,7 +230,10 @@ describe('LENGTHEN', () => {
       closed: false,
       periodic: false,
     };
-    expect(lengthen(s, true, 12)).toBe('spline');
+    expect(ends(lengthen(s, true, 12) as EntityGeometry)).toEqual([
+      [0, 0],
+      [12, 0],
+    ]);
     expect(ends(lengthen(s, true, 4) as EntityGeometry)).toEqual([
       [0, 0],
       [4, 0],

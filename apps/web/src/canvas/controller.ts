@@ -118,6 +118,7 @@ import {
   type DraftingState,
 } from '../drafting';
 import { DEFAULT_CANVAS, type CanvasColours } from '../preferences';
+import { heldOverrides, withOverrides } from '../temp-overrides';
 import { crosshairCursor, foregroundOn, interfaceColours, type InterfaceColours } from './colours';
 import {
   ACQUIRE_MS,
@@ -929,6 +930,22 @@ export class CanvasController {
       this.#requestSnap();
       this.#track();
     }
+  }
+
+  /**
+   * The drafting aids the cursor follows: the status bar's, with the temporary override keys
+   * held applied (M3-06 part 5).
+   */
+  #aids(): DraftingState {
+    return withOverrides(this.#drafting, heldOverrides.active());
+  }
+
+  /** A temporary override key was pressed or let go: snap and track anew at a point prompt. */
+  #overridden(): void {
+    if (!this.#prompt || this.#mode !== 'none') return;
+    this.#hit = undefined;
+    this.#requestSnap();
+    this.#track();
   }
 
   /** The canvas colours changed in Settings (M2-20). */
@@ -1749,6 +1766,9 @@ export class CanvasController {
   #listen(): void {
     const c = this.canvas;
     const opts = { signal: this.#listeners.signal };
+    // A temporary override key pressed or let go (M3-06 part 5): the cursor snaps anew.
+    const stopOverrides = heldOverrides.subscribe(() => this.#overridden());
+    this.#listeners.signal.addEventListener('abort', stopOverrides);
     // Ctrl pressed or let go with the cursor still (M3-01 part 6): the dragged arc switches.
     const ctrlKey = (e: KeyboardEvent) => {
       if (e.key !== 'Control') {
@@ -2101,7 +2121,7 @@ export class CanvasController {
    * the prompt's last segment with POLARMODE 1.
    */
   #constrain(world: Vec2): ReturnType<typeof constrainCursor> {
-    const d = this.#drafting;
+    const d = this.#aids();
     const base = this.#base();
     const vport = this.#vport();
     const p = this.#prompt;
@@ -2126,7 +2146,7 @@ export class CanvasController {
   /** The modes the next point snaps with: a typed override's, else the running ones. */
   #modes(): number {
     const p = this.#prompt;
-    return p?.kind === 'point' && p.osnap !== undefined ? p.osnap : this.#drafting.osmode;
+    return p?.kind === 'point' && p.osnap !== undefined ? p.osnap : this.#aids().osmode;
   }
 
   /** The object snaps at a point, best first, then what may be acquired; none with OSNAP off. */
@@ -2184,7 +2204,7 @@ export class CanvasController {
   #watchAcquire(hits: readonly OsnapHit[]): void {
     const items: Acquired[] = [];
     const point = this.#hit;
-    if (point && this.#drafting.otrack && this.#prompt?.kind === 'point' && !this.#prompt.osnap)
+    if (point && this.#aids().otrack && this.#prompt?.kind === 'point' && !this.#prompt.osnap)
       items.push({ kind: 'point', point: point.point, mode: point.mode });
     for (const h of hits) {
       if (!h.track || !h.direction) continue;
@@ -2252,6 +2272,9 @@ export class CanvasController {
    * else the constrained cursor; missed when the prompt's override found nothing there.
    */
   async #pointAt(world: Vec2): Promise<PickedPoint> {
+    // The aids as they are at the click: an override key let go while the snaps are worked out
+    // still counts (M3-06 part 5), as the modes asked for already do.
+    const constrained = this.#constrain(world).point;
     const hits = (await this.#snapAt(world)).filter((h) => !h.track);
     const hit = hits[this.#cycle < hits.length ? this.#cycle : 0];
     if (hit) {
@@ -2260,7 +2283,7 @@ export class CanvasController {
     }
     const p = this.#prompt;
     const missed = p?.kind === 'point' && p.osnap !== undefined && p.osnap !== 0;
-    return { point: this.#constrain(world).point, ...(missed && { missed: true }) };
+    return { point: constrained, ...(missed && { missed: true }) };
   }
 
   /**

@@ -15,6 +15,7 @@ import {
   type Entity,
   type EntityGeometry,
   type EntityId,
+  type SplineGeometry,
   type ViewHost,
   type Vec2,
   type ViewReply,
@@ -122,6 +123,12 @@ function setup(extra: (EntityGeometry | [EntityGeometry, Partial<Entity>])[] = [
   };
   return { model, bus, log, byHandle, space, kinds, ends };
 }
+
+/** A spline's first and last control points. */
+const cvs = (e: Entity) => {
+  const p = (e.geom as SplineGeometry).controlPoints;
+  return [p[0]!.x, p[0]!.y, p.at(-1)!.x, p.at(-1)!.y].map(r6);
+};
 
 describe('BREAK', () => {
   it('takes the pick as the first point and erases up to the second', async () => {
@@ -367,6 +374,31 @@ describe('JOIN', () => {
     expect(byHandle('41')).toBeUndefined();
   });
 
+  it('joins a line meeting a source spline into the spline (M3-12 part 2)', async () => {
+    const { bus, log, byHandle, kinds } = setup([
+      {
+        kind: 'SPLINE',
+        degree: 2,
+        knots: [0, 0, 0, 1, 1, 1],
+        controlPoints: [
+          { x: 20, y: 0 },
+          { x: 25, y: 5 },
+          { x: 30, y: 0 },
+        ],
+        closed: false,
+        periodic: false,
+      } as EntityGeometry,
+      lineGeom(30, 0, 35, 0),
+    ]);
+    await bus.script(['JOIN']);
+    await bus.pick({ x: 20, y: 0 });
+    await bus.script(['', 'C', '29,-1', '36,1', '']);
+    expect(log).toContain('2 objects converted to 1 spline');
+    expect(cvs(byHandle('40')!)).toEqual([20, 0, 35, 0]);
+    expect(byHandle('41')).toBeUndefined();
+    expect(kinds().filter((k) => k === 'SPLINE')).toHaveLength(1);
+  });
+
   it('closes a source arc into a circle', async () => {
     const { bus, log, kinds } = setup([
       { kind: 'ARC', center: { x: 20, y: 0 }, radius: 2, startAngle: 0, endAngle: Math.PI },
@@ -546,7 +578,7 @@ describe('the less common answers', () => {
   });
 
   it('says what LENGTHEN cannot do and checks its values', async () => {
-    const { bus, log } = setup([
+    const { bus, log, byHandle } = setup([
       ellipseArc,
       {
         kind: 'SPLINE',
@@ -572,9 +604,12 @@ describe('the less common answers', () => {
     expect(bus.promptText).toBe('Specify total length or [Angle] <1.0000>:');
     await bus.script(['100']);
     await bus.pick({ x: 38, y: 10 });
-    expect(log).toContain('A spline can only be shortened.');
+    // A spline grows by a straight piece along its end (M3-12 part 2).
+    expect(cvs(byHandle('41')!)).toEqual([30, 10, 130, 10]);
     await bus.pick({ x: 5, y: 30 });
     expect(log).toContain('Cannot lengthen that object.');
+    await bus.script(['U']);
+    expect(cvs(byHandle('41')!)).toEqual([30, 10, 40, 10]);
     await bus.script(['U']);
     expect(log).toContain('Nothing to undo.');
     await bus.pick({ x: 24, y: 0 });
