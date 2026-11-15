@@ -175,6 +175,15 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   { name: 'DYNPROMPT', store: 'app', kind: 'switch' },
   { name: 'DYNPICOORDS', store: 'app', kind: 'integer', min: 0, max: 1 },
   { name: 'DYNPIFORMAT', store: 'app', kind: 'integer', min: 0, max: 1 },
+  // M3-06 part 8 (AutoCAD 2024 Help, all "Saved in: Registry"): DYNPIVIS pointer input shows 0
+  // once typed in, 1 at a prompt for a point (initially), 2 always; DYNDIVIS dimension input
+  // while a grip is stretched shows 0 one field, 1 two (initially), 2 those DYNDIGRIP's bits say
+  // (1 resulting dimension, 2 length change, 4 absolute angle, 8 angle change, 16 arc radius;
+  // initially 31); DYNINFOTIPS 1 the tips for Shift and Ctrl (initially), 0 not.
+  { name: 'DYNPIVIS', store: 'app', kind: 'integer', min: 0, max: 2 },
+  { name: 'DYNDIVIS', store: 'app', kind: 'integer', min: 0, max: 2 },
+  { name: 'DYNDIGRIP', store: 'app', kind: 'integer', min: 0, max: 31 },
+  { name: 'DYNINFOTIPS', store: 'app', kind: 'switch' },
   // M3-04 part 3 (AutoCAD 2024 Help): SELECTSIMILARMODE's bits are the properties SELECTSIMILAR
   // matches (1 Color, 2 Layer, 4 Linetype, 8 Linetype scale, 16 Lineweight, 32 Plot style, 64
   // Object style, 128 Name; initially 130); SELECTIONCYCLING 0 off, 1 the overlap badge, 2 the

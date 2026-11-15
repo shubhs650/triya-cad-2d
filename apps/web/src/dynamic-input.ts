@@ -17,18 +17,25 @@
 // (`DynSettings`): pointer input (DYNMODE bit 1) in polar or Cartesian format (DYNPIFORMAT) with
 // relative or absolute next points (DYNPICOORDS), dimension input (DYNMODE bit 2), and the
 // prompt itself (DYNPROMPT). A prompt none of them applies to takes what is typed, as typed.
+// Part 8 added the rest of the tab: when pointer input shows (DYNPIVIS), the dimension fields
+// of grip stretching (DYNDIVIS, DYNDIGRIP: a line's or polyline's resulting length and angle and
+// their changes, a circle's radius) and the tips for Ctrl (DYNINFOTIPS).
 import {
   DECIMAL_UNITS,
   DEFAULT_ANGLES,
   formatAngle,
   formatDistance,
   formatNumber,
+  parseAngle,
+  parseAngleValue,
+  parseDistance,
   toUcs,
   turnToUcs,
   WORLD_UCS,
   type AngleConvention,
   type PlanUcs,
   type DrawingUnits,
+  type GripDimensions,
   type Prompt,
   type Vec2,
 } from '@triya/engine';
@@ -50,6 +57,14 @@ export interface DynSettings {
   readonly absolute: boolean;
   /** Pointer input's next points: Cartesian format (DYNPIFORMAT 1), else polar (0). */
   readonly cartesian: boolean;
+  /** DYNPIVIS: pointer input shows 0 once typed in, 1 at a prompt for a point, 2 always. */
+  readonly pointerVisibility?: 0 | 1 | 2;
+  /** DYNDIVIS: grip stretching shows 0 one dimension field, 1 two, 2 those `gripFields` name. */
+  readonly dimensionVisibility?: 0 | 1 | 2;
+  /** DYNDIGRIP: the dimension fields DYNDIVIS 2 shows (`GRIP_MEASURES`' bits). */
+  readonly gripFields?: number;
+  /** DYNINFOTIPS: the tips for Ctrl while grips are edited. */
+  readonly infoTips?: boolean;
 }
 
 /** AutoCAD's initial settings: DYNMODE 3, DYNPROMPT 1, DYNPICOORDS 0, DYNPIFORMAT 0. */
@@ -59,25 +74,61 @@ export const DYN_SETTINGS: DynSettings = {
   prompt: true,
   absolute: false,
   cartesian: false,
+  pointerVisibility: 1,
+  dimensionVisibility: 1,
+  gripFields: 31,
+  infoTips: true,
 };
 
 /** The Dynamic Input settings the drafting aids keep. */
 export const dynSettings = (
-  d: Pick<DraftingState, 'dynBits' | 'dynPrompt' | 'dynPiCoords' | 'dynPiFormat'>,
+  d: Pick<
+    DraftingState,
+    | 'dynBits'
+    | 'dynPrompt'
+    | 'dynPiCoords'
+    | 'dynPiFormat'
+    | 'dynPiVis'
+    | 'dynDiVis'
+    | 'dynDiGrip'
+    | 'dynInfoTips'
+  >,
 ): DynSettings => ({
   pointer: (d.dynBits & DYN_POINTER) !== 0,
   dimension: (d.dynBits & DYN_DIMENSION) !== 0,
   prompt: d.dynPrompt,
   absolute: d.dynPiCoords === 1,
   cartesian: d.dynPiFormat === 1,
+  pointerVisibility: d.dynPiVis,
+  dimensionVisibility: d.dynDiVis,
+  gripFields: d.dynDiGrip,
+  infoTips: d.dynInfoTips,
 });
 
-export type DynKind = 'pointer' | 'dimension' | 'single';
+export type DynKind = 'pointer' | 'dimension' | 'single' | 'grip';
+
+/** What a grip stretching field measures (AutoCAD 2024 Help, "DYNDIGRIP"). */
+export type GripMeasure = 'length' | 'lengthChange' | 'angle' | 'angleChange' | 'radius';
+
+/** The grip fields in AutoCAD's cycle order, with their DYNDIGRIP bits and labels. */
+export const GRIP_MEASURES: readonly {
+  readonly measure: GripMeasure;
+  readonly bit: number;
+  readonly label: string;
+}[] = [
+  { measure: 'length', bit: 1, label: 'Resulting Dimension' },
+  { measure: 'lengthChange', bit: 2, label: 'Length Change' },
+  { measure: 'angle', bit: 4, label: 'Absolute Angle' },
+  { measure: 'angleChange', bit: 8, label: 'Angle Change' },
+  { measure: 'radius', bit: 16, label: 'Arc Radius' },
+];
 
 export interface DynField {
   readonly label: string;
   readonly text: string;
   readonly locked: boolean;
+  /** A grip stretching field's measure. */
+  readonly measure?: GripMeasure;
 }
 
 export interface DynState {
@@ -90,9 +141,32 @@ export interface DynState {
   readonly raw: boolean;
   /** The highlighted option of the ↓ menu, when open. */
   readonly menu?: number;
+  /** DYNDIVIS 0 or 1: how many grip fields show at a time, from the active one on. */
+  readonly window?: number;
 }
 
 const field = (label: string): DynField => ({ label, text: '', locked: false });
+
+/**
+ * The fields grip stretching shows with settings `o` (M3-06 part 8): those `d` can measure, in
+ * cycle order, all at once those DYNDIGRIP names with DYNDIVIS 2, else one or two at a time.
+ */
+function gripFields(d: GripDimensions, o: DynSettings): { fields: DynField[]; window?: number } {
+  const all = o.dimensionVisibility === 2;
+  const fields = GRIP_MEASURES.filter(
+    (m) =>
+      (m.measure === 'radius' ? d.center !== undefined : d.anchor !== undefined) &&
+      (!all || ((o.gripFields ?? 31) & m.bit) !== 0),
+  ).map((m) => ({ ...field(m.label), measure: m.measure }));
+  return all || fields.length <= 1 ? { fields } : { fields, window: o.dimensionVisibility! + 1 };
+}
+
+/** The fields shown: all of them, or a window's from the active one on (DYNDIVIS 0 and 1). */
+export function dynVisible(s: DynState): readonly number[] {
+  const n = s.fields.length;
+  const shown = Math.min(s.window ?? n, n);
+  return Array.from({ length: shown }, (_, i) => (s.active + i) % n).sort((a, b) => a - b);
+}
 
 /**
  * The fields a prompt shows with settings `o`. Next points (with a rubber band) take dimension
@@ -103,6 +177,10 @@ export function dynFor(prompt: Prompt, o: DynSettings = DYN_SETTINGS): DynState 
   const relative = prompt.kind === 'point' && prompt.rubberBand !== undefined && !o.absolute;
   const base = { active: 0, raw: false, relative } as const;
   const none: DynState = { ...base, kind: 'single', fields: [field('')] };
+  if (prompt.kind === 'point' && prompt.gripDimensions && o.dimension) {
+    const g = gripFields(prompt.gripDimensions, o);
+    if (g.fields.length > 0) return { ...base, relative: false, kind: 'grip', ...g };
+  }
   if (prompt.kind === 'point' && prompt.rubberBand && !prompt.rubberBand.box) {
     if (o.dimension || (o.pointer && !o.cartesian))
       return { ...base, kind: 'dimension', fields: [field('Distance'), field('Angle')] };
@@ -140,7 +218,7 @@ function plain(s: DynState, index: number, text: string): boolean {
   return new RegExp(`^${prefix}[-+]?(?:\\d[\\d.'"/-]*|\\.\\d*)?$`).test(text);
 }
 
-const SEPARATOR: Record<DynKind, string> = { pointer: ',', dimension: '<', single: '' };
+const SEPARATOR: Record<DynKind, string> = { pointer: ',', dimension: '<', single: '', grip: '' };
 
 const withField = (s: DynState, i: number, f: Partial<DynField>): DynState => ({
   ...s,
@@ -305,14 +383,88 @@ export const DYN_DEFAULT_UNITS: DynUnits = { units: DECIMAL_UNITS, angles: DEFAU
 /**
  * The direction from `from` to `to` as it would be typed: ANGBASE and ANGDIR turn a typed angle
  * into the world (`parseAngle`), so the shown one is turned back, and typing it goes where the
- * cursor is. A bearing names a world direction whatever they say (M2-35 part 18).
+ * cursor is. A bearing names a direction whatever they say (M2-35 part 18), from the UCS's Y
+ * axis as north (M3-06 part 8). `turn`: a turn prompt's angle, picked from the UCS's X axis.
  */
-function typedAngle(from: Vec2, to: Vec2, u: DynUnits): string {
-  const world = Math.atan2(to.y - from.y, to.x - from.x);
-  const { base, clockwise } = u.angles ?? DEFAULT_ANGLES;
-  const typed = u.units.aunits === 4 ? world : clockwise ? base - world : world - base;
+function typedAngle(from: Vec2, to: Vec2, u: DynUnits, turn = false): string {
+  const world = Math.atan2(to.y - from.y, to.x - from.x) - (turn ? (u.ucs?.angle ?? 0) : 0);
+  const { base, clockwise, ucs = 0 } = u.angles ?? DEFAULT_ANGLES;
+  const typed = u.units.aunits === 4 ? world - ucs : clockwise ? base - world : world - base;
   return formatAngle(typed, u.units);
 }
+
+/** A grip field's value with the cursor at `cursor` (M3-06 part 8). */
+function gripValue(m: GripMeasure, d: GripDimensions, cursor: Vec2, u: DynUnits): string {
+  const length = (v: number) => formatDistance(v, u.units);
+  const a = d.anchor ?? d.grip;
+  const from = (p: Vec2) => Math.hypot(p.x - a.x, p.y - a.y);
+  switch (m) {
+    case 'length':
+      return length(from(cursor));
+    case 'lengthChange':
+      return length(from(cursor) - from(d.grip));
+    case 'angle':
+      return typedAngle(a, cursor, u);
+    case 'angleChange': {
+      const turn =
+        Math.atan2(cursor.y - a.y, cursor.x - a.x) - Math.atan2(d.grip.y - a.y, d.grip.x - a.x);
+      const clockwise = u.angles?.clockwise ?? false;
+      return formatAngle(clockwise ? -turn : turn, {
+        ...u.units,
+        aunits: Math.min(u.units.aunits, 3),
+      });
+    }
+    case 'radius': {
+      const c = d.center ?? d.grip;
+      return length(Math.hypot(cursor.x - c.x, cursor.y - c.y));
+    }
+  }
+}
+
+/**
+ * The point grip fields `s` give, the fields typed in setting their measures and the cursor the
+ * rest: a radius along the cursor's direction from the centre, else a length and an angle from
+ * the anchor. Undefined when a typed field does not read.
+ */
+function gripPoint(s: DynState, d: GripDimensions, cursor: Vec2, u: DynUnits): Vec2 | undefined {
+  const typed = new Map(s.fields.filter((f) => f.text !== '').map((f) => [f.measure!, f.text]));
+  const distanceOf = (t: string) => parseDistance(t, u.units.lunits);
+  const radius = typed.get('radius');
+  if (radius !== undefined) {
+    const c = d.center ?? d.grip;
+    const r = distanceOf(radius);
+    if (r === undefined) return undefined;
+    const dir = Math.hypot(cursor.x - c.x, cursor.y - c.y) > 0 ? cursor : d.grip;
+    const a = Math.atan2(dir.y - c.y, dir.x - c.x);
+    return { x: c.x + r * Math.cos(a), y: c.y + r * Math.sin(a) };
+  }
+  const a = d.anchor ?? d.grip;
+  const was = Math.hypot(d.grip.x - a.x, d.grip.y - a.y);
+  const wasAngle = Math.atan2(d.grip.y - a.y, d.grip.x - a.x);
+  let length = Math.hypot(cursor.x - a.x, cursor.y - a.y);
+  let angle = Math.atan2(cursor.y - a.y, cursor.x - a.x);
+  const l = typed.get('length') ?? typed.get('lengthChange');
+  if (l !== undefined) {
+    const v = distanceOf(l);
+    if (v === undefined) return undefined;
+    length = typed.has('length') ? v : was + v;
+  }
+  const t = typed.get('angle');
+  const dt = typed.get('angleChange');
+  if (t !== undefined) {
+    const v = parseAngle(t, u.angles ?? DEFAULT_ANGLES);
+    if (v === undefined) return undefined;
+    angle = v;
+  } else if (dt !== undefined) {
+    const v = parseAngleValue(dt);
+    if (v === undefined) return undefined;
+    angle = wasAngle + (u.angles?.clockwise ? -v : v);
+  }
+  return { x: a.x + length * Math.cos(angle), y: a.y + length * Math.sin(angle) };
+}
+
+/** A world point typed so that the bus reads it back exactly: `*x,y`, in the WCS. */
+const worldText = (p: Vec2) => `*${p.x.toFixed(10)},${p.y.toFixed(10)}`;
 
 /** What each field shows while nothing is typed in it: the cursor's coordinates or distance and angle. */
 export function dynLive(
@@ -323,6 +475,10 @@ export function dynLive(
 ): readonly string[] {
   if (!cursor) return s.fields.map(() => '');
   const length = (v: number) => formatDistance(v, u.units);
+  if (s.kind === 'grip' && prompt.kind === 'point' && prompt.gripDimensions) {
+    const d = prompt.gripDimensions;
+    return s.fields.map((f) => gripValue(f.measure!, d, cursor, u));
+  }
   const base =
     prompt.kind === 'point' ? prompt.rubberBand?.from : 'base' in prompt ? prompt.base : undefined;
   if (s.kind === 'pointer') {
@@ -336,7 +492,7 @@ export function dynLive(
   if (!base) return s.fields.map(() => '');
   const d = Math.hypot(cursor.x - base.x, cursor.y - base.y);
   if (s.kind === 'dimension') return [length(d), typedAngle(base, cursor, u)];
-  if (prompt.kind === 'angle') return [typedAngle(base, cursor, u)];
+  if (prompt.kind === 'angle') return [typedAngle(base, cursor, u, prompt.turn === true)];
   // SCALE's factor is a plain number, as the command line shows a real (`<1.0000>`).
   return [s.fields[0]!.label === 'Scale' ? formatNumber(d, u.units.luprec) : length(d)];
 }
@@ -354,6 +510,13 @@ export function dynText(
 ): string {
   const [a = '', b = ''] = s.fields.map((f) => f.text);
   if (s.raw || s.kind === 'single') return a;
+  if (s.kind === 'grip') {
+    const typed = s.fields.find((f) => f.text !== '');
+    if (!typed || !cursor || prompt.kind !== 'point' || !prompt.gripDimensions) return '';
+    const p = gripPoint(s, prompt.gripDimensions, cursor, u);
+    // A field that does not read goes as typed, for the command to refuse.
+    return p ? worldText(p) : typed.text;
+  }
   if (a === '' && b === '') return '';
   const live = dynLive(s, prompt, cursor, u);
   if (s.kind === 'dimension') {

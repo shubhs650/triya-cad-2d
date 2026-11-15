@@ -17,6 +17,7 @@ import {
   dynTyped,
   dynSettings,
   dynShows,
+  dynVisible,
   DYN_SETTINGS,
   type DynSettings,
   type DynState,
@@ -348,6 +349,10 @@ describe('the Dynamic Input tab (M3-06 part 4)', () => {
       prompt: true,
       absolute: false,
       cartesian: false,
+      pointerVisibility: 1,
+      dimensionVisibility: 1,
+      gripFields: 31,
+      infoTips: true,
     });
     expect(
       dynSettings({
@@ -357,7 +362,13 @@ describe('the Dynamic Input tab (M3-06 part 4)', () => {
         dynPiCoords: 1,
         dynPiFormat: 1,
       }),
-    ).toEqual({ pointer: true, dimension: false, prompt: false, absolute: true, cartesian: true });
+    ).toMatchObject({
+      pointer: true,
+      dimension: false,
+      prompt: false,
+      absolute: true,
+      cartesian: true,
+    });
   });
 
   it('Enable Dimension Input off: next points take pointer input, polar or Cartesian', () => {
@@ -405,5 +416,111 @@ describe('the Dynamic Input tab (M3-06 part 4)', () => {
     expect(dynReplay(next, ['5', ','], off).fields.map((f) => f.label)).toEqual(['']);
     expect(dynAhead(dynFor(first, off), first, ['5', 'Enter'], off).ends).toBe(true);
     expect(dynCurrent({ prompt: first, state: undefined }, next, [], off)?.kind).toBe('single');
+  });
+});
+
+describe('grip stretching’s dimension input (M3-06 part 8, DYNDIVIS, DYNDIGRIP)', () => {
+  // A line from 0,0 whose end grip at 10,0 is dragged to 6,8 (length 10, at 53.13°).
+  const line = prompts.point({
+    message: 'Specify stretch point or',
+    rubberBand: { from: { x: 10, y: 0 } },
+    gripDimensions: { grip: { x: 10, y: 0 }, anchor: { x: 0, y: 0 } },
+  });
+  const circle = prompts.point({
+    message: 'Specify stretch point or',
+    rubberBand: { from: { x: 7, y: 5 } },
+    gripDimensions: { grip: { x: 7, y: 5 }, center: { x: 5, y: 5 } },
+  });
+  const at = { x: 6, y: 8 };
+  const labels = (s: DynState) => dynVisible(s).map((i) => s.fields[i]!.label);
+  const enter = (p: Prompt, keys: string, o: DynSettings = DYN_SETTINGS) => {
+    let s = dynFor(p, o);
+    for (const k of keys) s = k === '\t' ? dynTab(s) : dynType(s, k);
+    return dynText(s, p, at);
+  };
+  const point = (text: string) => parseCoordinate(text, {}) as { x: number; y: number };
+
+  it('shows two fields at a time (DYNDIVIS 1), Tab moving on through the rest', () => {
+    const s = dynFor(line);
+    expect(s.kind).toBe('grip');
+    expect(s.fields.map((f) => f.label)).toEqual([
+      'Resulting Dimension',
+      'Length Change',
+      'Absolute Angle',
+      'Angle Change',
+    ]);
+    expect(labels(s)).toEqual(['Resulting Dimension', 'Length Change']);
+    expect(labels(dynTab(dynTab(s)))).toEqual(['Absolute Angle', 'Angle Change']);
+    expect(labels(dynFor(line, { ...DYN_SETTINGS, dimensionVisibility: 0 }))).toEqual([
+      'Resulting Dimension',
+    ]);
+    // DYNDIVIS 2 shows DYNDIGRIP's fields together.
+    const both = { ...DYN_SETTINGS, dimensionVisibility: 2 as const, gripFields: 1 | 4 };
+    expect(labels(dynFor(line, both))).toEqual(['Resulting Dimension', 'Absolute Angle']);
+    expect(dynLive(dynFor(line), line, at)).toEqual(['10.0000', '0.0000', '53', '53']);
+    expect(dynFor(circle).fields.map((f) => f.label)).toEqual(['Arc Radius']);
+    expect(dynLive(dynFor(circle), circle, at)).toEqual(['3.1623']);
+    // Without dimension input, a grip's point is the rubber band's.
+    expect(dynFor(line, { ...DYN_SETTINGS, dimension: false }).kind).not.toBe('grip');
+  });
+
+  it('sets the point by the fields typed, the cursor giving the rest', () => {
+    // A length of 5 along the cursor's direction.
+    const a = point(enter(line, '5'));
+    expect(a.x).toBeCloseTo(3, 9);
+    expect(a.y).toBeCloseTo(4, 9);
+    // 2 longer than the line was (12), at an absolute 90°.
+    const b = point(enter(line, '\t2\t90'));
+    expect(b.x).toBeCloseTo(0, 9);
+    expect(b.y).toBeCloseTo(12, 9);
+    // Turned 180° from where it pointed, at the cursor's length (10).
+    const c = point(enter(line, '\t\t\t180'));
+    expect(c.x).toBeCloseTo(-10, 9);
+    expect(c.y).toBeCloseTo(0, 9);
+    // A radius of 4 from the circle's centre towards the cursor.
+    const r = point(enter(circle, '4'));
+    expect(Math.hypot(r.x - 5, r.y - 5)).toBeCloseTo(4, 9);
+    // Nothing typed is Enter; what does not read goes as typed; a comma, as pointer input.
+    expect(enter(line, '')).toBe('');
+    expect(enter(line, 'x')).toBe('x');
+    expect(enter(line, '\t\t\t1x')).toBe('1x');
+  });
+});
+
+describe('pointer input visibility and tips (M3-06 part 8)', () => {
+  it('reads DYNPIVIS, DYNDIVIS, DYNDIGRIP and DYNINFOTIPS from the drafting aids', () => {
+    expect(
+      dynSettings({
+        ...INITIAL_DRAFTING,
+        dynPiVis: 2,
+        dynDiVis: 0,
+        dynDiGrip: 5,
+        dynInfoTips: false,
+      }),
+    ).toMatchObject({
+      pointerVisibility: 2,
+      dimensionVisibility: 0,
+      gripFields: 5,
+      infoTips: false,
+    });
+  });
+});
+
+describe('angles in a UCS (M3-06 part 8)', () => {
+  const ucs = { origin: { x: 0, y: 0 }, angle: Math.PI / 2 };
+  const base = { x: 10, y: 10 };
+  it('shows a bearing from the UCS’s Y axis, and a turn from its X axis', () => {
+    const bearing = {
+      units: { ...DECIMAL_UNITS, aunits: 4 },
+      angles: { base: Math.PI / 2, clockwise: false, ucs: Math.PI / 2 },
+      ucs,
+    };
+    const next = prompts.point({ message: 'Next', rubberBand: { from: base } });
+    // World −X is the UCS's north.
+    expect(dynLive(dynFor(next), next, { x: 5, y: 10 }, bearing)[1]).toBe('N');
+    const turn = prompts.angle({ message: 'Rotation', base, turn: true });
+    const u = { units: DECIMAL_UNITS, angles: { base: 0, clockwise: false }, ucs };
+    // World 180° is 90° from the UCS's X axis.
+    expect(dynLive(dynFor(turn), turn, { x: 5, y: 10 }, u)).toEqual(['90']);
   });
 });

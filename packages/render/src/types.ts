@@ -50,6 +50,12 @@ export interface RenderStyle {
    */
   readonly gripSize?: number;
   /**
+   * M3-06 part 8: a layout's viewports each show the UCS icon (UCSICON, the viewport's DXF 90
+   * bits 32 and 64) for model space's current UCS, as seen through them. The canvas of a layout
+   * sets it; plots and previews never draw it.
+   */
+  readonly viewportUcsIcons?: boolean;
+  /**
    * GRIPCOLOR, GRIPHOVER, GRIPHOT and GRIPCONTOUR (M3-05 part 5), ACIs; absent are AutoCAD's
    * initial colours (`GRIP_COLORS_DEFAULT`).
    */

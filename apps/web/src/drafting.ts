@@ -9,6 +9,7 @@
 // same for every drawing. Nothing is written back to the file. The snap and grid spacing are
 // each drawing's own (its *Active VPORT's SNAPUNIT and GRIDUNIT), read by the canvas.
 import { GRIP_COLORS_DEFAULT, type GripColors } from '@triya/render';
+import { DEFAULT_TOOLTIP, type TooltipAppearance } from './tooltip-appearance';
 import {
   GRID_DISPLAY,
   OSMODE_DEFAULT,
@@ -127,6 +128,18 @@ export interface DraftingState {
   readonly dynPrompt: boolean;
   readonly dynPiCoords: 0 | 1;
   readonly dynPiFormat: 0 | 1;
+  /**
+   * The rest of the Dynamic Input tab (M3-06 part 8), per user as AutoCAD keeps them: DYNPIVIS,
+   * when pointer input shows (0 once typed in, 1 at a prompt for a point, initially, 2 always);
+   * DYNDIVIS, how many dimension input fields grip stretching shows (0 one, 1 two, initially,
+   * 2 those DYNDIGRIP's bits name, initially 31); DYNINFOTIPS, the tips for Shift and Ctrl
+   * (initially on); and the Drafting Tooltip Appearance (`tooltip-appearance.ts`).
+   */
+  readonly dynPiVis: 0 | 1 | 2;
+  readonly dynDiVis: 0 | 1 | 2;
+  readonly dynDiGrip: number;
+  readonly dynInfoTips: boolean;
+  readonly tooltip: TooltipAppearance;
   /**
    * SELECTSIMILARMODE (M3-04 part 3): the properties SELECTSIMILAR matches, AutoCAD's bits (1
    * Color, 2 Layer, 4 Linetype, 8 Linetype scale, 16 Lineweight, 32 Plot style, 64 Object
@@ -434,6 +447,11 @@ export const INITIAL_DRAFTING: DraftingState = {
   dynPrompt: true,
   dynPiCoords: 0,
   dynPiFormat: 0,
+  dynPiVis: 1,
+  dynDiVis: 1,
+  dynDiGrip: 31,
+  dynInfoTips: true,
+  tooltip: DEFAULT_TOOLTIP,
   selectSimilarMode: 130,
   selectionCycling: 0,
   pickStyle: 1,

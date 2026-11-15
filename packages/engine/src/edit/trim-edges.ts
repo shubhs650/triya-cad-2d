@@ -275,7 +275,7 @@ function walk(
 }
 
 /** A hatch's boundary loops as curves: a polyline loop whole, an edge loop edge by edge. */
-function hatchBoundary(g: HatchGeometry): Curve[] {
+export function hatchBoundary(g: HatchGeometry): Curve[] {
   const out: Curve[] = [];
   for (const loop of g.loops) {
     const p = loop.polyline;

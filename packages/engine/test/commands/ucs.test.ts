@@ -77,6 +77,7 @@ const extra: [string, EntityGeometry][] = [
       endParam: 2 * Math.PI,
     },
   ],
+  ['33', { kind: 'RAY', base: { x: 0, y: 0 }, direction: { x: 1, y: 0 } }],
 ];
 
 function drawing(header: [string, HeaderValue][] = []): DocumentInit {
@@ -212,7 +213,11 @@ describe('UCS', () => {
     s.pick('30');
     await s.bus.script(['UCS', 'OB', '*50,55']);
     expect(s.ucs()).toEqual({ origin: { x: 50, y: 50 }, angle: Math.PI / 2 });
+    // An ellipse at its centre along its major axis (M3-06 part 8); a ray aligns nothing.
     s.pick('32');
+    await s.bus.script(['UCS', 'OB', '*3,0']);
+    expect(s.ucs()).toEqual({ origin: { x: 0, y: 0 }, angle: 0 });
+    s.pick('33');
     await s.bus.submit('UCS');
     await s.bus.submit('OB');
     await s.bus.submit('*3,0');
@@ -424,5 +429,108 @@ describe('UCSICON and the viewport variables', () => {
     await s.bus.script(['UCS', '1,2', '']);
     await s.bus.script(['SETVAR', 'UCSORG']);
     expect(s.bus.history.at(-1)).toMatch(/^UCSORG = 1\.0000,2\.0000,0\.0000 \(read only\)$/);
+  });
+});
+
+describe('the UCS, part 8', () => {
+  it('measures picked rotation angles from the UCS’s X axis, as typed ones turn', async () => {
+    const s = setup();
+    await s.bus.script(['UCS', 'Z', '30']);
+    expect(s.bus.prompt).toBeUndefined();
+    // The line 0,0–10,0 (world) rotated about the world origin by a point picked at world
+    // 120°: 90° from the UCS's X axis, so a quarter turn.
+    s.pick('20');
+    await s.bus.script(['ROTATE', '*5,0', '', '*0,0']);
+    expect(s.bus.prompt).toMatchObject({
+      drag: { kind: 'rotate', reference: expect.closeTo(deg(30), 12) },
+    });
+    await s.bus.pick({ x: Math.cos(deg(120)), y: Math.sin(deg(120)) });
+    const line = s.model.entityByHandle('20')!.geom as {
+      end: { x: number; y: number };
+    };
+    close(line.end, { x: 0, y: 10 });
+  });
+
+  it('measures an arc’s picked included angle from the UCS’s X axis, as its sketch does', async () => {
+    const s = setup();
+    await s.bus.script(['UCS', 'Z', '90']);
+    await s.bus.script(['ARC', '*10,0', 'C', '*0,0', 'A']);
+    expect(s.bus.prompt).toMatchObject({
+      drag: { kind: 'sketch', sketch: { shape: 'arcSC', turn: expect.closeTo(deg(90), 12) } },
+    });
+    // Picked at world 180°: 90° from the UCS's X axis, a quarter of a circle.
+    await s.bus.pick({ x: -5, y: 0 });
+    expect(s.last()).toMatchObject({
+      kind: 'ARC',
+      startAngle: 0,
+      endAngle: expect.closeTo(deg(90), 9),
+    });
+  });
+
+  it('reads surveyor’s bearings from the UCS’s Y axis as north', async () => {
+    const s = setup([['$AUNITS', 4]]);
+    await s.bus.script(['UCS', 'Z', '90']);
+    await s.bus.script(['LINE', '*0,0', '@10<N', '@10<N90dE', '']);
+    const [a, b] = s.added() as { end: { x: number; y: number } }[];
+    // UCS north is world −X; east, the UCS's X axis, world +Y.
+    close(a!.end, { x: -10, y: 0 });
+    close(b!.end, { x: -10, y: 10 });
+  });
+
+  it('aligns to dimensions, ellipses and hatches', () => {
+    const pick = { x: 9, y: 1 };
+    const dim = {
+      kind: 'DIMENSION',
+      dimType: 'linear',
+      definitionPoint: { x: 0, y: 5 },
+      textPosition: { x: 5, y: 6 },
+      horizontalDirection: -deg(30),
+      first: { x: 0, y: 0 },
+      second: { x: 10, y: 0 },
+    } as EntityGeometry;
+    // The text's middle; X as the UCS's when it was drawn (DXF 51 is minus its angle).
+    expect(objectUcs(dim, pick)).toEqual({
+      origin: { x: 5, y: 6 },
+      angle: expect.closeTo(deg(30), 12),
+    });
+    const ellipse = extra[2]![1];
+    expect(objectUcs({ ...ellipse, majorAxis: { x: 0, y: 3 } } as EntityGeometry, pick)).toEqual({
+      origin: { x: 0, y: 0 },
+      angle: deg(90),
+    });
+    const hatch = {
+      kind: 'HATCH',
+      loops: [
+        {
+          flags: 1,
+          polyline: {
+            closed: true,
+            vertices: [
+              { x: 0, y: 0 },
+              { x: 10, y: 0 },
+              { x: 10, y: 10 },
+              { x: 0, y: 10 },
+            ],
+          },
+        },
+      ],
+    } as unknown as EntityGeometry;
+    // The boundary's corner nearest the pick, X along the edge on from it.
+    expect(objectUcs(hatch, pick)).toEqual({ origin: { x: 10, y: 0 }, angle: deg(90) });
+    // Edge loops: each edge from its start; no boundary aligns nothing.
+    const edges = {
+      kind: 'HATCH',
+      loops: [
+        {
+          flags: 1,
+          edges: [
+            { type: 'line', start: { x: 0, y: 0 }, end: { x: 0, y: 8 } },
+            { type: 'line', start: { x: 0, y: 8 }, end: { x: 0, y: 0 } },
+          ],
+        },
+      ],
+    } as unknown as EntityGeometry;
+    expect(objectUcs(edges, { x: 1, y: 7 })).toEqual({ origin: { x: 0, y: 8 }, angle: deg(270) });
+    expect(objectUcs({ ...hatch, loops: [] } as EntityGeometry, pick)).toBeUndefined();
   });
 });

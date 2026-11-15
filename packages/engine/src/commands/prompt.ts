@@ -9,6 +9,7 @@ import type { Handle } from '../model/handle';
 import type { Color, EntityType, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
 import type { OverkillSettings } from '../edit/overkill';
+import type { GripDimensions } from '../edit/grips';
 import type { QuickSelectCriteria, QuickSelectType } from '../selection/qselect';
 import type { FilterItem, FilterNameKey } from '../selection/filter';
 import type { PropertyUnits } from '../properties/sheet';
@@ -244,6 +245,11 @@ export interface PointPrompt extends PromptBase {
    * a freehand cloud while the crosshairs are guided along its path. A click answers too.
    */
   readonly trace?: { readonly from: Vec2; readonly spacing: number };
+  /**
+   * Grip stretching one object (M3-06 part 8): what Dynamic Input's dimension fields measure
+   * (DYNDIVIS, DYNDIGRIP), a resulting length and angle from `anchor`, a radius from `center`.
+   */
+  readonly gripDimensions?: GripDimensions;
   /**
    * An object pick (TRIM's and EXTEND's "Select object to trim", M3-02 part 2): the click's own
    * point, with the pickbox rather than the crosshairs and no drafting aids, Shift held or not

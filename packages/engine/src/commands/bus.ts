@@ -904,9 +904,11 @@ export class PromptBus {
     const base = this.#model.header.get('$ANGBASE');
     const dir = this.#model.header.get('$ANGDIR');
     const angbase = typeof base === 'number' ? base : DEFAULT_ANGLES.base;
+    const ucs = this.#ucs().angle;
     return {
-      base: turn ? angbase : angbase + this.#ucs().angle,
+      base: turn ? angbase : angbase + ucs,
       clockwise: dir === 1 || dir === true,
+      ...(!turn && ucs !== 0 && { ucs }),
     };
   }
 
@@ -1640,6 +1642,9 @@ export class PromptBus {
     }
     if (log) this.#log(`${this.promptText} ${echo}`.trimEnd());
     this.#lastPoint = p;
+    // A turn picked counts from the UCS's X axis, as a direction picked counts from the world's
+    // (M3-06 part 8): ROTATE by a point along the UCS's X axis turns nothing.
+    const turn = prompt.kind === 'angle' && prompt.turn ? this.#ucs().angle : 0;
     const measure = (a: Vec2, b: Vec2, c?: true): PromptAnswer =>
       prompt.kind === 'distance'
         ? {
@@ -1648,7 +1653,7 @@ export class PromptBus {
             to: b,
             ...(c && { ctrl: c }),
           }
-        : { kind: 'angle', value: Math.atan2(b.y - a.y, b.x - a.x), ...(c && { ctrl: c }) };
+        : { kind: 'angle', value: Math.atan2(b.y - a.y, b.x - a.x) - turn, ...(c && { ctrl: c }) };
     if (prompt.base) return this.#deliver(measure(prompt.base, p, ctrl), '', false);
     this.#collectors.push({
       text: 'Specify second point:',

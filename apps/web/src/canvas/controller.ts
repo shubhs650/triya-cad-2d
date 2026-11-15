@@ -130,6 +130,7 @@ import {
 import { DEFAULT_CANVAS, type CanvasColours } from '../preferences';
 import { heldOverrides, withOverrides } from '../temp-overrides';
 import { crosshairCursor, foregroundOn, interfaceColours, type InterfaceColours } from './colours';
+import { tooltipStyle } from '../tooltip-appearance';
 import {
   ACQUIRE_MS,
   MARKER_PX,
@@ -557,6 +558,8 @@ export class CanvasController {
     );
     const canvas = document.createElement('canvas');
     canvas.className = 'drawing-canvas';
+    // Dynamic Input's tooltip takes the layout colour over a layout (M3-06 part 8).
+    canvas.dataset['space'] = this.#layout ? 'layout' : 'model';
     canvas.setAttribute(
       'aria-label',
       this.#layout ? `Layout ${this.#layout.name}` : (hooks.tile?.label ?? 'Model'),
@@ -569,6 +572,7 @@ export class CanvasController {
     this.#tip.dataset['testid'] = 'autosnap-tip';
     this.#tip.hidden = true;
     container.append(this.#tip);
+    this.#styleTip();
     this.#quickLabels = document.createElement('div');
     this.#quickLabels.className = 'quick-measure';
     this.#quickLabels.dataset['testid'] = 'quick-measure';
@@ -998,6 +1002,7 @@ export class CanvasController {
       this.#host.setStyle(this.#style());
       this.#requestFrame();
     }
+    if (before.tooltip !== state.tooltip) this.#styleTip();
     if (this.#prompt && this.#mode === 'none') {
       this.#requestSnap();
       this.#track();
@@ -1018,6 +1023,20 @@ export class CanvasController {
     this.#hit = undefined;
     this.#requestSnap();
     this.#track();
+  }
+
+  /**
+   * The AutoSnap and tracking tooltip as the Drafting Tooltip Appearance sets every drafting
+   * tooltip, unless it is set for Dynamic Input's only (M3-06 part 8).
+   */
+  #styleTip(): void {
+    const t = this.#drafting.tooltip;
+    const style = this.#tip.style;
+    const s = t.all ? tooltipStyle(t, this.#layout !== undefined) : undefined;
+    style.background = s?.background ?? '';
+    style.color = s?.color ?? '';
+    style.fontSize = s?.fontSize ?? '';
+    style.opacity = s?.opacity ?? '';
   }
 
   /** The canvas colours changed in Settings (M2-20). */
@@ -1382,6 +1401,7 @@ export class CanvasController {
     // The new canvas has drawn nothing yet.
     delete canvas.dataset['drawn'];
     canvas.setAttribute('aria-label', this.canvas.getAttribute('aria-label') ?? '');
+    canvas.dataset['space'] = this.#canvas.dataset['space'];
     // A canvas handed to the render worker cannot be handed over again, so swap in a new one.
     this.#listeners.abort();
     this.#canvas.replaceWith(canvas);
@@ -1617,9 +1637,18 @@ export class CanvasController {
     return interfaceColours({ ...c, background: this.#layout ? c.paper : c.model });
   }
 
-  /** The crosshairs in their colour as the canvas's cursor (styles.css reads `--crosshair`). */
+  /**
+   * The crosshairs in their colour as the canvas's cursor (styles.css reads `--crosshair`),
+   * turned with the UCS and SNAPANG (M3-06 part 8; AutoCAD 2024 Help, "SNAPANG": "The
+   * crosshairs ... are rotated"). Painted again only when the colour or the angle changes.
+   */
   #paintCursor(): void {
-    this.#canvas.style.setProperty('--crosshair', crosshairCursor(this.#ui().crosshair));
+    const color = this.#ui().crosshair;
+    const angle = this.#ucs().angle + (this.#vport()?.snapRotation ?? 0);
+    const key = `${color} ${angle}`;
+    if (this.#canvas.dataset['cursor'] === key) return;
+    this.#canvas.dataset['cursor'] = key;
+    this.#canvas.style.setProperty('--crosshair', crosshairCursor(color, angle));
   }
 
   #style(): RenderStyle {
@@ -1640,7 +1669,8 @@ export class CanvasController {
     return {
       background,
       foreground: foregroundOn(background),
-      ...(this.#layout && { layoutBackground: c.surround }),
+      // A layout's viewports show model space's UCS icon (M3-06 part 8).
+      ...(this.#layout && { layoutBackground: c.surround, viewportUcsIcons: true }),
       ...shared,
     };
   }
@@ -1688,7 +1718,11 @@ export class CanvasController {
    * UCS, always on, as Triya keeps no layout VPORT.
    */
   #showUcsIcon(): void {
-    const icon = this.#ucsIcon;
+    // The UCS or SNAPANG may have turned: the crosshairs follow them (once the canvas exists:
+    // the constructor replays the drawing's changes before it makes it).
+    const icon = this.#ucsIcon as HTMLDivElement | undefined;
+    if (!icon) return;
+    this.#paintCursor();
     const bits = this.#layout ? 1 : (this.#vport()?.ucsIcon ?? 1);
     const { width, height } = this.#size;
     if (!(bits & 1) || width === 0 || !this.#view) {
