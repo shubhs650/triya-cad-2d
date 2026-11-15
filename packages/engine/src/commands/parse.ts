@@ -238,21 +238,27 @@ export function parseCoordinate(
   return relative ? { x: from.x + p.x, y: from.y + p.y } : p;
 }
 
-/** The point modifiers typed at any point prompt: `FROM`, `M2P` and `.x`-style point filters. */
+/**
+ * The point modifiers typed at any point prompt: `FROM`, `M2P`, `TK` and `.x`-style point
+ * filters.
+ */
 export type PointModifier =
   | { readonly kind: 'from' }
   | { readonly kind: 'm2p' }
+  /** TRACKING (M3-06 part 4): temporary tracking points, each orthogonal to the last. */
+  | { readonly kind: 'tracking' }
   /** The coordinates taken from the next point; the rest come from the one after. */
   | { readonly kind: 'filter'; readonly take: '' | 'x' | 'y' | 'xy' };
 
 /**
- * `FROM` (or `FRO`), `M2P` (or `MTP`), and the point filters `.X .Y .XY`; `.Z`, `.XZ` and `.YZ`
+ * `FROM` (or `FRO`), `M2P` (or `MTP`), `TRACKING` (`TRACK`, `TRA` or `TK`), and the point filters `.X .Y .XY`; `.Z`, `.XZ` and `.YZ`
  * are taken as their 2D part (`.z` takes nothing, so the next point gives X and Y).
  */
 export function parsePointModifier(text: string): PointModifier | undefined {
   const t = text.trim().toUpperCase();
   if (t === 'FROM' || t === 'FRO') return { kind: 'from' };
   if (t === 'M2P' || t === 'MTP') return { kind: 'm2p' };
+  if (t === 'TK' || t === 'TRA' || t === 'TRACK' || t === 'TRACKING') return { kind: 'tracking' };
   const filter = /^\.(X|Y|Z|XY|XZ|YZ)$/.exec(t);
   if (!filter) return undefined;
   const take = filter[1]!.replace('Z', '').toLowerCase() as '' | 'x' | 'y' | 'xy';

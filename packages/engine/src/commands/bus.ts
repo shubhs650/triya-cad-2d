@@ -13,6 +13,7 @@
 import type { DeferredPick } from '../geom/deferred';
 import type { Vec2 } from '../geom/types';
 import { OSNAP, type DeferredModes } from '../input/osnap';
+import { orthoPoint } from '../input/constrain';
 import { ChangeSetBuilder } from '../model/builder';
 import type { ChangeSet } from '../model/changeset';
 import type { DocumentModel } from '../model/document';
@@ -226,7 +227,41 @@ interface Collector {
   readonly deferred?: DeferredModes;
   /** What the prompt it was typed at dragged, still dragged while the override asks (M3-01). */
   readonly drag?: DragPreview;
+  /**
+   * The point goes orthogonally from `band` (TK's next tracking point, M3-06 part 4): the
+   * front-end constrains the cursor so, and a number typed goes that far along it.
+   */
+  readonly ortho?: true;
+  /** What Enter gives, where it ends the collector (TK: the last tracking point). */
+  readonly enter?: () => Vec2;
   accept(p: Vec2): Vec2 | Collector | { readonly answer: PromptAnswer };
+}
+
+/**
+ * TRACKING (TK; AutoCAD 2024 Help, "To Locate a Point Using Tracking"): a first tracking point,
+ * then each next one orthogonal to the one before (horizontally or vertically, whichever way it
+ * goes further), until Enter gives the last as the point. A snap off the axis keeps its X or Y,
+ * so `TK`, the midpoint of a rectangle's top, then of its side, finds its centre.
+ */
+function trackingPoints(): Collector {
+  const next = (last: Vec2): Collector => ({
+    text: 'Next point (Press ENTER to end tracking):',
+    band: last,
+    relativeTo: last,
+    ortho: true,
+    enter: () => last,
+    accept: (p) => next(orthoPoint(last, p)),
+  });
+  return { text: 'First tracking point:', accept: (p) => next(p) };
+}
+
+/** `d` from `base` along the horizontal or vertical towards `cursor`; undefined without one. */
+function orthoDistance(base: Vec2, cursor: Vec2 | undefined, d: number): Vec2 | undefined {
+  if (!cursor) return undefined;
+  const to = orthoPoint(base, cursor);
+  const len = Math.hypot(to.x - base.x, to.y - base.y);
+  if (len === 0) return undefined;
+  return { x: base.x + ((to.x - base.x) / len) * d, y: base.y + ((to.y - base.y) / len) * d };
 }
 
 const isCollector = (r: ReturnType<Collector['accept']>): r is Collector => 'accept' in r;
@@ -357,6 +392,7 @@ export class PromptBus {
         ...(c.osnap !== undefined && { osnap: c.osnap }),
         ...(c.deferred && { deferred: c.deferred }),
         ...(c.drag && { drag: c.drag }),
+        ...(c.ortho && { ortho: true }),
       });
     }
     const frame = this.#stack.at(-1);
@@ -829,6 +865,10 @@ export class PromptBus {
     }
     if (loop) frame.select = undefined;
     if (this.#collectors.length > 0) {
+      if (answer.kind === 'enter' && this.#collectors.at(-1)!.enter) {
+        this.#log(this.promptText);
+        return this.#endCollector();
+      }
       if (answer.kind !== 'point') return this.#reject('Invalid point.');
       this.#log(`${this.promptText} ${echo}`.trimEnd());
       return this.#feedPoint(answer.point, answer.deferred);
@@ -1323,6 +1363,8 @@ export class PromptBus {
         text: 'Base point:',
         accept: (base) => ({ text: '<Offset>:', relativeTo: base, accept: (p) => p }),
       });
+    } else if (m.kind === 'tracking') {
+      this.#collectors.push(trackingPoints());
     } else if (m.kind === 'm2p') {
       this.#collectors.push({
         text: 'First point of mid:',
@@ -1362,6 +1404,8 @@ export class PromptBus {
           : undefined;
     const deferred = shown?.kind === 'point' ? shown.deferred : undefined;
     const drag = shown?.drag;
+    // At TK's next tracking point the snap goes on orthogonally from it (M3-06 part 4).
+    const ortho = shown?.kind === 'point' && shown.ortho === true && band !== undefined;
     this.#log(`${this.promptText} ${echo}`);
     this.#collectors.push({
       text: overrideAsks(modes),
@@ -1369,6 +1413,7 @@ export class PromptBus {
       ...(band && { band }),
       ...(deferred && { deferred }),
       ...(drag && { drag }),
+      ...(ortho && { ortho: true as const }),
       accept: (p) => p,
     });
     this.#showPrompt();
@@ -1380,11 +1425,26 @@ export class PromptBus {
     if (modifier) return this.#modifier(modifier, t);
     const override = parseOsnapOverride(t);
     if (override !== undefined) return this.#override(override, t);
+    if (t === '' && c.enter) {
+      this.#log(this.promptText);
+      return this.#endCollector();
+    }
     const lastPoint = c.relativeTo ?? this.#relativeBase();
-    const p = parseCoordinate(t, { lastPoint, angles: this.#angles(), lunits: this.#lunits() });
+    const lunits = this.#lunits();
+    let p = parseCoordinate(t, { lastPoint, angles: this.#angles(), lunits });
+    // A number at an orthogonal collector: that far from its base towards the cursor (TK).
+    const d = c.ortho && c.band && p === undefined ? parseDistance(t, lunits) : undefined;
+    if (d !== undefined && c.band) p = orthoDistance(c.band, this.#cursor, d);
     if (p === undefined || p === 'invalid') return this.#reject('Invalid point.');
     this.#log(`${this.promptText} ${t}`);
     return this.#feedPoint(p);
+  }
+
+  /** Enter at a collector that ends with it: its point goes on as a point given there would. */
+  async #endCollector(): Promise<void> {
+    const p = this.#collectors.pop()!.enter!();
+    if (this.#collectors.length > 0) return this.#feedPoint(p);
+    return this.#pointFor(p, '', false);
   }
 
   /** A point for the innermost collector; `deferred` goes on with it through an override's. */
