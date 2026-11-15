@@ -16,12 +16,12 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 | ARC | A | 1 | all 11 methods; Continue (↵); Direction; Angle; Length; CEnter | x (#368: 3P, SCE, SCA, SCL, SEC, SEA, SED, SER, CSE, CSA, CSL and ↵ tangent from the last line or arc, dragged while the last value is asked; negative angles, chords and radii draw the other way; AutoCAD's Ctrl direction switch is not offered) |
 | RECTANG | REC | 1 | Chamfer, Elevation, Fillet, Thickness, Width, Area, Dimensions, Rotation | x (#375: a closed LWPOLYLINE dragged to its other corner; Chamfer (first distance on the side arriving at each corner), Fillet, Width, Elevation and Thickness (written to the polyline, not shown in 2D) kept for the drawing's next rectangles and listed as "Current rectangle modes"; corners too big for the rectangle are left square; Area with a length or width (the corners' area counted), Dimensions with the cursor choosing the side, Rotation typed or by Pick points, kept) |
 | POLYGON | POL | 2 | Edge, Inscribed/Circumscribed | x (#375: 3 to 1024 sides (the last kept, POLYSIDES), Inscribed or Circumscribed (the last kept); a picked radius turns the polygon to the cursor, a typed one levels the bottom edge (SNAPANG waits for M3-06); Edge counter-clockwise from its first endpoint; dragged) |
-| ELLIPSE | EL | 2 | Arc, Center, Rotation | |
+| ELLIPSE | EL | 2 | Arc, Center, Rotation | x (#376: Axis, End; Center; Rotation (up to 89.4°); Arc by start and end Angle, Parameter or Included angle, counted from the first axis endpoint; dragged while asked; Isocircle (needs isometric snap) and PELLIPSE 1 not yet) |
 | SPLINE | SPL | 2 | Method (Fit/CV), Knots, Degree, Object, Close, Tolerance | x (#378, M3-01 part 5: Fit through the points picked, a cubic with Chord, Square root or Uniform knots, start and end Tangency, toLerance (saved as DXF 44; the curve still passes through the fit points, AutoCAD's approximation being undocumented), Undo, Close (periodic) and Enter; CV by control vertices of degree 1 to 10 (uniform knots, clamped; Close periodic), the degree lowered while fewer vertices carry it; dragged as it grows; the method, knots and degree kept for the drawing's next spline (SPLMETHOD, SPLKNOTS, SPLDEGREE, session only); Object turns quadratic and cubic spline-fit polylines into splines on their frames, erasing them (DELOBJ's default). Esc draws nothing) |
-| XLINE | XL | 2 | Hor, Ver, Ang, Bisect, Offset | |
-| RAY | — | 2 | | |
-| POINT | PO | 2 | PDMODE, PDSIZE, Multiple | |
-| DONUT | DO | 3 | | |
+| XLINE | XL | 2 | Hor, Ver, Ang, Bisect, Offset | x (#376: through points, Hor, Ver, Ang (last angle offered) with Reference to a line, Bisect, Offset by a distance (remembered) or Through from a line, xline, ray or straight polyline segment; each dragged with the cursor) |
+| RAY | — | 2 | | x (#376: a start point and through points until Enter, dragged) |
+| POINT | PO | 2 | PDMODE, PDSIZE, Multiple | ~ (#376: one point, with "Current point modes" reported; drawn and plotted by PDMODE and PDSIZE, which are set by typing them; Multiple Points with the ribbon, M7-01; the DDPTYPE dialog is left on M3-01) |
+| DONUT | DO | 3 | | x (#376: inside and outside diameters (remembered, 0.5 and 1 at first; a zero inside fills it), then centres until Enter, dragged; a closed LWPOLYLINE of two half circles with a constant width) |
 | HATCH | H, BH | 2 | contextual tab; -HATCH dash variant required | |
 | GRADIENT | GD | 2 | | |
 | BOUNDARY | BO | 2 | Island detection, object type (polyline/region) | |

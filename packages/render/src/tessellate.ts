@@ -59,6 +59,7 @@ import { patternLength, type LinePattern } from './style/pattern';
 import { linetypeEmbedPrimitives, textPrimitives, type TextContext } from './text';
 import { imagePrimitives, type ImageFrames } from './image';
 import { underlayPrimitives } from './underlay';
+import { figureOf, type PointStyle } from './point-style';
 
 /** What tessellating some kinds needs beyond the geometry and paint. */
 export interface TessellateContext {
@@ -83,6 +84,8 @@ export interface TessellateContext {
    * 1 the visible ones, 2 all); 1, AutoCAD's initial value, when absent.
    */
   readonly attributeMode?: number | undefined;
+  /** PDMODE and PDSIZE (`pointStyle`, M3-01 part 4); POINTs are dots when absent. */
+  readonly points?: PointStyle | undefined;
 }
 
 /** What every primitive of one entity shares, resolved from the entity and its layer. */
@@ -280,7 +283,7 @@ function geometryPrimitives(
       return dashed || widePolyline(g.vertices, g.closed, widths, paint, ctx.fill ?? true);
     }
   }
-  const prims = exact(g, paint, ctx.patterns ?? PATTERNS);
+  const prims = exact(g, paint, ctx.patterns ?? PATTERNS, ctx.points);
   const lt = paint.linetype;
   const first = prims[0];
   if (!lt || prims.length !== 1) return prims;
@@ -598,7 +601,12 @@ function dashGeometry(
   }
 }
 
-function exact(g: EntityGeometry, paint: Paint, patterns: PatternLibrary): RenderPrimitive[] {
+function exact(
+  g: EntityGeometry,
+  paint: Paint,
+  patterns: PatternLibrary,
+  points: PointStyle | undefined,
+): RenderPrimitive[] {
   switch (g.kind) {
     case 'LINE':
       return [stroke([PATH_M, g.start.x, g.start.y, PATH_L, g.end.x, g.end.y], paint)];
@@ -674,8 +682,20 @@ function exact(g: EntityGeometry, paint: Paint, patterns: PatternLibrary): Rende
         ),
       ];
     }
-    case 'POINT':
-      return [{ kind: 'point', x: g.position.x, y: g.position.y, color: paint.color }];
+    case 'POINT': {
+      // PDMODE 1 alone shows nothing; any other mode but 0 a figure (M3-01 part 4).
+      const figure = figureOf(points, g.xAxisAngle);
+      if (figure && (figure.mode & 31) === 1 && (figure.mode & 96) === 0) return [];
+      return [
+        {
+          kind: 'point',
+          x: g.position.x,
+          y: g.position.y,
+          color: paint.color,
+          ...(figure && { figure }),
+        },
+      ];
+    }
     case 'LWPOLYLINE':
     case 'POLYLINE': {
       // Widths draw as centre lines until polyline widths (M1-46).

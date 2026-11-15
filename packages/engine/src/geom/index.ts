@@ -14,6 +14,7 @@ export * from './intersect';
 export * from './nurbs';
 export * from './offset';
 export * from './shapes';
+export * from './ellipse-xline';
 export * from './tangent';
 export * from './tolerance';
 export * from './transform';

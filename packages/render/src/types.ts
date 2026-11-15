@@ -316,12 +316,16 @@ export type RenderPrimitive =
       readonly opacity?: number;
       readonly lineweight?: number;
     }
-  /** A POINT drawn as a dot (PDMODE 0); other PDMODE shapes come with the POINT style task. */
+  /**
+   * A POINT: a dot, or with `figure` the PDMODE figure (M3-01 part 4), sized when drawn since a
+   * relative PDSIZE follows the view (`point-style.ts`).
+   */
   | {
       readonly kind: 'point';
       readonly x: number;
       readonly y: number;
       readonly color: PrimitiveColor;
+      readonly figure?: PointFigure;
       /**
        * Inside a block reference (M1-18): the layers that hide this part when frozen in a
        * viewport, its own effective layer and every nested reference's above it.
@@ -332,6 +336,14 @@ export type RenderPrimitive =
       /** Object transparency (M1-108): the opacity it draws at, below 1; absent is opaque. */
       readonly opacity?: number;
     };
+
+/** A POINT's PDMODE figure (M3-01 part 4): its mode, PDSIZE and turn (DXF 50). */
+export interface PointFigure {
+  readonly mode: number;
+  /** PDSIZE as set: > 0 drawing units, else a percentage of the view's height (0 is 5). */
+  readonly size: number;
+  readonly angle?: number;
+}
 
 /** A rectangle of the canvas, CSS pixels from its top-left corner. */
 export interface ScreenRect {
