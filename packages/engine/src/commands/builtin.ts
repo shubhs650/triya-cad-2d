@@ -23,6 +23,7 @@ import { offsetCommand } from './modify/offset';
 import { alignCommand } from './modify/align';
 import { breakAtPointCommand, breakCommand, lengthenCommand } from './modify/break';
 import { explodeCommand, joinCommand, reverseCommand } from './modify/join';
+import { peditCommand } from './modify/pedit';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
@@ -77,6 +78,7 @@ export function builtinCommands(): CommandRegistry {
     lengthenCommand(),
     reverseCommand(),
     alignCommand(),
+    peditCommand(),
     revcloudCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),

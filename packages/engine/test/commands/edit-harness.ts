@@ -1,0 +1,121 @@
+// The drawing and canvas M3-02 part 5's command tests (PEDIT, MATCHPROP, CHPROP, CHANGE) run
+// on: picks take the objects within 0.25 of the pick, windows what they hold or cross.
+import {
+  DocumentModel,
+  PromptBus,
+  builtinCommands,
+  closestPoint,
+  flatten,
+  offsetCurveOf,
+  toleranceForSize,
+  type BusEvent,
+  type Entity,
+  type EntityGeometry,
+  type EntityId,
+  type ViewHost,
+  type Vec2,
+  type ViewReply,
+} from '../../src/index';
+import {
+  LAYER_0,
+  LAYER_WALLS,
+  MODEL_SPACE,
+  blockRecord,
+  entityInit,
+  layer,
+  lineGeom,
+  sampleInit,
+} from '../model/fixtures';
+
+export const r6 = (v: number) => Math.round(v * 1e6) / 1e6 + 0;
+const BLOCK = '50';
+
+/** A canvas whose picks take the objects within 0.25 of the pick, nearest first. */
+export function host(model: () => DocumentModel): ViewHost {
+  return {
+    request: (r): Promise<ViewReply> => {
+      if (r.op === 'pick') {
+        const hits: [number, EntityId][] = [];
+        for (const e of model().entities()) {
+          if (e.owner !== MODEL_SPACE) continue;
+          const c = offsetCurveOf(e.geom);
+          const d = c ? closestPoint(c, r.point, toleranceForSize(100)).distance : Infinity;
+          if (d < 0.25) hits.push([d, e.id]);
+        }
+        hits.sort((a, b) => a[0] - b[0]);
+        return Promise.resolve({ ok: true, ids: hits.map(([, id]) => id) });
+      }
+      if (r.op === 'select') {
+        // A window holds an object with all its points inside, a crossing one with any.
+        const inside = (p: Vec2) =>
+          p.x >= Math.min(r.a.x, r.b.x) &&
+          p.x <= Math.max(r.a.x, r.b.x) &&
+          p.y >= Math.min(r.a.y, r.b.y) &&
+          p.y <= Math.max(r.a.y, r.b.y);
+        const ids = model()
+          .blockEntities(MODEL_SPACE)
+          .filter((id) => {
+            const g = model().entity(id)!.geom;
+            const c = offsetCurveOf(g);
+            const bounded = c && c.kind !== 'RAY' && c.kind !== 'XLINE' ? c : undefined;
+            const pts = bounded
+              ? flatten(bounded, 0.01).points
+              : g.kind === 'INSERT'
+                ? [g.position]
+                : [];
+            const n = pts.filter(inside).length;
+            return r.crossing ? n > 0 : n === pts.length && n > 0;
+          });
+        return Promise.resolve({ ok: true, ids });
+      }
+      return Promise.resolve({ ok: false, message: 'no' });
+    },
+  };
+}
+
+/**
+ * A drawing of its own: line 30 (0,0)-(10,0), circle 31 at (50,0) r 5, and whatever `extra`
+ * adds (handles from 40 on, on WALLS). Block "B" (record 50) holds a line (0,0)-(1,0) on layer 0
+ * coloured ByBlock and a circle at (1,0) r 0.5.
+ */
+export function setup(extra: (EntityGeometry | [EntityGeometry, Partial<Entity>])[] = []) {
+  const init = sampleInit();
+  const model = DocumentModel.create({
+    ...init,
+    tables: {
+      ...init.tables,
+      layers: [layer(LAYER_0, '0'), layer(LAYER_WALLS, 'WALLS')],
+      blockRecords: [...(init.tables?.blockRecords ?? []), blockRecord(BLOCK, 'B')],
+    },
+    blocks: [...(init.blocks ?? []), { handle: BLOCK, name: 'B', basePoint: { x: 0, y: 0 } }],
+    entities: [
+      entityInit('30', lineGeom(0, 0, 10, 0)),
+      entityInit('31', { kind: 'CIRCLE', center: { x: 50, y: 0 }, radius: 5 }),
+      entityInit('51', lineGeom(0, 0, 1, 0), { owner: BLOCK, color: { kind: 'byBlock' } }),
+      entityInit('52', { kind: 'CIRCLE', center: { x: 1, y: 0 }, radius: 0.5 }, { owner: BLOCK }),
+      ...extra.map((x, i) => {
+        const [g, props] = Array.isArray(x) ? x : [x, {}];
+        return entityInit((0x40 + i).toString(16).toUpperCase(), g, {
+          layer: LAYER_WALLS,
+          ...props,
+        } as never);
+      }),
+    ],
+  });
+  const bus = new PromptBus({ model, registry: builtinCommands(), view: host(() => model) });
+  const log: string[] = [];
+  bus.on((e: BusEvent) => {
+    if (e.type === 'log') log.push(e.line);
+  });
+  const byHandle = (h: string): Entity | undefined => {
+    const id = model.ids.idOf(h);
+    return id === undefined ? undefined : model.entity(id);
+  };
+  const space = () => model.blockEntities(MODEL_SPACE).map((id) => model.entity(id)!);
+  const kinds = () => space().map((e) => e.geom.kind);
+  const ends = (e: Entity) => {
+    const g = e.geom as { start: { x: number; y: number }; end: { x: number; y: number } };
+    return [g.start.x, g.start.y, g.end.x, g.end.y].map(r6);
+  };
+  return { model, bus, log, byHandle, space, kinds, ends };
+}

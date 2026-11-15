@@ -77,6 +77,8 @@ describe('palette search', () => {
       'PASTEBLOCK',
       'PASTECLIP',
       'PASTEORIG',
+      // M3-02 part 5: PEDIT.
+      'PEDIT',
       // M3-01 part 3: PLINE, POLYGON and RECTANG.
       'PLINE',
       'PLOT',
