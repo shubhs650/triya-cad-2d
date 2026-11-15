@@ -38,4 +38,5 @@ export {
 } from './dimension-block';
 export * from './dimension';
 export * from './named-view';
+export { offsetCurveOf, offsetGeometry, offsetSide } from './offset';
 export * from './underlay-layers';
