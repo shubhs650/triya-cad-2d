@@ -239,6 +239,19 @@ describe('WCS entities', () => {
     expect(fit(15).knotParameterization).toBeUndefined();
   });
 
+  it('keeps a fit tolerance above AutoCAD’s 1e-10 "none" (M3-01 part 5)', () => {
+    const fit = (tolerance: number, points = 2) => {
+      const s = new Spline();
+      s.degree = 3;
+      s.fitPoints = [new XYZ(0, 0, 0), new XYZ(5, 5, 0)].slice(0, points);
+      s.fitTolerance = tolerance;
+      return mapOne(s).geom as { fitTolerance?: number };
+    };
+    expect(fit(0.25).fitTolerance).toBe(0.25);
+    expect(fit(1e-10).fitTolerance).toBeUndefined();
+    expect(fit(0.25, 0).fitTolerance).toBeUndefined();
+  });
+
   it('keeps a 3DFACE in plan view with its hidden edges', () => {
     const f = new Face3D();
     f.firstCorner = new XYZ(0, 0, 1);

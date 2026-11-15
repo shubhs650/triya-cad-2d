@@ -10,6 +10,8 @@ import { lineCommand } from './draw/line';
 import { plineCommand } from './draw/pline';
 import { polygonCommand } from './draw/polygon';
 import { rectangCommand } from './draw/rectang';
+import { splineCommand } from './draw/spline';
+import { divideCommand, measureCommand } from './draw/divide';
 import { MLEADER_COMMANDS } from './draw/mleader';
 import { revcloudCommand } from './draw/revcloud';
 import { wipeoutCommand } from './draw/wipeout';
@@ -49,6 +51,9 @@ export function builtinCommands(): CommandRegistry {
     plineCommand(last),
     rectangCommand(),
     polygonCommand(),
+    splineCommand(),
+    divideCommand(),
+    measureCommand(),
     textCommand(),
     mtextCommand(),
     textEditCommand(),
