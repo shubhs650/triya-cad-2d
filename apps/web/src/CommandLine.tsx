@@ -5,7 +5,7 @@
 // is a front-end of the drawing's command engine, which runs in the engine worker. Dynamic
 // Input (F12) and the Ctrl+K palette (part 2) are two more front-ends, kept here beside it: they
 // send what the command line would.
-import { builtinCommands, keywordShortcut, type Vec2 } from '@triya/engine';
+import { keywordShortcut, type Vec2 } from '@triya/engine';
 import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { CommandPalette } from './CommandPalette';
 import {
@@ -24,9 +24,7 @@ import { DRAFTING_ITEMS, DRAFTING_KEYS, drafting, type DraftingToggle } from './
 import { cycleSnap } from './canvas/registry';
 import { engines } from './engine/registry';
 import { commandItems, type PaletteItem } from './palette';
-
-/** The commands for completion: the same registry each drawing's engine runs. */
-const registry = builtinCommands();
+import { aliasFileVersion, appRegistry as registry } from './user-aliases';
 
 /** Lines of history the docked window shows above the prompt (AutoCAD's default is 3). */
 const SHOWN_LINES = 2;
@@ -58,6 +56,7 @@ export function CommandLine({
   onSettings,
   recent = [],
   onOpenRecent,
+  onEditAliases,
 }: {
   /** The drawing shown, or undefined with none open. */
   doc: number | undefined;
@@ -68,12 +67,16 @@ export function CommandLine({
   cursor: () => { readonly x: number; readonly y: number } | undefined;
   /** Opens the Settings dialog (from the palette). */
   onSettings: () => void;
+  /** Opens the Edit Aliases dialog (from the palette, M3-10). */
+  onEditAliases?: () => void;
   /** The recent drawings the palette lists (M2-14, UI_SPEC §5), newest first. */
   recent?: readonly { readonly key: string; readonly name: string }[];
   /** Opens a recent drawing by its key. */
   onOpenRecent?: (key: string) => void;
 }) {
   useSyncExternalStore(lines.subscribe, lines.version);
+  // The user alias file changes completion and the palette's aliases (M3-10).
+  const aliasVersion = useSyncExternalStore(aliasFileVersion.subscribe, aliasFileVersion.get);
   const state = doc === undefined ? undefined : lines.get(doc);
   const [text, setText] = useState('');
   const [recall, setRecall] = useState<number | undefined>();
@@ -137,6 +140,13 @@ export function CommandLine({
         // AutoCAD's OPTIONS, and what Settings holds (M2-20).
         aliases: ['Options', 'Theme', 'Canvas colors', 'Clear all local data'],
       },
+      {
+        id: 'aliases',
+        kind: 'action',
+        label: 'Edit Aliases',
+        // AutoCAD's Edit Aliases (Manage tab), which opens acad.pgp (M3-10).
+        aliases: ['acad.pgp', 'Command aliases', 'ALIASEDIT'],
+      },
       ...recent.map((r): PaletteItem => ({
         id: `recent:${r.key}`,
         kind: 'action',
@@ -144,13 +154,15 @@ export function CommandLine({
         aliases: [],
       })),
     ],
-    [recent],
+    // The registry's aliases change with aliasVersion.
+    [recent, aliasVersion],
   );
   const runItem = (item: PaletteItem) => {
     if (item.kind === 'command') {
       if (doc !== undefined) engines.command(doc, { kind: 'invoke', name: item.id });
     } else if (item.id === 'history') setHistoryOpen(true);
     else if (item.id === 'dyn') dynMode.toggle();
+    else if (item.id === 'aliases') onEditAliases?.();
     else if (item.id.startsWith('recent:')) onOpenRecent?.(item.id.slice('recent:'.length));
     else if (item.id.startsWith('drafting:'))
       drafting.toggle(item.id.slice('drafting:'.length) as DraftingToggle);

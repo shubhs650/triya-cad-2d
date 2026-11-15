@@ -43,6 +43,7 @@ export function Settings({
   onAdd,
   onAddFonts,
   onAddFiles,
+  onEditAliases,
 }: {
   preferences: PreferencesStore;
   /** Deletes everything on the device; the page reloads unless something could not go. */
@@ -58,6 +59,8 @@ export function Settings({
   onAddFonts: (files: Iterable<File>) => void;
   /** Plot style tables and linetype files, each to its store. */
   onAddFiles: (files: Iterable<File>) => void;
+  /** Opens the Edit Aliases dialog (M3-10). */
+  onEditAliases?: () => void;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   const picker = useRef<HTMLInputElement>(null);
@@ -204,6 +207,13 @@ export function Settings({
         store={linetypes}
         onAdd={onAddFiles}
       />
+      <section aria-labelledby="aliases-title">
+        <h3 id="aliases-title">Command aliases</h3>
+        <p>Your own aliases, in acad.pgp syntax, run in place of the default ones.</p>
+        <button type="button" onClick={onEditAliases}>
+          Edit aliases…
+        </button>
+      </section>
       <LocalData onClearAll={onClearAll} />
       <form method="dialog">
         <button type="submit">Close</button>

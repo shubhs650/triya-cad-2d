@@ -3353,6 +3353,47 @@ button {
   min-width: 8ch;
 }
 
+/* The Edit Aliases dialog (M3-10). */
+.cad-dialog.alias-editor {
+  width: min(640px, calc(100vw - 32px));
+}
+
+.alias-editor-file {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.alias-editor-file textarea {
+  font-family: ui-monospace, 'Cascadia Mono', Consolas, 'DejaVu Sans Mono', monospace;
+  font-size: 12px;
+  resize: vertical;
+  white-space: pre;
+}
+
+.alias-editor-count {
+  margin: 4px 0;
+}
+
+.alias-editor-problems {
+  margin: 4px 0;
+  padding-left: 18px;
+  max-height: 96px;
+  overflow: auto;
+  color: var(--danger-text);
+}
+
+.alias-editor-defaults pre {
+  max-height: 160px;
+  overflow: auto;
+  font-size: 12px;
+  margin: 4px 0;
+}
+
+.alias-editor-gap {
+  flex: 1;
+}
+
 /* UNITS' Drawing Units and Direction Control (M3-09). */
 .units-dialog {
   width: min(480px, calc(100vw - 32px));
