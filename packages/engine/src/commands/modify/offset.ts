@@ -50,7 +50,7 @@ const isPoint = (v: unknown): v is Vec2 =>
  * The tolerance an offset works to: the drawing's, from its extents (DEC-036), or the curve's own
  * size where the curve lies beyond them.
  */
-function toleranceFor(model: DocumentModel, c: Curve): Tolerance {
+export function toleranceFor(model: DocumentModel, c: Curve): Tolerance {
   const min = model.header.get('$EXTMIN');
   const max = model.header.get('$EXTMAX');
   const pts: Vec2[] =

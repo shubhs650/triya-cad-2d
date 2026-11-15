@@ -416,6 +416,17 @@ export class ChangeSetBuilder {
     return record;
   }
 
+  /**
+   * Puts a removed object back under its own handle (TRIM's and EXTEND's Undo, M3-02 part 2:
+   * a dimension association the trim dropped), as `restoreEntity` does an entity.
+   */
+  restoreObject(o: NonGraphicalObject): NonGraphicalObject {
+    this.#open();
+    if (this.#objects.get(o.handle)) throw new Error(`object ${o.handle} is in the drawing`);
+    this.#objects.add(o);
+    return o;
+  }
+
   updateObject(handle: Handle, patch: RecordPatch<NonGraphicalObject>): NonGraphicalObject {
     this.#open();
     return this.#objects.update(handle, patch);

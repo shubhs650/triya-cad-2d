@@ -39,6 +39,7 @@ describe('palette search', () => {
       'ERASE',
       'EXPORT',
       'EXPORTPDF',
+      'EXTEND',
       'HATCHTOBACK',
       'ID',
       'LINE',
@@ -77,6 +78,7 @@ describe('palette search', () => {
       'TEXT',
       'TEXTEDIT',
       'TEXTTOFRONT',
+      'TRIM',
       // M2-23: the undo commands run in every drawing.
       'U',
       // M2-56 part 1: the Underlay Layers dialog.
