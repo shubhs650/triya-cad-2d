@@ -307,6 +307,11 @@ export class CanvasController {
   #layout: Layout | undefined;
   /** The header as it is now: model space's LIMMIN and LIMMAX are read from it. */
   readonly #header: Map<string, HeaderValue>;
+  /**
+   * VPORT records as edited since the drawing opened (M3-06 part 2: the Snap and Grid tab, SNAP
+   * and GRID edit the `*Active` one's spacing), by handle; the opened ones otherwise.
+   */
+  readonly #vports = new Map<Handle, VportRecord>();
   readonly #hooks: CanvasHooks;
   readonly #observer: ResizeObserver;
   /** The view shown is still the saved one the space opened in (`#resize` fits it again). */
@@ -447,7 +452,10 @@ export class CanvasController {
         ? undefined
         : layoutsOf(opened.init, changes).find((l) => l.blockRecord === block);
     this.#header = new Map(opened.init.header ?? []);
-    for (const cs of changes) this.#followHeader(cs);
+    for (const cs of changes) {
+      this.#followHeader(cs);
+      this.#followVports(cs);
+    }
     this.#hooks = hooks;
     this.#underlays = hooks.underlays?.(
       (definition, raster) => {
@@ -1116,6 +1124,8 @@ export class CanvasController {
       this.#canvas.setAttribute('aria-label', `Layout ${after.name}`);
     }
     this.#followHeader(change);
+    // The snap and grid spacing, or the snap type, changed: the grid shows them.
+    if (this.#followVports(change)) this.#host.setStyle(this.#style());
     // Drawn now rather than on the next animation frame, so `flush` resolves once the change
     // is on screen (the palette measures toggle → canvas, M1-23). The view is sent only when it
     // is not the one the renderer has: setting a view redraws the whole scene, and a render
@@ -1185,6 +1195,14 @@ export class CanvasController {
     (this.#hooks.changes?.() ?? []).forEach((change, i) => host.apply(change, i + 1));
     this.canvas.dataset['renderer'] = host.mode;
     return host;
+  }
+
+  /** Keeps the VPORT records `change` edits; true when it edited any. */
+  #followVports(change: ChangeSet): boolean {
+    const v = change.tables?.vports;
+    for (const r of [...(v?.added ?? []), ...(v?.updated ?? []).map((u) => u.after)])
+      this.#vports.set(r.handle, r);
+    return (v?.added?.length ?? 0) + (v?.updated?.length ?? 0) > 0;
   }
 
   #followHeader(change: ChangeSet): void {
@@ -1326,12 +1344,13 @@ export class CanvasController {
     };
   }
 
-  /** The `*Active` VPORT of model space, or this tile's; none in a layout. */
+  /** The `*Active` VPORT of model space, or this tile's, as edited; none in a layout. */
   #vport(): VportRecord | undefined {
     if (this.#layout) return undefined;
-    return this.#hooks.tile
+    const opened = this.#hooks.tile
       ? this.#hooks.tile.vport
       : activeVport(this.#opened.init.tables?.vports);
+    return opened && (this.#vports.get(opened.handle) ?? opened);
   }
 
   #resize(): void {

@@ -73,6 +73,8 @@ describe('palette search', () => {
       'EXTEND',
       'FILLET',
       'FILTER',
+      // M3-06 part 2: GRID and SNAP.
+      'GRID',
       'HATCHTOBACK',
       'ID',
       'JOIN',
@@ -127,6 +129,7 @@ describe('palette search', () => {
       'SELECT',
       'SELECTSIMILAR',
       'SETVAR',
+      'SNAP',
       'SPLINE',
       'SPLINEDIT',
       'STRETCH',

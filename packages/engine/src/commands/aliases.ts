@@ -136,6 +136,7 @@ export const ALIASES: Readonly<Record<string, string>> = {
   DS: 'DSETTINGS',
   SE: 'DSETTINGS',
   OS: 'OSNAP',
+  SN: 'SNAP',
   OP: 'OPTIONS',
   // Output
   PRE: 'PREVIEW',

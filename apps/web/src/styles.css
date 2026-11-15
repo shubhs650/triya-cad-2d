@@ -3100,6 +3100,27 @@ button {
   border: 1px solid var(--chrome-border);
 }
 
+/* Snap and Grid (part 2): snap on the left, grid on the right, one column when narrow. */
+.dsettings-columns {
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  align-items: start;
+  gap: 6px 12px;
+}
+
+.dsettings-columns > div {
+  display: grid;
+  gap: 6px;
+}
+
+.dsettings-columns .cad-dialog-field > span {
+  min-width: 120px;
+}
+
+.dsettings-note {
+  margin: 0;
+  color: var(--chrome-text-muted);
+}
+
 .dsettings-row {
   display: flex;
   flex-wrap: wrap;
