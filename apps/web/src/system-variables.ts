@@ -89,6 +89,10 @@ const VALUES: Readonly<
     set: (selectionPreview) => ({ selectionPreview }),
   },
   PREVIEWFILTER: { get: (s) => s.previewFilter, set: (previewFilter) => ({ previewFilter }) },
+  SELECTIONPREVIEWLIMIT: {
+    get: (s) => s.selectionPreviewLimit,
+    set: (selectionPreviewLimit) => ({ selectionPreviewLimit }),
+  },
   ARRAYASSOCIATIVITY: {
     get: (s) => bit(s.arrayAssociativity),
     set: (v) => ({ arrayAssociativity: v === 1 }),

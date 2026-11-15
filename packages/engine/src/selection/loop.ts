@@ -82,6 +82,8 @@ export type PickVariable =
   typeof PICKADD | typeof PICKAUTO | typeof PICKSTYLE | typeof GROUPDISPLAYMODE;
 /** PICKAUTO 1: a pick that finds nothing at "Select objects" starts a window. */
 const PICKAUTO_WINDOW = 1;
+/** PICKAUTO 2: a press on an object at `Command:`, dragged, starts a window there (M3-04 part 6). */
+const PICKAUTO_DRAG = 2;
 
 /** What a step does to the set: adds, removes, replaces it, or toggles (Shift at PICKADD 0). */
 type SetOp = 'add' | 'remove' | 'replace' | 'toggle';
@@ -174,6 +176,27 @@ interface Corner {
   /** `auto` takes its kind from the direction (implied windowing and BOX). */
   readonly kind: 'auto' | 'window' | 'crossing';
   readonly op: SetOp;
+  /** Started by dragging from over an object (PICKAUTO 2): a rectangle, never a lasso. */
+  readonly fromObject?: true;
+}
+
+/** The pick a press at `Command:` made, which PICKAUTO 2 takes back once it is dragged. */
+interface Pressed {
+  readonly at: Vec2;
+  readonly op: SetOp;
+  /** Where the pick before it was made (`#pick`). */
+  readonly pick: Vec2 | undefined;
+}
+
+/** The box round `points`, as a window's corners, with the points as its polygon. */
+function polygonWindow(points: readonly Vec2[]): SelectionWindow {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return {
+    a: { x: Math.min(...xs), y: Math.min(...ys) },
+    b: { x: Math.max(...xs), y: Math.max(...ys) },
+    polygon: [...points],
+  };
 }
 
 export class SelectionLoop {
@@ -198,6 +221,8 @@ export class SelectionLoop {
   #group = false;
   /** Multiple typed: the picks made so far, taken at Enter. */
   #multiple: Vec2[] | undefined;
+  /** The last step was a press at `Command:` that picked an object (PICKAUTO 2). */
+  #pressed: Pressed | undefined;
 
   constructor(host: SelectionLoopHost, o: SelectionLoopOptions) {
     this.#host = host;
@@ -249,7 +274,13 @@ export class SelectionLoop {
       return {
         kind: 'point',
         message: 'Specify opposite corner',
-        rubberBand: { from: c.from, box: true, selection: c.kind },
+        rubberBand: {
+          from: c.from,
+          box: true,
+          selection: c.kind,
+          ...(this.#o.atCommand && { atCommand: true as const }),
+          ...(c.fromObject && { lasso: false as const }),
+        },
       };
     }
     if (this.#o.atCommand) return undefined;
@@ -285,7 +316,7 @@ export class SelectionLoop {
 
   /** A window waiting for a corner is dropped (a command typed at `Command:` instead). */
   cancelWindow(): void {
-    this.#first = this.#corner = this.#path = this.#multiple = undefined;
+    this.#first = this.#corner = this.#path = this.#multiple = this.#pressed = undefined;
     this.#group = false;
   }
 
@@ -307,6 +338,7 @@ export class SelectionLoop {
     p: Vec2,
     o: { readonly shift?: boolean; readonly release?: boolean; readonly lasso?: Lasso } = {},
   ): Promise<StepResult> {
+    this.#pressed = undefined;
     if (this.#first) {
       this.#corner = { from: p, kind: this.#first, op: this.#op(false) };
       this.#first = undefined;
@@ -322,6 +354,7 @@ export class SelectionLoop {
         kind: lasso.kind,
         points: lasso.points,
       });
+      this.#pathWindow(r, c.op, lasso);
       return await this.#take(r, c.op, `${lassoPrompt(lasso.kind)}:`, {});
     }
     if (c) {
@@ -361,9 +394,42 @@ export class SelectionLoop {
     const hit = hits.length > 1 ? await this.#cycle(p, hits) : hits[0];
     // The Selection list dismissed: nothing taken, and no window either.
     if (hit === undefined) return 'more';
+    const before = this.#pick;
     if (op !== 'remove') this.#pick = p;
     const { ids, groups } = await this.#grouped([hit]);
-    return this.#apply(ids, op, this.#label(), { pick: p }, groups);
+    const step = this.#apply(ids, op, this.#label(), { pick: p }, groups);
+    if (this.#o.atCommand && !o.release) this.#pressed = { at: p, op, pick: before };
+    return step;
+  }
+
+  /**
+   * PICKAUTO 2 (M3-04 part 6; AutoCAD 2024 Help, "PICKAUTO (System Variable)": "begins a window
+   * or crossing selection even if the cursor is directly over an object … only when you select
+   * objects before you start a command using the click, drag, and release method"): the press
+   * at `p` that picked an object at `Command:` has been dragged. Its pick is taken back and the
+   * press is the first corner of a window, a rectangle, which the release completes. False when
+   * that press picked nothing (its window already started), or bit 2 is off.
+   */
+  dragged(p: Vec2): boolean {
+    const pressed = this.#pressed;
+    this.#pressed = undefined;
+    const auto = this.#host.pickauto?.() ?? DEFAULT_PICKAUTO;
+    if (!this.#o.atCommand || !pressed || (auto & PICKAUTO_DRAG) === 0) return false;
+    if (pressed.at.x !== p.x || pressed.at.y !== p.y) return false;
+    this.#ids = this.#undo.pop() ?? [];
+    this.#takes = this.#undoTakes.pop() ?? [];
+    this.#pick = pressed.pick;
+    this.#corner = { from: p, kind: 'auto', op: pressed.op, fromObject: true };
+    return true;
+  }
+
+  /**
+   * A selection polygon or lasso that took objects is STRETCH's window (M3-04 part 6: "by
+   * crossing-window or crossing-polygon"); a fence holds nothing, so it is none.
+   */
+  #pathWindow(r: ViewReply, op: SetOp, path: SelectionPath): void {
+    if (op === 'remove' || !r.ok || path.kind === 'fence') return;
+    this.#window = polygonWindow(path.points);
   }
 
   /** What a step does: Remove mode removes; PICKADD says whether it adds or replaces. */
@@ -405,6 +471,7 @@ export class SelectionLoop {
   async keyword(text: string): Promise<StepResult | undefined> {
     const mode = matchKeyword(text, SELECTION_MODES);
     if (!mode) return undefined;
+    this.#pressed = undefined;
     // A mode typed after Multiple's picks takes them first, as Enter would.
     if (this.#multiple) {
       const step = await this.#endMultiple();
@@ -533,6 +600,7 @@ export class SelectionLoop {
       kind: path.kind,
       points: path.points,
     });
+    this.#pathWindow(r, path.op, path);
     return await this.#take(r, path.op, label, {});
   }
 

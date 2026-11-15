@@ -184,6 +184,8 @@ export type CommandInput =
       readonly ctrl?: boolean;
       /** The function picked from a grip's hover menu, with `grip` (M3-05 part 2). */
       readonly gripFunction?: string;
+      /** The press made at `point` has been dragged (PICKAUTO 2, M3-04 part 6). */
+      readonly dragged?: boolean;
     }
   /** Ctrl+A (M2-03, `PromptBus.selectAll`). */
   | { readonly kind: 'select-all' }
@@ -416,6 +418,7 @@ export class EngineSession {
           ...(input.deferred && { deferred: input.deferred }),
           ...(input.ctrl && { ctrl: true }),
           ...(input.gripFunction && { gripFunction: input.gripFunction }),
+          ...(input.dragged && { dragged: true }),
         });
       case 'select-all':
         return this.#bus.selectAll();

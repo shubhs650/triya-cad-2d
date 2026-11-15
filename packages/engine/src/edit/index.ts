@@ -9,6 +9,8 @@ export {
 export {
   copyObjects,
   inBox,
+  inPolygon,
+  stretchInside,
   planStretch,
   planGrip,
   gripObjects,

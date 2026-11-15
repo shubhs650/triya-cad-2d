@@ -32,7 +32,7 @@
 
 import {
   applyPoint,
-  inBox,
+  stretchInside,
   invert,
   layoutSheet,
   stretchGeometry,
@@ -776,7 +776,7 @@ export class Canvas2DRenderer implements Renderer {
     const stretched: CacheEntry[] = [];
     const s = motion.stretch;
     if (s) {
-      const inside = inBox(s.window);
+      const inside = stretchInside({ box: s.window, ...(s.polygon && { polygon: s.polygon }) });
       for (const id of s.ids) {
         const e = this.#model.entity(id);
         if (!e || !this.#cache[id]) continue;
@@ -876,19 +876,25 @@ export class Canvas2DRenderer implements Renderer {
   }
 
   setSelectionPreview(preview: SelectionPreview | undefined): void {
-    const hit = preview && this.hitTest(preview.screen, preview.aperture)[0];
-    const ids =
-      preview && hit !== undefined
-        ? previewObjects(this.#model, hit, {
-            filter: preview.filter,
-            groups: preview.groups,
-            space: this.#block,
-          })
-        : [];
+    const ids = preview ? this.#previewOf(preview) : [];
     const was = this.#previewed;
     if (ids.length === was.length && ids.every((id, i) => id === was[i])) return;
     this.#previewed = ids;
     this.#transientDirty = true;
+  }
+
+  /** What `preview` lights up: the object under the pickbox, or what its area would take. */
+  #previewOf(preview: SelectionPreview): EntityId[] {
+    const o = { filter: preview.filter, groups: preview.groups, space: this.#block };
+    if (preview.area) {
+      const taken = this.select(preview.area);
+      if (preview.limit !== undefined && taken.length > preview.limit) return [];
+      const out = new Set<EntityId>();
+      for (const id of taken) for (const p of previewObjects(this.#model, id, o)) out.add(p);
+      return [...out].sort((a, b) => a - b);
+    }
+    const hit = preview.screen && this.hitTest(preview.screen, preview.aperture)[0];
+    return hit !== undefined ? previewObjects(this.#model, hit, o) : [];
   }
 
   select(query: SelectQuery): EntityId[] {
