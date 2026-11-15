@@ -16,6 +16,7 @@ import { wipeoutCommand } from './draw/wipeout';
 import { DRAW_ORDER_COMMANDS } from './modify/draw-order';
 import { mtextCommand, textCommand, textEditCommand } from './draw/text';
 import { EDIT_COMMANDS } from './modify/edit';
+import { chamferCommand, cornerSettings, filletCommand } from './modify/fillet';
 import { offsetCommand } from './modify/offset';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
@@ -36,6 +37,8 @@ export function builtinCommands(): CommandRegistry {
   const last = lastDrawn();
   // TRIM and EXTEND share their Mode, Edge and Project settings, as AutoCAD's variables.
   const trim = trimSettings();
+  // FILLET and CHAMFER share their Trim mode (TRIMMODE).
+  const corner = cornerSettings();
   return new CommandRegistry([
     lineCommand(last),
     arcCommand(last),
@@ -59,6 +62,8 @@ export function builtinCommands(): CommandRegistry {
     offsetCommand(),
     trimCommand(trim),
     extendCommand(trim),
+    filletCommand(corner),
+    chamferCommand(corner),
     revcloudCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),

@@ -52,5 +52,6 @@ export {
   trimCurveOf,
   trimGeometry,
 } from './trim';
+export * from './corner';
 export * from './underlay-layers';
 export * from './array';
