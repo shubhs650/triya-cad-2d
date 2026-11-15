@@ -25,8 +25,13 @@
 // takes is trimmed (extended) where it is nearest the window's first corner inside the window,
 // the most common drafter expectation.
 //
-// Left for later (roadmap M3-12): Quick mode's freehand fence (press and drag), the highlight of
-// what a pick would trim, and blocks, text, hatches, regions, viewports and dimensions as edges. Projection has nothing to do in plan (DEC-039).
+// Block references, dimensions, tables, leaders, multileaders, text, regions, viewports and
+// (chosen) hatches are edges too (M3-12 part 4, `edit/trim-edges.ts`): before each pick, fence
+// or window the canvas measures the boxes of the texts among the edges (`textOutlines`), once
+// per text for the command.
+//
+// Left for later (roadmap M3-12): Quick mode's freehand fence (press and drag) and the highlight
+// of what a pick would trim. Projection has nothing to do in plan (DEC-039).
 import type { Curve } from '../../geom/curves';
 import { domain, pointAt } from '../../geom/eval';
 import { intersect } from '../../geom/intersect';
@@ -35,17 +40,17 @@ import type { Tolerance } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
 import { distance } from '../../geom/vec';
 import { eraseObjects, reshapeObject, revertChanges } from '../../edit/edit';
+import { cutParams, extendGeometry, pickParam, trimCurveOf, trimGeometry } from '../../edit/trim';
 import {
-  cutParams,
-  edgeCurvesOf,
-  extendGeometry,
-  pickParam,
-  trimCurveOf,
-  trimGeometry,
-} from '../../edit/trim';
+  edgeTexts,
+  objectEdgeCurves,
+  type EdgeOptions,
+  type EdgeText,
+} from '../../edit/trim-edges';
 import type { ChangeSet } from '../../model/changeset';
 import type { DocumentModel } from '../../model/document';
 import type { EntityId } from '../../model/entity-ids';
+import type { Entity } from '../../model/types';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { toleranceFor } from './offset';
@@ -224,7 +229,9 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
             case 'Fence': {
               const first = yield ctx.prompt.point({ message: 'Specify first fence point' });
               if (first.kind !== 'point') continue;
-              const done = run.fence(yield* fencePoints(ctx, first.point, false), w.work);
+              const points = yield* fencePoints(ctx, first.point, false);
+              await run.measure();
+              const done = run.fence(points, w.work);
               if (done.length > 0) history.push(done);
               continue;
             }
@@ -247,14 +254,18 @@ function trimExtend(s: TrimSettings, w: Words): CommandDef {
         if (hits.length > 0) {
           // Under a hatch the line it is drawn up to is what a drafter means.
           const id = hits.find((h) => trimCurveOf(ctx.model.entity(h)!.geom)) ?? hits[0]!;
+          await run.measure();
           const cs = run.one(id, a.point, work, true);
           if (cs) history.push([cs]);
           continue;
         }
         // A pick on nothing: Quick mode's fence of two points, Standard mode's crossing window.
-        const done = s.quick
-          ? run.fence(yield* fencePoints(ctx, a.point, true), work)
-          : yield* crossing(ctx, run, a.point, work, true);
+        let done: ChangeSet[];
+        if (s.quick) {
+          const points = yield* fencePoints(ctx, a.point, true);
+          await run.measure();
+          done = run.fence(points, work);
+        } else done = yield* crossing(ctx, run, a.point, work, true);
         if (done.length > 0) history.push(done);
       }
     },
@@ -320,6 +331,7 @@ async function* crossing(
     rubberBand: { from: first, box: true, selection: implied ? 'auto' : 'crossing' },
   });
   if (a.kind !== 'point') return [];
+  await run.measure();
   return run.window(first, a.point, work);
 }
 
@@ -335,18 +347,74 @@ class Runner {
     this.#edges = edges;
   }
 
-  /** The edge curves, all but `except`'s. */
-  #edgeCurves(except: EntityId): Curve[] {
+  /** The boxes of the texts among the edges, by `edgeTexts`' keys; null where none is drawn. */
+  readonly #boxes = new Map<object, readonly Vec2[] | null>();
+  /** The objects whose texts were measured. */
+  readonly #measured = new WeakSet<object>();
+  /** Each object's edge curves, by its geometry, for each pair of edge options. */
+  readonly #curves = new Map<string, WeakMap<object, Curve[]>>();
+
+  /** The edges shown in the space, as objects. */
+  #edgeObjects(): Entity[] {
     const model = this.#ctx.model;
     const chosen = this.#edges();
     const ids =
       chosen === 'all'
         ? model.blockEntities(this.#ctx.space)
         : [...chosen].filter((id) => model.entity(id)?.owner === this.#ctx.space);
+    return ids.filter((id) => shown(model, id)).map((id) => model.entity(id)!);
+  }
+
+  #options(): EdgeOptions {
+    // Hatches are edges only when chosen as edges (`edit/trim-edges.ts`).
+    return { extend: this.#s.extendEdges, hatches: this.#edges() !== 'all' };
+  }
+
+  /**
+   * Has the canvas measure the texts among the edges not yet measured (`textOutlines`), so
+   * they cut with the boxes they are drawn in. A canvas without fonts measures nothing.
+   */
+  async measure(): Promise<void> {
+    const model = this.#ctx.model;
+    const o = this.#options();
+    const keys: object[] = [];
+    const texts: EdgeText[] = [];
+    for (const e of this.#edgeObjects()) {
+      if (this.#measured.has(e.geom)) continue;
+      this.#measured.add(e.geom);
+      for (const t of edgeTexts(model, e, o)) {
+        if (this.#boxes.has(t.key)) continue;
+        this.#boxes.set(t.key, null);
+        keys.push(t.key);
+        texts.push(t.text);
+      }
+    }
+    if (texts.length === 0) return;
+    const r = await this.#ctx.view.request({ op: 'textOutlines', texts });
+    if (!r.ok || !r.outlines) return;
+    r.outlines.forEach((outline, i) => {
+      if (outline) this.#boxes.set(keys[i]!, outline.corners);
+    });
+  }
+
+  /** The edge curves, all but `except`'s. */
+  #edgeCurves(except: EntityId): Curve[] {
+    const model = this.#ctx.model;
+    const o = this.#options();
+    const k = `${o.extend}/${o.hatches}`;
+    let cache = this.#curves.get(k);
+    if (!cache) this.#curves.set(k, (cache = new WeakMap()));
+    const src = {
+      model,
+      tol: toleranceFor(model, { kind: 'XLINE', base: { x: 0, y: 0 }, direction: { x: 1, y: 0 } }),
+      textBox: (key: object) => this.#boxes.get(key) ?? undefined,
+    };
     const out: Curve[] = [];
-    for (const id of ids) {
-      if (id === except || !shown(model, id)) continue;
-      out.push(...edgeCurvesOf(model.entity(id)!.geom, this.#s.extendEdges));
+    for (const e of this.#edgeObjects()) {
+      if (e.id === except) continue;
+      let curves = cache.get(e.geom);
+      if (!curves) cache.set(e.geom, (curves = objectEdgeCurves(src, e, o)));
+      out.push(...curves);
     }
     return out;
   }
