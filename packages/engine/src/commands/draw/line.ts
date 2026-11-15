@@ -6,13 +6,25 @@
 //   Specify next point or [Undo]:            the first two segments
 //   Specify next point or [Close/Undo]:      from the third on
 // (AutoCAD 2024 Help, "LINE (Command)"). Tangent and perpendicular starts come from the running
-// and typed object snaps (M2-04).
+// and typed object snaps (M2-04): the first point takes AutoCAD's Deferred Tangent and Deferred
+// Perpendicular (M3-01 part 2), held until the next point is given; that point may be one too,
+// which draws a line tangent to two circles, or tangent to one and perpendicular to another.
+// Where no such line exists, "Line does not exist." and the next point is asked again (AutoCAD
+// leaves the message unsaid; this one follows CIRCLE's "Circle does not exist.").
+import { lineBetween, type DeferredPick } from '../../geom/deferred';
 import type { Vec2 } from '../../geom/types';
+import { OSNAP, type DeferredModes } from '../../input/osnap';
 import { add, scale } from '../../geom/vec';
 import type { EntityId } from '../../model/entity-ids';
 import type { CommandDef } from '../command';
 import { currentProps } from '../../properties/current';
 import { lastDrawn, lineDirection, type LastDrawn } from './last-drawn';
+import { sketchTolerance } from './sketch';
+
+export const NO_LINE = 'Line does not exist.';
+
+/** LINE's first point, and the point after a deferred one, take TAN and PER deferred. */
+const DEFERRED: DeferredModes = { modes: OSNAP.TAN | OSNAP.PER };
 
 export { currentLayer } from '../../properties/current';
 
@@ -44,8 +56,37 @@ export function lineCommand(last: LastDrawn = lastDrawn()): CommandDef {
         };
       };
       while (points.length === 0) {
-        const a = yield ctx.prompt.point({ message: 'Specify first point' });
-        if (a.kind === 'point') points.push(a.point);
+        const a = yield ctx.prompt.point({ message: 'Specify first point', deferred: DEFERRED });
+        if (a.kind === 'point' && a.deferred) {
+          // The first segment waits for its end to solve the deferred start.
+          const from: DeferredPick = a.deferred;
+          for (;;) {
+            const b = yield {
+              ...ctx.prompt.point({
+                message: 'Specify next point or',
+                options: ['Undo'],
+                deferred: DEFERRED,
+              }),
+              drag: {
+                kind: 'sketch',
+                sketch: { shape: 'line', from },
+                layer: currentProps(ctx.model).layer,
+              },
+            };
+            if (b.kind === 'keyword') break; // Undo: the first point again.
+            if (b.kind !== 'point') return;
+            const to = b.deferred ?? b.point;
+            const tol = sketchTolerance(from.pick, b.point);
+            const segment = lineBetween(from, to, tol);
+            if (!segment) {
+              ctx.message(NO_LINE);
+              continue;
+            }
+            draw(segment.start, segment.end);
+            points.push(segment.start, segment.end);
+            break;
+          }
+        } else if (a.kind === 'point') points.push(a.point);
         else if (a.kind !== 'enter') return;
         else if (!last.end) ctx.message('No line or arc to continue.');
         else if (!last.end.arc) points.push(last.end.point);

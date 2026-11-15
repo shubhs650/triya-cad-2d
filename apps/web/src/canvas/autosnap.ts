@@ -22,8 +22,12 @@ const DASH_PX = 4;
 
 const LABEL = new Map(OSNAP_MODES.map((m) => [m.mode, m.label]));
 
-/** The tooltip AutoSnap shows: the mode's name ("Endpoint"). */
-export const snapLabel = (mode: OsnapMode): string => LABEL.get(mode) ?? mode;
+/**
+ * The tooltip AutoSnap shows: the mode's name ("Endpoint"); a TAN or PER the command solves
+ * later is AutoCAD's "Deferred Tangent" or "Deferred Perpendicular" (M3-01 part 2).
+ */
+export const snapLabel = (mode: OsnapMode, deferred = false): string =>
+  `${deferred ? 'Deferred ' : ''}${LABEL.get(mode) ?? mode}`;
 
 function square(p: Vec2, s: number): number[] {
   return [
@@ -226,13 +230,28 @@ export function markerPrimitives(
   p: Vec2,
   px: number,
   color: string,
+  deferred = false,
 ): RenderPrimitive[] {
   // The second outline a pixel inside the first (a hair larger for the open shapes).
   const inner = markerPath(mode, p, px * (1 - 1 / MARKER_PX));
   return [
     { kind: 'stroke', color, path: markerPath(mode, p, px) },
     { kind: 'stroke', color, path: inner },
+    ...(deferred ? [{ kind: 'stroke' as const, color, path: ellipsis(p, px) }] : []),
   ];
+}
+
+/**
+ * The three dots after a deferred marker (AutoCAD's Deferred Tangent marker is the Tangent
+ * marker followed by an ellipsis), along its base line to the right.
+ */
+function ellipsis(p: Vec2, px: number): number[] {
+  const s = MARKER_PX * px;
+  const dot = px * 0.75;
+  const out: number[] = [];
+  for (let k = 0; k < 3; k++)
+    out.push(...square({ x: p.x + s + px * (3 + 3 * k), y: p.y - s + dot }, dot));
+  return out;
 }
 
 /** Polar tracking's path: dashes from `base` along `angle`, `length` world units long. */

@@ -18,3 +18,4 @@ export * from './transform';
 export type * from './types';
 export * from './vec';
 export * from './width';
+export * from './deferred';
