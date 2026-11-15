@@ -199,6 +199,8 @@ export interface CanvasHooks {
       readonly release: boolean;
       /** At `Command:`: how near a grip, in drawing units, counts as on it (M2-06). */
       readonly grip?: number;
+      /** Ctrl was held: an arc's direction switched where the prompt says so (M3-01 part 6). */
+      readonly ctrl?: boolean;
     },
   ) => void;
   /**
@@ -331,6 +333,11 @@ export class CanvasController {
     | undefined;
   /** Where the pointer is over the canvas (offset), or undefined when it is not. */
   #pointer: { readonly offsetX: number; readonly offsetY: number } | undefined;
+  /**
+   * Ctrl is held (M3-01 part 6): at a prompt that switches an arc's direction with it
+   * (`switchDirection`), the dragged arc goes the other way round, as AutoCAD's does.
+   */
+  #ctrl = false;
   /** Where the cursor rests, for rollover tooltips (M2-35 part 21). */
   readonly #rest = new RestWatch<{
     readonly x: number;
@@ -1385,8 +1392,9 @@ export class CanvasController {
   #rubberBand(cursor: Point | undefined): void {
     const p = this.#prompt;
     // The objects the prompt drags follow the cursor as the drafting aids place it (M2-06).
+    const ctrl = this.#ctrl && p?.switchDirection === true;
     const motion =
-      p?.drag && cursor && this.#mode === 'none' ? dragMotion(p.drag, cursor) : undefined;
+      p?.drag && cursor && this.#mode === 'none' ? dragMotion(p.drag, cursor, { ctrl }) : undefined;
     if (motion || this.#dragging) {
       this.#host.setDrag(motion);
       this.#dragging = motion !== undefined;
@@ -1515,6 +1523,14 @@ export class CanvasController {
   #listen(): void {
     const c = this.canvas;
     const opts = { signal: this.#listeners.signal };
+    // Ctrl pressed or let go with the cursor still (M3-01 part 6): the dragged arc switches.
+    const ctrlKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Control' || this.#ctrl === e.ctrlKey) return;
+      this.#ctrl = e.ctrlKey;
+      if (this.#prompt?.switchDirection && this.#pointer && this.#mode === 'none') this.#track();
+    };
+    window.addEventListener('keydown', ctrlKey, opts);
+    window.addEventListener('keyup', ctrlKey, opts);
     c.addEventListener(
       'wheel',
       (e) => {
@@ -1583,7 +1599,12 @@ export class CanvasController {
             return;
           }
           // At a point prompt the click gives the point the drafting aids make of it.
-          this.#hooks.onPick?.(this.#pointAt(world), { shift, release: false });
+          this.#ctrl = e.ctrlKey;
+          this.#hooks.onPick?.(this.#pointAt(world), {
+            shift,
+            release: false,
+            ...(e.ctrlKey && { ctrl: true }),
+          });
           return;
         }
         if (this.#mode === 'pan' || this.#mode === 'zoom') this.#startDrag(e);
@@ -1620,6 +1641,7 @@ export class CanvasController {
           drag.y = e.clientY;
         }
         this.#pointer = { offsetX: e.offsetX, offsetY: e.offsetY };
+        this.#ctrl = e.ctrlKey;
         // A rest is the cursor alone: not while a button is held, a window, PAN or ZOOM goes on.
         if (e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none') {
           this.#rest.move({ x: e.clientX, y: e.clientY, offsetX: e.offsetX, offsetY: e.offsetY });

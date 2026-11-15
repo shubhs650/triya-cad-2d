@@ -11,6 +11,7 @@
 // (`geom/shapes.ts` `donutOf`); its diameters are remembered for the next DONUT, as AutoCAD's
 // DONUTID and DONUTOD (initially 0.5 and 1), which it does not save.
 import { donutOf } from '../../geom/ellipse-xline';
+import type { HeaderValue } from '../../model/types';
 import type { CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { currentProps } from '../../properties/current';
@@ -91,3 +92,42 @@ export function donutCommand(): CommandDef {
     },
   };
 }
+
+/**
+ * The PDMODE values AutoCAD has (AutoCAD 2024 Help, "PDMODE (System Variable)"): a figure (0 dot,
+ * 1 none, 2 plus, 3 cross, 4 tick) with 32 adding a circle, 64 a square, 96 both. In the Point
+ * Style dialog's order: a row of each, left to right.
+ */
+export const POINT_MODES: readonly number[] = [0, 32, 64, 96].flatMap((ring) =>
+  [0, 1, 2, 3, 4].map((figure) => ring + figure),
+);
+
+/**
+ * DDPTYPE (M3-01 part 6): the Point Style dialog (AutoCAD 2024 Help, "Point Style Dialog Box"),
+ * opened on PDMODE and PDSIZE. OK sets those that changed in one undo step, as AutoCAD's dialog
+ * sets the two variables; the points are drawn anew by the renderer, which reads them each
+ * frame. Cancel (Esc) changes nothing. An answer with a mode AutoCAD has not or a size that is no
+ * number is ignored, as the dialog cannot give one.
+ */
+export function ddptypeCommand(): CommandDef {
+  return {
+    name: 'DDPTYPE',
+    async *run(ctx) {
+      const mode = numberOr(ctx.model.header.get('$PDMODE'), 0);
+      const size = numberOr(ctx.model.header.get('$PDSIZE'), 0);
+      const a = yield ctx.prompt.dialog({
+        message: 'Point Style',
+        dialog: { type: 'pointstyle', mode, size },
+      });
+      if (a.kind !== 'dialog' || a.action !== 'ok' || !a.pointStyle) return;
+      const next = a.pointStyle;
+      if (!POINT_MODES.includes(next.mode) || !Number.isFinite(next.size)) return;
+      const entries: [string, HeaderValue][] = [];
+      if (next.mode !== mode) entries.push(['$PDMODE', next.mode]);
+      if (next.size !== size) entries.push(['$PDSIZE', next.size]);
+      if (entries.length > 0) ctx.edit((b) => entries.forEach(([k, v]) => b.setHeader(k, v)));
+    },
+  };
+}
+
+const numberOr = (v: unknown, fallback: number): number => (typeof v === 'number' ? v : fallback);

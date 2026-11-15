@@ -44,6 +44,8 @@ describe('palette search', () => {
       'COPYBASE',
       'COPYCLIP',
       'CUTCLIP',
+      // M3-01 part 6: the Point Style dialog.
+      'DDPTYPE',
       'DIMALIGNED',
       'DIMANGULAR',
       'DIMBASELINE',

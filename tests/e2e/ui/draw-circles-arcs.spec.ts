@@ -83,7 +83,7 @@ test('CIRCLE dragged and clicked, ARC 3P, ARC and LINE continuing tangent', asyn
   await click(0.65, 0.6);
   await expect(prompt(page)).toHaveText('Command:');
   await type(page, 'ARC', 'Specify start point of arc or [Center]:');
-  await type(page, '', 'Specify end point of arc:');
+  await type(page, '', 'Specify end point of arc (hold Ctrl to switch direction):');
   const end = at(0.8, 0.75);
   await page.mouse.move(end.x, end.y, { steps: 4 });
   await page.screenshot({ path: test.info().outputPath('3-arc-continued-dragged.png') });

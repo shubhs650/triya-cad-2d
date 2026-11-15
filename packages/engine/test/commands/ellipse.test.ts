@@ -10,6 +10,7 @@ import {
   pointAt,
   type Ellipse,
   type Entity,
+  type HeaderValue,
 } from '../../src/index';
 import { LAYER_WALLS, MODEL_SPACE, sampleInit } from '../model/fixtures';
 
@@ -236,5 +237,79 @@ describe('ELLIPSE ended early', () => {
     // An included angle of 0 (the cursor along +X) closes the ellipse.
     expect(included).toMatchObject({ startParam: 0, endParam: 2 * Math.PI });
     await bus.cancel();
+  });
+});
+
+// M3-01 part 6: PELLIPSE 1 (AutoCAD 2024 Help, "PELLIPSE (System Variable)": "Creates a
+// polyline representation of an ellipse"): ELLIPSE makes a closed LWPOLYLINE of arcs instead,
+// and leaves out Arc, which a polyline ellipse cannot be.
+describe('ELLIPSE with PELLIPSE 1', () => {
+  /** How far a polyline's arcs stray from the ellipse x²/a² + y²/b² = 1, sampled. */
+  function stray(g: Entity['geom'], a: number, b: number): number {
+    if (g.kind !== 'LWPOLYLINE') return Infinity;
+    let worst = 0;
+    const n = g.vertices.length;
+    for (let i = 0; i < n; i++) {
+      const p = g.vertices[i]!;
+      const q = g.vertices[(i + 1) % n]!;
+      const sweep = 4 * Math.atan(p.bulge);
+      const chord = Math.hypot(q.x - p.x, q.y - p.y);
+      const r = chord / (2 * Math.abs(Math.sin(sweep / 2)));
+      const h = chord / 2 / Math.tan(sweep / 2);
+      const mx = (p.x + q.x) / 2 - ((q.y - p.y) / chord) * h;
+      const my = (p.y + q.y) / 2 + ((q.x - p.x) / chord) * h;
+      const a0 = Math.atan2(p.y - my, p.x - mx);
+      for (let k = 0; k <= 8; k++) {
+        const t = a0 + (sweep * k) / 8;
+        const x = mx + r * Math.cos(t);
+        const y = my + r * Math.sin(t);
+        // The distance to the ellipse, to first order: |F| / |∇F| with F = x²/a² + y²/b² − 1.
+        const f = (x * x) / (a * a) + (y * y) / (b * b) - 1;
+        const grad = Math.hypot((2 * x) / (a * a), (2 * y) / (b * b));
+        worst = Math.max(worst, Math.abs(f) / grad);
+      }
+    }
+    return worst;
+  }
+
+  it('makes a closed polyline of arcs through the ellipse, without the Arc option', async () => {
+    // A drawing's header has PELLIPSE (0 in a new one); SETVAR sets it.
+    const init = sampleInit();
+    (init.header as Map<string, HeaderValue>).set('$PELLIPSE', 0);
+    const model = DocumentModel.create(init);
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    const added = () => [...model.entities()].filter((e) => e.owner === MODEL_SPACE);
+    await bus.script(['PELLIPSE', '1']);
+    await bus.submit('EL');
+    expect(bus.promptText).toBe('Specify axis endpoint of ellipse or [Center]:');
+    await bus.script(['-10,0', '10,0', '5']);
+    const e = added().at(-1)!;
+    expect(e).toMatchObject({ type: 'LWPOLYLINE', owner: MODEL_SPACE, layer: LAYER_WALLS });
+    const g = e.geom as Extract<Entity['geom'], { kind: 'LWPOLYLINE' }>;
+    expect(g.closed).toBe(true);
+    expect(g.vertices).toHaveLength(16);
+    // Every vertex is on the ellipse, and the arcs keep within 0.1% of the major radius.
+    for (const v of g.vertices) expect(r6((v.x * v.x) / 100 + (v.y * v.y) / 25)).toBe(1);
+    expect(g.vertices.every((v) => v.bulge > 0)).toBe(true);
+    expect(stray(g, 10, 5)).toBeLessThan(0.01);
+    // Center, with the first axis the minor one: still a polyline about the centre.
+    await bus.script(['EL', 'C', '0,0', '0,3', '8']);
+    expect(stray(added().at(-1)!.geom, 8, 3)).toBeLessThan(0.012);
+    // Arc is not an option: typed, it is refused.
+    await bus.script(['EL', 'A']);
+    expect(bus.promptText).toBe('Specify axis endpoint of ellipse or [Center]:');
+    await bus.cancel();
+    // PELLIPSE 0: true ellipses again.
+    await bus.script(['PELLIPSE', '0', 'EL', '0,0', '4,0', '1']);
+    expect(added().at(-1)!.type).toBe('ELLIPSE');
+  });
+
+  it('reads a PELLIPSE kept as a flag, as a drawing read from a file may keep it', async () => {
+    const init = sampleInit();
+    (init.header as Map<string, HeaderValue>).set('$PELLIPSE', true);
+    const model = DocumentModel.create(init);
+    const bus = new PromptBus({ model, registry: builtinCommands() });
+    await bus.script(['EL', '0,0', '4,0', '1']);
+    expect([...model.entities()].at(-1)!.type).toBe('LWPOLYLINE');
   });
 });
