@@ -207,6 +207,13 @@ describe('system variables the app keeps', () => {
     expect(d.get().snapType).toBe(0);
   });
 
+  it('keeps TEMPOVERRIDES, the temporary override keys on (M3-06 part 5)', () => {
+    const d = new Drafting();
+    expect(systemVariableReply(d, 'TEMPOVERRIDES')).toEqual({ ok: true, value: 1 });
+    expect(systemVariableReply(d, 'TEMPOVERRIDES', 0)).toEqual({ ok: true, value: 0 });
+    expect(d.get().tempOverrides).toBe(false);
+  });
+
   it('keep SELECTSIMILARMODE and SELECTIONCYCLING (M3-04 part 3)', () => {
     const d = new Drafting();
     expect(systemVariableReply(d, 'SELECTSIMILARMODE')).toEqual({ ok: true, value: 130 });

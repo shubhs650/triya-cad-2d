@@ -8,10 +8,12 @@ import {
   chordOf,
   commandOf,
   keepsForText,
+  keyAction,
   type Focus,
   type KeyOverrides,
   type KeyPress,
 } from './keymap';
+import { heldOverrides, overrideOf } from './temp-overrides';
 
 let map = new Keymap();
 let version = 0;
@@ -81,13 +83,38 @@ export const commandInput: { current: HTMLInputElement | null } = { current: nul
  * the action the keyboard map gives it, by its registered handler.
  */
 export function runShortcut(e: KeyPress & { readonly target: EventTarget | null }): boolean {
-  const chord = chordOf(e);
+  const chord = chordOf(e) ?? (shiftAlone(e) ? 'Shift' : undefined);
   if (chord === undefined) return false;
   const id = map.actionFor(chord);
   if (id === undefined) return false;
   const focus = focusOf(e.target, commandInput.current);
+  if (keyAction(id)?.hold) return holdOverride(e, chord, id, focus);
   if (keepsForText(chord, focus)) return false;
   const handler =
     handlers.get(id) ?? (commandOf(id) !== undefined ? handlers.get('command:') : undefined);
   return handler?.(id, focus) ?? false;
 }
+
+const shiftAlone = (e: KeyPress): boolean =>
+  e.key === 'Shift' && !e.ctrlKey && !e.metaKey && !e.altKey;
+
+/**
+ * A temporary override key pressed (M3-06 part 5): held while its owner (`override:`, the command
+ * line) takes it. Shift alone is held but left to the browser, as Shift+click needs it.
+ */
+function holdOverride(e: KeyPress, chord: string, id: string, focus: Focus): boolean {
+  const kind = overrideOf(id);
+  const handler = handlers.get('override:');
+  if (!kind || !handler?.(id, focus)) return false;
+  heldOverrides.press(chord === 'Shift' ? 'Shift' : keyOf(e), kind);
+  return chord !== 'Shift';
+}
+
+/** A key let go: its override ends; Shift let go ends them all. */
+export function releaseShortcut(e: Pick<KeyPress, 'key' | 'code'>): void {
+  if (e.key === 'Shift') heldOverrides.clear();
+  else heldOverrides.release(keyOf(e));
+}
+
+/** The physical key held, whatever Shift types on it. */
+const keyOf = (e: Pick<KeyPress, 'key' | 'code'>): string => e.code ?? e.key.toUpperCase();

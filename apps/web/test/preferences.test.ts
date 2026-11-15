@@ -72,6 +72,8 @@ describe('preferences', () => {
       // M3-06 part 3: SNAPTYPE 0 (grid snap) and POLARDIST 0, AutoCAD's initial values.
       snapType: 0,
       polarDist: 0,
+      // M3-06 part 5: TEMPOVERRIDES 1, AutoCAD's.
+      tempOverrides: true,
       // M3-06 part 4: DYNMODE 3, DYNPROMPT 1, DYNPICOORDS 0, DYNPIFORMAT 0, AutoCAD's.
       dynBits: 3,
       dynPrompt: true,
@@ -134,6 +136,7 @@ describe('preferences', () => {
         polarAddAngles: '12.5;80',
         snapType: 1,
         polarDist: 2.5,
+        tempOverrides: false,
         dynBits: 1,
         dynPrompt: false,
         dynPiCoords: 1,
@@ -165,6 +168,7 @@ describe('preferences', () => {
       polarAddAngles: '12.5;80',
       snapType: 1,
       polarDist: 2.5,
+      tempOverrides: false,
       dynBits: 1,
       dynPrompt: false,
       dynPiCoords: 1,
@@ -180,6 +184,7 @@ describe('preferences', () => {
         polarAddAngles: 'north',
         snapType: 2,
         polarDist: -1,
+        tempOverrides: 'off',
         dynBits: 'all',
         dynPrompt: 'yes',
         dynPiCoords: 0.5,
@@ -211,6 +216,7 @@ describe('preferences', () => {
       polarAddAngles: '',
       snapType: 0,
       polarDist: 0,
+      tempOverrides: true,
       dynBits: 3,
       dynPrompt: true,
       dynPiCoords: 0,

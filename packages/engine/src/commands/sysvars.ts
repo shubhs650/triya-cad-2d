@@ -156,6 +156,9 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // PolarSnap (initially 0); POLARDIST the PolarSnap increment (initially 0: the snap X spacing).
   { name: 'SNAPTYPE', store: 'app', kind: 'integer', min: 0, max: 1 },
   { name: 'POLARDIST', store: 'app', kind: 'real', nonNegative: true },
+  // M3-06 part 5 (AutoCAD 2024 Help, "Saved in: Registry"): TEMPOVERRIDES 1 the temporary override
+  // keys act (initially), 0 not.
+  { name: 'TEMPOVERRIDES', store: 'app', kind: 'switch' },
   // M3-06 part 4 (AutoCAD 2024 Help, all "Saved in: Registry"): the Dynamic Input tab's DYNPROMPT
   // 1 the prompt at the cursor (initially), 0 not; DYNPICOORDS pointer input's next points 0
   // relative (initially), 1 absolute; DYNPIFORMAT their format 0 polar (initially), 1 Cartesian.

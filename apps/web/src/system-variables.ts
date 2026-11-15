@@ -65,6 +65,7 @@ const VALUES: Readonly<
   // M3-06 part 3: PolarSnap's switch and distance (the engine has checked 0–1 and 0 or more).
   SNAPTYPE: { get: (s) => s.snapType, set: (v) => ({ snapType: v === 1 ? 1 : 0 }) },
   POLARDIST: { get: (s) => s.polarDist, set: (polarDist) => ({ polarDist }) },
+  TEMPOVERRIDES: { get: (s) => bit(s.tempOverrides), set: (v) => ({ tempOverrides: v === 1 }) },
   DYNPROMPT: { get: (s) => bit(s.dynPrompt), set: (v) => ({ dynPrompt: v === 1 }) },
   DYNPICOORDS: { get: (s) => s.dynPiCoords, set: (v) => ({ dynPiCoords: v === 1 ? 1 : 0 }) },
   DYNPIFORMAT: { get: (s) => s.dynPiFormat, set: (v) => ({ dynPiFormat: v === 1 ? 1 : 0 }) },
