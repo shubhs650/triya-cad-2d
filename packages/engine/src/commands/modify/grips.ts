@@ -23,7 +23,13 @@ import type { Vec2 } from '../../geom/types';
 import { add, sub } from '../../geom/vec';
 import type { EntityId } from '../../model/entity-ids';
 import { copyObjects, gripObjects, refusalMessages, transformObjects } from '../../edit/edit';
-import { moveGrip } from '../../edit/grips';
+import {
+  gripDimensionsOf,
+  gripsOf,
+  moveGrip,
+  sameGrip,
+  type GripDimensions,
+} from '../../edit/grips';
 import { gripInfoOf } from '../../edit/array-grips';
 import { mirrorIn, moveBy, scaleAbout, turnAbout, type Similarity } from '../../edit/similarity';
 import type { DocumentModel } from '../../model/document';
@@ -41,6 +47,7 @@ import {
 } from '../../edit/grip-functions';
 import { continueDimension } from '../draw/dimension';
 import { recountColumns } from './mtext-columns';
+import { currentUcs } from '../ucs';
 
 export const GRIP_MODES = ['STRETCH', 'MOVE', 'ROTATE', 'SCALE', 'MIRROR'] as const;
 export type GripMode = (typeof GRIP_MODES)[number];
@@ -197,6 +204,7 @@ export function gripCommand(
               drag: group
                 ? { kind: 'move', ids, from: base }
                 : { kind: 'grip', ids, grip: hot, from: base },
+              ...(!group && base === hot && gripDimensions(ctx, ids, hot)),
             });
             break;
           case 'MOVE':
@@ -215,7 +223,7 @@ export function gripCommand(
               options: withReference,
               ...extra,
               base,
-              drag: { kind: 'rotate', ids, base, reference: 0 },
+              drag: { kind: 'rotate', ids, base, reference: currentUcs(ctx).angle },
             });
             break;
           case 'SCALE':
@@ -371,4 +379,20 @@ async function* scaleReference(
   });
   if (n.kind !== 'distance' || !(n.value > 0)) return 'more';
   return apply(scaleAbout(base, n.value / r.value), 'scaled') ? 'end' : 'more';
+}
+
+/**
+ * What Dynamic Input measures while the grip at `hot` is stretched (M3-06 part 8, DYNDIGRIP):
+ * the one object of `ids` the grip belongs to, else nothing (shared grips move several).
+ */
+function gripDimensions(
+  ctx: CommandContext,
+  ids: readonly EntityId[],
+  hot: Vec2,
+): { gripDimensions: GripDimensions } | undefined {
+  const owners = ids
+    .map((id) => ctx.model.entity(id))
+    .filter((e) => e !== undefined && gripsOf(e.geom).some((g) => sameGrip(g.point, hot)));
+  const d = owners.length === 1 ? gripDimensionsOf(owners[0]!.geom, hot) : undefined;
+  return d && { gripDimensions: d };
 }

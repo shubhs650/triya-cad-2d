@@ -814,3 +814,123 @@ test('sets a UCS that typed points, the coordinates, the grid and the icon follo
     new RegExp(`^${X0 + 4}\\.0+, ${Y0 + 3}\\.0+, 0\\.0+$`),
   );
 });
+
+/** The ends of the line `handle`, as the last change left it. */
+async function lineEnds(page: Page, handle: string): Promise<number[] | undefined> {
+  const changes = await page.evaluate(() =>
+    (window as unknown as { triyaDev: { changes(): readonly ChangeSet[] } }).triyaDev.changes(),
+  );
+  let out: number[] | undefined;
+  for (const cs of changes) {
+    for (const e of [
+      ...(cs.entities?.added ?? []).map((a) => a.entity),
+      ...(cs.entities?.updated ?? []).map((u) => u.after),
+    ]) {
+      if (e.handle !== handle || e.geom.kind !== 'LINE') continue;
+      const { start, end } = e.geom;
+      out = [start.x, start.y, end.x, end.y].map((v) => Math.round(v * 1e4) / 1e4);
+    }
+  }
+  return out;
+}
+
+// M3-06 part 8: the rest of the Dynamic Input tab (AutoCAD 2024 Help, "Dynamic Input Tab",
+// "Pointer Input Settings", "Dimension Input Settings", "Tooltip Appearance"): pointer input
+// always shown (DYNPIVIS 2), grip stretching's dimension fields shown together as DYNDIGRIP
+// says (DYNDIVIS 2), the tips for Ctrl (DYNINFOTIPS), the tooltip's size and transparency; and
+// the crosshairs turned with the UCS.
+test('sets pointer and dimension input visibility, grip fields, tips and the tooltip appearance', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0 - 30},${Y0 - 20}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 40},${Y0 + 30}`, 'Command:');
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => {
+    const p = view.at(x, y);
+    return { x: view.box.x + p.x, y: view.box.y + p.y };
+  };
+  const dyn = page.getByTestId('dyn');
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `#${X0},${Y0}`, 'Specify next point or [Undo]:');
+  await type(page, `#${X0 + 10},${Y0}`, 'Specify next point or [Undo]:');
+  await type(page, '', 'Command:');
+  const changes = await page.evaluate(() =>
+    (window as unknown as { triyaDev: { changes(): readonly ChangeSet[] } }).triyaDev.changes(),
+  );
+  const handle = changes.at(-1)!.entities!.added![0]!.entity.handle;
+
+  await type(page, 'DS', 'Drafting Settings:');
+  const d = dialog(page);
+  await d.getByRole('tab', { name: 'Dynamic Input' }).click();
+  const radio = (name: string) => d.getByRole('radio', { name });
+  const check = (name: string) => d.getByRole('checkbox', { name, exact: true });
+  await expect(radio('When a command asks for a point')).toBeChecked();
+  await expect(radio('Show 2 dimension input fields at a time')).toBeChecked();
+  await expect(check('Resulting Dimension')).toBeDisabled();
+  await expect(check('Show additional tips with command prompting')).toBeChecked();
+  await radio('Always - even when not in a command').check();
+  await radio('Show the following dimension input fields simultaneously:').check();
+  await check('Length Change').uncheck();
+  await check('Angle Change').uncheck();
+  await d.getByRole('button', { name: 'Drafting Tooltip Appearance...' }).click();
+  const look = page.getByRole('dialog', { name: 'Tooltip Appearance' });
+  await expect(look.getByRole('radio', { name: /all drafting tooltips/ })).toBeChecked();
+  await look.getByRole('slider', { name: 'Size' }).fill('3');
+  await look.getByRole('slider', { name: 'Transparency' }).fill('20');
+  await shot(page, '18-tooltip-appearance');
+  await look.getByRole('button', { name: 'OK' }).click();
+  await expect(look).toBeHidden();
+  await shot(page, '19-dynamic-input-tab-part-8');
+  await d.getByRole('button', { name: 'OK' }).click();
+  await expect(d).toBeHidden();
+  for (const [name, value] of [
+    ['DYNPIVIS', '2'],
+    ['DYNDIVIS', '2'],
+    ['DYNDIGRIP', '21'],
+    ['DYNINFOTIPS', '1'],
+  ] as const) {
+    await type(page, name, `Enter new value for ${name} <${value}>:`);
+    await type(page, '', 'Command:');
+  }
+
+  // At Command: the cursor's coordinates show, at the size and transparency set.
+  let p = at(X0 + 20, Y0 + 10);
+  await page.mouse.move(p.x, p.y);
+  await expect(dyn.getByLabel('X', { exact: true })).toHaveText(/^10000(19\.9|20\.0)\d{3}$/);
+  await expect(dyn).toHaveCSS('font-size', '15.6px');
+  await expect(dyn).toHaveCSS('opacity', '0.8');
+
+  // The line's end grip: its resulting length and absolute angle, typed 20 and 90.
+  p = at(X0 + 5, Y0);
+  await page.mouse.click(p.x, p.y);
+  p = at(X0 + 10, Y0);
+  await page.mouse.move(p.x, p.y);
+  await page.mouse.click(p.x, p.y);
+  await expect(prompt(page)).toHaveText('Specify stretch point or [Base point/Copy/Undo/eXit]:');
+  await expect(dyn.getByLabel('Resulting Dimension')).toBeVisible();
+  await expect(dyn.getByLabel('Absolute Angle')).toBeVisible();
+  await expect(dyn.getByLabel('Length Change')).toHaveCount(0);
+  await expect(dyn.locator('.dyn-tip')).toContainText(['Hold Ctrl as you click to make copies']);
+  await page.keyboard.type('20');
+  await page.keyboard.press('Tab');
+  await page.keyboard.type('90');
+  await shot(page, '20-grip-dimension-input');
+  await page.keyboard.press('Enter');
+  await expect(prompt(page)).toHaveText('Command:');
+  await expect.poll(() => lineEnds(page, handle)).toEqual([X0, Y0, X0, Y0 + 20]);
+  await page.keyboard.press('Escape');
+
+  // The crosshairs turn with the UCS.
+  await canvas.hover();
+  await expect(canvas).toHaveAttribute('data-cursor', / 0$/);
+  await type(page, 'UCS', /^Specify origin of UCS/);
+  await type(page, 'Z', /^Specify rotation angle about Z axis/);
+  await type(page, '30', 'Command:');
+  await expect(canvas).toHaveAttribute('data-cursor', / 0\.523598/);
+});

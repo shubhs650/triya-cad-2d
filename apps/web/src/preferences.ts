@@ -21,6 +21,7 @@ import type { DynMode } from './dynamic-input';
 import { normalizeKeyOverrides, type KeyOverrides } from './keymap';
 import { closeOnDelete } from './local-data';
 import { normalizeFilters, type NamedFilters } from './selection-filters';
+import { DEFAULT_TOOLTIP, tooltipAppearanceOf } from './tooltip-appearance';
 import { ALIAS_FILE_MAX } from './user-aliases';
 
 /** The chrome's colours: the system's light or dark setting, or one of them always. */
@@ -83,6 +84,11 @@ export type DraftingPreferences = Pick<
   | 'dynPrompt'
   | 'dynPiCoords'
   | 'dynPiFormat'
+  | 'dynPiVis'
+  | 'dynDiVis'
+  | 'dynDiGrip'
+  | 'dynInfoTips'
+  | 'tooltip'
   | 'selectSimilarMode'
   | 'selectionCycling'
   | 'pickStyle'
@@ -165,6 +171,11 @@ export const DEFAULT_PREFERENCES: Preferences = {
     dynPrompt: true,
     dynPiCoords: 0,
     dynPiFormat: 0,
+    dynPiVis: 1,
+    dynDiVis: 1,
+    dynDiGrip: 31,
+    dynInfoTips: true,
+    tooltip: DEFAULT_TOOLTIP,
     selectSimilarMode: 130,
     selectionCycling: 0,
     pickStyle: 1,
@@ -321,6 +332,11 @@ export function normalizePreferences(raw: unknown): Preferences {
       dynPrompt: bool(k['dynPrompt'], d.drafting.dynPrompt),
       dynPiCoords: within(k['dynPiCoords'], { min: 0, max: 1 }, d.drafting.dynPiCoords) as 0 | 1,
       dynPiFormat: within(k['dynPiFormat'], { min: 0, max: 1 }, d.drafting.dynPiFormat) as 0 | 1,
+      dynPiVis: within(k['dynPiVis'], { min: 0, max: 2 }, d.drafting.dynPiVis) as 0 | 1 | 2,
+      dynDiVis: within(k['dynDiVis'], { min: 0, max: 2 }, d.drafting.dynDiVis) as 0 | 1 | 2,
+      dynDiGrip: within(k['dynDiGrip'], { min: 0, max: 31 }, d.drafting.dynDiGrip),
+      dynInfoTips: bool(k['dynInfoTips'], d.drafting.dynInfoTips),
+      tooltip: tooltipAppearanceOf(k['tooltip']),
       qpQuadrant: QP_QUADRANTS.some((q) => q.value === qpQuadrant)
         ? (qpQuadrant as QpQuadrant)
         : d.drafting.qpQuadrant,
@@ -412,6 +428,11 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     dynPrompt: s.dynPrompt,
     dynPiCoords: s.dynPiCoords,
     dynPiFormat: s.dynPiFormat,
+    dynPiVis: s.dynPiVis,
+    dynDiVis: s.dynDiVis,
+    dynDiGrip: s.dynDiGrip,
+    dynInfoTips: s.dynInfoTips,
+    tooltip: s.tooltip,
     selectSimilarMode: s.selectSimilarMode,
     selectionCycling: s.selectionCycling,
     pickStyle: s.pickStyle,

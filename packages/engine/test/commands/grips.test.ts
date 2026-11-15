@@ -224,3 +224,31 @@ describe('grips', () => {
     expect(grips.at(-1) ?? { ids: [] }).toMatchObject({ ids: [] });
   });
 });
+
+describe('grip dimension input (M3-06 part 8, DYNDIGRIP)', () => {
+  it('says what Dynamic Input measures from while one object’s grip is stretched', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    await s.bus.pick({ x: 10.2, y: 0.1 }, { grip: 0.5 });
+    // A line's end: its length and angle from the other end.
+    expect(s.bus.prompt).toMatchObject({
+      gripDimensions: { grip: { x: 10, y: 0 }, anchor: { x: 0, y: 0 } },
+    });
+    await s.bus.cancel();
+  });
+
+  it('measures a circle’s quadrant from its centre, and nothing for shared grips', async () => {
+    const s = setup();
+    await s.bus.selectAll();
+    // 21: a circle at (5,5) r 2; its right quadrant (7,5).
+    await s.bus.pick({ x: 7.1, y: 5 }, { grip: 0.5 });
+    expect(s.bus.prompt).toMatchObject({
+      gripDimensions: { grip: { x: 7, y: 5 }, center: { x: 5, y: 5 } },
+    });
+    await s.bus.cancel();
+    // (0,0) is both lines' end: no one object to measure.
+    await s.bus.selectAll();
+    await s.bus.pick({ x: 0, y: 0 }, { grip: 0.5 });
+    expect(s.bus.prompt).not.toHaveProperty('gripDimensions');
+  });
+});

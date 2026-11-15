@@ -58,6 +58,8 @@ export type Sketch =
       readonly by: 'end' | 'angle' | 'chord';
       readonly start: Vec2;
       readonly center: Vec2;
+      /** The UCS's X axis, which an included angle picked counts from (M3-06 part 8). */
+      readonly turn?: number;
     }
   /** ARC from a start and end: the cursor gives the centre, angle, direction or radius. */
   | {
@@ -65,6 +67,8 @@ export type Sketch =
       readonly by: 'center' | 'angle' | 'direction' | 'radius';
       readonly start: Vec2;
       readonly end: Vec2;
+      /** The UCS's X axis, which an included angle picked counts from (M3-06 part 8). */
+      readonly turn?: number;
     }
   /** ARC continuing tangent, or Start, Direction, End: the cursor is the end. */
   | { readonly shape: 'arcTangent'; readonly start: Vec2; readonly direction: Vec2 }
@@ -238,7 +242,8 @@ function cursorArc(s: ArcSketch, cursor: Vec2): BulgeArc | undefined {
       const tol = sketchTolerance(s.start, s.center, cursor);
       if (s.by === 'end') return arcStartCenterEnd(s.start, s.center, cursor, tol);
       if (s.by === 'angle') {
-        return arcStartCenterAngle(s.start, s.center, angleOf(sub(cursor, s.center)), tol);
+        const angle = angleOf(sub(cursor, s.center)) - (s.turn ?? 0);
+        return arcStartCenterAngle(s.start, s.center, angle, tol);
       }
       return arcStartCenterChord(s.start, s.center, distance(s.start, cursor), tol);
     }
@@ -248,7 +253,12 @@ function cursorArc(s: ArcSketch, cursor: Vec2): BulgeArc | undefined {
         case 'center':
           return arcStartEndCenter(s.start, s.end, cursor, tol);
         case 'angle':
-          return arcStartEndAngle(s.start, s.end, angleOf(sub(cursor, s.start)), tol);
+          return arcStartEndAngle(
+            s.start,
+            s.end,
+            angleOf(sub(cursor, s.start)) - (s.turn ?? 0),
+            tol,
+          );
         case 'direction':
           return arcStartDirectionEnd(s.start, sub(cursor, s.start), s.end, tol);
         case 'radius':

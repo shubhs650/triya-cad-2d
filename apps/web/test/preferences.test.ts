@@ -14,6 +14,7 @@ import {
   type PreferencesPersistence,
 } from '../src/preferences';
 import { ALIAS_FILE_MAX } from '../src/user-aliases';
+import { DEFAULT_TOOLTIP } from '../src/tooltip-appearance';
 
 function memory(initial?: unknown): PreferencesPersistence & { saved: Preferences[] } {
   const saved: Preferences[] = [];
@@ -80,6 +81,12 @@ describe('preferences', () => {
       dynPrompt: true,
       dynPiCoords: 0,
       dynPiFormat: 0,
+      // M3-06 part 8: DYNPIVIS 1, DYNDIVIS 1, DYNDIGRIP 31, DYNINFOTIPS 1, AutoCAD's.
+      dynPiVis: 1,
+      dynDiVis: 1,
+      dynDiGrip: 31,
+      dynInfoTips: true,
+      tooltip: DEFAULT_TOOLTIP,
       // SELECTSIMILARMODE 130 (Layer and Name) and SELECTIONCYCLING 0 (off), AutoCAD's.
       selectSimilarMode: 130,
       selectionCycling: 0,
@@ -131,6 +138,32 @@ describe('preferences', () => {
     expect(normalizePreferences({ aliasFile: 'C,*COPY\n' }).aliasFile).toBe('C,*COPY\n');
     expect(normalizePreferences({ aliasFile: 7 }).aliasFile).toBe('');
     expect(normalizePreferences({ aliasFile: 'x'.repeat(ALIAS_FILE_MAX + 1) }).aliasFile).toBe('');
+  });
+
+  it('keep the Dynamic Input tab\u2019s part 8 values when valid', () => {
+    const tooltip = {
+      modelColor: '#102030',
+      layoutColor: undefined,
+      size: 2,
+      transparency: 30,
+      all: false,
+    };
+    expect(
+      normalizePreferences({
+        drafting: { dynPiVis: 2, dynDiVis: 0, dynDiGrip: 9, dynInfoTips: false, tooltip },
+      }).drafting,
+    ).toMatchObject({ dynPiVis: 2, dynDiVis: 0, dynDiGrip: 9, dynInfoTips: false, tooltip });
+    expect(
+      normalizePreferences({
+        drafting: { dynPiVis: 3, dynDiVis: -1, dynDiGrip: 32, dynInfoTips: 'no', tooltip: 1 },
+      }).drafting,
+    ).toMatchObject({
+      dynPiVis: 1,
+      dynDiVis: 1,
+      dynDiGrip: 31,
+      dynInfoTips: true,
+      tooltip: { size: 0 },
+    });
   });
 
   it('keep the Drafting Settings dialog\u2019s values when valid (M3-06 part 1)', () => {

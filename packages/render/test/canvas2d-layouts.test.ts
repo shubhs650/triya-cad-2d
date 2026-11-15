@@ -1,6 +1,12 @@
 // M1-18: a layout drawn on its sheet, with each viewport's view of model space clipped to its
 // frame, checked on the calls the renderer makes to a recording context.
-import type { EntityGeometry, EntityInit, LayoutPlot, ViewportGeometry } from '@triya/engine';
+import type {
+  EntityGeometry,
+  EntityInit,
+  HeaderValue,
+  LayoutPlot,
+  ViewportGeometry,
+} from '@triya/engine';
 import { invertChangeSet } from '@triya/engine';
 import { describe, expect, it } from 'vitest';
 import { Canvas2DRenderer, type RenderStyle } from '../src/index';
@@ -602,5 +608,48 @@ describe('layout change sets (M1-97)', () => {
     );
     r.frame();
     expect(scene.ctx.named('rect')).toEqual([['rect', 10.5, 10.5, 179, 79]]);
+  });
+});
+
+describe('viewport UCS icons (M3-06 part 8)', () => {
+  const ICONS: RenderStyle = { ...LIGHT, viewportUcsIcons: true };
+  /** The icon's strokes: the moveTo/lineTo pairs after the viewports' own drawing. */
+  const iconPath = (calls: Call[]) => {
+    const i = calls.findLastIndex((c) => c[0] === 'clip');
+    return calls.slice(i + 1).filter((c) => c[0] === 'moveTo' || c[0] === 'lineTo');
+  };
+
+  it('draws the UCS icon in the frame’s lower-left corner of a viewport with UCSICON on', () => {
+    const { r, scene } = setup([onPaper('30', viewport({ flags: 32 }))], { style: ICONS });
+    r.frame();
+    const path = iconPath(scene.ctx.calls);
+    // Frame 40…80 × 20…60 → device x 50…90, y 30…70; the corner 30 px in from (50, 70).
+    expect(path[0]).toEqual(['moveTo', 80, 40]);
+    // The X arm along the device's +x, 24 px.
+    expect(path[1]).toEqual(['lineTo', 104, 40]);
+  });
+
+  it('turns the icon with the UCS, and draws none without UCSICON or the style', () => {
+    const header: [string, HeaderValue][] = [
+      ['$UCSORG', { x: 0, y: 0, z: 0 }],
+      ['$UCSXDIR', { x: 0, y: 1, z: 0 }],
+      ['$UCSYDIR', { x: -1, y: 0, z: 0 }],
+    ];
+    const { r, scene } = setup([onPaper('30', viewport({ flags: 32 }))], {
+      style: ICONS,
+      extra: { header },
+    });
+    r.frame();
+    const path = iconPath(scene.ctx.calls);
+    // X points up the device.
+    expect(path[1]![1]).toBeCloseTo(80, 9);
+    expect(path[1]![2]).toBeCloseTo(16, 9);
+    const off = setup([onPaper('30', viewport())], { style: ICONS });
+    off.r.frame();
+    const plain = setup([onPaper('30', viewport({ flags: 32 }))]);
+    plain.r.frame();
+    for (const s of [off.scene, plain.scene]) {
+      expect(s.ctx.calls.filter((c) => c[0] === 'clip')).toHaveLength(0);
+    }
   });
 });

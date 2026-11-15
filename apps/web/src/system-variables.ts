@@ -71,6 +71,11 @@ const VALUES: Readonly<
   DYNPROMPT: { get: (s) => bit(s.dynPrompt), set: (v) => ({ dynPrompt: v === 1 }) },
   DYNPICOORDS: { get: (s) => s.dynPiCoords, set: (v) => ({ dynPiCoords: v === 1 ? 1 : 0 }) },
   DYNPIFORMAT: { get: (s) => s.dynPiFormat, set: (v) => ({ dynPiFormat: v === 1 ? 1 : 0 }) },
+  // M3-06 part 8 (the engine has checked the ranges).
+  DYNPIVIS: { get: (s) => s.dynPiVis, set: (v) => ({ dynPiVis: v as 0 | 1 | 2 }) },
+  DYNDIVIS: { get: (s) => s.dynDiVis, set: (v) => ({ dynDiVis: v as 0 | 1 | 2 }) },
+  DYNDIGRIP: { get: (s) => s.dynDiGrip, set: (dynDiGrip) => ({ dynDiGrip }) },
+  DYNINFOTIPS: { get: (s) => bit(s.dynInfoTips), set: (v) => ({ dynInfoTips: v === 1 }) },
   SELECTSIMILARMODE: {
     get: (s) => s.selectSimilarMode,
     set: (selectSimilarMode) => ({ selectSimilarMode }),

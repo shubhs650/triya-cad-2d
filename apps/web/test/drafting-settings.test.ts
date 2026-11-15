@@ -26,6 +26,7 @@ import {
   spacingSettings,
   typeSpacing,
 } from '../src/drafting-settings';
+import { DEFAULT_TOOLTIP } from '../src/tooltip-appearance';
 
 const state = (patch: Partial<DraftingState> = {}): DraftingState => ({
   ...INITIAL_DRAFTING,
@@ -107,6 +108,11 @@ describe('the Drafting Settings dialog', () => {
       dynPrompt: true,
       dynAbsolute: false,
       dynCartesian: false,
+      dynPiVis: 1,
+      dynDiVis: 1,
+      dynDiGrip: 31,
+      dynInfoTips: true,
+      tooltip: DEFAULT_TOOLTIP,
       qp: false,
       qpMode: 2,
       qpLocation: 0,
@@ -155,6 +161,11 @@ describe('the Drafting Settings dialog', () => {
       dynPrompt: true,
       dynPiCoords: 0,
       dynPiFormat: 0,
+      dynPiVis: 1,
+      dynDiVis: 1,
+      dynDiGrip: 31,
+      dynInfoTips: true,
+      tooltip: DEFAULT_TOOLTIP,
       qpmode: 2,
       qpLocation: 1,
       qpQuadrant: 'bottom-left',
@@ -418,5 +429,24 @@ describe('the grid the canvas draws (M3-06 part 6)', () => {
       true,
     ]);
     expect(dots(2, false)).toBe(false);
+  });
+});
+
+describe('the Dynamic Input tab, part 8', () => {
+  it('opens on DYNPIVIS, DYNDIVIS, DYNDIGRIP, DYNINFOTIPS and the tooltip appearance, and sets them', () => {
+    const tooltip = { ...DEFAULT_TOOLTIP, size: 2, all: false };
+    const d = draftOf(
+      state({ dynPiVis: 0, dynDiVis: 2, dynDiGrip: 5, dynInfoTips: false, tooltip }),
+    );
+    expect(d).toMatchObject({
+      dynPiVis: 0,
+      dynDiVis: 2,
+      dynDiGrip: 5,
+      dynInfoTips: false,
+      tooltip,
+    });
+    expect(
+      draftPatch({ ...d, dynPiVis: 2, dynDiGrip: 16, dynInfoTips: true }, state({})),
+    ).toMatchObject({ dynPiVis: 2, dynDiVis: 2, dynDiGrip: 16, dynInfoTips: true, tooltip });
   });
 });

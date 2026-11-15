@@ -109,6 +109,11 @@ export function parseDistance(text: string, lunits: number): number | undefined 
 export interface AngleConvention {
   readonly base: number;
   readonly clockwise: boolean;
+  /**
+   * The current UCS's X axis (world radians), when turned (M3-06 part 8): a surveyor's bearing
+   * names a direction from the UCS's Y axis as north, whatever ANGBASE and ANGDIR say.
+   */
+  readonly ucs?: number;
 }
 
 export const DEFAULT_ANGLES: AngleConvention = { base: 0, clockwise: false };
@@ -184,7 +189,7 @@ export function parseAngle(
   angles: AngleConvention = DEFAULT_ANGLES,
 ): number | undefined {
   const bearing = parseBearing(text);
-  if (bearing !== undefined) return bearing;
+  if (bearing !== undefined) return bearing + (angles.ucs ?? 0);
   const a = parseAngleValue(text);
   return a === undefined ? undefined : worldAngle(a, angles);
 }
