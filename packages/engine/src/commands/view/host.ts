@@ -11,6 +11,7 @@ import type { Clipboard } from '../../edit/clipboard';
 import type { ClipboardPicture } from '../../edit/picture';
 import type { UndoView } from '../undo';
 import type { UnderlayLayersInfo } from '../../edit/underlay-layers';
+import type { EnclosedSpace } from '../inquiry/quick';
 
 /** The view of the current viewport, in world units. */
 export interface ViewState {
@@ -116,6 +117,11 @@ export type ViewRequest =
        */
       readonly resume?: boolean;
     }
+  /**
+   * The space enclosed around a point by the objects shown (MEASUREGEOM Quick's click, M3-07):
+   * the renderer, which holds the spatial index, answers `enclosed`, or none where none is.
+   */
+  | { readonly op: 'enclosed'; readonly point: Vec2 }
   /** The objects' extents (COPYCLIP's base point, M2-14 part 2), which the renderer answers. */
   | { readonly op: 'bounds'; readonly ids: readonly EntityId[] }
   /**
@@ -327,6 +333,8 @@ export type ViewReply =
       /** The canvas's size in CSS pixels, which `get` answers (SCREENSIZE, M2-59). */
       readonly screen?: { readonly width: number; readonly height: number };
       readonly views?: readonly NamedViewInfo[];
+      /** What an `enclosed` request found; absent where the point is in no enclosed space. */
+      readonly enclosed?: EnclosedSpace;
       /** What a `pick` or `select` took. */
       readonly ids?: readonly EntityId[];
       /** What `textBox` measured. */

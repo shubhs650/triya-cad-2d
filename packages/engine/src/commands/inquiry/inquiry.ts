@@ -12,26 +12,37 @@
 //               Distance = 14.1421,  Angle in XY Plane = 45,  Angle from XY Plane = 0
 //               Delta X = 10.0000,  Delta Y = 10.0000,  Delta Z = 0.0000
 //   AREA        Specify first corner point or [Object/Add area/Subtract area] <Object>:
-//               Specify next point or [Length/Undo/Total] <Total>:
+//               Specify next point or [Arc/Length/Undo/Total] <Total>:
 //               Area = 50.0000, Perimeter = 30.0000
-//   MEASUREGEOM Enter an option [Distance/Radius/Angle/ARea/Volume] <Distance>:
-//               (again after each measurement, with eXit, the default)
+//   MEASUREGEOM Move cursor or [Distance/Radius/Angle/ARea/Volume/Quick/Mode/eXit] <eXit>:
+//               (Quick, `quick.ts`, unless Mode says to start at the last option used), then
+//               Enter an option [Distance/Radius/Angle/ARea/Volume/Quick/Mode/eXit] <eXit>:
+//               after each measurement
 //
-// AutoCAD's "next point" prompts also offer Arc (an arc segment drawn as PLINE's are); Triya
-// offers it when PLINE's arc segments exist (M3-01), and MEASUREGEOM's Quick mode (measuring
-// what the cursor hovers over) is M3-07's next part. The help pages show the result lines but
-// not every space in them: the spacing above is AutoCAD 2024's command line as commonly quoted.
-import type { Arc, Line } from '../../geom/curves';
+// The "next point" prompts offer Arc: arc segments drawn with PLINE's prompts (M3-07 part 2).
+// The help pages show the result lines but not every space in them: the spacing above is
+// AutoCAD 2024's command line as commonly quoted. LIST is in `list.ts`.
+import type { Arc, Line, Polyline } from '../../geom/curves';
+import { arcEnd, arcStartDirectionEnd } from '../../geom/construct';
+import { bulgeOf } from '../../geom/shapes';
 import { explodePolyline } from '../../geom/eval';
 import { closestPoint } from '../../geom/closest';
 import { toleranceForSize } from '../../geom/tolerance';
 import type { Vec2 } from '../../geom/types';
-import { angleOf, distance, dot, length, normalize, sub, add, scale, cross } from '../../geom/vec';
+import { angleOf, distance, dot, length, sub, add, scale, cross } from '../../geom/vec';
 import type { DocumentModel } from '../../model/document';
-import type { Entity, EntityGeometry, LineGeometry } from '../../model/types';
+import type { Entity, EntityGeometry } from '../../model/types';
+import { currentLayer } from '../../properties/current';
+import { polylineLength } from '../../properties/measure';
+import { INVALID_ARC } from '../draw/arc';
+import { lineDirection } from '../draw/last-drawn';
+import { arcSegment, type ArcStep } from '../draw/pline-arc';
+import { sketchTolerance } from '../draw/sketch';
 import type { CommandContext, CommandDef } from '../command';
 import type { Prompt, PromptAnswer } from '../prompt';
 import { drawingUnits, formatAngle, formatDistance, type DrawingUnits } from '../units';
+import { listCommand } from './list';
+import type { EnclosedSpace } from './quick';
 import { areaText, measureObject, measurePolygon, volumeText, type Measured } from './measure';
 
 type Sub<T> = AsyncGenerator<Prompt, T, PromptAnswer>;
@@ -71,70 +82,124 @@ function distanceLines(a: Vec2, b: Vec2, u: DrawingUnits): [string, string] {
   ];
 }
 
-const pathLength = (points: readonly Vec2[]): number =>
-  points.slice(1).reduce((sum, p, i) => sum + distance(points[i]!, p), 0);
+/** A measured path's points: each with the bulge of the segment to the next (an arc's). */
+type PathVertex = { x: number; y: number; bulge: number };
 
-const segmentsOf = (points: readonly Vec2[], closed: boolean): LineGeometry[] => {
-  const lines: LineGeometry[] = points
-    .slice(1)
-    .map((p, i) => ({ kind: 'LINE', start: points[i]!, end: p }));
-  if (closed && points.length > 2) {
-    lines.push({ kind: 'LINE', start: points.at(-1)!, end: points[0]! });
-  }
-  return lines;
-};
+const pathOf = (vertices: readonly PathVertex[], closed: boolean): Polyline => ({
+  kind: 'LWPOLYLINE',
+  closed,
+  vertices,
+});
+
+const pathLength = (vertices: readonly PathVertex[]): number =>
+  polylineLength(pathOf(vertices, false));
 
 /**
- * The points after the first of a measured path ("Specify next point or [Length/Undo/Total]"),
- * until Enter or Total: undefined when the command is cancelled. `closed` previews the polygon
- * closed back to the first point (AREA); `report` writes the running total after each point
- * (DIST Multiple points).
+ * The points after the first of a measured path ("Specify next point or [Arc/Length/Undo/
+ * Total]"), until Enter or Total: undefined when the command is cancelled. Arc draws the next
+ * segments as arcs with PLINE's prompts (`arcSegment`; MEASUREGEOM help, "Distance, Area, and
+ * Volume Options"), each tangent to the path by default; Line goes back to straight ones;
+ * CLose ends the path with an arc back to its first point. `closed` previews the path closed
+ * back to the first point (AREA); `report` writes the running total after each segment (DIST
+ * Multiple points).
  */
 async function* nextPoints(
   ctx: CommandContext,
   first: Vec2,
   o: { readonly prefix: string; readonly closed: boolean; readonly report?: boolean },
-): Sub<Vec2[] | undefined> {
-  const points: Vec2[] = [first];
+): Sub<PathVertex[] | undefined> {
+  const vertices: PathVertex[] = [{ x: first.x, y: first.y, bulge: 0 }];
+  /** The direction the path travels at the end of each segment. */
+  const directions: Vec2[] = [];
+  const layer = currentLayer(ctx.model);
+  let arcMode = false;
+  const last = () => vertices.at(-1)!;
+  const point = (): Vec2 => ({ x: last().x, y: last().y });
+  // Before any segment an arc leaves eastwards, as the path has no direction yet.
+  const direction = (): Vec2 => directions.at(-1) ?? { x: 1, y: 0 };
   const total = () => {
-    if (o.report) ctx.message(`Distance = ${formatDistance(pathLength(points), unitsOf(ctx))}`);
+    if (o.report) ctx.message(`Distance = ${formatDistance(pathLength(vertices), unitsOf(ctx))}`);
+  };
+  const segment = (to: Vec2, bulge: number, travel: Vec2) => {
+    last().bulge = bulge;
+    vertices.push({ x: to.x, y: to.y, bulge: 0 });
+    directions.push(travel);
+    total();
+  };
+  const end = (result: PathVertex[] | undefined) => {
+    ctx.preview([]);
+    return result;
   };
   for (;;) {
-    ctx.preview(segmentsOf(points, o.closed));
-    const enough = points.length >= (o.closed ? 3 : 2);
-    const last = points.at(-1)!;
-    const a = yield ctx.prompt.point({
-      message: `${o.prefix}Specify next point or`,
-      options: enough ? ['Length', 'Undo', 'Total'] : ['Length', 'Undo'],
-      ...(enough && { default: { kind: 'keyword', keyword: 'Total' } }),
-      rubberBand: { from: last },
-    });
-    if (a.kind === 'point') {
-      points.push(a.point);
-      total();
+    ctx.preview(vertices.length >= 2 ? [pathOf(vertices, o.closed)] : []);
+    const segments = vertices.length - 1;
+    // An arc and the chord closing it enclose an area; straight segments need two.
+    const enough = o.closed ? segments >= 2 || vertices.some((v) => v.bulge !== 0) : segments >= 1;
+    let a: PromptAnswer | ArcStep;
+    if (!arcMode) {
+      a = yield ctx.prompt.point({
+        message: `${o.prefix}Specify next point or`,
+        options: enough ? ['Arc', 'Length', 'Undo', 'Total'] : ['Arc', 'Length', 'Undo'],
+        ...(enough && { default: { kind: 'keyword', keyword: 'Total' } }),
+        rubberBand: { from: point() },
+      });
+    } else {
+      const step = yield* arcSegment(ctx, {
+        start: point(),
+        direction: direction(),
+        options: segments >= 1 ? ['CLose', 'Line', 'Undo'] : ['Line', 'Undo'],
+        ...(enough && { after: ['Total'], default: 'Total' }),
+        layer,
+        prefix: o.prefix,
+      });
+      if (!step) return end(undefined);
+      a = step;
+    }
+    if (a.kind === 'arc') {
+      const e = arcEnd(a.arc);
+      segment(e.point, bulgeOf(a.arc), e.direction);
+    } else if (a.kind === 'point') {
+      segment(a.point, 0, lineDirection(point(), a.point, direction()));
+    } else if (a.kind === 'keyword' && a.keyword === 'Arc') {
+      arcMode = true;
+    } else if (a.kind === 'keyword' && a.keyword === 'Line') {
+      arcMode = false;
+    } else if (a.kind === 'keyword' && a.keyword === 'CLose') {
+      const start = vertices[0]!;
+      const arc = arcStartDirectionEnd(
+        point(),
+        direction(),
+        start,
+        sketchTolerance(point(), start),
+      );
+      if (!arc) {
+        ctx.message(INVALID_ARC);
+        continue;
+      }
+      // AREA closes the path with it; DIST measures it as one more segment.
+      if (o.closed) last().bulge = bulgeOf(arc);
+      else segment(start, bulgeOf(arc), arcEnd(arc).direction);
+      return end(vertices);
     } else if (a.kind === 'keyword' && a.keyword === 'Length') {
-      // PLINE's Length: on in the last segment's direction (east before there is one).
-      const before = points.at(-2);
-      const dir = before ? normalize(sub(last, before)) : { x: 1, y: 0 };
-      const l = yield ctx.prompt.distance({ message: 'Specify length of line', base: last });
+      // PLINE's Length: on in the last segment's direction, tangent to it after an arc.
+      const l = yield ctx.prompt.distance({ message: 'Specify length of line', base: point() });
       if (l.kind !== 'distance') {
         if (l.kind === 'enter') continue;
-        ctx.preview([]);
-        return undefined;
+        return end(undefined);
       }
-      points.push(add(last, scale(dir, l.value)));
-      total();
+      const d = direction();
+      segment(add(point(), scale(d, l.value)), 0, l.value < 0 ? scale(d, -1) : d);
     } else if (a.kind === 'keyword' && a.keyword === 'Undo') {
-      if (points.length > 1) {
-        points.pop();
+      if (segments > 0) {
+        vertices.pop();
+        directions.pop();
+        last().bulge = 0;
         total();
       } else ctx.message('All segments already undone.');
     } else if (a.kind === 'enter' || (a.kind === 'keyword' && a.keyword === 'Total')) {
-      ctx.preview([]);
-      return points;
+      return end(vertices);
     } else {
-      ctx.preview([]);
-      return undefined;
+      return end(undefined);
     }
   }
 }
@@ -430,7 +495,70 @@ async function* measureAngle(ctx: CommandContext): Sub<boolean> {
 
 // --- MEASUREGEOM -------------------------------------------------------------------------------
 
-const MEASURE_OPTIONS = ['Distance', 'Radius', 'Angle', 'ARea', 'Volume'];
+const MEASURE_OPTIONS = ['Distance', 'Radius', 'Angle', 'ARea', 'Volume', 'Quick', 'Mode'];
+
+/**
+ * MEASUREGEOM's Mode, per drawing for the session (AutoCAD keeps it in the user's profile):
+ * whether it starts in Quick, else at the option used last.
+ */
+interface MeasureSettings {
+  quick: boolean;
+  last: string;
+}
+
+const SETTINGS = new WeakMap<DocumentModel, MeasureSettings>();
+
+function settingsOf(model: DocumentModel): MeasureSettings {
+  let s = SETTINGS.get(model);
+  if (!s) SETTINGS.set(model, (s = { quick: true, last: 'Distance' }));
+  return s;
+}
+
+/** Whether two measured spaces are one (a Shift-click on a space already picked). */
+const sameSpace = (a: EnclosedSpace, b: EnclosedSpace): boolean =>
+  Math.abs(a.area - b.area) <= 1e-9 * Math.max(1, Math.abs(a.area)) &&
+  Math.abs(a.perimeter - b.perimeter) <= 1e-9 * Math.max(1, a.perimeter);
+
+/**
+ * Quick: "Move cursor or …", the front-end measuring under the cursor (`prompt.quick`). A click
+ * measures the space it is in, a Shift-click adds that space to (or takes it from) the ones
+ * picked, and the total is written. Returns the option chosen, 'eXit' for Enter, or undefined
+ * when cancelled.
+ */
+async function* quickMode(ctx: CommandContext): Sub<string | undefined> {
+  let picked: EnclosedSpace[] = [];
+  for (;;) {
+    const a = yield ctx.prompt.point({
+      message: 'Move cursor or',
+      options: [...MEASURE_OPTIONS, 'eXit'],
+      default: { kind: 'keyword', keyword: 'eXit' },
+      pickbox: true,
+      quick: { loops: picked.flatMap((s) => s.loops) },
+    });
+    if (a.kind === 'keyword') {
+      if (a.keyword !== 'Quick') return a.keyword;
+      continue;
+    }
+    if (a.kind !== 'point') return a.kind === 'enter' ? 'eXit' : undefined;
+    const reply = await ctx.view.request({ op: 'enclosed', point: a.point });
+    const space = reply.ok ? reply.enclosed : undefined;
+    if (!a.shift) picked = space ? [space] : [];
+    else if (space) {
+      const i = picked.findIndex((p) => sameSpace(p, space));
+      if (i >= 0) picked.splice(i, 1);
+      else picked.push(space);
+    }
+    if (picked.length === 0) continue;
+    const u = unitsOf(ctx);
+    const area = picked.reduce((sum, p) => sum + p.area, 0);
+    const perimeter = picked.reduce((sum, p) => sum + p.perimeter, 0);
+    const [a1, p1] = picked.length > 1 ? ['Total area', 'Total perimeter'] : ['Area', 'Perimeter'];
+    ctx.message(`${a1} = ${areaText(area, u)}, ${p1} = ${formatDistance(perimeter, u)}`);
+    const r = results(ctx);
+    r.area = area;
+    r.perimeter = perimeter;
+  }
+}
 
 function measuregeomCommand(): CommandDef {
   return {
@@ -438,16 +566,41 @@ function measuregeomCommand(): CommandDef {
     transparent: true,
     usesSelection: 'none',
     async *run(ctx) {
+      const settings = settingsOf(ctx.model);
+      // What to do next: an option, or undefined to ask for one.
+      let option: string | undefined = settings.quick ? 'Quick' : undefined;
       let first = true;
       for (;;) {
-        const a = yield ctx.prompt.keyword({
-          message: 'Enter an option',
-          options: first ? MEASURE_OPTIONS : [...MEASURE_OPTIONS, 'eXit'],
-          default: { kind: 'keyword', keyword: first ? 'Distance' : 'eXit' },
-        });
-        if (a.kind !== 'keyword' || a.keyword === 'eXit') return;
+        if (option === undefined) {
+          const a = yield ctx.prompt.keyword({
+            message: 'Enter an option',
+            options: first ? MEASURE_OPTIONS : [...MEASURE_OPTIONS, 'eXit'],
+            default: { kind: 'keyword', keyword: first ? settings.last : 'eXit' },
+          });
+          if (a.kind !== 'keyword' || a.keyword === 'eXit') return;
+          option = a.keyword;
+        }
         first = false;
-        switch (a.keyword) {
+        const now = option;
+        option = undefined;
+        if (now !== 'Quick' && now !== 'Mode') settings.last = now;
+        switch (now) {
+          case 'Quick': {
+            const next = yield* quickMode(ctx);
+            if (next === undefined || next === 'eXit') return;
+            option = next;
+            break;
+          }
+          case 'Mode': {
+            const m = yield ctx.prompt.keyword({
+              message: 'Enter default option',
+              options: ['Quick', 'Last used'],
+              default: { kind: 'keyword', keyword: settings.quick ? 'Quick' : 'Last used' },
+            });
+            if (m.kind !== 'keyword') return;
+            settings.quick = m.keyword === 'Quick';
+            break;
+          }
           case 'Distance':
             yield* measureDistance(ctx);
             break;
@@ -473,6 +626,7 @@ function measuregeomCommand(): CommandDef {
 export const INQUIRY_COMMANDS: readonly (() => CommandDef)[] = [
   idCommand,
   distCommand,
+  listCommand,
   areaCommand,
   measuregeomCommand,
 ];

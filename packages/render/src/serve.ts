@@ -147,6 +147,16 @@ export function serveRenderer(port: Endpoint<HostMessage, WorkerMessage>, o: Ser
       case 'snap':
         port.postMessage({ type: 'snap', id: m.id, hits: session.snap(m.query) });
         break;
+      case 'quick':
+        port.postMessage({ type: 'quick', id: m.id, measure: session.quickMeasure(m.query) });
+        break;
+      case 'enclosed':
+        port.postMessage({
+          type: 'enclosed',
+          id: m.id,
+          space: session.enclosedSpace(m.point, m.view) ?? null,
+        });
+        break;
       case 'entitiesIn':
         port.postMessage({ type: 'entities', id: m.id, entities: r.entitiesIn(m.rect) });
         break;

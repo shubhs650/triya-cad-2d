@@ -69,6 +69,7 @@ describe('palette search', () => {
       'JOIN',
       'LENGTHEN',
       'LINE',
+      'LIST',
       // M3-02 part 5: MATCHPROP.
       'MATCHPROP',
       'MEASURE',

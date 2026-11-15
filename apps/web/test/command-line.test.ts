@@ -157,13 +157,14 @@ describe('type-ahead (M2-47 part 3)', () => {
 describe('completions', () => {
   const registry = builtinCommands();
   it('offers the command an alias names, then names that begin with the text', () => {
-    // LENGTHEN (M3-02 part 4) begins with L too.
+    // LENGTHEN (M3-02 part 4) and LIST (M3-07 part 2) begin with L too; LI is LIST's alias.
     expect(completions(registry, 'l')).toEqual([
       { name: 'LINE', alias: 'L' },
       { name: 'LENGTHEN' },
+      { name: 'LIST' },
     ]);
-    expect(completions(registry, 'LI')).toEqual([{ name: 'LINE' }]);
-    expect(completions(registry, "'li")).toEqual([{ name: 'LINE' }]);
+    expect(completions(registry, 'LI')).toEqual([{ name: 'LIST', alias: 'LI' }, { name: 'LINE' }]);
+    expect(completions(registry, "'lin")).toEqual([{ name: 'LINE' }]);
   });
 
   it('offers nothing for coordinates, blanks or unknown text', () => {

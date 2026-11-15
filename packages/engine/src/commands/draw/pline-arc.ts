@@ -66,8 +66,15 @@ export interface ArcSegmentOptions {
   readonly layer: Handle;
   /** The dragged segment's widths at its start and end (PLINE's current widths). */
   readonly widths?: { readonly start: number; readonly end: number };
-  /** Put before each prompt (AREA's "<Subtract mode> "). */
+  /** Put before each prompt (AREA's "(SUBTRACT mode) "). */
   readonly prefix?: string;
+  /**
+   * The caller's options listed after the arc's, as given (DIST's and AREA's Total, last as in
+   * their next-point prompts).
+   */
+  readonly after?: readonly string[];
+  /** The option Enter takes at the endpoint prompt (DIST's and AREA's Total). */
+  readonly default?: string;
 }
 
 /** What the endpoint prompt was answered with: an arc, one of the caller's options, Enter. */
@@ -111,9 +118,12 @@ export async function* arcSegment(
     }
   };
   const tol = (...p: Vec2[]) => sketchTolerance(start, ...p);
-  const options = [...o.options, ...ARC_OPTIONS].sort((a, b) =>
-    a.toLowerCase().localeCompare(b.toLowerCase()),
-  );
+  const options = [
+    ...[...o.options, ...ARC_OPTIONS].sort((a, b) =>
+      a.toLowerCase().localeCompare(b.toLowerCase()),
+    ),
+    ...(o.after ?? []),
+  ];
   for (;;) {
     const a = yield ask(
       { shape: 'arcTangent', start, direction: o.direction },
@@ -121,6 +131,9 @@ export async function* arcSegment(
         message: 'Specify endpoint of arc or',
         options,
         rubberBand: { from: start },
+        ...(o.default !== undefined && {
+          default: { kind: 'keyword' as const, keyword: o.default },
+        }),
       }),
     );
     let arc: BulgeArc | undefined;
