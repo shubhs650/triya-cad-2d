@@ -20,7 +20,7 @@
 //   raised to the highest degree among them, with C0 kinks at the joins.
 import { closestPoint } from '../geom/closest';
 import type { Spline } from '../geom/curves';
-import { polylineSegment } from '../geom/eval';
+import { ellipseAxes, polylineSegment } from '../geom/eval';
 import { fitSpline } from '../geom/fit';
 import {
   basisFunctions,
@@ -491,7 +491,8 @@ export function closeControlFrame(g: SplineGeometry, close: boolean): SplineGeom
 
 // ── Join ───────────────────────────────────────────────────────────────────────────────────
 
-const reversedSpline = (s: Spline): Spline => {
+/** `s` run the other way: the same curve. */
+export const reversedSpline = (s: Spline): Spline => {
   const lo = s.knots[0]!;
   const hi = s.knots.at(-1)!;
   return {
@@ -543,6 +544,20 @@ export function joinableSpline(g: EntityGeometry): Spline | undefined {
       const sweep = (((g.endAngle - g.startAngle) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
       return sweep > 0 ? arcSpline(g.center, g.radius, g.startAngle, sweep) : undefined;
     }
+    case 'ELLIPSE': {
+      // The unit circle's arc mapped onto the ellipse's axes: NURBS are affinely invariant.
+      const sweep = (((g.endParam - g.startParam) % (2 * Math.PI)) + 2 * Math.PI) % (2 * Math.PI);
+      if (!(sweep > 0)) return undefined;
+      const { major, minor } = ellipseAxes(g);
+      const unit = arcSpline({ x: 0, y: 0 }, 1, g.startParam, sweep);
+      return {
+        ...unit,
+        controlPoints: unit.controlPoints.map((q) => ({
+          x: g.center.x + major.x * q.x + minor.x * q.y,
+          y: g.center.y + major.y * q.x + minor.y * q.y,
+        })),
+      };
+    }
     case 'LWPOLYLINE':
     case 'POLYLINE': {
       if (g.closed || (g.kind === 'POLYLINE' && g.is3d) || g.vertices.length < 2) return undefined;
@@ -577,13 +592,14 @@ export function joinableSpline(g: EntityGeometry): Spline | undefined {
 }
 
 /** `b` joined on to the end of `a`, the lower degree raised to the higher. */
-function joinCurves(a: Spline | undefined, b: Spline): Spline {
+export function joinCurves(a: Spline | undefined, b: Spline): Spline {
   if (!a) return b;
   const p = Math.max(a.degree, b.degree);
   return joinSplines(elevateDegree(a, p), elevateDegree(b, p))!;
 }
 
-const endsOf = (s: Spline): [Vec2, Vec2] => {
+/** A spline's start and end points. */
+export const endsOf = (s: Spline): [Vec2, Vec2] => {
   const { start, end } = splineDomain(s);
   return [splinePoint(s, start), splinePoint(s, end)];
 };
