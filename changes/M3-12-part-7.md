@@ -1,0 +1,1 @@
+- M3-12 part 7 (#TBD): EXPLODE of nonuniformly scaled block references and of MTEXT; TRIM and EXTEND preview along a fence or crossing window.
