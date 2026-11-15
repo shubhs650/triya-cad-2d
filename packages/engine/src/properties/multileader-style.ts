@@ -4,8 +4,8 @@
 // Choosing another style gives the multileader that style's values wherever it does not override
 // them: a property flagged in DXF 90 (`MLEADER_OVERRIDES`, `MLEADER_TEXT_OVERRIDES`, the ODA
 // specification's bits) keeps the multileader's own value and its flag, and every other one takes
-// the new style's, as AutoCAD documents for objects whose style changes ("properties that are not
-// overridden take the style's values"; its help gives no list for a multileader). The context
+// the new style's, as a style's overrides work for every AutoCAD object (its help gives no list
+// for a multileader; this one follows the override bits, noted in the PR). The context
 // data states sizes drawn, so the style's sizes are drawn at the multileader's overall scale (the
 // style's own scale when that is not overridden, grown about the content's anchor as the Overall
 // scale row does; an annotative style gives its scale to a plain multileader, as MLEADER does

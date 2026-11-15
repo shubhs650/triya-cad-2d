@@ -15,7 +15,8 @@
 // the first one's text, sets its line spacing and turns its background mask and frame on. M2-35
 // part 15 gives the _TagCircle one another colour, scale and rotation and then the callout block
 // (its attributes at their definitions' values); their override bits (19 to 22, M2-66) read
-// back. M2-35 part 22 gives the first one AutoCAD's Closed blank arrowhead, authoring its
+// back. M2-35 part 28 gives the boxed note another Multileader style where the drawing has one.
+// M2-35 part 22 gives the first one AutoCAD's Closed blank arrowhead, authoring its
 // `_CLOSEDBLANK` block where the drawing lacks it, which reads back with its parts. The drawing
 // is saved as AC1032 DXF (DEC-047), read back by acad-ts and mapped, and
 // each multileader draws the same parts (`multiLeaderParts`: lines, landings, arrowheads, text,
@@ -121,6 +122,7 @@ describe('MLEADER on the public corpus', () => {
   const proxied: string[] = [];
   const textless: string[] = [];
   let blocks = 0;
+  let restyled = 0;
 
   it.each(readable.map((f) => [f.path, f] as const))(
     '%s saves its multileaders, which draw the same when read back',
@@ -253,6 +255,34 @@ describe('MLEADER on the public corpus', () => {
       leaders({ key: 'horzLanding', value: 'yes' });
       // M2-35 part 25: its Misc row Overall scale.
       leaders({ key: 'overallScale', value: '2' });
+      // M2-35 part 28: the boxed note takes another Multileader style where the drawing has one
+      // (the style's values where it overrides none; drawn at the style's scale).
+      const boxed = added[2]!;
+      const other = [...model.tables.mleaderStyles.values()].find(
+        (x) => x.handle !== (boxed.geom as MultiLeaderGeometry).style,
+      );
+      let restyledBox: MultiLeaderGeometry | undefined;
+      if (other) {
+        const now = [model.entity(boxed.id)!];
+        const edit: PropertyEdit = { key: 'mleaderStyle', value: other.handle };
+        const widths = new Map(
+          multiLeaderTextsToMeasure(model, now, edit).map((m) => [
+            m.id,
+            {
+              ...(m.before && { before: widthOf(m.before) }),
+              ...(m.after && { after: widthOf(m.after) }),
+            },
+          ]),
+        );
+        const b = new ChangeSetBuilder(model);
+        const report = applyPropertyEdit(b, model, now, edit, undefined, undefined, widths);
+        expect(report, `${f.path} mleaderStyle`).toMatchObject({ changed: 1, refused: new Map() });
+        model.apply(b.build());
+        restyledBox = model.entity(boxed.id)!.geom as MultiLeaderGeometry;
+        expect(restyledBox.style).toBe(other.handle);
+        expect(restyledBox.scale).toBe(other.scale > 0 ? other.scale : 1);
+        restyled++;
+      }
       // The built-in blocks: definitions with their parts, the multileaders' attribute values.
       const builtins = ['_TagCircle', '_DetailCallout'].map((n) =>
         [...model.blocks.values()].find((b) => b.name === n)!,
@@ -311,7 +341,9 @@ describe('MLEADER on the public corpus', () => {
         expect(partsOf(back, r), `MULTILEADER ${e.handle}`).toEqual(
           partsOf(model, model.entity(e.id)!),
         );
-        expect((r.geom as MultiLeaderGeometry).style).toBe((e.geom as MultiLeaderGeometry).style);
+        const now = model.entity(e.id)!.geom as MultiLeaderGeometry;
+        expect((r.geom as MultiLeaderGeometry).style).toBe(now.style);
+        expect((r.geom as MultiLeaderGeometry).overrideFlags).toBe(now.overrideFlags);
       }
       const firstBack = back.entityByHandle(firstLeader.handle)!.geom as MultiLeaderGeometry;
       expect(firstBack.text).toMatchObject({ attachment: 3, height: 7, style: lastStyle });
@@ -383,5 +415,7 @@ describe('MLEADER on the public corpus', () => {
     ]);
     expect(saved + textless.length).toBe(readable.length);
     expect(blocks).toBeGreaterThan(saved / 2);
+    // Most drawings ezdxf made hold Standard and Annotative (M2-35 part 28; 54 of 118 files).
+    expect(restyled).toBeGreaterThan(saved * 0.4);
   });
 });
