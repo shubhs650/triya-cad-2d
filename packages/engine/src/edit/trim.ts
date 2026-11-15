@@ -592,7 +592,7 @@ function segmentLength(c: Polyline, i: number): number {
  * `g` with the cleaned polyline's vertices `vs` (each segment keeping the widths of the source
  * vertex it starts at) and its fit dropped.
  */
-function withVertices(
+export function withVertices(
   g: LwPolylineGeometry | PolylineGeometry,
   index: readonly number[],
   vs: readonly { x: number; y: number; bulge: number }[],

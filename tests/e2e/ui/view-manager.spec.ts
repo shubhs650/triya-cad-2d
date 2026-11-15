@@ -50,7 +50,10 @@ function sameView(a: Awaited<ReturnType<typeof shown>>, b: typeof a): void {
 async function viewNames(page: Page): Promise<string[]> {
   await command(page, 'VIEW', '');
   const folder = tree(page).getByRole('treeitem', { name: /^Model Views/ });
-  const names = await folder.getByRole('group').getByRole('treeitem').allTextContents();
+  const items = folder.getByRole('group').getByRole('treeitem');
+  // The tree fills after the dialog opens; reading at once read an empty folder on a busy CI runner.
+  await items.first().waitFor({ state: 'attached' });
+  const names = await items.allTextContents();
   await page.keyboard.press('Escape');
   await expect(manager(page)).toBeHidden();
   return names;
