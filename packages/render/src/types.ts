@@ -392,6 +392,11 @@ export interface Renderer {
   setDrag(motion: DragMotion | undefined): void;
   /** The objects to show grips on, `hot` the hot grip (M2-06 part 2); none hides them. */
   setGrips(ids: readonly EntityId[], hot?: Vec2): void;
+  /**
+   * The cursor (M3-05 part 2): the grip nearest it within `within` drawing units draws in the
+   * hover colour; undefined, none does.
+   */
+  setGripHover(at: Vec2 | undefined, within: number): void;
 }
 
 /**

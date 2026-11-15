@@ -10,8 +10,9 @@
 // A multi-functional grip (M3-05 part 1, `edit/grip-functions.ts`): STRETCH is its first
 // function, and a tap of Ctrl goes on to the next that takes a point, as AutoCAD's Ctrl cycles
 // them ("** ADD VERTEX **", "** LENGTHEN **", …), round to STRETCH again. Each function can also
-// be typed by name (AutoCAD offers them in a menu at the grip, still to come); Remove Vertex and
-// Convert to Line take no point and act at once. A function edits only the first selected object
+// be typed by name, or picked from the grip's hover menu (part 2: the grip starts in it); Remove
+// Vertex and Convert to Line take no point and act at once. Part 2 also takes a point clicked
+// with Ctrl held at a grip mode's prompt as Copy turned on, that click placing the first copy. A function edits only the first selected object
 // with that grip, in one undo step; Enter goes on to MOVE, as from STRETCH.
 import type { Vec2 } from '../../geom/types';
 import { add, sub } from '../../geom/vec';
@@ -75,8 +76,11 @@ function copyStretched(
   return out;
 }
 
-/** The grip modes on `ids` with the grip at `hot` hot. */
-export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
+/**
+ * The grip modes on `ids` with the grip at `hot` hot; `first`, a function picked from the grip's
+ * hover menu (M3-05 part 2), the one it starts in.
+ */
+export function gripCommand(ids: readonly EntityId[], hot: Vec2, first?: string): CommandDef {
   return {
     name: 'GRIP',
     usesSelection: 'none',
@@ -84,10 +88,14 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
     async *run(ctx) {
       // An associative array's sizing grip edits that array alone (M3-11 part 3).
       const array = arrayGripAt(ctx.model, ids, hot);
-      if (array) return yield* editArrayByGrip(ctx, array.id, array.role, hot);
+      if (array) return yield* editArrayByGrip(ctx, array.id, array.role, hot, first);
       // The hot grip's functions, if it has more than one (M3-05).
       const multi = functionsAt(ctx.model, ids, hot);
-      let fn: GripFunction | undefined;
+      const picked = first === 'Stretch Vertex' ? 'Stretch' : first;
+      let fn: GripFunction | undefined =
+        multi && picked !== multi.functions[0]
+          ? multi.functions.find((f) => f === picked)
+          : undefined;
       let mode = 0;
       let base = hot;
       let copying = false;
@@ -153,6 +161,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
         const extra = {
           hiddenOptions: stretching ? hidden : MODE_KEYWORDS,
           ...(stretching && { ctrlCycles: true as const }),
+          ctrlCopies: true as const,
         };
         const options = ['Base point', 'Copy', 'Undo', 'eXit'];
         const withReference = ['Base point', 'Copy', 'Undo', 'Reference', 'eXit'];
@@ -245,6 +254,8 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2): CommandDef {
           }
           continue;
         }
+        // A point clicked with Ctrl held turns Copy on, this one placing the first copy.
+        if ('ctrl' in a && a.ctrl) copying = true;
         let ended = false;
         if (name === 'STRETCH' && a.kind === 'point') {
           const to = add(hot, sub(a.point, base));

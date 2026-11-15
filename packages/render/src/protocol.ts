@@ -104,6 +104,8 @@ export type HostMessage =
   | { readonly type: 'drag'; readonly motion: DragMotion | null }
   /** The objects to show grips on and the hot grip (M2-06 part 2). */
   | { readonly type: 'grips'; readonly ids: readonly EntityId[]; readonly hot: Vec2 | null }
+  /** The cursor for the grip hover colour (M3-05 part 2); null, none. */
+  | { readonly type: 'grip-hover'; readonly at: Vec2 | null; readonly within: number }
   /** The extents of some entities (ZOOM Object, M2-03); the answer is an `extents`. */
   | { readonly type: 'bounds'; readonly id: number; readonly ids: readonly EntityId[] }
   /** The box an MTEXT's glyphs fill (M2-09); the answer is an `extents`. */
