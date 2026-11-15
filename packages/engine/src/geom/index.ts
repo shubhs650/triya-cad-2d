@@ -3,6 +3,7 @@
 export * from './angle';
 export * from './bounds';
 export * from './closest';
+export * from './construct';
 export * from './curves';
 export * from './eval';
 export * from './fit';
