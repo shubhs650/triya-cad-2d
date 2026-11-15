@@ -1,5 +1,7 @@
 // M3-06 part 1: the Drafting Settings dialog (DSETTINGS, DS, SE; OSNAP opens it on Object Snap),
-// as a drafter uses it (AutoCAD 2024 Help, "Drafting Settings Dialog Box"). The Polar Tracking
+// as a drafter uses it (AutoCAD 2024 Help, "Drafting Settings Dialog Box"). Part 2: the Snap and
+// Grid tab sets SNAP, GRID and the drawing's snap and grid spacing, which the cursor and grid
+// follow, as do the SNAP and GRID commands. The Polar Tracking
 // tab adds an additional angle polar tracking then locks onto, and sets POLARMODE and
 // POLARADDANG; the Object Snap tab chooses the modes and turns OSNAP off; the Quick Properties tab
 // sets QPMODE, QPLOCATION, the quadrant, the distance and the row count, and Quick Properties
@@ -55,10 +57,16 @@ test('sets polar tracking, object snaps and Quick Properties', async ({ page }) 
   await type(page, `${X0 + 90},${Y0}`, 'Specify next point or [Undo]:');
   await type(page, '', 'Command:');
 
-  // DSETTINGS opens on Polar Tracking (the first tab Triya has) with the status bar's settings.
+  // DSETTINGS opens on Snap and Grid (the first tab, M3-06 part 2); Polar Tracking shows the
+  // status bar's settings.
   await type(page, 'DS', 'Drafting Settings:');
   const d = dialog(page);
   await expect(d).toBeVisible();
+  await expect(d.getByRole('tab', { name: 'Snap and Grid' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  await d.getByRole('tab', { name: 'Polar Tracking' }).click();
   await expect(d.getByRole('tab', { name: 'Polar Tracking' })).toHaveAttribute(
     'aria-selected',
     'true',
@@ -209,4 +217,101 @@ test('sets polar tracking, object snaps and Quick Properties', async ({ page }) 
   await expect(quick).toBeVisible();
   await page.mouse.move(pick.x, pick.y - 40);
   await expect(rows.filter({ visible: true })).toHaveCount(5);
+});
+
+const history = (page: Page) => page.getByRole('log', { name: 'Recent command lines' });
+
+test('sets the snap and grid spacing, from the Snap and Grid tab and from SNAP and GRID', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0 - 10},${Y0 - 30}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 70},${Y0 + 30}`, 'Command:');
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => {
+    const p = view.at(x, y);
+    return { x: view.box.x + p.x, y: view.box.y + p.y };
+  };
+  /** ID's answer for a click near (x, y): where the cursor's constraints put the point. */
+  const idAt = async (x: number, y: number) => {
+    await type(page, 'ID', 'Specify point:');
+    const p = at(x, y);
+    await page.mouse.move(p.x, p.y);
+    await page.mouse.click(p.x, p.y);
+    await expect(prompt(page)).toHaveText('Command:');
+  };
+  await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'false');
+  await expect(toggle(page, 'GRID')).toHaveAttribute('aria-pressed', 'false');
+  await shot(page, '6-before-snap-and-grid');
+
+  // The tab opens on the drawing's *Active VPORT: 0.5 snap and grid, as ezdxf wrote them.
+  await type(page, 'DS', 'Drafting Settings:');
+  const d = dialog(page);
+  await expect(d.getByRole('tab', { name: 'Snap and Grid' })).toHaveAttribute(
+    'aria-selected',
+    'true',
+  );
+  const field = (name: string) => d.getByRole('textbox', { name, exact: true });
+  await expect(field('Snap X spacing:')).toHaveValue('0.5');
+  await expect(field('Grid Y spacing:')).toHaveValue('0.5');
+  await expect(field('Major line every:')).toHaveValue('5');
+  const equal = d.getByRole('checkbox', { name: 'Equal X and Y spacing' });
+  await expect(equal).toBeChecked();
+  // Equal X and Y spacing: Y follows X.
+  await field('Snap X spacing:').fill('2.5');
+  await expect(field('Snap Y spacing:')).toHaveValue('2.5');
+  await field('Grid X spacing:').fill('0');
+  await field('Major line every:').fill('0');
+  await expect(d.getByRole('alert')).toHaveText(
+    'Major line every must be a whole number from 1 to 100.',
+  );
+  await expect(d.getByRole('button', { name: 'OK' })).toBeDisabled();
+  await field('Major line every:').fill('4');
+  await d.getByRole('checkbox', { name: 'Snap On (F9)' }).check();
+  await d.getByRole('checkbox', { name: 'Grid On (F7)' }).check();
+  await shot(page, '7-snap-and-grid-tab');
+  await d.getByRole('button', { name: 'OK' }).click();
+  await expect(d).toBeHidden();
+  await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'true');
+  await expect(toggle(page, 'GRID')).toHaveAttribute('aria-pressed', 'true');
+
+  // The cursor snaps 2.5 apart now (the drawing's 0.5 would have given 12.5 and 0.5 too, so
+  // a point between tells them apart).
+  await canvas.hover();
+  await idAt(X0 + 13.6, Y0 + 1.1);
+  await expect(history(page)).toContainText('X = 1000012.5000     Y = 1000000.0000');
+  await canvas.hover();
+  await shot(page, '8-grid-follows-snap');
+
+  // SNAP and GRID at the command line: a spacing, and 2x the snap spacing for the grid.
+  await type(page, 'SN', 'Specify snap spacing or [ON/OFF/Aspect] <2.5000>:');
+  await type(page, '4', 'Command:');
+  await type(page, 'GRID', 'Specify grid spacing(X) or [ON/OFF/Snap/Major/Aspect] <0.0000>:');
+  await type(page, '2x', 'Command:');
+  await idAt(X0 + 9.1, Y0 - 2.1);
+  await expect(history(page)).toContainText('X = 1000008.0000     Y = 999996.0000');
+  await canvas.hover();
+  await shot(page, '9-snap-and-grid-commands');
+  await type(page, 'DS', 'Drafting Settings:');
+  await expect(field('Snap X spacing:')).toHaveValue('4');
+  await expect(field('Grid X spacing:')).toHaveValue('8');
+  await page.keyboard.press('Escape');
+  await expect(d).toBeHidden();
+
+  // SNAP OFF is F9's toggle; U takes back GRID's spacing, then SNAP's.
+  await canvas.hover();
+  await type(page, 'SNAP', /^Specify snap spacing/);
+  await type(page, 'OFF', 'Command:');
+  await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'false');
+  await type(page, 'U', 'Command:');
+  await type(page, 'U', 'Command:');
+  await type(page, 'DS', 'Drafting Settings:');
+  await expect(field('Snap X spacing:')).toHaveValue('2.5');
+  await expect(field('Grid X spacing:')).toHaveValue('0');
+  await page.keyboard.press('Escape');
 });

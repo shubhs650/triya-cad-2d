@@ -460,6 +460,11 @@ export type DialogRequest =
        */
       readonly type: 'dsettings';
       readonly tab?: DraftingSettingsTab;
+      /**
+       * The Snap and Grid tab's spacing (M3-06 part 2): the drawing's, from its
+       * `*Active` VPORT; none when it has no such viewport.
+       */
+      readonly snapGrid?: SnapGridSettings;
     }
   | {
       /** SELECTSIMILAR's Select Similar Settings (M3-04 part 3), opened on SELECTSIMILARMODE. */
@@ -479,8 +484,18 @@ export type DialogRequest =
       readonly types: readonly { readonly type: EntityType; readonly label: string }[];
     };
 
-/** The Drafting Settings tabs Triya has (M3-06 part 1). */
-export type DraftingSettingsTab = 'polar' | 'osnap' | 'qp';
+/** The Drafting Settings tabs Triya has (M3-06 parts 1 and 2). */
+export type DraftingSettingsTab = 'snap' | 'polar' | 'osnap' | 'qp';
+
+/**
+ * What the Snap and Grid tab sets in the `*Active` VPORT (M3-06 part 2): SNAPUNIT, GRIDUNIT (0
+ * follows the snap spacing) and GRIDMAJOR.
+ */
+export interface SnapGridSettings {
+  readonly snapSpacing: Vec2;
+  readonly gridSpacing: Vec2;
+  readonly gridMajor: number;
+}
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
 export interface DialogPrompt extends PromptBase {
@@ -580,6 +595,8 @@ export type PromptAnswer =
       readonly pointStyle?: { readonly mode: number; readonly size: number };
       /** Delete Duplicate Objects' settings as OK closed it. */
       readonly overkill?: OverkillSettings;
+      /** Drafting Settings' Snap and Grid tab as OK closed it (M3-06 part 2). */
+      readonly snapGrid?: SnapGridSettings;
       /** Quick Select's criteria as OK (or Select objects) closed it. */
       readonly qselect?: QuickSelectCriteria;
       /** Select Similar Settings' checkboxes as OK closed it, SELECTSIMILARMODE's bits. */

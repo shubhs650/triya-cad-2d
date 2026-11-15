@@ -1,8 +1,9 @@
 // DSETTINGS' Drafting Settings dialog (M3-06 part 1), with AutoCAD 2024's structure and labels
 // (AutoCAD Help, "Drafting Settings Dialog Box" and its "Polar Tracking Tab", "Object Snap Tab"
-// and "Quick Properties Tab" pages; UI_SPEC.md §7). The Snap and Grid, Dynamic Input and
-// Selection Cycling tabs come with the rest of M3-06; 3D Object Snap is out of scope (PRD
-// non-goal: no 3D). Polar Angle measurement's Relative to last segment waits for them too.
+// and "Quick Properties Tab" pages; UI_SPEC.md §7). The Snap and Grid tab came with part 2,
+// without Snap type (PolarSnap is a later part; Isometric snap is PRD non-goal 7, DEC-060), Grid
+// style and Grid behavior (Triya's grid is lines, adaptive and past the limits); the Dynamic Input and Selection
+// Cycling tabs come with the rest of M3-06; 3D Object Snap is out of scope (PRD non-goal: no 3D). Polar Angle measurement's Relative to last segment waits for them too.
 // It opens on the tab shown last (OSNAP: Object Snap), edits a copy of the drafting aids and
 // sets them on OK; Cancel (or Esc) leaves them as they were. Options... is left out: Triya's
 // Settings panel is not a dialog to open over it.
@@ -17,7 +18,11 @@ import {
   draftOf,
   draftPatch,
   draftProblem,
+  equalSpacing,
+  snapGridOf,
+  typeSpacing,
   type DraftingSettingsDraft,
+  type SpacingDraft,
 } from './drafting-settings';
 import { engines } from './engine/registry';
 import { POLAR_ANGLES } from './preferences';
@@ -29,13 +34,15 @@ const answer = (doc: number, a: PromptAnswer) =>
   engines.command(doc, { kind: 'answer', answer: a });
 
 /** The tab shown last, which DSETTINGS opens on (AutoCAD remembers it). */
-let lastTab: Tab = 'polar';
+let lastTab: Tab = 'snap';
 
 const ALL_MODES = OSNAP_MODES.reduce((bits, m) => bits | OSNAP[m.mode], 0);
 
 export function DraftingSettingsDialog({ doc, request }: { doc: number; request: Request }) {
   const [tab, setTab] = useState<Tab>(request.tab ?? lastTab);
-  const [d, setD] = useState<DraftingSettingsDraft>(() => draftOf(drafting.get()));
+  const [d, setD] = useState<DraftingSettingsDraft>(() =>
+    draftOf(drafting.get(), request.snapGrid),
+  );
   const problem = draftProblem(d);
   const set = (patch: Partial<DraftingSettingsDraft>) => setD((was) => ({ ...was, ...patch }));
   useEffect(() => {
@@ -44,7 +51,8 @@ export function DraftingSettingsDialog({ doc, request }: { doc: number; request:
   const ok = () => {
     if (problem) return;
     drafting.configure(draftPatch(d, drafting.get()));
-    void answer(doc, { kind: 'dialog', action: 'ok' });
+    const snapGrid = snapGridOf(d);
+    void answer(doc, { kind: 'dialog', action: 'ok', ...(snapGrid && { snapGrid }) });
   };
   const cancel = () => engines.command(doc, { kind: 'cancel' });
   return (
@@ -63,6 +71,7 @@ export function DraftingSettingsDialog({ doc, request }: { doc: number; request:
         ))}
       </div>
       <div role="tabpanel" className="cad-dialog-panel" aria-label={tabLabel(tab)}>
+        {tab === 'snap' && <SnapGridTab d={d} set={set} />}
         {tab === 'polar' && <PolarTab d={d} set={set} />}
         {tab === 'osnap' && <ObjectSnapTab d={d} set={set} />}
         {tab === 'qp' && <QuickPropertiesTab d={d} set={set} />}
@@ -133,6 +142,103 @@ function Radio({
       <input type="radio" name={name} checked={checked} disabled={disabled} onChange={onChange} />
       {children}
     </label>
+  );
+}
+
+function Spacing({
+  label,
+  value,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  disabled: boolean;
+  onChange: (text: string) => void;
+}) {
+  return (
+    <label className="cad-dialog-field">
+      <span>{label}</span>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(e.currentTarget.value)}
+      />
+    </label>
+  );
+}
+
+/**
+ * Snap and Grid: SNAP (F9) and GRID (F7) on and off, and the drawing's snap and grid spacing
+ * with Equal X and Y spacing and Major line every.
+ */
+function SnapGridTab({ d, set }: TabProps) {
+  const g = d.spacing;
+  const none = g === undefined;
+  const setG = (next: SpacingDraft) => set({ spacing: next });
+  const field = (f: 'snapX' | 'snapY' | 'gridX' | 'gridY') => (text: string) =>
+    g && setG(typeSpacing(g, f, text));
+  return (
+    <div className="dsettings-tab dsettings-columns">
+      <div>
+        <Check checked={d.snap} onChange={(snap) => set({ snap })}>
+          Snap On (F9)
+        </Check>
+        <fieldset>
+          <legend>Snap spacing</legend>
+          <Spacing
+            label="Snap X spacing:"
+            value={g?.snapX ?? ''}
+            disabled={none}
+            onChange={field('snapX')}
+          />
+          <Spacing
+            label="Snap Y spacing:"
+            value={g?.snapY ?? ''}
+            disabled={none}
+            onChange={field('snapY')}
+          />
+          <Check
+            checked={g?.equal ?? false}
+            disabled={none}
+            onChange={(on) => g && setG(equalSpacing(g, on))}
+          >
+            Equal X and Y spacing
+          </Check>
+        </fieldset>
+      </div>
+      <div>
+        <Check checked={d.grid} onChange={(grid) => set({ grid })}>
+          Grid On (F7)
+        </Check>
+        <fieldset>
+          <legend>Grid spacing</legend>
+          <Spacing
+            label="Grid X spacing:"
+            value={g?.gridX ?? ''}
+            disabled={none}
+            onChange={field('gridX')}
+          />
+          <Spacing
+            label="Grid Y spacing:"
+            value={g?.gridY ?? ''}
+            disabled={none}
+            onChange={field('gridY')}
+          />
+          <Spacing
+            label="Major line every:"
+            value={g?.major ?? ''}
+            disabled={none}
+            onChange={(major) => g && setG({ ...g, major })}
+          />
+        </fieldset>
+        {none && (
+          <p className="dsettings-note">This drawing has no current viewport to keep spacing in.</p>
+        )}
+      </div>
+    </div>
   );
 }
 
