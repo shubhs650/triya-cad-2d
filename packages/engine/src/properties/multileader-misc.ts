@@ -1,8 +1,8 @@
 // A multileader's Misc rows in the Properties palette (M2-35 part 25). AutoCAD's help does not
 // list the palette's rows for a multileader; these follow ActiveX AcadMLeader's StyleName and
 // ScaleFactor and the Annotative row every annotative object shows: Multileader style and
-// Annotative are shown (another style's values re-applied is left on M2-35; annotative
-// multileaders are M2-43), Overall scale is set.
+// Annotative are shown (another style is chosen in `multileader-style.ts`, M2-35 part 28;
+// annotative multileaders are M2-43), Overall scale is set.
 //
 // Overall scale (DXF 45) is what the style's sizes are drawn at. The context data states them
 // drawn (text height and wrap width, landing gap, arrowhead size, each landing's length, the
@@ -43,7 +43,7 @@ export function multiLeaderMiscChange(
 }
 
 /** `g` at overall scale `scale`: what is drawn grown about the content's anchor. */
-function rescaled(g: MultiLeaderGeometry, scale: number): MultiLeaderGeometry {
+export function rescaled(g: MultiLeaderGeometry, scale: number): MultiLeaderGeometry {
   const k = g.scale > 0 ? scale / g.scale : 1;
   const c = g.contentBase;
   const about = (p: Vec2): Vec2 => ({ x: c.x + (p.x - c.x) * k, y: c.y + (p.y - c.y) * k });

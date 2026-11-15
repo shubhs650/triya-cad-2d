@@ -155,7 +155,7 @@ export function multiLeaderBlockChange(
 }
 
 /** The block's non-constant attribute definitions, each at its value (MLEADER's defaults). */
-function attributeDefaults(model: DocumentModel, block: Handle): MultiLeaderAttribute[] {
+export function attributeDefaults(model: DocumentModel, block: Handle): MultiLeaderAttribute[] {
   const out: MultiLeaderAttribute[] = [];
   for (const id of model.blockEntities(block)) {
     const d = model.entity(id)!;
@@ -171,7 +171,7 @@ function attributeDefaults(model: DocumentModel, block: Handle): MultiLeaderAttr
  * the file comment); its insertion point as before where the style connects by it, or where
  * either block has no known extents.
  */
-function keptOnLanding(
+export function keptOnLanding(
   model: DocumentModel,
   g: MultiLeaderGeometry,
   before: MultiLeaderBlock,
@@ -191,7 +191,7 @@ function keptOnLanding(
  * point of its box that faced the landing; by its extents, so that that point is where its
  * insertion point was. Where it is when its extents are unknown.
  */
-function reconnected(
+export function reconnected(
   model: DocumentModel,
   g: MultiLeaderGeometry,
   b: MultiLeaderBlock,

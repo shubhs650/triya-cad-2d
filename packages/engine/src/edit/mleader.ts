@@ -53,6 +53,7 @@ export const MLEADER_OVERRIDES = {
   linetype: 1 << 2,
   lineweight: 1 << 3,
   landing: 1 << 4,
+  landingGap: 1 << 5,
   dogleg: 1 << 6,
   doglegLength: 1 << 7,
   arrowhead: 1 << 8,

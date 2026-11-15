@@ -47,8 +47,19 @@ import type { PropertyOption, PropertyRow, PropertyValue } from './sheet';
  */
 export const MLEADER_TEXT_OVERRIDES = {
   textStyle: 1 << 11,
+  // M2-35 part 28: the rest of the text's bits, which another style re-applies around
+  // (TEXT_LEFT_ATTACHMENT, TEXT_ANGLE, TEXT_COLOR, CHAR_HEIGHT, TEXT_RIGHT_ATTACHMENT,
+  // TEXT_ATTACHMENT_DIRECTION, TEXT_TOP_ATTACHMENT, TEXT_BOTTOM_ATTACHMENT).
+  textLeftAttachment: 1 << 12,
+  textAngle: 1 << 13,
   textAlignment: 1 << 14,
+  textColor: 1 << 15,
+  textHeight: 1 << 16,
   textFrame: 1 << 17,
+  textRightAttachment: 1 << 25,
+  textAttachmentDirection: 1 << 27,
+  textTopAttachment: 1 << 28,
+  textBottomAttachment: 1 << 29,
 } as const;
 
 const JUSTIFY = ['Left', 'Center', 'Right'] as const;
@@ -101,7 +112,7 @@ export function textOf(g: MultiLeaderGeometry): MultiLeaderText | undefined {
   return g.contentType === MLEADER_MTEXT ? g.text : undefined;
 }
 
-const columnOf = (attachment: number): number => (Math.max(1, attachment) - 1) % 3;
+export const columnOf = (attachment: number): number => (Math.max(1, attachment) - 1) % 3;
 
 /** Every value the objects share, or `*VARIES*`. */
 function sharedRow(
@@ -325,6 +336,56 @@ function levelOf(g: MultiLeaderGeometry, t: MultiLeaderText): number {
 }
 
 /**
+ * Where text `next` goes so that the side of its box facing the landing stays where `t`'s was
+ * (the file comment): `g` is the multileader before, `after` with the attachments and landing
+ * gap `next` is placed by. Undefined where a width it needs was not measured.
+ */
+export function placedText(
+  g: MultiLeaderGeometry,
+  after: MultiLeaderGeometry,
+  t: MultiLeaderText,
+  next: MultiLeaderText,
+  measured: { readonly before?: number; readonly after?: number } | undefined,
+): Vec2 | undefined {
+  const facing = facingColumn(g);
+  // A text's width matters only where its insertion point is off the side facing the landing.
+  const widthOf = (x: MultiLeaderText, w: number | undefined) =>
+    offsetOf(x, facing) === 0 ? 0 : x.width > 0 ? x.width : w;
+  const before = widthOf(t, measured?.before);
+  const width = widthOf(next, measured?.after);
+  if (before === undefined || width === undefined) return undefined;
+  const along = offsetOf(t, facing) * before - offsetOf(next, facing) * width;
+  const up = levelOf(after, next) - levelOf(g, t);
+  const dir: Vec2 = { x: Math.cos(t.rotation), y: Math.sin(t.rotation) };
+  // Upside-down text (normal −Z) has its Y axis reversed.
+  const flip = t.upsideDown ? -1 : 1;
+  const normal: Vec2 = { x: -dir.y * flip, y: dir.x * flip };
+  return {
+    x: t.position.x + dir.x * along + normal.x * up,
+    y: t.position.y + dir.y * along + normal.y * up,
+  };
+}
+
+/**
+ * What the canvas must measure to place `next` where `t` was on multileader `g` (`placedText`):
+ * each text, unturned, where its width matters and it has no defined width; undefined for none.
+ */
+export function textsToMeasureFor(
+  g: MultiLeaderGeometry,
+  t: MultiLeaderText,
+  next: MultiLeaderText,
+): { readonly before?: MTextGeometry; readonly after?: MTextGeometry } | undefined {
+  const need = needsWidths(g, t, next);
+  if (!need.before && !need.after) return undefined;
+  // Measured unturned, so the width is along the text's own direction.
+  const flat = (x: MultiLeaderText) => ({ ...multiLeaderMText(x), rotation: 0 });
+  return {
+    ...(need.before && { before: flat(t) }),
+    ...(need.after && { after: flat(next) }),
+  };
+}
+
+/**
  * The texts the canvas must measure before `edit` (a Justify, Text style or Text height row) can
  * place the multileaders' text again: each multileader's text before and after, where its
  * insertion point is not on the side of its box facing the landing and it has no defined width.
@@ -341,15 +402,8 @@ export function multiLeadersToMeasure(
     const next = retexted(model, e, key, v);
     const t = textOf(e.geom);
     if (!t || next === undefined || next === 'invalid' || 'refuse' in next) continue;
-    const need = needsWidths(e.geom, t, next);
-    if (!need.before && !need.after) continue;
-    // Measured unturned, so the width is along the text's own direction.
-    const flat = (x: MultiLeaderText) => ({ ...multiLeaderMText(x), rotation: 0 });
-    out.push({
-      id: e.id,
-      ...(need.before && { before: flat(t) }),
-      ...(need.after && { after: flat(next) }),
-    });
+    const texts = textsToMeasureFor(e.geom, t, next);
+    if (texts) out.push({ id: e.id, ...texts });
   }
   return out;
 }
@@ -371,24 +425,8 @@ export function multiLeaderTextChange(
   if (next === undefined || next === 'invalid' || 'refuse' in next) return next;
   // `retexted` gives a text only to a multileader that has one.
   const t = textOf(g)!;
-  const facing = facingColumn(g);
-  const measured = widths?.get(e.id);
-  // A text's width matters only where its insertion point is off the side facing the landing.
-  const widthOf = (x: MultiLeaderText, w: number | undefined) =>
-    offsetOf(x, facing) === 0 ? 0 : x.width > 0 ? x.width : w;
-  const before = widthOf(t, measured?.before);
-  const after = widthOf(next, measured?.after);
-  if (before === undefined || after === undefined) return { refuse: UNMEASURED };
-  const along = offsetOf(t, facing) * before - offsetOf(next, facing) * after;
-  const up = levelOf(g, next) - levelOf(g, t);
-  const dir: Vec2 = { x: Math.cos(t.rotation), y: Math.sin(t.rotation) };
-  // Upside-down text (normal −Z) has its Y axis reversed.
-  const flip = t.upsideDown ? -1 : 1;
-  const normal: Vec2 = { x: -dir.y * flip, y: dir.x * flip };
-  const position = {
-    x: t.position.x + dir.x * along + normal.x * up,
-    y: t.position.y + dir.y * along + normal.y * up,
-  };
+  const position = placedText(g, g, t, next, widths?.get(e.id));
+  if (!position) return { refuse: UNMEASURED };
   let flags = g.overrideFlags;
   if (key === 'style') flags |= MLEADER_TEXT_OVERRIDES.textStyle;
   if (key === 'justify') flags |= MLEADER_TEXT_OVERRIDES.textAlignment;
