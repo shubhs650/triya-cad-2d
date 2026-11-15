@@ -231,7 +231,7 @@ describe('Arc option of the next-point prompts', () => {
     const s = setup();
     await s.bus.script(['DIST', '0,0', 'M', '10,0', 'A']);
     expect(s.bus.promptText).toBe(
-      'Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo/Total] <Total>:',
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo/Total] <Total>:',
     );
     // On east from (10,0) to (10,10): a half circle of radius 5.
     await s.bus.script(['10,10']);
@@ -257,12 +257,12 @@ describe('Arc option of the next-point prompts', () => {
     // A 10×10 square with its right side bulged out into a half circle.
     await s.bus.script(['AREA', '0,0', '10,0', 'A']);
     expect(s.bus.promptText).toBe(
-      'Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo]:',
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo]:',
     );
     await s.bus.script(['10,10']);
     // An arc and the closing chord enclose an area already.
     expect(s.bus.promptText).toBe(
-      'Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo/Total] <Total>:',
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo/Total] <Total>:',
     );
     await s.bus.script(['L', '0,10', '']);
     expect(s.log.at(-1)).toBe(
@@ -282,7 +282,7 @@ describe('Arc option of the next-point prompts', () => {
     const s = setup();
     await s.bus.script(['AREA', 'A', '0,0', '2,0', 'A']);
     expect(s.bus.promptText).toBe(
-      '(ADD mode) Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo]:',
+      '(ADD mode) Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Line/Radius/Second pt/Undo]:',
     );
     await s.bus.script(['R']);
     expect(s.bus.promptText).toBe('(ADD mode) Specify radius of arc:');
@@ -299,7 +299,7 @@ describe('Arc option of the next-point prompts', () => {
     // From the first point there is nothing to close or undo yet.
     await s.bus.script(['AREA', '0,0', 'A']);
     expect(s.bus.promptText).toBe(
-      'Specify endpoint of arc or [Angle/CEnter/Direction/Line/Radius/Second pt/Undo]:',
+      'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/Direction/Line/Radius/Second pt/Undo]:',
     );
     await s.bus.script(['U']);
     expect(s.log.at(-1)).toBe('All segments already undone.');

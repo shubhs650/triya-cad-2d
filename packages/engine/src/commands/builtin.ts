@@ -6,7 +6,7 @@ import { dimensionCommands } from './draw/dimension';
 import { arcCommand } from './draw/arc';
 import { circleCommand } from './draw/circle';
 import { ellipseCommand } from './draw/ellipse';
-import { donutCommand, pointCommand } from './draw/point';
+import { ddptypeCommand, donutCommand, pointCommand } from './draw/point';
 import { rayCommand, xlineCommand } from './draw/xline';
 import { lastDrawn } from './draw/last-drawn';
 import { lineCommand } from './draw/line';
@@ -67,6 +67,7 @@ export function builtinCommands(): CommandRegistry {
     rayCommand(),
     pointCommand(),
     donutCommand(),
+    ddptypeCommand(),
     textCommand(),
     mtextCommand(),
     textEditCommand(),

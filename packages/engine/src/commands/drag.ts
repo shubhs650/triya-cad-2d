@@ -97,8 +97,15 @@ export interface DragMotion {
   };
 }
 
-/** The motion a drag makes with the cursor at `cursor`; undefined where it makes none. */
-export function dragMotion(drag: DragPreview, cursor: Vec2): DragMotion | undefined {
+/**
+ * The motion a drag makes with the cursor at `cursor`; undefined where it makes none. `ctrl`:
+ * Ctrl is held at a prompt that switches an arc's direction with it (M3-01 part 6).
+ */
+export function dragMotion(
+  drag: DragPreview,
+  cursor: Vec2,
+  o: { readonly ctrl?: boolean } = {},
+): DragMotion | undefined {
   switch (drag.kind) {
     case 'preview':
       // The front-end moves the preview itself; no object of the drawing moves.
@@ -143,7 +150,7 @@ export function dragMotion(drag: DragPreview, cursor: Vec2): DragMotion | undefi
       );
     }
     case 'sketch': {
-      const geom = sketchGeometry(drag.sketch, cursor);
+      const geom = sketchGeometry(drag.sketch, cursor, o.ctrl);
       return geom && { ids: [], m: IDENTITY, adding: { layer: drag.layer, geom } };
     }
   }

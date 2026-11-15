@@ -1,0 +1,1 @@
+- M3-04 part 1 (#387): the Fence, WPolygon, CPolygon, Group and Multiple modes of "Select objects", with the polygon or fence drawn on the canvas as it is picked.

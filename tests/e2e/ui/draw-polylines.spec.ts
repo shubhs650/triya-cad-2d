@@ -87,7 +87,7 @@ test('PLINE with an arc segment, a filleted RECTANG and a POLYGON, dragged and c
   await type(
     page,
     'A',
-    'Specify endpoint of arc or [Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width]:',
+    'Specify endpoint of arc (hold Ctrl to switch direction) or [Angle/CEnter/CLose/Direction/Halfwidth/Line/Radius/Second pt/Undo/Width]:',
   );
   // The arc from 0.25,0.8 heading east to 0.25,0.5 bulges right: its far side is out at
   // x = 0.25 + half the chord, only once the cursor is up there.
