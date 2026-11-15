@@ -127,7 +127,8 @@ export function peditCommand(): CommandDef {
             if (n === undefined) return;
             p = n;
           }
-          const poly = polylineFrom(g, p)!;
+          const poly = polylineFrom(g, p);
+          if (!poly) continue;
           ctx.edit((b) => {
             id = reshapeObject(b, ctx.model, id, [poly])[0]!;
           });
@@ -475,7 +476,8 @@ async function* multiple(ctx: CommandContext): Sub<void> {
         ids = ids.map((id) => {
           const g = ctx.model.entity(id)!.geom;
           if (isPolyline(g)) return id;
-          return reshapeObject(b, ctx.model, id, [polylineFrom(g, p)!])[0]!;
+          const poly = polylineFrom(g, p);
+          return poly ? reshapeObject(b, ctx.model, id, [poly])[0]! : id;
         });
       });
     }

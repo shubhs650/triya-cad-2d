@@ -8,6 +8,7 @@ import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import type { Color, LinetypeRef, Lineweight } from '../model/types';
 import type { ColorBook } from '../properties/color-books';
+import type { MatchSettings } from '../properties/match';
 import type { DragPreview } from './drag';
 import {
   DECIMAL_UNITS,
@@ -365,6 +366,13 @@ export type DialogRequest =
       /** The default value; a multiline ATTDEF's MTEXT contents. */
       readonly value: string;
       readonly multiline: boolean;
+    }
+  | {
+      /** MATCHPROP's Property Settings (M3-02 part 5): which properties it copies. */
+      readonly type: 'matchprop';
+      readonly settings: MatchSettings;
+      /** Plot Style is offered: the drawing uses named plot styles. */
+      readonly plotStyles: boolean;
     };
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
@@ -450,6 +458,8 @@ export type PromptAnswer =
       readonly attributes?: readonly AttributePatch[];
       /** Edit Attribute Definition's fields. */
       readonly attdef?: { readonly tag: string; readonly prompt: string; readonly value: string };
+      /** Property Settings' checkboxes as OK closed it. */
+      readonly matchprop?: MatchSettings;
       readonly target?: Handle;
     }
   | { readonly kind: 'enter' }

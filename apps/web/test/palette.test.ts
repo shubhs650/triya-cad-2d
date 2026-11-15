@@ -66,6 +66,8 @@ describe('palette search', () => {
       'JOIN',
       'LENGTHEN',
       'LINE',
+      // M3-02 part 5: MATCHPROP.
+      'MATCHPROP',
       'MEASURE',
       'MEASUREGEOM',
       'MIRROR',

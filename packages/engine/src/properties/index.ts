@@ -39,3 +39,4 @@ export {
   rolloverSheet,
 } from './quick';
 export * from './color-books';
+export * from './match';

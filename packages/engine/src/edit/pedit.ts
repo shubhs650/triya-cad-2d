@@ -22,6 +22,7 @@ import type { Tolerance } from '../geom/tolerance';
 import type { Vec2 } from '../geom/types';
 import { add, cross, distance, dot, length, normalize, scale, sub } from '../geom/vec';
 import { circleThrough3 } from '../geom/construct';
+import { splineCurve } from '../model/spline';
 import type {
   EntityGeometry,
   LwPolylineGeometry,
@@ -45,10 +46,10 @@ export const isSplineFit = (g: EditablePolyline): boolean =>
 export const isCurveFit = (g: EditablePolyline): boolean =>
   g.kind === 'POLYLINE' && g.fit === 'curve';
 
-/** A vertex with its widths, both or neither (a zero width is no width, as the file maps it). */
+/** A vertex with its widths; a zero width is no width, as the file maps it. */
 function wide(v: PolylineVertex, sw: number, ew: number): PolylineVertex {
   const { startWidth: _s, endWidth: _e, ...rest } = v;
-  return sw !== 0 || ew !== 0 ? { ...rest, startWidth: sw, endWidth: ew } : rest;
+  return { ...rest, ...(sw !== 0 && { startWidth: sw }), ...(ew !== 0 && { endWidth: ew }) };
 }
 
 /** The vertices with every width their own (the constant width or POLYLINE defaults applied). */
@@ -129,12 +130,15 @@ export function polylineFrom(g: EntityGeometry, precision = 10): LwPolylineGeome
   }
 }
 
-function splineToPolyline(g: SplineGeometry, precision: number): LwPolylineGeometry {
-  const { start, end } = splineDomain(g);
-  const spans = new Set(g.knots.filter((k) => k > start && k < end)).size + 1;
+function splineToPolyline(g: SplineGeometry, precision: number): LwPolylineGeometry | undefined {
+  // The curve drawn: the NURBS, or the one through the fit points when there is none.
+  const c = splineCurve(g);
+  if (!c) return undefined;
+  const { start, end } = splineDomain(c);
+  const spans = new Set(c.knots.filter((k) => k > start && k < end)).size + 1;
   const n = spans * (Math.max(0, Math.min(99, Math.round(precision))) + 1);
   const points: Vec2[] = [];
-  for (let i = 0; i <= n; i++) points.push(splinePoint(g, start + ((end - start) * i) / n));
+  for (let i = 0; i <= n; i++) points.push(splinePoint(c, start + ((end - start) * i) / n));
   const closed = g.closed || distance(points[0]!, points[n]!) === 0;
   if (closed) points.pop();
   return {
@@ -307,7 +311,10 @@ export function splineFit(
   const m = closed ? points.length : points.length - 1;
   const vertices = points.map((p, j): PolylineVertex => {
     const v = { x: p.x, y: p.y, bulge: 0 };
-    if (uniform || (g.kind === 'POLYLINE' && g.is3d) || j >= m) return v;
+    if ((g.kind === 'POLYLINE' && g.is3d) || j >= m) return v;
+    // A uniform width is every vertex's own too: a file's VERTEX states its widths (DXF 40/41
+    // are written for each), so a vertex without them would save as 0 wide.
+    if (uniform) return wide(v, w0, w0);
     return wide(v, w0 + ((wEnd - w0) * j) / m, w0 + ((wEnd - w0) * (j + 1)) / m);
   });
   const { startWidth: _s, endWidth: _e, ...rest } = base;
@@ -380,8 +387,14 @@ export function decurvePolyline(g: EditablePolyline): EditablePolyline {
 export function widthPolyline(g: EditablePolyline, w: number): EditablePolyline {
   const plain = g.vertices.map(({ startWidth: _s, endWidth: _e, ...v }) => v);
   if (g.kind === 'LWPOLYLINE') return { ...g, vertices: plain, constantWidth: w };
+  if (g.is3d) return g;
+  // Each VERTEX states its widths in a file, so they are the vertices' own as well.
   const { startWidth: _s, endWidth: _e, ...rest } = g;
-  return { ...rest, vertices: plain, ...(w !== 0 && { startWidth: w, endWidth: w }) };
+  return {
+    ...rest,
+    vertices: plain.map((v) => wide(v, w, w)),
+    ...(w !== 0 && { startWidth: w, endWidth: w }),
+  };
 }
 
 /** PEDIT Close and Open: a spline-fit polyline is fitted again to its frame, a curve fit too. */

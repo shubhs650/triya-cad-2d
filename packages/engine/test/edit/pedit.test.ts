@@ -187,7 +187,7 @@ describe('Spline', () => {
   it('keeps a uniform width as the default and tapers another', () => {
     const uniform = splineFit(lw([v(0, 0), v(5, 5), v(10, 0)], false, { constantWidth: 1 }), 6, 4);
     expect(uniform.startWidth).toBe(1);
-    expect(uniform.vertices.every((x) => x.startWidth === undefined)).toBe(true);
+    expect(uniform.vertices[0]).toMatchObject({ startWidth: 1, endWidth: 1 });
     const tapered = splineFit(
       lw([
         { ...v(0, 0), startWidth: 0, endWidth: 1 },
@@ -197,7 +197,7 @@ describe('Spline', () => {
       6,
       4,
     );
-    expect(tapered.vertices[0]).toMatchObject({ startWidth: 0, endWidth: 0.25 });
+    expect(tapered.vertices[0]).toEqual({ x: 0, y: 0, bulge: 0, endWidth: 0.25 });
     expect(r6(tapered.vertices[7]!.endWidth!)).toBe(2);
   });
 
@@ -230,6 +230,7 @@ describe('Width, Close and Edit vertex', () => {
       startWidth: 1,
       endWidth: 2,
     };
+    expect(widthPolyline(heavy, 2).vertices[0]).toMatchObject({ startWidth: 2, endWidth: 2 });
     expect(widthPolyline(heavy, 0)).toEqual({
       ...heavy,
       startWidth: undefined,

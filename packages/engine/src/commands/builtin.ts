@@ -25,6 +25,7 @@ import { breakAtPointCommand, breakCommand, lengthenCommand } from './modify/bre
 import { explodeCommand, joinCommand, reverseCommand } from './modify/join';
 import { peditCommand } from './modify/pedit';
 import { changeCommand, chpropCommand } from './modify/chprop';
+import { matchpropCommand } from './modify/matchprop';
 import { extendCommand, trimCommand, trimSettings } from './modify/trim';
 import { FILE_COMMANDS } from './file';
 import { CLIPBOARD_COMMANDS } from './modify/clipboard';
@@ -82,6 +83,7 @@ export function builtinCommands(): CommandRegistry {
     peditCommand(),
     chpropCommand(),
     changeCommand(),
+    matchpropCommand(),
     revcloudCommand(),
     wipeoutCommand(),
     ...DRAW_ORDER_COMMANDS.map((make) => make()),
