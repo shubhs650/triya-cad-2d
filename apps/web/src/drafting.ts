@@ -174,6 +174,11 @@ export interface DraftingState {
    */
   readonly selectionPreviewLimit: number;
   /**
+   * COMMANDPREVIEW (M3-12 part 6; AutoCAD 2024 Help, "Saved in: Registry", initially 1): 1 shows
+   * what TRIM, EXTEND, FILLET, CHAMFER, LENGTHEN, BREAK and OFFSET would do before the pick.
+   */
+  readonly commandPreview: number;
+  /**
    * The Drafting Settings dialog's Quick Properties tab (AutoCAD 2024 Help, "Quick Properties
    * Tab (Drafting Settings Dialog Box)"), kept per user: by the cursor, the quadrant and the
    * distance in pixels it goes at; whether it collapses, and to how many rows.
@@ -439,6 +444,7 @@ export const INITIAL_DRAFTING: DraftingState = {
   selectionPreview: 3,
   previewFilter: 3,
   selectionPreviewLimit: 20000,
+  commandPreview: 1,
   qpQuadrant: 'top-right',
   qpDistance: 50,
   qpCollapse: true,

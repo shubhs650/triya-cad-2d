@@ -248,6 +248,7 @@ describe('completions of system variables', () => {
       'CETRANSPARENCY',
       'CHAMMODE',
       'CLAYER',
+      'COMMANDPREVIEW',
       'CTAB',
     ]);
     // Without variables (a drawing not open), commands only.
