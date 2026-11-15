@@ -14,6 +14,7 @@
 // Vertex and Convert to Line take no point and act at once. Part 2 also takes a point clicked
 // with Ctrl held at a grip mode's prompt as Copy turned on, that click placing the first copy. A function edits only the first selected object
 // with that grip, in one undo step; Enter goes on to MOVE, as from STRETCH.
+import { removeCopies } from '../../edit/groups';
 import type { Vec2 } from '../../geom/types';
 import { add, sub } from '../../geom/vec';
 import type { EntityId } from '../../model/entity-ids';
@@ -78,19 +79,26 @@ function copyStretched(
 
 /**
  * The grip modes on `ids` with the grip at `hot` hot; `first`, a function picked from the grip's
- * hover menu (M3-05 part 2), the one it starts in.
+ * hover menu (M3-05 part 2), the one it starts in. `group`: the hot grip is a selected group's
+ * centre grip (GROUPDISPLAYMODE, M3-13), whose STRETCH moves the objects, as a grip at no
+ * object's own point does.
  */
-export function gripCommand(ids: readonly EntityId[], hot: Vec2, first?: string): CommandDef {
+export function gripCommand(
+  ids: readonly EntityId[],
+  hot: Vec2,
+  first?: string,
+  group?: boolean,
+): CommandDef {
   return {
     name: 'GRIP',
     usesSelection: 'none',
     keepsSelection: true,
     async *run(ctx) {
       // An associative array's sizing grip edits that array alone (M3-11 part 3).
-      const array = arrayGripAt(ctx.model, ids, hot);
+      const array = group ? undefined : arrayGripAt(ctx.model, ids, hot);
       if (array) return yield* editArrayByGrip(ctx, array.id, array.role, hot, first);
       // The hot grip's functions, if it has more than one (M3-05).
-      const multi = functionsAt(ctx.model, ids, hot);
+      const multi = group ? undefined : functionsAt(ctx.model, ids, hot);
       const picked = first === 'Stretch Vertex' ? 'Stretch' : first;
       let fn: GripFunction | undefined =
         multi && picked !== multi.functions[0]
@@ -173,7 +181,9 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2, first?: string)
               options,
               ...extra,
               rubberBand: { from: base },
-              drag: { kind: 'grip', ids, grip: hot, from: base },
+              drag: group
+                ? { kind: 'move', ids, from: base }
+                : { kind: 'grip', ids, grip: hot, from: base },
             });
             break;
           case 'MOVE':
@@ -235,7 +245,7 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2, first?: string)
               continue;
             case 'Undo': {
               const last = made.pop();
-              if (last) ctx.edit((b) => last.forEach((id) => b.entity(id) && b.removeEntity(id)));
+              if (last) ctx.edit((b) => removeCopies(b, last));
               continue;
             }
             case 'Base point': {
@@ -257,7 +267,9 @@ export function gripCommand(ids: readonly EntityId[], hot: Vec2, first?: string)
         // A point clicked with Ctrl held turns Copy on, this one placing the first copy.
         if ('ctrl' in a && a.ctrl) copying = true;
         let ended = false;
-        if (name === 'STRETCH' && a.kind === 'point') {
+        if (name === 'STRETCH' && a.kind === 'point' && group) {
+          ended = apply(moveBy(sub(a.point, base)), 'moved');
+        } else if (name === 'STRETCH' && a.kind === 'point') {
           const to = add(hot, sub(a.point, base));
           if (copying) {
             const copies = copyStretched(ctx, ids, hot, to);

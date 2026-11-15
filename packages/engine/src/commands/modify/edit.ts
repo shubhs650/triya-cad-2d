@@ -5,6 +5,7 @@
 // While a second point, angle or scale is asked for, the objects are dragged with the cursor
 // (`drag` on the prompt, part 2), as AutoCAD drags them (DRAGMODE Auto). STRETCH (part 2) takes
 // the last crossing window of its selection.
+import { removeCopies } from '../../edit/groups';
 import { angleOf, distance, sub } from '../../geom/vec';
 import type { Vec2 } from '../../geom/types';
 import type { EntityId } from '../../model/entity-ids';
@@ -194,7 +195,7 @@ export function copyCommand(): CommandDef {
         });
         if (a.kind === 'keyword' && a.keyword === 'Undo') {
           const ids = made.pop();
-          if (ids) ctx.edit((b) => ids.forEach((id) => b.entity(id) && b.removeEntity(id)));
+          if (ids) ctx.edit((b) => removeCopies(b, ids));
           continue;
         }
         if (a.kind === 'keyword' && a.keyword === 'Array') {

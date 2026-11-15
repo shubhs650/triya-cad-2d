@@ -19,10 +19,15 @@ import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
 import {
+  DEFAULT_GROUPDISPLAYMODE,
   DEFAULT_PICKADD,
   DEFAULT_PICKAUTO,
+  DEFAULT_PICKSTYLE,
+  GROUP_SELECTION,
   PICKADD,
-  type PICKAUTO,
+  PICKAUTO,
+  PICKSTYLE,
+  type PickVariable,
   SelectionLoop,
   type Lasso,
   type StepResult,
@@ -75,6 +80,7 @@ import { systemVariable } from './sysvars';
 import { gripInfoOf } from '../edit/array-grips';
 import type { DimensionRegenerator } from '../edit/dimension-block';
 import { distance } from '../geom/vec';
+import { wholeGroups } from '../edit/groups';
 import type { DragPreview } from './drag';
 import { UndoStack, type UndoAction, type UndoState } from './undo';
 import type { PropertyEdit } from '../properties/edit';
@@ -168,7 +174,23 @@ export type BusEvent =
    * The objects to show grips on (M2-06): the selection at `Command:` (up to GRIPOBJLIMIT
    * objects), with the hot grip while grip editing; none while another command runs.
    */
-  | { readonly type: 'grips'; readonly ids: readonly EntityId[]; readonly hot?: Vec2 };
+  | {
+      readonly type: 'grips';
+      readonly ids: readonly EntityId[];
+      readonly hot?: Vec2;
+      /**
+       * The groups selected whole that show one grip at their centre (GROUPDISPLAYMODE 1 or 2,
+       * M3-13), with their members, which show none of their own; `box`, their bounding box
+       * too (2). The canvas, which knows the objects' extents, places the grip.
+       */
+      readonly groups?: readonly GroupGrip[];
+    };
+
+/** A selected group's one grip (M3-13): at the centre of its members' extents. */
+export interface GroupGrip {
+  readonly ids: readonly EntityId[];
+  readonly box?: true;
+}
 
 export interface PromptBusOptions {
   readonly model: DocumentModel;
@@ -282,6 +304,9 @@ export class PromptBus {
   #pickfirstOn: boolean;
   #pickadd: number;
   #pickauto: number;
+  /** PICKSTYLE and GROUPDISPLAYMODE as the app last set them: how grips show on groups (M3-13). */
+  #pickstyle = DEFAULT_PICKSTYLE;
+  #groupDisplay = DEFAULT_GROUPDISPLAYMODE;
   /** The pre-selection made at `Command:` (PICKFIRST). */
   readonly #idle: SelectionLoop;
   /** The pre-selection the running command takes at its first "Select objects" prompt. */
@@ -495,10 +520,27 @@ export class PromptBus {
       // picked from the grip's hover menu (M3-05 part 2), the one the grip starts in.
       if (!frame && o.grip !== undefined && !o.shift && !o.release && !this.#idle.wantsPoint) {
         const ids = this.#gripIds();
-        const hot = ids.length > 0 ? nearestGrip(this.#model, ids, point, o.grip) : undefined;
+        const { loose, groups } = this.#gripShapes(ids);
+        let hot = loose.length > 0 ? nearestGrip(this.#model, loose, point, o.grip) : undefined;
+        // A selected group's one grip, at its members' centre as the canvas bounds them (M3-13).
+        let reach = hot ? distance(hot, point) : o.grip;
+        let group = false;
+        for (const g of groups) {
+          const r = await this.#view.request({ op: 'bounds', ids: g.ids });
+          if (!r.ok || !r.box) continue;
+          const c = { x: (r.box.minX + r.box.maxX) / 2, y: (r.box.minY + r.box.maxY) / 2 };
+          if (distance(c, point) > reach) continue;
+          hot = c;
+          reach = distance(c, point);
+          group = true;
+        }
         if (hot) {
           this.#hot = hot;
-          return this.#start(gripCommand(ids, hot, o.gripFunction), false, false);
+          return this.#start(
+            gripCommand(ids, hot, group ? undefined : o.gripFunction, group),
+            false,
+            false,
+          );
         }
       }
       if (frame?.select && this.#collectors.length === 0) {
@@ -573,10 +615,18 @@ export class PromptBus {
     return on ? Promise.resolve() : this.clearSelection();
   }
 
-  /** PICKADD or PICKAUTO set while the drawing is open (M3-04 part 4): from the next step. */
-  setPickVariable(name: typeof PICKADD | typeof PICKAUTO, value: number): void {
+  /**
+   * PICKADD or PICKAUTO set while the drawing is open (M3-04 part 4): from the next step;
+   * PICKSTYLE or GROUPDISPLAYMODE (M3-13): the grips shown change at once.
+   */
+  setPickVariable(name: PickVariable, value: number): void {
     if (name === PICKADD) this.#pickadd = value;
-    else this.#pickauto = value;
+    else if (name === PICKAUTO) this.#pickauto = value;
+    else {
+      if (name === PICKSTYLE) this.#pickstyle = value;
+      else this.#groupDisplay = value;
+      if (!this.#stack.at(-1)) this.#showGrips();
+    }
   }
 
   get pickadd(): number {
@@ -1169,12 +1219,39 @@ export class PromptBus {
 
   #showGrips(): void {
     const top = this.#stack.at(-1);
-    const ids = !top || (top.def.keepsSelection && this.#hot) ? this.#gripIds() : [];
+    const all = !top || (top.def.keepsSelection && this.#hot) ? this.#gripIds() : [];
     const hot = top ? this.#hot : undefined;
-    const key = `${ids.join(',')}|${hot ? `${hot.x},${hot.y}` : ''}`;
+    const { loose, groups } = this.#gripShapes(all);
+    const key = JSON.stringify([loose, groups, hot]);
     if (key === this.#gripsShown) return;
     this.#gripsShown = key;
-    this.#emit({ type: 'grips', ids: [...ids], ...(hot && ids.length > 0 && { hot }) });
+    this.#emit({
+      type: 'grips',
+      ids: [...loose],
+      ...(hot && all.length > 0 && { hot }),
+      ...(groups.length > 0 && { groups }),
+    });
+  }
+
+  /**
+   * The grips `ids` show (M3-13; AutoCAD Help, "GROUPDISPLAYMODE"): with group selection on and
+   * GROUPDISPLAYMODE 1 or 2, a group selected whole shows one grip for its members, which show
+   * none of their own; the other objects (`loose`) show theirs.
+   */
+  #gripShapes(ids: readonly EntityId[]): { loose: readonly EntityId[]; groups: GroupGrip[] } {
+    if (ids.length === 0 || (this.#pickstyle & GROUP_SELECTION) === 0 || this.#groupDisplay === 0) {
+      return { loose: ids, groups: [] };
+    }
+    const whole = wholeGroups(this.#model, ids, this.#space());
+    if (whole.length === 0) return { loose: ids, groups: [] };
+    const grouped = new Set(whole.flatMap((g) => g.ids));
+    return {
+      loose: ids.filter((id) => !grouped.has(id)),
+      groups: whole.map((g) => ({
+        ids: g.ids,
+        ...(this.#groupDisplay === 2 && { box: true as const }),
+      })),
+    };
   }
 
   #showSelection(): void {
