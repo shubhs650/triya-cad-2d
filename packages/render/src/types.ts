@@ -397,6 +397,24 @@ export interface Renderer {
    * hover colour; undefined, none does.
    */
   setGripHover(at: Vec2 | undefined, within: number): void;
+  /**
+   * The selection preview (M3-04 part 5, SELECTIONPREVIEW): the object under the pickbox at
+   * `screen`, unless PREVIEWFILTER leaves it out, is highlighted on the transient layer, with
+   * its group when group selection is on; undefined, none is.
+   */
+  setSelectionPreview(preview: SelectionPreview | undefined): void;
+}
+
+/** Where the pickbox is and what the selection preview leaves out (M3-04 part 5). */
+export interface SelectionPreview {
+  /** The cursor, in CSS pixels from the canvas's top left. */
+  readonly screen: { readonly x: number; readonly y: number };
+  /** The pickbox's half size in CSS pixels (PICKBOX). */
+  readonly aperture: number;
+  /** PREVIEWFILTER's bits. */
+  readonly filter: number;
+  /** Group selection is on (PICKSTYLE bit 1). */
+  readonly groups: boolean;
 }
 
 /**

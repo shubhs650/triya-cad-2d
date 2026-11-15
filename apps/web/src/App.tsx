@@ -2123,6 +2123,8 @@ function ViewportCanvas({
           view,
         }),
       onSnapMenu: (at) => snapMenu.open(id, at),
+      // SELECTIONPREVIEW's bit 1 (M3-04 part 5) previews at `Command:` only.
+      atCommand: () => atCommand(id),
       // Rollover tooltips (M2-35 part 21): the object under a resting cursor at `Command:`.
       onRest: (at) => {
         void hoverRollover(rollovers, id, at, {

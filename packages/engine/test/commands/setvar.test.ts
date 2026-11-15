@@ -321,6 +321,24 @@ describe('SETVAR', () => {
     expect(systemVariable(model, 'rollovertips')).toMatchObject({ store: 'app', kind: 'integer' });
   });
 
+  it('asks the app for SELECTIONPREVIEW and PREVIEWFILTER, kept per user (M3-04 part 5)', async () => {
+    // AutoCAD 2024 Help: SELECTIONPREVIEW bits 1 and 2, PREVIEWFILTER bits 1 to 32, both
+    // initially 3 and saved in the registry.
+    const app = appHost({ SELECTIONPREVIEW: 3, PREVIEWFILTER: 3 });
+    const s = setup(sampleInit(), app.view);
+    await s.bus.script(['SELECTIONPREVIEW']);
+    expect(s.bus.promptText).toBe('Enter new value for SELECTIONPREVIEW <3>:');
+    await s.bus.script(['4']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 3.');
+    await s.bus.script(['1']);
+    expect(app.values['SELECTIONPREVIEW']).toBe(1);
+    await s.bus.script(['PREVIEWFILTER', '64']);
+    expect(s.log.at(-1)).toBe('Value must be between 0 and 63.');
+    await s.bus.script(['40']);
+    expect(app.values['PREVIEWFILTER']).toBe(40);
+    expect(s.bus.undo.state.undoable).toBe(0);
+  });
+
   it('lists variables matching wild cards with ?', async () => {
     const s = setup(withHeader(HEADER), appHost({ ORTHOMODE: 1 }).view);
     await s.bus.script(['SETVAR', '?']);
