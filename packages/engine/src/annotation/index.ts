@@ -1,6 +1,7 @@
 export * from './multileader';
 export * from './leader';
 export * from './parts';
+export { mlineParts, mlineProblem } from './mline';
 export * from './tolerance';
 export * from './dimvars';
 export * from './dstyle';
