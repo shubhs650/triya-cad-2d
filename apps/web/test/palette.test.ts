@@ -60,6 +60,8 @@ describe('palette search', () => {
       'DONUT',
       'DRAWINGRECOVERY',
       'DRAWORDER',
+      // M3-06 part 1: the Drafting Settings dialog, OSNAP on its Object Snap tab.
+      'DSETTINGS',
       'EATTEDIT',
       'ELLIPSE',
       'ERASE',
@@ -86,6 +88,7 @@ describe('palette search', () => {
       'MTEXT',
       'OFFSET',
       'OOPS',
+      'OSNAP',
       // M3-02 part 6: OVERKILL and SPLINEDIT.
       'OVERKILL',
       'PAN',

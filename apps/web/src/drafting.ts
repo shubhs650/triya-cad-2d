@@ -74,6 +74,97 @@ export interface DraftingState {
    * initially on; ARRAY's ASsociative option sets it.
    */
   readonly arrayAssociativity: boolean;
+  /**
+   * POLARMODE (M3-06 part 1): bits 1 polar angles relative to the last segment, 2 object snap
+   * tracking along the polar angles, 4 the additional angles, 8 Shift to acquire tracking
+   * points. AutoCAD keeps it per user, initially 0. Bits 2 and 4 act; 1 and 8 are kept for
+   * the Drafting Settings parts to come (ROADMAP M3-06).
+   */
+  readonly polarMode: number;
+  /**
+   * POLARADDANG: the additional polar tracking angles, degrees, as AutoCAD keeps them (up to
+   * 10, separated by semicolons; initially ""). Tracked while POLARMODE has bit 4.
+   */
+  readonly polarAddAngles: string;
+  /**
+   * The Drafting Settings dialog's Quick Properties tab (AutoCAD 2024 Help, "Quick Properties
+   * Tab (Drafting Settings Dialog Box)"), kept per user: by the cursor, the quadrant and the
+   * distance in pixels it goes at; whether it collapses, and to how many rows.
+   */
+  readonly qpQuadrant: QpQuadrant;
+  readonly qpDistance: number;
+  readonly qpCollapse: boolean;
+  readonly qpRows: number;
+}
+
+/** Quick Properties' Quadrant, as the Drafting Settings dialog lists them. */
+export type QpQuadrant = 'top-right' | 'top-left' | 'bottom-left' | 'bottom-right';
+export const QP_QUADRANTS: readonly { value: QpQuadrant; label: string }[] = [
+  { value: 'top-right', label: 'Top-right' },
+  { value: 'top-left', label: 'Top-left' },
+  { value: 'bottom-left', label: 'Bottom-left' },
+  { value: 'bottom-right', label: 'Bottom-right' },
+];
+/** Distance in Pixels' and Minimum Number of Rows' ranges. */
+export const QP_DISTANCES = { min: 0, max: 400 } as const;
+export const QP_ROW_COUNTS = { min: 1, max: 30 } as const;
+
+/** POLARMODE 1: polar angles count from the last segment drawn. */
+export const POLARMODE_RELATIVE = 1;
+/** POLARMODE 2: object snap tracking follows the polar angles, not only horizontal and vertical. */
+export const POLARMODE_TRACK_POLAR = 2;
+/** POLARMODE 4: the additional angles (POLARADDANG) are tracked too. */
+export const POLARMODE_ADDITIONAL = 4;
+
+/** POLARADDANG's limits (AutoCAD 2024 Help): up to 10 angles of up to 25 characters each. */
+export const MAX_ADDITIONAL_ANGLES = 10;
+const ANGLE_CHARS = 25;
+const DECIMAL = /^[+-]?(\d+\.?\d*|\.\d+)$/;
+
+/**
+ * POLARADDANG's angles, degrees, in its order; undefined when the text is not a list of them.
+ * AutoCAD shows them in AUNITS' format; Triya reads and writes decimal degrees, the format the
+ * Drafting Settings dialog's New button takes (AutoCAD's Help does not say which formats the
+ * variable itself accepts).
+ */
+export function additionalAngles(text: string): number[] | undefined {
+  if (text.trim() === '') return [];
+  const parts = text.split(';').map((t) => t.trim());
+  if (parts.length > MAX_ADDITIONAL_ANGLES) return undefined;
+  const out: number[] = [];
+  for (const t of parts) {
+    if (t.length === 0 || t.length > ANGLE_CHARS || !DECIMAL.test(t)) return undefined;
+    out.push(Number(t));
+  }
+  return out;
+}
+
+/**
+ * What the cursor tracks with (constrainCursor's `polar` and `trackPolar`): POLARANG's multiples
+ * while POLAR is on, with POLARADDANG's angles while POLARMODE has bit 4, and object snap
+ * tracking along all of them while it has bit 2 (AutoCAD 2024 Help, "Polar Tracking Tab
+ * (Drafting Settings Dialog Box)": "Track Using All Polar Angle Settings").
+ */
+export function trackingSettings(s: DraftingState): {
+  polar?: { increment: number; additional?: number[] };
+  trackPolar?: true;
+} {
+  if (!s.polar) return {};
+  const rad = Math.PI / 180;
+  const extra =
+    (s.polarMode & POLARMODE_ADDITIONAL) !== 0 ? (additionalAngles(s.polarAddAngles) ?? []) : [];
+  return {
+    polar: {
+      increment: s.polarAngle * rad,
+      ...(extra.length > 0 && { additional: extra.map((a) => a * rad) }),
+    },
+    ...((s.polarMode & POLARMODE_TRACK_POLAR) !== 0 && { trackPolar: true }),
+  };
+}
+
+/** An angle as POLARADDANG lists it: decimal degrees, no trailing zeros. */
+export function angleText(deg: number): string {
+  return String(+deg.toFixed(6));
 }
 
 /** AUTOSNAP 1: AutoSnap's marker is drawn at the snap point. */
@@ -137,6 +228,12 @@ export const INITIAL_DRAFTING: DraftingState = {
   gripSize: 5,
   rolloverTips: true,
   arrayAssociativity: true,
+  polarMode: 0,
+  polarAddAngles: '',
+  qpQuadrant: 'top-right',
+  qpDistance: 50,
+  qpCollapse: true,
+  qpRows: 3,
 };
 
 /**

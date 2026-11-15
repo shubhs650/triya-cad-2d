@@ -108,6 +108,7 @@ import {
   AUTOSNAP_TIP,
   AUTOSNAP_TRACK_TIP,
   INITIAL_DRAFTING,
+  trackingSettings,
   type DraftingState,
 } from '../drafting';
 import { DEFAULT_CANVAS, type CanvasColours } from '../preferences';
@@ -1791,7 +1792,7 @@ export class CanvasController {
         ...(vport?.snapBase && { snapBase: vport.snapBase }),
       }),
       ortho: d.ortho,
-      ...(d.polar && { polar: { increment: (d.polarAngle * Math.PI) / 180 } }),
+      ...trackingSettings(d),
       tolerance: TRACK_PX * this.#px(),
       ...(this.#acquired.length > 0 && { acquired: this.#acquired }),
     });

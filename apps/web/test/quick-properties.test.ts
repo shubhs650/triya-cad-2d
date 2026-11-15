@@ -18,6 +18,15 @@ describe('quickPlacement', () => {
     });
   });
 
+  it('puts it in the Drafting Settings dialog\u2019s quadrant, at its distance (M3-06 part 1)', () => {
+    const pointer = { x: 500, y: 300 };
+    const at = (quadrant: 'top-left' | 'bottom-left' | 'bottom-right', distance: number) =>
+      quickPlacement({ location: 0, pointer, size, area, quadrant, distance });
+    expect(at('top-left', 20)).toEqual({ left: 240, top: 160 });
+    expect(at('bottom-left', 20)).toEqual({ left: 240, top: 320 });
+    expect(at('bottom-right', 0)).toEqual({ left: 500, top: 300 });
+  });
+
   it('keeps it on the canvas near an edge', () => {
     expect(quickPlacement({ location: 0, pointer: { x: 900, y: 60 }, size, area })).toEqual({
       left: 760,

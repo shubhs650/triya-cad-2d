@@ -2931,7 +2931,8 @@ button {
 }
 
 /* Quick Properties (M2-35 part 16): a small floating palette over the drawing, by the cursor or
-   where it was dragged, collapsed to three rows until the pointer or the focus is in it. */
+   where it was dragged. Its collapse to the Minimum Number of Rows (M3-06 part 1) is a rule the
+   palette writes, as the row count is a setting. */
 .quick-properties {
   position: absolute;
   z-index: 4;
@@ -2970,10 +2971,6 @@ button {
 .quick-properties .properties-objects {
   margin: 4px;
   width: calc(100% - 8px);
-}
-
-.quick-properties:not(:hover, :focus-within) tbody tr:nth-child(n + 4) {
-  display: none;
 }
 
 /* Rollover tooltips (M2-35 part 21, ROLLOVERTIPS): the object under a resting cursor, with its
@@ -3080,6 +3077,102 @@ button {
   margin: 8px 0;
   border: 0;
   padding: 0;
+}
+
+/* DSETTINGS' Drafting Settings (M3-06 part 1): tabs of check boxes and grouped options. */
+.cad-dialog.dsettings {
+  width: min(520px, calc(100vw - 32px));
+}
+
+.dsettings-tab {
+  display: grid;
+  gap: 6px;
+}
+
+.dsettings-tab fieldset {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  border: 1px solid var(--chrome-border);
+}
+
+.dsettings-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+
+.dsettings-sub {
+  padding-left: 20px;
+}
+
+.dsettings-sub .cad-dialog-field > span,
+.cad-dialog-field.dsettings-sub > span {
+  min-width: 150px;
+}
+
+.dsettings-tab .cad-dialog-field input[type='text'] {
+  flex: 0 0 8ch;
+}
+
+.dsettings-angles {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+}
+
+.dsettings-angle-list {
+  flex: 1 1 auto;
+  min-height: 96px;
+  max-height: 160px;
+  overflow-y: auto;
+  border: 1px solid var(--chrome-border);
+  background: var(--chrome-bg);
+  padding: 2px;
+}
+
+.dsettings-angle-list[aria-disabled='true'] {
+  opacity: 0.6;
+}
+
+.dsettings-angle-list [role='option'] {
+  padding: 1px 4px;
+  cursor: default;
+}
+
+.dsettings-angle-list [role='option'][aria-selected='true'] {
+  background: var(--selected-bg);
+}
+
+.dsettings-angle-list input {
+  width: 100%;
+  font: inherit;
+}
+
+.dsettings-angle-buttons,
+.dsettings-mode-buttons {
+  display: flex;
+  gap: 6px;
+}
+
+.dsettings-angle-buttons {
+  flex-direction: column;
+}
+
+.dsettings-modes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 12px;
+}
+
+.dsettings-modes .osnap-marker {
+  flex: 0 0 auto;
+  color: var(--chrome-text-muted);
+}
+
+.dsettings-error {
+  margin: 4px 0 0;
+  color: var(--danger-text);
 }
 
 /* OVERKILL's Delete Duplicate Objects (M3-02 part 6): settings above, options below. */

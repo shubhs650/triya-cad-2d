@@ -122,7 +122,7 @@ export interface ViewContext {
    * SETVAR (M2-42): a system variable the app keeps (the drafting aids, the per-user settings),
    * set to `value` when given, answered with its value.
    */
-  readonly sysvar?: (name: string, value?: number) => ViewReply;
+  readonly sysvar?: (name: string, value?: number | string) => ViewReply;
   /**
    * SETVAR CTAB and TILEMODE (M2-59 part 5): the app shows the tab `name` names, or the layout
    * tab shown last.
@@ -177,7 +177,7 @@ export function answerView(r: ViewRequest, ctx: ViewContext): ViewReply | Promis
       : { ok: false, message: NO_PATTERNS };
   }
   if (r.op === 'sysvar') {
-    return ctx.sysvar ? ctx.sysvar(r.name, r.value) : { ok: false, message: NO_SETTINGS };
+    return ctx.sysvar ? ctx.sysvar(r.name, r.text ?? r.value) : { ok: false, message: NO_SETTINGS };
   }
   if (r.op === 'tab') {
     return ctx.tab ? ctx.tab(r.name) : { ok: false, message: NO_TABS };

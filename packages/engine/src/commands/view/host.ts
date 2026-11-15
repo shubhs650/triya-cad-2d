@@ -163,9 +163,15 @@ export type ViewRequest =
   /**
    * A system variable the app keeps (SETVAR, M2-42: the drafting aids and the per-user settings
    * of `APP_VARIABLES`): set to `value` when one is given (already checked against the
-   * variable's range), and answered with the value it holds.
+   * variable's range), and answered with the value it holds. A text variable (POLARADDANG,
+   * M3-06 part 1) is set by `text` instead, which the app may still refuse.
    */
-  | { readonly op: 'sysvar'; readonly name: string; readonly value?: number }
+  | {
+      readonly op: 'sysvar';
+      readonly name: string;
+      readonly value?: number;
+      readonly text?: string;
+    }
   /**
    * CTAB and TILEMODE set (M2-59 part 5): the app shows the tab of the layout `name` names
    * (Model or a layout, as the drawing spells it), or without one the layout tab last shown

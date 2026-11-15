@@ -5,7 +5,16 @@
 // ORTHO, SNAP, GRID, LWT and TPY are each drawing's own in AutoCAD (ORTHOMODE, SNAPMODE,
 // GRIDMODE, LWDISPLAY, TRANSPARENCYDISPLAY) and stay per session, as M2-04 built them.
 import { OSMODE_DEFAULT, OSNAP_OFF } from '@triya/engine';
-import { AUTOSNAP_KEPT, type Drafting, type DraftingState } from './drafting';
+import {
+  AUTOSNAP_KEPT,
+  QP_DISTANCES,
+  QP_QUADRANTS,
+  QP_ROW_COUNTS,
+  additionalAngles,
+  type Drafting,
+  type DraftingState,
+  type QpQuadrant,
+} from './drafting';
 import type { DynMode } from './dynamic-input';
 import { closeOnDelete } from './local-data';
 
@@ -59,6 +68,12 @@ export type DraftingPreferences = Pick<
   | 'gripSize'
   | 'rolloverTips'
   | 'arrayAssociativity'
+  | 'polarMode'
+  | 'polarAddAngles'
+  | 'qpQuadrant'
+  | 'qpDistance'
+  | 'qpCollapse'
+  | 'qpRows'
 >;
 
 export interface Preferences {
@@ -110,6 +125,12 @@ export const DEFAULT_PREFERENCES: Preferences = {
     gripSize: 5,
     rolloverTips: true,
     arrayAssociativity: true,
+    polarMode: 0,
+    polarAddAngles: '',
+    qpQuadrant: 'top-right',
+    qpDistance: 50,
+    qpCollapse: true,
+    qpRows: 3,
   },
 };
 
@@ -143,6 +164,8 @@ export function normalizePreferences(raw: unknown): Preferences {
   const coordinates = raw['coordinates'];
   const osmode = k['osmode'];
   const polarAngle = k['polarAngle'];
+  const polarAddAngles = k['polarAddAngles'];
+  const qpQuadrant = k['qpQuadrant'];
   return {
     theme: theme === 'light' || theme === 'dark' || theme === 'system' ? theme : d.theme,
     canvas: {
@@ -183,6 +206,17 @@ export function normalizePreferences(raw: unknown): Preferences {
       pickfirst: bool(k['pickfirst'], d.drafting.pickfirst),
       rolloverTips: bool(k['rolloverTips'], d.drafting.rolloverTips),
       arrayAssociativity: bool(k['arrayAssociativity'], d.drafting.arrayAssociativity),
+      polarMode: within(k['polarMode'], { min: 0, max: 15 }, d.drafting.polarMode),
+      polarAddAngles:
+        typeof polarAddAngles === 'string' && additionalAngles(polarAddAngles)
+          ? polarAddAngles
+          : d.drafting.polarAddAngles,
+      qpQuadrant: QP_QUADRANTS.some((q) => q.value === qpQuadrant)
+        ? (qpQuadrant as QpQuadrant)
+        : d.drafting.qpQuadrant,
+      qpDistance: int(k['qpDistance'], QP_DISTANCES, d.drafting.qpDistance),
+      qpCollapse: bool(k['qpCollapse'], d.drafting.qpCollapse),
+      qpRows: int(k['qpRows'], QP_ROW_COUNTS, d.drafting.qpRows),
     },
   };
 }
@@ -257,6 +291,12 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     gripSize: s.gripSize,
     rolloverTips: s.rolloverTips,
     arrayAssociativity: s.arrayAssociativity,
+    polarMode: s.polarMode,
+    polarAddAngles: s.polarAddAngles,
+    qpQuadrant: s.qpQuadrant,
+    qpDistance: s.qpDistance,
+    qpCollapse: s.qpCollapse,
+    qpRows: s.qpRows,
   };
 }
 

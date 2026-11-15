@@ -146,6 +146,12 @@ export const APP_VARIABLES: readonly SystemVariable[] = [
   // ARRAYASSOCIATIVITY (M3-11; AutoCAD 2024 Help): new arrays are associative (1, initially) or
   // separate objects (0); ARRAY's ASsociative option sets it.
   { name: 'ARRAYASSOCIATIVITY', store: 'app', kind: 'switch' },
+  // M3-06 part 1 (AutoCAD 2024 Help): POLARMODE's bits are 1 polar angles relative to the last
+  // segment, 2 object snap tracking along the polar angles, 4 the additional angles, 8 Shift to
+  // acquire tracking points (initially 0); POLARADDANG up to 10 additional angles separated by
+  // semicolons (initially ""), which the app reads and may refuse.
+  { name: 'POLARMODE', store: 'app', kind: 'integer', min: 0, max: 15 },
+  { name: 'POLARADDANG', store: 'app', kind: 'text' },
 ];
 
 /**

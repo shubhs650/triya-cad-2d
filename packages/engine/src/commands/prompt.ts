@@ -408,7 +408,19 @@ export type DialogRequest =
       /** OVERKILL's Delete Duplicate Objects (M3-02 part 6): its settings as it opens. */
       readonly type: 'overkill';
       readonly settings: OverkillSettings;
+    }
+  | {
+      /**
+       * DSETTINGS' Drafting Settings (M3-06 part 1): the app's per-user drafting settings, which
+       * the dialog sets itself; `tab` the tab it opens on (OSNAP's Object Snap), none for the
+       * one shown last.
+       */
+      readonly type: 'dsettings';
+      readonly tab?: DraftingSettingsTab;
     };
+
+/** The Drafting Settings tabs Triya has (M3-06 part 1). */
+export type DraftingSettingsTab = 'polar' | 'osnap' | 'qp';
 
 /** A dialog open while the command waits; Esc (or Cancel) cancels the command. */
 export interface DialogPrompt extends PromptBase {
