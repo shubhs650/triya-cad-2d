@@ -230,7 +230,7 @@ Every task has: **ID**, **title**, **acceptance** (what the test proves), option
 - [ ] **M3-08** GROUP/UNGROUP, group selection toggle, named groups panel. **Acceptance:** group selection tests.
 - [ ] **M3-09** UNITS dialog + insertion scale behaviour (`INSUNITS` ratio, unitless prompt). **Acceptance:** insert scale tests.
 - [ ] **M3-10** Keyboard map (AutoCAD defaults) + remapping UI; user alias file (pgp syntax) editor. **Acceptance:** alias override test.
-- [ ] **M3-11** Associative arrays Triya makes (ARRAY's ASsociative Yes, ARRAYASSOCIATIVITY) and ARRAYEDIT on them (Source, REPlace, Base point, counts and spacings, RESet), array grips (found by M3-03 part 2, #380). **Blocked on needs-human #379** (how the array's definition is saved: recommended a `TRIYA_ARRAY` xrecord on the array INSERT). ARRAYEDIT cannot change AutoCAD-made arrays under any option (their parameters are undocumented). **Acceptance:** output structure tests: an array made, saved, reopened and edited with ARRAYEDIT.
+- [~] (thread: Make associative arrays with ARRAYEDIT) **M3-11** Associative arrays Triya makes (ARRAY's ASsociative Yes, ARRAYASSOCIATIVITY) and ARRAYEDIT on them (Source, REPlace, Base point, counts and spacings, RESet), array grips (found by M3-03 part 2, #380). *Unblocked 2026-11-15:* the owner accepted #379, DEC-059 (a `TRIYA_ARRAY` XRECORD on the array INSERT). ARRAYEDIT cannot change AutoCAD-made arrays under any option (their parameters are undocumented). **Acceptance:** output structure tests: an array made, saved, reopened and edited with ARRAYEDIT.
 
 ---
 
