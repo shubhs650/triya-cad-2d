@@ -10,6 +10,7 @@ import { parseAngleValue, parseDistance, parseNumber } from '../commands/parse';
 import { moveBy, turnAbout } from '../edit/similarity';
 import { dissociateHatch, transformObjects } from '../edit/edit';
 import { rescaledReference } from '../edit/transform';
+import { relaidLines } from '../edit/hatch-lines';
 import { arrowheadBlockName } from '../edit/arrowhead-blocks';
 import { JUSTIFICATIONS, rejustified } from '../commands/modify/attributes';
 import type { PatternPlacement, PlacedPattern, TextOutline } from '../commands/view/host';
@@ -294,30 +295,6 @@ const TWO_COLOUR = 'a two-colour gradient';
 export function patternPlacement(g: HatchGeometry): PatternPlacement {
   const scaled = isPatterned(g) && g.patternType !== 0 && g.patternScale > 0;
   return { angle: g.patternAngle, scale: scaled ? g.patternScale : 1, origin: patternOrigin(g) };
-}
-
-/**
- * Pattern lines turned by `by` and scaled by `k` about `o`, as AutoCAD lays a pattern out again
- * at a new angle or scale about the same origin (each line's base point, its offset and dashes).
- */
-function relaidLines(
-  lines: readonly HatchPatternLine[],
-  o: Vec2,
-  by: number,
-  k: number,
-): HatchPatternLine[] {
-  const c = Math.cos(by);
-  const s = Math.sin(by);
-  const t = (v: Vec2): Vec2 => ({ x: k * (v.x * c - v.y * s), y: k * (v.x * s + v.y * c) });
-  return lines.map((l) => {
-    const d = t({ x: l.base.x - o.x, y: l.base.y - o.y });
-    return {
-      angle: l.angle + by,
-      base: { x: o.x + d.x, y: o.y + d.y },
-      offset: t(l.offset),
-      dashes: l.dashes.map((x) => x * k),
-    };
-  });
 }
 
 /**
