@@ -896,7 +896,7 @@ describe('records, blocks and multileader attributes pasted into another drawing
     const target = DocumentModel.create(targetInit());
     paste(target, copyMore().clip);
     const myapp = byName(target.tables.appIds, 'MYAPP')!.handle;
-    // The annotative property is not pasted (M2-43), so its xdata stays behind as on objects.
+    // The annotative property is not pasted (DEC-058), so its xdata stays behind as on objects.
     expect(byName(target.tables.layers, 'DASHED_L')!.xdata).toEqual([
       { appId: myapp, values: [{ code: 1000, value: 'dash' }] },
     ]);

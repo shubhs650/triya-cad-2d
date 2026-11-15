@@ -16,7 +16,7 @@
 // engine cannot bound the block (text only), the insertion point is kept instead. Another source
 // block takes its attribute definitions' values, as MLEADER offers them; the old block's values
 // belong to its own definitions. Content and placement are kept per annotation scale in the
-// context data, so an annotative multileader refuses these edits (M2-43), as its Text rows do.
+// context data, so an annotative multileader refuses these edits (DEC-058), as its Text rows do.
 //
 // M2-35 part 25: Attachment, the MLEADERSTYLE dialog's "Center Extents" or "Insertion Point"
 // (ActiveX BlockConnectionType), is the multileader's own DXF 176, flagged by bit 23

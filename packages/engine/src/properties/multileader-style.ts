@@ -9,7 +9,7 @@
 // data states sizes drawn, so the style's sizes are drawn at the multileader's overall scale (the
 // style's own scale when that is not overridden, grown about the content's anchor as the Overall
 // scale row does; an annotative style gives its scale to a plain multileader, as MLEADER does
-// until M2-43).
+// under DEC-058).
 //
 // The content stays where it is, as the other Text and Block rows keep it (AutoCAD's help does
 // not say): the text's side facing the landing is kept (`placedText`, measured by the canvas
@@ -23,7 +23,7 @@
 // (text stays text), its text attachment direction (horizontal or vertical landings), a left or
 // right attachment that anchors the text by another row of its lines (the text's height in lines
 // is not known without the canvas), and a source block the drawing lacks or the style does not
-// name. An annotative multileader keeps a placement per annotation scale (M2-43), so it refuses.
+// name. An annotative multileader keeps a placement per annotation scale (DEC-013, DEC-058), so it refuses.
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';

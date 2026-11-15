@@ -372,8 +372,12 @@ export function mleaderCommand(): CommandDef {
         settingsFor = style.handle;
       }
       const scale = style.scale > 0 ? style.scale : 1;
+      // Annotative creation is a PRD non-goal (DEC-013, kept by DEC-058): an annotative style's
+      // multileader is made as a plain one at the style's scale.
       if (style.annotative) {
-        ctx.message('Annotative multileaders are not made yet: this one takes the style’s scale.');
+        ctx.message(
+          'Triya does not make annotative multileaders: this one takes the style’s scale.',
+        );
       }
 
       for (;;) {
