@@ -62,11 +62,7 @@ test('ARRAYRECT, ARRAYPOLAR and ARRAYPATH copy objects in rows, round a centre a
   await expectDrawn(page);
   await expect(prompt(page)).toHaveText('Command:');
   const log = page.getByRole('log', { name: 'Recent command lines' });
-  const shot = async (name: string) => {
-    // Off the navigation bar, whose menu a resting pointer opens.
-    await page.mouse.move(640, 560);
-    await page.screenshot({ path: test.info().outputPath(name) });
-  };
+  const shot = (name: string) => page.screenshot({ path: test.info().outputPath(name) });
 
   // Clear of the drawing's hatch, on its right.
   await answer(page, 'ZOOM', /^Specify corner of window/);
