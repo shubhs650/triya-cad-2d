@@ -695,6 +695,11 @@ export class PromptBus {
     return run;
   }
 
+  /** A line on the command line from outside a command: F5's "<Isoplane Top>" (M3-06). */
+  note(line: string): void {
+    this.#log(line);
+  }
+
   #emit(e: BusEvent): void {
     for (const l of this.#listeners) l(e);
   }

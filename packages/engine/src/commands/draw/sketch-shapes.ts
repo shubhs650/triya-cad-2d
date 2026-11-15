@@ -16,6 +16,7 @@ import {
   type StraightLine,
 } from '../../geom/ellipse-xline';
 import { toleranceForSize, type Tolerance } from '../../geom/tolerance';
+import { isocircleAxes, type Isoplane } from '../../input/isometric';
 import type { Vec2 } from '../../geom/types';
 import { angleOf, distance, sub } from '../../geom/vec';
 import type { EntityGeometry } from '../../model/types';
@@ -42,6 +43,13 @@ export type ShapeSketch =
       readonly start?: { readonly u: number; readonly angle: number };
       readonly by?: 'angle' | 'parameter' | 'included';
     }
+  /** ELLIPSE Isocircle (M3-06 part 2): the cursor's distance is the radius, or the diameter. */
+  | {
+      readonly shape: 'isocircle';
+      readonly center: Vec2;
+      readonly plane: Isoplane;
+      readonly diameter?: boolean;
+    }
   /** XLINE through `base` and the cursor. */
   | { readonly shape: 'xline'; readonly base: Vec2 }
   /** XLINE Hor, Ver, Ang and Offset Through: along `direction` through the cursor. */
@@ -58,6 +66,7 @@ export type ShapeSketch =
 const SHAPES: ReadonlySet<string> = new Set([
   'ellipse',
   'ellipseArc',
+  'isocircle',
   'xline',
   'xlineDirection',
   'xlineBisect',
@@ -117,6 +126,10 @@ export function shapeSketchGeometry(s: ShapeSketch, cursor: Vec2): EntityGeometr
         s.by === 'included' ? angleOf(sub(cursor, s.axes.center)) : angleFromAxis(s.axes, cursor);
       const u1 = arcEndParameter(s.axes, s.start, s.by, value);
       return ellipseOf(s.axes, tol, s.start.u, u1 <= s.start.u ? u1 + TAU : u1);
+    }
+    case 'isocircle': {
+      const r = distance(s.center, cursor) / (s.diameter ? 2 : 1);
+      return ellipseOf(isocircleAxes(s.center, r, s.plane), tolOf(s.center, cursor));
     }
     case 'xline':
       return xlineThrough(s.base, sub(cursor, s.base), tolOf(s.base, cursor));

@@ -33,6 +33,8 @@ import type { PropertyEdit } from '../properties/edit';
 import { propertySheet, type DimensionMeasure, type PropertySheet } from '../properties/sheet';
 import { quickPropertySheet, rolloverSheet } from '../properties/quick';
 import { REVCLOUDGRIPS } from '../edit/revcloud';
+import { setIsoplane } from '../edit/snap-grid';
+import { ISOPLANE_NAMES } from '../input/isometric';
 
 /** A layer's on, frozen and locked states (LAYER palette toggles, M1-23). */
 export interface LayerStateEdit {
@@ -101,8 +103,22 @@ export interface SessionVariableEdit {
   readonly value: 0 | 1;
 }
 
+/**
+ * F5 and Ctrl+E (M3-06 part 2): the next isoplane, as Enter at ISOPLANE takes it, with
+ * "<Isoplane Top>" on the command line. Not an undo step, as the other drafting keys are not.
+ */
+export interface IsoplaneEdit {
+  readonly kind: 'isoplane';
+}
+
 export type EngineEdit =
-  LayerStateEdit | LayoutEdit | XrefLoadEdit | NamedViewEdit | ViewTableEdit | SessionVariableEdit;
+  | LayerStateEdit
+  | LayoutEdit
+  | XrefLoadEdit
+  | NamedViewEdit
+  | ViewTableEdit
+  | SessionVariableEdit
+  | IsoplaneEdit;
 
 /**
  * Characters AutoCAD refuses in a layout name (LAYOUT Rename: "Invalid layout name"), and its
@@ -445,6 +461,7 @@ export class EngineSession {
     if (e.kind === 'view-delete' || e.kind === 'view-rename' || e.kind === 'view-category')
       return this.#viewTableEdit(e);
     if (e.kind === 'sysvar') return this.#sessionVariable(e);
+    if (e.kind === 'isoplane') return this.#isoplane();
     return e.kind === 'layout' ? this.#layoutEdit(e) : this.#layerEdit(e);
   }
 
@@ -487,6 +504,16 @@ export class EngineSession {
     const change = b.build();
     this.model.apply(change);
     this.#step('VIEW', change);
+    return { ok: true, change };
+  }
+
+  #isoplane(): EditResult {
+    const b = new ChangeSetBuilder(this.model);
+    const plane = setIsoplane(b, this.model);
+    if (plane === undefined) return { ok: false, message: 'The drawing has no current viewport.' };
+    const change = b.build();
+    this.model.apply(change);
+    this.#bus.note(`<Isoplane ${ISOPLANE_NAMES[plane]}>`);
     return { ok: true, change };
   }
 
