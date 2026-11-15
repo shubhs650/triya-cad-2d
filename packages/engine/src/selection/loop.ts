@@ -9,13 +9,17 @@
 //     Undo takes back the last step; AUto is the default behaviour; SIngle ends at the first
 //     selection;
 //   - each step says "n found, m total" as AutoCAD words it.
+//   - Fence takes what a run of lines crosses, WPolygon what lies wholly inside a polygon and
+//     CPolygon what it holds or crosses (M3-04): the points are asked for one by one, Undo takes
+//     back the last, Enter ends it; a polygon "cannot cross or touch itself", the fence can;
+//   - Group takes a named (or `*A3` unnamed) group's members; Multiple collects picks without
+//     highlighting them and takes them all at Enter, each pick an object the others did not.
 // The same loop, without a prompt of its own, is the pre-selection made at `Command:` (PICKFIRST).
-// Fence, WPolygon, CPolygon, Group and Multiple are not taken yet; they say so like AutoCAD does
-// for any word it does not know.
 import type { Vec2 } from '../geom/types';
 import type { DocumentModel } from '../model/document';
 import type { EntityId } from '../model/entity-ids';
 import type { Handle } from '../model/handle';
+import type { Group } from '../model/types';
 import {
   matchKeyword,
   type Prompt,
@@ -32,8 +36,13 @@ export const SELECTION_MODES = [
   'Crossing',
   'BOX',
   'ALL',
+  'Fence',
+  'WPolygon',
+  'CPolygon',
+  'Group',
   'Add',
   'Remove',
+  'Multiple',
   'Previous',
   'Undo',
   'AUto',
@@ -41,6 +50,8 @@ export const SELECTION_MODES = [
 ] as const;
 
 const INVALID = '*Invalid selection*';
+/** What AutoCAD says to a polygon point that would make the polygon cross or touch itself. */
+export const POLYGON_CROSSES = 'Invalid point, polygon segments cannot intersect.';
 const EXPECTS = `Expects a point or ${SELECTION_MODES.join('/')}`;
 
 export interface SelectionLoopHost {
@@ -66,6 +77,15 @@ export interface SelectionLoopOptions {
   readonly atCommand?: boolean;
   /** Ends at the first step that takes objects, as SIngle does (M2-08). */
   readonly single?: boolean;
+}
+
+/**
+ * A fence or a selection polygon being drawn (M3-04): `window` is WPolygon, `crossing`
+ * CPolygon, as the canvas's `selectPath` request names them.
+ */
+export interface SelectionPath {
+  readonly kind: 'fence' | 'window' | 'crossing';
+  readonly points: readonly Vec2[];
 }
 
 /** What a step did: the selection is complete (SIngle), or the loop goes on. */
@@ -94,6 +114,12 @@ export class SelectionLoop {
   /** The steps that took objects, how each took them (M2-27); with `#undo`'s sets. */
   #takes: SelectionTake[] = [];
   readonly #undoTakes: SelectionTake[][] = [];
+  /** Fence, WPolygon or CPolygon typed: its points so far. */
+  #path: { kind: SelectionPath['kind']; points: Vec2[]; remove: boolean } | undefined;
+  /** Group typed: its name is asked for. */
+  #group = false;
+  /** Multiple typed: the picks made so far, taken at Enter. */
+  #multiple: Vec2[] | undefined;
 
   constructor(host: SelectionLoopHost, o: SelectionLoopOptions) {
     this.#host = host;
@@ -122,12 +148,24 @@ export class SelectionLoop {
 
   /** A corner is asked for: the next point completes a window rather than picking. */
   get wantsPoint(): boolean {
-    return this.#first !== undefined || this.#corner !== undefined;
+    return this.#first !== undefined || this.#corner !== undefined || this.#path !== undefined;
+  }
+
+  /** A fence or polygon is being drawn: Enter ends it and Undo takes back its last point. */
+  get drawingPath(): boolean {
+    return this.#path !== undefined;
+  }
+
+  /** Group's name is asked for. */
+  get wantsName(): boolean {
+    return this.#group;
   }
 
   /** The prompt shown now; at `Command:` only while a window's corner is asked for. */
   get prompt(): Prompt | undefined {
     if (this.#first) return { kind: 'point', message: 'Specify first corner' };
+    if (this.#path) return pathPrompt(this.#path.kind, this.#path.points);
+    if (this.#group) return { kind: 'string', message: 'Enter group name' };
     const c = this.#corner;
     if (c) {
       return {
@@ -169,7 +207,8 @@ export class SelectionLoop {
 
   /** A window waiting for a corner is dropped (a command typed at `Command:` instead). */
   cancelWindow(): void {
-    this.#first = this.#corner = undefined;
+    this.#first = this.#corner = this.#path = this.#multiple = undefined;
+    this.#group = false;
   }
 
   /** Drops objects that no longer exist (erased). Returns whether any went. */
@@ -204,6 +243,20 @@ export class SelectionLoop {
       return this.#take(r, c.remove, 'Specify opposite corner:', { window, crossing });
     }
     if (o.release) return 'more';
+    const path = this.#path;
+    if (path) {
+      if (path.kind !== 'fence' && polygonCrosses(path.points, p)) {
+        this.#say(POLYGON_CROSSES);
+        return 'more';
+      }
+      path.points.push(p);
+      return 'more';
+    }
+    if (this.#group) return 'more';
+    if (this.#multiple) {
+      this.#multiple.push(p);
+      return 'more';
+    }
     const remove = this.#remove || !!o.shift;
     const r = await this.#host.request({ op: 'pick', point: p });
     const hit = r.ok ? (r.ids ?? []).find((id) => this.#host.model.entity(id)) : undefined;
@@ -220,6 +273,11 @@ export class SelectionLoop {
   async keyword(text: string): Promise<StepResult | undefined> {
     const mode = matchKeyword(text, SELECTION_MODES);
     if (!mode) return undefined;
+    // A mode typed after Multiple's picks takes them first, as Enter would.
+    if (this.#multiple) {
+      const step = await this.#endMultiple();
+      if (step === 'done') return step;
+    }
     const label = `${this.#label()} ${text.trim()}`;
     const model = this.#host.model;
     const space = this.#host.space();
@@ -231,6 +289,24 @@ export class SelectionLoop {
         return 'more';
       case 'BOX':
         this.#first = 'auto';
+        this.#say(label);
+        return 'more';
+      case 'Fence':
+      case 'WPolygon':
+      case 'CPolygon':
+        this.#path = {
+          kind: mode === 'Fence' ? 'fence' : mode === 'WPolygon' ? 'window' : 'crossing',
+          points: [],
+          remove: this.#remove,
+        };
+        this.#say(label);
+        return 'more';
+      case 'Group':
+        this.#group = true;
+        this.#say(label);
+        return 'more';
+      case 'Multiple':
+        this.#multiple = [];
         this.#say(label);
         return 'more';
       case 'ALL':
@@ -266,6 +342,81 @@ export class SelectionLoop {
       default:
         return undefined;
     }
+  }
+
+  /**
+   * Enter at a step of its own: it ends a fence or polygon (taking what it selects), Multiple's
+   * picks, or the group name asked for. Undefined when Enter ends the selection instead.
+   */
+  async enter(): Promise<StepResult | undefined> {
+    if (this.#path) return this.#endPath();
+    if (this.#multiple) return this.#endMultiple();
+    if (this.#group) {
+      this.#group = false;
+      return 'more';
+    }
+    return undefined;
+  }
+
+  /** Undo while a fence or polygon is drawn: its last point goes (all gone, the first is asked). */
+  undoPoint(text: string): void {
+    const path = this.#path;
+    if (!path) return;
+    this.#say(`${formatPathPrompt(path.kind, path.points)} ${text.trim()}`);
+    path.points.pop();
+  }
+
+  /** The group named at "Enter group name": its members in the space are taken. */
+  name(text: string): StepResult {
+    this.#group = false;
+    const name = text.trim();
+    const label = `Enter group name: ${name}`;
+    const model = this.#host.model;
+    const key = name.toUpperCase();
+    let group: Group | undefined;
+    for (const o of model.objects.values()) {
+      if (o.type === 'GROUP' && (o as Group).name.toUpperCase() === key) group = o as Group;
+    }
+    if (!group) {
+      this.#say(label);
+      this.#say(`Group "${name}" has not been defined.`);
+      return 'more';
+    }
+    const space = this.#host.space();
+    const ids = group.entities.flatMap((h) => {
+      const e = model.entityByHandle(h);
+      return e && e.owner === space ? [e.id] : [];
+    });
+    return this.#apply(ids, this.#remove, label);
+  }
+
+  async #endPath(): Promise<StepResult> {
+    const path = this.#path!;
+    this.#path = undefined;
+    const label = formatPathPrompt(path.kind, path.points);
+    if (path.points.length === 0) return 'more';
+    const r = await this.#host.request({
+      op: 'selectPath',
+      kind: path.kind,
+      points: path.points,
+    });
+    return this.#take(r, path.remove, label, {});
+  }
+
+  /** Multiple's picks: each takes the nearest object under it that no other pick took. */
+  async #endMultiple(): Promise<StepResult> {
+    const picks = this.#multiple!;
+    this.#multiple = undefined;
+    if (picks.length === 0) return 'more';
+    const found: EntityId[] = [];
+    for (const p of picks) {
+      const r = await this.#host.request({ op: 'pick', point: p });
+      const hit = r.ok
+        ? (r.ids ?? []).find((id) => this.#host.model.entity(id) && !found.includes(id))
+        : undefined;
+      if (hit !== undefined) found.push(hit);
+    }
+    return this.#apply(found, this.#remove, this.#label());
   }
 
   /** Text that is no point and no mode: AutoCAD's refusal and its list of modes. */
@@ -333,6 +484,80 @@ export class SelectionLoop {
     }
     return this.#single && !remove && taken.length > 0 ? 'done' : 'more';
   }
+}
+
+/** The prompt for a fence's or polygon's next point, AutoCAD's words. */
+function pathPrompt(kind: SelectionPath['kind'], points: readonly Vec2[]): Prompt {
+  const last = points.at(-1);
+  if (!last) {
+    return {
+      kind: 'point',
+      message: kind === 'fence' ? 'Specify first fence point' : 'First polygon point',
+    };
+  }
+  return {
+    kind: 'point',
+    message: kind === 'fence' ? 'Specify next fence point or' : 'Specify endpoint of line or',
+    options: ['Undo'],
+    rubberBand: {
+      from: last,
+      selection: kind === 'window' ? 'window' : 'crossing',
+      path: { points, ...(kind === 'fence' && { open: true as const }) },
+    },
+  };
+}
+
+function formatPathPrompt(kind: SelectionPath['kind'], points: readonly Vec2[]): string {
+  const p = pathPrompt(kind, points);
+  return `${p.message}${p.options ? ` [${p.options.join('/')}]` : ''}:`;
+}
+
+/**
+ * Whether a polygon's next point `p` would make it cross or touch itself: its new side (from the
+ * last point) or the closing side (back to the first) meeting a side they do not join.
+ */
+export function polygonCrosses(points: readonly Vec2[], p: Vec2): boolean {
+  const n = points.length;
+  if (n === 0) return false;
+  const last = points[n - 1]!;
+  const first = points[0]!;
+  if (samePoint(p, last)) return true;
+  for (let i = 0; i + 1 < n; i++) {
+    const a = points[i]!;
+    const b = points[i + 1]!;
+    // The new side meets the side before it at the last point, and the first side at the first.
+    if (i + 1 < n - 1 && segmentsMeet(last, p, a, b)) return true;
+    if (n >= 2 && i > 0 && segmentsMeet(p, first, a, b)) return true;
+  }
+  return false;
+}
+
+function samePoint(a: Vec2, b: Vec2): boolean {
+  return a.x === b.x && a.y === b.y;
+}
+
+/** Whether two closed segments share a point. */
+function segmentsMeet(a: Vec2, b: Vec2, c: Vec2, d: Vec2): boolean {
+  const cross = (o: Vec2, p: Vec2, q: Vec2) =>
+    (p.x - o.x) * (q.y - o.y) - (p.y - o.y) * (q.x - o.x);
+  const on = (o: Vec2, p: Vec2, q: Vec2) =>
+    Math.min(o.x, p.x) <= q.x &&
+    q.x <= Math.max(o.x, p.x) &&
+    Math.min(o.y, p.y) <= q.y &&
+    q.y <= Math.max(o.y, p.y);
+  const d1 = cross(c, d, a);
+  const d2 = cross(c, d, b);
+  const d3 = cross(a, b, c);
+  const d4 = cross(a, b, d);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    return true;
+  }
+  return (
+    (d1 === 0 && on(c, d, a)) ||
+    (d2 === 0 && on(c, d, b)) ||
+    (d3 === 0 && on(a, b, c)) ||
+    (d4 === 0 && on(a, b, d))
+  );
 }
 
 /** `takes` without the objects `gone` (removed from the set, or erased). */

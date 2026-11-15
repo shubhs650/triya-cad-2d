@@ -394,10 +394,15 @@ export interface Renderer {
   setGrips(ids: readonly EntityId[], hot?: Vec2): void;
 }
 
-/** A selection window in world units (M2-03). */
+/**
+ * A selection window in world units (M2-03), or a selection polygon or fence (M3-04): with
+ * `polygon`, `window` (WPolygon) and `crossing` (CPolygon) test against the polygon through its
+ * points, `fence` against the open run of lines through them, and `box` holds them all.
+ */
 export interface SelectQuery {
-  readonly kind: 'window' | 'crossing';
+  readonly kind: 'window' | 'crossing' | 'fence';
   readonly box: Box;
+  readonly polygon?: readonly { readonly x: number; readonly y: number }[];
 }
 
 /** The world box a view shows on a viewport of the given CSS size. */

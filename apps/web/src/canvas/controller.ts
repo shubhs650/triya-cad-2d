@@ -915,6 +915,19 @@ export class CanvasController {
     return this.#host.select({ kind: crossing ? 'crossing' : 'window', box });
   }
 
+  /** What a selection polygon (WPolygon, CPolygon) or fence takes (M3-04). */
+  selectPath(points: readonly Vec2[], kind: 'window' | 'crossing' | 'fence'): Promise<EntityId[]> {
+    const xs = points.map((p) => p.x);
+    const ys = points.map((p) => p.y);
+    const box = {
+      minX: Math.min(...xs),
+      minY: Math.min(...ys),
+      maxX: Math.max(...xs),
+      maxY: Math.max(...ys),
+    };
+    return this.#host.select({ kind, box, polygon: points });
+  }
+
   /** ZOOM Object: the objects' extents fill the window; false when none has a known extent. */
   async zoomObjects(ids: readonly EntityId[]): Promise<boolean> {
     const box = await this.#host.boundsOf(ids);
@@ -1412,9 +1425,12 @@ export class CanvasController {
     const selection = p?.kind === 'point' ? p.rubberBand?.selection : undefined;
     if (from && cursor && selection && this.#mode === 'none') {
       const crossing = selection === 'auto' ? cursor.x < from.x : selection === 'crossing';
+      const path = p?.kind === 'point' ? p.rubberBand?.path : undefined;
       this.#host.setTransient([
         ...preview,
-        ...this.#selectionBand(from, cursor, crossing),
+        ...(path
+          ? this.#selectionPath([...path.points, cursor], crossing, path.open !== true)
+          : this.#selectionBand(from, cursor, crossing)),
         ...this.#vertexMarker(),
       ]);
       this.#requestFrame();
@@ -1456,6 +1472,38 @@ export class CanvasController {
       ...this.#vertexMarker(),
     ]);
     this.#requestFrame();
+  }
+
+  /**
+   * A selection polygon (M3-04: WPolygon blue and solid, CPolygon green and dashed, as windows
+   * are), closed and filled, or a fence: its lines alone, dashed.
+   */
+  #selectionPath(points: readonly Point[], crossing: boolean, closed: boolean): RenderPrimitive[] {
+    const color = crossing ? CROSSING_COLOR : WINDOW_COLOR;
+    const ring = closed ? [...points, points[0]!] : points;
+    const outline: number[] = [];
+    ring.forEach((q, i) => outline.push(i === 0 ? PATH_M : PATH_L, q.x, q.y));
+    let edge = outline;
+    if (crossing) {
+      const step = DASH_PX / (this.#view?.scale ?? 1);
+      edge = [];
+      for (let i = 0; i + 1 < ring.length; i++) {
+        const { x: x0, y: y0 } = ring[i]!;
+        const { x: x1, y: y1 } = ring[i + 1]!;
+        const len = Math.hypot(x1 - x0, y1 - y0);
+        for (let t = 0; t < len; t += 2 * step) {
+          const u = Math.min(t + step, len);
+          edge.push(PATH_M, x0 + ((x1 - x0) * t) / len, y0 + ((y1 - y0) * t) / len);
+          edge.push(PATH_L, x0 + ((x1 - x0) * u) / len, y0 + ((y1 - y0) * u) / len);
+        }
+      }
+    }
+    return [
+      ...(closed
+        ? [{ kind: 'fill', color, path: outline, opacity: SELECTION_FILL_OPACITY } as const]
+        : []),
+      { kind: 'stroke', color, path: edge },
+    ];
   }
 
   /** A selection window: a translucent fill and its edge, dashed when it is a crossing one. */

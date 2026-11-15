@@ -293,3 +293,165 @@ export function primCrosses(prim: RenderPrimitive, box: Box): boolean {
   }
   return false;
 }
+
+// Selection polygons and fences (M3-04, AutoCAD 2024 Help, "SELECT (Command)"): WPolygon takes
+// what lies wholly inside a polygon, CPolygon what it holds or crosses, Fence what the run of
+// lines crosses. A polygon "cannot cross or touch itself" (the selection loop refuses such a
+// point), so even-odd tells inside from outside; a fence is open and may cross itself.
+
+/** A point of a selection polygon or fence, in world units. */
+export interface PathPoint {
+  readonly x: number;
+  readonly y: number;
+}
+
+type Side = readonly [number, number, number, number];
+
+/** The polygon's sides, closed back to its first point, or the fence's lines (`open`). */
+function sidesOf(points: readonly PathPoint[], open: boolean): Side[] {
+  const out: Side[] = [];
+  const n = points.length;
+  for (let i = 0; i + 1 < (open ? n : n + 1); i++) {
+    const a = points[i]!;
+    const b = points[(i + 1) % n]!;
+    out.push([a.x, a.y, b.x, b.y]);
+  }
+  return out;
+}
+
+/** Whether two closed segments share a point. */
+function segmentsMeet(s: Side, x0: number, y0: number, x1: number, y1: number): boolean {
+  const [ax, ay, bx, by] = s;
+  const cross = (ox: number, oy: number, px: number, py: number, qx: number, qy: number) =>
+    (px - ox) * (qy - oy) - (py - oy) * (qx - ox);
+  const within = (ox: number, oy: number, px: number, py: number, qx: number, qy: number) =>
+    Math.min(ox, px) <= qx &&
+    qx <= Math.max(ox, px) &&
+    Math.min(oy, py) <= qy &&
+    qy <= Math.max(oy, py);
+  const d1 = cross(ax, ay, bx, by, x0, y0);
+  const d2 = cross(ax, ay, bx, by, x1, y1);
+  const d3 = cross(x0, y0, x1, y1, ax, ay);
+  const d4 = cross(x0, y0, x1, y1, bx, by);
+  if (((d1 > 0 && d2 < 0) || (d1 < 0 && d2 > 0)) && ((d3 > 0 && d4 < 0) || (d3 < 0 && d4 > 0))) {
+    return true;
+  }
+  return (
+    (d1 === 0 && within(ax, ay, bx, by, x0, y0)) ||
+    (d2 === 0 && within(ax, ay, bx, by, x1, y1)) ||
+    (d3 === 0 && within(x0, y0, x1, y1, ax, ay)) ||
+    (d4 === 0 && within(x0, y0, x1, y1, bx, by))
+  );
+}
+
+/** Whether a segment meets the drawn part of a circular arc. */
+function segmentMeetsArc(
+  s: Side,
+  cx: number,
+  cy: number,
+  r: number,
+  a0: number,
+  a1: number,
+  ccw: boolean,
+): boolean {
+  const [x0, y0, x1, y1] = s;
+  const dx = x1 - x0;
+  const dy = y1 - y0;
+  const fx = x0 - cx;
+  const fy = y0 - cy;
+  const a = dx * dx + dy * dy;
+  const b = 2 * (fx * dx + fy * dy);
+  const c = fx * fx + fy * fy - r * r;
+  if (a === 0) return Math.abs(c) <= 1e-12 * r * r && onSweep(Math.atan2(fy, fx), a0, a1, ccw);
+  const disc = b * b - 4 * a * c;
+  if (disc < 0) return false;
+  const root = Math.sqrt(disc);
+  for (const t of [(-b - root) / (2 * a), (-b + root) / (2 * a)]) {
+    if (t < 0 || t > 1) continue;
+    if (onSweep(Math.atan2(y0 + t * dy - cy, x0 + t * dx - cx), a0, a1, ccw)) return true;
+  }
+  return false;
+}
+
+/** Even-odd: is the point inside the polygon? */
+function insidePolygon(points: readonly PathPoint[], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const a = points[i]!;
+    const b = points[j]!;
+    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) inside = !inside;
+  }
+  return inside;
+}
+
+/** The far ends of an XLINE or RAY, as a crossing window measures it. */
+function infiniteSegment(prim: Extract<RenderPrimitive, { kind: 'infinite' }>): Side {
+  const far = 1e12;
+  return [
+    prim.both ? prim.base.x - prim.direction.x * far : prim.base.x,
+    prim.both ? prim.base.y - prim.direction.y * far : prim.base.y,
+    prim.base.x + prim.direction.x * far,
+    prim.base.y + prim.direction.y * far,
+  ];
+}
+
+/** Whether any of a primitive's drawn pieces meets any of `sides`. */
+function meetsSides(prim: RenderPrimitive, sides: readonly Side[]): boolean {
+  if (prim.kind === 'point') return false;
+  if (prim.kind === 'infinite') {
+    const [x0, y0, x1, y1] = infiniteSegment(prim);
+    return sides.some((s) => segmentsMeet(s, x0, y0, x1, y1));
+  }
+  let meets = false;
+  for (const path of pathsOf(prim)) {
+    walk(path, {
+      line(x0, y0, x1, y1) {
+        if (!meets && sides.some((s) => segmentsMeet(s, x0, y0, x1, y1))) meets = true;
+      },
+      arc(cx, cy, r, a0, a1, ccw) {
+        if (!meets && sides.some((s) => segmentMeetsArc(s, cx, cy, r, a0, a1, ccw))) meets = true;
+      },
+    });
+    if (meets) return true;
+  }
+  return false;
+}
+
+/** The first point of each of a primitive's paths: inside a polygon one side never crossed. */
+function startsOf(prim: RenderPrimitive): [number, number][] {
+  if (prim.kind === 'point') return [[prim.x, prim.y]];
+  if (prim.kind === 'infinite') return [];
+  return pathsOf(prim).flatMap((path) =>
+    path.length >= 3 && path[0] === PATH_M ? [[path[1]!, path[2]!] as [number, number]] : [],
+  );
+}
+
+/** WPolygon: whether a primitive lies wholly inside the polygon, touching none of its sides. */
+export function primInsidePolygon(prim: RenderPrimitive, polygon: readonly PathPoint[]): boolean {
+  if (prim.kind === 'infinite' || polygon.length < 3) return false;
+  const starts = startsOf(prim);
+  if (starts.length === 0 || !starts.every(([x, y]) => insidePolygon(polygon, x, y))) return false;
+  return !meetsSides(prim, sidesOf(polygon, false));
+}
+
+/** CPolygon: whether a primitive lies inside the polygon or crosses one of its sides. */
+export function primCrossesPolygon(prim: RenderPrimitive, polygon: readonly PathPoint[]): boolean {
+  if (polygon.length === 0) return false;
+  if (meetsSides(prim, sidesOf(polygon, polygon.length < 3))) return true;
+  if (polygon.length < 3) return false;
+  if (startsOf(prim).some(([x, y]) => insidePolygon(polygon, x, y))) return true;
+  // A polygon wholly inside a fill (or a run of text) still crosses it.
+  if (prim.kind === 'point' || prim.kind === 'infinite') return false;
+  const p = polygon[0]!;
+  return pathsOf(prim).some(
+    (path) =>
+      (prim.kind === 'fill' || path !== (prim.continuous ?? prim.path)) &&
+      insidePath(path, p.x, p.y),
+  );
+}
+
+/** Fence: whether any of the fence's lines crosses the primitive. */
+export function primCrossesFence(prim: RenderPrimitive, fence: readonly PathPoint[]): boolean {
+  if (fence.length < 2) return false;
+  return meetsSides(prim, sidesOf(fence, true));
+}

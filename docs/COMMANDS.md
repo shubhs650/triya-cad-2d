@@ -80,7 +80,7 @@ The Aliases column is the engine's alias table (`ALIASES` in `packages/engine/sr
 
 | Command | Aliases | Tier | Notes | Status |
 |---|---|---|---|---|
-| SELECT | — | 1 | all modes: W, C, F, WP, CP, L, P, ALL, BOX, AU, A, R, M, U, SI, G | ~ (#225): pick, implied windowing (window left to right, crossing right to left, clicked or dragged), Shift-remove, W, C, BOX, ALL, L, P, A, R, U, AU, SI; Ctrl+A; PICKFIRST pre-selection at `Command:`. F, WP, CP, M, G in M3-04 |
+| SELECT | — | 1 | all modes: W, C, F, WP, CP, L, P, ALL, BOX, AU, A, R, M, U, SI, G | x (#225): pick, implied windowing (window left to right, crossing right to left, clicked or dragged), Shift-remove, W, C, BOX, ALL, L, P, A, R, U, AU, SI; Ctrl+A; PICKFIRST pre-selection at `Command:`. #387 (M3-04 part 1): Fence, WPolygon and CPolygon (point by point with Undo, a polygon that would cross or touch itself refused, drawn as AutoCAD draws them), Group (named or `*A`n unnamed), Multiple (picks taken at Enter, unhighlighted). Lasso, selection cycling, PICKADD/PICKAUTO/PICKBOX and SELECTIONPREVIEW are M3-04's later parts |
 | QSELECT | — | 2 | dialog | |
 | FILTER | FI | 2 | dialog, named filters | |
 | SELECTSIMILAR | — | 2 | settings | |
