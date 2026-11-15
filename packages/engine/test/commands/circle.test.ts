@@ -3,7 +3,13 @@
 import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
+  OSNAP,
   PromptBus,
+  SpatialIndex,
+  osnap,
+  toleranceForSize,
+  type DeferredModes,
+  type PointPrompt,
   builtinCommands,
   dragMotion,
   tangentTarget,
@@ -139,6 +145,111 @@ describe('CIRCLE', () => {
     await bus.submit('-10,0');
     expect(circles()).toEqual([[0, 0, 10]]);
     expect(bus.history).toContain('Specify first point on circle: 10,0');
+  });
+
+  it('3P takes deferred tangents: Tan, Tan, Tan in a triangle draws its inscribed circle', async () => {
+    const { bus, circles } = setup();
+    const line = (x: number, y: number, dx: number, dy: number) =>
+      ({ kind: 'line', point: { x, y }, direction: { x: dx, y: dy } }) as const;
+    const tan = (target: ReturnType<typeof line>, x: number, y: number) => ({
+      deferred: { mode: 'TAN' as const, target, pick: { x, y } },
+    });
+    await bus.script(['C', '3P']);
+    const tangents = { deferred: { modes: OSNAP.TAN, straight: true } };
+    expect(bus.prompt).toMatchObject({ message: 'Specify first point on circle', ...tangents });
+    // The ribbon's Tan, Tan, Tan is 3P with the TAN override at each point: "to", then a pick.
+    await bus.submit('tan');
+    expect(bus.promptText).toBe('to');
+    expect(bus.prompt).toMatchObject({ osnap: OSNAP.TAN, ...tangents });
+    await bus.pick({ x: 2, y: 0 }, tan(line(0, 0, 1, 0), 2, 0));
+    // A tangent is no point to stretch a rubber band from.
+    expect(bus.prompt).toMatchObject({ message: 'Specify second point on circle', ...tangents });
+    expect(bus.prompt).not.toHaveProperty('rubberBand');
+    await bus.submit('tan');
+    await bus.pick({ x: 0, y: 1.5 }, tan(line(0, 0, 0, 1), 0, 1.5));
+    expect(bus.prompt).toMatchObject({ message: 'Specify third point on circle', ...tangents });
+    // Dragged: the circle through the cursor, tangent to both lines.
+    expect(dragMotion(bus.prompt!.drag!, { x: 2, y: 2 })?.adding?.geom).toMatchObject({
+      kind: 'CIRCLE',
+    });
+    await bus.submit('tan');
+    // Still dragged while the override asks "to".
+    expect(bus.prompt).toMatchObject({ message: 'to', drag: { kind: 'sketch' } });
+    await bus.pick({ x: 2, y: 1.5 }, tan(line(4, 0, -4, 3), 2, 1.5));
+    expect(circles()).toEqual([[1, 1, 1]]);
+    expect(bus.history).toContain('Specify first point on circle: tan');
+    expect(bus.history).toContain('to 2.0000,0.0000');
+  });
+
+  it('3P mixes points and deferred tangents, and says when no circle touches them', async () => {
+    const { bus, circles } = setup();
+    const xAxis = { kind: 'line', point: { x: 0, y: 0 }, direction: { x: 1, y: 0 } } as const;
+    await bus.script(['C', '3P', '-2,2']);
+    // After a point the rubber band runs from it as before.
+    expect(bus.prompt).toMatchObject({ rubberBand: { from: { x: -2, y: 2 } } });
+    await bus.script(['2,2']);
+    await bus.pick(
+      { x: 0, y: 0 },
+      { deferred: { mode: 'TAN', target: xAxis, pick: { x: 0, y: 0 } } },
+    );
+    expect(circles()).toEqual([[0, 2, 2]]);
+    // Three parallel lines: no circle touches them all.
+    const flat = (y: number) =>
+      ({ kind: 'line', point: { x: 0, y }, direction: { x: 1, y: 0 } }) as const;
+    await bus.script(['C', '3P']);
+    for (const y of [0, 1])
+      await bus.pick(
+        { x: 0, y },
+        { deferred: { mode: 'TAN', target: flat(y), pick: { x: 0, y } } },
+      );
+    await bus.pick(
+      { x: 0, y: 2 },
+      { deferred: { mode: 'TAN', target: flat(2), pick: { x: 0, y: 2 } } },
+    );
+    expect(bus.history.at(-1)).toBe('Circle does not exist.');
+    expect(bus.promptText).toBe('Specify third point on circle:');
+    await bus.cancel();
+    // A deferred PERpendicular is no tangent: 3P takes it as the point picked.
+    await bus.script(['C', '3P', '0,0', '10,0']);
+    await bus.pick(
+      { x: 5, y: 5 },
+      { deferred: { mode: 'PER', target: xAxis, pick: { x: 5, y: 5 } } },
+    );
+    expect(circles()).toEqual([
+      [0, 2, 2],
+      [5, 0, 5],
+    ]);
+  });
+
+  it('Tan, Tan, Tan from the object snaps on drawn lines (the snap and the command together)', async () => {
+    const { bus, model, added } = setup();
+    await bus.script(['LINE', '100,100', '104,100', '100,103', 'C']);
+    const tol = toleranceForSize(1000);
+    const src = { model, index: SpatialIndex.build(model, { tol }), block: MODEL_SPACE, tol };
+    await bus.script(['C', '3P']);
+    for (const p of [
+      { x: 102, y: 100.05 },
+      { x: 100.05, y: 101.5 },
+      { x: 102, y: 101.55 },
+    ]) {
+      const prompt = bus.prompt as PointPrompt;
+      const [hit] = osnap(src, {
+        point: p,
+        aperture: 0.2,
+        modes: OSNAP.TAN,
+        deferred: prompt.deferred as DeferredModes,
+      });
+      expect(hit?.deferred?.mode).toBe('TAN');
+      await bus.pick(hit!.point, { deferred: hit!.deferred! });
+    }
+    const drawn = added().filter((e) => e.geom.kind === 'CIRCLE');
+    expect(drawn.map((e) => e.geom)).toEqual([
+      {
+        kind: 'CIRCLE',
+        center: { x: expect.closeTo(101, 9), y: expect.closeTo(101, 9) },
+        radius: expect.closeTo(1, 9),
+      },
+    ]);
   });
 
   it('2P: the two ends of a diameter', async () => {

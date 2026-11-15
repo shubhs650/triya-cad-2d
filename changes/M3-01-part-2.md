@@ -1,0 +1,1 @@
+- M3-01 part 2 (#373): AutoCAD's Deferred Tangent and Deferred Perpendicular object snaps, so LINE draws a line tangent to two circles (or tangent to one and perpendicular to another) and CIRCLE 3P draws circles tangent to lines, circles and arcs, including Tan, Tan, Tan (3P with TAN at each point); typed TAN, PER and NEA overrides ask "to".

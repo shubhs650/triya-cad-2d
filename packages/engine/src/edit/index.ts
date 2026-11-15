@@ -54,3 +54,4 @@ export {
 } from './trim';
 export * from './corner';
 export * from './underlay-layers';
+export * from './array';

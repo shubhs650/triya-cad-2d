@@ -5,8 +5,12 @@ import { describe, expect, it } from 'vitest';
 import {
   DocumentModel,
   PromptBus,
+  NO_LINE,
+  OSNAP,
   builtinCommands,
   currentLayer,
+  sketchGeometry,
+  type Sketch,
   modelSpaceOf,
   type BusEvent,
   type Entity,
@@ -159,5 +163,107 @@ describe('currentLayer and modelSpaceOf', () => {
     });
     expect(() => currentLayer(bare)).toThrow('layer 0');
     expect(() => modelSpaceOf(bare)).toThrow('*Model_Space');
+  });
+});
+
+describe('LINE with deferred TANgent and PERpendicular (M3-01 part 2)', () => {
+  const circleA = { kind: 'circle', center: { x: 0, y: 0 }, radius: 2 } as const;
+  const circleB = { kind: 'circle', center: { x: 10, y: 0 }, radius: 2 } as const;
+  const tan = (target: typeof circleA | typeof circleB, x: number, y: number) => ({
+    deferred: { mode: 'TAN' as const, target, pick: { x, y } },
+  });
+
+  it('asks the first point with TAN and PER deferred, and the next one too after one', async () => {
+    const { bus } = setup();
+    await bus.submit('LINE');
+    expect(bus.prompt).toMatchObject({
+      message: 'Specify first point',
+      deferred: { modes: OSNAP.TAN | OSNAP.PER },
+    });
+    await bus.pick({ x: 0, y: 2.1 }, tan(circleA, 0, 2.1));
+    // No rubber band from a tangent not yet solved: the line itself is dragged instead.
+    expect(bus.prompt).toMatchObject({
+      message: 'Specify next point or',
+      options: ['Undo'],
+      deferred: { modes: OSNAP.TAN | OSNAP.PER },
+      drag: { kind: 'sketch', sketch: { shape: 'line' }, layer: LAYER_WALLS },
+    });
+    expect(bus.prompt).not.toHaveProperty('rubberBand');
+    expect(
+      sketchGeometry((bus.prompt!.drag as { sketch: Sketch }).sketch, { x: 0, y: 10 }),
+    ).toEqual({
+      kind: 'LINE',
+      start: { x: expect.closeTo(-1.959592, 6), y: 0.4 },
+      end: { x: 0, y: 10 },
+    });
+  });
+
+  it('draws a line tangent to two circles, picked TAN then TAN, and goes on from its end', async () => {
+    const { bus, ends } = setup();
+    await bus.submit('LINE');
+    await bus.pick({ x: 0, y: 2.1 }, tan(circleA, 0, 2.1));
+    await bus.pick({ x: 10, y: 2.1 }, tan(circleB, 10, 2.1));
+    expect(ends()).toEqual([[0, 2, 10, 2]]);
+    // From the tangent line's end LINE goes on as usual, its rubber band from that end.
+    expect(bus.prompt).toMatchObject({
+      message: 'Specify next point or',
+      options: ['Undo'],
+      rubberBand: { from: { x: 10, y: 2 } },
+    });
+    expect(bus.prompt).not.toHaveProperty('deferred');
+    await bus.script(['10,10', '']);
+    expect(ends()).toEqual([
+      [0, 2, 10, 2],
+      [10, 2, 10, 10],
+    ]);
+  });
+
+  it('starts tangent from a typed TAN override ("to") and ends at a typed point', async () => {
+    const { bus, ends } = setup();
+    await bus.script(['LINE', 'tan']);
+    expect(bus.promptText).toBe('to');
+    expect(bus.prompt).toMatchObject({
+      osnap: OSNAP.TAN,
+      deferred: { modes: OSNAP.TAN | OSNAP.PER },
+    });
+    const big = { kind: 'circle', center: { x: 0, y: 0 }, radius: 5 } as const;
+    await bus.pick(
+      { x: 2, y: 5 },
+      { deferred: { mode: 'TAN', target: big, pick: { x: 2, y: 5 } } },
+    );
+    await bus.script(['10,0', '']);
+    expect(ends()).toEqual([[2.5, 4.330127, 10, 0]]);
+  });
+
+  it('draws perpendicular from a line to a point', async () => {
+    const { bus, ends } = setup();
+    await bus.submit('LINE');
+    const target = { kind: 'line', point: { x: 0, y: 0 }, direction: { x: 1, y: 0 } } as const;
+    await bus.pick({ x: 1, y: 0 }, { deferred: { mode: 'PER', target, pick: { x: 1, y: 0 } } });
+    await bus.script(['3,4', '']);
+    expect(ends()).toEqual([[3, 0, 3, 4]]);
+  });
+
+  it('says "Line does not exist." and asks again where none does; Undo takes the start back', async () => {
+    const { bus, ends } = setup();
+    await bus.submit('LINE');
+    await bus.pick({ x: 0, y: 2 }, tan(circleA, 0, 2));
+    // From inside the circle no tangent touches it.
+    await bus.submit('0.5,0');
+    expect(bus.history.at(-1)).toBe(NO_LINE);
+    expect(bus.prompt).toMatchObject({ message: 'Specify next point or', deferred: {} });
+    await bus.submit('U');
+    expect(bus.promptText).toBe('Specify first point:');
+    await bus.script(['0,0', '5,0', '']);
+    expect(ends()).toEqual([[0, 0, 5, 0]]);
+  });
+
+  it('takes a deferred pick as its point where the prompt does not solve it', async () => {
+    const { bus, ends } = setup();
+    await bus.script(['LINE', '0,0']);
+    // The second point after a plain first point: TAN is drawn from that point, not deferred.
+    await bus.pick({ x: 0, y: 2 }, tan(circleA, 0, 2));
+    await bus.submit('');
+    expect(ends()).toEqual([[0, 0, 0, 2]]);
   });
 });
