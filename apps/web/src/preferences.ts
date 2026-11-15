@@ -71,6 +71,8 @@ export type DraftingPreferences = Pick<
   | 'arrayAssociativity'
   | 'polarMode'
   | 'polarAddAngles'
+  | 'snapType'
+  | 'polarDist'
   | 'selectSimilarMode'
   | 'selectionCycling'
   | 'pickbox'
@@ -135,6 +137,8 @@ export const DEFAULT_PREFERENCES: Preferences = {
     arrayAssociativity: true,
     polarMode: 0,
     polarAddAngles: '',
+    snapType: 0,
+    polarDist: 0,
     selectSimilarMode: 130,
     selectionCycling: 0,
     pickbox: 3,
@@ -239,6 +243,11 @@ export function normalizePreferences(raw: unknown): Preferences {
         typeof polarAddAngles === 'string' && additionalAngles(polarAddAngles)
           ? polarAddAngles
           : d.drafting.polarAddAngles,
+      snapType: within(k['snapType'], { min: 0, max: 1 }, d.drafting.snapType) as 0 | 1,
+      polarDist:
+        typeof k['polarDist'] === 'number' && Number.isFinite(k['polarDist']) && k['polarDist'] >= 0
+          ? k['polarDist']
+          : d.drafting.polarDist,
       qpQuadrant: QP_QUADRANTS.some((q) => q.value === qpQuadrant)
         ? (qpQuadrant as QpQuadrant)
         : d.drafting.qpQuadrant,
@@ -321,6 +330,8 @@ export function draftingPreferences(s: DraftingState): DraftingPreferences {
     arrayAssociativity: s.arrayAssociativity,
     polarMode: s.polarMode,
     polarAddAngles: s.polarAddAngles,
+    snapType: s.snapType,
+    polarDist: s.polarDist,
     selectSimilarMode: s.selectSimilarMode,
     selectionCycling: s.selectionCycling,
     pickbox: s.pickbox,

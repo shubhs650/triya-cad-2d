@@ -7,10 +7,22 @@
 // snap point wins over all three (applied by the front-end after these); typed coordinates
 // are never constrained.
 //
-// Not in this version (M3-06): SNAPANG and isometric snap, PolarSnap distances, polar angles
-// relative to the last segment (POLARMODE bit 1), UCS.
+// M3-06 part 3: PolarSnap (SNAPTYPE 1, POLARDIST): instead of the grid, the cursor snaps along
+// a tracking path to whole multiples of the polar distance from where the path starts ("the
+// cursor snaps from the first point specified to distances of 0, 4, 8, 12, 16, and so on");
+// off every path it is free. And polar angles relative to the last segment (POLARMODE 1).
+//
+// Not in this version: SNAPANG, UCS. Isometric snap is PRD non-goal 7 (DEC-060).
 import type { Vec2 } from '../geom/types';
-import { orthoTrack, trackCursor, type Acquired, type TrackLock } from './track';
+import {
+  orthoTrack,
+  polarAngles,
+  shownAngle,
+  trackCursor,
+  type Acquired,
+  type TrackLock,
+  type TrackPath,
+} from './track';
 
 /** ORTHO: the horizontal or vertical from `base`, whichever the cursor is nearer to. */
 export function orthoPoint(base: Vec2, p: Vec2): Vec2 {
@@ -24,6 +36,11 @@ export interface PolarSettings {
   readonly increment: number;
   /** POLARADDANG, radians (used when POLARMODE bit 4 is set). */
   readonly additional?: readonly number[];
+  /**
+   * POLARMODE bit 1 with a last segment ending at the base point: that segment's angle,
+   * radians, which the polar angles count from.
+   */
+  readonly relative?: number;
 }
 
 export interface PolarLock {
@@ -33,6 +50,8 @@ export interface PolarLock {
   readonly angle: number;
   /** From the base point to `point`. */
   readonly distance: number;
+  /** The last segment's angle the path's angle counts from (POLARMODE 1). */
+  readonly relative?: number;
 }
 
 const TAU = 2 * Math.PI;
@@ -51,12 +70,7 @@ export function polarTrack(
   const dx = p.x - base.x;
   const dy = p.y - base.y;
   if (dx === 0 && dy === 0) return undefined;
-  const angles: number[] = [];
-  if (s.increment > 1e-9) {
-    const n = Math.min(Math.round(TAU / s.increment), 3600);
-    for (let k = 0; k < n; k++) angles.push(k * s.increment);
-  }
-  for (const a of s.additional ?? []) angles.push(((a % TAU) + TAU) % TAU);
+  const angles = polarAngles(s);
   let best: PolarLock | undefined;
   let bestOff = Infinity;
   for (const a of angles) {
@@ -74,17 +88,22 @@ export function polarTrack(
       point: { x: base.x + cx * along, y: base.y + cy * along },
       angle: ((a % TAU) + TAU) % TAU,
       distance: along,
+      ...(s.relative !== undefined && { relative: s.relative }),
     };
   }
   return best;
 }
 
-/** The polar tracking tooltip: `Polar: 14.3543 < 45°` (distance in LUPREC places). */
+/**
+ * The polar tracking tooltip: `Polar: 14.3543 < 45°` (distance in LUPREC places), or
+ * `Relative Polar: 10.0000 < 90°` with the angle from the last segment (POLARMODE 1).
+ */
 export function polarLabel(t: PolarLock, precision = 4): string {
-  const deg = (t.angle * 180) / Math.PI;
+  const deg = (shownAngle(t) * 180) / Math.PI;
   const shown =
     Math.abs(deg - Math.round(deg)) < 1e-6 ? String(Math.round(deg) % 360) : deg.toFixed(2);
-  return `Polar: ${t.distance.toFixed(precision)} < ${shown}°`;
+  const name = t.relative === undefined ? 'Polar' : 'Relative Polar';
+  return `${name}: ${t.distance.toFixed(precision)} < ${shown}°`;
 }
 
 /** SNAP: the nearest snap point, `spacing` apart from `base` (SNAPUNIT, SNAPBASE). */
@@ -97,8 +116,14 @@ export function snapToGrid(p: Vec2, spacing: Vec2, base: Vec2 = { x: 0, y: 0 }):
 export interface ConstrainOptions {
   /** The point the cursor is measured from (a rubber band's start); none: SNAP only. */
   readonly base?: Vec2;
-  /** SNAPUNIT when SNAP is on. */
+  /** SNAPUNIT when SNAP is on with grid snap (SNAPTYPE 0). */
   readonly snap?: Vec2;
+  /**
+   * The PolarSnap distance when SNAP is on with PolarSnap (SNAPTYPE 1): POLARDIST, or the snap X
+   * spacing while POLARDIST is 0. Grid snap does not apply with it ("PolarSnap and grid snap
+   * cannot be turned on at the same time").
+   */
+  readonly polarSnap?: number;
   readonly snapBase?: Vec2;
   readonly ortho?: boolean;
   /** Polar tracking settings when POLAR is on. */
@@ -125,7 +150,8 @@ export interface Constrained {
  * may say how far along; tracking otherwise takes it onto the nearest path, or two crossing.
  */
 export function constrainCursor(p: Vec2, o: ConstrainOptions): Constrained {
-  const snapped = o.snap ? snapToGrid(p, o.snap, o.snapBase) : p;
+  const polarSnap = o.polarSnap !== undefined && o.polarSnap > 0 ? o.polarSnap : undefined;
+  const snapped = o.snap && !polarSnap ? snapToGrid(p, o.snap, o.snapBase) : p;
   const acquired = o.acquired ?? [];
   const tolerance = o.tolerance ?? 0;
   if (o.base && o.ortho) {
@@ -139,19 +165,40 @@ export function constrainCursor(p: Vec2, o: ConstrainOptions): Constrained {
   }
   const polar = o.base ? o.polar : undefined;
   if (polar || acquired.length > 0) {
-    const lock = trackCursor(p, {
+    const found = trackCursor(p, {
       ...(o.base && { base: o.base }),
       ...(o.polar && { polar: o.polar }),
       acquired,
       ...(o.trackPolar && { trackPolar: true }),
       tolerance,
     });
-    const only = lock?.paths.length === 1 ? lock.paths[0]! : undefined;
-    if (lock && only?.label === 'Polar') {
+    const only = found?.paths.length === 1 ? found.paths[0]! : undefined;
+    const lock =
+      found && only && polarSnap
+        ? { ...found, point: alongBy(only, found.point, polarSnap) }
+        : found;
+    if (lock && only?.polar) {
       const distance = Math.hypot(lock.point.x - only.from.x, lock.point.y - only.from.y);
-      return { point: lock.point, polar: { point: lock.point, angle: only.angle, distance } };
+      return {
+        point: lock.point,
+        polar: {
+          point: lock.point,
+          angle: only.angle,
+          distance,
+          ...(only.relative !== undefined && { relative: only.relative }),
+        },
+      };
     }
     if (lock) return { point: lock.point, track: lock };
   }
   return { point: snapped };
+}
+
+/** PolarSnap: `point` on `path` moved to the nearest whole multiple of `step` from its start. */
+function alongBy(path: TrackPath, point: Vec2, step: number): Vec2 {
+  const along = Math.hypot(point.x - path.from.x, point.y - path.from.y);
+  const d = Math.round(along / step) * step;
+  const t = along === 0 ? 0 : d / along;
+  const at = (o: number, v: number) => +(o + (v - o) * t).toPrecision(15);
+  return { x: at(path.from.x, point.x), y: at(path.from.y, point.y) };
 }

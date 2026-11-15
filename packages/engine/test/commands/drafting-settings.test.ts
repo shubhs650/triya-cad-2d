@@ -108,4 +108,24 @@ describe('POLARMODE and POLARADDANG', () => {
     expect(values['POLARADDANG']).toBe('12.5;80');
     expect(bus.undo.state.undoable).toBe(0);
   });
+  it('are joined by SNAPTYPE (0 or 1) and POLARDIST (0 or more), M3-06 part 3', async () => {
+    // AutoCAD 2024 Help, "SNAPTYPE": 0 grid snap, 1 PolarSnap; "POLARDIST": the PolarSnap
+    // increment, a real, initially 0. Both are kept in the registry, so the app keeps them.
+    const values: Record<string, number | string> = { SNAPTYPE: 0, POLARDIST: 0 };
+    const { bus, log } = setup(app(values));
+    await bus.submit('SNAPTYPE');
+    expect(bus.promptText).toBe('Enter new value for SNAPTYPE <0>:');
+    await bus.submit('2');
+    expect(log.at(-1)).toBe('Value must be between 0 and 1.');
+    await bus.submit('1');
+    expect(values['SNAPTYPE']).toBe(1);
+    await bus.submit('POLARDIST');
+    expect(bus.promptText).toBe('Enter new value for POLARDIST <0.0000>:');
+    await bus.submit('-1');
+    expect(values['POLARDIST']).toBe(0);
+    await bus.cancel();
+    await bus.submit('POLARDIST');
+    await bus.submit('2.5');
+    expect(values['POLARDIST']).toBe(2.5);
+  });
 });

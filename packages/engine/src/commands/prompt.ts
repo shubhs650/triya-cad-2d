@@ -122,6 +122,12 @@ export interface PointPrompt extends PromptBase {
      * first unless `open` (a fence), as `selection` says (a window or a crossing).
      */
     readonly path?: { readonly points: readonly Vec2[]; readonly open?: true };
+    /**
+     * The direction, a unit vector, of the last segment drawn where it ends at `from` (LINE's
+     * and PLINE's next point, M3-06 part 3): with POLARMODE 1 the front-end counts the polar
+     * tracking angles from it ("Relative to Last Segment").
+     */
+    readonly direction?: Vec2;
   };
   /**
    * Text that is neither a point nor an option answers `{ kind: 'string' }` instead of being

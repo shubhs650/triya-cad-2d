@@ -10,6 +10,7 @@ import {
   AUTOSNAP_MARKER,
   AUTOSNAP_TIP,
   AUTOSNAP_TRACK_TIP,
+  POLARMODE_SHIFT_ACQUIRE,
   drafting,
 } from './drafting';
 import { dynMode } from './dynamic-input';
@@ -487,7 +488,7 @@ const AUTOSNAP_CHECKS = [
 
 /**
  * DRAFTINGSETTINGS' object snap modes and polar increment, OPTIONS > Drafting's AutoSnap
- * settings and marker and aperture sizes, OPTIONS > Selection's grip size and Noun/verb selection, and
+ * settings, Alignment point acquisition (POLARMODE 8, M3-06 part 3) and marker and aperture sizes, OPTIONS > Selection's grip size and Noun/verb selection, and
  * Dynamic Input. They act on the status bar's drafting aids,
  * which keep them between sessions (preferences.ts).
  */
@@ -569,6 +570,29 @@ function DraftingSettings() {
           <span className="range-value">{d.gripSize}</span>
         </span>
       </div>
+      <fieldset>
+        <legend>Alignment point acquisition</legend>
+        {[
+          { shift: false, label: 'Automatic' },
+          { shift: true, label: 'Shift to acquire' },
+        ].map(({ shift, label }) => (
+          <label key={label} className="setting-check">
+            <input
+              type="radio"
+              name={`${id}-acquire`}
+              checked={((d.polarMode & POLARMODE_SHIFT_ACQUIRE) !== 0) === shift}
+              onChange={() =>
+                drafting.configure({
+                  polarMode: shift
+                    ? d.polarMode | POLARMODE_SHIFT_ACQUIRE
+                    : d.polarMode & ~POLARMODE_SHIFT_ACQUIRE,
+                })
+              }
+            />
+            {label}
+          </label>
+        ))}
+      </fieldset>
       {AUTOSNAP_CHECKS.map(({ bit, label }) => (
         <label key={bit} className="setting-check">
           <input

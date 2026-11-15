@@ -68,6 +68,9 @@ describe('preferences', () => {
       // Drafting Settings dialog's Quick Properties tab: top right, 50 pixels, collapsed to 3 rows.
       polarMode: 0,
       polarAddAngles: '',
+      // M3-06 part 3: SNAPTYPE 0 (grid snap) and POLARDIST 0, AutoCAD's initial values.
+      snapType: 0,
+      polarDist: 0,
       // SELECTSIMILARMODE 130 (Layer and Name) and SELECTIONCYCLING 0 (off), AutoCAD's.
       selectSimilarMode: 130,
       selectionCycling: 0,
@@ -89,6 +92,8 @@ describe('preferences', () => {
       drafting: {
         polarMode: 6,
         polarAddAngles: '12.5;80',
+        snapType: 1,
+        polarDist: 2.5,
         selectSimilarMode: 7,
         selectionCycling: -2,
         pickbox: 10,
@@ -108,6 +113,8 @@ describe('preferences', () => {
       pickauto: 7,
       polarMode: 6,
       polarAddAngles: '12.5;80',
+      snapType: 1,
+      polarDist: 2.5,
       qpQuadrant: 'bottom-left',
       qpDistance: 120,
       qpCollapse: false,
@@ -117,6 +124,8 @@ describe('preferences', () => {
       drafting: {
         polarMode: 16,
         polarAddAngles: 'north',
+        snapType: 2,
+        polarDist: -1,
         selectSimilarMode: 256,
         selectionCycling: 3,
         pickbox: 51,
@@ -136,6 +145,8 @@ describe('preferences', () => {
       pickauto: 5,
       polarMode: 0,
       polarAddAngles: '',
+      snapType: 0,
+      polarDist: 0,
       qpQuadrant: 'top-right',
       qpDistance: 50,
       qpCollapse: true,

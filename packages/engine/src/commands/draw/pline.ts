@@ -119,7 +119,7 @@ export function plineCommand(last: LastDrawn = lastDrawn()): CommandDef {
                 segments > 0
                   ? ['Arc', 'Close', 'Halfwidth', 'Length', 'Undo', 'Width']
                   : ['Arc', 'Halfwidth', 'Length', 'Undo', 'Width'],
-              rubberBand: { from },
+              rubberBand: { from, ...(segments > 0 && { direction: direction() }) },
             }),
             drag: {
               kind: 'sketch',

@@ -6,8 +6,10 @@
 // POLARADDANG; the Object Snap tab chooses the modes and turns OSNAP off; the Quick Properties tab
 // sets QPMODE, QPLOCATION, the quadrant, the distance and the row count, and Quick Properties
 // follows them. Cancel (Esc) leaves everything as it was. The dialog's model is unit-tested in
-// apps/web/test/drafting-settings.test.ts.
+// apps/web/test/drafting-settings.test.ts. Part 3: PolarSnap, polar angles relative to the last
+// segment and Settings' Shift to acquire.
 import { expect, test, type Page } from '@playwright/test';
+import type { ChangeSet } from '@triya/engine';
 import path from 'node:path';
 import { DXF, activeCanvas, expectShown, openWithPicker, viewOf } from '../app/page';
 import { startApp } from '../app/server';
@@ -289,7 +291,7 @@ test('sets the snap and grid spacing, from the Snap and Grid tab and from SNAP a
   await shot(page, '8-grid-follows-snap');
 
   // SNAP and GRID at the command line: a spacing, and 2x the snap spacing for the grid.
-  await type(page, 'SN', 'Specify snap spacing or [ON/OFF/Aspect] <2.5000>:');
+  await type(page, 'SN', 'Specify snap spacing or [ON/OFF/Aspect/Type] <2.5000>:');
   await type(page, '4', 'Command:');
   await type(page, 'GRID', 'Specify grid spacing(X) or [ON/OFF/Snap/Major/Aspect] <0.0000>:');
   await type(page, '2x', 'Command:');
@@ -314,4 +316,137 @@ test('sets the snap and grid spacing, from the Snap and Grid tab and from SNAP a
   await expect(field('Snap X spacing:')).toHaveValue('2.5');
   await expect(field('Grid X spacing:')).toHaveValue('0');
   await page.keyboard.press('Escape');
+});
+
+/** The LINE entities the drawing's commands added, as [x1, y1, x2, y2] to 4 places. */
+async function linesAdded(page: Page): Promise<number[][]> {
+  const changes = await page.evaluate(() =>
+    (window as unknown as { triyaDev: { changes(): readonly ChangeSet[] } }).triyaDev.changes(),
+  );
+  const out: number[][] = [];
+  for (const cs of changes) {
+    for (const { entity } of cs.entities?.added ?? []) {
+      if (entity.geom.kind !== 'LINE') continue;
+      const { start, end } = entity.geom;
+      out.push([start.x, start.y, end.x, end.y].map((v) => Math.round(v * 1e4) / 1e4));
+    }
+  }
+  return out;
+}
+
+// M3-06 part 3: PolarSnap (Snap type, Polar distance; SNAPTYPE, POLARDIST), polar angles relative
+// to the last segment (POLARMODE 1), and Shift to acquire (Settings, POLARMODE 8).
+test('snaps along polar paths by the polar distance, relative to the last segment', async ({
+  page,
+}) => {
+  test.setTimeout(120_000);
+  await page.goto(app.url);
+  await openWithPicker(page, DXF);
+  await expectShown(page, path.basename(DXF));
+  const canvas = activeCanvas(page);
+  await type(page, 'Z', /^Specify corner of window/);
+  await type(page, `${X0 - 10},${Y0 - 40}`, 'Specify opposite corner:');
+  await type(page, `${X0 + 70},${Y0 + 40}`, 'Command:');
+  const view = await viewOf(page);
+  const at = (x: number, y: number) => {
+    const p = view.at(x, y);
+    return { x: view.box.x + p.x, y: view.box.y + p.y };
+  };
+
+  // Snap and Grid: Polar distance waits for PolarSnap, which then disables the snap spacing.
+  await type(page, 'DS', 'Drafting Settings:');
+  const d = dialog(page);
+  await d.getByRole('tab', { name: 'Snap and Grid' }).click();
+  const field = (name: string) => d.getByRole('textbox', { name, exact: true });
+  await expect(d.getByRole('radio', { name: 'Grid snap' })).toBeChecked();
+  await expect(field('Polar distance:')).toBeDisabled();
+  await d.getByRole('radio', { name: 'PolarSnap' }).check();
+  await expect(field('Polar distance:')).toBeEnabled();
+  await expect(field('Snap X spacing:')).toBeDisabled();
+  await field('Polar distance:').fill('-5');
+  await expect(d.getByRole('alert')).toHaveText('Polar distance must be a number, 0 or more.');
+  await field('Polar distance:').fill('5');
+  await d.getByRole('checkbox', { name: 'Snap On (F9)' }).check();
+  await shot(page, '10-polar-snap');
+  await d.getByRole('tab', { name: 'Polar Tracking' }).click();
+  await expect(d.getByRole('radio', { name: 'Absolute' })).toBeChecked();
+  await d.getByRole('radio', { name: 'Relative to last segment' }).check();
+  await shot(page, '11-relative-to-last-segment');
+  await d.getByRole('button', { name: 'OK' }).click();
+  await expect(d).toBeHidden();
+  await canvas.hover();
+  await type(page, 'SNAPTYPE', 'Enter new value for SNAPTYPE <1>:');
+  await type(page, '', 'Command:');
+  await type(page, 'POLARDIST', 'Enter new value for POLARDIST <5.0000>:');
+  await type(page, '', 'Command:');
+  await type(page, 'POLARMODE', 'Enter new value for POLARMODE <1>:');
+  await type(page, '', 'Command:');
+
+  // LINE: the cursor 13.6 along 0° goes to 15, the nearest multiple of 5.
+  await type(page, 'L', 'Specify first point:');
+  await type(page, `${X0},${Y0}`, 'Specify next point or [Undo]:');
+  let p = at(X0 + 13.6, Y0 + 0.3);
+  await page.mouse.move(p.x, p.y);
+  await expect(tip(page)).toHaveText('Polar: 15.0000 < 0°');
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(async () => (await linesAdded(page)).length).toBe(1);
+  // Typed points are never constrained: a segment at 30°.
+  await type(page, '@20<30', 'Specify next point or [Close/Undo]:');
+  await expect.poll(async () => (await linesAdded(page)).length).toBe(2);
+  // From its end, 90° from it is 120°; 9.2 along goes to 10.
+  const from = { x: X0 + 15 + 20 * Math.cos(Math.PI / 6), y: Y0 + 10 };
+  const a = (2 * Math.PI) / 3;
+  p = at(from.x + 9.2 * Math.cos(a) + 0.2, from.y + 9.2 * Math.sin(a) + 0.1);
+  await page.mouse.move(p.x, p.y);
+  await expect(tip(page)).toHaveText('Relative Polar: 10.0000 < 90°');
+  await shot(page, '12-relative-polar-snapped');
+  await page.mouse.click(p.x, p.y);
+  await expect.poll(async () => (await linesAdded(page)).length).toBe(3);
+  await type(page, '', 'Command:');
+  const lines = await linesAdded(page);
+  expect(lines[0]).toEqual([X0, Y0, X0 + 15, Y0]);
+  const r4 = (v: number) => Math.round(v * 1e4) / 1e4;
+  expect(lines[2]).toEqual([
+    r4(from.x),
+    r4(from.y),
+    r4(from.x + 10 * Math.cos(a)),
+    r4(from.y + 10 * Math.sin(a)),
+  ]);
+
+  // SNAP Type back to grid snap: the cursor rounds to the drawing's 0.5 again.
+  await type(page, 'SNAP', 'Specify snap spacing or [ON/OFF/Aspect/Type] <0.5000>:');
+  await type(page, 'T', 'Enter snap type [Polar/Grid] <Polar>:');
+  await type(page, 'G', 'Command:');
+  await type(page, 'SNAPTYPE', 'Enter new value for SNAPTYPE <0>:');
+  await type(page, '', 'Command:');
+
+  // Shift to acquire (Settings): a pause no longer acquires the endpoint; Shift over it does.
+  await page.getByRole('button', { name: 'Settings', exact: true }).click();
+  const settings = page.getByRole('dialog', { name: 'Settings' });
+  await expect(settings.getByRole('radio', { name: 'Automatic' })).toBeChecked();
+  await settings.getByRole('radio', { name: 'Shift to acquire' }).check();
+  await page.keyboard.press('Escape');
+  await expect(settings).toBeHidden();
+  await canvas.hover();
+  await type(page, 'POLARMODE', 'Enter new value for POLARMODE <9>:');
+  await type(page, '', 'Command:');
+  await page.keyboard.press('F9');
+  await expect(toggle(page, 'SNAP')).toHaveAttribute('aria-pressed', 'false');
+  await type(page, 'L', 'Specify first point:');
+  p = at(X0 + 15, Y0 - 0.2);
+  await page.mouse.move(p.x, p.y);
+  await expect(tip(page)).toHaveText('Endpoint');
+  await page.waitForTimeout(800);
+  const below = at(X0 + 15.1, Y0 - 20);
+  await page.mouse.move(below.x, below.y);
+  await expect(tip(page)).toBeHidden();
+  await page.mouse.move(p.x, p.y);
+  await expect(tip(page)).toHaveText('Endpoint');
+  await page.keyboard.down('Shift');
+  await page.keyboard.up('Shift');
+  await page.mouse.move(below.x, below.y);
+  await expect(tip(page)).toHaveText('Endpoint: 20.0000 < 270°');
+  await shot(page, '13-shift-acquired');
+  await page.keyboard.press('Escape');
+  await expect(prompt(page)).toHaveText('Command:');
 });

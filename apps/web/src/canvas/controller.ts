@@ -109,6 +109,8 @@ import {
   AUTOSNAP_TIP,
   AUTOSNAP_TRACK_TIP,
   INITIAL_DRAFTING,
+  POLARMODE_SHIFT_ACQUIRE,
+  polarSnapDistance,
   trackingSettings,
   type DraftingState,
 } from '../drafting';
@@ -374,6 +376,8 @@ export class CanvasController {
    * cycles a hot multi-functional grip's functions at a prompt that says so (`ctrlCycles`).
    */
   #ctrlTap = false;
+  /** Shift is held: it acquires tracking points or keeps them from being acquired (POLARMODE 8). */
+  #shift = false;
   /** Grips show with none hot: the one under the cursor takes GRIPHOVER (M3-05 part 2). */
   #gripsHoverable = false;
   /** The renderer was last told a cursor for GRIPHOVER. */
@@ -1683,6 +1687,12 @@ export class CanvasController {
     window.addEventListener('pointerdown', () => (this.#ctrlTap = false), opts);
     window.addEventListener('keydown', ctrlKey, opts);
     window.addEventListener('keyup', ctrlKey, opts);
+    const shiftKey = (e: KeyboardEvent) => {
+      if (e.key === 'Shift') this.#shiftKey(e.type === 'keydown');
+    };
+    window.addEventListener('keydown', shiftKey, opts);
+    window.addEventListener('keyup', shiftKey, opts);
+    window.addEventListener('blur', () => (this.#shift = false), opts);
     c.addEventListener(
       'wheel',
       (e) => {
@@ -1802,6 +1812,7 @@ export class CanvasController {
         }
         this.#pointer = { offsetX: e.offsetX, offsetY: e.offsetY };
         this.#ctrl = e.ctrlKey;
+        this.#shift = e.shiftKey;
         // A rest is the cursor alone: not while a button is held, a window, PAN or ZOOM goes on.
         if (e.buttons === 0 && !this.#drag && !this.#corner && this.#mode === 'none') {
           this.#rest.move({ x: e.clientX, y: e.clientY, offsetX: e.offsetX, offsetY: e.offsetY });
@@ -1989,19 +2000,28 @@ export class CanvasController {
     return s && s.x > 0 && s.y > 0 ? s : { x: 10, y: 10 };
   }
 
-  /** SNAP, then ORTHO or POLAR, applied to a cursor point (M2-04). */
+  /**
+   * SNAP, then ORTHO or POLAR, applied to a cursor point (M2-04). SNAP is grid snap or, with
+   * SNAPTYPE 1, PolarSnap along the tracking paths (M3-06 part 3); the polar angles count from
+   * the prompt's last segment with POLARMODE 1.
+   */
   #constrain(world: Vec2): ReturnType<typeof constrainCursor> {
     const d = this.#drafting;
     const base = this.#base();
     const vport = this.#vport();
+    const p = this.#prompt;
+    const last = p?.kind === 'point' ? p.rubberBand?.direction : undefined;
+    const polarSnap = polarSnapDistance(d, this.#snapSpacing().x);
     return constrainCursor(world, {
       ...(base && { base }),
-      ...(d.snap && {
-        snap: this.#snapSpacing(),
-        ...(vport?.snapBase && { snapBase: vport.snapBase }),
-      }),
+      ...(d.snap &&
+        polarSnap === undefined && {
+          snap: this.#snapSpacing(),
+          ...(vport?.snapBase && { snapBase: vport.snapBase }),
+        }),
+      ...(polarSnap !== undefined && { polarSnap }),
       ortho: d.ortho,
-      ...trackingSettings(d),
+      ...trackingSettings(d, last),
       tolerance: TRACK_PX * this.#px(),
       ...(this.#acquired.length > 0 && { acquired: this.#acquired }),
     });
@@ -2082,11 +2102,33 @@ export class CanvasController {
     clearTimeout(this.#acquireTimer);
     this.#candidate = key ? { key, items } : undefined;
     if (!key) return;
+    // POLARMODE 8 (M3-06 part 3): Shift held over it acquires it at once, and nothing else does.
+    if (this.#shiftAcquires()) {
+      if (this.#shift) this.#acquire(items);
+      return;
+    }
+    // Otherwise a pause acquires it, unless Shift is held ("press Shift to temporarily avoid
+    // acquiring a point", AutoCAD 2024 Help).
     this.#acquireTimer = window.setTimeout(() => {
-      if (this.#candidate?.key !== key) return;
+      if (this.#candidate?.key !== key || this.#shift) return;
       this.#acquire(items);
       this.#track();
     }, ACQUIRE_MS);
+  }
+
+  /** Points are acquired with Shift (Options > Drafting's "Shift to acquire", POLARMODE 8). */
+  #shiftAcquires(): boolean {
+    return (this.#drafting.polarMode & POLARMODE_SHIFT_ACQUIRE) !== 0;
+  }
+
+  /** Shift pressed or let go: with Shift to acquire, pressing it acquires what the cursor is over. */
+  #shiftKey(down: boolean): void {
+    if (down === this.#shift) return;
+    this.#shift = down;
+    const c = this.#candidate;
+    if (!down || !c || !this.#shiftAcquires() || !this.#prompt || this.#mode !== 'none') return;
+    this.#acquire(c.items);
+    this.#track();
   }
 
   /** Acquires what the cursor paused over, or lets it go if it was acquired already. */
